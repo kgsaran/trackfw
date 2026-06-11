@@ -1,5 +1,5 @@
 ---
-name: trackfw-ares
+name: trackfw-infra
 description: "🛠️ Ares - Infrastructure Senior Specialist | Kubernetes, AWS/GCP/Azure, GitOps (ArgoCD/Flux), CI/CD, Terraform, DR, FinOps, Platform Engineering. Use proactively when infrastructure provisioning, Kubernetes manifests, CI/CD pipelines, GitOps, IDP/Backstage, or cloud deployments are needed."
 model: sonnet
 tools: "Read, Edit, Write, Bash, Grep, Glob, AskUserQuestion"

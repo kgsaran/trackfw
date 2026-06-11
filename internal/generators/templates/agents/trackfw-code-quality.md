@@ -1,5 +1,5 @@
 ---
-name: trackfw-hephaestus
+name: trackfw-code-quality
 description: "🔧 Hephaestus - Code Quality Senior Specialist | SonarQube/Semgrep/CodeQL, quality gates, linting, refatoração, detecção de code smells, Architecture Fitness Functions, tech debt tracking. Use proactively when code quality analysis, quality gate validation, refactoring recommendations, or static analysis is needed."
 model: sonnet
 tools: "Read, Grep, Glob, Bash, WebSearch, AskUserQuestion"

@@ -1,5 +1,5 @@
 ---
-name: trackfw-metis
+name: trackfw-data
 description: "📊 Metis - Data Engineering & Data Science Senior Specialist | ELT/ETL, Airflow/Prefect, Kafka, dbt, Snowflake/BigQuery, Delta Lake, Spark, DuckDB, LangChain/RAG, MLOps. Use proactively when building data pipelines, ML workflows, AI/LLM data pipelines, or data quality governance is needed."
 model: sonnet
 tools: "Read, Edit, Write, Bash, Grep, Glob, AskUserQuestion"

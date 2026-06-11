@@ -7,10 +7,10 @@ import (
 )
 
 var expectedAgents = []string{
-	"trackfw-zeus.md", "trackfw-apolo.md", "trackfw-afrodite.md",
-	"trackfw-artemis.md", "trackfw-ares.md", "trackfw-hades.md",
-	"trackfw-hephaestus.md", "trackfw-poseidon.md", "trackfw-athena.md",
-	"trackfw-metis.md",
+	"trackfw-architect.md", "trackfw-backend.md", "trackfw-frontend.md",
+	"trackfw-qa.md", "trackfw-infra.md", "trackfw-security.md",
+	"trackfw-code-quality.md", "trackfw-dba.md", "trackfw-ux.md",
+	"trackfw-data.md",
 }
 
 func TestInstallAgents_CriaArquivosEmHome(t *testing.T) {

@@ -1,5 +1,5 @@
 ---
-name: trackfw-zeus
+name: trackfw-architect
 description: "🌩️ Zeus - Principal Software Architect | Análise Arquitetura, ADRs, Orquestração Agents. Use proactively when architectural decisions, ADRs, system design, AI/LLM architecture, Platform Engineering governance, or multi-agent coordination is needed."
 model: opus
 tools: "Agent, Read, Edit, Write, Bash, Grep, Glob, WebSearch, WebFetch, AskUserQuestion, EnterPlanMode, ExitPlanMode, TaskCreate, TaskGet, TaskList, TaskUpdate, TaskStop, TaskOutput, Monitor, PushNotification"

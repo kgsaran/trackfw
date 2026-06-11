@@ -1,5 +1,5 @@
 ---
-name: trackfw-apolo
+name: trackfw-backend
 description: "☀️ Apolo - Backend Senior Specialist | Go (Gin/Fx/Clean Arch), Java Spring Boot, REST/RFC7807, gRPC/GraphQL, Spring AI, microservices. Use proactively when backend APIs, microservices, Go or Java implementation, database repositories, or AI/LLM backend integration is needed."
 model: sonnet
 tools: "Read, Edit, Write, Bash, Grep, Glob, AskUserQuestion"

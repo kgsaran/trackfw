@@ -1,5 +1,5 @@
 ---
-name: trackfw-poseidon
+name: trackfw-dba
 description: "🔱 Poseidon - Database Senior Specialist | PostgreSQL 16+, MySQL 8+, ArangoDB (AQL), Redis, DynamoDB/MongoDB, pgvector/Weaviate (vector DBs), ClickHouse, tuning/index/backup. Use proactively when database modeling, query optimization, index tuning, backup/PITR, vector database design, or migration strategy is needed."
 model: sonnet
 tools: "Read, Edit, Write, Bash, Grep, Glob, AskUserQuestion"

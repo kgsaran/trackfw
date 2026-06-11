@@ -1,5 +1,5 @@
 ---
-name: trackfw-hades
+name: trackfw-security
 description: "🔒 Hades - Principal DevSecOps Security Specialist | SAST/DAST/SCA, Threat Modeling (STRIDE), Zero Trust, Container/IaC Security, CNAPP, SIEM/SOAR, Supply Chain, OWASP. Use proactively when security reviews, vulnerability scanning, threat modeling, secret detection, or DevSecOps pipeline hardening is needed."
 model: sonnet
 tools: "Read, Grep, Glob, Bash, WebSearch, AskUserQuestion"

@@ -1,5 +1,5 @@
 ---
-name: trackfw-afrodite
+name: trackfw-frontend
 description: "💖 Afrodite - Frontend i18n Senior Specialist | Design System, Accessibility, UX Consistency, React 19/Next.js 15/Tailwind, MFE Builds, PWA. Use proactively when frontend components, i18n (pt-BR/en-US/es-ES), React/Next.js, Module Federation, or accessibility (WCAG 2.2) work is needed."
 model: sonnet
 tools: "Read, Edit, Write, Bash, Grep, Glob, AskUserQuestion"
