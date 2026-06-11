@@ -1,0 +1,15 @@
+{
+  "name": "trackfw",
+  "version": "0.1.0",
+  "description": "Governed software delivery framework: ADR → REQ → ROADMAP → kanban",
+  "keywords": ["cli", "adr", "roadmap", "governance", "delivery"],
+  "homepage": "https://github.com/kgsaran/trackfw",
+  "repository": { "type": "git", "url": "https://github.com/kgsaran/trackfw" },
+  "license": "MIT",
+  "bin": { "trackfw": "./bin/trackfw" },
+  "scripts": { "postinstall": "node scripts/postinstall.js" },
+  "files": ["bin/", "scripts/"],
+  "engines": { "node": ">=14" },
+  "os": ["linux", "darwin", "win32"],
+  "cpu": ["x64", "arm64"]
+}
