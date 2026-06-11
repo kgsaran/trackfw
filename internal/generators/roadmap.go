@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -89,17 +90,5 @@ func findRoadmap(name string) (string, error) {
 }
 
 func containsIgnoreCase(s, sub string) bool {
-	return len(s) >= len(sub) &&
-		(s == sub ||
-			len(sub) == 0 ||
-			containsRune(s, sub))
-}
-
-func containsRune(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }

@@ -143,7 +143,7 @@ jobs:
 
       - name: Install trackfw
         run: |
-          curl -sSfL https://raw.githubusercontent.com/trackfw/trackfw/main/scripts/install.sh | sh
+          curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
 
       - name: Governance gate
         run: trackfw validate
@@ -165,7 +165,7 @@ trackfw-gate:
   image: alpine:latest
   before_script:
     - apk add --no-cache curl
-    - curl -sSfL https://raw.githubusercontent.com/trackfw/trackfw/main/scripts/install.sh | sh
+    - curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
   script:
     - trackfw validate
   only:
