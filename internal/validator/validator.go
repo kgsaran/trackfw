@@ -7,40 +7,50 @@ import (
 	"strings"
 )
 
-func Validate() ([]string, error) {
-	var violations []string
-
-	wipViolations, err := validateWIPHasREQ()
-	if err != nil {
-		return nil, err
+func Validate() (violations []string, warnings []string, err error) {
+	wipViolations, e := validateWIPHasREQ()
+	if e != nil {
+		return nil, nil, e
 	}
 	violations = append(violations, wipViolations...)
 
-	reqViolations, err := validateREQsHaveADR()
-	if err != nil {
-		return nil, err
+	reqViolations, e := validateREQsHaveADR()
+	if e != nil {
+		return nil, nil, e
 	}
 	violations = append(violations, reqViolations...)
 
-	blockedViolations, err := validateBlockedHasREQ()
-	if err != nil {
-		return nil, err
+	blockedViolations, e := validateBlockedHasREQ()
+	if e != nil {
+		return nil, nil, e
 	}
 	violations = append(violations, blockedViolations...)
 
-	reqRoadmapViolations, err := validateREQsHaveRoadmap()
-	if err != nil {
-		return nil, err
+	reqRoadmapViolations, e := validateREQsHaveRoadmap()
+	if e != nil {
+		return nil, nil, e
 	}
 	violations = append(violations, reqRoadmapViolations...)
 
-	adrOrphanViolations, err := validateADRsAreReferenced()
-	if err != nil {
-		return nil, err
+	adrOrphanViolations, e := validateADRsAreReferenced()
+	if e != nil {
+		return nil, nil, e
 	}
 	violations = append(violations, adrOrphanViolations...)
 
-	return violations, nil
+	criteriaViolations, e := validateWIPHasAcceptanceCriteria()
+	if e != nil {
+		return nil, nil, e
+	}
+	violations = append(violations, criteriaViolations...)
+
+	wipWarnings, e := validateSingleWIP()
+	if e != nil {
+		return nil, nil, e
+	}
+	warnings = append(warnings, wipWarnings...)
+
+	return violations, warnings, nil
 }
 
 func GetStatus() (string, error) {
@@ -180,6 +190,41 @@ func validateADRsAreReferenced() ([]string, error) {
 		}
 	}
 	return violations, nil
+}
+
+func validateWIPHasAcceptanceCriteria() ([]string, error) {
+	entries, err := listDir("docs/roadmaps/wip")
+	if err != nil {
+		return nil, nil
+	}
+
+	var violations []string
+	for _, name := range entries {
+		content, err := os.ReadFile(filepath.Join("docs/roadmaps/wip", name))
+		if err != nil {
+			continue
+		}
+		s := string(content)
+		hasBlock := strings.Contains(s, "## Acceptance Criteria") ||
+			strings.Contains(s, "## Critérios de Aceite") ||
+			strings.Contains(s, "acceptance criteria") ||
+			strings.Contains(s, "Acceptance Criteria:")
+		if !hasBlock {
+			violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no acceptance criteria block", name))
+		}
+	}
+	return violations, nil
+}
+
+func validateSingleWIP() ([]string, error) {
+	entries, err := listDir("docs/roadmaps/wip")
+	if err != nil {
+		return nil, nil
+	}
+	if len(entries) > 1 {
+		return []string{fmt.Sprintf("%d roadmaps in wip/ (recommended: keep only 1 active at a time)", len(entries))}, nil
+	}
+	return nil, nil
 }
 
 func listDir(dir string) ([]string, error) {

@@ -12,12 +12,19 @@ func newValidateCmd() *cobra.Command {
 		Use:   "validate",
 		Short: "Check governance consistency (REQ linked, ADR exists, no orphan roadmaps)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			violations, err := validator.Validate()
+			violations, warnings, err := validator.Validate()
 			if err != nil {
 				return err
 			}
+			for _, w := range warnings {
+				fmt.Printf("⚠  %s\n", w)
+			}
 			if len(violations) == 0 {
-				fmt.Println("✓ governance is consistent — no violations found.")
+				if len(warnings) == 0 {
+					fmt.Println("✓ governance is consistent — no violations found.")
+				} else {
+					fmt.Printf("✓ no violations — %d warning(s)\n", len(warnings))
+				}
 				return nil
 			}
 			for _, v := range violations {
