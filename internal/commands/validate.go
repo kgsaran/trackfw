@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/trackfw/trackfw/internal/validator"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 func newValidateCmd() *cobra.Command {

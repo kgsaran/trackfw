@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/trackfw/trackfw/internal/commands"
+	"github.com/kgsaran/trackfw/internal/commands"
 )
 
 func main() {

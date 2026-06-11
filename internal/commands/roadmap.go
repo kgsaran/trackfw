@@ -2,7 +2,7 @@ package commands
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/trackfw/trackfw/internal/generators"
+	"github.com/kgsaran/trackfw/internal/generators"
 )
 
 func newRoadmapCmd() *cobra.Command {
