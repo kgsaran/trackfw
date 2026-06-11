@@ -19,6 +19,7 @@ Run 'trackfw init' to set up governance in your project.`,
 func Execute() {
 	rootCmd.AddCommand(
 		newInitCmd(),
+		newSkillsCmd(),
 		newADRCmd(),
 		newReqCmd(),
 		newRoadmapCmd(),

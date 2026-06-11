@@ -62,6 +62,12 @@ func Scaffold(cfg Config) error {
 	return nil
 }
 
+// InstallSkills cria .claude/commands/trackfw/ com os slash commands do trackfw.
+// Arquivos já existentes não são sobrescritos — idempotente.
+func InstallSkills() error {
+	return generateClaudeCommands()
+}
+
 func generateClaudeCommands() error {
 	dir := ".claude/commands/trackfw"
 	if err := os.MkdirAll(dir, 0755); err != nil {
