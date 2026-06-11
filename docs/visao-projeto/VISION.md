@@ -189,5 +189,5 @@ npm and PyPI packages are thin wrappers that download the correct platform binar
 
 trackfw is designed for community contribution from day one. The generator plugin model means you can contribute support for a new stack without touching core logic.
 
-Repository: `github.com/trackfw/trackfw`
+Repository: `github.com/kgsaran/trackfw`
 License: MIT
