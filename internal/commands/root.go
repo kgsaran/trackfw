@@ -20,6 +20,7 @@ func Execute() {
 	rootCmd.AddCommand(
 		newInitCmd(),
 		newSkillsCmd(),
+		newAgentsCmd(),
 		newADRCmd(),
 		newReqCmd(),
 		newRoadmapCmd(),
