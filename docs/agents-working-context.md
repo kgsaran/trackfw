@@ -222,6 +222,27 @@
 
 ---
 
+---
+
+## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** Implementar geração de roadmap por IA no `trackfw roadmap new` (branch `feat/roadmap-ai-generation`).
+
+**Escopo:**
+- Novo pacote `internal/ai/` (client.go, anthropic.go, openai.go, fake.go, config.go, client_test.go)
+- Modificar `internal/generators/scaffold.go` — Config + writeTrackfwConfig com ai_provider/ai_api_key
+- Modificar `internal/commands/init.go` — Grupo 5 AI no wizard
+- Modificar `internal/generators/roadmap.go` — struct RoadmapContent + NewRoadmapFromContent
+- Adicionar testes em `internal/generators/roadmap_test.go`
+- Reescrever `internal/commands/roadmap.go` — wizard huh.Select de REQs + chamada à IA
+
+**Atenção:**
+- SDK anthropic-sdk-go v1.x tem API diferente do especificado — verificar com `go doc` antes de usar
+- Modelo padrão Claude: `claude-haiku-4-5-20251001` (string de runtime apenas)
+- 26 testes existentes não podem quebrar
+
+---
+
 ## Estrutura atual do projeto
 
 ```
