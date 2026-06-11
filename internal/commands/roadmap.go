@@ -17,7 +17,7 @@ func newRoadmapCmd() *cobra.Command {
 		Use:   "roadmap",
 		Short: "Manage Roadmaps",
 	}
-	cmd.AddCommand(newRoadmapNewCmd(), newRoadmapMoveCmd())
+	cmd.AddCommand(newRoadmapNewCmd(), newRoadmapMoveCmd(), newRoadmapListCmd())
 	return cmd
 }
 
@@ -62,6 +62,16 @@ func newRoadmapNewCmd() *cobra.Command {
 				Title:   title,
 				REQPath: selectedREQ,
 			})
+		},
+	}
+}
+
+func newRoadmapListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List all roadmaps grouped by state",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return generators.ListRoadmaps()
 		},
 	}
 }
