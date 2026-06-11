@@ -33,11 +33,10 @@
 
 ## Próxima sessão — O que fazer primeiro
 
-### Prioridade 1 — Criar repositório no GitHub
-```bash
-gh repo create trackfw/trackfw --public --description "Governed software delivery framework: ADR → REQ → ROADMAP → kanban" --source=. --push
-```
-> Confirmar se a org `trackfw` existe ou se criamos sob o user pessoal primeiro.
+### ✅ Prioridade 1 — Criar repositório no GitHub (CONCLUÍDO)
+- Repo: https://github.com/kgsaran/trackfw (privado, conta pessoal kgsaran)
+- Module path atualizado para `github.com/kgsaran/trackfw`
+- 3 commits na main, código em sincronia com o remoto
 
 ### Prioridade 2 — GoReleaser (distribuição de binários)
 - Instalar GoReleaser: `brew install goreleaser`
