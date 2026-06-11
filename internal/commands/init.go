@@ -2,6 +2,8 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/huh"
 	"github.com/kgsaran/trackfw/internal/generators"
@@ -17,8 +19,10 @@ func newInitCmd() *cobra.Command {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	wd, _ := os.Getwd()
+	projectName := filepath.Base(wd)
+
 	var (
-		projectName string
 		projectType string
 		frontend    string
 		backend     string
@@ -30,10 +34,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	form := huh.NewForm(
 		// Grupo 1 — sempre mostrado
 		huh.NewGroup(
-			huh.NewInput().
-				Title("Project name?").
-				Value(&projectName),
-
 			huh.NewSelect[string]().
 				Title("Project type?").
 				Options(
