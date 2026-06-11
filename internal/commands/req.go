@@ -32,18 +32,24 @@ func newReqNewCmd() *cobra.Command {
 			if cbterm.IsTerminal(uintptr(os.Stdin.Fd())) {
 				form := huh.NewForm(
 					huh.NewGroup(
-						huh.NewText().
+						huh.NewInput().
 							Title("Motivation").
 							Description("Why is this requirement needed? What problem does it solve?").
 							Value(&content.Motivation),
-						huh.NewText().
+					),
+					huh.NewGroup(
+						huh.NewInput().
 							Title("Acceptance Criteria").
 							Description("List acceptance criteria, one per line").
 							Value(&content.Criteria),
+					),
+					huh.NewGroup(
 						huh.NewInput().
 							Title("Linked ADR").
 							Description("ADR filename or slug (leave blank if none)").
 							Value(&content.LinkedADR),
+					),
+					huh.NewGroup(
 						huh.NewInput().
 							Title("Linked Roadmap").
 							Description("Roadmap filename or slug (leave blank if none)").

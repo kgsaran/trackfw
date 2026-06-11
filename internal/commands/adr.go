@@ -32,19 +32,25 @@ func newADRNewCmd() *cobra.Command {
 			if cbterm.IsTerminal(uintptr(os.Stdin.Fd())) {
 				form := huh.NewForm(
 					huh.NewGroup(
-						huh.NewText().
+						huh.NewInput().
 							Title("Context").
 							Description("What is the situation that motivates this decision?").
 							Value(&content.Context),
-						huh.NewText().
+					),
+					huh.NewGroup(
+						huh.NewInput().
 							Title("Decision").
 							Description("What was decided?").
 							Value(&content.Decision),
-						huh.NewText().
+					),
+					huh.NewGroup(
+						huh.NewInput().
 							Title("Consequences").
 							Description("What are the positive and negative consequences?").
 							Value(&content.Consequences),
-						huh.NewText().
+					),
+					huh.NewGroup(
+						huh.NewInput().
 							Title("Alternatives Considered").
 							Description("What other options were evaluated and why were they rejected?").
 							Value(&content.Alternatives),
