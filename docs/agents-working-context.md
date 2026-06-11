@@ -222,6 +222,66 @@
 
 ---
 
+---
+
+## Sessão 2026-06-11 — Apolo (CONCLUIDO)
+
+**Tarefa:** Implementar geração de roadmap por IA no `trackfw roadmap new` (branch `feat/roadmap-ai-generation`).
+
+**Entregue:**
+- `internal/ai/` — Client interface, AnthropicClient (SDK v1.50.1 — API v1.x sem `anthropic.F()`), OpenAIClient (stdlib), FakeClient, ReadConfig (parser YAML simples sem dependência de yaml.v3)
+- `internal/generators/roadmap.go` — struct RoadmapContent + NewRoadmapFromContent; NewRoadmap refatorado para delegar
+- `internal/commands/roadmap.go` — reescrito: wizard huh.Select lista docs/req/*.md, lê conteúdo da REQ, chama IA se configurada, fallback template vazio
+- `internal/generators/scaffold.go` — Config.AIProvider/AIApiKey; writeTrackfwConfig escreve ai_provider/ai_model/ai_api_key
+- `internal/commands/init.go` — Grupo 5 no wizard (provider + api key)
+- Commit `7656a4b` | push para `feat/roadmap-ai-generation`
+
+**Resultado:** 29/29 testes verdes | `go build ./...` limpo | `go vet ./...` limpo
+
+**Decisoes tecnicas:**
+- SDK Anthropic v1.50.1: `Messages []MessageParam` (sem wrapper F()), `NewUserMessage(NewTextBlock(prompt))` como helper, `msg.Content[0].Text` para acessar texto
+- OpenAI implementado com stdlib pura (sem dependência adicional)
+- ai_model: escrita sem valor no YAML (campo livre editável manualmente) — sem verb Sprintf para evitar corrupção silenciosa
+
+---
+
+## Sessão 2026-06-11 — Zeus + Apolo (CONCLUÍDO)
+
+**Tarefa:** Geração de roadmap por IA — `trackfw roadmap new` com wizard interativo + integração Anthropic/OpenAI + fallback template vazio.
+
+**Entregue:**
+- `internal/ai/client.go` — interface `Client{Generate}` + factory `NewClient(provider, model, apiKey)`
+- `internal/ai/anthropic.go` — struct `anthropicClient` via `github.com/anthropics/anthropic-sdk-go` v1.50.1
+- `internal/ai/openai.go` — struct `openAIClient` via stdlib `net/http` + `encoding/json`
+- `internal/ai/fake.go` — `FakeClient{Response string}` para testes
+- `internal/ai/config.go` — `ReadConfig(path)` lê `ai_provider`, `ai_model`, `ai_api_key` de YAML flat sem yaml.v3
+- `internal/ai/client_test.go` — 3 testes: `ReadConfig_Empty`, `ReadConfig_WithValues`, `FakeClient_Generate`
+- `internal/generators/roadmap.go` — `RoadmapContent{Title, REQPath, Body}` + `NewRoadmapFromContent`; `NewRoadmap` refatorado para delegar
+- `internal/generators/roadmap_test.go` — 2 novos testes: `NewRoadmapFromContent_CreatesFile`, `NewRoadmapFromContent_EmptyBody`
+- `internal/generators/scaffold.go` — `Config.AIProvider`, `Config.AIApiKey`; `writeTrackfwConfig` gera `ai_provider`/`ai_model`/`ai_api_key` no YAML
+- `internal/commands/init.go` — Grupo 5 AI no wizard (`huh.Select` provider + `huh.Input` api key)
+- `internal/commands/roadmap.go` — reescrito: `huh.Select` lista `docs/req/*.md`, lê config AI, chama IA ou fallback template, `Args: cobra.MaximumNArgs(1)`
+- `go.mod` — `github.com/anthropics/anthropic-sdk-go v1.50.1` adicionado
+
+**Resultado:** 29/29 testes verdes | `go build ./...` limpo | `go vet ./...` limpo | commit `7656a4b` na branch `feat/roadmap-ai-generation`
+
+---
+
+## Sessão 2026-06-11 — Apolo (CONCLUIDO)
+
+**Tarefa:** Reverter integração de IA do binário Go — remover `internal/ai/`, campos AI do Config, Grupo 5 do wizard init, lógica AI do roadmap.go, e rodar `go mod tidy`.
+
+**Entregue:**
+- `internal/ai/` deletado integralmente (6 arquivos: client.go, anthropic.go, openai.go, fake.go, config.go, client_test.go)
+- `internal/generators/scaffold.go` — campos `AIProvider`/`AIApiKey` removidos de `Config`; template `writeTrackfwConfig` sem `ai_provider`/`ai_model`/`ai_api_key`
+- `internal/commands/init.go` — variáveis `aiProvider`/`aiApiKey` e Grupo 5 do wizard removidos; struct `cfg` sem campos AI
+- `internal/commands/roadmap.go` — reescrito: sem imports `context`/`time`/`ai`, sem `roadmapPromptTemplate`, sem lógica AI; `roadmap new` simplificado com `body: ""` implícito via `RoadmapContent` sem campo Body
+- `go mod tidy` — `github.com/anthropics/anthropic-sdk-go` e deps transitivas removidos
+- 26/26 testes verdes | `go build ./...` limpo | `go vet ./...` limpo
+- Commit `2557fef` | push para `feat/roadmap-ai-generation`
+
+---
+
 ## Estrutura atual do projeto
 
 ```

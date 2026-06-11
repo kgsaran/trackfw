@@ -1,8 +1,15 @@
 package commands
 
 import (
-	"github.com/spf13/cobra"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/charmbracelet/huh"
+	cbterm "github.com/charmbracelet/x/term"
 	"github.com/kgsaran/trackfw/internal/generators"
+	"github.com/spf13/cobra"
 )
 
 func newRoadmapCmd() *cobra.Command {
@@ -16,11 +23,45 @@ func newRoadmapCmd() *cobra.Command {
 
 func newRoadmapNewCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "new <title>",
-		Short: "Create a new roadmap in backlog",
-		Args:  cobra.ExactArgs(1),
+		Use:   "new",
+		Short: "Create a new roadmap from a REQ",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return generators.NewRoadmap(args[0])
+			reqFiles, _ := filepath.Glob("docs/req/*.md")
+			var selectedREQ string
+
+			isTTY := cbterm.IsTerminal(uintptr(os.Stdin.Fd()))
+
+			if isTTY && len(reqFiles) > 0 {
+				options := make([]huh.Option[string], len(reqFiles))
+				for i, f := range reqFiles {
+					options[i] = huh.NewOption(filepath.Base(f), f)
+				}
+				form := huh.NewForm(
+					huh.NewGroup(
+						huh.NewSelect[string]().
+							Title("Select a REQ to link this roadmap to:").
+							Options(options...).
+							Value(&selectedREQ),
+					),
+				)
+				if err := form.Run(); err != nil {
+					return fmt.Errorf("wizard: %w", err)
+				}
+			} else if len(args) > 0 {
+				selectedREQ = args[0]
+			} else if len(reqFiles) == 0 {
+				fmt.Fprintln(os.Stderr, "Nenhuma REQ encontrada em docs/req/. Crie uma REQ primeiro com 'trackfw req new'.")
+				return nil
+			}
+
+			title := strings.TrimSuffix(filepath.Base(selectedREQ), ".md")
+			title = strings.TrimPrefix(title, "REQ-")
+
+			return generators.NewRoadmapFromContent(generators.RoadmapContent{
+				Title:   title,
+				REQPath: selectedREQ,
+			})
 		},
 	}
 }

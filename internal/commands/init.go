@@ -104,6 +104,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				).
 				Value(&ci),
 		),
+
 	)
 
 	if err := form.Run(); err != nil {

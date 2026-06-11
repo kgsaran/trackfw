@@ -16,22 +16,40 @@ var validStates = map[string]string{
 	"abandoned": "docs/roadmaps/abandoned",
 }
 
+// RoadmapContent contém os dados para criação de um roadmap.
+type RoadmapContent struct {
+	Title   string
+	REQPath string
+	Body    string
+}
+
+// NewRoadmap cria um roadmap com template padrão a partir de um título simples.
 func NewRoadmap(title string) error {
+	return NewRoadmapFromContent(RoadmapContent{Title: title})
+}
+
+// NewRoadmapFromContent cria um roadmap a partir de um RoadmapContent.
+// Se Body for preenchido, usa diretamente; caso contrário, gera template padrão.
+func NewRoadmapFromContent(content RoadmapContent) error {
 	if err := os.MkdirAll("docs/roadmaps/backlog", 0755); err != nil {
 		return err
 	}
 
-	slug := toSlug(title)
+	slug := toSlug(content.Title)
 	date := time.Now().Format("2006-01-02")
 	filename := fmt.Sprintf("docs/roadmaps/backlog/ROADMAP-%s-%s.md", date, slug)
 
-	content := fmt.Sprintf(`# Roadmap: %s
+	var body string
+	if content.Body != "" {
+		body = content.Body
+	} else {
+		body = fmt.Sprintf(`# Roadmap: %s
 
 > Created: %s | Status: backlog
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
-REQ:
+REQ: %s
 
 ## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
@@ -44,9 +62,10 @@ REQ:
 - [ ] build passes
 - [ ] tests green
 - [ ] validate passes
-`, title, date)
+`, content.Title, date, content.REQPath)
+	}
 
-	if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
 		return fmt.Errorf("writing roadmap: %w", err)
 	}
 

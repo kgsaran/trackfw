@@ -128,6 +128,76 @@ func TestMoveRoadmap_NotFound(t *testing.T) {
 	}
 }
 
+// TestNewRoadmapFromContent_CreatesFile — verifica que arquivo é criado quando Body é preenchido
+func TestNewRoadmapFromContent_CreatesFile(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	err := NewRoadmapFromContent(RoadmapContent{
+		Title:   "AI Feature",
+		REQPath: "docs/req/REQ-2026-01-01-ai-feature.md",
+		Body:    "# Roadmap gerado por IA\nConteúdo customizado aqui.",
+	})
+	if err != nil {
+		t.Fatalf("NewRoadmapFromContent() erro: %v", err)
+	}
+
+	matches, err := filepath.Glob("docs/roadmaps/backlog/*.md")
+	if err != nil {
+		t.Fatalf("Glob erro: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("esperado 1 arquivo em backlog, obteve %d", len(matches))
+	}
+
+	content, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(content)
+	if !strings.Contains(body, "Conteúdo customizado aqui") {
+		t.Errorf("arquivo deveria conter o body fornecido, obteve: %q", body)
+	}
+}
+
+// TestNewRoadmapFromContent_EmptyBody — verifica que template padrão é gerado quando Body == ""
+func TestNewRoadmapFromContent_EmptyBody(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	err := NewRoadmapFromContent(RoadmapContent{
+		Title:   "Template Feature",
+		REQPath: "docs/req/REQ-2026-01-01-template-feature.md",
+		Body:    "",
+	})
+	if err != nil {
+		t.Fatalf("NewRoadmapFromContent() erro: %v", err)
+	}
+
+	matches, err := filepath.Glob("docs/roadmaps/backlog/*.md")
+	if err != nil {
+		t.Fatalf("Glob erro: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("esperado 1 arquivo em backlog, obteve %d", len(matches))
+	}
+
+	content, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(content)
+	if !strings.Contains(body, "Template Feature") {
+		t.Errorf("template deveria conter o título, obteve: %q", body)
+	}
+	if !strings.Contains(body, "REQ:") {
+		t.Errorf("template deveria conter 'REQ:', obteve: %q", body)
+	}
+	if !strings.Contains(body, "ML-1A") {
+		t.Errorf("template deveria conter 'ML-1A', obteve: %q", body)
+	}
+}
+
 // TestContainsIgnoreCase — função privada testada diretamente via white-box
 func TestContainsIgnoreCase(t *testing.T) {
 	cases := []struct {
