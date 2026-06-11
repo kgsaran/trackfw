@@ -38,3 +38,19 @@ changelog:
   filters:
     exclude:
       - "^Merge"
+
+brews:
+  - name: trackfw
+    homepage: "https://github.com/kgsaran/trackfw"
+    description: "Governed software delivery framework: ADR → REQ → ROADMAP → kanban"
+    license: "MIT"
+    repository:
+      owner: kgsaran
+      name: homebrew-trackfw
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    install: |
+      bin.install "trackfw"
+    test: |
+      assert_match "trackfw", shell_output("#{bin}/trackfw version")
+    skip_upload: auto
