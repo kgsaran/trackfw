@@ -267,9 +267,18 @@
 
 ---
 
-## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
+## Sessão 2026-06-11 — Apolo (CONCLUIDO)
 
 **Tarefa:** Reverter integração de IA do binário Go — remover `internal/ai/`, campos AI do Config, Grupo 5 do wizard init, lógica AI do roadmap.go, e rodar `go mod tidy`.
+
+**Entregue:**
+- `internal/ai/` deletado integralmente (6 arquivos: client.go, anthropic.go, openai.go, fake.go, config.go, client_test.go)
+- `internal/generators/scaffold.go` — campos `AIProvider`/`AIApiKey` removidos de `Config`; template `writeTrackfwConfig` sem `ai_provider`/`ai_model`/`ai_api_key`
+- `internal/commands/init.go` — variáveis `aiProvider`/`aiApiKey` e Grupo 5 do wizard removidos; struct `cfg` sem campos AI
+- `internal/commands/roadmap.go` — reescrito: sem imports `context`/`time`/`ai`, sem `roadmapPromptTemplate`, sem lógica AI; `roadmap new` simplificado com `body: ""` implícito via `RoadmapContent` sem campo Body
+- `go mod tidy` — `github.com/anthropics/anthropic-sdk-go` e deps transitivas removidos
+- 26/26 testes verdes | `go build ./...` limpo | `go vet ./...` limpo
+- Commit `2557fef` | push para `feat/roadmap-ai-generation`
 
 ---
 
