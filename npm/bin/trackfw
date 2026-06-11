@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+
+'use strict'
+
+const { spawnSync } = require('child_process')
+const path = require('path')
+const fs = require('fs')
+
+const isWindows = process.platform === 'win32'
+const binaryName = isWindows ? 'trackfw-bin.exe' : 'trackfw-bin'
+const binaryPath = path.join(__dirname, binaryName)
+
+if (!fs.existsSync(binaryPath)) {
+  console.error(
+    'trackfw: binário não encontrado em ' + binaryPath + '\n' +
+    'Tente reinstalar: npm install -g trackfw'
+  )
+  process.exit(1)
+}
+
+const result = spawnSync(binaryPath, process.argv.slice(2), { stdio: 'inherit' })
+process.exit(result.status ?? 1)

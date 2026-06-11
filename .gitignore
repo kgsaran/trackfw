@@ -1,3 +1,5 @@
-bin/
-dist/
+/bin/
+/dist/
 *.exe
+npm/bin/trackfw-bin
+npm/bin/trackfw-bin.exe
