@@ -209,6 +209,19 @@
 
 ---
 
+## Sessão 2026-06-11 — Apolo (CONCLUIDO)
+
+**Tarefa:** ML-1A do roadmap `roadmap-req-wizard-e-list-2026-06-11` — wizard interativo `req new` + subcomando `req list`.
+
+**Entregue:**
+- `internal/generators/req.go` — struct `REQContent{Title, Motivation, Criteria, LinkedADR, LinkedRoadmap}`; `NewREQ(REQContent)` puro sem I/O de UI; campos preenchidos inseridos diretamente, campos vazios mantêm placeholder HTML/markdown; `ListREQs(dir)` (glob + print tabular); `parseREQMeta` extrai título e status do markdown.
+- `internal/commands/req.go` — `newReqNewCmd()` detecta TTY via `charmbracelet/x/term.IsTerminal`; wizard huh 4 campos em TTY (Motivation, Criteria, LinkedADR, LinkedRoadmap), fallback silencioso em CI/não-TTY; `newReqListCmd()` registrado no grupo `req`.
+- `internal/generators/req_test.go` — 7 testes: `CreatesFile`, `SlugInFilename`, `WithContent`, `EmptyFields`, `ListREQs_Empty`, `ListREQs_WithFiles`, `ListREQs_ParsesMeta`.
+- `go build ./...` sem erros | `go vet ./...` limpo | 26/26 testes verdes.
+- Commit `0db0864` na branch `feat/req-wizard-e-list` | push para remoto.
+
+---
+
 ## Estrutura atual do projeto
 
 ```
