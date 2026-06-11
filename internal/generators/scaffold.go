@@ -297,13 +297,23 @@ Próximo passo: abrir PR com gh pr create
 ` + "```",
 	}
 
+	created, skipped := 0, 0
 	for filename, content := range commands {
 		path := filepath.Join(dir, filename)
+		if _, err := os.Stat(path); err == nil {
+			skipped++
+			continue
+		}
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)
 		}
+		created++
 	}
-	fmt.Printf("  ✓ %s (7 slash commands)\n", dir)
+	if skipped > 0 {
+		fmt.Printf("  ✓ %s (%d slash commands criados, %d já existiam — não sobrescritos)\n", dir, created, skipped)
+	} else {
+		fmt.Printf("  ✓ %s (%d slash commands)\n", dir, created)
+	}
 	return nil
 }
 
