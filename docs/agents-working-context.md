@@ -191,6 +191,24 @@
 
 ---
 
+## Sessão 2026-06-11 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-1A do roadmap `roadmap-adr-wizard-e-list-2026-06-11` — wizard interativo `adr new` + subcomando `adr list`.
+
+**Entregue:**
+- `internal/generators/adr.go` — struct `ADRContent{Title, Context, Decision, Consequences, Alternatives}`; `NewADR(ADRContent)` puro (sem I/O de UI); campos preenchidos inseridos diretamente, campos vazios mantêm placeholder HTML; nova função `ListADRs(dir)` (glob + print tabular); `parseADRMeta` extrai título e status do markdown.
+- `internal/commands/adr.go` — `newADRNewCmd()` detecta TTY via `charmbracelet/x/term.IsTerminal`; wizard huh 4 campos em TTY, fallback silencioso em CI/não-TTY; `newADRListCmd()` registrado no grupo `adr`.
+- `internal/generators/adr_test.go` — 7 testes: `CreatesFile`, `SlugInFilename`, `WithContent`, `EmptyFields`, `ListADRs_Empty`, `ListADRs_WithFiles`, `ListADRs_ParsesMeta`.
+- `go build ./...` sem erros | `go vet ./...` limpo | 20/20 testes verdes.
+- Commit `e4a69d8` na branch `feat/adr-wizard-e-list` | push para remoto.
+
+**Decisões técnicas:**
+- Usado `charmbracelet/x/term` (já no go.mod) ao invés de `golang.org/x/term` — evita nova dependência.
+- `ListADRs` e `parseADRMeta` ficam em `generators` para permitir teste direto sem cobra.
+- Wizard só ativa em TTY — em CI o comando ainda funciona gerando ADR com placeholders.
+
+---
+
 ## Estrutura atual do projeto
 
 ```

@@ -6,7 +6,7 @@ req: REQ-adr-wizard-e-list-2026-06-11
 
 # Roadmap: ADR — Wizard Interativo e adr list
 
-> Criado em: 2026-06-11 | Status: 🔄 WIP
+> Criado em: 2026-06-11 | Status: ✅ Done
 
 ## Diagnóstico / Contexto
 
@@ -18,7 +18,7 @@ O comando `trackfw adr new` atualmente cria um arquivo com seções vazias (plac
 
 ### ML-1A — Wizard + adr list (Apolo)
 
-**Status:** ⬜ Pendente  
+**Status:** ✅ Concluído  
 **Agente:** Apolo  
 **Branch:** `feat/adr-wizard-e-list`
 
