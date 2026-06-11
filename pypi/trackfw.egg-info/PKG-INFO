@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: trackfw
+Version: 0.1.0
+Summary: Governed software delivery framework: ADR → REQ → ROADMAP → kanban
+License: MIT
+Project-URL: Homepage, https://github.com/kgsaran/trackfw
+Project-URL: Repository, https://github.com/kgsaran/trackfw
+Keywords: cli,adr,roadmap,governance,delivery
+Classifier: Development Status :: 3 - Alpha
+Classifier: Environment :: Console
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Software Development :: Build Tools
+Requires-Python: >=3.8

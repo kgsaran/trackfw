@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trackfw"
+version = "0.1.0"
+description = "Governed software delivery framework: ADR → REQ → ROADMAP → kanban"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+keywords = ["cli", "adr", "roadmap", "governance", "delivery"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Build Tools",
+]
+
+[project.urls]
+Homepage = "https://github.com/kgsaran/trackfw"
+Repository = "https://github.com/kgsaran/trackfw"
+
+[project.scripts]
+trackfw = "trackfw._cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["trackfw*"]
