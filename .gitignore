@@ -3,3 +3,8 @@
 *.exe
 npm/bin/trackfw-bin
 npm/bin/trackfw-bin.exe
+pypi/trackfw-bin
+pypi/trackfw-bin.exe
+pypi/**/__pycache__/
+pypi/**/*.egg-info/
+pypi/*.egg-info/
