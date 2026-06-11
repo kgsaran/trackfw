@@ -267,6 +267,12 @@
 
 ---
 
+## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** Reverter integração de IA do binário Go — remover `internal/ai/`, campos AI do Config, Grupo 5 do wizard init, lógica AI do roadmap.go, e rodar `go mod tidy`.
+
+---
+
 ## Estrutura atual do projeto
 
 ```

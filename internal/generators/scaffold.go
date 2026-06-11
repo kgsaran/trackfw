@@ -15,8 +15,6 @@ type Config struct {
 	PkgManager  string
 	Hooks       string
 	CI          string
-	AIProvider  string
-	AIApiKey    string
 }
 
 var govDirs = []string{
@@ -69,10 +67,7 @@ backend: %s
 pkg_manager: %s
 hooks: %s
 ci: %s
-ai_provider: %s
-ai_model:
-ai_api_key: %s
-`, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.PkgManager, cfg.Hooks, cfg.CI, cfg.AIProvider, cfg.AIApiKey)
+`, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.PkgManager, cfg.Hooks, cfg.CI)
 
 	if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing trackfw.yaml: %w", err)

@@ -25,8 +25,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		pkgManager  string
 		hooks       string
 		ci          string
-		aiProvider  string = "none"
-		aiApiKey    string
 	)
 
 	form := huh.NewForm(
@@ -107,20 +105,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 				Value(&ci),
 		),
 
-		// Grupo 5 — configuração de IA para geração de roadmaps
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("AI provider for roadmap generation?").
-				Options(
-					huh.NewOption("None", "none"),
-					huh.NewOption("Anthropic (Claude)", "anthropic"),
-					huh.NewOption("OpenAI", "openai"),
-				).
-				Value(&aiProvider),
-			huh.NewInput().
-				Title("AI API Key (opcional, deixe vazio para usar env var)").
-				Value(&aiApiKey),
-		),
 	)
 
 	if err := form.Run(); err != nil {
@@ -135,8 +119,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		PkgManager:  pkgManager,
 		Hooks:       hooks,
 		CI:          ci,
-		AIProvider:  aiProvider,
-		AIApiKey:    aiApiKey,
 	}
 
 	if err := generators.Scaffold(cfg); err != nil {
