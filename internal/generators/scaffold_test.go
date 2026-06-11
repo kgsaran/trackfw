@@ -6,6 +6,43 @@ import (
 	"testing"
 )
 
+// TestInstallSkills_CriaSlashCommandsESkillGlobal — verifica que InstallSkills cria
+// os slash commands no projeto E a skill global em $HOME/.claude/skills/trackfw/
+func TestInstallSkills_CriaSlashCommandsESkillGlobal(t *testing.T) {
+	dir := t.TempDir()
+	home := t.TempDir()
+	orig, _ := os.Getwd()
+	origHome := os.Getenv("HOME")
+	_ = os.Chdir(dir)
+	_ = os.Setenv("HOME", home)
+	t.Cleanup(func() {
+		_ = os.Chdir(orig)
+		_ = os.Setenv("HOME", origHome)
+	})
+
+	if err := InstallSkills(); err != nil {
+		t.Fatalf("InstallSkills() erro: %v", err)
+	}
+
+	// slash commands no projeto
+	for _, name := range expectedCommands {
+		p := filepath.Join(".claude", "commands", "trackfw", name)
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("slash command não encontrado: %s", p)
+		}
+	}
+
+	// skill global
+	skillPath := filepath.Join(home, ".claude", "skills", "trackfw", "SKILL.md")
+	info, err := os.Stat(skillPath)
+	if err != nil {
+		t.Fatalf("SKILL.md não encontrado: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Error("SKILL.md está vazio")
+	}
+}
+
 var expectedCommands = []string{
 	"adr.md", "req.md", "roadmap.md", "implement.md",
 	"validate.md", "status.md", "move.md",

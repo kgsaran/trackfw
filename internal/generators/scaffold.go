@@ -62,10 +62,114 @@ func Scaffold(cfg Config) error {
 	return nil
 }
 
-// InstallSkills cria .claude/commands/trackfw/ com os slash commands do trackfw.
+// InstallSkills instala os slash commands no projeto atual e a skill global em ~/.claude/skills/trackfw/.
 // Arquivos já existentes não são sobrescritos — idempotente.
 func InstallSkills() error {
-	return generateClaudeCommands()
+	if err := generateClaudeCommands(); err != nil {
+		return err
+	}
+	return installGlobalSkill()
+}
+
+func installGlobalSkill() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("localizando home dir: %w", err)
+	}
+
+	skillDir := filepath.Join(home, ".claude", "skills", "trackfw")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return fmt.Errorf("creating %s: %w", skillDir, err)
+	}
+
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	if _, err := os.Stat(skillPath); err == nil {
+		fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md (já existe — não sobrescrito)\n")
+		return nil
+	}
+
+	content := `---
+name: trackfw
+description: "trackfw — Governed Software Delivery: ADR → REQ → ROADMAP → kanban"
+signature: "📦 trackfw - Governed Delivery"
+---
+
+# trackfw — Modo de Operação
+
+Você está operando com o **trackfw**, um framework de governança de entrega de software.
+A cadeia obrigatória é: **ADR → REQ → ROADMAP → backlog/wip/blocked/done/abandoned**
+
+---
+
+## Regras invioláveis
+
+1. **Nunca inicie uma implementação sem uma REQ e um ROADMAP.** Se não existirem, crie-os primeiro com ` + "`/trackfw:req`" + ` e ` + "`/trackfw:roadmap`" + `.
+2. **Use ` + "`/trackfw:implement`" + ` como ponto de entrada para qualquer implementação.** Este skill orquestra o fluxo completo automaticamente.
+3. **Apenas um roadmap em ` + "`wip/`" + ` por vez.** Antes de iniciar um novo, conclua ou mova para ` + "`blocked/`" + ` o atual.
+4. **Atualize o roadmap após cada ML.** Marque MLs concluídos como ` + "`✅ Concluído`" + ` antes de avançar.
+5. **Execute ` + "`trackfw validate`" + ` antes de cada commit.** Zero violations obrigatório.
+6. **ADRs antes de decisões arquiteturais.** Qualquer decisão técnica relevante deve ter um ADR (` + "`/trackfw:adr`" + `).
+
+---
+
+## Cadeia de governança
+
+` + "```" + `
+ADR         → registra decisões técnicas e arquiteturais
+REQ         → especifica requisitos e critérios de aceite
+ROADMAP     → detalha implementação em microlotes (MLs) por Waves
+backlog     → roadmaps aguardando execução
+wip         → roadmap em execução ativa (máximo 1)
+blocked     → impedido por dependência ou decisão externa
+done        → concluído e validado
+abandoned   → descontinuado (exige motivo)
+` + "```" + `
+
+---
+
+## Slash commands disponíveis
+
+| Comando | Quando usar |
+|---|---|
+| ` + "`/trackfw:implement <req>`" + ` | **Início aqui** — orquestra o fluxo completo de implementação |
+| ` + "`/trackfw:adr <título>`" + ` | Antes de qualquer decisão arquitetural |
+| ` + "`/trackfw:req <título>`" + ` | Antes de qualquer implementação |
+| ` + "`/trackfw:roadmap <req>`" + ` | Gera roadmap em microlotes a partir de uma REQ |
+| ` + "`/trackfw:move <nome> <estado>`" + ` | Move roadmap entre estados manualmente |
+| ` + "`/trackfw:validate`" + ` | Valida governança do projeto |
+| ` + "`/trackfw:status`" + ` | Exibe o que está em execução |
+
+---
+
+## Estratégia de microlotes (ML)
+
+Cada roadmap é dividido em **Waves** com **MLs paralelos**:
+
+- MLs dentro da mesma Wave são **independentes** (arquivos distintos, sem conflito)
+- Cada ML deve ser autocontido: arquivos exatos, ações exatas, critérios de aceite mensuráveis
+- Avance para a próxima Wave somente após todos os MLs da Wave atual estarem ✅
+- Protocolo por ML: implementar → validar (build + testes) → atualizar roadmap → commitar
+
+---
+
+## Protocolo de conclusão de cada ML
+
+` + "```" + `
+1. Implementar    → executar ações descritas no ML
+2. Build          → comando de build do projeto
+3. Testes         → comando de testes do projeto
+4. Validate       → trackfw validate
+5. Commit         → git commit -m "feat(<escopo>): <descrição>"
+6. Push           → git push origin <branch>
+7. Roadmap        → marcar ML como ✅ Concluído
+` + "```" + `
+`
+
+	if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("writing SKILL.md: %w", err)
+	}
+	fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md\n")
+	return nil
 }
 
 func generateClaudeCommands() error {
