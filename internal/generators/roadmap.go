@@ -111,3 +111,36 @@ func findRoadmap(name string) (string, error) {
 func containsIgnoreCase(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }
+
+// ListRoadmaps imprime todos os roadmaps agrupados por estado.
+func ListRoadmaps() error {
+	stateOrder := []string{"wip", "backlog", "blocked", "done", "abandoned"}
+	found := false
+
+	for _, state := range stateOrder {
+		dir := validStates[state]
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		var files []string
+		for _, e := range entries {
+			if !e.IsDir() && filepath.Ext(e.Name()) == ".md" {
+				files = append(files, e.Name())
+			}
+		}
+		if len(files) == 0 {
+			continue
+		}
+		found = true
+		fmt.Printf("[%s]\n", state)
+		for _, f := range files {
+			fmt.Printf("  %s\n", f)
+		}
+	}
+
+	if !found {
+		fmt.Println("Nenhum roadmap encontrado. Crie um com 'trackfw roadmap new'.")
+	}
+	return nil
+}

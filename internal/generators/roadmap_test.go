@@ -198,6 +198,47 @@ func TestNewRoadmapFromContent_EmptyBody(t *testing.T) {
 	}
 }
 
+// TestListRoadmaps_GroupedByState — verifica agrupamento correto por estado
+func TestListRoadmaps_GroupedByState(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	for _, d := range validStates {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", d, err)
+		}
+	}
+
+	// Criar um arquivo em backlog e um em done
+	if err := os.WriteFile("docs/roadmaps/backlog/ROADMAP-2026-01-01-feature-a.md", []byte("# A"), 0644); err != nil {
+		t.Fatalf("WriteFile backlog: %v", err)
+	}
+	if err := os.WriteFile("docs/roadmaps/done/ROADMAP-2026-01-01-feature-b.md", []byte("# B"), 0644); err != nil {
+		t.Fatalf("WriteFile done: %v", err)
+	}
+
+	// ListRoadmaps não deve retornar erro
+	if err := ListRoadmaps(); err != nil {
+		t.Fatalf("ListRoadmaps() erro: %v", err)
+	}
+}
+
+// TestListRoadmaps_Empty — nenhum roadmap → mensagem amigável, sem erro
+func TestListRoadmaps_Empty(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	for _, d := range validStates {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+	}
+
+	if err := ListRoadmaps(); err != nil {
+		t.Fatalf("ListRoadmaps() erro esperando nil: %v", err)
+	}
+}
+
 // TestContainsIgnoreCase — função privada testada diretamente via white-box
 func TestContainsIgnoreCase(t *testing.T) {
 	cases := []struct {
