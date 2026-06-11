@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/huh"
-	"github.com/spf13/cobra"
 	"github.com/kgsaran/trackfw/internal/generators"
+	"github.com/spf13/cobra"
 )
 
 func newInitCmd() *cobra.Command {
@@ -18,14 +18,34 @@ func newInitCmd() *cobra.Command {
 
 func runInit(cmd *cobra.Command, args []string) error {
 	var (
-		frontend   string
-		backend    string
-		pkgManager string
-		hooks      string
-		ci         string
+		projectName string
+		projectType string
+		frontend    string
+		backend     string
+		pkgManager  string
+		hooks       string
+		ci          string
 	)
 
 	form := huh.NewForm(
+		// Grupo 1 — sempre mostrado
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Project name?").
+				Value(&projectName),
+
+			huh.NewSelect[string]().
+				Title("Project type?").
+				Options(
+					huh.NewOption("Full-stack (frontend + backend)", "fullstack"),
+					huh.NewOption("Frontend only", "frontend"),
+					huh.NewOption("Backend only", "backend"),
+					huh.NewOption("Governance only (no build stack)", "governance"),
+				).
+				Value(&projectType),
+		),
+
+		// Grupo 2 — Frontend (oculto se backend ou governance)
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Frontend stack?").
@@ -33,10 +53,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 					huh.NewOption("React / Next.js", "react"),
 					huh.NewOption("Vue", "vue"),
 					huh.NewOption("Angular", "angular"),
-					huh.NewOption("None", "none"),
 				).
 				Value(&frontend),
 
+			huh.NewSelect[string]().
+				Title("Package manager?").
+				Options(
+					huh.NewOption("npm", "npm"),
+					huh.NewOption("pnpm", "pnpm"),
+					huh.NewOption("yarn", "yarn"),
+					huh.NewOption("bun", "bun"),
+				).
+				Value(&pkgManager),
+		).WithHideFunc(func() bool {
+			return projectType == "backend" || projectType == "governance"
+		}),
+
+		// Grupo 3 — Backend (oculto se frontend ou governance)
+		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Backend stack?").
 				Options(
@@ -44,22 +78,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 					huh.NewOption("Java / Spring Boot", "java"),
 					huh.NewOption("Node.js", "node"),
 					huh.NewOption("Python", "python"),
-					huh.NewOption("None", "none"),
 				).
 				Value(&backend),
-		),
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Package manager? (for frontend)").
-				Options(
-					huh.NewOption("npm", "npm"),
-					huh.NewOption("pnpm", "pnpm"),
-					huh.NewOption("yarn", "yarn"),
-					huh.NewOption("bun", "bun"),
-					huh.NewOption("N/A", "none"),
-				).
-				Value(&pkgManager),
+		).WithHideFunc(func() bool {
+			return projectType == "frontend" || projectType == "governance"
+		}),
 
+		// Grupo 4 — sempre mostrado
+		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Git hooks?").
 				Options(
@@ -85,11 +111,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := generators.Config{
-		Frontend:   frontend,
-		Backend:    backend,
-		PkgManager: pkgManager,
-		Hooks:      hooks,
-		CI:         ci,
+		ProjectType: projectType,
+		ProjectName: projectName,
+		Frontend:    frontend,
+		Backend:     backend,
+		PkgManager:  pkgManager,
+		Hooks:       hooks,
+		CI:          ci,
 	}
 
 	if err := generators.Scaffold(cfg); err != nil {

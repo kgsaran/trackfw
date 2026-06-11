@@ -8,11 +8,13 @@ import (
 )
 
 type Config struct {
-	Frontend   string
-	Backend    string
-	PkgManager string
-	Hooks      string
-	CI         string
+	ProjectType string // "fullstack" | "frontend" | "backend" | "governance"
+	ProjectName string
+	Frontend    string
+	Backend     string
+	PkgManager  string
+	Hooks       string
+	CI          string
 }
 
 var govDirs = []string{
@@ -46,6 +48,10 @@ func Scaffold(cfg Config) error {
 	}
 
 	if err := generateGitHooks(cfg); err != nil {
+		return err
+	}
+
+	if err := generateClaudeMD(cfg); err != nil {
 		return err
 	}
 
@@ -100,6 +106,8 @@ trackfw validate
 		base += "echo \"→ build check (maven)...\"\nmvn compile -q\n"
 	case "node":
 		base += fmt.Sprintf("echo \"→ build check (node)...\"\n%s run build\n", cfg.PkgManager)
+	case "python":
+		base += "echo \"→ build check (python)...\"\npython -m py_compile $(find . -name '*.py' -not -path './.venv/*' -not -path './venv/*')\n"
 	}
 
 	switch cfg.Frontend {
