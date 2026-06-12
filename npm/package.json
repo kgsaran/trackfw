@@ -7,8 +7,7 @@
   "repository": { "type": "git", "url": "https://github.com/kgsaran/trackfw" },
   "license": "MIT",
   "bin": { "trackfw": "./bin/trackfw" },
-  "scripts": { "postinstall": "node scripts/postinstall.js" },
-  "files": ["bin/", "scripts/"],
+  "files": ["bin/"],
   "engines": { "node": ">=14" },
   "os": ["linux", "darwin", "win32"],
   "cpu": ["x64", "arm64"]
