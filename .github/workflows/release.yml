@@ -52,6 +52,26 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
           npm version "$VERSION" --no-git-tag-version
 
+      - name: Embute binários no pacote
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          for TARGET in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64; do
+            OS=$(echo $TARGET | cut -d_ -f1)
+            ARCH=$(echo $TARGET | cut -d_ -f2)
+            ARCHIVE="trackfw_${VERSION}_${OS}_${ARCH}.tar.gz"
+            gh release download "v${VERSION}" --repo kgsaran/trackfw --pattern "$ARCHIVE" --output "bin/$ARCHIVE"
+            tar -xzf "bin/$ARCHIVE" -C bin/
+            if [ "$OS" = "windows" ]; then
+              mv bin/trackfw.exe "bin/trackfw-${OS}-${ARCH}.exe"
+            else
+              mv bin/trackfw "bin/trackfw-${OS}-${ARCH}"
+              chmod +x "bin/trackfw-${OS}-${ARCH}"
+            fi
+            rm "bin/$ARCHIVE"
+          done
+
       - name: Publica no npm
         run: npm publish --access public
         env:
