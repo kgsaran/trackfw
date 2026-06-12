@@ -75,9 +75,9 @@ Requer conta no PyPI com o pacote `trackfw` registrado.
 - README.md completo
 - Install script (`scripts/install.sh`)
 
-### Não implementado (roadmap v0.2+)
-- `trackfw roadmap show <name>` — render do progresso no terminal
-- `trackfw adr list` / `trackfw req list`
-- `trackfw log` — histórico de transições de estado
-- Plugin system (`trackfw plugins list/add/remove`)
-- Detecção de entradas stale em wip/ (em wip por > N dias)
+### Implementado na v1.0.0
+- `trackfw roadmap show <name>` — render do roadmap no terminal com match parcial
+- `trackfw adr list` / `trackfw req list` — já estavam implementados desde v0.1.0
+- `trackfw log [--tail N]` — histórico de transições de estado (append em `docs/roadmaps/.trackfw-log`)
+- `trackfw plugins list/add/remove` — plugin system com dispatch automático
+- Detecção de WIP stale (≥7 dias) em `validate` (warning) e `status`
