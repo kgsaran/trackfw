@@ -18,14 +18,15 @@ func newInitCmd() *cobra.Command {
 
 func runInit(cmd *cobra.Command, args []string) error {
 	var (
-		projectName string
-		projectType string
-		frontend    string
-		backend     string
-		pkgManager  string
-		hooks       string
-		ci          string
-		aiTools     []string
+		projectName      string
+		projectType      string
+		frontend         string
+		backend          string
+		backendFramework string
+		pkgManager       string
+		hooks            string
+		ci               string
+		aiTools          []string
 	)
 
 	form := huh.NewForm(
@@ -73,7 +74,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// Grupo 3 — Backend (oculto se frontend ou governance)
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Backend stack?").
+				Title("Backend language?").
 				Options(
 					huh.NewOption("Go", "go"),
 					huh.NewOption("Java / Spring Boot", "java"),
@@ -127,14 +128,56 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if backend != "" {
+		frameworkChoices := map[string][]huh.Option[string]{
+			"go": {
+				huh.NewOption("Gin", "gin"),
+				huh.NewOption("Echo", "echo"),
+				huh.NewOption("Fiber", "fiber"),
+				huh.NewOption("Standard library (net/http)", "stdlib"),
+			},
+			"java": {
+				huh.NewOption("Spring Boot", "spring-boot"),
+				huh.NewOption("Quarkus", "quarkus"),
+				huh.NewOption("Micronaut", "micronaut"),
+			},
+			"node": {
+				huh.NewOption("Express", "express"),
+				huh.NewOption("Fastify", "fastify"),
+				huh.NewOption("NestJS", "nestjs"),
+				huh.NewOption("Koa", "koa"),
+			},
+			"python": {
+				huh.NewOption("FastAPI", "fastapi"),
+				huh.NewOption("Django", "django"),
+				huh.NewOption("Flask", "flask"),
+			},
+		}
+		choices := frameworkChoices[backend]
+		if len(choices) > 0 {
+			frameworkForm := huh.NewForm(
+				huh.NewGroup(
+					huh.NewSelect[string]().
+						Title("Backend framework?").
+						Options(choices...).
+						Value(&backendFramework),
+				),
+			)
+			if err := frameworkForm.Run(); err != nil {
+				return err
+			}
+		}
+	}
+
 	cfg := generators.Config{
-		ProjectType: projectType,
-		ProjectName: projectName,
-		Frontend:    frontend,
-		Backend:     backend,
-		PkgManager:  pkgManager,
-		Hooks:       hooks,
-		CI:          ci,
+		ProjectType:      projectType,
+		ProjectName:      projectName,
+		Frontend:         frontend,
+		Backend:          backend,
+		BackendFramework: backendFramework,
+		PkgManager:       pkgManager,
+		Hooks:            hooks,
+		CI:               ci,
 	}
 
 	if err := generators.Scaffold(cfg); err != nil {

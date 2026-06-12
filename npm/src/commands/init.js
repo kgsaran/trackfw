@@ -25,7 +25,7 @@ cmd.action(async () => {
 
   const { input, select, checkbox } = require('@inquirer/prompts')
 
-  let projectName, projectType, frontend, pkgManager, backend, hooks, ci, aiTools
+  let projectName, projectType, frontend, pkgManager, backend, backendFramework, hooks, ci, aiTools
 
   try {
     projectName = await input({
@@ -66,15 +66,45 @@ cmd.action(async () => {
     }
 
     backend = ''
+    let backendFramework = ''
     if (projectType === 'fullstack' || projectType === 'backend') {
       backend = await select({
-        message: 'Backend stack?',
+        message: 'Backend language?',
         choices: [
           { name: 'Go', value: 'go' },
-          { name: 'Java / Spring Boot', value: 'java' },
+          { name: 'Java', value: 'java' },
           { name: 'Node.js', value: 'node' },
           { name: 'Python', value: 'python' },
         ],
+      })
+
+      const frameworkChoices = {
+        go: [
+          { name: 'Gin', value: 'gin' },
+          { name: 'Echo', value: 'echo' },
+          { name: 'Fiber', value: 'fiber' },
+          { name: 'Standard library (net/http)', value: 'stdlib' },
+        ],
+        java: [
+          { name: 'Spring Boot', value: 'spring-boot' },
+          { name: 'Quarkus', value: 'quarkus' },
+          { name: 'Micronaut', value: 'micronaut' },
+        ],
+        node: [
+          { name: 'Express', value: 'express' },
+          { name: 'Fastify', value: 'fastify' },
+          { name: 'NestJS', value: 'nestjs' },
+          { name: 'Koa', value: 'koa' },
+        ],
+        python: [
+          { name: 'FastAPI', value: 'fastapi' },
+          { name: 'Django', value: 'django' },
+          { name: 'Flask', value: 'flask' },
+        ],
+      }
+      backendFramework = await select({
+        message: 'Backend framework?',
+        choices: frameworkChoices[backend] || [],
       })
     }
 
@@ -123,7 +153,7 @@ cmd.action(async () => {
     return
   }
 
-  const cfg = { projectName, projectType, frontend, backend, pkgManager, hooks, ci }
+  const cfg = { projectName, projectType, frontend, backend, backendFramework, pkgManager, hooks, ci }
   await generators.scaffold(cfg)
 
   for (const tool of (aiTools || [])) {
