@@ -1,33 +1,82 @@
 # trackfw
 
-> Governed software delivery framework — ADR → REQ → ROADMAP → kanban
+> Governed software delivery — ADR → REQ → ROADMAP → backlog / wip / done
 
 [![Release](https://img.shields.io/github/v/release/kgsaran/trackfw)](https://github.com/kgsaran/trackfw/releases/latest)
-[![License](https://img.shields.io/github/license/kgsaran/trackfw)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.21+-00ADD8?logo=go)](go.mod)
+[![License](https://img.shields.io/github/license/kgsaran/trackfw)](LICENSE)
 
-trackfw is an open-source, stack-agnostic CLI that enforces a traceable chain from architectural decision to shipped code. No SaaS. No accounts. No database. Files are state.
+**trackfw** is an open-source CLI that enforces a traceable chain from architectural decision to shipped code — without SaaS, accounts, or databases. Markdown files are state.
 
 ```
 ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
 ```
 
+Every piece of work traces back to a decision. Every decision links to a requirement. Every requirement lands in a roadmap. No orphan work, no undocumented choices.
+
 ---
 
-## Why trackfw?
+## The problem
 
 Most teams accumulate technical debt not because they lack tools, but because they lack **governance traceability**. Decisions are made in Slack. Requirements live in someone's head. Roadmaps drift from what was actually shipped.
 
-trackfw closes the loop — it is the connective tissue between *why*, *what*, and *when*.
+- **ADR tools** manage decision records, but don't connect them to delivery.
+- **Kanban tools** track tasks, but don't enforce that tasks are backed by a decision.
+- **CI tools** validate code, but don't validate governance.
+
+trackfw closes the loop — connective tissue between *why*, *what*, and *when*.
+
+---
+
+## Demo
+
+<!-- TODO: add terminal recording — `vhs demo.tape` or `asciinema` -->
+
+```bash
+$ trackfw req new "Login screen"
+
+  ? Describe what you want to build  Login screen for the application
+  ? Motivation                       Users need to authenticate to access the system
+
+  Detected domains: authentication, ui
+
+  ? How will users authenticate?
+  > Local login (email + password)
+    SSO (Google, Azure AD, Okta...)
+    Not decided yet  ← generates ADR draft
+
+  ? Is there an existing UI framework or design system?
+    Yes, already chosen
+  > No, need to choose a UI framework  ← generates ADR draft
+
+ADR drafts created:
+  → ADR-2026-06-12-authentication-strategy.md
+  → ADR-2026-06-12-ui-framework.md
+
+Resolve these ADRs (set Status: Accepted) before creating a roadmap.
+created docs/req/REQ-2026-06-12-login-screen.md
+```
 
 ---
 
 ## Installation
 
-### curl (Linux / macOS)
+### macOS / Linux — curl
 
 ```bash
 curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+```
+
+### Homebrew
+
+```bash
+brew install kgsaran/tap/trackfw
+```
+
+### Go
+
+```bash
+go install github.com/kgsaran/trackfw/cmd/trackfw@latest
 ```
 
 ### npm
@@ -42,39 +91,27 @@ npm install -g trackfw
 pip install trackfw
 ```
 
-### Homebrew
-
-```bash
-brew install kgsaran/tap/trackfw
-```
-
-### go install
-
-```bash
-go install github.com/kgsaran/trackfw/cmd/trackfw@latest
-```
-
 ---
 
 ## Quick start
 
 ```bash
-# 1. Scaffold governance structure in your project
+# 1. Set up governance in your project (interactive wizard)
 trackfw init
 
-# 2. Document a decision
+# 2. Document an architectural decision
 trackfw adr new "Use PostgreSQL as primary database"
 
-# 3. Create a requirement linked to the ADR
+# 3. Create a requirement — wizard detects domains and proposes ADR drafts
 trackfw req new "User authentication"
 
-# 4. Plan the work
+# 4. Once ADRs are accepted, plan the work
 trackfw roadmap new "Auth service"
 
 # 5. Check governance health
 trackfw validate
 
-# 6. See what's in flight
+# 6. See what is in flight
 trackfw status
 ```
 
@@ -84,38 +121,68 @@ trackfw status
 
 | Command | Description |
 |---|---|
-| `trackfw init` | Interactive wizard — scaffolds governance structure |
-| `trackfw adr new "title"` | Create a new ADR from template |
-| `trackfw req new "title"` | Create a new REQ, linked to an ADR |
+| `trackfw init` | Interactive wizard — scaffolds governance + AI integrations |
+| `trackfw adr new "title"` | Create a new Architecture Decision Record |
+| `trackfw adr list` | List all ADRs with status |
+| `trackfw req new "title"` | Create a REQ with guided ADR discovery |
+| `trackfw req list` | List all REQs with status |
 | `trackfw roadmap new "title"` | Create a roadmap in `backlog/` |
-| `trackfw roadmap move <name> <state>` | Move a roadmap between states |
-| `trackfw validate` | Check governance consistency |
-| `trackfw status` | Show wip, blocked, recent done |
+| `trackfw roadmap move <name> <state>` | Move roadmap between states |
+| `trackfw roadmap list` | List all roadmaps grouped by state |
+| `trackfw validate` | Check governance consistency (use as CI gate) |
+| `trackfw status` | Show wip, blocked, REQs waiting on ADRs |
+| `trackfw agents` | Install Claude Code subagents |
+| `trackfw gemini` | Install Gemini CLI skills and commands |
+| `trackfw cursor` | Install Cursor rules |
+| `trackfw copilot` | Install GitHub Copilot instructions |
+| `trackfw windsurf` | Install Windsurf rules and workflows |
+| `trackfw amazonq` | Install Amazon Q Developer rules |
 | `trackfw version` | Print version |
 
 ---
 
-## The governance chain
+## Governance chain
 
 | Layer | Artifact | Purpose |
 |---|---|---|
-| Govern | `ADR` | Document the *why* behind a technical decision |
+| Decide | `ADR` | Document the *why* behind a technical decision |
 | Specify | `REQ` | Define *what* needs to be delivered, linked to an ADR |
 | Plan | `ROADMAP` | Break the requirement into microbatches with acceptance criteria |
-| Execute | `backlog → wip → done` | Track delivery state — folder is the source of truth |
+| Execute | `backlog → wip → done` | Folder position is the source of truth |
 
 ### Roadmap states
 
 ```
 docs/roadmaps/
-├── backlog/    # queued, not started
-├── wip/        # actively being worked on (one at a time)
-├── blocked/    # waiting on a dependency or decision
-├── done/       # completed and validated
-└── abandoned/  # discontinued (reason required in frontmatter)
+├── backlog/     queued, not started
+├── wip/         actively being worked on (one at a time)
+├── blocked/     waiting on a dependency or decision
+├── done/        completed and validated
+└── abandoned/   discontinued — reason required in file
 ```
 
-Moving a file between folders IS the state transition. No database, no API.
+Moving a file between folders **is** the state transition. No database, no API.
+
+---
+
+## REQ-driven ADR discovery
+
+When you run `trackfw req new`, the wizard analyzes your intent and asks targeted questions for each detected domain — authentication, UI, persistence, API, deploy, events. Unanswered architectural decisions become ADR drafts automatically.
+
+```
+trackfw req new "checkout flow with payment integration"
+```
+
+Detected domains: **persistence**, **api**, **events**
+
+Questions asked:
+- Which database engine will be used? → *Not decided yet* → `ADR: database-engine (Draft)`
+- Which API protocol will be used? → *REST (already decided)* → no ADR
+- Which event broker will be used? → *Not decided yet* → `ADR: event-broker (Draft)`
+
+The REQ is linked to its blocking ADRs. `trackfw validate` enforces that no roadmap is created until every linked ADR reaches `Accepted` status.
+
+This is the difference between experienced architects (who know which decisions to make) and everyone else — trackfw brings the architectural checklist to the requirement.
 
 ---
 
@@ -124,99 +191,108 @@ Moving a file between folders IS the state transition. No database, no API.
 ```bash
 $ trackfw validate
 
-✓  All wip/ roadmaps have a linked REQ
-✓  All REQs have a linked ADR
-✓  All wip/ roadmaps have acceptance criteria
-✓  No orphan ADRs
+✗ REQ-2026-06-12-login-screen.md is blocked by Draft ADR: ADR-authentication-strategy.md
+✗ roadmap/wip/auth-service.md has no linked REQ
 ⚠  2 roadmaps in wip/ (recommended: 1)
+
+2 violation(s) found
 ```
 
-Designed to run as a **pre-commit hook** and a **CI quality gate**. `trackfw init` generates both automatically based on your stack.
+Designed to run as a **pre-commit hook** and a **CI quality gate**. `trackfw init` wires both automatically for your stack.
+
+---
+
+## `trackfw status` — current state at a glance
+
+```bash
+$ trackfw status
+
+── trackfw status ──────────────────────
+
+🔄 WIP (1)
+   roadmap-auth-service.md
+
+❌ Blocked (0)
+
+⏳ REQs blocked by Draft ADRs (1)
+   REQ-2026-06-12-login-screen.md
+     → ADR-2026-06-12-authentication-strategy.md (Draft)
+
+✅ Done (last 5)
+   roadmap-user-profile.md
+   roadmap-db-setup.md
+```
+
+---
+
+## AI assistant integration
+
+`trackfw init` asks which AI tools your team uses and installs native governance context for each. Commands can also be run independently.
+
+| Command | Installs | Format |
+|---|---|---|
+| `trackfw agents` | 10 subagents in `~/.claude/agents/` | Claude Code `.md` with frontmatter |
+| `trackfw gemini` | GEMINI.md + 10 skills + 3 commands | `~/.gemini/` + project root |
+| `trackfw cursor` | 10 rules in `.cursor/rules/` | `.mdc` with YAML frontmatter |
+| `trackfw copilot` | `copilot-instructions.md` + 10 instructions + 10 prompts | `.github/` |
+| `trackfw windsurf` | 10 rules + workflows in `.windsurf/` + global rules | Appends to `~/.codeium/windsurf/memories/` |
+| `trackfw amazonq` | 10 rules in `.amazonq/rules/` | Plain Markdown |
+
+Each installer is idempotent — running it twice never overwrites your customizations.
+
+The 10 roles installed for each tool: **architect · backend · frontend · qa · infra · security · code-quality · dba · ux · data**
 
 ---
 
 ## `trackfw init` — stack-aware scaffolding
 
-The interactive wizard asks about your project's stack and generates the appropriate integration artifacts:
-
 ```
-? Frontend stack?     → React / Vue / Angular / None
-? Backend stack?      → Go / Java / Node / Python / None
-? Package manager?    → npm / pnpm / yarn / bun / N/A
-? Git hooks?          → husky / lefthook / none
-? CI system?          → GitHub Actions / GitLab CI / None
+? Project type?          Full-stack / Frontend / Backend / Governance only
+? Frontend stack?        React / Vue / Angular
+? Backend stack?         Go / Java / Node / Python
+? Package manager?       npm / pnpm / yarn / bun
+? Git hooks?             husky / lefthook / none
+? CI system?             GitHub Actions / GitLab CI / none
+? Which AI assistants?   Claude Code / Gemini CLI / Cursor / Copilot / Windsurf / Amazon Q
 ```
 
-The governance structure (`docs/adr/`, `docs/req/`, `docs/roadmaps/`) is always identical — stack-agnostic. Only the integration layer adapts to your stack.
-
----
-
-## AI assistant slash commands
-
-trackfw ships with native slash commands for AI assistants. After installing, the following are available:
-
-| Command | Description |
-|---|---|
-| `/trackfw:adr <title>` | Create a new ADR |
-| `/trackfw:req <title>` | Create a new REQ |
-| `/trackfw:roadmap <title>` | Create a new roadmap |
-| `/trackfw:validate` | Run governance validation |
-| `/trackfw:status` | Show project status |
-
-Works with **Claude Code** (`.claude/commands/trackfw/`) and **Gemini CLI** (`.gemini/commands/trackfw/`).
+The governance structure (`docs/adr/`, `docs/req/`, `docs/roadmaps/`) is always identical — stack-agnostic. The generated hooks, workflows, and AI integrations adapt to your answers.
 
 ---
 
 ## Design principles
 
-1. **Files are state** — moving a file between folders IS the state transition.
-2. **Traceability is mandatory, not optional** — `validate` is a gate, not a suggestion.
-3. **The framework is agnostic; the integration is aware** — governance structure never changes; generated hooks adapt to the stack.
+1. **Files are state** — folder position is the source of truth. No database, no lock-in.
+2. **Traceability is mandatory** — `validate` is a gate, not a suggestion.
+3. **Framework-agnostic, integration-aware** — governance never changes; generated artifacts adapt to your stack.
 4. **One active roadmap at a time** — parallel work without traceability is the root of most delivery chaos.
-5. **Templates over convention** — every ADR, REQ, and ROADMAP is a markdown file with a predictable structure.
+5. **Human-readable, machine-parseable** — every artifact is a Markdown file with a predictable structure.
+6. **Guided, not prescriptive** — the wizard surfaces decisions you might not know to ask; it never blocks work unnecessarily.
 
 ---
 
-## Roadmap
+## What trackfw is not
 
-### v0.1 — Foundation ✅
-- CLI scaffold (init, adr, req, roadmap, status, validate)
-- Interactive stack wizard
-- Stack-specific generators: Go, Java, Node, Python, React
-- Git hook generators: husky, lefthook
-- CI generators: GitHub Actions, GitLab CI
-- Governance gate (`trackfw validate`)
-- Install script
-
-### v0.2 — Distribution
-- GoReleaser pipeline (linux/darwin/windows amd64+arm64)
-- npm wrapper package
-- PyPI wrapper package
-- Homebrew tap
-
-### v0.3 — Plugin System
-- Generator plugin interface
-- `trackfw plugins list/add/remove`
-- Community generator registry
-
-### v0.4 — Intelligence
-- `trackfw log` — history of state transitions
-- `trackfw roadmap show <name>` — render roadmap progress in terminal
-- Validate: detect stale `wip/` entries (in wip for > N days)
-- `trackfw adr list` / `trackfw req list` with status summary
+- Not a project management SaaS — no UI, no accounts, no cloud sync
+- Not a replacement for Git history — it complements, not duplicates
+- Not a task tracker — use GitHub Issues, Linear, or Jira for tasks; trackfw governs the *why*
+- Not opinionated about how you write code — only about how you document decisions
 
 ---
 
 ## Contributing
 
-trackfw is designed for community contribution from day one. The generator plugin model means you can add support for a new stack without touching core logic.
-
 ```bash
 git clone https://github.com/kgsaran/trackfw
 cd trackfw
-make build
-make test
+make build   # compiles to bin/trackfw
+make test    # go test ./...
+make lint    # go vet ./...
 ```
+
+Generators are the stack-specific components — you can add support for a new stack without touching core logic. See `internal/generators/` for examples.
+
+Issues and pull requests welcome at [github.com/kgsaran/trackfw](https://github.com/kgsaran/trackfw).
 
 ---
 
