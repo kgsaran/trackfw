@@ -447,3 +447,121 @@ trackfw/
 - `internal/commands/roadmap.go` — função `newRoadmapShowCmd()` adicionada e registrada em `newRoadmapCmd()`.
 - `go build ./...` limpo | `go test ./...` verde | `go vet ./...` limpo.
 - Commit `6d4cc19` na branch `feat/v1-remaining-features`.
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-1A do roadmap de reescrita do pacote npm em Node.js puro (branch `feat/npm-nodejs-rewrite`) — Atualizar package.json e entry point.
+
+**Entregue:**
+- `npm/package.json` — reescrito: removidos campos `os`/`cpu`, adicionados `main`, `files` com `src/`, `dependencies` (`commander ^12.0.0`, `@inquirer/prompts ^5.0.0`), `engines.node` atualizado para `>=18`.
+- `npm/bin/trackfw` — reescrito: sem mais fat-package/spawnSync de binário Go; entry point Node puro que chama `createProgram().parseAsync(process.argv)`.
+- `npm/bin/.gitkeep` — removido.
+- `npm/src/commands/index.js` — criado: stub commander com `name/description/version`; exporta `createProgram()`.
+- `npm/package-lock.json` — gerado via `npm install` (41 pacotes: commander + @inquirer/prompts + transitivos).
+- Critério de aceite: `node npm/bin/trackfw --help` imprime usage sem erro. Passou.
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-1B do roadmap de reescrita do pacote npm em Node.js puro (branch `feat/npm-nodejs-rewrite`) — Criar estrutura src/ com stubs.
+
+**Entregue:**
+- `npm/src/commands/index.js` — reescrito: `createProgram()` lê version do `package.json`, registra 8 subcomandos via `addCommand`, hook `preSubcommand` vazio para futura dispatch de plugins.
+- `npm/src/commands/init.js` — stub: `trackfw init` → `TODO: init`.
+- `npm/src/commands/adr.js` — stub com subcomandos `new <title>` e `list`.
+- `npm/src/commands/req.js` — stub com subcomandos `new <title>` e `list`.
+- `npm/src/commands/roadmap.js` — stub com subcomandos `new`, `list`, `show <name>`, `move <name> <state>`.
+- `npm/src/commands/validate.js` — stub: `trackfw validate` → `TODO: validate`.
+- `npm/src/commands/status.js` — stub: `trackfw status` → `TODO: status`.
+- `npm/src/commands/log.js` — stub com flag `--tail <n>` (default 20).
+- `npm/src/commands/plugins.js` — stub com subcomandos `list`, `add <repo>`, `remove <name>`.
+- `npm/src/generators/{adr,req,roadmap,init}.js` — stubs `module.exports = {}`.
+- `npm/src/validator/index.js` — stub `module.exports = {}`.
+- Critério de aceite: `node -e "const {createProgram}=require('./npm/src/commands/index.js'); const p=createProgram(); console.log(p.commands.map(c=>c.name()))"` retorna todos os 8 subcomandos. Passou.
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-2A do roadmap de reescrita do pacote npm em Node.js puro (branch `feat/npm-nodejs-rewrite`) — Implementar `npm/src/generators/adr.js` e `npm/src/commands/adr.js`.
+
+**Entregue:**
+- `npm/src/generators/adr.js` — funções `newADR(content)`, `listADRs(dir)`, `newADRDraft(slug)`, `toSlug(s)` portadas do Go; placeholders HTML idênticos; `newADRDraft` idempotente via regex sobre `readdirSync`; coluna 60 chars no `list`; helper `parseADRStatus` extrai status da linha `| Status: `.
+- `npm/src/commands/adr.js` — implementação real (não mais stub); subcomando `new <title>` com wizard `@inquirer/prompts` em TTY + fallback silencioso em não-TTY; subcomando `list` delega para `generators.listADRs('docs/adr')`.
+- Critérios de aceite validados manualmente em `/tmp/trackfw-test-node`:
+  - `adr list` (diretório vazio) → `No ADRs found in docs/adr` ✅
+  - `adr new "Test Decision" < /dev/null` → `created docs/adr/ADR-2026-06-12-test-decision.md` ✅
+  - `adr list` (após criação) → linha com arquivo e status `Proposed` em coluna 60 ✅
+  - Conteúdo do arquivo com template e placeholders idênticos ao gerador Go ✅
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-2C do roadmap de reescrita npm Node.js — Implementar `npm/src/commands/log.js` com leitura real do `.trackfw-log`.
+
+**Entregue:**
+- `npm/src/commands/log.js` — implementação real: lê `docs/roadmaps/.trackfw-log`, filtra linhas vazias, aplica `--tail N` (default 20), imprime cabeçalho + linhas; mensagem amigável se arquivo inexistente.
+- Critérios de aceite validados: sem log → "No transitions recorded yet." | com log → cabeçalho + linha impressos | `--version` → "0.1.0".
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-2B do roadmap de reescrita npm Node.js — portar `listREQs`, `listRoadmaps`, `showRoadmap`, `moveRoadmap`, `appendTransitionLog`, `newRoadmap` para Node.js puro + atualizar commands.
+
+**Entregue:**
+- `npm/src/generators/req.js` — `listREQs(dir)`: glob `.md`, extrai status da linha `| Status: ...`, padding 60 chars, fallback `No REQs found in <dir>`.
+- `npm/src/generators/roadmap.js` — `VALID_STATES`, `listRoadmaps()`, `showRoadmap(name)`, `moveRoadmap(name, state)`, `appendTransitionLog(basename, from, to)`, `newRoadmap(title, reqPath)`, helpers `findRoadmapMatches` e `toSlug`. Zero dependências externas.
+- `npm/src/commands/req.js` — `req list` delegando a `listREQs('docs/req')`.
+- `npm/src/commands/roadmap.js` — todos os 4 subcomandos (`new`, `list`, `show`, `move`) delegando aos generators.
+
+**Critérios de aceite validados:**
+- `roadmap list` vazio → mensagem orientando usuário ✅
+- `roadmap list` com arquivo em backlog → lista `[backlog]` ✅
+- `roadmap move test wip` → `✓ moved ROADMAP-2026-06-12-test.md → docs/roadmaps/wip` + log gravado ✅
+- `roadmap show test` → cabeçalho `── BASENAME ── [WIP] ──────────...` + conteúdo + `Location:` ✅
+- `req list` vazio → `No REQs found in docs/req` ✅
+- `req list` com arquivo → `REQ-...md                    Open` ✅
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-3A do roadmap de reescrita npm Node.js — Implementar `npm/src/validator/index.js` (porte completo do validador Go) + `npm/src/commands/validate.js` + `npm/src/commands/status.js`.
+
+**Entregue:**
+- `npm/src/validator/index.js` — porte completo do `internal/validator/validator.go`: 9 funções de validação + auxiliares `parseBlockedADRs`, `adrIsDraft`, `listDir`, `blockedREQs`, função principal `validate()` e `getStatus()`. Zero dependências externas.
+- `npm/src/commands/validate.js` — saída `✓ No violations found.` / listagem de violations e warnings / `process.exit(1)` em violações.
+- `npm/src/commands/status.js` — delegando para `getStatus()`.
+
+**Critérios de aceite:** diretório vazio → `✓ No violations found.` ✅ | `status` → seções formatadas ✅ | `node --check` limpo ✅
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-3B do roadmap de reescrita npm Node.js — Portar `newREQ`, `PROBES_CATALOG`, `detectDomains` para `npm/src/generators/req.js` e reescrever wizard `req new` em `npm/src/commands/req.js`.
+
+**Entregue:**
+- `npm/src/generators/req.js` — funções `newREQ(content)`, `PROBES_CATALOG` (6 domínios: authentication, ui, persistence, api, deploy, events — porte exato do Go), `detectDomains(intention)` adicionadas sem remover `listREQs`/`parseREQStatus` existentes; helper `toSlug` local; template idêntico ao Go com seção `## Blocked by ADRs`, linha de status com contador `| Blocked by ADRs: N`.
+- `npm/src/commands/req.js` — `req new` reescrito com wizard `@inquirer/prompts` em dois passos (TTY) + fallback silencioso (não-TTY); perguntas dinâmicas por probe via `select`; ADR drafts gerados via `adrGenerators.newADRDraft`; deduplicação via `Set`; mensagem final lista ADR drafts criados.
+- Critérios de aceite validados:
+  - `req new "OAuth login" < /dev/null` → `created docs/req/REQ-2026-06-12-oauth-login.md` com template correto e `Status: Open` ✅
+  - `req list` → `REQ-2026-06-12-oauth-login.md   Open` ✅
+  - `detectDomains("OAuth login via SSO provider")` → `['authentication']` ✅
+  - `newREQ` com `dependsOnADRs` → seção `## Blocked by ADRs` populada + status `| Blocked by ADRs: 2` ✅
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-3C do roadmap de reescrita npm Node.js — Implementar `npm/src/generators/init.js` (scaffold completo) e `npm/src/commands/init.js` (wizard com @inquirer/prompts).
+
+**Entregue:**
+- `npm/src/generators/init.js` — `GOV_DIRS` (7 entradas), `scaffold(cfg)`, `writeTrackfwConfig`, `generateValidateScript` + `buildValidateScript` (go/java/node/python + frontend), `generateCIWorkflow` (github-actions/gitlab-ci), `generateGitHooks` (husky/lefthook), `generateClaudeMD` (seções frontend/backend/pre-commit/hooks/CI), `generateClaudeCommands` (7 slash commands idempotentes), stubs `installAgents/Gemini/Cursor/Copilot/Windsurf/AmazonQ` com mensagem orientativa.
+- `npm/src/commands/init.js` — wizard completo com `@inquirer/prompts` (input/select/checkbox), guard `!process.stdin.isTTY` com defaults, try/catch para fallback em stdin inesperadamente fechado, dispatch para instaladores de AI tools.
+- Critério de aceite validado: `echo "" | node npm/bin/trackfw init` cria os 7 diretórios de governança + trackfw.yaml + scripts/trackfw-validate.sh + CLAUDE.md + .claude/commands/trackfw (7 slash commands). Sintaxe validada com `node --check`.

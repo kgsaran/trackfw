@@ -7,8 +7,11 @@
   "repository": { "type": "git", "url": "https://github.com/kgsaran/trackfw" },
   "license": "MIT",
   "bin": { "trackfw": "./bin/trackfw" },
-  "files": ["bin/"],
-  "engines": { "node": ">=14" },
-  "os": ["linux", "darwin", "win32"],
-  "cpu": ["x64", "arm64"]
+  "main": "./src/commands/index.js",
+  "files": ["bin/", "src/"],
+  "dependencies": {
+    "commander": "^12.0.0",
+    "@inquirer/prompts": "^5.0.0"
+  },
+  "engines": { "node": ">=18" }
 }
