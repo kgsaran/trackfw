@@ -1,33 +1,4 @@
 #!/usr/bin/env node
-
 'use strict'
 
-const { spawnSync } = require('child_process')
-const path = require('path')
-const fs = require('fs')
-
-const PLATFORM_MAP = { linux: 'linux', darwin: 'darwin', win32: 'windows' }
-const ARCH_MAP = { x64: 'amd64', arm64: 'arm64' }
-
-const platform = PLATFORM_MAP[process.platform]
-const arch = ARCH_MAP[process.arch]
-
-if (!platform || !arch) {
-  console.error('trackfw: plataforma não suportada: ' + process.platform + '/' + process.arch)
-  process.exit(1)
-}
-
-const isWindows = process.platform === 'win32'
-const binaryName = isWindows
-  ? `trackfw-${platform}-${arch}.exe`
-  : `trackfw-${platform}-${arch}`
-const binaryPath = path.join(__dirname, binaryName)
-
-if (!fs.existsSync(binaryPath)) {
-  console.error('trackfw: binário não encontrado: ' + binaryPath)
-  console.error('Tente reinstalar: npm install -g trackfw')
-  process.exit(1)
-}
-
-const result = spawnSync(binaryPath, process.argv.slice(2), { stdio: 'inherit' })
-process.exit(result.status ?? 1)
+require('../src/commands/index').createProgram().parseAsync(process.argv)
