@@ -17,7 +17,7 @@ func newRoadmapCmd() *cobra.Command {
 		Use:   "roadmap",
 		Short: "Manage Roadmaps",
 	}
-	cmd.AddCommand(newRoadmapNewCmd(), newRoadmapMoveCmd(), newRoadmapListCmd())
+	cmd.AddCommand(newRoadmapNewCmd(), newRoadmapMoveCmd(), newRoadmapListCmd(), newRoadmapShowCmd())
 	return cmd
 }
 
@@ -72,6 +72,17 @@ func newRoadmapListCmd() *cobra.Command {
 		Short: "List all roadmaps grouped by state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return generators.ListRoadmaps()
+		},
+	}
+}
+
+func newRoadmapShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <name>",
+		Short: "Show a roadmap by name (partial match)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return generators.ShowRoadmap(args[0])
 		},
 	}
 }

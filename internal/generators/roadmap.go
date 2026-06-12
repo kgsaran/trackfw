@@ -84,10 +84,14 @@ func MoveRoadmap(name, state string) error {
 		return err
 	}
 
+	fromState := filepath.Base(filepath.Dir(src))
+
 	dst := filepath.Join(targetDir, filepath.Base(src))
 	if err := os.Rename(src, dst); err != nil {
 		return fmt.Errorf("moving roadmap: %w", err)
 	}
+
+	appendTransitionLog(filepath.Base(src), fromState, state)
 
 	fmt.Printf("✓ moved %s → %s\n", filepath.Base(src), targetDir)
 	return nil
@@ -110,6 +114,53 @@ func findRoadmap(name string) (string, error) {
 
 func containsIgnoreCase(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
+}
+
+const transitionLogPath = "docs/roadmaps/.trackfw-log"
+
+func appendTransitionLog(basename, fromState, toState string) {
+	f, err := os.OpenFile(transitionLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	line := fmt.Sprintf("%s  %-50s  %s → %s\n",
+		time.Now().Format("2006-01-02 15:04"),
+		basename,
+		fromState,
+		toState,
+	)
+	f.WriteString(line)
+}
+
+// ShowRoadmap exibe o conteúdo de um roadmap identificado por nome parcial.
+func ShowRoadmap(name string) error {
+	pattern := filepath.Join("docs", "roadmaps", "*", "*"+name+"*.md")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return err
+	}
+	if len(matches) == 0 {
+		return fmt.Errorf("no roadmap found matching %q", name)
+	}
+	if len(matches) > 1 {
+		fmt.Println("Multiple roadmaps found — be more specific:")
+		for _, m := range matches {
+			fmt.Printf("  %s\n", m)
+		}
+		return fmt.Errorf("ambiguous match for %q", name)
+	}
+	path := matches[0]
+	state := filepath.Base(filepath.Dir(path))
+	base := filepath.Base(path)
+	fmt.Printf("── %s ── [%s] ──────────────────────\n\n", base, strings.ToUpper(state))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	fmt.Printf("Location: %s\n", path)
+	return nil
 }
 
 // ListRoadmaps imprime todos os roadmaps agrupados por estado.
