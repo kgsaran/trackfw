@@ -314,6 +314,17 @@ trackfw/
 
 ---
 
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** Detectar roadmaps em WIP stale (> 7 dias sem modificação) na branch `feat/v1-remaining-features`.
+
+**Entregue:**
+- `internal/validator/validator.go` — constante `staleWIPDays = 7`; função `validateStaleWIP()` que usa `filepath.Glob` + `os.Stat` para calcular idade por `ModTime`; integrada em `Validate()` após `validateSingleWIP()`; seção `⚠  Stale WIP` adicionada em `GetStatus()` entre `❌ Blocked` e `⏳ REQs blocked by Draft ADRs`.
+- Import `"time"` adicionado.
+- `go build ./...` limpo | `go test ./...` 100% verde | `go vet ./...` limpo | commit `406ebcf` na branch `feat/v1-remaining-features`.
+
+---
+
 ## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
 
 **Tarefa:** ML-1A — Criar templates Gemini CLI: GEMINI.md global, GEMINI-project.md, 10 SKILL.md (architect/backend/frontend/qa/infra/security/code-quality/dba/ux/data), 3 commands TOML (trackfw-adr/req/roadmap).
@@ -400,3 +411,39 @@ trackfw/
 - `internal/validator/validator.go` — função `blockedREQs() (map[string][]string, error)` que reutiliza `parseBlockedADRs` e `adrIsDraft` do ML-3A; seção adicionada em `GetStatus()` entre `❌ Blocked` e `✅ Done`, emitida apenas quando há REQs bloqueadas.
 - `internal/validator/validator_test.go` — 2 novos testes: `TestGetStatus_REQsBloqueadas` (verifica presença da seção e do ADR listado) e `TestGetStatus_SemREQsBloqueadas` (verifica ausência quando não há bloqueios). Padrão de fixture igual ao existente (`t.TempDir()` + `chdir`).
 - `go build ./...` limpo | 12/12 testes verdes | commit `85b0ba1` | push para `feat/req-driven-adr-discovery`.
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** Implementar `trackfw log` e registro automático de transições de estado (branch `feat/v1-remaining-features`).
+
+**Entregue:**
+- `internal/generators/roadmap.go` — `appendTransitionLog(basename, fromState, toState)` grava em `docs/roadmaps/.trackfw-log` no formato `YYYY-MM-DD HH:MM  <basename padded 50>  <from> → <to>`; `MoveRoadmap` extrai `fromState` via `filepath.Base(filepath.Dir(src))` e chama `appendTransitionLog` após `os.Rename` bem-sucedido.
+- `internal/commands/log.go` — comando cobra `log` com flag `--tail N` (default 20); lê `.trackfw-log`, seleciona as últimas N linhas e imprime com cabeçalho; mensagem amigável se arquivo inexistente.
+- `internal/commands/root.go` — `newLogCmd()` registrado na lista de subcomandos.
+- `go build ./...` limpo | testes verdes | `go vet ./...` limpo | commit `138b4e8` na branch `feat/v1-remaining-features`.
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** Implementar sistema de plugins do trackfw (branch `feat/v1-remaining-features`).
+
+**Entregue:**
+- `internal/plugins/plugins.go` — pacote novo; `Dir()` retorna `~/.trackfw/plugins`; `List()` lista binários instalados; `Install(repo)` baixa asset das GitHub Releases (formato `user/name[@tag]`, detecta GOOS/GOARCH); `Remove(name)` remove plugin pelo nome.
+- `internal/commands/plugins.go` — comando cobra `plugins` com subcomandos `list`, `add` e `remove`; `RunPlugin(name, args)` executa plugin instalado passando stdin/stdout/stderr.
+- `internal/commands/root.go` — `newPluginsCmd()` registrado; `rootCmd.Args = cobra.ArbitraryArgs` + `rootCmd.RunE` configurados para dispatch automático de comandos desconhecidos para plugins.
+- `go build ./...` limpo | `go test ./...` verde | `go vet ./...` limpo | commit `d201b45` na branch `feat/v1-remaining-features`.
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** Adicionar subcomando `trackfw roadmap show <name>` com busca parcial por nome.
+
+**Entregue:**
+- `internal/generators/roadmap.go` — função `ShowRoadmap(name string) error` adicionada: busca via `filepath.Glob` em todos os estados (`docs/roadmaps/*/*name*.md`), exibe cabeçalho com basename e estado em maiúsculas, conteúdo completo do arquivo e path.
+- `internal/commands/roadmap.go` — função `newRoadmapShowCmd()` adicionada e registrada em `newRoadmapCmd()`.
+- `go build ./...` limpo | `go test ./...` verde | `go vet ./...` limpo.
+- Commit `6d4cc19` na branch `feat/v1-remaining-features`.
