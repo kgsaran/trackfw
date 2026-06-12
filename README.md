@@ -30,7 +30,7 @@ trackfw closes the loop — connective tissue between *why*, *what*, and *when*.
 
 ## Demo
 
-<!-- TODO: add terminal recording — `vhs demo.tape` or `asciinema` -->
+![trackfw demo](docs/demo.gif)
 
 ```bash
 $ trackfw req new "Login screen"
