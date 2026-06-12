@@ -303,6 +303,17 @@ trackfw/
 
 ---
 
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-1A do roadmap `feat/req-driven-adr-discovery` — catálogo de probes e detecção de domínio.
+
+**Entregue:**
+- `internal/generators/probes.go` — tipos `Probe`, `Question`, `ProbeOption`; `ProbesCatalog` com 6 domínios (authentication, ui, persistence, api, deploy, events); `DetectDomains(intention string) []Probe` — busca case-insensitive por substring nos keywords.
+- `internal/generators/probes_test.go` — 5 testes: `Authentication`, `UI`, `NoMatch`, `MultiDomain`, `CaseInsensitive`.
+- `go build ./...` limpo | 5/5 testes verdes | commit `2cb3976` | push para `feat/req-driven-adr-discovery`.
+
+---
+
 ## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
 
 **Tarefa:** ML-1A — Criar templates Gemini CLI: GEMINI.md global, GEMINI-project.md, 10 SKILL.md (architect/backend/frontend/qa/infra/security/code-quality/dba/ux/data), 3 commands TOML (trackfw-adr/req/roadmap).
@@ -320,3 +331,45 @@ trackfw/
 **Tarefa:** ML-1D e ML-1E — Criar templates Windsurf (10 rules + 3 workflows + 1 global_rules_append = 14 arquivos) e Amazon Q (10 rules = 10 arquivos). Total: 24 arquivos.
 
 **Destino:** `internal/generators/templates/copilot/`
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-1B do roadmap `feat/req-driven-adr-discovery` — Adicionar `NewADRDraft` em `internal/generators/adr.go`.
+
+**O que foi feito:**
+- Adicionadas funções `slugToTitle` e `NewADRDraft` ao final de `internal/generators/adr.go`
+- `NewADRDraft` cria ADR com `Status: Draft`, é idempotente via glob por slug, e deriva o título do slug via title case
+- Adicionados 4 testes em `internal/generators/adr_test.go`: `TestNewADRDraft_CriaArquivo`, `TestNewADRDraft_StatusDraft`, `TestNewADRDraft_Idempotente`, `TestNewADRDraft_TituloDerivado`
+- Build e testes passando: `go build ./...` ok, 4/4 testes verdes
+- Commit `7510a64` pushado para branch `feat/req-driven-adr-discovery`
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-2A do roadmap `feat/req-driven-adr-discovery` — Estender `REQContent` com `DependsOnADRs []string` e gerar seção "Blocked by ADRs" no arquivo REQ.
+
+**Entregue:**
+- `internal/generators/req.go` — campo `DependsOnADRs []string` adicionado em `REQContent`; `NewREQ` gera cabeçalho com `| Blocked by ADRs: N` quando há ADRs vinculados; nova seção `## Blocked by ADRs` inserida entre `Linked ADR` e `Linked Roadmap`; `parseREQMeta` corrigido para extrair status antes do próximo pipe (evita capturar "Blocked by ADRs: 2" como parte do status).
+- `internal/generators/req_test.go` — 3 novos testes: `TestNewREQ_ComADRsVinculados`, `TestNewREQ_SemADRsVinculados`, `TestNewREQ_ContadorNoStatus`.
+- `go build ./...` limpo | 10/10 testes `TestNewREQ` verdes | suite completa OK.
+- Commit `7e2a069` | push para `feat/req-driven-adr-discovery`.
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-2B do roadmap `feat/req-driven-adr-discovery` — Wizard `req new` com etapa de probes contextuais.
+
+**Entregue:**
+- `internal/commands/req.go` — `runReqNew` refatorado com dois forms em sequência:
+  - Form 1: coleta `Title` + `Motivation` em grupo único.
+  - Detecção automática via `generators.DetectDomains(title + motivation)`.
+  - Form 2: grupos de `Criteria`, `LinkedADR`/`LinkedRoadmap` + um `huh.Select` por question de cada probe detectada.
+  - Respostas processadas: ADRSlug não-vazio gera ADR Draft via `generators.NewADRDraft`; resultado salvo em `content.DependsOnADRs` (deduplicado via `uniqueStrings`).
+  - Mensagem final lista ADR drafts criados e orienta a resolvê-los antes do roadmap.
+- Helper `uniqueStrings` adicionado no mesmo arquivo.
+- Em modo não-TTY (CI): fluxo direto sem wizard/probes — comportamento inalterado.
+- `go build ./...` limpo.
