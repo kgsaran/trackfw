@@ -1,0 +1,15 @@
+description = "Criar um novo Architecture Decision Record (ADR) seguindo a governança trackfw"
+prompt = """
+Crie um novo ADR seguindo a cadeia de governança trackfw.
+
+Estrutura obrigatória do ADR:
+- **Título**: decisão sendo documentada
+- **Contexto**: situação atual e forças que motivam a decisão
+- **Decisão**: o que foi decidido e por quê
+- **Consequências**: impactos positivos e negativos, trade-offs
+- **Alternativas Consideradas**: outras opções avaliadas e razões da rejeição
+
+Salve em `docs/adr/<area>/ADR-NNN-<titulo-kebab-case>.md`.
+
+{{args}}
+"""

@@ -1,0 +1,14 @@
+description = "Criar uma nova REQ (requisição) antes de implementar uma feature não trivial"
+prompt = """
+Crie um documento de requisição (REQ) seguindo a governança trackfw.
+
+Estrutura obrigatória:
+- **Solicitação**: descrição clara do que deve ser implementado
+- **Escopo**: mudanças específicas, arquivos afetados, restrições
+- **Critérios de Aceite**: condições mensuráveis para conclusão
+
+Salve em `docs/requisições/<area>/backlog/REQ-<descricao>-<YYYY-MM-DD>.md`.
+Em seguida, crie o roadmap em microlotes baseado nesta REQ.
+
+{{args}}
+"""
