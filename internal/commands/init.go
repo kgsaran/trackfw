@@ -25,6 +25,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		pkgManager  string
 		hooks       string
 		ci          string
+		aiTools     []string
 	)
 
 	form := huh.NewForm(
@@ -105,6 +106,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 				Value(&ci),
 		),
 
+		// Grupo 5 — seleção de ferramentas de IA
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which AI assistants do you use?").
+				Options(
+					huh.NewOption("Claude Code", "claude"),
+					huh.NewOption("Gemini CLI", "gemini"),
+					huh.NewOption("Cursor", "cursor"),
+					huh.NewOption("GitHub Copilot", "copilot"),
+					huh.NewOption("Windsurf", "windsurf"),
+					huh.NewOption("Amazon Q Developer", "amazonq"),
+				).
+				Value(&aiTools),
+		),
+
 	)
 
 	if err := form.Run(); err != nil {
@@ -123,6 +139,35 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	if err := generators.Scaffold(cfg); err != nil {
 		return err
+	}
+
+	for _, tool := range aiTools {
+		switch tool {
+		case "claude":
+			if err := generators.InstallAgents(); err != nil {
+				return fmt.Errorf("instalando agentes Claude: %w", err)
+			}
+		case "gemini":
+			if err := generators.InstallGemini(); err != nil {
+				return fmt.Errorf("instalando Gemini: %w", err)
+			}
+		case "cursor":
+			if err := generators.InstallCursor(); err != nil {
+				return fmt.Errorf("instalando Cursor: %w", err)
+			}
+		case "copilot":
+			if err := generators.InstallCopilot(); err != nil {
+				return fmt.Errorf("instalando Copilot: %w", err)
+			}
+		case "windsurf":
+			if err := generators.InstallWindsurf(); err != nil {
+				return fmt.Errorf("instalando Windsurf: %w", err)
+			}
+		case "amazonq":
+			if err := generators.InstallAmazonQ(); err != nil {
+				return fmt.Errorf("instalando Amazon Q: %w", err)
+			}
+		}
 	}
 
 	fmt.Println("\n✓ trackfw initialized — run 'trackfw status' to see your governance state.")
