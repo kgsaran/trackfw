@@ -376,6 +376,16 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-12 — Apolo (IMPLEMENTANDO)
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
 
 **Tarefa:** ML-3A do roadmap `feat/req-driven-adr-discovery` — Adicionar regra de validação em `internal/validator/validator.go` que detecta REQs Open bloqueadas por ADRs com Status: Draft.
+
+**Entregue:**
+- `validateREQsNotBlockedByDraftADRs()` — percorre `docs/req/*.md`, filtra REQs com `Status: Open`, extrai ADRs da seção `## Blocked by ADRs` via `parseBlockedADRs()`, verifica `Status: Draft` via `adrIsDraft()`, emite violation `"REQ X is blocked by Draft ADR: Y"`.
+- `parseBlockedADRs(path)` — parser de seção markdown: lê de `## Blocked by ADRs` até próximo `##`, extrai basename `.md` de cada linha `- `.
+- `adrIsDraft(adrBasename)` — lê `docs/adr/<basename>` e verifica presença de `"Status: Draft"`.
+- `blockedREQs()` — retorna `map[string][]string` (req → adrs Draft) para uso em `GetStatus()`.
+- Integrada em `Validate()` após `validateSingleWIP()`.
+- Integrada em `GetStatus()` com seção "REQs blocked by Draft ADRs" (adicionada externamente antes da conclusão desta sessão).
+- 3 testes novos: `TestValidateREQsNotBlockedByDraftADRs_Violação`, `_SemViolação`, `_Retrocompatível`.
+- `go build ./...` limpo | todos os testes verdes | commit `36d582b` | push para `feat/req-driven-adr-discovery`.
