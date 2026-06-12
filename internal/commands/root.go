@@ -32,6 +32,7 @@ func Execute() {
 		newStatusCmd(),
 		newValidateCmd(),
 		newVersionCmd(),
+		newLogCmd(),
 	)
 
 	if err := rootCmd.Execute(); err != nil {
