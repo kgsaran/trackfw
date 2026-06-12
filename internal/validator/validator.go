@@ -50,6 +50,12 @@ func Validate() (violations []string, warnings []string, err error) {
 	}
 	warnings = append(warnings, wipWarnings...)
 
+	draftBlockedViolations, e := validateREQsNotBlockedByDraftADRs()
+	if e != nil {
+		return nil, nil, e
+	}
+	violations = append(violations, draftBlockedViolations...)
+
 	return violations, warnings, nil
 }
 
@@ -70,6 +76,18 @@ func GetStatus() (string, error) {
 	sb.WriteString(fmt.Sprintf("\n❌ Blocked (%d)\n", len(blocked)))
 	for _, f := range blocked {
 		sb.WriteString(fmt.Sprintf("   %s\n", f))
+	}
+
+	// Seção: REQs bloqueadas por ADRs Draft
+	blockedByDraft, err := blockedREQs()
+	if err == nil && len(blockedByDraft) > 0 {
+		sb.WriteString(fmt.Sprintf("\n⏳ REQs blocked by Draft ADRs (%d)\n", len(blockedByDraft)))
+		for reqFile, adrs := range blockedByDraft {
+			sb.WriteString(fmt.Sprintf("   %s\n", reqFile))
+			for _, adr := range adrs {
+				sb.WriteString(fmt.Sprintf("     → %s (Draft)\n", adr))
+			}
+		}
 	}
 
 	sb.WriteString(fmt.Sprintf("\n✅ Done (last 5)\n"))
@@ -225,6 +243,120 @@ func validateSingleWIP() ([]string, error) {
 		return []string{fmt.Sprintf("%d roadmaps in wip/ (recommended: keep only 1 active at a time)", len(entries))}, nil
 	}
 	return nil, nil
+}
+
+// blockedREQs retorna um mapa de REQ-basename → lista de ADR-basenames Draft que a bloqueiam.
+// Somente REQs com Status: Open e ADRs com Status: Draft são incluídas.
+func blockedREQs() (map[string][]string, error) {
+	entries, err := listDir("docs/req")
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]string)
+	for _, name := range entries {
+		reqPath := filepath.Join("docs", "req", name)
+		content, err := os.ReadFile(reqPath)
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(string(content), "Status: Open") {
+			continue
+		}
+
+		adrNames, err := parseBlockedADRs(reqPath)
+		if err != nil {
+			continue
+		}
+		var draftADRs []string
+		for _, adrBasename := range adrNames {
+			if adrIsDraft(adrBasename) {
+				draftADRs = append(draftADRs, adrBasename)
+			}
+		}
+		if len(draftADRs) > 0 {
+			result[name] = draftADRs
+		}
+	}
+	return result, nil
+}
+
+// validateREQsNotBlockedByDraftADRs verifica se REQs com Status Open têm ADRs Draft vinculados.
+// Uma REQ Open com ADR Draft é uma violação: o roadmap não pode ser criado até os ADRs serem aceitos.
+func validateREQsNotBlockedByDraftADRs() ([]string, error) {
+	entries, err := filepath.Glob(filepath.Join("docs", "req", "*.md"))
+	if err != nil {
+		return nil, err
+	}
+
+	var violations []string
+	for _, path := range entries {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		s := string(content)
+		// Verificar se a REQ está com Status: Open (linha de cabeçalho)
+		if !strings.Contains(s, "Status: Open") {
+			continue
+		}
+		// Extrair ADRs da seção "## Blocked by ADRs"
+		blockedADRs, err := parseBlockedADRs(path)
+		if err != nil {
+			continue
+		}
+		reqBasename := filepath.Base(path)
+		for _, adrBasename := range blockedADRs {
+			if adrIsDraft(adrBasename) {
+				violations = append(violations, fmt.Sprintf("REQ %s is blocked by Draft ADR: %s", reqBasename, adrBasename))
+			}
+		}
+	}
+	return violations, nil
+}
+
+// parseBlockedADRs extrai os basenames de ADRs listados na seção "## Blocked by ADRs" de um arquivo REQ.
+func parseBlockedADRs(path string) ([]string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(content), "\n")
+
+	var adrs []string
+	inSection := false
+	for _, line := range lines {
+		if line == "## Blocked by ADRs" {
+			inSection = true
+			continue
+		}
+		if inSection {
+			// Próxima seção termina a leitura
+			if strings.HasPrefix(line, "## ") {
+				break
+			}
+			// Linhas de item: "- ADR-xxx.md (Draft)" ou "- ADR-xxx.md (Accepted)"
+			if strings.HasPrefix(line, "- ") {
+				item := strings.TrimPrefix(line, "- ")
+				// Extrair o basename (primeira palavra antes de espaço ou parêntese)
+				parts := strings.Fields(item)
+				if len(parts) > 0 && strings.HasSuffix(parts[0], ".md") {
+					adrs = append(adrs, parts[0])
+				}
+			}
+		}
+	}
+	return adrs, nil
+}
+
+// adrIsDraft verifica se o ADR identificado pelo basename contém "Status: Draft".
+func adrIsDraft(adrBasename string) bool {
+	path := filepath.Join("docs", "adr", adrBasename)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(content), "Status: Draft")
 }
 
 func listDir(dir string) ([]string, error) {

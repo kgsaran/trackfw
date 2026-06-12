@@ -130,3 +130,66 @@ func toSlug(s string) string {
 	s = strings.ReplaceAll(s, " ", "-")
 	return s
 }
+
+// slugToTitle converte um slug com hífens em título com title case.
+// Ex: "authentication-strategy" → "Authentication Strategy"
+func slugToTitle(slug string) string {
+	words := strings.Split(slug, "-")
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// NewADRDraft cria um ADR com Status: Draft a partir de um slug.
+// Usado pelo wizard req new para registrar decisões pendentes.
+// Retorna o basename do arquivo criado.
+// Se o arquivo já existir, não sobrescreve (idempotente) e retorna o basename sem erro.
+func NewADRDraft(slug string) (string, error) {
+	if err := os.MkdirAll("docs/adr", 0755); err != nil {
+		return "", fmt.Errorf("creating docs/adr: %w", err)
+	}
+
+	// Verificar idempotência: glob por slug
+	pattern := filepath.Join("docs", "adr", "ADR-*-"+slug+".md")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", fmt.Errorf("glob: %w", err)
+	}
+	if len(matches) > 0 {
+		basename := filepath.Base(matches[0])
+		fmt.Printf("skipped %s (already exists)\n", basename)
+		return basename, nil
+	}
+
+	date := time.Now().Format("2006-01-02")
+	filename := fmt.Sprintf("ADR-%s-%s.md", date, slug)
+	path := filepath.Join("docs", "adr", filename)
+	title := slugToTitle(slug)
+
+	body := fmt.Sprintf(`# ADR: %s
+
+> Date: %s | Status: Draft
+
+## Context
+<!-- What is the situation that motivates this decision? -->
+
+## Decision
+<!-- What was decided? -->
+
+## Consequences
+<!-- What are the positive and negative consequences of this decision? -->
+
+## Alternatives Considered
+<!-- What other options were evaluated and why were they rejected? -->
+`, title, date)
+
+	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+		return "", fmt.Errorf("writing ADR draft: %w", err)
+	}
+
+	fmt.Printf("created %s\n", filename)
+	return filename, nil
+}

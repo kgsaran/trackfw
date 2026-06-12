@@ -207,6 +207,127 @@ Sem referencia a REQ.
 	}
 }
 
+// TestValidateREQsNotBlockedByDraftADRs_Violação — REQ Open com ADR Draft → violation
+func TestValidateREQsNotBlockedByDraftADRs_Violação(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	_ = os.MkdirAll(filepath.Join(dir, "docs", "req"), 0755)
+	_ = os.MkdirAll(filepath.Join(dir, "docs", "adr"), 0755)
+
+	// Criar ADR Draft
+	adrContent := "# ADR: Auth\n\n> Date: 2026-06-12 | Status: Draft\n\n## Context\n"
+	_ = os.WriteFile(filepath.Join(dir, "docs", "adr", "ADR-2026-06-12-authentication-strategy.md"), []byte(adrContent), 0644)
+
+	// Criar REQ Open com ADR Draft vinculado
+	reqContent := "# REQ: Login\n\n> Date: 2026-06-12 | Status: Open | Blocked by ADRs: 1\n\n## Motivation\n\n## Acceptance Criteria\n\n## Linked ADR\nADR: \n\n## Blocked by ADRs\n<!-- ADRs in Draft status -->\n- ADR-2026-06-12-authentication-strategy.md (Draft)\n\n## Linked Roadmap\nRoadmap: \n"
+	_ = os.WriteFile(filepath.Join(dir, "docs", "req", "REQ-2026-06-12-login.md"), []byte(reqContent), 0644)
+
+	violations, err := validateREQsNotBlockedByDraftADRs()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) == 0 {
+		t.Error("esperava violação para REQ com ADR Draft, não encontrou nenhuma")
+	}
+}
+
+// TestValidateREQsNotBlockedByDraftADRs_SemViolação — REQ Open com ADR Accepted → sem violation
+func TestValidateREQsNotBlockedByDraftADRs_SemViolação(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	_ = os.MkdirAll(filepath.Join(dir, "docs", "req"), 0755)
+	_ = os.MkdirAll(filepath.Join(dir, "docs", "adr"), 0755)
+
+	// Criar ADR Accepted
+	adrContent := "# ADR: Auth\n\n> Date: 2026-06-12 | Status: Accepted\n\n## Context\n"
+	_ = os.WriteFile(filepath.Join(dir, "docs", "adr", "ADR-2026-06-12-auth.md"), []byte(adrContent), 0644)
+
+	// REQ com ADR Accepted listado na seção (não é Draft — não deve violar)
+	reqContent := "# REQ: Login\n\n> Date: 2026-06-12 | Status: Open | Blocked by ADRs: 1\n\n## Blocked by ADRs\n- ADR-2026-06-12-auth.md (Accepted)\n\n## Linked Roadmap\nRoadmap: \n"
+	_ = os.WriteFile(filepath.Join(dir, "docs", "req", "REQ-2026-06-12-login.md"), []byte(reqContent), 0644)
+
+	violations, err := validateREQsNotBlockedByDraftADRs()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("não esperava violações, encontrou: %v", violations)
+	}
+}
+
+// TestValidateREQsNotBlockedByDraftADRs_Retrocompatível — REQ antiga sem seção "Blocked by ADRs" → sem violation
+func TestValidateREQsNotBlockedByDraftADRs_Retrocompatível(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	_ = os.MkdirAll(filepath.Join(dir, "docs", "req"), 0755)
+
+	// REQ antiga sem seção "Blocked by ADRs"
+	reqContent := "# REQ: Old Feature\n\n> Date: 2026-01-01 | Status: Open\n\n## Motivation\nOld req\n\n## Linked ADR\nADR: \n\n## Linked Roadmap\nRoadmap: \n"
+	_ = os.WriteFile(filepath.Join(dir, "docs", "req", "REQ-2026-01-01-old.md"), []byte(reqContent), 0644)
+
+	violations, err := validateREQsNotBlockedByDraftADRs()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("REQ antiga sem seção Blocked by ADRs não deve gerar violação: %v", violations)
+	}
+}
+
+// TestGetStatus_REQsBloqueadas — REQ Open com ADR Draft aparece na seção ⏳
+func TestGetStatus_REQsBloqueadas(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/req",
+		"docs/adr",
+		"docs/roadmaps/wip",
+		"docs/roadmaps/blocked",
+		"docs/roadmaps/done",
+	)
+	chdir(t, dir)
+
+	// ADR Draft
+	adrContent := "# ADR: Auth\n\n> Date: 2026-06-12 | Status: Draft\n"
+	writeFile(t, dir, "docs/adr/ADR-2026-06-12-auth.md", adrContent)
+
+	// REQ bloqueada (Status: Open + seção ## Blocked by ADRs)
+	reqContent := "# REQ: Login\n\n> Date: 2026-06-12 | Status: Open | Blocked by ADRs: 1\n\n## Blocked by ADRs\n- ADR-2026-06-12-auth.md (Draft)\n\n## Linked Roadmap\nRoadmap: \n"
+	writeFile(t, dir, "docs/req/REQ-2026-06-12-login.md", reqContent)
+
+	output, err := GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus erro: %v", err)
+	}
+	if !strings.Contains(output, "⏳ REQs blocked by Draft ADRs") {
+		t.Error("output não contém seção de REQs bloqueadas")
+	}
+	if !strings.Contains(output, "ADR-2026-06-12-auth.md") {
+		t.Error("output não menciona o ADR bloqueante")
+	}
+}
+
+// TestGetStatus_SemREQsBloqueadas — sem REQs bloqueadas, seção ⏳ não aparece
+func TestGetStatus_SemREQsBloqueadas(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip",
+		"docs/roadmaps/blocked",
+		"docs/roadmaps/done",
+	)
+	chdir(t, dir)
+
+	output, err := GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus erro: %v", err)
+	}
+	if strings.Contains(output, "⏳ REQs blocked") {
+		t.Error("seção de REQs bloqueadas não deve aparecer quando não há bloqueios")
+	}
+}
+
 // TestGetStatus_Empty — diretórios vazios → retorna string de status sem pânico
 func TestGetStatus_Empty(t *testing.T) {
 	dir := t.TempDir()
