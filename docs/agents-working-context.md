@@ -389,3 +389,14 @@ trackfw/
 - Integrada em `GetStatus()` com seção "REQs blocked by Draft ADRs" (adicionada externamente antes da conclusão desta sessão).
 - 3 testes novos: `TestValidateREQsNotBlockedByDraftADRs_Violação`, `_SemViolação`, `_Retrocompatível`.
 - `go build ./...` limpo | todos os testes verdes | commit `36d582b` | push para `feat/req-driven-adr-discovery`.
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-3B do roadmap `feat/req-driven-adr-discovery` — Adicionar seção `⏳ REQs blocked by Draft ADRs` ao `GetStatus()`.
+
+**Entregue:**
+- `internal/validator/validator.go` — função `blockedREQs() (map[string][]string, error)` que reutiliza `parseBlockedADRs` e `adrIsDraft` do ML-3A; seção adicionada em `GetStatus()` entre `❌ Blocked` e `✅ Done`, emitida apenas quando há REQs bloqueadas.
+- `internal/validator/validator_test.go` — 2 novos testes: `TestGetStatus_REQsBloqueadas` (verifica presença da seção e do ADR listado) e `TestGetStatus_SemREQsBloqueadas` (verifica ausência quando não há bloqueios). Padrão de fixture igual ao existente (`t.TempDir()` + `chdir`).
+- `go build ./...` limpo | 12/12 testes verdes | commit `85b0ba1` | push para `feat/req-driven-adr-discovery`.
