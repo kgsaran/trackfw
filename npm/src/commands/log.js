@@ -2,16 +2,17 @@
 const { Command } = require('commander')
 const fs = require('fs')
 const path = require('path')
+const { t } = require('../i18n')
 
 const cmd = new Command('log')
-cmd.description('Show roadmap state transition history')
-cmd.option('--tail <n>', 'Number of recent transitions to show', '20')
+cmd.description(t('log.description'))
+cmd.option('--tail <n>', t('log.tail'), '20')
 cmd.action(async (opts) => {
   const tail = parseInt(opts.tail, 10)
   const logPath = path.join('docs', 'roadmaps', '.trackfw-log')
 
   if (!fs.existsSync(logPath)) {
-    console.log('No transitions recorded yet.')
+    console.log(t('log.empty'))
     return
   }
 
@@ -22,7 +23,7 @@ cmd.action(async (opts) => {
   const start = Math.max(0, lines.length - tail)
   const visible = lines.slice(start)
 
-  console.log('── trackfw log ─────────────────────────')
+  console.log(t('log.header'))
   visible.forEach(l => console.log(l))
 })
 

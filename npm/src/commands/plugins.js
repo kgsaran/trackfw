@@ -3,6 +3,7 @@ const { Command } = require('commander')
 const os = require('os')
 const path = require('path')
 const fs = require('fs')
+const { t } = require('../i18n')
 
 function pluginsDir() {
   return path.join(os.homedir(), '.trackfw', 'plugins')
@@ -40,7 +41,7 @@ async function installPlugin(repo) {
     : `https://github.com/${base}/releases/download/${tag}/${assetName}`
 
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`download failed: HTTP ${res.status} for ${url}`)
+  if (!res.ok) throw new Error(t('errors.downloadFailed', { status: res.status, url }))
 
   const dir = pluginsDir()
   fs.mkdirSync(dir, { recursive: true })
@@ -49,32 +50,32 @@ async function installPlugin(repo) {
 
 function removePlugin(name) {
   const filePath = path.join(pluginsDir(), name)
-  if (!fs.existsSync(filePath)) throw new Error(`plugin "${name}" not found`)
+  if (!fs.existsSync(filePath)) throw new Error(t('errors.pluginNotFound', { name }))
   fs.unlinkSync(filePath)
 }
 
 const cmd = new Command('plugins')
-cmd.description('Manage trackfw plugins')
+cmd.description(t('plugins.description'))
 
 cmd.command('list')
-  .description('List installed plugins')
+  .description(t('plugins.list.description'))
   .action(() => {
     const plugins = listPlugins()
     if (plugins.length === 0) {
-      console.log('No plugins installed. Use `trackfw plugins add <user/repo>` to install one.')
+      console.log(t('plugins.list.empty'))
       return
     }
     plugins.forEach(p => console.log(p))
   })
 
 cmd.command('add <repo>')
-  .description('Install a plugin from GitHub Releases (user/repo or user/repo@tag)')
+  .description(t('plugins.add.description'))
   .action(async (repo) => {
     try {
-      console.log(`Installing plugin from ${repo}...`)
+      console.log(t('plugins.add.installing', { repo }))
       await installPlugin(repo)
       const name = repo.split('@')[0].split('/').pop()
-      console.log(`Plugin "${name}" installed successfully.`)
+      console.log(t('plugins.add.success', { name }))
     } catch (err) {
       console.error(`Error: ${err.message}`)
       process.exit(1)
@@ -82,11 +83,11 @@ cmd.command('add <repo>')
   })
 
 cmd.command('remove <name>')
-  .description('Remove an installed plugin')
+  .description(t('plugins.remove.description'))
   .action((name) => {
     try {
       removePlugin(name)
-      console.log(`Plugin "${name}" removed.`)
+      console.log(t('plugins.remove.success', { name }))
     } catch (err) {
       console.error(`Error: ${err.message}`)
       process.exit(1)

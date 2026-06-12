@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -12,19 +13,19 @@ func newLogCmd() *cobra.Command {
 	var tail int
 	cmd := &cobra.Command{
 		Use:   "log",
-		Short: "Show roadmap state transition history",
+		Short: i18n.T("log.description"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLog(tail)
 		},
 	}
-	cmd.Flags().IntVar(&tail, "tail", 20, "Number of recent transitions to show")
+	cmd.Flags().IntVar(&tail, "tail", 20, i18n.T("log.tail"))
 	return cmd
 }
 
 func runLog(tail int) error {
 	f, err := os.Open("docs/roadmaps/.trackfw-log")
 	if os.IsNotExist(err) {
-		fmt.Println("No transitions recorded yet.")
+		fmt.Println(i18n.T("log.empty"))
 		return nil
 	}
 	if err != nil {

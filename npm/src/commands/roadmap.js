@@ -1,12 +1,13 @@
 'use strict'
 const { Command } = require('commander')
 const { listRoadmaps, showRoadmap, moveRoadmap, newRoadmap } = require('../generators/roadmap')
+const { t } = require('../i18n')
 
 const cmd = new Command('roadmap')
-cmd.description('Manage Roadmaps')
+cmd.description(t('roadmap.description'))
 
 cmd.command('new')
-  .description('Create a new roadmap from a REQ')
+  .description(t('roadmap.new.description'))
   .option('-t, --title <title>', 'Roadmap title')
   .option('-r, --req <path>', 'Path to the linked REQ')
   .action(async (opts) => {
@@ -16,19 +17,19 @@ cmd.command('new')
   })
 
 cmd.command('list')
-  .description('List all roadmaps grouped by state')
+  .description(t('roadmap.list.description'))
   .action(async () => {
     listRoadmaps()
   })
 
 cmd.command('show <name>')
-  .description('Show a roadmap by name (partial match)')
+  .description(t('roadmap.show.description'))
   .action(async (name) => {
     showRoadmap(name)
   })
 
 cmd.command('move <name> <state>')
-  .description('Move a roadmap between states (backlog|wip|blocked|done|abandoned)')
+  .description(t('roadmap.move.description'))
   .action(async (name, state) => {
     moveRoadmap(name, state)
   })

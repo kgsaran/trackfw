@@ -8,13 +8,14 @@ import (
 )
 
 type Config struct {
-	ProjectType string // "fullstack" | "frontend" | "backend" | "governance"
-	ProjectName string
-	Frontend    string
-	Backend     string
-	PkgManager  string
-	Hooks       string
-	CI          string
+	ProjectType      string // "fullstack" | "frontend" | "backend" | "governance"
+	ProjectName      string
+	Frontend         string
+	Backend          string
+	BackendFramework string
+	PkgManager       string
+	Hooks            string
+	CI               string
 }
 
 var govDirs = []string{
@@ -57,6 +58,13 @@ func Scaffold(cfg Config) error {
 
 	if err := generateClaudeCommands(); err != nil {
 		return err
+	}
+
+	if cfg.Backend == "java" {
+		if err := GeneratePomXML(cfg); err != nil {
+			return fmt.Errorf("gerando pom.xml: %w", err)
+		}
+		fmt.Println("  ✓ pom.xml")
 	}
 
 	return nil
@@ -433,10 +441,11 @@ func writeTrackfwConfig(cfg Config) error {
 
 frontend: %s
 backend: %s
+backend_framework: %s
 pkg_manager: %s
 hooks: %s
 ci: %s
-`, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.PkgManager, cfg.Hooks, cfg.CI)
+`, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.BackendFramework, cfg.PkgManager, cfg.Hooks, cfg.CI)
 
 	if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing trackfw.yaml: %w", err)

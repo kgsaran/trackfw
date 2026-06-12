@@ -1,0 +1,51 @@
+{
+  "init": {
+    "description": "Inicializa a governança trackfw no projeto atual",
+    "prompt": {
+      "projectName": "Nome do projeto?",
+      "projectType": "Tipo de projeto?",
+      "frontendStack": "Stack de frontend?",
+      "pkgManager": "Gerenciador de pacotes?",
+      "backendLang": "Linguagem de backend?",
+      "backendFramework": "Framework de backend?",
+      "gitHooks": "Git hooks?",
+      "ci": "Sistema de CI?",
+      "aiTools": "Quais assistentes de IA você usa?"
+    },
+    "success": "\n✓ trackfw inicializado — execute 'trackfw status' para ver o estado de governança."
+  },
+  "adr": {
+    "description": "Gerenciar Architecture Decision Records",
+    "new": { "description": "Criar um novo Architecture Decision Record", "created": "✓ ADR criado: {{path}}" },
+    "list": { "description": "Listar todos os ADRs com status", "empty": "Nenhum ADR encontrado em docs/adr/" }
+  },
+  "req": {
+    "description": "Gerenciar Requisitos",
+    "new": { "description": "Criar um novo requisito", "created": "✓ REQ criado: {{path}}", "adrDraftsCreated": "ADR drafts criados:", "detectedDomains": "Domínios detectados: {{domains}}" },
+    "list": { "description": "Listar todos os REQs com status", "empty": "Nenhum REQ encontrado em docs/req/" }
+  },
+  "roadmap": {
+    "description": "Gerenciar Roadmaps",
+    "new": { "description": "Criar um novo roadmap no backlog", "created": "✓ Roadmap criado: {{path}}" },
+    "list": { "description": "Listar todos os roadmaps agrupados por estado", "empty": "Nenhum roadmap encontrado." },
+    "show": { "description": "Exibir conteúdo de um roadmap", "notFound": "Roadmap não encontrado: {{name}}" },
+    "move": { "description": "Mover um roadmap para um novo estado", "success": "✓ Movido {{name}} → {{state}}" }
+  },
+  "validate": {
+    "description": "Validar regras de governança (use como gate de CI)",
+    "ok": "✓ Nenhuma violação encontrada.",
+    "violations": "{{count}} violação(ões) encontrada(s)",
+    "warnings": "{{count}} aviso(s)"
+  },
+  "status": { "description": "Exibir o estado atual de governança do projeto" },
+  "log": { "description": "Exibir histórico de transições de estado dos roadmaps", "empty": "Nenhuma transição registrada ainda.", "tail": "Exibir as últimas N transições" },
+  "plugins": {
+    "description": "Gerenciar plugins do trackfw",
+    "list": { "description": "Listar plugins instalados", "empty": "Nenhum plugin instalado. Use `trackfw plugins add <user/repo>` para instalar um." },
+    "add": { "description": "Instalar um plugin do GitHub Releases", "installing": "Instalando plugin de {{repo}}...", "success": "Plugin \"{{name}}\" instalado com sucesso." },
+    "remove": { "description": "Remover um plugin instalado", "success": "Plugin \"{{name}}\" removido." }
+  },
+  "errors": {
+    "pluginNotFound": "plugin {{name}} não encontrado"
+  }
+}

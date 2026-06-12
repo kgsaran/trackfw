@@ -5,38 +5,49 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/kgsaran/trackfw/internal/generators"
+	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
 func newInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: "Initialize trackfw governance in the current project",
+		Short: i18n.T("init.description"),
 		RunE:  runInit,
 	}
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
 	var (
-		projectName string
-		projectType string
-		frontend    string
-		backend     string
-		pkgManager  string
-		hooks       string
-		ci          string
-		aiTools     []string
+		projectName      string
+		projectType      string
+		frontend         string
+		backend          string
+		backendFramework string
+		pkgManager       string
+		hooks            string
+		ci               string
+		aiTools          []string
 	)
+
+	titleProjectName := i18n.T("init.prompt.projectName")
+	titleProjectType := i18n.T("init.prompt.projectType")
+	titleFrontendStack := i18n.T("init.prompt.frontendStack")
+	titlePkgManager := i18n.T("init.prompt.pkgManager")
+	titleBackendLang := i18n.T("init.prompt.backendLang")
+	titleGitHooks := i18n.T("init.prompt.gitHooks")
+	titleCI := i18n.T("init.prompt.ci")
+	titleAITools := i18n.T("init.prompt.aiTools")
 
 	form := huh.NewForm(
 		// Grupo 1 — sempre mostrado
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Project name?").
+				Title(titleProjectName).
 				Value(&projectName),
 
 			huh.NewSelect[string]().
-				Title("Project type?").
+				Title(titleProjectType).
 				Options(
 					huh.NewOption("Full-stack (frontend + backend)", "fullstack"),
 					huh.NewOption("Frontend only", "frontend"),
@@ -49,7 +60,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// Grupo 2 — Frontend (oculto se backend ou governance)
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Frontend stack?").
+				Title(titleFrontendStack).
 				Options(
 					huh.NewOption("React / Next.js", "react"),
 					huh.NewOption("Vue", "vue"),
@@ -58,7 +69,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				Value(&frontend),
 
 			huh.NewSelect[string]().
-				Title("Package manager?").
+				Title(titlePkgManager).
 				Options(
 					huh.NewOption("npm", "npm"),
 					huh.NewOption("pnpm", "pnpm"),
@@ -73,7 +84,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// Grupo 3 — Backend (oculto se frontend ou governance)
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Backend stack?").
+				Title(titleBackendLang).
 				Options(
 					huh.NewOption("Go", "go"),
 					huh.NewOption("Java / Spring Boot", "java"),
@@ -88,7 +99,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// Grupo 4 — sempre mostrado
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Git hooks?").
+				Title(titleGitHooks).
 				Options(
 					huh.NewOption("husky", "husky"),
 					huh.NewOption("lefthook", "lefthook"),
@@ -97,7 +108,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				Value(&hooks),
 
 			huh.NewSelect[string]().
-				Title("CI system?").
+				Title(titleCI).
 				Options(
 					huh.NewOption("GitHub Actions", "github-actions"),
 					huh.NewOption("GitLab CI", "gitlab-ci"),
@@ -109,7 +120,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// Grupo 5 — seleção de ferramentas de IA
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
-				Title("Which AI assistants do you use?").
+				Title(titleAITools).
 				Options(
 					huh.NewOption("Claude Code", "claude"),
 					huh.NewOption("Gemini CLI", "gemini"),
@@ -127,14 +138,57 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if backend != "" {
+		frameworkChoices := map[string][]huh.Option[string]{
+			"go": {
+				huh.NewOption("Gin", "gin"),
+				huh.NewOption("Echo", "echo"),
+				huh.NewOption("Fiber", "fiber"),
+				huh.NewOption("Standard library (net/http)", "stdlib"),
+			},
+			"java": {
+				huh.NewOption("Spring Boot", "spring-boot"),
+				huh.NewOption("Quarkus", "quarkus"),
+				huh.NewOption("Micronaut", "micronaut"),
+			},
+			"node": {
+				huh.NewOption("Express", "express"),
+				huh.NewOption("Fastify", "fastify"),
+				huh.NewOption("NestJS", "nestjs"),
+				huh.NewOption("Koa", "koa"),
+			},
+			"python": {
+				huh.NewOption("FastAPI", "fastapi"),
+				huh.NewOption("Django", "django"),
+				huh.NewOption("Flask", "flask"),
+			},
+		}
+		choices := frameworkChoices[backend]
+		if len(choices) > 0 {
+			titleBackendFramework := i18n.T("init.prompt.backendFramework")
+			frameworkForm := huh.NewForm(
+				huh.NewGroup(
+					huh.NewSelect[string]().
+						Title(titleBackendFramework).
+						Options(choices...).
+						Value(&backendFramework),
+				),
+			)
+			if err := frameworkForm.Run(); err != nil {
+				return err
+			}
+		}
+	}
+
 	cfg := generators.Config{
-		ProjectType: projectType,
-		ProjectName: projectName,
-		Frontend:    frontend,
-		Backend:     backend,
-		PkgManager:  pkgManager,
-		Hooks:       hooks,
-		CI:          ci,
+		ProjectType:      projectType,
+		ProjectName:      projectName,
+		Frontend:         frontend,
+		Backend:          backend,
+		BackendFramework: backendFramework,
+		PkgManager:       pkgManager,
+		Hooks:            hooks,
+		CI:               ci,
 	}
 
 	if err := generators.Scaffold(cfg); err != nil {
@@ -170,6 +224,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Println("\n✓ trackfw initialized — run 'trackfw status' to see your governance state.")
+	fmt.Println(i18n.T("init.success"))
 	return nil
 }

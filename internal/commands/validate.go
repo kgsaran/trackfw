@@ -2,15 +2,17 @@ package commands
 
 import (
 	"fmt"
+	"strconv"
 
-	"github.com/spf13/cobra"
+	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/validator"
+	"github.com/spf13/cobra"
 )
 
 func newValidateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "validate",
-		Short: "Check governance consistency (REQ linked, ADR exists, no orphan roadmaps)",
+		Short: i18n.T("validate.description"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			violations, warnings, err := validator.Validate()
 			if err != nil {
@@ -21,16 +23,16 @@ func newValidateCmd() *cobra.Command {
 			}
 			if len(violations) == 0 {
 				if len(warnings) == 0 {
-					fmt.Println("✓ governance is consistent — no violations found.")
+					fmt.Println(i18n.T("validate.ok"))
 				} else {
-					fmt.Printf("✓ no violations — %d warning(s)\n", len(warnings))
+					fmt.Println(i18n.T("validate.warnings", "count", strconv.Itoa(len(warnings))))
 				}
 				return nil
 			}
 			for _, v := range violations {
 				fmt.Printf("✗ %s\n", v)
 			}
-			return fmt.Errorf("%d violation(s) found", len(violations))
+			return fmt.Errorf("%s", i18n.T("validate.violations", "count", strconv.Itoa(len(violations))))
 		},
 	}
 }

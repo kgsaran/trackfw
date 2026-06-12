@@ -1,24 +1,25 @@
 'use strict'
 const { Command } = require('commander')
 const { validate } = require('../validator')
+const { t } = require('../i18n')
 
 const cmd = new Command('validate')
-cmd.description('Validate governance rules')
+cmd.description(t('validate.description'))
 cmd.action(async () => {
   const { violations, warnings } = await validate()
 
   if (violations.length === 0 && warnings.length === 0) {
-    console.log('✓ No violations found.')
+    console.log(t('validate.ok'))
     return
   }
 
   if (violations.length > 0) {
-    console.log(`\n✗ Violations (${violations.length}):`)
+    console.log(`\n${t('validate.violations', { count: violations.length })}`)
     violations.forEach(v => console.log(`  • ${v}`))
   }
 
   if (warnings.length > 0) {
-    console.log(`\n⚠ Warnings (${warnings.length}):`)
+    console.log(`\n${t('validate.warnings', { count: warnings.length })}`)
     warnings.forEach(w => console.log(`  • ${w}`))
   }
 

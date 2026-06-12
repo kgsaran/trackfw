@@ -1,8 +1,9 @@
 'use strict'
 const { Command } = require('commander')
+const { t } = require('../i18n')
 
 const cmd = new Command('init')
-cmd.description('Initialize trackfw governance in the current project')
+cmd.description(t('init.description'))
 cmd.action(async () => {
   const path = require('path')
   const generators = require('../generators/init')
@@ -19,27 +20,27 @@ cmd.action(async () => {
       ci: 'none',
     }
     await generators.scaffold(cfg)
-    console.log("\n✓ trackfw initialized — run 'trackfw status' to see your governance state.")
+    console.log(`\n${t('init.success')}`)
     return
   }
 
   const { input, select, checkbox } = require('@inquirer/prompts')
 
-  let projectName, projectType, frontend, pkgManager, backend, hooks, ci, aiTools
+  let projectName, projectType, frontend, pkgManager, backend, backendFramework, hooks, ci, aiTools
 
   try {
     projectName = await input({
-      message: 'Project name?',
+      message: t('init.prompt.projectName'),
       default: path.basename(process.cwd()),
     })
 
     projectType = await select({
-      message: 'Project type?',
+      message: t('init.prompt.projectType'),
       choices: [
-        { name: 'Full-stack (frontend + backend)', value: 'fullstack' },
-        { name: 'Frontend only', value: 'frontend' },
-        { name: 'Backend only', value: 'backend' },
-        { name: 'Governance only (no build stack)', value: 'governance' },
+        { name: t('init.prompt.projectType_fullstack'), value: 'fullstack' },
+        { name: t('init.prompt.projectType_frontend'), value: 'frontend' },
+        { name: t('init.prompt.projectType_backend'), value: 'backend' },
+        { name: t('init.prompt.projectType_governance'), value: 'governance' },
       ],
     })
 
@@ -47,7 +48,7 @@ cmd.action(async () => {
     pkgManager = ''
     if (projectType === 'fullstack' || projectType === 'frontend') {
       frontend = await select({
-        message: 'Frontend stack?',
+        message: t('init.prompt.frontendStack'),
         choices: [
           { name: 'React / Next.js', value: 'react' },
           { name: 'Vue', value: 'vue' },
@@ -55,7 +56,7 @@ cmd.action(async () => {
         ],
       })
       pkgManager = await select({
-        message: 'Package manager?',
+        message: t('init.prompt.pkgManager'),
         choices: [
           { name: 'npm', value: 'npm' },
           { name: 'pnpm', value: 'pnpm' },
@@ -66,20 +67,50 @@ cmd.action(async () => {
     }
 
     backend = ''
+    let backendFramework = ''
     if (projectType === 'fullstack' || projectType === 'backend') {
       backend = await select({
-        message: 'Backend stack?',
+        message: t('init.prompt.backendLang'),
         choices: [
           { name: 'Go', value: 'go' },
-          { name: 'Java / Spring Boot', value: 'java' },
+          { name: 'Java', value: 'java' },
           { name: 'Node.js', value: 'node' },
           { name: 'Python', value: 'python' },
         ],
       })
+
+      const frameworkChoices = {
+        go: [
+          { name: 'Gin', value: 'gin' },
+          { name: 'Echo', value: 'echo' },
+          { name: 'Fiber', value: 'fiber' },
+          { name: 'Standard library (net/http)', value: 'stdlib' },
+        ],
+        java: [
+          { name: 'Spring Boot', value: 'spring-boot' },
+          { name: 'Quarkus', value: 'quarkus' },
+          { name: 'Micronaut', value: 'micronaut' },
+        ],
+        node: [
+          { name: 'Express', value: 'express' },
+          { name: 'Fastify', value: 'fastify' },
+          { name: 'NestJS', value: 'nestjs' },
+          { name: 'Koa', value: 'koa' },
+        ],
+        python: [
+          { name: 'FastAPI', value: 'fastapi' },
+          { name: 'Django', value: 'django' },
+          { name: 'Flask', value: 'flask' },
+        ],
+      }
+      backendFramework = await select({
+        message: t('init.prompt.backendFramework'),
+        choices: frameworkChoices[backend] || [],
+      })
     }
 
     hooks = await select({
-      message: 'Git hooks?',
+      message: t('init.prompt.gitHooks'),
       choices: [
         { name: 'husky', value: 'husky' },
         { name: 'lefthook', value: 'lefthook' },
@@ -88,7 +119,7 @@ cmd.action(async () => {
     })
 
     ci = await select({
-      message: 'CI system?',
+      message: t('init.prompt.ci'),
       choices: [
         { name: 'GitHub Actions', value: 'github-actions' },
         { name: 'GitLab CI', value: 'gitlab-ci' },
@@ -97,7 +128,7 @@ cmd.action(async () => {
     })
 
     aiTools = await checkbox({
-      message: 'Which AI assistants do you use?',
+      message: t('init.prompt.aiTools'),
       choices: [
         { name: 'Claude Code', value: 'claude' },
         { name: 'Gemini CLI', value: 'gemini' },
@@ -119,11 +150,11 @@ cmd.action(async () => {
       ci: 'none',
     }
     await generators.scaffold(cfg)
-    console.log("\n✓ trackfw initialized — run 'trackfw status' to see your governance state.")
+    console.log(`\n${t('init.success')}`)
     return
   }
 
-  const cfg = { projectName, projectType, frontend, backend, pkgManager, hooks, ci }
+  const cfg = { projectName, projectType, frontend, backend, backendFramework, pkgManager, hooks, ci }
   await generators.scaffold(cfg)
 
   for (const tool of (aiTools || [])) {
@@ -137,7 +168,7 @@ cmd.action(async () => {
     }
   }
 
-  console.log("\n✓ trackfw initialized — run 'trackfw status' to see your governance state.")
+  console.log(`\n${t('init.success')}`)
 })
 
 module.exports = cmd
