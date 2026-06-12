@@ -165,6 +165,79 @@ func TestListADRs_WithFiles(t *testing.T) {
 	}
 }
 
+func TestNewADRDraft_CriaArquivo(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	basename, err := NewADRDraft("authentication-strategy")
+	if err != nil {
+		t.Fatalf("NewADRDraft erro: %v", err)
+	}
+	if basename == "" {
+		t.Fatal("basename vazio")
+	}
+	path := filepath.Join("docs", "adr", basename)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("arquivo não criado: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatal("arquivo vazio")
+	}
+}
+
+func TestNewADRDraft_StatusDraft(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	basename, _ := NewADRDraft("ui-framework")
+	content, err := os.ReadFile(filepath.Join("docs", "adr", basename))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(content), "Status: Draft") {
+		t.Error("arquivo não contém 'Status: Draft'")
+	}
+}
+
+func TestNewADRDraft_Idempotente(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	b1, err1 := NewADRDraft("session-management")
+	b2, err2 := NewADRDraft("session-management")
+	if err1 != nil || err2 != nil {
+		t.Fatalf("erros: %v, %v", err1, err2)
+	}
+	if b1 != b2 {
+		t.Errorf("basenames diferentes: %s vs %s", b1, b2)
+	}
+	// verificar que há apenas um arquivo com esse slug
+	matches, _ := filepath.Glob(filepath.Join("docs", "adr", "*session-management*"))
+	if len(matches) != 1 {
+		t.Errorf("esperava 1 arquivo, encontrou %d", len(matches))
+	}
+}
+
+func TestNewADRDraft_TituloDerivado(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	basename, _ := NewADRDraft("api-protocol")
+	content, _ := os.ReadFile(filepath.Join("docs", "adr", basename))
+	if !strings.Contains(string(content), "# ADR: Api Protocol") {
+		t.Errorf("título esperado 'Api Protocol' não encontrado em:\n%s", string(content))
+	}
+}
+
 // TestListADRs_ParsesMeta — verifica que parseADRMeta extrai título e status corretamente
 func TestListADRs_ParsesMeta(t *testing.T) {
 	dir := t.TempDir()
