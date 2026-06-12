@@ -5,7 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+const staleWIPDays = 7
 
 func Validate() (violations []string, warnings []string, err error) {
 	wipViolations, e := validateWIPHasREQ()
@@ -50,6 +53,12 @@ func Validate() (violations []string, warnings []string, err error) {
 	}
 	warnings = append(warnings, wipWarnings...)
 
+	staleWarnings, e := validateStaleWIP()
+	if e != nil {
+		return nil, nil, e
+	}
+	warnings = append(warnings, staleWarnings...)
+
 	draftBlockedViolations, e := validateREQsNotBlockedByDraftADRs()
 	if e != nil {
 		return nil, nil, e
@@ -76,6 +85,18 @@ func GetStatus() (string, error) {
 	sb.WriteString(fmt.Sprintf("\n❌ Blocked (%d)\n", len(blocked)))
 	for _, f := range blocked {
 		sb.WriteString(fmt.Sprintf("   %s\n", f))
+	}
+
+	// Seção: stale WIP
+	staleWIPs, _ := validateStaleWIP()
+	if len(staleWIPs) > 0 {
+		sb.WriteString(fmt.Sprintf("\n⚠  Stale WIP (%d)\n", len(staleWIPs)))
+		for _, w := range staleWIPs {
+			parts := strings.Fields(w)
+			if len(parts) > 0 {
+				sb.WriteString(fmt.Sprintf("   %s\n", w))
+			}
+		}
 	}
 
 	// Seção: REQs bloqueadas por ADRs Draft
@@ -232,6 +253,29 @@ func validateWIPHasAcceptanceCriteria() ([]string, error) {
 		}
 	}
 	return violations, nil
+}
+
+func validateStaleWIP() ([]string, error) {
+	entries, err := filepath.Glob("docs/roadmaps/wip/*.md")
+	if err != nil {
+		return nil, err
+	}
+	var warnings []string
+	for _, path := range entries {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		age := time.Since(info.ModTime())
+		days := int(age.Hours() / 24)
+		if days >= staleWIPDays {
+			warnings = append(warnings, fmt.Sprintf(
+				"roadmap/wip/%s has been in WIP for %d days (last modified %s)",
+				filepath.Base(path), days, info.ModTime().Format("2006-01-02"),
+			))
+		}
+	}
+	return warnings, nil
 }
 
 func validateSingleWIP() ([]string, error) {

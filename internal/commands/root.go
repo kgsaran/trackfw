@@ -32,7 +32,17 @@ func Execute() {
 		newStatusCmd(),
 		newValidateCmd(),
 		newVersionCmd(),
+		newLogCmd(),
+		newPluginsCmd(),
 	)
+
+	rootCmd.Args = cobra.ArbitraryArgs
+	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return RunPlugin(args[0], args[1:])
+		}
+		return cmd.Help()
+	}
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
