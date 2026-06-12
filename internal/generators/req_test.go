@@ -166,6 +166,85 @@ func TestListREQs_WithFiles(t *testing.T) {
 	}
 }
 
+// TestNewREQ_ComADRsVinculados — seção Blocked by ADRs listada quando DependsOnADRs preenchido
+func TestNewREQ_ComADRsVinculados(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	content := REQContent{
+		Title:         "Login Screen",
+		DependsOnADRs: []string{"ADR-2026-06-12-authentication-strategy.md", "ADR-2026-06-12-ui-framework.md"},
+	}
+	if err := NewREQ(content); err != nil {
+		t.Fatalf("NewREQ erro: %v", err)
+	}
+
+	matches, _ := filepath.Glob(filepath.Join("docs", "req", "*.md"))
+	if len(matches) == 0 {
+		t.Fatal("nenhum arquivo REQ criado")
+	}
+	data, _ := os.ReadFile(matches[0])
+	body := string(data)
+
+	if !strings.Contains(body, "## Blocked by ADRs") {
+		t.Error("seção '## Blocked by ADRs' ausente")
+	}
+	if !strings.Contains(body, "ADR-2026-06-12-authentication-strategy.md (Draft)") {
+		t.Error("ADR authentication-strategy não listado")
+	}
+	if !strings.Contains(body, "ADR-2026-06-12-ui-framework.md (Draft)") {
+		t.Error("ADR ui-framework não listado")
+	}
+}
+
+// TestNewREQ_SemADRsVinculados — seção Blocked by ADRs com placeholder quando DependsOnADRs vazio
+func TestNewREQ_SemADRsVinculados(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	content := REQContent{Title: "Simple Feature"}
+	if err := NewREQ(content); err != nil {
+		t.Fatalf("NewREQ erro: %v", err)
+	}
+
+	matches, _ := filepath.Glob(filepath.Join("docs", "req", "*.md"))
+	data, _ := os.ReadFile(matches[0])
+	body := string(data)
+
+	if !strings.Contains(body, "## Blocked by ADRs") {
+		t.Error("seção '## Blocked by ADRs' deve existir mesmo sem ADRs")
+	}
+	if !strings.Contains(body, "<!-- none -->") {
+		t.Error("placeholder '<!-- none -->' ausente")
+	}
+}
+
+// TestNewREQ_ContadorNoStatus — cabeçalho exibe contador de ADRs bloqueantes
+func TestNewREQ_ContadorNoStatus(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	content := REQContent{
+		Title:         "Auth Feature",
+		DependsOnADRs: []string{"ADR-x.md", "ADR-y.md"},
+	}
+	_ = NewREQ(content)
+
+	matches, _ := filepath.Glob(filepath.Join("docs", "req", "*.md"))
+	data, _ := os.ReadFile(matches[0])
+	body := string(data)
+
+	if !strings.Contains(body, "Blocked by ADRs: 2") {
+		t.Errorf("esperava 'Blocked by ADRs: 2' no header, obteve:\n%s", body)
+	}
+}
+
 // TestListREQs_ParsesMeta — parseREQMeta extrai título e status corretamente
 func TestListREQs_ParsesMeta(t *testing.T) {
 	dir := t.TempDir()
