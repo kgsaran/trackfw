@@ -79,11 +79,13 @@ brew install kgsaran/tap/trackfw
 go install github.com/kgsaran/trackfw/cmd/trackfw@latest
 ```
 
-### npm
+### npm (pure Node.js — no binary)
 
 ```bash
 npm install -g trackfw
 ```
+
+The npm package is pure Node.js — no compiled binary, no postinstall download. Works everywhere Node.js ≥ 18 is installed, including corporate Windows environments where unsigned `.exe` files are blocked by antivirus.
 
 ### pip
 
@@ -127,17 +129,24 @@ trackfw status
 | `trackfw req new "title"` | Create a REQ with guided ADR discovery |
 | `trackfw req list` | List all REQs with status |
 | `trackfw roadmap new "title"` | Create a roadmap in `backlog/` |
+| `trackfw roadmap show <name>` | Print a roadmap with its current state |
 | `trackfw roadmap move <name> <state>` | Move roadmap between states |
 | `trackfw roadmap list` | List all roadmaps grouped by state |
 | `trackfw validate` | Check governance consistency (use as CI gate) |
 | `trackfw status` | Show wip, blocked, REQs waiting on ADRs |
-| `trackfw agents` | Install Claude Code subagents |
-| `trackfw gemini` | Install Gemini CLI skills and commands |
-| `trackfw cursor` | Install Cursor rules |
-| `trackfw copilot` | Install GitHub Copilot instructions |
-| `trackfw windsurf` | Install Windsurf rules and workflows |
-| `trackfw amazonq` | Install Amazon Q Developer rules |
+| `trackfw log [--tail N]` | Show roadmap state transition history |
+| `trackfw plugins list` | List installed plugins |
+| `trackfw plugins add <user/repo>` | Install a plugin from GitHub Releases |
+| `trackfw plugins remove <name>` | Remove an installed plugin |
+| `trackfw agents` | Install Claude Code subagents *(Go binary only)* |
+| `trackfw gemini` | Install Gemini CLI skills and commands *(Go binary only)* |
+| `trackfw cursor` | Install Cursor rules *(Go binary only)* |
+| `trackfw copilot` | Install GitHub Copilot instructions *(Go binary only)* |
+| `trackfw windsurf` | Install Windsurf rules and workflows *(Go binary only)* |
+| `trackfw amazonq` | Install Amazon Q Developer rules *(Go binary only)* |
 | `trackfw version` | Print version |
+
+> **Go binary only** commands (`agents`, `gemini`, `cursor`, `copilot`, `windsurf`, `amazonq`) are available when installed via brew, `install.sh`, or `go install`. When using the npm package, AI integrations are installed through `trackfw init`.
 
 ---
 
@@ -227,7 +236,7 @@ $ trackfw status
 
 ## AI assistant integration
 
-`trackfw init` asks which AI tools your team uses and installs native governance context for each. Commands can also be run independently.
+`trackfw init` asks which AI tools your team uses and installs native governance context for each. When using the Go binary (brew, `install.sh`, `go install`), each integration can also be run as a standalone command.
 
 | Command | Installs | Format |
 |---|---|---|
