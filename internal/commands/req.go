@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
@@ -59,7 +58,8 @@ func runReqNew(_ *cobra.Command, args []string) error {
 	intention := content.Title + " " + content.Motivation
 	detectedProbes := generators.DetectDomains(intention)
 
-	// Construir grupos do Form 2
+	// Construir grupos do Form 2 — sem campos manuais de ADR/roadmap:
+	// os vínculos com ADRs são estabelecidos automaticamente pelo probe discovery abaixo.
 	groups := []*huh.Group{
 		huh.NewGroup(
 			huh.NewInput().
@@ -67,58 +67,6 @@ func runReqNew(_ *cobra.Command, args []string) error {
 				Description("List acceptance criteria, one per line").
 				Value(&content.Criteria),
 		),
-	}
-
-	// Linked ADR — select se existirem ADRs, input se não
-	adrFiles, _ := filepath.Glob("docs/adr/*.md")
-	if len(adrFiles) > 0 {
-		adrOpts := []huh.Option[string]{huh.NewOption("None", "")}
-		for _, f := range adrFiles {
-			base := filepath.Base(f)
-			adrOpts = append(adrOpts, huh.NewOption(base, base))
-		}
-		groups = append(groups, huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Linked ADR").
-				Description("Select an existing ADR to link (or None)").
-				Options(adrOpts...).
-				Value(&content.LinkedADR),
-		))
-	} else {
-		groups = append(groups, huh.NewGroup(
-			huh.NewInput().
-				Title("Linked ADR").
-				Description("ADR filename or slug (leave blank if none)").
-				Value(&content.LinkedADR),
-		))
-	}
-
-	// Linked Roadmap — select se existirem roadmaps, input se não
-	var roadmapFiles []string
-	for _, state := range []string{"backlog", "wip", "blocked", "done"} {
-		matches, _ := filepath.Glob(filepath.Join("docs/roadmaps", state, "*.md"))
-		roadmapFiles = append(roadmapFiles, matches...)
-	}
-	if len(roadmapFiles) > 0 {
-		rmOpts := []huh.Option[string]{huh.NewOption("None", "")}
-		for _, f := range roadmapFiles {
-			base := filepath.Base(f)
-			rmOpts = append(rmOpts, huh.NewOption(base, base))
-		}
-		groups = append(groups, huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Linked Roadmap").
-				Description("Select an existing roadmap to link (or None)").
-				Options(rmOpts...).
-				Value(&content.LinkedRoadmap),
-		))
-	} else {
-		groups = append(groups, huh.NewGroup(
-			huh.NewInput().
-				Title("Linked Roadmap").
-				Description("Roadmap filename or slug (leave blank if none)").
-				Value(&content.LinkedRoadmap),
-		))
 	}
 
 	// Slice de respostas — indexada para evitar bug de closure
