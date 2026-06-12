@@ -7,7 +7,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const child_process = require('child_process');
-const zlib = require('zlib');
 
 // ---------------------------------------------------------------------------
 // Mapeamento de plataforma e arquitetura
@@ -28,9 +27,7 @@ const platform = PLATFORM_MAP[process.platform];
 const arch = ARCH_MAP[process.arch];
 
 if (!platform || !arch) {
-  console.warn(
-    'trackfw: plataforma não suportada, pulando instalação do binário'
-  );
+  console.warn('trackfw: plataforma não suportada, pulando instalação do binário');
   process.exit(0);
 }
 
@@ -58,7 +55,6 @@ const binDir = path.join(__dirname, '..', 'bin');
 const binName = isWindows ? 'trackfw-bin.exe' : 'trackfw-bin';
 const binDest = path.join(binDir, binName);
 
-// Garantir que o diretório bin existe
 if (!fs.existsSync(binDir)) {
   fs.mkdirSync(binDir, { recursive: true });
 }
@@ -67,12 +63,6 @@ if (!fs.existsSync(binDir)) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Baixa uma URL para um arquivo local, seguindo redirects 301/302.
- * @param {string} url
- * @param {string} destFile
- * @returns {Promise<void>}
- */
 function download(url, destFile) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(destFile);
@@ -81,23 +71,30 @@ function download(url, destFile) {
       https
         .get(currentUrl, (res) => {
           if (res.statusCode === 301 || res.statusCode === 302) {
-            // Seguir redirect
             const location = res.headers['location'];
             if (!location) {
               reject(new Error('Redirect sem Location header'));
               return;
             }
-            res.resume(); // descartar body
-            get(location);
+            res.resume();
+            // reabrir o arquivo para a requisição seguinte não acumular lixo
+            file.close(() => {
+              const file2 = fs.createWriteStream(destFile);
+              file2.on('finish', () => file2.close(resolve));
+              file2.on('error', (err) => { fs.unlink(destFile, () => {}); reject(err); });
+              https.get(location, (res2) => {
+                if (res2.statusCode !== 200) {
+                  reject(new Error(`Falha ao baixar ${location}: HTTP ${res2.statusCode}`));
+                  return;
+                }
+                res2.pipe(file2);
+              }).on('error', (err) => { fs.unlink(destFile, () => {}); reject(err); });
+            });
             return;
           }
 
           if (res.statusCode !== 200) {
-            reject(
-              new Error(
-                `Falha ao baixar ${currentUrl}: HTTP ${res.statusCode}`
-              )
-            );
+            reject(new Error(`Falha ao baixar ${currentUrl}: HTTP ${res.statusCode}`));
             return;
           }
 
@@ -118,42 +115,45 @@ function download(url, destFile) {
   });
 }
 
-/**
- * Extrai um arquivo .tar.gz ou .zip para um diretório.
- * @param {string} archiveFile caminho do arquivo baixado
- * @param {string} destDir diretório de destino da extração
- */
 function extract(archiveFile, destDir) {
   if (isWindows) {
     child_process.execSync(
-      `powershell -command "Expand-Archive -Path '${archiveFile}' -DestinationPath '${destDir}' -Force"`,
-      { stdio: 'inherit' }
+      `powershell -NoProfile -Command "Expand-Archive -LiteralPath '${archiveFile}' -DestinationPath '${destDir}' -Force"`,
+      { stdio: 'pipe' }
     );
   } else {
     child_process.execSync(
       `tar -xzf "${archiveFile}" -C "${destDir}"`,
-      { stdio: 'inherit' }
+      { stdio: 'pipe' }
     );
   }
 }
 
-/**
- * Remove um arquivo ou diretório silenciosamente.
- * @param {string} target
- */
+// Busca recursiva pelo binário em qualquer subdiretório após extração
+function findBinary(dir, name) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const found = findBinary(full, name);
+      if (found) return found;
+    } else if (entry.name === name) {
+      return full;
+    }
+  }
+  return null;
+}
+
 function cleanup(target) {
   try {
     if (!fs.existsSync(target)) return;
     const stat = fs.statSync(target);
     if (stat.isDirectory()) {
-      // Node 14 não tem rm({recursive}) confiável em todas as versões; usar rmdir
-      fs.rmdirSync(target, { recursive: true });
+      fs.rmSync(target, { recursive: true, force: true });
     } else {
       fs.unlinkSync(target);
     }
-  } catch (_) {
-    // Limpeza é best-effort — não falhar por causa disso
-  }
+  } catch (_) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -170,16 +170,29 @@ async function main() {
 
     await download(downloadUrl, tmpFile);
 
+    const fileSize = fs.statSync(tmpFile).size;
+    if (fileSize < 1000) {
+      throw new Error(`Arquivo baixado suspeito (${fileSize} bytes) — verifique a conexão ou se a versão v${version} foi publicada no GitHub`);
+    }
+
     console.log('trackfw: extraindo arquivo...');
     extract(tmpFile, tmpDir);
 
-    // GoReleaser extrai o binário com o nome original ("trackfw" / "trackfw.exe")
     const extractedBinName = isWindows ? 'trackfw.exe' : 'trackfw';
-    const extractedBin = path.join(tmpDir, extractedBinName);
+    const extractedBin = findBinary(tmpDir, extractedBinName);
 
-    if (!fs.existsSync(extractedBin)) {
+    if (!extractedBin) {
+      const files = [];
+      function listAll(d) {
+        for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+          const p = path.join(d, e.name);
+          files.push(p);
+          if (e.isDirectory()) listAll(p);
+        }
+      }
+      listAll(tmpDir);
       throw new Error(
-        `Binário não encontrado após extração: ${extractedBin}`
+        `Binário "${extractedBinName}" não encontrado após extração.\nArquivos encontrados:\n${files.join('\n')}`
       );
     }
 
@@ -189,7 +202,7 @@ async function main() {
       fs.chmodSync(binDest, 0o755);
     }
 
-    console.log('trackfw: binário instalado com sucesso');
+    console.log('trackfw: binário instalado com sucesso em ' + binDest);
   } finally {
     cleanup(tmpFile);
     cleanup(tmpDir);
@@ -197,7 +210,12 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('trackfw: erro ao instalar binário:', err.message);
-  // Sair com 0 para não bloquear CIs que não precisam do binário pré-instalado
+  console.error('\ntrackfw: ERRO ao instalar binário:');
+  console.error('  ' + err.message);
+  console.error('\nAlternativas de instalação:');
+  console.error('  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh');
+  console.error('  brew install kgsaran/tap/trackfw  (macOS/Linux)');
+  console.error('  go install github.com/kgsaran/trackfw/cmd/trackfw@latest\n');
+  // Sair com 0 para não bloquear npm install em CIs sem acesso ao GitHub
   process.exit(0);
 });
