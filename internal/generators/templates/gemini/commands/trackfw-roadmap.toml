@@ -1,0 +1,16 @@
+description = "Criar um novo roadmap em microlotes baseado em uma REQ existente"
+prompt = """
+Crie um roadmap em microlotes seguindo a governança trackfw.
+
+Estrutura obrigatória de cada ML:
+- **Status**: ⬜ Pendente / 🔄 Em andamento / ✅ Concluído / ❌ Bloqueado
+- **Arquivos afetados**: lista exata
+- **Ações**: lista detalhada com valores, chaves, comandos
+- **Critérios de aceite**: condições mensuráveis (build, testes, gate)
+- **Comandos de validação**: comandos exatos para verificar o ML
+
+Salve em `docs/roadmaps/<area>/backlog/roadmap-<descricao>-<YYYY-MM-DD>.md`.
+Mova para `wip/` ao iniciar a implementação.
+
+{{args}}
+"""

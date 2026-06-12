@@ -300,3 +300,23 @@ trackfw/
 ├── go.sum
 └── .gitignore
 ```
+
+---
+
+## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-1A — Criar templates Gemini CLI: GEMINI.md global, GEMINI-project.md, 10 SKILL.md (architect/backend/frontend/qa/infra/security/code-quality/dba/ux/data), 3 commands TOML (trackfw-adr/req/roadmap).
+
+---
+
+## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-1C — Criar templates GitHub Copilot: 1 `copilot-instructions.md` consolidado + 10 `.instructions.md` + 10 `.prompt.md` = 21 arquivos.
+
+---
+
+## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-1D e ML-1E — Criar templates Windsurf (10 rules + 3 workflows + 1 global_rules_append = 14 arquivos) e Amazon Q (10 rules = 10 arquivos). Total: 24 arquivos.
+
+**Destino:** `internal/generators/templates/copilot/`
