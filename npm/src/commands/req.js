@@ -1,12 +1,13 @@
 'use strict'
 const { Command } = require('commander')
 const { listREQs } = require('../generators/req')
+const { t } = require('../i18n')
 
 const cmd = new Command('req')
-cmd.description('Manage Requirements')
+cmd.description(t('req.description'))
 
 cmd.command('new <title>')
-  .description('Create a new REQ')
+  .description(t('req.new.description'))
   .action(async (title) => {
     const { input, select } = require('@inquirer/prompts')
     const generators = require('../generators/req')
@@ -16,14 +17,14 @@ cmd.command('new <title>')
 
     if (process.stdin.isTTY) {
       // Form 1 — título + motivação
-      content.title = await input({ message: 'Project requirement', default: title })
-      content.motivation = await input({ message: 'Motivation (why is this needed?)', default: '' })
+      content.title = await input({ message: t('req.new.prompt.title'), default: title })
+      content.motivation = await input({ message: t('req.new.prompt.motivation'), default: '' })
 
       // Detectar domínios com base em título + motivação
       const probes = generators.detectDomains(content.title + ' ' + content.motivation)
 
       // Form 2 — critérios de aceite
-      content.criteria = await input({ message: 'Acceptance Criteria (one per line)', default: '- [ ]\n- [ ]' })
+      content.criteria = await input({ message: t('req.new.prompt.criteria'), default: '- [ ]\n- [ ]' })
 
       // Perguntas dinâmicas por probe
       const generatedADRs = []
@@ -42,7 +43,7 @@ cmd.command('new <title>')
               const basename = await adrGenerators.newADRDraft(answer)
               if (basename) generatedADRs.push(basename)
             } catch (e) {
-              console.warn(`warning: could not create ADR draft for ${answer}: ${e.message}`)
+              console.warn(t('req.new.adrWarning', { slug: answer, message: e.message }))
             }
           }
         }
@@ -54,14 +55,14 @@ cmd.command('new <title>')
     await generators.newREQ(content)
 
     if (content.dependsOnADRs.length > 0) {
-      console.log('\nADR drafts created:')
+      console.log(`\n${t('req.new.adrDraftsCreated')}`)
       content.dependsOnADRs.forEach(adr => console.log(`  -> ${adr}`))
-      console.log('\nResolve these ADRs (set Status: Accepted) before creating a roadmap.')
+      console.log(`\n${t('req.new.resolveADRs')}`)
     }
   })
 
 cmd.command('list')
-  .description('List all REQs in docs/req/')
+  .description(t('req.list.description'))
   .action(async () => {
     listREQs('docs/req')
   })

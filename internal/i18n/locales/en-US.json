@@ -1,0 +1,51 @@
+{
+  "init": {
+    "description": "Initialize trackfw governance in the current project",
+    "prompt": {
+      "projectName": "Project name?",
+      "projectType": "Project type?",
+      "frontendStack": "Frontend stack?",
+      "pkgManager": "Package manager?",
+      "backendLang": "Backend language?",
+      "backendFramework": "Backend framework?",
+      "gitHooks": "Git hooks?",
+      "ci": "CI system?",
+      "aiTools": "Which AI assistants do you use?"
+    },
+    "success": "\n✓ trackfw initialized — run 'trackfw status' to see your governance state."
+  },
+  "adr": {
+    "description": "Manage Architecture Decision Records",
+    "new": { "description": "Create a new Architecture Decision Record", "created": "✓ ADR created: {{path}}" },
+    "list": { "description": "List all ADRs with status", "empty": "No ADRs found in docs/adr/" }
+  },
+  "req": {
+    "description": "Manage Requirements",
+    "new": { "description": "Create a new requirement", "created": "✓ REQ created: {{path}}", "adrDraftsCreated": "ADR drafts created:", "detectedDomains": "Detected domains: {{domains}}" },
+    "list": { "description": "List all REQs with status", "empty": "No REQs found in docs/req/" }
+  },
+  "roadmap": {
+    "description": "Manage Roadmaps",
+    "new": { "description": "Create a new roadmap in backlog", "created": "✓ Roadmap created: {{path}}" },
+    "list": { "description": "List all roadmaps grouped by state", "empty": "No roadmaps found." },
+    "show": { "description": "Show a roadmap content", "notFound": "Roadmap not found: {{name}}" },
+    "move": { "description": "Move a roadmap to a new state", "success": "✓ Moved {{name}} → {{state}}" }
+  },
+  "validate": {
+    "description": "Validate governance rules (use as CI gate)",
+    "ok": "✓ No violations found.",
+    "violations": "{{count}} violation(s) found",
+    "warnings": "{{count}} warning(s)"
+  },
+  "status": { "description": "Show project governance status" },
+  "log": { "description": "Show roadmap state transition history", "empty": "No transitions recorded yet.", "tail": "Show last N transitions" },
+  "plugins": {
+    "description": "Manage trackfw plugins",
+    "list": { "description": "List installed plugins", "empty": "No plugins installed. Use `trackfw plugins add <user/repo>` to install one." },
+    "add": { "description": "Install a plugin from GitHub Releases", "installing": "Installing plugin from {{repo}}...", "success": "Plugin \"{{name}}\" installed successfully." },
+    "remove": { "description": "Remove an installed plugin", "success": "Plugin \"{{name}}\" removed." }
+  },
+  "errors": {
+    "pluginNotFound": "plugin {{name}} not found"
+  }
+}

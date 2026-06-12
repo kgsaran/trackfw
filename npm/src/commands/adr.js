@@ -3,26 +3,27 @@
 const { Command } = require('commander')
 const { input } = require('@inquirer/prompts')
 const generators = require('../generators/adr')
+const { t } = require('../i18n')
 
 const cmd = new Command('adr')
-cmd.description('Manage Architecture Decision Records')
+cmd.description(t('adr.description'))
 
 cmd.command('new <title>')
-  .description('Create a new ADR')
+  .description(t('adr.new.description'))
   .action(async (title) => {
     const content = { title }
     // wizard interativo se TTY
     if (process.stdin.isTTY) {
-      content.context = await input({ message: 'Context (what motivates this decision)?', default: '' })
-      content.decision = await input({ message: 'Decision (what was decided)?', default: '' })
-      content.consequences = await input({ message: 'Consequences (positive and negative)?', default: '' })
-      content.alternatives = await input({ message: 'Alternatives considered?', default: '' })
+      content.context = await input({ message: t('adr.new.prompt.context'), default: '' })
+      content.decision = await input({ message: t('adr.new.prompt.decision'), default: '' })
+      content.consequences = await input({ message: t('adr.new.prompt.consequences'), default: '' })
+      content.alternatives = await input({ message: t('adr.new.prompt.alternatives'), default: '' })
     }
     await generators.newADR(content)
   })
 
 cmd.command('list')
-  .description('List all ADRs in docs/adr/')
+  .description(t('adr.list.description'))
   .action(async () => {
     await generators.listADRs('docs/adr')
   })
