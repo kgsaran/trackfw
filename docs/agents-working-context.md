@@ -373,3 +373,9 @@ trackfw/
 - Helper `uniqueStrings` adicionado no mesmo arquivo.
 - Em modo não-TTY (CI): fluxo direto sem wizard/probes — comportamento inalterado.
 - `go build ./...` limpo.
+
+---
+
+## Sessão 2026-06-12 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-3A do roadmap `feat/req-driven-adr-discovery` — Adicionar regra de validação em `internal/validator/validator.go` que detecta REQs Open bloqueadas por ADRs com Status: Draft.
