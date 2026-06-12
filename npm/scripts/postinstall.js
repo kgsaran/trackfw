@@ -3,6 +3,7 @@
 'use strict';
 
 const https = require('https');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -31,17 +32,20 @@ const pkgPath = path.join(__dirname, '..', 'package.json');
 const { version } = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 
 // ---------------------------------------------------------------------------
-// URL — todos os sistemas recebem .tar.gz (Windows 10+ tem tar nativo)
+// URL de download
+// TRACKFW_BINARY_URL permite override para redes corporativas / mirrors internos.
+// Exemplo: TRACKFW_BINARY_URL=https://mirror.empresa.com/trackfw/v1.0.3/trackfw_1.0.3_windows_amd64.tar.gz
 // ---------------------------------------------------------------------------
 
+const isWindows = process.platform === 'win32';
 const archiveName = `trackfw_${version}_${platform}_${arch}.tar.gz`;
-const downloadUrl = `https://github.com/kgsaran/trackfw/releases/download/v${version}/${archiveName}`;
+const defaultUrl = `https://github.com/kgsaran/trackfw/releases/download/v${version}/${archiveName}`;
+const downloadUrl = process.env.TRACKFW_BINARY_URL || defaultUrl;
 
 // ---------------------------------------------------------------------------
 // Destino
 // ---------------------------------------------------------------------------
 
-const isWindows = process.platform === 'win32';
 const binDir = path.join(__dirname, '..', 'bin');
 const binName = isWindows ? 'trackfw-bin.exe' : 'trackfw-bin';
 const binDest = path.join(binDir, binName);
@@ -51,14 +55,15 @@ if (!fs.existsSync(binDir)) {
 }
 
 // ---------------------------------------------------------------------------
-// Download com suporte a redirect
+// Download com suporte a redirect e http/https
 // ---------------------------------------------------------------------------
 
 function download(url, destFile) {
   return new Promise((resolve, reject) => {
     function get(currentUrl, attempt) {
       if (attempt > 5) { reject(new Error('Muitos redirects')); return; }
-      https.get(currentUrl, (res) => {
+      const client = currentUrl.startsWith('https') ? https : http;
+      client.get(currentUrl, (res) => {
         if (res.statusCode === 301 || res.statusCode === 302) {
           res.resume();
           get(res.headers['location'], attempt + 1);
@@ -100,6 +105,26 @@ function cleanup(target) {
 }
 
 // ---------------------------------------------------------------------------
+// Instruções de instalação manual (exibidas em caso de falha)
+// ---------------------------------------------------------------------------
+
+function printManualInstructions() {
+  const releaseUrl = `https://github.com/kgsaran/trackfw/releases/download/v${version}/${archiveName}`;
+  console.error('\n─── Instalação manual ──────────────────────────────────────────');
+  console.error(`1. Baixe o binário: ${releaseUrl}`);
+  console.error(`2. Extraia e copie o executável para:`);
+  console.error(`     ${binDest}`);
+  if (isWindows) {
+    console.error('\nOu use o install script via WSL/Git Bash:');
+    console.error('  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh');
+  }
+  console.error('\nRede corporativa? Defina TRACKFW_BINARY_URL apontando para um mirror:');
+  console.error(`  $env:TRACKFW_BINARY_URL="https://seu-mirror/${archiveName}"`);
+  console.error(`  npm install -g trackfw`);
+  console.error('────────────────────────────────────────────────────────────────\n');
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -115,7 +140,7 @@ async function main() {
 
     const fileSize = fs.statSync(tmpFile).size;
     if (fileSize < 1000) {
-      throw new Error(`Arquivo baixado inválido (${fileSize} bytes) — release v${version} pode não ter sido publicado ainda`);
+      throw new Error(`Arquivo baixado inválido (${fileSize} bytes)`);
     }
 
     console.log('trackfw: extraindo arquivo...');
@@ -126,10 +151,7 @@ async function main() {
     const extractedBin = findBinary(tmpDir, extractedBinName);
 
     if (!extractedBin) {
-      const files = [];
-      const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); files.push(p); if (e.isDirectory()) walk(p); } };
-      walk(tmpDir);
-      throw new Error(`Binário "${extractedBinName}" não encontrado após extração.\nConteúdo extraído:\n${files.join('\n')}`);
+      throw new Error(`Binário "${extractedBinName}" não encontrado após extração`);
     }
 
     fs.copyFileSync(extractedBin, binDest);
@@ -143,11 +165,8 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('\ntrackfw: ERRO ao instalar binário:');
-  console.error('  ' + err.message);
-  console.error('\nAlternativas:');
-  console.error('  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh');
-  console.error('  brew install kgsaran/tap/trackfw');
-  console.error('  go install github.com/kgsaran/trackfw/cmd/trackfw@latest\n');
+  console.error('\ntrackfw: ERRO ao instalar binário — ' + err.message);
+  printManualInstructions();
+  // Sai com 0 para não bloquear pipelines de CI que não precisam do binário
   process.exit(0);
 });
