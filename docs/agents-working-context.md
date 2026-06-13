@@ -1535,4 +1535,20 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `npm/src/validator/index.js`: importa `checkTraceIds` e integra em `validateUnfiltered()` com guard `if (cfg.traceIdField)`
 - `npm/tests/traceid.test.js`: 6 testes com mkdtempSync cobrindo todos os cenários
 
+---
+
+## Sessão 2026-06-13 — Backend (IMPLEMENTANDO)
+
+**Tarefa:** ML-1C do roadmap v2.5.1 — popular `rule` e `file` no `--json` + adicionar `trace_id_field` e `rules.traceid_*` ao `trackfw help` no CLI Python.
+
+**Branch:** `fix/v2.5.1-json-rule-file-help-traceid`
+
+**Arquivos modificados:**
+- `pypi/trackfw/validator.py`: adicionado `import re`; funções `_extract_file(msg)` e `_enrich_items(items, rule_name)` novas; `_apply_rule` passa por `_enrich_items` antes de distribuir; regras sem `_apply_rule` (diretas) também enriquecidas via `_enrich_items` em `validate_unfiltered`.
+- `pypi/trackfw/commands/help_cmd.py`: adicionadas entradas `trace_id_field` + 5 regras `rules.traceid_*` ao `CONFIG_DOCS`.
+- `pypi/tests/test_validate_json.py`: novo teste `test_json_violations_tem_campos_rule_e_file` verifica que `rule` e `file` são preenchidos.
+- `pypi/tests/test_help.py`: 4 novos testes para `trace_id_field` e `rules.traceid_*`.
+
+**Resultado:** 230/230 testes verdes | Sem regressões
+
 **Resultado:** 6/6 traceid.test.js verdes | 12/12 config.test.js sem regressões | 12/12 validate_json.test.js sem regressões
