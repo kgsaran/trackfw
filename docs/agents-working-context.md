@@ -743,13 +743,17 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-3A (CONCLUÍDO)
 
 **Tarefa:** ML-3A do roadmap `trackfw-ai-agent-rail` — JSON Schema para ADR/REQ/ROADMAP + `validateFrontmatterPresence` em Go e npm.
 
 **Branch:** `feat/v2.3-ai-agent-rail`
 
-**Ações em andamento:**
-- Criando `docs/schema/adr.schema.json`, `req.schema.json`, `roadmap.schema.json`
-- Adicionando `extractFrontmatterField` e `validateFrontmatterPresence` em `internal/validator/validator.go`
-- Adicionando `validateFrontmatterPresence` em `npm/src/validator/index.js`
+**Entregue:**
+- `docs/schema/adr.schema.json` — JSON Schema Draft-07; `required: ["status", "date"]`; `status` enum `["Draft","Proposed","Accepted","Deprecated","Superseded"]`; `date` pattern `^[0-9]{4}-[0-9]{2}-[0-9]{2}$`; campos opcionais `author`, `superseded_by`.
+- `docs/schema/req.schema.json` — JSON Schema Draft-07; `required: ["status", "date"]`; `status` enum `["Open","Closed","Blocked"]`; campos opcionais `author`, `adr`, `roadmap`.
+- `docs/schema/roadmap.schema.json` — JSON Schema Draft-07; `required: ["status", "date"]`; `status` enum `["backlog","wip","blocked","done","abandoned"]`; campos opcionais `req`, `squad`.
+- `internal/validator/validator.go` — `extractFrontmatterField(content, field)` + `validateFrontmatterPresence()`: verifica ADRs e REQs sem bloco `---` de frontmatter; registrada em `Validate()` após `validateREQsNotBlockedByDraftADRs`.
+- `npm/src/validator/index.js` — `validateFrontmatterPresence()` portada em Node.js puro; integrada em `validate()` e exportada em `module.exports`.
+
+**Resultado:** `go build ./...` limpo | `go test ./...` 100% verde | `node --check npm/src/validator/index.js` OK | commit `f7ab22c` | push para `feat/v2.3-ai-agent-rail`.
