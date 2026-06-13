@@ -1353,3 +1353,34 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `pypi/tests/test_config.py` — classe `TestConfigPaths` adicionada com 4 testes: `test_config_adr_dirs_list`, `test_config_req_dir_custom` (UTF-8), `test_config_roadmap_dir_custom`, `test_config_paths_defaults`.
 
 **Resultado:** 17/17 test_config.py verdes | 191/191 testes pypi completos sem regressões | commit `41822c2` | push para `feat/v2.5-discovery-json-traceid`
+
+---
+
+## Sessão 2026-06-13 — Backend ML-2A v2.5 Go paths configuráveis (IMPLEMENTANDO)
+
+**Agente:** Backend | Status: IMPLEMENTANDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-2A — paths configuráveis `adr_dirs`/`req_dir`/`roadmap_dir` no CLI Go.
+
+**Análise:** Campos `ADRDirs`, `REQDir`, `RoadmapDir` e o parser YAML já estão implementados em `internal/config/config.go` (struct, defaults e parse). Os 4 testes nomeados no ML-2A ainda não existem — criando em `internal/config/config_paths_test.go`.
+
+**Paths hardcoded em `discover.go`:** pertencem ao scanner de discovery brownfield (candidatos de autodetecção), não à camada de config — mantidos intencionalmente.
+
+---
+
+## Sessão 2026-06-13 — Backend (IMPLEMENTANDO)
+
+**Agente:** Backend | Status: IMPLEMENTANDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-1A — flag `--json` no `trackfw validate` (CLI Go).
+
+**Escopo:**
+- Criar `internal/validator/result.go` com structs `RuleItem`, `ValidateSummary`, `ValidateResult` e builder `BuildResult`.
+- Adicionar flag `--json bool` ao cobra command em `internal/commands/validate.go`.
+- Serializar resultado via `encoding/json` para stdout quando `--json` ativo; comportamento texto inalterado sem a flag.
+- Exit code idêntico nos dois modos (violações → exit 1, ok → exit 0).
+- Criar `internal/commands/validate_json_test.go` com 3 testes: JSON válido, exit code paridade, texto inalterado.
