@@ -1,12 +1,20 @@
 'use strict'
 const { Command } = require('commander')
-const { validate } = require('../validator')
+const { validate, isLenient, lenientUntilDate } = require('../validator')
 const { t } = require('../i18n')
 
 const cmd = new Command('validate')
 cmd.description(t('validate.description'))
 cmd.action(async () => {
   const { violations, warnings } = await validate()
+
+  // Informar usuário sobre modo lenient
+  if (isLenient()) {
+    const until = lenientUntilDate()
+    if (until) {
+      console.log(`[LENIENT MODE] ${t('validate.lenient_mode', { date: until })}`)
+    }
+  }
 
   if (violations.length === 0 && warnings.length === 0) {
     console.log(t('validate.ok'))

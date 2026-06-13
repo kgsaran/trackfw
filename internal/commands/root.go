@@ -35,6 +35,9 @@ func Execute() {
 		newLogCmd(),
 		newPluginsCmd(),
 		NewDiscoverCmd(),
+		newServeCmd(),
+		newMetricsCmd(),
+		newSyncCmd(),
 	)
 
 	rootCmd.Args = cobra.ArbitraryArgs

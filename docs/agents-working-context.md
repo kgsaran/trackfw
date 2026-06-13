@@ -282,6 +282,22 @@
 
 ---
 
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** Wave 3+4B do roadmap `v1.1.0-i18n-wizard-java` — infraestrutura i18n Go + wiring nos comandos.
+
+**Entregue:**
+- `internal/i18n/i18n.go` — pacote i18n com `DetectLocale()` (LANG/LC_ALL/LANGUAGE), `load()` com `sync.Once`, `T(key string, vars ...string) string` (dot-path + interpolação `{{var}}`), `Locale() string`. Embed de 3 arquivos JSON via `//go:embed`.
+- `internal/i18n/locales/en-US.json` — traduções em inglês (init, adr, req, roadmap, validate, status, log, plugins, errors).
+- `internal/i18n/locales/pt-BR.json` — traduções em português brasileiro.
+- `internal/i18n/locales/es-ES.json` — traduções em espanhol.
+- `internal/commands/init.go` — `newInitCmd().Short` usa `i18n.T("init.description")`; títulos dos prompts huh via variáveis intermediárias com `i18n.T("init.prompt.*")`; `fmt.Println(i18n.T("init.success"))`.
+- `internal/commands/validate.go` — `Short`, mensagens de ok/violations/warnings via `i18n.T()`.
+- `internal/commands/log.go` — `Short`, flag `--tail` description, mensagem "No transitions" via `i18n.T()`.
+- `go build ./...` limpo | `go test ./...` 100% verde | `LANG=pt_BR.UTF-8 bin/trackfw --help` exibe comandos traduzidos.
+
+---
+
 ## Estrutura atual do projeto
 
 ```
@@ -324,24 +340,6 @@ trackfw/
 - `go build ./...` limpo | `go test ./...` 100% verde | `go vet ./...` limpo | commit `406ebcf` na branch `feat/v1-remaining-features`.
 
 ---
-
-## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
-
-**Tarefa:** ML-1A — Criar templates Gemini CLI: GEMINI.md global, GEMINI-project.md, 10 SKILL.md (architect/backend/frontend/qa/infra/security/code-quality/dba/ux/data), 3 commands TOML (trackfw-adr/req/roadmap).
-
----
-
-## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
-
-**Tarefa:** ML-1C — Criar templates GitHub Copilot: 1 `copilot-instructions.md` consolidado + 10 `.instructions.md` + 10 `.prompt.md` = 21 arquivos.
-
----
-
-## Sessão 2026-06-11 — Apolo (IMPLEMENTANDO)
-
-**Tarefa:** ML-1D e ML-1E — Criar templates Windsurf (10 rules + 3 workflows + 1 global_rules_append = 14 arquivos) e Amazon Q (10 rules = 10 arquivos). Total: 24 arquivos.
-
-**Destino:** `internal/generators/templates/copilot/`
 
 ---
 
@@ -557,88 +555,6 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO ML-1B do roadmap v2.1-discovery-mode)
-
-**Tarefa:** Substituir TODOS os paths hardcoded por `config.Load()` em todos os pacotes Go e npm.
-
----
-
-## Sessão 2026-06-13 — Apolo (CONCLUÍDO ML-1B)
-
-**Tarefa:** ML-1B do roadmap v2.1-discovery-mode — Substituir paths hardcoded por config.Load() em todos os pacotes.
-
-**Arquivos Go modificados:**
-- `internal/validator/validator.go` — todas as funções usam `cfg := config.Load()` para `RoadmapDir`, `REQDir`, `ADRDirs` (com iteração sobre todas as dirs); `adrIsDraft` busca em todas ADRDirs.
-- `internal/generators/roadmap.go` — removido `var validStates` e `const transitionLogPath`; substituídos por `stateDir(state)` e `logPath()` que chamam `config.Load()`; todas as funções (`NewRoadmapFromContent`, `MoveRoadmap`, `findRoadmap`, `appendTransitionLog`, `ShowRoadmap`, `ListRoadmaps`) usam config.
-- `internal/generators/adr.go` — `NewADR` e `NewADRDraft` usam `cfg.ADRDirs[0]` como diretório alvo.
-- `internal/generators/req.go` — `NewREQ` usa `cfg.REQDir`.
-- `internal/commands/adr.go` — `ListADRs` recebe `config.Load().ADRDirs[0]`.
-- `internal/commands/req.go` — `ListREQs` recebe `config.Load().REQDir`.
-- `internal/commands/roadmap.go` — Glob usa `config.Load().REQDir + "/*.md"`.
-- `internal/commands/log.go` — `os.Open` usa `config.Load().RoadmapDir + "/.trackfw-log"`.
-- `internal/generators/roadmap_test.go` — substituído uso de `validStates` (removido) por `testStateDirs []string` local.
-
-**Arquivos npm modificados:**
-- `npm/src/validator/index.js` — todas as funções usam `config.load()` para `roadmapDir`, `reqDir`, `adrDirs`; `adrIsDraft` itera sobre `adrDirs`.
-- `npm/src/generators/roadmap.js` — removido `VALID_STATES` e `TRANSITION_LOG_PATH`; substituídos por `stateDir(state)` e `logPath()` dinâmicos via `config.load()`.
-- `npm/src/generators/adr.js` — `newADR` e `newADRDraft` usam `config.load().adrDirs[0]`.
-- `npm/src/generators/req.js` — `newREQ` usa `config.load().reqDir`.
-- `npm/src/commands/adr.js` — `listADRs` recebe `config.load().adrDirs[0]`.
-- `npm/src/commands/req.js` — `listREQs` recebe `config.load().reqDir`.
-
-**Retrocompatibilidade garantida:** sem trackfw.yaml, `config.Load()` retorna defaults v1/v2 idênticos aos paths hardcoded anteriores.
-
-**Resultado:** `go build ./...` limpo | `go test ./...` todos verdes (sem regressões) | `node --check` todos os arquivos JS limpos.
-
----
-
-## Sessão 2026-06-13 — Apolo (CONCLUÍDO ML-2A/2B/2C do roadmap v2.1-discovery-mode)
-
-**Tarefa:** Implementar constantes de namespacing (ML-2A), suporte a hierarquia by_agent nos generators (ML-2B), e validator/status em modo by_agent (ML-2C) — Go + npm Node.js.
-
-**Entregue:**
-- `internal/config/config.go` — constantes `NamespacingFlat = "flat"` e `NamespacingByAgent = "by_agent"` adicionadas antes da struct `ProjectConfig`.
-- `npm/src/config/index.js` — constantes `NAMESPACING_FLAT` e `NAMESPACING_BY_AGENT` adicionadas e exportadas.
-- `internal/generators/roadmap.go` — `agentStateDir(agent, state)` nova; `findRoadmap` itera agents×states em by_agent; `MoveRoadmap` mantém agente na hierarquia; `NewRoadmapFromContent` cria em agentStateDir em by_agent; `ListRoadmaps` agrupa por `[agent/state]`; `ShowRoadmap` usa glob 3 níveis em by_agent; validação de estado movida para antes de `findRoadmap` (preserva comportamento de erro original).
-- `npm/src/generators/roadmap.js` — paridade JS completa: `agentStateDir`, `findRoadmapMatches` by_agent, `moveRoadmap`, `listRoadmaps`, `newRoadmap` atualizados.
-- `internal/validator/validator.go` — `resolveWIPDirs(cfg)` nova; `validateSingleWIP` renomeado para `validateWIPLimit` com suporte a wip_limit por agente; `validateWIPHasREQ`, `validateWIPHasAcceptanceCriteria`, `validateStaleWIP` usam `resolveWIPDirs`; `GetStatus` com seção `⚙ WIP by Agent` em by_agent.
-- `npm/src/validator/index.js` — paridade JS: `resolveWIPDirs`, `validateWIPLimit`, `validateSingleWIP` (alias), `validateWIPHasREQ`, `validateWIPHasAcceptanceCriteria`, `validateStaleWIP`, `getStatus` atualizados.
-- Testes Go novos: `TestListRoadmaps_ByAgent`, `TestMoveRoadmap_ByAgent` (generators) + `TestValidateWIPLimit_ByAgent` (validator).
-- Resultado: `go build ./...` limpo | 3 pacotes Go verdes (generators, validator, config) | `node --check` limpo em todos JS modificados.
-- Commit `94f0798` | push para `feat/v2.1-discovery-mode`.
-
----
-
-## Sessão 2026-06-13 — Apolo (CONCLUÍDO)
-
-**Tarefa:** ML-1A do roadmap v2.1-discovery-mode — Criar pacote central de configuração `internal/config/` e paridade Node.js.
-
-**Entregue:**
-- `internal/config/config.go` — `ProjectConfig` struct com `Load()` singleton (sync.Once), `Reset()` para testes, `defaults()` retrocompatíveis, parser YAML flat sem dependências externas; campos: `ADRDirs`, `REQDir`, `RoadmapDir`, `RoadmapNamespacing`, `Agents`, `GovernanceMode`, `LenientUntil`, `WipLimit`, `WipBySquad`, `RequireReqInCommit`.
-- `internal/config/config_test.go` — 6 testes: `TestLoad_NoFile`, `TestLoad_WithFile_AllFields`, `TestLoad_WithFile_PartialFields`, `TestLoad_ADRDirs_List`, `TestLoad_Agents_List`, `TestReset`. Todos usam `t.TempDir()` + `os.Chdir` + `config.Reset()`.
-- `npm/src/config/index.js` — paridade exata em Node.js: `load(cwd)`, `reset()`, `defaults()`, `parse()` com lógica de listas YAML idêntica ao Go; singleton via `_instance`.
-- `go test ./internal/config/...` — 6/6 verdes.
-- `go build ./...` — limpo.
-- `node --check npm/src/config/index.js` — sintaxe OK.
-- Commit `a5c29f4` | push para `feat/v2.1-discovery-mode`.
-
-## Sessão 2026-06-13 — Apolo (CONCLUÍDO ML-3A e ML-3B do roadmap v2.1-discovery-mode)
-
-**Tarefa:** ML-3A — `internal/discover/discover.go` + testes. ML-3B — `trackfw discover` command (Go + npm Node.js), chave i18n `discover.description` nos 3 locales.
-
-**Entregue:**
-- `internal/discover/discover.go` — pacote novo: `DiscoveryResult`, `Scan(rootDir)`, `GenerateYAML(r)`, `GenerateBootstrapLog(r, rootDir)`; detecção de ADRs (flat/by_agent), REQ com 4 candidatos incluindo pt-BR, roadmaps flat/by_agent, GovernanceScore 0-100.
-- `internal/discover/discover_test.go` — 5 testes: `TestScan_Empty`, `TestScan_Flat`, `TestScan_ByAgent`, `TestScan_CMDBLike` (6 agentes), `TestGenerateYAML`. Todos passaram.
-- `internal/commands/discover.go` — comando cobra `discover` com flags `--init` (gera trackfw.yaml) e `--bootstrap-log` (cria .trackfw-log retroativo).
-- `internal/commands/root.go` — `NewDiscoverCmd()` registrado.
-- `internal/i18n/locales/*.json` — chave `discover.description` adicionada nos 3 locales (pt-BR, en-US, es-ES).
-- `npm/src/commands/discover.js` — paridade Node.js via Commander; exporta `scan`, `generateYAML`, `generateBootstrapLog`.
-- `npm/src/commands/index.js` — `discover` registrado no programa.
-
-**Resultado:** `go build ./...` limpo | 5/5 testes discover verdes | todos os demais pacotes sem regressão | `node --check` OK | commit `d5803c8` | push para `feat/v2.1-discovery-mode`.
-
----
-
 ## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
 
 **Tarefa:** ML-3C do roadmap de reescrita npm Node.js — Implementar `npm/src/generators/init.js` (scaffold completo) e `npm/src/commands/init.js` (wizard com @inquirer/prompts).
@@ -650,6 +566,177 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO ML-4A + ML-4B do roadmap v2.1-discovery-mode)
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
 
-**Tarefa:** ML-4A — Detectar HookFramework e CISystem no Scan(); ML-4B — `discover --init` instala gates de governança (lefthook/husky + CI workflow). Go + npm (paridade obrigatória).
+**Tarefa:** Criar artefatos de governança para v1.1.0 — REQ e Roadmap de i18n, wizard init fixes e scaffold Java.
+
+**Entregue:**
+- `docs/requisições/claude/REQ-2026-06-12-i18n-wizard-java-scaffold.md` — REQ com motivação (4 melhorias pós validação em ambiente Windows corporativo) e 9 critérios de aceite mensuráveis.
+- `docs/roadmaps/claude/backlog/v1.1.0-i18n-wizard-java-2026-06-12.md` — Roadmap com 4 waves, 9 MLs detalhados (Go binary + npm em paridade): Wave 1 (wizard fixes), Wave 2 (Java pom.xml), Wave 3 (i18n infra), Wave 4 (i18n wiring + templates).
+
+---
+
+## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
+
+**Tarefa:** Wave 1+2 do roadmap `v1.1.0-i18n-wizard-java` — adicionar pergunta de framework de backend ao wizard `trackfw init` (Go) e gerar `pom.xml` Spring Boot 3.3 quando backend=java.
+
+**Entregue:**
+- `internal/commands/init.go` — variável `backendFramework string` adicionada; title "Backend stack?" renomeado para "Backend language?"; segundo form `frameworkForm` executado após o form principal quando `backend != ""`; opções condicionais por linguagem (go: 4, java: 3, node: 4, python: 3); `cfg.BackendFramework` passado ao Config.
+- `internal/generators/scaffold.go` — campo `BackendFramework string` adicionado em `Config`; `writeTrackfwConfig` gera linha `backend_framework: <valor>` no YAML; chamada `GeneratePomXML(cfg)` adicionada ao final de `Scaffold` com guard `cfg.Backend == "java"`.
+- `internal/generators/java.go` — arquivo novo; `GeneratePomXML(cfg Config) error` gera `pom.xml` Spring Boot 3.3 / Java 21 com starter-web, starter-actuator e starter-test; reutiliza `toSlug` de `adr.go` (sem redefinição).
+- `go build ./...` — sem erros | `make test` — todos os testes verdes.
+
+**Observação:** `toSlug` já existia em `internal/generators/adr.go` — não foi redefinida em `java.go`.
+
+---
+
+## Sessão 2026-06-12 — Afrodite (CONCLUÍDO)
+
+**Tarefa:** Criar infraestrutura i18n para o pacote npm do trackfw (branch `feat/v1.1.0-i18n-wizard-java`).
+
+**Status:** CONCLUIDO
+
+**Entregue:**
+- `npm/src/i18n/index.js` — módulo de detecção de locale (LANG/LC_ALL/LANGUAGE + fallback Intl) e função `t(key, vars)` com interpolação `{{var}}`
+- `npm/src/i18n/locales/en-US.json` — todas as strings do CLI em inglês
+- `npm/src/i18n/locales/pt-BR.json` — tradução completa para português do Brasil
+- `npm/src/i18n/locales/es-ES.json` — tradução completa para espanhol
+- `npm/src/commands/validate.js` — wired com `t()`
+- `npm/src/commands/status.js` — wired com `t()`
+- `npm/src/commands/log.js` — wired com `t()`
+- `npm/src/commands/roadmap.js` — wired com `t()`
+- `npm/src/commands/plugins.js` — wired com `t()`; erros de download/plugin via `t()`
+- `npm/src/commands/adr.js` — wired com `t()`; prompts do wizard i18n
+- `npm/src/commands/req.js` — wired com `t()`; prompts do wizard i18n
+- `npm/src/commands/init.js` — wired com `t()`; todos os prompts e messages do wizard i18n
+
+**Validacao:**
+- `node npm/bin/trackfw --help` — strings em EN-US (padrao) OK
+- `LANG=pt_BR.UTF-8 node npm/bin/trackfw --help` — strings em PT-BR OK
+- `LANG=es_ES.UTF-8 node npm/bin/trackfw --help` — strings em ES-ES OK
+- `LANG=pt_BR.UTF-8 node npm/bin/trackfw validate` — "Nenhuma violacao encontrada." OK
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-1A (CONCLUÍDO)
+
+**Tarefa:** ML-1A do roadmap `feat/v2.0-gaps` — implementar `trackfw serve` (servidor HTTP local de visualização ADR→REQ→ROADMAP).
+
+**Arquivos criados/modificados:**
+- `internal/server/server.go` (novo) — handlers HTTP, parse de markdown, template HTML
+- `internal/commands/serve.go` (novo) — comando cobra serve com flag --port
+- `internal/commands/root.go` — newServeCmd() registrado
+- `internal/i18n/locales/en-US.json`, `pt-BR.json`, `es-ES.json` — chave serve.description adicionada
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | `go test ./...` verde | `trackfw serve --help` mostra flag --port | `/api/data` retorna JSON válido | HTML com 3 seções (traceability, timeline, kanban) | commit `b0f27b8` | push para `feat/v2.0-gaps`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-1B (CONCLUÍDO)
+
+**Tarefa:** ML-1B do roadmap `feat/v2.0-gaps` — implementar `trackfw metrics` (cycle time, throughput e WIP age a partir do `.trackfw-log`).
+
+**Arquivos a criar/modificar:**
+- `internal/metrics/metrics.go` (novo) — ParseLog, Filter, Calculate, ExportCSV
+- `internal/metrics/metrics_test.go` (novo) — testes unitários
+- `internal/commands/metrics.go` (novo) — comando cobra metrics com --since e --export
+- `internal/commands/root.go` — newMetricsCmd() registrado
+- `internal/i18n/locales/*.json` — chave metrics.* nos 3 locales
+- `npm/src/commands/metrics.js` (novo) — porte Node.js puro
+- `npm/src/commands/index.js` — registrar command metrics
+
+**Resultado:**
+- `go build ./...` limpo | `go vet ./...` limpo | `go test ./internal/metrics/...` 8/8 verde
+- `node --check npm/src/commands/metrics.js` OK
+- Commit `a2fc979` | push para `feat/v2.0-gaps`
+- `trackfw metrics --help` disponível com flags --since e --export
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2B (CONCLUÍDO)
+
+**Tarefa:** ML-2B do roadmap `feat/v2.0-gaps` — WIP Limit configurável por squad via `trackfw.yaml`.
+
+**Entregue:**
+- `internal/generators/scaffold.go` — `Config.WipLimit int` e `Config.WipBySquad bool` adicionados; `writeTrackfwConfig` gera `wip_limit: 1` e `wip_by_squad: false` no YAML (com defaults quando campos zero).
+- `internal/generators/roadmap.go` — campo `squad:` adicionado ao template de novo roadmap no frontmatter (após REQ:, vazio para preenchimento manual).
+- `internal/validator/validator.go` — `WIPConfig{Limit, BySquad}` + `readWIPConfig()` (parser YAML flat, sem yaml.v3); `parseSquadFromFrontmatter(path)` extrai campo `squad:` do markdown; `validateWIPLimit()` substitui `validateSingleWIP()` — modo global conta todos os WIPs contra o limite, modo squad agrupa por squad e valida por grupo; `GetStatus()` exibe seção `⚙ WIP by Squad` com count e indicador ⚠/✓ quando `wip_by_squad: true`.
+- `internal/validator/validator_test.go` — 5 novos testes: `Global_OK`, `Global_Exceed`, `Global_HighLimit`, `BySquad_OK`, `BySquad_Exceed`. Todos os 17 testes do pacote passando.
+- `npm/src/validator/index.js` — paridade Node.js: `readWIPConfig()`, `parseSquadFromFrontmatter()`, `validateWIPLimit()` (retorna `{violations, warnings}`); `validate()` usa `validateWIPLimit` no lugar de `validateSingleWIP`; `getStatus()` exibe seção squad quando `bySquad: true`; novos exports adicionados.
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | 17/17 testes verdes | `node --check` OK | commit `0b39e3d` | push para `feat/v2.0-gaps`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2A (CONCLUÍDO)
+
+**Tarefa:** ML-2A do roadmap `feat/v2.0-gaps` — `trackfw init --brownfield` modo lenient de governança.
+
+**Arquivos criados/modificados:**
+- `internal/generators/scaffold.go` — campos `BrownfieldMode bool` e `LenientUntil time.Time` adicionados em `Config`; `writeTrackfwConfig` escreve `governance_mode: lenient` e `lenient_until: YYYY-MM-DD` condicionalmente.
+- `internal/commands/init.go` — flag `--brownfield` registrada em `newInitCmd()`; import `"time"` adicionado; `cfg.BrownfieldMode=true` e `cfg.LenientUntil=time.Now().AddDate(0,0,30)` quando flag ativa.
+- `internal/validator/validator.go` — structs `GovernanceMode`, funções `readGovernanceMode()`, `IsLenient()`, `LenientUntilDate()` (exportadas) adicionadas; `Validate()` move violations para warnings quando `IsLenient()`.
+- `internal/commands/validate.go` — imprime `[LENIENT MODE]` + `i18n.T("validate.lenient_mode", "date", until)` quando em modo lenient.
+- `internal/i18n/locales/{en-US,pt-BR,es-ES}.json` — chave `validate.lenient_mode` adicionada nos 3 locales.
+- `npm/src/generators/init.js` — `writeTrackfwConfig` escreve linhas lenient quando `cfg.brownfieldMode`.
+- `npm/src/validator/index.js` — funções `readGovernanceMode()`, `isLenient()`, `lenientUntilDate()` adicionadas; `validate()` move violations para warnings quando lenient; exports atualizados.
+- `npm/src/commands/validate.js` — imprime `[LENIENT MODE]` quando em modo lenient.
+- `npm/src/i18n/locales/{en-US,pt-BR,es-ES}.json` — chave `validate.lenient_mode` adicionada nos 3 locales.
+
+**Resultado:**
+- `go build ./...` limpo | `go vet ./...` limpo | todos os testes verdes
+- Teste integração: `trackfw validate` em projeto lenient → `[LENIENT MODE]`, `⚠ violation`, exit 0
+- Teste integração: `trackfw validate` em projeto strict → `✗ violation`, exit 1 (inalterado)
+- `node --check` limpo nos 3 arquivos npm modificados
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-3A (CONCLUÍDO)
+
+**Tarefa:** ML-3A do roadmap `feat/v2.0-gaps` — Plugin Registry: `trackfw plugins search` e resolução de nomes via registry `kgsaran/trackfw-plugins`.
+
+**Entregue:**
+- `internal/plugins/plugins.go` — `RegistryURL`, `RegistryEntry`, `parseRegistryYAML` (parser YAML lista-de-maps linha a linha, sem yaml.v3), `matchesKeyword` (name+description+tags), `Search` (GET registry + filter), `ResolveRepo` (sem `/` → busca no registry; com `/` → retorna direto sem rede); `Install` modificado para chamar `ResolveRepo` antes de baixar.
+- `internal/plugins/plugins_test.go` — 6 testes sem rede: `ParseRegistryYAML_Empty`, `ParseRegistryYAML_OneEntry`, `MatchesKeyword_Name`, `MatchesKeyword_Tag`, `MatchesKeyword_NoMatch`, `ResolveRepo_WithSlash`.
+- `internal/commands/plugins.go` — subcomando `search <keyword>` registrado; exit 0 em offline (mensagem amigável) e em sem matches.
+- `npm/src/commands/plugins.js` — `fetchRegistry`, `parseRegistryYAML`, `matchesKeyword` e subcomando `search` com saída tabular e exit 0 em offline/sem matches.
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | 6/6 testes verdes | `node --check` OK | commit `26275dc` | push para `feat/v2.0-gaps`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-3B (CONCLUÍDO)
+
+**Tarefa:** ML-3B do roadmap `feat/v2.0-gaps` — `trackfw sync --to=linear` e `--to=jira`.
+
+**Entregue:**
+- `internal/sync/linear.go` — LinearClient: credenciais via trackfw.yaml ou env vars (LINEAR_API_KEY, LINEAR_TEAM_ID); CreateIssue via GraphQL mutation; readConfigField (parser YAML linha a linha sem yaml.v3).
+- `internal/sync/jira.go` — JiraClient: credenciais via trackfw.yaml ou env vars (JIRA_BASE_URL, JIRA_EMAIL, JIRA_TOKEN, JIRA_PROJECT); CreateIssue via REST API v3 com Basic Auth (base64 email:token).
+- `internal/sync/sync.go` — SyncToLinear, SyncToJira, syncToProvider: percorre docs/req/*.md, pula não-Open e já sincronizados, chama create, injeta campo no frontmatter; helpers extractTitle, extractMotivation, extractField, injectField, isStatusOpen.
+- `internal/sync/sync_test.go` — 8 testes sem rede: SkipsNonOpen, SkipsAlreadySynced, InjectsField, ExtractTitle (3 casos), InjectField, InjectField_UpdatesExisting, ReadConfigField, ExtractMotivation. Todos 8/8 verdes.
+- `internal/commands/sync.go` — cobra command `sync` com flag `--to` obrigatória; saída tabular REQ/ISSUE; mensagens de erro claras.
+- `internal/commands/root.go` — newSyncCmd() registrado.
+- `internal/generators/req.go` — campos `| Linear Issue:` e `| Jira Issue:` adicionados no template de REQ.
+- `npm/src/commands/sync.js` — paridade Node.js com https stdlib; linearCreateIssue (GraphQL), jiraCreateIssue (REST v3), syncToProvider, syncToLinear, syncToJira; commander command com --to.
+- `npm/src/commands/index.js` — sync registrado no createProgram().
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | 8/8 testes sync verdes | suite completa verde | `node --check` OK | commit `dfa58aa` | push para `feat/v2.0-gaps`.
+
+---
+
+## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-4A do roadmap v2.0-gaps — Hook `commit-msg` com validação de REQ em branches feat/fix.
+
+**Branch:** `feat/v2.0-gaps`
+
+**Entregue:**
+- `internal/generators/scaffold.go` — campo `RequireReqInCommit bool` em `Config`; função `generateCommitMsgHook` (husky: `.husky/commit-msg`; lefthook: `lefthook.yml` + `.lefthook/commit-msg/trackfw-req-check.sh`); campo `require_req_in_commit` no `trackfw.yaml`
+- `internal/commands/init.go` — segundo form condicional pós-wizard perguntando `require_req_in_commit` quando hooks != "none"; campo passado para `Config`
+- `internal/generators/commitmsghook_test.go` — 3 testes: `TestGenerateCommitMsgHook_Husky`, `TestGenerateCommitMsgHook_Disabled`, `TestGenerateCommitMsgHook_Lefthook` — todos 3/3 verdes
+- i18n locales Go (en-US, pt-BR, es-ES) — chave `init.prompt.require_req_in_commit`
+- `npm/src/generators/init.js` — função `generateCommitMsgHook` + chamada em `scaffold()` + campo no `writeTrackfwConfig`
+- `npm/src/commands/init.js` — pergunta condicional com `@inquirer/prompts` confirm; `requireReqInCommit` no cfg
+- `npm/src/i18n/locales/` — chave `require_req_in_commit` nos 3 locales
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | suite completa verde | `node --check` OK | commit `add41a6` | push para `feat/v2.0-gaps`.

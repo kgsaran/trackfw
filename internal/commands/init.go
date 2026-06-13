@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
@@ -13,11 +14,13 @@ import (
 )
 
 func newInitCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "init",
 		Short: i18n.T("init.description"),
 		RunE:  runInit,
 	}
+	cmd.Flags().Bool("brownfield", false, "Adopt governance gradually (lenient mode for 30 days)")
+	return cmd
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -41,25 +44,27 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	var (
-		projectName      string
-		projectType      string
-		frontend         string
-		backend          string
-		backendFramework string
-		pkgManager       string
-		hooks            string
-		ci               string
-		aiTools          []string
+		projectName        string
+		projectType        string
+		frontend           string
+		backend            string
+		backendFramework   string
+		pkgManager         string
+		hooks              string
+		ci                 string
+		aiTools            []string
+		requireReqInCommit bool
 	)
 
-	titleProjectName := i18n.T("init.prompt.projectName")
-	titleProjectType := i18n.T("init.prompt.projectType")
-	titleFrontendStack := i18n.T("init.prompt.frontendStack")
-	titlePkgManager := i18n.T("init.prompt.pkgManager")
-	titleBackendLang := i18n.T("init.prompt.backendLang")
-	titleGitHooks := i18n.T("init.prompt.gitHooks")
-	titleCI := i18n.T("init.prompt.ci")
-	titleAITools := i18n.T("init.prompt.aiTools")
+	titleProjectName    := i18n.T("init.prompt.projectName")
+	titleProjectType    := i18n.T("init.prompt.projectType")
+	titleFrontendStack  := i18n.T("init.prompt.frontendStack")
+	titlePkgManager     := i18n.T("init.prompt.pkgManager")
+	titleBackendLang    := i18n.T("init.prompt.backendLang")
+	titleGitHooks       := i18n.T("init.prompt.gitHooks")
+	titleCI             := i18n.T("init.prompt.ci")
+	titleAITools        := i18n.T("init.prompt.aiTools")
+	titleRequireReq     := i18n.T("init.prompt.require_req_in_commit")
 
 	form := huh.NewForm(
 		// Grupo 1 — sempre mostrado
@@ -160,6 +165,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Pergunta condicional: require_req_in_commit (somente quando hooks != "none")
+	if hooks != "none" {
+		reqForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title(titleRequireReq).
+					Value(&requireReqInCommit),
+			),
+		)
+		if err := reqForm.Run(); err != nil {
+			return err
+		}
+	}
+
 	if backend != "" {
 		frameworkChoices := map[string][]huh.Option[string]{
 			"go": {
@@ -202,15 +221,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	brownfield, _ := cmd.Flags().GetBool("brownfield")
 	cfg := generators.Config{
-		ProjectType:      projectType,
-		ProjectName:      projectName,
-		Frontend:         frontend,
-		Backend:          backend,
-		BackendFramework: backendFramework,
-		PkgManager:       pkgManager,
-		Hooks:            hooks,
-		CI:               ci,
+		ProjectType:        projectType,
+		ProjectName:        projectName,
+		Frontend:           frontend,
+		Backend:            backend,
+		BackendFramework:   backendFramework,
+		PkgManager:         pkgManager,
+		Hooks:              hooks,
+		CI:                 ci,
+		RequireReqInCommit: requireReqInCommit,
+	}
+	if brownfield {
+		cfg.BrownfieldMode = true
+		cfg.LenientUntil = time.Now().AddDate(0, 0, 30)
 	}
 
 	if err := generators.Scaffold(cfg); err != nil {

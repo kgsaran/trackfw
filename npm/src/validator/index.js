@@ -214,10 +214,55 @@ function validateWIPHasAcceptanceCriteria() {
   return violations
 }
 
-// validateWIPLimit — mais de wipLimit roadmaps em wip → warning.
-// Em modo by_agent, verifica por agente individualmente.
+// readWIPConfig lê wip_limit e wip_by_squad do trackfw.yaml no CWD.
+// Retorna { limit: 1, bySquad: false } se o arquivo não existe ou campos ausentes.
+function readWIPConfig() {
+  const cfg = { limit: 1, bySquad: false }
+  let content
+  try {
+    content = fs.readFileSync('trackfw.yaml', 'utf8')
+  } catch (_) {
+    return cfg
+  }
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('wip_limit:')) {
+      const val = trimmed.slice('wip_limit:'.length).trim().split(/\s+/)[0]
+      const n = parseInt(val, 10)
+      if (!isNaN(n) && n > 0) cfg.limit = n
+    }
+    if (trimmed.startsWith('wip_by_squad:')) {
+      const val = trimmed.slice('wip_by_squad:'.length).trim().split(/\s+/)[0]
+      if (val === 'true') cfg.bySquad = true
+    }
+  }
+  return cfg
+}
+
+// parseSquadFromFrontmatter extrai o valor do campo "squad:" de um arquivo markdown.
+// Retorna string vazia se ausente ou vazio.
+function parseSquadFromFrontmatter(filePath) {
+  let content
+  try {
+    content = fs.readFileSync(filePath, 'utf8')
+  } catch (_) {
+    return ''
+  }
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('squad:')) {
+      return trimmed.slice('squad:'.length).trim()
+    }
+  }
+  return ''
+}
+
+// validateWIPLimit — verifica o WIP limit por agente, por squad ou global conforme trackfw.yaml.
+// Retorna { violations: [], warnings: [] }.
 function validateWIPLimit() {
   const cfg = config.load()
+  const violations = []
+  const warnings = []
 
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
     let agents = cfg.agents || []
@@ -228,24 +273,48 @@ function validateWIPLimit() {
         })
       } catch (_) { agents = [] }
     }
-    const warnings = []
     const limit = cfg.wipLimit > 0 ? cfg.wipLimit : 1
     for (const agent of agents) {
-      const dir = cfg.roadmapDir + '/' + agent + '/wip'
-      const entries = listDir(dir)
+      const entries = listDir(cfg.roadmapDir + '/' + agent + '/wip')
       if (entries.length > limit) {
-        warnings.push(`${entries.length} roadmaps in wip/ for agent "${agent}" (limit: ${limit})`)
+        warnings.push(`${entries.length} roadmaps in wip/ for agent "${agent}" (limit: ${limit}) — consider focusing`)
       }
     }
-    return warnings
+    return { violations, warnings }
   }
 
-  const entries = listDir(cfg.roadmapDir + '/wip')
-  const limit = cfg.wipLimit > 0 ? cfg.wipLimit : 1
-  if (entries.length > limit) {
-    return [`${entries.length} roadmaps in wip/ (limit: ${limit})`]
+  // modo flat (global ou por squad)
+  let files = []
+  try {
+    files = fs.readdirSync(path.join(cfg.roadmapDir, 'wip'))
+      .filter(f => { try { return !fs.statSync(path.join(cfg.roadmapDir, 'wip', f)).isDirectory() } catch (_) { return false } })
+      .map(f => path.join(cfg.roadmapDir, 'wip', f))
+  } catch (_) {
+    return { violations, warnings }
   }
-  return []
+
+  const wipCfg = readWIPConfig()
+
+  if (!wipCfg.bySquad) {
+    if (files.length > wipCfg.limit) {
+      warnings.push(`${files.length} roadmaps in wip/ (limit: ${wipCfg.limit}) — consider focusing`)
+    }
+    return { violations, warnings }
+  }
+
+  const bySquad = {}
+  for (const f of files) {
+    let squad = parseSquadFromFrontmatter(f)
+    if (!squad) squad = '(no squad)'
+    if (!bySquad[squad]) bySquad[squad] = []
+    bySquad[squad].push(path.basename(f))
+  }
+  for (const [squad, items] of Object.entries(bySquad)) {
+    if (items.length > wipCfg.limit) {
+      warnings.push(`squad "${squad}" has ${items.length} roadmaps in wip/ (limit: ${wipCfg.limit})`)
+    }
+  }
+  return { violations, warnings }
 }
 
 // validateSingleWIP — alias retrocompatível de validateWIPLimit (modo flat)
@@ -340,9 +409,53 @@ function blockedREQs() {
   return result
 }
 
+// readGovernanceMode lê governance_mode e lenient_until do trackfw.yaml no CWD.
+// Retorna { mode: 'strict', lenientUntil: null } se o arquivo não existe ou campos ausentes.
+function readGovernanceMode() {
+  let content
+  try {
+    content = fs.readFileSync('trackfw.yaml', 'utf8')
+  } catch (_) {
+    return { mode: 'strict', lenientUntil: null }
+  }
+  let mode = 'strict'
+  let lenientUntil = null
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('governance_mode:')) {
+      const val = trimmed.slice('governance_mode:'.length).trim().split(/\s+/)[0]
+      if (val) mode = val
+    }
+    if (trimmed.startsWith('lenient_until:')) {
+      const val = trimmed.slice('lenient_until:'.length).trim().split(/\s+/)[0]
+      if (val) {
+        const d = new Date(val)
+        if (!isNaN(d.getTime())) lenientUntil = d
+      }
+    }
+  }
+  return { mode, lenientUntil }
+}
+
+// isLenient retorna true se o projeto está em modo lenient e o prazo não expirou.
+function isLenient() {
+  const gm = readGovernanceMode()
+  if (gm.mode !== 'lenient') return false
+  if (!gm.lenientUntil) return true
+  return new Date() < gm.lenientUntil
+}
+
+// lenientUntilDate retorna a data de expiração formatada (YYYY-MM-DD) ou ''.
+function lenientUntilDate() {
+  const gm = readGovernanceMode()
+  if (gm.mode !== 'lenient' || !gm.lenientUntil) return ''
+  return gm.lenientUntil.toISOString().slice(0, 10)
+}
+
 // validate executa todas as validações e retorna { violations, warnings }
 async function validate() {
-  const violations = [
+  const wipLimitResult = validateWIPLimit()
+  let violations = [
     ...validateWIPHasREQ(),
     ...validateREQsHaveADR(),
     ...validateBlockedHasREQ(),
@@ -350,11 +463,17 @@ async function validate() {
     ...validateADRsAreReferenced(),
     ...validateWIPHasAcceptanceCriteria(),
     ...validateREQsNotBlockedByDraftADRs(),
+    ...wipLimitResult.violations,
   ]
-  const warnings = [
-    ...validateWIPLimit(),
+  let warnings = [
+    ...wipLimitResult.warnings,
     ...validateStaleWIP(),
   ]
+  // Modo lenient: mover violations para warnings, exit code 0
+  if (isLenient()) {
+    warnings = [...warnings, ...violations]
+    violations = []
+  }
   return { violations, warnings }
 }
 
@@ -387,6 +506,22 @@ async function getStatus() {
 
     out += `\n🔄 WIP (${wip.length})\n`
     for (const f of wip) out += `   ${f}\n`
+
+    const wipCfg = readWIPConfig()
+    if (wipCfg.bySquad && wip.length > 0) {
+      const bySquad = {}
+      for (const f of wip) {
+        let squad = parseSquadFromFrontmatter(path.join(cfg.roadmapDir, 'wip', f))
+        if (!squad) squad = '(no squad)'
+        bySquad[squad] = (bySquad[squad] || 0) + 1
+      }
+      out += `\n⚙ WIP by Squad (limit: ${wipCfg.limit} per squad)\n`
+      for (const [squad, count] of Object.entries(bySquad)) {
+        const status = count > wipCfg.limit ? '⚠' : '✓'
+        const noun = count === 1 ? 'roadmap' : 'roadmaps'
+        out += `   ${(squad + ':').padEnd(20)} ${count} ${noun}  ${status}\n`
+      }
+    }
 
     out += `\n❌ Blocked (${blocked.length})\n`
     for (const f of blocked) out += `   ${f}\n`
@@ -421,6 +556,8 @@ async function getStatus() {
 module.exports = {
   validate,
   getStatus,
+  isLenient,
+  lenientUntilDate,
   // exportadas para testes unitários
   validateWIPHasREQ,
   validateREQsHaveADR,
@@ -436,4 +573,7 @@ module.exports = {
   adrIsDraft,
   listDir,
   resolveWIPDirs,
+  readGovernanceMode,
+  readWIPConfig,
+  parseSquadFromFrontmatter,
 }

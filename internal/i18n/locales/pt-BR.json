@@ -10,7 +10,8 @@
       "backendFramework": "Framework de backend?",
       "gitHooks": "Git hooks?",
       "ci": "Sistema de CI?",
-      "aiTools": "Quais assistentes de IA você usa?"
+      "aiTools": "Quais assistentes de IA você usa?",
+      "require_req_in_commit": "Exigir referência REQ nas mensagens de commit de branches feat/fix?"
     },
     "success": "\n✓ trackfw inicializado — execute 'trackfw status' para ver o estado de governança."
   },
@@ -35,7 +36,8 @@
     "description": "Validar regras de governança (use como gate de CI)",
     "ok": "✓ Nenhuma violação encontrada.",
     "violations": "{{count}} violação(ões) encontrada(s)",
-    "warnings": "{{count}} aviso(s)"
+    "warnings": "{{count}} aviso(s)",
+    "lenient_mode": "Violações de governança tratadas como avisos até {{date}}"
   },
   "status": { "description": "Exibir o estado atual de governança do projeto" },
   "log": { "description": "Exibir histórico de transições de estado dos roadmaps", "empty": "Nenhuma transição registrada ainda.", "tail": "Exibir as últimas N transições" },
@@ -44,6 +46,13 @@
     "list": { "description": "Listar plugins instalados", "empty": "Nenhum plugin instalado. Use `trackfw plugins add <user/repo>` para instalar um." },
     "add": { "description": "Instalar um plugin do GitHub Releases", "installing": "Instalando plugin de {{repo}}...", "success": "Plugin \"{{name}}\" instalado com sucesso." },
     "remove": { "description": "Remover um plugin instalado", "success": "Plugin \"{{name}}\" removido." }
+  },
+  "serve": {
+    "description": "Inicia servidor local de visualização de governança"
+  },
+  "metrics": {
+    "description": "Exibe métricas de delivery",
+    "no_data": "Nenhuma transição registrada ainda."
   },
   "errors": {
     "pluginNotFound": "plugin {{name}} não encontrado"

@@ -11,6 +11,7 @@
       "gitHooks": "Git hooks?",
       "ci": "Sistema de CI?",
       "aiTools": "Quais assistentes de IA você usa?",
+      "require_req_in_commit": "Exigir referência REQ nas mensagens de commit de branches feat/fix?",
       "projectType_fullstack": "Full-stack (frontend + backend)",
       "projectType_frontend": "Somente frontend",
       "projectType_backend": "Somente backend",
@@ -87,7 +88,8 @@
     "description": "Validar regras de governança (use como gate de CI)",
     "ok": "✓ Nenhuma violação encontrada.",
     "violations": "✗ Violações ({{count}}):",
-    "warnings": "⚠ Avisos ({{count}}):"
+    "warnings": "⚠ Avisos ({{count}}):",
+    "lenient_mode": "Violações de governança tratadas como avisos até {{date}}"
   },
   "status": {
     "description": "Exibir o estado atual de governança do projeto"
@@ -113,6 +115,12 @@
       "description": "Remover um plugin instalado",
       "success": "Plugin \"{{name}}\" removido."
     }
+  },
+  "metrics": {
+    "description": "Exibe métricas de delivery",
+    "no_data": "Nenhuma transição registrada ainda.",
+    "since": "Filtrar por período (ex: 7d, 30d, 90d)",
+    "export": "Exportar métricas para arquivo CSV"
   },
   "errors": {
     "notFound": "Não encontrado: {{path}}",

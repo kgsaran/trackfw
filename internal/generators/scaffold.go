@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -16,6 +17,11 @@ type Config struct {
 	PkgManager       string
 	Hooks            string
 	CI               string
+	BrownfieldMode      bool
+	LenientUntil        time.Time // zero value = strict
+	WipLimit            int       // default: 1
+	WipBySquad          bool      // default: false
+	RequireReqInCommit  bool      // gera hook commit-msg que exige REQ: em feat/* e fix/*
 }
 
 var govDirs = []string{
@@ -49,6 +55,10 @@ func Scaffold(cfg Config) error {
 	}
 
 	if err := generateGitHooks(cfg); err != nil {
+		return err
+	}
+
+	if err := generateCommitMsgHook(cfg); err != nil {
 		return err
 	}
 
@@ -436,6 +446,20 @@ Próximo passo: abrir PR com gh pr create
 }
 
 func writeTrackfwConfig(cfg Config) error {
+	wipLimit := cfg.WipLimit
+	if wipLimit <= 0 {
+		wipLimit = 1
+	}
+	wipBySquad := "false"
+	if cfg.WipBySquad {
+		wipBySquad = "true"
+	}
+
+	requireReqInCommit := "false"
+	if cfg.RequireReqInCommit {
+		requireReqInCommit = "true"
+	}
+
 	content := fmt.Sprintf(`# trackfw configuration
 # generated: %s
 
@@ -445,6 +469,9 @@ backend_framework: %s
 pkg_manager: %s
 hooks: %s
 ci: %s
+wip_limit: %d
+wip_by_squad: %s
+require_req_in_commit: %s
 
 # governance paths (edit to match your project structure)
 adr_dirs:
@@ -452,7 +479,11 @@ adr_dirs:
 req_dir: docs/req
 roadmap_dir: docs/roadmaps
 roadmap_namespacing: flat
-`, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.BackendFramework, cfg.PkgManager, cfg.Hooks, cfg.CI)
+`, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.BackendFramework, cfg.PkgManager, cfg.Hooks, cfg.CI, wipLimit, wipBySquad, requireReqInCommit)
+
+	if cfg.BrownfieldMode {
+		content += fmt.Sprintf("governance_mode: lenient\nlenient_until: %s\n", cfg.LenientUntil.Format("2006-01-02"))
+	}
 
 	if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing trackfw.yaml: %w", err)
@@ -570,6 +601,56 @@ trackfw-gate:
 		return fmt.Errorf("writing GitLab CI: %w", err)
 	}
 	fmt.Println("  ✓ .gitlab-ci-trackfw.yml")
+	return nil
+}
+
+func generateCommitMsgHook(cfg Config) error {
+	if !cfg.RequireReqInCommit {
+		return nil
+	}
+
+	script := "#!/bin/sh\n" +
+		"# trackfw: require REQ reference in feat/* and fix/* branches\n" +
+		"BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo \"\")\n" +
+		"case \"$BRANCH\" in\n" +
+		"  feat/*|fix/*)\n" +
+		"    if ! grep -qE \"^(REQ|req): \" \"$1\"; then\n" +
+		"      echo \"ERROR: Commits in feat/* and fix/* branches require a REQ reference.\"\n" +
+		"      echo \"  Add to commit body: REQ: REQ-YYYY-MM-DD-your-req-slug\"\n" +
+		"      exit 1\n" +
+		"    fi\n" +
+		"    ;;\n" +
+		"esac\n"
+
+	switch cfg.Hooks {
+	case "husky":
+		if err := os.MkdirAll(".husky", 0755); err != nil {
+			return fmt.Errorf("creating .husky: %w", err)
+		}
+		path := ".husky/commit-msg"
+		if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+			return fmt.Errorf("writing husky commit-msg hook: %w", err)
+		}
+		fmt.Printf("  ✓ %s\n", path)
+	case "lefthook":
+		lefthookPath := "lefthook.yml"
+		existing, _ := os.ReadFile(lefthookPath)
+		if !strings.Contains(string(existing), "commit-msg:") {
+			addition := "\ncommit-msg:\n  scripts:\n    \"trackfw-req-check.sh\":\n      runner: sh\n"
+			if err := os.WriteFile(lefthookPath, append(existing, []byte(addition)...), 0644); err != nil {
+				return fmt.Errorf("writing lefthook.yml commit-msg section: %w", err)
+			}
+		}
+		scriptDir := ".lefthook/commit-msg"
+		if err := os.MkdirAll(scriptDir, 0755); err != nil {
+			return fmt.Errorf("creating %s: %w", scriptDir, err)
+		}
+		scriptPath := scriptDir + "/trackfw-req-check.sh"
+		if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+			return fmt.Errorf("writing lefthook commit-msg script: %w", err)
+		}
+		fmt.Printf("  ✓ %s\n", scriptPath)
+	}
 	return nil
 }
 

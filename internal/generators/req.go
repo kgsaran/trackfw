@@ -55,9 +55,9 @@ func NewREQ(content REQContent) error {
 	}
 
 	// Linha de status — inclui contador de ADRs bloqueantes quando presente
-	statusLine := fmt.Sprintf("> Date: %s | Status: Open", date)
+	statusLine := fmt.Sprintf("> Date: %s | Status: Open\n| Linear Issue: \n| Jira Issue: ", date)
 	if len(content.DependsOnADRs) > 0 {
-		statusLine = fmt.Sprintf("> Date: %s | Status: Open | Blocked by ADRs: %d", date, len(content.DependsOnADRs))
+		statusLine = fmt.Sprintf("> Date: %s | Status: Open | Blocked by ADRs: %d\n| Linear Issue: \n| Jira Issue: ", date, len(content.DependsOnADRs))
 	}
 
 	// Seção "Blocked by ADRs"

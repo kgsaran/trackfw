@@ -10,7 +10,8 @@
       "backendFramework": "Backend framework?",
       "gitHooks": "Git hooks?",
       "ci": "CI system?",
-      "aiTools": "Which AI assistants do you use?"
+      "aiTools": "Which AI assistants do you use?",
+      "require_req_in_commit": "Require REQ reference in commit messages for feat/fix branches?"
     },
     "success": "\n✓ trackfw initialized — run 'trackfw status' to see your governance state."
   },
@@ -35,7 +36,8 @@
     "description": "Validate governance rules (use as CI gate)",
     "ok": "✓ No violations found.",
     "violations": "{{count}} violation(s) found",
-    "warnings": "{{count}} warning(s)"
+    "warnings": "{{count}} warning(s)",
+    "lenient_mode": "Governance violations treated as warnings until {{date}}"
   },
   "status": { "description": "Show project governance status" },
   "log": { "description": "Show roadmap state transition history", "empty": "No transitions recorded yet.", "tail": "Show last N transitions" },
@@ -44,6 +46,13 @@
     "list": { "description": "List installed plugins", "empty": "No plugins installed. Use `trackfw plugins add <user/repo>` to install one." },
     "add": { "description": "Install a plugin from GitHub Releases", "installing": "Installing plugin from {{repo}}...", "success": "Plugin \"{{name}}\" installed successfully." },
     "remove": { "description": "Remove an installed plugin", "success": "Plugin \"{{name}}\" removed." }
+  },
+  "serve": {
+    "description": "Start local governance visualization server"
+  },
+  "metrics": {
+    "description": "Show delivery metrics",
+    "no_data": "No transitions recorded yet."
   },
   "errors": {
     "pluginNotFound": "plugin {{name}} not found"

@@ -94,6 +94,7 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
 REQ: %s
+squad:
 
 ## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
