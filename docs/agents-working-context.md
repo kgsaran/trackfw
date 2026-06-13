@@ -783,3 +783,11 @@ trackfw/
 - `npm/src/validator/index.js` — `validateFrontmatterPresence()` portada em Node.js puro; integrada em `validate()` e exportada em `module.exports`.
 
 **Resultado:** `go build ./...` limpo | `go test ./...` 100% verde | `node --check npm/src/validator/index.js` OK | commit `f7ab22c` | push para `feat/v2.3-ai-agent-rail`.
+
+---
+
+## Sessão 2026-06-13 — Afrodite (IMPLEMENTANDO)
+
+**Tarefa:** Criar site de documentação VitePress bilíngue pt-BR/en-US + GitHub Actions deploy (branch `feat/v2.4-docs-site`)
+
+**Branch:** `feat/v2.4-docs-site`
