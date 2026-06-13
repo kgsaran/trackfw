@@ -1504,3 +1504,24 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `npm/src/validator/traceid.js`: módulo puro `checkTraceIds(reqDir, roadmapDir, fieldName)` com 5 violations
 - `npm/src/validator/index.js`: integração da verificação via `validateUnfiltered()`
 - `npm/tests/traceid.test.js`: testes com dirs temporários (mkdtempSync)
+
+---
+
+## 2026-06-13 — ML-3A: namespacing by_agent — testes Go (Backend)
+
+**Status:** IMPLEMENTANDO → CONCLUIDO
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**O que foi implementado:**
+- `internal/validator/validator_namespacing_test.go`: 3 testes novos
+  - `TestByAgentNamespacingWIPLimit`: limiar discriminante (zeus=3, apolo=3, limit=5 → total=6 violaria check global mas por agente passa sem warning)
+  - `TestByAgentNamespacingWIPLimitExceeded`: agente zeus com 3 WIPs ultrapassa limit=2 → warning somente para zeus
+  - `TestByAgentNamespacingFlat`: sem namespacing, comportamento flat — 2 WIPs com limit=1 emite warning global
+- `internal/config/config_namespacing_test.go`: 1 teste novo
+  - `TestConfigByAgentParsed`: YAML block-style `roadmap_namespacing: by_agent` + `agents: [zeus, apolo]` → struct correto
+
+**Nota:** implementação de config.go, validator.go e generators/roadmap.go estava completa em MLs anteriores. Este ML consistiu exclusivamente em criar os testes de verificação.
+
+**Falha pré-existente (não é responsabilidade do ML-3A):** `TestMoveRoadmap_ByAgent` em `internal/generators/` — ausência de `config.Reset()` faz o singleton retornar flat e `findRoadmap` falha. Confirmado anterior a este ML.
+
+**Resultado:** `go test ./internal/validator/ -run TestByAgent -v` → 3/3 PASS | `go test ./internal/config/ -run TestConfigByAgent -v` → 1/1 PASS | `make build` → sem erros
