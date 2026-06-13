@@ -15,6 +15,7 @@ function defaults() {
     wipLimit: 1,
     wipBySquad: false,
     requireReqInCommit: false,
+    traceIdField: '',
     // NOVOS campos:
     linkFields: {
       req:     ['REQ:'],
@@ -174,6 +175,7 @@ function parse(content, cfg) {
       case 'wip_limit':             { const n = parseInt(val, 10); if (n > 0) cfg.wipLimit = n; break; }
       case 'wip_by_squad':          cfg.wipBySquad = val === 'true'; break;
       case 'require_req_in_commit': cfg.requireReqInCommit = val === 'true'; break;
+      case 'trace_id_field':        cfg.traceIdField = val.replace(/^["']|["']$/g, ''); break;
       case 'link_fields':           inLinkFields = true; break;
       case 'acceptance_markers':    inAcceptanceMarkers = true; acceptanceMarkers = []; break;
       case 'rules':                 inRules = true; rules = {}; break;
