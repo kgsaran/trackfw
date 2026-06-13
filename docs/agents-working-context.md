@@ -702,3 +702,20 @@ trackfw/
 - `npm/src/commands/plugins.js` — `fetchRegistry`, `parseRegistryYAML`, `matchesKeyword` e subcomando `search` com saída tabular e exit 0 em offline/sem matches.
 
 **Resultado:** `go build ./...` limpo | `go vet ./...` limpo | 6/6 testes verdes | `node --check` OK | commit `26275dc` | push para `feat/v2.0-gaps`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-3B (IMPLEMENTANDO)
+
+**Tarefa:** ML-3B do roadmap `feat/v2.0-gaps` — `trackfw sync --to=linear` e `--to=jira`.
+
+**Arquivos a criar/modificar:**
+- `internal/sync/linear.go` (novo) — LinearClient com NewLinearClient() e CreateIssue()
+- `internal/sync/jira.go` (novo) — JiraClient com NewJiraClient() e CreateIssue()
+- `internal/sync/sync.go` (novo) — lógica principal SyncToLinear/SyncToJira/syncToProvider
+- `internal/commands/sync.go` (novo) — comando cobra sync com --to flag
+- `internal/commands/root.go` — registrar newSyncCmd()
+- `internal/generators/req.go` — adicionar campos Linear/Jira no template
+- `npm/src/commands/sync.js` (novo) — paridade Node.js
+- `npm/src/commands/index.js` — registrar command sync
+- `internal/sync/sync_test.go` (novo) — testes sem rede

@@ -20,6 +20,7 @@ function createProgram() {
   program.addCommand(require('./plugins'))
   program.addCommand(require('./discover'))
   program.addCommand(require('./metrics'))
+  program.addCommand(require('./sync'))
 
   // plugin dispatch — comandos desconhecidos tentam executar plugin
   program.hook('preSubcommand', () => {})
