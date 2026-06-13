@@ -1164,3 +1164,109 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 **Decisão técnica:** o parser original aceitava itens de lista sem indentação (`- zeus` direto após `agents:`) — a nova implementação preserva esse comportamento detectando `line.startswith("- ")` independente do `raw_line[0]`, garantindo retrocompatibilidade total com yamls v2.3.
 
 **Resultado:** 163/163 testes verdes (6 novos) | commit `201e748` | push para `feat/v2.4-config-evolution`
+
+---
+
+## Sessão 2026-06-13 — Backend (config evolution ML-2A validator)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.4-config-evolution`
+
+**Tarefa:** ML-2A — fazer o validator Go consumir os novos campos de config (`LinkFieldsReq`, `LinkFieldsADR`, `LinkFieldsRoadmap`, `AcceptanceMarkers`, `Rules`) em vez de strings hardcoded. F2 (field mapping) + F3 (severity per rule).
+
+**Entregue:**
+- `internal/validator/validator.go` — helper `contentHasMarker` substitui todas as comparações hardcoded `strings.Contains(content, "REQ:")` por loops sobre `cfg.LinkFieldsReq/ADR/Roadmap` e `cfg.AcceptanceMarkers`; helpers `ruleSeverity` e `applyRule` adicionados; `Validate()` refatorada para usar `applyRule` em todas as regras configuráveis (wip_has_req, adr_orphan, wip_acceptance, wip_limit, stale_wip, blocked_by_draft_adr, ref_targets_exist, folder_status, filename_uniqueness); regras sem entrada em `Rules` (validateREQsHaveADR, validateBlockedHasREQ, validateREQsHaveRoadmap, validateFrontmatterPresence) mantêm append direto em violations.
+- `internal/validator/validator_evolution_test.go` — 4 testes: `TestFieldMapping_ReqId_SatisfiesWipHasREQ`, `TestRuleSeverity_Off_AdrOrphan`, `TestRuleSeverity_Warning_WipHasReq`, `TestAcceptanceMarkersCustom`.
+
+**Resultado:** go build ./... verde | 4/4 novos testes verdes | todos os testes anteriores mantidos verdes | commit `0b0e47a` | push para `feat/v2.4-config-evolution`
+
+---
+
+## Sessão 2026-06-13 — Backend (config evolution ML-2B Node.js)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.4-config-evolution`
+
+**Tarefa:** ML-2B — fazer o validator Node.js (`npm/src/validator/index.js`) consumir os novos campos de config (`linkFields`, `acceptanceMarkers`, `rules`) em vez de strings hardcoded.
+
+**Entregue:**
+- `npm/src/validator/index.js` — adicionado `contentHasMarker(content, markers)` que substitui checks hardcoded de `'REQ:'`/`'ADR:'`/`'Roadmap:'` por loops sobre `cfg.linkFields.*`; adicionado `ruleSeverity(name)` e `applyRule(ruleName, msgs, violations, warnings)` para rotear msgs conforme `cfg.rules[name]` (error→violations, warning→warnings, off→descarta); função `validate()` refatorada usando `applyRule` para 9 regras configuráveis; regras sem configuração de severidade (validateREQsHaveADR, validateBlockedHasREQ, validateREQsHaveRoadmap, validateFrontmatterPresence) mantidas como violations diretas; `contentHasMarker`, `ruleSeverity`, `applyRule` exportadas no `module.exports`.
+- `npm/tests/validator.test.js` — 4 novos testes: field mapping `req_id` satisfaz `wip_has_req`, severity `off` suprime `adr_orphan`, severity `warning` roteia `wip_has_req` para warnings, `acceptance_markers` customizado satisfaz verificação.
+
+**Decisão técnica:** os testes de severity chamam diretamente `applyRule` + a sub-função de validação em vez de chamar `validate()` completo — evita efeitos colaterais de outras regras no ambiente de teste isolado.
+
+**Resultado:** 16/16 testes `validator.test.js` verdes (12 existentes + 4 novos) | comportamento default idêntico à v2.3 | commit `6ed3ed5` | push para `feat/v2.4-config-evolution`
+
+---
+
+## Sessão 2026-06-13 — Backend (config evolution ML-2C Python)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.4-config-evolution`
+
+**Tarefa:** ML-2C — fazer o validator Python (`pypi/trackfw/validator.py`) consumir os novos campos de config (`link_fields`, `acceptance_markers`, `rules`) em vez de strings hardcoded (F2 field mapping + F3 severity per rule).
+
+**Entregue:**
+- `pypi/trackfw/validator.py` — adicionado `_content_has_marker(content, markers)` que substitui checks hardcoded de `"REQ:"`/`"ADR:"`/`"Roadmap:"` em `validate_wip_has_req`, `validate_reqs_have_adr`, `validate_blocked_has_req`, `validate_reqs_have_roadmap` por loops sobre `cfg["link_fields"][*]`; `validate_wip_has_acceptance_criteria` refatorado para usar `cfg["acceptance_markers"]` substituindo os 4 checks hardcoded; adicionado `_rule_severity(name, cfg)` e `_apply_rule(rule_name, msgs, violations, warnings, cfg)` para rotear msgs conforme `cfg["rules"]`; função `validate()` refatorada usando `_apply_rule` para 8 regras configuráveis (wip_has_req, adr_orphan, wip_acceptance, blocked_by_draft_adr, filename_uniqueness, ref_targets_exist, folder_status, stale_wip, wip_limit); regras sem configuração de severidade (validate_reqs_have_adr, validate_blocked_has_req, validate_reqs_have_roadmap, validate_frontmatter_presence) mantidas como violations diretas.
+- `pypi/tests/test_validator.py` — nova classe `TestValidatorEvolution` com 4 testes: field mapping `req_id` satisfaz `wip_has_req`, severity `off` suprime `adr_orphan`, severity `warning` roteia `wip_has_req` para warnings, `acceptance_markers` customizado `## Done When` satisfaz verificação.
+
+**Decisão técnica:** violations/warnings no Python validator são dicts `{"type": "...", "message": "..."}` (não strings simples) — `_apply_rule` e `_violations_messages` no teste tratam ambos os formatos.
+
+**Resultado:** 167/167 testes verdes (todos os anteriores + 4 novos) | comportamento default idêntico à v2.3 | commit `86c133a` | push para `feat/v2.4-config-evolution`
+
+---
+
+## Sessão 2026-06-13 — Backend (baseline ML-3A Go)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.4-config-evolution`
+
+**Tarefa:** ML-3A — implementar `trackfw baseline` e mecanismo de ratchet em `trackfw validate` (Go).
+
+**Entregue:**
+- `internal/validator/validator.go` — adicionado `BaselineFile` struct, `baselineFileName`, `LoadBaseline()`, `SaveBaseline()`; `Validate()` renomeada para `ValidateUnfiltered()` (sem filtros); nova `Validate()` chama `ValidateUnfiltered()`, aplica ratchet de baseline (filtra violations presentes no baseline) e depois aplica modo lenient; import `encoding/json` adicionado.
+- `internal/commands/baseline.go` — novo arquivo com `newBaselineCmd()`: chama `ValidateUnfiltered()`, persiste resultado via `SaveBaseline()`, imprime contagem.
+- `internal/commands/root.go` — `newBaselineCmd()` registrado após `newValidateCmd()`.
+- `internal/validator/validator_baseline_test.go` — 3 testes: `TestBaselineCreation` (cria baseline com violation), `TestBaselineFiltersOldViolations` (Validate() filtra violation do baseline), `TestBaselineNetNewViolation` (Validate() reporta violation não no baseline).
+
+**Resultado:** `go build ./...` verde | 34/34 testes validator verdes (31 existentes + 3 novos) | commit `88456fd` | push para `feat/v2.4-config-evolution`
+
+---
+
+## Sessão 2026-06-13 — Backend (baseline ML-3B Node.js)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.4-config-evolution`
+
+**Tarefa:** ML-3B — implementar `trackfw baseline` e mecanismo de ratchet em `trackfw validate` (Node.js).
+
+**Entregue:**
+- `npm/src/validator/index.js` — adicionado `BASELINE_FILE`, `loadBaseline()`, `saveBaseline()`; função `validate()` renomeada para `validateUnfiltered()` (lógica inalterada, sem ratchet); nova `validate()` chama `validateUnfiltered()`, aplica ratchet (filtra violations já no baseline via Set de strings) e depois aplica modo lenient; todas as 4 funções novas exportadas em `module.exports`.
+- `npm/src/commands/baseline.js` — novo arquivo; comando `trackfw baseline` chama `validateUnfiltered()` (async), persiste via `saveBaseline()`, imprime contagem.
+- `npm/src/commands/index.js` — `require('./baseline')` registrado em `createProgram()`.
+- `npm/tests/baseline.test.js` — 4 testes async: `saveBaseline cria .trackfw-baseline.json`, `loadBaseline retorna null se arquivo não existe`, `validate filtra violations do baseline`, `validate reporta violations novas (não no baseline)`.
+
+**Resultado:** 4/4 testes `baseline.test.js` verdes | 16/16 testes `validator.test.js` inalterados | commit `77b8f8a` | push para `feat/v2.4-config-evolution`
+
+---
+
+## Sessão 2026-06-13 — Backend (baseline ML-3C Python)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.4-config-evolution`
+
+**Tarefa:** ML-3C — implementar `trackfw baseline` e mecanismo de ratchet em `trackfw validate` (Python).
+
+**Entregue:**
+- `pypi/trackfw/validator.py` — adicionado `import json`; constante `_BASELINE_FILE`; funções `_extract_messages()`, `load_baseline()`, `save_baseline()`; função `validate()` renomeada para `validate_unfiltered()` (sem ratchet, sem lenient); nova `validate()` chama `validate_unfiltered()`, aplica ratchet (filtra violations já no baseline via set de strings extraídas por `_extract_messages`) e depois aplica modo lenient; usa `datetime.now(timezone.utc)` (API moderna, sem DeprecationWarning).
+- `pypi/trackfw/commands/baseline.py` — novo arquivo; comando `trackfw baseline` chama `validate_unfiltered()`, persiste via `save_baseline()`, imprime contagem.
+- `pypi/trackfw/cli.py` — `baseline_cmd.register(subparsers)` registrado após `log_cmd`.
+- `pypi/tests/test_baseline.py` — 4 testes: `test_save_baseline_cria_arquivo`, `test_load_baseline_retorna_none_se_nao_existe`, `test_validate_filtra_violations_do_baseline`, `test_validate_reporta_violations_novas`.
+
+**Resultado:** 4/4 testes `test_baseline*` verdes | 171/171 testes totais verdes | `trackfw baseline` CLI funcional | commit a seguir | push para `feat/v2.4-config-evolution`

@@ -4,6 +4,7 @@ Espelho Python de npm/src/validator/index.js (paridade de comportamento).
 Stdlib apenas: os, pathlib, re, datetime, subprocess.
 """
 
+import json
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -311,6 +312,44 @@ def _read_governance_mode(cwd: str = None) -> dict:
                     pass
 
     return result
+
+
+_BASELINE_FILE = ".trackfw-baseline.json"
+
+
+def _extract_messages(items: list) -> list:
+    """Extrai campo 'message' de uma lista de dicts de violation/warning."""
+    result = []
+    for item in items:
+        if isinstance(item, dict):
+            result.append(item.get("message", str(item)))
+        else:
+            result.append(str(item))
+    return result
+
+
+def load_baseline() -> dict | None:
+    """Lê .trackfw-baseline.json do CWD. Retorna None se não existir."""
+    try:
+        with open(_BASELINE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+    except (json.JSONDecodeError, OSError) as e:
+        raise RuntimeError(f"Erro ao ler baseline: {e}") from e
+
+
+def save_baseline(violations: list, warnings: list) -> None:
+    """Salva violations e warnings como baseline em .trackfw-baseline.json.
+    Aceita lista de dicts ou strings — normaliza para strings.
+    """
+    bf = {
+        "created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "violations": _extract_messages(violations),
+        "warnings": _extract_messages(warnings),
+    }
+    with open(_BASELINE_FILE, "w", encoding="utf-8") as f:
+        json.dump(bf, f, indent=2, ensure_ascii=False)
 
 
 def _is_lenient(cwd: str = None) -> bool:
@@ -769,11 +808,10 @@ def validate_filename_uniqueness(cfg: dict) -> list:
 # validate() — ponto de entrada principal
 # ---------------------------------------------------------------------------
 
-def validate(cwd: str = None) -> dict:
+def validate_unfiltered(cwd: str = None) -> dict:
     """
-    Executa todas as validações e retorna {"violations": [...], "warnings": [...]}.
-    Se governance_mode == "lenient": move violations para warnings.
-    Cada item é um dict {"type": "violation"|"warning", "message": "..."}.
+    Executa todas as validações sem filtro de baseline.
+    Retorna {"violations": [...], "warnings": [...]} onde cada item é um dict com "message".
     Usa _apply_rule para distribuir resultados conforme severidade configurada (F3 — v2.4).
     """
     _config.reset()
@@ -803,6 +841,24 @@ def validate(cwd: str = None) -> dict:
     _apply_rule("wip_limit", wip_limit_result["violations"], violations, warnings, cfg)
     warnings += wip_limit_result["warnings"]
 
+    return {"violations": violations, "warnings": warnings}
+
+
+def validate(cwd: str = None) -> dict:
+    """Executa validações, filtra pelo baseline (ratchet) e aplica modo lenient."""
+    result = validate_unfiltered(cwd)
+    violations = result.get("violations", [])
+    warnings = result.get("warnings", [])
+
+    # Ratchet: filtrar violations que já estavam no baseline
+    baseline = load_baseline()
+    if baseline is not None:
+        baseline_set = set(baseline.get("violations", []))
+        net_new = [v for v in violations
+                   if _extract_messages([v])[0] not in baseline_set]
+        violations = net_new
+
+    # Modo lenient: mover violations para warnings
     if _is_lenient(cwd):
         warnings = warnings + violations
         violations = []

@@ -59,6 +59,10 @@ def main():
     from trackfw.commands import log as log_cmd
     log_cmd.register(subparsers)
 
+    # --- baseline ---
+    from trackfw.commands import baseline as baseline_cmd
+    baseline_cmd.register(subparsers)
+
     # --- discover (stub) ---
     discover_parser = subparsers.add_parser("discover", help="Discover governance context")
     discover_parser.set_defaults(func=_stub("discover"))
