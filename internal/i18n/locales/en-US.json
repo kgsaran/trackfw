@@ -47,5 +47,8 @@
   },
   "errors": {
     "pluginNotFound": "plugin {{name}} not found"
+  },
+  "discover": {
+    "description": "Scan the repository and auto-detect the governance structure"
   }
 }

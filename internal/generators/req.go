@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 // REQContent contém os campos de uma REQ a ser gerada.
@@ -22,13 +24,15 @@ type REQContent struct {
 // NewREQ gera um arquivo REQ em docs/req/ com base no conteúdo fornecido.
 // Campos preenchidos são inseridos diretamente; campos vazios mantêm o placeholder original.
 func NewREQ(content REQContent) error {
-	if err := os.MkdirAll("docs/req", 0755); err != nil {
+	cfg := config.Load()
+	reqDir := cfg.REQDir
+	if err := os.MkdirAll(reqDir, 0755); err != nil {
 		return err
 	}
 
 	slug := toSlug(content.Title)
 	date := time.Now().Format("2006-01-02")
-	filename := fmt.Sprintf("docs/req/REQ-%s-%s.md", date, slug)
+	filename := fmt.Sprintf("%s/REQ-%s-%s.md", reqDir, date, slug)
 
 	motivationSection := "<!-- Why is this requirement needed? What problem does it solve? -->"
 	if content.Motivation != "" {

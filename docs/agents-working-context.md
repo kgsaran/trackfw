@@ -557,6 +557,88 @@ trackfw/
 
 ---
 
+## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO ML-1B do roadmap v2.1-discovery-mode)
+
+**Tarefa:** Substituir TODOS os paths hardcoded por `config.Load()` em todos os pacotes Go e npm.
+
+---
+
+## Sessão 2026-06-13 — Apolo (CONCLUÍDO ML-1B)
+
+**Tarefa:** ML-1B do roadmap v2.1-discovery-mode — Substituir paths hardcoded por config.Load() em todos os pacotes.
+
+**Arquivos Go modificados:**
+- `internal/validator/validator.go` — todas as funções usam `cfg := config.Load()` para `RoadmapDir`, `REQDir`, `ADRDirs` (com iteração sobre todas as dirs); `adrIsDraft` busca em todas ADRDirs.
+- `internal/generators/roadmap.go` — removido `var validStates` e `const transitionLogPath`; substituídos por `stateDir(state)` e `logPath()` que chamam `config.Load()`; todas as funções (`NewRoadmapFromContent`, `MoveRoadmap`, `findRoadmap`, `appendTransitionLog`, `ShowRoadmap`, `ListRoadmaps`) usam config.
+- `internal/generators/adr.go` — `NewADR` e `NewADRDraft` usam `cfg.ADRDirs[0]` como diretório alvo.
+- `internal/generators/req.go` — `NewREQ` usa `cfg.REQDir`.
+- `internal/commands/adr.go` — `ListADRs` recebe `config.Load().ADRDirs[0]`.
+- `internal/commands/req.go` — `ListREQs` recebe `config.Load().REQDir`.
+- `internal/commands/roadmap.go` — Glob usa `config.Load().REQDir + "/*.md"`.
+- `internal/commands/log.go` — `os.Open` usa `config.Load().RoadmapDir + "/.trackfw-log"`.
+- `internal/generators/roadmap_test.go` — substituído uso de `validStates` (removido) por `testStateDirs []string` local.
+
+**Arquivos npm modificados:**
+- `npm/src/validator/index.js` — todas as funções usam `config.load()` para `roadmapDir`, `reqDir`, `adrDirs`; `adrIsDraft` itera sobre `adrDirs`.
+- `npm/src/generators/roadmap.js` — removido `VALID_STATES` e `TRANSITION_LOG_PATH`; substituídos por `stateDir(state)` e `logPath()` dinâmicos via `config.load()`.
+- `npm/src/generators/adr.js` — `newADR` e `newADRDraft` usam `config.load().adrDirs[0]`.
+- `npm/src/generators/req.js` — `newREQ` usa `config.load().reqDir`.
+- `npm/src/commands/adr.js` — `listADRs` recebe `config.load().adrDirs[0]`.
+- `npm/src/commands/req.js` — `listREQs` recebe `config.load().reqDir`.
+
+**Retrocompatibilidade garantida:** sem trackfw.yaml, `config.Load()` retorna defaults v1/v2 idênticos aos paths hardcoded anteriores.
+
+**Resultado:** `go build ./...` limpo | `go test ./...` todos verdes (sem regressões) | `node --check` todos os arquivos JS limpos.
+
+---
+
+## Sessão 2026-06-13 — Apolo (CONCLUÍDO ML-2A/2B/2C do roadmap v2.1-discovery-mode)
+
+**Tarefa:** Implementar constantes de namespacing (ML-2A), suporte a hierarquia by_agent nos generators (ML-2B), e validator/status em modo by_agent (ML-2C) — Go + npm Node.js.
+
+**Entregue:**
+- `internal/config/config.go` — constantes `NamespacingFlat = "flat"` e `NamespacingByAgent = "by_agent"` adicionadas antes da struct `ProjectConfig`.
+- `npm/src/config/index.js` — constantes `NAMESPACING_FLAT` e `NAMESPACING_BY_AGENT` adicionadas e exportadas.
+- `internal/generators/roadmap.go` — `agentStateDir(agent, state)` nova; `findRoadmap` itera agents×states em by_agent; `MoveRoadmap` mantém agente na hierarquia; `NewRoadmapFromContent` cria em agentStateDir em by_agent; `ListRoadmaps` agrupa por `[agent/state]`; `ShowRoadmap` usa glob 3 níveis em by_agent; validação de estado movida para antes de `findRoadmap` (preserva comportamento de erro original).
+- `npm/src/generators/roadmap.js` — paridade JS completa: `agentStateDir`, `findRoadmapMatches` by_agent, `moveRoadmap`, `listRoadmaps`, `newRoadmap` atualizados.
+- `internal/validator/validator.go` — `resolveWIPDirs(cfg)` nova; `validateSingleWIP` renomeado para `validateWIPLimit` com suporte a wip_limit por agente; `validateWIPHasREQ`, `validateWIPHasAcceptanceCriteria`, `validateStaleWIP` usam `resolveWIPDirs`; `GetStatus` com seção `⚙ WIP by Agent` em by_agent.
+- `npm/src/validator/index.js` — paridade JS: `resolveWIPDirs`, `validateWIPLimit`, `validateSingleWIP` (alias), `validateWIPHasREQ`, `validateWIPHasAcceptanceCriteria`, `validateStaleWIP`, `getStatus` atualizados.
+- Testes Go novos: `TestListRoadmaps_ByAgent`, `TestMoveRoadmap_ByAgent` (generators) + `TestValidateWIPLimit_ByAgent` (validator).
+- Resultado: `go build ./...` limpo | 3 pacotes Go verdes (generators, validator, config) | `node --check` limpo em todos JS modificados.
+- Commit `94f0798` | push para `feat/v2.1-discovery-mode`.
+
+---
+
+## Sessão 2026-06-13 — Apolo (CONCLUÍDO)
+
+**Tarefa:** ML-1A do roadmap v2.1-discovery-mode — Criar pacote central de configuração `internal/config/` e paridade Node.js.
+
+**Entregue:**
+- `internal/config/config.go` — `ProjectConfig` struct com `Load()` singleton (sync.Once), `Reset()` para testes, `defaults()` retrocompatíveis, parser YAML flat sem dependências externas; campos: `ADRDirs`, `REQDir`, `RoadmapDir`, `RoadmapNamespacing`, `Agents`, `GovernanceMode`, `LenientUntil`, `WipLimit`, `WipBySquad`, `RequireReqInCommit`.
+- `internal/config/config_test.go` — 6 testes: `TestLoad_NoFile`, `TestLoad_WithFile_AllFields`, `TestLoad_WithFile_PartialFields`, `TestLoad_ADRDirs_List`, `TestLoad_Agents_List`, `TestReset`. Todos usam `t.TempDir()` + `os.Chdir` + `config.Reset()`.
+- `npm/src/config/index.js` — paridade exata em Node.js: `load(cwd)`, `reset()`, `defaults()`, `parse()` com lógica de listas YAML idêntica ao Go; singleton via `_instance`.
+- `go test ./internal/config/...` — 6/6 verdes.
+- `go build ./...` — limpo.
+- `node --check npm/src/config/index.js` — sintaxe OK.
+- Commit `a5c29f4` | push para `feat/v2.1-discovery-mode`.
+
+## Sessão 2026-06-13 — Apolo (CONCLUÍDO ML-3A e ML-3B do roadmap v2.1-discovery-mode)
+
+**Tarefa:** ML-3A — `internal/discover/discover.go` + testes. ML-3B — `trackfw discover` command (Go + npm Node.js), chave i18n `discover.description` nos 3 locales.
+
+**Entregue:**
+- `internal/discover/discover.go` — pacote novo: `DiscoveryResult`, `Scan(rootDir)`, `GenerateYAML(r)`, `GenerateBootstrapLog(r, rootDir)`; detecção de ADRs (flat/by_agent), REQ com 4 candidatos incluindo pt-BR, roadmaps flat/by_agent, GovernanceScore 0-100.
+- `internal/discover/discover_test.go` — 5 testes: `TestScan_Empty`, `TestScan_Flat`, `TestScan_ByAgent`, `TestScan_CMDBLike` (6 agentes), `TestGenerateYAML`. Todos passaram.
+- `internal/commands/discover.go` — comando cobra `discover` com flags `--init` (gera trackfw.yaml) e `--bootstrap-log` (cria .trackfw-log retroativo).
+- `internal/commands/root.go` — `NewDiscoverCmd()` registrado.
+- `internal/i18n/locales/*.json` — chave `discover.description` adicionada nos 3 locales (pt-BR, en-US, es-ES).
+- `npm/src/commands/discover.js` — paridade Node.js via Commander; exporta `scan`, `generateYAML`, `generateBootstrapLog`.
+- `npm/src/commands/index.js` — `discover` registrado no programa.
+
+**Resultado:** `go build ./...` limpo | 5/5 testes discover verdes | todos os demais pacotes sem regressão | `node --check` OK | commit `d5803c8` | push para `feat/v2.1-discovery-mode`.
+
+---
+
 ## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
 
 **Tarefa:** ML-3C do roadmap de reescrita npm Node.js — Implementar `npm/src/generators/init.js` (scaffold completo) e `npm/src/commands/init.js` (wizard com @inquirer/prompts).
@@ -565,3 +647,9 @@ trackfw/
 - `npm/src/generators/init.js` — `GOV_DIRS` (7 entradas), `scaffold(cfg)`, `writeTrackfwConfig`, `generateValidateScript` + `buildValidateScript` (go/java/node/python + frontend), `generateCIWorkflow` (github-actions/gitlab-ci), `generateGitHooks` (husky/lefthook), `generateClaudeMD` (seções frontend/backend/pre-commit/hooks/CI), `generateClaudeCommands` (7 slash commands idempotentes), stubs `installAgents/Gemini/Cursor/Copilot/Windsurf/AmazonQ` com mensagem orientativa.
 - `npm/src/commands/init.js` — wizard completo com `@inquirer/prompts` (input/select/checkbox), guard `!process.stdin.isTTY` com defaults, try/catch para fallback em stdin inesperadamente fechado, dispatch para instaladores de AI tools.
 - Critério de aceite validado: `echo "" | node npm/bin/trackfw init` cria os 7 diretórios de governança + trackfw.yaml + scripts/trackfw-validate.sh + CLAUDE.md + .claude/commands/trackfw (7 slash commands). Sintaxe validada com `node --check`.
+
+---
+
+## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO ML-4A + ML-4B do roadmap v2.1-discovery-mode)
+
+**Tarefa:** ML-4A — Detectar HookFramework e CISystem no Scan(); ML-4B — `discover --init` instala gates de governança (lefthook/husky + CI workflow). Go + npm (paridade obrigatória).

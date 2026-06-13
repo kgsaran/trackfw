@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/spf13/cobra"
 )
@@ -23,7 +24,8 @@ func newLogCmd() *cobra.Command {
 }
 
 func runLog(tail int) error {
-	f, err := os.Open("docs/roadmaps/.trackfw-log")
+	logFile := config.Load().RoadmapDir + "/.trackfw-log"
+	f, err := os.Open(logFile)
 	if os.IsNotExist(err) {
 		fmt.Println(i18n.T("log.empty"))
 		return nil

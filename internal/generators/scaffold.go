@@ -445,6 +445,13 @@ backend_framework: %s
 pkg_manager: %s
 hooks: %s
 ci: %s
+
+# governance paths (edit to match your project structure)
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: flat
 `, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.BackendFramework, cfg.PkgManager, cfg.Hooks, cfg.CI)
 
 	if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {

@@ -18,6 +18,7 @@ function createProgram() {
   program.addCommand(require('./status'))
   program.addCommand(require('./log'))
   program.addCommand(require('./plugins'))
+  program.addCommand(require('./discover'))
 
   // plugin dispatch — comandos desconhecidos tentam executar plugin
   program.hook('preSubcommand', () => {})

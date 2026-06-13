@@ -64,7 +64,7 @@ cmd.command('new <title>')
 cmd.command('list')
   .description(t('req.list.description'))
   .action(async () => {
-    listREQs('docs/req')
+    listREQs(require('../config').load().reqDir)
   })
 
 module.exports = cmd

@@ -47,5 +47,8 @@
   },
   "errors": {
     "pluginNotFound": "plugin {{name}} não encontrado"
+  },
+  "discover": {
+    "description": "Escaneia o repositório e auto-detecta a estrutura de governança"
   }
 }

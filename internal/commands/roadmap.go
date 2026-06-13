@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/spf13/cobra"
 )
@@ -27,7 +28,7 @@ func newRoadmapNewCmd() *cobra.Command {
 		Short: "Create a new roadmap from a REQ",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			reqFiles, _ := filepath.Glob("docs/req/*.md")
+			reqFiles, _ := filepath.Glob(config.Load().REQDir + "/*.md")
 			var selectedREQ string
 
 			isTTY := cbterm.IsTerminal(uintptr(os.Stdin.Fd()))

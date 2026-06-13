@@ -25,7 +25,7 @@ cmd.command('new <title>')
 cmd.command('list')
   .description(t('adr.list.description'))
   .action(async () => {
-    await generators.listADRs('docs/adr')
+    await generators.listADRs(require('../config').load().adrDirs[0])
   })
 
 module.exports = cmd

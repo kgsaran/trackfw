@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/spf13/cobra"
 )
@@ -148,7 +149,7 @@ func newReqListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List all REQs in docs/req/",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return generators.ListREQs("docs/req")
+			return generators.ListREQs(config.Load().REQDir)
 		},
 	}
 }

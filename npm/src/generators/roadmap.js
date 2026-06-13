@@ -1,40 +1,80 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
-
-const VALID_STATES = {
-  backlog:   'docs/roadmaps/backlog',
-  wip:       'docs/roadmaps/wip',
-  blocked:   'docs/roadmaps/blocked',
-  done:      'docs/roadmaps/done',
-  abandoned: 'docs/roadmaps/abandoned',
-}
+const config = require('../config')
 
 const STATE_ORDER = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
 
-const TRANSITION_LOG_PATH = 'docs/roadmaps/.trackfw-log'
+// stateDir retorna o caminho do diretório para um estado válido no modo flat, ou null se inválido.
+function stateDir(state) {
+  const cfg = config.load()
+  const valid = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
+  if (!valid.includes(state)) return null
+  return cfg.roadmapDir + '/' + state
+}
+
+// agentStateDir retorna o diretório para um agente+estado em modo by_agent.
+// agent=null usa o primeiro agente configurado (ou "default" se lista vazia).
+function agentStateDir(agent, state) {
+  const cfg = config.load()
+  const valid = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
+  if (!valid.includes(state)) return null
+  if (!agent) {
+    agent = cfg.agents && cfg.agents.length > 0 ? cfg.agents[0] : 'default'
+  }
+  return cfg.roadmapDir + '/' + agent + '/' + state
+}
+
+// logPath retorna o caminho do arquivo de log de transições.
+function logPath() {
+  return config.load().roadmapDir + '/.trackfw-log'
+}
 
 /**
- * listRoadmaps — lista roadmaps agrupados por estado (wip, backlog, blocked, done, abandoned).
+ * listRoadmaps — lista roadmaps agrupados por estado (e por agente em modo by_agent).
  * Se nenhum encontrado imprime mensagem orientando o usuário.
  */
 function listRoadmaps() {
+  const cfg = config.load()
   let found = false
 
-  for (const state of STATE_ORDER) {
-    const dir = VALID_STATES[state]
-    let files = []
-    try {
-      files = fs.readdirSync(dir).filter(f => !fs.statSync(path.join(dir, f)).isDirectory() && f.endsWith('.md'))
-    } catch (_) {
-      continue
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    let agents = cfg.agents || []
+    if (agents.length === 0) {
+      try {
+        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
+          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
+        })
+      } catch (_) { agents = [] }
     }
-    if (files.length === 0) continue
-
-    found = true
-    console.log(`[${state}]`)
-    for (const f of files) {
-      console.log(`  ${f}`)
+    for (const agent of agents) {
+      for (const state of STATE_ORDER) {
+        const dir = cfg.roadmapDir + '/' + agent + '/' + state
+        let files = []
+        try {
+          files = fs.readdirSync(dir).filter(f => {
+            try { return !fs.statSync(path.join(dir, f)).isDirectory() && f.endsWith('.md') } catch (_) { return false }
+          })
+        } catch (_) { continue }
+        if (files.length === 0) continue
+        found = true
+        console.log(`[${agent}/${state}]`)
+        for (const f of files) console.log(`  ${f}`)
+      }
+    }
+  } else {
+    for (const state of STATE_ORDER) {
+      const dir = cfg.roadmapDir + '/' + state
+      let files = []
+      try {
+        files = fs.readdirSync(dir).filter(f => {
+          try { return !fs.statSync(path.join(dir, f)).isDirectory() && f.endsWith('.md') } catch (_) { return false }
+        })
+      } catch (_) { continue }
+      if (files.length === 0) continue
+      found = true
+      console.log(`[${state}]`)
+      for (const f of files) console.log(`  ${f}`)
     }
   }
 
@@ -44,8 +84,8 @@ function listRoadmaps() {
 }
 
 /**
- * showRoadmap — busca docs/roadmaps/ESTADO/NOME*.md (partial match), imprime cabeçalho + conteúdo.
- * 0 matches: erro. múltiplos: lista + erro. 1 match: imprime cabeçalho e conteúdo.
+ * showRoadmap — busca <roadmapDir>/ESTADO/NOME*.md (partial match, flat) ou
+ * <roadmapDir>/AGENTE/ESTADO/NOME*.md (by_agent), imprime cabeçalho + conteúdo.
  */
 function showRoadmap(name) {
   const matches = findRoadmapMatches(name)
@@ -58,9 +98,7 @@ function showRoadmap(name) {
 
   if (matches.length > 1) {
     console.log('Multiple roadmaps found — be more specific:')
-    for (const m of matches) {
-      console.log(`  ${m}`)
-    }
+    for (const m of matches) console.log(`  ${m}`)
     console.error(`ambiguous match for "${name}"`)
     process.exitCode = 1
     return
@@ -78,12 +116,12 @@ function showRoadmap(name) {
 
 /**
  * moveRoadmap — move arquivo para diretório do estado alvo.
- * Valida estado, procura arquivo em qualquer estado (case-insensitive partial match),
- * move com fs.renameSync, chama appendTransitionLog, imprime confirmação.
+ * Em modo by_agent, mantém o agente na hierarquia.
  */
 function moveRoadmap(name, state) {
-  const targetDir = VALID_STATES[state]
-  if (!targetDir) {
+  const cfg = config.load()
+  const valid = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
+  if (!valid.includes(state)) {
     console.error(`invalid state "${state}" — valid states: backlog, wip, blocked, done, abandoned`)
     process.exitCode = 1
     return
@@ -97,9 +135,7 @@ function moveRoadmap(name, state) {
   }
   if (matches.length > 1) {
     console.log('Multiple roadmaps found — be more specific:')
-    for (const m of matches) {
-      console.log(`  ${m}`)
-    }
+    for (const m of matches) console.log(`  ${m}`)
     console.error(`ambiguous match for "${name}"`)
     process.exitCode = 1
     return
@@ -107,22 +143,41 @@ function moveRoadmap(name, state) {
 
   const src = matches[0]
   const basename = path.basename(src)
-  const fromState = path.basename(path.dirname(src))
+  let targetDir, fromState, logBasename
 
-  try {
-    fs.mkdirSync(targetDir, { recursive: true })
-  } catch (_) {}
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    const agentDir = path.dirname(path.dirname(src))
+    const agent = path.basename(agentDir)
+    fromState = path.basename(path.dirname(src))
+    targetDir = agentStateDir(agent, state)
+    if (!targetDir) {
+      console.error(`invalid state "${state}"`)
+      process.exitCode = 1
+      return
+    }
+    logBasename = agent + '/' + basename
+  } else {
+    fromState = path.basename(path.dirname(src))
+    targetDir = stateDir(state)
+    if (!targetDir) {
+      console.error(`invalid state "${state}"`)
+      process.exitCode = 1
+      return
+    }
+    logBasename = basename
+  }
+
+  try { fs.mkdirSync(targetDir, { recursive: true }) } catch (_) {}
 
   const dst = path.join(targetDir, basename)
   fs.renameSync(src, dst)
 
-  appendTransitionLog(basename, fromState, state)
+  appendTransitionLog(logBasename, fromState, state)
   console.log(`✓ moved ${basename} → ${targetDir}`)
 }
 
 /**
- * appendTransitionLog — append em docs/roadmaps/.trackfw-log.
- * Formato: `YYYY-MM-DD HH:mm  <basename padded to 50>  <fromState> → <toState>\n`
+ * appendTransitionLog — append em <roadmapDir>/.trackfw-log.
  */
 function appendTransitionLog(basename, fromState, toState) {
   const now = new Date()
@@ -135,24 +190,39 @@ function appendTransitionLog(basename, fromState, toState) {
   const line = `${timestamp}  ${basename.padEnd(50)}  ${fromState} → ${toState}\n`
 
   try {
-    fs.mkdirSync(path.dirname(TRANSITION_LOG_PATH), { recursive: true })
-    fs.appendFileSync(TRANSITION_LOG_PATH, line, 'utf8')
+    const lp = logPath()
+    fs.mkdirSync(path.dirname(lp), { recursive: true })
+    fs.appendFileSync(lp, line, 'utf8')
   } catch (_) {}
 }
 
 /**
- * newRoadmap — cria roadmap em docs/roadmaps/backlog/ROADMAP-YYYY-MM-DD-<slug>.md.
+ * newRoadmap — cria roadmap em <roadmapDir>/backlog/ROADMAP-YYYY-MM-DD-<slug>.md.
+ * Em modo by_agent, usa o primeiro agente configurado.
  */
 function newRoadmap(title, reqPath) {
+  const cfg = config.load()
   const now = new Date()
   const yyyy = now.getFullYear()
   const mm = String(now.getMonth() + 1).padStart(2, '0')
   const dd = String(now.getDate()).padStart(2, '0')
   const date = `${yyyy}-${mm}-${dd}`
   const slug = toSlug(title)
-  const filename = `docs/roadmaps/backlog/ROADMAP-${date}-${slug}.md`
 
-  fs.mkdirSync('docs/roadmaps/backlog', { recursive: true })
+  let backlogDir
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    backlogDir = agentStateDir(null, 'backlog')
+    if (!backlogDir) {
+      console.error('cannot resolve backlog dir in by_agent mode')
+      process.exitCode = 1
+      return
+    }
+  } else {
+    backlogDir = cfg.roadmapDir + '/backlog'
+  }
+
+  const filename = `${backlogDir}/ROADMAP-${date}-${slug}.md`
+  fs.mkdirSync(backlogDir, { recursive: true })
 
   const body = `# Roadmap: ${title}
 
@@ -183,21 +253,43 @@ REQ: ${reqPath || ''}
 
 /**
  * findRoadmapMatches — retorna array de paths que contêm `name` (case-insensitive) em qualquer estado.
+ * Suporta modo flat (1 nível) e by_agent (2 níveis).
  */
 function findRoadmapMatches(name) {
+  const cfg = config.load()
   const matches = []
   const nameLower = name.toLowerCase()
-  for (const state of STATE_ORDER) {
-    const dir = VALID_STATES[state]
-    let files = []
-    try {
-      files = fs.readdirSync(dir)
-    } catch (_) {
-      continue
+
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    let agents = cfg.agents || []
+    if (agents.length === 0) {
+      try {
+        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
+          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
+        })
+      } catch (_) { agents = ['default'] }
     }
-    for (const f of files) {
-      if (f.toLowerCase().includes(nameLower) && f.endsWith('.md')) {
-        matches.push(path.join(dir, f))
+    for (const agent of agents) {
+      for (const state of STATE_ORDER) {
+        const dir = cfg.roadmapDir + '/' + agent + '/' + state
+        let files = []
+        try { files = fs.readdirSync(dir) } catch (_) { continue }
+        for (const f of files) {
+          if (f.toLowerCase().includes(nameLower) && f.endsWith('.md')) {
+            matches.push(path.join(dir, f))
+          }
+        }
+      }
+    }
+  } else {
+    for (const state of STATE_ORDER) {
+      const dir = cfg.roadmapDir + '/' + state
+      let files = []
+      try { files = fs.readdirSync(dir) } catch (_) { continue }
+      for (const f of files) {
+        if (f.toLowerCase().includes(nameLower) && f.endsWith('.md')) {
+          matches.push(path.join(dir, f))
+        }
       }
     }
   }
@@ -215,10 +307,11 @@ function toSlug(s) {
 }
 
 module.exports = {
-  VALID_STATES,
   listRoadmaps,
   showRoadmap,
   moveRoadmap,
   appendTransitionLog,
   newRoadmap,
+  stateDir,
+  agentStateDir,
 }
