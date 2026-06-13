@@ -6,21 +6,32 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-)
 
-var validStates = map[string]string{
-	"backlog":   "docs/roadmaps/backlog",
-	"wip":       "docs/roadmaps/wip",
-	"blocked":   "docs/roadmaps/blocked",
-	"done":      "docs/roadmaps/done",
-	"abandoned": "docs/roadmaps/abandoned",
-}
+	"github.com/kgsaran/trackfw/internal/config"
+)
 
 // RoadmapContent contém os dados para criação de um roadmap.
 type RoadmapContent struct {
 	Title   string
 	REQPath string
 	Body    string
+}
+
+// stateDir retorna o caminho do diretório para um estado válido, ou "", false se inválido.
+func stateDir(state string) (string, bool) {
+	cfg := config.Load()
+	validStateNames := map[string]bool{
+		"backlog": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
+	}
+	if !validStateNames[state] {
+		return "", false
+	}
+	return cfg.RoadmapDir + "/" + state, true
+}
+
+// logPath retorna o caminho do arquivo de log de transições.
+func logPath() string {
+	return config.Load().RoadmapDir + "/.trackfw-log"
 }
 
 // NewRoadmap cria um roadmap com template padrão a partir de um título simples.
@@ -31,13 +42,15 @@ func NewRoadmap(title string) error {
 // NewRoadmapFromContent cria um roadmap a partir de um RoadmapContent.
 // Se Body for preenchido, usa diretamente; caso contrário, gera template padrão.
 func NewRoadmapFromContent(content RoadmapContent) error {
-	if err := os.MkdirAll("docs/roadmaps/backlog", 0755); err != nil {
+	cfg := config.Load()
+	backlogDir := cfg.RoadmapDir + "/backlog"
+	if err := os.MkdirAll(backlogDir, 0755); err != nil {
 		return err
 	}
 
 	slug := toSlug(content.Title)
 	date := time.Now().Format("2006-01-02")
-	filename := fmt.Sprintf("docs/roadmaps/backlog/ROADMAP-%s-%s.md", date, slug)
+	filename := fmt.Sprintf("%s/ROADMAP-%s-%s.md", backlogDir, date, slug)
 
 	var body string
 	if content.Body != "" {
@@ -74,7 +87,7 @@ REQ: %s
 }
 
 func MoveRoadmap(name, state string) error {
-	targetDir, ok := validStates[state]
+	targetDir, ok := stateDir(state)
 	if !ok {
 		return fmt.Errorf("invalid state %q — valid states: backlog, wip, blocked, done, abandoned", state)
 	}
@@ -85,6 +98,10 @@ func MoveRoadmap(name, state string) error {
 	}
 
 	fromState := filepath.Base(filepath.Dir(src))
+
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("creating target dir: %w", err)
+	}
 
 	dst := filepath.Join(targetDir, filepath.Base(src))
 	if err := os.Rename(src, dst); err != nil {
@@ -98,7 +115,9 @@ func MoveRoadmap(name, state string) error {
 }
 
 func findRoadmap(name string) (string, error) {
-	for _, dir := range validStates {
+	cfg := config.Load()
+	for _, state := range []string{"backlog", "wip", "blocked", "done", "abandoned"} {
+		dir := cfg.RoadmapDir + "/" + state
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
@@ -116,10 +135,8 @@ func containsIgnoreCase(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }
 
-const transitionLogPath = "docs/roadmaps/.trackfw-log"
-
 func appendTransitionLog(basename, fromState, toState string) {
-	f, err := os.OpenFile(transitionLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(logPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
 	}
@@ -135,7 +152,8 @@ func appendTransitionLog(basename, fromState, toState string) {
 
 // ShowRoadmap exibe o conteúdo de um roadmap identificado por nome parcial.
 func ShowRoadmap(name string) error {
-	pattern := filepath.Join("docs", "roadmaps", "*", "*"+name+"*.md")
+	cfg := config.Load()
+	pattern := filepath.Join(cfg.RoadmapDir, "*", "*"+name+"*.md")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return err
@@ -165,11 +183,12 @@ func ShowRoadmap(name string) error {
 
 // ListRoadmaps imprime todos os roadmaps agrupados por estado.
 func ListRoadmaps() error {
+	cfg := config.Load()
 	stateOrder := []string{"wip", "backlog", "blocked", "done", "abandoned"}
 	found := false
 
 	for _, state := range stateOrder {
-		dir := validStates[state]
+		dir := cfg.RoadmapDir + "/" + state
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue

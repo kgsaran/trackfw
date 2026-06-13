@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 // ADRContent contém os campos de um ADR a ser gerado.
@@ -21,13 +23,15 @@ type ADRContent struct {
 // NewADR gera um arquivo ADR em docs/adr/ com base no conteúdo fornecido.
 // Campos preenchidos são inseridos diretamente; campos vazios mantêm o placeholder HTML.
 func NewADR(content ADRContent) error {
-	if err := os.MkdirAll("docs/adr", 0755); err != nil {
+	cfg := config.Load()
+	adrDir := cfg.ADRDirs[0]
+	if err := os.MkdirAll(adrDir, 0755); err != nil {
 		return err
 	}
 
 	slug := toSlug(content.Title)
 	date := time.Now().Format("2006-01-02")
-	filename := fmt.Sprintf("docs/adr/ADR-%s-%s.md", date, slug)
+	filename := fmt.Sprintf("%s/ADR-%s-%s.md", adrDir, date, slug)
 
 	contextSection := "<!-- What is the situation that motivates this decision? -->"
 	if content.Context != "" {
@@ -148,12 +152,14 @@ func slugToTitle(slug string) string {
 // Retorna o basename do arquivo criado.
 // Se o arquivo já existir, não sobrescreve (idempotente) e retorna o basename sem erro.
 func NewADRDraft(slug string) (string, error) {
-	if err := os.MkdirAll("docs/adr", 0755); err != nil {
-		return "", fmt.Errorf("creating docs/adr: %w", err)
+	cfg := config.Load()
+	adrDir := cfg.ADRDirs[0]
+	if err := os.MkdirAll(adrDir, 0755); err != nil {
+		return "", fmt.Errorf("creating %s: %w", adrDir, err)
 	}
 
 	// Verificar idempotência: glob por slug
-	pattern := filepath.Join("docs", "adr", "ADR-*-"+slug+".md")
+	pattern := filepath.Join(adrDir, "ADR-*-"+slug+".md")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return "", fmt.Errorf("glob: %w", err)
@@ -166,7 +172,7 @@ func NewADRDraft(slug string) (string, error) {
 
 	date := time.Now().Format("2006-01-02")
 	filename := fmt.Sprintf("ADR-%s-%s.md", date, slug)
-	path := filepath.Join("docs", "adr", filename)
+	path := filepath.Join(adrDir, filename)
 	title := slugToTitle(slug)
 
 	body := fmt.Sprintf(`# ADR: %s

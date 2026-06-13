@@ -2,12 +2,13 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/spf13/cobra"
-	"os"
 )
 
 func newADRCmd() *cobra.Command {
@@ -71,7 +72,7 @@ func newADRListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List all ADRs in docs/adr/",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return generators.ListADRs("docs/adr")
+			return generators.ListADRs(config.Load().ADRDirs[0])
 		},
 	}
 }

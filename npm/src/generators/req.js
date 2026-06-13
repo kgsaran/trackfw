@@ -69,11 +69,12 @@ function toSlug(s) {
  * @returns {Promise<void>}
  */
 async function newREQ(content) {
-  fs.mkdirSync('docs/req', { recursive: true })
+  const reqDir = require('../config').load().reqDir
+  fs.mkdirSync(reqDir, { recursive: true })
 
   const slug = toSlug(content.title)
   const date = new Date().toISOString().slice(0, 10)
-  const filename = `docs/req/REQ-${date}-${slug}.md`
+  const filename = `${reqDir}/REQ-${date}-${slug}.md`
 
   const motivationSection = content.motivation || '<!-- Why is this requirement needed? What problem does it solve? -->'
   const criteriaSection = content.criteria || '- [ ]\n- [ ]'

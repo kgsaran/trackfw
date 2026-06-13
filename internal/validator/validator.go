@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 const staleWIPDays = 7
@@ -69,11 +71,12 @@ func Validate() (violations []string, warnings []string, err error) {
 }
 
 func GetStatus() (string, error) {
+	cfg := config.Load()
 	var sb strings.Builder
 
-	wip, _ := listDir("docs/roadmaps/wip")
-	blocked, _ := listDir("docs/roadmaps/blocked")
-	done, _ := listDir("docs/roadmaps/done")
+	wip, _ := listDir(cfg.RoadmapDir + "/wip")
+	blocked, _ := listDir(cfg.RoadmapDir + "/blocked")
+	done, _ := listDir(cfg.RoadmapDir + "/done")
 
 	sb.WriteString("── trackfw status ──────────────────────\n")
 
@@ -125,14 +128,15 @@ func GetStatus() (string, error) {
 }
 
 func validateWIPHasREQ() ([]string, error) {
-	entries, err := listDir("docs/roadmaps/wip")
+	cfg := config.Load()
+	entries, err := listDir(cfg.RoadmapDir + "/wip")
 	if err != nil {
 		return nil, nil
 	}
 
 	var violations []string
 	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join("docs/roadmaps/wip", name))
+		content, err := os.ReadFile(filepath.Join(cfg.RoadmapDir+"/wip", name))
 		if err != nil {
 			continue
 		}
@@ -144,14 +148,15 @@ func validateWIPHasREQ() ([]string, error) {
 }
 
 func validateREQsHaveADR() ([]string, error) {
-	entries, err := listDir("docs/req")
+	cfg := config.Load()
+	entries, err := listDir(cfg.REQDir)
 	if err != nil {
 		return nil, nil
 	}
 
 	var violations []string
 	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join("docs/req", name))
+		content, err := os.ReadFile(filepath.Join(cfg.REQDir, name))
 		if err != nil {
 			continue
 		}
@@ -163,14 +168,15 @@ func validateREQsHaveADR() ([]string, error) {
 }
 
 func validateBlockedHasREQ() ([]string, error) {
-	entries, err := listDir("docs/roadmaps/blocked")
+	cfg := config.Load()
+	entries, err := listDir(cfg.RoadmapDir + "/blocked")
 	if err != nil {
 		return nil, nil
 	}
 
 	var violations []string
 	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join("docs/roadmaps/blocked", name))
+		content, err := os.ReadFile(filepath.Join(cfg.RoadmapDir+"/blocked", name))
 		if err != nil {
 			continue
 		}
@@ -182,14 +188,15 @@ func validateBlockedHasREQ() ([]string, error) {
 }
 
 func validateREQsHaveRoadmap() ([]string, error) {
-	entries, err := listDir("docs/req")
+	cfg := config.Load()
+	entries, err := listDir(cfg.REQDir)
 	if err != nil {
 		return nil, nil
 	}
 
 	var violations []string
 	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join("docs/req", name))
+		content, err := os.ReadFile(filepath.Join(cfg.REQDir, name))
 		if err != nil {
 			continue
 		}
@@ -201,11 +208,17 @@ func validateREQsHaveRoadmap() ([]string, error) {
 }
 
 func validateADRsAreReferenced() ([]string, error) {
-	adrs, err := listDir("docs/adr")
-	if err != nil {
-		return nil, nil
+	cfg := config.Load()
+	var adrs []string
+	for _, adrDir := range cfg.ADRDirs {
+		names, err := listDir(adrDir)
+		if err != nil {
+			continue
+		}
+		adrs = append(adrs, names...)
 	}
-	reqs, err := os.ReadDir("docs/req")
+
+	reqs, err := os.ReadDir(cfg.REQDir)
 	if err != nil {
 		return nil, nil
 	}
@@ -215,7 +228,7 @@ func validateADRsAreReferenced() ([]string, error) {
 		if r.IsDir() {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join("docs/req", r.Name()))
+		b, err := os.ReadFile(filepath.Join(cfg.REQDir, r.Name()))
 		if err == nil {
 			allREQContent.Write(b)
 		}
@@ -232,14 +245,15 @@ func validateADRsAreReferenced() ([]string, error) {
 }
 
 func validateWIPHasAcceptanceCriteria() ([]string, error) {
-	entries, err := listDir("docs/roadmaps/wip")
+	cfg := config.Load()
+	entries, err := listDir(cfg.RoadmapDir + "/wip")
 	if err != nil {
 		return nil, nil
 	}
 
 	var violations []string
 	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join("docs/roadmaps/wip", name))
+		content, err := os.ReadFile(filepath.Join(cfg.RoadmapDir+"/wip", name))
 		if err != nil {
 			continue
 		}
@@ -256,7 +270,8 @@ func validateWIPHasAcceptanceCriteria() ([]string, error) {
 }
 
 func validateStaleWIP() ([]string, error) {
-	entries, err := filepath.Glob("docs/roadmaps/wip/*.md")
+	cfg := config.Load()
+	entries, err := filepath.Glob(cfg.RoadmapDir + "/wip/*.md")
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +294,8 @@ func validateStaleWIP() ([]string, error) {
 }
 
 func validateSingleWIP() ([]string, error) {
-	entries, err := listDir("docs/roadmaps/wip")
+	cfg := config.Load()
+	entries, err := listDir(cfg.RoadmapDir + "/wip")
 	if err != nil {
 		return nil, nil
 	}
@@ -292,14 +308,15 @@ func validateSingleWIP() ([]string, error) {
 // blockedREQs retorna um mapa de REQ-basename → lista de ADR-basenames Draft que a bloqueiam.
 // Somente REQs com Status: Open e ADRs com Status: Draft são incluídas.
 func blockedREQs() (map[string][]string, error) {
-	entries, err := listDir("docs/req")
+	cfg := config.Load()
+	entries, err := listDir(cfg.REQDir)
 	if err != nil {
 		return nil, err
 	}
 
 	result := make(map[string][]string)
 	for _, name := range entries {
-		reqPath := filepath.Join("docs", "req", name)
+		reqPath := filepath.Join(cfg.REQDir, name)
 		content, err := os.ReadFile(reqPath)
 		if err != nil {
 			continue
@@ -328,7 +345,8 @@ func blockedREQs() (map[string][]string, error) {
 // validateREQsNotBlockedByDraftADRs verifica se REQs com Status Open têm ADRs Draft vinculados.
 // Uma REQ Open com ADR Draft é uma violação: o roadmap não pode ser criado até os ADRs serem aceitos.
 func validateREQsNotBlockedByDraftADRs() ([]string, error) {
-	entries, err := filepath.Glob(filepath.Join("docs", "req", "*.md"))
+	cfg := config.Load()
+	entries, err := filepath.Glob(filepath.Join(cfg.REQDir, "*.md"))
 	if err != nil {
 		return nil, err
 	}
@@ -394,13 +412,17 @@ func parseBlockedADRs(path string) ([]string, error) {
 }
 
 // adrIsDraft verifica se o ADR identificado pelo basename contém "Status: Draft".
+// Busca em todas as ADRDirs configuradas.
 func adrIsDraft(adrBasename string) bool {
-	path := filepath.Join("docs", "adr", adrBasename)
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return false
+	cfg := config.Load()
+	for _, adrDir := range cfg.ADRDirs {
+		path := filepath.Join(adrDir, adrBasename)
+		content, err := os.ReadFile(path)
+		if err == nil {
+			return strings.Contains(string(content), "Status: Draft")
+		}
 	}
-	return strings.Contains(string(content), "Status: Draft")
+	return false
 }
 
 func listDir(dir string) ([]string, error) {

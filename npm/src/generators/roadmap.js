@@ -1,28 +1,33 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
-
-const VALID_STATES = {
-  backlog:   'docs/roadmaps/backlog',
-  wip:       'docs/roadmaps/wip',
-  blocked:   'docs/roadmaps/blocked',
-  done:      'docs/roadmaps/done',
-  abandoned: 'docs/roadmaps/abandoned',
-}
+const config = require('../config')
 
 const STATE_ORDER = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
 
-const TRANSITION_LOG_PATH = 'docs/roadmaps/.trackfw-log'
+// stateDir retorna o caminho do diretório para um estado válido, ou null se inválido.
+function stateDir(state) {
+  const cfg = config.load()
+  const valid = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
+  if (!valid.includes(state)) return null
+  return cfg.roadmapDir + '/' + state
+}
+
+// logPath retorna o caminho do arquivo de log de transições.
+function logPath() {
+  return config.load().roadmapDir + '/.trackfw-log'
+}
 
 /**
  * listRoadmaps — lista roadmaps agrupados por estado (wip, backlog, blocked, done, abandoned).
  * Se nenhum encontrado imprime mensagem orientando o usuário.
  */
 function listRoadmaps() {
+  const cfg = config.load()
   let found = false
 
   for (const state of STATE_ORDER) {
-    const dir = VALID_STATES[state]
+    const dir = cfg.roadmapDir + '/' + state
     let files = []
     try {
       files = fs.readdirSync(dir).filter(f => !fs.statSync(path.join(dir, f)).isDirectory() && f.endsWith('.md'))
@@ -44,7 +49,7 @@ function listRoadmaps() {
 }
 
 /**
- * showRoadmap — busca docs/roadmaps/ESTADO/NOME*.md (partial match), imprime cabeçalho + conteúdo.
+ * showRoadmap — busca <roadmapDir>/ESTADO/NOME*.md (partial match), imprime cabeçalho + conteúdo.
  * 0 matches: erro. múltiplos: lista + erro. 1 match: imprime cabeçalho e conteúdo.
  */
 function showRoadmap(name) {
@@ -82,7 +87,7 @@ function showRoadmap(name) {
  * move com fs.renameSync, chama appendTransitionLog, imprime confirmação.
  */
 function moveRoadmap(name, state) {
-  const targetDir = VALID_STATES[state]
+  const targetDir = stateDir(state)
   if (!targetDir) {
     console.error(`invalid state "${state}" — valid states: backlog, wip, blocked, done, abandoned`)
     process.exitCode = 1
@@ -121,7 +126,7 @@ function moveRoadmap(name, state) {
 }
 
 /**
- * appendTransitionLog — append em docs/roadmaps/.trackfw-log.
+ * appendTransitionLog — append em <roadmapDir>/.trackfw-log.
  * Formato: `YYYY-MM-DD HH:mm  <basename padded to 50>  <fromState> → <toState>\n`
  */
 function appendTransitionLog(basename, fromState, toState) {
@@ -135,24 +140,27 @@ function appendTransitionLog(basename, fromState, toState) {
   const line = `${timestamp}  ${basename.padEnd(50)}  ${fromState} → ${toState}\n`
 
   try {
-    fs.mkdirSync(path.dirname(TRANSITION_LOG_PATH), { recursive: true })
-    fs.appendFileSync(TRANSITION_LOG_PATH, line, 'utf8')
+    const lp = logPath()
+    fs.mkdirSync(path.dirname(lp), { recursive: true })
+    fs.appendFileSync(lp, line, 'utf8')
   } catch (_) {}
 }
 
 /**
- * newRoadmap — cria roadmap em docs/roadmaps/backlog/ROADMAP-YYYY-MM-DD-<slug>.md.
+ * newRoadmap — cria roadmap em <roadmapDir>/backlog/ROADMAP-YYYY-MM-DD-<slug>.md.
  */
 function newRoadmap(title, reqPath) {
+  const cfg = config.load()
   const now = new Date()
   const yyyy = now.getFullYear()
   const mm = String(now.getMonth() + 1).padStart(2, '0')
   const dd = String(now.getDate()).padStart(2, '0')
   const date = `${yyyy}-${mm}-${dd}`
   const slug = toSlug(title)
-  const filename = `docs/roadmaps/backlog/ROADMAP-${date}-${slug}.md`
+  const backlogDir = cfg.roadmapDir + '/backlog'
+  const filename = `${backlogDir}/ROADMAP-${date}-${slug}.md`
 
-  fs.mkdirSync('docs/roadmaps/backlog', { recursive: true })
+  fs.mkdirSync(backlogDir, { recursive: true })
 
   const body = `# Roadmap: ${title}
 
@@ -185,10 +193,11 @@ REQ: ${reqPath || ''}
  * findRoadmapMatches — retorna array de paths que contêm `name` (case-insensitive) em qualquer estado.
  */
 function findRoadmapMatches(name) {
+  const cfg = config.load()
   const matches = []
   const nameLower = name.toLowerCase()
   for (const state of STATE_ORDER) {
-    const dir = VALID_STATES[state]
+    const dir = cfg.roadmapDir + '/' + state
     let files = []
     try {
       files = fs.readdirSync(dir)
@@ -215,7 +224,6 @@ function toSlug(s) {
 }
 
 module.exports = {
-  VALID_STATES,
   listRoadmaps,
   showRoadmap,
   moveRoadmap,

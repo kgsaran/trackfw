@@ -7,6 +7,15 @@ import (
 	"testing"
 )
 
+// testStateDirs retorna os diretórios de estado padrão para uso em testes.
+var testStateDirs = []string{
+	"docs/roadmaps/backlog",
+	"docs/roadmaps/wip",
+	"docs/roadmaps/blocked",
+	"docs/roadmaps/done",
+	"docs/roadmaps/abandoned",
+}
+
 // chdir muda para dir e restaura ao fim do teste
 func chdirRoadmap(t *testing.T, dir string) {
 	t.Helper()
@@ -113,7 +122,7 @@ func TestMoveRoadmap_NotFound(t *testing.T) {
 	chdirRoadmap(t, dir)
 
 	// Criar todos os diretórios válidos (vazios)
-	for _, d := range validStates {
+	for _, d := range testStateDirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
@@ -203,7 +212,7 @@ func TestListRoadmaps_GroupedByState(t *testing.T) {
 	dir := t.TempDir()
 	chdirRoadmap(t, dir)
 
-	for _, d := range validStates {
+	for _, d := range testStateDirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			t.Fatalf("MkdirAll %s: %v", d, err)
 		}
@@ -228,7 +237,7 @@ func TestListRoadmaps_Empty(t *testing.T) {
 	dir := t.TempDir()
 	chdirRoadmap(t, dir)
 
-	for _, d := range validStates {
+	for _, d := range testStateDirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}

@@ -40,11 +40,12 @@ function today() {
  * @returns {Promise<void>}
  */
 async function newADR(content) {
-  fs.mkdirSync('docs/adr', { recursive: true })
+  const adrDir = require('../config').load().adrDirs[0]
+  fs.mkdirSync(adrDir, { recursive: true })
 
   const slug = toSlug(content.title)
   const date = today()
-  const filename = `docs/adr/ADR-${date}-${slug}.md`
+  const filename = `${adrDir}/ADR-${date}-${slug}.md`
 
   const contextSection = content.context || '<!-- What is the situation that motivates this decision? -->'
   const decisionSection = content.decision || '<!-- What was decided? -->'
@@ -129,10 +130,10 @@ function parseADRStatus(filepath) {
  * @returns {Promise<string>} basename do arquivo criado
  */
 async function newADRDraft(slug) {
-  fs.mkdirSync('docs/adr', { recursive: true })
+  const adrDir = require('../config').load().adrDirs[0]
+  fs.mkdirSync(adrDir, { recursive: true })
 
   // Verificar idempotência: buscar arquivo existente com o mesmo slug
-  const adrDir = 'docs/adr'
   const existing = fs.existsSync(adrDir)
     ? fs.readdirSync(adrDir).find((f) => f.match(new RegExp(`^ADR-.*-${slug}\\.md$`)))
     : null
@@ -144,7 +145,7 @@ async function newADRDraft(slug) {
 
   const date = today()
   const filename = `ADR-${date}-${slug}.md`
-  const filepath = path.join('docs/adr', filename)
+  const filepath = path.join(adrDir, filename)
   const title = slugToTitle(slug)
 
   const body = `# ADR: ${title}

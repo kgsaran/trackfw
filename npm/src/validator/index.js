@@ -2,6 +2,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const config = require('../config')
 
 const STALE_WIP_DAYS = 7
 
@@ -51,23 +52,30 @@ function parseBlockedADRs(filePath) {
   return adrs
 }
 
-// adrIsDraft verifica se docs/adr/<basename> contém "Status: Draft".
+// adrIsDraft verifica se <adrBasename> contém "Status: Draft" em alguma das adrDirs configuradas.
 function adrIsDraft(basename) {
-  try {
-    const content = fs.readFileSync(path.join('docs', 'adr', basename), 'utf8')
-    return content.includes('Status: Draft')
-  } catch (_) {
-    return false
+  const cfg = config.load()
+  for (const adrDir of cfg.adrDirs) {
+    const p = path.join(adrDir, basename)
+    if (fs.existsSync(p)) {
+      try {
+        return fs.readFileSync(p, 'utf8').includes('Status: Draft')
+      } catch (_) {
+        // ignorar erro de leitura
+      }
+    }
   }
+  return false
 }
 
-// validateWIPHasREQ — roadmaps em docs/roadmaps/wip/ sem "REQ:" no conteúdo → violation
+// validateWIPHasREQ — roadmaps em <roadmapDir>/wip/ sem "REQ:" no conteúdo → violation
 function validateWIPHasREQ() {
-  const entries = listDir('docs/roadmaps/wip')
+  const cfg = config.load()
+  const entries = listDir(cfg.roadmapDir + '/wip')
   const violations = []
   for (const name of entries) {
     try {
-      const content = fs.readFileSync(path.join('docs/roadmaps/wip', name), 'utf8')
+      const content = fs.readFileSync(path.join(cfg.roadmapDir + '/wip', name), 'utf8')
       if (!content.includes('REQ:') || content.includes('REQ: \n')) {
         violations.push(`roadmap "${name}" is in wip but has no linked REQ`)
       }
@@ -78,13 +86,14 @@ function validateWIPHasREQ() {
   return violations
 }
 
-// validateREQsHaveADR — REQs em docs/req/ sem "ADR:" no conteúdo → violation
+// validateREQsHaveADR — REQs em <reqDir>/ sem "ADR:" no conteúdo → violation
 function validateREQsHaveADR() {
-  const entries = listDir('docs/req')
+  const cfg = config.load()
+  const entries = listDir(cfg.reqDir)
   const violations = []
   for (const name of entries) {
     try {
-      const content = fs.readFileSync(path.join('docs/req', name), 'utf8')
+      const content = fs.readFileSync(path.join(cfg.reqDir, name), 'utf8')
       if (!content.includes('ADR:') || content.includes('ADR: \n')) {
         violations.push(`req "${name}" has no linked ADR`)
       }
@@ -95,13 +104,14 @@ function validateREQsHaveADR() {
   return violations
 }
 
-// validateBlockedHasREQ — roadmaps em docs/roadmaps/blocked/ sem "REQ:" → violation
+// validateBlockedHasREQ — roadmaps em <roadmapDir>/blocked/ sem "REQ:" → violation
 function validateBlockedHasREQ() {
-  const entries = listDir('docs/roadmaps/blocked')
+  const cfg = config.load()
+  const entries = listDir(cfg.roadmapDir + '/blocked')
   const violations = []
   for (const name of entries) {
     try {
-      const content = fs.readFileSync(path.join('docs/roadmaps/blocked', name), 'utf8')
+      const content = fs.readFileSync(path.join(cfg.roadmapDir + '/blocked', name), 'utf8')
       if (!content.includes('REQ:') || content.includes('REQ: \n')) {
         violations.push(`roadmap "${name}" is in blocked but has no linked REQ`)
       }
@@ -114,11 +124,12 @@ function validateBlockedHasREQ() {
 
 // validateREQsHaveRoadmap — REQs sem "Roadmap:" → violation
 function validateREQsHaveRoadmap() {
-  const entries = listDir('docs/req')
+  const cfg = config.load()
+  const entries = listDir(cfg.reqDir)
   const violations = []
   for (const name of entries) {
     try {
-      const content = fs.readFileSync(path.join('docs/req', name), 'utf8')
+      const content = fs.readFileSync(path.join(cfg.reqDir, name), 'utf8')
       if (!content.includes('Roadmap:') || content.includes('Roadmap: \n')) {
         violations.push(`req "${name}" has no linked Roadmap`)
       }
@@ -129,15 +140,19 @@ function validateREQsHaveRoadmap() {
   return violations
 }
 
-// validateADRsAreReferenced — ADRs em docs/adr/ não referenciados em nenhuma REQ → violation
+// validateADRsAreReferenced — ADRs em adrDirs não referenciados em nenhuma REQ → violation
 function validateADRsAreReferenced() {
-  const adrs = listDir('docs/adr')
-  const reqEntries = listDir('docs/req')
+  const cfg = config.load()
+  let adrs = []
+  for (const adrDir of cfg.adrDirs) {
+    adrs = adrs.concat(listDir(adrDir))
+  }
 
+  const reqEntries = listDir(cfg.reqDir)
   let combined = ''
   for (const name of reqEntries) {
     try {
-      combined += fs.readFileSync(path.join('docs/req', name), 'utf8')
+      combined += fs.readFileSync(path.join(cfg.reqDir, name), 'utf8')
     } catch (_) {
       // ignorar
     }
@@ -154,11 +169,12 @@ function validateADRsAreReferenced() {
 
 // validateWIPHasAcceptanceCriteria — roadmaps wip sem bloco de critérios de aceite → violation
 function validateWIPHasAcceptanceCriteria() {
-  const entries = listDir('docs/roadmaps/wip')
+  const cfg = config.load()
+  const entries = listDir(cfg.roadmapDir + '/wip')
   const violations = []
   for (const name of entries) {
     try {
-      const content = fs.readFileSync(path.join('docs/roadmaps/wip', name), 'utf8')
+      const content = fs.readFileSync(path.join(cfg.roadmapDir + '/wip', name), 'utf8')
       const hasBlock =
         content.includes('## Acceptance Criteria') ||
         content.includes('## Critérios de Aceite') ||
@@ -176,7 +192,8 @@ function validateWIPHasAcceptanceCriteria() {
 
 // validateSingleWIP — mais de 1 roadmap em wip → warning
 function validateSingleWIP() {
-  const entries = listDir('docs/roadmaps/wip')
+  const cfg = config.load()
+  const entries = listDir(cfg.roadmapDir + '/wip')
   if (entries.length > 1) {
     return [`${entries.length} roadmaps in wip/ (recommended: keep only 1 active at a time)`]
   }
@@ -185,11 +202,12 @@ function validateSingleWIP() {
 
 // validateStaleWIP — roadmaps wip com mtime >= 7 dias → warning
 function validateStaleWIP() {
+  const cfg = config.load()
   let files = []
   try {
-    files = fs.readdirSync('docs/roadmaps/wip')
+    files = fs.readdirSync(cfg.roadmapDir + '/wip')
       .filter(f => f.endsWith('.md'))
-      .map(f => path.join('docs/roadmaps/wip', f))
+      .map(f => path.join(cfg.roadmapDir + '/wip', f))
   } catch (_) {
     return []
   }
@@ -217,10 +235,11 @@ function validateStaleWIP() {
 
 // validateREQsNotBlockedByDraftADRs — REQs Open com ADRs Draft na seção "## Blocked by ADRs" → violation
 function validateREQsNotBlockedByDraftADRs() {
-  const entries = listDir('docs/req')
+  const cfg = config.load()
+  const entries = listDir(cfg.reqDir)
   const violations = []
   for (const name of entries) {
-    const filePath = path.join('docs/req', name)
+    const filePath = path.join(cfg.reqDir, name)
     let content
     try {
       content = fs.readFileSync(filePath, 'utf8')
@@ -241,10 +260,11 @@ function validateREQsNotBlockedByDraftADRs() {
 
 // blockedREQs retorna mapa de reqBasename → [adrBasenames Draft] para uso em getStatus()
 function blockedREQs() {
-  const entries = listDir('docs/req')
+  const cfg = config.load()
+  const entries = listDir(cfg.reqDir)
   const result = {}
   for (const name of entries) {
-    const filePath = path.join('docs/req', name)
+    const filePath = path.join(cfg.reqDir, name)
     let content
     try {
       content = fs.readFileSync(filePath, 'utf8')
@@ -282,9 +302,10 @@ async function validate() {
 
 // getStatus retorna string formatada com o status de governança do projeto
 async function getStatus() {
-  const wip = listDir('docs/roadmaps/wip')
-  const blocked = listDir('docs/roadmaps/blocked')
-  const done = listDir('docs/roadmaps/done')
+  const cfg = config.load()
+  const wip = listDir(cfg.roadmapDir + '/wip')
+  const blocked = listDir(cfg.roadmapDir + '/blocked')
+  const done = listDir(cfg.roadmapDir + '/done')
 
   let out = ''
   out += '── trackfw status ──────────────────────\n'
