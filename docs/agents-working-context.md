@@ -1270,3 +1270,51 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `pypi/tests/test_baseline.py` — 4 testes: `test_save_baseline_cria_arquivo`, `test_load_baseline_retorna_none_se_nao_existe`, `test_validate_filtra_violations_do_baseline`, `test_validate_reporta_violations_novas`.
 
 **Resultado:** 4/4 testes `test_baseline*` verdes | 171/171 testes totais verdes | `trackfw baseline` CLI funcional | commit a seguir | push para `feat/v2.4-config-evolution`
+
+---
+
+## Sessão 2026-06-13 — Apolo (CONCLUÍDO)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `fix/v2.4.1-baseline-ratchet-warnings`
+
+**Tarefa:** ML-2C — corrigir parser de `trackfw.yaml` em Python: trim de aspas envolventes nos valores do bloco `rules:` e nos escalares top-level.
+
+**Entregue:**
+- `pypi/trackfw/config.py` — `_parse()`: valor de sub-chaves de `rules:` agora usa `.strip().strip("\"'")` (linha do bloco `in_rules`); valores escalares top-level (`req_dir`, `roadmap_dir`, `roadmap_namespacing`, `governance_mode`, `lenient_until`) também recebem `.strip("\"'")`.
+- `pypi/tests/test_config.py` — 2 novos testes adicionados em `TestConfigEvolution`: `test_rules_value_with_double_quotes` e `test_rules_value_with_single_quotes`.
+
+**Resultado:** 187/187 testes verdes | commit `3f4becf` | push para `fix/v2.4.1-baseline-ratchet-warnings`
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2A Go (CONCLUÍDO)
+
+**Agente:** Apolo | Status: CONCLUÍDO
+
+**Branch:** `fix/v2.4.1-baseline-ratchet-warnings`
+
+**Tarefa:** ML-2A — corrigir parser de `trackfw.yaml` em Go: trim de aspas envolventes em valores YAML (bloco `rules:` e escalares top-level).
+
+**Entregue:**
+- `internal/config/config.go` — `splitKV()` agora aplica `strings.Trim(val, "\"'")` após o `TrimSpace`, removendo aspas simples e duplas de qualquer valor extraído — cobre sub-chaves de `rules:`, `link_fields:` e escalares top-level em uma única mudança centralizada.
+- `internal/config/config_evolution_test.go` — 2 novos testes adicionados: `TestRulesValueWithDoubleQuotes` (`adr_orphan: "off"` → `"off"` sem aspas) e `TestRulesValueWithSingleQuotes` (`stale_wip: 'warning'` → `"warning"` sem aspas).
+
+**Resultado:** `go build ./...` verde | 14/14 testes `internal/config` verdes | commit `e6b8b39` | push para `fix/v2.4.1-baseline-ratchet-warnings`
+
+---
+
+## Sessão 2026-06-13 — Backend ML-1B Node.js (CONCLUÍDO)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-1B — flag `--json` no `trackfw validate` para o CLI Node.js.
+
+**Arquivos criados/modificados:**
+- `npm/src/commands/validate.js` — opção `--json` adicionada ao commander; quando ativa, monta e imprime `JSON.stringify({summary, violations, warnings}, null, 2)` onde `summary = {violations: N, warnings: N, mode: "strict"|"lenient", exit_code: 0|1}`; comportamento texto completamente inalterado sem a flag.
+- `npm/tests/validate_json.test.js` (novo) — 12 testes cobrindo: JSON válido, campos summary/violations/warnings presentes, contagem correta, exit_code consistente entre texto e JSON, mode válido, e comportamento texto inalterado sem --json.
+
+**Resultado:** 12/12 validate_json.test.js verdes | 45/45 testes existentes (validator + config + help + baseline) sem regressões | commit e push para `feat/v2.5-discovery-json-traceid`
