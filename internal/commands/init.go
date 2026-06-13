@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
@@ -13,11 +14,13 @@ import (
 )
 
 func newInitCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "init",
 		Short: i18n.T("init.description"),
 		RunE:  runInit,
 	}
+	cmd.Flags().Bool("brownfield", false, "Adopt governance gradually (lenient mode for 30 days)")
+	return cmd
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -202,6 +205,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	brownfield, _ := cmd.Flags().GetBool("brownfield")
 	cfg := generators.Config{
 		ProjectType:      projectType,
 		ProjectName:      projectName,
@@ -211,6 +215,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		PkgManager:       pkgManager,
 		Hooks:            hooks,
 		CI:               ci,
+	}
+	if brownfield {
+		cfg.BrownfieldMode = true
+		cfg.LenientUntil = time.Now().AddDate(0, 0, 30)
 	}
 
 	if err := generators.Scaffold(cfg); err != nil {

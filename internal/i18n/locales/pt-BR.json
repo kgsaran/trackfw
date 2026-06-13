@@ -35,7 +35,8 @@
     "description": "Validar regras de governança (use como gate de CI)",
     "ok": "✓ Nenhuma violação encontrada.",
     "violations": "{{count}} violação(ões) encontrada(s)",
-    "warnings": "{{count}} aviso(s)"
+    "warnings": "{{count}} aviso(s)",
+    "lenient_mode": "Violações de governança tratadas como avisos até {{date}}"
   },
   "status": { "description": "Exibir o estado atual de governança do projeto" },
   "log": { "description": "Exibir histórico de transições de estado dos roadmaps", "empty": "Nenhuma transição registrada ainda.", "tail": "Exibir as últimas N transições" },

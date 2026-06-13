@@ -18,6 +18,13 @@ func newValidateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Informar usuário sobre modo lenient
+			if validator.IsLenient() {
+				until := validator.LenientUntilDate()
+				if until != "" {
+					fmt.Printf("[LENIENT MODE] %s\n", i18n.T("validate.lenient_mode", "date", until))
+				}
+			}
 			for _, w := range warnings {
 				fmt.Printf("⚠  %s\n", w)
 			}

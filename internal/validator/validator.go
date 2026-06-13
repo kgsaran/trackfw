@@ -12,6 +12,66 @@ import (
 
 const staleWIPDays = 7
 
+// GovernanceMode armazena o modo de governança lido do trackfw.yaml.
+type GovernanceMode struct {
+	Mode         string    // "strict" (default) ou "lenient"
+	LenientUntil time.Time // zero se strict ou sem data definida
+}
+
+// readGovernanceMode lê os campos governance_mode e lenient_until do trackfw.yaml no CWD.
+// Retorna GovernanceMode{Mode: "strict"} se o arquivo não existe ou os campos estão ausentes.
+func readGovernanceMode() GovernanceMode {
+	content, err := os.ReadFile("trackfw.yaml")
+	if err != nil {
+		return GovernanceMode{Mode: "strict"}
+	}
+	gm := GovernanceMode{Mode: "strict"}
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "governance_mode:") {
+			val := strings.TrimSpace(strings.TrimPrefix(line, "governance_mode:"))
+			// Pegar apenas a primeira palavra (ignorar comentários inline)
+			fields := strings.Fields(val)
+			if len(fields) > 0 {
+				gm.Mode = fields[0]
+			}
+		}
+		if strings.HasPrefix(line, "lenient_until:") {
+			val := strings.TrimSpace(strings.TrimPrefix(line, "lenient_until:"))
+			fields := strings.Fields(val)
+			if len(fields) > 0 {
+				t, parseErr := time.Parse("2006-01-02", fields[0])
+				if parseErr == nil {
+					gm.LenientUntil = t
+				}
+			}
+		}
+	}
+	return gm
+}
+
+// IsLenient retorna true se o projeto está em modo lenient e o prazo ainda não expirou.
+func IsLenient() bool {
+	gm := readGovernanceMode()
+	if gm.Mode != "lenient" {
+		return false
+	}
+	if gm.LenientUntil.IsZero() {
+		return true
+	}
+	return time.Now().Before(gm.LenientUntil)
+}
+
+// LenientUntilDate retorna a data de expiração do modo lenient formatada em "2006-01-02".
+// Retorna string vazia se o modo não for lenient ou a data não estiver definida.
+func LenientUntilDate() string {
+	gm := readGovernanceMode()
+	if gm.Mode != "lenient" || gm.LenientUntil.IsZero() {
+		return ""
+	}
+	return gm.LenientUntil.Format("2006-01-02")
+}
+
 func Validate() (violations []string, warnings []string, err error) {
 	wipViolations, e := validateWIPHasREQ()
 	if e != nil {
@@ -66,6 +126,12 @@ func Validate() (violations []string, warnings []string, err error) {
 		return nil, nil, e
 	}
 	violations = append(violations, draftBlockedViolations...)
+
+	// Modo lenient: mover violations para warnings, exit code 0
+	if IsLenient() {
+		warnings = append(warnings, violations...)
+		violations = nil
+	}
 
 	return violations, warnings, nil
 }

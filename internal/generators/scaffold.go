@@ -16,6 +16,8 @@ type Config struct {
 	PkgManager       string
 	Hooks            string
 	CI               string
+	BrownfieldMode   bool
+	LenientUntil     time.Time // zero value = strict
 }
 
 var govDirs = []string{
@@ -453,6 +455,10 @@ req_dir: docs/req
 roadmap_dir: docs/roadmaps
 roadmap_namespacing: flat
 `, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.BackendFramework, cfg.PkgManager, cfg.Hooks, cfg.CI)
+
+	if cfg.BrownfieldMode {
+		content += fmt.Sprintf("governance_mode: lenient\nlenient_until: %s\n", cfg.LenientUntil.Format("2006-01-02"))
+	}
 
 	if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing trackfw.yaml: %w", err)

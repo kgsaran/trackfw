@@ -340,9 +340,52 @@ function blockedREQs() {
   return result
 }
 
+// readGovernanceMode lê governance_mode e lenient_until do trackfw.yaml no CWD.
+// Retorna { mode: 'strict', lenientUntil: null } se o arquivo não existe ou campos ausentes.
+function readGovernanceMode() {
+  let content
+  try {
+    content = fs.readFileSync('trackfw.yaml', 'utf8')
+  } catch (_) {
+    return { mode: 'strict', lenientUntil: null }
+  }
+  let mode = 'strict'
+  let lenientUntil = null
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('governance_mode:')) {
+      const val = trimmed.slice('governance_mode:'.length).trim().split(/\s+/)[0]
+      if (val) mode = val
+    }
+    if (trimmed.startsWith('lenient_until:')) {
+      const val = trimmed.slice('lenient_until:'.length).trim().split(/\s+/)[0]
+      if (val) {
+        const d = new Date(val)
+        if (!isNaN(d.getTime())) lenientUntil = d
+      }
+    }
+  }
+  return { mode, lenientUntil }
+}
+
+// isLenient retorna true se o projeto está em modo lenient e o prazo não expirou.
+function isLenient() {
+  const gm = readGovernanceMode()
+  if (gm.mode !== 'lenient') return false
+  if (!gm.lenientUntil) return true
+  return new Date() < gm.lenientUntil
+}
+
+// lenientUntilDate retorna a data de expiração formatada (YYYY-MM-DD) ou ''.
+function lenientUntilDate() {
+  const gm = readGovernanceMode()
+  if (gm.mode !== 'lenient' || !gm.lenientUntil) return ''
+  return gm.lenientUntil.toISOString().slice(0, 10)
+}
+
 // validate executa todas as validações e retorna { violations, warnings }
 async function validate() {
-  const violations = [
+  let violations = [
     ...validateWIPHasREQ(),
     ...validateREQsHaveADR(),
     ...validateBlockedHasREQ(),
@@ -351,10 +394,15 @@ async function validate() {
     ...validateWIPHasAcceptanceCriteria(),
     ...validateREQsNotBlockedByDraftADRs(),
   ]
-  const warnings = [
+  let warnings = [
     ...validateWIPLimit(),
     ...validateStaleWIP(),
   ]
+  // Modo lenient: mover violations para warnings, exit code 0
+  if (isLenient()) {
+    warnings = [...warnings, ...violations]
+    violations = []
+  }
   return { violations, warnings }
 }
 
@@ -421,6 +469,8 @@ async function getStatus() {
 module.exports = {
   validate,
   getStatus,
+  isLenient,
+  lenientUntilDate,
   // exportadas para testes unitários
   validateWIPHasREQ,
   validateREQsHaveADR,
@@ -436,4 +486,5 @@ module.exports = {
   adrIsDraft,
   listDir,
   resolveWIPDirs,
+  readGovernanceMode,
 }

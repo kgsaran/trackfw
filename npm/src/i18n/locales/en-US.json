@@ -87,7 +87,8 @@
     "description": "Validate governance rules (use as CI gate)",
     "ok": "✓ No violations found.",
     "violations": "✗ Violations ({{count}}):",
-    "warnings": "⚠ Warnings ({{count}}):"
+    "warnings": "⚠ Warnings ({{count}}):",
+    "lenient_mode": "Governance violations treated as warnings until {{date}}"
   },
   "status": {
     "description": "Show project governance status"

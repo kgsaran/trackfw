@@ -87,7 +87,8 @@
     "description": "Validar reglas de gobernanza (úsalo como gate de CI)",
     "ok": "✓ No se encontraron violaciones.",
     "violations": "✗ Violaciones ({{count}}):",
-    "warnings": "⚠ Avisos ({{count}}):"
+    "warnings": "⚠ Avisos ({{count}}):",
+    "lenient_mode": "Las violaciones de gobernanza se tratan como avisos hasta {{date}}"
   },
   "status": {
     "description": "Mostrar el estado actual de gobernanza del proyecto"

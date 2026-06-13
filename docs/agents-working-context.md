@@ -632,7 +632,7 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo ML-1B (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-1B (CONCLUÍDO)
 
 **Tarefa:** ML-1B do roadmap `feat/v2.0-gaps` — implementar `trackfw metrics` (cycle time, throughput e WIP age a partir do `.trackfw-log`).
 
@@ -644,3 +644,32 @@ trackfw/
 - `internal/i18n/locales/*.json` — chave metrics.* nos 3 locales
 - `npm/src/commands/metrics.js` (novo) — porte Node.js puro
 - `npm/src/commands/index.js` — registrar command metrics
+
+**Resultado:**
+- `go build ./...` limpo | `go vet ./...` limpo | `go test ./internal/metrics/...` 8/8 verde
+- `node --check npm/src/commands/metrics.js` OK
+- Commit `a2fc979` | push para `feat/v2.0-gaps`
+- `trackfw metrics --help` disponível com flags --since e --export
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2A (CONCLUÍDO)
+
+**Tarefa:** ML-2A do roadmap `feat/v2.0-gaps` — `trackfw init --brownfield` modo lenient de governança.
+
+**Arquivos criados/modificados:**
+- `internal/generators/scaffold.go` — campos `BrownfieldMode bool` e `LenientUntil time.Time` adicionados em `Config`; `writeTrackfwConfig` escreve `governance_mode: lenient` e `lenient_until: YYYY-MM-DD` condicionalmente.
+- `internal/commands/init.go` — flag `--brownfield` registrada em `newInitCmd()`; import `"time"` adicionado; `cfg.BrownfieldMode=true` e `cfg.LenientUntil=time.Now().AddDate(0,0,30)` quando flag ativa.
+- `internal/validator/validator.go` — structs `GovernanceMode`, funções `readGovernanceMode()`, `IsLenient()`, `LenientUntilDate()` (exportadas) adicionadas; `Validate()` move violations para warnings quando `IsLenient()`.
+- `internal/commands/validate.go` — imprime `[LENIENT MODE]` + `i18n.T("validate.lenient_mode", "date", until)` quando em modo lenient.
+- `internal/i18n/locales/{en-US,pt-BR,es-ES}.json` — chave `validate.lenient_mode` adicionada nos 3 locales.
+- `npm/src/generators/init.js` — `writeTrackfwConfig` escreve linhas lenient quando `cfg.brownfieldMode`.
+- `npm/src/validator/index.js` — funções `readGovernanceMode()`, `isLenient()`, `lenientUntilDate()` adicionadas; `validate()` move violations para warnings quando lenient; exports atualizados.
+- `npm/src/commands/validate.js` — imprime `[LENIENT MODE]` quando em modo lenient.
+- `npm/src/i18n/locales/{en-US,pt-BR,es-ES}.json` — chave `validate.lenient_mode` adicionada nos 3 locales.
+
+**Resultado:**
+- `go build ./...` limpo | `go vet ./...` limpo | todos os testes verdes
+- Teste integração: `trackfw validate` em projeto lenient → `[LENIENT MODE]`, `⚠ violation`, exit 0
+- Teste integração: `trackfw validate` em projeto strict → `✗ violation`, exit 1 (inalterado)
+- `node --check` limpo nos 3 arquivos npm modificados

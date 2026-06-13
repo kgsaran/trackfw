@@ -39,7 +39,7 @@ async function scaffold(cfg) {
 
 function writeTrackfwConfig(cfg) {
   const today = new Date().toISOString().slice(0, 10)
-  const content = `# trackfw configuration
+  let content = `# trackfw configuration
 # generated: ${today}
 
 frontend: ${cfg.frontend || ''}
@@ -56,6 +56,10 @@ req_dir: docs/req
 roadmap_dir: docs/roadmaps
 roadmap_namespacing: flat
 `
+  if (cfg.brownfieldMode) {
+    const until = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    content += `governance_mode: lenient\nlenient_until: ${until}\n`
+  }
   fs.writeFileSync('trackfw.yaml', content, 'utf8')
   console.log('  ✓ trackfw.yaml')
 }

@@ -35,7 +35,8 @@
     "description": "Validate governance rules (use as CI gate)",
     "ok": "✓ No violations found.",
     "violations": "{{count}} violation(s) found",
-    "warnings": "{{count}} warning(s)"
+    "warnings": "{{count}} warning(s)",
+    "lenient_mode": "Governance violations treated as warnings until {{date}}"
   },
   "status": { "description": "Show project governance status" },
   "log": { "description": "Show roadmap state transition history", "empty": "No transitions recorded yet.", "tail": "Show last N transitions" },
