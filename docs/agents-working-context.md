@@ -1112,3 +1112,29 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 **Resultado:** 157/157 testes verdes (11 novos) | commit `12d1009` | push para `feat/v2.3-validator-improvements`
 
 **Agente:** Apolo | Status: CONCLUÍDO
+
+---
+
+## Sessão 2026-06-13 — Backend (config evolution ML-1A)
+
+**Agente:** Backend | Status: IMPLEMENTANDO
+
+**Branch:** `feat/v2.4-config-evolution`
+
+**Tarefa:** ML-1A — estender `internal/config/config.go` com novos campos (`LinkFieldsReq`, `LinkFieldsADR`, `LinkFieldsRoadmap`, `AcceptanceMarkers`, `Rules`) e parser de blocos aninhados de 1 nível. Criar `internal/config/config_evolution_test.go` com 6 testes cobrindo defaults, parsing e retrocompatibilidade.
+
+---
+
+## Sessão 2026-06-13 — Backend (config evolution ML-1B npm)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.4-config-evolution`
+
+**Tarefa:** ML-1B — estender `npm/src/config/index.js` com novos campos (`linkFields`, `acceptanceMarkers`, `rules`) e parser de blocos aninhados de 1 nível. Criar `npm/tests/config.test.js` com 6 testes.
+
+**Entregue:**
+- `npm/src/config/index.js` — `defaults()` estendida com `linkFields` (req/adr/roadmap), `acceptanceMarkers` e `rules` (9 regras com severidade); `parse()` reescrita com estados `inLinkFields`/`inAcceptanceMarkers`/`inRules` e função `flushBlocks()` para flush ao mudar de bloco ou no EOF; parser distingue indent via `rawLine[0]` (espaço/tab); sub-chaves de `link_fields` (req/adr/roadmap) resolvidas por nome.
+- `npm/tests/config.test.js` — 6 testes sem framework externo (assert nativo): defaults, link_fields customizado, acceptance_markers customizado, rules parcial com merge, sparse, retrocompatibilidade v2.3.
+
+**Resultado:** 6/6 testes `config.test.js` verdes | 12/12 testes `validator.test.js` inalterados | commit `84eeff0` | push para `feat/v2.4-config-evolution`.
