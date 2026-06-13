@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -10,7 +11,9 @@ import (
 )
 
 func newValidateCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
 		Use:   "validate",
 		Short: i18n.T("validate.description"),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -18,7 +21,26 @@ func newValidateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Informar usuário sobre modo lenient
+
+			if jsonOutput {
+				// Modo JSON: suprimir saída de erro do cobra para que stdout seja JSON puro.
+				cmd.SilenceErrors = true
+				cmd.SilenceUsage = true
+
+				result := validator.BuildResult(violations, warnings, validator.IsLenient())
+				data, marshalErr := json.Marshal(result)
+				if marshalErr != nil {
+					return marshalErr
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), string(data))
+
+				if len(violations) > 0 {
+					return fmt.Errorf("%s", i18n.T("validate.violations", "count", strconv.Itoa(len(violations))))
+				}
+				return nil
+			}
+
+			// Modo texto (comportamento original inalterado).
 			if validator.IsLenient() {
 				until := validator.LenientUntilDate()
 				if until != "" {
@@ -42,4 +64,7 @@ func newValidateCmd() *cobra.Command {
 			return fmt.Errorf("%s", i18n.T("validate.violations", "count", strconv.Itoa(len(violations))))
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output validation result as JSON")
+	return cmd
 }
