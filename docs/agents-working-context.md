@@ -905,8 +905,19 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo ML-3A Python CLI (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-3A Python CLI (CONCLUÍDO)
 
 **Tarefa:** ML-3A do roadmap Python CLI nativo — Wave 3 comandos CLI: `cli.py` (entry point argparse), `commands/adr.py`, `commands/req.py`, `commands/log.py`, `commands/__init__.py`, `tests/test_commands_basic.py` + atualizar `pyproject.toml`.
 
 **Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/commands/__init__.py` — declara pacote de subcomandos.
+- `pypi/trackfw/cli.py` — entry point argparse com 11 subcomandos: `adr` e `req` e `log` com implementação real; `init`, `roadmap`, `validate`, `status`, `discover`, `metrics`, `context`, `sync`, `plugins` como stubs ("Not implemented yet", exit 0). Flag `--version` via argparse.
+- `pypi/trackfw/commands/adr.py` — `register(subparsers)` + `adr new <title> [--status] [--dir]`; chama `generate_adr()`, imprime path criado.
+- `pypi/trackfw/commands/req.py` — `register(subparsers)` + `req new [<title>]`; `input()` quando título ausente; chama `generate_req()`, imprime path criado.
+- `pypi/trackfw/commands/log.py` — `register(subparsers)` + `log <message>`; append em `.trackfw-log` na raiz do projeto com timestamp `YYYY-MM-DD HH:MM`.
+- `pypi/pyproject.toml` — entry point atualizado de `trackfw._cli:main` para `trackfw.cli:main`.
+- `pypi/tests/test_commands_basic.py` — 11 testes de integração via `subprocess.run` com `PYTHONPATH=PYPI_DIR`; cobre `--version`, `adr new` (3 variações), `log` (3 variações) e 4 stubs.
+
+**Resultado:** 93/93 testes verdes | commit `1f83956` | push para `feat/v2.2-python-cli-nativo`.
