@@ -45,6 +45,9 @@
     "add": { "description": "Install a plugin from GitHub Releases", "installing": "Installing plugin from {{repo}}...", "success": "Plugin \"{{name}}\" installed successfully." },
     "remove": { "description": "Remove an installed plugin", "success": "Plugin \"{{name}}\" removed." }
   },
+  "serve": {
+    "description": "Start local governance visualization server"
+  },
   "errors": {
     "pluginNotFound": "plugin {{name}} not found"
   },

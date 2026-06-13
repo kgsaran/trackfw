@@ -45,6 +45,9 @@
     "add": { "description": "Instalar um plugin do GitHub Releases", "installing": "Instalando plugin de {{repo}}...", "success": "Plugin \"{{name}}\" instalado com sucesso." },
     "remove": { "description": "Remover um plugin instalado", "success": "Plugin \"{{name}}\" removido." }
   },
+  "serve": {
+    "description": "Inicia servidor local de visualização de governança"
+  },
   "errors": {
     "pluginNotFound": "plugin {{name}} não encontrado"
   },
