@@ -1525,3 +1525,14 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 **Falha pré-existente (não é responsabilidade do ML-3A):** `TestMoveRoadmap_ByAgent` em `internal/generators/` — ausência de `config.Reset()` faz o singleton retornar flat e `findRoadmap` falha. Confirmado anterior a este ML.
 
 **Resultado:** `go test ./internal/validator/ -run TestByAgent -v` → 3/3 PASS | `go test ./internal/config/ -run TestConfigByAgent -v` → 1/1 PASS | `make build` → sem erros
+
+**Status:** CONCLUIDO
+**Commit:** `10119cb`
+
+**Arquivos modificados:**
+- `npm/src/config/index.js`: campo `traceIdField: ''` no defaults + case `trace_id_field` no parse YAML
+- `npm/src/validator/traceid.js`: módulo puro `checkTraceIds(reqDir, roadmapDir, fieldName)` — indexa REQs e Roadmaps pelo campo de frontmatter e emite 5 violations; state derivado da pasta do arquivo (não do frontmatter)
+- `npm/src/validator/index.js`: importa `checkTraceIds` e integra em `validateUnfiltered()` com guard `if (cfg.traceIdField)`
+- `npm/tests/traceid.test.js`: 6 testes com mkdtempSync cobrindo todos os cenários
+
+**Resultado:** 6/6 traceid.test.js verdes | 12/12 config.test.js sem regressões | 12/12 validate_json.test.js sem regressões
