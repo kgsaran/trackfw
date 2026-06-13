@@ -23,11 +23,24 @@ func newRoadmapCmd() *cobra.Command {
 }
 
 func newRoadmapNewCmd() *cobra.Command {
-	return &cobra.Command{
+	var title, reqPath string
+	cmd := &cobra.Command{
 		Use:   "new",
 		Short: "Create a new roadmap from a REQ",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// --req flag bypasses wizard entirely
+			if reqPath != "" {
+				if title == "" {
+					title = strings.TrimSuffix(filepath.Base(reqPath), ".md")
+					title = strings.TrimPrefix(title, "REQ-")
+				}
+				return generators.NewRoadmapFromContent(generators.RoadmapContent{
+					Title:   title,
+					REQPath: reqPath,
+				})
+			}
+
 			reqFiles, _ := filepath.Glob(config.Load().REQDir + "/*.md")
 			var selectedREQ string
 
@@ -56,8 +69,10 @@ func newRoadmapNewCmd() *cobra.Command {
 				return nil
 			}
 
-			title := strings.TrimSuffix(filepath.Base(selectedREQ), ".md")
-			title = strings.TrimPrefix(title, "REQ-")
+			if title == "" {
+				title = strings.TrimSuffix(filepath.Base(selectedREQ), ".md")
+				title = strings.TrimPrefix(title, "REQ-")
+			}
 
 			return generators.NewRoadmapFromContent(generators.RoadmapContent{
 				Title:   title,
@@ -65,6 +80,9 @@ func newRoadmapNewCmd() *cobra.Command {
 			})
 		},
 	}
+	cmd.Flags().StringVarP(&title, "title", "t", "", "Roadmap title")
+	cmd.Flags().StringVarP(&reqPath, "req", "r", "", "Path to the linked REQ file")
+	return cmd
 }
 
 func newRoadmapListCmd() *cobra.Command {

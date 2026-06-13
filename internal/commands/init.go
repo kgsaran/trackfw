@@ -2,8 +2,11 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/huh"
+	cbterm "github.com/charmbracelet/x/term"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/spf13/cobra"
@@ -18,6 +21,25 @@ func newInitCmd() *cobra.Command {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	// Non-TTY: use defaults and skip wizard (matches npm CLI behavior)
+	if !cbterm.IsTerminal(uintptr(os.Stdin.Fd())) {
+		cwd, _ := os.Getwd()
+		cfg := generators.Config{
+			ProjectName: filepath.Base(cwd),
+			ProjectType: "governance",
+			Frontend:    "",
+			Backend:     "",
+			PkgManager:  "npm",
+			Hooks:       "none",
+			CI:          "none",
+		}
+		if err := generators.Scaffold(cfg); err != nil {
+			return err
+		}
+		fmt.Println(i18n.T("init.success"))
+		return nil
+	}
+
 	var (
 		projectName      string
 		projectType      string
