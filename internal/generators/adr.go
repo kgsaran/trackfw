@@ -53,7 +53,13 @@ func NewADR(content ADRContent) error {
 		alternativesSection = content.Alternatives
 	}
 
-	body := fmt.Sprintf(`# ADR: %s
+	body := fmt.Sprintf(`---
+status: Proposed
+date: %s
+author: ""
+---
+
+# ADR: %s
 
 > Date: %s | Status: Proposed
 
@@ -68,7 +74,7 @@ func NewADR(content ADRContent) error {
 
 ## Alternatives Considered
 %s
-`, content.Title, date, contextSection, decisionSection, consequencesSection, alternativesSection)
+`, date, content.Title, date, contextSection, decisionSection, consequencesSection, alternativesSection)
 
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
 		return fmt.Errorf("writing ADR: %w", err)
@@ -175,7 +181,13 @@ func NewADRDraft(slug string) (string, error) {
 	path := filepath.Join(adrDir, filename)
 	title := slugToTitle(slug)
 
-	body := fmt.Sprintf(`# ADR: %s
+	body := fmt.Sprintf(`---
+status: Draft
+date: %s
+author: ""
+---
+
+# ADR: %s
 
 > Date: %s | Status: Draft
 
@@ -190,7 +202,7 @@ func NewADRDraft(slug string) (string, error) {
 
 ## Alternatives Considered
 <!-- What other options were evaluated and why were they rejected? -->
-`, title, date)
+`, date, title, date)
 
 	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
 		return "", fmt.Errorf("writing ADR draft: %w", err)

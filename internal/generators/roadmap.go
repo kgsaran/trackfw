@@ -87,7 +87,14 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 	if content.Body != "" {
 		body = content.Body
 	} else {
-		body = fmt.Sprintf(`# Roadmap: %s
+		body = fmt.Sprintf(`---
+status: backlog
+date: %s
+req: ""
+squad: ""
+---
+
+# Roadmap: %s
 
 > Created: %s | Status: backlog
 
@@ -107,7 +114,7 @@ squad:
 - [ ] build passes
 - [ ] tests green
 - [ ] validate passes
-`, content.Title, date, content.REQPath)
+`, date, content.Title, date, content.REQPath)
 	}
 
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {

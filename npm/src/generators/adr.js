@@ -52,7 +52,13 @@ async function newADR(content) {
   const consequencesSection = content.consequences || '<!-- What are the positive and negative consequences of this decision? -->'
   const alternativesSection = content.alternatives || '<!-- What other options were evaluated and why were they rejected? -->'
 
-  const body = `# ADR: ${content.title}
+  const body = `---
+status: Proposed
+date: ${date}
+author: ""
+---
+
+# ADR: ${content.title}
 
 > Date: ${date} | Status: Proposed
 
@@ -148,7 +154,13 @@ async function newADRDraft(slug) {
   const filepath = path.join(adrDir, filename)
   const title = slugToTitle(slug)
 
-  const body = `# ADR: ${title}
+  const body = `---
+status: Draft
+date: ${date}
+author: ""
+---
+
+# ADR: ${title}
 
 > Date: ${date} | Status: Draft
 

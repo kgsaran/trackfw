@@ -224,7 +224,14 @@ function newRoadmap(title, reqPath) {
   const filename = `${backlogDir}/ROADMAP-${date}-${slug}.md`
   fs.mkdirSync(backlogDir, { recursive: true })
 
-  const body = `# Roadmap: ${title}
+  const body = `---
+status: backlog
+date: ${date}
+req: ""
+squad: ""
+---
+
+# Roadmap: ${title}
 
 > Created: ${date} | Status: backlog
 

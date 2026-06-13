@@ -101,7 +101,15 @@ async function newREQ(content) {
     blockedSection = lines.join('\n')
   }
 
-  const body = `# REQ: ${content.title}
+  const body = `---
+status: Open
+date: ${date}
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: ${content.title}
 
 ${statusLine}
 
