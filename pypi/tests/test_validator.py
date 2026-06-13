@@ -560,5 +560,94 @@ class TestValidatorImprovements(unittest.TestCase):
         self.assertEqual(violations, [])
 
 
+class TestValidatorEvolution(unittest.TestCase):
+    """Testes para F2 (field mapping) e F3 (severity per rule) — v2.4."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+        self._orig_dir = os.getcwd()
+        # Criar estrutura mínima
+        for d in ["docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+                  "docs/roadmaps/done", "docs/req", "docs/adr"]:
+            os.makedirs(os.path.join(self.tmp, d), exist_ok=True)
+
+    def tearDown(self):
+        os.chdir(self._orig_dir)
+        _config.reset()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, rel, content=""):
+        path = os.path.join(self.tmp, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    def _chdir(self):
+        os.chdir(self.tmp)
+
+    def _violations_messages(self, violations):
+        """Extrai mensagem de uma lista de violations (str ou dict)."""
+        result = []
+        for v in violations:
+            if isinstance(v, dict):
+                result.append(v.get("message", str(v)))
+            else:
+                result.append(str(v))
+        return result
+
+    def test_field_mapping_req_id_satisfies_wip_has_req(self):
+        """req_id como link_fields.req satisfaz a validação de REQ em wip."""
+        self._write("trackfw.yaml",
+            "link_fields:\n  req:\n    - req_id\n")
+        self._write("docs/roadmaps/wip/RM-001.md",
+            "---\nstatus: WIP\nreq_id: docs/req/REQ-001.md\n---\n## Acceptance Criteria\n- [ ] done\n")
+        self._chdir()
+        result = v.validate()
+        msgs = self._violations_messages(result.get("violations", []))
+        self.assertFalse(any("no linked REQ" in m for m in msgs),
+            f"req_id deve satisfazer wip_has_req. violations: {msgs}")
+
+    def test_severity_off_adr_orphan_silenciado(self):
+        """adr_orphan: off → ADR órfão não aparece em violations nem warnings."""
+        self._write("trackfw.yaml", "rules:\n  adr_orphan: off\n")
+        self._write("docs/adr/ADR-001.md",
+            "---\nstatus: Accepted\n---\n# ADR-001\n")
+        self._chdir()
+        result = v.validate()
+        all_msgs = (
+            self._violations_messages(result.get("violations", []))
+            + self._violations_messages(result.get("warnings", []))
+        )
+        self.assertFalse(any("not referenced" in m for m in all_msgs),
+            f"adr_orphan: off deve suprimir tudo. msgs: {all_msgs}")
+
+    def test_severity_warning_wip_has_req(self):
+        """wip_has_req: warning → aparece em warnings, não em violations."""
+        self._write("trackfw.yaml", "rules:\n  wip_has_req: warning\n")
+        self._write("docs/roadmaps/wip/RM-001.md",
+            "---\nstatus: WIP\n---\n## Acceptance Criteria\n- [ ] done\n")
+        self._chdir()
+        result = v.validate()
+        v_msgs = self._violations_messages(result.get("violations", []))
+        w_msgs = self._violations_messages(result.get("warnings", []))
+        self.assertFalse(any("no linked REQ" in m for m in v_msgs),
+            f"wip_has_req: warning não deve estar em violations. violations: {v_msgs}")
+        self.assertTrue(any("no linked REQ" in m for m in w_msgs),
+            f"wip_has_req: warning deve aparecer em warnings. warnings: {w_msgs}")
+
+    def test_acceptance_markers_customizados(self):
+        """Marcador customizado ## Done When satisfaz verificação de acceptance criteria."""
+        self._write("trackfw.yaml",
+            'acceptance_markers:\n  - "## Done When"\n  - "## Critérios"\n')
+        self._write("docs/roadmaps/wip/RM-001.md",
+            "---\nstatus: WIP\nREQ: docs/req/REQ-001.md\n---\n## Done When\n- [ ] done\n")
+        self._chdir()
+        result = v.validate()
+        msgs = self._violations_messages(result.get("violations", []))
+        self.assertFalse(any("no acceptance criteria" in m for m in msgs),
+            f"## Done When deve satisfazer acceptance criteria. violations: {msgs}")
+
+
 if __name__ == "__main__":
     unittest.main()

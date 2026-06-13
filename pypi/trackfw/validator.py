@@ -4,6 +4,7 @@ Espelho Python de npm/src/validator/index.js (paridade de comportamento).
 Stdlib apenas: os, pathlib, re, datetime, subprocess.
 """
 
+import json
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -11,6 +12,45 @@ from datetime import datetime, timezone
 from . import config as _config
 
 STALE_WIP_DAYS = 7
+
+
+# ---------------------------------------------------------------------------
+# Helpers de field mapping e severidade (F2 + F3 — v2.4)
+# ---------------------------------------------------------------------------
+
+def _content_has_marker(content: str, markers: list) -> bool:
+    """
+    Retorna True se content contém qualquer marcador com valor não-vazio.
+    Um marcador é considerado "sem valor" se a linha for exatamente
+    "MARKER \n" (espaço + newline) — espelhando a lógica anterior.
+    """
+    for marker in markers:
+        if marker in content and (marker + " \n") not in content:
+            return True
+    return False
+
+
+def _rule_severity(name: str, cfg: dict) -> str:
+    """Retorna severidade da regra: 'off' | 'warning' | 'error'."""
+    return cfg.get("rules", {}).get(name, "error")
+
+
+def _apply_rule(rule_name: str, msgs: list, violations: list, warnings: list, cfg: dict):
+    """
+    Distribui msgs (lista de dicts) conforme a severidade configurada da regra.
+    - 'off'     → descarta
+    - 'warning' → adiciona a warnings
+    - 'error'   → adiciona a violations (default)
+    """
+    if not msgs:
+        return
+    severity = _rule_severity(rule_name, cfg)
+    if severity == "off":
+        return
+    if severity == "warning":
+        warnings.extend(msgs)
+    else:
+        violations.extend(msgs)
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +314,44 @@ def _read_governance_mode(cwd: str = None) -> dict:
     return result
 
 
+_BASELINE_FILE = ".trackfw-baseline.json"
+
+
+def _extract_messages(items: list) -> list:
+    """Extrai campo 'message' de uma lista de dicts de violation/warning."""
+    result = []
+    for item in items:
+        if isinstance(item, dict):
+            result.append(item.get("message", str(item)))
+        else:
+            result.append(str(item))
+    return result
+
+
+def load_baseline() -> dict | None:
+    """Lê .trackfw-baseline.json do CWD. Retorna None se não existir."""
+    try:
+        with open(_BASELINE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+    except (json.JSONDecodeError, OSError) as e:
+        raise RuntimeError(f"Erro ao ler baseline: {e}") from e
+
+
+def save_baseline(violations: list, warnings: list) -> None:
+    """Salva violations e warnings como baseline em .trackfw-baseline.json.
+    Aceita lista de dicts ou strings — normaliza para strings.
+    """
+    bf = {
+        "created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "violations": _extract_messages(violations),
+        "warnings": _extract_messages(warnings),
+    }
+    with open(_BASELINE_FILE, "w", encoding="utf-8") as f:
+        json.dump(bf, f, indent=2, ensure_ascii=False)
+
+
 def _is_lenient(cwd: str = None) -> bool:
     """Retorna True se o projeto está em modo lenient e o prazo não expirou."""
     gm = _read_governance_mode(cwd)
@@ -296,10 +374,12 @@ def _is_lenient(cwd: str = None) -> bool:
 
 def validate_wip_has_req(cfg: dict) -> list:
     """
-    Roadmaps em wip/ sem 'REQ:' no conteúdo → violation.
+    Roadmaps em wip/ sem marcador req no conteúdo → violation.
     Suporta modo by_agent via resolve_wip_dirs.
+    Usa cfg["link_fields"]["req"] para os marcadores configuráveis.
     """
     wip_dirs = resolve_wip_dirs(cfg)
+    req_markers = cfg.get("link_fields", {}).get("req", ["REQ:"])
     violations = []
     for wip_dir in wip_dirs:
         entries = list_dir(wip_dir)
@@ -307,7 +387,7 @@ def validate_wip_has_req(cfg: dict) -> list:
             try:
                 with open(os.path.join(wip_dir, name), "r", encoding="utf-8") as f:
                     content = f.read()
-                if "REQ:" not in content or "REQ: \n" in content:
+                if not _content_has_marker(content, req_markers):
                     violations.append(
                         {"type": "violation", "message": f'roadmap "{name}" is in wip but has no linked REQ'}
                     )
@@ -317,14 +397,15 @@ def validate_wip_has_req(cfg: dict) -> list:
 
 
 def validate_reqs_have_adr(cfg: dict) -> list:
-    """REQs em req_dir/ sem 'ADR:' no conteúdo → violation."""
+    """REQs em req_dir/ sem marcador adr no conteúdo → violation."""
     entries = list_dir(cfg.get("req_dir", "docs/req"))
+    adr_markers = cfg.get("link_fields", {}).get("adr", ["ADR:"])
     violations = []
     for name in entries:
         try:
             with open(os.path.join(cfg["req_dir"], name), "r", encoding="utf-8") as f:
                 content = f.read()
-            if "ADR:" not in content or "ADR: \n" in content:
+            if not _content_has_marker(content, adr_markers):
                 violations.append(
                     {"type": "violation", "message": f'req "{name}" has no linked ADR'}
                 )
@@ -334,15 +415,16 @@ def validate_reqs_have_adr(cfg: dict) -> list:
 
 
 def validate_blocked_has_req(cfg: dict) -> list:
-    """Roadmaps em blocked/ sem 'REQ:' → violation."""
+    """Roadmaps em blocked/ sem marcador req → violation."""
     blocked_dir = cfg.get("roadmap_dir", "docs/roadmaps") + "/blocked"
     entries = list_dir(blocked_dir)
+    req_markers = cfg.get("link_fields", {}).get("req", ["REQ:"])
     violations = []
     for name in entries:
         try:
             with open(os.path.join(blocked_dir, name), "r", encoding="utf-8") as f:
                 content = f.read()
-            if "REQ:" not in content or "REQ: \n" in content:
+            if not _content_has_marker(content, req_markers):
                 violations.append(
                     {"type": "violation", "message": f'roadmap "{name}" is in blocked but has no linked REQ'}
                 )
@@ -352,14 +434,15 @@ def validate_blocked_has_req(cfg: dict) -> list:
 
 
 def validate_reqs_have_roadmap(cfg: dict) -> list:
-    """REQs sem 'Roadmap:' → violation."""
+    """REQs sem marcador roadmap → violation."""
     entries = list_dir(cfg.get("req_dir", "docs/req"))
+    roadmap_markers = cfg.get("link_fields", {}).get("roadmap", ["Roadmap:"])
     violations = []
     for name in entries:
         try:
             with open(os.path.join(cfg["req_dir"], name), "r", encoding="utf-8") as f:
                 content = f.read()
-            if "Roadmap:" not in content or "Roadmap: \n" in content:
+            if not _content_has_marker(content, roadmap_markers):
                 violations.append(
                     {"type": "violation", "message": f'req "{name}" has no linked Roadmap'}
                 )
@@ -393,8 +476,11 @@ def validate_adrs_are_referenced(cfg: dict) -> list:
 
 
 def validate_wip_has_acceptance_criteria(cfg: dict) -> list:
-    """Roadmaps wip sem bloco de critérios de aceite → violation."""
+    """Roadmaps wip sem bloco de critérios de aceite → violation.
+    Usa cfg["acceptance_markers"] para os marcadores configuráveis.
+    """
     wip_dirs = resolve_wip_dirs(cfg)
+    acceptance_markers = cfg.get("acceptance_markers", ["## Acceptance Criteria", "## Critérios de Aceite"])
     violations = []
     for wip_dir in wip_dirs:
         entries = list_dir(wip_dir)
@@ -402,13 +488,7 @@ def validate_wip_has_acceptance_criteria(cfg: dict) -> list:
             try:
                 with open(os.path.join(wip_dir, name), "r", encoding="utf-8") as f:
                     content = f.read()
-                has_block = (
-                    "## Acceptance Criteria" in content
-                    or "## Critérios de Aceite" in content
-                    or "acceptance criteria" in content
-                    or "Acceptance Criteria:" in content
-                )
-                if not has_block:
+                if not _content_has_marker(content, acceptance_markers):
                     violations.append(
                         {"type": "violation", "message": f'roadmap "{name}" is in wip but has no acceptance criteria block'}
                     )
@@ -728,32 +808,57 @@ def validate_filename_uniqueness(cfg: dict) -> list:
 # validate() — ponto de entrada principal
 # ---------------------------------------------------------------------------
 
-def validate(cwd: str = None) -> dict:
+def validate_unfiltered(cwd: str = None) -> dict:
     """
-    Executa todas as validações e retorna {"violations": [...], "warnings": [...]}.
-    Se governance_mode == "lenient": move violations para warnings.
-    Cada item é um dict {"type": "violation"|"warning", "message": "..."}.
+    Executa todas as validações sem filtro de baseline.
+    Retorna {"violations": [...], "warnings": [...]} onde cada item é um dict com "message".
+    Usa _apply_rule para distribuir resultados conforme severidade configurada (F3 — v2.4).
     """
     _config.reset()
     cfg = _config.load(cwd)
 
+    violations = []
+    warnings = []
+
+    # Regras com severidade configurável via cfg["rules"]
+    _apply_rule("wip_has_req",          validate_wip_has_req(cfg),                    violations, warnings, cfg)
+    _apply_rule("adr_orphan",           validate_adrs_are_referenced(cfg),            violations, warnings, cfg)
+    _apply_rule("wip_acceptance",       validate_wip_has_acceptance_criteria(cfg),    violations, warnings, cfg)
+    _apply_rule("blocked_by_draft_adr", validate_reqs_not_blocked_by_draft_adrs(cfg), violations, warnings, cfg)
+    _apply_rule("filename_uniqueness",  validate_filename_uniqueness(cfg),            violations, warnings, cfg)
+    _apply_rule("ref_targets_exist",    validate_ref_targets_exist(cfg),              violations, warnings, cfg)
+    _apply_rule("folder_status",        validate_folder_status_coherence(cfg),        violations, warnings, cfg)
+    _apply_rule("stale_wip",            validate_stale_wip(cfg),                      violations, warnings, cfg)
+
+    # Regras sem mapeamento configurável (violations diretas)
+    violations += validate_reqs_have_adr(cfg)
+    violations += validate_blocked_has_req(cfg)
+    violations += validate_reqs_have_roadmap(cfg)
+    violations += validate_frontmatter_presence(cfg)
+
+    # wip_limit: violations e warnings já separados internamente
     wip_limit_result = validate_wip_limit(cfg)
+    _apply_rule("wip_limit", wip_limit_result["violations"], violations, warnings, cfg)
+    warnings += wip_limit_result["warnings"]
 
-    violations = (
-        validate_wip_has_req(cfg)
-        + validate_reqs_have_adr(cfg)
-        + validate_blocked_has_req(cfg)
-        + validate_reqs_have_roadmap(cfg)
-        + validate_adrs_are_referenced(cfg)
-        + validate_wip_has_acceptance_criteria(cfg)
-        + validate_reqs_not_blocked_by_draft_adrs(cfg)
-        + validate_frontmatter_presence(cfg)
-        + validate_filename_uniqueness(cfg)
-        + wip_limit_result["violations"]
-    )
+    return {"violations": violations, "warnings": warnings}
 
-    warnings = wip_limit_result["warnings"] + validate_stale_wip(cfg) + validate_ref_targets_exist(cfg) + validate_folder_status_coherence(cfg)
 
+def validate(cwd: str = None) -> dict:
+    """Executa validações, filtra pelo baseline (ratchet) e aplica modo lenient."""
+    result = validate_unfiltered(cwd)
+    violations = result.get("violations", [])
+    warnings = result.get("warnings", [])
+
+    # Ratchet: filtrar violations que já estavam no baseline
+    baseline = load_baseline()
+    if baseline is not None:
+        baseline_set = set(baseline.get("violations", []))
+        net_new = [v for v in violations
+                   if _extract_messages([v])[0] not in baseline_set]
+        violations = net_new
+
+    # Modo lenient: mover violations para warnings
     if _is_lenient(cwd):
         warnings = warnings + violations
         violations = []
