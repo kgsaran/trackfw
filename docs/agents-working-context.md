@@ -1377,18 +1377,17 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 ## Sessão 2026-06-13 — Backend (IMPLEMENTANDO)
 
-**Agente:** Backend | Status: IMPLEMENTANDO
+**Agente:** Backend | Status: CONCLUIDO
 
 **Branch:** `feat/v2.5-discovery-json-traceid`
 
 **Tarefa:** ML-1A — flag `--json` no `trackfw validate` (CLI Go).
 
-**Escopo:**
-- Criar `internal/validator/result.go` com structs `RuleItem`, `ValidateSummary`, `ValidateResult` e builder `BuildResult`.
-- Adicionar flag `--json bool` ao cobra command em `internal/commands/validate.go`.
-- Serializar resultado via `encoding/json` para stdout quando `--json` ativo; comportamento texto inalterado sem a flag.
-- Exit code idêntico nos dois modos (violações → exit 1, ok → exit 0).
-- Criar `internal/commands/validate_json_test.go` com 3 testes: JSON válido, exit code paridade, texto inalterado.
+**Entregue:**
+- `internal/validator/result.go` — structs `RuleItem`, `ValidateSummary`, `ValidateResult` e builder `BuildResult`; slices inicializados como `[]RuleItem{}` para serializar como `[]` e não `null`.
+- `internal/commands/validate.go` — flag `--json bool` adicionada ao cobra command; modo JSON usa `cmd.SilenceErrors = true` para saída JSON pura no stdout; exit code idêntico ao modo texto.
+- `internal/commands/validate_json_test.go` — 3 testes: `TestValidateJSONFlag` (JSON válido + campos obrigatórios), `TestValidateJSONExitCode` (paridade de exit code), `TestValidateTextUnchanged` (modo texto inalterado).
+- `make build` sem erros | 6/6 testes de commands verdes | todos os testes de validator verdes | sem regressões nos pacotes afetados.
 
 ---
 
