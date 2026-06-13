@@ -330,14 +330,19 @@ cmd.action((opts) => {
   console.log(`\nGovernance Score: ${r.governanceScore}/100`);
 
   if (opts.init) {
-    const yaml = generateYAML(r);
-    fs.writeFileSync('trackfw.yaml', yaml, 'utf8');
-    console.log('\n✓ trackfw.yaml generated');
-    try {
-      installGates(r, cwd);
-      console.log('✓ governance gates installed');
-    } catch (e) {
-      console.log(`⚠ gates install partial: ${e.message}`);
+    const yamlPath = path.join(cwd, 'trackfw.yaml');
+    if (fs.existsSync(yamlPath)) {
+      console.log('\n⚠ trackfw.yaml already exists — skipping (remove it first to regenerate)');
+    } else {
+      const yaml = generateYAML(r);
+      fs.writeFileSync(yamlPath, yaml, 'utf8');
+      console.log('\n✓ trackfw.yaml generated');
+      try {
+        installGates(r, cwd);
+        console.log('✓ governance gates installed');
+      } catch (e) {
+        console.log(`⚠ gates install partial: ${e.message}`);
+      }
     }
   }
 
