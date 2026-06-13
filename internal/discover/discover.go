@@ -1,0 +1,247 @@
+package discover
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// DiscoveryResult contém a estrutura de governança detectada em um repositório.
+type DiscoveryResult struct {
+	ADRDirs            []string
+	REQDir             string
+	RoadmapDir         string
+	RoadmapNamespacing string   // "flat" ou "by_agent"
+	Agents             []string // detectados das subdirs
+	ADRCount           int
+	REQCount           int
+	RoadmapCount       int
+	HasTrackfwYAML     bool
+	HasTrackfwLog      bool
+	GovernanceScore    int // 0-100
+}
+
+// Scan escaneia rootDir e retorna a estrutura de governança detectada.
+func Scan(rootDir string) (DiscoveryResult, error) {
+	var r DiscoveryResult
+
+	// 1. trackfw.yaml e .trackfw-log
+	r.HasTrackfwYAML = fileExists(filepath.Join(rootDir, "trackfw.yaml"))
+
+	// 2. REQ dir — testa candidatos em ordem de preferência
+	for _, candidate := range []string{"docs/req", "docs/requisições", "docs/requirements", "docs/reqs"} {
+		full := filepath.Join(rootDir, candidate)
+		if dirExists(full) {
+			r.REQDir = candidate
+			r.REQCount = countMDFiles(full)
+			break
+		}
+	}
+
+	// 3. ADR dirs — procura docs/adr recursivamente
+	adrRoot := filepath.Join(rootDir, "docs", "adr")
+	if dirExists(adrRoot) {
+		subDirs, _ := listSubDirs(adrRoot)
+		if len(subDirs) > 0 {
+			// tem subdirs: usa cada uma como um adr dir
+			for _, sub := range subDirs {
+				rel := "docs/adr/" + sub
+				r.ADRDirs = append(r.ADRDirs, rel)
+				r.ADRCount += countMDFiles(filepath.Join(rootDir, rel))
+			}
+		} else {
+			// plano: docs/adr diretamente
+			r.ADRDirs = []string{"docs/adr"}
+			r.ADRCount = countMDFiles(adrRoot)
+		}
+	}
+
+	// 4. Roadmap dir e namespacing
+	roadmapRoot := filepath.Join(rootDir, "docs", "roadmaps")
+	if dirExists(roadmapRoot) {
+		r.RoadmapDir = "docs/roadmaps"
+
+		// detecta by_agent: existe docs/roadmaps/*/wip/ ?
+		agentDirs, _ := listSubDirs(roadmapRoot)
+		byAgent := false
+		for _, sub := range agentDirs {
+			// se a subdir contém pelo menos um estado válido → by_agent
+			wipDir := filepath.Join(roadmapRoot, sub, "wip")
+			backlogDir := filepath.Join(roadmapRoot, sub, "backlog")
+			doneDir := filepath.Join(roadmapRoot, sub, "done")
+			if dirExists(wipDir) || dirExists(backlogDir) || dirExists(doneDir) {
+				byAgent = true
+				r.Agents = append(r.Agents, sub)
+			}
+		}
+
+		if byAgent {
+			r.RoadmapNamespacing = "by_agent"
+			for _, agent := range r.Agents {
+				for _, state := range []string{"backlog", "wip", "blocked", "done", "abandoned"} {
+					dir := filepath.Join(roadmapRoot, agent, state)
+					r.RoadmapCount += countMDFiles(dir)
+				}
+			}
+		} else {
+			r.RoadmapNamespacing = "flat"
+			for _, state := range []string{"backlog", "wip", "blocked", "done", "abandoned"} {
+				dir := filepath.Join(roadmapRoot, state)
+				r.RoadmapCount += countMDFiles(dir)
+			}
+		}
+
+		// detectar .trackfw-log dentro de roadmapDir
+		r.HasTrackfwLog = fileExists(filepath.Join(roadmapRoot, ".trackfw-log"))
+	}
+
+	// 5. Score
+	r.GovernanceScore = calcScore(r)
+
+	return r, nil
+}
+
+func calcScore(r DiscoveryResult) int {
+	score := 0
+	if r.ADRCount > 0 {
+		score += 20
+	}
+	if r.REQCount > 0 {
+		score += 20
+	}
+	if r.RoadmapCount > 0 {
+		score += 20
+	}
+	if r.HasTrackfwYAML {
+		score += 20
+	}
+	if r.HasTrackfwLog {
+		score += 20
+	}
+	return score
+}
+
+// GenerateYAML gera o conteúdo de um trackfw.yaml calibrado para o DiscoveryResult.
+func GenerateYAML(r DiscoveryResult) string {
+	var sb strings.Builder
+	sb.WriteString("# trackfw configuration — gerado por trackfw discover\n")
+	sb.WriteString("# governance_mode: lenient permite validação não-bloqueante durante onboarding\n\n")
+
+	sb.WriteString("governance_mode: lenient\n\n")
+
+	if len(r.ADRDirs) > 0 {
+		sb.WriteString("adr_dirs:\n")
+		for _, d := range r.ADRDirs {
+			sb.WriteString(fmt.Sprintf("  - %s\n", d))
+		}
+	} else {
+		sb.WriteString("adr_dirs:\n  - docs/adr\n")
+	}
+
+	if r.REQDir != "" {
+		sb.WriteString(fmt.Sprintf("req_dir: %s\n", r.REQDir))
+	} else {
+		sb.WriteString("req_dir: docs/req\n")
+	}
+
+	if r.RoadmapDir != "" {
+		sb.WriteString(fmt.Sprintf("roadmap_dir: %s\n", r.RoadmapDir))
+	} else {
+		sb.WriteString("roadmap_dir: docs/roadmaps\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("roadmap_namespacing: %s\n", r.RoadmapNamespacing))
+
+	if len(r.Agents) > 0 {
+		sb.WriteString("agents:\n")
+		for _, a := range r.Agents {
+			sb.WriteString(fmt.Sprintf("  - %s\n", a))
+		}
+	}
+
+	return sb.String()
+}
+
+// GenerateBootstrapLog percorre os arquivos em done/ e gera entradas retroativas no .trackfw-log
+// com base no mtime dos arquivos (melhor aproximação disponível).
+func GenerateBootstrapLog(r DiscoveryResult, rootDir string) string {
+	var sb strings.Builder
+	roadmapRoot := filepath.Join(rootDir, r.RoadmapDir)
+
+	appendEntries := func(dir, agent string) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			var basename string
+			if agent != "" {
+				basename = agent + "/" + e.Name()
+			} else {
+				basename = e.Name()
+			}
+			sb.WriteString(fmt.Sprintf("%s  %-50s  backlog → done\n",
+				info.ModTime().Format("2006-01-02 15:04"),
+				basename,
+			))
+		}
+	}
+
+	if r.RoadmapNamespacing == "by_agent" {
+		for _, agent := range r.Agents {
+			appendEntries(filepath.Join(roadmapRoot, agent, "done"), agent)
+		}
+	} else {
+		appendEntries(filepath.Join(roadmapRoot, "done"), "")
+	}
+
+	return sb.String()
+}
+
+// helpers
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func countMDFiles(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			n++
+		}
+	}
+	return n
+}
+
+func listSubDirs(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var dirs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e.Name())
+		}
+	}
+	return dirs, nil
+}

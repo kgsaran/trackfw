@@ -622,6 +622,12 @@ trackfw/
 - `node --check npm/src/config/index.js` — sintaxe OK.
 - Commit `a5c29f4` | push para `feat/v2.1-discovery-mode`.
 
+## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO ML-3A e ML-3B do roadmap v2.1-discovery-mode)
+
+**Tarefa:** ML-3A — `internal/discover/discover.go` + testes. ML-3B — `trackfw discover` command (Go + npm Node.js), chave i18n `discover.description` nos 3 locales.
+
+---
+
 ## Sessão 2026-06-12 — Apolo (CONCLUÍDO)
 
 **Tarefa:** ML-3C do roadmap de reescrita npm Node.js — Implementar `npm/src/generators/init.js` (scaffold completo) e `npm/src/commands/init.js` (wizard com @inquirer/prompts).
