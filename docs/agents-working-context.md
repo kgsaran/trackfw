@@ -592,9 +592,20 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO ML-2A/2B/2C do roadmap v2.1-discovery-mode)
+## Sessão 2026-06-13 — Apolo (CONCLUÍDO ML-2A/2B/2C do roadmap v2.1-discovery-mode)
 
 **Tarefa:** Implementar constantes de namespacing (ML-2A), suporte a hierarquia by_agent nos generators (ML-2B), e validator/status em modo by_agent (ML-2C) — Go + npm Node.js.
+
+**Entregue:**
+- `internal/config/config.go` — constantes `NamespacingFlat = "flat"` e `NamespacingByAgent = "by_agent"` adicionadas antes da struct `ProjectConfig`.
+- `npm/src/config/index.js` — constantes `NAMESPACING_FLAT` e `NAMESPACING_BY_AGENT` adicionadas e exportadas.
+- `internal/generators/roadmap.go` — `agentStateDir(agent, state)` nova; `findRoadmap` itera agents×states em by_agent; `MoveRoadmap` mantém agente na hierarquia; `NewRoadmapFromContent` cria em agentStateDir em by_agent; `ListRoadmaps` agrupa por `[agent/state]`; `ShowRoadmap` usa glob 3 níveis em by_agent; validação de estado movida para antes de `findRoadmap` (preserva comportamento de erro original).
+- `npm/src/generators/roadmap.js` — paridade JS completa: `agentStateDir`, `findRoadmapMatches` by_agent, `moveRoadmap`, `listRoadmaps`, `newRoadmap` atualizados.
+- `internal/validator/validator.go` — `resolveWIPDirs(cfg)` nova; `validateSingleWIP` renomeado para `validateWIPLimit` com suporte a wip_limit por agente; `validateWIPHasREQ`, `validateWIPHasAcceptanceCriteria`, `validateStaleWIP` usam `resolveWIPDirs`; `GetStatus` com seção `⚙ WIP by Agent` em by_agent.
+- `npm/src/validator/index.js` — paridade JS: `resolveWIPDirs`, `validateWIPLimit`, `validateSingleWIP` (alias), `validateWIPHasREQ`, `validateWIPHasAcceptanceCriteria`, `validateStaleWIP`, `getStatus` atualizados.
+- Testes Go novos: `TestListRoadmaps_ByAgent`, `TestMoveRoadmap_ByAgent` (generators) + `TestValidateWIPLimit_ByAgent` (validator).
+- Resultado: `go build ./...` limpo | 3 pacotes Go verdes (generators, validator, config) | `node --check` limpo em todos JS modificados.
+- Commit `94f0798` | push para `feat/v2.1-discovery-mode`.
 
 ---
 
