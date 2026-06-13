@@ -76,7 +76,7 @@ Target: v2.1.x — v2.3.x (3 waves independentes)
 
 ---
 
-## Wave 3 — `trackfw serve --mcp` + Schema JSON (exposição para agentes)
+## Wave 3 — Schema JSON (validação estrutural para agentes)
 > Independente das waves 1 e 2
 
 ### ML-3A — Schema JSON para ADR/REQ/ROADMAP
@@ -97,24 +97,6 @@ Target: v2.1.x — v2.3.x (3 waves independentes)
 - [ ] `trackfw validate` rejeita artefatos com frontmatter inválido
 - [ ] `go test ./...` verde
 
-### ML-3B — `trackfw serve --mcp` — servidor MCP para coding agents
-**Status:** ⬜ Pendente  
-**Arquivos afetados:**
-- `internal/server/mcp.go` (novo)
-- `internal/commands/serve.go` — nova flag `--mcp`
-- `npm/src/commands/serve.js` — paridade npm
-
-**Ações:**
-- Flag `--mcp` em `trackfw serve` sobe servidor MCP (Model Context Protocol)
-- Resources expostos: `adr://list`, `adr://get/{id}`, `req://list`, `req://get/{id}`, `roadmap://list`, `roadmap://wip`, `governance://score`
-- Compatível com Claude Code MCP, Cursor MCP, Gemini CLI
-
-**Critérios de aceite:**
-- [ ] `trackfw serve --mcp` sobe na porta 7332 sem conflito com `serve` padrão (7331)
-- [ ] Resource `governance://score` retorna GovernanceScore calculado
-- [ ] Claude Code consegue listar ADRs via MCP tool
-- [ ] Paridade Go + npm
-
 ---
 
 ## Verificação end-to-end
@@ -128,7 +110,4 @@ trackfw roadmap new --from-req docs/requisições/claude/REQ-2026-06-13-trackfw-
 
 # Validar com schema
 trackfw validate
-
-# Expor via MCP para Claude Code
-trackfw serve --mcp
 ```

@@ -57,7 +57,7 @@ Agentes de IA operam em contextos heterogêneos (Go toolchain, Node.js, containe
 | Manter posicionamento implícito (não declarar) | Perde a janela de diferenciação; OpenSpec/GSD vão preencher o espaço se o trackfw não o reivindicar |
 | Criar um produto separado "trackfw-ai" | Fragmenta o ecossistema e dobra o custo de manutenção; a cadeia já existente é o diferenciador |
 | Focar apenas em times humanos | Mercado saturado por Jira/Linear/GitHub Projects; sem vantagem competitiva clara |
-| Adicionar camada MCP/API para agentes consumirem | Complementar — pode vir depois, mas não é o passo inicial; a interface de arquivo Markdown já é consumível por LLMs |
+| Adicionar camada MCP/API para agentes consumirem | Rejeitado — servidor MCP expõe superfície de ataque que pode comprometer análises de segurança do trackfw por times de segurança corporativos; a interface de arquivo Markdown já é consumível por LLMs sem risco adicional |
 
 ## Consequências
 
@@ -84,8 +84,7 @@ Features priorizadas por este ADR:
 1. Templates de ADR/REQ/ROADMAP com frontmatter estruturado (YAML parseable por agentes)
 2. `trackfw context` — comando que emite um dump de contexto de governança consumível por LLM (ADRs aceitos + REQs abertas + WIP atual)
 3. `trackfw roadmap new --from-req` com geração assistida de MLs a partir do conteúdo da REQ
-4. Modo MCP server (`trackfw serve --mcp`) — expõe cadeia como recursos MCP para coding agents
-5. Schema JSON/YAML para validação programática de ADR/REQ/ROADMAP por agentes
+4. Schema JSON/YAML para validação programática de ADR/REQ/ROADMAP por agentes
 
 ---
 
