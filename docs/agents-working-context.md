@@ -822,16 +822,18 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-1B Python CLI (CONCLUÍDO)
 
 **Tarefa:** ML-1B do roadmap Python CLI nativo — módulo i18n Python com suporte pt-BR/en-US/es-ES.
 
 **Branch:** `feat/v2.2-python-cli-nativo`
 
-**Arquivos a criar:**
-- `pypi/trackfw/i18n/__init__.py` — função `t(key)`, detecção de locale via env vars, suporte a chaves aninhadas com `.`
-- `pypi/trackfw/i18n/locales/{pt-BR,en-US,es-ES}.json` — cópia dos JSONs do npm
-- `pypi/tests/test_i18n.py` — testes unittest
+**Entregue:**
+- `pypi/trackfw/i18n/__init__.py` — detecção de locale via `TRACKFW_LANG`/`LANG`/`LANGUAGE`/`LC_ALL`; normalização `pt_BR*→pt-BR`, `es_*→es-ES`, qualquer outro→`en-US`; função `t(key, **vars)` com suporte a chaves aninhadas com `.` e interpolação `{{var}}`; fallback en-US e fallback para a própria chave; cache lazy com `reset()` para testes.
+- `pypi/trackfw/i18n/locales/{pt-BR,en-US,es-ES}.json` — copiados de `npm/src/i18n/locales/`
+- `pypi/tests/test_i18n.py` — 11 testes unittest: fallback en-US, pt-BR, es-ES, normalização LANG Unix, chave inexistente, chaves aninhadas, interpolação, detecção de locale, fallback de chave ausente.
+
+**Resultado:** 11/11 testes verdes | sintaxe validada com `py_compile` | commit `e3087d1` | push para `feat/v2.2-python-cli-nativo`.
 
 ---
 
