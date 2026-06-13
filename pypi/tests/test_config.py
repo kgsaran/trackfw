@@ -108,5 +108,84 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg2["wip_limit"], 5)
 
 
+class TestConfigEvolution(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        config.reset()
+
+    def tearDown(self):
+        config.reset()
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write_yaml(self, content):
+        path = os.path.join(self.tmpdir, "trackfw.yaml")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    def test_defaults_novos_campos(self):
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["link_fields"]["req"], ["REQ:"])
+        self.assertEqual(cfg["link_fields"]["adr"], ["ADR:"])
+        self.assertEqual(cfg["link_fields"]["roadmap"], ["Roadmap:"])
+        self.assertEqual(cfg["acceptance_markers"], ["## Acceptance Criteria", "## Critérios de Aceite"])
+        self.assertEqual(cfg["rules"]["wip_has_req"], "error")
+        self.assertEqual(cfg["rules"]["stale_wip"], "warning")
+
+    def test_link_fields_customizado(self):
+        self._write_yaml(
+            "link_fields:\n"
+            "  req:\n"
+            '    - "REQ:"\n'
+            "    - req_id\n"
+            "  adr:\n"
+            '    - "ADR:"\n'
+            "  roadmap:\n"
+            '    - "Roadmap:"\n'
+        )
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["link_fields"]["req"], ["REQ:", "req_id"])
+        self.assertEqual(cfg["link_fields"]["adr"], ["ADR:"])
+        self.assertEqual(cfg["link_fields"]["roadmap"], ["Roadmap:"])
+
+    def test_acceptance_markers_customizado(self):
+        self._write_yaml(
+            "acceptance_markers:\n"
+            '  - "## Done"\n'
+            '  - "## Concluído"\n'
+        )
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["acceptance_markers"], ["## Done", "## Concluído"])
+
+    def test_rules_parcial_merge_com_defaults(self):
+        self._write_yaml(
+            "rules:\n"
+            "  stale_wip: error\n"
+            "  adr_orphan: off\n"
+        )
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["rules"]["stale_wip"], "error")
+        self.assertEqual(cfg["rules"]["adr_orphan"], "off")
+        self.assertEqual(cfg["rules"]["wip_has_req"], "error")  # default mantido
+
+    def test_sparse_novos_campos_usam_defaults(self):
+        self._write_yaml("wip_limit: 3\n")
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["wip_limit"], 3)
+        self.assertEqual(cfg["link_fields"]["req"], ["REQ:"])
+        self.assertEqual(cfg["rules"]["wip_has_req"], "error")
+
+    def test_retrocompat_yaml_v23(self):
+        self._write_yaml(
+            "adr_dirs:\n"
+            "  - docs/adr\n"
+            "wip_limit: 2\n"
+        )
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["adr_dirs"], ["docs/adr"])
+        self.assertEqual(cfg["wip_limit"], 2)
+        self.assertEqual(cfg["link_fields"]["req"], ["REQ:"])  # default
+
+
 if __name__ == "__main__":
     unittest.main()
