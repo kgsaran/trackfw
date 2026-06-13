@@ -48,6 +48,10 @@
   "serve": {
     "description": "Inicia servidor local de visualização de governança"
   },
+  "metrics": {
+    "description": "Exibe métricas de delivery",
+    "no_data": "Nenhuma transição registrada ainda."
+  },
   "errors": {
     "pluginNotFound": "plugin {{name}} não encontrado"
   },

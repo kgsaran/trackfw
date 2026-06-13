@@ -114,6 +114,12 @@
       "success": "Plugin \"{{name}}\" removido."
     }
   },
+  "metrics": {
+    "description": "Exibe métricas de delivery",
+    "no_data": "Nenhuma transição registrada ainda.",
+    "since": "Filtrar por período (ex: 7d, 30d, 90d)",
+    "export": "Exportar métricas para arquivo CSV"
+  },
   "errors": {
     "notFound": "Não encontrado: {{path}}",
     "downloadFailed": "falha no download: HTTP {{status}} para {{url}}",

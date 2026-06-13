@@ -618,12 +618,29 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-1A (CONCLUÍDO)
 
 **Tarefa:** ML-1A do roadmap `feat/v2.0-gaps` — implementar `trackfw serve` (servidor HTTP local de visualização ADR→REQ→ROADMAP).
 
-**Arquivos a criar/modificar:**
+**Arquivos criados/modificados:**
 - `internal/server/server.go` (novo) — handlers HTTP, parse de markdown, template HTML
 - `internal/commands/serve.go` (novo) — comando cobra serve com flag --port
-- `internal/commands/root.go` — registrar newServeCmd()
-- `internal/i18n/locales/en-US.json`, `pt-BR.json`, `es-ES.json` — chave serve.description
+- `internal/commands/root.go` — newServeCmd() registrado
+- `internal/i18n/locales/en-US.json`, `pt-BR.json`, `es-ES.json` — chave serve.description adicionada
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | `go test ./...` verde | `trackfw serve --help` mostra flag --port | `/api/data` retorna JSON válido | HTML com 3 seções (traceability, timeline, kanban) | commit `b0f27b8` | push para `feat/v2.0-gaps`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-1B (IMPLEMENTANDO)
+
+**Tarefa:** ML-1B do roadmap `feat/v2.0-gaps` — implementar `trackfw metrics` (cycle time, throughput e WIP age a partir do `.trackfw-log`).
+
+**Arquivos a criar/modificar:**
+- `internal/metrics/metrics.go` (novo) — ParseLog, Filter, Calculate, ExportCSV
+- `internal/metrics/metrics_test.go` (novo) — testes unitários
+- `internal/commands/metrics.go` (novo) — comando cobra metrics com --since e --export
+- `internal/commands/root.go` — newMetricsCmd() registrado
+- `internal/i18n/locales/*.json` — chave metrics.* nos 3 locales
+- `npm/src/commands/metrics.js` (novo) — porte Node.js puro
+- `npm/src/commands/index.js` — registrar command metrics
