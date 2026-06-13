@@ -31,6 +31,9 @@ type ProjectConfig struct {
 	LinkFieldsRoadmap []string          // default: ["Roadmap:"]
 	AcceptanceMarkers []string          // default: ["## Acceptance Criteria", "## Critérios de Aceite"]
 	Rules             map[string]string // governance rule severities
+
+	// v2.5 fields
+	TraceIdField string // frontmatter field for bidirectional REQ↔Roadmap tracing (default: "" = disabled)
 }
 
 var (
@@ -272,6 +275,8 @@ func parse(content string, cfg *ProjectConfig) {
 		case "rules":
 			inRules = true
 			rules = map[string]string{}
+		case "trace_id_field":
+			cfg.TraceIdField = val
 		}
 	}
 

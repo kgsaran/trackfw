@@ -4,6 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const { execSync } = require('child_process')
 const config = require('../config')
+const { checkTraceIds } = require('./traceid')
 
 const STALE_WIP_DAYS = 7
 
@@ -767,6 +768,12 @@ async function validateUnfiltered() {
 
   // warnings diretos do WIP limit (não configuráveis)
   warnings.push(...wipLimitResult.warnings)
+
+  // Verificação bidirecional de trace ID (somente se traceIdField configurado)
+  const cfg = config.load()
+  if (cfg.traceIdField) {
+    violations.push(...checkTraceIds(cfg.reqDir, cfg.roadmapDir, cfg.traceIdField))
+  }
 
   return { violations, warnings }
 }

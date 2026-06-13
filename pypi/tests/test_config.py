@@ -205,5 +205,54 @@ class TestConfigEvolution(unittest.TestCase):
         self.assertEqual(cfg["rules"]["stale_wip"], "warning")
 
 
+class TestConfigPaths(unittest.TestCase):
+    """Testes ML-2C: paths configuráveis adr_dirs, req_dir, roadmap_dir."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        config.reset()
+
+    def tearDown(self):
+        config.reset()
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write_yaml(self, content):
+        path = os.path.join(self.tmpdir, "trackfw.yaml")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    def test_config_adr_dirs_list(self):
+        """adr_dirs com dois itens → lista correta."""
+        self._write_yaml(
+            "adr_dirs:\n"
+            "  - docs/adr/zeus\n"
+            "  - docs/adr/apolo\n"
+        )
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["adr_dirs"], ["docs/adr/zeus", "docs/adr/apolo"])
+        self.assertIsInstance(cfg["adr_dirs"], list)
+        self.assertEqual(len(cfg["adr_dirs"]), 2)
+
+    def test_config_req_dir_custom(self):
+        """req_dir: docs/requisições → valor UTF-8 correto."""
+        self._write_yaml("req_dir: docs/requisições\n")
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["req_dir"], "docs/requisições")
+
+    def test_config_roadmap_dir_custom(self):
+        """roadmap_dir: docs/rm → valor correto."""
+        self._write_yaml("roadmap_dir: docs/rm\n")
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["roadmap_dir"], "docs/rm")
+
+    def test_config_paths_defaults(self):
+        """Sem campos de path no yaml → defaults corretos."""
+        self._write_yaml("wip_limit: 2\n")
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["adr_dirs"], ["docs/adr"])
+        self.assertEqual(cfg["req_dir"], "docs/req")
+        self.assertEqual(cfg["roadmap_dir"], "docs/roadmaps")
+
+
 if __name__ == "__main__":
     unittest.main()

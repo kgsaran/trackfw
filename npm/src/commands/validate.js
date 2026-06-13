@@ -5,11 +5,31 @@ const { t } = require('../i18n')
 
 const cmd = new Command('validate')
 cmd.description(t('validate.description'))
-cmd.action(async () => {
+cmd.option('--json', 'output result as JSON')
+cmd.action(async (options) => {
   const { violations, warnings } = await validate()
+  const lenient = isLenient()
+  const mode = lenient ? 'lenient' : 'strict'
+  const exitCode = violations.length > 0 ? 1 : 0
+
+  if (options.json) {
+    const output = {
+      summary: {
+        violations: violations.length,
+        warnings: warnings.length,
+        mode,
+        exit_code: exitCode,
+      },
+      violations: violations.map(v => ({ message: v })),
+      warnings: warnings.map(w => ({ message: w })),
+    }
+    console.log(JSON.stringify(output, null, 2))
+    process.exit(exitCode)
+    return
+  }
 
   // Informar usuário sobre modo lenient
-  if (isLenient()) {
+  if (lenient) {
     const until = lenientUntilDate()
     if (until) {
       console.log(`[LENIENT MODE] ${t('validate.lenient_mode', { date: until })}`)

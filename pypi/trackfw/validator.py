@@ -10,6 +10,7 @@ import subprocess
 from datetime import datetime, timezone
 
 from . import config as _config
+from .traceid import check_traceid
 
 STALE_WIP_DAYS = 7
 
@@ -840,6 +841,9 @@ def validate_unfiltered(cwd: str = None) -> dict:
     wip_limit_result = validate_wip_limit(cfg)
     _apply_rule("wip_limit", wip_limit_result["violations"], violations, warnings, cfg)
     warnings += wip_limit_result["warnings"]
+
+    # Verificação bidirecional de req_id (desativada se trace_id_field não configurado)
+    violations += check_traceid(cfg)
 
     return {"violations": violations, "warnings": warnings}
 

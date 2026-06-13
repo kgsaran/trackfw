@@ -1270,3 +1270,269 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `pypi/tests/test_baseline.py` — 4 testes: `test_save_baseline_cria_arquivo`, `test_load_baseline_retorna_none_se_nao_existe`, `test_validate_filtra_violations_do_baseline`, `test_validate_reporta_violations_novas`.
 
 **Resultado:** 4/4 testes `test_baseline*` verdes | 171/171 testes totais verdes | `trackfw baseline` CLI funcional | commit a seguir | push para `feat/v2.4-config-evolution`
+
+---
+
+## Sessão 2026-06-13 — Apolo (CONCLUÍDO)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `fix/v2.4.1-baseline-ratchet-warnings`
+
+**Tarefa:** ML-2C — corrigir parser de `trackfw.yaml` em Python: trim de aspas envolventes nos valores do bloco `rules:` e nos escalares top-level.
+
+**Entregue:**
+- `pypi/trackfw/config.py` — `_parse()`: valor de sub-chaves de `rules:` agora usa `.strip().strip("\"'")` (linha do bloco `in_rules`); valores escalares top-level (`req_dir`, `roadmap_dir`, `roadmap_namespacing`, `governance_mode`, `lenient_until`) também recebem `.strip("\"'")`.
+- `pypi/tests/test_config.py` — 2 novos testes adicionados em `TestConfigEvolution`: `test_rules_value_with_double_quotes` e `test_rules_value_with_single_quotes`.
+
+**Resultado:** 187/187 testes verdes | commit `3f4becf` | push para `fix/v2.4.1-baseline-ratchet-warnings`
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2A Go (CONCLUÍDO)
+
+**Agente:** Apolo | Status: CONCLUÍDO
+
+**Branch:** `fix/v2.4.1-baseline-ratchet-warnings`
+
+**Tarefa:** ML-2A — corrigir parser de `trackfw.yaml` em Go: trim de aspas envolventes em valores YAML (bloco `rules:` e escalares top-level).
+
+**Entregue:**
+- `internal/config/config.go` — `splitKV()` agora aplica `strings.Trim(val, "\"'")` após o `TrimSpace`, removendo aspas simples e duplas de qualquer valor extraído — cobre sub-chaves de `rules:`, `link_fields:` e escalares top-level em uma única mudança centralizada.
+- `internal/config/config_evolution_test.go` — 2 novos testes adicionados: `TestRulesValueWithDoubleQuotes` (`adr_orphan: "off"` → `"off"` sem aspas) e `TestRulesValueWithSingleQuotes` (`stale_wip: 'warning'` → `"warning"` sem aspas).
+
+**Resultado:** `go build ./...` verde | 14/14 testes `internal/config` verdes | commit `e6b8b39` | push para `fix/v2.4.1-baseline-ratchet-warnings`
+
+---
+
+## Sessão 2026-06-13 — Backend ML-1B Node.js (CONCLUÍDO)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-1B — flag `--json` no `trackfw validate` para o CLI Node.js.
+
+**Arquivos criados/modificados:**
+- `npm/src/commands/validate.js` — opção `--json` adicionada ao commander; quando ativa, monta e imprime `JSON.stringify({summary, violations, warnings}, null, 2)` onde `summary = {violations: N, warnings: N, mode: "strict"|"lenient", exit_code: 0|1}`; comportamento texto completamente inalterado sem a flag.
+- `npm/tests/validate_json.test.js` (novo) — 12 testes cobrindo: JSON válido, campos summary/violations/warnings presentes, contagem correta, exit_code consistente entre texto e JSON, mode válido, e comportamento texto inalterado sem --json.
+
+**Resultado:** 12/12 validate_json.test.js verdes | 45/45 testes existentes (validator + config + help + baseline) sem regressões | commit e push para `feat/v2.5-discovery-json-traceid`
+
+---
+
+## Sessão 2026-06-13 — Backend ML-2B Node.js paths configuráveis (CONCLUÍDO)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-2B — paths configuráveis `adr_dirs`, `req_dir`, `roadmap_dir` no CLI Node.js.
+
+**Diagnóstico:** `npm/src/config/index.js` e `npm/src/validator/index.js` já tinham os campos implementados. Faltava: strip de aspas em `req_dir` e `roadmap_dir` (parser atribuía val direto) e testes dos novos campos.
+
+**Arquivos modificados:**
+- `npm/src/config/index.js` — fix: `req_dir` e `roadmap_dir` agora removem aspas envolventes com `.replace(/^["']|["']$/g, '')`.
+- `npm/tests/config.test.js` — 4 novos testes ML-2B: `adr_dirs` com 2 itens, `req_dir` customizado, `roadmap_dir` customizado, defaults quando campos ausentes.
+
+**Resultado:** 12/12 config.test.js verdes (8 anteriores + 4 novos) | 0 falhas
+
+---
+
+## Sessão 2026-06-13 — Backend ML-2C Python (CONCLUÍDO)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-2C — paths configuráveis `adr_dirs`, `req_dir`, `roadmap_dir` no CLI Python.
+
+**Diagnóstico:** `config.py` e `validator.py` já estavam totalmente parametrizados com os campos `adr_dirs`, `req_dir`, `roadmap_dir` (defaults e parse implementados em versões anteriores). Nenhuma alteração necessária nesses arquivos.
+
+**Arquivos modificados:**
+- `pypi/tests/test_config.py` — classe `TestConfigPaths` adicionada com 4 testes: `test_config_adr_dirs_list`, `test_config_req_dir_custom` (UTF-8), `test_config_roadmap_dir_custom`, `test_config_paths_defaults`.
+
+**Resultado:** 17/17 test_config.py verdes | 191/191 testes pypi completos sem regressões | commit `41822c2` | push para `feat/v2.5-discovery-json-traceid`
+
+---
+
+## Sessão 2026-06-13 — Backend ML-2A v2.5 Go paths configuráveis (CONCLUÍDO)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-2A — paths configuráveis `adr_dirs`/`req_dir`/`roadmap_dir` no CLI Go.
+
+**Análise:** Campos `ADRDirs`, `REQDir`, `RoadmapDir` e o parser YAML já estavam implementados em `internal/config/config.go`. Os 4 testes nomeados no ML-2A não existiam — criados em `internal/config/config_paths_test.go`.
+
+**Paths hardcoded em `discover.go`:** pertencem ao scanner de discovery brownfield (candidatos de autodetecção), não à camada de config — mantidos intencionalmente.
+
+**Entregue:**
+- `internal/config/config_paths_test.go` — 4 testes: `TestConfigAdrDirsList`, `TestConfigReqDirCustom` (UTF-8 docs/requisições), `TestConfigRoadmapDirCustom`, `TestConfigPathsDefaults`.
+
+**Resultado:** 18/18 testes `internal/config` verdes | `make build` limpo | sem regressões novas | commit `d8ad96d` | push para `feat/v2.5-discovery-json-traceid`
+
+---
+
+## Sessão 2026-06-13 — Backend (IMPLEMENTANDO)
+
+**Agente:** Backend | Status: CONCLUIDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-1A — flag `--json` no `trackfw validate` (CLI Go).
+
+**Entregue:**
+- `internal/validator/result.go` — structs `RuleItem`, `ValidateSummary`, `ValidateResult` e builder `BuildResult`; slices inicializados como `[]RuleItem{}` para serializar como `[]` e não `null`.
+- `internal/commands/validate.go` — flag `--json bool` adicionada ao cobra command; modo JSON usa `cmd.SilenceErrors = true` para saída JSON pura no stdout; exit code idêntico ao modo texto.
+- `internal/commands/validate_json_test.go` — 3 testes: `TestValidateJSONFlag` (JSON válido + campos obrigatórios), `TestValidateJSONExitCode` (paridade de exit code), `TestValidateTextUnchanged` (modo texto inalterado).
+- `make build` sem erros | 6/6 testes de commands verdes | todos os testes de validator verdes | sem regressões nos pacotes afetados.
+
+---
+
+## Sessão 2026-06-13 — Backend ML-1C v2.5 flag --json no validate Python (IMPLEMENTANDO)
+
+**Agente:** Backend | Status: IMPLEMENTANDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-1C — flag `--json` no `trackfw validate` para o CLI Python.
+
+**Análise:**
+- `pypi/trackfw/commands/validate.py` já é implementação completa (não stub)
+- `pypi/trackfw/validator.py` retorna dicts `{"type": ..., "message": ...}` — sem campos `rule` e `file`
+- Node JS mirror já tem `--json` com estrutura `{summary, violations: [{message}], warnings: [{message}]}`
+- Estratégia: adicionar `--json` ao parser; no branch JSON, suprimir toda saída textual e emitir JSON puro; campos `rule`/`file` extraídos do dict se presentes (null se ausentes); testes pytest isolados com tmpdir + os.chdir
+
+**Resultado:** 15/15 test_validate_json.py verdes | 206/206 testes pypi completos sem regressões | commits e2ed388 + b006205 | push para `feat/v2.5-discovery-json-traceid`
+
+**Status final:** CONCLUIDO
+
+**Arquivos modificados:**
+- `pypi/trackfw/commands/validate.py` — argumento `--json` adicionado ao parser; branch JSON emite JSON estruturado puro suprimindo saída textual; modo texto inalterado
+- `pypi/tests/test_validate_json.py` — 15 testes cobrindo: JSON válido, campos corretos, exit code paridade, modo lenient
+
+---
+
+## Sessão 2026-06-13 — ML-3C: namespacing by_agent — Python CLI
+
+**Agente:** Backend | Status: IMPLEMENTANDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-3C — `roadmap_namespacing: by_agent` no CLI Python.
+
+**Análise:**
+- `pypi/trackfw/config.py` já tem `NAMESPACING_BY_AGENT`, parse de `roadmap_namespacing` e `agents`
+- `pypi/trackfw/validator.py` já tem `resolve_wip_dirs`, `validate_wip_limit` e `validate_folder_status_coherence` com suporte by_agent
+- `pypi/trackfw/commands/status.py` já tem breakdown por agente
+- Falta apenas: `pypi/tests/test_namespacing.py` com 3 testes obrigatórios
+
+---
+
+## 2026-06-13 — ML-3B Node.js namespacing by_agent (CONCLUÍDO)
+
+**Agente:** Backend
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+### O que foi implementado
+
+`npm/tests/namespacing.test.js` criado com 15 testes cobrindo:
+- Parse de `roadmap_namespacing: by_agent` e `agents: [zeus, apolo]` no config
+- `resolveWIPDirs` retornando hierarquia `<roadmapDir>/<agente>/wip/` no modo by_agent
+- `validateWIPHasREQ`, `validateWIPHasAcceptanceCriteria` e `validateWIPLimit` varrendo dois agentes independentemente
+- Comportamento flat inalterado (sem regressão)
+- `getStatus` exibindo breakdown por agente
+- Exportação correta de `NAMESPACING_FLAT` e `NAMESPACING_BY_AGENT`
+
+**Resultado:** 15/15 passando; config.test.js (12) e validator.test.js (16) sem regressão.
+**Commit:** `4777f80` — push em `feat/v2.5-discovery-json-traceid`
+
+**Nota:** `config/index.js` e `validator/index.js` já tinham suporte completo a `by_agent` implementado em MLs anteriores. O ML-3B Node.js consistiu exclusivamente em criar a cobertura de testes.
+
+**Resultado:** 9/9 test_namespacing.py verdes | 215/215 testes pypi completos sem regressões | commit 265caa4 | push para `feat/v2.5-discovery-json-traceid`
+
+**Status final:** CONCLUIDO
+
+**Arquivos modificados:**
+- `pypi/tests/test_namespacing.py` — 9 testes cobrindo: parse config by_agent, wip_limit por agente, autodiscover de agentes, resolve_wip_dirs, comportamento flat inalterado
+
+**Nota:** config.py, validator.py e status.py já tinham implementação completa de by_agent. Apenas os testes de namespacing estavam ausentes.
+
+---
+
+## 2026-06-13 — ML-5C: req_id bidirecional no CLI Python (Backend)
+
+**Status:** CONCLUIDO
+**Branch:** `feat/v2.5-discovery-json-traceid`
+**Commit:** `7249687`
+
+**O que foi implementado:**
+- `pypi/trackfw/config.py`: campo `trace_id_field` adicionado ao defaults (default `""` — desativado) com parse no `_parse`
+- `pypi/trackfw/traceid.py`: novo módulo com `check_traceid(cfg)` — indexa REQs e Roadmaps pelo campo de frontmatter configurado e emite 5 tipos de violations: `traceid_orphan_roadmap`, `traceid_orphan_req`, `traceid_state_mismatch`, `traceid_duplicate_req`, `traceid_duplicate_roadmap`. Parse de frontmatter duplicado localmente para evitar importação circular com `validator.py`
+- `pypi/trackfw/validator.py`: integra `check_traceid(cfg)` em `validate_unfiltered()`
+- `pypi/tests/test_traceid.py`: 6 testes pytest cobrindo todos os cenários (orphan roadmap, orphan req, state mismatch, duplicate req, par válido sem violation, desativado sem trace_id_field)
+
+**Resultado:** 6/6 test_traceid.py verdes | 221/221 testes pypi completos sem regressões
+
+---
+
+## 2026-06-13 — ML-5A: req_id bidirecional no CLI Go (Backend)
+
+**Status:** CONCLUIDO
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+### O que foi implementado
+
+- `internal/config/config.go`: campo `TraceIdField string` adicionado ao struct `ProjectConfig` + case `trace_id_field` no parser `parse()`.
+- `internal/validator/validator_traceid.go`: módulo com `validateTraceId(cfg ProjectConfig)` — 5 verificações: `traceid_orphan_roadmap`, `traceid_orphan_req`, `traceid_state_mismatch`, `traceid_duplicate_req`, `traceid_duplicate_roadmap`. Indexação por estado via subpastas (wip/, done/ etc.) + flat para REQs.
+- `internal/validator/validator.go`: `ValidateUnfiltered()` atualizado — carrega `cfg := config.Load()` e chama `validateTraceId(cfg)` ao final.
+- `internal/validator/validator_traceid_test.go`: 6 testes (`TestTraceIdOrphanRoadmap`, `TestTraceIdOrphanReq`, `TestTraceIdStateMismatch`, `TestTraceIdDuplicateReq`, `TestTraceIdValidPair`, `TestTraceIdDisabled`) — 6/6 verdes.
+
+**Resultado:** `make build` sem erros | `go test ./internal/validator/ -run TestTraceId -v` 6/6 verdes | `go test ./...` sem novas regressões (falha pré-existente `TestMoveRoadmap_ByAgent` inalterada).
+
+---
+
+## 2026-06-13 — ML-5B: req_id bidirecional no CLI Node.js (Backend)
+
+**Status:** IMPLEMENTANDO
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**O que está sendo implementado:**
+- `npm/src/config/index.js`: campo `traceIdField` no defaults + parse de `trace_id_field` no YAML
+- `npm/src/validator/traceid.js`: módulo puro `checkTraceIds(reqDir, roadmapDir, fieldName)` com 5 violations
+- `npm/src/validator/index.js`: integração da verificação via `validateUnfiltered()`
+- `npm/tests/traceid.test.js`: testes com dirs temporários (mkdtempSync)
+
+---
+
+## 2026-06-13 — ML-3A: namespacing by_agent — testes Go (Backend)
+
+**Status:** IMPLEMENTANDO → CONCLUIDO
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**O que foi implementado:**
+- `internal/validator/validator_namespacing_test.go`: 3 testes novos
+  - `TestByAgentNamespacingWIPLimit`: limiar discriminante (zeus=3, apolo=3, limit=5 → total=6 violaria check global mas por agente passa sem warning)
+  - `TestByAgentNamespacingWIPLimitExceeded`: agente zeus com 3 WIPs ultrapassa limit=2 → warning somente para zeus
+  - `TestByAgentNamespacingFlat`: sem namespacing, comportamento flat — 2 WIPs com limit=1 emite warning global
+- `internal/config/config_namespacing_test.go`: 1 teste novo
+  - `TestConfigByAgentParsed`: YAML block-style `roadmap_namespacing: by_agent` + `agents: [zeus, apolo]` → struct correto
+
+**Nota:** implementação de config.go, validator.go e generators/roadmap.go estava completa em MLs anteriores. Este ML consistiu exclusivamente em criar os testes de verificação.
+
+**Falha pré-existente (não é responsabilidade do ML-3A):** `TestMoveRoadmap_ByAgent` em `internal/generators/` — ausência de `config.Reset()` faz o singleton retornar flat e `findRoadmap` falha. Confirmado anterior a este ML.
+
+**Resultado:** `go test ./internal/validator/ -run TestByAgent -v` → 3/3 PASS | `go test ./internal/config/ -run TestConfigByAgent -v` → 1/1 PASS | `make build` → sem erros
+
+**Status:** CONCLUIDO
+**Commit:** `10119cb`
+
+**Arquivos modificados:**
+- `npm/src/config/index.js`: campo `traceIdField: ''` no defaults + case `trace_id_field` no parse YAML
+- `npm/src/validator/traceid.js`: módulo puro `checkTraceIds(reqDir, roadmapDir, fieldName)` — indexa REQs e Roadmaps pelo campo de frontmatter e emite 5 violations; state derivado da pasta do arquivo (não do frontmatter)
+- `npm/src/validator/index.js`: importa `checkTraceIds` e integra em `validateUnfiltered()` com guard `if (cfg.traceIdField)`
+- `npm/tests/traceid.test.js`: 6 testes com mkdtempSync cobrindo todos os cenários
+
+**Resultado:** 6/6 traceid.test.js verdes | 12/12 config.test.js sem regressões | 12/12 validate_json.test.js sem regressões

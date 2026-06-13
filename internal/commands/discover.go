@@ -1,8 +1,11 @@
 package commands
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/kgsaran/trackfw/internal/discover"
 	"github.com/kgsaran/trackfw/internal/i18n"
@@ -17,12 +20,14 @@ func NewDiscoverCmd() *cobra.Command {
 		Use:   "discover",
 		Short: i18n.T("discover.description"),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+
 			cwd, err := os.Getwd()
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("trackfw discover — scanning %s\n\n", cwd)
+			fmt.Fprintf(out, "trackfw discover — scanning %s\n\n", cwd)
 
 			r, err := discover.Scan(cwd)
 			if err != nil {
@@ -38,16 +43,16 @@ func NewDiscoverCmd() *cobra.Command {
 					}
 					dirs += d
 				}
-				fmt.Printf("✓ ADRs found:      %-4d  (%s)\n", r.ADRCount, dirs)
+				fmt.Fprintf(out, "✓ ADRs found:      %-4d  (%s)\n", r.ADRCount, dirs)
 			} else {
-				fmt.Println("⚠ No ADRs found")
+				fmt.Fprintln(out, "⚠ No ADRs found")
 			}
 
 			// REQ dir
 			if r.REQCount > 0 {
-				fmt.Printf("✓ REQs found:      %-4d  (%s)\n", r.REQCount, r.REQDir)
+				fmt.Fprintf(out, "✓ REQs found:      %-4d  (%s)\n", r.REQCount, r.REQDir)
 			} else {
-				fmt.Println("⚠ No REQs found")
+				fmt.Fprintln(out, "⚠ No REQs found")
 			}
 
 			// Roadmaps
@@ -56,9 +61,9 @@ func NewDiscoverCmd() *cobra.Command {
 				if mode == "by_agent" {
 					mode = "by_agent mode"
 				}
-				fmt.Printf("✓ Roadmaps found:  %-4d  (%s — %s)\n", r.RoadmapCount, r.RoadmapDir, mode)
+				fmt.Fprintf(out, "✓ Roadmaps found:  %-4d  (%s — %s)\n", r.RoadmapCount, r.RoadmapDir, mode)
 			} else {
-				fmt.Println("⚠ No roadmaps found")
+				fmt.Fprintln(out, "⚠ No roadmaps found")
 			}
 
 			// Agents
@@ -70,50 +75,56 @@ func NewDiscoverCmd() *cobra.Command {
 					}
 					agents += a
 				}
-				fmt.Printf("✓ Agents detected: %s\n", agents)
+				fmt.Fprintf(out, "✓ Agents detected: %s\n", agents)
 			}
 
 			// trackfw.yaml
 			if !r.HasTrackfwYAML {
-				fmt.Println("⚠ No trackfw.yaml — run with --init to generate one")
+				fmt.Fprintln(out, "⚠ No trackfw.yaml — run with --init to generate one")
 			} else {
-				fmt.Println("✓ trackfw.yaml found")
+				fmt.Fprintln(out, "✓ trackfw.yaml found")
 			}
 
 			// .trackfw-log
 			if !r.HasTrackfwLog {
-				fmt.Println("⚠ No .trackfw-log — run with --bootstrap-log to create retroactive history")
+				fmt.Fprintln(out, "⚠ No .trackfw-log — run with --bootstrap-log to create retroactive history")
 			} else {
-				fmt.Println("✓ .trackfw-log found")
+				fmt.Fprintln(out, "✓ .trackfw-log found")
 			}
 
 			// hooks
 			if r.HookFramework != "none" {
-				fmt.Printf("✓ Hooks: %s\n", r.HookFramework)
+				fmt.Fprintf(out, "✓ Hooks: %s\n", r.HookFramework)
 			} else {
-				fmt.Println("⚠ No hook framework detected")
+				fmt.Fprintln(out, "⚠ No hook framework detected")
 			}
 
 			// CI
 			if r.CISystem != "none" {
-				fmt.Printf("✓ CI: %s\n", r.CISystem)
+				fmt.Fprintf(out, "✓ CI: %s\n", r.CISystem)
 			} else {
-				fmt.Println("⚠ No CI system detected")
+				fmt.Fprintln(out, "⚠ No CI system detected")
 			}
 
-			fmt.Printf("\nGovernance Score: %d/100\n", r.GovernanceScore)
+			fmt.Fprintf(out, "\nGovernance Score: %d/100\n", r.GovernanceScore)
 
 			// --init
 			if flagInit {
+				yamlPath := filepath.Join(cwd, "trackfw.yaml")
+				if _, statErr := os.Stat(yamlPath); statErr == nil {
+					// arquivo já existe — avisar e sair sem sobrescrever
+					fmt.Fprintln(out, "\n⚠ trackfw.yaml already exists — remove it first if you want to regenerate")
+					return nil
+				}
 				yaml := discover.GenerateYAML(r)
-				if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+				if err := os.WriteFile(yamlPath, []byte(yaml), 0644); err != nil {
 					return fmt.Errorf("writing trackfw.yaml: %w", err)
 				}
-				fmt.Println("\n✓ trackfw.yaml generated")
+				fmt.Fprintln(out, "\n✓ trackfw.yaml generated")
 				if err := discover.InstallGates(r, cwd); err != nil {
-					fmt.Printf("⚠ gates install partial: %v\n", err)
+					fmt.Fprintf(out, "⚠ gates install partial: %v\n", err)
 				} else {
-					fmt.Println("✓ governance gates installed")
+					fmt.Fprintln(out, "✓ governance gates installed")
 				}
 			}
 
@@ -122,15 +133,37 @@ func NewDiscoverCmd() *cobra.Command {
 				if r.RoadmapDir == "" {
 					return fmt.Errorf("no roadmap dir detected — cannot bootstrap log")
 				}
-				logContent := discover.GenerateBootstrapLog(r, cwd)
-				logPath := r.RoadmapDir + "/.trackfw-log"
+
+				logPath := filepath.Join(cwd, r.RoadmapDir, ".trackfw-log")
+
+				// ler entradas já existentes para dedup
+				existingEntries := readLogEntries(logPath)
+
+				// gerar novas entradas
+				newContent := discover.GenerateBootstrapLog(r, cwd)
+				lines := strings.Split(newContent, "\n")
+
 				f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 				if err != nil {
 					return fmt.Errorf("opening log: %w", err)
 				}
 				defer f.Close()
-				f.WriteString(logContent)
-				fmt.Printf("✓ bootstrap log written to %s\n", logPath)
+
+				written := 0
+				for _, line := range lines {
+					if line == "" {
+						continue
+					}
+					// extrair chave de dedup: data + filename (sem o timestamp de hora)
+					key := dedupKey(line)
+					if existingEntries[key] {
+						continue
+					}
+					fmt.Fprintln(f, line)
+					written++
+				}
+
+				fmt.Fprintf(out, "✓ bootstrap log written to %s (%d new entries)\n", logPath, written)
 			}
 
 			return nil
@@ -141,4 +174,33 @@ func NewDiscoverCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&flagBootstrapLog, "bootstrap-log", false, "create retroactive .trackfw-log from done/ files")
 
 	return cmd
+}
+
+// readLogEntries lê o arquivo de log e retorna um set de chaves de dedup.
+func readLogEntries(logPath string) map[string]bool {
+	entries := make(map[string]bool)
+	f, err := os.Open(logPath)
+	if err != nil {
+		return entries
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			entries[dedupKey(line)] = true
+		}
+	}
+	return entries
+}
+
+// dedupKey extrai a chave de deduplicação de uma linha de log.
+// O formato gerado por GenerateBootstrapLog é:
+//
+//	"2006-01-02 15:04  filename.md  backlog → done"
+//
+// A chave usada é a linha inteira (trim), pois o conteúdo representa
+// o mesmo arquivo/data independentemente da hora exata.
+func dedupKey(line string) string {
+	return strings.TrimSpace(line)
 }

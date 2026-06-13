@@ -275,6 +275,8 @@ func LenientUntilDate() string {
 // ValidateUnfiltered executa todas as validações sem filtro de baseline nem modo lenient.
 // Use para criar snapshots de baseline ou quando você quer o quadro completo.
 func ValidateUnfiltered() (violations []string, warnings []string, err error) {
+	cfg := config.Load()
+
 	wipViolations, e := validateWIPHasREQ()
 	if e != nil {
 		return nil, nil, e
@@ -350,6 +352,11 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 		return nil, nil, e
 	}
 	applyRule("filename_uniqueness", uniquenessViolations, &violations, &warnings)
+
+	// v2.5: verificação bidirecional REQ↔Roadmap via trace_id_field (desativada se campo vazio)
+	traceViolations, traceWarnings := validateTraceId(cfg)
+	violations = append(violations, traceViolations...)
+	warnings = append(warnings, traceWarnings...)
 
 	return violations, warnings, nil
 }

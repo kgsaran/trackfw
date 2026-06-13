@@ -15,6 +15,7 @@ function defaults() {
     wipLimit: 1,
     wipBySquad: false,
     requireReqInCommit: false,
+    traceIdField: '',
     // NOVOS campos:
     linkFields: {
       req:     ['REQ:'],
@@ -165,8 +166,8 @@ function parse(content, cfg) {
 
     switch (key) {
       case 'adr_dirs':              inAdrDirs = true; adrDirs = []; break;
-      case 'req_dir':               cfg.reqDir = val; break;
-      case 'roadmap_dir':           cfg.roadmapDir = val; break;
+      case 'req_dir':               cfg.reqDir = val.replace(/^["']|["']$/g, ''); break;
+      case 'roadmap_dir':           cfg.roadmapDir = val.replace(/^["']|["']$/g, ''); break;
       case 'roadmap_namespacing':   cfg.roadmapNamespacing = val; break;
       case 'agents':                inAgents = true; agents = []; break;
       case 'governance_mode':       cfg.governanceMode = val; break;
@@ -174,6 +175,7 @@ function parse(content, cfg) {
       case 'wip_limit':             { const n = parseInt(val, 10); if (n > 0) cfg.wipLimit = n; break; }
       case 'wip_by_squad':          cfg.wipBySquad = val === 'true'; break;
       case 'require_req_in_commit': cfg.requireReqInCommit = val === 'true'; break;
+      case 'trace_id_field':        cfg.traceIdField = val.replace(/^["']|["']$/g, ''); break;
       case 'link_fields':           inLinkFields = true; break;
       case 'acceptance_markers':    inAcceptanceMarkers = true; acceptanceMarkers = []; break;
       case 'rules':                 inRules = true; rules = {}; break;
