@@ -149,6 +149,19 @@ func TestValidateJSONExitCode(t *testing.T) {
 	if result.Summary.ExitCode != 1 {
 		t.Errorf("esperado exit_code=1 quando há violações, obteve %d", result.Summary.ExitCode)
 	}
+
+	// Verificar que rule e file estão preenchidos para a violação wip_has_req.
+	// O fixture tem "ROADMAP-sem-req.md" em wip sem REQ linkada → rule="wip_has_req", file="ROADMAP-sem-req.md".
+	foundRuleFile := false
+	for _, item := range result.Violations {
+		if item.Rule == "wip_has_req" && item.File == "ROADMAP-sem-req.md" {
+			foundRuleFile = true
+			break
+		}
+	}
+	if !foundRuleFile {
+		t.Errorf("esperado violation com rule='wip_has_req' e file='ROADMAP-sem-req.md', obteve: %+v", result.Violations)
+	}
 }
 
 // TestValidateTextUnchanged verifica que sem --json o output continua sendo texto (não JSON).

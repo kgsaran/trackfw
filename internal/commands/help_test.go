@@ -22,6 +22,13 @@ func TestHelpNoArgs(t *testing.T) {
 	if !strings.Contains(out, "wip_limit") {
 		t.Errorf("esperava 'wip_limit' na saída, obteve:\n%s", out)
 	}
+	// Verificar entradas traceid adicionadas no ML-1A.
+	if !strings.Contains(out, "trace_id_field") {
+		t.Errorf("esperava 'trace_id_field' na saída, obteve:\n%s", out)
+	}
+	if !strings.Contains(out, "rules.traceid_orphan_roadmap") {
+		t.Errorf("esperava 'rules.traceid_orphan_roadmap' na saída, obteve:\n%s", out)
+	}
 }
 
 func TestHelpKnownKey(t *testing.T) {

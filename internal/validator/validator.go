@@ -90,6 +90,26 @@ func applyRule(ruleName string, msgs []string, violations, warnings *[]string) {
 	}
 }
 
+// applyRuleTagged é idêntico a applyRule mas acumula TaggedMsg (rule+msg) em vez de []string.
+// Usado por ValidateTagged para propagar o nome da regra até o BuildResultTagged.
+func applyRuleTagged(ruleName string, msgs []string, violations, warnings *[]TaggedMsg) {
+	if len(msgs) == 0 {
+		return
+	}
+	tagged := make([]TaggedMsg, len(msgs))
+	for i, m := range msgs {
+		tagged[i] = TaggedMsg{Rule: ruleName, Msg: m}
+	}
+	switch ruleSeverity(ruleName) {
+	case "off":
+		// silencioso
+	case "warning":
+		*warnings = append(*warnings, tagged...)
+	default:
+		*violations = append(*violations, tagged...)
+	}
+}
+
 // WIPConfig armazena configuração de WIP limit lida do trackfw.yaml.
 type WIPConfig struct {
 	Limit   int  // default 1
@@ -399,6 +419,178 @@ func Validate() (violations []string, warnings []string, err error) {
 	}
 
 	// Modo lenient: mover violations para warnings, exit code 0
+	if IsLenient() {
+		warnings = append(warnings, violations...)
+		violations = nil
+	}
+
+	return
+}
+
+// validateUnfilteredTagged é a versão interna de ValidateUnfiltered que retorna TaggedMsg.
+// Regras sem applyRuleTagged (diretas) ficam com Rule="" — comportamento intencional.
+func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, err error) {
+	cfg := config.Load()
+
+	wipViolations, e := validateWIPHasREQ()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("wip_has_req", wipViolations, &violations, &warnings)
+
+	reqViolations, e := validateREQsHaveADR()
+	if e != nil {
+		return nil, nil, e
+	}
+	for _, m := range reqViolations {
+		violations = append(violations, TaggedMsg{Rule: "", Msg: m})
+	}
+
+	blockedViolations, e := validateBlockedHasREQ()
+	if e != nil {
+		return nil, nil, e
+	}
+	for _, m := range blockedViolations {
+		violations = append(violations, TaggedMsg{Rule: "", Msg: m})
+	}
+
+	reqRoadmapViolations, e := validateREQsHaveRoadmap()
+	if e != nil {
+		return nil, nil, e
+	}
+	for _, m := range reqRoadmapViolations {
+		violations = append(violations, TaggedMsg{Rule: "", Msg: m})
+	}
+
+	adrOrphanViolations, e := validateADRsAreReferenced()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("adr_orphan", adrOrphanViolations, &violations, &warnings)
+
+	criteriaViolations, e := validateWIPHasAcceptanceCriteria()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("wip_acceptance", criteriaViolations, &violations, &warnings)
+
+	wipViolationsLimit, wipWarningsLimit, e := validateWIPLimit()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("wip_limit", wipViolationsLimit, &violations, &warnings)
+	for _, m := range wipWarningsLimit {
+		warnings = append(warnings, TaggedMsg{Rule: "wip_limit", Msg: m})
+	}
+
+	staleWarnings, e := validateStaleWIP()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("stale_wip", staleWarnings, &violations, &warnings)
+
+	draftBlockedViolations, e := validateREQsNotBlockedByDraftADRs()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("blocked_by_draft_adr", draftBlockedViolations, &violations, &warnings)
+
+	frontmatterViolations := validateFrontmatterPresence()
+	for _, m := range frontmatterViolations {
+		violations = append(violations, TaggedMsg{Rule: "", Msg: m})
+	}
+
+	refWarnings, e := validateRefTargetsExist()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("ref_targets_exist", refWarnings, &violations, &warnings)
+
+	coherenceWarnings, e := validateFolderStatusCoherence()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("folder_status", coherenceWarnings, &violations, &warnings)
+
+	uniquenessViolations, e := validateFilenameUniqueness()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("filename_uniqueness", uniquenessViolations, &violations, &warnings)
+
+	// v2.5: traceid — applyRuleTagged está no validator_traceid via applyRule; aqui fazemos tagged
+	traceViolations, traceWarnings := validateTraceId(cfg)
+	for _, m := range traceViolations {
+		violations = append(violations, TaggedMsg{Rule: extractRulePrefix(m), Msg: m})
+	}
+	for _, m := range traceWarnings {
+		warnings = append(warnings, TaggedMsg{Rule: extractRulePrefix(m), Msg: m})
+	}
+
+	return violations, warnings, nil
+}
+
+// extractRulePrefix extrai o prefixo "traceid_*" das mensagens de rastreabilidade.
+// Retorna a substring antes do primeiro ":" se ela tiver prefixo "traceid_", senão "".
+func extractRulePrefix(msg string) string {
+	colonIdx := -1
+	for i, c := range msg {
+		if c == ':' {
+			colonIdx = i
+			break
+		}
+	}
+	if colonIdx <= 0 {
+		return ""
+	}
+	prefix := msg[:colonIdx]
+	if len(prefix) > 8 && prefix[:8] == "traceid_" {
+		return prefix
+	}
+	return ""
+}
+
+// ValidateTagged executa toda a validação retornando TaggedMsg com Rule+Msg preenchidos.
+// Aplica filtro de baseline e modo lenient igual a Validate().
+// Use para --json onde rule e file precisam estar preenchidos.
+func ValidateTagged() (violations []TaggedMsg, warnings []TaggedMsg, err error) {
+	violations, warnings, err = validateUnfilteredTagged()
+	if err != nil {
+		return
+	}
+
+	// Filtro de baseline: excluir violations/warnings já conhecidos (por mensagem).
+	baseline, bErr := LoadBaseline()
+	if bErr != nil {
+		return nil, nil, fmt.Errorf("erro ao carregar baseline: %w", bErr)
+	}
+	if baseline != nil {
+		baselineSet := make(map[string]struct{}, len(baseline.Violations))
+		for _, v := range baseline.Violations {
+			baselineSet[v] = struct{}{}
+		}
+		var netNew []TaggedMsg
+		for _, v := range violations {
+			if _, exists := baselineSet[v.Msg]; !exists {
+				netNew = append(netNew, v)
+			}
+		}
+		violations = netNew
+
+		warnSet := make(map[string]struct{}, len(baseline.Warnings))
+		for _, w := range baseline.Warnings {
+			warnSet[w] = struct{}{}
+		}
+		var netNewWarn []TaggedMsg
+		for _, w := range warnings {
+			if _, exists := warnSet[w.Msg]; !exists {
+				netNewWarn = append(netNewWarn, w)
+			}
+		}
+		warnings = netNewWarn
+	}
+
+	// Modo lenient: mover violations para warnings, exit code 0.
 	if IsLenient() {
 		warnings = append(warnings, violations...)
 		violations = nil
