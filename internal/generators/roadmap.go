@@ -1,6 +1,7 @@
 package generators
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -123,6 +124,117 @@ squad:
 
 	fmt.Printf("✓ created %s\n", filename)
 	return nil
+}
+
+// NewRoadmapFromREQ cria um roadmap pré-preenchido lendo o conteúdo de uma REQ.
+// Extrai título e critérios de aceite; gera MLs rascunho para cada critério.
+func NewRoadmapFromREQ(reqPath string) error {
+	data, err := os.ReadFile(reqPath)
+	if err != nil {
+		return fmt.Errorf("reading REQ: %w", err)
+	}
+
+	title, criteria, linkedADR := parseREQForRoadmap(string(data))
+	if title == "" {
+		title = strings.TrimSuffix(filepath.Base(reqPath), ".md")
+		title = strings.TrimPrefix(title, "REQ-")
+	}
+
+	date := time.Now().Format("2006-01-02")
+
+	// Gerar seção de MLs a partir dos critérios de aceite
+	var mlSection strings.Builder
+	mlSection.WriteString("## Wave 1 — Implementation (derived from REQ criteria)\n")
+	mlSection.WriteString("> Dependencies: none\n")
+	for i, criterion := range criteria {
+		mlLabel := fmt.Sprintf("ML-1%c", rune('A'+i))
+		mlSection.WriteString(fmt.Sprintf("\n### %s — %s\n", mlLabel, criterion))
+		mlSection.WriteString("**Status:** pending\n")
+		mlSection.WriteString("**Files affected:**\n")
+		mlSection.WriteString("**Actions:**\n")
+		mlSection.WriteString("**Acceptance criteria:**\n")
+		mlSection.WriteString(fmt.Sprintf("- [ ] %s\n", criterion))
+		mlSection.WriteString("- [ ] build passes\n")
+		mlSection.WriteString("- [ ] tests green\n")
+	}
+
+	adrRef := ""
+	if linkedADR != "" {
+		adrRef = "\nADR: " + linkedADR
+	}
+
+	body := fmt.Sprintf(`---
+status: backlog
+date: %s
+req: "%s"
+squad: ""
+---
+
+# Roadmap: %s
+
+> Created: %s | Status: backlog
+
+## Context
+<!-- Derived from REQ: %s -->
+REQ: %s%s
+
+%s`, date, filepath.Base(reqPath), title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())
+
+	return NewRoadmapFromContent(RoadmapContent{
+		Title: title,
+		Body:  body,
+	})
+}
+
+// parseREQForRoadmap extrai título, critérios de aceite e ADR linkada de um arquivo REQ.
+func parseREQForRoadmap(content string) (title string, criteria []string, linkedADR string) {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	inCriteria := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "# REQ: ") {
+			title = strings.TrimPrefix(line, "# REQ: ")
+			continue
+		}
+		if strings.HasPrefix(line, "# REQ — ") {
+			title = strings.TrimPrefix(line, "# REQ — ")
+			continue
+		}
+		if strings.HasPrefix(line, "# REQ - ") {
+			title = strings.TrimPrefix(line, "# REQ - ")
+			continue
+		}
+		if strings.HasPrefix(line, "**ADR:**") {
+			linkedADR = strings.TrimSpace(strings.TrimPrefix(line, "**ADR:**"))
+			continue
+		}
+
+		// Detectar seção de critérios (pt-BR e en-US)
+		lower := strings.ToLower(strings.TrimSpace(line))
+		if lower == "## critérios de aceite" || lower == "## acceptance criteria" {
+			inCriteria = true
+			continue
+		}
+		if inCriteria && strings.HasPrefix(line, "## ") {
+			inCriteria = false
+			continue
+		}
+		if inCriteria {
+			// Capturar itens de checklist: "- [ ] texto"
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "- [ ]") || strings.HasPrefix(trimmed, "- [x]") || strings.HasPrefix(trimmed, "- [X]") {
+				item := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(trimmed, "- [ ]"), "- [x]"), "- [X]"))
+				// Remover backticks de código para nome do ML
+				item = strings.ReplaceAll(item, "`", "")
+				if item != "" {
+					criteria = append(criteria, item)
+				}
+			}
+		}
+	}
+	return title, criteria, linkedADR
 }
 
 func MoveRoadmap(name, state string) error {

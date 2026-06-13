@@ -256,6 +256,139 @@ REQ: ${reqPath || ''}
   console.log(`✓ created ${filename}`)
 }
 
+/**
+ * newRoadmapFromReq — lê uma REQ e gera roadmap pré-preenchido com MLs extraídos
+ * dos critérios de aceite.
+ */
+function newRoadmapFromReq(reqPath) {
+  let data
+  try {
+    data = fs.readFileSync(reqPath, 'utf8')
+  } catch (err) {
+    console.error(`reading REQ: ${err.message}`)
+    process.exitCode = 1
+    return
+  }
+
+  const { title: parsedTitle, criteria, linkedADR } = parseReqForRoadmap(data)
+  const basename = path.basename(reqPath)
+  const title = parsedTitle || basename.replace(/\.md$/, '').replace(/^REQ-/, '')
+
+  const cfg = config.load()
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const date = `${yyyy}-${mm}-${dd}`
+  const slug = toSlug(title)
+
+  let backlogDir
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    backlogDir = agentStateDir(null, 'backlog')
+    if (!backlogDir) {
+      console.error('cannot resolve backlog dir in by_agent mode')
+      process.exitCode = 1
+      return
+    }
+  } else {
+    backlogDir = cfg.roadmapDir + '/backlog'
+  }
+
+  const filename = `${backlogDir}/ROADMAP-${date}-${slug}.md`
+  try { fs.mkdirSync(backlogDir, { recursive: true }) } catch (_) {}
+
+  // Gerar seção de MLs a partir dos critérios de aceite
+  const mlLines = ['## Wave 1 — Implementation (derived from REQ criteria)', '> Dependencies: none']
+  for (let i = 0; i < criteria.length; i++) {
+    const mlLabel = `ML-1${String.fromCharCode(65 + i)}`
+    const crit = criteria[i]
+    mlLines.push(`\n### ${mlLabel} — ${crit}`)
+    mlLines.push('**Status:** pending')
+    mlLines.push('**Files affected:**')
+    mlLines.push('**Actions:**')
+    mlLines.push('**Acceptance criteria:**')
+    mlLines.push(`- [ ] ${crit}`)
+    mlLines.push('- [ ] build passes')
+    mlLines.push('- [ ] tests green')
+  }
+  const mlSection = mlLines.join('\n')
+
+  const adrRef = linkedADR ? `\nADR: ${linkedADR}` : ''
+
+  const body = `---
+status: backlog
+date: ${date}
+req: "${basename}"
+squad: ""
+---
+
+# Roadmap: ${title}
+
+> Created: ${date} | Status: backlog
+
+## Context
+<!-- Derived from REQ: ${basename} -->
+REQ: ${reqPath}${adrRef}
+
+${mlSection}
+`
+
+  fs.writeFileSync(filename, body, 'utf8')
+  console.log(`✓ created ${filename}`)
+}
+
+/**
+ * parseReqForRoadmap — extrai título, critérios de aceite e ADR linkada de conteúdo REQ.
+ */
+function parseReqForRoadmap(content) {
+  const lines = content.split('\n')
+  let title = ''
+  let linkedADR = ''
+  const criteria = []
+  let inCriteria = false
+
+  for (const line of lines) {
+    if (line.startsWith('# REQ: ')) {
+      title = line.replace('# REQ: ', '').trim()
+      continue
+    }
+    if (line.startsWith('# REQ — ')) {
+      title = line.replace('# REQ — ', '').trim()
+      continue
+    }
+    if (line.startsWith('# REQ - ')) {
+      title = line.replace('# REQ - ', '').trim()
+      continue
+    }
+    if (line.startsWith('**ADR:**')) {
+      linkedADR = line.replace('**ADR:**', '').trim()
+      continue
+    }
+
+    const lower = line.trim().toLowerCase()
+    if (lower === '## critérios de aceite' || lower === '## acceptance criteria') {
+      inCriteria = true
+      continue
+    }
+    if (inCriteria && line.startsWith('## ')) {
+      inCriteria = false
+      continue
+    }
+    if (inCriteria) {
+      const trimmed = line.trim()
+      const checkboxPrefixes = ['- [ ]', '- [x]', '- [X]']
+      for (const prefix of checkboxPrefixes) {
+        if (trimmed.startsWith(prefix)) {
+          const item = trimmed.slice(prefix.length).trim().replace(/`/g, '')
+          if (item) criteria.push(item)
+          break
+        }
+      }
+    }
+  }
+  return { title, criteria, linkedADR }
+}
+
 // --- helpers ---
 
 /**
@@ -319,6 +452,7 @@ module.exports = {
   moveRoadmap,
   appendTransitionLog,
   newRoadmap,
+  newRoadmapFromReq,
   stateDir,
   agentStateDir,
 }

@@ -1,6 +1,6 @@
 # Roadmap: trackfw como trilho de governança para agentes de IA
 
-> Criado em: 2026-06-13 | Status: ⬜ Backlog
+> Criado em: 2026-06-13 | Status: 🔄 WIP
 
 **REQ:** REQ-2026-06-13-trackfw-ai-agent-governance-rail.md  
 **ADR:** ADR-001-trackfw-como-trilho-de-governanca-para-agentes-ia.md
@@ -19,7 +19,7 @@ Target: v2.1.x — v2.3.x (3 waves independentes)
 > Independente das demais waves
 
 ### ML-1A — Frontmatter YAML obrigatório nos templates de ADR/REQ/ROADMAP
-**Status:** ⬜ Pendente  
+**Status:** ✅ Concluído  
 **Arquivos afetados:**
 - `internal/generators/adr.go` — template ADR
 - `internal/generators/req.go` — template REQ
@@ -35,7 +35,7 @@ Target: v2.1.x — v2.3.x (3 waves independentes)
 - [ ] `go test ./...` verde, `node --check` limpo
 
 ### ML-1B — `trackfw context` — dump de contexto consumível por LLM
-**Status:** ⬜ Pendente  
+**Status:** ✅ Concluído  
 **Arquivos afetados:**
 - `internal/commands/context.go` (novo)
 - `internal/generators/context.go` (novo)
@@ -58,7 +58,7 @@ Target: v2.1.x — v2.3.x (3 waves independentes)
 > Depende de ML-1A (frontmatter nos templates)
 
 ### ML-2A — Flag `--from-req` no `roadmap new`
-**Status:** ⬜ Pendente  
+**Status:** ✅ Concluído  
 **Arquivos afetados:**
 - `internal/commands/roadmap.go` — adicionar flag `--from-req`
 - `internal/generators/roadmap.go` — parser de REQ para extração de MLs
@@ -80,7 +80,7 @@ Target: v2.1.x — v2.3.x (3 waves independentes)
 > Independente das waves 1 e 2
 
 ### ML-3A — Schema JSON para ADR/REQ/ROADMAP
-**Status:** ⬜ Pendente  
+**Status:** ✅ Concluído  
 **Arquivos afetados:**
 - `docs/schema/adr.schema.json` (novo)
 - `docs/schema/req.schema.json` (novo)
