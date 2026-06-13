@@ -622,9 +622,20 @@ trackfw/
 - `node --check npm/src/config/index.js` — sintaxe OK.
 - Commit `a5c29f4` | push para `feat/v2.1-discovery-mode`.
 
-## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO ML-3A e ML-3B do roadmap v2.1-discovery-mode)
+## Sessão 2026-06-13 — Apolo (CONCLUÍDO ML-3A e ML-3B do roadmap v2.1-discovery-mode)
 
 **Tarefa:** ML-3A — `internal/discover/discover.go` + testes. ML-3B — `trackfw discover` command (Go + npm Node.js), chave i18n `discover.description` nos 3 locales.
+
+**Entregue:**
+- `internal/discover/discover.go` — pacote novo: `DiscoveryResult`, `Scan(rootDir)`, `GenerateYAML(r)`, `GenerateBootstrapLog(r, rootDir)`; detecção de ADRs (flat/by_agent), REQ com 4 candidatos incluindo pt-BR, roadmaps flat/by_agent, GovernanceScore 0-100.
+- `internal/discover/discover_test.go` — 5 testes: `TestScan_Empty`, `TestScan_Flat`, `TestScan_ByAgent`, `TestScan_CMDBLike` (6 agentes), `TestGenerateYAML`. Todos passaram.
+- `internal/commands/discover.go` — comando cobra `discover` com flags `--init` (gera trackfw.yaml) e `--bootstrap-log` (cria .trackfw-log retroativo).
+- `internal/commands/root.go` — `NewDiscoverCmd()` registrado.
+- `internal/i18n/locales/*.json` — chave `discover.description` adicionada nos 3 locales (pt-BR, en-US, es-ES).
+- `npm/src/commands/discover.js` — paridade Node.js via Commander; exporta `scan`, `generateYAML`, `generateBootstrapLog`.
+- `npm/src/commands/index.js` — `discover` registrado no programa.
+
+**Resultado:** `go build ./...` limpo | 5/5 testes discover verdes | todos os demais pacotes sem regressão | `node --check` OK | commit `d5803c8` | push para `feat/v2.1-discovery-mode`.
 
 ---
 

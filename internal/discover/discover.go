@@ -70,7 +70,9 @@ func Scan(rootDir string) (DiscoveryResult, error) {
 			wipDir := filepath.Join(roadmapRoot, sub, "wip")
 			backlogDir := filepath.Join(roadmapRoot, sub, "backlog")
 			doneDir := filepath.Join(roadmapRoot, sub, "done")
-			if dirExists(wipDir) || dirExists(backlogDir) || dirExists(doneDir) {
+			abandonedDir := filepath.Join(roadmapRoot, sub, "abandoned")
+			blockedDir := filepath.Join(roadmapRoot, sub, "blocked")
+			if dirExists(wipDir) || dirExists(backlogDir) || dirExists(doneDir) || dirExists(abandonedDir) || dirExists(blockedDir) {
 				byAgent = true
 				r.Agents = append(r.Agents, sub)
 			}
@@ -219,16 +221,16 @@ func dirExists(path string) bool {
 }
 
 func countMDFiles(dir string) int {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return 0
-	}
 	n := 0
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".md") {
 			n++
 		}
-	}
+		return nil
+	})
 	return n
 }
 

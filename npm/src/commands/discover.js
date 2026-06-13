@@ -59,7 +59,9 @@ function scan(rootDir) {
       const wipDir = path.join(roadmapRoot, sub, 'wip');
       const backlogDir = path.join(roadmapRoot, sub, 'backlog');
       const doneDir = path.join(roadmapRoot, sub, 'done');
-      if (isDir(wipDir) || isDir(backlogDir) || isDir(doneDir)) {
+      const abandonedDir = path.join(roadmapRoot, sub, 'abandoned');
+      const blockedDir = path.join(roadmapRoot, sub, 'blocked');
+      if (isDir(wipDir) || isDir(backlogDir) || isDir(doneDir) || isDir(abandonedDir) || isDir(blockedDir)) {
         byAgent = true;
         agents.push(sub);
       }
@@ -153,9 +155,17 @@ function isDir(p) {
 }
 
 function countMD(dir) {
-  try {
-    return fs.readdirSync(dir).filter(f => f.endsWith('.md')).length;
-  } catch { return 0; }
+  let n = 0;
+  function walk(d) {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.isDirectory()) walk(path.join(d, e.name));
+      else if (e.name.endsWith('.md')) n++;
+    }
+  }
+  walk(dir);
+  return n;
 }
 
 function listSubDirs(dir) {
