@@ -705,17 +705,19 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo ML-3B (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-3B (CONCLUÍDO)
 
 **Tarefa:** ML-3B do roadmap `feat/v2.0-gaps` — `trackfw sync --to=linear` e `--to=jira`.
 
-**Arquivos a criar/modificar:**
-- `internal/sync/linear.go` (novo) — LinearClient com NewLinearClient() e CreateIssue()
-- `internal/sync/jira.go` (novo) — JiraClient com NewJiraClient() e CreateIssue()
-- `internal/sync/sync.go` (novo) — lógica principal SyncToLinear/SyncToJira/syncToProvider
-- `internal/commands/sync.go` (novo) — comando cobra sync com --to flag
-- `internal/commands/root.go` — registrar newSyncCmd()
-- `internal/generators/req.go` — adicionar campos Linear/Jira no template
-- `npm/src/commands/sync.js` (novo) — paridade Node.js
-- `npm/src/commands/index.js` — registrar command sync
-- `internal/sync/sync_test.go` (novo) — testes sem rede
+**Entregue:**
+- `internal/sync/linear.go` — LinearClient: credenciais via trackfw.yaml ou env vars (LINEAR_API_KEY, LINEAR_TEAM_ID); CreateIssue via GraphQL mutation; readConfigField (parser YAML linha a linha sem yaml.v3).
+- `internal/sync/jira.go` — JiraClient: credenciais via trackfw.yaml ou env vars (JIRA_BASE_URL, JIRA_EMAIL, JIRA_TOKEN, JIRA_PROJECT); CreateIssue via REST API v3 com Basic Auth (base64 email:token).
+- `internal/sync/sync.go` — SyncToLinear, SyncToJira, syncToProvider: percorre docs/req/*.md, pula não-Open e já sincronizados, chama create, injeta campo no frontmatter; helpers extractTitle, extractMotivation, extractField, injectField, isStatusOpen.
+- `internal/sync/sync_test.go` — 8 testes sem rede: SkipsNonOpen, SkipsAlreadySynced, InjectsField, ExtractTitle (3 casos), InjectField, InjectField_UpdatesExisting, ReadConfigField, ExtractMotivation. Todos 8/8 verdes.
+- `internal/commands/sync.go` — cobra command `sync` com flag `--to` obrigatória; saída tabular REQ/ISSUE; mensagens de erro claras.
+- `internal/commands/root.go` — newSyncCmd() registrado.
+- `internal/generators/req.go` — campos `| Linear Issue:` e `| Jira Issue:` adicionados no template de REQ.
+- `npm/src/commands/sync.js` — paridade Node.js com https stdlib; linearCreateIssue (GraphQL), jiraCreateIssue (REST v3), syncToProvider, syncToLinear, syncToJira; commander command com --to.
+- `npm/src/commands/index.js` — sync registrado no createProgram().
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | 8/8 testes sync verdes | suite completa verde | `node --check` OK | commit `dfa58aa` | push para `feat/v2.0-gaps`.
