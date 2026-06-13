@@ -700,6 +700,27 @@ function validateFilenameUniqueness() {
   return violations
 }
 
+// _itemMeta: mapa de message → { rule, file } para enriquecer saída JSON.
+// Populado em applyRule e nos pushs diretos do validateUnfiltered.
+// Permanece em memória apenas durante a execução de uma chamada validate*.
+const _itemMeta = new Map()
+
+// _setMeta registra metadados de rule/file para uma mensagem.
+function _setMeta(msg, ruleName) {
+  const m = /"([^"]+)"/.exec(msg)
+  _itemMeta.set(msg, { rule: ruleName, file: m ? m[1] : '' })
+}
+
+// getItemMeta retorna { rule, file } para uma mensagem, ou { rule: '', file: '' } se ausente.
+function getItemMeta(msg) {
+  return _itemMeta.get(msg) || { rule: '', file: '' }
+}
+
+// resetMeta limpa o mapa entre execuções (usado internamente).
+function resetMeta() {
+  _itemMeta.clear()
+}
+
 // ruleSeverity retorna a severidade configurada para uma regra ('error'|'warning'|'off').
 function ruleSeverity(name) {
   const cfg = config.load()
@@ -708,14 +729,15 @@ function ruleSeverity(name) {
 
 // applyRule distribui msgs para violations ou warnings conforme a severidade configurada.
 // Se severidade for 'off', descarta silenciosamente.
+// Também popula _itemMeta com rule/file para cada mensagem aceita.
 function applyRule(ruleName, msgs, violations, warnings) {
   if (!msgs || msgs.length === 0) return
   const severity = ruleSeverity(ruleName)
   if (severity === 'off') return
   if (severity === 'warning') {
-    warnings.push(...msgs)
+    for (const msg of msgs) { _setMeta(msg, ruleName); warnings.push(msg) }
   } else {
-    violations.push(...msgs)
+    for (const msg of msgs) { _setMeta(msg, ruleName); violations.push(msg) }
   }
 }
 
@@ -745,11 +767,12 @@ function saveBaseline(violations, warnings) {
 
 // validateUnfiltered executa todas as validações e retorna { violations, warnings } sem ratchet.
 async function validateUnfiltered() {
+  resetMeta()
   const wipLimitResult = validateWIPLimit()
   const violations = []
   const warnings = []
 
-  // Regras com severidade configurável via applyRule
+  // Regras com severidade configurável via applyRule (popula _itemMeta automaticamente)
   applyRule('wip_has_req',          validateWIPHasREQ(),                   violations, warnings)
   applyRule('wip_acceptance',       validateWIPHasAcceptanceCriteria(),    violations, warnings)
   applyRule('wip_limit',            wipLimitResult.violations,             violations, warnings)
@@ -761,18 +784,24 @@ async function validateUnfiltered() {
   applyRule('blocked_by_draft_adr', validateREQsNotBlockedByDraftADRs(),  violations, warnings)
 
   // Regras diretas (sem configuração de severidade): violations sempre
-  violations.push(...validateREQsHaveADR())
-  violations.push(...validateBlockedHasREQ())
-  violations.push(...validateREQsHaveRoadmap())
-  violations.push(...validateFrontmatterPresence())
+  // Popular _itemMeta manualmente para manter rastreabilidade no JSON
+  for (const msg of validateREQsHaveADR())         { _setMeta(msg, 'req_has_adr');         violations.push(msg) }
+  for (const msg of validateBlockedHasREQ())        { _setMeta(msg, 'blocked_has_req');      violations.push(msg) }
+  for (const msg of validateREQsHaveRoadmap())      { _setMeta(msg, 'req_has_roadmap');      violations.push(msg) }
+  for (const msg of validateFrontmatterPresence())  { _setMeta(msg, 'frontmatter_presence'); violations.push(msg) }
 
   // warnings diretos do WIP limit (não configuráveis)
-  warnings.push(...wipLimitResult.warnings)
+  for (const msg of wipLimitResult.warnings) { _setMeta(msg, 'wip_limit'); warnings.push(msg) }
 
   // Verificação bidirecional de trace ID (somente se traceIdField configurado)
   const cfg = config.load()
   if (cfg.traceIdField) {
-    violations.push(...checkTraceIds(cfg.reqDir, cfg.roadmapDir, cfg.traceIdField))
+    for (const msg of checkTraceIds(cfg.reqDir, cfg.roadmapDir, cfg.traceIdField)) {
+      // O prefixo da mensagem traceid já carrega o nome da regra (ex: "traceid_orphan_roadmap: ...")
+      const ruleName = msg.split(':')[0].trim()
+      _setMeta(msg, ruleName)
+      violations.push(msg)
+    }
   }
 
   return { violations, warnings }
@@ -917,4 +946,7 @@ module.exports = {
   contentHasMarker,
   ruleSeverity,
   applyRule,
+  // novas funções ML-1B (v2.5.1)
+  getItemMeta,
+  resetMeta,
 }

@@ -1,6 +1,6 @@
 'use strict'
 const { Command } = require('commander')
-const { validate, isLenient, lenientUntilDate } = require('../validator')
+const { validate, isLenient, lenientUntilDate, getItemMeta } = require('../validator')
 const { t } = require('../i18n')
 
 const cmd = new Command('validate')
@@ -20,8 +20,8 @@ cmd.action(async (options) => {
         mode,
         exit_code: exitCode,
       },
-      violations: violations.map(v => ({ message: v })),
-      warnings: warnings.map(w => ({ message: w })),
+      violations: violations.map(v => { const m = getItemMeta(v); return { message: v, rule: m.rule, file: m.file } }),
+      warnings: warnings.map(w => { const m = getItemMeta(w); return { message: w, rule: m.rule, file: m.file } }),
     }
     console.log(JSON.stringify(output, null, 2))
     process.exit(exitCode)
