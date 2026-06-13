@@ -1037,3 +1037,78 @@ trackfw/
 **Próximos passos:** criar PR para `feat/v2.2-python-cli-nativo` → `main` e gerar tag v2.2.0 após merge.
 
 **Agente:** Zeus | Status: CONCLUÍDO
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-1A v2.3 Validator Improvements (CONCLUÍDO)
+
+**Tarefa:** ML-1A do roadmap v2.3 — melhorias no validador Go do trackfw (5 mudanças).
+
+**Branch:** `feat/v2.3-validator-improvements`
+
+**Entregue:**
+
+B1 — adr_dirs recursivo:
+- `walkADRFiles(adrDir)` — WalkDir recursivo, retorna basenames de todos `.md`.
+- `findADRFile(basename, adrDirs)` — busca o caminho completo recursivamente; usa `fs.SkipAll` ao encontrar.
+- `validateADRsAreReferenced`, `validateFrontmatterPresence` e `adrIsDraft` migrados para busca recursiva.
+
+B2 — stale WIP por git log:
+- `gitLastModifiedTime(path)` — `git log -1 --format=%ct` com fallback para mtime do filesystem.
+- `validateStaleWIP()` — usa timestamp do último commit quando disponível.
+
+M3 — verificar existência de referências:
+- `extractRefPath(content, field)` — extrai caminho `.md`; ignora vazios/traços.
+- `validateRefTargetsExist()` — warnings para REQ:/ADR:/Roadmap: que não existem no filesystem.
+
+M4 — coerência pasta × status:
+- `validateFolderStatusCoherence()` — warning quando frontmatter `status:` diverge da pasta (flat e by_agent).
+
+M5 — unicidade de filename entre estados:
+- `validateFilenameUniqueness()` — violation quando mesmo filename aparece em múltiplos estados.
+
+Testes (7 novos em `internal/validator/validator_improvements_test.go`):
+- TestWalkADRFiles, TestADRDirsRecursiveInValidate, TestValidateStaleWIPFallback
+- TestExtractRefPath (7 sub-casos), TestRefTargetsExistWarning, TestFolderStatusCoherence, TestFilenameUniqueness
+
+**Resultado:** `go build ./...` limpo | 24/24 testes verdes | commit `a3a3697` | push para `feat/v2.3-validator-improvements`
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-1B validator-improvements (CONCLUÍDO)
+
+**Tarefa:** ML-1B do roadmap `feat/v2.3-validator-improvements` — Melhorias no validador Node.js.
+
+**Branch:** `feat/v2.3-validator-improvements`
+
+**Entregue:**
+- `npm/src/validator/index.js` — walkDirMd, findAdrFile, gitLastModifiedTime adicionados; adrIsDraft, validateADRsAreReferenced, validateFrontmatterPresence e validateStaleWIP atualizados para busca recursiva; extractRefPath, validateRefTargetsExist, validateFolderStatusCoherence, validateFilenameUniqueness + FOLDER_TO_STATUS implementados; validate() inclui novas validações; module.exports expandido.
+- `npm/tests/validator.test.js` — criado: 12/12 testes passando (sem framework externo).
+
+**Resultado:** `node --check` OK | 12/12 testes verdes | `validate()` OK | commit `c1b236b` | push para `feat/v2.3-validator-improvements`.
+
+**Agente:** Apolo | Status: CONCLUÍDO
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-1C validator-improvements Python (IMPLEMENTANDO)
+
+**Tarefa:** ML-1C do roadmap `feat/v2.3-validator-improvements` — Melhorias no validador Python (`pypi/trackfw/validator.py`).
+
+**Branch:** `feat/v2.3-validator-improvements`
+
+**Mudanças a implementar:**
+- B1: `_walk_dir_md` + `_find_adr_file` (ADR dirs recursivo)
+- B2: `_git_last_modified_time` + `subprocess` (stale WIP por git log)
+- M3: `_extract_ref_path` + `validate_ref_targets_exist` (verificar existência de referências)
+- M4: `_FOLDER_TO_STATUS` + `validate_folder_status_coherence` (coerência pasta×status)
+- M5: `validate_filename_uniqueness` (unicidade de filename entre estados)
+- Novos testes: classe `TestValidatorImprovements` em `pypi/tests/test_validator.py`
+
+**Entregue:**
+- `pypi/trackfw/validator.py` — `import subprocess` adicionado; `_walk_dir_md`, `_find_adr_file`, `_git_last_modified_time`, `_extract_ref_path` adicionados; `_adr_is_draft` usa `_find_adr_file`; `validate_adrs_are_referenced` usa `_walk_dir_md`; `validate_frontmatter_presence` usa `_walk_dir_md` + `_find_adr_file`; `validate_stale_wip` usa `_git_last_modified_time` com fallback para `st_mtime`; `validate_ref_targets_exist`, `_FOLDER_TO_STATUS`, `validate_folder_status_coherence`, `validate_filename_uniqueness` implementados; `validate()` inclui novas validações.
+- `pypi/tests/test_validator.py` — classe `TestValidatorImprovements` com 11 novos testes adicionada.
+
+**Resultado:** 157/157 testes verdes (11 novos) | commit `12d1009` | push para `feat/v2.3-validator-improvements`
+
+**Agente:** Apolo | Status: CONCLUÍDO

@@ -2,6 +2,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const { execSync } = require('child_process')
 const config = require('../config')
 
 const STALE_WIP_DAYS = 7
@@ -20,6 +21,64 @@ function listDir(dir) {
   } catch (_) {
     return []
   }
+}
+
+// walkDirMd retorna basenames de todos .md recursivamente dentro de dir.
+function walkDirMd(dir) {
+  const results = []
+  function walk(d) {
+    let entries
+    try { entries = fs.readdirSync(d) } catch (_) { return }
+    for (const name of entries) {
+      const full = path.join(d, name)
+      try {
+        if (fs.statSync(full).isDirectory()) { walk(full) }
+        else if (name.endsWith('.md')) { results.push(name) }
+      } catch (_) {}
+    }
+  }
+  walk(dir)
+  return results
+}
+
+// findAdrFile busca o basename recursivamente em todos os adrDirs configurados.
+// Retorna o caminho completo se encontrado, ou null.
+function findAdrFile(basename) {
+  const cfg = config.load()
+  for (const adrDir of cfg.adrDirs) {
+    function search(d) {
+      let entries
+      try { entries = fs.readdirSync(d) } catch (_) { return null }
+      for (const name of entries) {
+        const full = path.join(d, name)
+        try {
+          if (fs.statSync(full).isDirectory()) {
+            const r = search(full)
+            if (r) return r
+          } else if (name === basename) {
+            return full
+          }
+        } catch (_) {}
+      }
+      return null
+    }
+    const found = search(adrDir)
+    if (found) return found
+  }
+  return null
+}
+
+// gitLastModifiedTime retorna o timestamp (ms) do último commit que tocou o arquivo via git log.
+// Retorna null em caso de erro ou se não houver commits.
+function gitLastModifiedTime(filePath) {
+  try {
+    const out = execSync(`git log -1 --format=%ct -- "${filePath}"`, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim()
+    if (out) return parseInt(out, 10) * 1000  // converter para ms
+  } catch (_) {}
+  return null
 }
 
 // resolveWIPDirs retorna todos os diretórios wip/ conforme o modo de namespacing.
@@ -68,20 +127,13 @@ function parseBlockedADRs(filePath) {
   return adrs
 }
 
-// adrIsDraft verifica se <adrBasename> contém "Status: Draft" em alguma das adrDirs configuradas.
+// adrIsDraft verifica se <adrBasename> contém "Status: Draft" buscando recursivamente nas adrDirs.
 function adrIsDraft(basename) {
-  const cfg = config.load()
-  for (const adrDir of cfg.adrDirs) {
-    const p = path.join(adrDir, basename)
-    if (fs.existsSync(p)) {
-      try {
-        return fs.readFileSync(p, 'utf8').includes('Status: Draft')
-      } catch (_) {
-        // ignorar erro de leitura
-      }
-    }
-  }
-  return false
+  const p = findAdrFile(basename)
+  if (!p) return false
+  try {
+    return fs.readFileSync(p, 'utf8').includes('Status: Draft')
+  } catch (_) { return false }
 }
 
 // validateWIPHasREQ — roadmaps em wip/ sem "REQ:" no conteúdo → violation
@@ -165,7 +217,7 @@ function validateADRsAreReferenced() {
   const cfg = config.load()
   let adrs = []
   for (const adrDir of cfg.adrDirs) {
-    adrs = adrs.concat(listDir(adrDir))
+    adrs = adrs.concat(walkDirMd(adrDir))
   }
 
   const reqEntries = listDir(cfg.reqDir)
@@ -343,10 +395,12 @@ function validateStaleWIP() {
     for (const filePath of files) {
       try {
         const stat = fs.statSync(filePath)
-        const ageMs = now - stat.mtimeMs
+        const gitTime = gitLastModifiedTime(filePath)
+        const ageMs = now - (gitTime !== null ? gitTime : stat.mtimeMs)
         const days = Math.floor(ageMs / (1000 * 60 * 60 * 24))
         if (days >= STALE_WIP_DAYS) {
-          const lastModified = stat.mtime.toISOString().slice(0, 10)
+          const refTime = gitTime !== null ? gitTime : stat.mtimeMs
+          const lastModified = new Date(refTime).toISOString().slice(0, 10)
           const basename = path.basename(filePath)
           warnings.push(
             `roadmap/wip/${basename} has been in WIP for ${days} days (last modified ${lastModified})`
@@ -458,10 +512,11 @@ function validateFrontmatterPresence() {
   const violations = []
 
   for (const adrDir of cfg.adrDirs) {
-    const files = listDir(adrDir).filter(f => f.endsWith('.md'))
-    for (const f of files) {
+    for (const f of walkDirMd(adrDir)) {
+      const fullPath = findAdrFile(f)
+      if (!fullPath) continue
       try {
-        const content = fs.readFileSync(path.join(adrDir, f), 'utf8')
+        const content = fs.readFileSync(fullPath, 'utf8')
         if (!content.startsWith('---')) {
           violations.push(`adr "${f}" has no frontmatter block`)
         }
@@ -483,6 +538,161 @@ function validateFrontmatterPresence() {
   return violations
 }
 
+// extractRefPath extrai o valor de um campo (ex: "REQ", "ADR", "Roadmap") que aponta para .md
+function extractRefPath(content, field) {
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    const prefix = field + ':'
+    if (trimmed.startsWith(prefix)) {
+      let val = trimmed.slice(prefix.length).trim()
+      if (!val || val === '—' || val === '-' || val === '–') return null
+      val = val.split(/\s+/)[0]
+      if (val.endsWith('.md')) return val
+    }
+  }
+  return null
+}
+
+// validateRefTargetsExist — verifica se os arquivos referenciados em REQ:, ADR: e Roadmap: existem
+function validateRefTargetsExist() {
+  const cfg = config.load()
+  const warnings = []
+
+  // Roadmaps em wip e blocked: verificar REQ:
+  const dirs = [...resolveWIPDirs(cfg), cfg.roadmapDir + '/blocked']
+  for (const dir of dirs) {
+    for (const name of listDir(dir)) {
+      try {
+        const content = fs.readFileSync(path.join(dir, name), 'utf8')
+        const ref = extractRefPath(content, 'REQ')
+        if (ref && !fs.existsSync(ref)) {
+          warnings.push(`roadmap "${name}" links to REQ "${ref}" which does not exist`)
+        }
+      } catch (_) {}
+    }
+  }
+
+  // REQs: verificar ADR: e Roadmap:
+  for (const name of listDir(cfg.reqDir)) {
+    try {
+      const content = fs.readFileSync(path.join(cfg.reqDir, name), 'utf8')
+      const adrRef = extractRefPath(content, 'ADR')
+      if (adrRef && !fs.existsSync(adrRef)) {
+        warnings.push(`req "${name}" links to ADR "${adrRef}" which does not exist`)
+      }
+      const roadmapRef = extractRefPath(content, 'Roadmap')
+      if (roadmapRef && !fs.existsSync(roadmapRef)) {
+        warnings.push(`req "${name}" links to Roadmap "${roadmapRef}" which does not exist`)
+      }
+    } catch (_) {}
+  }
+
+  return warnings
+}
+
+// FOLDER_TO_STATUS mapeia pasta de estado para os valores válidos de status no frontmatter
+const FOLDER_TO_STATUS = {
+  wip:       ['WIP', 'wip', 'In Progress'],
+  backlog:   ['Backlog', 'backlog'],
+  blocked:   ['Blocked', 'blocked'],
+  done:      ['Done', 'done'],
+  abandoned: ['Abandoned', 'abandoned'],
+}
+
+// validateFolderStatusCoherence — verifica se o status declarado no frontmatter condiz com a pasta
+function validateFolderStatusCoherence() {
+  const cfg = config.load()
+  const warnings = []
+  const states = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
+
+  let dirs = []
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    let agents = cfg.agents || []
+    if (agents.length === 0) {
+      try { agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
+        try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
+      }) } catch (_) { agents = [] }
+    }
+    for (const agent of agents) {
+      for (const state of states) {
+        dirs.push({ dir: path.join(cfg.roadmapDir, agent, state), state })
+      }
+    }
+  } else {
+    for (const state of states) {
+      dirs.push({ dir: path.join(cfg.roadmapDir, state), state })
+    }
+  }
+
+  for (const { dir, state } of dirs) {
+    for (const name of listDir(dir).filter(f => f.endsWith('.md'))) {
+      try {
+        const content = fs.readFileSync(path.join(dir, name), 'utf8')
+        // Extrair status do frontmatter
+        let declared = ''
+        if (content.startsWith('---')) {
+          const end = content.indexOf('\n---', 3)
+          if (end > 0) {
+            for (const line of content.slice(3, end).split('\n')) {
+              const t = line.trim()
+              if (t.startsWith('status:')) {
+                declared = t.slice('status:'.length).trim().replace(/['"]/g, '')
+                break
+              }
+            }
+          }
+        }
+        if (!declared) continue
+        const expected = FOLDER_TO_STATUS[state] || []
+        if (!expected.some(e => e.toLowerCase() === declared.toLowerCase())) {
+          warnings.push(`roadmap "${name}": folder is "${state}" but status declares "${declared}"`)
+        }
+      } catch (_) {}
+    }
+  }
+  return warnings
+}
+
+// validateFilenameUniqueness — verifica que o mesmo filename não aparece em múltiplos estados
+function validateFilenameUniqueness() {
+  const cfg = config.load()
+  const states = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
+  const seen = {}  // filename → [states]
+
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    let agents = cfg.agents || []
+    if (agents.length === 0) {
+      try { agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
+        try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
+      }) } catch (_) { agents = [] }
+    }
+    for (const agent of agents) {
+      for (const state of states) {
+        for (const name of listDir(path.join(cfg.roadmapDir, agent, state))) {
+          const key = agent + '/' + name
+          if (!seen[key]) seen[key] = []
+          seen[key].push(state)
+        }
+      }
+    }
+  } else {
+    for (const state of states) {
+      for (const name of listDir(path.join(cfg.roadmapDir, state))) {
+        if (!seen[name]) seen[name] = []
+        seen[name].push(state)
+      }
+    }
+  }
+
+  const violations = []
+  for (const [name, stateList] of Object.entries(seen)) {
+    if (stateList.length > 1) {
+      violations.push(`roadmap "${name}" appears in multiple states: [${stateList.join(', ')}]`)
+    }
+  }
+  return violations
+}
+
 // validate executa todas as validações e retorna { violations, warnings }
 async function validate() {
   const wipLimitResult = validateWIPLimit()
@@ -495,11 +705,14 @@ async function validate() {
     ...validateWIPHasAcceptanceCriteria(),
     ...validateREQsNotBlockedByDraftADRs(),
     ...validateFrontmatterPresence(),
+    ...validateFilenameUniqueness(),
     ...wipLimitResult.violations,
   ]
   let warnings = [
     ...wipLimitResult.warnings,
     ...validateStaleWIP(),
+    ...validateRefTargetsExist(),
+    ...validateFolderStatusCoherence(),
   ]
   // Modo lenient: mover violations para warnings, exit code 0
   if (isLenient()) {
@@ -609,4 +822,12 @@ module.exports = {
   readWIPConfig,
   parseSquadFromFrontmatter,
   validateFrontmatterPresence,
+  // novas funções ML-1B
+  walkDirMd,
+  findAdrFile,
+  gitLastModifiedTime,
+  extractRefPath,
+  validateRefTargetsExist,
+  validateFolderStatusCoherence,
+  validateFilenameUniqueness,
 }

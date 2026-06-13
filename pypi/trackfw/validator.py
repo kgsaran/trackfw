@@ -1,10 +1,11 @@
 """
 validator.py — Validações de governança do trackfw.
 Espelho Python de npm/src/validator/index.js (paridade de comportamento).
-Stdlib apenas: os, pathlib, re, datetime.
+Stdlib apenas: os, pathlib, re, datetime, subprocess.
 """
 
 import os
+import subprocess
 from datetime import datetime, timezone
 
 from . import config as _config
@@ -33,6 +34,68 @@ def list_dir(path: str) -> list:
         return entries
     except OSError:
         return []
+
+
+def _walk_dir_md(dir_path: str) -> list:
+    """Retorna basenames de todos .md recursivamente em dir_path."""
+    result = []
+    try:
+        for root, dirs, files in os.walk(dir_path):
+            for name in files:
+                if name.endswith('.md'):
+                    result.append(name)
+    except OSError:
+        pass
+    return result
+
+
+def _find_adr_file(basename: str, adr_dirs: list) -> str:
+    """Busca basename recursivamente em todos os adr_dirs. Retorna caminho completo ou ''."""
+    for adr_dir in adr_dirs:
+        try:
+            for root, dirs, files in os.walk(adr_dir):
+                if basename in files:
+                    return os.path.join(root, basename)
+        except OSError:
+            pass
+    return ""
+
+
+def _git_last_modified_time(file_path: str):
+    """
+    Retorna timestamp (float) do último commit que tocou o arquivo via git log.
+    Retorna None se não for um repo git ou git não estiver disponível.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%ct", "--", file_path],
+            capture_output=True, text=True, timeout=5
+        )
+        out = result.stdout.strip()
+        if out:
+            return float(out)
+    except Exception:
+        pass
+    return None
+
+
+def _extract_ref_path(content: str, field: str) -> str:
+    """
+    Extrai o caminho .md após 'field: valor' na mesma linha.
+    Retorna '' se não encontrado ou não terminar em .md.
+    """
+    prefix = field + ":"
+    for line in content.split("\n"):
+        trimmed = line.strip()
+        if trimmed.startswith(prefix):
+            val = trimmed[len(prefix):].strip()
+            if not val or val in ("—", "-", "–"):
+                return ""
+            # Primeira "palavra" (antes de espaço)
+            val = val.split()[0] if val.split() else ""
+            if val.endswith(".md"):
+                return val
+    return ""
 
 
 def resolve_wip_dirs(cfg: dict) -> list:
@@ -116,16 +179,16 @@ def _parse_blocked_adrs(file_path: str) -> list:
 def _adr_is_draft(basename: str, cfg: dict) -> bool:
     """
     Verifica se <basename> contém 'Status: Draft' em algum dos adrDirs configurados.
+    Busca recursivamente nas subpastas via _find_adr_file.
     """
-    for adr_dir in cfg.get("adr_dirs", ["docs/adr"]):
-        p = os.path.join(adr_dir, basename)
-        if os.path.exists(p):
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    return "Status: Draft" in f.read()
-            except OSError:
-                pass
-    return False
+    p = _find_adr_file(basename, cfg.get("adr_dirs", ["docs/adr"]))
+    if not p:
+        return False
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return "Status: Draft" in f.read()
+    except OSError:
+        return False
 
 
 def _read_wip_config(cwd: str = None) -> dict:
@@ -306,10 +369,10 @@ def validate_reqs_have_roadmap(cfg: dict) -> list:
 
 
 def validate_adrs_are_referenced(cfg: dict) -> list:
-    """ADRs em adr_dirs não referenciados em nenhuma REQ → violation."""
+    """ADRs em adr_dirs não referenciados em nenhuma REQ → violation (busca recursiva)."""
     adrs = []
     for adr_dir in cfg.get("adr_dirs", ["docs/adr"]):
-        adrs.extend(list_dir(adr_dir))
+        adrs.extend(_walk_dir_md(adr_dir))
 
     req_entries = list_dir(cfg.get("req_dir", "docs/req"))
     combined = ""
@@ -448,10 +511,12 @@ def validate_stale_wip(cfg: dict, days: int = STALE_WIP_DAYS) -> list:
         for file_path in md_files:
             try:
                 stat = os.stat(file_path)
-                age_seconds = now - stat.st_mtime
+                git_time = _git_last_modified_time(file_path)
+                ref_time = git_time if git_time is not None else stat.st_mtime
+                age_seconds = now - ref_time
                 age_days = int(age_seconds / (60 * 60 * 24))
                 if age_days >= days:
-                    last_modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d")
+                    last_modified = datetime.fromtimestamp(ref_time).strftime("%Y-%m-%d")
                     basename = os.path.basename(file_path)
                     warnings.append({
                         "type": "warning",
@@ -489,14 +554,17 @@ def validate_reqs_not_blocked_by_draft_adrs(cfg: dict) -> list:
 
 
 def validate_frontmatter_presence(cfg: dict) -> list:
-    """Verifica presença de frontmatter em ADRs e REQs."""
+    """Verifica presença de frontmatter em ADRs e REQs (busca recursiva em adr_dirs)."""
     violations = []
 
     for adr_dir in cfg.get("adr_dirs", ["docs/adr"]):
-        files = [f for f in list_dir(adr_dir) if f.endswith(".md")]
+        files = [f for f in _walk_dir_md(adr_dir) if f.endswith(".md")]
         for f in files:
+            full_path = _find_adr_file(f, [adr_dir])
+            if not full_path:
+                continue
             try:
-                with open(os.path.join(adr_dir, f), "r", encoding="utf-8") as fh:
+                with open(full_path, "r", encoding="utf-8") as fh:
                     content = fh.read()
                 if not content.startswith("---"):
                     violations.append({
@@ -520,6 +588,139 @@ def validate_frontmatter_presence(cfg: dict) -> list:
         except OSError:
             pass
 
+    return violations
+
+
+def validate_ref_targets_exist(cfg: dict) -> list:
+    """Verifica se arquivos referenciados em REQ:, ADR:, Roadmap: existem. Retorna warnings."""
+    warnings = []
+
+    # Roadmaps em wip e blocked: verificar REQ:
+    dirs = resolve_wip_dirs(cfg) + [cfg.get("roadmap_dir", "docs/roadmaps") + "/blocked"]
+    for wip_dir in dirs:
+        for name in list_dir(wip_dir):
+            try:
+                with open(os.path.join(wip_dir, name), "r", encoding="utf-8") as f:
+                    content = f.read()
+                ref = _extract_ref_path(content, "REQ")
+                if ref and not os.path.exists(ref):
+                    warnings.append({
+                        "type": "warning",
+                        "message": f'roadmap "{name}" links to REQ "{ref}" which does not exist'
+                    })
+            except OSError:
+                pass
+
+    # REQs: verificar ADR: e Roadmap:
+    req_dir = cfg.get("req_dir", "docs/req")
+    for name in list_dir(req_dir):
+        try:
+            with open(os.path.join(req_dir, name), "r", encoding="utf-8") as f:
+                content = f.read()
+            adr_ref = _extract_ref_path(content, "ADR")
+            if adr_ref and not os.path.exists(adr_ref):
+                warnings.append({
+                    "type": "warning",
+                    "message": f'req "{name}" links to ADR "{adr_ref}" which does not exist'
+                })
+            roadmap_ref = _extract_ref_path(content, "Roadmap")
+            if roadmap_ref and not os.path.exists(roadmap_ref):
+                warnings.append({
+                    "type": "warning",
+                    "message": f'req "{name}" links to Roadmap "{roadmap_ref}" which does not exist'
+                })
+        except OSError:
+            pass
+
+    return warnings
+
+
+_FOLDER_TO_STATUS = {
+    "wip":       ["WIP", "wip", "In Progress"],
+    "backlog":   ["Backlog", "backlog"],
+    "blocked":   ["Blocked", "blocked"],
+    "done":      ["Done", "done"],
+    "abandoned": ["Abandoned", "abandoned"],
+}
+
+
+def validate_folder_status_coherence(cfg: dict) -> list:
+    """
+    Verifica que o campo status: no frontmatter bate com a pasta onde o arquivo está.
+    Divergência → warning.
+    """
+    warnings = []
+    states = ["wip", "backlog", "blocked", "done", "abandoned"]
+    roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
+
+    dirs = []
+    if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
+        agents = cfg.get("agents") or []
+        if not agents:
+            try:
+                agents = [f for f in os.listdir(roadmap_dir) if os.path.isdir(os.path.join(roadmap_dir, f))]
+            except OSError:
+                agents = []
+        for agent in agents:
+            for state in states:
+                dirs.append((os.path.join(roadmap_dir, agent, state), state))
+    else:
+        for state in states:
+            dirs.append((os.path.join(roadmap_dir, state), state))
+
+    for dir_path, state in dirs:
+        for name in list_dir(dir_path):
+            if not name.endswith(".md"):
+                continue
+            try:
+                with open(os.path.join(dir_path, name), "r", encoding="utf-8") as f:
+                    content = f.read()
+                fm = parse_frontmatter(content)
+                declared = fm.get("status", "")
+                if not declared:
+                    continue
+                expected = _FOLDER_TO_STATUS.get(state, [])
+                if not any(e.lower() == declared.lower() for e in expected):
+                    warnings.append({
+                        "type": "warning",
+                        "message": f'roadmap "{name}": folder is "{state}" but status declares "{declared}"'
+                    })
+            except OSError:
+                pass
+
+    return warnings
+
+
+def validate_filename_uniqueness(cfg: dict) -> list:
+    """Detecta o mesmo filename de roadmap em dois ou mais estados. Duplicata → violation."""
+    states = ["wip", "backlog", "blocked", "done", "abandoned"]
+    roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
+    seen = {}  # filename → [states]
+
+    if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
+        agents = cfg.get("agents") or []
+        if not agents:
+            try:
+                agents = [f for f in os.listdir(roadmap_dir) if os.path.isdir(os.path.join(roadmap_dir, f))]
+            except OSError:
+                agents = []
+        for agent in agents:
+            for state in states:
+                for name in list_dir(os.path.join(roadmap_dir, agent, state)):
+                    key = agent + "/" + name
+                    seen.setdefault(key, []).append(state)
+    else:
+        for state in states:
+            for name in list_dir(os.path.join(roadmap_dir, state)):
+                seen.setdefault(name, []).append(state)
+
+    violations = []
+    for name, state_list in seen.items():
+        if len(state_list) > 1:
+            violations.append({
+                "type": "violation",
+                "message": f'roadmap "{name}" appears in multiple states: {state_list}'
+            })
     return violations
 
 
@@ -547,10 +748,11 @@ def validate(cwd: str = None) -> dict:
         + validate_wip_has_acceptance_criteria(cfg)
         + validate_reqs_not_blocked_by_draft_adrs(cfg)
         + validate_frontmatter_presence(cfg)
+        + validate_filename_uniqueness(cfg)
         + wip_limit_result["violations"]
     )
 
-    warnings = wip_limit_result["warnings"] + validate_stale_wip(cfg)
+    warnings = wip_limit_result["warnings"] + validate_stale_wip(cfg) + validate_ref_targets_exist(cfg) + validate_folder_status_coherence(cfg)
 
     if _is_lenient(cwd):
         warnings = warnings + violations
