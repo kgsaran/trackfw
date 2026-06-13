@@ -452,6 +452,37 @@ function lenientUntilDate() {
   return gm.lenientUntil.toISOString().slice(0, 10)
 }
 
+// validateFrontmatterPresence — verifica presença de frontmatter em ADRs e REQs
+function validateFrontmatterPresence() {
+  const cfg = config.load()
+  const violations = []
+
+  for (const adrDir of cfg.adrDirs) {
+    const files = listDir(adrDir).filter(f => f.endsWith('.md'))
+    for (const f of files) {
+      try {
+        const content = fs.readFileSync(path.join(adrDir, f), 'utf8')
+        if (!content.startsWith('---')) {
+          violations.push(`adr "${f}" has no frontmatter block`)
+        }
+      } catch (_) {}
+    }
+  }
+
+  let reqFiles = []
+  try { reqFiles = listDir(cfg.reqDir).filter(f => f.endsWith('.md')) } catch (_) {}
+  for (const f of reqFiles) {
+    try {
+      const content = fs.readFileSync(path.join(cfg.reqDir, f), 'utf8')
+      if (!content.startsWith('---')) {
+        violations.push(`req "${f}" has no frontmatter block`)
+      }
+    } catch (_) {}
+  }
+
+  return violations
+}
+
 // validate executa todas as validações e retorna { violations, warnings }
 async function validate() {
   const wipLimitResult = validateWIPLimit()
@@ -463,6 +494,7 @@ async function validate() {
     ...validateADRsAreReferenced(),
     ...validateWIPHasAcceptanceCriteria(),
     ...validateREQsNotBlockedByDraftADRs(),
+    ...validateFrontmatterPresence(),
     ...wipLimitResult.violations,
   ]
   let warnings = [
@@ -576,4 +608,5 @@ module.exports = {
   readGovernanceMode,
   readWIPConfig,
   parseSquadFromFrontmatter,
+  validateFrontmatterPresence,
 }

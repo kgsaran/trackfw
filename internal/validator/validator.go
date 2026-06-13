@@ -250,6 +250,9 @@ func Validate() (violations []string, warnings []string, err error) {
 	}
 	violations = append(violations, draftBlockedViolations...)
 
+	frontmatterViolations := validateFrontmatterPresence()
+	violations = append(violations, frontmatterViolations...)
+
 	// Modo lenient: mover violations para warnings, exit code 0
 	if IsLenient() {
 		warnings = append(warnings, violations...)
@@ -681,6 +684,64 @@ func adrIsDraft(adrBasename string) bool {
 		}
 	}
 	return false
+}
+
+// extractFrontmatterField extrai o valor de um campo do bloco frontmatter YAML.
+func extractFrontmatterField(content, field string) string {
+	if !strings.HasPrefix(content, "---") {
+		return ""
+	}
+	rest := content[3:]
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return ""
+	}
+	block := rest[:end]
+	for _, line := range strings.Split(block, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, field+":") {
+			val := strings.TrimSpace(strings.TrimPrefix(line, field+":"))
+			val = strings.Trim(val, `"'`)
+			return val
+		}
+	}
+	return ""
+}
+
+// validateFrontmatterPresence verifica se os artefatos têm frontmatter com status e date.
+// Retorna violations para arquivos sem frontmatter válido.
+// Esta validação é lenient: só reporta se o frontmatter estiver completamente ausente.
+func validateFrontmatterPresence() []string {
+	cfg := config.Load()
+	var violations []string
+
+	// ADRs
+	for _, adrDir := range cfg.ADRDirs {
+		files, _ := filepath.Glob(filepath.Join(adrDir, "*.md"))
+		for _, f := range files {
+			content, err := os.ReadFile(f)
+			if err != nil {
+				continue
+			}
+			if !strings.HasPrefix(string(content), "---") {
+				violations = append(violations, fmt.Sprintf("adr %q has no frontmatter block", filepath.Base(f)))
+			}
+		}
+	}
+
+	// REQs
+	reqFiles, _ := filepath.Glob(filepath.Join(cfg.REQDir, "*.md"))
+	for _, f := range reqFiles {
+		content, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		if !strings.HasPrefix(string(content), "---") {
+			violations = append(violations, fmt.Sprintf("req %q has no frontmatter block", filepath.Base(f)))
+		}
+	}
+
+	return violations
 }
 
 func listDir(dir string) ([]string, error) {

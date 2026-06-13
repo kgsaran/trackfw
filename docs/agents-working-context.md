@@ -740,3 +740,16 @@ trackfw/
 - `npm/src/i18n/locales/` — chave `require_req_in_commit` nos 3 locales
 
 **Resultado:** `go build ./...` limpo | `go vet ./...` limpo | suite completa verde | `node --check` OK | commit `add41a6` | push para `feat/v2.0-gaps`.
+
+---
+
+## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-3A do roadmap `trackfw-ai-agent-rail` — JSON Schema para ADR/REQ/ROADMAP + `validateFrontmatterPresence` em Go e npm.
+
+**Branch:** `feat/v2.3-ai-agent-rail`
+
+**Ações em andamento:**
+- Criando `docs/schema/adr.schema.json`, `req.schema.json`, `roadmap.schema.json`
+- Adicionando `extractFrontmatterField` e `validateFrontmatterPresence` em `internal/validator/validator.go`
+- Adicionando `validateFrontmatterPresence` em `npm/src/validator/index.js`
