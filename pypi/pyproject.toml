@@ -23,7 +23,7 @@ Homepage = "https://github.com/kgsaran/trackfw"
 Repository = "https://github.com/kgsaran/trackfw"
 
 [project.scripts]
-trackfw = "trackfw._cli:main"
+trackfw = "trackfw.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -864,11 +864,17 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo ML-2B Python CLI (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-2B Python CLI (CONCLUÍDO)
 
 **Tarefa:** ML-2B do roadmap Python CLI nativo — `generators/req.py` + `tests/test_generators_req.py`.
 
 **Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/generators/req.py` — `slugify(title)` via `unicodedata.NFKD + ascii ignore`; `generate_req(title, req_dir, cwd)` cria `REQ-YYYY-MM-DD-<slug>.md` com frontmatter completo (name, title, status: Open, linked_adr: —, created, author) e seções Motivação, Critérios de Aceite, Fora de Escopo; cria `req_dir` automaticamente via `os.makedirs(exist_ok=True)`; retorna path absoluto.
+- `pypi/tests/test_generators_req.py` — 8 testes unittest: `test_generate_req_cria_arquivo`, `test_frontmatter_correto`, `test_slugify_com_acentos`, `test_cria_req_dir_se_nao_existir`, `test_retorna_path_absoluto`, `test_conteudo_template`, `test_slugify_lowercase`, `test_slugify_sem_acentos`.
+
+**Resultado:** 8/8 testes verdes | commit `bf64f67` | push para `feat/v2.2-python-cli-nativo`.
 
 ---
 
@@ -896,3 +902,11 @@ trackfw/
 - `pypi/tests/test_generators_roadmap.py` — 11 testes unittest: `TestSlugify` (3 casos), `TestGenerateFlat` (gera em `backlog/`), `TestGenerateByAgent` (gera em `zeus/backlog/`, fallback primeiro agente), `TestMoveBacklogParaWip` (move arquivo, atualiza frontmatter, grava log, levanta erros), `TestMoveBuscaEmTodosAgentes` (by_agent sem especificar agente).
 
 **Resultado:** 11/11 testes verdes | commit `3b3d3cb` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-3A Python CLI (IMPLEMENTANDO)
+
+**Tarefa:** ML-3A do roadmap Python CLI nativo — Wave 3 comandos CLI: `cli.py` (entry point argparse), `commands/adr.py`, `commands/req.py`, `commands/log.py`, `commands/__init__.py`, `tests/test_commands_basic.py` + atualizar `pyproject.toml`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
