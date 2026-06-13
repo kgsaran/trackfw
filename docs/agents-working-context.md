@@ -691,12 +691,14 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo ML-3A (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-3A (CONCLUÍDO)
 
 **Tarefa:** ML-3A do roadmap `feat/v2.0-gaps` — Plugin Registry: `trackfw plugins search` e resolução de nomes via registry `kgsaran/trackfw-plugins`.
 
-**Arquivos a criar/modificar:**
-- `internal/plugins/plugins.go` — adicionar `RegistryURL`, `RegistryEntry`, `Search`, `ResolveRepo`, `parseRegistryYAML`, `matchesKeyword`; modificar `Install` para chamar `ResolveRepo`
-- `internal/plugins/plugins_test.go` — novo com 6 testes unitários (sem rede)
-- `internal/commands/plugins.go` — adicionar subcomando `search`
-- `npm/src/commands/plugins.js` — adicionar subcomando `search` com fetch/parse/match
+**Entregue:**
+- `internal/plugins/plugins.go` — `RegistryURL`, `RegistryEntry`, `parseRegistryYAML` (parser YAML lista-de-maps linha a linha, sem yaml.v3), `matchesKeyword` (name+description+tags), `Search` (GET registry + filter), `ResolveRepo` (sem `/` → busca no registry; com `/` → retorna direto sem rede); `Install` modificado para chamar `ResolveRepo` antes de baixar.
+- `internal/plugins/plugins_test.go` — 6 testes sem rede: `ParseRegistryYAML_Empty`, `ParseRegistryYAML_OneEntry`, `MatchesKeyword_Name`, `MatchesKeyword_Tag`, `MatchesKeyword_NoMatch`, `ResolveRepo_WithSlash`.
+- `internal/commands/plugins.go` — subcomando `search <keyword>` registrado; exit 0 em offline (mensagem amigável) e em sem matches.
+- `npm/src/commands/plugins.js` — `fetchRegistry`, `parseRegistryYAML`, `matchesKeyword` e subcomando `search` com saída tabular e exit 0 em offline/sem matches.
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | 6/6 testes verdes | `node --check` OK | commit `26275dc` | push para `feat/v2.0-gaps`.
