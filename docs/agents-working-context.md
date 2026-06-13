@@ -653,16 +653,18 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo ML-2B (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-2B (CONCLUÍDO)
 
 **Tarefa:** ML-2B do roadmap `feat/v2.0-gaps` — WIP Limit configurável por squad via `trackfw.yaml`.
 
-**Arquivos a modificar:**
-- `internal/generators/scaffold.go` — campos WipLimit e WipBySquad em Config
-- `internal/generators/roadmap.go` — campo squad: no template de frontmatter
-- `internal/validator/validator.go` — WIPConfig, readWIPConfig, parseSquadFromFrontmatter, validateWIPLimit (substitui validateSingleWIP), GetStatus com breakdown de squad
-- `internal/validator/validator_test.go` — 5 novos testes
-- `npm/src/validator/index.js` — paridade Node.js
+**Entregue:**
+- `internal/generators/scaffold.go` — `Config.WipLimit int` e `Config.WipBySquad bool` adicionados; `writeTrackfwConfig` gera `wip_limit: 1` e `wip_by_squad: false` no YAML (com defaults quando campos zero).
+- `internal/generators/roadmap.go` — campo `squad:` adicionado ao template de novo roadmap no frontmatter (após REQ:, vazio para preenchimento manual).
+- `internal/validator/validator.go` — `WIPConfig{Limit, BySquad}` + `readWIPConfig()` (parser YAML flat, sem yaml.v3); `parseSquadFromFrontmatter(path)` extrai campo `squad:` do markdown; `validateWIPLimit()` substitui `validateSingleWIP()` — modo global conta todos os WIPs contra o limite, modo squad agrupa por squad e valida por grupo; `GetStatus()` exibe seção `⚙ WIP by Squad` com count e indicador ⚠/✓ quando `wip_by_squad: true`.
+- `internal/validator/validator_test.go` — 5 novos testes: `Global_OK`, `Global_Exceed`, `Global_HighLimit`, `BySquad_OK`, `BySquad_Exceed`. Todos os 17 testes do pacote passando.
+- `npm/src/validator/index.js` — paridade Node.js: `readWIPConfig()`, `parseSquadFromFrontmatter()`, `validateWIPLimit()` (retorna `{violations, warnings}`); `validate()` usa `validateWIPLimit` no lugar de `validateSingleWIP`; `getStatus()` exibe seção squad quando `bySquad: true`; novos exports adicionados.
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | 17/17 testes verdes | `node --check` OK | commit `0b39e3d` | push para `feat/v2.0-gaps`.
 
 ---
 
