@@ -1105,4 +1105,10 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - M5: `validate_filename_uniqueness` (unicidade de filename entre estados)
 - Novos testes: classe `TestValidatorImprovements` em `pypi/tests/test_validator.py`
 
-**Agente:** Apolo | Status: IMPLEMENTANDO
+**Entregue:**
+- `pypi/trackfw/validator.py` — `import subprocess` adicionado; `_walk_dir_md`, `_find_adr_file`, `_git_last_modified_time`, `_extract_ref_path` adicionados; `_adr_is_draft` usa `_find_adr_file`; `validate_adrs_are_referenced` usa `_walk_dir_md`; `validate_frontmatter_presence` usa `_walk_dir_md` + `_find_adr_file`; `validate_stale_wip` usa `_git_last_modified_time` com fallback para `st_mtime`; `validate_ref_targets_exist`, `_FOLDER_TO_STATUS`, `validate_folder_status_coherence`, `validate_filename_uniqueness` implementados; `validate()` inclui novas validações.
+- `pypi/tests/test_validator.py` — classe `TestValidatorImprovements` com 11 novos testes adicionada.
+
+**Resultado:** 157/157 testes verdes (11 novos) | commit `12d1009` | push para `feat/v2.3-validator-improvements`
+
+**Agente:** Apolo | Status: CONCLUÍDO
