@@ -193,7 +193,7 @@ def _parse(content, cfg):
                 colon_idx = line.find(":")
                 if colon_idx > 0:
                     k = line[:colon_idx].strip()
-                    v = line[colon_idx + 1:].strip()
+                    v = line[colon_idx + 1:].strip().strip("\"'")
                     if k:
                         rules[k] = v
                 continue
@@ -225,18 +225,18 @@ def _parse(content, cfg):
             in_adr_dirs = True
             adr_dirs.clear()
         elif key == "req_dir":
-            cfg["req_dir"] = val
+            cfg["req_dir"] = val.strip("\"'")
         elif key == "roadmap_dir":
-            cfg["roadmap_dir"] = val
+            cfg["roadmap_dir"] = val.strip("\"'")
         elif key == "roadmap_namespacing":
-            cfg["roadmap_namespacing"] = val
+            cfg["roadmap_namespacing"] = val.strip("\"'")
         elif key == "agents":
             in_agents = True
             agents.clear()
         elif key == "governance_mode":
-            cfg["governance_mode"] = val
+            cfg["governance_mode"] = val.strip("\"'")
         elif key == "lenient_until":
-            cfg["lenient_until"] = val
+            cfg["lenient_until"] = val.strip("\"'")
         elif key == "wip_limit":
             try:
                 n = int(val)
