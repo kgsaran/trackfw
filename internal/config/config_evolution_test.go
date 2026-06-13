@@ -120,6 +120,28 @@ func TestConfigSparse_NewFields(t *testing.T) {
 	}
 }
 
+func TestRulesValueWithDoubleQuotes(t *testing.T) {
+	Reset()
+	yaml := "rules:\n  adr_orphan: \"off\"\n"
+	cfg := defaults()
+	parse(yaml, &cfg)
+
+	if cfg.Rules["adr_orphan"] != "off" {
+		t.Errorf("Rules[adr_orphan] com aspas duplas: got %q, want off", cfg.Rules["adr_orphan"])
+	}
+}
+
+func TestRulesValueWithSingleQuotes(t *testing.T) {
+	Reset()
+	yaml := "rules:\n  stale_wip: 'warning'\n"
+	cfg := defaults()
+	parse(yaml, &cfg)
+
+	if cfg.Rules["stale_wip"] != "warning" {
+		t.Errorf("Rules[stale_wip] com aspas simples: got %q, want warning", cfg.Rules["stale_wip"])
+	}
+}
+
 func TestConfigRetrocompat(t *testing.T) {
 	Reset()
 	// yaml com apenas campos v2.3

@@ -310,6 +310,7 @@ func splitKV(line string) (key, val string, ok bool) {
 	}
 	key = strings.TrimSpace(line[:idx])
 	val = strings.TrimSpace(line[idx+1:])
+	val = strings.Trim(val, "\"'")
 	return key, val, key != ""
 }
 
