@@ -743,6 +743,32 @@ trackfw/
 
 ---
 
+## Sessão 2026-06-13 — Apolo Wave 1 feat/v2.3-ai-agent-rail (CONCLUÍDO)
+
+**Tarefa:** Wave 1 do roadmap `trackfw-ai-agent-rail` — ML-1A (frontmatter YAML em templates) e ML-1B (comando `trackfw context`).
+
+**Branch:** `feat/v2.3-ai-agent-rail`
+
+**ML-1A — Frontmatter YAML em templates (Go + npm):**
+- `internal/generators/adr.go` — `NewADR()` e `NewADRDraft()` agora geram bloco `---` com `status`/`date`/`author`
+- `internal/generators/req.go` — `NewREQ()` agora gera bloco `---` com `status`/`date`/`author`/`adr`/`roadmap`
+- `internal/generators/roadmap.go` — template padrão (quando `content.Body == ""`) agora gera bloco `---` com `status`/`date`/`req`/`squad`
+- `npm/src/generators/adr.js` — paridade: `newADR()` e `newADRDraft()` com frontmatter
+- `npm/src/generators/req.js` — paridade: `newREQ()` com frontmatter
+- `npm/src/generators/roadmap.js` — paridade: `newRoadmap()` com frontmatter
+
+**ML-1B — Comando `trackfw context` (Go + npm):**
+- `internal/generators/context.go` — `GetContext(format string) error`: coleta ADRs/REQs/Roadmaps via config, chama `validator.Validate()`, computa score (20pts/categoria + 40pts validate limpo), imprime em md ou json; `extractFrontmatterField()` e `extractInlineStatus()` como helpers
+- `internal/commands/context.go` — cobra command `context` com flag `--format` (md|json)
+- `internal/commands/root.go` — `newContextCmd()` registrado
+- `npm/src/commands/context.js` — paridade Node.js puro: mesma lógica de coleta, score e formatação
+- `npm/src/commands/index.js` — `require('./context')` registrado
+
+**Resultado:** `go build ./...` limpo | `go test ./...` 100% verde | `node --check` OK em todos os arquivos npm
+- Commit `66b5a8f` (ML-1A) | Commit `4f8b504` (ML-1B) | Push para `feat/v2.3-ai-agent-rail`
+
+---
+
 ## Sessão 2026-06-13 — Apolo ML-3A (CONCLUÍDO)
 
 **Tarefa:** ML-3A do roadmap `trackfw-ai-agent-rail` — JSON Schema para ADR/REQ/ROADMAP + `validateFrontmatterPresence` em Go e npm.
