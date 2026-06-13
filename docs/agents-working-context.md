@@ -730,11 +730,13 @@ trackfw/
 
 **Branch:** `feat/v2.0-gaps`
 
-**Escopo:**
-- `internal/generators/scaffold.go` — campo `RequireReqInCommit bool` em Config + função `generateCommitMsgHook` + campo `require_req_in_commit` no trackfw.yaml
-- `internal/commands/init.go` — nova pergunta no wizard (somente quando hooks != "none")
-- `internal/generators/commitmsghook_test.go` — 3 testes de cobertura
-- i18n locales Go (en-US, pt-BR, es-ES) — chave `require_req_in_commit`
-- `npm/src/generators/init.js` — geração do hook commit-msg no scaffold
-- `npm/src/commands/init.js` — nova pergunta no wizard
+**Entregue:**
+- `internal/generators/scaffold.go` — campo `RequireReqInCommit bool` em `Config`; função `generateCommitMsgHook` (husky: `.husky/commit-msg`; lefthook: `lefthook.yml` + `.lefthook/commit-msg/trackfw-req-check.sh`); campo `require_req_in_commit` no `trackfw.yaml`
+- `internal/commands/init.go` — segundo form condicional pós-wizard perguntando `require_req_in_commit` quando hooks != "none"; campo passado para `Config`
+- `internal/generators/commitmsghook_test.go` — 3 testes: `TestGenerateCommitMsgHook_Husky`, `TestGenerateCommitMsgHook_Disabled`, `TestGenerateCommitMsgHook_Lefthook` — todos 3/3 verdes
+- i18n locales Go (en-US, pt-BR, es-ES) — chave `init.prompt.require_req_in_commit`
+- `npm/src/generators/init.js` — função `generateCommitMsgHook` + chamada em `scaffold()` + campo no `writeTrackfwConfig`
+- `npm/src/commands/init.js` — pergunta condicional com `@inquirer/prompts` confirm; `requireReqInCommit` no cfg
 - `npm/src/i18n/locales/` — chave `require_req_in_commit` nos 3 locales
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | suite completa verde | `node --check` OK | commit `add41a6` | push para `feat/v2.0-gaps`.
