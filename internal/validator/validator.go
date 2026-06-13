@@ -15,6 +15,41 @@ import (
 
 const staleWIPDays = 7
 
+// contentHasMarker retorna true se content contém algum dos marcadores com valor não-vazio.
+func contentHasMarker(content string, markers []string) bool {
+	for _, marker := range markers {
+		if strings.Contains(content, marker) && !strings.Contains(content, marker+" \n") {
+			return true
+		}
+	}
+	return false
+}
+
+// ruleSeverity retorna a severidade configurada para a regra ou "error" como fallback.
+func ruleSeverity(name string) string {
+	cfg := config.Load()
+	if s, ok := cfg.Rules[name]; ok {
+		return s
+	}
+	return "error"
+}
+
+// applyRule distribui msgs conforme severidade da regra.
+// "off" → silencioso; "warning" → warnings; default ("error") → violations.
+func applyRule(ruleName string, msgs []string, violations, warnings *[]string) {
+	if len(msgs) == 0 {
+		return
+	}
+	switch ruleSeverity(ruleName) {
+	case "off":
+		// silencioso
+	case "warning":
+		*warnings = append(*warnings, msgs...)
+	default:
+		*violations = append(*violations, msgs...)
+	}
+}
+
 // WIPConfig armazena configuração de WIP limit lida do trackfw.yaml.
 type WIPConfig struct {
 	Limit   int  // default 1
@@ -202,77 +237,77 @@ func Validate() (violations []string, warnings []string, err error) {
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, wipViolations...)
+	applyRule("wip_has_req", wipViolations, &violations, &warnings)
 
 	reqViolations, e := validateREQsHaveADR()
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, reqViolations...)
+	violations = append(violations, reqViolations...) // sem regra configurável
 
 	blockedViolations, e := validateBlockedHasREQ()
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, blockedViolations...)
+	violations = append(violations, blockedViolations...) // sem regra configurável
 
 	reqRoadmapViolations, e := validateREQsHaveRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, reqRoadmapViolations...)
+	violations = append(violations, reqRoadmapViolations...) // sem regra configurável
 
 	adrOrphanViolations, e := validateADRsAreReferenced()
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, adrOrphanViolations...)
+	applyRule("adr_orphan", adrOrphanViolations, &violations, &warnings)
 
 	criteriaViolations, e := validateWIPHasAcceptanceCriteria()
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, criteriaViolations...)
+	applyRule("wip_acceptance", criteriaViolations, &violations, &warnings)
 
 	wipViolationsLimit, wipWarningsLimit, e := validateWIPLimit()
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, wipViolationsLimit...)
-	warnings = append(warnings, wipWarningsLimit...)
+	applyRule("wip_limit", wipViolationsLimit, &violations, &warnings)
+	warnings = append(warnings, wipWarningsLimit...) // warnings de limite não têm severidade configurável
 
 	staleWarnings, e := validateStaleWIP()
 	if e != nil {
 		return nil, nil, e
 	}
-	warnings = append(warnings, staleWarnings...)
+	applyRule("stale_wip", staleWarnings, &violations, &warnings)
 
 	draftBlockedViolations, e := validateREQsNotBlockedByDraftADRs()
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, draftBlockedViolations...)
+	applyRule("blocked_by_draft_adr", draftBlockedViolations, &violations, &warnings)
 
 	frontmatterViolations := validateFrontmatterPresence()
-	violations = append(violations, frontmatterViolations...)
+	violations = append(violations, frontmatterViolations...) // sem regra configurável
 
 	refWarnings, e := validateRefTargetsExist()
 	if e != nil {
 		return nil, nil, e
 	}
-	warnings = append(warnings, refWarnings...)
+	applyRule("ref_targets_exist", refWarnings, &violations, &warnings)
 
 	coherenceWarnings, e := validateFolderStatusCoherence()
 	if e != nil {
 		return nil, nil, e
 	}
-	warnings = append(warnings, coherenceWarnings...)
+	applyRule("folder_status", coherenceWarnings, &violations, &warnings)
 
 	uniquenessViolations, e := validateFilenameUniqueness()
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, uniquenessViolations...)
+	applyRule("filename_uniqueness", uniquenessViolations, &violations, &warnings)
 
 	// Modo lenient: mover violations para warnings, exit code 0
 	if IsLenient() {
@@ -425,7 +460,7 @@ func validateWIPHasREQ() ([]string, error) {
 			if err != nil {
 				continue
 			}
-			if !strings.Contains(string(content), "REQ:") || strings.Contains(string(content), "REQ: \n") {
+			if !contentHasMarker(string(content), cfg.LinkFieldsReq) {
 				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no linked REQ", name))
 			}
 		}
@@ -446,7 +481,7 @@ func validateREQsHaveADR() ([]string, error) {
 		if err != nil {
 			continue
 		}
-		if !strings.Contains(string(content), "ADR:") || strings.Contains(string(content), "ADR: \n") {
+		if !contentHasMarker(string(content), cfg.LinkFieldsADR) {
 			violations = append(violations, fmt.Sprintf("req %q has no linked ADR", name))
 		}
 	}
@@ -466,7 +501,7 @@ func validateBlockedHasREQ() ([]string, error) {
 		if err != nil {
 			continue
 		}
-		if !strings.Contains(string(content), "REQ:") || strings.Contains(string(content), "REQ: \n") {
+		if !contentHasMarker(string(content), cfg.LinkFieldsReq) {
 			violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ", name))
 		}
 	}
@@ -486,7 +521,7 @@ func validateREQsHaveRoadmap() ([]string, error) {
 		if err != nil {
 			continue
 		}
-		if !strings.Contains(string(content), "Roadmap:") || strings.Contains(string(content), "Roadmap: \n") {
+		if !contentHasMarker(string(content), cfg.LinkFieldsRoadmap) {
 			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap", name))
 		}
 	}
@@ -543,10 +578,7 @@ func validateWIPHasAcceptanceCriteria() ([]string, error) {
 				continue
 			}
 			s := string(content)
-			hasBlock := strings.Contains(s, "## Acceptance Criteria") ||
-				strings.Contains(s, "## Critérios de Aceite") ||
-				strings.Contains(s, "acceptance criteria") ||
-				strings.Contains(s, "Acceptance Criteria:")
+			hasBlock := contentHasMarker(s, cfg.AcceptanceMarkers)
 			if !hasBlock {
 				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no acceptance criteria block", name))
 			}
