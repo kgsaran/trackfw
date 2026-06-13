@@ -1356,17 +1356,22 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 ---
 
-## Sessão 2026-06-13 — Backend ML-2A v2.5 Go paths configuráveis (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Backend ML-2A v2.5 Go paths configuráveis (CONCLUÍDO)
 
-**Agente:** Backend | Status: IMPLEMENTANDO
+**Agente:** Backend | Status: CONCLUÍDO
 
 **Branch:** `feat/v2.5-discovery-json-traceid`
 
 **Tarefa:** ML-2A — paths configuráveis `adr_dirs`/`req_dir`/`roadmap_dir` no CLI Go.
 
-**Análise:** Campos `ADRDirs`, `REQDir`, `RoadmapDir` e o parser YAML já estão implementados em `internal/config/config.go` (struct, defaults e parse). Os 4 testes nomeados no ML-2A ainda não existem — criando em `internal/config/config_paths_test.go`.
+**Análise:** Campos `ADRDirs`, `REQDir`, `RoadmapDir` e o parser YAML já estavam implementados em `internal/config/config.go`. Os 4 testes nomeados no ML-2A não existiam — criados em `internal/config/config_paths_test.go`.
 
 **Paths hardcoded em `discover.go`:** pertencem ao scanner de discovery brownfield (candidatos de autodetecção), não à camada de config — mantidos intencionalmente.
+
+**Entregue:**
+- `internal/config/config_paths_test.go` — 4 testes: `TestConfigAdrDirsList`, `TestConfigReqDirCustom` (UTF-8 docs/requisições), `TestConfigRoadmapDirCustom`, `TestConfigPathsDefaults`.
+
+**Resultado:** 18/18 testes `internal/config` verdes | `make build` limpo | sem regressões novas | commit `d8ad96d` | push para `feat/v2.5-discovery-json-traceid`
 
 ---
 
@@ -1384,3 +1389,19 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - Serializar resultado via `encoding/json` para stdout quando `--json` ativo; comportamento texto inalterado sem a flag.
 - Exit code idêntico nos dois modos (violações → exit 1, ok → exit 0).
 - Criar `internal/commands/validate_json_test.go` com 3 testes: JSON válido, exit code paridade, texto inalterado.
+
+---
+
+## Sessão 2026-06-13 — Backend ML-1C v2.5 flag --json no validate Python (IMPLEMENTANDO)
+
+**Agente:** Backend | Status: IMPLEMENTANDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-1C — flag `--json` no `trackfw validate` para o CLI Python.
+
+**Análise:**
+- `pypi/trackfw/commands/validate.py` já é implementação completa (não stub)
+- `pypi/trackfw/validator.py` retorna dicts `{"type": ..., "message": ...}` — sem campos `rule` e `file`
+- Node JS mirror já tem `--json` com estrutura `{summary, violations: [{message}], warnings: [{message}]}`
+- Estratégia: adicionar `--json` ao parser; no branch JSON, suprimir toda saída textual e emitir JSON puro; campos `rule`/`file` extraídos do dict se presentes (null se ausentes); testes pytest isolados com tmpdir + os.chdir
