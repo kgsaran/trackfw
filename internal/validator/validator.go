@@ -377,6 +377,18 @@ func Validate() (violations []string, warnings []string, err error) {
 			}
 		}
 		violations = netNew
+
+		warnSet := make(map[string]struct{}, len(baseline.Warnings))
+		for _, w := range baseline.Warnings {
+			warnSet[w] = struct{}{}
+		}
+		var netNewWarn []string
+		for _, w := range warnings {
+			if _, exists := warnSet[w]; !exists {
+				netNewWarn = append(netNewWarn, w)
+			}
+		}
+		warnings = netNewWarn
 	}
 
 	// Modo lenient: mover violations para warnings, exit code 0
