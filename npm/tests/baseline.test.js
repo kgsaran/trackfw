@@ -107,6 +107,64 @@ test('validate reporta violations novas (não no baseline)', async () => {
   }
 })
 
+test('baseline filtra warnings baselined', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bl-'))
+  mkdirs(tmp, ['docs/adr', 'docs/req', 'docs/roadmaps/wip',
+    'docs/roadmaps/backlog', 'docs/roadmaps/blocked', 'docs/roadmaps/done'])
+  // ADR sem REQ vinculada → gera adr_orphan como warning (severidade padrão)
+  writeFile(tmp, 'docs/adr/ADR-001.md', '---\nstatus: Approved\n---\n# ADR-001\n')
+  const origDir = process.cwd()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    // Capturar warnings reais
+    const raw = await validator.validateUnfiltered()
+    assert(raw.warnings.some(w => w.includes('ADR-001')),
+      'ADR-001 deve gerar um warning adr_orphan: ' + JSON.stringify(raw.warnings))
+
+    // Salvar baseline com os warnings atuais
+    validator.saveBaseline(raw.violations, raw.warnings)
+
+    // validate() deve filtrar os warnings do baseline
+    const result = await validator.validate()
+    assert(!result.warnings.some(w => w.includes('ADR-001')),
+      'warnings do baseline devem ser filtrados: ' + JSON.stringify(result.warnings))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
+test('lenient + baseline: warning baselined não reaparece', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bl-'))
+  mkdirs(tmp, ['docs/adr', 'docs/req', 'docs/roadmaps/wip',
+    'docs/roadmaps/backlog', 'docs/roadmaps/blocked', 'docs/roadmaps/done'])
+  // ADR sem REQ vinculada → gera adr_orphan como warning
+  writeFile(tmp, 'docs/adr/ADR-002.md', '---\nstatus: Approved\n---\n# ADR-002\n')
+  // Ativar modo lenient sem data de expiração (sempre ativo)
+  writeFile(tmp, 'trackfw.yaml', 'governance_mode: lenient\n')
+  const origDir = process.cwd()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    // Capturar warnings reais e salvar baseline
+    const raw = await validator.validateUnfiltered()
+    assert(raw.warnings.some(w => w.includes('ADR-002')),
+      'ADR-002 deve gerar um warning: ' + JSON.stringify(raw.warnings))
+    validator.saveBaseline(raw.violations, raw.warnings)
+
+    // Em modo lenient + baseline, o warning baselined não deve reaparecer
+    const result = await validator.validate()
+    assert(!result.warnings.some(w => w.includes('ADR-002')),
+      'warning baselined não deve reaparecer em modo lenient: ' + JSON.stringify(result.warnings))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
 ;(async () => {
   for (const { name, fn } of tests) {
     try {

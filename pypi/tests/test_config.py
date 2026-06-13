@@ -186,6 +186,24 @@ class TestConfigEvolution(unittest.TestCase):
         self.assertEqual(cfg["wip_limit"], 2)
         self.assertEqual(cfg["link_fields"]["req"], ["REQ:"])  # default
 
+    def test_rules_value_with_double_quotes(self):
+        """Valores de rules com aspas duplas devem ser armazenados sem aspas."""
+        self._write_yaml(
+            "rules:\n"
+            '  adr_orphan: "off"\n'
+        )
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["rules"]["adr_orphan"], "off")
+
+    def test_rules_value_with_single_quotes(self):
+        """Valores de rules com aspas simples devem ser armazenados sem aspas."""
+        self._write_yaml(
+            "rules:\n"
+            "  stale_wip: 'warning'\n"
+        )
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["rules"]["stale_wip"], "warning")
+
 
 if __name__ == "__main__":
     unittest.main()

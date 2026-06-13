@@ -80,6 +80,81 @@ func TestBaselineFiltersOldViolations(t *testing.T) {
 	}
 }
 
+func TestBaselineFiltersWarnings(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	mkdirs(t, dir, "docs/adr", "docs/req", "docs/roadmaps/wip",
+		"docs/roadmaps/backlog", "docs/roadmaps/blocked", "docs/roadmaps/done")
+
+	// ADR sem nenhuma REQ referenciando → gera warning de adr_orphan (default severity)
+	writeFile(t, dir, "docs/adr/ADR-001.md",
+		"---\nstatus: Accepted\ndate: 2026-01-01\n---\n# ADR-001\n")
+
+	// Validar sem filtro para capturar warnings
+	rawViolations, rawWarnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered: %v", err)
+	}
+	if !hasWarning(rawWarnings, "ADR-001") {
+		t.Fatalf("esperado warning de adr_orphan para ADR-001; warnings=%v", rawWarnings)
+	}
+
+	// Salvar baseline com o estado atual (inclui o warning)
+	if err := SaveBaseline(rawViolations, rawWarnings); err != nil {
+		t.Fatalf("SaveBaseline: %v", err)
+	}
+
+	// Validate() com baseline → warning de ADR-001 não deve aparecer
+	_, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if hasWarning(warnings, "ADR-001") {
+		t.Errorf("warning de adr_orphan baselined deveria ter sido filtrado; warnings=%v", warnings)
+	}
+}
+
+func TestBaselineLenientNoRecreate(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	mkdirs(t, dir, "docs/adr", "docs/req", "docs/roadmaps/wip",
+		"docs/roadmaps/backlog", "docs/roadmaps/blocked", "docs/roadmaps/done")
+
+	// ADR sem REQ → warning de adr_orphan
+	writeFile(t, dir, "docs/adr/ADR-002.md",
+		"---\nstatus: Accepted\ndate: 2026-01-01\n---\n# ADR-002\n")
+
+	// Criar baseline capturando o warning
+	rawViolations, rawWarnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered: %v", err)
+	}
+	if !hasWarning(rawWarnings, "ADR-002") {
+		t.Fatalf("esperado warning de adr_orphan para ADR-002; warnings=%v", rawWarnings)
+	}
+	if err := SaveBaseline(rawViolations, rawWarnings); err != nil {
+		t.Fatalf("SaveBaseline: %v", err)
+	}
+
+	// Ativar modo lenient via trackfw.yaml
+	writeFile(t, dir, "trackfw.yaml", "governance_mode: lenient\n")
+
+	// Validate() com baseline + lenient → warning baselined não deve reaparecer
+	_, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if hasWarning(warnings, "ADR-002") {
+		t.Errorf("warning baselined não deve reaparecer com modo lenient; warnings=%v", warnings)
+	}
+}
+
 func TestBaselineNetNewViolation(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)

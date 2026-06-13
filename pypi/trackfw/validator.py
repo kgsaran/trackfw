@@ -850,13 +850,16 @@ def validate(cwd: str = None) -> dict:
     violations = result.get("violations", [])
     warnings = result.get("warnings", [])
 
-    # Ratchet: filtrar violations que já estavam no baseline
+    # Ratchet: filtrar violations e warnings que já estavam no baseline
     baseline = load_baseline()
     if baseline is not None:
         baseline_set = set(baseline.get("violations", []))
         net_new = [v for v in violations
                    if _extract_messages([v])[0] not in baseline_set]
         violations = net_new
+        baseline_warn_set = set(baseline.get("warnings", []))
+        warnings = [w for w in warnings
+                    if _extract_messages([w])[0] not in baseline_warn_set]
 
     # Modo lenient: mover violations para warnings
     if _is_lenient(cwd):

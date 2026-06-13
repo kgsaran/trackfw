@@ -82,5 +82,21 @@ test('retrocompat — yaml v2.3 sem novos campos', () => {
   })
 })
 
+test('rules com aspas duplas são reconhecidas', () => {
+  const yaml = `rules:\n  adr_orphan: "off"\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.strictEqual(cfg.rules.adr_orphan, 'off')
+  })
+})
+
+test('rules com aspas simples são reconhecidas', () => {
+  const yaml = `rules:\n  stale_wip: 'warning'\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.strictEqual(cfg.rules.stale_wip, 'warning')
+  })
+})
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

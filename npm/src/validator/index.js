@@ -777,11 +777,13 @@ async function validate() {
   const result = await validateUnfiltered()
   let { violations, warnings } = result
 
-  // Ratchet: filtrar violations que já estavam no baseline
+  // Ratchet: filtrar violations e warnings que já estavam no baseline
   const baseline = loadBaseline()
   if (baseline) {
     const baselineSet = new Set(baseline.violations || [])
     violations = violations.filter(v => !baselineSet.has(v))
+    const baselineWarnSet = new Set(baseline.warnings || [])
+    warnings = warnings.filter(w => !baselineWarnSet.has(w))
   }
 
   // Modo lenient: mover violations para warnings, exit code 0
