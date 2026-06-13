@@ -26,6 +26,7 @@ def defaults():
         "wip_by_squad": False,
         "require_req_in_commit": False,
         # novos campos
+        "trace_id_field": "",
         "link_fields": {
             "req":     ["REQ:"],
             "adr":     ["ADR:"],
@@ -248,6 +249,8 @@ def _parse(content, cfg):
             cfg["wip_by_squad"] = val == "true"
         elif key == "require_req_in_commit":
             cfg["require_req_in_commit"] = val == "true"
+        elif key == "trace_id_field":
+            cfg["trace_id_field"] = val.strip("\"'")
         elif key == "link_fields":
             in_link_fields = True
         elif key == "acceptance_markers":
