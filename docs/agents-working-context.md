@@ -688,3 +688,15 @@ trackfw/
 - Teste integração: `trackfw validate` em projeto lenient → `[LENIENT MODE]`, `⚠ violation`, exit 0
 - Teste integração: `trackfw validate` em projeto strict → `✗ violation`, exit 1 (inalterado)
 - `node --check` limpo nos 3 arquivos npm modificados
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-3A (IMPLEMENTANDO)
+
+**Tarefa:** ML-3A do roadmap `feat/v2.0-gaps` — Plugin Registry: `trackfw plugins search` e resolução de nomes via registry `kgsaran/trackfw-plugins`.
+
+**Arquivos a criar/modificar:**
+- `internal/plugins/plugins.go` — adicionar `RegistryURL`, `RegistryEntry`, `Search`, `ResolveRepo`, `parseRegistryYAML`, `matchesKeyword`; modificar `Install` para chamar `ResolveRepo`
+- `internal/plugins/plugins_test.go` — novo com 6 testes unitários (sem rede)
+- `internal/commands/plugins.go` — adicionar subcomando `search`
+- `npm/src/commands/plugins.js` — adicionar subcomando `search` com fetch/parse/match

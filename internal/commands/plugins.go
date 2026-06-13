@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/kgsaran/trackfw/internal/plugins"
 	"github.com/spf13/cobra"
@@ -15,7 +16,7 @@ func newPluginsCmd() *cobra.Command {
 		Use:   "plugins",
 		Short: "Manage trackfw plugins",
 	}
-	cmd.AddCommand(newPluginsListCmd(), newPluginsAddCmd(), newPluginsRemoveCmd())
+	cmd.AddCommand(newPluginsListCmd(), newPluginsAddCmd(), newPluginsRemoveCmd(), newPluginsSearchCmd())
 	return cmd
 }
 
@@ -75,6 +76,32 @@ func newPluginsRemoveCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("plugin %s removed\n", args[0])
+			return nil
+		},
+	}
+}
+
+func newPluginsSearchCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "search <keyword>",
+		Short: "Search the plugin registry",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			entries, err := plugins.Search(args[0])
+			if err != nil {
+				// Registry indisponível: mensagem amigável, exit 0
+				fmt.Printf("Registry unavailable: %s\n", err)
+				return nil
+			}
+			if len(entries) == 0 {
+				fmt.Printf("No plugins found for %q\n", args[0])
+				return nil
+			}
+			fmt.Printf("%-30s %-30s %s\n", "NAME", "REPO", "DESCRIPTION")
+			fmt.Println(strings.Repeat("-", 90))
+			for _, e := range entries {
+				fmt.Printf("%-30s %-30s %s\n", e.Name, e.Repo, e.Description)
+			}
 			return nil
 		},
 	}
