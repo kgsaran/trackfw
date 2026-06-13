@@ -95,6 +95,55 @@ class TestBaseline(unittest.TestCase):
         self.assertTrue(any("RM-002" in m for m in msgs),
             f"nova violation deve aparecer. msgs: {msgs}")
 
+    def test_baseline_filters_warnings(self):
+        """validate() filtra warnings já capturados no baseline (set-difference)."""
+        # Cria ADR sem REQ referenciando → gera warning adr_orphan
+        _write(os.path.join(self.tmp, "docs/adr/ADR-001.md"),
+               "---\nstatus: Accepted\n---\n# ADR-001\n")
+        # trackfw.yaml configurando adr_orphan como warning
+        _write(os.path.join(self.tmp, "trackfw.yaml"),
+               'rules:\n  adr_orphan: warning\n')
+        self._chdir()
+
+        # Captura warnings iniciais e salva baseline
+        raw = v.validate_unfiltered()
+        warn_msgs = [w["message"] for w in raw["warnings"] if "ADR-001" in w["message"]]
+        self.assertTrue(warn_msgs, "setup deve gerar warning adr_orphan para ADR-001")
+
+        v.save_baseline(raw["violations"], raw["warnings"])
+
+        # validate() deve filtrar o warning do ADR-001
+        result = v.validate()
+        warn_result = [
+            item["message"] if isinstance(item, dict) else str(item)
+            for item in result.get("warnings", [])
+        ]
+        self.assertFalse(any("ADR-001" in m for m in warn_result),
+            f"warnings do baseline devem ser filtrados. msgs: {warn_result}")
+
+    def test_lenient_baseline_no_recreate(self):
+        """Em modo lenient, warnings suprimidos pelo baseline não reaparecem."""
+        # Cria ADR sem REQ referenciando → gera warning adr_orphan
+        _write(os.path.join(self.tmp, "docs/adr/ADR-001.md"),
+               "---\nstatus: Accepted\n---\n# ADR-001\n")
+        # trackfw.yaml: adr_orphan como warning + lenient
+        _write(os.path.join(self.tmp, "trackfw.yaml"),
+               'rules:\n  adr_orphan: warning\ngovernance_mode: lenient\n')
+        self._chdir()
+
+        # Salva baseline com o warning existente
+        raw = v.validate_unfiltered()
+        v.save_baseline(raw["violations"], raw["warnings"])
+
+        # validate() em modo lenient: baseline suprime o warning; lenient não o recria
+        result = v.validate()
+        warn_result = [
+            item["message"] if isinstance(item, dict) else str(item)
+            for item in result.get("warnings", [])
+        ]
+        self.assertFalse(any("ADR-001" in m for m in warn_result),
+            f"warning baselined nao deve reaparecer em lenient. msgs: {warn_result}")
+
 
 if __name__ == "__main__":
     unittest.main()
