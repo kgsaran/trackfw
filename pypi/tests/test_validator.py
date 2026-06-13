@@ -391,5 +391,174 @@ class TestValidateReqHasAdr(unittest.TestCase):
         self.assertEqual(result, [])
 
 
+class TestValidatorImprovements(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_walk_dir_md_finds_in_subdirs(self):
+        """_walk_dir_md deve encontrar .md em subpastas."""
+        from trackfw.validator import _walk_dir_md
+        done_dir = os.path.join(self.tmp, "done")
+        os.makedirs(done_dir)
+        with open(os.path.join(done_dir, "ADR-001.md"), "w") as f:
+            f.write("---\nstatus: Accepted\n---\n# ADR\n")
+        wip_dir = os.path.join(self.tmp, "wip")
+        os.makedirs(wip_dir)
+        with open(os.path.join(wip_dir, "ADR-002.md"), "w") as f:
+            f.write("---\nstatus: Draft\n---\n# ADR\n")
+        results = _walk_dir_md(self.tmp)
+        self.assertIn("ADR-001.md", results)
+        self.assertIn("ADR-002.md", results)
+
+    def test_find_adr_file_in_subdir(self):
+        """_find_adr_file deve encontrar arquivo em subpasta."""
+        from trackfw.validator import _find_adr_file
+        sub = os.path.join(self.tmp, "done")
+        os.makedirs(sub)
+        adr_path = os.path.join(sub, "ADR-001.md")
+        with open(adr_path, "w") as f:
+            f.write("---\nstatus: Accepted\n---\n")
+        result = _find_adr_file("ADR-001.md", [self.tmp])
+        self.assertEqual(result, adr_path)
+
+    def test_find_adr_file_not_found(self):
+        from trackfw.validator import _find_adr_file
+        result = _find_adr_file("nao-existe.md", [self.tmp])
+        self.assertEqual(result, "")
+
+    def test_extract_ref_path_basic(self):
+        from trackfw.validator import _extract_ref_path
+        content = "REQ: docs/req/foo.md\n"
+        self.assertEqual(_extract_ref_path(content, "REQ"), "docs/req/foo.md")
+
+    def test_extract_ref_path_em_dash(self):
+        from trackfw.validator import _extract_ref_path
+        content = "REQ: —\n"
+        self.assertEqual(_extract_ref_path(content, "REQ"), "")
+
+    def test_extract_ref_path_no_md(self):
+        from trackfw.validator import _extract_ref_path
+        content = "REQ: algum texto sem extensao\n"
+        self.assertEqual(_extract_ref_path(content, "REQ"), "")
+
+    def test_validate_ref_targets_exist_warning(self):
+        """Ref a arquivo inexistente gera warning."""
+        from trackfw import config as cfg_mod
+        from trackfw.validator import validate_ref_targets_exist
+        cfg_mod.reset()
+
+        # Criar estrutura mínima
+        req_dir = os.path.join(self.tmp, "docs", "req")
+        roadmap_wip = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        os.makedirs(req_dir)
+        os.makedirs(roadmap_wip)
+
+        # Roadmap com REQ inexistente
+        with open(os.path.join(roadmap_wip, "my-roadmap.md"), "w") as f:
+            f.write("---\nstatus: WIP\n---\nREQ: docs/req/nao-existe.md\n")
+
+        cfg = {
+            "adr_dirs": ["docs/adr"],
+            "req_dir": req_dir,
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+
+        import os as _os
+        orig_cwd = _os.getcwd()
+        _os.chdir(self.tmp)
+        try:
+            warnings = validate_ref_targets_exist(cfg)
+        finally:
+            _os.chdir(orig_cwd)
+
+        self.assertTrue(any("nao-existe.md" in w["message"] for w in warnings))
+
+    def test_validate_folder_status_coherence_warning(self):
+        """Arquivo em wip/ com status: Done gera warning."""
+        from trackfw import config as cfg_mod
+        from trackfw.validator import validate_folder_status_coherence
+        cfg_mod.reset()
+
+        wip_dir = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        os.makedirs(wip_dir)
+        with open(os.path.join(wip_dir, "my-roadmap.md"), "w") as f:
+            f.write("---\nstatus: Done\n---\n# Roadmap\n")
+
+        cfg = {
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        warnings = validate_folder_status_coherence(cfg)
+        self.assertTrue(any('status declares "Done"' in w["message"] for w in warnings))
+
+    def test_validate_folder_status_coherence_no_warning_when_match(self):
+        """Arquivo em wip/ com status: WIP não gera warning."""
+        from trackfw import config as cfg_mod
+        from trackfw.validator import validate_folder_status_coherence
+        cfg_mod.reset()
+
+        wip_dir = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        os.makedirs(wip_dir)
+        with open(os.path.join(wip_dir, "my-roadmap.md"), "w") as f:
+            f.write("---\nstatus: WIP\n---\n# Roadmap\n")
+
+        cfg = {
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        warnings = validate_folder_status_coherence(cfg)
+        self.assertEqual(warnings, [])
+
+    def test_validate_filename_uniqueness_violation(self):
+        """Mesmo filename em wip/ e backlog/ gera violation."""
+        from trackfw import config as cfg_mod
+        from trackfw.validator import validate_filename_uniqueness
+        cfg_mod.reset()
+
+        for state in ["wip", "backlog"]:
+            d = os.path.join(self.tmp, "docs", "roadmaps", state)
+            os.makedirs(d)
+            with open(os.path.join(d, "duplicado.md"), "w") as f:
+                f.write("---\nstatus: WIP\n---\n")
+
+        cfg = {
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        violations = validate_filename_uniqueness(cfg)
+        self.assertTrue(any("duplicado.md" in v["message"] for v in violations))
+
+    def test_validate_filename_uniqueness_no_violation(self):
+        """Filenames únicos por estado não geram violation."""
+        from trackfw import config as cfg_mod
+        from trackfw.validator import validate_filename_uniqueness
+        cfg_mod.reset()
+
+        wip_dir = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        backlog_dir = os.path.join(self.tmp, "docs", "roadmaps", "backlog")
+        os.makedirs(wip_dir)
+        os.makedirs(backlog_dir)
+        with open(os.path.join(wip_dir, "feat-a.md"), "w") as f:
+            f.write("---\nstatus: WIP\n---\n")
+        with open(os.path.join(backlog_dir, "feat-b.md"), "w") as f:
+            f.write("---\nstatus: Backlog\n---\n")
+
+        cfg = {
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        violations = validate_filename_uniqueness(cfg)
+        self.assertEqual(violations, [])
+
+
 if __name__ == "__main__":
     unittest.main()
