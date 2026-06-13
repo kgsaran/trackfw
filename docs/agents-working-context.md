@@ -1318,3 +1318,38 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `npm/tests/validate_json.test.js` (novo) — 12 testes cobrindo: JSON válido, campos summary/violations/warnings presentes, contagem correta, exit_code consistente entre texto e JSON, mode válido, e comportamento texto inalterado sem --json.
 
 **Resultado:** 12/12 validate_json.test.js verdes | 45/45 testes existentes (validator + config + help + baseline) sem regressões | commit e push para `feat/v2.5-discovery-json-traceid`
+
+---
+
+## Sessão 2026-06-13 — Backend ML-2B Node.js paths configuráveis (CONCLUÍDO)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-2B — paths configuráveis `adr_dirs`, `req_dir`, `roadmap_dir` no CLI Node.js.
+
+**Diagnóstico:** `npm/src/config/index.js` e `npm/src/validator/index.js` já tinham os campos implementados. Faltava: strip de aspas em `req_dir` e `roadmap_dir` (parser atribuía val direto) e testes dos novos campos.
+
+**Arquivos modificados:**
+- `npm/src/config/index.js` — fix: `req_dir` e `roadmap_dir` agora removem aspas envolventes com `.replace(/^["']|["']$/g, '')`.
+- `npm/tests/config.test.js` — 4 novos testes ML-2B: `adr_dirs` com 2 itens, `req_dir` customizado, `roadmap_dir` customizado, defaults quando campos ausentes.
+
+**Resultado:** 12/12 config.test.js verdes (8 anteriores + 4 novos) | 0 falhas
+
+---
+
+## Sessão 2026-06-13 — Backend ML-2C Python (CONCLUÍDO)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-2C — paths configuráveis `adr_dirs`, `req_dir`, `roadmap_dir` no CLI Python.
+
+**Diagnóstico:** `config.py` e `validator.py` já estavam totalmente parametrizados com os campos `adr_dirs`, `req_dir`, `roadmap_dir` (defaults e parse implementados em versões anteriores). Nenhuma alteração necessária nesses arquivos.
+
+**Arquivos modificados:**
+- `pypi/tests/test_config.py` — classe `TestConfigPaths` adicionada com 4 testes: `test_config_adr_dirs_list`, `test_config_req_dir_custom` (UTF-8), `test_config_roadmap_dir_custom`, `test_config_paths_defaults`.
+
+**Resultado:** 17/17 test_config.py verdes | 191/191 testes pypi completos sem regressões | commit `41822c2` | push para `feat/v2.5-discovery-json-traceid`

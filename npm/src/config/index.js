@@ -165,8 +165,8 @@ function parse(content, cfg) {
 
     switch (key) {
       case 'adr_dirs':              inAdrDirs = true; adrDirs = []; break;
-      case 'req_dir':               cfg.reqDir = val; break;
-      case 'roadmap_dir':           cfg.roadmapDir = val; break;
+      case 'req_dir':               cfg.reqDir = val.replace(/^["']|["']$/g, ''); break;
+      case 'roadmap_dir':           cfg.roadmapDir = val.replace(/^["']|["']$/g, ''); break;
       case 'roadmap_namespacing':   cfg.roadmapNamespacing = val; break;
       case 'agents':                inAgents = true; agents = []; break;
       case 'governance_mode':       cfg.governanceMode = val; break;

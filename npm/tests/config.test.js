@@ -98,5 +98,39 @@ test('rules com aspas simples são reconhecidas', () => {
   })
 })
 
+// ML-2B — paths configuráveis adr_dirs/req_dir/roadmap_dir
+test('adr_dirs com dois itens → adrDirs é array com dois valores', () => {
+  const yaml = `adr_dirs:\n  - docs/adr\n  - docs/decisoes\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.deepStrictEqual(cfg.adrDirs, ['docs/adr', 'docs/decisoes'])
+  })
+})
+
+test('req_dir customizado → cfg.reqDir correto', () => {
+  const yaml = `req_dir: "docs/requisições"\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.strictEqual(cfg.reqDir, 'docs/requisições')
+  })
+})
+
+test('roadmap_dir customizado → cfg.roadmapDir correto', () => {
+  const yaml = `roadmap_dir: "docs/roadmaps/claude"\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.strictEqual(cfg.roadmapDir, 'docs/roadmaps/claude')
+  })
+})
+
+test('sem adr_dirs/req_dir/roadmap_dir → defaults corretos', () => {
+  withTmpDir(null, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.deepStrictEqual(cfg.adrDirs, ['docs/adr'])
+    assert.strictEqual(cfg.reqDir, 'docs/req')
+    assert.strictEqual(cfg.roadmapDir, 'docs/roadmaps')
+  })
+})
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
