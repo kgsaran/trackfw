@@ -71,9 +71,9 @@ def main():
     from trackfw.commands import configure as configure_cmd
     configure_cmd.register(subparsers)
 
-    # --- discover (stub) ---
-    discover_parser = subparsers.add_parser("discover", help="Discover governance context")
-    discover_parser.set_defaults(func=_stub("discover"))
+    # --- discover ---
+    from trackfw.commands import discover as discover_cmd
+    discover_cmd.register(subparsers)
 
     # --- metrics (stub) ---
     metrics_parser = subparsers.add_parser("metrics", help="Show delivery metrics")

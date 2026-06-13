@@ -382,8 +382,11 @@ def _cmd_discover(args):
     print(f"\nGovernance Score: {r['governance_score']}/100")
 
     if getattr(args, "init", False):
-        yaml_content = generate_yaml(r)
         yaml_path = os.path.join(cwd, "trackfw.yaml")
+        if _is_file(yaml_path):
+            print("\nAviso: trackfw.yaml ja existe — remova-o primeiro se quiser regenerar")
+            return
+        yaml_content = generate_yaml(r)
         with open(yaml_path, "w", encoding="utf-8") as f:
             f.write(yaml_content)
         print("\ntrackfw.yaml gerado")
@@ -397,12 +400,33 @@ def _cmd_discover(args):
         if not r["roadmap_dir"]:
             print("Aviso: nenhum diretório de roadmap detectado — impossível criar bootstrap log", file=sys.stderr)
             return
-        log_content = generate_bootstrap_log(r, cwd)
         log_path = os.path.join(cwd, r["roadmap_dir"], ".trackfw-log")
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
+        # ler entradas já existentes para dedup (chave: linha trimada)
+        existing: set[str] = set()
+        if _is_file(log_path):
+            try:
+                with open(log_path, encoding="utf-8") as f:
+                    for line in f:
+                        stripped = line.rstrip("\n")
+                        if stripped.strip():
+                            existing.add(stripped.strip())
+            except OSError:
+                pass
+
+        log_content = generate_bootstrap_log(r, cwd)
+        written = 0
         with open(log_path, "a", encoding="utf-8") as f:
-            f.write(log_content)
-        print(f"Bootstrap log gravado em {log_path}")
+            for line in log_content.splitlines():
+                if not line.strip():
+                    continue
+                if line.strip() in existing:
+                    continue
+                f.write(line + "\n")
+                written += 1
+
+        print(f"Bootstrap log gravado em {log_path} ({written} novas entradas)")
 
 
 # ---------------------------------------------------------------------------
