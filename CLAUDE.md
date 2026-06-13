@@ -37,6 +37,18 @@ make lint           # go vet ./...
 make install        # instala em /usr/local/bin
 ```
 
+## Regra Dura de Paridade — 3 CLIs (INVIOLÁVEL)
+
+Toda feature nova, correção de comportamento ou ajuste de lógica **DEVE ser implementada nos três CLIs**:
+
+| CLI | Localização | Stack |
+|-----|------------|-------|
+| Go | `internal/` | Go + cobra |
+| Node.js | `npm/src/` | Node.js puro (commander) |
+| Python | `pypi/trackfw/` | Python puro (argparse/click) |
+
+**Nenhum PR é aceito sem paridade nos 3 CLIs.** Mudanças doc-only, infra, templates de artefato e `trackfw serve` (exclusivo Go) são exceção explícita.
+
 ## Regras específicas
 
 - **Nunca commitar na `main` sem PR** (mesmo sendo projeto novo)

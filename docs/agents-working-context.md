@@ -802,3 +802,238 @@ trackfw/
 - `.github/workflows/deploy-docs.yml` — build + deploy automático no GitHub Pages em push na main
 
 **Resultado:** `npm run build` limpo | 9 HTMLs gerados em `.vitepress/dist/` | commit `d252e92` | push para `feat/v2.4-docs-site`
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-1A Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-1A do roadmap Python CLI nativo — `config.py` singleton + `__main__` entry point.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/__init__.py` — `__version__ = "2.2.0"`.
+- `pypi/trackfw/__main__.py` — entry point `from trackfw.cli import main; main()`.
+- `pypi/trackfw/config.py` — funções `defaults()`, `load(cwd=None)`, `reset()`, `_parse(content, cfg)`; singleton `_instance`; parse YAML linha a linha sem dependência externa; constantes `NAMESPACING_FLAT` e `NAMESPACING_BY_AGENT`; paridade exata com `npm/src/config/index.js`.
+- `pypi/tests/__init__.py` — vazio (declara pacote de testes).
+- `pypi/tests/test_config.py` — 5 testes unittest: `test_defaults_sem_yaml`, `test_le_campos_escalares`, `test_le_adr_dirs`, `test_singleton`, `test_reset`.
+
+**Resultado:** 5/5 testes verdes | commit `633016d` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-1B Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-1B do roadmap Python CLI nativo — módulo i18n Python com suporte pt-BR/en-US/es-ES.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/i18n/__init__.py` — detecção de locale via `TRACKFW_LANG`/`LANG`/`LANGUAGE`/`LC_ALL`; normalização `pt_BR*→pt-BR`, `es_*→es-ES`, qualquer outro→`en-US`; função `t(key, **vars)` com suporte a chaves aninhadas com `.` e interpolação `{{var}}`; fallback en-US e fallback para a própria chave; cache lazy com `reset()` para testes.
+- `pypi/trackfw/i18n/locales/{pt-BR,en-US,es-ES}.json` — copiados de `npm/src/i18n/locales/`
+- `pypi/tests/test_i18n.py` — 11 testes unittest: fallback en-US, pt-BR, es-ES, normalização LANG Unix, chave inexistente, chaves aninhadas, interpolação, detecção de locale, fallback de chave ausente.
+
+**Resultado:** 11/11 testes verdes | sintaxe validada com `py_compile` | commit `e3087d1` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo (CONCLUIDO)
+
+**Tarefa:** ML-1C do roadmap Python CLI nativo — `validator.py` com wip-limit, stale-wip, req-adr em paridade com `npm/src/validator/index.js`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/validator.py` — espelho completo do validator JS: list_dir, resolve_wip_dirs, parse_frontmatter, validate_wip_has_req, validate_reqs_have_adr, validate_blocked_has_req, validate_reqs_have_roadmap, validate_adrs_are_referenced, validate_wip_has_acceptance_criteria, validate_wip_limit (flat/by_agent/by_squad), validate_stale_wip, validate_reqs_not_blocked_by_draft_adrs, validate_frontmatter_presence, validate(), modo lenient.
+- `pypi/tests/test_validator.py` — 22 testes unittest passando (100%).
+- Commit `a2a0407` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2A Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-2A do roadmap Python CLI nativo — `generators/__init__.py` + `generators/adr.py` + `tests/test_generators_adr.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/generators/__init__.py` — pacote vazio (declara o subpacote generators).
+- `pypi/trackfw/generators/adr.py` — três funções: `next_adr_number(adr_dir)` escaneia ADR-NNN-*.md e retorna max+1; `slugify(title)` via unicodedata NFKD + encode ascii ignore, espaços→hífen, remove não-alfanuméricos; `generate_adr(title, status, adr_dirs, cwd)` cria arquivo ADR com frontmatter YAML e template markdown, numeração sequencial automática.
+- `pypi/tests/test_generators_adr.py` — 13 testes unittest: TestNextAdrNumber (4 casos), TestSlugify (5 casos), TestGenerateAdr (4 casos). Todos 13/13 verdes.
+- Commit `b9003b6` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2B Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-2B do roadmap Python CLI nativo — `generators/req.py` + `tests/test_generators_req.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/generators/req.py` — `slugify(title)` via `unicodedata.NFKD + ascii ignore`; `generate_req(title, req_dir, cwd)` cria `REQ-YYYY-MM-DD-<slug>.md` com frontmatter completo (name, title, status: Open, linked_adr: —, created, author) e seções Motivação, Critérios de Aceite, Fora de Escopo; cria `req_dir` automaticamente via `os.makedirs(exist_ok=True)`; retorna path absoluto.
+- `pypi/tests/test_generators_req.py` — 8 testes unittest: `test_generate_req_cria_arquivo`, `test_frontmatter_correto`, `test_slugify_com_acentos`, `test_cria_req_dir_se_nao_existir`, `test_retorna_path_absoluto`, `test_conteudo_template`, `test_slugify_lowercase`, `test_slugify_sem_acentos`.
+
+**Resultado:** 8/8 testes verdes | commit `bf64f67` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2D Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-2D do roadmap Python CLI nativo — `generators/init_gen.py` (scaffold flat/by_agent) + `tests/test_generators_init.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/generators/init_gen.py` — espelho de `npm/src/generators/init.js` em Python puro (stdlib apenas): `scaffold(cwd, opts)`, `_gov_dirs_by_agent(agents)`, `_write_trackfw_yaml(cwd, opts)`, `_write_example_adr(cwd, opts)`; constantes `GOV_DIRS_FLAT` e `ROADMAP_STATES`; ADR exemplo idempotente (não sobrescreve se já existir).
+- `pypi/tests/test_generators_init.py` — 12 testes unittest distribuídos em 5 classes: `TestScaffoldFlat` (2), `TestScaffoldByAgent` (2), `TestTrackfwYamlGerado` (3), `TestIdempotente` (2), `TestExemploADR` (3).
+- Suite completa: 82/82 testes verdes | `py_compile` OK | commit `591d4df` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2C Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-2C do roadmap Python CLI nativo — `generators/roadmap.py` + `tests/test_generators_roadmap.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/generators/roadmap.py` — espelho de `npm/src/generators/roadmap.js`: `slugify()`, `generate_roadmap()` (modo flat e by_agent), `move_roadmap()` (busca em todos os estados/agentes, atualiza `status:` no frontmatter, grava `.trackfw-log`); helpers `_state_dir`, `_agent_state_dir`, `_find_roadmap_matches`, `_append_transition_log`, `_roadmap_template`.
+- `pypi/tests/test_generators_roadmap.py` — 11 testes unittest: `TestSlugify` (3 casos), `TestGenerateFlat` (gera em `backlog/`), `TestGenerateByAgent` (gera em `zeus/backlog/`, fallback primeiro agente), `TestMoveBacklogParaWip` (move arquivo, atualiza frontmatter, grava log, levanta erros), `TestMoveBuscaEmTodosAgentes` (by_agent sem especificar agente).
+
+**Resultado:** 11/11 testes verdes | commit `3b3d3cb` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-3A Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-3A do roadmap Python CLI nativo — Wave 3 comandos CLI: `cli.py` (entry point argparse), `commands/adr.py`, `commands/req.py`, `commands/log.py`, `commands/__init__.py`, `tests/test_commands_basic.py` + atualizar `pyproject.toml`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/commands/__init__.py` — declara pacote de subcomandos.
+- `pypi/trackfw/cli.py` — entry point argparse com 11 subcomandos: `adr` e `req` e `log` com implementação real; `init`, `roadmap`, `validate`, `status`, `discover`, `metrics`, `context`, `sync`, `plugins` como stubs ("Not implemented yet", exit 0). Flag `--version` via argparse.
+- `pypi/trackfw/commands/adr.py` — `register(subparsers)` + `adr new <title> [--status] [--dir]`; chama `generate_adr()`, imprime path criado.
+- `pypi/trackfw/commands/req.py` — `register(subparsers)` + `req new [<title>]`; `input()` quando título ausente; chama `generate_req()`, imprime path criado.
+- `pypi/trackfw/commands/log.py` — `register(subparsers)` + `log <message>`; append em `.trackfw-log` na raiz do projeto com timestamp `YYYY-MM-DD HH:MM`.
+- `pypi/pyproject.toml` — entry point atualizado de `trackfw._cli:main` para `trackfw.cli:main`.
+- `pypi/tests/test_commands_basic.py` — 11 testes de integração via `subprocess.run` com `PYTHONPATH=PYPI_DIR`; cobre `--version`, `adr new` (3 variações), `log` (3 variações) e 4 stubs.
+
+**Resultado:** 93/93 testes verdes | commit `1f83956` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-3B Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-3B do roadmap Python CLI nativo — `commands/validate.py` + `commands/status.py` + `tests/test_commands_validate_status.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/commands/validate.py` — `register(subparsers)` e `run(args)`: chama `validator.validate()`, imprime violations como `✗ <msg>` (vermelho ANSI se terminal suportar), warnings como `⚠ <msg>`, `✓ Governance OK` se tudo limpo; exit code 1 se violations; informa usuario sobre modo lenient.
+- `pypi/trackfw/commands/status.py` — `register(subparsers)`, `run(args)`, `get_status(cwd)`: dashboard com contagem de ADRs, REQs (breakdown Open/Closed) e Roadmaps por estado; suporta modo `flat` e `by_agent` (totais agregados + seção "Roadmaps (by agent)" com contagens por agente); helper `_resolve(base, path)` garante paths relativos resolvidos ao `cwd` passado.
+- `pypi/tests/test_commands_validate_status.py` — 10 testes unittest (sem subprocess, `tempfile.mkdtemp()`): `TestValidateSemViolations`, `TestValidateComViolation`, `TestValidateLenientExitZero`, `TestStatusFlat` (3 asserts), `TestStatusByAgent` (4 asserts).
+
+**Resultado:** 10/10 testes novos verdes | suite completa 103/103 | commit `7e989a6` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-3C Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-3C do roadmap Python CLI nativo — `commands/roadmap.py` + `commands/discover.py` + `tests/test_commands_roadmap_discover.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/commands/roadmap.py` — `register(subparsers)` com 4 subcomandos:
+  - `roadmap new <title> [--agent]`: chama `generate_roadmap()`, imprime path criado.
+  - `roadmap move <filename> <state>`: chama `move_roadmap()`, imprime novo path.
+  - `roadmap list [--state]`: lista roadmaps por estado; modo flat agrupa por estado, modo by_agent agrupa por agente.
+  - `roadmap show <filename>`: busca por nome exato ou parcial (case-insensitive), imprime conteúdo.
+  - Helpers internos: `_list_flat`, `_list_by_agent`, `_find_file`.
+- `pypi/trackfw/commands/discover.py` — `register(subparsers)` com flags `--init` e `--bootstrap-log`:
+  - `scan(root_dir)`: detecta adr_dirs, req_dir, roadmap_dir, namespacing, agents, counts, score 0-100; espelha `internal/discover/discover.go` e `npm/src/commands/discover.js`.
+  - `generate_yaml(result)`: gera conteúdo do trackfw.yaml.
+  - `generate_bootstrap_log(result, root_dir)`: entradas retroativas baseadas em mtime dos arquivos em done/.
+  - `install_gates(result, root_dir)`: instala validate script, hook entry e CI workflow.
+  - `_cmd_discover(args)`: imprime relatório com score e executa --init/--bootstrap-log conforme flags.
+- `pypi/tests/test_commands_roadmap_discover.py` — 26 testes unittest:
+  - `TestRoadmapNew` (3 casos): flat, by_agent com agent, by_agent sem agent.
+  - `TestRoadmapMove` (3 casos): move válido, estado inválido, arquivo não encontrado.
+  - `TestRoadmapList` (3 casos): flat, by_agent, filtro por estado.
+  - `TestRoadmapShow` (3 casos): exato, parcial, não encontrado.
+  - `TestDiscoverScan` (6 casos): flat, by_agent, score 0, score parcial, github-actions, lefthook.
+  - `TestDiscoverInit` (2 casos): arquivo criado, conteúdo correto.
+  - `TestDiscoverBootstrapLog` (3 casos): flat, by_agent, sem done/.
+  - `TestRegister` (3 casos): argparse de roadmap e discover.
+
+**Resultado:** 26/26 testes novos verdes | suite completa 129/129 | commit `2fcbe02` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-3D Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-3D do roadmap Python CLI nativo — Wave 3 comandos extras: `commands/metrics.py`, `commands/context.py`, `commands/sync.py`, `commands/plugins.py`, `tests/test_commands_extras.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/commands/metrics.py` — `register(subparsers)` com flags `--days`, `--since`, `--export`; `_parse_log()` via regex LINE_RE (espelha JS); `_calculate()` (cycle time médio, throughput por semana, WIP age); `_print_metrics()` (tabela ASCII); `_export_csv()`; `_filter()` por datetime; `_format_duration()`.
+- `pypi/trackfw/commands/context.py` — `register(subparsers)` com flags `--format` e `--output`; `_get_context()` coleta ADRs/REQs/Roadmaps via config, chama `validator.validate()`, computa score, saída em markdown ou JSON; suporte a `--output FILE`.
+- `pypi/trackfw/commands/sync.py` — `register(subparsers)` com flag `--to` obrigatória (linear|jira); `_sync_to_linear()` e `_sync_to_jira()` via `urllib.request` (stdlib pura); helpers `_read_config_field`, `_extract_title`, `_extract_motivation`, `_inject_field`, `_is_status_open`; `_sync_to_provider()` percorre `docs/req/*.md`, pula não-Open e já sincronizados; saída tabular REQ/ISSUE.
+- `pypi/trackfw/commands/plugins.py` — `register(subparsers)` com sub-subcomandos `list` e `run`; `_find_plugins_in_path()` busca executáveis `trackfw-*` no PATH via `os.listdir` + `os.access`; `_cmd_run()` executa via `subprocess.run()`, repassa args e exit code.
+- `pypi/tests/test_commands_extras.py` — 17 testes unittest: TestMetrics (6), TestContext (6), TestPlugins (5). Todos 17/17 verdes.
+
+**Resultado:** 17/17 testes verdes | suite completa 146/146 | commit `09b54c5` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessao 2026-06-13 — Artemis ML-4A Python CLI QA (CONCLUIDO)
+
+**Tarefa:** ML-4A do roadmap Python CLI nativo — auditoria e validacao da suite de testes Python completa.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Resultado da auditoria:**
+- **146/146 testes verdes** (0 failures, 0 errors)
+- Suite completa em 0.688s
+- Working tree limpo — todos os testes ja estavam commitados junto com cada ML de implementacao
+- Nenhum teste faz chamada de rede (urllib/requests/http/socket ausentes nos arquivos de teste)
+- Nenhum arquivo temporario deixado em `pypi/` apos execucao
+- Cobertura verificada: config sem trackfw.yaml (test_defaults_sem_yaml), modo lenient (test_lenient_mode_violations_viram_warnings, test_validate_lenient_violations_viram_warnings), roadmap move (test_roadmap_move, test_roadmap_move_estado_invalido, test_roadmap_move_arquivo_nao_encontrado)
+- Total >= 100 testes: 146 (criterio atendido com folga)
+
+**Distribuicao por arquivo:**
+- test_config.py: 5 | test_i18n.py: 11 | test_validator.py: 22
+- test_generators_adr.py: 13 | test_generators_req.py: 8 | test_generators_roadmap.py: 11
+- test_generators_init.py: 12 | test_commands_basic.py: 11
+- test_commands_validate_status.py: 10 | test_commands_roadmap_discover.py: 26
+- test_commands_extras.py: 17
+
+**Agente:** Artemis | Status: CONCLUIDO
+
+---
+
+## Sessão 2026-06-13 — Zeus ML-4B + Fechamento v2.2 Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-4B (remoção do wrapper `_cli.py`) + fechamento do roadmap v2.2.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**ML-4B resultado:**
+- `pypi/trackfw/_cli.py` (wrapper Go binary) removido
+- Nenhuma referência residual a `_cli` nos arquivos Python/TOML
+- `pip install -e pypi/` sem warnings
+- `trackfw --version` → `trackfw 2.2.0`
+- `python3 -m trackfw --help` funcional
+- Commit `b2121dd` | push OK
+
+**Fechamento do roadmap:**
+- Roadmap movido de `wip/` para `done/`
+- Todos os 11 MLs marcados ✅ Concluído
+- Total: 146 testes, 12 comandos, zero dependências externas, Python 3.8+
+
+**Próximos passos:** criar PR para `feat/v2.2-python-cli-nativo` → `main` e gerar tag v2.2.0 após merge.
+
+**Agente:** Zeus | Status: CONCLUÍDO

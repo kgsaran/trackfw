@@ -1,0 +1,130 @@
+{
+  "init": {
+    "description": "Initialize trackfw governance in the current project",
+    "prompt": {
+      "projectName": "Project name?",
+      "projectType": "Project type?",
+      "frontendStack": "Frontend stack?",
+      "pkgManager": "Package manager?",
+      "backendLang": "Backend language?",
+      "backendFramework": "Backend framework?",
+      "gitHooks": "Git hooks?",
+      "ci": "CI system?",
+      "aiTools": "Which AI assistants do you use?",
+      "require_req_in_commit": "Require REQ reference in commit messages for feat/fix branches?",
+      "projectType_fullstack": "Full-stack (frontend + backend)",
+      "projectType_frontend": "Frontend only",
+      "projectType_backend": "Backend only",
+      "projectType_governance": "Governance only (no build stack)"
+    },
+    "success": "✓ trackfw initialized — run 'trackfw status' to see your governance state."
+  },
+  "adr": {
+    "description": "Manage Architecture Decision Records",
+    "new": {
+      "description": "Create a new Architecture Decision Record",
+      "prompt": {
+        "title": "ADR title?",
+        "status": "Initial status?",
+        "context": "Context (what motivates this decision)?",
+        "decision": "Decision (what was decided)?",
+        "consequences": "Consequences (positive and negative)?",
+        "alternatives": "Alternatives considered?"
+      },
+      "created": "✓ ADR created: {{path}}"
+    },
+    "list": {
+      "description": "List all ADRs with status",
+      "empty": "No ADRs found in docs/adr/"
+    }
+  },
+  "req": {
+    "description": "Manage Requirements",
+    "new": {
+      "description": "Create a new requirement",
+      "prompt": {
+        "title": "Project requirement",
+        "motivation": "Motivation (why is this needed)?",
+        "criteria": "Acceptance Criteria (one per line)",
+        "domainQuestion_authentication": "How will users authenticate?",
+        "domainQuestion_ui": "Is there an existing UI framework or design system?",
+        "domainQuestion_persistence": "Which database engine will be used?",
+        "domainQuestion_api": "Which API protocol will be used?",
+        "domainQuestion_deploy": "What is the deployment target?",
+        "domainQuestion_events": "Which event broker will be used?"
+      },
+      "detectedDomains": "Detected domains: {{domains}}",
+      "created": "✓ REQ created: {{path}}",
+      "adrDraftsCreated": "ADR drafts created:",
+      "resolveADRs": "Resolve these ADRs (set Status: Accepted) before creating a roadmap.",
+      "adrWarning": "warning: could not create ADR draft for {{slug}}: {{message}}"
+    },
+    "list": {
+      "description": "List all REQs with status",
+      "empty": "No REQs found in docs/req/"
+    }
+  },
+  "roadmap": {
+    "description": "Manage Roadmaps",
+    "list": {
+      "description": "List all roadmaps grouped by state",
+      "empty": "No roadmaps found."
+    },
+    "show": {
+      "description": "Show a roadmap by name (partial match)",
+      "notFound": "Roadmap not found: {{name}}"
+    },
+    "move": {
+      "description": "Move a roadmap between states (backlog|wip|blocked|done|abandoned)",
+      "success": "✓ Moved {{name}} → {{state}}",
+      "notFound": "Roadmap not found: {{name}}"
+    },
+    "new": {
+      "description": "Create a new roadmap from a REQ",
+      "created": "✓ Roadmap created: {{path}}"
+    }
+  },
+  "validate": {
+    "description": "Validate governance rules (use as CI gate)",
+    "ok": "✓ No violations found.",
+    "violations": "✗ Violations ({{count}}):",
+    "warnings": "⚠ Warnings ({{count}}):",
+    "lenient_mode": "Governance violations treated as warnings until {{date}}"
+  },
+  "status": {
+    "description": "Show project governance status"
+  },
+  "log": {
+    "description": "Show roadmap state transition history",
+    "empty": "No transitions recorded yet.",
+    "tail": "Number of recent transitions to show",
+    "header": "── trackfw log ─────────────────────────"
+  },
+  "plugins": {
+    "description": "Manage trackfw plugins",
+    "list": {
+      "description": "List installed plugins",
+      "empty": "No plugins installed. Use `trackfw plugins add <user/repo>` to install one."
+    },
+    "add": {
+      "description": "Install a plugin from GitHub Releases (user/repo or user/repo@tag)",
+      "installing": "Installing plugin from {{repo}}...",
+      "success": "Plugin \"{{name}}\" installed successfully."
+    },
+    "remove": {
+      "description": "Remove an installed plugin",
+      "success": "Plugin \"{{name}}\" removed."
+    }
+  },
+  "metrics": {
+    "description": "Show delivery metrics",
+    "no_data": "No transitions recorded yet.",
+    "since": "Filter by period (e.g. 7d, 30d, 90d)",
+    "export": "Export metrics to CSV file"
+  },
+  "errors": {
+    "notFound": "Not found: {{path}}",
+    "downloadFailed": "download failed: HTTP {{status}} for {{url}}",
+    "pluginNotFound": "plugin \"{{name}}\" not found"
+  }
+}

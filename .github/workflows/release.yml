@@ -80,7 +80,6 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
-          sed -i "s/^VERSION = .*/VERSION = \"$VERSION\"/" trackfw/_cli.py
 
       - name: Copia README para o pacote PyPI
         run: cp ../README.md README.md

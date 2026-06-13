@@ -1,6 +1,6 @@
 {
   "name": "trackfw",
-  "version": "2.1.0",
+  "version": "0.0.0-dev",
   "description": "CLI de governança para entrega de software: ADR → REQ → ROADMAP → kanban. Suporte nativo a agentes de IA (Claude Code, Gemini CLI, Cursor).",
   "keywords": [
     "cli",

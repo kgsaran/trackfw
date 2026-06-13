@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trackfw"
-version = "0.1.0"
+version = "0.0.0-dev"
 description = "Governed software delivery framework: ADR → REQ → ROADMAP → kanban"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = { text = "MIT" }
@@ -23,7 +23,7 @@ Homepage = "https://github.com/kgsaran/trackfw"
 Repository = "https://github.com/kgsaran/trackfw"
 
 [project.scripts]
-trackfw = "trackfw._cli:main"
+trackfw = "trackfw.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
