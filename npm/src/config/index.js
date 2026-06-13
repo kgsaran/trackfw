@@ -126,7 +126,7 @@ function parse(content, cfg) {
         const colonIdx = line.indexOf(':');
         if (colonIdx > 0) {
           const k = line.slice(0, colonIdx).trim();
-          const v = line.slice(colonIdx + 1).trim();
+          const v = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, '');
           if (k) rules[k] = v;
         }
         continue;
