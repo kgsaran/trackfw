@@ -1551,4 +1551,52 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 **Resultado:** 230/230 testes verdes | Sem regressões
 
+**Status:** CONCLUIDO
+**Commit:** `b572ee7`
+
 **Resultado:** 6/6 traceid.test.js verdes | 12/12 config.test.js sem regressões | 12/12 validate_json.test.js sem regressões
+
+---
+
+## Sessão 2026-06-13 — Backend (CONCLUIDO)
+
+**Tarefa:** ML-1B do roadmap v2.5.1 — popular `rule` e `file` no `--json` + adicionar `trace_id_field` e `rules.traceid_*` ao `trackfw help` no CLI Node.js.
+
+**Branch:** `fix/v2.5.1-json-rule-file-help-traceid`
+
+**Arquivos modificados:**
+- `npm/src/validator/index.js`: adicionado `_itemMeta` Map com funções `_setMeta`, `getItemMeta` e `resetMeta`; `applyRule` popula o map na fonte; pushs diretos (`req_has_adr`, `blocked_has_req`, `req_has_roadmap`, `frontmatter_presence`, `wip_limit`, `traceid_*`) também populam com nome de regra explícito. Exporta `getItemMeta` e `resetMeta` sem alterar representação interna (strings — baseline e tests inalterados).
+- `npm/src/commands/validate.js`: ao montar `--json`, enriquece cada item com `rule`/`file` via `getItemMeta()`.
+- `npm/src/commands/help.js`: adicionadas 6 entradas (`trace_id_field` + `rules.traceid_{orphan_roadmap, orphan_req, state_mismatch, duplicate_req, duplicate_roadmap}`) ao `configDocs` com todos os campos obrigatórios.
+- `npm/tests/validate_json.test.js`: dois novos testes com fixtures isoladas garantindo violations/warnings reais e verificando `rule`/`file`.
+- `npm/tests/help.test.js`: dez novos testes cobrindo `listKeys` e `describeKey` para todas as entradas traceid.
+
+**Resultado:** 14/14 validate_json.test.js | 20/20 help.test.js | 12/12 config.test.js | 6/6 baseline.test.js | 16/16 validator.test.js | 6/6 traceid.test.js | 15/15 namespacing.test.js | 13/13 discover.test.js — todos verdes, zero regressões.
+
+**Status:** CONCLUIDO
+**Commit:** `8536b7a`
+
+---
+
+## Sessão 2026-06-13 — Backend ML-1A v2.5.1 — auditoria Go (CONCLUÍDO)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `fix/v2.5.1-json-rule-file-help-traceid`
+
+**Tarefa:** Auditoria e verificação do ML-1A do roadmap v2.5.1 — popular `rule` e `file` no `--json` + adicionar `trace_id_field` e `rules.traceid_*` ao `trackfw help` (CLI Go).
+
+**Resultado da auditoria:**
+- `internal/validator/result.go` — `TaggedMsg{Rule, Msg}`, `extractFile()`, `BuildResultTagged()` implementados; `BuildResult()` mantido para compatibilidade com assinatura original.
+- `internal/validator/validator.go` — `applyRuleTagged()`, `validateUnfilteredTagged()`, `extractRulePrefix()` e `ValidateTagged()` implementados; assinaturas públicas `Validate()`/`ValidateUnfiltered()`/`SaveBaseline()` inalteradas; filtro de baseline e modo lenient preservados em `ValidateTagged`.
+- `internal/commands/validate.go` — modo `--json` usa `ValidateTagged()` + `BuildResultTagged()`; modo texto usa `Validate()` original sem alteração.
+- `internal/commands/help.go` — 6 entradas adicionadas: `trace_id_field` + `rules.traceid_{orphan_roadmap,orphan_req,state_mismatch,duplicate_req,duplicate_roadmap}`.
+- `internal/commands/validate_json_test.go` — asserção `rule='wip_has_req'` e `file='ROADMAP-sem-req.md'` adicionada ao `TestValidateJSONExitCode`.
+- `internal/commands/help_test.go` — asserções `trace_id_field` e `rules.traceid_orphan_roadmap` adicionadas ao `TestHelpNoArgs`.
+
+**Testes verificados:**
+- `go test ./internal/commands/ -run 'TestValidateJSON|TestHelp' -v` — todos PASS
+- `go test ./...` — sem novas regressões; `TestMoveRoadmap_ByAgent` falha pré-existente inalterada
+- `make build` — limpo
+
+**Observação:** os arquivos Go já estavam commitados no branch (provavelmente por sessão anterior). A implementação desta auditoria reproduziu o mesmo código já presente no HEAD — confirmando que o ML-1A Go estava correto e completo.
