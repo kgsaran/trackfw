@@ -7,6 +7,107 @@ import (
 	"strings"
 )
 
+// InstallGates instala os artefatos de governança num projeto brownfield:
+// validate script, hook entry e (se github-actions) CI workflow.
+func InstallGates(r DiscoveryResult, rootDir string) error {
+	if err := writeValidateScript(rootDir); err != nil {
+		return err
+	}
+	if err := installHook(r.HookFramework, rootDir); err != nil {
+		return err
+	}
+	if r.CISystem == "github-actions" {
+		if err := writeCIWorkflow(rootDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeValidateScript(rootDir string) error {
+	scriptsDir := filepath.Join(rootDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		return fmt.Errorf("creating scripts dir: %w", err)
+	}
+	content := "#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n"
+	dest := filepath.Join(scriptsDir, "trackfw-validate.sh")
+	if err := os.WriteFile(dest, []byte(content), 0755); err != nil {
+		return fmt.Errorf("writing validate script: %w", err)
+	}
+	return nil
+}
+
+func installHook(framework, rootDir string) error {
+	hookEntry := "\npre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n"
+	huskyEntry := "\nscripts/trackfw-validate.sh\n"
+
+	switch framework {
+	case "lefthook":
+		cfgPath := filepath.Join(rootDir, "lefthook.yml")
+		if !fileExists(cfgPath) {
+			cfgPath = filepath.Join(rootDir, ".lefthook.yml")
+		}
+		content, err := os.ReadFile(cfgPath)
+		if err != nil {
+			return fmt.Errorf("reading lefthook config: %w", err)
+		}
+		if strings.Contains(string(content), "trackfw") {
+			// já configurado — idempotente
+			return nil
+		}
+		f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("opening lefthook config: %w", err)
+		}
+		defer f.Close()
+		_, err = f.WriteString(hookEntry)
+		return err
+
+	case "husky":
+		huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+		f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
+		if err != nil {
+			return fmt.Errorf("opening husky pre-commit: %w", err)
+		}
+		defer f.Close()
+		_, err = f.WriteString(huskyEntry)
+		return err
+
+	default:
+		fmt.Println("⚠ No hook framework detected — skipping hook installation")
+	}
+	return nil
+}
+
+func writeCIWorkflow(rootDir string) error {
+	workflowsDir := filepath.Join(rootDir, ".github", "workflows")
+	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+		return fmt.Errorf("creating workflows dir: %w", err)
+	}
+	dest := filepath.Join(workflowsDir, "trackfw-validate.yml")
+	if fileExists(dest) {
+		// idempotente — não sobrescreve
+		return nil
+	}
+	content := `name: trackfw validate
+on: [push, pull_request]
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@latest
+      - run: trackfw validate
+`
+	if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
+		return fmt.Errorf("writing CI workflow: %w", err)
+	}
+	return nil
+}
+
 // DiscoveryResult contém a estrutura de governança detectada em um repositório.
 type DiscoveryResult struct {
 	ADRDirs            []string
@@ -19,7 +120,9 @@ type DiscoveryResult struct {
 	RoadmapCount       int
 	HasTrackfwYAML     bool
 	HasTrackfwLog      bool
-	GovernanceScore    int // 0-100
+	GovernanceScore    int    // 0-100
+	HookFramework      string // "lefthook", "husky", "pre-commit", "none"
+	CISystem           string // "github-actions", "gitlab", "none"
 }
 
 // Scan escaneia rootDir e retorna a estrutura de governança detectada.
@@ -98,7 +201,29 @@ func Scan(rootDir string) (DiscoveryResult, error) {
 		r.HasTrackfwLog = fileExists(filepath.Join(roadmapRoot, ".trackfw-log"))
 	}
 
-	// 5. Score
+	// 5. Hook framework
+	switch {
+	case fileExists(filepath.Join(rootDir, "lefthook.yml")) || fileExists(filepath.Join(rootDir, ".lefthook.yml")):
+		r.HookFramework = "lefthook"
+	case dirExists(filepath.Join(rootDir, ".husky")):
+		r.HookFramework = "husky"
+	case fileExists(filepath.Join(rootDir, ".pre-commit-config.yaml")):
+		r.HookFramework = "pre-commit"
+	default:
+		r.HookFramework = "none"
+	}
+
+	// 6. CI system
+	switch {
+	case dirExists(filepath.Join(rootDir, ".github", "workflows")):
+		r.CISystem = "github-actions"
+	case fileExists(filepath.Join(rootDir, ".gitlab-ci.yml")):
+		r.CISystem = "gitlab"
+	default:
+		r.CISystem = "none"
+	}
+
+	// 7. Score
 	r.GovernanceScore = calcScore(r)
 
 	return r, nil
@@ -161,6 +286,9 @@ func GenerateYAML(r DiscoveryResult) string {
 			sb.WriteString(fmt.Sprintf("  - %s\n", a))
 		}
 	}
+
+	sb.WriteString(fmt.Sprintf("hooks: %s\n", r.HookFramework))
+	sb.WriteString(fmt.Sprintf("ci: %s\n", r.CISystem))
 
 	return sb.String()
 }

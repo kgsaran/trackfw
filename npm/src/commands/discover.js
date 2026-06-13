@@ -17,6 +17,8 @@ function scan(rootDir) {
     hasTrackfwYAML: false,
     hasTrackfwLog: false,
     governanceScore: 0,
+    hookFramework: 'none',
+    ciSystem: 'none',
   };
 
   // trackfw.yaml
@@ -84,6 +86,26 @@ function scan(rootDir) {
     r.hasTrackfwLog = fs.existsSync(path.join(roadmapRoot, '.trackfw-log'));
   }
 
+  // Hook framework
+  if (isFile(path.join(rootDir, 'lefthook.yml')) || isFile(path.join(rootDir, '.lefthook.yml'))) {
+    r.hookFramework = 'lefthook';
+  } else if (isDir(path.join(rootDir, '.husky'))) {
+    r.hookFramework = 'husky';
+  } else if (isFile(path.join(rootDir, '.pre-commit-config.yaml'))) {
+    r.hookFramework = 'pre-commit';
+  } else {
+    r.hookFramework = 'none';
+  }
+
+  // CI
+  if (isDir(path.join(rootDir, '.github', 'workflows'))) {
+    r.ciSystem = 'github-actions';
+  } else if (isFile(path.join(rootDir, '.gitlab-ci.yml'))) {
+    r.ciSystem = 'gitlab';
+  } else {
+    r.ciSystem = 'none';
+  }
+
   r.governanceScore = calcScore(r);
   return r;
 }
@@ -119,6 +141,9 @@ function generateYAML(r) {
     r.agents.forEach(a => { out += `  - ${a}\n`; });
   }
 
+  out += `hooks: ${r.hookFramework}\n`;
+  out += `ci: ${r.ciSystem}\n`;
+
   return out;
 }
 
@@ -149,9 +174,69 @@ function generateBootstrapLog(r, rootDir) {
   return out;
 }
 
+// installGates instala artefatos de governança: validate script, hook entry, CI workflow.
+function installGates(r, rootDir) {
+  writeValidateScript(rootDir);
+  installHook(r.hookFramework, rootDir);
+  if (r.ciSystem === 'github-actions') {
+    writeCIWorkflow(rootDir);
+  }
+}
+
+function writeValidateScript(rootDir) {
+  const scriptsDir = path.join(rootDir, 'scripts');
+  if (!isDir(scriptsDir)) fs.mkdirSync(scriptsDir, { recursive: true });
+  const content = '#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n';
+  const dest = path.join(scriptsDir, 'trackfw-validate.sh');
+  fs.writeFileSync(dest, content, { mode: 0o755 });
+}
+
+function installHook(framework, rootDir) {
+  const hookEntry = '\npre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n';
+  const huskyEntry = '\nscripts/trackfw-validate.sh\n';
+
+  if (framework === 'lefthook') {
+    let cfgPath = path.join(rootDir, 'lefthook.yml');
+    if (!isFile(cfgPath)) cfgPath = path.join(rootDir, '.lefthook.yml');
+    const content = fs.readFileSync(cfgPath, 'utf8');
+    if (content.includes('trackfw')) return; // idempotente
+    fs.appendFileSync(cfgPath, hookEntry, 'utf8');
+  } else if (framework === 'husky') {
+    const huskyHook = path.join(rootDir, '.husky', 'pre-commit');
+    fs.appendFileSync(huskyHook, huskyEntry, 'utf8');
+  } else {
+    console.log('⚠ No hook framework detected — skipping hook installation');
+  }
+}
+
+function writeCIWorkflow(rootDir) {
+  const workflowsDir = path.join(rootDir, '.github', 'workflows');
+  if (!isDir(workflowsDir)) fs.mkdirSync(workflowsDir, { recursive: true });
+  const dest = path.join(workflowsDir, 'trackfw-validate.yml');
+  if (isFile(dest)) return; // idempotente
+  const content = `name: trackfw validate
+on: [push, pull_request]
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@latest
+      - run: trackfw validate
+`;
+  fs.writeFileSync(dest, content, 'utf8');
+}
+
 // helpers
 function isDir(p) {
   try { return fs.statSync(p).isDirectory(); } catch { return false; }
+}
+
+function isFile(p) {
+  try { return fs.statSync(p).isFile(); } catch { return false; }
 }
 
 function countMD(dir) {
@@ -228,12 +313,32 @@ cmd.action((opts) => {
     console.log('✓ .trackfw-log found');
   }
 
+  // hooks
+  if (r.hookFramework !== 'none') {
+    console.log(`✓ Hooks: ${r.hookFramework}`);
+  } else {
+    console.log('⚠ No hook framework detected');
+  }
+
+  // CI
+  if (r.ciSystem !== 'none') {
+    console.log(`✓ CI: ${r.ciSystem}`);
+  } else {
+    console.log('⚠ No CI system detected');
+  }
+
   console.log(`\nGovernance Score: ${r.governanceScore}/100`);
 
   if (opts.init) {
     const yaml = generateYAML(r);
     fs.writeFileSync('trackfw.yaml', yaml, 'utf8');
     console.log('\n✓ trackfw.yaml generated');
+    try {
+      installGates(r, cwd);
+      console.log('✓ governance gates installed');
+    } catch (e) {
+      console.log(`⚠ gates install partial: ${e.message}`);
+    }
   }
 
   if (opts.bootstrapLog) {

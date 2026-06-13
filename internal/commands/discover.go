@@ -87,6 +87,20 @@ func NewDiscoverCmd() *cobra.Command {
 				fmt.Println("✓ .trackfw-log found")
 			}
 
+			// hooks
+			if r.HookFramework != "none" {
+				fmt.Printf("✓ Hooks: %s\n", r.HookFramework)
+			} else {
+				fmt.Println("⚠ No hook framework detected")
+			}
+
+			// CI
+			if r.CISystem != "none" {
+				fmt.Printf("✓ CI: %s\n", r.CISystem)
+			} else {
+				fmt.Println("⚠ No CI system detected")
+			}
+
 			fmt.Printf("\nGovernance Score: %d/100\n", r.GovernanceScore)
 
 			// --init
@@ -96,6 +110,11 @@ func NewDiscoverCmd() *cobra.Command {
 					return fmt.Errorf("writing trackfw.yaml: %w", err)
 				}
 				fmt.Println("\n✓ trackfw.yaml generated")
+				if err := discover.InstallGates(r, cwd); err != nil {
+					fmt.Printf("⚠ gates install partial: %v\n", err)
+				} else {
+					fmt.Println("✓ governance gates installed")
+				}
 			}
 
 			// --bootstrap-log

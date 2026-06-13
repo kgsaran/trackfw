@@ -30,6 +30,9 @@ func TestScan_Flat(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "docs/adr/ADR-001.md"), "# ADR")
 	mustWriteFile(t, filepath.Join(dir, "docs/req/REQ-001.md"), "# REQ")
 	mustWriteFile(t, filepath.Join(dir, "docs/roadmaps/done/ROADMAP-001.md"), "# R")
+	// hook e CI
+	mustWriteFile(t, filepath.Join(dir, "lefthook.yml"), "")
+	mustMkdir(t, dir, ".github/workflows")
 
 	r, err := Scan(dir)
 	if err != nil {
@@ -47,6 +50,12 @@ func TestScan_Flat(t *testing.T) {
 	if r.RoadmapCount != 1 {
 		t.Errorf("expected 1 roadmap, got %d", r.RoadmapCount)
 	}
+	if r.HookFramework != "lefthook" {
+		t.Errorf("expected lefthook, got %s", r.HookFramework)
+	}
+	if r.CISystem != "github-actions" {
+		t.Errorf("expected github-actions, got %s", r.CISystem)
+	}
 }
 
 func TestScan_ByAgent(t *testing.T) {
@@ -59,6 +68,9 @@ func TestScan_ByAgent(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "docs/requisições/REQ-001.md"), "# REQ")
 	mustWriteFile(t, filepath.Join(dir, "docs/roadmaps/zeus/wip/ROADMAP-001.md"), "# R")
 	mustWriteFile(t, filepath.Join(dir, "docs/roadmaps/apolo/done/ROADMAP-002.md"), "# R")
+	// hook e CI
+	mustWriteFile(t, filepath.Join(dir, "lefthook.yml"), "")
+	mustMkdir(t, dir, ".github/workflows")
 
 	r, err := Scan(dir)
 	if err != nil {
@@ -76,6 +88,12 @@ func TestScan_ByAgent(t *testing.T) {
 	if r.RoadmapCount != 2 {
 		t.Errorf("expected 2 roadmaps, got %d", r.RoadmapCount)
 	}
+	if r.HookFramework != "lefthook" {
+		t.Errorf("expected lefthook, got %s", r.HookFramework)
+	}
+	if r.CISystem != "github-actions" {
+		t.Errorf("expected github-actions, got %s", r.CISystem)
+	}
 }
 
 func TestScan_CMDBLike(t *testing.T) {
@@ -88,6 +106,9 @@ func TestScan_CMDBLike(t *testing.T) {
 		mustMkdir(t, dir, "docs/adr/"+agent)
 	}
 	mustMkdir(t, dir, "docs/requisições")
+	// hook e CI
+	mustWriteFile(t, filepath.Join(dir, "lefthook.yml"), "")
+	mustMkdir(t, dir, ".github/workflows")
 
 	r, err := Scan(dir)
 	if err != nil {
@@ -104,6 +125,97 @@ func TestScan_CMDBLike(t *testing.T) {
 	}
 	if len(r.ADRDirs) != 6 {
 		t.Errorf("expected 6 ADR dirs, got %d", len(r.ADRDirs))
+	}
+	if r.HookFramework != "lefthook" {
+		t.Errorf("expected lefthook, got %s", r.HookFramework)
+	}
+	if r.CISystem != "github-actions" {
+		t.Errorf("expected github-actions, got %s", r.CISystem)
+	}
+}
+
+func TestScan_HookAndCI(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "lefthook.yml"), "")
+	mustMkdir(t, dir, ".github/workflows")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.HookFramework != "lefthook" {
+		t.Errorf("expected lefthook, got %s", r.HookFramework)
+	}
+	if r.CISystem != "github-actions" {
+		t.Errorf("expected github-actions, got %s", r.CISystem)
+	}
+}
+
+func TestInstallGates_Lefthook_GithubActions(t *testing.T) {
+	dir := t.TempDir()
+	// cria lefthook.yml (sem entrada trackfw)
+	mustWriteFile(t, filepath.Join(dir, "lefthook.yml"), "# lefthook config\n")
+	// cria .github/workflows (vazio — sem workflow existente)
+	mustMkdir(t, dir, ".github/workflows")
+
+	r := DiscoveryResult{
+		HookFramework: "lefthook",
+		CISystem:      "github-actions",
+	}
+
+	if err := InstallGates(r, dir); err != nil {
+		t.Fatalf("InstallGates error: %v", err)
+	}
+
+	// validate script criado
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-validate.sh")
+	content, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("validate script not found: %v", err)
+	}
+	if !containsSubstr(string(content), "trackfw validate") {
+		t.Error("validate script should contain 'trackfw validate'")
+	}
+
+	// lefthook.yml atualizado com entrada trackfw
+	hookContent, _ := os.ReadFile(filepath.Join(dir, "lefthook.yml"))
+	if !containsSubstr(string(hookContent), "trackfw") {
+		t.Error("lefthook.yml should contain trackfw entry")
+	}
+
+	// CI workflow criado
+	workflowPath := filepath.Join(dir, ".github", "workflows", "trackfw-validate.yml")
+	if _, err := os.Stat(workflowPath); err != nil {
+		t.Errorf("CI workflow not found: %v", err)
+	}
+}
+
+func TestInstallGates_Idempotente(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "lefthook.yml"), "# trackfw already here\n")
+	mustMkdir(t, dir, ".github/workflows")
+	// workflow já existe
+	mustWriteFile(t, filepath.Join(dir, ".github/workflows/trackfw-validate.yml"), "# existing\n")
+
+	r := DiscoveryResult{
+		HookFramework: "lefthook",
+		CISystem:      "github-actions",
+	}
+
+	if err := InstallGates(r, dir); err != nil {
+		t.Fatalf("InstallGates error: %v", err)
+	}
+
+	// lefthook não deve ter sido modificado (já contém trackfw)
+	hookContent, _ := os.ReadFile(filepath.Join(dir, "lefthook.yml"))
+	if string(hookContent) != "# trackfw already here\n" {
+		t.Error("lefthook.yml should not be modified when trackfw is already present")
+	}
+
+	// workflow não deve ter sido sobrescrito
+	wfContent, _ := os.ReadFile(filepath.Join(dir, ".github/workflows/trackfw-validate.yml"))
+	if string(wfContent) != "# existing\n" {
+		t.Error("existing CI workflow should not be overwritten")
 	}
 }
 
