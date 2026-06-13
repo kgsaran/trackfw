@@ -341,17 +341,15 @@ func TestValidateWIPLimit_ByAgent(t *testing.T) {
 	config.Reset()
 	t.Cleanup(config.Reset)
 
-	// Criar trackfw.yaml com by_agent e wip_limit: 1
 	yaml := "roadmap_namespacing: by_agent\nagents:\n- zeus\nwip_limit: 1\n"
 	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(yaml), 0644); err != nil {
 		t.Fatalf("escrever trackfw.yaml: %v", err)
 	}
 
-	// Criar 2 roadmaps em zeus/wip
 	writeFile(t, dir, "docs/roadmaps/zeus/wip/ROADMAP-alpha.md", "# Alpha\nREQ: REQ-001\n## Acceptance Criteria\n- [ ] ok\n")
 	writeFile(t, dir, "docs/roadmaps/zeus/wip/ROADMAP-beta.md", "# Beta\nREQ: REQ-002\n## Acceptance Criteria\n- [ ] ok\n")
 
-	warnings, err := validateWIPLimit()
+	_, warnings, err := validateWIPLimit()
 	if err != nil {
 		t.Fatalf("validateWIPLimit() erro: %v", err)
 	}
@@ -360,6 +358,106 @@ func TestValidateWIPLimit_ByAgent(t *testing.T) {
 	}
 	if !hasWarning(warnings, "limit: 1") {
 		t.Errorf("esperado warning mencionando 'limit: 1', obteve: %v", warnings)
+	}
+}
+
+// TestValidateWIPLimit_Global_OK — 1 WIP, limit=1 → sem warning
+func TestValidateWIPLimit_Global_OK(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	chdir(t, dir)
+
+	writeFile(t, dir, "trackfw.yaml", "wip_limit: 1\nwip_by_squad: false\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-alpha.md", "# Roadmap: Alpha\n\nREQ: REQ-001\nsquad: platform\n\n## Acceptance Criteria\n- [ ] build\n")
+
+	_, warnings, err := validateWIPLimit()
+	if err != nil {
+		t.Fatalf("validateWIPLimit() erro: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings com 1 WIP e limit=1, obteve: %v", warnings)
+	}
+}
+
+// TestValidateWIPLimit_Global_Exceed — 2 WIPs, limit=1 → 1 warning
+func TestValidateWIPLimit_Global_Exceed(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	chdir(t, dir)
+
+	writeFile(t, dir, "trackfw.yaml", "wip_limit: 1\nwip_by_squad: false\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-alpha.md", "# Roadmap: Alpha\n\nREQ: REQ-001\nsquad: platform\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-beta.md", "# Roadmap: Beta\n\nREQ: REQ-002\nsquad: platform\n")
+
+	_, warnings, err := validateWIPLimit()
+	if err != nil {
+		t.Fatalf("validateWIPLimit() erro: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("esperado 1 warning com 2 WIPs e limit=1, obteve %d: %v", len(warnings), warnings)
+	}
+	if !hasWarning(warnings, "roadmaps in wip/") {
+		t.Errorf("warning esperado conter 'roadmaps in wip/', obteve: %v", warnings)
+	}
+}
+
+// TestValidateWIPLimit_Global_HighLimit — 2 WIPs, limit=3 → sem warning
+func TestValidateWIPLimit_Global_HighLimit(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	chdir(t, dir)
+
+	writeFile(t, dir, "trackfw.yaml", "wip_limit: 3\nwip_by_squad: false\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-alpha.md", "# Roadmap: Alpha\n\nREQ: REQ-001\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-beta.md", "# Roadmap: Beta\n\nREQ: REQ-002\n")
+
+	_, warnings, err := validateWIPLimit()
+	if err != nil {
+		t.Fatalf("validateWIPLimit() erro: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings com 2 WIPs e limit=3, obteve: %v", warnings)
+	}
+}
+
+// TestValidateWIPLimit_BySquad_OK — 2 WIPs de squads diferentes, limit=1 → sem warning
+func TestValidateWIPLimit_BySquad_OK(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	chdir(t, dir)
+
+	writeFile(t, dir, "trackfw.yaml", "wip_limit: 1\nwip_by_squad: true\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-alpha.md", "# Roadmap: Alpha\n\nREQ: REQ-001\nsquad: platform\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-beta.md", "# Roadmap: Beta\n\nREQ: REQ-002\nsquad: backend\n")
+
+	_, warnings, err := validateWIPLimit()
+	if err != nil {
+		t.Fatalf("validateWIPLimit() erro: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings com 2 WIPs em squads distintos e limit=1, obteve: %v", warnings)
+	}
+}
+
+// TestValidateWIPLimit_BySquad_Exceed — 2 WIPs do mesmo squad, limit=1 → 1 warning
+func TestValidateWIPLimit_BySquad_Exceed(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	chdir(t, dir)
+
+	writeFile(t, dir, "trackfw.yaml", "wip_limit: 1\nwip_by_squad: true\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-alpha.md", "# Roadmap: Alpha\n\nREQ: REQ-001\nsquad: platform\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-beta.md", "# Roadmap: Beta\n\nREQ: REQ-002\nsquad: platform\n")
+
+	_, warnings, err := validateWIPLimit()
+	if err != nil {
+		t.Fatalf("validateWIPLimit() erro: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("esperado 1 warning com 2 WIPs do mesmo squad e limit=1, obteve %d: %v", len(warnings), warnings)
+	}
+	if !hasWarning(warnings, "platform") {
+		t.Errorf("warning esperado mencionar squad 'platform', obteve: %v", warnings)
 	}
 }
 

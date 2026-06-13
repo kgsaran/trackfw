@@ -12,6 +12,128 @@ import (
 
 const staleWIPDays = 7
 
+// WIPConfig armazena configuração de WIP limit lida do trackfw.yaml.
+type WIPConfig struct {
+	Limit   int  // default 1
+	BySquad bool // default false
+}
+
+// readWIPConfig lê wip_limit e wip_by_squad do trackfw.yaml no CWD.
+// Retorna {Limit: 1, BySquad: false} se o arquivo não existe ou os campos estão ausentes.
+func readWIPConfig() WIPConfig {
+	cfg := WIPConfig{Limit: 1, BySquad: false}
+	content, err := os.ReadFile("trackfw.yaml")
+	if err != nil {
+		return cfg
+	}
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "wip_limit:") {
+			val := strings.TrimSpace(strings.TrimPrefix(line, "wip_limit:"))
+			fields := strings.Fields(val)
+			if len(fields) > 0 {
+				var n int
+				if _, err := fmt.Sscanf(fields[0], "%d", &n); err == nil && n > 0 {
+					cfg.Limit = n
+				}
+			}
+		}
+		if strings.HasPrefix(line, "wip_by_squad:") {
+			val := strings.TrimSpace(strings.TrimPrefix(line, "wip_by_squad:"))
+			fields := strings.Fields(val)
+			if len(fields) > 0 && fields[0] == "true" {
+				cfg.BySquad = true
+			}
+		}
+	}
+	return cfg
+}
+
+// parseSquadFromFrontmatter lê um arquivo markdown e extrai o valor da linha "squad: <valor>".
+// Retorna string vazia se o campo está ausente ou vazio.
+func parseSquadFromFrontmatter(path string) string {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "squad:") {
+			val := strings.TrimSpace(strings.TrimPrefix(trimmed, "squad:"))
+			return val
+		}
+	}
+	return ""
+}
+
+// validateWIPLimit verifica o WIP limit — por agente, por squad ou global — conforme trackfw.yaml.
+func validateWIPLimit() (violations []string, warnings []string, err error) {
+	projectCfg := config.Load()
+
+	if projectCfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := projectCfg.Agents
+		if len(agents) == 0 {
+			entries, readErr := os.ReadDir(projectCfg.RoadmapDir)
+			if readErr == nil {
+				for _, e := range entries {
+					if e.IsDir() {
+						agents = append(agents, e.Name())
+					}
+				}
+			}
+		}
+		wipCfg := readWIPConfig()
+		for _, agent := range agents {
+			files, globErr := filepath.Glob(filepath.Join(projectCfg.RoadmapDir, agent, "wip", "*.md"))
+			if globErr != nil {
+				return nil, nil, globErr
+			}
+			if len(files) > wipCfg.Limit {
+				warnings = append(warnings, fmt.Sprintf(
+					"%d roadmaps in wip/ for agent %q (limit: %d) — consider focusing",
+					len(files), agent, wipCfg.Limit,
+				))
+			}
+		}
+		return
+	}
+
+	files, globErr := filepath.Glob(filepath.Join(projectCfg.RoadmapDir, "wip", "*.md"))
+	if globErr != nil {
+		return nil, nil, globErr
+	}
+
+	wipCfg := readWIPConfig()
+
+	if !wipCfg.BySquad {
+		if len(files) > wipCfg.Limit {
+			warnings = append(warnings, fmt.Sprintf(
+				"%d roadmaps in wip/ (limit: %d) — consider focusing",
+				len(files), wipCfg.Limit,
+			))
+		}
+		return
+	}
+
+	bySquad := map[string][]string{}
+	for _, f := range files {
+		squad := parseSquadFromFrontmatter(f)
+		if squad == "" {
+			squad = "(no squad)"
+		}
+		bySquad[squad] = append(bySquad[squad], filepath.Base(f))
+	}
+	for squad, items := range bySquad {
+		if len(items) > wipCfg.Limit {
+			warnings = append(warnings, fmt.Sprintf(
+				"squad %q has %d roadmaps in wip/ (limit: %d)",
+				squad, len(items), wipCfg.Limit,
+			))
+		}
+	}
+	return
+}
+
 // GovernanceMode armazena o modo de governança lido do trackfw.yaml.
 type GovernanceMode struct {
 	Mode         string    // "strict" (default) ou "lenient"
@@ -109,11 +231,12 @@ func Validate() (violations []string, warnings []string, err error) {
 	}
 	violations = append(violations, criteriaViolations...)
 
-	wipWarnings, e := validateWIPLimit()
+	wipViolationsLimit, wipWarningsLimit, e := validateWIPLimit()
 	if e != nil {
 		return nil, nil, e
 	}
-	warnings = append(warnings, wipWarnings...)
+	violations = append(violations, wipViolationsLimit...)
+	warnings = append(warnings, wipWarningsLimit...)
 
 	staleWarnings, e := validateStaleWIP()
 	if e != nil {
@@ -171,6 +294,30 @@ func GetStatus() (string, error) {
 		sb.WriteString(fmt.Sprintf("\n🔄 WIP (%d)\n", len(wip)))
 		for _, f := range wip {
 			sb.WriteString(fmt.Sprintf("   %s\n", f))
+		}
+
+		wipCfg := readWIPConfig()
+		if wipCfg.BySquad && len(wip) > 0 {
+			bySquad := map[string]int{}
+			for _, f := range wip {
+				squad := parseSquadFromFrontmatter(filepath.Join(cfg.RoadmapDir, "wip", f))
+				if squad == "" {
+					squad = "(no squad)"
+				}
+				bySquad[squad]++
+			}
+			sb.WriteString(fmt.Sprintf("\n⚙ WIP by Squad (limit: %d per squad)\n", wipCfg.Limit))
+			for squad, count := range bySquad {
+				status := "✓"
+				if count > wipCfg.Limit {
+					status = "⚠"
+				}
+				noun := "roadmap"
+				if count > 1 {
+					noun = "roadmaps"
+				}
+				sb.WriteString(fmt.Sprintf("   %-20s %d %s  %s\n", squad+":", count, noun, status))
+			}
 		}
 
 		sb.WriteString(fmt.Sprintf("\n❌ Blocked (%d)\n", len(blocked)))
@@ -415,55 +562,6 @@ func validateStaleWIP() ([]string, error) {
 	return warnings, nil
 }
 
-// validateWIPLimit verifica se a quantidade de roadmaps em wip excede o limite configurado.
-// Em modo by_agent, verifica por agente individualmente.
-func validateWIPLimit() ([]string, error) {
-	cfg := config.Load()
-
-	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			entries, err := os.ReadDir(cfg.RoadmapDir)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
-		var warnings []string
-		for _, agent := range agents {
-			dir := cfg.RoadmapDir + "/" + agent + "/wip"
-			entries, _ := listDir(dir)
-			limit := cfg.WipLimit
-			if limit <= 0 {
-				limit = 1
-			}
-			if len(entries) > limit {
-				warnings = append(warnings, fmt.Sprintf(
-					"%d roadmaps in wip/ for agent %q (limit: %d)",
-					len(entries), agent, limit,
-				))
-			}
-		}
-		return warnings, nil
-	}
-
-	// modo flat
-	entries, err := listDir(cfg.RoadmapDir + "/wip")
-	if err != nil {
-		return nil, nil
-	}
-	limit := cfg.WipLimit
-	if limit <= 0 {
-		limit = 1
-	}
-	if len(entries) > limit {
-		return []string{fmt.Sprintf("%d roadmaps in wip/ (limit: %d)", len(entries), limit)}, nil
-	}
-	return nil, nil
-}
 
 // blockedREQs retorna um mapa de REQ-basename → lista de ADR-basenames Draft que a bloqueiam.
 // Somente REQs com Status: Open e ADRs com Status: Draft são incluídas.

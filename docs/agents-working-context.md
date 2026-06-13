@@ -653,6 +653,19 @@ trackfw/
 
 ---
 
+## Sessão 2026-06-13 — Apolo ML-2B (IMPLEMENTANDO)
+
+**Tarefa:** ML-2B do roadmap `feat/v2.0-gaps` — WIP Limit configurável por squad via `trackfw.yaml`.
+
+**Arquivos a modificar:**
+- `internal/generators/scaffold.go` — campos WipLimit e WipBySquad em Config
+- `internal/generators/roadmap.go` — campo squad: no template de frontmatter
+- `internal/validator/validator.go` — WIPConfig, readWIPConfig, parseSquadFromFrontmatter, validateWIPLimit (substitui validateSingleWIP), GetStatus com breakdown de squad
+- `internal/validator/validator_test.go` — 5 novos testes
+- `npm/src/validator/index.js` — paridade Node.js
+
+---
+
 ## Sessão 2026-06-13 — Apolo ML-2A (CONCLUÍDO)
 
 **Tarefa:** ML-2A do roadmap `feat/v2.0-gaps` — `trackfw init --brownfield` modo lenient de governança.

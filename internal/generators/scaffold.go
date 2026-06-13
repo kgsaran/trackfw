@@ -18,6 +18,8 @@ type Config struct {
 	CI               string
 	BrownfieldMode   bool
 	LenientUntil     time.Time // zero value = strict
+	WipLimit         int       // default: 1
+	WipBySquad       bool      // default: false
 }
 
 var govDirs = []string{
@@ -438,6 +440,15 @@ Próximo passo: abrir PR com gh pr create
 }
 
 func writeTrackfwConfig(cfg Config) error {
+	wipLimit := cfg.WipLimit
+	if wipLimit <= 0 {
+		wipLimit = 1
+	}
+	wipBySquad := "false"
+	if cfg.WipBySquad {
+		wipBySquad = "true"
+	}
+
 	content := fmt.Sprintf(`# trackfw configuration
 # generated: %s
 
@@ -447,6 +458,8 @@ backend_framework: %s
 pkg_manager: %s
 hooks: %s
 ci: %s
+wip_limit: %d
+wip_by_squad: %s
 
 # governance paths (edit to match your project structure)
 adr_dirs:
@@ -454,7 +467,7 @@ adr_dirs:
 req_dir: docs/req
 roadmap_dir: docs/roadmaps
 roadmap_namespacing: flat
-`, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.BackendFramework, cfg.PkgManager, cfg.Hooks, cfg.CI)
+`, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.BackendFramework, cfg.PkgManager, cfg.Hooks, cfg.CI, wipLimit, wipBySquad)
 
 	if cfg.BrownfieldMode {
 		content += fmt.Sprintf("governance_mode: lenient\nlenient_until: %s\n", cfg.LenientUntil.Format("2006-01-02"))
