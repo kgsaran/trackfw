@@ -872,8 +872,27 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo ML-2D Python CLI (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-2D Python CLI (CONCLUÍDO)
 
 **Tarefa:** ML-2D do roadmap Python CLI nativo — `generators/init_gen.py` (scaffold flat/by_agent) + `tests/test_generators_init.py`.
 
 **Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/generators/init_gen.py` — espelho de `npm/src/generators/init.js` em Python puro (stdlib apenas): `scaffold(cwd, opts)`, `_gov_dirs_by_agent(agents)`, `_write_trackfw_yaml(cwd, opts)`, `_write_example_adr(cwd, opts)`; constantes `GOV_DIRS_FLAT` e `ROADMAP_STATES`; ADR exemplo idempotente (não sobrescreve se já existir).
+- `pypi/tests/test_generators_init.py` — 12 testes unittest distribuídos em 5 classes: `TestScaffoldFlat` (2), `TestScaffoldByAgent` (2), `TestTrackfwYamlGerado` (3), `TestIdempotente` (2), `TestExemploADR` (3).
+- Suite completa: 82/82 testes verdes | `py_compile` OK | commit `591d4df` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2C Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-2C do roadmap Python CLI nativo — `generators/roadmap.py` + `tests/test_generators_roadmap.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/generators/roadmap.py` — espelho de `npm/src/generators/roadmap.js`: `slugify()`, `generate_roadmap()` (modo flat e by_agent), `move_roadmap()` (busca em todos os estados/agentes, atualiza `status:` no frontmatter, grava `.trackfw-log`); helpers `_state_dir`, `_agent_state_dir`, `_find_roadmap_matches`, `_append_transition_log`, `_roadmap_template`.
+- `pypi/tests/test_generators_roadmap.py` — 11 testes unittest: `TestSlugify` (3 casos), `TestGenerateFlat` (gera em `backlog/`), `TestGenerateByAgent` (gera em `zeus/backlog/`, fallback primeiro agente), `TestMoveBacklogParaWip` (move arquivo, atualiza frontmatter, grava log, levanta erros), `TestMoveBuscaEmTodosAgentes` (by_agent sem especificar agente).
+
+**Resultado:** 11/11 testes verdes | commit `3b3d3cb` | push para `feat/v2.2-python-cli-nativo`.
