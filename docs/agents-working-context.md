@@ -1405,3 +1405,11 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `pypi/trackfw/validator.py` retorna dicts `{"type": ..., "message": ...}` — sem campos `rule` e `file`
 - Node JS mirror já tem `--json` com estrutura `{summary, violations: [{message}], warnings: [{message}]}`
 - Estratégia: adicionar `--json` ao parser; no branch JSON, suprimir toda saída textual e emitir JSON puro; campos `rule`/`file` extraídos do dict se presentes (null se ausentes); testes pytest isolados com tmpdir + os.chdir
+
+**Resultado:** 15/15 test_validate_json.py verdes | 206/206 testes pypi completos sem regressões | commits e2ed388 + b006205 | push para `feat/v2.5-discovery-json-traceid`
+
+**Status final:** CONCLUIDO
+
+**Arquivos modificados:**
+- `pypi/trackfw/commands/validate.py` — argumento `--json` adicionado ao parser; branch JSON emite JSON estruturado puro suprimindo saída textual; modo texto inalterado
+- `pypi/tests/test_validate_json.py` — 15 testes cobrindo: JSON válido, campos corretos, exit code paridade, modo lenient
