@@ -76,11 +76,11 @@ jobs:
       - name: Instala build
         run: pip install build
 
-      - name: Atualiza versão no pyproject.toml
+      - name: Atualiza versão no pyproject.toml e __init__.py
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
-          sed -i "s/^VERSION = .*/VERSION = \"$VERSION\"/" trackfw/_cli.py
+          sed -i "s/^__version__ = .*/__version__ = \"$VERSION\"/" trackfw/__init__.py
 
       - name: Copia README para o pacote PyPI
         run: cp ../README.md README.md
