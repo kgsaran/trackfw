@@ -65,6 +65,59 @@ test('help com argumento rules.stale_wip exibe severidade', () => {
   assert(output.includes('warning'), 'output deve conter o default "warning"')
 })
 
+// trace_id_field e rules.traceid_*
+test('help lista trace_id_field', () => {
+  const output = listKeys()
+  assert(output.includes('trace_id_field'), 'listKeys deve conter "trace_id_field"')
+})
+
+test('help lista rules.traceid_orphan_roadmap', () => {
+  const output = listKeys()
+  assert(output.includes('rules.traceid_orphan_roadmap'), 'listKeys deve conter "rules.traceid_orphan_roadmap"')
+})
+
+test('help lista rules.traceid_orphan_req', () => {
+  const output = listKeys()
+  assert(output.includes('rules.traceid_orphan_req'), 'listKeys deve conter "rules.traceid_orphan_req"')
+})
+
+test('help lista rules.traceid_state_mismatch', () => {
+  const output = listKeys()
+  assert(output.includes('rules.traceid_state_mismatch'), 'listKeys deve conter "rules.traceid_state_mismatch"')
+})
+
+test('help lista rules.traceid_duplicate_req', () => {
+  const output = listKeys()
+  assert(output.includes('rules.traceid_duplicate_req'), 'listKeys deve conter "rules.traceid_duplicate_req"')
+})
+
+test('help lista rules.traceid_duplicate_roadmap', () => {
+  const output = listKeys()
+  assert(output.includes('rules.traceid_duplicate_roadmap'), 'listKeys deve conter "rules.traceid_duplicate_roadmap"')
+})
+
+test('describeKey trace_id_field retorna dados válidos', () => {
+  const output = describeKey('trace_id_field')
+  assert(output !== null, 'describeKey não deve retornar null para trace_id_field')
+  assert(output.includes('trace_id_field'), 'output deve conter o nome da key')
+  assert(output.includes('Type'), 'output deve conter Type')
+  assert(output.includes('Default'), 'output deve conter Default')
+  assert(output.includes('Example'), 'output deve conter Example')
+  assert(output.includes('Impact'), 'output deve conter Impact')
+})
+
+test('describeKey rules.traceid_orphan_roadmap exibe severidade error', () => {
+  const output = describeKey('rules.traceid_orphan_roadmap')
+  assert(output !== null, 'describeKey não deve retornar null')
+  assert(output.includes('error'), 'deve conter o default "error"')
+})
+
+test('describeKey rules.traceid_state_mismatch exibe severidade error', () => {
+  const output = describeKey('rules.traceid_state_mismatch')
+  assert(output !== null, 'describeKey não deve retornar null')
+  assert(output.includes('error'), 'deve conter o default "error"')
+})
+
 // key inválida
 test('help key inválida retorna null', () => {
   const output = describeKey('nao_existe')

@@ -205,6 +205,21 @@ class TestValidateJsonComViolation(unittest.TestCase):
             self.assertIn("message", item,
                           f"Item de violation sem 'message': {item}")
 
+    def test_json_violations_tem_campos_rule_e_file(self):
+        """Cada item de violations deve ter 'rule' não vazio e 'file' preenchido quando a mensagem contém filename."""
+        result, _ = _run_json(self.tmp)
+        for item in result["violations"]:
+            self.assertIn("rule", item, f"Item sem campo 'rule': {item}")
+            self.assertIn("file", item, f"Item sem campo 'file': {item}")
+            self.assertIsNotNone(item["rule"], f"'rule' não deve ser None: {item}")
+            self.assertNotEqual(item["rule"], "", f"'rule' não deve ser string vazia: {item}")
+            # A mensagem contém '"roadmap-sem-req.md"' — file deve ser populado
+            if '"' in item.get("message", ""):
+                self.assertNotEqual(
+                    item["file"], "",
+                    f"'file' deve ser preenchido quando a mensagem contém filename: {item}"
+                )
+
     def test_json_summary_violations_count(self):
         """summary.violations deve bater com len(violations)."""
         result, _ = _run_json(self.tmp)

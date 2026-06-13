@@ -17,30 +17,35 @@ func newValidateCmd() *cobra.Command {
 		Use:   "validate",
 		Short: i18n.T("validate.description"),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			violations, warnings, err := validator.Validate()
-			if err != nil {
-				return err
-			}
-
 			if jsonOutput {
-				// Modo JSON: suprimir saída de erro do cobra para que stdout seja JSON puro.
+				// Modo JSON: usa ValidateTagged para propagar rule+file nos RuleItems.
 				cmd.SilenceErrors = true
 				cmd.SilenceUsage = true
 
-				result := validator.BuildResult(violations, warnings, validator.IsLenient())
+				taggedV, taggedW, err := validator.ValidateTagged()
+				if err != nil {
+					return err
+				}
+
+				result := validator.BuildResultTagged(taggedV, taggedW, validator.IsLenient())
 				data, marshalErr := json.Marshal(result)
 				if marshalErr != nil {
 					return marshalErr
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), string(data))
 
-				if len(violations) > 0 {
-					return fmt.Errorf("%s", i18n.T("validate.violations", "count", strconv.Itoa(len(violations))))
+				if len(taggedV) > 0 {
+					return fmt.Errorf("%s", i18n.T("validate.violations", "count", strconv.Itoa(len(taggedV))))
 				}
 				return nil
 			}
 
 			// Modo texto (comportamento original inalterado).
+			violations, warnings, err := validator.Validate()
+			if err != nil {
+				return err
+			}
+
 			if validator.IsLenient() {
 				until := validator.LenientUntilDate()
 				if until != "" {

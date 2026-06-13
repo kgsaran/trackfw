@@ -79,6 +79,38 @@ class TestHelp(unittest.TestCase):
         self.assertIsNotNone(output)
         self.assertIn("Acceptance Criteria", output)
 
+    def test_list_keys_contains_trace_id_field(self):
+        """list_keys() deve incluir trace_id_field."""
+        output = list_keys()
+        self.assertIn("trace_id_field", output)
+
+    def test_describe_key_trace_id_field(self):
+        """describe_key('trace_id_field') deve retornar dados válidos."""
+        output = describe_key("trace_id_field")
+        self.assertIsNotNone(output)
+        self.assertIn("req_id", output)
+        self.assertIn("Impact:", output)
+        self.assertIn("Example:", output)
+
+    def test_list_keys_contains_traceid_rules(self):
+        """list_keys() deve incluir todas as regras rules.traceid_*."""
+        output = list_keys()
+        for rule in [
+            "rules.traceid_orphan_roadmap",
+            "rules.traceid_orphan_req",
+            "rules.traceid_state_mismatch",
+            "rules.traceid_duplicate_req",
+            "rules.traceid_duplicate_roadmap",
+        ]:
+            self.assertIn(rule, output, f"Regra ausente na tabela: {rule}")
+
+    def test_describe_key_traceid_orphan_roadmap(self):
+        """describe_key('rules.traceid_orphan_roadmap') deve retornar doc válida."""
+        output = describe_key("rules.traceid_orphan_roadmap")
+        self.assertIsNotNone(output)
+        self.assertIn("off|warning|error", output)
+        self.assertIn("error", output)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -168,6 +168,48 @@ CONFIG_DOCS = {
         "example": "rules:\n  blocked_by_draft_adr: warning",
         "impact": "Verifica REQs Open com ADR em Status: Draft na seção Blocked by ADRs.",
     },
+    "trace_id_field": {
+        "type": "string",
+        "default": '""',
+        "description": "Campo de frontmatter usado como ID de rastreabilidade estável entre REQ e Roadmap. Vazio = desativado.",
+        "example": "trace_id_field: req_id",
+        "impact": "Ativa verificação bidirecional REQ↔Roadmap (traceid_orphan_*, traceid_state_mismatch, traceid_duplicate_*).",
+    },
+    "rules.traceid_orphan_roadmap": {
+        "type": "off|warning|error",
+        "default": '"error"',
+        "description": "Roadmap com req_id sem REQ correspondente.",
+        "example": "rules:\n  traceid_orphan_roadmap: warning",
+        "impact": "Detecta Roadmaps sem REQ pareada.",
+    },
+    "rules.traceid_orphan_req": {
+        "type": "off|warning|error",
+        "default": '"error"',
+        "description": "REQ com req_id sem Roadmap correspondente.",
+        "example": "rules:\n  traceid_orphan_req: warning",
+        "impact": "Detecta REQs sem Roadmap pareado.",
+    },
+    "rules.traceid_state_mismatch": {
+        "type": "off|warning|error",
+        "default": '"error"',
+        "description": "REQ e Roadmap com mesmo req_id em estados divergentes.",
+        "example": "rules:\n  traceid_state_mismatch: warning",
+        "impact": "Garante consistência de estado.",
+    },
+    "rules.traceid_duplicate_req": {
+        "type": "off|warning|error",
+        "default": '"error"',
+        "description": "Mesmo req_id em mais de uma REQ.",
+        "example": "rules:\n  traceid_duplicate_req: warning",
+        "impact": "Garante unicidade lógica de REQs.",
+    },
+    "rules.traceid_duplicate_roadmap": {
+        "type": "off|warning|error",
+        "default": '"error"',
+        "description": "Mesmo req_id em mais de um Roadmap.",
+        "example": "rules:\n  traceid_duplicate_roadmap: warning",
+        "impact": "Garante unicidade lógica de Roadmaps.",
+    },
 }
 
 _COL_KEY = 24

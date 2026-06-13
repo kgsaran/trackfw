@@ -6,6 +6,7 @@ Stdlib apenas: os, pathlib, re, datetime, subprocess.
 
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 
@@ -36,22 +37,49 @@ def _rule_severity(name: str, cfg: dict) -> str:
     return cfg.get("rules", {}).get(name, "error")
 
 
+def _extract_file(msg: str) -> str:
+    """Extrai o primeiro filename entre aspas duplas de uma mensagem. Retorna '' se ausente."""
+    m = re.search(r'"([^"]+)"', msg)
+    return m.group(1) if m else ""
+
+
+def _enrich_items(items: list, rule_name: str) -> list:
+    """
+    Adiciona os campos 'rule' e 'file' a cada dict da lista, se ainda não presentes.
+    Não modifica itens que já possuam esses campos.
+    """
+    result = []
+    for item in items:
+        if isinstance(item, dict):
+            enriched = dict(item)
+            if "rule" not in enriched:
+                enriched["rule"] = rule_name
+            if "file" not in enriched:
+                enriched["file"] = _extract_file(enriched.get("message", ""))
+            result.append(enriched)
+        else:
+            result.append(item)
+    return result
+
+
 def _apply_rule(rule_name: str, msgs: list, violations: list, warnings: list, cfg: dict):
     """
     Distribui msgs (lista de dicts) conforme a severidade configurada da regra.
     - 'off'     → descarta
     - 'warning' → adiciona a warnings
     - 'error'   → adiciona a violations (default)
+    Enriquece cada item com 'rule' e 'file' antes de distribuir.
     """
     if not msgs:
         return
     severity = _rule_severity(rule_name, cfg)
     if severity == "off":
         return
+    enriched = _enrich_items(msgs, rule_name)
     if severity == "warning":
-        warnings.extend(msgs)
+        warnings.extend(enriched)
     else:
-        violations.extend(msgs)
+        violations.extend(enriched)
 
 
 # ---------------------------------------------------------------------------
@@ -832,18 +860,18 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule("stale_wip",            validate_stale_wip(cfg),                      violations, warnings, cfg)
 
     # Regras sem mapeamento configurável (violations diretas)
-    violations += validate_reqs_have_adr(cfg)
-    violations += validate_blocked_has_req(cfg)
-    violations += validate_reqs_have_roadmap(cfg)
-    violations += validate_frontmatter_presence(cfg)
+    violations += _enrich_items(validate_reqs_have_adr(cfg),           "reqs_have_adr")
+    violations += _enrich_items(validate_blocked_has_req(cfg),         "blocked_has_req")
+    violations += _enrich_items(validate_reqs_have_roadmap(cfg),       "reqs_have_roadmap")
+    violations += _enrich_items(validate_frontmatter_presence(cfg),    "frontmatter_presence")
 
     # wip_limit: violations e warnings já separados internamente
     wip_limit_result = validate_wip_limit(cfg)
     _apply_rule("wip_limit", wip_limit_result["violations"], violations, warnings, cfg)
-    warnings += wip_limit_result["warnings"]
+    warnings += _enrich_items(wip_limit_result["warnings"], "wip_limit")
 
     # Verificação bidirecional de req_id (desativada se trace_id_field não configurado)
-    violations += check_traceid(cfg)
+    violations += _enrich_items(check_traceid(cfg), "traceid")
 
     return {"violations": violations, "warnings": warnings}
 

@@ -162,6 +162,48 @@ const configDocs = {
     description: 'Severidade: REQ bloqueada por ADR em rascunho.',
     example: 'rules:\n  blocked_by_draft_adr: warning',
     impact: 'error bloqueia; warning apenas reporta; off desativa a regra.'
+  },
+  trace_id_field: {
+    type: 'string',
+    default: '""',
+    description: 'Campo de frontmatter usado como trace ID para verificação bidirecional REQ↔Roadmap. Vazio desativa a verificação.',
+    example: 'trace_id_field: req_id',
+    impact: 'Quando configurado, ativa as regras traceid_* que garantem que toda REQ tem Roadmap correspondente e vice-versa.'
+  },
+  'rules.traceid_orphan_roadmap': {
+    type: 'off|warning|error',
+    default: '"error"',
+    description: 'Severidade: Roadmap com trace ID sem REQ correspondente.',
+    example: 'rules:\n  traceid_orphan_roadmap: warning',
+    impact: 'error bloqueia; warning apenas reporta; off desativa a regra.'
+  },
+  'rules.traceid_orphan_req': {
+    type: 'off|warning|error',
+    default: '"error"',
+    description: 'Severidade: REQ com trace ID sem Roadmap correspondente.',
+    example: 'rules:\n  traceid_orphan_req: warning',
+    impact: 'error bloqueia; warning apenas reporta; off desativa a regra.'
+  },
+  'rules.traceid_state_mismatch': {
+    type: 'off|warning|error',
+    default: '"error"',
+    description: 'Severidade: REQ e Roadmap com mesmo trace ID em estados diferentes (ex: REQ em done, Roadmap em wip).',
+    example: 'rules:\n  traceid_state_mismatch: warning',
+    impact: 'error bloqueia; warning apenas reporta; off desativa a regra.'
+  },
+  'rules.traceid_duplicate_req': {
+    type: 'off|warning|error',
+    default: '"error"',
+    description: 'Severidade: mesmo trace ID aparece em mais de uma REQ.',
+    example: 'rules:\n  traceid_duplicate_req: warning',
+    impact: 'error bloqueia; warning apenas reporta; off desativa a regra.'
+  },
+  'rules.traceid_duplicate_roadmap': {
+    type: 'off|warning|error',
+    default: '"error"',
+    description: 'Severidade: mesmo trace ID aparece em mais de um Roadmap.',
+    example: 'rules:\n  traceid_duplicate_roadmap: warning',
+    impact: 'error bloqueia; warning apenas reporta; off desativa a regra.'
   }
 }
 
