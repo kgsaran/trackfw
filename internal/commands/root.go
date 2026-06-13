@@ -32,6 +32,8 @@ func Execute() {
 		newStatusCmd(),
 		newValidateCmd(),
 		newBaselineCmd(),
+		newHelpCmd(),
+		newConfigureCmd(),
 		newVersionCmd(),
 		newLogCmd(),
 		newPluginsCmd(),
