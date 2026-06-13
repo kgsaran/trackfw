@@ -31,6 +31,7 @@ func Execute() {
 		newRoadmapCmd(),
 		newStatusCmd(),
 		newValidateCmd(),
+		newBaselineCmd(),
 		newVersionCmd(),
 		newLogCmd(),
 		newPluginsCmd(),

@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -12,6 +13,45 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 )
+
+// BaselineFile representa o conteúdo de .trackfw-baseline.json
+type BaselineFile struct {
+	Created    string   `json:"created"`
+	Violations []string `json:"violations"`
+	Warnings   []string `json:"warnings"`
+}
+
+const baselineFileName = ".trackfw-baseline.json"
+
+// LoadBaseline lê .trackfw-baseline.json do CWD. Retorna nil se não existir.
+func LoadBaseline() (*BaselineFile, error) {
+	data, err := os.ReadFile(baselineFileName)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var bf BaselineFile
+	if err := json.Unmarshal(data, &bf); err != nil {
+		return nil, fmt.Errorf("erro ao ler baseline: %w", err)
+	}
+	return &bf, nil
+}
+
+// SaveBaseline salva violations e warnings atuais em .trackfw-baseline.json.
+func SaveBaseline(violations, warnings []string) error {
+	bf := BaselineFile{
+		Created:    time.Now().UTC().Format(time.RFC3339),
+		Violations: violations,
+		Warnings:   warnings,
+	}
+	data, err := json.MarshalIndent(bf, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(baselineFileName, data, 0644)
+}
 
 const staleWIPDays = 7
 
@@ -232,7 +272,9 @@ func LenientUntilDate() string {
 	return gm.LenientUntil.Format("2006-01-02")
 }
 
-func Validate() (violations []string, warnings []string, err error) {
+// ValidateUnfiltered executa todas as validações sem filtro de baseline nem modo lenient.
+// Use para criar snapshots de baseline ou quando você quer o quadro completo.
+func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	wipViolations, e := validateWIPHasREQ()
 	if e != nil {
 		return nil, nil, e
@@ -309,13 +351,41 @@ func Validate() (violations []string, warnings []string, err error) {
 	}
 	applyRule("filename_uniqueness", uniquenessViolations, &violations, &warnings)
 
+	return violations, warnings, nil
+}
+
+func Validate() (violations []string, warnings []string, err error) {
+	violations, warnings, err = ValidateUnfiltered()
+	if err != nil {
+		return
+	}
+
+	// Aplicar filtro de baseline (ratchet): falha somente em violations novas
+	baseline, bErr := LoadBaseline()
+	if bErr != nil {
+		return nil, nil, fmt.Errorf("erro ao carregar baseline: %w", bErr)
+	}
+	if baseline != nil {
+		baselineSet := make(map[string]struct{}, len(baseline.Violations))
+		for _, v := range baseline.Violations {
+			baselineSet[v] = struct{}{}
+		}
+		var netNew []string
+		for _, v := range violations {
+			if _, exists := baselineSet[v]; !exists {
+				netNew = append(netNew, v)
+			}
+		}
+		violations = netNew
+	}
+
 	// Modo lenient: mover violations para warnings, exit code 0
 	if IsLenient() {
 		warnings = append(warnings, violations...)
 		violations = nil
 	}
 
-	return violations, warnings, nil
+	return
 }
 
 func GetStatus() (string, error) {
