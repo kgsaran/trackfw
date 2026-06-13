@@ -837,12 +837,43 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo (CONCLUIDO)
 
 **Tarefa:** ML-1C do roadmap Python CLI nativo — `validator.py` com wip-limit, stale-wip, req-adr em paridade com `npm/src/validator/index.js`.
 
 **Branch:** `feat/v2.2-python-cli-nativo`
 
-**Arquivos a criar:**
-- `pypi/trackfw/validator.py` — espelho Python do validator JS (612 linhas)
-- `pypi/tests/test_validator.py` — testes unittest
+**Entregue:**
+- `pypi/trackfw/validator.py` — espelho completo do validator JS: list_dir, resolve_wip_dirs, parse_frontmatter, validate_wip_has_req, validate_reqs_have_adr, validate_blocked_has_req, validate_reqs_have_roadmap, validate_adrs_are_referenced, validate_wip_has_acceptance_criteria, validate_wip_limit (flat/by_agent/by_squad), validate_stale_wip, validate_reqs_not_blocked_by_draft_adrs, validate_frontmatter_presence, validate(), modo lenient.
+- `pypi/tests/test_validator.py` — 22 testes unittest passando (100%).
+- Commit `a2a0407` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2A Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-2A do roadmap Python CLI nativo — `generators/__init__.py` + `generators/adr.py` + `tests/test_generators_adr.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/generators/__init__.py` — pacote vazio (declara o subpacote generators).
+- `pypi/trackfw/generators/adr.py` — três funções: `next_adr_number(adr_dir)` escaneia ADR-NNN-*.md e retorna max+1; `slugify(title)` via unicodedata NFKD + encode ascii ignore, espaços→hífen, remove não-alfanuméricos; `generate_adr(title, status, adr_dirs, cwd)` cria arquivo ADR com frontmatter YAML e template markdown, numeração sequencial automática.
+- `pypi/tests/test_generators_adr.py` — 13 testes unittest: TestNextAdrNumber (4 casos), TestSlugify (5 casos), TestGenerateAdr (4 casos). Todos 13/13 verdes.
+- Commit `b9003b6` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2B Python CLI (IMPLEMENTANDO)
+
+**Tarefa:** ML-2B do roadmap Python CLI nativo — `generators/req.py` + `tests/test_generators_req.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-2D Python CLI (IMPLEMENTANDO)
+
+**Tarefa:** ML-2D do roadmap Python CLI nativo — `generators/init_gen.py` (scaffold flat/by_agent) + `tests/test_generators_init.py`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
