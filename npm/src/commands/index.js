@@ -22,6 +22,7 @@ function createProgram() {
   program.addCommand(require('./metrics'))
   program.addCommand(require('./sync'))
   program.addCommand(require('./context'))
+  program.addCommand(require('./baseline'))
 
   // plugin dispatch — comandos desconhecidos tentam executar plugin
   program.hook('preSubcommand', () => {})

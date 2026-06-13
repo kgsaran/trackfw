@@ -718,8 +718,32 @@ function applyRule(ruleName, msgs, violations, warnings) {
   }
 }
 
-// validate executa todas as validações e retorna { violations, warnings }
-async function validate() {
+const BASELINE_FILE = '.trackfw-baseline.json'
+
+// loadBaseline carrega o baseline do arquivo .trackfw-baseline.json.
+// Retorna null se o arquivo não existir.
+function loadBaseline() {
+  try {
+    const data = fs.readFileSync(BASELINE_FILE, 'utf8')
+    return JSON.parse(data)
+  } catch (e) {
+    if (e.code === 'ENOENT') return null
+    throw new Error(`Erro ao ler baseline: ${e.message}`)
+  }
+}
+
+// saveBaseline salva snapshot de violations e warnings em .trackfw-baseline.json.
+function saveBaseline(violations, warnings) {
+  const bf = {
+    created: new Date().toISOString(),
+    violations,
+    warnings,
+  }
+  fs.writeFileSync(BASELINE_FILE, JSON.stringify(bf, null, 2), 'utf8')
+}
+
+// validateUnfiltered executa todas as validações e retorna { violations, warnings } sem ratchet.
+async function validateUnfiltered() {
   const wipLimitResult = validateWIPLimit()
   const violations = []
   const warnings = []
@@ -744,11 +768,28 @@ async function validate() {
   // warnings diretos do WIP limit (não configuráveis)
   warnings.push(...wipLimitResult.warnings)
 
+  return { violations, warnings }
+}
+
+// validate executa todas as validações, aplica ratchet (baseline) e modo lenient.
+// Retorna { violations, warnings }.
+async function validate() {
+  const result = await validateUnfiltered()
+  let { violations, warnings } = result
+
+  // Ratchet: filtrar violations que já estavam no baseline
+  const baseline = loadBaseline()
+  if (baseline) {
+    const baselineSet = new Set(baseline.violations || [])
+    violations = violations.filter(v => !baselineSet.has(v))
+  }
+
   // Modo lenient: mover violations para warnings, exit code 0
   if (isLenient()) {
-    const allViolations = violations.splice(0)
-    warnings.push(...allViolations)
+    warnings = [...warnings, ...violations]
+    violations = []
   }
+
   return { violations, warnings }
 }
 
@@ -830,6 +871,9 @@ async function getStatus() {
 
 module.exports = {
   validate,
+  validateUnfiltered,
+  loadBaseline,
+  saveBaseline,
   getStatus,
   isLenient,
   lenientUntilDate,
