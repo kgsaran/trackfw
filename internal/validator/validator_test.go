@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 // helper para criar diretórios de fixtures
@@ -325,6 +327,39 @@ func TestGetStatus_SemREQsBloqueadas(t *testing.T) {
 	}
 	if strings.Contains(output, "⏳ REQs blocked") {
 		t.Error("seção de REQs bloqueadas não deve aparecer quando não há bloqueios")
+	}
+}
+
+// TestValidateWIPLimit_ByAgent — by_agent: 2 roadmaps em zeus/wip com limit 1 → 1 warning
+func TestValidateWIPLimit_ByAgent(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/zeus/wip",
+		"docs/roadmaps/zeus/backlog",
+	)
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// Criar trackfw.yaml com by_agent e wip_limit: 1
+	yaml := "roadmap_namespacing: by_agent\nagents:\n- zeus\nwip_limit: 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatalf("escrever trackfw.yaml: %v", err)
+	}
+
+	// Criar 2 roadmaps em zeus/wip
+	writeFile(t, dir, "docs/roadmaps/zeus/wip/ROADMAP-alpha.md", "# Alpha\nREQ: REQ-001\n## Acceptance Criteria\n- [ ] ok\n")
+	writeFile(t, dir, "docs/roadmaps/zeus/wip/ROADMAP-beta.md", "# Beta\nREQ: REQ-002\n## Acceptance Criteria\n- [ ] ok\n")
+
+	warnings, err := validateWIPLimit()
+	if err != nil {
+		t.Fatalf("validateWIPLimit() erro: %v", err)
+	}
+	if !hasWarning(warnings, "zeus") {
+		t.Errorf("esperado warning mencionando 'zeus', obteve: %v", warnings)
+	}
+	if !hasWarning(warnings, "limit: 1") {
+		t.Errorf("esperado warning mencionando 'limit: 1', obteve: %v", warnings)
 	}
 }
 

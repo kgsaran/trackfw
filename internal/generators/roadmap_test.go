@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 // testStateDirs retorna os diretórios de estado padrão para uso em testes.
@@ -245,6 +247,75 @@ func TestListRoadmaps_Empty(t *testing.T) {
 
 	if err := ListRoadmaps(); err != nil {
 		t.Fatalf("ListRoadmaps() erro esperando nil: %v", err)
+	}
+}
+
+// TestListRoadmaps_ByAgent — modo by_agent lista roadmaps agrupados por agente/estado
+func TestListRoadmaps_ByAgent(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// Criar trackfw.yaml com by_agent + agentes zeus e apolo
+	yaml := "roadmap_namespacing: by_agent\nagents:\n- zeus\n- apolo\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("escrever trackfw.yaml: %v", err)
+	}
+
+	// Criar estrutura de diretórios e arquivos
+	if err := os.MkdirAll("docs/roadmaps/zeus/wip", 0755); err != nil {
+		t.Fatalf("mkdir zeus/wip: %v", err)
+	}
+	if err := os.MkdirAll("docs/roadmaps/apolo/backlog", 0755); err != nil {
+		t.Fatalf("mkdir apolo/backlog: %v", err)
+	}
+	if err := os.WriteFile("docs/roadmaps/zeus/wip/ROADMAP-2026-01-01-zeus-test.md", []byte("# Zeus"), 0644); err != nil {
+		t.Fatalf("escrever arquivo zeus: %v", err)
+	}
+	if err := os.WriteFile("docs/roadmaps/apolo/backlog/ROADMAP-2026-01-01-apolo-test.md", []byte("# Apolo"), 0644); err != nil {
+		t.Fatalf("escrever arquivo apolo: %v", err)
+	}
+
+	if err := ListRoadmaps(); err != nil {
+		t.Fatalf("ListRoadmaps() erro: %v", err)
+	}
+}
+
+// TestMoveRoadmap_ByAgent — move roadmap dentro do namespace do agente em modo by_agent
+func TestMoveRoadmap_ByAgent(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// Criar trackfw.yaml com by_agent
+	yaml := "roadmap_namespacing: by_agent\nagents:\n- zeus\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("escrever trackfw.yaml: %v", err)
+	}
+
+	// Criar roadmap em zeus/backlog
+	if err := os.MkdirAll("docs/roadmaps/zeus/backlog", 0755); err != nil {
+		t.Fatalf("mkdir zeus/backlog: %v", err)
+	}
+	const roadmapFile = "docs/roadmaps/zeus/backlog/ROADMAP-test.md"
+	if err := os.WriteFile(roadmapFile, []byte("# Test"), 0644); err != nil {
+		t.Fatalf("escrever arquivo: %v", err)
+	}
+
+	if err := MoveRoadmap("ROADMAP-test", "wip"); err != nil {
+		t.Fatalf("MoveRoadmap() erro: %v", err)
+	}
+
+	// Deve existir em zeus/wip
+	if _, err := os.Stat("docs/roadmaps/zeus/wip/ROADMAP-test.md"); err != nil {
+		t.Errorf("arquivo não encontrado em zeus/wip: %v", err)
+	}
+
+	// Não deve existir mais em zeus/backlog
+	if _, err := os.Stat(roadmapFile); err == nil {
+		t.Error("arquivo ainda existe em zeus/backlog após move")
 	}
 }
 

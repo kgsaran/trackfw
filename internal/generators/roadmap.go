@@ -17,7 +17,7 @@ type RoadmapContent struct {
 	Body    string
 }
 
-// stateDir retorna o caminho do diretório para um estado válido, ou "", false se inválido.
+// stateDir retorna o caminho do diretório para um estado válido no modo flat, ou "", false se inválido.
 func stateDir(state string) (string, bool) {
 	cfg := config.Load()
 	validStateNames := map[string]bool{
@@ -27,6 +27,26 @@ func stateDir(state string) (string, bool) {
 		return "", false
 	}
 	return cfg.RoadmapDir + "/" + state, true
+}
+
+// agentStateDir retorna o diretório para um agente+estado em modo by_agent.
+// agent="" usa o primeiro agente configurado (ou "default" se lista vazia).
+func agentStateDir(agent, state string) (string, bool) {
+	cfg := config.Load()
+	validStateNames := map[string]bool{
+		"backlog": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
+	}
+	if !validStateNames[state] {
+		return "", false
+	}
+	if agent == "" {
+		if len(cfg.Agents) > 0 {
+			agent = cfg.Agents[0]
+		} else {
+			agent = "default"
+		}
+	}
+	return cfg.RoadmapDir + "/" + agent + "/" + state, true
 }
 
 // logPath retorna o caminho do arquivo de log de transições.
@@ -43,7 +63,18 @@ func NewRoadmap(title string) error {
 // Se Body for preenchido, usa diretamente; caso contrário, gera template padrão.
 func NewRoadmapFromContent(content RoadmapContent) error {
 	cfg := config.Load()
-	backlogDir := cfg.RoadmapDir + "/backlog"
+
+	var backlogDir string
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		dir, ok := agentStateDir("", "backlog")
+		if !ok {
+			return fmt.Errorf("cannot resolve backlog dir in by_agent mode")
+		}
+		backlogDir = dir
+	} else {
+		backlogDir = cfg.RoadmapDir + "/backlog"
+	}
+
 	if err := os.MkdirAll(backlogDir, 0755); err != nil {
 		return err
 	}
@@ -87,8 +118,13 @@ REQ: %s
 }
 
 func MoveRoadmap(name, state string) error {
-	targetDir, ok := stateDir(state)
-	if !ok {
+	cfg := config.Load()
+
+	// Validar estado antes de buscar o roadmap (melhor UX)
+	validStateNames := map[string]bool{
+		"backlog": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
+	}
+	if !validStateNames[state] {
 		return fmt.Errorf("invalid state %q — valid states: backlog, wip, blocked, done, abandoned", state)
 	}
 
@@ -97,7 +133,27 @@ func MoveRoadmap(name, state string) error {
 		return err
 	}
 
-	fromState := filepath.Base(filepath.Dir(src))
+	var targetDir string
+	var fromState string
+
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		// em by_agent: src = roadmapDir/agent/state/file → agentDir é a pasta avó
+		agentDir := filepath.Dir(filepath.Dir(src))
+		agent := filepath.Base(agentDir)
+		fromState = filepath.Base(filepath.Dir(src))
+		var ok bool
+		targetDir, ok = agentStateDir(agent, state)
+		if !ok {
+			return fmt.Errorf("invalid state %q — valid states: backlog, wip, blocked, done, abandoned", state)
+		}
+	} else {
+		fromState = filepath.Base(filepath.Dir(src))
+		var ok bool
+		targetDir, ok = stateDir(state)
+		if !ok {
+			return fmt.Errorf("invalid state %q — valid states: backlog, wip, blocked, done, abandoned", state)
+		}
+	}
 
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("creating target dir: %w", err)
@@ -108,7 +164,12 @@ func MoveRoadmap(name, state string) error {
 		return fmt.Errorf("moving roadmap: %w", err)
 	}
 
-	appendTransitionLog(filepath.Base(src), fromState, state)
+	logBasename := filepath.Base(src)
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agent := filepath.Base(filepath.Dir(filepath.Dir(src)))
+		logBasename = agent + "/" + filepath.Base(src)
+	}
+	appendTransitionLog(logBasename, fromState, state)
 
 	fmt.Printf("✓ moved %s → %s\n", filepath.Base(src), targetDir)
 	return nil
@@ -116,15 +177,38 @@ func MoveRoadmap(name, state string) error {
 
 func findRoadmap(name string) (string, error) {
 	cfg := config.Load()
-	for _, state := range []string{"backlog", "wip", "blocked", "done", "abandoned"} {
-		dir := cfg.RoadmapDir + "/" + state
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
+	states := []string{"backlog", "wip", "blocked", "done", "abandoned"}
+
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := cfg.Agents
+		if len(agents) == 0 {
+			agents = []string{"default"}
 		}
-		for _, e := range entries {
-			if containsIgnoreCase(e.Name(), name) {
-				return filepath.Join(dir, e.Name()), nil
+		for _, agent := range agents {
+			for _, state := range states {
+				dir := cfg.RoadmapDir + "/" + agent + "/" + state
+				entries, err := os.ReadDir(dir)
+				if err != nil {
+					continue
+				}
+				for _, e := range entries {
+					if containsIgnoreCase(e.Name(), name) {
+						return filepath.Join(dir, e.Name()), nil
+					}
+				}
+			}
+		}
+	} else {
+		for _, state := range states {
+			dir := cfg.RoadmapDir + "/" + state
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				if containsIgnoreCase(e.Name(), name) {
+					return filepath.Join(dir, e.Name()), nil
+				}
 			}
 		}
 	}
@@ -153,7 +237,15 @@ func appendTransitionLog(basename, fromState, toState string) {
 // ShowRoadmap exibe o conteúdo de um roadmap identificado por nome parcial.
 func ShowRoadmap(name string) error {
 	cfg := config.Load()
-	pattern := filepath.Join(cfg.RoadmapDir, "*", "*"+name+"*.md")
+
+	var pattern string
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		// 3 níveis: roadmapDir/agent/state/file
+		pattern = filepath.Join(cfg.RoadmapDir, "*", "*", "*"+name+"*.md")
+	} else {
+		pattern = filepath.Join(cfg.RoadmapDir, "*", "*"+name+"*.md")
+	}
+
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return err
@@ -181,31 +273,69 @@ func ShowRoadmap(name string) error {
 	return nil
 }
 
-// ListRoadmaps imprime todos os roadmaps agrupados por estado.
+// ListRoadmaps imprime todos os roadmaps agrupados por estado (e por agente em modo by_agent).
 func ListRoadmaps() error {
 	cfg := config.Load()
 	stateOrder := []string{"wip", "backlog", "blocked", "done", "abandoned"}
 	found := false
 
-	for _, state := range stateOrder {
-		dir := cfg.RoadmapDir + "/" + state
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		var files []string
-		for _, e := range entries {
-			if !e.IsDir() && filepath.Ext(e.Name()) == ".md" {
-				files = append(files, e.Name())
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := cfg.Agents
+		if len(agents) == 0 {
+			// descobrir subdirs dinamicamente
+			entries, err := os.ReadDir(cfg.RoadmapDir)
+			if err == nil {
+				for _, e := range entries {
+					if e.IsDir() {
+						agents = append(agents, e.Name())
+					}
+				}
 			}
 		}
-		if len(files) == 0 {
-			continue
+		for _, agent := range agents {
+			for _, state := range stateOrder {
+				dir := cfg.RoadmapDir + "/" + agent + "/" + state
+				entries, err := os.ReadDir(dir)
+				if err != nil {
+					continue
+				}
+				var files []string
+				for _, e := range entries {
+					if !e.IsDir() && filepath.Ext(e.Name()) == ".md" {
+						files = append(files, e.Name())
+					}
+				}
+				if len(files) == 0 {
+					continue
+				}
+				found = true
+				fmt.Printf("[%s/%s]\n", agent, state)
+				for _, f := range files {
+					fmt.Printf("  %s\n", f)
+				}
+			}
 		}
-		found = true
-		fmt.Printf("[%s]\n", state)
-		for _, f := range files {
-			fmt.Printf("  %s\n", f)
+	} else {
+		for _, state := range stateOrder {
+			dir := cfg.RoadmapDir + "/" + state
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			var files []string
+			for _, e := range entries {
+				if !e.IsDir() && filepath.Ext(e.Name()) == ".md" {
+					files = append(files, e.Name())
+				}
+			}
+			if len(files) == 0 {
+				continue
+			}
+			found = true
+			fmt.Printf("[%s]\n", state)
+			for _, f := range files {
+				fmt.Printf("  %s\n", f)
+			}
 		}
 	}
 

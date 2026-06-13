@@ -6,6 +6,11 @@ import (
 	"sync"
 )
 
+const (
+	NamespacingFlat    = "flat"
+	NamespacingByAgent = "by_agent"
+)
+
 // ProjectConfig holds all configurable paths and governance settings read from trackfw.yaml.
 // Absent fields fall back to retrocompatible defaults (v1/v2 projects work unchanged).
 type ProjectConfig struct {

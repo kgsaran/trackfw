@@ -592,6 +592,12 @@ trackfw/
 
 ---
 
+## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO ML-2A/2B/2C do roadmap v2.1-discovery-mode)
+
+**Tarefa:** Implementar constantes de namespacing (ML-2A), suporte a hierarquia by_agent nos generators (ML-2B), e validator/status em modo by_agent (ML-2C) — Go + npm Node.js.
+
+---
+
 ## Sessão 2026-06-13 — Apolo (CONCLUÍDO)
 
 **Tarefa:** ML-1A do roadmap v2.1-discovery-mode — Criar pacote central de configuração `internal/config/` e paridade Node.js.

@@ -22,6 +22,22 @@ function listDir(dir) {
   }
 }
 
+// resolveWIPDirs retorna todos os diretórios wip/ conforme o modo de namespacing.
+function resolveWIPDirs(cfg) {
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    let agents = cfg.agents || []
+    if (agents.length === 0) {
+      try {
+        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
+          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
+        })
+      } catch (_) { agents = [] }
+    }
+    return agents.map(agent => cfg.roadmapDir + '/' + agent + '/wip')
+  }
+  return [cfg.roadmapDir + '/wip']
+}
+
 // parseBlockedADRs extrai basenames de ADRs da seção "## Blocked by ADRs" de um arquivo REQ.
 function parseBlockedADRs(filePath) {
   let content
@@ -68,19 +84,23 @@ function adrIsDraft(basename) {
   return false
 }
 
-// validateWIPHasREQ — roadmaps em <roadmapDir>/wip/ sem "REQ:" no conteúdo → violation
+// validateWIPHasREQ — roadmaps em wip/ sem "REQ:" no conteúdo → violation
+// Suporta modo by_agent via resolveWIPDirs.
 function validateWIPHasREQ() {
   const cfg = config.load()
-  const entries = listDir(cfg.roadmapDir + '/wip')
+  const wipDirs = resolveWIPDirs(cfg)
   const violations = []
-  for (const name of entries) {
-    try {
-      const content = fs.readFileSync(path.join(cfg.roadmapDir + '/wip', name), 'utf8')
-      if (!content.includes('REQ:') || content.includes('REQ: \n')) {
-        violations.push(`roadmap "${name}" is in wip but has no linked REQ`)
+  for (const wipDir of wipDirs) {
+    const entries = listDir(wipDir)
+    for (const name of entries) {
+      try {
+        const content = fs.readFileSync(path.join(wipDir, name), 'utf8')
+        if (!content.includes('REQ:') || content.includes('REQ: \n')) {
+          violations.push(`roadmap "${name}" is in wip but has no linked REQ`)
+        }
+      } catch (_) {
+        // ignorar erro de leitura
       }
-    } catch (_) {
-      // ignorar erro de leitura
     }
   }
   return violations
@@ -168,66 +188,104 @@ function validateADRsAreReferenced() {
 }
 
 // validateWIPHasAcceptanceCriteria — roadmaps wip sem bloco de critérios de aceite → violation
+// Suporta modo by_agent via resolveWIPDirs.
 function validateWIPHasAcceptanceCriteria() {
   const cfg = config.load()
-  const entries = listDir(cfg.roadmapDir + '/wip')
+  const wipDirs = resolveWIPDirs(cfg)
   const violations = []
-  for (const name of entries) {
-    try {
-      const content = fs.readFileSync(path.join(cfg.roadmapDir + '/wip', name), 'utf8')
-      const hasBlock =
-        content.includes('## Acceptance Criteria') ||
-        content.includes('## Critérios de Aceite') ||
-        content.includes('acceptance criteria') ||
-        content.includes('Acceptance Criteria:')
-      if (!hasBlock) {
-        violations.push(`roadmap "${name}" is in wip but has no acceptance criteria block`)
+  for (const wipDir of wipDirs) {
+    const entries = listDir(wipDir)
+    for (const name of entries) {
+      try {
+        const content = fs.readFileSync(path.join(wipDir, name), 'utf8')
+        const hasBlock =
+          content.includes('## Acceptance Criteria') ||
+          content.includes('## Critérios de Aceite') ||
+          content.includes('acceptance criteria') ||
+          content.includes('Acceptance Criteria:')
+        if (!hasBlock) {
+          violations.push(`roadmap "${name}" is in wip but has no acceptance criteria block`)
+        }
+      } catch (_) {
+        // ignorar
       }
-    } catch (_) {
-      // ignorar
     }
   }
   return violations
 }
 
-// validateSingleWIP — mais de 1 roadmap em wip → warning
-function validateSingleWIP() {
+// validateWIPLimit — mais de wipLimit roadmaps em wip → warning.
+// Em modo by_agent, verifica por agente individualmente.
+function validateWIPLimit() {
   const cfg = config.load()
+
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    let agents = cfg.agents || []
+    if (agents.length === 0) {
+      try {
+        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
+          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
+        })
+      } catch (_) { agents = [] }
+    }
+    const warnings = []
+    const limit = cfg.wipLimit > 0 ? cfg.wipLimit : 1
+    for (const agent of agents) {
+      const dir = cfg.roadmapDir + '/' + agent + '/wip'
+      const entries = listDir(dir)
+      if (entries.length > limit) {
+        warnings.push(`${entries.length} roadmaps in wip/ for agent "${agent}" (limit: ${limit})`)
+      }
+    }
+    return warnings
+  }
+
   const entries = listDir(cfg.roadmapDir + '/wip')
-  if (entries.length > 1) {
-    return [`${entries.length} roadmaps in wip/ (recommended: keep only 1 active at a time)`]
+  const limit = cfg.wipLimit > 0 ? cfg.wipLimit : 1
+  if (entries.length > limit) {
+    return [`${entries.length} roadmaps in wip/ (limit: ${limit})`]
   }
   return []
 }
 
+// validateSingleWIP — alias retrocompatível de validateWIPLimit (modo flat)
+function validateSingleWIP() {
+  return validateWIPLimit()
+}
+
 // validateStaleWIP — roadmaps wip com mtime >= 7 dias → warning
+// Suporta modo by_agent via resolveWIPDirs.
 function validateStaleWIP() {
   const cfg = config.load()
-  let files = []
-  try {
-    files = fs.readdirSync(cfg.roadmapDir + '/wip')
-      .filter(f => f.endsWith('.md'))
-      .map(f => path.join(cfg.roadmapDir + '/wip', f))
-  } catch (_) {
-    return []
-  }
-
+  const wipDirs = resolveWIPDirs(cfg)
   const warnings = []
   const now = Date.now()
-  for (const filePath of files) {
+
+  for (const wipDir of wipDirs) {
+    let files = []
     try {
-      const stat = fs.statSync(filePath)
-      const ageMs = now - stat.mtimeMs
-      const days = Math.floor(ageMs / (1000 * 60 * 60 * 24))
-      if (days >= STALE_WIP_DAYS) {
-        const lastModified = stat.mtime.toISOString().slice(0, 10)
-        const basename = path.basename(filePath)
-        warnings.push(
-          `roadmap/wip/${basename} has been in WIP for ${days} days (last modified ${lastModified})`
-        )
-      }
+      files = fs.readdirSync(wipDir)
+        .filter(f => f.endsWith('.md'))
+        .map(f => path.join(wipDir, f))
     } catch (_) {
-      // ignorar
+      continue
+    }
+
+    for (const filePath of files) {
+      try {
+        const stat = fs.statSync(filePath)
+        const ageMs = now - stat.mtimeMs
+        const days = Math.floor(ageMs / (1000 * 60 * 60 * 24))
+        if (days >= STALE_WIP_DAYS) {
+          const lastModified = stat.mtime.toISOString().slice(0, 10)
+          const basename = path.basename(filePath)
+          warnings.push(
+            `roadmap/wip/${basename} has been in WIP for ${days} days (last modified ${lastModified})`
+          )
+        }
+      } catch (_) {
+        // ignorar
+      }
     }
   }
   return warnings
@@ -294,7 +352,7 @@ async function validate() {
     ...validateREQsNotBlockedByDraftADRs(),
   ]
   const warnings = [
-    ...validateSingleWIP(),
+    ...validateWIPLimit(),
     ...validateStaleWIP(),
   ]
   return { violations, warnings }
@@ -303,40 +361,58 @@ async function validate() {
 // getStatus retorna string formatada com o status de governança do projeto
 async function getStatus() {
   const cfg = config.load()
-  const wip = listDir(cfg.roadmapDir + '/wip')
-  const blocked = listDir(cfg.roadmapDir + '/blocked')
-  const done = listDir(cfg.roadmapDir + '/done')
+  let out = '── trackfw status ──────────────────────\n'
 
-  let out = ''
-  out += '── trackfw status ──────────────────────\n'
-
-  out += `\n🔄 WIP (${wip.length})\n`
-  for (const f of wip) out += `   ${f}\n`
-
-  out += `\n❌ Blocked (${blocked.length})\n`
-  for (const f of blocked) out += `   ${f}\n`
-
-  const staleWIPs = validateStaleWIP()
-  if (staleWIPs.length > 0) {
-    out += `\n⚠  Stale WIP (${staleWIPs.length})\n`
-    for (const w of staleWIPs) out += `   ${w}\n`
-  }
-
-  const blockedByDraft = blockedREQs()
-  const blockedKeys = Object.keys(blockedByDraft)
-  if (blockedKeys.length > 0) {
-    out += `\n⏳ REQs blocked by Draft ADRs (${blockedKeys.length})\n`
-    for (const reqFile of blockedKeys) {
-      out += `   ${reqFile}\n`
-      for (const adr of blockedByDraft[reqFile]) {
-        out += `     → ${adr} (Draft)\n`
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    let agents = cfg.agents || []
+    if (agents.length === 0) {
+      try {
+        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
+          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
+        })
+      } catch (_) { agents = [] }
+    }
+    out += '\n⚙ WIP by Agent\n'
+    for (const agent of agents) {
+      const wip = listDir(cfg.roadmapDir + '/' + agent + '/wip')
+      if (wip.length > 0) {
+        out += `  [${agent}] WIP (${wip.length})\n`
+        wip.forEach(f => { out += `    ${f}\n` })
       }
     }
-  }
+  } else {
+    const wip = listDir(cfg.roadmapDir + '/wip')
+    const blocked = listDir(cfg.roadmapDir + '/blocked')
+    const done = listDir(cfg.roadmapDir + '/done')
 
-  out += `\n✅ Done (last 5)\n`
-  const last5 = done.length > 5 ? done.slice(done.length - 5) : done
-  for (const f of last5) out += `   ${f}\n`
+    out += `\n🔄 WIP (${wip.length})\n`
+    for (const f of wip) out += `   ${f}\n`
+
+    out += `\n❌ Blocked (${blocked.length})\n`
+    for (const f of blocked) out += `   ${f}\n`
+
+    const staleWIPs = validateStaleWIP()
+    if (staleWIPs.length > 0) {
+      out += `\n⚠  Stale WIP (${staleWIPs.length})\n`
+      for (const w of staleWIPs) out += `   ${w}\n`
+    }
+
+    const blockedByDraft = blockedREQs()
+    const blockedKeys = Object.keys(blockedByDraft)
+    if (blockedKeys.length > 0) {
+      out += `\n⏳ REQs blocked by Draft ADRs (${blockedKeys.length})\n`
+      for (const reqFile of blockedKeys) {
+        out += `   ${reqFile}\n`
+        for (const adr of blockedByDraft[reqFile]) {
+          out += `     → ${adr} (Draft)\n`
+        }
+      }
+    }
+
+    out += `\n✅ Done (last 5)\n`
+    const last5 = done.length > 5 ? done.slice(done.length - 5) : done
+    for (const f of last5) out += `   ${f}\n`
+  }
 
   out += '\n────────────────────────────────────────\n'
   return out
@@ -352,10 +428,12 @@ module.exports = {
   validateREQsHaveRoadmap,
   validateADRsAreReferenced,
   validateWIPHasAcceptanceCriteria,
+  validateWIPLimit,
   validateSingleWIP,
   validateStaleWIP,
   validateREQsNotBlockedByDraftADRs,
   parseBlockedADRs,
   adrIsDraft,
   listDir,
+  resolveWIPDirs,
 }

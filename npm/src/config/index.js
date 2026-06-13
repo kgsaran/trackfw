@@ -86,4 +86,7 @@ function parse(content, cfg) {
   if (inAgents && agents.length) cfg.agents = agents;
 }
 
-module.exports = { load, reset, defaults };
+const NAMESPACING_FLAT = 'flat'
+const NAMESPACING_BY_AGENT = 'by_agent'
+
+module.exports = { load, reset, defaults, NAMESPACING_FLAT, NAMESPACING_BY_AGENT };

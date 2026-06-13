@@ -49,7 +49,7 @@ func Validate() (violations []string, warnings []string, err error) {
 	}
 	violations = append(violations, criteriaViolations...)
 
-	wipWarnings, e := validateSingleWIP()
+	wipWarnings, e := validateWIPLimit()
 	if e != nil {
 		return nil, nil, e
 	}
@@ -73,75 +73,124 @@ func Validate() (violations []string, warnings []string, err error) {
 func GetStatus() (string, error) {
 	cfg := config.Load()
 	var sb strings.Builder
-
-	wip, _ := listDir(cfg.RoadmapDir + "/wip")
-	blocked, _ := listDir(cfg.RoadmapDir + "/blocked")
-	done, _ := listDir(cfg.RoadmapDir + "/done")
-
 	sb.WriteString("── trackfw status ──────────────────────\n")
 
-	sb.WriteString(fmt.Sprintf("\n🔄 WIP (%d)\n", len(wip)))
-	for _, f := range wip {
-		sb.WriteString(fmt.Sprintf("   %s\n", f))
-	}
-
-	sb.WriteString(fmt.Sprintf("\n❌ Blocked (%d)\n", len(blocked)))
-	for _, f := range blocked {
-		sb.WriteString(fmt.Sprintf("   %s\n", f))
-	}
-
-	// Seção: stale WIP
-	staleWIPs, _ := validateStaleWIP()
-	if len(staleWIPs) > 0 {
-		sb.WriteString(fmt.Sprintf("\n⚠  Stale WIP (%d)\n", len(staleWIPs)))
-		for _, w := range staleWIPs {
-			parts := strings.Fields(w)
-			if len(parts) > 0 {
-				sb.WriteString(fmt.Sprintf("   %s\n", w))
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := cfg.Agents
+		if len(agents) == 0 {
+			entries, err := os.ReadDir(cfg.RoadmapDir)
+			if err == nil {
+				for _, e := range entries {
+					if e.IsDir() {
+						agents = append(agents, e.Name())
+					}
+				}
 			}
 		}
-	}
-
-	// Seção: REQs bloqueadas por ADRs Draft
-	blockedByDraft, err := blockedREQs()
-	if err == nil && len(blockedByDraft) > 0 {
-		sb.WriteString(fmt.Sprintf("\n⏳ REQs blocked by Draft ADRs (%d)\n", len(blockedByDraft)))
-		for reqFile, adrs := range blockedByDraft {
-			sb.WriteString(fmt.Sprintf("   %s\n", reqFile))
-			for _, adr := range adrs {
-				sb.WriteString(fmt.Sprintf("     → %s (Draft)\n", adr))
+		sb.WriteString("\n⚙ WIP by Agent\n")
+		for _, agent := range agents {
+			wip, _ := listDir(cfg.RoadmapDir + "/" + agent + "/wip")
+			if len(wip) > 0 {
+				sb.WriteString(fmt.Sprintf("  [%s] WIP (%d)\n", agent, len(wip)))
+				for _, f := range wip {
+					sb.WriteString(fmt.Sprintf("    %s\n", f))
+				}
 			}
 		}
-	}
+	} else {
+		wip, _ := listDir(cfg.RoadmapDir + "/wip")
+		blocked, _ := listDir(cfg.RoadmapDir + "/blocked")
+		done, _ := listDir(cfg.RoadmapDir + "/done")
 
-	sb.WriteString(fmt.Sprintf("\n✅ Done (last 5)\n"))
-	last5 := done
-	if len(last5) > 5 {
-		last5 = last5[len(last5)-5:]
-	}
-	for _, f := range last5 {
-		sb.WriteString(fmt.Sprintf("   %s\n", f))
+		sb.WriteString(fmt.Sprintf("\n🔄 WIP (%d)\n", len(wip)))
+		for _, f := range wip {
+			sb.WriteString(fmt.Sprintf("   %s\n", f))
+		}
+
+		sb.WriteString(fmt.Sprintf("\n❌ Blocked (%d)\n", len(blocked)))
+		for _, f := range blocked {
+			sb.WriteString(fmt.Sprintf("   %s\n", f))
+		}
+
+		// Seção: stale WIP
+		staleWIPs, _ := validateStaleWIP()
+		if len(staleWIPs) > 0 {
+			sb.WriteString(fmt.Sprintf("\n⚠  Stale WIP (%d)\n", len(staleWIPs)))
+			for _, w := range staleWIPs {
+				parts := strings.Fields(w)
+				if len(parts) > 0 {
+					sb.WriteString(fmt.Sprintf("   %s\n", w))
+				}
+			}
+		}
+
+		// Seção: REQs bloqueadas por ADRs Draft
+		blockedByDraft, err := blockedREQs()
+		if err == nil && len(blockedByDraft) > 0 {
+			sb.WriteString(fmt.Sprintf("\n⏳ REQs blocked by Draft ADRs (%d)\n", len(blockedByDraft)))
+			for reqFile, adrs := range blockedByDraft {
+				sb.WriteString(fmt.Sprintf("   %s\n", reqFile))
+				for _, adr := range adrs {
+					sb.WriteString(fmt.Sprintf("     → %s (Draft)\n", adr))
+				}
+			}
+		}
+
+		sb.WriteString(fmt.Sprintf("\n✅ Done (last 5)\n"))
+		last5 := done
+		if len(last5) > 5 {
+			last5 = last5[len(last5)-5:]
+		}
+		for _, f := range last5 {
+			sb.WriteString(fmt.Sprintf("   %s\n", f))
+		}
 	}
 
 	sb.WriteString("\n────────────────────────────────────────\n")
 	return sb.String(), nil
 }
 
+// resolveWIPDirs retorna todos os diretórios wip/ conforme o modo de namespacing.
+func resolveWIPDirs(cfg config.ProjectConfig) []string {
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := cfg.Agents
+		if len(agents) == 0 {
+			entries, err := os.ReadDir(cfg.RoadmapDir)
+			if err == nil {
+				for _, e := range entries {
+					if e.IsDir() {
+						agents = append(agents, e.Name())
+					}
+				}
+			}
+		}
+		var dirs []string
+		for _, agent := range agents {
+			dirs = append(dirs, cfg.RoadmapDir+"/"+agent+"/wip")
+		}
+		return dirs
+	}
+	return []string{cfg.RoadmapDir + "/wip"}
+}
+
 func validateWIPHasREQ() ([]string, error) {
 	cfg := config.Load()
-	entries, err := listDir(cfg.RoadmapDir + "/wip")
-	if err != nil {
-		return nil, nil
-	}
+	wipDirs := resolveWIPDirs(cfg)
 
 	var violations []string
-	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join(cfg.RoadmapDir+"/wip", name))
+	for _, wipDir := range wipDirs {
+		entries, err := listDir(wipDir)
 		if err != nil {
 			continue
 		}
-		if !strings.Contains(string(content), "REQ:") || strings.Contains(string(content), "REQ: \n") {
-			violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no linked REQ", name))
+		for _, name := range entries {
+			content, err := os.ReadFile(filepath.Join(wipDir, name))
+			if err != nil {
+				continue
+			}
+			if !strings.Contains(string(content), "REQ:") || strings.Contains(string(content), "REQ: \n") {
+				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no linked REQ", name))
+			}
 		}
 	}
 	return violations, nil
@@ -246,24 +295,27 @@ func validateADRsAreReferenced() ([]string, error) {
 
 func validateWIPHasAcceptanceCriteria() ([]string, error) {
 	cfg := config.Load()
-	entries, err := listDir(cfg.RoadmapDir + "/wip")
-	if err != nil {
-		return nil, nil
-	}
+	wipDirs := resolveWIPDirs(cfg)
 
 	var violations []string
-	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join(cfg.RoadmapDir+"/wip", name))
+	for _, wipDir := range wipDirs {
+		entries, err := listDir(wipDir)
 		if err != nil {
 			continue
 		}
-		s := string(content)
-		hasBlock := strings.Contains(s, "## Acceptance Criteria") ||
-			strings.Contains(s, "## Critérios de Aceite") ||
-			strings.Contains(s, "acceptance criteria") ||
-			strings.Contains(s, "Acceptance Criteria:")
-		if !hasBlock {
-			violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no acceptance criteria block", name))
+		for _, name := range entries {
+			content, err := os.ReadFile(filepath.Join(wipDir, name))
+			if err != nil {
+				continue
+			}
+			s := string(content)
+			hasBlock := strings.Contains(s, "## Acceptance Criteria") ||
+				strings.Contains(s, "## Critérios de Aceite") ||
+				strings.Contains(s, "acceptance criteria") ||
+				strings.Contains(s, "Acceptance Criteria:")
+			if !hasBlock {
+				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no acceptance criteria block", name))
+			}
 		}
 	}
 	return violations, nil
@@ -271,36 +323,78 @@ func validateWIPHasAcceptanceCriteria() ([]string, error) {
 
 func validateStaleWIP() ([]string, error) {
 	cfg := config.Load()
-	entries, err := filepath.Glob(cfg.RoadmapDir + "/wip/*.md")
-	if err != nil {
-		return nil, err
-	}
+	wipDirs := resolveWIPDirs(cfg)
+
 	var warnings []string
-	for _, path := range entries {
-		info, err := os.Stat(path)
+	for _, wipDir := range wipDirs {
+		entries, err := filepath.Glob(wipDir + "/*.md")
 		if err != nil {
 			continue
 		}
-		age := time.Since(info.ModTime())
-		days := int(age.Hours() / 24)
-		if days >= staleWIPDays {
-			warnings = append(warnings, fmt.Sprintf(
-				"roadmap/wip/%s has been in WIP for %d days (last modified %s)",
-				filepath.Base(path), days, info.ModTime().Format("2006-01-02"),
-			))
+		for _, path := range entries {
+			info, err := os.Stat(path)
+			if err != nil {
+				continue
+			}
+			age := time.Since(info.ModTime())
+			days := int(age.Hours() / 24)
+			if days >= staleWIPDays {
+				warnings = append(warnings, fmt.Sprintf(
+					"roadmap/wip/%s has been in WIP for %d days (last modified %s)",
+					filepath.Base(path), days, info.ModTime().Format("2006-01-02"),
+				))
+			}
 		}
 	}
 	return warnings, nil
 }
 
-func validateSingleWIP() ([]string, error) {
+// validateWIPLimit verifica se a quantidade de roadmaps em wip excede o limite configurado.
+// Em modo by_agent, verifica por agente individualmente.
+func validateWIPLimit() ([]string, error) {
 	cfg := config.Load()
+
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := cfg.Agents
+		if len(agents) == 0 {
+			entries, err := os.ReadDir(cfg.RoadmapDir)
+			if err == nil {
+				for _, e := range entries {
+					if e.IsDir() {
+						agents = append(agents, e.Name())
+					}
+				}
+			}
+		}
+		var warnings []string
+		for _, agent := range agents {
+			dir := cfg.RoadmapDir + "/" + agent + "/wip"
+			entries, _ := listDir(dir)
+			limit := cfg.WipLimit
+			if limit <= 0 {
+				limit = 1
+			}
+			if len(entries) > limit {
+				warnings = append(warnings, fmt.Sprintf(
+					"%d roadmaps in wip/ for agent %q (limit: %d)",
+					len(entries), agent, limit,
+				))
+			}
+		}
+		return warnings, nil
+	}
+
+	// modo flat
 	entries, err := listDir(cfg.RoadmapDir + "/wip")
 	if err != nil {
 		return nil, nil
 	}
-	if len(entries) > 1 {
-		return []string{fmt.Sprintf("%d roadmaps in wip/ (recommended: keep only 1 active at a time)", len(entries))}, nil
+	limit := cfg.WipLimit
+	if limit <= 0 {
+		limit = 1
+	}
+	if len(entries) > limit {
+		return []string{fmt.Sprintf("%d roadmaps in wip/ (limit: %d)", len(entries), limit)}, nil
 	}
 	return nil, nil
 }
