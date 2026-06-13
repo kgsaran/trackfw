@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 // ADRInfo holds parsed metadata from an ADR markdown file.
@@ -67,13 +69,17 @@ func firstMatch(re *regexp.Regexp, content string) string {
 	return strings.TrimSpace(m[1])
 }
 
-// parseADRs globs docs/adr/*.md and extracts title and status.
-func parseADRs(dir string) []ADRInfo {
-	pattern := filepath.Join(dir, "docs", "adr", "*.md")
-	files, _ := filepath.Glob(pattern)
-	sort.Strings(files)
-	result := make([]ADRInfo, 0, len(files))
-	for _, f := range files {
+// parseADRs globs each configured adr_dir for *.md files.
+func parseADRs(rootDir string, adrDirs []string) []ADRInfo {
+	var allFiles []string
+	for _, d := range adrDirs {
+		pattern := filepath.Join(rootDir, d, "*.md")
+		files, _ := filepath.Glob(pattern)
+		allFiles = append(allFiles, files...)
+	}
+	sort.Strings(allFiles)
+	result := make([]ADRInfo, 0, len(allFiles))
+	for _, f := range allFiles {
 		content := readFile(f)
 		title := firstMatch(reTitle, content)
 		if title == "" {
@@ -92,13 +98,20 @@ func parseADRs(dir string) []ADRInfo {
 	return result
 }
 
-// parseREQs globs docs/req/*.md and extracts title, status and linked ADR.
-func parseREQs(dir string) []REQInfo {
-	pattern := filepath.Join(dir, "docs", "req", "*.md")
-	files, _ := filepath.Glob(pattern)
-	sort.Strings(files)
-	result := make([]REQInfo, 0, len(files))
-	for _, f := range files {
+// parseREQs globs the configured req_dir for *.md files (flat and one level deep).
+func parseREQs(rootDir, reqDir string) []REQInfo {
+	base := filepath.Join(rootDir, reqDir)
+	var allFiles []string
+	for _, pattern := range []string{
+		filepath.Join(base, "*.md"),
+		filepath.Join(base, "*", "*.md"),
+	} {
+		files, _ := filepath.Glob(pattern)
+		allFiles = append(allFiles, files...)
+	}
+	sort.Strings(allFiles)
+	result := make([]REQInfo, 0, len(allFiles))
+	for _, f := range allFiles {
 		content := readFile(f)
 		title := firstMatch(reTitle, content)
 		if title == "" {
@@ -119,13 +132,25 @@ func parseREQs(dir string) []REQInfo {
 	return result
 }
 
-// parseRoadmaps globs docs/roadmaps/*/*.md (excluding .trackfw-log) and extracts metadata.
-func parseRoadmaps(dir string) []RoadmapInfo {
-	pattern := filepath.Join(dir, "docs", "roadmaps", "*", "*.md")
-	files, _ := filepath.Glob(pattern)
-	sort.Strings(files)
-	result := make([]RoadmapInfo, 0, len(files))
-	for _, f := range files {
+// parseRoadmaps globs the configured roadmap_dir using the correct depth for flat vs by_agent.
+func parseRoadmaps(rootDir, roadmapDir, namespacing string) []RoadmapInfo {
+	base := filepath.Join(rootDir, roadmapDir)
+	var patterns []string
+	if namespacing == "by_agent" {
+		// docs/roadmaps/<agent>/<state>/*.md
+		patterns = []string{filepath.Join(base, "*", "*", "*.md")}
+	} else {
+		// docs/roadmaps/<state>/*.md
+		patterns = []string{filepath.Join(base, "*", "*.md")}
+	}
+	var allFiles []string
+	for _, p := range patterns {
+		files, _ := filepath.Glob(p)
+		allFiles = append(allFiles, files...)
+	}
+	sort.Strings(allFiles)
+	result := make([]RoadmapInfo, 0, len(allFiles))
+	for _, f := range allFiles {
 		if strings.Contains(f, ".trackfw-log") {
 			continue
 		}
@@ -257,7 +282,7 @@ nav a:hover { text-decoration: underline; }
     </tbody>
   </table>
   {{else}}
-  <p class="empty-msg">No REQs found in docs/req/</p>
+  <p class="empty-msg">No REQs found</p>
   {{end}}
 
   <!-- ADR TIMELINE -->
@@ -282,7 +307,7 @@ nav a:hover { text-decoration: underline; }
     </tbody>
   </table>
   {{else}}
-  <p class="empty-msg">No ADRs found in docs/adr/</p>
+  <p class="empty-msg">No ADRs found</p>
   {{end}}
 
   <!-- KANBAN -->
@@ -307,16 +332,17 @@ nav a:hover { text-decoration: underline; }
     {{end}}
   </div>
   {{else}}
-  <p class="empty-msg">No roadmaps found in docs/roadmaps/</p>
+  <p class="empty-msg">No roadmaps found</p>
   {{end}}
 </div>
 </body>
 </html>`
 
 func buildPageData(dir string) pageData {
-	adrs := parseADRs(dir)
-	reqs := parseREQs(dir)
-	roadmaps := parseRoadmaps(dir)
+	cfg := config.Load()
+	adrs := parseADRs(dir, cfg.ADRDirs)
+	reqs := parseREQs(dir, cfg.REQDir)
+	roadmaps := parseRoadmaps(dir, cfg.RoadmapDir, cfg.RoadmapNamespacing)
 
 	byState := make(map[string][]RoadmapInfo)
 	for _, r := range roadmaps {
@@ -355,10 +381,11 @@ func handleAPIData(w http.ResponseWriter, r *http.Request) {
 		REQs     []REQInfo     `json:"reqs"`
 		Roadmaps []RoadmapInfo `json:"roadmaps"`
 	}
+	cfg := config.Load()
 	resp := apiResponse{
-		ADRs:     parseADRs(dir),
-		REQs:     parseREQs(dir),
-		Roadmaps: parseRoadmaps(dir),
+		ADRs:     parseADRs(dir, cfg.ADRDirs),
+		REQs:     parseREQs(dir, cfg.REQDir),
+		Roadmaps: parseRoadmaps(dir, cfg.RoadmapDir, cfg.RoadmapNamespacing),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
