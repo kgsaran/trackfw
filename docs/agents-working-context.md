@@ -786,8 +786,19 @@ trackfw/
 
 ---
 
-## Sessão 2026-06-13 — Afrodite (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Afrodite (CONCLUIDO)
 
 **Tarefa:** Criar site de documentação VitePress bilíngue pt-BR/en-US + GitHub Actions deploy (branch `feat/v2.4-docs-site`)
 
 **Branch:** `feat/v2.4-docs-site`
+
+**Entregue:**
+- `site/package.json` + `site/.gitignore` — configuração base VitePress 1.6.4
+- `site/.vitepress/config.mts` — config bilíngue (root=pt-BR, /en=en-US), base=/trackfw/, search local, social links
+- `site/index.md` + `site/en/index.md` — landing pages hero com features, instalação e quickstart
+- `site/guide/getting-started.md` + `site/en/guide/getting-started.md` — guia completo (init, adr, req, roadmap, status, validate)
+- `site/guide/commands.md` + `site/en/guide/commands.md` — referência de todos os comandos com flags e exemplos
+- `site/guide/ai-agents.md` + `site/en/guide/ai-agents.md` — integração com Claude Code, Gemini CLI, Cursor, JSON Schema, prompts
+- `.github/workflows/deploy-docs.yml` — build + deploy automático no GitHub Pages em push na main
+
+**Resultado:** `npm run build` limpo | 9 HTMLs gerados em `.vitepress/dist/` | commit `d252e92` | push para `feat/v2.4-docs-site`
