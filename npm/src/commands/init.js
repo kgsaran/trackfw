@@ -26,7 +26,7 @@ cmd.action(async () => {
 
   const { input, select, checkbox } = require('@inquirer/prompts')
 
-  let projectName, projectType, frontend, pkgManager, backend, backendFramework, hooks, ci, aiTools
+  let projectName, projectType, frontend, pkgManager, backend, backendFramework, hooks, ci, aiTools, requireReqInCommit
 
   try {
     projectName = await input({
@@ -127,6 +127,15 @@ cmd.action(async () => {
       ],
     })
 
+    requireReqInCommit = false
+    if (hooks !== 'none') {
+      const { confirm: confirmPrompt } = require('@inquirer/prompts')
+      requireReqInCommit = await confirmPrompt({
+        message: t('init.prompt.require_req_in_commit'),
+        default: false,
+      })
+    }
+
     aiTools = await checkbox({
       message: t('init.prompt.aiTools'),
       choices: [
@@ -154,7 +163,7 @@ cmd.action(async () => {
     return
   }
 
-  const cfg = { projectName, projectType, frontend, backend, backendFramework, pkgManager, hooks, ci }
+  const cfg = { projectName, projectType, frontend, backend, backendFramework, pkgManager, hooks, ci, requireReqInCommit }
   await generators.scaffold(cfg)
 
   for (const tool of (aiTools || [])) {

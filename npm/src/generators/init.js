@@ -28,6 +28,7 @@ async function scaffold(cfg) {
   generateValidateScript(cfg)
   generateCIWorkflow(cfg)
   generateGitHooks(cfg)
+  generateCommitMsgHook(cfg)
   generateClaudeMD(cfg)
   if (cfg.backend === 'java') generatePomXml(cfg)
   generateClaudeCommands()
@@ -48,6 +49,7 @@ backend_framework: ${cfg.backendFramework || ''}
 pkg_manager: ${cfg.pkgManager || ''}
 hooks: ${cfg.hooks || ''}
 ci: ${cfg.ci || ''}
+require_req_in_commit: ${cfg.requireReqInCommit ? 'true' : 'false'}
 
 # governance paths (edit to match your project structure)
 adr_dirs:
@@ -204,6 +206,42 @@ function generateLefthookHook() {
 `
   fs.writeFileSync('lefthook.yml', content, 'utf8')
   console.log('  ✓ lefthook.yml')
+}
+
+function generateCommitMsgHook(cfg) {
+  if (!cfg.requireReqInCommit || cfg.hooks === 'none') return
+
+  const script = [
+    '#!/bin/sh',
+    '# trackfw: require REQ reference in feat/* and fix/* branches',
+    'BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")',
+    'case "$BRANCH" in',
+    '  feat/*|fix/*)',
+    '    if ! grep -qE "^(REQ|req): " "$1"; then',
+    '      echo "ERROR: Commits in feat/* and fix/* branches require a REQ reference."',
+    '      echo "  Add to commit body: REQ: REQ-YYYY-MM-DD-your-req-slug"',
+    '      exit 1',
+    '    fi',
+    '    ;;',
+    'esac',
+    '',
+  ].join('\n')
+
+  if (cfg.hooks === 'husky') {
+    fs.mkdirSync('.husky', { recursive: true })
+    fs.writeFileSync('.husky/commit-msg', script, { encoding: 'utf8', mode: 0o755 })
+    console.log('  ✓ .husky/commit-msg')
+  } else if (cfg.hooks === 'lefthook') {
+    const lefthookPath = 'lefthook.yml'
+    const existing = fs.existsSync(lefthookPath) ? fs.readFileSync(lefthookPath, 'utf8') : ''
+    if (!existing.includes('commit-msg:')) {
+      const addition = '\ncommit-msg:\n  scripts:\n    "trackfw-req-check.sh":\n      runner: sh\n'
+      fs.writeFileSync(lefthookPath, existing + addition, 'utf8')
+    }
+    fs.mkdirSync('.lefthook/commit-msg', { recursive: true })
+    fs.writeFileSync('.lefthook/commit-msg/trackfw-req-check.sh', script, { encoding: 'utf8', mode: 0o755 })
+    console.log('  ✓ .lefthook/commit-msg/trackfw-req-check.sh')
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -702,6 +740,7 @@ module.exports = {
   generateValidateScript,
   generateCIWorkflow,
   generateGitHooks,
+  generateCommitMsgHook,
   generateClaudeMD,
   generateClaudeCommands,
   installAgents,

@@ -10,7 +10,8 @@
       "backendFramework": "¿Framework de backend?",
       "gitHooks": "¿Git hooks?",
       "ci": "¿Sistema de CI?",
-      "aiTools": "¿Qué asistentes de IA usas?"
+      "aiTools": "¿Qué asistentes de IA usas?",
+      "require_req_in_commit": "¿Requerir referencia REQ en mensajes de commit de ramas feat/fix?"
     },
     "success": "\n✓ trackfw inicializado — ejecuta 'trackfw status' para ver el estado de gobernanza."
   },

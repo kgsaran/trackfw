@@ -721,3 +721,20 @@ trackfw/
 - `npm/src/commands/index.js` — sync registrado no createProgram().
 
 **Resultado:** `go build ./...` limpo | `go vet ./...` limpo | 8/8 testes sync verdes | suite completa verde | `node --check` OK | commit `dfa58aa` | push para `feat/v2.0-gaps`.
+
+---
+
+## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-4A do roadmap v2.0-gaps — Hook `commit-msg` com validação de REQ em branches feat/fix.
+
+**Branch:** `feat/v2.0-gaps`
+
+**Escopo:**
+- `internal/generators/scaffold.go` — campo `RequireReqInCommit bool` em Config + função `generateCommitMsgHook` + campo `require_req_in_commit` no trackfw.yaml
+- `internal/commands/init.go` — nova pergunta no wizard (somente quando hooks != "none")
+- `internal/generators/commitmsghook_test.go` — 3 testes de cobertura
+- i18n locales Go (en-US, pt-BR, es-ES) — chave `require_req_in_commit`
+- `npm/src/generators/init.js` — geração do hook commit-msg no scaffold
+- `npm/src/commands/init.js` — nova pergunta no wizard
+- `npm/src/i18n/locales/` — chave `require_req_in_commit` nos 3 locales

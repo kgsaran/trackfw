@@ -11,6 +11,7 @@
       "gitHooks": "Git hooks?",
       "ci": "CI system?",
       "aiTools": "Which AI assistants do you use?",
+      "require_req_in_commit": "Require REQ reference in commit messages for feat/fix branches?",
       "projectType_fullstack": "Full-stack (frontend + backend)",
       "projectType_frontend": "Frontend only",
       "projectType_backend": "Backend only",
