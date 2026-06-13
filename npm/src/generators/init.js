@@ -48,6 +48,13 @@ backend_framework: ${cfg.backendFramework || ''}
 pkg_manager: ${cfg.pkgManager || ''}
 hooks: ${cfg.hooks || ''}
 ci: ${cfg.ci || ''}
+
+# governance paths (edit to match your project structure)
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: flat
 `
   fs.writeFileSync('trackfw.yaml', content, 'utf8')
   console.log('  ✓ trackfw.yaml')
