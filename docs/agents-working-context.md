@@ -1428,3 +1428,79 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `pypi/trackfw/validator.py` já tem `resolve_wip_dirs`, `validate_wip_limit` e `validate_folder_status_coherence` com suporte by_agent
 - `pypi/trackfw/commands/status.py` já tem breakdown por agente
 - Falta apenas: `pypi/tests/test_namespacing.py` com 3 testes obrigatórios
+
+---
+
+## 2026-06-13 — ML-3B Node.js namespacing by_agent (CONCLUÍDO)
+
+**Agente:** Backend
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+### O que foi implementado
+
+`npm/tests/namespacing.test.js` criado com 15 testes cobrindo:
+- Parse de `roadmap_namespacing: by_agent` e `agents: [zeus, apolo]` no config
+- `resolveWIPDirs` retornando hierarquia `<roadmapDir>/<agente>/wip/` no modo by_agent
+- `validateWIPHasREQ`, `validateWIPHasAcceptanceCriteria` e `validateWIPLimit` varrendo dois agentes independentemente
+- Comportamento flat inalterado (sem regressão)
+- `getStatus` exibindo breakdown por agente
+- Exportação correta de `NAMESPACING_FLAT` e `NAMESPACING_BY_AGENT`
+
+**Resultado:** 15/15 passando; config.test.js (12) e validator.test.js (16) sem regressão.
+**Commit:** `4777f80` — push em `feat/v2.5-discovery-json-traceid`
+
+**Nota:** `config/index.js` e `validator/index.js` já tinham suporte completo a `by_agent` implementado em MLs anteriores. O ML-3B Node.js consistiu exclusivamente em criar a cobertura de testes.
+
+**Resultado:** 9/9 test_namespacing.py verdes | 215/215 testes pypi completos sem regressões | commit 265caa4 | push para `feat/v2.5-discovery-json-traceid`
+
+**Status final:** CONCLUIDO
+
+**Arquivos modificados:**
+- `pypi/tests/test_namespacing.py` — 9 testes cobrindo: parse config by_agent, wip_limit por agente, autodiscover de agentes, resolve_wip_dirs, comportamento flat inalterado
+
+**Nota:** config.py, validator.py e status.py já tinham implementação completa de by_agent. Apenas os testes de namespacing estavam ausentes.
+
+---
+
+## 2026-06-13 — ML-5C: req_id bidirecional no CLI Python (Backend)
+
+**Status:** CONCLUIDO
+**Branch:** `feat/v2.5-discovery-json-traceid`
+**Commit:** `7249687`
+
+**O que foi implementado:**
+- `pypi/trackfw/config.py`: campo `trace_id_field` adicionado ao defaults (default `""` — desativado) com parse no `_parse`
+- `pypi/trackfw/traceid.py`: novo módulo com `check_traceid(cfg)` — indexa REQs e Roadmaps pelo campo de frontmatter configurado e emite 5 tipos de violations: `traceid_orphan_roadmap`, `traceid_orphan_req`, `traceid_state_mismatch`, `traceid_duplicate_req`, `traceid_duplicate_roadmap`. Parse de frontmatter duplicado localmente para evitar importação circular com `validator.py`
+- `pypi/trackfw/validator.py`: integra `check_traceid(cfg)` em `validate_unfiltered()`
+- `pypi/tests/test_traceid.py`: 6 testes pytest cobrindo todos os cenários (orphan roadmap, orphan req, state mismatch, duplicate req, par válido sem violation, desativado sem trace_id_field)
+
+**Resultado:** 6/6 test_traceid.py verdes | 221/221 testes pypi completos sem regressões
+
+---
+
+## 2026-06-13 — ML-5A: req_id bidirecional no CLI Go (Backend)
+
+**Status:** CONCLUIDO
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+### O que foi implementado
+
+- `internal/config/config.go`: campo `TraceIdField string` adicionado ao struct `ProjectConfig` + case `trace_id_field` no parser `parse()`.
+- `internal/validator/validator_traceid.go`: módulo com `validateTraceId(cfg ProjectConfig)` — 5 verificações: `traceid_orphan_roadmap`, `traceid_orphan_req`, `traceid_state_mismatch`, `traceid_duplicate_req`, `traceid_duplicate_roadmap`. Indexação por estado via subpastas (wip/, done/ etc.) + flat para REQs.
+- `internal/validator/validator.go`: `ValidateUnfiltered()` atualizado — carrega `cfg := config.Load()` e chama `validateTraceId(cfg)` ao final.
+- `internal/validator/validator_traceid_test.go`: 6 testes (`TestTraceIdOrphanRoadmap`, `TestTraceIdOrphanReq`, `TestTraceIdStateMismatch`, `TestTraceIdDuplicateReq`, `TestTraceIdValidPair`, `TestTraceIdDisabled`) — 6/6 verdes.
+
+**Resultado:** `make build` sem erros | `go test ./internal/validator/ -run TestTraceId -v` 6/6 verdes | `go test ./...` sem novas regressões (falha pré-existente `TestMoveRoadmap_ByAgent` inalterada).
+
+---
+
+## 2026-06-13 — ML-5B: req_id bidirecional no CLI Node.js (Backend)
+
+**Status:** IMPLEMENTANDO
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**O que está sendo implementado:**
+- `npm/src/config/index.js`: campo `traceIdField` no defaults + parse de `trace_id_field` no YAML
+- `npm/src/validator/traceid.js`: módulo puro `checkTraceIds(reqDir, roadmapDir, fieldName)` com 5 violations
+- `npm/src/validator/index.js`: integração da verificação via `validateUnfiltered()`
+- `npm/tests/traceid.test.js`: testes com dirs temporários (mkdtempSync)
