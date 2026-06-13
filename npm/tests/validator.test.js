@@ -129,5 +129,107 @@ test('validateRefTargetsExist returns array', () => {
   assert(Array.isArray(result))
 })
 
+// ML-2B: field mapping + severity per rule
+
+test('field mapping: req_id satisfies wip_has_req', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-vm-'))
+  fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+    'link_fields:\n  req:\n    - req_id\n')
+  fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'docs/roadmaps/wip/RM-001.md'),
+    '---\nstatus: WIP\nreq_id: docs/req/REQ-001.md\n---\n## Acceptance Criteria\n- [ ] done\n')
+  const origDir = process.cwd()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const result = validator.validateWIPHasREQ()
+    assert(!result.some(v => v.includes('no linked REQ')),
+      'req_id marker should satisfy wip_has_req: ' + JSON.stringify(result))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
+test('severity off: adr_orphan suppressed', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-vm-'))
+  fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+    'rules:\n  adr_orphan: off\n')
+  fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'docs/adr/ADR-001.md'),
+    '---\nstatus: Accepted\n---\n# ADR-001\n')
+  const origDir = process.cwd()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const violations = []
+    const warnings = []
+    validator.applyRule('adr_orphan', validator.validateADRsAreReferenced(), violations, warnings)
+    assert(!violations.some(v => v.includes('not referenced')),
+      'adr_orphan: off should suppress violations')
+    assert(!warnings.some(w => w.includes('not referenced')),
+      'adr_orphan: off should suppress warnings too')
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
+test('severity warning: wip_has_req appears in warnings not violations', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-vm-'))
+  fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+    'rules:\n  wip_has_req: warning\n')
+  fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'docs/roadmaps/wip/RM-001.md'),
+    '---\nstatus: WIP\n---\n## Acceptance Criteria\n- [ ] done\n')
+  const origDir = process.cwd()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const violations = []
+    const warnings = []
+    validator.applyRule('wip_has_req', validator.validateWIPHasREQ(), violations, warnings)
+    assert(!violations.some(v => v.includes('no linked REQ')),
+      'wip_has_req: warning should not be in violations')
+    assert(warnings.some(w => w.includes('no linked REQ')),
+      'wip_has_req: warning should appear in warnings')
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
+test('acceptance_markers custom: custom marker satisfies check', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-vm-'))
+  fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+    'acceptance_markers:\n  - "## Done When"\n  - "## Critérios"\n')
+  fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'docs/roadmaps/wip/RM-001.md'),
+    '---\nstatus: WIP\nREQ: docs/req/REQ-001.md\n---\n## Done When\n- [ ] done\n')
+  const origDir = process.cwd()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const result = validator.validateWIPHasAcceptanceCriteria()
+    assert(!result.some(v => v.includes('no acceptance criteria')),
+      'custom marker ## Done When should satisfy acceptance criteria check')
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

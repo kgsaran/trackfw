@@ -127,6 +127,16 @@ function parseBlockedADRs(filePath) {
   return adrs
 }
 
+// contentHasMarker retorna true se o conteúdo contém algum dos markers sem espaço em branco após.
+function contentHasMarker(content, markers) {
+  for (const marker of markers) {
+    if (content.includes(marker) && !content.includes(marker + ' \n')) {
+      return true
+    }
+  }
+  return false
+}
+
 // adrIsDraft verifica se <adrBasename> contém "Status: Draft" buscando recursivamente nas adrDirs.
 function adrIsDraft(basename) {
   const p = findAdrFile(basename)
@@ -136,7 +146,7 @@ function adrIsDraft(basename) {
   } catch (_) { return false }
 }
 
-// validateWIPHasREQ — roadmaps em wip/ sem "REQ:" no conteúdo → violation
+// validateWIPHasREQ — roadmaps em wip/ sem marker REQ no conteúdo → violation
 // Suporta modo by_agent via resolveWIPDirs.
 function validateWIPHasREQ() {
   const cfg = config.load()
@@ -147,7 +157,7 @@ function validateWIPHasREQ() {
     for (const name of entries) {
       try {
         const content = fs.readFileSync(path.join(wipDir, name), 'utf8')
-        if (!content.includes('REQ:') || content.includes('REQ: \n')) {
+        if (!contentHasMarker(content, cfg.linkFields.req)) {
           violations.push(`roadmap "${name}" is in wip but has no linked REQ`)
         }
       } catch (_) {
@@ -158,7 +168,7 @@ function validateWIPHasREQ() {
   return violations
 }
 
-// validateREQsHaveADR — REQs em <reqDir>/ sem "ADR:" no conteúdo → violation
+// validateREQsHaveADR — REQs em <reqDir>/ sem marker ADR no conteúdo → violation
 function validateREQsHaveADR() {
   const cfg = config.load()
   const entries = listDir(cfg.reqDir)
@@ -166,7 +176,7 @@ function validateREQsHaveADR() {
   for (const name of entries) {
     try {
       const content = fs.readFileSync(path.join(cfg.reqDir, name), 'utf8')
-      if (!content.includes('ADR:') || content.includes('ADR: \n')) {
+      if (!contentHasMarker(content, cfg.linkFields.adr)) {
         violations.push(`req "${name}" has no linked ADR`)
       }
     } catch (_) {
@@ -176,7 +186,7 @@ function validateREQsHaveADR() {
   return violations
 }
 
-// validateBlockedHasREQ — roadmaps em <roadmapDir>/blocked/ sem "REQ:" → violation
+// validateBlockedHasREQ — roadmaps em <roadmapDir>/blocked/ sem marker REQ → violation
 function validateBlockedHasREQ() {
   const cfg = config.load()
   const entries = listDir(cfg.roadmapDir + '/blocked')
@@ -184,7 +194,7 @@ function validateBlockedHasREQ() {
   for (const name of entries) {
     try {
       const content = fs.readFileSync(path.join(cfg.roadmapDir + '/blocked', name), 'utf8')
-      if (!content.includes('REQ:') || content.includes('REQ: \n')) {
+      if (!contentHasMarker(content, cfg.linkFields.req)) {
         violations.push(`roadmap "${name}" is in blocked but has no linked REQ`)
       }
     } catch (_) {
@@ -194,7 +204,7 @@ function validateBlockedHasREQ() {
   return violations
 }
 
-// validateREQsHaveRoadmap — REQs sem "Roadmap:" → violation
+// validateREQsHaveRoadmap — REQs sem marker Roadmap → violation
 function validateREQsHaveRoadmap() {
   const cfg = config.load()
   const entries = listDir(cfg.reqDir)
@@ -202,7 +212,7 @@ function validateREQsHaveRoadmap() {
   for (const name of entries) {
     try {
       const content = fs.readFileSync(path.join(cfg.reqDir, name), 'utf8')
-      if (!content.includes('Roadmap:') || content.includes('Roadmap: \n')) {
+      if (!contentHasMarker(content, cfg.linkFields.roadmap)) {
         violations.push(`req "${name}" has no linked Roadmap`)
       }
     } catch (_) {
@@ -250,11 +260,7 @@ function validateWIPHasAcceptanceCriteria() {
     for (const name of entries) {
       try {
         const content = fs.readFileSync(path.join(wipDir, name), 'utf8')
-        const hasBlock =
-          content.includes('## Acceptance Criteria') ||
-          content.includes('## Critérios de Aceite') ||
-          content.includes('acceptance criteria') ||
-          content.includes('Acceptance Criteria:')
+        const hasBlock = contentHasMarker(content, cfg.acceptanceMarkers)
         if (!hasBlock) {
           violations.push(`roadmap "${name}" is in wip but has no acceptance criteria block`)
         }
@@ -693,31 +699,55 @@ function validateFilenameUniqueness() {
   return violations
 }
 
+// ruleSeverity retorna a severidade configurada para uma regra ('error'|'warning'|'off').
+function ruleSeverity(name) {
+  const cfg = config.load()
+  return cfg.rules[name] || 'error'
+}
+
+// applyRule distribui msgs para violations ou warnings conforme a severidade configurada.
+// Se severidade for 'off', descarta silenciosamente.
+function applyRule(ruleName, msgs, violations, warnings) {
+  if (!msgs || msgs.length === 0) return
+  const severity = ruleSeverity(ruleName)
+  if (severity === 'off') return
+  if (severity === 'warning') {
+    warnings.push(...msgs)
+  } else {
+    violations.push(...msgs)
+  }
+}
+
 // validate executa todas as validações e retorna { violations, warnings }
 async function validate() {
   const wipLimitResult = validateWIPLimit()
-  let violations = [
-    ...validateWIPHasREQ(),
-    ...validateREQsHaveADR(),
-    ...validateBlockedHasREQ(),
-    ...validateREQsHaveRoadmap(),
-    ...validateADRsAreReferenced(),
-    ...validateWIPHasAcceptanceCriteria(),
-    ...validateREQsNotBlockedByDraftADRs(),
-    ...validateFrontmatterPresence(),
-    ...validateFilenameUniqueness(),
-    ...wipLimitResult.violations,
-  ]
-  let warnings = [
-    ...wipLimitResult.warnings,
-    ...validateStaleWIP(),
-    ...validateRefTargetsExist(),
-    ...validateFolderStatusCoherence(),
-  ]
+  const violations = []
+  const warnings = []
+
+  // Regras com severidade configurável via applyRule
+  applyRule('wip_has_req',          validateWIPHasREQ(),                   violations, warnings)
+  applyRule('wip_acceptance',       validateWIPHasAcceptanceCriteria(),    violations, warnings)
+  applyRule('wip_limit',            wipLimitResult.violations,             violations, warnings)
+  applyRule('adr_orphan',           validateADRsAreReferenced(),           violations, warnings)
+  applyRule('stale_wip',            validateStaleWIP(),                    violations, warnings)
+  applyRule('ref_targets_exist',    validateRefTargetsExist(),             violations, warnings)
+  applyRule('folder_status',        validateFolderStatusCoherence(),       violations, warnings)
+  applyRule('filename_uniqueness',  validateFilenameUniqueness(),          violations, warnings)
+  applyRule('blocked_by_draft_adr', validateREQsNotBlockedByDraftADRs(),  violations, warnings)
+
+  // Regras diretas (sem configuração de severidade): violations sempre
+  violations.push(...validateREQsHaveADR())
+  violations.push(...validateBlockedHasREQ())
+  violations.push(...validateREQsHaveRoadmap())
+  violations.push(...validateFrontmatterPresence())
+
+  // warnings diretos do WIP limit (não configuráveis)
+  warnings.push(...wipLimitResult.warnings)
+
   // Modo lenient: mover violations para warnings, exit code 0
   if (isLenient()) {
-    warnings = [...warnings, ...violations]
-    violations = []
+    const allViolations = violations.splice(0)
+    warnings.push(...allViolations)
   }
   return { violations, warnings }
 }
@@ -830,4 +860,8 @@ module.exports = {
   validateRefTargetsExist,
   validateFolderStatusCoherence,
   validateFilenameUniqueness,
+  // novas funções ML-2B
+  contentHasMarker,
+  ruleSeverity,
+  applyRule,
 }
