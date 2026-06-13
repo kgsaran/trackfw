@@ -2,8 +2,11 @@ package validator
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -253,6 +256,24 @@ func Validate() (violations []string, warnings []string, err error) {
 	frontmatterViolations := validateFrontmatterPresence()
 	violations = append(violations, frontmatterViolations...)
 
+	refWarnings, e := validateRefTargetsExist()
+	if e != nil {
+		return nil, nil, e
+	}
+	warnings = append(warnings, refWarnings...)
+
+	coherenceWarnings, e := validateFolderStatusCoherence()
+	if e != nil {
+		return nil, nil, e
+	}
+	warnings = append(warnings, coherenceWarnings...)
+
+	uniquenessViolations, e := validateFilenameUniqueness()
+	if e != nil {
+		return nil, nil, e
+	}
+	violations = append(violations, uniquenessViolations...)
+
 	// Modo lenient: mover violations para warnings, exit code 0
 	if IsLenient() {
 		warnings = append(warnings, violations...)
@@ -476,10 +497,7 @@ func validateADRsAreReferenced() ([]string, error) {
 	cfg := config.Load()
 	var adrs []string
 	for _, adrDir := range cfg.ADRDirs {
-		names, err := listDir(adrDir)
-		if err != nil {
-			continue
-		}
+		names := walkADRFiles(adrDir)
 		adrs = append(adrs, names...)
 	}
 
@@ -552,12 +570,16 @@ func validateStaleWIP() ([]string, error) {
 			if err != nil {
 				continue
 			}
-			age := time.Since(info.ModTime())
+			modTime := info.ModTime()
+			if gitTime, ok := gitLastModifiedTime(path); ok {
+				modTime = gitTime
+			}
+			age := time.Since(modTime)
 			days := int(age.Hours() / 24)
 			if days >= staleWIPDays {
 				warnings = append(warnings, fmt.Sprintf(
 					"roadmap/wip/%s has been in WIP for %d days (last modified %s)",
-					filepath.Base(path), days, info.ModTime().Format("2006-01-02"),
+					filepath.Base(path), days, modTime.Format("2006-01-02"),
 				))
 			}
 		}
@@ -673,17 +695,18 @@ func parseBlockedADRs(path string) ([]string, error) {
 }
 
 // adrIsDraft verifica se o ADR identificado pelo basename contém "Status: Draft".
-// Busca em todas as ADRDirs configuradas.
+// Busca recursivamente em todas as ADRDirs configuradas.
 func adrIsDraft(adrBasename string) bool {
 	cfg := config.Load()
-	for _, adrDir := range cfg.ADRDirs {
-		path := filepath.Join(adrDir, adrBasename)
-		content, err := os.ReadFile(path)
-		if err == nil {
-			return strings.Contains(string(content), "Status: Draft")
-		}
+	p := findADRFile(adrBasename, cfg.ADRDirs)
+	if p == "" {
+		return false
 	}
-	return false
+	content, err := os.ReadFile(p)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(content), "Status: Draft")
 }
 
 // extractFrontmatterField extrai o valor de um campo do bloco frontmatter YAML.
@@ -715,16 +738,20 @@ func validateFrontmatterPresence() []string {
 	cfg := config.Load()
 	var violations []string
 
-	// ADRs
+	// ADRs — busca recursiva em subpastas
 	for _, adrDir := range cfg.ADRDirs {
-		files, _ := filepath.Glob(filepath.Join(adrDir, "*.md"))
-		for _, f := range files {
-			content, err := os.ReadFile(f)
+		basenames := walkADRFiles(adrDir)
+		for _, basename := range basenames {
+			fullPath := findADRFile(basename, cfg.ADRDirs)
+			if fullPath == "" {
+				continue
+			}
+			content, err := os.ReadFile(fullPath)
 			if err != nil {
 				continue
 			}
 			if !strings.HasPrefix(string(content), "---") {
-				violations = append(violations, fmt.Sprintf("adr %q has no frontmatter block", filepath.Base(f)))
+				violations = append(violations, fmt.Sprintf("adr %q has no frontmatter block", basename))
 			}
 		}
 	}
@@ -756,4 +783,248 @@ func listDir(dir string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// walkADRFiles retorna basenames de todos os arquivos .md encontrados recursivamente em adrDir.
+func walkADRFiles(adrDir string) []string {
+	var names []string
+	_ = filepath.WalkDir(adrDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".md") {
+			names = append(names, filepath.Base(path))
+		}
+		return nil
+	})
+	return names
+}
+
+// findADRFile busca um arquivo pelo basename recursivamente em todos os adrDirs.
+// Retorna o caminho completo ou string vazia se não encontrado.
+func findADRFile(adrBasename string, adrDirs []string) string {
+	for _, adrDir := range adrDirs {
+		var found string
+		_ = filepath.WalkDir(adrDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if !d.IsDir() && filepath.Base(path) == adrBasename {
+				found = path
+				return fs.SkipAll
+			}
+			return nil
+		})
+		if found != "" {
+			return found
+		}
+	}
+	return ""
+}
+
+// gitLastModifiedTime retorna o timestamp do último commit que tocou o path via git log.
+// Retorna (zero, false) se git não estiver disponível ou o arquivo não tiver histórico.
+func gitLastModifiedTime(path string) (time.Time, bool) {
+	cmd := exec.Command("git", "log", "-1", "--format=%ct", "--", path)
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return time.Time{}, false
+	}
+	ts, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return time.Unix(ts, 0), true
+}
+
+// extractRefPath extrai o valor do campo field: na linha de frontmatter/cabeçalho.
+// Retorna string vazia se o campo estiver ausente, vazio ou com valor traço.
+func extractRefPath(content, field string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		prefix := field + ":"
+		if strings.HasPrefix(trimmed, prefix) {
+			val := strings.TrimSpace(trimmed[len(prefix):])
+			if val == "" || val == "—" || val == "-" || val == "–" {
+				return ""
+			}
+			fields := strings.Fields(val)
+			if len(fields) == 0 {
+				return ""
+			}
+			v := fields[0]
+			if strings.HasSuffix(v, ".md") {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+// validateRefTargetsExist verifica se arquivos referenciados via REQ:, ADR: e Roadmap: existem.
+func validateRefTargetsExist() ([]string, error) {
+	cfg := config.Load()
+	var warnings []string
+
+	wipDirs := resolveWIPDirs(cfg)
+	blockedDir := cfg.RoadmapDir + "/blocked"
+	for _, dir := range append(wipDirs, blockedDir) {
+		entries, _ := listDir(dir)
+		for _, name := range entries {
+			content, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				continue
+			}
+			if ref := extractRefPath(string(content), "REQ"); ref != "" {
+				if _, e := os.Stat(ref); os.IsNotExist(e) {
+					warnings = append(warnings, fmt.Sprintf("roadmap %q links to REQ %q which does not exist", name, ref))
+				}
+			}
+		}
+	}
+
+	entries, _ := listDir(cfg.REQDir)
+	for _, name := range entries {
+		content, err := os.ReadFile(filepath.Join(cfg.REQDir, name))
+		if err != nil {
+			continue
+		}
+		s := string(content)
+		if ref := extractRefPath(s, "ADR"); ref != "" {
+			if _, e := os.Stat(ref); os.IsNotExist(e) {
+				warnings = append(warnings, fmt.Sprintf("req %q links to ADR %q which does not exist", name, ref))
+			}
+		}
+		if ref := extractRefPath(s, "Roadmap"); ref != "" {
+			if _, e := os.Stat(ref); os.IsNotExist(e) {
+				warnings = append(warnings, fmt.Sprintf("req %q links to Roadmap %q which does not exist", name, ref))
+			}
+		}
+	}
+	return warnings, nil
+}
+
+// folderToExpectedStatus mapeia o nome da pasta para os valores de status aceitos.
+var folderToExpectedStatus = map[string][]string{
+	"wip":       {"WIP", "wip", "In Progress"},
+	"backlog":   {"Backlog", "backlog"},
+	"blocked":   {"Blocked", "blocked"},
+	"done":      {"Done", "done"},
+	"abandoned": {"Abandoned", "abandoned"},
+}
+
+// validateFolderStatusCoherence verifica se o status declarado no frontmatter é coerente com a pasta.
+func validateFolderStatusCoherence() ([]string, error) {
+	cfg := config.Load()
+	var warnings []string
+	states := []string{"wip", "backlog", "blocked", "done", "abandoned"}
+
+	type dirState struct{ path, state string }
+	var dirs []dirState
+
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := cfg.Agents
+		if len(agents) == 0 {
+			entries, _ := os.ReadDir(cfg.RoadmapDir)
+			for _, e := range entries {
+				if e.IsDir() {
+					agents = append(agents, e.Name())
+				}
+			}
+		}
+		for _, agent := range agents {
+			for _, state := range states {
+				dirs = append(dirs, dirState{
+					path:  filepath.Join(cfg.RoadmapDir, agent, state),
+					state: state,
+				})
+			}
+		}
+	} else {
+		for _, state := range states {
+			dirs = append(dirs, dirState{
+				path:  filepath.Join(cfg.RoadmapDir, state),
+				state: state,
+			})
+		}
+	}
+
+	for _, dir := range dirs {
+		entries, _ := listDir(dir.path)
+		for _, name := range entries {
+			if !strings.HasSuffix(name, ".md") {
+				continue
+			}
+			content, err := os.ReadFile(filepath.Join(dir.path, name))
+			if err != nil {
+				continue
+			}
+			declared := extractFrontmatterField(string(content), "status")
+			if declared == "" {
+				continue
+			}
+			expected := folderToExpectedStatus[dir.state]
+			found := false
+			for _, e := range expected {
+				if strings.EqualFold(declared, e) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				warnings = append(warnings, fmt.Sprintf(
+					"roadmap %q: folder is %q but status declares %q", name, dir.state, declared,
+				))
+			}
+		}
+	}
+	return warnings, nil
+}
+
+// validateFilenameUniqueness detecta o mesmo filename em múltiplos estados.
+func validateFilenameUniqueness() ([]string, error) {
+	cfg := config.Load()
+	states := []string{"wip", "backlog", "blocked", "done", "abandoned"}
+
+	seen := map[string][]string{}
+
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := cfg.Agents
+		if len(agents) == 0 {
+			entries, _ := os.ReadDir(cfg.RoadmapDir)
+			for _, e := range entries {
+				if e.IsDir() {
+					agents = append(agents, e.Name())
+				}
+			}
+		}
+		for _, agent := range agents {
+			for _, state := range states {
+				dir := filepath.Join(cfg.RoadmapDir, agent, state)
+				names, _ := listDir(dir)
+				for _, name := range names {
+					key := agent + "/" + name
+					seen[key] = append(seen[key], state)
+				}
+			}
+		}
+	} else {
+		for _, state := range states {
+			dir := filepath.Join(cfg.RoadmapDir, state)
+			names, _ := listDir(dir)
+			for _, name := range names {
+				seen[name] = append(seen[name], state)
+			}
+		}
+	}
+
+	var violations []string
+	for name, stateList := range seen {
+		if len(stateList) > 1 {
+			violations = append(violations, fmt.Sprintf(
+				"roadmap %q appears in multiple states: %v", name, stateList,
+			))
+		}
+	}
+	return violations, nil
 }
