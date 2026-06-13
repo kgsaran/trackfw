@@ -1,0 +1,130 @@
+{
+  "init": {
+    "description": "Inicializa a governança trackfw no projeto atual",
+    "prompt": {
+      "projectName": "Nome do projeto?",
+      "projectType": "Tipo de projeto?",
+      "frontendStack": "Stack de frontend?",
+      "pkgManager": "Gerenciador de pacotes?",
+      "backendLang": "Linguagem de backend?",
+      "backendFramework": "Framework de backend?",
+      "gitHooks": "Git hooks?",
+      "ci": "Sistema de CI?",
+      "aiTools": "Quais assistentes de IA você usa?",
+      "require_req_in_commit": "Exigir referência REQ nas mensagens de commit de branches feat/fix?",
+      "projectType_fullstack": "Full-stack (frontend + backend)",
+      "projectType_frontend": "Somente frontend",
+      "projectType_backend": "Somente backend",
+      "projectType_governance": "Somente governança (sem stack de build)"
+    },
+    "success": "✓ trackfw inicializado — execute 'trackfw status' para ver o estado de governança."
+  },
+  "adr": {
+    "description": "Gerenciar Architecture Decision Records",
+    "new": {
+      "description": "Criar um novo Architecture Decision Record",
+      "prompt": {
+        "title": "Título do ADR?",
+        "status": "Status inicial?",
+        "context": "Contexto (o que motiva esta decisão)?",
+        "decision": "Decisão (o que foi decidido)?",
+        "consequences": "Consequências (positivas e negativas)?",
+        "alternatives": "Alternativas consideradas?"
+      },
+      "created": "✓ ADR criado: {{path}}"
+    },
+    "list": {
+      "description": "Listar todos os ADRs com status",
+      "empty": "Nenhum ADR encontrado em docs/adr/"
+    }
+  },
+  "req": {
+    "description": "Gerenciar Requisitos",
+    "new": {
+      "description": "Criar um novo requisito",
+      "prompt": {
+        "title": "Requisito do projeto",
+        "motivation": "Motivação (por que isso é necessário)?",
+        "criteria": "Critérios de aceite (um por linha)",
+        "domainQuestion_authentication": "Como os usuários serão autenticados?",
+        "domainQuestion_ui": "Existe um framework de UI ou design system já escolhido?",
+        "domainQuestion_persistence": "Qual engine de banco de dados será usada?",
+        "domainQuestion_api": "Qual protocolo de API será usado?",
+        "domainQuestion_deploy": "Qual é o destino de deploy?",
+        "domainQuestion_events": "Qual message broker será usado?"
+      },
+      "detectedDomains": "Domínios detectados: {{domains}}",
+      "created": "✓ REQ criado: {{path}}",
+      "adrDraftsCreated": "ADR drafts criados:",
+      "resolveADRs": "Resolva estes ADRs (defina Status: Accepted) antes de criar um roadmap.",
+      "adrWarning": "aviso: não foi possível criar ADR draft para {{slug}}: {{message}}"
+    },
+    "list": {
+      "description": "Listar todos os REQs com status",
+      "empty": "Nenhum REQ encontrado em docs/req/"
+    }
+  },
+  "roadmap": {
+    "description": "Gerenciar Roadmaps",
+    "list": {
+      "description": "Listar todos os roadmaps agrupados por estado",
+      "empty": "Nenhum roadmap encontrado."
+    },
+    "show": {
+      "description": "Exibir roadmap pelo nome (correspondência parcial)",
+      "notFound": "Roadmap não encontrado: {{name}}"
+    },
+    "move": {
+      "description": "Mover um roadmap entre estados (backlog|wip|blocked|done|abandoned)",
+      "success": "✓ Movido {{name}} → {{state}}",
+      "notFound": "Roadmap não encontrado: {{name}}"
+    },
+    "new": {
+      "description": "Criar um novo roadmap a partir de uma REQ",
+      "created": "✓ Roadmap criado: {{path}}"
+    }
+  },
+  "validate": {
+    "description": "Validar regras de governança (use como gate de CI)",
+    "ok": "✓ Nenhuma violação encontrada.",
+    "violations": "✗ Violações ({{count}}):",
+    "warnings": "⚠ Avisos ({{count}}):",
+    "lenient_mode": "Violações de governança tratadas como avisos até {{date}}"
+  },
+  "status": {
+    "description": "Exibir o estado atual de governança do projeto"
+  },
+  "log": {
+    "description": "Exibir histórico de transições de estado dos roadmaps",
+    "empty": "Nenhuma transição registrada ainda.",
+    "tail": "Número de transições recentes a exibir",
+    "header": "── trackfw log ─────────────────────────"
+  },
+  "plugins": {
+    "description": "Gerenciar plugins do trackfw",
+    "list": {
+      "description": "Listar plugins instalados",
+      "empty": "Nenhum plugin instalado. Use `trackfw plugins add <user/repo>` para instalar um."
+    },
+    "add": {
+      "description": "Instalar um plugin do GitHub Releases (user/repo ou user/repo@tag)",
+      "installing": "Instalando plugin de {{repo}}...",
+      "success": "Plugin \"{{name}}\" instalado com sucesso."
+    },
+    "remove": {
+      "description": "Remover um plugin instalado",
+      "success": "Plugin \"{{name}}\" removido."
+    }
+  },
+  "metrics": {
+    "description": "Exibe métricas de delivery",
+    "no_data": "Nenhuma transição registrada ainda.",
+    "since": "Filtrar por período (ex: 7d, 30d, 90d)",
+    "export": "Exportar métricas para arquivo CSV"
+  },
+  "errors": {
+    "notFound": "Não encontrado: {{path}}",
+    "downloadFailed": "falha no download: HTTP {{status}} para {{url}}",
+    "pluginNotFound": "plugin \"{{name}}\" não encontrado"
+  }
+}

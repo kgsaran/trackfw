@@ -802,3 +802,45 @@ trackfw/
 - `.github/workflows/deploy-docs.yml` — build + deploy automático no GitHub Pages em push na main
 
 **Resultado:** `npm run build` limpo | 9 HTMLs gerados em `.vitepress/dist/` | commit `d252e92` | push para `feat/v2.4-docs-site`
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-1A Python CLI (CONCLUÍDO)
+
+**Tarefa:** ML-1A do roadmap Python CLI nativo — `config.py` singleton + `__main__` entry point.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Entregue:**
+- `pypi/trackfw/__init__.py` — `__version__ = "2.2.0"`.
+- `pypi/trackfw/__main__.py` — entry point `from trackfw.cli import main; main()`.
+- `pypi/trackfw/config.py` — funções `defaults()`, `load(cwd=None)`, `reset()`, `_parse(content, cfg)`; singleton `_instance`; parse YAML linha a linha sem dependência externa; constantes `NAMESPACING_FLAT` e `NAMESPACING_BY_AGENT`; paridade exata com `npm/src/config/index.js`.
+- `pypi/tests/__init__.py` — vazio (declara pacote de testes).
+- `pypi/tests/test_config.py` — 5 testes unittest: `test_defaults_sem_yaml`, `test_le_campos_escalares`, `test_le_adr_dirs`, `test_singleton`, `test_reset`.
+
+**Resultado:** 5/5 testes verdes | commit `633016d` | push para `feat/v2.2-python-cli-nativo`.
+
+---
+
+## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-1B do roadmap Python CLI nativo — módulo i18n Python com suporte pt-BR/en-US/es-ES.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Arquivos a criar:**
+- `pypi/trackfw/i18n/__init__.py` — função `t(key)`, detecção de locale via env vars, suporte a chaves aninhadas com `.`
+- `pypi/trackfw/i18n/locales/{pt-BR,en-US,es-ES}.json` — cópia dos JSONs do npm
+- `pypi/tests/test_i18n.py` — testes unittest
+
+---
+
+## Sessão 2026-06-13 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-1C do roadmap Python CLI nativo — `validator.py` com wip-limit, stale-wip, req-adr em paridade com `npm/src/validator/index.js`.
+
+**Branch:** `feat/v2.2-python-cli-nativo`
+
+**Arquivos a criar:**
+- `pypi/trackfw/validator.py` — espelho Python do validator JS (612 linhas)
+- `pypi/tests/test_validator.py` — testes unittest
