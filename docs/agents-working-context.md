@@ -1075,20 +1075,19 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 ---
 
-## Sessão 2026-06-13 — Apolo ML-1B validator-improvements (IMPLEMENTANDO)
+## Sessão 2026-06-13 — Apolo ML-1B validator-improvements (CONCLUÍDO)
 
 **Tarefa:** ML-1B do roadmap `feat/v2.3-validator-improvements` — Melhorias no validador Node.js.
 
 **Branch:** `feat/v2.3-validator-improvements`
 
-**Mudanças a implementar:**
-- B1: walkDirMd + findAdrFile (ADR dirs recursivo)
-- B2: gitLastModifiedTime (stale WIP por git log)
-- M3: validateRefTargetsExist (verificar existência de referências)
-- M4: validateFolderStatusCoherence (coerência pasta×status)
-- M5: validateFilenameUniqueness (unicidade de filename entre estados)
+**Entregue:**
+- `npm/src/validator/index.js` — walkDirMd, findAdrFile, gitLastModifiedTime adicionados; adrIsDraft, validateADRsAreReferenced, validateFrontmatterPresence e validateStaleWIP atualizados para busca recursiva; extractRefPath, validateRefTargetsExist, validateFolderStatusCoherence, validateFilenameUniqueness + FOLDER_TO_STATUS implementados; validate() inclui novas validações; module.exports expandido.
+- `npm/tests/validator.test.js` — criado: 12/12 testes passando (sem framework externo).
 
-**Agente:** Apolo | Status: IMPLEMENTANDO
+**Resultado:** `node --check` OK | 12/12 testes verdes | `validate()` OK | commit `c1b236b` | push para `feat/v2.3-validator-improvements`.
+
+**Agente:** Apolo | Status: CONCLUÍDO
 
 ---
 
