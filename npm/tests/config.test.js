@@ -1,0 +1,86 @@
+'use strict'
+const assert = require('assert')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
+const config = require('../src/config/index.js')
+
+function withTmpDir(yaml, fn) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-config-'))
+  try {
+    if (yaml) fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), yaml, 'utf8')
+    config.reset()
+    fn(tmp)
+  } finally {
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+}
+
+let passed = 0, failed = 0
+
+function test(name, fn) {
+  try { fn(); console.log(`✓ ${name}`); passed++ }
+  catch (e) { console.error(`✗ ${name}: ${e.message}`); failed++ }
+}
+
+test('defaults — linkFields, acceptanceMarkers, rules', () => {
+  withTmpDir(null, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.deepStrictEqual(cfg.linkFields.req, ['REQ:'])
+    assert.deepStrictEqual(cfg.linkFields.adr, ['ADR:'])
+    assert.deepStrictEqual(cfg.linkFields.roadmap, ['Roadmap:'])
+    assert.deepStrictEqual(cfg.acceptanceMarkers, ['## Acceptance Criteria', '## Critérios de Aceite'])
+    assert.strictEqual(cfg.rules.wip_has_req, 'error')
+    assert.strictEqual(cfg.rules.stale_wip, 'warning')
+  })
+})
+
+test('link_fields customizado', () => {
+  const yaml = `link_fields:\n  req:\n    - "REQ:"\n    - "req_id"\n  adr:\n    - "ADR:"\n  roadmap:\n    - "Roadmap:"\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.deepStrictEqual(cfg.linkFields.req, ['REQ:', 'req_id'])
+    assert.deepStrictEqual(cfg.linkFields.adr, ['ADR:'])
+  })
+})
+
+test('acceptance_markers customizado', () => {
+  const yaml = `acceptance_markers:\n  - "## Done"\n  - "## Concluído"\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.deepStrictEqual(cfg.acceptanceMarkers, ['## Done', '## Concluído'])
+  })
+})
+
+test('rules parcial — merge com defaults', () => {
+  const yaml = `rules:\n  stale_wip: error\n  adr_orphan: off\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.strictEqual(cfg.rules.stale_wip, 'error')
+    assert.strictEqual(cfg.rules.adr_orphan, 'off')
+    assert.strictEqual(cfg.rules.wip_has_req, 'error') // default mantido
+  })
+})
+
+test('sparse — só wip_limit, novos campos usam defaults', () => {
+  withTmpDir('wip_limit: 3\n', (tmp) => {
+    const cfg = config.load(tmp)
+    assert.strictEqual(cfg.wipLimit, 3)
+    assert.deepStrictEqual(cfg.linkFields.req, ['REQ:'])
+    assert.strictEqual(cfg.rules.wip_has_req, 'error')
+  })
+})
+
+test('retrocompat — yaml v2.3 sem novos campos', () => {
+  const yaml = `adr_dirs:\n  - docs/adr\nwip_limit: 2\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.deepStrictEqual(cfg.adrDirs, ['docs/adr'])
+    assert.strictEqual(cfg.wipLimit, 2)
+    assert.deepStrictEqual(cfg.linkFields.req, ['REQ:']) // default
+  })
+})
+
+console.log(`\n${passed} passed, ${failed} failed`)
+if (failed > 0) process.exit(1)
