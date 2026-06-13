@@ -1117,11 +1117,19 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 ## Sessão 2026-06-13 — Backend (config evolution ML-1A)
 
-**Agente:** Backend | Status: IMPLEMENTANDO
+**Agente:** Backend | Status: CONCLUIDO
 
 **Branch:** `feat/v2.4-config-evolution`
 
 **Tarefa:** ML-1A — estender `internal/config/config.go` com novos campos (`LinkFieldsReq`, `LinkFieldsADR`, `LinkFieldsRoadmap`, `AcceptanceMarkers`, `Rules`) e parser de blocos aninhados de 1 nível. Criar `internal/config/config_evolution_test.go` com 6 testes cobrindo defaults, parsing e retrocompatibilidade.
+
+**Entregue:**
+- `internal/config/config.go` — struct `ProjectConfig` estendida com 5 novos campos v2.4; `defaults()` atualizado com defaults para todos; `parse()` reescrito com suporte a blocos aninhados de 1 nível (link_fields com sub-chaves req/adr/roadmap, acceptance_markers como lista, rules como mapa chave/valor).
+- `internal/config/config_evolution_test.go` — 6 testes: `TestConfigDefaults_NewFields`, `TestConfigLinkFields`, `TestConfigAcceptanceMarkers`, `TestConfigRules`, `TestConfigSparse_NewFields`, `TestConfigRetrocompat`.
+
+**Resultado:** 12/12 testes verdes em `internal/config` | `go build ./...` verde | commit `c676d45` | push para `feat/v2.4-config-evolution`
+
+**Obs:** `TestMoveRoadmap_ByAgent` em `internal/generators` falha — pré-existente no commit `84eeff0`, fora do escopo do ML-1A.
 
 ---
 
