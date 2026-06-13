@@ -75,7 +75,15 @@ func NewREQ(content REQContent) error {
 		blockedSection = sb.String()
 	}
 
-	body := fmt.Sprintf(`# REQ: %s
+	body := fmt.Sprintf(`---
+status: Open
+date: %s
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: %s
 
 %s
 
@@ -95,7 +103,7 @@ ADR: %s
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
 Roadmap: %s
-`, content.Title, statusLine, motivationSection, criteriaSection, linkedADRSection, blockedSection, linkedRoadmapSection)
+`, date, content.Title, statusLine, motivationSection, criteriaSection, linkedADRSection, blockedSection, linkedRoadmapSection)
 
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
 		return fmt.Errorf("writing REQ: %w", err)

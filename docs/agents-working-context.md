@@ -740,3 +740,46 @@ trackfw/
 - `npm/src/i18n/locales/` — chave `require_req_in_commit` nos 3 locales
 
 **Resultado:** `go build ./...` limpo | `go vet ./...` limpo | suite completa verde | `node --check` OK | commit `add41a6` | push para `feat/v2.0-gaps`.
+
+---
+
+## Sessão 2026-06-13 — Apolo Wave 1 feat/v2.3-ai-agent-rail (CONCLUÍDO)
+
+**Tarefa:** Wave 1 do roadmap `trackfw-ai-agent-rail` — ML-1A (frontmatter YAML em templates) e ML-1B (comando `trackfw context`).
+
+**Branch:** `feat/v2.3-ai-agent-rail`
+
+**ML-1A — Frontmatter YAML em templates (Go + npm):**
+- `internal/generators/adr.go` — `NewADR()` e `NewADRDraft()` agora geram bloco `---` com `status`/`date`/`author`
+- `internal/generators/req.go` — `NewREQ()` agora gera bloco `---` com `status`/`date`/`author`/`adr`/`roadmap`
+- `internal/generators/roadmap.go` — template padrão (quando `content.Body == ""`) agora gera bloco `---` com `status`/`date`/`req`/`squad`
+- `npm/src/generators/adr.js` — paridade: `newADR()` e `newADRDraft()` com frontmatter
+- `npm/src/generators/req.js` — paridade: `newREQ()` com frontmatter
+- `npm/src/generators/roadmap.js` — paridade: `newRoadmap()` com frontmatter
+
+**ML-1B — Comando `trackfw context` (Go + npm):**
+- `internal/generators/context.go` — `GetContext(format string) error`: coleta ADRs/REQs/Roadmaps via config, chama `validator.Validate()`, computa score (20pts/categoria + 40pts validate limpo), imprime em md ou json; `extractFrontmatterField()` e `extractInlineStatus()` como helpers
+- `internal/commands/context.go` — cobra command `context` com flag `--format` (md|json)
+- `internal/commands/root.go` — `newContextCmd()` registrado
+- `npm/src/commands/context.js` — paridade Node.js puro: mesma lógica de coleta, score e formatação
+- `npm/src/commands/index.js` — `require('./context')` registrado
+
+**Resultado:** `go build ./...` limpo | `go test ./...` 100% verde | `node --check` OK em todos os arquivos npm
+- Commit `66b5a8f` (ML-1A) | Commit `4f8b504` (ML-1B) | Push para `feat/v2.3-ai-agent-rail`
+
+---
+
+## Sessão 2026-06-13 — Apolo ML-3A (CONCLUÍDO)
+
+**Tarefa:** ML-3A do roadmap `trackfw-ai-agent-rail` — JSON Schema para ADR/REQ/ROADMAP + `validateFrontmatterPresence` em Go e npm.
+
+**Branch:** `feat/v2.3-ai-agent-rail`
+
+**Entregue:**
+- `docs/schema/adr.schema.json` — JSON Schema Draft-07; `required: ["status", "date"]`; `status` enum `["Draft","Proposed","Accepted","Deprecated","Superseded"]`; `date` pattern `^[0-9]{4}-[0-9]{2}-[0-9]{2}$`; campos opcionais `author`, `superseded_by`.
+- `docs/schema/req.schema.json` — JSON Schema Draft-07; `required: ["status", "date"]`; `status` enum `["Open","Closed","Blocked"]`; campos opcionais `author`, `adr`, `roadmap`.
+- `docs/schema/roadmap.schema.json` — JSON Schema Draft-07; `required: ["status", "date"]`; `status` enum `["backlog","wip","blocked","done","abandoned"]`; campos opcionais `req`, `squad`.
+- `internal/validator/validator.go` — `extractFrontmatterField(content, field)` + `validateFrontmatterPresence()`: verifica ADRs e REQs sem bloco `---` de frontmatter; registrada em `Validate()` após `validateREQsNotBlockedByDraftADRs`.
+- `npm/src/validator/index.js` — `validateFrontmatterPresence()` portada em Node.js puro; integrada em `validate()` e exportada em `module.exports`.
+
+**Resultado:** `go build ./...` limpo | `go test ./...` 100% verde | `node --check npm/src/validator/index.js` OK | commit `f7ab22c` | push para `feat/v2.3-ai-agent-rail`.

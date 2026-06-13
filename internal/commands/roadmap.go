@@ -23,12 +23,17 @@ func newRoadmapCmd() *cobra.Command {
 }
 
 func newRoadmapNewCmd() *cobra.Command {
-	var title, reqPath string
+	var title, reqPath, fromReq string
 	cmd := &cobra.Command{
 		Use:   "new",
 		Short: "Create a new roadmap from a REQ",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// --from-req: gera roadmap pré-preenchido com MLs extraídos da REQ
+			if fromReq != "" {
+				return generators.NewRoadmapFromREQ(fromReq)
+			}
+
 			// --req flag bypasses wizard entirely
 			if reqPath != "" {
 				if title == "" {
@@ -82,6 +87,7 @@ func newRoadmapNewCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&title, "title", "t", "", "Roadmap title")
 	cmd.Flags().StringVarP(&reqPath, "req", "r", "", "Path to the linked REQ file")
+	cmd.Flags().StringVar(&fromReq, "from-req", "", "Generate roadmap with ML stubs from REQ acceptance criteria")
 	return cmd
 }
 

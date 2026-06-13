@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "trackfw/roadmap",
+  "title": "Roadmap Frontmatter",
+  "description": "JSON Schema for trackfw Roadmap frontmatter",
+  "type": "object",
+  "required": ["status", "date"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["backlog", "wip", "blocked", "done", "abandoned"]
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "req": { "type": "string" },
+    "squad": { "type": "string" }
+  }
+}
