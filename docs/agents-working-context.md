@@ -1146,3 +1146,21 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `npm/tests/config.test.js` — 6 testes sem framework externo (assert nativo): defaults, link_fields customizado, acceptance_markers customizado, rules parcial com merge, sparse, retrocompatibilidade v2.3.
 
 **Resultado:** 6/6 testes `config.test.js` verdes | 12/12 testes `validator.test.js` inalterados | commit `84eeff0` | push para `feat/v2.4-config-evolution`.
+
+---
+
+## Sessão 2026-06-13 — Backend (config evolution ML-1C Python)
+
+**Agente:** Backend | Status: CONCLUÍDO
+
+**Branch:** `feat/v2.4-config-evolution`
+
+**Tarefa:** ML-1C — estender `pypi/trackfw/config.py` com novos campos (`link_fields`, `acceptance_markers`, `rules`) e parser de blocos aninhados de 1 nível. Adicionar classe `TestConfigEvolution` em `pypi/tests/test_config.py` com 6 novos testes.
+
+**Entregue:**
+- `pypi/trackfw/config.py` — `defaults()` estendida com `link_fields` (req/adr/roadmap), `acceptance_markers` e `rules` (9 regras); `_parse()` reescrita com suporte a blocos aninhados: detecta indentação via `raw_line[0]`, aceita itens de lista com e sem indentação (compatibilidade com yamls existentes onde `- item` vem sem indent após a chave), função interna `flush_blocks()` com `nonlocal` para flush ao trocar de bloco ou no EOF; sub-chaves de `link_fields` resolvidas por nome.
+- `pypi/tests/test_config.py` — classe `TestConfigEvolution` com 6 testes: `test_defaults_novos_campos`, `test_link_fields_customizado`, `test_acceptance_markers_customizado`, `test_rules_parcial_merge_com_defaults`, `test_sparse_novos_campos_usam_defaults`, `test_retrocompat_yaml_v23`.
+
+**Decisão técnica:** o parser original aceitava itens de lista sem indentação (`- zeus` direto após `agents:`) — a nova implementação preserva esse comportamento detectando `line.startswith("- ")` independente do `raw_line[0]`, garantindo retrocompatibilidade total com yamls v2.3.
+
+**Resultado:** 163/163 testes verdes (6 novos) | commit `201e748` | push para `feat/v2.4-config-evolution`
