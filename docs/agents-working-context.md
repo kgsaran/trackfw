@@ -1412,3 +1412,19 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 **Arquivos modificados:**
 - `pypi/trackfw/commands/validate.py` — argumento `--json` adicionado ao parser; branch JSON emite JSON estruturado puro suprimindo saída textual; modo texto inalterado
 - `pypi/tests/test_validate_json.py` — 15 testes cobrindo: JSON válido, campos corretos, exit code paridade, modo lenient
+
+---
+
+## Sessão 2026-06-13 — ML-3C: namespacing by_agent — Python CLI
+
+**Agente:** Backend | Status: IMPLEMENTANDO
+
+**Branch:** `feat/v2.5-discovery-json-traceid`
+
+**Tarefa:** ML-3C — `roadmap_namespacing: by_agent` no CLI Python.
+
+**Análise:**
+- `pypi/trackfw/config.py` já tem `NAMESPACING_BY_AGENT`, parse de `roadmap_namespacing` e `agents`
+- `pypi/trackfw/validator.py` já tem `resolve_wip_dirs`, `validate_wip_limit` e `validate_folder_status_coherence` com suporte by_agent
+- `pypi/trackfw/commands/status.py` já tem breakdown por agente
+- Falta apenas: `pypi/tests/test_namespacing.py` com 3 testes obrigatórios
