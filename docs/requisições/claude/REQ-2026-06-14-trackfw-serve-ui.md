@@ -17,8 +17,14 @@ A proposta é evoluir para um dashboard web completo, explorando os dados que
 o trackfw já coleta: artefatos (ADR/REQ/ROADMAP), grafo de dependências, log
 de transições (`.trackfw-log`) e saída do `validate --json`.
 
-Tecnologia escolhida: **HTMX + marked.js + Chart.js** servidos via `embed.FS`
-no binário Go — sem bundler, sem npm no runtime, zero dependência externa em produção.
+**Paridade total nos 3 CLIs** — `trackfw serve` é implementado em Go, Node.js e Python,
+seguindo a regra inviolável do projeto. Os assets web (HTML/JS/CSS) são compartilhados
+entre as três implementações.
+
+Tecnologia: **HTMX + marked.js + Chart.js** — client-side rendering, zero bundler.
+- **Go**: assets via `embed.FS` (single-binary)
+- **Node.js**: assets instalados junto com o pacote npm (`package.json` files)
+- **Python**: assets via `importlib.resources` / `package_data` no `setup.cfg`
 
 ---
 
@@ -45,16 +51,24 @@ no binário Go — sem bundler, sem npm no runtime, zero dependência externa em
 - **Distribuição por estado** (donut chart)
 - **Burndown**: roadmaps `wip+backlog` acumulados ao longo do tempo vs `done`
 
-### Endpoints Go (`internal/serve/`)
+### Endpoints (idênticos nos 3 CLIs)
 
 | Endpoint | Descrição |
 |----------|-----------|
-| `GET /` | Serve `index.html` (embed) |
-| `GET /static/*` | Serve assets (embed): JS, CSS, marked.js, Chart.js CDN local |
+| `GET /` | Serve `index.html` |
+| `GET /static/*` | Serve assets: JS, CSS |
 | `GET /api/board` | JSON: roadmaps agrupados por estado/agente |
 | `GET /api/chain` | JSON: grafo ADR→REQ→ROADMAP com arestas e metadados |
 | `GET /api/metrics` | JSON: lead time, cycle time, taxa de abandono, burndown series |
 | `GET /api/file?path=` | Conteúdo raw do arquivo `.md` (validado por allowlist de paths) |
+
+### Implementação por CLI
+
+| CLI | Servidor | Assets | Log parser |
+|-----|----------|--------|-----------|
+| Go | `net/http` nativo | `embed.FS` | novo (reutiliza lógica do `internal/serve/`) |
+| Node.js | módulo `http` nativo | arquivos do pacote npm | reutiliza `parseLog` de `commands/metrics.js` |
+| Python | `http.server` stdlib | `package_data` / `importlib.resources` | reutiliza `_parse_log` de `commands/metrics.py` |
 
 ### Markdown rendering
 - `marked.js` (CDN local no embed, ~50KB minificado) — client-side
@@ -77,8 +91,9 @@ no binário Go — sem bundler, sem npm no runtime, zero dependência externa em
 - [ ] Burndown derivado do `.trackfw-log` renderizado como line chart (Chart.js)
 - [ ] Suporte a `roadmap_namespacing: by_agent` (filtro por agente no kanban)
 - [ ] `/api/file` não permite path traversal fora dos dirs configurados
-- [ ] Binário continua single-binary (assets via `embed.FS`)
-- [ ] `trackfw serve` exclusivo Go (Node.js/Python não implementam serve — exceção da regra de paridade)
+- [ ] Binário Go continua single-binary (assets via `embed.FS`)
+- [ ] `npx trackfw serve` e `trackfw serve` (pip) funcionam com o mesmo dashboard
+- [ ] Paridade completa nos 3 CLIs: Go · Node.js · Python
 
 ## Não está no escopo
 
@@ -86,4 +101,3 @@ no binário Go — sem bundler, sem npm no runtime, zero dependência externa em
 - Autenticação/autorização
 - Deploy remoto / modo multi-usuário
 - Story points / velocity (o trackfw não tem esse conceito)
-- Node.js e Python CLIs (serve é exclusivo Go)
