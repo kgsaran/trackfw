@@ -1828,11 +1828,22 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 ## 2026-06-14 — Apolo — ML-3A: trackfw serve Python
 
-**Status:** IMPLEMENTANDO
+**Status:** CONCLUIDO
 
 **Tarefa:** Implementar `trackfw serve` para o CLI Python — servidor HTTP stdlib com dashboard web (kanban board, chain, metrics, file API).
 
 **Branch:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Resultado:** 247 testes passando | commit `10e1a23` | push para `feat/v2.7.0-trackfw-serve-ui`
+
+**Decisoes tecnicas:**
+- `functools.partial` para injetar `cfg` no `BaseHTTPRequestHandler` sem variável global
+- `os.path.realpath` + sufixo `os.sep` para evitar falsos positivos em path traversal (ex: `/docs/adr` vs `/docs/adr2`)
+- `_parse_log` de `commands/metrics.py` reutilizado diretamente — sem duplicação
+- Assets estáticos copiados de `internal/serve/static/` e declarados em `pyproject.toml` via `[tool.setuptools.package-data]`
+- Detecção automática de agentes por subdiretórios quando `roadmap_namespacing == "by_agent"` e `agents: []`
+
+**Agente:** Apolo | Status: CONCLUIDO
 
 ---
 
