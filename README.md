@@ -1,9 +1,11 @@
 # trackfw
 
-> Governed software delivery — ADR → REQ → ROADMAP → backlog / wip / done
+> The AI-native governance layer for software delivery — ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
 
 [![Release](https://img.shields.io/github/v/release/kgsaran/trackfw)](https://github.com/kgsaran/trackfw/releases/latest)
 [![Go](https://img.shields.io/badge/go-1.21+-00ADD8?logo=go)](go.mod)
+[![npm](https://img.shields.io/npm/v/trackfw?logo=npm&color=CB3837)](https://www.npmjs.com/package/trackfw)
+[![PyPI](https://img.shields.io/pypi/v/trackfw?logo=python&color=3776AB)](https://pypi.org/project/trackfw/)
 [![License](https://img.shields.io/github/license/kgsaran/trackfw)](LICENSE)
 
 **trackfw** is an open-source CLI that enforces a traceable chain from architectural decision to shipped code — without SaaS, accounts, or databases. Markdown files are state.
@@ -23,6 +25,9 @@ Most teams accumulate technical debt not because they lack tools, but because th
 - **ADR tools** manage decision records, but don't connect them to delivery.
 - **Kanban tools** track tasks, but don't enforce that tasks are backed by a decision.
 - **CI tools** validate code, but don't validate governance.
+- **AI coding assistants** generate code at unprecedented speed, but without traceability: who decided what? Why? Which requirement authorized this roadmap?
+
+trackfw adds the governance layer that makes AI-assisted delivery auditable.
 
 trackfw closes the loop — connective tissue between *why*, *what*, and *when*.
 
@@ -85,13 +90,15 @@ go install github.com/kgsaran/trackfw/cmd/trackfw@latest
 npm install -g trackfw
 ```
 
-The npm package is pure Node.js — no compiled binary, no postinstall download. Works everywhere Node.js ≥ 18 is installed, including corporate Windows environments where unsigned `.exe` files are blocked by antivirus.
+The npm package is pure Node.js — no compiled binary, no postinstall download. Works everywhere Node.js ≥ 18 is installed, including corporate Windows environments where unsigned `.exe` files are blocked by antivirus. Full feature parity with the Go CLI — all commands, all validation rules, all by_agent features.
 
 ### pip
 
 ```bash
 pip install trackfw
 ```
+
+The pip package is pure Python — no compiled binary, no postinstall download. Full feature parity with the Go CLI — all commands, all validation rules, all by_agent features.
 
 ---
 
@@ -133,6 +140,8 @@ trackfw status
 | `trackfw roadmap move <name> <state>` | Move roadmap between states |
 | `trackfw roadmap list` | List all roadmaps grouped by state |
 | `trackfw validate` | Check governance consistency (use as CI gate) |
+| `trackfw context` | Print a structured summary of the project's governance state (REQs, Roadmaps, ADRs with counts and statuses) |
+| `trackfw serve` | Start a local governance dashboard (no cloud, no accounts) |
 | `trackfw status` | Show wip, blocked, REQs waiting on ADRs |
 | `trackfw log [--tail N]` | Show roadmap state transition history |
 | `trackfw plugins list` | List installed plugins |
@@ -174,6 +183,60 @@ Moving a file between folders **is** the state transition. No database, no API.
 
 ---
 
+## AI-native governance
+
+trackfw v2.6.0 introduces features designed for teams where AI agents are first-class contributors.
+
+### Multi-agent namespacing
+
+```yaml
+# trackfw.yaml
+roadmap_namespacing: by_agent
+agents: [claude, gemini, copilot]
+```
+
+Artifacts are organized by agent: `docs/roadmaps/claude/wip/`, `docs/req/gemini/done/`. `trackfw validate` and `trackfw context` are fully by_agent-aware — no false positives.
+
+### Bidirectional traceability (`trace_id_field`)
+
+```yaml
+# trackfw.yaml
+trace_id_field: req_id
+```
+
+Automatically verifies the REQ↔ROADMAP link in both directions. Reports 5 check types:
+- `traceid_orphan_req` — REQ with no matching ROADMAP
+- `traceid_orphan_roadmap` — ROADMAP with no matching REQ
+- `traceid_state_mismatch` — REQ and ROADMAP in different states
+- `traceid_duplicate_req` / `traceid_duplicate_roadmap` — duplicate trace IDs
+
+### Configurable rules
+
+Every governance rule has configurable severity:
+
+```yaml
+# trackfw.yaml
+rules:
+  req_has_adr:      "error"    # default
+  req_has_roadmap:  "warning"  # relax for tactical REQs
+  blocked_has_req:  "error"
+  wip_limit:        "warning"
+  stale_wip:        "warning"
+  adr_orphan:       "off"      # silence during migration
+```
+
+15+ rules available. Adopt progressively — start with `warning`, tighten to `error` as your team builds the habit.
+
+### Governance gate
+
+```yaml
+# trackfw.yaml
+governance_mode: strict   # CI fails on any violation
+# governance_mode: lenient # CI passes with warnings only
+```
+
+---
+
 ## REQ-driven ADR discovery
 
 When you run `trackfw req new`, the wizard analyzes your intent and asks targeted questions for each detected domain — authentication, UI, persistence, API, deploy, events. Unanswered architectural decisions become ADR drafts automatically.
@@ -208,6 +271,26 @@ $ trackfw validate
 ```
 
 Designed to run as a **pre-commit hook** and a **CI quality gate**. `trackfw init` wires both automatically for your stack.
+
+### JSON output for CI integration
+
+```bash
+trackfw validate --json
+```
+
+```json
+{
+  "summary": { "violations": 2, "warnings": 1, "mode": "strict", "exit_code": 1 },
+  "violations": [
+    { "rule": "wip_has_req", "file": "roadmaps/wip/auth-service.md" }
+  ],
+  "warnings": [
+    { "rule": "stale_wip", "file": "roadmaps/wip/auth-service.md" }
+  ]
+}
+```
+
+Use `--json` for programmatic CI parsing, Slack notifications, or custom reporting.
 
 ---
 
@@ -277,12 +360,14 @@ The governance structure (`docs/adr/`, `docs/req/`, `docs/roadmaps/`) is always 
 4. **One active roadmap at a time** — parallel work without traceability is the root of most delivery chaos.
 5. **Human-readable, machine-parseable** — every artifact is a Markdown file with a predictable structure.
 6. **Guided, not prescriptive** — the wizard surfaces decisions you might not know to ask; it never blocks work unnecessarily.
+7. **Configurable by design** — every governance rule has a severity (`off`/`warning`/`error`). Start permissive, tighten as your team builds the habit.
+8. **AI-agent aware** — `roadmap_namespacing: by_agent` and `trace_id_field` make AI-generated work traceable and auditable by default.
 
 ---
 
 ## What trackfw is not
 
-- Not a project management SaaS — no UI, no accounts, no cloud sync
+- Not a project management SaaS — no accounts, no cloud sync, no data leaving your repository. A local dashboard is available via `trackfw serve`.
 - Not a replacement for Git history — it complements, not duplicates
 - Not a task tracker — use GitHub Issues, Linear, or Jira for tasks; trackfw governs the *why*
 - Not opinionated about how you write code — only about how you document decisions
