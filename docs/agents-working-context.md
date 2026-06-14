@@ -1813,4 +1813,55 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `internal/serve/api_file.go`
 - Atualizar `internal/serve/serve.go` para registrar os handlers
 
-**Agente:** Apolo | Status: IMPLEMENTANDO
+**Resultado:** `go build ./...` limpo | `go test ./...` 100% verde | commit `8a5dce3` | push para `feat/v2.7.0-trackfw-serve-ui`
+
+**Decisoes tecnicas:**
+- `setCORSHeaders` centralizado em `api_board.go` com `Access-Control-Allow-Origin: *` (dev-only)
+- `parseFrontmatter` em `api_chain.go` puro sem dependência externa (evita yaml.v3)
+- `fileHandler` usa prefixo com separador para evitar falsos positivos (ex: `docs/adr2` vs `docs/adr`)
+- `calcBurndown` usa boundary semanal: para cada semana, aplica todos os eventos até o fim da semana para determinar o estado de cada roadmap
+- `ParseLog` retorna slice vazia (não nil) quando o arquivo não existe — compatível com o frontend
+
+**Agente:** Apolo | Status: CONCLUÍDO
+
+---
+
+## 2026-06-14 — Apolo — ML-3A: trackfw serve Python
+
+**Status:** IMPLEMENTANDO
+
+**Tarefa:** Implementar `trackfw serve` para o CLI Python — servidor HTTP stdlib com dashboard web (kanban board, chain, metrics, file API).
+
+**Branch:** `feat/v2.7.0-trackfw-serve-ui`
+
+---
+
+## 2026-06-14 — Apolo — ML-2A: trackfw serve Node.js
+
+**Status:** CONCLUÍDO
+
+**Tarefa:** Implementar `trackfw serve` para o CLI Node.js — servidor HTTP nativo (sem Express) com dashboard web.
+
+**Arquivos criados/modificados:**
+- `npm/src/commands/serve.js` — comando CLI + createServer com roteamento HTTP
+- `npm/src/serve/api_board.js` — scan kanban (flat + by_agent)
+- `npm/src/serve/api_chain.js` — grafo ADR→REQ→ROADMAP com parseFrontmatter nativo
+- `npm/src/serve/api_metrics.js` — reutiliza parseLog/calculate de metrics.js
+- `npm/src/serve/api_file.js` — segurança path traversal (resolve + allowedDirs)
+- `npm/src/serve/static/` — cópia dos assets de internal/serve/static/
+- `npm/src/commands/metrics.js` — exporta parseLog e calculate além do cmd
+- `npm/src/commands/index.js` — registra createServeCommand()
+
+**Critérios de aceite verificados:**
+- `node npm/bin/trackfw serve --no-open --port 9191` sobe sem erro
+- `/api/board` retorna JSON válido com columns e agents
+- `/api/metrics` retorna JSON com lead_time, cycle_time, abandonment_rate, state_distribution, burndown
+- `/api/chain` retorna JSON com nodes e edges
+- `/api/file?path=../../../etc/passwd` retorna 403
+- `/static/app.js` retorna 200
+
+**Commit:** `8ea11ee` | **Push:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Observação:** O ambiente tem processos Go `main` ouvindo em várias portas (8080, 8081, etc.) que interceptam requisições com autenticação. Os testes foram realizados na porta 9191.
+
+**Agente:** Apolo | Status: CONCLUÍDO

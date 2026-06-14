@@ -91,6 +91,10 @@ def main():
     plugins_parser = subparsers.add_parser("plugins", help="Manage trackfw plugins")
     plugins_parser.set_defaults(func=_stub("plugins"))
 
+    # --- serve ---
+    from trackfw.commands import serve as serve_cmd
+    serve_cmd.register(subparsers)
+
     args = parser.parse_args()
 
     if args.command is None:
