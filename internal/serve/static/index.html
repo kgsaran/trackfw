@@ -1,12 +1,199 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>trackfw</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>trackfw — dashboard</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <!-- marked.js -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <!-- D3.js -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body>
-    <h1>trackfw dashboard</h1>
-    <p>Loading...</p>
+<body class="bg-gray-50 text-gray-900 min-h-screen flex flex-col">
+
+  <!-- Header / Nav -->
+  <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-6 shadow-sm">
+    <span class="font-bold text-lg tracking-tight text-blue-600">trackfw</span>
+    <nav class="flex gap-2" role="navigation" aria-label="Navegação principal">
+      <button
+        id="tab-board"
+        onclick="switchView('board')"
+        class="tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors"
+        aria-pressed="true"
+      >Board</button>
+      <button
+        id="tab-chain"
+        onclick="switchView('chain')"
+        class="tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors"
+        aria-pressed="false"
+      >Chain</button>
+      <button
+        id="tab-metrics"
+        onclick="switchView('metrics')"
+        class="tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors"
+        aria-pressed="false"
+      >Metrics</button>
+    </nav>
+  </header>
+
+  <!-- Conteúdo principal -->
+  <main class="flex-1 relative overflow-hidden flex">
+
+    <!-- View: Board -->
+    <section id="view-board" class="view-section w-full p-6 overflow-auto" aria-label="Board kanban">
+
+      <!-- Filtro por agente -->
+      <div id="agent-filter-container" class="mb-4 hidden">
+        <label for="agent-filter" class="text-sm font-medium text-gray-600 mr-2">Filtrar por agente:</label>
+        <select
+          id="agent-filter"
+          onchange="filterByAgent(this.value)"
+          class="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
+          aria-label="Filtrar roadmaps por agente"
+        >
+          <option value="">Todos</option>
+        </select>
+      </div>
+
+      <!-- Kanban columns -->
+      <div id="board-container" class="flex gap-4 min-w-max">
+        <!-- Spinner de loading inicial -->
+        <div id="board-loading" class="flex items-center gap-2 text-gray-500 text-sm">
+          <svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          Carregando board...
+        </div>
+      </div>
+
+      <!-- Mensagem de erro Board -->
+      <div id="board-error" class="hidden text-red-600 text-sm mt-4" role="alert"></div>
+    </section>
+
+    <!-- View: Chain -->
+    <section id="view-chain" class="view-section w-full hidden" aria-label="Grafo de cadeia ADR-REQ-ROADMAP">
+      <div id="chain-loading" class="flex items-center gap-2 text-gray-500 text-sm p-6">
+        <svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        Carregando cadeia...
+      </div>
+      <div id="chain-error" class="hidden text-red-600 text-sm p-6" role="alert"></div>
+      <svg id="chain-svg" class="w-full" style="height: calc(100vh - 60px);"></svg>
+    </section>
+
+    <!-- View: Metrics -->
+    <section id="view-metrics" class="view-section w-full hidden p-6 overflow-auto" aria-label="Métricas do projeto">
+      <div id="metrics-loading" class="flex items-center gap-2 text-gray-500 text-sm">
+        <svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        Carregando métricas...
+      </div>
+      <div id="metrics-error" class="hidden text-red-600 text-sm" role="alert"></div>
+
+      <!-- KPI cards -->
+      <div id="kpi-cards" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Lead Time Médio</p>
+          <p id="kpi-lead-time" class="text-2xl font-bold text-gray-900">—</p>
+        </div>
+        <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Cycle Time Médio</p>
+          <p id="kpi-cycle-time" class="text-2xl font-bold text-gray-900">—</p>
+        </div>
+        <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Taxa de Abandono</p>
+          <p id="kpi-abandonment" class="text-2xl font-bold text-gray-900">—</p>
+        </div>
+      </div>
+
+      <!-- Gráficos -->
+      <div id="charts-container" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
+          <h2 class="text-sm font-semibold text-gray-700 mb-4">Distribuição por Estado</h2>
+          <div class="flex justify-center" style="height: 260px;">
+            <canvas id="donut-chart" aria-label="Gráfico donut: distribuição por estado"></canvas>
+          </div>
+        </div>
+        <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
+          <h2 class="text-sm font-semibold text-gray-700 mb-4">Burndown</h2>
+          <div id="burndown-empty" class="hidden text-sm text-gray-500 flex items-center justify-center h-48">
+            Sem dados suficientes no .trackfw-log
+          </div>
+          <canvas id="burndown-chart" style="height: 240px;" aria-label="Gráfico de burndown: abertos e fechados ao longo do tempo"></canvas>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Overlay do drawer -->
+  <div
+    id="drawer-overlay"
+    class="fixed inset-0 bg-black bg-opacity-30 hidden z-40"
+    onclick="closeDrawer()"
+    aria-hidden="true"
+  ></div>
+
+  <!-- Drawer lateral -->
+  <aside
+    id="drawer"
+    class="fixed top-0 right-0 h-full bg-white shadow-2xl z-50 flex flex-col drawer-slide"
+    style="width: 40%; display: none;"
+    role="complementary"
+    aria-label="Detalhes do arquivo"
+  >
+    <!-- Header do drawer -->
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gray-50">
+      <span id="drawer-filename" class="text-sm font-medium text-gray-700 truncate max-w-xs"></span>
+      <button
+        onclick="closeDrawer()"
+        class="text-gray-400 hover:text-gray-700 transition-colors p-1 rounded"
+        aria-label="Fechar drawer"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Loading do drawer -->
+    <div id="drawer-loading" class="flex items-center justify-center gap-2 text-gray-500 text-sm p-8 hidden">
+      <svg class="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+      </svg>
+      Carregando arquivo...
+    </div>
+
+    <!-- Erro do drawer -->
+    <div id="drawer-error" class="hidden text-red-600 text-sm p-5" role="alert"></div>
+
+    <!-- Conteúdo do drawer -->
+    <div id="drawer-content" class="flex-1 overflow-y-auto p-5 hidden">
+      <!-- Frontmatter como tabela -->
+      <div id="drawer-frontmatter" class="mb-5 hidden">
+        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Metadados</h3>
+        <table id="frontmatter-table" class="w-full text-sm border border-gray-200 rounded overflow-hidden">
+          <tbody></tbody>
+        </table>
+      </div>
+      <!-- Markdown renderizado -->
+      <div id="drawer-markdown" class="prose prose-sm max-w-none"></div>
+    </div>
+  </aside>
+
+  <script src="/static/app.js"></script>
 </body>
 </html>

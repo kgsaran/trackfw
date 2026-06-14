@@ -1754,7 +1754,16 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 **Branch:** `feat/v2.7.0-trackfw-serve-ui`
 
-**Agente:** Apolo | Status: IMPLEMENTANDO
+**Arquivos criados/modificados:**
+- `internal/serve/serve.go` (novo) — pacote serve com `//go:embed static`, `Start(port int)`, rotas `/` e `/static/*`
+- `internal/serve/static/index.html` (novo) — placeholder HTML inicial
+- `internal/commands/serve.go` — import trocado de `internal/server` para `internal/serve`
+
+**Resultado:** `go build ./...` limpo | `go test ./...` 100% verde | commit `648af62` | push para `feat/v2.7.0-trackfw-serve-ui`
+
+**Observação:** `internal/server` permanece no projeto (não foi deletado) — será removido/migrado em wave posterior quando os endpoints API forem portados para `internal/serve/api_*.go`.
+
+**Agente:** Apolo | Status: CONCLUÍDO
 
 ---
 
@@ -1764,5 +1773,22 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 **Arquivo modificado:**
 - `docs/visao-projeto/VISION.md` — header atualizado (v2.6.0 / 2026-06-14); comandos atuais adicionados (`context`, `validate --json`, `serve`, `traceid`); seção `trackfw validate` expandida com `governance_mode`, 15+ regras configuráveis e `trace_id_field` (5 checks automáticos); nova seção "AI-native Governance" com `roadmap_namespacing: by_agent`; seção Distribution atualizada para CLIs nativos (Go + Node.js + Python); 2 novos Design Principles (Configurable by design, AI-agent aware); roadmap antigo substituído por tabela "Current State (v2.6.0)"; seção "What trackfw Is NOT" ajustada para mencionar `trackfw serve`.
+
+---
+
+## 2026-06-14 — Afrodite — ML-0A assets dashboard trackfw serve (CONCLUÍDO)
+
+**Branch:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Tarefa:** Implementar os 3 assets estáticos do dashboard `trackfw serve` (sem bundler, CDN apenas).
+
+**Arquivos criados/modificados:**
+- `internal/serve/static/index.html` — substituiu placeholder; layout completo com header/nav (Board/Chain/Metrics), 3 views, drawer lateral com overlay
+- `internal/serve/static/style.css` — animacao slideIn do drawer, tab ativa, badge de estado, kanban cards com hover/focus, estilos prose para markdown, frontmatter table, D3 node labels, responsivo mobile (drawer 100% width < 768px)
+- `internal/serve/static/app.js` — JS vanilla: loadBoard (kanban com cache, filtro agente), loadChain (D3 force-directed com zoom/pan/drag, setas, coloracao por tipo/estado), loadMetrics (Chart.js donut + burndown line), openDrawer/closeDrawer (fetch /api/file, parseFrontmatter, marked.parse, intercept links .md internos), switchView, filterByAgent, escapeHtml
+
+**Resultado:** `go build ./...` limpo (embed.FS continua funcionando) | 3 arquivos criados
+
+**Agente:** Afrodite | Status: CONCLUÍDO
 
 **Agente:** Apolo | Status: CONCLUÍDO
