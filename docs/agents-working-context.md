@@ -1876,3 +1876,38 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 **Observação:** O ambiente tem processos Go `main` ouvindo em várias portas (8080, 8081, etc.) que interceptam requisições com autenticação. Os testes foram realizados na porta 9191.
 
 **Agente:** Apolo | Status: CONCLUÍDO
+
+---
+
+## Sessao 2026-06-14 — ML-4B Testes Node.js serve APIs
+
+**Agente:** Artemis | Status: CONCLUIDO
+**Branch:** feat/v2.7.0-trackfw-serve-ui
+**REQ:** docs/requisicoes/artemis/done/REQ-2026-06-14-serve-api-tests-nodejs.md
+**ROADMAP:** docs/roadmap/artemis/done/ROADMAP-2026-06-14-serve-api-tests-nodejs.md
+
+**Arquivo criado:** `npm/tests/serve_api.test.js`
+**Resultado:** 8/8 testes passaram | 0 regressoes nos 130 testes existentes
+**Cobertura:**
+- api_board: flat mode (columns + agents), by_agent mode (agent no card), board vazio
+- api_file: path valido (200), path traversal (403), path fora dos dirs (403)
+- api_metrics: sem log (zeros), com log valido (cycle_time_avg_days calculado)
+
+---
+
+## Sessao 2026-06-14 — ML-4C Testes Python serve APIs
+
+**Agente:** Artemis | Status: CONCLUIDO
+**Branch:** feat/v2.7.0-trackfw-serve-ui
+
+**Objetivo:** Implementar `pypi/tests/test_serve_api.py` cobrindo api_board, api_file e api_metrics.
+
+**Resultados:**
+- 14 testes implementados e passando (pytest)
+- Suite completa: 261/261 PASSED, sem regressoes
+- Cobertura: api_board (flat, by_agent, autodetect, vazio), api_file (200, 403 traversal, 403 outside, _is_safe_path unit), api_metrics (sem log zeros, com log cycle_time, abandonment_rate, _calc_cycle_time direto)
+- Path traversal bloqueado e testado com `../../../etc/passwd` → 403
+
+**Commit:** `80e2492` | **Push:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Agente:** Artemis | Status: CONCLUIDO
