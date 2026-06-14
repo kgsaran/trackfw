@@ -1748,6 +1748,16 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 ---
 
+## 2026-06-14 — Apolo — ML-1A v2.7.0 trackfw serve UI (IMPLEMENTANDO)
+
+**Tarefa:** ML-1A do roadmap `v2.7.0-trackfw-serve-ui` — criar pacote `internal/serve/` com `embed.FS` e placeholder `index.html`; atualizar `commands/serve.go` para usar `serve.Start(port)`.
+
+**Branch:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Agente:** Apolo | Status: IMPLEMENTANDO
+
+---
+
 ## 2026-06-14 — Apolo — Atualização VISION.md v2.6.0 (CONCLUÍDO)
 
 **Tarefa:** Atualizar `docs/visao-projeto/VISION.md` para refletir o estado atual do projeto (v2.6.0) e posicionamento de mercado.
