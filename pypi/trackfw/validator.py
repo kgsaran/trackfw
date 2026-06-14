@@ -4,6 +4,7 @@ Espelho Python de npm/src/validator/index.js (paridade de comportamento).
 Stdlib apenas: os, pathlib, re, datetime, subprocess.
 """
 
+import glob as _glob
 import json
 import os
 import re
@@ -165,6 +166,32 @@ def _extract_ref_path(content: str, field: str) -> str:
             if val.endswith(".md"):
                 return val
     return ""
+
+
+def resolve_req_files(cfg: dict) -> list:
+    """
+    Retorna lista de paths completos de .md em req_dir,
+    consciente de roadmap_namespacing: by_agent percorre req_dir/<agente>/<estado>/.
+    """
+    req_dir = cfg.get("req_dir", "docs/req")
+    namespacing = cfg.get("roadmap_namespacing", "")
+    if namespacing == "by_agent":
+        states = ["backlog", "wip", "blocked", "done", "abandoned"]
+        agents = cfg.get("agents", [])
+        if not agents:
+            try:
+                agents = [e for e in os.listdir(req_dir)
+                          if os.path.isdir(os.path.join(req_dir, e))]
+            except OSError:
+                return []
+        files = []
+        for agent in agents:
+            for state in states:
+                pattern = os.path.join(req_dir, agent, state, "*.md")
+                files.extend(_glob.glob(pattern))
+        return files
+    # flat (comportamento anterior)
+    return _glob.glob(os.path.join(req_dir, "*.md"))
 
 
 def resolve_wip_dirs(cfg: dict) -> list:
@@ -427,14 +454,15 @@ def validate_wip_has_req(cfg: dict) -> list:
 
 def validate_reqs_have_adr(cfg: dict) -> list:
     """REQs em req_dir/ sem marcador adr no conteúdo → violation."""
-    entries = list_dir(cfg.get("req_dir", "docs/req"))
+    files = resolve_req_files(cfg)
     adr_markers = cfg.get("link_fields", {}).get("adr", ["ADR:"])
     violations = []
-    for name in entries:
+    for file_path in files:
         try:
-            with open(os.path.join(cfg["req_dir"], name), "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
             if not _content_has_marker(content, adr_markers):
+                name = os.path.basename(file_path)
                 violations.append(
                     {"type": "violation", "message": f'req "{name}" has no linked ADR'}
                 )
@@ -464,14 +492,15 @@ def validate_blocked_has_req(cfg: dict) -> list:
 
 def validate_reqs_have_roadmap(cfg: dict) -> list:
     """REQs sem marcador roadmap → violation."""
-    entries = list_dir(cfg.get("req_dir", "docs/req"))
+    files = resolve_req_files(cfg)
     roadmap_markers = cfg.get("link_fields", {}).get("roadmap", ["Roadmap:"])
     violations = []
-    for name in entries:
+    for file_path in files:
         try:
-            with open(os.path.join(cfg["req_dir"], name), "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
             if not _content_has_marker(content, roadmap_markers):
+                name = os.path.basename(file_path)
                 violations.append(
                     {"type": "violation", "message": f'req "{name}" has no linked Roadmap'}
                 )
@@ -486,11 +515,11 @@ def validate_adrs_are_referenced(cfg: dict) -> list:
     for adr_dir in cfg.get("adr_dirs", ["docs/adr"]):
         adrs.extend(_walk_dir_md(adr_dir))
 
-    req_entries = list_dir(cfg.get("req_dir", "docs/req"))
+    req_files = resolve_req_files(cfg)
     combined = ""
-    for name in req_entries:
+    for file_path in req_files:
         try:
-            with open(os.path.join(cfg["req_dir"], name), "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 combined += f.read()
         except OSError:
             pass
@@ -639,10 +668,10 @@ def validate_stale_wip(cfg: dict, days: int = STALE_WIP_DAYS) -> list:
 
 def validate_reqs_not_blocked_by_draft_adrs(cfg: dict) -> list:
     """REQs Open com ADRs Draft na seção '## Blocked by ADRs' → violation."""
-    entries = list_dir(cfg.get("req_dir", "docs/req"))
+    files = resolve_req_files(cfg)
     violations = []
-    for name in entries:
-        file_path = os.path.join(cfg["req_dir"], name)
+    for file_path in files:
+        name = os.path.basename(file_path)
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -683,13 +712,13 @@ def validate_frontmatter_presence(cfg: dict) -> list:
             except OSError:
                 pass
 
-    req_dir = cfg.get("req_dir", "docs/req")
-    req_files = [f for f in list_dir(req_dir) if f.endswith(".md")]
-    for f in req_files:
+    req_files = [p for p in resolve_req_files(cfg) if p.endswith(".md")]
+    for file_path in req_files:
         try:
-            with open(os.path.join(req_dir, f), "r", encoding="utf-8") as fh:
+            with open(file_path, "r", encoding="utf-8") as fh:
                 content = fh.read()
             if not content.startswith("---"):
+                f = os.path.basename(file_path)
                 violations.append({
                     "type": "violation",
                     "message": f'req "{f}" has no frontmatter block'
@@ -721,11 +750,11 @@ def validate_ref_targets_exist(cfg: dict) -> list:
                 pass
 
     # REQs: verificar ADR: e Roadmap:
-    req_dir = cfg.get("req_dir", "docs/req")
-    for name in list_dir(req_dir):
+    for file_path in resolve_req_files(cfg):
         try:
-            with open(os.path.join(req_dir, name), "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
+            name = os.path.basename(file_path)
             adr_ref = _extract_ref_path(content, "ADR")
             if adr_ref and not os.path.exists(adr_ref):
                 warnings.append({
