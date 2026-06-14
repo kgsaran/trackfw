@@ -83,6 +83,47 @@ func collectTraceIdEntries(rootDir, traceField string) ([]traceIdEntry, error) {
 	return entries, nil
 }
 
+// collectTraceIdEntriesByAgent varre um diretório de roadmaps organizado por agente (by_agent)
+// e retorna entradas indexadas pelo campo traceField.
+// Estrutura esperada: rootDir/<agente>/<estado>/*.md
+func collectTraceIdEntriesByAgent(roadmapDir, traceField string, cfg config.ProjectConfig) ([]traceIdEntry, error) {
+	stateDirs := []string{"wip", "done", "backlog", "blocked", "abandoned"}
+	agents := cfg.Agents
+	if len(agents) == 0 {
+		entries, err := os.ReadDir(roadmapDir)
+		if err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					agents = append(agents, e.Name())
+				}
+			}
+		}
+	}
+	var all []traceIdEntry
+	for _, agent := range agents {
+		agentDir := filepath.Join(roadmapDir, agent)
+		for _, state := range stateDirs {
+			dir := filepath.Join(agentDir, state)
+			files, err := filepath.Glob(filepath.Join(dir, "*.md"))
+			if err != nil || files == nil {
+				continue
+			}
+			for _, f := range files {
+				content, err := os.ReadFile(f)
+				if err != nil {
+					continue
+				}
+				val := extractFrontmatterField(string(content), traceField)
+				if val == "" {
+					continue
+				}
+				all = append(all, traceIdEntry{reqID: val, state: state, path: f})
+			}
+		}
+	}
+	return all, nil
+}
+
 // validateTraceId executa as 5 verificações bidirecionais REQ↔Roadmap via trace_id_field.
 // Retorna violations e warnings separados por tipo de regra.
 func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []string) {
@@ -93,8 +134,13 @@ func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []
 
 	// Indexar REQs
 	reqEntries, _ := collectTraceIdEntries(cfg.REQDir, traceField)
-	// Indexar Roadmaps (sem by_agent nesta versão — varre flat com subpastas de estado)
-	roadmapEntries, _ := collectTraceIdEntries(cfg.RoadmapDir, traceField)
+	// Indexar Roadmaps — usa by_agent quando configurado
+	var roadmapEntries []traceIdEntry
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		roadmapEntries, _ = collectTraceIdEntriesByAgent(cfg.RoadmapDir, traceField, cfg)
+	} else {
+		roadmapEntries, _ = collectTraceIdEntries(cfg.RoadmapDir, traceField)
+	}
 
 	// Montar índices: req_id → []traceIdEntry
 	reqIndex := map[string][]traceIdEntry{}
@@ -104,6 +150,13 @@ func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []
 	roadmapIndex := map[string][]traceIdEntry{}
 	for _, e := range roadmapEntries {
 		roadmapIndex[e.reqID] = append(roadmapIndex[e.reqID], e)
+	}
+
+	// Salvaguarda: nenhuma entrada indexada — campo configurado mas diretórios vazios ou mal configurados
+	if len(reqEntries) == 0 && len(roadmapEntries) == 0 {
+		warnings = append(warnings,
+			"trace_id_field is set but no REQ/Roadmap entries were indexed — check req_dir, roadmap_dir and roadmap_namespacing")
+		return violations, warnings
 	}
 
 	// traceid_duplicate_req: mesmo req_id em mais de 1 REQ

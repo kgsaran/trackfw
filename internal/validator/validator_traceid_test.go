@@ -192,6 +192,64 @@ func TestTraceIdDisabled(t *testing.T) {
 	}
 }
 
+// TestTraceIdByAgent: roadmap_namespacing: by_agent — checks disparam corretamente para estrutura agente/estado/
+func TestTraceIdByAgent(t *testing.T) {
+	dir := t.TempDir()
+	config.Reset()
+	t.Cleanup(config.Reset)
+	chdir(t, dir)
+
+	// Criar estrutura by_agent: roadmaps/claude/wip/rm.md
+	mkdirs(t, dir, "req", "roadmaps/claude/wip")
+
+	// REQ com req_id orphan-001 — sem Roadmap correspondente
+	writeFile(t, dir, "req/REQ-orphan-001.md",
+		reqFrontmatter("req_id", "orphan-001"))
+
+	// Roadmap com req_id orphan-002 — sem REQ correspondente
+	writeFile(t, dir, "roadmaps/claude/wip/rm.md",
+		roadmapFrontmatter("req_id", "orphan-002", "WIP"))
+
+	cfg := config.ProjectConfig{
+		REQDir:              dir + "/req",
+		RoadmapDir:          dir + "/roadmaps",
+		RoadmapNamespacing:  config.NamespacingByAgent,
+		TraceIdField:        "req_id",
+		Rules:               map[string]string{},
+	}
+
+	vs, _ := validateTraceId(cfg)
+	if !hasViolation(vs, "traceid_orphan_req") {
+		t.Errorf("esperado violation traceid_orphan_req, obteve: %v", vs)
+	}
+	if !hasViolation(vs, "traceid_orphan_roadmap") {
+		t.Errorf("esperado violation traceid_orphan_roadmap, obteve: %v", vs)
+	}
+}
+
+// TestTraceIdZeroEntriesSalvaguarda: diretórios vazios → warning de zero entradas indexadas
+func TestTraceIdZeroEntriesSalvaguarda(t *testing.T) {
+	dir := t.TempDir()
+	config.Reset()
+	t.Cleanup(config.Reset)
+	chdir(t, dir)
+
+	// Diretórios existem mas sem arquivos .md
+	mkdirs(t, dir, "req", "roadmaps/wip")
+
+	cfg := config.ProjectConfig{
+		REQDir:       dir + "/req",
+		RoadmapDir:   dir + "/roadmaps",
+		TraceIdField: "req_id",
+		Rules:        map[string]string{},
+	}
+
+	_, ws := validateTraceId(cfg)
+	if !hasWarning(ws, "trace_id_field is set but no REQ/Roadmap entries were indexed") {
+		t.Errorf("esperado warning de zero entradas indexadas, obteve: %v", ws)
+	}
+}
+
 // contains é um helper local para os testes traceid (evita import strings).
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||

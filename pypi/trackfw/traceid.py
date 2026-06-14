@@ -120,6 +120,37 @@ def _index_roadmaps(roadmap_dir: str, field: str) -> list:
     return entries
 
 
+def _index_roadmaps_by_agent(roadmap_dir: str, field: str, agents: list) -> list:
+    """Indexa roadmaps em layout by_agent: roadmap_dir/<agente>/<estado>/"""
+    if not agents:
+        try:
+            agents = [e for e in os.listdir(roadmap_dir)
+                      if os.path.isdir(os.path.join(roadmap_dir, e))]
+        except OSError:
+            return []
+    entries = []
+    for agent in agents:
+        agent_dir = os.path.join(roadmap_dir, agent)
+        for state in _ROADMAP_STATES:
+            state_dir = os.path.join(agent_dir, state)
+            try:
+                names = [n for n in os.listdir(state_dir)
+                         if n.endswith(".md") and not os.path.isdir(os.path.join(state_dir, n))]
+            except OSError:
+                continue
+            for name in names:
+                path = os.path.join(state_dir, name)
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                except OSError:
+                    continue
+                trace_id = _extract_trace_id(content, field)
+                if trace_id:
+                    entries.append({"file": name, "path": path, "trace_id": trace_id, "state": state})
+    return entries
+
+
 def _violation(rule: str, file: str, message: str) -> dict:
     return {"type": "violation", "rule": rule, "file": file, "message": message}
 
@@ -137,7 +168,20 @@ def check_traceid(cfg: dict) -> list:
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
 
     req_entries = _index_reqs(req_dir, field)
-    roadmap_entries = _index_roadmaps(roadmap_dir, field)
+    namespacing = cfg.get("roadmap_namespacing", "")
+    if namespacing == "by_agent":
+        agents = cfg.get("agents", [])
+        roadmap_entries = _index_roadmaps_by_agent(roadmap_dir, field, agents)
+    else:
+        roadmap_entries = _index_roadmaps(roadmap_dir, field)
+
+    if not req_entries and not roadmap_entries:
+        return [_violation(
+            "traceid_config_warning",
+            "",
+            "trace_id_field is set but no REQ/Roadmap entries were indexed"
+            " — check req_dir, roadmap_dir and roadmap_namespacing"
+        )]
 
     violations = []
 
