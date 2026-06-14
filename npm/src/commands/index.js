@@ -26,6 +26,9 @@ function createProgram() {
   program.addCommand(require('./help'))
   program.addCommand(require('./configure'))
 
+  const { createServeCommand } = require('./serve')
+  program.addCommand(createServeCommand())
+
   // plugin dispatch — comandos desconhecidos tentam executar plugin
   program.hook('preSubcommand', () => {})
 
