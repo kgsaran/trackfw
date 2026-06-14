@@ -302,7 +302,14 @@ func findRoadmap(name string) (string, error) {
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		agents := cfg.Agents
 		if len(agents) == 0 {
-			agents = []string{"default"}
+			dirEntries, err := os.ReadDir(cfg.RoadmapDir)
+			if err == nil {
+				for _, e := range dirEntries {
+					if e.IsDir() {
+						agents = append(agents, e.Name())
+					}
+				}
+			}
 		}
 		for _, agent := range agents {
 			for _, state := range states {
