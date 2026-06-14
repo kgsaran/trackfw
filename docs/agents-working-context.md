@@ -924,6 +924,14 @@ trackfw/
 
 ---
 
+## Sessão 2026-06-14 — Athena (IMPLEMENTANDO)
+
+**Tarefa:** Análise de mercado aprofundada e completa — trackfw vs. concorrentes em 6 segmentos: ADR Management, Spec/REQ Management, Roadmap, Platform Engineering/IDP, Engineering Metrics/DORA, AI-native Governance. WebSearch ativo para 20+ ferramentas. Entrega do relatório completo em markdown.
+
+**Status:** CONCLUÍDO — relatório completo entregue. Cobertura: 6 segmentos, 25+ ferramentas analisadas via WebSearch. Posicionamento, diferenciadores únicos, gaps, ameaças, oportunidades e 9 recomendações estratégicas.
+
+---
+
 ## Sessão 2026-06-13 — Apolo ML-3B Python CLI (CONCLUÍDO)
 
 **Tarefa:** ML-3B do roadmap Python CLI nativo — `commands/validate.py` + `commands/status.py` + `tests/test_commands_validate_status.py`.
@@ -1627,3 +1635,124 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 **Branch:** fix/v2.5.3-req-indexing-by-agent
 
 **Objetivo:** corrigir scanner de REQs para suportar req_dir/<agente>/<estado>/ quando roadmap_namespacing: by_agent — adicionar resolveREQFiles, substituir coletas planas em validator.go, fix em validator_traceid.go e salvaguarda one-sided.
+
+---
+
+## Sessão 2026-06-13 — ML-1B: context REQ by_agent (v2.5.4) — Apolo (CONCLUÍDO)
+
+**Tarefa:** fix(npm): `trackfw context` exibia `## REQs (0)` em projetos com `roadmap_namespacing: by_agent`.
+
+**Branch:** `fix/v2.5.4-context-req-by-agent`
+
+**Problema corrigido:** `npm/src/commands/context.js` linha ~102 usava `collectEntries` plana para REQs, sem iterar agentes/estados como já era feito para Roadmaps.
+
+**Arquivos modificados:**
+- `npm/src/commands/context.js` — substituído `const reqs = collectEntries(cfg.reqDir || 'docs/req', 'REQ')` por lógica by_agent-aware que descobre agentes via `fs.readdirSync` e itera os 5 estados kanban; fallback para flat quando não é by_agent.
+- `npm/tests/context_req_by_agent.test.js` — 2 testes: by_agent encontra REQ em `claude/wip/`; flat sem by_agent não regride.
+
+**Resultado:** 2/2 testes novos verdes | testes `req_by_agent` e `validate_json` sem regressão | commit `5ab2532` | push para `fix/v2.5.4-context-req-by-agent`.
+
+---
+
+## Sessão 2026-06-13 — ML-1C: context REQ by_agent Python (v2.5.4) — Apolo (CONCLUÍDO)
+
+**Tarefa:** fix(python): `trackfw context` exibia `## REQs (0)` em projetos com `roadmap_namespacing: by_agent` no CLI Python.
+
+**Branch:** `fix/v2.5.4-context-req-by-agent`
+
+**Problema corrigido:** `pypi/trackfw/commands/context.py` linha 108 usava `_collect_entries` plana para REQs, sem iterar agentes/estados como já era feito para Roadmaps no mesmo arquivo.
+
+**Arquivos modificados:**
+- `pypi/trackfw/commands/context.py` — substituído `reqs = _collect_entries(cfg.get("req_dir", "docs/req"), "REQ")` por lógica by_agent-aware que descobre agentes via `os.listdir` e itera os 5 estados kanban; fallback para flat quando não é by_agent.
+- `pypi/tests/test_context_req_by_agent.py` — 2 testes pytest: `test_context_req_by_agent` (REQ em `claude/wip/` encontrada), `test_context_req_flat_no_regression` (modo flat sem regressão).
+
+**Resultado:** 2/2 testes novos verdes | 238/238 testes totais passando | commit `6d10bf3` | push para `fix/v2.5.4-context-req-by-agent`.
+
+---
+
+## Sessão 2026-06-13 — ML-1A: context REQ by_agent Go (v2.5.4) — Apolo (CONCLUÍDO)
+
+**Tarefa:** fix(go): `trackfw context` exibia `## REQs (0)` em projetos com `roadmap_namespacing: by_agent` no CLI Go. Adicionalmente, `validateADRsAreReferenced` usava `os.ReadDir` flat ignorando estrutura by_agent.
+
+**Branch:** `fix/v2.5.4-context-req-by-agent`
+
+**Problemas corrigidos:**
+- `internal/generators/context.go` — bloco flat de REQs substituído por lógica by_agent-aware: quando `cfg.RoadmapNamespacing == config.NamespacingByAgent`, descobre agentes via `cfg.Agents` ou `os.ReadDir(cfg.REQDir)` (filtrando dirs) e itera os 5 estados kanban. Fallback flat preservado.
+- `internal/validator/validator.go` — `validateADRsAreReferenced` substituiu `os.ReadDir(cfg.REQDir)` flat por `resolveREQFiles(cfg)` (já existia desde v2.5.3), tornando a validação de ADRs órfãos by_agent-aware.
+
+**Testes adicionados:**
+- `internal/generators/context_test.go` — `TestContextREQByAgent`: verifica que a lógica by_agent encontra REQ em `req/claude/wip/` com status correto extraído do frontmatter.
+- `internal/validator/validator_test.go` — `TestValidateADRsAreReferencedByAgent`: verifica que ADR referenciado em REQ by_agent não gera violation de orphan.
+
+**Resultado:** 2/2 testes novos verdes | `go test ./internal/validator/... ok` | commit `ac0c0de` | push para `fix/v2.5.4-context-req-by-agent`.
+
+---
+
+## Sessão 2026-06-14 — Apolo ML-1A Go (v2.6.0-rules-req-configuraveis) (CONCLUÍDO)
+
+**Tarefa:** ML-1A do roadmap `feat/v2.6.0-rules-req-configuraveis` — tornar `req_has_adr`, `blocked_has_req` e `req_has_roadmap` controláveis via `rules.<nome>: off/warning/error` no `trackfw.yaml`.
+
+**Branch:** `feat/v2.6.0-rules-req-configuraveis`
+
+**Arquivos modificados:**
+- `internal/validator/validator.go` — em `ValidateUnfiltered`: substituídos 3 `violations = append(violations, ...)` diretos por `applyRule("req_has_adr", ...)`, `applyRule("blocked_has_req", ...)` e `applyRule("req_has_roadmap", ...)`; em `validateUnfilteredTagged`: substituídos 3 loops `for _, m := range ... { violations = append(..., TaggedMsg{Rule: "", Msg: m}) }` por `applyRuleTagged("req_has_adr", ...)`, `applyRuleTagged("blocked_has_req", ...)` e `applyRuleTagged("req_has_roadmap", ...)`.
+- `internal/validator/validator_test.go` — 3 novos testes com 3 sub-testes cada (warning/off/default_error): `TestReqHasADRConfiguravel`, `TestBlockedHasREQConfiguravel`, `TestReqHasRoadmapConfiguravel`. Seguem o padrão `t.TempDir()` + `chdir` + `config.Reset` + `t.Cleanup(config.Reset)`.
+
+**Resultado:** `go build ./...` limpo | 11/11 pacotes de teste verdes (todos) | commit `f94dac9` | push para `feat/v2.6.0-rules-req-configuraveis`.
+
+---
+
+## 2026-06-14 — Apolo — ML-1C (Python) — CONCLUIDO
+
+**Tarefa:** ML-1C do roadmap `feat/v2.6.0-rules-req-configuraveis` — tornar `req_has_adr`, `blocked_has_req` e `req_has_roadmap` configuráveis via `_apply_rule` no CLI Python.
+
+**Branch:** `feat/v2.6.0-rules-req-configuraveis`
+
+**Arquivos modificados:**
+- `pypi/trackfw/validator.py` — em `validate_unfiltered`: substituídas 3 linhas `violations += _enrich_items(...)` por `_apply_rule("req_has_adr", ...)`, `_apply_rule("blocked_has_req", ...)` e `_apply_rule("req_has_roadmap", ...)`; renomeada chave `reqs_have_adr` → `req_has_adr` (sem "s") para alinhar cross-CLI.
+- `pypi/tests/test_rules_req_configuraveis.py` — 9 testes novos (3 regras × 3 cenários: warning/off/default-error) usando `monkeypatch` para injetar config sem `trackfw.yaml`.
+
+**Resultado:** 9/9 testes do arquivo novo verdes | 247/247 testes da suite completa verdes (sem regressão) | commit `80cf580` | push para `feat/v2.6.0-rules-req-configuraveis`.
+
+---
+
+## 2026-06-14 — Apolo — ML-1B (Node.js) — CONCLUIDO
+
+**Tarefa:** ML-1B do roadmap `feat/v2.6.0-rules-req-configuraveis` — tornar `req_has_adr`, `blocked_has_req` e `req_has_roadmap` configuráveis via `applyRule` no CLI Node.js.
+
+**Branch:** `feat/v2.6.0-rules-req-configuraveis`
+
+**Arquivos modificados:**
+- `npm/src/validator/index.js` — em `validateUnfiltered`: substituídos 3 loops `for (const msg of ...)` com push direto em violations por `applyRule('req_has_adr', ...)`, `applyRule('blocked_has_req', ...)` e `applyRule('req_has_roadmap', ...)`. `applyRule` já chama `_setMeta` internamente.
+- `npm/tests/rules_req_configuraveis.test.js` — 9 testes novos (3 regras × 3 cenários: warning/off/default-error) usando `process.chdir` + `config.reset()` + dirs temporários.
+
+**Resultado:** 9/9 testes novos verdes | `validate_json.test.js` 14/14 verdes (sem regressão) | `req_by_agent.test.js` 4/4 verdes (sem regressão) | alterações já presentes no commit `80cf580` (commit conjunto com Python) | branch atualizada no remoto.
+
+---
+
+## 2026-06-14 — Athena — Análise de Mercado trackfw v2.6.0 (CONCLUÍDO)
+
+**Tarefa:** Pesquisa via WebSearch de 25+ concorrentes e geração de relatório completo de análise de mercado.
+
+**Entregue:**
+- `/tmp/trackfw-market-analysis.md` — relatório completo com 7 seções: mapa de mercado, análise por segmento (ADR tools, Spec/REQ, Roadmap, Platform Engineering, Engineering Metrics, AI-native Governance), posicionamento, pontos fortes/fracos, ameaças/oportunidades e recomendações estratégicas.
+
+**Concorrentes pesquisados:** log4brains, adr-tools (npryce), MADR, pyadr, adr-log, arc-kit, Linear, Shortcut, GitHub Projects, GitLab Requirements, Productboard, Aha!, Backstage, Port.io, Cortex.io, OpsLevel, LinearB, Sleuth, Swarmia, Faros AI, GitHub Copilot Workspace, Cursor Rules/Organizations.
+
+**Insights chave:**
+- trackfw ocupa quadrante único: offline-first + CLI-centric + cadeia completa ADR→REQ→ROADMAP com CI gate.
+- `roadmap_namespacing: by_agent` e `trace_id_field` são diferenciadores sem equivalente no mercado em jun/2026.
+- Maior ameaça: GitHub Copilot Workspace + arc-kit evoluindo para CI gate. Maior oportunidade: SaaS fatigue + AI agents como atores de delivery.
+
+**Agente:** Athena | Status: CONCLUÍDO
+
+---
+
+## 2026-06-14 — Apolo — Atualização VISION.md v2.6.0 (CONCLUÍDO)
+
+**Tarefa:** Atualizar `docs/visao-projeto/VISION.md` para refletir o estado atual do projeto (v2.6.0) e posicionamento de mercado.
+
+**Arquivo modificado:**
+- `docs/visao-projeto/VISION.md` — header atualizado (v2.6.0 / 2026-06-14); comandos atuais adicionados (`context`, `validate --json`, `serve`, `traceid`); seção `trackfw validate` expandida com `governance_mode`, 15+ regras configuráveis e `trace_id_field` (5 checks automáticos); nova seção "AI-native Governance" com `roadmap_namespacing: by_agent`; seção Distribution atualizada para CLIs nativos (Go + Node.js + Python); 2 novos Design Principles (Configurable by design, AI-agent aware); roadmap antigo substituído por tabela "Current State (v2.6.0)"; seção "What trackfw Is NOT" ajustada para mencionar `trackfw serve`.
+
+**Agente:** Apolo | Status: CONCLUÍDO

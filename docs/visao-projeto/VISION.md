@@ -1,6 +1,6 @@
 # trackfw — Project Vision
 
-> Version: 0.1 | Date: 2026-06-11
+> Version: v2.6.0 | Date: 2026-06-14
 
 ---
 
@@ -55,6 +55,31 @@ docs/roadmaps/
 
 ---
 
+## AI-native Governance
+
+trackfw is the only governance CLI that treats AI agents as first-class actors in the delivery chain.
+
+### `roadmap_namespacing: by_agent`
+
+When your project uses AI agents as contributors, organize artifacts by agent:
+
+```
+docs/roadmaps/
+├── claude/
+│   ├── wip/
+│   └── done/
+├── gemini/
+│   └── backlog/
+```
+
+`trackfw validate` and `trackfw context` are fully aware of this layout — no false positives, no blind spots.
+
+### Why this matters (2026)
+
+Engineering metrics platforms (LinearB, Faros AI) report AI agents increased throughput 30–40% but also change failure rate. trackfw's `trace_id_field` and `governance_mode: strict` provide the governance layer that ensures AI-generated work is traceable and validated before merge.
+
+---
+
 ## The CLI
 
 trackfw ships as a single binary with no runtime dependencies.
@@ -67,6 +92,10 @@ trackfw roadmap new "title"         # creates a roadmap in backlog/
 trackfw roadmap move <name> wip     # moves roadmap between states
 trackfw status                      # shows wip, blocked, recent done
 trackfw validate                    # checks governance consistency
+trackfw validate --json             # structured JSON output for programmatic CI integration
+trackfw context                     # structured output of project state (REQs, Roadmaps, ADRs with counts)
+trackfw serve                       # local governance dashboard (no cloud, no SaaS)
+trackfw traceid                     # verifies bidirectional traceability REQ↔ROADMAP
 ```
 
 ### `trackfw validate` — the governance gate
@@ -77,6 +106,34 @@ The validate command is the heart of trackfw. It checks:
 - Every REQ has a linked ADR
 - No roadmap is in `wip/` without an acceptance criteria block
 - Plural `wip/` entries (more than one active roadmap) are flagged as a warning
+
+**`governance_mode`** — configurable binary gate in `trackfw.yaml`:
+- `strict` — any violation fails the pipeline (exit code 1)
+- `lenient` — violations are reported but do not block CI
+
+**15+ configurable rules** with severity levels (`off` / `warning` / `error`):
+
+| Rule | What it checks |
+|---|---|
+| `req_has_adr` | Every REQ is linked to an ADR |
+| `req_has_roadmap` | Every REQ has at least one ROADMAP |
+| `blocked_has_req` | Every blocked roadmap references a REQ |
+| `wip_limit` | No more than N roadmaps in wip simultaneously |
+| `stale_wip` | Roadmaps in wip for longer than configured threshold |
+| `adr_orphan` | ADRs not referenced by any REQ |
+| `wip_acceptance` | Roadmaps in wip must have acceptance criteria |
+
+**`trace_id_field`** — bidirectional REQ↔ROADMAP traceability with 5 automatic checks:
+
+| Check | What it validates |
+|---|---|
+| `traceid_orphan_req` | REQ has a trace_id not referenced by any ROADMAP |
+| `traceid_orphan_roadmap` | ROADMAP references a trace_id not found in any REQ |
+| `traceid_state_mismatch` | REQ and ROADMAP states are inconsistent |
+| `traceid_duplicate_req` | Multiple REQs share the same trace_id |
+| `traceid_duplicate_roadmap` | Multiple ROADMAPs share the same trace_id |
+
+**`--json` output** — machine-readable format for programmatic CI integration and dashboards.
 
 This command is designed to run as a **pre-commit hook** and a **CI quality gate**.
 
@@ -100,7 +157,7 @@ Based on your answers, `init` generates:
 
 | Artifact | Purpose |
 |---|---|
-| `trackfw.yaml` | Project config (stack profile) |
+| `trackfw.yaml` | Project config (stack profile, governance_mode, rules) |
 | `scripts/trackfw-validate.sh` | Stack-aware validation script |
 | `.husky/pre-commit` or `lefthook.yml` | Git hook wiring |
 | `.github/workflows/trackfw-gate.yml` | CI quality gate |
@@ -123,16 +180,17 @@ This means a Java/Maven shop and a Go/Makefile shop and a Python/Poetry shop all
 
 ## Distribution
 
-trackfw ships as a **Go binary** — no runtime dependency, single file, cross-platform.
+trackfw ships across three fully native CLIs — **all three have complete feature parity**.
 
-| Channel | Package | Installation |
-|---|---|---|
-| Direct | GitHub Releases | `curl -sSfL .../install.sh \| sh` |
-| npm | `trackfw` | `npm install -g trackfw` |
-| PyPI | `trackfw` | `pip install trackfw` |
-| Homebrew | `trackfw/tap/trackfw` | `brew install trackfw/tap/trackfw` |
+| Channel | Package | Implementation | Installation |
+|---|---|---|---|
+| Direct | GitHub Releases | Go binary | `curl -sSfL .../install.sh \| sh` |
+| Homebrew | `trackfw/tap/trackfw` | Go binary | `brew install trackfw/tap/trackfw` |
+| Go | `github.com/trackfw/trackfw` | Go binary | `go install github.com/trackfw/trackfw/cmd/trackfw@latest` |
+| npm | `trackfw` | Native Node.js (Node ≥ 18) | `npm install -g trackfw` |
+| PyPI | `trackfw` | Native Python (Python ≥ 3.9) | `pip install trackfw` |
 
-npm and PyPI packages are thin wrappers that download the correct platform binary. This is the same pattern used by esbuild, Biome, and Turbo.
+The Node.js and Python CLIs are **native reimplementations** — not wrappers around a compiled binary. No `postinstall` binary download. No platform-specific compilation. Pure JavaScript (commander) and pure Python (argparse/click) with complete feature parity with the Go CLI.
 
 ---
 
@@ -143,45 +201,29 @@ npm and PyPI packages are thin wrappers that download the correct platform binar
 3. **The framework is agnostic; the integration is aware** — governance structure never changes; generated hooks adapt to the stack.
 4. **One active roadmap at a time** — parallel work without traceability is the root of most delivery chaos.
 5. **Templates over convention** — every ADR, REQ, and ROADMAP is a markdown file with a predictable structure. Readable by humans and parseable by machines.
+6. **Configurable by design** — every governance rule has a severity (`off` / `warning` / `error`). Adopt progressively, tighten over time.
+7. **AI-agent aware** — governance structure natively supports multi-agent workflows (`roadmap_namespacing: by_agent`).
 
 ---
 
 ## What trackfw Is NOT
 
-- Not a project management SaaS (no UI, no accounts, no cloud sync)
+- Not a project management SaaS (no accounts, no cloud sync) — `trackfw serve` provides a local dashboard with no external dependencies
 - Not a replacement for Git history (it complements, not duplicates)
 - Not a task tracker (use GitHub Issues, Linear, Jira for tasks — trackfw governs the *why*)
 - Not opinionated about how you write code — only about how you document decisions
 
 ---
 
-## Roadmap
+## Current State (v2.6.0)
 
-### v0.1 — Foundation (current)
-- [x] CLI scaffold (init, adr, req, roadmap, status, validate)
-- [x] Interactive stack wizard
-- [x] Stack-specific generator: Go, Java, Node, Python, React
-- [x] Git hook generators: husky, lefthook
-- [x] CI generators: GitHub Actions, GitLab CI
-- [x] `trackfw validate` governance gate
-- [x] Install script
-
-### v0.2 — Distribution
-- [ ] GoReleaser pipeline (binaries for linux/darwin/windows amd64+arm64)
-- [ ] npm wrapper package
-- [ ] PyPI wrapper package
-- [ ] Homebrew tap
-
-### v0.3 — Plugin System
-- [ ] Generator plugin interface
-- [ ] `trackfw plugins list/add/remove`
-- [ ] Community generator registry
-
-### v0.4 — Intelligence
-- [ ] `trackfw log` — history of state transitions
-- [ ] `trackfw roadmap show <name>` — render roadmap progress in terminal
-- [ ] Validate: detect stale `wip/` entries (in wip for > N days)
-- [ ] `trackfw adr list` / `trackfw req list` with status summary
+| Version | Feature | Status |
+|---|---|---|
+| v0.1 | CLI scaffold, validate, init wizard, stack generators | ✅ Done |
+| v2.4 | JSON output, configurable rules (off/warning/error), governance_mode | ✅ Done |
+| v2.5 | trace_id_field (bidirectional REQ↔ROADMAP), by_agent namespacing, salvaguarda one-sided | ✅ Done |
+| v2.6 | req_has_adr / req_has_roadmap / blocked_has_req configurable | ✅ Done |
+| vNext | GitHub Actions official, trackfw serve UX, multi-repo support | 🔄 Planned |
 
 ---
 
