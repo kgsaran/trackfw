@@ -107,9 +107,9 @@ func scanChainDir(root, nodeType string) ([]chainNode, []chainEdge) {
 		}
 
 		// Build edges from link fields: req:, adr:, roadmap:
+		// Only add edges for values that look like real file paths (skip placeholders like "—")
 		for _, field := range []string{"req", "adr", "roadmap"} {
-			if val, ok := fm[field]; ok && val != "" {
-				// val may be a relative path or just a filename — keep as-is for the frontend
+			if val, ok := fm[field]; ok && strings.HasSuffix(val, ".md") {
 				edges = append(edges, chainEdge{From: path, To: val})
 			}
 		}

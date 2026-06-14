@@ -93,7 +93,7 @@ function switchView(view) {
 
 // ─── View: Board / Kanban ─────────────────────────────────────────────────────
 
-const COLUMNS_ORDER = ['wip', 'backlog', 'blocked', 'done', 'abandoned'];
+const COLUMNS_ORDER = ['backlog', 'wip', 'blocked', 'done', 'abandoned'];
 const COLUMNS_LABEL = {
   wip: 'WIP', backlog: 'Backlog', blocked: 'Blocked', done: 'Done', abandoned: 'Abandoned',
 };
@@ -296,8 +296,8 @@ function renderChain(data) {
   nodes.forEach(n => { nodeById[n.id] = n; });
 
   const links = edges.map(e => ({
-    source: nodeById[e.from] || e.from,
-    target: nodeById[e.to]   || e.to,
+    source: nodeById[e.from],
+    target: nodeById[e.to],
   })).filter(l => l.source && l.target);
 
   // Simulação
