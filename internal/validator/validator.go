@@ -307,19 +307,19 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, reqViolations...) // sem regra configurável
+	applyRule("req_has_adr", reqViolations, &violations, &warnings)
 
 	blockedViolations, e := validateBlockedHasREQ()
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, blockedViolations...) // sem regra configurável
+	applyRule("blocked_has_req", blockedViolations, &violations, &warnings)
 
 	reqRoadmapViolations, e := validateREQsHaveRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
-	violations = append(violations, reqRoadmapViolations...) // sem regra configurável
+	applyRule("req_has_roadmap", reqRoadmapViolations, &violations, &warnings)
 
 	adrOrphanViolations, e := validateADRsAreReferenced()
 	if e != nil {
@@ -442,25 +442,19 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	if e != nil {
 		return nil, nil, e
 	}
-	for _, m := range reqViolations {
-		violations = append(violations, TaggedMsg{Rule: "", Msg: m})
-	}
+	applyRuleTagged("req_has_adr", reqViolations, &violations, &warnings)
 
 	blockedViolations, e := validateBlockedHasREQ()
 	if e != nil {
 		return nil, nil, e
 	}
-	for _, m := range blockedViolations {
-		violations = append(violations, TaggedMsg{Rule: "", Msg: m})
-	}
+	applyRuleTagged("blocked_has_req", blockedViolations, &violations, &warnings)
 
 	reqRoadmapViolations, e := validateREQsHaveRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
-	for _, m := range reqRoadmapViolations {
-		violations = append(violations, TaggedMsg{Rule: "", Msg: m})
-	}
+	applyRuleTagged("req_has_roadmap", reqRoadmapViolations, &violations, &warnings)
 
 	adrOrphanViolations, e := validateADRsAreReferenced()
 	if e != nil {

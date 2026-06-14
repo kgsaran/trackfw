@@ -559,6 +559,222 @@ status: wip
 	}
 }
 
+// TestReqHasADRConfiguravel — req_has_adr pode ser rebaixada para warning ou desativada via rules.
+func TestReqHasADRConfiguravel(t *testing.T) {
+	// REQ sem ADR preenchido → a severidade deve ser controlada pela regra req_has_adr.
+	buildDir := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		mkdirs(t, dir,
+			"docs/roadmaps/wip",
+			"docs/roadmaps/backlog",
+			"docs/roadmaps/blocked",
+			"docs/req",
+			"docs/adr",
+		)
+		// REQ com Roadmap preenchido mas SEM ADR — dispara req_has_adr
+		writeFile(t, dir, "docs/req/REQ-sem-adr.md", "# REQ: Sem ADR\n\nRoadmap: ROADMAP-001\n")
+		return dir
+	}
+
+	t.Run("warning", func(t *testing.T) {
+		dir := buildDir(t)
+		writeFile(t, dir, "trackfw.yaml", "rules:\n  req_has_adr: warning\n")
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		if hasViolation(violations, "req_has_adr") || hasViolation(violations, "no linked ADR") {
+			t.Errorf("com req_has_adr=warning não deve haver violations de ADR, obteve: %v", violations)
+		}
+		if !hasWarning(warnings, "req_has_adr") && !hasWarning(warnings, "no linked ADR") {
+			t.Errorf("com req_has_adr=warning deve haver pelo menos 1 warning de ADR, obteve warnings=%v", warnings)
+		}
+	})
+
+	t.Run("off", func(t *testing.T) {
+		dir := buildDir(t)
+		writeFile(t, dir, "trackfw.yaml", "rules:\n  req_has_adr: off\n")
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		if hasViolation(violations, "no linked ADR") {
+			t.Errorf("com req_has_adr=off não deve haver violations de ADR, obteve: %v", violations)
+		}
+		if hasWarning(warnings, "no linked ADR") {
+			t.Errorf("com req_has_adr=off não deve haver warnings de ADR, obteve: %v", warnings)
+		}
+	})
+
+	t.Run("default_error", func(t *testing.T) {
+		dir := buildDir(t)
+		// sem trackfw.yaml → default "error"
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, _, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		if !hasViolation(violations, "no linked ADR") {
+			t.Errorf("sem config (default error) deve gerar violation de ADR, obteve: %v", violations)
+		}
+	})
+}
+
+// TestBlockedHasREQConfiguravel — blocked_has_req pode ser rebaixada para warning ou desativada via rules.
+func TestBlockedHasREQConfiguravel(t *testing.T) {
+	buildDir := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		mkdirs(t, dir,
+			"docs/roadmaps/wip",
+			"docs/roadmaps/backlog",
+			"docs/roadmaps/blocked",
+			"docs/req",
+			"docs/adr",
+		)
+		// Roadmap em blocked SEM REQ — dispara blocked_has_req
+		writeFile(t, dir, "docs/roadmaps/blocked/ROADMAP-bloqueado.md", "# Roadmap: Bloqueado\n\n## Motivo\nSem REQ.\n")
+		return dir
+	}
+
+	t.Run("warning", func(t *testing.T) {
+		dir := buildDir(t)
+		writeFile(t, dir, "trackfw.yaml", "rules:\n  blocked_has_req: warning\n")
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		if hasViolation(violations, "blocked_has_req") || hasViolation(violations, "no linked REQ") {
+			t.Errorf("com blocked_has_req=warning não deve haver violations de REQ (blocked), obteve: %v", violations)
+		}
+		if !hasWarning(warnings, "blocked_has_req") && !hasWarning(warnings, "no linked REQ") {
+			t.Errorf("com blocked_has_req=warning deve haver pelo menos 1 warning, obteve warnings=%v", warnings)
+		}
+	})
+
+	t.Run("off", func(t *testing.T) {
+		dir := buildDir(t)
+		writeFile(t, dir, "trackfw.yaml", "rules:\n  blocked_has_req: off\n")
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		// O roadmap bloqueado sem REQ não deve gerar nada quando regra está off
+		if hasViolation(violations, "blocked_has_req") || hasViolation(violations, "no linked REQ") {
+			t.Errorf("com blocked_has_req=off não deve haver violations, obteve: %v", violations)
+		}
+		if hasWarning(warnings, "blocked_has_req") || hasWarning(warnings, "no linked REQ") {
+			t.Errorf("com blocked_has_req=off não deve haver warnings, obteve: %v", warnings)
+		}
+	})
+
+	t.Run("default_error", func(t *testing.T) {
+		dir := buildDir(t)
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, _, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		if !hasViolation(violations, "no linked REQ") {
+			t.Errorf("sem config (default error) deve gerar violation de blocked REQ, obteve: %v", violations)
+		}
+	})
+}
+
+// TestReqHasRoadmapConfiguravel — req_has_roadmap pode ser rebaixada para warning ou desativada via rules.
+func TestReqHasRoadmapConfiguravel(t *testing.T) {
+	buildDir := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		mkdirs(t, dir,
+			"docs/roadmaps/wip",
+			"docs/roadmaps/backlog",
+			"docs/roadmaps/blocked",
+			"docs/req",
+			"docs/adr",
+		)
+		// REQ com ADR preenchido mas SEM Roadmap — dispara req_has_roadmap
+		writeFile(t, dir, "docs/req/REQ-sem-roadmap.md", "# REQ: Sem Roadmap\n\nADR: ADR-001\n")
+		return dir
+	}
+
+	t.Run("warning", func(t *testing.T) {
+		dir := buildDir(t)
+		writeFile(t, dir, "trackfw.yaml", "rules:\n  req_has_roadmap: warning\n")
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		if hasViolation(violations, "req_has_roadmap") || hasViolation(violations, "no linked Roadmap") {
+			t.Errorf("com req_has_roadmap=warning não deve haver violations, obteve: %v", violations)
+		}
+		if !hasWarning(warnings, "req_has_roadmap") && !hasWarning(warnings, "no linked Roadmap") {
+			t.Errorf("com req_has_roadmap=warning deve haver pelo menos 1 warning, obteve warnings=%v", warnings)
+		}
+	})
+
+	t.Run("off", func(t *testing.T) {
+		dir := buildDir(t)
+		writeFile(t, dir, "trackfw.yaml", "rules:\n  req_has_roadmap: off\n")
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		if hasViolation(violations, "no linked Roadmap") {
+			t.Errorf("com req_has_roadmap=off não deve haver violations, obteve: %v", violations)
+		}
+		if hasWarning(warnings, "no linked Roadmap") {
+			t.Errorf("com req_has_roadmap=off não deve haver warnings, obteve: %v", warnings)
+		}
+	})
+
+	t.Run("default_error", func(t *testing.T) {
+		dir := buildDir(t)
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, _, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		if !hasViolation(violations, "no linked Roadmap") {
+			t.Errorf("sem config (default error) deve gerar violation de Roadmap ausente, obteve: %v", violations)
+		}
+	})
+}
+
 // TestValidateADRsAreReferencedByAgent — ADR referenciado em REQ by_agent não deve gerar violation.
 func TestValidateADRsAreReferencedByAgent(t *testing.T) {
 	dir := t.TempDir()
