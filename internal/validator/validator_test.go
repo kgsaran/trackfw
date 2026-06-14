@@ -475,3 +475,86 @@ func TestGetStatus_Empty(t *testing.T) {
 		t.Errorf("status deveria conter 'trackfw status', obteve: %q", status)
 	}
 }
+
+// TestResolveREQFilesByAgent — resolveREQFiles deve encontrar arquivos em req_dir/<agente>/<estado>/ quando by_agent.
+func TestResolveREQFilesByAgent(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "docs/requisicoes/claude/wip/REQ-001.md", `---
+req_id: RID-1
+---
+# REQ-001
+`)
+	cfg := config.ProjectConfig{
+		REQDir:             filepath.Join(dir, "docs/requisicoes"),
+		RoadmapNamespacing: config.NamespacingByAgent,
+		Agents:             []string{"claude"},
+	}
+
+	files := resolveREQFiles(cfg)
+	if len(files) != 1 {
+		t.Fatalf("esperado 1 arquivo, obteve %d: %v", len(files), files)
+	}
+	if filepath.Base(files[0]) != "REQ-001.md" {
+		t.Errorf("esperado REQ-001.md, obteve %q", filepath.Base(files[0]))
+	}
+}
+
+// TestTraceIdREQByAgent — par REQ+Roadmap com mesmo req_id em estrutura by_agent não deve gerar traceid_orphan_roadmap.
+func TestTraceIdREQByAgent(t *testing.T) {
+	dir := t.TempDir()
+	// REQ em req_dir/claude/wip/
+	writeFile(t, dir, "docs/requisicoes/claude/wip/REQ-001.md", `---
+req_id: RID-1
+status: wip
+---
+# REQ-001
+`)
+	// Roadmap em roadmap_dir/claude/wip/
+	writeFile(t, dir, "docs/roadmaps/claude/wip/ROADMAP-001.md", `---
+req_id: RID-1
+status: wip
+---
+# Roadmap 001
+`)
+	cfg := config.ProjectConfig{
+		REQDir:             filepath.Join(dir, "docs/requisicoes"),
+		RoadmapDir:         filepath.Join(dir, "docs/roadmaps"),
+		RoadmapNamespacing: config.NamespacingByAgent,
+		Agents:             []string{"claude"},
+		TraceIdField:       "req_id",
+	}
+
+	violations, _ := validateTraceId(cfg)
+	for _, v := range violations {
+		if strings.Contains(v, "traceid_orphan_roadmap") {
+			t.Errorf("não esperava traceid_orphan_roadmap, mas obteve: %q", v)
+		}
+		if strings.Contains(v, "traceid_orphan_req") {
+			t.Errorf("não esperava traceid_orphan_req, mas obteve: %q", v)
+		}
+	}
+}
+
+// TestSalvaguardaOneSided — apenas Roadmap com req_id, sem REQ, deve gerar warning com "REQs (0)".
+func TestSalvaguardaOneSided(t *testing.T) {
+	dir := t.TempDir()
+	// Apenas roadmap, sem REQ nenhuma
+	writeFile(t, dir, "docs/roadmaps/claude/wip/ROADMAP-001.md", `---
+req_id: RID-1
+status: wip
+---
+# Roadmap 001
+`)
+	cfg := config.ProjectConfig{
+		REQDir:             filepath.Join(dir, "docs/requisicoes"),
+		RoadmapDir:         filepath.Join(dir, "docs/roadmaps"),
+		RoadmapNamespacing: config.NamespacingByAgent,
+		Agents:             []string{"claude"},
+		TraceIdField:       "req_id",
+	}
+
+	_, warnings := validateTraceId(cfg)
+	if !hasWarning(warnings, "REQs (0)") {
+		t.Errorf("esperado warning contendo 'REQs (0)', obteve: %v", warnings)
+	}
+}

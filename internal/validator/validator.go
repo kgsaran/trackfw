@@ -726,6 +726,46 @@ func resolveWIPDirs(cfg config.ProjectConfig) []string {
 	return []string{cfg.RoadmapDir + "/wip"}
 }
 
+// resolveREQFiles retorna paths completos de todos os .md em req_dir,
+// consciente de roadmap_namespacing: by_agent percorre req_dir/<agente>/<estado>/.
+func resolveREQFiles(cfg config.ProjectConfig) []string {
+	reqDir := cfg.REQDir
+	if reqDir == "" {
+		return nil
+	}
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		stateDirs := []string{"backlog", "wip", "blocked", "done", "abandoned"}
+		agents := cfg.Agents
+		if len(agents) == 0 {
+			entries, err := os.ReadDir(reqDir)
+			if err == nil {
+				for _, e := range entries {
+					if e.IsDir() {
+						agents = append(agents, e.Name())
+					}
+				}
+			}
+		}
+		var files []string
+		for _, agent := range agents {
+			for _, state := range stateDirs {
+				pattern := filepath.Join(reqDir, agent, state, "*.md")
+				matches, err := filepath.Glob(pattern)
+				if err == nil {
+					files = append(files, matches...)
+				}
+			}
+		}
+		return files
+	}
+	// flat (comportamento anterior)
+	matches, err := filepath.Glob(filepath.Join(reqDir, "*.md"))
+	if err != nil {
+		return nil
+	}
+	return matches
+}
+
 func validateWIPHasREQ() ([]string, error) {
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
@@ -751,19 +791,16 @@ func validateWIPHasREQ() ([]string, error) {
 
 func validateREQsHaveADR() ([]string, error) {
 	cfg := config.Load()
-	entries, err := listDir(cfg.REQDir)
-	if err != nil {
-		return nil, nil
-	}
+	files := resolveREQFiles(cfg)
 
 	var violations []string
-	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join(cfg.REQDir, name))
+	for _, path := range files {
+		content, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
 		if !contentHasMarker(string(content), cfg.LinkFieldsADR) {
-			violations = append(violations, fmt.Sprintf("req %q has no linked ADR", name))
+			violations = append(violations, fmt.Sprintf("req %q has no linked ADR", filepath.Base(path)))
 		}
 	}
 	return violations, nil
@@ -791,19 +828,16 @@ func validateBlockedHasREQ() ([]string, error) {
 
 func validateREQsHaveRoadmap() ([]string, error) {
 	cfg := config.Load()
-	entries, err := listDir(cfg.REQDir)
-	if err != nil {
-		return nil, nil
-	}
+	files := resolveREQFiles(cfg)
 
 	var violations []string
-	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join(cfg.REQDir, name))
+	for _, path := range files {
+		content, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
 		if !contentHasMarker(string(content), cfg.LinkFieldsRoadmap) {
-			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap", name))
+			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap", filepath.Base(path)))
 		}
 	}
 	return violations, nil
@@ -905,14 +939,10 @@ func validateStaleWIP() ([]string, error) {
 // Somente REQs com Status: Open e ADRs com Status: Draft são incluídas.
 func blockedREQs() (map[string][]string, error) {
 	cfg := config.Load()
-	entries, err := listDir(cfg.REQDir)
-	if err != nil {
-		return nil, err
-	}
+	files := resolveREQFiles(cfg)
 
 	result := make(map[string][]string)
-	for _, name := range entries {
-		reqPath := filepath.Join(cfg.REQDir, name)
+	for _, reqPath := range files {
 		content, err := os.ReadFile(reqPath)
 		if err != nil {
 			continue
@@ -932,7 +962,7 @@ func blockedREQs() (map[string][]string, error) {
 			}
 		}
 		if len(draftADRs) > 0 {
-			result[name] = draftADRs
+			result[filepath.Base(reqPath)] = draftADRs
 		}
 	}
 	return result, nil
@@ -942,10 +972,7 @@ func blockedREQs() (map[string][]string, error) {
 // Uma REQ Open com ADR Draft é uma violação: o roadmap não pode ser criado até os ADRs serem aceitos.
 func validateREQsNotBlockedByDraftADRs() ([]string, error) {
 	cfg := config.Load()
-	entries, err := filepath.Glob(filepath.Join(cfg.REQDir, "*.md"))
-	if err != nil {
-		return nil, err
-	}
+	entries := resolveREQFiles(cfg)
 
 	var violations []string
 	for _, path := range entries {
@@ -1069,8 +1096,8 @@ func validateFrontmatterPresence() []string {
 		}
 	}
 
-	// REQs
-	reqFiles, _ := filepath.Glob(filepath.Join(cfg.REQDir, "*.md"))
+	// REQs — usa resolveREQFiles para suportar namespacing by_agent
+	reqFiles := resolveREQFiles(cfg)
 	for _, f := range reqFiles {
 		content, err := os.ReadFile(f)
 		if err != nil {
@@ -1196,13 +1223,14 @@ func validateRefTargetsExist() ([]string, error) {
 		}
 	}
 
-	entries, _ := listDir(cfg.REQDir)
-	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join(cfg.REQDir, name))
+	reqFiles := resolveREQFiles(cfg)
+	for _, reqPath := range reqFiles {
+		content, err := os.ReadFile(reqPath)
 		if err != nil {
 			continue
 		}
 		s := string(content)
+		name := filepath.Base(reqPath)
 		if ref := extractRefPath(s, "ADR"); ref != "" {
 			if _, e := os.Stat(ref); os.IsNotExist(e) {
 				warnings = append(warnings, fmt.Sprintf("req %q links to ADR %q which does not exist", name, ref))

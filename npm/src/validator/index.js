@@ -82,6 +82,43 @@ function gitLastModifiedTime(filePath) {
   return null
 }
 
+// resolveReqFiles retorna array de paths completos de arquivos .md de REQs.
+// Em modo by_agent percorre reqDir/<agente>/<estado>/; em modo flat varre reqDir/ diretamente.
+function resolveReqFiles(cfg) {
+  const reqDir = cfg.reqDir || cfg.req_dir || ''
+  if (!reqDir) return []
+  const namespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
+  if (namespacing === 'by_agent') {
+    const STATES = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
+    let agents = cfg.agents || []
+    if (!agents.length) {
+      try {
+        agents = fs.readdirSync(reqDir).filter(e => {
+          try { return fs.statSync(path.join(reqDir, e)).isDirectory() } catch (_) { return false }
+        })
+      } catch (_) { return [] }
+    }
+    const files = []
+    for (const agent of agents) {
+      for (const state of STATES) {
+        const dir = path.join(reqDir, agent, state)
+        try {
+          for (const name of fs.readdirSync(dir)) {
+            if (name.endsWith('.md')) files.push(path.join(dir, name))
+          }
+        } catch (_) {}
+      }
+    }
+    return files
+  }
+  // flat (comportamento anterior) — retorna paths completos
+  try {
+    return fs.readdirSync(reqDir)
+      .filter(n => n.endsWith('.md') && !fs.statSync(path.join(reqDir, n)).isDirectory())
+      .map(n => path.join(reqDir, n))
+  } catch (_) { return [] }
+}
+
 // resolveWIPDirs retorna todos os diretórios wip/ conforme o modo de namespacing.
 function resolveWIPDirs(cfg) {
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
@@ -172,13 +209,13 @@ function validateWIPHasREQ() {
 // validateREQsHaveADR — REQs em <reqDir>/ sem marker ADR no conteúdo → violation
 function validateREQsHaveADR() {
   const cfg = config.load()
-  const entries = listDir(cfg.reqDir)
+  const files = resolveReqFiles(cfg)
   const violations = []
-  for (const name of entries) {
+  for (const filePath of files) {
     try {
-      const content = fs.readFileSync(path.join(cfg.reqDir, name), 'utf8')
+      const content = fs.readFileSync(filePath, 'utf8')
       if (!contentHasMarker(content, cfg.linkFields.adr)) {
-        violations.push(`req "${name}" has no linked ADR`)
+        violations.push(`req "${path.basename(filePath)}" has no linked ADR`)
       }
     } catch (_) {
       // ignorar
@@ -208,13 +245,13 @@ function validateBlockedHasREQ() {
 // validateREQsHaveRoadmap — REQs sem marker Roadmap → violation
 function validateREQsHaveRoadmap() {
   const cfg = config.load()
-  const entries = listDir(cfg.reqDir)
+  const files = resolveReqFiles(cfg)
   const violations = []
-  for (const name of entries) {
+  for (const filePath of files) {
     try {
-      const content = fs.readFileSync(path.join(cfg.reqDir, name), 'utf8')
+      const content = fs.readFileSync(filePath, 'utf8')
       if (!contentHasMarker(content, cfg.linkFields.roadmap)) {
-        violations.push(`req "${name}" has no linked Roadmap`)
+        violations.push(`req "${path.basename(filePath)}" has no linked Roadmap`)
       }
     } catch (_) {
       // ignorar
@@ -231,11 +268,11 @@ function validateADRsAreReferenced() {
     adrs = adrs.concat(walkDirMd(adrDir))
   }
 
-  const reqEntries = listDir(cfg.reqDir)
+  const reqFiles = resolveReqFiles(cfg)
   let combined = ''
-  for (const name of reqEntries) {
+  for (const filePath of reqFiles) {
     try {
-      combined += fs.readFileSync(path.join(cfg.reqDir, name), 'utf8')
+      combined += fs.readFileSync(filePath, 'utf8')
     } catch (_) {
       // ignorar
     }
@@ -424,10 +461,9 @@ function validateStaleWIP() {
 // validateREQsNotBlockedByDraftADRs — REQs Open com ADRs Draft na seção "## Blocked by ADRs" → violation
 function validateREQsNotBlockedByDraftADRs() {
   const cfg = config.load()
-  const entries = listDir(cfg.reqDir)
+  const files = resolveReqFiles(cfg)
   const violations = []
-  for (const name of entries) {
-    const filePath = path.join(cfg.reqDir, name)
+  for (const filePath of files) {
     let content
     try {
       content = fs.readFileSync(filePath, 'utf8')
@@ -439,7 +475,7 @@ function validateREQsNotBlockedByDraftADRs() {
     const blockedADRs = parseBlockedADRs(filePath)
     for (const adrBasename of blockedADRs) {
       if (adrIsDraft(adrBasename)) {
-        violations.push(`REQ ${name} is blocked by Draft ADR: ${adrBasename}`)
+        violations.push(`REQ ${path.basename(filePath)} is blocked by Draft ADR: ${adrBasename}`)
       }
     }
   }
@@ -449,10 +485,9 @@ function validateREQsNotBlockedByDraftADRs() {
 // blockedREQs retorna mapa de reqBasename → [adrBasenames Draft] para uso em getStatus()
 function blockedREQs() {
   const cfg = config.load()
-  const entries = listDir(cfg.reqDir)
+  const files = resolveReqFiles(cfg)
   const result = {}
-  for (const name of entries) {
-    const filePath = path.join(cfg.reqDir, name)
+  for (const filePath of files) {
     let content
     try {
       content = fs.readFileSync(filePath, 'utf8')
@@ -464,7 +499,7 @@ function blockedREQs() {
     const adrNames = parseBlockedADRs(filePath)
     const draftADRs = adrNames.filter(a => adrIsDraft(a))
     if (draftADRs.length > 0) {
-      result[name] = draftADRs
+      result[path.basename(filePath)] = draftADRs
     }
   }
   return result
@@ -531,13 +566,12 @@ function validateFrontmatterPresence() {
     }
   }
 
-  let reqFiles = []
-  try { reqFiles = listDir(cfg.reqDir).filter(f => f.endsWith('.md')) } catch (_) {}
-  for (const f of reqFiles) {
+  const reqFilePaths = resolveReqFiles(cfg)
+  for (const filePath of reqFilePaths) {
     try {
-      const content = fs.readFileSync(path.join(cfg.reqDir, f), 'utf8')
+      const content = fs.readFileSync(filePath, 'utf8')
       if (!content.startsWith('---')) {
-        violations.push(`req "${f}" has no frontmatter block`)
+        violations.push(`req "${path.basename(filePath)}" has no frontmatter block`)
       }
     } catch (_) {}
   }
@@ -580,9 +614,10 @@ function validateRefTargetsExist() {
   }
 
   // REQs: verificar ADR: e Roadmap:
-  for (const name of listDir(cfg.reqDir)) {
+  for (const filePath of resolveReqFiles(cfg)) {
     try {
-      const content = fs.readFileSync(path.join(cfg.reqDir, name), 'utf8')
+      const content = fs.readFileSync(filePath, 'utf8')
+      const name = path.basename(filePath)
       const adrRef = extractRefPath(content, 'ADR')
       if (adrRef && !fs.existsSync(adrRef)) {
         warnings.push(`req "${name}" links to ADR "${adrRef}" which does not exist`)
@@ -929,6 +964,7 @@ module.exports = {
   parseBlockedADRs,
   adrIsDraft,
   listDir,
+  resolveReqFiles,
   resolveWIPDirs,
   readGovernanceMode,
   readWIPConfig,

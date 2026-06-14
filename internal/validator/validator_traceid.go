@@ -132,8 +132,13 @@ func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []
 		return nil, nil
 	}
 
-	// Indexar REQs
-	reqEntries, _ := collectTraceIdEntries(cfg.REQDir, traceField)
+	// Indexar REQs — usa by_agent quando configurado
+	var reqEntries []traceIdEntry
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		reqEntries, _ = collectTraceIdEntriesByAgent(cfg.REQDir, traceField, cfg)
+	} else {
+		reqEntries, _ = collectTraceIdEntries(cfg.REQDir, traceField)
+	}
 	// Indexar Roadmaps — usa by_agent quando configurado
 	var roadmapEntries []traceIdEntry
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
@@ -157,6 +162,18 @@ func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []
 		warnings = append(warnings,
 			"trace_id_field is set but no REQ/Roadmap entries were indexed — check req_dir, roadmap_dir and roadmap_namespacing")
 		return violations, warnings
+	}
+	if len(reqEntries) == 0 && len(roadmapEntries) > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"trace_id_field is set but REQs (0) were indexed while Roadmaps (%d) were — check req_dir and roadmap_namespacing",
+			len(roadmapEntries),
+		))
+	}
+	if len(roadmapEntries) == 0 && len(reqEntries) > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"trace_id_field is set but Roadmaps (0) were indexed while REQs (%d) were — check roadmap_dir and roadmap_namespacing",
+			len(reqEntries),
+		))
 	}
 
 	// traceid_duplicate_req: mesmo req_id em mais de 1 REQ

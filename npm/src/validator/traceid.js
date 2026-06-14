@@ -91,6 +91,14 @@ function checkTraceIds(reqDir, roadmapDir, fieldName) {
 
   const violations = []
 
+  // Salvaguarda one-sided: um lado indexado e o outro não
+  if (reqIndex.size === 0 && roadmapIndex.size > 0) {
+    violations.push(`traceid_config_warning: trace_id_field is set but REQs (0) were indexed while Roadmaps (${roadmapIndex.size}) were — check reqDir and roadmap_namespacing`)
+  }
+  if (roadmapIndex.size === 0 && reqIndex.size > 0) {
+    violations.push(`traceid_config_warning: trace_id_field is set but Roadmaps (0) were indexed while REQs (${reqIndex.size}) were — check roadmapDir and roadmap_namespacing`)
+  }
+
   // traceid_duplicate_req: mesmo req_id em >1 REQ
   for (const [traceId, entries] of reqIndex.entries()) {
     if (entries.length > 1) {

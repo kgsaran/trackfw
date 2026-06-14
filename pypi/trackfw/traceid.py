@@ -87,6 +87,37 @@ def _index_reqs(req_dir: str, field: str) -> list:
     return entries
 
 
+def _index_reqs_by_agent(req_dir: str, field: str, agents: list) -> list:
+    """Indexa REQs em layout by_agent: req_dir/<agente>/<estado>/"""
+    if not agents:
+        try:
+            agents = [e for e in os.listdir(req_dir)
+                      if os.path.isdir(os.path.join(req_dir, e))]
+        except OSError:
+            return []
+    entries = []
+    for agent in agents:
+        agent_dir = os.path.join(req_dir, agent)
+        for state in _ROADMAP_STATES:
+            state_dir = os.path.join(agent_dir, state)
+            try:
+                names = [n for n in os.listdir(state_dir)
+                         if n.endswith(".md") and not os.path.isdir(os.path.join(state_dir, n))]
+            except OSError:
+                continue
+            for name in names:
+                path = os.path.join(state_dir, name)
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                except OSError:
+                    continue
+                trace_id = _extract_trace_id(content, field)
+                if trace_id:
+                    entries.append({"file": name, "path": path, "trace_id": trace_id, "state": state})
+    return entries
+
+
 def _index_roadmaps(roadmap_dir: str, field: str) -> list:
     """
     Lê todos os .md em roadmap_dir/<state>/ para os estados canônicos.
@@ -167,12 +198,13 @@ def check_traceid(cfg: dict) -> list:
     req_dir = cfg.get("req_dir", "docs/req")
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
 
-    req_entries = _index_reqs(req_dir, field)
     namespacing = cfg.get("roadmap_namespacing", "")
+    agents = cfg.get("agents", [])
     if namespacing == "by_agent":
-        agents = cfg.get("agents", [])
+        req_entries = _index_reqs_by_agent(req_dir, field, agents)
         roadmap_entries = _index_roadmaps_by_agent(roadmap_dir, field, agents)
     else:
+        req_entries = _index_reqs(req_dir, field)
         roadmap_entries = _index_roadmaps(roadmap_dir, field)
 
     if not req_entries and not roadmap_entries:
@@ -184,6 +216,18 @@ def check_traceid(cfg: dict) -> list:
         )]
 
     violations = []
+    if not req_entries and roadmap_entries:
+        violations.append(_violation(
+            "traceid_config_warning", "",
+            f"trace_id_field is set but REQs (0) were indexed while Roadmaps ({len(roadmap_entries)}) were"
+            " — check req_dir and roadmap_namespacing"
+        ))
+    if not roadmap_entries and req_entries:
+        violations.append(_violation(
+            "traceid_config_warning", "",
+            f"trace_id_field is set but Roadmaps (0) were indexed while REQs ({len(req_entries)}) were"
+            " — check roadmap_dir and roadmap_namespacing"
+        ))
 
     # --- traceid_duplicate_req: mesmo req_id em >1 REQ ---
     req_by_id: dict[str, list] = {}

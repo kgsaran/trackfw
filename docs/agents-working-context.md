@@ -1600,3 +1600,30 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 - `make build` — limpo
 
 **Observação:** os arquivos Go já estavam commitados no branch (provavelmente por sessão anterior). A implementação desta auditoria reproduziu o mesmo código já presente no HEAD — confirmando que o ML-1A Go estava correto e completo.
+
+---
+
+## Sessão 2026-06-13 — Apolo (CONCLUÍDO)
+
+**Tarefa:** fix(traceid) ML-1A — suporte a `roadmap_namespacing: by_agent` na função `validateTraceId` + salvaguarda de zero entradas.
+
+**Branch:** `fix/v2.5.2-traceid-by-agent`
+
+**Problema corrigido:** Em projetos com `roadmap_namespacing: by_agent`, os 5 checks `traceid_*` nunca disparavam porque `collectTraceIdEntries` só varria `rootDir/<estado>/`, mas em `by_agent` a estrutura é `rootDir/<agente>/<estado>/`.
+
+**Arquivos modificados:**
+- `internal/validator/validator_traceid.go` — nova função `collectTraceIdEntriesByAgent` (varre `rootDir/<agente>/<estado>/*.md`; usa `cfg.Agents` ou descobre agentes via `os.ReadDir`); `validateTraceId` agora escolhe entre `collectTraceIdEntries` e `collectTraceIdEntriesByAgent` com base em `cfg.RoadmapNamespacing`; salvaguarda de zero entradas emite warning descritivo.
+- `internal/validator/validator_traceid_test.go` — 2 novos testes: `TestTraceIdByAgent` (valida `traceid_orphan_req` e `traceid_orphan_roadmap` em estrutura by_agent) e `TestTraceIdZeroEntriesSalvaguarda` (valida warning quando diretórios estão vazios).
+
+**Resultado:** `make build` limpo | 8/8 testes TraceId verdes | suite `internal/validator` 100% verde | commit `c7e61b9` | push para `fix/v2.5.2-traceid-by-agent`.
+
+
+---
+
+## Sessão 2026-06-13 — ML-1A: REQ indexing by_agent (v2.5.3)
+
+**Agente:** Apolo
+**Status:** IMPLEMENTANDO
+**Branch:** fix/v2.5.3-req-indexing-by-agent
+
+**Objetivo:** corrigir scanner de REQs para suportar req_dir/<agente>/<estado>/ quando roadmap_namespacing: by_agent — adicionar resolveREQFiles, substituir coletas planas em validator.go, fix em validator_traceid.go e salvaguarda one-sided.

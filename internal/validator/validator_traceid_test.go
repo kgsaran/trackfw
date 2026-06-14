@@ -193,17 +193,18 @@ func TestTraceIdDisabled(t *testing.T) {
 }
 
 // TestTraceIdByAgent: roadmap_namespacing: by_agent — checks disparam corretamente para estrutura agente/estado/
+// REQs e Roadmaps seguem a estrutura <dir>/<agente>/<estado>/*.md.
 func TestTraceIdByAgent(t *testing.T) {
 	dir := t.TempDir()
 	config.Reset()
 	t.Cleanup(config.Reset)
 	chdir(t, dir)
 
-	// Criar estrutura by_agent: roadmaps/claude/wip/rm.md
-	mkdirs(t, dir, "req", "roadmaps/claude/wip")
+	// Criar estrutura by_agent: ambos req e roadmaps com agente/estado/
+	mkdirs(t, dir, "req/claude/wip", "roadmaps/claude/wip")
 
 	// REQ com req_id orphan-001 — sem Roadmap correspondente
-	writeFile(t, dir, "req/REQ-orphan-001.md",
+	writeFile(t, dir, "req/claude/wip/REQ-orphan-001.md",
 		reqFrontmatter("req_id", "orphan-001"))
 
 	// Roadmap com req_id orphan-002 — sem REQ correspondente
@@ -211,11 +212,12 @@ func TestTraceIdByAgent(t *testing.T) {
 		roadmapFrontmatter("req_id", "orphan-002", "WIP"))
 
 	cfg := config.ProjectConfig{
-		REQDir:              dir + "/req",
-		RoadmapDir:          dir + "/roadmaps",
-		RoadmapNamespacing:  config.NamespacingByAgent,
-		TraceIdField:        "req_id",
-		Rules:               map[string]string{},
+		REQDir:             dir + "/req",
+		RoadmapDir:         dir + "/roadmaps",
+		RoadmapNamespacing: config.NamespacingByAgent,
+		TraceIdField:       "req_id",
+		Agents:             []string{"claude"},
+		Rules:              map[string]string{},
 	}
 
 	vs, _ := validateTraceId(cfg)

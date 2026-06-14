@@ -125,12 +125,12 @@ def test_traceid_disabled(tmp_path):
 
 
 def test_traceid_by_agent(tmp_path):
-    """Layout by_agent: roadmap_dir/<agente>/<estado>/ — orphans devem ser detectados."""
+    """Layout by_agent: req_dir/<agente>/<estado>/ e roadmap_dir/<agente>/<estado>/ — orphans devem ser detectados."""
     cfg = _make_cfg(tmp_path)
     cfg["roadmap_namespacing"] = "by_agent"
 
-    # REQ com req_id sem roadmap correspondente
-    _write(str(tmp_path / "docs/req/REQ-007.md"), _req_content("orphan-req-007"))
+    # REQ em by_agent com req_id sem roadmap correspondente
+    _write(str(tmp_path / "docs/req/claude/wip/REQ-007.md"), _req_content("orphan-req-007"))
     # Roadmap em by_agent sem REQ correspondente
     _write(
         str(tmp_path / "docs/roadmaps/claude/wip/RM-007.md"),
