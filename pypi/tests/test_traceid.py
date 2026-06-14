@@ -122,3 +122,36 @@ def test_traceid_disabled(tmp_path):
 
     violations = check_traceid(cfg)
     assert violations == [], f"Sem trace_id_field, violations deve ser vazio, obteve: {violations}"
+
+
+def test_traceid_by_agent(tmp_path):
+    """Layout by_agent: roadmap_dir/<agente>/<estado>/ — orphans devem ser detectados."""
+    cfg = _make_cfg(tmp_path)
+    cfg["roadmap_namespacing"] = "by_agent"
+
+    # REQ com req_id sem roadmap correspondente
+    _write(str(tmp_path / "docs/req/REQ-007.md"), _req_content("orphan-req-007"))
+    # Roadmap em by_agent sem REQ correspondente
+    _write(
+        str(tmp_path / "docs/roadmaps/claude/wip/RM-007.md"),
+        _roadmap_content("orphan-roadmap-007"),
+    )
+
+    violations = check_traceid(cfg)
+    rules = [v["rule"] for v in violations]
+    assert "traceid_orphan_req" in rules, f"Esperado traceid_orphan_req em {rules}"
+    assert "traceid_orphan_roadmap" in rules, f"Esperado traceid_orphan_roadmap em {rules}"
+
+
+def test_traceid_zero_entries_warning(tmp_path):
+    """Diretórios vazios com trace_id_field → violation traceid_config_warning."""
+    cfg = _make_cfg(tmp_path)
+    # Cria os diretórios mas sem arquivos .md
+    os.makedirs(str(tmp_path / "docs/req"), exist_ok=True)
+    os.makedirs(str(tmp_path / "docs/roadmaps"), exist_ok=True)
+
+    result = check_traceid(cfg)
+    assert any(
+        "no REQ/Roadmap entries were indexed" in v.get("message", "")
+        for v in result
+    ), f"Esperado traceid_config_warning com mensagem de zero entradas, obteve: {result}"
