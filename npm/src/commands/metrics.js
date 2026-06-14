@@ -232,4 +232,11 @@ cmd.action((opts) => {
   }
 })
 
+// Exportar o comando como default para compatibilidade com index.js
+// e expor funções utilitárias para reutilização (ex: api_metrics.js do serve)
+cmd.parseLog = parseLog
+cmd.calculate = calculate
+
 module.exports = cmd
+module.exports.parseLog = parseLog
+module.exports.calculate = calculate

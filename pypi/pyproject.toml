@@ -28,3 +28,10 @@ trackfw = "trackfw.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["trackfw*"]
+
+[tool.setuptools.package-data]
+trackfw = [
+    "serve/static/*.html",
+    "serve/static/*.js",
+    "serve/static/*.css",
+]

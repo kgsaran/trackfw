@@ -1748,6 +1748,25 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 ---
 
+## 2026-06-14 — Apolo — ML-1A v2.7.0 trackfw serve UI (IMPLEMENTANDO)
+
+**Tarefa:** ML-1A do roadmap `v2.7.0-trackfw-serve-ui` — criar pacote `internal/serve/` com `embed.FS` e placeholder `index.html`; atualizar `commands/serve.go` para usar `serve.Start(port)`.
+
+**Branch:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Arquivos criados/modificados:**
+- `internal/serve/serve.go` (novo) — pacote serve com `//go:embed static`, `Start(port int)`, rotas `/` e `/static/*`
+- `internal/serve/static/index.html` (novo) — placeholder HTML inicial
+- `internal/commands/serve.go` — import trocado de `internal/server` para `internal/serve`
+
+**Resultado:** `go build ./...` limpo | `go test ./...` 100% verde | commit `648af62` | push para `feat/v2.7.0-trackfw-serve-ui`
+
+**Observação:** `internal/server` permanece no projeto (não foi deletado) — será removido/migrado em wave posterior quando os endpoints API forem portados para `internal/serve/api_*.go`.
+
+**Agente:** Apolo | Status: CONCLUÍDO
+
+---
+
 ## 2026-06-14 — Apolo — Atualização VISION.md v2.6.0 (CONCLUÍDO)
 
 **Tarefa:** Atualizar `docs/visao-projeto/VISION.md` para refletir o estado atual do projeto (v2.6.0) e posicionamento de mercado.
@@ -1755,4 +1774,140 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 **Arquivo modificado:**
 - `docs/visao-projeto/VISION.md` — header atualizado (v2.6.0 / 2026-06-14); comandos atuais adicionados (`context`, `validate --json`, `serve`, `traceid`); seção `trackfw validate` expandida com `governance_mode`, 15+ regras configuráveis e `trace_id_field` (5 checks automáticos); nova seção "AI-native Governance" com `roadmap_namespacing: by_agent`; seção Distribution atualizada para CLIs nativos (Go + Node.js + Python); 2 novos Design Principles (Configurable by design, AI-agent aware); roadmap antigo substituído por tabela "Current State (v2.6.0)"; seção "What trackfw Is NOT" ajustada para mencionar `trackfw serve`.
 
+---
+
+## 2026-06-14 — Afrodite — ML-0A assets dashboard trackfw serve (CONCLUÍDO)
+
+**Branch:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Tarefa:** Implementar os 3 assets estáticos do dashboard `trackfw serve` (sem bundler, CDN apenas).
+
+**Arquivos criados/modificados:**
+- `internal/serve/static/index.html` — substituiu placeholder; layout completo com header/nav (Board/Chain/Metrics), 3 views, drawer lateral com overlay
+- `internal/serve/static/style.css` — animacao slideIn do drawer, tab ativa, badge de estado, kanban cards com hover/focus, estilos prose para markdown, frontmatter table, D3 node labels, responsivo mobile (drawer 100% width < 768px)
+- `internal/serve/static/app.js` — JS vanilla: loadBoard (kanban com cache, filtro agente), loadChain (D3 force-directed com zoom/pan/drag, setas, coloracao por tipo/estado), loadMetrics (Chart.js donut + burndown line), openDrawer/closeDrawer (fetch /api/file, parseFrontmatter, marked.parse, intercept links .md internos), switchView, filterByAgent, escapeHtml
+
+**Resultado:** `go build ./...` limpo (embed.FS continua funcionando) | 3 arquivos criados
+
+**Agente:** Afrodite | Status: CONCLUÍDO
+
 **Agente:** Apolo | Status: CONCLUÍDO
+
+---
+
+## 2026-06-14 — Apolo — ML-1B→1E v2.7.0 trackfw serve endpoints (IMPLEMENTANDO)
+
+**Tarefa:** Implementar os 4 endpoints da Wave 1 do `trackfw serve`:
+- ML-1B: `GET /api/board` — kanban de roadmaps
+- ML-1C: `GET /api/chain` — grafo ADR→REQ→ROADMAP
+- ML-1D: `GET /api/metrics` — métricas de fluxo (log parser + cálculos)
+- ML-1E: `GET /api/file` — leitura segura de arquivos (anti path traversal)
+
+**Branch:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Arquivos a criar:**
+- `internal/serve/api_board.go`
+- `internal/serve/api_chain.go`
+- `internal/serve/api_metrics.go`
+- `internal/serve/metrics_log.go`
+- `internal/serve/api_file.go`
+- Atualizar `internal/serve/serve.go` para registrar os handlers
+
+**Resultado:** `go build ./...` limpo | `go test ./...` 100% verde | commit `8a5dce3` | push para `feat/v2.7.0-trackfw-serve-ui`
+
+**Decisoes tecnicas:**
+- `setCORSHeaders` centralizado em `api_board.go` com `Access-Control-Allow-Origin: *` (dev-only)
+- `parseFrontmatter` em `api_chain.go` puro sem dependência externa (evita yaml.v3)
+- `fileHandler` usa prefixo com separador para evitar falsos positivos (ex: `docs/adr2` vs `docs/adr`)
+- `calcBurndown` usa boundary semanal: para cada semana, aplica todos os eventos até o fim da semana para determinar o estado de cada roadmap
+- `ParseLog` retorna slice vazia (não nil) quando o arquivo não existe — compatível com o frontend
+
+**Agente:** Apolo | Status: CONCLUÍDO
+
+---
+
+## 2026-06-14 — Apolo — ML-3A: trackfw serve Python
+
+**Status:** CONCLUIDO
+
+**Tarefa:** Implementar `trackfw serve` para o CLI Python — servidor HTTP stdlib com dashboard web (kanban board, chain, metrics, file API).
+
+**Branch:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Resultado:** 247 testes passando | commit `10e1a23` | push para `feat/v2.7.0-trackfw-serve-ui`
+
+**Decisoes tecnicas:**
+- `functools.partial` para injetar `cfg` no `BaseHTTPRequestHandler` sem variável global
+- `os.path.realpath` + sufixo `os.sep` para evitar falsos positivos em path traversal (ex: `/docs/adr` vs `/docs/adr2`)
+- `_parse_log` de `commands/metrics.py` reutilizado diretamente — sem duplicação
+- Assets estáticos copiados de `internal/serve/static/` e declarados em `pyproject.toml` via `[tool.setuptools.package-data]`
+- Detecção automática de agentes por subdiretórios quando `roadmap_namespacing == "by_agent"` e `agents: []`
+
+**Agente:** Apolo | Status: CONCLUIDO
+
+---
+
+## 2026-06-14 — Apolo — ML-2A: trackfw serve Node.js
+
+**Status:** CONCLUÍDO
+
+**Tarefa:** Implementar `trackfw serve` para o CLI Node.js — servidor HTTP nativo (sem Express) com dashboard web.
+
+**Arquivos criados/modificados:**
+- `npm/src/commands/serve.js` — comando CLI + createServer com roteamento HTTP
+- `npm/src/serve/api_board.js` — scan kanban (flat + by_agent)
+- `npm/src/serve/api_chain.js` — grafo ADR→REQ→ROADMAP com parseFrontmatter nativo
+- `npm/src/serve/api_metrics.js` — reutiliza parseLog/calculate de metrics.js
+- `npm/src/serve/api_file.js` — segurança path traversal (resolve + allowedDirs)
+- `npm/src/serve/static/` — cópia dos assets de internal/serve/static/
+- `npm/src/commands/metrics.js` — exporta parseLog e calculate além do cmd
+- `npm/src/commands/index.js` — registra createServeCommand()
+
+**Critérios de aceite verificados:**
+- `node npm/bin/trackfw serve --no-open --port 9191` sobe sem erro
+- `/api/board` retorna JSON válido com columns e agents
+- `/api/metrics` retorna JSON com lead_time, cycle_time, abandonment_rate, state_distribution, burndown
+- `/api/chain` retorna JSON com nodes e edges
+- `/api/file?path=../../../etc/passwd` retorna 403
+- `/static/app.js` retorna 200
+
+**Commit:** `8ea11ee` | **Push:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Observação:** O ambiente tem processos Go `main` ouvindo em várias portas (8080, 8081, etc.) que interceptam requisições com autenticação. Os testes foram realizados na porta 9191.
+
+**Agente:** Apolo | Status: CONCLUÍDO
+
+---
+
+## Sessao 2026-06-14 — ML-4B Testes Node.js serve APIs
+
+**Agente:** Artemis | Status: CONCLUIDO
+**Branch:** feat/v2.7.0-trackfw-serve-ui
+**REQ:** docs/requisicoes/artemis/done/REQ-2026-06-14-serve-api-tests-nodejs.md
+**ROADMAP:** docs/roadmap/artemis/done/ROADMAP-2026-06-14-serve-api-tests-nodejs.md
+
+**Arquivo criado:** `npm/tests/serve_api.test.js`
+**Resultado:** 8/8 testes passaram | 0 regressoes nos 130 testes existentes
+**Cobertura:**
+- api_board: flat mode (columns + agents), by_agent mode (agent no card), board vazio
+- api_file: path valido (200), path traversal (403), path fora dos dirs (403)
+- api_metrics: sem log (zeros), com log valido (cycle_time_avg_days calculado)
+
+---
+
+## Sessao 2026-06-14 — ML-4C Testes Python serve APIs
+
+**Agente:** Artemis | Status: CONCLUIDO
+**Branch:** feat/v2.7.0-trackfw-serve-ui
+
+**Objetivo:** Implementar `pypi/tests/test_serve_api.py` cobrindo api_board, api_file e api_metrics.
+
+**Resultados:**
+- 14 testes implementados e passando (pytest)
+- Suite completa: 261/261 PASSED, sem regressoes
+- Cobertura: api_board (flat, by_agent, autodetect, vazio), api_file (200, 403 traversal, 403 outside, _is_safe_path unit), api_metrics (sem log zeros, com log cycle_time, abandonment_rate, _calc_cycle_time direto)
+- Path traversal bloqueado e testado com `../../../etc/passwd` → 403
+
+**Commit:** `80e2492` | **Push:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Agente:** Artemis | Status: CONCLUIDO
