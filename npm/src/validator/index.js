@@ -818,11 +818,12 @@ async function validateUnfiltered() {
   applyRule('filename_uniqueness',  validateFilenameUniqueness(),          violations, warnings)
   applyRule('blocked_by_draft_adr', validateREQsNotBlockedByDraftADRs(),  violations, warnings)
 
-  // Regras diretas (sem configuração de severidade): violations sempre
-  // Popular _itemMeta manualmente para manter rastreabilidade no JSON
-  for (const msg of validateREQsHaveADR())         { _setMeta(msg, 'req_has_adr');         violations.push(msg) }
-  for (const msg of validateBlockedHasREQ())        { _setMeta(msg, 'blocked_has_req');      violations.push(msg) }
-  for (const msg of validateREQsHaveRoadmap())      { _setMeta(msg, 'req_has_roadmap');      violations.push(msg) }
+  // Regras configuráveis via applyRule (popula _itemMeta automaticamente)
+  applyRule('req_has_adr',          validateREQsHaveADR(),          violations, warnings)
+  applyRule('blocked_has_req',      validateBlockedHasREQ(),        violations, warnings)
+  applyRule('req_has_roadmap',      validateREQsHaveRoadmap(),      violations, warnings)
+
+  // Regra direta (sem configuração de severidade): violation sempre
   for (const msg of validateFrontmatterPresence())  { _setMeta(msg, 'frontmatter_presence'); violations.push(msg) }
 
   // warnings diretos do WIP limit (não configuráveis)

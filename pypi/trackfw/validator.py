@@ -888,10 +888,10 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule("folder_status",        validate_folder_status_coherence(cfg),        violations, warnings, cfg)
     _apply_rule("stale_wip",            validate_stale_wip(cfg),                      violations, warnings, cfg)
 
-    # Regras sem mapeamento configurável (violations diretas)
-    violations += _enrich_items(validate_reqs_have_adr(cfg),           "reqs_have_adr")
-    violations += _enrich_items(validate_blocked_has_req(cfg),         "blocked_has_req")
-    violations += _enrich_items(validate_reqs_have_roadmap(cfg),       "reqs_have_roadmap")
+    # Regras com severidade configurável (req_has_adr, blocked_has_req, req_has_roadmap)
+    _apply_rule("req_has_adr",     validate_reqs_have_adr(cfg),     violations, warnings, cfg)
+    _apply_rule("blocked_has_req", validate_blocked_has_req(cfg),   violations, warnings, cfg)
+    _apply_rule("req_has_roadmap", validate_reqs_have_roadmap(cfg), violations, warnings, cfg)
     violations += _enrich_items(validate_frontmatter_presence(cfg),    "frontmatter_presence")
 
     # wip_limit: violations e warnings já separados internamente
