@@ -84,6 +84,11 @@ function checkTraceIds(reqDir, roadmapDir, fieldName) {
     roadmapIndex.get(traceId).push({ file: path.basename(filePath), state })
   }
 
+  // Salvaguarda: trace_id_field configurado mas nenhum arquivo indexado
+  if (reqIndex.size === 0 && roadmapIndex.size === 0) {
+    return ['traceid_config_warning: trace_id_field is set but no REQ/Roadmap entries were indexed — check reqDir, roadmapDir and roadmap_namespacing']
+  }
+
   const violations = []
 
   // traceid_duplicate_req: mesmo req_id em >1 REQ
