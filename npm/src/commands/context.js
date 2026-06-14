@@ -99,7 +99,27 @@ function getContext(format) {
   }
 
   // REQs
-  const reqs = collectEntries(cfg.reqDir || 'docs/req', 'REQ')
+  const reqs = []
+  const reqDir = cfg.reqDir || cfg.req_dir || 'docs/req'
+  const reqNamespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
+  if (reqNamespacing === 'by_agent') {
+    const STATES = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
+    let agents = cfg.agents || []
+    if (!agents.length) {
+      try {
+        agents = fs.readdirSync(reqDir).filter(f => {
+          try { return fs.statSync(path.join(reqDir, f)).isDirectory() } catch (_) { return false }
+        })
+      } catch (_) {}
+    }
+    for (const agent of agents) {
+      for (const state of STATES) {
+        reqs.push(...collectEntries(path.join(reqDir, agent, state), 'REQ', state))
+      }
+    }
+  } else {
+    reqs.push(...collectEntries(reqDir, 'REQ'))
+  }
 
   // Roadmaps
   const roadmaps = []

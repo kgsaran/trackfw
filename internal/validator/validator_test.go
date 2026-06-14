@@ -558,3 +558,46 @@ status: wip
 		t.Errorf("esperado warning contendo 'REQs (0)', obteve: %v", warnings)
 	}
 }
+
+// TestValidateADRsAreReferencedByAgent — ADR referenciado em REQ by_agent não deve gerar violation.
+func TestValidateADRsAreReferencedByAgent(t *testing.T) {
+	dir := t.TempDir()
+
+	// ADR em docs/adr/claude/done/
+	writeFile(t, dir, "docs/adr/claude/done/ADR-001.md", `---
+name: ADR-001
+status: Accepted
+---
+# ADR-001: Decisão de Exemplo
+`)
+	// REQ em docs/req/claude/wip/ referenciando ADR-001
+	writeFile(t, dir, "docs/req/claude/wip/REQ-001.md", `---
+status: Open
+---
+# REQ-001
+
+ADR: ADR-001.md
+Roadmap: ROADMAP-001
+`)
+
+	// trackfw.yaml com by_agent
+	writeFile(t, dir, "trackfw.yaml", `roadmap_namespacing: by_agent
+agents:
+  - claude
+req_dir: docs/req
+adr_dirs:
+  - docs/adr
+`)
+
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateADRsAreReferenced()
+	if err != nil {
+		t.Fatalf("validateADRsAreReferenced() erro inesperado: %v", err)
+	}
+	if hasViolation(violations, "ADR-001") {
+		t.Errorf("ADR-001 não deveria ser orphan — está referenciado na REQ by_agent; obteve: %v", violations)
+	}
+}

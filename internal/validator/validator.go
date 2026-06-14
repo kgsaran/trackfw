@@ -851,17 +851,10 @@ func validateADRsAreReferenced() ([]string, error) {
 		adrs = append(adrs, names...)
 	}
 
-	reqs, err := os.ReadDir(cfg.REQDir)
-	if err != nil {
-		return nil, nil
-	}
-
+	reqPaths := resolveREQFiles(cfg)
 	var allREQContent strings.Builder
-	for _, r := range reqs {
-		if r.IsDir() {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(cfg.REQDir, r.Name()))
+	for _, p := range reqPaths {
+		b, err := os.ReadFile(p)
 		if err == nil {
 			allREQContent.Write(b)
 		}

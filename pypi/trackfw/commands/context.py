@@ -105,7 +105,23 @@ def _get_context(fmt, output_file=None):
         adrs.extend(_collect_entries(adr_dir, "ADR"))
 
     # REQs
-    reqs = _collect_entries(cfg.get("req_dir", "docs/req"), "REQ")
+    req_dir = cfg.get("req_dir", "docs/req")
+    namespacing = cfg.get("roadmap_namespacing", "")
+    reqs = []
+    if namespacing == "by_agent":
+        STATES = ["backlog", "wip", "blocked", "done", "abandoned"]
+        agents = cfg.get("agents", [])
+        if not agents:
+            try:
+                agents = [e for e in os.listdir(req_dir)
+                          if os.path.isdir(os.path.join(req_dir, e))]
+            except OSError:
+                agents = []
+        for agent in agents:
+            for state in STATES:
+                reqs.extend(_collect_entries(os.path.join(req_dir, agent, state), "REQ", state))
+    else:
+        reqs = _collect_entries(req_dir, "REQ")
 
     # Roadmaps
     roadmaps = []

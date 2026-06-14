@@ -54,18 +54,51 @@ func GetContext(format string) error {
 	}
 
 	var reqs []ContextEntry
-	reqEntries, err := os.ReadDir(cfg.REQDir)
-	if err == nil {
-		for _, e := range reqEntries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-				continue
+	reqStates := []string{"backlog", "wip", "blocked", "done", "abandoned"}
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := cfg.Agents
+		if len(agents) == 0 {
+			dirEntries, _ := os.ReadDir(cfg.REQDir)
+			for _, de := range dirEntries {
+				if de.IsDir() {
+					agents = append(agents, de.Name())
+				}
 			}
-			content, _ := os.ReadFile(filepath.Join(cfg.REQDir, e.Name()))
-			status := extractFrontmatterField(string(content), "status")
-			if status == "" {
-				status = extractInlineStatus(string(content))
+		}
+		for _, agent := range agents {
+			for _, state := range reqStates {
+				dir := filepath.Join(cfg.REQDir, agent, state)
+				es, err := os.ReadDir(dir)
+				if err != nil {
+					continue
+				}
+				for _, e := range es {
+					if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+						continue
+					}
+					content, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+					status := extractFrontmatterField(string(content), "status")
+					if status == "" {
+						status = extractInlineStatus(string(content))
+					}
+					reqs = append(reqs, ContextEntry{Type: "REQ", File: e.Name(), Status: status})
+				}
 			}
-			reqs = append(reqs, ContextEntry{Type: "REQ", File: e.Name(), Status: status})
+		}
+	} else {
+		reqEntries, err := os.ReadDir(cfg.REQDir)
+		if err == nil {
+			for _, e := range reqEntries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+					continue
+				}
+				content, _ := os.ReadFile(filepath.Join(cfg.REQDir, e.Name()))
+				status := extractFrontmatterField(string(content), "status")
+				if status == "" {
+					status = extractInlineStatus(string(content))
+				}
+				reqs = append(reqs, ContextEntry{Type: "REQ", File: e.Name(), Status: status})
+			}
 		}
 	}
 
