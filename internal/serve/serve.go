@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 //go:embed static
@@ -34,6 +36,21 @@ func Start(port int) error {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(data)
+	})
+
+	// API endpoints
+	cfg := config.Load()
+	mux.HandleFunc("/api/board", func(w http.ResponseWriter, r *http.Request) {
+		boardHandler(w, r, cfg)
+	})
+	mux.HandleFunc("/api/chain", func(w http.ResponseWriter, r *http.Request) {
+		chainHandler(w, r, cfg)
+	})
+	mux.HandleFunc("/api/metrics", func(w http.ResponseWriter, r *http.Request) {
+		metricsHandler(w, r, cfg)
+	})
+	mux.HandleFunc("/api/file", func(w http.ResponseWriter, r *http.Request) {
+		fileHandler(w, r, cfg)
 	})
 
 	addr := fmt.Sprintf(":%d", port)

@@ -1792,3 +1792,25 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 **Agente:** Afrodite | Status: CONCLUÍDO
 
 **Agente:** Apolo | Status: CONCLUÍDO
+
+---
+
+## 2026-06-14 — Apolo — ML-1B→1E v2.7.0 trackfw serve endpoints (IMPLEMENTANDO)
+
+**Tarefa:** Implementar os 4 endpoints da Wave 1 do `trackfw serve`:
+- ML-1B: `GET /api/board` — kanban de roadmaps
+- ML-1C: `GET /api/chain` — grafo ADR→REQ→ROADMAP
+- ML-1D: `GET /api/metrics` — métricas de fluxo (log parser + cálculos)
+- ML-1E: `GET /api/file` — leitura segura de arquivos (anti path traversal)
+
+**Branch:** `feat/v2.7.0-trackfw-serve-ui`
+
+**Arquivos a criar:**
+- `internal/serve/api_board.go`
+- `internal/serve/api_chain.go`
+- `internal/serve/api_metrics.go`
+- `internal/serve/metrics_log.go`
+- `internal/serve/api_file.go`
+- Atualizar `internal/serve/serve.go` para registrar os handlers
+
+**Agente:** Apolo | Status: IMPLEMENTANDO
