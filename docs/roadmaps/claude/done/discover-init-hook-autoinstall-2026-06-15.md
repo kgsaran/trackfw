@@ -1,7 +1,7 @@
 ---
 name: discover-init-hook-autoinstall-2026-06-15
 title: "feat: discover --init instala hook framework automaticamente"
-status: wip
+status: done
 req: docs/requisições/claude/REQ-2026-06-15-discover-init-hook-autoinstall.md
 created: 2026-06-15
 author: zeus
