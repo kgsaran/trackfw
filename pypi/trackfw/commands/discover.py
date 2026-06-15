@@ -8,6 +8,7 @@ import os
 import sys
 import stat
 import datetime
+import subprocess
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +295,62 @@ def _install_hook(framework: str, root_dir: str) -> None:
         with open(husky_hook, "a", encoding="utf-8") as f:
             f.write(husky_entry)
     else:
-        print("Aviso: nenhum hook framework detectado — instalação de hook ignorada")
+        pkg_json = os.path.join(root_dir, "package.json")
+        if os.path.isfile(pkg_json):
+            _install_husky(root_dir)
+        else:
+            _install_lefthook(root_dir)
+
+
+def _install_husky(root_dir: str) -> None:
+    """Instala husky via npm e configura o pre-commit hook."""
+    try:
+        subprocess.run(
+            ["npm", "install", "--save-dev", "husky"],
+            cwd=root_dir,
+            check=False,
+        )
+        subprocess.run(
+            ["npx", "husky", "init"],
+            cwd=root_dir,
+            check=False,
+        )
+        husky_dir = os.path.join(root_dir, ".husky")
+        os.makedirs(husky_dir, exist_ok=True)
+        hook_file = os.path.join(husky_dir, "pre-commit")
+        with open(hook_file, "a", encoding="utf-8") as f:
+            f.write("\nscripts/trackfw-validate.sh\n")
+    except subprocess.CalledProcessError as exc:
+        print(f"Aviso: falha ao instalar husky: {exc}")
+
+
+def _install_lefthook(root_dir: str) -> None:
+    """Cria lefthook.yml na raiz e tenta executar lefthook install."""
+    lefthook_yml = os.path.join(root_dir, "lefthook.yml")
+
+    # idempotência: se já existe e menciona trackfw, não sobrescrever
+    if os.path.isfile(lefthook_yml):
+        with open(lefthook_yml, "r", encoding="utf-8") as f:
+            if "trackfw" in f.read():
+                return
+
+    content = (
+        "pre-commit:\n"
+        "  commands:\n"
+        "    trackfw-validate:\n"
+        "      run: scripts/trackfw-validate.sh\n"
+    )
+    with open(lefthook_yml, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    try:
+        subprocess.run(
+            ["lefthook", "install"],
+            cwd=root_dir,
+            check=False,
+        )
+    except FileNotFoundError:
+        print("Aviso: lefthook não encontrado no PATH — lefthook.yml criado, mas 'lefthook install' foi ignorado")
 
 
 def _write_ci_workflow(root_dir: str) -> None:
