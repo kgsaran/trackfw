@@ -1,6 +1,7 @@
 package discover
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -163,7 +164,7 @@ func TestInstallGates_Lefthook_GithubActions(t *testing.T) {
 		CISystem:      "github-actions",
 	}
 
-	if err := InstallGates(r, dir); err != nil {
+	if err := InstallGates(r, dir, io.Discard); err != nil {
 		t.Fatalf("InstallGates error: %v", err)
 	}
 
@@ -202,7 +203,7 @@ func TestInstallGates_Idempotente(t *testing.T) {
 		CISystem:      "github-actions",
 	}
 
-	if err := InstallGates(r, dir); err != nil {
+	if err := InstallGates(r, dir, io.Discard); err != nil {
 		t.Fatalf("InstallGates error: %v", err)
 	}
 
@@ -236,6 +237,92 @@ func TestGenerateYAML(t *testing.T) {
 	}
 	if !containsStr(yaml, "governance_mode: lenient") {
 		t.Error("YAML should contain lenient mode")
+	}
+}
+
+// TestInstallLefthook_SemPackageJSON — projeto sem package.json → lefthook.yml criado
+func TestInstallLefthook_SemPackageJSON(t *testing.T) {
+	dir := t.TempDir()
+	// sem package.json, sem lefthook.yml existente
+
+	if err := installLefthook(dir, io.Discard); err != nil {
+		t.Fatalf("installLefthook error: %v", err)
+	}
+
+	cfgPath := filepath.Join(dir, "lefthook.yml")
+	content, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("lefthook.yml not created: %v", err)
+	}
+	if !containsSubstr(string(content), "trackfw-validate") {
+		t.Errorf("lefthook.yml should contain trackfw-validate entry, got: %s", content)
+	}
+}
+
+// TestInstallLefthook_Idempotente — lefthook já contém trackfw → não adiciona duplicata
+func TestInstallLefthook_Idempotente(t *testing.T) {
+	dir := t.TempDir()
+	original := "pre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n"
+	mustWriteFile(t, filepath.Join(dir, "lefthook.yml"), original)
+
+	if err := installLefthook(dir, io.Discard); err != nil {
+		t.Fatalf("installLefthook error: %v", err)
+	}
+
+	content, _ := os.ReadFile(filepath.Join(dir, "lefthook.yml"))
+	// o conteúdo não deve ter sido expandido — ainda é o original
+	if string(content) != original {
+		t.Errorf("lefthook.yml should remain unchanged, got: %s", content)
+	}
+}
+
+// TestInstallHusky_ComPackageJSON — projeto com package.json → .husky/pre-commit criado
+// O exec de npm/npx pode falhar no ambiente de teste; o importante é o arquivo .husky/pre-commit.
+func TestInstallHusky_ComPackageJSON(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "package.json"), `{"name":"test"}`)
+
+	if err := installHusky(dir, io.Discard); err != nil {
+		t.Fatalf("installHusky error: %v", err)
+	}
+
+	huskyHook := filepath.Join(dir, ".husky", "pre-commit")
+	content, err := os.ReadFile(huskyHook)
+	if err != nil {
+		t.Fatalf(".husky/pre-commit not created: %v", err)
+	}
+	if !containsSubstr(string(content), "trackfw-validate.sh") {
+		t.Errorf(".husky/pre-commit should contain trackfw-validate.sh, got: %s", content)
+	}
+}
+
+// TestInstallHook_DefaultSemPackageJSON — via installHook com framework "none" sem package.json
+func TestInstallHook_DefaultSemPackageJSON(t *testing.T) {
+	dir := t.TempDir()
+	// sem package.json → deve chamar installLefthook
+
+	if err := installHook("none", dir, io.Discard); err != nil {
+		t.Fatalf("installHook error: %v", err)
+	}
+
+	cfgPath := filepath.Join(dir, "lefthook.yml")
+	if _, err := os.Stat(cfgPath); err != nil {
+		t.Errorf("lefthook.yml should have been created: %v", err)
+	}
+}
+
+// TestInstallHook_DefaultComPackageJSON — via installHook com framework "none" com package.json
+func TestInstallHook_DefaultComPackageJSON(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "package.json"), `{"name":"test"}`)
+
+	if err := installHook("none", dir, io.Discard); err != nil {
+		t.Fatalf("installHook error: %v", err)
+	}
+
+	huskyHook := filepath.Join(dir, ".husky", "pre-commit")
+	if _, err := os.Stat(huskyHook); err != nil {
+		t.Errorf(".husky/pre-commit should have been created: %v", err)
 	}
 }
 
