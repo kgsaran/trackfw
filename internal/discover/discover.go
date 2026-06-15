@@ -2,18 +2,20 @@ package discover
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
 // InstallGates instala os artefatos de governança num projeto brownfield:
 // validate script, hook entry e (se github-actions) CI workflow.
-func InstallGates(r DiscoveryResult, rootDir string) error {
+func InstallGates(r DiscoveryResult, rootDir string, w io.Writer) error {
 	if err := writeValidateScript(rootDir); err != nil {
 		return err
 	}
-	if err := installHook(r.HookFramework, rootDir); err != nil {
+	if err := installHook(r.HookFramework, rootDir, w); err != nil {
 		return err
 	}
 	if r.CISystem == "github-actions" {
@@ -37,7 +39,7 @@ func writeValidateScript(rootDir string) error {
 	return nil
 }
 
-func installHook(framework, rootDir string) error {
+func installHook(framework, rootDir string, w io.Writer) error {
 	hookEntry := "\npre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n"
 	huskyEntry := "\nscripts/trackfw-validate.sh\n"
 
@@ -65,6 +67,9 @@ func installHook(framework, rootDir string) error {
 
 	case "husky":
 		huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+		if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
+			return fmt.Errorf("creating .husky dir: %w", err)
+		}
 		f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
 		if err != nil {
 			return fmt.Errorf("opening husky pre-commit: %w", err)
@@ -74,8 +79,100 @@ func installHook(framework, rootDir string) error {
 		return err
 
 	default:
-		fmt.Println("⚠ No hook framework detected — skipping hook installation")
+		pkgJSON := filepath.Join(rootDir, "package.json")
+		if fileExists(pkgJSON) {
+			return installHusky(rootDir, w)
+		}
+		return installLefthook(rootDir, w)
 	}
+}
+
+// installLefthook cria lefthook.yml na raiz e tenta executar "lefthook install".
+// Se lefthook não estiver no PATH, imprime instrução e retorna nil (não bloqueante).
+func installLefthook(rootDir string, w io.Writer) error {
+	const lefthookContent = "pre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n"
+
+	cfgPath := filepath.Join(rootDir, "lefthook.yml")
+
+	if fileExists(cfgPath) {
+		content, err := os.ReadFile(cfgPath)
+		if err != nil {
+			return fmt.Errorf("reading lefthook.yml: %w", err)
+		}
+		if strings.Contains(string(content), "trackfw") {
+			// já configurado — idempotente
+			fmt.Fprintf(w, "✓ lefthook.yml already contains trackfw entry\n")
+			return nil
+		}
+		// appenda entrada ao arquivo existente
+		f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("opening lefthook.yml: %w", err)
+		}
+		defer f.Close()
+		if _, err := f.WriteString("\npre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n"); err != nil {
+			return fmt.Errorf("appending to lefthook.yml: %w", err)
+		}
+		fmt.Fprintf(w, "✓ trackfw entry appended to lefthook.yml\n")
+	} else {
+		if err := os.WriteFile(cfgPath, []byte(lefthookContent), 0644); err != nil {
+			return fmt.Errorf("writing lefthook.yml: %w", err)
+		}
+		fmt.Fprintf(w, "✓ lefthook.yml created\n")
+	}
+
+	// tenta executar "lefthook install" se disponível
+	if _, err := exec.LookPath("lefthook"); err == nil {
+		cmd := exec.Command("lefthook", "install")
+		cmd.Dir = rootDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(w, "⚠ lefthook install failed: %s\n", strings.TrimSpace(string(out)))
+		} else {
+			fmt.Fprintf(w, "✓ lefthook install ran successfully\n")
+		}
+	} else {
+		fmt.Fprintf(w, "⚠ lefthook not found in PATH — run 'lefthook install' after installing it\n")
+	}
+
+	return nil
+}
+
+// installHusky executa npm install --save-dev husky, npx husky init e cria .husky/pre-commit.
+// Erros de exec são impressos como aviso (não bloqueantes).
+func installHusky(rootDir string, w io.Writer) error {
+	// npm install --save-dev husky
+	npmInstall := exec.Command("npm", "install", "--save-dev", "husky")
+	npmInstall.Dir = rootDir
+	if out, err := npmInstall.CombinedOutput(); err != nil {
+		fmt.Fprintf(w, "⚠ npm install husky failed: %s\n", strings.TrimSpace(string(out)))
+	} else {
+		fmt.Fprintf(w, "✓ husky installed via npm\n")
+	}
+
+	// npx husky init
+	huskyInit := exec.Command("npx", "husky", "init")
+	huskyInit.Dir = rootDir
+	if out, err := huskyInit.CombinedOutput(); err != nil {
+		fmt.Fprintf(w, "⚠ npx husky init failed: %s\n", strings.TrimSpace(string(out)))
+	} else {
+		fmt.Fprintf(w, "✓ husky initialized\n")
+	}
+
+	// cria/append .husky/pre-commit com linha do trackfw
+	huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+	if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
+		return fmt.Errorf("creating .husky dir: %w", err)
+	}
+	f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		return fmt.Errorf("opening .husky/pre-commit: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString("\nscripts/trackfw-validate.sh\n"); err != nil {
+		return fmt.Errorf("writing .husky/pre-commit: %w", err)
+	}
+	fmt.Fprintf(w, "✓ trackfw entry added to .husky/pre-commit\n")
+
 	return nil
 }
 

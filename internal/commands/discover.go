@@ -121,7 +121,7 @@ func NewDiscoverCmd() *cobra.Command {
 					return fmt.Errorf("writing trackfw.yaml: %w", err)
 				}
 				fmt.Fprintln(out, "\n✓ trackfw.yaml generated")
-				if err := discover.InstallGates(r, cwd); err != nil {
+				if err := discover.InstallGates(r, cwd, out); err != nil {
 					fmt.Fprintf(out, "⚠ gates install partial: %v\n", err)
 				} else {
 					fmt.Fprintln(out, "✓ governance gates installed")
