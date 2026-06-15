@@ -3,6 +3,7 @@
 const { Command } = require('commander');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 function scan(rootDir) {
   const r = {
@@ -205,7 +206,51 @@ function installHook(framework, rootDir) {
     const huskyHook = path.join(rootDir, '.husky', 'pre-commit');
     fs.appendFileSync(huskyHook, huskyEntry, 'utf8');
   } else {
-    console.log('⚠ No hook framework detected — skipping hook installation');
+    const pkgJson = path.join(rootDir, 'package.json');
+    if (fs.existsSync(pkgJson)) {
+      installHusky(rootDir);
+    } else {
+      installLefthook(rootDir);
+    }
+  }
+}
+
+function installHusky(rootDir) {
+  try {
+    execSync('npm install --save-dev husky', { cwd: rootDir, stdio: 'inherit' });
+  } catch (e) {
+    console.warn('⚠ trackfw: falha ao instalar husky:', e.message);
+    return;
+  }
+  try {
+    execSync('npx husky init', { cwd: rootDir, stdio: 'inherit' });
+  } catch (e) {
+    console.warn('⚠ trackfw: falha ao inicializar husky:', e.message);
+    return;
+  }
+  try {
+    const huskyDir = path.join(rootDir, '.husky');
+    if (!isDir(huskyDir)) fs.mkdirSync(huskyDir, { recursive: true });
+    fs.appendFileSync(path.join(huskyDir, 'pre-commit'), '\nscripts/trackfw-validate.sh\n', 'utf8');
+  } catch (e) {
+    console.warn('⚠ trackfw: falha ao configurar hook pre-commit do husky:', e.message);
+  }
+}
+
+function installLefthook(rootDir) {
+  const lefthookPath = path.join(rootDir, 'lefthook.yml');
+  if (isFile(lefthookPath)) {
+    const existing = fs.readFileSync(lefthookPath, 'utf8');
+    if (existing.includes('trackfw')) return; // idempotente
+    fs.appendFileSync(lefthookPath, '\npre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n', 'utf8');
+  } else {
+    const content = 'pre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n';
+    fs.writeFileSync(lefthookPath, content, 'utf8');
+  }
+  try {
+    execSync('lefthook install', { cwd: rootDir, stdio: 'inherit' });
+  } catch (e) {
+    console.warn('⚠ trackfw: lefthook não encontrado no PATH — hook registrado em lefthook.yml mas não instalado:', e.message);
   }
 }
 
