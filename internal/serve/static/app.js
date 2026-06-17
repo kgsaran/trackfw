@@ -203,12 +203,34 @@ function createCard(card) {
   div.setAttribute('role', 'button');
   div.setAttribute('aria-label', `Abrir: ${card.title || card.file}`);
 
+  const total    = card.ml_total  || 0;
+  const done     = card.ml_done   || 0;
+  const activeML = card.active_ml || '';
+  const pct      = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  let barColor = 'bg-blue-500';
+  if (card.state === 'blocked') barColor = 'bg-red-400';
+  else if (done === total && total > 0) barColor = 'bg-green-500';
+
+  const progressHTML = total > 0 ? `
+    <div class="mt-2 pt-2 border-t border-gray-100">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-xs text-gray-400">MLs</span>
+        <span class="text-xs font-medium text-gray-600">${done}/${total}</span>
+      </div>
+      <div class="w-full bg-gray-200 rounded-full h-1.5">
+        <div class="${barColor} h-1.5 rounded-full transition-all" style="width:${pct}%"></div>
+      </div>
+      ${activeML ? `<p class="text-xs text-blue-600 mt-1 leading-snug truncate" title="${escapeHtml(activeML)}">▶ ${escapeHtml(activeML)}</p>` : ''}
+    </div>` : '';
+
   div.innerHTML = `
     <p class="text-xs font-semibold text-gray-800 mb-2 leading-snug">${escapeHtml(card.title || card.file)}</p>
     <div class="flex flex-wrap items-center gap-1">
       ${card.agent ? `<span class="inline-block text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">${escapeHtml(card.agent)}</span>` : ''}
       <span class="badge-${card.state} inline-block text-xs px-1.5 py-0.5 rounded font-medium">${stateLabel(card.state)}</span>
-    </div>`;
+    </div>
+    ${progressHTML}`;
 
   div.addEventListener('click', () => openDrawer(card.path));
   div.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDrawer(card.path); } });
