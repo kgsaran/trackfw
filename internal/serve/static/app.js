@@ -221,11 +221,18 @@ function createCard(card) {
   const total    = card.ml_total  || 0;
   const done     = card.ml_done   || 0;
   const activeML = card.active_ml || '';
+  const nextML   = card.next_ml   || '';
   const pct      = total > 0 ? Math.round((done / total) * 100) : 0;
 
   let barColor = 'bg-blue-500';
   if (card.state === 'blocked') barColor = 'bg-red-400';
   else if (done === total && total > 0) barColor = 'bg-green-500';
+
+  const mlLabel = activeML
+    ? `<p class="text-xs text-blue-600 mt-1 leading-snug truncate" title="${escapeHtml(activeML)}">▶ ${escapeHtml(activeML)}</p>`
+    : nextML
+      ? `<p class="text-xs text-gray-400 mt-1 leading-snug truncate" title="${escapeHtml(nextML)}">→ ${escapeHtml(nextML)}</p>`
+      : '';
 
   const progressHTML = total > 0 ? `
     <div class="mt-2 pt-2 border-t border-gray-100">
@@ -236,7 +243,7 @@ function createCard(card) {
       <div class="w-full bg-gray-200 rounded-full h-1.5">
         <div class="${barColor} h-1.5 rounded-full transition-all" style="width:${pct}%"></div>
       </div>
-      ${activeML ? `<p class="text-xs text-blue-600 mt-1 leading-snug truncate" title="${escapeHtml(activeML)}">▶ ${escapeHtml(activeML)}</p>` : ''}
+      ${mlLabel}
     </div>` : '';
 
   div.innerHTML = `

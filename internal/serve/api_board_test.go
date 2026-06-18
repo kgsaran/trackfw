@@ -121,6 +121,90 @@ func TestBoardHandler_FlatMode(t *testing.T) {
 	}
 }
 
+// TestParseMLProgress — verifica contagem de MLs, active_ml e next_ml.
+func TestParseMLProgress(t *testing.T) {
+	content := `# Roadmap Teste
+
+## Wave 1 — Backend
+
+### ML-1A — Criar endpoint
+**Status:** ✅ Concluído
+
+### ML-1B — Adicionar testes
+**Status:** 🔄 Em andamento
+
+### ML-1C — Deploy
+**Status:** ⬜ Pendente
+
+## Wave 2 — Frontend
+
+### ML-2A — Tela inicial
+**Status:** ⬜ Pendente
+`
+	f, err := os.CreateTemp("", "roadmap-*.md")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	f.Close()
+
+	total, done, activeML, nextML := parseMLProgress(f.Name())
+
+	if total != 4 {
+		t.Errorf("total: esperado 4, obteve %d", total)
+	}
+	if done != 1 {
+		t.Errorf("done: esperado 1, obteve %d", done)
+	}
+	if activeML != "Wave 1 — Backend · ML-1B — Adicionar testes" {
+		t.Errorf("activeML: obteve %q", activeML)
+	}
+	if nextML != "Wave 1 — Backend · ML-1C — Deploy" {
+		t.Errorf("nextML: obteve %q", nextML)
+	}
+}
+
+// TestParseMLProgress_AllPending — roadmap em wip com todos MLs pendentes deve ter next_ml preenchido.
+func TestParseMLProgress_AllPending(t *testing.T) {
+	content := `# Roadmap Novo
+
+## Wave 1 — Implementação
+
+### ML-1A — Passo inicial
+**Status:** ⬜ Pendente
+
+### ML-1B — Passo seguinte
+**Status:** ⬜ Pendente
+`
+	f, err := os.CreateTemp("", "roadmap-pending-*.md")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	f.Close()
+
+	total, done, activeML, nextML := parseMLProgress(f.Name())
+
+	if total != 2 {
+		t.Errorf("total: esperado 2, obteve %d", total)
+	}
+	if done != 0 {
+		t.Errorf("done: esperado 0, obteve %d", done)
+	}
+	if activeML != "" {
+		t.Errorf("activeML: esperado vazio, obteve %q", activeML)
+	}
+	if nextML != "Wave 1 — Implementação · ML-1A — Passo inicial" {
+		t.Errorf("nextML: obteve %q", nextML)
+	}
+}
+
 // TestBoardHandler_EmptyBoard — dir existe mas está vazio: JSON com colunas vazias, sem erro.
 func TestBoardHandler_EmptyBoard(t *testing.T) {
 	base := t.TempDir()

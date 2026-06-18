@@ -21,6 +21,7 @@ type boardItem struct {
 	MLTotal  int    `json:"ml_total"`
 	MLDone   int    `json:"ml_done"`
 	ActiveML string `json:"active_ml"`
+	NextML   string `json:"next_ml"`
 }
 
 // boardResponse is the JSON shape returned by GET /api/board.
@@ -106,7 +107,7 @@ func readStateDir(dir, state, agent, rootDir string) []boardItem {
 		} else {
 			relPath = filepath.Join(rootDir, state, e.Name())
 		}
-		total, done, activeML := parseMLProgress(fullPath)
+		total, done, activeML, nextML := parseMLProgress(fullPath)
 		items = append(items, boardItem{
 			File:     e.Name(),
 			Title:    title,
@@ -116,6 +117,7 @@ func readStateDir(dir, state, agent, rootDir string) []boardItem {
 			MLTotal:  total,
 			MLDone:   done,
 			ActiveML: activeML,
+			NextML:   nextML,
 		})
 	}
 	return items
@@ -125,10 +127,11 @@ func readStateDir(dir, state, agent, rootDir string) []boardItem {
 // - total: number of ML-* sections found
 // - done: number of MLs with status ✅
 // - activeML: "<wave title> · <ml title>" of the first ML with status 🔄, or ""
-func parseMLProgress(path string) (total, done int, activeML string) {
+// - nextML: "<wave title> · <ml title>" of the first ML with status ⬜ (pending), or ""
+func parseMLProgress(path string) (total, done int, activeML, nextML string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, 0, ""
+		return 0, 0, "", ""
 	}
 	var waveCurrent string
 	var mlTitle string
@@ -148,10 +151,16 @@ func parseMLProgress(path string) (total, done int, activeML string) {
 				} else {
 					activeML = mlTitle
 				}
+			} else if strings.Contains(trimmed, "⬜") && nextML == "" {
+				if waveCurrent != "" {
+					nextML = waveCurrent + " · " + mlTitle
+				} else {
+					nextML = mlTitle
+				}
 			}
 		}
 	}
-	return total, done, activeML
+	return total, done, activeML, nextML
 }
 
 // extractTitle reads the first `# ` heading from a markdown file,
