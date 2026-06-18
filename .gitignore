@@ -8,3 +8,5 @@ pypi/trackfw-bin.exe
 pypi/**/__pycache__/
 pypi/**/*.egg-info/
 pypi/*.egg-info/
+npm/node_modules/
+npm/package-lock.json
