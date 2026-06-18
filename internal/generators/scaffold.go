@@ -83,13 +83,26 @@ func Scaffold(cfg Config) error {
 // InstallSkills instala os slash commands no projeto atual e a skill global em ~/.claude/skills/trackfw/.
 // Arquivos já existentes não são sobrescritos — idempotente.
 func InstallSkills() error {
-	if err := generateClaudeCommands(); err != nil {
+	return installSkillsInner(false)
+}
+
+// ForceInstallSkills re-instala os slash commands e a skill global, sobrescrevendo arquivos existentes.
+func ForceInstallSkills() error {
+	return installSkillsInner(true)
+}
+
+func installSkillsInner(force bool) error {
+	if err := generateClaudeCommandsInner(force); err != nil {
 		return err
 	}
-	return installGlobalSkill()
+	return installGlobalSkillInner(force)
 }
 
 func installGlobalSkill() error {
+	return installGlobalSkillInner(false)
+}
+
+func installGlobalSkillInner(force bool) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("localizando home dir: %w", err)
@@ -101,7 +114,7 @@ func installGlobalSkill() error {
 	}
 
 	skillPath := filepath.Join(skillDir, "SKILL.md")
-	if _, err := os.Stat(skillPath); err == nil {
+	if _, err := os.Stat(skillPath); err == nil && !force {
 		fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md (já existe — não sobrescrito)\n")
 		return nil
 	}
@@ -190,7 +203,16 @@ Cada roadmap é dividido em **Waves** com **MLs paralelos**:
 	return nil
 }
 
+// ForceGenerateClaudeCommands re-gera todos os slash commands, sobrescrevendo arquivos existentes.
+func ForceGenerateClaudeCommands() error {
+	return generateClaudeCommandsInner(true)
+}
+
 func generateClaudeCommands() error {
+	return generateClaudeCommandsInner(false)
+}
+
+func generateClaudeCommandsInner(force bool) error {
 	dir := ".claude/commands/trackfw"
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating %s: %w", dir, err)
@@ -428,7 +450,7 @@ Próximo passo: abrir PR com gh pr create
 	created, skipped := 0, 0
 	for filename, content := range commands {
 		path := filepath.Join(dir, filename)
-		if _, err := os.Stat(path); err == nil {
+		if _, err := os.Stat(path); err == nil && !force {
 			skipped++
 			continue
 		}

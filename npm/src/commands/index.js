@@ -19,6 +19,7 @@ function createProgram() {
   program.addCommand(require('./log'))
   program.addCommand(require('./plugins'))
   program.addCommand(require('./discover'))
+  program.addCommand(require('./update'))
   program.addCommand(require('./metrics'))
   program.addCommand(require('./sync'))
   program.addCommand(require('./context'))

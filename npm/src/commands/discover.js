@@ -410,7 +410,30 @@ cmd.action((opts) => {
   }
 });
 
+function writeCIWorkflowForce(rootDir) {
+  const workflowsDir = path.join(rootDir, '.github', 'workflows');
+  if (!isDir(workflowsDir)) fs.mkdirSync(workflowsDir, { recursive: true });
+  const dest = path.join(workflowsDir, 'trackfw-validate.yml');
+  const content = `name: trackfw validate
+on: [push, pull_request]
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@latest
+      - run: trackfw validate
+`;
+  fs.writeFileSync(dest, content, 'utf8');
+}
+
 module.exports = cmd;
 module.exports.scan = scan;
 module.exports.generateYAML = generateYAML;
 module.exports.generateBootstrapLog = generateBootstrapLog;
+module.exports.writeValidateScript = writeValidateScript;
+module.exports.writeCIWorkflow = writeCIWorkflow;
+module.exports.writeCIWorkflowForce = writeCIWorkflowForce;

@@ -889,6 +889,65 @@ async function installAmazonQ() {
   }
 }
 
+/**
+ * generateClaudeCommandsForce — re-gera todos os slash commands, sobrescrevendo arquivos existentes.
+ */
+function generateClaudeCommandsForce(rootDir) {
+  const dir = rootDir ? path.join(rootDir, '.claude', 'commands', 'trackfw') : '.claude/commands/trackfw'
+  fs.mkdirSync(dir, { recursive: true })
+
+  const commands = {
+    'adr.md': `Execute o seguinte comando bash: \`trackfw adr new "$ARGUMENTS"\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
+    'req.md': `Execute o seguinte comando bash: \`trackfw req new "$ARGUMENTS"\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
+    'validate.md': `Execute o seguinte comando bash: \`trackfw validate\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
+    'status.md': `Execute o seguinte comando bash: \`trackfw status\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
+    'move.md': `Execute o seguinte comando bash: \`trackfw roadmap move $ARGUMENTS\`\n\nO formato esperado é: \`<nome-do-roadmap> <estado>\`\nEstados válidos: \`backlog\`, \`wip\`, \`blocked\`, \`done\`, \`abandoned\`\n\nSe o comando falhar, instale trackfw com:\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh`,
+  }
+
+  for (const [filename, content] of Object.entries(commands)) {
+    fs.writeFileSync(path.join(dir, filename), content, 'utf8')
+  }
+  console.log(`  ✓ .claude/commands/trackfw/ (${Object.keys(commands).length} slash commands sobrescritos)`)
+}
+
+/**
+ * installSkillsForce — sobrescreve ~/.claude/skills/trackfw/SKILL.md sempre.
+ */
+function installSkillsForce() {
+  const skillDir = path.join(os.homedir(), '.claude', 'skills', 'trackfw')
+  fs.mkdirSync(skillDir, { recursive: true })
+
+  const content = `---
+name: trackfw
+description: "trackfw — Governed Software Delivery: ADR → REQ → ROADMAP → kanban"
+signature: "📦 trackfw - Governed Delivery"
+---
+
+# trackfw — Modo de Operação
+
+Este projeto usa **trackfw** para governança de entrega de software.
+Cadeia: **ADR → REQ → ROADMAP** · Estados: \`backlog / wip / blocked / done / abandoned\`
+
+## Comandos principais
+
+- \`trackfw context\` — contexto de trabalho atual (sempre execute primeiro)
+- \`trackfw status\` — todos os artefatos e estados
+- \`trackfw validate\` — valida consistência de governança
+- \`trackfw roadmap move <nome> <estado>\` — transição de estado
+- \`trackfw serve\` — board Kanban em http://localhost:4080
+
+## Protocolo de agente
+
+1. Antes de iniciar: \`trackfw context\` + ler \`docs/agents-working-context.md\`
+2. Após concluir: atualizar \`docs/agents-working-context.md\`
+3. Antes de PR: \`trackfw validate\` deve passar com zero violations
+`
+
+  const dest = path.join(skillDir, 'SKILL.md')
+  fs.writeFileSync(dest, content, 'utf8')
+  console.log(`  ✓ skill global atualizada em ${dest}`)
+}
+
 module.exports = {
   GOV_DIRS,
   scaffold,
@@ -899,6 +958,8 @@ module.exports = {
   generateCommitMsgHook,
   generateClaudeMD,
   generateClaudeCommands,
+  generateClaudeCommandsForce,
+  installSkillsForce,
   installAgents,
   installGemini,
   installCursor,
