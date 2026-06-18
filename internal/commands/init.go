@@ -242,31 +242,59 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	cwd, _ := os.Getwd()
+
 	for _, tool := range aiTools {
 		switch tool {
 		case "claude":
 			if err := generators.InstallAgents(); err != nil {
 				return fmt.Errorf("instalando agentes Claude: %w", err)
 			}
+			// CLAUDE.md já tratado por generateClaudeMD dentro de Scaffold
 		case "gemini":
 			if err := generators.InstallGemini(); err != nil {
 				return fmt.Errorf("instalando Gemini: %w", err)
+			}
+			if err := generators.InjectRulesForTool("gemini", cwd); err != nil {
+				fmt.Printf("  ⚠ gemini rules inject: %v\n", err)
+			} else {
+				fmt.Println("  ✓ trackfw rules → GEMINI.md")
 			}
 		case "cursor":
 			if err := generators.InstallCursor(); err != nil {
 				return fmt.Errorf("instalando Cursor: %w", err)
 			}
+			if err := generators.InjectRulesForTool("cursor", cwd); err != nil {
+				fmt.Printf("  ⚠ cursor rules inject: %v\n", err)
+			} else {
+				fmt.Println("  ✓ trackfw rules → .cursor/rules/trackfw.mdc")
+			}
 		case "copilot":
 			if err := generators.InstallCopilot(); err != nil {
 				return fmt.Errorf("instalando Copilot: %w", err)
+			}
+			if err := generators.InjectRulesForTool("copilot", cwd); err != nil {
+				fmt.Printf("  ⚠ copilot rules inject: %v\n", err)
+			} else {
+				fmt.Println("  ✓ trackfw rules → .github/copilot-instructions.md")
 			}
 		case "windsurf":
 			if err := generators.InstallWindsurf(); err != nil {
 				return fmt.Errorf("instalando Windsurf: %w", err)
 			}
+			if err := generators.InjectRulesForTool("windsurf", cwd); err != nil {
+				fmt.Printf("  ⚠ windsurf rules inject: %v\n", err)
+			} else {
+				fmt.Println("  ✓ trackfw rules → .windsurfrules")
+			}
 		case "amazonq":
 			if err := generators.InstallAmazonQ(); err != nil {
 				return fmt.Errorf("instalando Amazon Q: %w", err)
+			}
+			if err := generators.InjectRulesForTool("amazonq", cwd); err != nil {
+				fmt.Printf("  ⚠ amazonq rules inject: %v\n", err)
+			} else {
+				fmt.Println("  ✓ trackfw rules → .amazonq/developer/guidelines.md")
 			}
 		}
 	}

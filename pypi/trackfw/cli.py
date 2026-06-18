@@ -75,6 +75,10 @@ def main():
     from trackfw.commands import discover as discover_cmd
     discover_cmd.register(subparsers)
 
+    # --- update ---
+    from trackfw.commands import update as update_cmd
+    update_cmd.register(subparsers)
+
     # --- metrics (stub) ---
     metrics_parser = subparsers.add_parser("metrics", help="Show delivery metrics")
     metrics_parser.set_defaults(func=_stub("metrics"))

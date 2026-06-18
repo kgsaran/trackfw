@@ -1911,3 +1911,58 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 **Commit:** `80e2492` | **Push:** `feat/v2.7.0-trackfw-serve-ui`
 
 **Agente:** Artemis | Status: CONCLUIDO
+
+---
+
+## Sessao 2026-06-15 — ML-1A discover auto-install hook framework
+
+**Agente:** Backend | Status: CONCLUIDO
+**Branch:** `feat/discover-init-hook-autoinstall`
+**Commit:** `0df8b6f`
+
+**Objetivo:** `trackfw discover --init` sem framework detectado agora auto-instala lefthook ou husky em vez de apenas imprimir aviso.
+
+**Mudancas implementadas:**
+- `internal/discover/discover.go`:
+  - `InstallGates` e `installHook` agora recebem `io.Writer` — corrige vazamento de `fmt.Println` para stdout
+  - `case default` em `installHook`: detecta `package.json` → chama `installHusky`; ausente → chama `installLefthook`
+  - `installLefthook`: cria `lefthook.yml` com entrada trackfw-validate; idempotente; tenta `lefthook install` se disponivel no PATH
+  - `installHusky`: executa `npm install --save-dev husky` + `npx husky init`; cria `.husky/pre-commit` com `MkdirAll`; erros de exec sao warn, nao bloqueantes
+- `internal/commands/discover.go`: repassa `out` (cobra writer) para `InstallGates`
+- `internal/discover/discover_test.go`:
+  - Testes existentes atualizados para nova assinatura (`io.Discard`)
+  - 5 novos testes: sem package.json → lefthook.yml criado; com package.json → .husky/pre-commit criado; idempotencia lefthook; default sem/com package.json
+
+**Resultado:** `make build`, `make test`, `make lint` — todos verdes
+
+---
+
+## Sessão 2026-06-17 — Apolo (CONCLUÍDO)
+
+**Tarefa:** Feature de progresso de Wave/ML em `internal/serve/api_board.go`.
+
+**Entregue:**
+- `boardItem` — 3 campos novos: `MLTotal int`, `MLDone int`, `ActiveML string` (JSON: `ml_total`, `ml_done`, `active_ml`).
+- `parseMLProgress(path string) (total, done int, activeML string)` — lê o arquivo de roadmap linha a linha; detecta linhas `## ... Wave` (captura título da wave atual), `### ML-*` (incrementa total, salva mlTitle), `**Status:**` com `✅` (incrementa done) ou `🔄` (preenche `activeML` como `"<wave> · <ml>"`). Tolerante a roadmaps sem waves (activeML usa somente o título do ML).
+- `readStateDir` — chama `parseMLProgress(fullPath)` para cada card e popula os 3 campos novos no `boardItem`.
+
+**Resultado:** `make build` limpo | `make test` 100% verde (todos os pacotes, incluindo `internal/serve`)
+
+---
+
+## Sessão 2026-06-18 — Zeus (CONCLUÍDO)
+
+**Tarefa:** Implementar `trackfw update` nos 3 CLIs (Go + Node.js + Python).
+
+**Entregue:**
+- `internal/generators/update.go` — `Update(cwd)`, `ReadUpdateConfig(cwd)`, `updateHooksSurgical(cfg)`.
+- `internal/generators/scaffold.go` — `ForceGenerateClaudeCommands()`, `ForceInstallSkills()`, variantes internas `force bool`.
+- `internal/commands/update.go` — comando cobra `trackfw update`.
+- `npm/src/commands/update.js` — comando Node.js com mesma lógica.
+- `npm/src/generators/init.js` — `generateClaudeCommandsForce(rootDir)`, `installSkillsForce()`.
+- `npm/src/commands/discover.js` — `writeCIWorkflowForce(rootDir)`, exports de `writeValidateScript/writeCIWorkflow`.
+- `pypi/trackfw/commands/update.py` — escopo reduzido: apenas regras de agente.
+- REQ: `docs/requisições/claude/REQ-2026-06-18-trackfw-update-command.md`.
+
+**Comportamento:** 3 categorias de update — (1) marker-delimited via InjectRulesDetected, (2) trackfw-owned force overwrite, (3) shared hooks com inject cirúrgico.
+**Branch:** `feat/kanban-roadmap-progress` | Roadmap: `done/trackfw-update-command-2026-06-18.md`

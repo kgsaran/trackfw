@@ -302,6 +302,136 @@ function generatePomXml(cfg) {
 }
 
 // ---------------------------------------------------------------------------
+// trackfw rules inject-or-update (idempotente via marcadores HTML)
+// ---------------------------------------------------------------------------
+
+const RULES_START = '<!-- trackfw:rules:start -->'
+const RULES_END = '<!-- trackfw:rules:end -->'
+
+const AGENT_FILES = {
+  claude:   'CLAUDE.md',
+  codex:    'AGENTS.md',
+  gemini:   'GEMINI.md',
+  copilot:  '.github/copilot-instructions.md',
+  windsurf: '.windsurfrules',
+  amazonq:  '.amazonq/developer/guidelines.md',
+  cursor:   '.cursor/rules/trackfw.mdc',
+}
+
+const AGENT_HEADERS = {
+  claude:   '# Project Instructions\n',
+  codex:    '# Project Instructions\n',
+  gemini:   '# Project Instructions\n',
+  copilot:  '# GitHub Copilot Instructions\n',
+  windsurf: '# Windsurf Rules\n',
+  amazonq:  '# Amazon Q Developer Guidelines\n',
+  cursor:   '---\ndescription: trackfw governance rules\nglob: "**/*"\nalwaysApply: true\n---\n',
+}
+
+function trackfwRulesBlock() {
+  return RULES_START + `
+## trackfw — Governance Rules
+
+This project uses **trackfw** for AI-native delivery governance.
+Chain: \`ADR → REQ → ROADMAP\` · States: \`backlog / wip / blocked / done / abandoned\`
+
+### Agent Protocol
+1. **Before starting:** run \`trackfw context\` · read \`docs/agents-working-context.md\`
+2. **After finishing:** update \`docs/agents-working-context.md\` with what changed
+3. **Before PR:** \`trackfw validate\` must pass
+
+### Key Commands
+- \`trackfw context\` — current governance state (always run first)
+- \`trackfw status\` — all artifacts and states
+- \`trackfw validate\` — governance consistency check
+- \`trackfw roadmap move <name> <state>\` — transition roadmap state
+- \`trackfw serve\` — live Kanban board at http://localhost:4080
+
+### Attention Signal (when you need user input during a task)
+Write \`docs/roadmaps/.trackfw-attention.json\`:
+\`\`\`json
+{"roadmap":"file.md","ml":"ML-1A","message":"what you need","level":"action_required","timestamp":"ISO8601Z"}
+\`\`\`
+Delete the file when resolved. Visible as a live banner in \`trackfw serve\`.
+` + RULES_END
+}
+
+/**
+ * injectOrUpdateRules — injeta ou atualiza o bloco de regras trackfw no arquivo.
+ * - Arquivo não existe: cria com headerIfNew + bloco de regras
+ * - Arquivo existe, sem marcador: appenda o bloco no final
+ * - Arquivo existe, com marcador: substitui conteúdo entre marcadores
+ */
+function injectOrUpdateRules(filePath, headerIfNew) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+
+  const block = trackfwRulesBlock()
+
+  if (!fs.existsSync(filePath)) {
+    let content = headerIfNew || ''
+    if (content && !content.endsWith('\n')) content += '\n'
+    content += '\n' + block + '\n'
+    fs.writeFileSync(filePath, content, 'utf8')
+    return
+  }
+
+  let content = fs.readFileSync(filePath, 'utf8')
+
+  const start = content.indexOf(RULES_START)
+  if (start === -1) {
+    // No marker: append
+    if (!content.endsWith('\n')) content += '\n'
+    content += '\n' + block + '\n'
+    fs.writeFileSync(filePath, content, 'utf8')
+    return
+  }
+
+  // Has marker: replace between start and end
+  const end = content.indexOf(RULES_END, start)
+  if (end === -1) {
+    // Malformed: append new block
+    content += '\n' + block + '\n'
+    fs.writeFileSync(filePath, content, 'utf8')
+    return
+  }
+
+  const newContent = content.slice(0, start) + block + content.slice(end + RULES_END.length)
+  fs.writeFileSync(filePath, newContent, 'utf8')
+}
+
+/**
+ * injectRulesForTool — injeta regras trackfw no arquivo de config do tool dado.
+ * tool: 'claude' | 'codex' | 'gemini' | 'copilot' | 'windsurf' | 'amazonq' | 'cursor'
+ * cwd: diretório raiz do projeto (default: process.cwd())
+ */
+function injectRulesForTool(tool, cwd) {
+  const relPath = AGENT_FILES[tool]
+  if (!relPath) return
+  const header = AGENT_HEADERS[tool] || ''
+  injectOrUpdateRules(path.join(cwd || process.cwd(), relPath), header)
+}
+
+/**
+ * injectRulesDetected — varre cwd por arquivos de config de agentes existentes
+ * e injeta as regras trackfw em cada um encontrado.
+ * Cursor: injeta também se .cursor/ existir, mesmo que trackfw.mdc não exista ainda.
+ */
+function injectRulesDetected(cwd) {
+  const root = cwd || process.cwd()
+  for (const [tool, relPath] of Object.entries(AGENT_FILES)) {
+    if (tool === 'cursor') {
+      if (fs.existsSync(path.join(root, '.cursor'))) {
+        try { injectRulesForTool('cursor', root) } catch (_) {}
+      }
+      continue
+    }
+    if (fs.existsSync(path.join(root, relPath))) {
+      try { injectRulesForTool(tool, root) } catch (_) {}
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // CLAUDE.md
 // ---------------------------------------------------------------------------
 
@@ -417,7 +547,7 @@ function generateClaudeMD(cfg) {
       content += 'No CI gate configured.\n'
   }
 
-  fs.writeFileSync('CLAUDE.md', content, 'utf8')
+  injectOrUpdateRules('CLAUDE.md', content)
   console.log('  ✓ CLAUDE.md')
 }
 
@@ -710,27 +840,112 @@ Próximo passo: abrir PR com gh pr create
  * ao usuário que esta operação requer o binário Go instalado.
  */
 async function installAgents() {
+  // CLAUDE.md já tratado por generateClaudeMD via injectOrUpdateRules
   console.log('  ✓ claude (agentes — execute `trackfw install agents` com o binário Go para instalar os templates)')
 }
 
 async function installGemini() {
-  console.log('  ✓ gemini (sem templates disponíveis no pacote npm — instale o binário Go para acesso completo)')
+  try {
+    injectRulesForTool('gemini', process.cwd())
+    console.log('  ✓ trackfw rules → GEMINI.md')
+  } catch (e) {
+    console.log(`  ⚠ gemini rules inject: ${e.message}`)
+  }
 }
 
 async function installCursor() {
-  console.log('  ✓ cursor (sem templates disponíveis no pacote npm — instale o binário Go para acesso completo)')
+  try {
+    injectRulesForTool('cursor', process.cwd())
+    console.log('  ✓ trackfw rules → .cursor/rules/trackfw.mdc')
+  } catch (e) {
+    console.log(`  ⚠ cursor rules inject: ${e.message}`)
+  }
 }
 
 async function installCopilot() {
-  console.log('  ✓ copilot (sem templates disponíveis no pacote npm — instale o binário Go para acesso completo)')
+  try {
+    injectRulesForTool('copilot', process.cwd())
+    console.log('  ✓ trackfw rules → .github/copilot-instructions.md')
+  } catch (e) {
+    console.log(`  ⚠ copilot rules inject: ${e.message}`)
+  }
 }
 
 async function installWindsurf() {
-  console.log('  ✓ windsurf (sem templates disponíveis no pacote npm — instale o binário Go para acesso completo)')
+  try {
+    injectRulesForTool('windsurf', process.cwd())
+    console.log('  ✓ trackfw rules → .windsurfrules')
+  } catch (e) {
+    console.log(`  ⚠ windsurf rules inject: ${e.message}`)
+  }
 }
 
 async function installAmazonQ() {
-  console.log('  ✓ amazonq (sem templates disponíveis no pacote npm — instale o binário Go para acesso completo)')
+  try {
+    injectRulesForTool('amazonq', process.cwd())
+    console.log('  ✓ trackfw rules → .amazonq/developer/guidelines.md')
+  } catch (e) {
+    console.log(`  ⚠ amazonq rules inject: ${e.message}`)
+  }
+}
+
+/**
+ * generateClaudeCommandsForce — re-gera todos os slash commands, sobrescrevendo arquivos existentes.
+ */
+function generateClaudeCommandsForce(rootDir) {
+  const dir = rootDir ? path.join(rootDir, '.claude', 'commands', 'trackfw') : '.claude/commands/trackfw'
+  fs.mkdirSync(dir, { recursive: true })
+
+  const commands = {
+    'adr.md': `Execute o seguinte comando bash: \`trackfw adr new "$ARGUMENTS"\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
+    'req.md': `Execute o seguinte comando bash: \`trackfw req new "$ARGUMENTS"\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
+    'validate.md': `Execute o seguinte comando bash: \`trackfw validate\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
+    'status.md': `Execute o seguinte comando bash: \`trackfw status\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
+    'move.md': `Execute o seguinte comando bash: \`trackfw roadmap move $ARGUMENTS\`\n\nO formato esperado é: \`<nome-do-roadmap> <estado>\`\nEstados válidos: \`backlog\`, \`wip\`, \`blocked\`, \`done\`, \`abandoned\`\n\nSe o comando falhar, instale trackfw com:\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh`,
+  }
+
+  for (const [filename, content] of Object.entries(commands)) {
+    fs.writeFileSync(path.join(dir, filename), content, 'utf8')
+  }
+  console.log(`  ✓ .claude/commands/trackfw/ (${Object.keys(commands).length} slash commands sobrescritos)`)
+}
+
+/**
+ * installSkillsForce — sobrescreve ~/.claude/skills/trackfw/SKILL.md sempre.
+ */
+function installSkillsForce() {
+  const skillDir = path.join(os.homedir(), '.claude', 'skills', 'trackfw')
+  fs.mkdirSync(skillDir, { recursive: true })
+
+  const content = `---
+name: trackfw
+description: "trackfw — Governed Software Delivery: ADR → REQ → ROADMAP → kanban"
+signature: "📦 trackfw - Governed Delivery"
+---
+
+# trackfw — Modo de Operação
+
+Este projeto usa **trackfw** para governança de entrega de software.
+Cadeia: **ADR → REQ → ROADMAP** · Estados: \`backlog / wip / blocked / done / abandoned\`
+
+## Comandos principais
+
+- \`trackfw context\` — contexto de trabalho atual (sempre execute primeiro)
+- \`trackfw status\` — todos os artefatos e estados
+- \`trackfw validate\` — valida consistência de governança
+- \`trackfw roadmap move <nome> <estado>\` — transição de estado
+- \`trackfw serve\` — board Kanban em http://localhost:4080
+
+## Protocolo de agente
+
+1. Antes de iniciar: \`trackfw context\` + ler \`docs/agents-working-context.md\`
+2. Após concluir: atualizar \`docs/agents-working-context.md\`
+3. Antes de PR: \`trackfw validate\` deve passar com zero violations
+`
+
+  const dest = path.join(skillDir, 'SKILL.md')
+  fs.writeFileSync(dest, content, 'utf8')
+  console.log(`  ✓ skill global atualizada em ${dest}`)
 }
 
 module.exports = {
@@ -743,10 +958,15 @@ module.exports = {
   generateCommitMsgHook,
   generateClaudeMD,
   generateClaudeCommands,
+  generateClaudeCommandsForce,
+  installSkillsForce,
   installAgents,
   installGemini,
   installCursor,
   installCopilot,
   installWindsurf,
   installAmazonQ,
+  injectRulesForTool,
+  injectRulesDetected,
+  trackfwRulesBlock,
 }

@@ -55,6 +55,55 @@ Toda feature nova, correção de comportamento ou ajuste de lógica **DEVE ser i
 - **Build obrigatório** após qualquer alteração: `go build ./...`
 - **Atualizar `docs/agents-working-context.md`** ao iniciar e encerrar cada ciclo
 
+## Sinalização de Atenção para o Board (`trackfw serve`)
+
+Quando um agente precisar de confirmação ou ação do usuário durante uma implementação,
+**escreva o arquivo `.trackfw-attention.json`** na raiz do diretório de roadmaps
+(ex: `docs/roadmaps/.trackfw-attention.json`).
+
+O `trackfw serve` monitora esse arquivo a cada 8 s e exibe um banner de alerta no board.
+
+### Formato obrigatório
+
+```json
+{
+  "roadmap": "nome-exato-do-arquivo.md",
+  "ml": "ML-2A — Título do microlote",
+  "message": "Descreva objetivamente o que você precisa do usuário.",
+  "level": "action_required",
+  "timestamp": "2026-06-18T10:30:00Z"
+}
+```
+
+| Campo | Obrigatório | Valores | Descrição |
+|---|---|---|---|
+| `message` | ✅ | string | Pergunta ou informação clara para o usuário |
+| `level` | ✅ | `"action_required"` \| `"info"` | `action_required` = banner âmbar; `info` = banner azul |
+| `timestamp` | ✅ | ISO 8601 UTC | Usado para deduplicar dismissals no browser |
+| `roadmap` | recomendado | basename do `.md` | Marca o card correspondente no board |
+| `ml` | opcional | string | Microlote em andamento |
+
+### Quando usar
+
+- Agente encontrou ambiguidade bloqueante que não pode resolver com o contexto disponível.
+- Agente precisa escolher entre duas abordagens e o impacto é significativo.
+- Agente gerou artefato que requer revisão antes de continuar.
+
+### Quando NÃO usar
+
+- Dúvidas que podem ser resolvidas lendo o roadmap, CLAUDE.md ou o código existente.
+- Decisões de baixo risco (nomenclatura, formatação, ordem de campos).
+
+### Limpeza após resolução
+
+**Apague o arquivo** assim que a atenção não for mais necessária — o banner desaparece automaticamente.
+
+```bash
+rm docs/roadmaps/.trackfw-attention.json
+```
+
+---
+
 ## Protocolo de Release (tag)
 
 Ao gerar uma nova tag, o fluxo obrigatório é:

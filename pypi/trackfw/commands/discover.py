@@ -451,6 +451,12 @@ def _cmd_discover(args):
             print("Gates de governança instalados")
         except Exception as e:
             print(f"Aviso: instalacao parcial dos gates: {e}")
+        try:
+            from trackfw.generators.init_gen import inject_rules_detected
+            inject_rules_detected(cwd)
+            print("Regras trackfw injetadas nos arquivos de agentes")
+        except Exception as e:
+            print(f"Aviso: injecao parcial de regras de agentes: {e}")
 
     if getattr(args, "bootstrap_log", False):
         if not r["roadmap_dir"]:

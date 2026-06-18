@@ -2,7 +2,6 @@ package generators
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 )
@@ -125,8 +124,8 @@ func generateClaudeMD(cfg Config) error {
 		sb.WriteString("No CI gate configured.\n")
 	}
 
-	if err := os.WriteFile("CLAUDE.md", []byte(sb.String()), 0644); err != nil {
-		return fmt.Errorf("writing CLAUDE.md: %w", err)
+	if err := injectOrUpdateRules("CLAUDE.md", sb.String()); err != nil {
+		return fmt.Errorf("updating CLAUDE.md: %w", err)
 	}
 	fmt.Println("  ✓ CLAUDE.md")
 	return nil

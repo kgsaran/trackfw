@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/discover"
+	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/spf13/cobra"
 )
@@ -125,6 +126,11 @@ func NewDiscoverCmd() *cobra.Command {
 					fmt.Fprintf(out, "⚠ gates install partial: %v\n", err)
 				} else {
 					fmt.Fprintln(out, "✓ governance gates installed")
+				}
+				if err := generators.InjectRulesDetected(cwd); err != nil {
+					fmt.Fprintf(out, "⚠ agent rules inject partial: %v\n", err)
+				} else {
+					fmt.Fprintln(out, "✓ trackfw rules injected into agent config files")
 				}
 			}
 

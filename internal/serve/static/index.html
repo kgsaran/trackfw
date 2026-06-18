@@ -43,23 +43,62 @@
     </nav>
   </header>
 
+  <!-- Banner de atenção de agente (visível apenas quando /api/attention retornar active:true) -->
+  <div id="attention-banner" class="hidden attention-banner attention-banner-action" role="alert" aria-live="assertive" aria-atomic="true">
+    <span id="attention-icon" aria-hidden="true">⚠️</span>
+    <span class="font-semibold" id="attention-label"></span>
+    <span class="opacity-80 font-mono text-xs" id="attention-context"></span>
+    <span class="mx-1 opacity-60">—</span>
+    <span id="attention-message" class="flex-1"></span>
+    <button onclick="dismissAttention()" class="ml-auto text-sm font-medium underline opacity-80 hover:opacity-100 whitespace-nowrap" aria-label="Dispensar alerta">✕ Dispensar</button>
+  </div>
+
   <!-- Conteúdo principal -->
   <main class="flex-1 relative overflow-hidden flex">
 
     <!-- View: Board -->
     <section id="view-board" class="view-section w-full p-6 overflow-auto" aria-label="Board kanban">
 
-      <!-- Filtro por agente -->
-      <div id="agent-filter-container" class="mb-4 hidden">
-        <label for="agent-filter" class="text-sm font-medium text-gray-600 mr-2">Filtrar por agente:</label>
-        <select
-          id="agent-filter"
-          onchange="filterByAgent(this.value)"
-          class="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
-          aria-label="Filtrar roadmaps por agente"
-        >
-          <option value="">Todos</option>
-        </select>
+      <!-- Toolbar: filtro por agente + controles de auto-refresh -->
+      <div class="flex items-center gap-3 flex-wrap mb-4">
+        <div id="agent-filter-container" class="hidden">
+          <label for="agent-filter" class="text-sm font-medium text-gray-600 mr-2">Filtrar por agente:</label>
+          <select
+            id="agent-filter"
+            onchange="filterByAgent(this.value)"
+            class="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
+            aria-label="Filtrar roadmaps por agente"
+          >
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <!-- Auto-refresh controls -->
+        <div class="flex items-center gap-2 ml-auto">
+          <span class="text-xs text-gray-500">Auto-refresh:</span>
+          <select
+            id="refresh-interval"
+            onchange="setRefreshInterval(parseInt(this.value))"
+            class="text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+            aria-label="Intervalo de atualização automática"
+          >
+            <option value="15">15s</option>
+            <option value="30">30s</option>
+            <option value="60">1 min</option>
+            <option value="120">2 min</option>
+            <option value="300">5 min</option>
+          </select>
+          <button
+            id="refresh-toggle"
+            onclick="toggleRefreshPause()"
+            class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
+          >⏸ Pausar</button>
+          <button
+            onclick="manualRefresh()"
+            class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
+            aria-label="Atualizar board agora"
+            title="Atualizar agora"
+          >↻</button>
+        </div>
       </div>
 
       <!-- Kanban columns -->
