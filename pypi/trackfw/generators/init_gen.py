@@ -12,6 +12,29 @@ from datetime import date, timedelta
 # Constantes
 # ---------------------------------------------------------------------------
 
+RULES_START = '<!-- trackfw:rules:start -->'
+RULES_END = '<!-- trackfw:rules:end -->'
+
+AGENT_FILES = {
+    'claude':   'CLAUDE.md',
+    'codex':    'AGENTS.md',
+    'gemini':   'GEMINI.md',
+    'copilot':  '.github/copilot-instructions.md',
+    'windsurf': '.windsurfrules',
+    'amazonq':  '.amazonq/developer/guidelines.md',
+    'cursor':   '.cursor/rules/trackfw.mdc',
+}
+
+AGENT_HEADERS = {
+    'claude':   '# Project Instructions\n',
+    'codex':    '# Project Instructions\n',
+    'gemini':   '# Project Instructions\n',
+    'copilot':  '# GitHub Copilot Instructions\n',
+    'windsurf': '# Windsurf Rules\n',
+    'amazonq':  '# Amazon Q Developer Guidelines\n',
+    'cursor':   '---\ndescription: trackfw governance rules\nglob: "**/*"\nalwaysApply: true\n---\n',
+}
+
 GOV_DIRS_FLAT = [
     'docs/adr',
     'docs/req',
@@ -175,3 +198,95 @@ Proposed
 
     rel = os.path.relpath(filepath, cwd)
     print(f'  checkmark {rel}')
+
+
+# ---------------------------------------------------------------------------
+# trackfw rules inject-or-update
+# ---------------------------------------------------------------------------
+
+def _trackfw_rules_block() -> str:
+    return (
+        RULES_START + '\n'
+        '## trackfw — Governance Rules\n\n'
+        'This project uses **trackfw** for AI-native delivery governance.\n'
+        'Chain: `ADR → REQ → ROADMAP` · States: `backlog / wip / blocked / done / abandoned`\n\n'
+        '### Agent Protocol\n'
+        '1. **Before starting:** run `trackfw context` · read `docs/agents-working-context.md`\n'
+        '2. **After finishing:** update `docs/agents-working-context.md` with what changed\n'
+        '3. **Before PR:** `trackfw validate` must pass\n\n'
+        '### Key Commands\n'
+        '- `trackfw context` — current governance state (always run first)\n'
+        '- `trackfw status` — all artifacts and states\n'
+        '- `trackfw validate` — governance consistency check\n'
+        '- `trackfw roadmap move <name> <state>` — transition roadmap state\n'
+        '- `trackfw serve` — live Kanban board at http://localhost:4080\n\n'
+        '### Attention Signal (when you need user input during a task)\n'
+        'Write `docs/roadmaps/.trackfw-attention.json`:\n'
+        '```json\n'
+        '{"roadmap":"file.md","ml":"ML-1A","message":"what you need","level":"action_required","timestamp":"ISO8601Z"}\n'
+        '```\n'
+        'Delete the file when resolved. Visible as a live banner in `trackfw serve`.\n'
+        + RULES_END
+    )
+
+
+def _inject_or_update_rules(file_path: str, header_if_new: str) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+
+    block = _trackfw_rules_block()
+
+    if not os.path.exists(file_path):
+        content = header_if_new or ''
+        if content and not content.endswith('\n'):
+            content += '\n'
+        content += '\n' + block + '\n'
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    start = content.find(RULES_START)
+    if start == -1:
+        if not content.endswith('\n'):
+            content += '\n'
+        content += '\n' + block + '\n'
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return
+
+    end = content.find(RULES_END, start)
+    if end == -1:
+        content += '\n' + block + '\n'
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return
+
+    new_content = content[:start] + block + content[end + len(RULES_END):]
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+
+
+def inject_rules_for_tool(tool: str, cwd: str) -> None:
+    rel_path = AGENT_FILES.get(tool)
+    if not rel_path:
+        return
+    header = AGENT_HEADERS.get(tool, '')
+    _inject_or_update_rules(os.path.join(cwd, rel_path), header)
+
+
+def inject_rules_detected(cwd: str) -> None:
+    for tool, rel_path in AGENT_FILES.items():
+        if tool == 'cursor':
+            if os.path.isdir(os.path.join(cwd, '.cursor')):
+                try:
+                    inject_rules_for_tool('cursor', cwd)
+                except Exception:
+                    pass
+            continue
+        if os.path.exists(os.path.join(cwd, rel_path)):
+            try:
+                inject_rules_for_tool(tool, cwd)
+            except Exception:
+                pass

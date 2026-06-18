@@ -388,6 +388,13 @@ cmd.action((opts) => {
       } catch (e) {
         console.log(`⚠ gates install partial: ${e.message}`);
       }
+      try {
+        const generators = require('../generators/init');
+        generators.injectRulesDetected(cwd);
+        console.log('✓ trackfw rules injected into agent config files');
+      } catch (e) {
+        console.log(`⚠ agent rules inject partial: ${e.message}`);
+      }
     }
   }
 
