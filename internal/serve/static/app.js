@@ -14,6 +14,15 @@ let _burnChart   = null;     // instância Chart.js burndown
 let _d3Sim       = null;     // simulação D3 force
 let _drawerPath  = null;     // path atualmente aberto no drawer
 
+// ─── Auto-refresh ─────────────────────────────────────────────────────────────
+let _refreshInterval = parseInt(localStorage.getItem('trackfw_refresh_interval') || '60');
+let _refreshPaused   = localStorage.getItem('trackfw_refresh_paused') === 'true';
+let _refreshTimer    = null;
+
+// ─── Atenção de agente ────────────────────────────────────────────────────────
+let _attentionTimer     = null;
+let _attentionDismissed = localStorage.getItem('trackfw_attention_dismissed') || null;
+
 // Cores canonicas por estado
 const STATE_COLORS = {
   wip:       '#3b82f6',
@@ -162,6 +171,9 @@ function renderBoard(data, agentFilter) {
     if (agentFilter) {
       cards = cards.filter(c => c.agent === agentFilter);
     }
+    if (state === 'wip') {
+      cards = [...cards].sort((a, b) => (b.active_ml ? 1 : 0) - (a.active_ml ? 1 : 0));
+    }
 
     const col = document.createElement('div');
     col.className = 'kanban-column bg-white rounded-lg border border-gray-200 shadow-sm flex flex-col';
@@ -197,11 +209,14 @@ function renderBoard(data, agentFilter) {
 }
 
 function createCard(card) {
+  const isActive = !!(card.active_ml) && card.state === 'wip';
+
   const div = document.createElement('div');
-  div.className = 'kanban-card bg-gray-50 border border-gray-200 rounded-md p-3 hover:bg-white';
+  div.className = `kanban-card bg-gray-50 border border-gray-200 rounded-md p-3 hover:bg-white${isActive ? ' card-active' : ''}`;
   div.setAttribute('tabindex', '0');
   div.setAttribute('role', 'button');
   div.setAttribute('aria-label', `Abrir: ${card.title || card.file}`);
+  div.setAttribute('data-file', card.file || '');
 
   const total    = card.ml_total  || 0;
   const done     = card.ml_done   || 0;
@@ -225,10 +240,12 @@ function createCard(card) {
     </div>` : '';
 
   div.innerHTML = `
+    ${isActive ? '<span class="live-dot" aria-hidden="true"></span>' : ''}
     <p class="text-xs font-semibold text-gray-800 mb-2 leading-snug">${escapeHtml(card.title || card.file)}</p>
     <div class="flex flex-wrap items-center gap-1">
       ${card.agent ? `<span class="inline-block text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">${escapeHtml(card.agent)}</span>` : ''}
       <span class="badge-${card.state} inline-block text-xs px-1.5 py-0.5 rounded font-medium">${stateLabel(card.state)}</span>
+      ${isActive ? '<span class="inline-block text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">ATIVO</span>' : ''}
     </div>
     ${progressHTML}`;
 
@@ -242,6 +259,144 @@ function filterByAgent(agent) {
   if (_boardData) {
     renderBoard(_boardData, agent);
   }
+}
+
+// ─── Auto-refresh ─────────────────────────────────────────────────────────────
+
+function startRefreshTimer() {
+  clearTimeout(_refreshTimer);
+  if (_refreshPaused || _refreshInterval <= 0) return;
+  _refreshTimer = setTimeout(() => {
+    if (_currentView === 'board') {
+      _boardData = null;
+      loadBoard();
+    }
+    startRefreshTimer();
+  }, _refreshInterval * 1000);
+}
+
+function setRefreshInterval(seconds) {
+  _refreshInterval = seconds;
+  localStorage.setItem('trackfw_refresh_interval', String(seconds));
+  startRefreshTimer();
+}
+
+function toggleRefreshPause() {
+  _refreshPaused = !_refreshPaused;
+  localStorage.setItem('trackfw_refresh_paused', String(_refreshPaused));
+  if (_refreshPaused) {
+    clearTimeout(_refreshTimer);
+  } else {
+    startRefreshTimer();
+  }
+  updateRefreshUI();
+}
+
+function manualRefresh() {
+  _boardData = null;
+  loadBoard();
+  startRefreshTimer();
+}
+
+function updateRefreshUI() {
+  const btn = el('refresh-toggle');
+  if (!btn) return;
+  btn.textContent = _refreshPaused ? '▶ Retomar' : '⏸ Pausar';
+}
+
+function initRefreshUI() {
+  const sel = el('refresh-interval');
+  if (sel) sel.value = String(_refreshInterval);
+  updateRefreshUI();
+}
+
+// ─── Atenção de agente ────────────────────────────────────────────────────────
+
+function startAttentionPolling() {
+  clearInterval(_attentionTimer);
+  _attentionTimer = setInterval(pollAttention, 8000);
+  pollAttention();
+}
+
+async function pollAttention() {
+  try {
+    const res = await fetch('/api/attention');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.active && data.timestamp !== _attentionDismissed) {
+      showAttentionBanner(data);
+    } else if (!data.active) {
+      hideAttentionBanner();
+    }
+  } catch (_) { /* ignorar erros de rede */ }
+}
+
+function showAttentionBanner(data) {
+  const banner = el('attention-banner');
+  if (!banner) return;
+
+  const isAction = data.level !== 'info';
+  banner.className = `attention-banner ${isAction ? 'attention-banner-action' : 'attention-banner-info'}`;
+  banner.setAttribute('data-timestamp', data.timestamp || '');
+
+  const iconEl = el('attention-icon');
+  const labelEl = el('attention-label');
+  const ctxEl = el('attention-context');
+  const msgEl = el('attention-message');
+
+  if (iconEl)  iconEl.textContent  = isAction ? '⚠️' : 'ℹ️';
+  if (labelEl) labelEl.textContent = isAction ? 'Ação necessária' : 'Aviso';
+  if (ctxEl)   ctxEl.textContent   = [data.roadmap, data.ml].filter(Boolean).join(' · ');
+  if (msgEl)   msgEl.textContent   = data.message || '';
+
+  if (data.roadmap) markCardAttention(data.roadmap);
+}
+
+function hideAttentionBanner() {
+  const banner = el('attention-banner');
+  if (banner) banner.className = 'hidden attention-banner attention-banner-action';
+  clearCardAttention();
+}
+
+function dismissAttention() {
+  const banner = el('attention-banner');
+  if (!banner) return;
+  const ts = banner.getAttribute('data-timestamp');
+  if (ts) {
+    _attentionDismissed = ts;
+    localStorage.setItem('trackfw_attention_dismissed', ts);
+  }
+  hideAttentionBanner();
+}
+
+function markCardAttention(roadmapFile) {
+  document.querySelectorAll('.kanban-card[data-file]').forEach(c => {
+    if (c.getAttribute('data-file') !== roadmapFile) return;
+    c.classList.add('card-attention');
+    const live = c.querySelector('.live-dot');
+    if (live) {
+      live.className = 'attention-dot';
+    } else {
+      const dot = document.createElement('span');
+      dot.className = 'attention-dot';
+      dot.setAttribute('aria-hidden', 'true');
+      c.appendChild(dot);
+    }
+  });
+}
+
+function clearCardAttention() {
+  document.querySelectorAll('.card-attention').forEach(c => {
+    c.classList.remove('card-attention');
+    const dot = c.querySelector('.attention-dot');
+    if (dot) {
+      if (c.classList.contains('card-active')) {
+        dot.className = 'live-dot';
+      } else {
+        dot.remove();
+      }
+    }
+  });
 }
 
 // ─── View: Chain (D3 force-directed graph) ────────────────────────────────────
@@ -704,6 +859,8 @@ document.addEventListener('keydown', e => {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Ativar tab Board e carregar dados iniciais
   switchView('board');
+  initRefreshUI();
+  startRefreshTimer();
+  startAttentionPolling();
 });

@@ -52,6 +52,9 @@ func Start(port int) error {
 	mux.HandleFunc("/api/file", func(w http.ResponseWriter, r *http.Request) {
 		fileHandler(w, r, cfg)
 	})
+	mux.HandleFunc("/api/attention", func(w http.ResponseWriter, r *http.Request) {
+		attentionHandler(w, r, cfg)
+	})
 
 	addr := fmt.Sprintf(":%d", port)
 	fmt.Printf("trackfw serve — listening on http://localhost%s\n", addr)
