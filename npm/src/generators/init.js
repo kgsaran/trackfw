@@ -1063,6 +1063,34 @@ Cadeia: **ADR → REQ → ROADMAP** · Estados: \`backlog / wip / blocked / done
   console.log(`  ✓ skill global atualizada em ${dest}`)
 }
 
+function printArchitectNextSteps(cwd) {
+  const candidates = [
+    { file: 'CLAUDE.md',                              cmd: 'claude' },
+    { file: '.cursor/rules/trackfw.mdc',              cmd: 'cursor .' },
+    { file: '.windsurfrules',                         cmd: 'windsurf .' },
+    { file: '.github/copilot-instructions.md',        cmd: 'code . (Copilot)' },
+    { file: '.amazonq/developer/guidelines.md',       cmd: 'code . (Amazon Q)' },
+    { file: 'GEMINI.md',                              cmd: 'gemini' },
+    { file: 'AGENTS.md',                              cmd: 'codex' },
+  ]
+
+  const detected = candidates.filter(t => {
+    try { return fs.existsSync(path.join(cwd, t.file)) } catch { return false }
+  })
+
+  const tools = detected.length > 0 ? detected : [{ cmd: 'claude' }]
+
+  console.log()
+  console.log('Próximo passo — inicie com o guia de arquitetura:')
+  console.log()
+  for (const t of tools) {
+    console.log(`  ${t.cmd}`)
+  }
+  console.log()
+  console.log('  Execute /trackfw:architect no chat do seu assistente de IA.')
+  console.log()
+}
+
 module.exports = {
   GOV_DIRS,
   scaffold,
@@ -1084,4 +1112,5 @@ module.exports = {
   injectRulesForTool,
   injectRulesDetected,
   trackfwRulesBlock,
+  printArchitectNextSteps,
 }

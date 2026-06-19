@@ -300,5 +300,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println(i18n.T("init.success"))
+	generators.PrintArchitectNextSteps(cwd)
 	return nil
 }

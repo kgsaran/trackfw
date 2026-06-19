@@ -110,6 +110,7 @@ cmd.action(() => {
   }
 
   console.log('\n✓ trackfw update concluído');
+  require('../generators/init').printArchitectNextSteps(process.cwd())
 });
 
 module.exports = cmd;

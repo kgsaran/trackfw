@@ -396,6 +396,10 @@ cmd.action((opts) => {
       } catch (e) {
         console.log(`⚠ agent rules inject partial: ${e.message}`);
       }
+      try {
+        const generators = require('../generators/init')
+        generators.printArchitectNextSteps(cwd)
+      } catch (e) {}
     }
   }
 

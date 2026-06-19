@@ -131,6 +131,7 @@ func NewDiscoverCmd() *cobra.Command {
 					fmt.Fprintf(out, "⚠ agent rules inject partial: %v\n", err)
 				} else {
 					fmt.Fprintln(out, "✓ trackfw rules injected into agent config files")
+					generators.PrintArchitectNextSteps(cwd)
 				}
 			}
 

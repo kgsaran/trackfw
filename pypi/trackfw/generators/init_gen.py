@@ -82,6 +82,7 @@ def scaffold(cwd: str, opts: dict) -> None:
     _write_trackfw_yaml(cwd, opts)
     _write_example_adr(cwd, opts)
     generate_claude_commands(cwd)
+    print_architect_next_steps(cwd)
 
 
 # ---------------------------------------------------------------------------
@@ -556,3 +557,29 @@ def generate_claude_commands(cwd: str) -> None:
         print(f'  ✓ .claude/commands/trackfw/ ({created} slash commands criados, {skipped} já existiam)')
     else:
         print(f'  ✓ .claude/commands/trackfw/ ({created} slash commands)')
+
+
+def print_architect_next_steps(cwd: str) -> None:
+    """Exibe instruções de próximo passo após init/update."""
+    candidates = [
+        ('CLAUDE.md',                              'claude'),
+        ('.cursor/rules/trackfw.mdc',              'cursor .'),
+        ('.windsurfrules',                         'windsurf .'),
+        ('.github/copilot-instructions.md',        'code . (Copilot)'),
+        ('.amazonq/developer/guidelines.md',       'code . (Amazon Q)'),
+        ('GEMINI.md',                              'gemini'),
+        ('AGENTS.md',                              'codex'),
+    ]
+
+    detected = [cmd for f, cmd in candidates if os.path.exists(os.path.join(cwd, f))]
+    if not detected:
+        detected = ['claude']
+
+    print()
+    print('Próximo passo — inicie com o guia de arquitetura:')
+    print()
+    for cmd in detected:
+        print(f'  {cmd}')
+    print()
+    print('  Execute /trackfw:architect no chat do seu assistente de IA.')
+    print()

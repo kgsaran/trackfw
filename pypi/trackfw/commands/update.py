@@ -40,3 +40,8 @@ def _run(args: argparse.Namespace) -> None:
     print("    npx trackfw update   (CLI Node.js)")
 
     print("\ntrackfw update concluído")
+    try:
+        from trackfw.generators.init_gen import print_architect_next_steps
+        print_architect_next_steps(cwd)
+    except Exception:
+        pass
