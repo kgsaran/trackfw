@@ -21,14 +21,14 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("<!-- Describe what this project does in 2-3 sentences. -->\n\n")
 
 	sb.WriteString("## Governance chain\n\n")
-	sb.WriteString("```\nADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned\n```\n\n")
+	sb.WriteString("```\nADR → REQ → ROADMAP → backlog / analyzing / wip / blocked / done / abandoned\n```\n\n")
 
 	sb.WriteString("## Agent rules (mandatory)\n\n")
 	sb.WriteString("These rules apply to every agent or AI assistant working in this project:\n\n")
 	sb.WriteString("1. **Never start coding without a REQ and a ROADMAP.** If none exists, create them first.\n")
 	sb.WriteString("2. **Use `/trackfw:implement <req-slug>` to start any implementation.** This skill orchestrates the full flow automatically: finds or generates the roadmap, moves it to `wip/`, executes each ML, updates the roadmap, and moves to `done/`.\n")
 	sb.WriteString("3. **Only one roadmap in `wip/` at a time.** Before starting a new one, complete or move to `blocked/` the current one.\n")
-	sb.WriteString("4. **Update the roadmap after every ML.** Mark completed MLs as `✅ Concluído` in the roadmap file before moving to the next.\n")
+	sb.WriteString("4. **ML lifecycle — mandatory:** When starting a ML, change `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` and commit the roadmap. When completing, change to `**Status:** ✅ Concluído` and include in the ML commit. When analyzing a roadmap before starting, move it from `backlog/` to `analyzing/`; only move to `wip/` when actually coding.\n")
 	sb.WriteString("5. **Run `trackfw validate` before every commit.** Zero violations required.\n")
 	sb.WriteString("6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n\n")
 

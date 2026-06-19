@@ -30,7 +30,7 @@ type boardResponse struct {
 	Agents  []string               `json:"agents"`
 }
 
-var boardStates = []string{"wip", "backlog", "blocked", "done", "abandoned"}
+var boardStates = []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
 
 // boardHandler handles GET /api/board.
 func boardHandler(w http.ResponseWriter, _ *http.Request, cfg config.ProjectConfig) {

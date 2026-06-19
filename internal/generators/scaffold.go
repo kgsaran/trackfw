@@ -28,6 +28,7 @@ var govDirs = []string{
 	"docs/adr",
 	"docs/req",
 	"docs/roadmaps/backlog",
+	"docs/roadmaps/analyzing",
 	"docs/roadmaps/wip",
 	"docs/roadmaps/blocked",
 	"docs/roadmaps/done",
@@ -137,7 +138,10 @@ A cadeia obrigatória é: **ADR → REQ → ROADMAP → backlog/wip/blocked/done
 1. **Nunca inicie uma implementação sem uma REQ e um ROADMAP.** Se não existirem, crie-os primeiro com ` + "`/trackfw:req`" + ` e ` + "`/trackfw:roadmap`" + `.
 2. **Use ` + "`/trackfw:implement`" + ` como ponto de entrada para qualquer implementação.** Este skill orquestra o fluxo completo automaticamente.
 3. **Apenas um roadmap em ` + "`wip/`" + ` por vez.** Antes de iniciar um novo, conclua ou mova para ` + "`blocked/`" + ` o atual.
-4. **Atualize o roadmap após cada ML.** Marque MLs concluídos como ` + "`✅ Concluído`" + ` antes de avançar.
+4. **Ciclo de vida do ML — obrigatório:**
+   - Ao **iniciar** um ML: edite o roadmap alterando ` + "`**Status:** ⬜ Pendente`" + ` → ` + "`**Status:** 🔄 Em andamento`" + ` e faça commit do roadmap.
+   - Ao **concluir** um ML: edite o roadmap alterando ` + "`**Status:** 🔄 Em andamento`" + ` → ` + "`**Status:** ✅ Concluído`" + ` e inclua essa mudança no commit do ML.
+   - Ao **analisar** um roadmap antes de iniciar: mova o arquivo de ` + "`backlog/`" + ` para ` + "`analyzing/`" + `; só mova para ` + "`wip/`" + ` ao começar a codificar de fato.
 5. **Execute ` + "`trackfw validate`" + ` antes de cada commit.** Zero violations obrigatório.
 6. **ADRs antes de decisões arquiteturais.** Qualquer decisão técnica relevante deve ter um ADR (` + "`/trackfw:adr`" + `).
 
@@ -150,6 +154,7 @@ ADR         → registra decisões técnicas e arquiteturais
 REQ         → especifica requisitos e critérios de aceite
 ROADMAP     → detalha implementação em microlotes (MLs) por Waves
 backlog     → roadmaps aguardando execução
+analyzing   → roadmap em análise/validação pré-wip
 wip         → roadmap em execução ativa (máximo 1)
 blocked     → impedido por dependência ou decisão externa
 done        → concluído e validado
@@ -271,7 +276,7 @@ trackfw não está instalado. Instale com uma das opções:
 
 O formato esperado é: ` + "`<nome-do-roadmap> <estado>`" + `
 
-Estados válidos: ` + "`backlog`, `wip`, `blocked`, `done`, `abandoned`" + `
+Estados válidos: ` + "`backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`" + `
 
 Exemplo: ` + "`/trackfw:move meu-roadmap wip`" + `
 

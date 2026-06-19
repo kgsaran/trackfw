@@ -112,11 +112,12 @@ def scan(root_dir: str) -> dict:
         agents = []
         for sub in agent_dirs:
             wip_dir = os.path.join(roadmap_root, sub, "wip")
+            analyzing_dir = os.path.join(roadmap_root, sub, "analyzing")
             backlog_dir = os.path.join(roadmap_root, sub, "backlog")
             done_dir = os.path.join(roadmap_root, sub, "done")
             abandoned_dir = os.path.join(roadmap_root, sub, "abandoned")
             blocked_dir = os.path.join(roadmap_root, sub, "blocked")
-            if any(_is_dir(d) for d in [wip_dir, backlog_dir, done_dir, abandoned_dir, blocked_dir]):
+            if any(_is_dir(d) for d in [wip_dir, analyzing_dir, backlog_dir, done_dir, abandoned_dir, blocked_dir]):
                 by_agent = True
                 agents.append(sub)
 
@@ -124,11 +125,11 @@ def scan(root_dir: str) -> dict:
             r["roadmap_namespacing"] = "by_agent"
             r["agents"] = agents
             for agent in agents:
-                for state in ["backlog", "wip", "blocked", "done", "abandoned"]:
+                for state in ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]:
                     r["roadmap_count"] += _count_md(os.path.join(roadmap_root, agent, state))
         else:
             r["roadmap_namespacing"] = "flat"
-            for state in ["backlog", "wip", "blocked", "done", "abandoned"]:
+            for state in ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]:
                 r["roadmap_count"] += _count_md(os.path.join(roadmap_root, state))
 
         r["has_trackfw_log"] = _is_file(os.path.join(roadmap_root, ".trackfw-log"))
