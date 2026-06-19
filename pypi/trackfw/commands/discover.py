@@ -458,6 +458,16 @@ def _cmd_discover(args):
             print("Regras trackfw injetadas nos arquivos de agentes")
         except Exception as e:
             print(f"Aviso: injecao parcial de regras de agentes: {e}")
+        try:
+            from trackfw.generators.init_gen import generate_claude_commands
+            generate_claude_commands(cwd)
+        except Exception as e:
+            print(f"Aviso: instalacao parcial dos slash commands: {e}")
+        try:
+            from trackfw.generators.init_gen import print_architect_next_steps
+            print_architect_next_steps(cwd)
+        except Exception:
+            pass
 
     if getattr(args, "bootstrap_log", False):
         if not r["roadmap_dir"]:

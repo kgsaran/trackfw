@@ -81,6 +81,8 @@ def scaffold(cwd: str, opts: dict) -> None:
 
     _write_trackfw_yaml(cwd, opts)
     _write_example_adr(cwd, opts)
+    generate_claude_commands(cwd)
+    print_architect_next_steps(cwd)
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +242,16 @@ def _trackfw_rules_block() -> str:
         '{"roadmap":"file.md","ml":"ML-1A","message":"what you need","level":"action_required","timestamp":"ISO8601Z"}\n'
         '```\n'
         'Delete the file when resolved. Visible as a live banner in `trackfw serve`.\n'
+        '\n### Architecture Directives (mandatory)\n'
+        '- **3-layer separation:** frontend / backend / database — never mix concerns\n'
+        '- **No in-memory data:** always database + ORM (never arrays/globals for persistence)\n'
+        '- **Auth from day 1:** never defer — refactoring auth later is very costly\n'
+        '- **Docker + .env from day 1:** containerize early; all config via env vars\n'
+        '- **2-layer validation:** frontend (UX) + backend (security) — never only one\n'
+        '- **API-first:** define OpenAPI contract before coding frontend/backend integration\n'
+        '- **Security wave:** include a red-team review wave in every feature roadmap\n'
+        '- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)\n'
+        '- Use `/trackfw:architect` to define stack before the first REQ\n'
         + RULES_END
     )
 
@@ -304,3 +316,270 @@ def inject_rules_detected(cwd: str) -> None:
                 inject_rules_for_tool(tool, cwd)
             except Exception:
                 pass
+
+
+def generate_claude_commands(cwd: str) -> None:
+    """Instala os slash commands do trackfw em .claude/commands/trackfw/."""
+    cmd_dir = os.path.join(cwd, '.claude', 'commands', 'trackfw')
+    os.makedirs(cmd_dir, exist_ok=True)
+
+    _install_not_found = (
+        '\n\nSe o comando falhar com `trackfw: command not found` ou similar, informe ao usuário:\n\n'
+        '```\n'
+        'trackfw não está instalado. Instale com uma das opções:\n\n'
+        '  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n'
+        '  npm install -g trackfw\n'
+        '  pip install trackfw\n'
+        '```'
+    )
+
+    commands = {
+        'adr.md': (
+            'Execute o seguinte comando bash: `trackfw adr new "$ARGUMENTS"`'
+            + _install_not_found
+        ),
+        'req.md': (
+            'Execute o seguinte comando bash: `trackfw req new "$ARGUMENTS"`'
+            + _install_not_found
+        ),
+        'validate.md': (
+            'Execute o seguinte comando bash: `trackfw validate`'
+            + _install_not_found
+        ),
+        'status.md': (
+            'Execute o seguinte comando bash: `trackfw status`'
+            + _install_not_found
+        ),
+        'move.md': (
+            'Execute o seguinte comando bash: `trackfw roadmap move $ARGUMENTS`\n\n'
+            'O formato esperado é: `<nome-do-roadmap> <estado>`\n\n'
+            'Estados válidos: `backlog`, `wip`, `blocked`, `done`, `abandoned`\n\n'
+            'Exemplo: `/trackfw:move meu-roadmap wip`\n\n'
+            'Se o comando falhar com `trackfw: command not found` ou similar, informe ao usuário:\n'
+            'trackfw não está instalado. Instale com:\n'
+            '  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n'
+            '  npm install -g trackfw\n'
+            '  pip install trackfw'
+        ),
+        'roadmap.md': (
+            'Gere um roadmap de implementação em microlotes para uma REQ do projeto.\n\n'
+            '## Passos\n\n'
+            '1. **Listar REQs disponíveis**\n'
+            '   Use Glob para listar `docs/req/*.md`. Se nenhum arquivo encontrado, informe:\n'
+            '   > Nenhuma REQ encontrada em `docs/req/`. Crie uma primeiro com `/trackfw:req`.\n\n'
+            '2. **Selecionar a REQ**\n'
+            '   - Se `$ARGUMENTS` foi fornecido: use como filtro (substring case-insensitive) para encontrar o arquivo\n'
+            '   - Se não foi fornecido ou o filtro não encontrar exatamente um: liste os arquivos disponíveis e pergunte ao usuário qual usar\n'
+            '   - Leia o conteúdo completo do arquivo REQ selecionado\n\n'
+            '3. **Gerar o roadmap**\n'
+            '   Com base no conteúdo da REQ, gere um roadmap seguindo **estritamente** este formato:\n\n'
+            '   ```markdown\n'
+            '   # Roadmap: <título derivado da REQ>\n\n'
+            '   > Criado em: <YYYY-MM-DD> | Status: ⬜ Backlog\n\n'
+            '   ## Diagnóstico / Contexto\n'
+            '   <resumo do problema, motivação e escopo extraídos da REQ>\n\n'
+            '   ## Wave 1 — <nome descritivo> (<N> MLs em paralelo)\n'
+            '   > Dependências: Independente\n\n'
+            '   ### ML-1A — <título>\n'
+            '   **Status:** ⬜ Pendente\n'
+            '   **Arquivos afetados:**\n'
+            '   - `caminho/exato/do/arquivo`\n'
+            '   **Ações:**\n'
+            '   - Descrição detalhada da ação com valores, chaves e comandos exatos\n'
+            '   **Critérios de aceite:**\n'
+            '   - [ ] build sem erros\n'
+            '   - [ ] testes verdes\n'
+            '   **Comandos de validação:** `<comando de build e teste do projeto>`\n'
+            '   ```\n\n'
+            '   **Princípios obrigatórios:**\n'
+            '   - MLs dentro da mesma Wave são **independentes** (arquivos distintos, sem conflito)\n'
+            '   - Cada ML deve ser detalhado o suficiente para execução por um agente sem contexto extra\n'
+            '   - Maximizar paralelismo: agrupe em paralelo tudo que não compartilhar arquivos\n'
+            '   - Waves sequenciais apenas quando há dependência real de resultado\n'
+            '   - Critérios de aceite mensuráveis em cada ML\n\n'
+            '4. **Salvar o arquivo**\n'
+            '   - Calcule o slug: título em lowercase, espaços → hifens, remova caracteres especiais\n'
+            '   - Crie o arquivo em `docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md`\n'
+            '   - Use a data de hoje\n\n'
+            '5. **Confirmar**\n'
+            '   Informe o caminho do arquivo criado e um resumo das Waves e total de MLs gerados.'
+        ),
+        'implement.md': (
+            'Você é o orquestrador de implementação do trackfw. Siga o fluxo abaixo **sem pular etapas**.\n\n'
+            '## Argumento\n\n'
+            '`$ARGUMENTS` é opcional. Se fornecido, é usado como filtro (substring case-insensitive) sobre os nomes de arquivo das REQs.\n\n'
+            '---\n\n'
+            '## Passo 1 — Selecionar a REQ\n\n'
+            'Use Glob para listar `docs/req/*.md`.\n\n'
+            '- Se **nenhum arquivo encontrado**: informe que não há REQs disponíveis e sugira criar com `/trackfw:req`.\n'
+            '- Se **`$ARGUMENTS` foi fornecido** e filtra para exatamente uma REQ: use-a diretamente.\n'
+            '- Em **todos os outros casos** (sem argumento, ou argumento ambíguo): apresente a lista de REQs disponíveis e pergunte ao usuário qual deseja implementar.\n\n'
+            'Leia o conteúdo completo da REQ selecionada.\n\n'
+            '---\n\n'
+            '## Passo 2 — Encontrar ou gerar o Roadmap\n\n'
+            'Verifique se existe um roadmap vinculado à REQ buscando em `docs/roadmaps/` (backlog, wip, blocked, done, abandoned) por arquivo cujo nome contenha o slug da REQ.\n\n'
+            '**Se o roadmap ainda não existe:**\n'
+            '- Informe o usuário: "Nenhum roadmap encontrado para esta REQ. Gerando agora..."\n'
+            '- Execute o fluxo completo de geração do `/trackfw:roadmap` (leia o arquivo `.claude/commands/trackfw/roadmap.md` para seguir as instruções exatas), passando a REQ já selecionada — não pergunte novamente.\n'
+            '- Salve o roadmap gerado em `docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md`.\n\n'
+            '**Se o roadmap existe e já está em `done/` ou `abandoned/`:**\n'
+            '- Informe o usuário e pergunte se deseja criar um novo roadmap ou encerrar.\n\n'
+            '**Se o roadmap existe em `backlog/` ou `blocked/`:**\n'
+            '- Prossiga para o Passo 3.\n\n'
+            '**Se já está em `wip/`:**\n'
+            '- Prossiga diretamente para o Passo 4 (já está em execução).\n\n'
+            '---\n\n'
+            '## Passo 3 — Mover roadmap para WIP\n\n'
+            'Execute:\n'
+            '```bash\n'
+            'trackfw roadmap move <nome-do-roadmap> wip\n'
+            '```\n\n'
+            'Confirme que o arquivo foi movido para `docs/roadmaps/wip/`.\n\n'
+            '---\n\n'
+            '## Passo 4 — Ler e apresentar o plano\n\n'
+            'Leia o roadmap (agora em `wip/`). Apresente ao usuário:\n'
+            '- Título do roadmap\n'
+            '- Total de Waves e MLs\n'
+            '- Lista resumida dos MLs por Wave\n\n'
+            'Confirme: "Iniciando implementação. Vou executar cada ML em ordem e atualizar o roadmap a cada conclusão."\n\n'
+            '---\n\n'
+            '## Passo 5 — Executar cada ML em ordem\n\n'
+            'Para cada Wave (em sequência), execute os MLs da Wave:\n\n'
+            '### Para cada ML:\n\n'
+            '**5a. Anunciar:** informe qual ML está sendo executado (ex: "Executando ML-1A — Criar client.go").\n\n'
+            '**5b. Implementar:** execute as ações descritas no ML usando suas ferramentas (Read, Write, Edit, Bash). Siga exatamente os arquivos afetados, ações e critérios de aceite listados no roadmap.\n\n'
+            '**5c. Validar:** execute os comandos de validação do ML. Se falhar, corrija antes de avançar.\n\n'
+            '**5d. Atualizar o roadmap:** edite o arquivo de roadmap em `docs/roadmaps/wip/` substituindo o status do ML:\n'
+            '- `**Status:** ⬜ Pendente` → `**Status:** ✅ Concluído`\n\n'
+            '**5e. Commitar:**\n'
+            '```bash\n'
+            'git add -A\n'
+            'git commit -m "feat(<escopo>): <descrição do ML>"\n'
+            '```\n\n'
+            'Só avance para a próxima Wave após todos os MLs da Wave atual estarem ✅.\n\n'
+            '---\n\n'
+            '## Passo 6 — Finalizar\n\n'
+            'Quando todos os MLs estiverem ✅:\n\n'
+            '**6a.** Execute `trackfw validate` — deve passar com zero violations.\n\n'
+            '**6b.** Mova o roadmap para done:\n'
+            '```bash\n'
+            'trackfw roadmap move <nome-do-roadmap> done\n'
+            '```\n\n'
+            '**6c.** Faça o commit final:\n'
+            '```bash\n'
+            'git add docs/roadmaps/\n'
+            'git commit -m "docs(trackfw): roadmap <nome> → done"\n'
+            '```\n\n'
+            '**6d.** Informe o usuário:\n'
+            '```\n'
+            '✅ Implementação concluída.\n'
+            'Roadmap: docs/roadmaps/done/<nome>.md\n'
+            'Próximo passo: abrir PR com gh pr create\n'
+            '```'
+        ),
+        'architect.md': (
+            'Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.\n\n'
+            '## Passo 1 — Descoberta de Negócio\n\n'
+            'Faça ao usuário as seguintes perguntas em linguagem simples, uma por vez:\n\n'
+            '1. "O que sua aplicação vai fazer? Descreva em 2-3 frases como se fosse explicar para alguém de fora da TI."\n'
+            '2. "Quantas pessoas vão usar esse sistema simultaneamente? (< 10 pessoas / 10-100 pessoas / > 100 pessoas)"\n'
+            '3. "Esse sistema vai para produção de verdade ou é um protótipo para validar uma ideia?"\n'
+            '4. "Você precisa de login/autenticação de usuários? (Sim / Não / Não sei)"\n'
+            '5. "Tem alguma restrição de tecnologia ou preferência da empresa? (ex: só Java, só Microsoft, etc.)"\n\n'
+            '---\n\n'
+            '## Passo 2 — Recomendação de Stack\n\n'
+            'Com base nas respostas, escolha **UM** dos combos pré-validados:\n\n'
+            '### Combo A — Protótipo Rápido\n'
+            '**Quando usar:** prototipagem, validação de ideia, até ~10 usuários, sem pressão de produção.\n'
+            '- **Frontend:** React + Vite\n'
+            '- **Backend:** FastAPI (Python) ou Express (Node.js)\n'
+            '- **Banco:** SQLite + SQLAlchemy / Prisma\n'
+            '- **Auth:** JWT simples quando necessário\n'
+            '- **Docker:** Dockerfile básico para o backend\n\n'
+            '### Combo B — Sistema Pequeno/Médio em Produção\n'
+            '**Quando usar:** sistema real, 10-100 usuários, robustez e manutenibilidade.\n'
+            '- **Frontend:** Next.js (SSR + rotas prontas)\n'
+            '- **Backend:** FastAPI (Python) ou NestJS (Node.js)\n'
+            '- **Banco:** PostgreSQL + ORM (SQLAlchemy / Prisma / TypeORM)\n'
+            '- **Auth:** OAuth2 com JWT (Supabase Auth ou Auth0)\n'
+            '- **Docker:** docker-compose com frontend + backend + banco\n\n'
+            '### Combo C — Enterprise / Java\n'
+            '**Quando usar:** integração com sistemas corporativos, > 100 usuários, exigência de Java.\n'
+            '- **Frontend:** Angular\n'
+            '- **Backend:** Spring Boot\n'
+            '- **Banco:** PostgreSQL + Hibernate\n'
+            '- **Auth:** Spring Security + OAuth2 (Keycloak ou Azure AD)\n'
+            '- **Docker:** docker-compose com todos os serviços\n\n'
+            'Apresente o combo recomendado com explicação simples do motivo.\n\n'
+            '---\n\n'
+            '## Passo 3 — Arquitetura em Camadas (explicação simples)\n\n'
+            'Explique a arquitetura com uma metáfora de negócio:\n\n'
+            '"Pense na aplicação como um restaurante:\n'
+            '- **Frontend** = o salão: o que o cliente vê e interage\n'
+            '- **Backend** = a cozinha: onde as regras de negócio acontecem, nunca exposta diretamente\n'
+            '- **Banco de dados** = a despensa: onde os dados ficam guardados, acessada só pela cozinha"\n\n'
+            'Reforce as regras obrigatórias:\n'
+            '- **Nunca dados em memória** (arrays, variáveis globais): sempre banco + ORM\n'
+            '- **Docker + .env desde o dia 1**: facilita deploys e evita problemas de ambiente\n'
+            '- **Auth desde o início**: nunca deixe para depois — refatorar auth é muito custoso\n'
+            '- **Validação em 2 camadas**: frontend (UX) + backend (segurança)\n'
+            '- **API-first**: defina o contrato OpenAPI antes de codar frontend e backend juntos\n'
+            '- **Red team wave**: reserve 1 wave de segurança no roadmap para revisar vulnerabilidades\n'
+            '- **Cobertura mínima de testes**: 60% (protótipo) / 80% (produção)\n\n'
+            '---\n\n'
+            '## Passo 4 — Gerar o ADR de Stack\n\n'
+            'Execute `/trackfw:adr` com o título: `"Stack e arquitetura em camadas — [nome do projeto]"`\n\n'
+            'O ADR deve registrar a stack escolhida (combo e componentes), motivação baseada nas respostas, alternativas descartadas e princípios de arquitetura adotados.\n\n'
+            '---\n\n'
+            '## Passo 5 — Próximos Passos\n\n'
+            'Oriente o usuário:\n\n'
+            '```\n'
+            '✅ Stack definida. Próximos passos:\n\n'
+            '1. Crie a REQ da primeira feature com /trackfw:req\n'
+            '2. Gere o roadmap em microlotes com /trackfw:roadmap\n'
+            '3. Inicie a implementação com /trackfw:implement\n'
+            '```'
+        ),
+    }
+
+    created = 0
+    skipped = 0
+    for filename, content in commands.items():
+        file_path = os.path.join(cmd_dir, filename)
+        if os.path.exists(file_path):
+            skipped += 1
+            continue
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        created += 1
+
+    if skipped > 0:
+        print(f'  ✓ .claude/commands/trackfw/ ({created} slash commands criados, {skipped} já existiam)')
+    else:
+        print(f'  ✓ .claude/commands/trackfw/ ({created} slash commands)')
+
+
+def print_architect_next_steps(cwd: str) -> None:
+    """Exibe instruções de próximo passo após init/update."""
+    candidates = [
+        ('CLAUDE.md',                              'claude'),
+        ('.cursor/rules/trackfw.mdc',              'cursor .'),
+        ('.windsurfrules',                         'windsurf .'),
+        ('.github/copilot-instructions.md',        'code . (Copilot)'),
+        ('.amazonq/developer/guidelines.md',       'code . (Amazon Q)'),
+        ('GEMINI.md',                              'gemini'),
+        ('AGENTS.md',                              'codex'),
+    ]
+
+    detected = [cmd for f, cmd in candidates if os.path.exists(os.path.join(cwd, f))]
+    if not detected:
+        detected = ['claude']
+
+    print()
+    print('Próximo passo — inicie com o guia de arquitetura:')
+    print()
+    for cmd in detected:
+        print(f'  {cmd}')
+    print()
+    print('  Execute /trackfw:architect no chat do seu assistente de IA.')
+    print()

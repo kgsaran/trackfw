@@ -21,6 +21,7 @@ cmd.action(async () => {
     }
     await generators.scaffold(cfg)
     console.log(`\n${t('init.success')}`)
+    require('../generators/init').printArchitectNextSteps(process.cwd())
     return
   }
 
@@ -160,6 +161,7 @@ cmd.action(async () => {
     }
     await generators.scaffold(cfg)
     console.log(`\n${t('init.success')}`)
+    require('../generators/init').printArchitectNextSteps(process.cwd())
     return
   }
 
@@ -178,6 +180,7 @@ cmd.action(async () => {
   }
 
   console.log(`\n${t('init.success')}`)
+  require('../generators/init').printArchitectNextSteps(process.cwd())
 })
 
 module.exports = cmd

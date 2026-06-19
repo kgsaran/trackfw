@@ -30,7 +30,8 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("3. **Only one roadmap in `wip/` at a time.** Before starting a new one, complete or move to `blocked/` the current one.\n")
 	sb.WriteString("4. **ML lifecycle — mandatory:** When starting a ML, change `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` and commit the roadmap. When completing, change to `**Status:** ✅ Concluído` and include in the ML commit. When analyzing a roadmap before starting, move it from `backlog/` to `analyzing/`; only move to `wip/` when actually coding.\n")
 	sb.WriteString("5. **Run `trackfw validate` before every commit.** Zero violations required.\n")
-	sb.WriteString("6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n\n")
+	sb.WriteString("6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n")
+	sb.WriteString("7. **Use `/trackfw:architect` to define stack and architecture before the first REQ.**\n\n")
 
 	sb.WriteString("## Slash commands (Claude Code)\n\n")
 	sb.WriteString("| Command | When to use |\n")
@@ -41,7 +42,8 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("| `/trackfw:roadmap <req>` | Generate AI roadmap from a REQ |\n")
 	sb.WriteString("| `/trackfw:move <name> <state>` | Move roadmap between states manually |\n")
 	sb.WriteString("| `/trackfw:validate` | Run governance validation |\n")
-	sb.WriteString("| `/trackfw:status` | Check what is in flight |\n\n")
+	sb.WriteString("| `/trackfw:status` | Check what is in flight |\n")
+	sb.WriteString("| `/trackfw:architect` | Guide stack and architecture decisions |\n\n")
 
 	sb.WriteString("## CLI commands (terminal / CI)\n\n")
 	sb.WriteString("| Command | When to use |\n")
@@ -52,6 +54,16 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("| `trackfw roadmap move <name> <state>` | Move roadmap state |\n")
 	sb.WriteString("| `trackfw validate` | Governance validation gate |\n")
 	sb.WriteString("| `trackfw status` | Show governance status |\n\n")
+
+	sb.WriteString("## Architecture Directives (mandatory)\n\n")
+	sb.WriteString("1. **3-layer separation** — frontend / backend / database. Never mix concerns.\n")
+	sb.WriteString("2. **No in-memory data** — always database + ORM. Never arrays/globals for persistence.\n")
+	sb.WriteString("3. **Auth from day 1** — never defer; refactoring auth later is very costly.\n")
+	sb.WriteString("4. **Docker + .env from day 1** — containerize early; all config via env vars, never hardcoded.\n")
+	sb.WriteString("5. **2-layer validation** — frontend (UX feedback) + backend (security guard). Never only one.\n")
+	sb.WriteString("6. **API-first** — define OpenAPI contract before coding frontend/backend integration.\n")
+	sb.WriteString("7. **Security wave** — include a red-team review wave at the end of every feature roadmap.\n")
+	sb.WriteString("8. **Test coverage** — TDD for critical business logic; min 60% (prototype) / 80% (production).\n\n")
 
 	// Frontend section
 	if cfg.Frontend != "" && cfg.Frontend != "none" {

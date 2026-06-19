@@ -107,6 +107,7 @@ func Update(cwd string) error {
 	}
 
 	fmt.Println("\n✓ trackfw update concluído")
+	PrintArchitectNextSteps(cwd)
 	return nil
 }
 

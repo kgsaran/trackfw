@@ -367,7 +367,18 @@ Write \`docs/roadmaps/.trackfw-attention.json\`:
 {"roadmap":"file.md","ml":"ML-1A","message":"what you need","level":"action_required","timestamp":"ISO8601Z"}
 \`\`\`
 Delete the file when resolved. Visible as a live banner in \`trackfw serve\`.
-` + RULES_END
+` +
+'\n### Architecture Directives (mandatory)\n' +
+'- **3-layer separation:** frontend / backend / database — never mix concerns\n' +
+'- **No in-memory data:** always database + ORM (never arrays/globals for persistence)\n' +
+'- **Auth from day 1:** never defer — refactoring auth later is very costly\n' +
+'- **Docker + .env from day 1:** containerize early; all config via env vars\n' +
+'- **2-layer validation:** frontend (UX) + backend (security) — never only one\n' +
+'- **API-first:** define OpenAPI contract before coding frontend/backend integration\n' +
+'- **Security wave:** include a red-team review wave in every feature roadmap\n' +
+'- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)\n' +
+'- Use `/trackfw:architect` to define stack before the first REQ\n' +
+RULES_END
 }
 
 /**
@@ -826,6 +837,92 @@ git commit -m "docs(trackfw): roadmap <nome> → done"
 Roadmap: docs/roadmaps/done/<nome>.md
 Próximo passo: abrir PR com gh pr create
 \`\`\``,
+
+    'architect.md': `Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.
+
+## Passo 1 — Descoberta de Negócio
+
+Faça ao usuário as seguintes perguntas em linguagem simples, uma por vez:
+
+1. "O que sua aplicação vai fazer? Descreva em 2-3 frases como se fosse explicar para alguém de fora da TI."
+2. "Quantas pessoas vão usar esse sistema simultaneamente? (< 10 pessoas / 10-100 pessoas / > 100 pessoas)"
+3. "Esse sistema vai para produção de verdade ou é um protótipo para validar uma ideia?"
+4. "Você precisa de login/autenticação de usuários? (Sim / Não / Não sei)"
+5. "Tem alguma restrição de tecnologia ou preferência da empresa? (ex: só Java, só Microsoft, etc.)"
+
+---
+
+## Passo 2 — Recomendação de Stack
+
+Com base nas respostas, escolha **UM** dos combos pré-validados:
+
+### Combo A — Protótipo Rápido
+**Quando usar:** prototipagem, validação de ideia, até ~10 usuários, sem pressão de produção.
+- **Frontend:** React + Vite
+- **Backend:** FastAPI (Python) ou Express (Node.js)
+- **Banco:** SQLite + SQLAlchemy / Prisma
+- **Auth:** JWT simples quando necessário
+- **Docker:** Dockerfile básico para o backend
+
+### Combo B — Sistema Pequeno/Médio em Produção
+**Quando usar:** sistema real, 10-100 usuários, robustez e manutenibilidade.
+- **Frontend:** Next.js (SSR + rotas prontas)
+- **Backend:** FastAPI (Python) ou NestJS (Node.js)
+- **Banco:** PostgreSQL + ORM (SQLAlchemy / Prisma / TypeORM)
+- **Auth:** OAuth2 com JWT (Supabase Auth ou Auth0)
+- **Docker:** docker-compose com frontend + backend + banco
+
+### Combo C — Enterprise / Java
+**Quando usar:** integração com sistemas corporativos, > 100 usuários, exigência de Java.
+- **Frontend:** Angular
+- **Backend:** Spring Boot
+- **Banco:** PostgreSQL + Hibernate
+- **Auth:** Spring Security + OAuth2 (Keycloak ou Azure AD)
+- **Docker:** docker-compose com todos os serviços
+
+Apresente o combo recomendado com explicação simples do motivo.
+
+---
+
+## Passo 3 — Arquitetura em Camadas (explicação simples)
+
+Explique a arquitetura com uma metáfora de negócio:
+
+"Pense na aplicação como um restaurante:
+- **Frontend** = o salão: o que o cliente vê e interage
+- **Backend** = a cozinha: onde as regras de negócio acontecem, nunca exposta diretamente
+- **Banco de dados** = a despensa: onde os dados ficam guardados, acessada só pela cozinha"
+
+Reforce as regras obrigatórias:
+- **Nunca dados em memória** (arrays, variáveis globais): sempre banco + ORM
+- **Docker + .env desde o dia 1**: facilita deploys e evita problemas de ambiente
+- **Auth desde o início**: nunca deixe para depois — refatorar auth é muito custoso
+- **Validação em 2 camadas**: frontend (UX) + backend (segurança)
+- **API-first**: defina o contrato OpenAPI antes de codar frontend e backend juntos
+- **Red team wave**: reserve 1 wave de segurança no roadmap para revisar vulnerabilidades
+- **Cobertura mínima de testes**: 60% (protótipo) / 80% (produção)
+
+---
+
+## Passo 4 — Gerar o ADR de Stack
+
+Execute \`/trackfw:adr\` com o título: \`"Stack e arquitetura em camadas — [nome do projeto]"\`
+
+O ADR deve registrar a stack escolhida (combo e componentes), motivação baseada nas respostas, alternativas descartadas e princípios de arquitetura adotados.
+
+---
+
+## Passo 5 — Próximos Passos
+
+Oriente o usuário:
+
+\`\`\`
+✅ Stack definida. Próximos passos:
+
+1. Crie a REQ da primeira feature com /trackfw:req
+2. Gere o roadmap em microlotes com /trackfw:roadmap
+3. Inicie a implementação com /trackfw:implement
+\`\`\``,
   }
 
   let created = 0
@@ -919,6 +1016,7 @@ function generateClaudeCommandsForce(rootDir) {
     'validate.md': `Execute o seguinte comando bash: \`trackfw validate\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
     'status.md': `Execute o seguinte comando bash: \`trackfw status\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
     'move.md': `Execute o seguinte comando bash: \`trackfw roadmap move $ARGUMENTS\`\n\nO formato esperado é: \`<nome-do-roadmap> <estado>\`\nEstados válidos: \`backlog\`, \`analyzing\`, \`wip\`, \`blocked\`, \`done\`, \`abandoned\`\n\nSe o comando falhar, instale trackfw com:\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh`,
+    'architect.md': `Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.\n\n## Passo 1 — Descoberta de Negócio\n\nFaça ao usuário as seguintes perguntas em linguagem simples, uma por vez:\n\n1. "O que sua aplicação vai fazer? Descreva em 2-3 frases como se fosse explicar para alguém de fora da TI."\n2. "Quantas pessoas vão usar esse sistema simultaneamente? (< 10 pessoas / 10-100 pessoas / > 100 pessoas)"\n3. "Esse sistema vai para produção de verdade ou é um protótipo para validar uma ideia?"\n4. "Você precisa de login/autenticação de usuários? (Sim / Não / Não sei)"\n5. "Tem alguma restrição de tecnologia ou preferência da empresa? (ex: só Java, só Microsoft, etc.)"\n\n---\n\n## Passo 2 — Recomendação de Stack\n\nCom base nas respostas, escolha **UM** dos combos pré-validados:\n\n### Combo A — Protótipo Rápido\n**Quando usar:** prototipagem, validação de ideia, até ~10 usuários, sem pressão de produção.\n- **Frontend:** React + Vite\n- **Backend:** FastAPI (Python) ou Express (Node.js)\n- **Banco:** SQLite + SQLAlchemy / Prisma\n- **Auth:** JWT simples quando necessário\n- **Docker:** Dockerfile básico para o backend\n\n### Combo B — Sistema Pequeno/Médio em Produção\n**Quando usar:** sistema real, 10-100 usuários, robustez e manutenibilidade.\n- **Frontend:** Next.js (SSR + rotas prontas)\n- **Backend:** FastAPI (Python) ou NestJS (Node.js)\n- **Banco:** PostgreSQL + ORM (SQLAlchemy / Prisma / TypeORM)\n- **Auth:** OAuth2 com JWT (Supabase Auth ou Auth0)\n- **Docker:** docker-compose com frontend + backend + banco\n\n### Combo C — Enterprise / Java\n**Quando usar:** integração com sistemas corporativos, > 100 usuários, exigência de Java.\n- **Frontend:** Angular\n- **Backend:** Spring Boot\n- **Banco:** PostgreSQL + Hibernate\n- **Auth:** Spring Security + OAuth2 (Keycloak ou Azure AD)\n- **Docker:** docker-compose com todos os serviços\n\nApresente o combo recomendado com explicação simples do motivo.\n\n---\n\n## Passo 3 — Arquitetura em Camadas (explicação simples)\n\nExplique a arquitetura com uma metáfora de negócio:\n\n"Pense na aplicação como um restaurante:\n- **Frontend** = o salão: o que o cliente vê e interage\n- **Backend** = a cozinha: onde as regras de negócio acontecem, nunca exposta diretamente\n- **Banco de dados** = a despensa: onde os dados ficam guardados, acessada só pela cozinha"\n\nReforce as regras obrigatórias:\n- **Nunca dados em memória** (arrays, variáveis globais): sempre banco + ORM\n- **Docker + .env desde o dia 1**: facilita deploys e evita problemas de ambiente\n- **Auth desde o início**: nunca deixe para depois — refatorar auth é muito custoso\n- **Validação em 2 camadas**: frontend (UX) + backend (segurança)\n- **API-first**: defina o contrato OpenAPI antes de codar frontend e backend juntos\n- **Red team wave**: reserve 1 wave de segurança no roadmap para revisar vulnerabilidades\n- **Cobertura mínima de testes**: 60% (protótipo) / 80% (produção)\n\n---\n\n## Passo 4 — Gerar o ADR de Stack\n\nExecute \`/trackfw:adr\` com o título: \`"Stack e arquitetura em camadas — [nome do projeto]"\`\n\nO ADR deve registrar a stack escolhida (combo e componentes), motivação baseada nas respostas, alternativas descartadas e princípios de arquitetura adotados.\n\n---\n\n## Passo 5 — Próximos Passos\n\nOriente o usuário:\n\n\`\`\`\n✅ Stack definida. Próximos passos:\n\n1. Crie a REQ da primeira feature com /trackfw:req\n2. Gere o roadmap em microlotes com /trackfw:roadmap\n3. Inicie a implementação com /trackfw:implement\n\`\`\``,
   }
 
   for (const [filename, content] of Object.entries(commands)) {
@@ -965,6 +1063,34 @@ Cadeia: **ADR → REQ → ROADMAP** · Estados: \`backlog / wip / blocked / done
   console.log(`  ✓ skill global atualizada em ${dest}`)
 }
 
+function printArchitectNextSteps(cwd) {
+  const candidates = [
+    { file: 'CLAUDE.md',                              cmd: 'claude' },
+    { file: '.cursor/rules/trackfw.mdc',              cmd: 'cursor .' },
+    { file: '.windsurfrules',                         cmd: 'windsurf .' },
+    { file: '.github/copilot-instructions.md',        cmd: 'code . (Copilot)' },
+    { file: '.amazonq/developer/guidelines.md',       cmd: 'code . (Amazon Q)' },
+    { file: 'GEMINI.md',                              cmd: 'gemini' },
+    { file: 'AGENTS.md',                              cmd: 'codex' },
+  ]
+
+  const detected = candidates.filter(t => {
+    try { return fs.existsSync(path.join(cwd, t.file)) } catch { return false }
+  })
+
+  const tools = detected.length > 0 ? detected : [{ cmd: 'claude' }]
+
+  console.log()
+  console.log('Próximo passo — inicie com o guia de arquitetura:')
+  console.log()
+  for (const t of tools) {
+    console.log(`  ${t.cmd}`)
+  }
+  console.log()
+  console.log('  Execute /trackfw:architect no chat do seu assistente de IA.')
+  console.log()
+}
+
 module.exports = {
   GOV_DIRS,
   scaffold,
@@ -986,4 +1112,5 @@ module.exports = {
   injectRulesForTool,
   injectRulesDetected,
   trackfwRulesBlock,
+  printArchitectNextSteps,
 }
