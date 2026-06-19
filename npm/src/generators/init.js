@@ -8,6 +8,7 @@ const GOV_DIRS = [
   'docs/adr',
   'docs/req',
   'docs/roadmaps/backlog',
+  'docs/roadmaps/analyzing',
   'docs/roadmaps/wip',
   'docs/roadmaps/blocked',
   'docs/roadmaps/done',
@@ -333,18 +334,31 @@ function trackfwRulesBlock() {
 ## trackfw — Governance Rules
 
 This project uses **trackfw** for AI-native delivery governance.
-Chain: \`ADR → REQ → ROADMAP\` · States: \`backlog / wip / blocked / done / abandoned\`
+Chain: \`ADR → REQ → ROADMAP\` · States: \`backlog / analyzing / wip / blocked / done / abandoned\`
+
+\`\`\`
+backlog     → roadmaps aguardando execução
+analyzing   → roadmap em análise/validação pré-wip
+wip         → roadmap em execução ativa (máximo 1)
+blocked     → impedido por dependência ou decisão
+done        → concluído e validado
+abandoned   → descontinuado ou superado
+\`\`\`
 
 ### Agent Protocol
 1. **Before starting:** run \`trackfw context\` · read \`docs/agents-working-context.md\`
 2. **After finishing:** update \`docs/agents-working-context.md\` with what changed
 3. **Before PR:** \`trackfw validate\` must pass
+4. **Ciclo de vida do ML — obrigatório:**
+   - Ao **iniciar** um ML: edite o roadmap alterando \`**Status:** ⬜ Pendente\` → \`**Status:** 🔄 Em andamento\` e faça commit do roadmap.
+   - Ao **concluir** um ML: edite o roadmap alterando \`**Status:** 🔄 Em andamento\` → \`**Status:** ✅ Concluído\` e inclua essa mudança no commit do ML.
+   - Ao **analisar** um roadmap antes de iniciar: mova o arquivo de \`backlog/\` para \`analyzing/\`; só mova para \`wip/\` ao começar a codificar de fato.
 
 ### Key Commands
 - \`trackfw context\` — current governance state (always run first)
 - \`trackfw status\` — all artifacts and states
 - \`trackfw validate\` — governance consistency check
-- \`trackfw roadmap move <name> <state>\` — transition roadmap state
+- \`trackfw roadmap move <name> <state>\` — transition roadmap state (\`backlog\`, \`analyzing\`, \`wip\`, \`blocked\`, \`done\`, \`abandoned\`)
 - \`trackfw serve\` — live Kanban board at http://localhost:4080
 
 ### Attention Signal (when you need user input during a task)
@@ -446,14 +460,17 @@ function generateClaudeMD(cfg) {
   content += '<!-- Describe what this project does in 2-3 sentences. -->\n\n'
 
   content += '## Governance chain\n\n'
-  content += '```\nADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned\n```\n\n'
+  content += '```\nADR → REQ → ROADMAP → backlog / analyzing / wip / blocked / done / abandoned\n```\n\n'
 
   content += '## Agent rules (mandatory)\n\n'
   content += 'These rules apply to every agent or AI assistant working in this project:\n\n'
   content += '1. **Never start coding without a REQ and a ROADMAP.** If none exists, create them first.\n'
   content += '2. **Use `/trackfw:implement <req-slug>` to start any implementation.** This skill orchestrates the full flow automatically: finds or generates the roadmap, moves it to `wip/`, executes each ML, updates the roadmap, and moves to `done/`.\n'
   content += '3. **Only one roadmap in `wip/` at a time.** Before starting a new one, complete or move to `blocked/` the current one.\n'
-  content += '4. **Update the roadmap after every ML.** Mark completed MLs as `✅ Concluído` in the roadmap file before moving to the next.\n'
+  content += '4. **Ciclo de vida do ML — obrigatório:**\n'
+  content += '   - Ao **iniciar** um ML: edite o roadmap alterando `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` e faça commit do roadmap.\n'
+  content += '   - Ao **concluir** um ML: edite o roadmap alterando `**Status:** 🔄 Em andamento` → `**Status:** ✅ Concluído` e inclua essa mudança no commit do ML.\n'
+  content += '   - Ao **analisar** um roadmap antes de iniciar: mova o arquivo de `backlog/` para `analyzing/`; só mova para `wip/` ao começar a codificar de fato.\n'
   content += '5. **Run `trackfw validate` before every commit.** Zero violations required.\n'
   content += '6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n\n'
 
@@ -635,9 +652,9 @@ trackfw não está instalado. Instale com uma das opções:
 
 O formato esperado é: \`<nome-do-roadmap> <estado>\`
 
-Estados válidos: \`backlog\`, \`wip\`, \`blocked\`, \`done\`, \`abandoned\`
+Estados válidos: \`backlog\`, \`analyzing\`, \`wip\`, \`blocked\`, \`done\`, \`abandoned\`
 
-Exemplo: \`/trackfw:move meu-roadmap wip\`
+Exemplo: \`/trackfw:move meu-roadmap analyzing\`
 
 Se o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:
 trackfw não está instalado. Instale com:
@@ -901,7 +918,7 @@ function generateClaudeCommandsForce(rootDir) {
     'req.md': `Execute o seguinte comando bash: \`trackfw req new "$ARGUMENTS"\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
     'validate.md': `Execute o seguinte comando bash: \`trackfw validate\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
     'status.md': `Execute o seguinte comando bash: \`trackfw status\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
-    'move.md': `Execute o seguinte comando bash: \`trackfw roadmap move $ARGUMENTS\`\n\nO formato esperado é: \`<nome-do-roadmap> <estado>\`\nEstados válidos: \`backlog\`, \`wip\`, \`blocked\`, \`done\`, \`abandoned\`\n\nSe o comando falhar, instale trackfw com:\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh`,
+    'move.md': `Execute o seguinte comando bash: \`trackfw roadmap move $ARGUMENTS\`\n\nO formato esperado é: \`<nome-do-roadmap> <estado>\`\nEstados válidos: \`backlog\`, \`analyzing\`, \`wip\`, \`blocked\`, \`done\`, \`abandoned\`\n\nSe o comando falhar, instale trackfw com:\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh`,
   }
 
   for (const [filename, content] of Object.entries(commands)) {

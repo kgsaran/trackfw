@@ -61,10 +61,11 @@ function scan(rootDir) {
     for (const sub of agentDirs) {
       const wipDir = path.join(roadmapRoot, sub, 'wip');
       const backlogDir = path.join(roadmapRoot, sub, 'backlog');
+      const analyzingDir = path.join(roadmapRoot, sub, 'analyzing');
       const doneDir = path.join(roadmapRoot, sub, 'done');
       const abandonedDir = path.join(roadmapRoot, sub, 'abandoned');
       const blockedDir = path.join(roadmapRoot, sub, 'blocked');
-      if (isDir(wipDir) || isDir(backlogDir) || isDir(doneDir) || isDir(abandonedDir) || isDir(blockedDir)) {
+      if (isDir(wipDir) || isDir(backlogDir) || isDir(analyzingDir) || isDir(doneDir) || isDir(abandonedDir) || isDir(blockedDir)) {
         byAgent = true;
         agents.push(sub);
       }
@@ -73,13 +74,13 @@ function scan(rootDir) {
       r.roadmapNamespacing = 'by_agent';
       r.agents = agents;
       for (const agent of agents) {
-        for (const state of ['backlog', 'wip', 'blocked', 'done', 'abandoned']) {
+        for (const state of ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']) {
           r.roadmapCount += countMD(path.join(roadmapRoot, agent, state));
         }
       }
     } else {
       r.roadmapNamespacing = 'flat';
-      for (const state of ['backlog', 'wip', 'blocked', 'done', 'abandoned']) {
+      for (const state of ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']) {
         r.roadmapCount += countMD(path.join(roadmapRoot, state));
       }
     }
