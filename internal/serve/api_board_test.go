@@ -16,7 +16,7 @@ func TestBoardHandler_FlatMode(t *testing.T) {
 	base := t.TempDir()
 
 	// Criar estrutura flat: base/wip/roadmap1.md, base/backlog/roadmap2.md, base/done/roadmap3.md
-	states := []string{"wip", "backlog", "blocked", "done", "abandoned"}
+	states := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
 	for _, s := range states {
 		if err := os.MkdirAll(filepath.Join(base, s), 0755); err != nil {
 			t.Fatalf("MkdirAll %s: %v", s, err)
@@ -112,7 +112,10 @@ func TestBoardHandler_FlatMode(t *testing.T) {
 		}
 	}
 
-	// blocked e abandoned devem estar vazios
+	// analyzing, blocked e abandoned devem estar vazios
+	if len(resp.Columns["analyzing"]) != 0 {
+		t.Errorf("esperado 0 itens em analyzing, obteve %d", len(resp.Columns["analyzing"]))
+	}
 	if len(resp.Columns["blocked"]) != 0 {
 		t.Errorf("esperado 0 itens em blocked, obteve %d", len(resp.Columns["blocked"]))
 	}
@@ -210,7 +213,7 @@ func TestBoardHandler_EmptyBoard(t *testing.T) {
 	base := t.TempDir()
 
 	// Criar as pastas de estado mas sem nenhum arquivo .md
-	states := []string{"wip", "backlog", "blocked", "done", "abandoned"}
+	states := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
 	for _, s := range states {
 		if err := os.MkdirAll(filepath.Join(base, s), 0755); err != nil {
 			t.Fatalf("MkdirAll %s: %v", s, err)
