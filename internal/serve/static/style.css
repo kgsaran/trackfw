@@ -61,6 +61,11 @@
   color: #374151;
 }
 
+.badge-analyzing {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
 .badge-blocked {
   background-color: #fee2e2;
   color: #991b1b;

@@ -27,6 +27,7 @@ let _attentionDismissed = localStorage.getItem('trackfw_attention_dismissed') ||
 const STATE_COLORS = {
   wip:       '#3b82f6',
   backlog:   '#6b7280',
+  analyzing: '#f59e0b',
   blocked:   '#ef4444',
   done:      '#22c55e',
   abandoned: '#78716c',
@@ -48,7 +49,7 @@ function truncate(str, max = 30) {
 
 function stateLabel(state) {
   const labels = {
-    wip: 'WIP', backlog: 'BACKLOG', blocked: 'BLOCKED', done: 'DONE', abandoned: 'ABANDONED',
+    wip: 'WIP', backlog: 'BACKLOG', analyzing: 'Analisando', blocked: 'BLOCKED', done: 'DONE', abandoned: 'ABANDONED',
   };
   return labels[state] || state.toUpperCase();
 }
@@ -102,9 +103,9 @@ function switchView(view) {
 
 // ─── View: Board / Kanban ─────────────────────────────────────────────────────
 
-const COLUMNS_ORDER = ['backlog', 'wip', 'blocked', 'done', 'abandoned'];
+const COLUMNS_ORDER = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned'];
 const COLUMNS_LABEL = {
-  wip: 'WIP', backlog: 'Backlog', blocked: 'Blocked', done: 'Done', abandoned: 'Abandoned',
+  wip: 'WIP', backlog: 'Backlog', analyzing: 'Analisando', blocked: 'Blocked', done: 'Done', abandoned: 'Abandoned',
 };
 
 async function loadBoard() {
