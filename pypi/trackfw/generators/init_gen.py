@@ -39,13 +39,14 @@ GOV_DIRS_FLAT = [
     'docs/adr',
     'docs/req',
     'docs/roadmaps/backlog',
+    'docs/roadmaps/analyzing',
     'docs/roadmaps/wip',
     'docs/roadmaps/blocked',
     'docs/roadmaps/done',
     'docs/roadmaps/abandoned',
 ]
 
-ROADMAP_STATES = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
+ROADMAP_STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
 
 
 # ---------------------------------------------------------------------------
@@ -209,16 +210,29 @@ def _trackfw_rules_block() -> str:
         RULES_START + '\n'
         '## trackfw — Governance Rules\n\n'
         'This project uses **trackfw** for AI-native delivery governance.\n'
-        'Chain: `ADR → REQ → ROADMAP` · States: `backlog / wip / blocked / done / abandoned`\n\n'
+        'Chain: `ADR → REQ → ROADMAP` · States: `backlog / analyzing / wip / blocked / done / abandoned`\n\n'
+        '### Roadmap State Lifecycle\n'
+        '```\n'
+        'backlog     → roadmaps awaiting execution\n'
+        'analyzing   → roadmap under analysis/validation before wip\n'
+        'wip         → roadmap in active execution (max 1)\n'
+        'blocked     → blocked by dependency or decision\n'
+        'done        → completed and validated\n'
+        'abandoned   → discontinued (requires reason + successor)\n'
+        '```\n\n'
         '### Agent Protocol\n'
         '1. **Before starting:** run `trackfw context` · read `docs/agents-working-context.md`\n'
         '2. **After finishing:** update `docs/agents-working-context.md` with what changed\n'
-        '3. **Before PR:** `trackfw validate` must pass\n\n'
+        '3. **Before PR:** `trackfw validate` must pass\n'
+        '4. **ML lifecycle — mandatory:**\n'
+        '   - When **starting** a ML: edit the roadmap changing `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` and commit the roadmap.\n'
+        '   - When **completing** a ML: edit the roadmap changing `**Status:** 🔄 Em andamento` → `**Status:** ✅ Concluído` and include this change in the ML commit.\n'
+        '   - When **analyzing** a roadmap before starting: move the file from `backlog/` to `analyzing/`; only move to `wip/` when actually starting to code.\n\n'
         '### Key Commands\n'
         '- `trackfw context` — current governance state (always run first)\n'
         '- `trackfw status` — all artifacts and states\n'
         '- `trackfw validate` — governance consistency check\n'
-        '- `trackfw roadmap move <name> <state>` — transition roadmap state\n'
+        '- `trackfw roadmap move <name> <state>` — transition roadmap state (valid: backlog, analyzing, wip, blocked, done, abandoned)\n'
         '- `trackfw serve` — live Kanban board at http://localhost:4080\n\n'
         '### Attention Signal (when you need user input during a task)\n'
         'Write `docs/roadmaps/.trackfw-attention.json`:\n'
