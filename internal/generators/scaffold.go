@@ -147,47 +147,6 @@ A cadeia obrigatória é: **ADR → REQ → ROADMAP → backlog/wip/blocked/done
 
 ---
 
-## Cadeia de governança
-
-` + "```" + `
-ADR         → registra decisões técnicas e arquiteturais
-REQ         → especifica requisitos e critérios de aceite
-ROADMAP     → detalha implementação em microlotes (MLs) por Waves
-backlog     → roadmaps aguardando execução
-analyzing   → roadmap em análise/validação pré-wip
-wip         → roadmap em execução ativa (máximo 1)
-blocked     → impedido por dependência ou decisão externa
-done        → concluído e validado
-abandoned   → descontinuado (exige motivo)
-` + "```" + `
-
----
-
-## Slash commands disponíveis
-
-| Comando | Quando usar |
-|---|---|
-| ` + "`/trackfw:implement <req>`" + ` | **Início aqui** — orquestra o fluxo completo de implementação |
-| ` + "`/trackfw:adr <título>`" + ` | Antes de qualquer decisão arquitetural |
-| ` + "`/trackfw:req <título>`" + ` | Antes de qualquer implementação |
-| ` + "`/trackfw:roadmap <req>`" + ` | Gera roadmap em microlotes a partir de uma REQ |
-| ` + "`/trackfw:move <nome> <estado>`" + ` | Move roadmap entre estados manualmente |
-| ` + "`/trackfw:validate`" + ` | Valida governança do projeto |
-| ` + "`/trackfw:status`" + ` | Exibe o que está em execução |
-
----
-
-## Estratégia de microlotes (ML)
-
-Cada roadmap é dividido em **Waves** com **MLs paralelos**:
-
-- MLs dentro da mesma Wave são **independentes** (arquivos distintos, sem conflito)
-- Cada ML deve ser autocontido: arquivos exatos, ações exatas, critérios de aceite mensuráveis
-- Avance para a próxima Wave somente após todos os MLs da Wave atual estarem ✅
-- Protocolo por ML: implementar → validar (build + testes) → atualizar roadmap → commitar
-
----
-
 ## Protocolo de conclusão de cada ML
 
 ` + "```" + `
@@ -395,14 +354,7 @@ Explique a arquitetura com uma metáfora de negócio:
 - **Backend** = a cozinha: onde as regras de negócio acontecem, nunca exposta diretamente
 - **Banco de dados** = a despensa: onde os dados ficam guardados, acessada só pela cozinha"
 
-Reforce as regras obrigatórias:
-- **Nunca dados em memória** (arrays, variáveis globais): sempre banco + ORM
-- **Docker + .env desde o dia 1**: facilita deploys e evita problemas de ambiente
-- **Auth desde o início**: nunca deixe para depois — refatorar auth é muito custoso
-- **Validação em 2 camadas**: frontend (UX) + backend (segurança)
-- **API-first**: defina o contrato OpenAPI antes de codar frontend e backend juntos
-- **Red team wave**: reserve 1 wave de segurança no roadmap para revisar vulnerabilidades
-- **Cobertura mínima de testes**: 60% (protótipo) / 80% (produção)
+Reforce as **Architecture Directives** já injetadas no CLAUDE.md deste projeto: separação em 3 camadas sem dados em memória (sempre DB + ORM), auth + Docker + .env desde o dia 1, validação em 2 camadas, contrato OpenAPI antes de codar, wave de segurança em todo roadmap e cobertura mínima de testes (60% protótipo / 80% produção).
 
 ---
 
