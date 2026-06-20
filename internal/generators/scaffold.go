@@ -538,6 +538,10 @@ wip_limit: %d
 wip_by_squad: %s
 require_req_in_commit: %s
 
+# validator rules (off / warning / error)
+rules:
+  branch_has_wip_roadmap: error
+
 # governance paths (edit to match your project structure)
 adr_dirs:
   - docs/adr

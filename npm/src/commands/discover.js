@@ -211,9 +211,30 @@ function installHook(framework, rootDir) {
     if (fs.existsSync(pkgJson)) {
       installHusky(rootDir);
     } else {
+      // Node.js disponível mas sem package.json → husky via npx
+      try {
+        execSync('node --version', { stdio: 'pipe' });
+        installHuskyNPX(rootDir);
+        return;
+      } catch (_) {}
+      // fallback: lefthook
       installLefthook(rootDir);
     }
   }
+}
+
+function installHuskyNPX(rootDir) {
+  console.log('ℹ node detected — using husky via npx (no package.json required)');
+  try {
+    execSync('npx husky init', { cwd: rootDir, stdio: 'inherit' });
+  } catch (_) {
+    console.log('⚠ npx husky init failed — install manually: npx husky init');
+  }
+  const huskyDir = path.join(rootDir, '.husky');
+  fs.mkdirSync(huskyDir, { recursive: true });
+  const hookPath = path.join(huskyDir, 'pre-commit');
+  fs.appendFileSync(hookPath, '\nscripts/trackfw-validate.sh\n', { mode: 0o755 });
+  console.log('✓ trackfw entry added to .husky/pre-commit');
 }
 
 function installHusky(rootDir) {

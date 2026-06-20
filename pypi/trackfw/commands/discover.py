@@ -5,6 +5,7 @@ Espelha npm/src/commands/discover.js e internal/discover/discover.go em Python p
 """
 
 import os
+import shutil
 import sys
 import stat
 import datetime
@@ -299,6 +300,8 @@ def _install_hook(framework: str, root_dir: str) -> None:
         pkg_json = os.path.join(root_dir, "package.json")
         if os.path.isfile(pkg_json):
             _install_husky(root_dir)
+        elif shutil.which("node"):
+            _install_husky_npx(root_dir)
         else:
             _install_lefthook(root_dir)
 
@@ -323,6 +326,24 @@ def _install_husky(root_dir: str) -> None:
             f.write("\nscripts/trackfw-validate.sh\n")
     except subprocess.CalledProcessError as exc:
         print(f"Aviso: falha ao instalar husky: {exc}")
+
+
+def _install_husky_npx(root_dir: str) -> None:
+    """Instala husky via npx sem precisar de package.json."""
+    print("ℹ node detected — using husky via npx (no package.json required)")
+    try:
+        subprocess.run(["npx", "husky", "init"], cwd=root_dir, check=False)
+        print("✓ husky initialized via npx")
+    except Exception:
+        print("⚠ npx husky init failed — install manually: npx husky init")
+
+    husky_dir = os.path.join(root_dir, ".husky")
+    os.makedirs(husky_dir, exist_ok=True)
+    hook_path = os.path.join(husky_dir, "pre-commit")
+    with open(hook_path, "a", encoding="utf-8") as f:
+        f.write("\nscripts/trackfw-validate.sh\n")
+    os.chmod(hook_path, 0o755)
+    print("✓ trackfw entry added to .husky/pre-commit")
 
 
 def _install_lefthook(root_dir: str) -> None:

@@ -735,6 +735,33 @@ function validateFilenameUniqueness() {
   return violations
 }
 
+// validateBranchHasWIPRoadmap — verifica que branch feat/fix/refactor tem ao menos um roadmap em wip/
+function validateBranchHasWIPRoadmap() {
+  const { execSync } = require('child_process')
+  let branch
+  try {
+    branch = execSync('git symbolic-ref --short HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+  } catch {
+    return [] // não é git repo ou HEAD detached
+  }
+  if (!branch.startsWith('feat/') && !branch.startsWith('fix/') && !branch.startsWith('refactor/')) {
+    return []
+  }
+
+  const cfg = config.load()
+  const wipDirs = resolveWIPDirs(cfg)
+  let total = 0
+  for (const wipDir of wipDirs) {
+    const files = listDir(wipDir).filter(f => f.endsWith('.md'))
+    total += files.length
+  }
+
+  if (total === 0) {
+    return [`branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ — create governance artifacts first:\n  trackfw req new "title"\n  trackfw roadmap new "title"\n  trackfw roadmap move <name> wip`]
+  }
+  return []
+}
+
 // _itemMeta: mapa de message → { rule, file } para enriquecer saída JSON.
 // Populado em applyRule e nos pushs diretos do validateUnfiltered.
 // Permanece em memória apenas durante a execução de uma chamada validate*.
@@ -816,6 +843,7 @@ async function validateUnfiltered() {
   applyRule('ref_targets_exist',    validateRefTargetsExist(),             violations, warnings)
   applyRule('folder_status',        validateFolderStatusCoherence(),       violations, warnings)
   applyRule('filename_uniqueness',  validateFilenameUniqueness(),          violations, warnings)
+  applyRule('branch_has_wip_roadmap', validateBranchHasWIPRoadmap(),      violations, warnings)
   applyRule('blocked_by_draft_adr', validateREQsNotBlockedByDraftADRs(),  violations, warnings)
 
   // Regras configuráveis via applyRule (popula _itemMeta automaticamente)
@@ -979,6 +1007,7 @@ module.exports = {
   validateRefTargetsExist,
   validateFolderStatusCoherence,
   validateFilenameUniqueness,
+  validateBranchHasWIPRoadmap,
   // novas funções ML-2B
   contentHasMarker,
   ruleSeverity,
