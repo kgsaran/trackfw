@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node
 
-> Criado em: 2026-06-20 | Status: 🔄 WIP
+> Criado em: 2026-06-20 | Status: ✅ Done
 
 REQ: REQ-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md
 
@@ -38,7 +38,7 @@ Dois problemas a resolver:
 > Dependências: nenhuma
 
 ### ML-1A — Regra `branch_has_wip_roadmap` no validator Go
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/validator/validator.go` — nova função `validateBranchHasWIPRoadmap()` + chamada em `ValidateUnfiltered()`
 
@@ -65,7 +65,7 @@ go test ./internal/validator/...
 ---
 
 ### ML-1B — Regra `branch_has_wip_roadmap` no CLI Node.js
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `npm/src/validator.js` (ou equivalente) — nova função `validateBranchHasWIPRoadmap()`
 
@@ -91,7 +91,7 @@ cd npm && npm test
 ---
 
 ### ML-1C — Regra `branch_has_wip_roadmap` no CLI Python
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `pypi/trackfw/validator.py` (ou equivalente) — nova função `validate_branch_has_wip_roadmap()`
 
@@ -116,7 +116,7 @@ cd pypi && python -m pytest
 ---
 
 ### ML-1D — Atualizar `trackfwRulesBlock()` com protocolo REQ→Roadmap
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` — função `trackfwRulesBlock()`
 
@@ -147,7 +147,7 @@ go test ./internal/generators/...
 > Dependências: independente da Wave 1 (pode rodar em paralelo)
 
 ### ML-2A — Detecção de Node.js como fallback para husky (Go)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/discover/discover.go` — função `installHook()` e nova `installHuskyNPX()`
 
@@ -181,7 +181,7 @@ go test ./internal/discover/...
 ---
 
 ### ML-2B — Fallback Node.js no CLI Node.js
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `npm/src/discover.js` (ou equivalente) — função `installHook()`
 
@@ -203,7 +203,7 @@ cd npm && npm test
 ---
 
 ### ML-2C — Fallback Node.js no CLI Python
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `pypi/trackfw/discover.py` (ou equivalente) — função `install_hook()`
 
@@ -228,7 +228,7 @@ cd pypi && python -m pytest
 > Dependências: Wave 1 e Wave 2 completas
 
 ### ML-3A — Testes de integração da regra `branch_has_wip_roadmap`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/validator/validator_test.go` (ou arquivo de teste existente)
 
@@ -249,7 +249,7 @@ go test ./internal/validator/... -v -run TestValidateBranchHasWIPRoadmap
 ---
 
 ### ML-3B — Atualizar VISION.md com v2.7.0 e nova regra
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `docs/visao-projeto/VISION.md`
 
