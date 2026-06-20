@@ -2,12 +2,34 @@ package validator
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
 )
+
+// initGitRepo inicializa um repo git no diretório e cria+faz checkout de uma branch.
+func initGitRepo(t *testing.T, dir, branch string) {
+	t.Helper()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "test")
+	// commit vazio para criar HEAD
+	run("commit", "--allow-empty", "-m", "init")
+	if branch != "main" && branch != "master" {
+		run("checkout", "-b", branch)
+	}
+}
 
 // helper para criar diretórios de fixtures
 func mkdirs(t *testing.T, base string, dirs ...string) {
@@ -815,5 +837,82 @@ adr_dirs:
 	}
 	if hasViolation(violations, "ADR-001") {
 		t.Errorf("ADR-001 não deveria ser orphan — está referenciado na REQ by_agent; obteve: %v", violations)
+	}
+}
+
+// TestValidateBranchHasWIPRoadmap_Violation — feat/ sem wip/ roadmap → violation
+func TestValidateBranchHasWIPRoadmap_Violation(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "feat/my-feature")
+	mkdirs(t, dir, "docs/roadmaps/wip") // wip/ existe mas vazio
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(violations, "no roadmap is in wip/") {
+		t.Errorf("esperava violation de wip vazio, obteve: %v", violations)
+	}
+}
+
+// TestValidateBranchHasWIPRoadmap_Pass — feat/ com roadmap em wip/ → sem violation
+func TestValidateBranchHasWIPRoadmap_Pass(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "feat/my-feature")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-001.md", "REQ: REQ-001\n## Acceptance Criteria\n- [ ] ok\n")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) > 0 {
+		t.Errorf("não esperava violations com roadmap em wip, obteve: %v", violations)
+	}
+}
+
+// TestValidateBranchHasWIPRoadmap_MainBranch — branch main → skip, sem violation
+func TestValidateBranchHasWIPRoadmap_MainBranch(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main") // permanece em main
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) > 0 {
+		t.Errorf("branch main não deve gerar violation, obteve: %v", violations)
+	}
+}
+
+// TestValidateBranchHasWIPRoadmap_RuleOff — regra desativada via config → silencioso
+func TestValidateBranchHasWIPRoadmap_RuleOff(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "fix/something")
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\nrules:\n  branch_has_wip_roadmap: off\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	// com regra "off" não deve aparecer nem como violation nem como warning
+	if hasViolation(violations, "no roadmap is in wip/") || hasWarning(warnings, "no roadmap is in wip/") {
+		t.Errorf("regra off deve suprimir a mensagem, obteve violations=%v warnings=%v", violations, warnings)
 	}
 }
