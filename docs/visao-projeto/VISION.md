@@ -1,6 +1,6 @@
 # trackfw — Project Vision
 
-> Version: v2.7.0 | Date: 2026-06-20
+> Version: v2.8.0 | Date: 2026-06-20
 
 ---
 
@@ -150,6 +150,21 @@ The interactive wizard asks about your project's stack and generates the appropr
 ? Backend stack?      → Go / Java / Node / Python / None
 ? Package manager?    → npm / pnpm / yarn / bun / N/A
 ? Git hooks?          → husky / lefthook / none (auto-detected: husky via npx when Node.js present but lefthook unavailable)
+```
+
+After `init`, `trackfw update` automatically injects **attention hooks** into every detected AI agent CLI config. When an agent executes a tool call, `.trackfw-attention.json` is written instantly — the `trackfw serve` board shows a live banner without any agent behavioral change:
+
+| CLI | Hook event | Config file |
+|---|---|---|
+| Claude Code | `PreToolUse[AskUserQuestion]` / `PostToolUse` | `.claude/settings.json` |
+| Codex CLI | `PreToolUse` / `PostToolUse` | `.codex/hooks.json` |
+| Gemini CLI | `BeforeTool` / `AfterTool` | `.gemini/settings.json` |
+| Kiro | `PreToolUse` / `PostToolUse` | `.kiro/hooks/trackfw-attention.json` |
+| GitHub Copilot | `preToolUse` / `postToolUse` | `.github/hooks/trackfw-attention.json` |
+| Cursor | `preToolUse` / `postToolUse` | `.cursor/hooks.json` |
+| Windsurf | instruction only (no generic PreToolUse) | `.windsurfrules` |
+
+```
 ? CI system?          → GitHub Actions / GitLab CI / None
 ```
 
@@ -224,6 +239,7 @@ The Node.js and Python CLIs are **native reimplementations** — not wrappers ar
 | v2.5 | trace_id_field (bidirectional REQ↔ROADMAP), by_agent namespacing, salvaguarda one-sided | ✅ Done |
 | v2.6 | req_has_adr / req_has_roadmap / blocked_has_req configurable | ✅ Done |
 | v2.7 | `branch_has_wip_roadmap` rule (gate pré-trabalho); Node.js → husky fallback (Windows/corp); agent protocol in rules block | ✅ Done |
+| v2.8 | Attention hooks auto-injected for 6 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor); board banner fires on tool call without agent behavioral change | ✅ Done |
 | vNext | GitHub Actions official, trackfw serve UX, multi-repo support | 🔄 Planned |
 
 ---

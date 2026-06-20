@@ -1966,3 +1966,19 @@ Testes (7 novos em `internal/validator/validator_improvements_test.go`):
 
 **Comportamento:** 3 categorias de update — (1) marker-delimited via InjectRulesDetected, (2) trackfw-owned force overwrite, (3) shared hooks com inject cirúrgico.
 **Branch:** `feat/kanban-roadmap-progress` | Roadmap: `done/trackfw-update-command-2026-06-18.md`
+
+---
+
+## Sessão 2026-06-20 — Apolo (CONCLUÍDO)
+
+**Tarefa:** Implementar sistema de attention hooks do trackfw no CLI Go.
+
+**Entregue:**
+- `internal/generators/hooks.go` (novo) — `InjectHooksDetected(cwd)` detecta CLIs presentes e injeta hooks; injetores por CLI: `injectClaudeHooks` (merge idempotente em `.claude/settings.json`), `injectCodexHooks` (`.codex/hooks.json`), `injectGeminiHooks` (`.gemini/settings.json`), `injectKiroHooks` (`.kiro/hooks/trackfw-attention.json` — arquivo dedicado), `injectCopilotHooks` (`.github/hooks/trackfw-attention.json` — arquivo dedicado), `injectCursorHooks` (`.cursor/hooks.json`); helpers `mergeClaudeHookArray` e `mergeSimpleCommandArray` para deduplicação por command.
+- `internal/generators/scaffold.go` — função `generateAttentionScripts()` gera `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh` (permissão 0755); chamada adicionada em `Scaffold()` após `generateValidateScript`.
+- `internal/generators/update.go` — passo 1b (`InjectHooksDetected`) adicionado após passo 1; `generateAttentionScripts()` chamada junto com validate script.
+- `internal/commands/discover.go` — `generators.InjectHooksDetected(cwd)` invocado após `InjectRulesDetected` no fluxo `--init`.
+- `internal/generators/agentfiles.go` — nota Windsurf adicionada na seção `### Attention Signal` do rules block.
+
+**Resultado:** `go build ./...` limpo | `go vet ./...` limpo | `go test ./...` 100% verde.
+**Branch:** `feat/attention-hooks-agent-clis`

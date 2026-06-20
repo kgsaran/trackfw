@@ -51,6 +51,10 @@ func Scaffold(cfg Config) error {
 		return err
 	}
 
+	if err := generateAttentionScripts(); err != nil {
+		return err
+	}
+
 	if err := generateCIWorkflow(cfg); err != nil {
 		return err
 	}
@@ -572,6 +576,75 @@ func generateValidateScript(cfg Config) error {
 		return fmt.Errorf("writing validate script: %w", err)
 	}
 	fmt.Printf("  ✓ %s\n", path)
+	return nil
+}
+
+func generateAttentionScripts() error {
+	if err := os.MkdirAll("scripts", 0755); err != nil {
+		return err
+	}
+
+	signalScript := `#!/usr/bin/env bash
+# trackfw attention signal — PreToolUse/BeforeTool hook
+# Writes .trackfw-attention.json so trackfw serve board shows a banner.
+# Receives JSON via stdin with tool_name and tool_input.
+set -euo pipefail
+
+INPUT=$(cat)
+
+# No-op in projects without trackfw
+[ -f "trackfw.yaml" ] || exit 0
+
+# Extract message from tool input
+if command -v jq &>/dev/null; then
+  TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""')
+  MSG=$(echo "$INPUT" | jq -r '(.tool_input.question // .tool_input.command // ("Agent executing: " + (.tool_name // "unknown"))) | .[0:300]')
+else
+  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null || echo "")
+  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
+fi
+
+# Get roadmap_dir from trackfw.yaml (default: docs/roadmaps)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
+ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+mkdir -p "$ROADMAP_DIR"
+printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\n' \
+  "$(echo "$TOOL" | sed 's/"/\\"/g')" \
+  "$(echo "$MSG"  | sed 's/"/\\"/g; s/$//' | tr -d '\n')" \
+  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-attention.json"
+
+exit 0
+`
+
+	cleanupScript := `#!/usr/bin/env bash
+# trackfw attention cleanup — PostToolUse/AfterTool hook
+# Removes .trackfw-attention.json after tool call completes.
+set -euo pipefail
+
+[ -f "trackfw.yaml" ] || exit 0
+
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
+ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
+
+rm -f "$ROADMAP_DIR/.trackfw-attention.json"
+exit 0
+`
+
+	signalPath := filepath.Join("scripts", "trackfw-attention-signal.sh")
+	if err := os.WriteFile(signalPath, []byte(signalScript), 0755); err != nil {
+		return fmt.Errorf("writing attention signal script: %w", err)
+	}
+	fmt.Printf("  ✓ %s\n", signalPath)
+
+	cleanupPath := filepath.Join("scripts", "trackfw-attention-cleanup.sh")
+	if err := os.WriteFile(cleanupPath, []byte(cleanupScript), 0755); err != nil {
+		return fmt.Errorf("writing attention cleanup script: %w", err)
+	}
+	fmt.Printf("  ✓ %s\n", cleanupPath)
+
 	return nil
 }
 

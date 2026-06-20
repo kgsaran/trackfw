@@ -5,6 +5,7 @@ Depende apenas de stdlib.
 """
 
 import os
+import stat
 from datetime import date, timedelta
 
 
@@ -82,6 +83,7 @@ def scaffold(cwd: str, opts: dict) -> None:
     _write_trackfw_yaml(cwd, opts)
     _write_example_adr(cwd, opts)
     generate_claude_commands(cwd)
+    _generate_attention_scripts(cwd)
     print_architect_next_steps(cwd)
 
 
@@ -531,6 +533,66 @@ def generate_claude_commands(cwd: str) -> None:
         print(f'  ✓ .claude/commands/trackfw/ ({created} slash commands criados, {skipped} já existiam)')
     else:
         print(f'  ✓ .claude/commands/trackfw/ ({created} slash commands)')
+
+
+_ATTENTION_SIGNAL_SH = r"""#!/usr/bin/env bash
+# trackfw attention signal — PreToolUse/BeforeTool hook
+# Writes .trackfw-attention.json so trackfw serve board shows a banner.
+set -euo pipefail
+
+INPUT=$(cat)
+[ -f "trackfw.yaml" ] || exit 0
+
+if command -v jq &>/dev/null; then
+  TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""')
+  MSG=$(echo "$INPUT" | jq -r '(.tool_input.question // .tool_input.command // ("Agent executing: " + (.tool_name // "unknown"))) | .[0:300]')
+else
+  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null || echo "")
+  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
+fi
+
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
+ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+mkdir -p "$ROADMAP_DIR"
+printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\n' \
+  "$(echo "$TOOL" | sed 's/"/\\"/g')" \
+  "$(echo "$MSG"  | sed 's/"/\\"/g; s/$//' | tr -d '\n')" \
+  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-attention.json"
+
+exit 0
+"""
+
+_ATTENTION_CLEANUP_SH = r"""#!/usr/bin/env bash
+# trackfw attention cleanup — PostToolUse/AfterTool hook
+set -euo pipefail
+
+[ -f "trackfw.yaml" ] || exit 0
+
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
+ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
+
+rm -f "$ROADMAP_DIR/.trackfw-attention.json"
+exit 0
+"""
+
+
+def _generate_attention_scripts(cwd: str) -> None:
+    """Gera scripts shell de attention signal/cleanup em scripts/."""
+    scripts_dir = os.path.join(cwd, 'scripts')
+    os.makedirs(scripts_dir, exist_ok=True)
+
+    signal_path = os.path.join(scripts_dir, 'trackfw-attention-signal.sh')
+    with open(signal_path, 'w', encoding='utf-8') as f:
+        f.write(_ATTENTION_SIGNAL_SH.lstrip('\n'))
+    os.chmod(signal_path, 0o755)
+
+    cleanup_path = os.path.join(scripts_dir, 'trackfw-attention-cleanup.sh')
+    with open(cleanup_path, 'w', encoding='utf-8') as f:
+        f.write(_ATTENTION_CLEANUP_SH.lstrip('\n'))
+    os.chmod(cleanup_path, 0o755)
 
 
 def print_architect_next_steps(cwd: str) -> None:

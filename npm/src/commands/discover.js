@@ -418,6 +418,13 @@ cmd.action((opts) => {
         console.log(`⚠ agent rules inject partial: ${e.message}`);
       }
       try {
+        const { injectHooksDetected } = require('../generators/hooks');
+        injectHooksDetected(cwd);
+        console.log('✓ agent hooks injected');
+      } catch (e) {
+        console.warn(`⚠ agent hooks inject partial: ${e.message}`);
+      }
+      try {
         const generators = require('../generators/init')
         generators.printArchitectNextSteps(cwd)
       } catch (e) {}

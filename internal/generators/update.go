@@ -77,9 +77,20 @@ func Update(cwd string) error {
 		fmt.Println("  ✓ agent rules atualizadas")
 	}
 
+	// 1b. Agent hooks (attention signal)
+	if err := InjectHooksDetected(cwd); err != nil {
+		fmt.Printf("  ⚠ agent hooks: %v\n", err)
+	} else {
+		fmt.Println("  ✓ agent hooks atualizados")
+	}
+
 	// 2. Validate script (categoria 2 — trackfw-owned, overwrite seguro)
 	if err := generateValidateScript(cfg); err != nil {
 		fmt.Printf("  ⚠ validate script: %v\n", err)
+	}
+
+	if err := generateAttentionScripts(); err != nil {
+		fmt.Printf("  ⚠ attention scripts: %v\n", err)
 	}
 
 	// 3. CI workflow (categoria 2 — trackfw-owned, overwrite seguro)

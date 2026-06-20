@@ -480,6 +480,12 @@ def _cmd_discover(args):
         except Exception as e:
             print(f"Aviso: injecao parcial de regras de agentes: {e}")
         try:
+            from trackfw.generators.hooks import inject_hooks_detected
+            inject_hooks_detected(cwd)
+            print('  ✓ agent hooks atualizados')
+        except Exception as e:
+            print(f'  ⚠ agent hooks: {e}')
+        try:
             from trackfw.generators.init_gen import generate_claude_commands
             generate_claude_commands(cwd)
         except Exception as e:
