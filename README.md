@@ -374,6 +374,20 @@ The governance structure (`docs/adr/`, `docs/req/`, `docs/roadmaps/`) is always 
 
 ---
 
+## Compared to alternatives
+
+| Tool | What it does | What's missing |
+|---|---|---|
+| **adr-tools** | Creates ADR files | No link to requirements or roadmaps |
+| **madr** | ADR template format | No enforcement, no delivery tracking |
+| **Linear / Jira** | Task tracking | No traceability to architectural decisions |
+| **Kosli** | SDLC compliance for regulated industries | SaaS, accounts, cost — not for every team |
+| **trackfw** | Enforces the full chain: decision → requirement → roadmap → delivery | — |
+
+trackfw is the only open-source CLI that links ADRs to requirements, requirements to roadmaps, and enforces the chain as a pre-commit and CI gate — with native support for AI coding assistants.
+
+---
+
 ## Contributing
 
 ```bash
