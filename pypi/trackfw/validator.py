@@ -862,6 +862,45 @@ def validate_filename_uniqueness(cfg: dict) -> list:
     return violations
 
 
+def validate_branch_has_wip_roadmap(cfg: dict) -> list:
+    """Verifica que branch feat/fix/refactor tem ao menos um roadmap em wip/ antes de trabalhar."""
+    import subprocess
+    # Derive the working directory from roadmap_dir so tests using tmp dirs get
+    # an isolated git context (a tmp dir outside the repo returns non-zero).
+    roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
+    git_cwd = os.path.dirname(os.path.abspath(roadmap_dir)) if roadmap_dir else None
+    try:
+        result = subprocess.run(
+            ['git', 'symbolic-ref', '--short', 'HEAD'],
+            capture_output=True, text=True, timeout=5,
+            cwd=git_cwd
+        )
+        if result.returncode != 0:
+            return []
+        branch = result.stdout.strip()
+    except Exception:
+        return []
+
+    if not (branch.startswith('feat/') or branch.startswith('fix/') or branch.startswith('refactor/')):
+        return []
+
+    wip_dirs = resolve_wip_dirs(cfg)
+    total = 0
+    for wip_dir in wip_dirs:
+        if os.path.isdir(wip_dir):
+            total += sum(1 for f in os.listdir(wip_dir) if f.endswith('.md'))
+
+    if total == 0:
+        return [
+            f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ — '
+            f'create governance artifacts first:\n'
+            f'  trackfw req new "title"\n'
+            f'  trackfw roadmap new "title"\n'
+            f'  trackfw roadmap move <name> wip'
+        ]
+    return []
+
+
 # ---------------------------------------------------------------------------
 # validate() — ponto de entrada principal
 # ---------------------------------------------------------------------------
@@ -884,6 +923,7 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule("wip_acceptance",       validate_wip_has_acceptance_criteria(cfg),    violations, warnings, cfg)
     _apply_rule("blocked_by_draft_adr", validate_reqs_not_blocked_by_draft_adrs(cfg), violations, warnings, cfg)
     _apply_rule("filename_uniqueness",  validate_filename_uniqueness(cfg),            violations, warnings, cfg)
+    _apply_rule("branch_has_wip_roadmap", validate_branch_has_wip_roadmap(cfg),      violations, warnings, cfg)
     _apply_rule("ref_targets_exist",    validate_ref_targets_exist(cfg),              violations, warnings, cfg)
     _apply_rule("folder_status",        validate_folder_status_coherence(cfg),        violations, warnings, cfg)
     _apply_rule("stale_wip",            validate_stale_wip(cfg),                      violations, warnings, cfg)
