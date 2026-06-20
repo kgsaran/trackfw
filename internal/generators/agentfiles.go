@@ -38,6 +38,11 @@ This project uses **trackfw** for AI-native delivery governance.
 Chain: ` + "`ADR → REQ → ROADMAP`" + ` · States: ` + "`backlog / wip / blocked / done / abandoned`" + `
 
 ### Agent Protocol
+0. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:
+   ` + "`trackfw req new \"title\"`" + ` → ` + "`trackfw roadmap new \"title\"`" + ` → ` + "`trackfw roadmap move <name> wip`" + ` → ` + "`git checkout -b feat/<branch>`" + `
+   ❌ Never create a branch before REQ + ROADMAP are in wip/
+   ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables
+   ✓ ` + "`trackfw validate`" + ` enforces this via ` + "`branch_has_wip_roadmap`" + ` rule (v2.7.0+)
 1. **Before starting:** run ` + "`trackfw context`" + ` · read ` + "`docs/agents-working-context.md`" + `
 2. **After finishing:** update ` + "`docs/agents-working-context.md`" + ` with what changed
 3. **Before PR:** ` + "`trackfw validate`" + ` must pass
