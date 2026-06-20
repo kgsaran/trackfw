@@ -83,6 +83,11 @@ func installHook(framework, rootDir string, w io.Writer) error {
 		if fileExists(pkgJSON) {
 			return installHusky(rootDir, w)
 		}
+		// Node.js disponível mas sem package.json → husky via npx (funciona em Windows sem lefthook)
+		if _, nodeErr := exec.LookPath("node"); nodeErr == nil {
+			fmt.Fprintf(w, "ℹ node detected — using husky via npx (no package.json required)\n")
+			return installHuskyNPX(rootDir, w)
+		}
 		return installLefthook(rootDir, w)
 	}
 }
@@ -173,6 +178,37 @@ func installHusky(rootDir string, w io.Writer) error {
 	}
 	fmt.Fprintf(w, "✓ trackfw entry added to .husky/pre-commit\n")
 
+	return nil
+}
+
+// installHuskyNPX configura husky via npx em projetos sem package.json.
+// Adequado para projetos Go/Java/Python em ambientes Windows com Node.js disponível mas sem lefthook.
+// Erros de exec são impressos como aviso (não bloqueantes).
+func installHuskyNPX(rootDir string, w io.Writer) error {
+	// npx husky init — cria .husky/ e instala o handler de hooks
+	huskyInit := exec.Command("npx", "husky", "init")
+	huskyInit.Dir = rootDir
+	if out, err := huskyInit.CombinedOutput(); err != nil {
+		fmt.Fprintf(w, "⚠ npx husky init failed: %s\n", strings.TrimSpace(string(out)))
+		fmt.Fprintf(w, "  → install husky manually: npx husky init\n")
+	} else {
+		fmt.Fprintf(w, "✓ husky initialized via npx\n")
+	}
+
+	// cria/append .husky/pre-commit com linha do trackfw
+	huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+	if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
+		return fmt.Errorf("creating .husky dir: %w", err)
+	}
+	f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		return fmt.Errorf("opening .husky/pre-commit: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString("\nscripts/trackfw-validate.sh\n"); err != nil {
+		return fmt.Errorf("writing .husky/pre-commit: %w", err)
+	}
+	fmt.Fprintf(w, "✓ trackfw entry added to .husky/pre-commit\n")
 	return nil
 }
 

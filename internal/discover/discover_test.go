@@ -296,18 +296,25 @@ func TestInstallHusky_ComPackageJSON(t *testing.T) {
 	}
 }
 
-// TestInstallHook_DefaultSemPackageJSON — via installHook com framework "none" sem package.json
+// TestInstallHook_DefaultSemPackageJSON — via installHook com framework "none" sem package.json.
+// Quando node está no PATH, o fallback é husky via npx (.husky/pre-commit).
+// Quando node não está, o fallback é lefthook (lefthook.yml).
 func TestInstallHook_DefaultSemPackageJSON(t *testing.T) {
 	dir := t.TempDir()
-	// sem package.json → deve chamar installLefthook
+	// sem package.json → fallback depende da presença de node no PATH
 
 	if err := installHook("none", dir, io.Discard); err != nil {
 		t.Fatalf("installHook error: %v", err)
 	}
 
-	cfgPath := filepath.Join(dir, "lefthook.yml")
-	if _, err := os.Stat(cfgPath); err != nil {
-		t.Errorf("lefthook.yml should have been created: %v", err)
+	huskyHook := filepath.Join(dir, ".husky", "pre-commit")
+	lefthookCfg := filepath.Join(dir, "lefthook.yml")
+
+	huskyExists := fileExists(huskyHook)
+	lefthookExists := fileExists(lefthookCfg)
+
+	if !huskyExists && !lefthookExists {
+		t.Error("expected either .husky/pre-commit (node fallback) or lefthook.yml (lefthook fallback) to be created")
 	}
 }
 
@@ -323,6 +330,26 @@ func TestInstallHook_DefaultComPackageJSON(t *testing.T) {
 	huskyHook := filepath.Join(dir, ".husky", "pre-commit")
 	if _, err := os.Stat(huskyHook); err != nil {
 		t.Errorf(".husky/pre-commit should have been created: %v", err)
+	}
+}
+
+// TestInstallHuskyNPX_SemPackageJSON — installHuskyNPX cria .husky/pre-commit mesmo sem package.json.
+// O npx pode falhar no CI (warning não-bloqueante), mas o arquivo de hook deve ser criado.
+func TestInstallHuskyNPX_SemPackageJSON(t *testing.T) {
+	dir := t.TempDir()
+	// sem package.json — installHuskyNPX deve criar .husky/pre-commit de qualquer forma
+
+	if err := installHuskyNPX(dir, io.Discard); err != nil {
+		t.Fatalf("installHuskyNPX error: %v", err)
+	}
+
+	huskyHook := filepath.Join(dir, ".husky", "pre-commit")
+	content, err := os.ReadFile(huskyHook)
+	if err != nil {
+		t.Fatalf(".husky/pre-commit not created: %v", err)
+	}
+	if !containsSubstr(string(content), "trackfw-validate.sh") {
+		t.Errorf(".husky/pre-commit should contain trackfw-validate.sh, got: %s", content)
 	}
 }
 
