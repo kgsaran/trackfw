@@ -373,6 +373,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("filename_uniqueness", uniquenessViolations, &violations, &warnings)
 
+	branchViolations, e := validateBranchHasWIPRoadmap()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("branch_has_wip_roadmap", branchViolations, &violations, &warnings)
+
 	// v2.5: verificação bidirecional REQ↔Roadmap via trace_id_field (desativada se campo vazio)
 	traceViolations, traceWarnings := validateTraceId(cfg)
 	violations = append(violations, traceViolations...)
@@ -511,6 +517,12 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("filename_uniqueness", uniquenessViolations, &violations, &warnings)
+
+	branchViolationsT, e := validateBranchHasWIPRoadmap()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("branch_has_wip_roadmap", branchViolationsT, &violations, &warnings)
 
 	// v2.5: traceid — applyRuleTagged está no validator_traceid via applyRule; aqui fazemos tagged
 	traceViolations, traceWarnings := validateTraceId(cfg)
@@ -1355,4 +1367,39 @@ func validateFilenameUniqueness() ([]string, error) {
 		}
 	}
 	return violations, nil
+}
+
+// validateBranchHasWIPRoadmap verifica se a branch atual (feat/fix/refactor) tem ao menos um roadmap em wip/.
+// Retorna violation se a branch for de implementação mas wip/ estiver vazio — previne trabalho órfão.
+func validateBranchHasWIPRoadmap() ([]string, error) {
+	cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, nil // não é git repo ou HEAD detached — skip
+	}
+	branch := strings.TrimSpace(string(out))
+	if !strings.HasPrefix(branch, "feat/") && !strings.HasPrefix(branch, "fix/") && !strings.HasPrefix(branch, "refactor/") {
+		return nil, nil // só enforça em branches de implementação
+	}
+
+	cfg := config.Load()
+	wipDirs := resolveWIPDirs(cfg)
+
+	total := 0
+	for _, wipDir := range wipDirs {
+		entries, _ := listDir(wipDir)
+		for _, name := range entries {
+			if strings.HasSuffix(name, ".md") {
+				total++
+			}
+		}
+	}
+
+	if total == 0 {
+		return []string{fmt.Sprintf(
+			"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ — create governance artifacts first:\n  trackfw req new \"title\"\n  trackfw roadmap new \"title\"\n  trackfw roadmap move <name> wip",
+			branch,
+		)}, nil
+	}
+	return nil, nil
 }
