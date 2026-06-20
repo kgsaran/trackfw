@@ -72,6 +72,15 @@ cmd.action(() => {
     console.log(`  ⚠ agent rules: ${e.message}`);
   }
 
+  // 1b. Agent hooks (attention signal/cleanup)
+  try {
+    const { injectHooksDetected } = require('../generators/hooks');
+    injectHooksDetected(cwd);
+    console.log('  ✓ agent hooks atualizados');
+  } catch (e) {
+    console.warn(`  ⚠ agent hooks: ${e.message}`);
+  }
+
   // 2. Validate script (trackfw-owned, overwrite)
   try {
     discover.writeValidateScript(cwd);

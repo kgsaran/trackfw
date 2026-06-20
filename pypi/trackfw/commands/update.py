@@ -33,6 +33,13 @@ def _run(args: argparse.Namespace) -> None:
     except Exception as e:
         print(f"  Aviso: falha ao atualizar regras: {e}")
 
+    from trackfw.generators.hooks import inject_hooks_detected
+    try:
+        inject_hooks_detected(cwd)
+        print('  ✓ agent hooks atualizados')
+    except Exception as e:
+        print(f'  ⚠ agent hooks: {e}')
+
     print()
     print("  Nota: este CLI Python atualiza apenas as regras de agente.")
     print("  Para atualizar gates (hooks/CI) e Claude commands, use:")

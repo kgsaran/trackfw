@@ -60,6 +60,9 @@ Write ` + "`docs/roadmaps/.trackfw-attention.json`" + `:
 {"roadmap":"file.md","ml":"ML-1A","message":"what you need","level":"action_required","timestamp":"ISO8601Z"}
 ` + "```" + `
 Delete the file when resolved. Visible as a live banner in ` + "`trackfw serve`" + `.
+
+> **Windsurf / agents without PreToolUse hook:** before asking the user a question, write
+> the attention file manually — then proceed normally.
 ` + rulesEnd
 }
 

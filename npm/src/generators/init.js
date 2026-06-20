@@ -27,6 +27,7 @@ async function scaffold(cfg) {
 
   writeTrackfwConfig(cfg)
   generateValidateScript(cfg)
+  generateAttentionScripts(cfg)
   generateCIWorkflow(cfg)
   generateGitHooks(cfg)
   generateCommitMsgHook(cfg)
@@ -114,6 +115,15 @@ trackfw validate
 
   base += '\necho "✓ all checks passed."\n'
   return base
+}
+
+// ---------------------------------------------------------------------------
+// scripts/trackfw-attention-signal.sh + trackfw-attention-cleanup.sh
+// ---------------------------------------------------------------------------
+
+function generateAttentionScripts(cfg, cwd) {
+  const { generateAttentionScripts: gen } = require('./hooks')
+  gen(cfg, cwd || process.cwd())
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,6 +1079,7 @@ module.exports = {
   scaffold,
   writeTrackfwConfig,
   generateValidateScript,
+  generateAttentionScripts,
   generateCIWorkflow,
   generateGitHooks,
   generateCommitMsgHook,
