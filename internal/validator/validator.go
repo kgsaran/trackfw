@@ -1398,12 +1398,14 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 		os.Getenv("CI_COMMIT_REF_NAME"),
 	)
 	if branch == "" {
-		cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
-		out, err := cmd.Output()
-		if err != nil {
-			branch = os.Getenv("GITHUB_REF_NAME")
-		} else {
-			branch = strings.TrimSpace(string(out))
+		if isGitWorktree(".") {
+			cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
+			out, err := cmd.Output()
+			if err == nil {
+				branch = strings.TrimSpace(string(out))
+			} else {
+				branch = os.Getenv("GITHUB_REF_NAME")
+			}
 		}
 	}
 	if !strings.HasPrefix(branch, "feat/") && !strings.HasPrefix(branch, "fix/") && !strings.HasPrefix(branch, "refactor/") {
@@ -1446,6 +1448,15 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func isGitWorktree(dir string) bool {
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 
 func normalizeBranchSlug(value string) string {

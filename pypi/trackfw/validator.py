@@ -889,15 +889,19 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
         or ""
     )
     if not branch:
-        try:
-            result = subprocess.run(
-                ['git', 'symbolic-ref', '--short', 'HEAD'],
-                capture_output=True, text=True, timeout=5,
-                cwd=git_cwd
-            )
-            branch = result.stdout.strip() if result.returncode == 0 else os.environ.get("GITHUB_REF_NAME", "")
-        except Exception:
-            branch = os.environ.get("GITHUB_REF_NAME", "")
+        if git_cwd and _is_git_worktree(git_cwd):
+            try:
+                result = subprocess.run(
+                    ['git', 'symbolic-ref', '--short', 'HEAD'],
+                    capture_output=True, text=True, timeout=5,
+                    cwd=git_cwd
+                )
+                branch = result.stdout.strip() if result.returncode == 0 else os.environ.get("GITHUB_REF_NAME", "")
+            except Exception:
+                branch = os.environ.get("GITHUB_REF_NAME", "")
+
+    if not branch:
+        return []
 
     if not (branch.startswith('feat/') or branch.startswith('fix/') or branch.startswith('refactor/')):
         return []
@@ -925,6 +929,19 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
         f'(found: {", ".join(wip_files)}) — include the branch slug in the roadmap filename '
         f'or set TRACKFW_BRANCH explicitly in CI'
     ]
+
+
+def _is_git_worktree(cwd: str) -> bool:
+    """Retorna True se cwd pertence a um worktree git."""
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--is-inside-work-tree'],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "true"
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
