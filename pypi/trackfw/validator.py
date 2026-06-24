@@ -882,22 +882,27 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
     # an isolated git context (a tmp dir outside the repo returns non-zero).
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
     git_cwd = os.path.dirname(os.path.abspath(roadmap_dir)) if roadmap_dir else None
-    branch = (
-        os.environ.get("TRACKFW_BRANCH")
-        or os.environ.get("GITHUB_HEAD_REF")
-        or os.environ.get("CI_COMMIT_REF_NAME")
-        or ""
-    )
-    if not branch:
+    branch = os.environ.get("TRACKFW_BRANCH") or ""
+    if not branch and git_cwd and _is_git_worktree(git_cwd):
         try:
             result = subprocess.run(
                 ['git', 'symbolic-ref', '--short', 'HEAD'],
                 capture_output=True, text=True, timeout=5,
                 cwd=git_cwd
             )
-            branch = result.stdout.strip() if result.returncode == 0 else os.environ.get("GITHUB_REF_NAME", "")
+            branch = result.stdout.strip() if result.returncode == 0 else ""
         except Exception:
-            branch = os.environ.get("GITHUB_REF_NAME", "")
+            branch = ""
+        if not branch:
+            branch = (
+                os.environ.get("GITHUB_HEAD_REF")
+                or os.environ.get("CI_COMMIT_REF_NAME")
+                or os.environ.get("GITHUB_REF_NAME")
+                or ""
+            )
+
+    if not branch:
+        return []
 
     if not (branch.startswith('feat/') or branch.startswith('fix/') or branch.startswith('refactor/')):
         return []
@@ -925,6 +930,19 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
         f'(found: {", ".join(wip_files)}) — include the branch slug in the roadmap filename '
         f'or set TRACKFW_BRANCH explicitly in CI'
     ]
+
+
+def _is_git_worktree(cwd: str) -> bool:
+    """Retorna True se cwd pertence a um worktree git."""
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--is-inside-work-tree'],
+            capture_output=True, text=True, timeout=5,
+            cwd=cwd,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "true"
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------

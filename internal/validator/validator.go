@@ -1392,18 +1392,19 @@ func validateFilenameUniqueness() ([]string, error) {
 // validateBranchHasWIPRoadmap verifica se a branch atual (feat/fix/refactor) tem ao menos um roadmap em wip/.
 // Retorna violation se a branch for de implementação mas wip/ estiver vazio — previne trabalho órfão.
 func validateBranchHasWIPRoadmap() ([]string, error) {
-	branch := firstNonEmpty(
-		os.Getenv("TRACKFW_BRANCH"),
-		os.Getenv("GITHUB_HEAD_REF"),
-		os.Getenv("CI_COMMIT_REF_NAME"),
-	)
-	if branch == "" {
+	branch := firstNonEmpty(os.Getenv("TRACKFW_BRANCH"))
+	if branch == "" && isGitWorktree(".") {
 		cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
 		out, err := cmd.Output()
-		if err != nil {
-			branch = os.Getenv("GITHUB_REF_NAME")
-		} else {
+		if err == nil {
 			branch = strings.TrimSpace(string(out))
+		}
+		if branch == "" {
+			branch = firstNonEmpty(
+				os.Getenv("GITHUB_HEAD_REF"),
+				os.Getenv("CI_COMMIT_REF_NAME"),
+				os.Getenv("GITHUB_REF_NAME"),
+			)
 		}
 	}
 	if !strings.HasPrefix(branch, "feat/") && !strings.HasPrefix(branch, "fix/") && !strings.HasPrefix(branch, "refactor/") {
@@ -1446,6 +1447,15 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func isGitWorktree(dir string) bool {
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 
 func normalizeBranchSlug(value string) string {

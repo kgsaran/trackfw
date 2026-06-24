@@ -747,14 +747,18 @@ function validateFilenameUniqueness() {
 // validateBranchHasWIPRoadmap — verifica que branch feat/fix/refactor tem ao menos um roadmap em wip/
 function validateBranchHasWIPRoadmap() {
   const { execSync } = require('child_process')
-  let branch = process.env.TRACKFW_BRANCH || process.env.GITHUB_HEAD_REF || process.env.CI_COMMIT_REF_NAME || ''
-  if (!branch) {
+  let branch = process.env.TRACKFW_BRANCH || ''
+  if (!branch && isGitWorktree(process.cwd())) {
     try {
       branch = execSync('git symbolic-ref --short HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
     } catch {
-      branch = process.env.GITHUB_REF_NAME || ''
+      branch = ''
+    }
+    if (!branch) {
+      branch = process.env.GITHUB_HEAD_REF || process.env.CI_COMMIT_REF_NAME || process.env.GITHUB_REF_NAME || ''
     }
   }
+  if (!branch) return []
   if (!branch.startsWith('feat/') && !branch.startsWith('fix/') && !branch.startsWith('refactor/')) {
     return []
   }
@@ -777,6 +781,15 @@ function validateBranchHasWIPRoadmap() {
 
 function normalizeBranchSlug(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+}
+
+function isGitWorktree(dir) {
+  try {
+    const out = execSync('git rev-parse --is-inside-work-tree', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd: dir })
+    return String(out).trim() === 'true'
+  } catch {
+    return false
+  }
 }
 
 // _itemMeta: mapa de message → { rule, file } para enriquecer saída JSON.
