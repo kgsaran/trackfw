@@ -6,26 +6,14 @@ const path = require('node:path')
 
 const { installCursor, installWindsurf, installAmazonQ } = require('../src/generators/init')
 
-async function withCwd(root, fn) {
-  const prev = process.cwd()
-  process.chdir(root)
-  try {
-    await fn()
-  } finally {
-    process.chdir(prev)
-  }
-}
-
 async function assertIdempotentToolInstall(toolName, installer, expectedFiles) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `trackfw-${toolName}-`))
-  await withCwd(root, async () => {
-    await installer()
-    const snapshots = expectedFiles.map(file => fs.readFileSync(path.join(root, file), 'utf8'))
-    await installer()
-    expectedFiles.forEach((file, index) => {
-      assert.equal(fs.existsSync(path.join(root, file)), true, file)
-      assert.equal(fs.readFileSync(path.join(root, file), 'utf8'), snapshots[index], `${toolName}:${file}`)
-    })
+  await installer(root)
+  const snapshots = expectedFiles.map(file => fs.readFileSync(path.join(root, file), 'utf8'))
+  await installer(root)
+  expectedFiles.forEach((file, index) => {
+    assert.equal(fs.existsSync(path.join(root, file)), true, file)
+    assert.equal(fs.readFileSync(path.join(root, file), 'utf8'), snapshots[index], `${toolName}:${file}`)
   })
 }
 
