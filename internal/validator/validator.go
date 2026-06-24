@@ -1394,18 +1394,17 @@ func validateFilenameUniqueness() ([]string, error) {
 func validateBranchHasWIPRoadmap() ([]string, error) {
 	branch := firstNonEmpty(os.Getenv("TRACKFW_BRANCH"))
 	if branch == "" && isGitWorktree(".") {
-		branch = firstNonEmpty(
-			os.Getenv("GITHUB_HEAD_REF"),
-			os.Getenv("CI_COMMIT_REF_NAME"),
-		)
+		cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
+		out, err := cmd.Output()
+		if err == nil {
+			branch = strings.TrimSpace(string(out))
+		}
 		if branch == "" {
-			cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
-			out, err := cmd.Output()
-			if err == nil {
-				branch = strings.TrimSpace(string(out))
-			} else {
-				branch = os.Getenv("GITHUB_REF_NAME")
-			}
+			branch = firstNonEmpty(
+				os.Getenv("GITHUB_HEAD_REF"),
+				os.Getenv("CI_COMMIT_REF_NAME"),
+				os.Getenv("GITHUB_REF_NAME"),
+			)
 		}
 	}
 	if !strings.HasPrefix(branch, "feat/") && !strings.HasPrefix(branch, "fix/") && !strings.HasPrefix(branch, "refactor/") {

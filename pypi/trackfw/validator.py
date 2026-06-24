@@ -884,21 +884,22 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
     git_cwd = os.path.dirname(os.path.abspath(roadmap_dir)) if roadmap_dir else None
     branch = os.environ.get("TRACKFW_BRANCH") or ""
     if not branch and git_cwd and _is_git_worktree(git_cwd):
-        branch = (
-            os.environ.get("GITHUB_HEAD_REF")
-            or os.environ.get("CI_COMMIT_REF_NAME")
-            or ""
-        )
+        try:
+            result = subprocess.run(
+                ['git', 'symbolic-ref', '--short', 'HEAD'],
+                capture_output=True, text=True, timeout=5,
+                cwd=git_cwd
+            )
+            branch = result.stdout.strip() if result.returncode == 0 else ""
+        except Exception:
+            branch = ""
         if not branch:
-            try:
-                result = subprocess.run(
-                    ['git', 'symbolic-ref', '--short', 'HEAD'],
-                    capture_output=True, text=True, timeout=5,
-                    cwd=git_cwd
-                )
-                branch = result.stdout.strip() if result.returncode == 0 else os.environ.get("GITHUB_REF_NAME", "")
-            except Exception:
-                branch = os.environ.get("GITHUB_REF_NAME", "")
+            branch = (
+                os.environ.get("GITHUB_HEAD_REF")
+                or os.environ.get("CI_COMMIT_REF_NAME")
+                or os.environ.get("GITHUB_REF_NAME")
+                or ""
+            )
 
     if not branch:
         return []

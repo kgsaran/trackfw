@@ -749,13 +749,13 @@ function validateBranchHasWIPRoadmap() {
   const { execSync } = require('child_process')
   let branch = process.env.TRACKFW_BRANCH || ''
   if (!branch && isGitWorktree(process.cwd())) {
-    branch = process.env.GITHUB_HEAD_REF || process.env.CI_COMMIT_REF_NAME || ''
-  }
-  if (!branch && isGitWorktree(process.cwd())) {
     try {
       branch = execSync('git symbolic-ref --short HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
     } catch {
-      branch = process.env.GITHUB_REF_NAME || ''
+      branch = ''
+    }
+    if (!branch) {
+      branch = process.env.GITHUB_HEAD_REF || process.env.CI_COMMIT_REF_NAME || process.env.GITHUB_REF_NAME || ''
     }
   }
   if (!branch) return []
