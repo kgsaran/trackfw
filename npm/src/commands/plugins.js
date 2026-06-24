@@ -7,6 +7,8 @@ const https = require('https')
 const { t } = require('../i18n')
 
 const REGISTRY_URL = 'https://raw.githubusercontent.com/kgsaran/trackfw-plugins/main/registry.yaml'
+const MAX_PLUGIN_SIZE = 50 * 1024 * 1024
+const REQUEST_TIMEOUT_MS = 30000
 
 function fetchRegistry() {
   return new Promise((resolve, reject) => {
@@ -91,15 +93,27 @@ async function installPlugin(repo) {
     ? `https://github.com/${base}/releases/latest/download/${assetName}`
     : `https://github.com/${base}/releases/download/${tag}/${assetName}`
 
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
   if (!res.ok) throw new Error(t('errors.downloadFailed', { status: res.status, url }))
+  const declaredSize = Number(res.headers.get('content-length') || 0)
+  if (declaredSize > MAX_PLUGIN_SIZE) throw new Error(`Plugin exceeds ${MAX_PLUGIN_SIZE} bytes`)
 
   const dir = pluginsDir()
   fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, pluginName), Buffer.from(await res.arrayBuffer()), { mode: 0o755 })
+  const content = Buffer.from(await res.arrayBuffer())
+  if (content.length > MAX_PLUGIN_SIZE) throw new Error(`Plugin exceeds ${MAX_PLUGIN_SIZE} bytes`)
+  const destination = path.join(dir, pluginName)
+  const temporary = path.join(dir, `.${pluginName}-${process.pid}.tmp`)
+  try {
+    fs.writeFileSync(temporary, content, { mode: 0o755 })
+    fs.renameSync(temporary, destination)
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary)
+  }
 }
 
 function removePlugin(name) {
+  if (!name || path.basename(name) !== name) throw new Error(`Invalid plugin name: ${name}`)
   const filePath = path.join(pluginsDir(), name)
   if (!fs.existsSync(filePath)) throw new Error(t('errors.pluginNotFound', { name }))
   fs.unlinkSync(filePath)

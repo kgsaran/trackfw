@@ -57,6 +57,9 @@ class TrackfwHandler(BaseHTTPRequestHandler):
         elif path == "/api/file":
             from trackfw.serve.api_file import get_file
             get_file(self.cfg, parsed, self)
+        elif path == "/api/attention":
+            from trackfw.serve.api_attention import get_attention
+            self._json(get_attention(self.cfg))
         else:
             self.send_error(404, "Not found")
 

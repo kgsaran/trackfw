@@ -126,30 +126,51 @@ class TestLog(unittest.TestCase):
             self.assertRegex(content, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}")
 
 
-class TestStubs(unittest.TestCase):
-    def test_validate_stub(self):
-        """trackfw validate imprime 'Not implemented yet' e sai com 0."""
-        result = run_trackfw("validate")
+class TestRealCommands(unittest.TestCase):
+    def test_validate_uses_real_handler(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_trackfw("validate", "--json", cwd=tmpdir)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("Not implemented yet", result.stdout)
+        self.assertIn('"summary"', result.stdout)
+        self.assertNotIn("Not implemented yet", result.stdout)
 
-    def test_status_stub(self):
-        """trackfw status imprime 'Not implemented yet' e sai com 0."""
-        result = run_trackfw("status")
+    def test_status_uses_real_handler(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_trackfw("status", cwd=tmpdir)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("Not implemented yet", result.stdout)
+        self.assertIn("Governance Status", result.stdout)
 
-    def test_metrics_stub(self):
-        """trackfw metrics imprime 'Not implemented yet' e sai com 0."""
-        result = run_trackfw("metrics")
+    def test_metrics_uses_real_handler(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_trackfw("metrics", cwd=tmpdir)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("Not implemented yet", result.stdout)
+        self.assertIn("No log found", result.stdout)
 
-    def test_context_stub(self):
-        """trackfw context imprime 'Not implemented yet' e sai com 0."""
-        result = run_trackfw("context")
+    def test_context_uses_real_handler(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_trackfw("context", "--format", "json", cwd=tmpdir)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("Not implemented yet", result.stdout)
+        self.assertIn('"score"', result.stdout)
+
+    def test_roadmap_help_uses_real_handler(self):
+        result = run_trackfw("roadmap", "--help")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("new", result.stdout)
+        self.assertIn("move", result.stdout)
+
+    def test_init_scaffolds_project(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_trackfw(
+                "init",
+                "--project-name",
+                "example",
+                "--namespacing",
+                "flat",
+                cwd=tmpdir,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertTrue(os.path.isfile(os.path.join(tmpdir, "trackfw.yaml")))
+            self.assertTrue(os.path.isdir(os.path.join(tmpdir, "docs", "roadmaps", "wip")))
 
 
 if __name__ == "__main__":

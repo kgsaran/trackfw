@@ -12,8 +12,8 @@ import (
 // em cada um. Erros são coletados e retornados como string joined (não para na primeira falha).
 func InjectHooksDetected(cwd string) error {
 	type detector struct {
-		fn      func(string) error
-		detect  func(string) bool
+		fn     func(string) error
+		detect func(string) bool
 	}
 
 	detections := map[string]detector{
@@ -195,8 +195,8 @@ func injectCodexHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
-	hooks["PreToolUse"] = mergeSimpleCommandArray(
-		hooks["PreToolUse"],
+	hooks["PermissionRequest"] = mergeSimpleCommandArray(
+		hooks["PermissionRequest"],
 		"scripts/trackfw-attention-signal.sh",
 		func(command string) interface{} {
 			return map[string]interface{}{"matcher": ".*", "hooks": []interface{}{map[string]interface{}{"type": "command", "command": command}}}
@@ -282,20 +282,16 @@ func injectGeminiHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
-	makeEntry := func(command string) interface{} {
-		return map[string]interface{}{"command": command}
-	}
-	getCmd := func(item interface{}) string {
-		obj, ok := item.(map[string]interface{})
-		if !ok {
-			return ""
-		}
-		cmd, _ := obj["command"].(string)
-		return cmd
-	}
-
-	hooks["BeforeTool"] = mergeSimpleCommandArray(hooks["BeforeTool"], "scripts/trackfw-attention-signal.sh", makeEntry, getCmd)
-	hooks["AfterTool"] = mergeSimpleCommandArray(hooks["AfterTool"], "scripts/trackfw-attention-cleanup.sh", makeEntry, getCmd)
+	hooks["Notification"] = mergeClaudeHookArray(
+		hooks["Notification"],
+		"ToolPermission",
+		"scripts/trackfw-attention-signal.sh",
+	)
+	hooks["AfterTool"] = mergeClaudeHookArray(
+		hooks["AfterTool"],
+		"*",
+		"scripts/trackfw-attention-cleanup.sh",
+	)
 
 	root["hooks"] = hooks
 
@@ -353,9 +349,24 @@ func injectCopilotHooks(cwd string) error {
 
 	// Arquivo dedicado trackfw-owned — overwrite seguro
 	content := map[string]interface{}{
-		"hooks": []interface{}{
-			map[string]interface{}{"event": "preToolUse", "run": "scripts/trackfw-attention-signal.sh"},
-			map[string]interface{}{"event": "postToolUse", "run": "scripts/trackfw-attention-cleanup.sh"},
+		"version": 1,
+		"hooks": map[string]interface{}{
+			"preToolUse": []interface{}{
+				map[string]interface{}{
+					"type":       "command",
+					"bash":       "scripts/trackfw-attention-signal.sh",
+					"cwd":        ".",
+					"timeoutSec": 10,
+				},
+			},
+			"postToolUse": []interface{}{
+				map[string]interface{}{
+					"type":       "command",
+					"bash":       "scripts/trackfw-attention-cleanup.sh",
+					"cwd":        ".",
+					"timeoutSec": 10,
+				},
+			},
 		},
 	}
 

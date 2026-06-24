@@ -28,6 +28,7 @@ func mustWriteFileCmd(t *testing.T, path, content string) {
 // Faz chdir para tmpDir e restaura o diretório original ao finalizar.
 func runDiscover(t *testing.T, tmpDir string, flags ...string) (string, error) {
 	t.Helper()
+	t.Setenv("TRACKFW_DISABLE_EXTERNAL_COMMANDS", "1")
 
 	orig, err := os.Getwd()
 	if err != nil {

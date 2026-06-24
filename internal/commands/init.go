@@ -20,6 +20,7 @@ func newInitCmd() *cobra.Command {
 		RunE:  runInit,
 	}
 	cmd.Flags().Bool("brownfield", false, "Adopt governance gradually (lenient mode for 30 days)")
+	cmd.Flags().StringSlice("ai-tools", nil, "AI tools to configure (codex,claude,gemini,cursor,copilot,windsurf,amazonq)")
 	return cmd
 }
 
@@ -39,6 +40,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err := generators.Scaffold(cfg); err != nil {
 			return err
 		}
+		aiTools, _ := cmd.Flags().GetStringSlice("ai-tools")
+		if err := installAITools(aiTools, cwd); err != nil {
+			return err
+		}
 		fmt.Println(i18n.T("init.success"))
 		return nil
 	}
@@ -56,15 +61,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 		requireReqInCommit bool
 	)
 
-	titleProjectName    := i18n.T("init.prompt.projectName")
-	titleProjectType    := i18n.T("init.prompt.projectType")
-	titleFrontendStack  := i18n.T("init.prompt.frontendStack")
-	titlePkgManager     := i18n.T("init.prompt.pkgManager")
-	titleBackendLang    := i18n.T("init.prompt.backendLang")
-	titleGitHooks       := i18n.T("init.prompt.gitHooks")
-	titleCI             := i18n.T("init.prompt.ci")
-	titleAITools        := i18n.T("init.prompt.aiTools")
-	titleRequireReq     := i18n.T("init.prompt.require_req_in_commit")
+	titleProjectName := i18n.T("init.prompt.projectName")
+	titleProjectType := i18n.T("init.prompt.projectType")
+	titleFrontendStack := i18n.T("init.prompt.frontendStack")
+	titlePkgManager := i18n.T("init.prompt.pkgManager")
+	titleBackendLang := i18n.T("init.prompt.backendLang")
+	titleGitHooks := i18n.T("init.prompt.gitHooks")
+	titleCI := i18n.T("init.prompt.ci")
+	titleAITools := i18n.T("init.prompt.aiTools")
+	titleRequireReq := i18n.T("init.prompt.require_req_in_commit")
 
 	form := huh.NewForm(
 		// Grupo 1 — sempre mostrado
@@ -150,6 +155,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				Title(titleAITools).
 				Options(
 					huh.NewOption("Claude Code", "claude"),
+					huh.NewOption("OpenAI Codex", "codex"),
 					huh.NewOption("Gemini CLI", "gemini"),
 					huh.NewOption("Cursor", "cursor"),
 					huh.NewOption("GitHub Copilot", "copilot"),
@@ -158,7 +164,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 				).
 				Value(&aiTools),
 		),
-
 	)
 
 	if err := form.Run(); err != nil {
@@ -244,8 +249,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	cwd, _ := os.Getwd()
 
+	if err := installAITools(aiTools, cwd); err != nil {
+		return err
+	}
+
+	fmt.Println(i18n.T("init.success"))
+	generators.PrintArchitectNextSteps(cwd)
+	return nil
+}
+
+func installAITools(aiTools []string, cwd string) error {
 	for _, tool := range aiTools {
 		switch tool {
+		case "codex":
+			if err := generators.InstallCodex(cwd); err != nil {
+				return fmt.Errorf("instalando Codex: %w", err)
+			}
 		case "claude":
 			if err := generators.InstallAgents(); err != nil {
 				return fmt.Errorf("instalando agentes Claude: %w", err)
@@ -298,8 +317,5 @@ func runInit(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-
-	fmt.Println(i18n.T("init.success"))
-	generators.PrintArchitectNextSteps(cwd)
 	return nil
 }

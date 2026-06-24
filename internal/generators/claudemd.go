@@ -157,7 +157,7 @@ func backendCommands(cfg Config) (string, string, string) {
 	case "node":
 		return pm + " run build", pm + " test", pm + " run lint"
 	case "python":
-		return "python -m py_compile $(find . -name '*.py' -not -path './.venv/*' -not -path './venv/*')",
+		return "python3 -c \"import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('.').rglob('*.py') if '.venv' not in p.parts and 'venv' not in p.parts]\"",
 			"python -m pytest",
 			"ruff check ."
 	default:

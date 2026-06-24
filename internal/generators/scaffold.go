@@ -9,19 +9,19 @@ import (
 )
 
 type Config struct {
-	ProjectType      string // "fullstack" | "frontend" | "backend" | "governance"
-	ProjectName      string
-	Frontend         string
-	Backend          string
-	BackendFramework string
-	PkgManager       string
-	Hooks            string
-	CI               string
-	BrownfieldMode      bool
-	LenientUntil        time.Time // zero value = strict
-	WipLimit            int       // default: 1
-	WipBySquad          bool      // default: false
-	RequireReqInCommit  bool      // gera hook commit-msg que exige REQ: em feat/* e fix/*
+	ProjectType        string // "fullstack" | "frontend" | "backend" | "governance"
+	ProjectName        string
+	Frontend           string
+	Backend            string
+	BackendFramework   string
+	PkgManager         string
+	Hooks              string
+	CI                 string
+	BrownfieldMode     bool
+	LenientUntil       time.Time // zero value = strict
+	WipLimit           int       // default: 1
+	WipBySquad         bool      // default: false
+	RequireReqInCommit bool      // gera hook commit-msg que exige REQ: em feat/* e fix/*
 }
 
 var govDirs = []string{
@@ -585,23 +585,26 @@ func generateAttentionScripts() error {
 	}
 
 	signalScript := `#!/usr/bin/env bash
-# trackfw attention signal — PreToolUse/BeforeTool hook
+# trackfw attention signal — permission/notification hook
 # Writes .trackfw-attention.json so trackfw serve board shows a banner.
 # Receives JSON via stdin with tool_name and tool_input.
 set -euo pipefail
 
 INPUT=$(cat)
 
+HOOK_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
+[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD"
+
 # No-op in projects without trackfw
 [ -f "trackfw.yaml" ] || exit 0
 
 # Extract message from tool input
 if command -v jq &>/dev/null; then
-  TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""')
-  MSG=$(echo "$INPUT" | jq -r '(.tool_input.question // .tool_input.command // ("Agent executing: " + (.tool_name // "unknown"))) | .[0:300]')
+  TOOL=$(echo "$INPUT" | jq -r '.tool_name // .notification_type // ""')
+  MSG=$(echo "$INPUT" | jq -r '(.message // .tool_input.description // .tool_input.question // .tool_input.command // ("Approval required for: " + (.tool_name // .notification_type // "unknown"))) | .[0:300]')
 else
-  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null || echo "")
-  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
+  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name') or d.get('notification_type') or '')" 2>/dev/null || echo "")
+  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((d.get('message') or ti.get('description') or ti.get('question') or ti.get('command') or 'Approval required for: '+(d.get('tool_name') or d.get('notification_type') or 'unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
 fi
 
 # Get roadmap_dir from trackfw.yaml (default: docs/roadmaps)
@@ -623,6 +626,10 @@ exit 0
 # trackfw attention cleanup — PostToolUse/AfterTool hook
 # Removes .trackfw-attention.json after tool call completes.
 set -euo pipefail
+
+INPUT=$(cat)
+HOOK_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
+[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD"
 
 [ -f "trackfw.yaml" ] || exit 0
 
@@ -662,11 +669,11 @@ trackfw validate
 		base += "echo \"→ build check (go)...\"\ngo build ./...\n"
 	case "java":
 		base += "echo \"→ build check (maven)...\"\nmvn compile -q\n"
-	case "node":
-		base += fmt.Sprintf("echo \"→ build check (node)...\"\n%s run build\n", cfg.PkgManager)
-	case "python":
-		base += "echo \"→ build check (python)...\"\npython -m py_compile $(find . -name '*.py' -not -path './.venv/*' -not -path './venv/*')\n"
-	}
+		case "node":
+			base += fmt.Sprintf("echo \"→ build check (node)...\"\n%s run build\n", cfg.PkgManager)
+		case "python":
+			base += "echo \"→ build check (python)...\"\npython3 -c \"import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('.').rglob('*.py') if '.venv' not in p.parts and 'venv' not in p.parts]\"\n"
+		}
 
 	switch cfg.Frontend {
 	case "react", "vue", "angular":

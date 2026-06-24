@@ -9,6 +9,7 @@ const { handleBoard } = require('../serve/api_board')
 const { handleChain } = require('../serve/api_chain')
 const { handleMetrics } = require('../serve/api_metrics')
 const { handleFile } = require('../serve/api_file')
+const { handleAttention } = require('../serve/api_attention')
 
 const STATIC_DIR = path.join(__dirname, '..', 'serve', 'static')
 
@@ -118,6 +119,11 @@ function createServer(cfg, port) {
 
     if (pathname === '/api/file') {
       handleFile(cfg, req, res)
+      return
+    }
+
+    if (pathname === '/api/attention') {
+      handleAttention(cfg, req, res)
       return
     }
 

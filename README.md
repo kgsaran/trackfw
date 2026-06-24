@@ -3,7 +3,7 @@
 > The AI-native governance layer for software delivery — ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
 
 [![Release](https://img.shields.io/github/v/release/kgsaran/trackfw)](https://github.com/kgsaran/trackfw/releases/latest)
-[![Go](https://img.shields.io/badge/go-1.21+-00ADD8?logo=go)](go.mod)
+[![Go](https://img.shields.io/badge/go-1.25+-00ADD8?logo=go)](go.mod)
 [![npm](https://img.shields.io/npm/v/trackfw?logo=npm&color=CB3837)](https://www.npmjs.com/package/trackfw)
 [![PyPI](https://img.shields.io/pypi/v/trackfw?logo=python&color=3776AB)](https://pypi.org/project/trackfw/)
 [![License](https://img.shields.io/github/license/kgsaran/trackfw)](LICENSE)
@@ -90,7 +90,9 @@ go install github.com/kgsaran/trackfw/cmd/trackfw@latest
 npm install -g trackfw
 ```
 
-The npm package is pure Node.js — no compiled binary, no postinstall download. Works everywhere Node.js ≥ 18 is installed, including corporate Windows environments where unsigned `.exe` files are blocked by antivirus. Full feature parity with the Go CLI — all commands, all validation rules, all by_agent features.
+The npm package is pure Node.js — no compiled binary or postinstall download.
+It works wherever Node.js ≥ 18 is installed. Shared behavior and intentional
+Go-only integration installers follow the [CLI parity contract](docs/cli-parity.md).
 
 ### pip
 
@@ -98,7 +100,9 @@ The npm package is pure Node.js — no compiled binary, no postinstall download.
 pip install trackfw
 ```
 
-The pip package is pure Python — no compiled binary, no postinstall download. Full feature parity with the Go CLI — all commands, all validation rules, all by_agent features.
+The pip package is pure Python 3.10+ — no compiled binary or postinstall
+download. Shared commands, validation rules, and by_agent behavior follow the
+[CLI parity contract](docs/cli-parity.md).
 
 ---
 
@@ -323,6 +327,7 @@ $ trackfw status
 
 | Command | Installs | Format |
 |---|---|---|
+| `trackfw init --ai-tools codex` | `AGENTS.md`, 5 repository skills, 6 custom agents, Codex config and hooks | `.agents/skills/` + `.codex/` |
 | `trackfw agents` | 10 subagents in `~/.claude/agents/` | Claude Code `.md` with frontmatter |
 | `trackfw gemini` | GEMINI.md + 10 skills + 3 commands | `~/.gemini/` + project root |
 | `trackfw cursor` | 10 rules in `.cursor/rules/` | `.mdc` with YAML frontmatter |
@@ -345,10 +350,12 @@ The 10 roles installed for each tool: **architect · backend · frontend · qa �
 ? Package manager?       npm / pnpm / yarn / bun
 ? Git hooks?             husky / lefthook / none
 ? CI system?             GitHub Actions / GitLab CI / none
-? Which AI assistants?   Claude Code / Gemini CLI / Cursor / Copilot / Windsurf / Amazon Q
+? Which AI assistants?   Claude Code / OpenAI Codex / Gemini CLI / Cursor / Copilot / Windsurf / Amazon Q
 ```
 
 The governance structure (`docs/adr/`, `docs/req/`, `docs/roadmaps/`) is always identical — stack-agnostic. The generated hooks, workflows, and AI integrations adapt to your answers.
+
+The Codex integration is repository-scoped: `AGENTS.md` carries persistent instructions, `.agents/skills/` provides governance workflows, `.codex/agents/` provides specialist subagents, and `.codex/hooks.json` signals permission requests to the local dashboard.
 
 ---
 

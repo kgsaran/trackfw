@@ -26,6 +26,7 @@ function createProgram() {
   program.addCommand(require('./baseline'))
   program.addCommand(require('./help'))
   program.addCommand(require('./configure'))
+  program.addCommand(require('./version'))
 
   const { createServeCommand } = require('./serve')
   program.addCommand(createServeCommand())

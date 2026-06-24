@@ -6,7 +6,7 @@
 
 ## Why AI agents need structured governance
 
-AI agents like Claude Code, Gemini CLI, and Cursor operate in independent sessions. Without a persistent record of decisions and context, each session starts from scratch — the agent doesn't know:
+AI agents like Claude Code, OpenAI Codex, Gemini CLI, Cursor, GitHub Copilot, Windsurf, and Amazon Q operate in independent sessions. Without a persistent record of decisions and context, each session starts from scratch — the agent doesn't know:
 
 - Which architectural decisions have already been made (and why)
 - Which requirements are in progress
@@ -294,6 +294,20 @@ The agent automatically reads `trackfw context --format=json` and includes the r
 # Export context for use with Gemini
 trackfw context --format=json | gemini --model gemini-2.0-flash "Analyze the governance state and suggest next steps."
 ```
+
+---
+
+## OpenAI Codex
+
+Select **OpenAI Codex** in `trackfw init`, or run:
+
+```bash
+trackfw init --ai-tools codex
+```
+
+The integration generates `AGENTS.md`, five skills under `.agents/skills/`, six
+specialist agents under `.codex/agents/`, concurrency limits in
+`.codex/config.toml`, and attention hooks in `.codex/hooks.json`.
 
 ---
 

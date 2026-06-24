@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from trackfw.serve.api_board import get_board
 from trackfw.serve.api_file import get_file, _is_safe_path
 from trackfw.serve.api_metrics import get_metrics, _calc_cycle_time
+from trackfw.serve.api_attention import get_attention
 
 
 # ---------------------------------------------------------------------------
@@ -336,3 +337,21 @@ class TestMetricsAPI:
         ]
         result = _calc_cycle_time(transitions)
         assert result == 3.0
+
+
+class TestAttentionAPI:
+
+    def test_attention_missing(self, tmp_path):
+        cfg = {"roadmap_dir": str(tmp_path / "docs" / "roadmaps")}
+        assert get_attention(cfg) == {"active": False}
+
+    def test_attention_active(self, tmp_path):
+        roadmap_dir = tmp_path / "docs" / "roadmaps"
+        roadmap_dir.mkdir(parents=True)
+        (roadmap_dir / ".trackfw-attention.json").write_text(
+            '{"message":"Review required","level":"action_required","timestamp":"2026-06-24T12:00:00Z"}',
+            encoding="utf-8",
+        )
+        result = get_attention({"roadmap_dir": str(roadmap_dir)})
+        assert result["active"] is True
+        assert result["message"] == "Review required"

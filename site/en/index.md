@@ -19,7 +19,7 @@ features:
     details: Every line of code traced back to a decision (ADR), a requirement (REQ), and an implementation microbatch (ROADMAP).
   - icon: 🤖
     title: AI-agent native
-    details: '"trackfw context --format=json" emits full governance context for LLMs. Claude Code, Gemini CLI, and Cursor already use this rail.'
+    details: '"trackfw context --format=json" emits full LLM context. Codex gets native AGENTS.md, skills, subagents, and hooks; Claude Code, Gemini CLI, Cursor, Copilot, Windsurf, and Amazon Q are also supported.'
   - icon: 🌐
     title: Multi-stack
     details: Go, Java, Node.js, Python. React/Vue/Angular frontends. Hooks for husky, lefthook, GitHub Actions, and GitLab CI.

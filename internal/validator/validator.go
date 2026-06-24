@@ -933,7 +933,6 @@ func validateStaleWIP() ([]string, error) {
 	return warnings, nil
 }
 
-
 // blockedREQs retorna um mapa de REQ-basename → lista de ADR-basenames Draft que a bloqueiam.
 // Somente REQs com Status: Open e ADRs com Status: Draft são incluídas.
 func blockedREQs() (map[string][]string, error) {
@@ -1215,7 +1214,7 @@ func validateRefTargetsExist() ([]string, error) {
 				continue
 			}
 			if ref := extractRefPath(string(content), "REQ"); ref != "" {
-				if _, e := os.Stat(ref); os.IsNotExist(e) {
+				if !referenceExists(ref, []string{cfg.REQDir}) {
 					warnings = append(warnings, fmt.Sprintf("roadmap %q links to REQ %q which does not exist", name, ref))
 				}
 			}
@@ -1231,17 +1230,38 @@ func validateRefTargetsExist() ([]string, error) {
 		s := string(content)
 		name := filepath.Base(reqPath)
 		if ref := extractRefPath(s, "ADR"); ref != "" {
-			if _, e := os.Stat(ref); os.IsNotExist(e) {
+			if !referenceExists(ref, cfg.ADRDirs) {
 				warnings = append(warnings, fmt.Sprintf("req %q links to ADR %q which does not exist", name, ref))
 			}
 		}
 		if ref := extractRefPath(s, "Roadmap"); ref != "" {
-			if _, e := os.Stat(ref); os.IsNotExist(e) {
+			if !referenceExists(ref, []string{cfg.RoadmapDir}) {
 				warnings = append(warnings, fmt.Sprintf("req %q links to Roadmap %q which does not exist", name, ref))
 			}
 		}
 	}
 	return warnings, nil
+}
+
+func referenceExists(ref string, roots []string) bool {
+	if _, err := os.Stat(ref); err == nil {
+		return true
+	}
+	base := filepath.Base(ref)
+	for _, root := range roots {
+		found := false
+		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err == nil && !entry.IsDir() && entry.Name() == base {
+				found = true
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		if found {
+			return true
+		}
+	}
+	return false
 }
 
 // folderToExpectedStatus mapeia o nome da pasta para os valores de status aceitos.
@@ -1372,12 +1392,20 @@ func validateFilenameUniqueness() ([]string, error) {
 // validateBranchHasWIPRoadmap verifica se a branch atual (feat/fix/refactor) tem ao menos um roadmap em wip/.
 // Retorna violation se a branch for de implementação mas wip/ estiver vazio — previne trabalho órfão.
 func validateBranchHasWIPRoadmap() ([]string, error) {
-	cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, nil // não é git repo ou HEAD detached — skip
+	branch := firstNonEmpty(
+		os.Getenv("TRACKFW_BRANCH"),
+		os.Getenv("GITHUB_HEAD_REF"),
+		os.Getenv("CI_COMMIT_REF_NAME"),
+	)
+	if branch == "" {
+		cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
+		out, err := cmd.Output()
+		if err != nil {
+			branch = os.Getenv("GITHUB_REF_NAME")
+		} else {
+			branch = strings.TrimSpace(string(out))
+		}
 	}
-	branch := strings.TrimSpace(string(out))
 	if !strings.HasPrefix(branch, "feat/") && !strings.HasPrefix(branch, "fix/") && !strings.HasPrefix(branch, "refactor/") {
 		return nil, nil // só enforça em branches de implementação
 	}
@@ -1385,21 +1413,53 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
 
-	total := 0
+	branchSlug := normalizeBranchSlug(strings.SplitN(branch, "/", 2)[1])
+	var wipFiles []string
 	for _, wipDir := range wipDirs {
 		entries, _ := listDir(wipDir)
 		for _, name := range entries {
 			if strings.HasSuffix(name, ".md") {
-				total++
+				wipFiles = append(wipFiles, name)
+				if strings.Contains(normalizeBranchSlug(name), branchSlug) {
+					return nil, nil
+				}
 			}
 		}
 	}
 
-	if total == 0 {
+	if len(wipFiles) == 0 {
 		return []string{fmt.Sprintf(
 			"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ — create governance artifacts first:\n  trackfw req new \"title\"\n  trackfw roadmap new \"title\"\n  trackfw roadmap move <name> wip",
 			branch,
 		)}, nil
 	}
-	return nil, nil
+	return []string{fmt.Sprintf(
+		"branch %q has no matching roadmap in wip/ (found: %s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
+		branch, strings.Join(wipFiles, ", "),
+	)}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func normalizeBranchSlug(value string) string {
+	value = strings.ToLower(value)
+	var out strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			out.WriteRune(r)
+			lastDash = false
+		} else if !lastDash {
+			out.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(out.String(), "-")
 }

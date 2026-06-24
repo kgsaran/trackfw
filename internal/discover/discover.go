@@ -1,13 +1,45 @@
 package discover
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+const externalCommandTimeout = 30 * time.Second
+
+func externalCommandsDisabled() bool {
+	return os.Getenv("TRACKFW_DISABLE_EXTERNAL_COMMANDS") == "1"
+}
+
+func externalCommandAvailable(name string) bool {
+	if externalCommandsDisabled() {
+		return false
+	}
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+func runExternalCommand(rootDir, name string, args ...string) ([]byte, error) {
+	if externalCommandsDisabled() {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), externalCommandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = rootDir
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return out, fmt.Errorf("%s timed out after %s", name, externalCommandTimeout)
+	}
+	return out, err
+}
 
 // InstallGates instala os artefatos de governança num projeto brownfield:
 // validate script, hook entry e (se github-actions) CI workflow.
@@ -84,7 +116,7 @@ func installHook(framework, rootDir string, w io.Writer) error {
 			return installHusky(rootDir, w)
 		}
 		// Node.js disponível mas sem package.json → husky via npx (funciona em Windows sem lefthook)
-		if _, nodeErr := exec.LookPath("node"); nodeErr == nil {
+		if externalCommandAvailable("node") {
 			fmt.Fprintf(w, "ℹ node detected — using husky via npx (no package.json required)\n")
 			return installHuskyNPX(rootDir, w)
 		}
@@ -127,10 +159,8 @@ func installLefthook(rootDir string, w io.Writer) error {
 	}
 
 	// tenta executar "lefthook install" se disponível
-	if _, err := exec.LookPath("lefthook"); err == nil {
-		cmd := exec.Command("lefthook", "install")
-		cmd.Dir = rootDir
-		if out, err := cmd.CombinedOutput(); err != nil {
+	if externalCommandAvailable("lefthook") {
+		if out, err := runExternalCommand(rootDir, "lefthook", "install"); err != nil {
 			fmt.Fprintf(w, "⚠ lefthook install failed: %s\n", strings.TrimSpace(string(out)))
 		} else {
 			fmt.Fprintf(w, "✓ lefthook install ran successfully\n")
@@ -146,18 +176,14 @@ func installLefthook(rootDir string, w io.Writer) error {
 // Erros de exec são impressos como aviso (não bloqueantes).
 func installHusky(rootDir string, w io.Writer) error {
 	// npm install --save-dev husky
-	npmInstall := exec.Command("npm", "install", "--save-dev", "husky")
-	npmInstall.Dir = rootDir
-	if out, err := npmInstall.CombinedOutput(); err != nil {
+	if out, err := runExternalCommand(rootDir, "npm", "install", "--save-dev", "husky"); err != nil {
 		fmt.Fprintf(w, "⚠ npm install husky failed: %s\n", strings.TrimSpace(string(out)))
 	} else {
 		fmt.Fprintf(w, "✓ husky installed via npm\n")
 	}
 
 	// npx husky init
-	huskyInit := exec.Command("npx", "husky", "init")
-	huskyInit.Dir = rootDir
-	if out, err := huskyInit.CombinedOutput(); err != nil {
+	if out, err := runExternalCommand(rootDir, "npx", "husky", "init"); err != nil {
 		fmt.Fprintf(w, "⚠ npx husky init failed: %s\n", strings.TrimSpace(string(out)))
 	} else {
 		fmt.Fprintf(w, "✓ husky initialized\n")
@@ -186,9 +212,7 @@ func installHusky(rootDir string, w io.Writer) error {
 // Erros de exec são impressos como aviso (não bloqueantes).
 func installHuskyNPX(rootDir string, w io.Writer) error {
 	// npx husky init — cria .husky/ e instala o handler de hooks
-	huskyInit := exec.Command("npx", "husky", "init")
-	huskyInit.Dir = rootDir
-	if out, err := huskyInit.CombinedOutput(); err != nil {
+	if out, err := runExternalCommand(rootDir, "npx", "husky", "init"); err != nil {
 		fmt.Fprintf(w, "⚠ npx husky init failed: %s\n", strings.TrimSpace(string(out)))
 		fmt.Fprintf(w, "  → install husky manually: npx husky init\n")
 	} else {

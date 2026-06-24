@@ -104,7 +104,7 @@ trackfw validate
       break
     }
     case 'python':
-      base += "echo \"→ build check (python)...\"\npython -m py_compile $(find . -name '*.py' -not -path './.venv/*' -not -path './venv/*')\n"
+      base += "echo \"→ build check (python)...\"\npython3 -c \"import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('.').rglob('*.py') if '.venv' not in p.parts and 'venv' not in p.parts]\"\n"
       break
   }
 
@@ -583,7 +583,7 @@ function backendCommands(cfg) {
       return [`${pm} run build`, `${pm} test`, `${pm} run lint`]
     case 'python':
       return [
-        "python -m py_compile $(find . -name '*.py' -not -path './.venv/*' -not -path './venv/*')",
+        "python3 -c \"import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('.').rglob('*.py') if '.venv' not in p.parts and 'venv' not in p.parts]\"",
         'python -m pytest',
         'ruff check .',
       ]
@@ -941,45 +941,45 @@ async function installAgents() {
   console.log('  ✓ claude (agentes — execute `trackfw install agents` com o binário Go para instalar os templates)')
 }
 
-async function installGemini() {
+async function installGemini(cwd = process.cwd()) {
   try {
-    injectRulesForTool('gemini', process.cwd())
+    injectRulesForTool('gemini', cwd)
     console.log('  ✓ trackfw rules → GEMINI.md')
   } catch (e) {
     console.log(`  ⚠ gemini rules inject: ${e.message}`)
   }
 }
 
-async function installCursor() {
+async function installCursor(cwd = process.cwd()) {
   try {
-    injectRulesForTool('cursor', process.cwd())
+    injectRulesForTool('cursor', cwd)
     console.log('  ✓ trackfw rules → .cursor/rules/trackfw.mdc')
   } catch (e) {
     console.log(`  ⚠ cursor rules inject: ${e.message}`)
   }
 }
 
-async function installCopilot() {
+async function installCopilot(cwd = process.cwd()) {
   try {
-    injectRulesForTool('copilot', process.cwd())
+    injectRulesForTool('copilot', cwd)
     console.log('  ✓ trackfw rules → .github/copilot-instructions.md')
   } catch (e) {
     console.log(`  ⚠ copilot rules inject: ${e.message}`)
   }
 }
 
-async function installWindsurf() {
+async function installWindsurf(cwd = process.cwd()) {
   try {
-    injectRulesForTool('windsurf', process.cwd())
+    injectRulesForTool('windsurf', cwd)
     console.log('  ✓ trackfw rules → .windsurfrules')
   } catch (e) {
     console.log(`  ⚠ windsurf rules inject: ${e.message}`)
   }
 }
 
-async function installAmazonQ() {
+async function installAmazonQ(cwd = process.cwd()) {
   try {
-    injectRulesForTool('amazonq', process.cwd())
+    injectRulesForTool('amazonq', cwd)
     console.log('  ✓ trackfw rules → .amazonq/developer/guidelines.md')
   } catch (e) {
     console.log(`  ⚠ amazonq rules inject: ${e.message}`)

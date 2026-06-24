@@ -7,6 +7,11 @@ import (
 	"testing"
 )
 
+func TestMain(m *testing.M) {
+	_ = os.Setenv("TRACKFW_DISABLE_EXTERNAL_COMMANDS", "1")
+	os.Exit(m.Run())
+}
+
 func TestScan_Empty(t *testing.T) {
 	dir := t.TempDir()
 	r, err := Scan(dir)

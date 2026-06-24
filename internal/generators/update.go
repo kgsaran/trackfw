@@ -83,6 +83,15 @@ func Update(cwd string) error {
 	} else {
 		fmt.Println("  ✓ agent hooks atualizados")
 	}
+	_, agentsErr := os.Stat(filepath.Join(cwd, "AGENTS.md"))
+	_, codexErr := os.Stat(filepath.Join(cwd, ".codex"))
+	if agentsErr == nil || codexErr == nil {
+		if err := InstallCodex(cwd); err != nil {
+			fmt.Printf("  ⚠ Codex integration: %v\n", err)
+		} else {
+			fmt.Println("  ✓ Codex skills and custom agents updated")
+		}
+	}
 
 	// 2. Validate script (categoria 2 — trackfw-owned, overwrite seguro)
 	if err := generateValidateScript(cfg); err != nil {

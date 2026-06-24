@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-06-20
 req: "REQ-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md"
 squad: ""

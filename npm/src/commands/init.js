@@ -4,7 +4,8 @@ const { t } = require('../i18n')
 
 const cmd = new Command('init')
 cmd.description(t('init.description'))
-cmd.action(async () => {
+cmd.option('--ai-tools <tools>', 'Comma-separated AI tools to configure (codex,claude,gemini,cursor,copilot,windsurf,amazonq)', '')
+cmd.action(async (options) => {
   const path = require('path')
   const generators = require('../generators/init')
 
@@ -20,6 +21,19 @@ cmd.action(async () => {
       ci: 'none',
     }
     await generators.scaffold(cfg)
+    const aiTools = String(options.aiTools || '').split(',').map(tool => tool.trim()).filter(Boolean)
+    for (const tool of aiTools) {
+      switch (tool) {
+        case 'codex':    require('../generators/codex').installCodex(process.cwd()); break
+        case 'claude':   await generators.installAgents();  break
+        case 'gemini':   await generators.installGemini();  break
+        case 'cursor':   await generators.installCursor();  break
+        case 'copilot':  await generators.installCopilot(); break
+        case 'windsurf': await generators.installWindsurf(); break
+        case 'amazonq':  await generators.installAmazonQ(); break
+        default: throw new Error(`Unsupported AI tool: ${tool}`)
+      }
+    }
     console.log(`\n${t('init.success')}`)
     require('../generators/init').printArchitectNextSteps(process.cwd())
     return
@@ -141,6 +155,7 @@ cmd.action(async () => {
       message: t('init.prompt.aiTools'),
       choices: [
         { name: 'Claude Code', value: 'claude' },
+        { name: 'OpenAI Codex', value: 'codex' },
         { name: 'Gemini CLI', value: 'gemini' },
         { name: 'Cursor', value: 'cursor' },
         { name: 'GitHub Copilot', value: 'copilot' },
@@ -170,6 +185,7 @@ cmd.action(async () => {
 
   for (const tool of (aiTools || [])) {
     switch (tool) {
+      case 'codex':    require('../generators/codex').installCodex(process.cwd()); break
       case 'claude':   await generators.installAgents();  break
       case 'gemini':   await generators.installGemini();  break
       case 'cursor':   await generators.installCursor();  break

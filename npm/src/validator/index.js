@@ -606,7 +606,7 @@ function validateRefTargetsExist() {
       try {
         const content = fs.readFileSync(path.join(dir, name), 'utf8')
         const ref = extractRefPath(content, 'REQ')
-        if (ref && !fs.existsSync(ref)) {
+        if (ref && !referenceExists(ref, [cfg.reqDir])) {
           warnings.push(`roadmap "${name}" links to REQ "${ref}" which does not exist`)
         }
       } catch (_) {}
@@ -619,17 +619,26 @@ function validateRefTargetsExist() {
       const content = fs.readFileSync(filePath, 'utf8')
       const name = path.basename(filePath)
       const adrRef = extractRefPath(content, 'ADR')
-      if (adrRef && !fs.existsSync(adrRef)) {
+      if (adrRef && !referenceExists(adrRef, cfg.adrDirs)) {
         warnings.push(`req "${name}" links to ADR "${adrRef}" which does not exist`)
       }
       const roadmapRef = extractRefPath(content, 'Roadmap')
-      if (roadmapRef && !fs.existsSync(roadmapRef)) {
+      if (roadmapRef && !referenceExists(roadmapRef, [cfg.roadmapDir])) {
         warnings.push(`req "${name}" links to Roadmap "${roadmapRef}" which does not exist`)
       }
     } catch (_) {}
   }
 
   return warnings
+}
+
+function referenceExists(ref, roots) {
+  if (fs.existsSync(ref)) return true
+  const basename = path.basename(ref)
+  for (const root of roots || []) {
+    if (walkDirMd(root).some(filePath => path.basename(filePath) === basename)) return true
+  }
+  return false
 }
 
 // FOLDER_TO_STATUS mapeia pasta de estado para os valores válidos de status no frontmatter
@@ -738,11 +747,13 @@ function validateFilenameUniqueness() {
 // validateBranchHasWIPRoadmap — verifica que branch feat/fix/refactor tem ao menos um roadmap em wip/
 function validateBranchHasWIPRoadmap() {
   const { execSync } = require('child_process')
-  let branch
-  try {
-    branch = execSync('git symbolic-ref --short HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
-  } catch {
-    return [] // não é git repo ou HEAD detached
+  let branch = process.env.TRACKFW_BRANCH || process.env.GITHUB_HEAD_REF || process.env.CI_COMMIT_REF_NAME || ''
+  if (!branch) {
+    try {
+      branch = execSync('git symbolic-ref --short HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+    } catch {
+      branch = process.env.GITHUB_REF_NAME || ''
+    }
   }
   if (!branch.startsWith('feat/') && !branch.startsWith('fix/') && !branch.startsWith('refactor/')) {
     return []
@@ -750,16 +761,22 @@ function validateBranchHasWIPRoadmap() {
 
   const cfg = config.load()
   const wipDirs = resolveWIPDirs(cfg)
-  let total = 0
+  const branchSlug = normalizeBranchSlug(branch.split('/', 2)[1])
+  const wipFiles = []
   for (const wipDir of wipDirs) {
     const files = listDir(wipDir).filter(f => f.endsWith('.md'))
-    total += files.length
+    wipFiles.push(...files)
+    if (files.some(file => normalizeBranchSlug(file).includes(branchSlug))) return []
   }
 
-  if (total === 0) {
+  if (wipFiles.length === 0) {
     return [`branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ — create governance artifacts first:\n  trackfw req new "title"\n  trackfw roadmap new "title"\n  trackfw roadmap move <name> wip`]
   }
-  return []
+  return [`branch "${branch}" has no matching roadmap in wip/ (found: ${wipFiles.join(', ')}) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI`]
+}
+
+function normalizeBranchSlug(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
 // _itemMeta: mapa de message → { rule, file } para enriquecer saída JSON.

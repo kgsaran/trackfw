@@ -6,7 +6,7 @@ O `trackfw` foi desenhado desde o início para ser nativo ao fluxo de trabalho c
 
 ## Por que agentes de IA precisam de governança estruturada
 
-Agentes de IA como Claude Code, Gemini CLI e Cursor operam em sessões independentes. Sem um registro persistente de decisões e contexto, cada sessão começa do zero — o agente não sabe:
+Agentes de IA como Claude Code, OpenAI Codex, Gemini CLI, Cursor, GitHub Copilot, Windsurf e Amazon Q operam em sessões independentes. Sem um registro persistente de decisões e contexto, cada sessão começa do zero — o agente não sabe:
 
 - Quais decisões arquiteturais já foram tomadas (e por quê)
 - Quais requisitos estão em andamento
@@ -294,6 +294,20 @@ O agente lê automaticamente `trackfw context --format=json` e inclui o resultad
 # Exportar contexto para uso com Gemini
 trackfw context --format=json | gemini --model gemini-2.0-flash "Analise o estado de governança e sugira próximos passos."
 ```
+
+---
+
+## OpenAI Codex
+
+Selecione **OpenAI Codex** no `trackfw init` ou execute:
+
+```bash
+trackfw init --ai-tools codex
+```
+
+A integração gera `AGENTS.md`, cinco skills em `.agents/skills/`, seis subagentes
+em `.codex/agents/`, limites de concorrência em `.codex/config.toml` e hooks de
+atenção em `.codex/hooks.json`.
 
 ---
 

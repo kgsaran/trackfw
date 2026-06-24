@@ -478,6 +478,27 @@ class TestValidatorImprovements(unittest.TestCase):
 
         self.assertTrue(any("nao-existe.md" in w["message"] for w in warnings))
 
+    def test_validate_ref_targets_accepts_generated_basenames(self):
+        from trackfw.validator import validate_ref_targets_exist
+
+        req_dir = os.path.join(self.tmp, "docs", "req")
+        roadmap_wip = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        os.makedirs(req_dir)
+        os.makedirs(roadmap_wip)
+        with open(os.path.join(req_dir, "REQ-001.md"), "w") as f:
+            f.write("# REQ\nRoadmap: ROADMAP-001.md\n")
+        with open(os.path.join(roadmap_wip, "ROADMAP-001.md"), "w") as f:
+            f.write("# Roadmap\nREQ: REQ-001.md\n")
+
+        cfg = {
+            "adr_dirs": [os.path.join(self.tmp, "docs", "adr")],
+            "req_dir": req_dir,
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        self.assertEqual(validate_ref_targets_exist(cfg), [])
+
     def test_validate_folder_status_coherence_warning(self):
         """Arquivo em wip/ com status: Done gera warning."""
         from trackfw import config as cfg_mod

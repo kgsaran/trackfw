@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 from trackfw.commands.metrics import _parse_log
 
 STATES = ["wip", "backlog", "blocked", "done", "abandoned"]
-LOG_PATH = os.path.join("docs", "roadmaps", ".trackfw-log")
 
 
 def _state_distribution(cfg):
@@ -186,10 +185,6 @@ def get_metrics(cfg):
     Calcula e retorna métricas de entrega a partir do .trackfw-log.
     """
     log_path = os.path.join(cfg.get("roadmap_dir", "docs/roadmaps"), ".trackfw-log")
-    # Fallback para path padrão se não existir
-    if not os.path.exists(log_path):
-        log_path = LOG_PATH
-
     transitions = _parse_log(log_path)
 
     lead_time = _calc_lead_time(transitions)

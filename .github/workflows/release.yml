@@ -10,7 +10,38 @@ permissions:
   id-token: write
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: go test -timeout 2m ./...
+        env:
+          TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
+      - run: go vet ./...
+      - run: go build ./...
+      - run: npm ci --ignore-scripts
+        working-directory: npm
+      - run: npm test
+        working-directory: npm
+      - run: python -m pip install build pytest
+      - run: python -m pytest pypi/tests -q
+      - run: python -m build pypi
+      - run: scripts/check-cli-parity.sh
+      - run: scripts/check-validate-parity.sh
+      - run: scripts/check-static-assets.sh
+
   release:
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +62,7 @@ jobs:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
   publish-npm:
-    needs: release
+    needs: [quality, release]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -58,7 +89,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-pypi:
-    needs: release
+    needs: [quality, release]
     runs-on: ubuntu-latest
     defaults:
       run:
