@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trackfw"
 version = "2.12.2"
-description = "Governance CLI for AI-native software delivery. Enforces traceability: ADR → REQ → ROADMAP → kanban. Native support for Codex, Claude Code, Gemini CLI, Cursor, Copilot, Windsurf, and Amazon Q."
+description = "Governance CLI for AI-native software delivery and AI coding agents. Enforces traceability: ADR → REQ → ROADMAP → kanban. Native support for Codex, Claude Code, Gemini CLI, Cursor, Copilot, Windsurf, and Amazon Q."
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 requires-python = ">=3.10"
@@ -13,8 +13,10 @@ keywords = [
   "cli", "adr", "architecture-decision-records", "roadmap", "governance",
   "software-delivery", "devops", "ai-agents", "developer-tools", "kanban",
   "traceability", "software-governance", "ai-governance", "pre-commit",
-  "developer-experience", "technical-debt", "openai-codex", "claude-code", "gemini",
-  "cursor", "copilot", "trackfw"
+  "developer-experience", "technical-debt", "governance-cli", "agents",
+  "agents-md", "skills", "subagents", "hooks", "ai-coding-assistant",
+  "openai-codex", "claude-code", "gemini-cli", "gemini",
+  "github-copilot", "cursor", "copilot", "windsurf", "amazon-q", "trackfw"
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
