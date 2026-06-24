@@ -9,7 +9,7 @@ Referência completa de todos os comandos do `trackfw`.
 Inicializa a estrutura de governança no projeto atual via wizard interativo.
 
 ```bash
-trackfw init [--brownfield]
+trackfw init [--brownfield] [--ai-tools codex,...]
 ```
 
 ### Flags
@@ -17,6 +17,7 @@ trackfw init [--brownfield]
 | Flag | Descrição |
 |------|-----------|
 | `--brownfield` | Ativa modo lenient por 30 dias (violações viram warnings) |
+| `--ai-tools` | Configura integrações de IA em modo não interativo; `codex` é suportado nos três runtimes |
 
 ### O que é gerado
 
@@ -25,6 +26,7 @@ trackfw init [--brownfield]
 - `scripts/trackfw-validate.sh` — script de validação para CI
 - `CLAUDE.md` — contexto para Claude Code (se selecionado)
 - `.claude/commands/` — 7 slash commands para Claude Code
+- `AGENTS.md`, `.agents/skills/`, `.codex/agents/` e `.codex/hooks.json` — integração Codex (se selecionado)
 - `.husky/` ou `lefthook.yml` — git hooks (se selecionado)
 - `.github/workflows/trackfw.yml` ou `.gitlab-ci.yml` (se selecionado)
 - `pom.xml` Spring Boot 3.3 (se backend=java)

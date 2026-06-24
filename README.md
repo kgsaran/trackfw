@@ -327,6 +327,7 @@ $ trackfw status
 
 | Command | Installs | Format |
 |---|---|---|
+| `trackfw init --ai-tools codex` | `AGENTS.md`, 5 repository skills, 6 custom agents, Codex config and hooks | `.agents/skills/` + `.codex/` |
 | `trackfw agents` | 10 subagents in `~/.claude/agents/` | Claude Code `.md` with frontmatter |
 | `trackfw gemini` | GEMINI.md + 10 skills + 3 commands | `~/.gemini/` + project root |
 | `trackfw cursor` | 10 rules in `.cursor/rules/` | `.mdc` with YAML frontmatter |
@@ -349,10 +350,12 @@ The 10 roles installed for each tool: **architect · backend · frontend · qa �
 ? Package manager?       npm / pnpm / yarn / bun
 ? Git hooks?             husky / lefthook / none
 ? CI system?             GitHub Actions / GitLab CI / none
-? Which AI assistants?   Claude Code / Gemini CLI / Cursor / Copilot / Windsurf / Amazon Q
+? Which AI assistants?   Claude Code / OpenAI Codex / Gemini CLI / Cursor / Copilot / Windsurf / Amazon Q
 ```
 
 The governance structure (`docs/adr/`, `docs/req/`, `docs/roadmaps/`) is always identical — stack-agnostic. The generated hooks, workflows, and AI integrations adapt to your answers.
+
+The Codex integration is repository-scoped: `AGENTS.md` carries persistent instructions, `.agents/skills/` provides governance workflows, `.codex/agents/` provides specialist subagents, and `.codex/hooks.json` signals permission requests to the local dashboard.
 
 ---
 

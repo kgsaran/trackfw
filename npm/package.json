@@ -1,7 +1,7 @@
 {
   "name": "trackfw",
   "version": "0.0.0-dev",
-  "description": "Governance CLI for AI-native software delivery. Enforces traceability: ADR → REQ → ROADMAP → kanban. Pre-commit gate + CI integration. Native support for Claude Code, Gemini CLI, Cursor, Copilot, Windsurf, Amazon Q.",
+  "description": "Governance CLI for AI-native software delivery. Enforces traceability: ADR → REQ → ROADMAP → kanban. Native support for Codex, Claude Code, Gemini CLI, Cursor, Copilot, Windsurf, and Amazon Q.",
   "keywords": [
     "cli",
     "adr",
@@ -20,6 +20,7 @@
     "developer-experience",
     "technical-debt",
     "claude-code",
+    "openai-codex",
     "gemini",
     "cursor",
     "copilot",

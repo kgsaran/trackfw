@@ -5,7 +5,7 @@ req: "REQ-2026-06-20-attention-hooks-agent-clis.md"
 squad: ""
 ---
 
-# Roadmap: attention-hooks-agent-clis
+# Roadmap: codex-agent-integrations
 
 > Criado em: 2026-06-20 | Status: 🔄 WIP
 
@@ -18,8 +18,8 @@ Pesquisa de hooks em todos os CLIs suportados (2026-06-20):
 | CLI | Hook pré-tool | Arquivo de config | Nota |
 |-----|--------------|-------------------|------|
 | Claude Code | `PreToolUse` (matcher por nome da tool) | `.claude/settings.json` | `AskUserQuestion` é tool nomeada → hook exato |
-| Codex CLI | `PreToolUse` (matcher por nome) | `.codex/hooks.json` | Perguntas via terminal, não tool nomeada |
-| Gemini CLI | `BeforeTool` | `.gemini/settings.json` | Sem evento para clarification requests |
+| Codex CLI | `PermissionRequest` | `.codex/hooks.json` | Evento nativo de aprovação |
+| Gemini CLI | `Notification[ToolPermission]` | `.gemini/settings.json` | Evento observável de permissão |
 | Kiro | `PreToolUse` | `.kiro/hooks/` | Config declarativa versionável |
 | GitHub Copilot | `preToolUse` | `.github/hooks/*.json` | fail-closed |
 | Cursor | `preToolUse` (genérico) | `.cursor/hooks.json` | Mais completo dos editores |
@@ -138,7 +138,7 @@ Formato resultante em `.claude/settings.json`:
 ```json
 {
   "hooks": {
-    "PreToolUse": [
+    "PermissionRequest": [
       {
         "matcher": "AskUserQuestion",
         "hooks": [{ "type": "command", "command": "scripts/trackfw-attention-signal.sh" }]
@@ -191,7 +191,7 @@ Formato resultante em `.claude/settings.json`:
   }
 }
 ```
-Nota: Codex não tem `AskUserQuestion` nomeado — matcher `.*` captura todos os tool calls.
+Nota: `PermissionRequest` evita sinalizar operações que não exigem intervenção humana.
 
 **Critérios de aceite:**
 - [ ] `go build ./...` sem erros
@@ -210,11 +210,17 @@ Nota: Codex não tem `AskUserQuestion` nomeado — matcher `.*` captura todos os
 ```json
 {
   "hooks": {
-    "BeforeTool": [
-      { "command": "scripts/trackfw-attention-signal.sh" }
+    "Notification": [
+      {
+        "matcher": "ToolPermission",
+        "hooks": [{ "type": "command", "command": "scripts/trackfw-attention-signal.sh" }]
+      }
     ],
     "AfterTool": [
-      { "command": "scripts/trackfw-attention-cleanup.sh" }
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "scripts/trackfw-attention-cleanup.sh" }]
+      }
     ]
   }
 }

@@ -88,24 +88,39 @@ def inject_claude_hooks(cwd: str) -> None:
 # ---------------------------------------------------------------------------
 
 def inject_codex_hooks(cwd: str) -> None:
-    """Injeta hooks PreToolUse/PostToolUse no .codex/hooks.json."""
+    """Injeta hooks PermissionRequest/PostToolUse no .codex/hooks.json."""
     file_path = os.path.join(cwd, '.codex', 'hooks.json')
     data = _read_json(file_path)
 
     hooks = data.setdefault('hooks', {})
 
-    pre_hooks = hooks.setdefault('PreToolUse', [])
-    if not _has_entry(pre_hooks, 'matcher', '.*'):
+    def has_nested_command(entries, command):
+        return any(
+            any(h.get('command') == command for h in entry.get('hooks', []))
+            for entry in entries
+        )
+
+    pre_hooks = hooks.setdefault('PermissionRequest', [])
+    if not has_nested_command(pre_hooks, 'scripts/trackfw-attention-signal.sh'):
         pre_hooks.append({
             'matcher': '.*',
-            'command': 'scripts/trackfw-attention-signal.sh',
+            'hooks': [{
+                'type': 'command',
+                'command': 'scripts/trackfw-attention-signal.sh',
+                'timeout': 10,
+                'statusMessage': 'Waiting for approval',
+            }],
         })
 
     post_hooks = hooks.setdefault('PostToolUse', [])
-    if not _has_entry(post_hooks, 'matcher', '.*'):
+    if not has_nested_command(post_hooks, 'scripts/trackfw-attention-cleanup.sh'):
         post_hooks.append({
             'matcher': '.*',
-            'command': 'scripts/trackfw-attention-cleanup.sh',
+            'hooks': [{
+                'type': 'command',
+                'command': 'scripts/trackfw-attention-cleanup.sh',
+                'timeout': 10,
+            }],
         })
 
     _write_json(file_path, data)
@@ -116,19 +131,48 @@ def inject_codex_hooks(cwd: str) -> None:
 # ---------------------------------------------------------------------------
 
 def inject_gemini_hooks(cwd: str) -> None:
-    """Injeta hooks BeforeTool/AfterTool no .gemini/settings.json."""
+    """Injeta hooks Notification/AfterTool no .gemini/settings.json."""
     file_path = os.path.join(cwd, '.gemini', 'settings.json')
     data = _read_json(file_path)
 
     hooks = data.setdefault('hooks', {})
 
-    before = hooks.setdefault('BeforeTool', [])
-    if not _has_entry(before, 'command', 'scripts/trackfw-attention-signal.sh'):
-        before.append({'command': 'scripts/trackfw-attention-signal.sh'})
+    notifications = hooks.setdefault('Notification', [])
+    if not any(
+        entry.get('matcher') == 'ToolPermission'
+        and any(
+            hook.get('command') == 'scripts/trackfw-attention-signal.sh'
+            for hook in entry.get('hooks', [])
+        )
+        for entry in notifications
+    ):
+        notifications.append({
+            'matcher': 'ToolPermission',
+            'hooks': [{
+                'name': 'trackfw-attention-signal',
+                'type': 'command',
+                'command': 'scripts/trackfw-attention-signal.sh',
+                'timeout': 10000,
+            }],
+        })
 
     after = hooks.setdefault('AfterTool', [])
-    if not _has_entry(after, 'command', 'scripts/trackfw-attention-cleanup.sh'):
-        after.append({'command': 'scripts/trackfw-attention-cleanup.sh'})
+    if not any(
+        any(
+            hook.get('command') == 'scripts/trackfw-attention-cleanup.sh'
+            for hook in entry.get('hooks', [])
+        )
+        for entry in after
+    ):
+        after.append({
+            'matcher': '*',
+            'hooks': [{
+                'name': 'trackfw-attention-cleanup',
+                'type': 'command',
+                'command': 'scripts/trackfw-attention-cleanup.sh',
+                'timeout': 10000,
+            }],
+        })
 
     _write_json(file_path, data)
 
@@ -167,10 +211,21 @@ def inject_copilot_hooks(cwd: str) -> None:
     """Cria/sobrescreve .github/hooks/trackfw-attention.json."""
     file_path = os.path.join(cwd, '.github', 'hooks', 'trackfw-attention.json')
     data = {
-        'hooks': [
-            {'event': 'preToolUse',  'run': 'scripts/trackfw-attention-signal.sh'},
-            {'event': 'postToolUse', 'run': 'scripts/trackfw-attention-cleanup.sh'},
-        ]
+        'version': 1,
+        'hooks': {
+            'preToolUse': [{
+                'type': 'command',
+                'bash': 'scripts/trackfw-attention-signal.sh',
+                'cwd': '.',
+                'timeoutSec': 10,
+            }],
+            'postToolUse': [{
+                'type': 'command',
+                'bash': 'scripts/trackfw-attention-cleanup.sh',
+                'cwd': '.',
+                'timeoutSec': 10,
+            }],
+        },
     }
     _write_json(file_path, data)
 

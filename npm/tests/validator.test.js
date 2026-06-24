@@ -129,6 +129,26 @@ test('validateRefTargetsExist returns array', () => {
   assert(Array.isArray(result))
 })
 
+test('validateRefTargetsExist accepts generated basename references', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ref-'))
+  fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+  fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'docs/req/REQ-001.md'), '# REQ\nRoadmap: ROADMAP-001.md\n')
+  fs.writeFileSync(path.join(tmp, 'docs/roadmaps/wip/ROADMAP-001.md'), '# Roadmap\nREQ: REQ-001.md\n')
+  fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+
+  const origDir = process.cwd()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    assert.deepStrictEqual(validator.validateRefTargetsExist(), [])
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
 // ML-2B: field mapping + severity per rule
 
 test('field mapping: req_id satisfies wip_has_req', () => {

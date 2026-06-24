@@ -297,6 +297,20 @@ trackfw context --format=json | gemini --model gemini-2.0-flash "Analise o estad
 
 ---
 
+## OpenAI Codex
+
+Selecione **OpenAI Codex** no `trackfw init` ou execute:
+
+```bash
+trackfw init --ai-tools codex
+```
+
+A integração gera `AGENTS.md`, cinco skills em `.agents/skills/`, seis subagentes
+em `.codex/agents/`, limites de concorrência em `.codex/config.toml` e hooks de
+atenção em `.codex/hooks.json`.
+
+---
+
 ## Cursor
 
 Adicione ao `.cursorrules` do projeto:

@@ -28,6 +28,11 @@ def register(subparsers):
         help="Comma-separated agents used with --namespacing by_agent",
     )
     parser.add_argument("--wip-limit", type=int, default=1, help="Maximum active roadmaps")
+    parser.add_argument(
+        "--ai-tools",
+        default="",
+        help="Comma-separated AI tools to configure (currently: codex)",
+    )
     parser.set_defaults(func=run)
     return parser
 
@@ -49,4 +54,8 @@ def run(args):
         "wip_limit": args.wip_limit,
     }
     scaffold(cwd, opts)
+    ai_tools = _parse_agents(args.ai_tools)
+    if "codex" in ai_tools:
+        from trackfw.generators.codex import install_codex
+        install_codex(cwd)
     return 0

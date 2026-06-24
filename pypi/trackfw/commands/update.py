@@ -40,6 +40,13 @@ def _run(args: argparse.Namespace) -> None:
     except Exception as e:
         print(f'  ⚠ agent hooks: {e}')
 
+    if os.path.exists(os.path.join(cwd, "AGENTS.md")) or os.path.isdir(os.path.join(cwd, ".codex")):
+        try:
+            from trackfw.generators.codex import install_codex
+            install_codex(cwd)
+        except Exception as e:
+            print(f"  ⚠ Codex integration: {e}")
+
     print()
     print("  Nota: este CLI Python atualiza apenas as regras de agente.")
     print("  Para atualizar gates (hooks/CI) e Claude commands, use:")

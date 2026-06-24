@@ -207,6 +207,24 @@ func TestRefTargetsExistWarning(t *testing.T) {
 	}
 }
 
+func TestRefTargetsExistAcceptsGeneratedBasenames(t *testing.T) {
+	dir := t.TempDir()
+	config.Reset()
+	t.Cleanup(config.Reset)
+	chdir(t, dir)
+
+	writeFile(t, dir, "docs/req/REQ-001.md", "# REQ\nRoadmap: ROADMAP-001.md\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-001.md", "# Roadmap\nREQ: REQ-001.md\n")
+
+	warnings, err := validateRefTargetsExist()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("generated basename references should resolve, got: %v", warnings)
+	}
+}
+
 // TestFolderStatusCoherence — arquivo em wip/ com status: Done → warning; status: WIP → sem warning
 func TestFolderStatusCoherence(t *testing.T) {
 	dir := t.TempDir()

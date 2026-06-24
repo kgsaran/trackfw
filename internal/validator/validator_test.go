@@ -863,7 +863,7 @@ func TestValidateBranchHasWIPRoadmap_Violation(t *testing.T) {
 func TestValidateBranchHasWIPRoadmap_Pass(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir, "feat/my-feature")
-	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-001.md", "REQ: REQ-001\n## Acceptance Criteria\n- [ ] ok\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-my-feature.md", "REQ: REQ-001\n## Acceptance Criteria\n- [ ] ok\n")
 	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
 	config.Reset()
 	chdir(t, dir)
@@ -875,6 +875,42 @@ func TestValidateBranchHasWIPRoadmap_Pass(t *testing.T) {
 	}
 	if len(violations) > 0 {
 		t.Errorf("não esperava violations com roadmap em wip, obteve: %v", violations)
+	}
+}
+
+func TestValidateBranchHasWIPRoadmap_MismatchedRoadmap(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "feat/my-feature")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-unrelated.md", "REQ: REQ-001\n")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasViolation(violations, "no matching roadmap") {
+		t.Errorf("expected mismatch violation, got: %v", violations)
+	}
+}
+
+func TestValidateBranchHasWIPRoadmap_CIBranchEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-ci-feature.md", "REQ: REQ-001\n")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Setenv("TRACKFW_BRANCH", "feat/ci-feature")
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("CI branch environment should match roadmap, got: %v", violations)
 	}
 }
 

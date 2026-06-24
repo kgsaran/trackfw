@@ -157,8 +157,8 @@ After `init`, `trackfw update` automatically injects **attention hooks** into ev
 | CLI | Hook event | Config file |
 |---|---|---|
 | Claude Code | `PreToolUse[AskUserQuestion]` / `PostToolUse` | `.claude/settings.json` |
-| Codex CLI | `PreToolUse` / `PostToolUse` | `.codex/hooks.json` |
-| Gemini CLI | `BeforeTool` / `AfterTool` | `.gemini/settings.json` |
+| Codex CLI | `PermissionRequest` / `PostToolUse` | `.codex/hooks.json` |
+| Gemini CLI | `Notification[ToolPermission]` / `AfterTool` | `.gemini/settings.json` |
 | Kiro | `PreToolUse` / `PostToolUse` | `.kiro/hooks/trackfw-attention.json` |
 | GitHub Copilot | `preToolUse` / `postToolUse` | `.github/hooks/trackfw-attention.json` |
 | Cursor | `preToolUse` / `postToolUse` | `.cursor/hooks.json` |
@@ -242,7 +242,7 @@ defined by `docs/cli-parity.md` and enforced by release smoke tests.
 | v2.5 | trace_id_field (bidirectional REQ↔ROADMAP), by_agent namespacing, salvaguarda one-sided | ✅ Done |
 | v2.6 | req_has_adr / req_has_roadmap / blocked_has_req configurable | ✅ Done |
 | v2.7 | `branch_has_wip_roadmap` rule (gate pré-trabalho); Node.js → husky fallback (Windows/corp); agent protocol in rules block | ✅ Done |
-| v2.8 | Attention hooks auto-injected for 6 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor); board banner fires on tool call without agent behavioral change | ✅ Done |
+| v2.8 | Attention hooks auto-injected for 6 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor); permission-capable CLIs signal only when user action is required | ✅ Done |
 | vNext | GitHub Actions official, trackfw serve UX, multi-repo support | 🔄 Planned |
 
 ---

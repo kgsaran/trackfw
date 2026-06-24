@@ -3,7 +3,7 @@ status: Open
 date: 2026-06-20
 author: Zeus
 adr: ""
-roadmap: "ROADMAP-2026-06-20-attention-hooks-agent-clis.md"
+roadmap: "ROADMAP-2026-06-20-codex-agent-integrations.md"
 ---
 
 # REQ: attention-hooks-agent-clis
@@ -27,8 +27,8 @@ equivalente), e que o Windsurf é o único outlier (hooks por tipo de ação, se
 
 - [ ] Claude Code: hook `PreToolUse[AskUserQuestion]` gerado em `.claude/settings.json` que escreve
       `.trackfw-attention.json` antes da pergunta e o apaga via `PostToolUse[AskUserQuestion]`
-- [ ] Codex CLI: hook `PreToolUse` + `PostToolUse` gerado em `.codex/hooks.json`
-- [ ] Gemini CLI: hook `BeforeTool` + `AfterTool` gerado em `.gemini/settings.json`
+- [x] Codex CLI: hook `PermissionRequest` + `PostToolUse` gerado em `.codex/hooks.json`
+- [x] Gemini CLI: hook `Notification[ToolPermission]` + `AfterTool` gerado em `.gemini/settings.json`
 - [ ] Kiro: hook `PreToolUse` + `PostToolUse` gerado em `.kiro/hooks/trackfw-attention.json`
 - [ ] GitHub Copilot: hook `preToolUse` + `postToolUse` gerado em `.github/hooks/trackfw-attention.json`
 - [ ] Cursor: hook `preToolUse` + `postToolUse` gerado em `.cursor/hooks.json`
@@ -46,4 +46,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: ROADMAP-2026-06-20-attention-hooks-agent-clis.md
+Roadmap: ROADMAP-2026-06-20-codex-agent-integrations.md

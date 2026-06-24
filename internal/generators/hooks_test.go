@@ -197,3 +197,45 @@ func TestInjectHooksDetected_Claude(t *testing.T) {
 		t.Error("hook Claude não foi injetado ao detectar CLAUDE.md")
 	}
 }
+
+func TestInjectGeminiHooks_UsesCurrentSchema(t *testing.T) {
+	dir := t.TempDir()
+	if err := injectGeminiHooks(dir); err != nil {
+		t.Fatalf("injectGeminiHooks() error: %v", err)
+	}
+	if err := injectGeminiHooks(dir); err != nil {
+		t.Fatalf("injectGeminiHooks() must be idempotent: %v", err)
+	}
+
+	data := readJSONFile(t, filepath.Join(dir, ".gemini", "settings.json"))
+	if !hasClaudeHookEntry(data, "Notification", "ToolPermission", "scripts/trackfw-attention-signal.sh") {
+		t.Error("Notification[ToolPermission] attention hook not found")
+	}
+	if !hasClaudeHookEntry(data, "AfterTool", "*", "scripts/trackfw-attention-cleanup.sh") {
+		t.Error("AfterTool cleanup hook not found")
+	}
+}
+
+func TestInjectCopilotHooks_UsesVersionedSchema(t *testing.T) {
+	dir := t.TempDir()
+	if err := injectCopilotHooks(dir); err != nil {
+		t.Fatalf("injectCopilotHooks() error: %v", err)
+	}
+
+	data := readJSONFile(t, filepath.Join(dir, ".github", "hooks", "trackfw-attention.json"))
+	if data["version"] != float64(1) {
+		t.Fatalf("version = %v, want 1", data["version"])
+	}
+	hooks, ok := data["hooks"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("hooks must be an object, got %T", data["hooks"])
+	}
+	pre, _ := hooks["preToolUse"].([]interface{})
+	if len(pre) != 1 {
+		t.Fatalf("preToolUse = %v", pre)
+	}
+	entry, _ := pre[0].(map[string]interface{})
+	if entry["type"] != "command" || entry["bash"] != "scripts/trackfw-attention-signal.sh" {
+		t.Errorf("unexpected preToolUse entry: %v", entry)
+	}
+}

@@ -71,6 +71,13 @@ cmd.action(() => {
   } catch (e) {
     console.log(`  ⚠ agent rules: ${e.message}`);
   }
+  if (fs.existsSync(path.join(cwd, 'AGENTS.md')) || fs.existsSync(path.join(cwd, '.codex'))) {
+    try {
+      require('../generators/codex').installCodex(cwd);
+    } catch (e) {
+      console.warn(`  ⚠ Codex integration: ${e.message}`);
+    }
+  }
 
   // 1b. Agent hooks (attention signal/cleanup)
   try {

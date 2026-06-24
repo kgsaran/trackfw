@@ -741,7 +741,7 @@ def validate_ref_targets_exist(cfg: dict) -> list:
                 with open(os.path.join(wip_dir, name), "r", encoding="utf-8") as f:
                     content = f.read()
                 ref = _extract_ref_path(content, "REQ")
-                if ref and not os.path.exists(ref):
+                if ref and not _reference_exists(ref, [cfg.get("req_dir", "docs/req")]):
                     warnings.append({
                         "type": "warning",
                         "message": f'roadmap "{name}" links to REQ "{ref}" which does not exist'
@@ -756,13 +756,15 @@ def validate_ref_targets_exist(cfg: dict) -> list:
                 content = f.read()
             name = os.path.basename(file_path)
             adr_ref = _extract_ref_path(content, "ADR")
-            if adr_ref and not os.path.exists(adr_ref):
+            if adr_ref and not _reference_exists(adr_ref, cfg.get("adr_dirs", ["docs/adr"])):
                 warnings.append({
                     "type": "warning",
                     "message": f'req "{name}" links to ADR "{adr_ref}" which does not exist'
                 })
             roadmap_ref = _extract_ref_path(content, "Roadmap")
-            if roadmap_ref and not os.path.exists(roadmap_ref):
+            if roadmap_ref and not _reference_exists(
+                roadmap_ref, [cfg.get("roadmap_dir", "docs/roadmaps")]
+            ):
                 warnings.append({
                     "type": "warning",
                     "message": f'req "{name}" links to Roadmap "{roadmap_ref}" which does not exist'
@@ -771,6 +773,17 @@ def validate_ref_targets_exist(cfg: dict) -> list:
             pass
 
     return warnings
+
+
+def _reference_exists(ref: str, roots: list[str]) -> bool:
+    if os.path.exists(ref):
+        return True
+    basename = os.path.basename(ref)
+    for root in roots:
+        for dirpath, _, filenames in os.walk(root):
+            if basename in filenames:
+                return True
+    return False
 
 
 _FOLDER_TO_STATUS = {
@@ -869,28 +882,37 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
     # an isolated git context (a tmp dir outside the repo returns non-zero).
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
     git_cwd = os.path.dirname(os.path.abspath(roadmap_dir)) if roadmap_dir else None
-    try:
-        result = subprocess.run(
-            ['git', 'symbolic-ref', '--short', 'HEAD'],
-            capture_output=True, text=True, timeout=5,
-            cwd=git_cwd
-        )
-        if result.returncode != 0:
-            return []
-        branch = result.stdout.strip()
-    except Exception:
-        return []
+    branch = (
+        os.environ.get("TRACKFW_BRANCH")
+        or os.environ.get("GITHUB_HEAD_REF")
+        or os.environ.get("CI_COMMIT_REF_NAME")
+        or ""
+    )
+    if not branch:
+        try:
+            result = subprocess.run(
+                ['git', 'symbolic-ref', '--short', 'HEAD'],
+                capture_output=True, text=True, timeout=5,
+                cwd=git_cwd
+            )
+            branch = result.stdout.strip() if result.returncode == 0 else os.environ.get("GITHUB_REF_NAME", "")
+        except Exception:
+            branch = os.environ.get("GITHUB_REF_NAME", "")
 
     if not (branch.startswith('feat/') or branch.startswith('fix/') or branch.startswith('refactor/')):
         return []
 
     wip_dirs = resolve_wip_dirs(cfg)
-    total = 0
+    branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.split("/", 1)[1].lower()).strip("-")
+    wip_files = []
     for wip_dir in wip_dirs:
         if os.path.isdir(wip_dir):
-            total += sum(1 for f in os.listdir(wip_dir) if f.endswith('.md'))
+            files = [f for f in os.listdir(wip_dir) if f.endswith('.md')]
+            wip_files.extend(files)
+            if any(branch_slug in re.sub(r"[^a-z0-9]+", "-", f.lower()).strip("-") for f in files):
+                return []
 
-    if total == 0:
+    if not wip_files:
         return [
             f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ — '
             f'create governance artifacts first:\n'
@@ -898,7 +920,11 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
             f'  trackfw roadmap new "title"\n'
             f'  trackfw roadmap move <name> wip'
         ]
-    return []
+    return [
+        f'branch "{branch}" has no matching roadmap in wip/ '
+        f'(found: {", ".join(wip_files)}) — include the branch slug in the roadmap filename '
+        f'or set TRACKFW_BRANCH explicitly in CI'
+    ]
 
 
 # ---------------------------------------------------------------------------

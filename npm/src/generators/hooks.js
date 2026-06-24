@@ -33,19 +33,21 @@ function hasEntry(arr, field, value) {
 // ---------------------------------------------------------------------------
 
 const SIGNAL_SCRIPT = `#!/usr/bin/env bash
-# trackfw attention signal — PreToolUse/BeforeTool hook
+# trackfw attention signal — permission/notification hook
 # Writes .trackfw-attention.json so trackfw serve board shows a banner.
 set -euo pipefail
 
 INPUT=$(cat)
+HOOK_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
+[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD"
 [ -f "trackfw.yaml" ] || exit 0
 
 if command -v jq &>/dev/null; then
-  TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""')
-  MSG=$(echo "$INPUT" | jq -r '(.tool_input.question // .tool_input.command // ("Agent executing: " + (.tool_name // "unknown"))) | .[0:300]')
+  TOOL=$(echo "$INPUT" | jq -r '.tool_name // .notification_type // ""')
+  MSG=$(echo "$INPUT" | jq -r '(.message // .tool_input.description // .tool_input.question // .tool_input.command // ("Approval required for: " + (.tool_name // .notification_type // "unknown"))) | .[0:300]')
 else
-  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null || echo "")
-  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
+  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name') or d.get('notification_type') or '')" 2>/dev/null || echo "")
+  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((d.get('message') or ti.get('description') or ti.get('question') or ti.get('command') or 'Approval required for: '+(d.get('tool_name') or d.get('notification_type') or 'unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
 fi
 
 ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
@@ -66,6 +68,9 @@ const CLEANUP_SCRIPT = `#!/usr/bin/env bash
 # trackfw attention cleanup — PostToolUse/AfterTool hook
 set -euo pipefail
 
+INPUT=$(cat)
+HOOK_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
+[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD"
 [ -f "trackfw.yaml" ] || exit 0
 
 ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
@@ -142,14 +147,24 @@ function injectCodexHooks(cwd) {
   const filePath = path.join(cwd, '.codex', 'hooks.json')
   const data = readJSON(filePath)
 
-  if (!data.PreToolUse) data.PreToolUse = []
-  if (!data.PostToolUse) data.PostToolUse = []
+  if (!data.hooks) data.hooks = {}
+  if (!Array.isArray(data.hooks.PermissionRequest)) data.hooks.PermissionRequest = []
+  if (!Array.isArray(data.hooks.PostToolUse)) data.hooks.PostToolUse = []
 
-  if (!hasEntry(data.PreToolUse, 'command', SIGNAL_CMD)) {
-    data.PreToolUse.push({ matcher: '.*', command: SIGNAL_CMD })
+  const hasNestedCommand = (entries, command) => entries.some(
+    entry => Array.isArray(entry && entry.hooks) && entry.hooks.some(h => h && h.command === command)
+  )
+  if (!hasNestedCommand(data.hooks.PermissionRequest, SIGNAL_CMD)) {
+    data.hooks.PermissionRequest.push({
+      matcher: '.*',
+      hooks: [{ type: 'command', command: SIGNAL_CMD, timeout: 10, statusMessage: 'Waiting for approval' }],
+    })
   }
-  if (!hasEntry(data.PostToolUse, 'command', CLEANUP_CMD)) {
-    data.PostToolUse.push({ matcher: '.*', command: CLEANUP_CMD })
+  if (!hasNestedCommand(data.hooks.PostToolUse, CLEANUP_CMD)) {
+    data.hooks.PostToolUse.push({
+      matcher: '.*',
+      hooks: [{ type: 'command', command: CLEANUP_CMD, timeout: 10 }],
+    })
   }
 
   writeJSON(filePath, data)
@@ -165,14 +180,25 @@ function injectGeminiHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
 
-  if (!Array.isArray(data.hooks.BeforeTool)) data.hooks.BeforeTool = []
-  if (!hasEntry(data.hooks.BeforeTool, 'command', SIGNAL_CMD)) {
-    data.hooks.BeforeTool.push({ command: SIGNAL_CMD })
+  if (!Array.isArray(data.hooks.Notification)) data.hooks.Notification = []
+  if (!data.hooks.Notification.some(entry =>
+    entry && entry.matcher === 'ToolPermission' &&
+    Array.isArray(entry.hooks) && entry.hooks.some(hook => hook && hook.command === SIGNAL_CMD)
+  )) {
+    data.hooks.Notification.push({
+      matcher: 'ToolPermission',
+      hooks: [{ name: 'trackfw-attention-signal', type: 'command', command: SIGNAL_CMD, timeout: 10000 }],
+    })
   }
 
   if (!Array.isArray(data.hooks.AfterTool)) data.hooks.AfterTool = []
-  if (!hasEntry(data.hooks.AfterTool, 'command', CLEANUP_CMD)) {
-    data.hooks.AfterTool.push({ command: CLEANUP_CMD })
+  if (!data.hooks.AfterTool.some(entry =>
+    Array.isArray(entry && entry.hooks) && entry.hooks.some(hook => hook && hook.command === CLEANUP_CMD)
+  )) {
+    data.hooks.AfterTool.push({
+      matcher: '*',
+      hooks: [{ name: 'trackfw-attention-cleanup', type: 'command', command: CLEANUP_CMD, timeout: 10000 }],
+    })
   }
 
   writeJSON(filePath, data)
@@ -210,10 +236,11 @@ function injectKiroHooks(cwd) {
 function injectCopilotHooks(cwd) {
   const filePath = path.join(cwd, '.github', 'hooks', 'trackfw-attention.json')
   const data = {
-    hooks: [
-      { event: 'preToolUse', run: SIGNAL_CMD },
-      { event: 'postToolUse', run: CLEANUP_CMD },
-    ],
+    version: 1,
+    hooks: {
+      preToolUse: [{ type: 'command', bash: SIGNAL_CMD, cwd: '.', timeoutSec: 10 }],
+      postToolUse: [{ type: 'command', bash: CLEANUP_CMD, cwd: '.', timeoutSec: 10 }],
+    },
   }
   writeJSON(filePath, data)
 }

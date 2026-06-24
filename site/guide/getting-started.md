@@ -48,7 +48,7 @@ O wizard faz perguntas sobre:
 - **Framework backend** — Spring Boot, Gin, Express, FastAPI, etc.
 - **Git hooks** — husky, lefthook ou nenhum
 - **CI/CD** — GitHub Actions ou GitLab CI
-- **Agentes de IA** — Claude Code, Gemini CLI, Cursor, etc.
+- **Agentes de IA** — OpenAI Codex, Claude Code, Gemini CLI, Cursor, etc.
 
 ### O que é gerado
 
@@ -72,6 +72,9 @@ scripts/
 └── trackfw-validate.sh
 CLAUDE.md             ← contexto para Claude Code (se selecionado)
 .claude/commands/     ← slash commands para Claude Code
+AGENTS.md             ← instruções persistentes para Codex (se selecionado)
+.agents/skills/       ← workflows de governança para Codex
+.codex/agents/        ← subagentes especialistas do Codex
 ```
 
 ### Modo brownfield (projeto legado)

@@ -29,8 +29,9 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 ## Intentional Go-only commands
 
 `skills`, `agents`, `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq`
-install integrations that are folded into `init`/`update` on the native Node.js
-and Python distributions.
+remain Go-only standalone installers. Node.js folds these integrations into the
+interactive `init` flow. Codex is available through `init --ai-tools codex` and
+`update` in Go, Node.js, and Python.
 
 ## Release rule
 
