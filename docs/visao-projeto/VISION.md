@@ -1,6 +1,6 @@
 # trackfw — Project Vision
 
-> Version: v2.12.2 | Date: 2026-06-24
+> Version: v2.12.4 | Date: 2026-06-24
 
 ---
 
