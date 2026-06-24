@@ -4,18 +4,7 @@ Usa argparse (stdlib) e delega para subcomandos em trackfw/commands/.
 """
 
 import argparse
-import sys
-
 from trackfw import __version__
-
-
-def _stub(name):
-    """Retorna uma função handler que imprime 'Not implemented yet' para um stub."""
-    def _handler(args):
-        print("Not implemented yet")
-        sys.exit(0)
-    _handler.__name__ = name
-    return _handler
 
 
 def main():
@@ -31,9 +20,12 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
 
-    # --- init (stub) ---
-    init_parser = subparsers.add_parser("init", help="Initialize trackfw in this project")
-    init_parser.set_defaults(func=_stub("init"))
+    version_parser = subparsers.add_parser("version", help="Print version")
+    version_parser.set_defaults(func=lambda _args: print(f"trackfw {__version__}"))
+
+    # --- init ---
+    from trackfw.commands import init as init_cmd
+    init_cmd.register(subparsers)
 
     # --- adr ---
     from trackfw.commands import adr as adr_cmd
@@ -43,17 +35,17 @@ def main():
     from trackfw.commands import req as req_cmd
     req_cmd.register(subparsers)
 
-    # --- roadmap (stub) ---
-    roadmap_parser = subparsers.add_parser("roadmap", help="Manage roadmaps")
-    roadmap_parser.set_defaults(func=_stub("roadmap"))
+    # --- roadmap ---
+    from trackfw.commands import roadmap as roadmap_cmd
+    roadmap_cmd.register(subparsers)
 
-    # --- validate (stub) ---
-    validate_parser = subparsers.add_parser("validate", help="Validate governance artifacts")
-    validate_parser.set_defaults(func=_stub("validate"))
+    # --- validate ---
+    from trackfw.commands import validate as validate_cmd
+    validate_cmd.register(subparsers)
 
-    # --- status (stub) ---
-    status_parser = subparsers.add_parser("status", help="Show governance status")
-    status_parser.set_defaults(func=_stub("status"))
+    # --- status ---
+    from trackfw.commands import status as status_cmd
+    status_cmd.register(subparsers)
 
     # --- log ---
     from trackfw.commands import log as log_cmd
@@ -79,21 +71,21 @@ def main():
     from trackfw.commands import update as update_cmd
     update_cmd.register(subparsers)
 
-    # --- metrics (stub) ---
-    metrics_parser = subparsers.add_parser("metrics", help="Show delivery metrics")
-    metrics_parser.set_defaults(func=_stub("metrics"))
+    # --- metrics ---
+    from trackfw.commands import metrics as metrics_cmd
+    metrics_cmd.register(subparsers)
 
-    # --- context (stub) ---
-    context_parser = subparsers.add_parser("context", help="Show AI agent context")
-    context_parser.set_defaults(func=_stub("context"))
+    # --- context ---
+    from trackfw.commands import context as context_cmd
+    context_cmd.register(subparsers)
 
-    # --- sync (stub) ---
-    sync_parser = subparsers.add_parser("sync", help="Sync REQs to external trackers")
-    sync_parser.set_defaults(func=_stub("sync"))
+    # --- sync ---
+    from trackfw.commands import sync as sync_cmd
+    sync_cmd.register(subparsers)
 
-    # --- plugins (stub) ---
-    plugins_parser = subparsers.add_parser("plugins", help="Manage trackfw plugins")
-    plugins_parser.set_defaults(func=_stub("plugins"))
+    # --- plugins ---
+    from trackfw.commands import plugins as plugins_cmd
+    plugins_cmd.register(subparsers)
 
     # --- serve ---
     from trackfw.commands import serve as serve_cmd

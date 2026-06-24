@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	trackversion "github.com/kgsaran/trackfw/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -14,9 +15,11 @@ var rootCmd = &cobra.Command{
 ADR → REQ → ROADMAP → backlog/wip/done
 
 Run 'trackfw init' to set up governance in your project.`,
+	Version: trackversion.Version,
 }
 
 func Execute() {
+	rootCmd.SetVersionTemplate("trackfw {{.Version}}\n")
 	rootCmd.AddCommand(
 		newInitCmd(),
 		newUpdateCmd(),

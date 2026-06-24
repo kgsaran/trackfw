@@ -3,7 +3,7 @@
 > The AI-native governance layer for software delivery — ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
 
 [![Release](https://img.shields.io/github/v/release/kgsaran/trackfw)](https://github.com/kgsaran/trackfw/releases/latest)
-[![Go](https://img.shields.io/badge/go-1.21+-00ADD8?logo=go)](go.mod)
+[![Go](https://img.shields.io/badge/go-1.25+-00ADD8?logo=go)](go.mod)
 [![npm](https://img.shields.io/npm/v/trackfw?logo=npm&color=CB3837)](https://www.npmjs.com/package/trackfw)
 [![PyPI](https://img.shields.io/pypi/v/trackfw?logo=python&color=3776AB)](https://pypi.org/project/trackfw/)
 [![License](https://img.shields.io/github/license/kgsaran/trackfw)](LICENSE)
@@ -90,7 +90,9 @@ go install github.com/kgsaran/trackfw/cmd/trackfw@latest
 npm install -g trackfw
 ```
 
-The npm package is pure Node.js — no compiled binary, no postinstall download. Works everywhere Node.js ≥ 18 is installed, including corporate Windows environments where unsigned `.exe` files are blocked by antivirus. Full feature parity with the Go CLI — all commands, all validation rules, all by_agent features.
+The npm package is pure Node.js — no compiled binary or postinstall download.
+It works wherever Node.js ≥ 18 is installed. Shared behavior and intentional
+Go-only integration installers follow the [CLI parity contract](docs/cli-parity.md).
 
 ### pip
 
@@ -98,7 +100,9 @@ The npm package is pure Node.js — no compiled binary, no postinstall download.
 pip install trackfw
 ```
 
-The pip package is pure Python — no compiled binary, no postinstall download. Full feature parity with the Go CLI — all commands, all validation rules, all by_agent features.
+The pip package is pure Python 3.10+ — no compiled binary or postinstall
+download. Shared commands, validation rules, and by_agent behavior follow the
+[CLI parity contract](docs/cli-parity.md).
 
 ---
 

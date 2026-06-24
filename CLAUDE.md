@@ -15,7 +15,7 @@ Leia `docs/agents-working-context.md` para o estado atual de trabalho.
 - **Linguagem:** Go
 - **CLI framework:** cobra (`github.com/spf13/cobra`)
 - **Wizard:** huh (`github.com/charmbracelet/huh`)
-- **Module:** `github.com/trackfw/trackfw`
+- **Module:** `github.com/kgsaran/trackfw`
 
 ## Estrutura
 
@@ -34,6 +34,7 @@ scripts/            → install.sh
 make build          # compila o binário em bin/trackfw
 make test           # go test ./...
 make lint           # go vet ./...
+make quality        # Go + Node.js + Python + contratos de paridade
 make install        # instala em /usr/local/bin
 ```
 
@@ -47,7 +48,9 @@ Toda feature nova, correção de comportamento ou ajuste de lógica **DEVE ser i
 | Node.js | `npm/src/` | Node.js puro (commander) |
 | Python | `pypi/trackfw/` | Python puro (argparse/click) |
 
-**Nenhum PR é aceito sem paridade nos 3 CLIs.** Mudanças doc-only, infra, templates de artefato e `trackfw serve` (exclusivo Go) são exceção explícita.
+**Nenhum PR é aceito sem paridade nos 3 CLIs.** O contrato e as exceções
+intencionais estão documentados em `docs/cli-parity.md`. Mudanças doc-only,
+infra e templates de artefato são exceções explícitas.
 
 ## Regras específicas
 

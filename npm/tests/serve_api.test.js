@@ -8,6 +8,7 @@ const os = require('os')
 const { handleBoard } = require('../src/serve/api_board')
 const { handleFile } = require('../src/serve/api_file')
 const { handleMetrics } = require('../src/serve/api_metrics')
+const { getAttention } = require('../src/serve/api_attention')
 
 let passed = 0, failed = 0
 const tests = []
@@ -232,6 +233,33 @@ test('api_metrics — com log valido calcula cycle_time_avg_days', () => {
     assert(data.cycle_time_avg_days > 0, 'cycle_time_avg_days deve ser positivo com log valido')
     // startTs = 2026-01-01 (primeiro to=backlog), doneTs = 2026-01-06 = 5 dias
     assert.strictEqual(data.cycle_time_avg_days, 5, 'cycle_time deve ser 5 dias')
+  } finally {
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
+test('api_attention — ausente retorna inactive', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-attention-'))
+  try {
+    const cfg = { roadmapDir: path.join(tmp, 'roadmaps') }
+    assert.deepStrictEqual(getAttention(cfg), { active: false })
+  } finally {
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
+test('api_attention — arquivo valido retorna active', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-attention-'))
+  try {
+    const roadmapDir = path.join(tmp, 'roadmaps')
+    mkdirp(roadmapDir)
+    fs.writeFileSync(
+      path.join(roadmapDir, '.trackfw-attention.json'),
+      JSON.stringify({ message: 'Review required', timestamp: '2026-06-24T12:00:00Z' })
+    )
+    const result = getAttention({ roadmapDir })
+    assert.strictEqual(result.active, true)
+    assert.strictEqual(result.message, 'Review required')
   } finally {
     fs.rmSync(tmp, { recursive: true })
   }

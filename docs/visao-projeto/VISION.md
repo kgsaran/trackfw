@@ -195,7 +195,8 @@ This means a Java/Maven shop and a Go/Makefile shop and a Python/Poetry shop all
 
 ## Distribution
 
-trackfw ships across three fully native CLIs — **all three have complete feature parity**.
+trackfw ships across three native CLIs. Shared behavior and intentional
+runtime-specific exceptions are governed by the CLI parity contract.
 
 | Channel | Package | Implementation | Installation |
 |---|---|---|---|
@@ -203,9 +204,11 @@ trackfw ships across three fully native CLIs — **all three have complete featu
 | Homebrew | `trackfw/tap/trackfw` | Go binary | `brew install trackfw/tap/trackfw` |
 | Go | `github.com/trackfw/trackfw` | Go binary | `go install github.com/trackfw/trackfw/cmd/trackfw@latest` |
 | npm | `trackfw` | Native Node.js (Node ≥ 18) | `npm install -g trackfw` |
-| PyPI | `trackfw` | Native Python (Python ≥ 3.9) | `pip install trackfw` |
+| PyPI | `trackfw` | Native Python (Python ≥ 3.10) | `pip install trackfw` |
 
-The Node.js and Python CLIs are **native reimplementations** — not wrappers around a compiled binary. No `postinstall` binary download. No platform-specific compilation. Pure JavaScript (commander) and pure Python (argparse/click) with complete feature parity with the Go CLI.
+The Node.js and Python CLIs are native reimplementations, not wrappers around a
+compiled binary. Their shared behavior and intentional Go-only exceptions are
+defined by `docs/cli-parity.md` and enforced by release smoke tests.
 
 ---
 

@@ -8,9 +8,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const RegistryURL = "https://raw.githubusercontent.com/kgsaran/trackfw-plugins/main/registry.yaml"
+const maxPluginSize = 50 << 20
+const maxRegistrySize = 1 << 20
+
+var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 type RegistryEntry struct {
 	Name        string
@@ -93,7 +98,7 @@ func matchesKeyword(e RegistryEntry, keyword string) bool {
 // Search busca no registry central por keyword (name, description, tags).
 // Retorna nil, nil se registry indisponível (rede offline).
 func Search(keyword string) ([]RegistryEntry, error) {
-	resp, err := http.Get(RegistryURL) //nolint:gosec
+	resp, err := httpClient.Get(RegistryURL) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("registry unavailable: %w", err)
 	}
@@ -101,9 +106,12 @@ func Search(keyword string) ([]RegistryEntry, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("registry returned status %d", resp.StatusCode)
 	}
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxRegistrySize+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read registry: %w", err)
+	}
+	if len(bodyBytes) > maxRegistrySize {
+		return nil, fmt.Errorf("registry exceeds %d bytes", maxRegistrySize)
 	}
 	entries := parseRegistryYAML(string(bodyBytes))
 
@@ -199,7 +207,7 @@ func Install(repo string) error {
 		return err
 	}
 
-	resp, err := http.Get(url) //nolint:gosec
+	resp, err := httpClient.Get(url) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
@@ -207,20 +215,44 @@ func Install(repo string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed: HTTP %d for %s", resp.StatusCode, url)
 	}
+	if resp.ContentLength > maxPluginSize {
+		return fmt.Errorf("download exceeds %d bytes", maxPluginSize)
+	}
 
 	dest := filepath.Join(dir, pluginName)
-	f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755) //nolint:gosec
+	f, err := os.CreateTemp(dir, "."+pluginName+"-*.tmp")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	tmpPath := f.Name()
+	defer os.Remove(tmpPath)
+
+	written, err := io.Copy(f, io.LimitReader(resp.Body, maxPluginSize+1))
+	if err != nil {
+		f.Close()
 		return err
 	}
-	return nil
+	if written > maxPluginSize {
+		f.Close()
+		return fmt.Errorf("download exceeds %d bytes", maxPluginSize)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0755); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, dest)
 }
 
 func Remove(name string) error {
+	if name == "" || filepath.Base(name) != name {
+		return fmt.Errorf("invalid plugin name %q", name)
+	}
 	dir, err := Dir()
 	if err != nil {
 		return err
