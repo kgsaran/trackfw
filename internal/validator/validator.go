@@ -1392,13 +1392,13 @@ func validateFilenameUniqueness() ([]string, error) {
 // validateBranchHasWIPRoadmap verifica se a branch atual (feat/fix/refactor) tem ao menos um roadmap em wip/.
 // Retorna violation se a branch for de implementação mas wip/ estiver vazio — previne trabalho órfão.
 func validateBranchHasWIPRoadmap() ([]string, error) {
-	branch := firstNonEmpty(
-		os.Getenv("TRACKFW_BRANCH"),
-		os.Getenv("GITHUB_HEAD_REF"),
-		os.Getenv("CI_COMMIT_REF_NAME"),
-	)
-	if branch == "" {
-		if isGitWorktree(".") {
+	branch := firstNonEmpty(os.Getenv("TRACKFW_BRANCH"))
+	if branch == "" && isGitWorktree(".") {
+		branch = firstNonEmpty(
+			os.Getenv("GITHUB_HEAD_REF"),
+			os.Getenv("CI_COMMIT_REF_NAME"),
+		)
+		if branch == "" {
 			cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
 			out, err := cmd.Output()
 			if err == nil {

@@ -747,12 +747,13 @@ function validateFilenameUniqueness() {
 // validateBranchHasWIPRoadmap — verifica que branch feat/fix/refactor tem ao menos um roadmap em wip/
 function validateBranchHasWIPRoadmap() {
   const { execSync } = require('child_process')
-  let branch = process.env.TRACKFW_BRANCH || process.env.GITHUB_HEAD_REF || process.env.CI_COMMIT_REF_NAME || ''
-  if (!branch) {
+  let branch = process.env.TRACKFW_BRANCH || ''
+  if (!branch && isGitWorktree(process.cwd())) {
+    branch = process.env.GITHUB_HEAD_REF || process.env.CI_COMMIT_REF_NAME || ''
+  }
+  if (!branch && isGitWorktree(process.cwd())) {
     try {
-      if (isGitWorktree(process.cwd())) {
-        branch = execSync('git symbolic-ref --short HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
-      }
+      branch = execSync('git symbolic-ref --short HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
     } catch {
       branch = process.env.GITHUB_REF_NAME || ''
     }

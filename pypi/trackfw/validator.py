@@ -882,14 +882,14 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
     # an isolated git context (a tmp dir outside the repo returns non-zero).
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
     git_cwd = os.path.dirname(os.path.abspath(roadmap_dir)) if roadmap_dir else None
-    branch = (
-        os.environ.get("TRACKFW_BRANCH")
-        or os.environ.get("GITHUB_HEAD_REF")
-        or os.environ.get("CI_COMMIT_REF_NAME")
-        or ""
-    )
-    if not branch:
-        if git_cwd and _is_git_worktree(git_cwd):
+    branch = os.environ.get("TRACKFW_BRANCH") or ""
+    if not branch and git_cwd and _is_git_worktree(git_cwd):
+        branch = (
+            os.environ.get("GITHUB_HEAD_REF")
+            or os.environ.get("CI_COMMIT_REF_NAME")
+            or ""
+        )
+        if not branch:
             try:
                 result = subprocess.run(
                     ['git', 'symbolic-ref', '--short', 'HEAD'],
