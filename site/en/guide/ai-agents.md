@@ -6,7 +6,7 @@
 
 ## Why AI agents need structured governance
 
-AI agents like Claude Code, Gemini CLI, and Cursor operate in independent sessions. Without a persistent record of decisions and context, each session starts from scratch — the agent doesn't know:
+AI agents like Claude Code, OpenAI Codex, Gemini CLI, Cursor, GitHub Copilot, Windsurf, and Amazon Q operate in independent sessions. Without a persistent record of decisions and context, each session starts from scratch — the agent doesn't know:
 
 - Which architectural decisions have already been made (and why)
 - Which requirements are in progress

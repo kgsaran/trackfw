@@ -2007,6 +2007,22 @@ adicionar quality gates de CI/release e formalizar o contrato entre Go, Node.js 
 - Downloads de plugins Go/Node com timeout, limite de tamanho e substituição atômica.
 - Runtime mínimo alinhado: Go 1.25+, Node.js 18+, Python 3.10+.
 
+---
+
+## Sessão 2026-06-24 — Paridade documental de agentes (CONCLUÍDO)
+
+**Tarefa:** alinhar a documentação visível e o log interno com a cobertura real de agentes e hooks.
+
+**Entregue:**
+- `site/guide/ai-agents.md` e `site/en/guide/ai-agents.md` — intro atualizada para listar Codex, Claude Code, Gemini CLI, Cursor, GitHub Copilot, Windsurf e Amazon Q.
+- `site/index.md` e `site/en/index.md` — teaser de home alinhado à lista atual de agentes suportados.
+- `site/guide/getting-started.md` e `site/en/guide/getting-started.md` — bullets de onboarding atualizados.
+- `docs/agents-working-context.md` — sessão registrada com a fase de paridade documental.
+
+**Validação:** `trackfw validate --json` manteve `violations=0` e `warnings=0`; `go test ./...`, `npm test` e `pytest pypi/tests` permaneceram verdes na fase anterior.
+
+**Branch:** `feat/codex-agent-integrations`
+
 **Validação:**
 - `make quality` verde.
 - Go: `go test`, `go vet` e `go build` verdes.

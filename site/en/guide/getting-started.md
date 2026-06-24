@@ -48,7 +48,7 @@ The wizard asks about:
 - **Backend framework** — Spring Boot, Gin, Express, FastAPI, etc.
 - **Git hooks** — husky, lefthook, or none
 - **CI/CD** — GitHub Actions or GitLab CI
-- **AI agents** — OpenAI Codex, Claude Code, Gemini CLI, Cursor, etc.
+- **AI agents** — OpenAI Codex, Claude Code, Gemini CLI, Cursor, GitHub Copilot, Windsurf, and Amazon Q.
 
 ### What gets generated
 

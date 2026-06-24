@@ -6,7 +6,7 @@ O `trackfw` foi desenhado desde o início para ser nativo ao fluxo de trabalho c
 
 ## Por que agentes de IA precisam de governança estruturada
 
-Agentes de IA como Claude Code, Gemini CLI e Cursor operam em sessões independentes. Sem um registro persistente de decisões e contexto, cada sessão começa do zero — o agente não sabe:
+Agentes de IA como Claude Code, OpenAI Codex, Gemini CLI, Cursor, GitHub Copilot, Windsurf e Amazon Q operam em sessões independentes. Sem um registro persistente de decisões e contexto, cada sessão começa do zero — o agente não sabe:
 
 - Quais decisões arquiteturais já foram tomadas (e por quê)
 - Quais requisitos estão em andamento
