@@ -1,9 +1,6 @@
 package commands
 
-import (
-	"github.com/kgsaran/trackfw/internal/generators"
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 func newWindsurfCmd() *cobra.Command {
 	return &cobra.Command{
@@ -18,7 +15,7 @@ Roles: architect, backend, frontend, qa, infra, security, code-quality, dba, ux,
 The global rules file is never overwritten — trackfw content is appended only if not present.
 Safe to run multiple times — existing files are never overwritten.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return generators.InstallWindsurf()
+			return runDeprecatedIntegrationAlias(cmd, "windsurf", []string{"project"})
 		},
 	}
 }

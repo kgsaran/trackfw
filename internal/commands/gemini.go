@@ -1,9 +1,6 @@
 package commands
 
-import (
-	"github.com/kgsaran/trackfw/internal/generators"
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 func newGeminiCmd() *cobra.Command {
 	return &cobra.Command{
@@ -18,7 +15,7 @@ func newGeminiCmd() *cobra.Command {
 Roles: architect, backend, frontend, qa, infra, security, code-quality, dba, ux, data.
 Safe to run multiple times — existing files are never overwritten.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return generators.InstallGemini()
+			return runDeprecatedIntegrationAlias(cmd, "gemini", []string{"global", "project"})
 		},
 	}
 }
