@@ -1,6 +1,6 @@
 # trackfw
 
-> The AI-native governance layer for software delivery — ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
+> AI governance CLI for software delivery teams — ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
 
 [![Release](https://img.shields.io/github/v/release/kgsaran/trackfw)](https://github.com/kgsaran/trackfw/releases/latest)
 [![Go](https://img.shields.io/badge/go-1.25+-00ADD8?logo=go)](go.mod)
@@ -8,7 +8,9 @@
 [![PyPI](https://img.shields.io/pypi/v/trackfw?logo=python&color=3776AB)](https://pypi.org/project/trackfw/)
 [![License](https://img.shields.io/github/license/kgsaran/trackfw)](LICENSE)
 
-**trackfw** is an open-source CLI that enforces a traceable chain from architectural decision to shipped code — without SaaS, accounts, or databases. Markdown files are state.
+**trackfw** is an open-source governance CLI for AI-native software delivery. It enforces a traceable chain from architectural decision to shipped code — without SaaS, accounts, or databases. Markdown files are state.
+
+It is designed for teams looking for an ADR / REQ / ROADMAP governance framework with native support for AI coding assistants such as Codex, Claude Code, Gemini CLI, Cursor, GitHub Copilot, Windsurf, and Amazon Q.
 
 ```
 ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned

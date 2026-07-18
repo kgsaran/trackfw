@@ -382,13 +382,13 @@ Windsurf não tem `preToolUse` genérico — única opção é instrução textu
 
 ---
 
-### ML-3C — Atualizar VISION.md com v2.12.2
+### ML-3C — Atualizar VISION.md com v2.12.4
 **Status:** ⬜ Pendente
 **Arquivos afetados:**
 - `docs/visao-projeto/VISION.md`
 
 **Ações:**
-1. Versão → v2.12.2
+1. Versão → v2.12.4
 2. Adicionar linha v2.8 na tabela Current State
 3. Documentar hooks automáticos na seção de `trackfw init`
 
