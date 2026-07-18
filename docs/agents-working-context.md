@@ -2029,3 +2029,22 @@ adicionar quality gates de CI/release e formalizar o contrato entre Go, Node.js 
 - Node.js: 13 arquivos de teste verdes.
 - Python: 265 testes verdes.
 - Wheel e tarball npm construídos e executados com sucesso.
+
+---
+
+## Sessão 2026-07-18 — Agents/skills lifecycle multi-CLI (EM ANDAMENTO)
+
+**Branch:** `feat/agents-skills-lifecycle-multi-cli`
+
+**Objetivo:** substituir os instaladores fragmentados por um catálogo canônico e
+adapters nativos, expondo `list`, `install`, `uninstall` e `update` para `agents` e
+`skills` com paridade Go, Node.js e Python.
+
+**Governança:**
+- ADR: `docs/adr/ADR-2026-07-18-catalogo-canonico-e-adapters-para-integracoes-de-agentes.md`
+- REQ: `docs/req/REQ-2026-07-18-agents-skills-lifecycle-multi-cli.md`
+- Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md`
+
+**Matriz alvo:** Claude, Codex, Gemini, Antigravity, Cursor, Copilot, Windsurf,
+Amazon Q e Kiro. Implementação ainda não iniciada; Wave 1 preparará catálogo,
+ownership e proteções de filesystem.
