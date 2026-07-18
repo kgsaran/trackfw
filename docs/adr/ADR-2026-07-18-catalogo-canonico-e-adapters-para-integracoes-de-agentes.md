@@ -29,8 +29,10 @@ próprios. Antigravity e Kiro também precisam entrar na matriz suportada.
    - `skills`: 5 workflows de governança (`governance`, `plan`, `implement`,
      `review`, `release`).
 2. Implementar adapters orientados a dados para `claude`, `codex`, `gemini`,
-   `antigravity`, `cursor`, `copilot`, `windsurf`, `amazonq` e `kiro`. Cada adapter
-   define capacidades, paths, escopo, extensão, frontmatter e artefatos auxiliares.
+   `antigravity`, `cursor`, `copilot`, `windsurf`, `amazonq` e `kiro`. Cada target
+   contém uma ou mais `surfaces` (IDE, CLI, current ou legacy), e cada surface
+   define capacidades, paths, escopo, extensão, frontmatter, artefatos auxiliares
+   e nível de suporte `native`, `fallback`, `legacy` ou `unsupported`.
 3. Expor o mesmo contrato nos CLIs Go, Node.js e Python:
    - `trackfw agents|skills list [--target ...] [--json]`;
    - `trackfw agents|skills install [--targets ...] [--items ...] [--scope ...]`;
@@ -40,8 +42,10 @@ próprios. Antigravity e Kiro também precisam entrar na matriz suportada.
    execução não interativa, usam flags determinísticas e falham com mensagem
    acionável quando faltar seleção.
 5. Registrar ownership, versão e SHA-256 dos arquivos em manifesto trackfw por
-   escopo. O estado reportado será `not-installed`, `current`, `outdated` ou
-   `modified`.
+   escopo. O estado de lifecycle será `not-installed`, `current`, `outdated` ou
+   `modified`, combinado ao nível de suporte da surface. Um mesmo artefato físico
+   pode possuir claims de múltiplos consumers; removê-lo de um target não apaga o
+   arquivo enquanto outro claim permanecer ativo.
 6. `update` sobrescreve somente arquivos cujo ownership seja comprovado e que não
    estejam modificados; `--force` será exigido para substituir customizações.
    `uninstall` remove somente arquivos pertencentes ao trackfw e limpa diretórios
@@ -62,6 +66,8 @@ próprios. Antigravity e Kiro também precisam entrar na matriz suportada.
 - Algumas ferramentas não possuem conceito nativo de subagente; nesses casos o
   adapter materializa a especialidade no mecanismo nativo mais próximo e declara
   essa representação no resultado de `list --json`.
+- Antigravity e Kiro exigem surfaces distintas para contratos atuais e legados;
+  Amazon Q permanece suportado com indicação de migração para Kiro.
 
 ## Alternatives Considered
 

@@ -52,7 +52,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 `go test ./internal/integrations/... && go build ./... && trackfw validate`
 
 ### ML-1B — Manifesto de ownership e lifecycle seguro
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:**
 - `internal/integrations/manifest.go`
 - `internal/integrations/manager.go`
@@ -75,7 +75,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 > Dependencies: Wave 1 complete
 
 ### ML-2A — Go/Cobra: agents e skills lifecycle
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:**
 - `internal/commands/agents.go`
 - `internal/commands/skills.go`
@@ -94,7 +94,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 `go test ./internal/commands/... ./internal/integrations/... && go build ./...`
 
 ### ML-2B — Node.js/Commander: paridade completa
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:**
 - `npm/src/commands/agents.js`
 - `npm/src/commands/skills.js`
@@ -113,7 +113,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 `npm test && npm pack --dry-run --prefix npm`
 
 ### ML-2C — Python/argparse: paridade completa
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:**
 - `pypi/trackfw/commands/agents.py`
 - `pypi/trackfw/commands/skills.py`
