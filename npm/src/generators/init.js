@@ -986,6 +986,15 @@ async function installAmazonQ(cwd = process.cwd()) {
   }
 }
 
+/** Install the canonical agents and skills for one AI target. */
+async function installIntegrationTarget(target, cwd = process.cwd()) {
+  const { execute } = require('../integrations')
+  const roots = { projectRoot: cwd }
+  execute('agents', 'install', { targets: [target], scope: 'project' }, roots)
+  execute('skills', 'install', { targets: [target], scope: 'project' }, roots)
+  console.log(`  ✓ ${target} agents and skills`)
+}
+
 /**
  * generateClaudeCommandsForce — re-gera todos os slash commands, sobrescrevendo arquivos existentes.
  */
@@ -1093,6 +1102,7 @@ module.exports = {
   installCopilot,
   installWindsurf,
   installAmazonQ,
+  installIntegrationTarget,
   injectRulesForTool,
   injectRulesDetected,
   trackfwRulesBlock,
