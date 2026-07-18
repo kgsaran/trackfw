@@ -214,6 +214,12 @@ func preflight(item resolvedPlan, manifest Manifest, force bool, operation mutat
 			return fmt.Errorf("artifact %q is outdated; use update", item.destination)
 		}
 	case mutationUpdate:
+		// Force only authorizes replacing a modified artifact whose ownership is
+		// already proven. Unknown unmanaged bytes must go through install --force;
+		// update may adopt only the desired or a declared legacy template.
+		if !owned && inspection.State == StateModified {
+			return fmt.Errorf("unmanaged artifact %q does not match a trackfw template", item.destination)
+		}
 		if inspection.State == StateModified && !force {
 			return fmt.Errorf("artifact %q is modified; use force to update it", item.destination)
 		}
@@ -245,6 +251,10 @@ func applyMutation(item resolvedPlan, manifest *Manifest, force bool, operation 
 		if err := os.Remove(item.destination); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove managed artifact %q: %w", item.destination, err)
 		}
+		root := filepath.Dir(filepath.Dir(item.manifest))
+		if err := removeEmptyAncestors(filepath.Dir(item.destination), root); err != nil {
+			return fmt.Errorf("clean managed artifact directories: %w", err)
+		}
 		delete(manifest.Artifacts, item.destination)
 		return nil
 	}
@@ -267,7 +277,7 @@ func applyMutation(item resolvedPlan, manifest *Manifest, force bool, operation 
 		writeDesired = actualHash != desiredHash
 	}
 	if writeDesired {
-		if err := atomicWrite(item.destination, item.plan.Content, 0o600); err != nil {
+		if err := atomicWrite(item.destination, item.plan.Content, 0o644); err != nil {
 			return fmt.Errorf("write managed artifact %q: %w", item.destination, err)
 		}
 		actualHash = desiredHash
@@ -285,6 +295,43 @@ func applyMutation(item resolvedPlan, manifest *Manifest, force bool, operation 
 	}
 	manifest.Artifacts[item.destination] = entry
 	return nil
+}
+
+// removeEmptyAncestors removes only empty real directories below root. It
+// stops at the first non-empty directory and never removes or follows a
+// symlink, including one introduced concurrently after path resolution.
+func removeEmptyAncestors(directory, root string) error {
+	for directory != root && beneath(root, directory) {
+		info, err := os.Lstat(directory)
+		if os.IsNotExist(err) {
+			directory = filepath.Dir(directory)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing symlink directory %q", directory)
+		}
+		if !info.IsDir() {
+			return nil
+		}
+		if err := os.Remove(directory); err != nil {
+			if errors.Is(err, os.ErrExist) || isDirectoryNotEmpty(err) {
+				return nil
+			}
+			return err
+		}
+		directory = filepath.Dir(directory)
+	}
+	return nil
+}
+
+func isDirectoryNotEmpty(err error) bool {
+	// os.Remove returns a PathError whose platform-specific error string is
+	// ENOTEMPTY on Unix and "directory not empty" on Windows.
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "directory not empty") || strings.Contains(message, "not empty")
 }
 
 func inspectResolved(plan PlannedArtifact, destination string, manifest Manifest) (Inspection, error) {

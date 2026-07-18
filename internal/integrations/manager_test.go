@@ -134,6 +134,69 @@ func TestManagerUnmanagedAndModifiedRequireForce(t *testing.T) {
 	}
 }
 
+func TestManagerUpdateForceNeverAdoptsUnknownUnmanagedContent(t *testing.T) {
+	manager, project, _ := testManager(t)
+	plan := testPlan("project", "agents/backend.md", "v2", "managed")
+	filename := filepath.Join(project, plan.Destination)
+	if err := os.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filename, []byte("user-owned bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.Update([]PlannedArtifact{plan}, true); err == nil {
+		t.Fatal("Update(force) adopted unknown unmanaged content")
+	}
+	if got := readFile(t, filename); got != "user-owned bytes" {
+		t.Fatalf("Update(force) changed unmanaged bytes to %q", got)
+	}
+	if _, err := os.Stat(manifestPath(project)); !os.IsNotExist(err) {
+		t.Fatalf("Update(force) created ownership manifest: %v", err)
+	}
+}
+
+func TestManagerUninstallRemovesEmptyAncestorDirectories(t *testing.T) {
+	manager, project, _ := testManager(t)
+	plan := testPlan("project", ".agents/skills/backend/SKILL.md", "v1", "managed")
+	if err := manager.Install([]PlannedArtifact{plan}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Uninstall([]PlannedArtifact{plan}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(project, ".agents")); !os.IsNotExist(err) {
+		t.Fatalf("empty managed ancestors remain: %v", err)
+	}
+	if info, err := os.Stat(project); err != nil || !info.IsDir() {
+		t.Fatalf("project root was removed: info=%v err=%v", info, err)
+	}
+}
+
+func TestManagerUninstallPreservesSiblingAndItsAncestors(t *testing.T) {
+	manager, project, _ := testManager(t)
+	plan := testPlan("project", ".agents/skills/backend/SKILL.md", "v1", "managed")
+	sibling := filepath.Join(project, ".agents", "skills", "user.md")
+	if err := os.MkdirAll(filepath.Dir(sibling), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sibling, []byte("user"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Install([]PlannedArtifact{plan}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Uninstall([]PlannedArtifact{plan}, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, sibling); got != "user" {
+		t.Fatalf("sibling changed to %q", got)
+	}
+	if info, err := os.Stat(filepath.Dir(sibling)); err != nil || !info.IsDir() {
+		t.Fatalf("sibling ancestor removed: info=%v err=%v", info, err)
+	}
+}
+
 func TestManagerRejectsTraversalAbsoluteMismatchAndNUL(t *testing.T) {
 	manager, _, home := testManager(t)
 	cases := []PlannedArtifact{
