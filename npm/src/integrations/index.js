@@ -4,11 +4,15 @@ const { catalog, items, target, surfaceFor, readAsset } = require('./catalog')
 const { render } = require('./render')
 const { IntegrationManager } = require('./manager')
 
-function parseTarget(value) {
-  const [targetID, surfaceID, extra] = String(value).split('=')
-  if (!targetID || extra !== undefined) throw new Error(`Invalid target selector: ${value}`)
-  const targetEntry = target(targetID)
-  return { target: targetEntry, surface: surfaceFor(targetEntry, surfaceID) }
+function parseSurfaces(values = []) {
+  const result = {}
+  for (const value of values) {
+    const [targetID, surfaceID, extra] = String(value).split('=')
+    if (!targetID || !surfaceID || extra !== undefined) throw new Error(`Invalid --surface ${value}: expected target=surface`)
+    if (result[targetID]) throw new Error(`Duplicate --surface for target ${targetID}`)
+    result[targetID] = surfaceID
+  }
+  return result
 }
 
 function selections(kind, options = {}) {
@@ -19,8 +23,18 @@ function selections(kind, options = {}) {
     return found
   })
   const targetValues = options.targets && options.targets.length ? options.targets : catalog.targets.map(entry => entry.id)
+  const surfaceSelections = parseSurfaces(options.surfaces)
   const scopes = options.scope ? [options.scope] : ['project']
-  return { itemEntries, targets: targetValues.map(parseTarget), scopes }
+  const targets = []
+  for (const targetID of targetValues) {
+    const targetEntry = target(targetID)
+    const selected = surfaceSelections[targetID]
+    const surfaces = options.allSurfaces && !selected
+      ? targetEntry.surfaces.filter(entry => entry.capabilities[kind].support_level !== 'unsupported')
+      : [surfaceFor(targetEntry, selected, kind)]
+    for (const surface of surfaces) targets.push({ target: targetEntry, surface })
+  }
+  return { itemEntries, targets, scopes }
 }
 
 function buildPlans(kind, options = {}) {
@@ -57,14 +71,14 @@ function result(kind, plans, statuses) {
     kind,
     catalog_version: catalog.version,
     items: items(kind).map(({ id, name, description }) => ({ id, name, description })),
-    deployments: statuses.map(status => ({
+    deployments: statuses.map((status, index) => ({
       target: status.claim.target,
       surface: status.claim.surface,
       scope: status.claim.scope,
       item: status.claim.item,
       support_level: status.supportLevel,
       representation: status.representation,
-      destination: status.destination,
+      destination: plans[index].destination,
       state: status.state,
       managed: status.managed,
     })),
@@ -76,11 +90,11 @@ function execute(kind, operation, options = {}, roots = {}) {
   const manager = new IntegrationManager(roots)
   let statuses
   if (operation === 'list') statuses = manager.inspect(plans)
-  else if (operation === 'install') statuses = manager.install(plans)
+  else if (operation === 'install') statuses = manager.install(plans, { force: options.force })
   else if (operation === 'update') statuses = manager.update(plans, { force: options.force })
   else if (operation === 'uninstall') statuses = manager.uninstall(plans, { force: options.force })
   else throw new Error(`Unsupported integration operation: ${operation}`)
   return result(kind, plans, statuses)
 }
 
-module.exports = { catalog, buildPlans, execute, IntegrationManager }
+module.exports = { catalog, buildPlans, execute, IntegrationManager, parseSurfaces }

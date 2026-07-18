@@ -17,11 +17,11 @@ function target(id) {
   return found
 }
 
-function surfaceFor(targetEntry, requested) {
+function surfaceFor(targetEntry, requested, kind = 'agents') {
   const surfaces = targetEntry.surfaces || []
   const found = requested
     ? surfaces.find(entry => entry.id === requested)
-    : surfaces.find(entry => entry.capabilities.agents.support_level !== 'legacy' && entry.capabilities.skills.support_level !== 'legacy') || surfaces[0]
+    : surfaces.find(entry => !['legacy', 'unsupported'].includes(entry.capabilities[kind].support_level)) || surfaces[0]
   if (!found) throw new Error(`Unsupported surface ${requested} for target ${targetEntry.id}`)
   return found
 }

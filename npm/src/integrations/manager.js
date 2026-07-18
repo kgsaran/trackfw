@@ -5,70 +5,70 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const MANIFEST_VERSION = 1
-
-function sha256(content) {
-  return crypto.createHash('sha256').update(content).digest('hex')
-}
-
-function claimKey(claim) {
-  return [claim.target, claim.surface, claim.scope, claim.kind, claim.item].join('\u0000')
-}
+const SCHEMA_VERSION = 1
+const sha256 = content => crypto.createHash('sha256').update(content).digest('hex')
+const claimKey = claim => [claim.target, claim.surface, claim.scope, claim.kind, claim.item].join('\u0000')
+const cleanClaim = claim => ({ target: claim.target, surface: claim.surface, scope: claim.scope, kind: claim.kind, item: claim.item })
 
 class IntegrationManager {
   constructor({ projectRoot = process.cwd(), homeRoot = os.homedir() } = {}) {
     this.roots = { project: path.resolve(projectRoot), global: path.resolve(homeRoot) }
   }
 
-  manifestPath(scope) {
-    return path.join(this.roots[scope], '.trackfw', 'integrations-manifest.json')
-  }
+  manifestPath(scope) { return path.join(this.roots[scope], '.trackfw', 'integrations-manifest.json') }
 
   resolve(scope, destination) {
-    if (!this.roots[scope]) throw new Error(`Unsupported scope: ${scope}`)
+    const root = this.roots[scope]
+    if (!root) throw new Error(`Unsupported scope: ${scope}`)
     if (typeof destination !== 'string' || destination.includes('\u0000') || destination.includes('\\')) throw new Error(`Unsafe destination: ${destination}`)
-    let relative = destination
-    if (scope === 'global') {
-      if (!relative.startsWith('~/')) throw new Error(`Global destination must start with ~/: ${destination}`)
-      relative = relative.slice(2)
-    } else if (relative.startsWith('~/') || path.isAbsolute(relative)) {
-      throw new Error(`Project destination must be relative: ${destination}`)
+    let resolved
+    if (destination.startsWith('~/')) {
+      if (scope !== 'global') throw new Error('Home destination requires global scope')
+      resolved = path.resolve(root, destination.slice(2))
+    } else if (path.isAbsolute(destination)) {
+      resolved = path.normalize(destination)
+    } else {
+      if (!destination || path.normalize(destination) !== destination || destination === '.' || destination.startsWith(`..${path.sep}`)) throw new Error(`Unsafe destination: ${destination}`)
+      resolved = path.resolve(root, destination)
     }
-    const segments = relative.split('/')
-    if (!relative || segments.some(segment => !segment || segment === '.' || segment === '..')) throw new Error(`Unsafe destination: ${destination}`)
-    const resolved = path.resolve(this.roots[scope], ...segments)
-    const rel = path.relative(this.roots[scope], resolved)
-    if (!rel || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) throw new Error(`Destination escapes ${scope} root: ${destination}`)
-    this.assertNoSymlinks(this.roots[scope], resolved)
+    const rel = path.relative(root, resolved)
+    if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) throw new Error(`Destination is outside ${scope} root: ${destination}`)
+    this.assertNoSymlinks(root, resolved)
+    this.assertNoSymlinks(root, this.manifestPath(scope))
     return resolved
   }
 
   assertNoSymlinks(root, destination) {
-    let current = root
-    if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) throw new Error(`Symlink root is not allowed: ${root}`)
-    const rel = path.relative(root, destination)
-    for (const segment of rel.split(path.sep)) {
-      current = path.join(current, segment)
-      if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) throw new Error(`Symlink destination is not allowed: ${current}`)
+    let current = destination
+    while (true) {
+      if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) throw new Error(`Symlink path is not allowed: ${current}`)
+      if (current === root) return
+      const parent = path.dirname(current)
+      const rel = path.relative(root, current)
+      if (parent === current || rel === '..' || rel.startsWith(`..${path.sep}`)) throw new Error(`Path escapes root: ${destination}`)
+      current = parent
     }
   }
 
   loadManifest(scope) {
     const file = this.manifestPath(scope)
     this.assertNoSymlinks(this.roots[scope], file)
-    if (!fs.existsSync(file)) return { version: MANIFEST_VERSION, artifacts: [] }
+    if (!fs.existsSync(file)) return { schema_version: SCHEMA_VERSION, artifacts: {} }
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
-    if (parsed.version !== MANIFEST_VERSION || !Array.isArray(parsed.artifacts)) throw new Error(`Unsupported integration manifest: ${file}`)
+    if (parsed.schema_version !== SCHEMA_VERSION || !parsed.artifacts || Array.isArray(parsed.artifacts)) throw new Error(`Unsupported integration manifest: ${file}`)
     return parsed
   }
 
-  atomicWrite(file, content) {
-    this.assertNoSymlinks(path.parse(file).root === file ? file : this.rootFor(file), file)
+  atomicWrite(file, content, mode) {
+    const root = this.rootFor(file)
+    this.assertNoSymlinks(root, file)
     fs.mkdirSync(path.dirname(file), { recursive: true })
     const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`)
     try {
-      fs.writeFileSync(tmp, content, { encoding: 'utf8', mode: 0o600 })
+      fs.writeFileSync(tmp, content, { mode })
+      fs.chmodSync(tmp, mode)
       fs.renameSync(tmp, file)
+      fs.chmodSync(file, mode)
     } finally {
       if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
     }
@@ -77,55 +77,66 @@ class IntegrationManager {
   rootFor(file) {
     const found = Object.values(this.roots).find(root => {
       const rel = path.relative(root, file)
-      return rel && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)
+      return rel && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)
     })
     if (!found) throw new Error(`Path is outside integration roots: ${file}`)
     return found
   }
 
   saveManifest(scope, manifest) {
-    manifest.artifacts.sort((a, b) => a.destination.localeCompare(b.destination))
-    for (const artifact of manifest.artifacts) artifact.claims.sort((a, b) => claimKey(a).localeCompare(claimKey(b)))
-    this.atomicWrite(this.manifestPath(scope), `${JSON.stringify(manifest, null, 2)}\n`)
+    const artifacts = {}
+    for (const destination of Object.keys(manifest.artifacts).sort()) {
+      const artifact = manifest.artifacts[destination]
+      artifact.claims = artifact.claims.map(cleanClaim).sort((a, b) => claimKey(a).localeCompare(claimKey(b)))
+      artifacts[destination] = artifact
+    }
+    this.atomicWrite(this.manifestPath(scope), `${JSON.stringify({ schema_version: SCHEMA_VERSION, artifacts }, null, 2)}\n`, 0o600)
   }
 
   inspect(plans) {
     const manifests = new Map()
     return plans.map(plan => {
-      const { scope } = plan.claim
+      const scope = plan.claim.scope
       if (!manifests.has(scope)) manifests.set(scope, this.loadManifest(scope))
       const file = this.resolve(scope, plan.destination)
-      const record = manifests.get(scope).artifacts.find(entry => entry.destination === plan.destination)
-      const owned = record && record.claims.some(claim => claimKey(claim) === claimKey(plan.claim))
-      if (!fs.existsSync(file)) return { ...plan, state: 'not-installed', managed: Boolean(owned) }
+      const record = manifests.get(scope).artifacts[file]
+      const managed = Boolean(record && record.claims.some(claim => claimKey(claim) === claimKey(plan.claim)))
+      if (!fs.existsSync(file)) return { ...plan, destination: file, state: 'not-installed', managed }
       const actual = sha256(fs.readFileSync(file))
-      if (!owned) return { ...plan, state: 'modified', managed: false }
-      if (actual !== record.sha256) return { ...plan, state: 'modified', managed: true }
       const desired = sha256(plan.content)
-      const state = desired === actual && record.catalog_version === plan.catalogVersion ? 'current' : 'outdated'
-      return { ...plan, state, managed: true }
+      let state
+      if (record) {
+        if (actual !== record.sha256) state = 'modified'
+        else if (actual !== desired || record.catalog_version !== plan.catalogVersion) state = 'outdated'
+        else state = 'current'
+      } else if (actual === desired) state = 'current'
+      else if ((plan.legacyHashes || []).includes(actual)) state = 'outdated'
+      else state = 'modified'
+      return { ...plan, destination: file, state, managed }
     })
   }
 
-  install(plans) { return this.mutate('install', plans, false) }
+  install(plans, { force = false } = {}) { return this.mutate('install', plans, force) }
   update(plans, { force = false } = {}) { return this.mutate('update', plans, force) }
   uninstall(plans, { force = false } = {}) { return this.mutate('uninstall', plans, force) }
 
   mutate(operation, plans, force) {
-    const snapshots = new Map()
+    const resolved = plans.map(plan => ({ plan, file: this.resolve(plan.claim.scope, plan.destination) }))
     const manifests = new Map()
-    const scopes = [...new Set(plans.map(plan => plan.claim.scope))]
-    for (const scope of scopes) {
-      manifests.set(scope, this.loadManifest(scope))
-      this.snapshot(snapshots, this.manifestPath(scope))
+    for (const { plan } of resolved) if (!manifests.has(plan.claim.scope)) manifests.set(plan.claim.scope, this.loadManifest(plan.claim.scope))
+    const desiredByFile = new Map()
+    for (const item of resolved) {
+      const desired = sha256(item.plan.content)
+      if (operation !== 'uninstall' && desiredByFile.has(item.file) && desiredByFile.get(item.file) !== desired) throw new Error(`Conflicting content planned for: ${item.file}`)
+      desiredByFile.set(item.file, desired)
+      this.preflight(operation, item, manifests.get(item.plan.claim.scope), force)
     }
-    for (const plan of plans) {
-      const file = this.resolve(plan.claim.scope, plan.destination)
-      this.snapshot(snapshots, file)
-    }
+    const snapshots = new Map()
+    for (const item of resolved) this.snapshot(snapshots, item.file)
+    for (const scope of manifests.keys()) this.snapshot(snapshots, this.manifestPath(scope))
     try {
-      for (const plan of plans) this.apply(operation, plan, manifests.get(plan.claim.scope), force)
-      for (const scope of scopes) this.saveManifest(scope, manifests.get(scope))
+      for (const item of resolved) this.apply(operation, item, manifests.get(item.plan.claim.scope), force)
+      for (const [scope, manifest] of [...manifests].sort(([a], [b]) => a.localeCompare(b))) this.saveManifest(scope, manifest)
     } catch (error) {
       this.rollback(snapshots)
       throw error
@@ -133,97 +144,94 @@ class IntegrationManager {
     return this.inspect(plans)
   }
 
-  apply(operation, plan, manifest, force) {
-    const file = this.resolve(plan.claim.scope, plan.destination)
-    let record = manifest.artifacts.find(entry => entry.destination === plan.destination)
-    const key = claimKey(plan.claim)
-    const owned = record && record.claims.some(claim => claimKey(claim) === key)
-    const exists = fs.existsSync(file)
-    const actual = exists ? sha256(fs.readFileSync(file)) : ''
-    const desired = sha256(plan.content)
+  preflight(operation, { plan, file }, manifest, force) {
+    const status = this.inspectResolved(plan, file, manifest)
+    const record = manifest.artifacts[file]
+    const owned = Boolean(record && record.claims.some(claim => claimKey(claim) === claimKey(plan.claim)))
+    if (operation === 'install') {
+      if (status.state === 'modified' && !force) throw new Error(`Artifact is modified; use --force: ${file}`)
+      if (status.state === 'outdated' && owned && !force) throw new Error(`Artifact is outdated; use update: ${file}`)
+    } else if (operation === 'update') {
+      if (!owned && status.state === 'modified') throw new Error(`Unmanaged artifact does not match a trackfw template: ${file}`)
+      if (status.state === 'modified' && !force) throw new Error(`Artifact is modified; use --force: ${file}`)
+    } else if (operation === 'uninstall' && owned && status.state === 'modified' && !force) {
+      throw new Error(`Artifact is modified; use --force: ${file}`)
+    }
+  }
 
+  inspectResolved(plan, file, manifest) {
+    const record = manifest.artifacts[file]
+    const managed = Boolean(record && record.claims.some(claim => claimKey(claim) === claimKey(plan.claim)))
+    if (!fs.existsSync(file)) return { state: 'not-installed', managed }
+    const actual = sha256(fs.readFileSync(file))
+    const desired = sha256(plan.content)
+    if (record) {
+      if (actual !== record.sha256) return { state: 'modified', managed }
+      return { state: actual === desired && record.catalog_version === plan.catalogVersion ? 'current' : 'outdated', managed }
+    }
+    if (actual === desired) return { state: 'current', managed: false }
+    if ((plan.legacyHashes || []).includes(actual)) return { state: 'outdated', managed: false }
+    return { state: 'modified', managed: false }
+  }
+
+  apply(operation, { plan, file }, manifest, force) {
+    let record = manifest.artifacts[file]
+    const key = claimKey(plan.claim)
+    const owned = Boolean(record && record.claims.some(claim => claimKey(claim) === key))
     if (operation === 'uninstall') {
       if (!owned) return
-      if (exists && actual !== record.sha256 && !force) throw new Error(`Refusing to remove modified file without --force: ${plan.destination}`)
       record.claims = record.claims.filter(claim => claimKey(claim) !== key)
-      if (record.claims.length === 0) {
-        if (exists) fs.unlinkSync(file)
-        manifest.artifacts = manifest.artifacts.filter(entry => entry !== record)
-        this.cleanEmpty(path.dirname(file), this.roots[plan.claim.scope])
-      }
+      if (record.claims.length) return
+      if (fs.existsSync(file)) fs.unlinkSync(file)
+      delete manifest.artifacts[file]
+      this.cleanEmpty(path.dirname(file), this.roots[plan.claim.scope])
       return
     }
 
-    if (!record) {
-      if (exists) {
-        const legacy = actual === desired || (plan.legacyHashes || []).includes(actual)
-        if (!legacy) throw new Error(`Refusing to adopt unmanaged file: ${plan.destination}`)
-        record = { destination: plan.destination, sha256: actual, catalog_version: plan.catalogVersion, claims: [] }
-        manifest.artifacts.push(record)
-        record.claims.push({ ...plan.claim, support_level: actual === desired ? plan.supportLevel : 'legacy' })
-        if (operation === 'update' && actual !== desired) {
-          this.atomicWrite(file, plan.content)
-          record.sha256 = desired
-          record.catalog_version = plan.catalogVersion
-          record.claims[0].support_level = plan.supportLevel
-        }
-        return
-      }
-      this.atomicWrite(file, plan.content)
-      manifest.artifacts.push({ destination: plan.destination, sha256: desired, catalog_version: plan.catalogVersion, claims: [{ ...plan.claim, support_level: plan.supportLevel }] })
-      return
+    const exists = fs.existsSync(file)
+    let actual = exists ? sha256(fs.readFileSync(file)) : ''
+    const desired = sha256(plan.content)
+    const knownLegacy = (plan.legacyHashes || []).includes(actual)
+    let writeDesired = !exists
+    if (exists && !owned) writeDesired = (operation === 'update' && actual !== desired) || (force && actual !== desired)
+    else if (exists && owned) writeDesired = actual !== desired
+    if (!record) record = { destination: file, sha256: '', catalog_version: '', claims: [] }
+    if (writeDesired) {
+      this.atomicWrite(file, plan.content, 0o644)
+      actual = desired
+    } else if (exists && !owned && actual !== desired && !knownLegacy && !force) {
+      throw new Error(`Unmanaged artifact does not match a trackfw template: ${file}`)
     }
-
-    const modified = exists && actual !== record.sha256
-    if (operation === 'install' && modified) throw new Error(`Refusing to claim modified managed file: ${plan.destination}`)
-    if (!owned) record.claims.push({ ...plan.claim, support_level: plan.supportLevel })
-    if (operation === 'install') {
-      if (!exists) {
-        this.atomicWrite(file, plan.content)
-        record.sha256 = desired
-        record.catalog_version = plan.catalogVersion
-      }
-      return
-    }
-    if (modified && !force) throw new Error(`Refusing to overwrite modified file without --force: ${plan.destination}`)
-    if (!exists || actual !== desired) this.atomicWrite(file, plan.content)
-    record.sha256 = desired
-    record.catalog_version = plan.catalogVersion
-    const claim = record.claims.find(entry => claimKey(entry) === key)
-    claim.support_level = plan.supportLevel
+    if (!record.claims.some(claim => claimKey(claim) === key)) record.claims.push(cleanClaim(plan.claim))
+    record.sha256 = actual
+    record.catalog_version = actual === desired ? plan.catalogVersion : 'legacy'
+    manifest.artifacts[file] = record
   }
 
   snapshot(snapshots, file) {
     if (snapshots.has(file)) return
-    snapshots.set(file, fs.existsSync(file) ? fs.readFileSync(file) : null)
+    if (!fs.existsSync(file)) snapshots.set(file, null)
+    else snapshots.set(file, { content: fs.readFileSync(file), mode: fs.statSync(file).mode & 0o777 })
   }
 
   rollback(snapshots) {
-    for (const [file, content] of [...snapshots.entries()].reverse()) {
+    for (const [file, snapshot] of [...snapshots].reverse()) {
       try {
-        if (content === null) {
-          if (fs.existsSync(file) && !fs.lstatSync(file).isDirectory()) fs.unlinkSync(file)
-        } else {
-          fs.mkdirSync(path.dirname(file), { recursive: true })
-          const tmp = `${file}.rollback-${process.pid}`
-          fs.writeFileSync(tmp, content)
-          fs.renameSync(tmp, file)
-        }
-      } catch { /* retain the original error */ }
+        if (!snapshot) { if (fs.existsSync(file) && !fs.lstatSync(file).isDirectory()) fs.unlinkSync(file) }
+        else this.atomicWrite(file, snapshot.content, snapshot.mode)
+      } catch { /* preserve original error */ }
     }
   }
 
-  cleanEmpty(dir, root) {
-    let current = dir
-    while (current !== root) {
-      const rel = path.relative(root, current)
-      if (!rel || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) break
-      if (!fs.existsSync(current) || fs.lstatSync(current).isSymbolicLink()) break
-      if (fs.readdirSync(current).length) break
-      fs.rmdirSync(current)
-      current = path.dirname(current)
+  cleanEmpty(directory, root) {
+    while (directory !== root) {
+      const rel = path.relative(root, directory)
+      if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return
+      if (!fs.existsSync(directory) || fs.lstatSync(directory).isSymbolicLink() || fs.readdirSync(directory).length) return
+      fs.rmdirSync(directory)
+      directory = path.dirname(directory)
     }
   }
 }
 
-module.exports = { IntegrationManager, sha256, claimKey }
+module.exports = { IntegrationManager, sha256, claimKey, SCHEMA_VERSION }

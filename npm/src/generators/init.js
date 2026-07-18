@@ -931,14 +931,9 @@ Oriente o usuário:
 // AI tool installers
 // ---------------------------------------------------------------------------
 
-/**
- * installAgents — instala agentes Claude Code em ~/.claude/agents/
- * O pacote npm não embute os templates binários do Go, por isso informa
- * ao usuário que esta operação requer o binário Go instalado.
- */
-async function installAgents() {
-  // CLAUDE.md já tratado por generateClaudeMD via injectOrUpdateRules
-  console.log('  ✓ claude (agentes — execute `trackfw install agents` com o binário Go para instalar os templates)')
+/** Compatibility entrypoint backed by the canonical integration engine. */
+async function installAgents(cwd = process.cwd()) {
+  await installIntegrationTarget('claude', cwd)
 }
 
 async function installGemini(cwd = process.cwd()) {
