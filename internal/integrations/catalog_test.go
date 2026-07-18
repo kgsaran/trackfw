@@ -73,13 +73,25 @@ func TestCatalogModelsOfficialMultiSurfaceContracts(t *testing.T) {
 	}
 	assertSurfacePath(t, catalog, "gemini", "cli", KindAgents, "project", ".gemini/agents/trackfw-{{id}}.md", "native")
 	assertSurfacePath(t, catalog, "cursor", "ide", KindSkills, "project", ".cursor/skills/trackfw-{{id}}/SKILL.md", "native")
-	assertSurfacePath(t, catalog, "antigravity", "ide", KindAgents, "project", ".agents/agents/trackfw-{{id}}/agent.md", "native")
-	assertSurfacePath(t, catalog, "antigravity", "legacy", KindAgents, "global", "~/.gemini/antigravity/skills/trackfw-agent-{{id}}/SKILL.md", "legacy")
+	assertSurfacePath(t, catalog, "antigravity", "current", KindAgents, "global", "~/.gemini/config/agents/trackfw-{{id}}/agent.md", "native")
+	assertSurfacePath(t, catalog, "antigravity", "current", KindAgents, "project", ".agents/agents/trackfw-{{id}}/agent.md", "native")
+	assertSurfacePath(t, catalog, "antigravity", "current", KindSkills, "global", "~/.gemini/config/skills/trackfw-{{id}}/SKILL.md", "native")
+	assertSurfacePath(t, catalog, "antigravity", "legacy-cli", KindAgents, "global", "~/.gemini/antigravity-cli/agents/trackfw-{{id}}/agent.json", "legacy")
+	assertSurfacePath(t, catalog, "antigravity", "legacy-cli", KindAgents, "project", ".agents/agents/trackfw-{{id}}/agent.json", "legacy")
+	assertSurfacePath(t, catalog, "antigravity", "legacy-cli", KindSkills, "global", "~/.gemini/antigravity-cli/skills/trackfw-{{id}}/SKILL.md", "legacy")
 	assertSurfacePath(t, catalog, "amazonq", "cli", KindAgents, "project", ".amazonq/cli-agents/trackfw-{{id}}.json", "native")
 	assertSurfacePath(t, catalog, "amazonq", "cli", KindSkills, "project", ".amazonq/rules/trackfw-{{id}}.md", "fallback")
 	assertSurfacePath(t, catalog, "windsurf", "ide", KindSkills, "project", ".windsurf/skills/trackfw-{{id}}/SKILL.md", "native")
+	assertSurfacePath(t, catalog, "windsurf", "ide", KindAgents, "global", "~/.codeium/windsurf/skills/trackfw-agent-{{id}}/SKILL.md", "fallback")
+	assertSurfacePath(t, catalog, "windsurf", "ide", KindSkills, "global", "~/.codeium/windsurf/skills/trackfw-{{id}}/SKILL.md", "native")
+	assertSurfacePath(t, catalog, "copilot", "ide", KindAgents, "global", "~/.copilot/agents/trackfw-{{id}}.agent.md", "native")
+	assertSurfacePath(t, catalog, "copilot", "ide", KindSkills, "global", "~/.copilot/skills/trackfw-{{id}}/SKILL.md", "native")
 	assertSurfacePath(t, catalog, "kiro", "ide", KindAgents, "project", ".kiro/agents/trackfw-{{id}}.md", "native")
+	assertSurfacePath(t, catalog, "kiro", "ide", KindAgents, "global", "~/.kiro/agents/trackfw-{{id}}.md", "native")
+	assertSurfacePath(t, catalog, "kiro", "ide", KindSkills, "global", "~/.kiro/skills/trackfw-{{id}}/SKILL.md", "native")
 	assertSurfacePath(t, catalog, "kiro", "cli", KindAgents, "project", ".kiro/agents/trackfw-{{id}}.json", "native")
+	assertSurfacePath(t, catalog, "kiro", "cli", KindSkills, "global", "~/.kiro/skills/trackfw-{{id}}/SKILL.md", "native")
+	assertSurfacePath(t, catalog, "kiro", "cli", KindSkills, "project", ".kiro/skills/trackfw-{{id}}/SKILL.md", "native")
 }
 
 func TestCatalogRejectsDuplicateTarget(t *testing.T) {
