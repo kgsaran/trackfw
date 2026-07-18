@@ -30,7 +30,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 > Dependencies: none
 
 ### ML-1A — Catálogo canônico e assets por adapter
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:**
 - `internal/integrations/assets/catalog.json`
 - `internal/integrations/assets/agents/**`
