@@ -391,3 +391,60 @@ def test_init_ai_tools_uses_integration_engine_for_all_targets(tmp_path):
     assert result.returncode == 0, result.stderr
     assert (tmp_path / ".cursor/agents/trackfw-backend.md").is_file()
     assert (tmp_path / ".cursor/skills/trackfw-implement/SKILL.md").is_file()
+
+
+def test_antigravity_current_surface_renders_agent_directory():
+    """Surface 'current' do antigravity deve reconstruir o frontmatter no formato agent-directory.
+
+    - architect (model opus): mapeia para pro, recebe SET_ARCH (14 tools).
+    - backend (model sonnet): mapeia para flash, recebe SET_IMPL (10 tools).
+    - Modelos originais (opus, sonnet) e IDs proibidos nunca devem aparecer.
+    """
+    # IDs proibidos — nunca devem aparecer no output
+    forbidden_ids = [
+        "edit_file", "read_file", "find",
+        "view_code_item", "view_file_outline", "call_mcp_tool",
+    ]
+
+    # --- architect: model opus → pro, SET_ARCH (14 tools) ---
+    _, plans = plan_deployments("agents", ["antigravity"], ["architect"], "project")
+    assert len(plans) == 1
+    assert plans[0]["claim"]["surface"] == "current"
+    content = plans[0]["content"].decode("utf-8")
+
+    assert "model: pro" in content, f"esperado 'model: pro', output:\n{content}"
+    assert "opus" not in content, f"'opus' não deve aparecer no output:\n{content}"
+
+    arch_tools = [
+        "view_file", "list_dir", "grep_search", "search_web",
+        "read_url_content", "write_to_file", "replace_file_content",
+        "run_command", "command_status", "generate_image",
+        "send_message", "define_subagent", "invoke_subagent", "schedule",
+    ]
+    for tool in arch_tools:
+        assert f"  - {tool}" in content, f"tool '{tool}' ausente no output do architect:\n{content}"
+
+    for forbidden in forbidden_ids:
+        assert forbidden not in content, f"ID proibido '{forbidden}' presente no output do architect:\n{content}"
+
+    # --- backend: model sonnet → flash, SET_IMPL (10 tools, sem define_subagent) ---
+    _, plans = plan_deployments("agents", ["antigravity"], ["backend"], "project")
+    assert len(plans) == 1
+    assert plans[0]["claim"]["surface"] == "current"
+    content = plans[0]["content"].decode("utf-8")
+
+    assert "model: flash" in content, f"esperado 'model: flash', output:\n{content}"
+    assert "sonnet" not in content, f"'sonnet' não deve aparecer no output:\n{content}"
+
+    impl_tools = [
+        "view_file", "list_dir", "grep_search", "search_web",
+        "read_url_content", "write_to_file", "replace_file_content",
+        "run_command", "command_status", "generate_image",
+    ]
+    for tool in impl_tools:
+        assert f"  - {tool}" in content, f"tool '{tool}' ausente no output do backend:\n{content}"
+
+    assert "define_subagent" not in content, f"'define_subagent' não deve aparecer no SET_IMPL:\n{content}"
+
+    for forbidden in forbidden_ids:
+        assert forbidden not in content, f"ID proibido '{forbidden}' presente no output do backend:\n{content}"

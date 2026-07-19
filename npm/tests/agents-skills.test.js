@@ -368,3 +368,66 @@ test('init uses the canonical integration engine', () => {
   assert.equal(fs.existsSync(path.join(dirs.projectRoot, '.agents/agents/trackfw-architect/agent.md')), true)
   assert.equal(fs.existsSync(path.join(dirs.projectRoot, '.agents/skills/trackfw-governance/SKILL.md')), true)
 })
+
+test('Antigravity agent-directory renderer é byte-equivalente ao contrato Go/Python', () => {
+  const architect = buildPlans('agents', options(['antigravity'], ['architect']))[0]
+  const backend = buildPlans('agents', options(['antigravity'], ['backend']))[0]
+
+  // IDs proibidos — nunca devem aparecer no output
+  const forbidden = ['edit_file', 'read_file', 'find', 'view_code_item', 'view_file_outline', 'call_mcp_tool']
+
+  // Golden string para architect: model opus → pro, SET_ARCH (14 tools)
+  const expectedArchitect =
+    '---\n' +
+    'name: trackfw-architect\n' +
+    'description: Principal software architect for system design, ADRs and governed multi-agent coordination.\n' +
+    'model: pro\n' +
+    'tools:\n' +
+    '  - view_file\n' +
+    '  - list_dir\n' +
+    '  - grep_search\n' +
+    '  - search_web\n' +
+    '  - read_url_content\n' +
+    '  - write_to_file\n' +
+    '  - replace_file_content\n' +
+    '  - run_command\n' +
+    '  - command_status\n' +
+    '  - generate_image\n' +
+    '  - send_message\n' +
+    '  - define_subagent\n' +
+    '  - invoke_subagent\n' +
+    '  - schedule\n' +
+    '---\n' +
+    '# Architect\n' +
+    '\n' +
+    'Map the existing architecture and traceability chain before proposing changes. Record material decisions as ADRs, produce decision-complete plans, and delegate implementation to the appropriate specialist. Do not implement product code.\n'
+  assert.equal(architect.content, expectedArchitect)
+  assert.doesNotMatch(architect.content, /opus/)
+  for (const id of forbidden) assert.doesNotMatch(architect.content, new RegExp(`  - ${id}`), `forbidden: ${id}`)
+
+  // Golden string para backend: model sonnet → flash, SET_IMPL (10 tools)
+  const expectedBackend =
+    '---\n' +
+    'name: trackfw-backend\n' +
+    'description: Senior backend specialist for APIs, domain logic, integrations and data access.\n' +
+    'model: flash\n' +
+    'tools:\n' +
+    '  - view_file\n' +
+    '  - list_dir\n' +
+    '  - grep_search\n' +
+    '  - search_web\n' +
+    '  - read_url_content\n' +
+    '  - write_to_file\n' +
+    '  - replace_file_content\n' +
+    '  - run_command\n' +
+    '  - command_status\n' +
+    '  - generate_image\n' +
+    '---\n' +
+    '# Backend\n' +
+    '\n' +
+    'Implement only the assigned backend scope. Preserve public contracts, Clean Architecture boundaries, observability and trackfw traceability. Run focused build and tests and report evidence and remaining risks.\n'
+  assert.equal(backend.content, expectedBackend)
+  assert.doesNotMatch(backend.content, /sonnet/)
+  assert.doesNotMatch(backend.content, /define_subagent/)
+  for (const id of forbidden) assert.doesNotMatch(backend.content, new RegExp(`  - ${id}`), `forbidden: ${id}`)
+})
