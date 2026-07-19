@@ -7,6 +7,7 @@ from importlib.resources import files
 from typing import Any
 
 from .renderers import render
+from .legacy import legacy_hashes
 
 
 def _asset_root():
@@ -89,21 +90,22 @@ def plan_deployments(
                 for install_path in install_paths:
                     destination = install_path["path"].replace("{{id}}", item["id"])
                     rendered = render(kind, target["id"], surface["id"], item, content, capability)
+                    claim = {
+                        "target": target["id"],
+                        "surface": surface["id"],
+                        "scope": scope,
+                        "kind": kind,
+                        "item": item["id"],
+                    }
                     result.append(
                         {
-                            "claim": {
-                                "target": target["id"],
-                                "surface": surface["id"],
-                                "scope": scope,
-                                "kind": kind,
-                                "item": item["id"],
-                            },
+                            "claim": claim,
                             "destination": destination,
                             "content": rendered.encode("utf-8"),
                             "catalog_version": catalog["version"],
                             "support_level": capability["support_level"],
                             "representation": capability["representation"],
-                            "legacy_hashes": [],
+                            "legacy_hashes": legacy_hashes(claim),
                         }
                     )
     return catalog, result

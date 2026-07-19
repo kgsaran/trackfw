@@ -42,8 +42,15 @@ def _run(args: argparse.Namespace) -> None:
 
     if os.path.exists(os.path.join(cwd, "AGENTS.md")) or os.path.isdir(os.path.join(cwd, ".codex")):
         try:
-            from trackfw.generators.codex import install_codex
-            install_codex(cwd)
+            from trackfw.integrations.catalog import plan_deployments
+            from trackfw.integrations.manager import IntegrationManager
+            manager = IntegrationManager(cwd)
+            _, plans = plan_deployments("agents", target_ids=["codex"], scope="project")
+            plans = [plan for plan, status in zip(plans, manager.list(plans)) if status["state"] != "not-installed"]
+            manager.update(plans)
+            _, plans = plan_deployments("skills", target_ids=["codex"], scope="project")
+            plans = [plan for plan, status in zip(plans, manager.list(plans)) if status["state"] != "not-installed"]
+            manager.update(plans)
         except Exception as e:
             print(f"  ⚠ Codex integration: {e}")
 

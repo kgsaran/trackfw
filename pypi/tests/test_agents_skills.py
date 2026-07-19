@@ -16,6 +16,7 @@ import pytest
 from trackfw.integrations.catalog import _surfaces, load_catalog, plan_deployments
 from trackfw.integrations.command import _prompt_ambiguous_surfaces
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
+from trackfw.generators.codex import AGENTS as LEGACY_PYTHON_AGENTS
 
 
 PYPI_ROOT = Path(__file__).parents[1]
@@ -205,6 +206,96 @@ def test_legacy_adoption_then_update(tmp_path):
     assert manager.inspect(plans[0])["state"] == "outdated"
     manager.update(plans)
     assert destination.read_bytes() == plans[0]["content"]
+
+
+def test_released_claude_hashes_are_global_only():
+    historical_root = PYPI_ROOT.parent / "internal/generators/templates/agents"
+    _, global_plans = plan_deployments("agents", ["claude"], scope="global")
+    assert len(global_plans) == 10
+    for plan in global_plans:
+        historical = (historical_root / f"trackfw-{plan['claim']['item']}.md").read_bytes()
+        assert hashlib.sha256(historical).hexdigest() in plan["legacy_hashes"]
+    _, project = plan_deployments("agents", ["claude"], ["backend"], "project")
+    _, codex_global = plan_deployments("agents", ["codex"], ["backend"], "global")
+    assert project[0]["legacy_hashes"] == []
+    assert codex_global[0]["legacy_hashes"] == []
+
+
+def test_codex_legacy_union_recognizes_go_npm_and_python_bytes(tmp_path):
+    _, plans = plan_deployments("agents", ["codex"], ["backend"], "project")
+    plan = plans[0]
+    fixtures = {
+        "go": b'''name = "trackfw_backend"
+description = "Backend implementation specialist for APIs, domain logic, integrations, Go, Java, Node.js, and Python."
+developer_instructions = """
+Implement only the assigned backend scope. Preserve public contracts and trackfw traceability.
+Run focused tests and report changed files, validation evidence, and remaining risks.
+"""
+''',
+        "npm": b'''name = "trackfw_backend"
+description = "Backend implementation specialist for APIs, domain logic, integrations, Go, Java, Node.js, and Python."
+developer_instructions = """
+Implement only the assigned backend scope, preserve contracts and traceability, run focused tests, and report changed files and evidence.
+"""
+''',
+        "python": (LEGACY_PYTHON_AGENTS["trackfw-backend.toml"].strip() + "\n").encode(),
+    }
+    for producer, content in fixtures.items():
+        assert hashlib.sha256(content).hexdigest() in plan["legacy_hashes"], producer
+        root = tmp_path / producer
+        destination = root / plan["destination"]
+        destination.parent.mkdir(parents=True)
+        destination.write_bytes(content)
+        inspection = IntegrationManager(root).inspect(plan)
+        assert (inspection["state"], inspection["managed"]) == ("outdated", False)
+
+
+def test_released_python_codex_is_adopted_without_overwrite_then_updated(tmp_path):
+    _, plans = plan_deployments("agents", ["codex"], ["backend"], "project")
+    plan = plans[0]
+    legacy = (LEGACY_PYTHON_AGENTS["trackfw-backend.toml"].strip() + "\n").encode()
+    destination = tmp_path / plan["destination"]
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(legacy)
+    manager = IntegrationManager(tmp_path)
+    assert (manager.inspect(plan)["state"], manager.inspect(plan)["managed"]) == ("outdated", False)
+    manager.install(plans)
+    assert destination.read_bytes() == legacy
+    assert (manager.inspect(plan)["state"], manager.inspect(plan)["managed"]) == ("outdated", True)
+    manifest = json.loads((tmp_path / ".trackfw/integrations-manifest.json").read_text())
+    assert manifest["artifacts"][str(destination)]["catalog_version"] == "legacy"
+    manager.update(plans)
+    assert destination.read_bytes() == plan["content"]
+    assert (manager.inspect(plan)["state"], manager.inspect(plan)["managed"]) == ("current", True)
+
+
+def test_update_alias_preserves_unknown_codex_bytes_and_warns(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    (tmp_path / "trackfw.yaml").write_text("hooks: none\nci: none\n", encoding="utf-8")
+    unknown = tmp_path / ".codex/agents/trackfw-backend.toml"
+    unknown.parent.mkdir(parents=True)
+    unknown.write_bytes(b"user-owned unknown bytes\n")
+    result = cli("update", cwd=tmp_path, home=home)
+    assert result.returncode == 0, result.stderr
+    assert unknown.read_bytes() == b"user-owned unknown bytes\n"
+    assert "Codex integration" in result.stdout
+    assert "unmanaged artifact" in result.stdout.lower()
+
+
+def test_update_alias_converts_only_present_codex_artifacts(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    (tmp_path / "trackfw.yaml").write_text("hooks: none\nci: none\n", encoding="utf-8")
+    backend = tmp_path / ".codex/agents/trackfw-backend.toml"
+    backend.parent.mkdir(parents=True)
+    backend.write_text(LEGACY_PYTHON_AGENTS["trackfw-backend.toml"].strip() + "\n", encoding="utf-8")
+    result = cli("update", cwd=tmp_path, home=home)
+    assert result.returncode == 0, result.stderr
+    _, plans = plan_deployments("agents", ["codex"], ["backend"], "project")
+    assert backend.read_bytes() == plans[0]["content"]
+    assert not (tmp_path / ".codex/agents/trackfw-qa.toml").exists()
+    assert not (tmp_path / ".agents/skills/trackfw-governance/SKILL.md").exists()
 
 
 @pytest.mark.parametrize(
