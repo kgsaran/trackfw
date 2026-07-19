@@ -2096,6 +2096,14 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - Arquivo REQ `docs/req/REQ-2026-07-19-global-adrs-governance.md` criado com sucesso.
 - Contexto de trabalho atualizado.
 
+---
 
+## Sessão 2026-07-19 — Customização da Statusline (CONCLUÍDO)
 
+**Branch:** `feat/global-adrs-governance` (sem alterações de código no repositório)
 
+**Objetivo:** Configurar a statusline do Antigravity CLI com o layout Powerline personalizado.
+
+**Progresso:**
+- Criado o script Python em `~/.gemini/antigravity-cli/statusline.py` para receber o payload do CLI e formatá-lo com cores e setas Powerline.
+- Atualizado o arquivo de configuração `~/.gemini/antigravity-cli/settings.json` para apontar para o novo script.
