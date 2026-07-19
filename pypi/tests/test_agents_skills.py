@@ -7,7 +7,6 @@ import json
 import os
 import subprocess
 import sys
-import tomllib
 from importlib.resources import files
 from pathlib import Path
 
@@ -335,9 +334,9 @@ def test_manager_rejects_symlink_parent(tmp_path):
 
 def test_renderers_emit_native_toml_json_and_markdown():
     _, codex = plan_deployments("agents", ["codex"], ["backend"], "project")
-    parsed_toml = tomllib.loads(codex[0]["content"].decode())
-    assert parsed_toml["name"] == "trackfw_backend"
-    assert "developer_instructions" in parsed_toml
+    codex_toml = codex[0]["content"]
+    assert codex_toml.startswith(b'name = "trackfw_backend"\n')
+    assert b'\ndeveloper_instructions = "' in codex_toml
     _, amazon = plan_deployments("agents", ["amazonq"], ["backend"], "project")
     assert json.loads(amazon[0]["content"])["name"] == "trackfw-backend"
     _, antigravity = plan_deployments("agents", ["antigravity"], ["backend"], "project", {"antigravity": "legacy-cli"})
