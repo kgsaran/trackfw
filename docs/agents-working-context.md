@@ -2048,3 +2048,14 @@ adapters nativos, expondo `list`, `install`, `uninstall` e `update` para `agents
 **Matriz alvo:** Claude, Codex, Gemini, Antigravity, Cursor, Copilot, Windsurf,
 Amazon Q e Kiro. Implementação ainda não iniciada; Wave 1 preparará catálogo,
 ownership e proteções de filesystem.
+
+### Progresso em 2026-07-18
+
+- Waves 1 e 2 concluídas: catálogo canônico, manifesto de ownership e os quatro
+  subcomandos de lifecycle estão implementados em Go, Node.js e Python.
+- Os três runtimes compartilham o schema de manifesto v1, os estados
+  `not-installed/current/outdated/modified` e as proteções de update/uninstall.
+- O `list` exibe todos os itens e todas as surfaces compatíveis por target; uma
+  surface específica pode ser escolhida com `--surface target=surface`.
+- Testes focados Go, npm e Python estão verdes; assets dos três runtimes estão
+  byte-idênticos. A Wave 3 iniciou os gates de empacotamento e migração legada.

@@ -75,7 +75,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 > Dependencies: Wave 1 complete
 
 ### ML-2A — Go/Cobra: agents e skills lifecycle
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:**
 - `internal/commands/agents.go`
 - `internal/commands/skills.go`
@@ -94,7 +94,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 `go test ./internal/commands/... ./internal/integrations/... && go build ./...`
 
 ### ML-2B — Node.js/Commander: paridade completa
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:**
 - `npm/src/commands/agents.js`
 - `npm/src/commands/skills.js`
@@ -113,7 +113,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 `npm test && npm pack --dry-run --prefix npm`
 
 ### ML-2C — Python/argparse: paridade completa
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:**
 - `pypi/trackfw/commands/agents.py`
 - `pypi/trackfw/commands/skills.py`
@@ -136,7 +136,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 > Dependencies: Wave 2 complete
 
 ### ML-3A — Sync determinístico e package contract
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:**
 - `scripts/sync-integration-assets.*`
 - `scripts/check-integration-assets.*`
