@@ -308,6 +308,25 @@ test('legacy trackfw update alias preserves unknown Codex bytes and warns', () =
   assert.match(run.stderr, /Codex integration:.*Unmanaged artifact/i)
 })
 
+test('legacy trackfw update alias converts only present Codex artifacts', () => {
+  const dirs = roots()
+  const bin = path.resolve(__dirname, '../bin/trackfw')
+  fs.writeFileSync(path.join(dirs.projectRoot, 'trackfw.yaml'), 'hooks: none\nci: none\n')
+  const backend = path.join(dirs.projectRoot, '.codex/agents/trackfw-backend.toml')
+  fs.mkdirSync(path.dirname(backend), { recursive: true })
+  fs.writeFileSync(backend, `${legacyCodexFixtures.agents['trackfw-backend.toml'].trim()}\n`)
+  const run = spawnSync(process.execPath, [bin, 'update'], {
+    cwd: dirs.projectRoot,
+    env: { ...process.env, HOME: dirs.homeRoot },
+    encoding: 'utf8',
+  })
+  assert.equal(run.status, 0, run.stderr)
+  const desired = buildPlans('agents', options(['codex'], ['backend']))[0]
+  assert.equal(fs.readFileSync(backend, 'utf8'), desired.content)
+  assert.equal(fs.existsSync(path.join(dirs.projectRoot, '.codex/agents/trackfw-qa.toml')), false)
+  assert.equal(fs.existsSync(path.join(dirs.projectRoot, '.agents/skills/trackfw-governance/SKILL.md')), false)
+})
+
 test('CLI uses repeatable --surface and unfiltered list includes legacy surfaces', () => {
   const dirs = roots()
   const bin = path.resolve(__dirname, '../bin/trackfw')
