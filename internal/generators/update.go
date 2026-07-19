@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/integrations"
 )
 
 // ReadUpdateConfig lê hooks/ci/backend/frontend/pkg_manager de trackfw.yaml.
@@ -86,13 +88,8 @@ func Update(cwd string) error {
 	_, agentsErr := os.Stat(filepath.Join(cwd, "AGENTS.md"))
 	_, codexErr := os.Stat(filepath.Join(cwd, ".codex"))
 	if agentsErr == nil || codexErr == nil {
-		if err := InstallCodex(cwd); err != nil {
-			fmt.Printf("  ⚠ Codex integration: %v\n", err)
-		} else {
-			fmt.Println("  ✓ Codex skills and custom agents updated")
-		}
+		updateDetectedCodexIntegrations(cwd)
 	}
-
 	// 2. Validate script (categoria 2 — trackfw-owned, overwrite seguro)
 	if err := generateValidateScript(cfg); err != nil {
 		fmt.Printf("  ⚠ validate script: %v\n", err)
@@ -112,23 +109,62 @@ func Update(cwd string) error {
 	// 4. Git hooks — cirúrgico (categoria 3 — shared user files)
 	updateHooksSurgical(cfg)
 
-	// 5. Claude commands (categoria 2 — trackfw-owned directory, force overwrite)
+	// 5. Historical Claude auxiliaries remain backward compatible. Canonical
+	// agents/skills themselves are managed only by their lifecycle commands.
 	if err := ForceGenerateClaudeCommands(); err != nil {
 		fmt.Printf("  ⚠ Claude commands: %v\n", err)
 	} else {
 		fmt.Println("  ✓ .claude/commands/trackfw/ atualizado")
 	}
-
-	// 6. Skills global (categoria 2 — trackfw-owned file, force overwrite)
 	if err := ForceInstallSkills(); err != nil {
-		fmt.Printf("  ⚠ skills: %v\n", err)
+		fmt.Printf("  ⚠ legacy Claude skill: %v\n", err)
 	} else {
-		fmt.Println("  ✓ skill global atualizada")
+		fmt.Println("  ✓ legacy Claude skill global atualizada")
 	}
 
 	fmt.Println("\n✓ trackfw update concluído")
 	PrintArchitectNextSteps(cwd)
 	return nil
+}
+
+func updateDetectedCodexIntegrations(cwd string) {
+	catalog, err := integrations.LoadCatalog()
+	if err != nil {
+		fmt.Printf("  ⚠ Codex integration catalog: %v\n", err)
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Printf("  ⚠ Codex integration home: %v\n", err)
+		return
+	}
+	manager := integrations.Manager{ProjectRoot: cwd, HomeDir: home}
+	updated := 0
+	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
+		plans, planErr := integrations.BuildPlans(catalog, integrations.PlanRequest{Kind: kind, Targets: []string{"codex"}, Scope: "project"})
+		if planErr != nil {
+			fmt.Printf("  ⚠ Codex %s plans: %v\n", kind, planErr)
+			continue
+		}
+		for _, plan := range plans {
+			inspection, inspectErr := manager.Inspect(plan)
+			if inspectErr != nil {
+				fmt.Printf("  ⚠ Codex %s/%s inspect: %v\n", kind, plan.Claim.Item, inspectErr)
+				continue
+			}
+			if inspection.State == integrations.StateNotInstalled {
+				continue
+			}
+			if updateErr := manager.Update([]integrations.PlannedArtifact{plan}, false); updateErr != nil {
+				fmt.Printf("  ⚠ Codex %s/%s preservado: %v\n", kind, plan.Claim.Item, updateErr)
+				continue
+			}
+			updated++
+		}
+	}
+	if updated > 0 {
+		fmt.Printf("  ✓ %d Codex agent/skill artifact(s) migrated or updated\n", updated)
+	}
 }
 
 // updateHooksSurgical garante que 'trackfw validate' está presente nos hooks sem sobrescrever conteúdo do usuário.

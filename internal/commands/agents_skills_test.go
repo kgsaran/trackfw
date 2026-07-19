@@ -158,9 +158,85 @@ func TestDeprecatedCursorAliasUsesLifecycleManager(t *testing.T) {
 	for _, path := range []string{
 		filepath.Join(project, ".cursor", "agents", "trackfw-architect.md"),
 		filepath.Join(project, ".cursor", "skills", "trackfw-governance", "SKILL.md"),
+		filepath.Join(project, ".cursor", "rules", "trackfw.mdc"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("alias did not install %s: %v", path, err)
 		}
+	}
+	manifest, err := os.ReadFile(filepath.Join(project, ".trackfw", "integrations-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(manifest), filepath.Join(project, ".cursor", "rules", "trackfw.mdc")) {
+		t.Fatal("auxiliary legacy rule must not receive lifecycle ownership")
+	}
+}
+
+func TestInitAIToolsUsesCanonicalManagerAndValidatesTargets(t *testing.T) {
+	project, _ := integrationCommandFixture(t)
+	if err := installAITools([]string{"kiro", "antigravity"}, project); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(project, ".kiro", "agents", "trackfw-backend.md"),
+		filepath.Join(project, ".kiro", "skills", "trackfw-governance", "SKILL.md"),
+		filepath.Join(project, ".agents", "agents", "trackfw-backend", "agent.md"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("canonical init artifact missing: %s: %v", path, err)
+		}
+	}
+
+	unknownProject := t.TempDir()
+	if err := installAITools([]string{"unknown-ai"}, unknownProject); err == nil || !strings.Contains(err.Error(), "unknown target") {
+		t.Fatalf("unknown target must fail actionably, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(unknownProject, ".trackfw", "integrations-manifest.json")); !os.IsNotExist(err) {
+		t.Fatalf("unknown target must not create integration manifest: %v", err)
+	}
+}
+
+func TestInitAIToolsHelpIncludesEveryCatalogTarget(t *testing.T) {
+	usage := newInitCmd().Flag("ai-tools").Usage
+	for _, target := range []string{"claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "kiro"} {
+		if !strings.Contains(usage, target) {
+			t.Fatalf("--ai-tools help omits %s: %s", target, usage)
+		}
+	}
+}
+
+func TestDeprecatedAliasesPreserveAuxiliaryRulesWithoutOwnership(t *testing.T) {
+	tests := []struct {
+		name     string
+		command  func() *cobra.Command
+		rulePath string
+	}{
+		{"gemini", newGeminiCmd, "GEMINI.md"},
+		{"copilot", newCopilotCmd, filepath.Join(".github", "copilot-instructions.md")},
+		{"windsurf", newWindsurfCmd, ".windsurfrules"},
+		{"amazonq", newAmazonQCmd, filepath.Join(".amazonq", "developer", "guidelines.md")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			project, _ := integrationCommandFixture(t)
+			cmd := test.command()
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			if err := cmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			rule := filepath.Join(project, test.rulePath)
+			if _, err := os.Stat(rule); err != nil {
+				t.Fatalf("legacy alias rule missing: %s: %v", rule, err)
+			}
+			manifest, err := os.ReadFile(filepath.Join(project, ".trackfw", "integrations-manifest.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(manifest), rule) {
+				t.Fatalf("auxiliary rule unexpectedly owned by lifecycle: %s", rule)
+			}
+		})
 	}
 }

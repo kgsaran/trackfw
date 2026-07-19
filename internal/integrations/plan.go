@@ -53,10 +53,12 @@ func BuildPlans(catalog *Catalog, request PlanRequest) ([]PlannedArtifact, error
 				if err != nil {
 					return nil, err
 				}
+				claim := Claim{Target: target.ID, Surface: surface.ID, Scope: request.Scope, Kind: request.Kind, Item: item.ID}
 				plans = append(plans, PlannedArtifact{
-					Claim:       Claim{Target: target.ID, Surface: surface.ID, Scope: request.Scope, Kind: request.Kind, Item: item.ID},
+					Claim:       claim,
 					Destination: strings.ReplaceAll(installPath.Path, "{{id}}", item.ID),
 					Content:     content, CatalogVersion: catalog.Version, SupportLevel: capability.SupportLevel,
+					LegacyHashes: LegacyHashes(claim),
 				})
 			}
 		}

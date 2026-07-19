@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/spf13/cobra"
 )
@@ -320,6 +321,13 @@ func runDeprecatedIntegrationAlias(cmd *cobra.Command, target string, scopes []s
 				return err
 			}
 		}
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	if err := generators.InjectRulesForTool(target, cwd); err != nil {
+		return fmt.Errorf("install %s auxiliary rules: %w", target, err)
 	}
 	return nil
 }
