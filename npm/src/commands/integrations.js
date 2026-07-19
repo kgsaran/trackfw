@@ -55,7 +55,7 @@ function createLifecycleCommand(kind) {
         await promptSelection(kind, options)
       }
       if (mutation && process.stdin.isTTY) await promptAmbiguousSurfaces(kind, options)
-      options.allSurfaces = operation === 'list' && (!options.targets || !options.targets.length)
+      options.allSurfaces = operation === 'list'
       const output = execute(kind, operation, options)
       console.log(options.json ? JSON.stringify(output) : human(output))
     })

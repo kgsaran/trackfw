@@ -121,6 +121,28 @@ func TestListWithoutTargetIncludesAllCatalogSurfaces(t *testing.T) {
 	}
 }
 
+func TestListWithTargetStillIncludesAllCompatibleSurfaces(t *testing.T) {
+	integrationCommandFixture(t)
+	cmd := newAgentsCmd()
+	cmd.SetArgs([]string{"list", "--targets", "antigravity", "--items", "backend", "--json"})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var decoded lifecycleOutput
+	if err := json.Unmarshal(output.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(decoded.Deployments))
+	for _, deployment := range decoded.Deployments {
+		got = append(got, deployment.Surface)
+	}
+	if strings.Join(got, ",") != "current,legacy-cli" {
+		t.Fatalf("target filter must retain every compatible surface, got %v", got)
+	}
+}
+
 func TestDeprecatedCursorAliasUsesLifecycleManager(t *testing.T) {
 	project, _ := integrationCommandFixture(t)
 	cmd := newCursorCmd()

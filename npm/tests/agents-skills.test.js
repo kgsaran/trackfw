@@ -226,6 +226,10 @@ test('CLI uses repeatable --surface and unfiltered list includes legacy surfaces
   assert.equal(deployments.some(entry => entry.target === 'antigravity' && entry.surface === 'legacy-cli'), true)
   assert.equal(deployments.some(entry => entry.target === 'kiro' && entry.surface === 'cli'), true)
 
+  const filtered = spawnSync(process.execPath, [bin, 'agents', 'list', '--targets', 'antigravity', '--items', 'architect', '--json'], { cwd: dirs.projectRoot, encoding: 'utf8' })
+  assert.equal(filtered.status, 0, filtered.stderr)
+  assert.deepEqual(JSON.parse(filtered.stdout).deployments.map(entry => entry.surface), ['current', 'legacy-cli'])
+
   const human = spawnSync(process.execPath, [bin, 'skills', 'list', '--targets', 'claude', '--items', 'plan'], { cwd: dirs.projectRoot, encoding: 'utf8' })
   assert.match(human.stdout, /Available skills/)
   assert.match(human.stdout, /Governance/)

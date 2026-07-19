@@ -72,7 +72,7 @@ func newIntegrationListCmd(kind integrations.ItemKind) *cobra.Command {
 		Short: fmt.Sprintf("List available and deployed trackfw %s", kind),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return executeIntegrationList(cmd, kind, opts, len(opts.targets) == 0)
+			return executeIntegrationList(cmd, kind, opts)
 		},
 	}
 	addIntegrationFlags(cmd, &opts, false)
@@ -162,7 +162,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	return nil
 }
 
-func executeIntegrationList(cmd *cobra.Command, kind integrations.ItemKind, opts integrationOptions, allSurfaces bool) error {
+func executeIntegrationList(cmd *cobra.Command, kind integrations.ItemKind, opts integrationOptions) error {
 	if opts.scope != "project" && opts.scope != "global" {
 		return fmt.Errorf("invalid --scope %q: use project or global", opts.scope)
 	}
@@ -176,7 +176,7 @@ func executeIntegrationList(cmd *cobra.Command, kind integrations.ItemKind, opts
 	}
 	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope,
-		Surfaces: surfaceMap, AllSurfaces: allSurfaces,
+		Surfaces: surfaceMap, AllSurfaces: true,
 	})
 	if err != nil {
 		return err
