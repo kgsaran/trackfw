@@ -10,6 +10,7 @@ import (
 	cbterm "github.com/charmbracelet/x/term"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
+	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +21,7 @@ func newInitCmd() *cobra.Command {
 		RunE:  runInit,
 	}
 	cmd.Flags().Bool("brownfield", false, "Adopt governance gradually (lenient mode for 30 days)")
-	cmd.Flags().StringSlice("ai-tools", nil, "AI tools to configure (codex,claude,gemini,cursor,copilot,windsurf,amazonq)")
+	cmd.Flags().StringSlice("ai-tools", nil, "AI tools to configure (claude,codex,gemini,antigravity,cursor,copilot,windsurf,amazonq,kiro)")
 	return cmd
 }
 
@@ -157,10 +158,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 					huh.NewOption("Claude Code", "claude"),
 					huh.NewOption("OpenAI Codex", "codex"),
 					huh.NewOption("Gemini CLI", "gemini"),
+					huh.NewOption("Google Antigravity", "antigravity"),
 					huh.NewOption("Cursor", "cursor"),
 					huh.NewOption("GitHub Copilot", "copilot"),
 					huh.NewOption("Windsurf", "windsurf"),
 					huh.NewOption("Amazon Q Developer", "amazonq"),
+					huh.NewOption("Kiro", "kiro"),
 				).
 				Value(&aiTools),
 		),
@@ -259,63 +262,33 @@ func runInit(cmd *cobra.Command, args []string) error {
 }
 
 func installAITools(aiTools []string, cwd string) error {
-	for _, tool := range aiTools {
-		switch tool {
-		case "codex":
-			if err := generators.InstallCodex(cwd); err != nil {
-				return fmt.Errorf("instalando Codex: %w", err)
-			}
-		case "claude":
-			if err := generators.InstallAgents(); err != nil {
-				return fmt.Errorf("instalando agentes Claude: %w", err)
-			}
-			// CLAUDE.md já tratado por generateClaudeMD dentro de Scaffold
-		case "gemini":
-			if err := generators.InstallGemini(); err != nil {
-				return fmt.Errorf("instalando Gemini: %w", err)
-			}
-			if err := generators.InjectRulesForTool("gemini", cwd); err != nil {
-				fmt.Printf("  ⚠ gemini rules inject: %v\n", err)
-			} else {
-				fmt.Println("  ✓ trackfw rules → GEMINI.md")
-			}
-		case "cursor":
-			if err := generators.InstallCursor(); err != nil {
-				return fmt.Errorf("instalando Cursor: %w", err)
-			}
-			if err := generators.InjectRulesForTool("cursor", cwd); err != nil {
-				fmt.Printf("  ⚠ cursor rules inject: %v\n", err)
-			} else {
-				fmt.Println("  ✓ trackfw rules → .cursor/rules/trackfw.mdc")
-			}
-		case "copilot":
-			if err := generators.InstallCopilot(); err != nil {
-				return fmt.Errorf("instalando Copilot: %w", err)
-			}
-			if err := generators.InjectRulesForTool("copilot", cwd); err != nil {
-				fmt.Printf("  ⚠ copilot rules inject: %v\n", err)
-			} else {
-				fmt.Println("  ✓ trackfw rules → .github/copilot-instructions.md")
-			}
-		case "windsurf":
-			if err := generators.InstallWindsurf(); err != nil {
-				return fmt.Errorf("instalando Windsurf: %w", err)
-			}
-			if err := generators.InjectRulesForTool("windsurf", cwd); err != nil {
-				fmt.Printf("  ⚠ windsurf rules inject: %v\n", err)
-			} else {
-				fmt.Println("  ✓ trackfw rules → .windsurfrules")
-			}
-		case "amazonq":
-			if err := generators.InstallAmazonQ(); err != nil {
-				return fmt.Errorf("instalando Amazon Q: %w", err)
-			}
-			if err := generators.InjectRulesForTool("amazonq", cwd); err != nil {
-				fmt.Printf("  ⚠ amazonq rules inject: %v\n", err)
-			} else {
-				fmt.Println("  ✓ trackfw rules → .amazonq/developer/guidelines.md")
-			}
+	if len(aiTools) == 0 {
+		return nil
+	}
+	catalog, err := integrations.LoadCatalog()
+	if err != nil {
+		return err
+	}
+	var plans []integrations.PlannedArtifact
+	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
+		selected, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
+			Kind: kind, Targets: aiTools, Scope: "project",
+		})
+		if err != nil {
+			return fmt.Errorf("configurando AI tools: %w", err)
 		}
+		plans = append(plans, selected...)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	manager := integrations.Manager{ProjectRoot: cwd, HomeDir: home}
+	if err := manager.Install(plans, false); err != nil {
+		return fmt.Errorf("instalando AI tools: %w", err)
+	}
+	for _, tool := range aiTools {
+		fmt.Printf("  ✓ %s agents and skills\n", tool)
 	}
 	return nil
 }

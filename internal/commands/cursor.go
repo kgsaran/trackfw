@@ -1,9 +1,6 @@
 package commands
 
-import (
-	"github.com/kgsaran/trackfw/internal/generators"
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 func newCursorCmd() *cobra.Command {
 	return &cobra.Command{
@@ -24,7 +21,7 @@ func newCursorCmd() *cobra.Command {
 Rules use alwaysApply: false (Agent Requested mode) so Cursor activates them on demand.
 Safe to run multiple times — existing files are never overwritten.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return generators.InstallCursor()
+			return runDeprecatedIntegrationAlias(cmd, "cursor", []string{"project"})
 		},
 	}
 }

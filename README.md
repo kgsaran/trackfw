@@ -10,7 +10,7 @@
 
 **trackfw** is an open-source governance CLI for AI-native software delivery. It enforces a traceable chain from architectural decision to shipped code — without SaaS, accounts, or databases. Markdown files are state.
 
-It is designed for teams looking for an ADR / REQ / ROADMAP governance framework with native support for AI coding assistants such as Codex, Claude Code, Gemini CLI, Cursor, GitHub Copilot, Windsurf, and Amazon Q.
+It is designed for teams looking for an ADR / REQ / ROADMAP governance framework with native support for AI coding assistants such as Codex, Claude Code, Gemini CLI, Antigravity, Cursor, GitHub Copilot, Windsurf, Amazon Q, and Kiro.
 
 ```
 ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
@@ -93,8 +93,8 @@ npm install -g trackfw
 ```
 
 The npm package is pure Node.js — no compiled binary or postinstall download.
-It works wherever Node.js ≥ 18 is installed. Shared behavior and intentional
-Go-only integration installers follow the [CLI parity contract](docs/cli-parity.md).
+It works wherever Node.js ≥ 18 is installed. Shared behavior, including the AI
+integration lifecycle, follows the [CLI parity contract](docs/cli-parity.md).
 
 ### pip
 
@@ -153,15 +153,17 @@ trackfw status
 | `trackfw plugins list` | List installed plugins |
 | `trackfw plugins add <user/repo>` | Install a plugin from GitHub Releases |
 | `trackfw plugins remove <name>` | Remove an installed plugin |
-| `trackfw agents` | Install Claude Code subagents *(Go binary only)* |
-| `trackfw gemini` | Install Gemini CLI skills and commands *(Go binary only)* |
-| `trackfw cursor` | Install Cursor rules *(Go binary only)* |
-| `trackfw copilot` | Install GitHub Copilot instructions *(Go binary only)* |
-| `trackfw windsurf` | Install Windsurf rules and workflows *(Go binary only)* |
-| `trackfw amazonq` | Install Amazon Q Developer rules *(Go binary only)* |
+| `trackfw agents list` | List available agents and deployment state across AI CLIs |
+| `trackfw agents install` | Install selected specialist agents |
+| `trackfw agents update` | Safely update managed agents |
+| `trackfw agents uninstall` | Remove selected owned agent deployments |
+| `trackfw skills list` | List available governance skills and deployment state |
+| `trackfw skills install/update/uninstall` | Manage selected governance skills |
+| `trackfw gemini`, `cursor`, `copilot`, `windsurf`, `amazonq` | Historical aliases in the Go distribution only; use `agents`/`skills` |
 | `trackfw version` | Print version |
 
-> **Go binary only** commands (`agents`, `gemini`, `cursor`, `copilot`, `windsurf`, `amazonq`) are available when installed via brew, `install.sh`, or `go install`. When using the npm package, AI integrations are installed through `trackfw init`.
+The same lifecycle contract is available from the Go/Homebrew, npm, and PyPI
+distributions.
 
 ---
 
@@ -325,19 +327,41 @@ $ trackfw status
 
 ## AI assistant integration
 
-`trackfw init` asks which AI tools your team uses and installs native governance context for each. When using the Go binary (brew, `install.sh`, `go install`), each integration can also be run as a standalone command.
+`trackfw init` can install initial AI integrations. The `agents` and `skills`
+command families provide the complete lifecycle in every distribution.
 
-| Command | Installs | Format |
-|---|---|---|
-| `trackfw init --ai-tools codex` | `AGENTS.md`, 5 repository skills, 6 custom agents, Codex config and hooks | `.agents/skills/` + `.codex/` |
-| `trackfw agents` | 10 subagents in `~/.claude/agents/` | Claude Code `.md` with frontmatter |
-| `trackfw gemini` | GEMINI.md + 10 skills + 3 commands | `~/.gemini/` + project root |
-| `trackfw cursor` | 10 rules in `.cursor/rules/` | `.mdc` with YAML frontmatter |
-| `trackfw copilot` | `copilot-instructions.md` + 10 instructions + 10 prompts | `.github/` |
-| `trackfw windsurf` | 10 rules + workflows in `.windsurf/` + global rules | Appends to `~/.codeium/windsurf/memories/` |
-| `trackfw amazonq` | 10 rules in `.amazonq/rules/` | Plain Markdown |
+| Target | Native/fallback representation |
+|---|---|
+| Claude Code | Subagent Markdown and Agent Skills |
+| Codex | Custom-agent TOML and Agent Skills |
+| Gemini CLI | Agent Markdown and skills |
+| Antigravity | Agent/skill directories; explicit `legacy-cli` surface available |
+| Cursor | Agent Markdown and skills |
+| GitHub Copilot | Custom agents and Agent Skills |
+| Windsurf | Specialist-skill fallback for agents and native skills |
+| Amazon Q | CLI agent JSON and workflow-rule fallback |
+| Kiro | Native IDE/CLI agents and Agent Skills |
 
-Each installer is idempotent — running it twice never overwrites your customizations.
+```bash
+# Inspect every deployment, including legacy surfaces
+trackfw agents list --json
+
+# Install selected items in the repository
+trackfw agents install --targets codex,claude --items architect,backend --scope project
+trackfw skills install --targets codex,antigravity --items governance,implement --scope project
+
+# Select an alternate surface explicitly
+trackfw agents install --targets kiro --surface kiro=cli
+trackfw agents list --targets antigravity --surface antigravity=legacy-cli
+```
+
+Without `--targets`, mutations open a numbered/checkbox selector in a TTY and
+fail with an actionable error in CI. The lifecycle reports `not-installed`,
+`current`, `outdated`, or `modified`. A manifest under `.trackfw/` records
+scope-specific ownership, version, SHA-256, and shared claims. Modified files
+are never replaced or removed unless `--force` is explicit, and unmanaged files
+are never removed. Known historical templates are adopted without overwriting;
+unknown unmanaged content cannot be adopted by `update`, even with `--force`.
 
 The 10 roles installed for each tool: **architect · backend · frontend · qa · infra · security · code-quality · dba · ux · data**
 
@@ -352,7 +376,7 @@ The 10 roles installed for each tool: **architect · backend · frontend · qa �
 ? Package manager?       npm / pnpm / yarn / bun
 ? Git hooks?             husky / lefthook / none
 ? CI system?             GitHub Actions / GitLab CI / none
-? Which AI assistants?   Claude Code / OpenAI Codex / Gemini CLI / Cursor / Copilot / Windsurf / Amazon Q
+? Which AI assistants?   Claude / Codex / Gemini / Antigravity / Cursor / Copilot / Windsurf / Amazon Q / Kiro
 ```
 
 The governance structure (`docs/adr/`, `docs/req/`, `docs/roadmaps/`) is always identical — stack-agnostic. The generated hooks, workflows, and AI integrations adapt to your answers.

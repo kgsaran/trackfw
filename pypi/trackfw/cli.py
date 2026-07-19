@@ -4,6 +4,7 @@ Usa argparse (stdlib) e delega para subcomandos em trackfw/commands/.
 """
 
 import argparse
+import sys
 from trackfw import __version__
 
 
@@ -90,6 +91,12 @@ def main():
     # --- serve ---
     from trackfw.commands import serve as serve_cmd
     serve_cmd.register(subparsers)
+
+    # --- agents / skills ---
+    from trackfw.commands import agents as agents_cmd
+    from trackfw.commands import skills as skills_cmd
+    agents_cmd.register(subparsers)
+    skills_cmd.register(subparsers)
 
     args = parser.parse_args()
 

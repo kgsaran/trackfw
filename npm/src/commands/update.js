@@ -73,7 +73,15 @@ cmd.action(() => {
   }
   if (fs.existsSync(path.join(cwd, 'AGENTS.md')) || fs.existsSync(path.join(cwd, '.codex'))) {
     try {
-      require('../generators/codex').installCodex(cwd);
+      const { buildPlans, IntegrationManager } = require('../integrations');
+      const roots = { projectRoot: cwd };
+      const manager = new IntegrationManager(roots);
+      for (const kind of ['agents', 'skills']) {
+        const plans = buildPlans(kind, { targets: ['codex'], scope: 'project' });
+        const statuses = manager.inspect(plans);
+        const existing = plans.filter((_, index) => statuses[index].state !== 'not-installed');
+        manager.update(existing);
+      }
     } catch (e) {
       console.warn(`  ⚠ Codex integration: ${e.message}`);
     }

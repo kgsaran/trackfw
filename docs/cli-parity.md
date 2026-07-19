@@ -24,14 +24,37 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `sync` | yes | yes | yes | Jira/Linear synchronization |
 | `plugins` | yes | yes | yes | Plugin operations supported by runtime |
 | `serve` | yes | yes | yes | Local dashboard |
+| `agents` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
+| `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
+| `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Prints `trackfw <version>` |
 
-## Intentional Go-only commands
+## AI integration lifecycle
 
-`skills`, `agents`, `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq`
-remain Go-only standalone installers. Node.js folds these integrations into the
-interactive `init` flow. Codex is available through `init --ai-tools codex` and
-`update` in Go, Node.js, and Python.
+The Go, Node.js, and Python runtimes expose the same public lifecycle:
+
+```bash
+trackfw agents list|install|uninstall|update
+trackfw skills list|install|uninstall|update
+```
+
+The common flags are `--targets`, `--items`, `--scope`, `--surface`, `--json`,
+and, for mutations that may replace or remove content, `--force`. Mutations
+without `--targets` open a TTY selector; in non-interactive execution the flag
+is required. Supported targets are Claude Code, Codex, Gemini CLI, Antigravity,
+Cursor, GitHub Copilot, Windsurf, Amazon Q, and Kiro.
+
+Lifecycle state is one of `not-installed`, `current`, `outdated`, or `modified`.
+Ownership and SHA-256 are stored per project or global scope. Update and
+uninstall preserve modified files unless `--force` is explicit; uninstall never
+removes an unmanaged file or a shared artifact that still has another claim.
+Legacy surfaces are inspected by `list` and selected explicitly for mutations,
+for example `--surface antigravity=legacy-cli`. Known legacy templates can be
+adopted safely; unknown content is never adopted by `update`, even with force.
+
+The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` names
+exist only in the Go distribution for historical compatibility. They are not
+part of the cross-runtime contract; use `agents` and `skills` in new automation.
 
 ## Release rule
 

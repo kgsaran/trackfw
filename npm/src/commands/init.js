@@ -4,7 +4,7 @@ const { t } = require('../i18n')
 
 const cmd = new Command('init')
 cmd.description(t('init.description'))
-cmd.option('--ai-tools <tools>', 'Comma-separated AI tools to configure (codex,claude,gemini,cursor,copilot,windsurf,amazonq)', '')
+cmd.option('--ai-tools <tools>', 'Comma-separated AI tools to configure (claude,codex,gemini,antigravity,cursor,copilot,windsurf,amazonq,kiro)', '')
 cmd.action(async (options) => {
   const path = require('path')
   const generators = require('../generators/init')
@@ -22,17 +22,10 @@ cmd.action(async (options) => {
     }
     await generators.scaffold(cfg)
     const aiTools = String(options.aiTools || '').split(',').map(tool => tool.trim()).filter(Boolean)
+    const supported = new Set(['claude', 'codex', 'gemini', 'antigravity', 'cursor', 'copilot', 'windsurf', 'amazonq', 'kiro'])
     for (const tool of aiTools) {
-      switch (tool) {
-        case 'codex':    require('../generators/codex').installCodex(process.cwd()); break
-        case 'claude':   await generators.installAgents();  break
-        case 'gemini':   await generators.installGemini();  break
-        case 'cursor':   await generators.installCursor();  break
-        case 'copilot':  await generators.installCopilot(); break
-        case 'windsurf': await generators.installWindsurf(); break
-        case 'amazonq':  await generators.installAmazonQ(); break
-        default: throw new Error(`Unsupported AI tool: ${tool}`)
-      }
+      if (!supported.has(tool)) throw new Error(`Unsupported AI tool: ${tool}`)
+      await generators.installIntegrationTarget(tool, process.cwd())
     }
     console.log(`\n${t('init.success')}`)
     require('../generators/init').printArchitectNextSteps(process.cwd())
@@ -157,10 +150,12 @@ cmd.action(async (options) => {
         { name: 'Claude Code', value: 'claude' },
         { name: 'OpenAI Codex', value: 'codex' },
         { name: 'Gemini CLI', value: 'gemini' },
+        { name: 'Google Antigravity', value: 'antigravity' },
         { name: 'Cursor', value: 'cursor' },
         { name: 'GitHub Copilot', value: 'copilot' },
         { name: 'Windsurf', value: 'windsurf' },
         { name: 'Amazon Q Developer', value: 'amazonq' },
+        { name: 'Kiro', value: 'kiro' },
       ],
     })
   } catch (err) {
@@ -183,17 +178,7 @@ cmd.action(async (options) => {
   const cfg = { projectName, projectType, frontend, backend, backendFramework, pkgManager, hooks, ci, requireReqInCommit }
   await generators.scaffold(cfg)
 
-  for (const tool of (aiTools || [])) {
-    switch (tool) {
-      case 'codex':    require('../generators/codex').installCodex(process.cwd()); break
-      case 'claude':   await generators.installAgents();  break
-      case 'gemini':   await generators.installGemini();  break
-      case 'cursor':   await generators.installCursor();  break
-      case 'copilot':  await generators.installCopilot(); break
-      case 'windsurf': await generators.installWindsurf(); break
-      case 'amazonq':  await generators.installAmazonQ(); break
-    }
-  }
+  for (const tool of (aiTools || [])) await generators.installIntegrationTarget(tool, process.cwd())
 
   console.log(`\n${t('init.success')}`)
   require('../generators/init').printArchitectNextSteps(process.cwd())

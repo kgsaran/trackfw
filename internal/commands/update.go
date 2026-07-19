@@ -18,9 +18,12 @@ Updates:
   - trackfw rules block in all detected agent config files (CLAUDE.md, GEMINI.md, etc.)
   - scripts/trackfw-validate.sh
   - CI workflow (.github/workflows/trackfw-gate.yml or .gitlab-ci-trackfw.yml)
-  - .claude/commands/trackfw/ slash commands
-  - ~/.claude/skills/trackfw/ global skill
-  - Git hooks (surgical: ensures 'trackfw validate' is present)`,
+  - existing Codex agent/skill deployments (without installing missing items)
+  - historical Claude slash commands and global compatibility skill
+  - Git hooks (surgical: ensures 'trackfw validate' is present)
+
+Other agent and skill integrations are updated explicitly with
+'trackfw agents update' and 'trackfw skills update'.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, _ := os.Getwd()
 			return generators.Update(cwd)

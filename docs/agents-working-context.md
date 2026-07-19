@@ -2029,3 +2029,43 @@ adicionar quality gates de CI/release e formalizar o contrato entre Go, Node.js 
 - Node.js: 13 arquivos de teste verdes.
 - Python: 265 testes verdes.
 - Wheel e tarball npm construídos e executados com sucesso.
+
+---
+
+## Sessão 2026-07-18 — Agents/skills lifecycle multi-CLI (CONCLUÍDO)
+
+**Branch:** `feat/agents-skills-lifecycle-multi-cli`
+
+**Objetivo:** substituir os instaladores fragmentados por um catálogo canônico e
+adapters nativos, expondo `list`, `install`, `uninstall` e `update` para `agents` e
+`skills` com paridade Go, Node.js e Python.
+
+**Governança:**
+- ADR: `docs/adr/ADR-2026-07-18-catalogo-canonico-e-adapters-para-integracoes-de-agentes.md`
+- REQ: `docs/req/REQ-2026-07-18-agents-skills-lifecycle-multi-cli.md`
+- Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md`
+
+**Matriz entregue:** Claude, Codex, Gemini, Antigravity, Cursor, Copilot,
+Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
+
+### Progresso em 2026-07-18
+
+- Waves 1 e 2 concluídas: catálogo canônico, manifesto de ownership e os quatro
+  subcomandos de lifecycle estão implementados em Go, Node.js e Python.
+- Os três runtimes compartilham o schema de manifesto v1, os estados
+  `not-installed/current/outdated/modified` e as proteções de update/uninstall.
+- O `list` exibe todos os itens e todas as surfaces compatíveis por target; uma
+  surface específica pode ser escolhida com `--surface target=surface`.
+- Testes focados Go, npm e Python estão verdes; assets dos três runtimes estão
+  byte-idênticos. A Wave 3 iniciou os gates de empacotamento e migração legada.
+
+### Encerramento
+
+- Lifecycle `list/install/uninstall/update` entregue com JSON semanticamente
+  idêntico em Go/Homebrew, npm e PyPI.
+- Migração byte-exata cobre instalações Claude/Codex anteriores dos três
+  pacotes, preservando conteúdo desconhecido e customizações.
+- Sync/check de assets, smoke real do tarball npm e do wheel Python e matriz
+  hermética dos nove targets foram aprovados.
+- `make quality`: verde; Python: 300 testes; Node: 40 testes top-level;
+  `trackfw validate --json`: zero violações e zero warnings.

@@ -931,17 +931,13 @@ Oriente o usuário:
 // AI tool installers
 // ---------------------------------------------------------------------------
 
-/**
- * installAgents — instala agentes Claude Code em ~/.claude/agents/
- * O pacote npm não embute os templates binários do Go, por isso informa
- * ao usuário que esta operação requer o binário Go instalado.
- */
-async function installAgents() {
-  // CLAUDE.md já tratado por generateClaudeMD via injectOrUpdateRules
-  console.log('  ✓ claude (agentes — execute `trackfw install agents` com o binário Go para instalar os templates)')
+/** Compatibility entrypoint backed by the canonical integration engine. */
+async function installAgents(cwd = process.cwd()) {
+  await installIntegrationTarget('claude', cwd)
 }
 
 async function installGemini(cwd = process.cwd()) {
+  await installIntegrationTarget('gemini', cwd)
   try {
     injectRulesForTool('gemini', cwd)
     console.log('  ✓ trackfw rules → GEMINI.md')
@@ -951,6 +947,7 @@ async function installGemini(cwd = process.cwd()) {
 }
 
 async function installCursor(cwd = process.cwd()) {
+  await installIntegrationTarget('cursor', cwd)
   try {
     injectRulesForTool('cursor', cwd)
     console.log('  ✓ trackfw rules → .cursor/rules/trackfw.mdc')
@@ -960,6 +957,7 @@ async function installCursor(cwd = process.cwd()) {
 }
 
 async function installCopilot(cwd = process.cwd()) {
+  await installIntegrationTarget('copilot', cwd)
   try {
     injectRulesForTool('copilot', cwd)
     console.log('  ✓ trackfw rules → .github/copilot-instructions.md')
@@ -969,6 +967,7 @@ async function installCopilot(cwd = process.cwd()) {
 }
 
 async function installWindsurf(cwd = process.cwd()) {
+  await installIntegrationTarget('windsurf', cwd)
   try {
     injectRulesForTool('windsurf', cwd)
     console.log('  ✓ trackfw rules → .windsurfrules')
@@ -978,12 +977,22 @@ async function installWindsurf(cwd = process.cwd()) {
 }
 
 async function installAmazonQ(cwd = process.cwd()) {
+  await installIntegrationTarget('amazonq', cwd)
   try {
     injectRulesForTool('amazonq', cwd)
     console.log('  ✓ trackfw rules → .amazonq/developer/guidelines.md')
   } catch (e) {
     console.log(`  ⚠ amazonq rules inject: ${e.message}`)
   }
+}
+
+/** Install the canonical agents and skills for one AI target. */
+async function installIntegrationTarget(target, cwd = process.cwd()) {
+  const { execute } = require('../integrations')
+  const roots = { projectRoot: cwd }
+  execute('agents', 'install', { targets: [target], scope: 'project' }, roots)
+  execute('skills', 'install', { targets: [target], scope: 'project' }, roots)
+  console.log(`  ✓ ${target} agents and skills`)
 }
 
 /**
@@ -1093,6 +1102,7 @@ module.exports = {
   installCopilot,
   installWindsurf,
   installAmazonQ,
+  installIntegrationTarget,
   injectRulesForTool,
   injectRulesDetected,
   trackfwRulesBlock,

@@ -9,7 +9,7 @@ GOCACHE=${GOCACHE:-/tmp/trackfw-go-cache} go build -o "$GO_BIN" ./cmd/trackfw
 
 commands=(
   init adr req roadmap validate status log plugins discover update metrics
-  sync context baseline help configure serve version
+  sync context baseline help configure serve version agents skills
 )
 
 check_help() {
@@ -35,5 +35,7 @@ PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw version | grep -Eq '^trackfw .+'
 "$GO_BIN" --version | grep -Eq '^trackfw .+'
 node "$ROOT_DIR/npm/bin/trackfw" --version | grep -Eq '^([0-9]+\.){2}[0-9]+|^0\.0\.0-dev$'
 PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw --version | grep -Eq '^trackfw .+'
+
+GO_BIN="$GO_BIN" bash "$ROOT_DIR/scripts/check-integration-cli-parity.sh"
 
 echo "CLI parity smoke checks passed"

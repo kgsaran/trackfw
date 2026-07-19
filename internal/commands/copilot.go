@@ -1,9 +1,6 @@
 package commands
 
-import (
-	"github.com/kgsaran/trackfw/internal/generators"
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 func newCopilotCmd() *cobra.Command {
 	return &cobra.Command{
@@ -17,7 +14,7 @@ func newCopilotCmd() *cobra.Command {
 Roles covered: architect, backend, frontend, qa, infra, security, code-quality, dba, ux, data.
 Safe to run multiple times — existing files are never overwritten.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return generators.InstallCopilot()
+			return runDeprecatedIntegrationAlias(cmd, "copilot", []string{"project"})
 		},
 	}
 }

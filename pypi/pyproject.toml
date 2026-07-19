@@ -49,4 +49,7 @@ trackfw = [
     "serve/static/*.html",
     "serve/static/*.js",
     "serve/static/*.css",
+    "integrations/assets/catalog.json",
+    "integrations/assets/agents/*.md",
+    "integrations/assets/skills/*.md",
 ]

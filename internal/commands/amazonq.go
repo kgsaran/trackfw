@@ -1,9 +1,6 @@
 package commands
 
-import (
-	"github.com/kgsaran/trackfw/internal/generators"
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 func newAmazonQCmd() *cobra.Command {
 	return &cobra.Command{
@@ -24,7 +21,7 @@ func newAmazonQCmd() *cobra.Command {
 Rules are plain Markdown (no frontmatter) as required by Amazon Q Developer.
 Safe to run multiple times — existing files are never overwritten.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return generators.InstallAmazonQ()
+			return runDeprecatedIntegrationAlias(cmd, "amazonq", []string{"project"})
 		},
 	}
 }
