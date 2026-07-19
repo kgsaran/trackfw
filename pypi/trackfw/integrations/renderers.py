@@ -35,7 +35,7 @@ def render(
     if kind == "agents" and target == "codex":
         return "\n".join(
             [
-                f"name = {json.dumps(name.removeprefix('trackfw-'))}",
+                f"name = {json.dumps(name.replace('-', '_'))}",
                 f"description = {json.dumps(description)}",
                 f"developer_instructions = {json.dumps(body.rstrip())}",
                 "",

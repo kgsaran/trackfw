@@ -46,6 +46,35 @@ def _select(label: str, entries: list[tuple[str, str]]) -> list[str]:
     return list(dict.fromkeys(selected))
 
 
+def _select_one(label: str, entries: list[tuple[str, str]]) -> str:
+    print(f"Select {label}:", file=sys.stderr)
+    for index, (_, name) in enumerate(entries, 1):
+        print(f"  [{index}] {name}", file=sys.stderr)
+    raw = input("> ").strip()
+    try:
+        index = int(raw)
+        if index < 1:
+            raise IndexError
+        return entries[index - 1][0]
+    except (ValueError, IndexError):
+        raise ValueError(f"invalid selection {raw!r}") from None
+
+
+def _prompt_ambiguous_surfaces(catalog, kind: str, targets: list[str], selected: dict[str, str]) -> None:
+    targets_by_id = {target["id"]: target for target in catalog["targets"]}
+    for target_id in targets:
+        if target_id in selected:
+            continue
+        target = targets_by_id[target_id]
+        choices = [
+            (surface["id"], surface["name"])
+            for surface in target["surfaces"]
+            if surface["capabilities"][kind]["support_level"] not in {"legacy", "unsupported"}
+        ]
+        if len(choices) > 1:
+            selected[target_id] = _select_one(f"surface for {target['name']}", choices)
+
+
 def add_lifecycle_parser(subparsers, kind: str):
     parser = subparsers.add_parser(kind, help=f"List and manage trackfw {kind}")
     actions = parser.add_subparsers(dest="action", required=True)
@@ -74,12 +103,16 @@ def run(args: argparse.Namespace, kind: str) -> int:
                 raise ValueError(f"--targets is required for non-interactive {args.action}")
         if mutation and not items and sys.stdin.isatty():
             items = _select(kind, [(entry["id"], entry["name"]) for entry in catalog[kind]])
+        selected_surfaces = surface_values(args.surface)
+        if mutation and sys.stdin.isatty():
+            _prompt_ambiguous_surfaces(catalog, kind, targets or [], selected_surfaces)
         catalog, plans = plan_deployments(
             kind,
             target_ids=targets,
             item_ids=items,
             scope=args.scope,
-            surfaces=surface_values(args.surface),
+            surfaces=selected_surfaces,
+            all_surfaces=not mutation,
         )
         manager = IntegrationManager(os.getcwd())
         if args.action == "install":
@@ -102,6 +135,10 @@ def run(args: argparse.Namespace, kind: str) -> int:
         if args.json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
+            print(f"Available {kind} (catalog {catalog['version']}):")
+            for item in payload["items"]:
+                print(f"  {item['id']:<14} {item['name']} — {item['description']}")
+            print("\nDeployments:")
             for deployment in deployments:
                 print(
                     f"{deployment['target']}/{deployment['surface']} "

@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from trackfw.integrations.catalog import load_catalog, plan_deployments
+from trackfw.integrations.catalog import _surfaces, load_catalog, plan_deployments
+from trackfw.integrations.command import _prompt_ambiguous_surfaces
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
 
 
@@ -50,6 +51,13 @@ def test_packaged_catalog_and_assets_are_complete():
     assert "integrations/assets/catalog.json" in pyproject
     assert "integrations/assets/agents/*.md" in pyproject
     assert "integrations/assets/skills/*.md" in pyproject
+    canonical = PYPI_ROOT.parent / "internal/integrations/assets"
+    packaged = PYPI_ROOT / "trackfw/integrations/assets"
+    canonical_files = sorted(path.relative_to(canonical) for path in canonical.rglob("*") if path.is_file())
+    packaged_files = sorted(path.relative_to(packaged) for path in packaged.rglob("*") if path.is_file())
+    assert packaged_files == canonical_files
+    for relative in canonical_files:
+        assert (packaged / relative).read_bytes() == (canonical / relative).read_bytes()
 
 
 def test_list_json_has_exact_contract_and_deterministic_order(tmp_path):
@@ -65,6 +73,22 @@ def test_list_json_has_exact_contract_and_deterministic_order(tmp_path):
     assert list(payload["deployments"][0]) == [
         "target", "surface", "scope", "item", "support_level", "representation", "destination", "state", "managed"
     ]
+
+
+def test_list_without_surface_includes_current_and_legacy_surfaces(tmp_path):
+    result = cli("agents", "list", "--targets", "antigravity", "--items", "backend", "--json", cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    deployments = json.loads(result.stdout)["deployments"]
+    assert [deployment["surface"] for deployment in deployments] == ["current", "legacy-cli"]
+
+
+def test_human_list_includes_available_catalog_and_deployments(tmp_path):
+    result = cli("skills", "list", "--targets", "claude", "--items", "implement", cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "Available skills (catalog 1.1.0):" in result.stdout
+    assert "governance" in result.stdout
+    assert "Deployments:" in result.stdout
+    assert "claude/cli" in result.stdout
 
 
 @pytest.mark.parametrize("kind", ["agents", "skills"])
@@ -125,6 +149,35 @@ def test_project_and_global_use_separate_manifests(tmp_path):
     assert len(global_manifest["artifacts"]) == 1
     assert all(path.startswith(str(tmp_path)) for path in project_manifest["artifacts"])
     assert all(path.startswith(str(home)) for path in global_manifest["artifacts"])
+
+
+def test_reads_canonical_go_manifest_fixture(tmp_path):
+    manager = IntegrationManager(tmp_path)
+    _, plans = plan_deployments("agents", ["claude"], ["backend"], "project")
+    plan = plans[0]
+    destination = tmp_path / plan["destination"]
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(plan["content"])
+    manifest_path = tmp_path / ".trackfw/integrations-manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "artifacts": {
+                    str(destination): {
+                        "destination": str(destination),
+                        "sha256": hashlib.sha256(plan["content"]).hexdigest(),
+                        "catalog_version": plan["catalog_version"],
+                        "claims": [plan["claim"]],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert manager.inspect(plan)["state"] == "current"
+    assert manager.inspect(plan)["managed"] is True
 
 
 def test_update_force_never_claims_unknown_unmanaged_file(tmp_path):
@@ -192,7 +245,7 @@ def test_manager_rejects_symlink_parent(tmp_path):
 def test_renderers_emit_native_toml_json_and_markdown():
     _, codex = plan_deployments("agents", ["codex"], ["backend"], "project")
     parsed_toml = tomllib.loads(codex[0]["content"].decode())
-    assert parsed_toml["name"] == "backend"
+    assert parsed_toml["name"] == "trackfw_backend"
     assert "developer_instructions" in parsed_toml
     _, amazon = plan_deployments("agents", ["amazonq"], ["backend"], "project")
     assert json.loads(amazon[0]["content"])["name"] == "trackfw-backend"
@@ -209,6 +262,38 @@ def test_surface_selection_and_default_skip_legacy():
     assert default[0]["destination"].endswith("agent.md")
     assert legacy[0]["claim"]["surface"] == "legacy-cli"
     assert legacy[0]["destination"].endswith("agent.json")
+
+
+def test_default_surface_selection_is_specific_to_kind():
+    target = {
+        "id": "mixed",
+        "surfaces": [
+            {
+                "id": "skill-current",
+                "capabilities": {
+                    "agents": {"support_level": "unsupported"},
+                    "skills": {"support_level": "native"},
+                },
+            },
+            {
+                "id": "agent-current",
+                "capabilities": {
+                    "agents": {"support_level": "native"},
+                    "skills": {"support_level": "legacy"},
+                },
+            },
+        ],
+    }
+    assert _surfaces(target, "agents", {}, False)[0]["id"] == "agent-current"
+    assert _surfaces(target, "skills", {}, False)[0]["id"] == "skill-current"
+
+
+def test_tty_prompts_for_ambiguous_nonlegacy_surface(monkeypatch):
+    catalog = load_catalog()
+    selected = {}
+    monkeypatch.setattr("builtins.input", lambda _prompt: "2")
+    _prompt_ambiguous_surfaces(catalog, "agents", ["kiro"], selected)
+    assert selected == {"kiro": "cli"}
 
 
 def test_init_ai_tools_uses_integration_engine_for_all_targets(tmp_path):

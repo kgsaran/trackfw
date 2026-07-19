@@ -21,18 +21,32 @@ def load_catalog() -> dict[str, Any]:
 CATALOG_VERSION = load_catalog()["version"]
 
 
-def _surface(target: dict[str, Any], requested: dict[str, str]) -> dict[str, Any]:
+def _surfaces(
+    target: dict[str, Any],
+    kind: str,
+    requested: dict[str, str],
+    all_surfaces: bool,
+) -> list[dict[str, Any]]:
     selected = requested.get(target["id"])
     if selected:
         for surface in target["surfaces"]:
             if surface["id"] == selected:
-                return surface
+                return [surface]
         raise ValueError(f"unknown surface {target['id']}={selected}")
+    compatible = [
+        surface
+        for surface in target["surfaces"]
+        if surface["capabilities"][kind]["support_level"] != "unsupported"
+    ]
+    if all_surfaces:
+        return compatible
     for surface in target["surfaces"]:
-        capabilities = surface["capabilities"].values()
-        if not all(capability["support_level"] == "legacy" for capability in capabilities):
-            return surface
-    return target["surfaces"][0]
+        level = surface["capabilities"][kind]["support_level"]
+        if level not in {"legacy", "unsupported"}:
+            return [surface]
+    if compatible:
+        return [compatible[0]]
+    raise ValueError(f"target {target['id']} has no supported {kind} surface")
 
 
 def plan_deployments(
@@ -41,6 +55,7 @@ def plan_deployments(
     item_ids: list[str] | None = None,
     scope: str = "project",
     surfaces: dict[str, str] | None = None,
+    all_surfaces: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if kind not in {"agents", "skills"}:
         raise ValueError(f"unsupported integration kind {kind!r}")
@@ -63,34 +78,32 @@ def plan_deployments(
     for target in catalog["targets"]:
         if target["id"] not in selected_targets:
             continue
-        surface = _surface(target, surface_selection)
-        capability = surface["capabilities"][kind]
-        if capability["support_level"] == "unsupported":
-            continue
-        install_paths = [entry for entry in surface["paths"][kind] if entry["scope"] == scope]
-        for item in catalog[kind]:
-            if item["id"] not in selected_items:
-                continue
-            asset_path = item["asset"].removeprefix("assets/")
-            content = _asset_root().joinpath(asset_path).read_text(encoding="utf-8")
-            for install_path in install_paths:
-                destination = install_path["path"].replace("{{id}}", item["id"])
-                rendered = render(kind, target["id"], surface["id"], item, content, capability)
-                result.append(
-                    {
-                        "claim": {
-                            "target": target["id"],
-                            "surface": surface["id"],
-                            "scope": scope,
-                            "kind": kind,
-                            "item": item["id"],
-                        },
-                        "destination": destination,
-                        "content": rendered.encode("utf-8"),
-                        "catalog_version": catalog["version"],
-                        "support_level": capability["support_level"],
-                        "representation": capability["representation"],
-                        "legacy_hashes": [],
-                    }
-                )
+        for surface in _surfaces(target, kind, surface_selection, all_surfaces):
+            capability = surface["capabilities"][kind]
+            install_paths = [entry for entry in surface["paths"][kind] if entry["scope"] == scope]
+            for item in catalog[kind]:
+                if item["id"] not in selected_items:
+                    continue
+                asset_path = item["asset"].removeprefix("assets/")
+                content = _asset_root().joinpath(asset_path).read_text(encoding="utf-8")
+                for install_path in install_paths:
+                    destination = install_path["path"].replace("{{id}}", item["id"])
+                    rendered = render(kind, target["id"], surface["id"], item, content, capability)
+                    result.append(
+                        {
+                            "claim": {
+                                "target": target["id"],
+                                "surface": surface["id"],
+                                "scope": scope,
+                                "kind": kind,
+                                "item": item["id"],
+                            },
+                            "destination": destination,
+                            "content": rendered.encode("utf-8"),
+                            "catalog_version": catalog["version"],
+                            "support_level": capability["support_level"],
+                            "representation": capability["representation"],
+                            "legacy_hashes": [],
+                        }
+                    )
     return catalog, result
