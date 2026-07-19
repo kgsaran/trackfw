@@ -73,7 +73,10 @@ cmd.action(() => {
   }
   if (fs.existsSync(path.join(cwd, 'AGENTS.md')) || fs.existsSync(path.join(cwd, '.codex'))) {
     try {
-      require('../generators/codex').installCodex(cwd);
+      const { execute } = require('../integrations');
+      const roots = { projectRoot: cwd };
+      execute('agents', 'update', { targets: ['codex'], scope: 'project' }, roots);
+      execute('skills', 'update', { targets: ['codex'], scope: 'project' }, roots);
     } catch (e) {
       console.warn(`  ⚠ Codex integration: ${e.message}`);
     }

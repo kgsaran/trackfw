@@ -17,7 +17,7 @@ test('installCodex creates idempotent native Codex artifacts', () => {
     '.codex/config.toml',
     '.codex/hooks.json',
     '.codex/agents/trackfw-architect.toml',
-    '.codex/agents/trackfw-reviewer.toml',
+    '.codex/agents/trackfw-infra.toml',
     '.agents/skills/trackfw-governance/SKILL.md',
     '.agents/skills/trackfw-release/SKILL.md',
   ]

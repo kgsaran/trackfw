@@ -10,6 +10,7 @@ const { spawnSync } = require('node:child_process')
 const { buildPlans, execute, IntegrationManager } = require('../src/integrations')
 const { sha256 } = require('../src/integrations/manager')
 const { promptSelection, promptAmbiguousSurfaces } = require('../src/commands/integrations')
+const { legacyCodexFixtures } = require('../src/generators/codex')
 
 function roots() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-integrations-'))
@@ -77,6 +78,83 @@ test('recognized legacy content is adopted but unknown files are never overwritt
   fs.writeFileSync(unknown, 'user content')
   assert.throws(() => manager2.update([plan], { force: true }), /unmanaged artifact/i)
   assert.equal(fs.readFileSync(unknown, 'utf8'), 'user content')
+})
+
+test('all historical Claude agent fixtures are wired to current destinations', () => {
+  const historicalRoot = path.resolve(__dirname, '../../internal/generators/templates/agents')
+  const plans = buildPlans('agents', { targets: ['claude'], scope: 'global' })
+  assert.equal(plans.length, 10)
+  for (const plan of plans) {
+    const historical = fs.readFileSync(path.join(historicalRoot, `trackfw-${plan.claim.item}.md`))
+    assert.equal(plan.legacyHashes.includes(sha256(historical)), true, plan.claim.item)
+  }
+  assert.equal(buildPlans('agents', { targets: ['claude'], items: ['backend'], scope: 'project' })[0].legacyHashes.length, 0)
+  assert.equal(buildPlans('agents', { targets: ['codex'], items: ['backend'], scope: 'global' })[0].legacyHashes.length, 0)
+})
+
+test('Codex legacy union recognizes exact Go, npm and Python producer bytes', () => {
+  const [plan] = buildPlans('agents', options(['codex'], ['backend']))
+  const producerFixtures = {
+    go: `name = "trackfw_backend"
+description = "Backend implementation specialist for APIs, domain logic, integrations, Go, Java, Node.js, and Python."
+developer_instructions = """
+Implement only the assigned backend scope. Preserve public contracts and trackfw traceability.
+Run focused tests and report changed files, validation evidence, and remaining risks.
+"""
+`,
+    npm: `${legacyCodexFixtures.agents['trackfw-backend.toml'].trim()}\n`,
+    python: `name = "trackfw_backend"
+description = "Backend implementation specialist for APIs, domain logic, integrations, Go, Java, Node.js, and Python."
+developer_instructions = """Implement only the assigned backend scope, preserve contracts and traceability, and run focused tests."""
+`,
+  }
+  for (const [producer, content] of Object.entries(producerFixtures)) {
+    assert.equal(plan.legacyHashes.includes(sha256(content)), true, producer)
+    const dirs = roots()
+    const filename = path.join(dirs.projectRoot, plan.destination)
+    fs.mkdirSync(path.dirname(filename), { recursive: true })
+    fs.writeFileSync(filename, content)
+    assert.deepEqual(new IntegrationManager(dirs).inspect([plan]).map(entry => [entry.state, entry.managed]), [['outdated', false]], producer)
+  }
+})
+
+test('historical Codex agents and skills are recognized, adopted, then converted on update', () => {
+  const dirs = roots()
+  for (const [name, content] of Object.entries(legacyCodexFixtures.agents)) {
+    const filename = path.join(dirs.projectRoot, '.codex/agents', name)
+    fs.mkdirSync(path.dirname(filename), { recursive: true })
+    fs.writeFileSync(filename, `${content.trim()}\n`)
+  }
+  for (const [name, content] of Object.entries(legacyCodexFixtures.skills)) {
+    const filename = path.join(dirs.projectRoot, '.agents/skills', name, 'SKILL.md')
+    fs.mkdirSync(path.dirname(filename), { recursive: true })
+    fs.writeFileSync(filename, `${content.trim()}\n`)
+  }
+  const manager = new IntegrationManager(dirs)
+  const agentItems = ['architect', 'backend', 'frontend', 'qa', 'security']
+  const skillItems = ['governance', 'plan', 'implement', 'review', 'release']
+  const agentPlans = buildPlans('agents', options(['codex'], agentItems))
+  const skillPlans = buildPlans('skills', options(['codex'], skillItems))
+
+  for (const plan of [...agentPlans, ...skillPlans]) {
+    const filename = path.join(dirs.projectRoot, plan.destination)
+    const historical = fs.readFileSync(filename)
+    assert.equal(plan.legacyHashes.includes(sha256(historical)), true, `${plan.claim.kind}:${plan.claim.item}`)
+    assert.deepEqual(manager.inspect([plan]).map(entry => [entry.state, entry.managed]), [['outdated', false]])
+  }
+
+  const plan = agentPlans.find(entry => entry.claim.item === 'architect')
+  const filename = path.join(dirs.projectRoot, plan.destination)
+  const historical = fs.readFileSync(filename)
+  manager.install([plan])
+  assert.deepEqual(fs.readFileSync(filename), historical, 'install adoption must not overwrite legacy bytes')
+  assert.deepEqual(manager.inspect([plan]).map(entry => [entry.state, entry.managed]), [['outdated', true]])
+  const manifest = JSON.parse(fs.readFileSync(path.join(dirs.projectRoot, '.trackfw/integrations-manifest.json')))
+  assert.equal(manifest.artifacts[filename].catalog_version, 'legacy')
+
+  manager.update([plan])
+  assert.equal(fs.readFileSync(filename, 'utf8'), plan.content)
+  assert.deepEqual(manager.inspect([plan]).map(entry => [entry.state, entry.managed]), [['current', true]])
 })
 
 test('install force replaces unknown unmanaged content while update force never does', () => {
@@ -211,6 +289,23 @@ test('CLI emits the exact deterministic JSON envelope and supports lifecycle', (
   const missing = spawnSync(process.execPath, [bin, 'skills', 'install'], { cwd: dirs.projectRoot, encoding: 'utf8' })
   assert.notEqual(missing.status, 0)
   assert.match(missing.stderr, /install requires --targets/)
+})
+
+test('legacy trackfw update alias preserves unknown Codex bytes and warns', () => {
+  const dirs = roots()
+  const bin = path.resolve(__dirname, '../bin/trackfw')
+  fs.writeFileSync(path.join(dirs.projectRoot, 'trackfw.yaml'), 'hooks: none\nci: none\n')
+  const unknown = path.join(dirs.projectRoot, '.codex/agents/trackfw-backend.toml')
+  fs.mkdirSync(path.dirname(unknown), { recursive: true })
+  fs.writeFileSync(unknown, 'user-owned unknown bytes\n')
+  const run = spawnSync(process.execPath, [bin, 'update'], {
+    cwd: dirs.projectRoot,
+    env: { ...process.env, HOME: dirs.homeRoot },
+    encoding: 'utf8',
+  })
+  assert.equal(run.status, 0, run.stderr)
+  assert.equal(fs.readFileSync(unknown, 'utf8'), 'user-owned unknown bytes\n')
+  assert.match(run.stderr, /Codex integration:.*Unmanaged artifact/i)
 })
 
 test('CLI uses repeatable --surface and unfiltered list includes legacy surfaces', () => {

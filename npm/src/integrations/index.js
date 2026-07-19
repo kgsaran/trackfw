@@ -3,6 +3,7 @@
 const { catalog, items, target, surfaceFor, readAsset } = require('./catalog')
 const { render } = require('./render')
 const { IntegrationManager } = require('./manager')
+const { legacyHashes } = require('./legacy')
 
 function parseSurfaces(values = []) {
   const result = {}
@@ -50,13 +51,15 @@ function buildPlans(kind, options = {}) {
         for (const installPath of paths) {
           const destination = installPath.path.replace('{{id}}', item.id)
           const content = render({ target: targetEntry.id, kind, item, content: readAsset(item), capability, destination })
+          const claim = { target: targetEntry.id, surface: surface.id, scope, kind, item: item.id }
           plans.push({
-            claim: { target: targetEntry.id, surface: surface.id, scope, kind, item: item.id },
+            claim,
             destination,
             content,
             catalogVersion: catalog.version,
             supportLevel: capability.support_level,
             representation: capability.representation,
+            legacyHashes: legacyHashes(claim),
             item,
           })
         }

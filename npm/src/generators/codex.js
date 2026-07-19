@@ -81,13 +81,11 @@ Review the branch as an owner. Return findings first, ordered by severity, with 
 `,
 }
 
-function writeManaged(filePath, content) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.writeFileSync(filePath, content.trim() + '\n', 'utf8')
-}
-
 function installCodex(cwd) {
   const root = cwd || process.cwd()
+  const { execute } = require('../integrations')
+  execute('agents', 'install', { targets: ['codex'], scope: 'project' }, { projectRoot: root })
+  execute('skills', 'install', { targets: ['codex'], scope: 'project' }, { projectRoot: root })
   injectRulesForTool('codex', root)
 
   const configPath = path.join(root, '.codex', 'config.toml')
@@ -98,14 +96,8 @@ function installCodex(cwd) {
     fs.writeFileSync(configPath, config, 'utf8')
   }
 
-  for (const [name, content] of Object.entries(skills)) {
-    writeManaged(path.join(root, '.agents', 'skills', name, 'SKILL.md'), content)
-  }
-  for (const [name, content] of Object.entries(agents)) {
-    writeManaged(path.join(root, '.codex', 'agents', name), content)
-  }
   injectCodexHooks(root)
   console.log('  ✓ Codex: AGENTS.md, skills, custom agents and hooks')
 }
 
-module.exports = { installCodex }
+module.exports = { installCodex, legacyCodexFixtures: { skills, agents } }
