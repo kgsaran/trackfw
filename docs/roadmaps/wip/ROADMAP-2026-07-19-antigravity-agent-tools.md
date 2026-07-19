@@ -10,11 +10,11 @@ squad: "Apolo, Artemis"
 > Created: 2026-07-19 | Status: wip
 
 ## Acceptance Criteria
-- [ ] Render `agent-directory` mapeia model (opus→pro, sonnet→flash) e omite se ausente
-- [ ] Render `agent-directory` injeta `tools:` (architect=14, demais=10) sem IDs proibidos
-- [ ] Assets `assets/agents/*.md` inalterados nos 3 CLIs
-- [ ] Paridade Go/Node/Python com testes de contrato verdes
-- [ ] E2E `init --ai-tools antigravity` gera agents aceitos por `agy` com tools + model tier corretos
+- [x] Render `agent-directory` mapeia model (opus→pro, sonnet→flash) e omite se ausente
+- [x] Render `agent-directory` injeta `tools:` (architect=14, demais=10) sem IDs proibidos
+- [x] Assets `assets/agents/*.md` inalterados nos 3 CLIs
+- [x] Paridade Go/Node/Python com testes de contrato verdes (`make quality` verde)
+- [x] E2E `init --ai-tools antigravity` gera agents byte-idênticos nos 3 CLIs; `model: pro` aceito por `agy agent`
 
 ## Context
 REQ: docs/req/REQ-2026-07-19-corrigir-render-antigravity-com-tools-validos-e-model-tier-do-agy.md
@@ -67,7 +67,7 @@ tools:
 > Dependencies: none. Arquivos disjuntos (Go / Node / Python) — spawn simultaneo.
 
 ### ML-1A — Render Antigravity no CLI Go
-**Status:** pending
+**Status:** ✅ done
 **Files affected:** `internal/integrations/render.go`, `internal/integrations/render_test.go`
 **Actions:**
 - Estender `markdownParts` para capturar tambem `model` (hoje so name/description).
@@ -79,7 +79,7 @@ tools:
 - [ ] nenhum asset em `assets/agents/` modificado
 
 ### ML-1B — Render Antigravity no CLI Node
-**Status:** pending
+**Status:** ✅ done
 **Files affected:** `npm/src/integrations/render.js`, `npm/tests/agents-skills.test.js`
 **Actions:**
 - Estender `markdownParts` para capturar `model`.
@@ -90,7 +90,7 @@ tools:
 - [ ] nenhum asset em `npm/src/integrations/assets/agents/` modificado
 
 ### ML-1C — Render Antigravity no CLI Python
-**Status:** pending
+**Status:** ✅ done
 **Files affected:** `pypi/trackfw/integrations/renderers.py`, `pypi/tests/test_agents_skills.py`
 **Actions:**
 - Estender `_parts` para capturar `model`.
@@ -104,7 +104,7 @@ tools:
 > Dependencies: Wave 1 completa (barrier).
 
 ### ML-2 — Validacao de paridade + E2E no agy
-**Status:** pending
+**Status:** ✅ done
 **Files affected:** nenhum de produto (apenas execucao/validacao)
 **Actions:**
 - `make quality` (contrato de paridade 3 CLIs) verde.
