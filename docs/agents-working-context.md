@@ -2069,3 +2069,33 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
   hermética dos nove targets foram aprovados.
 - `make quality`: verde; Python: 300 testes; Node: 40 testes top-level;
   `trackfw validate --json`: zero violações e zero warnings.
+
+---
+
+## Sessão 2026-07-19 — Validação de Escrita de Arquivos (CONCLUÍDO)
+
+**Branch:** `main`
+
+**Objetivo:** Validar o acesso de escrita a arquivos no repositório.
+
+**Progresso:**
+- Acesso de escrita validado com sucesso.
+- O arquivo `docs/valida-escrita.md` foi criado e persistido no repositório.
+- Atualização do arquivo de contexto de agentes realizada com sucesso.
+
+---
+
+## Sessão 2026-07-19 — Suporte a ADRs Globais e Diretivas de IA (CONCLUÍDO)
+
+**Branch:** `feat/global-adrs-governance`
+
+**Objetivo:** Criar a especificação (ADR e REQ) para o suporte a ADRs globais compartilhados e diretivas de IA.
+
+**Progresso:**
+- Arquivo ADR `docs/adr/ADR-2026-07-19-global-adrs-governance.md` criado com sucesso.
+- Arquivo REQ `docs/req/REQ-2026-07-19-global-adrs-governance.md` criado com sucesso.
+- Contexto de trabalho atualizado.
+
+
+
+
