@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-19
 req: "docs/req/REQ-2026-07-19-corrigir-render-antigravity-com-tools-validos-e-model-tier-do-agy.md"
 squad: "Apolo, Artemis"
