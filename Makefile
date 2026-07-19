@@ -1,7 +1,7 @@
 BINARY=trackfw
 BUILD_DIR=bin
 
-.PHONY: build test test-node test-python parity lint quality install clean
+.PHONY: build test test-node test-python parity lint quality install clean sync-integration-assets check-integration-assets package-smoke
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw
@@ -19,6 +19,16 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-cli-parity.sh
 	scripts/check-validate-parity.sh
 	scripts/check-static-assets.sh
+	scripts/check-integration-assets.sh
+
+sync-integration-assets:
+	scripts/sync-integration-assets.sh
+
+check-integration-assets:
+	scripts/check-integration-assets.sh
+
+package-smoke: check-integration-assets
+	scripts/smoke-integration-packages.sh
 
 lint:
 	go vet ./...
