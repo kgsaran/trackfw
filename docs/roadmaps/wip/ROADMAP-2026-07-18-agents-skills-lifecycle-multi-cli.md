@@ -136,7 +136,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 > Dependencies: Wave 2 complete
 
 ### ML-3A — Sync determinístico e package contract
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:**
 - `scripts/sync-integration-assets.*`
 - `scripts/check-integration-assets.*`
@@ -156,7 +156,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 `make quality && scripts/check-integration-assets.sh`
 
 ### ML-3B — Migração e aliases legados
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:**
 - `internal/integrations/legacy.go`
 - `npm/src/integrations/legacy.js`
