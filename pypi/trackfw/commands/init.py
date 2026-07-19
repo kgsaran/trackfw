@@ -31,7 +31,7 @@ def register(subparsers):
     parser.add_argument(
         "--ai-tools",
         default="",
-        help="Comma-separated AI tools to configure (currently: codex)",
+        help="Comma-separated AI tools to configure",
     )
     parser.set_defaults(func=run)
     return parser
@@ -55,7 +55,12 @@ def run(args):
     }
     scaffold(cwd, opts)
     ai_tools = _parse_agents(args.ai_tools)
-    if "codex" in ai_tools:
-        from trackfw.generators.codex import install_codex
-        install_codex(cwd)
+    if ai_tools:
+        from trackfw.integrations.catalog import plan_deployments
+        from trackfw.integrations.manager import IntegrationManager
+
+        _, plans = plan_deployments("agents", target_ids=ai_tools, scope="project")
+        IntegrationManager(cwd).install(plans)
+        _, plans = plan_deployments("skills", target_ids=ai_tools, scope="project")
+        IntegrationManager(cwd).install(plans)
     return 0

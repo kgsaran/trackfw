@@ -1,0 +1,96 @@
+"""Load the packaged canonical catalog and produce deterministic deployments."""
+
+from __future__ import annotations
+
+import json
+from importlib.resources import files
+from typing import Any
+
+from .renderers import render
+
+
+def _asset_root():
+    return files("trackfw.integrations").joinpath("assets")
+
+
+def load_catalog() -> dict[str, Any]:
+    with _asset_root().joinpath("catalog.json").open("r", encoding="utf-8") as stream:
+        return json.load(stream)
+
+
+CATALOG_VERSION = load_catalog()["version"]
+
+
+def _surface(target: dict[str, Any], requested: dict[str, str]) -> dict[str, Any]:
+    selected = requested.get(target["id"])
+    if selected:
+        for surface in target["surfaces"]:
+            if surface["id"] == selected:
+                return surface
+        raise ValueError(f"unknown surface {target['id']}={selected}")
+    for surface in target["surfaces"]:
+        capabilities = surface["capabilities"].values()
+        if not all(capability["support_level"] == "legacy" for capability in capabilities):
+            return surface
+    return target["surfaces"][0]
+
+
+def plan_deployments(
+    kind: str,
+    target_ids: list[str] | None = None,
+    item_ids: list[str] | None = None,
+    scope: str = "project",
+    surfaces: dict[str, str] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if kind not in {"agents", "skills"}:
+        raise ValueError(f"unsupported integration kind {kind!r}")
+    if scope not in {"project", "global"}:
+        raise ValueError(f"unsupported scope {scope!r}")
+    catalog = load_catalog()
+    selected_targets = set(target_ids or [target["id"] for target in catalog["targets"]])
+    selected_items = set(item_ids or [item["id"] for item in catalog[kind]])
+    known_targets = {target["id"] for target in catalog["targets"]}
+    known_items = {item["id"] for item in catalog[kind]}
+    unknown_targets = selected_targets - known_targets
+    unknown_items = selected_items - known_items
+    if unknown_targets:
+        raise ValueError(f"unknown targets: {', '.join(sorted(unknown_targets))}")
+    if unknown_items:
+        raise ValueError(f"unknown {kind}: {', '.join(sorted(unknown_items))}")
+
+    result: list[dict[str, Any]] = []
+    surface_selection = surfaces or {}
+    for target in catalog["targets"]:
+        if target["id"] not in selected_targets:
+            continue
+        surface = _surface(target, surface_selection)
+        capability = surface["capabilities"][kind]
+        if capability["support_level"] == "unsupported":
+            continue
+        install_paths = [entry for entry in surface["paths"][kind] if entry["scope"] == scope]
+        for item in catalog[kind]:
+            if item["id"] not in selected_items:
+                continue
+            asset_path = item["asset"].removeprefix("assets/")
+            content = _asset_root().joinpath(asset_path).read_text(encoding="utf-8")
+            for install_path in install_paths:
+                destination = install_path["path"].replace("{{id}}", item["id"])
+                rendered = render(kind, target["id"], surface["id"], item, content, capability)
+                result.append(
+                    {
+                        "claim": {
+                            "target": target["id"],
+                            "surface": surface["id"],
+                            "scope": scope,
+                            "kind": kind,
+                            "item": item["id"],
+                        },
+                        "destination": destination,
+                        "content": rendered.encode("utf-8"),
+                        "catalog_version": catalog["version"],
+                        "support_level": capability["support_level"],
+                        "representation": capability["representation"],
+                        "legacy_hashes": [],
+                    }
+                )
+    return catalog, result
