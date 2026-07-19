@@ -179,10 +179,21 @@ test('renderers produce native deterministic formats', () => {
   const codex = buildPlans('agents', options(['codex'], ['architect']))[0]
   const amazonq = buildPlans('agents', options(['amazonq'], ['architect']))[0]
   const claude = buildPlans('agents', options(['claude'], ['architect']))[0]
-  assert.match(codex.content, /^name = "architect"/)
+  assert.match(codex.content, /^name = "trackfw_architect"/)
   assert.equal(JSON.parse(amazonq.content).name, 'trackfw-architect')
   assert.match(claude.content, /^---\nname:/)
   assert.equal(codex.content, buildPlans('agents', options(['codex'], ['architect']))[0].content)
+})
+
+test('Codex TOML renderer is byte-equivalent to the Go golden contract', () => {
+  const backend = buildPlans('agents', options(['codex'], ['backend']))[0]
+  const expected = 'name = "trackfw_backend"\n' +
+    'description = "Senior backend specialist for APIs, domain logic, integrations and data access."\n' +
+    'developer_instructions = "# Backend\\n\\nImplement only the assigned backend scope. Preserve public contracts, Clean Architecture boundaries, observability and trackfw traceability. Run focused build and tests and report evidence and remaining risks."\n'
+  assert.equal(backend.content, expected)
+
+  const codeQuality = buildPlans('agents', options(['codex'], ['code-quality']))[0]
+  assert.match(codeQuality.content, /^name = "trackfw_code_quality"\n/)
 })
 
 test('CLI emits the exact deterministic JSON envelope and supports lifecycle', () => {

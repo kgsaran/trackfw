@@ -937,6 +937,7 @@ async function installAgents(cwd = process.cwd()) {
 }
 
 async function installGemini(cwd = process.cwd()) {
+  await installIntegrationTarget('gemini', cwd)
   try {
     injectRulesForTool('gemini', cwd)
     console.log('  ✓ trackfw rules → GEMINI.md')
@@ -946,6 +947,7 @@ async function installGemini(cwd = process.cwd()) {
 }
 
 async function installCursor(cwd = process.cwd()) {
+  await installIntegrationTarget('cursor', cwd)
   try {
     injectRulesForTool('cursor', cwd)
     console.log('  ✓ trackfw rules → .cursor/rules/trackfw.mdc')
@@ -955,6 +957,7 @@ async function installCursor(cwd = process.cwd()) {
 }
 
 async function installCopilot(cwd = process.cwd()) {
+  await installIntegrationTarget('copilot', cwd)
   try {
     injectRulesForTool('copilot', cwd)
     console.log('  ✓ trackfw rules → .github/copilot-instructions.md')
@@ -964,6 +967,7 @@ async function installCopilot(cwd = process.cwd()) {
 }
 
 async function installWindsurf(cwd = process.cwd()) {
+  await installIntegrationTarget('windsurf', cwd)
   try {
     injectRulesForTool('windsurf', cwd)
     console.log('  ✓ trackfw rules → .windsurfrules')
@@ -973,6 +977,7 @@ async function installWindsurf(cwd = process.cwd()) {
 }
 
 async function installAmazonQ(cwd = process.cwd()) {
+  await installIntegrationTarget('amazonq', cwd)
   try {
     injectRulesForTool('amazonq', cwd)
     console.log('  ✓ trackfw rules → .amazonq/developer/guidelines.md')

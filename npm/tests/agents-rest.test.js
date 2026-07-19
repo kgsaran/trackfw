@@ -4,7 +4,14 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { installCursor, installWindsurf, installAmazonQ } = require('../src/generators/init')
+const {
+  installAgents,
+  installGemini,
+  installCursor,
+  installCopilot,
+  installWindsurf,
+  installAmazonQ,
+} = require('../src/generators/init')
 
 async function assertIdempotentToolInstall(toolName, installer, expectedFiles) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `trackfw-${toolName}-`))
@@ -17,14 +24,15 @@ async function assertIdempotentToolInstall(toolName, installer, expectedFiles) {
   })
 }
 
-test('installCursor creates idempotent Cursor rules', async () => {
-  await assertIdempotentToolInstall('cursor', installCursor, ['.cursor/rules/trackfw.mdc'])
-})
-
-test('installWindsurf creates idempotent Windsurf rules', async () => {
-  await assertIdempotentToolInstall('windsurf', installWindsurf, ['.windsurfrules'])
-})
-
-test('installAmazonQ creates idempotent Amazon Q rules', async () => {
-  await assertIdempotentToolInstall('amazonq', installAmazonQ, ['.amazonq/developer/guidelines.md'])
-})
+for (const fixture of [
+  ['claude', installAgents, ['.claude/agents/trackfw-architect.md', '.claude/skills/trackfw-governance/SKILL.md']],
+  ['gemini', installGemini, ['.gemini/agents/trackfw-architect.md', '.gemini/skills/trackfw-governance/SKILL.md', 'GEMINI.md']],
+  ['cursor', installCursor, ['.cursor/agents/trackfw-architect.md', '.cursor/skills/trackfw-governance/SKILL.md', '.cursor/rules/trackfw.mdc']],
+  ['copilot', installCopilot, ['.github/agents/trackfw-architect.agent.md', '.github/skills/trackfw-governance/SKILL.md', '.github/copilot-instructions.md']],
+  ['windsurf', installWindsurf, ['.windsurf/skills/trackfw-agent-architect/SKILL.md', '.windsurf/skills/trackfw-governance/SKILL.md', '.windsurfrules']],
+  ['amazonq', installAmazonQ, ['.amazonq/cli-agents/trackfw-architect.json', '.amazonq/rules/trackfw-governance.md', '.amazonq/developer/guidelines.md']],
+]) {
+  test(`install${fixture[0]} delegates idempotently to canonical integrations`, async () => {
+    await assertIdempotentToolInstall(fixture[0], fixture[1], fixture[2])
+  })
+}

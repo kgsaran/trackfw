@@ -31,7 +31,7 @@ function render({ kind, content, capability }) {
   if (kind === 'skills') return normalize(content)
   const parts = markdownParts(content)
   if (capability.representation === 'custom-agent-toml') {
-    return `name = ${JSON.stringify(parts.name.replace(/^trackfw-/, ''))}\ndescription = ${JSON.stringify(parts.description)}\ndeveloper_instructions = ${JSON.stringify(parts.body)}\n`
+    return `name = ${JSON.stringify(parts.name.replaceAll('-', '_'))}\ndescription = ${JSON.stringify(parts.description)}\ndeveloper_instructions = ${JSON.stringify(parts.body)}\n`
   }
   if (capability.representation === 'cli-agent-json' || capability.representation === 'agent-json') {
     return `${JSON.stringify({ name: parts.name, description: parts.description, prompt: parts.body }, null, 2)}\n`
