@@ -2032,7 +2032,7 @@ adicionar quality gates de CI/release e formalizar o contrato entre Go, Node.js 
 
 ---
 
-## Sessão 2026-07-18 — Agents/skills lifecycle multi-CLI (EM ANDAMENTO)
+## Sessão 2026-07-18 — Agents/skills lifecycle multi-CLI (CONCLUÍDO)
 
 **Branch:** `feat/agents-skills-lifecycle-multi-cli`
 
@@ -2043,11 +2043,10 @@ adapters nativos, expondo `list`, `install`, `uninstall` e `update` para `agents
 **Governança:**
 - ADR: `docs/adr/ADR-2026-07-18-catalogo-canonico-e-adapters-para-integracoes-de-agentes.md`
 - REQ: `docs/req/REQ-2026-07-18-agents-skills-lifecycle-multi-cli.md`
-- Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md`
+- Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md`
 
-**Matriz alvo:** Claude, Codex, Gemini, Antigravity, Cursor, Copilot, Windsurf,
-Amazon Q e Kiro. Implementação ainda não iniciada; Wave 1 preparará catálogo,
-ownership e proteções de filesystem.
+**Matriz entregue:** Claude, Codex, Gemini, Antigravity, Cursor, Copilot,
+Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 ### Progresso em 2026-07-18
 
@@ -2059,3 +2058,14 @@ ownership e proteções de filesystem.
   surface específica pode ser escolhida com `--surface target=surface`.
 - Testes focados Go, npm e Python estão verdes; assets dos três runtimes estão
   byte-idênticos. A Wave 3 iniciou os gates de empacotamento e migração legada.
+
+### Encerramento
+
+- Lifecycle `list/install/uninstall/update` entregue com JSON semanticamente
+  idêntico em Go/Homebrew, npm e PyPI.
+- Migração byte-exata cobre instalações Claude/Codex anteriores dos três
+  pacotes, preservando conteúdo desconhecido e customizações.
+- Sync/check de assets, smoke real do tarball npm e do wheel Python e matriz
+  hermética dos nove targets foram aprovados.
+- `make quality`: verde; Python: 300 testes; Node: 40 testes top-level;
+  `trackfw validate --json`: zero violações e zero warnings.
