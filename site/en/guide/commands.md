@@ -106,7 +106,8 @@ is adopted without overwrite and reported as `outdated`; `update` migrates it.
 Unknown unmanaged content is never adopted by update, even with `--force`.
 
 The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` commands
-remain only as compatibility aliases and delegate to this lifecycle.
+exist only in the Go distribution as historical compatibility aliases. They are
+not part of the npm/PyPI contract; use `agents` and `skills` in new automation.
 
 ---
 

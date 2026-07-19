@@ -106,7 +106,9 @@ faz a migração. Conteúdo unmanaged desconhecido nunca é adotado por update,
 mesmo com `--force`.
 
 Os comandos standalone `gemini`, `cursor`, `copilot`, `windsurf` e `amazonq`
-permanecem apenas como aliases de compatibilidade e delegam a este lifecycle.
+existem apenas na distribuição Go como aliases de compatibilidade histórica.
+Eles não fazem parte do contrato npm/PyPI; use `agents` e `skills` em novas
+automações.
 
 ---
 

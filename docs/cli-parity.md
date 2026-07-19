@@ -26,7 +26,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `serve` | yes | yes | yes | Local dashboard |
 | `agents` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
-| `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | yes | yes | Deprecated compatibility aliases for the lifecycle engine |
+| `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Prints `trackfw <version>` |
 
 ## AI integration lifecycle
@@ -51,6 +51,10 @@ removes an unmanaged file or a shared artifact that still has another claim.
 Legacy surfaces are inspected by `list` and selected explicitly for mutations,
 for example `--surface antigravity=legacy-cli`. Known legacy templates can be
 adopted safely; unknown content is never adopted by `update`, even with force.
+
+The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` names
+exist only in the Go distribution for historical compatibility. They are not
+part of the cross-runtime contract; use `agents` and `skills` in new automation.
 
 ## Release rule
 
