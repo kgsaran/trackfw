@@ -1,12 +1,12 @@
 ---
-status: Draft
+status: Accepted
 date: 2026-07-19
 author: "Zeus"
 ---
 
 # ADR: Suporte a ADRs Globais Compartilhados e Diretivas de IA
 
-> Date: 2026-07-19 | Status: Draft
+> Date: 2026-07-19 | Status: Accepted
 
 ## Context
 
