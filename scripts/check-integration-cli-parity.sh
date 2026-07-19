@@ -3,6 +3,14 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 GO_BIN=${GO_BIN:-"$ROOT_DIR/bin/trackfw"}
+case "$GO_BIN" in
+  /*) ;;
+  *) GO_BIN="$ROOT_DIR/${GO_BIN#./}" ;;
+esac
+if [[ ! -x "$GO_BIN" ]]; then
+  echo "Go trackfw binary is not executable: $GO_BIN" >&2
+  exit 1
+fi
 TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-integration-parity.XXXXXX")
 trap 'rm -rf "$TMP_ROOT"' EXIT INT TERM
 
