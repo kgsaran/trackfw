@@ -156,7 +156,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 `make quality && scripts/check-integration-assets.sh`
 
 ### ML-3B — Migração e aliases legados
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:**
 - `internal/integrations/legacy.go`
 - `npm/src/integrations/legacy.js`
@@ -178,7 +178,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 > Dependencies: Wave 3 complete
 
 ### ML-4A — Contrato de paridade e documentação de uso
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:**
 - `docs/cli-parity.md`
 - `README.md`
@@ -197,7 +197,7 @@ squad: Codex, backend Go, backend Node.js, backend Python, QA/paridade
 `make quality`
 
 ### ML-4B — QA de matriz e segurança destrutiva
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:**
 - `scripts/check-cli-parity.sh`
 - suites Go/npm/Python de integração
