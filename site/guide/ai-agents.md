@@ -6,7 +6,7 @@ O `trackfw` foi desenhado desde o início para ser nativo ao fluxo de trabalho c
 
 ## Por que agentes de IA precisam de governança estruturada
 
-Agentes de IA como Claude Code, OpenAI Codex, Gemini CLI, Cursor, GitHub Copilot, Windsurf e Amazon Q operam em sessões independentes. Sem um registro persistente de decisões e contexto, cada sessão começa do zero — o agente não sabe:
+Agentes de IA como Claude Code, OpenAI Codex, Gemini CLI, Antigravity, Cursor, GitHub Copilot, Windsurf, Amazon Q e Kiro operam em sessões independentes. Sem um registro persistente de decisões e contexto, cada sessão começa do zero — o agente não sabe:
 
 - Quais decisões arquiteturais já foram tomadas (e por quê)
 - Quais requisitos estão em andamento
@@ -288,6 +288,51 @@ O agente lê automaticamente `trackfw context --format=json` e inclui o resultad
 
 ---
 
+## Instalação e lifecycle multi-CLI
+
+Agents e skills usam o mesmo contrato nos pacotes Go/Homebrew, npm e PyPI:
+
+```bash
+trackfw agents list
+trackfw agents install --targets claude,codex --items architect,backend --scope project
+trackfw agents update --targets claude,codex
+trackfw agents uninstall --targets claude,codex
+
+trackfw skills list --json
+trackfw skills install --targets gemini,antigravity --items governance,implement
+trackfw skills update --targets gemini,antigravity
+trackfw skills uninstall --targets gemini,antigravity
+```
+
+Os targets são Claude Code, Codex, Gemini CLI, Antigravity, Cursor, GitHub
+Copilot, Windsurf, Amazon Q e Kiro. As flags compartilhadas são:
+
+| Flag | Uso |
+|---|---|
+| `--targets <csv>` | CLIs de destino; obrigatório em mutações sem TTY |
+| `--items <csv>` | Agents ou skills específicos; o padrão é todos |
+| `--scope project\|global` | Instalação no repositório ou no diretório do usuário |
+| `--surface target=surface` | Seleciona uma surface, por exemplo `kiro=cli` |
+| `--json` | Retorna catálogo, deployments, suporte, formato e estado |
+| `--force` | Autoriza substituir/remover apenas conteúdo gerenciado modificado |
+
+Em um terminal interativo, mutações sem `--targets` exibem uma seleção e targets
+com mais de uma surface atual pedem a surface desejada. `list` inspeciona também
+surfaces legadas. Para escolher a compatibilidade antiga explicitamente:
+
+```bash
+trackfw agents list --targets antigravity --surface antigravity=legacy-cli
+```
+
+Cada deployment fica em `not-installed`, `current`, `outdated` ou `modified`.
+O manifesto `.trackfw/integrations-manifest.json` registra ownership, versão,
+SHA-256 e claims compartilhados por escopo. `update` e `uninstall` preservam
+customizações sem `--force`; uninstall nunca remove arquivo unmanaged. Templates
+históricos conhecidos podem ser adotados sem overwrite e migrados com `update`.
+Conteúdo desconhecido não é adotado por update, nem mesmo com `--force`.
+
+---
+
 ## Gemini CLI
 
 ```bash
@@ -299,15 +344,15 @@ trackfw context --format=json | gemini --model gemini-2.0-flash "Analise o estad
 
 ## OpenAI Codex
 
-Selecione **OpenAI Codex** no `trackfw init` ou execute:
+Selecione **OpenAI Codex** no `trackfw init` ou use o lifecycle:
 
 ```bash
-trackfw init --ai-tools codex
+trackfw agents install --targets codex --scope project
+trackfw skills install --targets codex --scope project
 ```
 
-A integração gera `AGENTS.md`, cinco skills em `.agents/skills/`, seis subagentes
-em `.codex/agents/`, limites de concorrência em `.codex/config.toml` e hooks de
-atenção em `.codex/hooks.json`.
+O adapter gera dez agentes especialistas TOML em `.codex/agents/` e cinco Agent
+Skills em `.agents/skills/`, com ownership seguro e atualização conservadora.
 
 ---
 

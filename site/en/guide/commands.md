@@ -17,7 +17,7 @@ trackfw init [--brownfield] [--ai-tools codex,...]
 | Flag | Description |
 |------|-------------|
 | `--brownfield` | Activates lenient mode for 30 days (violations become warnings) |
-| `--ai-tools` | Configures AI integrations non-interactively; `codex` is supported by all three runtimes |
+| `--ai-tools` | Configures all nine AI targets non-interactively in all three runtimes |
 
 ### What gets generated
 
@@ -45,6 +45,68 @@ $ trackfw init
 
 ✓ Governance structure initialized.
 ```
+
+---
+
+## `trackfw agents` and `trackfw skills`
+
+Manage specialist agents and governance skills with the same contract in the
+Go/Homebrew, npm, and PyPI CLIs.
+
+```bash
+trackfw agents list|install|uninstall|update [flags]
+trackfw skills list|install|uninstall|update [flags]
+```
+
+Supported targets: `claude`, `codex`, `gemini`, `antigravity`, `cursor`,
+`copilot`, `windsurf`, `amazonq`, and `kiro`.
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--targets <csv>` | Target CLIs; required for mutations without a TTY |
+| `--items <csv>` | Catalog IDs; defaults to all items |
+| `--scope project\|global` | Installs in the project or user directory |
+| `--surface target=surface` | Selects a specific surface; may be repeated |
+| `--json` | Emits catalog and deployments in deterministic format |
+| `--force` | Allows replacing/removing modified managed content |
+
+In a TTY, `install`, `update`, and `uninstall` without `--targets` open an
+interactive selector. In CI or another non-interactive environment, omitting
+`--targets` is an error.
+
+### Examples
+
+```bash
+# Lists catalog, native/fallback representation, and state; includes legacy surfaces
+trackfw agents list --json
+
+# Installs selected agents and skills in the project
+trackfw agents install --targets claude,codex --items architect,backend --scope project
+trackfw skills install --targets gemini,kiro --items governance,implement --scope project
+
+# Installs globally and selects the Kiro CLI surface
+trackfw agents install --targets kiro --scope global --surface kiro=cli
+
+# Explicitly inspects the old Antigravity surface
+trackfw agents list --targets antigravity --surface antigravity=legacy-cli
+
+# Updates or removes only selected deployments
+trackfw skills update --targets codex,gemini
+trackfw agents uninstall --targets claude --items backend
+```
+
+States are `not-installed`, `current`, `outdated`, and `modified`. The
+scope-specific `.trackfw/integrations-manifest.json` manifest records ownership,
+version, SHA-256, and shared claims. `update` and `uninstall` preserve `modified`
+files until `--force` is explicit. Uninstall never removes an unmanaged file or
+an artifact that is still shared. A historical installation with a known hash
+is adopted without overwrite and reported as `outdated`; `update` migrates it.
+Unknown unmanaged content is never adopted by update, even with `--force`.
+
+The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` commands
+remain only as compatibility aliases and delegate to this lifecycle.
 
 ---
 
