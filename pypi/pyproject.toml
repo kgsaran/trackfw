@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trackfw"
-version = "2.12.4"
+version = "2.14.0"
 description = "Governance CLI for AI-native software delivery and AI coding agents. Enforces traceability: ADR → REQ → ROADMAP → kanban. Native support for Codex, Claude Code, Gemini CLI, Cursor, Copilot, Windsurf, and Amazon Q."
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
