@@ -591,6 +591,7 @@ set -euo pipefail
 
 INPUT=$(cat)
 
+# Script e intencionalmente no-op quando executado fora do diretorio raiz do projeto trackfw.
 [ -f "trackfw.yaml" ] || exit 0
 
 if command -v jq &>/dev/null; then
@@ -601,28 +602,21 @@ else
   MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent is executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
 fi
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1 || true)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 case "$ROADMAP_DIR" in
-  /*)
-    CWD=$(pwd)
-    case "$ROADMAP_DIR" in
-      "$CWD"/*) ROADMAP_DIR=".${ROADMAP_DIR#"$CWD"}" ;;
-      "$CWD")   ROADMAP_DIR="." ;;
-      *)        ROADMAP_DIR="docs/roadmaps" ;;
-    esac
-    ;;
-esac
-case "$ROADMAP_DIR" in
-  *..*) ROADMAP_DIR="docs/roadmaps" ;;
+  /*|../*|*/../*|*/..|..) ROADMAP_DIR="docs/roadmaps" ;;
 esac
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+TOOL_ESC=$(echo "$TOOL" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
+MSG_ESC=$(echo "$MSG" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
+
 mkdir -p "$ROADMAP_DIR"
 printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\n' \
-  "$(echo "$TOOL" | tr -d '\n' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')" \
-  "$(echo "$MSG"  | tr -d '\n' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')" \
+  "$TOOL_ESC" \
+  "$MSG_ESC" \
   "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-attention.json"
 
 exit 0
@@ -632,22 +626,13 @@ exit 0
 # trackfw attention cleanup — PostToolUse/AfterTool hook
 set -euo pipefail
 
+# Script e intencionalmente no-op quando executado fora do diretorio raiz do projeto trackfw.
 [ -f "trackfw.yaml" ] || exit 0
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1 || true)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 case "$ROADMAP_DIR" in
-  /*)
-    CWD=$(pwd)
-    case "$ROADMAP_DIR" in
-      "$CWD"/*) ROADMAP_DIR=".${ROADMAP_DIR#"$CWD"}" ;;
-      "$CWD")   ROADMAP_DIR="." ;;
-      *)        ROADMAP_DIR="docs/roadmaps" ;;
-    esac
-    ;;
-esac
-case "$ROADMAP_DIR" in
-  *..*) ROADMAP_DIR="docs/roadmaps" ;;
+  /*|../*|*/../*|*/..|..) ROADMAP_DIR="docs/roadmaps" ;;
 esac
 
 rm -f "$ROADMAP_DIR/.trackfw-attention.json"

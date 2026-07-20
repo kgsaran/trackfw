@@ -4,7 +4,9 @@ tests/test_generators_init.py — testes para generators/init_gen.py
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -620,6 +622,120 @@ class TestAttentionScriptsExecutionAndHardening(unittest.TestCase):
 
         self.assertIn("Line1Line2", data["message"].replace(" ", ""))
         self.assertEqual(data["level"], "action_required")
+        self.assertIn("timestamp", data)
+
+    def test_control_character_sanitization(self):
+        """(Q2+Q4) Caracteres de controle (U+0000-U+001F) são sanitizados do JSON."""
+        payload = json.dumps({
+            "tool_name": "tool\u0007name\u001f",
+            "tool_input": {"question": "Hello\u0000\tWorld\r\nTest"}
+        })
+
+        res = subprocess.run(
+            [self.signal_script],
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=self.tmp,
+            shell=False
+        )
+        self.assertEqual(res.returncode, 0)
+
+        attention_file = os.path.join(self.tmp, 'docs', 'roadmaps', '.trackfw-attention.json')
+        self.assertTrue(os.path.isfile(attention_file))
+
+        with open(attention_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        self.assertEqual(data["tool"], "toolname")
+        self.assertEqual(data["message"], "HelloWorldTest")
+
+    def test_tolerant_roadmap_dir_parsing_with_comments(self):
+        """(Q6) roadmap_dir com comentários inline e/ou sem espaço é parseado corretamente."""
+        yaml_path = os.path.join(self.tmp, 'trackfw.yaml')
+        with open(yaml_path, 'w', encoding='utf-8') as f:
+            f.write("roadmap_dir:custom/roadmaps # comentario inline\n")
+
+        payload = json.dumps({
+            "tool_name": "bash",
+            "tool_input": {"command": "echo test"}
+        })
+
+        res = subprocess.run(
+            [self.signal_script],
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=self.tmp,
+            shell=False
+        )
+        self.assertEqual(res.returncode, 0)
+
+        custom_file = os.path.join(self.tmp, 'custom', 'roadmaps', '.trackfw-attention.json')
+        self.assertTrue(os.path.isfile(custom_file), "Attention file não foi criado no roadmap_dir customizado parseado")
+
+    def test_fallback_without_jq(self):
+        """(Q5) Execução do signal script sem jq no PATH utiliza o fallback python3 e gera JSON válido."""
+        env = dict(os.environ)
+        path_dirs = env.get("PATH", "").split(os.path.pathsep)
+
+        fake_bin = tempfile.mkdtemp()
+        filtered_dirs = []
+
+        for d in path_dirs:
+            if not os.path.isdir(d):
+                continue
+            if os.path.exists(os.path.join(d, "jq")) or os.path.exists(os.path.join(d, "jq.exe")):
+                for item in os.listdir(d):
+                    if item in ("jq", "jq.exe"):
+                        continue
+                    src = os.path.join(d, item)
+                    dst = os.path.join(fake_bin, item)
+                    if not os.path.exists(dst):
+                        try:
+                            os.symlink(src, dst)
+                        except OSError:
+                            pass
+            else:
+                filtered_dirs.append(d)
+
+        filtered_dirs.insert(0, fake_bin)
+
+        if not any(os.path.exists(os.path.join(d, "python3")) for d in filtered_dirs):
+            py_bin = os.path.join(fake_bin, "python3")
+            if not os.path.exists(py_bin):
+                try:
+                    os.symlink(sys.executable, py_bin)
+                except OSError:
+                    pass
+
+        env["PATH"] = os.path.pathsep.join(filtered_dirs)
+
+        payload = json.dumps({
+            "tool_name": "bash",
+            "tool_input": {"command": "echo fallback_no_jq"}
+        })
+
+        res = subprocess.run(
+            [self.signal_script],
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=self.tmp,
+            env=env,
+            shell=False
+        )
+        self.assertEqual(res.returncode, 0, f"Signal script falhou no fallback sem jq. Stderr: {res.stderr}")
+
+        attention_file = os.path.join(self.tmp, 'docs', 'roadmaps', '.trackfw-attention.json')
+        self.assertTrue(os.path.isfile(attention_file), "Attention file não foi gerado no fallback sem jq")
+
+        with open(attention_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        self.assertEqual(data.get("tool"), "bash")
+        self.assertEqual(data.get("message"), "echo fallback_no_jq")
+        self.assertEqual(data.get("level"), "action_required")
         self.assertIn("timestamp", data)
 
 

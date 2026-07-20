@@ -2549,3 +2549,30 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
   - 🟡 Q6: parsing YAML frágil. Q7: falta teste golden de paridade. Q8: pressuposto de cwd não documentado.
 - **Artefatos criados (backlog):** `docs/req/REQ-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md` + `docs/roadmaps/backlog/ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md` (Wave 1 scripts por CLI → Wave 2 testes → Wave 3 barrier; com decisões canônicas para paridade idêntica).
 - **Housekeeping:** removida cópia stale de `ROADMAP-...-pr56-pr57.md` em `backlog/` (duplicata vinda do #58/main; autoritativa é a de `done/`) — sintoma da divergência de squash-merge #58↔#59 já reportada.
+
+---
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO Roadmap Hardening Qualidade Q1-Q8 pós-PR59)
+
+**Tarefa:** Orquestração e execução do roadmap `ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md`.
+**Agente:** 🌩️ Zeus - Principal Software Architect
+**Branch:** `fix/hardening-qualidade-attention-hooks`
+
+**Status:** CONCLUÍDO (8/8 achados Q1-Q8 resolvidos e testados nos 3 CLIs)
+- **Wave 1 (Decisões Canônicas dos Scripts):**
+  - Contenção de path traversal única e segment-aware (`/*|../*|*/../*|*/..|..`) nos 3 CLIs (Q3).
+  - Sanitização de caracteres de controle U+0000–U+001F (`tr -d '\000-\037'`) antes do escaping nos 3 CLIs (Q2, Q4).
+  - Extração tolerante de `roadmap_dir:` (`sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//'`) (Q6).
+  - Comentário explicativo de cwd (Q8).
+- **Wave 2 (Testes de Contrato, Fallback e Golden Parity):**
+  - **Go (Apolo):** Adicionados `TestAttentionScripts_ExecutionContract` (executa scripts bash para default, traversal e payload com aspas/barras/newlines/tabs/CR) e `TestAttentionScripts_FallbackWithoutJQ` (Q1, Q5).
+  - **Node (Afrodite):** Adicionado teste de fallback sem `jq` com `fakeBinDir` (Q5).
+  - **Python Specialist:** Adicionado `test_fallback_without_jq` com `fake_bin` (Q5).
+  - **QA Golden Parity:** Criado `internal/generators/scaffold_parity_test.go` (`TestScriptsParity_GoldenCanonicalBlocks`) que compara byte-a-byte a estrutura dos scripts shell gerados nos 3 CLIs (Q7).
+- **Wave 3 (Barrier Quality):**
+  - `make quality` 100% VERDE (Go unit/vet/contract/parity + Node 60/60 + Python 333/333).
+  - Roadmap movido para `docs/roadmaps/done/ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md`.
+  - REQ atualizada para `Status: Done`.
+- **Abertura de PR:** PR #60 aberto na branch `fix/hardening-qualidade-attention-hooks` apontando para `main` (https://github.com/kgsaran/trackfw/pull/60).
+
+
