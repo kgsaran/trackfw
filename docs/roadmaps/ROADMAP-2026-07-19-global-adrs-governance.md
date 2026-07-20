@@ -75,7 +75,7 @@ ADRs globais/externos também não devem ser marcados como `adr_orphan` quando e
 > Dependências: Wave 1 concluída
 
 ### ML-2A — Go: Bypass de CI/CD para Dirs Inexistentes + Isenção adr_orphan
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo (Backend Specialist)
 **Arquivos afetados:**
 - `internal/config/config.go` (adicionar campo `StrictCIPaths bool` em Config)
@@ -92,7 +92,7 @@ ADRs globais/externos também não devem ser marcados como `adr_orphan` quando e
 ---
 
 ### ML-2B — Node.js: Bypass de CI/CD para Dirs Inexistentes + Isenção adr_orphan
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Afrodite (Frontend/Node Specialist)
 **Arquivos afetados:**
 - `npm/src/config/index.js`
@@ -107,7 +107,7 @@ ADRs globais/externos também não devem ser marcados como `adr_orphan` quando e
 ---
 
 ### ML-2C — Python: Bypass de CI/CD para Dirs Inexistentes + Isenção adr_orphan
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo (Backend Specialist)
 **Arquivos afetados:**
 - `pypi/trackfw/config.py`

@@ -384,6 +384,11 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	violations = append(violations, traceViolations...)
 	warnings = append(warnings, traceWarnings...)
 
+	// ML-2A: validação de existência dos diretórios adr_dirs (Warning por padrão, Error se strict_ci_paths)
+	adrDirViolations, adrDirWarnings := validateADRDirsExist(cfg)
+	violations = append(violations, adrDirViolations...)
+	warnings = append(warnings, adrDirWarnings...)
+
 	return violations, warnings, nil
 }
 
@@ -531,6 +536,15 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	}
 	for _, m := range traceWarnings {
 		warnings = append(warnings, TaggedMsg{Rule: extractRulePrefix(m), Msg: m})
+	}
+
+	// ML-2A: validação de existência dos diretórios adr_dirs (Warning por padrão, Error se strict_ci_paths)
+	adrDirViolations, adrDirWarnings := validateADRDirsExist(cfg)
+	for _, m := range adrDirViolations {
+		violations = append(violations, TaggedMsg{Rule: "adr_dir_exists", Msg: m})
+	}
+	for _, m := range adrDirWarnings {
+		warnings = append(warnings, TaggedMsg{Rule: "adr_dir_exists", Msg: m})
 	}
 
 	return violations, warnings, nil
@@ -853,8 +867,13 @@ func validateADRsAreReferenced() ([]string, error) {
 	cfg := config.Load()
 	var adrs []string
 	for _, adrDir := range cfg.ADRDirs {
-		names := walkADRFiles(adrDir)
-		adrs = append(adrs, names...)
+		paths := walkADRFilePaths(adrDir)
+		for _, p := range paths {
+			if isOutsideCWD(p) {
+				continue
+			}
+			adrs = append(adrs, filepath.Base(p))
+		}
 	}
 
 	reqPaths := resolveREQFiles(cfg)
@@ -1123,19 +1142,69 @@ func listDir(dir string) ([]string, error) {
 	return names, nil
 }
 
-// walkADRFiles retorna basenames de todos os arquivos .md encontrados recursivamente em adrDir.
-func walkADRFiles(adrDir string) []string {
+// validateADRDirsExist verifica se os diretórios em adr_dirs existem no disco.
+// Se um diretório não existir:
+// - se StrictCIPaths for true: gera violation (Error)
+// - se StrictCIPaths for false: gera warning (Warning)
+func validateADRDirsExist(cfg config.ProjectConfig) (violations []string, warnings []string) {
+	for _, adrDir := range cfg.ADRDirs {
+		expandedDir := config.ExpandPath(adrDir)
+		if _, err := os.Stat(expandedDir); os.IsNotExist(err) {
+			msg := fmt.Sprintf("adr_dir %q does not exist", adrDir)
+			if cfg.StrictCIPaths {
+				violations = append(violations, msg)
+			} else {
+				warnings = append(warnings, msg)
+			}
+		}
+	}
+	return violations, warnings
+}
+
+// isOutsideCWD verifica se o caminho do arquivo/diretório está localizado fora do diretório raiz do projeto local (CWD).
+func isOutsideCWD(path string) bool {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	absCwd, err := filepath.Abs(cwd)
+	if err != nil {
+		return false
+	}
+	absPath, err := filepath.Abs(config.ExpandPath(path))
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(absCwd, absPath)
+	if err != nil {
+		return true
+	}
+	return strings.HasPrefix(rel, "..") || filepath.IsAbs(rel)
+}
+
+// walkADRFilePaths retorna os caminhos completos de todos os arquivos .md encontrados recursivamente em adrDir.
+func walkADRFilePaths(adrDir string) []string {
 	adrDir = config.ExpandPath(adrDir)
-	var names []string
+	var paths []string
 	_ = filepath.WalkDir(adrDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if !d.IsDir() && strings.HasSuffix(path, ".md") {
-			names = append(names, filepath.Base(path))
+			paths = append(paths, path)
 		}
 		return nil
 	})
+	return paths
+}
+
+// walkADRFiles retorna basenames de todos os arquivos .md encontrados recursivamente em adrDir.
+func walkADRFiles(adrDir string) []string {
+	paths := walkADRFilePaths(adrDir)
+	var names []string
+	for _, p := range paths {
+		names = append(names, filepath.Base(p))
+	}
 	return names
 }
 

@@ -25,8 +25,15 @@ function listDir(dir) {
   }
 }
 
-// walkDirMd retorna basenames de todos .md recursivamente dentro de dir.
-function walkDirMd(dir) {
+// isInsideDir retorna true se childPath estiver contido ou for igual a parentDir.
+function isInsideDir(parentDir, childPath) {
+  if (!parentDir || !childPath) return false
+  const rel = path.relative(path.resolve(parentDir), path.resolve(childPath))
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+}
+
+// walkDirMdWithPaths retorna { name, fullPath } de todos .md recursivamente dentro de dir.
+function walkDirMdWithPaths(dir) {
   const results = []
   const expandedDir = config.expandPath ? config.expandPath(dir) : dir
   function walk(d) {
@@ -36,12 +43,17 @@ function walkDirMd(dir) {
       const full = path.join(d, name)
       try {
         if (fs.statSync(full).isDirectory()) { walk(full) }
-        else if (name.endsWith('.md')) { results.push(name) }
+        else if (name.endsWith('.md')) { results.push({ name, fullPath: full }) }
       } catch (_) {}
     }
   }
   walk(expandedDir)
   return results
+}
+
+// walkDirMd retorna basenames de todos .md recursivamente dentro de dir.
+function walkDirMd(dir) {
+  return walkDirMdWithPaths(dir).map(item => item.name)
 }
 
 // findAdrFile busca o basename recursivamente em todos os adrDirs configurados.
@@ -263,12 +275,45 @@ function validateREQsHaveRoadmap() {
   return violations
 }
 
-// validateADRsAreReferenced — ADRs em adrDirs não referenciados em nenhuma REQ → violation
+// validateADRDirsExist — verifica se todos adrDirs existem.
+// Retorna { violations: [], warnings: [] } respeitando strictCiPaths.
+function validateADRDirsExist() {
+  const cfg = config.load()
+  const violations = []
+  const warnings = []
+  for (const adrDir of cfg.adrDirs || []) {
+    const expanded = config.expandPath ? config.expandPath(adrDir) : adrDir
+    const absDir = path.resolve(expanded)
+    if (!fs.existsSync(absDir)) {
+      const msg = `adr directory "${adrDir}" does not exist`
+      if (cfg.strictCiPaths) {
+        violations.push(msg)
+      } else {
+        warnings.push(msg)
+      }
+    }
+  }
+  return { violations, warnings }
+}
+
+// validateADRsAreReferenced — ADRs em adrDirs não referenciados em nenhuma REQ → violation.
+// ADRs localizados fora do projeto local (cwd) são isentos desta validação.
 function validateADRsAreReferenced() {
   const cfg = config.load()
+  const cwd = process.cwd()
   let adrs = []
-  for (const adrDir of cfg.adrDirs) {
-    adrs = adrs.concat(walkDirMd(adrDir))
+  for (const adrDir of cfg.adrDirs || []) {
+    const expanded = config.expandPath ? config.expandPath(adrDir) : adrDir
+    const absDir = path.resolve(expanded)
+    // Isentar diretórios fora do cwd local
+    if (!isInsideDir(cwd, absDir)) {
+      continue
+    }
+    for (const item of walkDirMdWithPaths(absDir)) {
+      if (isInsideDir(cwd, item.fullPath)) {
+        adrs.push(item.name)
+      }
+    }
   }
 
   const reqFiles = resolveReqFiles(cfg)
@@ -889,6 +934,11 @@ async function validateUnfiltered() {
   // Regra direta (sem configuração de severidade): violation sempre
   for (const msg of validateFrontmatterPresence())  { _setMeta(msg, 'frontmatter_presence'); violations.push(msg) }
 
+  // Validação de existência dos adr_dirs (retorna violations se strictCiPaths, senão warnings)
+  const adrDirsExistResult = validateADRDirsExist()
+  for (const msg of adrDirsExistResult.violations) { _setMeta(msg, 'adr_dirs_exist'); violations.push(msg) }
+  for (const msg of adrDirsExistResult.warnings) { _setMeta(msg, 'adr_dirs_exist'); warnings.push(msg) }
+
   // warnings diretos do WIP limit (não configuráveis)
   for (const msg of wipLimitResult.warnings) { _setMeta(msg, 'wip_limit'); warnings.push(msg) }
 
@@ -1050,4 +1100,8 @@ module.exports = {
   // novas funções ML-1B (v2.5.1)
   getItemMeta,
   resetMeta,
+  // novas funções ML-2B (governança global)
+  isInsideDir,
+  walkDirMdWithPaths,
+  validateADRDirsExist,
 }

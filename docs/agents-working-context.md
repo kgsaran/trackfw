@@ -2227,21 +2227,16 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - `internal/validator/validator_test.go`: adicionado teste `TestValidate_WithTildeInADRDirs`.
 - Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-1A marcado como `✅ Concluído`.
 
----
+## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
 
-## Sessão 2026-07-20 — Afrodite (CONCLUÍDO ML-1B)
+**Tarefa:** Orquestração e disparo da Wave 2 do ROADMAP-2026-07-19-global-adrs-governance.md.
+**Branch:** `feat/global-adrs-governance`
+**Agente:** 🌩️ Zeus - Principal Software Architect
 
-**Tarefa:** ML-1B - Suporte à expansão de til (`~` ou `~/`) no carregamento de `adr_dirs` no CLI Node.js (`npm/src/config/` e `npm/src/validator/`).
-**Agente:** 💖 Afrodite - Frontend i18n Senior Specialist
+**Ações:**
+- Wave 1 auditada e 100% verde nos 3 CLIs (Go, Node, Python). Commit da Wave 1 efetuado (`d76c367`).
+- Disparados 3 subagentes paralelos para Wave 2 (ML-2A Go, ML-2B Node, ML-2C Python).
 
-**Entregue:**
-- `npm/src/config/index.js`: criada função `expandPath(filePath)` utilizando `os.homedir()` e `path.join()`. Aplicada a expansão no `defaults()`, no `parse()` de `adr_dirs`, `req_dir`, `roadmap_dir` e no `flushBlocks()`. Função exportada no `module.exports`.
-- `npm/src/validator/index.js`: atualizadas funções `listDir`, `walkDirMd`, `findAdrFile` e `referenceExists` para expandir caminhos com `config.expandPath()`.
-- `npm/tests/config.test.js`: adicionados testes unitários para a função `expandPath` e para o parse do `trackfw.yaml` com `adr_dirs` contendo `~/...`.
-- `npm/tests/validator.test.js`: adicionado teste unitário para o validador com `adr_dirs` contendo `~/...` apontando para subdiretório do usuáro.
-- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-1B marcado como `✅ Concluído`.
-
----
 
 ## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-1C)
 
@@ -2254,6 +2249,75 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - `pypi/tests/test_config.py`: adicionado `test_config_adr_dirs_tilde_expansion` testando o parse de `~/...`.
 - `pypi/tests/test_validator.py`: adicionada classe `TestExpandTildeAdrDirs` com `test_find_adr_file_com_tilde` e `test_validate_adrs_are_referenced_com_tilde`.
 - Status do ML-1C no roadmap atualizado para `✅ Concluído`.
+
+
+---
+
+## Sessão 2026-07-20 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-2A do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Suporte a `strict_ci_paths` (default `false`), Warning para `adr_dirs` inexistentes e isenção de `adr_orphan` para ADRs fora do `cwd` no Go CLI.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Ações:**
+- Iniciando implementação de `strict_ci_paths` em `internal/config/config.go`.
+- Ajustando validações em `internal/validator/validator.go`.
+- Adicionando testes unitários em `internal/validator/validator_test.go`.
+
+---
+
+## Sessão 2026-07-20 — Afrodite (CONCLUÍDO ML-2B)
+
+**Tarefa:** ML-2B do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Suporte a `strict_ci_paths` (default `false`), `Warning` para diretórios `adr_dirs` inexistentes e isenção de `adr_orphan` para arquivos fora de `cwd` no CLI Node.js.
+**Agente:** 💖 Afrodite — Frontend i18n Senior Specialist
+
+**Entregue:**
+- `npm/src/config/index.js`: adicionada opção `strictCiPaths` no `defaults()` (default `false`) e parse de `strict_ci_paths` no parser YAML.
+- `npm/src/validator/index.js`:
+  - Criados helpers `isInsideDir` e `walkDirMdWithPaths`.
+  - Criada função `validateADRDirsExist` que retorna `warnings` se `strictCiPaths: false` (default) ou `violations` se `strictCiPaths: true` para diretórios `adr_dirs` inexistentes.
+  - Atualizada `validateADRsAreReferenced` para isentar diretórios e arquivos de ADR externos à raiz do projeto (`cwd`) da verificação de `adr_orphan`.
+- `npm/tests/config.test.js`: adicionado teste de `strict_ci_paths`.
+- `npm/tests/validator.test.js`: adicionados testes unitários validando warning/violation para dir inexistente e isenção de `adr_orphan` para ADRs externos.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-2B marcado como `✅ Concluído`.
+
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-2C)
+
+**Tarefa:** ML-2C do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Suporte a `strict_ci_paths` (default `False`), `Warning` para diretórios `adr_dirs` não encontrados e isenção de `adr_orphan` para arquivos fora de `cwd` no CLI Python.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `pypi/trackfw/config.py`: `strict_ci_paths` adicionado aos `defaults()` (default `False`) e parseado a partir de `trackfw.yaml`.
+- `pypi/trackfw/validator.py`:
+  - Helper `_is_subpath` criado para identificar arquivos/diretórios contidos em `cwd`.
+  - `validate_adr_dirs_exist` verifica se os diretórios em `adr_dirs` existem, emitindo `Warning` se `strict_ci_paths` for `False` e `violation` se `strict_ci_paths` for `True`.
+  - `validate_adrs_are_referenced` isenta caminhos fora de `cwd` da regra `adr_orphan`.
+- `pypi/tests/test_config.py`: teste `test_config_strict_ci_paths` adicionado.
+- `pypi/tests/test_validator.py`: classes `TestStrictCIPathsAndInexistentAdrDirs` e `TestAdrOrphanExemptOutsideCwd` adicionadas.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-2C marcado como `✅ Concluído`.
+
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-2A)
+
+**Tarefa:** ML-2A do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Suporte a `strict_ci_paths` (default `false`), `Warning` para diretórios `adr_dirs` inexistentes e isenção de `adr_orphan` para arquivos fora do `cwd` no Go CLI.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `internal/config/config.go`: adicionado campo `StrictCIPaths bool` em `ProjectConfig` (default `false`) e parse de `strict_ci_paths` a partir do YAML.
+- `internal/config/config_paths_test.go`: adicionado `TestConfigStrictCIPaths` cobrindo o default `false` e parse quando `true`.
+- `internal/validator/validator.go`:
+  - `validateADRDirsExist`: verifica se cada diretório em `adr_dirs` existe; se não existir, gera `Warning` (se `StrictCIPaths == false`) ou `Error` violation (se `StrictCIPaths == true`).
+  - `isOutsideCWD`: helper que determina se um caminho está fora da raiz do projeto local (`cwd`).
+  - `validateADRsAreReferenced`: isenta arquivos ADR localizados fora do `cwd` da verificação `adr_orphan`.
+- `internal/validator/validator_test.go`: adicionados testes `TestValidate_NonExistentADRDirs_WarningByDefault`, `TestValidate_NonExistentADRDirs_StrictCIPathsError` e `TestValidate_ExternalADROrphanExemption`.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-2A marcado como `✅ Concluído`.
+
+
+
 
 
 

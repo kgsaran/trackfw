@@ -269,5 +269,17 @@ class TestConfigPaths(unittest.TestCase):
         self.assertEqual(cfg["adr_dirs"], expected)
 
 
+    def test_config_strict_ci_paths(self):
+        """strict_ci_paths: true → cfg['strict_ci_paths'] é True; omitido → False."""
+        self._write_yaml("strict_ci_paths: true\n")
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertTrue(cfg["strict_ci_paths"])
+
+        config.reset()
+        self._write_yaml("wip_limit: 1\n")
+        cfg_default = config.load(cwd=self.tmpdir)
+        self.assertFalse(cfg_default["strict_ci_paths"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -177,3 +177,34 @@ func TestConfigTildeExpansionInAdrDirs(t *testing.T) {
 	}
 }
 
+// TestConfigStrictCIPaths verifica a leitura da flag strict_ci_paths (default false).
+func TestConfigStrictCIPaths(t *testing.T) {
+	t.Run("default is false", func(t *testing.T) {
+		Reset()
+		tmp := t.TempDir()
+		orig, _ := os.Getwd()
+		defer func() { _ = os.Chdir(orig) }()
+		_ = os.Chdir(tmp)
+
+		_ = os.WriteFile(filepath.Join(tmp, "trackfw.yaml"), []byte("wip_limit: 1\n"), 0644)
+		cfg := Load()
+		if cfg.StrictCIPaths {
+			t.Errorf("StrictCIPaths: want false by default, got true")
+		}
+	})
+
+	t.Run("parsed true when set to true", func(t *testing.T) {
+		Reset()
+		tmp := t.TempDir()
+		orig, _ := os.Getwd()
+		defer func() { _ = os.Chdir(orig) }()
+		_ = os.Chdir(tmp)
+
+		_ = os.WriteFile(filepath.Join(tmp, "trackfw.yaml"), []byte("strict_ci_paths: true\n"), 0644)
+		cfg := Load()
+		if !cfg.StrictCIPaths {
+			t.Errorf("StrictCIPaths: want true, got false")
+		}
+	})
+}
+

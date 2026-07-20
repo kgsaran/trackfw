@@ -35,6 +35,9 @@ type ProjectConfig struct {
 
 	// v2.5 fields
 	TraceIdField string // frontmatter field for bidirectional REQ↔Roadmap tracing (default: "" = disabled)
+
+	// ML-2A field
+	StrictCIPaths bool // strict_ci_paths: true|false (default: false)
 }
 
 var (
@@ -280,6 +283,8 @@ func parse(content string, cfg *ProjectConfig) {
 			rules = map[string]string{}
 		case "trace_id_field":
 			cfg.TraceIdField = val
+		case "strict_ci_paths":
+			cfg.StrictCIPaths = val == "true"
 		}
 	}
 

@@ -151,6 +151,18 @@ test('adr_dirs com ~ em trackfw.yaml → expandido para homedir', () => {
   })
 })
 
+// ML-2B — strict_ci_paths
+test('strict_ci_paths — default é false, aceita true via yaml', () => {
+  withTmpDir(null, (tmp) => {
+    const cfgDefault = config.load(tmp)
+    assert.strictEqual(cfgDefault.strictCiPaths, false)
+  })
+  withTmpDir('strict_ci_paths: true\n', (tmp) => {
+    const cfgTrue = config.load(tmp)
+    assert.strictEqual(cfgTrue.strictCiPaths, true)
+  })
+})
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
 

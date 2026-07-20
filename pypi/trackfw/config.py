@@ -16,6 +16,7 @@ def defaults():
     return {
         # campos existentes
         "adr_dirs": ["docs/adr"],
+        "strict_ci_paths": False,
         "req_dir": "docs/req",
         "roadmap_dir": "docs/roadmaps",
         "roadmap_namespacing": "flat",
@@ -225,6 +226,8 @@ def _parse(content, cfg):
         if key == "adr_dirs":
             in_adr_dirs = True
             adr_dirs.clear()
+        elif key == "strict_ci_paths":
+            cfg["strict_ci_paths"] = val.strip("\"'").lower() == "true"
         elif key == "req_dir":
             cfg["req_dir"] = val.strip("\"'")
         elif key == "roadmap_dir":
