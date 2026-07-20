@@ -2575,4 +2575,17 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
   - REQ atualizada para `Status: Done`.
 - **Abertura de PR:** PR #60 aberto na branch `fix/hardening-qualidade-attention-hooks` apontando para `main` (https://github.com/kgsaran/trackfw/pull/60).
 
+---
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO Release v2.15.0)
+
+**Tarefa:** Sincronização dos arquivos de versão para a nova release v2.15.0 pós-integração dos PRs #56, #57, #58, #59 e #60.
+**Agente:** 🌩️ Zeus - Principal Software Architect
+**Branch:** `chore/release-v2.15.0`
+
+**Status:** CONCLUÍDO
+- Bump de `2.14.0` → `2.15.0` nos 5 arquivos de versão: `internal/version/version.go`, `npm/package.json`, `pypi/pyproject.toml`, `pypi/trackfw/__init__.py`, `docs/visao-projeto/VISION.md`.
+- `make quality` **100% VERDE**.
+
+
 
