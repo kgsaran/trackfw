@@ -2229,13 +2229,14 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 ## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
 
-**Tarefa:** Orquestração e disparo da Wave 2 do ROADMAP-2026-06-20-attention-hooks-agent-clis.md.
+**Tarefa:** Orquestração e disparo da Wave 3 do ROADMAP-2026-06-20-attention-hooks-agent-clis.md.
 **Branch:** `feat/attention-hooks-agent-clis`
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
 **Ações:**
-- Wave 1 auditada e 100% verde nos 3 CLIs. Commit efetuado (`722354c`).
-- Disparados 3 subagentes paralelos por stack de linguagem para Wave 2 (InjectHooks para Claude, Codex, Gemini, Kiro, Copilot, Cursor e Windsurf em Go, Node.js e Python).
+- Wave 2 auditada e 100% verde nos 3 CLIs. Commit da Wave 2 efetuado (`c55ea15`).
+- Disparados subagentes para a Wave 3 (`trackfw update` com regeneração de hooks, testes de integração e finalização da documentação).
+
 
 
 
@@ -2423,5 +2424,13 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
   - Confirmada a invocação de `injectHooksDetected(cwd)` em `discover --init`.
 - `npm/tests/generators.test.js`:
   - Adicionados testes unitários completos testando criação do zero, merge idempotente preservando hooks customizados pré-existentes do usuário e detecção automática combinada dos 7 CLIs.
+
+---
+
+## Sessão 2026-07-20 — Apolo (IMPLEMENTANDO Wave 3 ML-3A e ML-3B)
+
+**Tarefa:** Implementar a Wave 3 (ML-3A e ML-3B) do `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md` para Go e Node.js.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
 
 

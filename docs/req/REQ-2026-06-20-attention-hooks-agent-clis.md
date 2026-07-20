@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Closed
 date: 2026-06-20
 author: Zeus
 adr: ""
-roadmap: "docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-06-20-attention-hooks-agent-clis.md"
 ---
 
 # REQ: attention-hooks-agent-clis
 
-> Date: 2026-06-20 | Status: Open
+> Date: 2026-06-20 | Status: Closed
 
 ## Motivation
 
@@ -25,19 +25,19 @@ equivalente), e que o Windsurf é o único outlier (hooks por tipo de ação, se
 
 ## Acceptance Criteria
 
-- [ ] Claude Code: hook `PreToolUse[AskUserQuestion]` gerado em `.claude/settings.json` que escreve
+- [x] Claude Code: hook `PreToolUse[AskUserQuestion]` gerado em `.claude/settings.json` que escreve
       `.trackfw-attention.json` antes da pergunta e o apaga via `PostToolUse[AskUserQuestion]`
 - [x] Codex CLI: hook `PermissionRequest` + `PostToolUse` gerado em `.codex/hooks.json`
 - [x] Gemini CLI: hook `Notification[ToolPermission]` + `AfterTool` gerado em `.gemini/settings.json`
-- [ ] Kiro: hook `PreToolUse` + `PostToolUse` gerado em `.kiro/hooks/trackfw-attention.json`
-- [ ] GitHub Copilot: hook `preToolUse` + `postToolUse` gerado em `.github/hooks/trackfw-attention.json`
-- [ ] Cursor: hook `preToolUse` + `postToolUse` gerado em `.cursor/hooks.json`
-- [ ] Windsurf: instrução explícita no `.windsurfrules` (sem hook confiável para perguntas ao usuário)
-- [ ] Script `scripts/trackfw-attention-signal.sh` gerado por `trackfw init`/`discover --init`
-- [ ] Script `scripts/trackfw-attention-cleanup.sh` gerado por `trackfw init`/`discover --init`
-- [ ] `trackfw update` regenera/atualiza os hook configs detectados
-- [ ] Paridade nos 3 CLIs (Go, Node.js, Python)
-- [ ] Todos os testes existentes continuam verdes
+- [x] Kiro: hook `PreToolUse` + `PostToolUse` gerado em `.kiro/hooks/trackfw-attention.json`
+- [x] GitHub Copilot: hook `preToolUse` + `postToolUse` gerado em `.github/hooks/trackfw-attention.json`
+- [x] Cursor: hook `preToolUse` + `postToolUse` gerado em `.cursor/hooks.json`
+- [x] Windsurf: instrução explícita no `.windsurfrules` (sem hook confiável para perguntas ao usuário)
+- [x] Script `scripts/trackfw-attention-signal.sh` gerado por `trackfw init`/`discover --init`
+- [x] Script `scripts/trackfw-attention-cleanup.sh` gerado por `trackfw init`/`discover --init`
+- [x] `trackfw update` regenera/atualiza os hook configs detectados
+- [x] Paridade nos 3 CLIs (Go, Node.js, Python)
+- [x] Todos os testes existentes continuam verdes
 
 ## Linked ADR
 ADR:
@@ -46,4 +46,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: ROADMAP-2026-06-20-codex-agent-integrations.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-06-20-attention-hooks-agent-clis.md

@@ -438,6 +438,28 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertIn('Windsurf users:', block)
         self.assertIn('<roadmap_dir>/.trackfw-attention.json', block)
 
+    def test_update_command_injects_attention_hooks(self):
+        from trackfw.commands.update import _run
+        import argparse
+        import os
+
+        # Criar projeto fake com trackfw.yaml e .claude/
+        with open(os.path.join(self.tmp, 'trackfw.yaml'), 'w', encoding='utf-8') as f:
+            f.write('backend: python\nroadmap_dir: docs/roadmaps\n')
+        os.makedirs(os.path.join(self.tmp, '.claude'), exist_ok=True)
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(self.tmp)
+            _run(argparse.Namespace())
+        finally:
+            os.chdir(old_cwd)
+
+        # Verificar se hooks de atenção e scripts foram criados
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.claude', 'settings.json')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')))
+
 
 if __name__ == '__main__':
     unittest.main()

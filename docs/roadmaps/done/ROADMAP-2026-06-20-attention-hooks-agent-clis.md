@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-06-20
 req: "docs/req/REQ-2026-06-20-attention-hooks-agent-clis.md"
 branch: "feat/attention-hooks-agent-clis"
@@ -7,7 +7,7 @@ branch: "feat/attention-hooks-agent-clis"
 
 # Roadmap: attention-hooks-agent-clis
 
-> Criado em: 2026-06-20 | Status: 🔄 WIP
+> Criado em: 2026-06-20 | Status: ✅ DONE (Movido para `docs/roadmaps/done/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`)
 
 REQ: REQ-2026-06-20-attention-hooks-agent-clis.md
 
@@ -345,7 +345,7 @@ Windsurf não tem `preToolUse` genérico — única opção é instrução textu
 > Dependências: Wave 2 completa
 
 ### ML-3A — `trackfw update` detecta e regenera hooks
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/commands/update.go` (ou equivalente) — chamar `InjectXxxHooks` para cada agente detectado
 - `npm/src/commands/update.js` — idem
@@ -362,13 +362,13 @@ Windsurf não tem `preToolUse` genérico — única opção é instrução textu
 2. Paridade Node.js e Python.
 
 **Critérios de aceite:**
-- [ ] `trackfw update` regenera/atualiza hooks sem sobrescrever config existente
-- [ ] `go test ./internal/commands/...` verde
+- [x] `trackfw update` regenera/atualiza hooks sem sobrescrever config existente
+- [x] `go test ./internal/commands/...` verde
 
 ---
 
 ### ML-3B — Testes de integração para InjectClaudeHooks
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/agentfiles_test.go` (criar se não existir)
 
@@ -378,12 +378,12 @@ Windsurf não tem `preToolUse` genérico — única opção é instrução textu
 3. `TestInjectClaudeHooks_Idempotent`: rodar duas vezes → não duplica entries
 
 **Critérios de aceite:**
-- [ ] `go test ./internal/generators/... -run TestInjectClaudeHooks` verde (3 testes)
+- [x] `go test ./internal/generators/... -run TestInjectClaudeHooks` verde (3 testes)
 
 ---
 
 ### ML-3C — Atualizar VISION.md com v2.12.4
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `docs/visao-projeto/VISION.md`
 

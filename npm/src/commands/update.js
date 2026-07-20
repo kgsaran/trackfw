@@ -89,8 +89,9 @@ cmd.action(() => {
 
   // 1b. Agent hooks (attention signal/cleanup)
   try {
-    const { injectHooksDetected } = require('../generators/hooks');
+    const { injectHooksDetected, generateAttentionScripts } = require('../generators/hooks');
     injectHooksDetected(cwd);
+    generateAttentionScripts(cfg, cwd);
     console.log('  ✓ agent hooks atualizados');
   } catch (e) {
     console.warn(`  ⚠ agent hooks: ${e.message}`);

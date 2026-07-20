@@ -242,7 +242,7 @@ defined by `docs/cli-parity.md` and enforced by release smoke tests.
 | v2.5 | trace_id_field (bidirectional REQ↔ROADMAP), by_agent namespacing, salvaguarda one-sided | ✅ Done |
 | v2.6 | req_has_adr / req_has_roadmap / blocked_has_req configurable | ✅ Done |
 | v2.7 | `branch_has_wip_roadmap` rule (gate pré-trabalho); Node.js → husky fallback (Windows/corp); agent protocol in rules block | ✅ Done |
-| v2.8 | Attention hooks auto-injected for 6 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor); permission-capable CLIs signal only when user action is required | ✅ Done |
+| v2.8 | Attention hooks auto-injected for 7 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor, Windsurf); permission-capable CLIs signal only when user action is required; 100% parity across Go, Node.js and Python CLIs | ✅ Done |
 | vNext | GitHub Actions official, trackfw serve UX, multi-repo support | 🔄 Planned |
 
 ---
