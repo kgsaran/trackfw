@@ -2511,8 +2511,6 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
   - Roadmap atualizado e movido para `docs/roadmaps/done/ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md`.
   - REQ atualizada para `Status: Done`.
 
-
-
 ---
 
 ## Sessão 2026-07-20 — Zeus (CONCLUÍDO Auditoria de conformidade pós-implementação + reabertura C13)
