@@ -1,3 +1,10 @@
+---
+status: wip
+date: 2026-06-19
+req: "docs/requisições/claude/REQ-2026-06-19-architect-command-guidelines.md"
+branch: "feat/architect-command-guidelines"
+---
+
 # Roadmap: Slash command /trackfw:architect + diretrizes de arquitetura
 
 > Criado em: 2026-06-19 | Status: 🔄 WIP

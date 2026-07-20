@@ -2227,18 +2227,18 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - `internal/validator/validator_test.go`: adicionado teste `TestValidate_WithTildeInADRDirs`.
 - Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-1A marcado como `✅ Concluído`.
 
-## Sessão 2026-07-20 — Zeus (CONCLUÍDO)
+## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
 
-**Tarefa:** Orquestração e implementação completa do ROADMAP-2026-06-20-attention-hooks-agent-clis.md (Backlog #2).
-**Branch:** `feat/attention-hooks-agent-clis`
-**Pull Request:** https://github.com/kgsaran/trackfw/pull/57
+**Tarefa:** Orquestração e disparo do ROADMAP-2026-06-19-architect-command-guidelines.md (Backlog #3).
+**Branch:** `feat/architect-command-guidelines`
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
-**Entregues:**
-- **Branch e PR criados:** `feat/attention-hooks-agent-clis` → PR #57 (`https://github.com/kgsaran/trackfw/pull/57`).
-- **Wave 1:** Scripts `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh` gerados em Go, Node.js e Python com permissão `0755`.
-- **Wave 2:** Injetores idempotentes de hooks para 7 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor e Windsurf) nas 3 linguagens.
-- **Wave 3:** Suporte em `trackfw update` para regeneração de hooks, atualização de `VISION.md`, encerramento da REQ e finalização do roadmap em `docs/roadmaps/done/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`. Suítes de testes 100% verdes (Go, Node.js 21/21, Python 320/320).
+**Ações:**
+- Feito `git checkout main`, `git pull origin main` (PR #57 mesclado).
+- Criada e ativada a branch isolada `feat/architect-command-guidelines`.
+- Movido e configurado o roadmap `docs/roadmaps/ROADMAP-2026-06-19-architect-command-guidelines.md` (status `wip`).
+- Disparados 3 subagentes paralelos para Wave 1 (ML-1A Go, ML-1B Node.js, ML-1C Python).
+
 
 
 
