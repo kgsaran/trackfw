@@ -39,3 +39,34 @@ test('scaffold generates CLAUDE.md with mandatory global ADRs directive', async 
     process.chdir(origCwd)
   }
 })
+
+test('scaffold generates attention scripts with execution permissions and expected headers', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-attention-test-'))
+  const origCwd = process.cwd()
+  try {
+    process.chdir(tmpDir)
+    await scaffold({ projectName: 'test-attention-project', frontend: 'none', backend: 'none' })
+    const signalPath = path.join(tmpDir, 'scripts', 'trackfw-attention-signal.sh')
+    const cleanupPath = path.join(tmpDir, 'scripts', 'trackfw-attention-cleanup.sh')
+
+    assert.ok(fs.existsSync(signalPath), 'signal script should exist')
+    assert.ok(fs.existsSync(cleanupPath), 'cleanup script should exist')
+
+    const signalStat = fs.statSync(signalPath)
+    const cleanupStat = fs.statSync(cleanupPath)
+
+    if (process.platform !== 'win32') {
+      assert.ok((signalStat.mode & 0o111) !== 0, 'signal script should be executable')
+      assert.ok((cleanupStat.mode & 0o111) !== 0, 'cleanup script should be executable')
+    }
+
+    const signalContent = fs.readFileSync(signalPath, 'utf8')
+    assert.ok(signalContent.includes('# trackfw attention signal — PreToolUse/BeforeTool hook'), 'signal header correct')
+
+    const cleanupContent = fs.readFileSync(cleanupPath, 'utf8')
+    assert.ok(cleanupContent.includes('# trackfw attention cleanup — PostToolUse/AfterTool hook'), 'cleanup header correct')
+  } finally {
+    process.chdir(origCwd)
+  }
+})
+

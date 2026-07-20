@@ -274,6 +274,37 @@ class TestGlobalADRsRuleDirective(unittest.TestCase):
         self.assertIn(expected, content, "Diretiva de ADRs globais ausente do CLAUDE.md gerado")
 
 
+class TestAttentionScripts(unittest.TestCase):
+    """Verifica geração dos scripts de atenção trackfw-attention-signal.sh e cleanup.sh."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def test_scaffold_generates_attention_scripts(self):
+        opts = {'project_name': 'test-proj', 'namespacing': 'flat', 'wip_limit': 1}
+        scaffold(self.tmp, opts)
+
+        signal_path = os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')
+        cleanup_path = os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')
+
+        self.assertTrue(os.path.isfile(signal_path), 'trackfw-attention-signal.sh não foi criado')
+        self.assertTrue(os.path.isfile(cleanup_path), 'trackfw-attention-cleanup.sh não foi criado')
+
+        # Permissão de execução no Unix
+        if os.name == 'posix':
+            self.assertTrue(os.stat(signal_path).st_mode & 0o111 != 0, 'signal script não é executável')
+            self.assertTrue(os.stat(cleanup_path).st_mode & 0o111 != 0, 'cleanup script não é executável')
+
+        with open(signal_path, encoding='utf-8') as f:
+            signal_content = f.read()
+        self.assertIn('# trackfw attention signal — PreToolUse/BeforeTool hook', signal_content)
+
+        with open(cleanup_path, encoding='utf-8') as f:
+            cleanup_content = f.read()
+        self.assertIn('# trackfw attention cleanup — PostToolUse/AfterTool hook', cleanup_content)
+
+
 if __name__ == '__main__':
     unittest.main()
+
 

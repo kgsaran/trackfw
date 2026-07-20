@@ -2350,4 +2350,21 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - `npm/tests/generators.test.js`: criação de suíte de testes unitários Node.js validando a inclusão da diretiva no bloco de regras e em arquivos gerados.
 - Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-3A marcado como `✅ Concluído`.
 
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-1A)
+
+**Tarefa:** ML-1A do Roadmap `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md` — Geração dos scripts `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh` nos 3 geradores de scaffold/init (Go, Node.js, Python).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `internal/generators/scaffold.go`: atualizada a função `generateAttentionScripts()` para gerar `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh` com o conteúdo exato exigido e permissão `0755`.
+- `internal/generators/scaffold_test.go`: adicionado o teste `TestGenerateAttentionScripts` garantindo a criação dos dois scripts, permissões executáveis e validação do cabeçalho do conteúdo.
+- `npm/src/generators/hooks.js`: atualizadas as constantes `SIGNAL_SCRIPT` e `CLEANUP_SCRIPT` para gerar os scripts com o conteúdo exato exigido.
+- `npm/tests/generators.test.js`: adicionado o teste `scaffold generates attention scripts with execution permissions and expected headers`.
+- `pypi/trackfw/generators/init_gen.py`: atualizadas as constantes `_ATTENTION_SIGNAL_SH` e `_ATTENTION_CLEANUP_SH` para o conteúdo exato exigido.
+- `pypi/tests/test_generators_init.py`: adicionada a classe de testes `TestAttentionScripts` validando existência, permissões executáveis no POSIX e cabeçalhos dos scripts.
+- `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`: ML-1A marcado como `✅ Concluído`.
+
+
 

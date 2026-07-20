@@ -586,30 +586,22 @@ func generateAttentionScripts() error {
 	}
 
 	signalScript := `#!/usr/bin/env bash
-# trackfw attention signal — permission/notification hook
-# Writes .trackfw-attention.json so trackfw serve board shows a banner.
-# Receives JSON via stdin with tool_name and tool_input.
+# trackfw attention signal — PreToolUse/BeforeTool hook
 set -euo pipefail
 
 INPUT=$(cat)
 
-HOOK_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
-[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD"
-
-# No-op in projects without trackfw
 [ -f "trackfw.yaml" ] || exit 0
 
-# Extract message from tool input
 if command -v jq &>/dev/null; then
-  TOOL=$(echo "$INPUT" | jq -r '.tool_name // .notification_type // ""')
-  MSG=$(echo "$INPUT" | jq -r '(.message // .tool_input.description // .tool_input.question // .tool_input.command // ("Approval required for: " + (.tool_name // .notification_type // "unknown"))) | .[0:300]')
+  TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""')
+  MSG=$(echo "$INPUT" | jq -r '(.tool_input.question // .tool_input.command // "Agent is executing: \(.tool_name // "unknown")") | .[0:300]')
 else
-  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name') or d.get('notification_type') or '')" 2>/dev/null || echo "")
-  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((d.get('message') or ti.get('description') or ti.get('question') or ti.get('command') or 'Approval required for: '+(d.get('tool_name') or d.get('notification_type') or 'unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
+  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null || echo "")
+  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent is executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
 fi
 
-# Get roadmap_dir from trackfw.yaml (default: docs/roadmaps)
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -617,7 +609,7 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 mkdir -p "$ROADMAP_DIR"
 printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\n' \
   "$(echo "$TOOL" | sed 's/"/\\"/g')" \
-  "$(echo "$MSG"  | sed 's/"/\\"/g; s/$//' | tr -d '\n')" \
+  "$(echo "$MSG"  | sed 's/"/\\"/g')" \
   "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-attention.json"
 
 exit 0
@@ -625,16 +617,11 @@ exit 0
 
 	cleanupScript := `#!/usr/bin/env bash
 # trackfw attention cleanup — PostToolUse/AfterTool hook
-# Removes .trackfw-attention.json after tool call completes.
 set -euo pipefail
-
-INPUT=$(cat)
-HOOK_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
-[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD"
 
 [ -f "trackfw.yaml" ] || exit 0
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 
 rm -f "$ROADMAP_DIR/.trackfw-attention.json"

@@ -47,7 +47,7 @@ com fallback para `docs/roadmaps`.
 > Dependências: nenhuma
 
 ### ML-1A — Scripts `trackfw-attention-signal.sh` e `trackfw-attention-cleanup.sh`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/scaffold.go` — adicionar geração dos dois scripts em `GenerateScripts()`
 - `npm/src/generators/init.js` — idem
@@ -109,9 +109,9 @@ exit 0
 ```
 
 **Critérios de aceite:**
-- [ ] `go build ./...` sem erros
-- [ ] Scripts gerados em `scripts/` por `trackfw init`
-- [ ] Scripts são idempotentes (re-rodar `init` não duplica)
+- [x] `go build ./...` sem erros
+- [x] Scripts gerados em `scripts/` por `trackfw init`
+- [x] Scripts são idempotentes (re-rodar `init` não duplica)
 
 ---
 
