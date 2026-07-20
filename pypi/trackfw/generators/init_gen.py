@@ -84,6 +84,11 @@ def scaffold(cwd: str, opts: dict) -> None:
     _write_example_adr(cwd, opts)
     generate_claude_commands(cwd)
     _generate_attention_scripts(cwd)
+    try:
+        from trackfw.generators.hooks import inject_hooks_detected
+        inject_hooks_detected(cwd)
+    except Exception as e:
+        print(f'  ⚠ agent hooks: {e}')
     print_architect_next_steps(cwd)
 
 
@@ -228,7 +233,10 @@ def _trackfw_rules_block() -> str:
         '```json\n'
         '{"roadmap":"file.md","ml":"ML-1A","message":"what you need","level":"action_required","timestamp":"ISO8601Z"}\n'
         '```\n'
-        'Delete the file when resolved. Visible as a live banner in `trackfw serve`.\n'
+        'Delete the file when resolved. Visible as a live banner in `trackfw serve`.\n\n'
+        '> **Windsurf users:** before asking the user a question or requesting approval, write\n'
+        '> `<roadmap_dir>/.trackfw-attention.json` manually — there is no automatic hook for this.\n'
+        '> Delete the file after the user responds.\n'
         '\n### Architecture Directives (mandatory)\n'
         '- Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.\n'
         '- **3-layer arch + no in-memory data:** frontend / backend / database; always DB + ORM — never arrays/globals\n'
@@ -537,24 +545,22 @@ def generate_claude_commands(cwd: str) -> None:
 
 
 _ATTENTION_SIGNAL_SH = r"""#!/usr/bin/env bash
-# trackfw attention signal — permission/notification hook
-# Writes .trackfw-attention.json so trackfw serve board shows a banner.
+# trackfw attention signal — PreToolUse/BeforeTool hook
 set -euo pipefail
 
 INPUT=$(cat)
-HOOK_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || echo "")
-[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD"
+
 [ -f "trackfw.yaml" ] || exit 0
 
 if command -v jq &>/dev/null; then
-  TOOL=$(echo "$INPUT" | jq -r '.tool_name // .notification_type // ""')
-  MSG=$(echo "$INPUT" | jq -r '(.message // .tool_input.description // .tool_input.question // .tool_input.command // ("Approval required for: " + (.tool_name // .notification_type // "unknown"))) | .[0:300]')
+  TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""')
+  MSG=$(echo "$INPUT" | jq -r '(.tool_input.question // .tool_input.command // "Agent is executing: \(.tool_name // "unknown")") | .[0:300]')
 else
-  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name') or d.get('notification_type') or '')" 2>/dev/null || echo "")
-  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((d.get('message') or ti.get('description') or ti.get('question') or ti.get('command') or 'Approval required for: '+(d.get('tool_name') or d.get('notification_type') or 'unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
+  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null || echo "")
+  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent is executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
 fi
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -562,7 +568,7 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 mkdir -p "$ROADMAP_DIR"
 printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\n' \
   "$(echo "$TOOL" | sed 's/"/\\"/g')" \
-  "$(echo "$MSG"  | sed 's/"/\\"/g; s/$//' | tr -d '\n')" \
+  "$(echo "$MSG"  | sed 's/"/\\"/g')" \
   "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-attention.json"
 
 exit 0
@@ -572,12 +578,9 @@ _ATTENTION_CLEANUP_SH = r"""#!/usr/bin/env bash
 # trackfw attention cleanup — PostToolUse/AfterTool hook
 set -euo pipefail
 
-INPUT=$(cat)
-HOOK_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || echo "")
-[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD"
 [ -f "trackfw.yaml" ] || exit 0
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 
 rm -f "$ROADMAP_DIR/.trackfw-attention.json"

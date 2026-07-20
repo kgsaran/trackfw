@@ -2,6 +2,7 @@
 tests/test_generators_init.py — testes para generators/init_gen.py
 """
 
+import json
 import os
 import tempfile
 import unittest
@@ -274,6 +275,194 @@ class TestGlobalADRsRuleDirective(unittest.TestCase):
         self.assertIn(expected, content, "Diretiva de ADRs globais ausente do CLAUDE.md gerado")
 
 
+class TestAttentionScripts(unittest.TestCase):
+    """Verifica geração dos scripts de atenção trackfw-attention-signal.sh e cleanup.sh."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def test_scaffold_generates_attention_scripts(self):
+        opts = {'project_name': 'test-proj', 'namespacing': 'flat', 'wip_limit': 1}
+        scaffold(self.tmp, opts)
+
+        signal_path = os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')
+        cleanup_path = os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')
+
+        self.assertTrue(os.path.isfile(signal_path), 'trackfw-attention-signal.sh não foi criado')
+        self.assertTrue(os.path.isfile(cleanup_path), 'trackfw-attention-cleanup.sh não foi criado')
+
+        # Permissão de execução no Unix
+        if os.name == 'posix':
+            self.assertTrue(os.stat(signal_path).st_mode & 0o111 != 0, 'signal script não é executável')
+            self.assertTrue(os.stat(cleanup_path).st_mode & 0o111 != 0, 'cleanup script não é executável')
+
+        with open(signal_path, encoding='utf-8') as f:
+            signal_content = f.read()
+        self.assertIn('# trackfw attention signal — PreToolUse/BeforeTool hook', signal_content)
+
+        with open(cleanup_path, encoding='utf-8') as f:
+            cleanup_content = f.read()
+        self.assertIn('# trackfw attention cleanup — PostToolUse/AfterTool hook', cleanup_content)
+
+
+class TestAttentionHooksInjectors(unittest.TestCase):
+    """Testes unitários para injeção idempotente de hooks de atenção nos 7 CLIs."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def test_inject_claude_hooks_create_and_merge(self):
+        from trackfw.generators.hooks import inject_claude_hooks
+        # 1. Criação do zero
+        inject_claude_hooks(self.tmp)
+        path = os.path.join(self.tmp, '.claude', 'settings.json')
+        self.assertTrue(os.path.isfile(path))
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        self.assertIn('PreToolUse', data.get('hooks', {}))
+        self.assertIn('PostToolUse', data.get('hooks', {}))
+
+        # 2. Idempotência
+        inject_claude_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data2 = json.load(f)
+        self.assertEqual(len(data2['hooks']['PreToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['PostToolUse']), 1)
+
+    def test_inject_codex_hooks_create_and_merge(self):
+        from trackfw.generators.hooks import inject_codex_hooks
+        inject_codex_hooks(self.tmp)
+        path = os.path.join(self.tmp, '.codex', 'hooks.json')
+        self.assertTrue(os.path.isfile(path))
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        self.assertIn('PermissionRequest', data.get('hooks', {}))
+        self.assertIn('PostToolUse', data.get('hooks', {}))
+
+        # Idempotência
+        inject_codex_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data2 = json.load(f)
+        self.assertEqual(len(data2['hooks']['PermissionRequest']), 1)
+        self.assertEqual(len(data2['hooks']['PostToolUse']), 1)
+
+    def test_inject_gemini_hooks_create_and_merge(self):
+        from trackfw.generators.hooks import inject_gemini_hooks
+        inject_gemini_hooks(self.tmp)
+        path = os.path.join(self.tmp, '.gemini', 'settings.json')
+        self.assertTrue(os.path.isfile(path))
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        self.assertIn('Notification', data.get('hooks', {}))
+        self.assertIn('AfterTool', data.get('hooks', {}))
+
+        # Idempotência
+        inject_gemini_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data2 = json.load(f)
+        self.assertEqual(len(data2['hooks']['Notification']), 1)
+        self.assertEqual(len(data2['hooks']['AfterTool']), 1)
+
+    def test_inject_kiro_hooks(self):
+        from trackfw.generators.hooks import inject_kiro_hooks
+        inject_kiro_hooks(self.tmp)
+        path = os.path.join(self.tmp, '.kiro', 'hooks', 'trackfw-attention.json')
+        self.assertTrue(os.path.isfile(path))
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        self.assertEqual(len(data.get('hooks', [])), 2)
+
+        # Idempotência
+        inject_kiro_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data2 = json.load(f)
+        self.assertEqual(len(data2.get('hooks', [])), 2)
+
+    def test_inject_copilot_hooks(self):
+        from trackfw.generators.hooks import inject_copilot_hooks
+        inject_copilot_hooks(self.tmp)
+        path = os.path.join(self.tmp, '.github', 'hooks', 'trackfw-attention.json')
+        self.assertTrue(os.path.isfile(path))
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        self.assertIn('preToolUse', data.get('hooks', {}))
+        self.assertIn('postToolUse', data.get('hooks', {}))
+
+        # Idempotência
+        inject_copilot_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data2 = json.load(f)
+        self.assertEqual(data, data2)
+
+    def test_inject_cursor_hooks(self):
+        from trackfw.generators.hooks import inject_cursor_hooks
+        inject_cursor_hooks(self.tmp)
+        path = os.path.join(self.tmp, '.cursor', 'hooks.json')
+        self.assertTrue(os.path.isfile(path))
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        self.assertIn('preToolUse', data)
+        self.assertIn('postToolUse', data)
+
+        # Idempotência
+        inject_cursor_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data2 = json.load(f)
+        self.assertEqual(len(data2['preToolUse']), 1)
+        self.assertEqual(len(data2['postToolUse']), 1)
+
+    def test_inject_hooks_detected(self):
+        from trackfw.generators.hooks import inject_hooks_detected
+        # Simular presença dos CLIs
+        os.makedirs(os.path.join(self.tmp, '.claude'), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, '.codex'), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, '.gemini'), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, '.kiro'), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, '.github'), exist_ok=True)
+        with open(os.path.join(self.tmp, '.github', 'copilot-instructions.md'), 'w') as f:
+            f.write('# Copilot')
+        os.makedirs(os.path.join(self.tmp, '.cursor'), exist_ok=True)
+
+        inject_hooks_detected(self.tmp)
+
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.claude', 'settings.json')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.codex', 'hooks.json')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.gemini', 'settings.json')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.kiro', 'hooks', 'trackfw-attention.json')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.github', 'hooks', 'trackfw-attention.json')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.cursor', 'hooks.json')))
+
+    def test_windsurf_instruction_in_rules(self):
+        from trackfw.generators.init_gen import _trackfw_rules_block
+        block = _trackfw_rules_block()
+        self.assertIn('Windsurf users:', block)
+        self.assertIn('<roadmap_dir>/.trackfw-attention.json', block)
+
+    def test_update_command_injects_attention_hooks(self):
+        from trackfw.commands.update import _run
+        import argparse
+        import os
+
+        # Criar projeto fake com trackfw.yaml e .claude/
+        with open(os.path.join(self.tmp, 'trackfw.yaml'), 'w', encoding='utf-8') as f:
+            f.write('backend: python\nroadmap_dir: docs/roadmaps\n')
+        os.makedirs(os.path.join(self.tmp, '.claude'), exist_ok=True)
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(self.tmp)
+            _run(argparse.Namespace())
+        finally:
+            os.chdir(old_cwd)
+
+        # Verificar se hooks de atenção e scripts foram criados
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.claude', 'settings.json')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')))
+
+
 if __name__ == '__main__':
     unittest.main()
+
+
 

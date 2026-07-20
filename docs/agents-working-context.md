@@ -2229,17 +2229,19 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 ## Sessão 2026-07-20 — Zeus (CONCLUÍDO)
 
-**Tarefa:** Orquestração e implementação completa do ROADMAP-2026-07-19-global-adrs-governance.md.
-**Branch:** `feat/global-adrs-governance`
-**Pull Request:** https://github.com/kgsaran/trackfw/pull/56
+**Tarefa:** Orquestração e implementação completa do ROADMAP-2026-06-20-attention-hooks-agent-clis.md (Backlog #2).
+**Branch:** `feat/attention-hooks-agent-clis`
+**Pull Request:** https://github.com/kgsaran/trackfw/pull/57
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
 **Entregues:**
-- **Branch criada, empurrada e PR aberto:** `feat/global-adrs-governance` → PR #56 (`https://github.com/kgsaran/trackfw/pull/56`).
-- **Wave 1:** Suporte à expansão de til (`~` / `~/`) no carregamento de `adr_dirs` em Go (`config.go`, `validator.go`), Node.js (`npm/src/config/index.js`, `npm/src/validator/index.js`) e Python (`pypi/trackfw/config.py`, `pypi/trackfw/validator.py`).
-- **Wave 2:** Suporte a `strict_ci_paths` (default `false`), conversão de diretórios externos não encontrados para `Warning` (em vez de Error) e isenção da verificação `adr_orphan` para ADRs fora do `cwd` local em Go, Node.js e Python.
-- **Wave 3:** Injeção da diretiva compulsória de leitura dos ADRs globais nos geradores de regras dos assistentes de IA (`CLAUDE.md`, `AGENTS.md` e `SKILL.md`) nas três linguagens.
-- **Wave 4:** Validação E2E com suítes de testes 100% verdes em Go, Node.js (21/21) e Python (310/310). Todos os critérios de aceite da REQ marcados como `[x]`. Roadmap finalizado em `docs/roadmaps/done/ROADMAP-2026-07-19-global-adrs-governance.md`.
+- **Branch e PR criados:** `feat/attention-hooks-agent-clis` → PR #57 (`https://github.com/kgsaran/trackfw/pull/57`).
+- **Wave 1:** Scripts `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh` gerados em Go, Node.js e Python com permissão `0755`.
+- **Wave 2:** Injetores idempotentes de hooks para 7 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor e Windsurf) nas 3 linguagens.
+- **Wave 3:** Suporte em `trackfw update` para regeneração de hooks, atualização de `VISION.md`, encerramento da REQ e finalização do roadmap em `docs/roadmaps/done/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`. Suítes de testes 100% verdes (Go, Node.js 21/21, Python 320/320).
+
+
+
 
 
 
@@ -2350,5 +2352,88 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - `npm/src/generators/init.js`: inclusão da diretiva em `trackfwRulesBlock()` e `generateClaudeMD()`.
 - `npm/tests/generators.test.js`: criação de suíte de testes unitários Node.js validando a inclusão da diretiva no bloco de regras e em arquivos gerados.
 - Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-3A marcado como `✅ Concluído`.
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-1A)
+
+**Tarefa:** ML-1A do Roadmap `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md` — Geração dos scripts `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh` nos 3 geradores de scaffold/init (Go, Node.js, Python).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `internal/generators/scaffold.go`: atualizada a função `generateAttentionScripts()` para gerar `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh` com o conteúdo exato exigido e permissão `0755`.
+- `internal/generators/scaffold_test.go`: adicionado o teste `TestGenerateAttentionScripts` garantindo a criação dos dois scripts, permissões executáveis e validação do cabeçalho do conteúdo.
+- `npm/src/generators/hooks.js`: atualizadas as constantes `SIGNAL_SCRIPT` e `CLEANUP_SCRIPT` para gerar os scripts com o conteúdo exato exigido.
+- `npm/tests/generators.test.js`: adicionado o teste `scaffold generates attention scripts with execution permissions and expected headers`.
+- `pypi/trackfw/generators/init_gen.py`: atualizadas as constantes `_ATTENTION_SIGNAL_SH` e `_ATTENTION_CLEANUP_SH` para o conteúdo exato exigido.
+- `pypi/tests/test_generators_init.py`: adicionada a classe de testes `TestAttentionScripts` validando existência, permissões executáveis no POSIX e cabeçalhos dos scripts.
+- `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`: ML-1A marcado como `✅ Concluído`.
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-2A a ML-2G no CLI Python)
+
+**Tarefa:** Injetores de hooks de atenção para os 7 CLIs no CLI Python (ML-2A até ML-2G do `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `pypi/trackfw/generators/init_gen.py`:
+  - Adicionada a instrução de uso manual do `.trackfw-attention.json` para usuários do Windsurf no bloco de regras `_trackfw_rules_block()`.
+  - Integrada a chamada a `inject_hooks_detected(cwd)` durante a execução de `scaffold(...)` no `init`.
+- `pypi/trackfw/generators/hooks.py`:
+  - Suporte completo e idempotente a injeção de hooks para os 7 CLIs (Claude Code, Codex, Gemini, Kiro, Copilot, Cursor e Windsurf via rules block).
+- `pypi/trackfw/commands/discover.py`:
+  - Adicionada geração de `_generate_attention_scripts(cwd)` e atualização de `inject_hooks_detected(cwd)` durante a flag `--init`.
+- `pypi/tests/test_generators_init.py`:
+  - Adicionados testes unitários completos em `TestAttentionHooksInjectors` para injeção, idempotência, merge e detecção automática de hooks nos 7 CLIs.
+  - 319/319 testes da suíte Python passando (100% verde).
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-2A a ML-2G no CLI Go)
+
+**Tarefa:** Implementar injetores de hooks de atenção para os 7 CLIs no CLI Go (ML-2A até ML-2G do `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `internal/generators/agentfiles.go`:
+  - Implementadas as 7 funções de injeção exportadas (`InjectClaudeHooks`, `InjectCodexHooks`, `InjectGeminiHooks`, `InjectKiroHooks`, `InjectCopilotHooks`, `InjectCursorHooks`, `InjectWindsurfHooks`) com merges idempotentes.
+  - Atualizado `trackfwRulesBlock()` com a instrução do Windsurf.
+- `internal/generators/hooks.go` & `internal/generators/codex.go`:
+  - Refatorados para utilizar as funções exportadas de injeção em `agentfiles.go`.
+- `internal/discover/discover.go`:
+  - Atualizada a função `InstallGates` para chamar `generators.InjectHooksDetected(rootDir)`.
+- `internal/generators/agentfiles_test.go` e `internal/generators/hooks_test.go`:
+  - Testes unitários completos para criação, merge idempotente e detecção dos hooks nos 7 CLIs.
+  - Suíte `go test ./...` 100% verde.
+- `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`:
+  - ML-2A até ML-2G marcados como `✅ Concluído`.
+---
+
+## Sessão 2026-07-20 — Afrodite (CONCLUÍDO ML-2A a ML-2G Node.js)
+
+**Tarefa:** Implementar os injetores de hooks de atenção para os 7 CLIs no CLI Node.js (ML-2A até ML-2G de `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`).
+**Agente:** 💖 Afrodite - Frontend i18n Senior Specialist
+
+**Entregue:**
+- `npm/src/generators/hooks.js`:
+  - Implementados injetores de hooks de atenção idempotentes para os 7 CLIs: `injectClaudeHooks` (`.claude/settings.json`), `injectCodexHooks` (`.codex/hooks.json`), `injectGeminiHooks` (`.gemini/settings.json`), `injectKiroHooks` (`.kiro/hooks/trackfw-attention.json`), `injectCopilotHooks` (`.github/hooks/trackfw-attention.json`), `injectCursorHooks` (`.cursor/hooks.json`) e `injectWindsurfHooks` (`.windsurfrules`).
+  - Atualizada a função `injectHooksDetected(cwd)` para mapear e executar automaticamente a injeção em todos os 7 CLIs suportados.
+- `npm/src/generators/init.js`:
+  - Atualizado `trackfwRulesBlock()` para incluir a instrução explícita do Windsurf para criação manual do `.trackfw-attention.json`.
+  - Integrada a chamada `injectHooksDetected(root)` ao método `scaffold(...)`.
+  - Exportadas as funções `injectHooksDetected` e helpers.
+- `npm/src/commands/discover.js`:
+  - Confirmada a invocação de `injectHooksDetected(cwd)` em `discover --init`.
+- `npm/tests/generators.test.js`:
+  - Adicionados testes unitários completos testando criação do zero, merge idempotente preservando hooks customizados pré-existentes do usuário e detecção automática combinada dos 7 CLIs.
+
+---
+
+## Sessão 2026-07-20 — Apolo (IMPLEMENTANDO Wave 3 ML-3A e ML-3B)
+
+**Tarefa:** Implementar a Wave 3 (ML-3A e ML-3B) do `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md` para Go e Node.js.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
 
 

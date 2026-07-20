@@ -49,14 +49,11 @@ func TestInstallCodexCreatesNativeArtifacts(t *testing.T) {
 		t.Errorf("unexpected Codex config:\n%s", config)
 	}
 
-	hooks := readJSONFile(t, filepath.Join(dir, ".codex", "hooks.json"))
-	if !hasClaudeHookEntry(hooks, "PermissionRequest", ".*", "scripts/trackfw-attention-signal.sh") {
-		t.Error("PermissionRequest attention hook not found")
+	hooks := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
+	if !helperHasClaudeHook(hooks, "PreToolUse", ".*", "scripts/trackfw-attention-signal.sh") {
+		t.Error("PreToolUse attention hook not found")
 	}
-	if !hasClaudeHookEntry(hooks, "PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(hooks, "PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse cleanup hook not found")
-	}
-	if hasClaudeHookEntry(hooks, "PreToolUse", ".*", "scripts/trackfw-attention-signal.sh") {
-		t.Error("Codex attention must use PermissionRequest, not PreToolUse")
 	}
 }

@@ -96,3 +96,99 @@ Run focused tests and report changed files, validation evidence, and remaining r
 		t.Fatalf("unexpected Codex ownership manifest:\n%s", manifest)
 	}
 }
+
+func TestUpdateInjectsAndUpdatesAttentionHooksIdempotently(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := os.WriteFile(filepath.Join(root, "trackfw.yaml"), []byte("hooks: none\nci: none\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Criar marcadores para Claude, Cursor e Windsurf com hook customizado pré-existente no Claude
+	claudeDir := filepath.Join(root, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	customClaudeSettings := []byte(`{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "CustomTool",
+        "hooks": [{"type": "command", "command": "custom-script.sh"}]
+      }
+    ]
+  }
+}`)
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), customClaudeSettings, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cursorDir := filepath.Join(root, ".cursor")
+	if err := os.MkdirAll(cursorDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	windsurfRules := filepath.Join(root, ".windsurfrules")
+	if err := os.WriteFile(windsurfRules, []byte("# Existing windsurf rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Primeiramente executar Update
+	if err := Update(root); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	// Validar que os scripts de atenção foram gerados em scripts/
+	signalPath := filepath.Join(root, "scripts", "trackfw-attention-signal.sh")
+	cleanupPath := filepath.Join(root, "scripts", "trackfw-attention-cleanup.sh")
+	if _, err := os.Stat(signalPath); err != nil {
+		t.Fatalf("attention signal script not created by update: %v", err)
+	}
+	if _, err := os.Stat(cleanupPath); err != nil {
+		t.Fatalf("attention cleanup script not created by update: %v", err)
+	}
+
+	// Validar injeção do Claude preservando hook customizado
+	claudeContent, err := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+	if err != nil {
+		t.Fatalf("failed to read claude settings: %v", err)
+	}
+	if !strings.Contains(string(claudeContent), "CustomTool") {
+		t.Fatalf("custom claude hook was overwritten by update:\n%s", claudeContent)
+	}
+	if !strings.Contains(string(claudeContent), "AskUserQuestion") {
+		t.Fatalf("claude attention hook missing after update:\n%s", claudeContent)
+	}
+
+	// Validar injeção do Cursor
+	cursorContent, err := os.ReadFile(filepath.Join(cursorDir, "hooks.json"))
+	if err != nil {
+		t.Fatalf("failed to read cursor hooks: %v", err)
+	}
+	if !strings.Contains(string(cursorContent), "scripts/trackfw-attention-signal.sh") {
+		t.Fatalf("cursor attention hook missing after update:\n%s", cursorContent)
+	}
+
+	// Validar injeção do Windsurf
+	windsurfContent, err := os.ReadFile(windsurfRules)
+	if err != nil {
+		t.Fatalf("failed to read windsurfrules: %v", err)
+	}
+	if !strings.Contains(string(windsurfContent), "Windsurf users:") {
+		t.Fatalf("windsurf instruction missing after update:\n%s", windsurfContent)
+	}
+
+	// Executar Update uma segunda vez para garantir idempotência
+	if err := Update(root); err != nil {
+		t.Fatalf("Second Update failed: %v", err)
+	}
+
+	claudeContentSecond, _ := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+	count := strings.Count(string(claudeContentSecond), "AskUserQuestion")
+	if count != 2 {
+		t.Fatalf("claude attention hooks duplicated on re-update. Expected 2 occurrences of AskUserQuestion, got %d:\n%s", count, claudeContentSecond)
+	}
+}
+

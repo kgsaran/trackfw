@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/generators"
 )
 
 const externalCommandTimeout = 30 * time.Second
@@ -42,7 +44,7 @@ func runExternalCommand(rootDir, name string, args ...string) ([]byte, error) {
 }
 
 // InstallGates instala os artefatos de governança num projeto brownfield:
-// validate script, hook entry e (se github-actions) CI workflow.
+// validate script, hook entry, (se github-actions) CI workflow e injeta attention hooks dos CLIs detectados.
 func InstallGates(r DiscoveryResult, rootDir string, w io.Writer) error {
 	if err := writeValidateScript(rootDir); err != nil {
 		return err
@@ -54,6 +56,9 @@ func InstallGates(r DiscoveryResult, rootDir string, w io.Writer) error {
 		if err := writeCIWorkflow(rootDir); err != nil {
 			return err
 		}
+	}
+	if err := generators.InjectHooksDetected(rootDir); err != nil {
+		fmt.Fprintf(w, "  ⚠ agent hooks: %v\n", err)
 	}
 	return nil
 }

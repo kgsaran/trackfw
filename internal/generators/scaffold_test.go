@@ -3,6 +3,7 @@ package generators
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -101,5 +102,43 @@ func TestGenerateClaudeCommands_Idempotente(t *testing.T) {
 	}
 	if string(got) != customContent {
 		t.Errorf("arquivo customizado foi sobrescrito — esperado %q, obteve %q", customContent, string(got))
+	}
+}
+
+func TestGenerateAttentionScripts(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	if err := generateAttentionScripts(); err != nil {
+		t.Fatalf("generateAttentionScripts() erro: %v", err)
+	}
+
+	signalPath := filepath.Join("scripts", "trackfw-attention-signal.sh")
+	cleanupPath := filepath.Join("scripts", "trackfw-attention-cleanup.sh")
+
+	for _, p := range []string{signalPath, cleanupPath} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatalf("arquivo de atenção não gerado: %s (%v)", p, err)
+		}
+		if info.Size() == 0 {
+			t.Errorf("arquivo de atenção está vazio: %s", p)
+		}
+		// Verifica permissões de execução (no Unix 0755)
+		if mode := info.Mode().Perm(); mode&0111 == 0 {
+			t.Errorf("arquivo %s não tem permissão de execução (perm: %o)", p, mode)
+		}
+	}
+
+	signalContent, _ := os.ReadFile(signalPath)
+	if !strings.Contains(string(signalContent), "# trackfw attention signal — PreToolUse/BeforeTool hook") {
+		t.Errorf("script signal não contém cabeçalho esperado: %s", string(signalContent))
+	}
+
+	cleanupContent, _ := os.ReadFile(cleanupPath)
+	if !strings.Contains(string(cleanupContent), "# trackfw attention cleanup — PostToolUse/AfterTool hook") {
+		t.Errorf("script cleanup não contém cabeçalho esperado: %s", string(cleanupContent))
 	}
 }

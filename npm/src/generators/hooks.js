@@ -28,29 +28,52 @@ function hasEntry(arr, field, value) {
   return Array.isArray(arr) && arr.some(e => e && e[field] === value)
 }
 
+/** Merge helper para arrays de hooks tipo Claude / Codex / Gemini */
+function mergeClaudeHookArray(existing, matcher, command) {
+  const arr = Array.isArray(existing) ? existing : []
+
+  for (const item of arr) {
+    if (!item || item.matcher !== matcher) continue
+    const innerHooks = Array.isArray(item.hooks) ? item.hooks : []
+    if (innerHooks.some(h => h && h.command === command)) {
+      return arr
+    }
+  }
+
+  let entry = arr.find(e => e && e.matcher === matcher)
+  if (!entry) {
+    entry = { matcher, hooks: [] }
+    arr.push(entry)
+  }
+  if (!Array.isArray(entry.hooks)) entry.hooks = []
+  if (!entry.hooks.some(h => h && h.command === command)) {
+    entry.hooks.push({ type: 'command', command })
+  }
+
+  return arr
+}
+
 // ---------------------------------------------------------------------------
 // Scripts content
 // ---------------------------------------------------------------------------
 
 const SIGNAL_SCRIPT = `#!/usr/bin/env bash
-# trackfw attention signal — permission/notification hook
-# Writes .trackfw-attention.json so trackfw serve board shows a banner.
+# trackfw attention signal — PreToolUse/BeforeTool hook
 set -euo pipefail
 
 INPUT=$(cat)
-HOOK_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
-[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD"
+
 [ -f "trackfw.yaml" ] || exit 0
 
 if command -v jq &>/dev/null; then
-  TOOL=$(echo "$INPUT" | jq -r '.tool_name // .notification_type // ""')
-  MSG=$(echo "$INPUT" | jq -r '(.message // .tool_input.description // .tool_input.question // .tool_input.command // ("Approval required for: " + (.tool_name // .notification_type // "unknown"))) | .[0:300]')
+  TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""')
+  MSG=$(echo "$INPUT" | jq -r '(.tool_input.question // .tool_input.command // "Agent is executing: \\(.tool_name // "unknown")") | .[0:300]')
 else
-  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name') or d.get('notification_type') or '')" 2>/dev/null || echo "")
-  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((d.get('message') or ti.get('description') or ti.get('question') or ti.get('command') or 'Approval required for: '+(d.get('tool_name') or d.get('notification_type') or 'unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
+  TOOL=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null || echo "")
+  MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent is executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
 fi
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1)
 ROADMAP_DIR=\${ROADMAP_DIR:-docs/roadmaps}
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -58,7 +81,7 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 mkdir -p "$ROADMAP_DIR"
 printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\\n' \\
   "$(echo "$TOOL" | sed 's/"/\\\\"/g')" \\
-  "$(echo "$MSG"  | sed 's/"/\\\\"/g; s/$//' | tr -d '\\n')" \\
+  "$(echo "$MSG"  | sed 's/"/\\\\"/g')" \\
   "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-attention.json"
 
 exit 0
@@ -68,12 +91,9 @@ const CLEANUP_SCRIPT = `#!/usr/bin/env bash
 # trackfw attention cleanup — PostToolUse/AfterTool hook
 set -euo pipefail
 
-INPUT=$(cat)
-HOOK_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null || true)
-[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD"
 [ -f "trackfw.yaml" ] || exit 0
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d "\"'" | head -1)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1)
 ROADMAP_DIR=\${ROADMAP_DIR:-docs/roadmaps}
 
 rm -f "$ROADMAP_DIR/.trackfw-attention.json"
@@ -111,30 +131,8 @@ function injectClaudeHooks(cwd) {
   const data = readJSON(filePath)
 
   if (!data.hooks) data.hooks = {}
-
-  // PreToolUse — AskUserQuestion
-  if (!data.hooks.PreToolUse) data.hooks.PreToolUse = []
-  let preEntry = data.hooks.PreToolUse.find(e => e && e.matcher === 'AskUserQuestion')
-  if (!preEntry) {
-    preEntry = { matcher: 'AskUserQuestion', hooks: [] }
-    data.hooks.PreToolUse.push(preEntry)
-  }
-  if (!Array.isArray(preEntry.hooks)) preEntry.hooks = []
-  if (!hasEntry(preEntry.hooks, 'command', SIGNAL_CMD)) {
-    preEntry.hooks.push({ type: 'command', command: SIGNAL_CMD })
-  }
-
-  // PostToolUse — cleanup
-  if (!data.hooks.PostToolUse) data.hooks.PostToolUse = []
-  let postEntry = data.hooks.PostToolUse.find(e => e && e.matcher === 'AskUserQuestion')
-  if (!postEntry) {
-    postEntry = { matcher: 'AskUserQuestion', hooks: [] }
-    data.hooks.PostToolUse.push(postEntry)
-  }
-  if (!Array.isArray(postEntry.hooks)) postEntry.hooks = []
-  if (!hasEntry(postEntry.hooks, 'command', CLEANUP_CMD)) {
-    postEntry.hooks.push({ type: 'command', command: CLEANUP_CMD })
-  }
+  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'AskUserQuestion', SIGNAL_CMD)
+  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'AskUserQuestion', CLEANUP_CMD)
 
   writeJSON(filePath, data)
 }
@@ -148,24 +146,8 @@ function injectCodexHooks(cwd) {
   const data = readJSON(filePath)
 
   if (!data.hooks) data.hooks = {}
-  if (!Array.isArray(data.hooks.PermissionRequest)) data.hooks.PermissionRequest = []
-  if (!Array.isArray(data.hooks.PostToolUse)) data.hooks.PostToolUse = []
-
-  const hasNestedCommand = (entries, command) => entries.some(
-    entry => Array.isArray(entry && entry.hooks) && entry.hooks.some(h => h && h.command === command)
-  )
-  if (!hasNestedCommand(data.hooks.PermissionRequest, SIGNAL_CMD)) {
-    data.hooks.PermissionRequest.push({
-      matcher: '.*',
-      hooks: [{ type: 'command', command: SIGNAL_CMD, timeout: 10, statusMessage: 'Waiting for approval' }],
-    })
-  }
-  if (!hasNestedCommand(data.hooks.PostToolUse, CLEANUP_CMD)) {
-    data.hooks.PostToolUse.push({
-      matcher: '.*',
-      hooks: [{ type: 'command', command: CLEANUP_CMD, timeout: 10 }],
-    })
-  }
+  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, '.*', SIGNAL_CMD)
+  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, '.*', CLEANUP_CMD)
 
   writeJSON(filePath, data)
 }
@@ -179,27 +161,8 @@ function injectGeminiHooks(cwd) {
   const data = readJSON(filePath)
 
   if (!data.hooks) data.hooks = {}
-
-  if (!Array.isArray(data.hooks.Notification)) data.hooks.Notification = []
-  if (!data.hooks.Notification.some(entry =>
-    entry && entry.matcher === 'ToolPermission' &&
-    Array.isArray(entry.hooks) && entry.hooks.some(hook => hook && hook.command === SIGNAL_CMD)
-  )) {
-    data.hooks.Notification.push({
-      matcher: 'ToolPermission',
-      hooks: [{ name: 'trackfw-attention-signal', type: 'command', command: SIGNAL_CMD, timeout: 10000 }],
-    })
-  }
-
-  if (!Array.isArray(data.hooks.AfterTool)) data.hooks.AfterTool = []
-  if (!data.hooks.AfterTool.some(entry =>
-    Array.isArray(entry && entry.hooks) && entry.hooks.some(hook => hook && hook.command === CLEANUP_CMD)
-  )) {
-    data.hooks.AfterTool.push({
-      matcher: '*',
-      hooks: [{ name: 'trackfw-attention-cleanup', type: 'command', command: CLEANUP_CMD, timeout: 10000 }],
-    })
-  }
+  data.hooks.Notification = mergeClaudeHookArray(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD)
+  data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, '*', CLEANUP_CMD)
 
   writeJSON(filePath, data)
 }
@@ -214,12 +177,14 @@ function injectKiroHooks(cwd) {
     hooks: [
       {
         name: 'trackfw-attention-signal',
+        description: 'Signals trackfw board when agent executes a tool',
         event: 'PreToolUse',
         matcher: { tool_name: '.*' },
         action: { type: 'command', command: SIGNAL_CMD },
       },
       {
         name: 'trackfw-attention-cleanup',
+        description: 'Clears trackfw board attention after tool completes',
         event: 'PostToolUse',
         matcher: { tool_name: '.*' },
         action: { type: 'command', command: CLEANUP_CMD },
@@ -236,11 +201,16 @@ function injectKiroHooks(cwd) {
 function injectCopilotHooks(cwd) {
   const filePath = path.join(cwd, '.github', 'hooks', 'trackfw-attention.json')
   const data = {
-    version: 1,
-    hooks: {
-      preToolUse: [{ type: 'command', bash: SIGNAL_CMD, cwd: '.', timeoutSec: 10 }],
-      postToolUse: [{ type: 'command', bash: CLEANUP_CMD, cwd: '.', timeoutSec: 10 }],
-    },
+    hooks: [
+      {
+        event: 'preToolUse',
+        run: SIGNAL_CMD,
+      },
+      {
+        event: 'postToolUse',
+        run: CLEANUP_CMD,
+      },
+    ],
   }
   writeJSON(filePath, data)
 }
@@ -264,6 +234,15 @@ function injectCursorHooks(cwd) {
   }
 
   writeJSON(filePath, data)
+}
+
+// ---------------------------------------------------------------------------
+// Windsurf — update .windsurfrules with attention instruction
+// ---------------------------------------------------------------------------
+
+function injectWindsurfHooks(cwd) {
+  const { injectRulesForTool } = require('./init')
+  return injectRulesForTool('windsurf', cwd)
 }
 
 // ---------------------------------------------------------------------------
@@ -298,12 +277,17 @@ function injectHooksDetected(cwd) {
     },
     copilot: {
       check: () =>
-        fs.existsSync(path.join(root, '.github', 'copilot-instructions.md')),
+        fs.existsSync(path.join(root, '.github', 'copilot-instructions.md')) ||
+        fs.existsSync(path.join(root, '.github', 'hooks')),
       fn: injectCopilotHooks,
     },
     cursor: {
       check: () => fs.existsSync(path.join(root, '.cursor')),
       fn: injectCursorHooks,
+    },
+    windsurf: {
+      check: () => fs.existsSync(path.join(root, '.windsurfrules')),
+      fn: injectWindsurfHooks,
     },
   }
 
@@ -325,5 +309,6 @@ module.exports = {
   injectKiroHooks,
   injectCopilotHooks,
   injectCursorHooks,
+  injectWindsurfHooks,
   injectHooksDetected,
 }

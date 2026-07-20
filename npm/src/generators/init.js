@@ -19,21 +19,23 @@ const GOV_DIRS = [
  * scaffold(cfg) — cria diretórios de governança e gera arquivos de configuração.
  * cfg = { projectName, projectType, frontend, backend, pkgManager, hooks, ci }
  */
-async function scaffold(cfg) {
+async function scaffold(cfg, cwd) {
+  const root = cwd || process.cwd()
   for (const dir of GOV_DIRS) {
-    fs.mkdirSync(dir, { recursive: true })
+    fs.mkdirSync(path.join(root, dir), { recursive: true })
     console.log(`  ✓ ${dir}`)
   }
 
-  writeTrackfwConfig(cfg)
-  generateValidateScript(cfg)
-  generateAttentionScripts(cfg)
-  generateCIWorkflow(cfg)
-  generateGitHooks(cfg)
-  generateCommitMsgHook(cfg)
-  generateClaudeMD(cfg)
-  if (cfg.backend === 'java') generatePomXml(cfg)
-  generateClaudeCommands()
+  writeTrackfwConfig(cfg, root)
+  generateValidateScript(cfg, root)
+  generateAttentionScripts(cfg, root)
+  generateCIWorkflow(cfg, root)
+  generateGitHooks(cfg, root)
+  generateCommitMsgHook(cfg, root)
+  generateClaudeMD(cfg, root)
+  if (cfg.backend === 'java') generatePomXml(cfg, root)
+  generateClaudeCommands(root)
+  injectHooksDetected(root)
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +126,11 @@ trackfw validate
 function generateAttentionScripts(cfg, cwd) {
   const { generateAttentionScripts: gen } = require('./hooks')
   gen(cfg, cwd || process.cwd())
+}
+
+function injectHooksDetected(cwd) {
+  const { injectHooksDetected: inject } = require('./hooks')
+  inject(cwd || process.cwd())
 }
 
 // ---------------------------------------------------------------------------
@@ -362,14 +369,18 @@ Write \`docs/roadmaps/.trackfw-attention.json\`:
 {"roadmap":"file.md","ml":"ML-1A","message":"what you need","level":"action_required","timestamp":"ISO8601Z"}
 \`\`\`
 Delete the file when resolved. Visible as a live banner in \`trackfw serve\`.
-` +
-'\n### Architecture Directives (mandatory)\n' +
-'- **3-layer arch + no in-memory data:** frontend / backend / database; always DB + ORM — never arrays/globals\n' +
-'- **Auth + Docker + .env from day 1:** never defer auth; containerize early; all config via env vars\n' +
-'- **2-layer validation + API-first:** frontend (UX) + backend (security); define OpenAPI contract first\n' +
-'- **Security wave + test coverage:** red-team review in every roadmap; TDD for critical; min 60%/80%\n' +
-'- Use `/trackfw:architect` to define stack before the first REQ\n' +
-RULES_END
+
+> **Windsurf users:** before asking the user a question or requesting approval, write
+> \`<roadmap_dir>/.trackfw-attention.json\` manually — there is no automatic hook for this.
+> Delete the file after the user responds.
+
+### Architecture Directives (mandatory)
+- **3-layer arch + no in-memory data:** frontend / backend / database; always DB + ORM — never arrays/globals
+- **Auth + Docker + .env from day 1:** never defer auth; containerize early; all config via env vars
+- **2-layer validation + API-first:** frontend (UX) + backend (security); define OpenAPI contract first
+- **Security wave + test coverage:** red-team review in every roadmap; TDD for critical; min 60%/80%
+- Use '/trackfw:architect' to define stack before the first REQ
+` + RULES_END
 }
 
 /**
@@ -1107,6 +1118,7 @@ module.exports = {
   installIntegrationTarget,
   injectRulesForTool,
   injectRulesDetected,
+  injectHooksDetected,
   trackfwRulesBlock,
   printArchitectNextSteps,
 }

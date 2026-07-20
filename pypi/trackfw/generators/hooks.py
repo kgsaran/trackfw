@@ -259,6 +259,12 @@ def inject_hooks_detected(cwd: str) -> None:
     Detecta CLIs presentes no projeto e injeta hooks de atenção em cada um.
     Erros são não-fatais: reportados mas não interrompem o fluxo.
     """
+    try:
+        from trackfw.generators.init_gen import _generate_attention_scripts
+        _generate_attention_scripts(cwd)
+    except Exception as e:
+        print(f'  ⚠ attention scripts: {e}')
+
     detections = {
         'claude': (
             lambda: os.path.isdir(os.path.join(cwd, '.claude')) or os.path.isfile(os.path.join(cwd, 'CLAUDE.md')),
