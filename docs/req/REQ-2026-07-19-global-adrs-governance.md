@@ -18,11 +18,11 @@ Habilitar a centralização de guias de estilo de arquitetura e desenvolvimento 
 
 ## Acceptance Criteria
 
-- [ ] Suporte à expansão de til (`~`) no carregamento de `adr_dirs` do `trackfw.yaml` nas linguagens Go, Node.js e Python.
-- [ ] Validador não falha builds de CI/CD se um diretório externo configurado não existir no runner.
-- [ ] Regra de validação `adr_orphan` ignora arquivos contidos fora da raiz do projeto local.
-- [ ] Geradores do comando `trackfw init` injetam a diretiva obrigatória de leitura de ADRs globais nos arquivos `CLAUDE.md` e `AGENTS.md`.
-- [ ] Testes de conformidade de caminhos implementados e verdes nas três distribuições do framework.
+- [x] Suporte à expansão de til (`~`) no carregamento de `adr_dirs` do `trackfw.yaml` nas linguagens Go, Node.js e Python.
+- [x] Validador não falha builds de CI/CD se um diretório externo configurado não existir no runner.
+- [x] Regra de validação `adr_orphan` ignora arquivos contidos fora da raiz do projeto local.
+- [x] Geradores do comando `trackfw init` injetam a diretiva obrigatória de leitura de ADRs globais nos arquivos `CLAUDE.md` e `AGENTS.md`.
+- [x] Testes de conformidade de caminhos implementados e verdes nas três distribuições do framework.
 
 ## Linked ADR
 

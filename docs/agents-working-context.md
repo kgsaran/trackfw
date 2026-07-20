@@ -2227,15 +2227,18 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - `internal/validator/validator_test.go`: adicionado teste `TestValidate_WithTildeInADRDirs`.
 - Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-1A marcado como `✅ Concluído`.
 
-## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO)
 
-**Tarefa:** Orquestração e disparo da Wave 3 do ROADMAP-2026-07-19-global-adrs-governance.md.
+**Tarefa:** Orquestração e implementação completa do ROADMAP-2026-07-19-global-adrs-governance.md.
 **Branch:** `feat/global-adrs-governance`
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
-**Ações:**
-- Wave 2 auditada e 100% verde nos 3 CLIs (Go, Node, Python). Commit da Wave 2 efetuado (`8a48a6e`).
-- Disparados 2 subagentes paralelos para Wave 3 (ML-3A Go/Node, ML-3B Python).
+**Entregues:**
+- **Wave 1:** Suporte à expansão de til (`~` / `~/`) no carregamento de `adr_dirs` em Go (`config.go`, `validator.go`), Node.js (`npm/src/config/index.js`, `npm/src/validator/index.js`) e Python (`pypi/trackfw/config.py`, `pypi/trackfw/validator.py`).
+- **Wave 2:** Suporte a `strict_ci_paths` (default `false`), conversão de diretórios externos não encontrados para `Warning` (em vez de Error) e isenção da verificação `adr_orphan` para ADRs fora do `cwd` local em Go, Node.js e Python.
+- **Wave 3:** Injeção da diretiva compulsória de leitura dos ADRs globais nos geradores de regras dos assistentes de IA (`CLAUDE.md`, `AGENTS.md` e `SKILL.md`) nas três linguagens.
+- **Wave 4:** Validação E2E com suítes de testes 100% verdes em Go, Node.js (21/21) e Python (310/310). Todos os critérios de aceite da REQ marcados como `[x]`. Roadmap finalizado em `docs/roadmaps/done/ROADMAP-2026-07-19-global-adrs-governance.md`.
+
 
 
 

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-19
 req: "docs/req/REQ-2026-07-19-global-adrs-governance.md"
 adr: "docs/adr/ADR-2026-07-19-global-adrs-governance.md"
@@ -8,7 +8,7 @@ branch: "feat/global-adrs-governance"
 
 # Roadmap: Suporte a ADRs Globais Compartilhados e Diretivas de IA
 
-> Criado em: 2026-07-19 | Status: 🔄 WIP
+> Criado em: 2026-07-19 | Status: ✅ Done
 > REQ: `docs/req/REQ-2026-07-19-global-adrs-governance.md`
 > ADR: `docs/adr/ADR-2026-07-19-global-adrs-governance.md`
 
@@ -158,7 +158,7 @@ ADRs globais/externos também não devem ser marcados como `adr_orphan` quando e
 > Dependências: Waves 1, 2 e 3 concluídas
 
 ### ML-4A — Testes de Integração e Paridade das 3 Distribuições
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Artemis (QA Specialist)
 **Ações:**
 1. Executar suítes completas de teste (`go test ./...`, `npm test`, `pytest`).
