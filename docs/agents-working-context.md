@@ -2501,8 +2501,8 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Agente:** 🌩️ Zeus - Principal Software Architect
 **Branch:** `fix/attention-hooks-pos-auditoria`
 
-**Status:** CONCLUÍDO
-- **Wave 1 & 2 (Go, Node.js, Python em paralelo):**
+- **Status:** CONCLUÍDO (13/13 achados zerados com testes verdes nos 3 CLIs)
+  - **C13 resolvido:** Adicionadas asserções de igualdade de conteúdo pós-2ª injeção (`bytes.Equal` em Go, `deepStrictEqual` em Node e `assertEqual` em Python) para Kiro e Copilot. `make quality` 100% verde.
   - **Apolo (Go):** Alinhado evento do Claude (`PreToolUse[AskUserQuestion]`) e Codex (`PermissionRequest`). Resiliência de script shell contra `grep` sem match sob `pipefail`. Path containment e JSON escaping. Constante de ADRs globais unificada. `go test ./...` 100% verde.
   - **Afrodite (Node):** Alinhado evento do Codex (`PermissionRequest`). Resiliência de script shell sob `pipefail`. Path containment e JSON escaping. Constante de ADRs globais unificada. `npm test` (58 testes) 100% verde.
   - **Python Specialist:** Resiliência de script shell sob `pipefail`. Path containment e JSON escaping. Exceção silenciosa em `discover.py` removida. Granularidade por-arquivo de `adr_orphan` com `realpath` e suporte a `windsurf`. Constante de ADRs globais. `pytest pypi/tests/` (330 testes) 100% verde.

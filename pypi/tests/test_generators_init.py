@@ -377,7 +377,7 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         inject_kiro_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
-        self.assertEqual(len(data2.get('hooks', [])), 2)
+        self.assertEqual(data, data2)
 
     def test_inject_copilot_hooks(self):
         from trackfw.generators.hooks import inject_copilot_hooks

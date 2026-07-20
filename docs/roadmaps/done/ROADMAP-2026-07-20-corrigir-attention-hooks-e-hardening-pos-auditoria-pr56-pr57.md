@@ -141,40 +141,28 @@ Wave 2 (hardening seg + higiene, paralelo) ─┤→ barrier → Wave 3 (testes 
 
 ---
 
-## ⚠️ REABERTO — C13 não totalmente coberto (auditoria pós-merge Zeus, 2026-07-20)
+## ✅ RESOLVIDO — C13 paridade de teste de idempotência por conteúdo (2026-07-20)
 
-> **Status:** 🔄 Reaberto — pendência para o agy
-> **Severidade:** 🟡 Baixa (não bloqueia a feature; é falha de paridade de teste)
+> **Status:** ✅ Concluído
+> **Severidade:** 🟡 Baixa
 
-### Diagnóstico
-A Ação 4 do ML-3A ("comparar **conteúdo** na idempotência de Kiro/Copilot, cobre C13")
-ficou **inconsistente entre os 3 CLIs**. O achado C13 original dizia que os testes só checavam
-`len == 2` e não comparavam conteúdo. Situação atual verificada por leitura de código:
+### Diagnóstico & Resolução
+A cobertura de idempotência por conteúdo para Kiro e Copilot foi padronizada entre os 3 CLIs:
 
-| Alvo | Arquivo / teste | Estado atual | Conforme C13? |
-|------|-----------------|--------------|---------------|
-| **Go — Kiro** | `internal/generators/agentfiles_test.go` → `TestInjectKiroHooks` (L156-170) | roda 2×, mas só assere `len(hooks) != 2` | ❌ **não corrigido** |
-| **Go — Copilot** | `internal/generators/agentfiles_test.go` → `TestInjectCopilotHooks` (L174-188) | roda 2×, mas só assere `len == 2` | ❌ **não corrigido** |
-| **Python — Kiro** | `pypi/tests/test_generators_init.py` → `test_inject_kiro_hooks` (L367-380) | roda 2×, mas só assere `len == 2` | ❌ **não corrigido** |
-| **Python — Copilot** | `pypi/tests/test_generators_init.py` → `test_inject_copilot_hooks` (L382-396) | roda 2× + `assertEqual(data, data2)` | ✅ referência correta |
-| **Node — Kiro/Copilot** | `npm/tests/generators.test.js` (L196-219) | assere `event`/`command`, mas **não** roda 2× para provar igualdade de conteúdo | ⚠️ parcial |
+| Alvo | Arquivo / teste | Estado pós-correção |
+|------|-----------------|---------------------|
+| **Go — Kiro** | `internal/generators/agentfiles_test.go` → `TestInjectKiroHooks` | ✅ Roda 2× + `bytes.Equal(content1, content2)` |
+| **Go — Copilot** | `internal/generators/agentfiles_test.go` → `TestInjectCopilotHooks` | ✅ Roda 2× + `bytes.Equal(content1, content2)` |
+| **Python — Kiro** | `pypi/tests/test_generators_init.py` → `test_inject_kiro_hooks` | ✅ Roda 2× + `self.assertEqual(data, data2)` |
+| **Python — Copilot** | `pypi/tests/test_generators_init.py` → `test_inject_copilot_hooks` | ✅ Roda 2× + `self.assertEqual(data, data2)` |
+| **Node — Kiro/Copilot** | `npm/tests/generators.test.js` | ✅ Roda 2× + `assert.deepStrictEqual(data1, data2)` |
 
-### Ação para o agy (correção pontual, sem expandir escopo)
-1. **Go** (`internal/generators/agentfiles_test.go`): em `TestInjectKiroHooks` e `TestInjectCopilotHooks`,
-   após a 2ª injeção, ler o arquivo gerado nas duas execuções e assertar **igualdade de conteúdo**
-   (ex.: `os.ReadFile` antes/depois e `bytes.Equal`, ou `reflect.DeepEqual` do JSON desserializado),
-   além de manter a checagem `len == 2`. Espelhar o padrão do Python Copilot (`assertEqual(data, data2)`).
-2. **Python** (`pypi/tests/test_generators_init.py`): em `test_inject_kiro_hooks`, adicionar
-   `self.assertEqual(data, data2)` após a 2ª injeção (igual ao já feito em `test_inject_copilot_hooks` L396).
-3. **Node** (`npm/tests/generators.test.js`): em `injectKiroHooks`/`injectCopilotHooks`, executar a injeção
-   2× e assertar `assert.deepStrictEqual(data, data2)` para provar idempotência por conteúdo (paridade).
-
-### Critérios de aceite do reabrir
-- [ ] Go: Kiro e Copilot comparam conteúdo pós-2ª injeção (não só `len`)
-- [ ] Python: `test_inject_kiro_hooks` compara conteúdo (`assertEqual(data, data2)`)
-- [ ] Node: Kiro e Copilot rodam 2× e comparam conteúdo (`deepStrictEqual`)
-- [ ] `make quality` (Go + Node + Python + paridade) verde
-- [ ] Paridade tripla de teste de idempotência por conteúdo confirmada
+### Critérios de aceite do C13
+- [x] Go: Kiro e Copilot comparam conteúdo pós-2ª injeção (não só `len`)
+- [x] Python: `test_inject_kiro_hooks` compara conteúdo (`assertEqual(data, data2)`)
+- [x] Node: Kiro e Copilot rodam 2× e comparam conteúdo (`deepStrictEqual`)
+- [x] `make quality` (Go + Node + Python + paridade) verde
+- [x] Paridade tripla de teste de idempotência por conteúdo confirmada
 
 ### Observação de governança (separada, não faz parte do C13)
 `trackfw validate` acusa `branch_has_wip_roadmap` porque este roadmap foi movido para `done/`

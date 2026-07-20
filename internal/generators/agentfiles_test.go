@@ -1,6 +1,7 @@
 package generators
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -158,11 +159,25 @@ func TestInjectKiroHooks(t *testing.T) {
 	if err := InjectKiroHooks(dir); err != nil {
 		t.Fatalf("InjectKiroHooks failed: %v", err)
 	}
+	file := filepath.Join(dir, ".kiro", "hooks", "trackfw-attention.json")
+	content1, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+
 	if err := InjectKiroHooks(dir); err != nil {
 		t.Fatalf("second InjectKiroHooks failed: %v", err)
 	}
+	content2, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("second ReadFile failed: %v", err)
+	}
 
-	data := helperReadJSON(t, filepath.Join(dir, ".kiro", "hooks", "trackfw-attention.json"))
+	if !bytes.Equal(content1, content2) {
+		t.Fatalf("expected Kiro config content to be identical after 2nd injection")
+	}
+
+	data := helperReadJSON(t, file)
 	hooks, _ := data["hooks"].([]interface{})
 	if len(hooks) != 2 {
 		t.Fatalf("expected 2 hooks in Kiro config, got %d", len(hooks))
@@ -176,11 +191,25 @@ func TestInjectCopilotHooks(t *testing.T) {
 	if err := InjectCopilotHooks(dir); err != nil {
 		t.Fatalf("InjectCopilotHooks failed: %v", err)
 	}
+	file := filepath.Join(dir, ".github", "hooks", "trackfw-attention.json")
+	content1, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+
 	if err := InjectCopilotHooks(dir); err != nil {
 		t.Fatalf("second InjectCopilotHooks failed: %v", err)
 	}
+	content2, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("second ReadFile failed: %v", err)
+	}
 
-	data := helperReadJSON(t, filepath.Join(dir, ".github", "hooks", "trackfw-attention.json"))
+	if !bytes.Equal(content1, content2) {
+		t.Fatalf("expected Copilot config content to be identical after 2nd injection")
+	}
+
+	data := helperReadJSON(t, file)
 	hooks, ok := data["hooks"].([]interface{})
 	if !ok || len(hooks) != 2 {
 		t.Fatalf("expected hooks array of size 2, got %v", data["hooks"])

@@ -193,30 +193,38 @@ test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', 
   assert.equal(data.hooks.Notification[0].hooks.length, 1)
 })
 
-test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json', () => {
+test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-kiro-hooks-'))
   const hookPath = path.join(tmpDir, '.kiro', 'hooks', 'trackfw-attention.json')
 
   injectKiroHooks(tmpDir)
-  let data = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
-  assert.equal(data.hooks.length, 2)
-  assert.equal(data.hooks[0].event, 'PreToolUse')
-  assert.equal(data.hooks[0].action.command, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(data.hooks[1].event, 'PostToolUse')
-  assert.equal(data.hooks[1].action.command, 'scripts/trackfw-attention-cleanup.sh')
+  let data1 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
+  assert.equal(data1.hooks.length, 2)
+  assert.equal(data1.hooks[0].event, 'PreToolUse')
+  assert.equal(data1.hooks[0].action.command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data1.hooks[1].event, 'PostToolUse')
+  assert.equal(data1.hooks[1].action.command, 'scripts/trackfw-attention-cleanup.sh')
+
+  injectKiroHooks(tmpDir)
+  let data2 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
+  assert.deepStrictEqual(data1, data2)
 })
 
-test('injectCopilotHooks creates .github/hooks/trackfw-attention.json', () => {
+test('injectCopilotHooks creates .github/hooks/trackfw-attention.json idempotently', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-copilot-hooks-'))
   const hookPath = path.join(tmpDir, '.github', 'hooks', 'trackfw-attention.json')
 
   injectCopilotHooks(tmpDir)
-  let data = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
-  assert.equal(data.hooks.length, 2)
-  assert.equal(data.hooks[0].event, 'preToolUse')
-  assert.equal(data.hooks[0].run, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(data.hooks[1].event, 'postToolUse')
-  assert.equal(data.hooks[1].run, 'scripts/trackfw-attention-cleanup.sh')
+  let data1 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
+  assert.equal(data1.hooks.length, 2)
+  assert.equal(data1.hooks[0].event, 'preToolUse')
+  assert.equal(data1.hooks[0].run, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data1.hooks[1].event, 'postToolUse')
+  assert.equal(data1.hooks[1].run, 'scripts/trackfw-attention-cleanup.sh')
+
+  injectCopilotHooks(tmpDir)
+  let data2 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
+  assert.deepStrictEqual(data1, data2)
 })
 
 test('injectCursorHooks creates and merges .cursor/hooks.json idempotently', () => {
