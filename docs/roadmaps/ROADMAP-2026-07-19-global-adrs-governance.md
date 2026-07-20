@@ -125,7 +125,7 @@ ADRs globais/externos também não devem ser marcados como `adr_orphan` quando e
 > Dependências: Wave 2 concluída
 
 ### ML-3A — Go & Node.js: Injeção de Diretiva de ADRs Globais
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo (Backend Specialist)
 **Arquivos afetados:**
 - `internal/generators/claudemd.go`
@@ -142,7 +142,7 @@ ADRs globais/externos também não devem ser marcados como `adr_orphan` quando e
 ---
 
 ### ML-3B — Python: Injeção de Diretiva de ADRs Globais
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo (Backend Specialist)
 **Arquivos afetados:**
 - `pypi/trackfw/generators/init_gen.py`

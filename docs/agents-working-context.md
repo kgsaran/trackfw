@@ -2229,13 +2229,14 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 ## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
 
-**Tarefa:** Orquestração e disparo da Wave 2 do ROADMAP-2026-07-19-global-adrs-governance.md.
+**Tarefa:** Orquestração e disparo da Wave 3 do ROADMAP-2026-07-19-global-adrs-governance.md.
 **Branch:** `feat/global-adrs-governance`
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
 **Ações:**
-- Wave 1 auditada e 100% verde nos 3 CLIs (Go, Node, Python). Commit da Wave 1 efetuado (`d76c367`).
-- Disparados 3 subagentes paralelos para Wave 2 (ML-2A Go, ML-2B Node, ML-2C Python).
+- Wave 2 auditada e 100% verde nos 3 CLIs (Go, Node, Python). Commit da Wave 2 efetuado (`8a48a6e`).
+- Disparados 2 subagentes paralelos para Wave 3 (ML-3A Go/Node, ML-3B Python).
+
 
 
 ## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-1C)
@@ -2314,12 +2315,35 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
   - `isOutsideCWD`: helper que determina se um caminho está fora da raiz do projeto local (`cwd`).
   - `validateADRsAreReferenced`: isenta arquivos ADR localizados fora do `cwd` da verificação `adr_orphan`.
 - `internal/validator/validator_test.go`: adicionados testes `TestValidate_NonExistentADRDirs_WarningByDefault`, `TestValidate_NonExistentADRDirs_StrictCIPathsError` e `TestValidate_ExternalADROrphanExemption`.
-- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-2A marcado como `✅ Concluído`.
 
 
+---
 
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-3B)
 
+**Tarefa:** ML-3B do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Injetar a diretiva obrigatória de leitura dos ADRs globais no gerador de regras de agente para Python.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
 
+**Entregue:**
+- `pypi/trackfw/generators/init_gen.py`: inclusão da diretiva `"- Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura."` na seção `Architecture Directives (mandatory)` de `_trackfw_rules_block()`.
+- `pypi/tests/test_generators_init.py`: adicionada a classe `TestGlobalADRsRuleDirective` com teste `test_rules_block_contains_global_adrs_directive` validando a presença da nova diretiva no bloco gerado e na injeção em arquivos de agentes.
+- `pypi/tests/test_rules_agents.py`: atualizado para asserção do snippet da diretiva em múltiplos assistentes.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-3B marcado como `✅ Concluído`.
 
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-3A)
+
+**Tarefa:** ML-3A do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Injetar a diretiva obrigatória de leitura dos ADRs globais nos geradores de regras de agente para Go e Node.js.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `internal/generators/claudemd.go`: inclusão da diretiva `"8. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**"` no bloco de Agent rules.
+- `internal/generators/scaffold.go`: inclusão da mesma diretiva nas Regras invioláveis de `installGlobalSkillInner`.
+- `internal/generators/agentfiles.go`: inclusão da diretiva no Agent Protocol de `trackfwRulesBlock()`.
+- `internal/generators/claudemd_test.go`: criação de suíte de testes unitários Go cobrindo a presença da diretiva em `CLAUDE.md`, `trackfwRulesBlock` e na skill global `SKILL.md`.
+- `npm/src/generators/init.js`: inclusão da diretiva em `trackfwRulesBlock()` e `generateClaudeMD()`.
+- `npm/tests/generators.test.js`: criação de suíte de testes unitários Node.js validando a inclusão da diretiva no bloco de regras e em arquivos gerados.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-3A marcado como `✅ Concluído`.
 
 

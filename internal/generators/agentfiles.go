@@ -46,6 +46,7 @@ Chain: ` + "`ADR → REQ → ROADMAP`" + ` · States: ` + "`backlog / wip / bloc
 1. **Before starting:** run ` + "`trackfw context`" + ` · read ` + "`docs/agents-working-context.md`" + `
 2. **After finishing:** update ` + "`docs/agents-working-context.md`" + ` with what changed
 3. **Before PR:** ` + "`trackfw validate`" + ` must pass
+4. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**
 
 ### Key Commands
 - ` + "`trackfw context`" + ` — current governance state (always run first)

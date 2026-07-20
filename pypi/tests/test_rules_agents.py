@@ -27,21 +27,21 @@ class TestAgentRules(unittest.TestCase):
         self._assert_idempotent(
             "cursor",
             os.path.join(".cursor", "rules", "trackfw.mdc"),
-            ["---", "alwaysApply: true", "trackfw governance"],
+            ["---", "alwaysApply: true", "trackfw governance", "ADRs globais nos diretórios listados em adr_dirs"],
         )
 
     def test_windsurf_rules(self):
         self._assert_idempotent(
             "windsurf",
             ".windsurfrules",
-            ["# Windsurf Rules", "AI-native delivery governance"],
+            ["# Windsurf Rules", "AI-native delivery governance", "ADRs globais nos diretórios listados em adr_dirs"],
         )
 
     def test_amazonq_rules(self):
         self._assert_idempotent(
             "amazonq",
             os.path.join(".amazonq", "developer", "guidelines.md"),
-            ["# Amazon Q Developer Guidelines", "AI-native delivery governance"],
+            ["# Amazon Q Developer Guidelines", "AI-native delivery governance", "ADRs globais nos diretórios listados em adr_dirs"],
         )
 
 

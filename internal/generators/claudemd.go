@@ -31,7 +31,8 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("4. **ML lifecycle — mandatory:** When starting a ML, change `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` and commit the roadmap. When completing, change to `**Status:** ✅ Concluído` and include in the ML commit. When analyzing a roadmap before starting, move it from `backlog/` to `analyzing/`; only move to `wip/` when actually coding.\n")
 	sb.WriteString("5. **Run `trackfw validate` before every commit.** Zero violations required.\n")
 	sb.WriteString("6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n")
-	sb.WriteString("7. **Use `/trackfw:architect` to define stack and architecture before the first REQ.**\n\n")
+	sb.WriteString("7. **Use `/trackfw:architect` to define stack and architecture before the first REQ.**\n")
+	sb.WriteString("8. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**\n\n")
 
 	sb.WriteString("## Slash commands (Claude Code)\n\n")
 	sb.WriteString("| Command | When to use |\n")
