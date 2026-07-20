@@ -2107,3 +2107,84 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Progresso:**
 - Criado o script Python em `~/.gemini/antigravity-cli/statusline.py` para receber o payload do CLI e formatá-lo com cores e setas Powerline.
 - Atualizado o arquivo de configuração `~/.gemini/antigravity-cli/settings.json` para apontar para o novo script.
+
+---
+
+## Sessão 2026-07-19 — Apolo ML-1C (CONCLUÍDO)
+
+**Tarefa:** ML-1C do roadmap `ROADMAP-2026-07-19-antigravity-agent-tools.md` — Implementar renderer `agent-directory` no CLI Python.
+
+**Arquivos alterados:**
+- `pypi/trackfw/integrations/renderers.py` — novo branch para `kind == "agents" and target == "antigravity" and surface == "current"`: reconstrói frontmatter com mapeamento de model (opus→pro, sonnet→flash) e injeção de tools (SET_IMPL 10 / SET_ARCH 14). Helpers: `_map_model`, `_agent_tools`, constantes `_MODEL_MAP`, `_SET_IMPL`, `_SET_ARCH`.
+- `pypi/tests/test_agents_skills.py` — novo teste `test_antigravity_current_surface_renders_agent_directory`: valida architect (14 tools, model: pro, sem opus) e backend (10 tools, model: flash, sem define_subagent), ambos sem IDs proibidos.
+
+**Resultado:** 31/31 testes verdes. Paridade byte-a-byte com implementação Go (`internal/integrations/render.go`).
+
+---
+
+## Sessão 2026-07-19 — ML-1A: Render agent-directory para Antigravity (IMPLEMENTANDO)
+
+**Agente:** Apolo (Backend Specialist)
+**Branch:** feat/antigravity-agent-tools (criada por Zeus)
+
+**Objetivo:** Adicionar `case "agent-directory"` em `internal/integrations/render.go` para reconstruir frontmatter sem `model: opus|sonnet` e com `tools:` (SET_IMPL / SET_ARCH).
+
+**Progresso:**
+- Estendeu `markdownParts` para retornar 4º valor `model string`.
+- Adicionou `case "agent-directory"` no switch de `Render` com reconstrução de frontmatter.
+- Implementou helpers `mapModel` (opus→pro, sonnet→flash, passthrough para flash_lite/flash/pro) e `agentTools` (SET_IMPL 10 tools / SET_ARCH 14 tools).
+- Adicionou `TestRenderAgentDirectory` com subtestes architect e backend.
+- `go test ./internal/integrations/...` verde.
+- `make build` sem erros.
+- Nenhum asset alterado.
+
+**Status: CONCLUIDO**
+
+---
+
+## Sessão 2026-07-19 — ML-1B: Render agent-directory para Antigravity no CLI Node.js (CONCLUÍDO)
+
+**Agente:** Apolo (Backend Specialist)
+**Branch:** feat/antigravity-agent-tools (criada por Zeus)
+
+**Objetivo:** Adaptar `npm/src/integrations/render.js` para a representação `agent-directory` com mapa de model e injeção de tools; adicionar teste golden em `npm/tests/agents-skills.test.js`.
+
+**Entregue:**
+- `markdownParts` estendido para capturar campo `model` do frontmatter.
+- Helpers `resolveModel` (opus→pro, sonnet→flash, passthrough flash_lite/flash/pro, '' para ausente/não-mapeável) e `toolsFor` (SET_ARCH 14 tools para nomes terminando em "architect", SET_IMPL 10 tools para demais).
+- Constantes `SET_IMPL` e `SET_ARCH` locais; IDs proibidos nunca incluídos.
+- Branch `if (capability.representation === 'agent-directory')` que reconstrói frontmatter e preserva body.
+- Formato byte-equivalente ao Go (ML-1A): `---\nname/description/model(opcional)/tools---\nbody\n`.
+- Teste golden `'Antigravity agent-directory renderer é byte-equivalente ao contrato Go/Python'` com `assert.equal` de string completa para architect e backend + asserts de ausência de IDs proibidos.
+- `node --test npm/tests/agents-skills.test.js`: 21/21 testes passando.
+- Nenhum asset em `npm/src/integrations/assets/agents/` alterado.
+
+---
+
+## 2026-07-19 — Apolo | Housekeeping: sincronização de version files → 2.14.0
+
+**Status:** CONCLUIDO
+**Branch:** `chore/sync-version-files-2.14.0`
+**Agente:** Apolo (Backend Senior Specialist)
+
+### O que foi feito
+- Bump de `2.12.4` → `2.14.0` nos 5 version files: `internal/version/version.go`, `npm/package.json`, `pypi/pyproject.toml`, `pypi/trackfw/__init__.py`, `docs/visao-projeto/VISION.md`.
+- Build validado: `make build` sem erros.
+- Binário confirmado: `./bin/trackfw version` → `trackfw v2.14.0`.
+- Testes verdes: `go test ./internal/version/... ./internal/integrations/...`.
+- grep de residual `2.12.4` nos 5 arquivos: vazio.
+- Commit: `2ed0874` — apenas os 5 arquivos, sem push (Zeus faz o push).
+
+---
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO)
+
+**Tarefa:** Verificação e consolidação do backlog para codar no projeto.
+**Agente:** 🌩️ Zeus - Principal Software Architect
+
+**Ações:**
+- Inspecionados diretórios `docs/req/`, `docs/roadmaps/`, `docs/requisições/` e `docs/adr/`.
+- Mapeadas 4 demandas pendentes/backlog (1 REQ sem Roadmap, 1 REQ com Roadmap em `done` não-executado, 2 REQs com Roadmaps em `wip`).
+- Apresentado panorama detalhado com plano de ação e sugestões de handoff orquestrado.
+
+
