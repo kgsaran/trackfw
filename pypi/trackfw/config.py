@@ -129,6 +129,7 @@ def _parse(content, cfg):
         nonlocal in_acceptance_markers, acceptance_markers, in_rules, rules
 
         if in_adr_dirs and adr_dirs:
+            # Expansão nativa de ~ e ~user/ via stdlib (os.path.expanduser) em adr_dirs
             cfg["adr_dirs"] = [os.path.expanduser(p) for p in adr_dirs]
         if in_agents and agents:
             cfg["agents"] = agents[:]

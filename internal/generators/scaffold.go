@@ -148,7 +148,7 @@ A cadeia obrigatória é: **ADR → REQ → ROADMAP → backlog/wip/blocked/done
    - Ao **analisar** um roadmap antes de iniciar: mova o arquivo de ` + "`backlog/`" + ` para ` + "`analyzing/`" + `; só mova para ` + "`wip/`" + ` ao começar a codificar de fato.
 5. **Execute ` + "`trackfw validate`" + ` antes de cada commit.** Zero violations obrigatório.
 6. **ADRs antes de decisões arquiteturais.** Qualquer decisão técnica relevante deve ter um ADR (` + "`/trackfw:adr`" + `).
-7. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**
+7. **` + GlobalADRsDirective + `**
 
 ---
 
@@ -601,15 +601,28 @@ else
   MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent is executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
 fi
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1 || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
+case "$ROADMAP_DIR" in
+  /*)
+    CWD=$(pwd)
+    case "$ROADMAP_DIR" in
+      "$CWD"/*) ROADMAP_DIR=".${ROADMAP_DIR#"$CWD"}" ;;
+      "$CWD")   ROADMAP_DIR="." ;;
+      *)        ROADMAP_DIR="docs/roadmaps" ;;
+    esac
+    ;;
+esac
+case "$ROADMAP_DIR" in
+  *..*) ROADMAP_DIR="docs/roadmaps" ;;
+esac
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 mkdir -p "$ROADMAP_DIR"
 printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\n' \
-  "$(echo "$TOOL" | sed 's/"/\\"/g')" \
-  "$(echo "$MSG"  | sed 's/"/\\"/g')" \
+  "$(echo "$TOOL" | tr -d '\n' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')" \
+  "$(echo "$MSG"  | tr -d '\n' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')" \
   "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-attention.json"
 
 exit 0
@@ -621,8 +634,21 @@ set -euo pipefail
 
 [ -f "trackfw.yaml" ] || exit 0
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1 || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
+case "$ROADMAP_DIR" in
+  /*)
+    CWD=$(pwd)
+    case "$ROADMAP_DIR" in
+      "$CWD"/*) ROADMAP_DIR=".${ROADMAP_DIR#"$CWD"}" ;;
+      "$CWD")   ROADMAP_DIR="." ;;
+      *)        ROADMAP_DIR="docs/roadmaps" ;;
+    esac
+    ;;
+esac
+case "$ROADMAP_DIR" in
+  *..*) ROADMAP_DIR="docs/roadmaps" ;;
+esac
 
 rm -f "$ROADMAP_DIR/.trackfw-attention.json"
 exit 0

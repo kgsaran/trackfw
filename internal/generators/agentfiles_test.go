@@ -64,8 +64,8 @@ func TestInjectClaudeHooks_Create(t *testing.T) {
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
 
-	if !helperHasClaudeHook(data, "PermissionRequest", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
-		t.Error("PermissionRequest[AskUserQuestion] → signal.sh missing")
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
+		t.Error("PreToolUse[AskUserQuestion] → signal.sh missing")
 	}
 	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse[AskUserQuestion] → cleanup.sh missing")
@@ -78,7 +78,7 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	existing := map[string]interface{}{
 		"permissions": map[string]interface{}{"defaultMode": "default"},
 		"hooks": map[string]interface{}{
-			"PermissionRequest": []interface{}{
+			"PreToolUse": []interface{}{
 				map[string]interface{}{
 					"matcher": "Bash",
 					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": "scripts/other.sh"}},
@@ -97,17 +97,17 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
 
-	if !helperHasClaudeHook(data, "PermissionRequest", "Bash", "scripts/other.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/other.sh") {
 		t.Error("existing Bash hook lost during merge")
 	}
-	if !helperHasClaudeHook(data, "PermissionRequest", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
-		t.Error("PermissionRequest signal hook missing")
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
+		t.Error("PreToolUse signal hook missing")
 	}
 
 	hooks, _ := data["hooks"].(map[string]interface{})
-	pr, _ := hooks["PermissionRequest"].([]interface{})
+	pr, _ := hooks["PreToolUse"].([]interface{})
 	if len(pr) != 2 {
-		t.Errorf("expected 2 PermissionRequest entries, got %d", len(pr))
+		t.Errorf("expected 2 PreToolUse entries, got %d", len(pr))
 	}
 }
 
@@ -123,8 +123,8 @@ func TestInjectCodexHooks(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", ".*", "scripts/trackfw-attention-signal.sh") {
-		t.Error("Codex PreToolUse hook missing")
+	if !helperHasClaudeHook(data, "PermissionRequest", ".*", "scripts/trackfw-attention-signal.sh") {
+		t.Error("Codex PermissionRequest hook missing")
 	}
 	if !helperHasClaudeHook(data, "PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("Codex PostToolUse hook missing")

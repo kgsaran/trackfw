@@ -7,15 +7,6 @@ import (
 	"strings"
 )
 
-var (
-	injectClaudeHooks  = InjectClaudeHooks
-	injectCodexHooks   = InjectCodexHooks
-	injectGeminiHooks  = InjectGeminiHooks
-	injectKiroHooks    = InjectKiroHooks
-	injectCopilotHooks = InjectCopilotHooks
-	injectCursorHooks  = InjectCursorHooks
-)
-
 // InjectHooksDetected detecta quais CLIs estão presentes no cwd e injeta os attention hooks
 // em cada um. Erros são coletados e retornados como string joined (não para na primeira falha).
 func InjectHooksDetected(cwd string) error {

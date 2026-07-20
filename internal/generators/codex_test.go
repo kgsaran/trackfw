@@ -50,8 +50,8 @@ func TestInstallCodexCreatesNativeArtifacts(t *testing.T) {
 	}
 
 	hooks := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
-	if !helperHasClaudeHook(hooks, "PreToolUse", ".*", "scripts/trackfw-attention-signal.sh") {
-		t.Error("PreToolUse attention hook not found")
+	if !helperHasClaudeHook(hooks, "PermissionRequest", ".*", "scripts/trackfw-attention-signal.sh") {
+		t.Error("PermissionRequest attention hook not found")
 	}
 	if !helperHasClaudeHook(hooks, "PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse cleanup hook not found")

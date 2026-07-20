@@ -4,6 +4,7 @@ tests/test_generators_init.py — testes para generators/init_gen.py
 
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 
@@ -503,7 +504,7 @@ class TestGenerateClaudeCommands(unittest.TestCase):
             self.assertTrue(os.path.isfile(cmd_path), f'Slash command {cmd} não foi criado')
 
     def test_rules_block_contains_architecture_directives(self):
-        from trackfw.generators.init_gen import _trackfw_rules_block
+        from trackfw.generators.init_gen import _trackfw_rules_block, GLOBAL_ADR_DIRECTIVE
 
         block = _trackfw_rules_block()
         self.assertIn('### Architecture Directives (mandatory)', block)
@@ -516,6 +517,146 @@ class TestGenerateClaudeCommands(unittest.TestCase):
         self.assertIn('Security wave:', block)
         self.assertIn('Test coverage:', block)
         self.assertIn('Use `/trackfw:architect` to define stack before the first REQ', block)
+        self.assertIn(GLOBAL_ADR_DIRECTIVE, block)
+
+    def test_global_adr_directive_constant(self):
+        from trackfw.generators.init_gen import GLOBAL_ADR_DIRECTIVE
+        self.assertIn("Obrigatório: Inspecione e respeite todos os ADRs globais", GLOBAL_ADR_DIRECTIVE)
+
+
+class TestAttentionScriptsExecutionAndHardening(unittest.TestCase):
+    """Testes de contrato e hardening dos scripts shell de atenção (C1, C4, C5)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        opts = {'project_name': 'test-proj', 'namespacing': 'flat', 'wip_limit': 1}
+        scaffold(self.tmp, opts)
+        self.signal_script = os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')
+        self.cleanup_script = os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')
+
+    def test_script_execution_without_roadmap_dir_in_yaml(self):
+        """(C1) Script executa com sucesso quando trackfw.yaml não possui roadmap_dir:."""
+        yaml_path = os.path.join(self.tmp, 'trackfw.yaml')
+        with open(yaml_path, 'w', encoding='utf-8') as f:
+            f.write("backend: python\n")
+
+        payload = json.dumps({
+            "tool_name": "bash",
+            "tool_input": {"command": "echo hello"}
+        })
+
+        res = subprocess.run(
+            [self.signal_script],
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=self.tmp,
+            shell=False
+        )
+        self.assertEqual(res.returncode, 0, f"Signal script falhou com stdout: {res.stdout}, stderr: {res.stderr}")
+
+        attention_file = os.path.join(self.tmp, 'docs', 'roadmaps', '.trackfw-attention.json')
+        self.assertTrue(os.path.isfile(attention_file), "Attention file não foi criado no fallback docs/roadmaps")
+
+        res_clean = subprocess.run(
+            [self.cleanup_script],
+            capture_output=True,
+            text=True,
+            cwd=self.tmp,
+            shell=False
+        )
+        self.assertEqual(res_clean.returncode, 0)
+        self.assertFalse(os.path.exists(attention_file), "Attention file não foi removido pelo cleanup script")
+
+    def test_path_containment_in_roadmap_dir(self):
+        """(C4) roadmap_dir apontando para fora do CWD é contido ao fallback docs/roadmaps."""
+        yaml_path = os.path.join(self.tmp, 'trackfw.yaml')
+        with open(yaml_path, 'w', encoding='utf-8') as f:
+            f.write("roadmap_dir: ../../outside\n")
+
+        payload = json.dumps({
+            "tool_name": "test_tool",
+            "tool_input": {"question": "Are you sure?"}
+        })
+
+        res = subprocess.run(
+            [self.signal_script],
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=self.tmp,
+            shell=False
+        )
+        self.assertEqual(res.returncode, 0)
+
+        outside_file = os.path.abspath(os.path.join(self.tmp, '..', '..', 'outside', '.trackfw-attention.json'))
+        self.assertFalse(os.path.exists(outside_file), "Escreveu fora do CWD em roadmap_dir malicioso")
+
+        inside_file = os.path.join(self.tmp, 'docs', 'roadmaps', '.trackfw-attention.json')
+        self.assertTrue(os.path.isfile(inside_file), "Arquivo de atenção não foi salvo no fallback contido")
+
+    def test_json_escaping_with_quotes_slashes_and_newlines(self):
+        """(C5) tool_name/message contendo aspas, barras invertidas e newlines gera JSON válido."""
+        payload = json.dumps({
+            "tool_name": 'tool\\"name\\foo',
+            "tool_input": {"question": "Line 1\nLine 2 \"quoted\" \\slash\\"}
+        })
+
+        res = subprocess.run(
+            [self.signal_script],
+            input=payload,
+            capture_output=True,
+            text=True,
+            cwd=self.tmp,
+            shell=False
+        )
+        self.assertEqual(res.returncode, 0)
+
+        attention_file = os.path.join(self.tmp, 'docs', 'roadmaps', '.trackfw-attention.json')
+        self.assertTrue(os.path.isfile(attention_file))
+
+        with open(attention_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        self.assertIn("Line1Line2", data["message"].replace(" ", ""))
+        self.assertEqual(data["level"], "action_required")
+        self.assertIn("timestamp", data)
+
+
+class TestWindsurfHooks(unittest.TestCase):
+    """Testes para injeção de hooks no CLI Windsurf (C8)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def test_inject_windsurf_hooks_updates_rules(self):
+        from trackfw.generators.hooks import inject_windsurf_hooks
+
+        windsurfrules = os.path.join(self.tmp, '.windsurfrules')
+        with open(windsurfrules, 'w', encoding='utf-8') as f:
+            f.write("# Existing rules\n")
+
+        inject_windsurf_hooks(self.tmp)
+
+        with open(windsurfrules, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        self.assertIn("<!-- trackfw:rules:start -->", content)
+        self.assertIn("Governance Rules", content)
+
+    def test_inject_hooks_detected_detects_windsurf(self):
+        from trackfw.generators.hooks import inject_hooks_detected
+
+        windsurfrules = os.path.join(self.tmp, '.windsurfrules')
+        with open(windsurfrules, 'w', encoding='utf-8') as f:
+            f.write("# Rules\n")
+
+        inject_hooks_detected(self.tmp)
+
+        with open(windsurfrules, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        self.assertIn("trackfw — Governance Rules", content)
 
 
 if __name__ == '__main__':

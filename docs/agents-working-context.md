@@ -2495,12 +2495,20 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 ---
 
-## Sessão 2026-07-20 — Zeus (CONCLUÍDO Localização REQ/Roadmap Auditoria)
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO Implementação Roadmap pós-auditoria PRs #56 e #57)
 
-**Tarefa:** Localização da REQ e Roadmap referentes à auditoria de qualidade/segurança pós-merge PRs #56 e #57.
+**Tarefa:** Execução completa do roadmap `ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md`.
 **Agente:** 🌩️ Zeus - Principal Software Architect
+**Branch:** `fix/attention-hooks-pos-auditoria`
 
 **Status:** CONCLUÍDO
-- **REQ localizada:** `docs/req/REQ-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md`
-- **Roadmap localizado:** `docs/roadmaps/backlog/ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md`
+- **Wave 1 & 2 (Go, Node.js, Python em paralelo):**
+  - **Apolo (Go):** Alinhado evento do Claude (`PreToolUse[AskUserQuestion]`) e Codex (`PermissionRequest`). Resiliência de script shell contra `grep` sem match sob `pipefail`. Path containment e JSON escaping. Constante de ADRs globais unificada. `go test ./...` 100% verde.
+  - **Afrodite (Node):** Alinhado evento do Codex (`PermissionRequest`). Resiliência de script shell sob `pipefail`. Path containment e JSON escaping. Constante de ADRs globais unificada. `npm test` (58 testes) 100% verde.
+  - **Python Specialist:** Resiliência de script shell sob `pipefail`. Path containment e JSON escaping. Exceção silenciosa em `discover.py` removida. Granularidade por-arquivo de `adr_orphan` com `realpath` e suporte a `windsurf`. Constante de ADRs globais. `pytest pypi/tests/` (330 testes) 100% verde.
+- **Wave 3 (Barrier QA & Contratos):**
+  - `make quality` executado e 100% VERDE (Go + Node.js + Python + CLI parity lifecycle e smoke checks + validate JSON parity).
+  - Roadmap atualizado e movido para `docs/roadmaps/done/ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md`.
+  - REQ atualizada para `Status: Done`.
+
 

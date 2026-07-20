@@ -40,7 +40,7 @@ func TestInjectHooksDetected_Claude(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PermissionRequest", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
 		t.Error("hook Claude não foi injetado ao detectar CLAUDE.md")
 	}
 }

@@ -47,7 +47,7 @@ Chain: ` + "`ADR → REQ → ROADMAP`" + ` · States: ` + "`backlog / wip / bloc
 1. **Before starting:** run ` + "`trackfw context`" + ` · read ` + "`docs/agents-working-context.md`" + `
 2. **After finishing:** update ` + "`docs/agents-working-context.md`" + ` with what changed
 3. **Before PR:** ` + "`trackfw validate`" + ` must pass
-4. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**
+4. **` + GlobalADRsDirective + `**
 
 ### Architecture Directives (mandatory)
 - **3-layer separation:** frontend / backend / database — never mix concerns
@@ -201,8 +201,8 @@ func InjectClaudeHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
-	hooks["PermissionRequest"] = mergeClaudeHookArray(
-		hooks["PermissionRequest"],
+	hooks["PreToolUse"] = mergeClaudeHookArray(
+		hooks["PreToolUse"],
 		"AskUserQuestion",
 		"scripts/trackfw-attention-signal.sh",
 	)
@@ -250,8 +250,8 @@ func InjectCodexHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
-	hooks["PreToolUse"] = mergeClaudeHookArray(
-		hooks["PreToolUse"],
+	hooks["PermissionRequest"] = mergeClaudeHookArray(
+		hooks["PermissionRequest"],
 		".*",
 		"scripts/trackfw-attention-signal.sh",
 	)
@@ -320,6 +320,7 @@ func InjectGeminiHooks(cwd string) error {
 }
 
 // InjectKiroHooks injects Kiro attention hooks into .kiro/hooks/trackfw-attention.json.
+// Overwriting this file is intentional as trackfw-attention.json is a dedicated file owned exclusively by trackfw.
 func InjectKiroHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".kiro", "hooks")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -354,6 +355,7 @@ func InjectKiroHooks(cwd string) error {
 }
 
 // InjectCopilotHooks injects GitHub Copilot attention hooks into .github/hooks/trackfw-attention.json.
+// Overwriting this file is intentional as trackfw-attention.json is a dedicated file owned exclusively by trackfw.
 func InjectCopilotHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".github", "hooks")
 	if err := os.MkdirAll(dir, 0755); err != nil {

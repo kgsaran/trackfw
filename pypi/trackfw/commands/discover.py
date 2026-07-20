@@ -482,8 +482,8 @@ def _cmd_discover(args):
         try:
             from trackfw.generators.init_gen import _generate_attention_scripts
             _generate_attention_scripts(cwd)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  ⚠ attention scripts: {e}")
         try:
             from trackfw.generators.hooks import inject_hooks_detected
             inject_hooks_detected(cwd)
