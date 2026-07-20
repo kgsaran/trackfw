@@ -122,8 +122,9 @@ def _walk_dir_md(dir_path: str) -> list:
 def _find_adr_file(basename: str, adr_dirs: list) -> str:
     """Busca basename recursivamente em todos os adr_dirs. Retorna caminho completo ou ''."""
     for adr_dir in adr_dirs:
+        expanded_dir = os.path.expanduser(adr_dir)
         try:
-            for root, dirs, files in os.walk(adr_dir):
+            for root, dirs, files in os.walk(expanded_dir):
                 if basename in files:
                     return os.path.join(root, basename)
         except OSError:
@@ -277,7 +278,8 @@ def _adr_is_draft(basename: str, cfg: dict) -> bool:
     Verifica se <basename> contém 'Status: Draft' em algum dos adrDirs configurados.
     Busca recursivamente nas subpastas via _find_adr_file.
     """
-    p = _find_adr_file(basename, cfg.get("adr_dirs", ["docs/adr"]))
+    adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
+    p = _find_adr_file(basename, adr_dirs)
     if not p:
         return False
     try:
@@ -512,7 +514,8 @@ def validate_reqs_have_roadmap(cfg: dict) -> list:
 def validate_adrs_are_referenced(cfg: dict) -> list:
     """ADRs em adr_dirs não referenciados em nenhuma REQ → violation (busca recursiva)."""
     adrs = []
-    for adr_dir in cfg.get("adr_dirs", ["docs/adr"]):
+    adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
+    for adr_dir in adr_dirs:
         adrs.extend(_walk_dir_md(adr_dir))
 
     req_files = resolve_req_files(cfg)
@@ -694,11 +697,12 @@ def validate_reqs_not_blocked_by_draft_adrs(cfg: dict) -> list:
 def validate_frontmatter_presence(cfg: dict) -> list:
     """Verifica presença de frontmatter em ADRs e REQs (busca recursiva em adr_dirs)."""
     violations = []
+    adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
 
-    for adr_dir in cfg.get("adr_dirs", ["docs/adr"]):
+    for adr_dir in adr_dirs:
         files = [f for f in _walk_dir_md(adr_dir) if f.endswith(".md")]
         for f in files:
-            full_path = _find_adr_file(f, [adr_dir])
+            full_path = _find_adr_file(f, adr_dirs)
             if not full_path:
                 continue
             try:
@@ -756,7 +760,8 @@ def validate_ref_targets_exist(cfg: dict) -> list:
                 content = f.read()
             name = os.path.basename(file_path)
             adr_ref = _extract_ref_path(content, "ADR")
-            if adr_ref and not _reference_exists(adr_ref, cfg.get("adr_dirs", ["docs/adr"])):
+            adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
+            if adr_ref and not _reference_exists(adr_ref, adr_dirs):
                 warnings.append({
                     "type": "warning",
                     "message": f'req "{name}" links to ADR "{adr_ref}" which does not exist'

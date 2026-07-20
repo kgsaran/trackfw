@@ -25,7 +25,7 @@ ADRs globais/externos também não devem ser marcados como `adr_orphan` quando e
 > Dependências: Nenhuma
 
 ### ML-1A — Go: Expansão de `~` em `adr_dirs`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo (Backend Specialist)
 **Arquivos afetados:**
 - `internal/config/config.go`
@@ -41,7 +41,7 @@ ADRs globais/externos também não devem ser marcados como `adr_orphan` quando e
 ---
 
 ### ML-1B — Node.js: Expansão de `~` em `adr_dirs`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Afrodite (Frontend/Node Specialist)
 **Arquivos afetados:**
 - `npm/src/config/index.js` (ou `npm/src/config/config.js`)
@@ -57,7 +57,7 @@ ADRs globais/externos também não devem ser marcados como `adr_orphan` quando e
 ---
 
 ### ML-1C — Python: Expansão de `~` em `adr_dirs`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo (Backend Specialist)
 **Arquivos afetados:**
 - `pypi/trackfw/config.py`

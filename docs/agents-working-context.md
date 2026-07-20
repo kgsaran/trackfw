@@ -2184,7 +2184,78 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 **Ações:**
 - Inspecionados diretórios `docs/req/`, `docs/roadmaps/`, `docs/requisições/` e `docs/adr/`.
-- Mapeadas 4 demandas pendentes/backlog (1 REQ sem Roadmap, 1 REQ com Roadmap em `done` não-executado, 2 REQs com Roadmaps em `wip`).
-- Apresentado panorama detalhado com plano de ação e sugestões de handoff orquestrado.
+- Mapeadas 4 demandas pendentes/backlog.
+
+---
+
+## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
+
+**Tarefa:** Orquestração e disparo da Wave 1 do ROADMAP-2026-07-19-global-adrs-governance.md.
+**Branch:** `feat/global-adrs-governance`
+**Agente:** 🌩️ Zeus - Principal Software Architect
+
+**Ações:**
+- Criada branch `feat/global-adrs-governance`.
+- Gerado `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` detalhado com 4 waves e paralelização de microlotes.
+- Atualizado vínculo no `REQ-2026-07-19-global-adrs-governance.md`.
+- Commit de docs realizado (`d6f649b`).
+2202: - Disparados 3 subagentes paralelos para Wave 1 (ML-1A Go, ML-1B Node, ML-1C Python).
+
+---
+
+## Sessão 2026-07-20 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-1C do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Expansão de tilde (`~` / `~/`) no CLI Python (`config.py` e `validator.py`).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Ações:**
+- Iniciando implementação da expansão de til em `pypi/trackfw/config.py` e `pypi/trackfw/validator.py`.
+- Adição de testes em `pypi/tests/test_config.py` e `pypi/tests/test_validator.py`.
+
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-1A)
+
+**Tarefa:** ML-1A - Suporte à expansão de til (`~` ou `~/`) no carregamento de `adr_dirs` no CLI Go (`internal/config/config.go` e `internal/validator/validator.go`).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `internal/config/config.go`: adicionada função exportada `ExpandPath(p string) string` utilizando `os.UserHomeDir()` e `filepath.Join()`. Atualizado o parser `parse()` de `trackfw.yaml` para expandir caminhos em `adr_dirs`.
+- `internal/validator/validator.go`: atualizadas funções `walkADRFiles`, `findADRFile` e `referenceExists` para expandir caminhos com `config.ExpandPath()`.
+- `internal/config/config_paths_test.go`: adicionados testes `TestExpandPath` e `TestConfigTildeExpansionInAdrDirs`.
+- `internal/validator/validator_test.go`: adicionado teste `TestValidate_WithTildeInADRDirs`.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-1A marcado como `✅ Concluído`.
+
+---
+
+## Sessão 2026-07-20 — Afrodite (CONCLUÍDO ML-1B)
+
+**Tarefa:** ML-1B - Suporte à expansão de til (`~` ou `~/`) no carregamento de `adr_dirs` no CLI Node.js (`npm/src/config/` e `npm/src/validator/`).
+**Agente:** 💖 Afrodite - Frontend i18n Senior Specialist
+
+**Entregue:**
+- `npm/src/config/index.js`: criada função `expandPath(filePath)` utilizando `os.homedir()` e `path.join()`. Aplicada a expansão no `defaults()`, no `parse()` de `adr_dirs`, `req_dir`, `roadmap_dir` e no `flushBlocks()`. Função exportada no `module.exports`.
+- `npm/src/validator/index.js`: atualizadas funções `listDir`, `walkDirMd`, `findAdrFile` e `referenceExists` para expandir caminhos com `config.expandPath()`.
+- `npm/tests/config.test.js`: adicionados testes unitários para a função `expandPath` e para o parse do `trackfw.yaml` com `adr_dirs` contendo `~/...`.
+- `npm/tests/validator.test.js`: adicionado teste unitário para o validador com `adr_dirs` contendo `~/...` apontando para subdiretório do usuáro.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-1B marcado como `✅ Concluído`.
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-1C)
+
+**Tarefa:** ML-1C do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Expansão de tilde (`~` / `~/`) no CLI Python (`config.py` e `validator.py`).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `pypi/trackfw/config.py`: adr_dirs utiliza `os.path.expanduser` durante a leitura/parse de listas YAML.
+- `pypi/trackfw/validator.py`: `_find_adr_file`, `_adr_is_draft`, `validate_adrs_are_referenced`, `validate_frontmatter_presence` e `validate_ref_targets_exist` utilizam `os.path.expanduser` em cada `adr_dir`.
+- `pypi/tests/test_config.py`: adicionado `test_config_adr_dirs_tilde_expansion` testando o parse de `~/...`.
+- `pypi/tests/test_validator.py`: adicionada classe `TestExpandTildeAdrDirs` com `test_find_adr_file_com_tilde` e `test_validate_adrs_are_referenced_com_tilde`.
+- Status do ML-1C no roadmap atualizado para `✅ Concluído`.
+
+
+
 
 

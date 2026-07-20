@@ -112,3 +112,68 @@ func TestConfigPathsDefaults(t *testing.T) {
 		t.Errorf("RoadmapDir default: want docs/roadmaps, got %s", cfg.RoadmapDir)
 	}
 }
+
+// TestExpandPath verifica a expansão do prefixo ~ e ~/ para o diretório home do usuário.
+func TestExpandPath(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("os.UserHomeDir() falhou: %v", err)
+	}
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"~", home},
+		{"~/shared-adrs", filepath.Join(home, "shared-adrs")},
+		{"~/nested/dir/adrs", filepath.Join(home, "nested/dir/adrs")},
+		{"docs/adr", "docs/adr"},
+		{"/abs/path/adr", "/abs/path/adr"},
+	}
+
+	for _, tt := range tests {
+		got := ExpandPath(tt.input)
+		if got != tt.expected {
+			t.Errorf("ExpandPath(%q): want %q, got %q", tt.input, tt.expected, got)
+		}
+	}
+}
+
+// TestConfigTildeExpansionInAdrDirs verifica que adr_dirs iniciando com ~/ são expandidos ao carregar o YAML.
+func TestConfigTildeExpansionInAdrDirs(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("os.UserHomeDir() falhou: %v", err)
+	}
+
+	Reset()
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	yaml := `adr_dirs:
+  - ~/company-adrs
+  - docs/adr
+`
+	if err := os.WriteFile(filepath.Join(tmp, "trackfw.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+
+	if len(cfg.ADRDirs) != 2 {
+		t.Fatalf("ADRDirs: want 2 entries, got %d: %v", len(cfg.ADRDirs), cfg.ADRDirs)
+	}
+
+	expectedFirst := filepath.Join(home, "company-adrs")
+	if cfg.ADRDirs[0] != expectedFirst {
+		t.Errorf("ADRDirs[0]: want %s, got %s", expectedFirst, cfg.ADRDirs[0])
+	}
+	if cfg.ADRDirs[1] != "docs/adr" {
+		t.Errorf("ADRDirs[1]: want docs/adr, got %s", cfg.ADRDirs[1])
+	}
+}
+

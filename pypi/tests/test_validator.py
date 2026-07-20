@@ -670,5 +670,51 @@ class TestValidatorEvolution(unittest.TestCase):
             f"## Done When deve satisfazer acceptance criteria. violations: {msgs}")
 
 
+class TestExpandTildeAdrDirs(unittest.TestCase):
+    """Testes unitários para expansão de til (~) em adr_dirs no validator."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_find_adr_file_com_tilde(self):
+        """_find_adr_file localiza arquivo ADR em adr_dir especificado com ~/."""
+        home = os.path.expanduser("~")
+        test_dir_name = f".tmp_trackfw_test_{int(time.time())}"
+        test_dir = os.path.join(home, test_dir_name)
+        os.makedirs(test_dir, exist_ok=True)
+        try:
+            adr_path = os.path.join(test_dir, "ADR-0001-global.md")
+            _write(adr_path, "---\nstatus: Accepted\n---\n# Global ADR")
+            found = v._find_adr_file("ADR-0001-global.md", [f"~/{test_dir_name}"])
+            self.assertEqual(found, adr_path)
+        finally:
+            shutil.rmtree(test_dir, ignore_errors=True)
+
+    def test_validate_adrs_are_referenced_com_tilde(self):
+        """validate_adrs_are_referenced expande ~/ em adr_dirs ao verificar referências."""
+        home = os.path.expanduser("~")
+        test_dir_name = f".tmp_trackfw_test_ref_{int(time.time())}"
+        test_dir = os.path.join(home, test_dir_name)
+        os.makedirs(test_dir, exist_ok=True)
+        try:
+            _write(os.path.join(test_dir, "ADR-0002.md"), "---\nstatus: Accepted\n---\n# ADR 2")
+            req_dir = os.path.join(self.tmp, "docs/req")
+            _write(os.path.join(req_dir, "REQ-001.md"), "---\nstatus: Open\n---\nADR: ADR-0002.md\n")
+
+            cfg = _config.defaults()
+            cfg["adr_dirs"] = [f"~/{test_dir_name}"]
+            cfg["req_dir"] = req_dir
+
+            violations = v.validate_adrs_are_referenced(cfg)
+            self.assertEqual(violations, [])
+        finally:
+            shutil.rmtree(test_dir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

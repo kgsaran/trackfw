@@ -952,3 +952,65 @@ func TestValidateBranchHasWIPRoadmap_RuleOff(t *testing.T) {
 		t.Errorf("regra off deve suprimir a mensagem, obteve violations=%v warnings=%v", violations, warnings)
 	}
 }
+
+// TestValidate_WithTildeInADRDirs — verifica que adr_dirs com ~/ encontra ADRs no diretório home.
+func TestValidate_WithTildeInADRDirs(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("os.UserHomeDir() falhou: %v", err)
+	}
+
+	// Criar um diretório temporário dentro do home dir do usuário para simular ~/my-global-adrs
+	relativeSubdir := filepath.Join(".trackfw-test-adrs-tmp", "global-adrs")
+	globalADRDir := filepath.Join(home, relativeSubdir)
+	if err := os.MkdirAll(globalADRDir, 0755); err != nil {
+		t.Fatalf("mkdir globalADRDir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(filepath.Join(home, ".trackfw-test-adrs-tmp")) }()
+
+	// Criar um ADR global no diretório de home
+	adrContent := "---\nstatus: Accepted\ndate: 2026-07-20\n---\n# ADR 001 Global\n"
+	if err := os.WriteFile(filepath.Join(globalADRDir, "ADR-001-global.md"), []byte(adrContent), 0644); err != nil {
+		t.Fatalf("writeFile ADR-001-global: %v", err)
+	}
+
+	// Criar projeto local de teste
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip",
+		"docs/req",
+		"docs/adr",
+	)
+
+	// trackfw.yaml configurando adr_dirs com ~/
+	tildePath := "~/" + relativeSubdir
+	yamlContent := "adr_dirs:\n  - " + tildePath + "\n  - docs/adr\n"
+	writeFile(t, dir, "trackfw.yaml", yamlContent)
+
+	// REQ referenciando o ADR global
+	reqContent := "---\nstatus: Open\ndate: 2026-07-20\n---\n# REQ 001\nADR: ADR-001-global.md\nRoadmap: ROADMAP-001.md\n"
+	writeFile(t, dir, "docs/req/REQ-001.md", reqContent)
+
+	// Roadmap linkando REQ
+	rmContent := "---\nstatus: WIP\ndate: 2026-07-20\n---\n# Roadmap 001\nREQ: REQ-001.md\n## Acceptance Criteria\n- AC1\n"
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-001.md", rmContent)
+
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered erro inesperado: %v", err)
+	}
+
+	// Não deve haver violation de orphan para ADR-001-global.md
+	if hasViolation(violations, "ADR-001-global.md") {
+		t.Errorf("ADR em caminho com ~/ não deveria ser considerado órfão. Violations: %v", violations)
+	}
+	// Não deve haver warning de ref target inexistente para ADR-001-global.md
+	if hasWarning(warnings, "ADR-001-global.md") {
+		t.Errorf("ADR em caminho com ~/ deveria ser encontrado. Warnings: %v", warnings)
+	}
+}
+

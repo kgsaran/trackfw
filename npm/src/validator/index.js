@@ -11,10 +11,11 @@ const STALE_WIP_DAYS = 7
 // listDir retorna array de nomes de arquivo (não-diretórios) em dir.
 // Retorna [] se o diretório não existir.
 function listDir(dir) {
+  const expanded = config.expandPath ? config.expandPath(dir) : dir
   try {
-    return fs.readdirSync(dir).filter(name => {
+    return fs.readdirSync(expanded).filter(name => {
       try {
-        return !fs.statSync(path.join(dir, name)).isDirectory()
+        return !fs.statSync(path.join(expanded, name)).isDirectory()
       } catch (_) {
         return false
       }
@@ -27,6 +28,7 @@ function listDir(dir) {
 // walkDirMd retorna basenames de todos .md recursivamente dentro de dir.
 function walkDirMd(dir) {
   const results = []
+  const expandedDir = config.expandPath ? config.expandPath(dir) : dir
   function walk(d) {
     let entries
     try { entries = fs.readdirSync(d) } catch (_) { return }
@@ -38,7 +40,7 @@ function walkDirMd(dir) {
       } catch (_) {}
     }
   }
-  walk(dir)
+  walk(expandedDir)
   return results
 }
 
@@ -46,7 +48,8 @@ function walkDirMd(dir) {
 // Retorna o caminho completo se encontrado, ou null.
 function findAdrFile(basename) {
   const cfg = config.load()
-  for (const adrDir of cfg.adrDirs) {
+  const adrDirs = (cfg.adrDirs || []).map(d => config.expandPath ? config.expandPath(d) : d)
+  for (const adrDir of adrDirs) {
     function search(d) {
       let entries
       try { entries = fs.readdirSync(d) } catch (_) { return null }
@@ -633,10 +636,12 @@ function validateRefTargetsExist() {
 }
 
 function referenceExists(ref, roots) {
-  if (fs.existsSync(ref)) return true
+  const expandedRef = config.expandPath ? config.expandPath(ref) : ref
+  if (fs.existsSync(expandedRef)) return true
   const basename = path.basename(ref)
   for (const root of roots || []) {
-    if (walkDirMd(root).some(filePath => path.basename(filePath) === basename)) return true
+    const expandedRoot = config.expandPath ? config.expandPath(root) : root
+    if (walkDirMd(expandedRoot).some(filePath => path.basename(filePath) === basename)) return true
   }
   return false
 }

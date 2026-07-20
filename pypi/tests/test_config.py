@@ -253,6 +253,21 @@ class TestConfigPaths(unittest.TestCase):
         self.assertEqual(cfg["req_dir"], "docs/req")
         self.assertEqual(cfg["roadmap_dir"], "docs/roadmaps")
 
+    def test_config_adr_dirs_tilde_expansion(self):
+        """adr_dirs com ~ ou ~/ → til expandido para o home do usuario."""
+        home = os.path.expanduser("~")
+        self._write_yaml(
+            "adr_dirs:\n"
+            "  - ~/global_adrs\n"
+            "  - ~/.trackfw/adrs\n"
+        )
+        cfg = config.load(cwd=self.tmpdir)
+        expected = [
+            os.path.join(home, "global_adrs"),
+            os.path.join(home, ".trackfw/adrs"),
+        ]
+        self.assertEqual(cfg["adr_dirs"], expected)
+
 
 if __name__ == "__main__":
     unittest.main()

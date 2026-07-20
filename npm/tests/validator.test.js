@@ -251,5 +251,30 @@ test('acceptance_markers custom: custom marker satisfies check', () => {
   }
 })
 
+// ML-1B — Validação de adr_dirs com ~/
+test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () => {
+  const testSubdir = '.trackfw-test-adrs-' + Date.now()
+  const fullHomeSubdir = path.join(os.homedir(), testSubdir)
+  fs.mkdirSync(fullHomeSubdir, { recursive: true })
+  fs.writeFileSync(path.join(fullHomeSubdir, 'ADR-GLOBAL-001.md'), '---\nstatus: Accepted\n---\n# Global ADR\n')
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-tilde-val-'))
+  fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), `adr_dirs:\n  - "~/${testSubdir}"\n`)
+
+  const origDir = process.cwd()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const found = validator.findAdrFile('ADR-GLOBAL-001.md')
+    assert.strictEqual(found, path.join(fullHomeSubdir, 'ADR-GLOBAL-001.md'))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+    fs.rmSync(fullHomeSubdir, { recursive: true, force: true })
+  }
+})
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
+

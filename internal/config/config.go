@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -169,7 +170,9 @@ func parse(content string, cfg *ProjectConfig) {
 		if hasIndent {
 			if inADRDirs {
 				if strings.HasPrefix(trimmed, "- ") {
-					adrDirs = append(adrDirs, strings.TrimPrefix(trimmed, "- "))
+					val := strings.TrimPrefix(trimmed, "- ")
+					val = strings.Trim(val, `"'`)
+					adrDirs = append(adrDirs, ExpandPath(val))
 				}
 				continue
 			}
@@ -332,3 +335,24 @@ func parseInt(s string, def int) int {
 	}
 	return n
 }
+
+// ExpandPath substitui o prefixo ~ ou ~/ pelo diretório home do usuário (os.UserHomeDir()).
+// Se p não iniciar com ~ ou se falhar ao obter homeDir, retorna o caminho inalterado.
+func ExpandPath(p string) string {
+	if p == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return p
+		}
+		return home
+	}
+	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~\\") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return p
+		}
+		return filepath.Join(home, p[2:])
+	}
+	return p
+}
+

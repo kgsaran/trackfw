@@ -1125,6 +1125,7 @@ func listDir(dir string) ([]string, error) {
 
 // walkADRFiles retorna basenames de todos os arquivos .md encontrados recursivamente em adrDir.
 func walkADRFiles(adrDir string) []string {
+	adrDir = config.ExpandPath(adrDir)
 	var names []string
 	_ = filepath.WalkDir(adrDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -1142,8 +1143,9 @@ func walkADRFiles(adrDir string) []string {
 // Retorna o caminho completo ou string vazia se não encontrado.
 func findADRFile(adrBasename string, adrDirs []string) string {
 	for _, adrDir := range adrDirs {
+		expandedDir := config.ExpandPath(adrDir)
 		var found string
-		_ = filepath.WalkDir(adrDir, func(path string, d fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(expandedDir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
@@ -1244,13 +1246,15 @@ func validateRefTargetsExist() ([]string, error) {
 }
 
 func referenceExists(ref string, roots []string) bool {
-	if _, err := os.Stat(ref); err == nil {
+	expandedRef := config.ExpandPath(ref)
+	if _, err := os.Stat(expandedRef); err == nil {
 		return true
 	}
 	base := filepath.Base(ref)
 	for _, root := range roots {
+		expandedRoot := config.ExpandPath(root)
 		found := false
-		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		_ = filepath.WalkDir(expandedRoot, func(path string, entry os.DirEntry, err error) error {
 			if err == nil && !entry.IsDir() && entry.Name() == base {
 				found = true
 				return filepath.SkipAll
