@@ -397,4 +397,81 @@ test('attention scripts normalize/contain ROADMAP_DIR against path traversal', a
   assert.ok(fs.existsSync(defaultAttFile), 'traversal attempt should fallback to docs/roadmaps')
 })
 
+test('attention scripts tolerate roadmap_dir without spaces and inline comments, and sanitize U+0000-U+001F control chars', async () => {
+  const { generateAttentionScripts } = require('../src/generators/hooks')
+  const { execSync } = require('node:child_process')
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-att-tolerant-'))
+
+  // Criar trackfw.yaml sem espaço após ':' e com comentário inline
+  fs.writeFileSync(path.join(tmpDir, 'trackfw.yaml'), 'roadmap_dir:docs/custom_roadmaps # inline comment\n', 'utf8')
+  generateAttentionScripts({}, tmpDir)
+
+  const signalScript = path.join(tmpDir, 'scripts', 'trackfw-attention-signal.sh')
+
+  // Payload com caracteres de controle U+0000..U+001F (ex: bell \x07, tab \x09, newline \x0A, carriage return \x0D)
+  const payload = JSON.stringify({
+    tool_name: 'test_tool\x07\x09',
+    tool_input: { question: 'Question with control chars: \x07\x1b[31mRed\x1b[0m and \r\nnewlines' }
+  })
+
+  execSync(`"${signalScript}"`, { cwd: tmpDir, input: payload, stdio: ['pipe', 'pipe', 'pipe'] })
+
+  const customAttFile = path.join(tmpDir, 'docs', 'custom_roadmaps', '.trackfw-attention.json')
+  assert.ok(fs.existsSync(customAttFile), 'attention json file should be created in parsed custom roadmap_dir')
+
+  const writtenContent = fs.readFileSync(customAttFile, 'utf8')
+  const parsed = JSON.parse(writtenContent)
+  assert.equal(parsed.tool, 'test_tool')
+  assert.equal(parsed.message, 'Question with control chars: [31mRed[0m and newlines')
+})
+
+test('attention signal script falls back to python3 when jq is not in PATH', async () => {
+  const { generateAttentionScripts } = require('../src/generators/hooks')
+  const { execSync } = require('node:child_process')
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-att-nojq-'))
+
+  fs.writeFileSync(path.join(tmpDir, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n', 'utf8')
+  generateAttentionScripts({}, tmpDir)
+
+  const signalScript = path.join(tmpDir, 'scripts', 'trackfw-attention-signal.sh')
+
+  const payload = JSON.stringify({
+    tool_name: 'no_jq_tool',
+    tool_input: { question: 'Fallback python3 question' }
+  })
+
+  const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-fakebin-'))
+  const pathDirs = (process.env.PATH || '').split(path.delimiter)
+  for (const dir of pathDirs) {
+    try {
+      if (!fs.existsSync(dir)) continue
+      const files = fs.readdirSync(dir)
+      for (const file of files) {
+        if (file === 'jq' || file === 'jq.exe') continue
+        const src = path.join(dir, file)
+        const dst = path.join(fakeBinDir, file)
+        if (!fs.existsSync(dst)) {
+          try { fs.symlinkSync(src, dst) } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  execSync(`"${signalScript}"`, {
+    cwd: tmpDir,
+    input: payload,
+    env: { ...process.env, PATH: fakeBinDir },
+    stdio: ['pipe', 'pipe', 'pipe']
+  })
+
+  const attFile = path.join(tmpDir, 'docs', 'roadmaps', '.trackfw-attention.json')
+  assert.ok(fs.existsSync(attFile), 'attention json file should be created using python3 fallback')
+
+  const writtenContent = fs.readFileSync(attFile, 'utf8')
+  const parsed = JSON.parse(writtenContent)
+  assert.equal(parsed.tool, 'no_jq_tool')
+  assert.equal(parsed.message, 'Fallback python3 question')
+})
+
+
 

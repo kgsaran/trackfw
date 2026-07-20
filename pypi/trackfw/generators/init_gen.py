@@ -560,6 +560,7 @@ set -euo pipefail
 
 INPUT=$(cat)
 
+# Script é intencionalmente no-op fora da raiz do projeto (onde trackfw.yaml reside)
 [ -f "trackfw.yaml" ] || exit 0
 
 if command -v jq &>/dev/null; then
@@ -570,7 +571,7 @@ else
   MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent is executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
 fi
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1 || true)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 
 case "$ROADMAP_DIR" in
@@ -579,8 +580,8 @@ esac
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-TOOL_ESC=$(echo "$TOOL" | tr -d '\n' | sed 's/\\/\\\\/g; s/"/\\"/g')
-MSG_ESC=$(echo "$MSG" | tr -d '\n' | sed 's/\\/\\\\/g; s/"/\\"/g')
+TOOL_ESC=$(echo "$TOOL" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
+MSG_ESC=$(echo "$MSG" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
 
 mkdir -p "$ROADMAP_DIR"
 printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\n' \
@@ -595,9 +596,10 @@ _ATTENTION_CLEANUP_SH = r"""#!/usr/bin/env bash
 # trackfw attention cleanup — PostToolUse/AfterTool hook
 set -euo pipefail
 
+# Script é intencionalmente no-op fora da raiz do projeto (onde trackfw.yaml reside)
 [ -f "trackfw.yaml" ] || exit 0
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' | tr -d "'" | head -1 || true)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 
 case "$ROADMAP_DIR" in

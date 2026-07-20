@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-20
 author: Zeus
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md"
 ---
 
 # REQ: hardening de qualidade attention-hooks pos-PR59 (Q1-Q8)
 
-> Date: 2026-07-20 | Status: Open
+> Date: 2026-07-20 | Status: Done
 
 ## Motivation
 
@@ -82,8 +82,8 @@ Esta REQ formaliza o hardening de qualidade, mantendo a **Regra Dura de Paridade
 
 ### Gate
 
-- [ ] `make quality` (Go + Node.js + Python + contratos de paridade) verde.
-- [ ] `trackfw validate` sem violações.
+- [x] `make quality` (Go + Node.js + Python + contratos de paridade) verde.
+- [x] `trackfw validate` sem violações.
 
 ## Linked ADR
 ADR:
@@ -92,4 +92,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md

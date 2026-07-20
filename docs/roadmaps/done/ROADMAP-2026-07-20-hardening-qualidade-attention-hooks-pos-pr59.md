@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-20
 req: "docs/req/REQ-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: hardening qualidade attention-hooks pos-pr59
 
-> Created: 2026-07-20 | Status: wip
+> Created: 2026-07-20 | Status: done
 
 ## Context
 
@@ -63,7 +63,7 @@ Wave 2 (testes: Q1/Q5/Q7 — depende de Wave 1) ──────────�
 > Dependencies: none
 
 ### ML-1A — Go: aplicar decisões canônicas no script embutido
-**Status:** pending
+**Status:** done
 **Files affected:** `internal/generators/scaffold.go` (funções `signalScript`/`cleanupScript`)
 **Actions:**
 1. (Q3) Substituir os DOIS blocos `case` de path traversal (o `/*` com relativização + o `*..*`) pelo bloco
@@ -72,12 +72,12 @@ Wave 2 (testes: Q1/Q5/Q7 — depende de Wave 1) ──────────�
 3. (Q6) Adotar o parsing tolerante de `roadmap_dir` da Decisão 3.
 4. (Q8) Adicionar o comentário da Decisão 4.
 **Acceptance criteria:**
-- [ ] `go build ./...` e `go vet ./...` sem erros
-- [ ] `go test ./internal/generators/...` verde
-- [ ] Script gerado idêntico em semântica ao de Node/Python nos 4 pontos canônicos
+- [x] `go build ./...` e `go vet ./...` sem erros
+- [x] `go test ./internal/generators/...` verde
+- [x] Script gerado idêntico em semântica ao de Node/Python nos 4 pontos canônicos
 
 ### ML-1B — Node: aplicar decisões canônicas no template
-**Status:** pending
+**Status:** done
 **Files affected:** `npm/src/generators/hooks.js` (template do script)
 **Actions:**
 1. (Q3) Confirmar/manter o bloco `case` canônico (Node já usa o padrão segment-aware) em signal e cleanup.
@@ -85,11 +85,11 @@ Wave 2 (testes: Q1/Q5/Q7 — depende de Wave 1) ──────────�
 3. (Q6) Adotar o parsing tolerante de `roadmap_dir` (Decisão 3).
 4. (Q8) Adicionar o comentário de cwd (Decisão 4).
 **Acceptance criteria:**
-- [ ] `node --test` verde
-- [ ] Script gerado idêntico em semântica ao de Go/Python nos 4 pontos canônicos
+- [x] `node --test` verde
+- [x] Script gerado idêntico em semântica ao de Go/Python nos 4 pontos canônicos
 
 ### ML-1C — Python: aplicar decisões canônicas nos templates
-**Status:** pending
+**Status:** done
 **Files affected:** `pypi/trackfw/generators/init_gen.py` (`_ATTENTION_SIGNAL_SH`/`_ATTENTION_CLEANUP_SH`)
 **Actions:**
 1. (Q3) Confirmar/manter o bloco `case` canônico (Python já usa o padrão segment-aware) em signal e cleanup.
@@ -97,8 +97,8 @@ Wave 2 (testes: Q1/Q5/Q7 — depende de Wave 1) ──────────�
 3. (Q6) Adotar o parsing tolerante de `roadmap_dir` (Decisão 3).
 4. (Q8) Adicionar o comentário de cwd (Decisão 4).
 **Acceptance criteria:**
-- [ ] `pytest pypi/tests/` verde
-- [ ] Script gerado idêntico em semântica ao de Go/Node nos 4 pontos canônicos
+- [x] `pytest pypi/tests/` verde
+- [x] Script gerado idêntico em semântica ao de Go/Node nos 4 pontos canônicos
 
 ---
 
@@ -106,7 +106,7 @@ Wave 2 (testes: Q1/Q5/Q7 — depende de Wave 1) ──────────�
 > Dependencies: Wave 1 completa (os testes asseram o comportamento corrigido)
 
 ### ML-2A — Go: testes de contrato que EXECUTAM o script (Q1) + fallback sem jq (Q5)
-**Status:** pending
+**Status:** done
 **Files affected:** `internal/generators/scaffold_test.go`
 **Actions:**
 1. (Q1) Adicionar teste(s) que executam o `.sh` gerado via `exec.Command("bash", signalPath)` cobrindo:
@@ -117,30 +117,30 @@ Wave 2 (testes: Q1/Q5/Q7 — depende de Wave 1) ──────────�
 2. (Q5) Teste que executa o signal com `jq` removido do `PATH` (env `PATH` reduzido) exercitando o fallback
    `python3` → JSON válido gerado.
 **Acceptance criteria:**
-- [ ] Go executa o script gerado (não só string-contains) nos 3 cenários C1/C4/C5
-- [ ] Teste de fallback sem `jq` verde
-- [ ] `go test ./internal/generators/...` verde
+- [x] Go executa o script gerado (não só string-contains) nos 3 cenários C1/C4/C5
+- [x] Teste de fallback sem `jq` verde
+- [x] `go test ./internal/generators/...` verde
 
 ### ML-2B — Node: fallback sem jq (Q5)
-**Status:** pending
+**Status:** done
 **Files affected:** `npm/tests/generators.test.js`
 **Actions:**
 1. (Q5) Adicionar teste que executa o signal com `jq` mascarado do `PATH`, validando o fallback `python3`
    e JSON parseável. (Node já executa o script para C1/C4/C5 — apenas complementar o caso sem `jq`.)
 **Acceptance criteria:**
-- [ ] `node --test` verde com o novo caso de fallback
+- [x] `node --test` verde com o novo caso de fallback
 
 ### ML-2C — Python: fallback sem jq (Q5)
-**Status:** pending
+**Status:** done
 **Files affected:** `pypi/tests/test_generators_init.py`
 **Actions:**
 1. (Q5) Adicionar teste `subprocess.run` com `jq` mascarado do `PATH`, validando o fallback `python3` e
    `json.loads` do arquivo gerado. (Python já executa o script para C1/C4/C5.)
 **Acceptance criteria:**
-- [ ] `pytest pypi/tests/` verde com o novo caso de fallback
+- [x] `pytest pypi/tests/` verde com o novo caso de fallback
 
 ### ML-2D — QA: teste golden de paridade dos 3 scripts (Q7)
-**Status:** pending
+**Status:** done
 **Files affected:** novo teste (ex.: `internal/generators/scaffold_parity_test.go` ou script em
 `scripts/` chamado por `make quality`)
 **Actions:**
@@ -148,8 +148,8 @@ Wave 2 (testes: Q1/Q5/Q7 — depende de Wave 1) ──────────�
    controle, parsing de `roadmap_dir`, comentário de cwd), normalizando apenas o quoting específico de
    linguagem. Falhar se divergirem. Objetivo: pegar divergências futuras automaticamente.
 **Acceptance criteria:**
-- [ ] Teste golden compara os 3 scripts e passa
-- [ ] Divergência proposital em 1 CLI faz o teste falhar (validado localmente)
+- [x] Teste golden compara os 3 scripts e passa
+- [x] Divergência proposital em 1 CLI faz o teste falhar (validado localmente)
 
 ---
 
@@ -157,14 +157,14 @@ Wave 2 (testes: Q1/Q5/Q7 — depende de Wave 1) ──────────�
 > Dependencies: Wave 1 E Wave 2 completas
 
 ### ML-3A — Gate final
-**Status:** pending
+**Status:** done
 **Files affected:** — (execução de gates)
 **Actions:**
 1. Rodar `make quality` (Go + Node.js + Python + contratos de paridade).
 2. Rodar `trackfw validate`.
 3. Atualizar este roadmap para `done` e marcar todos os MLs concluídos.
 **Acceptance criteria:**
-- [ ] `make quality` verde
-- [ ] `trackfw validate` sem violações
-- [ ] `MSG` com TAB/CR gera JSON parseável nos 3 CLIs (Q2/Q4 comprovado por teste)
-- [ ] Paridade de contenção de traversal idêntica nos 3 CLIs (Q3 comprovado por teste golden)
+- [x] `make quality` verde
+- [x] `trackfw validate` sem violações
+- [x] `MSG` com TAB/CR gera JSON parseável nos 3 CLIs (Q2/Q4 comprovado por teste)
+- [x] Paridade de contenção de traversal idêntica nos 3 CLIs (Q3 comprovado por teste golden)

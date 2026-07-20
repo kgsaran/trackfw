@@ -2552,11 +2552,25 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 ---
 
-## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO Roadmap Hardening Qualidade Q1-Q8 pós-PR59)
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO Roadmap Hardening Qualidade Q1-Q8 pós-PR59)
 
 **Tarefa:** Orquestração e execução do roadmap `ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md`.
 **Agente:** 🌩️ Zeus - Principal Software Architect
 **Branch:** `fix/hardening-qualidade-attention-hooks`
 
-**Status:** IMPLEMENTANDO (Wave 1 disparada em paralelo por CLI)
+**Status:** CONCLUÍDO (8/8 achados Q1-Q8 resolvidos e testados nos 3 CLIs)
+- **Wave 1 (Decisões Canônicas dos Scripts):**
+  - Contenção de path traversal única e segment-aware (`/*|../*|*/../*|*/..|..`) nos 3 CLIs (Q3).
+  - Sanitização de caracteres de controle U+0000–U+001F (`tr -d '\000-\037'`) antes do escaping nos 3 CLIs (Q2, Q4).
+  - Extração tolerante de `roadmap_dir:` (`sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//'`) (Q6).
+  - Comentário explicativo de cwd (Q8).
+- **Wave 2 (Testes de Contrato, Fallback e Golden Parity):**
+  - **Go (Apolo):** Adicionados `TestAttentionScripts_ExecutionContract` (executa scripts bash para default, traversal e payload com aspas/barras/newlines/tabs/CR) e `TestAttentionScripts_FallbackWithoutJQ` (Q1, Q5).
+  - **Node (Afrodite):** Adicionado teste de fallback sem `jq` com `fakeBinDir` (Q5).
+  - **Python Specialist:** Adicionado `test_fallback_without_jq` com `fake_bin` (Q5).
+  - **QA Golden Parity:** Criado `internal/generators/scaffold_parity_test.go` (`TestScriptsParity_GoldenCanonicalBlocks`) que compara byte-a-byte a estrutura dos scripts shell gerados nos 3 CLIs (Q7).
+- **Wave 3 (Barrier Quality):**
+  - `make quality` 100% VERDE (Go unit/vet/contract/parity + Node 60/60 + Python 333/333).
+  - Roadmap movido para `docs/roadmaps/done/ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md`.
+  - REQ atualizada para `Status: Done`.
 
