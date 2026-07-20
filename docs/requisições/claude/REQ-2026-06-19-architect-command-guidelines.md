@@ -1,7 +1,7 @@
 ---
 id: REQ-2026-06-19-architect-command-guidelines
 title: Slash command /trackfw:architect — guia de arquitetura para times não técnicos
-status: approved
+status: done
 priority: high
 type: feature
 created: 2026-06-19
@@ -47,9 +47,9 @@ Go, Node.js e Python devem instalar o `architect.md` via `generateClaudeCommands
 
 ## Critérios de Aceite
 
-- [ ] `architect.md` gerado por `trackfw init` em `.claude/commands/trackfw/`
-- [ ] Comando cobre: discovery → stack recommendation → ADR → next steps
-- [ ] Bloco de regras injetado contém resumo das diretrizes arquiteturais (≤ 15 linhas)
-- [ ] 3 CLIs (Go, Node.js, Python) instalam o comando
-- [ ] `trackfw update` reinjecta o comando atualizado
-- [ ] Build e testes verdes
+- [x] `architect.md` gerado por `trackfw init` em `.claude/commands/trackfw/`
+- [x] Comando cobre: discovery → stack recommendation → ADR → next steps
+- [x] Bloco de regras injetado contém resumo das diretrizes arquiteturais (≤ 15 linhas)
+- [x] 3 CLIs (Go, Node.js, Python) instalam o comando
+- [x] `trackfw update` reinjecta o comando atualizado
+- [x] Build e testes verdes

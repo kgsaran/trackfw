@@ -1,6 +1,13 @@
+---
+status: done
+date: 2026-06-19
+req: "docs/requisições/claude/REQ-2026-06-19-architect-command-guidelines.md"
+branch: "feat/architect-command-guidelines"
+---
+
 # Roadmap: Slash command /trackfw:architect + diretrizes de arquitetura
 
-> Criado em: 2026-06-19 | Status: 🔄 WIP
+> Criado em: 2026-06-19 | Status: ✅ Done
 > REQ: `docs/requisições/claude/REQ-2026-06-19-architect-command-guidelines.md`
 
 ## Diagnóstico / Contexto
@@ -11,7 +18,7 @@ Times não técnicos que usam o trackfw não têm orientação sobre stack e arq
 > Dependências: Independente (arquivos distintos por CLI)
 
 ### ML-1A — Go: architect.md + regras de arquitetura no rules block
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/scaffold.go` (função `generateClaudeCommandsInner`, mapa `commands`)
 - `internal/generators/claudemd.go` (função `generateClaudeMD` — seção "Agent rules")
@@ -22,13 +29,13 @@ Times não técnicos que usam o trackfw não têm orientação sobre stack e arq
    E adicionar nova seção `## Architecture Directives` com as 8 diretrizes obrigatórias
 3. Adicionar `| \`/trackfw:architect\` | Guide stack and architecture decisions |` na tabela de slash commands
 **Critérios de aceite:**
-- [ ] `go build ./...` sem erros
-- [ ] `go test ./...` sem erros
-- [ ] Arquivo `architect.md` gerado em `.claude/commands/trackfw/` após `trackfw init` (manual check)
+- [x] `go build ./...` sem erros
+- [x] `go test ./...` sem erros
+- [x] Arquivo `architect.md` gerado em `.claude/commands/trackfw/` após `trackfw init` (manual check)
 **Comandos de validação:** `cd /Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw && go build ./... && go test ./...`
 
 ### ML-1B — Node.js: architect.md + regras de arquitetura no rules block
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `npm/src/generators/init.js` (funções `generateClaudeCommands` e `generateClaudeCommandsForce`, e `trackfwRulesBlock`)
 **Ações:**
@@ -36,12 +43,12 @@ Times não técnicos que usam o trackfw não têm orientação sobre stack e arq
 2. Em `generateClaudeCommandsForce()` (linha ~895+), adicionar `'architect.md'` ao mapa `commands`
 3. Em `trackfwRulesBlock()` (linha ~331), adicionar seção `### Architecture Directives` com as 8 diretrizes
 **Critérios de aceite:**
-- [ ] `node npm/src/cli.js --version` sem erros
-- [ ] Arquivo `architect.md` gerado após chamada de `generateClaudeCommands()`
+- [x] `node npm/src/cli.js --version` sem erros
+- [x] Arquivo `architect.md` gerado após chamada de `generateClaudeCommands()`
 **Comandos de validação:** `cd /Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw && node -e "const g = require('./npm/src/generators/init.js'); console.log(typeof g.generateClaudeCommandsForce)"`
 
 ### ML-1C — Python: generate_claude_commands + architect.md + regras de arquitetura
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `pypi/trackfw/generators/init_gen.py` (nova função `generate_claude_commands`, atualização de `_trackfw_rules_block`, chamada em `scaffold`)
 - `pypi/trackfw/commands/discover.py` (chamar `generate_claude_commands` no `--init`)
@@ -51,8 +58,8 @@ Times não técnicos que usam o trackfw não têm orientação sobre stack e arq
 3. Chamar `generate_claude_commands(cwd)` no bloco `--init` de `discover.py` (após `inject_rules_detected`)
 4. Atualizar `_trackfw_rules_block()` para incluir seção `### Architecture Directives` com as 8 diretrizes
 **Critérios de aceite:**
-- [ ] `python -m pytest pypi/tests/ -x -q` sem erros
-- [ ] Função `generate_claude_commands` exportada e chamável
+- [x] `python -m pytest pypi/tests/ -x -q` sem erros
+- [x] Função `generate_claude_commands` exportada e chamável
 **Comandos de validação:** `cd /Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw && python -m pytest pypi/tests/ -x -q 2>&1 | tail -5`
 
 ---

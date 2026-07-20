@@ -375,11 +375,15 @@ Delete the file when resolved. Visible as a live banner in \`trackfw serve\`.
 > Delete the file after the user responds.
 
 ### Architecture Directives (mandatory)
-- **3-layer arch + no in-memory data:** frontend / backend / database; always DB + ORM — never arrays/globals
-- **Auth + Docker + .env from day 1:** never defer auth; containerize early; all config via env vars
-- **2-layer validation + API-first:** frontend (UX) + backend (security); define OpenAPI contract first
-- **Security wave + test coverage:** red-team review in every roadmap; TDD for critical; min 60%/80%
-- Use '/trackfw:architect' to define stack before the first REQ
+- **3-layer separation:** frontend / backend / database — never mix concerns
+- **No in-memory data:** always database + ORM (never arrays/globals for persistence)
+- **Auth from day 1:** never defer — refactoring auth later is very costly
+- **Docker + .env from day 1:** containerize early; all config via env vars
+- **2-layer validation:** frontend (UX) + backend (security) — never only one
+- **API-first:** define OpenAPI contract before coding frontend/backend integration
+- **Security wave:** include a red-team review wave in every feature roadmap
+- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)
+- Use \`/trackfw:architect\` to define stack before the first REQ
 ` + RULES_END
 }
 
@@ -491,6 +495,7 @@ function generateClaudeMD(cfg) {
   content += '## Slash commands (Claude Code)\n\n'
   content += '| Command | When to use |\n'
   content += '|---|---|\n'
+  content += '| `/trackfw:architect` | Guide stack and architecture decisions |\n'
   content += '| `/trackfw:implement <req>` | **Start here** — orchestrates full implementation flow |\n'
   content += '| `/trackfw:adr <title>` | Before any architectural decision |\n'
   content += '| `/trackfw:req <title>` | Before any implementation work |\n'

@@ -239,10 +239,14 @@ def _trackfw_rules_block() -> str:
         '> Delete the file after the user responds.\n'
         '\n### Architecture Directives (mandatory)\n'
         '- Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.\n'
-        '- **3-layer arch + no in-memory data:** frontend / backend / database; always DB + ORM — never arrays/globals\n'
-        '- **Auth + Docker + .env from day 1:** never defer auth; containerize early; all config via env vars\n'
-        '- **2-layer validation + API-first:** frontend (UX) + backend (security); define OpenAPI contract first\n'
-        '- **Security wave + test coverage:** red-team review in every roadmap; TDD for critical; min 60%/80%\n'
+        '- **3-layer separation:** frontend / backend / database — never mix concerns\n'
+        '- **No in-memory data:** always database + ORM (never arrays/globals for persistence)\n'
+        '- **Auth from day 1:** never defer — refactoring auth later is very costly\n'
+        '- **Docker + .env from day 1:** containerize early; all config via env vars\n'
+        '- **2-layer validation:** frontend (UX) + backend (security) — never only one\n'
+        '- **API-first:** define OpenAPI contract before coding frontend/backend integration\n'
+        '- **Security wave:** include a red-team review wave in every feature roadmap\n'
+        '- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)\n'
         '- Use `/trackfw:architect` to define stack before the first REQ\n'
         + RULES_END
     )
@@ -470,7 +474,7 @@ def generate_claude_commands(cwd: str) -> None:
             '```'
         ),
         'architect.md': (
-            'Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.\n\n'
+            'Você é o guia de arquitetura do trackfw (`/trackfw:architect`). Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.\n\n'
             '## Passo 1 — Descoberta de Negócio\n\n'
             'Faça ao usuário as seguintes perguntas em linguagem simples, uma por vez:\n\n'
             '1. "O que sua aplicação vai fazer? Descreva em 2-3 frases como se fosse explicar para alguém de fora da TI."\n'
