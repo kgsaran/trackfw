@@ -2231,9 +2231,11 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 **Tarefa:** Orquestração e implementação completa do ROADMAP-2026-06-19-architect-command-guidelines.md (Backlog #3).
 **Branch:** `feat/architect-command-guidelines`
+**Pull Request:** https://github.com/kgsaran/trackfw/pull/58
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
 **Entregues:**
+- **Branch e PR criados:** `feat/architect-command-guidelines` → PR #58 (`https://github.com/kgsaran/trackfw/pull/58`).
 - **Wave 1:**
   - Slash command `/trackfw:architect` (`architect.md`) gerado em `.claude/commands/trackfw/` nas 3 distribuições (Go, Node.js, Python).
   - Seção `### Architecture Directives (mandatory)` com as 8 diretrizes de arquitetura injetada nos blocos de regras (`CLAUDE.md`, `AGENTS.md`, `.windsurfrules`, `.cursor/rules/`, etc.).
