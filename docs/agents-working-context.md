@@ -2573,4 +2573,6 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
   - `make quality` 100% VERDE (Go unit/vet/contract/parity + Node 60/60 + Python 333/333).
   - Roadmap movido para `docs/roadmaps/done/ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md`.
   - REQ atualizada para `Status: Done`.
+- **Abertura de PR:** PR #60 aberto na branch `fix/hardening-qualidade-attention-hooks` apontando para `main` (https://github.com/kgsaran/trackfw/pull/60).
+
 
