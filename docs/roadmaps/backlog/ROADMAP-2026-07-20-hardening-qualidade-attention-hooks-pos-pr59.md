@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-07-20
 req: "docs/req/REQ-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: hardening qualidade attention-hooks pos-pr59
 
-> Created: 2026-07-20 | Status: backlog
+> Created: 2026-07-20 | Status: wip
 
 ## Context
 
