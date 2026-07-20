@@ -2512,3 +2512,17 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
   - REQ atualizada para `Status: Done`.
 
 
+
+---
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO Auditoria de conformidade pós-implementação + reabertura C13)
+
+**Tarefa:** Auditar a implementação do agy na branch `fix/attention-hooks-pos-auditoria` contra os 13 achados (C1–C13) da REQ pós-auditoria, verificar cobertura e correção.
+**Agente:** 🌩️ Zeus - Principal Software Architect
+**Branch:** `fix/attention-hooks-pos-auditoria`
+
+**Status:** CONCLUÍDO
+- **Verificação:** 3 auditores paralelos (Go/Node/Python) + suítes de teste (Go `ok`, Node 58/58, Python 330/330, `go vet` limpo) + reprodução empírica de C1 (script roda `exit=0` e escreve JSON no fallback `docs/roadmaps` sem `roadmap_dir:`) e C5 (payload com `"`,`\`,`\n` → JSON escapado e parseável).
+- **Resultado:** 11 de 13 achados sólida e corretamente resolvidos, incluindo os 3 críticos (C1/C2/C3). Feature funcional e endurecida.
+- **⚠️ C13 REABERTO:** cobertura inconsistente entre CLIs — comparação de conteúdo na idempotência de Kiro/Copilot só implementada em Python-Copilot; Go (Kiro+Copilot), Python-Kiro e Node ficaram com `len==2`/asserção parcial. Pendência acionável (arquivos+linhas) registrada no roadmap para o agy corrigir.
+- **Observação de governança:** `trackfw validate` acusa `branch_has_wip_roadmap` (roadmap em `done/` com branch `fix/` não mergeada). Registrado como observação separada.
