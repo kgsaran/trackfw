@@ -3,7 +3,7 @@ status: Open
 date: 2026-06-20
 author: Zeus
 adr: ""
-roadmap: "ROADMAP-2026-06-20-codex-agent-integrations.md"
+roadmap: "docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md"
 ---
 
 # REQ: attention-hooks-agent-clis

@@ -2227,19 +2227,18 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - `internal/validator/validator_test.go`: adicionado teste `TestValidate_WithTildeInADRDirs`.
 - Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-1A marcado como `✅ Concluído`.
 
-## Sessão 2026-07-20 — Zeus (CONCLUÍDO)
+## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
 
-**Tarefa:** Orquestração e implementação completa do ROADMAP-2026-07-19-global-adrs-governance.md.
-**Branch:** `feat/global-adrs-governance`
-**Pull Request:** https://github.com/kgsaran/trackfw/pull/56
+**Tarefa:** Orquestração e disparo do ROADMAP-2026-06-20-attention-hooks-agent-clis.md (Backlog #2).
+**Branch:** `feat/attention-hooks-agent-clis`
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
-**Entregues:**
-- **Branch criada, empurrada e PR aberto:** `feat/global-adrs-governance` → PR #56 (`https://github.com/kgsaran/trackfw/pull/56`).
-- **Wave 1:** Suporte à expansão de til (`~` / `~/`) no carregamento de `adr_dirs` em Go (`config.go`, `validator.go`), Node.js (`npm/src/config/index.js`, `npm/src/validator/index.js`) e Python (`pypi/trackfw/config.py`, `pypi/trackfw/validator.py`).
-- **Wave 2:** Suporte a `strict_ci_paths` (default `false`), conversão de diretórios externos não encontrados para `Warning` (em vez de Error) e isenção da verificação `adr_orphan` para ADRs fora do `cwd` local em Go, Node.js e Python.
-- **Wave 3:** Injeção da diretiva compulsória de leitura dos ADRs globais nos geradores de regras dos assistentes de IA (`CLAUDE.md`, `AGENTS.md` e `SKILL.md`) nas três linguagens.
-- **Wave 4:** Validação E2E com suítes de testes 100% verdes em Go, Node.js (21/21) e Python (310/310). Todos os critérios de aceite da REQ marcados como `[x]`. Roadmap finalizado em `docs/roadmaps/done/ROADMAP-2026-07-19-global-adrs-governance.md`.
+**Ações:**
+- Feito `git checkout main`, `git pull origin main` (PR #56 mesclado).
+- Alternado para a branch isolada `feat/attention-hooks-agent-clis` (rebased na `main`).
+- Movido e configurado roadmap `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md` (status `wip`).
+- Disparado subagente para Wave 1 (ML-1A: Scripts shell `trackfw-attention-signal.sh` e `trackfw-attention-cleanup.sh`).
+
 
 
 

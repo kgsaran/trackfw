@@ -1,13 +1,13 @@
 ---
-status: done
+status: wip
 date: 2026-06-20
-req: "REQ-2026-06-20-attention-hooks-agent-clis.md"
-squad: ""
+req: "docs/req/REQ-2026-06-20-attention-hooks-agent-clis.md"
+branch: "feat/attention-hooks-agent-clis"
 ---
 
-# Roadmap: codex-agent-integrations
+# Roadmap: attention-hooks-agent-clis
 
-> Criado em: 2026-06-20 | Status: ✅ Done
+> Criado em: 2026-06-20 | Status: 🔄 WIP
 
 REQ: REQ-2026-06-20-attention-hooks-agent-clis.md
 
