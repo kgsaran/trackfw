@@ -5,7 +5,13 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { trackfwRulesBlock, generateClaudeMD, scaffold } = require('../src/generators/init')
+const {
+  trackfwRulesBlock,
+  generateClaudeMD,
+  scaffold,
+  generateClaudeCommands,
+  generateClaudeCommandsForce
+} = require('../src/generators/init')
 const {
   injectClaudeHooks,
   injectCodexHooks,
@@ -23,6 +29,47 @@ test('trackfwRulesBlock includes mandatory global ADRs directive', () => {
   const block = trackfwRulesBlock()
   assert.ok(block.includes(EXPECTED_DIRECTIVE), `trackfwRulesBlock should contain global ADRs directive.\nGot:\n${block}`)
 })
+
+test('trackfwRulesBlock includes mandatory 8 architecture directives', () => {
+  const block = trackfwRulesBlock()
+  assert.ok(block.includes('### Architecture Directives (mandatory)'), 'should contain Architecture Directives header')
+  assert.ok(block.includes('- **3-layer separation:**'), 'should contain 3-layer separation')
+  assert.ok(block.includes('- **No in-memory data:**'), 'should contain no in-memory data')
+  assert.ok(block.includes('- **Auth from day 1:**'), 'should contain auth from day 1')
+  assert.ok(block.includes('- **Docker + .env from day 1:**'), 'should contain docker + .env from day 1')
+  assert.ok(block.includes('- **2-layer validation:**'), 'should contain 2-layer validation')
+  assert.ok(block.includes('- **API-first:**'), 'should contain api-first')
+  assert.ok(block.includes('- **Security wave:**'), 'should contain security wave')
+  assert.ok(block.includes('- **Test coverage:**'), 'should contain test coverage')
+  assert.ok(block.includes("Use `/trackfw:architect` to define stack"), 'should mention /trackfw:architect')
+})
+
+test('generateClaudeCommands and generateClaudeCommandsForce create architect.md command file', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-architect-test-'))
+  const origCwd = process.cwd()
+  try {
+    process.chdir(tmpDir)
+
+    // Test generateClaudeCommands
+    generateClaudeCommands()
+    const archPath = path.join(tmpDir, '.claude', 'commands', 'trackfw', 'architect.md')
+    assert.ok(fs.existsSync(archPath), 'architect.md should exist after generateClaudeCommands()')
+
+    const content = fs.readFileSync(archPath, 'utf8')
+    assert.ok(content.includes('guia de arquitetura do trackfw'), 'architect.md should contain role description')
+    assert.ok(content.includes('Passo 1 — Descoberta de Negócio'), 'architect.md should contain step 1')
+    assert.ok(content.includes('Combo A — Protótipo Rápido'), 'architect.md should contain combo A')
+
+    // Test generateClaudeCommandsForce
+    generateClaudeCommandsForce(tmpDir)
+    assert.ok(fs.existsSync(archPath), 'architect.md should exist after generateClaudeCommandsForce()')
+    const forceContent = fs.readFileSync(archPath, 'utf8')
+    assert.ok(forceContent.includes('guia de arquitetura do trackfw'), 'architect.md force content valid')
+  } finally {
+    process.chdir(origCwd)
+  }
+})
+
 
 test('generateClaudeMD includes mandatory global ADRs directive in CLAUDE.md', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gen-test-'))

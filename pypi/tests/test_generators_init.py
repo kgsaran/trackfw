@@ -461,8 +461,66 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')))
 
 
+class TestGenerateClaudeCommands(unittest.TestCase):
+    """Verifica geração dos slash commands do Claude, em especial architect.md."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def test_generate_claude_commands_creates_architect_md(self):
+        from trackfw.generators.init_gen import generate_claude_commands
+
+        generate_claude_commands(self.tmp)
+
+        cmd_dir = os.path.join(self.tmp, '.claude', 'commands', 'trackfw')
+        self.assertTrue(os.path.isdir(cmd_dir), '.claude/commands/trackfw não foi criado')
+
+        architect_file = os.path.join(cmd_dir, 'architect.md')
+        self.assertTrue(os.path.isfile(architect_file), 'architect.md não foi criado')
+
+        with open(architect_file, encoding='utf-8') as f:
+            content = f.read()
+
+        self.assertIn('guia de arquitetura do trackfw', content)
+        self.assertIn('Passo 1 — Descoberta de Negócio', content)
+        self.assertIn('Passo 2 — Recomendação de Stack', content)
+        self.assertIn('Passo 3 — Arquitetura em Camadas', content)
+        self.assertIn('Passo 4 — Gerar o ADR de Stack', content)
+        self.assertIn('Passo 5 — Próximos Passos', content)
+        self.assertIn('/trackfw:architect', content)
+
+    def test_scaffold_creates_all_slash_commands(self):
+        opts = {'project_name': 'test-proj', 'namespacing': 'flat', 'wip_limit': 1}
+        scaffold(self.tmp, opts)
+
+        cmd_dir = os.path.join(self.tmp, '.claude', 'commands', 'trackfw')
+        expected_commands = [
+            'adr.md', 'req.md', 'validate.md', 'status.md',
+            'move.md', 'roadmap.md', 'implement.md', 'architect.md'
+        ]
+        for cmd in expected_commands:
+            cmd_path = os.path.join(cmd_dir, cmd)
+            self.assertTrue(os.path.isfile(cmd_path), f'Slash command {cmd} não foi criado')
+
+    def test_rules_block_contains_architecture_directives(self):
+        from trackfw.generators.init_gen import _trackfw_rules_block
+
+        block = _trackfw_rules_block()
+        self.assertIn('### Architecture Directives (mandatory)', block)
+        self.assertIn('3-layer separation:', block)
+        self.assertIn('No in-memory data:', block)
+        self.assertIn('Auth from day 1:', block)
+        self.assertIn('Docker + .env from day 1:', block)
+        self.assertIn('2-layer validation:', block)
+        self.assertIn('API-first:', block)
+        self.assertIn('Security wave:', block)
+        self.assertIn('Test coverage:', block)
+        self.assertIn('Use `/trackfw:architect` to define stack before the first REQ', block)
+
+
 if __name__ == '__main__':
     unittest.main()
+
 
 
 

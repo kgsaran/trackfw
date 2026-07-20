@@ -2227,17 +2227,19 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - `internal/validator/validator_test.go`: adicionado teste `TestValidate_WithTildeInADRDirs`.
 - Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-1A marcado como `✅ Concluído`.
 
-## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO)
 
-**Tarefa:** Orquestração e disparo do ROADMAP-2026-06-19-architect-command-guidelines.md (Backlog #3).
+**Tarefa:** Orquestração e implementação completa do ROADMAP-2026-06-19-architect-command-guidelines.md (Backlog #3).
 **Branch:** `feat/architect-command-guidelines`
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
-**Ações:**
-- Feito `git checkout main`, `git pull origin main` (PR #57 mesclado).
-- Criada e ativada a branch isolada `feat/architect-command-guidelines`.
-- Movido e configurado o roadmap `docs/roadmaps/ROADMAP-2026-06-19-architect-command-guidelines.md` (status `wip`).
-- Disparados 3 subagentes paralelos para Wave 1 (ML-1A Go, ML-1B Node.js, ML-1C Python).
+**Entregues:**
+- **Wave 1:**
+  - Slash command `/trackfw:architect` (`architect.md`) gerado em `.claude/commands/trackfw/` nas 3 distribuições (Go, Node.js, Python).
+  - Seção `### Architecture Directives (mandatory)` com as 8 diretrizes de arquitetura injetada nos blocos de regras (`CLAUDE.md`, `AGENTS.md`, `.windsurfrules`, `.cursor/rules/`, etc.).
+  - REQ atualizada e concluída em `docs/requisições/claude/REQ-2026-06-19-architect-command-guidelines.md`.
+  - Roadmap finalizado em `docs/roadmaps/done/ROADMAP-2026-06-19-architect-command-guidelines.md`.
+  - Suítes de testes 100% aprovadas nas 3 linguagens.
 
 
 
@@ -2435,5 +2437,56 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Tarefa:** Implementar a Wave 3 (ML-3A e ML-3B) do `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md` para Go e Node.js.
 **Agente:** ☀️ Apolo — Backend Senior Specialist
 
+---
+
+## Sessão 2026-07-20 — Afrodite (IMPLEMENTANDO ML-1B Node.js)
+
+**Tarefa:** Implementar ML-1B do Roadmap `docs/roadmaps/ROADMAP-2026-06-19-architect-command-guidelines.md` (slash command `/trackfw:architect` + diretrizes de arquitetura no Node.js).
+**Agente:** 💖 Afrodite - Frontend i18n Senior Specialist
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-1C Python)
+
+**Tarefa:** Implementar ML-1C em Python do `docs/roadmaps/ROADMAP-2026-06-19-architect-command-guidelines.md`.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `pypi/trackfw/generators/init_gen.py`:
+  - `generate_claude_commands(cwd: str) -> None`: exportada e implementada com suporte a todos os slash commands, incluindo `architect.md`.
+  - `architect.md`: gerado em `.claude/commands/trackfw/` com 5 passos estruturados (Descoberta de Negócio, Recomendação de Stack, Arquitetura em Camadas, Gerar ADR de Stack, Próximos Passos).
+  - `_trackfw_rules_block()`: atualizado com a seção `### Architecture Directives (mandatory)` contendo as 8 diretrizes de arquitetura.
+  - `scaffold()`: chama `generate_claude_commands(cwd)`.
+- `pypi/trackfw/commands/discover.py`:
+  - Chama `generate_claude_commands(cwd)` ao executar com a flag `--init`.
+- `pypi/tests/test_generators_init.py`:
+  - Adicionada a classe `TestGenerateClaudeCommands` testando a criação de `architect.md`, de todos os slash commands via `scaffold`, e a presença da seção `### Architecture Directives (mandatory)`.
+  - Executado `python3 -m pytest pypi/tests/` com 323/323 testes verdes (100% de aprovação).
+- `docs/roadmaps/ROADMAP-2026-06-19-architect-command-guidelines.md`:
+  - ML-1C marcado como `✅ Concluído`.
 
 
+
+
+
+
+---
+
+## Sessão 2026-07-20 — Hades (IMPLEMENTANDO Threat Review PR#56 e PR#57)
+
+**Tarefa:** Threat review de segurança dos PRs #56 (adr_dirs `~`, strict_ci_paths, isenção adr_orphan, diretiva de IA em geradores) e #57 (hooks nativos 7 CLIs de IA + scripts shell trackfw-attention-*.sh) já mergeados.
+**Agente:** 🔒 Hades - Principal DevSecOps Security Specialist
+
+---
+
+## Sessão 2026-07-20 — Hades (CONCLUÍDO Threat Review PR#56 e PR#57)
+
+**Tarefa:** Threat review de segurança dos PRs #56 e #57 já mergeados.
+**Agente:** 🔒 Hades - Principal DevSecOps Security Specialist
+
+**Achados principais (não corrigidos — apenas reportados, correção é handoff):**
+- 🟠 Path Traversal (CWE-22) em `scripts/trackfw-attention-signal.sh` / `trackfw-attention-cleanup.sh` (Go/Node/Python): `ROADMAP_DIR` extraído via `grep` cru de `roadmap_dir:` em `trackfw.yaml` sem validação de contenção no `cwd` — diferente do tratamento dado a `adr_dirs` no PR#56 (que ganhou `isOutsideCWD`/`_is_subpath`). Um `trackfw.yaml` malicioso (`roadmap_dir: ../../../algum/lugar`) permite `mkdir -p`/escrita de `.trackfw-attention.json` fora do projeto quando o hook dispara automaticamente a cada tool call.
+- 🟡 Improper JSON escaping (CWE-116) no mesmo script: `sed 's/"/\\"/g'` escapa apenas aspas, não backslashes; um `MSG`/`TOOL` terminando em `\` corrompe o JSON gerado (a versão Node removeu o `tr -d '\n'` que existia antes, piorando o cenário de newline embutido).
+- Demais vetores (command injection via `$()`/backticks no shell, hijack de `.claude/settings.json`/hooks dos 7 CLIs, supply chain) — avaliados como NÃO exploráveis: os injetores de hook usam apenas comandos estáticos hardcoded (`scripts/trackfw-attention-*.sh`), sem interpolação de dados externos; os valores extraídos via `jq`/`python3` só são usados como argumento de `%s` do `printf`, nunca via `eval`/`bash -c`.
+
+**Nenhum código alterado** — revisão apenas, sem correções (fora do escopo do Hades; achados endereçados para handoff aos agentes implementadores).

@@ -49,6 +49,17 @@ Chain: ` + "`ADR → REQ → ROADMAP`" + ` · States: ` + "`backlog / wip / bloc
 3. **Before PR:** ` + "`trackfw validate`" + ` must pass
 4. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**
 
+### Architecture Directives (mandatory)
+- **3-layer separation:** frontend / backend / database — never mix concerns
+- **No in-memory data:** always database + ORM (never arrays/globals for persistence)
+- **Auth from day 1:** never defer — refactoring auth later is very costly
+- **Docker + .env from day 1:** containerize early; all config via env vars
+- **2-layer validation:** frontend (UX) + backend (security) — never only one
+- **API-first:** define OpenAPI contract before coding frontend/backend integration
+- **Security wave:** include a red-team review wave in every feature roadmap
+- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)
+- Use ` + "`/trackfw:architect`" + ` to define stack before the first REQ
+
 ### Key Commands
 - ` + "`trackfw context`" + ` — current governance state (always run first)
 - ` + "`trackfw status`" + ` — all artifacts and states
