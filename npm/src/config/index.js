@@ -1,13 +1,25 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+
+function expandPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return filePath;
+  if (filePath === '~') {
+    return os.homedir();
+  }
+  if (filePath.startsWith('~/') || filePath.startsWith('~\\')) {
+    return path.join(os.homedir(), filePath.slice(2));
+  }
+  return filePath;
+}
 
 function defaults() {
   return {
-    adrDirs: ['docs/adr'],
-    reqDir: 'docs/req',
-    roadmapDir: 'docs/roadmaps',
+    adrDirs: ['docs/adr'].map(expandPath),
+    reqDir: expandPath('docs/req'),
+    roadmapDir: expandPath('docs/roadmaps'),
     roadmapNamespacing: 'flat',
     agents: [],
     governanceMode: '',
@@ -15,6 +27,7 @@ function defaults() {
     wipLimit: 1,
     wipBySquad: false,
     requireReqInCommit: false,
+    strictCiPaths: false,
     traceIdField: '',
     // NOVOS campos:
     linkFields: {
@@ -78,7 +91,7 @@ function parse(content, cfg) {
   let rules = {};
 
   function flushBlocks() {
-    if (inAdrDirs && adrDirs.length) cfg.adrDirs = adrDirs;
+    if (inAdrDirs && adrDirs.length) cfg.adrDirs = adrDirs.map(expandPath);
     if (inAgents && agents.length) cfg.agents = agents;
     if (inLinkFields) {
       if (inLinkFieldsReq && linkFieldsReq.length) cfg.linkFields.req = linkFieldsReq;
@@ -108,7 +121,11 @@ function parse(content, cfg) {
 
     if (hasIndent) {
       if (inAdrDirs) {
-        if (line.startsWith('- ')) adrDirs.push(line.slice(2).trim());
+        if (line.startsWith('- ')) {
+          let val = line.slice(2).trim();
+          val = val.replace(/^["']|["']$/g, '');
+          adrDirs.push(expandPath(val));
+        }
         continue;
       }
       if (inAgents) {
@@ -166,8 +183,8 @@ function parse(content, cfg) {
 
     switch (key) {
       case 'adr_dirs':              inAdrDirs = true; adrDirs = []; break;
-      case 'req_dir':               cfg.reqDir = val.replace(/^["']|["']$/g, ''); break;
-      case 'roadmap_dir':           cfg.roadmapDir = val.replace(/^["']|["']$/g, ''); break;
+      case 'req_dir':               cfg.reqDir = expandPath(val.replace(/^["']|["']$/g, '')); break;
+      case 'roadmap_dir':           cfg.roadmapDir = expandPath(val.replace(/^["']|["']$/g, '')); break;
       case 'roadmap_namespacing':   cfg.roadmapNamespacing = val; break;
       case 'agents':                inAgents = true; agents = []; break;
       case 'governance_mode':       cfg.governanceMode = val; break;
@@ -175,6 +192,7 @@ function parse(content, cfg) {
       case 'wip_limit':             { const n = parseInt(val, 10); if (n > 0) cfg.wipLimit = n; break; }
       case 'wip_by_squad':          cfg.wipBySquad = val === 'true'; break;
       case 'require_req_in_commit': cfg.requireReqInCommit = val === 'true'; break;
+      case 'strict_ci_paths':       cfg.strictCiPaths = val === 'true'; break;
       case 'trace_id_field':        cfg.traceIdField = val.replace(/^["']|["']$/g, ''); break;
       case 'link_fields':           inLinkFields = true; break;
       case 'acceptance_markers':    inAcceptanceMarkers = true; acceptanceMarkers = []; break;
@@ -189,4 +207,5 @@ function parse(content, cfg) {
 const NAMESPACING_FLAT = 'flat';
 const NAMESPACING_BY_AGENT = 'by_agent';
 
-module.exports = { load, reset, defaults, NAMESPACING_FLAT, NAMESPACING_BY_AGENT };
+module.exports = { load, reset, defaults, expandPath, NAMESPACING_FLAT, NAMESPACING_BY_AGENT };
+

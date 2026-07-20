@@ -230,6 +230,7 @@ def _trackfw_rules_block() -> str:
         '```\n'
         'Delete the file when resolved. Visible as a live banner in `trackfw serve`.\n'
         '\n### Architecture Directives (mandatory)\n'
+        '- Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.\n'
         '- **3-layer arch + no in-memory data:** frontend / backend / database; always DB + ORM — never arrays/globals\n'
         '- **Auth + Docker + .env from day 1:** never defer auth; containerize early; all config via env vars\n'
         '- **2-layer validation + API-first:** frontend (UX) + backend (security); define OpenAPI contract first\n'

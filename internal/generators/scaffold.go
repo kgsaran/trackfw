@@ -148,6 +148,7 @@ A cadeia obrigatória é: **ADR → REQ → ROADMAP → backlog/wip/blocked/done
    - Ao **analisar** um roadmap antes de iniciar: mova o arquivo de ` + "`backlog/`" + ` para ` + "`analyzing/`" + `; só mova para ` + "`wip/`" + ` ao começar a codificar de fato.
 5. **Execute ` + "`trackfw validate`" + ` antes de cada commit.** Zero violations obrigatório.
 6. **ADRs antes de decisões arquiteturais.** Qualquer decisão técnica relevante deve ter um ADR (` + "`/trackfw:adr`" + `).
+7. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**
 
 ---
 

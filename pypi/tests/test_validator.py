@@ -670,5 +670,130 @@ class TestValidatorEvolution(unittest.TestCase):
             f"## Done When deve satisfazer acceptance criteria. violations: {msgs}")
 
 
+class TestExpandTildeAdrDirs(unittest.TestCase):
+    """Testes unitários para expansão de til (~) em adr_dirs no validator."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_find_adr_file_com_tilde(self):
+        """_find_adr_file localiza arquivo ADR em adr_dir especificado com ~/."""
+        home = os.path.expanduser("~")
+        test_dir_name = f".tmp_trackfw_test_{int(time.time())}"
+        test_dir = os.path.join(home, test_dir_name)
+        os.makedirs(test_dir, exist_ok=True)
+        try:
+            adr_path = os.path.join(test_dir, "ADR-0001-global.md")
+            _write(adr_path, "---\nstatus: Accepted\n---\n# Global ADR")
+            found = v._find_adr_file("ADR-0001-global.md", [f"~/{test_dir_name}"])
+            self.assertEqual(found, adr_path)
+        finally:
+            shutil.rmtree(test_dir, ignore_errors=True)
+
+    def test_validate_adrs_are_referenced_com_tilde(self):
+        """validate_adrs_are_referenced expande ~/ em adr_dirs ao verificar referências."""
+        home = os.path.expanduser("~")
+        test_dir_name = f".tmp_trackfw_test_ref_{int(time.time())}"
+        test_dir = os.path.join(home, test_dir_name)
+        os.makedirs(test_dir, exist_ok=True)
+        try:
+            _write(os.path.join(test_dir, "ADR-0002.md"), "---\nstatus: Accepted\n---\n# ADR 2")
+            req_dir = os.path.join(self.tmp, "docs/req")
+            _write(os.path.join(req_dir, "REQ-001.md"), "---\nstatus: Open\n---\nADR: ADR-0002.md\n")
+
+            cfg = _config.defaults()
+            cfg["adr_dirs"] = [f"~/{test_dir_name}"]
+            cfg["req_dir"] = req_dir
+
+            violations = v.validate_adrs_are_referenced(cfg)
+            self.assertEqual(violations, [])
+        finally:
+            shutil.rmtree(test_dir, ignore_errors=True)
+
+
+class TestStrictCIPathsAndInexistentAdrDirs(unittest.TestCase):
+    """Testes unitários ML-2C: tratamento de diretórios adr_dirs inexistentes e strict_ci_paths."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_adr_dir_inexistente_gera_warning_por_padrao(self):
+        """Diretório em adr_dirs inexistente com strict_ci_paths=False gera Warning em warnings."""
+        cfg = _config.defaults()
+        cfg["adr_dirs"] = [os.path.join(self.tmp, "docs/adr_inexistente")]
+        cfg["strict_ci_paths"] = False
+
+        res = v.validate_adr_dirs_exist(cfg)
+        self.assertEqual(res["violations"], [])
+        self.assertEqual(len(res["warnings"]), 1)
+        self.assertIn("does not exist", res["warnings"][0]["message"])
+        self.assertEqual(res["warnings"][0]["type"], "warning")
+
+    def test_adr_dir_inexistente_gera_violation_quando_strict_ci_paths_true(self):
+        """Diretório em adr_dirs inexistente com strict_ci_paths=True gera Violation em violations."""
+        cfg = _config.defaults()
+        cfg["adr_dirs"] = [os.path.join(self.tmp, "docs/adr_inexistente")]
+        cfg["strict_ci_paths"] = True
+
+        res = v.validate_adr_dirs_exist(cfg)
+        self.assertEqual(res["warnings"], [])
+        self.assertEqual(len(res["violations"]), 1)
+        self.assertIn("does not exist", res["violations"][0]["message"])
+        self.assertEqual(res["violations"][0]["type"], "violation")
+
+
+class TestAdrOrphanExemptOutsideCwd(unittest.TestCase):
+    """Testes unitários ML-2C: isenção de adr_orphan para arquivos fora de cwd."""
+
+    def setUp(self):
+        self.cwd = tempfile.mkdtemp()
+        self.external_dir = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.cwd, ignore_errors=True)
+        shutil.rmtree(self.external_dir, ignore_errors=True)
+        _config.reset()
+
+    def test_adr_orphan_isenta_arquivos_fora_de_cwd(self):
+        """ADR contida em diretório fora de cwd não deve ser reportada como adr_orphan."""
+        # Cria uma ADR no diretório externo
+        ext_adr = os.path.join(self.external_dir, "ADR-0099-global.md")
+        _write(ext_adr, "---\nstatus: Accepted\n---\n# Global ADR")
+
+        cfg = _config.defaults()
+        cfg["adr_dirs"] = [self.external_dir]
+        cfg["req_dir"] = os.path.join(self.cwd, "docs/req")
+        os.makedirs(cfg["req_dir"], exist_ok=True)
+
+        violations = v.validate_adrs_are_referenced(cfg, cwd=self.cwd)
+        self.assertEqual(violations, [], "ADR em diretório externo a cwd deve ser isenta de adr_orphan")
+
+    def test_adr_orphan_reporta_arquivos_dentro_de_cwd(self):
+        """ADR contida dentro de cwd e não referenciada por nenhuma REQ gera violation."""
+        internal_adr_dir = os.path.join(self.cwd, "docs/adr")
+        int_adr = os.path.join(internal_adr_dir, "ADR-0001-local.md")
+        _write(int_adr, "---\nstatus: Accepted\n---\n# Local ADR")
+
+        cfg = _config.defaults()
+        cfg["adr_dirs"] = [internal_adr_dir]
+        cfg["req_dir"] = os.path.join(self.cwd, "docs/req")
+        os.makedirs(cfg["req_dir"], exist_ok=True)
+
+        violations = v.validate_adrs_are_referenced(cfg, cwd=self.cwd)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("ADR-0001-local.md", violations[0]["message"])
+
+
 if __name__ == "__main__":
     unittest.main()

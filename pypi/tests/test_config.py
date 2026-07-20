@@ -253,6 +253,33 @@ class TestConfigPaths(unittest.TestCase):
         self.assertEqual(cfg["req_dir"], "docs/req")
         self.assertEqual(cfg["roadmap_dir"], "docs/roadmaps")
 
+    def test_config_adr_dirs_tilde_expansion(self):
+        """adr_dirs com ~ ou ~/ → til expandido para o home do usuario."""
+        home = os.path.expanduser("~")
+        self._write_yaml(
+            "adr_dirs:\n"
+            "  - ~/global_adrs\n"
+            "  - ~/.trackfw/adrs\n"
+        )
+        cfg = config.load(cwd=self.tmpdir)
+        expected = [
+            os.path.join(home, "global_adrs"),
+            os.path.join(home, ".trackfw/adrs"),
+        ]
+        self.assertEqual(cfg["adr_dirs"], expected)
+
+
+    def test_config_strict_ci_paths(self):
+        """strict_ci_paths: true → cfg['strict_ci_paths'] é True; omitido → False."""
+        self._write_yaml("strict_ci_paths: true\n")
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertTrue(cfg["strict_ci_paths"])
+
+        config.reset()
+        self._write_yaml("wip_limit: 1\n")
+        cfg_default = config.load(cwd=self.tmpdir)
+        self.assertFalse(cfg_default["strict_ci_paths"])
+
 
 if __name__ == "__main__":
     unittest.main()

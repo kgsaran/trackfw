@@ -132,5 +132,37 @@ test('sem adr_dirs/req_dir/roadmap_dir → defaults corretos', () => {
   })
 })
 
+// ML-1B — Expansão de ~ (tilde) em adr_dirs, req_dir, roadmap_dir
+test('expandPath — expande ~ e ~/ para o diretório Home', () => {
+  const home = os.homedir()
+  assert.strictEqual(config.expandPath('~'), home)
+  assert.strictEqual(config.expandPath('~/global-adrs'), path.join(home, 'global-adrs'))
+  assert.strictEqual(config.expandPath('~\\global-adrs'), path.join(home, 'global-adrs'))
+  assert.strictEqual(config.expandPath('docs/adr'), 'docs/adr')
+  assert.strictEqual(config.expandPath(null), null)
+})
+
+test('adr_dirs com ~ em trackfw.yaml → expandido para homedir', () => {
+  const home = os.homedir()
+  const yaml = `adr_dirs:\n  - ~/company-adrs\n  - docs/adr\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.deepStrictEqual(cfg.adrDirs, [path.join(home, 'company-adrs'), 'docs/adr'])
+  })
+})
+
+// ML-2B — strict_ci_paths
+test('strict_ci_paths — default é false, aceita true via yaml', () => {
+  withTmpDir(null, (tmp) => {
+    const cfgDefault = config.load(tmp)
+    assert.strictEqual(cfgDefault.strictCiPaths, false)
+  })
+  withTmpDir('strict_ci_paths: true\n', (tmp) => {
+    const cfgTrue = config.load(tmp)
+    assert.strictEqual(cfgTrue.strictCiPaths, true)
+  })
+})
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
+

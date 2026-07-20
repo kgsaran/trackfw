@@ -13,6 +13,10 @@ function test(name, fn) {
   try { fn(); console.log('✓', name); passed++ }
   catch (e) { console.error('✗', name, e.message); failed++ }
 }
+async function testAsync(name, fn) {
+  try { await fn(); console.log('✓', name); passed++ }
+  catch (e) { console.error('✗', name, e.message); failed++ }
+}
 
 // walkDirMd
 test('walkDirMd finds .md in subdirectories', () => {
@@ -251,5 +255,104 @@ test('acceptance_markers custom: custom marker satisfies check', () => {
   }
 })
 
-console.log(`\n${passed} passed, ${failed} failed`)
-if (failed > 0) process.exit(1)
+// ML-1B — Validação de adr_dirs com ~/
+test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () => {
+  const testSubdir = '.trackfw-test-adrs-' + Date.now()
+  const fullHomeSubdir = path.join(os.homedir(), testSubdir)
+  fs.mkdirSync(fullHomeSubdir, { recursive: true })
+  fs.writeFileSync(path.join(fullHomeSubdir, 'ADR-GLOBAL-001.md'), '---\nstatus: Accepted\n---\n# Global ADR\n')
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-tilde-val-'))
+  fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), `adr_dirs:\n  - "~/${testSubdir}"\n`)
+
+  const origDir = process.cwd()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const found = validator.findAdrFile('ADR-GLOBAL-001.md')
+    assert.strictEqual(found, path.join(fullHomeSubdir, 'ADR-GLOBAL-001.md'))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+    fs.rmSync(fullHomeSubdir, { recursive: true, force: true })
+  }
+})
+
+// ML-2B — Resiliência CI/CD para adr_dirs inexistentes e isenção de adr_orphan em ADRs externos
+;(async () => {
+  await testAsync('adr_dirs inexistente com strict_ci_paths false (default) gera warning', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-nonexistent-warning-'))
+    const nonexistent = path.join(tmp, 'nonexistent-adrs-dir')
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), `adr_dirs:\n  - "${nonexistent}"\nstrict_ci_paths: false\n`)
+
+    const origDir = process.cwd()
+    process.chdir(tmp)
+    config.reset()
+    try {
+      const res = validator.validateADRDirsExist()
+      assert.strictEqual(res.violations.length, 0)
+      assert(res.warnings.some(w => w.includes('does not exist') && w.includes('nonexistent-adrs-dir')))
+      
+      const unfilt = await validator.validateUnfiltered()
+      assert(unfilt.warnings.some(w => w.includes('does not exist')))
+      assert(!unfilt.violations.some(v => v.includes('does not exist')))
+    } finally {
+      process.chdir(origDir)
+      config.reset()
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  await testAsync('adr_dirs inexistente com strict_ci_paths true gera violation', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-nonexistent-violation-'))
+    const nonexistent = path.join(tmp, 'nonexistent-adrs-dir')
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), `adr_dirs:\n  - "${nonexistent}"\nstrict_ci_paths: true\n`)
+
+    const origDir = process.cwd()
+    process.chdir(tmp)
+    config.reset()
+    try {
+      const res = validator.validateADRDirsExist()
+      assert.strictEqual(res.warnings.length, 0)
+      assert(res.violations.some(v => v.includes('does not exist') && v.includes('nonexistent-adrs-dir')))
+
+      const unfilt = await validator.validateUnfiltered()
+      assert(unfilt.violations.some(v => v.includes('does not exist')))
+    } finally {
+      process.chdir(origDir)
+      config.reset()
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  test('adr_orphan isenta arquivos de ADR externos à raiz do projeto (cwd)', () => {
+    const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-external-adrs-'))
+    fs.writeFileSync(path.join(externalDir, 'ADR-EXTERNAL-999.md'), '---\nstatus: Accepted\n---\n# External ADR\n')
+
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-project-dir-'))
+    fs.mkdirSync(path.join(projectDir, 'docs/req'), { recursive: true })
+    fs.mkdirSync(path.join(projectDir, 'docs/adr'), { recursive: true })
+    fs.writeFileSync(path.join(projectDir, 'docs/adr/ADR-LOCAL-001.md'), '---\nstatus: Accepted\n---\n# Local ADR\n')
+    fs.writeFileSync(path.join(projectDir, 'trackfw.yaml'), `adr_dirs:\n  - docs/adr\n  - "${externalDir}"\n`)
+
+    const origDir = process.cwd()
+    process.chdir(projectDir)
+    config.reset()
+    try {
+      const violations = validator.validateADRsAreReferenced()
+      // ADR-LOCAL-001.md não está em nenhuma REQ -> deve ser marcado como violation adr_orphan
+      assert(violations.some(v => v.includes('ADR-LOCAL-001.md')), 'ADR local não referenciado deve ser órfão')
+      // ADR-EXTERNAL-999.md está fora do cwd -> DEVE SER ISENTO de adr_orphan
+      assert(!violations.some(v => v.includes('ADR-EXTERNAL-999.md')), 'ADR externo deve ser ISENTO de adr_orphan')
+    } finally {
+      process.chdir(origDir)
+      config.reset()
+      fs.rmSync(externalDir, { recursive: true, force: true })
+      fs.rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
+
+  console.log(`\n${passed} passed, ${failed} failed`)
+  if (failed > 0) process.exit(1)
+})()

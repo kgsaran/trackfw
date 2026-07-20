@@ -2107,3 +2107,248 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Progresso:**
 - Criado o script Python em `~/.gemini/antigravity-cli/statusline.py` para receber o payload do CLI e formatá-lo com cores e setas Powerline.
 - Atualizado o arquivo de configuração `~/.gemini/antigravity-cli/settings.json` para apontar para o novo script.
+
+---
+
+## Sessão 2026-07-19 — Apolo ML-1C (CONCLUÍDO)
+
+**Tarefa:** ML-1C do roadmap `ROADMAP-2026-07-19-antigravity-agent-tools.md` — Implementar renderer `agent-directory` no CLI Python.
+
+**Arquivos alterados:**
+- `pypi/trackfw/integrations/renderers.py` — novo branch para `kind == "agents" and target == "antigravity" and surface == "current"`: reconstrói frontmatter com mapeamento de model (opus→pro, sonnet→flash) e injeção de tools (SET_IMPL 10 / SET_ARCH 14). Helpers: `_map_model`, `_agent_tools`, constantes `_MODEL_MAP`, `_SET_IMPL`, `_SET_ARCH`.
+- `pypi/tests/test_agents_skills.py` — novo teste `test_antigravity_current_surface_renders_agent_directory`: valida architect (14 tools, model: pro, sem opus) e backend (10 tools, model: flash, sem define_subagent), ambos sem IDs proibidos.
+
+**Resultado:** 31/31 testes verdes. Paridade byte-a-byte com implementação Go (`internal/integrations/render.go`).
+
+---
+
+## Sessão 2026-07-19 — ML-1A: Render agent-directory para Antigravity (IMPLEMENTANDO)
+
+**Agente:** Apolo (Backend Specialist)
+**Branch:** feat/antigravity-agent-tools (criada por Zeus)
+
+**Objetivo:** Adicionar `case "agent-directory"` em `internal/integrations/render.go` para reconstruir frontmatter sem `model: opus|sonnet` e com `tools:` (SET_IMPL / SET_ARCH).
+
+**Progresso:**
+- Estendeu `markdownParts` para retornar 4º valor `model string`.
+- Adicionou `case "agent-directory"` no switch de `Render` com reconstrução de frontmatter.
+- Implementou helpers `mapModel` (opus→pro, sonnet→flash, passthrough para flash_lite/flash/pro) e `agentTools` (SET_IMPL 10 tools / SET_ARCH 14 tools).
+- Adicionou `TestRenderAgentDirectory` com subtestes architect e backend.
+- `go test ./internal/integrations/...` verde.
+- `make build` sem erros.
+- Nenhum asset alterado.
+
+**Status: CONCLUIDO**
+
+---
+
+## Sessão 2026-07-19 — ML-1B: Render agent-directory para Antigravity no CLI Node.js (CONCLUÍDO)
+
+**Agente:** Apolo (Backend Specialist)
+**Branch:** feat/antigravity-agent-tools (criada por Zeus)
+
+**Objetivo:** Adaptar `npm/src/integrations/render.js` para a representação `agent-directory` com mapa de model e injeção de tools; adicionar teste golden em `npm/tests/agents-skills.test.js`.
+
+**Entregue:**
+- `markdownParts` estendido para capturar campo `model` do frontmatter.
+- Helpers `resolveModel` (opus→pro, sonnet→flash, passthrough flash_lite/flash/pro, '' para ausente/não-mapeável) e `toolsFor` (SET_ARCH 14 tools para nomes terminando em "architect", SET_IMPL 10 tools para demais).
+- Constantes `SET_IMPL` e `SET_ARCH` locais; IDs proibidos nunca incluídos.
+- Branch `if (capability.representation === 'agent-directory')` que reconstrói frontmatter e preserva body.
+- Formato byte-equivalente ao Go (ML-1A): `---\nname/description/model(opcional)/tools---\nbody\n`.
+- Teste golden `'Antigravity agent-directory renderer é byte-equivalente ao contrato Go/Python'` com `assert.equal` de string completa para architect e backend + asserts de ausência de IDs proibidos.
+- `node --test npm/tests/agents-skills.test.js`: 21/21 testes passando.
+- Nenhum asset em `npm/src/integrations/assets/agents/` alterado.
+
+---
+
+## 2026-07-19 — Apolo | Housekeeping: sincronização de version files → 2.14.0
+
+**Status:** CONCLUIDO
+**Branch:** `chore/sync-version-files-2.14.0`
+**Agente:** Apolo (Backend Senior Specialist)
+
+### O que foi feito
+- Bump de `2.12.4` → `2.14.0` nos 5 version files: `internal/version/version.go`, `npm/package.json`, `pypi/pyproject.toml`, `pypi/trackfw/__init__.py`, `docs/visao-projeto/VISION.md`.
+- Build validado: `make build` sem erros.
+- Binário confirmado: `./bin/trackfw version` → `trackfw v2.14.0`.
+- Testes verdes: `go test ./internal/version/... ./internal/integrations/...`.
+- grep de residual `2.12.4` nos 5 arquivos: vazio.
+- Commit: `2ed0874` — apenas os 5 arquivos, sem push (Zeus faz o push).
+
+---
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO)
+
+**Tarefa:** Verificação e consolidação do backlog para codar no projeto.
+**Agente:** 🌩️ Zeus - Principal Software Architect
+
+**Ações:**
+- Inspecionados diretórios `docs/req/`, `docs/roadmaps/`, `docs/requisições/` e `docs/adr/`.
+- Mapeadas 4 demandas pendentes/backlog.
+
+---
+
+## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
+
+**Tarefa:** Orquestração e disparo da Wave 1 do ROADMAP-2026-07-19-global-adrs-governance.md.
+**Branch:** `feat/global-adrs-governance`
+**Agente:** 🌩️ Zeus - Principal Software Architect
+
+**Ações:**
+- Criada branch `feat/global-adrs-governance`.
+- Gerado `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` detalhado com 4 waves e paralelização de microlotes.
+- Atualizado vínculo no `REQ-2026-07-19-global-adrs-governance.md`.
+- Commit de docs realizado (`d6f649b`).
+2202: - Disparados 3 subagentes paralelos para Wave 1 (ML-1A Go, ML-1B Node, ML-1C Python).
+
+---
+
+## Sessão 2026-07-20 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-1C do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Expansão de tilde (`~` / `~/`) no CLI Python (`config.py` e `validator.py`).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Ações:**
+- Iniciando implementação da expansão de til em `pypi/trackfw/config.py` e `pypi/trackfw/validator.py`.
+- Adição de testes em `pypi/tests/test_config.py` e `pypi/tests/test_validator.py`.
+
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-1A)
+
+**Tarefa:** ML-1A - Suporte à expansão de til (`~` ou `~/`) no carregamento de `adr_dirs` no CLI Go (`internal/config/config.go` e `internal/validator/validator.go`).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `internal/config/config.go`: adicionada função exportada `ExpandPath(p string) string` utilizando `os.UserHomeDir()` e `filepath.Join()`. Atualizado o parser `parse()` de `trackfw.yaml` para expandir caminhos em `adr_dirs`.
+- `internal/validator/validator.go`: atualizadas funções `walkADRFiles`, `findADRFile` e `referenceExists` para expandir caminhos com `config.ExpandPath()`.
+- `internal/config/config_paths_test.go`: adicionados testes `TestExpandPath` e `TestConfigTildeExpansionInAdrDirs`.
+- `internal/validator/validator_test.go`: adicionado teste `TestValidate_WithTildeInADRDirs`.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-1A marcado como `✅ Concluído`.
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO)
+
+**Tarefa:** Orquestração e implementação completa do ROADMAP-2026-07-19-global-adrs-governance.md.
+**Branch:** `feat/global-adrs-governance`
+**Pull Request:** https://github.com/kgsaran/trackfw/pull/56
+**Agente:** 🌩️ Zeus - Principal Software Architect
+
+**Entregues:**
+- **Branch criada, empurrada e PR aberto:** `feat/global-adrs-governance` → PR #56 (`https://github.com/kgsaran/trackfw/pull/56`).
+- **Wave 1:** Suporte à expansão de til (`~` / `~/`) no carregamento de `adr_dirs` em Go (`config.go`, `validator.go`), Node.js (`npm/src/config/index.js`, `npm/src/validator/index.js`) e Python (`pypi/trackfw/config.py`, `pypi/trackfw/validator.py`).
+- **Wave 2:** Suporte a `strict_ci_paths` (default `false`), conversão de diretórios externos não encontrados para `Warning` (em vez de Error) e isenção da verificação `adr_orphan` para ADRs fora do `cwd` local em Go, Node.js e Python.
+- **Wave 3:** Injeção da diretiva compulsória de leitura dos ADRs globais nos geradores de regras dos assistentes de IA (`CLAUDE.md`, `AGENTS.md` e `SKILL.md`) nas três linguagens.
+- **Wave 4:** Validação E2E com suítes de testes 100% verdes em Go, Node.js (21/21) e Python (310/310). Todos os critérios de aceite da REQ marcados como `[x]`. Roadmap finalizado em `docs/roadmaps/done/ROADMAP-2026-07-19-global-adrs-governance.md`.
+
+
+
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-1C)
+
+**Tarefa:** ML-1C do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Expansão de tilde (`~` / `~/`) no CLI Python (`config.py` e `validator.py`).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `pypi/trackfw/config.py`: adr_dirs utiliza `os.path.expanduser` durante a leitura/parse de listas YAML.
+- `pypi/trackfw/validator.py`: `_find_adr_file`, `_adr_is_draft`, `validate_adrs_are_referenced`, `validate_frontmatter_presence` e `validate_ref_targets_exist` utilizam `os.path.expanduser` em cada `adr_dir`.
+- `pypi/tests/test_config.py`: adicionado `test_config_adr_dirs_tilde_expansion` testando o parse de `~/...`.
+- `pypi/tests/test_validator.py`: adicionada classe `TestExpandTildeAdrDirs` com `test_find_adr_file_com_tilde` e `test_validate_adrs_are_referenced_com_tilde`.
+- Status do ML-1C no roadmap atualizado para `✅ Concluído`.
+
+
+---
+
+## Sessão 2026-07-20 — Apolo (IMPLEMENTANDO)
+
+**Tarefa:** ML-2A do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Suporte a `strict_ci_paths` (default `false`), Warning para `adr_dirs` inexistentes e isenção de `adr_orphan` para ADRs fora do `cwd` no Go CLI.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Ações:**
+- Iniciando implementação de `strict_ci_paths` em `internal/config/config.go`.
+- Ajustando validações em `internal/validator/validator.go`.
+- Adicionando testes unitários em `internal/validator/validator_test.go`.
+
+---
+
+## Sessão 2026-07-20 — Afrodite (CONCLUÍDO ML-2B)
+
+**Tarefa:** ML-2B do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Suporte a `strict_ci_paths` (default `false`), `Warning` para diretórios `adr_dirs` inexistentes e isenção de `adr_orphan` para arquivos fora de `cwd` no CLI Node.js.
+**Agente:** 💖 Afrodite — Frontend i18n Senior Specialist
+
+**Entregue:**
+- `npm/src/config/index.js`: adicionada opção `strictCiPaths` no `defaults()` (default `false`) e parse de `strict_ci_paths` no parser YAML.
+- `npm/src/validator/index.js`:
+  - Criados helpers `isInsideDir` e `walkDirMdWithPaths`.
+  - Criada função `validateADRDirsExist` que retorna `warnings` se `strictCiPaths: false` (default) ou `violations` se `strictCiPaths: true` para diretórios `adr_dirs` inexistentes.
+  - Atualizada `validateADRsAreReferenced` para isentar diretórios e arquivos de ADR externos à raiz do projeto (`cwd`) da verificação de `adr_orphan`.
+- `npm/tests/config.test.js`: adicionado teste de `strict_ci_paths`.
+- `npm/tests/validator.test.js`: adicionados testes unitários validando warning/violation para dir inexistente e isenção de `adr_orphan` para ADRs externos.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-2B marcado como `✅ Concluído`.
+
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-2C)
+
+**Tarefa:** ML-2C do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Suporte a `strict_ci_paths` (default `False`), `Warning` para diretórios `adr_dirs` não encontrados e isenção de `adr_orphan` para arquivos fora de `cwd` no CLI Python.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `pypi/trackfw/config.py`: `strict_ci_paths` adicionado aos `defaults()` (default `False`) e parseado a partir de `trackfw.yaml`.
+- `pypi/trackfw/validator.py`:
+  - Helper `_is_subpath` criado para identificar arquivos/diretórios contidos em `cwd`.
+  - `validate_adr_dirs_exist` verifica se os diretórios em `adr_dirs` existem, emitindo `Warning` se `strict_ci_paths` for `False` e `violation` se `strict_ci_paths` for `True`.
+  - `validate_adrs_are_referenced` isenta caminhos fora de `cwd` da regra `adr_orphan`.
+- `pypi/tests/test_config.py`: teste `test_config_strict_ci_paths` adicionado.
+- `pypi/tests/test_validator.py`: classes `TestStrictCIPathsAndInexistentAdrDirs` e `TestAdrOrphanExemptOutsideCwd` adicionadas.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-2C marcado como `✅ Concluído`.
+
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-2A)
+
+**Tarefa:** ML-2A do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Suporte a `strict_ci_paths` (default `false`), `Warning` para diretórios `adr_dirs` inexistentes e isenção de `adr_orphan` para arquivos fora do `cwd` no Go CLI.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `internal/config/config.go`: adicionado campo `StrictCIPaths bool` em `ProjectConfig` (default `false`) e parse de `strict_ci_paths` a partir do YAML.
+- `internal/config/config_paths_test.go`: adicionado `TestConfigStrictCIPaths` cobrindo o default `false` e parse quando `true`.
+- `internal/validator/validator.go`:
+  - `validateADRDirsExist`: verifica se cada diretório em `adr_dirs` existe; se não existir, gera `Warning` (se `StrictCIPaths == false`) ou `Error` violation (se `StrictCIPaths == true`).
+  - `isOutsideCWD`: helper que determina se um caminho está fora da raiz do projeto local (`cwd`).
+  - `validateADRsAreReferenced`: isenta arquivos ADR localizados fora do `cwd` da verificação `adr_orphan`.
+- `internal/validator/validator_test.go`: adicionados testes `TestValidate_NonExistentADRDirs_WarningByDefault`, `TestValidate_NonExistentADRDirs_StrictCIPathsError` e `TestValidate_ExternalADROrphanExemption`.
+
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-3B)
+
+**Tarefa:** ML-3B do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Injetar a diretiva obrigatória de leitura dos ADRs globais no gerador de regras de agente para Python.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `pypi/trackfw/generators/init_gen.py`: inclusão da diretiva `"- Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura."` na seção `Architecture Directives (mandatory)` de `_trackfw_rules_block()`.
+- `pypi/tests/test_generators_init.py`: adicionada a classe `TestGlobalADRsRuleDirective` com teste `test_rules_block_contains_global_adrs_directive` validando a presença da nova diretiva no bloco gerado e na injeção em arquivos de agentes.
+- `pypi/tests/test_rules_agents.py`: atualizado para asserção do snippet da diretiva em múltiplos assistentes.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-3B marcado como `✅ Concluído`.
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-3A)
+
+**Tarefa:** ML-3A do Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md` — Injetar a diretiva obrigatória de leitura dos ADRs globais nos geradores de regras de agente para Go e Node.js.
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `internal/generators/claudemd.go`: inclusão da diretiva `"8. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**"` no bloco de Agent rules.
+- `internal/generators/scaffold.go`: inclusão da mesma diretiva nas Regras invioláveis de `installGlobalSkillInner`.
+- `internal/generators/agentfiles.go`: inclusão da diretiva no Agent Protocol de `trackfwRulesBlock()`.
+- `internal/generators/claudemd_test.go`: criação de suíte de testes unitários Go cobrindo a presença da diretiva em `CLAUDE.md`, `trackfwRulesBlock` e na skill global `SKILL.md`.
+- `npm/src/generators/init.js`: inclusão da diretiva em `trackfwRulesBlock()` e `generateClaudeMD()`.
+- `npm/tests/generators.test.js`: criação de suíte de testes unitários Node.js validando a inclusão da diretiva no bloco de regras e em arquivos gerados.
+- Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-3A marcado como `✅ Concluído`.
+
+

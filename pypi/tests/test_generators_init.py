@@ -248,5 +248,32 @@ class TestExemploADR(unittest.TestCase):
         self.assertEqual(content, 'conteudo modificado', 'ADR foi sobrescrito indevidamente')
 
 
+class TestGlobalADRsRuleDirective(unittest.TestCase):
+    """Verifica que a diretiva de ADRs globais está presente no bloco de regras."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def test_rules_block_contains_global_adrs_directive(self):
+        from trackfw.generators.init_gen import _trackfw_rules_block, inject_rules_for_tool
+
+        block = _trackfw_rules_block()
+        expected = (
+            "Obrigatório: Inspecione e respeite todos os ADRs globais "
+            "nos diretórios listados em adr_dirs (inclusive caminhos ~/...) "
+            "antes de propor alterações de arquitetura."
+        )
+        self.assertIn(expected, block, "Diretiva de ADRs globais ausente do _trackfw_rules_block()")
+
+        # Testar também a injeção em arquivo de agente (ex: CLAUDE.md)
+        inject_rules_for_tool("claude", self.tmp)
+        claude_md = os.path.join(self.tmp, "CLAUDE.md")
+        self.assertTrue(os.path.isfile(claude_md))
+        with open(claude_md, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn(expected, content, "Diretiva de ADRs globais ausente do CLAUDE.md gerado")
+
+
 if __name__ == '__main__':
     unittest.main()
+

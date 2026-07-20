@@ -16,6 +16,7 @@ def defaults():
     return {
         # campos existentes
         "adr_dirs": ["docs/adr"],
+        "strict_ci_paths": False,
         "req_dir": "docs/req",
         "roadmap_dir": "docs/roadmaps",
         "roadmap_namespacing": "flat",
@@ -128,7 +129,7 @@ def _parse(content, cfg):
         nonlocal in_acceptance_markers, acceptance_markers, in_rules, rules
 
         if in_adr_dirs and adr_dirs:
-            cfg["adr_dirs"] = adr_dirs[:]
+            cfg["adr_dirs"] = [os.path.expanduser(p) for p in adr_dirs]
         if in_agents and agents:
             cfg["agents"] = agents[:]
         if in_link_fields:
@@ -166,9 +167,9 @@ def _parse(content, cfg):
 
         # --- Processamento de itens de lista (indentados ou não) ---
         if is_list_item:
-            val = line[2:].strip()
+            val = line[2:].strip().strip("\"'")
             if in_adr_dirs:
-                adr_dirs.append(val)
+                adr_dirs.append(os.path.expanduser(val))
                 continue
             if in_agents:
                 agents.append(val)
@@ -225,6 +226,8 @@ def _parse(content, cfg):
         if key == "adr_dirs":
             in_adr_dirs = True
             adr_dirs.clear()
+        elif key == "strict_ci_paths":
+            cfg["strict_ci_paths"] = val.strip("\"'").lower() == "true"
         elif key == "req_dir":
             cfg["req_dir"] = val.strip("\"'")
         elif key == "roadmap_dir":

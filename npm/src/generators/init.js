@@ -354,6 +354,7 @@ Chain: \`ADR → REQ → ROADMAP\` · States: \`backlog / analyzing / wip / bloc
    - Starting a ML: edit roadmap \`**Status:** ⬜ Pendente\` → \`**Status:** 🔄 Em andamento\` + commit.
    - Completing a ML: edit roadmap → \`**Status:** ✅ Concluído\` + include in ML commit.
    - Analyzing a roadmap: move from \`backlog/\` to \`analyzing/\`; to \`wip/\` only when coding starts.
+5. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**
 
 ### Attention Signal (when you need user input during a task)
 Write \`docs/roadmaps/.trackfw-attention.json\`:
@@ -473,7 +474,8 @@ function generateClaudeMD(cfg) {
   content += '   - Ao **concluir** um ML: edite o roadmap alterando `**Status:** 🔄 Em andamento` → `**Status:** ✅ Concluído` e inclua essa mudança no commit do ML.\n'
   content += '   - Ao **analisar** um roadmap antes de iniciar: mova o arquivo de `backlog/` para `analyzing/`; só mova para `wip/` ao começar a codificar de fato.\n'
   content += '5. **Run `trackfw validate` before every commit.** Zero violations required.\n'
-  content += '6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n\n'
+  content += '6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n'
+  content += '7. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**\n\n'
 
   content += '## Slash commands (Claude Code)\n\n'
   content += '| Command | When to use |\n'

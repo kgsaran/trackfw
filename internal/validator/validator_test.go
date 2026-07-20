@@ -952,3 +952,176 @@ func TestValidateBranchHasWIPRoadmap_RuleOff(t *testing.T) {
 		t.Errorf("regra off deve suprimir a mensagem, obteve violations=%v warnings=%v", violations, warnings)
 	}
 }
+
+// TestValidate_WithTildeInADRDirs — verifica que adr_dirs com ~/ encontra ADRs no diretório home.
+func TestValidate_WithTildeInADRDirs(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("os.UserHomeDir() falhou: %v", err)
+	}
+
+	// Criar um diretório temporário dentro do home dir do usuário para simular ~/my-global-adrs
+	relativeSubdir := filepath.Join(".trackfw-test-adrs-tmp", "global-adrs")
+	globalADRDir := filepath.Join(home, relativeSubdir)
+	if err := os.MkdirAll(globalADRDir, 0755); err != nil {
+		t.Fatalf("mkdir globalADRDir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(filepath.Join(home, ".trackfw-test-adrs-tmp")) }()
+
+	// Criar um ADR global no diretório de home
+	adrContent := "---\nstatus: Accepted\ndate: 2026-07-20\n---\n# ADR 001 Global\n"
+	if err := os.WriteFile(filepath.Join(globalADRDir, "ADR-001-global.md"), []byte(adrContent), 0644); err != nil {
+		t.Fatalf("writeFile ADR-001-global: %v", err)
+	}
+
+	// Criar projeto local de teste
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip",
+		"docs/req",
+		"docs/adr",
+	)
+
+	// trackfw.yaml configurando adr_dirs com ~/
+	tildePath := "~/" + relativeSubdir
+	yamlContent := "adr_dirs:\n  - " + tildePath + "\n  - docs/adr\n"
+	writeFile(t, dir, "trackfw.yaml", yamlContent)
+
+	// REQ referenciando o ADR global
+	reqContent := "---\nstatus: Open\ndate: 2026-07-20\n---\n# REQ 001\nADR: ADR-001-global.md\nRoadmap: ROADMAP-001.md\n"
+	writeFile(t, dir, "docs/req/REQ-001.md", reqContent)
+
+	// Roadmap linkando REQ
+	rmContent := "---\nstatus: WIP\ndate: 2026-07-20\n---\n# Roadmap 001\nREQ: REQ-001.md\n## Acceptance Criteria\n- AC1\n"
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-001.md", rmContent)
+
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered erro inesperado: %v", err)
+	}
+
+	// Não deve haver violation de orphan para ADR-001-global.md
+	if hasViolation(violations, "ADR-001-global.md") {
+		t.Errorf("ADR em caminho com ~/ não deveria ser considerado órfão. Violations: %v", violations)
+	}
+	// Não deve haver warning de ref target inexistente para ADR-001-global.md
+	if hasWarning(warnings, "ADR-001-global.md") {
+		t.Errorf("ADR em caminho com ~/ deveria ser encontrado. Warnings: %v", warnings)
+	}
+}
+
+// TestValidate_NonExistentADRDirs_WarningByDefault verifica que adr_dirs inexistente emite Warning por padrão (strict_ci_paths: false).
+func TestValidate_NonExistentADRDirs_WarningByDefault(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip",
+		"docs/req",
+		"docs/adr",
+	)
+
+	nonExistent := filepath.Join(t.TempDir(), "subfolder_that_does_not_exist")
+	yamlContent := "strict_ci_paths: false\nadr_dirs:\n  - docs/adr\n  - " + nonExistent + "\n"
+	writeFile(t, dir, "trackfw.yaml", yamlContent)
+
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered erro inesperado: %v", err)
+	}
+
+	if hasViolation(violations, nonExistent) {
+		t.Errorf("adr_dir inexistente não deveria emitir violation quando strict_ci_paths é false. Violations: %v", violations)
+	}
+
+	if !hasWarning(warnings, nonExistent) {
+		t.Errorf("adr_dir inexistente deveria emitir warning quando strict_ci_paths é false. Warnings: %v", warnings)
+	}
+}
+
+// TestValidate_NonExistentADRDirs_StrictCIPathsError verifica que adr_dirs inexistente emite Error quando strict_ci_paths: true.
+func TestValidate_NonExistentADRDirs_StrictCIPathsError(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip",
+		"docs/req",
+		"docs/adr",
+	)
+
+	nonExistent := filepath.Join(t.TempDir(), "subfolder_that_does_not_exist")
+	yamlContent := "strict_ci_paths: true\nadr_dirs:\n  - docs/adr\n  - " + nonExistent + "\n"
+	writeFile(t, dir, "trackfw.yaml", yamlContent)
+
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered erro inesperado: %v", err)
+	}
+
+	if !hasViolation(violations, nonExistent) {
+		t.Errorf("adr_dir inexistente deveria emitir violation quando strict_ci_paths é true. Violations: %v", violations)
+	}
+
+	if hasWarning(warnings, nonExistent) {
+		t.Errorf("adr_dir inexistente não deveria emitir warning quando strict_ci_paths é true. Warnings: %v", warnings)
+	}
+}
+
+// TestValidate_ExternalADROrphanExemption verifica que ADRs localizados fora do CWD são isentos da regra adr_orphan.
+func TestValidate_ExternalADROrphanExemption(t *testing.T) {
+	externalDir := t.TempDir()
+	adrExternalContent := "---\nstatus: Accepted\ndate: 2026-07-20\n---\n# ADR 999 External\n"
+	if err := os.WriteFile(filepath.Join(externalDir, "ADR-999-external.md"), []byte(adrExternalContent), 0644); err != nil {
+		t.Fatalf("writeFile ADR-999-external: %v", err)
+	}
+
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip",
+		"docs/req",
+		"docs/adr",
+	)
+
+	yamlContent := "adr_dirs:\n  - docs/adr\n  - " + externalDir + "\n"
+	writeFile(t, dir, "trackfw.yaml", yamlContent)
+
+	// ADR local não referenciado (deve gerar adr_orphan)
+	adrLocalContent := "---\nstatus: Accepted\ndate: 2026-07-20\n---\n# ADR 001 Local\n"
+	writeFile(t, dir, "docs/adr/ADR-001-local.md", adrLocalContent)
+
+	// REQ e Roadmap validos linkando o ADR externo
+	reqContent := "---\nstatus: Open\ndate: 2026-07-20\nadr: ADR-999-external.md\nroadmap: ROADMAP-001.md\n---\n# REQ 001\nRoadmap: ROADMAP-001.md\nADR: ADR-999-external.md\n"
+	writeFile(t, dir, "docs/req/REQ-001.md", reqContent)
+
+	rmContent := "---\nstatus: WIP\ndate: 2026-07-20\n---\n# Roadmap 001\nREQ: REQ-001.md\n## Acceptance Criteria\n- AC1\n"
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-001.md", rmContent)
+
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered erro inesperado: %v", err)
+	}
+
+	// ADR-001-local.md (dentro do CWD) DEVE ser reportado em warnings (pois adr_orphan default é warning)
+	if !hasWarning(warnings, "ADR-001-local.md") && !hasViolation(violations, "ADR-001-local.md") {
+		t.Errorf("ADR local sem referência deveria ser marcado como órfão. Violations: %v, Warnings: %v", violations, warnings)
+	}
+
+	// ADR-999-external.md (fora do CWD) NÃO DEVE ser reportado como órfão em warnings nem violations
+	if hasWarning(warnings, "ADR-999-external.md") || hasViolation(violations, "ADR-999-external.md") {
+		t.Errorf("ADR externo fora do CWD NÃO deveria ser marcado como órfão. Violations: %v, Warnings: %v", violations, warnings)
+	}
+}
+
