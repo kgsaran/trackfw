@@ -2492,3 +2492,15 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - Demais vetores (command injection via `$()`/backticks no shell, hijack de `.claude/settings.json`/hooks dos 7 CLIs, supply chain) — avaliados como NÃO exploráveis: os injetores de hook usam apenas comandos estáticos hardcoded (`scripts/trackfw-attention-*.sh`), sem interpolação de dados externos; os valores extraídos via `jq`/`python3` só são usados como argumento de `%s` do `printf`, nunca via `eval`/`bash -c`.
 
 **Nenhum código alterado** — revisão apenas, sem correções (fora do escopo do Hades; achados endereçados para handoff aos agentes implementadores).
+
+---
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO Localização REQ/Roadmap Auditoria)
+
+**Tarefa:** Localização da REQ e Roadmap referentes à auditoria de qualidade/segurança pós-merge PRs #56 e #57.
+**Agente:** 🌩️ Zeus - Principal Software Architect
+
+**Status:** CONCLUÍDO
+- **REQ localizada:** `docs/req/REQ-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md`
+- **Roadmap localizado:** `docs/roadmaps/backlog/ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md`
+
