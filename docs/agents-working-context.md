@@ -2525,3 +2525,27 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - **⚠️ C13 REABERTO:** cobertura inconsistente entre CLIs — comparação de conteúdo na idempotência de Kiro/Copilot só implementada em Python-Copilot; Go (Kiro+Copilot), Python-Kiro e Node ficaram com `len==2`/asserção parcial. Pendência acionável (arquivos+linhas) registrada no roadmap para o agy corrigir.
 - **Abertura de PR:** PR #59 aberto na branch `fix/attention-hooks-pos-auditoria` apontando para `main` (https://github.com/kgsaran/trackfw/pull/59).
 
+
+---
+
+## Sessão 2026-07-20 — Code Quality (IMPLEMENTANDO Revisão de Qualidade de Código PR #59)
+
+**Tarefa:** Revisão de qualidade de código (manutenibilidade, duplicação, paridade 3 CLIs, robustez, legibilidade, testes) do PR #59 (correções pós-auditoria PRs #56/#57), sem edições.
+**Agente:** 🔧 Code Quality - Code Quality Senior Specialist
+**Branch:** `fix/attention-hooks-pos-auditoria`
+
+---
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO Reanálise de qualidade PR #59 + REQ/Roadmap de hardening Q1-Q8)
+
+**Tarefa:** Reanalisar a QUALIDADE do código do PR #59 (além da correção dos 13 achados) e gerar REQ→Roadmap para o agy implementar o hardening.
+**Agente:** 🌩️ Zeus - Principal Software Architect
+**Branch:** `fix/attention-hooks-pos-auditoria`
+
+**Status:** CONCLUÍDO (documentos de governança gerados; implementação delegada ao agy)
+- **Reanálise (verificada em código + reprodução empírica + comparação lado-a-lado dos 3 scripts):** 8 achados de qualidade (Q1–Q8).
+  - 🔴 Q1: teste de contrato do Go não executa o script (só string-contains) — Node/Python executam; paridade de teste quebrada e anti-padrão da Wave 3 reaberto.
+  - 🟠 Q2: escaping não cobre caracteres de controle U+0000–U+001F (TAB/CR quebram o JSON — reproduzido: jq e json.loads rejeitam). Q3: contenção de traversal diverge (Go relativiza abs-sob-cwd/`*..*` vs Node/Python segment-aware). Q4: `tr -d '\n'` (Go/Python) vs `tr -d '\r\n'` (Node). Q5: fallback sem `jq` nunca testado.
+  - 🟡 Q6: parsing YAML frágil. Q7: falta teste golden de paridade. Q8: pressuposto de cwd não documentado.
+- **Artefatos criados (backlog):** `docs/req/REQ-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md` + `docs/roadmaps/backlog/ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md` (Wave 1 scripts por CLI → Wave 2 testes → Wave 3 barrier; com decisões canônicas para paridade idêntica).
+- **Housekeeping:** removida cópia stale de `ROADMAP-...-pr56-pr57.md` em `backlog/` (duplicata vinda do #58/main; autoritativa é a de `done/`) — sintoma da divergência de squash-merge #58↔#59 já reportada.
