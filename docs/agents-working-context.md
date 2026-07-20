@@ -2234,6 +2234,7 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
 **Entregues:**
+- **Branch criada e ativa:** `feat/global-adrs-governance`.
 - **Wave 1:** Suporte à expansão de til (`~` / `~/`) no carregamento de `adr_dirs` em Go (`config.go`, `validator.go`), Node.js (`npm/src/config/index.js`, `npm/src/validator/index.js`) e Python (`pypi/trackfw/config.py`, `pypi/trackfw/validator.py`).
 - **Wave 2:** Suporte a `strict_ci_paths` (default `false`), conversão de diretórios externos não encontrados para `Warning` (em vez de Error) e isenção da verificação `adr_orphan` para ADRs fora do `cwd` local em Go, Node.js e Python.
 - **Wave 3:** Injeção da diretiva compulsória de leitura dos ADRs globais nos geradores de regras dos assistentes de IA (`CLAUDE.md`, `AGENTS.md` e `SKILL.md`) nas três linguagens.
