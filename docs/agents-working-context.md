@@ -2227,15 +2227,18 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - `internal/validator/validator_test.go`: adicionado teste `TestValidate_WithTildeInADRDirs`.
 - Roadmap `docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md`: ML-1A marcado como `✅ Concluído`.
 
-## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO)
 
-**Tarefa:** Orquestração e disparo da Wave 3 do ROADMAP-2026-06-20-attention-hooks-agent-clis.md.
+**Tarefa:** Orquestração e implementação completa do ROADMAP-2026-06-20-attention-hooks-agent-clis.md (Backlog #2).
 **Branch:** `feat/attention-hooks-agent-clis`
+**Pull Request:** https://github.com/kgsaran/trackfw/pull/57
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
-**Ações:**
-- Wave 2 auditada e 100% verde nos 3 CLIs. Commit da Wave 2 efetuado (`c55ea15`).
-- Disparados subagentes para a Wave 3 (`trackfw update` com regeneração de hooks, testes de integração e finalização da documentação).
+**Entregues:**
+- **Branch e PR criados:** `feat/attention-hooks-agent-clis` → PR #57 (`https://github.com/kgsaran/trackfw/pull/57`).
+- **Wave 1:** Scripts `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh` gerados em Go, Node.js e Python com permissão `0755`.
+- **Wave 2:** Injetores idempotentes de hooks para 7 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor e Windsurf) nas 3 linguagens.
+- **Wave 3:** Suporte em `trackfw update` para regeneração de hooks, atualização de `VISION.md`, encerramento da REQ e finalização do roadmap em `docs/roadmaps/done/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`. Suítes de testes 100% verdes (Go, Node.js 21/21, Python 320/320).
 
 
 
