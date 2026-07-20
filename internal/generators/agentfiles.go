@@ -1,6 +1,7 @@
 package generators
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,8 +63,9 @@ Write ` + "`docs/roadmaps/.trackfw-attention.json`" + `:
 ` + "```" + `
 Delete the file when resolved. Visible as a live banner in ` + "`trackfw serve`" + `.
 
-> **Windsurf / agents without PreToolUse hook:** before asking the user a question, write
-> the attention file manually — then proceed normally.
+> **Windsurf users:** before asking the user a question or requesting approval, write
+> ` + "`<roadmap_dir>/.trackfw-attention.json`" + ` manually — there is no automatic hook for this.
+> Delete the file after the user responds.
 ` + rulesEnd
 }
 
@@ -157,4 +159,311 @@ func InjectRulesDetected(cwd string) error {
 		return fmt.Errorf("partial: %s", strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// --- Attention Hook Injectors ---
+
+// InjectClaudeHooks injects Claude Code attention hooks into .claude/settings.json.
+func InjectClaudeHooks(cwd string) error {
+	path := filepath.Join(cwd, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &root); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+
+	hooks["PermissionRequest"] = mergeClaudeHookArray(
+		hooks["PermissionRequest"],
+		"AskUserQuestion",
+		"scripts/trackfw-attention-signal.sh",
+	)
+
+	hooks["PostToolUse"] = mergeClaudeHookArray(
+		hooks["PostToolUse"],
+		"AskUserQuestion",
+		"scripts/trackfw-attention-cleanup.sh",
+	)
+
+	root["hooks"] = hooks
+
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0644)
+}
+
+// InjectCodexHooks injects Codex CLI attention hooks into .codex/hooks.json.
+func InjectCodexHooks(cwd string) error {
+	dir := filepath.Join(cwd, ".codex")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "hooks.json")
+
+	raw, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &root); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+
+	hooks["PreToolUse"] = mergeClaudeHookArray(
+		hooks["PreToolUse"],
+		".*",
+		"scripts/trackfw-attention-signal.sh",
+	)
+
+	hooks["PostToolUse"] = mergeClaudeHookArray(
+		hooks["PostToolUse"],
+		".*",
+		"scripts/trackfw-attention-cleanup.sh",
+	)
+
+	root["hooks"] = hooks
+
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0644)
+}
+
+// InjectGeminiHooks injects Gemini CLI attention hooks into .gemini/settings.json.
+func InjectGeminiHooks(cwd string) error {
+	dir := filepath.Join(cwd, ".gemini")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "settings.json")
+
+	raw, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &root); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+
+	hooks["Notification"] = mergeClaudeHookArray(
+		hooks["Notification"],
+		"ToolPermission",
+		"scripts/trackfw-attention-signal.sh",
+	)
+	hooks["AfterTool"] = mergeClaudeHookArray(
+		hooks["AfterTool"],
+		"*",
+		"scripts/trackfw-attention-cleanup.sh",
+	)
+
+	root["hooks"] = hooks
+
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0644)
+}
+
+// InjectKiroHooks injects Kiro attention hooks into .kiro/hooks/trackfw-attention.json.
+func InjectKiroHooks(cwd string) error {
+	dir := filepath.Join(cwd, ".kiro", "hooks")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "trackfw-attention.json")
+
+	content := map[string]interface{}{
+		"hooks": []interface{}{
+			map[string]interface{}{
+				"name":        "trackfw-attention-signal",
+				"description": "Signals trackfw board when agent executes a tool",
+				"event":       "PreToolUse",
+				"matcher":     map[string]interface{}{"tool_name": ".*"},
+				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-signal.sh"},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-attention-cleanup",
+				"description": "Clears trackfw board attention after tool completes",
+				"event":       "PostToolUse",
+				"matcher":     map[string]interface{}{"tool_name": ".*"},
+				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-cleanup.sh"},
+			},
+		},
+	}
+
+	out, err := json.MarshalIndent(content, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0644)
+}
+
+// InjectCopilotHooks injects GitHub Copilot attention hooks into .github/hooks/trackfw-attention.json.
+func InjectCopilotHooks(cwd string) error {
+	dir := filepath.Join(cwd, ".github", "hooks")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "trackfw-attention.json")
+
+	content := map[string]interface{}{
+		"hooks": []interface{}{
+			map[string]interface{}{
+				"event": "preToolUse",
+				"run":   "scripts/trackfw-attention-signal.sh",
+			},
+			map[string]interface{}{
+				"event": "postToolUse",
+				"run":   "scripts/trackfw-attention-cleanup.sh",
+			},
+		},
+	}
+
+	out, err := json.MarshalIndent(content, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0644)
+}
+
+// InjectCursorHooks injects Cursor attention hooks into .cursor/hooks.json.
+func InjectCursorHooks(cwd string) error {
+	path := filepath.Join(cwd, ".cursor", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &root); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+
+	makeEntry := func(command string) interface{} {
+		return map[string]interface{}{"command": command}
+	}
+	getCmd := func(item interface{}) string {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		cmd, _ := obj["command"].(string)
+		return cmd
+	}
+
+	root["preToolUse"] = mergeSimpleCommandArray(root["preToolUse"], "scripts/trackfw-attention-signal.sh", makeEntry, getCmd)
+	root["postToolUse"] = mergeSimpleCommandArray(root["postToolUse"], "scripts/trackfw-attention-cleanup.sh", makeEntry, getCmd)
+
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0644)
+}
+
+// InjectWindsurfHooks updates .windsurfrules with the attention instruction.
+func InjectWindsurfHooks(cwd string) error {
+	return InjectRulesForTool("windsurf", cwd)
+}
+
+// --- helpers ---
+
+func mergeClaudeHookArray(existing interface{}, matcher, command string) []interface{} {
+	arr, _ := existing.([]interface{})
+
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if obj["matcher"] != matcher {
+			continue
+		}
+		innerHooks, _ := obj["hooks"].([]interface{})
+		for _, h := range innerHooks {
+			hObj, ok := h.(map[string]interface{})
+			if ok && hObj["command"] == command {
+				return arr
+			}
+		}
+	}
+
+	entry := map[string]interface{}{
+		"matcher": matcher,
+		"hooks": []interface{}{
+			map[string]interface{}{
+				"type":    "command",
+				"command": command,
+			},
+		},
+	}
+	return append(arr, entry)
+}
+
+func mergeSimpleCommandArray(
+	existing interface{},
+	command string,
+	makeEntry func(string) interface{},
+	getCmd func(interface{}) string,
+) []interface{} {
+	arr, _ := existing.([]interface{})
+	for _, item := range arr {
+		if getCmd(item) == command {
+			return arr
+		}
+	}
+	return append(arr, makeEntry(command))
 }

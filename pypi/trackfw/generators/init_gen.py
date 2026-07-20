@@ -84,6 +84,11 @@ def scaffold(cwd: str, opts: dict) -> None:
     _write_example_adr(cwd, opts)
     generate_claude_commands(cwd)
     _generate_attention_scripts(cwd)
+    try:
+        from trackfw.generators.hooks import inject_hooks_detected
+        inject_hooks_detected(cwd)
+    except Exception as e:
+        print(f'  ⚠ agent hooks: {e}')
     print_architect_next_steps(cwd)
 
 
@@ -228,7 +233,10 @@ def _trackfw_rules_block() -> str:
         '```json\n'
         '{"roadmap":"file.md","ml":"ML-1A","message":"what you need","level":"action_required","timestamp":"ISO8601Z"}\n'
         '```\n'
-        'Delete the file when resolved. Visible as a live banner in `trackfw serve`.\n'
+        'Delete the file when resolved. Visible as a live banner in `trackfw serve`.\n\n'
+        '> **Windsurf users:** before asking the user a question or requesting approval, write\n'
+        '> `<roadmap_dir>/.trackfw-attention.json` manually — there is no automatic hook for this.\n'
+        '> Delete the file after the user responds.\n'
         '\n### Architecture Directives (mandatory)\n'
         '- Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.\n'
         '- **3-layer arch + no in-memory data:** frontend / backend / database; always DB + ORM — never arrays/globals\n'

@@ -139,7 +139,7 @@ func InstallCodex(cwd string) error {
 			return err
 		}
 	}
-	if err := injectCodexHooks(cwd); err != nil {
+	if err := InjectCodexHooks(cwd); err != nil {
 		return err
 	}
 	fmt.Println("  ✓ Codex: AGENTS.md, skills, custom agents and hooks")

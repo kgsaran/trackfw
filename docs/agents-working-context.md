@@ -2229,15 +2229,14 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 ## Sessão 2026-07-20 — Zeus (IMPLEMENTANDO)
 
-**Tarefa:** Orquestração e disparo do ROADMAP-2026-06-20-attention-hooks-agent-clis.md (Backlog #2).
+**Tarefa:** Orquestração e disparo da Wave 2 do ROADMAP-2026-06-20-attention-hooks-agent-clis.md.
 **Branch:** `feat/attention-hooks-agent-clis`
 **Agente:** 🌩️ Zeus - Principal Software Architect
 
 **Ações:**
-- Feito `git checkout main`, `git pull origin main` (PR #56 mesclado).
-- Alternado para a branch isolada `feat/attention-hooks-agent-clis` (rebased na `main`).
-- Movido e configurado roadmap `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md` (status `wip`).
-- Disparado subagente para Wave 1 (ML-1A: Scripts shell `trackfw-attention-signal.sh` e `trackfw-attention-cleanup.sh`).
+- Wave 1 auditada e 100% verde nos 3 CLIs. Commit efetuado (`722354c`).
+- Disparados 3 subagentes paralelos por stack de linguagem para Wave 2 (InjectHooks para Claude, Codex, Gemini, Kiro, Copilot, Cursor e Windsurf em Go, Node.js e Python).
+
 
 
 
@@ -2366,5 +2365,63 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - `pypi/tests/test_generators_init.py`: adicionada a classe de testes `TestAttentionScripts` validando existência, permissões executáveis no POSIX e cabeçalhos dos scripts.
 - `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`: ML-1A marcado como `✅ Concluído`.
 
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-2A a ML-2G no CLI Python)
+
+**Tarefa:** Injetores de hooks de atenção para os 7 CLIs no CLI Python (ML-2A até ML-2G do `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `pypi/trackfw/generators/init_gen.py`:
+  - Adicionada a instrução de uso manual do `.trackfw-attention.json` para usuários do Windsurf no bloco de regras `_trackfw_rules_block()`.
+  - Integrada a chamada a `inject_hooks_detected(cwd)` durante a execução de `scaffold(...)` no `init`.
+- `pypi/trackfw/generators/hooks.py`:
+  - Suporte completo e idempotente a injeção de hooks para os 7 CLIs (Claude Code, Codex, Gemini, Kiro, Copilot, Cursor e Windsurf via rules block).
+- `pypi/trackfw/commands/discover.py`:
+  - Adicionada geração de `_generate_attention_scripts(cwd)` e atualização de `inject_hooks_detected(cwd)` durante a flag `--init`.
+- `pypi/tests/test_generators_init.py`:
+  - Adicionados testes unitários completos em `TestAttentionHooksInjectors` para injeção, idempotência, merge e detecção automática de hooks nos 7 CLIs.
+  - 319/319 testes da suíte Python passando (100% verde).
+
+---
+
+## Sessão 2026-07-20 — Apolo (CONCLUÍDO ML-2A a ML-2G no CLI Go)
+
+**Tarefa:** Implementar injetores de hooks de atenção para os 7 CLIs no CLI Go (ML-2A até ML-2G do `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`).
+**Agente:** ☀️ Apolo — Backend Senior Specialist
+
+**Entregue:**
+- `internal/generators/agentfiles.go`:
+  - Implementadas as 7 funções de injeção exportadas (`InjectClaudeHooks`, `InjectCodexHooks`, `InjectGeminiHooks`, `InjectKiroHooks`, `InjectCopilotHooks`, `InjectCursorHooks`, `InjectWindsurfHooks`) com merges idempotentes.
+  - Atualizado `trackfwRulesBlock()` com a instrução do Windsurf.
+- `internal/generators/hooks.go` & `internal/generators/codex.go`:
+  - Refatorados para utilizar as funções exportadas de injeção em `agentfiles.go`.
+- `internal/discover/discover.go`:
+  - Atualizada a função `InstallGates` para chamar `generators.InjectHooksDetected(rootDir)`.
+- `internal/generators/agentfiles_test.go` e `internal/generators/hooks_test.go`:
+  - Testes unitários completos para criação, merge idempotente e detecção dos hooks nos 7 CLIs.
+  - Suíte `go test ./...` 100% verde.
+- `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`:
+  - ML-2A até ML-2G marcados como `✅ Concluído`.
+---
+
+## Sessão 2026-07-20 — Afrodite (CONCLUÍDO ML-2A a ML-2G Node.js)
+
+**Tarefa:** Implementar os injetores de hooks de atenção para os 7 CLIs no CLI Node.js (ML-2A até ML-2G de `docs/roadmaps/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`).
+**Agente:** 💖 Afrodite - Frontend i18n Senior Specialist
+
+**Entregue:**
+- `npm/src/generators/hooks.js`:
+  - Implementados injetores de hooks de atenção idempotentes para os 7 CLIs: `injectClaudeHooks` (`.claude/settings.json`), `injectCodexHooks` (`.codex/hooks.json`), `injectGeminiHooks` (`.gemini/settings.json`), `injectKiroHooks` (`.kiro/hooks/trackfw-attention.json`), `injectCopilotHooks` (`.github/hooks/trackfw-attention.json`), `injectCursorHooks` (`.cursor/hooks.json`) e `injectWindsurfHooks` (`.windsurfrules`).
+  - Atualizada a função `injectHooksDetected(cwd)` para mapear e executar automaticamente a injeção em todos os 7 CLIs suportados.
+- `npm/src/generators/init.js`:
+  - Atualizado `trackfwRulesBlock()` para incluir a instrução explícita do Windsurf para criação manual do `.trackfw-attention.json`.
+  - Integrada a chamada `injectHooksDetected(root)` ao método `scaffold(...)`.
+  - Exportadas as funções `injectHooksDetected` e helpers.
+- `npm/src/commands/discover.js`:
+  - Confirmada a invocação de `injectHooksDetected(cwd)` em `discover --init`.
+- `npm/tests/generators.test.js`:
+  - Adicionados testes unitários completos testando criação do zero, merge idempotente preservando hooks customizados pré-existentes do usuário e detecção automática combinada dos 7 CLIs.
 
 

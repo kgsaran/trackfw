@@ -480,6 +480,11 @@ def _cmd_discover(args):
         except Exception as e:
             print(f"Aviso: injecao parcial de regras de agentes: {e}")
         try:
+            from trackfw.generators.init_gen import _generate_attention_scripts
+            _generate_attention_scripts(cwd)
+        except Exception:
+            pass
+        try:
             from trackfw.generators.hooks import inject_hooks_detected
             inject_hooks_detected(cwd)
             print('  ✓ agent hooks atualizados')

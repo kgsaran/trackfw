@@ -119,7 +119,7 @@ exit 0
 > Dependências: ML-1A concluído (scripts existem antes de referenciar nos hooks)
 
 ### ML-2A — Claude Code: `.claude/settings.json`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` — nova função `InjectClaudeHooks(cwd string) error`
 - `internal/discover/discover.go` — chamar `InjectClaudeHooks` quando Claude detectado
@@ -157,14 +157,14 @@ Formato resultante em `.claude/settings.json`:
 2. Chamar `InjectClaudeHooks` em `discover --init` quando `.claude/` ou `CLAUDE.md` detectado.
 
 **Critérios de aceite:**
-- [ ] `go build ./...` sem erros
-- [ ] `.claude/settings.json` existente com outros hooks NÃO é sobrescrito (merge idempotente)
-- [ ] `go test ./internal/generators/...` verde
+- [x] `go build ./...` sem erros
+- [x] `.claude/settings.json` existente com outros hooks NÃO é sobrescrito (merge idempotente)
+- [x] `go test ./internal/generators/...` verde
 
 ---
 
 ### ML-2B — Codex CLI: `.codex/hooks.json`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` — nova função `InjectCodexHooks(cwd string) error`
 - `internal/discover/discover.go` — chamar quando `AGENTS.md` ou `.codex/` detectado
@@ -194,13 +194,13 @@ Formato resultante em `.claude/settings.json`:
 Nota: `PermissionRequest` evita sinalizar operações que não exigem intervenção humana.
 
 **Critérios de aceite:**
-- [ ] `go build ./...` sem erros
-- [ ] Merge idempotente (não duplica entries)
+- [x] `go build ./...` sem erros
+- [x] Merge idempotente (não duplica entries)
 
 ---
 
 ### ML-2C — Gemini CLI: `.gemini/settings.json`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` — `InjectGeminiHooks(cwd string) error`
 - detecção: `GEMINI.md` ou `.gemini/` presentes
@@ -227,13 +227,13 @@ Nota: `PermissionRequest` evita sinalizar operações que não exigem intervenç
 ```
 
 **Critérios de aceite:**
-- [ ] `go build ./...` sem erros
-- [ ] Merge idempotente
+- [x] `go build ./...` sem erros
+- [x] Merge idempotente
 
 ---
 
 ### ML-2D — Kiro: `.kiro/hooks/trackfw-attention.json`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` — `InjectKiroHooks(cwd string) error`
 - detecção: `.kiro/` presente
@@ -262,13 +262,13 @@ Nota: `PermissionRequest` evita sinalizar operações que não exigem intervenç
 ```
 
 **Critérios de aceite:**
-- [ ] Arquivo criado corretamente
-- [ ] Idempotente (re-rodar não duplica)
+- [x] Arquivo criado corretamente
+- [x] Idempotente (re-rodar não duplica)
 
 ---
 
 ### ML-2E — GitHub Copilot: `.github/hooks/trackfw-attention.json`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` — `InjectCopilotHooks(cwd string) error`
 - detecção: `.github/copilot-instructions.md` presente
@@ -291,13 +291,13 @@ Nota: `PermissionRequest` evita sinalizar operações que não exigem intervenç
 ```
 
 **Critérios de aceite:**
-- [ ] Arquivo criado corretamente
-- [ ] Idempotente
+- [x] Arquivo criado corretamente
+- [x] Idempotente
 
 ---
 
 ### ML-2F — Cursor: `.cursor/hooks.json`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` — `InjectCursorHooks(cwd string) error`
 - detecção: `.cursor/` presente
@@ -316,12 +316,12 @@ Nota: `PermissionRequest` evita sinalizar operações que não exigem intervenç
 ```
 
 **Critérios de aceite:**
-- [ ] Merge idempotente (não duplica entries existentes)
+- [x] Merge idempotente (não duplica entries existentes)
 
 ---
 
 ### ML-2G — Windsurf: instrução em `.windsurfrules`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` — atualizar `trackfwRulesBlock()` com instrução específica para Windsurf
 
@@ -336,8 +336,8 @@ Windsurf não tem `preToolUse` genérico — única opção é instrução textu
 ```
 
 **Critérios de aceite:**
-- [ ] `go build ./...` sem erros
-- [ ] Instrução aparece no `.windsurfrules` gerado
+- [x] `go build ./...` sem erros
+- [x] Instrução aparece no `.windsurfrules` gerado
 
 ---
 
