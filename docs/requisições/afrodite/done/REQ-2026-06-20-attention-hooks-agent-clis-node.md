@@ -1,0 +1,22 @@
+---
+status: Closed
+date: 2026-07-20
+author: Afrodite
+roadmap: "docs/roadmap/afrodite/done/ROADMAP-2026-06-20-attention-hooks-agent-clis-node.md"
+---
+
+# REQ: Injetores de Hooks de Atenção para os 7 CLIs no CLI Node.js (ML-2A a ML-2G)
+
+## Motivation
+Implementar os injetores de hooks de atenção para os 7 CLIs suportados no CLI Node.js (`npm/src/`), garantindo paridade e injeção idempotente em `trackfw init` e `discover --init`, além de testes unitários verdes.
+
+## Acceptance Criteria
+- [x] Claude Code: `.claude/settings.json`
+- [x] Codex CLI: `.codex/hooks.json`
+- [x] Gemini CLI: `.gemini/settings.json`
+- [x] Kiro: `.kiro/hooks/trackfw-attention.json`
+- [x] GitHub Copilot: `.github/hooks/trackfw-attention.json`
+- [x] Cursor: `.cursor/hooks.json`
+- [x] Windsurf: instrução em `.windsurfrules`
+- [x] Integração no `trackfw init` e `discover --init`
+- [x] Testes unitários em `npm/tests/generators.test.js`

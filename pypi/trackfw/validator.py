@@ -523,16 +523,25 @@ def validate_reqs_have_roadmap(cfg: dict) -> list:
 
 def validate_adrs_are_referenced(cfg: dict, cwd: str = None) -> list:
     """ADRs em adr_dirs não referenciados em nenhuma REQ → violation (busca recursiva).
-    Isenta arquivos/diretórios localizados fora do diretório raiz (cwd).
+    Isenta arquivos localizados fora do diretório raiz (cwd).
     """
-    abs_cwd = os.path.abspath(cwd or os.getcwd())
+    abs_cwd = os.path.realpath(os.path.abspath(cwd or os.getcwd()))
     adrs = []
     adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
     for adr_dir in adr_dirs:
-        abs_adr_dir = os.path.abspath(adr_dir)
-        if not _is_subpath(abs_adr_dir, abs_cwd):
-            continue
-        adrs.extend(_walk_dir_md(abs_adr_dir))
+        expanded_dir = os.path.expanduser(adr_dir)
+        try:
+            for root, _, files in os.walk(expanded_dir):
+                for name in files:
+                    if not name.endswith(".md"):
+                        continue
+                    real_path = os.path.realpath(os.path.join(root, name))
+                    # Isenta arquivos localizados fora do CWD (ex.: ADRs globais compartilhados ou symlinks externos)
+                    if not _is_subpath(real_path, abs_cwd):
+                        continue
+                    adrs.append(name)
+        except OSError:
+            pass
 
     req_files = resolve_req_files(cfg)
     combined = ""

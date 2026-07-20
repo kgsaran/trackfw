@@ -47,7 +47,18 @@ Chain: ` + "`ADR → REQ → ROADMAP`" + ` · States: ` + "`backlog / wip / bloc
 1. **Before starting:** run ` + "`trackfw context`" + ` · read ` + "`docs/agents-working-context.md`" + `
 2. **After finishing:** update ` + "`docs/agents-working-context.md`" + ` with what changed
 3. **Before PR:** ` + "`trackfw validate`" + ` must pass
-4. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**
+4. **` + GlobalADRsDirective + `**
+
+### Architecture Directives (mandatory)
+- **3-layer separation:** frontend / backend / database — never mix concerns
+- **No in-memory data:** always database + ORM (never arrays/globals for persistence)
+- **Auth from day 1:** never defer — refactoring auth later is very costly
+- **Docker + .env from day 1:** containerize early; all config via env vars
+- **2-layer validation:** frontend (UX) + backend (security) — never only one
+- **API-first:** define OpenAPI contract before coding frontend/backend integration
+- **Security wave:** include a red-team review wave in every feature roadmap
+- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)
+- Use ` + "`/trackfw:architect`" + ` to define stack before the first REQ
 
 ### Architecture Directives (mandatory)
 - **3-layer separation:** frontend / backend / database — never mix concerns
@@ -201,8 +212,8 @@ func InjectClaudeHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
-	hooks["PermissionRequest"] = mergeClaudeHookArray(
-		hooks["PermissionRequest"],
+	hooks["PreToolUse"] = mergeClaudeHookArray(
+		hooks["PreToolUse"],
 		"AskUserQuestion",
 		"scripts/trackfw-attention-signal.sh",
 	)
@@ -250,8 +261,8 @@ func InjectCodexHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
-	hooks["PreToolUse"] = mergeClaudeHookArray(
-		hooks["PreToolUse"],
+	hooks["PermissionRequest"] = mergeClaudeHookArray(
+		hooks["PermissionRequest"],
 		".*",
 		"scripts/trackfw-attention-signal.sh",
 	)
@@ -320,6 +331,7 @@ func InjectGeminiHooks(cwd string) error {
 }
 
 // InjectKiroHooks injects Kiro attention hooks into .kiro/hooks/trackfw-attention.json.
+// Overwriting this file is intentional as trackfw-attention.json is a dedicated file owned exclusively by trackfw.
 func InjectKiroHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".kiro", "hooks")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -354,6 +366,7 @@ func InjectKiroHooks(cwd string) error {
 }
 
 // InjectCopilotHooks injects GitHub Copilot attention hooks into .github/hooks/trackfw-attention.json.
+// Overwriting this file is intentional as trackfw-attention.json is a dedicated file owned exclusively by trackfw.
 func InjectCopilotHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".github", "hooks")
 	if err := os.MkdirAll(dir, 0755); err != nil {

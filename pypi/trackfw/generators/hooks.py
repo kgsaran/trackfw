@@ -250,6 +250,12 @@ def inject_cursor_hooks(cwd: str) -> None:
     _write_json(file_path, data)
 
 
+def inject_windsurf_hooks(cwd: str) -> None:
+    """Atualiza .windsurfrules com a diretiva de regras do trackfw."""
+    from trackfw.generators.init_gen import inject_rules_for_tool
+    inject_rules_for_tool('windsurf', cwd)
+
+
 # ---------------------------------------------------------------------------
 # Ponto de entrada público — detecção automática
 # ---------------------------------------------------------------------------
@@ -289,6 +295,10 @@ def inject_hooks_detected(cwd: str) -> None:
         'cursor': (
             lambda: os.path.isdir(os.path.join(cwd, '.cursor')),
             inject_cursor_hooks,
+        ),
+        'windsurf': (
+            lambda: os.path.isfile(os.path.join(cwd, '.windsurfrules')),
+            inject_windsurf_hooks,
         ),
     }
 

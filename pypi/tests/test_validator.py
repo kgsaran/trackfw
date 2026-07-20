@@ -794,6 +794,26 @@ class TestAdrOrphanExemptOutsideCwd(unittest.TestCase):
         self.assertEqual(len(violations), 1)
         self.assertIn("ADR-0001-local.md", violations[0]["message"])
 
+    def test_adr_orphan_isenta_arquivo_individual_externo_via_symlink(self):
+        """ADR individual cujo caminho absoluto resolvido está fora de CWD é isento por-arquivo."""
+        internal_adr_dir = os.path.join(self.cwd, "docs", "adr")
+        os.makedirs(internal_adr_dir, exist_ok=True)
+        ext_file = os.path.join(self.external_dir, "ADR-0100-external-symlink.md")
+        _write(ext_file, "---\nstatus: Accepted\n---\n# External ADR")
+        symlink_path = os.path.join(internal_adr_dir, "ADR-0100-external-symlink.md")
+        try:
+            os.symlink(ext_file, symlink_path)
+        except (OSError, AttributeError, NotImplementedError):
+            return
+
+        cfg = _config.defaults()
+        cfg["adr_dirs"] = [internal_adr_dir]
+        cfg["req_dir"] = os.path.join(self.cwd, "docs/req")
+        os.makedirs(cfg["req_dir"], exist_ok=True)
+
+        violations = v.validate_adrs_are_referenced(cfg, cwd=self.cwd)
+        self.assertEqual(violations, [], "Arquivo com caminho resolvido fora do CWD deve ser isento por-arquivo")
+
 
 if __name__ == "__main__":
     unittest.main()

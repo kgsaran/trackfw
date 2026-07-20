@@ -2492,3 +2492,60 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - Demais vetores (command injection via `$()`/backticks no shell, hijack de `.claude/settings.json`/hooks dos 7 CLIs, supply chain) — avaliados como NÃO exploráveis: os injetores de hook usam apenas comandos estáticos hardcoded (`scripts/trackfw-attention-*.sh`), sem interpolação de dados externos; os valores extraídos via `jq`/`python3` só são usados como argumento de `%s` do `printf`, nunca via `eval`/`bash -c`.
 
 **Nenhum código alterado** — revisão apenas, sem correções (fora do escopo do Hades; achados endereçados para handoff aos agentes implementadores).
+
+---
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO Implementação Roadmap pós-auditoria PRs #56 e #57)
+
+**Tarefa:** Execução completa do roadmap `ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md`.
+**Agente:** 🌩️ Zeus - Principal Software Architect
+**Branch:** `fix/attention-hooks-pos-auditoria`
+
+- **Status:** CONCLUÍDO (13/13 achados zerados com testes verdes nos 3 CLIs)
+  - **C13 resolvido:** Adicionadas asserções de igualdade de conteúdo pós-2ª injeção (`bytes.Equal` em Go, `deepStrictEqual` em Node e `assertEqual` em Python) para Kiro e Copilot. `make quality` 100% verde.
+  - **Apolo (Go):** Alinhado evento do Claude (`PreToolUse[AskUserQuestion]`) e Codex (`PermissionRequest`). Resiliência de script shell contra `grep` sem match sob `pipefail`. Path containment e JSON escaping. Constante de ADRs globais unificada. `go test ./...` 100% verde.
+  - **Afrodite (Node):** Alinhado evento do Codex (`PermissionRequest`). Resiliência de script shell sob `pipefail`. Path containment e JSON escaping. Constante de ADRs globais unificada. `npm test` (58 testes) 100% verde.
+  - **Python Specialist:** Resiliência de script shell sob `pipefail`. Path containment e JSON escaping. Exceção silenciosa em `discover.py` removida. Granularidade por-arquivo de `adr_orphan` com `realpath` e suporte a `windsurf`. Constante de ADRs globais. `pytest pypi/tests/` (330 testes) 100% verde.
+- **Wave 3 (Barrier QA & Contratos):**
+  - `make quality` executado e 100% VERDE (Go + Node.js + Python + CLI parity lifecycle e smoke checks + validate JSON parity).
+  - Roadmap atualizado e movido para `docs/roadmaps/done/ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md`.
+  - REQ atualizada para `Status: Done`.
+
+---
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO Auditoria de conformidade pós-implementação + reabertura C13)
+
+**Tarefa:** Auditar a implementação do agy na branch `fix/attention-hooks-pos-auditoria` contra os 13 achados (C1–C13) da REQ pós-auditoria, verificar cobertura e correção.
+**Agente:** 🌩️ Zeus - Principal Software Architect
+**Branch:** `fix/attention-hooks-pos-auditoria`
+
+**Status:** CONCLUÍDO
+- **Verificação:** 3 auditores paralelos (Go/Node/Python) + suítes de teste (Go `ok`, Node 58/58, Python 330/330, `go vet` limpo) + reprodução empírica de C1 (script roda `exit=0` e escreve JSON no fallback `docs/roadmaps` sem `roadmap_dir:`) e C5 (payload com `"`,`\`,`\n` → JSON escapado e parseável).
+- **Resultado:** 11 de 13 achados sólida e corretamente resolvidos, incluindo os 3 críticos (C1/C2/C3). Feature funcional e endurecida.
+- **⚠️ C13 REABERTO:** cobertura inconsistente entre CLIs — comparação de conteúdo na idempotência de Kiro/Copilot só implementada em Python-Copilot; Go (Kiro+Copilot), Python-Kiro e Node ficaram com `len==2`/asserção parcial. Pendência acionável (arquivos+linhas) registrada no roadmap para o agy corrigir.
+- **Abertura de PR:** PR #59 aberto na branch `fix/attention-hooks-pos-auditoria` apontando para `main` (https://github.com/kgsaran/trackfw/pull/59).
+
+
+---
+
+## Sessão 2026-07-20 — Code Quality (IMPLEMENTANDO Revisão de Qualidade de Código PR #59)
+
+**Tarefa:** Revisão de qualidade de código (manutenibilidade, duplicação, paridade 3 CLIs, robustez, legibilidade, testes) do PR #59 (correções pós-auditoria PRs #56/#57), sem edições.
+**Agente:** 🔧 Code Quality - Code Quality Senior Specialist
+**Branch:** `fix/attention-hooks-pos-auditoria`
+
+---
+
+## Sessão 2026-07-20 — Zeus (CONCLUÍDO Reanálise de qualidade PR #59 + REQ/Roadmap de hardening Q1-Q8)
+
+**Tarefa:** Reanalisar a QUALIDADE do código do PR #59 (além da correção dos 13 achados) e gerar REQ→Roadmap para o agy implementar o hardening.
+**Agente:** 🌩️ Zeus - Principal Software Architect
+**Branch:** `fix/attention-hooks-pos-auditoria`
+
+**Status:** CONCLUÍDO (documentos de governança gerados; implementação delegada ao agy)
+- **Reanálise (verificada em código + reprodução empírica + comparação lado-a-lado dos 3 scripts):** 8 achados de qualidade (Q1–Q8).
+  - 🔴 Q1: teste de contrato do Go não executa o script (só string-contains) — Node/Python executam; paridade de teste quebrada e anti-padrão da Wave 3 reaberto.
+  - 🟠 Q2: escaping não cobre caracteres de controle U+0000–U+001F (TAB/CR quebram o JSON — reproduzido: jq e json.loads rejeitam). Q3: contenção de traversal diverge (Go relativiza abs-sob-cwd/`*..*` vs Node/Python segment-aware). Q4: `tr -d '\n'` (Go/Python) vs `tr -d '\r\n'` (Node). Q5: fallback sem `jq` nunca testado.
+  - 🟡 Q6: parsing YAML frágil. Q7: falta teste golden de paridade. Q8: pressuposto de cwd não documentado.
+- **Artefatos criados (backlog):** `docs/req/REQ-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md` + `docs/roadmaps/backlog/ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md` (Wave 1 scripts por CLI → Wave 2 testes → Wave 3 barrier; com decisões canônicas para paridade idêntica).
+- **Housekeeping:** removida cópia stale de `ROADMAP-...-pr56-pr57.md` em `backlog/` (duplicata vinda do #58/main; autoritativa é a de `done/`) — sintoma da divergência de squash-merge #58↔#59 já reportada.

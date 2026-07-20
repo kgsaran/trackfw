@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// GlobalADRsDirective é a diretiva obrigatória para instruir os agentes sobre ADRs globais.
+const GlobalADRsDirective = "Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura."
+
 func generateClaudeMD(cfg Config) error {
 	var sb strings.Builder
 
@@ -32,7 +35,7 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("5. **Run `trackfw validate` before every commit.** Zero violations required.\n")
 	sb.WriteString("6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n")
 	sb.WriteString("6a. **Usar `/trackfw:architect` para definir stack e arquitetura antes da primeira REQ.**\n")
-	sb.WriteString("7. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**\n\n")
+	sb.WriteString("7. **" + GlobalADRsDirective + "**\n\n")
 
 	sb.WriteString("## Slash commands (Claude Code)\n\n")
 	sb.WriteString("| Command | When to use |\n")

@@ -73,15 +73,21 @@ else
   MSG=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent is executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
 fi
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1 || true)
 ROADMAP_DIR=\${ROADMAP_DIR:-docs/roadmaps}
+
+case "$ROADMAP_DIR" in
+  /*|../*|*/../*|*/..|..)
+    ROADMAP_DIR="docs/roadmaps"
+    ;;
+esac
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 mkdir -p "$ROADMAP_DIR"
 printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\\n' \\
-  "$(echo "$TOOL" | sed 's/"/\\\\"/g')" \\
-  "$(echo "$MSG"  | sed 's/"/\\\\"/g')" \\
+  "$(echo "$TOOL" | tr -d '\\r\\n' | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')" \\
+  "$(echo "$MSG"  | tr -d '\\r\\n' | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')" \\
   "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-attention.json"
 
 exit 0
@@ -93,8 +99,14 @@ set -euo pipefail
 
 [ -f "trackfw.yaml" ] || exit 0
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1)
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'"'" | head -1 || true)
 ROADMAP_DIR=\${ROADMAP_DIR:-docs/roadmaps}
+
+case "$ROADMAP_DIR" in
+  /*|../*|*/../*|*/..|..)
+    ROADMAP_DIR="docs/roadmaps"
+    ;;
+esac
 
 rm -f "$ROADMAP_DIR/.trackfw-attention.json"
 exit 0
@@ -146,7 +158,7 @@ function injectCodexHooks(cwd) {
   const data = readJSON(filePath)
 
   if (!data.hooks) data.hooks = {}
-  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, '.*', SIGNAL_CMD)
+  data.hooks.PermissionRequest = mergeClaudeHookArray(data.hooks.PermissionRequest, '.*', SIGNAL_CMD)
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, '.*', CLEANUP_CMD)
 
   writeJSON(filePath, data)

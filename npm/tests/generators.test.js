@@ -10,7 +10,8 @@ const {
   generateClaudeMD,
   scaffold,
   generateClaudeCommands,
-  generateClaudeCommandsForce
+  generateClaudeCommandsForce,
+  GLOBAL_ADRS_DIRECTIVE,
 } = require('../src/generators/init')
 const {
   injectClaudeHooks,
@@ -23,7 +24,7 @@ const {
   injectHooksDetected,
 } = require('../src/generators/hooks')
 
-const EXPECTED_DIRECTIVE = 'Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.'
+const EXPECTED_DIRECTIVE = GLOBAL_ADRS_DIRECTIVE
 
 test('trackfwRulesBlock includes mandatory global ADRs directive', () => {
   const block = trackfwRulesBlock()
@@ -162,16 +163,16 @@ test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () =>
 
   injectCodexHooks(tmpDir)
   let data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
-  assert.equal(data.hooks.PreToolUse[0].matcher, '.*')
-  assert.equal(data.hooks.PreToolUse[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.PermissionRequest[0].matcher, '.*')
+  assert.equal(data.hooks.PermissionRequest[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.PostToolUse[0].matcher, '.*')
   assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
 
   // Idempotência
   injectCodexHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
-  assert.equal(data.hooks.PreToolUse.length, 1)
-  assert.equal(data.hooks.PreToolUse[0].hooks.length, 1)
+  assert.equal(data.hooks.PermissionRequest.length, 1)
+  assert.equal(data.hooks.PermissionRequest[0].hooks.length, 1)
 })
 
 test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', () => {
@@ -192,30 +193,38 @@ test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', 
   assert.equal(data.hooks.Notification[0].hooks.length, 1)
 })
 
-test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json', () => {
+test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-kiro-hooks-'))
   const hookPath = path.join(tmpDir, '.kiro', 'hooks', 'trackfw-attention.json')
 
   injectKiroHooks(tmpDir)
-  let data = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
-  assert.equal(data.hooks.length, 2)
-  assert.equal(data.hooks[0].event, 'PreToolUse')
-  assert.equal(data.hooks[0].action.command, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(data.hooks[1].event, 'PostToolUse')
-  assert.equal(data.hooks[1].action.command, 'scripts/trackfw-attention-cleanup.sh')
+  let data1 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
+  assert.equal(data1.hooks.length, 2)
+  assert.equal(data1.hooks[0].event, 'PreToolUse')
+  assert.equal(data1.hooks[0].action.command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data1.hooks[1].event, 'PostToolUse')
+  assert.equal(data1.hooks[1].action.command, 'scripts/trackfw-attention-cleanup.sh')
+
+  injectKiroHooks(tmpDir)
+  let data2 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
+  assert.deepStrictEqual(data1, data2)
 })
 
-test('injectCopilotHooks creates .github/hooks/trackfw-attention.json', () => {
+test('injectCopilotHooks creates .github/hooks/trackfw-attention.json idempotently', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-copilot-hooks-'))
   const hookPath = path.join(tmpDir, '.github', 'hooks', 'trackfw-attention.json')
 
   injectCopilotHooks(tmpDir)
-  let data = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
-  assert.equal(data.hooks.length, 2)
-  assert.equal(data.hooks[0].event, 'preToolUse')
-  assert.equal(data.hooks[0].run, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(data.hooks[1].event, 'postToolUse')
-  assert.equal(data.hooks[1].run, 'scripts/trackfw-attention-cleanup.sh')
+  let data1 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
+  assert.equal(data1.hooks.length, 2)
+  assert.equal(data1.hooks[0].event, 'preToolUse')
+  assert.equal(data1.hooks[0].run, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data1.hooks[1].event, 'postToolUse')
+  assert.equal(data1.hooks[1].run, 'scripts/trackfw-attention-cleanup.sh')
+
+  injectCopilotHooks(tmpDir)
+  let data2 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
+  assert.deepStrictEqual(data1, data2)
 })
 
 test('injectCursorHooks creates and merges .cursor/hooks.json idempotently', () => {
@@ -330,4 +339,62 @@ test('trackfw update command injects attention hooks and scripts idempotently pr
     process.chdir(origCwd)
   }
 })
+
+test('attention scripts are resilient to missing roadmap_dir in YAML and execute successfully', async () => {
+  const { generateAttentionScripts } = require('../src/generators/hooks')
+  const { execSync } = require('node:child_process')
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-att-resilient-'))
+
+  // Criar trackfw.yaml SEM roadmap_dir
+  fs.writeFileSync(path.join(tmpDir, 'trackfw.yaml'), 'frontend: react\nbackend: go\n', 'utf8')
+  generateAttentionScripts({}, tmpDir)
+
+  const signalScript = path.join(tmpDir, 'scripts', 'trackfw-attention-signal.sh')
+  const cleanupScript = path.join(tmpDir, 'scripts', 'trackfw-attention-cleanup.sh')
+
+  // Executar signalScript com input JSON contendo aspas, backslash e newlines (C1 + C5)
+  const payload = JSON.stringify({
+    tool_name: 'test_tool',
+    tool_input: { question: 'Need help with path\\file.txt and "quotes"\nSecond line' }
+  })
+
+  execSync(`"${signalScript}"`, {
+    cwd: tmpDir,
+    input: payload,
+    stdio: ['pipe', 'pipe', 'pipe']
+  })
+
+  const attFile = path.join(tmpDir, 'docs', 'roadmaps', '.trackfw-attention.json')
+  assert.ok(fs.existsSync(attFile), 'attention json file should be created in default docs/roadmaps')
+
+  const writtenContent = fs.readFileSync(attFile, 'utf8')
+  const parsed = JSON.parse(writtenContent)
+  assert.equal(parsed.tool, 'test_tool')
+  assert.ok(parsed.message.includes('Need help with path\\file.txt and "quotes"'), 'message escapes quotes and backslashes properly')
+  assert.ok(!writtenContent.includes('\nSecond line'), 'newlines stripped from message body in JSON')
+
+  // Executar cleanupScript
+  execSync(`"${cleanupScript}"`, { cwd: tmpDir, stdio: ['ignore', 'pipe', 'pipe'] })
+  assert.ok(!fs.existsSync(attFile), 'attention json file should be removed after cleanup script')
+})
+
+test('attention scripts normalize/contain ROADMAP_DIR against path traversal', async () => {
+  const { generateAttentionScripts } = require('../src/generators/hooks')
+  const { execSync } = require('node:child_process')
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-att-traversal-'))
+
+  // Criar trackfw.yaml COM path traversal em roadmap_dir
+  fs.writeFileSync(path.join(tmpDir, 'trackfw.yaml'), 'roadmap_dir: ../../../tmp/traversal\n', 'utf8')
+  generateAttentionScripts({}, tmpDir)
+
+  const signalScript = path.join(tmpDir, 'scripts', 'trackfw-attention-signal.sh')
+  const payload = JSON.stringify({ tool_name: 'test_tool', tool_input: { question: 'Hello' } })
+
+  execSync(`"${signalScript}"`, { cwd: tmpDir, input: payload, stdio: ['pipe', 'pipe', 'pipe'] })
+
+  // Garantir que não escreveu fora do CWD
+  const defaultAttFile = path.join(tmpDir, 'docs', 'roadmaps', '.trackfw-attention.json')
+  assert.ok(fs.existsSync(defaultAttFile), 'traversal attempt should fallback to docs/roadmaps')
+})
+
 

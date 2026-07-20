@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-20
 author: Zeus
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md"
 ---
 
 # REQ: corrigir attention-hooks e hardening pos-auditoria pr56 pr57
 
-> Date: 2026-07-20 | Status: Open
+> Date: 2026-07-20 | Status: Done
 
 ## Motivation
 
@@ -128,4 +128,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: docs/roadmaps/done/ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md

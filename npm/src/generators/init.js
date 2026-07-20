@@ -15,6 +15,8 @@ const GOV_DIRS = [
   'docs/roadmaps/abandoned',
 ]
 
+const GLOBAL_ADRS_DIRECTIVE = 'Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.'
+
 /**
  * scaffold(cfg) — cria diretórios de governança e gera arquivos de configuração.
  * cfg = { projectName, projectType, frontend, backend, pkgManager, hooks, ci }
@@ -361,7 +363,7 @@ Chain: \`ADR → REQ → ROADMAP\` · States: \`backlog / analyzing / wip / bloc
    - Starting a ML: edit roadmap \`**Status:** ⬜ Pendente\` → \`**Status:** 🔄 Em andamento\` + commit.
    - Completing a ML: edit roadmap → \`**Status:** ✅ Concluído\` + include in ML commit.
    - Analyzing a roadmap: move from \`backlog/\` to \`analyzing/\`; to \`wip/\` only when coding starts.
-5. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**
+5. **${GLOBAL_ADRS_DIRECTIVE}**
 
 ### Attention Signal (when you need user input during a task)
 Write \`docs/roadmaps/.trackfw-attention.json\`:
@@ -490,7 +492,7 @@ function generateClaudeMD(cfg) {
   content += '   - Ao **analisar** um roadmap antes de iniciar: mova o arquivo de `backlog/` para `analyzing/`; só mova para `wip/` ao começar a codificar de fato.\n'
   content += '5. **Run `trackfw validate` before every commit.** Zero violations required.\n'
   content += '6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n'
-  content += '7. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**\n\n'
+  content += `7. **${GLOBAL_ADRS_DIRECTIVE}**\n\n`
 
   content += '## Slash commands (Claude Code)\n\n'
   content += '| Command | When to use |\n'
@@ -1103,6 +1105,7 @@ function printArchitectNextSteps(cwd) {
 
 module.exports = {
   GOV_DIRS,
+  GLOBAL_ADRS_DIRECTIVE,
   scaffold,
   writeTrackfwConfig,
   generateValidateScript,
