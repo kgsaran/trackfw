@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-07-24
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: Corrige resolve de integrations em Windows destinos validos rejeitados
 
-> Date: 2026-07-24 | Status: Open
+> Date: 2026-07-24 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 

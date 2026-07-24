@@ -2603,7 +2603,7 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - **Apolo** entregou commit `e9cb58c`: Node `path.posix.normalize`, Go `path.Clean` (+import `path`), 3 suites de teste de paridade (Go table-driven, Node 9 casos, Python 8 casos), job `windows-latest` no `quality.yml` wired em `needs` do gate agregado.
 - **Auditoria Zeus:** diffs conferem exatamente ao roadmap; nenhuma linha indevida tocada. `go build ./...` OK, `go test ./internal/integrations/...` OK, `make quality` verde (341 Python + 69 Node + Go).
 - **Divergência de paridade documentada:** `./x` só é rejeitado em Node/Go (forma canônica), não em Python (`".." in parts` é semântico). Irrelevante ao bug — destinos do catálogo são canônicos.
-- **Wave 2 (release patch 2.15.1 + PR):** aguarda decisão explícita do usuário.
+- **Wave 2 (release patch 2.15.1):** CONCLUÍDA. PR #62 mergeado (squash). Bump 2.15.0 → 2.15.1 nos 5 arquivos de versão na branch `chore/release-v2.15.1`; `make quality` verde (341 Python + Go + parity). Roadmap → done, REQ → Done. Tag `v2.15.1` a criar após merge do release.
 
 ---
 
