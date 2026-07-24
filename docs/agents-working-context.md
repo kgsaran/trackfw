@@ -2587,5 +2587,19 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - Bump de `2.14.0` → `2.15.0` nos 5 arquivos de versão: `internal/version/version.go`, `npm/package.json`, `pypi/pyproject.toml`, `pypi/trackfw/__init__.py`, `docs/visao-projeto/VISION.md`.
 - `make quality` **100% VERDE**.
 
+---
+
+## Sessão 2026-07-24 — Zeus (IMPLEMENTANDO Fix Windows integrations resolve)
+
+**Tarefa:** Bug de produção reportado no Windows — `trackfw agents list/install` (npm v2.15.0) aborta com `Unsafe destination: .amazonq/cli-agents/...` e `.claude/agents/...`.
+**Agente:** 🌩️ Zeus - Principal Software Architect (orquestração)
+**Branch:** `fix/windows-integrations-resolve`
+**REQ:** `docs/req/REQ-2026-07-24-corrige-resolve-de-integrations-em-windows-destinos-validos-rejeitados.md`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md`
+
+**Causa raiz (análise estática validada):** `resolve()` compara input POSIX (`/`) contra normalização dependente de plataforma. Node `path.normalize` (manager.js:31) e Go `filepath.Clean` (manager.go:398) convertem `/`→`\` no Windows, disparando `Unsafe destination`. Python (manager.py:47, `".." in parts`) já é cross-platform correto — referência. Bug invisível no CI atual (100% ubuntu).
+**Plano:** ML-1A Node `path.posix.normalize` · ML-1B Go `path.Clean` · ML-1C testes paridade 3 CLIs · ML-1D job `windows-latest` (guard real) · ML-2A release patch 2.15.1.
+**Status:** IMPLEMENTANDO — handoff para Apolo.
+
 
 
