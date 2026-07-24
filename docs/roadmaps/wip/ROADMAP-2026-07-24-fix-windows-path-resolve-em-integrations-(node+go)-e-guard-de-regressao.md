@@ -49,7 +49,7 @@ O único guard honesto é um job **`windows-latest`** rodando os testes de integ
 > Dependências: nenhuma. Node/Go/Python/CI tocam árvores distintas, mas formam uma única correção de paridade — entregar atômico.
 
 ### ML-1A — Fix Node.js resolve() (POSIX normalize)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `npm/src/integrations/manager.js`
 **Ações:**
 - Linha 31: trocar `path.normalize(destination)` por `path.posix.normalize(destination)`.
@@ -63,7 +63,7 @@ O único guard honesto é um job **`windows-latest`** rodando os testes de integ
 - [ ] `node --test tests/*.test.js` verde.
 
 ### ML-1B — Fix Go resolve() (path.Clean POSIX)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/integrations/manager.go`
 **Ações:**
 - Linha 398: trocar `filepath.Clean(destination) != destination` por `path.Clean(destination) != destination`
@@ -76,7 +76,7 @@ O único guard honesto é um job **`windows-latest`** rodando os testes de integ
 - [ ] Novo teste table-driven em `manager_test.go` cobrindo aceitação de destino aninhado forward-slash e rejeição de traversal.
 
 ### ML-1C — Testes de paridade (Node + Go + Python-referência)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `npm/tests/` (novo `integrations_resolve.test.js` ou anexar a `agents-skills.test.js`), `internal/integrations/manager_test.go`, `pypi/tests/` (novo `test_integrations_resolve.py`)
 **Ações:**
 - Casos de aceitação: `.claude/agents/trackfw-architect.md`, `.amazonq/cli-agents/trackfw-architect.json` → resolvem sem erro.
@@ -87,7 +87,7 @@ O único guard honesto é um job **`windows-latest`** rodando os testes de integ
 - [ ] Conjunto de casos de aceite/rejeição idêntico entre os 3 CLIs (paridade).
 
 ### ML-1D — Guard de regressão real: job Windows no CI
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `.github/workflows/quality.yml`
 **Ações:**
 - Adicionar job(s) `runs-on: windows-latest` executando os testes de integrations dos 3 CLIs

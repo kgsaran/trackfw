@@ -2599,7 +2599,29 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 **Causa raiz (análise estática validada):** `resolve()` compara input POSIX (`/`) contra normalização dependente de plataforma. Node `path.normalize` (manager.js:31) e Go `filepath.Clean` (manager.go:398) convertem `/`→`\` no Windows, disparando `Unsafe destination`. Python (manager.py:47, `".." in parts`) já é cross-platform correto — referência. Bug invisível no CI atual (100% ubuntu).
 **Plano:** ML-1A Node `path.posix.normalize` · ML-1B Go `path.Clean` · ML-1C testes paridade 3 CLIs · ML-1D job `windows-latest` (guard real) · ML-2A release patch 2.15.1.
-**Status:** IMPLEMENTANDO — handoff para Apolo.
+**Status:** CONCLUÍDO (Wave 1) — pendente release (Wave 2, decisão do usuário)
+- **Apolo** entregou commit `e9cb58c`: Node `path.posix.normalize`, Go `path.Clean` (+import `path`), 3 suites de teste de paridade (Go table-driven, Node 9 casos, Python 8 casos), job `windows-latest` no `quality.yml` wired em `needs` do gate agregado.
+- **Auditoria Zeus:** diffs conferem exatamente ao roadmap; nenhuma linha indevida tocada. `go build ./...` OK, `go test ./internal/integrations/...` OK, `make quality` verde (341 Python + 69 Node + Go).
+- **Divergência de paridade documentada:** `./x` só é rejeitado em Node/Go (forma canônica), não em Python (`".." in parts` é semântico). Irrelevante ao bug — destinos do catálogo são canônicos.
+- **Wave 2 (release patch 2.15.1 + PR):** aguarda decisão explícita do usuário.
+
+---
+
+## Sessão 2026-07-24 — Apolo (CONCLUÍDO)
+
+**Tarefa:** Fix cross-platform Windows para `resolve()` em integrations (ML-1A, 1B, 1C, 1D). Branch `fix/windows-integrations-resolve`.
+
+**Entregue:**
+- `npm/src/integrations/manager.js` linha 31 — `path.normalize` → `path.posix.normalize`; `` `..${path.sep}` `` → `'../'`
+- `internal/integrations/manager.go` linha 398 — `filepath.Clean` → `path.Clean`; `string(filepath.Separator)` → `"/"`. Import `"path"` adicionado.
+- `internal/integrations/manager_test.go` — `TestResolveWindowsCrossplatform` (table-driven): 2 casos de aceitação + 7 de rejeição.
+- `npm/tests/integrations_resolve.test.js` — 9 testes (node --test): 2 accept + 7 reject.
+- `pypi/tests/test_integrations_resolve.py` — 8 testes (pytest): 2 accept + 6 reject (./x omitido — Python não enforça forma canônica para não-traversal).
+- `.github/workflows/quality.yml` — job `windows-latest` guard de regressão real.
+
+**Resultado:** `go build ./...` ✅ | `go test ./internal/integrations/...` 100% | Node 9/9 | Python 8/8 | `make quality` 341 testes Python + 69 Node + go vet/build todos verdes. Commit `e9cb58c` | push para `fix/windows-integrations-resolve`.
+
+**Decisão autônoma:** `./x` removido dos casos de rejeição Python — `Path('./x').parts == ('x',)`, implementação de referência não rejeita (não é traversal). Documentado no commit e no teste.
 
 
 
