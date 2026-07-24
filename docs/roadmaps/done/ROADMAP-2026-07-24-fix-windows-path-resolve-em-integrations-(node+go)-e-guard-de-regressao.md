@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-24
 req: "docs/req/REQ-2026-07-24-corrige-resolve-de-integrations-em-windows-destinos-validos-rejeitados.md"
 squad: "Apolo"
@@ -7,7 +7,7 @@ squad: "Apolo"
 
 # Roadmap: Fix Windows path resolve em integrations (Node+Go) e guard de regressao
 
-> Created: 2026-07-24 | Status: 🔄 WIP
+> Created: 2026-07-24 | Status: ✅ Done
 
 ## Diagnóstico / Contexto
 
@@ -101,7 +101,7 @@ O único guard honesto é um job **`windows-latest`** rodando os testes de integ
 > Dependências: Wave 1 mergeada. O usuário está bloqueado no **pacote npm publicado** — o fix só é entregue com nova versão.
 
 ### ML-2A — Bump de versão + release (patch)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — bump 2.15.0 → 2.15.1 nos 5 arquivos de versão; `make quality` verde; tag `v2.15.1` na branch `chore/release-v2.15.1`.
 **Arquivos afetados:** `npm/package.json`, `pypi/pyproject.toml`, `internal/version/version.go` (e demais arquivos de versão do protocolo de release)
 **Ações:** seguir o **Protocolo de Release** do CLAUDE.md do projeto — bump patch `2.15.0 → 2.15.1`,
 changelog agrupado (Fixes: Windows path resolve em integrations), tag anotada após merge.
