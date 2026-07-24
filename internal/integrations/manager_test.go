@@ -274,6 +274,40 @@ func TestManagerPreflightRollsBackBatch(t *testing.T) {
 	}
 }
 
+func TestResolveWindowsCrossplatform(t *testing.T) {
+	// Verifies that resolve() uses POSIX semantics so forward-slash paths from
+	// the catalog (e.g. ".claude/agents/x.md") are accepted on all platforms,
+	// including Windows where filepath.Clean would convert "/" → "\".
+	accept := []string{
+		".claude/agents/trackfw-architect.md",
+		".amazonq/cli-agents/trackfw-architect.json",
+	}
+	for _, dest := range accept {
+		manager, _, _ := testManager(t)
+		plan := testPlan("project", dest, "v1", "content")
+		if err := manager.Install([]PlannedArtifact{plan}, false); err != nil {
+			t.Errorf("Install(%q) rejected valid POSIX path: %v", dest, err)
+		}
+	}
+
+	reject := []string{
+		"..",
+		"../x",
+		"a/../../x",
+		".",
+		"./x",
+		"",
+		"bad\x00name",
+	}
+	for _, dest := range reject {
+		manager, _, _ := testManager(t)
+		plan := testPlan("project", dest, "v1", "content")
+		if err := manager.Install([]PlannedArtifact{plan}, false); err == nil {
+			t.Errorf("Install(%q) accepted unsafe destination", dest)
+		}
+	}
+}
+
 func testManager(t *testing.T) (Manager, string, string) {
 	t.Helper()
 	project := t.TempDir()

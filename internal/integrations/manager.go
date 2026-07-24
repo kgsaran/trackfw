@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -395,7 +396,7 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 	} else if filepath.IsAbs(destination) {
 		destination = filepath.Clean(destination)
 	} else {
-		if filepath.Clean(destination) != destination || destination == "." || strings.HasPrefix(destination, ".."+string(filepath.Separator)) {
+		if path.Clean(destination) != destination || destination == "." || strings.HasPrefix(destination, "../") {
 			return "", "", fmt.Errorf("unsafe destination %q", plan.Destination)
 		}
 		destination = filepath.Join(root, destination)
