@@ -28,7 +28,7 @@ class IntegrationManager {
     } else if (path.isAbsolute(destination)) {
       resolved = path.normalize(destination)
     } else {
-      if (!destination || path.normalize(destination) !== destination || destination === '.' || destination.startsWith(`..${path.sep}`)) throw new Error(`Unsafe destination: ${destination}`)
+      if (!destination || path.posix.normalize(destination) !== destination || destination === '.' || destination.startsWith('../')) throw new Error(`Unsafe destination: ${destination}`)
       resolved = path.resolve(root, destination)
     }
     const rel = path.relative(root, resolved)
