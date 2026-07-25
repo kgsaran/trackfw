@@ -8,10 +8,17 @@ import os
 import sys
 from typing import Any
 
+from trackfw.i18n import t as i18n_t
 from trackfw.identity import IdentityError, load as load_identity
 
 from .catalog import plan_deployments
 from .manager import IntegrationError, IntegrationManager
+
+# trackfw.commands.identity_wizard is imported lazily inside run(), as a
+# defensive measure: this module lives in trackfw.integrations, and
+# trackfw.commands.init also imports trackfw.integrations.catalog lazily for
+# the same reason — keeping the identity_wizard import function-local here
+# avoids depending on cross-package import order at module-load time.
 
 
 def csv_values(raw: str | None) -> list[str] | None:
@@ -87,20 +94,52 @@ def add_lifecycle_parser(subparsers, kind: str):
         child.add_argument("--scope", choices=("project", "global"), default="project")
         child.add_argument("--surface", action="append", help="Select target surface as target=surface")
         child.add_argument("--json", action="store_true", help="Print deterministic JSON")
-        child.add_argument("--force", action="store_true", help="Replace/remove modified managed files")
+        mutation = action != "list"
+        if mutation:
+            child.add_argument("--force", action="store_true", help="Replace/remove modified managed files")
+        # Identity flags are agents-only (ADR D5): skills have no identity,
+        # and this lifecycle command is shared between `agents` and
+        # `skills` — without this kind gate, `trackfw skills install
+        # --identity` would silently accept a flag with no effect at all.
+        if mutation and kind == "agents":
+            from trackfw import identity as _identity
+
+            child.add_argument(
+                "--identity",
+                action="store_true",
+                help="Reconfigure agent identity even if ~/.trackfw/identity.json already exists",
+            )
+            child.add_argument(
+                "--identity-preset",
+                default=None,
+                help="Agent identity preset (non-interactive): none, neutral, "
+                + ", ".join(_identity.preset_names()),
+            )
         child.set_defaults(func=lambda args, selected_kind=kind: run(args, selected_kind))
     return parser
 
 
 def run(args: argparse.Namespace, kind: str) -> int:
     try:
+        home = os.path.expanduser("~")
         # Identity must be resolved from disk before plan_deployments — skipping
         # this silently reverts custom agent names to the neutral defaults.
-        ident = load_identity(os.path.expanduser("~"))
+        ident = load_identity(home)
         catalog, _ = plan_deployments(kind, scope=args.scope, identity_cfg=ident)
         targets = csv_values(args.targets)
         items = csv_values(args.items)
         mutation = args.action != "list"
+
+        from trackfw.commands import identity_wizard
+
+        # --identity-preset is validated and persisted unconditionally, above
+        # every TTY-dependent branch below — mirrors init's --identity-preset
+        # handling so an invalid value always fails loudly instead of
+        # silently no-op'ing in a non-interactive CI run.
+        preset_changed = kind == "agents" and mutation and getattr(args, "identity_preset", None) is not None
+        if preset_changed:
+            identity_wizard.apply_identity_preset_flag(args.identity_preset, args.action, home)
+
         if mutation and not targets:
             if sys.stdin.isatty():
                 targets = _select("target CLIs", [(entry["id"], entry["name"]) for entry in catalog["targets"]])
@@ -111,6 +150,29 @@ def run(args: argparse.Namespace, kind: str) -> int:
         selected_surfaces = surface_values(args.surface)
         if mutation and sys.stdin.isatty():
             _prompt_ambiguous_surfaces(catalog, kind, targets or [], selected_surfaces)
+
+        # Identity wizard trigger (ADR ADR-2026-07-25-wizard-unificado-de-
+        # identidade-no-agents-install, D2): shown only when the flag path
+        # above did not already resolve identity for this run, and only for
+        # agents (never skills, D5). Runs after target/surface selection and
+        # before the final plan_deployments call below so the wizard's
+        # freshly-saved identity is what gets rendered into the plans.
+        if kind == "agents" and mutation and not preset_changed:
+            identity_exists = identity_wizard.identity_file_exists(home)
+            force_flag = bool(getattr(args, "identity", False))
+            if identity_wizard.should_prompt_identity(kind, sys.stdin.isatty(), identity_exists, force_flag):
+                identity_wizard.identity_wizard_runner(catalog, home)
+            elif identity_exists and not args.json:
+                existing = load_identity(home)
+                print(i18n_t("identity.inUse", count=str(len(existing.agents))))
+
+        # Identity must be resolved from disk before the final
+        # plan_deployments call — reload here because the wizard or
+        # --identity-preset above may have just written a new config; using
+        # the stale `ident` loaded at the top of this function would
+        # silently revert custom agent names to the neutral defaults.
+        ident = load_identity(home)
+
         catalog, plans = plan_deployments(
             kind,
             target_ids=targets,

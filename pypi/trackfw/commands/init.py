@@ -4,6 +4,7 @@ import os
 import sys
 
 from trackfw import identity
+from trackfw.commands import identity_wizard
 from trackfw.generators.init_gen import scaffold
 from trackfw.i18n import t as i18n_t
 
@@ -49,7 +50,7 @@ def _identity_home() -> str:
 
 
 def _identity_file_exists(home: str) -> bool:
-    return os.path.isfile(os.path.join(home, ".trackfw", "identity.json"))
+    return identity_wizard.identity_file_exists(home)
 
 
 def _resolve_identity_preset(value: str) -> tuple["identity.Config | None", bool]:
@@ -59,92 +60,7 @@ def _resolve_identity_preset(value: str) -> tuple["identity.Config | None", bool
     create ~/.trackfw/identity.json for those values. Any other unknown
     value is always an error, listing the accepted values.
     """
-    if value in ("none", "neutral"):
-        return None, False
-    try:
-        cfg = identity.preset(value)
-    except identity.IdentityError as error:
-        valid = ["none", "neutral"] + identity.preset_names()
-        raise identity.IdentityError(
-            f"identity-preset invalido {value!r} (validos: {', '.join(valid)})"
-        ) from error
-    return cfg, True
-
-
-def _prompt_choice(title: str, choices: list[tuple[str, str]]) -> str:
-    """Simple TTY prompt for a single choice: prints [n] label, reads a
-    number. Only called when sys.stdin.isatty() — never blocks CI."""
-    print(title, file=sys.stderr)
-    for index, (_, label) in enumerate(choices, 1):
-        print(f"  [{index}] {label}", file=sys.stderr)
-    raw = input("> ").strip()
-    if not raw:
-        return ""
-    try:
-        idx = int(raw) - 1
-        if idx < 0:
-            raise IndexError
-        return choices[idx][0]
-    except (ValueError, IndexError):
-        return ""
-
-
-_IDENTITY_PRESET_LABELS: list[tuple[str, str]] = [
-    ("greek", "Panteão grego (Zeus, Apolo, Afrodite...)"),
-    ("norse", "Mitologia nórdica (Odin, Thor, Freya...)"),
-    ("pioneers", "Pioneiros da computação (Turing, Codd, Knuth...)"),
-    ("potter", "Harry Potter (Dumbledore, Snape, Luna...)"),
-    ("thrones", "Game of Thrones (Tyrion, Jon, Arya...)"),
-    ("tolkien", "Senhor dos Anéis (Gandalf, Aragorn, Arwen...)"),
-    ("starwars", "Star Wars (Yoda, Leia, Vader...)"),
-    ("chaves", "Chaves (Girafales, Madruga, Chiquinha...)"),
-    ("turma", "Turma da Mônica (Franjinha, Cebolinha, Mônica...)"),
-    ("egyptian", "Panteão egípcio (Thoth, Ísis, Anúbis...)"),
-    ("custom", "Personalizar um a um"),
-    ("neutral", "Nomes neutros (padrão)"),
-]
-
-
-def _run_identity_wizard(home: str) -> None:
-    """Interactive identity wizard: 12 choices (10 presets + custom +
-    neutral), followed by a custom-name-per-agent loop and an optional
-    nickname prompt. Only called from a TTY — never blocks CI."""
-    title = i18n_t("init.prompt.identityPreset")
-    select = _prompt_choice(title, _IDENTITY_PRESET_LABELS)
-    if select in ("", "neutral"):
-        return
-
-    if select == "custom":
-        known_ids = identity.known_agent_ids()
-        custom_title = i18n_t("init.prompt.identityCustomName")
-        agents: dict[str, identity.AgentIdentity] = {}
-        slugs_seen: dict[str, str] = {}
-        for agent_id in known_ids:
-            while True:
-                value = input(f"{custom_title} ({agent_id}): ").strip()
-                try:
-                    slug = identity.slugify(value)
-                except identity.IdentityError as error:
-                    print(f"  {error}", file=sys.stderr)
-                    continue
-                if slug in slugs_seen:
-                    print(
-                        f"  slug {slug!r} duplicado com o agente {slugs_seen[slug]!r}",
-                        file=sys.stderr,
-                    )
-                    continue
-                slugs_seen[slug] = agent_id
-                agents[agent_id] = identity.AgentIdentity(display_name=value, slug=slug)
-                break
-        cfg = identity.Config(agents=agents)
-    else:
-        cfg = identity.preset(select)
-
-    nickname_title = i18n_t("init.prompt.identityNickname")
-    cfg.user_nickname = input(f"{nickname_title}: ").strip()
-
-    identity.validate(cfg, identity.known_agent_ids())
-    identity.save(home, cfg)
+    return identity_wizard.resolve_identity_preset(value)
 
 
 def run(args):
@@ -182,8 +98,11 @@ def run(args):
     skip_identity_wizard = preset_changed or _identity_file_exists(home)
 
     if not skip_identity_wizard and sys.stdin.isatty():
+        from trackfw.integrations.catalog import load_catalog
+
         try:
-            _run_identity_wizard(home)
+            catalog = load_catalog()
+            identity_wizard.identity_wizard_runner(catalog, home)
         except identity.IdentityError as error:
             print(f"init: identidade invalida: {error}", file=sys.stderr)
             sys.exit(2)
