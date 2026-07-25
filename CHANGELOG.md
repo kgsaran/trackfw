@@ -10,6 +10,23 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [Unreleased]
+### Changed
+- **BREAKING**: `agents|skills install|update` without `--scope` in
+  non-interactive mode now installs to scope `global` (`~/.claude/...`)
+  instead of `project` (`.claude/...`). CI pipelines that relied on the old
+  implicit `project` scope must now pass `--scope project` explicitly.
+- **BREAKING**: `agents|skills uninstall` without `--scope` in
+  non-interactive mode now **fails**, requiring the flag explicitly, instead
+  of assuming a scope. Motivation: prevent a CI script from silently deleting
+  artifacts under the user's home directory.
+### Added
+- Interactive scope prompt in `agents`, `skills`, and `init` — asks where to
+  install (`~/.claude` vs `.claude`), with `global` pre-selected, whenever
+  stdin is a TTY and `--scope` was not passed explicitly.
+- Resolved destination paths are printed before writing, in every mutating
+  `agents`/`skills` command and in `init`'s AI-tools step (outside `--json`).
+
 ## [2.16.0] - 2026-07-25
 ### Added
 - Identidade personalizável de agentes nos 3 CLIs — 10 presets temáticos

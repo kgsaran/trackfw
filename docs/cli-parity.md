@@ -55,6 +55,87 @@ adopted safely; unknown content is never adopted by `update`, even with force.
 The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` names
 exist only in the Go distribution for historical compatibility. They are not
 part of the cross-runtime contract; use `agents` and `skills` in new automation.
+`internal/generators/agents.go:InstallAgents` (hardcodes `~/.claude/agents/`)
+has no production caller and is exercised only by tests — dead code kept as
+is, not part of the contract either.
+
+## Install scope (`--scope`)
+
+`agents|skills install|update|uninstall`, and `trackfw init`'s AI-tools step,
+share one scope-resolution contract across the three runtimes
+(ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills):
+
+| Situation | Resolved scope | Notes |
+|---|---|---|
+| `--scope project` / `--scope global` passed | exactly that value | Detected by *flag-set*, never by comparing the resolved value against `"project"` — `cmd.Flags().Changed("scope")` (Go), `options.scope !== undefined` (Node), `args.scope is not None` (Python). Never prompts. |
+| No `--scope`, no TTY, operation is `install` or `update` | `global` (`~/.claude/...`) | Breaking change vs. the pre-ADR default of `project`. |
+| No `--scope`, no TTY, operation is `uninstall` | **error** | `"uninstall requires --scope in non-interactive mode"` (D8) — see below. |
+| No `--scope`, TTY | interactive select, **`global` pre-selected** | Same wording/options in all three runtimes; fires even when `--targets` was already supplied — it is a gate independent of target/item selection. |
+| `list` (any TTY state) | `global` if no `--scope` | Read-only command: never prompts (D6), but keeps the same default so it reports the destinations `install` actually wrote to. |
+
+**D8 — `uninstall` does not inherit the `global` default in non-interactive
+mode.** Defaulting a destructive operation to a location the caller never
+chose would let a CI script that today cleans up `.claude/agents/` in the
+repo start deleting files from the user's home directory instead. In TTY,
+`uninstall` prompts exactly like `install`/`update` — the user sees the choice
+before anything is destroyed.
+
+**Destination transparency (D5):** before writing anything, in every mutating
+command and in `init`'s AI-tools step, the three runtimes print the resolved
+destination paths (skipped only for `--json`, which is the deterministic
+channel scripts consume instead).
+
+### Internal codex-sync paths fixed to `scope: "project"`
+
+Two call sites bypass the scope gate entirely and hardcode `project`, in all
+three runtimes:
+
+- The Codex generator itself — `internal/generators/codex.go:InstallCodex`,
+  `npm/src/generators/codex.js:installCodex`,
+  `pypi/trackfw/generators/codex.py:install_codex` — writes `AGENTS.md`,
+  `.codex/agents/`, and `.codex/config.toml` directly into the repository. It
+  never goes through the shared plan/scope machinery in Go or Python
+  (Node's `installCodex` happens to reuse `execute()` internally, but always
+  with `scope: 'project'` fixed); the `.codex/` directory is inherently
+  repo-scoped by Codex's own design, not a user choice.
+- `trackfw update`'s "re-sync detected Codex integration" step —
+  `internal/generators/update.go:updateDetectedCodexIntegrations`,
+  `npm/src/commands/update.js` (the `AGENTS.md`/`.codex` branch), and
+  `pypi/trackfw/commands/update.py` — re-applies whatever Codex agent/skill
+  artifacts are already installed in the current project. All three runtimes
+  fix this to `scope: "project"` for the same reason: it operates on files
+  that already live in the repo, not a fresh install a user is choosing a
+  destination for.
+
+Neither is a parity gap: all three runtimes agree, and neither is reachable
+through the public `--scope` flag.
+
+## Non-interactive `--targets` error message (pre-existing, not part of the
+install-scope contract)
+
+`install|update|uninstall` without `--targets` and without a TTY fail with a
+message that already diverged before the install-scope ADR:
+
+- Go / Node: `"{operation} requires --targets in non-interactive mode"`
+- Python: `"--targets is required for non-interactive {action}"`
+
+Both are asserted by existing tests in all three suites
+(`internal/commands/agents_skills_test.go`,
+`npm/tests/agents-skills.test.js`, `pypi/tests/test_agents_skills.py`).
+Left as-is by ML-2A: unifying the wording is a small, low-risk change, but it
+is orthogonal to install-scope reconciliation and would touch pre-existing,
+already-asserted strings in an unrelated code path. Tracked here rather than
+silently fixed, so a future REQ can pick it up deliberately.
+
+## Non-zero exit codes for integration lifecycle errors
+
+Go and Node exit `1` (the default for cobra/Node's uncaught-throw path) on
+integration errors (invalid `--scope`, missing `--targets`, `uninstall`
+without `--scope`, etc.). Python's `agents`/`skills` command handler
+(`pypi/trackfw/integrations/command.py`) catches
+`IntegrationError | OSError | ValueError` and exits `2`
+(`raise SystemExit(2) from error`) — a pre-existing Python-CLI convention,
+unrelated to and unaffected by the install-scope feature.
 
 ## Agent identity
 

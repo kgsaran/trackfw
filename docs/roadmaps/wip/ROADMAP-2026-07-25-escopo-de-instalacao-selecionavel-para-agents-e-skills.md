@@ -14,15 +14,18 @@ Branch: `fix/escopo-de-instalacao-selecionavel-para-agents-e-skills`
 
 ## Critérios de Aceite
 
-- [ ] Em TTY, sem `--scope`, `agents|skills install|update|uninstall` perguntam o escopo
+- [x] Em TTY, sem `--scope`, `agents|skills install|update|uninstall` perguntam o escopo
       com `global` pré-selecionado
-- [ ] O prompt dispara mesmo com `--targets` informado (gate independente)
-- [ ] Sem TTY e sem `--scope` → escopo `global`
-- [ ] `--scope` explícito é respeitado e não dispara prompt (detecção por *flag-set*)
-- [ ] `trackfw init` pergunta o escopo; sem TTY → `global`
-- [ ] Caminhos de destino impressos antes da gravação (fora de `--json`)
-- [ ] `make build && make test && make lint && make quality` verdes
-- [ ] `trackfw validate` sem violações
+- [x] O prompt dispara mesmo com `--targets` informado (gate independente)
+- [x] Sem TTY e sem `--scope` → escopo `global` (exceto `uninstall`, que exige `--scope`
+      explícito por D8)
+- [x] `--scope` explícito é respeitado e não dispara prompt (detecção por *flag-set*)
+- [x] `trackfw init` pergunta o escopo; sem TTY → `global`
+- [x] Caminhos de destino impressos antes da gravação (fora de `--json`)
+- [x] `make build && make test && make lint && make quality` verdes
+- [x] `trackfw validate` sem violações (além das 2 pré-existentes de
+      `REQ-2026-07-24-corrige-resolve-de-integrations-em-windows...`, fora do escopo
+      desta REQ)
 
 ## Diagnóstico / Contexto
 
@@ -273,20 +276,85 @@ default `global`. Em TTY, `uninstall` continua perguntando normalmente.
 
 1. **`init` só pergunta o escopo quando há ferramentas de IA selecionadas** (`len(aiTools) > 0`) —
    decisão autônoma do ML-1A. Confirmar que Node e Python espelham essa condição.
+   ✅ **Confirmado — sem divergência.** Go (`init.go:332`, `if len(aiTools) > 0`),
+   Node (`init.js:193`, `aiTools.length ? await resolveScope(...) : 'global'`) e
+   Python (`init.py:119`, `if ai_tools:`) usam exatamente a mesma condição. Nenhuma
+   mudança necessária.
 2. **Impressão de destinos (D5) no `init`:** Go imprime em `installAITools`; Node **não**
    imprime em `commands/init.js`. Uniformizar.
+   ✅ **Divergência real, corrigida.** Python de fato já imprimia (`init.py:137-148`,
+   "Destino:"); apenas o Node ficava silencioso, porque `installIntegrationTarget`
+   (`npm/src/generators/init.js:1019`) chama `execute()` diretamente (camada baixa),
+   sem passar pelo `printResolvedDestinations` que só existe em
+   `commands/integrations.js`. Corrigido: `installIntegrationTarget` agora chama
+   `buildPlans` (sem efeito colateral) para imprimir `"Destino (<scope>):"` e os
+   caminhos únicos, antes do `execute()` real, no mesmo formato usado pelo restante
+   do CLI Node. Teste novo:
+   `npm/tests/identity-init.test.js::init --ai-tools claude sem TTY imprime destinos antes da gravação (D5)`.
 3. **Caminhos que não passam pelo gate (Node):** `npm/src/commands/update.js` e
    `npm/src/generators/codex.js` chamam `buildPlans`/`execute` com `scope: 'project'` fixo.
    Avaliar se é divergência real ou caminho legítimo, e registrar a conclusão.
+   ✅ **Caminho legítimo, não é divergência.** Confirmado que Go e Python têm os
+   mesmos dois caminhos, fixos em `"project"` da mesma forma:
+   - Gerador do próprio Codex (`internal/generators/codex.go:InstallCodex`,
+     `npm/src/generators/codex.js:installCodex`,
+     `pypi/trackfw/generators/codex.py:install_codex`): grava `AGENTS.md`/`.codex/`
+     diretamente no repositório — é inerentemente project-scoped pelo próprio
+     desenho do Codex, não uma escolha do usuário. Go/Python nem passam pelo
+     `BuildPlans`/`plan_deployments` aqui; o Node passa, mas sempre com
+     `scope: 'project'` fixo, produzindo o mesmo resultado.
+   - Re-sincronização do Codex dentro de `trackfw update`
+     (`internal/generators/update.go:updateDetectedCodexIntegrations`,
+     `npm/src/commands/update.js` (ramo `AGENTS.md`/`.codex`),
+     `pypi/trackfw/commands/update.py`): re-aplica artefatos **já instalados** no
+     projeto atual — não é uma instalação nova para o usuário escolher destino,
+     é uma atualização de arquivos que já vivem no repo. Os 3 CLIs fixam
+     `scope: "project"` pela mesma razão. Documentado em `docs/cli-parity.md`
+     ("Internal codex-sync paths fixed to `scope: "project"`").
 4. **Aliases deprecados só existem no CLI Go** (`copilot`, `cursor`, `gemini`, `windsurf`,
    `amazonq`) — não há equivalente Node/Python. Registrar como exceção intencional em
    `docs/cli-parity.md`.
+   ✅ **Já estava documentado** (`docs/cli-parity.md`, linha "gemini / cursor / copilot
+   / windsurf / amazonq | yes | no | no | Historical Go-only compatibility aliases").
+   Nenhuma mudança necessária.
 5. **Pré-seleção `global` no prompt não tem teste** nos 3 CLIs (os testes stubam o runner).
    Go verificado manualmente (`scope := "global"` antes do `.Value(&scope)`). Verificar
    Node (`global` como default do `select`) e Python (Enter vazio → `global`).
+   ✅ **Divergência real, corrigida em Go e Node; Python já estava coberto.**
+   - Python: já existia `test_prompt_scope_defaults_to_global_on_bare_enter`
+     (`pypi/tests/test_scope_resolution.py:119`), que estuba `builtins.input` para
+     retornar `""` e chama `_prompt_scope()` de verdade. Nada a fazer.
+   - Go: `promptInstallScope` foi refatorado extraindo a construção do
+     `huh.Select` para `installScopeSelect(scope *string) *huh.Select[string]`
+     (`internal/commands/integrations_flags.go`), permitindo exercitar o campo
+     real via `Select.RunAccessible` (modo acessível do huh, lê um Enter em
+     branco de um `io.Reader` falso — não é TTY nem stub do `promptInstallScopeRunner`).
+     Novo teste: `TestInstallScopeSelectDefaultsToGlobal`
+     (`internal/commands/agents_skills_test.go`).
+   - Node: adicionado teste que captura o objeto de configuração passado ao
+     `select()` real dentro de `resolveScope` (em vez de estubar `select` para
+     sempre devolver `'global'` incondicionalmente) e verifica
+     `capturedConfig.default === 'global'` e a ordem das choices. Novo teste:
+     `resolveScope: TTY sem --scope monta o select real com "global" pré-selecionado`
+     (`npm/tests/agents-skills.test.js`).
+6. **Mensagem de `--targets` ausente diverge** (Go/Node: `"{operation} requires --targets in
+   non-interactive mode"`; Python: `"--targets is required for non-interactive {action}"`).
+   ✅ **Decisão: fora de escopo deste ML.** É uma divergência pré-existente (não
+   introduzida por esta feature) e já coberta por testes próprios e independentes
+   em cada CLI. Unificar a string é um fix pequeno e de baixo risco, mas ortogonal
+   à reconciliação de escopo — misturaria neste commit uma mudança de contrato
+   textual não relacionada a `--scope`. Registrado em `docs/cli-parity.md` como
+   divergência conhecida e rastreada, para uma REQ futura dedicada.
+7. **Exit code diverge no Python (2 em vez de 1)** para erro de escopo.
+   ✅ **Confirmado como convenção pré-existente do CLI Python, agora documentada.**
+   Não estava em `docs/cli-parity.md` antes deste ML; adicionada a seção
+   "Non-zero exit codes for integration lifecycle errors" explicando que
+   `pypi/trackfw/integrations/command.py` sempre saiu com `SystemExit(2)` para
+   `IntegrationError | OSError | ValueError` no handler de `agents`/`skills`,
+   independente desta feature.
 
 ### ML-2A — Contrato de paridade, documentação e CHANGELOG
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** trackfw-qa
 **Arquivos afetados:**
 - `docs/cli-parity.md`

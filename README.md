@@ -363,6 +363,15 @@ are never replaced or removed unless `--force` is explicit, and unmanaged files
 are never removed. Known historical templates are adopted without overwriting;
 unknown unmanaged content cannot be adopted by `update`, even with `--force`.
 
+Without `--scope`, `install`/`update` default to `global` (`~/.claude/...`)
+when stdin is not a TTY, and otherwise prompt interactively with `global`
+pre-selected — the resolved destination paths are printed before anything is
+written. `uninstall` is the one exception: without `--scope` and without a
+TTY it fails instead of guessing, since silently defaulting a destructive
+operation could delete artifacts from the user's home directory. `list` never
+prompts and always assumes `global` unless `--scope` is given, so it reports
+the same destinations `install` actually wrote to.
+
 The 10 roles installed for each tool: **architect · backend · frontend · qa · infra · security · code-quality · dba · ux · data**
 
 ---
