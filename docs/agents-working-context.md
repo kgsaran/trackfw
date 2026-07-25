@@ -2704,3 +2704,24 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Impacto real:** um usuário que instala agentes amazonq pelo CLI Go e depois roda `agents list` pelo CLI Node vê estado `modified` (falso drift), porque o manifest é indexado por hash de conteúdo. `check-cli-parity.sh` não detecta isso hoje.
 
 **Encaminhamento:** ML-5A (que já vai adicionar o gate de paridade cross-CLI) deve corrigir a ordem das chaves no `render.js` do npm — caso contrário o próprio gate novo falharia. Alternativa rejeitada: documentar como exceção intencional em `docs/cli-parity.md`, porque o falso drift é um bug de usuário real, não uma divergência cosmética.
+
+**Wave 4 — ML-4A (Node.js) CONCLUÍDO** (`9995c1c`, `6740541`): módulo `npm/src/identity/`, duas rotas em `render.js`, `toolsFor` por `item.id`, detecção de colisão, wizard + flag, i18n. 97 testes.
+
+**Wave 5 — CONCLUÍDA (re-split em 2 MLs paralelos):**
+- ML-5A ✅ (`e10ffad`, `3b22736`) — corrigiu o defeito **pré-existente** do `cli-agent-json`/`agent-json` (ordem de chaves JSON no Node) e criou `scripts/check-identity-parity.sh`. Ampliou o gate de 9 para **11 combinações target/surface** por conta própria, incluindo `antigravity=legacy-cli` e `kiro=cli` — a representação `agent-json` só existe em superfícies **não-default**, então sem elas metade do fix ficaria sem cobertura (e ambas de fato divergiam).
+- ML-5B ✅ (`641494e`) — `docs/cli-parity.md`, os 3 READMEs (`npm/README.md` não existia e foi criado), fechamento de roadmap e REQ. Recusou-se a marcar 1 critério não verificável e reportou 3 achados, 2 deles defeitos meus.
+
+**Wave 6 — CONCLUÍDA:** ML-6A ✅ (`903ad9c`) — `Validate` rejeita slug com sufixo `-tf` duplicado nos 3 CLIs. Fecha footgun de caminho suportado (edição manual do `identity.json`, ADR D9).
+
+**Defeitos corrigidos pela auditoria do orquestrador nesta feature:**
+1. Placeholder `{{IDENTITY_LINE}}` vazaria literal em `~/.claude/agents/` (ML-1B revertido)
+2. Rota `subagent` não reescrevia o frontmatter — `@agent-<slug>-tf` e roteamento natural quebrados na superfície principal (ML-2B)
+3. Ordem de chaves JSON divergente Node × Go/Python — **pré-existente**, causava falso drift (ML-5A)
+4. Exemplo do ADR D5 induzia `name: zeus-tf-tf` (corrigido + guard no ML-6A)
+5. Nome da branch sem slug correspondente no roadmap — `trackfw validate` vermelho (roadmap renomeado)
+
+**Lição registrada:** nos defeitos 1, 2 e 3 **todos os gates estavam verdes**. Os testes Go eram auto-referentes (renderizavam do mesmo asset embedado) e não detectavam drift. A correção estrutural foi introduzir goldens congelados em `internal/integrations/testdata/` e o gate cross-CLI `check-identity-parity.sh` — este último verificado falhando de propósito antes de ser aceito.
+
+**Estado final:** `make quality` verde (Go + 99 Node + 394 Python + 5 gates de paridade). `trackfw validate`: 2 violations, ambas pré-existentes de `REQ-2026-07-24-corrige-resolve...`.
+
+**Status:** CONCLUÍDO — aguardando decisão do usuário sobre PR (não aberto).

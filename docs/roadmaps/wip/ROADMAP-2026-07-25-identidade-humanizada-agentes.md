@@ -23,14 +23,13 @@ squad: "trackfw"
       identidade — `update` nao reverte personalizacao
 - [x] `init --identity-preset` funciona e o ramo non-TTY nunca bloqueia
 - [x] Agente nao le configuracao em runtime
-- [ ] `make quality` e `trackfw validate` verdes
-      — `make quality` **verde** (Go + Node + Python + lint + os 5 gates de
-      paridade, incluindo `check-identity-parity.sh`). `trackfw validate`
-      reporta 3 violations, **nenhuma** desta REQ: 2 preexistentes de
-      `REQ-2026-07-24-corrige-resolve...` e 1 estrutural — o slug da branch
-      (`identidade-humanizada-agentes`) nao e substring do nome do arquivo do
-      roadmap (`...humanizada-dos-agentes`). Resolucao e decisao do
-      orquestrador (renomear o roadmap ou definir `TRACKFW_BRANCH`).
+- [x] `make quality` e `trackfw validate` verdes
+      — `make quality` **verde** (Go + 99 Node + 394 Python + os 5 gates de
+      paridade, incluindo `check-identity-parity.sh` em 11 combinacoes).
+      `trackfw validate`: **2 violations, ambas preexistentes** de
+      `REQ-2026-07-24-corrige-resolve...`, alheias a esta REQ. A terceira
+      (slug da branch ausente no nome do roadmap) foi resolvida renomeando
+      o roadmap para `...-identidade-humanizada-agentes.md`.
 
 ## Context
 
@@ -51,12 +50,12 @@ normalizacao e quebre `check-cli-parity.sh` no final.
 ### Mapa de dependencias
 
 ```
-Wave 1 (paralelo)              Wave 2        Wave 3      Wave 4 (paralelo)   Wave 5
-ML-1A identity Go ──► ML-1C ──┐
-      (mesmo preset.go)       ├──► ML-2A  ──► ML-3A ──┬──► ML-4A npm  ──┐
-ML-1B assets ─────────────────┘    render      CLI    └──► ML-4B pypi ──┴──► ML-5A
-                                   plan        wizard                       gates
-                                   manager                                  docs
+Wave 1 (paralelo)          Wave 2              Wave 3    Wave 4 (par.)   Wave 5 (par.)  Wave 6
+ML-1A ──► ML-1C ──► ML-1D ─┐
+   (mesmo preset.go)       ├──► ML-2A ──► ML-2B ──► ML-3A ─┬─► ML-4A npm ─┐ ┌─ ML-5A gate ─┐
+ML-1B assets ──────────────┘    render     fix      CLI    └─► ML-4B pypi ┴─┤              ├─► ML-6A
+   (ABANDONADO)                 plan     frontmatter wizard                 └─ ML-5B docs ─┘  guard
+                                manager   rota B
 ```
 
 ---
@@ -448,10 +447,22 @@ testes pypi, `pypi/tests/fixtures/slug_vectors.json`
 > **ML-5B** (documentacao e fechamento de governanca).
 
 ### ML-5A — Gate de paridade de identidade cross-CLI
-**Status:** in_progress
-**Agente:** trackfw-qa
+**Status:** done (`e10ffad`, `3b22736`)
+**Agente:** general-purpose (o `trackfw-qa` recusou a tarefa por conflito de persona)
 **Files affected:** `scripts/check-identity-parity.sh`, `Makefile`,
-`docs/agents-working-context.md`
+`npm/src/integrations/render.js`, `docs/agents-working-context.md`
+
+**Resultado auditado pelo orquestrador:**
+- Corrigiu defeito **preexistente** de paridade: `JSON.stringify` do Node
+  preservava ordem de insercao enquanto Go (`json.MarshalIndent` sobre mapa) e
+  Python emitem chaves alfabeticamente. Afetava `cli-agent-json` e `agent-json`.
+- Ampliou o gate de 9 para **11 combinacoes target/surface**, incluindo
+  `antigravity=legacy-cli` e `kiro=cli` — a representacao `agent-json` so existe
+  em superficies **nao-default**, entao sem elas metade do fix ficaria sem
+  cobertura. Ambas de fato divergiam.
+- Gate verificado **pelo orquestrador**: divergencia artificial no Go produz
+  `check-identity-parity.sh` exit **1** e `make parity` exit **2**; restaurado,
+  ambos voltam a 0.
 
 **Actions:**
 1. Criar `scripts/check-identity-parity.sh` provando que os 3 CLIs geram o
@@ -505,3 +516,27 @@ testes pypi, `pypi/tests/fixtures/slug_vectors.json`
 
 ## Legenda de status
 - pending / in_progress / done / blocked
+
+---
+
+## Wave 6 — Hardening (1 ML)
+> Dependencies: **barrier — ML-5A e ML-5B completos**
+
+### ML-6A — `Validate` rejeita slug com sufixo `-tf` duplicado
+**Status:** done (`903ad9c`)
+**Agente:** general-purpose
+**Files affected:** `internal/identity/identity.go`, `npm/src/identity/config.js`,
+`pypi/trackfw/identity/__init__.py` + testes dos 3 CLIs
+
+**Motivo.** O `slug` e persistido **sem** sufixo; `AgentName()` acrescenta `-tf`
+num unico ponto. Quem editasse `~/.trackfw/identity.json` a mao escrevendo
+`"slug": "zeus-tf"` obteria `name: zeus-tf-tf`. Nao era hipotetico: o ADR D9
+documenta a edicao manual como o caminho **nao-interativo** do modo `custom`, e
+o proprio ADR D5 exibia o exemplo errado (corrigido em `05171ad`).
+
+**Acceptance criteria:**
+- [x] `zeus-tf` rejeitado, mensagem citando id do agente e slug
+- [x] `zeus`, `tf` e `meu-tf-agente` continuam validos (teste de sufixo, nao regex)
+- [x] Os 10 presets continuam passando em `Validate`
+- [x] Comportamento identico nos 3 CLIs
+- [x] `make quality` verde
