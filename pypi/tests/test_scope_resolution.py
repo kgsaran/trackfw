@@ -28,8 +28,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from trackfw import identity
 from trackfw.integrations import command as integrations_command
 
@@ -62,7 +60,12 @@ def test_resolve_scope_explicit_project_is_returned_as_is(monkeypatch):
     # against a sentinel value.
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     called = {"prompted": False}
-    monkeypatch.setattr(integrations_command, "scope_prompt_runner", lambda: called.__setitem__("prompted", True) or "global")
+
+    def _spy() -> str:
+        called["prompted"] = True
+        return "global"
+
+    monkeypatch.setattr(integrations_command, "scope_prompt_runner", _spy)
     assert integrations_command.resolve_scope("project") == "project"
     assert called["prompted"] is False
 
