@@ -54,6 +54,20 @@ O escopo de instalação passa a ser uma **escolha explícita do usuário**, com
   para não reportar deployments divergentes dos que o `install` gravou.
 - **D7 — Paridade:** implementado de forma idêntica nos três CLIs, conforme a regra dura
   de paridade (`docs/cli-parity.md`).
+- **D8 — `uninstall` não herda o default `global` em modo não-interativo.** D1 foi decidido
+  no enquadramento "onde **instalar**". Aplicá-lo uniformemente a `uninstall` produziria
+  uma consequência não aprovada: um script de CI executando
+  `trackfw agents uninstall --targets claude` — que hoje remove `.claude/agents/trackfw-*.md`
+  do repositório — passaria a **apagar arquivos do diretório home do usuário**.
+  Verificado empiricamente após o ML-1A: os `destination` resolvidos vinham como
+  `~/.claude/agents/trackfw-*.md`.
+  Portanto, em `uninstall` **sem TTY e sem `--scope`**, o comando **falha** exigindo
+  `--scope` explícito, reutilizando o precedente já existente no código
+  (`"requires --targets in non-interactive mode"`). Em TTY, `uninstall` pergunta
+  normalmente como `install`/`update` (o usuário vê a escolha antes de destruir).
+  Justificativa: para operações destrutivas, o argumento de "degradação suave" que sustenta
+  D1 se inverte — errar o escopo em `install` cria arquivos no lugar errado; errar em
+  `uninstall` destrói arquivos do usuário.
 
 ## Consequences
 

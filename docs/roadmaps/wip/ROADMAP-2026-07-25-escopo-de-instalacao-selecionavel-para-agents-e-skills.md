@@ -239,8 +239,51 @@ cd pypi && python -m pytest
 
 ---
 
-## Wave 2 — Paridade, docs e changelog (barrier)
-> Dependências: **aguardar ML-1A, ML-1B e ML-1C concluídos** antes de iniciar.
+## Wave 2 — Guarda de segurança do uninstall (barrier)
+> Dependências: **aguardar ML-1A, ML-1B e ML-1C concluídos**.
+
+### ML-2Z — `uninstall` não herda o default `global` sem TTY (ADR D8)
+**Status:** ⬜ Pendente
+**Agente:** trackfw-backend
+**Arquivos afetados:** os 3 CLIs (Wave 1 encerrada, sem risco de colisão)
+
+**Contexto — regressão de segurança detectada em auditoria pós-ML-1A:**
+`trackfw agents uninstall --targets claude --json` sem TTY resolveu destinos como
+`~/.claude/agents/trackfw-*.md`. Um script de CI que antes limpava o repositório passaria a
+**apagar os agentes do home do usuário**. Ver ADR D8.
+
+**Ações:** em `resolveScope` (e equivalentes Node/Python), quando a operação for `uninstall`
+E não houver TTY E `--scope` não tiver sido informado → retornar erro exigindo `--scope`
+explícito, no formato do precedente existente
+(`"uninstall requires --scope in non-interactive mode"`). `install` e `update` mantêm o
+default `global`. Em TTY, `uninstall` continua perguntando normalmente.
+
+**Critérios de aceite:**
+- [ ] `uninstall --targets X` sem TTY e sem `--scope` falha com erro claro (teste nos 3 CLIs)
+- [ ] `uninstall --targets X --scope global` sem TTY funciona
+- [ ] `install`/`update` sem TTY e sem `--scope` continuam resolvendo `global`
+- [ ] Build/testes verdes nos 3 CLIs
+
+---
+
+## Wave 3 — Paridade, docs e changelog (barrier)
+> Dependências: **aguardar ML-2Z concluído**.
+
+### Divergências da Wave 1 a reconciliar no ML-2A
+
+1. **`init` só pergunta o escopo quando há ferramentas de IA selecionadas** (`len(aiTools) > 0`) —
+   decisão autônoma do ML-1A. Confirmar que Node e Python espelham essa condição.
+2. **Impressão de destinos (D5) no `init`:** Go imprime em `installAITools`; Node **não**
+   imprime em `commands/init.js`. Uniformizar.
+3. **Caminhos que não passam pelo gate (Node):** `npm/src/commands/update.js` e
+   `npm/src/generators/codex.js` chamam `buildPlans`/`execute` com `scope: 'project'` fixo.
+   Avaliar se é divergência real ou caminho legítimo, e registrar a conclusão.
+4. **Aliases deprecados só existem no CLI Go** (`copilot`, `cursor`, `gemini`, `windsurf`,
+   `amazonq`) — não há equivalente Node/Python. Registrar como exceção intencional em
+   `docs/cli-parity.md`.
+5. **Pré-seleção `global` no prompt não tem teste** nos 3 CLIs (os testes stubam o runner).
+   Go verificado manualmente (`scope := "global"` antes do `.Value(&scope)`). Verificar
+   Node (`global` como default do `select`) e Python (Enter vazio → `global`).
 
 ### ML-2A — Contrato de paridade, documentação e CHANGELOG
 **Status:** ⬜ Pendente
