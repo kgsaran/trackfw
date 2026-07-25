@@ -2110,7 +2110,6 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 ---
 
-<<<<<<< Updated upstream
 ## Sessão 2026-07-19 — Apolo ML-1C (CONCLUÍDO)
 
 **Tarefa:** ML-1C do roadmap `ROADMAP-2026-07-19-antigravity-agent-tools.md` — Implementar renderer `agent-directory` no CLI Python.
@@ -2705,31 +2704,3 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Impacto real:** um usuário que instala agentes amazonq pelo CLI Go e depois roda `agents list` pelo CLI Node vê estado `modified` (falso drift), porque o manifest é indexado por hash de conteúdo. `check-cli-parity.sh` não detecta isso hoje.
 
 **Encaminhamento:** ML-5A (que já vai adicionar o gate de paridade cross-CLI) deve corrigir a ordem das chaves no `render.js` do npm — caso contrário o próprio gate novo falharia. Alternativa rejeitada: documentar como exceção intencional em `docs/cli-parity.md`, porque o falso drift é um bug de usuário real, não uma divergência cosmética.
-=======
-## Sessão 2026-07-19 — Correção de erro na Statusline (CONCLUÍDO)
-
-**Branch:** `feat/global-adrs-governance`
-
-**Objetivo:** Investigar e corrigir o erro de traceback que ocorre na entrada/execução do CLI após a customização da statusline.
-
-**Entregue:**
-- `~/.gemini/antigravity-cli/statusline.py` — Modificada a extração defensiva das chaves `vcs`, `model` e `context_window` no payload JSON de entrada. Agora utiliza `or {}` com validação `isinstance(..., dict)` para prevenir erros `AttributeError` quando o CLI enviar valores `null` (como ocorreu após a alteração do statusbar).
-- Apolo realizou e validou a alteração, eliminando o erro de inicialização.
-
----
-
-## Sessão 2026-07-19 — Exibição do nome do agente na Statusline (CONCLUÍDO)
-
-**Branch:** `feat/global-adrs-governance` (sem alterações de código no repositório)
-
-**Objetivo:** Ajustar o script da statusline para extrair corretamente apenas o nome do agente quando este for fornecido como dicionário/JSON (e.g. `{"name": "zeus"}`).
-
-**Progresso:**
-- Detectado que o script `~/.gemini/antigravity-cli/statusline.py` exibe a string inteira de representação do objeto `agent` se ele for um dicionário.
-- Ajustada a lógica no script (`agent_raw`) para processar e extrair corretamente apenas o valor da chave `"name"` do dicionário ou usar a string diretamente.
-- Handoff para Apolo realizar o ajuste no script Python (concluído).
-- Teste executado simulando o payload com sucesso.
-
-
-
->>>>>>> Stashed changes
