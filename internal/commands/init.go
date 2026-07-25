@@ -118,12 +118,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		ci                 string
 		aiTools            []string
 		requireReqInCommit bool
-		identitySelect     string
-		userNickname       string
 	)
-
-	knownAgentIDs := identity.KnownAgentIDs()
-	customDisplayNames := make([]string, len(knownAgentIDs))
 
 	titleProjectName := i18n.T("init.prompt.projectName")
 	titleProjectType := i18n.T("init.prompt.projectType")
@@ -134,9 +129,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	titleCI := i18n.T("init.prompt.ci")
 	titleAITools := i18n.T("init.prompt.aiTools")
 	titleRequireReq := i18n.T("init.prompt.require_req_in_commit")
-	titleIdentityPreset := i18n.T("init.prompt.identityPreset")
-	titleIdentityCustomName := i18n.T("init.prompt.identityCustomName")
-	titleIdentityNickname := i18n.T("init.prompt.identityNickname")
 
 	form := huh.NewForm(
 		// Grupo 1 — sempre mostrado
@@ -233,51 +225,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 				).
 				Value(&aiTools),
 		),
-
-		// Grupo 6 — identidade dos agentes (oculto se resolvida via flag ou já existente)
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title(titleIdentityPreset).
-				Options(
-					huh.NewOption("Panteão grego (Zeus, Apolo, Afrodite...)", "greek"),
-					huh.NewOption("Mitologia nórdica (Odin, Thor, Freya...)", "norse"),
-					huh.NewOption("Pioneiros da computação (Turing, Codd, Knuth...)", "pioneers"),
-					huh.NewOption("Harry Potter (Dumbledore, Snape, Luna...)", "potter"),
-					huh.NewOption("Game of Thrones (Tyrion, Jon, Arya...)", "thrones"),
-					huh.NewOption("Senhor dos Anéis (Gandalf, Aragorn, Arwen...)", "tolkien"),
-					huh.NewOption("Star Wars (Yoda, Leia, Vader...)", "starwars"),
-					huh.NewOption("Chaves (Girafales, Madruga, Chiquinha...)", "chaves"),
-					huh.NewOption("Turma da Mônica (Franjinha, Cebolinha, Mônica...)", "turma"),
-					huh.NewOption("Panteão egípcio (Thoth, Ísis, Anúbis...)", "egyptian"),
-					huh.NewOption("Personalizar um a um", "custom"),
-					huh.NewOption("Nomes neutros (padrão)", "neutral"),
-				).
-				Value(&identitySelect),
-		).WithHideFunc(func() bool {
-			return skipIdentityWizard
-		}),
-
-		// Grupo 7 — nomes customizados um a um (somente se identitySelect == "custom")
-		buildCustomIdentityGroup(titleIdentityCustomName, knownAgentIDs, customDisplayNames, func() bool {
-			return skipIdentityWizard || identitySelect != "custom"
-		}),
-
-		// Grupo 8 — apelido do usuário (oculto para "neutral" e quando resolvida via flag/já existente)
-		huh.NewGroup(
-			huh.NewInput().
-				Title(titleIdentityNickname).
-				Value(&userNickname),
-		).WithHideFunc(func() bool {
-			return skipIdentityWizard || identitySelect == "" || identitySelect == "neutral"
-		}),
 	)
 
 	if err := form.Run(); err != nil {
 		return err
 	}
 
+	// Identity wizard runs as its own form, right after the main form — the
+	// same shared component (ADR D1) that `agents install` uses. This is
+	// skipped entirely (no prompt at all) when the flag path already
+	// resolved it above, or when an identity file already exists.
 	if !skipIdentityWizard {
-		if err := saveWizardIdentity(home, identitySelect, knownAgentIDs, customDisplayNames, userNickname); err != nil {
+		catalog, err := integrations.LoadCatalog()
+		if err != nil {
+			return err
+		}
+		if _, _, err := identityWizardRunner(catalog, home); err != nil {
 			return err
 		}
 	}
@@ -405,77 +368,6 @@ func installAITools(aiTools []string, cwd string) error {
 	}
 	for _, tool := range aiTools {
 		fmt.Printf("  ✓ %s agents and skills\n", tool)
-	}
-	return nil
-}
-
-// buildCustomIdentityGroup builds the huh group for the "Personalizar um a
-// um" identity path: one input per known agent id, each validated inline via
-// identity.Slugify and checked for slug collisions against the fields
-// entered so far.
-func buildCustomIdentityGroup(title string, ids []string, values []string, hide func() bool) *huh.Group {
-	fields := make([]huh.Field, 0, len(ids))
-	for index, id := range ids {
-		index := index
-		id := id
-		fields = append(fields, huh.NewInput().
-			Title(fmt.Sprintf("%s (%s)", title, id)).
-			Value(&values[index]).
-			Validate(func(value string) error {
-				slug, err := identity.Slugify(value)
-				if err != nil {
-					return err
-				}
-				for j := 0; j < index; j++ {
-					if values[j] == "" {
-						continue
-					}
-					otherSlug, err := identity.Slugify(values[j])
-					if err != nil {
-						continue
-					}
-					if otherSlug == slug {
-						return fmt.Errorf("slug %q duplicado com o agente %q", slug, ids[j])
-					}
-				}
-				return nil
-			}))
-	}
-	return huh.NewGroup(fields...).WithHideFunc(hide)
-}
-
-// saveWizardIdentity persists the identity chosen through the interactive
-// wizard. "neutral" (and the zero-value select left untouched because the
-// group was hidden) mean "do not write anything".
-func saveWizardIdentity(home, identitySelect string, knownAgentIDs []string, customDisplayNames []string, userNickname string) error {
-	if identitySelect == "" || identitySelect == "neutral" {
-		return nil
-	}
-
-	var cfg identity.Config
-	if identitySelect == "custom" {
-		cfg = identity.Config{Agents: make(map[string]identity.AgentIdentity, len(knownAgentIDs))}
-		for index, id := range knownAgentIDs {
-			slug, err := identity.Slugify(customDisplayNames[index])
-			if err != nil {
-				return fmt.Errorf("init: identidade customizada invalida para %q: %w", id, err)
-			}
-			cfg.Agents[id] = identity.AgentIdentity{DisplayName: customDisplayNames[index], Slug: slug}
-		}
-	} else {
-		preset, err := identity.Preset(identitySelect)
-		if err != nil {
-			return err
-		}
-		cfg = preset
-	}
-	cfg.UserNickname = userNickname
-
-	if err := identity.Validate(cfg, identity.KnownAgentIDs()); err != nil {
-		return fmt.Errorf("init: identidade invalida: %w", err)
-	}
-	if err := identity.Save(home, cfg); err != nil {
-		return fmt.Errorf("init: falha ao gravar identidade: %w", err)
 	}
 	return nil
 }

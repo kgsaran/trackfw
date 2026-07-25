@@ -5,23 +5,27 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
 	"github.com/kgsaran/trackfw/internal/generators"
+	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/spf13/cobra"
 )
 
 type integrationOptions struct {
-	targets  []string
-	items    []string
-	scope    string
-	surfaces []string
-	json     bool
-	force    bool
+	targets        []string
+	items          []string
+	scope          string
+	surfaces       []string
+	json           bool
+	force          bool
+	identity       bool
+	identityPreset string
 }
 
 type deploymentOutput struct {
@@ -77,7 +81,7 @@ func newIntegrationListCmd(kind integrations.ItemKind) *cobra.Command {
 			return executeIntegrationList(cmd, kind, opts)
 		},
 	}
-	addIntegrationFlags(cmd, &opts, false)
+	addIntegrationFlags(cmd, &opts, false, kind)
 	return cmd
 }
 
@@ -91,11 +95,11 @@ func newIntegrationMutationCmd(kind integrations.ItemKind, operation string) *co
 			return executeIntegrationMutation(cmd, kind, operation, &opts)
 		},
 	}
-	addIntegrationFlags(cmd, &opts, true)
+	addIntegrationFlags(cmd, &opts, true, kind)
 	return cmd
 }
 
-func addIntegrationFlags(cmd *cobra.Command, opts *integrationOptions, mutation bool) {
+func addIntegrationFlags(cmd *cobra.Command, opts *integrationOptions, mutation bool, kind integrations.ItemKind) {
 	cmd.Flags().StringSliceVar(&opts.targets, "targets", nil, "target CLIs (comma-separated)")
 	cmd.Flags().StringSliceVar(&opts.items, "items", nil, "catalog items (comma-separated; default: all)")
 	cmd.Flags().StringVar(&opts.scope, "scope", "project", "installation scope: project or global")
@@ -103,6 +107,14 @@ func addIntegrationFlags(cmd *cobra.Command, opts *integrationOptions, mutation 
 	cmd.Flags().BoolVar(&opts.json, "json", false, "print canonical JSON output")
 	if mutation {
 		cmd.Flags().BoolVar(&opts.force, "force", false, "replace or remove modified managed artifacts")
+	}
+	// Identity flags are agents-only (ADR D5): skills have no identity, and
+	// newIntegrationsLifecycleCmd is shared between `agents` and `skills` —
+	// without this kind gate, `trackfw skills install --identity` would
+	// silently accept a flag with no effect at all.
+	if mutation && kind == integrations.KindAgents {
+		cmd.Flags().BoolVar(&opts.identity, "identity", false, "reconfigure agent identity even if ~/.trackfw/identity.json already exists")
+		cmd.Flags().StringVar(&opts.identityPreset, "identity-preset", "", "agent identity preset (non-interactive): none, neutral, "+strings.Join(identity.PresetNames(), ", "))
 	}
 }
 
@@ -114,6 +126,18 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	if opts.scope != "project" && opts.scope != "global" {
 		return fmt.Errorf("invalid --scope %q: use project or global", opts.scope)
 	}
+
+	// --identity-preset is validated and persisted unconditionally, above
+	// every TTY-dependent branch below — mirrors init's --identity-preset
+	// handling so an invalid value always fails loudly instead of silently
+	// no-op'ing in a non-interactive CI run.
+	presetChanged := kind == integrations.KindAgents && cmd.Flags().Changed("identity-preset")
+	if presetChanged {
+		if err := applyIdentityPresetFlag(opts.identityPreset, operation); err != nil {
+			return err
+		}
+	}
+
 	if len(opts.targets) == 0 {
 		if !integrationsStdinIsTTY() {
 			return fmt.Errorf("%s requires --targets in non-interactive mode", operation)
@@ -138,6 +162,28 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	if err != nil {
 		return err
 	}
+
+	// Identity wizard trigger (ADR ADR-2026-07-25-wizard-unificado-de-
+	// identidade-no-agents-install, D2): shown only when the flag path above
+	// did not already resolve identity for this run, and only for agents
+	// (never skills, D5). Runs after target/surface selection and before
+	// BuildPlans so the wizard's freshly-saved identity is what gets
+	// rendered into the plans below.
+	if kind == integrations.KindAgents && !presetChanged {
+		identityExists := identityFileExists(manager.HomeDir)
+		if shouldPromptIdentity(kind, integrationsStdinIsTTY(), identityExists, opts.identity) {
+			if _, _, err := identityWizardRunner(catalog, manager.HomeDir); err != nil {
+				return err
+			}
+		} else if identityExists && !opts.json {
+			existing, err := identity.Load(manager.HomeDir)
+			if err != nil {
+				return fmt.Errorf("%s: identidade invalida: %w", operation, err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\n", i18n.T("identity.inUse", "count", strconv.Itoa(len(existing.Agents))))
+		}
+	}
+
 	// Identity must be resolved from disk before BuildPlans — skipping this
 	// silently reverts custom agent names to the neutral defaults.
 	ident, err := identity.Load(manager.HomeDir)
@@ -167,6 +213,31 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 		return printLifecycleOutput(cmd, catalog, kind, plans, manager)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s complete: %d %s artifact(s)\n", operation, len(plans), kind)
+	return nil
+}
+
+// applyIdentityPresetFlag resolves and persists --identity-preset for
+// `agents install|update|uninstall`, reusing resolveIdentityPreset (init.go)
+// so both commands accept exactly the same preset names and reject invalid
+// ones with the exact same error shape.
+func applyIdentityPresetFlag(presetValue, operation string) error {
+	cfg, shouldSave, err := resolveIdentityPreset(presetValue)
+	if err != nil {
+		return err
+	}
+	if !shouldSave {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	if err := identity.Validate(cfg, identity.KnownAgentIDs()); err != nil {
+		return fmt.Errorf("%s: identidade invalida: %w", operation, err)
+	}
+	if err := identity.Save(home, cfg); err != nil {
+		return fmt.Errorf("%s: falha ao gravar identidade: %w", operation, err)
+	}
 	return nil
 }
 

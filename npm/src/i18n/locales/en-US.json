@@ -22,6 +22,14 @@
     },
     "success": "✓ trackfw initialized — run 'trackfw status' to see your governance state."
   },
+  "identity": {
+    "inUse": "identity: {{count}} custom agent(s)",
+    "wizard": {
+      "confirmHeader": "── Confirmation ──────────────────────────────",
+      "confirmQuestion": "Confirm?",
+      "nicknameRowLabel": "What we'll call you:"
+    }
+  },
   "adr": {
     "description": "Manage Architecture Decision Records",
     "new": {

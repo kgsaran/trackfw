@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-25
 req: "REQ-2026-07-25-identidade-humanizada-dos-agentes-trackfw.md"
 squad: "trackfw"
@@ -7,7 +7,7 @@ squad: "trackfw"
 
 # Roadmap: Identidade humanizada dos agentes
 
-> Created: 2026-07-25 | Status: wip
+> Created: 2026-07-25 | Status: done | Merged: PR #64
 
 ## Acceptance Criteria
 

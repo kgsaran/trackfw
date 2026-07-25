@@ -47,6 +47,35 @@ two names resolving to the same identifier are rejected as well. The wizard
 also asks for an optional nickname for you, used by the agents when addressing
 you.
 
+### `agents install` also runs the wizard
+
+`trackfw init` is not the only entry point: `trackfw agents install`, the
+natural path in a project that is already governed, offers the same wizard.
+It appears **only** when all of the following hold: the command is `agents`
+(never `skills` — skills have no identity), stdin is a TTY, and either no
+`~/.trackfw/identity.json` exists yet or `--identity` was passed to force
+reconfiguration. With an identity already configured and no `--identity`,
+the command asks nothing — it prints `identity: N custom agent(s)` and
+installs directly.
+
+```bash
+trackfw agents install --targets claude                          # offers the wizard on first run, then installs; installs directly if identity is already set
+trackfw agents install --targets claude --identity                # force reconfiguration
+trackfw agents install --targets claude --identity-preset chaves  # non-interactive
+```
+
+Two new flags exist only on `agents install` (`skills install` never
+registers them): `--identity` (bool, forces reconfiguration) and
+`--identity-preset <preset>` (same ten presets plus `neutral` and `none`; an
+invalid value errors out listing the valid ones).
+
+In **name them one by one** mode, each field is labeled by the agent's
+specialty from the catalog, never by its technical id (e.g. `Architect —
+Architecture, ADRs and governed coordination`). Before anything is written to
+disk — for a preset or for custom names — a confirmation screen lists all ten
+`specialty → name` pairs plus your nickname; answering no returns to preset
+selection without writing anything.
+
 ### Shared configuration
 
 Identity lives in a single global file read by the Go, npm, and PyPI CLIs

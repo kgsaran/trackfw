@@ -2725,3 +2725,57 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Estado final:** `make quality` verde (Go + 99 Node + 394 Python + 5 gates de paridade). `trackfw validate`: 2 violations, ambas pré-existentes de `REQ-2026-07-24-corrige-resolve...`.
 
 **Status:** CONCLUÍDO — aguardando decisão do usuário sobre PR (não aberto).
+
+---
+
+## Sessão 2026-07-25 (ciclo 2) — Zeus (IMPLEMENTANDO)
+
+**Tarefa:** Wizard guiado de identidade no `agents install`. Branch `feat/wizard-guiado-identidade-agents-install`.
+
+**REQ:** `docs/req/REQ-2026-07-25-wizard-guiado-de-identidade-no-agents-install.md`
+**ADR:** `docs/adr/ADR-2026-07-25-wizard-unificado-de-identidade-no-agents-install.md`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md`
+
+**Ciclo anterior encerrado:** PR #64 mergeado. Roadmap → `done/`, REQ → `Done`, ADR → `Accepted`. Branch local removida após confirmar squash-merge (`git diff origin/main origin/feat/... --stat` vazio).
+
+**Lacunas que motivam este ciclo (levantadas pelo usuário):**
+- **L1 descoberta:** o wizard ficou só em `init`. `agents install` apenas **lê** `~/.trackfw/identity.json` (`integrations_flags.go:143`) e nunca oferece configurá-la — quem não roda `init` de novo só descobre a feature pelo README. Uma feature de personalização invisível no comando que a consome está, na prática, desligada.
+- **L2 rótulos:** o modo `custom` exibe o `id` técnico (`architect`, `code-quality`) em vez da especialidade. O catálogo já tem `Item.Name` + `Item.Description` embedados e não usados.
+- **L3 presets às cegas:** escolher `tolkien` não revela que security→Boromir e dba→Elrond até os arquivos estarem em disco. Não há confirmação.
+
+**Decisão de escopo:** é REQ **exclusivamente de UX de CLI** — não altera schema de `identity.json`, contrato de slug nem artefatos gerados. Critério de controle: `check-identity-parity.sh` deve continuar passando **sem nenhuma alteração**; se precisar mudar, algo saiu do escopo.
+
+**Risco principal identificado no ADR (D2):** a regra de acionamento. Errar para o lado permissivo transforma o wizard em incômodo recorrente e leva o usuário a automatizar o "pular", esvaziando a feature. Exige teste explícito do caso "identidade já existe → não pergunta".
+
+**Plano:** 3 waves / 4 MLs. W1 (sequencial, define o contrato de UX): ML-1A componente Go + init + agents install. W2 (paralelo): ML-2A npm, ML-2B pypi. W3: ML-3A docs + E2E.
+
+**Status:** IMPLEMENTANDO — Wave 1 em execução.
+
+### Data — ML-2B (pypi) — CONCLUÍDO
+
+**Escopo:** portou o wizard guiado de identidade (ADR-2026-07-25-wizard-unificado-de-identidade-no-agents-install) para o CLI Python. Exclusivo em `pypi/`.
+
+**Arquivos:**
+- Novo `pypi/trackfw/commands/identity_wizard.py` — componente compartilhado (`run_identity_wizard`, indireção `identity_wizard_runner` para spies em teste, `should_prompt_identity`, `identity_file_exists`, `resolve_identity_preset`, `apply_identity_preset_flag`, `IDENTITY_PRESET_LABELS`).
+- `pypi/trackfw/commands/init.py` — `init` agora consome o wizard compartilhado; removida a implementação antiga de `_run_identity_wizard`/`_IDENTITY_PRESET_LABELS` (duplicada).
+- `pypi/trackfw/integrations/command.py` — `agents install/update/uninstall` ganham `--identity`/`--identity-preset` (apenas quando `kind == "agents"` e ação é mutação); trigger do wizard entre seleção de surface e o `plan_deployments` final; recarrega identidade do disco após wizard/preset antes de montar os planos definitivos (ponto crítico apontado pelo advisor — sem isso os nomes custom regridem silenciosamente para neutro).
+- 3 locales `pypi/trackfw/i18n/locales/*.json` — bloco `identity.inUse` / `identity.wizard.{confirmHeader,confirmQuestion,nicknameRowLabel}` adicionado (faltava inteiramente nos 3 locales Python; as chaves `init.prompt.identityPreset/identityCustomName/identityNickname` já existiam de ciclo anterior).
+- Novo `pypi/tests/test_identity_wizard.py` — 24 testes: truth table completa de `should_prompt_identity` (16 combos), gatilho do wizard em `agents install` (existente/sem flag não invoca, sem identidade com TTY invoca, `--identity` força, `skills install` nunca invoca, não-TTY nunca bloqueia), recusa de confirmação não persiste nada, rótulos do modo custom usam `name — description` do catálogo (não o id cru), erro de `--identity-preset` inválido lista os válidos.
+
+**Validação:**
+- `make test-python`: 418 passed.
+- `scripts/check-identity-parity.sh` (sem alteração no script): passou para as 11 combinações target/surface, com e sem identidade — inclui Go, Node.js (já implementado em paralelo por outro agente) e Python.
+- 5 cenários E2E comparados manualmente contra o binário Go: (1) non-TTY sem identidade não trava e não grava `identity.json` — igual; (2) `--identity-preset starwars` → `dba` vira `r2-d2-tf` nos dois; (3) identidade existente imprime `identity: 10 custom agent(s)` nos dois (locale fixado em `en-US` para comparação); (4) `skills install --help` sem nenhuma flag de identidade nos dois; (5) `--identity-preset xpto` → mesma lista de válidos na mesma ordem nos dois (exit code diverge Go=1/Python=2, divergência preexistente do CLI, não é critério de paridade).
+- Regra de acionamento sem TTY real: testada via `monkeypatch.setattr("sys.stdin.isatty", lambda: False/True)` chamando `integrations_command.run(...)` diretamente com um spy substituindo `identity_wizard.identity_wizard_runner` (nunca chamando o `input()` real) — mesmo padrão de indireção do Go (`var identityWizardRunner`), documentado no docstring do módulo para não regressar.
+
+**Git:** commit `9266242` em `feat/wizard-guiado-identidade-agents-install`, apenas `pypi/trackfw` e `pypi/tests` staged (confirmado `git status --short pypi` limpo antes do commit; `.trackfw-baseline.json` e `AGENTS.md` não tocados).
+
+**Status:** CONCLUÍDO.
+
+**Wave 3 — CONCLUÍDA:** ML-3A ✅ (`1e81ea2`, `1e9c514`) — documentação nos 3 READMEs + `cli-parity.md` + fechamento de governança. `make quality` verde, `trackfw validate` só com as 2 violations pré-existentes.
+
+**Achado corrigido pelo orquestrador pós-ML-3A:** o agente reportou que o ADR D6 descrevia a ordem "apelido antes do preset", mas a implementação real (verificada nos 3 CLIs) faz preset → nomes → apelido → confirmação. Era o **ADR que estava errado**, não o código — corrigido D6 registrando explicitamente que nenhuma mudança de código foi necessária.
+
+**Estado final do ciclo:** roadmap → `done/`, REQ → `Done`, ADR → `Accepted`. `make quality` verde (Go + 113 Node + 418 Python + 5 gates de paridade, incluindo `check-identity-parity.sh` **sem nenhuma linha alterada** durante toda a feature — o guarda-corpo de escopo funcionou do início ao fim).
+
+**Status:** CONCLUÍDO — aguardando decisão do usuário sobre PR (não aberto).

@@ -18,6 +18,14 @@
     },
     "success": "\n✓ trackfw inicializado — execute 'trackfw status' para ver o estado de governança."
   },
+  "identity": {
+    "inUse": "identidade: {{count}} agente(s) personalizado(s)",
+    "wizard": {
+      "confirmHeader": "── Confirmação ──────────────────────────────",
+      "confirmQuestion": "Confirmar?",
+      "nicknameRowLabel": "Como você será chamado:"
+    }
+  },
   "adr": {
     "description": "Gerenciar Architecture Decision Records",
     "new": { "description": "Criar um novo Architecture Decision Record", "created": "✓ ADR criado: {{path}}" },

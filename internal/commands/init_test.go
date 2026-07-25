@@ -150,11 +150,16 @@ func TestInitRerunWithoutFlagPreservesExistingIdentity(t *testing.T) {
 	}
 }
 
-// TestSaveWizardIdentityCustomWritesValidatedConfig covers the "Personalizar
-// um a um" wizard path: saveWizardIdentity must write a Config with one
-// AgentIdentity per known agent id, each Slug matching identity.Slugify of
-// the entered display name, plus the nickname.
-func TestSaveWizardIdentityCustomWritesValidatedConfig(t *testing.T) {
+// acceptIdentity is the confirm callback for tests that exercise the
+// confirmed path of resolveIdentitySelection without a real huh.Form.
+func acceptIdentity(identity.Config) (bool, error) { return true, nil }
+
+// TestResolveIdentitySelectionCustomWritesValidatedConfig covers the
+// "Personalizar um a um" wizard path against the live code that
+// runIdentityWizard itself calls: resolveIdentitySelection must write a
+// Config with one AgentIdentity per known agent id, each Slug matching
+// identity.Slugify of the entered display name, plus the nickname.
+func TestResolveIdentitySelectionCustomWritesValidatedConfig(t *testing.T) {
 	home := t.TempDir()
 	ids := identity.KnownAgentIDs()
 	names := make([]string, len(ids))
@@ -162,8 +167,12 @@ func TestSaveWizardIdentityCustomWritesValidatedConfig(t *testing.T) {
 		names[i] = "Agente " + id
 	}
 
-	if err := saveWizardIdentity(home, "custom", ids, names, "Kleber"); err != nil {
+	_, outcome, err := resolveIdentitySelection(home, "custom", ids, names, "Kleber", acceptIdentity)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if outcome != identitySaved {
+		t.Fatalf("expected identitySaved, got %v", outcome)
 	}
 
 	cfg, err := identity.Load(home)
@@ -191,15 +200,24 @@ func TestSaveWizardIdentityCustomWritesValidatedConfig(t *testing.T) {
 	}
 }
 
-// TestSaveWizardIdentityNeutralWritesNothing covers the "neutral" wizard
-// choice and the hidden-group zero value ("") — both mean "do not write".
-func TestSaveWizardIdentityNeutralWritesNothing(t *testing.T) {
+// TestResolveIdentitySelectionNeutralWritesNothing covers the "neutral"
+// wizard choice and the hidden-group zero value ("") — both mean "do not
+// write". The confirm callback must never even be reached.
+func TestResolveIdentitySelectionNeutralWritesNothing(t *testing.T) {
 	ids := identity.KnownAgentIDs()
 	for _, selection := range []string{"neutral", ""} {
 		t.Run(selection, func(t *testing.T) {
 			home := t.TempDir()
-			if err := saveWizardIdentity(home, selection, ids, make([]string, len(ids)), ""); err != nil {
+			_, outcome, err := resolveIdentitySelection(home, selection, ids, make([]string, len(ids)), "",
+				func(identity.Config) (bool, error) {
+					t.Fatalf("selection %q must not reach the confirmation step", selection)
+					return false, nil
+				})
+			if err != nil {
 				t.Fatal(err)
+			}
+			if outcome != identitySkipped {
+				t.Fatalf("selection %q: expected identitySkipped, got %v", selection, outcome)
 			}
 			if _, statErr := os.Stat(identityJSONPath(home)); !os.IsNotExist(statErr) {
 				t.Fatalf("selection %q must not write identity.json: %v", selection, statErr)
@@ -208,12 +226,12 @@ func TestSaveWizardIdentityNeutralWritesNothing(t *testing.T) {
 	}
 }
 
-// TestSaveWizardIdentityCustomCollisionWritesNothing proves the ordering
-// saveWizardIdentity relies on: identity.Validate must run BEFORE
+// TestResolveIdentitySelectionCustomCollisionWritesNothing proves the
+// ordering the live wizard relies on: identity.Validate must run BEFORE
 // identity.Save, so a slug collision between two custom display names
 // aborts with an error and leaves no file behind — never a corrupt or
 // partially-written identity.json.
-func TestSaveWizardIdentityCustomCollisionWritesNothing(t *testing.T) {
+func TestResolveIdentitySelectionCustomCollisionWritesNothing(t *testing.T) {
 	home := t.TempDir()
 	ids := identity.KnownAgentIDs()
 	names := make([]string, len(ids))
@@ -225,7 +243,7 @@ func TestSaveWizardIdentityCustomCollisionWritesNothing(t *testing.T) {
 	names[0] = "Zeus"
 	names[1] = "zeus"
 
-	err := saveWizardIdentity(home, "custom", ids, names, "")
+	_, _, err := resolveIdentitySelection(home, "custom", ids, names, "", acceptIdentity)
 	if err == nil {
 		t.Fatal("expected an error for colliding slugs")
 	}

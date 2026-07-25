@@ -417,6 +417,66 @@ resolve to the same identifier are rejected too.
 The wizard then asks for an optional **nickname for you**, which is how the
 agents will address you.
 
+### `agents install` also runs the wizard
+
+`trackfw init` is not the only entry point: `trackfw agents install`, the
+natural path in a project that is already governed, offers the same wizard.
+The rule is identical across the three CLIs — it appears **only** when
+**all** of the following hold:
+
+- the command is `agents` (never `skills`: skills have no identity);
+- stdin is a TTY (a non-interactive run never blocks on a prompt);
+- and either no `~/.trackfw/identity.json` exists yet, or `--identity` was
+  passed to force reconfiguration.
+
+With an identity already configured and no `--identity`, the command asks
+nothing — it prints `identity: N custom agent(s)` and installs directly.
+
+```bash
+# First run on this machine: offers the wizard, then installs
+trackfw agents install --targets claude
+
+# Identity already configured: no prompt, installs directly
+trackfw agents install --targets claude
+
+# Force reconfiguration
+trackfw agents install --targets claude --identity
+
+# Non-interactive, same semantics as init --identity-preset
+trackfw agents install --targets claude --identity-preset chaves
+```
+
+Two new flags exist only on `agents install` (`skills install` never
+registers them): `--identity` (bool, forces reconfiguration even if a file
+already exists) and `--identity-preset <preset>` (same ten themed presets
+plus `neutral` and `none`; an invalid value errors out listing the valid
+ones).
+
+In **name them one by one** mode, each field is now labeled by the agent's
+specialty, taken from the catalog, never by its technical id:
+
+```
+Architect — Architecture, ADRs and governed coordination
+> _
+```
+
+Before anything is written to disk — for a themed preset **or** for custom
+names — a confirmation screen lists all ten `specialty → name` pairs plus
+your nickname:
+
+```
+── Confirmation ──────────────────────────────
+  Architecture, ADRs and governed coordination   →  Girafales
+  Backend APIs, domain logic and integrations    →  Madruga
+  ...
+  What we'll call you:                              chefe
+
+? Confirm?
+```
+
+Answering no returns to preset selection; nothing is written until you
+confirm.
+
 Everything is stored in a single global file, shared by the Go, npm, and PyPI
 distributions:
 
