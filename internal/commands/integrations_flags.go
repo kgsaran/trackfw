@@ -127,7 +127,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	// resolveScope is a gate independent from target/item selection (ADR D2):
 	// it must run — and may prompt — even when --targets was already
 	// supplied below, which is the most common invocation shape.
-	if err := resolveScope(cmd, opts); err != nil {
+	if err := resolveScope(cmd, opts, operation); err != nil {
 		return err
 	}
 
@@ -394,8 +394,14 @@ func promptInstallScope() (string, error) {
 // comparison cannot distinguish an explicit `--scope project` from the flag's
 // unset default) or a deprecated-alias-assigned scope (opts.scopeExplicit)
 // always wins and is only validated, never re-prompted. Otherwise: no TTY →
-// "global" (D1); TTY → interactive prompt with "global" pre-selected (D2).
-func resolveScope(cmd *cobra.Command, opts *integrationOptions) error {
+// "global" (D1) for install/update; for uninstall, no TTY and no explicit
+// --scope is a hard error (ADR D8) — a destructive operation must never
+// silently default to a scope the caller didn't choose, since a CI script
+// removing `.claude/agents/trackfw-*.md` from the repo would otherwise start
+// deleting files from the user's home directory instead. TTY → interactive
+// prompt with "global" pre-selected (D2), for every operation including
+// uninstall.
+func resolveScope(cmd *cobra.Command, opts *integrationOptions, operation string) error {
 	if opts.scopeExplicit || cmd.Flags().Changed("scope") {
 		if opts.scope != "project" && opts.scope != "global" {
 			return fmt.Errorf("invalid --scope %q: use project or global", opts.scope)
@@ -403,6 +409,9 @@ func resolveScope(cmd *cobra.Command, opts *integrationOptions) error {
 		return nil
 	}
 	if !integrationsStdinIsTTY() {
+		if operation == "uninstall" {
+			return fmt.Errorf("uninstall requires --scope in non-interactive mode")
+		}
 		opts.scope = "global"
 		return nil
 	}
