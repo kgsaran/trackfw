@@ -274,6 +274,19 @@ escrever `.claude/agents/` ou `.trackfw/` na arvore do trackfw. Uma primeira
 tentativa rodou por engano dentro do repo e foi revertida com `rm -rf` antes
 de qualquer commit.
 
+**Nota de escopo:** `docs/agents-working-context.md`, listado acima em
+"Files affected" do ML-3A, **nao** fez parte do escopo exclusivo desta
+execucao (delimitado explicitamente pelo orquestrador a README.md,
+npm/README.md, pypi/README.md, docs/cli-parity.md, este roadmap e a REQ) —
+deixado intencionalmente de fora, para o orquestrador decidir se atualiza.
+
+**Nota sobre a ordem do fluxo:** a leitura direta de `runIdentityWizard` nos
+3 CLIs mostra preset/custom -> nomes (so custom) -> apelido -> confirmacao,
+o que **difere** da ordem descrita acima em "Fluxo alvo (ADR D6)" (que lista
+o apelido antes do preset). `docs/cli-parity.md` foi escrito para refletir a
+ordem real do codigo, com a divergencia registrada na REQ. Nao e regressao —
+os 3 CLIs implementam a mesma ordem entre si.
+
 ---
 
 ## Legenda de status

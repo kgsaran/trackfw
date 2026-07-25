@@ -140,8 +140,13 @@ Identity is not only configured by `init` — `trackfw agents install` offers
 the same interactive wizard, and the two entry points must feel identical
 across the three CLIs. Specifically:
 
-- **Order of steps** — targets → agents → surface → nickname → preset or
-  custom → names (custom only) → confirmation → install.
+- **Order of steps** — targets → agents → surface → preset or custom → names
+  (custom only) → nickname → confirmation → install. Verified directly in
+  `runIdentityWizard` in all three CLIs (`internal/commands/identity_wizard.go`,
+  `npm/src/commands/identity-wizard.js`,
+  `pypi/trackfw/commands/identity_wizard.py`): the nickname prompt runs after
+  the preset/custom-names step and before validation and confirmation, in all
+  three.
 - **Trigger rule** — the wizard appears in `agents install` only when
   `kind == agents` **and** stdin is a TTY **and** (`identity.json` is absent
   **or** `--identity` was passed). `skills install` never triggers it, and a

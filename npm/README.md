@@ -71,8 +71,11 @@ trackfw agents install --targets claude --identity-preset chaves  # non-interact
 
 Two new flags exist only on `agents install` (`skills install` never
 registers them): `--identity` (bool, forces reconfiguration) and
-`--identity-preset <preset>` (same ten presets plus `neutral` and `none`; an
-invalid value errors out listing the valid ones).
+`--identity-preset <preset>` (same ten presets plus `neutral` and `none`). In
+the Go and Python CLIs an invalid value errors out listing the valid ones; in
+this npm CLI an invalid value currently surfaces as an unhandled exception
+rather than a clean error message — a pre-existing gap shared with other
+flags (e.g. an invalid `--scope`), not specific to identity.
 
 In **name them one by one** mode, each field is labeled by the agent's
 specialty from the catalog, never by its technical id (e.g. `Architect —

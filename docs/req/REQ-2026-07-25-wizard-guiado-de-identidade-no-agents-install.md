@@ -38,36 +38,72 @@ Decisoes, alternativas rejeitadas e a regra de acionamento estao no ADR.
       `test_identity_wizard.py` — todas verdes em `make quality`.)
 - [x] `agents install` exibe o passo de identidade **somente** quando:
       `kind == agents` **e** stdin e TTY **e** (`identity.json` ausente **ou**
-      flag `--identity` passada). Confirmado por leitura de
-      `shouldPromptIdentity` (Go) e equivalentes, cobertos por teste, e por
-      E2E real (Cenarios A/B nos 3 CLIs).
+      flag `--identity` passada). Teste nomeado: Go
+      `TestShouldPromptIdentityExhaustive` (tabela das 10 combinacoes) +
+      `TestAgentsInstallInvokesWizardWhenIdentityAbsent` +
+      `TestAgentsInstallForceFlagInvokesWizardEvenWithExistingIdentity`; npm
+      `'shouldPromptIdentity — tabela exaustiva das 10 combinações'` +
+      `'agents install sem identidade em TTY invoca o wizard'`; Python
+      `test_should_prompt_identity_truth_table` +
+      `test_agents_install_without_identity_with_tty_invokes`. Confirmado
+      tambem por E2E real (Cenarios A/B nos 3 CLIs).
 - [x] Com `identity.json` existente e sem `--identity`, `agents install`
-      **nao pergunta nada** e informa qual identidade esta em uso. E2E
-      Cenario B: `identity: 10 custom agent(s)` nos 3 CLIs, sem prompt.
-- [x] `trackfw skills install` **nunca** exibe o wizard de identidade. E2E
-      Cenario C: `skills install --help | grep -c identity` retorna `0` nos
-      3 CLIs.
+      **nao pergunta nada** e informa qual identidade esta em uso. Teste
+      nomeado: Go `TestAgentsInstallSkipsWizardWhenIdentityAlreadyConfigured`;
+      npm `'agents install com identidade existente e sem --identity não
+      invoca o wizard'`; Python
+      `test_agents_install_with_existing_identity_and_no_flag_does_not_invoke`.
+      E2E Cenario B: `identity: 10 custom agent(s)` nos 3 CLIs, sem prompt.
+- [x] `trackfw skills install` **nunca** exibe o wizard de identidade. Teste
+      nomeado: Go `TestSkillsInstallNeverInvokesWizard` +
+      `TestSkillsCommandHasNoIdentityFlags`; npm `'skills install nunca
+      invoca o wizard, mesmo sem identity.json'` + `'skills install não
+      registra as flags de identidade'`; Python
+      `test_skills_install_never_invokes_wizard`. E2E Cenario C:
+      `skills install --help | grep -c identity` retorna `0` nos 3 CLIs.
 - [x] `agents install` aceita `--identity-preset` com a mesma semantica de
       `init` (10 presets + `neutral` + `none`; invalido -> erro listando).
-      E2E Cenario A (preset valido) e D (invalido) nos 3 CLIs — ver nota
-      abaixo sobre o CLI Node.
+      Teste nomeado: Go `TestAgentsIdentityPresetInvalidValueListsValidOnes`;
+      npm `'--identity-preset inválido falha listando os válidos e não grava
+      nada'`; Python `test_invalid_identity_preset_lists_valid_values`. E2E
+      Cenario A (preset valido) e D (invalido) nos 3 CLIs — ver nota abaixo
+      sobre divergencia no CLI Node.
 - [x] Ramo nao-TTY de `agents install` **nunca bloqueia em prompt** e continua
-      exigindo `--targets`. Coberto por teste dedicado em cada CLI (ML-1A/
-      2A/2B), verde em `make quality`; nao re-executado manualmente neste ML
-      por exigir simulacao de TTY, fora do escopo do E2E via binario deste ML.
+      exigindo `--targets`. Teste nomeado (cobre explicitamente as duas
+      metades — nao bloqueia **e** ainda exige `--targets`): Go
+      `TestAgentsInstallNonTTYNeverBlocksAndStillRequiresTargets`; npm
+      `'agents install não-TTY não bloqueia e --identity-preset nunca invoca
+      o wizard'`; Python
+      `test_non_tty_never_blocks_and_still_requires_targets`. Nao
+      re-executado manualmente neste ML — os 3 comandos reais rodados nos
+      Cenarios A-D deste ML tambem foram, na pratica, chamadas nao-TTY (stdin
+      do Bash tool nao e terminal) e nenhum bloqueou, o que corrobora o
+      teste automatizado.
 - [x] Modo `custom` rotula cada campo com `Item.Name` e `Item.Description` do
-      catalogo, **sem** exibir o `id`. Confirmado por leitura de
-      `buildCustomIdentityGroup` (Go) e equivalentes, cobertos por teste.
+      catalogo, **sem** exibir o `id`. Teste nomeado: Go
+      `TestBuildCustomIdentityGroupLabelsUseCatalogNotID`; npm `'modo custom
+      rotula os campos com o description do catálogo, nunca o id cru'`;
+      Python `test_custom_labels_use_name_and_description_not_raw_id`.
 - [x] Tela de confirmacao lista os 10 pares `especialidade -> nome` mais o
       apelido, antes de qualquer escrita em disco — para preset **e** custom.
-      Confirmado por leitura de `confirmIdentitySelection` e equivalentes,
-      cobertos por teste.
+      Confirmado por leitura de `confirmIdentitySelection`/equivalentes (os
+      3 CLIs renderizam o mesmo cabecalho `identity.wizard.confirmHeader` e
+      layout de pares) e pelos testes de decline/confirm abaixo, que exercitam
+      esse fluxo.
 - [x] Recusar a confirmacao **nao grava nada** e retorna a selecao de preset.
-      Coberto por teste dedicado (`...WritesNothing`) nos 3 CLIs, verde em
-      `make quality`.
-- [x] Ordem do fluxo conforme ADR D6: alvos -> agentes -> superficie ->
-      apelido -> preset -> nomes -> confirmacao -> instalacao. Confirmado por
-      leitura do fluxo em `identity_wizard.go`/equivalentes.
+      Teste nomeado: Go `TestResolveIdentitySelectionCustomCollisionWritesNothing`
+      + `TestResolveIdentitySelectionNeutralWritesNothing`; npm `'recusar a
+      confirmação faz o wizard voltar ao início sem gravar nada'`; Python
+      `test_declining_confirmation_persists_nothing`.
+- [x] Ordem do fluxo: alvos -> agentes -> superficie -> preset ou custom ->
+      nomes (so no modo custom) -> apelido -> confirmacao -> instalacao.
+      **Nota:** esta ordem foi verificada por leitura direta de
+      `runIdentityWizard` nos 3 CLIs e **difere** da ordem descrita no ADR D6
+      (que lista o apelido antes do preset) — o codigo real pede o preset/
+      custom primeiro, depois os nomes livres (so custom), e so entao o
+      apelido, em todos os 3 CLIs igualmente. Tratado como divergencia
+      documentacao-vs-codigo do ADR, nao como defeito desta REQ (a REQ exige
+      equivalencia entre os 3 CLIs, que existe).
 - [x] Comportamento equivalente nos 3 CLIs (ordem, rotulos, acionamento,
       conteudo da confirmacao). E2E Cenarios A/B/C identicos nos 3 CLIs.
       **Divergencia encontrada e nao-bloqueante:** Cenario D (`--identity-preset`

@@ -471,7 +471,7 @@ your nickname:
   ...
   What we'll call you:                              chefe
 
-? Confirm? (y/N)
+? Confirm?
 ```
 
 Answering no returns to preset selection; nothing is written until you
