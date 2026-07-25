@@ -89,7 +89,7 @@ já escolheram `project`. A detecção deve ser:
 > (`internal/` × `npm/src/` × `pypi/trackfw/`) — spawn simultâneo obrigatório.
 
 ### ML-1A — CLI Go: prompt e default de escopo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (commit `fb33bbb`)
 **Agente:** trackfw-backend
 **Arquivos afetados (exclusivos deste ML):**
 - `internal/commands/integrations_flags.go`
@@ -158,7 +158,7 @@ go build ./... && go vet ./... && go test ./...
 ---
 
 ### ML-1B — CLI Node.js: prompt e default de escopo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (commit `ac8b45b`)
 **Agente:** trackfw-backend (segunda instância)
 **Arquivos afetados (exclusivos deste ML):**
 - `npm/src/commands/integrations.js`
@@ -199,7 +199,7 @@ cd npm && npm test
 ---
 
 ### ML-1C — CLI Python: prompt e default de escopo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (commit `5acf8f1`)
 **Agente:** trackfw-backend (terceira instância)
 **Arquivos afetados (exclusivos deste ML):**
 - `pypi/trackfw/integrations/command.py`
