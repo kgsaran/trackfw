@@ -2779,3 +2779,17 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Estado final do ciclo:** roadmap → `done/`, REQ → `Done`, ADR → `Accepted`. `make quality` verde (Go + 113 Node + 418 Python + 5 gates de paridade, incluindo `check-identity-parity.sh` **sem nenhuma linha alterada** durante toda a feature — o guarda-corpo de escopo funcionou do início ao fim).
 
 **Status:** CONCLUÍDO — aguardando decisão do usuário sobre PR (não aberto).
+
+---
+
+## Encerramento — Ciclo 2 (wizard guiado de identidade)
+
+PR #65 mergeado (squash) na main. Branch local removida (diff vazio contra `origin/main`, confirmando integração). Roadmap → `done/`, REQ → `Done`, ADR já estava `Accepted`.
+
+**Duas gerações de identidade personalizável de agentes, agora concluídas:**
+1. PR #64 — a feature em si (10 presets, 3 CLIs, materialização em build time)
+2. PR #65 — descoberta via `agents install`, rótulos por especialidade, confirmação antes de gravar
+
+`check-identity-parity.sh` não teve **uma única linha alterada** durante toda a segunda REQ — o guarda-corpo de escopo (esta REQ é só UX, não muda schema/contrato/artefatos) funcionou do início ao fim.
+
+`make quality` verde na main: Go + 113 Node + 418 Python + 5 gates de paridade.
