@@ -2625,3 +2625,26 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 
 
+
+---
+
+## Sessão 2026-07-25 — Zeus (IMPLEMENTANDO)
+
+**Tarefa:** Identidade humanizada dos agentes trackfw. Branch `feat/identidade-humanizada-agentes`.
+
+**REQ:** `docs/req/REQ-2026-07-25-identidade-humanizada-dos-agentes-trackfw.md`
+**ADR:** `docs/adr/ADR-2026-07-25-identidade-personalizavel-de-agentes.md`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-25-identidade-humanizada-dos-agentes.md`
+
+**Objetivo:** permitir nomear os 10 agentes (`display_name` → `description` + corpo; `slug`+`-tf` → `name`) e definir apelido do usuário (corpo apenas), materializado em tempo de instalação por `Render()`.
+
+**Achados que moldaram o ADR (verificados em código + doc oficial):**
+- Seleção de subagent usa **apenas** `name` + `description`; o corpo carrega só após a seleção. Logo o apelido precisa ir no `description` para habilitar roteamento natural.
+- `name` **não** precisa coincidir com o filename (doc oficial). Path vem de `{{id}}` → alterar `name` não mexe em manifest nem gera órfãos.
+- **Bloqueante encontrado:** os 10 nomes do preset grego já existem em `~/.claude/agents/` (agentes pessoais do usuário). Colisão de `name` no mesmo diretório = shadowing silencioso e não-determinístico (doc oficial). Resolvido por sufixo fixo `-tf` no slug + varredura de colisão obrigatória.
+- `agentTools` decidia SET_ARCH por `strings.HasSuffix(name,"architect")` — quebraria com `name` customizado. Refatorado para `item.ID == "architect"`.
+- Modelo de hash do manifest **suporta** personalização sem drift: `desiredHash` vem de `plan.Content` em tempo de plano.
+
+**Plano:** 5 waves / 7 MLs. W1 (paralelo): ML-1A pacote `internal/identity` + ML-1B placeholders nos assets. W2: ML-2A render/plan/manager. W3: ML-3A wizard `init` + 4 callers + i18n. W4 (paralelo): ML-4A npm + ML-4B pypi. W5: ML-5A gates de paridade + docs.
+
+**Status:** IMPLEMENTANDO — Wave 1 em execução.
