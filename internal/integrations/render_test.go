@@ -3,6 +3,7 @@ package integrations
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -261,15 +262,173 @@ func TestRenderSubagentRouteInjectsIdentity(t *testing.T) {
 	if !strings.Contains(output, "Você é Zeus. Trate o usuário como chefe.") {
 		t.Fatalf("saudação de identidade ausente no corpo da Rota B:\n%s", output)
 	}
-	// frontmatter original preservado, corpo original ("# Architect...") ainda presente
-	if !strings.Contains(output, "name: trackfw-architect") {
-		t.Fatalf("frontmatter original não preservado na Rota B:\n%s", output)
+	// frontmatter reescrito com o name/description customizados: @agent-zeus-tf
+	// e o roteamento por linguagem natural dependem disso, pois a seleção de
+	// subagent do Claude Code lê exclusivamente name/description do
+	// frontmatter (nunca o corpo).
+	if !strings.Contains(output, "name: zeus-tf") {
+		t.Fatalf("frontmatter não reescrito com o name customizado na Rota B:\n%s", output)
+	}
+	if strings.Contains(output, "name: trackfw-architect") {
+		t.Fatalf("name original vazou no frontmatter da Rota B:\n%s", output)
+	}
+	if !strings.Contains(output, "description: Zeus — ") {
+		t.Fatalf("description não reescrita com prefixo do display name na Rota B:\n%s", output)
+	}
+	// o modelo original (fora do escopo da identidade) deve permanecer intacto
+	if !strings.Contains(output, "model: opus") {
+		t.Fatalf("linha model: preservada incorretamente na Rota B:\n%s", output)
 	}
 	if !strings.Contains(output, "# Architect") {
 		t.Fatalf("corpo original perdido na Rota B:\n%s", output)
 	}
 	if strings.Contains(output, "{{") {
 		t.Fatalf("placeholder não substituído vazou na saída:\n%s", output)
+	}
+}
+
+// TestRenderSubagentRouteFrontmatterRewriteIsScoped prova que a reescrita de
+// name/description na Rota B é restrita ao bloco de frontmatter: uma linha
+// começando com "name:" dentro do corpo do agente não pode ser alterada, e
+// as demais linhas do frontmatter (ex.: model:) devem ser preservadas byte a
+// byte, na mesma ordem.
+func TestRenderSubagentRouteFrontmatterRewriteIsScoped(t *testing.T) {
+	source := []byte("---\n" +
+		"name: trackfw-architect\n" +
+		"description: Principal software architect.\n" +
+		"model: opus\n" +
+		"---\n\n" +
+		"# Architect\n\n" +
+		"Exemplo de convenção:\n" +
+		"name: minha-variavel-local\n" +
+		"Fim.\n")
+
+	item := Item{ID: "architect"}
+	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, zeusIdentity())
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := string(out)
+
+	if !strings.Contains(output, "name: zeus-tf") {
+		t.Fatalf("name do frontmatter não reescrito:\n%s", output)
+	}
+	if !strings.Contains(output, "model: opus\n") {
+		t.Fatalf("linha model: do frontmatter não preservada:\n%s", output)
+	}
+	if !strings.Contains(output, "name: minha-variavel-local") {
+		t.Fatalf("linha 'name:' do CORPO foi alterada indevidamente:\n%s", output)
+	}
+	// só deve haver uma ocorrência de "name: zeus-tf" (no frontmatter); a
+	// linha do corpo continua com seu valor original, não com o slug.
+	if strings.Count(output, "name: zeus-tf") != 1 {
+		t.Fatalf("esperada exatamente 1 ocorrência de 'name: zeus-tf' (só no frontmatter):\n%s", output)
+	}
+}
+
+// TestRenderAllRepresentationsRenderIdentityName é a tabela que garante que
+// TODAS as representações — incluindo a Rota B ("subagent" e demais
+// superfícies que usam o branch default) — derivam o name renderizado do
+// slug da identidade configurada. A transformação "-" → "_" do
+// custom-agent-toml é comportamento preexistente e intencional (ADR
+// identidade-personalizavel), documentada aqui como esperada, não corrigida.
+// Este teste é o guarda contra uma representação futura ficar para trás
+// silenciosamente quando uma nova rota for adicionada a Render.
+func TestRenderAllRepresentationsRenderIdentityName(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("agente 'architect' não encontrado no catalog")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		representation string
+		wantName       string
+		extract        func(t *testing.T, out []byte) string
+	}{
+		{
+			representation: "subagent",
+			wantName:       "zeus-tf",
+			extract: func(t *testing.T, out []byte) string {
+				for _, line := range strings.Split(string(out), "\n") {
+					if strings.HasPrefix(line, "name:") {
+						return strings.TrimSpace(strings.TrimPrefix(line, "name:"))
+					}
+				}
+				return ""
+			},
+		},
+		{
+			representation: "agent-directory",
+			wantName:       "zeus-tf",
+			extract: func(t *testing.T, out []byte) string {
+				for _, line := range strings.Split(string(out), "\n") {
+					if strings.HasPrefix(line, "name:") {
+						return strings.TrimSpace(strings.TrimPrefix(line, "name:"))
+					}
+				}
+				return ""
+			},
+		},
+		{
+			representation: "agent-json",
+			wantName:       "zeus-tf",
+			extract: func(t *testing.T, out []byte) string {
+				var decoded map[string]string
+				if err := json.Unmarshal(out, &decoded); err != nil {
+					t.Fatalf("invalid agent-json: %v", err)
+				}
+				return decoded["name"]
+			},
+		},
+		{
+			representation: "cli-agent-json",
+			wantName:       "zeus-tf",
+			extract: func(t *testing.T, out []byte) string {
+				var decoded map[string]string
+				if err := json.Unmarshal(out, &decoded); err != nil {
+					t.Fatalf("invalid cli-agent-json: %v", err)
+				}
+				return decoded["name"]
+			},
+		},
+		{
+			representation: "custom-agent-toml",
+			// comportamento preexistente e intencional: "-" → "_" no TOML.
+			wantName: "zeus_tf",
+			extract: func(t *testing.T, out []byte) string {
+				for _, line := range strings.Split(string(out), "\n") {
+					if strings.HasPrefix(line, "name = ") {
+						unquoted, err := strconv.Unquote(strings.TrimPrefix(line, "name = "))
+						if err != nil {
+							t.Fatalf("failed to unquote toml name: %v", err)
+						}
+						return unquoted
+					}
+				}
+				return ""
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.representation, func(t *testing.T) {
+			out, err := Render(item, KindAgents, Capability{Representation: tc.representation}, source, zeusIdentity())
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := tc.extract(t, out)
+			if got != tc.wantName {
+				t.Fatalf("representation=%s: name renderizado = %q, esperado %q\noutput:\n%s", tc.representation, got, tc.wantName, out)
+			}
+		})
 	}
 }
 

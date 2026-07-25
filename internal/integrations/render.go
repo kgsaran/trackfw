@@ -20,7 +20,10 @@ import (
 //     the frontmatter by markdownParts.
 //   - Rota B: the default branch, used by the "subagent" representation
 //     (claude, gemini, cursor, copilot, kiro-ide, windsurf), returns the raw
-//     normalized source with the frontmatter still attached.
+//     normalized source with the frontmatter still attached. When an
+//     identity is configured, its "name:"/"description:" lines are rewritten
+//     in place (see rewriteFrontmatterFields) — required because Claude
+//     Code's subagent selection reads only the frontmatter, never the body.
 //
 // Both routes must receive the identity injection. When there is no
 // identity configured for item.ID, name/description/body are left exactly
@@ -84,7 +87,9 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 		if !hasIdentity {
 			return normalizeMarkdown(source), nil
 		}
-		return normalizeMarkdown(insertBodyPrefix(source, greeting)), nil
+		withBody := insertBodyPrefix(source, greeting)
+		withFrontmatter := rewriteFrontmatterFields(withBody, name, description)
+		return normalizeMarkdown(withFrontmatter), nil
 	}
 }
 
@@ -122,6 +127,61 @@ func insertBodyPrefix(source []byte, prefix string) []byte {
 		return []byte(head + "\n\n" + prefix)
 	}
 	return []byte(head + "\n\n" + prefix + "\n\n" + rest)
+}
+
+// rewriteFrontmatterFields replaces the "name:" and "description:" lines of
+// a raw markdown source's frontmatter with name and description, preserving
+// every other frontmatter line byte-for-byte (order, spacing, quote style)
+// and leaving the body untouched. Used by Rota B (the default branch of
+// Render) so representations that consume the raw frontmatter — chiefly
+// "subagent" (claude, gemini, cursor, copilot, kiro-ide, windsurf) — pick up
+// the customized identity: Claude Code's subagent selection reads only
+// name/description from the frontmatter, never the body.
+//
+// The rewrite is scoped strictly to the frontmatter block (between the
+// opening "---\n" and the closing "\n---"): a "name:" line that happens to
+// appear in the body is never touched. If the frontmatter has no "name:" or
+// "description:" line, that key is simply left absent — this function never
+// invents a key that wasn't already there. If source has no recognizable
+// frontmatter, source is returned unchanged (trimmed), matching the
+// behavior Render already has for identity-less rendering.
+func rewriteFrontmatterFields(source []byte, name, description string) []byte {
+	trimmed := strings.TrimSpace(string(source))
+	if !strings.HasPrefix(trimmed, "---\n") {
+		return []byte(trimmed)
+	}
+	end := strings.Index(trimmed[4:], "\n---")
+	if end < 0 {
+		return []byte(trimmed)
+	}
+	frontmatter := trimmed[4 : 4+end]
+	rest := trimmed[4+end:] // starts with "\n---", followed by the body
+
+	lines := strings.Split(frontmatter, "\n")
+	for i, line := range lines {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		var replacement string
+		switch strings.TrimSpace(key) {
+		case "name":
+			replacement = name
+		case "description":
+			replacement = description
+		default:
+			continue
+		}
+		trimmedValue := strings.TrimSpace(value)
+		quoted := len(trimmedValue) >= 2 && strings.HasPrefix(trimmedValue, `"`) && strings.HasSuffix(trimmedValue, `"`)
+		if quoted {
+			lines[i] = key + ": \"" + replacement + "\""
+		} else {
+			lines[i] = key + ": " + replacement
+		}
+	}
+
+	return []byte("---\n" + strings.Join(lines, "\n") + rest)
 }
 
 func normalizeMarkdown(source []byte) []byte {
