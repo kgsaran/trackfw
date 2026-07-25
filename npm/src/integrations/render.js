@@ -203,7 +203,13 @@ function render({ kind, content, capability, item, identity: cfg }) {
     return `name = ${JSON.stringify(name.replaceAll('-', '_'))}\ndescription = ${JSON.stringify(description)}\ndeveloper_instructions = ${JSON.stringify(body)}\n`
   }
   if (capability.representation === 'cli-agent-json' || capability.representation === 'agent-json') {
-    return `${JSON.stringify({ name, description, prompt: body }, null, 2)}\n`
+    // Ordem alfabética das chaves (description, name, prompt) é obrigatória:
+    // Go serializa via json.MarshalIndent(map[string]string{...}), cujo encoder
+    // ordena as chaves alfabeticamente, e Python usa sort_keys. JSON.stringify
+    // preserva a ordem de inserção, então a ordem é fixada aqui à mão. Sem
+    // isso, instalar por um CLI e listar por outro reporta falso `modified`
+    // (o manifest indexa artefatos por sha256 do conteúdo).
+    return `${JSON.stringify({ description, name, prompt: body }, null, 2)}\n`
   }
   if (capability.representation === 'agent-directory') {
     // Reconstrói o frontmatter para o Antigravity CLI (agy):
