@@ -93,10 +93,11 @@ como o agente se apresenta.
 
 ### D3 — Contrato de slug (identico nos 3 CLIs)
 
-1. Slugs do preset sao **hardcoded na tabela do preset**, nunca derivados por
-   normalizacao em runtime (`Artemis -> artemis`, `Metis -> metis`,
-   `Hefesto -> hefesto`). Remove dependencia de diferencas de normalizacao
-   Unicode entre Go, JavaScript e Python.
+1. Slugs de **todos** os presets sao **hardcoded na tabela do preset**, nunca
+   derivados por normalizacao em runtime (`Artemis -> artemis`,
+   `Metis -> metis`, `Hefesto -> hefesto`). Remove dependencia de diferencas de
+   normalizacao Unicode entre Go, JavaScript e Python. A slugificacao dinamica
+   (D3.2) atende **exclusivamente** o modo de nomeacao livre.
 2. Texto livre passa por: NFD + remocao de diacriticos (ASCII-fold),
    lowercase, espacos e underscores -> hifen, remocao de caracteres fora de
    `[a-z0-9-]`, colapso de hifens repetidos, trim de hifens nas pontas.
@@ -106,6 +107,35 @@ como o agente se apresenta.
    mesmo slug sao rejeitados.
 5. Uma **tabela de vetores de teste** unica, replicada nas tres suites
    (acentos, maiusculas, espacos, emoji, string vazia, colisao).
+
+### D3-bis — Catalogo de presets
+
+Sao oferecidos **5 presets tematicos** mais o modo de nomeacao livre. Todos os
+`display_name` e `slug` sao hardcoded; nenhum depende de slugificacao runtime.
+
+| id do agente | greek | norse | potter | thrones | chaves |
+|---|---|---|---|---|---|
+| architect | Zeus | Odin | Dumbledore | Tyrion | Girafales |
+| backend | Apolo | Thor | Snape | Jon | Madruga |
+| frontend | Afrodite | Freya | Luna | Sansa | Chiquinha |
+| qa | Artemis | Heimdall | Moody | Arya | Florinda |
+| infra | Ares | Tyr | Hagrid | Brienne | Barriga |
+| security | Hades | Vidar | Kingsley | Varys | Quico |
+| dba | Poseidon | Njord | Flitwick | Samwell | Clotilde |
+| ux | Atena | Idun | Tonks | Margaery | Popis |
+| code-quality | Hefesto | Bragi | Hermione | Stannis | Nhonho |
+| data | Metis | Mimir | Trelawney | Bran | Godinez |
+
+Criterio de atribuicao: o papel do personagem na obra deve evocar a
+especialidade do agente (ex: Heimdall, o vigia, em QA; Samwell, arquivista da
+Cidadela, em DBA; Varys, mestre dos sussurros, em security; Bran, que ve tudo,
+em data; Dona Florinda, que fiscaliza tudo, em QA).
+
+Um sexto modo, `custom`, coleta os 10 `display_name` diretamente do usuario e
+usa a slugificacao dinamica de D3.2. E o unico caminho onde D3.2 e exercitado.
+
+O modo `neutral` (ou ausencia de configuracao) preserva o comportamento atual
+byte a byte.
 
 ### D4 — Deteccao de colisao no install
 
@@ -160,9 +190,11 @@ personalizacao no proximo update:
 
 ### D9 — Caminho nao-interativo preservado
 
-`init` ganha `--identity-preset greek|neutral|none`. O ramo `!IsTerminal`
-existente nunca bloqueia em prompt, e re-executar `init` reutiliza a identidade
-persistida em vez de re-perguntar.
+`init` ganha `--identity-preset greek|norse|potter|thrones|chaves|neutral|none`.
+O modo `custom` e interativo por natureza e nao e exposto como valor de flag;
+para uso nao-interativo, o usuario edita `~/.trackfw/identity.json` diretamente.
+O ramo `!IsTerminal` existente nunca bloqueia em prompt, e re-executar `init`
+reutiliza a identidade persistida em vez de re-perguntar.
 
 ## Consequences
 

@@ -44,11 +44,12 @@ normalizacao e quebre `check-cli-parity.sh` no final.
 ### Mapa de dependencias
 
 ```
-Wave 1 (paralelo)          Wave 2        Wave 3        Wave 4 (paralelo)     Wave 5
-ML-1A identity Go  ──┐
-                     ├──►  ML-2A  ──►  ML-3A  ──┬──►  ML-4A npm      ──┐
-ML-1B assets      ───┘     render        CLI    └──►  ML-4B pypi     ──┴──► ML-5A
-                           plan/manager   wizard                            gates+docs
+Wave 1 (paralelo)              Wave 2        Wave 3      Wave 4 (paralelo)   Wave 5
+ML-1A identity Go ──► ML-1C ──┐
+      (mesmo preset.go)       ├──► ML-2A  ──► ML-3A ──┬──► ML-4A npm  ──┐
+ML-1B assets ─────────────────┘    render      CLI    └──► ML-4B pypi ──┴──► ML-5A
+                                   plan        wizard                       gates
+                                   manager                                  docs
 ```
 
 ---
@@ -128,8 +129,49 @@ ML-1B assets      ───┘     render        CLI    └──►  ML-4B pypi
 
 ---
 
+### ML-1C — Catalogo de 5 presets tematicos + modo livre
+**Status:** pending
+**Agente:** trackfw-backend
+**Dependencies:** ML-1A completo (mesmo arquivo `preset.go`)
+**Files affected:** `internal/identity/preset.go`, `internal/identity/preset_test.go`
+
+**Actions:**
+1. Generalizar `PresetGreek()` para `Preset(name string) (Config, error)` com
+   os ids `greek`, `norse`, `potter`, `thrones`, `chaves`. Manter
+   `PresetNames() []string` nessa ordem.
+2. Tabelas **hardcoded** (display_name / slug), conforme ADR D3-bis:
+
+| id | greek | norse | potter | thrones | chaves |
+|---|---|---|---|---|---|
+| architect | Zeus / zeus | Odin / odin | Dumbledore / dumbledore | Tyrion / tyrion | Girafales / girafales |
+| backend | Apolo / apolo | Thor / thor | Snape / snape | Jon / jon | Madruga / madruga |
+| frontend | Afrodite / afrodite | Freya / freya | Luna / luna | Sansa / sansa | Chiquinha / chiquinha |
+| qa | Ártemis / artemis | Heimdall / heimdall | Moody / moody | Arya / arya | Florinda / florinda |
+| infra | Ares / ares | Tyr / tyr | Hagrid / hagrid | Brienne / brienne | Barriga / barriga |
+| security | Hades / hades | Vidar / vidar | Kingsley / kingsley | Varys / varys | Quico / quico |
+| dba | Poseidon / poseidon | Njord / njord | Flitwick / flitwick | Samwell / samwell | Clotilde / clotilde |
+| ux | Atena / atena | Idun / idun | Tonks / tonks | Margaery / margaery | Popis / popis |
+| code-quality | Hefesto / hefesto | Bragi / bragi | Hermione / hermione | Stannis / stannis | Nhonho / nhonho |
+| data | Métis / metis | Mimir / mimir | Trelawney / trelawney | Bran / bran | Godinez / godinez |
+
+3. `Preset` com nome desconhecido -> erro citando os nomes validos.
+4. Modo livre (`custom`) **nao** e um preset: e coletado pelo wizard no ML-3A e
+   usa `Slugify`. Nao implemente wizard aqui.
+
+**Acceptance criteria:**
+- [ ] Cada preset cobre exatamente os 10 ids de `KnownAgentIDs()`
+- [ ] Teste prova que nenhum preset tem slug duplicado internamente
+- [ ] Teste prova que todo preset passa em `Validate`
+- [ ] Teste prova que `Preset("inexistente")` retorna erro
+- [ ] `go build ./... && go test ./internal/identity/... && go vet ./...` verdes
+- [ ] Nenhum arquivo fora de `internal/identity/` modificado
+
+**Comandos de validação:** `go build ./... && go test ./internal/identity/... && go vet ./...`
+
+---
+
 ## Wave 2 — Integracao no pipeline de render (1 ML)
-> Dependencies: **barrier — ML-1A e ML-1B completos**
+> Dependencies: **barrier — ML-1A, ML-1B e ML-1C completos**
 
 ### ML-2A — `Render`/`BuildPlans`/colisao + fim da heuristica por nome
 **Status:** pending
@@ -181,12 +223,21 @@ ML-1B assets      ───┘     render        CLI    └──►  ML-4B pypi
 1. Resolver `identity.Load(home)` e injetar em `PlanRequest.Identity` nos
    **4 callers**: `integrations_flags.go:136` (mutation),
    `integrations_flags.go:178` (list), `init.go:274`, `generators/update.go:144`.
-2. `init` ganha `--identity-preset` com valores `greek|neutral|none`
-   (default `none`). `neutral`/`none` -> nenhuma identidade gravada.
+2. `init` ganha `--identity-preset` com valores
+   `greek|norse|potter|thrones|chaves|neutral|none` (default `none`).
+   `neutral`/`none` -> nenhuma identidade gravada. Valor invalido -> erro
+   listando os aceitos.
 3. Grupo `huh` novo no wizard interativo de `init`:
-   - select: `Preset: Panteão grego` | `Nomes neutros (padrão)` |
-     `Personalizar um a um` | `Pular`
-   - se `Personalizar um a um`: 10 inputs de `display_name`
+   - select com 7 opcoes:
+     `Panteão grego (Zeus, Apolo, Afrodite...)` |
+     `Mitologia nórdica (Odin, Thor, Freya...)` |
+     `Harry Potter (Dumbledore, Snape, Luna...)` |
+     `Game of Thrones (Tyrion, Jon, Arya...)` |
+     `Chaves (Girafales, Madruga, Chiquinha...)` |
+     `Personalizar um a um` | `Nomes neutros (padrão)`
+   - se `Personalizar um a um`: 10 inputs de `display_name`, cada um validado
+     por `identity.Slugify` no `Validate` do campo `huh` (erro inline, sem
+     correcao silenciosa); slug duplicado tambem e erro inline
    - input opcional: apelido do usuario
    Persistir via `identity.Save`.
 4. **Ramo `!IsTerminal` nao pode exibir prompt** — respeita apenas a flag.
