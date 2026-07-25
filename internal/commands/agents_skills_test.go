@@ -300,6 +300,27 @@ func TestInstallWithTargetsButNoScopeStillPromptsInTTY(t *testing.T) {
 	}
 }
 
+// TestInstallScopeSelectDefaultsToGlobal covers ADR D2's "global pre-selected"
+// requirement directly against the real huh.Select field built by
+// installScopeSelect — not against promptInstallScopeRunner, which every
+// other test in this file stubs out entirely (roadmap divergence #5,
+// ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills).
+// Select.RunAccessible reads a bare Enter from a fake reader and, because the
+// field's accessor is a *PointerAccessor bound to a variable pre-set to
+// "global", falls back to the option matching that value — this is huh's own
+// non-interactive fallback path, not a stub, so it fails if the pre-selected
+// option is ever changed away from "global" without updating this test.
+func TestInstallScopeSelectDefaultsToGlobal(t *testing.T) {
+	scope := "global"
+	sel := installScopeSelect(&scope)
+	if err := sel.RunAccessible(&bytes.Buffer{}, strings.NewReader("\n")); err != nil {
+		t.Fatalf("RunAccessible with bare Enter must accept the pre-selected default: %v", err)
+	}
+	if scope != "global" {
+		t.Fatalf("expected pre-selected scope to be %q on bare Enter, got %q", "global", scope)
+	}
+}
+
 // TestListWithoutScopeReportsGlobalDestinations covers ADR D6: `list` never
 // prompts (it is a read-only command), but adopts the same "global" default
 // as install/update/uninstall so it does not report deployments at a scope

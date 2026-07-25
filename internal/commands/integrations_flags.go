@@ -366,21 +366,30 @@ func parseSurfaceFlags(values []string) (map[string]string, error) {
 // promptInstallScope directly.
 var promptInstallScopeRunner = promptInstallScope
 
+// installScopeSelect builds the huh.Select field used by promptInstallScope,
+// extracted so tests can exercise the real pre-selected default via
+// Select.RunAccessible (no TTY required) instead of stubbing
+// promptInstallScopeRunner — see TestInstallScopeSelectDefaultsToGlobal in
+// agents_skills_test.go. Options() runs before Value(scope) binds the
+// accessor, so huh re-syncs the cursor to *scope's initial value ("global")
+// when Value is called (see huh's Accessor/selectValue).
+func installScopeSelect(scope *string) *huh.Select[string] {
+	return huh.NewSelect[string]().
+		Title("Onde instalar os artefatos?").
+		Options(
+			huh.NewOption("Pasta do usuário (~/.claude) — vale para todos os projetos", "global"),
+			huh.NewOption("Este projeto (.claude) — apenas neste repositório", "project"),
+		).
+		Value(scope)
+}
+
 // promptInstallScope asks the user where trackfw should install agents and
 // skills artifacts. It is shared between `agents|skills install|update|
 // uninstall` (via resolveScope) and `trackfw init`'s wizard so both surfaces
 // present the exact same options and wording (ADR D2, D4).
 func promptInstallScope() (string, error) {
 	scope := "global"
-	err := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("Onde instalar os artefatos?").
-			Options(
-				huh.NewOption("Pasta do usuário (~/.claude) — vale para todos os projetos", "global"),
-				huh.NewOption("Este projeto (.claude) — apenas neste repositório", "project"),
-			).
-			Value(&scope),
-	)).Run()
+	err := huh.NewForm(huh.NewGroup(installScopeSelect(&scope))).Run()
 	return scope, err
 }
 
