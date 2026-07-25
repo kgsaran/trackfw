@@ -180,13 +180,19 @@ do mesmo usuario.
   "schema_version": 1,
   "user_nickname": "chefe",
   "agents": {
-    "architect": { "display_name": "Zeus", "slug": "zeus-tf" }
+    "architect": { "display_name": "Zeus", "slug": "zeus" }
   }
 }
 ```
 
 Ausencia do arquivo, `agents` vazio ou entrada ausente para um `id` ->
 comportamento default atual, byte a byte.
+
+> **O `slug` e persistido SEM o sufixo.** `AgentName()` acrescenta `-tf` em um
+> unico ponto, no momento do render. Gravar `"slug": "zeus-tf"` produz
+> `name: zeus-tf-tf`. Como D9 documenta a edicao manual do arquivo como o
+> caminho nao-interativo do modo `custom`, `Validate` **rejeita** slug que ja
+> termine em `-tf`, com mensagem explicando que o sufixo e automatico.
 
 ### D6 — Materializacao em build time, nunca em runtime
 

@@ -16,7 +16,22 @@ GO_BIN=${GO_BIN:-"$ROOT_DIR/bin/trackfw"}
 # run_install faz `cd` para o diretório do projeto — GO_BIN precisa ser absoluto.
 case "$GO_BIN" in /*) ;; *) GO_BIN="$ROOT_DIR/$GO_BIN" ;; esac
 
-TARGETS=(claude codex antigravity amazonq gemini cursor copilot windsurf kiro)
+# Cada entrada é "target" (superfície default) ou "target=surface" (superfície
+# explícita). As duas últimas cobrem a representação "agent-json", que só
+# aparece em superfícies não-default e portanto ficaria fora do gate se
+# usássemos apenas a lista de alvos.
+TARGETS=(
+  claude codex antigravity amazonq gemini cursor copilot windsurf kiro
+  antigravity=legacy-cli kiro=cli
+)
+
+# Nem todo ambiente tem as duas ferramentas: macOS traz shasum, Linux traz
+# sha256sum. Escolhido uma vez para manter o formato de saída estável.
+if command -v sha256sum >/dev/null 2>&1; then
+  HASH_CMD=(sha256sum)
+else
+  HASH_CMD=(shasum -a 256)
+fi
 
 # Diretório-raiz único e isolado para tudo que este script cria. Nada é escrito
 # no $HOME real nem na raiz do repositório. Criado ANTES do trap para que uma
@@ -50,14 +65,20 @@ done
 # 2. Helpers
 # ---------------------------------------------------------------------------
 
-# run_install <cli> <home> <project-dir> <target>
+# run_install <cli> <home> <project-dir> <spec>
+# spec é "target" ou "target=surface".
 run_install() {
-  local cli=$1 home=$2 project=$3 target=$4
+  local cli=$1 home=$2 project=$3 spec=$4
+  local target=${spec%%=*}
+  local args=(agents install --targets "$target" --scope project)
+  if [[ "$spec" == *=* ]]; then
+    args+=(--surface "$spec")
+  fi
   mkdir -p "$project"
   case "$cli" in
-    go)     (cd "$project" && HOME="$home" "$GO_BIN" agents install --targets "$target" --scope project) ;;
-    node)   (cd "$project" && HOME="$home" node "$ROOT_DIR/npm/bin/trackfw" agents install --targets "$target" --scope project) ;;
-    python) (cd "$project" && HOME="$home" PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw agents install --targets "$target" --scope project) ;;
+    go)     (cd "$project" && HOME="$home" "$GO_BIN" "${args[@]}") ;;
+    node)   (cd "$project" && HOME="$home" node "$ROOT_DIR/npm/bin/trackfw" "${args[@]}") ;;
+    python) (cd "$project" && HOME="$home" PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw "${args[@]}") ;;
     *) echo "Identity parity: unknown cli '$cli'" >&2; return 1 ;;
   esac
 }
@@ -73,16 +94,16 @@ snapshot() {
   (
     cd "$project"
     find . -type f ! -path './.trackfw/*' | LC_ALL=C sort | while IFS= read -r file; do
-      printf '%s  %s\n' "$(shasum -a 256 "$file" | cut -d' ' -f1)" "$file"
+      printf '%s  %s\n' "$("${HASH_CMD[@]}" "$file" | cut -d' ' -f1)" "$file"
     done
   )
 }
 
-# compare_target <label> <home> <target>
+# compare_target <label> <home> <spec>
 # Instala o alvo pelos 3 CLIs em projetos separados e exige snapshots idênticos.
 compare_target() {
   local label=$1 home=$2 target=$3
-  local base="$WORK_DIR/projects/$label/$target"
+  local base="$WORK_DIR/projects/$label/${target//=/--}"
   rm -rf "$base"
   mkdir -p "$base"
   local cli
@@ -169,4 +190,4 @@ if [[ "$failures" -gt 0 ]]; then
   exit 1
 fi
 
-echo "Identity parity verified across Go/Node/Python for ${#TARGETS[@]} targets (with and without identity)"
+echo "Identity parity verified across Go/Node/Python for ${#TARGETS[@]} target/surface combinations (with and without identity)"
