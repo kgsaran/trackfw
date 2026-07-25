@@ -2725,3 +2725,28 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Estado final:** `make quality` verde (Go + 99 Node + 394 Python + 5 gates de paridade). `trackfw validate`: 2 violations, ambas pré-existentes de `REQ-2026-07-24-corrige-resolve...`.
 
 **Status:** CONCLUÍDO — aguardando decisão do usuário sobre PR (não aberto).
+
+---
+
+## Sessão 2026-07-25 (ciclo 2) — Zeus (IMPLEMENTANDO)
+
+**Tarefa:** Wizard guiado de identidade no `agents install`. Branch `feat/wizard-guiado-identidade-agents-install`.
+
+**REQ:** `docs/req/REQ-2026-07-25-wizard-guiado-de-identidade-no-agents-install.md`
+**ADR:** `docs/adr/ADR-2026-07-25-wizard-unificado-de-identidade-no-agents-install.md`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md`
+
+**Ciclo anterior encerrado:** PR #64 mergeado. Roadmap → `done/`, REQ → `Done`, ADR → `Accepted`. Branch local removida após confirmar squash-merge (`git diff origin/main origin/feat/... --stat` vazio).
+
+**Lacunas que motivam este ciclo (levantadas pelo usuário):**
+- **L1 descoberta:** o wizard ficou só em `init`. `agents install` apenas **lê** `~/.trackfw/identity.json` (`integrations_flags.go:143`) e nunca oferece configurá-la — quem não roda `init` de novo só descobre a feature pelo README. Uma feature de personalização invisível no comando que a consome está, na prática, desligada.
+- **L2 rótulos:** o modo `custom` exibe o `id` técnico (`architect`, `code-quality`) em vez da especialidade. O catálogo já tem `Item.Name` + `Item.Description` embedados e não usados.
+- **L3 presets às cegas:** escolher `tolkien` não revela que security→Boromir e dba→Elrond até os arquivos estarem em disco. Não há confirmação.
+
+**Decisão de escopo:** é REQ **exclusivamente de UX de CLI** — não altera schema de `identity.json`, contrato de slug nem artefatos gerados. Critério de controle: `check-identity-parity.sh` deve continuar passando **sem nenhuma alteração**; se precisar mudar, algo saiu do escopo.
+
+**Risco principal identificado no ADR (D2):** a regra de acionamento. Errar para o lado permissivo transforma o wizard em incômodo recorrente e leva o usuário a automatizar o "pular", esvaziando a feature. Exige teste explícito do caso "identidade já existe → não pergunta".
+
+**Plano:** 3 waves / 4 MLs. W1 (sequencial, define o contrato de UX): ML-1A componente Go + init + agents install. W2 (paralelo): ML-2A npm, ML-2B pypi. W3: ML-3A docs + E2E.
+
+**Status:** IMPLEMENTANDO — Wave 1 em execução.

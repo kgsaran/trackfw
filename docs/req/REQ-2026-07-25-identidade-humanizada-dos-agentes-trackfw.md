@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-07-25
 author: "Zeus (Principal Software Architect)"
 adr: "ADR-2026-07-25-identidade-personalizavel-de-agentes.md"
@@ -8,7 +8,7 @@ roadmap: "ROADMAP-2026-07-25-identidade-humanizada-agentes.md"
 
 # REQ: Identidade humanizada dos agentes trackfw
 
-> Date: 2026-07-25 | Status: Open
+> Date: 2026-07-25 | Status: Done (PR #64)
 | Linear Issue:
 | Jira Issue:
 
@@ -71,4 +71,4 @@ ADR: docs/adr/ADR-2026-07-25-identidade-personalizavel-de-agentes.md
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-07-25-identidade-humanizada-agentes.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-07-25-identidade-humanizada-agentes.md

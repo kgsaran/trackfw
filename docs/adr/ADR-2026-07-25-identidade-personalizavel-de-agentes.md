@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-07-25
 author: "Zeus (Principal Software Architect)"
 ---
 
 # ADR: Identidade personalizavel de agentes
 
-> Date: 2026-07-25 | Status: Proposed
+> Date: 2026-07-25 | Status: Accepted (PR #64)
 
 ## Context
 
