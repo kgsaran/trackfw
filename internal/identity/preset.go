@@ -87,15 +87,76 @@ var presets = map[string]map[string]AgentIdentity{
 		"code-quality": {DisplayName: "Nhonho", Slug: "nhonho"},
 		"data":         {DisplayName: "Godinez", Slug: "godinez"},
 	},
+	"pioneers": {
+		"architect":    {DisplayName: "Turing", Slug: "turing"},
+		"backend":      {DisplayName: "Ritchie", Slug: "ritchie"},
+		"frontend":     {DisplayName: "Berners-Lee", Slug: "berners-lee"},
+		"qa":           {DisplayName: "Hamilton", Slug: "hamilton"},
+		"infra":        {DisplayName: "Torvalds", Slug: "torvalds"},
+		"security":     {DisplayName: "Diffie", Slug: "diffie"},
+		"dba":          {DisplayName: "Codd", Slug: "codd"},
+		"ux":           {DisplayName: "Norman", Slug: "norman"},
+		"code-quality": {DisplayName: "Knuth", Slug: "knuth"},
+		"data":         {DisplayName: "Hopper", Slug: "hopper"},
+	},
+	"starwars": {
+		"architect":    {DisplayName: "Yoda", Slug: "yoda"},
+		"backend":      {DisplayName: "Han", Slug: "han"},
+		"frontend":     {DisplayName: "Leia", Slug: "leia"},
+		"qa":           {DisplayName: "Ahsoka", Slug: "ahsoka"},
+		"infra":        {DisplayName: "Chewbacca", Slug: "chewbacca"},
+		"security":     {DisplayName: "Vader", Slug: "vader"},
+		"dba":          {DisplayName: "R2-D2", Slug: "r2-d2"},
+		"ux":           {DisplayName: "Padmé", Slug: "padme"},
+		"code-quality": {DisplayName: "Obi-Wan", Slug: "obi-wan"},
+		"data":         {DisplayName: "C-3PO", Slug: "c-3po"},
+	},
+	"tolkien": {
+		"architect":    {DisplayName: "Gandalf", Slug: "gandalf"},
+		"backend":      {DisplayName: "Aragorn", Slug: "aragorn"},
+		"frontend":     {DisplayName: "Arwen", Slug: "arwen"},
+		"qa":           {DisplayName: "Legolas", Slug: "legolas"},
+		"infra":        {DisplayName: "Gimli", Slug: "gimli"},
+		"security":     {DisplayName: "Boromir", Slug: "boromir"},
+		"dba":          {DisplayName: "Elrond", Slug: "elrond"},
+		"ux":           {DisplayName: "Galadriel", Slug: "galadriel"},
+		"code-quality": {DisplayName: "Faramir", Slug: "faramir"},
+		"data":         {DisplayName: "Bilbo", Slug: "bilbo"},
+	},
+	"turma": {
+		"architect":    {DisplayName: "Franjinha", Slug: "franjinha"},
+		"backend":      {DisplayName: "Cebolinha", Slug: "cebolinha"},
+		"frontend":     {DisplayName: "Magali", Slug: "magali"},
+		"qa":           {DisplayName: "Mônica", Slug: "monica"},
+		"infra":        {DisplayName: "Cascão", Slug: "cascao"},
+		"security":     {DisplayName: "Bidu", Slug: "bidu"},
+		"dba":          {DisplayName: "Marocas", Slug: "marocas"},
+		"ux":           {DisplayName: "Anjinho", Slug: "anjinho"},
+		"code-quality": {DisplayName: "Titi", Slug: "titi"},
+		"data":         {DisplayName: "Chico", Slug: "chico"},
+	},
+	"egyptian": {
+		"architect":    {DisplayName: "Thoth", Slug: "thoth"},
+		"backend":      {DisplayName: "Rá", Slug: "ra"},
+		"frontend":     {DisplayName: "Ísis", Slug: "isis"},
+		"qa":           {DisplayName: "Hórus", Slug: "horus"},
+		"infra":        {DisplayName: "Ptah", Slug: "ptah"},
+		"security":     {DisplayName: "Anúbis", Slug: "anubis"},
+		"dba":          {DisplayName: "Seshat", Slug: "seshat"},
+		"ux":           {DisplayName: "Bastet", Slug: "bastet"},
+		"code-quality": {DisplayName: "Maat", Slug: "maat"},
+		"data":         {DisplayName: "Osíris", Slug: "osiris"},
+	},
 }
 
 // presetOrder is the canonical, stable order in which preset names are
 // listed (e.g. by PresetNames and in error messages).
-var presetOrder = []string{"greek", "norse", "potter", "thrones", "chaves"}
+var presetOrder = []string{"greek", "norse", "potter", "thrones", "chaves", "pioneers", "starwars", "tolkien", "turma", "egyptian"}
 
 // Preset returns the identity Config for the given themed preset name (one
-// of "greek", "norse", "potter", "thrones", "chaves"). If name is not a
-// known preset, Preset returns an error listing the valid preset names.
+// of "greek", "norse", "potter", "thrones", "chaves", "pioneers", "starwars",
+// "tolkien", "turma", "egyptian"). If name is not a known preset, Preset
+// returns an error listing the valid preset names.
 //
 // The returned Config is always a copy: mutating it does not affect the
 // package-level preset table or any other Config returned by a previous
@@ -118,7 +179,8 @@ func Preset(name string) (Config, error) {
 }
 
 // PresetNames returns the names of all known presets, in the stable order:
-// greek, norse, potter, thrones, chaves.
+// greek, norse, potter, thrones, chaves, pioneers, starwars, tolkien, turma,
+// egyptian.
 func PresetNames() []string {
 	names := make([]string, len(presetOrder))
 	copy(names, presetOrder)

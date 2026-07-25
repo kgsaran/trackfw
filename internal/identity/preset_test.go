@@ -7,7 +7,7 @@ import (
 )
 
 func TestPresetNames_ReturnsExpectedOrder(t *testing.T) {
-	want := []string{"greek", "norse", "potter", "thrones", "chaves"}
+	want := []string{"greek", "norse", "potter", "thrones", "chaves", "pioneers", "starwars", "tolkien", "turma", "egyptian"}
 	got := PresetNames()
 	if len(got) != len(want) {
 		t.Fatalf("PresetNames() tem %d itens, esperava %d", len(got), len(want))
@@ -15,6 +15,21 @@ func TestPresetNames_ReturnsExpectedOrder(t *testing.T) {
 	for i, name := range want {
 		if got[i] != name {
 			t.Fatalf("PresetNames()[%d] = %q, esperava %q", i, got[i], name)
+		}
+	}
+}
+
+func TestPresetNames_HasExactlyTenEntries(t *testing.T) {
+	got := PresetNames()
+	if len(got) != 10 {
+		t.Fatalf("PresetNames() tem %d itens, esperava exatamente 10: %v", len(got), got)
+	}
+}
+
+func TestPresetNames_EveryNameResolvesViaPreset(t *testing.T) {
+	for _, name := range PresetNames() {
+		if _, err := Preset(name); err != nil {
+			t.Fatalf("Preset(%q) nao deveria falhar para nome listado em PresetNames(): %v", name, err)
 		}
 	}
 }
