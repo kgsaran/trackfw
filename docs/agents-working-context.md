@@ -2793,3 +2793,74 @@ PR #65 mergeado (squash) na main. Branch local removida (diff vazio contra `orig
 `check-identity-parity.sh` não teve **uma única linha alterada** durante toda a segunda REQ — o guarda-corpo de escopo (esta REQ é só UX, não muda schema/contrato/artefatos) funcionou do início ao fim.
 
 `make quality` verde na main: Go + 113 Node + 418 Python + 5 gates de paridade.
+
+---
+
+## Ciclo 3 — Escopo de instalação selecionável para agents e skills
+
+**Data:** 2026-07-25 | **Orquestrador:** Zeus | **Status:** IMPLEMENTANDO
+
+**Origem:** usuário reportou que `trackfw agents install` instala silenciosamente no projeto
+atual, quando o esperado é instalar na pasta do usuário ou perguntar o escopo. Mesma queixa
+vale para skills.
+
+**Causa raiz (análise estática, 3 CLIs):** `--scope` com default fixo `"project"` em
+`internal/commands/integrations_flags.go:105`, `npm/src/commands/integrations.js:50`,
+`pypi/trackfw/integrations/command.py:94` (+ `catalog.py:59`), e `Scope: "project"`
+hardcoded em `internal/commands/init.go:358`. Nenhum prompt de escopo existe. O único
+prompt (`promptIntegrationSelection`) só dispara quando `--targets` está vazio — o caso
+comum `--targets claude` não passa por prompt algum. Os 11 surfaces do catálogo suportam
+`global` e `project`, então não há restrição técnica.
+
+**Armadilha registrada:** a detecção de "usuário não escolheu" precisa usar *flag-set*
+(`cmd.Flags().Changed("scope")` / `undefined` / `default=None`) — comparar contra o valor
+`"project"` não distingue um `--scope project` explícito do default e re-perguntaria a quem
+já escolheu.
+
+**Decisões do usuário:** default `global` em modo não-interativo (breaking change);
+`init` também pergunta; sem confirmação extra, apenas impressão dos destinos resolvidos.
+
+**Artefatos:** ADR + REQ + Roadmap `2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills`,
+branch `fix/escopo-de-instalacao-selecionavel-para-agents-e-skills`.
+
+**Plano:** Wave 1 com 3 MLs em paralelo (Go / Node / Python — árvores disjuntas),
+barrier, Wave 2 com ML de paridade + CHANGELOG + docs.
+
+**Wave 1 — CONCLUÍDA:** ML-1A Go (`fb33bbb`), ML-1B Node (`ac8b45b`), ML-1C Python (`5acf8f1`).
+Os 3 CLIs com detecção por *flag-set*, gate independente de `--targets`, prompt com `global`
+pré-selecionado, `list` sem prompt, impressão de destinos.
+
+**Wave 2 — CONCLUÍDA (ADR D8):** `321c148` / `e181597` / `f46bd74`. Auditoria pós-ML-1A
+detectou que `agents uninstall --targets X` sem TTY resolvia destinos em `~/.claude/` —
+um script de CI passaria a apagar os agentes do home do usuário. Guarda adicionada:
+`uninstall` sem TTY e sem `--scope` falha exigindo a flag. `install`/`update` mantêm `global`.
+
+**Wave 3 — CONCLUÍDA:** `c6e12b8` / `b05b2a7` / `5cc061a`. As 7 divergências reconciliadas;
+2 eram bugs reais (Node `installIntegrationTarget` não imprimia destinos; teste do default
+real do prompt ausente nos 3 CLIs), 5 eram exceções intencionais agora documentadas em
+`docs/cli-parity.md`. CHANGELOG com os 2 breaking changes.
+
+**Validação final pelo orquestrador (não confiando só nos relatórios):**
+- `make build && make test && make lint && make quality` — todos verdes (Go + 119 Node +
+  435 Python + 5 gates de paridade).
+- `trackfw validate` — só as 2 violations pré-existentes da REQ de 2026-07-24.
+- E2E manual nos 3 binários: `install` sem scope → `~/.claude/...` nos 3; `uninstall` sem
+  scope → erro nos 3.
+
+**Achados registrados (fora de escopo, §11):**
+- CLI Node lança `Error` não tratado em falhas de validação, exibindo stack trace em vez de
+  mensagem limpa. **Pré-existente** — o erro de `--targets` se comporta igual desde antes
+  desta feature. Go imprime `Error: msg`; Python imprime `trackfw agents X: msg`.
+- Mensagem de `--targets` ausente diverge no Python (`"--targets is required for
+  non-interactive X"` vs `"X requires --targets in non-interactive mode"`). Pré-existente,
+  documentada como exceção rastreada.
+- JSON do Node é compacto; Go e Python indentam. Pré-existente.
+
+**Incidente operacional:** o agente da Wave 3, ao validar o binário manualmente, rodou
+`install` na raiz do repo e limpou com `rm -rf .claude`, o que apagou os diretórios de 3
+worktrees git pré-existentes. Os arquivos tracked foram restaurados (`git checkout`), as
+branches `worktree-agent-*` sobreviveram e seus commits (`feat(update)`) já estavam na main
+— sem perda real. As worktrees ficaram `prunable`. **Lição:** validação manual de comandos
+que escrevem no filesystem deve ocorrer sempre em diretório temporário, nunca na raiz do repo.
+
+**Status:** CONCLUÍDO — aguardando decisão do usuário sobre PR (não aberto).

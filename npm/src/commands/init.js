@@ -4,6 +4,7 @@ const { t } = require('../i18n')
 const identityStore = require('../identity')
 const identityWizard = require('./identity-wizard')
 const { resolveIdentityPreset, identityFileExists } = identityWizard
+const { resolveScope } = require('./integrations')
 
 const cmd = new Command('init')
 cmd.description(t('init.description'))
@@ -48,9 +49,11 @@ cmd.action(async (options, command) => {
     await generators.scaffold(cfg)
     const aiTools = String(options.aiTools || '').split(',').map(tool => tool.trim()).filter(Boolean)
     const supported = new Set(['claude', 'codex', 'gemini', 'antigravity', 'cursor', 'copilot', 'windsurf', 'amazonq', 'kiro'])
+    // Sem TTY, o escopo nunca é perguntado: default `global` (ADR D1/D4).
+    const scope = await resolveScope({}, { interactive: false })
     for (const tool of aiTools) {
       if (!supported.has(tool)) throw new Error(`Unsupported AI tool: ${tool}`)
-      await generators.installIntegrationTarget(tool, process.cwd())
+      await generators.installIntegrationTarget(tool, process.cwd(), scope)
     }
     console.log(`\n${t('init.success')}`)
     require('../generators/init').printArchitectNextSteps(process.cwd())
@@ -59,7 +62,7 @@ cmd.action(async (options, command) => {
 
   const { input, select, checkbox } = require('@inquirer/prompts')
 
-  let projectName, projectType, frontend, pkgManager, backend, backendFramework, hooks, ci, aiTools, requireReqInCommit
+  let projectName, projectType, frontend, pkgManager, backend, backendFramework, hooks, ci, aiTools, requireReqInCommit, scope
 
   try {
     projectName = await input({
@@ -184,6 +187,11 @@ cmd.action(async (options, command) => {
       ],
     })
 
+    // Escopo de instalação (ADR D4): só pergunta quando há de fato algo para
+    // instalar. `resolveScope` é a mesma função (mesmas strings/mecanismo de
+    // prompt) usada por `agents install` / `skills install`.
+    scope = aiTools.length ? await resolveScope({}, { interactive: true }) : 'global'
+
   } catch (err) {
     // Fallback quando stdin fecha inesperadamente (ex: pipe em TTY simulado)
     const cfg = {
@@ -231,7 +239,7 @@ cmd.action(async (options, command) => {
   const cfg = { projectName, projectType, frontend, backend, backendFramework, pkgManager, hooks, ci, requireReqInCommit }
   await generators.scaffold(cfg)
 
-  for (const tool of (aiTools || [])) await generators.installIntegrationTarget(tool, process.cwd())
+  for (const tool of (aiTools || [])) await generators.installIntegrationTarget(tool, process.cwd(), scope)
 
   console.log(`\n${t('init.success')}`)
   require('../generators/init').printArchitectNextSteps(process.cwd())

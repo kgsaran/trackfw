@@ -360,13 +360,115 @@ test('TTY prompts select targets and items and disambiguate non-legacy surfaces'
   assert.deepEqual(selected.surfaces, ['kiro=cli'])
 })
 
+// Sem TTY e sem --scope, o escopo default passa a ser `global` (ADR-2026-07-
+// 25-escopo-de-instalacao-selecionavel-para-agents-e-skills, D1 — breaking
+// change documentado no CHANGELOG). `init` grava, portanto, em
+// ~/.gemini/config (HOME redirecionado para o diretório de teste), não mais
+// em .agents/ do projeto.
 test('init uses the canonical integration engine', () => {
   const dirs = roots()
   const bin = path.resolve(__dirname, '../bin/trackfw')
-  const run = spawnSync(process.execPath, [bin, 'init', '--ai-tools', 'antigravity'], { cwd: dirs.projectRoot, encoding: 'utf8' })
+  const run = spawnSync(process.execPath, [bin, 'init', '--ai-tools', 'antigravity'], {
+    cwd: dirs.projectRoot,
+    env: { ...process.env, HOME: dirs.homeRoot },
+    encoding: 'utf8',
+  })
   assert.equal(run.status, 0, run.stderr)
-  assert.equal(fs.existsSync(path.join(dirs.projectRoot, '.agents/agents/trackfw-architect/agent.md')), true)
-  assert.equal(fs.existsSync(path.join(dirs.projectRoot, '.agents/skills/trackfw-governance/SKILL.md')), true)
+  assert.equal(fs.existsSync(path.join(dirs.homeRoot, '.gemini/config/agents/trackfw-architect/agent.md')), true)
+  assert.equal(fs.existsSync(path.join(dirs.homeRoot, '.gemini/config/skills/trackfw-governance/SKILL.md')), true)
+})
+
+// Escopo explícito `--scope project` continua respeitado sem prompt e sem
+// depender do default global acima.
+test('agents install --scope project explícito instala no projeto', () => {
+  const dirs = roots()
+  const bin = path.resolve(__dirname, '../bin/trackfw')
+  const run = spawnSync(process.execPath, [bin, 'agents', 'install', '--targets', 'claude', '--items', 'architect', '--scope', 'project'], {
+    cwd: dirs.projectRoot,
+    env: { ...process.env, HOME: dirs.homeRoot },
+    encoding: 'utf8',
+  })
+  assert.equal(run.status, 0, run.stderr)
+  assert.equal(fs.existsSync(path.join(dirs.projectRoot, '.claude/agents/trackfw-architect.md')), true)
+  assert.equal(fs.existsSync(path.join(dirs.homeRoot, '.claude/agents/trackfw-architect.md')), false)
+})
+
+// Sem TTY e sem --scope, `agents install` grava em ~/.claude (default global).
+test('agents install sem TTY e sem --scope grava em ~/.claude', () => {
+  const dirs = roots()
+  const bin = path.resolve(__dirname, '../bin/trackfw')
+  const run = spawnSync(process.execPath, [bin, 'agents', 'install', '--targets', 'claude', '--items', 'architect'], {
+    cwd: dirs.projectRoot,
+    env: { ...process.env, HOME: dirs.homeRoot },
+    encoding: 'utf8',
+  })
+  assert.equal(run.status, 0, run.stderr)
+  assert.equal(fs.existsSync(path.join(dirs.homeRoot, '.claude/agents/trackfw-architect.md')), true)
+  assert.equal(fs.existsSync(path.join(dirs.projectRoot, '.claude/agents/trackfw-architect.md')), false)
+})
+
+// `agents list` nunca pergunta (comando de leitura, D6), mas adota o mesmo
+// default `global` do `install` — caso contrário reportaria deployments
+// divergentes dos que o `install` de fato gravou.
+test('agents list sem --scope reporta destinos globais', () => {
+  const dirs = roots()
+  const bin = path.resolve(__dirname, '../bin/trackfw')
+  const run = spawnSync(process.execPath, [bin, 'agents', 'list', '--targets', 'claude', '--items', 'architect', '--json'], {
+    cwd: dirs.projectRoot,
+    env: { ...process.env, HOME: dirs.homeRoot },
+    encoding: 'utf8',
+  })
+  assert.equal(run.status, 0, run.stderr)
+  const output = JSON.parse(run.stdout)
+  assert.equal(output.deployments[0].scope, 'global')
+  assert.match(output.deployments[0].destination, /^~\/\.claude\//)
+})
+
+// `--targets claude` sem `--scope`, com TTY simulado, aciona o resolvedor de
+// escopo (o prompt é um gate independente da seleção de targets — dispara
+// mesmo quando --targets já foi informado).
+test('--targets claude sem --scope, com TTY simulado, aciona o resolvedor de escopo', async () => {
+  const { resolveScope } = require('../src/commands/integrations')
+  const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY')
+  Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true })
+  let called = false
+  try {
+    const scope = await resolveScope(
+      { targets: ['claude'] },
+      { interactive: true, prompts: { select: async () => { called = true; return 'global' } } },
+    )
+    assert.equal(called, true, 'o resolvedor de escopo deve perguntar quando --scope não foi informado e stdin é TTY')
+    assert.equal(scope, 'global')
+  } finally {
+    if (originalIsTTY) Object.defineProperty(process.stdin, 'isTTY', originalIsTTY)
+    else delete process.stdin.isTTY
+  }
+})
+
+// Divergência #5 do roadmap (reconciliação ML-2A): o teste acima estuba
+// `select` para retornar 'global' incondicionalmente, então nunca prova que a
+// pré-seleção (`global`) do prompt real é a que de fato chega ao usuário. Este
+// teste captura a configuração passada ao `select()` real de resolveScope e
+// verifica que `default: 'global'` (integrations.js:69) é exatamente o campo
+// que a implementação de produção envia — regressão aqui falha se alguém
+// remover ou trocar o default sem tocar em nenhum outro teste.
+test('resolveScope: TTY sem --scope monta o select real com "global" pré-selecionado', async () => {
+  const { resolveScope } = require('../src/commands/integrations')
+  const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY')
+  Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true })
+  let capturedConfig = null
+  try {
+    await resolveScope(
+      {},
+      { interactive: true, prompts: { select: async (config) => { capturedConfig = config; return config.default } } },
+    )
+  } finally {
+    if (originalIsTTY) Object.defineProperty(process.stdin, 'isTTY', originalIsTTY)
+    else delete process.stdin.isTTY
+  }
+  assert.ok(capturedConfig, 'select() deveria ter sido chamado')
+  assert.equal(capturedConfig.default, 'global')
+  assert.deepEqual(capturedConfig.choices.map(choice => choice.value), ['global', 'project'])
 })
 
 test('Antigravity agent-directory renderer é byte-equivalente ao contrato Go/Python', () => {

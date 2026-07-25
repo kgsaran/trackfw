@@ -85,7 +85,7 @@ func TestAgentsJSONLifecycleIsCanonical(t *testing.T) {
 	}
 
 	uninstall := newAgentsCmd()
-	uninstall.SetArgs([]string{"uninstall", "--targets", "codex", "--items", "backend"})
+	uninstall.SetArgs([]string{"uninstall", "--targets", "codex", "--items", "backend", "--scope", "project"})
 	if err := uninstall.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestDeprecatedCursorAliasUsesLifecycleManager(t *testing.T) {
 
 func TestInitAIToolsUsesCanonicalManagerAndValidatesTargets(t *testing.T) {
 	project, _ := integrationCommandFixture(t)
-	if err := installAITools([]string{"kiro", "antigravity"}, project); err != nil {
+	if err := installAITools([]string{"kiro", "antigravity"}, project, "project"); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{
@@ -189,7 +189,7 @@ func TestInitAIToolsUsesCanonicalManagerAndValidatesTargets(t *testing.T) {
 	}
 
 	unknownProject := t.TempDir()
-	if err := installAITools([]string{"unknown-ai"}, unknownProject); err == nil || !strings.Contains(err.Error(), "unknown target") {
+	if err := installAITools([]string{"unknown-ai"}, unknownProject, "project"); err == nil || !strings.Contains(err.Error(), "unknown target") {
 		t.Fatalf("unknown target must fail actionably, got %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(unknownProject, ".trackfw", "integrations-manifest.json")); !os.IsNotExist(err) {
@@ -203,6 +203,158 @@ func TestInitAIToolsHelpIncludesEveryCatalogTarget(t *testing.T) {
 		if !strings.Contains(usage, target) {
 			t.Fatalf("--ai-tools help omits %s: %s", target, usage)
 		}
+	}
+}
+
+// TestInstallExplicitScopeProjectDoesNotPrompt covers ADR D3: an explicit
+// --scope project must be respected verbatim and never triggers the install
+// scope prompt, even with stdin faked as a TTY (the only situation in which
+// the prompt could ever fire). promptInstallScopeRunner is swapped for a spy
+// — if resolveScope prompted anyway, the spy would be called and the test
+// would fail.
+func TestInstallExplicitScopeProjectDoesNotPrompt(t *testing.T) {
+	project, home := integrationCommandFixture(t)
+	writeGreekIdentity(t, home)
+
+	oldTTY := integrationsStdinIsTTY
+	integrationsStdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { integrationsStdinIsTTY = oldTTY })
+
+	oldPrompt := promptInstallScopeRunner
+	called := false
+	promptInstallScopeRunner = func() (string, error) {
+		called = true
+		return "global", nil
+	}
+	t.Cleanup(func() { promptInstallScopeRunner = oldPrompt })
+
+	cmd := newAgentsCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"install", "--targets", "claude", "--items", "backend", "--scope", "project"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("explicit --scope project must not invoke the install scope prompt")
+	}
+	path := filepath.Join(project, ".claude", "agents", "trackfw-backend.md")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("explicit --scope project must write under the project's .claude/: %v", err)
+	}
+}
+
+// TestInstallWithoutScopeOutsideTTYDefaultsToGlobal covers ADR D1: with no
+// TTY and no --scope, the resolved scope is "global" (~/.claude/...), not
+// the previous "project" default.
+func TestInstallWithoutScopeOutsideTTYDefaultsToGlobal(t *testing.T) {
+	_, home := integrationCommandFixture(t)
+
+	cmd := newAgentsCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"install", "--targets", "claude", "--items", "backend"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".claude", "agents", "trackfw-backend.md")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("no TTY and no --scope must default to global (~/.claude/): %v", err)
+	}
+}
+
+// TestInstallWithTargetsButNoScopeStillPromptsInTTY covers ADR D2: the scope
+// prompt is a gate independent from target selection — it must fire even
+// when --targets was already supplied, which is the most common invocation
+// shape. promptInstallScopeRunner is swapped for a spy so a real (blocking)
+// huh.Form is never exercised.
+func TestInstallWithTargetsButNoScopeStillPromptsInTTY(t *testing.T) {
+	project, home := integrationCommandFixture(t)
+	writeGreekIdentity(t, home)
+
+	oldTTY := integrationsStdinIsTTY
+	integrationsStdinIsTTY = func() bool { return true }
+	t.Cleanup(func() { integrationsStdinIsTTY = oldTTY })
+
+	oldPrompt := promptInstallScopeRunner
+	called := false
+	promptInstallScopeRunner = func() (string, error) {
+		called = true
+		return "project", nil
+	}
+	t.Cleanup(func() { promptInstallScopeRunner = oldPrompt })
+
+	cmd := newAgentsCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"install", "--targets", "claude", "--items", "backend"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("scope prompt must fire even when --targets was already supplied")
+	}
+	// The prompt's answer must actually be honored, not merely invoked — a
+	// regression where resolveScope calls the runner and drops its return
+	// value would still leave `called` true.
+	path := filepath.Join(project, ".claude", "agents", "trackfw-backend.md")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("prompt-chosen scope (project) must be honored: %v", err)
+	}
+}
+
+// TestInstallScopeSelectDefaultsToGlobal covers ADR D2's "global pre-selected"
+// requirement directly against the real huh.Select field built by
+// installScopeSelect — not against promptInstallScopeRunner, which every
+// other test in this file stubs out entirely (roadmap divergence #5,
+// ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills).
+// Select.RunAccessible reads a bare Enter from a fake reader and, because the
+// field's accessor is a *PointerAccessor bound to a variable pre-set to
+// "global", falls back to the option matching that value — this is huh's own
+// non-interactive fallback path, not a stub, so it fails if the pre-selected
+// option is ever changed away from "global" without updating this test.
+func TestInstallScopeSelectDefaultsToGlobal(t *testing.T) {
+	scope := "global"
+	sel := installScopeSelect(&scope)
+	if err := sel.RunAccessible(&bytes.Buffer{}, strings.NewReader("\n")); err != nil {
+		t.Fatalf("RunAccessible with bare Enter must accept the pre-selected default: %v", err)
+	}
+	if scope != "global" {
+		t.Fatalf("expected pre-selected scope to be %q on bare Enter, got %q", "global", scope)
+	}
+}
+
+// TestListWithoutScopeReportsGlobalDestinations covers ADR D6: `list` never
+// prompts (it is a read-only command), but adopts the same "global" default
+// as install/update/uninstall so it does not report deployments at a scope
+// the mutating commands wouldn't have written to.
+func TestListWithoutScopeReportsGlobalDestinations(t *testing.T) {
+	_, home := integrationCommandFixture(t)
+
+	cmd := newAgentsCmd()
+	cmd.SetArgs([]string{"install", "--targets", "claude", "--items", "backend"})
+	cmd.SetOut(&bytes.Buffer{})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	list := newAgentsCmd()
+	var out bytes.Buffer
+	list.SetOut(&out)
+	list.SetArgs([]string{"list", "--targets", "claude", "--items", "backend", "--json"})
+	if err := list.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var output lifecycleOutput
+	if err := json.Unmarshal(out.Bytes(), &output); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out.String())
+	}
+	if len(output.Deployments) != 1 || output.Deployments[0].Scope != "global" {
+		t.Fatalf("list without --scope must report global destinations: %+v", output.Deployments)
+	}
+	if !strings.HasPrefix(output.Deployments[0].Destination, "~/") {
+		t.Fatalf("list without --scope must report a home-relative (~/) destination: %+v", output.Deployments[0])
+	}
+	path := filepath.Join(home, ".claude", "agents", "trackfw-backend.md")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("install without --scope must have written under home: %v", err)
 	}
 }
 

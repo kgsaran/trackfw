@@ -21,6 +21,7 @@ type integrationOptions struct {
 	targets        []string
 	items          []string
 	scope          string
+	scopeExplicit  bool
 	surfaces       []string
 	json           bool
 	force          bool
@@ -102,7 +103,7 @@ func newIntegrationMutationCmd(kind integrations.ItemKind, operation string) *co
 func addIntegrationFlags(cmd *cobra.Command, opts *integrationOptions, mutation bool, kind integrations.ItemKind) {
 	cmd.Flags().StringSliceVar(&opts.targets, "targets", nil, "target CLIs (comma-separated)")
 	cmd.Flags().StringSliceVar(&opts.items, "items", nil, "catalog items (comma-separated; default: all)")
-	cmd.Flags().StringVar(&opts.scope, "scope", "project", "installation scope: project or global")
+	cmd.Flags().StringVar(&opts.scope, "scope", "", "installation scope: project or global (default: global; asks interactively)")
 	cmd.Flags().StringArrayVar(&opts.surfaces, "surface", nil, "target=surface selection (repeatable)")
 	cmd.Flags().BoolVar(&opts.json, "json", false, "print canonical JSON output")
 	if mutation {
@@ -123,8 +124,11 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	if err != nil {
 		return err
 	}
-	if opts.scope != "project" && opts.scope != "global" {
-		return fmt.Errorf("invalid --scope %q: use project or global", opts.scope)
+	// resolveScope is a gate independent from target/item selection (ADR D2):
+	// it must run — and may prompt — even when --targets was already
+	// supplied below, which is the most common invocation shape.
+	if err := resolveScope(cmd, opts, operation); err != nil {
+		return err
 	}
 
 	// --identity-preset is validated and persisted unconditionally, above
@@ -196,6 +200,14 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	if err != nil {
 		return err
 	}
+	// D5 — transparency: no extra confirmation, but the resolved destination
+	// paths are always printed before anything is written to disk.
+	if !opts.json {
+		fmt.Fprintf(cmd.OutOrStdout(), "Destino (%s):\n", opts.scope)
+		for _, plan := range plans {
+			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", plan.Destination)
+		}
+	}
 	switch operation {
 	case "install":
 		err = manager.Install(plans, opts.force)
@@ -242,6 +254,12 @@ func applyIdentityPresetFlag(presetValue, operation string) error {
 }
 
 func executeIntegrationList(cmd *cobra.Command, kind integrations.ItemKind, opts integrationOptions) error {
+	// D6: list is a read-only command and never prompts, but adopts the same
+	// "global" default as install/update/uninstall so it never reports
+	// deployments for a scope the mutating commands wouldn't have written to.
+	if opts.scope == "" {
+		opts.scope = "global"
+	}
 	if opts.scope != "project" && opts.scope != "global" {
 		return fmt.Errorf("invalid --scope %q: use project or global", opts.scope)
 	}
@@ -340,6 +358,80 @@ func parseSurfaceFlags(values []string) (map[string]string, error) {
 	return result, nil
 }
 
+// promptInstallScopeRunner is the indirection callers use to invoke the
+// install-scope prompt, mirroring the identityWizardRunner package-var
+// pattern already used in this package. Tests that need to prove a caller
+// *would* invoke the prompt (without actually blocking on a real huh.Form,
+// which requires a terminal) substitute this var instead of calling
+// promptInstallScope directly.
+var promptInstallScopeRunner = promptInstallScope
+
+// installScopeSelect builds the huh.Select field used by promptInstallScope,
+// extracted so tests can exercise the real pre-selected default via
+// Select.RunAccessible (no TTY required) instead of stubbing
+// promptInstallScopeRunner — see TestInstallScopeSelectDefaultsToGlobal in
+// agents_skills_test.go. Options() runs before Value(scope) binds the
+// accessor, so huh re-syncs the cursor to *scope's initial value ("global")
+// when Value is called (see huh's Accessor/selectValue).
+func installScopeSelect(scope *string) *huh.Select[string] {
+	return huh.NewSelect[string]().
+		Title("Onde instalar os artefatos?").
+		Options(
+			huh.NewOption("Pasta do usuário (~/.claude) — vale para todos os projetos", "global"),
+			huh.NewOption("Este projeto (.claude) — apenas neste repositório", "project"),
+		).
+		Value(scope)
+}
+
+// promptInstallScope asks the user where trackfw should install agents and
+// skills artifacts. It is shared between `agents|skills install|update|
+// uninstall` (via resolveScope) and `trackfw init`'s wizard so both surfaces
+// present the exact same options and wording (ADR D2, D4).
+func promptInstallScope() (string, error) {
+	scope := "global"
+	err := huh.NewForm(huh.NewGroup(installScopeSelect(&scope))).Run()
+	return scope, err
+}
+
+// resolveScope decides opts.scope for `agents|skills install|update|
+// uninstall`, as a gate independent from target/item selection (ADR D2): it
+// must run — and may prompt — even when --targets was already supplied,
+// which is the most common invocation shape.
+//
+// Precedence (ADR D3): an explicit --scope (detected via cmd.Flags().
+// Changed, never by comparing opts.scope's value against "project" — that
+// comparison cannot distinguish an explicit `--scope project` from the flag's
+// unset default) or a deprecated-alias-assigned scope (opts.scopeExplicit)
+// always wins and is only validated, never re-prompted. Otherwise: no TTY →
+// "global" (D1) for install/update; for uninstall, no TTY and no explicit
+// --scope is a hard error (ADR D8) — a destructive operation must never
+// silently default to a scope the caller didn't choose, since a CI script
+// removing `.claude/agents/trackfw-*.md` from the repo would otherwise start
+// deleting files from the user's home directory instead. TTY → interactive
+// prompt with "global" pre-selected (D2), for every operation including
+// uninstall.
+func resolveScope(cmd *cobra.Command, opts *integrationOptions, operation string) error {
+	if opts.scopeExplicit || cmd.Flags().Changed("scope") {
+		if opts.scope != "project" && opts.scope != "global" {
+			return fmt.Errorf("invalid --scope %q: use project or global", opts.scope)
+		}
+		return nil
+	}
+	if !integrationsStdinIsTTY() {
+		if operation == "uninstall" {
+			return fmt.Errorf("uninstall requires --scope in non-interactive mode")
+		}
+		opts.scope = "global"
+		return nil
+	}
+	scope, err := promptInstallScopeRunner()
+	if err != nil {
+		return err
+	}
+	opts.scope = scope
+	return nil
+}
+
 func promptIntegrationSelection(catalog *integrations.Catalog, kind integrations.ItemKind, opts *integrationOptions) error {
 	targetOptions := make([]huh.Option[string], 0, len(catalog.Targets))
 	for _, target := range catalog.Targets {
@@ -398,7 +490,11 @@ func runDeprecatedIntegrationAlias(cmd *cobra.Command, target string, scopes []s
 	fmt.Fprintf(cmd.ErrOrStderr(), "warning: trackfw %s is deprecated; use trackfw agents|skills install --targets %s\n", target, target)
 	for _, scope := range scopes {
 		for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
-			opts := integrationOptions{targets: []string{target}, scope: scope}
+			// scopeExplicit: true — deprecated aliases pass their own fixed
+			// scopes and never go through cmd.Flags(), so resolveScope must
+			// treat this exactly like an explicit --scope and never prompt
+			// (ADR "fora de escopo": alias behavior does not change).
+			opts := integrationOptions{targets: []string{target}, scope: scope, scopeExplicit: true}
 			if err := executeIntegrationMutation(cmd, kind, "install", &opts); err != nil {
 				return err
 			}

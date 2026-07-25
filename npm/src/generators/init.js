@@ -1006,12 +1006,35 @@ async function installAmazonQ(cwd = process.cwd()) {
   }
 }
 
-/** Install the canonical agents and skills for one AI target. */
-async function installIntegrationTarget(target, cwd = process.cwd()) {
-  const { execute } = require('../integrations')
+/**
+ * Install the canonical agents and skills for one AI target.
+ *
+ * `scope` defaults to "project" for backward compatibility with the
+ * compatibility entrypoints below (installAgents, installGemini, etc.), that
+ * historical tests exercise directly without going through the `init`
+ * wizard's scope prompt. `trackfw init` itself always passes the scope it
+ * resolved (ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-
+ * skills, D4).
+ */
+async function installIntegrationTarget(target, cwd = process.cwd(), scope = 'project') {
+  const { execute, buildPlans } = require('../integrations')
   const roots = { projectRoot: cwd }
-  execute('agents', 'install', { targets: [target], scope: 'project' }, roots)
-  execute('skills', 'install', { targets: [target], scope: 'project' }, roots)
+  const options = { targets: [target], scope }
+  // D5 — transparency: print resolved destinations before writing anything.
+  // buildPlans has no side effects, so it is safe to call here purely to
+  // enumerate destinations; the actual write happens below via execute().
+  // Mirrors printResolvedDestinations in commands/integrations.js and Go's
+  // installAITools (internal/commands/init.go) — this call site (init's AI
+  // tools install) was the one place that stayed silent (divergence #2,
+  // ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills).
+  const destinations = [
+    ...buildPlans('agents', options).map(plan => plan.destination),
+    ...buildPlans('skills', options).map(plan => plan.destination),
+  ]
+  console.log(`Destino (${scope}):`)
+  for (const destination of [...new Set(destinations)].sort()) console.log(`  ${destination}`)
+  execute('agents', 'install', options, roots)
+  execute('skills', 'install', options, roots)
   console.log(`  ✓ ${target} agents and skills`)
 }
 

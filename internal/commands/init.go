@@ -100,7 +100,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		aiTools, _ := cmd.Flags().GetStringSlice("ai-tools")
-		if err := installAITools(aiTools, cwd); err != nil {
+		if err := installAITools(aiTools, cwd, "global"); err != nil {
 			return err
 		}
 		fmt.Println(i18n.T("init.success"))
@@ -324,7 +324,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	cwd, _ := os.Getwd()
 
-	if err := installAITools(aiTools, cwd); err != nil {
+	// D4 — init's wizard also asks for the install scope, only when AI tools
+	// were actually selected (asking otherwise would be a prompt about
+	// nothing). Sem TTY já foi tratado no early-return acima (default
+	// "global"); este ramo só é alcançado quando stdin é um TTY real.
+	scope := "global"
+	if len(aiTools) > 0 {
+		var err error
+		scope, err = promptInstallScopeRunner()
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := installAITools(aiTools, cwd, scope); err != nil {
 		return err
 	}
 
@@ -333,7 +346,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func installAITools(aiTools []string, cwd string) error {
+// installAITools installs agents and skills for the selected AI tools at the
+// given scope ("project" or "global"). scope is resolved by the caller —
+// runInit prompts for it (D4) when AI tools were selected and stdin is a
+// TTY, and defaults to "global" (D1) in every non-interactive path.
+func installAITools(aiTools []string, cwd string, scope string) error {
 	if len(aiTools) == 0 {
 		return nil
 	}
@@ -355,12 +372,17 @@ func installAITools(aiTools []string, cwd string) error {
 	var plans []integrations.PlannedArtifact
 	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
 		selected, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
-			Kind: kind, Targets: aiTools, Scope: "project", Identity: ident,
+			Kind: kind, Targets: aiTools, Scope: scope, Identity: ident,
 		})
 		if err != nil {
 			return fmt.Errorf("configurando AI tools: %w", err)
 		}
 		plans = append(plans, selected...)
+	}
+	// D5 — transparency: print resolved destinations before writing anything.
+	fmt.Printf("Destino (%s):\n", scope)
+	for _, plan := range plans {
+		fmt.Printf("  %s\n", plan.Destination)
 	}
 	manager := integrations.Manager{ProjectRoot: cwd, HomeDir: home}
 	if err := manager.Install(plans, false); err != nil {

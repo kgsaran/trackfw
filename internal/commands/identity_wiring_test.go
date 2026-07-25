@@ -75,7 +75,7 @@ func TestIdentityPropagatesThroughListCaller(t *testing.T) {
 	list := newAgentsCmd()
 	var out bytes.Buffer
 	list.SetOut(&out)
-	list.SetArgs([]string{"list", "--targets", "claude", "--items", "backend", "--json"})
+	list.SetArgs([]string{"list", "--targets", "claude", "--items", "backend", "--scope", "project", "--json"})
 	if err := list.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestIdentityPropagatesThroughInitInstallAITools(t *testing.T) {
 	project, home := integrationCommandFixture(t)
 	writeGreekIdentity(t, home)
 
-	if err := installAITools([]string{"claude"}, project); err != nil {
+	if err := installAITools([]string{"claude"}, project, "project"); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(project, ".claude", "agents", "trackfw-backend.md")

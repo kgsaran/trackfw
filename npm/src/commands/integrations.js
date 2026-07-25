@@ -2,7 +2,7 @@
 
 const os = require('node:os')
 const { Command } = require('commander')
-const { catalog, execute, parseSurfaces } = require('../integrations')
+const { catalog, execute, parseSurfaces, buildPlans } = require('../integrations')
 const identityStore = require('../identity')
 const identityWizard = require('./identity-wizard')
 const { t } = require('../i18n')
@@ -27,6 +27,66 @@ async function promptSelection(kind, options, prompts = require('@inquirer/promp
   options.items = await checkbox({ message: `${kind} to manage`, choices: catalog[kind].map(item => ({ name: item.name, value: item.id })), required: true })
 }
 
+// resolveScope decide o escopo de instalação (ADR-2026-07-25-escopo-de-
+// instalacao-selecionavel-para-agents-e-skills):
+//
+//  - `--scope` explícito (`options.scope !== undefined`) é sempre respeitado
+//    e nunca dispara prompt — apenas validado contra os valores aceitos. A
+//    detecção é por *flag-set* (undefined), nunca por comparação de valor,
+//    para não confundir um `--scope project` explícito com o default.
+//  - Sem flag e `interactive` desligado (comando `list`, D6): default
+//    `global`, nunca lança erro (list nunca é destrutivo).
+//  - Sem flag e stdin não é um TTY (D1): default `global` — exceto para
+//    `uninstall` (ADR D8), que falha exigindo `--scope` explícito. D1 foi
+//    aprovado no enquadramento "onde instalar"; aplicá-lo a uninstall
+//    permitiria que um script de CI que hoje limpa `.claude/agents/` do
+//    repositório passasse a apagar arquivos do home do usuário.
+//  - Sem flag, `interactive` ligado e TTY (D2): pergunta o escopo, com
+//    `global` pré-selecionado, para toda operação incluindo uninstall — o
+//    usuário vê a escolha antes de destruir. Usa o mesmo mecanismo de prompt
+//    (`@inquirer/prompts`) já empregado por `identity-wizard.js`, sem
+//    dependência nova.
+//
+// `interactive` é passado pelo chamador como `false` para `list` — comando de
+// leitura que nunca deve bloquear em prompt, mas que ainda assim precisa do
+// mesmo default `global` para não reportar deployments divergentes dos que o
+// `install` gravou (D6). `operation` identifica install/update/uninstall/list
+// para o branch de D8. Espelha
+// internal/commands/integrations_flags.go:resolveScope.
+async function resolveScope(options, { interactive = true, operation, prompts = require('@inquirer/prompts') } = {}) {
+  if (options.scope !== undefined) {
+    if (options.scope !== 'project' && options.scope !== 'global') throw new Error(`Unsupported scope: ${options.scope}`)
+    return options.scope
+  }
+  if (!interactive) return 'global'
+  if (!process.stdin.isTTY) {
+    if (operation === 'uninstall') throw new Error('uninstall requires --scope in non-interactive mode')
+    return 'global'
+  }
+  const { select } = prompts
+  return select({
+    message: 'Onde instalar os artefatos?',
+    default: 'global',
+    choices: [
+      { name: 'Pasta do usuário (~/.claude) — vale para todos os projetos', value: 'global' },
+      { name: 'Este projeto (.claude) — apenas neste repositório', value: 'project' },
+    ],
+  })
+}
+
+// printResolvedDestinations imprime, antes da gravação, o escopo escolhido e
+// os caminhos de destino que serão afetados (ADR D5) — nunca em modo --json,
+// que já é o canal determinístico consumido por scripts. Recalcula os planos
+// via buildPlans (sem side effect) só para enumerar destinos; a gravação em
+// si acontece depois, em execute().
+function printResolvedDestinations(kind, options) {
+  if (options.json) return
+  const plans = buildPlans(kind, options)
+  const destinations = [...new Set(plans.map(plan => plan.destination))].sort()
+  console.log(`Destino (${options.scope}):`)
+  for (const destination of destinations) console.log(`  ${destination}`)
+}
+
 async function promptAmbiguousSurfaces(kind, options, prompts = require('@inquirer/prompts')) {
   const { select } = prompts
   const selected = parseSurfaces(options.surfaces)
@@ -47,7 +107,7 @@ function createLifecycleCommand(kind) {
     const command = new Command(operation)
       .option('--targets <targets>', 'Comma-separated target CLIs', csv)
       .option('--items <items>', `Comma-separated ${kind} IDs`, csv)
-      .option('--scope <scope>', 'Installation scope: project or global', 'project')
+      .option('--scope <scope>', 'Installation scope: project or global (default: global; asks interactively)')
       .option('--surface <target=surface>', 'Surface selection (repeatable)', collect, [])
       .option('--json', 'Print deterministic JSON')
       .option('--force', 'Replace or remove modified artifacts')
@@ -65,7 +125,14 @@ function createLifecycleCommand(kind) {
 
     command.action(async (options, cmd) => {
       options.surfaces = options.surface || []
-      if (options.scope !== 'project' && options.scope !== 'global') throw new Error(`Unsupported scope: ${options.scope}`)
+
+      // Gate de escopo (ADR D1-D3, D6): resolvido incondicionalmente aqui,
+      // antes de qualquer seleção de targets/surfaces ou construção de
+      // planos, e independentemente de --targets já ter sido informado —
+      // caso contrário o caso mais comum (`agents install --targets claude`)
+      // nunca passaria por prompt algum. `list` (mutation === false) nunca
+      // pergunta (comando de leitura), apenas adota o default `global`.
+      options.scope = await resolveScope(options, { interactive: mutation, operation })
 
       // O booleano de --identity nunca deve chegar a execute()/buildPlans()
       // sob a chave "identity" — essa chave ali é reservada para uma Config
@@ -112,6 +179,10 @@ function createLifecycleCommand(kind) {
         }
       }
 
+      // D5: caminhos de destino impressos antes da gravação, apenas para
+      // operações de mutação (install/update/uninstall) e fora de --json.
+      if (mutation) printResolvedDestinations(kind, options)
+
       const output = execute(kind, operation, options)
       console.log(options.json ? JSON.stringify(output) : human(output))
     })
@@ -120,4 +191,4 @@ function createLifecycleCommand(kind) {
   return root
 }
 
-module.exports = { createLifecycleCommand, csv, human, promptSelection, promptAmbiguousSurfaces }
+module.exports = { createLifecycleCommand, csv, human, promptSelection, promptAmbiguousSurfaces, resolveScope }
