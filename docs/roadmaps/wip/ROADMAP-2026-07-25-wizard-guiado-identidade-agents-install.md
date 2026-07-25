@@ -182,7 +182,7 @@ Deve ser resolvido pelo ML-2A, que reestrutura esse arquivo.
 > Dependencies: **barrier — ML-1A completo**. Diretorios disjuntos entre si.
 
 ### ML-2A — Porta Node.js
-**Status:** pending
+**Status:** done (`a7943df`)
 **Agente:** trackfw-frontend
 **Files affected:** `npm/src/commands/identity-wizard.js` (novo),
 `npm/src/commands/init.js`, `npm/src/integrations/index.js` (ou onde vive o
@@ -198,7 +198,7 @@ acionamento identicos**. Consultar a implementacao Go como referencia.
 - [ ] Nenhum arquivo fora de `npm/`
 
 ### ML-2B — Porta Python
-**Status:** pending
+**Status:** done (`9266242`)
 **Agente:** trackfw-data
 **Files affected:** `pypi/trackfw/commands/identity_wizard.py` (novo),
 `pypi/trackfw/commands/init.py`, `pypi/trackfw/integrations/command.py`,
@@ -247,3 +247,24 @@ Detectar TTY com `sys.stdin.isatty()`.
 
 ## Legenda de status
 - pending / in_progress / done / blocked
+
+
+**Auditoria do orquestrador (Wave 2):**
+
+- ML-2B (pypi) rodou primeiro. Verificado de forma independente: 418 testes
+  Python, gate `check-identity-parity.sh` intacto (0 linhas de diff), os 5
+  cenarios E2E pelo binario real batem com o Go — incluindo
+  `identity: 10 custom agent(s)` e a mensagem exata de preset invalido.
+- ML-2A (npm) **falhou na primeira tentativa** por limite de sessao da API,
+  nao por erro de execucao. Trabalho parcial ja estava completo e correto no
+  working tree; auditado e commitado pelo orquestrador em vez de re-executado
+  do zero. Resolveu a pendencia herdada do ML-1B (`saveWizardIdentity`
+  duplicado em `init.js`).
+- **Achado investigado e descartado como nao-defeito:** `--identity-preset xpto`
+  no CLI Node crasha com stack trace em vez de erro limpo. Confirmado como
+  **padrao pre-existente**, presente em `origin/main` antes desta feature —
+  `--scope xpto` ja crashava da mesma forma (`throw new Error` sem try/catch
+  global). Fora do escopo desta REQ, que e exclusivamente de UX do wizard de
+  identidade, nao de tratamento de erro do CLI.
+- `check-identity-parity.sh` passou nos 3 CLIs sem nenhuma linha alterada no
+  script — guarda-corpo de escopo mantido ate o fim da Wave 2.
