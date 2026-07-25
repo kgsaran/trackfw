@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 )
 
@@ -88,7 +89,9 @@ func Update(cwd string) error {
 	_, agentsErr := os.Stat(filepath.Join(cwd, "AGENTS.md"))
 	_, codexErr := os.Stat(filepath.Join(cwd, ".codex"))
 	if agentsErr == nil || codexErr == nil {
-		updateDetectedCodexIntegrations(cwd)
+		if err := updateDetectedCodexIntegrations(cwd); err != nil {
+			return fmt.Errorf("codex integration update: %w", err)
+		}
 	}
 	// 2. Validate script (categoria 2 — trackfw-owned, overwrite seguro)
 	if err := generateValidateScript(cfg); err != nil {
@@ -127,30 +130,35 @@ func Update(cwd string) error {
 	return nil
 }
 
-func updateDetectedCodexIntegrations(cwd string) {
+// updateDetectedCodexIntegrations re-applies managed Codex agent/skill
+// artifacts already installed in the project, using the identity currently
+// persisted at ~/.trackfw/identity.json. Identity resolution happens BEFORE
+// any manager.Update call: an error here must abort the whole update instead
+// of silently rewriting managed artifacts with the neutral default identity.
+func updateDetectedCodexIntegrations(cwd string) error {
 	catalog, err := integrations.LoadCatalog()
 	if err != nil {
-		fmt.Printf("  ⚠ Codex integration catalog: %v\n", err)
-		return
+		return fmt.Errorf("codex integration catalog: %w", err)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Printf("  ⚠ Codex integration home: %v\n", err)
-		return
+		return fmt.Errorf("codex integration home: %w", err)
+	}
+	ident, err := identity.Load(home)
+	if err != nil {
+		return fmt.Errorf("codex integration identity: %w", err)
 	}
 	manager := integrations.Manager{ProjectRoot: cwd, HomeDir: home}
 	updated := 0
 	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
-		plans, planErr := integrations.BuildPlans(catalog, integrations.PlanRequest{Kind: kind, Targets: []string{"codex"}, Scope: "project"})
+		plans, planErr := integrations.BuildPlans(catalog, integrations.PlanRequest{Kind: kind, Targets: []string{"codex"}, Scope: "project", Identity: ident})
 		if planErr != nil {
-			fmt.Printf("  ⚠ Codex %s plans: %v\n", kind, planErr)
-			continue
+			return fmt.Errorf("codex %s plans: %w", kind, planErr)
 		}
 		for _, plan := range plans {
 			inspection, inspectErr := manager.Inspect(plan)
 			if inspectErr != nil {
-				fmt.Printf("  ⚠ Codex %s/%s inspect: %v\n", kind, plan.Claim.Item, inspectErr)
-				continue
+				return fmt.Errorf("codex %s/%s inspect: %w", kind, plan.Claim.Item, inspectErr)
 			}
 			if inspection.State == integrations.StateNotInstalled {
 				continue
@@ -165,6 +173,7 @@ func updateDetectedCodexIntegrations(cwd string) {
 	if updated > 0 {
 		fmt.Printf("  ✓ %d Codex agent/skill artifact(s) migrated or updated\n", updated)
 	}
+	return nil
 }
 
 // updateHooksSurgical garante que 'trackfw validate' está presente nos hooks sem sobrescrever conteúdo do usuário.

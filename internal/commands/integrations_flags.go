@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
 	"github.com/kgsaran/trackfw/internal/generators"
+	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/spf13/cobra"
 )
@@ -133,13 +134,19 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 			return err
 		}
 	}
-	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
-		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope, Surfaces: surfaceMap,
-	})
+	manager, err := integrationsManager()
 	if err != nil {
 		return err
 	}
-	manager, err := integrationsManager()
+	// Identity must be resolved from disk before BuildPlans — skipping this
+	// silently reverts custom agent names to the neutral defaults.
+	ident, err := identity.Load(manager.HomeDir)
+	if err != nil {
+		return fmt.Errorf("%s: identidade invalida: %w", operation, err)
+	}
+	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
+		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope, Surfaces: surfaceMap, Identity: ident,
+	})
 	if err != nil {
 		return err
 	}
@@ -175,14 +182,18 @@ func executeIntegrationList(cmd *cobra.Command, kind integrations.ItemKind, opts
 	if err != nil {
 		return err
 	}
-	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
-		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope,
-		Surfaces: surfaceMap, AllSurfaces: true,
-	})
+	manager, err := integrationsManager()
 	if err != nil {
 		return err
 	}
-	manager, err := integrationsManager()
+	ident, err := identity.Load(manager.HomeDir)
+	if err != nil {
+		return fmt.Errorf("list: identidade invalida: %w", err)
+	}
+	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
+		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope,
+		Surfaces: surfaceMap, AllSurfaces: true, Identity: ident,
+	})
 	if err != nil {
 		return err
 	}
