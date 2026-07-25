@@ -8,6 +8,8 @@ import os
 import sys
 from typing import Any
 
+from trackfw.identity import IdentityError, load as load_identity
+
 from .catalog import plan_deployments
 from .manager import IntegrationError, IntegrationManager
 
@@ -92,7 +94,10 @@ def add_lifecycle_parser(subparsers, kind: str):
 
 def run(args: argparse.Namespace, kind: str) -> int:
     try:
-        catalog, _ = plan_deployments(kind, scope=args.scope)
+        # Identity must be resolved from disk before plan_deployments — skipping
+        # this silently reverts custom agent names to the neutral defaults.
+        ident = load_identity(os.path.expanduser("~"))
+        catalog, _ = plan_deployments(kind, scope=args.scope, identity_cfg=ident)
         targets = csv_values(args.targets)
         items = csv_values(args.items)
         mutation = args.action != "list"
@@ -113,6 +118,7 @@ def run(args: argparse.Namespace, kind: str) -> int:
             scope=args.scope,
             surfaces=selected_surfaces,
             all_surfaces=not mutation,
+            identity_cfg=ident,
         )
         manager = IntegrationManager(os.getcwd())
         if args.action == "install":

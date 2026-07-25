@@ -6,6 +6,8 @@ import json
 from importlib.resources import files
 from typing import Any
 
+from trackfw import identity
+
 from .renderers import render
 from .legacy import legacy_hashes
 
@@ -57,6 +59,7 @@ def plan_deployments(
     scope: str = "project",
     surfaces: dict[str, str] | None = None,
     all_surfaces: bool = False,
+    identity_cfg: "identity.Config | None" = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if kind not in {"agents", "skills"}:
         raise ValueError(f"unsupported integration kind {kind!r}")
@@ -89,7 +92,7 @@ def plan_deployments(
                 content = _asset_root().joinpath(asset_path).read_text(encoding="utf-8")
                 for install_path in install_paths:
                     destination = install_path["path"].replace("{{id}}", item["id"])
-                    rendered = render(kind, target["id"], surface["id"], item, content, capability)
+                    rendered = render(kind, target["id"], surface["id"], item, content, capability, identity_cfg)
                     claim = {
                         "target": target["id"],
                         "surface": surface["id"],

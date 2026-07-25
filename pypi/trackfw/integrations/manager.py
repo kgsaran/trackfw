@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import stat
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -200,6 +201,8 @@ class IntegrationManager:
             raise
 
     def _preflight(self, plan, destination, manifest, operation, force) -> None:
+        if operation != "uninstall":
+            self._detect_name_collision(plan, destination, force)
         state = self.inspect_with(plan, destination, manifest)
         entry = manifest["artifacts"].get(str(destination), {})
         owned = plan["claim"] in entry.get("claims", [])
@@ -215,6 +218,76 @@ class IntegrationManager:
                 raise IntegrationError(f"artifact {destination} is modified; use force")
         elif operation == "uninstall" and owned and state == "modified" and not force:
             raise IntegrationError(f"artifact {destination} is modified; use force")
+
+    @staticmethod
+    def _frontmatter_name(content: bytes) -> str | None:
+        """Extracts only the "name" field of a "---"-delimited YAML
+        frontmatter, without markdownParts' default values. Returns None
+        when the file has no recognizable frontmatter or no "name". Mirrors
+        Go's internal/integrations/render.go frontmatterName."""
+        text = content.decode("utf-8", errors="replace").strip()
+        if not text.startswith("---\n"):
+            return None
+        end = text.find("\n---", 4)
+        if end < 0:
+            return None
+        frontmatter = text[4:end]
+        for line in frontmatter.split("\n"):
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            if key.strip() != "name":
+                continue
+            value = value.strip().strip('"')
+            if not value:
+                return None
+            return value
+        return None
+
+    def _detect_name_collision(self, plan: dict[str, Any], destination: Path, force: bool) -> None:
+        """Guards against two distinct managed agent artifacts declaring the
+        same frontmatter "name" inside the same destination directory (ADR
+        ADR-2026-07-25-identidade-personalizavel-de-agentes, secao D4).
+
+        Limitation: only scans ".md" siblings, mirroring Go's manager.go —
+        JSON (cli-agent-json/agent-json) and TOML (custom-agent-toml)
+        artifacts are not scanned for collisions.
+        """
+        if plan["claim"].get("kind") != "agents":
+            return
+        if destination.suffix != ".md":
+            return
+        desired_name = self._frontmatter_name(plan["content"])
+        if desired_name is None:
+            return
+        directory = destination.parent
+        try:
+            entries = sorted(directory.iterdir())
+        except FileNotFoundError:
+            return
+        for candidate in entries:
+            if candidate.is_dir() or candidate.suffix != ".md":
+                continue
+            if candidate == destination:
+                continue
+            try:
+                data = candidate.read_bytes()
+            except OSError:
+                continue
+            candidate_name = self._frontmatter_name(data)
+            if candidate_name is None or candidate_name != desired_name:
+                continue
+            if force:
+                print(
+                    f"aviso: {candidate} declara o mesmo name {desired_name!r} que "
+                    f"{destination}; prosseguindo por --force",
+                    file=sys.stderr,
+                )
+                continue
+            raise IntegrationError(
+                f"artifact {destination} declares name {desired_name!r} which collides "
+                f"with existing file {candidate}"
+            )
 
     @staticmethod
     def inspect_with(plan, destination: Path, manifest) -> str:

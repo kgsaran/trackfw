@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from trackfw import identity
+
 # ---------------------------------------------------------------------------
 # Constantes para renderização no formato agent-directory (Antigravity IDE/CLI)
 # ---------------------------------------------------------------------------
@@ -50,9 +52,14 @@ def _map_model(model: str) -> str | None:
     return _MODEL_MAP.get(model)
 
 
-def _agent_tools(name: str) -> list[str]:
-    """Retorna SET_ARCH se o nome termina com 'architect', caso contrário SET_IMPL."""
-    if name.endswith("architect"):
+def _agent_tools(item_id: str) -> list[str]:
+    """Retorna SET_ARCH se item_id == "architect", caso contrário SET_IMPL.
+
+    A decisão é feita pelo id canônico do catálogo (ex.: "architect"), não
+    pelo nome renderizado — que pode ser customizado por identidade (ex.:
+    "zeus-tf") e não deve influenciar a seleção do toolset (ADR D8).
+    """
+    if item_id == "architect":
         return _SET_ARCH
     return _SET_IMPL
 
@@ -72,8 +79,89 @@ def _parts(source: str) -> tuple[dict[str, str], str]:
     for line in source[4:marker].splitlines():
         if ":" in line:
             key, value = line.split(":", 1)
-            metadata[key.strip()] = value.strip()
+            metadata[key.strip()] = value.strip().strip('"')
     return metadata, source[marker + 5 :].lstrip()
+
+
+# ---------------------------------------------------------------------------
+# Injeção de identidade — Rota A (name/description/body já separados) e
+# Rota B (frontmatter cru, usada pela representação default)
+# ---------------------------------------------------------------------------
+
+
+def _greeting_line(agent: identity.AgentIdentity, nickname: str) -> str:
+    """Primeira linha injetada no corpo do agente quando há identidade
+    configurada. Sem apelido configurado, menciona só o display_name."""
+    if not nickname:
+        return f"Você é {agent.display_name}."
+    return f"Você é {agent.display_name}. Trate o usuário como {nickname}."
+
+
+def _insert_body_prefix(source: str, prefix: str) -> str:
+    """Insere prefix como nova primeira linha do corpo de um markdown cru
+    (frontmatter + body), seguido de linha em branco. Se source não tem
+    frontmatter reconhecível, prefix é inserido no topo."""
+    trimmed = source.strip()
+    if not prefix:
+        return trimmed
+    if not trimmed.startswith("---\n"):
+        return f"{prefix}\n\n{trimmed}"
+    end = trimmed.find("\n---", 4)
+    if end < 0:
+        return f"{prefix}\n\n{trimmed}"
+    insert_at = end + 4
+    head = trimmed[:insert_at]
+    rest = trimmed[insert_at:].lstrip("\n")
+    if not rest:
+        return f"{head}\n\n{prefix}"
+    return f"{head}\n\n{prefix}\n\n{rest}"
+
+
+def _rewrite_frontmatter_fields(source: str, name: str, description: str) -> str:
+    """Substitui as linhas "name:" e "description:" do frontmatter de um
+    markdown cru por name e description, preservando as demais linhas
+    (ordem, espaçamento, estilo de aspas) e o corpo intocado.
+
+    Escopo estritamente limitado ao bloco de frontmatter (entre o "---\\n"
+    de abertura e o "\\n---" de fechamento): um "name:" que apareça no corpo
+    nunca é tocado. Se o frontmatter não tiver "name:" ou "description:",
+    essa chave é simplesmente deixada ausente — nunca inventa uma chave que
+    não existia. Se source não tem frontmatter reconhecível, é retornado
+    sem alteração (trimmed).
+    """
+    trimmed = source.strip()
+    if not trimmed.startswith("---\n"):
+        return trimmed
+    end = trimmed.find("\n---", 4)
+    if end < 0:
+        return trimmed
+    frontmatter = trimmed[4:end]
+    rest = trimmed[end:]  # começa com "\n---", seguido do corpo
+
+    lines = frontmatter.split("\n")
+    for index, line in enumerate(lines):
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key_name = key.strip()
+        if key_name == "name":
+            replacement = name
+        elif key_name == "description":
+            replacement = description
+        else:
+            continue
+        trimmed_value = value.strip()
+        quoted = len(trimmed_value) >= 2 and trimmed_value.startswith('"') and trimmed_value.endswith('"')
+        if quoted:
+            lines[index] = f'{key}: "{replacement}"'
+        else:
+            lines[index] = f"{key}: {replacement}"
+
+    return "---\n" + "\n".join(lines) + rest
+
+
+def _normalize_markdown(source: str) -> str:
+    return source.strip() + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -88,43 +176,69 @@ def render(
     item: dict[str, Any],
     source: str,
     capability: dict[str, str],
+    identity_cfg: "identity.Config | None" = None,
 ) -> str:
+    if kind == "skills":
+        return _normalize_markdown(source)
+
+    cfg = identity_cfg or identity.Config()
+    agent = identity.lookup(cfg, item["id"])
+
     metadata, body = _parts(source)
     description = metadata.get("description", item["description"])
     name = metadata.get("name", f"trackfw-{item['id']}")
+    body = body.strip()
 
-    if kind == "agents" and target == "codex":
+    greeting = ""
+    if agent is not None:
+        greeting = _greeting_line(agent, cfg.user_nickname)
+        name = identity.agent_name(agent.slug)
+        description = f"{agent.display_name} — {description}"
+        body = f"{greeting}\n\n{body}"
+
+    representation = capability.get("representation")
+
+    if representation == "custom-agent-toml":
         return "\n".join(
             [
-                f"name = {json.dumps(name.replace('-', '_'))}",
-                f"description = {json.dumps(description)}",
-                f"developer_instructions = {json.dumps(body.rstrip())}",
+                f"name = {json.dumps(name.replace('-', '_'), ensure_ascii=False)}",
+                f"description = {json.dumps(description, ensure_ascii=False)}",
+                f"developer_instructions = {json.dumps(body, ensure_ascii=False)}",
                 "",
             ]
         )
-    if kind == "agents" and (
-        target == "amazonq" or (target == "kiro" and surface == "cli") or (target == "antigravity" and surface == "legacy-cli")
-    ):
+    if representation in ("cli-agent-json", "agent-json"):
         # Go's encoding/json sorts map keys; keep byte-stable parity with the
         # canonical renderer as well as semantic JSON compatibility.
-        payload = {"description": description, "name": name, "prompt": body.rstrip()}
+        payload = {"description": description, "name": name, "prompt": body}
         return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
-    if kind == "agents" and target == "antigravity" and surface == "current":
-        # Reconstrói o frontmatter para o Antigravity IDE/CLI (representação agent-directory).
-        # O agy rejeita agentes com model: opus|sonnet — mapeamos para pro|flash.
-        # Injeta tools: SET_ARCH para architect, SET_IMPL para os demais.
+    if representation == "agent-directory":
+        # Reconstrói o frontmatter para o Antigravity CLI:
+        # - mapeia model canônico para o valor aceito (opus→pro, sonnet→flash)
+        # - injeta tools: SET_IMPL ou SET_ARCH dependendo do item.id (não do
+        #   nome renderizado, que pode ser customizado pela identidade)
+        # - omite campos não suportados pelo agy
         model = metadata.get("model", "")
         lines = ["---", f"name: {name}", f"description: {description}"]
         mapped = _map_model(model)
         if mapped is not None:
             lines.append(f"model: {mapped}")
         lines.append("tools:")
-        for tool in _agent_tools(name):
+        for tool in _agent_tools(item["id"]):
             lines.append(f"  - {tool}")
         lines.append("---")
         result = "\n".join(lines) + "\n"
-        stripped_body = body.rstrip()
-        if stripped_body:
-            result += stripped_body + "\n"
+        if body:
+            result += body + "\n"
         return result
-    return source.strip() + "\n"
+
+    # Rota B (default) — usada pela representação "subagent" e demais
+    # representações que consomem o frontmatter cru (agent-markdown,
+    # custom-agent, skill). Sem identidade, retorna a mesma expressão usada
+    # antes de identity existir — a saída sem identidade é garantida
+    # byte-a-byte idêntica por construção, não por coincidência.
+    if agent is None:
+        return _normalize_markdown(source)
+    with_body = _insert_body_prefix(source, greeting)
+    with_frontmatter = _rewrite_frontmatter_fields(with_body, name, description)
+    return _normalize_markdown(with_frontmatter)

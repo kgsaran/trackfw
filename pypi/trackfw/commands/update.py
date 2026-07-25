@@ -41,14 +41,25 @@ def _run(args: argparse.Namespace) -> None:
         print(f'  ⚠ agent hooks: {e}')
 
     if os.path.exists(os.path.join(cwd, "AGENTS.md")) or os.path.isdir(os.path.join(cwd, ".codex")):
+        from trackfw import identity
+        from trackfw.identity import IdentityError
+
+        # Identity errors must abort the command — never fall back silently
+        # to the neutral default, which would revert the user's identity.
+        try:
+            ident = identity.load(os.path.expanduser("~"))
+        except IdentityError as e:
+            print(f"update: identidade invalida: {e}")
+            raise SystemExit(2) from e
+
         try:
             from trackfw.integrations.catalog import plan_deployments
             from trackfw.integrations.manager import IntegrationManager
             manager = IntegrationManager(cwd)
-            _, plans = plan_deployments("agents", target_ids=["codex"], scope="project")
+            _, plans = plan_deployments("agents", target_ids=["codex"], scope="project", identity_cfg=ident)
             plans = [plan for plan, status in zip(plans, manager.list(plans)) if status["state"] != "not-installed"]
             manager.update(plans)
-            _, plans = plan_deployments("skills", target_ids=["codex"], scope="project")
+            _, plans = plan_deployments("skills", target_ids=["codex"], scope="project", identity_cfg=ident)
             plans = [plan for plan, status in zip(plans, manager.list(plans)) if status["state"] != "not-installed"]
             manager.update(plans)
         except Exception as e:
