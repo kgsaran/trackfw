@@ -16,11 +16,16 @@ NPM_BIN="$TMP_ROOT/npm-prefix/node_modules/.bin/trackfw"
 test -f "$TMP_ROOT/npm-prefix/node_modules/trackfw/src/integrations/assets/catalog.json"
 test -f "$TMP_ROOT/npm-prefix/node_modules/trackfw/src/integrations/assets/agents/architect.md"
 test -f "$TMP_ROOT/npm-prefix/node_modules/trackfw/src/integrations/assets/skills/governance.md"
+# --scope project is required, not redundant: since
+# ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills the
+# non-interactive default is `global` (~/.codex/...), so without the flag the
+# `test -f .codex/...` assertions below would look in the wrong place. This is
+# exactly the CI migration the CHANGELOG breaking-change note prescribes.
 (
   cd "$TMP_ROOT/npm-project"
   "$NPM_BIN" agents list --targets codex --items architect --json >/dev/null
-  "$NPM_BIN" agents install --targets codex --items architect --json >/dev/null
-  "$NPM_BIN" skills install --targets codex --items governance --json >/dev/null
+  "$NPM_BIN" agents install --targets codex --items architect --scope project --json >/dev/null
+  "$NPM_BIN" skills install --targets codex --items governance --scope project --json >/dev/null
   test -f .codex/agents/trackfw-architect.toml
   test -f .agents/skills/trackfw-governance/SKILL.md
 )
@@ -46,8 +51,8 @@ test -f "$PY_ASSET_DIR/skills/governance.md"
 (
   cd "$TMP_ROOT/python-project"
   "$PY_TRACKFW" agents list --targets codex --items architect --json >/dev/null
-  "$PY_TRACKFW" agents install --targets codex --items architect --json >/dev/null
-  "$PY_TRACKFW" skills install --targets codex --items governance --json >/dev/null
+  "$PY_TRACKFW" agents install --targets codex --items architect --scope project --json >/dev/null
+  "$PY_TRACKFW" skills install --targets codex --items governance --scope project --json >/dev/null
   test -f .codex/agents/trackfw-architect.toml
   test -f .agents/skills/trackfw-governance/SKILL.md
 )
