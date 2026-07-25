@@ -149,3 +149,87 @@ func TestInitRerunWithoutFlagPreservesExistingIdentity(t *testing.T) {
 		t.Fatalf("re-running init without --identity-preset must preserve the existing identity file.\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
+
+// TestSaveWizardIdentityCustomWritesValidatedConfig covers the "Personalizar
+// um a um" wizard path: saveWizardIdentity must write a Config with one
+// AgentIdentity per known agent id, each Slug matching identity.Slugify of
+// the entered display name, plus the nickname.
+func TestSaveWizardIdentityCustomWritesValidatedConfig(t *testing.T) {
+	home := t.TempDir()
+	ids := identity.KnownAgentIDs()
+	names := make([]string, len(ids))
+	for i, id := range ids {
+		names[i] = "Agente " + id
+	}
+
+	if err := saveWizardIdentity(home, "custom", ids, names, "Kleber"); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := identity.Load(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.UserNickname != "Kleber" {
+		t.Fatalf("expected nickname to be persisted, got %q", cfg.UserNickname)
+	}
+	if len(cfg.Agents) != len(ids) {
+		t.Fatalf("expected %d agents, got %d: %+v", len(ids), len(cfg.Agents), cfg.Agents)
+	}
+	for i, id := range ids {
+		agent, ok := cfg.Agents[id]
+		if !ok {
+			t.Fatalf("missing agent %q in saved config", id)
+		}
+		wantSlug, err := identity.Slugify(names[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if agent.Slug != wantSlug || agent.DisplayName != names[i] {
+			t.Fatalf("agent %q mismatch: got %+v, want slug=%q display=%q", id, agent, wantSlug, names[i])
+		}
+	}
+}
+
+// TestSaveWizardIdentityNeutralWritesNothing covers the "neutral" wizard
+// choice and the hidden-group zero value ("") — both mean "do not write".
+func TestSaveWizardIdentityNeutralWritesNothing(t *testing.T) {
+	ids := identity.KnownAgentIDs()
+	for _, selection := range []string{"neutral", ""} {
+		t.Run(selection, func(t *testing.T) {
+			home := t.TempDir()
+			if err := saveWizardIdentity(home, selection, ids, make([]string, len(ids)), ""); err != nil {
+				t.Fatal(err)
+			}
+			if _, statErr := os.Stat(identityJSONPath(home)); !os.IsNotExist(statErr) {
+				t.Fatalf("selection %q must not write identity.json: %v", selection, statErr)
+			}
+		})
+	}
+}
+
+// TestSaveWizardIdentityCustomCollisionWritesNothing proves the ordering
+// saveWizardIdentity relies on: identity.Validate must run BEFORE
+// identity.Save, so a slug collision between two custom display names
+// aborts with an error and leaves no file behind — never a corrupt or
+// partially-written identity.json.
+func TestSaveWizardIdentityCustomCollisionWritesNothing(t *testing.T) {
+	home := t.TempDir()
+	ids := identity.KnownAgentIDs()
+	names := make([]string, len(ids))
+	for i, id := range ids {
+		names[i] = "Agente " + id
+	}
+	// Force a slug collision: two different display names that fold to the
+	// same slug via identity.Slugify ("Zeus" and "zeus" both -> "zeus").
+	names[0] = "Zeus"
+	names[1] = "zeus"
+
+	err := saveWizardIdentity(home, "custom", ids, names, "")
+	if err == nil {
+		t.Fatal("expected an error for colliding slugs")
+	}
+	if _, statErr := os.Stat(identityJSONPath(home)); !os.IsNotExist(statErr) {
+		t.Fatalf("colliding custom identity must not write identity.json: %v", statErr)
+	}
+}

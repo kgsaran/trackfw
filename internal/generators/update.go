@@ -132,17 +132,26 @@ func Update(cwd string) error {
 
 // updateDetectedCodexIntegrations re-applies managed Codex agent/skill
 // artifacts already installed in the project, using the identity currently
-// persisted at ~/.trackfw/identity.json. Identity resolution happens BEFORE
-// any manager.Update call: an error here must abort the whole update instead
-// of silently rewriting managed artifacts with the neutral default identity.
+// persisted at ~/.trackfw/identity.json.
+//
+// Only identity.Load failing aborts the whole update (returns an error): an
+// error there means we cannot tell whether the user has a customized
+// identity, and silently falling back to the neutral default would revert it
+// without warning. Every other failure here (catalog, home, per-kind
+// planning, per-artifact inspection) keeps its original warn-and-continue
+// behavior — those are unrelated to identity and must not turn a single
+// unreadable Codex artifact into a reason to skip the rest of `trackfw
+// update` (CI workflow, git hooks, .claude/commands, legacy skill, ...).
 func updateDetectedCodexIntegrations(cwd string) error {
 	catalog, err := integrations.LoadCatalog()
 	if err != nil {
-		return fmt.Errorf("codex integration catalog: %w", err)
+		fmt.Printf("  ⚠ Codex integration catalog: %v\n", err)
+		return nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("codex integration home: %w", err)
+		fmt.Printf("  ⚠ Codex integration home: %v\n", err)
+		return nil
 	}
 	ident, err := identity.Load(home)
 	if err != nil {
@@ -153,12 +162,14 @@ func updateDetectedCodexIntegrations(cwd string) error {
 	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
 		plans, planErr := integrations.BuildPlans(catalog, integrations.PlanRequest{Kind: kind, Targets: []string{"codex"}, Scope: "project", Identity: ident})
 		if planErr != nil {
-			return fmt.Errorf("codex %s plans: %w", kind, planErr)
+			fmt.Printf("  ⚠ Codex %s plans: %v\n", kind, planErr)
+			continue
 		}
 		for _, plan := range plans {
 			inspection, inspectErr := manager.Inspect(plan)
 			if inspectErr != nil {
-				return fmt.Errorf("codex %s/%s inspect: %w", kind, plan.Claim.Item, inspectErr)
+				fmt.Printf("  ⚠ Codex %s/%s inspect: %v\n", kind, plan.Claim.Item, inspectErr)
+				continue
 			}
 			if inspection.State == integrations.StateNotInstalled {
 				continue
