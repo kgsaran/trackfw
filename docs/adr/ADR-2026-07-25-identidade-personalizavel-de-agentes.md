@@ -126,6 +126,29 @@ Sao oferecidos **5 presets tematicos** mais o modo de nomeacao livre. Todos os
 | code-quality | Hefesto | Bragi | Hermione | Stannis | Nhonho |
 | data | Metis | Mimir | Trelawney | Bran | Godinez |
 
+| id do agente | pioneers | starwars | tolkien | turma | egyptian |
+|---|---|---|---|---|---|
+| architect | Turing | Yoda | Gandalf | Franjinha | Thoth |
+| backend | Ritchie | Han | Aragorn | Cebolinha | Ra |
+| frontend | Berners-Lee | Leia | Arwen | Magali | Isis |
+| qa | Hamilton | Ahsoka | Legolas | Monica | Horus |
+| infra | Torvalds | Chewbacca | Gimli | Cascao | Ptah |
+| security | Diffie | Vader | Boromir | Bidu | Anubis |
+| dba | Codd | R2-D2 | Elrond | Marocas | Seshat |
+| ux | Norman | Padme | Galadriel | Anjinho | Bastet |
+| code-quality | Knuth | Obi-Wan | Faramir | Titi | Maat |
+| data | Hopper | C-3PO | Bilbo | Chico | Osiris |
+
+O preset da Turma da Monica tem id `turma`, e nao `monica`, porque um dos
+agentes tem slug `monica` — reusar o token geraria ambiguidade na leitura do
+config e da flag.
+
+O preset `pioneers` foi incluido por ter o mapeamento historico mais fiel a
+especialidade de cada agente: Codd criou o modelo relacional (dba), Don Norman
+cunhou "user experience" (ux), Knuth e o rigor de literate programming
+(code-quality), Margaret Hamilton cunhou "software engineering" e escreveu o
+codigo do Apollo (qa), Grace Hopper e compiladores e o primeiro "bug" (data).
+
 Criterio de atribuicao: o papel do personagem na obra deve evocar a
 especialidade do agente (ex: Heimdall, o vigia, em QA; Samwell, arquivista da
 Cidadela, em DBA; Varys, mestre dos sussurros, em security; Bran, que ve tudo,
@@ -190,7 +213,9 @@ personalizacao no proximo update:
 
 ### D9 — Caminho nao-interativo preservado
 
-`init` ganha `--identity-preset greek|norse|potter|thrones|chaves|neutral|none`.
+`init` ganha `--identity-preset` aceitando os 10 presets
+(`greek|norse|potter|thrones|chaves|pioneers|starwars|tolkien|turma|egyptian`)
+mais `neutral|none`.
 O modo `custom` e interativo por natureza e nao e exposto como valor de flag;
 para uso nao-interativo, o usuario edita `~/.trackfw/identity.json` diretamente.
 O ramo `!IsTerminal` existente nunca bloqueia em prompt, e re-executar `init`

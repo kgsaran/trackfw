@@ -198,8 +198,31 @@ ML-1B assets ─────────────────┘    render   
 
 ---
 
-## Wave 2 — Integracao no pipeline de render (1 ML)
-> Dependencies: **barrier — ML-1A, ML-1B e ML-1C completos**
+### ML-1D — 5 presets adicionais
+**Status:** done (`63f3f46`)
+**Agente:** trackfw-backend
+**Files affected:** `internal/identity/preset.go`, `internal/identity/preset_test.go`
+
+Adiciona `pioneers`, `starwars`, `tolkien`, `turma` e `egyptian`, totalizando
+**10 presets**. Tabelas hardcoded, conforme ADR D3-bis. Nenhum par
+`display_name`/`slug` precisou correcao — incluindo os casos de risco
+`C-3PO`->`c-3po`, `R2-D2`->`r2-d2`, `Berners-Lee`->`berners-lee`,
+`Padmé`->`padme`, `Cascão`->`cascao`, `Osíris`->`osiris`.
+
+O id do preset da Turma da Monica e `turma`, e nao `monica`, porque um dos
+agentes tem slug `monica` — usar o mesmo token para preset e agente seria
+ambiguo na leitura do config e da flag.
+
+**Acceptance criteria:**
+- [x] `PresetNames()` tem 10 entradas na ordem especificada
+- [x] Todo preset cobre os 10 ids e passa em `Validate`
+- [x] `go build/test/vet` verdes
+
+---
+
+## Wave 2 — Integracao no pipeline de render (2 MLs)
+> Dependencies: **barrier — ML-1A, ML-1C e ML-1D completos**
+> (ML-1B foi abandonado; ver acima)
 
 ### ML-2A — `Render`/`BuildPlans`/colisao + fim da heuristica por nome
 **Status:** pending
@@ -258,8 +281,51 @@ ML-1B assets ─────────────────┘    render   
 
 ---
 
+### ML-2B — Reescrita do frontmatter na rota `subagent`
+**Status:** in_progress
+**Agente:** trackfw-backend
+**Files affected:** `internal/integrations/render.go`, `render_test.go`, `testdata/`
+
+**Defeito corrigido (achado na auditoria do ML-2A):** o branch `default:`
+inseria a saudacao no corpo mas devolvia o **frontmatter original intacto**.
+Medicao empirica com identidade `Zeus`/`zeus` no agente `architect`:
+
+| representacao | `name` renderizado | |
+|---|---|---|
+| subagent | `trackfw-architect` | ❌ |
+| agent-markdown | `trackfw-architect` | ❌ |
+| custom-agent | `trackfw-architect` | ❌ |
+| agent-directory | `zeus-tf` | ✅ |
+| agent-json / cli-agent-json | `zeus-tf` | ✅ |
+| custom-agent-toml | `zeus_tf` | ✅ (transformacao TOML preexistente) |
+
+`subagent` e a representacao da superficie **claude**. Como a selecao de
+subagent usa exclusivamente `name` + `description` do frontmatter, o resultado
+era: agente se identifica como Zeus (corpo ✅), mas `@agent-zeus-tf` **nao
+funciona** e o roteamento natural **nao funciona** — 2 dos 3 objetivos
+quebrados na superficie principal.
+
+**Causa da falha de processo:** a especificacao do ML-2A detalhou a insercao
+no corpo para a Rota B, mas nao explicitou a reescrita do frontmatter. Lacuna
+de especificacao, nao de execucao.
+
+**Actions:** reescrever `name:` e `description:` **dentro do bloco de
+frontmatter** do source cru, preservando as demais linhas byte a byte e o
+estilo de aspas original. Sem identidade, o retorno permanece
+`normalizeMarkdown(source)`.
+
+**Acceptance criteria:**
+- [ ] Rota `subagent` com identidade tem `name: zeus-tf` e `description` prefixado
+- [ ] Linha `model:` preservada intacta
+- [ ] Golden congelado sem identidade continua batendo byte a byte
+- [ ] Teste table-driven cobre **todas** as representacoes — guarda contra uma
+      representacao futura ficar para tras silenciosamente
+- [ ] Linha iniciada por `name:` no corpo do agente nao e alterada
+
+---
+
 ## Wave 3 — CLI e wizard Go (1 ML)
-> Dependencies: **barrier — ML-2A completo**
+> Dependencies: **barrier — ML-2A e ML-2B completos**
 
 ### ML-3A — Wizard `init`, flag e wiring dos 4 callers
 **Status:** pending
