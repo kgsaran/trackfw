@@ -445,6 +445,32 @@ test('--targets claude sem --scope, com TTY simulado, aciona o resolvedor de esc
   }
 })
 
+// Divergência #5 do roadmap (reconciliação ML-2A): o teste acima estuba
+// `select` para retornar 'global' incondicionalmente, então nunca prova que a
+// pré-seleção (`global`) do prompt real é a que de fato chega ao usuário. Este
+// teste captura a configuração passada ao `select()` real de resolveScope e
+// verifica que `default: 'global'` (integrations.js:69) é exatamente o campo
+// que a implementação de produção envia — regressão aqui falha se alguém
+// remover ou trocar o default sem tocar em nenhum outro teste.
+test('resolveScope: TTY sem --scope monta o select real com "global" pré-selecionado', async () => {
+  const { resolveScope } = require('../src/commands/integrations')
+  const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY')
+  Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true })
+  let capturedConfig = null
+  try {
+    await resolveScope(
+      {},
+      { interactive: true, prompts: { select: async (config) => { capturedConfig = config; return config.default } } },
+    )
+  } finally {
+    if (originalIsTTY) Object.defineProperty(process.stdin, 'isTTY', originalIsTTY)
+    else delete process.stdin.isTTY
+  }
+  assert.ok(capturedConfig, 'select() deveria ter sido chamado')
+  assert.equal(capturedConfig.default, 'global')
+  assert.deepEqual(capturedConfig.choices.map(choice => choice.value), ['global', 'project'])
+})
+
 test('Antigravity agent-directory renderer é byte-equivalente ao contrato Go/Python', () => {
   const architect = buildPlans('agents', options(['antigravity'], ['architect']))[0]
   const backend = buildPlans('agents', options(['antigravity'], ['backend']))[0]

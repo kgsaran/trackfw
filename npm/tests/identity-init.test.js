@@ -65,6 +65,26 @@ test('init --identity-preset none/neutral não grava identity.json', () => {
   assert.equal(fs.existsSync(identityFile(h2)), false)
 })
 
+// D5 (ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills):
+// `init` deve imprimir os destinos resolvidos antes de gravar os artefatos de
+// AI tools, assim como o CLI Go (installAITools) e o CLI Python
+// (commands/init.py). Antes do ML-2A, `npm/src/commands/init.js` era o único
+// dos 3 CLIs que ficava silencioso aqui (divergência #2 do roadmap).
+test('init --ai-tools claude sem TTY imprime destinos antes da gravação (D5)', () => {
+  const { projectRoot, homeRoot } = dirs()
+  const bin = path.resolve(__dirname, '../bin/trackfw')
+  const run = spawnSync(process.execPath, [bin, 'init', '--ai-tools', 'claude'], {
+    cwd: projectRoot,
+    env: { ...process.env, HOME: homeRoot },
+    input: '',
+    encoding: 'utf8',
+  })
+  assert.equal(run.status, 0, run.stderr)
+  assert.match(run.stdout, /Destino \(global\):/)
+  assert.match(run.stdout, /\.claude[\\/]agents[\\/]trackfw-architect\.md/)
+  assert.equal(fs.existsSync(path.join(homeRoot, '.claude/agents/trackfw-architect.md')), true)
+})
+
 test('re-init sem flag preserva identity.json já existente (idempotente)', () => {
   const { projectRoot, homeRoot } = dirs()
   const first = runInit(projectRoot, homeRoot, ['--identity-preset', 'greek'])
