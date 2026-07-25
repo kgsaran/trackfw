@@ -2676,3 +2676,14 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 - ML-2B ✅ (`863e6cf`) **corrige defeito achado na auditoria do ML-2A**: o branch `default:` inseria a saudação no corpo mas devolvia o frontmatter intacto — na superfície `claude` o `name` continuava `trackfw-architect`, quebrando `@agent-<slug>-tf` e o roteamento natural. Nova função `rewriteFrontmatterFields` reescreve `name:`/`description:` só dentro do bloco de frontmatter. Teste table-driven cobre todas as representações.
 - **Verificação E2E do orquestrador** com `~/.trackfw/identity.json` real: `architect` → `name: zeus-tf`, `description: Zeus — ...`, `model: opus` preservado, corpo com `Você é Zeus. Trate o usuário como chefe.`; `backend` (não configurado) → byte a byte inalterado; 5 skills verificadas sem contaminação; path `~/.claude/agents/trackfw-architect.md` inalterado.
 - **Padrão observado:** gates verdes (build/test/vet/paridade) não provaram a feature em nenhum dos dois defeitos. Ambos foram pegos por auditoria manual renderizando todas as 8 representações. Recomendação para o ML-5A: o gate de paridade precisa incluir asserção por representação, não só comparação entre CLIs.
+
+**Wave 3 — CONCLUÍDA:**
+- ML-3A ✅ (`af95e7c` + `3cd02b2`) wizard de identidade no `init` (12 opções + modo custom + apelido), flag `--identity-preset` (10 presets + neutral/none), wiring dos 4 callers de `BuildPlans`, i18n nos 3 locales. Agente rodou mutation tests removendo `Identity` de cada caller — todos os 4 testes falharam corretamente, provando que não são vacuous.
+- **Verificação E2E do orquestrador pelo binário real** (`bin/trackfw` + HOME temporário):
+  - `init --ai-tools claude --identity-preset pioneers` → `~/.trackfw/identity.json` gravado; `.claude/agents/trackfw-dba.md` com `name: codd-tf`, `description: Codd — ...`, corpo `Você é Codd.`
+  - re-`init` sem a flag → identidade preservada (md5 idêntico)
+  - `--identity-preset xpto` → erro listando os 12 valores válidos
+  - `init` sem flag em HOME limpo → nenhuma identidade gravada; agente byte a byte igual ao de `5fe5cb9` (não-regressão)
+  - `agents update` → **não reverteu** a identidade; `agents list` reporta `current` (sem falso drift)
+
+**Wave 4 — EM EXECUÇÃO (2 MLs em paralelo):** ML-4A porta Node.js (`npm/`) e ML-4B porta Python (`pypi/`). Ambos recebem a advertência explícita das duas rotas de `Render` (a Rota B, do `default:`/`subagent`, foi onde os dois defeitos anteriores nasceram) e devem copiar `internal/identity/testdata/slug_vectors.json` byte a byte. Ponto de contrato: **os 3 CLIs leem o mesmo `~/.trackfw/identity.json`**.
