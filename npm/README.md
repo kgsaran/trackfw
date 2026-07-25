@@ -1,6 +1,11 @@
 # trackfw
 
-Native Python distribution of the trackfw governance CLI.
+Native Node.js distribution of the trackfw governance CLI. No binary download,
+no postinstall step — pure JavaScript.
+
+```bash
+npm install -g trackfw
+```
 
 Project documentation, installation instructions, and the CLI parity contract:
 https://github.com/kgsaran/trackfw
@@ -20,23 +25,23 @@ Accepted values are the ten themed presets plus two opt-outs:
 
 Sample mapping (three of the ten presets):
 
-| Agent | `greek` | `starwars` | `egyptian` |
+| Agent | `greek` | `norse` | `thrones` |
 |---|---|---|---|
-| architect | Zeus | Yoda | Thoth |
-| backend | Apolo | Han | Rá |
-| frontend | Afrodite | Leia | Ísis |
-| qa | Ártemis | Ahsoka | Hórus |
-| infra | Ares | Chewbacca | Ptah |
-| security | Hades | Vader | Anúbis |
-| dba | Poseidon | R2-D2 | Seshat |
-| ux | Atena | Padmé | Bastet |
-| code-quality | Hefesto | Obi-Wan | Maat |
-| data | Métis | C-3PO | Osíris |
+| architect | Zeus | Odin | Tyrion |
+| backend | Apolo | Thor | Jon |
+| frontend | Afrodite | Freya | Sansa |
+| qa | Ártemis | Heimdall | Arya |
+| infra | Ares | Tyr | Brienne |
+| security | Hades | Vidar | Varys |
+| dba | Poseidon | Njord | Samwell |
+| ux | Atena | Idun | Margaery |
+| code-quality | Hefesto | Bragi | Stannis |
+| data | Métis | Mimir | Bran |
 
-The remaining presets are `norse` (Odin, Thor, Freya…), `potter` (Dumbledore,
-Snape, Luna…), `thrones` (Tyrion, Jon, Arya…), `chaves` (Girafales, Madruga,
-Chiquinha…), `pioneers` (Turing, Ritchie, Berners-Lee…), `tolkien` (Gandalf,
-Aragorn, Arwen…), and `turma` (Franjinha, Cebolinha, Magali…).
+The remaining presets are `potter` (Dumbledore, Snape, Luna…), `chaves`
+(Girafales, Madruga, Chiquinha…), `pioneers` (Turing, Ritchie, Berners-Lee…),
+`starwars` (Yoda, Han, Leia…), `tolkien` (Gandalf, Aragorn, Arwen…), `turma`
+(Franjinha, Cebolinha, Magali…), and `egyptian` (Thoth, Rá, Ísis…).
 
 ### Custom mode and your nickname
 

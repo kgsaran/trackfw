@@ -367,6 +367,119 @@ The 10 roles installed for each tool: **architect · backend · frontend · qa �
 
 ---
 
+## Agent identity — give your agents a name
+
+By default the agents are functional and impersonal: `trackfw-architect`,
+`trackfw-backend`, … Agent identity lets you name all ten, pick how they
+address you, and call them by name.
+
+```bash
+# Non-interactive: pick a themed preset
+trackfw init --identity-preset greek
+
+# Or answer the wizard, which also offers "name them one by one"
+trackfw init
+```
+
+`--identity-preset` accepts ten themed presets plus two opt-outs:
+
+`greek` · `norse` · `potter` · `thrones` · `chaves` · `pioneers` · `starwars` · `tolkien` · `turma` · `egyptian` · `neutral` · `none`
+
+`neutral` and `none` write nothing and keep the current behavior.
+
+Sample mapping (three of the ten presets):
+
+| Agent | `greek` | `pioneers` | `tolkien` |
+|---|---|---|---|
+| architect | Zeus | Turing | Gandalf |
+| backend | Apolo | Ritchie | Aragorn |
+| frontend | Afrodite | Berners-Lee | Arwen |
+| qa | Ártemis | Hamilton | Legolas |
+| infra | Ares | Torvalds | Gimli |
+| security | Hades | Diffie | Boromir |
+| dba | Poseidon | Codd | Elrond |
+| ux | Atena | Norman | Galadriel |
+| code-quality | Hefesto | Knuth | Faramir |
+| data | Métis | Hopper | Bilbo |
+
+The remaining presets are `norse` (Odin, Thor, Freya…), `potter` (Dumbledore,
+Snape, Luna…), `thrones` (Tyrion, Jon, Arya…), `chaves` (Girafales, Madruga,
+Chiquinha…), `starwars` (Yoda, Han, Leia…), `turma` (Franjinha, Cebolinha,
+Magali…), and `egyptian` (Thoth, Rá, Ísis…).
+
+### Custom mode and your nickname
+
+The interactive wizard also offers **name them one by one**: you type all ten
+display names yourself. Each entry is validated as you go — an invalid name is
+rejected with an inline error, never silently corrected, and two names that
+resolve to the same identifier are rejected too.
+
+The wizard then asks for an optional **nickname for you**, which is how the
+agents will address you.
+
+Everything is stored in a single global file, shared by the Go, npm, and PyPI
+distributions:
+
+```json
+// ~/.trackfw/identity.json
+{
+  "schema_version": 1,
+  "user_nickname": "Kleber",
+  "agents": {
+    "architect": { "display_name": "Zeus", "slug": "zeus" }
+  }
+}
+```
+
+The generated artifact — still installed at the unchanged path
+`~/.claude/agents/trackfw-architect.md`:
+
+```markdown
+---
+name: zeus-tf
+description: Zeus — Principal software architect for system design, ADRs and governed multi-agent coordination.
+model: opus
+---
+
+Você é Zeus. Trate o usuário como Kleber.
+
+# Architect
+...
+```
+
+### Why the `-tf` suffix
+
+The `name` always ends in `-tf`. Two agents sharing the same `name` in the same
+directory make Claude Code load *"only one of them, chosen by filesystem read
+order rather than a documented precedence"* — a silent, non-deterministic
+shadowing that the user cannot detect. If you already keep a personal `zeus.md`
+agent, `zeus-tf` guarantees both survive.
+
+The suffix belongs to the technical identifier only. It never appears in how
+the agent presents itself: the `description` and the body both say **Zeus**.
+
+### How to invoke it
+
+| You type | What happens |
+|---|---|
+| `@agent-zeus-tf` | Works — explicit mention resolves against `name` |
+| "chame o Zeus" / "ask Zeus to…" | Works — natural-language routing reads `description` |
+| "quem é você?" | Answers "Sou Zeus" — the body is loaded after selection |
+
+### Cost and non-regression
+
+The agent **never reads the configuration at runtime**. Identity is
+materialized into the artifact at install time, so the per-interaction cost is
+essentially zero: the `description` is substituted rather than extended, and
+the body grows by tens of tokens that are loaded only after the agent has
+already been selected. No tool call, no file read, no permanent instruction.
+
+Without `~/.trackfw/identity.json`, the generated artifacts are **byte for byte
+identical** to the current ones in all three CLIs. The feature is opt-in and
+regresses nothing.
+
+---
+
 ## `trackfw init` — stack-aware scaffolding
 
 ```
@@ -377,6 +490,7 @@ The 10 roles installed for each tool: **architect · backend · frontend · qa �
 ? Git hooks?             husky / lefthook / none
 ? CI system?             GitHub Actions / GitLab CI / none
 ? Which AI assistants?   Claude / Codex / Gemini / Antigravity / Cursor / Copilot / Windsurf / Amazon Q / Kiro
+? Agent identity?        Greek / Norse / Potter / Thrones / Chaves / Pioneers / Star Wars / Tolkien / Turma / Egyptian / Name them one by one / Neutral
 ```
 
 The governance structure (`docs/adr/`, `docs/req/`, `docs/roadmaps/`) is always identical — stack-agnostic. The generated hooks, workflows, and AI integrations adapt to your answers.

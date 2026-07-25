@@ -11,19 +11,26 @@ squad: "trackfw"
 
 ## Acceptance Criteria
 
-- [ ] Sem `~/.trackfw/identity.json`, os artefatos gerados sao **byte a byte
+- [x] Sem `~/.trackfw/identity.json`, os artefatos gerados sao **byte a byte
       identicos** aos atuais nos 3 CLIs (nao-regressao)
-- [ ] Com identidade configurada, `name` = `<slug>-tf`, `description` prefixado
+- [x] Com identidade configurada, `name` = `<slug>-tf`, `description` prefixado
       pelo `display_name` e corpo cita `display_name` + apelido do usuario
-- [ ] `id` canonico, path `trackfw-{{id}}` e chaves do manifest inalterados
-- [ ] `agentTools` decide SET_ARCH por `item.ID == "architect"`
-- [ ] Slugificacao identica nos 3 CLIs, provada por fixture compartilhada
-- [ ] Colisao de `name` no destino gera aviso e exige `--force`
-- [ ] Os 4 callers de `BuildPlans` (Go) e equivalentes Node/Python resolvem
+- [x] `id` canonico, path `trackfw-{{id}}` e chaves do manifest inalterados
+- [x] `agentTools` decide SET_ARCH por `item.ID == "architect"`
+- [x] Slugificacao identica nos 3 CLIs, provada por fixture compartilhada
+- [x] Colisao de `name` no destino gera aviso e exige `--force`
+- [x] Os 4 callers de `BuildPlans` (Go) e equivalentes Node/Python resolvem
       identidade — `update` nao reverte personalizacao
-- [ ] `init --identity-preset` funciona e o ramo non-TTY nunca bloqueia
-- [ ] Agente nao le configuracao em runtime
+- [x] `init --identity-preset` funciona e o ramo non-TTY nunca bloqueia
+- [x] Agente nao le configuracao em runtime
 - [ ] `make quality` e `trackfw validate` verdes
+      — `make quality` **verde** (Go + Node + Python + lint + os 5 gates de
+      paridade, incluindo `check-identity-parity.sh`). `trackfw validate`
+      reporta 3 violations, **nenhuma** desta REQ: 2 preexistentes de
+      `REQ-2026-07-24-corrige-resolve...` e 1 estrutural — o slug da branch
+      (`identidade-humanizada-agentes`) nao e substring do nome do arquivo do
+      roadmap (`...humanizada-dos-agentes`). Resolucao e decisao do
+      orquestrador (renomear o roadmap ou definir `TRACKFW_BRANCH`).
 
 ## Context
 
@@ -58,7 +65,7 @@ ML-1B assets ─────────────────┘    render   
 > Dependencies: none — arquivos disjuntos
 
 ### ML-1A — Pacote `internal/identity` (referencia do contrato)
-**Status:** pending
+**Status:** done (`9b75dad`)
 **Agente:** trackfw-backend
 **Files affected:** `internal/identity/identity.go`, `internal/identity/slug.go`,
 `internal/identity/preset.go`, `internal/identity/identity_test.go`,
@@ -158,7 +165,7 @@ ML-1B assets ─────────────────┘    render   
 ---
 
 ### ML-1C — Catalogo de 5 presets tematicos + modo livre
-**Status:** pending
+**Status:** done (`6e5e179`)
 **Agente:** trackfw-backend
 **Dependencies:** ML-1A completo (mesmo arquivo `preset.go`)
 **Files affected:** `internal/identity/preset.go`, `internal/identity/preset_test.go`
@@ -225,7 +232,7 @@ ambiguo na leitura do config e da flag.
 > (ML-1B foi abandonado; ver acima)
 
 ### ML-2A — `Render`/`BuildPlans`/colisao + fim da heuristica por nome
-**Status:** pending
+**Status:** done (`09ca1c0`)
 **Agente:** trackfw-backend
 **Files affected:** `internal/integrations/render.go`, `internal/integrations/plan.go`,
 `internal/integrations/manager.go`, `internal/integrations/render_test.go`,
@@ -282,7 +289,7 @@ ambiguo na leitura do config e da flag.
 ---
 
 ### ML-2B — Reescrita do frontmatter na rota `subagent`
-**Status:** in_progress
+**Status:** done (`863e6cf`)
 **Agente:** trackfw-backend
 **Files affected:** `internal/integrations/render.go`, `render_test.go`, `testdata/`
 
@@ -328,7 +335,7 @@ estilo de aspas original. Sem identidade, o retorno permanece
 > Dependencies: **barrier — ML-2A e ML-2B completos**
 
 ### ML-3A — Wizard `init`, flag e wiring dos 4 callers
-**Status:** pending
+**Status:** done (`af95e7c`, `3cd02b2`)
 **Agente:** trackfw-backend
 **Files affected:** `internal/commands/init.go`,
 `internal/commands/integrations_flags.go`, `internal/generators/update.go`,
@@ -375,7 +382,7 @@ estilo de aspas original. Sem identidade, o retorno permanece
 > Dependencies: **barrier — ML-3A completo**. Diretorios disjuntos entre si.
 
 ### ML-4A — Porta Node.js
-**Status:** pending
+**Status:** done (`9995c1c`, `6740541`)
 **Agente:** trackfw-frontend
 **Files affected:** `npm/src/identity/*.js`, `npm/src/integrations/render.js`,
 `npm/src/integrations/index.js`, `npm/src/commands/update.js`,
@@ -405,7 +412,7 @@ estilo de aspas original. Sem identidade, o retorno permanece
 ---
 
 ### ML-4B — Porta Python
-**Status:** pending
+**Status:** done (`5c703e7`)
 **Agente:** trackfw-data
 **Files affected:** `pypi/trackfw/identity/*.py`,
 `pypi/trackfw/integrations/renderers.py`, `pypi/trackfw/integrations/catalog.py`,
@@ -435,28 +442,64 @@ testes pypi, `pypi/tests/fixtures/slug_vectors.json`
 ## Wave 5 — Gates de paridade e documentacao (1 ML)
 > Dependencies: **barrier — ML-4A e ML-4B completos**
 
-### ML-5A — Gates, teste de paridade cross-CLI e docs
-**Status:** pending
+> **Re-split da Wave 5.** O escopo original do ML-5A cobria gates + docs. O
+> orquestrador dividiu em dois MLs paralelos por diretorios disjuntos:
+> **ML-5A** (gate `scripts/check-identity-parity.sh` + `Makefile`) e
+> **ML-5B** (documentacao e fechamento de governanca).
+
+### ML-5A — Gate de paridade de identidade cross-CLI
+**Status:** in_progress
 **Agente:** trackfw-qa
-**Files affected:** `scripts/check-cli-parity.sh`, `docs/cli-parity.md`,
-`README.md`, `npm/README.md`, `pypi/README.md`, `docs/agents-working-context.md`
+**Files affected:** `scripts/check-identity-parity.sh`, `Makefile`,
+`docs/agents-working-context.md`
 
 **Actions:**
-1. Estender `scripts/check-cli-parity.sh` para provar que os 3 CLIs geram o
+1. Criar `scripts/check-identity-parity.sh` provando que os 3 CLIs geram o
    **mesmo artefato** para a mesma `identity.json` (comparacao de hash).
 2. Verificar que as 3 fixtures `slug_vectors.json` sao byte-identicas.
-3. Documentar a feature em `docs/cli-parity.md` (secao de identidade) e nos
-   3 READMEs: config, flag, preset, sufixo `-tf`, e o fato de que o agente
-   **nao le config em runtime**.
+3. Ligar o gate ao alvo `make quality`.
 4. Atualizar `docs/agents-working-context.md`.
 
 **Acceptance criteria:**
 - [ ] `make quality` verde (Go + Node + Python + paridade)
-- [ ] `trackfw validate` sem violations
 - [ ] Gate falha propositalmente se um CLI divergir (verificado manualmente)
-- [ ] Documentacao dos 3 pacotes cita `~/.trackfw/identity.json`
 
-**Comandos de validação:** `make quality && trackfw validate`
+**Comandos de validação:** `make quality`
+
+> Confirmacao de conclusao deste ML e do **orquestrador**, apos auditoria — o
+> agente do ML-5B nao tem visibilidade sobre o estado final dos arquivos de
+> `scripts/` e do `Makefile`, que estavam sendo editados em paralelo.
+
+---
+
+### ML-5B — Documentacao da feature e fechamento de governanca
+**Status:** done
+**Agente:** trackfw-qa (docs)
+**Files affected:** `docs/cli-parity.md`, `README.md`, `npm/README.md`,
+`pypi/README.md`, este roadmap, `docs/req/REQ-2026-07-25-identidade-humanizada-dos-agentes-trackfw.md`
+
+**Actions:**
+1. Secao "Agent identity" em `docs/cli-parity.md`: config compartilhado
+   `~/.trackfw/identity.json` (`schema_version` 1), contrato de slug
+   (presets hardcoded vs. slugificacao dinamica so em `custom`, rejeicao com
+   erro), fixture `slug_vectors.json` byte-identica nos 3 pacotes e o gate
+   `scripts/check-identity-parity.sh`.
+2. Secao de uso nos 3 READMEs: `--identity-preset` com os 10 presets +
+   `neutral|none`, tabela de amostra com 3 presets x 10 agentes, modo `custom`,
+   apelido do usuario, sufixo `-tf` e o motivo (shadowing silencioso), formas
+   de invocacao, custo por interacao ~zero e nao-regressao sem o config.
+   `npm/README.md` nao existia e foi criado.
+3. Fechamento de governanca: status dos MLs e checkboxes de aceite do roadmap
+   e da REQ, marcados **apenas** com evidencia verificada.
+
+**Acceptance criteria:**
+- [x] Os 3 READMEs citam `~/.trackfw/identity.json` e os 10 presets
+- [x] `docs/cli-parity.md` documenta o contrato de slug e a fixture
+      compartilhada
+- [x] `trackfw validate` nao introduz violations novas (3 antes, 3 depois)
+- [x] Nenhum arquivo de codigo modificado
+
+**Comandos de validação:** `trackfw validate && git status`
 
 ---
 
