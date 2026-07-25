@@ -56,6 +56,19 @@ def plan_deployments(
     kind: str,
     target_ids: list[str] | None = None,
     item_ids: list[str] | None = None,
+    # `scope` keeps a default value here purely for signature/syntax
+    # reasons: `target_ids` and `item_ids` (both optional) precede it
+    # positionally, and Python forbids a non-default parameter after
+    # default ones without reordering the signature (which would break
+    # every positional call site below). The default is NOT meant to be
+    # relied upon: ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-
+    # agents-e-skills identified a silent "project" fallback as exactly the
+    # bug being fixed. Every production caller (integrations/command.py,
+    # commands/init.py, commands/update.py) passes `scope` explicitly —
+    # resolved via integrations.command.resolve_scope() where the user's
+    # choice matters, or as an explicit "project" literal for the
+    # trackfw-own codex sync paths that are intentionally out of this
+    # ADR's scope. Do not add a new caller that omits `scope`.
     scope: str = "project",
     surfaces: dict[str, str] | None = None,
     all_surfaces: bool = False,

@@ -100,24 +100,41 @@ def test_non_tty_mutation_requires_targets(kind, action, tmp_path):
 
 
 def test_cli_install_list_update_and_uninstall_modified(tmp_path):
-    arguments = ("agents", "install", "--targets", "claude", "--items", "backend", "--json")
+    # --scope project is explicit and required here (ADR-2026-07-25-escopo-
+    # de-instalacao-selecionavel-para-agents-e-skills, D1): without it, a
+    # non-TTY subprocess now defaults to `global` (~/.claude/...) instead of
+    # writing under `tmp_path`, and this test asserts a project-scope path.
+    arguments = ("agents", "install", "--targets", "claude", "--items", "backend", "--scope", "project", "--json")
     installed = cli(*arguments, cwd=tmp_path)
     assert installed.returncode == 0, installed.stderr
     destination = tmp_path / ".claude/agents/trackfw-backend.md"
     assert destination.is_file()
     assert json.loads(installed.stdout)["deployments"][0]["state"] == "current"
     destination.write_text("custom", encoding="utf-8")
-    listed = cli("agents", "list", "--targets", "claude", "--items", "backend", "--json", cwd=tmp_path)
+    listed = cli(
+        "agents", "list", "--targets", "claude", "--items", "backend", "--scope", "project", "--json", cwd=tmp_path
+    )
     assert json.loads(listed.stdout)["deployments"][0]["state"] == "modified"
-    protected = cli("agents", "update", "--targets", "claude", "--items", "backend", "--json", cwd=tmp_path)
+    protected = cli(
+        "agents", "update", "--targets", "claude", "--items", "backend", "--scope", "project", "--json", cwd=tmp_path
+    )
     assert protected.returncode == 2
     assert destination.read_text(encoding="utf-8") == "custom"
-    forced = cli("agents", "update", "--targets", "claude", "--items", "backend", "--force", "--json", cwd=tmp_path)
+    forced = cli(
+        "agents", "update", "--targets", "claude", "--items", "backend",
+        "--scope", "project", "--force", "--json", cwd=tmp_path,
+    )
     assert forced.returncode == 0, forced.stderr
     destination.write_text("custom again", encoding="utf-8")
-    protected = cli("agents", "uninstall", "--targets", "claude", "--items", "backend", "--json", cwd=tmp_path)
+    protected = cli(
+        "agents", "uninstall", "--targets", "claude", "--items", "backend",
+        "--scope", "project", "--json", cwd=tmp_path,
+    )
     assert protected.returncode == 2
-    removed = cli("agents", "uninstall", "--targets", "claude", "--items", "backend", "--force", "--json", cwd=tmp_path)
+    removed = cli(
+        "agents", "uninstall", "--targets", "claude", "--items", "backend",
+        "--scope", "project", "--force", "--json", cwd=tmp_path,
+    )
     assert removed.returncode == 0, removed.stderr
     assert not destination.exists()
 
@@ -387,10 +404,18 @@ def test_tty_prompts_for_ambiguous_nonlegacy_surface(monkeypatch):
 
 
 def test_init_ai_tools_uses_integration_engine_for_all_targets(tmp_path):
-    result = cli("init", "--project-name", "example", "--ai-tools", "cursor", cwd=tmp_path)
+    # `init` has no --scope flag and this subprocess has no controlling TTY,
+    # so resolve_scope(None) takes the "global" default (ADR-2026-07-25-
+    # escopo-de-instalacao-selecionavel-para-agents-e-skills, D1/D4) —
+    # artifacts land under HOME, not under the project (tmp_path). `home` is
+    # pinned to an isolated tmp directory so this never touches the real
+    # user's ~/.cursor.
+    home = tmp_path / "home"
+    home.mkdir()
+    result = cli("init", "--project-name", "example", "--ai-tools", "cursor", cwd=tmp_path, home=home)
     assert result.returncode == 0, result.stderr
-    assert (tmp_path / ".cursor/agents/trackfw-backend.md").is_file()
-    assert (tmp_path / ".cursor/skills/trackfw-implement/SKILL.md").is_file()
+    assert (home / ".cursor/agents/trackfw-backend.md").is_file()
+    assert (home / ".cursor/skills/trackfw-implement/SKILL.md").is_file()
 
 
 def test_antigravity_current_surface_renders_agent_directory():

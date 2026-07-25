@@ -118,6 +118,7 @@ def run(args):
     ai_tools = _parse_agents(args.ai_tools)
     if ai_tools:
         from trackfw.integrations.catalog import plan_deployments
+        from trackfw.integrations.command import resolve_scope
         from trackfw.integrations.manager import IntegrationManager
 
         # Resolve the persisted identity BEFORE building plans — if this is
@@ -129,8 +130,21 @@ def run(args):
             print(f"init: identidade invalida: {error}", file=sys.stderr)
             sys.exit(2)
 
-        _, plans = plan_deployments("agents", target_ids=ai_tools, scope="project", identity_cfg=ident)
+        # `init` has no --scope flag (ADR D4): resolve_scope(None) always
+        # takes the TTY-prompt-or-"global" path below, reusing the exact
+        # same prompt (and wording) as `agents`/`skills` install so the two
+        # entry points never drift. Sem TTY -> "global".
+        scope = resolve_scope(None)
+        print(f"Escopo de instalação: {scope}")
+
+        _, plans = plan_deployments("agents", target_ids=ai_tools, scope=scope, identity_cfg=ident)
+        print("Destino:")
+        for plan in plans:
+            print(f"  {plan['destination']}")
         IntegrationManager(cwd).install(plans)
-        _, plans = plan_deployments("skills", target_ids=ai_tools, scope="project", identity_cfg=ident)
+        _, plans = plan_deployments("skills", target_ids=ai_tools, scope=scope, identity_cfg=ident)
+        print("Destino:")
+        for plan in plans:
+            print(f"  {plan['destination']}")
         IntegrationManager(cwd).install(plans)
     return 0

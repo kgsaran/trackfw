@@ -1006,12 +1006,21 @@ async function installAmazonQ(cwd = process.cwd()) {
   }
 }
 
-/** Install the canonical agents and skills for one AI target. */
-async function installIntegrationTarget(target, cwd = process.cwd()) {
+/**
+ * Install the canonical agents and skills for one AI target.
+ *
+ * `scope` defaults to "project" for backward compatibility with the
+ * compatibility entrypoints below (installAgents, installGemini, etc.), that
+ * historical tests exercise directly without going through the `init`
+ * wizard's scope prompt. `trackfw init` itself always passes the scope it
+ * resolved (ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-
+ * skills, D4).
+ */
+async function installIntegrationTarget(target, cwd = process.cwd(), scope = 'project') {
   const { execute } = require('../integrations')
   const roots = { projectRoot: cwd }
-  execute('agents', 'install', { targets: [target], scope: 'project' }, roots)
-  execute('skills', 'install', { targets: [target], scope: 'project' }, roots)
+  execute('agents', 'install', { targets: [target], scope }, roots)
+  execute('skills', 'install', { targets: [target], scope }, roots)
   console.log(`  ✓ ${target} agents and skills`)
 }
 

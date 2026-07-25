@@ -6,7 +6,7 @@ import argparse
 import json
 import os
 import sys
-from typing import Any
+from typing import Any, Callable
 
 from trackfw.i18n import t as i18n_t
 from trackfw.identity import IdentityError, load as load_identity
@@ -55,6 +55,71 @@ def _select(label: str, entries: list[tuple[str, str]]) -> list[str]:
     return list(dict.fromkeys(selected))
 
 
+SCOPE_PROMPT_TITLE = "Onde instalar os artefatos?"
+
+# Order matters: index 0 is the pre-selected/default option (D2 — `global`
+# pre-selected). Shared verbatim with the Go and Node CLIs so the three
+# implementations present identical wording (docs/cli-parity.md).
+SCOPE_CHOICES: list[tuple[str, str]] = [
+    ("global", "Pasta do usuário (~/.claude) — vale para todos os projetos"),
+    ("project", "Este projeto (.claude) — apenas neste repositório"),
+]
+
+
+def _prompt_scope() -> str:
+    """Real TTY prompt for install scope (D2). Only ever called when
+    sys.stdin.isatty() — never blocks a non-interactive run. Empty input
+    (bare Enter) accepts the pre-selected default, `global`."""
+    print(SCOPE_PROMPT_TITLE, file=sys.stderr)
+    for index, (_, label) in enumerate(SCOPE_CHOICES, 1):
+        suffix = " (padrão)" if index == 1 else ""
+        print(f"  [{index}] {label}{suffix}", file=sys.stderr)
+    raw = input("> ").strip()
+    if not raw:
+        return SCOPE_CHOICES[0][0]
+    try:
+        index = int(raw) - 1
+        if index < 0:
+            raise IndexError
+        return SCOPE_CHOICES[index][0]
+    except (ValueError, IndexError):
+        return SCOPE_CHOICES[0][0]
+
+
+# Indirection so tests can substitute the actual TTY prompt with a spy,
+# mirroring identity_wizard.identity_wizard_runner (same module-attribute
+# pattern, same reason: callers MUST invoke through this module attribute —
+# `command.scope_prompt_runner()` — never via a direct
+# `from ... import _prompt_scope`/`scope_prompt_runner`, since the latter
+# captures the reference at import time and monkeypatching the module
+# attribute afterwards would silently not take effect.
+scope_prompt_runner: Callable[[], str] = _prompt_scope
+
+
+def resolve_scope(scope: str | None) -> str:
+    """Resolve the effective install scope for `agents`/`skills`
+    install|update|uninstall, and for `trackfw init` (ADR-2026-07-25-
+    escopo-de-instalacao-selecionavel-para-agents-e-skills).
+
+    - `scope` is not None (an explicit --scope was parsed, D3): return it
+      as-is — argparse's `choices=("project", "global")` already validated
+      it, so no further checking is needed here.
+    - No TTY (D1): default to "global" — the breaking-change default this
+      ADR introduces, replacing the old silent "project" default.
+    - TTY and no explicit scope (D2): ask interactively, `global`
+      pre-selected.
+
+    Callers that must NOT prompt (e.g. `list`, a read-only command — D6)
+    should not call this function; they should fall back to
+    `scope if scope is not None else "global"` directly instead.
+    """
+    if scope is not None:
+        return scope
+    if not sys.stdin.isatty():
+        return "global"
+    return scope_prompt_runner()
+
+
 def _select_one(label: str, entries: list[tuple[str, str]]) -> str:
     print(f"Select {label}:", file=sys.stderr)
     for index, (_, name) in enumerate(entries, 1):
@@ -91,7 +156,19 @@ def add_lifecycle_parser(subparsers, kind: str):
         child = actions.add_parser(action, help=f"{action.title()} trackfw {kind}")
         child.add_argument("--targets", help="Comma-separated target CLIs")
         child.add_argument("--items", help=f"Comma-separated {kind} IDs")
-        child.add_argument("--scope", choices=("project", "global"), default="project")
+        # default=None (not "project"/"global") is load-bearing: it is what
+        # lets resolve_scope() below distinguish "user did not pass --scope"
+        # from an explicit `--scope project`. Comparing against a sentinel
+        # string value instead would make an explicit `--scope project`
+        # indistinguishable from the default and re-trigger the prompt for
+        # users who already chose it (ADR-2026-07-25-escopo-de-instalacao-
+        # selecionavel-para-agents-e-skills, "Armadilha crítica").
+        child.add_argument(
+            "--scope",
+            choices=("project", "global"),
+            default=None,
+            help="installation scope: project or global (default: global; asks interactively)",
+        )
         child.add_argument("--surface", action="append", help="Select target surface as target=surface")
         child.add_argument("--json", action="store_true", help="Print deterministic JSON")
         mutation = action != "list"
@@ -122,13 +199,27 @@ def add_lifecycle_parser(subparsers, kind: str):
 def run(args: argparse.Namespace, kind: str) -> int:
     try:
         home = os.path.expanduser("~")
+        mutation = args.action != "list"
+
+        # Scope resolution is a gate independent of --targets/--items (ADR
+        # D2 — "Nenhum dos CLIs possui prompt de escopo [...] o caso mais
+        # comum (trackfw agents install --targets claude) não passa por
+        # prompt algum"). It must run before targets/items are resolved and
+        # before the catalog is scoped below, and it must NOT prompt for
+        # the read-only `list` action (D6) — `list` only adopts the same
+        # `global` default so it never reports deployments that diverge
+        # from what `install` just wrote.
+        if mutation:
+            resolved_scope = resolve_scope(args.scope)
+        else:
+            resolved_scope = args.scope if args.scope is not None else "global"
+
         # Identity must be resolved from disk before plan_deployments — skipping
         # this silently reverts custom agent names to the neutral defaults.
         ident = load_identity(home)
-        catalog, _ = plan_deployments(kind, scope=args.scope, identity_cfg=ident)
+        catalog, _ = plan_deployments(kind, scope=resolved_scope, identity_cfg=ident)
         targets = csv_values(args.targets)
         items = csv_values(args.items)
-        mutation = args.action != "list"
 
         from trackfw.commands import identity_wizard
 
@@ -177,12 +268,21 @@ def run(args: argparse.Namespace, kind: str) -> int:
             kind,
             target_ids=targets,
             item_ids=items,
-            scope=args.scope,
+            scope=resolved_scope,
             surfaces=selected_surfaces,
             all_surfaces=not mutation,
             identity_cfg=ident,
         )
         manager = IntegrationManager(os.getcwd())
+        # D5 — transparency without an extra confirmation step: print the
+        # resolved destinations before writing anything, so the effect of
+        # the command is auditable. Only for mutating actions (install/
+        # update/uninstall) and only outside --json, which is meant to be
+        # machine-parseable output.
+        if mutation and not args.json:
+            print(f"Destino ({resolved_scope}):")
+            for plan in plans:
+                print(f"  {plan['destination']}")
         if args.action == "install":
             manager.install(plans, force=args.force)
         elif args.action == "update":
