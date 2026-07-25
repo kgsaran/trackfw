@@ -236,6 +236,35 @@ func TestValidate_RejectsDuplicateSlugs(t *testing.T) {
 	}
 }
 
+func TestValidate_RejectsSlugWithTFSuffix(t *testing.T) {
+	cfg := Config{
+		Agents: map[string]AgentIdentity{
+			"architect": {DisplayName: "Zeus", Slug: "zeus-tf"},
+		},
+	}
+	err := Validate(cfg, []string{"architect"})
+	if err == nil {
+		t.Fatal("Validate deveria rejeitar slug terminado em -tf")
+	}
+	if !strings.Contains(err.Error(), "architect") || !strings.Contains(err.Error(), "zeus-tf") {
+		t.Fatalf("mensagem de erro deveria citar o id e o slug, obteve: %v", err)
+	}
+}
+
+func TestValidate_AcceptsSlugsThatDoNotEndWithTFSuffix(t *testing.T) {
+	cases := []string{"zeus", "tf", "meu-tf-agente"}
+	for _, slug := range cases {
+		cfg := Config{
+			Agents: map[string]AgentIdentity{
+				"architect": {DisplayName: "Zeus", Slug: slug},
+			},
+		}
+		if err := Validate(cfg, []string{"architect"}); err != nil {
+			t.Fatalf("Validate nao deveria rejeitar slug %q: %v", slug, err)
+		}
+	}
+}
+
 func TestValidate_AcceptsValidConfig(t *testing.T) {
 	cfg, err := Preset("greek")
 	if err != nil {

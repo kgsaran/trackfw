@@ -96,6 +96,8 @@ function agentName(slug) {
 //   - display_name não pode ser vazio
 //   - slug deve casar com ^[a-z0-9]+(-[a-z0-9]+)*$
 //   - slugs devem ser únicos entre os agentes
+//   - slug não pode terminar com o sufixo "-tf" (ele é acrescentado
+//     automaticamente por agentName)
 // Espelha internal/identity/identity.go:Validate.
 function validate(cfg, knownIds) {
   const known = new Set(knownIds)
@@ -114,6 +116,9 @@ function validate(cfg, knownIds) {
     }
     if (seenSlugs.has(agent.slug)) {
       throw new Error(`identity: slug duplicado "${agent.slug}" entre os agentes "${seenSlugs.get(agent.slug)}" e "${id}"`)
+    }
+    if (agent.slug.endsWith('-tf')) {
+      throw new Error(`identity: slug "${agent.slug}" do agente "${id}" nao deve incluir o sufixo "-tf"; ele e acrescentado automaticamente (use "${agent.slug.slice(0, -3)}" em vez de "${agent.slug}")`)
     }
     seenSlugs.set(agent.slug, id)
   }

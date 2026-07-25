@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 // schemaVersion is the current schema version for the identity config file.
@@ -124,6 +125,8 @@ func AgentName(slug string) string {
 //   - DisplayName must not be empty
 //   - Slug must match ^[a-z0-9]+(-[a-z0-9]+)*$
 //   - slugs must be unique across agents
+//   - Slug must not end with the "-tf" suffix (it is appended automatically
+//     by AgentName)
 func Validate(cfg Config, knownIDs []string) error {
 	known := make(map[string]bool, len(knownIDs))
 	for _, id := range knownIDs {
@@ -144,6 +147,9 @@ func Validate(cfg Config, knownIDs []string) error {
 		}
 		if otherID, exists := seenSlugs[agent.Slug]; exists {
 			return fmt.Errorf("identity: slug duplicado %q entre os agentes %q e %q", agent.Slug, otherID, id)
+		}
+		if strings.HasSuffix(agent.Slug, "-tf") {
+			return fmt.Errorf("identity: slug %q do agente %q nao deve incluir o sufixo \"-tf\"; ele e acrescentado automaticamente (use %q em vez de %q)", agent.Slug, id, strings.TrimSuffix(agent.Slug, "-tf"), agent.Slug)
 		}
 		seenSlugs[agent.Slug] = id
 	}

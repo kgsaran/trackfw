@@ -98,6 +98,26 @@ test('validate — slugs duplicados entre agentes é erro', () => {
   assert.throws(() => identity.validate(cfg, identity.knownAgentIds()), /slug duplicado/)
 })
 
+test('validate — slug com sufixo -tf é erro e a mensagem cita id e slug', () => {
+  const cfg = { agents: { architect: { display_name: 'Zeus', slug: 'zeus-tf' } } }
+  assert.throws(
+    () => identity.validate(cfg, identity.knownAgentIds()),
+    (err) => {
+      assert.match(err.message, /sufixo "-tf"/)
+      assert.match(err.message, /zeus-tf/)
+      assert.match(err.message, /architect/)
+      return true
+    },
+  )
+})
+
+test('validate — slugs que não terminam em -tf continuam válidos', () => {
+  for (const slug of ['zeus', 'tf', 'meu-tf-agente']) {
+    const cfg = { agents: { architect: { display_name: 'Zeus', slug } } }
+    assert.doesNotThrow(() => identity.validate(cfg, identity.knownAgentIds()))
+  }
+})
+
 test('validate — config válida não lança', () => {
   const cfg = { agents: { architect: { display_name: 'Zeus', slug: 'zeus' } } }
   assert.doesNotThrow(() => identity.validate(cfg, identity.knownAgentIds()))

@@ -140,6 +140,19 @@ class TestValidate:
         with pytest.raises(IdentityError):
             validate(cfg, known_agent_ids())
 
+    def test_slug_with_tf_suffix_errors(self):
+        cfg = Config(agents={"architect": AgentIdentity(display_name="Zeus", slug="zeus-tf")})
+        with pytest.raises(IdentityError) as exc:
+            validate(cfg, known_agent_ids())
+        assert "zeus-tf" in str(exc.value)
+        assert "architect" in str(exc.value)
+        assert '-tf' in str(exc.value)
+
+    def test_slugs_not_ending_in_tf_suffix_pass(self):
+        for slug in ("zeus", "tf", "meu-tf-agente"):
+            cfg = Config(agents={"architect": AgentIdentity(display_name="Zeus", slug=slug)})
+            validate(cfg, known_agent_ids())
+
     def test_valid_config_passes(self):
         cfg = preset("greek")
         validate(cfg, known_agent_ids())

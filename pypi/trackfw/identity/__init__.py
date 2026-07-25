@@ -189,6 +189,8 @@ def validate(cfg: Config, known_ids: list[str]) -> None:
     - display_name must not be empty
     - slug must match ^[a-z0-9]+(-[a-z0-9]+)*$
     - slugs must be unique across agents
+    - slug must not end with the "-tf" suffix (it is appended automatically
+      by agent_name)
     """
     known = set(known_ids)
     seen_slugs: dict[str, str] = {}
@@ -209,6 +211,12 @@ def validate(cfg: Config, known_ids: list[str]) -> None:
             raise IdentityError(
                 f"identity: slug duplicado {agent.slug!r} entre os agentes "
                 f"{seen_slugs[agent.slug]!r} e {agent_id!r}"
+            )
+        if agent.slug.endswith("-tf"):
+            raise IdentityError(
+                f"identity: slug {agent.slug!r} do agente {agent_id!r} nao deve incluir "
+                f'o sufixo "-tf"; ele e acrescentado automaticamente '
+                f"(use {agent.slug[:-3]!r} em vez de {agent.slug!r})"
             )
         seen_slugs[agent.slug] = agent_id
 
