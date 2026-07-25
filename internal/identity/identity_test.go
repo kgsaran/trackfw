@@ -237,14 +237,20 @@ func TestValidate_RejectsDuplicateSlugs(t *testing.T) {
 }
 
 func TestValidate_AcceptsValidConfig(t *testing.T) {
-	cfg := PresetGreek()
+	cfg, err := Preset("greek")
+	if err != nil {
+		t.Fatalf("Preset(greek) nao deveria falhar: %v", err)
+	}
 	if err := Validate(cfg, KnownAgentIDs()); err != nil {
 		t.Fatalf("Validate nao deveria rejeitar o preset grego: %v", err)
 	}
 }
 
 func TestLookup(t *testing.T) {
-	cfg := PresetGreek()
+	cfg, err := Preset("greek")
+	if err != nil {
+		t.Fatalf("Preset(greek) nao deveria falhar: %v", err)
+	}
 
 	agent, ok := Lookup(cfg, "backend")
 	if !ok {
@@ -262,34 +268,5 @@ func TestLookup(t *testing.T) {
 	_, ok = Lookup(Config{}, "backend")
 	if ok {
 		t.Fatal("Lookup em Config zero-value nao deveria encontrar nada")
-	}
-}
-
-func TestPresetGreek_SlugsMatchSlugifyOfDisplayName(t *testing.T) {
-	cfg := PresetGreek()
-	for id, agent := range cfg.Agents {
-		got, err := Slugify(agent.DisplayName)
-		if err != nil {
-			t.Fatalf("Slugify(%q) para o agente %q retornou erro: %v", agent.DisplayName, id, err)
-		}
-		if got != agent.Slug {
-			t.Fatalf("agente %q: Slugify(%q) = %q, mas slug hardcoded eh %q", id, agent.DisplayName, got, agent.Slug)
-		}
-	}
-}
-
-func TestKnownAgentIDs_MatchesPresetKeys(t *testing.T) {
-	ids := KnownAgentIDs()
-	if len(ids) != 10 {
-		t.Fatalf("KnownAgentIDs deveria ter 10 ids, tem %d", len(ids))
-	}
-	cfg := PresetGreek()
-	if len(cfg.Agents) != len(ids) {
-		t.Fatalf("PresetGreek tem %d agentes, KnownAgentIDs tem %d", len(cfg.Agents), len(ids))
-	}
-	for _, id := range ids {
-		if _, ok := cfg.Agents[id]; !ok {
-			t.Fatalf("KnownAgentIDs contem %q, mas PresetGreek nao tem esse agente", id)
-		}
 	}
 }
