@@ -2687,3 +2687,20 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
   - `agents update` → **não reverteu** a identidade; `agents list` reporta `current` (sem falso drift)
 
 **Wave 4 — EM EXECUÇÃO (2 MLs em paralelo):** ML-4A porta Node.js (`npm/`) e ML-4B porta Python (`pypi/`). Ambos recebem a advertência explícita das duas rotas de `Render` (a Rota B, do `default:`/`subagent`, foi onde os dois defeitos anteriores nasceram) e devem copiar `internal/identity/testdata/slug_vectors.json` byte a byte. Ponto de contrato: **os 3 CLIs leem o mesmo `~/.trackfw/identity.json`**.
+
+**Wave 4 — ML-4B (Python) CONCLUÍDO** (`5c703e7`): módulo `pypi/trackfw/identity/`, duas rotas em `renderers.py` (`_insert_body_prefix` → `_rewrite_frontmatter_fields` → `_normalize_markdown`, mesma ordem do Go porque a reescrita dependeria de offsets deslocados se invertida), detecção de colisão, wizard + flag no `init`, i18n nos 3 locales. 392 testes (341 pré-existentes intocados + 51 novos). Agente corrigiu `ensure_ascii=True` nas duas chamadas `json.dumps` da rota TOML — sem identidade nunca divergiu (nenhum asset tem acento), mas `Você é Zeus` teria quebrado a paridade.
+
+**Auditoria de paridade cross-CLI do orquestrador** — mesmo `~/.trackfw/identity.json` (architect=Zeus, apelido Kleber), instalando em 9 alvos pelos 3 CLIs e comparando md5:
+
+| alvo | paridade | identidade aplicada |
+|---|---|---|
+| claude, gemini, cursor, copilot, windsurf, kiro | ✅ md5 idêntico | sim |
+| codex | ✅ | sim |
+| antigravity | ✅ | sim |
+| **amazonq** | ❌ **Node diverge de Go/Python** | sim |
+
+**Defeito PRÉ-EXISTENTE descoberto (não causado por esta feature):** na representação `cli-agent-json` (amazonq), o Go usa `json.MarshalIndent(map[string]string)`, que **ordena as chaves alfabeticamente** (`description, name, prompt`); o `JSON.stringify` do Node preserva a **ordem de inserção** (`name, description, prompt`). Python coincide com o Go. Confirmado reproduzindo com HOME limpo, **sem identidade** — logo é anterior a este trabalho; a feature apenas o tornou visível.
+
+**Impacto real:** um usuário que instala agentes amazonq pelo CLI Go e depois roda `agents list` pelo CLI Node vê estado `modified` (falso drift), porque o manifest é indexado por hash de conteúdo. `check-cli-parity.sh` não detecta isso hoje.
+
+**Encaminhamento:** ML-5A (que já vai adicionar o gate de paridade cross-CLI) deve corrigir a ordem das chaves no `render.js` do npm — caso contrário o próprio gate novo falharia. Alternativa rejeitada: documentar como exceção intencional em `docs/cli-parity.md`, porque o falso drift é um bug de usuário real, não uma divergência cosmética.
