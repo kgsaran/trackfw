@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-25
 req: "REQ-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Escopo de instalação selecionável para agents e skills
 
-> Criado em: 2026-07-25 | Status: 🔄 WIP — implementação completa, aguardando merge
+> Criado em: 2026-07-25 | Status: ✅ Done
 REQ: `docs/req/REQ-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md`
 ADR: `docs/adr/ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md`
 Branch: `fix/escopo-de-instalacao-selecionavel-para-agents-e-skills`

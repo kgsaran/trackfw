@@ -2864,3 +2864,26 @@ branches `worktree-agent-*` sobreviveram e seus commits (`feat(update)`) já est
 que escrevem no filesystem deve ocorrer sempre em diretório temporário, nunca na raiz do repo.
 
 **Status:** CONCLUÍDO — aguardando decisão do usuário sobre PR (não aberto).
+
+## Encerramento — Ciclo 3 (escopo de instalação selecionável)
+
+PRs #68 (feature), #69 (fix do CI) e #70 (release) mergeados na main. Tag `v3.0.0` publicada.
+
+**Por que major (2.16.0 → 3.0.0):** o usuário inicialmente optou por 2.17.0 (minor) e pediu
+a justificativa; ao enumerar as quebras item a item, identifiquei uma **terceira** que não
+estava documentada — o contrato de saída do `list --json`, que passa a reportar
+`"scope": "global"` e destinos `~/...` para a mesma pergunta. Com as três quebras
+explicitadas, o usuário reconsiderou para major.
+
+**Lição de CI:** `make quality` **não** inclui `scripts/smoke-integration-packages.sh` —
+ele só roda no GitHub Actions. Por isso todos os gates locais passaram verdes enquanto o
+`package-smoke` quebrava no CI (o script instalava sem `--scope` e afirmava caminhos de
+projeto). Considerar incluí-lo no `make quality`, ou ao menos documentar que o gate local
+é incompleto para mudanças que afetam resolução de caminhos.
+
+**Formato de CHANGELOG:** a pedido do usuário, a seção da 3.0.0 não se limita a listar
+commits — abre com "Por que esta versão é major" (contexto do bug, por que o fix exigiu
+inverter um default, as três quebras com impacto de cada uma) e um bloco "Migração" com o
+diff exato para pipelines. Adotar esse formato em futuras majors.
+
+**Status:** CONCLUÍDO.
