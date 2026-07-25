@@ -116,17 +116,24 @@ Ao gerar uma nova tag, o fluxo obrigatório é:
    - `git log <última-tag>..HEAD --oneline --no-merges` — commits incluídos
 
 2. **Gerar o changelog** a partir dos commits desde a última tag, agrupando por tipo:
-   - `feat` → What's New
-   - `fix` → Fixes
-   - `refactor/docs/chore` → omitir ou agrupar em "Internal"
+   - `feat` → What's New / `### Added`
+   - `fix` → Fixes / `### Fixed`
+   - `refactor/perf` → `### Changed`
+   - `docs/chore/test/style/build/ci` → omitir ou agrupar em "Internal"
    - Indicar Breaking Changes explicitamente (ou "Nenhum" se retrocompatível)
 
-3. **Criar a tag anotada** com o changelog no corpo da mensagem:
+3. **Atualizar `CHANGELOG.md`** (raiz do projeto, formato [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)):
+   inserir uma nova seção `## [x.y.z] - YYYY-MM-DD` **no topo** do arquivo,
+   com o mesmo agrupamento do passo 2. Este é o mesmo PR do bump de versão
+   (`chore(release): bump version files to x.y.z`) — nunca um commit separado.
+   `CHANGELOG.md` é arquivo único na raiz; não duplicar em `npm/` ou `pypi/`.
+
+4. **Criar a tag anotada** com o changelog no corpo da mensagem:
    ```bash
    git tag -a v<x.y.z> -m "<changelog>"
    git push origin v<x.y.z>
    ```
 
-4. **Nunca criar tag diretamente na main sem PRs merged** — a tag representa o estado pós-merge.
+5. **Nunca criar tag diretamente na main sem PRs merged** — a tag representa o estado pós-merge.
 
 > Critério de versão: feat breaking → major; feat não-breaking → minor; fix/patch → patch.
