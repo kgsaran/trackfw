@@ -3,6 +3,8 @@ package integrations
 import (
 	"fmt"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/identity"
 )
 
 type PlanRequest struct {
@@ -12,6 +14,7 @@ type PlanRequest struct {
 	Scope       string
 	Surfaces    map[string]string
 	AllSurfaces bool
+	Identity    identity.Config
 }
 
 // BuildPlans resolves catalog selections into deterministic lifecycle plans.
@@ -49,7 +52,7 @@ func BuildPlans(catalog *Catalog, request PlanRequest) ([]PlannedArtifact, error
 				if err != nil {
 					return nil, err
 				}
-				content, err := Render(item, request.Kind, capability, source)
+				content, err := Render(item, request.Kind, capability, source, request.Identity)
 				if err != nil {
 					return nil, err
 				}

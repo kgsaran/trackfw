@@ -308,6 +308,68 @@ func TestResolveWindowsCrossplatform(t *testing.T) {
 	}
 }
 
+func TestManagerRejectsNameCollisionAmongAgentMarkdownArtifacts(t *testing.T) {
+	manager, project, _ := testManager(t)
+	// Um arquivo pré-existente (não gerenciado pelo trackfw) no mesmo
+	// diretório de destino já declara o mesmo name que o artefato planejado.
+	existing := filepath.Join(project, ".claude/agents/other.md")
+	if err := os.MkdirAll(filepath.Dir(existing), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(existing, []byte("---\nname: zeus-tf\n---\n\nOther agent\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := testPlan("project", ".claude/agents/trackfw-architect.md", "v1", "---\nname: zeus-tf\n---\n\nArchitect\n")
+	if err := manager.Install([]PlannedArtifact{plan}, false); err == nil {
+		t.Fatal("Install() should reject a colliding declared name without force")
+	}
+	if _, err := os.Stat(filepath.Join(project, plan.Destination)); !os.IsNotExist(err) {
+		t.Fatalf("colliding artifact should not have been written: %v", err)
+	}
+
+	if err := manager.Install([]PlannedArtifact{plan}, true); err != nil {
+		t.Fatalf("Install(force) should proceed past a name collision: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(project, plan.Destination)); err != nil {
+		t.Fatalf("Install(force) should have written the artifact: %v", err)
+	}
+}
+
+func TestManagerNameCollisionIgnoresOwnDestination(t *testing.T) {
+	manager, _, _ := testManager(t)
+	plan := testPlan("project", ".claude/agents/trackfw-architect.md", "v1", "---\nname: zeus-tf\n---\n\nArchitect\n")
+	// Instalar e depois atualizar o próprio artefato não deve ser tratado
+	// como colisão, mesmo declarando o mesmo name que ele mesmo já tinha.
+	if err := manager.Install([]PlannedArtifact{plan}, false); err != nil {
+		t.Fatal(err)
+	}
+	updated := plan
+	updated.Content = []byte("---\nname: zeus-tf\n---\n\nArchitect updated\n")
+	updated.CatalogVersion = "v2"
+	if err := manager.Update([]PlannedArtifact{updated}, false); err != nil {
+		t.Fatalf("Update() falsely detected collision with its own destination: %v", err)
+	}
+}
+
+func TestManagerNameCollisionOnlyAppliesToAgentsMarkdown(t *testing.T) {
+	manager, project, _ := testManager(t)
+	existing := filepath.Join(project, ".codex/agents/other.toml")
+	if err := os.MkdirAll(filepath.Dir(existing), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(existing, []byte(`name = "zeus_tf"`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Mesmo "name" declarado, mas em formato .toml — a varredura de colisão
+	// é limitada a .md (ver comentário em detectNameCollision), então não
+	// deve haver erro.
+	plan := testPlan("project", ".codex/agents/trackfw-architect.toml", "v1", `name = "zeus_tf"`+"\n")
+	if err := manager.Install([]PlannedArtifact{plan}, false); err != nil {
+		t.Fatalf("Install() should not scan .toml siblings for collisions: %v", err)
+	}
+}
+
 func testManager(t *testing.T) (Manager, string, string) {
 	t.Helper()
 	project := t.TempDir()
