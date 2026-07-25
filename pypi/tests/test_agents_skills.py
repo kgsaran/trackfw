@@ -92,9 +92,28 @@ def test_human_list_includes_available_catalog_and_deployments(tmp_path):
 
 
 @pytest.mark.parametrize("kind", ["agents", "skills"])
-@pytest.mark.parametrize("action", ["install", "update", "uninstall"])
+@pytest.mark.parametrize("action", ["install", "update"])
 def test_non_tty_mutation_requires_targets(kind, action, tmp_path):
     result = cli(kind, action, "--json", cwd=tmp_path)
+    assert result.returncode == 2
+    assert "--targets is required" in result.stderr
+
+
+@pytest.mark.parametrize("kind", ["agents", "skills"])
+def test_non_tty_uninstall_without_scope_requires_scope_before_targets(kind, tmp_path):
+    # ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills,
+    # D8: uninstall's scope gate runs before the --targets check, so a
+    # non-interactive uninstall with neither flag fails on --scope first —
+    # matching resolve_scope() running ahead of the --targets branch in
+    # run() (mirrors internal/commands/integrations_flags.go's ordering).
+    result = cli(kind, "uninstall", "--json", cwd=tmp_path)
+    assert result.returncode == 2
+    assert "uninstall requires --scope in non-interactive mode" in result.stderr
+
+
+@pytest.mark.parametrize("kind", ["agents", "skills"])
+def test_non_tty_uninstall_with_scope_still_requires_targets(kind, tmp_path):
+    result = cli(kind, "uninstall", "--scope", "global", "--json", cwd=tmp_path)
     assert result.returncode == 2
     assert "--targets is required" in result.stderr
 

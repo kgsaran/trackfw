@@ -96,7 +96,7 @@ def _prompt_scope() -> str:
 scope_prompt_runner: Callable[[], str] = _prompt_scope
 
 
-def resolve_scope(scope: str | None) -> str:
+def resolve_scope(scope: str | None, operation: str | None = None) -> str:
     """Resolve the effective install scope for `agents`/`skills`
     install|update|uninstall, and for `trackfw init` (ADR-2026-07-25-
     escopo-de-instalacao-selecionavel-para-agents-e-skills).
@@ -104,10 +104,17 @@ def resolve_scope(scope: str | None) -> str:
     - `scope` is not None (an explicit --scope was parsed, D3): return it
       as-is — argparse's `choices=("project", "global")` already validated
       it, so no further checking is needed here.
-    - No TTY (D1): default to "global" — the breaking-change default this
-      ADR introduces, replacing the old silent "project" default.
+    - No TTY and `operation == "uninstall"` (ADR D8): raise instead of
+      defaulting. D1's "global" default was approved under the "where to
+      install" framing; applying it uniformly to `uninstall` would let a CI
+      script that today cleans up `.claude/agents/` in the repo start
+      deleting files from the user's home directory instead.
+    - No TTY otherwise (D1): default to "global" — the breaking-change
+      default this ADR introduces, replacing the old silent "project"
+      default.
     - TTY and no explicit scope (D2): ask interactively, `global`
-      pre-selected.
+      pre-selected — for every operation, including uninstall, since the
+      user sees the choice before anything destructive happens.
 
     Callers that must NOT prompt (e.g. `list`, a read-only command — D6)
     should not call this function; they should fall back to
@@ -116,6 +123,8 @@ def resolve_scope(scope: str | None) -> str:
     if scope is not None:
         return scope
     if not sys.stdin.isatty():
+        if operation == "uninstall":
+            raise ValueError("uninstall requires --scope in non-interactive mode")
         return "global"
     return scope_prompt_runner()
 
@@ -210,7 +219,7 @@ def run(args: argparse.Namespace, kind: str) -> int:
         # `global` default so it never reports deployments that diverge
         # from what `install` just wrote.
         if mutation:
-            resolved_scope = resolve_scope(args.scope)
+            resolved_scope = resolve_scope(args.scope, operation=args.action)
         else:
             resolved_scope = args.scope if args.scope is not None else "global"
 

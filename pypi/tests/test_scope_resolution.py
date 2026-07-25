@@ -86,6 +86,36 @@ def test_resolve_scope_tty_and_no_flag_invokes_the_prompt_runner(monkeypatch):
     assert integrations_command.resolve_scope(None) == "project"
 
 
+def test_resolve_scope_no_tty_uninstall_and_no_flag_raises(monkeypatch):
+    # ADR D8: uninstall never inherits install/update's "global" default in
+    # non-interactive mode — errs loudly instead of risking deletion of
+    # files outside the scope the caller intended.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    try:
+        integrations_command.resolve_scope(None, operation="uninstall")
+    except ValueError as error:
+        assert "uninstall requires --scope in non-interactive mode" in str(error)
+    else:
+        raise AssertionError("expected resolve_scope to raise for non-interactive uninstall")
+
+
+def test_resolve_scope_no_tty_install_and_no_flag_still_defaults_to_global(monkeypatch):
+    # install/update are unaffected by D8 — only uninstall's operation
+    # value triggers the raise above.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    assert integrations_command.resolve_scope(None, operation="install") == "global"
+    assert integrations_command.resolve_scope(None, operation="update") == "global"
+
+
+def test_resolve_scope_tty_uninstall_and_no_flag_invokes_the_prompt_runner(monkeypatch):
+    # In TTY, uninstall prompts exactly like install/update (ADR D8's
+    # non-interactive guard does not apply once the user can see the
+    # choice before anything destructive happens).
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr(integrations_command, "scope_prompt_runner", lambda: "project")
+    assert integrations_command.resolve_scope(None, operation="uninstall") == "project"
+
+
 def test_prompt_scope_defaults_to_global_on_bare_enter(monkeypatch):
     # Real prompt behavior (D2): global is index [1] and pre-selected, so a
     # bare Enter (empty input) must resolve to "global" without needing to
