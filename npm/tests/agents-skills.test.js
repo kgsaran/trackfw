@@ -380,7 +380,7 @@ test('init uses the canonical integration engine', () => {
 
 // Escopo explícito `--scope project` continua respeitado sem prompt e sem
 // depender do default global acima.
-test('init --scope project explícito instala no projeto', () => {
+test('agents install --scope project explícito instala no projeto', () => {
   const dirs = roots()
   const bin = path.resolve(__dirname, '../bin/trackfw')
   const run = spawnSync(process.execPath, [bin, 'agents', 'install', '--targets', 'claude', '--items', 'architect', '--scope', 'project'], {
