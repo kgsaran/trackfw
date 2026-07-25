@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-07-25
 author: "Zeus"
 adr: "ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills"
@@ -8,7 +8,7 @@ roadmap: "ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-ski
 
 # REQ: Escopo de instalação selecionável para agents e skills
 
-> Date: 2026-07-25 | Status: Open
+> Date: 2026-07-25 | Status: Done
 
 ## Motivation
 
@@ -22,17 +22,17 @@ O comportamento esperado é que agentes e skills sejam instalados na **pasta do 
 
 ## Acceptance Criteria
 
-- [ ] Em TTY, sem `--scope`, os comandos `agents|skills install|update|uninstall` perguntam
+- [x] Em TTY, sem `--scope`, os comandos `agents|skills install|update|uninstall` perguntam
       o escopo, com `global` pré-selecionado
-- [ ] O prompt de escopo dispara mesmo quando `--targets` é informado (gate independente)
-- [ ] Sem TTY e sem `--scope`, o escopo resolvido é `global` (`~/.claude/...`)
-- [ ] `--scope project` e `--scope global` explícitos são respeitados e **não** disparam prompt
-- [ ] A detecção de "escopo não informado" usa *flag-set*, não comparação de valor
-- [ ] `trackfw init` também pergunta o escopo no wizard; sem TTY → `global`
-- [ ] Os caminhos de destino resolvidos são impressos antes da gravação (fora do modo `--json`)
-- [ ] `agents|skills list` adota o mesmo default `global` (sem perguntar)
-- [ ] Comportamento idêntico nos 3 CLIs (Go, Node.js, Python) — `make quality` passa
-- [ ] Breaking change documentado no `CHANGELOG.md` e em `docs/cli-parity.md`
+- [x] O prompt de escopo dispara mesmo quando `--targets` é informado (gate independente)
+- [x] Sem TTY e sem `--scope`, o escopo resolvido é `global` (`~/.claude/...`)
+- [x] `--scope project` e `--scope global` explícitos são respeitados e **não** disparam prompt
+- [x] A detecção de "escopo não informado" usa *flag-set*, não comparação de valor
+- [x] `trackfw init` também pergunta o escopo no wizard; sem TTY → `global`
+- [x] Os caminhos de destino resolvidos são impressos antes da gravação (fora do modo `--json`)
+- [x] `agents|skills list` adota o mesmo default `global` (sem perguntar)
+- [x] Comportamento idêntico nos 3 CLIs (Go, Node.js, Python) — `make quality` passa
+- [x] Breaking change documentado no `CHANGELOG.md` e em `docs/cli-parity.md`
 
 ## Linked ADR
 

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-25
 req: "REQ-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Escopo de instalação selecionável para agents e skills
 
-> Criado em: 2026-07-25 | Status: 🔄 WIP
+> Criado em: 2026-07-25 | Status: ✅ Done
 REQ: `docs/req/REQ-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md`
 ADR: `docs/adr/ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md`
 Branch: `fix/escopo-de-instalacao-selecionavel-para-agents-e-skills`
@@ -146,12 +146,12 @@ já escolheram `project`. A detecção deve ser:
    - `list` sem `--scope` reporta destinos globais.
 
 **Critérios de aceite:**
-- [ ] `go build ./...` sem erros
-- [ ] `go vet ./...` limpo
-- [ ] `go test ./...` verde
-- [ ] `trackfw agents install --targets claude` (TTY) pergunta o escopo
-- [ ] `trackfw agents install --targets claude --scope project` **não** pergunta
-- [ ] Destinos resolvidos impressos antes da gravação
+- [x] `go build ./...` sem erros
+- [x] `go vet ./...` limpo
+- [x] `go test ./...` verde
+- [x] `trackfw agents install --targets claude` (TTY) pergunta o escopo
+- [x] `trackfw agents install --targets claude --scope project` **não** pergunta
+- [x] Destinos resolvidos impressos antes da gravação
 
 **Comandos de validação:**
 ```bash
@@ -189,10 +189,10 @@ go build ./... && go vet ./... && go test ./...
 8. Espelhar os 4 casos de teste listados no ML-1A.
 
 **Critérios de aceite:**
-- [ ] `npm test` (workspace `npm/`) verde
-- [ ] `--scope project` explícito não dispara prompt
-- [ ] Sem TTY e sem `--scope` → destino `~/.claude/`
-- [ ] Mensagem de erro para escopo inválido idêntica à do CLI Go
+- [x] `npm test` (workspace `npm/`) verde
+- [x] `--scope project` explícito não dispara prompt
+- [x] Sem TTY e sem `--scope` → destino `~/.claude/`
+- [x] Mensagem de erro para escopo inválido idêntica à do CLI Go
 
 **Comandos de validação:**
 ```bash
@@ -230,10 +230,10 @@ cd npm && npm test
 7. Espelhar os 4 casos de teste listados no ML-1A.
 
 **Critérios de aceite:**
-- [ ] Suíte de testes Python verde
-- [ ] `--scope project` explícito não dispara prompt
-- [ ] Sem TTY e sem `--scope` → destino `~/.claude/`
-- [ ] `manager.py:35` continua resolvendo `home_dir` corretamente para `global`
+- [x] Suíte de testes Python verde
+- [x] `--scope project` explícito não dispara prompt
+- [x] Sem TTY e sem `--scope` → destino `~/.claude/`
+- [x] `manager.py:35` continua resolvendo `home_dir` corretamente para `global`
 
 **Comandos de validação:**
 ```bash
@@ -262,10 +262,10 @@ explícito, no formato do precedente existente
 default `global`. Em TTY, `uninstall` continua perguntando normalmente.
 
 **Critérios de aceite:**
-- [ ] `uninstall --targets X` sem TTY e sem `--scope` falha com erro claro (teste nos 3 CLIs)
-- [ ] `uninstall --targets X --scope global` sem TTY funciona
-- [ ] `install`/`update` sem TTY e sem `--scope` continuam resolvendo `global`
-- [ ] Build/testes verdes nos 3 CLIs
+- [x] `uninstall --targets X` sem TTY e sem `--scope` falha com erro claro (teste nos 3 CLIs)
+- [x] `uninstall --targets X --scope global` sem TTY funciona
+- [x] `install`/`update` sem TTY e sem `--scope` continuam resolvendo `global`
+- [x] Build/testes verdes nos 3 CLIs
 
 ---
 
@@ -378,11 +378,11 @@ default `global`. Em TTY, `uninstall` continua perguntando normalmente.
 5. Atualizar `README.md` / docs de uso onde `--scope` for mencionado.
 
 **Critérios de aceite:**
-- [ ] `make quality` passa (inclui contratos de paridade dos 3 CLIs)
-- [ ] `make test` verde
-- [ ] `docs/cli-parity.md` reflete o novo contrato
-- [ ] `CHANGELOG.md` documenta o breaking change explicitamente
-- [ ] Os 3 CLIs produzem comportamento idêntico nos 4 cenários
+- [x] `make quality` passa (inclui contratos de paridade dos 3 CLIs)
+- [x] `make test` verde
+- [x] `docs/cli-parity.md` reflete o novo contrato
+- [x] `CHANGELOG.md` documenta o breaking change explicitamente
+- [x] Os 3 CLIs produzem comportamento idêntico nos 4 cenários
 
 **Comandos de validação:**
 ```bash
