@@ -2793,3 +2793,35 @@ PR #65 mergeado (squash) na main. Branch local removida (diff vazio contra `orig
 `check-identity-parity.sh` não teve **uma única linha alterada** durante toda a segunda REQ — o guarda-corpo de escopo (esta REQ é só UX, não muda schema/contrato/artefatos) funcionou do início ao fim.
 
 `make quality` verde na main: Go + 113 Node + 418 Python + 5 gates de paridade.
+
+---
+
+## Ciclo 3 — Escopo de instalação selecionável para agents e skills
+
+**Data:** 2026-07-25 | **Orquestrador:** Zeus | **Status:** IMPLEMENTANDO
+
+**Origem:** usuário reportou que `trackfw agents install` instala silenciosamente no projeto
+atual, quando o esperado é instalar na pasta do usuário ou perguntar o escopo. Mesma queixa
+vale para skills.
+
+**Causa raiz (análise estática, 3 CLIs):** `--scope` com default fixo `"project"` em
+`internal/commands/integrations_flags.go:105`, `npm/src/commands/integrations.js:50`,
+`pypi/trackfw/integrations/command.py:94` (+ `catalog.py:59`), e `Scope: "project"`
+hardcoded em `internal/commands/init.go:358`. Nenhum prompt de escopo existe. O único
+prompt (`promptIntegrationSelection`) só dispara quando `--targets` está vazio — o caso
+comum `--targets claude` não passa por prompt algum. Os 11 surfaces do catálogo suportam
+`global` e `project`, então não há restrição técnica.
+
+**Armadilha registrada:** a detecção de "usuário não escolheu" precisa usar *flag-set*
+(`cmd.Flags().Changed("scope")` / `undefined` / `default=None`) — comparar contra o valor
+`"project"` não distingue um `--scope project` explícito do default e re-perguntaria a quem
+já escolheu.
+
+**Decisões do usuário:** default `global` em modo não-interativo (breaking change);
+`init` também pergunta; sem confirmação extra, apenas impressão dos destinos resolvidos.
+
+**Artefatos:** ADR + REQ + Roadmap `2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills`,
+branch `fix/escopo-de-instalacao-selecionavel-para-agents-e-skills`.
+
+**Plano:** Wave 1 com 3 MLs em paralelo (Go / Node / Python — árvores disjuntas),
+barrier, Wave 2 com ML de paridade + CHANGELOG + docs.
