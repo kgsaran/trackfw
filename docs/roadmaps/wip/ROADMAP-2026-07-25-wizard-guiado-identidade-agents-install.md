@@ -67,7 +67,7 @@ de paridade na REQ anterior.
 > Dependencies: none
 
 ### ML-1A — Wizard unificado, rotulos por especialidade e confirmacao
-**Status:** pending
+**Status:** done (`8b0eeb1`)
 **Agente:** trackfw-backend
 **Files affected:** `internal/commands/identity_wizard.go` (novo),
 `internal/commands/init.go`, `internal/commands/integrations_flags.go`,
@@ -117,6 +117,64 @@ de paridade na REQ anterior.
 - [ ] `scripts/check-identity-parity.sh` passa **sem alteracao**
 
 **Comandos de validação:** `go build ./... && go test ./... && go vet ./... && make lint && scripts/check-identity-parity.sh`
+
+**Auditoria do orquestrador (E2E pelo binario):**
+
+| Cenario | Resultado |
+|---|---|
+| flags `--identity`/`--identity-preset` so em `agents` | ✅ zero em `skills` |
+| nao-TTY sem identidade | ✅ nao trava, nao pergunta, nao grava, artefato inalterado |
+| `--identity-preset starwars` | ✅ `name: r2-d2-tf`, `R2-D2 — Database specialist...` |
+| identidade existente | ✅ imprime `identity: 10 custom agent(s)` e **nao pergunta** |
+| `--identity-preset xpto` | ✅ erro listando os 12 validos |
+| `check-identity-parity.sh` | ✅ passou **sem alteracao no script** — guarda-corpo de escopo funcionou |
+
+---
+
+### ML-1B — Remocao de `saveWizardIdentity` orfa
+**Status:** done (`af46f8b`)
+**Agente:** general-purpose
+**Files affected:** `internal/commands/init.go`, `internal/commands/identity_wizard.go`,
+`internal/commands/init_test.go`
+
+**Motivo.** Apos a extracao do ML-1A, `saveWizardIdentity` deixou de ser
+chamada por qualquer caminho de producao, mas 3 testes continuavam a
+exercita-la. Isso e **cobertura falsa**: quebrar o caminho real nao deixaria
+nenhum teste vermelho.
+
+**Causa da falha de processo:** instrucao do orquestrador ao ML-1A dizia
+"testes preexistentes passam sem alteracao". A intencao era *nao regredir
+comportamento*; a leitura literal — correta — foi *preservar chamadas a
+funcao morta*. Lacuna de especificacao, nao de execucao. E o mesmo padrao dos
+defeitos do ciclo anterior em outra forma: **teste que nao observa codigo vivo**.
+
+**Actions executadas:**
+1. `saveWizardIdentity` removida; `grep -rn "saveWizardIdentity" internal/` retorna zero.
+2. Extraida `resolveIdentitySelection(...)` — toda a metade **nao-interativa**
+   do wizard (guarda de skip -> `buildIdentityConfig` -> `identity.Validate` ->
+   `confirm` -> `identity.Save`), com o unico passo interativo como callback.
+   A sequencia existe agora em **exatamente um lugar**, e e esse lugar que os
+   testes atacam.
+3. Enum `identityOutcome` (`identitySkipped`/`identityDeclined`/`identitySaved`):
+   um `bool` nao distinguiria "neutral" (nao grava e **retorna**) de "usuario
+   recusou" (nao grava e **volta ao loop**).
+
+**Acceptance criteria:**
+- [x] `grep -rn "saveWizardIdentity" internal/` retorna zero
+- [x] `go build/test/vet` + `make lint` verdes
+- [x] Os 3 testes cobrem a mesma intencao contra codigo vivo
+- [x] `check-identity-parity.sh` passa sem alteracao
+- [x] **Mutation test verificado pelo orquestrador:** removendo `identity.Validate`
+      do caminho real, falha **exatamente um** teste
+      (`TestResolveIdentitySelectionCustomCollisionWritesNothing`), na assercao
+      correta — `identity.json` passa a existir apesar do erro de validacao.
+      Antes do ML-1B, essa mutacao nao deixaria nenhum teste vermelho.
+
+**Pendencia herdada (para a Wave 2):** `npm/src/commands/init.js` ainda define e
+chama seu proprio `saveWizardIdentity`, e um comentario aponta para o simbolo
+Go ja removido. Nao e quebra de paridade comportamental (o contrato e de
+artefatos byte-identicos), mas e divergencia estrutural + ponteiro morto.
+Deve ser resolvido pelo ML-2A, que reestrutura esse arquivo.
 
 ---
 
