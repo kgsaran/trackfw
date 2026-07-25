@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "cases": [
+    {"input": "Zeus", "expect": "zeus"},
+    {"input": "Ártemis", "expect": "artemis"},
+    {"input": "Métis", "expect": "metis"},
+    {"input": "Hefesto", "expect": "hefesto"},
+    {"input": "Meu Agente", "expect": "meu-agente"},
+    {"input": "  Zeus  ", "expect": "zeus"},
+    {"input": "a__b", "expect": "a-b"},
+    {"input": "a--b", "expect": "a-b"},
+    {"input": "Código Ágil", "expect": "codigo-agil"},
+    {"input": "ZEUS-TF", "expect": "zeus-tf"},
+    {"input": "🌩️", "error": true},
+    {"input": "", "error": true},
+    {"input": "---", "error": true},
+    {"input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "error": true}
+  ]
+}

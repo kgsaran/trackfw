@@ -15,7 +15,10 @@
       "projectType_fullstack": "Full-stack (frontend + backend)",
       "projectType_frontend": "Solo frontend",
       "projectType_backend": "Solo backend",
-      "projectType_governance": "Solo gobernanza (sin stack de build)"
+      "projectType_governance": "Solo gobernanza (sin stack de build)",
+      "identityPreset": "¿Cómo quieres nombrar a tus agentes?",
+      "identityCustomName": "Nombre de exhibición para el agente",
+      "identityNickname": "¿Cómo debemos llamarte? (opcional)"
     },
     "success": "✓ trackfw inicializado — ejecuta 'trackfw status' para ver el estado de gobernanza."
   },

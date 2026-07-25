@@ -5,6 +5,8 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
+const { frontmatterName } = require('./render')
+
 const SCHEMA_VERSION = 1
 const sha256 = content => crypto.createHash('sha256').update(content).digest('hex')
 const claimKey = claim => [claim.target, claim.surface, claim.scope, claim.kind, claim.item].join('\u0000')
@@ -145,6 +147,7 @@ class IntegrationManager {
   }
 
   preflight(operation, { plan, file }, manifest, force) {
+    if (operation !== 'uninstall') this.detectNameCollision(plan, file, force)
     const status = this.inspectResolved(plan, file, manifest)
     const record = manifest.artifacts[file]
     const owned = Boolean(record && record.claims.some(claim => claimKey(claim) === claimKey(plan.claim)))
@@ -156,6 +159,53 @@ class IntegrationManager {
       if (status.state === 'modified' && !force) throw new Error(`Artifact is modified; use --force: ${file}`)
     } else if (operation === 'uninstall' && owned && status.state === 'modified' && !force) {
       throw new Error(`Artifact is modified; use --force: ${file}`)
+    }
+  }
+
+  // detectNameCollision protege contra dois artefatos de agente gerenciados
+  // distintos declarando o mesmo "name" de frontmatter dentro do mesmo
+  // diretório de destino (ADR ADR-2026-07-25-identidade-personalizavel-de-
+  // agentes, seção D4). Isso importa porque, com identidades customizáveis,
+  // dois item.id diferentes poderiam resolver para o mesmo nome renderizado
+  // (ex.: dois agentes ambos apontados para o slug "zeus"), e algumas
+  // surfaces usam esse campo name para descoberta de agentes.
+  //
+  // Limitação: a varredura só inspeciona irmãos ".md", porque é o único
+  // formato onde temos uma forma barata e sem dependências (frontmatterName)
+  // de ler de volta o name declarado a partir de bytes já renderizados.
+  // Artefatos JSON (cli-agent-json/agent-json) e TOML (custom-agent-toml)
+  // não são varridos para colisões. Espelha
+  // internal/integrations/manager.go:detectNameCollision.
+  detectNameCollision(plan, file, force) {
+    if (plan.claim.kind !== 'agents') return
+    if (path.extname(file) !== '.md') return
+    const desiredName = frontmatterName(plan.content)
+    if (!desiredName) return
+    const directory = path.dirname(file)
+    let entries
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true })
+    } catch (err) {
+      if (err.code === 'ENOENT') return
+      throw new Error(`scan ${directory} for name collisions: ${err.message}`)
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() || path.extname(entry.name) !== '.md') continue
+      const candidate = path.join(directory, entry.name)
+      if (candidate === file) continue
+      let data
+      try {
+        data = fs.readFileSync(candidate)
+      } catch {
+        continue
+      }
+      const candidateName = frontmatterName(data)
+      if (!candidateName || candidateName !== desiredName) continue
+      if (force) {
+        process.stderr.write(`aviso: ${candidate} declara o mesmo name ${desiredName} que ${file}; prosseguindo por --force\n`)
+        continue
+      }
+      throw new Error(`artifact ${file} declares name ${desiredName} which collides with existing file ${candidate}`)
     }
   }
 
