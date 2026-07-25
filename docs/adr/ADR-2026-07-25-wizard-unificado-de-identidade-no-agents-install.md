@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-07-25
 author: "Zeus (Principal Software Architect)"
 ---
 
 # ADR: Wizard unificado de identidade no agents install
 
-> Date: 2026-07-25 | Status: Proposed
+> Date: 2026-07-25 | Status: Accepted
 
 ## Context
 
@@ -126,12 +126,21 @@ wizard sem efeito algum.
 1. Target CLIs            (existente)
 2. Agentes a gerenciar    (existente)
 3. Superficie ambigua     (existente, condicional)
-4. Apelido do usuario      NOVO ── condicional por D2
-5. Preset ou custom        NOVO ── condicional por D2
-6. Nomes livres            NOVO ── so no modo custom
+4. Preset ou custom        NOVO ── condicional por D2
+5. Nomes livres            NOVO ── so no modo custom
+6. Apelido do usuario      NOVO ── condicional por D2
 7. Confirmacao             NOVO ── condicional por D2
 8. Instalacao             (existente)
 ```
+
+> **Correcao pos-implementacao (ML-3A):** este ADR originalmente listava o
+> apelido antes do preset. A implementacao real, verificada por leitura
+> direta de `runIdentityWizard` nos 3 CLIs, pede o preset/custom primeiro e
+> so entao o apelido — identico nos 3. A ordem acima foi corrigida para
+> refletir o codigo; a decisao valida (apelido depois do preset) faz mais
+> sentido de UX, ja que o usuario decide "quem sao os agentes" antes de
+> "como serei chamado". Nenhuma acao de codigo foi necessaria — era o
+> documento que estava desatualizado.
 
 A identidade vem **depois** da selecao de alvos porque alvo e o dado que o
 usuario veio fornecer; identidade e configuracao acessoria. Interromper antes

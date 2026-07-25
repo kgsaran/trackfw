@@ -2771,3 +2771,11 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Git:** commit `9266242` em `feat/wizard-guiado-identidade-agents-install`, apenas `pypi/trackfw` e `pypi/tests` staged (confirmado `git status --short pypi` limpo antes do commit; `.trackfw-baseline.json` e `AGENTS.md` não tocados).
 
 **Status:** CONCLUÍDO.
+
+**Wave 3 — CONCLUÍDA:** ML-3A ✅ (`1e81ea2`, `1e9c514`) — documentação nos 3 READMEs + `cli-parity.md` + fechamento de governança. `make quality` verde, `trackfw validate` só com as 2 violations pré-existentes.
+
+**Achado corrigido pelo orquestrador pós-ML-3A:** o agente reportou que o ADR D6 descrevia a ordem "apelido antes do preset", mas a implementação real (verificada nos 3 CLIs) faz preset → nomes → apelido → confirmação. Era o **ADR que estava errado**, não o código — corrigido D6 registrando explicitamente que nenhuma mudança de código foi necessária.
+
+**Estado final do ciclo:** roadmap → `done/`, REQ → `Done`, ADR → `Accepted`. `make quality` verde (Go + 113 Node + 418 Python + 5 gates de paridade, incluindo `check-identity-parity.sh` **sem nenhuma linha alterada** durante toda a feature — o guarda-corpo de escopo funcionou do início ao fim).
+
+**Status:** CONCLUÍDO — aguardando decisão do usuário sobre PR (não aberto).

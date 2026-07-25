@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-25
 req: "REQ-2026-07-25-wizard-guiado-de-identidade-no-agents-install.md"
 squad: "trackfw"
@@ -7,7 +7,7 @@ squad: "trackfw"
 
 # Roadmap: Wizard guiado identidade agents install
 
-> Created: 2026-07-25 | Status: wip
+> Created: 2026-07-25 | Status: done | Pending PR
 
 ## Acceptance Criteria
 
