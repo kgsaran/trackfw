@@ -2648,3 +2648,11 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 **Plano:** 5 waves / 7 MLs. W1 (paralelo): ML-1A pacote `internal/identity` + ML-1B placeholders nos assets. W2: ML-2A render/plan/manager. W3: ML-3A wizard `init` + 4 callers + i18n. W4 (paralelo): ML-4A npm + ML-4B pypi. W5: ML-5A gates de paridade + docs.
 
 **Status:** IMPLEMENTANDO — Wave 1 em execução.
+
+**Wave 1 — CONCLUÍDA com mudança de abordagem:**
+- ML-1A ✅ (`9b75dad`) pacote `internal/identity` — `Slugify` (NFD + ASCII-fold via `golang.org/x/text`), `Load`/`Save` atômico em `~/.trackfw/identity.json`, `AgentName` (sufixo `-tf`), `Validate`, fixture de 14 vetores de slug para paridade.
+- ML-1C ✅ (`6e5e179`) 5 presets temáticos hardcoded (greek/norse/potter/thrones/chaves) + `Preset(name)`/`PresetNames()`. 27 testes.
+- ML-1B ❌ **REVERTIDO** (`9ef17b3` → revert). Auditoria Zeus achou vazamento: `Render()` tem 2 rotas e o placeholder `{{IDENTITY_LINE}}` só seria removido em uma. O branch `default:` (`representation: "subagent"` — usado pela superfície **claude**) devolve o source cru, então `trackfw agents install` gravaria o placeholder literal em `~/.claude/agents/trackfw-architect.md`. Confirmado empiricamente. Só 2 testes Node (goldens inline) pegaram, e nas rotas menos usadas.
+  **Nova abordagem:** assets intocados; `Render()` **insere** a linha de identidade quando há identidade. Não-regressão vira verdadeira por construção em vez de depender de 6 implementações corretas de strip (2 rotas × 3 CLIs).
+- **Lacuna descoberta:** não existe cobertura de golden para bytes renderizados em Go — os testes renderizam do mesmo asset embedado, logo são auto-consistentes. ML-2A passa a exigir goldens congelados do estado pré-mudança.
+- **Correção de auditoria:** `go mod tidy` promoveu `golang.org/x/text` de indireta para direta (mesma versão, sem download novo).

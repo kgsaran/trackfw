@@ -104,7 +104,35 @@ ML-1B assets ─────────────────┘    render   
 ---
 
 ### ML-1B — Placeholders de identidade nos assets dos agentes
-**Status:** pending
+**Status:** ABANDONADO — abordagem revertida (commit `9ef17b3` revertido)
+
+> **Motivo da reversao.** O placeholder `{{IDENTITY_LINE}}` foi inserido nos 10
+> assets e propagado aos 3 pacotes. A auditoria revelou que `Render()` tem
+> **duas rotas** e o placeholder so seria removido em uma delas:
+>
+> - `custom-agent-toml`, `cli-agent-json`, `agent-json`, `agent-directory`
+>   passam por `markdownParts()` e separam frontmatter de corpo;
+> - o branch `default:` (`representation: "subagent"`) devolve
+>   `normalizeMarkdown(source)` — **o source cru**.
+>
+> A superficie `claude` usa `subagent`. Verificacao empirica confirmou que
+> `trackfw agents install` gravaria `{{IDENTITY_LINE}}` literal em
+> `~/.claude/agents/trackfw-architect.md` — na superficie mais usada do
+> produto, sem nenhum teste cobrindo. Apenas 2 testes Node (goldens inline)
+> pegaram o problema, e nas rotas menos usadas.
+>
+> Manter o placeholder exigiria **strip correto em 2 rotas x 3 CLIs = 6
+> implementacoes**, cada uma um ponto de vazamento silencioso. Como nenhum
+> asset precisa de posicionamento diferente de "inicio do corpo", o
+> placeholder comprava um ancoramento posicional que nao seria usado.
+>
+> **Nova abordagem (ver ML-2A):** os assets permanecem intocados e `Render()`
+> **insere** a linha de identidade apos o terminador do frontmatter quando ha
+> identidade configurada. O criterio de nao-regressao passa a ser verdadeiro
+> **por construcao** — sem identidade, nenhum codigo novo executa — em vez de
+> depender de 6 implementacoes corretas de remocao.
+
+**Status original:** done (revertido)
 **Agente:** trackfw-backend
 **Files affected:** `internal/integrations/assets/agents/*.md` (10 arquivos),
 `npm/src/integrations/assets/agents/*.md`, `pypi/trackfw/integrations/assets/agents/*.md`
@@ -186,21 +214,42 @@ ML-1B assets ─────────────────┘    render   
    para o `item.ID`**:
    - `name` -> `identity.AgentName(slug)` (ex: `zeus-tf`)
    - `description` -> `"<DisplayName> — " + description` original
-   - `{{IDENTITY_LINE}}` -> frase de identidade citando `display_name` e, se
-     houver, `user_nickname`.
-   Sem entrada: `name`/`description` inalterados e `{{IDENTITY_LINE}}` -> `""`,
-   **sem deixar linha em branco extra**.
+   - corpo -> **insercao** de uma frase de identidade citando `display_name` e,
+     se houver, `user_nickname`.
+   **Sem entrada para o `item.ID`, nenhum codigo novo executa** — retorno
+   identico ao atual por construcao (nao ha placeholder a remover).
+2-bis. A insercao no corpo precisa cobrir **as duas rotas** de `Render`:
+   - rotas que passam por `markdownParts()` (`custom-agent-toml`,
+     `cli-agent-json`, `agent-json`, `agent-directory`): prefixar o `body`;
+   - branch `default:` (`representation: "subagent"`, usado por **claude**,
+     gemini, cursor, copilot, kiro-ide, windsurf): o source cru e devolvido por
+     `normalizeMarkdown`. Inserir apos o terminador do frontmatter, reusando a
+     mesma logica de `strings.Index(text[4:], "\n---")` ja presente em
+     `markdownParts`. **Esquecer esta rota vaza texto no arquivo instalado da
+     superficie mais usada do produto** — foi exatamente a falha que derrubou
+     a abordagem do ML-1B.
 3. **`agentTools` passa a receber `item.ID`** e decidir SET_ARCH por
    `item.ID == "architect"`. Remover `strings.HasSuffix(name, "architect")`.
 4. `manager.go`: antes de escrever um agente, varrer o diretorio de destino
    por outros arquivos declarando o mesmo `name`; colisao -> erro claro
    citando o arquivo conflitante, contornavel com `force`.
-5. Testes de **nao-regressao**: com `identity.Config` zero, a saida de `Render`
-   e byte a byte igual a atual, para as 5 representacoes.
+5. Testes de nao-regressao com **goldens congelados**, nunca auto-referentes.
+   `Render(x) == Render(x)` nao prova nada — foi por isso que a suite Go
+   permaneceu verde enquanto os assets mudavam sob ela no ML-1B. Os goldens
+   devem ser **strings capturadas do estado pre-mudanca**:
+   - `custom-agent-toml`: literal `expected` de `npm/tests/agents-skills.test.js:271`
+   - `agent-directory`: literal `expected` de `npm/tests/agents-skills.test.js:404`
+   - `default:`/`subagent`: capturar de `git show 5fe5cb9:internal/integrations/assets/agents/architect.md`
+   Gravar em `internal/integrations/testdata/` e comparar byte a byte.
+   Isso tambem fecha a lacuna preexistente: hoje **nao existe** cobertura de
+   golden para bytes renderizados em Go.
 
 **Acceptance criteria:**
 - [ ] `go test ./internal/integrations/...` verde
-- [ ] Teste explicito prova saida identica sem identidade (5 representacoes)
+- [ ] Goldens congelados em `testdata/` cobrem as rotas `subagent`,
+      `custom-agent-toml` e `agent-directory`
+- [ ] Teste prova que a rota `subagent` (claude) recebe a linha de identidade
+      quando ha identidade configurada
 - [ ] Teste prova `SET_ARCH` mantido com `name` customizado (`zeus-tf`)
 - [ ] Teste prova erro de colisao e bypass com `force`
 - [ ] `go build ./... && go vet ./...` limpos
