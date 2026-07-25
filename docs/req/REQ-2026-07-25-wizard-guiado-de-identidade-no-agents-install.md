@@ -1,5 +1,5 @@
 ---
-status: Done
+status: Open
 date: 2026-07-25
 author: "Zeus (Principal Software Architect)"
 adr: "ADR-2026-07-25-wizard-unificado-de-identidade-no-agents-install.md"
@@ -8,7 +8,7 @@ roadmap: "ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md"
 
 # REQ: Wizard guiado de identidade no agents install
 
-> Date: 2026-07-25 | Status: Done
+> Date: 2026-07-25 | Status: Open
 | Linear Issue:
 | Jira Issue:
 
@@ -135,4 +135,4 @@ ADR: docs/adr/ADR-2026-07-25-wizard-unificado-de-identidade-no-agents-install.md
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/done/ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md
