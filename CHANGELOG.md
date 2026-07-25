@@ -10,22 +10,71 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
-## [Unreleased]
+## [3.0.0] - 2026-07-25
+
+### Por que esta versão é major
+
+Até a `2.16.0`, `agents` e `skills` eram instalados **silenciosamente no
+projeto atual**: `--scope` tinha default fixo `project` e nenhum dos três CLIs
+perguntava onde instalar. O único prompt existente cobria apenas quais CLIs e
+quais itens, e sequer disparava quando `--targets` era informado — a invocação
+mais comum. Corrigir isso exigiu inverter o default, e inverter um default
+muda o comportamento observável de comandos que já existiam.
+
+São três quebras de contrato distintas. Nenhuma delas emite aviso: o comando
+continua "funcionando", só que fazendo outra coisa.
+
+1. **Destino de gravação** — `install`/`update` sem `--scope` em modo
+   não-interativo passam a gravar em `~/.claude/...` em vez de `.claude/...`.
+   Pipelines que instalam e depois verificam ou commitam artefatos no
+   repositório param de encontrá-los.
+2. **`uninstall` passa a falhar** — sem `--scope` em modo não-interativo, o
+   comando retorna erro em vez de remover. É deliberado: com o novo default,
+   um `uninstall` de CI apagaria os artefatos do diretório home do usuário.
+   Preferimos falhar a destruir.
+3. **Contrato de saída do `list`** — `list --json` sem `--scope` passa a
+   reportar `"scope": "global"` e destinos `~/...`. Automações que consomem
+   esse JSON para inspecionar estado leem valores diferentes para a mesma
+   pergunta.
+
+O `package-smoke` deste próprio repositório quebrou pelo item 1 durante o
+desenvolvimento — foi o primeiro consumidor a sentir a mudança, e é um que
+controlamos. Assumimos que existem outros que não controlamos, e é por isso
+que esta é uma major e não uma minor: a atualização precisa ser deliberada.
+
+### Migração
+
+Pipelines de CI e scripts não-interativos devem passar `--scope`
+explicitamente:
+
+```diff
+- trackfw agents install --targets claude
++ trackfw agents install --targets claude --scope project
+```
+
+Use `--scope project` para manter o comportamento anterior (artefatos no
+repositório) ou `--scope global` para adotar o novo padrão. Uso interativo em
+terminal não requer mudança: o CLI pergunta, com `global` pré-selecionado.
+
 ### Changed
-- **BREAKING**: `agents|skills install|update` without `--scope` in
-  non-interactive mode now installs to scope `global` (`~/.claude/...`)
-  instead of `project` (`.claude/...`). CI pipelines that relied on the old
-  implicit `project` scope must now pass `--scope project` explicitly.
-- **BREAKING**: `agents|skills uninstall` without `--scope` in
-  non-interactive mode now **fails**, requiring the flag explicitly, instead
-  of assuming a scope. Motivation: prevent a CI script from silently deleting
-  artifacts under the user's home directory.
+- **BREAKING**: `agents|skills install|update` sem `--scope` em modo
+  não-interativo instalam em escopo `global` (`~/.claude/...`) em vez de
+  `project` (`.claude/...`).
+- **BREAKING**: `agents|skills uninstall` sem `--scope` em modo não-interativo
+  agora falha exigindo a flag, em vez de assumir um escopo.
+- **BREAKING**: `agents|skills list` sem `--scope` reporta escopo `global` e
+  os destinos correspondentes.
+
 ### Added
-- Interactive scope prompt in `agents`, `skills`, and `init` — asks where to
-  install (`~/.claude` vs `.claude`), with `global` pre-selected, whenever
-  stdin is a TTY and `--scope` was not passed explicitly.
-- Resolved destination paths are printed before writing, in every mutating
-  `agents`/`skills` command and in `init`'s AI-tools step (outside `--json`).
+- Prompt interativo de escopo em `agents`, `skills` e `init` — pergunta onde
+  instalar (`~/.claude` vs `.claude`), com `global` pré-selecionado, sempre
+  que stdin for um TTY e `--scope` não tiver sido informado.
+- Os caminhos de destino resolvidos são impressos antes da gravação, em todo
+  comando mutante de `agents`/`skills` e na etapa de AI tools do `init`.
+
+### Fixed
+- `scripts/smoke-integration-packages.sh` passa `--scope project` explícito —
+  primeiro consumidor a exigir a migração descrita acima.
 
 ## [2.16.0] - 2026-07-25
 ### Added
