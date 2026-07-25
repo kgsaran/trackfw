@@ -201,6 +201,11 @@ func (m Manager) mutate(plans []PlannedArtifact, force bool, operation mutation)
 }
 
 func preflight(item resolvedPlan, manifest Manifest, force bool, operation mutation) error {
+	if operation != mutationUninstall {
+		if err := detectNameCollision(item, force); err != nil {
+			return err
+		}
+	}
 	inspection, err := inspectResolved(item.plan, item.destination, manifest)
 	if err != nil {
 		return err
@@ -231,6 +236,65 @@ func preflight(item resolvedPlan, manifest Manifest, force bool, operation mutat
 		if inspection.State == StateModified && !force {
 			return fmt.Errorf("artifact %q is modified; use force to remove it", item.destination)
 		}
+	}
+	return nil
+}
+
+// detectNameCollision guards against two distinct managed agent artifacts
+// declaring the same frontmatter "name" inside the same destination
+// directory (ADR ADR-2026-07-25-identidade-personalizavel-de-agentes, seção
+// D4). This matters because with customizable identities two different
+// item.IDs could resolve to the same rendered name (e.g. two agents both
+// pointed at slug "zeus"), and some surfaces key agent discovery off that
+// name field.
+//
+// Limitation: the scan only inspects ".md" siblings, because that is the
+// only format where this package has a cheap, dependency-free way
+// (frontmatterName) to read the declared name back out of already-rendered
+// bytes. JSON (cli-agent-json/agent-json) and TOML (custom-agent-toml)
+// artifacts are not scanned for collisions — doing so would require a
+// generic JSON/TOML parser here purely for this check, which is out of
+// scope for this microlote.
+func detectNameCollision(item resolvedPlan, force bool) error {
+	if item.plan.Claim.Kind != KindAgents {
+		return nil
+	}
+	if filepath.Ext(item.destination) != ".md" {
+		return nil
+	}
+	desiredName, ok := frontmatterName(item.plan.Content)
+	if !ok {
+		return nil
+	}
+	directory := filepath.Dir(item.destination)
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("scan %q for name collisions: %w", directory, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+			continue
+		}
+		candidate := filepath.Join(directory, entry.Name())
+		if candidate == item.destination {
+			continue
+		}
+		data, err := os.ReadFile(candidate)
+		if err != nil {
+			continue
+		}
+		candidateName, ok := frontmatterName(data)
+		if !ok || candidateName != desiredName {
+			continue
+		}
+		if force {
+			fmt.Fprintf(os.Stderr, "aviso: %q declara o mesmo name %q que %q; prosseguindo por --force\n", candidate, desiredName, item.destination)
+			continue
+		}
+		return fmt.Errorf("artifact %q declares name %q which collides with existing file %q", item.destination, desiredName, candidate)
 	}
 	return nil
 }

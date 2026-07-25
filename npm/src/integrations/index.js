@@ -1,9 +1,12 @@
 'use strict'
 
+const os = require('node:os')
+
 const { catalog, items, target, surfaceFor, readAsset } = require('./catalog')
 const { render } = require('./render')
 const { IntegrationManager } = require('./manager')
 const { legacyHashes } = require('./legacy')
+const identityStore = require('../identity')
 
 function parseSurfaces(values = []) {
   const result = {}
@@ -40,6 +43,7 @@ function selections(kind, options = {}) {
 
 function buildPlans(kind, options = {}) {
   const selected = selections(kind, options)
+  const identityConfig = options.identity || { agents: {} }
   const plans = []
   for (const { target: targetEntry, surface } of selected.targets) {
     const capability = surface.capabilities[kind]
@@ -50,7 +54,7 @@ function buildPlans(kind, options = {}) {
       for (const item of selected.itemEntries) {
         for (const installPath of paths) {
           const destination = installPath.path.replace('{{id}}', item.id)
-          const content = render({ target: targetEntry.id, kind, item, content: readAsset(item), capability, destination })
+          const content = render({ target: targetEntry.id, kind, item, content: readAsset(item), capability, destination, identity: identityConfig })
           const claim = { target: targetEntry.id, surface: surface.id, scope, kind, item: item.id }
           plans.push({
             claim,
@@ -89,7 +93,13 @@ function result(kind, plans, statuses) {
 }
 
 function execute(kind, operation, options = {}, roots = {}) {
-  const plans = buildPlans(kind, options)
+  // A identidade é resolvida do disco antes de buildPlans — pular esta etapa
+  // reverteria silenciosamente os nomes customizados dos agentes para os
+  // defaults neutros (espelha internal/commands/integrations_flags.go:
+  // executeIntegrationMutation/executeIntegrationList).
+  const homeRoot = roots.homeRoot || os.homedir()
+  const identityConfig = options.identity !== undefined ? options.identity : identityStore.load(homeRoot)
+  const plans = buildPlans(kind, { ...options, identity: identityConfig })
   const manager = new IntegrationManager(roots)
   let statuses
   if (operation === 'list') statuses = manager.inspect(plans)

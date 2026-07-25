@@ -20,6 +20,7 @@ parity: build
 	scripts/check-validate-parity.sh
 	scripts/check-static-assets.sh
 	scripts/check-integration-assets.sh
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-identity-parity.sh
 
 sync-integration-assets:
 	scripts/sync-integration-assets.sh

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 )
 
@@ -88,7 +89,9 @@ func Update(cwd string) error {
 	_, agentsErr := os.Stat(filepath.Join(cwd, "AGENTS.md"))
 	_, codexErr := os.Stat(filepath.Join(cwd, ".codex"))
 	if agentsErr == nil || codexErr == nil {
-		updateDetectedCodexIntegrations(cwd)
+		if err := updateDetectedCodexIntegrations(cwd); err != nil {
+			return fmt.Errorf("codex integration update: %w", err)
+		}
 	}
 	// 2. Validate script (categoria 2 — trackfw-owned, overwrite seguro)
 	if err := generateValidateScript(cfg); err != nil {
@@ -127,21 +130,37 @@ func Update(cwd string) error {
 	return nil
 }
 
-func updateDetectedCodexIntegrations(cwd string) {
+// updateDetectedCodexIntegrations re-applies managed Codex agent/skill
+// artifacts already installed in the project, using the identity currently
+// persisted at ~/.trackfw/identity.json.
+//
+// Only identity.Load failing aborts the whole update (returns an error): an
+// error there means we cannot tell whether the user has a customized
+// identity, and silently falling back to the neutral default would revert it
+// without warning. Every other failure here (catalog, home, per-kind
+// planning, per-artifact inspection) keeps its original warn-and-continue
+// behavior — those are unrelated to identity and must not turn a single
+// unreadable Codex artifact into a reason to skip the rest of `trackfw
+// update` (CI workflow, git hooks, .claude/commands, legacy skill, ...).
+func updateDetectedCodexIntegrations(cwd string) error {
 	catalog, err := integrations.LoadCatalog()
 	if err != nil {
 		fmt.Printf("  ⚠ Codex integration catalog: %v\n", err)
-		return
+		return nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Printf("  ⚠ Codex integration home: %v\n", err)
-		return
+		return nil
+	}
+	ident, err := identity.Load(home)
+	if err != nil {
+		return fmt.Errorf("codex integration identity: %w", err)
 	}
 	manager := integrations.Manager{ProjectRoot: cwd, HomeDir: home}
 	updated := 0
 	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
-		plans, planErr := integrations.BuildPlans(catalog, integrations.PlanRequest{Kind: kind, Targets: []string{"codex"}, Scope: "project"})
+		plans, planErr := integrations.BuildPlans(catalog, integrations.PlanRequest{Kind: kind, Targets: []string{"codex"}, Scope: "project", Identity: ident})
 		if planErr != nil {
 			fmt.Printf("  ⚠ Codex %s plans: %v\n", kind, planErr)
 			continue
@@ -165,6 +184,7 @@ func updateDetectedCodexIntegrations(cwd string) {
 	if updated > 0 {
 		fmt.Printf("  ✓ %d Codex agent/skill artifact(s) migrated or updated\n", updated)
 	}
+	return nil
 }
 
 // updateHooksSurgical garante que 'trackfw validate' está presente nos hooks sem sobrescrever conteúdo do usuário.

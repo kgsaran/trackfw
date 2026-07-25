@@ -2,7 +2,9 @@
 
 const { Command } = require('commander');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const identityStore = require('../identity');
 
 function readUpdateConfig(rootDir) {
   const yaml = path.join(rootDir, 'trackfw.yaml');
@@ -62,6 +64,11 @@ cmd.action(() => {
   const generators = require('../generators/init');
   const discover = require('./discover');
 
+  // A identidade é carregada uma única vez, fora de qualquer try/catch —
+  // um identity.json corrompido deve abortar o comando inteiro, nunca cair
+  // silenciosamente para os nomes neutros default.
+  const identityConfig = identityStore.load(os.homedir());
+
   console.log('trackfw update — re-aplicando templates atuais...\n');
 
   // 1. Agent rules (marker-delimited, idempotent)
@@ -77,7 +84,7 @@ cmd.action(() => {
       const roots = { projectRoot: cwd };
       const manager = new IntegrationManager(roots);
       for (const kind of ['agents', 'skills']) {
-        const plans = buildPlans(kind, { targets: ['codex'], scope: 'project' });
+        const plans = buildPlans(kind, { targets: ['codex'], scope: 'project', identity: identityConfig });
         const statuses = manager.inspect(plans);
         const existing = plans.filter((_, index) => statuses[index].state !== 'not-installed');
         manager.update(existing);

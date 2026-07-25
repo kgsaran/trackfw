@@ -2625,3 +2625,103 @@ Windsurf, Amazon Q e Kiro, com formatos nativos ou fallback declarado.
 
 
 
+
+---
+
+## Sessão 2026-07-25 — Zeus (IMPLEMENTANDO)
+
+**Tarefa:** Identidade humanizada dos agentes trackfw. Branch `feat/identidade-humanizada-agentes`.
+
+**REQ:** `docs/req/REQ-2026-07-25-identidade-humanizada-dos-agentes-trackfw.md`
+**ADR:** `docs/adr/ADR-2026-07-25-identidade-personalizavel-de-agentes.md`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-25-identidade-humanizada-dos-agentes.md`
+
+**Objetivo:** permitir nomear os 10 agentes (`display_name` → `description` + corpo; `slug`+`-tf` → `name`) e definir apelido do usuário (corpo apenas), materializado em tempo de instalação por `Render()`.
+
+**Achados que moldaram o ADR (verificados em código + doc oficial):**
+- Seleção de subagent usa **apenas** `name` + `description`; o corpo carrega só após a seleção. Logo o apelido precisa ir no `description` para habilitar roteamento natural.
+- `name` **não** precisa coincidir com o filename (doc oficial). Path vem de `{{id}}` → alterar `name` não mexe em manifest nem gera órfãos.
+- **Bloqueante encontrado:** os 10 nomes do preset grego já existem em `~/.claude/agents/` (agentes pessoais do usuário). Colisão de `name` no mesmo diretório = shadowing silencioso e não-determinístico (doc oficial). Resolvido por sufixo fixo `-tf` no slug + varredura de colisão obrigatória.
+- `agentTools` decidia SET_ARCH por `strings.HasSuffix(name,"architect")` — quebraria com `name` customizado. Refatorado para `item.ID == "architect"`.
+- Modelo de hash do manifest **suporta** personalização sem drift: `desiredHash` vem de `plan.Content` em tempo de plano.
+
+**Plano:** 5 waves / 7 MLs. W1 (paralelo): ML-1A pacote `internal/identity` + ML-1B placeholders nos assets. W2: ML-2A render/plan/manager. W3: ML-3A wizard `init` + 4 callers + i18n. W4 (paralelo): ML-4A npm + ML-4B pypi. W5: ML-5A gates de paridade + docs.
+
+**Status:** IMPLEMENTANDO — Wave 1 em execução.
+
+**Wave 1 — CONCLUÍDA com mudança de abordagem:**
+- ML-1A ✅ (`9b75dad`) pacote `internal/identity` — `Slugify` (NFD + ASCII-fold via `golang.org/x/text`), `Load`/`Save` atômico em `~/.trackfw/identity.json`, `AgentName` (sufixo `-tf`), `Validate`, fixture de 14 vetores de slug para paridade.
+- ML-1C ✅ (`6e5e179`) 5 presets temáticos hardcoded (greek/norse/potter/thrones/chaves) + `Preset(name)`/`PresetNames()`. 27 testes.
+- ML-1B ❌ **REVERTIDO** (`9ef17b3` → revert). Auditoria Zeus achou vazamento: `Render()` tem 2 rotas e o placeholder `{{IDENTITY_LINE}}` só seria removido em uma. O branch `default:` (`representation: "subagent"` — usado pela superfície **claude**) devolve o source cru, então `trackfw agents install` gravaria o placeholder literal em `~/.claude/agents/trackfw-architect.md`. Confirmado empiricamente. Só 2 testes Node (goldens inline) pegaram, e nas rotas menos usadas.
+  **Nova abordagem:** assets intocados; `Render()` **insere** a linha de identidade quando há identidade. Não-regressão vira verdadeira por construção em vez de depender de 6 implementações corretas de strip (2 rotas × 3 CLIs).
+- **Lacuna descoberta:** não existe cobertura de golden para bytes renderizados em Go — os testes renderizam do mesmo asset embedado, logo são auto-consistentes. ML-2A passa a exigir goldens congelados do estado pré-mudança.
+- **Correção de auditoria:** `go mod tidy` promoveu `golang.org/x/text` de indireta para direta (mesma versão, sem download novo).
+
+**ML-2A — CONCLUÍDO (`09ca1c0`).** Injeção de identidade no `Render()` cobrindo as **duas rotas** de saída (`internal/integrations/render.go`, `plan.go`, `manager.go`):
+
+- `PlanRequest` ganhou campo `Identity identity.Config`, repassado a `Render`.
+- `Render` recebe `cfg identity.Config`; quando `identity.Lookup(cfg, item.ID)` acerta, aplica `name` (`identity.AgentName(slug)`), `description` (`DisplayName + " — " + description original`) e injeta saudação como primeira linha do corpo (`Você é {DisplayName}.` ou, com apelido, `Você é {DisplayName}. Trate o usuário como {UserNickname}.`) seguida de linha em branco.
+- **Rota A** (`custom-agent-toml`, `cli-agent-json`/`agent-json`, `agent-directory`) recebe a injeção via as variáveis já extraídas por `markdownParts`.
+- **Rota B** (branch `default:`, representation `subagent` — usado por claude/gemini/cursor/copilot/kiro-ide/windsurf) recebe a injeção via nova função `insertBodyPrefix`, que localiza o fim do frontmatter com a mesma lógica de `markdownParts` e insere a saudação no corpo cru, preservando o frontmatter original.
+- **Garantia por construção:** quando `Lookup` retorna `ok=false`, o branch `default:` retorna literalmente `normalizeMarkdown(source)` — a mesma expressão de antes da mudança — e as variáveis `name/description/body` só são mutadas dentro de `if hasIdentity {...}`. Não há caminho de código que produza a saída antiga "por acaso".
+- `agentTools` deixou de decidir SET_ARCH por `strings.HasSuffix(name, "architect")` e passou a comparar `item.ID == "architect"` (ADR D8) — sobrevive a `name` customizado (`zeus-tf`).
+- `manager.go` ganhou `detectNameCollision`: antes de instalar/atualizar um artefato `KindAgents`, varre o diretório de destino por outros arquivos `.md` que declarem o mesmo `name` no frontmatter (via nova `frontmatterName`). Colisão sem `force` → erro; com `force` → aviso em stderr e prossegue. O próprio destino do artefato nunca conta como colisão (excluído da varredura de siblings). **Limitação documentada em comentário:** a varredura só cobre `.md` — JSON/TOML não são escaneados (exigiria parser genérico só para este check).
+- **Goldens congelados** criados em `internal/integrations/testdata/` a partir de `git show 5fe5cb9:...architect.md` e dos literais `expected` em `npm/tests/agents-skills.test.js` (Codex TOML e Antigravity agent-directory) — a suite Go deixa de ser auto-referente.
+- Teste-chave que a tentativa anterior não tinha: `TestRenderSubagentRouteInjectsIdentity` prova que a Rota B (representation `subagent`) recebe `Você é Zeus. Trate o usuário como chefe.` no corpo.
+
+**Resultado:** `go build ./...` ✅ | `go test ./...` verde (toda a suite Go) | `go vet ./...` limpo | `scripts/check-integration-assets.sh` ✅ | `cd npm && npm test` 69/69 (sem regressão, não tocado) | `git status`: apenas `internal/integrations/*`. Commit `09ca1c0` na branch `feat/identidade-humanizada-agentes` (sem push).
+
+**Wave 2 — CONCLUÍDA (2 MLs):**
+- ML-2A ✅ (`09ca1c0`) `Render` recebe `identity.Config`; `PlanRequest.Identity`; `agentTools` passa a decidir SET_ARCH por `item.ID`; detecção de colisão de `name` em `manager.go` (limitada a `.md`); goldens congelados em `internal/integrations/testdata/` capturados de `5fe5cb9` e dos literais do teste Node.
+- ML-2B ✅ (`863e6cf`) **corrige defeito achado na auditoria do ML-2A**: o branch `default:` inseria a saudação no corpo mas devolvia o frontmatter intacto — na superfície `claude` o `name` continuava `trackfw-architect`, quebrando `@agent-<slug>-tf` e o roteamento natural. Nova função `rewriteFrontmatterFields` reescreve `name:`/`description:` só dentro do bloco de frontmatter. Teste table-driven cobre todas as representações.
+- **Verificação E2E do orquestrador** com `~/.trackfw/identity.json` real: `architect` → `name: zeus-tf`, `description: Zeus — ...`, `model: opus` preservado, corpo com `Você é Zeus. Trate o usuário como chefe.`; `backend` (não configurado) → byte a byte inalterado; 5 skills verificadas sem contaminação; path `~/.claude/agents/trackfw-architect.md` inalterado.
+- **Padrão observado:** gates verdes (build/test/vet/paridade) não provaram a feature em nenhum dos dois defeitos. Ambos foram pegos por auditoria manual renderizando todas as 8 representações. Recomendação para o ML-5A: o gate de paridade precisa incluir asserção por representação, não só comparação entre CLIs.
+
+**Wave 3 — CONCLUÍDA:**
+- ML-3A ✅ (`af95e7c` + `3cd02b2`) wizard de identidade no `init` (12 opções + modo custom + apelido), flag `--identity-preset` (10 presets + neutral/none), wiring dos 4 callers de `BuildPlans`, i18n nos 3 locales. Agente rodou mutation tests removendo `Identity` de cada caller — todos os 4 testes falharam corretamente, provando que não são vacuous.
+- **Verificação E2E do orquestrador pelo binário real** (`bin/trackfw` + HOME temporário):
+  - `init --ai-tools claude --identity-preset pioneers` → `~/.trackfw/identity.json` gravado; `.claude/agents/trackfw-dba.md` com `name: codd-tf`, `description: Codd — ...`, corpo `Você é Codd.`
+  - re-`init` sem a flag → identidade preservada (md5 idêntico)
+  - `--identity-preset xpto` → erro listando os 12 valores válidos
+  - `init` sem flag em HOME limpo → nenhuma identidade gravada; agente byte a byte igual ao de `5fe5cb9` (não-regressão)
+  - `agents update` → **não reverteu** a identidade; `agents list` reporta `current` (sem falso drift)
+
+**Wave 4 — EM EXECUÇÃO (2 MLs em paralelo):** ML-4A porta Node.js (`npm/`) e ML-4B porta Python (`pypi/`). Ambos recebem a advertência explícita das duas rotas de `Render` (a Rota B, do `default:`/`subagent`, foi onde os dois defeitos anteriores nasceram) e devem copiar `internal/identity/testdata/slug_vectors.json` byte a byte. Ponto de contrato: **os 3 CLIs leem o mesmo `~/.trackfw/identity.json`**.
+
+**Wave 4 — ML-4B (Python) CONCLUÍDO** (`5c703e7`): módulo `pypi/trackfw/identity/`, duas rotas em `renderers.py` (`_insert_body_prefix` → `_rewrite_frontmatter_fields` → `_normalize_markdown`, mesma ordem do Go porque a reescrita dependeria de offsets deslocados se invertida), detecção de colisão, wizard + flag no `init`, i18n nos 3 locales. 392 testes (341 pré-existentes intocados + 51 novos). Agente corrigiu `ensure_ascii=True` nas duas chamadas `json.dumps` da rota TOML — sem identidade nunca divergiu (nenhum asset tem acento), mas `Você é Zeus` teria quebrado a paridade.
+
+**Auditoria de paridade cross-CLI do orquestrador** — mesmo `~/.trackfw/identity.json` (architect=Zeus, apelido Kleber), instalando em 9 alvos pelos 3 CLIs e comparando md5:
+
+| alvo | paridade | identidade aplicada |
+|---|---|---|
+| claude, gemini, cursor, copilot, windsurf, kiro | ✅ md5 idêntico | sim |
+| codex | ✅ | sim |
+| antigravity | ✅ | sim |
+| **amazonq** | ❌ **Node diverge de Go/Python** | sim |
+
+**Defeito PRÉ-EXISTENTE descoberto (não causado por esta feature):** na representação `cli-agent-json` (amazonq), o Go usa `json.MarshalIndent(map[string]string)`, que **ordena as chaves alfabeticamente** (`description, name, prompt`); o `JSON.stringify` do Node preserva a **ordem de inserção** (`name, description, prompt`). Python coincide com o Go. Confirmado reproduzindo com HOME limpo, **sem identidade** — logo é anterior a este trabalho; a feature apenas o tornou visível.
+
+**Impacto real:** um usuário que instala agentes amazonq pelo CLI Go e depois roda `agents list` pelo CLI Node vê estado `modified` (falso drift), porque o manifest é indexado por hash de conteúdo. `check-cli-parity.sh` não detecta isso hoje.
+
+**Encaminhamento:** ML-5A (que já vai adicionar o gate de paridade cross-CLI) deve corrigir a ordem das chaves no `render.js` do npm — caso contrário o próprio gate novo falharia. Alternativa rejeitada: documentar como exceção intencional em `docs/cli-parity.md`, porque o falso drift é um bug de usuário real, não uma divergência cosmética.
+
+**Wave 4 — ML-4A (Node.js) CONCLUÍDO** (`9995c1c`, `6740541`): módulo `npm/src/identity/`, duas rotas em `render.js`, `toolsFor` por `item.id`, detecção de colisão, wizard + flag, i18n. 97 testes.
+
+**Wave 5 — CONCLUÍDA (re-split em 2 MLs paralelos):**
+- ML-5A ✅ (`e10ffad`, `3b22736`) — corrigiu o defeito **pré-existente** do `cli-agent-json`/`agent-json` (ordem de chaves JSON no Node) e criou `scripts/check-identity-parity.sh`. Ampliou o gate de 9 para **11 combinações target/surface** por conta própria, incluindo `antigravity=legacy-cli` e `kiro=cli` — a representação `agent-json` só existe em superfícies **não-default**, então sem elas metade do fix ficaria sem cobertura (e ambas de fato divergiam).
+- ML-5B ✅ (`641494e`) — `docs/cli-parity.md`, os 3 READMEs (`npm/README.md` não existia e foi criado), fechamento de roadmap e REQ. Recusou-se a marcar 1 critério não verificável e reportou 3 achados, 2 deles defeitos meus.
+
+**Wave 6 — CONCLUÍDA:** ML-6A ✅ (`903ad9c`) — `Validate` rejeita slug com sufixo `-tf` duplicado nos 3 CLIs. Fecha footgun de caminho suportado (edição manual do `identity.json`, ADR D9).
+
+**Defeitos corrigidos pela auditoria do orquestrador nesta feature:**
+1. Placeholder `{{IDENTITY_LINE}}` vazaria literal em `~/.claude/agents/` (ML-1B revertido)
+2. Rota `subagent` não reescrevia o frontmatter — `@agent-<slug>-tf` e roteamento natural quebrados na superfície principal (ML-2B)
+3. Ordem de chaves JSON divergente Node × Go/Python — **pré-existente**, causava falso drift (ML-5A)
+4. Exemplo do ADR D5 induzia `name: zeus-tf-tf` (corrigido + guard no ML-6A)
+5. Nome da branch sem slug correspondente no roadmap — `trackfw validate` vermelho (roadmap renomeado)
+
+**Lição registrada:** nos defeitos 1, 2 e 3 **todos os gates estavam verdes**. Os testes Go eram auto-referentes (renderizavam do mesmo asset embedado) e não detectavam drift. A correção estrutural foi introduzir goldens congelados em `internal/integrations/testdata/` e o gate cross-CLI `check-identity-parity.sh` — este último verificado falhando de propósito antes de ser aceito.
+
+**Estado final:** `make quality` verde (Go + 99 Node + 394 Python + 5 gates de paridade). `trackfw validate`: 2 violations, ambas pré-existentes de `REQ-2026-07-24-corrige-resolve...`.
+
+**Status:** CONCLUÍDO — aguardando decisão do usuário sobre PR (não aberto).

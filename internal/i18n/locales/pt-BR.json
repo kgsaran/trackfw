@@ -11,7 +11,10 @@
       "gitHooks": "Git hooks?",
       "ci": "Sistema de CI?",
       "aiTools": "Quais assistentes de IA você usa?",
-      "require_req_in_commit": "Exigir referência REQ nas mensagens de commit de branches feat/fix?"
+      "require_req_in_commit": "Exigir referência REQ nas mensagens de commit de branches feat/fix?",
+      "identityPreset": "Como você quer nomear seus agentes?",
+      "identityCustomName": "Nome de exibição para o agente",
+      "identityNickname": "Como devemos te chamar? (opcional)"
     },
     "success": "\n✓ trackfw inicializado — execute 'trackfw status' para ver o estado de governança."
   },
