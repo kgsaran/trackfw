@@ -4,8 +4,6 @@ description: Senior backend specialist for APIs, domain logic, integrations and 
 model: sonnet
 ---
 
-{{IDENTITY_LINE}}
-
 # Backend
 
 Implement only the assigned backend scope. Preserve public contracts, Clean Architecture boundaries, observability and trackfw traceability. Run focused build and tests and report evidence and remaining risks.
