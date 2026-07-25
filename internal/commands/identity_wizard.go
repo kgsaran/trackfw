@@ -67,39 +67,85 @@ func runIdentityWizard(catalog *integrations.Catalog, home string) (identity.Con
 			return identity.Config{}, false, err
 		}
 
-		if identitySelect == "" || identitySelect == "neutral" {
-			return identity.Config{}, false, nil
-		}
-
-		cfg, err := buildIdentityConfig(identitySelect, knownAgentIDs, customDisplayNames, userNickname)
-		if err != nil {
-			return identity.Config{}, false, fmt.Errorf("identidade invalida: %w", err)
-		}
-		if err := identity.Validate(cfg, knownAgentIDs); err != nil {
-			return identity.Config{}, false, fmt.Errorf("identidade invalida: %w", err)
-		}
-
-		confirmed, err := confirmIdentitySelection(catalog, knownAgentIDs, cfg)
+		cfg, outcome, err := resolveIdentitySelection(home, identitySelect, knownAgentIDs, customDisplayNames, userNickname,
+			func(candidate identity.Config) (bool, error) {
+				return confirmIdentitySelection(catalog, knownAgentIDs, candidate)
+			})
 		if err != nil {
 			return identity.Config{}, false, err
 		}
-		if !confirmed {
+		switch outcome {
+		case identitySkipped:
+			return identity.Config{}, false, nil
+		case identityDeclined:
 			// D3: declining returns to preset selection without persisting
 			// anything at all.
 			continue
+		default:
+			return cfg, true, nil
 		}
-
-		if err := identity.Save(home, cfg); err != nil {
-			return identity.Config{}, false, fmt.Errorf("falha ao gravar identidade: %w", err)
-		}
-		return cfg, true, nil
 	}
 }
 
+// identityOutcome distinguishes the three terminal states of a single wizard
+// round. A plain bool cannot: "neutral" (write nothing and finish) and
+// "user declined the confirmation" (write nothing and re-ask) are both
+// "nothing was saved", but the caller must return in the first case and loop
+// in the second.
+type identityOutcome int
+
+const (
+	// identitySkipped: "neutral" or the hidden-group zero value — the wizard
+	// writes nothing at all and the caller is done.
+	identitySkipped identityOutcome = iota
+	// identityDeclined: the config was built and validated, but the user
+	// rejected the confirmation screen; nothing was written.
+	identityDeclined
+	// identitySaved: the config was validated, confirmed and persisted.
+	identitySaved
+)
+
+// resolveIdentitySelection is the entire non-interactive half of the wizard:
+// the "write nothing" predicate, the Config construction, validation,
+// confirmation and persistence — in that exact order. runIdentityWizard is
+// its only production caller, so this sequence lives in exactly one place and
+// tests exercising it are testing the shipped path.
+//
+// The confirm callback is the sole interactive step (rendered by
+// confirmIdentitySelection in production); it is invoked only after
+// identity.Validate has already accepted cfg, and identity.Save runs only
+// after confirm returns true. That ordering is the whole point of the
+// extraction: a slug collision must abort before anything reaches disk.
+func resolveIdentitySelection(home, identitySelect string, knownAgentIDs []string, customDisplayNames []string, userNickname string, confirm func(identity.Config) (bool, error)) (identity.Config, identityOutcome, error) {
+	if identitySelect == "" || identitySelect == "neutral" {
+		return identity.Config{}, identitySkipped, nil
+	}
+
+	cfg, err := buildIdentityConfig(identitySelect, knownAgentIDs, customDisplayNames, userNickname)
+	if err != nil {
+		return identity.Config{}, identitySkipped, fmt.Errorf("identidade invalida: %w", err)
+	}
+	if err := identity.Validate(cfg, knownAgentIDs); err != nil {
+		return identity.Config{}, identitySkipped, fmt.Errorf("identidade invalida: %w", err)
+	}
+
+	confirmed, err := confirm(cfg)
+	if err != nil {
+		return identity.Config{}, identitySkipped, err
+	}
+	if !confirmed {
+		return identity.Config{}, identityDeclined, nil
+	}
+
+	if err := identity.Save(home, cfg); err != nil {
+		return identity.Config{}, identitySkipped, fmt.Errorf("falha ao gravar identidade: %w", err)
+	}
+	return cfg, identitySaved, nil
+}
+
 // buildIdentityConfig builds the in-memory Config for the chosen wizard
-// path, without touching disk. Extracted from saveWizardIdentity (init.go)
-// so both the shared wizard and the flag-driven init.go helper build the
-// exact same Config shape from the exact same inputs.
+// path, without touching disk, so the Config shape is built from the wizard
+// inputs in exactly one place.
 func buildIdentityConfig(identitySelect string, knownAgentIDs []string, customDisplayNames []string, userNickname string) (identity.Config, error) {
 	var cfg identity.Config
 	if identitySelect == "custom" {

@@ -371,30 +371,3 @@ func installAITools(aiTools []string, cwd string) error {
 	}
 	return nil
 }
-
-// saveWizardIdentity persists the identity chosen through the interactive
-// wizard. "neutral" (and the zero-value select left untouched because the
-// group was hidden) mean "do not write anything". It delegates the actual
-// Config construction to buildIdentityConfig (identity_wizard.go) so this
-// path and the shared runIdentityWizard build the exact same shape from the
-// exact same inputs; this helper still exists as its own function because
-// it is exercised directly by tests that predate the shared wizard and must
-// keep working byte-for-byte.
-func saveWizardIdentity(home, identitySelect string, knownAgentIDs []string, customDisplayNames []string, userNickname string) error {
-	if identitySelect == "" || identitySelect == "neutral" {
-		return nil
-	}
-
-	cfg, err := buildIdentityConfig(identitySelect, knownAgentIDs, customDisplayNames, userNickname)
-	if err != nil {
-		return fmt.Errorf("init: %w", err)
-	}
-
-	if err := identity.Validate(cfg, identity.KnownAgentIDs()); err != nil {
-		return fmt.Errorf("init: identidade invalida: %w", err)
-	}
-	if err := identity.Save(home, cfg); err != nil {
-		return fmt.Errorf("init: falha ao gravar identidade: %w", err)
-	}
-	return nil
-}
