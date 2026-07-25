@@ -134,6 +134,32 @@ the three runtimes render the same artifact for the same `identity.json`.
 It runs as part of `make quality`, alongside `check-cli-parity.sh` and
 `check-integration-assets.sh`.
 
+### The wizard's UX is also part of the contract
+
+Identity is not only configured by `init` — `trackfw agents install` offers
+the same interactive wizard, and the two entry points must feel identical
+across the three CLIs. Specifically:
+
+- **Order of steps** — targets → agents → surface → nickname → preset or
+  custom → names (custom only) → confirmation → install.
+- **Trigger rule** — the wizard appears in `agents install` only when
+  `kind == agents` **and** stdin is a TTY **and** (`identity.json` is absent
+  **or** `--identity` was passed). `skills install` never triggers it, and a
+  non-interactive run never blocks on a prompt.
+- **Confirmation screen content** — before any write, the ten
+  `specialty → name` pairs plus the nickname, for preset and custom alike;
+  declining returns to preset selection without persisting anything.
+- **Custom-mode labels** — each field shows `Item.Name` + `Item.Description`
+  from the catalog (e.g. `Architect — Architecture, ADRs and governed
+  coordination`), never the raw `id`.
+
+Unlike the artifact bytes and the slug algorithm, this UX contract has **no
+automated cross-CLI test** yet — `check-identity-parity.sh` validates the
+generated artifacts, not the wizard's interactive flow. Parity here is
+maintained by review: a change to the wizard's steps, labels, trigger rule,
+or confirmation layout in one CLI must be ported to the other two in the same
+change.
+
 ## Release rule
 
 Changes to commands, options, exit codes, JSON fields, validation rules, or

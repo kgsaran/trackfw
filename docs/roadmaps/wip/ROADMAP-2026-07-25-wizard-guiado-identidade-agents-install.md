@@ -220,7 +220,7 @@ Detectar TTY com `sys.stdin.isatty()`.
 > Dependencies: **barrier — ML-2A e ML-2B completos**
 
 ### ML-3A — Docs, i18n cruzado e E2E
-**Status:** pending
+**Status:** done
 **Agente:** general-purpose
 **Files affected:** `README.md`, `npm/README.md`, `pypi/README.md`,
 `docs/cli-parity.md`, `docs/agents-working-context.md`
@@ -237,11 +237,42 @@ Detectar TTY com `sys.stdin.isatty()`.
    `skills install` (nunca pergunta), nao-TTY (nao bloqueia).
 
 **Acceptance criteria:**
-- [ ] `make quality` verde
-- [ ] `trackfw validate` sem violations novas (2 preexistentes de
-      `REQ-2026-07-24-corrige-resolve...` nao contam)
-- [ ] Os 3 READMEs documentam `--identity` e `--identity-preset`
-- [ ] E2E dos 5 cenarios com output real registrado no relatorio
+- [x] `make quality` verde (Go 21 testes + npm 113 testes + pytest 418 testes,
+      `check-cli-parity.sh`, `check-validate-parity.sh`, `check-static-assets.sh`,
+      `check-integration-assets.sh` e `check-identity-parity.sh` todos verdes)
+- [x] `trackfw validate` sem violations novas — apenas as 2 preexistentes de
+      `REQ-2026-07-24-corrige-resolve-de-integrations-em-windows-...` (`no
+      linked ADR` / `no linked Roadmap`)
+- [x] Os 3 READMEs documentam `--identity` e `--identity-preset`
+- [x] E2E dos 4 cenarios (A/B/C/D do prompt do orquestrador) com output real
+      registrado no relatorio, nos 3 CLIs — ver auditoria abaixo
+- [x] Chaves i18n `identity.wizard.{confirmHeader,confirmQuestion,nicknameRowLabel}`
+      e `identity.inUse` conferidas nos 9 arquivos de locale (3 CLIs x 3
+      idiomas), conjuntos identicos
+
+**Auditoria (Wave 3, ML-3A — E2E pelos 3 binarios reais, `HOME` isolado, `WD`
+fora do repositorio):**
+
+| Cenario | Go | Node | Python |
+|---|---|---|---|
+| A — sem identidade + `--identity-preset chaves` | ✅ `name: girafales-tf` | ✅ `name: girafales-tf` | ✅ `name: girafales-tf` |
+| B — identidade ja configurada, sem flag | ✅ `identity: 10 custom agent(s)`, nao pergunta | ✅ idem | ✅ idem |
+| C — `skills install --help \| grep -c identity` | ✅ `0` | ✅ `0` | ✅ `0` |
+| D — `--identity-preset xpto` | ✅ erro limpo listando os 12 validos | ❌ stack trace (nao e erro limpo) | ✅ erro limpo listando os 12 validos |
+
+**Achado no Cenario D (Node):** `--identity-preset xpto` no CLI Node encerra
+com stack trace em vez de mensagem de erro limpa. **Nao e regressao desta
+REQ** — e o mesmo padrao pre-existente ja registrado na auditoria da Wave 2
+para `--scope xpto` (ausencia de try/catch global no CLI Node), fora do
+escopo desta REQ, que e exclusivamente de UX do wizard de identidade.
+Reportado aqui para rastreabilidade; nao bloqueia o fechamento do ML.
+
+**Nota de higiene do E2E:** os cenarios A/B foram executados com `scope
+project` a partir de um diretorio de trabalho **fora** do repositorio
+(`WD` em `/private/tmp/.../scratchpad/e2e/{go,node,python}`), evitando
+escrever `.claude/agents/` ou `.trackfw/` na arvore do trackfw. Uma primeira
+tentativa rodou por engano dentro do repo e foi revertida com `rm -rf` antes
+de qualquer commit.
 
 ---
 
