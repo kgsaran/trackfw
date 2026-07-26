@@ -164,11 +164,23 @@ go test ./internal/validator/... && make quality
 
 ---
 
-## Wave 2 — Adendos por papel (2 MLs em paralelo)
-> Dependências: **barrier** — ML-1A concluído. Os dois MLs tocam arquivos disjuntos.
+## Wave 2 — Adendos por papel (ML-2A + ML-2B, agente único)
+> Dependências: **barrier** — ML-1A concluído.
+
+> ⚠️ **Correção de paralelismo (2026-07-26, auditoria pré-spawn).** ML-2A e ML-2B tocam arquivos
+> de asset disjuntos, mas **compartilham saídas**: a árvore gerada por `sync-integration-assets.sh`
+> (npm + pypi), o binário `bin/trackfw` produzido por `make quality`, e o índice do git — ambos
+> operam no mesmo worktree. Dois `git add`/`commit` concorrentes ali colidem.
+> Pela regra do ADR ("MLs que compartilham arquivo tornam-se sequenciais"), os dois MLs passam a ser
+> executados por um **agente único**, na ordem 2A → 2B, com um commit por ML.
+>
+> 📌 Regra derivada, válida para as waves seguintes: **paralelismo só é seguro entre MLs que não
+> disparam `sync-integration-assets.sh` nem `make quality` ao mesmo tempo.** Isso afeta a Wave 3
+> (ML-3A não sincroniza assets; ML-3B sim → seguem paralelos) e a Wave 4 (ML-4A sincroniza; ML-4B
+> não → seguem paralelos).
 
 ### ML-2A — Adendo do orquestrador no `architect`
-**Status:** pending
+**Status:** in progress
 **Agente sugerido:** architect
 **Files affected:** `internal/integrations/assets/agents/architect.md`
 
@@ -193,7 +205,7 @@ go test ./internal/validator/... && make quality
 ---
 
 ### ML-2B — Adendo do implementador nos 9 demais assets
-**Status:** pending
+**Status:** in progress
 **Agente sugerido:** backend
 **Files affected:** `internal/integrations/assets/agents/{backend,frontend,qa,infra,security,dba,ux,code-quality,data}.md`
 
