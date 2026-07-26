@@ -3,9 +3,12 @@ package commands
 import (
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/forge"
 	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
@@ -22,12 +25,24 @@ type shipDeps struct {
 	checkGovernance func() []string
 
 	out io.Writer
+
+	// Step 7 — forge resolution and PR/MR opening.
+	// configForge is the forge: value from trackfw.yaml (injected; production: config.Load().Forge).
+	configForge string
+	// repoDir is the repo root for CI file detection ("" skips CI detection — safe for tests).
+	repoDir string
+	// availFn injects CLI availability check for forge.NewAdapter. nil uses the production default.
+	availFn func(string) bool
+	// execForgeCLI runs the forge CLI (gh, glab, az). nil uses defaultExecForgeCLI.
+	execForgeCLI func(name string, args []string) error
 }
 
 // shipOpts holds the parsed CLI flags for the ship command.
 type shipOpts struct {
 	message string
 	dryRun  bool
+	noPR    bool   // --no-pr: skip PR/MR creation after push
+	forge   string // --forge: override forge detection
 }
 
 // gitWriteCommands lists git subcommands that modify local or remote state.
@@ -41,6 +56,8 @@ var gitWriteCommands = map[string]bool{
 func newShipCmd() *cobra.Command {
 	var message string
 	var dryRun bool
+	var noPR bool
+	var forgeFlag string
 
 	cmd := &cobra.Command{
 		Use:   "ship",
@@ -54,6 +71,7 @@ func newShipCmd() *cobra.Command {
   4. Reviews what is staged (git status --short + git diff --cached --stat)
   5. Commits with Conventional Commits format (-m is required)
   6. Pushes to origin (adds -u if no upstream is configured yet)
+  7. Opens PR/MR via the resolved forge CLI (or prints URL if CLI is absent)
 
 Stage your files explicitly before running ship.
 This command never executes 'git add .' or 'git add -A'.`,
@@ -62,13 +80,24 @@ This command never executes 'git add .' or 'git add -A'.`,
 				execGit:         defaultGitExec,
 				checkGovernance: defaultCheckGovernance,
 				out:             cmd.OutOrStdout(),
+				configForge:     config.Load().Forge,
+				repoDir:         ".",
+				availFn:         nil, // forge.NewAdapter uses its own default when nil
+				execForgeCLI:    defaultExecForgeCLI,
 			}
-			return runShip(shipOpts{message: message, dryRun: dryRun}, deps)
+			return runShip(shipOpts{
+				message: message,
+				dryRun:  dryRun,
+				noPR:    noPR,
+				forge:   forgeFlag,
+			}, deps)
 		},
 	}
 
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Commit message (Conventional Commits format required)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print what would be done without executing write commands")
+	cmd.Flags().BoolVar(&noPR, "no-pr", false, "Skip PR/MR creation after push")
+	cmd.Flags().StringVar(&forgeFlag, "forge", "", "Override forge detection (github, gitlab, bitbucket, azure)")
 
 	return cmd
 }
@@ -79,6 +108,15 @@ func defaultGitExec(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
+}
+
+// defaultExecForgeCLI runs the forge CLI (gh, glab, az) with inherited stdin/stdout/stderr.
+func defaultExecForgeCLI(name string, args []string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // defaultCheckGovernance calls CheckShipGovernance as a hard gate.
@@ -205,10 +243,105 @@ func runShip(opts shipOpts, deps shipDeps) error {
 
 	if !opts.dryRun {
 		fmt.Fprintf(deps.out, "Pushed:    %s → origin/%s\n", branch, branch)
-		fmt.Fprintf(deps.out, "\nship complete.\n")
 	}
 
+	// ─── Step 7: Open PR/MR ──────────────────────────────────────────────────
+	// Resolve forge from: flag → config → remote URL → CI files → manual.
+	remoteURL, _ := deps.execGit("remote", "get-url", "origin")
+	remoteURL = strings.TrimSpace(remoteURL)
+
+	resolution, resErr := forge.Resolve(forge.Input{
+		FlagForge:   opts.forge,
+		ConfigForge: deps.configForge,
+		RemoteURL:   remoteURL,
+		RepoDir:     deps.repoDir,
+	})
+	if resErr != nil {
+		fmt.Fprintf(deps.out, "Warning: forge resolution error: %s — open PR/MR manually.\n", resErr)
+		fmt.Fprintf(deps.out, "\nship complete.\n")
+		return nil
+	}
+
+	adapter := forge.NewAdapter(resolution.Forge, deps.availFn)
+	fmt.Fprintf(deps.out, "Forge:     %s (source: %s)\n", resolution.Forge, resolution.Source)
+
+	if opts.noPR {
+		fmt.Fprintf(deps.out, "--no-pr: skipping %s creation.\n", adapter.Noun)
+		fmt.Fprintf(deps.out, "\nship complete.\n")
+		return nil
+	}
+
+	if opts.dryRun {
+		fmt.Fprintf(deps.out, "[dry-run] would open %s via %s\n", adapter.Noun, resolution.Forge)
+		return nil
+	}
+
+	if resolution.Forge == "manual" {
+		fmt.Fprintf(deps.out, "\nOpen your %s manually at:\n  %s\n", adapter.Noun, remoteURL)
+		fmt.Fprintf(deps.out, "\nship complete.\n")
+		return nil
+	}
+
+	if !adapter.Available {
+		url := adapter.FallbackURL(remoteURL, branch)
+		if url != "" {
+			fmt.Fprintf(deps.out, "%s CLI (%s) not available — open in browser:\n  %s\n", adapter.Noun, adapter.CLIName, url)
+		} else {
+			fmt.Fprintf(deps.out, "%s CLI (%s) not available — open %s manually.\n", adapter.Noun, adapter.CLIName, adapter.Noun)
+		}
+		fmt.Fprintf(deps.out, "\nship complete.\n")
+		return nil
+	}
+
+	// CLI is available — invoke it to create the PR/MR.
+	title := firstLine(opts.message)
+	body := buildPRBody(branch)
+	cliArgs := buildForgeCreateArgs(adapter, title, body)
+
+	execForgeCLI := deps.execForgeCLI
+	if execForgeCLI == nil {
+		execForgeCLI = defaultExecForgeCLI
+	}
+
+	if err := execForgeCLI(adapter.CLIName, cliArgs); err != nil {
+		url := adapter.FallbackURL(remoteURL, branch)
+		fmt.Fprintf(deps.out, "Warning: %s CLI failed (%s).\n", adapter.Noun, err)
+		if url != "" {
+			fmt.Fprintf(deps.out, "Open in browser:\n  %s\n", url)
+		}
+	} else {
+		fmt.Fprintf(deps.out, "%s created.\n", adapter.Noun)
+	}
+
+	fmt.Fprintf(deps.out, "\nship complete.\n")
 	return nil
+}
+
+// firstLine returns only the first line of s (before any newline).
+func firstLine(s string) string {
+	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+		return s[:idx]
+	}
+	return s
+}
+
+// buildPRBody constructs a minimal PR/MR body referencing the branch.
+func buildPRBody(branch string) string {
+	return fmt.Sprintf("Branch: %s\n\nCreated by trackfw ship.", branch)
+}
+
+// buildForgeCreateArgs appends --title and --body (or --description for azure)
+// to a copy of adapter.CLIArgs. Never mutates the adapter slice.
+func buildForgeCreateArgs(adapter forge.Adapter, title, body string) []string {
+	args := make([]string, len(adapter.CLIArgs))
+	copy(args, adapter.CLIArgs)
+	args = append(args, "--title", title)
+	if adapter.Forge == "azure" {
+		args = append(args, "--description", body)
+	} else {
+		args = append(args, "--body", body)
+	}
+	return args
 }
 
 // isShipBranch returns true when branch matches feat|fix|refactor/<slug>.

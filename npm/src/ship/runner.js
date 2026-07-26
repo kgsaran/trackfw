@@ -10,6 +10,8 @@
 const { spawnSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
+const { resolve: forgeResolve } = require('../forge/resolve')
+const { forgeAdapter } = require('../forge/adapter')
 
 // Git subcommands that modify local or remote state.
 // In --dry-run mode these are printed but not executed.
@@ -195,10 +197,54 @@ function buildPushArgs(branch, execGit) {
 }
 
 /**
- * runShip executes the six-step ship sequence.
+ * defaultExecForgeCLI invokes a forge CLI (gh, glab, az) inheriting stdio.
+ * @param {string} name
+ * @param {string[]} args
+ * @returns {Error|null}
+ */
+function defaultExecForgeCLI(name, args) {
+  const result = spawnSync(name, args, { stdio: 'inherit' })
+  if (result.status !== 0) {
+    return new Error(`${name} exited with ${result.status}`)
+  }
+  return null
+}
+
+/**
+ * firstLine returns only the first line of s.
+ * @param {string} s
+ * @returns {string}
+ */
+function firstLine(s) {
+  const idx = s.indexOf('\n')
+  return idx >= 0 ? s.slice(0, idx) : s
+}
+
+/**
+ * buildForgeCreateArgs appends --title and --body (or --description for azure)
+ * to a copy of adapter.cliArgs. Never mutates the original array.
+ * @param {object} adapter
+ * @param {string} title
+ * @param {string} body
+ * @returns {string[]}
+ */
+function buildForgeCreateArgs(adapter, title, body) {
+  const args = [...adapter.cliArgs, '--title', title]
+  if (adapter.forge === 'azure') {
+    args.push('--description', body)
+  } else {
+    args.push('--body', body)
+  }
+  return args
+}
+
+/**
+ * runShip executes the seven-step ship sequence.
  *
- * @param {{ message: string, dryRun: boolean }} opts
- * @param {{ execGit?: function, checkGovernance?: function, writeln?: function }} deps
+ * @param {{ message: string, dryRun: boolean, noPR?: boolean, forge?: string }} opts
+ * @param {{ execGit?: function, checkGovernance?: function, writeln?: function,
+ *           configForge?: string, repoDir?: string,
+ *           availFn?: function, execForgeCLI?: function }} deps
  * @returns {number} exit code (0 = success)
  */
 function runShip(opts, deps = {}) {
@@ -319,9 +365,72 @@ function runShip(opts, deps = {}) {
 
   if (!opts.dryRun) {
     writeln(`Pushed:    ${branch} → origin/${branch}`)
-    writeln('\nship complete.')
   }
 
+  // ─── Step 7: Open PR/MR ────────────────────────────────────────────────────
+  const { stdout: remoteURLRaw } = execGit(['remote', 'get-url', 'origin'])
+  const remoteURL = (remoteURLRaw || '').trim()
+
+  let resolution
+  try {
+    resolution = forgeResolve({
+      flagForge: opts.forge || '',
+      configForge: deps.configForge || '',
+      remoteURL,
+      repoDir: deps.repoDir || '',
+    })
+  } catch (resErr) {
+    writeln(`Warning: forge resolution error: ${resErr.message} — open PR/MR manually.`)
+    writeln('\nship complete.')
+    return 0
+  }
+
+  const adapter = forgeAdapter(resolution.forge, deps.availFn || undefined)
+  writeln(`Forge:     ${resolution.forge} (source: ${resolution.source})`)
+
+  if (opts.noPR) {
+    writeln(`--no-pr: skipping ${adapter.noun} creation.`)
+    writeln('\nship complete.')
+    return 0
+  }
+
+  if (opts.dryRun) {
+    writeln(`[dry-run] would open ${adapter.noun} via ${resolution.forge}`)
+    return 0
+  }
+
+  if (resolution.forge === 'manual') {
+    writeln(`\nOpen your ${adapter.noun} manually at:\n  ${remoteURL}`)
+    writeln('\nship complete.')
+    return 0
+  }
+
+  if (!adapter.available) {
+    const url = adapter.fallbackURL(remoteURL, branch)
+    if (url) {
+      writeln(`${adapter.noun} CLI (${adapter.cliName}) not available — open in browser:\n  ${url}`)
+    } else {
+      writeln(`${adapter.noun} CLI (${adapter.cliName}) not available — open ${adapter.noun} manually.`)
+    }
+    writeln('\nship complete.')
+    return 0
+  }
+
+  // CLI is available — invoke it.
+  const title = firstLine(opts.message || '')
+  const body = `Branch: ${branch}\n\nCreated by trackfw ship.`
+  const cliArgs = buildForgeCreateArgs(adapter, title, body)
+  const execForgeCLI = deps.execForgeCLI || defaultExecForgeCLI
+  const cliErr = execForgeCLI(adapter.cliName, cliArgs)
+  if (cliErr) {
+    const url = adapter.fallbackURL(remoteURL, branch)
+    writeln(`Warning: ${adapter.noun} CLI failed (${cliErr.message}).`)
+    if (url) writeln(`Open in browser:\n  ${url}`)
+  } else {
+    writeln(`${adapter.noun} created.`)
+  }
+
+  writeln('\nship complete.')
   return 0
 }
 
@@ -332,4 +441,6 @@ module.exports = {
   normalizeBranchSlug,
   checkShipGovernance,
   GIT_WRITE_COMMANDS,
+  buildForgeCreateArgs,
+  firstLine,
 }

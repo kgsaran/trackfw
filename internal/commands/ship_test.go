@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/forge"
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -56,6 +58,11 @@ func makeDeps(branch, staged string, violations []string) (shipDeps, *mockGit) {
 		execGit:         m.exec,
 		checkGovernance: func() []string { return violations },
 		out:             &bytes.Buffer{},
+		// Step 7 safe defaults: CLI never invoked, no filesystem access.
+		configForge:  "",
+		repoDir:      "", // empty → no CI file detection
+		availFn:      func(string) bool { return false },
+		execForgeCLI: func(string, []string) error { return nil },
 	}
 	return d, m
 }
@@ -180,6 +187,8 @@ func TestShip_DryRun_NoWriteCommandsExecuted(t *testing.T) {
 		execGit:         m.exec,
 		checkGovernance: func() []string { return nil },
 		out:             &bytes.Buffer{},
+		availFn:         func(string) bool { return false },
+		execForgeCLI:    func(string, []string) error { return nil },
 	}
 
 	err := runShip(shipOpts{message: "feat(scope): dry run test", dryRun: true}, d)
@@ -240,6 +249,8 @@ func TestShip_ExecNeverReceivesGitAddAll(t *testing.T) {
 		execGit:         m.exec,
 		checkGovernance: func() []string { return nil },
 		out:             &bytes.Buffer{},
+		availFn:         func(string) bool { return false },
+		execForgeCLI:    func(string, []string) error { return nil },
 	}
 
 	_ = runShip(shipOpts{message: "feat: safe check", dryRun: true}, d)
@@ -270,6 +281,232 @@ func TestIsShipBranch(t *testing.T) {
 	for _, b := range invalid {
 		if isShipBranch(b) {
 			t.Errorf("isShipBranch(%q) should be false", b)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Step 7 — forge resolution and PR/MR opening
+// ────────────────────────────────────────────────────────────────────────────
+
+// mockForgeCLI captures execForgeCLI calls.
+type mockForgeCLI struct {
+	calls []struct {
+		name string
+		args []string
+	}
+	err error
+}
+
+func (m *mockForgeCLI) exec(name string, args []string) error {
+	m.calls = append(m.calls, struct {
+		name string
+		args []string
+	}{name, args})
+	return m.err
+}
+
+// makeStep7Deps returns deps ready to reach Step 7 (valid branch, staged file, no violations).
+func makeStep7Deps(configForge string, forgeFlag string, availFn func(string) bool) (shipOpts, shipDeps, *mockGit, *mockForgeCLI) {
+	g := &mockGit{branch: "feat/my-feature", stagedFiles: "file.go"}
+	cli := &mockForgeCLI{}
+	if availFn == nil {
+		availFn = func(string) bool { return false }
+	}
+	d := shipDeps{
+		execGit:         g.exec,
+		checkGovernance: func() []string { return nil },
+		out:             &bytes.Buffer{},
+		configForge:     configForge,
+		repoDir:         "",
+		availFn:         availFn,
+		execForgeCLI:    cli.exec,
+	}
+	opts := shipOpts{message: "feat(x): test step7", forge: forgeFlag}
+	return opts, d, g, cli
+}
+
+func TestShip_GitLab_SaysMergeRequest(t *testing.T) {
+	opts, d, _, _ := makeStep7Deps("gitlab", "", func(string) bool { return false })
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "Merge Request") {
+		t.Fatalf("expected 'Merge Request' in output for gitlab, got:\n%s", out)
+	}
+}
+
+func TestShip_GitHub_SaysPullRequest(t *testing.T) {
+	opts, d, _, _ := makeStep7Deps("github", "", func(string) bool { return false })
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "Pull Request") {
+		t.Fatalf("expected 'Pull Request' in output for github, got:\n%s", out)
+	}
+}
+
+func TestShip_CLIUnavailable_Exit0WithURL(t *testing.T) {
+	// GitHub with CLI unavailable — should print URL and return nil.
+	opts, d, _, cli := makeStep7Deps("github", "", func(string) bool { return false })
+	d.repoDir = ""
+	// Override execGit to return a real-looking remote URL so FallbackURL works.
+	g := &mockGit{branch: "feat/my-feature", stagedFiles: "file.go"}
+	origExec := g.exec
+	d.execGit = func(args ...string) (string, error) {
+		if len(args) == 3 && args[0] == "remote" && args[1] == "get-url" {
+			return "https://github.com/org/repo.git", nil
+		}
+		return origExec(args...)
+	}
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("should not return error when CLI unavailable: %v", err)
+	}
+	if len(cli.calls) > 0 {
+		t.Fatalf("execForgeCLI must not be called when CLI is unavailable")
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "github.com") {
+		t.Fatalf("expected fallback URL in output, got:\n%s", out)
+	}
+}
+
+func TestShip_ManualForge_Exit0(t *testing.T) {
+	// No forge flag, no config, no remoteURL → manual.
+	opts, d, _, cli := makeStep7Deps("", "", nil)
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("manual forge should not cause error: %v", err)
+	}
+	if len(cli.calls) > 0 {
+		t.Fatalf("execForgeCLI must not be called for manual forge")
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "ship complete") {
+		t.Fatalf("expected 'ship complete' in manual output, got:\n%s", out)
+	}
+}
+
+func TestShip_NoPR_SkipsStep7(t *testing.T) {
+	opts, d, _, cli := makeStep7Deps("github", "", func(string) bool { return true })
+	opts.noPR = true
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("--no-pr should not cause error: %v", err)
+	}
+	if len(cli.calls) > 0 {
+		t.Fatalf("execForgeCLI must not be called with --no-pr")
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "--no-pr") {
+		t.Fatalf("expected '--no-pr' message in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "ship complete") {
+		t.Fatalf("expected 'ship complete' in output with --no-pr, got:\n%s", out)
+	}
+}
+
+func TestShip_ForgeFlag_Overrides(t *testing.T) {
+	// --forge github with configForge="" → flag takes precedence.
+	opts, d, _, _ := makeStep7Deps("", "github", func(string) bool { return false })
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "Forge:     github (source: flag)") {
+		t.Fatalf("expected forge=github source=flag in output, got:\n%s", out)
+	}
+}
+
+func TestShip_DryRun_NoForgeCLI(t *testing.T) {
+	opts, d, _, cli := makeStep7Deps("github", "", func(string) bool { return true })
+	opts.dryRun = true
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("dry-run should not fail: %v", err)
+	}
+	if len(cli.calls) > 0 {
+		t.Fatalf("execForgeCLI must not be called in dry-run mode")
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "[dry-run]") && !strings.Contains(out, "would open") {
+		t.Fatalf("expected dry-run marker for step 7, got:\n%s", out)
+	}
+}
+
+func TestShip_SourceMentionedInOutput(t *testing.T) {
+	// configForge set → source should be "config".
+	opts, d, _, _ := makeStep7Deps("gitlab", "", func(string) bool { return false })
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "source: config") {
+		t.Fatalf("expected 'source: config' in output, got:\n%s", out)
+	}
+}
+
+func TestShip_CLIAvailable_InvokesExecForgeCLI(t *testing.T) {
+	opts, d, _, cli := makeStep7Deps("github", "", func(string) bool { return true })
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cli.calls) != 1 {
+		t.Fatalf("expected 1 execForgeCLI call, got %d", len(cli.calls))
+	}
+	call := cli.calls[0]
+	if call.name != "gh" {
+		t.Fatalf("expected CLI name 'gh', got %q", call.name)
+	}
+	// Args must contain --title
+	found := false
+	for _, a := range call.args {
+		if a == "--title" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected --title in CLI args, got %v", call.args)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// buildForgeCreateArgs unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestBuildForgeCreateArgs_GitHubUsesBody(t *testing.T) {
+	adapter := forge.NewAdapter("github", func(string) bool { return false })
+	args := buildForgeCreateArgs(adapter, "my title", "my body")
+	want := []string{"pr", "create", "--title", "my title", "--body", "my body"}
+	if strings.Join(args, "|") != strings.Join(want, "|") {
+		t.Fatalf("got %v, want %v", args, want)
+	}
+}
+
+func TestBuildForgeCreateArgs_AzureUsesDescription(t *testing.T) {
+	adapter := forge.NewAdapter("azure", func(string) bool { return false })
+	args := buildForgeCreateArgs(adapter, "my title", "my body")
+	// Must use --description, not --body.
+	for i, a := range args {
+		if a == "--body" {
+			t.Fatalf("azure args must not contain --body (got %v)", args)
+		}
+		if a == "--description" && i+1 < len(args) && args[i+1] == "my body" {
+			return // found correctly
+		}
+	}
+	t.Fatalf("azure args must contain --description my body, got %v", args)
+}
+
+func TestBuildForgeCreateArgs_NeverMutatesAdapterSlice(t *testing.T) {
+	adapter := forge.NewAdapter("gitlab", func(string) bool { return false })
+	original := make([]string, len(adapter.CLIArgs))
+	copy(original, adapter.CLIArgs)
+	buildForgeCreateArgs(adapter, "t1", "b1")
+	buildForgeCreateArgs(adapter, "t2", "b2")
+	for i, v := range adapter.CLIArgs {
+		if v != original[i] {
+			t.Fatalf("adapter.CLIArgs was mutated at index %d: got %q, want %q", i, v, original[i])
 		}
 	}
 }

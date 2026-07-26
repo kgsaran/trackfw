@@ -10,6 +10,9 @@ import re
 import subprocess
 import sys
 
+from trackfw.forge.resolve import resolve as forge_resolve
+from trackfw.forge.adapter import forge_adapter
+
 
 # Git subcommands that modify local or remote state.
 # In --dry-run mode these are printed but not executed.
@@ -160,15 +163,50 @@ def _build_push_args(branch, exec_git):
     return ['push', 'origin', branch]
 
 
+def _first_line(s):
+    """Returns only the first line of s."""
+    idx = s.find('\n')
+    return s[:idx] if idx >= 0 else s
+
+
+def _build_forge_create_args(adapter, title, body):
+    """Builds CLI args for PR/MR creation. Never mutates adapter.cli_args."""
+    args = list(adapter.cli_args) + ['--title', title]
+    if adapter.forge == 'azure':
+        args += ['--description', body]
+    else:
+        args += ['--body', body]
+    return args
+
+
+def _default_exec_forge_cli(name, args):
+    """Runs the forge CLI inheriting stdin/stdout/stderr. Returns error string or None."""
+    try:
+        result = subprocess.run([name] + args)
+        if result.returncode != 0:
+            return f"{name} exited with {result.returncode}"
+        return None
+    except FileNotFoundError:
+        return f"{name} not found in PATH"
+    except Exception as e:
+        return str(e)
+
+
 def run_ship(
     message='',
     dry_run=False,
+    no_pr=False,
+    forge_flag='',
+    config_forge='',
+    repo_dir='',
+    avail_fn=None,
+    exec_forge_cli=None,
     exec_git=None,
     check_governance=None,
     writeln=None,
 ):
     """
-    Executes the six-step ship sequence.
+    Executes the seven-step ship sequence.
 
     Parameters
     ----------
@@ -176,6 +214,18 @@ def run_ship(
         Commit message (-m). Required; abort if empty.
     dry_run : bool
         Print what would be done without executing write commands.
+    no_pr : bool
+        Skip PR/MR creation after push.
+    forge_flag : str
+        Explicit forge override (highest precedence).
+    config_forge : str
+        Forge value from trackfw.yaml (injected; production: config['forge']).
+    repo_dir : str
+        Repo root for CI file detection ("" skips CI detection — safe for tests).
+    avail_fn : callable(str) -> bool | None
+        CLI availability check for forge_adapter. None uses production default.
+    exec_forge_cli : callable(str, list[str]) -> str|None
+        Runs the forge CLI. Returns error string or None. None uses production default.
     exec_git : callable(list[str]) -> (str, str|None)
         Injected git executor. Returns (stdout, error_or_None).
     check_governance : callable() -> list[str]
@@ -194,6 +244,8 @@ def run_ship(
         check_governance = check_ship_governance
     if writeln is None:
         writeln = lambda s: print(s)  # noqa: E731
+    if exec_forge_cli is None:
+        exec_forge_cli = _default_exec_forge_cli
 
     # Inner git wrapper: skips write commands in dry-run mode.
     def git(args):
@@ -299,6 +351,62 @@ def run_ship(
 
     if not dry_run:
         writeln(f'Pushed:    {branch} → origin/{branch}')
-        writeln('\nship complete.')
 
+    # ─── Step 7: Open PR/MR ────────────────────────────────────────────────
+    # Resolve forge: flag → config → remote URL → CI files → manual.
+    remote_url_out, _ = exec_git(['remote', 'get-url', 'origin'])
+    remote_url = (remote_url_out or '').strip()
+
+    try:
+        resolution = forge_resolve(
+            flag_forge=forge_flag,
+            config_forge=config_forge,
+            remote_url=remote_url,
+            repo_dir=repo_dir,
+        )
+    except ValueError as res_err:
+        writeln(f'Warning: forge resolution error: {res_err} — open PR/MR manually.')
+        writeln('\nship complete.')
+        return 0
+
+    adapter = forge_adapter(resolution.forge, avail_fn)
+    writeln(f'Forge:     {resolution.forge} (source: {resolution.source})')
+
+    if no_pr:
+        writeln(f'--no-pr: skipping {adapter.noun} creation.')
+        writeln('\nship complete.')
+        return 0
+
+    if dry_run:
+        writeln(f'[dry-run] would open {adapter.noun} via {resolution.forge}')
+        return 0
+
+    if resolution.forge == 'manual':
+        writeln(f'\nOpen your {adapter.noun} manually at:\n  {remote_url}')
+        writeln('\nship complete.')
+        return 0
+
+    if not adapter.available:
+        url = adapter.fallback_url(remote_url, branch)
+        if url:
+            writeln(f'{adapter.noun} CLI ({adapter.cli_name}) not available — open in browser:\n  {url}')
+        else:
+            writeln(f'{adapter.noun} CLI ({adapter.cli_name}) not available — open {adapter.noun} manually.')
+        writeln('\nship complete.')
+        return 0
+
+    # CLI available — invoke it.
+    title = _first_line(message)
+    body = f'Branch: {branch}\n\nCreated by trackfw ship.'
+    cli_args = _build_forge_create_args(adapter, title, body)
+    cli_err = exec_forge_cli(adapter.cli_name, cli_args)
+    if cli_err:
+        url = adapter.fallback_url(remote_url, branch)
+        writeln(f'Warning: {adapter.noun} CLI failed ({cli_err}).')
+        if url:
+            writeln(f'Open in browser:\n  {url}')
+    else:
+        writeln(f'{adapter.noun} created.')
+
+    writeln('\nship complete.')
     return 0

@@ -22,7 +22,10 @@ from trackfw.ship.runner import (
     is_git_write_cmd,
     normalize_branch_slug,
     GIT_WRITE_COMMANDS,
+    _first_line,
+    _build_forge_create_args,
 )
+from trackfw.forge.adapter import forge_adapter
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -58,17 +61,29 @@ class MockGit:
         return ('', None)
 
 
-def make_deps(branch='feat/my-feature', staged='file.py', violations=None):
+def make_deps(branch='feat/my-feature', staged='file.py', violations=None,
+              config_forge='', repo_dir='', avail_fn=None, exec_forge_cli=None):
     """Builds a dict of injectable dependencies."""
     git = MockGit(branch=branch, staged=staged)
     lines = []
+    cli_calls = []
+
+    def _noop_forge_cli(name, args):
+        cli_calls.append({'name': name, 'args': args})
+        return None
 
     return {
         'git': git,
         'lines': lines,
+        'cli_calls': cli_calls,
         'exec_git': git.exec,
         'check_governance': lambda: violations if violations is not None else [],
         'writeln': lambda s: lines.append(s),
+        'config_forge': config_forge,
+        'repo_dir': repo_dir,
+        # Step 7 safe defaults: no CLI invoked, no filesystem access.
+        'avail_fn': avail_fn or (lambda name: False),
+        'exec_forge_cli': exec_forge_cli or _noop_forge_cli,
     }
 
 
@@ -82,6 +97,8 @@ def run(branch='feat/my-feature', staged='file.py', message='feat: test',
         exec_git=d['exec_git'],
         check_governance=d['check_governance'],
         writeln=d['writeln'],
+        avail_fn=d['avail_fn'],
+        exec_forge_cli=d['exec_forge_cli'],
     )
     return code, '\n'.join(d['lines']), d['git']
 
@@ -257,3 +274,182 @@ def test_normalize_branch_slug():
     assert normalize_branch_slug('My Feature') == 'my-feature'
     assert normalize_branch_slug('foo_bar.baz') == 'foo-bar-baz'
     assert normalize_branch_slug('ABC123') == 'abc123'
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Step 7 — forge resolution and PR/MR opening
+# ────────────────────────────────────────────────────────────────────────────
+
+def _make_step7(config_forge='', forge_flag='', avail_fn=None):
+    """Returns (deps, cli_calls, opts_kwargs) ready to reach Step 7."""
+    cli_calls = []
+
+    def mock_exec_forge_cli(name, args):
+        cli_calls.append({'name': name, 'args': args})
+        return None
+
+    d = make_deps(
+        branch='feat/my-feature',
+        staged='file.py',
+        config_forge=config_forge,
+        repo_dir='',
+        avail_fn=avail_fn or (lambda name: False),
+        exec_forge_cli=mock_exec_forge_cli,
+    )
+    d['cli_calls_ref'] = cli_calls
+    kwargs = dict(
+        message='feat(x): test step7',
+        dry_run=False,
+        no_pr=False,
+        forge_flag=forge_flag,
+        config_forge=config_forge,
+        repo_dir='',
+        avail_fn=d['avail_fn'],
+        exec_forge_cli=mock_exec_forge_cli,
+        exec_git=d['exec_git'],
+        check_governance=d['check_governance'],
+        writeln=d['writeln'],
+    )
+    return d, cli_calls, kwargs
+
+
+def test_ship_step7_gitlab_says_merge_request():
+    d, cli_calls, kwargs = _make_step7(config_forge='gitlab')
+    code = run_ship(**kwargs)
+    out = '\n'.join(d['lines'])
+    assert code == 0
+    assert 'Merge Request' in out, f"expected Merge Request, got: {out}"
+
+
+def test_ship_step7_github_says_pull_request():
+    d, cli_calls, kwargs = _make_step7(config_forge='github')
+    code = run_ship(**kwargs)
+    out = '\n'.join(d['lines'])
+    assert code == 0
+    assert 'Pull Request' in out, f"expected Pull Request, got: {out}"
+
+
+def test_ship_step7_cli_unavailable_exit0_with_url():
+    cli_calls = []
+
+    def mock_exec_forge_cli(name, args):
+        cli_calls.append({'name': name, 'args': args})
+        return None
+
+    git = MockGit(branch='feat/my-feature', staged='file.py')
+    orig_exec = git.exec
+
+    def exec_git_with_remote(args):
+        if args[:3] == ['remote', 'get-url', 'origin']:
+            return ('https://github.com/org/repo.git', None)
+        return orig_exec(args)
+
+    lines = []
+    code = run_ship(
+        message='feat(x): test',
+        dry_run=False,
+        no_pr=False,
+        forge_flag='',
+        config_forge='github',
+        repo_dir='',
+        avail_fn=lambda name: False,
+        exec_forge_cli=mock_exec_forge_cli,
+        exec_git=exec_git_with_remote,
+        check_governance=lambda: [],
+        writeln=lambda s: lines.append(s),
+    )
+    out = '\n'.join(lines)
+    assert code == 0
+    assert len(cli_calls) == 0, 'exec_forge_cli must not be called when CLI unavailable'
+    assert 'github.com' in out, f"expected fallback URL, got: {out}"
+
+
+def test_ship_step7_manual_forge_exit0():
+    d, cli_calls, kwargs = _make_step7(config_forge='', forge_flag='')
+    code = run_ship(**kwargs)
+    out = '\n'.join(d['lines'])
+    assert code == 0
+    assert len(cli_calls) == 0, 'exec_forge_cli must not be called for manual forge'
+    assert 'ship complete' in out
+
+
+def test_ship_step7_no_pr_skips_step7():
+    d, cli_calls, kwargs = _make_step7(config_forge='github', avail_fn=lambda name: True)
+    kwargs['no_pr'] = True
+    code = run_ship(**kwargs)
+    out = '\n'.join(d['lines'])
+    assert code == 0
+    assert len(cli_calls) == 0, 'exec_forge_cli must not be called with --no-pr'
+    assert '--no-pr' in out
+    assert 'ship complete' in out
+
+
+def test_ship_step7_forge_flag_overrides():
+    d, cli_calls, kwargs = _make_step7(config_forge='', forge_flag='github')
+    code = run_ship(**kwargs)
+    out = '\n'.join(d['lines'])
+    assert code == 0
+    assert 'github (source: flag)' in out, f"expected source: flag, got: {out}"
+
+
+def test_ship_step7_dry_run_no_forge_cli():
+    d, cli_calls, kwargs = _make_step7(config_forge='github', avail_fn=lambda name: True)
+    kwargs['dry_run'] = True
+    code = run_ship(**kwargs)
+    out = '\n'.join(d['lines'])
+    assert code == 0
+    assert len(cli_calls) == 0, 'exec_forge_cli must not be called in dry-run mode'
+    assert '[dry-run]' in out or 'would open' in out, f"expected dry-run marker: {out}"
+
+
+def test_ship_step7_source_in_output():
+    d, cli_calls, kwargs = _make_step7(config_forge='gitlab')
+    run_ship(**kwargs)
+    out = '\n'.join(d['lines'])
+    assert 'source: config' in out, f"expected source: config, got: {out}"
+
+
+def test_ship_step7_cli_available_invokes_exec():
+    d, cli_calls, kwargs = _make_step7(config_forge='github', avail_fn=lambda name: True)
+    code = run_ship(**kwargs)
+    assert code == 0
+    assert len(cli_calls) == 1, f"expected 1 CLI call, got {len(cli_calls)}"
+    assert cli_calls[0]['name'] == 'gh'
+    assert '--title' in cli_calls[0]['args'], f"expected --title in args: {cli_calls[0]['args']}"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# _build_forge_create_args unit tests
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_build_forge_create_args_github_uses_body():
+    adapter = forge_adapter('github', lambda name: False)
+    args = _build_forge_create_args(adapter, 'my title', 'my body')
+    assert args == ['pr', 'create', '--title', 'my title', '--body', 'my body']
+
+
+def test_build_forge_create_args_azure_uses_description():
+    adapter = forge_adapter('azure', lambda name: False)
+    args = _build_forge_create_args(adapter, 'my title', 'my body')
+    assert '--body' not in args, 'azure must not use --body'
+    assert '--description' in args, 'azure must use --description'
+
+
+def test_build_forge_create_args_never_mutates():
+    adapter = forge_adapter('gitlab', lambda name: False)
+    original = list(adapter.cli_args)
+    _build_forge_create_args(adapter, 't1', 'b1')
+    _build_forge_create_args(adapter, 't2', 'b2')
+    assert adapter.cli_args == original, 'adapter.cli_args must not be mutated'
+
+
+def test_first_line_multiline():
+    assert _first_line('feat(x): title\n\nbody') == 'feat(x): title'
+
+
+def test_first_line_no_newline():
+    assert _first_line('no newline') == 'no newline'
+
+
+def test_first_line_empty():
+    assert _first_line('') == ''

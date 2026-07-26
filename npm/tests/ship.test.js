@@ -4,7 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { runShip, isShipBranch, isGitWriteCmd, normalizeBranchSlug, GIT_WRITE_COMMANDS } = require('../src/ship/runner')
+const { runShip, isShipBranch, isGitWriteCmd, normalizeBranchSlug, GIT_WRITE_COMMANDS, buildForgeCreateArgs, firstLine } = require('../src/ship/runner')
 
 // ────────────────────────────────────────────────────────────────────────────
 // helpers
@@ -52,13 +52,17 @@ function captureOutput() {
   }
 }
 
-function makeDeps({ branch, staged, violations = [] } = {}) {
+function makeDeps({ branch, staged, violations = [], configForge = '', repoDir = '', availFn = null, execForgeCLI = null } = {}) {
   const git = makeMockGit({ branch, stagedFiles: staged })
   const cap = captureOutput()
   const deps = {
     execGit: git,
     checkGovernance: () => violations,
     writeln: cap.writeln,
+    configForge,
+    repoDir,
+    availFn: availFn || (() => false),
+    execForgeCLI: execForgeCLI || (() => null),
   }
   return { deps, git, cap }
 }
@@ -254,4 +258,148 @@ test('normalizeBranchSlug: converts slug correctly', () => {
   assert.equal(normalizeBranchSlug('My Feature'), 'my-feature')
   assert.equal(normalizeBranchSlug('foo_bar.baz'), 'foo-bar-baz')
   assert.equal(normalizeBranchSlug('ABC123'), 'abc123')
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// Step 7 — forge resolution and PR/MR opening
+// ────────────────────────────────────────────────────────────────────────────
+
+function makeStep7Deps({ configForge = '', forgeFlag = '', availFn = null } = {}) {
+  const cliCalls = []
+  const mockExecForgeCLI = (name, args) => { cliCalls.push({ name, args }); return null }
+  const { deps, cap } = makeDeps({
+    branch: 'feat/my-feature',
+    staged: 'file.js',
+    configForge,
+    repoDir: '',
+    availFn: availFn || (() => false),
+    execForgeCLI: mockExecForgeCLI,
+  })
+  const opts = { message: 'feat(x): test step7', dryRun: false, noPR: false, forge: forgeFlag }
+  return { deps, cap, opts, cliCalls }
+}
+
+test('ship step7: gitlab outputs Merge Request', () => {
+  const { deps, cap, opts } = makeStep7Deps({ configForge: 'gitlab' })
+  const code = runShip(opts, deps)
+  assert.equal(code, 0)
+  assert.ok(cap.output().includes('Merge Request'), `expected Merge Request, got: ${cap.output()}`)
+})
+
+test('ship step7: github outputs Pull Request', () => {
+  const { deps, cap, opts } = makeStep7Deps({ configForge: 'github' })
+  const code = runShip(opts, deps)
+  assert.equal(code, 0)
+  assert.ok(cap.output().includes('Pull Request'), `expected Pull Request, got: ${cap.output()}`)
+})
+
+test('ship step7: CLI unavailable → exit 0, print URL', () => {
+  const cliCalls = []
+  const git = makeMockGit({ branch: 'feat/my-feature', stagedFiles: 'file.js' })
+  const origGit = git
+  // Override to return a fake remote URL
+  function execGitWithRemote(args) {
+    if (args.join(' ').startsWith('remote get-url')) {
+      return { stdout: 'https://github.com/org/repo.git', error: null }
+    }
+    return origGit(args)
+  }
+  const cap = captureOutput()
+  const deps = {
+    execGit: execGitWithRemote,
+    checkGovernance: () => [],
+    writeln: cap.writeln,
+    configForge: 'github',
+    repoDir: '',
+    availFn: () => false,
+    execForgeCLI: (name, args) => { cliCalls.push({ name, args }); return null },
+  }
+  const code = runShip({ message: 'feat: x', dryRun: false, noPR: false, forge: '' }, deps)
+  assert.equal(code, 0)
+  assert.equal(cliCalls.length, 0, 'execForgeCLI must not be called when CLI unavailable')
+  assert.ok(cap.output().includes('github.com'), `expected fallback URL, got: ${cap.output()}`)
+})
+
+test('ship step7: manual forge → exit 0, no CLI called', () => {
+  const { deps, cap, opts, cliCalls } = makeStep7Deps({ configForge: '', forgeFlag: '' })
+  const code = runShip(opts, deps)
+  assert.equal(code, 0)
+  assert.equal(cliCalls.length, 0, 'execForgeCLI must not be called for manual forge')
+  assert.ok(cap.output().includes('ship complete'), `expected ship complete, got: ${cap.output()}`)
+})
+
+test('ship step7: --no-pr skips PR creation', () => {
+  const { deps, cap, opts, cliCalls } = makeStep7Deps({ configForge: 'github', availFn: () => true })
+  opts.noPR = true
+  const code = runShip(opts, deps)
+  assert.equal(code, 0)
+  assert.equal(cliCalls.length, 0, 'execForgeCLI must not be called with --no-pr')
+  assert.ok(cap.output().includes('--no-pr'), `expected --no-pr message, got: ${cap.output()}`)
+  assert.ok(cap.output().includes('ship complete'), `expected ship complete, got: ${cap.output()}`)
+})
+
+test('ship step7: --forge overrides config', () => {
+  const { deps, cap, opts } = makeStep7Deps({ configForge: '', forgeFlag: 'github' })
+  const code = runShip(opts, deps)
+  assert.equal(code, 0)
+  assert.ok(cap.output().includes('github (source: flag)'), `expected source: flag, got: ${cap.output()}`)
+})
+
+test('ship step7: dry-run does not call execForgeCLI', () => {
+  const { deps, cap, opts, cliCalls } = makeStep7Deps({ configForge: 'github', availFn: () => true })
+  opts.dryRun = true
+  const code = runShip(opts, deps)
+  assert.equal(code, 0)
+  assert.equal(cliCalls.length, 0, 'execForgeCLI must not be called in dry-run mode')
+  const out = cap.output()
+  assert.ok(out.includes('[dry-run]') || out.includes('would open'), `expected dry-run marker, got: ${out}`)
+})
+
+test('ship step7: resolution source in output', () => {
+  const { deps, cap, opts } = makeStep7Deps({ configForge: 'gitlab' })
+  runShip(opts, deps)
+  assert.ok(cap.output().includes('source: config'), `expected source: config, got: ${cap.output()}`)
+})
+
+test('ship step7: CLI available → execForgeCLI invoked', () => {
+  const { deps, cap, opts, cliCalls } = makeStep7Deps({ configForge: 'github', availFn: () => true })
+  const code = runShip(opts, deps)
+  assert.equal(code, 0)
+  assert.equal(cliCalls.length, 1, 'execForgeCLI must be called exactly once')
+  assert.equal(cliCalls[0].name, 'gh')
+  assert.ok(cliCalls[0].args.includes('--title'), `expected --title in args, got: ${JSON.stringify(cliCalls[0].args)}`)
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// buildForgeCreateArgs unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+test('buildForgeCreateArgs: github uses --body', () => {
+  const { forgeAdapter } = require('../src/forge/adapter')
+  const adapter = forgeAdapter('github', () => false)
+  const args = buildForgeCreateArgs(adapter, 'my title', 'my body')
+  assert.deepEqual(args, ['pr', 'create', '--title', 'my title', '--body', 'my body'])
+})
+
+test('buildForgeCreateArgs: azure uses --description', () => {
+  const { forgeAdapter } = require('../src/forge/adapter')
+  const adapter = forgeAdapter('azure', () => false)
+  const args = buildForgeCreateArgs(adapter, 'my title', 'my body')
+  assert.ok(!args.includes('--body'), 'azure must not use --body')
+  assert.ok(args.includes('--description'), 'azure must use --description')
+})
+
+test('buildForgeCreateArgs: does not mutate adapter.cliArgs', () => {
+  const { forgeAdapter } = require('../src/forge/adapter')
+  const adapter = forgeAdapter('gitlab', () => false)
+  const original = adapter.cliArgs.slice()
+  buildForgeCreateArgs(adapter, 't1', 'b1')
+  buildForgeCreateArgs(adapter, 't2', 'b2')
+  assert.deepEqual(adapter.cliArgs, original, 'adapter.cliArgs must not be mutated')
+})
+
+test('firstLine: returns only first line', () => {
+  assert.equal(firstLine('feat(x): title\n\nmore body'), 'feat(x): title')
+  assert.equal(firstLine('no newline'), 'no newline')
+  assert.equal(firstLine(''), '')
 })
