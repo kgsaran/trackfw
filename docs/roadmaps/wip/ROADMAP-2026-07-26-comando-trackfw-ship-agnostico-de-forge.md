@@ -75,7 +75,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 > Dependências: **barrier** — ML-1A concluído. Arquivos disjuntos: `commands/` × `internal/forge/`.
 
 ### ML-2A — Comando `trackfw ship` (fluxo git, sem abrir PR)
-**Status:** in progress
+**Status:** done
 **Files affected:** `internal/commands/ship.go`, equivalentes em npm/pypi, testes
 
 **Actions:** implementar os passos 1–6 do ADR:
@@ -95,7 +95,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 - [ ] `make quality` verde
 
 ### ML-2B — Pacote `internal/forge` — adaptadores
-**Status:** in progress
+**Status:** done
 **Files affected:** `internal/forge/` (novo), equivalentes em npm/pypi, testes
 
 **Actions:**
@@ -113,6 +113,27 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 - [ ] URL de fallback correta para os 4 forges
 - [ ] Paridade nos 3 CLIs
 - [ ] `make quality` verde
+
+### ML-2C — Correções pós-auditoria da Wave 2
+**Status:** in progress
+**Files affected:** `internal/commands/ship.go`, `npm/src/ship/runner.js`, `pypi/trackfw/ship/runner.py`,
+`scripts/check-cli-parity.sh`, `docs/cli-parity.md`, `vault/notes/`
+
+**Actions:**
+1. **Explicitar o gate duro** (decisão do ADR, tomada depois do commit do ML-2A): o texto de
+   `ship --help` e a **mensagem de erro** do passo 2 devem dizer que a exigência de REQ+roadmap em
+   `wip` **não é afetada** pelo modo `lenient` nem pela severidade em `rules:`. Nos 3 CLIs.
+2. **Corrigir `scripts/check-cli-parity.sh`** — defeito de gate descoberto na auditoria: em Python
+   3.13+ o `argparse` colore a ajuda, e o `grep -E "(^|[[:space:]])<cmd>([[:space:]]|$)"` nunca casa
+   com o nome colorido. Local com Python 3.14 reprova; CI com 3.10/3.12 passa.
+3. Seção do comando `ship` em `docs/cli-parity.md`, incluindo o comportamento divergente do `validate`.
+4. Nota de vault sobre o defeito do gate.
+
+**Acceptance criteria:**
+- [ ] `ship --help` e erro do passo 2 mencionam `lenient` explicitamente, nos 3 CLIs
+- [ ] `make quality` verde **sem** `NO_COLOR=1`, com Python 3.14
+- [ ] O gate continua reprovando comando realmente ausente (falsificação demonstrada)
+- [ ] `docs/cli-parity.md` com a seção do `ship`
 
 ---
 
