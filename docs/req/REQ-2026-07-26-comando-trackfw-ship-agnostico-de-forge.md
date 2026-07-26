@@ -3,7 +3,7 @@ status: Open
 date: 2026-07-26
 author: "KG"
 adr: "docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md"
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md"
 ---
 
 # REQ: comando trackfw ship agnostico de forge
@@ -69,4 +69,4 @@ ADR: docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md
 
 ## Linked Roadmap
 <!-- Roadmap será criado quando esta REQ entrar em execução -->
-Roadmap:
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md
