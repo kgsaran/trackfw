@@ -3029,3 +3029,12 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 - `pypi/trackfw/integrations/renderers.py`: `_rewrite_signature_line` adicionada; Rota B atualizada; comentário Rota B atualizado.
 - `pypi/tests/test_integrations_identity.py`: 5 testes unitários + 1 teste de integração adicionados.
 **Validação:** `go build ./... && go test ./... && go vet ./... && make quality` — todos verdes (443 Python, 125 npm, todos Go ok).
+
+---
+
+## 2026-07-26 — ML-1A: Camada universal de harness nos 10 assets de agente — IMPLEMENTANDO
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** IMPLEMENTANDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**Escopo:** Adicionar `memory: project`, `tools:` ao frontmatter e 5 blocos universais (Mode lock, Before you act, Scope boundary, Working context, Knowledge vault) em inglês nos 10 assets de agente Go. Adicionar linha de assinatura ao final de cada asset. Sincronizar npm/pypi. Regravar 4 goldens congelados deliberadamente.

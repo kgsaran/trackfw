@@ -173,6 +173,13 @@ func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 // forma independente do asset embedado que Render também consome. Isso evita
 // a lacuna de "Render(x) == Render(x)" — a suite compara Render contra um
 // contrato externo congelado, não contra si mesma.
+//
+// Re-congelados em 2026-07-26 pela REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw:
+// os 10 assets de agente receberam a camada universal de harness (memory: project, tools:,
+// blocos Mode lock / Before you act / Scope boundary / Working context / Knowledge vault e
+// linha de assinatura). A propriedade "saída sem identidade == contrato congelado externo"
+// foi preservada — os goldens refletem o novo conteúdo deliberadamente revisado, não
+// uma cópia automática da saída.
 
 func readGolden(t *testing.T, name string) []byte {
 	t.Helper()
