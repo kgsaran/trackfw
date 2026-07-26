@@ -7,11 +7,14 @@ package integrations
 // Provenance note (REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw):
 // The hashes below for "architect" and "qa" under the claude/cli/global scope correspond
 // byte-for-byte to the templates that lived in internal/generators/templates/agents/ and
-// were removed in commit 664573f (ML-5B of the convergence REQ). Those files are no
+// were removed in commit 8a90a0b (ML-5B of the convergence REQ). Those files are no
 // longer present in the repository but their hashes must be kept here forever so that
 // users who installed agents from the old generator can still be safely adopted by
 // `trackfw agents update` without being treated as unknown/unmanaged content.
-// To recover the original template source, run: git show 664573f:internal/generators/templates/agents/
+// To recover the original template source, use the commit immediately prior to the
+// removal (664573f, ML-5A) — NOT 8a90a0b — because in the removal commit the files
+// are already absent and git show would return an error:
+// git show 664573f:internal/generators/templates/agents/
 var legacyHashes = map[string][]string{
 	"claude\x00cli\x00global\x00agents\x00architect":    {"d28ae507d2ce9fd3fcd7cb1a0c1ffaaebc994dc9c45b219e5361b909dc6132ba"},
 	"claude\x00cli\x00global\x00agents\x00backend":      {"587bf790907bc7451976c026b9c7dc5419541a5fdfb064586744198dcf8c0439"},
