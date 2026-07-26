@@ -180,6 +180,12 @@ func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 // linha de assinatura). A propriedade "saída sem identidade == contrato congelado externo"
 // foi preservada — os goldens refletem o novo conteúdo deliberadamente revisado, não
 // uma cópia automática da saída.
+//
+// Re-congelados em 2026-07-26 (Wave 2) pela REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw:
+// os 10 assets receberam o adendo do orquestrador (Git authority, Parallelization, Workflow,
+// Post-microbatch audit) em architect e o adendo do implementador (Governance prerequisite,
+// Git boundary, Microbatch completion protocol, Definition of done) nos 6 agents com Edit/Write,
+// e Reporting boundary nos 3 read-only (security, code-quality, ux). Todos receberam ## Mission.
 
 func readGolden(t *testing.T, name string) []byte {
 	t.Helper()

@@ -3054,3 +3054,12 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 - Comentário de `render_test.go` atualizado com data e REQ.
 - `npm/tests/agents-skills.test.js`: 2 testes de golden atualizados (Codex TOML e Antigravity agent-directory).
 **Validação:** `go build ./... && go test ./... && go vet ./... && make quality` — todos verdes (Go ok, npm 125/125, Python 443/443, todos os gates de paridade aprovados).
+
+---
+
+## 2026-07-26 — ML-2A + ML-2B: Adendo do orquestrador e implementador nos 10 assets — IMPLEMENTANDO
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** IMPLEMENTANDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**Escopo:** ML-2A: 4 blocos do orquestrador em `architect.md` (Git authority, Parallelization, Workflow, Post-microbatch audit) + `## Mission`. ML-2B: 4 blocos do implementador nos 6 agents com Edit/Write + Reporting boundary nos 3 read-only (security, code-quality, ux) + `## Mission` em todos os 9. Regravar 4 goldens, atualizar npm test e render_test.go.
