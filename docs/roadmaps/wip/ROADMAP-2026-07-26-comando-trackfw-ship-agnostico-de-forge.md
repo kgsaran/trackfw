@@ -141,7 +141,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 > Dependências: **barrier** — Wave 2 concluída. Arquivos disjuntos: `commands/ship` × `generators/`+`discover/`.
 
 ### ML-3A — Abertura de PR/MR no `ship`
-**Status:** in progress
+**Status:** done
 **Files affected:** `internal/commands/ship.go`, equivalentes, testes
 
 **Actions:**
@@ -158,7 +158,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 - [ ] `make quality` verde
 
 ### ML-3B — Captura da forge no `init` e no `discover`
-**Status:** in progress
+**Status:** done
 **Files affected:** `internal/commands/init.go` (wizard), `internal/discover/discover.go`,
 `internal/generators/` (escrita do `trackfw.yaml`), equivalentes, testes
 
@@ -182,6 +182,10 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 **Files affected:** testes nos 3 CLIs, `docs/cli-parity.md`, `README.md`, `site/`
 
 **Actions:**
+0. **Pendência da Wave 3:** `cmd.SilenceUsage` no `ship` (e demais comandos, se aplicável). Hoje um
+   erro de runtime imprime o bloco `Usage:` + `Flags:` do cobra **depois** da mensagem de governança,
+   empurrando a orientação acionável para fora da tela. A mensagem é boa; a apresentação a enterra.
+   Verificar o padrão dos outros comandos antes de mudar — pode ser comportamento global.
 1. **Matriz obrigatória:** 4 forges × (CLI presente / ausente) × (host conhecido / self-hosted).
 2. Teste de degradação graciosa com o CLI **removido do `PATH`** — não apenas mock.
 3. `docs/cli-parity.md`: comando `ship`, campo `forge:`, tabela de adaptadores.
@@ -258,6 +262,46 @@ auditoria em cenário real:
 aparecem sem cor em texto descritivo (`"List and manage trackfw agents"`), então o grep casava ali e
 não no nome do subcomando. Node.js ainda ignora `NO_COLOR` quando `FORCE_COLOR` está setado, por isso
 o strip inline foi mantido como segunda camada.
+
+**2026-07-26 — Wave 3 concluída e auditada (ML-3A ‖ ML-3B).**
+
+`make quality` verde **sem** `NO_COLOR` — a correção do ML-2C sustentou.
+
+**Verificação empírica em repositório temporário**, com REQ+roadmap em `wip` e branch de feature:
+
+| Cenário | Saída |
+|---|---|
+| remote `gitlab.com` | `Forge: gitlab (source: remote)` · **"Merge Request"** |
+| remote `github.com` | `Forge: github (source: remote)` · **"Pull Request"** |
+| `--forge azure` | `Forge: azure (source: flag)` — precedência da flag confirmada |
+| self-hosted `git.empresa.com.br` + `.gitlab-ci.yml` | `Forge: gitlab (source: ci)` · **"Merge Request"** |
+| `--no-pr` | para após o push, não tenta abrir nada |
+| sem roadmap em `wip` | erro lista a violação **e** os 3 comandos de remediação |
+| roadmap em `wip` sem REQ | erro lista a violação específica |
+
+A nota do gate duro aparece na mensagem de erro, como pedido: *"not affected by lenient mode… if
+'trackfw validate' passes but 'trackfw ship' aborts here, you likely have lenient mode configured"*.
+
+**Reúso confirmado:** o `discover` chama `forge.ResolveFromRepo` e não duplica o parse de host — as
+únicas ocorrências de `github.com` no arquivo são dois imports e o template do workflow de CI. Era o
+risco principal da wave: duas lógicas de detecção divergindo.
+
+**Acerto do agente além do pedido:** o `discover` só grava a chave quando `res.Source != "none"`,
+evitando escrever `manual` no yaml — o que faria o resolver tratar como configurado.
+
+**Achado de apresentação, não de lógica** → movido para o ML-4A: um erro de runtime dispara o bloco
+`Usage:`+`Flags:` do cobra **depois** da mensagem, empurrando a orientação para fora da tela.
+`cmd.SilenceUsage` resolve.
+
+**Limitação de teste reconhecida:** a degradação graciosa com CLI ausente **não foi provada
+empiricamente** — `--dry-run` encerra antes de consultar disponibilidade, e provar sem dry-run
+exigiria um push real. Está coberta por teste unitário com injeção. O ML-4A deve fechar essa lacuna
+com a matriz `PATH` sem o CLI.
+
+**Erro do orquestrador, segundo da sessão:** rodei `discover` sem `--init` e conclui que a detecção
+falhava nos 3 cenários; depois cortei a mensagem de erro do `ship` com `tail` e reportei defeito de
+mensagem inexistente. Nos dois casos, verifiquei o comportamento antes de confirmar que sabia
+invocá-lo. Mesma disciplina que exijo dos agentes.
 
 ## Acceptance Criteria
 
