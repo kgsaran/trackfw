@@ -7,6 +7,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const { buildPlans, IntegrationManager } = require('../src/integrations')
+const { rewriteSignatureLine } = require('../src/integrations/render')
 
 function roots() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-identity-render-'))
@@ -38,13 +39,13 @@ test('Rota B (subagent/claude) com identidade — name, description e saudação
   assert.match(plan.content, /^---\nname: zeus-tf\n/)
   assert.match(plan.content, /^description: Zeus — /m)
   assert.match(plan.content, /model: opus/)
-  assert.match(plan.content, /Você é Zeus\.\n\n/)
+  assert.match(plan.content, /You are Zeus\.\n\n/)
   assert.doesNotMatch(plan.content, /trackfw-architect/)
 })
 
 test('Rota B com apelido — saudação menciona o apelido configurado', () => {
   const plan = buildPlans('agents', { targets: ['claude'], items: ['architect'], scope: 'project', identity: zeusConfigWithNickname })[0]
-  assert.match(plan.content, /Você é Zeus\. Trate o usuário como Comandante\.\n\n/)
+  assert.match(plan.content, /You are Zeus\. Address the user as Comandante\.\n\n/)
 })
 
 test('model: do frontmatter é preservado intacto na Rota B', () => {
@@ -91,8 +92,53 @@ test('SET_ARCH (14 tools) é mantido para architect mesmo com name customizado',
 
 test('skills não recebem identidade', () => {
   const plan = buildPlans('skills', { targets: ['claude'], items: ['governance'], scope: 'project', identity: { agents: { governance: { display_name: 'Zeus', slug: 'zeus' } } } })[0]
-  assert.doesNotMatch(plan.content, /Você é Zeus/)
+  assert.doesNotMatch(plan.content, /You are Zeus/)
   assert.doesNotMatch(plan.content, /zeus-tf/)
+})
+
+// --- Testes unitários de rewriteSignatureLine ---
+
+test('rewriteSignatureLine — substitui o nome na última linha de assinatura', () => {
+  const source = '---\nname: trackfw-architect\n---\n\n# Corpo\n\nAlgum texto.\n\n— Architect, Principal Software Architect\n'
+  const got = rewriteSignatureLine(source, 'Zeus')
+  assert.match(got, /— Zeus, Principal Software Architect/)
+  assert.doesNotMatch(got, /— Architect, Principal Software Architect/)
+})
+
+test('rewriteSignatureLine — sem assinatura: source retornado inalterado', () => {
+  const source = '---\nname: trackfw-architect\n---\n\n# Corpo\n\nSem assinatura.\n'
+  const got = rewriteSignatureLine(source, 'Zeus')
+  assert.equal(got, source)
+})
+
+test('rewriteSignatureLine — assinatura dentro do frontmatter não é tocada', () => {
+  const source = '---\nname: trackfw-architect\ndescription: — Architect, Principal Software Architect\n---\n\n# Corpo sem assinatura.\n'
+  const got = rewriteSignatureLine(source, 'Zeus')
+  assert.equal(got, source)
+})
+
+test('rewriteSignatureLine — múltiplas linhas candidatas: apenas a última é reescrita', () => {
+  const source = '---\nname: trackfw-architect\n---\n\n— Architect, Senior Role\n\nTexto.\n\n— Architect, Principal Software Architect\n'
+  const got = rewriteSignatureLine(source, 'Zeus')
+  assert.match(got, /— Zeus, Principal Software Architect/)
+  assert.match(got, /— Architect, Senior Role/)
+  assert.doesNotMatch(got, /— Zeus, Senior Role/)
+})
+
+test('rewriteSignatureLine — displayName vazio: source retornado inalterado', () => {
+  const source = '---\nname: trackfw-architect\n---\n\n# Corpo\n\n— Architect, Principal Software Architect\n'
+  const got = rewriteSignatureLine(source, '')
+  assert.equal(got, source)
+})
+
+test('Rota B (subagent) com identidade e assinatura inline: nome reescrito', () => {
+  const { render } = require('../src/integrations/render')
+  const source = '---\nname: trackfw-architect\ndescription: Principal software architect.\nmodel: opus\n---\n\n# Architect\n\nCorpo do agente.\n\n— Architect, Principal Software Architect\n'
+  const item = { id: 'architect' }
+  const identity = { agents: { architect: { display_name: 'Zeus', slug: 'zeus' } }, user_nickname: 'chefe' }
+  const got = render({ kind: 'agents', content: source, capability: { representation: 'subagent' }, item, identity })
+  assert.match(got, /— Zeus, Principal Software Architect/)
+  assert.doesNotMatch(got, /— Architect, Principal Software Architect/)
 })
 
 test('colisão de name gera erro; force contorna', () => {

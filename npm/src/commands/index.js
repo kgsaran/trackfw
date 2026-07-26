@@ -29,6 +29,7 @@ function createProgram() {
   program.addCommand(require('./version'))
   program.addCommand(require('./agents'))
   program.addCommand(require('./skills'))
+  program.addCommand(require('./note'))
 
   const { createServeCommand } = require('./serve')
   program.addCommand(createServeCommand())

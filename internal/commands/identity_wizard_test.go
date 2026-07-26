@@ -199,8 +199,8 @@ func TestAgentsInstallNonTTYNeverBlocksAndStillRequiresTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Agents) != 10 {
-		t.Fatalf("expected --identity-preset greek to persist 10 agents, got %d", len(cfg.Agents))
+	if len(cfg.Agents) != 12 {
+		t.Fatalf("expected --identity-preset greek to persist 12 agents, got %d", len(cfg.Agents))
 	}
 
 	// --targets is still required outside a TTY, --identity-preset does not

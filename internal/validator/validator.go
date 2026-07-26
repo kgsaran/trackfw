@@ -65,11 +65,21 @@ func contentHasMarker(content string, markers []string) bool {
 	return false
 }
 
-// ruleSeverity retorna a severidade configurada para a regra ou "error" como fallback.
+// ruleDefaults mapeia regras cujo default NÃO é "error".
+// Regras ausentes deste mapa usam "error" como default.
+var ruleDefaults = map[string]string{
+	"note_orphan": "warning",
+}
+
+// ruleSeverity retorna a severidade configurada para a regra.
+// Prioridade: trackfw.yaml rules: > ruleDefaults > "error".
 func ruleSeverity(name string) string {
 	cfg := config.Load()
 	if s, ok := cfg.Rules[name]; ok {
 		return s
+	}
+	if d, ok := ruleDefaults[name]; ok {
+		return d
 	}
 	return "error"
 }
@@ -379,6 +389,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("branch_has_wip_roadmap", branchViolations, &violations, &warnings)
 
+	noteOrphanMsgs, e := validateNoteOrphan()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("note_orphan", noteOrphanMsgs, &violations, &warnings)
+
 	// v2.5: verificação bidirecional REQ↔Roadmap via trace_id_field (desativada se campo vazio)
 	traceViolations, traceWarnings := validateTraceId(cfg)
 	violations = append(violations, traceViolations...)
@@ -528,6 +544,12 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("branch_has_wip_roadmap", branchViolationsT, &violations, &warnings)
+
+	noteOrphanMsgsT, e := validateNoteOrphan()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("note_orphan", noteOrphanMsgsT, &violations, &warnings)
 
 	// v2.5: traceid — applyRuleTagged está no validator_traceid via applyRule; aqui fazemos tagged
 	traceViolations, traceWarnings := validateTraceId(cfg)
@@ -754,7 +776,7 @@ func resolveREQFiles(cfg config.ProjectConfig) []string {
 		return nil
 	}
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		stateDirs := []string{"backlog", "wip", "blocked", "done", "abandoned"}
+		stateDirs := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
 		agents := cfg.Agents
 		if len(agents) == 0 {
 			entries, err := os.ReadDir(reqDir)
@@ -1341,6 +1363,7 @@ func referenceExists(ref string, roots []string) bool {
 var folderToExpectedStatus = map[string][]string{
 	"wip":       {"WIP", "wip", "In Progress"},
 	"backlog":   {"Backlog", "backlog"},
+	"analyzing": {"Analyzing", "analyzing"},
 	"blocked":   {"Blocked", "blocked"},
 	"done":      {"Done", "done"},
 	"abandoned": {"Abandoned", "abandoned"},
@@ -1350,7 +1373,7 @@ var folderToExpectedStatus = map[string][]string{
 func validateFolderStatusCoherence() ([]string, error) {
 	cfg := config.Load()
 	var warnings []string
-	states := []string{"wip", "backlog", "blocked", "done", "abandoned"}
+	states := []string{"wip", "backlog", "analyzing", "blocked", "done", "abandoned"}
 
 	type dirState struct{ path, state string }
 	var dirs []dirState
@@ -1417,7 +1440,7 @@ func validateFolderStatusCoherence() ([]string, error) {
 // validateFilenameUniqueness detecta o mesmo filename em múltiplos estados.
 func validateFilenameUniqueness() ([]string, error) {
 	cfg := config.Load()
-	states := []string{"wip", "backlog", "blocked", "done", "abandoned"}
+	states := []string{"wip", "backlog", "analyzing", "blocked", "done", "abandoned"}
 
 	seen := map[string][]string{}
 
@@ -1529,6 +1552,48 @@ func isGitWorktree(dir string) bool {
 	}
 	out, err := cmd.Output()
 	return err == nil && strings.TrimSpace(string(out)) == "true"
+}
+
+// validateNoteOrphan detecta notas em vault/notes/ não referenciadas pelo index.md.
+// Severidade default: warning (ver ruleDefaults). Pode ser elevada a "error" via rules: no trackfw.yaml.
+// index.md não conta como nota órfã. Projeto sem vault/ não gera nenhum warning.
+func validateNoteOrphan() ([]string, error) {
+	vaultNotesDir := "vault/notes"
+	indexPath := "vault/notes/index.md"
+
+	// Vault ausente = sem warnings
+	if _, err := os.Stat(vaultNotesDir); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	matches, err := filepath.Glob(filepath.Join(vaultNotesDir, "*.md"))
+	if err != nil {
+		return nil, fmt.Errorf("listando vault/notes: %w", err)
+	}
+
+	// Lê conteúdo do index.md (pode não existir ainda)
+	var indexContent string
+	data, err := os.ReadFile(indexPath)
+	if err == nil {
+		indexContent = string(data)
+	}
+
+	var msgs []string
+	for _, match := range matches {
+		basename := filepath.Base(match)
+		if basename == "index.md" {
+			continue
+		}
+		nameWithoutExt := strings.TrimSuffix(basename, ".md")
+		// aceita link markdown `[texto](arquivo.md)` ou wikilink `[[nome]]`
+		referenced := strings.Contains(indexContent, "("+basename+")") ||
+			strings.Contains(indexContent, "[["+nameWithoutExt+"]]") ||
+			strings.Contains(indexContent, "[["+basename+"]]")
+		if !referenced {
+			msgs = append(msgs, fmt.Sprintf("note %q is not referenced in vault/notes/index.md", basename))
+		}
+	}
+	return msgs, nil
 }
 
 func normalizeBranchSlug(value string) string {

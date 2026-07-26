@@ -244,6 +244,8 @@ def known_agent_ids() -> list[str]:
         "ux",
         "code-quality",
         "data",
+        "iac",
+        "tooling",
     ]
 
 
@@ -265,6 +267,8 @@ _PRESETS: dict[str, dict[str, tuple[str, str]]] = {
         "ux": ("Atena", "atena"),
         "code-quality": ("Hefesto", "hefesto"),
         "data": ("Métis", "metis"),
+        "iac": ("Dédalo", "dedalo"),
+        "tooling": ("Prometeu", "prometeu"),
     },
     "norse": {
         "architect": ("Odin", "odin"),
@@ -277,6 +281,8 @@ _PRESETS: dict[str, dict[str, tuple[str, str]]] = {
         "ux": ("Idun", "idun"),
         "code-quality": ("Bragi", "bragi"),
         "data": ("Mimir", "mimir"),
+        "iac": ("Ivaldi", "ivaldi"),
+        "tooling": ("Loki", "loki"),
     },
     "potter": {
         "architect": ("Dumbledore", "dumbledore"),
@@ -289,6 +295,8 @@ _PRESETS: dict[str, dict[str, tuple[str, str]]] = {
         "ux": ("Tonks", "tonks"),
         "code-quality": ("Hermione", "hermione"),
         "data": ("Trelawney", "trelawney"),
+        "iac": ("Rowena", "rowena"),
+        "tooling": ("Ollivander", "ollivander"),
     },
     "thrones": {
         "architect": ("Tyrion", "tyrion"),
@@ -301,6 +309,8 @@ _PRESETS: dict[str, dict[str, tuple[str, str]]] = {
         "ux": ("Margaery", "margaery"),
         "code-quality": ("Stannis", "stannis"),
         "data": ("Bran", "bran"),
+        "iac": ("Gendry", "gendry"),
+        "tooling": ("Qyburn", "qyburn"),
     },
     "chaves": {
         "architect": ("Girafales", "girafales"),
@@ -313,6 +323,8 @@ _PRESETS: dict[str, dict[str, tuple[str, str]]] = {
         "ux": ("Popis", "popis"),
         "code-quality": ("Nhonho", "nhonho"),
         "data": ("Godinez", "godinez"),
+        "iac": ("Chaves", "chaves"),
+        "tooling": ("Chapolin", "chapolin"),
     },
     "pioneers": {
         "architect": ("Turing", "turing"),
@@ -325,6 +337,8 @@ _PRESETS: dict[str, dict[str, tuple[str, str]]] = {
         "ux": ("Norman", "norman"),
         "code-quality": ("Knuth", "knuth"),
         "data": ("Hopper", "hopper"),
+        "iac": ("Hashimoto", "hashimoto"),
+        "tooling": ("McCarthy", "mccarthy"),
     },
     "starwars": {
         "architect": ("Yoda", "yoda"),
@@ -337,6 +351,8 @@ _PRESETS: dict[str, dict[str, tuple[str, str]]] = {
         "ux": ("Padmé", "padme"),
         "code-quality": ("Obi-Wan", "obi-wan"),
         "data": ("C-3PO", "c-3po"),
+        "iac": ("Rey", "rey"),
+        "tooling": ("Babu Frik", "babu-frik"),
     },
     "tolkien": {
         "architect": ("Gandalf", "gandalf"),
@@ -349,6 +365,8 @@ _PRESETS: dict[str, dict[str, tuple[str, str]]] = {
         "ux": ("Galadriel", "galadriel"),
         "code-quality": ("Faramir", "faramir"),
         "data": ("Bilbo", "bilbo"),
+        "iac": ("Aulë", "aule"),
+        "tooling": ("Celebrimbor", "celebrimbor"),
     },
     "turma": {
         "architect": ("Franjinha", "franjinha"),
@@ -361,6 +379,8 @@ _PRESETS: dict[str, dict[str, tuple[str, str]]] = {
         "ux": ("Anjinho", "anjinho"),
         "code-quality": ("Titi", "titi"),
         "data": ("Chico", "chico"),
+        "iac": ("Piteco", "piteco"),
+        "tooling": ("Nimbus", "nimbus"),
     },
     "egyptian": {
         "architect": ("Thoth", "thoth"),
@@ -373,6 +393,8 @@ _PRESETS: dict[str, dict[str, tuple[str, str]]] = {
         "ux": ("Bastet", "bastet"),
         "code-quality": ("Maat", "maat"),
         "data": ("Osíris", "osiris"),
+        "iac": ("Imhotep", "imhotep"),
+        "tooling": ("Khnum", "khnum"),
     },
 }
 

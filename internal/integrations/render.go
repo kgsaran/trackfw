@@ -22,7 +22,9 @@ import (
 //     (claude, gemini, cursor, copilot, kiro-ide, windsurf), returns the raw
 //     normalized source with the frontmatter still attached. When an
 //     identity is configured, its "name:"/"description:" lines are rewritten
-//     in place (see rewriteFrontmatterFields) — required because Claude
+//     in place (see rewriteFrontmatterFields), and the last signature line in
+//     the body matching `^— <name>, <title>$` is rewritten with the identity
+//     display name (see rewriteSignatureLine) — required because Claude
 //     Code's subagent selection reads only the frontmatter, never the body.
 //
 // Both routes must receive the identity injection. When there is no
@@ -89,7 +91,8 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 		}
 		withBody := insertBodyPrefix(source, greeting)
 		withFrontmatter := rewriteFrontmatterFields(withBody, name, description)
-		return normalizeMarkdown(withFrontmatter), nil
+		withSignature := rewriteSignatureLine(withFrontmatter, id.DisplayName)
+		return normalizeMarkdown(withSignature), nil
 	}
 }
 
@@ -98,9 +101,9 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 // the agent's display name is mentioned.
 func greetingLine(id identity.AgentIdentity, nickname string) string {
 	if nickname == "" {
-		return fmt.Sprintf("Você é %s.", id.DisplayName)
+		return fmt.Sprintf("You are %s.", id.DisplayName)
 	}
-	return fmt.Sprintf("Você é %s. Trate o usuário como %s.", id.DisplayName, nickname)
+	return fmt.Sprintf("You are %s. Address the user as %s.", id.DisplayName, nickname)
 }
 
 // insertBodyPrefix inserts prefix as the new first line of the body section
@@ -127,6 +130,66 @@ func insertBodyPrefix(source []byte, prefix string) []byte {
 		return []byte(head + "\n\n" + prefix)
 	}
 	return []byte(head + "\n\n" + prefix + "\n\n" + rest)
+}
+
+// rewriteSignatureLine rewrites the last line in the body section of a raw
+// markdown source (frontmatter + body) that matches the agent signature
+// pattern `^— <name>, <title>$` (em-dash U+2014, space, name, comma, space,
+// title). Only the first capture group (the agent name) is replaced with
+// displayName; the title (second group) is preserved byte-for-byte.
+//
+// Scope: the function operates only on the body (everything after the closing
+// "---" of the frontmatter). A signature line that happens to appear inside
+// the frontmatter block is never touched — the frontmatter boundary detection
+// mirrors rewriteFrontmatterFields exactly.
+//
+// If no line in the body matches the pattern, source is returned unchanged.
+// If displayName is empty, source is returned unchanged. The function never
+// invents a signature that wasn't already present.
+//
+// Used by Rota B (the default branch of Render) when hasIdentity == true,
+// applied to the output of rewriteFrontmatterFields, so the identity display
+// name appears in the signature line in addition to the greeting and frontmatter.
+func rewriteSignatureLine(source []byte, displayName string) []byte {
+	if displayName == "" {
+		return source
+	}
+	trimmed := strings.TrimSpace(string(source))
+	// Locate the start of the body — mirror rewriteFrontmatterFields boundary
+	// detection so scoping agrees between the two functions.
+	bodyStart := 0
+	if strings.HasPrefix(trimmed, "---\n") {
+		end := strings.Index(trimmed[4:], "\n---")
+		if end >= 0 {
+			// bodyStart points to the character immediately after "\n---"
+			bodyStart = 4 + end + 4
+		}
+	}
+	head := trimmed[:bodyStart]
+	bodySection := trimmed[bodyStart:]
+
+	lines := strings.Split(bodySection, "\n")
+	// Walk backward to find the last line matching the signature pattern.
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		// Pattern: em-dash (U+2014) + space + name + ", " + title
+		if !strings.HasPrefix(line, "— ") {
+			continue
+		}
+		rest := line[len("— "):] // skip "— "
+		commaIdx := strings.Index(rest, ", ")
+		if commaIdx < 0 {
+			continue
+		}
+		title := rest[commaIdx+2:]
+		if title == "" {
+			continue
+		}
+		lines[i] = "— " + displayName + ", " + title
+		return []byte(head + strings.Join(lines, "\n"))
+	}
+	// No signature line found — return source unchanged.
+	return source
 }
 
 // rewriteFrontmatterFields replaces the "name:" and "description:" lines of

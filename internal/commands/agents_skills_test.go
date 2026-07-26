@@ -71,7 +71,7 @@ func TestAgentsJSONLifecycleIsCanonical(t *testing.T) {
 	if err := json.Unmarshal(installed.Bytes(), &output); err != nil {
 		t.Fatalf("invalid JSON output: %v\n%s", err, installed.String())
 	}
-	if output.Kind != "agents" || output.CatalogVersion == "" || len(output.Items) != 10 || len(output.Deployments) != 1 {
+	if output.Kind != "agents" || output.CatalogVersion == "" || len(output.Items) != 12 || len(output.Deployments) != 1 {
 		t.Fatalf("unexpected canonical output: %#v", output)
 	}
 	deployment := output.Deployments[0]
@@ -107,7 +107,7 @@ func TestListWithoutTargetIncludesAllCatalogSurfaces(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if len(decoded.Items) != 5 {
+	if len(decoded.Items) != 17 {
 		t.Fatalf("list must expose complete catalog, got %d items", len(decoded.Items))
 	}
 	var legacy bool

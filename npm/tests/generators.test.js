@@ -85,6 +85,65 @@ test('generateClaudeMD includes mandatory global ADRs directive in CLAUDE.md', (
   }
 })
 
+test('generateClaudeMD includes all 9 harness sections', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-harness-test-'))
+  const origCwd = process.cwd()
+  try {
+    process.chdir(tmpDir)
+    generateClaudeMD({ projectName: 'test-harness-project' })
+    const content = fs.readFileSync(path.join(tmpDir, 'CLAUDE.md'), 'utf8')
+
+    const harnessSections = [
+      '## Branch strategy',
+      '## Definition of done',
+      '## Requirement scope',
+      '## State requirements',
+      '## Roadmap format',
+      '## When governance is not required',
+      '## Production incidents',
+      '## Iterative prototyping',
+      '## Autopilot',
+    ]
+    for (const section of harnessSections) {
+      assert.ok(content.includes(section), `CLAUDE.md should contain harness section: "${section}"`)
+    }
+
+    const harnessSnippets = [
+      'One active branch at a time',
+      'squash-merged',
+      'Green build and tests do not close a microbatch',
+      'explicit negative scope',
+      '`blocked` requires a reason and an owner',
+      'waves of microbatches',
+      'closed list of exemptions',
+      'This section takes precedence',
+      'Inspect the live environment before proposing a fix',
+      'disposable, isolated prototype',
+      'Ask everything you need before starting',
+    ]
+    for (const snippet of harnessSnippets) {
+      assert.ok(content.includes(snippet), `CLAUDE.md should contain harness snippet: "${snippet}"`)
+    }
+
+    // Pre-existing sections must still be present
+    const preExisting = [
+      '## Governance chain',
+      '## Agent rules (mandatory)',
+      '## Slash commands (Claude Code)',
+      '## CLI commands (terminal / CI)',
+      '## Architecture Directives (mandatory)',
+      '## Pre-commit checklist',
+      '## Git hooks',
+      '## CI gate',
+    ]
+    for (const section of preExisting) {
+      assert.ok(content.includes(section), `CLAUDE.md should still contain pre-existing section: "${section}"`)
+    }
+  } finally {
+    process.chdir(origCwd)
+  }
+})
+
 test('scaffold generates CLAUDE.md with mandatory global ADRs directive', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-scaffold-test-'))
   const origCwd = process.cwd()

@@ -372,14 +372,16 @@ operation could delete artifacts from the user's home directory. `list` never
 prompts and always assumes `global` unless `--scope` is given, so it reports
 the same destinations `install` actually wrote to.
 
-The 10 roles installed for each tool: **architect · backend · frontend · qa · infra · security · code-quality · dba · ux · data**
+The **12 roles** installed for each tool: **architect · backend · frontend · qa · infra · security · code-quality · dba · ux · data · iac · tooling**
+
+The **17 skills** cover governance process (governance, implement, plan, release, review) and technical specialties (backend-skill, code-quality-skill, data-skill, dba-skill, frontend-skill, iac-skill, infra-skill, qa-skill, security-skill, tooling-skill, ux-skill, vault-skill).
 
 ---
 
 ## Agent identity — give your agents a name
 
 By default the agents are functional and impersonal: `trackfw-architect`,
-`trackfw-backend`, … Agent identity lets you name all ten, pick how they
+`trackfw-backend`, … Agent identity lets you name all twelve, pick how they
 address you, and call them by name.
 
 ```bash

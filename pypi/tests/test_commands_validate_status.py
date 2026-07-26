@@ -281,5 +281,86 @@ class TestStatusByAgent(unittest.TestCase):
         self.assertRegex(out, r"apolo.*done=5")
 
 
+class TestAnalyzingStateNoFolderStatusViolation(unittest.TestCase):
+    """Roadmap em analyzing/ com status: analyzing não deve gerar folder_status warning."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        analyzing_dir = os.path.join(self.tmp, "docs", "roadmaps", "analyzing")
+        _make_dirs(analyzing_dir)
+        _make_file(
+            os.path.join(analyzing_dir, "ROADMAP-em-analise.md"),
+            "---\nstatus: analyzing\ndate: 2026-07-26\n---\n# Roadmap: Em Análise\n\n## Objetivo\nPlanejamento.\n",
+        )
+        _make_file(
+            os.path.join(self.tmp, "trackfw.yaml"),
+            "roadmap_dir: docs/roadmaps\n",
+        )
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_analyzing_no_folder_status_warning(self):
+        """Roadmap em pasta analyzing/ com status: analyzing não gera folder_status."""
+        old_cwd = os.getcwd()
+        os.chdir(self.tmp)
+        try:
+            cfg = _config.load(self.tmp)
+            warnings = _validator.validate_folder_status_coherence(cfg)
+            for w in warnings:
+                self.assertNotIn(
+                    "ROADMAP-em-analise.md", w,
+                    f"Roadmap em analyzing/ NÃO deve gerar folder_status warning, obteve: {w}",
+                )
+        finally:
+            os.chdir(old_cwd)
+            _config.reset()
+
+
+class TestAnalyzingStateWipLimitDoesNotCount(unittest.TestCase):
+    """Roadmap em analyzing/ NÃO deve ser contado pelo wip_limit."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        wip_dir = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        analyzing_dir = os.path.join(self.tmp, "docs", "roadmaps", "analyzing")
+        _make_dirs(wip_dir, analyzing_dir)
+        _make_file(
+            os.path.join(wip_dir, "ROADMAP-em-wip.md"),
+            "# Roadmap em WIP\n\nREQ: REQ-001\n",
+        )
+        _make_file(
+            os.path.join(analyzing_dir, "ROADMAP-em-analise.md"),
+            "---\nstatus: analyzing\n---\n# Roadmap em Análise\n",
+        )
+        _make_file(
+            os.path.join(self.tmp, "trackfw.yaml"),
+            "roadmap_dir: docs/roadmaps\nwip_limit: 1\n",
+        )
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_wip_limit_ignores_analyzing(self):
+        """wip_limit=1 com 1 wip + 1 analyzing não deve gerar warning."""
+        old_cwd = os.getcwd()
+        os.chdir(self.tmp)
+        try:
+            cfg = _config.load(self.tmp)
+            result = _validator.validate_wip_limit(cfg)
+            warnings = result.get("warnings", [])
+            self.assertEqual(
+                warnings, [],
+                f"wip_limit NÃO deve contar roadmaps em analyzing/ — esperado [], obteve: {warnings}",
+            )
+        finally:
+            os.chdir(old_cwd)
+            _config.reset()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -93,8 +93,8 @@ def _greeting_line(agent: identity.AgentIdentity, nickname: str) -> str:
     """Primeira linha injetada no corpo do agente quando há identidade
     configurada. Sem apelido configurado, menciona só o display_name."""
     if not nickname:
-        return f"Você é {agent.display_name}."
-    return f"Você é {agent.display_name}. Trate o usuário como {nickname}."
+        return f"You are {agent.display_name}."
+    return f"You are {agent.display_name}. Address the user as {nickname}."
 
 
 def _insert_body_prefix(source: str, prefix: str) -> str:
@@ -115,6 +115,59 @@ def _insert_body_prefix(source: str, prefix: str) -> str:
     if not rest:
         return f"{head}\n\n{prefix}"
     return f"{head}\n\n{prefix}\n\n{rest}"
+
+
+def _rewrite_signature_line(source: str, display_name: str) -> str:
+    """Reescreve a última linha da seção de corpo de um markdown cru que casa
+    com o padrão de assinatura ``^— <nome>, <título>$`` (travessão em-dash
+    U+2014, espaço, nome, vírgula, espaço, título). Apenas o primeiro grupo
+    (o nome do agente) é substituído por display_name; o título é preservado
+    byte a byte.
+
+    Escopo: opera somente no corpo (após o fechamento do frontmatter). Uma
+    linha de assinatura dentro do frontmatter nunca é tocada — a detecção de
+    fronteira espelha _rewrite_frontmatter_fields exatamente.
+
+    Se nenhuma linha do corpo casar com o padrão, source é retornado inalterado.
+    Se display_name for vazio, source é retornado inalterado. A função nunca
+    inventa uma assinatura que não estava presente.
+
+    Espelha internal/integrations/render.go:rewriteSignatureLine.
+    """
+    if not display_name:
+        return source
+    trimmed = source.strip()
+
+    # Localiza o início do corpo — espelha _rewrite_frontmatter_fields para que
+    # o escopo de ambas as funções coincida.
+    body_start = 0
+    if trimmed.startswith("---\n"):
+        end = trimmed.find("\n---", 4)
+        if end >= 0:
+            body_start = end + 4  # char imediatamente após "\n---"
+
+    head = trimmed[:body_start]
+    body_section = trimmed[body_start:]
+
+    lines = body_section.split("\n")
+    # Percorre de trás para frente para encontrar a ÚLTIMA linha candidata.
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i]
+        prefix = "— "  # em-dash + espaço
+        if not line.startswith(prefix):
+            continue
+        rest = line[len(prefix):]  # pula "— "
+        comma_idx = rest.find(", ")
+        if comma_idx < 0:
+            continue
+        title = rest[comma_idx + 2:]
+        if not title:
+            continue
+        lines[i] = f"— {display_name}, {title}"
+        return head + "\n".join(lines)
+
+    # Nenhuma linha de assinatura encontrada — retorna source inalterado.
+    return source
 
 
 def _rewrite_frontmatter_fields(source: str, name: str, description: str) -> str:
@@ -236,9 +289,13 @@ def render(
     # representações que consomem o frontmatter cru (agent-markdown,
     # custom-agent, skill). Sem identidade, retorna a mesma expressão usada
     # antes de identity existir — a saída sem identidade é garantida
-    # byte-a-byte idêntica por construção, não por coincidência.
+    # byte-a-byte idêntica por construção, não por coincidência. Com
+    # identidade, além de reescrever name:/description: no frontmatter, também
+    # reescreve a última linha de assinatura do corpo (ver
+    # _rewrite_signature_line).
     if agent is None:
         return _normalize_markdown(source)
     with_body = _insert_body_prefix(source, greeting)
     with_frontmatter = _rewrite_frontmatter_fields(with_body, name, description)
-    return _normalize_markdown(with_frontmatter)
+    with_signature = _rewrite_signature_line(with_frontmatter, agent.display_name)
+    return _normalize_markdown(with_signature)

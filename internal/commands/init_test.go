@@ -57,7 +57,7 @@ func TestInitIdentityPresetInvalidValueListsValidOnes(t *testing.T) {
 	}
 }
 
-func TestInitIdentityPresetGreekWritesTenAgents(t *testing.T) {
+func TestInitIdentityPresetGreekWritesTwelveAgents(t *testing.T) {
 	_, home := initFixture(t)
 
 	cmd := newInitCmd()
@@ -70,8 +70,8 @@ func TestInitIdentityPresetGreekWritesTenAgents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Agents) != 10 {
-		t.Fatalf("expected 10 configured agents, got %d: %+v", len(cfg.Agents), cfg.Agents)
+	if len(cfg.Agents) != 12 {
+		t.Fatalf("expected 12 configured agents, got %d: %+v", len(cfg.Agents), cfg.Agents)
 	}
 	agent, ok := cfg.Agents["architect"]
 	if !ok || agent.Slug != "zeus" {

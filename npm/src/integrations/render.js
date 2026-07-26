@@ -80,8 +80,8 @@ function toolsFor(itemId) {
 // identidade configurada. Sem apelido configurado, apenas o display name do
 // agente é mencionado. Espelha internal/integrations/render.go:greetingLine.
 function greetingLine(displayName, nickname) {
-  if (!nickname) return `Você é ${displayName}.`
-  return `Você é ${displayName}. Trate o usuário como ${nickname}.`
+  if (!nickname) return `You are ${displayName}.`
+  return `You are ${displayName}. Address the user as ${nickname}.`
 }
 
 // insertBodyPrefix insere prefix como a nova primeira linha da seção de
@@ -101,6 +101,54 @@ function insertBodyPrefix(source, prefix) {
   const rest = trimmed.slice(insertAt).replace(/^\n+/, '')
   if (rest === '') return `${head}\n\n${prefix}`
   return `${head}\n\n${prefix}\n\n${rest}`
+}
+
+// rewriteSignatureLine reescreve a última linha da seção de corpo de um
+// markdown cru (frontmatter + corpo) que casa com o padrão de assinatura
+// `^— <nome>, <título>$` (travessão em-dash U+2014, espaço, nome, vírgula,
+// espaço, título). Apenas o grupo de nome (primeiro) é substituído por
+// displayName; o título (segundo grupo) é preservado byte a byte.
+//
+// Escopo: a função opera somente no corpo (após o fechamento do frontmatter).
+// Uma linha de assinatura dentro do frontmatter nunca é tocada — a detecção
+// de fronteira espelha rewriteFrontmatterFields exatamente.
+//
+// Se nenhuma linha do corpo casar com o padrão, source é retornado inalterado.
+// Se displayName for vazio, source é retornado inalterado. A função nunca
+// inventa uma assinatura que não estava presente.
+//
+// Espelha internal/integrations/render.go:rewriteSignatureLine.
+function rewriteSignatureLine(source, displayName) {
+  if (!displayName) return source
+  const trimmed = String(source).trim()
+
+  // Localiza o início do corpo — espelha a detecção de fronteira de
+  // rewriteFrontmatterFields para que o escopo de ambas as funções coincida.
+  let bodyStart = 0
+  if (trimmed.startsWith('---\n')) {
+    const end = trimmed.indexOf('\n---', 4)
+    if (end >= 0) {
+      bodyStart = end + 4 // aponta para o char imediatamente após "\n---"
+    }
+  }
+  const head = trimmed.slice(0, bodyStart)
+  const bodySection = trimmed.slice(bodyStart)
+
+  const lines = bodySection.split('\n')
+  // Percorre de trás para frente para encontrar a ÚLTIMA linha candidata.
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]
+    if (!line.startsWith('— ')) continue
+    const rest = line.slice('— '.length) // pula "— "
+    const commaIdx = rest.indexOf(', ')
+    if (commaIdx < 0) continue
+    const title = rest.slice(commaIdx + 2)
+    if (!title) continue
+    lines[i] = `— ${displayName}, ${title}`
+    return head + lines.join('\n')
+  }
+  // Nenhuma linha de assinatura encontrada — retorna source inalterado.
+  return source
 }
 
 // rewriteFrontmatterFields substitui as linhas "name:" e "description:" do
@@ -176,8 +224,10 @@ function frontmatterName(content) {
 //     gemini, cursor, copilot, kiro-ide, windsurf), retorna o source cru
 //     normalizado com o frontmatter ainda anexado. Quando há identidade
 //     configurada, suas linhas "name:"/"description:" são reescritas no
-//     lugar (ver rewriteFrontmatterFields) — necessário porque a seleção de
-//     subagent do Claude Code lê apenas o frontmatter, nunca o corpo.
+//     lugar (ver rewriteFrontmatterFields) e a última linha de assinatura do
+//     corpo com padrão `^— <nome>, <título>$` é reescrita com o display name
+//     da identidade (ver rewriteSignatureLine) — necessário porque a seleção
+//     de subagent do Claude Code lê apenas o frontmatter, nunca o corpo.
 //
 // Ambas as rotas devem receber a injeção de identidade. Quando não há
 // identidade configurada para item.id, name/description/body ficam
@@ -231,7 +281,8 @@ function render({ kind, content, capability, item, identity: cfg }) {
   if (!id) return normalize(content)
   const withBody = insertBodyPrefix(content, greeting)
   const withFrontmatter = rewriteFrontmatterFields(withBody, name, description)
-  return normalize(withFrontmatter)
+  const withSignature = rewriteSignatureLine(withFrontmatter, id.display_name)
+  return normalize(withSignature)
 }
 
-module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields }
+module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteSignatureLine }

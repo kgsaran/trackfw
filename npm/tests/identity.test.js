@@ -123,7 +123,7 @@ test('validate — config válida não lança', () => {
   assert.doesNotThrow(() => identity.validate(cfg, identity.knownAgentIds()))
 })
 
-test('preset — 10 presets na ordem canônica, cada um com os 10 ids conhecidos', () => {
+test('preset — 10 presets na ordem canônica, cada um com os 12 ids conhecidos', () => {
   const order = ['greek', 'norse', 'potter', 'thrones', 'chaves', 'pioneers', 'starwars', 'tolkien', 'turma', 'egyptian']
   assert.deepEqual(identity.presetNames(), order)
   for (const name of order) {
@@ -144,8 +144,8 @@ test('preset — nome desconhecido lança erro listando os válidos', () => {
   assert.throws(() => identity.preset('nao-existe'), /preset desconhecido.*greek/)
 })
 
-test('knownAgentIds — retorna os 10 ids na ordem estável', () => {
+test('knownAgentIds — retorna os 12 ids na ordem estável', () => {
   assert.deepEqual(identity.knownAgentIds(), [
-    'architect', 'backend', 'frontend', 'qa', 'infra', 'security', 'dba', 'ux', 'code-quality', 'data',
+    'architect', 'backend', 'frontend', 'qa', 'infra', 'security', 'dba', 'ux', 'code-quality', 'data', 'iac', 'tooling',
   ])
 })

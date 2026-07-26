@@ -26,8 +26,27 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `serve` | yes | yes | yes | Local dashboard |
 | `agents` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
+| `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Prints `trackfw <version>` |
+
+## Vault de conhecimento
+
+`trackfw init` cria `vault/notes/` e gera `vault/notes/index.md` nos três CLIs.
+
+O comando `note new "<título>"` cria `vault/notes/<slug>-YYYY-MM-DD.md` com frontmatter
+(`title`, `tags`, `date`, `related`) e seções `## Problem`, `## Root cause`, `## Solution`.
+Após criar o arquivo, acrescenta automaticamente uma linha de link no `index.md`.
+
+Regra de validação `note_orphan` — notas em `vault/notes/` não referenciadas no `index.md`:
+
+| Aspecto | Valor |
+|---|---|
+| Severidade default | `warning` (não bloqueia `trackfw validate`) |
+| Para elevar a error | `rules: { note_orphan: error }` no `trackfw.yaml` |
+| Projeto sem `vault/` | nenhum warning gerado |
+| `index.md` | não conta como nota órfã |
+| Detecção de link | aceita `[texto](arquivo.md)` e `[[nome-da-nota]]` |
 
 ## AI integration lifecycle
 
@@ -44,7 +63,10 @@ without `--targets` open a TTY selector; in non-interactive execution the flag
 is required. Supported targets are Claude Code, Codex, Gemini CLI, Antigravity,
 Cursor, GitHub Copilot, Windsurf, Amazon Q, and Kiro.
 
-Lifecycle state is one of `not-installed`, `current`, `outdated`, or `modified`.
+Lifecycle state is one of `not-installed`, `current`, `outdated`, `modified`, or `analyzing`
+(a transient state set while the manager reads and hashes an artifact — not user-visible in
+normal operation but testable; present in `scaffold.go`, `claudemd.go`, `codex.go`,
+`api_board.go` and the validator).
 Ownership and SHA-256 are stored per project or global scope. Update and
 uninstall preserve modified files unless `--force` is explicit; uninstall never
 removes an unmanaged file or a shared artifact that still has another claim.
@@ -52,12 +74,22 @@ Legacy surfaces are inspected by `list` and selected explicitly for mutations,
 for example `--surface antigravity=legacy-cli`. Known legacy templates can be
 adopted safely; unknown content is never adopted by `update`, even with force.
 
+The catalog ships **12 agents** (architect, backend, code-quality, data, dba, frontend, iac,
+infra, qa, security, tooling, ux) and **17 skills** (5 process: governance, implement, plan,
+release, review; 12 technical: backend-skill, code-quality-skill, data-skill, dba-skill,
+frontend-skill, iac-skill, infra-skill, qa-skill, security-skill, tooling-skill, ux-skill, and
+vault-skill once added).
+
+**Why technical skills carry a `-skill` suffix:** `internal/integrations/catalog.go` validates
+that `id` is unique *across* agents and skills in a single namespace. Because agent ids like
+`backend` already exist, a skill with the same id would collide. The `-skill` suffix
+(e.g. `backend-skill`) is the chosen disambiguation strategy — do not "fix" it without
+understanding this constraint; removing the suffix without renaming or removing the matching
+agent would cause a catalog load error at startup.
+
 The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` names
 exist only in the Go distribution for historical compatibility. They are not
 part of the cross-runtime contract; use `agents` and `skills` in new automation.
-`internal/generators/agents.go:InstallAgents` (hardcodes `~/.claude/agents/`)
-has no production caller and is exercised only by tests — dead code kept as
-is, not part of the contract either.
 
 ## Install scope (`--scope`)
 

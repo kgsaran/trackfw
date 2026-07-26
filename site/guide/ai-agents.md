@@ -351,8 +351,9 @@ trackfw agents install --targets codex --scope project
 trackfw skills install --targets codex --scope project
 ```
 
-O adapter gera dez agentes especialistas TOML em `.codex/agents/` e cinco Agent
-Skills em `.agents/skills/`, com ownership seguro e atualização conservadora.
+O adapter gera doze agentes especialistas TOML em `.codex/agents/` (architect, backend, frontend,
+qa, infra, security, code-quality, dba, ux, data, iac, tooling) e skills de governança e técnicas
+em `.agents/skills/`, com ownership seguro e atualização conservadora.
 
 ---
 

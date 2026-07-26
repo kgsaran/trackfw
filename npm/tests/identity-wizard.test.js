@@ -224,7 +224,7 @@ test('agents install não-TTY não bloqueia e --identity-preset nunca invoca o w
 
   assert.equal(called, false, '--identity-preset deve resolver a identidade sem nunca invocar o wizard interativo')
   const cfg = JSON.parse(fs.readFileSync(identityFile(home), 'utf8'))
-  assert.equal(Object.keys(cfg.agents).length, 10)
+  assert.equal(Object.keys(cfg.agents).length, 12)
 
   const home2 = tmpHome()
   const project2 = tmpProject()

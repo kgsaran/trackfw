@@ -173,6 +173,25 @@ func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 // forma independente do asset embedado que Render também consome. Isso evita
 // a lacuna de "Render(x) == Render(x)" — a suite compara Render contra um
 // contrato externo congelado, não contra si mesma.
+//
+// Re-congelados em 2026-07-26 pela REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw:
+// os 10 assets de agente receberam a camada universal de harness (memory: project, tools:,
+// blocos Mode lock / Before you act / Scope boundary / Working context / Knowledge vault e
+// linha de assinatura). A propriedade "saída sem identidade == contrato congelado externo"
+// foi preservada — os goldens refletem o novo conteúdo deliberadamente revisado, não
+// uma cópia automática da saída.
+//
+// Re-congelados em 2026-07-26 (Wave 2) pela REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw:
+// os 10 assets receberam o adendo do orquestrador (Git authority, Parallelization, Workflow,
+// Post-microbatch audit) em architect e o adendo do implementador (Governance prerequisite,
+// Git boundary, Microbatch completion protocol, Definition of done) nos 6 agents com Edit/Write,
+// e Reporting boundary nos 3 read-only (security, code-quality, ux). Todos receberam ## Mission.
+//
+// Wave 5 (2026-07-26) pela REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw:
+// iac.md e tooling.md tiveram descriptions enriquecidas sob a emenda D12-bis (vocabulário de
+// domínio como Terraform/Pulumi/MCP); assets architect e backend (escopo dos goldens) inalterados.
+// greetingLine migrada de PT-BR ("Você é/Trate o usuário") para EN ("You are/Address the user")
+// nos 3 CLIs por coerência com D2 do ADR de convergência. Goldens permanecem válidos.
 
 func readGolden(t *testing.T, name string) []byte {
 	t.Helper()
@@ -259,7 +278,7 @@ func TestRenderSubagentRouteInjectsIdentity(t *testing.T) {
 	}
 	output := string(out)
 
-	if !strings.Contains(output, "Você é Zeus. Trate o usuário como chefe.") {
+	if !strings.Contains(output, "You are Zeus. Address the user as chefe.") {
 		t.Fatalf("saudação de identidade ausente no corpo da Rota B:\n%s", output)
 	}
 	// frontmatter reescrito com o name/description customizados: @agent-zeus-tf
@@ -553,5 +572,107 @@ func zeusIdentityFor(itemID string) identity.Config {
 		Agents: map[string]identity.AgentIdentity{
 			itemID: {DisplayName: "Zeus", Slug: "zeus"},
 		},
+	}
+}
+
+// --- Testes de rewriteSignatureLine ---
+
+// TestRewriteSignatureLineBasic verifica a substituição do nome na última
+// linha de assinatura que casa com o padrão.
+func TestRewriteSignatureLineBasic(t *testing.T) {
+	source := []byte("---\nname: trackfw-architect\n---\n\n# Corpo\n\nAlgum texto.\n\n— Architect, Principal Software Architect\n")
+	got := rewriteSignatureLine(source, "Zeus")
+	want := "— Zeus, Principal Software Architect"
+	if !strings.Contains(string(got), want) {
+		t.Fatalf("esperado %q na saída:\n%s", want, got)
+	}
+	if strings.Contains(string(got), "— Architect, Principal Software Architect") {
+		t.Fatalf("nome original não foi substituído:\n%s", got)
+	}
+	// título preservado byte a byte
+	if !strings.Contains(string(got), "Principal Software Architect") {
+		t.Fatalf("título não preservado:\n%s", got)
+	}
+}
+
+// TestRewriteSignatureLineNoMatch verifica que source é retornado inalterado
+// quando nenhuma linha casa com o padrão de assinatura.
+func TestRewriteSignatureLineNoMatch(t *testing.T) {
+	source := []byte("---\nname: trackfw-architect\n---\n\n# Corpo\n\nNenhuma assinatura aqui.\n")
+	got := rewriteSignatureLine(source, "Zeus")
+	if string(got) != string(source) {
+		t.Fatalf("sem assinatura: source deve ser retornado inalterado\ngot: %q\nwant: %q", got, source)
+	}
+}
+
+// TestRewriteSignatureLineInFrontmatter garante que uma linha com padrão de
+// assinatura dentro do frontmatter NÃO é tocada — apenas o corpo é varrido.
+func TestRewriteSignatureLineInFrontmatter(t *testing.T) {
+	// A linha "— Architect, Principal Software Architect" está no frontmatter
+	// (entre os delimitadores ---); deve ser ignorada.
+	source := []byte("---\nname: trackfw-architect\ndescription: — Architect, Principal Software Architect\n---\n\n# Corpo sem assinatura.\n")
+	got := rewriteSignatureLine(source, "Zeus")
+	// source inalterado (sem assinatura no corpo)
+	if string(got) != string(source) {
+		t.Fatalf("linha no frontmatter não deve ser reescrita:\ngot: %q\nwant: %q", got, source)
+	}
+}
+
+// TestRewriteSignatureLineLastWins verifica que quando há múltiplas linhas
+// candidatas no corpo, APENAS a última é reescrita.
+func TestRewriteSignatureLineLastWins(t *testing.T) {
+	source := []byte("---\nname: trackfw-architect\n---\n\n— Architect, Senior Role\n\nTexto.\n\n— Architect, Principal Software Architect\n")
+	got := rewriteSignatureLine(source, "Zeus")
+	output := string(got)
+	// A última linha foi reescrita
+	if !strings.Contains(output, "— Zeus, Principal Software Architect") {
+		t.Fatalf("última assinatura não reescrita:\n%s", output)
+	}
+	// A primeira linha permanece inalterada
+	if !strings.Contains(output, "— Architect, Senior Role") {
+		t.Fatalf("primeira assinatura não deve ser alterada:\n%s", output)
+	}
+}
+
+// TestRewriteSignatureLineEmptyDisplayName verifica que source é retornado
+// inalterado quando displayName é vazio.
+func TestRewriteSignatureLineEmptyDisplayName(t *testing.T) {
+	source := []byte("---\nname: trackfw-architect\n---\n\n# Corpo\n\n— Architect, Principal Software Architect\n")
+	got := rewriteSignatureLine(source, "")
+	if string(got) != string(source) {
+		t.Fatalf("displayName vazio: source deve ser retornado inalterado\ngot: %q\nwant: %q", got, source)
+	}
+}
+
+// TestRenderSubagentRouteRewritesSignatureLine é o teste de integração que
+// prova que a Rota B (representation "subagent") reescreve a assinatura quando
+// há identidade configurada. Usa source inline para não depender dos assets
+// reais, que ainda não têm linha de assinatura (ela será adicionada no ML-1A).
+func TestRenderSubagentRouteRewritesSignatureLine(t *testing.T) {
+	source := []byte("---\n" +
+		"name: trackfw-architect\n" +
+		"description: Principal software architect.\n" +
+		"model: opus\n" +
+		"---\n\n" +
+		"# Architect\n\n" +
+		"Corpo do agente.\n\n" +
+		"— Architect, Principal Software Architect\n")
+
+	item := Item{ID: "architect"}
+	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, zeusIdentity())
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := string(out)
+
+	if !strings.Contains(output, "— Zeus, Principal Software Architect") {
+		t.Fatalf("assinatura não reescrita com identidade configurada:\n%s", output)
+	}
+	if strings.Contains(output, "— Architect, Principal Software Architect") {
+		t.Fatalf("assinatura original vazou na saída:\n%s", output)
+	}
+	// título preservado
+	if !strings.Contains(output, "Principal Software Architect") {
+		t.Fatalf("título da assinatura não preservado:\n%s", output)
 	}
 }

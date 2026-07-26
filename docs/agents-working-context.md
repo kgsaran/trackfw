@@ -2887,3 +2887,320 @@ inverter um default, as três quebras com impacto de cada uma) e um bloco "Migra
 diff exato para pipelines. Adotar esse formato em futuras majors.
 
 **Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Zeus — Comparativo agents trackfw × panteão grego (análise doc-only)
+
+**Escopo:** comparar os agents dos fontes do trackfw com os agents implantados em
+`~/.claude/agents/`, nos eixos harness, fluxo git e coordenação. Sem mudanças de código.
+
+**Entregável:** `docs/analises/2026-07-26-comparativo-agents-trackfw-vs-panteao.md`.
+
+**Achados principais:**
+1. Existem **três** conjuntos, não dois: panteão grego (14, hand-authored), assets vivos do
+   trackfw (10, ~360 bytes, EN, enviados ao usuário) e templates legados Go (10, PT-BR,
+   despersonificados do panteão, sem chamador de produção).
+2. O harness do panteão **não é uniforme**: LOCK/`memory: project`/`tools:` em 14/14, mas
+   KANBAN+GIT_FLOW só em `afrodite` e `artemis`, Vault em 3/14. Não há "harness do panteão"
+   pronto para portar — precisaria ser normalizado antes.
+3. Os assets enviados **não ensinam a cadeia ADR→REQ→ROADMAP** que o próprio
+   `branch_has_wip_roadmap` valida — lacuna de produto, não de estilo.
+4. `identity.AgentName()` sempre sufixa `-tf`, então preset greek geraria `zeus-tf` sem
+   colidir com `zeus.md` autoral — a decisão não é "um ou outro".
+5. SHA-256 dos templates legados **batem** com `legacyHashes` em `internal/integrations/legacy.go`
+   (adoção segura de instalações antigas). Apagá-los não quebra a adoção (hashes hardcoded),
+   mas remove a proveniência — Opção 4 exige nota de proveniência.
+6. Paridade dos assets vivos nos 3 CLIs: **OK** (md5 idêntico nos 10 arquivos).
+
+**Governança:** sem REQ/roadmap/branch — enquadra-se na exceção de trivialidade objetiva
+(§7 do CLAUDE.md global: "respostas a perguntas / review sem mudanças"). Artefatos de
+governança só após o KG escolher uma das 4 opções.
+
+**Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Zeus — Plano de convergência: harness pessoal do KG → trackfw
+
+**Escopo:** transformar o trackfw no harness único do KG, absorvendo o que há de melhor no
+Panteão Grego + `~/.claude/CLAUDE.md` + skills pessoais. Análise/decisão, sem implementação.
+
+**Entregável:** `docs/analises/2026-07-26-plano-convergencia-harness-pessoal-para-trackfw.md`.
+
+**Decisões fechadas com o KG:** Q1 default para todos · Q2 assets em inglês · Q2b assinatura em EN
+(com preset usa o DisplayName) · Q3 layout flat puro · Q4 exceção de trivialidade mantida (§7+§11) ·
+Q5 vocabulário Waves+MLs com frontmatter YAML · Q7 seis estados (`analyzing` entra no validator) ·
+Q9 vault completo (scaffold + `trackfw note new` + regra `note_orphan`) · Q14 `iac` como papel
+canônico novo · Q15 Cronos/Hermes ficam fora (resíduo assumido de 2 arquivos locais).
+
+**Achados que mudaram decisões:**
+1. **Dimensão por agente está morta no CMDB** — nos últimos 7 dias, 63 artefatos criados e
+   **zero** sob agente nomeado; 11 REQs já nasceram flat na raiz. Isso derrubou o custo estimado
+   de migrar para flat e decidiu a Q3.
+2. **O vault não depende de plugin** — `installed_plugins.json` não tem nada de vault; as 4 skills
+   em `vault/skills/` são de formato Obsidian, para o humano. Agentes só leem/escrevem markdown.
+   Corrigi minha recomendação anterior de "mapear para ADR": nota de vault é causa-raiz de bug,
+   não decisão arquitetural — naturezas diferentes.
+3. **Sync de assets já resolvido** — `scripts/sync-integration-assets.sh` + `check-integration-assets.sh`
+   em `make quality`. Enriquecer os agents custa 1 árvore, não 30 arquivos.
+4. **`agentTools()` NÃO serve para o `tools:` do Claude** — SET_IMPL/SET_ARCH usam IDs do agy/Windsurf.
+   Exige mapeamento novo.
+5. **Harness do panteão não é uniforme** — KANBAN/GIT_FLOW em 2/14, vault em 3/14. "Trazer do
+   panteão" é, na prática, **definir uma vez e aplicar aos 10**.
+6. **11 defeitos concretos catalogados** (Parte 4), incluindo `analyzing` reconhecido pelo board e
+   não pelo validator, e a skill `zeus` que o CLAUDE.md §0 manda invocar e que não existe.
+
+**Governança:** sem REQ/roadmap/branch — exceção §7 (análise/decisão). A próxima ação exige
+`trackfw req new` → `roadmap new` → `move wip` → `git checkout -b` antes de qualquer edição.
+
+**Status:** CONCLUÍDO.
+
+**Adendo (mesma data) — Q16 resolvida:** as skills técnicas do KG entram no trackfw como
+**família nova por papel** (10 arquivos em `assets/skills/`, ao lado das 5 de processo), **não**
+apensadas às existentes — as 5 atuais são organizadas por verbo/fase (transversais) e as técnicas
+por domínio/papel; fundir os eixos faria `implement` conter Go+React+ArangoDB+Kafka ao mesmo tempo.
+Skill (e não corpo do agente) por três razões: carga sob demanda, reuso cross-agent e consulta pela
+thread principal sem spawn. **Curadoria agnóstica de stack** (~40-50% das 1.231 linhas atravessam);
+o específico (ArangoDB, Uber Fx, Entra ID, Module Federation) migra para o `CLAUDE.md` do CMDB —
+que é onde o defeito #10 já dizia que deveria estar. Q17 (`git-ship` → `trackfw ship`) segue aberta.
+
+**Adendo 2 — Q17 resolvida:** `git-ship` vira **`trackfw ship`**, com abertura de PR/MR **agnóstica
+de forge**. Resolução do flavor por precedência: flag `--forge` → campo `forge:` no `trackfw.yaml`
+(novo em `config.ProjectConfig`) → parse do host de `git remote get-url origin` → CI detectado pelo
+`discover` (proxy) → modo manual (imprime URL, não falha). Mapeamento: github→`gh pr create`,
+gitlab→`glab mr create` (fala "MR"), azure→`az repos pr create`, bitbucket→URL. Reaproveitar
+`externalCommandAvailable` (exec.LookPath) do discover para degradação graciosa.
+⚠️ Armadilha registrada: GitLab/Bitbucket self-hosted têm host arbitrário — o parse do remote sozinho
+não resolve; daí o campo explícito e o desempate por `.gitlab-ci.yml`.
+W8 marcada como candidata a **REQ separada** (não depende de Q1–Q16, toca `config`/`discover`).
+
+**Descoberta lateral:** `config.ProjectConfig` já suporta `roadmap_namespacing: flat|by_agent` com
+`Agents []string`. Ou seja, o layout por agente **já é capacidade existente** — a Q3 (flat) apenas
+confirma o default, e o CMDB poderia manter o layout atual por configuração se quisesse.
+
+---
+
+## Sessão 2026-07-26 — ML-1B: validator reconhece estado `analyzing` (convergência do harness)
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** CONCLUÍDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**REQ:** docs/req/REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md
+**Commit:** e5671de — `fix(validator): reconhece estado analyzing nos 3 CLIs (REQ-2026-07-26)`
+
+**Arquivos alterados:**
+- `internal/validator/validator.go` — 4 pontos: stateDirs em resolveREQFiles, mapa folderToExpectedStatus, validateFolderStatusCoherence, validateFilenameUniqueness
+- `internal/validator/validator_traceid.go` — 2 stateDirs (collectTraceIdEntries e collectTraceIdEntriesByAgent)
+- `internal/validator/validator_test.go` — 2 novos testes: NoFolderStatusViolation e WipLimitDoesNotCount
+- `npm/src/validator/index.js` — STATES, FOLDER_TO_STATUS, validateFolderStatusCoherence, validateFilenameUniqueness
+- `npm/src/validator/traceid.js` — KNOWN_STATES
+- `npm/tests/validator.test.js` — 2 novos testes: folder_status e wip_limit com analyzing
+- `pypi/trackfw/validator.py` — resolveReqFiles, _FOLDER_TO_STATUS, validate_folder_status_coherence, validate_filename_uniqueness
+- `pypi/trackfw/traceid.py` — _ROADMAP_STATES
+- `pypi/tests/test_commands_validate_status.py` — 2 novas classes de teste
+
+**Resultado dos gates:** go build ✅ | go test ./internal/validator/... ✅ | go vet ✅ | Node.js 125 passed ✅ | Python 443 passed ✅ | make quality ✅
+**Semântica preservada:** wip_limit e branch_has_wip_roadmap continuam contando apenas `wip/` — não alterados.
+
+---
+
+## 2026-07-26 — ML-1C: Mecanismo rewriteSignatureLine
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** IMPLEMENTANDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**REQ:** docs/req/REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md
+**Escopo:** Criar `rewriteSignatureLine` nos 3 CLIs (Go, Node.js, Python) — localiza a última linha do corpo que casa com `^— (.+?), (.+)$` e substitui o nome pelo `displayName` da identidade configurada. Chamar na Rota B de Render após `rewriteFrontmatterFields` quando `hasIdentity == true`.
+
+---
+
+## 2026-07-26 — ML-1C: Mecanismo rewriteSignatureLine — CONCLUÍDO
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** CONCLUÍDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**Commit:** aa95b5a
+**Entregáveis:**
+- `internal/integrations/render.go`: `func rewriteSignatureLine(source []byte, displayName string) []byte` adicionada; Rota B atualizada; comentário do `Render()` atualizado.
+- `internal/integrations/render_test.go`: 5 testes unitários + 1 teste de integração adicionados; goldens intocados.
+- `npm/src/integrations/render.js`: `rewriteSignatureLine` adicionada e exportada; Rota B atualizada; comentário atualizado.
+- `npm/tests/identity-render.test.js`: 5 testes unitários + 1 teste de integração adicionados.
+- `pypi/trackfw/integrations/renderers.py`: `_rewrite_signature_line` adicionada; Rota B atualizada; comentário Rota B atualizado.
+- `pypi/tests/test_integrations_identity.py`: 5 testes unitários + 1 teste de integração adicionados.
+**Validação:** `go build ./... && go test ./... && go vet ./... && make quality` — todos verdes (443 Python, 125 npm, todos Go ok).
+
+---
+
+## 2026-07-26 — ML-1A: Camada universal de harness nos 10 assets de agente — IMPLEMENTANDO
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** IMPLEMENTANDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**Escopo:** Adicionar `memory: project`, `tools:` ao frontmatter e 5 blocos universais (Mode lock, Before you act, Scope boundary, Working context, Knowledge vault) em inglês nos 10 assets de agente Go. Adicionar linha de assinatura ao final de cada asset. Sincronizar npm/pypi. Regravar 4 goldens congelados deliberadamente.
+
+---
+
+## 2026-07-26 — ML-1A: Camada universal de harness nos 10 assets de agente — CONCLUÍDO
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** CONCLUÍDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**Commit:** d888df4
+**Entregáveis:**
+- 10 assets Go (`internal/integrations/assets/agents/{architect,backend,frontend,qa,infra,security,dba,ux,code-quality,data}.md`): `memory: project`, `tools:` correto por papel, 5 blocos universais em inglês, linha de assinatura exata.
+- Sincronização nos 3 CLIs via `scripts/sync-integration-assets.sh`.
+- 4 goldens re-congelados deliberadamente (`architect.subagent.golden.md`, `architect.agent-directory.golden.md`, `backend.agent-directory.golden.md`, `backend.codex-toml.golden.toml`).
+- Comentário de `render_test.go` atualizado com data e REQ.
+- `npm/tests/agents-skills.test.js`: 2 testes de golden atualizados (Codex TOML e Antigravity agent-directory).
+**Validação:** `go build ./... && go test ./... && go vet ./... && make quality` — todos verdes (Go ok, npm 125/125, Python 443/443, todos os gates de paridade aprovados).
+
+---
+
+## 2026-07-26 — ML-2A + ML-2B: Adendo do orquestrador e implementador nos 10 assets — IMPLEMENTANDO
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** IMPLEMENTANDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**Escopo:** ML-2A: 4 blocos do orquestrador em `architect.md` (Git authority, Parallelization, Workflow, Post-microbatch audit) + `## Mission`. ML-2B: 4 blocos do implementador nos 6 agents com Edit/Write + Reporting boundary nos 3 read-only (security, code-quality, ux) + `## Mission` em todos os 9. Regravar 4 goldens, atualizar npm test e render_test.go.
+**Commits:** fe088fe (ML-2A) + 353a4a2 (ML-2B)
+**Entregáveis:**
+- `architect.md`: blocos Git authority, Parallelization, Workflow, Post-microbatch audit, Mission.
+- 6 agents com Edit/Write (backend, frontend, qa, infra, dba, data): Governance prerequisite, Git boundary, Microbatch completion protocol, Definition of done, Mission.
+- 3 read-only (security, code-quality, ux): Governance prerequisite, Reporting boundary, Definition of done, Mission.
+- 4 goldens re-congelados: architect.subagent, architect.agent-directory, backend.agent-directory, backend.codex-toml.
+- render_test.go: comentário de re-congelamento Wave 2 adicionado.
+- npm test: golden strings atualizadas (Codex TOML + Antigravity agent-directory para architect e backend).
+- Sync nos 3 CLIs via `scripts/sync-integration-assets.sh`.
+**Validação:** `make quality` verde — Go ok, npm 125/125, Python 443/443, check-integration-assets, check-identity-parity aprovados.
+**Status:** CONCLUÍDO
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-3A: Harness completo no CLAUDE.md gerado
+
+**Status:** CONCLUÍDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commit:** 066bd00 — `feat(generators): harness completo no CLAUDE.md gerado (REQ-2026-07-26)`
+**Escopo:**
+- Adicionadas 9 seções de harness pessoal à função `generateClaudeMD` (Go): Branch strategy, Definition of done, Requirement scope, State requirements, Roadmap format, When governance is not required, Production incidents, Iterative prototyping, Autopilot
+- Paridade idêntica em Node.js (`npm/src/generators/init.js`)
+- Python: adicionada função `generate_claude_md()` em `pypi/trackfw/generators/init_gen.py`, chamada no `scaffold()`
+- Testes atualizados nos 3 CLIs verificando as 9 seções e integridade das seções pré-existentes
+**Validação:** `go build + go test ./internal/generators/... + go vet` verdes; `node --test tests/generators.test.js` 20/20; `python3 -m pytest tests/test_generators_init.py` 38/38
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-3C: Gate de paridade deriva contagem do catálogo
+
+**Status:** CONCLUÍDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commit:** 14d0dc7 — `fix(ci): gate de paridade deriva contagem de itens do catalogo (REQ-2026-07-26)`
+**Escopo:** Corrigir `scripts/check-integration-cli-parity.sh` — substituir número mágico `10` (agentes) e `5` (skills) por contagem derivada do `catalog.json` em tempo de execução.
+**Técnica:** `EXPECTED_AGENTS_COUNT` e `EXPECTED_SKILLS_COUNT` lidas via python3 do catalog.json antes do loop; exportadas como env vars; consumidas em `os.environ` no heredoc Python de `assert_json`. Falha explícita se catálogo ausente ou ilegível.
+**Prova de detecção:** cópia do catálogo com 13 agentes (no scratchpad) fez o assert disparar com `AssertionError: item count mismatch for agents: expected 13, got 12`. Sem resíduo no repositório.
+**Validação:** `make quality` VERDE de ponta a ponta.
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-3B: Papéis canônicos `iac` e `tooling`
+
+**Status:** CONCLUÍDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commit:** c8623c5 feat(agents): papeis canonicos iac e tooling (REQ-2026-07-26)
+**Escopo concluído:**
+- `iac` e `tooling` em KnownAgentIDs() e todos os 10 presets × 3 CLIs (Go, Node.js, Python)
+- Assets `iac.md` e `tooling.md` criados com estrutura idêntica a `infra.md` + blocos específicos
+- Fronteira `infra` × `iac` declarada em ambos os arquivos
+- `catalog.json` atualizado (descrições curtas ~51 chars para caber no form de identidade)
+- Sync via `scripts/sync-integration-assets.sh` — npm + pypi sincronizados
+- `agentTools` em render.go: SET_IMPL por default — sem alteração necessária
+- Testes atualizados: 10→12 agentes nos 3 CLIs, fixture check adaptatado para agentes novos sem histórico
+**Validação:** go build + go test (3 pacotes) verdes, go vet verde, npm 126/126, pypi 446/446, check-integration-assets verde
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-4A: 12 skills técnicas por papel
+
+**Status:** CONCLUÍDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commit:** 6d820dd feat(skills): 12 skills tecnicas por papel (REQ-2026-07-26)
+**Escopo concluído:**
+- 12 skills técnicas criadas em `internal/integrations/assets/skills/`: architecture, backend, frontend, qa, infra, iac, security, dba, ux, code-quality, data, tooling
+- Frontmatter: `name: trackfw-<id>-skill`; IDs no catalog.json com sufixo `-skill` para evitar colisão com IDs de agentes
+- As 5 skills de processo (governance, plan, implement, review, release) permanecem byte a byte inalteradas
+- Vocabulário proibido (ArangoDB, Uber Fx, Module Federation, Entra ID, API_SPECIFICATION) ausente — grep vazio
+- catalog.json: 5 → 17 skills; sync propagado para npm e pypi via scripts/sync-integration-assets.sh
+- Testes atualizados nos 3 CLIs (catalog_test.go → 17, agents_skills_test.go → 17, test_agents_skills.py → 17)
+- Descoberta: IDs de skills técnicas não podem colidir com IDs de agentes (catalog.go valida); sufixo -skill resolve
+**Linhas por skill:** architecture=66, backend=67, frontend=70, qa=63, infra=62, iac=90, security=74, dba=77, ux=70, code-quality=78, data=75, tooling=80
+**Validação:** make quality VERDE (Go 100%, npm 126/126, pypi 446/446, check-integration-assets verde, check-integration-cli-parity verde)
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-4B: Vault de conhecimento (scaffold, note new, note_orphan)
+
+**Status:** CONCLUÍDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commit:** 7b85b5a feat(vault): scaffold, comando note new e regra note_orphan (REQ-2026-07-26)
+**Escopo:**
+- Scaffold: vault/notes adicionado a govDirs nos 3 CLIs; vault/notes/index.md gerado no init
+- Comando `note new "<título>"` nos 3 CLIs (Go + npm + pypi): cria slug-YYYY-MM-DD.md com frontmatter + 3 seções, linka no index.md, idempotente
+- Regra `note_orphan` nos 3 validators (default warning, elevável a error via rules:, aceita link markdown e wikilink)
+- ruleDefaults (Go), RULE_DEFAULTS (JS), _RULE_DEFAULTS (Python) para defaults por-regra
+- 3 testes gerador + 5 testes validator no Go; npm 126/126 verde; pypi 446/446 verde
+- docs/cli-parity.md atualizado com comando note e regra note_orphan
+**Validação:** make quality VERDE de ponta a ponta
+
+---
+
+## Sessão 2026-07-26 — Apolo — Wave 5 (ML-5A + ML-5B): Saudação EN, D12-bis, aposentadoria de gerador legado
+
+**Status:** CONCLUÍDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commits:**
+- ML-5A: 664573f fix(agents): saudacao em ingles, uniformizacao D12-bis e documentacao (REQ-2026-07-26)
+- ML-5B: chore(generators): aposenta gerador legado preservando legacyHashes (REQ-2026-07-26)
+**Escopo:**
+- ML-5A: greetingLine PT-BR → EN nos 3 CLIs; iac/tooling descriptions enriquecidas (D12-bis); cli-parity.md com analyzing/12 agents/17 skills/razão do sufixo -skill; README.md + site atualizados; ADR de identidade com emenda de idioma da saudação
+- ML-5B: generators/agents.go, agents_test.go e templates/agents/ (10 arquivos) removidos; legacyHashes preservados integralmente com comentário de proveniência apontando para commit 664573f; legacy_test.go usa bytes inline do template removido
+**Validação:** make quality VERDE após ambos os commits; trackfw validate sem violações; grep InstallAgents vazio
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-5C: Correção de comentário de proveniência em legacy.go
+
+**Status:** CONCLUÍDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commit:** 06e7e9c docs(legacy): corrige commit de referencia na nota de proveniencia (REQ-2026-07-26)
+**Escopo:**
+- Corrigido comentário no bloco `legacyHashes` em `internal/integrations/legacy.go`
+- A remoção dos templates foi atribuída ao commit correto `8a90a0b` (ML-5B)
+- O comando de recuperação mantém `664573f` (ML-5A, commit anterior à remoção), com justificativa explícita de por que se usa esse hash e não o da remoção
+- Nenhum hash foi alterado; apenas o bloco de comentário foi reescrito
+**Verificações:**
+- hash reproduzido de 664573f: d28ae507d2ce9fd3fcd7cb1a0c1ffaaebc994dc9c45b219e5361b909dc6132ba
+- hash preservado em legacy.go: d28ae507d2ce9fd3fcd7cb1a0c1ffaaebc994dc9c45b219e5361b909dc6132ba (idênticos)
+- go build ./... VERDE
+- go test ./... VERDE (todos os pacotes)
+- make quality VERDE (Go 15 pacotes / npm 126/126 / pypi 446/446 / parity checks OK)
+
+---
+
+## 2026-07-26 — Zeus — Convergência do harness: roadmap ENCERRADO
+
+**Entregue:** 6 waves (1, 1b, 2, 3, 4, 5) + 2 corretivos (ML-3C, ML-5C), 26 commits na branch
+`feat/convergencia-do-harness-pessoal-para-o-trackfw`.
+
+**Resultado:** 12 agentes com harness completo (mode lock, tools, memory, vault, adendos de
+orquestrador e implementador), 17 skills (5 de processo + 12 técnicas), CLAUDE.md gerado com 9 seções
+novas, estado `analyzing` no validator, vault com comando e gate, papéis `iac` e `tooling`, gerador
+legado aposentado com proveniência preservada.
+
+**Achado aberto (nota de vault criada):** `branch_has_wip_roadmap` só enxerga `wip/`, então mover o
+roadmap para `done/` na própria branch — como a Definition of Done exige — faz o `validate` reprovar.
+O gate pune o comportamento que o produto prega. Registrado em
+`vault/notes/branch_has_wip_roadmap-conflita-com-a-definition-of-done-2026-07-26.md`, com 3 opções e
+recomendação. **Decisão pendente do KG.**
+
+**Status:** CONCLUÍDO.

@@ -15,6 +15,8 @@ function knownAgentIds() {
     'ux',
     'code-quality',
     'data',
+    'iac',
+    'tooling',
   ]
 }
 
@@ -35,6 +37,8 @@ const PRESETS = {
     ux: { display_name: 'Atena', slug: 'atena' },
     'code-quality': { display_name: 'Hefesto', slug: 'hefesto' },
     data: { display_name: 'Métis', slug: 'metis' },
+    iac: { display_name: 'Dédalo', slug: 'dedalo' },
+    tooling: { display_name: 'Prometeu', slug: 'prometeu' },
   },
   norse: {
     architect: { display_name: 'Odin', slug: 'odin' },
@@ -47,6 +51,8 @@ const PRESETS = {
     ux: { display_name: 'Idun', slug: 'idun' },
     'code-quality': { display_name: 'Bragi', slug: 'bragi' },
     data: { display_name: 'Mimir', slug: 'mimir' },
+    iac: { display_name: 'Ivaldi', slug: 'ivaldi' },
+    tooling: { display_name: 'Loki', slug: 'loki' },
   },
   potter: {
     architect: { display_name: 'Dumbledore', slug: 'dumbledore' },
@@ -59,6 +65,8 @@ const PRESETS = {
     ux: { display_name: 'Tonks', slug: 'tonks' },
     'code-quality': { display_name: 'Hermione', slug: 'hermione' },
     data: { display_name: 'Trelawney', slug: 'trelawney' },
+    iac: { display_name: 'Rowena', slug: 'rowena' },
+    tooling: { display_name: 'Ollivander', slug: 'ollivander' },
   },
   thrones: {
     architect: { display_name: 'Tyrion', slug: 'tyrion' },
@@ -71,6 +79,8 @@ const PRESETS = {
     ux: { display_name: 'Margaery', slug: 'margaery' },
     'code-quality': { display_name: 'Stannis', slug: 'stannis' },
     data: { display_name: 'Bran', slug: 'bran' },
+    iac: { display_name: 'Gendry', slug: 'gendry' },
+    tooling: { display_name: 'Qyburn', slug: 'qyburn' },
   },
   chaves: {
     architect: { display_name: 'Girafales', slug: 'girafales' },
@@ -83,6 +93,8 @@ const PRESETS = {
     ux: { display_name: 'Popis', slug: 'popis' },
     'code-quality': { display_name: 'Nhonho', slug: 'nhonho' },
     data: { display_name: 'Godinez', slug: 'godinez' },
+    iac: { display_name: 'Chaves', slug: 'chaves' },
+    tooling: { display_name: 'Chapolin', slug: 'chapolin' },
   },
   pioneers: {
     architect: { display_name: 'Turing', slug: 'turing' },
@@ -95,6 +107,8 @@ const PRESETS = {
     ux: { display_name: 'Norman', slug: 'norman' },
     'code-quality': { display_name: 'Knuth', slug: 'knuth' },
     data: { display_name: 'Hopper', slug: 'hopper' },
+    iac: { display_name: 'Hashimoto', slug: 'hashimoto' },
+    tooling: { display_name: 'McCarthy', slug: 'mccarthy' },
   },
   starwars: {
     architect: { display_name: 'Yoda', slug: 'yoda' },
@@ -107,6 +121,8 @@ const PRESETS = {
     ux: { display_name: 'Padmé', slug: 'padme' },
     'code-quality': { display_name: 'Obi-Wan', slug: 'obi-wan' },
     data: { display_name: 'C-3PO', slug: 'c-3po' },
+    iac: { display_name: 'Rey', slug: 'rey' },
+    tooling: { display_name: 'Babu Frik', slug: 'babu-frik' },
   },
   tolkien: {
     architect: { display_name: 'Gandalf', slug: 'gandalf' },
@@ -119,6 +135,8 @@ const PRESETS = {
     ux: { display_name: 'Galadriel', slug: 'galadriel' },
     'code-quality': { display_name: 'Faramir', slug: 'faramir' },
     data: { display_name: 'Bilbo', slug: 'bilbo' },
+    iac: { display_name: 'Aulë', slug: 'aule' },
+    tooling: { display_name: 'Celebrimbor', slug: 'celebrimbor' },
   },
   turma: {
     architect: { display_name: 'Franjinha', slug: 'franjinha' },
@@ -131,6 +149,8 @@ const PRESETS = {
     ux: { display_name: 'Anjinho', slug: 'anjinho' },
     'code-quality': { display_name: 'Titi', slug: 'titi' },
     data: { display_name: 'Chico', slug: 'chico' },
+    iac: { display_name: 'Piteco', slug: 'piteco' },
+    tooling: { display_name: 'Nimbus', slug: 'nimbus' },
   },
   egyptian: {
     architect: { display_name: 'Thoth', slug: 'thoth' },
@@ -143,6 +163,8 @@ const PRESETS = {
     ux: { display_name: 'Bastet', slug: 'bastet' },
     'code-quality': { display_name: 'Maat', slug: 'maat' },
     data: { display_name: 'Osíris', slug: 'osiris' },
+    iac: { display_name: 'Imhotep', slug: 'imhotep' },
+    tooling: { display_name: 'Khnum', slug: 'khnum' },
   },
 }
 

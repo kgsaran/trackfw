@@ -17,7 +17,7 @@ Sem trace_id_field configurado → retorna lista vazia (comportamento inalterado
 import os
 
 # Estados canônicos de pastas de roadmap
-_ROADMAP_STATES = ["backlog", "wip", "blocked", "done", "abandoned"]
+_ROADMAP_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
 
 
 def _parse_frontmatter(content: str) -> dict:

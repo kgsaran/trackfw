@@ -104,7 +104,7 @@ function resolveReqFiles(cfg) {
   if (!reqDir) return []
   const namespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
   if (namespacing === 'by_agent') {
-    const STATES = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
+    const STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
     let agents = cfg.agents || []
     if (!agents.length) {
       try {
@@ -695,6 +695,7 @@ function referenceExists(ref, roots) {
 const FOLDER_TO_STATUS = {
   wip:       ['WIP', 'wip', 'In Progress'],
   backlog:   ['Backlog', 'backlog'],
+  analyzing: ['Analyzing', 'analyzing'],
   blocked:   ['Blocked', 'blocked'],
   done:      ['Done', 'done'],
   abandoned: ['Abandoned', 'abandoned'],
@@ -704,7 +705,7 @@ const FOLDER_TO_STATUS = {
 function validateFolderStatusCoherence() {
   const cfg = config.load()
   const warnings = []
-  const states = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
+  const states = ['wip', 'backlog', 'analyzing', 'blocked', 'done', 'abandoned']
 
   let dirs = []
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
@@ -757,7 +758,7 @@ function validateFolderStatusCoherence() {
 // validateFilenameUniqueness — verifica que o mesmo filename não aparece em múltiplos estados
 function validateFilenameUniqueness() {
   const cfg = config.load()
-  const states = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
+  const states = ['wip', 'backlog', 'analyzing', 'blocked', 'done', 'abandoned']
   const seen = {}  // filename → [states]
 
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
@@ -833,6 +834,39 @@ function normalizeBranchSlug(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
+/**
+ * Detecta notas em vault/notes/ não referenciadas pelo index.md.
+ * index.md não conta como nota órfã. Projeto sem vault/ retorna [].
+ * Aceita link markdown `[texto](arquivo.md)` ou wikilink `[[nome]]`.
+ * @param {string} [cwd]
+ * @returns {string[]}
+ */
+function validateNoteOrphan(cwd) {
+  const root = cwd || process.cwd()
+  const vaultDir = path.join(root, 'vault', 'notes')
+  if (!fs.existsSync(vaultDir)) return []
+
+  const indexPath = path.join(vaultDir, 'index.md')
+  let indexContent = ''
+  if (fs.existsSync(indexPath)) {
+    indexContent = fs.readFileSync(indexPath, 'utf8')
+  }
+
+  const notes = fs.readdirSync(vaultDir).filter((f) => f.endsWith('.md') && f !== 'index.md')
+  const msgs = []
+  for (const filename of notes) {
+    const nameWithoutExt = filename.replace(/\.md$/, '')
+    const referenced =
+      indexContent.includes(`(${filename})`) ||
+      indexContent.includes(`[[${nameWithoutExt}]]`) ||
+      indexContent.includes(`[[${filename}]]`)
+    if (!referenced) {
+      msgs.push(`note "${filename}" is not referenced in vault/notes/index.md`)
+    }
+  }
+  return msgs
+}
+
 function isGitWorktree(dir) {
   try {
     const out = execSync('git rev-parse --is-inside-work-tree', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd: dir })
@@ -863,10 +897,18 @@ function resetMeta() {
   _itemMeta.clear()
 }
 
+// RULE_DEFAULTS mapeia regras cujo default NÃO é 'error'.
+const RULE_DEFAULTS = {
+  note_orphan: 'warning',
+}
+
 // ruleSeverity retorna a severidade configurada para uma regra ('error'|'warning'|'off').
+// Prioridade: trackfw.yaml rules: > RULE_DEFAULTS > 'error'.
 function ruleSeverity(name) {
   const cfg = config.load()
-  return cfg.rules[name] || 'error'
+  if (cfg.rules[name]) return cfg.rules[name]
+  if (RULE_DEFAULTS[name]) return RULE_DEFAULTS[name]
+  return 'error'
 }
 
 // applyRule distribui msgs para violations ou warnings conforme a severidade configurada.
@@ -925,6 +967,7 @@ async function validateUnfiltered() {
   applyRule('filename_uniqueness',  validateFilenameUniqueness(),          violations, warnings)
   applyRule('branch_has_wip_roadmap', validateBranchHasWIPRoadmap(),      violations, warnings)
   applyRule('blocked_by_draft_adr', validateREQsNotBlockedByDraftADRs(),  violations, warnings)
+  applyRule('note_orphan',           validateNoteOrphan(),                 violations, warnings)
 
   // Regras configuráveis via applyRule (popula _itemMeta automaticamente)
   applyRule('req_has_adr',          validateREQsHaveADR(),          violations, warnings)

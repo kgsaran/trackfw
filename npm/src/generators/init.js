@@ -13,6 +13,7 @@ const GOV_DIRS = [
   'docs/roadmaps/blocked',
   'docs/roadmaps/done',
   'docs/roadmaps/abandoned',
+  'vault/notes',
 ]
 
 const GLOBAL_ADRS_DIRECTIVE = 'Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.'
@@ -28,6 +29,7 @@ async function scaffold(cfg, cwd) {
     console.log(`  ✓ ${dir}`)
   }
 
+  generateVaultIndex(root)
   writeTrackfwConfig(cfg, root)
   generateValidateScript(cfg, root)
   generateAttentionScripts(cfg, root)
@@ -38,6 +40,29 @@ async function scaffold(cfg, cwd) {
   if (cfg.backend === 'java') generatePomXml(cfg, root)
   generateClaudeCommands(root)
   injectHooksDetected(root)
+}
+
+/**
+ * generateVaultIndex — cria vault/notes/index.md se ainda não existir.
+ * @param {string} root
+ */
+function generateVaultIndex(root) {
+  const indexPath = path.join(root || process.cwd(), 'vault', 'notes', 'index.md')
+  if (fs.existsSync(indexPath)) return
+  const content = `# Vault de Conhecimento
+
+> Ponto de entrada de conhecimento do projeto para agentes e pessoas.
+> Cada nota documenta uma causa-raiz, decisão técnica ou restrição não óbvia.
+> Crie notas com: trackfw note new "<título>"
+
+## Índice
+
+<!-- As notas serão listadas abaixo. Exemplo:
+- [nome-da-nota-YYYY-MM-DD](nome-da-nota-YYYY-MM-DD.md)
+-->
+`
+  fs.writeFileSync(indexPath, content, 'utf8')
+  console.log('  ✓ vault/notes/index.md')
 }
 
 // ---------------------------------------------------------------------------
@@ -584,6 +609,66 @@ function generateClaudeMD(cfg) {
     default:
       content += 'No CI gate configured.\n'
   }
+
+  // Harness sections — derived from project governance conventions
+  content += '\n## Branch strategy\n\n'
+  content += 'One active branch at a time. Name it `feat/<slug>`, `fix/<slug>` or `refactor/<slug>`. '
+  content += 'Before creating a new branch, verify no other is genuinely open: run `git fetch origin --prune`, '
+  content += 'then `git branch -r --no-merged origin/main`, then for each candidate `git diff origin/main <branch> --stat`. '
+  content += 'An empty diff means it was squash-merged — ignore it. '
+  content += 'Squash merges do not mark a branch as merged, so `--no-merged` alone is not evidence. '
+  content += 'If the branch is stale and the diff looks inflated by main\'s own evolution, '
+  content += 'compare only the files the branch itself touched since the merge base.\n\n'
+
+  content += '## Definition of done\n\n'
+  content += 'Green build and tests do not close a microbatch. '
+  content += 'It is done when the requirement and the roadmap sit in the correct state folder, '
+  content += 'their declared status matches that folder, the final validation is recorded with evidence, '
+  content += 'no duplicate copy remains in another state, and `trackfw validate` reports no violations.\n\n'
+
+  content += '## Requirement scope\n\n'
+  content += 'Every requirement must declare an explicit negative scope: what must not be implemented. '
+  content += 'Boundaries prevent an implementing agent from inventing work.\n\n'
+
+  content += '## State requirements\n\n'
+  content += '`blocked` requires a reason and an owner. '
+  content += '`abandoned` requires a reason and a successor. '
+  content += '`wip` must reflect work that is genuinely active; '
+  content += 'anything stalled moves to `blocked` or `abandoned` instead of rotting in `wip`.\n\n'
+
+  content += '## Roadmap format\n\n'
+  content += 'Organize work as waves of microbatches. '
+  content += 'A wave groups microbatches that can run in parallel; a barrier separates waves. '
+  content += 'Microbatches sharing any file — including generated trees and build outputs — must be sequential, '
+  content += 'and the reason is documented. '
+  content += 'Each microbatch declares exact files, exact actions, measurable acceptance criteria and exact validation commands, '
+  content += 'so that a small model can execute it without guessing.\n\n'
+
+  content += '## When governance is not required\n\n'
+  content += 'A closed list of exemptions: a typo or local variable rename; a documentation-only change; '
+  content += 'a configuration tweak with no runtime effect; a direct revert; '
+  content += 'answering a question or reviewing without changes. '
+  content += 'Additionally, when the user reports a concrete bug, fix it directly and do not open an architectural analysis for it. '
+  content += '**This section takes precedence over the general rule that requires a requirement and a roadmap.** '
+  content += 'Anything touching business logic, an API contract, a data schema, authentication or authorization, '
+  content += 'localization, or user-facing behavior always requires governance, regardless of how few files it touches.\n\n'
+
+  content += '## Production incidents\n\n'
+  content += 'Inspect the live environment before proposing a fix: real variables, active credentials, '
+  content += 'granted permissions, running processes. '
+  content += 'Confirm the root cause against real evidence, then implement the smallest fix. '
+  content += 'Never edit static configuration files as a response to a root cause that has not been confirmed in the running environment.\n\n'
+
+  content += '## Iterative prototyping\n\n'
+  content += 'For complex or uncertain user-facing work, validate the concept with a disposable, isolated prototype '
+  content += 'that the user reviews visually, and only then write the decision record and the production roadmap. '
+  content += 'Build and test success is not evidence that an interface is right.\n\n'
+
+  content += '## Autopilot\n\n'
+  content += 'Ask everything you need before starting. '
+  content += 'Once started, do not interrupt for confirmations that could have been anticipated. '
+  content += 'Decide low-risk details autonomously following existing project conventions, '
+  content += 'and record autonomous decisions in the commit message.\n'
 
   injectOrUpdateRules('CLAUDE.md', content)
   console.log('  ✓ CLAUDE.md')
@@ -1139,6 +1224,7 @@ module.exports = {
   generateClaudeMD,
   generateClaudeCommands,
   generateClaudeCommandsForce,
+  generateVaultIndex,
   installSkillsForce,
   installAgents,
   installGemini,
