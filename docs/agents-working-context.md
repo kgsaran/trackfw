@@ -3156,8 +3156,12 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 
 ## Sessão 2026-07-26 — Apolo — Wave 5 (ML-5A + ML-5B): Saudação EN, D12-bis, aposentadoria de gerador legado
 
-**Status:** IMPLEMENTANDO
+**Status:** CONCLUÍDO
 **Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commits:**
+- ML-5A: 664573f fix(agents): saudacao em ingles, uniformizacao D12-bis e documentacao (REQ-2026-07-26)
+- ML-5B: chore(generators): aposenta gerador legado preservando legacyHashes (REQ-2026-07-26)
 **Escopo:**
-- ML-5A: saudação em inglês nos 3 CLIs, uniformização D12-bis nos 12 assets, documentação
-- ML-5B: remoção de generators/agents.go + templates/agents/, preservando legacyHashes com comentário de proveniência
+- ML-5A: greetingLine PT-BR → EN nos 3 CLIs; iac/tooling descriptions enriquecidas (D12-bis); cli-parity.md com analyzing/12 agents/17 skills/razão do sufixo -skill; README.md + site atualizados; ADR de identidade com emenda de idioma da saudação
+- ML-5B: generators/agents.go, agents_test.go e templates/agents/ (10 arquivos) removidos; legacyHashes preservados integralmente com comentário de proveniência apontando para commit 664573f; legacy_test.go usa bytes inline do template removido
+**Validação:** make quality VERDE após ambos os commits; trackfw validate sem violações; grep InstallAgents vazio
