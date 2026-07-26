@@ -75,7 +75,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 > Dependências: **barrier** — ML-1A concluído. Arquivos disjuntos: `commands/` × `internal/forge/`.
 
 ### ML-2A — Comando `trackfw ship` (fluxo git, sem abrir PR)
-**Status:** pending
+**Status:** in progress
 **Files affected:** `internal/commands/ship.go`, equivalentes em npm/pypi, testes
 
 **Actions:** implementar os passos 1–6 do ADR:
@@ -95,7 +95,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 - [ ] `make quality` verde
 
 ### ML-2B — Pacote `internal/forge` — adaptadores
-**Status:** pending
+**Status:** in progress
 **Files affected:** `internal/forge/` (novo), equivalentes em npm/pypi, testes
 
 **Actions:**
