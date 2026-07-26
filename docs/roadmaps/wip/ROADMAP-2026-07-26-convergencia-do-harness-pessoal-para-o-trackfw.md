@@ -317,7 +317,7 @@ equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
 > Dependências: **barrier** — Wave 3 concluída (ML-4A depende de `catalog.json` estabilizado por ML-3B).
 
 ### ML-4A — 12 skills técnicas por papel, agnósticas de stack
-**Status:** in progress
+**Status:** done
 **Agente sugerido:** architect (curadoria) com apoio dos especialistas
 **Files affected:** `internal/integrations/assets/skills/{backend,frontend,qa,infra,security,dba,ux,code-quality,data,iac,tooling,architecture}.md`, `internal/integrations/assets/catalog.json`
 
@@ -385,7 +385,16 @@ equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
    `api_board.go` e no validator (fecha o defeito 11 da análise).
 3. Conferir que todo asset novo termina com assinatura e que nenhum declara assinatura sem tê-la.
 4. Atualizar `README.md` e `site/` com os papéis novos e as skills técnicas.
-5. **Uniformizar os 12 assets sob a emenda D12-bis** (decisão já tomada — ver ADR).
+5. **Decidir a nomenclatura das skills** (wart introduzida no ML-4A, com causa real).
+   `catalog.go:132` valida unicidade de `id` **entre** agents e skills; como já existe o agente
+   `backend`, a skill técnica teve de virar `backend-skill`. Resultado: as 5 de processo são
+   `governance`, `plan`, … e as 12 técnicas são `backend-skill`, `iac-skill`, … — dois padrões no
+   mesmo array. Opções: (a) manter e documentar a razão em `cli-parity.md`; (b) relaxar a unicidade
+   para ser por `kind` (agents e skills instalam em diretórios distintos em todos os targets, então
+   a colisão pode ser teórica) e renomear as 12; (c) sufixar também as 5 de processo — **rejeitada**,
+   quebra instalações existentes e a adoção via `legacyHashes`.
+   Recomendação: (a) agora, (b) só se houver outro motivo para mexer no catálogo.
+6. **Uniformizar os 12 assets sob a emenda D12-bis** (decisão já tomada — ver ADR).
    `Kubernetes` em `infra.md` passa a ser **conforme**. Revisar `iac.md` e `tooling.md`, escritos sob
    a regra estrita, e acrescentar o vocabulário de domínio que lhes foi negado — sem introduzir
    escolha de stack de projeto. Conferir os 12 sob o novo critério.
@@ -553,6 +562,25 @@ Verificação empírica nos 3 CLIs (não só testes):
 
 A severidade `warning` por default era o ponto crítico: como `error`, a regra fecharia o
 `trackfw validate` no primeiro uso de qualquer projeto com vault preexistente.
+
+**2026-07-26 — ML-4A (12 skills técnicas) concluído e auditado. Wave 4 fechada.**
+
+12 skills criadas, 62–90 linhas cada (alvo era 40–90). As 5 de processo: `git diff` vazio contra
+`main` — byte a byte inalteradas, como exigia D11.
+
+**D12-bis funcionando como pretendido:** zero escolha de stack de projeto nas 17 skills; vocabulário
+de domínio presente em 9 delas. `iac.md` (90 linhas) cobre estrutura de módulos, state remoto com
+locking, fluxo plan → policy-as-code → custo → aprovação humana → apply, e uma seção de anti-padrões
+concreta (`"*"` em actions e resources, versões não pinadas, drift por mudança manual). `tooling.md`
+(80 linhas) cobre design de agentes e skills, MCP, economia de contexto e validação de recomendação
+contra documentação oficial. Sem a emenda, ambas teriam virado princípios sem exemplo — era o pedido
+explícito do usuário.
+
+**Testes atualizados, não relaxados:** os 3 que hardcodavam 5 skills passaram a exigir 17 **e** a
+lista exata de ids. Continuam falhando se o catálogo divergir.
+
+**Verificação empírica:** `skills install` entrega 17 artefatos; `agents install` + `skills install`
+no mesmo projeto não produzem nenhum nome colidente.
 
 ## Acceptance Criteria
 
