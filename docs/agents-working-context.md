@@ -3313,24 +3313,37 @@ recomendação. **Decisão pendente do KG.**
 
 ---
 
-## 2026-07-26 — Apolo — ML-3A: integração forge + abertura de PR/MR no ship (IMPLEMENTANDO)
+## 2026-07-26 — Apolo — ML-3A: integração forge + abertura de PR/MR no ship (CONCLUÍDO)
 
 **Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
 **REQ:** `docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md`
+**Commit:** `fa4f16e` — `feat(ship): abertura de PR/MR conforme a forge resolvida (REQ-2026-07-26-ship)`
 
 **Objetivo:** Passo 7 do `trackfw ship` — após push, resolver forge e abrir PR/MR via adaptador. Paridade nos 3 CLIs (Go, Node.js, Python).
 
-**Arquivos afetados:**
-- `internal/commands/ship.go` — extend `shipOpts`/`shipDeps`, add Step 7
-- `internal/commands/ship_test.go` — novos testes + atualizar helpers existentes
-- `npm/src/ship/runner.js` — add Step 7
-- `npm/src/commands/ship.js` — add `--no-pr` e `--forge` flags
-- `npm/tests/ship.test.js` — novos testes
-- `pypi/trackfw/ship/runner.py` — add Step 7
-- `pypi/trackfw/commands/ship.py` — add `--no-pr` e `--forge` flags
-- `pypi/tests/test_ship.py` — novos testes
+**Arquivos modificados:**
+- `internal/commands/ship.go` — shipOpts (+noPR, +forge), shipDeps (+configForge/repoDir/availFn/execForgeCLI), Step 7, helpers firstLine/buildPRBody/buildForgeCreateArgs/defaultExecForgeCLI
+- `internal/commands/ship_test.go` — makeDeps atualizado, 2 testes diretos atualizados, 12 novos testes Step 7
+- `npm/src/ship/runner.js` — importa forge modules, Step 7, helpers firstLine/buildForgeCreateArgs
+- `npm/src/commands/ship.js` — flags --no-pr e --forge, wire configForge de config.load()
+- `npm/tests/ship.test.js` — makeDeps atualizado, 13 novos testes Step 7
+- `pypi/trackfw/ship/runner.py` — parâmetros no_pr/forge_flag/config_forge/repo_dir/avail_fn/exec_forge_cli, Step 7, helpers _first_line/_build_forge_create_args/_default_exec_forge_cli
+- `pypi/trackfw/commands/ship.py` — flags --no-pr e --forge, wire config_forge via load_config()
+- `pypi/tests/test_ship.py` — make_deps atualizado, 16 novos testes Step 7
 
-**Status:** IMPLEMENTANDO.
+**Resultados:**
+- Go: `go build ./... && go test ./internal/commands/... ./internal/forge/... && go vet ./...` — VERDE
+- npm: 206 testes — VERDE
+- Python: 556 testes — VERDE
+
+**Decisões técnicas:**
+- `forge.Resolve(forge.Input{...})` chamado com inputs injetáveis (não injeta um fake resolver) — testa precedência real
+- `repoDir: ""` em testes → CI file detection desabilitada, sem acesso ao filesystem
+- azure usa `--description` (não `--body`) construído em `buildForgeCreateArgs` do ship.go — adapter.go não modificado
+- `buildForgeCreateArgs` usa `copy()` para nunca mutar `adapter.CLIArgs`
+- Step 7 é non-fatal: ausência de CLI, forge=manual, ou erro de invocação → warn + URL de fallback + exit 0
+
+**Status:** CONCLUÍDO.
 
 ---
 
