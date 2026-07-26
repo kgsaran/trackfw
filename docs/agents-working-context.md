@@ -3122,9 +3122,19 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 
 ## Sessão 2026-07-26 — Apolo — ML-4A: 12 skills técnicas por papel
 
-**Status:** IMPLEMENTANDO
+**Status:** CONCLUÍDO
 **Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
-**Escopo:** Criar 12 skills técnicas em `internal/integrations/assets/skills/`, adicionar ao catalog.json, atualizar catalog_test.go, rodar sync e make quality.
+**Commit:** 6d820dd feat(skills): 12 skills tecnicas por papel (REQ-2026-07-26)
+**Escopo concluído:**
+- 12 skills técnicas criadas em `internal/integrations/assets/skills/`: architecture, backend, frontend, qa, infra, iac, security, dba, ux, code-quality, data, tooling
+- Frontmatter: `name: trackfw-<id>-skill`; IDs no catalog.json com sufixo `-skill` para evitar colisão com IDs de agentes
+- As 5 skills de processo (governance, plan, implement, review, release) permanecem byte a byte inalteradas
+- Vocabulário proibido (ArangoDB, Uber Fx, Module Federation, Entra ID, API_SPECIFICATION) ausente — grep vazio
+- catalog.json: 5 → 17 skills; sync propagado para npm e pypi via scripts/sync-integration-assets.sh
+- Testes atualizados nos 3 CLIs (catalog_test.go → 17, agents_skills_test.go → 17, test_agents_skills.py → 17)
+- Descoberta: IDs de skills técnicas não podem colidir com IDs de agentes (catalog.go valida); sufixo -skill resolve
+**Linhas por skill:** architecture=66, backend=67, frontend=70, qa=63, infra=62, iac=90, security=74, dba=77, ux=70, code-quality=78, data=75, tooling=80
+**Validação:** make quality VERDE (Go 100%, npm 126/126, pypi 446/446, check-integration-assets verde, check-integration-cli-parity verde)
 
 ---
 
