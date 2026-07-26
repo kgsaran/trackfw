@@ -20,11 +20,21 @@ reprovar:
 
 Impasse no momento do PR:
 
-- Mover o roadmap para `done/` na branch → `validate` reprova → **CI do PR falha**.
-- Deixar em `wip/` para o CI passar → **viola a Definition of Done**, que o próprio produto passou a
+- Mover o roadmap para `done/` na branch → `validate` reprova localmente.
+- Deixar em `wip/` para ficar verde → **viola a Definition of Done**, que o próprio produto passou a
   pregar ("build e testes verdes não encerram o trabalho; o fluxo Kanban encerra").
 
 O gate pune exatamente o comportamento que a documentação gerada exige.
+
+**Quem é afetado — verificado, não presumido.** O CI **deste repositório** (`quality.yml:71-74`) roda
+`trackfw validate --json` dentro de um `mktemp -d`, ou seja, **não valida o estado de governança do
+próprio repo** — logo o PR desta REQ não é bloqueado.
+
+O impasse atinge os **projetos usuários**: o workflow que o trackfw gera
+(`writeCIWorkflow` → `.github/workflows/trackfw-gate.yml`) roda `trackfw validate` **na raiz do
+projeto** a cada pull request. Nesses repositórios, encerrar o roadmap conforme a DoD reprova o PR.
+Ou seja: o defeito é invisível para quem desenvolve o trackfw e bloqueante para quem o usa — a pior
+combinação possível para ser descoberto tarde.
 
 ## Root cause
 
