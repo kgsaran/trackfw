@@ -3219,3 +3219,20 @@ recomendação. **Decisão pendente do KG.**
 - Precedência: flag → config → remote URL → CI files → manual
 - Parse SSH e HTTPS; hosts conhecidos; desempate self-hosted por `.gitlab-ci.yml` / `.github/workflows/`
 - Testes nos 3 CLIs com os mesmos casos obrigatórios
+
+**Entregue:**
+- `internal/config/config.go` — campo `Forge string` + parse da chave `forge:` no YAML
+- `internal/forge/resolve.go` — `Resolution{Forge, Source}`, `Input`, `Resolve()`, `ResolveFromRepo()`
+- `internal/forge/resolve_test.go` — 28 testes cobrindo todos os casos do roadmap
+- `npm/src/config/index.js` — campo `forge: ''` + parse da chave `forge:`
+- `npm/src/forge/resolve.js` — porte completo Node.js puro
+- `npm/tests/forge.test.js` — 28 testes (mesmos casos)
+- `pypi/trackfw/config.py` — campo `forge: ''` + parse da chave `forge:`
+- `pypi/trackfw/forge/__init__.py` + `pypi/trackfw/forge/resolve.py` — porte Python
+- `pypi/tests/test_forge_resolve.py` — 28 testes (mesmos casos)
+- Commit `505fcaf` | push para `feat/comando-trackfw-ship-agnostico-de-forge`
+- `make quality` VERDE (Go 15 pkgs | npm 154 testes | pypi 474 testes)
+
+**Nota técnica:** Azure SSH usa `ssh.dev.azure.com` (host distinto de `dev.azure.com`). Coberto via regra `*.dev.azure.com` no `hostToForge` nos 3 CLIs.
+
+**Status:** CONCLUÍDO.
