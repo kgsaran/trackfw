@@ -2887,3 +2887,94 @@ inverter um default, as três quebras com impacto de cada uma) e um bloco "Migra
 diff exato para pipelines. Adotar esse formato em futuras majors.
 
 **Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Zeus — Comparativo agents trackfw × panteão grego (análise doc-only)
+
+**Escopo:** comparar os agents dos fontes do trackfw com os agents implantados em
+`~/.claude/agents/`, nos eixos harness, fluxo git e coordenação. Sem mudanças de código.
+
+**Entregável:** `docs/analises/2026-07-26-comparativo-agents-trackfw-vs-panteao.md`.
+
+**Achados principais:**
+1. Existem **três** conjuntos, não dois: panteão grego (14, hand-authored), assets vivos do
+   trackfw (10, ~360 bytes, EN, enviados ao usuário) e templates legados Go (10, PT-BR,
+   despersonificados do panteão, sem chamador de produção).
+2. O harness do panteão **não é uniforme**: LOCK/`memory: project`/`tools:` em 14/14, mas
+   KANBAN+GIT_FLOW só em `afrodite` e `artemis`, Vault em 3/14. Não há "harness do panteão"
+   pronto para portar — precisaria ser normalizado antes.
+3. Os assets enviados **não ensinam a cadeia ADR→REQ→ROADMAP** que o próprio
+   `branch_has_wip_roadmap` valida — lacuna de produto, não de estilo.
+4. `identity.AgentName()` sempre sufixa `-tf`, então preset greek geraria `zeus-tf` sem
+   colidir com `zeus.md` autoral — a decisão não é "um ou outro".
+5. SHA-256 dos templates legados **batem** com `legacyHashes` em `internal/integrations/legacy.go`
+   (adoção segura de instalações antigas). Apagá-los não quebra a adoção (hashes hardcoded),
+   mas remove a proveniência — Opção 4 exige nota de proveniência.
+6. Paridade dos assets vivos nos 3 CLIs: **OK** (md5 idêntico nos 10 arquivos).
+
+**Governança:** sem REQ/roadmap/branch — enquadra-se na exceção de trivialidade objetiva
+(§7 do CLAUDE.md global: "respostas a perguntas / review sem mudanças"). Artefatos de
+governança só após o KG escolher uma das 4 opções.
+
+**Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Zeus — Plano de convergência: harness pessoal do KG → trackfw
+
+**Escopo:** transformar o trackfw no harness único do KG, absorvendo o que há de melhor no
+Panteão Grego + `~/.claude/CLAUDE.md` + skills pessoais. Análise/decisão, sem implementação.
+
+**Entregável:** `docs/analises/2026-07-26-plano-convergencia-harness-pessoal-para-trackfw.md`.
+
+**Decisões fechadas com o KG:** Q1 default para todos · Q2 assets em inglês · Q2b assinatura em EN
+(com preset usa o DisplayName) · Q3 layout flat puro · Q4 exceção de trivialidade mantida (§7+§11) ·
+Q5 vocabulário Waves+MLs com frontmatter YAML · Q7 seis estados (`analyzing` entra no validator) ·
+Q9 vault completo (scaffold + `trackfw note new` + regra `note_orphan`) · Q14 `iac` como papel
+canônico novo · Q15 Cronos/Hermes ficam fora (resíduo assumido de 2 arquivos locais).
+
+**Achados que mudaram decisões:**
+1. **Dimensão por agente está morta no CMDB** — nos últimos 7 dias, 63 artefatos criados e
+   **zero** sob agente nomeado; 11 REQs já nasceram flat na raiz. Isso derrubou o custo estimado
+   de migrar para flat e decidiu a Q3.
+2. **O vault não depende de plugin** — `installed_plugins.json` não tem nada de vault; as 4 skills
+   em `vault/skills/` são de formato Obsidian, para o humano. Agentes só leem/escrevem markdown.
+   Corrigi minha recomendação anterior de "mapear para ADR": nota de vault é causa-raiz de bug,
+   não decisão arquitetural — naturezas diferentes.
+3. **Sync de assets já resolvido** — `scripts/sync-integration-assets.sh` + `check-integration-assets.sh`
+   em `make quality`. Enriquecer os agents custa 1 árvore, não 30 arquivos.
+4. **`agentTools()` NÃO serve para o `tools:` do Claude** — SET_IMPL/SET_ARCH usam IDs do agy/Windsurf.
+   Exige mapeamento novo.
+5. **Harness do panteão não é uniforme** — KANBAN/GIT_FLOW em 2/14, vault em 3/14. "Trazer do
+   panteão" é, na prática, **definir uma vez e aplicar aos 10**.
+6. **11 defeitos concretos catalogados** (Parte 4), incluindo `analyzing` reconhecido pelo board e
+   não pelo validator, e a skill `zeus` que o CLAUDE.md §0 manda invocar e que não existe.
+
+**Governança:** sem REQ/roadmap/branch — exceção §7 (análise/decisão). A próxima ação exige
+`trackfw req new` → `roadmap new` → `move wip` → `git checkout -b` antes de qualquer edição.
+
+**Status:** CONCLUÍDO.
+
+**Adendo (mesma data) — Q16 resolvida:** as skills técnicas do KG entram no trackfw como
+**família nova por papel** (10 arquivos em `assets/skills/`, ao lado das 5 de processo), **não**
+apensadas às existentes — as 5 atuais são organizadas por verbo/fase (transversais) e as técnicas
+por domínio/papel; fundir os eixos faria `implement` conter Go+React+ArangoDB+Kafka ao mesmo tempo.
+Skill (e não corpo do agente) por três razões: carga sob demanda, reuso cross-agent e consulta pela
+thread principal sem spawn. **Curadoria agnóstica de stack** (~40-50% das 1.231 linhas atravessam);
+o específico (ArangoDB, Uber Fx, Entra ID, Module Federation) migra para o `CLAUDE.md` do CMDB —
+que é onde o defeito #10 já dizia que deveria estar. Q17 (`git-ship` → `trackfw ship`) segue aberta.
+
+**Adendo 2 — Q17 resolvida:** `git-ship` vira **`trackfw ship`**, com abertura de PR/MR **agnóstica
+de forge**. Resolução do flavor por precedência: flag `--forge` → campo `forge:` no `trackfw.yaml`
+(novo em `config.ProjectConfig`) → parse do host de `git remote get-url origin` → CI detectado pelo
+`discover` (proxy) → modo manual (imprime URL, não falha). Mapeamento: github→`gh pr create`,
+gitlab→`glab mr create` (fala "MR"), azure→`az repos pr create`, bitbucket→URL. Reaproveitar
+`externalCommandAvailable` (exec.LookPath) do discover para degradação graciosa.
+⚠️ Armadilha registrada: GitLab/Bitbucket self-hosted têm host arbitrário — o parse do remote sozinho
+não resolve; daí o campo explícito e o desempate por `.gitlab-ci.yml`.
+W8 marcada como candidata a **REQ separada** (não depende de Q1–Q16, toca `config`/`discover`).
+
+**Descoberta lateral:** `config.ProjectConfig` já suporta `roadmap_namespacing: flat|by_agent` com
+`Agents []string`. Ou seja, o layout por agente **já é capacidade existente** — a Q3 (flat) apenas
+confirma o default, e o CMDB poderia manter o layout atual por configuração se quisesse.
