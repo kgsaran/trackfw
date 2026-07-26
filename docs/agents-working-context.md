@@ -3204,3 +3204,18 @@ O gate pune o comportamento que o produto prega. Registrado em
 recomendação. **Decisão pendente do KG.**
 
 **Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-1A: campo `forge:` e resolver de precedência (IMPLEMENTANDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** `docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md`
+**ADR:** `docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md`
+
+**Escopo:**
+- Adicionar `Forge string` a `ProjectConfig` (Go) e equivalentes em npm/pypi
+- Criar `internal/forge/resolve.go` com `Resolution{Forge, Source}`, `Input`, `Resolve()`, `ResolveFromRepo()`
+- Precedência: flag → config → remote URL → CI files → manual
+- Parse SSH e HTTPS; hosts conhecidos; desempate self-hosted por `.gitlab-ci.yml` / `.github/workflows/`
+- Testes nos 3 CLIs com os mesmos casos obrigatórios

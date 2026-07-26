@@ -29,6 +29,7 @@ function defaults() {
     requireReqInCommit: false,
     strictCiPaths: false,
     traceIdField: '',
+    forge: '',
     // NOVOS campos:
     linkFields: {
       req:     ['REQ:'],
@@ -194,6 +195,7 @@ function parse(content, cfg) {
       case 'require_req_in_commit': cfg.requireReqInCommit = val === 'true'; break;
       case 'strict_ci_paths':       cfg.strictCiPaths = val === 'true'; break;
       case 'trace_id_field':        cfg.traceIdField = val.replace(/^["']|["']$/g, ''); break;
+      case 'forge':                 cfg.forge = val.replace(/^["']|["']$/g, ''); break;
       case 'link_fields':           inLinkFields = true; break;
       case 'acceptance_markers':    inAcceptanceMarkers = true; acceptanceMarkers = []; break;
       case 'rules':                 inRules = true; rules = {}; break;
