@@ -180,7 +180,7 @@ go test ./internal/validator/... && make quality
 > não → seguem paralelos).
 
 ### ML-2A — Adendo do orquestrador no `architect`
-**Status:** in progress
+**Status:** done
 **Agente sugerido:** architect
 **Files affected:** `internal/integrations/assets/agents/architect.md`
 
@@ -205,7 +205,7 @@ go test ./internal/validator/... && make quality
 ---
 
 ### ML-2B — Adendo do implementador nos 9 demais assets
-**Status:** in progress
+**Status:** done
 **Agente sugerido:** backend
 **Files affected:** `internal/integrations/assets/agents/{backend,frontend,qa,infra,security,dba,ux,code-quality,data}.md`
 
@@ -469,6 +469,32 @@ bilíngue. Não é regressão do ML-1A — é pré-existente e só ficou visíve
 **Observação de forma (não bloqueante):** com a inserção dos blocos após o H1, o parágrafo de missão
 ficou órfão no fim do arquivo, sem heading. É consequência da minha especificação, não erro do
 agente. Avaliar um `## Mission` na Wave 2, quando os adendos por papel forem escritos.
+
+**2026-07-26 — Wave 2 concluída e auditada (ML-2A + ML-2B, agente único).**
+
+Matriz de conformidade verificada asset a asset:
+
+| asset | Git authority | Git boundary | Reporting boundary | Gov. prereq | Mission |
+|---|:-:|:-:|:-:|:-:|:-:|
+| architect | ✅ | — | — | — | ✅ |
+| backend, frontend, qa, infra, dba, data | — | ✅ | — | ✅ | ✅ |
+| security, code-quality, ux (read-only) | — | — | ✅ | ✅ | ✅ |
+
+Coerência estrutural confirmada: os 3 papéis com `## Reporting boundary` são exatamente os 3 sem
+`Edit` no `tools:`. A assimetria do ML bate com a assimetria do frontmatter — não é coincidência
+textual.
+
+Renderização real conferida (não só fixture): com `--identity-preset greek`, `security` sai como
+`— Hades, Security Reviewer` e `architect` como `— Zeus, Principal Software Architect`, ambos com a
+ordem de headings correta e `## Mission` antes do parágrafo original.
+
+`make quality` verde, incluindo `check-identity-parity.sh` e `check-integration-assets.sh`.
+Dois commits, um por ML, conforme especificado. Nenhum arquivo proibido tocado.
+
+**Lição desta sessão codificada no produto:** o bloco `## Post-microbatch audit` do `architect` diz
+"green gates are not proof that the intended behavior was delivered — validate the real artifact,
+not only the test fixtures". Foi exatamente o que expôs o defeito da saudação bilíngue no ML-1A,
+com todos os gates verdes.
 
 ## Acceptance Criteria
 
