@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-26
 author: "KG"
 adr: "docs/adr/ADR-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md"
 ---
 
 # REQ: convergência do harness pessoal para o trackfw
 
-> Date: 2026-07-26 | Status: Open
+> Date: 2026-07-26 | Status: Done
 
 ## Motivation
 
@@ -59,18 +59,18 @@ Decisões D1–D17 no ADR vinculado.
 
 ## Acceptance Criteria
 
-- [ ] Os 10 assets de agente contêm a camada universal e passam `make quality` sem erro
-- [ ] `architect` contém o adendo orquestrador; os demais contêm o adendo implementador
-- [ ] `scripts/check-integration-assets.sh` verde: bytes idênticos entre Go, npm e PyPI
-- [ ] `trackfw validate` aceita roadmap em `analyzing` nos 3 CLIs, com testes cobrindo o novo estado
-- [ ] `trackfw init` cria `vault/notes/index.md`; `trackfw note new "<t>"` gera nota e linka no índice
-- [ ] `note_orphan` reportado como **warning** por default e configurável via `rules:`
-- [ ] `KnownAgentIDs` inclui `iac` e o papel de tooling; `TestPreset_EveryPresetCoversExactlyKnownAgentIDs` verde nos 10 presets
-- [ ] 10 skills técnicas presentes em `assets/skills/`, sem menção a stack específica
-- [ ] CLAUDE.md gerado contém branch strategy, DoD, escopo negativo, exigências por estado e formato Waves+MLs
-- [ ] Assinatura renderizada em EN, e com DisplayName quando há preset configurado
-- [ ] `make quality` verde nos 3 CLIs
-- [ ] `go build ./...`, `go test ./...` e `go vet ./...` sem erro
+- [x] Os 10 assets de agente contêm a camada universal e passam `make quality` sem erro
+- [x] `architect` contém o adendo orquestrador; os demais contêm o adendo implementador
+- [x] `scripts/check-integration-assets.sh` verde: bytes idênticos entre Go, npm e PyPI
+- [x] `trackfw validate` aceita roadmap em `analyzing` nos 3 CLIs, com testes cobrindo o novo estado
+- [x] `trackfw init` cria `vault/notes/index.md`; `trackfw note new "<t>"` gera nota e linka no índice
+- [x] `note_orphan` reportado como **warning** por default e configurável via `rules:`
+- [x] `KnownAgentIDs` inclui `iac` e `tooling`; `TestPreset_EveryPresetCoversExactlyKnownAgentIDs` verde nos 10 presets (12 ids cada)
+- [x] **12** skills técnicas presentes em `assets/skills/`, sem escolha de stack de projeto (D12-bis)
+- [x] CLAUDE.md gerado contém branch strategy, DoD, escopo negativo, exigências por estado e formato Waves+MLs
+- [x] Assinatura renderizada em EN, e com DisplayName quando há preset configurado
+- [x] `make quality` verde nos 3 CLIs
+- [x] `go build ./...`, `go test ./...` e `go vet ./...` sem erro
 
 ## Linked ADR
 
@@ -81,4 +81,4 @@ ADR: docs/adr/ADR-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md

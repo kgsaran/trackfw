@@ -3165,3 +3165,42 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 - ML-5A: greetingLine PT-BR → EN nos 3 CLIs; iac/tooling descriptions enriquecidas (D12-bis); cli-parity.md com analyzing/12 agents/17 skills/razão do sufixo -skill; README.md + site atualizados; ADR de identidade com emenda de idioma da saudação
 - ML-5B: generators/agents.go, agents_test.go e templates/agents/ (10 arquivos) removidos; legacyHashes preservados integralmente com comentário de proveniência apontando para commit 664573f; legacy_test.go usa bytes inline do template removido
 **Validação:** make quality VERDE após ambos os commits; trackfw validate sem violações; grep InstallAgents vazio
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-5C: Correção de comentário de proveniência em legacy.go
+
+**Status:** CONCLUÍDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commit:** 06e7e9c docs(legacy): corrige commit de referencia na nota de proveniencia (REQ-2026-07-26)
+**Escopo:**
+- Corrigido comentário no bloco `legacyHashes` em `internal/integrations/legacy.go`
+- A remoção dos templates foi atribuída ao commit correto `8a90a0b` (ML-5B)
+- O comando de recuperação mantém `664573f` (ML-5A, commit anterior à remoção), com justificativa explícita de por que se usa esse hash e não o da remoção
+- Nenhum hash foi alterado; apenas o bloco de comentário foi reescrito
+**Verificações:**
+- hash reproduzido de 664573f: d28ae507d2ce9fd3fcd7cb1a0c1ffaaebc994dc9c45b219e5361b909dc6132ba
+- hash preservado em legacy.go: d28ae507d2ce9fd3fcd7cb1a0c1ffaaebc994dc9c45b219e5361b909dc6132ba (idênticos)
+- go build ./... VERDE
+- go test ./... VERDE (todos os pacotes)
+- make quality VERDE (Go 15 pacotes / npm 126/126 / pypi 446/446 / parity checks OK)
+
+---
+
+## 2026-07-26 — Zeus — Convergência do harness: roadmap ENCERRADO
+
+**Entregue:** 6 waves (1, 1b, 2, 3, 4, 5) + 2 corretivos (ML-3C, ML-5C), 26 commits na branch
+`feat/convergencia-do-harness-pessoal-para-o-trackfw`.
+
+**Resultado:** 12 agentes com harness completo (mode lock, tools, memory, vault, adendos de
+orquestrador e implementador), 17 skills (5 de processo + 12 técnicas), CLAUDE.md gerado com 9 seções
+novas, estado `analyzing` no validator, vault com comando e gate, papéis `iac` e `tooling`, gerador
+legado aposentado com proveniência preservada.
+
+**Achado aberto (nota de vault criada):** `branch_has_wip_roadmap` só enxerga `wip/`, então mover o
+roadmap para `done/` na própria branch — como a Definition of Done exige — faz o `validate` reprovar.
+O gate pune o comportamento que o produto prega. Registrado em
+`vault/notes/branch_has_wip_roadmap-conflita-com-a-definition-of-done-2026-07-26.md`, com 3 opções e
+recomendação. **Decisão pendente do KG.**
+
+**Status:** CONCLUÍDO.

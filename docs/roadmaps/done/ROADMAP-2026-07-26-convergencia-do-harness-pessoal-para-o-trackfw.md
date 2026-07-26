@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-26
 req: "docs/req/REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: convergencia do harness pessoal para o trackfw
 
-> Created: 2026-07-26 | Status: wip
+> Created: 2026-07-26 | Status: done
 
 ## Context
 
@@ -375,7 +375,7 @@ equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
 > Dependências: **barrier** — Wave 4 concluída.
 
 ### ML-5A — Correção dos defeitos catalogados
-**Status:** pending
+**Status:** done
 **Agente sugerido:** code-quality
 **Files affected:** conforme cada item
 
@@ -415,7 +415,7 @@ equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
 ---
 
 ### ML-5B — Aposentar o gerador legado preservando a adoção segura
-**Status:** pending
+**Status:** done
 **Agente sugerido:** backend
 **Files affected:** `internal/generators/agents.go`, `internal/generators/agents_test.go`,
 `internal/generators/templates/agents/`, `internal/integrations/legacy.go`, `docs/cli-parity.md`
