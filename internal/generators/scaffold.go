@@ -33,6 +33,7 @@ var govDirs = []string{
 	"docs/roadmaps/blocked",
 	"docs/roadmaps/done",
 	"docs/roadmaps/abandoned",
+	"vault/notes",
 }
 
 func Scaffold(cfg Config) error {
@@ -41,6 +42,10 @@ func Scaffold(cfg Config) error {
 			return fmt.Errorf("creating %s: %w", dir, err)
 		}
 		fmt.Printf("  ✓ %s\n", dir)
+	}
+
+	if err := generateVaultIndex(); err != nil {
+		return err
 	}
 
 	if err := writeTrackfwConfig(cfg); err != nil {
@@ -822,6 +827,33 @@ func generateHuskyHook() error {
 		return fmt.Errorf("writing husky hook: %w", err)
 	}
 	fmt.Printf("  ✓ %s\n", path)
+	return nil
+}
+
+// generateVaultIndex cria vault/notes/index.md se ainda não existir.
+// O arquivo é o ponto de entrada do vault de conhecimento do projeto.
+func generateVaultIndex() error {
+	indexPath := filepath.Join("vault", "notes", "index.md")
+	if _, err := os.Stat(indexPath); err == nil {
+		// já existe — idempotente
+		return nil
+	}
+	content := `# Vault de Conhecimento
+
+> Ponto de entrada de conhecimento do projeto para agentes e pessoas.
+> Cada nota documenta uma causa-raiz, decisão técnica ou restrição não óbvia.
+> Crie notas com: trackfw note new "<título>"
+
+## Índice
+
+<!-- As notas serão listadas abaixo. Exemplo:
+- [nome-da-nota-YYYY-MM-DD](nome-da-nota-YYYY-MM-DD.md)
+-->
+`
+	if err := os.WriteFile(indexPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("writing vault/notes/index.md: %w", err)
+	}
+	fmt.Println("  ✓ vault/notes/index.md")
 	return nil
 }
 

@@ -45,6 +45,7 @@ GOV_DIRS_FLAT = [
     'docs/roadmaps/blocked',
     'docs/roadmaps/done',
     'docs/roadmaps/abandoned',
+    'vault/notes',
 ]
 
 ROADMAP_STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
@@ -80,6 +81,7 @@ def scaffold(cwd: str, opts: dict) -> None:
         os.makedirs(abs_dir, exist_ok=True)
         print(f'  checkmark {d}')
 
+    generate_vault_index(cwd)
     _write_trackfw_yaml(cwd, opts)
     _write_example_adr(cwd, opts)
     generate_claude_md(cwd, opts)
@@ -729,6 +731,28 @@ esac
 rm -f "$ROADMAP_DIR/.trackfw-attention.json"
 exit 0
 """
+
+
+def generate_vault_index(cwd: str) -> None:
+    """Cria vault/notes/ e vault/notes/index.md se ainda não existirem."""
+    vault_dir = os.path.join(cwd, 'vault', 'notes')
+    os.makedirs(vault_dir, exist_ok=True)
+    index_path = os.path.join(vault_dir, 'index.md')
+    if os.path.exists(index_path):
+        return
+    content = (
+        "# Vault de Conhecimento\n\n"
+        "> Ponto de entrada de conhecimento do projeto para agentes e pessoas.\n"
+        "> Cada nota documenta uma causa-raiz, decisão técnica ou restrição não óbvia.\n"
+        "> Crie notas com: trackfw note new \"<título>\"\n\n"
+        "## Índice\n\n"
+        "<!-- As notas serão listadas abaixo. Exemplo:\n"
+        "- [nome-da-nota-YYYY-MM-DD](nome-da-nota-YYYY-MM-DD.md)\n"
+        "-->\n"
+    )
+    with open(index_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print('  ✓ vault/notes/index.md')
 
 
 def _generate_attention_scripts(cwd: str) -> None:

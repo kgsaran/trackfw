@@ -13,6 +13,7 @@ const GOV_DIRS = [
   'docs/roadmaps/blocked',
   'docs/roadmaps/done',
   'docs/roadmaps/abandoned',
+  'vault/notes',
 ]
 
 const GLOBAL_ADRS_DIRECTIVE = 'Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.'
@@ -28,6 +29,7 @@ async function scaffold(cfg, cwd) {
     console.log(`  ✓ ${dir}`)
   }
 
+  generateVaultIndex(root)
   writeTrackfwConfig(cfg, root)
   generateValidateScript(cfg, root)
   generateAttentionScripts(cfg, root)
@@ -38,6 +40,29 @@ async function scaffold(cfg, cwd) {
   if (cfg.backend === 'java') generatePomXml(cfg, root)
   generateClaudeCommands(root)
   injectHooksDetected(root)
+}
+
+/**
+ * generateVaultIndex — cria vault/notes/index.md se ainda não existir.
+ * @param {string} root
+ */
+function generateVaultIndex(root) {
+  const indexPath = path.join(root || process.cwd(), 'vault', 'notes', 'index.md')
+  if (fs.existsSync(indexPath)) return
+  const content = `# Vault de Conhecimento
+
+> Ponto de entrada de conhecimento do projeto para agentes e pessoas.
+> Cada nota documenta uma causa-raiz, decisão técnica ou restrição não óbvia.
+> Crie notas com: trackfw note new "<título>"
+
+## Índice
+
+<!-- As notas serão listadas abaixo. Exemplo:
+- [nome-da-nota-YYYY-MM-DD](nome-da-nota-YYYY-MM-DD.md)
+-->
+`
+  fs.writeFileSync(indexPath, content, 'utf8')
+  console.log('  ✓ vault/notes/index.md')
 }
 
 // ---------------------------------------------------------------------------
@@ -1199,6 +1224,7 @@ module.exports = {
   generateClaudeMD,
   generateClaudeCommands,
   generateClaudeCommandsForce,
+  generateVaultIndex,
   installSkillsForce,
   installAgents,
   installGemini,

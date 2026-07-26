@@ -33,9 +33,22 @@ def _content_has_marker(content: str, markers: list) -> bool:
     return False
 
 
+# _RULE_DEFAULTS mapeia regras cujo default NÃO é 'error'.
+_RULE_DEFAULTS = {
+    "note_orphan": "warning",
+}
+
+
 def _rule_severity(name: str, cfg: dict) -> str:
-    """Retorna severidade da regra: 'off' | 'warning' | 'error'."""
-    return cfg.get("rules", {}).get(name, "error")
+    """Retorna severidade da regra: 'off' | 'warning' | 'error'.
+    Prioridade: trackfw.yaml rules: > _RULE_DEFAULTS > 'error'.
+    """
+    rules = cfg.get("rules", {})
+    if name in rules:
+        return rules[name]
+    if name in _RULE_DEFAULTS:
+        return _RULE_DEFAULTS[name]
+    return "error"
 
 
 def _extract_file(msg: str) -> str:
@@ -976,6 +989,48 @@ def _is_git_worktree(cwd: str) -> bool:
         return False
 
 
+def validate_note_orphan(cfg: dict, cwd: str = None) -> list:
+    """
+    Detecta notas em vault/notes/ não referenciadas pelo index.md.
+    index.md não conta como nota órfã. Projeto sem vault/ retorna [].
+    Aceita link markdown `[texto](arquivo.md)` ou wikilink `[[nome]]`.
+    """
+    base = cwd or os.getcwd()
+    vault_dir = os.path.join(base, "vault", "notes")
+    if not os.path.isdir(vault_dir):
+        return []
+
+    index_path = os.path.join(vault_dir, "index.md")
+    index_content = ""
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            index_content = f.read()
+
+    msgs = []
+    try:
+        entries = os.listdir(vault_dir)
+    except OSError:
+        return []
+
+    for filename in sorted(entries):
+        if not filename.endswith(".md") or filename == "index.md":
+            continue
+        name_without_ext = re.sub(r"\.md$", "", filename)
+        referenced = (
+            f"({filename})" in index_content
+            or f"[[{name_without_ext}]]" in index_content
+            or f"[[{filename}]]" in index_content
+        )
+        if not referenced:
+            msgs.append({
+                "type": "warning",
+                "message": f'note "{filename}" is not referenced in vault/notes/index.md',
+                "rule": "note_orphan",
+                "file": filename,
+            })
+    return msgs
+
+
 def validate_adr_dirs_exist(cfg: dict) -> dict:
     """
     Verifica se todos os diretórios configurados em adr_dirs existem.
@@ -1033,6 +1088,7 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule("ref_targets_exist",    validate_ref_targets_exist(cfg),              violations, warnings, cfg)
     _apply_rule("folder_status",        validate_folder_status_coherence(cfg),        violations, warnings, cfg)
     _apply_rule("stale_wip",            validate_stale_wip(cfg),                      violations, warnings, cfg)
+    _apply_rule("note_orphan",          validate_note_orphan(cfg, cwd),               violations, warnings, cfg)
 
     # Regras com severidade configurável (req_has_adr, blocked_has_req, req_has_roadmap)
     _apply_rule("req_has_adr",     validate_reqs_have_adr(cfg),     violations, warnings, cfg)

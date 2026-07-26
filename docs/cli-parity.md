@@ -26,8 +26,27 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `serve` | yes | yes | yes | Local dashboard |
 | `agents` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
+| `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Prints `trackfw <version>` |
+
+## Vault de conhecimento
+
+`trackfw init` cria `vault/notes/` e gera `vault/notes/index.md` nos três CLIs.
+
+O comando `note new "<título>"` cria `vault/notes/<slug>-YYYY-MM-DD.md` com frontmatter
+(`title`, `tags`, `date`, `related`) e seções `## Problem`, `## Root cause`, `## Solution`.
+Após criar o arquivo, acrescenta automaticamente uma linha de link no `index.md`.
+
+Regra de validação `note_orphan` — notas em `vault/notes/` não referenciadas no `index.md`:
+
+| Aspecto | Valor |
+|---|---|
+| Severidade default | `warning` (não bloqueia `trackfw validate`) |
+| Para elevar a error | `rules: { note_orphan: error }` no `trackfw.yaml` |
+| Projeto sem `vault/` | nenhum warning gerado |
+| `index.md` | não conta como nota órfã |
+| Detecção de link | aceita `[texto](arquivo.md)` e `[[nome-da-nota]]` |
 
 ## AI integration lifecycle
 

@@ -1185,3 +1185,112 @@ status: analyzing
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Testes note_orphan
+// ---------------------------------------------------------------------------
+
+// TestNoteOrphan_SemVault — projeto sem vault/ não gera nenhum warning.
+func TestNoteOrphan_SemVault(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	msgs, err := validateNoteOrphan()
+	if err != nil {
+		t.Fatalf("validateNoteOrphan() erro: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("projeto sem vault/ não deve gerar msgs, obteve: %v", msgs)
+	}
+}
+
+// TestNoteOrphan_NotaOrfaGeraWarning — nota não linkada no index gera warning por default.
+func TestNoteOrphan_NotaOrfaGeraWarning(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "vault/notes")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// Nota órfã — não referenciada no index
+	writeFile(t, dir, "vault/notes/minha-nota-2026-01-01.md", "# Minha nota\n")
+	writeFile(t, dir, "vault/notes/index.md", "# Vault\n\n## Índice\n\n")
+
+	msgs, err := validateNoteOrphan()
+	if err != nil {
+		t.Fatalf("validateNoteOrphan() erro: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Error("esperado 1 msg para nota órfã, obteve 0")
+	}
+	// Validate() deve retornar exit 0 (warning por default, não violation)
+	_, warnings, err2 := Validate()
+	if err2 != nil {
+		t.Fatalf("Validate() erro: %v", err2)
+	}
+	if !hasWarning(warnings, "minha-nota-2026-01-01.md") {
+		t.Errorf("esperado warning contendo nota, obteve warnings: %v", warnings)
+	}
+}
+
+// TestNoteOrphan_ElevadaAError — com rules: {note_orphan: error}, vira violation.
+func TestNoteOrphan_ElevadaAError(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "vault/notes")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, "vault/notes/orfaa-2026-01-01.md", "# Órfã\n")
+	writeFile(t, dir, "vault/notes/index.md", "# Vault\n\n## Índice\n\n")
+	writeFile(t, dir, "trackfw.yaml", "rules:\n  note_orphan: error\n")
+
+	violations, _, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() erro: %v", err)
+	}
+	if !hasViolation(violations, "orfaa-2026-01-01.md") {
+		t.Errorf("esperado violation com note_orphan:error, obteve violations: %v", violations)
+	}
+}
+
+// TestNoteOrphan_IndexNaoConta — index.md não é contada como nota órfã.
+func TestNoteOrphan_IndexNaoConta(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "vault/notes")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, "vault/notes/index.md", "# Vault\n\n## Índice\n\n")
+
+	msgs, err := validateNoteOrphan()
+	if err != nil {
+		t.Fatalf("validateNoteOrphan() erro: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("index.md não deve ser contado como órfão, obteve: %v", msgs)
+	}
+}
+
+// TestNoteOrphan_NotaLinkadaNaoGera — nota linkada no index não gera warning.
+func TestNoteOrphan_NotaLinkadaNaoGera(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "vault/notes")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, "vault/notes/nota-ok-2026-01-01.md", "# Nota OK\n")
+	writeFile(t, dir, "vault/notes/index.md", "# Vault\n\n## Índice\n\n- [nota-ok-2026-01-01](nota-ok-2026-01-01.md)\n")
+
+	msgs, err := validateNoteOrphan()
+	if err != nil {
+		t.Fatalf("validateNoteOrphan() erro: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("nota linkada não deve gerar msg, obteve: %v", msgs)
+	}
+}
+

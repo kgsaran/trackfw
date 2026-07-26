@@ -3117,3 +3117,14 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 - `agentTools` em render.go: SET_IMPL por default — sem alteração necessária
 - Testes atualizados: 10→12 agentes nos 3 CLIs, fixture check adaptatado para agentes novos sem histórico
 **Validação:** go build + go test (3 pacotes) verdes, go vet verde, npm 126/126, pypi 446/446, check-integration-assets verde
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-4B: Vault de conhecimento (scaffold, note new, note_orphan)
+
+**Status:** IMPLEMENTANDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Escopo:**
+- Scaffold: vault/notes adicionado a govDirs nos 3 CLIs; vault/notes/index.md gerado no init
+- Comando `note new "<título>"` nos 3 CLIs (Go + npm + pypi)
+- Regra `note_orphan` no validator dos 3 CLIs (default warning, elevável a error via rules:)
