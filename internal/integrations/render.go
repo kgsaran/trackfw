@@ -101,9 +101,9 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 // the agent's display name is mentioned.
 func greetingLine(id identity.AgentIdentity, nickname string) string {
 	if nickname == "" {
-		return fmt.Sprintf("Você é %s.", id.DisplayName)
+		return fmt.Sprintf("You are %s.", id.DisplayName)
 	}
-	return fmt.Sprintf("Você é %s. Trate o usuário como %s.", id.DisplayName, nickname)
+	return fmt.Sprintf("You are %s. Address the user as %s.", id.DisplayName, nickname)
 }
 
 // insertBodyPrefix inserts prefix as the new first line of the body section

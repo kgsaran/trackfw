@@ -186,6 +186,12 @@ func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 // Post-microbatch audit) em architect e o adendo do implementador (Governance prerequisite,
 // Git boundary, Microbatch completion protocol, Definition of done) nos 6 agents com Edit/Write,
 // e Reporting boundary nos 3 read-only (security, code-quality, ux). Todos receberam ## Mission.
+//
+// Wave 5 (2026-07-26) pela REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw:
+// iac.md e tooling.md tiveram descriptions enriquecidas sob a emenda D12-bis (vocabulário de
+// domínio como Terraform/Pulumi/MCP); assets architect e backend (escopo dos goldens) inalterados.
+// greetingLine migrada de PT-BR ("Você é/Trate o usuário") para EN ("You are/Address the user")
+// nos 3 CLIs por coerência com D2 do ADR de convergência. Goldens permanecem válidos.
 
 func readGolden(t *testing.T, name string) []byte {
 	t.Helper()
@@ -272,7 +278,7 @@ func TestRenderSubagentRouteInjectsIdentity(t *testing.T) {
 	}
 	output := string(out)
 
-	if !strings.Contains(output, "Você é Zeus. Trate o usuário como chefe.") {
+	if !strings.Contains(output, "You are Zeus. Address the user as chefe.") {
 		t.Fatalf("saudação de identidade ausente no corpo da Rota B:\n%s", output)
 	}
 	// frontmatter reescrito com o name/description customizados: @agent-zeus-tf

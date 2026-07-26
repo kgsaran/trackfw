@@ -39,13 +39,13 @@ test('Rota B (subagent/claude) com identidade — name, description e saudação
   assert.match(plan.content, /^---\nname: zeus-tf\n/)
   assert.match(plan.content, /^description: Zeus — /m)
   assert.match(plan.content, /model: opus/)
-  assert.match(plan.content, /Você é Zeus\.\n\n/)
+  assert.match(plan.content, /You are Zeus\.\n\n/)
   assert.doesNotMatch(plan.content, /trackfw-architect/)
 })
 
 test('Rota B com apelido — saudação menciona o apelido configurado', () => {
   const plan = buildPlans('agents', { targets: ['claude'], items: ['architect'], scope: 'project', identity: zeusConfigWithNickname })[0]
-  assert.match(plan.content, /Você é Zeus\. Trate o usuário como Comandante\.\n\n/)
+  assert.match(plan.content, /You are Zeus\. Address the user as Comandante\.\n\n/)
 })
 
 test('model: do frontmatter é preservado intacto na Rota B', () => {
@@ -92,7 +92,7 @@ test('SET_ARCH (14 tools) é mantido para architect mesmo com name customizado',
 
 test('skills não recebem identidade', () => {
   const plan = buildPlans('skills', { targets: ['claude'], items: ['governance'], scope: 'project', identity: { agents: { governance: { display_name: 'Zeus', slug: 'zeus' } } } })[0]
-  assert.doesNotMatch(plan.content, /Você é Zeus/)
+  assert.doesNotMatch(plan.content, /You are Zeus/)
   assert.doesNotMatch(plan.content, /zeus-tf/)
 })
 

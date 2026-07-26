@@ -93,8 +93,8 @@ def _greeting_line(agent: identity.AgentIdentity, nickname: str) -> str:
     """Primeira linha injetada no corpo do agente quando há identidade
     configurada. Sem apelido configurado, menciona só o display_name."""
     if not nickname:
-        return f"Você é {agent.display_name}."
-    return f"Você é {agent.display_name}. Trate o usuário como {nickname}."
+        return f"You are {agent.display_name}."
+    return f"You are {agent.display_name}. Address the user as {nickname}."
 
 
 def _insert_body_prefix(source: str, prefix: str) -> str:

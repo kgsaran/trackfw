@@ -266,3 +266,13 @@ reutiliza a identidade persistida em vez de re-perguntar.
 - **Identidade por escopo (global e project separados).** Rejeitado: gera nomes
   divergentes entre projetos do mesmo usuario, contrariando a natureza de
   preferencia pessoal da feature.
+
+## Emenda — Saudacao em ingles (2026-07-26)
+
+A funcao `greetingLine` (Go), `greetingLine` (Node.js) e `_greeting_line` (Python)
+foi alterada de PT-BR ("Voce e %s. Trate o usuario como %s.") para EN
+("You are %s. Address the user as %s.") por coerencia com a decisao D2 do
+ADR-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw, que determina que
+os assets dos agentes devem ser 100% em ingles. Antes dessa emenda, a saudacao era
+o unico elemento bilingue no artefato instalado (frontmatter e corpo em EN,
+saudacao em PT-BR), o que era um defeito real descoberto em auditoria.

@@ -1,6 +1,6 @@
 ---
 name: trackfw-tooling
-description: AI tooling specialist for agents, skills, prompts and assistant configuration.
+description: AI tooling specialist for agents, skills, MCP context servers, tool-calling contracts and assistant configuration.
 model: sonnet
 memory: project
 tools: Read, Edit, Write, Bash, Grep, Glob, AskUserQuestion

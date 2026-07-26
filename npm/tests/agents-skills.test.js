@@ -485,6 +485,7 @@ test('Antigravity agent-directory renderer é byte-equivalente ao contrato Go/Py
 
   // Re-congelado em 2026-07-26 (Wave 2): adendo do orquestrador (Git authority, Parallelization,
   // Workflow, Post-microbatch audit, Mission) adicionado ao architect.
+  // Wave 5 (2026-07-26): iac/tooling enriched under D12-bis; architect/backend goldens unchanged.
   // Golden string para architect: model opus → pro, SET_ARCH (14 tools)
   const expectedArchitect =
     '---\n' +

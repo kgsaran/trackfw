@@ -1,6 +1,6 @@
 ---
 name: trackfw-iac
-description: Infrastructure as code specialist for declarative provisioning across cloud and on-premise targets.
+description: Infrastructure as code specialist for declarative provisioning with Terraform, Pulumi, OpenTofu and Ansible across cloud and on-premise targets.
 model: sonnet
 memory: project
 tools: Read, Edit, Write, Bash, Grep, Glob, AskUserQuestion

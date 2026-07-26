@@ -3151,3 +3151,13 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 - 3 testes gerador + 5 testes validator no Go; npm 126/126 verde; pypi 446/446 verde
 - docs/cli-parity.md atualizado com comando note e regra note_orphan
 **Validação:** make quality VERDE de ponta a ponta
+
+---
+
+## Sessão 2026-07-26 — Apolo — Wave 5 (ML-5A + ML-5B): Saudação EN, D12-bis, aposentadoria de gerador legado
+
+**Status:** IMPLEMENTANDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Escopo:**
+- ML-5A: saudação em inglês nos 3 CLIs, uniformização D12-bis nos 12 assets, documentação
+- ML-5B: remoção de generators/agents.go + templates/agents/, preservando legacyHashes com comentário de proveniência

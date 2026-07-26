@@ -80,8 +80,8 @@ function toolsFor(itemId) {
 // identidade configurada. Sem apelido configurado, apenas o display name do
 // agente é mencionado. Espelha internal/integrations/render.go:greetingLine.
 function greetingLine(displayName, nickname) {
-  if (!nickname) return `Você é ${displayName}.`
-  return `Você é ${displayName}. Trate o usuário como ${nickname}.`
+  if (!nickname) return `You are ${displayName}.`
+  return `You are ${displayName}. Address the user as ${nickname}.`
 }
 
 // insertBodyPrefix insere prefix como a nova primeira linha da seção de

@@ -50,7 +50,7 @@ class TestRotaBWithIdentity:
         assert "name: zeus-tf" in got
         assert "description: Zeus — Principal software architect for system design." in got
         assert "model: sonnet" in got
-        assert "Você é Zeus. Trate o usuário como Kleber." in got
+        assert "You are Zeus. Address the user as Kleber." in got
         assert "# Architect" in got
         assert "Body text." in got
 
@@ -59,7 +59,7 @@ class TestRotaBWithIdentity:
         capability = {"representation": "agent-markdown", "support_level": "native"}
         got = render("agents", "gemini", "cli", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
         assert "name: zeus-tf" in got
-        assert "Você é Zeus." in got
+        assert "You are Zeus." in got
 
 
 class TestRotaAWithIdentity:
@@ -68,7 +68,7 @@ class TestRotaAWithIdentity:
         got = render("agents", "codex", "cli", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
         assert 'name = "zeus_tf"' in got
         assert "Zeus" in got
-        assert "\\u00ea" not in got  # ensure_ascii=False: "Você" stays literal
+        assert "\\u00ea" not in got  # ensure_ascii=False: non-ASCII chars in display names stay literal, not JSON-escaped
 
     def test_json_representation_uses_slug_name(self):
         capability = {"representation": "cli-agent-json", "support_level": "native"}
