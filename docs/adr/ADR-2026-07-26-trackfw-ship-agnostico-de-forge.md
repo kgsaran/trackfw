@@ -63,6 +63,28 @@ forge**.
 6. `git push origin <branch>`
 7. Abre PR/MR conforme a forge, com corpo referenciando REQ, roadmap e critérios de aceite
 
+### Governança no `ship` é gate duro, independente da configuração
+
+Decisão tomada em 2026-07-26, durante a execução do ML-2A, e não prevista no desenho original.
+
+O passo 2 (validação de REQ + roadmap em `wip`) **ignora** o baseline, o modo `lenient` e a
+severidade por regra configurada em `rules:`. O `ship` é um gate de **entrega**: entregar sem
+governança derrota o propósito do comando.
+
+**Consequência assumida:** o `ship` é mais rígido que o `validate`. Um projeto em modo `lenient` pode
+ter `trackfw validate` verde e `trackfw ship` abortando. Isso é inconsistência **visível e
+deliberada**, não acidente — e precisa estar explícita:
+
+- no texto de `trackfw ship --help`;
+- em `docs/cli-parity.md`;
+- na mensagem de erro do próprio comando, que deve dizer que a exigência não é afetada por `lenient`.
+
+Projetos brownfield em adoção gradual continuam usando `git` diretamente até estarem conformes.
+
+Implementação: `validator.CheckShipGovernance()`, função exportada que compõe
+`validateBranchHasWIPRoadmap` e `validateWIPHasREQ` sem passar pelo `applyRule` — evitando duplicar a
+lógica de busca de artefatos.
+
 ### Degradação graciosa
 Se o CLI da forge não estiver instalado, o comando **não falha**: conclui o push e imprime a URL de
 criação. Verificação via `exec.LookPath`, reaproveitando o padrão de `externalCommandAvailable`.
