@@ -251,3 +251,41 @@ func TestResolveIdentitySelectionCustomCollisionWritesNothing(t *testing.T) {
 		t.Fatalf("colliding custom identity must not write identity.json: %v", statErr)
 	}
 }
+
+// TestInitForgeFlag_Valid verifies that --forge gitlab in non-TTY mode writes
+// "forge: gitlab" in the generated trackfw.yaml.
+func TestInitForgeFlag_Valid(t *testing.T) {
+	project, _ := initFixture(t)
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--forge", "gitlab"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("expected no error for valid --forge, got: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(project, "trackfw.yaml"))
+	if err != nil {
+		t.Fatalf("trackfw.yaml not created: %v", err)
+	}
+	if !strings.Contains(string(content), "forge: gitlab") {
+		t.Errorf("expected 'forge: gitlab' in trackfw.yaml, got:\n%s", string(content))
+	}
+}
+
+// TestInitForgeFlag_Invalid verifies that --forge with an unknown value returns
+// an error that lists all accepted forge values.
+func TestInitForgeFlag_Invalid(t *testing.T) {
+	_, _ = initFixture(t)
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--forge", "notaforge"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid --forge value")
+	}
+	for _, want := range []string{"github", "gitlab", "bitbucket", "azure"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error must list valid forge %q, got: %v", want, err)
+		}
+	}
+}

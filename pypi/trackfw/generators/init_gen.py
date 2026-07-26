@@ -148,6 +148,11 @@ def _write_trackfw_yaml(cwd: str, opts: dict) -> None:
             lines.append(f'  - {agent}')
 
     lines.append(f'wip_limit: {wip_limit}')
+
+    forge = opts.get('forge', '')
+    if forge:
+        lines.append(f'forge: {forge}')
+
     lines.append('')  # newline final
 
     content = '\n'.join(lines)

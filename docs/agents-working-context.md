@@ -3313,6 +3313,27 @@ recomendação. **Decisão pendente do KG.**
 
 ---
 
+## 2026-07-26 — Apolo — ML-3A: integração forge + abertura de PR/MR no ship (IMPLEMENTANDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** `docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md`
+
+**Objetivo:** Passo 7 do `trackfw ship` — após push, resolver forge e abrir PR/MR via adaptador. Paridade nos 3 CLIs (Go, Node.js, Python).
+
+**Arquivos afetados:**
+- `internal/commands/ship.go` — extend `shipOpts`/`shipDeps`, add Step 7
+- `internal/commands/ship_test.go` — novos testes + atualizar helpers existentes
+- `npm/src/ship/runner.js` — add Step 7
+- `npm/src/commands/ship.js` — add `--no-pr` e `--forge` flags
+- `npm/tests/ship.test.js` — novos testes
+- `pypi/trackfw/ship/runner.py` — add Step 7
+- `pypi/trackfw/commands/ship.py` — add `--no-pr` e `--forge` flags
+- `pypi/tests/test_ship.py` — novos testes
+
+**Status:** IMPLEMENTANDO.
+
+---
+
 ## 2026-07-26 — Apolo — ML-2C: textos de lenient + correção ANSI no gate de paridade (CONCLUÍDO)
 
 **Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
@@ -3333,3 +3354,19 @@ recomendação. **Decisão pendente do KG.**
 - `make quality` verde sem `NO_COLOR=1` externo (Python 3.14.6)
 
 **Status:** CONCLUÍDO.
+
+---
+
+## Sessão 2026-07-26 — ML-3B: discover detecta e persiste a forge no trackfw.yaml
+
+**Agente:** Apolo — Backend Senior Specialist
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** REQ-2026-07-26-ship
+
+### Escopo do ML-3B
+- Passo 1: `internal/discover/discover.go` — campo `Forge string` em `DiscoveryResult`, detecção via `forge.ResolveFromRepo`, emissão condicional de `forge:` em `GenerateYAML`
+- Passo 2: `internal/commands/init.go` — flag `--forge`, wizard com detecção default, validação acima do early-return não-TTY
+- Passo 3: paridade em `npm/src/` e `pypi/trackfw/`
+- Testes nos 3 CLIs
+
+**Status:** IMPLEMENTANDO

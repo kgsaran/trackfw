@@ -41,6 +41,11 @@ def register(subparsers):
         default=None,
         help="Agent identity preset: none, neutral, " + ", ".join(identity.preset_names()),
     )
+    parser.add_argument(
+        "--forge",
+        default=None,
+        help="Forge platform: github, gitlab, bitbucket, azure",
+    )
     parser.set_defaults(func=run)
     return parser
 
@@ -71,6 +76,16 @@ def run(args):
     if args.wip_limit < 1:
         print("--wip-limit must be greater than zero", file=sys.stderr)
         sys.exit(2)
+
+    # --forge: validate unconditionally above the non-interactive branch so
+    # that an invalid value fails loudly in CI instead of silently no-op'ing.
+    forge_value = args.forge  # None if not provided
+    if forge_value is not None:
+        from trackfw.forge.resolve import VALID_FORGES, resolve
+        if forge_value not in VALID_FORGES:
+            valid = ", ".join(VALID_FORGES)
+            print(f'forge invalido "{forge_value}": valores aceitos: {valid}', file=sys.stderr)
+            sys.exit(2)
 
     home = _identity_home()
     preset_changed = args.identity_preset is not None
@@ -113,6 +128,7 @@ def run(args):
         "namespacing": args.namespacing,
         "agents": agents,
         "wip_limit": args.wip_limit,
+        "forge": forge_value or "",
     }
     scaffold(cwd, opts)
     ai_tools = _parse_agents(args.ai_tools)

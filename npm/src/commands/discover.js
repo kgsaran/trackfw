@@ -4,6 +4,7 @@ const { Command } = require('commander');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { resolve: resolveForge } = require('../forge/resolve');
 
 function scan(rootDir) {
   const r = {
@@ -20,6 +21,7 @@ function scan(rootDir) {
     governanceScore: 0,
     hookFramework: 'none',
     ciSystem: 'none',
+    forge: '',
   };
 
   // trackfw.yaml
@@ -108,6 +110,18 @@ function scan(rootDir) {
     r.ciSystem = 'none';
   }
 
+  // Forge detection — reuse forge/resolve.js (no duplicate parse).
+  // gitRemoteURL returns '' on any error; CI detection is filesystem-based.
+  try {
+    const { resolveFromRepo } = require('../forge/resolve');
+    const res = resolveFromRepo('', '', rootDir);
+    if (res.source !== 'none') {
+      r.forge = res.forge;
+    }
+  } catch (_) {
+    // forge detection is best-effort; never block scan on it
+  }
+
   r.governanceScore = calcScore(r);
   return r;
 }
@@ -145,6 +159,10 @@ function generateYAML(r) {
 
   out += `hooks: ${r.hookFramework}\n`;
   out += `ci: ${r.ciSystem}\n`;
+
+  if (r.forge) {
+    out += `forge: ${r.forge}\n`;
+  }
 
   return out;
 }

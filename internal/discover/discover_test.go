@@ -157,6 +157,89 @@ func TestScan_HookAndCI(t *testing.T) {
 	}
 }
 
+// TestGenerateYAML_ForgePresent verifies that GenerateYAML emits "forge: github"
+// when the DiscoveryResult has Forge set to a valid value.
+func TestGenerateYAML_ForgePresent(t *testing.T) {
+	r := DiscoveryResult{
+		ADRDirs:            []string{"docs/adr"},
+		REQDir:             "docs/req",
+		RoadmapDir:         "docs/roadmaps",
+		RoadmapNamespacing: "flat",
+		HookFramework:      "none",
+		CISystem:           "none",
+		Forge:              "github",
+	}
+	yaml := GenerateYAML(r)
+	if !containsSubstr(yaml, "forge: github") {
+		t.Errorf("expected 'forge: github' in YAML, got:\n%s", yaml)
+	}
+	// forge must appear after ci:
+	ciIdx := findSubstr(yaml, "ci:")
+	forgeIdx := findSubstr(yaml, "forge:")
+	if ciIdx < 0 || forgeIdx < 0 || forgeIdx <= ciIdx {
+		t.Errorf("forge: must appear after ci: in YAML (ciIdx=%d, forgeIdx=%d)", ciIdx, forgeIdx)
+	}
+}
+
+// TestGenerateYAML_ForgeAbsent verifies that GenerateYAML omits the "forge:" key
+// entirely when Forge is empty (not detected).
+func TestGenerateYAML_ForgeAbsent(t *testing.T) {
+	r := DiscoveryResult{
+		ADRDirs:            []string{"docs/adr"},
+		REQDir:             "docs/req",
+		RoadmapDir:         "docs/roadmaps",
+		RoadmapNamespacing: "flat",
+		HookFramework:      "none",
+		CISystem:           "none",
+		Forge:              "", // not detected
+	}
+	yaml := GenerateYAML(r)
+	if containsSubstr(yaml, "forge:") {
+		t.Errorf("expected 'forge:' key to be absent in YAML when Forge is empty, got:\n%s", yaml)
+	}
+}
+
+// TestScan_ForgeFromCI verifies that Scan detects the forge via .gitlab-ci.yml when
+// there is no git remote (temp dir is not a git repo so remote returns empty).
+func TestScan_ForgeFromCI(t *testing.T) {
+	dir := t.TempDir()
+	// Write .gitlab-ci.yml but no .github/workflows — CI detection picks gitlab.
+	mustWriteFile(t, filepath.Join(dir, ".gitlab-ci.yml"), "stages:\n  - test\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Forge != "gitlab" {
+		t.Errorf("expected Forge='gitlab' from .gitlab-ci.yml, got %q", r.Forge)
+	}
+	// The generated YAML must include the forge key.
+	yaml := GenerateYAML(r)
+	if !containsSubstr(yaml, "forge: gitlab") {
+		t.Errorf("expected 'forge: gitlab' in generated YAML, got:\n%s", yaml)
+	}
+}
+
+// TestScan_NoForge verifies that Scan leaves Forge empty when no CI files exist
+// and the directory is not a git repository (no remote URL available).
+func TestScan_NoForge(t *testing.T) {
+	dir := t.TempDir()
+	// Clean temp dir: no .gitlab-ci.yml, no .github/workflows, no git repo.
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Forge != "" {
+		t.Errorf("expected empty Forge for dir with no CI signals, got %q", r.Forge)
+	}
+	// The generated YAML must not include the forge key.
+	yaml := GenerateYAML(r)
+	if containsSubstr(yaml, "forge:") {
+		t.Errorf("expected 'forge:' key to be absent in YAML when forge not detected, got:\n%s", yaml)
+	}
+}
+
 func TestInstallGates_Lefthook_GithubActions(t *testing.T) {
 	dir := t.TempDir()
 	// cria lefthook.yml (sem entrada trackfw)
@@ -385,4 +468,14 @@ func containsSubstr(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// findSubstr returns the index of the first occurrence of sub in s, or -1.
+func findSubstr(s, sub string) int {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }
