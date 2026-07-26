@@ -3310,3 +3310,26 @@ recomendação. **Decisão pendente do KG.**
 **Nota técnica:** A governança usa wrapper exportado `CheckShipGovernance()` que chama as funções privadas do pacote `validator` diretamente, ignorando baseline/lenient/rules — gate duro inviolável. O dry-run implementa whitelist de write commands (`commit`, `push`, `fetch`) no wrapper `git()` interno do `runShip`; `execGit` do dep só recebe comandos read-only em dry-run.
 
 **Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-2C: textos de lenient + correção ANSI no gate de paridade (CONCLUÍDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**Commits:** `1b8c493` (docs lenient) · `df128e3` (fix ANSI gate)
+
+**Commit 1 — docs(ship): explicita gate duro ignora lenient**
+- `--help` passo 2 nos 3 CLIs: adicionado `(hard gate: not affected by lenient mode or per-rule severity)`
+- Mensagem de erro do passo 2 nos 3 CLIs: bloco explicativo sobre lenient após remediação
+- Testes Go/Node/Python: assert `"lenient"` no output de erro de governança
+- `docs/cli-parity.md`: linha `ship` na tabela + seção de prosa com flags, 6 passos, divergência do validate
+
+**Commit 2 — fix(ci): gate de paridade imune a ANSI do argparse**
+- Causa raiz: Python 3.13+ coloriza argparse por default; ANSI antes do nome do comando quebrava o grep de limite de palavra em `check_help` e `assert_help_contract`
+- `scripts/check-cli-parity.sh`: `export NO_COLOR=1 TERM=dumb` + strip ANSI inline em `check_help`; `commands=()` estendido com `note` e `ship`
+- `scripts/check-integration-cli-parity.sh`: strip ANSI inline em `assert_help_contract`
+- `vault/notes/argparse-ansi-parity-gate-python313-2026-07-26.md`: nota criada e linkada no índice
+- Falsificação: `commands=(definitely-not-a-real-command)` retorna exit=1 + mensagem correta, sem resíduo
+- `make quality` verde sem `NO_COLOR=1` externo (Python 3.14.6)
+
+**Status:** CONCLUÍDO.
