@@ -19,7 +19,19 @@
     {"id":"plan","name":"Plan","description":"Plan a governed implementation","asset":"assets/skills/plan.md"},
     {"id":"implement","name":"Implement","description":"Execute an approved roadmap","asset":"assets/skills/implement.md"},
     {"id":"review","name":"Review","description":"Review correctness and traceability","asset":"assets/skills/review.md"},
-    {"id":"release","name":"Release","description":"Prepare and verify a release","asset":"assets/skills/release.md"}
+    {"id":"release","name":"Release","description":"Prepare and verify a release","asset":"assets/skills/release.md"},
+    {"id":"architecture-skill","name":"Architecture","description":"System design, patterns, trade-off analysis and cross-cutting decisions","asset":"assets/skills/architecture.md"},
+    {"id":"backend-skill","name":"Backend","description":"Backend APIs, domain logic, persistence patterns and service reliability","asset":"assets/skills/backend.md"},
+    {"id":"frontend-skill","name":"Frontend","description":"Accessible, performant and internationalizable user interfaces","asset":"assets/skills/frontend.md"},
+    {"id":"qa-skill","name":"QA","description":"Automated testing, quality gates, contract verification and coverage strategy","asset":"assets/skills/qa.md"},
+    {"id":"infra-skill","name":"Infrastructure","description":"Cloud platforms, Kubernetes, CI/CD, observability and reliability","asset":"assets/skills/infra.md"},
+    {"id":"iac-skill","name":"IaC","description":"Declarative provisioning, state management, policy-as-code and immutability","asset":"assets/skills/iac.md"},
+    {"id":"security-skill","name":"Security","description":"Threat modeling, DevSecOps controls, Zero Trust and supply chain security","asset":"assets/skills/security.md"},
+    {"id":"dba-skill","name":"DBA","description":"Database modeling, query optimization, high availability and vector data patterns","asset":"assets/skills/dba.md"},
+    {"id":"ux-skill","name":"UX","description":"User-centred design, design systems, accessibility and usability validation","asset":"assets/skills/ux.md"},
+    {"id":"code-quality-skill","name":"Code Quality","description":"Maintainability metrics, quality gates, static analysis and refactoring discipline","asset":"assets/skills/code-quality.md"},
+    {"id":"data-skill","name":"Data","description":"Data pipelines, quality contracts, lakehouse patterns and MLOps","asset":"assets/skills/data.md"},
+    {"id":"tooling-skill","name":"Tooling","description":"AI agent design, skill composition, MCP configuration and context economy","asset":"assets/skills/tooling.md"}
   ],
   "targets": [
     {"id":"claude","name":"Claude Code","surfaces":[{"id":"cli","name":"Claude Code CLI","scopes":["global","project"],"capabilities":{"agents":{"support_level":"native","representation":"subagent"},"skills":{"support_level":"native","representation":"skill"}},"paths":{"agents":[{"scope":"global","path":"~/.claude/agents/trackfw-{{id}}.md","extension":".md"},{"scope":"project","path":".claude/agents/trackfw-{{id}}.md","extension":".md"}],"skills":[{"scope":"global","path":"~/.claude/skills/trackfw-{{id}}/SKILL.md","extension":".md"},{"scope":"project","path":".claude/skills/trackfw-{{id}}/SKILL.md","extension":".md"}]}}],"auxiliary_artifacts":[{"id":"settings","surface":"cli","scope":"project","path":".claude/settings.json","purpose":"attention hooks","required":false}]},

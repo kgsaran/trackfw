@@ -107,7 +107,7 @@ func TestListWithoutTargetIncludesAllCatalogSurfaces(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if len(decoded.Items) != 5 {
+	if len(decoded.Items) != 17 {
 		t.Fatalf("list must expose complete catalog, got %d items", len(decoded.Items))
 	}
 	var legacy bool

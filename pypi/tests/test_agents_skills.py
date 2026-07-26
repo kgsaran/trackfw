@@ -40,7 +40,7 @@ def test_packaged_catalog_and_assets_are_complete():
     catalog = load_catalog()
     assert catalog["version"] == "1.1.0"
     assert len(catalog["agents"]) == 12
-    assert len(catalog["skills"]) == 5
+    assert len(catalog["skills"]) == 17
     assert [target["id"] for target in catalog["targets"]] == [
         "claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "kiro"
     ]

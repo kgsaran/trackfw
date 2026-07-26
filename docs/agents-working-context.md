@@ -3120,6 +3120,14 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 
 ---
 
+## Sessão 2026-07-26 — Apolo — ML-4A: 12 skills técnicas por papel
+
+**Status:** IMPLEMENTANDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Escopo:** Criar 12 skills técnicas em `internal/integrations/assets/skills/`, adicionar ao catalog.json, atualizar catalog_test.go, rodar sync e make quality.
+
+---
+
 ## Sessão 2026-07-26 — Apolo — ML-4B: Vault de conhecimento (scaffold, note new, note_orphan)
 
 **Status:** CONCLUÍDO
