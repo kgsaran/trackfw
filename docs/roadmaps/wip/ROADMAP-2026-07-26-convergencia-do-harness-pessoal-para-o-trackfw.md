@@ -234,7 +234,7 @@ go test ./internal/validator/... && make quality
 > Dependências: **barrier** — Wave 2 concluída.
 
 ### ML-3A — CLAUDE.md gerado enriquecido (3 CLIs)
-**Status:** pending
+**Status:** done
 **Agente sugerido:** backend
 **Files affected:** `internal/generators/claudemd.go`, equivalentes em `npm/src/generators/` e `pypi/trackfw/generators/`
 
@@ -271,7 +271,7 @@ go test ./internal/validator/... && make quality
 ---
 
 ### ML-3B — Dois papéis canônicos novos: `iac` e `tooling`
-**Status:** pending
+**Status:** done
 **Agente sugerido:** backend
 **Files affected:** `internal/identity/preset.go`, `internal/integrations/assets/catalog.json`,
 `internal/integrations/assets/agents/{iac,tooling}.md`, `internal/integrations/render.go` (`agentTools`),
@@ -382,7 +382,13 @@ equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
    `api_board.go` e no validator (fecha o defeito 11 da análise).
 3. Conferir que todo asset novo termina com assinatura e que nenhum declara assinatura sem tê-la.
 4. Atualizar `README.md` e `site/` com os papéis novos e as skills técnicas.
-5. **Traduzir `greetingLine()` para inglês** (defeito descoberto na auditoria do ML-1A).
+5. **Decidir se descrições de papel podem citar tecnologia de categoria.**
+   `infra.md` diz `"cloud, Kubernetes, GitOps, CI/CD, reliability and FinOps"` (pré-existente na main),
+   enquanto `iac.md` e `tooling.md` nasceram sem citar nenhuma tecnologia, por D12. Dois assets da
+   mesma família com padrões diferentes. Argumento a favor de manter: a `description` alimenta a
+   seleção proativa do agente, e nomear a categoria ajuda a descoberta. Argumento contra: D12 é
+   inviolável e não abre exceção. **Decidir e uniformizar os 12.**
+6. **Traduzir `greetingLine()` para inglês** (defeito descoberto na auditoria do ML-1A).
    `internal/integrations/render.go:104-106` emite `"Você é %s."` e
    `"Você é %s. Trate o usuário como %s."` — PT-BR fixo. Com D2 (assets em inglês), o artefato
    instalado fica bilíngue: frontmatter e corpo em EN, saudação em PT-BR. Trocar para
@@ -495,6 +501,37 @@ Dois commits, um por ML, conforme especificado. Nenhum arquivo proibido tocado.
 "green gates are not proof that the intended behavior was delivered — validate the real artifact,
 not only the test fixtures". Foi exatamente o que expôs o defeito da saudação bilíngue no ML-1A,
 com todos os gates verdes.
+
+**2026-07-26 — Wave 3 concluída e auditada (ML-3A ‖ ML-3B, + ML-3C corretivo).**
+
+⚠️ **A barrier pegou uma regressão que os dois agentes não podiam ver.** Para evitar corrida no
+`bin/trackfw`, proibi ambos de rodar `make quality`. A mitigação eliminou a corrida mas criou uma
+janela cega: `scripts/check-integration-cli-parity.sh:58` tinha
+`assert len(payload["items"]) == (10 if kind == "agents" else 5)` — número mágico que quebrou quando
+o catálogo passou a ter 12 agentes. **Lição: quando se remove um gate do agente, a barrier passa a
+ser o único ponto de detecção — e precisa rodar o gate completo, não uma amostra.**
+
+**ML-3C não trocou 10 por 12** — passou a derivar as contagens do `catalog.json`. Trocar o número
+adiaria a quebra para a Wave 4, que leva as skills de 5 para 17.
+
+Falsificação do gate feita pelo orquestrador, independente do agente: adulterei o catálogo para 13
+agentes e o gate falhou com `item count mismatch for agents: expected 13, got 12`; catálogo
+restaurado sem resíduo. **Um gate que só ficou verde não está provado — precisa provar que ainda
+reprova.**
+
+**Paridade textual do CLAUDE.md gerado.** `trackfw init` é wizard interativo, então não dá para gerar
+não-interativamente e comparar. Verifiquei por extração de literais: das strings longas do gerador
+Go, apenas **2** não aparecem nos outros dois CLIs — ambas com placeholder de formato (`%s`) e
+pré-existentes. As 9 frases distintivas das seções novas estão presentes 1×1×1 nos três.
+
+**Papéis novos.** 12 agentes instalados com `--identity-preset greek`, incluindo
+`dedalo-tf → — Dédalo, Infrastructure as Code Specialist` e
+`prometeu-tf → — Prometeu, AI Tooling Specialist`. Fronteira `infra` × `iac` declarada nos dois
+arquivos, resolvendo a sobreposição que existia no panteão original e nunca fora explicitada.
+
+**D12:** nenhuma violação nova. `Kubernetes` em `infra.md` é pré-existente na `main` e `Copilot` no
+catálogo é nome de target suportado, não recomendação de stack. Resta a inconsistência entre assets
+antigos e novos, registrada no ML-5A.
 
 ## Acceptance Criteria
 

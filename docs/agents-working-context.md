@@ -3093,9 +3093,13 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 
 ## Sessão 2026-07-26 — Apolo — ML-3C: Gate de paridade deriva contagem do catálogo
 
-**Status:** IMPLEMENTANDO
+**Status:** CONCLUÍDO
 **Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
-**Escopo:** Corrigir `scripts/check-integration-cli-parity.sh` — substituir número mágico `10` (agentes) e `5` (skills) por contagem derivada do `catalog.json`. Catálogo atual: 12 agentes, 5 skills.
+**Commit:** 14d0dc7 — `fix(ci): gate de paridade deriva contagem de itens do catalogo (REQ-2026-07-26)`
+**Escopo:** Corrigir `scripts/check-integration-cli-parity.sh` — substituir número mágico `10` (agentes) e `5` (skills) por contagem derivada do `catalog.json` em tempo de execução.
+**Técnica:** `EXPECTED_AGENTS_COUNT` e `EXPECTED_SKILLS_COUNT` lidas via python3 do catalog.json antes do loop; exportadas como env vars; consumidas em `os.environ` no heredoc Python de `assert_json`. Falha explícita se catálogo ausente ou ilegível.
+**Prova de detecção:** cópia do catálogo com 13 agentes (no scratchpad) fez o assert disparar com `AssertionError: item count mismatch for agents: expected 13, got 12`. Sem resíduo no repositório.
+**Validação:** `make quality` VERDE de ponta a ponta.
 
 ---
 
