@@ -178,7 +178,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 > Dependências: **barrier** — Wave 3 concluída.
 
 ### ML-4A — Matriz de testes e documentação
-**Status:** pending
+**Status:** in progress
 **Files affected:** testes nos 3 CLIs, `docs/cli-parity.md`, `README.md`, `site/`
 
 **Actions:**
