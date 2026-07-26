@@ -33,22 +33,33 @@ trackfw, normalizado e neutralizado de stack, conforme decisões D1–D17 do ADR
 ### Mapa de dependências
 
 ```
-Wave 1 (3 MLs paralelos)  ─┐
-                           ├─ barrier ─> Wave 2 (2 MLs) ─ barrier ─> Wave 3 (2 MLs)
-                          ─┘                                              │
-                                                                       barrier
-                                                                          v
-                                             Wave 5 (2 MLs) <─ barrier ─ Wave 4 (2 MLs)
+Wave 1 (1B ‖ 1C) ─ barrier ─> Wave 1b (1A) ─ barrier ─> Wave 2 (2A ‖ 2B)
+                                                              │
+                                                           barrier
+                                                              v
+     Wave 5 (5A ‖ 5B) <─ barrier ─ Wave 4 (4A ‖ 4B) <─ barrier ─ Wave 3 (3A ‖ 3B)
 ```
+
+> ⚠️ **Correção de sequenciamento (2026-07-26, auditoria pré-spawn).** A Wave 1 foi planejada com
+> 3 MLs paralelos, mas ML-1A e ML-1C **compartilham arquivos**: `internal/integrations/testdata/*.golden.md`
+> são contratos congelados lidos do disco por `TestRenderWithoutIdentityMatchesFrozenGoldens`, e
+> ML-1C também edita `render_test.go`. Alterar os assets (1A) quebra esses goldens.
+> ML-1A foi movido para a **Wave 1b**, atrás de barrier — aplicando a própria regra do ADR:
+> MLs que compartilham arquivo tornam-se sequenciais.
 
 ---
 
-## Wave 1 — Fundações (3 MLs em paralelo)
-> Dependências: nenhuma. Os três MLs tocam arquivos disjuntos.
+## Wave 1 — Fundações (ML-1B ‖ ML-1C)
+> Dependências: nenhuma. Os dois MLs tocam arquivos disjuntos (`validator/` × `integrations/`).
+
+## Wave 1b — Assets (ML-1A)
+> Dependências: **barrier** — ML-1C concluído (a assinatura só renderiza com identidade depois que
+> `rewriteSignatureLine` existe) e ML-1A é o dono exclusivo dos goldens.
 
 ### ML-1A — Camada universal de harness nos 10 assets de agente
 **Status:** pending
 **Agente sugerido:** backend
+**Wave:** 1b (após barrier)
 **Files affected:** `internal/integrations/assets/agents/{architect,backend,frontend,qa,infra,security,dba,ux,code-quality,data}.md`
 
 **Actions:**
@@ -74,9 +85,19 @@ Wave 1 (3 MLs paralelos)  ─┐
 3. Encerrar cada arquivo com a linha de assinatura: `— <Role>, <Title>` (ex.: `— Architect, Principal Software Architect`).
 4. Manter o parágrafo de missão que já existe em cada asset.
 5. Rodar `scripts/sync-integration-assets.sh`.
+6. **Regenerar os goldens congelados — ato deliberado, não silencioso.**
+   `internal/integrations/testdata/` contém 4 goldens (`architect.subagent`, `architect.agent-directory`,
+   `backend.agent-directory`, `backend.codex-toml`) lidos do disco por
+   `TestRenderWithoutIdentityMatchesFrozenGoldens`. Eles quebram ao alterar os assets.
+   Regravar os 4 com o novo conteúdo e **atualizar o comentário do bloco** em `render_test.go`
+   registrando que os goldens foram re-congelados nesta data e por qual REQ.
+   A propriedade preservada continua sendo "saída sem identidade == conteúdo congelado externo".
+   Fazer o equivalente em `npm/tests/agents-skills.test.js` e no teste correspondente do PyPI.
 
 **Acceptance criteria:**
 - [ ] Os 10 assets contêm `memory: project`, `tools:` e os 5 blocos universais
+- [ ] Os 4 goldens regravados e o comentário de `render_test.go` atualizado com a data e a REQ
+- [ ] `TestRenderWithoutIdentityMatchesFrozenGoldens` verde nos 3 CLIs
 - [ ] Nenhum asset menciona stack específica (grep por `ArangoDB|Uber Fx|Gin|Entra|Module Federation` = 0)
 - [ ] Todos os assets terminam com linha de assinatura
 - [ ] `scripts/check-integration-assets.sh` verde
@@ -92,7 +113,7 @@ go build ./... && go test ./... && go vet ./...
 ---
 
 ### ML-1B — Estado `analyzing` reconhecido pelo validator (3 CLIs)
-**Status:** pending
+**Status:** done
 **Agente sugerido:** backend
 **Files affected:** `internal/validator/validator.go`, `internal/validator/validator_traceid.go`, equivalentes em `npm/src/validator/` e `pypi/trackfw/validator/`, mais testes
 
@@ -120,7 +141,7 @@ go test ./internal/validator/... && make quality
 ---
 
 ### ML-1C — Assinatura renderizada com a identidade configurada
-**Status:** pending
+**Status:** done
 **Agente sugerido:** backend
 **Files affected:** `internal/integrations/render.go` (+ `render_test.go`), equivalentes em `npm/src/integrations/` e `pypi/trackfw/integrations/`
 
@@ -380,6 +401,30 @@ equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
 - [ ] `go build ./... && go test ./...` verdes; `make quality` verde
 
 ---
+
+## Log de execução
+
+**2026-07-26 — Wave 1 concluída e auditada (ML-1B ‖ ML-1C).**
+
+Auditoria de conformidade executada pelo orquestrador, independente do relato dos agentes:
+- Escopo respeitado: nenhum dos dois tocou arquivo do outro, `testdata/`, `assets/` ou o roadmap.
+- `internal/integrations/testdata/` e `internal/integrations/assets/` **inalterados** desde `main`.
+- `make quality` verde: 443 testes Python, 125 Node.js, paridade CLI, paridade de identidade em 11
+  combinações target/surface, e assets sincronizados byte a byte.
+
+**Achado relevante do ML-1B (maior que o previsto):** `analyzing` não era apenas "um estado não
+aceito" — era um **ponto cego de validação**. Comprovado empiricamente comparando binários: um
+roadmap em `analyzing/` declarando `status: backlog` é reportado pelo binário novo
+(`folder is "analyzing" but status declares "backlog"`) e passava **silenciosamente** no v3.0.0.
+Ou seja, artefatos naquela pasta nunca eram validados. O agente também corrigiu o mapa
+`folderToExpectedStatus`, que não estava na especificação do ML.
+
+Semântica D7 preservada e verificada: `validateWIPLimit` usa `filepath.Glob(.../wip/*.md)`
+diretamente, sem percorrer listas de estado — `analyzing` não entra na contagem de WIP.
+
+**ML-1C:** `rewriteSignatureLine` criada nos 3 CLIs com 5 testes unitários + 1 de integração cada.
+Invariante preservada — sem identidade, a saída permanece byte a byte idêntica e os goldens
+congelados não foram tocados.
 
 ## Acceptance Criteria
 
