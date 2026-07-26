@@ -2984,10 +2984,24 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 ## Sessão 2026-07-26 — ML-1B: validator reconhece estado `analyzing` (convergência do harness)
 
 **Agente:** Apolo (Backend Senior Specialist)
-**Status:** IMPLEMENTANDO
+**Status:** CONCLUÍDO
 **Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
 **REQ:** docs/req/REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md
-**Escopo:** Adicionar `analyzing` como estado válido no validator dos 3 CLIs (Go, Node.js, Python) sem alterar as regras `wip_limit` e `branch_has_wip_roadmap`.
+**Commit:** e5671de — `fix(validator): reconhece estado analyzing nos 3 CLIs (REQ-2026-07-26)`
+
+**Arquivos alterados:**
+- `internal/validator/validator.go` — 4 pontos: stateDirs em resolveREQFiles, mapa folderToExpectedStatus, validateFolderStatusCoherence, validateFilenameUniqueness
+- `internal/validator/validator_traceid.go` — 2 stateDirs (collectTraceIdEntries e collectTraceIdEntriesByAgent)
+- `internal/validator/validator_test.go` — 2 novos testes: NoFolderStatusViolation e WipLimitDoesNotCount
+- `npm/src/validator/index.js` — STATES, FOLDER_TO_STATUS, validateFolderStatusCoherence, validateFilenameUniqueness
+- `npm/src/validator/traceid.js` — KNOWN_STATES
+- `npm/tests/validator.test.js` — 2 novos testes: folder_status e wip_limit com analyzing
+- `pypi/trackfw/validator.py` — resolveReqFiles, _FOLDER_TO_STATUS, validate_folder_status_coherence, validate_filename_uniqueness
+- `pypi/trackfw/traceid.py` — _ROADMAP_STATES
+- `pypi/tests/test_commands_validate_status.py` — 2 novas classes de teste
+
+**Resultado dos gates:** go build ✅ | go test ./internal/validator/... ✅ | go vet ✅ | Node.js 125 passed ✅ | Python 443 passed ✅ | make quality ✅
+**Semântica preservada:** wip_limit e branch_has_wip_roadmap continuam contando apenas `wip/` — não alterados.
 
 ---
 
@@ -2998,3 +3012,20 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 **Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
 **REQ:** docs/req/REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md
 **Escopo:** Criar `rewriteSignatureLine` nos 3 CLIs (Go, Node.js, Python) — localiza a última linha do corpo que casa com `^— (.+?), (.+)$` e substitui o nome pelo `displayName` da identidade configurada. Chamar na Rota B de Render após `rewriteFrontmatterFields` quando `hasIdentity == true`.
+
+---
+
+## 2026-07-26 — ML-1C: Mecanismo rewriteSignatureLine — CONCLUÍDO
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** CONCLUÍDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**Commit:** aa95b5a
+**Entregáveis:**
+- `internal/integrations/render.go`: `func rewriteSignatureLine(source []byte, displayName string) []byte` adicionada; Rota B atualizada; comentário do `Render()` atualizado.
+- `internal/integrations/render_test.go`: 5 testes unitários + 1 teste de integração adicionados; goldens intocados.
+- `npm/src/integrations/render.js`: `rewriteSignatureLine` adicionada e exportada; Rota B atualizada; comentário atualizado.
+- `npm/tests/identity-render.test.js`: 5 testes unitários + 1 teste de integração adicionados.
+- `pypi/trackfw/integrations/renderers.py`: `_rewrite_signature_line` adicionada; Rota B atualizada; comentário Rota B atualizado.
+- `pypi/tests/test_integrations_identity.py`: 5 testes unitários + 1 teste de integração adicionados.
+**Validação:** `go build ./... && go test ./... && go vet ./... && make quality` — todos verdes (443 Python, 125 npm, todos Go ok).
