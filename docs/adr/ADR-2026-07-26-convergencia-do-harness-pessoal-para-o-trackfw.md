@@ -60,12 +60,40 @@ conforme as 17 decisões abaixo.
 | **D9** | **`iac` como papel canônico novo** | Requer declarar a fronteira `infra` × `iac`, hoje inexistente. |
 | **D10** | **Verticais de domínio ficam fora** | ITIL/CMDB e NetSuite não entram no produto. Resíduo assumido: 2 agentes locais. |
 | **D11** | **Skills técnicas como família nova por papel** | Arquivos próprios em `assets/skills/`, ao lado das 5 de processo. Não são apensadas às existentes: as atuais organizam-se por verbo/fase (transversais) e as técnicas por domínio/papel. |
-| **D12** | **Curadoria agnóstica de stack** | Atravessam princípios universais (RFC 7807, SOLID, 12-Factor, WCAG 2.2 AA, web-first assertions, least privilege, idempotência). O específico de stack migra para o CLAUDE.md do projeto. |
+| **D12** | **Curadoria agnóstica de stack** *(emendada — ver D12-bis)* | Atravessam princípios universais (RFC 7807, SOLID, 12-Factor, WCAG 2.2 AA, web-first assertions, least privilege, idempotência). O específico de stack migra para o CLAUDE.md do projeto. |
+| **D12-bis** | **Emenda: vocabulário de domínio é permitido; escolha de stack do projeto não** | Ver seção "Emenda D12-bis" abaixo. |
 | **D13** | **`trackfw ship` agnóstico de forge** | Precedência: flag `--forge` → campo `forge:` no `trackfw.yaml` → parse do host de `git remote get-url origin` → CI detectado pelo `discover` → modo manual (imprime URL, não falha). |
 | **D14** | **Branch `feat\|fix\|refactor/<slug>`** | O padrão data-`YYYY-MM-DD` do `git-rules` é legado e quebra a validação `branch_has_wip_roadmap`. |
 | **D15** | **Conventional Commits puros** | Sem sufixo de nome de agente e sem trailer de modelo hardcoded. |
 | **D16** | **`trackfw validate` é o gate único** | Substitui o script `validate-kanban-gate.mjs`. |
 | **D17** | **Artefatos sempre via CLI** | `trackfw req\|roadmap\|adr new` — nunca criação manual, garantindo `req_id`, frontmatter e pareamento. Quem cria branch é o agente orquestrador. |
+
+### Emenda D12-bis (2026-07-26, durante a execução da Wave 4)
+
+**Contexto da emenda.** D12 foi aplicada como "zero nome de tecnologia" nos MLs 1A, 2A, 2B e 3B, e
+funcionou bem para `backend` e `frontend` — ArangoDB e Module Federation são de fato escolhas de um
+projeto, não vocabulário do papel. A regra **colapsa**, porém, em `iac` e `tooling`, onde a
+tecnologia é o próprio domínio: medido na skill de origem, a estrutura inteira se organiza por
+tecnologia (`Estrutura padrão de arquivos Terraform`, `AWS`, `EKS`, `AKS`, `GCP`). Uma skill de IaC
+proibida de dizer "Terraform" reduz-se a princípios sem exemplo. O mesmo vale para `tooling` sem
+poder citar MCP.
+
+O sintoma já havia aparecido antes: `infra.md` cita `Kubernetes` (pré-existente) enquanto `iac.md`
+nasceu sem citar nada — dois assets da mesma família com padrões diferentes.
+
+**Decisão.** D12 passa a distinguir duas categorias:
+
+| Categoria | Exemplos | Permitido |
+|---|---|:-:|
+| **Vocabulário de domínio** — padrão da indústria que define o papel | Terraform, OpenTofu, Ansible, Kubernetes, OpenAPI, RFC 7807, WCAG 2.2, MCP, Conventional Commits | ✅ |
+| **Escolha de stack do projeto** — trocável sem mudar o papel | ArangoDB, Uber Fx, Gin, Entra ID, Module Federation, nomes de serviço | ❌ vai para o CLAUDE.md do projeto |
+
+**Teste de decisão:** *trocar essa tecnologia mudaria o papel, ou apenas o projeto?* Trocar Terraform
+por Pulumi continua sendo IaC — nomear a categoria é o que dá conteúdo. Trocar ArangoDB por
+PostgreSQL não altera nada do papel `dba`.
+
+**Consequência retroativa:** os 12 assets precisam ser uniformizados sob o novo critério (ML-5A).
+`Kubernetes` em `infra.md` deixa de ser inconsistência e passa a ser conforme.
 
 ### Arquitetura em quatro camadas
 

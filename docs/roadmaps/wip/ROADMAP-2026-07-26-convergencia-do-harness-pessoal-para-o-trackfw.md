@@ -26,8 +26,11 @@ trackfw, normalizado e neutralizado de stack, conforme decisões D1–D17 do ADR
 2. **Paridade 3 CLIs:** mudanças de comportamento em Go exigem equivalente em `npm/src/` e
    `pypi/trackfw/`. Ver `docs/cli-parity.md`.
 3. **Idioma dos assets:** inglês (D2). Docs e comentários do repositório: PT-BR.
-4. **Zero conteúdo de stack nos assets e skills** (D12): proibido citar ArangoDB, Uber Fx, Gin,
-   Entra ID, Module Federation, Playwright+storageState ou similares.
+4. **D12 + emenda D12-bis (2026-07-26).** Permitido: **vocabulário de domínio** — padrão da
+   indústria que define o papel (Terraform, OpenTofu, Ansible, Kubernetes, OpenAPI, RFC 7807,
+   WCAG 2.2, MCP, Conventional Commits). Proibido: **escolha de stack do projeto** — trocável sem
+   mudar o papel (ArangoDB, Uber Fx, Gin, Entra ID, Module Federation, nomes de serviço).
+   Teste: *trocar isso mudaria o papel, ou apenas o projeto?*
 5. **Escopo negativo da REQ vale para todo ML.**
 
 ### Mapa de dependências
@@ -382,12 +385,10 @@ equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
    `api_board.go` e no validator (fecha o defeito 11 da análise).
 3. Conferir que todo asset novo termina com assinatura e que nenhum declara assinatura sem tê-la.
 4. Atualizar `README.md` e `site/` com os papéis novos e as skills técnicas.
-5. **Decidir se descrições de papel podem citar tecnologia de categoria.**
-   `infra.md` diz `"cloud, Kubernetes, GitOps, CI/CD, reliability and FinOps"` (pré-existente na main),
-   enquanto `iac.md` e `tooling.md` nasceram sem citar nenhuma tecnologia, por D12. Dois assets da
-   mesma família com padrões diferentes. Argumento a favor de manter: a `description` alimenta a
-   seleção proativa do agente, e nomear a categoria ajuda a descoberta. Argumento contra: D12 é
-   inviolável e não abre exceção. **Decidir e uniformizar os 12.**
+5. **Uniformizar os 12 assets sob a emenda D12-bis** (decisão já tomada — ver ADR).
+   `Kubernetes` em `infra.md` passa a ser **conforme**. Revisar `iac.md` e `tooling.md`, escritos sob
+   a regra estrita, e acrescentar o vocabulário de domínio que lhes foi negado — sem introduzir
+   escolha de stack de projeto. Conferir os 12 sob o novo critério.
 6. **Traduzir `greetingLine()` para inglês** (defeito descoberto na auditoria do ML-1A).
    `internal/integrations/render.go:104-106` emite `"Você é %s."` e
    `"Você é %s. Trate o usuário como %s."` — PT-BR fixo. Com D2 (assets em inglês), o artefato
