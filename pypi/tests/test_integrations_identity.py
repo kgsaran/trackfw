@@ -11,7 +11,7 @@ import pytest
 
 from trackfw.identity import AgentIdentity, Config
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
-from trackfw.integrations.renderers import render
+from trackfw.integrations.renderers import render, _rewrite_signature_line
 
 CLAUDE_SOURCE = (
     "---\n"
@@ -141,3 +141,66 @@ class TestNameCollisionDetection:
         manager.install([self._plan(".claude/agents/a.md", "architect", "zeus-tf")])
         manager.install([self._plan(".claude/agents/b.md", "backend", "apolo-tf")])
         assert (project / ".claude" / "agents" / "b.md").is_file()
+
+
+# ---------------------------------------------------------------------------
+# Testes unitários de _rewrite_signature_line
+# ---------------------------------------------------------------------------
+
+
+class TestRewriteSignatureLine:
+    def test_substitui_nome_na_ultima_assinatura(self):
+        source = "---\nname: trackfw-architect\n---\n\n# Corpo\n\nAlgum texto.\n\n— Architect, Principal Software Architect\n"
+        got = _rewrite_signature_line(source, "Zeus")
+        assert "— Zeus, Principal Software Architect" in got
+        assert "— Architect, Principal Software Architect" not in got
+
+    def test_sem_assinatura_retorna_source_inalterado(self):
+        source = "---\nname: trackfw-architect\n---\n\n# Corpo\n\nSem assinatura.\n"
+        got = _rewrite_signature_line(source, "Zeus")
+        assert got == source
+
+    def test_assinatura_no_frontmatter_nao_e_tocada(self):
+        source = "---\nname: trackfw-architect\ndescription: — Architect, Principal Software Architect\n---\n\n# Corpo sem assinatura.\n"
+        got = _rewrite_signature_line(source, "Zeus")
+        assert got == source
+
+    def test_multiplas_candidatas_apenas_ultima_reescrita(self):
+        source = "---\nname: trackfw-architect\n---\n\n— Architect, Senior Role\n\nTexto.\n\n— Architect, Principal Software Architect\n"
+        got = _rewrite_signature_line(source, "Zeus")
+        assert "— Zeus, Principal Software Architect" in got
+        assert "— Architect, Senior Role" in got
+        assert "— Zeus, Senior Role" not in got
+
+    def test_display_name_vazio_retorna_source_inalterado(self):
+        source = "---\nname: trackfw-architect\n---\n\n# Corpo\n\n— Architect, Principal Software Architect\n"
+        got = _rewrite_signature_line(source, "")
+        assert got == source
+
+
+class TestRotaBRewritesSignature:
+    """Teste de integração: Rota B reescreve assinatura quando há identidade."""
+
+    SOURCE_WITH_SIG = (
+        "---\n"
+        "name: trackfw-architect\n"
+        "description: Principal software architect.\n"
+        "model: opus\n"
+        "---\n\n"
+        "# Architect\n\n"
+        "Corpo do agente.\n\n"
+        "— Architect, Principal Software Architect\n"
+    )
+    ITEM = {"id": "architect", "description": "Principal software architect."}
+    CFG = Config(
+        user_nickname="chefe",
+        agents={"architect": AgentIdentity(display_name="Zeus", slug="zeus")},
+    )
+
+    def test_subagent_reescreve_assinatura_com_identidade(self):
+        capability = {"representation": "subagent", "support_level": "native"}
+        got = render("agents", "claude", "cli", self.ITEM, self.SOURCE_WITH_SIG, capability, self.CFG)
+        assert "— Zeus, Principal Software Architect" in got
+        assert "— Architect, Principal Software Architect" not in got
+        # título preservado
+        assert "Principal Software Architect" in got
