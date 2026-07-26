@@ -3370,3 +3370,6 @@ recomendação. **Decisão pendente do KG.**
 - Testes nos 3 CLIs
 
 **Status:** IMPLEMENTANDO
+
+**Status:** CONCLUÍDO. Commit: fbbd028. Push: feat/comando-trackfw-ship-agnostico-de-forge.
+Gates: go build ✅ | go test ✅ | go vet ✅ | npm test (206 pass) ✅ | pytest (541 pass) ✅
