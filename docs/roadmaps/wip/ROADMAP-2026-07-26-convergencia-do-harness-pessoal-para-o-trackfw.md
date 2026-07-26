@@ -317,7 +317,7 @@ equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
 > Dependências: **barrier** — Wave 3 concluída (ML-4A depende de `catalog.json` estabilizado por ML-3B).
 
 ### ML-4A — 12 skills técnicas por papel, agnósticas de stack
-**Status:** pending
+**Status:** in progress
 **Agente sugerido:** architect (curadoria) com apoio dos especialistas
 **Files affected:** `internal/integrations/assets/skills/{backend,frontend,qa,infra,security,dba,ux,code-quality,data,iac,tooling,architecture}.md`, `internal/integrations/assets/catalog.json`
 
@@ -345,7 +345,7 @@ equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
 ---
 
 ### ML-4B — Vault de conhecimento: scaffold, comando e regra
-**Status:** pending
+**Status:** done
 **Agente sugerido:** backend
 **Files affected:** `internal/generators/scaffold.go`, `internal/commands/` (comando `note`),
 `internal/validator/validator.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
@@ -533,6 +533,26 @@ arquivos, resolvendo a sobreposição que existia no panteão original e nunca f
 **D12:** nenhuma violação nova. `Kubernetes` em `infra.md` é pré-existente na `main` e `Copilot` no
 catálogo é nome de target suportado, não recomendação de stack. Resta a inconsistência entre assets
 antigos e novos, registrada no ML-5A.
+
+**2026-07-26 — ML-4B (vault) concluído e auditado.**
+
+Correção de processo aplicada: a Wave 3 mostrou que remover `make quality` do agente cria janela
+cega. Os agentes voltaram a rodar o gate completo — e, para não recriar a corrida no `bin/trackfw`,
+ML-4A e ML-4B foram **serializados** em vez de paralelos. Custo de alguns minutos, ganho de detecção.
+
+Verificação empírica nos 3 CLIs (não só testes):
+
+| Cenário | Resultado |
+|---|---|
+| `note new` mesmo título nos 3 CLIs | md5 da nota **idêntico** nos 3; md5 do índice **idêntico** nos 3 |
+| nota linkada no índice | sem warning |
+| nota órfã, default | `warning`, **exit 0** |
+| nota órfã com `rules: {note_orphan: error}` | violation, **exit 1** |
+| mesma nota órfã nos 3 CLIs | detectada por Go, Node e Python |
+| projeto sem `vault/` | zero menção a note — vault é opcional de fato |
+
+A severidade `warning` por default era o ponto crítico: como `error`, a regra fecharia o
+`trackfw validate` no primeiro uso de qualquer projeto com vault preexistente.
 
 ## Acceptance Criteria
 

@@ -3122,9 +3122,14 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 
 ## Sessão 2026-07-26 — Apolo — ML-4B: Vault de conhecimento (scaffold, note new, note_orphan)
 
-**Status:** IMPLEMENTANDO
+**Status:** CONCLUÍDO
 **Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commit:** 7b85b5a feat(vault): scaffold, comando note new e regra note_orphan (REQ-2026-07-26)
 **Escopo:**
 - Scaffold: vault/notes adicionado a govDirs nos 3 CLIs; vault/notes/index.md gerado no init
-- Comando `note new "<título>"` nos 3 CLIs (Go + npm + pypi)
-- Regra `note_orphan` no validator dos 3 CLIs (default warning, elevável a error via rules:)
+- Comando `note new "<título>"` nos 3 CLIs (Go + npm + pypi): cria slug-YYYY-MM-DD.md com frontmatter + 3 seções, linka no index.md, idempotente
+- Regra `note_orphan` nos 3 validators (default warning, elevável a error via rules:, aceita link markdown e wikilink)
+- ruleDefaults (Go), RULE_DEFAULTS (JS), _RULE_DEFAULTS (Python) para defaults por-regra
+- 3 testes gerador + 5 testes validator no Go; npm 126/126 verde; pypi 446/446 verde
+- docs/cli-parity.md atualizado com comando note e regra note_orphan
+**Validação:** make quality VERDE de ponta a ponta
