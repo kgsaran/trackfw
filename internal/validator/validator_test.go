@@ -1125,3 +1125,63 @@ func TestValidate_ExternalADROrphanExemption(t *testing.T) {
 	}
 }
 
+// TestAnalyzingState_NoFolderStatusViolation — roadmap em analyzing/ com status: analyzing
+// não deve gerar folder_status nem traceid_state_mismatch.
+func TestAnalyzingState_NoFolderStatusViolation(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/analyzing",
+		"docs/roadmaps/wip",
+		"docs/roadmaps/backlog",
+	)
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, "docs/roadmaps/analyzing/ROADMAP-em-analise.md", `---
+status: analyzing
+date: 2026-07-26
+---
+# Roadmap: Em Análise
+
+## Objetivo
+Planejamento sem código ainda.
+`)
+
+	warnings, err := validateFolderStatusCoherence()
+	if err != nil {
+		t.Fatalf("validateFolderStatusCoherence() erro: %v", err)
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "ROADMAP-em-analise.md") {
+			t.Errorf("roadmap em analyzing/ NÃO deve gerar folder_status warning, obteve: %q", w)
+		}
+	}
+}
+
+// TestAnalyzingState_WipLimitDoesNotCount — roadmap em analyzing/ NÃO deve ser contado pelo wip_limit.
+func TestAnalyzingState_WipLimitDoesNotCount(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/analyzing", "docs/roadmaps/wip")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// limit=1, 1 roadmap em wip e 1 em analyzing → não deve exceder o limite
+	writeFile(t, dir, "trackfw.yaml", "wip_limit: 1\nwip_by_squad: false\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-em-wip.md", "# Roadmap: Em WIP\n\nREQ: REQ-001\n")
+	writeFile(t, dir, "docs/roadmaps/analyzing/ROADMAP-em-analise.md", `---
+status: analyzing
+---
+# Roadmap: Em Análise
+`)
+
+	_, warnings, err := validateWIPLimit()
+	if err != nil {
+		t.Fatalf("validateWIPLimit() erro: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("wip_limit NÃO deve contar roadmaps em analyzing/ — esperado 0 warnings, obteve: %v", warnings)
+	}
+}
+

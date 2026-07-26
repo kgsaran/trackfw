@@ -353,6 +353,63 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     }
   })
 
+  // Estado analyzing: não deve gerar folder_status warning
+  test('analyzing state: roadmap em analyzing/ com status: analyzing não gera folder_status warning', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-analyzing-'))
+    const roadmapDir = path.join(tmp, 'roadmaps')
+    fs.mkdirSync(path.join(roadmapDir, 'analyzing'), { recursive: true })
+    fs.writeFileSync(
+      path.join(roadmapDir, 'analyzing', 'ROADMAP-em-analise.md'),
+      '---\nstatus: analyzing\ndate: 2026-07-26\n---\n# Roadmap: Em Análise\n'
+    )
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), `roadmap_dir: ${roadmapDir}\n`)
+
+    const origCwd = process.cwd()
+    process.chdir(tmp)
+    config.reset()
+    try {
+      const result = validator.validateFolderStatusCoherence()
+      assert(
+        !result.some(w => w.includes('ROADMAP-em-analise.md')),
+        `Roadmap em analyzing/ NÃO deve gerar folder_status warning, obteve: ${JSON.stringify(result)}`
+      )
+    } finally {
+      process.chdir(origCwd)
+      config.reset()
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  // Estado analyzing: wip_limit NÃO deve contar roadmaps em analyzing/
+  test('analyzing state: wip_limit não conta roadmaps em analyzing/', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-analyzing-wip-'))
+    const roadmapDir = path.join(tmp, 'roadmaps')
+    fs.mkdirSync(path.join(roadmapDir, 'wip'), { recursive: true })
+    fs.mkdirSync(path.join(roadmapDir, 'analyzing'), { recursive: true })
+    // wip_limit=1, 1 em wip, 1 em analyzing → não deve exceder
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), `roadmap_dir: ${roadmapDir}\nwip_limit: 1\nwip_by_squad: false\n`)
+    fs.writeFileSync(path.join(roadmapDir, 'wip', 'ROADMAP-em-wip.md'), '# Roadmap em WIP\n\nREQ: REQ-001\n')
+    fs.writeFileSync(
+      path.join(roadmapDir, 'analyzing', 'ROADMAP-em-analise.md'),
+      '---\nstatus: analyzing\n---\n# Roadmap em Análise\n'
+    )
+
+    const origCwd = process.cwd()
+    process.chdir(tmp)
+    config.reset()
+    try {
+      const result = validator.validateWIPLimit()
+      assert.strictEqual(
+        result.warnings.length, 0,
+        `wip_limit NÃO deve contar analyzing/ — esperado 0 warnings, obteve: ${JSON.stringify(result.warnings)}`
+      )
+    } finally {
+      process.chdir(origCwd)
+      config.reset()
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
   console.log(`\n${passed} passed, ${failed} failed`)
   if (failed > 0) process.exit(1)
 })()

@@ -20,7 +20,7 @@ type traceIdEntry struct {
 // Se o diretório tiver subpastas de estado (wip/, done/, etc.), usa a pasta como estado.
 // Se não tiver subpastas, trata como flat com estado vazio.
 func collectTraceIdEntries(rootDir, traceField string) ([]traceIdEntry, error) {
-	stateDirs := []string{"wip", "done", "backlog", "blocked", "abandoned"}
+	stateDirs := []string{"wip", "done", "backlog", "analyzing", "blocked", "abandoned"}
 
 	var entries []traceIdEntry
 
@@ -87,7 +87,7 @@ func collectTraceIdEntries(rootDir, traceField string) ([]traceIdEntry, error) {
 // e retorna entradas indexadas pelo campo traceField.
 // Estrutura esperada: rootDir/<agente>/<estado>/*.md
 func collectTraceIdEntriesByAgent(roadmapDir, traceField string, cfg config.ProjectConfig) ([]traceIdEntry, error) {
-	stateDirs := []string{"wip", "done", "backlog", "blocked", "abandoned"}
+	stateDirs := []string{"wip", "done", "backlog", "analyzing", "blocked", "abandoned"}
 	agents := cfg.Agents
 	if len(agents) == 0 {
 		entries, err := os.ReadDir(roadmapDir)

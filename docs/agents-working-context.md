@@ -2978,3 +2978,23 @@ W8 marcada como candidata a **REQ separada** (não depende de Q1–Q16, toca `co
 **Descoberta lateral:** `config.ProjectConfig` já suporta `roadmap_namespacing: flat|by_agent` com
 `Agents []string`. Ou seja, o layout por agente **já é capacidade existente** — a Q3 (flat) apenas
 confirma o default, e o CMDB poderia manter o layout atual por configuração se quisesse.
+
+---
+
+## Sessão 2026-07-26 — ML-1B: validator reconhece estado `analyzing` (convergência do harness)
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** IMPLEMENTANDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**REQ:** docs/req/REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md
+**Escopo:** Adicionar `analyzing` como estado válido no validator dos 3 CLIs (Go, Node.js, Python) sem alterar as regras `wip_limit` e `branch_has_wip_roadmap`.
+
+---
+
+## 2026-07-26 — ML-1C: Mecanismo rewriteSignatureLine
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** IMPLEMENTANDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**REQ:** docs/req/REQ-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md
+**Escopo:** Criar `rewriteSignatureLine` nos 3 CLIs (Go, Node.js, Python) — localiza a última linha do corpo que casa com `^— (.+?), (.+)$` e substitui o nome pelo `displayName` da identidade configurada. Chamar na Rota B de Render após `rewriteFrontmatterFields` quando `hasIdentity == true`.

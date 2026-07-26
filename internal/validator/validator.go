@@ -754,7 +754,7 @@ func resolveREQFiles(cfg config.ProjectConfig) []string {
 		return nil
 	}
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		stateDirs := []string{"backlog", "wip", "blocked", "done", "abandoned"}
+		stateDirs := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
 		agents := cfg.Agents
 		if len(agents) == 0 {
 			entries, err := os.ReadDir(reqDir)
@@ -1341,6 +1341,7 @@ func referenceExists(ref string, roots []string) bool {
 var folderToExpectedStatus = map[string][]string{
 	"wip":       {"WIP", "wip", "In Progress"},
 	"backlog":   {"Backlog", "backlog"},
+	"analyzing": {"Analyzing", "analyzing"},
 	"blocked":   {"Blocked", "blocked"},
 	"done":      {"Done", "done"},
 	"abandoned": {"Abandoned", "abandoned"},
@@ -1350,7 +1351,7 @@ var folderToExpectedStatus = map[string][]string{
 func validateFolderStatusCoherence() ([]string, error) {
 	cfg := config.Load()
 	var warnings []string
-	states := []string{"wip", "backlog", "blocked", "done", "abandoned"}
+	states := []string{"wip", "backlog", "analyzing", "blocked", "done", "abandoned"}
 
 	type dirState struct{ path, state string }
 	var dirs []dirState
@@ -1417,7 +1418,7 @@ func validateFolderStatusCoherence() ([]string, error) {
 // validateFilenameUniqueness detecta o mesmo filename em múltiplos estados.
 func validateFilenameUniqueness() ([]string, error) {
 	cfg := config.Load()
-	states := []string{"wip", "backlog", "blocked", "done", "abandoned"}
+	states := []string{"wip", "backlog", "analyzing", "blocked", "done", "abandoned"}
 
 	seen := map[string][]string{}
 

@@ -187,7 +187,7 @@ def resolve_req_files(cfg: dict) -> list:
     req_dir = cfg.get("req_dir", "docs/req")
     namespacing = cfg.get("roadmap_namespacing", "")
     if namespacing == "by_agent":
-        states = ["backlog", "wip", "blocked", "done", "abandoned"]
+        states = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
         agents = cfg.get("agents", [])
         if not agents:
             try:
@@ -819,6 +819,7 @@ def _reference_exists(ref: str, roots: list[str]) -> bool:
 _FOLDER_TO_STATUS = {
     "wip":       ["WIP", "wip", "In Progress"],
     "backlog":   ["Backlog", "backlog"],
+    "analyzing": ["Analyzing", "analyzing"],
     "blocked":   ["Blocked", "blocked"],
     "done":      ["Done", "done"],
     "abandoned": ["Abandoned", "abandoned"],
@@ -831,7 +832,7 @@ def validate_folder_status_coherence(cfg: dict) -> list:
     Divergência → warning.
     """
     warnings = []
-    states = ["wip", "backlog", "blocked", "done", "abandoned"]
+    states = ["wip", "backlog", "analyzing", "blocked", "done", "abandoned"]
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
 
     dirs = []
@@ -874,7 +875,7 @@ def validate_folder_status_coherence(cfg: dict) -> list:
 
 def validate_filename_uniqueness(cfg: dict) -> list:
     """Detecta o mesmo filename de roadmap em dois ou mais estados. Duplicata → violation."""
-    states = ["wip", "backlog", "blocked", "done", "abandoned"]
+    states = ["wip", "backlog", "analyzing", "blocked", "done", "abandoned"]
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
     seen = {}  # filename → [states]
 

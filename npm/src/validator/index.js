@@ -104,7 +104,7 @@ function resolveReqFiles(cfg) {
   if (!reqDir) return []
   const namespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
   if (namespacing === 'by_agent') {
-    const STATES = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
+    const STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
     let agents = cfg.agents || []
     if (!agents.length) {
       try {
@@ -695,6 +695,7 @@ function referenceExists(ref, roots) {
 const FOLDER_TO_STATUS = {
   wip:       ['WIP', 'wip', 'In Progress'],
   backlog:   ['Backlog', 'backlog'],
+  analyzing: ['Analyzing', 'analyzing'],
   blocked:   ['Blocked', 'blocked'],
   done:      ['Done', 'done'],
   abandoned: ['Abandoned', 'abandoned'],
@@ -704,7 +705,7 @@ const FOLDER_TO_STATUS = {
 function validateFolderStatusCoherence() {
   const cfg = config.load()
   const warnings = []
-  const states = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
+  const states = ['wip', 'backlog', 'analyzing', 'blocked', 'done', 'abandoned']
 
   let dirs = []
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
@@ -757,7 +758,7 @@ function validateFolderStatusCoherence() {
 // validateFilenameUniqueness — verifica que o mesmo filename não aparece em múltiplos estados
 function validateFilenameUniqueness() {
   const cfg = config.load()
-  const states = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
+  const states = ['wip', 'backlog', 'analyzing', 'blocked', 'done', 'abandoned']
   const seen = {}  // filename → [states]
 
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {

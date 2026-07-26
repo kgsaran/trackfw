@@ -4,7 +4,7 @@ const fs = require('fs')
 const path = require('path')
 
 // ESTADOS reconhecidos para REQs e Roadmaps (baseado na pasta onde o arquivo reside)
-const KNOWN_STATES = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
+const KNOWN_STATES = ['wip', 'backlog', 'analyzing', 'blocked', 'done', 'abandoned']
 
 // extractFrontmatterField extrai o valor de um campo do frontmatter YAML simples de um arquivo .md.
 // Retorna string vazia se o campo não for encontrado ou o arquivo não tiver frontmatter.
