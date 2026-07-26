@@ -3257,7 +3257,7 @@ recomendação. **Decisão pendente do KG.**
 
 ---
 
-## 2026-07-26 — Apolo — ML-2B: adaptadores por forge com degradação graciosa (IMPLEMENTANDO)
+## 2026-07-26 — Apolo — ML-2B: adaptadores por forge com degradação graciosa (CONCLUÍDO)
 
 **Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
 **REQ:** `docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md`
@@ -3267,8 +3267,46 @@ recomendação. **Decisão pendente do KG.**
 - `internal/forge/adapter.go` — `Adapter`, `NewAdapter()`, `FallbackURL()`, `remoteHTTPSBase()`
 - `internal/forge/adapter_test.go` — spy de availFn, 4 nouns, URLs HTTPS/SSH/self-hosted/Azure SSH
 - `npm/src/forge/adapter.js` — porte Node.js com PATH scan puro (sem subprocess)
-- `npm/tests/forge_adapter.test.js` — mesmos casos; spy spy
+- `npm/tests/forge_adapter.test.js` — mesmos casos; spy
 - `pypi/trackfw/forge/adapter.py` — porte Python com `shutil.which`
 - `pypi/tests/test_forge_adapter.py` — mesmos casos; spy
 
-**Status:** IMPLEMENTANDO.
+**Entregue:**
+- `internal/forge/adapter.go` — `Adapter`, `NewAdapter()`, `FallbackURL()`, `remoteHTTPSBase()`; defaultAvailFn respeita `TRACKFW_DISABLE_EXTERNAL_COMMANDS`
+- `internal/forge/adapter_test.go` — 11 testes; spy de availFn; bitbucket asserta 0 chamadas
+- `npm/src/forge/adapter.js` — porte Node.js com PATH scan puro (sem subprocess)
+- `npm/tests/forge_adapter.test.js` — 24 testes; spy; mesmos casos URL
+- `pypi/trackfw/forge/adapter.py` — porte Python; `shutil.which`; `removeprefix`/`removesuffix`
+- `pypi/tests/test_forge_adapter.py` — 32 testes; spy; mesmos casos URL
+- Commit `8bf2f0b` (bundled com ADR do ML-2A) | testes: Go 11 ✅ | Node 24 ✅ | Python 32 ✅
+
+**Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-2A: comando `trackfw ship` fluxo git completo (CONCLUÍDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**Commit:** `b31e4c4`
+
+**Entregue:**
+- `internal/validator/validator.go` — `CheckShipGovernance()` exportada como gate duro (bypass de baseline/lenient/rules): chama `validateBranchHasWIPRoadmap` + `validateWIPHasREQ` diretamente
+- `internal/commands/ship.go` — Passos 1–6 com injeção de `shipDeps{execGit, checkGovernance, out}`; `--dry-run` skipa escrita via wrapper interno; nunca chama `git add` com curinga
+- `internal/commands/ship_test.go` — 10 casos: main/master, padrão inválido, governança, nada staged, sem -m, dry-run, grep no fonte, runtime assertion
+- `internal/commands/root.go` — `newShipCmd()` registrado
+- `npm/src/commands/ship.js` + `npm/src/ship/runner.js` — Porte Node.js puro com mesma estrutura injetável
+- `npm/src/commands/index.js` — Ship adicionado ao programa
+- `npm/tests/ship.test.js` — 15 casos (mesmos casos + normalizeBranchSlug)
+- `pypi/trackfw/commands/ship.py` + `pypi/trackfw/ship/runner.py` — Porte Python puro
+- `pypi/trackfw/cli.py` — Ship registrado
+- `pypi/tests/test_ship.py` — 35 casos (parametrizados com pytest)
+- Push para `feat/comando-trackfw-ship-agnostico-de-forge`
+
+**Resultados:**
+- Go: `go build ./... && go test ./... && go vet ./...` — VERDE (todos os pacotes)
+- npm: 193 testes — VERDE
+- Python: 509 testes — VERDE
+
+**Nota técnica:** A governança usa wrapper exportado `CheckShipGovernance()` que chama as funções privadas do pacote `validator` diretamente, ignorando baseline/lenient/rules — gate duro inviolável. O dry-run implementa whitelist de write commands (`commit`, `push`, `fetch`) no wrapper `git()` interno do `runShip`; `execGit` do dep só recebe comandos read-only em dry-run.
+
+**Status:** CONCLUÍDO.
