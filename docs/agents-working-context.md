@@ -3038,3 +3038,19 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 **Status:** IMPLEMENTANDO
 **Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
 **Escopo:** Adicionar `memory: project`, `tools:` ao frontmatter e 5 blocos universais (Mode lock, Before you act, Scope boundary, Working context, Knowledge vault) em inglês nos 10 assets de agente Go. Adicionar linha de assinatura ao final de cada asset. Sincronizar npm/pypi. Regravar 4 goldens congelados deliberadamente.
+
+---
+
+## 2026-07-26 — ML-1A: Camada universal de harness nos 10 assets de agente — CONCLUÍDO
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** CONCLUÍDO
+**Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
+**Commit:** d888df4
+**Entregáveis:**
+- 10 assets Go (`internal/integrations/assets/agents/{architect,backend,frontend,qa,infra,security,dba,ux,code-quality,data}.md`): `memory: project`, `tools:` correto por papel, 5 blocos universais em inglês, linha de assinatura exata.
+- Sincronização nos 3 CLIs via `scripts/sync-integration-assets.sh`.
+- 4 goldens re-congelados deliberadamente (`architect.subagent.golden.md`, `architect.agent-directory.golden.md`, `backend.agent-directory.golden.md`, `backend.codex-toml.golden.toml`).
+- Comentário de `render_test.go` atualizado com data e REQ.
+- `npm/tests/agents-skills.test.js`: 2 testes de golden atualizados (Codex TOML e Antigravity agent-directory).
+**Validação:** `go build ./... && go test ./... && go vet ./... && make quality` — todos verdes (Go ok, npm 125/125, Python 443/443, todos os gates de paridade aprovados).

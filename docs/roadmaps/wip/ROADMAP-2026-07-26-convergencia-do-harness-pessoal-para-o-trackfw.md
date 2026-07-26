@@ -57,7 +57,7 @@ Wave 1 (1B ‖ 1C) ─ barrier ─> Wave 1b (1A) ─ barrier ─> Wave 2 (2A ‖
 > `rewriteSignatureLine` existe) e ML-1A é o dono exclusivo dos goldens.
 
 ### ML-1A — Camada universal de harness nos 10 assets de agente
-**Status:** pending
+**Status:** done
 **Agente sugerido:** backend
 **Wave:** 1b (após barrier)
 **Files affected:** `internal/integrations/assets/agents/{architect,backend,frontend,qa,infra,security,dba,ux,code-quality,data}.md`
@@ -370,6 +370,13 @@ equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
    `api_board.go` e no validator (fecha o defeito 11 da análise).
 3. Conferir que todo asset novo termina com assinatura e que nenhum declara assinatura sem tê-la.
 4. Atualizar `README.md` e `site/` com os papéis novos e as skills técnicas.
+5. **Traduzir `greetingLine()` para inglês** (defeito descoberto na auditoria do ML-1A).
+   `internal/integrations/render.go:104-106` emite `"Você é %s."` e
+   `"Você é %s. Trate o usuário como %s."` — PT-BR fixo. Com D2 (assets em inglês), o artefato
+   instalado fica bilíngue: frontmatter e corpo em EN, saudação em PT-BR. Trocar para
+   `"You are %s."` e `"You are %s. Address the user as %s."` nos 3 CLIs.
+   ⚠️ Impacta `scripts/check-identity-parity.sh` (11 combinações) e as fixtures de identidade —
+   atualizar junto. Registrar no ADR de identidade que a saudação passou a ser EN.
 
 **Acceptance criteria:**
 - [ ] `docs/cli-parity.md` atualizado
@@ -425,6 +432,31 @@ diretamente, sem percorrer listas de estado — `analyzing` não entra na contag
 **ML-1C:** `rewriteSignatureLine` criada nos 3 CLIs com 5 testes unitários + 1 de integração cada.
 Invariante preservada — sem identidade, a saída permanece byte a byte idêntica e os goldens
 congelados não foram tocados.
+
+**2026-07-26 — Wave 1b concluída e auditada (ML-1A).**
+
+Auditoria independente do relato do agente:
+- Escopo respeitado: `render.go`, `internal/validator/` e o roadmap **não** foram tocados.
+- Os 4 goldens regravados e o comentário de `render_test.go` atualizado com data, REQ e a razão do
+  re-congelamento — a proveniência não ficou falsa.
+- `make quality` verde, incluindo `check-identity-parity.sh` (11 combinações target/surface, com e
+  sem identidade, nos 3 CLIs) e `check-integration-assets.sh` (bytes idênticos).
+
+**Verificação empírica além dos testes.** O teste do ML-1C usa fixture inline, o que não prova nada
+sobre os assets reais. Instalei os agentes num diretório temporário e conferi a saída de verdade:
+
+| preset | assinatura renderizada |
+|---|---|
+| `none` | `— Architect, Principal Software Architect` |
+| `greek` | `— Zeus, Principal Software Architect` · `— Apolo, Senior Backend Specialist` · `— Hefesto, Code Quality Specialist` · (10/10 corretas) |
+
+**Defeito descoberto pela renderização real:** `greetingLine()` emite a saudação em PT-BR
+(`"Você é Zeus."`) enquanto todo o resto do asset está em inglês por D2. O artefato instalado sai
+bilíngue. Não é regressão do ML-1A — é pré-existente e só ficou visível agora. Adicionado ao ML-5A.
+
+**Observação de forma (não bloqueante):** com a inserção dos blocos após o H1, o parágrafo de missão
+ficou órfão no fim do arquivo, sem heading. É consequência da minha especificação, não erro do
+agente. Avaliar um `## Mission` na Wave 2, quando os adendos por papel forem escritos.
 
 ## Acceptance Criteria
 
