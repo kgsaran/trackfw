@@ -115,7 +115,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 - [ ] `make quality` verde
 
 ### ML-2C — Correções pós-auditoria da Wave 2
-**Status:** in progress
+**Status:** done
 **Files affected:** `internal/commands/ship.go`, `npm/src/ship/runner.js`, `pypi/trackfw/ship/runner.py`,
 `scripts/check-cli-parity.sh`, `docs/cli-parity.md`, `vault/notes/`
 
@@ -228,6 +228,36 @@ edição foi descartada por alguma limpeza de working tree do lado dele.
 **Regra adotada a partir daqui:** o orquestrador **commita a marcação de status ANTES do spawn**.
 Edição não commitada em worktree compartilhado com agente é volátil — a proibição de o agente editar
 o roadmap protege o conteúdo, mas não protege alterações que ainda não estão no índice.
+
+**2026-07-26 — Wave 2 concluída e auditada (ML-2A, ML-2B, ML-2C).**
+
+**Falso diagnóstico do orquestrador, registrado como lição.** Uma notificação de falha referente a
+agentes antigos me levou a concluir que ML-2A e ML-2B haviam morrido. Vi trabalho não commitado e
+nenhum adaptador, e spawnei um terceiro agente de "recuperação" — que teria colidido com o ML-2B,
+vivo e escrevendo nos mesmos arquivos. Parei o agente ainda na fase de leitura, sem dano.
+**Trabalho não commitado não distingue agente morto de agente ativo.** O sinal correto é o *mtime*
+dos arquivos: os adaptadores tinham sido escritos minutos antes.
+
+**Três defeitos de gate encontrados nesta REQ e na anterior** — nenhum pego por CI, todos por
+auditoria em cenário real:
+
+| Gate | Defeito |
+|---|---|
+| `check-integration-cli-parity.sh` | número mágico de itens do catálogo (corrigido na REQ anterior) |
+| `branch_has_wip_roadmap` | pune a própria Definition of Done (registrado no vault, sem correção) |
+| `check-cli-parity.sh` | quebra com `argparse` colorido do Python 3.13+ e validava menos do que aparentava |
+
+**ML-2C — verificação independente do orquestrador:**
+- Com `FORCE_COLOR=1`, o strip de ANSI faz `init` casar; comando inexistente continua reprovando.
+- `make quality` verde **sem** `NO_COLOR=1`, em Python 3.14.6.
+- A lista do gate ganhou `note` e `ship`, que não eram verificados.
+- Mensagem de erro do passo 2 cita `lenient` nos 3 CLIs; `--help` idem.
+- Duas notas de vault no repositório, ambas criadas com `trackfw note new`.
+
+**Achado do agente que explica o defeito:** `agents` e `skills` passavam no gate **por acaso** —
+aparecem sem cor em texto descritivo (`"List and manage trackfw agents"`), então o grep casava ali e
+não no nome do subcomando. Node.js ainda ignora `NO_COLOR` quando `FORCE_COLOR` está setado, por isso
+o strip inline foi mantido como segunda camada.
 
 ## Acceptance Criteria
 
