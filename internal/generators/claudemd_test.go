@@ -117,6 +117,84 @@ func TestTrackfwRulesBlock_ArchitectureDirectives(t *testing.T) {
 	}
 }
 
+func TestGenerateClaudeMD_HarnessSections(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	cfg := Config{
+		ProjectName: "test-harness-project",
+	}
+
+	if err := generateClaudeMD(cfg); err != nil {
+		t.Fatalf("generateClaudeMD() erro: %v", err)
+	}
+
+	contentBytes, err := os.ReadFile("CLAUDE.md")
+	if err != nil {
+		t.Fatalf("os.ReadFile(CLAUDE.md) erro: %v", err)
+	}
+	content := string(contentBytes)
+
+	harnessSections := []string{
+		"## Branch strategy",
+		"## Definition of done",
+		"## Requirement scope",
+		"## State requirements",
+		"## Roadmap format",
+		"## When governance is not required",
+		"## Production incidents",
+		"## Iterative prototyping",
+		"## Autopilot",
+	}
+
+	for _, section := range harnessSections {
+		if !strings.Contains(content, section) {
+			t.Errorf("CLAUDE.md não contém a seção de harness: %q", section)
+		}
+	}
+
+	// Verificar trechos de conteúdo específico de cada seção
+	harnessSnippets := []string{
+		"One active branch at a time",
+		"squash-merged",
+		"Green build and tests do not close a microbatch",
+		"explicit negative scope",
+		"`blocked` requires a reason and an owner",
+		"waves of microbatches",
+		"closed list of exemptions",
+		"This section takes precedence",
+		"Inspect the live environment before proposing a fix",
+		"disposable, isolated prototype",
+		"Ask everything you need before starting",
+	}
+
+	for _, snippet := range harnessSnippets {
+		if !strings.Contains(content, snippet) {
+			t.Errorf("CLAUDE.md não contém o trecho de harness esperado: %q", snippet)
+		}
+	}
+
+	// Verificar que seções pré-existentes ainda estão presentes
+	preExisting := []string{
+		"## Governance chain",
+		"## Agent rules (mandatory)",
+		"## Slash commands (Claude Code)",
+		"## CLI commands (terminal / CI)",
+		"## Architecture Directives (mandatory)",
+		"## Pre-commit checklist",
+		"## Git hooks",
+		"## CI gate",
+	}
+
+	for _, section := range preExisting {
+		if !strings.Contains(content, section) {
+			t.Errorf("CLAUDE.md perdeu a seção pré-existente: %q", section)
+		}
+	}
+}
+
 func TestGenerateClaudeCommands_Architect(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()

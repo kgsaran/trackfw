@@ -278,6 +278,92 @@ class TestGlobalADRsRuleDirective(unittest.TestCase):
         self.assertIn(expected, content, "Diretiva de ADRs globais ausente do CLAUDE.md gerado")
 
 
+class TestGenerateClaudeMDHarnessSections(unittest.TestCase):
+    """Verifica que generate_claude_md escreve as 9 seções de harness e preserva as pré-existentes."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def test_generate_claude_md_creates_harness_sections(self):
+        from trackfw.generators.init_gen import generate_claude_md
+
+        opts = {'project_name': 'test-harness-project', 'namespacing': 'flat', 'wip_limit': 1}
+        generate_claude_md(self.tmp, opts)
+
+        claude_path = os.path.join(self.tmp, 'CLAUDE.md')
+        self.assertTrue(os.path.isfile(claude_path), 'CLAUDE.md não foi criado')
+
+        with open(claude_path, encoding='utf-8') as f:
+            content = f.read()
+
+        harness_sections = [
+            '## Branch strategy',
+            '## Definition of done',
+            '## Requirement scope',
+            '## State requirements',
+            '## Roadmap format',
+            '## When governance is not required',
+            '## Production incidents',
+            '## Iterative prototyping',
+            '## Autopilot',
+        ]
+        for section in harness_sections:
+            self.assertIn(section, content, f'CLAUDE.md não contém a seção de harness: {section!r}')
+
+        harness_snippets = [
+            'One active branch at a time',
+            'squash-merged',
+            'Green build and tests do not close a microbatch',
+            'explicit negative scope',
+            '`blocked` requires a reason and an owner',
+            'waves of microbatches',
+            'closed list of exemptions',
+            'This section takes precedence',
+            'Inspect the live environment before proposing a fix',
+            'disposable, isolated prototype',
+            'Ask everything you need before starting',
+        ]
+        for snippet in harness_snippets:
+            self.assertIn(snippet, content, f'CLAUDE.md não contém o trecho de harness: {snippet!r}')
+
+    def test_generate_claude_md_preserves_pre_existing_sections(self):
+        from trackfw.generators.init_gen import generate_claude_md
+
+        opts = {'project_name': 'test-project', 'namespacing': 'flat', 'wip_limit': 1}
+        generate_claude_md(self.tmp, opts)
+
+        claude_path = os.path.join(self.tmp, 'CLAUDE.md')
+        with open(claude_path, encoding='utf-8') as f:
+            content = f.read()
+
+        pre_existing = [
+            '## Governance chain',
+            '## Agent rules (mandatory)',
+            '## Slash commands (Claude Code)',
+            '## CLI commands (terminal / CI)',
+            '## Architecture Directives (mandatory)',
+            '## Pre-commit checklist',
+            '## Git hooks',
+            '## CI gate',
+        ]
+        for section in pre_existing:
+            self.assertIn(section, content, f'CLAUDE.md perdeu a seção pré-existente: {section!r}')
+
+    def test_scaffold_generates_claude_md_with_harness_sections(self):
+        """scaffold() deve gerar CLAUDE.md com as 9 seções de harness."""
+        opts = {'project_name': 'scaffold-harness-test', 'namespacing': 'flat', 'wip_limit': 1}
+        scaffold(self.tmp, opts)
+
+        claude_path = os.path.join(self.tmp, 'CLAUDE.md')
+        self.assertTrue(os.path.isfile(claude_path), 'CLAUDE.md não foi criado pelo scaffold')
+
+        with open(claude_path, encoding='utf-8') as f:
+            content = f.read()
+
+        for section in ['## Branch strategy', '## Autopilot', '## When governance is not required']:
+            self.assertIn(section, content, f'scaffold não gerou a seção de harness: {section!r}')
+
+
 class TestAttentionScripts(unittest.TestCase):
     """Verifica geração dos scripts de atenção trackfw-attention-signal.sh e cleanup.sh."""
 

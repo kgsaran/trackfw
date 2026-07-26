@@ -140,6 +140,66 @@ func generateClaudeMD(cfg Config) error {
 		sb.WriteString("No CI gate configured.\n")
 	}
 
+	// Harness sections — derived from project governance conventions
+	sb.WriteString("\n## Branch strategy\n\n")
+	sb.WriteString("One active branch at a time. Name it `feat/<slug>`, `fix/<slug>` or `refactor/<slug>`. ")
+	sb.WriteString("Before creating a new branch, verify no other is genuinely open: run `git fetch origin --prune`, ")
+	sb.WriteString("then `git branch -r --no-merged origin/main`, then for each candidate `git diff origin/main <branch> --stat`. ")
+	sb.WriteString("An empty diff means it was squash-merged — ignore it. ")
+	sb.WriteString("Squash merges do not mark a branch as merged, so `--no-merged` alone is not evidence. ")
+	sb.WriteString("If the branch is stale and the diff looks inflated by main's own evolution, ")
+	sb.WriteString("compare only the files the branch itself touched since the merge base.\n\n")
+
+	sb.WriteString("## Definition of done\n\n")
+	sb.WriteString("Green build and tests do not close a microbatch. ")
+	sb.WriteString("It is done when the requirement and the roadmap sit in the correct state folder, ")
+	sb.WriteString("their declared status matches that folder, the final validation is recorded with evidence, ")
+	sb.WriteString("no duplicate copy remains in another state, and `trackfw validate` reports no violations.\n\n")
+
+	sb.WriteString("## Requirement scope\n\n")
+	sb.WriteString("Every requirement must declare an explicit negative scope: what must not be implemented. ")
+	sb.WriteString("Boundaries prevent an implementing agent from inventing work.\n\n")
+
+	sb.WriteString("## State requirements\n\n")
+	sb.WriteString("`blocked` requires a reason and an owner. ")
+	sb.WriteString("`abandoned` requires a reason and a successor. ")
+	sb.WriteString("`wip` must reflect work that is genuinely active; ")
+	sb.WriteString("anything stalled moves to `blocked` or `abandoned` instead of rotting in `wip`.\n\n")
+
+	sb.WriteString("## Roadmap format\n\n")
+	sb.WriteString("Organize work as waves of microbatches. ")
+	sb.WriteString("A wave groups microbatches that can run in parallel; a barrier separates waves. ")
+	sb.WriteString("Microbatches sharing any file — including generated trees and build outputs — must be sequential, ")
+	sb.WriteString("and the reason is documented. ")
+	sb.WriteString("Each microbatch declares exact files, exact actions, measurable acceptance criteria and exact validation commands, ")
+	sb.WriteString("so that a small model can execute it without guessing.\n\n")
+
+	sb.WriteString("## When governance is not required\n\n")
+	sb.WriteString("A closed list of exemptions: a typo or local variable rename; a documentation-only change; ")
+	sb.WriteString("a configuration tweak with no runtime effect; a direct revert; ")
+	sb.WriteString("answering a question or reviewing without changes. ")
+	sb.WriteString("Additionally, when the user reports a concrete bug, fix it directly and do not open an architectural analysis for it. ")
+	sb.WriteString("**This section takes precedence over the general rule that requires a requirement and a roadmap.** ")
+	sb.WriteString("Anything touching business logic, an API contract, a data schema, authentication or authorization, ")
+	sb.WriteString("localization, or user-facing behavior always requires governance, regardless of how few files it touches.\n\n")
+
+	sb.WriteString("## Production incidents\n\n")
+	sb.WriteString("Inspect the live environment before proposing a fix: real variables, active credentials, ")
+	sb.WriteString("granted permissions, running processes. ")
+	sb.WriteString("Confirm the root cause against real evidence, then implement the smallest fix. ")
+	sb.WriteString("Never edit static configuration files as a response to a root cause that has not been confirmed in the running environment.\n\n")
+
+	sb.WriteString("## Iterative prototyping\n\n")
+	sb.WriteString("For complex or uncertain user-facing work, validate the concept with a disposable, isolated prototype ")
+	sb.WriteString("that the user reviews visually, and only then write the decision record and the production roadmap. ")
+	sb.WriteString("Build and test success is not evidence that an interface is right.\n\n")
+
+	sb.WriteString("## Autopilot\n\n")
+	sb.WriteString("Ask everything you need before starting. ")
+	sb.WriteString("Once started, do not interrupt for confirmations that could have been anticipated. ")
+	sb.WriteString("Decide low-risk details autonomously following existing project conventions, ")
+	sb.WriteString("and record autonomous decisions in the commit message.\n")
+
 	if err := injectOrUpdateRules("CLAUDE.md", sb.String()); err != nil {
 		return fmt.Errorf("updating CLAUDE.md: %w", err)
 	}

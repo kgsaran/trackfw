@@ -3074,3 +3074,27 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 - Sync nos 3 CLIs via `scripts/sync-integration-assets.sh`.
 **Validação:** `make quality` verde — Go ok, npm 125/125, Python 443/443, check-integration-assets, check-identity-parity aprovados.
 **Status:** CONCLUÍDO
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-3A: Harness completo no CLAUDE.md gerado
+
+**Status:** IMPLEMENTANDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Escopo:**
+- Adicionar 9 seções de harness pessoal à função `generateClaudeMD` (Go)
+- Paridade em Node.js (`npm/src/generators/init.js`) e Python (`pypi/trackfw/generators/init_gen.py`)
+- Atualizar testes de geração nos 3 CLIs
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-3B: Papéis canônicos `iac` e `tooling`
+
+**Status:** IMPLEMENTANDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Escopo:**
+- Adicionar `iac` e `tooling` a `KnownAgentIDs()` e a todos os 10 presets nos 3 CLIs (Go, Node.js, Python)
+- Criar assets `iac.md` e `tooling.md` em `internal/integrations/assets/agents/`
+- Declarar fronteira `infra` × `iac` em ambos os arquivos
+- Acrescentar entradas no `catalog.json`
+- Rodar `scripts/sync-integration-assets.sh`
