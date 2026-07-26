@@ -3063,3 +3063,14 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 **Status:** IMPLEMENTANDO
 **Branch:** `feat/convergencia-do-harness-pessoal-para-o-trackfw`
 **Escopo:** ML-2A: 4 blocos do orquestrador em `architect.md` (Git authority, Parallelization, Workflow, Post-microbatch audit) + `## Mission`. ML-2B: 4 blocos do implementador nos 6 agents com Edit/Write + Reporting boundary nos 3 read-only (security, code-quality, ux) + `## Mission` em todos os 9. Regravar 4 goldens, atualizar npm test e render_test.go.
+**Commits:** fe088fe (ML-2A) + 353a4a2 (ML-2B)
+**Entregáveis:**
+- `architect.md`: blocos Git authority, Parallelization, Workflow, Post-microbatch audit, Mission.
+- 6 agents com Edit/Write (backend, frontend, qa, infra, dba, data): Governance prerequisite, Git boundary, Microbatch completion protocol, Definition of done, Mission.
+- 3 read-only (security, code-quality, ux): Governance prerequisite, Reporting boundary, Definition of done, Mission.
+- 4 goldens re-congelados: architect.subagent, architect.agent-directory, backend.agent-directory, backend.codex-toml.
+- render_test.go: comentário de re-congelamento Wave 2 adicionado.
+- npm test: golden strings atualizadas (Codex TOML + Antigravity agent-directory para architect e backend).
+- Sync nos 3 CLIs via `scripts/sync-integration-assets.sh`.
+**Validação:** `make quality` verde — Go ok, npm 125/125, Python 443/443, check-integration-assets, check-identity-parity aprovados.
+**Status:** CONCLUÍDO
