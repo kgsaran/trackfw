@@ -1,0 +1,300 @@
+"""
+ship/runner.py — Core implementation of `trackfw ship`.
+
+All git write operations are injectable for testability.
+Never passes "add ." or "add -A" to any git executor.
+"""
+
+import os
+import re
+import subprocess
+import sys
+
+
+# Git subcommands that modify local or remote state.
+# In --dry-run mode these are printed but not executed.
+GIT_WRITE_COMMANDS = {"commit", "push", "fetch"}
+
+
+def is_git_write_cmd(args):
+    """Returns True when the first arg is a write-mode git subcommand."""
+    return len(args) > 0 and args[0] in GIT_WRITE_COMMANDS
+
+
+def is_ship_branch(branch):
+    """Returns True when branch matches feat|fix|refactor/<slug>."""
+    return bool(re.match(r'^(feat|fix|refactor)/.+', branch))
+
+
+def normalize_branch_slug(value):
+    """
+    Converts a string to a lowercase dash-only slug.
+    Identical algorithm to Go normalizeBranchSlug and JS normalizeBranchSlug.
+    """
+    out = []
+    last_dash = False
+    for ch in value.lower():
+        if re.match(r'[a-z0-9]', ch):
+            out.append(ch)
+            last_dash = False
+        elif not last_dash:
+            out.append('-')
+            last_dash = True
+    return ''.join(out).strip('-')
+
+
+def default_exec_git(args):
+    """
+    Production git executor.
+    Returns (stdout_str, error_str_or_None).
+    """
+    try:
+        result = subprocess.run(
+            ['git'] + args,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return ('', result.stderr.strip() or f"git {' '.join(args)} failed")
+        return (result.stdout.strip(), None)
+    except FileNotFoundError:
+        return ('', 'git not found in PATH')
+    except Exception as e:
+        return ('', str(e))
+
+
+def _resolve_roadmap_dir():
+    """Reads trackfw.yaml to find roadmap_dir (default: docs/roadmaps/claude)."""
+    try:
+        with open('trackfw.yaml', 'r') as f:
+            for line in f:
+                m = re.match(r'^roadmap_dir:\s*(.+)', line)
+                if m:
+                    return m.group(1).strip()
+    except OSError:
+        pass
+    return 'docs/roadmaps/claude'
+
+
+def check_ship_governance():
+    """
+    Hard gate (bypasses config/baseline/lenient).
+    Checks:
+      1. Current branch has a matching roadmap in wip/
+      2. WIP roadmaps have a linked REQ
+    Returns list of violation messages (empty = pass).
+    """
+    violations = []
+
+    roadmap_dir = _resolve_roadmap_dir()
+    wip_dir = os.path.join(roadmap_dir, 'wip')
+
+    stdout, err = default_exec_git(['symbolic-ref', '--short', 'HEAD'])
+    branch = stdout.strip() if not err else ''
+
+    if branch and is_ship_branch(branch):
+        slug = normalize_branch_slug('/'.join(branch.split('/')[1:]))
+        wip_files = []
+        has_match = False
+
+        if os.path.isdir(wip_dir):
+            wip_files = [f for f in os.listdir(wip_dir) if f.endswith('.md')]
+            for f in wip_files:
+                if slug in normalize_branch_slug(f):
+                    has_match = True
+                    break
+
+        if not wip_files:
+            violations.append(
+                f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ — '
+                'create governance artifacts first:\n'
+                '  trackfw req new "<title>"\n'
+                '  trackfw roadmap new "<title>"\n'
+                '  trackfw roadmap move <name> wip'
+            )
+        elif not has_match:
+            violations.append(
+                f'branch "{branch}" has no matching roadmap in wip/ '
+                f'(found: {", ".join(wip_files)}) — '
+                'include the branch slug in the roadmap filename'
+            )
+
+        if has_match and os.path.isdir(wip_dir):
+            for f in wip_files:
+                fpath = os.path.join(wip_dir, f)
+                try:
+                    content = open(fpath).read()
+                    if 'REQ:' not in content and 'req:' not in content:
+                        violations.append(f'roadmap "{f}" is in wip but has no linked REQ')
+                except OSError:
+                    pass
+
+    return violations
+
+
+def _detect_pending_squash_merges(current_branch, exec_git, writeln):
+    """Warns about remote branches with non-empty diffs vs origin/main. Non-blocking."""
+    stdout, err = exec_git(['branch', '-r', '--no-merged', 'origin/main'])
+    if err or not stdout.strip():
+        return
+
+    for raw in stdout.split('\n'):
+        candidate = raw.strip()
+        if not candidate or 'HEAD' in candidate:
+            continue
+        short_name = re.sub(r'^origin/', '', candidate)
+        if short_name == current_branch:
+            continue
+        diff_out, derr = exec_git(['diff', 'origin/main', candidate, '--stat'])
+        if derr:
+            continue
+        if diff_out.strip():
+            writeln(f'Warning: branch "{short_name}" appears to have unmerged changes vs origin/main.')
+
+
+def _build_push_args(branch, exec_git):
+    """Returns the push args, adding -u if no upstream is configured."""
+    _, err = exec_git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])
+    if err:
+        return ['push', '-u', 'origin', branch]
+    return ['push', 'origin', branch]
+
+
+def run_ship(
+    message='',
+    dry_run=False,
+    exec_git=None,
+    check_governance=None,
+    writeln=None,
+):
+    """
+    Executes the six-step ship sequence.
+
+    Parameters
+    ----------
+    message : str
+        Commit message (-m). Required; abort if empty.
+    dry_run : bool
+        Print what would be done without executing write commands.
+    exec_git : callable(list[str]) -> (str, str|None)
+        Injected git executor. Returns (stdout, error_or_None).
+    check_governance : callable() -> list[str]
+        Injected governance check. Returns violation messages.
+    writeln : callable(str) -> None
+        Injected output writer.
+
+    Returns
+    -------
+    int
+        Exit code: 0 = success, 1 = failure.
+    """
+    if exec_git is None:
+        exec_git = default_exec_git
+    if check_governance is None:
+        check_governance = check_ship_governance
+    if writeln is None:
+        writeln = lambda s: print(s)  # noqa: E731
+
+    # Inner git wrapper: skips write commands in dry-run mode.
+    def git(args):
+        if dry_run and is_git_write_cmd(args):
+            writeln(f"[dry-run] git {' '.join(args)}")
+            return ('', None)
+        return exec_git(args)
+
+    # ─── Step 1: Branch validation ─────────────────────────────────────────
+    stdout, err = exec_git(['symbolic-ref', '--short', 'HEAD'])
+    if err:
+        writeln(f'error: could not determine current branch (are you in a git repo?): {err}')
+        return 1
+    branch = stdout.strip()
+
+    if branch in ('main', 'master'):
+        writeln(
+            f'error: trackfw ship cannot run on "{branch}" — use a feature branch:\n'
+            '  git checkout -b feat/<slug>'
+        )
+        return 1
+
+    if not is_ship_branch(branch):
+        writeln(
+            f'error: branch "{branch}" does not match the required pattern feat|fix|refactor/<slug>\n'
+            'Rename your branch or create a new one:\n  git checkout -b feat/<slug>'
+        )
+        return 1
+
+    writeln(f'Branch: {branch}')
+
+    # ─── Step 2: Governance ────────────────────────────────────────────────
+    violations = check_governance()
+    if violations:
+        writeln('\nGovernance check failed:')
+        for v in violations:
+            writeln(f'  {v}')
+        writeln('\nCreate the required artifacts before running ship:')
+        writeln('  trackfw req new "<title>"')
+        writeln('  trackfw roadmap new "<title>"')
+        writeln('  trackfw roadmap move <name> wip')
+        writeln(f'\nerror: governance check failed: {len(violations)} violation(s)')
+        return 1
+
+    writeln('Governance: OK')
+
+    # ─── Step 3: Squash-merge detection ────────────────────────────────────
+    if dry_run:
+        writeln('[dry-run] git fetch origin --prune')
+    else:
+        _, fetch_err = exec_git(['fetch', 'origin', '--prune'])
+        if fetch_err:
+            writeln('Warning: could not fetch origin (offline or no remote); skipping squash-merge check.')
+        else:
+            _detect_pending_squash_merges(branch, exec_git, writeln)
+
+    # ─── Step 4: Review staged ─────────────────────────────────────────────
+    status_out, _ = exec_git(['status', '--short'])
+    diff_stat_out, _ = exec_git(['diff', '--cached', '--stat'])
+
+    writeln('\n── Staged changes ──────────────────────────────────────')
+    if status_out:
+        writeln(status_out)
+    if diff_stat_out:
+        writeln(diff_stat_out)
+    writeln('────────────────────────────────────────────────────────\n')
+
+    cached_files, _ = exec_git(['diff', '--cached', '--name-only'])
+    if not cached_files.strip():
+        writeln(
+            'error: nothing is staged — stage your files explicitly before running ship:\n'
+            '  git add <file1> <file2> ...\n'
+            "Never use 'git add .' or 'git add -A'"
+        )
+        return 1
+
+    # ─── Step 5: Commit ────────────────────────────────────────────────────
+    if not message:
+        writeln(
+            'error: commit message is required — use -m:\n'
+            '  trackfw ship -m "feat(<scope>): <description>"'
+        )
+        return 1
+
+    _, commit_err = git(['commit', '-m', message])
+    if commit_err:
+        writeln(f'error: git commit failed: {commit_err}')
+        return 1
+
+    if not dry_run:
+        writeln(f'Committed: {message}')
+
+    # ─── Step 6: Push ──────────────────────────────────────────────────────
+    push_args = _build_push_args(branch, exec_git)
+    _, push_err = git(push_args)
+    if push_err:
+        writeln(f'error: git push failed: {push_err}')
+        return 1
+
+    if not dry_run:
+        writeln(f'Pushed:    {branch} → origin/{branch}')
+        writeln('\nship complete.')
+
+    return 0

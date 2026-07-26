@@ -3236,3 +3236,39 @@ recomendação. **Decisão pendente do KG.**
 **Nota técnica:** Azure SSH usa `ssh.dev.azure.com` (host distinto de `dev.azure.com`). Coberto via regra `*.dev.azure.com` no `hostToForge` nos 3 CLIs.
 
 **Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-2A: comando `trackfw ship` fluxo git completo (IMPLEMENTANDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** `docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md`
+**ADR:** `docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md`
+
+**Escopo:**
+- Passos 1–6 do fluxo ship: validação de branch, governança, squash-merges pendentes, staged review, commit CC, push
+- Flags: `-m/--message`, `--dry-run`
+- Injeção do executor de comandos git (sem exec direto em RunE)
+- Wrapper exportado `CheckShipGovernance()` em `internal/validator` (gate duro, ignora baseline/lenient)
+- Testes nos 3 CLIs cobrindo todos os casos obrigatórios; repositórios temporários para testes de escrita
+- Teste grep garantindo ausência de `git add .`/`git add -A` no código-fonte (excluindo arquivos de teste)
+
+**Status:** IMPLEMENTANDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-2B: adaptadores por forge com degradação graciosa (IMPLEMENTANDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** `docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md`
+**ADR:** `docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md`
+
+**Escopo:**
+- `internal/forge/adapter.go` — `Adapter`, `NewAdapter()`, `FallbackURL()`, `remoteHTTPSBase()`
+- `internal/forge/adapter_test.go` — spy de availFn, 4 nouns, URLs HTTPS/SSH/self-hosted/Azure SSH
+- `npm/src/forge/adapter.js` — porte Node.js com PATH scan puro (sem subprocess)
+- `npm/tests/forge_adapter.test.js` — mesmos casos; spy spy
+- `pypi/trackfw/forge/adapter.py` — porte Python com `shutil.which`
+- `pypi/tests/test_forge_adapter.py` — mesmos casos; spy
+
+**Status:** IMPLEMENTANDO.

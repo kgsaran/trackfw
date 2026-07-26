@@ -1611,3 +1611,38 @@ func normalizeBranchSlug(value string) string {
 	}
 	return strings.Trim(out.String(), "-")
 }
+
+// GovernanceViolation holds the messages from a failed CheckShipGovernance call.
+type GovernanceViolation struct {
+	// Missing contains human-readable violation messages, one per line.
+	Missing []string
+}
+
+func (e *GovernanceViolation) Error() string {
+	return strings.Join(e.Missing, "\n")
+}
+
+// CheckShipGovernance is the hard gate called by `trackfw ship` at step 2.
+// Unlike Validate(), it bypasses the baseline ratchet, lenient mode and
+// per-rule severity configuration — the ship command must always enforce
+// governance regardless of project settings.
+//
+// It checks:
+//  1. The current branch has a matching roadmap in wip/ (branch_has_wip_roadmap)
+//  2. All WIP roadmaps have a linked REQ (wip_has_req)
+//
+// Returns nil when all checks pass. Returns *GovernanceViolation otherwise.
+func CheckShipGovernance() *GovernanceViolation {
+	var missing []string
+
+	branchViolations, _ := validateBranchHasWIPRoadmap()
+	missing = append(missing, branchViolations...)
+
+	wipReqViolations, _ := validateWIPHasREQ()
+	missing = append(missing, wipReqViolations...)
+
+	if len(missing) == 0 {
+		return nil
+	}
+	return &GovernanceViolation{Missing: missing}
+}

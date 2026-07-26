@@ -96,6 +96,10 @@ def main():
     from trackfw.commands import note as note_cmd
     note_cmd.register(subparsers)
 
+    # --- ship ---
+    from trackfw.commands import ship as ship_cmd
+    ship_cmd.register(subparsers)
+
     # --- agents / skills ---
     from trackfw.commands import agents as agents_cmd
     from trackfw.commands import skills as skills_cmd
