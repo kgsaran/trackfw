@@ -49,6 +49,7 @@ func newShipCmd() *cobra.Command {
 
   1. Validates branch name — must match feat|fix|refactor/<slug>
   2. Validates governance — REQ + roadmap in wip/ must exist
+     (hard gate: not affected by lenient mode or per-rule severity)
   3. Detects pending squash-merges in other branches (advisory only)
   4. Reviews what is staged (git status --short + git diff --cached --stat)
   5. Commits with Conventional Commits format (-m is required)
@@ -137,6 +138,10 @@ func runShip(opts shipOpts, deps shipDeps) error {
 		fmt.Fprintf(deps.out, "  trackfw req new \"<title>\"\n")
 		fmt.Fprintf(deps.out, "  trackfw roadmap new \"<title>\"\n")
 		fmt.Fprintf(deps.out, "  trackfw roadmap move <name> wip\n")
+		fmt.Fprintf(deps.out, "\nNote: this governance check is a hard gate — it is not affected by lenient\n")
+		fmt.Fprintf(deps.out, "mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'\n")
+		fmt.Fprintf(deps.out, "passes but 'trackfw ship' aborts here, you likely have lenient mode\n")
+		fmt.Fprintf(deps.out, "configured — ship always requires REQ + roadmap in wip/.\n")
 		return fmt.Errorf("governance check failed: %d violation(s)", len(violations))
 	}
 

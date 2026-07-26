@@ -128,6 +128,7 @@ def test_ship_no_wip_roadmap_aborts_with_remediation():
     assert 'trackfw req new' in out
     assert 'trackfw roadmap new' in out
     assert 'trackfw roadmap move' in out
+    assert 'lenient' in out, "output must mention lenient mode so users understand why validate passes but ship aborts"
 
 
 # ────────────────────────────────────────────────────────────────────────────

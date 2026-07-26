@@ -115,6 +115,7 @@ test('ship: no wip roadmap aborts with remediation commands', () => {
   assert.ok(out.includes('trackfw req new'), 'must mention trackfw req new')
   assert.ok(out.includes('trackfw roadmap new'), 'must mention trackfw roadmap new')
   assert.ok(out.includes('trackfw roadmap move'), 'must mention trackfw roadmap move')
+  assert.ok(out.includes('lenient'), 'must mention lenient mode so users understand why validate passes but ship aborts')
 })
 
 // ────────────────────────────────────────────────────────────────────────────

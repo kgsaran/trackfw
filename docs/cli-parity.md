@@ -27,6 +27,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `agents` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
+| `ship` | yes | yes | yes | Governed `git commit + push`; hard governance gate (see below) |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Prints `trackfw <version>` |
 
@@ -277,6 +278,45 @@ generated artifacts, not the wizard's interactive flow. Parity here is
 maintained by review: a change to the wizard's steps, labels, trigger rule,
 or confirmation layout in one CLI must be ported to the other two in the same
 change.
+
+## `trackfw ship`
+
+`trackfw ship` runs a six-step governed delivery sequence in all three runtimes:
+
+```
+1. Validates branch name — must match feat|fix|refactor/<slug>
+2. Validates governance — REQ + roadmap in wip/ must exist
+   (hard gate: not affected by lenient mode or per-rule severity)
+3. Detects pending squash-merges in other branches (advisory only)
+4. Reviews what is staged (git status --short + git diff --cached --stat)
+5. Commits with Conventional Commits format (-m is required)
+6. Pushes to origin (adds -u if no upstream is configured yet)
+```
+
+### Flags
+
+| Flag | Type | Description |
+|---|---|---|
+| `-m` / `--message` | string | Commit message (Conventional Commits format required) |
+| `--dry-run` | bool | Print what would be done without executing write commands |
+
+### Behavioural divergence from `trackfw validate`
+
+`trackfw validate` respects `governance_mode: lenient` (configured in `trackfw.yaml`)
+and per-rule severity overrides — in lenient mode, governance violations become warnings
+and exit code is 0.
+
+`trackfw ship` does **not** respect lenient mode or per-rule severity. The governance
+check in step 2 (`CheckShipGovernance`) is always a hard gate: a branch without a linked
+REQ and a roadmap in `wip/` **always** aborts ship with exit code 1, regardless of
+`governance_mode` or `rules:` configuration.
+
+**Why:** `ship` is a delivery gate, not an audit tool. Lenient mode exists for teams
+still ramping up governance — it does not mean "ship without governance artifacts".
+
+**Impact on users:** a team running `governance_mode: lenient` may see `trackfw validate`
+pass (exit 0) but `trackfw ship` abort. This is intentional. The error message from step
+2 explicitly mentions lenient mode to prevent confusion.
 
 ## Release rule
 

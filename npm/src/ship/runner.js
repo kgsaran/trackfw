@@ -249,6 +249,10 @@ function runShip(opts, deps = {}) {
     writeln('  trackfw req new "<title>"')
     writeln('  trackfw roadmap new "<title>"')
     writeln('  trackfw roadmap move <name> wip')
+    writeln("\nNote: this governance check is a hard gate — it is not affected by lenient")
+    writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")
+    writeln("passes but 'trackfw ship' aborts here, you likely have lenient mode")
+    writeln("configured — ship always requires REQ + roadmap in wip/.")
     writeln(`\nerror: governance check failed: ${violations.length} violation(s)`)
     return 1
   }

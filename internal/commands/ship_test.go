@@ -135,6 +135,9 @@ func TestShip_NoWIPRoadmap_Aborts(t *testing.T) {
 			t.Fatalf("output must mention remediation command %q", cmd)
 		}
 	}
+	if !strings.Contains(outStr, "lenient") {
+		t.Fatalf("output must mention lenient mode so users understand why validate passes but ship aborts")
+	}
 }
 
 // ────────────────────────────────────────────────────────────────────────────
