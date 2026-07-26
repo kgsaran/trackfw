@@ -46,7 +46,7 @@ Wave 1 (1A, agente único) ─ barrier ─> Wave 2 (2A ‖ 2B) ─ barrier ─> 
 > Dependências: nenhuma.
 
 ### ML-1A — Campo `forge:` e resolver de precedência
-**Status:** pending
+**Status:** done
 **Files affected:** `internal/config/config.go`, `internal/discover/discover.go` (parse do remote),
 novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, mais testes
 
@@ -173,6 +173,40 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 - [ ] `make quality` verde
 
 ---
+
+## Log de execução
+
+**2026-07-26 — ML-1A concluído e auditado.**
+
+`make quality` verde; 28 testes de resolver em cada CLI.
+
+**Isolamento dos testes confirmado:** `grep` por `exec.Command`, `git remote` e `os.Getwd` nos testes
+de `internal/forge` retorna **vazio**. O resolver recebe `RemoteURL` como entrada em vez de executar
+git — os testes não dependem do repositório real e não quebram em fork ou clone SSH. Era a armadilha
+bloqueada no prompt.
+
+**Match de host verificado contra falso-positivo por sufixo** — a falha clássica desse parser. A
+implementação usa igualdade exata para `github.com`, `gitlab.com` e `bitbucket.org`, então
+`github.evil.com` **não** resolve como GitHub. Para Azure usa sufixo **com ponto inicial**
+(`.dev.azure.com`, `.visualstudio.com`), que casa `org.visualstudio.com` e rejeita
+`evilvisualstudio.com`.
+
+**Além da especificação:** o agente tratou `ssh.dev.azure.com`, forma SSH do Azure DevOps, que eu não
+havia listado.
+
+**Ambiguidade documentada, sem impacto prático:** com `.gitlab-ci.yml` e `.github/workflows/`
+presentes ao mesmo tempo, o desempate escolhe GitLab. Só alcançável em host desconhecido — em host
+conhecido a resolução termina no remote e nunca chega ao CI.
+
+### ⚠️ Lição de processo — marcação de status em worktree compartilhado
+
+A marcação `in progress` do ML-1A foi feita por mim **sem commit** e desapareceu durante a execução do
+agente. Nenhum commit do agente tocou o roadmap (`git log -- <roadmap>` mostra só o meu), então a
+edição foi descartada por alguma limpeza de working tree do lado dele.
+
+**Regra adotada a partir daqui:** o orquestrador **commita a marcação de status ANTES do spawn**.
+Edição não commitada em worktree compartilhado com agente é volátil — a proibição de o agente editar
+o roadmap protege o conteúdo, mas não protege alterações que ainda não estão no índice.
 
 ## Acceptance Criteria
 
