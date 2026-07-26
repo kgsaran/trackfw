@@ -3091,13 +3091,25 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 
 ---
 
-## Sessão 2026-07-26 — Apolo — ML-3B: Papéis canônicos `iac` e `tooling`
+## Sessão 2026-07-26 — Apolo — ML-3C: Gate de paridade deriva contagem do catálogo
 
 **Status:** IMPLEMENTANDO
 **Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
-**Escopo:**
-- Adicionar `iac` e `tooling` a `KnownAgentIDs()` e a todos os 10 presets nos 3 CLIs (Go, Node.js, Python)
-- Criar assets `iac.md` e `tooling.md` em `internal/integrations/assets/agents/`
-- Declarar fronteira `infra` × `iac` em ambos os arquivos
-- Acrescentar entradas no `catalog.json`
-- Rodar `scripts/sync-integration-assets.sh`
+**Escopo:** Corrigir `scripts/check-integration-cli-parity.sh` — substituir número mágico `10` (agentes) e `5` (skills) por contagem derivada do `catalog.json`. Catálogo atual: 12 agentes, 5 skills.
+
+---
+
+## Sessão 2026-07-26 — Apolo — ML-3B: Papéis canônicos `iac` e `tooling`
+
+**Status:** CONCLUÍDO
+**Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commit:** c8623c5 feat(agents): papeis canonicos iac e tooling (REQ-2026-07-26)
+**Escopo concluído:**
+- `iac` e `tooling` em KnownAgentIDs() e todos os 10 presets × 3 CLIs (Go, Node.js, Python)
+- Assets `iac.md` e `tooling.md` criados com estrutura idêntica a `infra.md` + blocos específicos
+- Fronteira `infra` × `iac` declarada em ambos os arquivos
+- `catalog.json` atualizado (descrições curtas ~51 chars para caber no form de identidade)
+- Sync via `scripts/sync-integration-assets.sh` — npm + pypi sincronizados
+- `agentTools` em render.go: SET_IMPL por default — sem alteração necessária
+- Testes atualizados: 10→12 agentes nos 3 CLIs, fixture check adaptatado para agentes novos sem histórico
+**Validação:** go build + go test (3 pacotes) verdes, go vet verde, npm 126/126, pypi 446/446, check-integration-assets verde

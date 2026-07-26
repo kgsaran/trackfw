@@ -11,6 +11,27 @@ if [[ ! -x "$GO_BIN" ]]; then
   echo "Go trackfw binary is not executable: $GO_BIN" >&2
   exit 1
 fi
+
+# Derive expected item counts from the canonical catalog — never hardcode.
+CATALOG_FILE="$ROOT_DIR/internal/integrations/assets/catalog.json"
+if [[ ! -f "$CATALOG_FILE" ]]; then
+  echo "ERROR: catalog not found: $CATALOG_FILE — cannot derive expected item counts; aborting." >&2
+  exit 1
+fi
+_catalog_counts=$(python3 - "$CATALOG_FILE" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        cat = json.load(f)
+    print(len(cat["agents"]), len(cat["skills"]))
+except Exception as exc:
+    print(f"catalog parse error: {exc}", file=sys.stderr)
+    sys.exit(1)
+PY
+) || { echo "ERROR: failed to parse catalog at $CATALOG_FILE" >&2; exit 1; }
+read -r EXPECTED_AGENTS_COUNT EXPECTED_SKILLS_COUNT <<<"$_catalog_counts"
+export EXPECTED_AGENTS_COUNT EXPECTED_SKILLS_COUNT
+
 TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-integration-parity.XXXXXX")
 trap 'rm -rf "$TMP_ROOT"' EXIT INT TERM
 
@@ -48,14 +69,16 @@ assert_help_contract() {
 assert_json() {
   local filename=$1 expected_kind=$2 expected_state=${3:-} expected_target=${4:-} expected_surface=${5:-}
   python3 - "$filename" "$expected_kind" "$expected_state" "$expected_target" "$expected_surface" <<'PY'
-import json, sys
+import json, os, sys
 filename, kind, state, target, surface = sys.argv[1:]
 with open(filename, encoding="utf-8") as stream:
     payload = json.load(stream)
 assert set(payload) == {"kind", "catalog_version", "items", "deployments"}, payload.keys()
 assert payload["kind"] == kind
 assert payload["catalog_version"]
-assert len(payload["items"]) == (10 if kind == "agents" else 5)
+_expected = int(os.environ["EXPECTED_AGENTS_COUNT"]) if kind == "agents" else int(os.environ["EXPECTED_SKILLS_COUNT"])
+_actual = len(payload["items"])
+assert _actual == _expected, f"item count mismatch for {kind}: expected {_expected}, got {_actual}"
 assert all(set(item) == {"id", "name", "description"} for item in payload["items"])
 required = {"target", "surface", "scope", "item", "support_level", "representation", "destination", "state", "managed"}
 assert all(set(row) == required for row in payload["deployments"])
