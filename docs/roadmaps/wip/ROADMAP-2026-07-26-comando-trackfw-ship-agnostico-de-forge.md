@@ -141,7 +141,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 > Dependências: **barrier** — Wave 2 concluída. Arquivos disjuntos: `commands/ship` × `generators/`+`discover/`.
 
 ### ML-3A — Abertura de PR/MR no `ship`
-**Status:** pending
+**Status:** in progress
 **Files affected:** `internal/commands/ship.go`, equivalentes, testes
 
 **Actions:**
@@ -158,7 +158,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 - [ ] `make quality` verde
 
 ### ML-3B — Captura da forge no `init` e no `discover`
-**Status:** pending
+**Status:** in progress
 **Files affected:** `internal/commands/init.go` (wizard), `internal/discover/discover.go`,
 `internal/generators/` (escrita do `trackfw.yaml`), equivalentes, testes
 
