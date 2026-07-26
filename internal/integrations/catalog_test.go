@@ -11,7 +11,7 @@ func TestLoadCatalogHasCanonicalInventory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCatalog() error = %v", err)
 	}
-	if got, want := len(catalog.Agents), 10; got != want {
+	if got, want := len(catalog.Agents), 12; got != want {
 		t.Fatalf("agents count = %d, want %d", got, want)
 	}
 	if got, want := len(catalog.Skills), 5; got != want {
@@ -21,7 +21,7 @@ func TestLoadCatalogHasCanonicalInventory(t *testing.T) {
 		t.Fatalf("targets count = %d, want %d", got, want)
 	}
 
-	assertIDs(t, catalog.Agents, []string{"architect", "backend", "frontend", "qa", "infra", "security", "code-quality", "dba", "ux", "data"})
+	assertIDs(t, catalog.Agents, []string{"architect", "backend", "frontend", "qa", "infra", "security", "code-quality", "dba", "ux", "data", "iac", "tooling"})
 	assertIDs(t, catalog.Skills, []string{"governance", "plan", "implement", "review", "release"})
 
 	for _, id := range []string{"claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "kiro"} {

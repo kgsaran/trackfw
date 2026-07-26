@@ -19,6 +19,8 @@ func KnownAgentIDs() []string {
 		"ux",
 		"code-quality",
 		"data",
+		"iac",
+		"tooling",
 	}
 }
 
@@ -38,6 +40,8 @@ var presets = map[string]map[string]AgentIdentity{
 		"ux":           {DisplayName: "Atena", Slug: "atena"},
 		"code-quality": {DisplayName: "Hefesto", Slug: "hefesto"},
 		"data":         {DisplayName: "Métis", Slug: "metis"},
+		"iac":          {DisplayName: "Dédalo", Slug: "dedalo"},
+		"tooling":      {DisplayName: "Prometeu", Slug: "prometeu"},
 	},
 	"norse": {
 		"architect":    {DisplayName: "Odin", Slug: "odin"},
@@ -50,6 +54,8 @@ var presets = map[string]map[string]AgentIdentity{
 		"ux":           {DisplayName: "Idun", Slug: "idun"},
 		"code-quality": {DisplayName: "Bragi", Slug: "bragi"},
 		"data":         {DisplayName: "Mimir", Slug: "mimir"},
+		"iac":          {DisplayName: "Ivaldi", Slug: "ivaldi"},
+		"tooling":      {DisplayName: "Loki", Slug: "loki"},
 	},
 	"potter": {
 		"architect":    {DisplayName: "Dumbledore", Slug: "dumbledore"},
@@ -62,6 +68,8 @@ var presets = map[string]map[string]AgentIdentity{
 		"ux":           {DisplayName: "Tonks", Slug: "tonks"},
 		"code-quality": {DisplayName: "Hermione", Slug: "hermione"},
 		"data":         {DisplayName: "Trelawney", Slug: "trelawney"},
+		"iac":          {DisplayName: "Rowena", Slug: "rowena"},
+		"tooling":      {DisplayName: "Ollivander", Slug: "ollivander"},
 	},
 	"thrones": {
 		"architect":    {DisplayName: "Tyrion", Slug: "tyrion"},
@@ -74,6 +82,8 @@ var presets = map[string]map[string]AgentIdentity{
 		"ux":           {DisplayName: "Margaery", Slug: "margaery"},
 		"code-quality": {DisplayName: "Stannis", Slug: "stannis"},
 		"data":         {DisplayName: "Bran", Slug: "bran"},
+		"iac":          {DisplayName: "Gendry", Slug: "gendry"},
+		"tooling":      {DisplayName: "Qyburn", Slug: "qyburn"},
 	},
 	"chaves": {
 		"architect":    {DisplayName: "Girafales", Slug: "girafales"},
@@ -86,6 +96,8 @@ var presets = map[string]map[string]AgentIdentity{
 		"ux":           {DisplayName: "Popis", Slug: "popis"},
 		"code-quality": {DisplayName: "Nhonho", Slug: "nhonho"},
 		"data":         {DisplayName: "Godinez", Slug: "godinez"},
+		"iac":          {DisplayName: "Chaves", Slug: "chaves"},
+		"tooling":      {DisplayName: "Chapolin", Slug: "chapolin"},
 	},
 	"pioneers": {
 		"architect":    {DisplayName: "Turing", Slug: "turing"},
@@ -98,6 +110,8 @@ var presets = map[string]map[string]AgentIdentity{
 		"ux":           {DisplayName: "Norman", Slug: "norman"},
 		"code-quality": {DisplayName: "Knuth", Slug: "knuth"},
 		"data":         {DisplayName: "Hopper", Slug: "hopper"},
+		"iac":          {DisplayName: "Hashimoto", Slug: "hashimoto"},
+		"tooling":      {DisplayName: "McCarthy", Slug: "mccarthy"},
 	},
 	"starwars": {
 		"architect":    {DisplayName: "Yoda", Slug: "yoda"},
@@ -110,6 +124,8 @@ var presets = map[string]map[string]AgentIdentity{
 		"ux":           {DisplayName: "Padmé", Slug: "padme"},
 		"code-quality": {DisplayName: "Obi-Wan", Slug: "obi-wan"},
 		"data":         {DisplayName: "C-3PO", Slug: "c-3po"},
+		"iac":          {DisplayName: "Rey", Slug: "rey"},
+		"tooling":      {DisplayName: "Babu Frik", Slug: "babu-frik"},
 	},
 	"tolkien": {
 		"architect":    {DisplayName: "Gandalf", Slug: "gandalf"},
@@ -122,6 +138,8 @@ var presets = map[string]map[string]AgentIdentity{
 		"ux":           {DisplayName: "Galadriel", Slug: "galadriel"},
 		"code-quality": {DisplayName: "Faramir", Slug: "faramir"},
 		"data":         {DisplayName: "Bilbo", Slug: "bilbo"},
+		"iac":          {DisplayName: "Aulë", Slug: "aule"},
+		"tooling":      {DisplayName: "Celebrimbor", Slug: "celebrimbor"},
 	},
 	"turma": {
 		"architect":    {DisplayName: "Franjinha", Slug: "franjinha"},
@@ -134,6 +152,8 @@ var presets = map[string]map[string]AgentIdentity{
 		"ux":           {DisplayName: "Anjinho", Slug: "anjinho"},
 		"code-quality": {DisplayName: "Titi", Slug: "titi"},
 		"data":         {DisplayName: "Chico", Slug: "chico"},
+		"iac":          {DisplayName: "Piteco", Slug: "piteco"},
+		"tooling":      {DisplayName: "Nimbus", Slug: "nimbus"},
 	},
 	"egyptian": {
 		"architect":    {DisplayName: "Thoth", Slug: "thoth"},
@@ -146,6 +166,8 @@ var presets = map[string]map[string]AgentIdentity{
 		"ux":           {DisplayName: "Bastet", Slug: "bastet"},
 		"code-quality": {DisplayName: "Maat", Slug: "maat"},
 		"data":         {DisplayName: "Osíris", Slug: "osiris"},
+		"iac":          {DisplayName: "Imhotep", Slug: "imhotep"},
+		"tooling":      {DisplayName: "Khnum", Slug: "khnum"},
 	},
 }
 

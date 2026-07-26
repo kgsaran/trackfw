@@ -83,9 +83,12 @@ test('recognized legacy content is adopted but unknown files are never overwritt
 test('all historical Claude agent fixtures are wired to current destinations', () => {
   const historicalRoot = path.resolve(__dirname, '../../internal/generators/templates/agents')
   const plans = buildPlans('agents', { targets: ['claude'], scope: 'global' })
-  assert.equal(plans.length, 10)
+  assert.equal(plans.length, 12)
   for (const plan of plans) {
-    const historical = fs.readFileSync(path.join(historicalRoot, `trackfw-${plan.claim.item}.md`))
+    const historicalPath = path.join(historicalRoot, `trackfw-${plan.claim.item}.md`)
+    // New agents (e.g. iac, tooling) have no historical fixture — skip legacy hash check.
+    if (!fs.existsSync(historicalPath)) continue
+    const historical = fs.readFileSync(historicalPath)
     assert.equal(plan.legacyHashes.includes(sha256(historical)), true, plan.claim.item)
   }
   assert.equal(buildPlans('agents', { targets: ['claude'], items: ['backend'], scope: 'project' })[0].legacyHashes.length, 0)

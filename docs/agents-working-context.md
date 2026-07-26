@@ -3079,12 +3079,15 @@ confirma o default, e o CMDB poderia manter o layout atual por configuração se
 
 ## Sessão 2026-07-26 — Apolo — ML-3A: Harness completo no CLAUDE.md gerado
 
-**Status:** IMPLEMENTANDO
+**Status:** CONCLUÍDO
 **Branch:** feat/convergencia-do-harness-pessoal-para-o-trackfw
+**Commit:** 066bd00 — `feat(generators): harness completo no CLAUDE.md gerado (REQ-2026-07-26)`
 **Escopo:**
-- Adicionar 9 seções de harness pessoal à função `generateClaudeMD` (Go)
-- Paridade em Node.js (`npm/src/generators/init.js`) e Python (`pypi/trackfw/generators/init_gen.py`)
-- Atualizar testes de geração nos 3 CLIs
+- Adicionadas 9 seções de harness pessoal à função `generateClaudeMD` (Go): Branch strategy, Definition of done, Requirement scope, State requirements, Roadmap format, When governance is not required, Production incidents, Iterative prototyping, Autopilot
+- Paridade idêntica em Node.js (`npm/src/generators/init.js`)
+- Python: adicionada função `generate_claude_md()` em `pypi/trackfw/generators/init_gen.py`, chamada no `scaffold()`
+- Testes atualizados nos 3 CLIs verificando as 9 seções e integridade das seções pré-existentes
+**Validação:** `go build + go test ./internal/generators/... + go vet` verdes; `node --test tests/generators.test.js` 20/20; `python3 -m pytest tests/test_generators_init.py` 38/38
 
 ---
 

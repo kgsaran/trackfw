@@ -39,7 +39,7 @@ def cli(*arguments: str, cwd: Path, home: Path | None = None):
 def test_packaged_catalog_and_assets_are_complete():
     catalog = load_catalog()
     assert catalog["version"] == "1.1.0"
-    assert len(catalog["agents"]) == 10
+    assert len(catalog["agents"]) == 12
     assert len(catalog["skills"]) == 5
     assert [target["id"] for target in catalog["targets"]] == [
         "claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "kiro"
@@ -68,7 +68,7 @@ def test_list_json_has_exact_contract_and_deterministic_order(tmp_path):
     payload = json.loads(first.stdout)
     assert list(payload) == ["kind", "catalog_version", "items", "deployments"]
     assert payload["kind"] == "agents"
-    assert len(payload["items"]) == 10
+    assert len(payload["items"]) == 12
     assert [deployment["target"] for deployment in payload["deployments"]] == ["claude", "codex"]
     assert list(payload["deployments"][0]) == [
         "target", "surface", "scope", "item", "support_level", "representation", "destination", "state", "managed"
@@ -246,9 +246,13 @@ def test_legacy_adoption_then_update(tmp_path):
 def test_released_claude_hashes_are_global_only():
     historical_root = PYPI_ROOT.parent / "internal/generators/templates/agents"
     _, global_plans = plan_deployments("agents", ["claude"], scope="global")
-    assert len(global_plans) == 10
+    assert len(global_plans) == 12
     for plan in global_plans:
-        historical = (historical_root / f"trackfw-{plan['claim']['item']}.md").read_bytes()
+        historical_path = historical_root / f"trackfw-{plan['claim']['item']}.md"
+        # New agents (e.g. iac, tooling) have no historical fixture — skip legacy hash check.
+        if not historical_path.exists():
+            continue
+        historical = historical_path.read_bytes()
         assert hashlib.sha256(historical).hexdigest() in plan["legacy_hashes"]
     _, project = plan_deployments("agents", ["claude"], ["backend"], "project")
     _, codex_global = plan_deployments("agents", ["codex"], ["backend"], "global")

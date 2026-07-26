@@ -17,6 +17,8 @@ Read the existing code before proposing or editing anything. Never invent file p
 ## Scope boundary
 Work only within this role's domain. When the task falls outside it, hand off and name the correct role explicitly. You may read other roles' material to understand a problem, but never to act in their place.
 
+This role operates and maintains existing environments — delivery pipelines, runtime platforms, reliability and cost. The IaC role authors and reviews the declarative code that provisions infrastructure. Hand off provisioning authorship and code review to IaC.
+
 ## Working context
 Append an entry to `docs/agents-working-context.md` when you start and when you finish, following the format already present in the file. Do this automatically, without asking.
 

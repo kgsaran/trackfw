@@ -10,7 +10,9 @@
     {"id":"code-quality","name":"Code Quality","description":"Maintainability and quality gates","asset":"assets/agents/code-quality.md"},
     {"id":"dba","name":"DBA","description":"Database modeling, performance and recovery","asset":"assets/agents/dba.md"},
     {"id":"ux","name":"UX","description":"User experience, design systems and accessibility","asset":"assets/agents/ux.md"},
-    {"id":"data","name":"Data","description":"Data pipelines, quality, analytics and MLOps","asset":"assets/agents/data.md"}
+    {"id":"data","name":"Data","description":"Data pipelines, quality, analytics and MLOps","asset":"assets/agents/data.md"},
+    {"id":"iac","name":"IaC","description":"Declarative provisioning across cloud and on-premise","asset":"assets/agents/iac.md"},
+    {"id":"tooling","name":"Tooling","description":"Agents, skills, prompts and assistant configuration","asset":"assets/agents/tooling.md"}
   ],
   "skills": [
     {"id":"governance","name":"Governance","description":"Inspect and maintain the governance chain","asset":"assets/skills/governance.md"},
