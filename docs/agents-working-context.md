@@ -3930,3 +3930,50 @@ GO=NODE=PYTHON em cada fuso; UTC+14 ≠ UTC-11 (confirmado).
 - `npm/src/serve/api_metrics.js:83` — cálculo de semanas para métricas de display
 
 **`make quality`:** 599 passed · 0 failed · 6 falsification checks passed
+
+---
+
+## Sessão 2026-07-27 — ML-3A: gate de paridade de artefatos (Apolo)
+
+**Status:** CONCLUÍDO
+
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md`
+
+### O que foi implementado
+
+**`scripts/check-artifact-parity.sh`** (novo gate):
+- Invoca `req new`, `adr new`, `roadmap new` e `note new` nos 3 CLIs (Go, Node.js, Python) dentro de `mktemp -d`
+- Compara arquivos gerados byte-a-byte — conteúdo e nome de arquivo
+- Vacuity guard: falha explicitamente se nenhum arquivo foi gerado por runtime/tipo
+- Guard de midnight rollover: falha com mensagem clara se a data mudar durante a geração
+- Diagnóstico acumulado: coleta todos os erros antes de sair, identifica tipo e runtimes divergentes
+- Caminho absoluto para GO_BIN: resolve path relativo do Makefile antes de entrar nas subshells
+
+**`scripts/check-gates-falsify.sh`** (Cenário 7 adicionado):
+- Corrompe `npm/src/generators/req.js` via `sed` para emitir `status: OPEN` no frontmatter
+- Guard de corrupção via `cmp -s` (falha se sed não alterou nada — prova P4 inválida sem esse guard)
+- `assert_fails_with "artifact-parity/req-content-drift" "artifact parity drift: req" ...`
+
+**`Makefile`**: gate adicionado ao alvo `parity` após `check-identity-parity.sh`, antes de `check-gates-falsify.sh`
+
+**`docs/cli-parity.md`**: nova seção "Contrato de artefatos gerados" documentando:
+- Frontmatter completo de `req`, `adr`, `roadmap` e `note` como contrato explícito
+- Limitação de slug não-ASCII (divergência residual: Python normaliza NFKD; Go/Node preserva Unicode)
+- Comportamento de data local (nunca UTC)
+- Referência ao gate e ao cenário negativo P4
+
+### Divergência residual encontrada e reportada
+
+Títulos com acentos ou caracteres não-ASCII produzem slugs distintos:
+- Go: `autenticação:-sso-&-oauth2` (preserva Unicode)
+- Node.js: `autenticação:-sso-&-oauth2` (preserva Unicode)
+- Python: `autenticacao:-sso-&-oauth2` (NFKD → remove acentos)
+
+O gate usa título ASCII puro (`"parity gate test"`) e documenta a limitação com comentário no script. A divergência está fora do escopo do ML (não tocar nos geradores).
+
+### Verificação final
+- `make quality` verde: 599 passed · 0 failed · 7 falsification checks passed
+- `git status` limpo após `make quality`
+- Commit `6c4f295` na branch · push realizado
