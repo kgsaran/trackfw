@@ -4171,3 +4171,22 @@ sem alteração de código de produção:
 - `make quality` executado fora do sandbox → verde: Go `ok`; Node `261 pass` e validator
   `37 passed, 0 failed, 4 xfail`; Python `604 passed, 4 xfailed`; `go vet`, build, parity,
   static/integration assets, identity parity, artifact parity e falsification gates passaram.
+
+## Finalização ML-1A 2026-07-27 — Artemis
+
+**Status:** auditado e pronto para handoff da Wave 1.
+
+**Validações executadas nesta finalização:**
+- `go test ./internal/validator -run TestXFail -v` → 4/4 `PASS` com logs `[xfail esperado]`.
+- `npm test -- --runInBand --test-name-pattern=validator` na raiz → falhou por ausência de
+  `package.json` na raiz; reexecutado no workspace `npm/`.
+- `npm test -- --runInBand --test-name-pattern=validator` em `npm/` → `37 passed, 0 failed, 4 xfail`
+  no `tests/validator.test.js`; suíte Node total reportou `261 pass`.
+- `python3 -m pytest pypi/tests/test_validator.py -q -rxX` → `59 passed, 4 xfailed`.
+- `make quality` → verde: Go `ok`; Node `261 pass`; Python `604 passed, 4 xfailed`; `go vet`,
+  build, parity, static/integration assets, identity parity, artifact parity e falsification gates
+  passaram.
+
+**Observação:** o commit `fef4184 test(validator): expose reference integrity escapes` já estava no
+topo da branch local e sincronizado com `origin/fix/integridade-das-referencias-e-ciclo-de-vida-da-req`
+antes desta nota; esta finalização registra a auditoria posterior e não toca Wave 2.
