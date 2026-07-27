@@ -35,9 +35,10 @@ from trackfw.forge.adapter import forge_adapter
 class MockGit:
     """Captures calls and returns configured responses."""
 
-    def __init__(self, branch='feat/default', staged='file.py'):
+    def __init__(self, branch='feat/default', staged='file.py', remote_url=''):
         self.branch = branch
         self.staged = staged
+        self.remote_url = remote_url
         self.calls = []
 
     def exec(self, args):
@@ -52,6 +53,11 @@ class MockGit:
         if joined.startswith('diff --cached --name-only'):
             return (self.staged, None)
 
+        if joined.startswith('remote get-url'):
+            if self.remote_url:
+                return (self.remote_url, None)
+            return ('', 'no remote')
+
         if '@{u}' in joined:
             return ('', 'no upstream')
 
@@ -62,9 +68,10 @@ class MockGit:
 
 
 def make_deps(branch='feat/my-feature', staged='file.py', violations=None,
-              config_forge='', repo_dir='', avail_fn=None, exec_forge_cli=None):
+              config_forge='', repo_dir='', avail_fn=None, exec_forge_cli=None,
+              remote_url=''):
     """Builds a dict of injectable dependencies."""
-    git = MockGit(branch=branch, staged=staged)
+    git = MockGit(branch=branch, staged=staged, remote_url=remote_url)
     lines = []
     cli_calls = []
 
@@ -453,3 +460,203 @@ def test_first_line_no_newline():
 
 def test_first_line_empty():
     assert _first_line('') == ''
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Forge matrix — 4 forges × 2 avail states × 2 host types (16 cells)
+# All cells run with dry_run=True to skip real push.
+# ────────────────────────────────────────────────────────────────────────────
+
+KNOWN_URLS = {
+    'github':    'https://github.com/org/repo.git',
+    'gitlab':    'https://gitlab.com/org/repo.git',
+    'bitbucket': 'https://bitbucket.org/org/repo.git',
+    'azure':     'https://dev.azure.com/org/proj/_git/repo',
+}
+SELF_HOSTED_URL = 'https://git.mycompany.com/org/repo.git'
+
+_FORGE_MATRIX = [
+    # forge, cli_present, remote_url, noun, expected_substring
+    # github × known host
+    ('github',    True,  KNOWN_URLS['github'],    'Pull Request',  '[dry-run] would open Pull Request via github CLI'),
+    ('github',    False, KNOWN_URLS['github'],    'Pull Request',  'github.com'),
+    # github × self-hosted
+    ('github',    True,  SELF_HOSTED_URL,         'Pull Request',  '[dry-run] would open Pull Request via github CLI'),
+    ('github',    False, SELF_HOSTED_URL,         'Pull Request',  'mycompany.com'),
+    # gitlab × known host
+    ('gitlab',    True,  KNOWN_URLS['gitlab'],    'Merge Request', '[dry-run] would open Merge Request via gitlab CLI'),
+    ('gitlab',    False, KNOWN_URLS['gitlab'],    'Merge Request', 'gitlab.com'),
+    # gitlab × self-hosted
+    ('gitlab',    True,  SELF_HOSTED_URL,         'Merge Request', '[dry-run] would open Merge Request via gitlab CLI'),
+    ('gitlab',    False, SELF_HOSTED_URL,         'Merge Request', 'mycompany.com'),
+    # bitbucket × known host (bitbucket has no CLI — always absent regardless of avail_fn)
+    ('bitbucket', True,  KNOWN_URLS['bitbucket'], 'Pull Request',  'bitbucket.org'),
+    ('bitbucket', False, KNOWN_URLS['bitbucket'], 'Pull Request',  'bitbucket.org'),
+    # bitbucket × self-hosted
+    ('bitbucket', True,  SELF_HOSTED_URL,         'Pull Request',  'mycompany.com'),
+    ('bitbucket', False, SELF_HOSTED_URL,         'Pull Request',  'mycompany.com'),
+    # azure × known host
+    ('azure',     True,  KNOWN_URLS['azure'],     'Pull Request',  '[dry-run] would open Pull Request via azure CLI'),
+    ('azure',     False, KNOWN_URLS['azure'],     'Pull Request',  'dev.azure.com'),
+    # azure × self-hosted
+    ('azure',     True,  SELF_HOSTED_URL,         'Pull Request',  '[dry-run] would open Pull Request via azure CLI'),
+    ('azure',     False, SELF_HOSTED_URL,         'Pull Request',  'mycompany.com'),
+]
+
+
+@pytest.mark.parametrize(
+    'forge,cli_present,remote_url,noun,expected_sub',
+    _FORGE_MATRIX,
+    ids=[
+        f"{f}×{'cli-present' if c else 'cli-absent'}×{'self-hosted' if 'mycompany' in r else 'known-host'}"
+        for f, c, r, *_ in _FORGE_MATRIX
+    ],
+)
+def test_forge_matrix(forge, cli_present, remote_url, noun, expected_sub):
+    """Verifies dry-run output for every cell of the forge × avail × host matrix."""
+    cli_calls = []
+
+    def mock_exec_forge_cli(name, args):
+        cli_calls.append({'name': name, 'args': args})
+        return None
+
+    d = make_deps(
+        branch='feat/my-feature',
+        staged='file.py',
+        config_forge=forge,
+        remote_url=remote_url,
+        avail_fn=lambda name: cli_present,
+        exec_forge_cli=mock_exec_forge_cli,
+    )
+
+    code = run_ship(
+        message='feat(x): matrix test',
+        dry_run=True,
+        no_pr=False,
+        forge_flag='',
+        config_forge=forge,
+        repo_dir='',
+        avail_fn=d['avail_fn'],
+        exec_forge_cli=mock_exec_forge_cli,
+        exec_git=d['exec_git'],
+        check_governance=d['check_governance'],
+        writeln=d['writeln'],
+    )
+    out = '\n'.join(d['lines'])
+
+    assert code == 0, f"expected exit 0, got {code}\noutput: {out}"
+    assert f'Forge:     {forge} (source: config)' in out, \
+        f'expected forge line with source: config, got: {out}'
+    assert noun in out, f'expected noun "{noun}" in output, got: {out}'
+    assert expected_sub in out, f'expected "{expected_sub}" in output, got: {out}'
+    assert len(cli_calls) == 0, \
+        f'dry-run must not invoke exec_forge_cli, got {len(cli_calls)} calls'
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Silence usage — runtime errors must NOT show "usage" text
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_silence_usage_runtime_error_no_usage_text():
+    """A runtime error (branch validation) must not print usage/help text."""
+    code, out, _ = run(branch='main')
+    assert code == 1
+    assert 'usage' not in out.lower(), \
+        f"runtime error must not print usage text, got: {out}"
+
+
+def test_silence_usage_parse_error_shows_usage():
+    """An argparse parse error (unknown flag) must print usage."""
+    import subprocess
+    import sys
+    pypi_root = os.path.join(os.path.dirname(__file__), '..')
+    result = subprocess.run(
+        [sys.executable, '-m', 'trackfw', 'ship', '--unknown-flag-xyz'],
+        capture_output=True,
+        text=True,
+        env={**os.environ, 'PYTHONPATH': pypi_root},
+    )
+    out = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert 'usage' in out.lower() or 'error' in out.lower(), \
+        f"expected usage/error on unknown flag, got: {out}"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Integration test — real Python binary with clean PATH (no gh/glab/az)
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_ship_integration_graceful_degradation_clean_path():
+    """Runs the real Python CLI with PATH containing only git.
+    Verifies exit 0 and fallback URL in output when forge CLI is absent.
+    """
+    import subprocess
+    import sys
+    import shutil
+    import tempfile
+
+    tmp_dir = tempfile.mkdtemp(prefix='trackfw-ship-py-')
+    try:
+        # Create tmpBin with only git
+        tmp_bin = os.path.join(tmp_dir, 'bin')
+        os.makedirs(tmp_bin)
+        git_path = shutil.which('git')
+        assert git_path, 'git must be installed to run integration test'
+        os.symlink(git_path, os.path.join(tmp_bin, 'git'))
+
+        # Create git repo
+        repo_dir = os.path.join(tmp_dir, 'repo')
+        os.makedirs(repo_dir)
+
+        def git(*args):
+            return subprocess.run(['git', *args], cwd=repo_dir, capture_output=True, text=True)
+
+        git('init')
+        git('config', 'user.email', 'test@example.com')
+        git('config', 'user.name', 'Test')
+        # Set HEAD to feat/my-feature without committing
+        subprocess.run(
+            ['git', 'symbolic-ref', 'HEAD', 'refs/heads/feat/my-feature'],
+            cwd=repo_dir, capture_output=True, text=True,
+        )
+        git('remote', 'add', 'origin', 'https://github.com/org/repo.git')
+
+        # Stage a file
+        with open(os.path.join(repo_dir, 'staged.txt'), 'w') as f:
+            f.write('content\n')
+        git('add', 'staged.txt')
+
+        # Create governance: wip roadmap with branch slug and REQ
+        wip_dir = os.path.join(repo_dir, 'docs', 'roadmaps', 'claude', 'wip')
+        os.makedirs(wip_dir)
+        with open(os.path.join(wip_dir, 'ROADMAP-my-feature-integration-test.md'), 'w') as f:
+            f.write('REQ: REQ-ship-integration-test\n\n# Roadmap: Integration Test\n\n'
+                    'Test roadmap for graceful degradation proof.\n')
+
+        # Run Python CLI with absolute interpreter path and clean PATH (no gh/glab/az)
+        pypi_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        result = subprocess.run(
+            [sys.executable, '-m', 'trackfw', 'ship',
+             '--dry-run', '--forge', 'github', '-m', 'feat: integration test'],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            env={
+                'PATH': tmp_bin,
+                'HOME': tmp_dir,
+                'PYTHONPATH': pypi_root,
+                'GIT_AUTHOR_NAME': 'Test',
+                'GIT_AUTHOR_EMAIL': 'test@example.com',
+                'GIT_COMMITTER_NAME': 'Test',
+                'GIT_COMMITTER_EMAIL': 'test@example.com',
+            },
+        )
+
+        out = result.stdout + result.stderr
+        assert result.returncode == 0, \
+            f"expected exit 0, got {result.returncode}\noutput: {out}"
+        assert 'github.com' in out, \
+            f"expected github.com URL in output, got: {out}"
+
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)

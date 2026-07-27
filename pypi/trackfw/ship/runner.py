@@ -378,7 +378,14 @@ def run_ship(
         return 0
 
     if dry_run:
-        writeln(f'[dry-run] would open {adapter.noun} via {resolution.forge}')
+        if not adapter.available and resolution.forge != 'manual':
+            url = adapter.fallback_url(remote_url, branch)
+            if url:
+                writeln(f'[dry-run] {adapter.noun} CLI ({adapter.cli_name}) not available — would open in browser:\n  {url}')
+            else:
+                writeln(f'[dry-run] {adapter.noun} CLI ({adapter.cli_name}) not available — would open {adapter.noun} manually')
+        else:
+            writeln(f'[dry-run] would open {adapter.noun} via {resolution.forge} CLI')
         return 0
 
     if resolution.forge == 'manual':

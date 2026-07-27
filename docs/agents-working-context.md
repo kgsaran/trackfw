@@ -3386,3 +3386,23 @@ recomendação. **Decisão pendente do KG.**
 
 **Status:** CONCLUÍDO. Commit: fbbd028. Push: feat/comando-trackfw-ship-agnostico-de-forge.
 Gates: go build ✅ | go test ✅ | go vet ✅ | npm test (206 pass) ✅ | pytest (541 pass) ✅
+
+---
+
+## Sessão 2026-07-27 — ML-4A: paridade npm/pypi, dry-run com disponibilidade, testes e docs
+
+**Agente:** Apolo — Backend Senior Specialist
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** REQ-2026-07-26-ship
+
+### Escopo desta sessão (continuação do ML-4A após sessão anterior morrer)
+
+Go já implementado e comitado em 6afbf5e. Esta sessão porta para npm e pypi:
+
+1. Dry-run consciente de disponibilidade em `npm/src/ship/runner.js` e `pypi/trackfw/ship/runner.py`
+2. Fix do wiring `--no-pr` em `npm/src/commands/ship.js` (commander usa `options.pr === false`)
+3. Testes da matriz de forges (4 forges × 2 avail × 2 hosts = 16 casos) em npm e pypi
+4. Testes de silence-usage e integração com PATH limpo em npm e pypi
+5. Documentação: `docs/cli-parity.md`, `README.md`, `site/`
+
+**Status:** IMPLEMENTANDO

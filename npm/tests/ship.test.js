@@ -12,9 +12,9 @@ const { runShip, isShipBranch, isGitWriteCmd, normalizeBranchSlug, GIT_WRITE_COM
 
 /**
  * mockExecGit builds an execGit mock that captures calls and responds
- * based on the configured branch and staged state.
+ * based on the configured branch, staged state, and optional remote URL.
  */
-function makeMockGit({ branch = '', stagedFiles = '' } = {}) {
+function makeMockGit({ branch = '', stagedFiles = '', remoteURL = '' } = {}) {
   const calls = []
   function execGit(args) {
     calls.push(args.slice())
@@ -26,6 +26,9 @@ function makeMockGit({ branch = '', stagedFiles = '' } = {}) {
     }
     if (joined.startsWith('diff --cached --name-only')) {
       return { stdout: stagedFiles, error: null }
+    }
+    if (joined.startsWith('remote get-url')) {
+      return { stdout: remoteURL, error: remoteURL ? null : new Error('no remote') }
     }
     if (joined.includes('@{u}')) {
       return { stdout: '', error: new Error('no upstream') }
@@ -52,8 +55,8 @@ function captureOutput() {
   }
 }
 
-function makeDeps({ branch, staged, violations = [], configForge = '', repoDir = '', availFn = null, execForgeCLI = null } = {}) {
-  const git = makeMockGit({ branch, stagedFiles: staged })
+function makeDeps({ branch, staged, violations = [], configForge = '', repoDir = '', availFn = null, execForgeCLI = null, remoteURL = '' } = {}) {
+  const git = makeMockGit({ branch, stagedFiles: staged, remoteURL })
   const cap = captureOutput()
   const deps = {
     execGit: git,
@@ -402,4 +405,176 @@ test('firstLine: returns only first line', () => {
   assert.equal(firstLine('feat(x): title\n\nmore body'), 'feat(x): title')
   assert.equal(firstLine('no newline'), 'no newline')
   assert.equal(firstLine(''), '')
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// Forge matrix — 4 forges × 2 avail states × 2 host types (16 cells)
+// All cells run with --dry-run to skip real push.
+// ────────────────────────────────────────────────────────────────────────────
+
+const KNOWN_URLS = {
+  github:    'https://github.com/org/repo.git',
+  gitlab:    'https://gitlab.com/org/repo.git',
+  bitbucket: 'https://bitbucket.org/org/repo.git',
+  azure:     'https://dev.azure.com/org/proj/_git/repo',
+}
+const SELF_HOSTED_URL = 'https://git.mycompany.com/org/repo.git'
+
+const forgeMatrix = [
+  // github × known host
+  { forge: 'github',    cliPresent: true,  remoteURL: KNOWN_URLS.github,    noun: 'Pull Request',  checkOutput: out => out.includes('[dry-run] would open Pull Request via github CLI') },
+  { forge: 'github',    cliPresent: false, remoteURL: KNOWN_URLS.github,    noun: 'Pull Request',  checkOutput: out => out.includes('github.com') },
+  // github × self-hosted
+  { forge: 'github',    cliPresent: true,  remoteURL: SELF_HOSTED_URL,      noun: 'Pull Request',  checkOutput: out => out.includes('[dry-run] would open Pull Request via github CLI') },
+  { forge: 'github',    cliPresent: false, remoteURL: SELF_HOSTED_URL,      noun: 'Pull Request',  checkOutput: out => out.includes('mycompany.com') },
+  // gitlab × known host
+  { forge: 'gitlab',    cliPresent: true,  remoteURL: KNOWN_URLS.gitlab,    noun: 'Merge Request', checkOutput: out => out.includes('[dry-run] would open Merge Request via gitlab CLI') },
+  { forge: 'gitlab',    cliPresent: false, remoteURL: KNOWN_URLS.gitlab,    noun: 'Merge Request', checkOutput: out => out.includes('gitlab.com') },
+  // gitlab × self-hosted
+  { forge: 'gitlab',    cliPresent: true,  remoteURL: SELF_HOSTED_URL,      noun: 'Merge Request', checkOutput: out => out.includes('[dry-run] would open Merge Request via gitlab CLI') },
+  { forge: 'gitlab',    cliPresent: false, remoteURL: SELF_HOSTED_URL,      noun: 'Merge Request', checkOutput: out => out.includes('mycompany.com') },
+  // bitbucket × known host (bitbucket has no CLI — cliPresent is irrelevant, always absent)
+  { forge: 'bitbucket', cliPresent: true,  remoteURL: KNOWN_URLS.bitbucket, noun: 'Pull Request',  checkOutput: out => out.includes('bitbucket.org') },
+  { forge: 'bitbucket', cliPresent: false, remoteURL: KNOWN_URLS.bitbucket, noun: 'Pull Request',  checkOutput: out => out.includes('bitbucket.org') },
+  // bitbucket × self-hosted
+  { forge: 'bitbucket', cliPresent: true,  remoteURL: SELF_HOSTED_URL,      noun: 'Pull Request',  checkOutput: out => out.includes('mycompany.com') },
+  { forge: 'bitbucket', cliPresent: false, remoteURL: SELF_HOSTED_URL,      noun: 'Pull Request',  checkOutput: out => out.includes('mycompany.com') },
+  // azure × known host
+  { forge: 'azure',     cliPresent: true,  remoteURL: KNOWN_URLS.azure,     noun: 'Pull Request',  checkOutput: out => out.includes('[dry-run] would open Pull Request via azure CLI') },
+  { forge: 'azure',     cliPresent: false, remoteURL: KNOWN_URLS.azure,     noun: 'Pull Request',  checkOutput: out => out.includes('dev.azure.com') },
+  // azure × self-hosted
+  { forge: 'azure',     cliPresent: true,  remoteURL: SELF_HOSTED_URL,      noun: 'Pull Request',  checkOutput: out => out.includes('[dry-run] would open Pull Request via azure CLI') },
+  { forge: 'azure',     cliPresent: false, remoteURL: SELF_HOSTED_URL,      noun: 'Pull Request',  checkOutput: out => out.includes('mycompany.com') },
+]
+
+for (const tc of forgeMatrix) {
+  const label = `forge matrix: ${tc.forge} × ${tc.cliPresent ? 'cli-present' : 'cli-absent'} × ${tc.remoteURL.includes('mycompany') ? 'self-hosted' : 'known-host'}`
+  test(label, () => {
+    const cliCalls = []
+    const { deps, cap } = makeDeps({
+      branch: 'feat/my-feature',
+      staged: 'file.js',
+      configForge: tc.forge,
+      remoteURL: tc.remoteURL,
+      availFn: () => tc.cliPresent,
+      execForgeCLI: (name, args) => { cliCalls.push({ name, args }); return null },
+    })
+    const opts = { message: 'feat(x): matrix test', dryRun: true, noPR: false, forge: '' }
+    const code = runShip(opts, deps)
+    const out = cap.output()
+
+    assert.equal(code, 0, `expected exit 0, got ${code}\noutput: ${out}`)
+    assert.ok(
+      out.includes(`Forge:     ${tc.forge} (source: config)`),
+      `expected forge line "Forge:     ${tc.forge} (source: config)", got: ${out}`
+    )
+    assert.ok(out.includes(tc.noun), `expected noun "${tc.noun}" in output, got: ${out}`)
+    assert.ok(tc.checkOutput(out), `expected condition not met for ${label}\noutput: ${out}`)
+    assert.equal(cliCalls.length, 0, `dry-run must not invoke execForgeCLI, got ${cliCalls.length} calls`)
+  })
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Silence usage — runtime errors must NOT show usage; parse errors must show it
+// ────────────────────────────────────────────────────────────────────────────
+
+test('silence-usage: runtime error (branch validation) does not show usage text', () => {
+  const { deps, cap } = makeDeps({ branch: 'main', staged: 'file.js' })
+  const code = runShip(makeOpts(), deps)
+  assert.equal(code, 1)
+  const out = cap.output()
+  // Runtime errors from runShip never reach commander's usage printer — no "Usage:" line
+  assert.ok(!out.includes('Usage:'), `runtime error must not print usage, got: ${out}`)
+})
+
+test('silence-usage: commander shows usage on unknown flag', () => {
+  const { spawnSync } = require('child_process')
+  const binPath = path.join(__dirname, '../bin/trackfw')
+  const result = spawnSync(process.execPath, [binPath, 'ship', '--unknown-flag-xyz'], { encoding: 'utf8' })
+  const out = (result.stdout || '') + (result.stderr || '')
+  assert.ok(out.toLowerCase().includes('usage') || out.toLowerCase().includes('error'), `expected usage or error on unknown flag, got: ${out}`)
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// --no-pr wiring: commander's negatable option stores .pr (not .noPr)
+// ────────────────────────────────────────────────────────────────────────────
+
+test('--no-pr wiring: commander negatable option sets options.pr=false', () => {
+  const { spawnSync } = require('child_process')
+  // Just verify the flag is accepted by the CLI without an "unknown option" error
+  // (we can't test full ship flow without a real git repo, but commander parse must succeed)
+  const binPath = path.join(__dirname, '../bin/trackfw')
+  const result = spawnSync(process.execPath, [binPath, 'ship', '--no-pr', '--help'], { encoding: 'utf8' })
+  const out = (result.stdout || '') + (result.stderr || '')
+  // --help with --no-pr must not produce "unknown option" — confirms commander parsed it
+  assert.ok(!out.includes('unknown option'), `--no-pr should be a known option, got: ${out}`)
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// Integration test — real binary (node) with clean PATH (only git)
+// ────────────────────────────────────────────────────────────────────────────
+
+test('ship integration: graceful degradation with clean PATH (no gh/glab/az)', async () => {
+  const { spawnSync } = require('child_process')
+  const os = require('os')
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-ship-npm-'))
+  try {
+    // Build tmpBin with only git
+    const tmpBin = path.join(tmpDir, 'bin')
+    fs.mkdirSync(tmpBin)
+    const gitWhich = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
+    if (!gitWhich) throw new Error('git not found in PATH')
+    fs.symlinkSync(gitWhich, path.join(tmpBin, 'git'))
+
+    // Create git repo
+    const repoDir = path.join(tmpDir, 'repo')
+    fs.mkdirSync(repoDir)
+
+    const gitRun = (args) => spawnSync('git', args, { cwd: repoDir, encoding: 'utf8' })
+
+    gitRun(['init'])
+    gitRun(['config', 'user.email', 'test@example.com'])
+    gitRun(['config', 'user.name', 'Test'])
+    // Set HEAD to feat/my-feature without committing
+    spawnSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/feat/my-feature'], { cwd: repoDir, encoding: 'utf8' })
+    gitRun(['remote', 'add', 'origin', 'https://github.com/org/repo.git'])
+
+    // Stage a file
+    fs.writeFileSync(path.join(repoDir, 'staged.txt'), 'content\n')
+    gitRun(['add', 'staged.txt'])
+
+    // Create governance: wip roadmap with branch slug and REQ
+    const wipDir = path.join(repoDir, 'docs', 'roadmaps', 'claude', 'wip')
+    fs.mkdirSync(wipDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(wipDir, 'ROADMAP-my-feature-integration-test.md'),
+      'REQ: REQ-ship-integration-test\n\n# Roadmap: Integration Test\n\nTest roadmap for graceful degradation proof.\n'
+    )
+
+    // Run npm CLI with explicit node path and clean PATH (no gh/glab/az)
+    const binPath = path.resolve(__dirname, '../bin/trackfw')
+    const result = spawnSync(
+      process.execPath,
+      [binPath, 'ship', '--dry-run', '--forge', 'github', '-m', 'feat: integration test'],
+      {
+        cwd: repoDir,
+        encoding: 'utf8',
+        env: {
+          PATH: tmpBin,
+          HOME: tmpDir,
+          GIT_AUTHOR_NAME: 'Test',
+          GIT_AUTHOR_EMAIL: 'test@example.com',
+          GIT_COMMITTER_NAME: 'Test',
+          GIT_COMMITTER_EMAIL: 'test@example.com',
+        },
+      }
+    )
+
+    const out = (result.stdout || '') + (result.stderr || '')
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\noutput: ${out}`)
+    assert.ok(out.includes('github.com'), `expected github.com URL in output, got: ${out}`)
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  }
 })

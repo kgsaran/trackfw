@@ -22,7 +22,7 @@ function createShipCommand() {
     )
     .option('-m, --message <msg>', 'Commit message (Conventional Commits format required)')
     .option('--dry-run', 'Print what would be done without executing write commands', false)
-    .option('--no-pr', 'Skip PR/MR creation after push', false)
+    .option('--no-pr', 'Skip PR/MR creation after push')
     .option('--forge <forge>', 'Override forge detection (github, gitlab, bitbucket, azure)', '')
     .action((options) => {
       const cfg = config.load()
@@ -30,7 +30,7 @@ function createShipCommand() {
         {
           message: options.message || '',
           dryRun: options.dryRun || false,
-          noPR: options.noPr || false,
+          noPR: options.pr === false,
           forge: options.forge || '',
         },
         {

@@ -395,7 +395,16 @@ function runShip(opts, deps = {}) {
   }
 
   if (opts.dryRun) {
-    writeln(`[dry-run] would open ${adapter.noun} via ${resolution.forge}`)
+    if (!adapter.available && resolution.forge !== 'manual') {
+      const url = adapter.fallbackURL(remoteURL, branch)
+      if (url) {
+        writeln(`[dry-run] ${adapter.noun} CLI (${adapter.cliName}) not available — would open in browser:\n  ${url}`)
+      } else {
+        writeln(`[dry-run] ${adapter.noun} CLI (${adapter.cliName}) not available — would open ${adapter.noun} manually`)
+      }
+    } else {
+      writeln(`[dry-run] would open ${adapter.noun} via ${resolution.forge} CLI`)
+    }
     return 0
   }
 
