@@ -58,6 +58,30 @@ const staleWIPDays = 7
 
 var staleWIPNow = time.Now
 
+func inspectionDiagnostic(rule, target string, err error) string {
+	return fmt.Sprintf("%s: could not inspect %q: %v", rule, target, err)
+}
+
+func listDirForRule(rule, dir string, msgs *[]string) []string {
+	entries, err := listDir(dir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			*msgs = append(*msgs, inspectionDiagnostic(rule, dir, err))
+		}
+		return nil
+	}
+	return entries
+}
+
+func readFileForRule(rule, path string, msgs *[]string) ([]byte, bool) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		*msgs = append(*msgs, inspectionDiagnostic(rule, path, err))
+		return nil, false
+	}
+	return content, true
+}
+
 // contentHasMarker retorna true se content contém algum dos marcadores com valor não-vazio.
 // P3: verifica tanto "\n" quanto "\r\n" para detectar campos vazios em arquivos CRLF.
 // Um marcador seguido de " \n" ou " \r\n" é tratado como "sem valor" (campo vazio).
@@ -848,13 +872,10 @@ func validateWIPHasREQ() ([]string, error) {
 
 	var violations []string
 	for _, wipDir := range wipDirs {
-		entries, err := listDir(wipDir)
-		if err != nil {
-			continue
-		}
+		entries := listDirForRule("wip_has_req", wipDir, &violations)
 		for _, name := range entries {
-			content, err := os.ReadFile(filepath.Join(wipDir, name))
-			if err != nil {
+			content, ok := readFileForRule("wip_has_req", filepath.Join(wipDir, name), &violations)
+			if !ok {
 				continue
 			}
 			if !contentHasMarker(string(content), cfg.LinkFieldsReq) {
@@ -887,13 +908,10 @@ func validateBlockedHasREQ() ([]string, error) {
 
 	var violations []string
 	for _, blockedDir := range resolveStateDirs(cfg, "blocked") {
-		entries, err := listDir(blockedDir)
-		if err != nil {
-			continue
-		}
+		entries := listDirForRule("blocked_has_req", blockedDir, &violations)
 		for _, name := range entries {
-			content, err := os.ReadFile(filepath.Join(blockedDir, name))
-			if err != nil {
+			content, ok := readFileForRule("blocked_has_req", filepath.Join(blockedDir, name), &violations)
+			if !ok {
 				continue
 			}
 			if !contentHasMarker(string(content), cfg.LinkFieldsReq) {
@@ -923,9 +941,10 @@ func validateREQsHaveRoadmap() ([]string, error) {
 
 func validateADRsAreReferenced() ([]string, error) {
 	cfg := config.Load()
+	var violations []string
 	var adrs []string
 	for _, adrDir := range cfg.ADRDirs {
-		paths := walkADRFilePaths(adrDir)
+		paths := walkADRFilePathsForRule("adr_orphan", adrDir, &violations)
 		for _, p := range paths {
 			if isOutsideCWD(p) {
 				continue
@@ -937,14 +956,13 @@ func validateADRsAreReferenced() ([]string, error) {
 	reqPaths := resolveREQFiles(cfg)
 	var allREQContent strings.Builder
 	for _, p := range reqPaths {
-		b, err := os.ReadFile(p)
-		if err == nil {
+		b, ok := readFileForRule("adr_orphan", p, &violations)
+		if ok {
 			allREQContent.Write(b)
 		}
 	}
 	combined := allREQContent.String()
 
-	var violations []string
 	for _, adr := range adrs {
 		if !strings.Contains(combined, adr) {
 			violations = append(violations, fmt.Sprintf("adr %q is not referenced by any REQ", adr))
@@ -959,13 +977,10 @@ func validateWIPHasAcceptanceCriteria() ([]string, error) {
 
 	var violations []string
 	for _, wipDir := range wipDirs {
-		entries, err := listDir(wipDir)
-		if err != nil {
-			continue
-		}
+		entries := listDirForRule("wip_acceptance", wipDir, &violations)
 		for _, name := range entries {
-			content, err := os.ReadFile(filepath.Join(wipDir, name))
-			if err != nil {
+			content, ok := readFileForRule("wip_acceptance", filepath.Join(wipDir, name), &violations)
+			if !ok {
 				continue
 			}
 			s := string(content)
@@ -989,17 +1004,27 @@ func validateStaleWIP() ([]string, error) {
 
 	var warnings []string
 	for _, wipDir := range wipDirs {
-		entries, err := filepath.Glob(wipDir + "/*.md")
+		entries, err := listDir(wipDir)
 		if err != nil {
+			if !os.IsNotExist(err) {
+				warnings = append(warnings, inspectionDiagnostic("stale_wip", wipDir, err))
+			}
 			continue
 		}
-		for _, path := range entries {
+		for _, name := range entries {
+			if !strings.HasSuffix(name, ".md") {
+				continue
+			}
+			path := filepath.Join(wipDir, name)
 			info, err := os.Stat(path)
 			if err != nil {
+				warnings = append(warnings, inspectionDiagnostic("stale_wip", path, err))
 				continue
 			}
 			refTime := info.ModTime()
-			if logTime, ok := latestWIPTransitionTime(cfg, path); ok {
+			logTime, ok, diagnostics := latestWIPTransitionTime(cfg, path)
+			warnings = append(warnings, diagnostics...)
+			if ok {
 				refTime = logTime
 			}
 			age := now.Sub(refTime)
@@ -1015,17 +1040,29 @@ func validateStaleWIP() ([]string, error) {
 	return warnings, nil
 }
 
-func latestWIPTransitionTime(cfg config.ProjectConfig, roadmapPath string) (time.Time, bool) {
-	data, err := os.ReadFile(filepath.Join(cfg.RoadmapDir, ".trackfw-log"))
+func latestWIPTransitionTime(cfg config.ProjectConfig, roadmapPath string) (time.Time, bool, []string) {
+	logPath := filepath.Join(cfg.RoadmapDir, ".trackfw-log")
+	data, err := os.ReadFile(logPath)
 	if err != nil {
-		return time.Time{}, false
+		if os.IsNotExist(err) {
+			return time.Time{}, false, nil
+		}
+		return time.Time{}, false, []string{inspectionDiagnostic("stale_wip", logPath, err)}
 	}
 	identity := roadmapLogIdentity(cfg, roadmapPath)
 	var latest time.Time
 	found := false
+	var diagnostics []string
 	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
 		timestamp, name, toState, ok := parseTransitionLogLine(line)
-		if !ok || name != identity || toState != "wip" {
+		if !ok {
+			diagnostics = append(diagnostics, fmt.Sprintf("stale_wip: invalid support line in %q: %q", logPath, line))
+			continue
+		}
+		if name != identity || toState != "wip" {
 			continue
 		}
 		if !found || timestamp.After(latest) {
@@ -1033,7 +1070,7 @@ func latestWIPTransitionTime(cfg config.ProjectConfig, roadmapPath string) (time
 			found = true
 		}
 	}
-	return latest, found
+	return latest, found, diagnostics
 }
 
 func roadmapLogIdentity(cfg config.ProjectConfig, roadmapPath string) string {
@@ -1096,7 +1133,7 @@ func blockedREQs() (map[string][]string, error) {
 		}
 		var draftADRs []string
 		for _, adrBasename := range adrNames {
-			if adrIsDraft(adrBasename) {
+			if draft, _ := adrDraftStatusForRule("blocked_by_draft_adr", adrBasename, nil); draft {
 				draftADRs = append(draftADRs, adrBasename)
 			}
 		}
@@ -1115,8 +1152,8 @@ func validateREQsNotBlockedByDraftADRs() ([]string, error) {
 
 	var violations []string
 	for _, path := range entries {
-		content, err := os.ReadFile(path)
-		if err != nil {
+		content, ok := readFileForRule("blocked_by_draft_adr", path, &violations)
+		if !ok {
 			continue
 		}
 		s := string(content)
@@ -1127,11 +1164,12 @@ func validateREQsNotBlockedByDraftADRs() ([]string, error) {
 		// Extrair ADRs da seção "## Blocked by ADRs"
 		blockedADRs, err := parseBlockedADRs(path)
 		if err != nil {
+			violations = append(violations, inspectionDiagnostic("blocked_by_draft_adr", path, err))
 			continue
 		}
 		reqBasename := filepath.Base(path)
 		for _, adrBasename := range blockedADRs {
-			if adrIsDraft(adrBasename) {
+			if draft, _ := adrDraftStatusForRule("blocked_by_draft_adr", adrBasename, &violations); draft {
 				violations = append(violations, fmt.Sprintf("REQ %s is blocked by Draft ADR: %s", reqBasename, adrBasename))
 			}
 		}
@@ -1176,16 +1214,24 @@ func parseBlockedADRs(path string) ([]string, error) {
 // adrIsDraft verifica se o ADR identificado pelo basename contém "Status: Draft".
 // Busca recursivamente em todas as ADRDirs configuradas.
 func adrIsDraft(adrBasename string) bool {
+	draft, _ := adrDraftStatusForRule("", adrBasename, nil)
+	return draft
+}
+
+func adrDraftStatusForRule(rule, adrBasename string, msgs *[]string) (bool, bool) {
 	cfg := config.Load()
 	p := findADRFile(adrBasename, cfg.ADRDirs)
 	if p == "" {
-		return false
+		return false, true
 	}
 	content, err := os.ReadFile(p)
 	if err != nil {
-		return false
+		if msgs != nil {
+			*msgs = append(*msgs, inspectionDiagnostic(rule, p, err))
+		}
+		return false, false
 	}
-	return strings.Contains(string(content), "Status: Draft")
+	return strings.Contains(string(content), "Status: Draft"), true
 }
 
 // extractFrontmatterField extrai o valor de um campo do bloco frontmatter YAML.
@@ -1306,10 +1352,17 @@ func isOutsideCWD(path string) bool {
 
 // walkADRFilePaths retorna os caminhos completos de todos os arquivos .md encontrados recursivamente em adrDir.
 func walkADRFilePaths(adrDir string) []string {
+	return walkADRFilePathsForRule("", adrDir, nil)
+}
+
+func walkADRFilePathsForRule(rule, adrDir string, msgs *[]string) []string {
 	adrDir = config.ExpandPath(adrDir)
 	var paths []string
 	_ = filepath.WalkDir(adrDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if msgs != nil && !os.IsNotExist(err) {
+				*msgs = append(*msgs, inspectionDiagnostic(rule, path, err))
+			}
 			return nil
 		}
 		if !d.IsDir() && strings.HasSuffix(path, ".md") {
@@ -1399,10 +1452,10 @@ func validateRefTargetsExist() ([]string, error) {
 
 	dirs := append(resolveWIPDirs(cfg), resolveStateDirs(cfg, "blocked")...)
 	for _, dir := range dirs {
-		entries, _ := listDir(dir)
+		entries := listDirForRule("ref_targets_exist", dir, &warnings)
 		for _, name := range entries {
-			content, err := os.ReadFile(filepath.Join(dir, name))
-			if err != nil {
+			content, ok := readFileForRule("ref_targets_exist", filepath.Join(dir, name), &warnings)
+			if !ok {
 				continue
 			}
 			if ref := extractRefPath(string(content), "REQ"); ref != "" {
@@ -1415,8 +1468,8 @@ func validateRefTargetsExist() ([]string, error) {
 
 	reqFiles := resolveREQFiles(cfg)
 	for _, reqPath := range reqFiles {
-		content, err := os.ReadFile(reqPath)
-		if err != nil {
+		content, ok := readFileForRule("ref_targets_exist", reqPath, &warnings)
+		if !ok {
 			continue
 		}
 		s := string(content)

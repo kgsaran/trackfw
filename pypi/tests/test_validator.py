@@ -1355,10 +1355,6 @@ def test_ml2a_stale_wip_fallback_mtime_quando_log_ausente(tmp_path, monkeypatch)
     ), f"esperava fallback para mtime quando .trackfw-log está ausente; warnings={warnings}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="ML-1A: stale_wip Python silencia erro de walk/ENOTDIR em wip/.",
-)
 def test_ml2b_stale_wip_diagnostica_erro_de_walk(tmp_path, monkeypatch):
     _ml1a_base(tmp_path, monkeypatch)
     shutil.rmtree(tmp_path / "docs/roadmaps/wip")

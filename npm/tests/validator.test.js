@@ -975,7 +975,7 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
-  testSkip('ML-2B stale_wip diagnostica erro de walk em wip/', () => {
+  test('ML-2B stale_wip diagnostica erro de walk em wip/', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-stale-walk-'))
     try {
       fs.mkdirSync(path.join(tmp, 'docs/roadmaps'), { recursive: true })

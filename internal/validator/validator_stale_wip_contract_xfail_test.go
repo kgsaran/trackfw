@@ -110,7 +110,7 @@ func TestStaleWIPFallsBackToMTimeWhenLogMissing(t *testing.T) {
 	}
 }
 
-func TestStaleWIPReportsWIPWalkError_XFail(t *testing.T) {
+func TestStaleWIPReportsWIPWalkError(t *testing.T) {
 	dir := t.TempDir()
 	mkdirs(t, dir, "docs/roadmaps", "docs/req", "docs/adr")
 	writeFile(t, dir, "docs/roadmaps/wip", "not a directory\n")
@@ -123,7 +123,7 @@ func TestStaleWIPReportsWIPWalkError_XFail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("validateStaleWIP erro: %v", err)
 	}
-	xfailExpect(t, "ML-2B", "stale_wip deve diagnosticar erro de walk/ENOTDIR em wip/ em vez de silenciar", func() bool {
-		return !hasWarning(warnings, "wip")
-	})
+	if !hasWarning(warnings, "wip") {
+		t.Fatalf("esperava diagnostico para erro de walk/ENOTDIR em wip/; warnings=%v", warnings)
+	}
 }
