@@ -3710,3 +3710,27 @@ slug que não casa com o roadmap `...sincroniza-o-status-do-artefato`. O `branch
 reprovou corretamente — era trabalho órfão. Branch renomeada antes do PR.
 
 **Débito:** 5 divergências adjacentes seguem abertas, registradas na REQ e na nota de vault.
+
+---
+
+## REQ-2026-07-27-convergencia-templates-python — 2026-07-27 — Zeus
+
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**Status:** IMPLEMENTANDO
+
+**Defeito:** templates de artefato do CLI Python divergem de Go/Node — mas o efeito real é que **duas
+regras do validator ficam vacuamente verdes** para artefatos gerados pelo Python:
+- `Status: Open` não casa (template Python usa tabela) → REQ escapa de `req_blocked_by_draft_adr` e do `sync`
+- `Status: Draft` não casa (template Python usa `## Status`) → `blocked_by_draft_adr` passa por ausência de match
+
+É P2 (degradação silenciosa) do ADR de gates. Sobreviveu porque nenhum gate jamais executou um gerador.
+
+**Ordem deliberada:** Wave 1 escreve os testes negativos ANTES da convergência. Convergir primeiro
+faria as regras casarem por efeito colateral e perderíamos a evidência da cegueira.
+
+**Escopo:** 3 waves sequenciais — expor as regras cegas / convergir templates Python / gate que
+executa os geradores e compara saída byte a byte.
+
+**Fora de escopo (5 itens na REQ):** migração dos 50 roadmaps existentes, slash-command que gera
+roadmap sem frontmatter nos 3 init, flags `--from-req`/`--req` ausentes no Python, schemas mortos +
+doc incorreta, divergências menores Go↔Node.
