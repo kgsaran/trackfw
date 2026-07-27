@@ -4308,3 +4308,11 @@ passou; o harness de falsificação executou os 9 cenários fora do sandbox, inc
 `artifact-parity/req-name-drift` e `referential-integrity/missing-roadmap`, com exit 0.
 A interrupção observada dentro do sandbox ocorreu na cópia/compilação isolada do cenário 8 e não
 se reproduziu no ambiente autorizado. Todos os critérios globais foram marcados como concluídos.
+
+## Housekeeping pós-merge 2026-07-27 — Zeus
+
+Após o merge do PR #78, a `main` local foi atualizada e a branch mergeada foi removida. A única
+REQ ainda `Open`, `REQ-2026-06-13-validator-improvements.md`, era um artefato legado cujo roadmap
+já estava concluído. A REQ foi marcada `Done`, seus campos de referência foram normalizados e o
+roadmap correspondente passou a apontar para `docs/req/`. Mudança exclusivamente documental,
+dispensada de nova REQ/roadmap pela exceção objetiva do AGENTS.md.

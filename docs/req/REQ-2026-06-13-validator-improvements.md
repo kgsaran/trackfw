@@ -1,9 +1,9 @@
 ---
 name: REQ-2026-06-13-validator-improvements
 title: "Melhorias no validador — adr_dirs recursivo, stale por git log, existência de refs, coerência pasta×status, unicidade de filename"
-status: Open
-linked_adr: —
-linked_roadmap: docs/roadmaps/claude/wip/v2.3-validator-improvements-2026-06-13.md
+status: Done
+adr: ""
+roadmap: docs/roadmaps/done/v2.3-validator-improvements-2026-06-13.md
 created: 2026-06-13
 author: zeus
 ---
@@ -12,9 +12,9 @@ author: zeus
 
 | Campo | Valor |
 |---|---|
-| Status | Open |
+| Status | Done |
 | Criado | 2026-06-13 |
-| Roadmap | [v2.3-validator-improvements-2026-06-13](../../../roadmaps/claude/wip/v2.3-validator-improvements-2026-06-13.md) |
+| Roadmap | [v2.3-validator-improvements-2026-06-13](../roadmaps/done/v2.3-validator-improvements-2026-06-13.md) |
 
 ---
 
