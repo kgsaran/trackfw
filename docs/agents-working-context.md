@@ -3831,3 +3831,38 @@ Executando ML-2A: convergência dos templates Python para o formato canônico Go
 - `pypi/tests/test_generators_req.py` — remove linked_adr, atualiza seções para inglês
 - `pypi/tests/test_generators_roadmap.py:70` — status: Backlog → status: backlog
 - `pypi/tests/test_commands_roadmap_discover.py:55` — status: Backlog → status: backlog
+
+---
+
+## Sessão 2026-07-27 — ML-2A concluído
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** CONCLUÍDO
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**Commit:** `2ee4f2b`
+
+### O que foi entregue
+
+**Geradores Python convergidos para formato canônico Go/Node:**
+- `pypi/trackfw/generators/req.py`: frontmatter canônico, header inline `> Date: | Status: Open`, 5 seções em inglês incluindo `## Blocked by ADRs`
+- `pypi/trackfw/generators/adr.py`: remove `next_adr_number`, nome por data `ADR-YYYY-MM-DD-<slug>.md`, frontmatter canônico, header inline, `## Alternatives Considered`, status padrão `Proposed`
+- `pypi/trackfw/generators/roadmap.py`: `_roadmap_template` canônica, `status: backlog` (minúsculo), seções em inglês, Node ≡ Python byte-a-byte
+- `pypi/trackfw/commands/adr.py`: default status `Draft` → `Proposed`
+
+**6 testes reativados (2 por runtime) — todos passando:**
+- Go: t.Skip removido das linhas 1477 e 1564, fixtures canônicos, testes renomeados
+- Node: testSkip → test, fixtures canônicos
+- Python: xfail removido, testes chamam geradores reais (regressão garantida)
+
+**Asserções antigas corrigidas em 5 arquivos de teste**
+
+**make quality:** 596 passed, 0 failed, 0 xfail
+
+**Diff empírico:**
+- ADR: Go = Node = Python (byte-idêntico)
+- REQ: Node = Python; Go diverge com `| Linear Issue: ` e `| Jira Issue: ` (terceira divergência Go↔Node, fora do escopo negativo)
+- ROADMAP: Node = Python; Go diverge com REQ preenchido + squad: + ML-1A literal (divergências 1-2 do escopo negativo)
+
+**Escopo negativo respeitado:** validator não alterado, branch não criada, PR não aberto, main não tocada, docs/schema não alterados.
+
+**Próximo passo:** ML-3A (gate de paridade de saída, executa os 3 geradores e compara byte a byte — é do orquestrador)
