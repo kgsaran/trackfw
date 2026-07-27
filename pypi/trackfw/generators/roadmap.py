@@ -178,7 +178,7 @@ def _append_transition_log(basename: str, from_state: str, to_state: str, cfg: d
         pass
 
 
-def _roadmap_template(title: str, slug: str, date: str) -> str:
+def _roadmap_template(title: str, slug: str, date: str, req_path: str = "") -> str:
     """
     Retorna conteúdo do roadmap no formato canônico Go/Node (inglês).
     Frontmatter: status: backlog · date · req: "" · squad: "" (minúsculo).
@@ -186,7 +186,6 @@ def _roadmap_template(title: str, slug: str, date: str) -> str:
     Seções e labels de ML em inglês.
     REQ-2026-07-27-convergencia-templates-python.
     """
-    req_path = ""
     return f"""---
 status: backlog
 date: {date}
@@ -216,11 +215,59 @@ REQ: {req_path}
 """
 
 
+def _parse_req_for_roadmap(content: str) -> tuple[str, list[str], str]:
+    """Extrai título, critérios de aceite e ADR linkada de um arquivo REQ."""
+    title = ""
+    criteria = []
+    linked_adr = ""
+    in_criteria = False
+
+    for line in content.splitlines():
+        if line.startswith("# REQ: "):
+            title = line.removeprefix("# REQ: ").strip()
+            continue
+        if line.startswith("# REQ — "):
+            title = line.removeprefix("# REQ — ").strip()
+            continue
+        if line.startswith("# REQ - "):
+            title = line.removeprefix("# REQ - ").strip()
+            continue
+        if line.startswith("**ADR:**"):
+            linked_adr = line.removeprefix("**ADR:**").strip()
+            continue
+
+        lower = line.strip().lower()
+        if lower in ("## critérios de aceite", "## acceptance criteria"):
+            in_criteria = True
+            continue
+        if in_criteria and line.startswith("## "):
+            in_criteria = False
+            continue
+        if not in_criteria:
+            continue
+
+        trimmed = line.strip()
+        for prefix in ("- [ ]", "- [x]", "- [X]"):
+            if trimmed.startswith(prefix):
+                item = trimmed[len(prefix):].strip().replace("`", "")
+                if item:
+                    criteria.append(item)
+                break
+
+    return title, criteria, linked_adr
+
+
 # ---------------------------------------------------------------------------
 # API pública
 # ---------------------------------------------------------------------------
 
-def generate_roadmap(title: str, cfg: dict, agent: str = None) -> str:
+def _backlog_dir(cfg: dict, agent: str = None) -> str:
+    if cfg.get("roadmap_namespacing") == cfg_module.NAMESPACING_BY_AGENT:
+        return _agent_state_dir(agent, "backlog", cfg)
+    return os.path.join(cfg["roadmap_dir"], "backlog")
+
+
+def generate_roadmap(title: str, cfg: dict, agent: str = None, req_path: str = "") -> str:
     """
     Cria roadmap em backlog/.
     - Modo flat:     cfg["roadmap_dir"]/backlog/<slug>.md
@@ -231,15 +278,72 @@ def generate_roadmap(title: str, cfg: dict, agent: str = None) -> str:
     slug = slugify(title)
     filename = f"ROADMAP-{today}-{slug}.md"
 
-    if cfg.get("roadmap_namespacing") == cfg_module.NAMESPACING_BY_AGENT:
-        backlog_dir = _agent_state_dir(agent, "backlog", cfg)
-    else:
-        backlog_dir = os.path.join(cfg["roadmap_dir"], "backlog")
+    backlog_dir = _backlog_dir(cfg, agent)
 
     os.makedirs(backlog_dir, exist_ok=True)
     filepath = os.path.join(backlog_dir, filename)
 
-    body = _roadmap_template(title, slug, today)
+    body = _roadmap_template(title, slug, today, req_path=req_path)
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(body)
+
+    return filepath
+
+
+def generate_roadmap_from_req(req_path: str, cfg: dict, agent: str = None) -> str:
+    """Cria roadmap pré-preenchido com MLs extraídos dos critérios de aceite da REQ."""
+    with open(req_path, "r", encoding="utf-8") as f:
+        data = f.read()
+
+    parsed_title, criteria, linked_adr = _parse_req_for_roadmap(data)
+    basename = os.path.basename(req_path)
+    title = parsed_title or os.path.splitext(basename)[0].removeprefix("REQ-")
+    today = datetime.date.today().isoformat()
+    slug = slugify(title)
+    filename = f"ROADMAP-{today}-{slug}.md"
+    backlog_dir = _backlog_dir(cfg, agent)
+
+    os.makedirs(backlog_dir, exist_ok=True)
+    filepath = os.path.join(backlog_dir, filename)
+
+    ml_lines = [
+        "## Wave 1 — Implementation (derived from REQ criteria)",
+        "> Dependencies: none",
+    ]
+    for index, criterion in enumerate(criteria):
+        ml_label = f"ML-1{chr(ord('A') + index)}"
+        ml_lines.extend([
+            "",
+            f"### {ml_label} — {criterion}",
+            "**Status:** pending",
+            "**Files affected:**",
+            "**Actions:**",
+            "**Acceptance criteria:**",
+            f"- [ ] {criterion}",
+            "- [ ] build passes",
+            "- [ ] tests green",
+        ])
+
+    adr_ref = f"\nADR: {linked_adr}" if linked_adr else ""
+    ml_section = "\n".join(ml_lines)
+    body = f"""---
+status: backlog
+date: {today}
+req: "{basename}"
+squad: ""
+---
+
+# Roadmap: {title}
+
+> Created: {today} | Status: backlog
+
+## Context
+<!-- Derived from REQ: {basename} -->
+REQ: {req_path}{adr_ref}
+
+{ml_section}
+"""
+
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(body)
 
