@@ -4,6 +4,43 @@
 
 ---
 
+## Sessão 2026-07-27 — Apolo (ML-2A concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
+
+**Tarefa:** Corrigir somente o slash-command `/trackfw:roadmap` e seus geradores/templates nos três CLIs,
+reativando os testes de frontmatter canônico sem implementar `analyzing`.
+
+**Entregue:**
+- Go, Node.js e Python agora geram `.claude/commands/trackfw/roadmap.md` com frontmatter canônico:
+  `status: backlog`, `date: <YYYY-MM-DD>`, `req: "docs/req/<arquivo-selecionado>.md"` e `squad: ""`.
+- Header mantido no contrato canônico `> Created: <YYYY-MM-DD> | Status: backlog`, com waves e
+  microlotes preservados.
+- O arquivo versionado `.claude/commands/trackfw/roadmap.md` foi alinhado ao conteúdo gerado.
+- Testes xfail do slash-command foram convertidos para testes obrigatórios nos três runtimes e passam
+  comparando byte a byte o comando gerado com o arquivo versionado.
+
+**Decisão de interpolação do `req:`:**
+- O slash-command é uma instrução de geração, então mantém o placeholder
+  `docs/req/<arquivo-selecionado>.md` no template e instrui preencher esse campo com o caminho relativo
+  completo da REQ selecionada. Isso evita basename/link Markdown e preserva o caminho real no artefato
+  materializado pelo agente.
+
+**Validação:**
+- `go test ./internal/generators -run SlashRoadmap -v` → verde.
+- `npm test -- --test-name-pattern=SlashRoadmap` → verde, `264 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests/test_generators_init.py -q` → `39 passed`.
+- `go build ./...` → verde; aviso não bloqueante de cache Go fora do sandbox.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → verde, `264 pass`, `0 fail`.
+- `bin/trackfw validate --json` → `0 violations`, `0 warnings`.
+- `make quality` → verde; Python completo `613 passed, 2 xfailed`; falsificação `all 9 scenarios, 8 gates proved non-vacuous`.
+
+**Ressalva:**
+- Nenhum runtime de `roadmap move` foi alterado neste ML; os xfails de `analyzing` permanecem para o ML-2B.
+
+---
+
 ## Sessão 2026-07-27 — Artemis (ML-1A concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`

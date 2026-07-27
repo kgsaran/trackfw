@@ -93,7 +93,7 @@ make quality
 
 ### ML-2A — Slash-command gera roadmap canônico
 
-**Status:** in progress
+**Status:** done
 
 **Files affected:**
 - `internal/generators/scaffold.go`
@@ -119,10 +119,10 @@ make quality
 5. Reativar os testes correspondentes do ML-1A.
 
 **Acceptance criteria:**
-- [ ] Templates Go, Node e Python produzem a mesma instrução canônica.
-- [ ] Arquivo versionado e arquivos gerados não divergem.
-- [ ] Testes de frontmatter reativados e verdes.
-- [ ] Nenhuma alteração no runtime de movimentação neste ML.
+- [x] Templates Go, Node e Python produzem a mesma instrução canônica.
+- [x] Arquivo versionado e arquivos gerados não divergem.
+- [x] Testes de frontmatter reativados e verdes.
+- [x] Nenhuma alteração no runtime de movimentação neste ML.
 
 **Validation commands:**
 ```bash
@@ -130,6 +130,25 @@ go test ./internal/generators -run SlashRoadmap -v
 (cd npm && npm test)
 python3 -m pytest pypi/tests/test_generators_init.py -q
 ```
+
+**Execution evidence (Apolo, 2026-07-27):**
+- Go/Node/Python: slash-command atualizado para instruir frontmatter canônico com
+  `status: backlog`, `date: <YYYY-MM-DD>`, `req: "docs/req/<arquivo-selecionado>.md"` e
+  `squad: ""`, mantendo header `> Created: <YYYY-MM-DD> | Status: backlog`, waves e microlotes.
+- Decisão de interpolação: como `/trackfw:roadmap` é um template de instrução, `req:` permanece como
+  placeholder explícito `docs/req/<arquivo-selecionado>.md`; o próprio comando instrui preencher esse
+  campo com o caminho relativo completo da REQ selecionada, nunca basename nem link Markdown.
+- Arquivo versionado `.claude/commands/trackfw/roadmap.md` alinhado ao conteúdo gerado. Os testes
+  reativados comparam byte a byte o `roadmap.md` gerado com o arquivo versionado nos três runtimes.
+- Testes focados: `go test ./internal/generators -run SlashRoadmap -v` passou; `npm test -- --test-name-pattern=SlashRoadmap`
+  passou com `264 pass`; `python3 -m pytest pypi/tests/test_generators_init.py -q` passou com
+  `39 passed`.
+- Gates amplos: `go build ./...` passou com aviso não bloqueante de cache Go fora do sandbox;
+  `go test ./...` passou; `(cd npm && npm test)` passou com `264 pass`; `bin/trackfw validate --json`
+  retornou `0 violations` e `0 warnings`.
+- Gate composto: `make quality` passou; Python completo reportou `613 passed, 2 xfailed` e
+  `scripts/check-gates-falsify.sh` reportou `Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)`.
+- Escopo preservado: nenhum runtime de movimentação foi alterado; xfails de `analyzing`/`move` foram mantidos.
 
 ### ML-2B — Estado analyzing completo nos três CLIs
 

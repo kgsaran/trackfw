@@ -1,4 +1,4 @@
-Gere um roadmap de implementação em microlotes para uma REQ do projeto trackfw.
+Gere um roadmap de implementação em microlotes para uma REQ do projeto.
 
 ## Passos
 
@@ -15,9 +15,16 @@ Gere um roadmap de implementação em microlotes para uma REQ do projeto trackfw
    Com base no conteúdo da REQ, gere um roadmap seguindo **estritamente** este formato:
 
    ```markdown
+   ---
+   status: backlog
+   date: <YYYY-MM-DD>
+   req: "docs/req/<arquivo-selecionado>.md"
+   squad: ""
+   ---
+
    # Roadmap: <título derivado da REQ>
 
-   > Criado em: <YYYY-MM-DD> | Status: ⬜ Backlog
+   > Created: <YYYY-MM-DD> | Status: backlog
 
    ## Diagnóstico / Contexto
    <resumo do problema, motivação e escopo extraídos da REQ>
@@ -28,20 +35,13 @@ Gere um roadmap de implementação em microlotes para uma REQ do projeto trackfw
    ### ML-1A — <título>
    **Status:** ⬜ Pendente
    **Arquivos afetados:**
-   - `caminho/exato/do/arquivo.go`
+   - `caminho/exato/do/arquivo`
    **Ações:**
    - Descrição detalhada da ação com valores, chaves e comandos exatos
    **Critérios de aceite:**
    - [ ] build sem erros
    - [ ] testes verdes
-   **Comandos de validação:** `go build ./... && go test ./...`
-
-   ### ML-1B — <título> (se independente de ML-1A)
-   ...
-
-   ## Wave 2 — <nome> (depende de Wave 1)
-   > Dependências: Wave 1 completa
-   ...
+   **Comandos de validação:** `<comando de build e teste do projeto>`
    ```
 
    **Princípios obrigatórios:**
@@ -54,6 +54,7 @@ Gere um roadmap de implementação em microlotes para uma REQ do projeto trackfw
 4. **Salvar o arquivo**
    - Calcule o slug: título em lowercase, espaços → hifens, remova caracteres especiais
    - Crie o arquivo em `docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md`
+   - Preencha `req:` com o caminho relativo completo da REQ selecionada
    - Use a data de hoje
 
 5. **Confirmar**

@@ -273,9 +273,16 @@ trackfw não está instalado. Instale com:
    Com base no conteúdo da REQ, gere um roadmap seguindo **estritamente** este formato:
 
    ` + "```markdown" + `
+   ---
+   status: backlog
+   date: <YYYY-MM-DD>
+   req: "docs/req/<arquivo-selecionado>.md"
+   squad: ""
+   ---
+
    # Roadmap: <título derivado da REQ>
 
-   > Criado em: <YYYY-MM-DD> | Status: ⬜ Backlog
+   > Created: <YYYY-MM-DD> | Status: backlog
 
    ## Diagnóstico / Contexto
    <resumo do problema, motivação e escopo extraídos da REQ>
@@ -305,10 +312,12 @@ trackfw não está instalado. Instale com:
 4. **Salvar o arquivo**
    - Calcule o slug: título em lowercase, espaços → hifens, remova caracteres especiais
    - Crie o arquivo em ` + "`docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md`" + `
+   - Preencha ` + "`req:`" + ` com o caminho relativo completo da REQ selecionada
    - Use a data de hoje
 
 5. **Confirmar**
-   Informe o caminho do arquivo criado e um resumo das Waves e total de MLs gerados.`,
+   Informe o caminho do arquivo criado e um resumo das Waves e total de MLs gerados.
+`,
 
 		"architect.md": `Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.
 
@@ -678,11 +687,11 @@ trackfw validate
 		base += "echo \"→ build check (go)...\"\ngo build ./...\n"
 	case "java":
 		base += "echo \"→ build check (maven)...\"\nmvn compile -q\n"
-		case "node":
-			base += fmt.Sprintf("echo \"→ build check (node)...\"\n%s run build\n", cfg.PkgManager)
-		case "python":
-			base += "echo \"→ build check (python)...\"\npython3 -c \"import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('.').rglob('*.py') if '.venv' not in p.parts and 'venv' not in p.parts]\"\n"
-		}
+	case "node":
+		base += fmt.Sprintf("echo \"→ build check (node)...\"\n%s run build\n", cfg.PkgManager)
+	case "python":
+		base += "echo \"→ build check (python)...\"\npython3 -c \"import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('.').rglob('*.py') if '.venv' not in p.parts and 'venv' not in p.parts]\"\n"
+	}
 
 	switch cfg.Frontend {
 	case "react", "vue", "angular":

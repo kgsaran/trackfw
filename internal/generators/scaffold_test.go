@@ -83,37 +83,44 @@ func TestGenerateClaudeCommands_CreatesAllFiles(t *testing.T) {
 	}
 }
 
-func TestSlashRoadmapCommandRequiresCanonicalFrontmatter_XFail(t *testing.T) {
-	expectKnownFailure(t, "slash-command /trackfw:roadmap ainda instrui roadmap sem frontmatter canônico", func() error {
-		dir := t.TempDir()
-		orig, _ := os.Getwd()
-		_ = os.Chdir(dir)
-		t.Cleanup(func() { _ = os.Chdir(orig) })
+func TestSlashRoadmapCommandRequiresCanonicalFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
 
-		if err := generateClaudeCommands(); err != nil {
-			return err
+	if err := generateClaudeCommands(); err != nil {
+		t.Fatalf("generateClaudeCommands() erro: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(".claude", "commands", "trackfw", "roadmap.md"))
+	if err != nil {
+		t.Fatalf("roadmap.md não encontrado: %v", err)
+	}
+	body := string(content)
+	required := []string{
+		"```markdown\n   ---",
+		"status: backlog",
+		"date: <YYYY-MM-DD>",
+		`req: "docs/req/<arquivo-selecionado>.md"`,
+		`squad: ""`,
+		"---\n\n   # Roadmap:",
+		"> Created: <YYYY-MM-DD> | Status: backlog",
+		"docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md",
+		"Preencha `req:` com o caminho relativo completo da REQ selecionada",
+	}
+	for _, want := range required {
+		if !strings.Contains(body, want) {
+			t.Fatalf("roadmap.md não contém trecho canônico esperado: %s", want)
 		}
-		content, err := os.ReadFile(filepath.Join(".claude", "commands", "trackfw", "roadmap.md"))
-		if err != nil {
-			return err
-		}
-		body := string(content)
-		required := []string{
-			"```markdown\n   ---",
-			"status: backlog",
-			"date: <YYYY-MM-DD>",
-			`req: "docs/req/<arquivo-selecionado>.md"`,
-			`squad: ""`,
-			"---\n\n   # Roadmap:",
-			"docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md",
-		}
-		for _, want := range required {
-			if !strings.Contains(body, want) {
-				return &testExpectationError{message: "roadmap.md não contém trecho canônico esperado: " + want}
-			}
-		}
-		return nil
-	})
+	}
+
+	versioned, err := os.ReadFile(filepath.Join(orig, "..", "..", ".claude", "commands", "trackfw", "roadmap.md"))
+	if err != nil {
+		t.Fatalf("roadmap.md versionado não encontrado: %v", err)
+	}
+	if body != string(versioned) {
+		t.Fatal("roadmap.md gerado diverge do arquivo versionado em .claude/commands/trackfw/roadmap.md")
+	}
 }
 
 type testExpectationError struct {

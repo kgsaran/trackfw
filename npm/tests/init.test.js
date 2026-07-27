@@ -8,19 +8,7 @@ const path = require('node:path')
 
 const { generateClaudeCommands } = require('../src/generators/init')
 
-function testSkipStrict(name, fn) {
-  test(name, () => {
-    try {
-      fn()
-    } catch (err) {
-      console.log(`↷ [xfail esperado] ${name}: ${err.message}`)
-      return
-    }
-    assert.fail(`XPASS inesperado — remover testSkipStrict após correção: ${name}`)
-  })
-}
-
-testSkipStrict('SlashRoadmap command requires canonical frontmatter with selected REQ path', () => {
+test('SlashRoadmap command requires canonical frontmatter with selected REQ path', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-slash-roadmap-'))
   const origCwd = process.cwd()
   try {
@@ -34,11 +22,16 @@ testSkipStrict('SlashRoadmap command requires canonical frontmatter with selecte
       'req: "docs/req/<arquivo-selecionado>.md"',
       'squad: ""',
       '---\n\n   # Roadmap:',
+      '> Created: <YYYY-MM-DD> | Status: backlog',
       'docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md',
+      'Preencha `req:` com o caminho relativo completo da REQ selecionada',
     ]
     for (const snippet of required) {
       assert.ok(roadmapCommand.includes(snippet), `roadmap.md should contain canonical snippet: ${snippet}`)
     }
+
+    const versioned = fs.readFileSync(path.join(__dirname, '..', '..', '.claude', 'commands', 'trackfw', 'roadmap.md'), 'utf8')
+    assert.equal(roadmapCommand, versioned, 'generated roadmap.md should match the versioned slash-command')
   } finally {
     process.chdir(origCwd)
     fs.rmSync(tmpDir, { recursive: true, force: true })

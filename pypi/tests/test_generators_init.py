@@ -9,8 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-
-import pytest
+from pathlib import Path
 
 from trackfw.generators.init_gen import scaffold
 
@@ -580,7 +579,6 @@ class TestGenerateClaudeCommands(unittest.TestCase):
         self.assertIn('Passo 5 — Próximos Passos', content)
         self.assertIn('/trackfw:architect', content)
 
-    @pytest.mark.xfail(strict=True, reason="slash-command /trackfw:roadmap ainda instrui roadmap sem frontmatter canônico")
     def test_slash_roadmap_command_requires_canonical_frontmatter(self):
         from trackfw.generators.init_gen import generate_claude_commands
 
@@ -597,10 +595,15 @@ class TestGenerateClaudeCommands(unittest.TestCase):
             'req: "docs/req/<arquivo-selecionado>.md"',
             'squad: ""',
             '---\n\n   # Roadmap:',
+            '> Created: <YYYY-MM-DD> | Status: backlog',
             'docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md',
+            'Preencha `req:` com o caminho relativo completo da REQ selecionada',
         ]
         for snippet in required:
             self.assertIn(snippet, content, f"roadmap.md deveria conter trecho canônico: {snippet}")
+
+        versioned = Path(__file__).resolve().parents[2] / '.claude' / 'commands' / 'trackfw' / 'roadmap.md'
+        self.assertEqual(content, versioned.read_text(encoding='utf-8'))
 
     def test_scaffold_creates_all_slash_commands(self):
         opts = {'project_name': 'test-proj', 'namespacing': 'flat', 'wip_limit': 1}
@@ -887,6 +890,4 @@ class TestWindsurfHooks(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-
 
