@@ -4376,3 +4376,7 @@ Implementação autorizada da REQ de contrato canônico do roadmap e estado `ana
 não pôde ser executada pelo comando oficial; o roadmap foi movido de `backlog/` diretamente para
 `wip/` ao iniciar a codificação. ML-1A marcado em andamento para produzir as provas negativas antes
 de qualquer correção de produção.
+
+Após auditoria do ML-1A, as falhas atuais ficaram caracterizadas nos três runtimes: o slash-command
+não instrui frontmatter canônico e `roadmap move ... analyzing` é rejeitado. ML-2A liberado para
+corrigir exclusivamente o contrato do slash-command antes da implementação do novo estado.

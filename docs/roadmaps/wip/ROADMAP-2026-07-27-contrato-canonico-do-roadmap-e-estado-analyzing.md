@@ -93,7 +93,7 @@ make quality
 
 ### ML-2A — Slash-command gera roadmap canônico
 
-**Status:** pending
+**Status:** in progress
 
 **Files affected:**
 - `internal/generators/scaffold.go`
