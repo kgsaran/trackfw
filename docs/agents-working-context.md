@@ -3405,4 +3405,16 @@ Go já implementado e comitado em 6afbf5e. Esta sessão porta para npm e pypi:
 4. Testes de silence-usage e integração com PATH limpo em npm e pypi
 5. Documentação: `docs/cli-parity.md`, `README.md`, `site/`
 
-**Status:** IMPLEMENTANDO
+**Status:** CONCLUÍDO.
+
+Commits: c036f72 (código) + a5e6277 (docs).
+
+Gates: go build ✅ | go test ✅ | npm test (48 pass) ✅ | pytest (69 pass) ✅ | make quality ✅
+
+Achados registrados:
+- Bug corrigido: commander `--no-pr` com default `false` explícito tornava `options.pr` sempre `false`;
+  a opção negatable deve ser definida sem default explícito para que `options.pr` seja `true` (sem a flag)
+  ou `false` (com `--no-pr`)
+- Divergência documentada: Go usa `docs/roadmaps/wip/` (default `docs/roadmaps`) como roadmap dir;
+  npm e pypi usam `docs/roadmaps/claude/wip/` (default `docs/roadmaps/claude`). Não corrigida nesta
+  sessão — é divergência pré-existente e ortogonal ao ML-4A
