@@ -3626,3 +3626,25 @@ que existe para cumprir a DoD gera um estado que o próprio validador reprova. R
 débito nº 5 no roadmap; é candidato a REQ própria (corrigir nos 3 CLIs).
 
 **Débito registrado (não esquecido):** 5 itens no fim do roadmap em `docs/roadmaps/done/`.
+
+---
+
+## REQ-2026-07-27-roadmap-move — 2026-07-27 — Zeus
+
+**Tarefa:** abertura da REQ e do roadmap para o débito nº 5 da REQ anterior
+**Branch:** `fix/roadmap-move-sincroniza-status`
+**Status:** IMPLEMENTANDO
+
+**Defeito:** `roadmap move` não sincroniza `status:` do frontmatter — o comando da DoD gera warning
+de `folder_status`. Mesmo formato do D4 da REQ-2026-07-26.
+
+**Reprodução:** o defeito apareceu ao criar este próprio roadmap, na sequência
+`req new → roadmap new → roadmap move wip`. O artefato que autoriza o conserto nasceu com o defeito.
+
+**Escopo:** reescrita escopada de frontmatter nos 3 CLIs (espelhando `rewriteFrontmatterFields`),
+correção do `re.sub` não escopado do Python, sincronização do cabeçalho, e testes P4 que rodam
+`validate` após o `move`. Node.js ganha suíte de `moveRoadmap`, hoje inexistente.
+
+**Fora de escopo (5 achados adjacentes registrados na REQ):** divergência de templates Python×Go/Node,
+estado `analyzing` não movível, aspas no `parse_frontmatter` do Python, ambiguidade do `findRoadmap`
+do Go, prefixo de agente no log Python.
