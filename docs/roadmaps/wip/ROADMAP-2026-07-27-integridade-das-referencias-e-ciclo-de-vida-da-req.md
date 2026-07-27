@@ -48,7 +48,7 @@ que estavam cegas.
 
 ### ML-1A — Testes negativos que provam a cegueira
 
-**Status:** in progress
+**Status:** done
 **Files affected:** testes do validator nos 3 CLIs
 
 **Actions:**
@@ -66,10 +66,37 @@ que estavam cegas.
 7. `make quality` verde.
 
 **Acceptance criteria:**
-- [ ] 4 cenários cobertos nos 3 CLIs, todos falhando contra o código atual
-- [ ] Saída das falhas registrada no relatório
-- [ ] Marcação strict nos 3 — nenhum runtime cala se o defeito for corrigido
-- [ ] `make quality` verde
+- [x] 4 cenários cobertos nos 3 CLIs, todos falhando contra o código atual
+- [x] Saída das falhas registrada no relatório
+- [x] Marcação strict nos 3 — nenhum runtime cala se o defeito for corrigido
+- [x] `make quality` verde
+
+**Relatório ML-1A — Artemis — 2026-07-27:**
+
+Arquivos alterados:
+- `internal/validator/validator_integrity_xfail_test.go`
+- `npm/tests/validator.test.js`
+- `pypi/tests/test_validator.py`
+
+Semântica strict por runtime:
+- Go: helper `xfailExpect` executa o corpo e emite `t.Errorf` em XPASS; não usa `t.Skip`.
+- Node.js: helper `testSkip` executa o corpo e incrementa `failed` em XPASS.
+- Python: `pytest.mark.xfail(strict=True)`.
+
+Evidência das falhas esperadas:
+- `go test ./internal/validator -run 'TestXFail' -v` → 4/4 `PASS` com logs `[xfail esperado]`
+  para Escape 1, Escape 2, Escape 3 e Defeito 2.
+- `npm test -- --runInBand --test-name-pattern=validator` → `37 passed, 0 failed, 4 xfail`
+  no `tests/validator.test.js`.
+- `python3 -m pytest pypi/tests/test_validator.py -q -rxX -k ml1a` → `59 deselected, 4 xfailed`.
+
+Validação final:
+- `python3 -m pytest pypi/tests/test_validator.py -q -rxX` no sandbox falhou fora do ML-1A por
+  `PermissionError` ao tentar criar diretórios temporários em `~/`; reexecutado como parte do
+  `make quality` fora do sandbox.
+- `make quality` → verde: Go `ok` incluindo `internal/validator`; Node `261 pass` e validator
+  `37 passed, 0 failed, 4 xfail`; Python `604 passed, 4 xfailed`; `go vet`, build, parity,
+  static/integration assets, identity parity, artifact parity e falsification gates passaram.
 
 ---
 

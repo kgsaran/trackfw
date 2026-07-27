@@ -749,6 +749,149 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
+  // ---------------------------------------------------------------------------
+  // ML-1A — REQ-2026-07-27-integridade-referencias — testes negativos xfail
+  // Semântica strict: testSkip executa o corpo; se o defeito for corrigido sem reativação
+  // do teste, reporta XPASS e incrementa failed → make quality fica vermelho.
+  // ---------------------------------------------------------------------------
+
+  // Escape 1: frontmatter roadmap: nunca lido — caminho inexistente não gera aviso.
+  // Reativar em ML-2A após corrigir extractRefPath para ler frontmatter.
+  testSkip('ML-1A Escape1: frontmatter roadmap: nao lido — caminho inexistente no frontmatter nao gera aviso [reativar ML-2A REQ-2026-07-27-integridade-referencias]', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-e1-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/done'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+      // REQ: frontmatter aponta para inexistente; corpo não tem Roadmap:
+      fs.writeFileSync(path.join(tmp, 'docs/req/REQ-XFAIL-ESCAPE1.md'),
+        '---\nstatus: Open\nroadmap: "docs/roadmaps/wip/NAO-EXISTE-ESCAPE-1.md"\n---\n\n' +
+        '## Linked Roadmap\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const warnings = validator.validateRefTargetsExist()
+        // Defeito presente: nenhum aviso menciona NAO-EXISTE-ESCAPE-1 (frontmatter não é lido)
+        assert(warnings.some(w => w.includes('NAO-EXISTE-ESCAPE-1')),
+          `esperava aviso para frontmatter roadmap: inexistente, mas nao houve (escape 1 ativo). warnings=${JSON.stringify(warnings)}`)
+      } finally {
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  // Escape 2: fallback basename aceita caminho errado (wip/ vs done/) — sem aviso.
+  // Reativar em ML-2A após remover fallback por basename de referenceExists.
+  testSkip('ML-1A Escape2: fallback basename aceita caminho errado — nenhum aviso emitido [reativar ML-2A REQ-2026-07-27-integridade-referencias]', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-e2-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/done'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+      // Arquivo real em done/ — basename fallback o encontra mesmo com path errado em wip/
+      fs.writeFileSync(path.join(tmp, 'docs/roadmaps/done/ESCAPE2-ROADMAP.md'),
+        '# Roadmap\n## Acceptance Criteria\n- [x] done\n')
+      // REQ: corpo aponta para wip/ (errado) — arquivo real está em done/
+      fs.writeFileSync(path.join(tmp, 'docs/req/REQ-XFAIL-ESCAPE2.md'),
+        '---\nstatus: Open\n---\n\n' +
+        '## Linked Roadmap\nRoadmap: docs/roadmaps/wip/ESCAPE2-ROADMAP.md\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const warnings = validator.validateRefTargetsExist()
+        // Defeito presente: nenhum aviso menciona ESCAPE2-ROADMAP (basename fallback valida)
+        assert(warnings.some(w => w.includes('ESCAPE2-ROADMAP')),
+          `esperava aviso para caminho errado (wip/ vs done/), mas nao houve (escape 2 ativo). warnings=${JSON.stringify(warnings)}`)
+      } finally {
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  // Escape 3: severidade padrão warning — ref quebrada não vai para violations.
+  // Nota: configurar ref_targets_exist: error faria o teste passar hoje;
+  // o escape é o *default* warning, elevado para error no ML-3A.
+  // Reativar em ML-3A após elevar severidade para error.
+  testSkip('ML-1A Escape3: severidade warning — ref quebrada nao reprova gate (violations vazio) [reativar ML-3A REQ-2026-07-27-integridade-referencias]', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-e3-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/done'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/backlog'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/blocked'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+      // REQ com Roadmap: verdadeiramente inexistente (não há match de basename)
+      fs.writeFileSync(path.join(tmp, 'docs/req/REQ-XFAIL-ESCAPE3.md'),
+        '---\nstatus: Open\n---\n\n' +
+        '## Linked Roadmap\nRoadmap: docs/roadmaps/wip/ESCAPE3-TRULY-MISSING.md\n')
+      // Config padrão — ref_targets_exist mantém severidade "warning"
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        // Usa validate() que aplica severidade — warnings não reprovam
+        const violations = validator.validate()
+        // Defeito presente: violations não menciona ESCAPE3-TRULY-MISSING
+        // (a mensagem existe mas em warnings, não violations)
+        assert(violations.some(v => v.includes('ESCAPE3-TRULY-MISSING')),
+          `esperava violation para ref quebrada com severidade error, mas nao houve (escape 3 ativo). violations=${JSON.stringify(violations)}`)
+      } finally {
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  // Defeito 2: REQ Open com roadmap em done/ — nenhuma regra sinaliza a inconsistência.
+  // Reativar em ML-2B após adicionar regra de ciclo de vida da REQ.
+  testSkip('ML-1A Defeito2: REQ Open com roadmap em done/ nao e sinalizada [reativar ML-2B REQ-2026-07-27-integridade-referencias]', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-d2-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/done'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/blocked'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+      // Roadmap real em done/ — entregue
+      fs.writeFileSync(path.join(tmp, 'docs/roadmaps/done/DONE-ROADMAP-DEFEITO2.md'),
+        '---\nstatus: Done\n---\n# Roadmap concluído\n## Acceptance Criteria\n- [x] done\n')
+      // REQ ainda Open mas roadmap está em done/
+      fs.writeFileSync(path.join(tmp, 'docs/req/REQ-XFAIL-DEFEITO2.md'),
+        '---\nstatus: Open\nroadmap: "docs/roadmaps/done/DONE-ROADMAP-DEFEITO2.md"\n---\n\n' +
+        '# REQ: Defeito 2\n\n> Date: 2026-07-27 | Status: Open\n\n' +
+        '## Linked Roadmap\nRoadmap: docs/roadmaps/done/DONE-ROADMAP-DEFEITO2.md\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const violations = validator.validate()
+        const warnings = validator.validateRefTargetsExist()
+        // Defeito presente: nem violations nem warnings mencionam a inconsistência de ciclo de vida
+        const allMsgs = [...violations, ...warnings]
+        assert(allMsgs.some(m => m.includes('DONE-ROADMAP-DEFEITO2')),
+          `esperava mensagem sobre REQ Open com roadmap em done/, mas nao houve (defeito 2 ativo). allMsgs=${JSON.stringify(allMsgs)}`)
+      } finally {
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
   console.log(`\n${passed} passed, ${failed} failed, ${skipped} xfail`)
   if (failed > 0) process.exit(1)
 })()

@@ -9,6 +9,7 @@ import time
 import unittest
 import tempfile
 import shutil
+import pytest
 
 # Garante que importamos a versão local do pacote
 import sys
@@ -1063,6 +1064,126 @@ class TestWIPHasREQCRLFIntegracao(unittest.TestCase):
                             f"esperava violation de REQ vazio com CRLF, obteve: {violations}")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# ML-1A — REQ-2026-07-27-integridade-referencias — testes negativos xfail
+# Semântica strict: cada teste executa o corpo e falha contra o código atual.
+# Se o defeito for corrigido sem reativação do teste, pytest reporta XPASS e
+# falha a suíte por causa de strict=True.
+# ---------------------------------------------------------------------------
+
+
+def _ml1a_base(tmp_path, monkeypatch):
+    for rel in [
+        "docs/req",
+        "docs/roadmaps/backlog",
+        "docs/roadmaps/blocked",
+        "docs/roadmaps/done",
+        "docs/roadmaps/wip",
+        "docs/adr",
+    ]:
+        (tmp_path / rel).mkdir(parents=True, exist_ok=True)
+    (tmp_path / "trackfw.yaml").write_text(
+        "req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs:\n  - docs/adr\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    _config.reset()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="ML-1A Escape1 ativo: frontmatter roadmap: ainda nao e validado; reativar no ML-2A.",
+)
+def test_ml1a_xfail_escape1_frontmatter_roadmap_nao_lido(tmp_path, monkeypatch):
+    _ml1a_base(tmp_path, monkeypatch)
+    (tmp_path / "docs/req/REQ-XFAIL-ESCAPE1.md").write_text(
+        "---\nstatus: Open\nroadmap: \"docs/roadmaps/wip/NAO-EXISTE-ESCAPE-1.md\"\n---\n\n"
+        "# REQ: Escape 1\n\n> Date: 2026-07-27 | Status: Open\n\n"
+        "## Linked Roadmap\n",
+        encoding="utf-8",
+    )
+
+    warnings = v.validate_ref_targets_exist(_config.load())
+
+    assert any(
+        "NAO-EXISTE-ESCAPE-1" in item["message"] for item in warnings
+    ), f"esperava warning para roadmap: inexistente no frontmatter; warnings={warnings}"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="ML-1A Escape2 ativo: fallback por basename aceita caminho errado; reativar no ML-2A.",
+)
+def test_ml1a_xfail_escape2_fallback_basename_aceita_path_errado(tmp_path, monkeypatch):
+    _ml1a_base(tmp_path, monkeypatch)
+    (tmp_path / "docs/roadmaps/done/ESCAPE2-ROADMAP.md").write_text(
+        "# Roadmap\n## Acceptance Criteria\n- [x] done\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docs/req/REQ-XFAIL-ESCAPE2.md").write_text(
+        "---\nstatus: Open\n---\n\n# REQ: Escape 2\n\n"
+        "> Date: 2026-07-27 | Status: Open\n\n"
+        "## Linked Roadmap\nRoadmap: docs/roadmaps/wip/ESCAPE2-ROADMAP.md\n",
+        encoding="utf-8",
+    )
+
+    warnings = v.validate_ref_targets_exist(_config.load())
+
+    assert any(
+        "ESCAPE2-ROADMAP" in item["message"] for item in warnings
+    ), f"esperava warning para caminho errado wip/ vs done/; warnings={warnings}"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="ML-1A Escape3 ativo: ref_targets_exist default warning nao reprova gate; reativar no ML-3A.",
+)
+def test_ml1a_xfail_escape3_severidade_warning_nao_reprova_gate(tmp_path, monkeypatch):
+    _ml1a_base(tmp_path, monkeypatch)
+    (tmp_path / "docs/req/REQ-XFAIL-ESCAPE3.md").write_text(
+        "---\nstatus: Open\n---\n\n# REQ: Escape 3\n\n"
+        "> Date: 2026-07-27 | Status: Open\n\n"
+        "## Linked Roadmap\nRoadmap: docs/roadmaps/wip/ESCAPE3-TRULY-MISSING.md\n",
+        encoding="utf-8",
+    )
+
+    result = v.validate_unfiltered()
+
+    assert any(
+        "ESCAPE3-TRULY-MISSING" in item["message"]
+        for item in result["violations"]
+    ), f"esperava violation para referencia quebrada; result={result}"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="ML-1A Defeito2 ativo: REQ Open com roadmap done nao e sinalizada; reativar no ML-2B.",
+)
+def test_ml1a_xfail_defeito2_req_open_com_roadmap_done(tmp_path, monkeypatch):
+    _ml1a_base(tmp_path, monkeypatch)
+    (tmp_path / "docs/roadmaps/done/DONE-ROADMAP-DEFEITO2.md").write_text(
+        "---\nstatus: Done\ndate: 2026-07-01\n---\n"
+        "# Roadmap concluido\n## Acceptance Criteria\n- [x] done\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docs/req/REQ-XFAIL-DEFEITO2.md").write_text(
+        "---\nstatus: Open\ndate: 2026-07-01\n"
+        "roadmap: \"docs/roadmaps/done/DONE-ROADMAP-DEFEITO2.md\"\n---\n\n"
+        "# REQ: Defeito 2\n\n> Date: 2026-07-01 | Status: Open\n\n"
+        "## Linked Roadmap\nRoadmap: docs/roadmaps/done/DONE-ROADMAP-DEFEITO2.md\n",
+        encoding="utf-8",
+    )
+
+    result = v.validate_unfiltered()
+    all_messages = [
+        item["message"] for item in result["violations"] + result["warnings"]
+    ]
+
+    assert any(
+        "DONE-ROADMAP-DEFEITO2" in message for message in all_messages
+    ), f"esperava mensagem sobre REQ Open com roadmap done; result={result}"
 
 
 # ---------------------------------------------------------------------------

@@ -4132,3 +4132,42 @@ normalização dos dados. Elevar na Wave 2 deixaria `make quality` vermelho na b
 
 **Fora de escopo:** slash-command sem frontmatter · `stale_wip` inócuo (mtime) · schemas mortos ·
 flags do Python · 6 itens de higiene menores.
+
+## Retomada 2026-07-27 — Zeus
+
+Retomado o roadmap `ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`
+na branch `fix/integridade-das-referencias-e-ciclo-de-vida-da-req`. O `trackfw validate` passou
+sem violações. O ML-1A estava parcial, com testes negativos locais em Go e Node; Python, relatório
+das falhas, `make quality`, commit e push permaneciam pendentes. Handoff realizado para Artemis
+concluir e validar exclusivamente o ML-1A antes da barrier da Wave 2.
+
+## ML-1A 2026-07-27 — Artemis
+
+**Status:** CONCLUÍDO na branch `fix/integridade-das-referencias-e-ciclo-de-vida-da-req`.
+
+**Escopo entregue:** 4 cenários negativos de integridade referencial/ciclo de vida nos 3 runtimes,
+sem alteração de código de produção:
+- Escape 1: `roadmap:` no frontmatter aponta para arquivo inexistente e não há `Roadmap:` no corpo.
+- Escape 2: `Roadmap: docs/roadmaps/wip/X.md` enquanto o arquivo real está em `docs/roadmaps/done/X.md`.
+- Escape 3: `ref_targets_exist` default `warning` não reprova o gate.
+- Defeito 2: REQ `Open` com roadmap em `done/` não é sinalizada.
+
+**Arquivos alterados:** `internal/validator/validator_integrity_xfail_test.go`,
+`npm/tests/validator.test.js`, `pypi/tests/test_validator.py`,
+`docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`,
+`docs/agents-working-context.md`.
+
+**Evidência das falhas esperadas:**
+- `go test ./internal/validator -run 'TestXFail' -v` → 4 testes executados com logs
+  `[xfail esperado]`; helper Go falha em XPASS via `t.Errorf`, sem `t.Skip`.
+- `npm test -- --runInBand --test-name-pattern=validator` → `37 passed, 0 failed, 4 xfail`
+  no validator.
+- `python3 -m pytest pypi/tests/test_validator.py -q -rxX -k ml1a` →
+  `59 deselected, 4 xfailed`; marcado com `pytest.mark.xfail(strict=True)`.
+
+**Validação final:**
+- `python3 -m pytest pypi/tests/test_validator.py -q -rxX` no sandbox falhou em dois testes legados
+  por `PermissionError` ao criar diretórios temporários em `~/`; classificado como limitação ambiental.
+- `make quality` executado fora do sandbox → verde: Go `ok`; Node `261 pass` e validator
+  `37 passed, 0 failed, 4 xfail`; Python `604 passed, 4 xfailed`; `go vet`, build, parity,
+  static/integration assets, identity parity, artifact parity e falsification gates passaram.
