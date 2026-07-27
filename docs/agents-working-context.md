@@ -3648,3 +3648,43 @@ correção do `re.sub` não escopado do Python, sincronização do cabeçalho, e
 **Fora de escopo (5 achados adjacentes registrados na REQ):** divergência de templates Python×Go/Node,
 estado `analyzing` não movível, aspas no `parse_frontmatter` do Python, ambiguidade do `findRoadmap`
 do Go, prefixo de agente no log Python.
+
+---
+
+## ML-1A — REQ-2026-07-27-roadmap-move — 2026-07-27 — Apolo
+
+**Tarefa:** ML-1A do roadmap `ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md`
+— sincronizar `status:` do frontmatter e cabeçalho em `roadmap move` nos 3 CLIs.
+**Branch:** `fix/roadmap-move-sincroniza-status`
+**Commit:** `385df5b`
+**Status:** CONCLUÍDO
+
+**O que foi feito:**
+
+- **Go** (`internal/generators/roadmap.go`): adicionou `rewriteRoadmapStatus(source []byte, state string) ([]byte, bool)` espelhando a semântica de `rewriteFrontmatterFields`. `MoveRoadmap` lê o arquivo após `os.Rename` e chama a função; só escreve se `changed == true`. Frontmatter escopado; `| Status: ` no cabeçalho sincronizado antes do primeiro `## `.
+
+- **Node.js** (`npm/src/generators/roadmap.js`): adicionou `rewriteRoadmapStatus(source, state)` com mesma semântica. `moveRoadmap` chama após `fs.renameSync`. Exportada para testes.
+
+- **Python** (`pypi/trackfw/generators/roadmap.py`): adicionou `_rewrite_roadmap_status(source, state)` substituindo o `re.sub` não escopado da linha ~213. State gravado em minúsculo (bytes idênticos nos 3 CLIs). Import `re` mantido (usado em `slugify`).
+
+**Testes criados:**
+
+- **Go** (`internal/generators/roadmap_test.go`):
+  - `TestMoveRoadmap_FrontmatterSync_ValidateAfterMove` — P4: controle positivo + ausência de `folder_status` após move
+  - `TestMoveRoadmap_BodyStatusIntact` — escopo: `status:` no corpo e `| Status:` em seção não tocados
+  - `TestMoveRoadmap_NoFrontmatter` — arquivo sem frontmatter: conteúdo intacto
+  - `TestMoveRoadmap_Valid` — atualizado para verificar `status: wip` e `| Status: wip`
+
+- **Node.js** (`npm/tests/roadmap_move.test.js` — novo, 10 testes): move válido, estado inválido, não encontrado, validate P4 com controle positivo, escopo do frontmatter, sem frontmatter, testes unitários de `rewriteRoadmapStatus`
+
+- **Python** (`pypi/tests/test_generators_roadmap.py`):
+  - `TestRewriteRoadmapStatus` (5 testes unitários)
+  - `TestMoveRoadmapFrontmatterSync` (4 testes: casing minúsculo, P4 validate, sem frontmatter, corpo intocado)
+  - `assertIn("status: WIP")` corrigidos em 2 arquivos de teste para `"status: wip"`
+
+**Divergências deliberadas não corrigidas (escopo negativo da REQ):**
+1. Template Python gera `status: Backlog` (não `status: backlog`) — divergência de template, REQ própria
+2. Prefixo de agente no log Python (ausente); Go/Node prefixam — REQ própria
+3. `parse_frontmatter` Python não remove aspas → `status: "wip"` gera warning — REQ própria
+
+**Qualidade:** `make quality` verde, sem variável de ambiente auxiliar.
