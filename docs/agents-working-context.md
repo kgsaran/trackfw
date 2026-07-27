@@ -3451,12 +3451,19 @@ Achados registrados:
 
 **Tarefa:** Correção crítica — alinhar default de `roadmap_dir` entre os 3 runtimes
 **Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
-**Status:** IMPLEMENTANDO
+**Status:** CONCLUÍDO
 
-**Diagnóstico confirmado:**
-- `npm/src/ship/runner.js` e `pypi/trackfw/ship/runner.py` tinham `resolveRoadmapDir()` com default `docs/roadmaps/claude` (errado)
-- Módulos de config (npm e PyPI) já usam `docs/roadmaps` como default correto
-- Testes de integração montavam cenário em `docs/roadmaps/claude/wip/` (errado)
-- `docs/cli-parity.md` documentava o defeito como "intencional"
+**Causa raiz confirmada:** runners npm/PyPI reimplementavam resolução de `roadmap_dir` com default errado (`docs/roadmaps/claude`), enquanto os módulos de config já tinham o default correto (`docs/roadmaps`). Duplicação de lógica com valor divergente.
 
-**Abordagem:** Reutilizar módulo de config existente em ambos os runners (elimina duplicação)
+**Correções aplicadas:**
+1. `npm/src/ship/runner.js`: `resolveRoadmapDir()` agora delega a `loadConfig().roadmapDir`
+2. `pypi/trackfw/ship/runner.py`: `_resolve_roadmap_dir()` agora delega a `_config.load()["roadmap_dir"]`
+3. Testes de integração npm e PyPI migrados: `docs/roadmaps/claude/wip/` → `docs/roadmaps/wip/`
+4. Testes de paridade adicionados: npm (50 pass) e PyPI (70 pass)
+5. `docs/cli-parity.md`: seção "Known divergence" removida
+6. Nota de vault criada: `vault/notes/ship-roadmap-dir-default-divergencia-2026-07-27.md`
+
+**Gate nos 3 runtimes (mesmo repositório):** Go ✅ | Node.js ✅ | PyPI ✅
+**make quality:** ✅ | **trackfw validate:** ✅
+
+**Commit:** 442bcf1 | **Push:** feat/comando-trackfw-ship-agnostico-de-forge

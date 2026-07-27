@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-26
 req: "docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: comando trackfw ship agnostico de forge
 
-> Created: 2026-07-26 | Status: wip
+> Created: 2026-07-26 | Status: done
 
 ## Context
 
