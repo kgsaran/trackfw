@@ -745,8 +745,11 @@ func GetStatus() (string, error) {
 	return sb.String(), nil
 }
 
-// resolveWIPDirs retorna todos os diretórios wip/ conforme o modo de namespacing.
-func resolveWIPDirs(cfg config.ProjectConfig) []string {
+// resolveStateDirs retorna todos os diretórios de um estado (ex: "wip", "done") conforme o modo de
+// namespacing. É a fonte única de resolução de caminho por estado — resolveWIPDirs e resolveDoneDirs
+// são wrappers finos sobre esta função. Duplicar a lógica aqui foi a causa raiz de defeitos
+// anteriores (roadmap_dir divergente entre runtimes).
+func resolveStateDirs(cfg config.ProjectConfig, state string) []string {
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		agents := cfg.Agents
 		if len(agents) == 0 {
@@ -761,11 +764,21 @@ func resolveWIPDirs(cfg config.ProjectConfig) []string {
 		}
 		var dirs []string
 		for _, agent := range agents {
-			dirs = append(dirs, cfg.RoadmapDir+"/"+agent+"/wip")
+			dirs = append(dirs, cfg.RoadmapDir+"/"+agent+"/"+state)
 		}
 		return dirs
 	}
-	return []string{cfg.RoadmapDir + "/wip"}
+	return []string{cfg.RoadmapDir + "/" + state}
+}
+
+// resolveWIPDirs retorna todos os diretórios wip/ conforme o modo de namespacing.
+func resolveWIPDirs(cfg config.ProjectConfig) []string {
+	return resolveStateDirs(cfg, "wip")
+}
+
+// resolveDoneDirs retorna todos os diretórios done/ conforme o modo de namespacing.
+func resolveDoneDirs(cfg config.ProjectConfig) []string {
+	return resolveStateDirs(cfg, "done")
 }
 
 // resolveREQFiles retorna paths completos de todos os .md em req_dir,
@@ -1509,14 +1522,17 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
+	doneDirs := resolveDoneDirs(cfg)
 
 	branchSlug := normalizeBranchSlug(strings.SplitN(branch, "/", 2)[1])
-	var wipFiles []string
-	for _, wipDir := range wipDirs {
-		entries, _ := listDir(wipDir)
+	// candidates reúne todos os roadmaps encontrados em wip/ e done/.
+	// O casamento de slug é testado ao iterar — se encontrado, retorna sem violação.
+	var candidates []string
+	for _, dir := range append(wipDirs, doneDirs...) {
+		entries, _ := listDir(dir)
 		for _, name := range entries {
 			if strings.HasSuffix(name, ".md") {
-				wipFiles = append(wipFiles, name)
+				candidates = append(candidates, name)
 				if strings.Contains(normalizeBranchSlug(name), branchSlug) {
 					return nil, nil
 				}
@@ -1524,15 +1540,15 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 		}
 	}
 
-	if len(wipFiles) == 0 {
+	if len(candidates) == 0 {
 		return []string{fmt.Sprintf(
-			"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ — create governance artifacts first:\n  trackfw req new \"title\"\n  trackfw roadmap new \"title\"\n  trackfw roadmap move <name> wip",
+			"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new \"title\"\n  trackfw roadmap new \"title\"\n  trackfw roadmap move <name> wip",
 			branch,
 		)}, nil
 	}
 	return []string{fmt.Sprintf(
-		"branch %q has no matching roadmap in wip/ (found: %s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
-		branch, strings.Join(wipFiles, ", "),
+		"branch %q has no matching roadmap in wip/ nor done/ (found: %s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
+		branch, strings.Join(candidates, ", "),
 	)}, nil
 }
 
@@ -1628,7 +1644,7 @@ func (e *GovernanceViolation) Error() string {
 // governance regardless of project settings.
 //
 // It checks:
-//  1. The current branch has a matching roadmap in wip/ (branch_has_wip_roadmap)
+//  1. The current branch has a matching roadmap in wip/ or done/ (branch_has_wip_roadmap)
 //  2. All WIP roadmaps have a linked REQ (wip_has_req)
 //
 // Returns nil when all checks pass. Returns *GovernanceViolation otherwise.

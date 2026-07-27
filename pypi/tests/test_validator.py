@@ -815,5 +815,109 @@ class TestAdrOrphanExemptOutsideCwd(unittest.TestCase):
         self.assertEqual(violations, [], "Arquivo com caminho resolvido fora do CWD deve ser isento por-arquivo")
 
 
+class TestValidateBranchHasWIPRoadmap(unittest.TestCase):
+    """4 cenários obrigatórios (P4 do ADR): a regra não afrouxou."""
+
+    def _cfg(self, roadmap_dir: str) -> dict:
+        return {
+            "roadmap_dir": roadmap_dir,
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+
+    def test_cenario1_wip_com_slug_passa(self):
+        """Cenário 1 — roadmap em wip/ com slug da branch → sem violação (comportamento preservado)."""
+        import os as _os
+        from trackfw.validator import validate_branch_has_wip_roadmap
+        tmp = tempfile.mkdtemp()
+        try:
+            wip_dir = os.path.join(tmp, "docs", "roadmaps", "wip")
+            os.makedirs(wip_dir)
+            _write(os.path.join(wip_dir, "ROADMAP-my-feature.md"), "REQ: REQ-001\n")
+            cfg = self._cfg(os.path.join(tmp, "docs", "roadmaps"))
+            orig = _os.environ.get("TRACKFW_BRANCH")
+            _os.environ["TRACKFW_BRANCH"] = "feat/my-feature"
+            try:
+                result = validate_branch_has_wip_roadmap(cfg)
+                self.assertEqual(result, [], f"roadmap em wip/ com slug deve passar, obteve: {result}")
+            finally:
+                if orig is None:
+                    _os.environ.pop("TRACKFW_BRANCH", None)
+                else:
+                    _os.environ["TRACKFW_BRANCH"] = orig
+        finally:
+            import shutil; shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_cenario2_done_com_slug_passa(self):
+        """Cenário 2 — roadmap em done/ com slug da branch → sem violação (novo comportamento)."""
+        import os as _os
+        from trackfw.validator import validate_branch_has_wip_roadmap
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, "docs", "roadmaps", "wip"))
+            done_dir = os.path.join(tmp, "docs", "roadmaps", "done")
+            os.makedirs(done_dir)
+            _write(os.path.join(done_dir, "ROADMAP-my-feature.md"), "REQ: REQ-001\n")
+            cfg = self._cfg(os.path.join(tmp, "docs", "roadmaps"))
+            orig = _os.environ.get("TRACKFW_BRANCH")
+            _os.environ["TRACKFW_BRANCH"] = "feat/my-feature"
+            try:
+                result = validate_branch_has_wip_roadmap(cfg)
+                self.assertEqual(result, [], f"roadmap em done/ com slug deve passar, obteve: {result}")
+            finally:
+                if orig is None:
+                    _os.environ.pop("TRACKFW_BRANCH", None)
+                else:
+                    _os.environ["TRACKFW_BRANCH"] = orig
+        finally:
+            import shutil; shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_cenario3_sem_roadmap_reprova(self):
+        """Cenário 3 — nenhum roadmap em wip/ nem done/ → continua reprovando."""
+        import os as _os
+        from trackfw.validator import validate_branch_has_wip_roadmap
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, "docs", "roadmaps", "wip"))
+            cfg = self._cfg(os.path.join(tmp, "docs", "roadmaps"))
+            orig = _os.environ.get("TRACKFW_BRANCH")
+            _os.environ["TRACKFW_BRANCH"] = "feat/my-feature"
+            try:
+                result = validate_branch_has_wip_roadmap(cfg)
+                self.assertTrue(len(result) > 0, "sem roadmap em wip/ nem done/ deve reprovar")
+                self.assertIn("no roadmap is in wip/ nor done/", result[0])
+            finally:
+                if orig is None:
+                    _os.environ.pop("TRACKFW_BRANCH", None)
+                else:
+                    _os.environ["TRACKFW_BRANCH"] = orig
+        finally:
+            import shutil; shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_cenario4_done_slug_diferente_reprova(self):
+        """Cenário 4 — roadmap em done/ com slug DIFERENTE → continua reprovando (casamento obrigatório)."""
+        import os as _os
+        from trackfw.validator import validate_branch_has_wip_roadmap
+        tmp = tempfile.mkdtemp()
+        try:
+            done_dir = os.path.join(tmp, "docs", "roadmaps", "done")
+            os.makedirs(done_dir)
+            _write(os.path.join(done_dir, "ROADMAP-outra-coisa.md"), "REQ: REQ-001\n")
+            cfg = self._cfg(os.path.join(tmp, "docs", "roadmaps"))
+            orig = _os.environ.get("TRACKFW_BRANCH")
+            _os.environ["TRACKFW_BRANCH"] = "feat/my-feature"
+            try:
+                result = validate_branch_has_wip_roadmap(cfg)
+                self.assertTrue(len(result) > 0, "slug diferente em done/ deve reprovar")
+                self.assertIn("no matching roadmap in wip/ nor done/", result[0])
+            finally:
+                if orig is None:
+                    _os.environ.pop("TRACKFW_BRANCH", None)
+                else:
+                    _os.environ["TRACKFW_BRANCH"] = orig
+        finally:
+            import shutil; shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

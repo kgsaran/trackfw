@@ -854,8 +854,8 @@ func TestValidateBranchHasWIPRoadmap_Violation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
-	if !hasViolation(violations, "no roadmap is in wip/") {
-		t.Errorf("esperava violation de wip vazio, obteve: %v", violations)
+	if !hasViolation(violations, "no roadmap is in wip/ nor done/") {
+		t.Errorf("esperava violation de wip/done vazios, obteve: %v", violations)
 	}
 }
 
@@ -893,6 +893,47 @@ func TestValidateBranchHasWIPRoadmap_MismatchedRoadmap(t *testing.T) {
 	}
 	if !hasViolation(violations, "no matching roadmap") {
 		t.Errorf("expected mismatch violation, got: %v", violations)
+	}
+}
+
+// TestValidateBranchHasWIPRoadmap_DonePass — feat/ com roadmap em done/ com slug da branch → sem violation (P4: cenário 2)
+func TestValidateBranchHasWIPRoadmap_DonePass(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "feat/my-feature")
+	// wip/ existe mas vazio; roadmap movido para done/ com slug correspondente
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-my-feature.md", "REQ: REQ-001\n")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) > 0 {
+		t.Errorf("roadmap em done/ com slug correspondente não deve gerar violation, obteve: %v", violations)
+	}
+}
+
+// TestValidateBranchHasWIPRoadmap_DoneMismatch — feat/ com roadmap em done/ com slug DIFERENTE → violation (P4: cenário 4)
+func TestValidateBranchHasWIPRoadmap_DoneMismatch(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "feat/my-feature")
+	// roadmap em done/ com slug que NÃO corresponde à branch
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-outra-coisa.md", "REQ: REQ-001\n")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(violations, "no matching roadmap in wip/ nor done/") {
+		t.Errorf("roadmap em done/ com slug diferente deve reprovar, obteve: %v", violations)
 	}
 }
 
@@ -948,7 +989,7 @@ func TestValidateBranchHasWIPRoadmap_RuleOff(t *testing.T) {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 	// com regra "off" não deve aparecer nem como violation nem como warning
-	if hasViolation(violations, "no roadmap is in wip/") || hasWarning(warnings, "no roadmap is in wip/") {
+	if hasViolation(violations, "no roadmap is in wip/ nor done/") || hasWarning(warnings, "no roadmap is in wip/ nor done/") {
 		t.Errorf("regra off deve suprimir a mensagem, obteve violations=%v warnings=%v", violations, warnings)
 	}
 }

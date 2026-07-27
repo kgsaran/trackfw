@@ -134,8 +134,11 @@ function resolveReqFiles(cfg) {
   } catch (_) { return [] }
 }
 
-// resolveWIPDirs retorna todos os diretórios wip/ conforme o modo de namespacing.
-function resolveWIPDirs(cfg) {
+// resolveStateDirs retorna todos os diretórios de um estado (ex: 'wip', 'done') conforme o modo de
+// namespacing. É a fonte única de resolução de caminho por estado — resolveWIPDirs e resolveDoneDirs
+// são wrappers finos sobre esta função. Duplicar a lógica aqui foi a causa raiz de defeitos
+// anteriores (roadmap_dir divergente entre runtimes).
+function resolveStateDirs(cfg, state) {
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
     let agents = cfg.agents || []
     if (agents.length === 0) {
@@ -145,9 +148,19 @@ function resolveWIPDirs(cfg) {
         })
       } catch (_) { agents = [] }
     }
-    return agents.map(agent => cfg.roadmapDir + '/' + agent + '/wip')
+    return agents.map(agent => cfg.roadmapDir + '/' + agent + '/' + state)
   }
-  return [cfg.roadmapDir + '/wip']
+  return [cfg.roadmapDir + '/' + state]
+}
+
+// resolveWIPDirs retorna todos os diretórios wip/ conforme o modo de namespacing.
+function resolveWIPDirs(cfg) {
+  return resolveStateDirs(cfg, 'wip')
+}
+
+// resolveDoneDirs retorna todos os diretórios done/ conforme o modo de namespacing.
+function resolveDoneDirs(cfg) {
+  return resolveStateDirs(cfg, 'done')
 }
 
 // parseBlockedADRs extrai basenames de ADRs da seção "## Blocked by ADRs" de um arquivo REQ.
@@ -795,7 +808,9 @@ function validateFilenameUniqueness() {
   return violations
 }
 
-// validateBranchHasWIPRoadmap — verifica que branch feat/fix/refactor tem ao menos um roadmap em wip/
+// validateBranchHasWIPRoadmap — verifica que branch feat/fix/refactor tem ao menos um roadmap em
+// wip/ ou done/ cujo slug case com a branch. Aceita done/ para permitir encerramento do roadmap na
+// própria branch, conforme a Definition of Done, sem reprovar o gate.
 function validateBranchHasWIPRoadmap() {
   const { execSync } = require('child_process')
   let branch = process.env.TRACKFW_BRANCH || ''
@@ -816,18 +831,20 @@ function validateBranchHasWIPRoadmap() {
 
   const cfg = config.load()
   const wipDirs = resolveWIPDirs(cfg)
+  const doneDirs = resolveDoneDirs(cfg)
   const branchSlug = normalizeBranchSlug(branch.split('/', 2)[1])
-  const wipFiles = []
-  for (const wipDir of wipDirs) {
-    const files = listDir(wipDir).filter(f => f.endsWith('.md'))
-    wipFiles.push(...files)
+  // candidates reúne todos os roadmaps encontrados em wip/ e done/.
+  const candidates = []
+  for (const dir of [...wipDirs, ...doneDirs]) {
+    const files = listDir(dir).filter(f => f.endsWith('.md'))
+    candidates.push(...files)
     if (files.some(file => normalizeBranchSlug(file).includes(branchSlug))) return []
   }
 
-  if (wipFiles.length === 0) {
-    return [`branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ — create governance artifacts first:\n  trackfw req new "title"\n  trackfw roadmap new "title"\n  trackfw roadmap move <name> wip`]
+  if (candidates.length === 0) {
+    return [`branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new "title"\n  trackfw roadmap new "title"\n  trackfw roadmap move <name> wip`]
   }
-  return [`branch "${branch}" has no matching roadmap in wip/ (found: ${wipFiles.join(', ')}) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI`]
+  return [`branch "${branch}" has no matching roadmap in wip/ nor done/ (found: ${candidates.join(', ')}) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI`]
 }
 
 function normalizeBranchSlug(value) {

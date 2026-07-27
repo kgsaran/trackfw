@@ -410,6 +410,93 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     }
   })
 
+  // ── validateBranchHasWIPRoadmap — 4 cenários (P4 do ADR) ──────────────────
+  test('branch_has_wip_roadmap: cenário 1 — roadmap em wip/ com slug → sem violation', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bwip1-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'wip', 'ROADMAP-my-feature.md'), 'REQ: REQ-001\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        process.env.TRACKFW_BRANCH = 'feat/my-feature'
+        const violations = validator.validateBranchHasWIPRoadmap()
+        assert.strictEqual(violations.length, 0, `roadmap em wip/ com slug deve passar, obteve: ${JSON.stringify(violations)}`)
+      } finally {
+        delete process.env.TRACKFW_BRANCH
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('branch_has_wip_roadmap: cenário 2 — roadmap em done/ com slug → sem violation', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bwip2-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'done', 'ROADMAP-my-feature.md'), 'REQ: REQ-001\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        process.env.TRACKFW_BRANCH = 'feat/my-feature'
+        const violations = validator.validateBranchHasWIPRoadmap()
+        assert.strictEqual(violations.length, 0, `roadmap em done/ com slug deve passar, obteve: ${JSON.stringify(violations)}`)
+      } finally {
+        delete process.env.TRACKFW_BRANCH
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('branch_has_wip_roadmap: cenário 3 — nenhum roadmap em wip/ nem done/ → violation', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bwip3-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        process.env.TRACKFW_BRANCH = 'feat/my-feature'
+        const violations = validator.validateBranchHasWIPRoadmap()
+        assert(violations.length > 0, 'sem roadmap em wip/ nem done/ deve reprovar')
+        assert(violations[0].includes('no roadmap is in wip/ nor done/'), `mensagem esperada, obteve: ${violations[0]}`)
+      } finally {
+        delete process.env.TRACKFW_BRANCH
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('branch_has_wip_roadmap: cenário 4 — roadmap em done/ com slug DIFERENTE → violation', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bwip4-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'done', 'ROADMAP-outra-coisa.md'), 'REQ: REQ-001\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        process.env.TRACKFW_BRANCH = 'feat/my-feature'
+        const violations = validator.validateBranchHasWIPRoadmap()
+        assert(violations.length > 0, 'slug diferente em done/ deve reprovar')
+        assert(violations[0].includes('no matching roadmap in wip/ nor done/'), `mensagem esperada, obteve: ${violations[0]}`)
+      } finally {
+        delete process.env.TRACKFW_BRANCH
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
   console.log(`\n${passed} passed, ${failed} failed`)
   if (failed > 0) process.exit(1)
 })()

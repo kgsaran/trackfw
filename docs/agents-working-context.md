@@ -3467,3 +3467,14 @@ Achados registrados:
 **make quality:** ✅ | **trackfw validate:** ✅
 
 **Commit:** 442bcf1 | **Push:** feat/comando-trackfw-ship-agnostico-de-forge
+
+---
+
+## ML-1A — 2026-07-27 — Apolo
+
+**Tarefa:** fix(validator): branch_has_wip_roadmap aceita roadmap concluído na própria branch
+**Branch:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Status:** IMPLEMENTANDO
+
+**Problema:** regra `branch_has_wip_roadmap` só busca em `wip/`; mover o roadmap para `done/` durante o DoD na branch reprova o gate.
+**Correção:** procurar slug em `wip/` E `done/`; reprovar apenas se não houver correspondência em nenhum dos dois; casamento de slug obrigatório também em `done/`.

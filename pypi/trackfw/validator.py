@@ -218,11 +218,14 @@ def resolve_req_files(cfg: dict) -> list:
     return _glob.glob(os.path.join(req_dir, "*.md"))
 
 
-def resolve_wip_dirs(cfg: dict) -> list:
+def _resolve_state_dirs(cfg: dict, state: str) -> list:
     """
-    Retorna lista de diretórios wip/ conforme o modo de namespacing.
-    flat     → [cfg["roadmap_dir"] + "/wip"]
-    by_agent → [cfg["roadmap_dir"] + "/" + agent + "/wip" for agent in agents]
+    Fonte única de resolução de caminho por estado (ex: 'wip', 'done') conforme o modo de
+    namespacing. resolve_wip_dirs e resolve_done_dirs são wrappers finos sobre esta função.
+    Duplicar a lógica aqui foi a causa raiz de defeitos anteriores (roadmap_dir divergente entre
+    runtimes).
+    flat     → [cfg["roadmap_dir"] + "/" + state]
+    by_agent → [cfg["roadmap_dir"] + "/" + agent + "/" + state for agent in agents]
     """
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
         agents = cfg.get("agents") or []
@@ -236,9 +239,27 @@ def resolve_wip_dirs(cfg: dict) -> list:
             except OSError:
                 agents = []
         roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
-        return [roadmap_dir + "/" + agent + "/wip" for agent in agents]
+        return [roadmap_dir + "/" + agent + "/" + state for agent in agents]
 
-    return [cfg.get("roadmap_dir", "docs/roadmaps") + "/wip"]
+    return [cfg.get("roadmap_dir", "docs/roadmaps") + "/" + state]
+
+
+def resolve_wip_dirs(cfg: dict) -> list:
+    """
+    Retorna lista de diretórios wip/ conforme o modo de namespacing.
+    flat     → [cfg["roadmap_dir"] + "/wip"]
+    by_agent → [cfg["roadmap_dir"] + "/" + agent + "/wip" for agent in agents]
+    """
+    return _resolve_state_dirs(cfg, "wip")
+
+
+def resolve_done_dirs(cfg: dict) -> list:
+    """
+    Retorna lista de diretórios done/ conforme o modo de namespacing.
+    flat     → [cfg["roadmap_dir"] + "/done"]
+    by_agent → [cfg["roadmap_dir"] + "/" + agent + "/done" for agent in agents]
+    """
+    return _resolve_state_dirs(cfg, "done")
 
 
 def parse_frontmatter(content: str) -> dict:
@@ -952,26 +973,28 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
         return []
 
     wip_dirs = resolve_wip_dirs(cfg)
+    done_dirs = resolve_done_dirs(cfg)
     branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.split("/", 1)[1].lower()).strip("-")
-    wip_files = []
-    for wip_dir in wip_dirs:
-        if os.path.isdir(wip_dir):
-            files = [f for f in os.listdir(wip_dir) if f.endswith('.md')]
-            wip_files.extend(files)
+    # candidates reúne todos os roadmaps encontrados em wip/ e done/.
+    candidates = []
+    for search_dir in wip_dirs + done_dirs:
+        if os.path.isdir(search_dir):
+            files = [f for f in os.listdir(search_dir) if f.endswith('.md')]
+            candidates.extend(files)
             if any(branch_slug in re.sub(r"[^a-z0-9]+", "-", f.lower()).strip("-") for f in files):
                 return []
 
-    if not wip_files:
+    if not candidates:
         return [
-            f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ — '
+            f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — '
             f'create governance artifacts first:\n'
             f'  trackfw req new "title"\n'
             f'  trackfw roadmap new "title"\n'
             f'  trackfw roadmap move <name> wip'
         ]
     return [
-        f'branch "{branch}" has no matching roadmap in wip/ '
-        f'(found: {", ".join(wip_files)}) — include the branch slug in the roadmap filename '
+        f'branch "{branch}" has no matching roadmap in wip/ nor done/ '
+        f'(found: {", ".join(candidates)}) — include the branch slug in the roadmap filename '
         f'or set TRACKFW_BRANCH explicitly in CI'
     ]
 
