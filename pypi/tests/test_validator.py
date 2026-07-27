@@ -919,5 +919,95 @@ class TestValidateBranchHasWIPRoadmap(unittest.TestCase):
             import shutil; shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# Testes P2/P3 — adicionados pelo ML-2A (REQ-2026-07-26-robustez-gates)
+# ---------------------------------------------------------------------------
+
+class TestContentHasMarkerCRLF(unittest.TestCase):
+    """P3: contentHasMarker deve detectar campos vazios em arquivos CRLF."""
+
+    def test_campo_vazio_crlf_nao_conta_como_presente(self):
+        from trackfw.validator import _content_has_marker
+        content = "# Roadmap\r\nREQ: \r\n## Seção\r\n"
+        self.assertFalse(_content_has_marker(content, ["REQ:"]),
+                         "campo vazio com CRLF não deve ser tratado como presente")
+
+    def test_campo_preenchido_crlf_conta_como_presente(self):
+        from trackfw.validator import _content_has_marker
+        content = "# Roadmap\r\nREQ: REQ-001-titulo.md\r\n## Seção\r\n"
+        self.assertTrue(_content_has_marker(content, ["REQ:"]),
+                        "campo preenchido com CRLF deve ser tratado como presente")
+
+    def test_campo_vazio_lf_nao_conta_como_presente(self):
+        from trackfw.validator import _content_has_marker
+        content = "# Roadmap\nREQ: \n## Seção\n"
+        self.assertFalse(_content_has_marker(content, ["REQ:"]),
+                         "campo vazio com LF não deve ser tratado como presente")
+
+
+class TestFolderStatusDirNaoLegivel(unittest.TestCase):
+    """P2: pasta de estado que EXISTE mas não pode ser lida deve gerar warning."""
+
+    def test_enotdir_gera_warning(self):
+        from trackfw.validator import validate_folder_status_coherence
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, "docs", "roadmaps"))
+            # "analyzing" como arquivo regular — NotADirectoryError ao listar
+            _write(os.path.join(tmp, "docs", "roadmaps", "analyzing"),
+                   "eu sou um arquivo, nao um diretorio")
+            cfg = {"roadmap_dir": os.path.join(tmp, "docs", "roadmaps")}
+            warnings = validate_folder_status_coherence(cfg)
+            msgs = [w["message"] for w in warnings]
+            self.assertTrue(any("could not read directory" in m for m in msgs),
+                            f"esperado warning sobre diretório ilegível, obteve: {msgs}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestFilenameUniquenessDirNaoLegivel(unittest.TestCase):
+    """P2: pasta de estado que EXISTE mas não pode ser lida deve gerar violation."""
+
+    def test_enotdir_gera_violation(self):
+        from trackfw.validator import validate_filename_uniqueness
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, "docs", "roadmaps"))
+            # "wip" como arquivo regular — NotADirectoryError ao listar
+            _write(os.path.join(tmp, "docs", "roadmaps", "wip"),
+                   "eu sou um arquivo, nao um diretorio")
+            cfg = {"roadmap_dir": os.path.join(tmp, "docs", "roadmaps")}
+            violations = validate_filename_uniqueness(cfg)
+            msgs = [v["message"] for v in violations]
+            self.assertTrue(any("could not read directory" in m for m in msgs),
+                            f"esperado violation sobre diretório ilegível, obteve: {msgs}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestFilenameUniquenessOrdemDeterministica(unittest.TestCase):
+    """P3: estados na mensagem devem estar em ordem alfabética."""
+
+    def test_estados_em_ordem_alfabetica(self):
+        from trackfw.validator import validate_filename_uniqueness
+        tmp = tempfile.mkdtemp()
+        try:
+            wip_dir = os.path.join(tmp, "docs", "roadmaps", "wip")
+            done_dir = os.path.join(tmp, "docs", "roadmaps", "done")
+            os.makedirs(wip_dir)
+            os.makedirs(done_dir)
+            _write(os.path.join(wip_dir, "ROADMAP-duplicado.md"), "# Dup\n")
+            _write(os.path.join(done_dir, "ROADMAP-duplicado.md"), "# Dup\n")
+            cfg = {"roadmap_dir": os.path.join(tmp, "docs", "roadmaps")}
+            violations = validate_filename_uniqueness(cfg)
+            self.assertEqual(len(violations), 1,
+                             f"esperado 1 violation, obteve {len(violations)}: {violations}")
+            msg = violations[0]["message"]
+            self.assertIn("['done', 'wip']", msg,
+                          f"estados devem estar em ordem alfabética, obteve: {msg}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

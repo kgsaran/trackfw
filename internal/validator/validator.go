@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -56,9 +57,13 @@ func SaveBaseline(violations, warnings []string) error {
 const staleWIPDays = 7
 
 // contentHasMarker retorna true se content contém algum dos marcadores com valor não-vazio.
+// P3: verifica tanto "\n" quanto "\r\n" para detectar campos vazios em arquivos CRLF.
+// Um marcador seguido de " \n" ou " \r\n" é tratado como "sem valor" (campo vazio).
 func contentHasMarker(content string, markers []string) bool {
 	for _, marker := range markers {
-		if strings.Contains(content, marker) && !strings.Contains(content, marker+" \n") {
+		if strings.Contains(content, marker) &&
+			!strings.Contains(content, marker+" \n") &&
+			!strings.Contains(content, marker+" \r\n") {
 			return true
 		}
 	}
@@ -1419,7 +1424,17 @@ func validateFolderStatusCoherence() ([]string, error) {
 	}
 
 	for _, dir := range dirs {
-		entries, _ := listDir(dir.path)
+		entries, err := listDir(dir.path)
+		if err != nil {
+			// P2: diretório ausente é esperado (projeto não usa esse estado);
+			// qualquer outro erro (ENOTDIR, EPERM…) deve ser reportado.
+			if !os.IsNotExist(err) {
+				warnings = append(warnings, fmt.Sprintf(
+					"folder_status: could not read directory %q: %v", dir.path, err,
+				))
+			}
+			continue
+		}
 		for _, name := range entries {
 			if !strings.HasSuffix(name, ".md") {
 				continue
@@ -1457,6 +1472,7 @@ func validateFilenameUniqueness() ([]string, error) {
 
 	seen := map[string][]string{}
 
+	var listErrors []string
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		agents := cfg.Agents
 		if len(agents) == 0 {
@@ -1470,7 +1486,16 @@ func validateFilenameUniqueness() ([]string, error) {
 		for _, agent := range agents {
 			for _, state := range states {
 				dir := filepath.Join(cfg.RoadmapDir, agent, state)
-				names, _ := listDir(dir)
+				names, err := listDir(dir)
+				if err != nil {
+					// P2: apenas reportar erros que não sejam "diretório ausente".
+					if !os.IsNotExist(err) {
+						listErrors = append(listErrors, fmt.Sprintf(
+							"filename_uniqueness: could not read directory %q: %v", dir, err,
+						))
+					}
+					continue
+				}
 				for _, name := range names {
 					key := agent + "/" + name
 					seen[key] = append(seen[key], state)
@@ -1480,7 +1505,15 @@ func validateFilenameUniqueness() ([]string, error) {
 	} else {
 		for _, state := range states {
 			dir := filepath.Join(cfg.RoadmapDir, state)
-			names, _ := listDir(dir)
+			names, err := listDir(dir)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					listErrors = append(listErrors, fmt.Sprintf(
+						"filename_uniqueness: could not read directory %q: %v", dir, err,
+					))
+				}
+				continue
+			}
 			for _, name := range names {
 				seen[name] = append(seen[name], state)
 			}
@@ -1488,10 +1521,22 @@ func validateFilenameUniqueness() ([]string, error) {
 	}
 
 	var violations []string
-	for name, stateList := range seen {
+	violations = append(violations, listErrors...)
+	// P3: ordenar a lista de estados em cada mensagem e depois as próprias mensagens
+	// para garantir saída determinística independente de ordem de iteração do mapa.
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		stateList := seen[name]
 		if len(stateList) > 1 {
+			sorted := make([]string, len(stateList))
+			copy(sorted, stateList)
+			sort.Strings(sorted)
 			violations = append(violations, fmt.Sprintf(
-				"roadmap %q appears in multiple states: %v", name, stateList,
+				"roadmap %q appears in multiple states: %v", name, sorted,
 			))
 		}
 	}

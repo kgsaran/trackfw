@@ -497,6 +497,105 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
+  // -------------------------------------------------------------------------
+  // Testes P2/P3 — adicionados pelo ML-2A (REQ-2026-07-26-robustez-gates)
+  // -------------------------------------------------------------------------
+
+  test('contentHasMarker: campo vazio CRLF não deve contar como presente (P3)', () => {
+    const content = '# Roadmap\r\nREQ: \r\n## Seção\r\n'
+    assert(!validator.contentHasMarker(content, ['REQ:']), 'campo vazio com CRLF não deve ser tratado como presente')
+  })
+
+  test('contentHasMarker: campo preenchido CRLF deve contar como presente (P3)', () => {
+    const content = '# Roadmap\r\nREQ: REQ-001-titulo.md\r\n## Seção\r\n'
+    assert(validator.contentHasMarker(content, ['REQ:']), 'campo preenchido com CRLF deve ser tratado como presente')
+  })
+
+  test('validateFolderStatusCoherence: diretório não legível (ENOTDIR) gera warning (P2)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-fsc-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps'), { recursive: true })
+      // "analyzing" como arquivo regular — ENOTDIR ao tentar listar
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'analyzing'), 'eu sou um arquivo')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const warnings = validator.validateFolderStatusCoherence()
+        assert(warnings.some(w => w.includes('could not read directory')),
+          `esperado warning sobre diretório ilegível, obteve: ${JSON.stringify(warnings)}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('validateFilenameUniqueness: diretório não legível (ENOTDIR) gera violation (P2)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-fnu-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps'), { recursive: true })
+      // "wip" como arquivo regular — ENOTDIR ao tentar listar
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), 'eu sou um arquivo')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const violations = validator.validateFilenameUniqueness()
+        assert(violations.some(v => v.includes('could not read directory')),
+          `esperado violation sobre diretório ilegível, obteve: ${JSON.stringify(violations)}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('validateFilenameUniqueness: estados na mensagem em ordem alfabética (P3)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-p3-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'wip', 'ROADMAP-duplicado.md'), '# Dup\n')
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'done', 'ROADMAP-duplicado.md'), '# Dup\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const violations = validator.validateFilenameUniqueness()
+        assert(violations.length === 1, `esperado 1 violation, obteve ${violations.length}`)
+        assert(violations[0].includes('[done, wip]'),
+          `estados devem estar em ordem alfabética (done antes de wip), obteve: ${violations[0]}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('adr_dir_exists: tag correta em Node.js (P3 — paridade com Go/Python)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-adr-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs'), { recursive: true })
+      // NÃO criar docs/adr — forçar violação
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'strict_ci_paths: true\nadr_dirs:\n  - docs/adr\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const result = validator.validateADRDirsExist()
+        assert(result.violations.length > 0, 'esperado violation quando adr_dir não existe')
+        assert(result.violations[0].includes('adr_dir "'), `mensagem deve usar 'adr_dir "', obteve: ${result.violations[0]}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
   console.log(`\n${passed} passed, ${failed} failed`)
   if (failed > 0) process.exit(1)
 })()

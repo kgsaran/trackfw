@@ -25,10 +25,11 @@ def _content_has_marker(content: str, markers: list) -> bool:
     """
     Retorna True se content contém qualquer marcador com valor não-vazio.
     Um marcador é considerado "sem valor" se a linha for exatamente
-    "MARKER \n" (espaço + newline) — espelhando a lógica anterior.
+    "MARKER \n" ou "MARKER \r\n" (espaço + newline/CRLF) — P3: detecta
+    campos vazios em arquivos CRLF além de arquivos LF.
     """
     for marker in markers:
-        if marker in content and (marker + " \n") not in content:
+        if marker in content and (marker + " \n") not in content and (marker + " \r\n") not in content:
             return True
     return False
 
@@ -117,6 +118,29 @@ def list_dir(path: str) -> list:
         return entries
     except OSError:
         return []
+
+
+def _try_list_dir(dir_path: str):
+    """
+    Tenta listar o diretório distinguindo "não existe" de outros erros.
+    Retorna (entries: list, error: OSError|None).
+    - error=None: sucesso, ou diretório ausente (ENOENT) — esperado para estados não usados.
+    - error não-None: diretório EXISTE mas não pôde ser lido (ENOTDIR, EPERM…) — P2: reportar.
+    """
+    try:
+        entries = []
+        for name in os.listdir(dir_path):
+            try:
+                full = os.path.join(dir_path, name)
+                if not os.path.isdir(full):
+                    entries.append(name)
+            except OSError:
+                pass
+        return entries, None
+    except FileNotFoundError:
+        return [], None  # diretório ausente — esperado
+    except OSError as e:
+        return [], e  # existe mas inacessível (ENOTDIR, EPERM…)
 
 
 def _walk_dir_md(dir_path: str) -> list:
@@ -885,7 +909,15 @@ def validate_folder_status_coherence(cfg: dict) -> list:
             dirs.append((os.path.join(roadmap_dir, state), state))
 
     for dir_path, state in dirs:
-        for name in list_dir(dir_path):
+        # P2: distinguir "diretório ausente" (esperado) de outros erros (reportar).
+        entries, read_error = _try_list_dir(dir_path)
+        if read_error is not None:
+            warnings.append({
+                "type": "warning",
+                "message": f'folder_status: could not read directory "{dir_path}": {read_error}'
+            })
+            continue
+        for name in entries:
             if not name.endswith(".md"):
                 continue
             try:
@@ -913,6 +945,7 @@ def validate_filename_uniqueness(cfg: dict) -> list:
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
     seen = {}  # filename → [states]
 
+    list_errors = []
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
         agents = cfg.get("agents") or []
         if not agents:
@@ -922,20 +955,39 @@ def validate_filename_uniqueness(cfg: dict) -> list:
                 agents = []
         for agent in agents:
             for state in states:
-                for name in list_dir(os.path.join(roadmap_dir, agent, state)):
+                dir_path = os.path.join(roadmap_dir, agent, state)
+                entries, read_error = _try_list_dir(dir_path)
+                if read_error is not None:
+                    list_errors.append({
+                        "type": "violation",
+                        "message": f'filename_uniqueness: could not read directory "{dir_path}": {read_error}'
+                    })
+                    continue
+                for name in entries:
                     key = agent + "/" + name
                     seen.setdefault(key, []).append(state)
     else:
         for state in states:
-            for name in list_dir(os.path.join(roadmap_dir, state)):
+            dir_path = os.path.join(roadmap_dir, state)
+            entries, read_error = _try_list_dir(dir_path)
+            if read_error is not None:
+                list_errors.append({
+                    "type": "violation",
+                    "message": f'filename_uniqueness: could not read directory "{dir_path}": {read_error}'
+                })
+                continue
+            for name in entries:
                 seen.setdefault(name, []).append(state)
 
-    violations = []
-    for name, state_list in seen.items():
+    violations = list(list_errors)
+    # P3: ordenar os nomes e os estados para saída determinística.
+    for name in sorted(seen.keys()):
+        state_list = seen[name]
         if len(state_list) > 1:
+            sorted_states = sorted(state_list)
             violations.append({
                 "type": "violation",
-                "message": f'roadmap "{name}" appears in multiple states: {state_list}'
+                "message": f'roadmap "{name}" appears in multiple states: {sorted_states}'
             })
     return violations
 

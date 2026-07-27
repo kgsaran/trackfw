@@ -25,6 +25,24 @@ function listDir(dir) {
   }
 }
 
+// tryListDir tenta listar o diretório distinguindo "não existe" de outros erros.
+// Retorna { entries: string[], readError: Error|null }.
+// readError é null tanto no caso de sucesso quanto quando o diretório não existe (ENOENT) —
+// diretório ausente é esperado para estados que o projeto não usa.
+// readError não-null indica que o diretório EXISTE mas não pôde ser lido (ENOTDIR, EPERM…).
+function tryListDir(dir) {
+  const expanded = config.expandPath ? config.expandPath(dir) : dir
+  try {
+    const entries = fs.readdirSync(expanded).filter(name => {
+      try { return !fs.statSync(path.join(expanded, name)).isDirectory() } catch (_) { return false }
+    })
+    return { entries, readError: null }
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return { entries: [], readError: null }
+    return { entries: [], readError: err }
+  }
+}
+
 // isInsideDir retorna true se childPath estiver contido ou for igual a parentDir.
 function isInsideDir(parentDir, childPath) {
   if (!parentDir || !childPath) return false
@@ -194,9 +212,10 @@ function parseBlockedADRs(filePath) {
 }
 
 // contentHasMarker retorna true se o conteúdo contém algum dos markers sem espaço em branco após.
+// P3: verifica tanto "\n" quanto "\r\n" para detectar campos vazios em arquivos CRLF.
 function contentHasMarker(content, markers) {
   for (const marker of markers) {
-    if (content.includes(marker) && !content.includes(marker + ' \n')) {
+    if (content.includes(marker) && !content.includes(marker + ' \n') && !content.includes(marker + ' \r\n')) {
       return true
     }
   }
@@ -298,7 +317,7 @@ function validateADRDirsExist() {
     const expanded = config.expandPath ? config.expandPath(adrDir) : adrDir
     const absDir = path.resolve(expanded)
     if (!fs.existsSync(absDir)) {
-      const msg = `adr directory "${adrDir}" does not exist`
+      const msg = `adr_dir "${adrDir}" does not exist`
       if (cfg.strictCiPaths) {
         violations.push(msg)
       } else {
@@ -740,7 +759,13 @@ function validateFolderStatusCoherence() {
   }
 
   for (const { dir, state } of dirs) {
-    for (const name of listDir(dir).filter(f => f.endsWith('.md'))) {
+    // P2: distinguir "diretório ausente" (esperado) de outros erros (reportar).
+    const { entries, readError } = tryListDir(dir)
+    if (readError) {
+      warnings.push(`folder_status: could not read directory "${dir}": ${readError.message}`)
+      continue
+    }
+    for (const name of entries.filter(f => f.endsWith('.md'))) {
       try {
         const content = fs.readFileSync(path.join(dir, name), 'utf8')
         // Extrair status do frontmatter
@@ -774,6 +799,7 @@ function validateFilenameUniqueness() {
   const states = ['wip', 'backlog', 'analyzing', 'blocked', 'done', 'abandoned']
   const seen = {}  // filename → [states]
 
+  const listErrors = []
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
     let agents = cfg.agents || []
     if (agents.length === 0) {
@@ -783,7 +809,13 @@ function validateFilenameUniqueness() {
     }
     for (const agent of agents) {
       for (const state of states) {
-        for (const name of listDir(path.join(cfg.roadmapDir, agent, state))) {
+        const dir = path.join(cfg.roadmapDir, agent, state)
+        const { entries, readError } = tryListDir(dir)
+        if (readError) {
+          listErrors.push(`filename_uniqueness: could not read directory "${dir}": ${readError.message}`)
+          continue
+        }
+        for (const name of entries) {
           const key = agent + '/' + name
           if (!seen[key]) seen[key] = []
           seen[key].push(state)
@@ -792,17 +824,28 @@ function validateFilenameUniqueness() {
     }
   } else {
     for (const state of states) {
-      for (const name of listDir(path.join(cfg.roadmapDir, state))) {
+      const dir = path.join(cfg.roadmapDir, state)
+      const { entries, readError } = tryListDir(dir)
+      if (readError) {
+        listErrors.push(`filename_uniqueness: could not read directory "${dir}": ${readError.message}`)
+        continue
+      }
+      for (const name of entries) {
         if (!seen[name]) seen[name] = []
         seen[name].push(state)
       }
     }
   }
 
-  const violations = []
-  for (const [name, stateList] of Object.entries(seen)) {
+  const violations = [...listErrors]
+  // P3: ordenar os estados dentro de cada mensagem e as mensagens pelo nome
+  // para garantir saída determinística independente de ordem de inserção.
+  const sortedNames = Object.keys(seen).sort()
+  for (const name of sortedNames) {
+    const stateList = seen[name]
     if (stateList.length > 1) {
-      violations.push(`roadmap "${name}" appears in multiple states: [${stateList.join(', ')}]`)
+      const sortedStates = [...stateList].sort()
+      violations.push(`roadmap "${name}" appears in multiple states: [${sortedStates.join(', ')}]`)
     }
   }
   return violations
@@ -996,8 +1039,8 @@ async function validateUnfiltered() {
 
   // Validação de existência dos adr_dirs (retorna violations se strictCiPaths, senão warnings)
   const adrDirsExistResult = validateADRDirsExist()
-  for (const msg of adrDirsExistResult.violations) { _setMeta(msg, 'adr_dirs_exist'); violations.push(msg) }
-  for (const msg of adrDirsExistResult.warnings) { _setMeta(msg, 'adr_dirs_exist'); warnings.push(msg) }
+  for (const msg of adrDirsExistResult.violations) { _setMeta(msg, 'adr_dir_exists'); violations.push(msg) }
+  for (const msg of adrDirsExistResult.warnings) { _setMeta(msg, 'adr_dir_exists'); warnings.push(msg) }
 
   // warnings diretos do WIP limit (não configuráveis)
   for (const msg of wipLimitResult.warnings) { _setMeta(msg, 'wip_limit'); warnings.push(msg) }
@@ -1138,6 +1181,7 @@ module.exports = {
   parseBlockedADRs,
   adrIsDraft,
   listDir,
+  tryListDir,
   resolveReqFiles,
   resolveWIPDirs,
   readGovernanceMode,

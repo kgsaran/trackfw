@@ -1335,3 +1335,96 @@ func TestNoteOrphan_NotaLinkadaNaoGera(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Testes P2/P3 — adicionados pelo ML-2A (REQ-2026-07-26-robustez-gates)
+// ---------------------------------------------------------------------------
+
+// TestContentHasMarker_CRLF_P3 — P3: marcador com campo vazio em arquivo CRLF
+// não deve ser tratado como "presente" (gate precisa reprovar).
+// Fixture: "REQ: \r\n" — campo vazio com terminação CRLF.
+func TestContentHasMarker_CRLF_P3(t *testing.T) {
+	t.Run("campo_vazio_crlf_nao_conta_como_presente", func(t *testing.T) {
+		content := "# Roadmap\r\nREQ: \r\n## Seção\r\n"
+		if contentHasMarker(content, []string{"REQ:"}) {
+			t.Error("campo vazio com CRLF não deve ser tratado como marcador presente")
+		}
+	})
+	t.Run("campo_preenchido_crlf_deve_contar", func(t *testing.T) {
+		content := "# Roadmap\r\nREQ: REQ-001-titulo.md\r\n## Seção\r\n"
+		if !contentHasMarker(content, []string{"REQ:"}) {
+			t.Error("campo preenchido com CRLF deve ser tratado como marcador presente")
+		}
+	})
+	t.Run("campo_vazio_lf_nao_conta_como_presente", func(t *testing.T) {
+		content := "# Roadmap\nREQ: \n## Seção\n"
+		if contentHasMarker(content, []string{"REQ:"}) {
+			t.Error("campo vazio com LF não deve ser tratado como marcador presente")
+		}
+	})
+}
+
+// TestFolderStatus_DiretorioNaoLegivel_P2 — P2: pasta de estado que EXISTE mas não pode ser
+// lida (ENOTDIR — criada como arquivo regular) deve gerar warning, não silenciar.
+// Vetor: "docs/roadmaps/analyzing" é um arquivo regular, não um diretório.
+func TestFolderStatus_DiretorioNaoLegivel_P2(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps")
+	// Criar "analyzing" como arquivo regular — os.ReadDir retornará ENOTDIR.
+	writeFile(t, dir, "docs/roadmaps/analyzing", "eu sou um arquivo, nao um diretorio")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	warnings, err := validateFolderStatusCoherence()
+	if err != nil {
+		t.Fatalf("validateFolderStatusCoherence() erro inesperado: %v", err)
+	}
+	if !hasWarning(warnings, "could not read directory") {
+		t.Errorf("esperado warning sobre diretório ilegível, obteve: %v", warnings)
+	}
+}
+
+// TestFilenameUniqueness_DiretorioNaoLegivel_P2 — P2: pasta de estado que EXISTE mas não pode
+// ser lida deve gerar violation, não silenciar (ENOTDIR via arquivo regular).
+func TestFilenameUniqueness_DiretorioNaoLegivel_P2(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps")
+	// "wip" como arquivo regular — os.ReadDir retornará ENOTDIR.
+	writeFile(t, dir, "docs/roadmaps/wip", "eu sou um arquivo, nao um diretorio")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	violations, err := validateFilenameUniqueness()
+	if err != nil {
+		t.Fatalf("validateFilenameUniqueness() erro inesperado: %v", err)
+	}
+	if !hasViolation(violations, "could not read directory") {
+		t.Errorf("esperado violation sobre diretório ilegível, obteve: %v", violations)
+	}
+}
+
+// TestFilenameUniqueness_OrdemDeterministica_P3 — P3: mesma roadmap em dois estados
+// deve produzir mensagem com estados em ordem alfabética entre execuções.
+func TestFilenameUniqueness_OrdemDeterministica_P3(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/done")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-duplicado.md", "# Duplicado\n")
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-duplicado.md", "# Duplicado\n")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	violations, err := validateFilenameUniqueness()
+	if err != nil {
+		t.Fatalf("validateFilenameUniqueness() erro: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("esperado 1 violation, obteve %d: %v", len(violations), violations)
+	}
+	// Estados devem aparecer em ordem alfabética: [done wip]
+	if !strings.Contains(violations[0], "[done wip]") {
+		t.Errorf("estados devem estar em ordem alfabética (done antes de wip), obteve: %s", violations[0])
+	}
+}
+

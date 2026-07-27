@@ -3488,4 +3488,40 @@ Achados registrados:
 - `docs/cli-parity.md` atualizado com tabela dos 4 cenários.
 - `make quality` verde (Go: ok | Node.js: 228 pass | Python: 580 pass) | `trackfw validate`: 0 violações.
 
+---
+
+## ML-2B — 2026-07-27 — Apolo
+
+**Tarefa:** fix(ci): auditoria P1–P3 dos 7 scripts de gate
+**Branch:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Status:** IMPLEMENTANDO
+
+**Escopo:** auditar `check-cli-parity.sh`, `check-identity-parity.sh`, `check-integration-assets.sh`, `check-integration-cli-parity.sh`, `check-static-assets.sh`, `check-validate-parity.sh`, `smoke-integration-packages.sh` e `Makefile` contra P1–P3 do ADR.
+
 **Commit:** 80746b4 | **Push:** feat/robustez-dos-gates-de-governanca-e-paridade
+
+---
+
+## ML-2A — 2026-07-27 — Apolo
+
+**Tarefa:** fix(validator): auditoria P1–P3 das 17 regras do validator
+**Branch:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Status:** IMPLEMENTANDO
+
+**Escopo:** auditar as 17 regras contra P1–P3 do ADR. Corrigir defeitos encontrados nos 3 CLIs.
+
+**Defeitos identificados para correção:**
+- P3 + P2 em `contentHasMarker` (3 CLIs): guarda `marker+" \n"` não detecta CRLF (`\r\n`) → empty markers em arquivos CRLF passam sem violation
+- P2 em `folder_status` (Go): `entries, _ := listDir(dir.path)` — erros non-ENOENT silenciados
+- P2 em `filename_uniqueness` (Go): `names, _ := listDir(dir)` — mesmo padrão
+- P3 em `filename_uniqueness` (Go): iteração de map → mensagens não-determinísticas
+- P3 em `adr_dir_exists` (Node.js): tag `adr_dirs_exist` ≠ `adr_dir_exists` (Go/Python); mensagem diverge
+- P2 em `folder_status` e `filename_uniqueness` (Node.js + Python): `listDir` engole erros não-ENOENT
+
+**Itens registrados sem correção (fora de escopo/complexidade):**
+- `adr_orphan`: `walkADRFilePaths` silencia walk errors — requer refator de assinatura
+- Todos os padrões `os.ReadFile → continue` (~30 sites × 3 CLIs) — sistêmico, fora de escopo
+- `staleWIPDays = 7` — P1 parcial, mas campo não existe em ProjectConfig
+- `branch_has_wip_roadmap`: não alterar por instrução explícita
+- `traceid_*`: parcialmente mitigado pela salvaguarda de zero entries
+
