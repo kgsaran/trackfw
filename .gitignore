@@ -10,3 +10,6 @@ pypi/**/*.egg-info/
 pypi/*.egg-info/
 pypi/build/
 npm/node_modules/
+
+# trackfw: baseline local de violations toleradas (nao versionado)
+.trackfw-baseline.json
