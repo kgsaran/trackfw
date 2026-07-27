@@ -128,6 +128,10 @@ trackfw validate
 
 # 6. See what is in flight
 trackfw status
+
+# 7. Governed commit + push + open PR/MR (feat/fix/refactor branches only)
+git add -p                        # stage your changes explicitly
+trackfw ship -m "feat(auth): add login flow"
 ```
 
 ---
@@ -146,6 +150,7 @@ trackfw status
 | `trackfw roadmap move <name> <state>` | Move roadmap between states |
 | `trackfw roadmap list` | List all roadmaps grouped by state |
 | `trackfw validate` | Check governance consistency (use as CI gate) |
+| `trackfw ship -m "msg"` | Governed `git commit + push + open PR/MR` — enforces branch pattern and governance gate; resolves forge (GitHub/GitLab/Bitbucket/Azure) automatically or via `--forge`; falls back to a browser URL when the forge CLI is absent |
 | `trackfw context` | Print a structured summary of the project's governance state (REQs, Roadmaps, ADRs with counts and statuses) |
 | `trackfw serve` | Start a local governance dashboard (no cloud, no accounts) |
 | `trackfw status` | Show wip, blocked, REQs waiting on ADRs |

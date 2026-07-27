@@ -281,7 +281,7 @@ change.
 
 ## `trackfw ship`
 
-`trackfw ship` runs a six-step governed delivery sequence in all three runtimes:
+`trackfw ship` runs a seven-step governed delivery sequence in all three runtimes:
 
 ```
 1. Validates branch name — must match feat|fix|refactor/<slug>
@@ -291,6 +291,7 @@ change.
 4. Reviews what is staged (git status --short + git diff --cached --stat)
 5. Commits with Conventional Commits format (-m is required)
 6. Pushes to origin (adds -u if no upstream is configured yet)
+7. Opens PR/MR via the resolved forge CLI, or prints a browser fallback URL if the CLI is absent
 ```
 
 ### Flags
@@ -298,7 +299,61 @@ change.
 | Flag | Type | Description |
 |---|---|---|
 | `-m` / `--message` | string | Commit message (Conventional Commits format required) |
-| `--dry-run` | bool | Print what would be done without executing write commands |
+| `--dry-run` | bool | Print what would be done without executing write commands; in step 7, also reports forge CLI availability and prints the fallback URL when CLI is absent |
+| `--no-pr` | bool | Skip PR/MR creation after push (steps 1–6 still run) |
+| `--forge` | string | Override forge detection (`github`, `gitlab`, `bitbucket`, `azure`) |
+
+### Forge resolution and `forge:` field
+
+The resolved forge is printed before step 7:
+
+```
+Forge:     github (source: flag)
+```
+
+Precedence (highest to lowest):
+
+1. `--forge` flag (source: `flag`)
+2. `forge:` key in `trackfw.yaml` (source: `config`)
+3. Remote URL pattern (source: `url`) — `github.com`, `gitlab.com`, `bitbucket.org`, `dev.azure.com`
+4. CI file detection (source: `ci`) — `.github/workflows`, `.gitlab-ci.yml`, `azure-pipelines.yml`, `bitbucket-pipelines.yml`
+5. Manual (source: `manual`) — no forge detected; prints `Open your Pull Request manually at: <remote-url>`
+
+`trackfw discover` and `trackfw init --forge` both write `forge: <value>` to `trackfw.yaml`, enabling
+source `config` on subsequent `ship` calls.
+
+### Adapter table
+
+| Forge | CLI | Noun | Fallback URL pattern |
+|---|---|---|---|
+| `github` | `gh` | Pull Request | `{base}/compare/{branch}?expand=1` |
+| `gitlab` | `glab` | Merge Request | `{base}/-/merge_requests/new?merge_request[source_branch]={branch}` |
+| `bitbucket` | _(none)_ | Pull Request | `{base}/pull-requests/new?source={branch}` |
+| `azure` | `az` | Pull Request | `{base}/pullrequestcreate?sourceRef={branch}` |
+
+`{base}` is the HTTPS URL derived from `git remote get-url origin`, normalised from any
+SSH/git@ format. Self-hosted instances are supported: the base URL is extracted from the
+remote URL regardless of the host.
+
+### Graceful degradation
+
+When the forge CLI is not available in `$PATH` (or `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1`
+is set), step 7 prints the fallback browser URL and exits 0 — it does not fail the
+delivery sequence. This behaviour is identical across all three runtimes.
+
+`--dry-run` queries CLI availability at step 7 and prints the same fallback URL when the
+CLI is absent, making graceful degradation verifiable without executing a real push:
+
+```
+# CLI present
+[dry-run] would open Pull Request via github CLI
+
+# CLI absent
+[dry-run] Pull Request CLI (gh) not available — would open in browser:
+  https://github.com/org/repo/compare/feat/my-feature?expand=1
+```
+
+This text is identical in Go, Node.js, and Python.
 
 ### Behavioural divergence from `trackfw validate`
 
@@ -317,6 +372,14 @@ still ramping up governance — it does not mean "ship without governance artifa
 **Impact on users:** a team running `governance_mode: lenient` may see `trackfw validate`
 pass (exit 0) but `trackfw ship` abort. This is intentional. The error message from step
 2 explicitly mentions lenient mode to prevent confusion.
+
+### Usage silencing
+
+Runtime errors (branch pattern, governance gate, nothing staged, missing `-m`) set
+`SilenceUsage = true` inside the command handler (Go/cobra) or return a non-zero exit
+code directly from the runner function (Node.js/Python), so the usage text is never
+printed for runtime errors. Parse-time errors (unknown flags) still show usage, because
+they are raised by cobra/commander/argparse before the command handler runs.
 
 ## Release rule
 

@@ -55,4 +55,5 @@ trackfw adr new       # nova decisão arquitetural
 trackfw req new       # novo requisito
 trackfw roadmap new   # novo roadmap vinculado à REQ
 trackfw status        # visão geral do projeto
+trackfw ship -m "feat(x): descrição"  # commit + push + abre PR/MR governados
 ```
