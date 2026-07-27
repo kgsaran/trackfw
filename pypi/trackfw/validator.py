@@ -202,15 +202,18 @@ def _extract_ref_path(content: str, field: str) -> str:
     Extrai o caminho .md após 'field: valor' na mesma linha.
     Retorna '' se não encontrado ou não terminar em .md.
     """
-    prefix = field + ":"
     for line in content.split("\n"):
         trimmed = line.strip()
-        if trimmed.startswith(prefix):
-            val = trimmed[len(prefix):].strip()
+        if ":" not in trimmed:
+            continue
+        key, val = trimmed.split(":", 1)
+        if key.strip().lower() == field.lower():
+            val = val.strip()
             if not val or val in ("—", "-", "–"):
                 return ""
             # Primeira "palavra" (antes de espaço)
             val = val.split()[0] if val.split() else ""
+            val = val.strip("\"'")
             if val.endswith(".md"):
                 return val
     return ""
@@ -543,20 +546,19 @@ def validate_reqs_have_adr(cfg: dict) -> list:
 
 def validate_blocked_has_req(cfg: dict) -> list:
     """Roadmaps em blocked/ sem marcador req → violation."""
-    blocked_dir = cfg.get("roadmap_dir", "docs/roadmaps") + "/blocked"
-    entries = list_dir(blocked_dir)
     req_markers = cfg.get("link_fields", {}).get("req", ["REQ:"])
     violations = []
-    for name in entries:
-        try:
-            with open(os.path.join(blocked_dir, name), "r", encoding="utf-8") as f:
-                content = f.read()
-            if not _content_has_marker(content, req_markers):
-                violations.append(
-                    {"type": "violation", "message": f'roadmap "{name}" is in blocked but has no linked REQ'}
-                )
-        except OSError:
-            pass
+    for blocked_dir in _resolve_state_dirs(cfg, "blocked"):
+        for name in list_dir(blocked_dir):
+            try:
+                with open(os.path.join(blocked_dir, name), "r", encoding="utf-8") as f:
+                    content = f.read()
+                if not _content_has_marker(content, req_markers):
+                    violations.append(
+                        {"type": "violation", "message": f'roadmap "{name}" is in blocked but has no linked REQ'}
+                    )
+            except OSError:
+                pass
     return violations
 
 
@@ -821,7 +823,7 @@ def validate_ref_targets_exist(cfg: dict) -> list:
     warnings = []
 
     # Roadmaps em wip e blocked: verificar REQ:
-    dirs = resolve_wip_dirs(cfg) + [cfg.get("roadmap_dir", "docs/roadmaps") + "/blocked"]
+    dirs = resolve_wip_dirs(cfg) + _resolve_state_dirs(cfg, "blocked")
     for wip_dir in dirs:
         for name in list_dir(wip_dir):
             try:
@@ -864,14 +866,7 @@ def validate_ref_targets_exist(cfg: dict) -> list:
 
 
 def _reference_exists(ref: str, roots: list[str]) -> bool:
-    if os.path.exists(ref):
-        return True
-    basename = os.path.basename(ref)
-    for root in roots:
-        for dirpath, _, filenames in os.walk(root):
-            if basename in filenames:
-                return True
-    return False
+    return os.path.exists(os.path.expanduser(ref))
 
 
 _FOLDER_TO_STATUS = {

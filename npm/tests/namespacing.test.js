@@ -160,6 +160,21 @@ test('validateWIPLimit com by_agent verifica por agente separadamente', () => {
   })
 })
 
+test('validateBlockedHasREQ com by_agent varre blocked por agente', () => {
+  const yaml = `roadmap_namespacing: by_agent\nagents:\n  - zeus\n  - apolo\nroadmap_dir: docs/roadmaps\n`
+  withTmpDir(yaml, (tmp) => {
+    for (const agent of ['zeus', 'apolo']) {
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps', agent, 'blocked'), { recursive: true })
+    }
+    fs.writeFileSync(path.join(tmp, 'docs/roadmaps/zeus/blocked/ZEUS-BLOCKED.md'), '# sem req\n')
+    fs.writeFileSync(path.join(tmp, 'docs/roadmaps/apolo/blocked/APOLO-BLOCKED.md'), 'REQ: docs/req/REQ-001.md\n')
+
+    const violations = validator.validateBlockedHasREQ()
+    assert(violations.some(v => v.includes('ZEUS-BLOCKED.md')), `Expected blocked violation for zeus, got: ${JSON.stringify(violations)}`)
+    assert(!violations.some(v => v.includes('APOLO-BLOCKED.md')), `Should not flag apolo, got: ${JSON.stringify(violations)}`)
+  })
+})
+
 // ─── Testes de comportamento flat inalterado ───────────────────────────────────
 
 test('modo flat: validateWIPHasREQ usa wip/ plano', () => {

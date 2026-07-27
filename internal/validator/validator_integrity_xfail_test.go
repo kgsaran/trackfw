@@ -27,12 +27,10 @@ func xfailExpect(t *testing.T, reactivateML, reason string, defectStillPresent f
 	}
 }
 
-// TestXFail_Escape1_FrontmatterNaoLido
-// REQ: REQ-2026-07-27-integridade-referencias | Reativar: ML-2A
-// Escape 1: extractRefPath busca "Roadmap:" (maiúsculo) no corpo; o frontmatter grava
-// "roadmap:" (minúsculo, aspeado) — nunca é lido. REQ com frontmatter apontando para
-// caminho inexistente e sem Roadmap: no corpo → nenhum aviso emitido hoje.
-func TestXFail_Escape1_FrontmatterNaoLido(t *testing.T) {
+// TestValidateRefTargetsExist_FrontmatterRoadmap
+// REQ: REQ-2026-07-27-integridade-referencias | Reativado: ML-2A
+// Escape 1 corrigido: roadmap: em frontmatter minúsculo e aspeado é validado.
+func TestValidateRefTargetsExist_FrontmatterRoadmap(t *testing.T) {
 	dir := t.TempDir()
 	mkdirs(t, dir,
 		"docs/req",
@@ -53,26 +51,19 @@ func TestXFail_Escape1_FrontmatterNaoLido(t *testing.T) {
 	config.Reset()
 	t.Cleanup(config.Reset)
 
-	xfailExpect(t,
-		"ML-2A",
-		"frontmatter roadmap: nunca é lido — caminho inexistente no frontmatter não gera aviso",
-		func() bool {
-			warnings, err := validateRefTargetsExist()
-			if err != nil {
-				t.Fatalf("validateRefTargetsExist erro: %v", err)
-			}
-			// Defeito presente: nenhum warning menciona o caminho inexistente do frontmatter
-			return !hasWarning(warnings, "NAO-EXISTE-ESCAPE-1")
-		},
-	)
+	warnings, err := validateRefTargetsExist()
+	if err != nil {
+		t.Fatalf("validateRefTargetsExist erro: %v", err)
+	}
+	if !hasWarning(warnings, "NAO-EXISTE-ESCAPE-1") {
+		t.Fatalf("esperava warning para roadmap: inexistente no frontmatter; warnings=%v", warnings)
+	}
 }
 
-// TestXFail_Escape2_FallbackBasename
-// REQ: REQ-2026-07-27-integridade-referencias | Reativar: ML-2A
-// Escape 2: referenceExists faz walk recursivo por basename quando o caminho direto falha.
-// Arquivo real em done/; corpo da REQ aponta para wip/ (caminho errado) → basename encontra
-// o arquivo em done/ → nenhum aviso emitido hoje.
-func TestXFail_Escape2_FallbackBasename(t *testing.T) {
+// TestValidateRefTargetsExist_RejectsWrongStatePath
+// REQ: REQ-2026-07-27-integridade-referencias | Reativado: ML-2A
+// Escape 2 corrigido: referenceExists valida o caminho literal, sem fallback por basename.
+func TestValidateRefTargetsExist_RejectsWrongStatePath(t *testing.T) {
 	dir := t.TempDir()
 	mkdirs(t, dir,
 		"docs/req",
@@ -95,18 +86,13 @@ func TestXFail_Escape2_FallbackBasename(t *testing.T) {
 	config.Reset()
 	t.Cleanup(config.Reset)
 
-	xfailExpect(t,
-		"ML-2A",
-		"fallback basename aceita caminho errado (wip/ vs done/) — caminho inválido não gera aviso",
-		func() bool {
-			warnings, err := validateRefTargetsExist()
-			if err != nil {
-				t.Fatalf("validateRefTargetsExist erro: %v", err)
-			}
-			// Defeito presente: nenhum warning menciona ESCAPE2-ROADMAP
-			return !hasWarning(warnings, "ESCAPE2-ROADMAP")
-		},
-	)
+	warnings, err := validateRefTargetsExist()
+	if err != nil {
+		t.Fatalf("validateRefTargetsExist erro: %v", err)
+	}
+	if !hasWarning(warnings, "ESCAPE2-ROADMAP") {
+		t.Fatalf("esperava warning para caminho errado wip/ vs done/; warnings=%v", warnings)
+	}
 }
 
 // TestXFail_Escape3_SeveridadeWarning

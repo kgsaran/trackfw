@@ -479,7 +479,7 @@ class TestValidatorImprovements(unittest.TestCase):
 
         self.assertTrue(any("nao-existe.md" in w["message"] for w in warnings))
 
-    def test_validate_ref_targets_accepts_generated_basenames(self):
+    def test_validate_ref_targets_rejects_generated_basenames(self):
         from trackfw.validator import validate_ref_targets_exist
 
         req_dir = os.path.join(self.tmp, "docs", "req")
@@ -498,7 +498,8 @@ class TestValidatorImprovements(unittest.TestCase):
             "roadmap_namespacing": "flat",
             "agents": [],
         }
-        self.assertEqual(validate_ref_targets_exist(cfg), [])
+        warnings = validate_ref_targets_exist(cfg)
+        self.assertTrue(any("ROADMAP-001.md" in w["message"] for w in warnings))
 
     def test_validate_folder_status_coherence_warning(self):
         """Arquivo em wip/ com status: Done gera warning."""
@@ -1092,11 +1093,7 @@ def _ml1a_base(tmp_path, monkeypatch):
     _config.reset()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="ML-1A Escape1 ativo: frontmatter roadmap: ainda nao e validado; reativar no ML-2A.",
-)
-def test_ml1a_xfail_escape1_frontmatter_roadmap_nao_lido(tmp_path, monkeypatch):
+def test_ml2a_escape1_frontmatter_roadmap_validado(tmp_path, monkeypatch):
     _ml1a_base(tmp_path, monkeypatch)
     (tmp_path / "docs/req/REQ-XFAIL-ESCAPE1.md").write_text(
         "---\nstatus: Open\nroadmap: \"docs/roadmaps/wip/NAO-EXISTE-ESCAPE-1.md\"\n---\n\n"
@@ -1112,11 +1109,7 @@ def test_ml1a_xfail_escape1_frontmatter_roadmap_nao_lido(tmp_path, monkeypatch):
     ), f"esperava warning para roadmap: inexistente no frontmatter; warnings={warnings}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="ML-1A Escape2 ativo: fallback por basename aceita caminho errado; reativar no ML-2A.",
-)
-def test_ml1a_xfail_escape2_fallback_basename_aceita_path_errado(tmp_path, monkeypatch):
+def test_ml2a_escape2_fallback_basename_removido(tmp_path, monkeypatch):
     _ml1a_base(tmp_path, monkeypatch)
     (tmp_path / "docs/roadmaps/done/ESCAPE2-ROADMAP.md").write_text(
         "# Roadmap\n## Acceptance Criteria\n- [x] done\n",

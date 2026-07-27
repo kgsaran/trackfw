@@ -868,19 +868,21 @@ func validateREQsHaveADR() ([]string, error) {
 
 func validateBlockedHasREQ() ([]string, error) {
 	cfg := config.Load()
-	entries, err := listDir(cfg.RoadmapDir + "/blocked")
-	if err != nil {
-		return nil, nil
-	}
 
 	var violations []string
-	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join(cfg.RoadmapDir+"/blocked", name))
+	for _, blockedDir := range resolveStateDirs(cfg, "blocked") {
+		entries, err := listDir(blockedDir)
 		if err != nil {
 			continue
 		}
-		if !contentHasMarker(string(content), cfg.LinkFieldsReq) {
-			violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ", name))
+		for _, name := range entries {
+			content, err := os.ReadFile(filepath.Join(blockedDir, name))
+			if err != nil {
+				continue
+			}
+			if !contentHasMarker(string(content), cfg.LinkFieldsReq) {
+				violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ", name))
+			}
 		}
 	}
 	return violations, nil
@@ -1291,9 +1293,9 @@ func gitLastModifiedTime(path string) (time.Time, bool) {
 func extractRefPath(content, field string) string {
 	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
-		prefix := field + ":"
-		if strings.HasPrefix(trimmed, prefix) {
-			val := strings.TrimSpace(trimmed[len(prefix):])
+		key, val, ok := strings.Cut(trimmed, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(key), field) {
+			val := strings.TrimSpace(val)
 			if val == "" || val == "—" || val == "-" || val == "–" {
 				return ""
 			}
@@ -1301,7 +1303,7 @@ func extractRefPath(content, field string) string {
 			if len(fields) == 0 {
 				return ""
 			}
-			v := fields[0]
+			v := strings.Trim(fields[0], `"'`)
 			if strings.HasSuffix(v, ".md") {
 				return v
 			}
@@ -1315,9 +1317,8 @@ func validateRefTargetsExist() ([]string, error) {
 	cfg := config.Load()
 	var warnings []string
 
-	wipDirs := resolveWIPDirs(cfg)
-	blockedDir := cfg.RoadmapDir + "/blocked"
-	for _, dir := range append(wipDirs, blockedDir) {
+	dirs := append(resolveWIPDirs(cfg), resolveStateDirs(cfg, "blocked")...)
+	for _, dir := range dirs {
 		entries, _ := listDir(dir)
 		for _, name := range entries {
 			content, err := os.ReadFile(filepath.Join(dir, name))
@@ -1358,21 +1359,6 @@ func referenceExists(ref string, roots []string) bool {
 	expandedRef := config.ExpandPath(ref)
 	if _, err := os.Stat(expandedRef); err == nil {
 		return true
-	}
-	base := filepath.Base(ref)
-	for _, root := range roots {
-		expandedRoot := config.ExpandPath(root)
-		found := false
-		_ = filepath.WalkDir(expandedRoot, func(path string, entry os.DirEntry, err error) error {
-			if err == nil && !entry.IsDir() && entry.Name() == base {
-				found = true
-				return filepath.SkipAll
-			}
-			return nil
-		})
-		if found {
-			return true
-		}
 	}
 	return false
 }

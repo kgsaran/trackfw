@@ -106,7 +106,7 @@ Validação final:
 
 ### ML-2A — Formato canônico e validação real do link
 
-**Status:** pending
+**Status:** done
 **Files affected:** `internal/validator/validator.go`, `npm/src/validator/index.js`,
 `pypi/trackfw/validator.py`, `internal/config/config.go` e equivalentes, `docs/cli-parity.md`
 
@@ -135,13 +135,53 @@ Validação final:
 > estiverem limpos.
 
 **Acceptance criteria:**
-- [ ] Formato canônico documentado em `docs/cli-parity.md`
-- [ ] Link do frontmatter validado por caminho nos 3 CLIs
-- [ ] Fallback por basename **removido** dos 3 CLIs
-- [ ] `blocked` usa `resolveStateDirs` nos 3 CLIs
-- [ ] Testes do ML-1A (escapes 1 e 2) reativados e passando
-- [ ] `make quality` verde — a severidade ainda é `warning`, então as 38 referências pendentes não
+- [x] Formato canônico documentado em `docs/cli-parity.md`
+- [x] Link do frontmatter validado por caminho nos 3 CLIs
+- [x] Fallback por basename **removido** dos 3 CLIs
+- [x] `blocked` usa `resolveStateDirs` nos 3 CLIs
+- [x] Testes do ML-1A (escapes 1 e 2) reativados e passando
+- [x] `make quality` verde — a severidade ainda é `warning`, então as 38 referências pendentes não
       reprovam o gate neste ponto
+
+**Relatório ML-2A — Apolo — 2026-07-27:**
+
+Arquivos alterados:
+- `internal/validator/validator.go`
+- `internal/validator/validator_integrity_xfail_test.go`
+- `internal/validator/validator_improvements_test.go`
+- `internal/validator/validator_namespacing_test.go`
+- `internal/validator/validator_test.go`
+- `npm/src/validator/index.js`
+- `npm/tests/validator.test.js`
+- `npm/tests/namespacing.test.js`
+- `pypi/trackfw/validator.py`
+- `pypi/tests/test_validator.py`
+- `pypi/tests/test_namespacing.py`
+- `docs/cli-parity.md`
+
+Entregue:
+- `extractRefPath`/`_extract_ref_path`/`extractRefPath` agora leem `adr:` e `roadmap:` em
+  frontmatter de forma case-insensitive e removem aspas simples/duplas do valor antes de validar.
+- `referenceExists`/`_reference_exists` valida somente o caminho literal expandido (`~/` incluso),
+  sem fallback por basename recursivo.
+- `validateBlockedHasREQ` e `validateRefTargetsExist` usam `resolveStateDirs(..., "blocked")` nos
+  três runtimes.
+- Escape 1 e Escape 2 foram reativados nos três runtimes; Escape 3 permanece xfail para ML-3A e
+  Defeito 2 permanece xfail para ML-2B.
+- `docs/cli-parity.md` documenta o formato canônico: caminho relativo completo desde a raiz do
+  projeto, com `.md`, sem basename permissivo.
+
+Validação:
+- `go build ./...` → exit 0; o sandbox emitiu aviso não bloqueante ao tentar escrever cache em
+  `/Users/kgsaran/go/pkg/mod/cache`.
+- `go test ./...` → verde.
+- `npm test` na raiz → falhou por ausência esperada de `package.json`; reexecutado em `npm/`.
+- `(cd npm && npm test)` → `261 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q -rxX` → `607 passed, 2 xfailed`.
+- `bin/trackfw validate` → exit 0, expondo 41 warnings de referências ainda não normalizadas
+  (mantidas para ML-3A).
+- `make quality` → verde: Go, Node, Python, `go vet`, build, CLI/validate parity, static/integration
+  assets, identity parity, artifact parity e falsification gates passaram.
 
 ### ML-2B — Fechamento da REQ e higiene de paridade
 

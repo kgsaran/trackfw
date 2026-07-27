@@ -149,7 +149,7 @@ test('validateRefTargetsExist returns array', () => {
   assert(Array.isArray(result))
 })
 
-test('validateRefTargetsExist accepts generated basename references', () => {
+test('validateRefTargetsExist rejects generated basename references', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ref-'))
   fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
   fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
@@ -161,7 +161,9 @@ test('validateRefTargetsExist accepts generated basename references', () => {
   process.chdir(tmp)
   config.reset()
   try {
-    assert.deepStrictEqual(validator.validateRefTargetsExist(), [])
+    const warnings = validator.validateRefTargetsExist()
+    assert(warnings.some(w => w.includes('REQ-001.md')), `Expected REQ basename warning, got ${JSON.stringify(warnings)}`)
+    assert(warnings.some(w => w.includes('ROADMAP-001.md')), `Expected roadmap basename warning, got ${JSON.stringify(warnings)}`)
   } finally {
     process.chdir(origDir)
     config.reset()
@@ -273,8 +275,11 @@ test('acceptance_markers custom: custom marker satisfies check', () => {
 
 // ML-1B — Validação de adr_dirs com ~/
 test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () => {
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-home-'))
   const testSubdir = '.trackfw-test-adrs-' + Date.now()
-  const fullHomeSubdir = path.join(os.homedir(), testSubdir)
+  const fullHomeSubdir = path.join(fakeHome, testSubdir)
+  const oldHome = process.env.HOME
+  process.env.HOME = fakeHome
   fs.mkdirSync(fullHomeSubdir, { recursive: true })
   fs.writeFileSync(path.join(fullHomeSubdir, 'ADR-GLOBAL-001.md'), '---\nstatus: Accepted\n---\n# Global ADR\n')
 
@@ -292,6 +297,9 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     config.reset()
     fs.rmSync(tmp, { recursive: true, force: true })
     fs.rmSync(fullHomeSubdir, { recursive: true, force: true })
+    fs.rmSync(fakeHome, { recursive: true, force: true })
+    if (oldHome === undefined) delete process.env.HOME
+    else process.env.HOME = oldHome
   }
 })
 
@@ -755,9 +763,8 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
   // do teste, reporta XPASS e incrementa failed → make quality fica vermelho.
   // ---------------------------------------------------------------------------
 
-  // Escape 1: frontmatter roadmap: nunca lido — caminho inexistente não gera aviso.
-  // Reativar em ML-2A após corrigir extractRefPath para ler frontmatter.
-  testSkip('ML-1A Escape1: frontmatter roadmap: nao lido — caminho inexistente no frontmatter nao gera aviso [reativar ML-2A REQ-2026-07-27-integridade-referencias]', () => {
+  // Escape 1 reativado no ML-2A: frontmatter roadmap: é validado.
+  test('ML-2A Escape1 reativado: frontmatter roadmap: inexistente gera aviso', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-e1-'))
     try {
       fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
@@ -775,9 +782,8 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
       config.reset()
       try {
         const warnings = validator.validateRefTargetsExist()
-        // Defeito presente: nenhum aviso menciona NAO-EXISTE-ESCAPE-1 (frontmatter não é lido)
         assert(warnings.some(w => w.includes('NAO-EXISTE-ESCAPE-1')),
-          `esperava aviso para frontmatter roadmap: inexistente, mas nao houve (escape 1 ativo). warnings=${JSON.stringify(warnings)}`)
+          `esperava aviso para frontmatter roadmap: inexistente. warnings=${JSON.stringify(warnings)}`)
       } finally {
         process.chdir(origDir)
         config.reset()
@@ -785,9 +791,8 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
-  // Escape 2: fallback basename aceita caminho errado (wip/ vs done/) — sem aviso.
-  // Reativar em ML-2A após remover fallback por basename de referenceExists.
-  testSkip('ML-1A Escape2: fallback basename aceita caminho errado — nenhum aviso emitido [reativar ML-2A REQ-2026-07-27-integridade-referencias]', () => {
+  // Escape 2 reativado no ML-2A: fallback por basename foi removido.
+  test('ML-2A Escape2 reativado: caminho errado wip/ vs done/ gera aviso', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-e2-'))
     try {
       fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
@@ -808,9 +813,8 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
       config.reset()
       try {
         const warnings = validator.validateRefTargetsExist()
-        // Defeito presente: nenhum aviso menciona ESCAPE2-ROADMAP (basename fallback valida)
         assert(warnings.some(w => w.includes('ESCAPE2-ROADMAP')),
-          `esperava aviso para caminho errado (wip/ vs done/), mas nao houve (escape 2 ativo). warnings=${JSON.stringify(warnings)}`)
+          `esperava aviso para caminho errado (wip/ vs done/). warnings=${JSON.stringify(warnings)}`)
       } finally {
         process.chdir(origDir)
         config.reset()

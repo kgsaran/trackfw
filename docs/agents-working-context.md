@@ -4190,3 +4190,33 @@ sem alteração de código de produção:
 **Observação:** o commit `fef4184 test(validator): expose reference integrity escapes` já estava no
 topo da branch local e sincronizado com `origin/fix/integridade-das-referencias-e-ciclo-de-vida-da-req`
 antes desta nota; esta finalização registra a auditoria posterior e não toca Wave 2.
+
+## ML-2A 2026-07-27 — Apolo
+
+**Status:** CONCLUÍDO na branch `fix/integridade-das-referencias-e-ciclo-de-vida-da-req`.
+
+**Escopo entregue:** formato canônico e validação real de referências em Go, Node.js e Python:
+- `adr:` e `roadmap:` em frontmatter agora são lidos de forma case-insensitive e com strip de aspas.
+- Referências são validadas por caminho literal expandido; o fallback recursivo por basename foi
+  removido.
+- `blocked` passou a usar resolução namespace-aware (`resolveStateDirs(..., "blocked")`) em
+  `blocked_has_req` e `ref_targets_exist`.
+- Testes dos escapes 1 e 2 foram reativados nos 3 runtimes. Escape 3 segue para ML-3A; Defeito 2
+  segue para ML-2B.
+- `docs/cli-parity.md` documenta o contrato de caminho relativo completo desde a raiz, com `.md`.
+
+**Arquivos alterados:** `internal/validator/validator.go`,
+`internal/validator/validator_integrity_xfail_test.go`,
+`internal/validator/validator_improvements_test.go`, `internal/validator/validator_namespacing_test.go`,
+`internal/validator/validator_test.go`, `npm/src/validator/index.js`, `npm/tests/validator.test.js`,
+`npm/tests/namespacing.test.js`, `pypi/trackfw/validator.py`, `pypi/tests/test_validator.py`,
+`pypi/tests/test_namespacing.py`, `docs/cli-parity.md`,
+`docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`.
+
+**Validação final:**
+- `go build ./...` → exit 0; aviso não bloqueante de cache Go fora do workspace no sandbox.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → `261 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q -rxX` → `607 passed, 2 xfailed`.
+- `bin/trackfw validate` → exit 0, com 41 warnings de referências canônicas pendentes para ML-3A.
+- `make quality` → verde: Go, Node, Python, vet, build e gates de paridade/falsificação passaram.
