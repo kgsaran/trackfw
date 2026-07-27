@@ -3,7 +3,7 @@ status: Open
 date: 2026-07-27
 author: "zeus"
 adr: "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md"
 ---
 
 # REQ: Contrato canônico do roadmap e estado analyzing
@@ -75,4 +75,4 @@ ADR: `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md`
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`

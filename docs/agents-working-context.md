@@ -4338,3 +4338,11 @@ por impacto:
 A memória Claude específica do workspace contém somente a regra permanente de paridade dos três
 CLIs e não armazenava esses follow-ups; nada foi removido dela. A fonte de verdade para execução
 passa a ser exclusivamente as REQs e roadmaps acima.
+
+## Implementação 2026-07-27 — Zeus — contrato canônico e analyzing
+
+Implementação autorizada da REQ de contrato canônico do roadmap e estado `analyzing`. Como
+`roadmap move ... analyzing` é um dos defeitos desta própria demanda, a etapa intermediária do skill
+não pôde ser executada pelo comando oficial; o roadmap foi movido de `backlog/` diretamente para
+`wip/` ao iniciar a codificação. ML-1A marcado em andamento para produzir as provas negativas antes
+de qualquer correção de produção.

@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-07-27
 req: "docs/req/REQ-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Contrato canônico do roadmap e estado analyzing
 
-> Created: 2026-07-27 | Status: backlog
+> Created: 2026-07-27 | Status: wip
 
 ## Context
 
@@ -33,7 +33,7 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A ‖ 2B) ─ barrier ─> Wave 3 (3A)
 
 ### ML-1A — Expor divergência do slash-command e rejeição de analyzing
 
-**Status:** pending
+**Status:** in progress
 
 **Files affected:**
 - `internal/generators/scaffold_test.go`
@@ -205,7 +205,7 @@ bin/trackfw validate --json
 git status --short
 ```
 
-## Global Acceptance Criteria
+## Acceptance Criteria
 
 - [ ] As três waves concluídas na ordem.
 - [ ] Slash-command e CLI compartilham um único contrato canônico de roadmap.
