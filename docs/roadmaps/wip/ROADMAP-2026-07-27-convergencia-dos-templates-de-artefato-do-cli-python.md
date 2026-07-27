@@ -48,7 +48,7 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A) ─ barrier ─> Wave 3 (3A)
 
 ### ML-1A — Testes negativos que provam a cegueira das regras
 
-**Status:** in progress
+**Status:** done
 **Files affected:** testes do validator nos 3 CLIs — `internal/validator/validator_test.go`,
 `npm/tests/validator.test.js`, `pypi/tests/test_validator.py`
 
@@ -81,7 +81,7 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A) ─ barrier ─> Wave 3 (3A)
 
 ### ML-2A — `req new`, `adr new` e `roadmap new` do Python adotam o formato canônico
 
-**Status:** pending
+**Status:** in progress
 **Files affected:** `pypi/trackfw/generators/req.py`, `adr.py`, `roadmap.py`,
 `pypi/trackfw/commands/adr.py` (nomenclatura de arquivo), e os testes que travam o formato atual
 
@@ -101,6 +101,11 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A) ─ barrier ─> Wave 3 (3A)
    formato. Onde Go e Node divergirem entre si, **siga o Node** (`npm/src/generators/`) e registre a
    divergência no relatório — as duas conhecidas estão no escopo negativo da REQ, não corrija.
 6. **Reativar os testes** marcados como skip/xfail no ML-1A. Devem passar agora.
+   ⚠️ **Os 3 precisam ser reativados explicitamente — o Go não avisa.** Node (`testSkip`) e Python
+   (`xfail(strict=True)`) **falham se o teste passar**, forçando a reativação. O Go usa `t.Skip`, que
+   nem executa o corpo: se você corrigir os templates e esquecer de remover o `t.Skip` das linhas 1477
+   e 1564 de `internal/validator/validator_test.go`, o teste fica pulado para sempre e ninguém sabe.
+   É degradação silenciosa (P2) dentro do mecanismo criado para expor P2 — ver Log de execução.
 7. **Corrigir as asserções que travam o formato antigo**:
    `pypi/tests/test_generators_roadmap.py:70`, `test_generators_req.py:46-47,67-70`,
    `test_generators_adr.py:88,94-100,135`, e a suíte de `next_adr_number` em `:19-41`.
@@ -142,6 +147,59 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A) ─ barrier ─> Wave 3 (3A)
 - [ ] Prova negativa: template divergente faz o gate reprovar, com diagnóstico claro
 - [ ] Roda em `make quality`, sem variável auxiliar e sem resíduo
 - [ ] `docs/cli-parity.md` documenta o frontmatter dos 3 artefatos como contrato
+
+## Log de execução
+
+**2026-07-27 — ML-1A concluído e auditado. A cegueira está provada.**
+
+6 testes, 2 por runtime. Os fixtures não foram inventados: saíram da execução real dos geradores
+Python. Saída da falha contra o código atual:
+
+```
+--- FAIL: TestADRDraftFormatoPython_regra_cega
+    DEFEITO P2 confirmado: blocked_by_draft_adr não detectou ADR Draft no formato Python.
+    ADR existe mas adrIsDraft() retorna false. violations: []
+
+--- FAIL: TestREQOpenFormatoPython_regra_cega
+    DEFEITO P2 confirmado: REQ usa tabela '| Status | Open |' mas validator procura
+    'Status: Open' (inline). A REQ é silenciosamente ignorada. violations: []
+```
+
+`violations: []` é a assinatura exata do P2 — a regra não errou, ela não viu.
+
+**Isolamento correto:** cada teste cruza os formatos para provar **um** defeito por vez. O teste do
+ADR usa REQ canônica (que passa no guard de `Open`), então a única explicação para zero violations é
+o `adrIsDraft` cego. O teste da REQ usa ADR canônico (que passa em `adrIsDraft`), isolando o guard de
+`Status: Open`. Sem esse cruzamento, um teste com os dois fixtures no formato Python provaria apenas
+"algo está errado".
+
+Escopo respeitado: `git diff` em `pypi/trackfw/generators/` vazio — os templates não foram tocados.
+`make quality` verde: 597 passed, 2 xfailed.
+
+### Achado do ML-1A → entra no ML-2A
+
+O template de REQ do Python **não emite a seção `## Blocked by ADRs`**. É um terceiro defeito, adjacente
+aos dois da REQ: mesmo que o formato do status fosse canônico, uma REQ gerada pelo Python nunca teria
+ADRs para bloquear — a regra continuaria vacuamente verde por outro caminho. A convergência do ML-2A
+resolve por tabela, já que o template canônico tem a seção, mas precisa ser verificado
+explicitamente.
+
+### Assimetria encontrada na auditoria → ação obrigatória no ML-2A
+
+Os três marcadores de "teste esperando falha" **não têm a mesma força**:
+
+| Runtime | Mecanismo | Se o defeito for corrigido |
+|---|---|---|
+| Node | `testSkip` (roda o corpo, `failed++` no XPASS) | **avisa** |
+| Python | `@pytest.mark.xfail(strict=True)` | **avisa** |
+| Go | `t.Skip` — não executa o corpo | **cala para sempre** |
+
+Se o ML-2A converger os templates e esquecer de remover o `t.Skip` (linhas 1477 e 1564 de
+`internal/validator/validator_test.go`), o teste Go fica pulado indefinidamente e nada acusa. É
+degradação silenciosa **dentro do mecanismo criado para expor degradação silenciosa**. Registrado
+como ação explícita no ML-2A.
+
+---
 
 ## Acceptance Criteria
 
