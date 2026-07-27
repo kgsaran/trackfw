@@ -164,7 +164,7 @@ lista de exceções — o "número mágico" que P1 condena.
 
 ### ML-2C — Node usa UTC onde Go e Python usam hora local (P3)
 
-**Status:** in progress
+**Status:** done
 **Files affected:** `npm/src/generators/req.js:76`, `adr.js:33`, `note.js:24`, e o gerador de roadmap
 do Node; mais os testes afetados
 
@@ -214,7 +214,7 @@ da ajuda colorida do argparse).
 
 ### ML-3A — Gate que executa os geradores e compara a saída
 
-**Status:** pending
+**Status:** in progress
 **Files affected:** `scripts/` (gate novo ou cenário em `check-gates-falsify.sh`), `Makefile`,
 `docs/cli-parity.md`
 
