@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 import argparse
+import pytest
 
 from trackfw import config as cfg_module
 from trackfw.generators.roadmap import generate_roadmap, move_roadmap
@@ -30,6 +31,30 @@ def _make_cfg(tmpdir: str, namespacing: str = "flat", agents=None) -> dict:
 # ---------------------------------------------------------------------------
 # tests roadmap new
 # ---------------------------------------------------------------------------
+
+def _find_subparser(parser: argparse.ArgumentParser, name: str) -> argparse.ArgumentParser:
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return action.choices[name]
+    raise AssertionError(f"subparser {name!r} not found")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="ML-1A: Python ainda não expõe roadmap new --title/--req/--from-req como Go/Node.",
+)
+def test_roadmap_new_help_exposes_go_node_parity_flags():
+    parser = argparse.ArgumentParser(prog="trackfw")
+    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+    roadmap_cmd.register(subparsers)
+
+    roadmap_parser = _find_subparser(parser, "roadmap")
+    new_parser = _find_subparser(roadmap_parser, "new")
+    help_text = new_parser.format_help()
+
+    for flag in ("--title", "--req", "--from-req"):
+        assert flag in help_text, f"Python roadmap new help missing parity flag {flag}; help:\n{help_text}"
+
 
 class TestRoadmapNew(unittest.TestCase):
     def setUp(self):

@@ -82,6 +82,15 @@ class TestParseFrontmatter(unittest.TestCase):
         result = v.parse_frontmatter(content)
         self.assertIn("linked_adr", result)
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason='ML-1A: parse_frontmatter Python mantém aspas externas em status: "wip".',
+    )
+    def test_status_com_aspas_externas_e_normalizado(self):
+        content = '---\nstatus: "wip"\ntitle: Roadmap\n---\n'
+        result = v.parse_frontmatter(content)
+        self.assertEqual(result.get("status"), "wip")
+
 
 class TestValidateWipHasReq(unittest.TestCase):
     def setUp(self):
@@ -538,6 +547,33 @@ class TestValidatorImprovements(unittest.TestCase):
         }
         warnings = validate_folder_status_coherence(cfg)
         self.assertEqual(warnings, [])
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason='ML-1A: validator Python diverge de Go/Node para status: "wip" com aspas externas.',
+    )
+    def test_validate_folder_status_coherence_no_warning_when_quoted_wip(self):
+        """Arquivo em wip/ com status: "wip" deve ser equivalente a status: wip."""
+        from trackfw import config as cfg_mod
+        from trackfw.validator import validate_folder_status_coherence
+        cfg_mod.reset()
+
+        wip_dir = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        os.makedirs(wip_dir)
+        with open(os.path.join(wip_dir, "quoted-wip.md"), "w") as f:
+            f.write('---\nstatus: "wip"\n---\n# Roadmap\n')
+
+        cfg = {
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        warnings = validate_folder_status_coherence(cfg)
+        messages = [w["message"] for w in warnings]
+        self.assertFalse(
+            any("quoted-wip.md" in message for message in messages),
+            f'status: "wip" não deve gerar warning folder_status; warnings={messages}',
+        )
 
     def test_validate_filename_uniqueness_violation(self):
         """Mesmo filename em wip/ e backlog/ gera violation."""

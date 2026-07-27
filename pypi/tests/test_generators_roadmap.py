@@ -201,6 +201,12 @@ class TestMoveBuscaEmTodosAgentes(unittest.TestCase):
             content = f.read()
         self.assertIn("status: wip", content)
 
+        log_path = os.path.join(cfg["roadmap_dir"], ".trackfw-log")
+        with open(log_path, encoding="utf-8") as f:
+            log_content = f.read()
+        self.assertIn(f"zeus/{basename}", log_content)
+        self.assertIn("backlog → wip", log_content)
+
 
 class TestMoveRoadmapAnalyzing(unittest.TestCase):
     """Contrato obrigatório: analyzing deve ser movível nos layouts flat e by_agent."""

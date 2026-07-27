@@ -4,6 +4,36 @@
 
 ---
 
+## Sessão 2026-07-27 — Artemis (ML-1A concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
+
+**Tarefa:** Caracterizar os quatro bloqueadores de release de paridade/contrato sem tocar código de
+produção.
+
+**Entregue:**
+- Python `roadmap new`: xfail strict em `pypi/tests/test_commands_roadmap_discover.py` provando ausência
+  de `--title`, `--req` e `--from-req`; controles de superfície em Go e Node adicionados.
+- Python validator: xfails strict em `pypi/tests/test_validator.py` para `parse_frontmatter` e
+  `folder_status` divergirem com `status: "wip"`.
+- Log `by_agent`: o código Python atual já preserva `zeus/<arquivo>.md`; adicionado guard obrigatório em
+  `pypi/tests/test_generators_roadmap.py` para impedir regressão do log `backlog → wip`.
+- Contrato documental de JSON Schema: xfail strict em `pypi/tests/test_documentation_contract.py`
+  enquanto o site afirmar validação automática inexistente por `trackfw validate`.
+
+**Validação:**
+- `python3 -m pytest pypi/tests/test_commands_roadmap_discover.py pypi/tests/test_validator.py pypi/tests/test_generators_roadmap.py pypi/tests/test_documentation_contract.py -q -rxX`
+  → `115 passed, 4 xfailed`.
+- `go test ./internal/commands ./internal/generators -run 'RoadmapNewCmdExposesParityFlags|MoveRoadmap' -v`
+  → verde.
+- `npm test -- --test-name-pattern='roadmap new exposes parity flags|moveRoadmap'` → Node executou a
+  suíte com `265 pass`, `0 fail`.
+- `bin/trackfw validate --json` → `0 violations`, `0 warnings`.
+
+**Ressalva:**
+- `make quality` não foi executado neste ML; permanece para auditoria central conforme orientação do
+  handoff.
+
 ## Sessão 2026-07-27 — Artemis (ML-3A concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
