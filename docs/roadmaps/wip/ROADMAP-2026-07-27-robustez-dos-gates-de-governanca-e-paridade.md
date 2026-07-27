@@ -49,7 +49,7 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A ‖ 2B) ─ barrier ─> Wave 3 (3A)
 > Dependências: nenhuma.
 
 ### ML-1A — `branch_has_wip_roadmap` aceita roadmap em `done/`
-**Status:** in progress
+**Status:** done
 **Files affected:** `internal/validator/validator.go` (~linha 1506), equivalentes em
 `npm/src/validator/` e `pypi/trackfw/validator.py`, mais testes
 
@@ -112,6 +112,12 @@ Auditar contra P1–P3: `check-cli-parity.sh`, `check-identity-parity.sh`,
 - **P2**: `|| true`, `2>/dev/null` e `set +e` que engolem falha; comando ausente tratado como sucesso.
 - **P3**: dependência de cor, locale, `PATH`, ordenação de `ls`/`find`, versão de runtime.
 
+**Item extra herdado do ML-1A:** a mensagem de violação do `branch_has_wip_roadmap` lista **todos** os
+roadmaps encontrados. Com `done/` agora incluído na busca, num projeto maduro isso vira uma parede de
+texto — neste repositório já são 15 arquivos numa linha só. Truncar (ex.: 3 primeiros + contagem) ou
+listar apenas os de `wip/`. Defeito de usabilidade, não de lógica, mas degrada uma mensagem que
+existe para orientar.
+
 ⚠️ Atenção especial ao **P2 em shell**: `set -euo pipefail` no topo não protege comando dentro de
 `$( )` nem o lado esquerdo de um pipe. Verificar caso a caso.
 
@@ -150,6 +156,31 @@ Registrar no relatório os 7 scripts com o veredito de cada um.
 - [ ] `make quality` verde **sem** variável de ambiente auxiliar
 
 ---
+
+## Log de execução
+
+**2026-07-27 — ML-1A concluído e auditado.**
+
+`make quality` verde. Reúso confirmado: o agente extraiu `resolveStateDirs(cfg, state)` e derivou
+`wip` e `done` dele — uma única resolução de caminho, uma única `normalizeBranchSlug`. Era a
+exigência explícita, porque duplicar resolução foi a causa raiz do `roadmap_dir` divergente na REQ
+anterior.
+
+**Verificação empírica feita no próprio repositório, nesta branch** — o cenário que falhou nas duas
+REQs anteriores:
+
+| Estado do roadmap | `trackfw validate` |
+|---|---|
+| em `wip/` | ✓ sem violações |
+| **movido para `done/`** (DoD cumprida) | **✓ sem violações** ← antes reprovava |
+| em `done/` com slug **diferente** da branch | ✗ reprova, como deve |
+
+A terceira linha é o que prova que a regra não afrouxou: aceitar `done/` sem exigir casamento de slug
+teria feito o gate nunca mais reprovar.
+
+**Efeito colateral encontrado na prova negativa** → movido para o ML-2B: com `done/` na busca, a
+mensagem passa a listar todos os roadmaps encontrados — 15 numa linha só neste repositório. Orienta
+menos do que antes.
 
 ## Acceptance Criteria
 
