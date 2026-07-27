@@ -255,6 +255,100 @@ func TestMoveRoadmap_NoFrontmatter(t *testing.T) {
 	}
 }
 
+func assertMoveRoadmapAnalyzingContract(t *testing.T, byAgent bool) error {
+	t.Helper()
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if byAgent {
+		yaml := "roadmap_namespacing: by_agent\nagents:\n- zeus\n"
+		if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+			return err
+		}
+		if err := os.MkdirAll("docs/roadmaps/zeus/backlog", 0755); err != nil {
+			return err
+		}
+		content := "---\nstatus: backlog\ndate: 2026-07-27\nreq: \"docs/req/REQ-demo.md\"\nsquad: \"\"\n---\n\n# Roadmap: Analyze By Agent\n\n> Created: 2026-07-27 | Status: backlog\n"
+		if err := os.WriteFile("docs/roadmaps/zeus/backlog/ROADMAP-analyze-by-agent.md", []byte(content), 0644); err != nil {
+			return err
+		}
+		if err := MoveRoadmap("analyze-by-agent", "analyzing"); err != nil {
+			return err
+		}
+		dst := "docs/roadmaps/zeus/analyzing/ROADMAP-analyze-by-agent.md"
+		raw, err := os.ReadFile(dst)
+		if err != nil {
+			return err
+		}
+		body := string(raw)
+		for _, want := range []string{"status: analyzing", "| Status: analyzing"} {
+			if !strings.Contains(body, want) {
+				return &testExpectationError{message: "roadmap by_agent não sincronizou " + want}
+			}
+		}
+		log, err := os.ReadFile("docs/roadmaps/.trackfw-log")
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(log), "zeus/ROADMAP-analyze-by-agent.md") || !strings.Contains(string(log), "backlog → analyzing") {
+			return &testExpectationError{message: "log by_agent não registrou backlog → analyzing preservando agente"}
+		}
+		return nil
+	}
+
+	for _, d := range []string{
+		"docs/roadmaps/backlog",
+		"docs/roadmaps/analyzing",
+		"docs/roadmaps/wip",
+		"docs/roadmaps/blocked",
+		"docs/roadmaps/done",
+		"docs/roadmaps/abandoned",
+	} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			return err
+		}
+	}
+	content := "---\nstatus: backlog\ndate: 2026-07-27\nreq: \"docs/req/REQ-demo.md\"\nsquad: \"\"\n---\n\n# Roadmap: Analyze Flat\n\n> Created: 2026-07-27 | Status: backlog\n"
+	if err := os.WriteFile("docs/roadmaps/backlog/ROADMAP-analyze-flat.md", []byte(content), 0644); err != nil {
+		return err
+	}
+	if err := MoveRoadmap("analyze-flat", "analyzing"); err != nil {
+		return err
+	}
+	raw, err := os.ReadFile("docs/roadmaps/analyzing/ROADMAP-analyze-flat.md")
+	if err != nil {
+		return err
+	}
+	body := string(raw)
+	for _, want := range []string{"status: analyzing", "| Status: analyzing"} {
+		if !strings.Contains(body, want) {
+			return &testExpectationError{message: "roadmap flat não sincronizou " + want}
+		}
+	}
+	log, err := os.ReadFile("docs/roadmaps/.trackfw-log")
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(log), "ROADMAP-analyze-flat.md") || !strings.Contains(string(log), "backlog → analyzing") {
+		return &testExpectationError{message: "log flat não registrou backlog → analyzing"}
+	}
+	return nil
+}
+
+func TestMoveRoadmap_AnalyzingFlat_XFail(t *testing.T) {
+	expectKnownFailure(t, "Go MoveRoadmap rejeita estado analyzing em layout flat", func() error {
+		return assertMoveRoadmapAnalyzingContract(t, false)
+	})
+}
+
+func TestMoveRoadmap_AnalyzingByAgent_XFail(t *testing.T) {
+	expectKnownFailure(t, "Go MoveRoadmap rejeita estado analyzing em layout by_agent", func() error {
+		return assertMoveRoadmapAnalyzingContract(t, true)
+	})
+}
+
 // TestMoveRoadmap_InvalidState — estado inválido → erro descritivo
 func TestMoveRoadmap_InvalidState(t *testing.T) {
 	dir := t.TempDir()

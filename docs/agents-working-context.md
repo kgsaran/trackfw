@@ -4,6 +4,36 @@
 
 ---
 
+## Sessão 2026-07-27 — Artemis (ML-1A concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
+
+**Tarefa:** Adicionar testes negativos/caracterização para o contrato canônico de `/trackfw:roadmap`
+e para `roadmap move <name> analyzing`, sem corrigir código de produção.
+
+**Entregue:**
+- Go: xfail estrito em `internal/generators/scaffold_test.go` para exigir frontmatter canônico no
+  slash-command e xfails em `internal/generators/roadmap_test.go` para `analyzing` flat/by_agent.
+- Node.js: xfail estrito novo em `npm/tests/init.test.js` para slash-command e xfails em
+  `npm/tests/roadmap_move.test.js` para `analyzing` flat/by_agent.
+- Python: `pytest.mark.xfail(strict=True)` em `pypi/tests/test_generators_init.py` e
+  `pypi/tests/test_generators_roadmap.py` cobrindo os mesmos defeitos.
+- Evidências negativas capturadas: slash-command não contém o início canônico ` ```markdown` seguido
+  de `---`; Go/Node rejeitam `analyzing` com `invalid state "analyzing"`; Python reporta
+  três xfails strict nos cenários equivalentes.
+
+**Validação:**
+- `go test ./internal/generators -run 'SlashRoadmap|Analyzing' -v` → verde, 3 xfails esperados via helper.
+- `(cd npm && npm test)` → `264 pass`, `0 fail`, com xfails esperados logados.
+- `python3 -m pytest pypi/tests/test_generators_init.py pypi/tests/test_generators_roadmap.py -q -rxX` → `58 passed, 3 xfailed`.
+- `make quality` → verde; Python completo `612 passed, 3 xfailed`; falsificação `all 9 scenarios, 8 gates proved non-vacuous`.
+
+**Ressalva:**
+- O xfail Node de slash-command foi criado no arquivo previsto pelo roadmap (`npm/tests/init.test.js`),
+  que não existia antes; `npm/tests/generators.test.js` foi mantido sem mudança funcional final.
+
+---
+
 ## Sessão 2026-07-27 — Apolo (ML-3A concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`

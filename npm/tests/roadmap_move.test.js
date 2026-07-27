@@ -20,6 +20,17 @@ function test(name, fn) {
   catch (e) { console.error(`✗ ${name}: ${e.message}`); failed++ }
 }
 
+function testSkip(name, fn) {
+  try {
+    fn()
+    console.error(`✗ [XPASS inesperado — remover testSkip após correção] ${name}`)
+    failed++
+  } catch (e) {
+    console.log(`↷ [xfail esperado] ${name}: ${e.message}`)
+    passed++
+  }
+}
+
 /**
  * Helper: cria tmpdir, configura trackfw.yaml com roadmap_dir apontando para tmpdir,
  * muda cwd, executa fn, restaura.
@@ -48,6 +59,10 @@ function mkStateDirs(roadmapDir) {
   for (const state of ['backlog', 'wip', 'blocked', 'done', 'abandoned']) {
     fs.mkdirSync(path.join(roadmapDir, state), { recursive: true })
   }
+}
+
+function canonicalRoadmap(title, state = 'backlog') {
+  return `---\nstatus: ${state}\ndate: 2026-07-27\nreq: "docs/req/REQ-demo.md"\nsquad: ""\n---\n\n# Roadmap: ${title}\n\n> Created: 2026-07-27 | Status: ${state}\n`
 }
 
 // ─── Testes básicos de moveRoadmap ────────────────────────────────────────────
@@ -188,6 +203,65 @@ test('moveRoadmap — arquivo sem frontmatter: move funciona, conteúdo intacto'
 
     const content = fs.readFileSync(path.join(roadmapDir, 'wip', files[0]), 'utf8')
     assert.strictEqual(content, plainContent, 'conteúdo deve ser idêntico ao original')
+  })
+})
+
+testSkip('moveRoadmap — analyzing flat: move, sincroniza frontmatter/header e registra log', () => {
+  withRoadmapDir((tmp, roadmapDir) => {
+    for (const state of ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']) {
+      fs.mkdirSync(path.join(roadmapDir, state), { recursive: true })
+    }
+    fs.writeFileSync(
+      path.join(roadmapDir, 'backlog', 'ROADMAP-analyze-flat.md'),
+      canonicalRoadmap('Analyze Flat'),
+      'utf8'
+    )
+
+    const savedExit = process.exitCode
+    try {
+      process.exitCode = undefined
+      moveRoadmap('analyze-flat', 'analyzing')
+      assert.notStrictEqual(process.exitCode, 1, 'moveRoadmap não deve marcar exitCode=1 para analyzing')
+    } finally {
+      process.exitCode = savedExit
+    }
+
+    const dst = path.join(roadmapDir, 'analyzing', 'ROADMAP-analyze-flat.md')
+    const content = fs.readFileSync(dst, 'utf8')
+    assert.ok(content.includes('status: analyzing'), 'frontmatter deve sincronizar status: analyzing')
+    assert.ok(content.includes('| Status: analyzing'), 'header deve sincronizar | Status: analyzing')
+    const log = fs.readFileSync(path.join(roadmapDir, '.trackfw-log'), 'utf8')
+    assert.ok(log.includes('ROADMAP-analyze-flat.md') && log.includes('backlog → analyzing'), 'log deve registrar backlog → analyzing')
+  })
+})
+
+testSkip('moveRoadmap — analyzing by_agent: preserva agente no path e no log', () => {
+  withRoadmapDir((tmp, roadmapDir) => {
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\nroadmap_namespacing: by_agent\nagents:\n- zeus\n', 'utf8')
+    config.reset()
+    fs.mkdirSync(path.join(roadmapDir, 'zeus', 'backlog'), { recursive: true })
+    fs.mkdirSync(path.join(roadmapDir, 'zeus', 'analyzing'), { recursive: true })
+    fs.writeFileSync(
+      path.join(roadmapDir, 'zeus', 'backlog', 'ROADMAP-analyze-by-agent.md'),
+      canonicalRoadmap('Analyze By Agent'),
+      'utf8'
+    )
+
+    const savedExit = process.exitCode
+    try {
+      process.exitCode = undefined
+      moveRoadmap('analyze-by-agent', 'analyzing')
+      assert.notStrictEqual(process.exitCode, 1, 'moveRoadmap não deve marcar exitCode=1 para analyzing')
+    } finally {
+      process.exitCode = savedExit
+    }
+
+    const dst = path.join(roadmapDir, 'zeus', 'analyzing', 'ROADMAP-analyze-by-agent.md')
+    const content = fs.readFileSync(dst, 'utf8')
+    assert.ok(content.includes('status: analyzing'), 'frontmatter deve sincronizar status: analyzing')
+    assert.ok(content.includes('| Status: analyzing'), 'header deve sincronizar | Status: analyzing')
+    const log = fs.readFileSync(path.join(roadmapDir, '.trackfw-log'), 'utf8')
+    assert.ok(log.includes('zeus/ROADMAP-analyze-by-agent.md') && log.includes('backlog → analyzing'), 'log deve preservar agente e registrar backlog → analyzing')
   })
 })
 

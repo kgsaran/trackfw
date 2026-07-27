@@ -51,6 +51,15 @@ var expectedCommands = []string{
 	"validate.md", "status.md", "move.md",
 }
 
+func expectKnownFailure(t *testing.T, defect string, check func() error) {
+	t.Helper()
+	if err := check(); err != nil {
+		t.Logf("xfail esperado (%s): %v", defect, err)
+		return
+	}
+	t.Fatalf("XPASS inesperado (%s): remova o xfail e reative o teste como obrigatório", defect)
+}
+
 func TestGenerateClaudeCommands_CreatesAllFiles(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
@@ -73,6 +82,45 @@ func TestGenerateClaudeCommands_CreatesAllFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestSlashRoadmapCommandRequiresCanonicalFrontmatter_XFail(t *testing.T) {
+	expectKnownFailure(t, "slash-command /trackfw:roadmap ainda instrui roadmap sem frontmatter canônico", func() error {
+		dir := t.TempDir()
+		orig, _ := os.Getwd()
+		_ = os.Chdir(dir)
+		t.Cleanup(func() { _ = os.Chdir(orig) })
+
+		if err := generateClaudeCommands(); err != nil {
+			return err
+		}
+		content, err := os.ReadFile(filepath.Join(".claude", "commands", "trackfw", "roadmap.md"))
+		if err != nil {
+			return err
+		}
+		body := string(content)
+		required := []string{
+			"```markdown\n   ---",
+			"status: backlog",
+			"date: <YYYY-MM-DD>",
+			`req: "docs/req/<arquivo-selecionado>.md"`,
+			`squad: ""`,
+			"---\n\n   # Roadmap:",
+			"docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md",
+		}
+		for _, want := range required {
+			if !strings.Contains(body, want) {
+				return &testExpectationError{message: "roadmap.md não contém trecho canônico esperado: " + want}
+			}
+		}
+		return nil
+	})
+}
+
+type testExpectationError struct {
+	message string
+}
+
+func (e *testExpectationError) Error() string { return e.message }
 
 // TestGenerateClaudeCommands_Idempotente — segundo init não sobrescreve arquivos customizados
 func TestGenerateClaudeCommands_Idempotente(t *testing.T) {
@@ -369,4 +417,3 @@ func TestAttentionScripts_FallbackWithoutJQ(t *testing.T) {
 		t.Errorf("Message esperada 'Testing fallback without jq', obteve %q", payload.Message)
 	}
 }
-

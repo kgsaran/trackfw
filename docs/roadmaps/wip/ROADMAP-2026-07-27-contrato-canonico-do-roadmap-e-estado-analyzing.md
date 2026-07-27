@@ -33,7 +33,7 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A ‖ 2B) ─ barrier ─> Wave 3 (3A)
 
 ### ML-1A — Expor divergência do slash-command e rejeição de analyzing
 
-**Status:** in progress
+**Status:** done
 
 **Files affected:**
 - `internal/generators/scaffold_test.go`
@@ -59,10 +59,10 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A ‖ 2B) ─ barrier ─> Wave 3 (3A)
 5. Registrar a saída que prova os dois defeitos antes de qualquer correção.
 
 **Acceptance criteria:**
-- [ ] Dois defeitos reproduzidos nos três runtimes.
-- [ ] XPASS reprova em todos os runtimes.
-- [ ] Nenhum arquivo de produção alterado neste ML.
-- [ ] `make quality` verde com falhas esperadas registradas.
+- [x] Dois defeitos reproduzidos nos três runtimes.
+- [x] XPASS reprova em todos os runtimes.
+- [x] Nenhum arquivo de produção alterado neste ML.
+- [x] `make quality` verde com falhas esperadas registradas.
 
 **Validation commands:**
 ```bash
@@ -71,6 +71,19 @@ go test ./internal/generators -run 'SlashRoadmap|Analyzing' -v
 python3 -m pytest pypi/tests/test_generators_init.py pypi/tests/test_generators_roadmap.py -q -rxX
 make quality
 ```
+
+**Execution evidence (Artemis, 2026-07-27):**
+- Go: `go test ./internal/generators -run 'SlashRoadmap|Analyzing' -v` passou; xfail registrou
+  `invalid state "analyzing"` em flat/by_agent e ausência do início canônico
+  ` ```markdown` seguido de `---` no slash-command.
+- Node.js: `(cd npm && npm test)` passou com `264 pass`, `0 fail`; xfails registraram o slash-command
+  sem frontmatter canônico e `invalid state "analyzing"` em flat/by_agent.
+- Python: `python3 -m pytest pypi/tests/test_generators_init.py pypi/tests/test_generators_roadmap.py -q -rxX`
+  passou com `58 passed, 3 xfailed`; xfails registraram o slash-command sem frontmatter canônico e
+  rejeição de `analyzing` em flat/by_agent.
+- Gate final: `make quality` passou; suíte Python completa reportou `612 passed, 3 xfailed` e
+  `scripts/check-gates-falsify.sh` reportou `Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)`.
+- Escopo preservado: somente testes e artefatos de governança foram alterados; nenhum arquivo de produção foi editado.
 
 ---
 
