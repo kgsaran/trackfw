@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-27
 req: "docs/req/REQ-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: roadmap move sincroniza o status do artefato
 
-> Created: 2026-07-27 | Status: wip
+> Created: 2026-07-27 | Status: done
 
 ## Context
 
@@ -71,7 +71,7 @@ idênticos**; um "fix de paridade" que grava três formatos diferentes não é f
 
 ### ML-1A — `move` sincroniza frontmatter e cabeçalho nos 3 CLIs
 
-**Status:** in progress
+**Status:** done
 
 **Files affected:**
 - `internal/generators/roadmap.go` (`MoveRoadmap`, ~linha 240) + `internal/generators/roadmap_test.go`
@@ -137,7 +137,7 @@ python3 -m pytest pypi/tests/test_generators_roadmap.py -q
 
 ### ML-2A — Encerramento como prova empírica
 
-**Status:** pending
+**Status:** done
 
 **Actions:**
 Encerrar este roadmap com o binário recém-compilado: `trackfw roadmap move <este-roadmap> done`
@@ -152,10 +152,83 @@ Aqui a prova é mais direta: este arquivo nasceu com o defeito (ver Context) e d
 - [ ] `trackfw validate` verde logo após, sem warning de `folder_status`
 - [ ] Nenhuma edição manual de frontmatter neste ciclo
 
+## Log de execução
+
+**2026-07-27 — ML-1A concluído e auditado.**
+
+`rewriteRoadmapStatus` (Go) / `rewriteRoadmapStatus` (Node) / `_rewrite_roadmap_status` (Python) —
+as três estruturalmente idênticas, espelhando `rewriteFrontmatterFields`. O `re.sub` não escopado do
+Python foi removido. Preservam aspas quando presentes (`status: "wip"` continua com aspas), não criam
+chave ausente, devolvem source intacta sem frontmatter reconhecível.
+
+**Prova de paridade de bytes feita pelo orquestrador** — o critério que os testes de cada CLI, rodando
+isolados, não conseguem verificar. Mesmo roadmap de entrada, `move ... done` executado pelos 3
+binários em diretórios separados:
+
+| Comparação | Resultado |
+|---|---|
+| Go × Node | **idênticos byte a byte** |
+| Go × Python | **idênticos byte a byte** |
+
+O fixture incluía a armadilha do escopo: uma linha `` `status: backlog` `` no corpo do documento.
+Ficou intacta nos três — é o cenário que reprovava a implementação anterior do Python. `validate`
+após o move: sem `folder_status`.
+
+Cobertura: Go 3 testes novos (com `ValidateUnfiltered` e controle positivo), Python 9 novos em 2
+classes, e **Node ganhou sua primeira suíte de `moveRoadmap`** — `npm/tests/roadmap_move.test.js`,
+10 testes. A ausência total de teste no Node era o que permitia o defeito sobreviver ali.
+
+`make quality` verde, sem variável auxiliar.
+
+---
+
 ## Acceptance Criteria
 
-- [ ] Wave 1 e Wave 2 concluídas
-- [ ] Paridade real nos 3 CLIs — mesmo comportamento **e mesmos bytes gravados**
-- [ ] Todo comportamento novo tem teste que prova o cenário negativo (P4)
-- [ ] `make quality` verde, sem variável auxiliar
-- [ ] Escopo negativo da REQ respeitado — os 5 achados adjacentes ficam registrados, não corrigidos
+- [x] Wave 1 e Wave 2 concluídas
+- [x] Paridade real nos 3 CLIs — mesmo comportamento **e mesmos bytes gravados**
+- [x] Todo comportamento novo tem teste que prova o cenário negativo (P4)
+- [x] `make quality` verde, sem variável auxiliar
+- [x] Escopo negativo da REQ respeitado — os 5 achados adjacentes ficam registrados, não corrigidos
+
+**2026-07-27 — ML-2A: a prova.**
+
+Encerramento executado com o binário corrigido, **sem nenhuma edição manual de frontmatter**:
+
+```
+$ trackfw roadmap move ROADMAP-2026-07-27-roadmap-move-... done
+✓ moved → docs/roadmaps/done
+
+$ head -2 docs/roadmaps/done/ROADMAP-2026-07-27-...
+---
+status: done          ← era "wip", virou "done" sozinho
+$ grep "| Status:"
+> Created: 2026-07-27 | Status: done   ← cabeçalho sincronizado junto
+```
+
+Este arquivo **nasceu com o defeito** (ver Context: o `move` para `wip` gerou warning na hora) e
+**morreu sem ele**. O ciclo inteiro cabe num único artefato.
+
+**Efeito colateral útil — o gate da REQ anterior pegou um erro meu.** No mesmo `validate` apareceu:
+
+```
+✗ branch "fix/roadmap-move-sincroniza-status" has no matching roadmap in wip/ nor done/
+  (found: ..., e mais 13)
+```
+
+A branch tinha sido criada com nome abreviado (`...sincroniza-status`) enquanto o roadmap é
+`...sincroniza-o-status-do-artefato` — o slug não casava. O `branch_has_wip_roadmap` **reprovou
+corretamente**: era exatamente o trabalho órfão que a regra existe para prevenir, e o autor do
+descuido fui eu. Branch renomeada para casar o slug; `validate` verde.
+
+Duas confirmações de bônus nessa mensagem: a regra corrigida no ML-1A da REQ anterior continua
+reprovando o que deve (não afrouxou ao aceitar `done/`), e o truncamento do ML-3A está em produção
+— "e mais 13" em vez da parede de 16 nomes.
+
+## Débito confirmado durante a execução
+
+Os 5 achados do escopo negativo da REQ seguem válidos. O ML-1A confirmou dois deles na prática:
+
+1. **Template Python gera `status: Backlog` capitalizado** — `roadmap new` no Python produz frontmatter
+   divergente de Go/Node desde o nascimento. O `move` agora normaliza para minúsculo, mas o estado
+   inicial ainda diverge entre CLIs. É o item 1 do escopo negativo, agora com evidência.
+2. **Prefixo de agente no log de transição** ausente no Python (item 5).

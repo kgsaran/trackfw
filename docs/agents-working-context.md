@@ -3688,3 +3688,25 @@ do Go, prefixo de agente no log Python.
 3. `parse_frontmatter` Python não remove aspas → `status: "wip"` gera warning — REQ própria
 
 **Qualidade:** `make quality` verde, sem variável de ambiente auxiliar.
+
+---
+
+## Encerramento da REQ-2026-07-27-roadmap-move — 2026-07-27 — Zeus
+
+**Branch:** `fix/roadmap-move-sincroniza-o-status-do-artefato`
+**Status:** CONCLUÍDO
+
+ML-1A e ML-2A concluídos e auditados. `make quality` verde.
+
+**Prova de paridade de bytes** (feita pelo orquestrador — os testes de cada CLI, isolados, não
+verificam isso entre si): mesmo roadmap movido pelos 3 binários em diretórios separados →
+Go × Node e Go × Python **idênticos byte a byte**. Fixture com `status:` no corpo ficou intacto.
+
+**ML-2A:** este roadmap nasceu com o defeito (o `move` para wip gerou warning) e foi encerrado sem
+ele — `status: wip` → `done` automático, cabeçalho junto, zero edição manual.
+
+**Gate pegou erro do orquestrador:** a branch fora criada como `fix/roadmap-move-sincroniza-status`,
+slug que não casa com o roadmap `...sincroniza-o-status-do-artefato`. O `branch_has_wip_roadmap`
+reprovou corretamente — era trabalho órfão. Branch renomeada antes do PR.
+
+**Débito:** 5 divergências adjacentes seguem abertas, registradas na REQ e na nota de vault.

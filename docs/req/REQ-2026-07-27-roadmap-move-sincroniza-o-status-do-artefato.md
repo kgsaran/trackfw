@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-27
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md"
 ---
 
 # REQ: roadmap move sincroniza o status do artefato
 
-> Date: 2026-07-27 | Status: Open
+> Date: 2026-07-27 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -52,16 +52,16 @@ silencioso quando a chave não existe e escreve label capitalizado (`WIP`), que 
 
 ## Acceptance Criteria
 
-- [ ] `roadmap move <nome> <estado>` sincroniza `status:` do frontmatter nos **3 CLIs**
-- [ ] A reescrita é **escopada ao bloco de frontmatter** (entre o `---` inicial e o `---` de
+- [x] `roadmap move <nome> <estado>` sincroniza `status:` do frontmatter nos **3 CLIs**
+- [x] A reescrita é **escopada ao bloco de frontmatter** (entre o `---` inicial e o `---` de
       fechamento); um `status:` no corpo do documento nunca é tocado
-- [ ] A reescrita **não inventa chave** que não existia, e devolve o arquivo intacto se não houver
+- [x] A reescrita **não inventa chave** que não existia, e devolve o arquivo intacto se não houver
       frontmatter reconhecível — mesma semântica de `rewriteFrontmatterFields`
-- [ ] A linha de cabeçalho `> Created: … | Status: …` é sincronizada junto, quando existir
-- [ ] O valor escrito é **idêntico byte a byte nos 3 CLIs** (casing canônico definido no roadmap)
-- [ ] Teste que roda `validate` **depois** do `move` e prova ausência de warning — nos 3 CLIs (P4)
-- [ ] Node.js ganha cobertura de `moveRoadmap`, hoje inexistente
-- [ ] `make quality` verde, sem variável de ambiente auxiliar
+- [x] A linha de cabeçalho `> Created: … | Status: …` é sincronizada junto, quando existir
+- [x] O valor escrito é **idêntico byte a byte nos 3 CLIs** (casing canônico definido no roadmap)
+- [x] Teste que roda `validate` **depois** do `move` e prova ausência de warning — nos 3 CLIs (P4)
+- [x] Node.js ganha cobertura de `moveRoadmap`, hoje inexistente
+- [x] `make quality` verde, sem variável de ambiente auxiliar
 
 ## Escopo negativo — achados adjacentes que NÃO entram
 
@@ -90,4 +90,4 @@ governada por ele, em especial P4 — a correção só é aceita com teste que p
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md`
