@@ -4324,3 +4324,17 @@ Criadas a `REQ-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md` e 
 o slash-command `/trackfw:roadmap` gera artefato sem frontmatter, e o estado `analyzing` é reconhecido
 pelo scaffold/validator mas rejeitado por `roadmap move`. Roadmap mantido em `backlog/`; nenhuma
 implementação iniciada. `trackfw validate` retornou 0 violations e 0 warnings.
+
+## Formalização de follow-ups 2026-07-27 — Zeus
+
+Os achados remanescentes deixaram de ser follow-ups soltos de sessões anteriores e foram separados
+por impacto:
+
+- **Bloqueantes de release:** `REQ-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
+  + roadmap homônimo em `backlog/` — flags Python, strip de aspas, log `by_agent` e contrato de schemas.
+- **Não bloqueantes:** `REQ-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
+  + roadmap homônimo em `backlog/` — `stale_wip`, política de I/O e catálogo do gate de identidade.
+
+A memória Claude específica do workspace contém somente a regra permanente de paridade dos três
+CLIs e não armazenava esses follow-ups; nada foi removido dela. A fonte de verdade para execução
+passa a ser exclusivamente as REQs e roadmaps acima.
