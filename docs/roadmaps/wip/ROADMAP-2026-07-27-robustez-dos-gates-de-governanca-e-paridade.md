@@ -77,7 +77,7 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A ‖ 2B) ─ barrier ─> Wave 3 (3A)
 > ⚠️ Nenhum dos dois roda `make quality`; o orquestrador roda na barrier.
 
 ### ML-2A — Auditoria das regras do validator
-**Status:** pending
+**Status:** in progress
 **Files affected:** `internal/validator/` e equivalentes; correções onde houver defeito
 
 **Actions:**
@@ -101,7 +101,7 @@ uma** — inclusive as conformes. Auditoria sem inventário não é auditoria.
 - [ ] `go build`, `go test` e `go vet` verdes; testes dos 3 CLIs verdes
 
 ### ML-2B — Auditoria dos scripts de gate
-**Status:** pending
+**Status:** in progress
 **Files affected:** `scripts/check-*.sh`, `scripts/smoke-integration-packages.sh`, `Makefile`
 
 **Actions:**
