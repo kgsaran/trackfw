@@ -3601,6 +3601,6 @@ Achados registrados:
 **Verificação final:** `make quality` verde — Go build/vet/test ok, Node.js 228 pass, Python 588 pass,
 6 gates positivos + 6 falsificações passando, sem variável auxiliar.
 
-**Commit:** (a preencher após push) | **Push:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Commit:** `dc9a18f` | **Push:** `feat/robustez-dos-gates-de-governanca-e-paridade`
 
 ---
