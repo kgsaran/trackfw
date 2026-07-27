@@ -11,6 +11,7 @@ from trackfw import config as cfg_module
 from trackfw.generators.roadmap import (
     slugify,
     generate_roadmap,
+    generate_roadmap_from_req,
     move_roadmap,
     _rewrite_roadmap_status,
     VALID_STATES,
@@ -71,6 +72,45 @@ class TestGenerateFlat(unittest.TestCase):
         self.assertIn("# Roadmap: Minha Feature", content)
         self.assertIn("## Wave 1", content)
         self.assertIn("ML-1A", content)
+
+    def test_generate_flat_with_req_path_sets_context_link(self):
+        cfg = _make_cfg(self.tmpdir)
+        path = generate_roadmap("Linked Roadmap", cfg, req_path="docs/req/REQ-linked.md")
+
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+
+        self.assertIn('req: ""', content)
+        self.assertIn("REQ: docs/req/REQ-linked.md", content)
+
+    def test_generate_from_req_derives_title_criteria_and_adr(self):
+        cfg = _make_cfg(self.tmpdir)
+        req_dir = os.path.join(self.tmpdir, "docs", "req")
+        os.makedirs(req_dir, exist_ok=True)
+        req_path = os.path.join(req_dir, "REQ-checkout.md")
+        with open(req_path, "w", encoding="utf-8") as f:
+            f.write(
+                "---\nstatus: Open\n---\n\n"
+                "# REQ: Checkout seguro\n\n"
+                "**ADR:** docs/adr/ADR-checkout.md\n\n"
+                "## Critérios de Aceite\n\n"
+                "- [ ] Validar token de pagamento\n"
+                "- [x] Persistir recibo\n"
+            )
+
+        path = generate_roadmap_from_req(req_path, cfg)
+
+        self.assertTrue(os.path.isfile(path))
+        self.assertIn("checkout-seguro", os.path.basename(path))
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+
+        self.assertIn('req: "REQ-checkout.md"', content)
+        self.assertIn("# Roadmap: Checkout seguro", content)
+        self.assertIn(f"REQ: {req_path}", content)
+        self.assertIn("ADR: docs/adr/ADR-checkout.md", content)
+        self.assertIn("### ML-1A — Validar token de pagamento", content)
+        self.assertIn("### ML-1B — Persistir recibo", content)
 
 
 class TestGenerateByAgent(unittest.TestCase):
@@ -200,6 +240,12 @@ class TestMoveBuscaEmTodosAgentes(unittest.TestCase):
         with open(dst_path, encoding="utf-8") as f:
             content = f.read()
         self.assertIn("status: wip", content)
+
+        log_path = os.path.join(cfg["roadmap_dir"], ".trackfw-log")
+        with open(log_path, encoding="utf-8") as f:
+            log_content = f.read()
+        self.assertIn(f"zeus/{basename}", log_content)
+        self.assertIn("backlog → wip", log_content)
 
 
 class TestMoveRoadmapAnalyzing(unittest.TestCase):

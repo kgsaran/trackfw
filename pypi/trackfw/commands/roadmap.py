@@ -9,6 +9,7 @@ import sys
 from trackfw import config as cfg_module
 from trackfw.generators.roadmap import (
     generate_roadmap,
+    generate_roadmap_from_req,
     move_roadmap,
     VALID_STATES,
 )
@@ -81,10 +82,14 @@ def _find_file(name: str, roadmap_dir: str, namespacing: str, agents=None) -> st
 
 def _cmd_new(args):
     cfg = cfg_module.load()
-    title = " ".join(args.title) if isinstance(args.title, list) else args.title
     agent = getattr(args, "agent", None)
     try:
-        path = generate_roadmap(title, cfg, agent=agent)
+        if args.from_req:
+            path = generate_roadmap_from_req(args.from_req, cfg, agent=agent)
+        else:
+            title_arg = " ".join(args.title) if isinstance(args.title, list) else args.title
+            title = title_arg or args.title_flag or "New Roadmap"
+            path = generate_roadmap(title, cfg, agent=agent, req_path=args.req or "")
         print(f"Roadmap criado: {path}")
     except Exception as e:
         print(f"Erro ao criar roadmap: {e}", file=sys.stderr)
@@ -169,9 +174,16 @@ def register(subparsers):
     )
     sub = roadmap_parser.add_subparsers(dest="roadmap_cmd", metavar="SUBCOMMAND")
 
-    # roadmap new <title> [--agent AGENT]
+    # roadmap new [title] [--title TITLE] [--req PATH] [--from-req PATH] [--agent AGENT]
     new_p = sub.add_parser("new", help="Cria um novo roadmap em backlog/")
-    new_p.add_argument("title", nargs="+", help="Titulo do roadmap")
+    new_p.add_argument("title", nargs="?", default=None, help="Titulo do roadmap")
+    new_p.add_argument("-t", "--title", dest="title_flag", default=None, help="Roadmap title")
+    new_p.add_argument("-r", "--req", default=None, help="Path to the linked REQ file")
+    new_p.add_argument(
+        "--from-req",
+        default=None,
+        help="Generate roadmap with ML stubs from REQ acceptance criteria",
+    )
     new_p.add_argument("--agent", default=None, help="Agente responsavel (modo by_agent)")
     new_p.set_defaults(func=_cmd_new)
 

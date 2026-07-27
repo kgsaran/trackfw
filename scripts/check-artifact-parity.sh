@@ -27,6 +27,9 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/go" "$WORK/node" "$WORK/python"
 
 TITLE="Autenticação e Sessão"
+FLAG_TITLE="Integração de Pagamentos"
+REQ_FLAG_REL="docs/req/REQ-flag-source.md"
+FROM_REQ_TITLE="Fluxo de Pagamentos"
 
 # ── Midnight rollover guard ──────────────────────────────────────────────────
 # Captura a data ANTES da geração. Se a data mudar durante o processo os nomes
@@ -40,18 +43,75 @@ DATE_BEFORE=$(date +%F)
 (cd "$WORK/go" && "$GO_BIN"                                       adr     new "$TITLE")
 (cd "$WORK/go" && "$GO_BIN"                                       roadmap new "$TITLE")
 (cd "$WORK/go" && "$GO_BIN"                                       note    new "$TITLE")
+cat >"$WORK/go/$REQ_FLAG_REL" <<'EOF'
+---
+status: Open
+date: 2026-07-27
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: Fluxo de Pagamentos
+
+> Date: 2026-07-27 | Status: Open
+
+## Acceptance Criteria
+- [ ] Create payment intent
+- [ ] Confirm payment status
+EOF
+(cd "$WORK/go" && "$GO_BIN"                                       roadmap new --title "$FLAG_TITLE" --req "$REQ_FLAG_REL")
+(cd "$WORK/go" && "$GO_BIN"                                       roadmap new --from-req "$REQ_FLAG_REL")
 
 (cd "$WORK/node" && node "$ROOT_DIR/npm/bin/trackfw"              init)
 (cd "$WORK/node" && node "$ROOT_DIR/npm/bin/trackfw"              req     new "$TITLE")
 (cd "$WORK/node" && node "$ROOT_DIR/npm/bin/trackfw"              adr     new "$TITLE")
 (cd "$WORK/node" && node "$ROOT_DIR/npm/bin/trackfw"              roadmap new "$TITLE")
 (cd "$WORK/node" && node "$ROOT_DIR/npm/bin/trackfw"              note    new "$TITLE")
+cat >"$WORK/node/$REQ_FLAG_REL" <<'EOF'
+---
+status: Open
+date: 2026-07-27
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: Fluxo de Pagamentos
+
+> Date: 2026-07-27 | Status: Open
+
+## Acceptance Criteria
+- [ ] Create payment intent
+- [ ] Confirm payment status
+EOF
+(cd "$WORK/node" && node "$ROOT_DIR/npm/bin/trackfw"              roadmap new --title "$FLAG_TITLE" --req "$REQ_FLAG_REL")
+(cd "$WORK/node" && node "$ROOT_DIR/npm/bin/trackfw"              roadmap new --from-req "$REQ_FLAG_REL")
 
 (cd "$WORK/python" && PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw init)
 (cd "$WORK/python" && PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw req     new "$TITLE")
 (cd "$WORK/python" && PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw adr     new "$TITLE")
 (cd "$WORK/python" && PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw roadmap new "$TITLE")
 (cd "$WORK/python" && PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw note    new "$TITLE")
+cat >"$WORK/python/$REQ_FLAG_REL" <<'EOF'
+---
+status: Open
+date: 2026-07-27
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: Fluxo de Pagamentos
+
+> Date: 2026-07-27 | Status: Open
+
+## Acceptance Criteria
+- [ ] Create payment intent
+- [ ] Confirm payment status
+EOF
+(cd "$WORK/python" && PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw roadmap new --title "$FLAG_TITLE" --req "$REQ_FLAG_REL")
+(cd "$WORK/python" && PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw roadmap new --from-req "$REQ_FLAG_REL")
 
 DATE_AFTER=$(date +%F)
 if [[ "$DATE_BEFORE" != "$DATE_AFTER" ]]; then
@@ -70,17 +130,21 @@ SLUG="autenticacao-e-sessao"
 EXPECTED_REQ="docs/req/REQ-${DATE}-${SLUG}.md"
 EXPECTED_ADR="docs/adr/ADR-${DATE}-${SLUG}.md"
 EXPECTED_ROADMAP="docs/roadmaps/backlog/ROADMAP-${DATE}-${SLUG}.md"
+EXPECTED_ROADMAP_FLAGS="docs/roadmaps/backlog/ROADMAP-${DATE}-integracao-de-pagamentos.md"
+EXPECTED_ROADMAP_FROM_REQ="docs/roadmaps/backlog/ROADMAP-${DATE}-fluxo-de-pagamentos.md"
 EXPECTED_SLASH_ROADMAP=".claude/commands/trackfw/roadmap.md"
 EXPECTED_NOTE="vault/notes/${SLUG}-${DATE}.md"
 EXPECTED_INDEX="vault/notes/index.md"
 
-KINDS=("req" "adr" "roadmap" "slash_roadmap" "note" "note_index")
+KINDS=("req" "adr" "roadmap" "roadmap_flags" "roadmap_from_req" "slash_roadmap" "note" "note_index")
 
 expected_path() {
   case "$1" in
     req)        echo "$EXPECTED_REQ"     ;;
     adr)        echo "$EXPECTED_ADR"     ;;
     roadmap)    echo "$EXPECTED_ROADMAP" ;;
+    roadmap_flags) echo "$EXPECTED_ROADMAP_FLAGS" ;;
+    roadmap_from_req) echo "$EXPECTED_ROADMAP_FROM_REQ" ;;
     slash_roadmap) echo "$EXPECTED_SLASH_ROADMAP" ;;
     note)       echo "$EXPECTED_NOTE"    ;;
     note_index) echo "$EXPECTED_INDEX"   ;;
@@ -146,6 +210,85 @@ run_trackfw() {
     python) (cd "$dir" && PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw "$@") ;;
     *)      echo "check-artifact-parity: runtime desconhecido: $runtime" >&2; return 1 ;;
   esac
+}
+
+assert_quoted_status_validate() {
+  local runtime=$1
+  local dir="$WORK/quoted-status-$runtime"
+
+  rm -rf "$dir"
+  mkdir -p "$dir/docs/adr" "$dir/docs/req" "$dir/docs/roadmaps/wip"
+  cat >"$dir/trackfw.yaml" <<'YAML'
+project_name: quoted-status
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: flat
+governance_mode: strict
+rules:
+  folder_status: warning
+YAML
+  cat >"$dir/docs/adr/ADR-quoted.md" <<'EOF'
+---
+status: Accepted
+date: 2026-07-27
+author: ""
+---
+
+# ADR: Quoted
+EOF
+  cat >"$dir/docs/req/REQ-quoted.md" <<'EOF'
+---
+status: Open
+date: 2026-07-27
+adr: "docs/adr/ADR-quoted.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-quoted.md"
+---
+
+# REQ: Quoted
+
+ADR: docs/adr/ADR-quoted.md
+Roadmap: docs/roadmaps/wip/ROADMAP-quoted.md
+EOF
+  cat >"$dir/docs/roadmaps/wip/ROADMAP-quoted.md" <<'EOF'
+---
+status: "wip"
+date: 2026-07-27
+req: "docs/req/REQ-quoted.md"
+squad: ""
+---
+
+# Roadmap: Quoted
+
+> Created: 2026-07-27 | Status: "wip"
+
+## Context
+REQ: docs/req/REQ-quoted.md
+
+## Wave 1 — Test
+> Dependencies: none
+
+### ML-1A — Test
+**Status:** pending
+**Files affected:**
+**Actions:**
+
+## Acceptance Criteria
+- [ ] validate passes
+EOF
+
+  validate_out=$(run_trackfw "$runtime" "$dir" validate --json)
+  if grep -q "folder_status" <<<"$validate_out"; then
+    echo "artifact parity quoted-status failed: $runtime — validate reportou folder_status para status aspeado" >&2
+    echo "$validate_out" >&2
+    exit 1
+  fi
+  if ! python3 -c 'import json,sys; p=json.load(sys.stdin); s=p["summary"]; sys.exit(0 if s["violations"] == 0 and s["warnings"] == 0 else 1)' <<<"$validate_out"; then
+    echo "artifact parity quoted-status failed: $runtime — validate não retornou 0/0" >&2
+    echo "$validate_out" >&2
+    exit 1
+  fi
 }
 
 write_cycle_project() {
@@ -306,6 +449,7 @@ assert_cycle() {
 for RUNTIME in go node python; do
   assert_cycle "$RUNTIME" flat
   assert_cycle "$RUNTIME" by_agent
+  assert_quoted_status_validate "$RUNTIME"
 done
 
-echo "Artifact parity checks passed (6 artifact types × 3 runtimes; analyzing cycle flat/by_agent)"
+echo "Artifact parity checks passed (8 artifact types × 3 runtimes; roadmap flags, quoted status, analyzing cycle flat/by_agent)"

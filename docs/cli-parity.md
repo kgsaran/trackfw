@@ -68,6 +68,19 @@ like `ROADMAP-001.md`, or a path that points to the wrong state directory such
 as `docs/roadmaps/wip/X.md` when the file is in `done/`, is invalid even when a
 file with the same basename exists elsewhere under `docs/roadmaps/`.
 
+## JSON Schema artifacts
+
+`trackfw init` publishes `docs/schema/adr.schema.json`,
+`docs/schema/req.schema.json`, and `docs/schema/roadmap.schema.json` as
+cross-runtime helper artifacts for external agents and automation. They describe
+the expected frontmatter object after a caller has extracted it from Markdown.
+
+The Go, Node.js, and Python `trackfw validate` implementations do not load or
+execute those JSON Schemas automatically. `trackfw validate` remains governed by
+the internal validation rules documented in this contract, including
+frontmatter presence, folder/status coherence, reference integrity, and
+traceability checks.
+
 ## AI integration lifecycle
 
 The Go, Node.js, and Python runtimes expose the same public lifecycle:

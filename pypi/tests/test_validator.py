@@ -9,7 +9,6 @@ import time
 import unittest
 import tempfile
 import shutil
-import pytest
 
 # Garante que importamos a versão local do pacote
 import sys
@@ -81,6 +80,30 @@ class TestParseFrontmatter(unittest.TestCase):
         content = "---\nlinked-adr: ADR-001.md\n---\n"
         result = v.parse_frontmatter(content)
         self.assertIn("linked_adr", result)
+
+    def test_status_com_aspas_externas_e_normalizado(self):
+        content = '---\nstatus: "wip"\ntitle: Roadmap\n---\n'
+        result = v.parse_frontmatter(content)
+        self.assertEqual(result.get("status"), "wip")
+
+    def test_valores_yaml_flat_com_aspas_simples_e_duplas_sao_normalizados(self):
+        content = "---\nstatus: 'wip'\ntitle: \"Roadmap\"\n---\n"
+        result = v.parse_frontmatter(content)
+        self.assertEqual(result.get("status"), "wip")
+        self.assertEqual(result.get("title"), "Roadmap")
+
+    def test_valores_yaml_flat_vazios_sao_preservados(self):
+        content = '---\nsquad: ""\nowner: \n---\n'
+        result = v.parse_frontmatter(content)
+        self.assertEqual(result.get("squad"), "")
+        self.assertEqual(result.get("owner"), "")
+
+    def test_valores_yaml_flat_preservam_conteudo_interno(self):
+        content = "---\ntitle: \"Roadmap 'release'\"\nslug: 'fix/\"release\"'\nraw: \"wip\n---\n"
+        result = v.parse_frontmatter(content)
+        self.assertEqual(result.get("title"), "Roadmap 'release'")
+        self.assertEqual(result.get("slug"), 'fix/"release"')
+        self.assertEqual(result.get("raw"), '"wip')
 
 
 class TestValidateWipHasReq(unittest.TestCase):
@@ -538,6 +561,75 @@ class TestValidatorImprovements(unittest.TestCase):
         }
         warnings = validate_folder_status_coherence(cfg)
         self.assertEqual(warnings, [])
+
+    def test_validate_folder_status_coherence_no_warning_when_quoted_wip(self):
+        """Arquivo em wip/ com status: "wip" deve ser equivalente a status: wip."""
+        from trackfw import config as cfg_mod
+        from trackfw.validator import validate_folder_status_coherence
+        cfg_mod.reset()
+
+        wip_dir = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        os.makedirs(wip_dir)
+        with open(os.path.join(wip_dir, "quoted-wip.md"), "w") as f:
+            f.write('---\nstatus: "wip"\n---\n# Roadmap\n')
+
+        cfg = {
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        warnings = validate_folder_status_coherence(cfg)
+        messages = [w["message"] for w in warnings]
+        self.assertFalse(
+            any("quoted-wip.md" in message for message in messages),
+            f'status: "wip" não deve gerar warning folder_status; warnings={messages}',
+        )
+
+    def test_validate_folder_status_coherence_no_warning_when_single_quoted_wip(self):
+        """Arquivo em wip/ com status: 'wip' deve ser equivalente a status: wip."""
+        from trackfw import config as cfg_mod
+        from trackfw.validator import validate_folder_status_coherence
+        cfg_mod.reset()
+
+        wip_dir = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        os.makedirs(wip_dir)
+        with open(os.path.join(wip_dir, "single-quoted-wip.md"), "w") as f:
+            f.write("---\nstatus: 'wip'\n---\n# Roadmap\n")
+
+        cfg = {
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        warnings = validate_folder_status_coherence(cfg)
+        messages = [w["message"] for w in warnings]
+        self.assertFalse(
+            any("single-quoted-wip.md" in message for message in messages),
+            f"status: 'wip' não deve gerar warning folder_status; warnings={messages}",
+        )
+
+    def test_validate_folder_status_coherence_ignora_status_vazio_aspeado(self):
+        """Arquivo com status vazio não deve gerar mismatch artificial."""
+        from trackfw import config as cfg_mod
+        from trackfw.validator import validate_folder_status_coherence
+        cfg_mod.reset()
+
+        wip_dir = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        os.makedirs(wip_dir)
+        with open(os.path.join(wip_dir, "empty-status.md"), "w") as f:
+            f.write('---\nstatus: ""\n---\n# Roadmap\n')
+
+        cfg = {
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        warnings = validate_folder_status_coherence(cfg)
+        messages = [w["message"] for w in warnings]
+        self.assertFalse(
+            any("empty-status.md" in message for message in messages),
+            f'status: "" deve continuar sem mismatch; warnings={messages}',
+        )
 
     def test_validate_filename_uniqueness_violation(self):
         """Mesmo filename em wip/ e backlog/ gera violation."""

@@ -85,6 +85,23 @@ check_help() {
 check_help "node" "$(node "$ROOT_DIR/npm/bin/trackfw" --help)"
 check_help "python" "$(PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw --help)"
 
+check_roadmap_new_flags() {
+  local runtime=$1
+  local output
+  output=$(printf '%s' "$2" | sed 's/\x1b\[[0-9;]*m//g')
+  local flag
+  for flag in "--title" "--req" "--from-req"; do
+    if ! grep -qF -- "$flag" <<<"$output"; then
+      echo "${runtime}: roadmap new help missing ${flag}" >&2
+      return 1
+    fi
+  done
+}
+
+check_roadmap_new_flags "go" "$("$GO_BIN" roadmap new --help)"
+check_roadmap_new_flags "node" "$(node "$ROOT_DIR/npm/bin/trackfw" roadmap new --help)"
+check_roadmap_new_flags "python" "$(PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw roadmap new --help)"
+
 "$GO_BIN" version | grep -Eq '^trackfw .+'
 node "$ROOT_DIR/npm/bin/trackfw" version | grep -Eq '^trackfw .+'
 PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw version | grep -Eq '^trackfw .+'

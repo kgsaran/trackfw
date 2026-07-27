@@ -7,6 +7,8 @@ import sys
 import tempfile
 import unittest
 import argparse
+import pytest
+from contextlib import contextmanager
 
 from trackfw import config as cfg_module
 from trackfw.generators.roadmap import generate_roadmap, move_roadmap
@@ -30,6 +32,135 @@ def _make_cfg(tmpdir: str, namespacing: str = "flat", agents=None) -> dict:
 # ---------------------------------------------------------------------------
 # tests roadmap new
 # ---------------------------------------------------------------------------
+
+def _find_subparser(parser: argparse.ArgumentParser, name: str) -> argparse.ArgumentParser:
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return action.choices[name]
+    raise AssertionError(f"subparser {name!r} not found")
+
+
+@contextmanager
+def _cwd(path: str):
+    old = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(old)
+
+
+def _roadmap_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="trackfw")
+    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+    roadmap_cmd.register(subparsers)
+    return parser
+
+
+def _write_req(root: str, filename: str = "REQ-demo.md") -> str:
+    req_dir = os.path.join(root, "docs", "req")
+    os.makedirs(req_dir, exist_ok=True)
+    req_path = os.path.join(req_dir, filename)
+    with open(req_path, "w", encoding="utf-8") as f:
+        f.write(
+            "---\nstatus: Open\n---\n\n"
+            "# REQ: Checkout seguro\n\n"
+            "**ADR:** docs/adr/ADR-demo.md\n\n"
+            "## Acceptance Criteria\n\n"
+            "- [ ] Cart validates payment token\n"
+            "- [x] Receipt is persisted\n"
+        )
+    return req_path
+
+
+def test_roadmap_new_help_exposes_go_node_parity_flags():
+    parser = _roadmap_parser()
+
+    roadmap_parser = _find_subparser(parser, "roadmap")
+    new_parser = _find_subparser(roadmap_parser, "new")
+    help_text = new_parser.format_help()
+
+    for flag in ("--title", "--req", "--from-req"):
+        assert flag in help_text, f"Python roadmap new help missing parity flag {flag}; help:\n{help_text}"
+
+
+def test_roadmap_new_accepts_valid_title_req_and_from_req_arguments(capsys):
+    parser = _roadmap_parser()
+
+    args = parser.parse_args(["roadmap", "new", "Checkout", "--req", "docs/req/REQ-demo.md"])
+    assert args.title == "Checkout"
+    assert args.req == "docs/req/REQ-demo.md"
+
+    args = parser.parse_args(["roadmap", "new", "--title", "Billing", "--from-req", "docs/req/REQ-demo.md"])
+    assert args.title_flag == "Billing"
+    assert args.from_req == "docs/req/REQ-demo.md"
+
+
+def test_roadmap_new_req_flag_generates_artifact_with_link(capsys):
+    with tempfile.TemporaryDirectory() as tmpdir, _cwd(tmpdir):
+        cfg_module.reset()
+        parser = _roadmap_parser()
+        args = parser.parse_args(["roadmap", "new", "--title", "Billing Flow", "--req", "docs/req/REQ-billing.md"])
+
+        args.func(args)
+
+        out = capsys.readouterr().out
+        assert "Roadmap criado:" in out
+        path = os.path.join(tmpdir, "docs", "roadmaps", "backlog")
+        files = os.listdir(path)
+        assert files == [f for f in files if f.endswith(".md")]
+        assert len(files) == 1
+        with open(os.path.join(path, files[0]), encoding="utf-8") as f:
+            content = f.read()
+        assert "# Roadmap: Billing Flow" in content
+        assert "REQ: docs/req/REQ-billing.md" in content
+        cfg_module.reset()
+
+
+def test_roadmap_new_title_conflict_uses_positional_before_title_flag(capsys):
+    with tempfile.TemporaryDirectory() as tmpdir, _cwd(tmpdir):
+        cfg_module.reset()
+        parser = _roadmap_parser()
+        args = parser.parse_args(["roadmap", "new", "Positional Title", "--title", "Flag Title"])
+
+        args.func(args)
+
+        files = os.listdir(os.path.join(tmpdir, "docs", "roadmaps", "backlog"))
+        with open(os.path.join(tmpdir, "docs", "roadmaps", "backlog", files[0]), encoding="utf-8") as f:
+            content = f.read()
+        assert "# Roadmap: Positional Title" in content
+        assert "Flag Title" not in content
+        cfg_module.reset()
+
+
+def test_roadmap_new_from_req_takes_precedence_over_other_inputs(capsys):
+    with tempfile.TemporaryDirectory() as tmpdir, _cwd(tmpdir):
+        req_path = _write_req(tmpdir)
+        cfg_module.reset()
+        parser = _roadmap_parser()
+        args = parser.parse_args([
+            "roadmap",
+            "new",
+            "Ignored Positional",
+            "--title",
+            "Ignored Flag",
+            "--req",
+            "docs/req/REQ-other.md",
+            "--from-req",
+            req_path,
+        ])
+
+        args.func(args)
+
+        files = os.listdir(os.path.join(tmpdir, "docs", "roadmaps", "backlog"))
+        with open(os.path.join(tmpdir, "docs", "roadmaps", "backlog", files[0]), encoding="utf-8") as f:
+            content = f.read()
+        assert "# Roadmap: Checkout seguro" in content
+        assert "REQ-other.md" not in content
+        assert "Cart validates payment token" in content
+        assert "Receipt is persisted" in content
+        cfg_module.reset()
+
 
 class TestRoadmapNew(unittest.TestCase):
     def setUp(self):

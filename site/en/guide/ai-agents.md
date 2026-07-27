@@ -65,7 +65,9 @@ squad: backend
 ...
 ```
 
-Frontmatter is validated against JSON Schemas in `docs/schema/` — ADRs, REQs, and Roadmaps with missing required fields generate violations in `trackfw validate`.
+`trackfw validate` runs the CLI's internal governance rules. The JSON Schemas in
+`docs/schema/` are helpers for external agent and automation checks; they are not
+consumed automatically by `trackfw validate`.
 
 ---
 
@@ -194,7 +196,7 @@ trackfw validate
 
 ## JSON Schema in `docs/schema/`
 
-`trackfw init` generates JSON schemas for artifact validation in `docs/schema/`:
+`trackfw init` generates auxiliary JSON schemas in `docs/schema/`:
 
 ```
 docs/schema/
@@ -203,14 +205,17 @@ docs/schema/
 └── roadmap.schema.json
 ```
 
-External agents can validate artifacts against these schemas before committing:
+External agents can extract frontmatter to JSON and validate it against these schemas before
+committing. This validation is external to `trackfw validate`:
 
 ```bash
+# Example: extract frontmatter to /tmp/adr-frontmatter.json first.
+
 # With ajv-cli
-npx ajv validate -s docs/schema/adr.schema.json -d docs/adr/ADR-2026-06-13-use-postgresql.md
+npx ajv validate -s docs/schema/adr.schema.json -d /tmp/adr-frontmatter.json
 
 # With jsonschema (Python)
-python3 -m jsonschema -i docs/adr/ADR-2026-06-13-use-postgresql.md docs/schema/adr.schema.json
+python3 -m jsonschema -i /tmp/adr-frontmatter.json docs/schema/adr.schema.json
 ```
 
 ### ADR Schema (`docs/schema/adr.schema.json`)

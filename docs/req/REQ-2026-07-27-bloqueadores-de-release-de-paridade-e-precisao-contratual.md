@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-27
 author: "zeus"
 adr: "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md"
 ---
 
 # REQ: Bloqueadores de release de paridade e precisão contratual
 
-> Date: 2026-07-27 | Status: Open
+> Date: 2026-07-27 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -74,4 +74,4 @@ ADR: `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md`
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`

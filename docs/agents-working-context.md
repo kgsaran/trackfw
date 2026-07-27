@@ -4,6 +4,67 @@
 
 ---
 
+## Sessão 2026-07-27 — Artemis (ML-3A bloqueadores concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
+
+**Tarefa:** Fechar o gate cross-CLI dos bloqueadores de release de paridade/contrato, preservando as
+provas negativas e validando flags, artefatos, status aspeado e log `by_agent` nos três runtimes.
+
+**Entregue:**
+- `scripts/check-cli-parity.sh` agora exige `--title`, `--req` e `--from-req` no help de
+  `roadmap new` em Go, Node e Python.
+- `scripts/check-artifact-parity.sh` cobre 8 tipos de artefato nos três runtimes, exercita geração real
+  com `--title/--req` e `--from-req`, valida `status: "wip"` como 0/0 e mantém o ciclo flat/`by_agent`.
+- `scripts/check-gates-falsify.sh` cobre 12 cenários P4, incluindo drift de flag pública em
+  `roadmap new` e drift do log `by_agent`.
+
+**Validação:**
+- `GO_BIN=bin/trackfw scripts/check-cli-parity.sh` → `CLI parity smoke checks passed`.
+- `GO_BIN=bin/trackfw scripts/check-artifact-parity.sh` →
+  `Artifact parity checks passed (8 artifact types × 3 runtimes; roadmap flags, quoted status, analyzing cycle flat/by_agent)`.
+- `GO_BIN=bin/trackfw scripts/check-gates-falsify.sh` →
+  `Falsification checks passed (all 12 scenarios, 8 gates proved non-vacuous)`.
+- `bin/trackfw validate --json` → `0 violations`, `0 warnings`.
+- `git diff --check` → verde.
+- `make quality` → verde em execução anterior desta mesma sessão; package smoke não foi reexecutado na
+  retomada por orientação explícita do handoff.
+
+**Ressalva:**
+- Nenhum código de produção foi alterado neste ML; o escopo ficou restrito a gates e documentação de
+  execução. Package smoke permanece sem nova evidência nesta retomada porque o handoff determinou não
+  rodar `make quality/smoke`.
+
+## Sessão 2026-07-27 — Artemis (ML-1A concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
+
+**Tarefa:** Caracterizar os quatro bloqueadores de release de paridade/contrato sem tocar código de
+produção.
+
+**Entregue:**
+- Python `roadmap new`: xfail strict em `pypi/tests/test_commands_roadmap_discover.py` provando ausência
+  de `--title`, `--req` e `--from-req`; controles de superfície em Go e Node adicionados.
+- Python validator: xfails strict em `pypi/tests/test_validator.py` para `parse_frontmatter` e
+  `folder_status` divergirem com `status: "wip"`.
+- Log `by_agent`: o código Python atual já preserva `zeus/<arquivo>.md`; adicionado guard obrigatório em
+  `pypi/tests/test_generators_roadmap.py` para impedir regressão do log `backlog → wip`.
+- Contrato documental de JSON Schema: xfail strict em `pypi/tests/test_documentation_contract.py`
+  enquanto o site afirmar validação automática inexistente por `trackfw validate`.
+
+**Validação:**
+- `python3 -m pytest pypi/tests/test_commands_roadmap_discover.py pypi/tests/test_validator.py pypi/tests/test_generators_roadmap.py pypi/tests/test_documentation_contract.py -q -rxX`
+  → `115 passed, 4 xfailed`.
+- `go test ./internal/commands ./internal/generators -run 'RoadmapNewCmdExposesParityFlags|MoveRoadmap' -v`
+  → verde.
+- `npm test -- --test-name-pattern='roadmap new exposes parity flags|moveRoadmap'` → Node executou a
+  suíte com `265 pass`, `0 fail`.
+- `bin/trackfw validate --json` → `0 violations`, `0 warnings`.
+
+**Ressalva:**
+- `make quality` não foi executado neste ML; permanece para auditoria central conforme orientação do
+  handoff.
+
 ## Sessão 2026-07-27 — Artemis (ML-3A concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
@@ -4494,3 +4555,27 @@ REQ concluída em 2026-07-27. O ciclo canônico foi implementado nos três CLIs:
 frontmatter (`status`, `date`, `req`, `squad`), `roadmap move ... analyzing` em layouts flat e
 by-agent, sincronização de pasta/frontmatter/header/log e gates E2E/falsificação. `make quality`
 passou integralmente; roadmap movido para `docs/roadmaps/done/` e REQ marcada como Done.
+
+## Implementação 2026-07-27 — Zeus — bloqueadores de release
+
+Após o merge do contrato canônico, a REQ de bloqueadores de release foi movida de `backlog/` para
+`analyzing/`, validada sem violações e iniciada em `wip/` na branch
+`fix/bloqueadores-release-paridade`. ML-1A está em andamento para caracterizar, antes de alterar
+produção, as quatro divergências: flags Python, frontmatter com aspas, log `by_agent` e alegação
+documental de JSON Schema.
+
+ML-1A confirmou três bloqueadores reais (flags Python, valores aspeados e contrato documental). O
+quarto, log `by_agent`, já estava corrigido na base e recebeu teste obrigatório de regressão; ML-2C
+foi encerrado por evidência, sem alteração de produção. ML-2A, ML-2B e ML-2D foram liberados em
+paralelo, com ownership de arquivos não sobreposto.
+
+Wave 2 concluída: o Python passou a aceitar `roadmap new --title/--req/--from-req`; valores YAML
+flat com aspas externas agora normalizam identicamente no validator e trace ID; e a documentação
+passou a declarar JSON Schemas como auxiliares externos. O smoke de packages iniciado no ML-2A
+atingiu timeout local depois de sincronizar assets; sua execução completa foi transferida para o
+gate integrado do ML-3A.
+
+REQ concluída em 2026-07-27. O gate integrado passou com flags Python, parsing aspeado e logs
+flat/by-agent cobertos por paridade e falsificação (12 cenários). `make quality` passou completo;
+o smoke de tarball npm e wheel PyPI passou após instalar `build` em dependência temporária isolada.
+Roadmap movido para `docs/roadmaps/done/` e REQ marcada como Done, liberando a próxima versão.
