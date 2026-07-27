@@ -3478,3 +3478,14 @@ Achados registrados:
 
 **Problema:** regra `branch_has_wip_roadmap` só busca em `wip/`; mover o roadmap para `done/` durante o DoD na branch reprova o gate.
 **Correção:** procurar slug em `wip/` E `done/`; reprovar apenas se não houver correspondência em nenhum dos dois; casamento de slug obrigatório também em `done/`.
+**Status:** CONCLUÍDO
+
+**Implementação:**
+- `resolveStateDirs(cfg, state)` adicionado nos 3 runtimes como fonte única de resolução de caminho; `resolveWIPDirs` e `resolveDoneDirs` são wrappers finos.
+- `validateBranchHasWIPRoadmap` itera `candidates` de `wip/` + `done/`; retorna sem violação se slug casar em qualquer um.
+- Mensagens atualizadas: "wip/ nor done/" nas duas variantes.
+- 4 cenários cobertos por teste nos 3 CLIs (P4 do ADR).
+- `docs/cli-parity.md` atualizado com tabela dos 4 cenários.
+- `make quality` verde (Go: ok | Node.js: 228 pass | Python: 580 pass) | `trackfw validate`: 0 violações.
+
+**Commit:** 80746b4 | **Push:** feat/robustez-dos-gates-de-governanca-e-paridade
