@@ -51,15 +51,19 @@ run_cli() {
 }
 
 assert_help_contract() {
-  local runtime=$1 project=$2 home=$3 kind action root_output kind_output
+  local runtime=$1 project=$2 home=$3 kind action root_output stripped_root kind_output stripped_kind
   root_output=$(run_cli "$runtime" "$project" "$home" --help)
+  # Strip ANSI escapes before grep — Python 3.13+ colourises argparse help and
+  # NO_COLOR may not propagate into nested invocations through run_cli.
+  stripped_root=$(printf '%s' "$root_output" | sed 's/\x1b\[[0-9;]*m//g')
   for kind in agents skills; do
-    grep -Eq "(^|[[:space:]])${kind}([[:space:]]|$)" <<<"$root_output" || {
+    grep -Eq "(^|[[:space:]])${kind}([[:space:]]|$)" <<<"$stripped_root" || {
       echo "$runtime: root help missing $kind" >&2; return 1;
     }
     kind_output=$(run_cli "$runtime" "$project" "$home" "$kind" --help)
+    stripped_kind=$(printf '%s' "$kind_output" | sed 's/\x1b\[[0-9;]*m//g')
     for action in list install uninstall update; do
-      grep -Eq "(^|[[:space:]])${action}([[:space:]]|$)" <<<"$kind_output" || {
+      grep -Eq "(^|[[:space:]])${action}([[:space:]]|$)" <<<"$stripped_kind" || {
         echo "$runtime: $kind help missing $action" >&2; return 1;
       }
     done

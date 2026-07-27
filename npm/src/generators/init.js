@@ -79,7 +79,7 @@ backend: ${cfg.backend || ''}
 backend_framework: ${cfg.backendFramework || ''}
 pkg_manager: ${cfg.pkgManager || ''}
 hooks: ${cfg.hooks || ''}
-ci: ${cfg.ci || ''}
+ci: ${cfg.ci || ''}${cfg.forge ? `\nforge: ${cfg.forge}` : ''}
 require_req_in_commit: ${cfg.requireReqInCommit ? 'true' : 'false'}
 
 # governance paths (edit to match your project structure)

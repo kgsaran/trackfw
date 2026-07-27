@@ -10,6 +10,7 @@
       "backendFramework": "¿Framework de backend?",
       "gitHooks": "¿Git hooks?",
       "ci": "¿Sistema de CI?",
+      "forge": "¿Plataforma de forge?",
       "aiTools": "¿Qué asistentes de IA usas?",
       "require_req_in_commit": "¿Requerir referencia REQ en mensajes de commit de ramas feat/fix?",
       "projectType_fullstack": "Full-stack (frontend + backend)",

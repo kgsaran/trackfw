@@ -22,6 +22,7 @@ type Config struct {
 	WipLimit           int       // default: 1
 	WipBySquad         bool      // default: false
 	RequireReqInCommit bool      // gera hook commit-msg que exige REQ: em feat/* e fix/*
+	Forge              string    // forge platform: "github", "gitlab", "bitbucket", "azure", or "" (omit key)
 }
 
 var govDirs = []string{
@@ -559,6 +560,10 @@ req_dir: docs/req
 roadmap_dir: docs/roadmaps
 roadmap_namespacing: flat
 `, time.Now().Format("2006-01-02"), cfg.Frontend, cfg.Backend, cfg.BackendFramework, cfg.PkgManager, cfg.Hooks, cfg.CI, wipLimit, wipBySquad, requireReqInCommit)
+
+	if cfg.Forge != "" {
+		content += fmt.Sprintf("forge: %s\n", cfg.Forge)
+	}
 
 	if cfg.BrownfieldMode {
 		content += fmt.Sprintf("governance_mode: lenient\nlenient_until: %s\n", cfg.LenientUntil.Format("2006-01-02"))

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Disable ANSI colour output across all runtimes invoked in this process tree.
+# Python 3.13+ colorises argparse help by default; without NO_COLOR the grep
+# patterns in check_help fail because ANSI escapes wrap the matched word
+# (e.g. ESC[1;32minit ESC[0m — the character before "init" is "m", not a space).
+export NO_COLOR=1
+export TERM=dumb
+
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 GO_BIN=${GO_BIN:-"$ROOT_DIR/bin/trackfw"}
 
@@ -9,12 +16,15 @@ GOCACHE=${GOCACHE:-/tmp/trackfw-go-cache} go build -o "$GO_BIN" ./cmd/trackfw
 
 commands=(
   init adr req roadmap validate status log plugins discover update metrics
-  sync context baseline help configure serve version agents skills
+  sync context baseline help configure serve version agents skills note ship
 )
 
 check_help() {
   local runtime=$1
-  local output=$2
+  # Strip any remaining ANSI escape sequences before grep so the check is
+  # immune to runtimes that honour NO_COLOR inconsistently or not at all.
+  local output
+  output=$(printf '%s' "$2" | sed 's/\x1b\[[0-9;]*m//g')
   local command
   for command in "${commands[@]}"; do
     if ! grep -Eq "(^|[[:space:]])${command}([[:space:]]|$)" <<<"$output"; then

@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/forge"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/identity"
@@ -25,6 +26,7 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().Bool("brownfield", false, "Adopt governance gradually (lenient mode for 30 days)")
 	cmd.Flags().StringSlice("ai-tools", nil, "AI tools to configure (claude,codex,gemini,antigravity,cursor,copilot,windsurf,amazonq,kiro)")
 	cmd.Flags().String("identity-preset", "none", "Agent identity preset: none, neutral, "+strings.Join(identity.PresetNames(), ", "))
+	cmd.Flags().String("forge", "", "Forge platform: "+strings.Join(forge.ValidForges, ", "))
 	return cmd
 }
 
@@ -79,6 +81,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// --forge: validate unconditionally above the non-TTY early return, so an
+	// invalid value fails loudly in CI instead of silently no-op'ing.
+	forgeValue, _ := cmd.Flags().GetString("forge")
+	forgeChanged := cmd.Flags().Changed("forge")
+	if forgeChanged {
+		if _, err := forge.Resolve(forge.Input{FlagForge: forgeValue}); err != nil {
+			return err
+		}
+	}
+
 	// Skip the identity wizard entirely when the flag was passed explicitly
 	// (already handled above) or when an identity file already exists —
 	// re-running init must never silently overwrite a configured identity.
@@ -95,6 +107,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 			PkgManager:  "npm",
 			Hooks:       "none",
 			CI:          "none",
+		}
+		if forgeChanged {
+			cfg.Forge = forgeValue
 		}
 		if err := generators.Scaffold(cfg); err != nil {
 			return err
@@ -127,8 +142,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 	titleBackendLang := i18n.T("init.prompt.backendLang")
 	titleGitHooks := i18n.T("init.prompt.gitHooks")
 	titleCI := i18n.T("init.prompt.ci")
+	titleForge := i18n.T("init.prompt.forge")
 	titleAITools := i18n.T("init.prompt.aiTools")
 	titleRequireReq := i18n.T("init.prompt.require_req_in_commit")
+
+	// Detect forge from the current working dir to prefill the wizard default.
+	// If the flag was already provided, that value wins (skip wizard question).
+	cwd, _ := os.Getwd()
+	wizardForge := "" // "" means "auto-detect (omit key)"
+	if !forgeChanged {
+		if res, err := forge.ResolveFromRepo("", "", cwd); err == nil && res.Source != "none" {
+			wizardForge = res.Forge
+		}
+	} else {
+		wizardForge = forgeValue
+	}
 
 	form := huh.NewForm(
 		// Grupo 1 — sempre mostrado
@@ -206,6 +234,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 					huh.NewOption("None", "none"),
 				).
 				Value(&ci),
+
+			huh.NewSelect[string]().
+				Title(titleForge).
+				Options(
+					huh.NewOption("Auto-detect (omit key)", ""),
+					huh.NewOption("GitHub", "github"),
+					huh.NewOption("GitLab", "gitlab"),
+					huh.NewOption("Bitbucket", "bitbucket"),
+					huh.NewOption("Azure DevOps", "azure"),
+				).
+				Value(&wizardForge),
 		),
 
 		// Grupo 5 — seleção de ferramentas de IA
@@ -302,6 +341,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	brownfield, _ := cmd.Flags().GetBool("brownfield")
+	// Resolve final forge value: explicit flag wins, then wizard selection.
+	finalForge := wizardForge
+	if forgeChanged {
+		finalForge = forgeValue
+	}
 	cfg := generators.Config{
 		ProjectType:        projectType,
 		ProjectName:        projectName,
@@ -312,6 +356,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		Hooks:              hooks,
 		CI:                 ci,
 		RequireReqInCommit: requireReqInCommit,
+		Forge:              finalForge,
 	}
 	if brownfield {
 		cfg.BrownfieldMode = true
@@ -321,8 +366,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if err := generators.Scaffold(cfg); err != nil {
 		return err
 	}
-
-	cwd, _ := os.Getwd()
 
 	// D4 — init's wizard also asks for the install scope, only when AI tools
 	// were actually selected (asking otherwise would be a prompt about

@@ -30,6 +30,7 @@ function createProgram() {
   program.addCommand(require('./agents'))
   program.addCommand(require('./skills'))
   program.addCommand(require('./note'))
+  program.addCommand(require('./ship'))
 
   const { createServeCommand } = require('./serve')
   program.addCommand(createServeCommand())

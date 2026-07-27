@@ -10,6 +10,7 @@ const cmd = new Command('init')
 cmd.description(t('init.description'))
 cmd.option('--ai-tools <tools>', 'Comma-separated AI tools to configure (claude,codex,gemini,antigravity,cursor,copilot,windsurf,amazonq,kiro)', '')
 cmd.option('--identity-preset <preset>', `Agent identity preset: none, neutral, ${identityStore.presetNames().join(', ')}`, 'none')
+cmd.option('--forge <value>', 'Forge platform: github, gitlab, bitbucket, azure', '')
 cmd.action(async (options, command) => {
   const os = require('os')
   const path = require('path')
@@ -29,6 +30,14 @@ cmd.action(async (options, command) => {
     }
   }
 
+  // --forge: validate unconditionally above the non-TTY early return so that
+  // an invalid value fails loudly in CI instead of silently no-op'ing.
+  const forgeChanged = command.getOptionValueSource('forge') === 'cli'
+  if (forgeChanged && options.forge) {
+    const { validateForge } = require('../forge/resolve')
+    validateForge(options.forge) // throws on invalid value
+  }
+
   // Pula o wizard de identidade inteiramente quando a flag foi passada
   // explicitamente (já tratado acima) ou quando um arquivo de identidade já
   // existe — re-executar init nunca deve sobrescrever silenciosamente uma
@@ -45,6 +54,7 @@ cmd.action(async (options, command) => {
       pkgManager: 'npm',
       hooks: 'none',
       ci: 'none',
+      forge: forgeChanged ? options.forge : '',
     }
     await generators.scaffold(cfg)
     const aiTools = String(options.aiTools || '').split(',').map(tool => tool.trim()).filter(Boolean)
@@ -62,7 +72,17 @@ cmd.action(async (options, command) => {
 
   const { input, select, checkbox } = require('@inquirer/prompts')
 
-  let projectName, projectType, frontend, pkgManager, backend, backendFramework, hooks, ci, aiTools, requireReqInCommit, scope
+  // Detect forge from the current dir to prefill the wizard default.
+  const { resolveFromRepo: resolveForgeFromRepo } = require('../forge/resolve')
+  let detectedForge = ''
+  if (!forgeChanged) {
+    try {
+      const res = resolveForgeFromRepo('', '', process.cwd())
+      if (res.source !== 'none') detectedForge = res.forge
+    } catch (_) {}
+  }
+
+  let projectName, projectType, frontend, pkgManager, backend, backendFramework, hooks, ci, forgeValue, aiTools, requireReqInCommit, scope
 
   try {
     projectName = await input({
@@ -163,6 +183,22 @@ cmd.action(async (options, command) => {
       ],
     })
 
+    if (!forgeChanged) {
+      forgeValue = await select({
+        message: t('init.prompt.forge'),
+        default: detectedForge,
+        choices: [
+          { name: 'Auto-detect (omit key)', value: '' },
+          { name: 'GitHub', value: 'github' },
+          { name: 'GitLab', value: 'gitlab' },
+          { name: 'Bitbucket', value: 'bitbucket' },
+          { name: 'Azure DevOps', value: 'azure' },
+        ],
+      })
+    } else {
+      forgeValue = options.forge
+    }
+
     requireReqInCommit = false
     if (hooks !== 'none') {
       const { confirm: confirmPrompt } = require('@inquirer/prompts')
@@ -202,6 +238,7 @@ cmd.action(async (options, command) => {
       pkgManager: 'npm',
       hooks: 'none',
       ci: 'none',
+      forge: forgeChanged ? options.forge : '',
     }
     await generators.scaffold(cfg)
     console.log(`\n${t('init.success')}`)
@@ -229,6 +266,7 @@ cmd.action(async (options, command) => {
         pkgManager: 'npm',
         hooks: 'none',
         ci: 'none',
+        forge: forgeChanged ? options.forge : '',
       })
       console.log(`\n${t('init.success')}`)
       require('../generators/init').printArchitectNextSteps(process.cwd())
@@ -236,7 +274,7 @@ cmd.action(async (options, command) => {
     }
   }
 
-  const cfg = { projectName, projectType, frontend, backend, backendFramework, pkgManager, hooks, ci, requireReqInCommit }
+  const cfg = { projectName, projectType, frontend, backend, backendFramework, pkgManager, hooks, ci, forge: forgeValue || '', requireReqInCommit }
   await generators.scaffold(cfg)
 
   for (const tool of (aiTools || [])) await generators.installIntegrationTarget(tool, process.cwd(), scope)

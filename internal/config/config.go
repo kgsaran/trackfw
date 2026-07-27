@@ -38,6 +38,9 @@ type ProjectConfig struct {
 
 	// ML-2A field
 	StrictCIPaths bool // strict_ci_paths: true|false (default: false)
+
+	// forge field (ship command)
+	Forge string // "github", "gitlab", "bitbucket", "azure" or "" (auto-detect)
 }
 
 var (
@@ -285,6 +288,8 @@ func parse(content string, cfg *ProjectConfig) {
 			cfg.TraceIdField = val
 		case "strict_ci_paths":
 			cfg.StrictCIPaths = val == "true"
+		case "forge":
+			cfg.Forge = val
 		}
 	}
 

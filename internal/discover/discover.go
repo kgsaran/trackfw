@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kgsaran/trackfw/internal/forge"
 	"github.com/kgsaran/trackfw/internal/generators"
 )
 
@@ -285,6 +286,7 @@ type DiscoveryResult struct {
 	GovernanceScore    int    // 0-100
 	HookFramework      string // "lefthook", "husky", "pre-commit", "none"
 	CISystem           string // "github-actions", "gitlab", "none"
+	Forge              string // "github", "gitlab", "bitbucket", "azure", or "" when not detected
 }
 
 // Scan escaneia rootDir e retorna a estrutura de governança detectada.
@@ -385,7 +387,14 @@ func Scan(rootDir string) (DiscoveryResult, error) {
 		r.CISystem = "none"
 	}
 
-	// 7. Score
+	// 7. Forge detection — reuses internal/forge/resolve.go (no duplicate parse).
+	// gitRemoteURL returns "" in temp dirs (no git repo) or on error; CI detection
+	// is filesystem-based and works without git.
+	if res, err := forge.ResolveFromRepo("", "", rootDir); err == nil && res.Source != "none" {
+		r.Forge = res.Forge
+	}
+
+	// 8. Score
 	r.GovernanceScore = calcScore(r)
 
 	return r, nil
@@ -451,6 +460,10 @@ func GenerateYAML(r DiscoveryResult) string {
 
 	sb.WriteString(fmt.Sprintf("hooks: %s\n", r.HookFramework))
 	sb.WriteString(fmt.Sprintf("ci: %s\n", r.CISystem))
+
+	if r.Forge != "" {
+		sb.WriteString(fmt.Sprintf("forge: %s\n", r.Forge))
+	}
 
 	return sb.String()
 }

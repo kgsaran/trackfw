@@ -11,6 +11,8 @@ import stat
 import datetime
 import subprocess
 
+from trackfw.forge.resolve import resolve_from_repo as _forge_resolve_from_repo
+
 
 # ---------------------------------------------------------------------------
 # helpers de filesystem
@@ -77,6 +79,7 @@ def scan(root_dir: str) -> dict:
         "governance_score": 0,
         "hook_framework": "none",
         "ci_system": "none",
+        "forge": "",
     }
 
     # 1. trackfw.yaml
@@ -153,7 +156,17 @@ def scan(root_dir: str) -> dict:
     else:
         r["ci_system"] = "none"
 
-    # 7. Score
+    # 7. Forge detection — reuse forge/resolve.py (no duplicate parse).
+    # _git_remote_url returns "" when repo dir is not a git repo or on any error.
+    # CI detection is filesystem-based and always works.
+    try:
+        res = _forge_resolve_from_repo(repo_dir=root_dir)
+        if res.source != "none":
+            r["forge"] = res.forge
+    except Exception:
+        pass  # forge detection is best-effort; never block scan on it
+
+    # 8. Score
     r["governance_score"] = _calc_score(r)
 
     return r
@@ -211,6 +224,10 @@ def generate_yaml(result: dict) -> str:
 
     lines.append(f"hooks: {result['hook_framework']}")
     lines.append(f"ci: {result['ci_system']}")
+
+    if result.get("forge"):
+        lines.append(f"forge: {result['forge']}")
+
     lines.append("")
 
     return "\n".join(lines)

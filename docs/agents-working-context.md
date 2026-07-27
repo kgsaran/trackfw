@@ -3204,3 +3204,266 @@ O gate pune o comportamento que o produto prega. Registrado em
 recomendação. **Decisão pendente do KG.**
 
 **Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-1A: campo `forge:` e resolver de precedência (IMPLEMENTANDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** `docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md`
+**ADR:** `docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md`
+
+**Escopo:**
+- Adicionar `Forge string` a `ProjectConfig` (Go) e equivalentes em npm/pypi
+- Criar `internal/forge/resolve.go` com `Resolution{Forge, Source}`, `Input`, `Resolve()`, `ResolveFromRepo()`
+- Precedência: flag → config → remote URL → CI files → manual
+- Parse SSH e HTTPS; hosts conhecidos; desempate self-hosted por `.gitlab-ci.yml` / `.github/workflows/`
+- Testes nos 3 CLIs com os mesmos casos obrigatórios
+
+**Entregue:**
+- `internal/config/config.go` — campo `Forge string` + parse da chave `forge:` no YAML
+- `internal/forge/resolve.go` — `Resolution{Forge, Source}`, `Input`, `Resolve()`, `ResolveFromRepo()`
+- `internal/forge/resolve_test.go` — 28 testes cobrindo todos os casos do roadmap
+- `npm/src/config/index.js` — campo `forge: ''` + parse da chave `forge:`
+- `npm/src/forge/resolve.js` — porte completo Node.js puro
+- `npm/tests/forge.test.js` — 28 testes (mesmos casos)
+- `pypi/trackfw/config.py` — campo `forge: ''` + parse da chave `forge:`
+- `pypi/trackfw/forge/__init__.py` + `pypi/trackfw/forge/resolve.py` — porte Python
+- `pypi/tests/test_forge_resolve.py` — 28 testes (mesmos casos)
+- Commit `505fcaf` | push para `feat/comando-trackfw-ship-agnostico-de-forge`
+- `make quality` VERDE (Go 15 pkgs | npm 154 testes | pypi 474 testes)
+
+**Nota técnica:** Azure SSH usa `ssh.dev.azure.com` (host distinto de `dev.azure.com`). Coberto via regra `*.dev.azure.com` no `hostToForge` nos 3 CLIs.
+
+**Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-2A: comando `trackfw ship` fluxo git completo (IMPLEMENTANDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** `docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md`
+**ADR:** `docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md`
+
+**Escopo:**
+- Passos 1–6 do fluxo ship: validação de branch, governança, squash-merges pendentes, staged review, commit CC, push
+- Flags: `-m/--message`, `--dry-run`
+- Injeção do executor de comandos git (sem exec direto em RunE)
+- Wrapper exportado `CheckShipGovernance()` em `internal/validator` (gate duro, ignora baseline/lenient)
+- Testes nos 3 CLIs cobrindo todos os casos obrigatórios; repositórios temporários para testes de escrita
+- Teste grep garantindo ausência de `git add .`/`git add -A` no código-fonte (excluindo arquivos de teste)
+
+**Status:** IMPLEMENTANDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-2B: adaptadores por forge com degradação graciosa (CONCLUÍDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** `docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md`
+**ADR:** `docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md`
+
+**Escopo:**
+- `internal/forge/adapter.go` — `Adapter`, `NewAdapter()`, `FallbackURL()`, `remoteHTTPSBase()`
+- `internal/forge/adapter_test.go` — spy de availFn, 4 nouns, URLs HTTPS/SSH/self-hosted/Azure SSH
+- `npm/src/forge/adapter.js` — porte Node.js com PATH scan puro (sem subprocess)
+- `npm/tests/forge_adapter.test.js` — mesmos casos; spy
+- `pypi/trackfw/forge/adapter.py` — porte Python com `shutil.which`
+- `pypi/tests/test_forge_adapter.py` — mesmos casos; spy
+
+**Entregue:**
+- `internal/forge/adapter.go` — `Adapter`, `NewAdapter()`, `FallbackURL()`, `remoteHTTPSBase()`; defaultAvailFn respeita `TRACKFW_DISABLE_EXTERNAL_COMMANDS`
+- `internal/forge/adapter_test.go` — 11 testes; spy de availFn; bitbucket asserta 0 chamadas
+- `npm/src/forge/adapter.js` — porte Node.js com PATH scan puro (sem subprocess)
+- `npm/tests/forge_adapter.test.js` — 24 testes; spy; mesmos casos URL
+- `pypi/trackfw/forge/adapter.py` — porte Python; `shutil.which`; `removeprefix`/`removesuffix`
+- `pypi/tests/test_forge_adapter.py` — 32 testes; spy; mesmos casos URL
+- Commit `8bf2f0b` (bundled com ADR do ML-2A) | testes: Go 11 ✅ | Node 24 ✅ | Python 32 ✅
+
+**Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-2A: comando `trackfw ship` fluxo git completo (CONCLUÍDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**Commit:** `b31e4c4`
+
+**Entregue:**
+- `internal/validator/validator.go` — `CheckShipGovernance()` exportada como gate duro (bypass de baseline/lenient/rules): chama `validateBranchHasWIPRoadmap` + `validateWIPHasREQ` diretamente
+- `internal/commands/ship.go` — Passos 1–6 com injeção de `shipDeps{execGit, checkGovernance, out}`; `--dry-run` skipa escrita via wrapper interno; nunca chama `git add` com curinga
+- `internal/commands/ship_test.go` — 10 casos: main/master, padrão inválido, governança, nada staged, sem -m, dry-run, grep no fonte, runtime assertion
+- `internal/commands/root.go` — `newShipCmd()` registrado
+- `npm/src/commands/ship.js` + `npm/src/ship/runner.js` — Porte Node.js puro com mesma estrutura injetável
+- `npm/src/commands/index.js` — Ship adicionado ao programa
+- `npm/tests/ship.test.js` — 15 casos (mesmos casos + normalizeBranchSlug)
+- `pypi/trackfw/commands/ship.py` + `pypi/trackfw/ship/runner.py` — Porte Python puro
+- `pypi/trackfw/cli.py` — Ship registrado
+- `pypi/tests/test_ship.py` — 35 casos (parametrizados com pytest)
+- Push para `feat/comando-trackfw-ship-agnostico-de-forge`
+
+**Resultados:**
+- Go: `go build ./... && go test ./... && go vet ./...` — VERDE (todos os pacotes)
+- npm: 193 testes — VERDE
+- Python: 509 testes — VERDE
+
+**Nota técnica:** A governança usa wrapper exportado `CheckShipGovernance()` que chama as funções privadas do pacote `validator` diretamente, ignorando baseline/lenient/rules — gate duro inviolável. O dry-run implementa whitelist de write commands (`commit`, `push`, `fetch`) no wrapper `git()` interno do `runShip`; `execGit` do dep só recebe comandos read-only em dry-run.
+
+**Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-3A: integração forge + abertura de PR/MR no ship (CONCLUÍDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** `docs/req/REQ-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md`
+**Commit:** `fa4f16e` — `feat(ship): abertura de PR/MR conforme a forge resolvida (REQ-2026-07-26-ship)`
+
+**Objetivo:** Passo 7 do `trackfw ship` — após push, resolver forge e abrir PR/MR via adaptador. Paridade nos 3 CLIs (Go, Node.js, Python).
+
+**Arquivos modificados:**
+- `internal/commands/ship.go` — shipOpts (+noPR, +forge), shipDeps (+configForge/repoDir/availFn/execForgeCLI), Step 7, helpers firstLine/buildPRBody/buildForgeCreateArgs/defaultExecForgeCLI
+- `internal/commands/ship_test.go` — makeDeps atualizado, 2 testes diretos atualizados, 12 novos testes Step 7
+- `npm/src/ship/runner.js` — importa forge modules, Step 7, helpers firstLine/buildForgeCreateArgs
+- `npm/src/commands/ship.js` — flags --no-pr e --forge, wire configForge de config.load()
+- `npm/tests/ship.test.js` — makeDeps atualizado, 13 novos testes Step 7
+- `pypi/trackfw/ship/runner.py` — parâmetros no_pr/forge_flag/config_forge/repo_dir/avail_fn/exec_forge_cli, Step 7, helpers _first_line/_build_forge_create_args/_default_exec_forge_cli
+- `pypi/trackfw/commands/ship.py` — flags --no-pr e --forge, wire config_forge via load_config()
+- `pypi/tests/test_ship.py` — make_deps atualizado, 16 novos testes Step 7
+
+**Resultados:**
+- Go: `go build ./... && go test ./internal/commands/... ./internal/forge/... && go vet ./...` — VERDE
+- npm: 206 testes — VERDE
+- Python: 556 testes — VERDE
+
+**Decisões técnicas:**
+- `forge.Resolve(forge.Input{...})` chamado com inputs injetáveis (não injeta um fake resolver) — testa precedência real
+- `repoDir: ""` em testes → CI file detection desabilitada, sem acesso ao filesystem
+- azure usa `--description` (não `--body`) construído em `buildForgeCreateArgs` do ship.go — adapter.go não modificado
+- `buildForgeCreateArgs` usa `copy()` para nunca mutar `adapter.CLIArgs`
+- Step 7 é non-fatal: ausência de CLI, forge=manual, ou erro de invocação → warn + URL de fallback + exit 0
+
+**Status:** CONCLUÍDO.
+
+---
+
+## 2026-07-26 — Apolo — ML-2C: textos de lenient + correção ANSI no gate de paridade (CONCLUÍDO)
+
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**Commits:** `1b8c493` (docs lenient) · `df128e3` (fix ANSI gate)
+
+**Commit 1 — docs(ship): explicita gate duro ignora lenient**
+- `--help` passo 2 nos 3 CLIs: adicionado `(hard gate: not affected by lenient mode or per-rule severity)`
+- Mensagem de erro do passo 2 nos 3 CLIs: bloco explicativo sobre lenient após remediação
+- Testes Go/Node/Python: assert `"lenient"` no output de erro de governança
+- `docs/cli-parity.md`: linha `ship` na tabela + seção de prosa com flags, 6 passos, divergência do validate
+
+**Commit 2 — fix(ci): gate de paridade imune a ANSI do argparse**
+- Causa raiz: Python 3.13+ coloriza argparse por default; ANSI antes do nome do comando quebrava o grep de limite de palavra em `check_help` e `assert_help_contract`
+- `scripts/check-cli-parity.sh`: `export NO_COLOR=1 TERM=dumb` + strip ANSI inline em `check_help`; `commands=()` estendido com `note` e `ship`
+- `scripts/check-integration-cli-parity.sh`: strip ANSI inline em `assert_help_contract`
+- `vault/notes/argparse-ansi-parity-gate-python313-2026-07-26.md`: nota criada e linkada no índice
+- Falsificação: `commands=(definitely-not-a-real-command)` retorna exit=1 + mensagem correta, sem resíduo
+- `make quality` verde sem `NO_COLOR=1` externo (Python 3.14.6)
+
+**Status:** CONCLUÍDO.
+
+---
+
+## Sessão 2026-07-26 — ML-3B: discover detecta e persiste a forge no trackfw.yaml
+
+**Agente:** Apolo — Backend Senior Specialist
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** REQ-2026-07-26-ship
+
+### Escopo do ML-3B
+- Passo 1: `internal/discover/discover.go` — campo `Forge string` em `DiscoveryResult`, detecção via `forge.ResolveFromRepo`, emissão condicional de `forge:` em `GenerateYAML`
+- Passo 2: `internal/commands/init.go` — flag `--forge`, wizard com detecção default, validação acima do early-return não-TTY
+- Passo 3: paridade em `npm/src/` e `pypi/trackfw/`
+- Testes nos 3 CLIs
+
+**Status:** IMPLEMENTANDO
+
+**Status:** CONCLUÍDO. Commit: fbbd028. Push: feat/comando-trackfw-ship-agnostico-de-forge.
+Gates: go build ✅ | go test ✅ | go vet ✅ | npm test (206 pass) ✅ | pytest (541 pass) ✅
+
+---
+
+## Sessão 2026-07-27 — ML-4A: paridade npm/pypi, dry-run com disponibilidade, testes e docs
+
+**Agente:** Apolo — Backend Senior Specialist
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**REQ:** REQ-2026-07-26-ship
+
+### Escopo desta sessão (continuação do ML-4A após sessão anterior morrer)
+
+Go já implementado e comitado em 6afbf5e. Esta sessão porta para npm e pypi:
+
+1. Dry-run consciente de disponibilidade em `npm/src/ship/runner.js` e `pypi/trackfw/ship/runner.py`
+2. Fix do wiring `--no-pr` em `npm/src/commands/ship.js` (commander usa `options.pr === false`)
+3. Testes da matriz de forges (4 forges × 2 avail × 2 hosts = 16 casos) em npm e pypi
+4. Testes de silence-usage e integração com PATH limpo em npm e pypi
+5. Documentação: `docs/cli-parity.md`, `README.md`, `site/`
+
+**Status:** CONCLUÍDO.
+
+Commits: c036f72 (código) + a5e6277 (docs).
+
+Gates: go build ✅ | go test ✅ | npm test (48 pass) ✅ | pytest (69 pass) ✅ | make quality ✅
+
+Achados registrados:
+- Bug corrigido: commander `--no-pr` com default `false` explícito tornava `options.pr` sempre `false`;
+  a opção negatable deve ser definida sem default explícito para que `options.pr` seja `true` (sem a flag)
+  ou `false` (com `--no-pr`)
+- Divergência documentada: Go usa `docs/roadmaps/wip/` (default `docs/roadmaps`) como roadmap dir;
+  npm e pypi usam `docs/roadmaps/claude/wip/` (default `docs/roadmaps/claude`). Não corrigida nesta
+  sessão — é divergência pré-existente e ortogonal ao ML-4A
+
+---
+
+## Sessão 2026-07-27 — Apolo — Correções pós-auditoria ML-4A
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**Status:** CONCLUÍDO
+
+### Correções realizadas após revisão do advisor
+
+1. **cli-parity.md — labels de source incorretos corrigidos:**
+   - `source: url` → `source: remote` (valor real retornado pelo resolver em Go e npm)
+   - `source: manual` → `source: none` (valor real para o caso "nenhuma forge detectada")
+   - CI detection: removidos `azure-pipelines.yml` e `bitbucket-pipelines.yml` (o código não detecta esses arquivos — apenas `.gitlab-ci.yml` e `.github/workflows/`)
+
+2. **cli-parity.md — tabela de paridade:** row do ship atualizada para "open PR/MR" (step 7)
+
+3. **cli-parity.md — divergência roadmap_dir documentada:** seção explícita registrando que Go usa `docs/roadmaps` e npm/pypi usam `docs/roadmaps/claude` como padrão; divergência intencional preservada
+
+4. **site/guide/commands.md + site/en/guide/commands.md:** seção `trackfw ship` adicionada (PT-BR e EN)
+
+5. **npm/tests/ship.test.js — integration test --no-pr command-layer:** novo teste que detecta regressão onde `options.noPr || false` silenciava o flag; usa `--dry-run --no-pr` juntos (noPR é checado antes do dry-run no passo 7); 49 testes (era 48)
+
+**Commit:** b0433a8
+**Gates:** make quality ✅ | npm test 49 pass ✅ | trackfw validate ✅
+
+---
+
+## ML-4B — 2026-07-27 — Apolo
+
+**Tarefa:** Correção crítica — alinhar default de `roadmap_dir` entre os 3 runtimes
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**Status:** CONCLUÍDO
+
+**Causa raiz confirmada:** runners npm/PyPI reimplementavam resolução de `roadmap_dir` com default errado (`docs/roadmaps/claude`), enquanto os módulos de config já tinham o default correto (`docs/roadmaps`). Duplicação de lógica com valor divergente.
+
+**Correções aplicadas:**
+1. `npm/src/ship/runner.js`: `resolveRoadmapDir()` agora delega a `loadConfig().roadmapDir`
+2. `pypi/trackfw/ship/runner.py`: `_resolve_roadmap_dir()` agora delega a `_config.load()["roadmap_dir"]`
+3. Testes de integração npm e PyPI migrados: `docs/roadmaps/claude/wip/` → `docs/roadmaps/wip/`
+4. Testes de paridade adicionados: npm (50 pass) e PyPI (70 pass)
+5. `docs/cli-parity.md`: seção "Known divergence" removida
+6. Nota de vault criada: `vault/notes/ship-roadmap-dir-default-divergencia-2026-07-27.md`
+
+**Gate nos 3 runtimes (mesmo repositório):** Go ✅ | Node.js ✅ | PyPI ✅
+**make quality:** ✅ | **trackfw validate:** ✅
+
+**Commit:** 442bcf1 | **Push:** feat/comando-trackfw-ship-agnostico-de-forge

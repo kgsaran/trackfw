@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-26
 author: "KG"
 adr: "docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md"
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md"
 ---
 
 # REQ: comando trackfw ship agnostico de forge
 
-> Date: 2026-07-26 | Status: Open
+> Date: 2026-07-26 | Status: Done
 
 ## Motivation
 
@@ -47,18 +47,18 @@ e não pode assumir GitHub. Decisões e mapeamento completo no ADR vinculado.
 
 ## Acceptance Criteria
 
-- [ ] `trackfw ship` existe e se comporta de forma idêntica nos 3 CLIs
-- [ ] `--forge` sobrepõe o valor de `trackfw.yaml`, que sobrepõe a detecção pelo remote
-- [ ] Remote `github.com/...` resolve `github`; `gitlab.com/...` resolve `gitlab`
-- [ ] Host desconhecido com `.gitlab-ci.yml` presente resolve `gitlab` (caso self-hosted)
-- [ ] Saída usa "Merge Request" quando a forge é `gitlab` e "Pull Request" nas demais
-- [ ] Com o CLI da forge ausente: exit 0, push concluído e URL de criação impressa
-- [ ] Em branch `main`/`master`: aborta com mensagem clara e exit não-zero
-- [ ] Sem roadmap em `wip`: aborta e orienta a criar REQ e roadmap
-- [ ] `trackfw init` pergunta a forge e persiste em `trackfw.yaml`
-- [ ] `trackfw discover` preenche `forge:` quando consegue detectar
-- [ ] `docs/cli-parity.md` atualizado com o comando novo
-- [ ] `make quality` verde nos 3 CLIs
+- [x] `trackfw ship` existe e se comporta de forma idêntica nos 3 CLIs
+- [x] `--forge` sobrepõe o valor de `trackfw.yaml`, que sobrepõe a detecção pelo remote
+- [x] Remote `github.com/...` resolve `github`; `gitlab.com/...` resolve `gitlab`
+- [x] Host desconhecido com `.gitlab-ci.yml` presente resolve `gitlab` (caso self-hosted)
+- [x] Saída usa "Merge Request" quando a forge é `gitlab` e "Pull Request" nas demais
+- [x] Com o CLI da forge ausente: exit 0, push concluído e URL de criação impressa
+- [x] Em branch `main`/`master`: aborta com mensagem clara e exit não-zero
+- [x] Sem roadmap em `wip`: aborta e orienta a criar REQ e roadmap
+- [x] `trackfw init` pergunta a forge e persiste em `trackfw.yaml`
+- [x] `trackfw discover` preenche `forge:` quando consegue detectar
+- [x] `docs/cli-parity.md` atualizado com o comando novo
+- [x] `make quality` verde nos 3 CLIs
 
 ## Linked ADR
 
@@ -69,4 +69,4 @@ ADR: docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md
 
 ## Linked Roadmap
 <!-- Roadmap será criado quando esta REQ entrar em execução -->
-Roadmap:
+Roadmap: docs/roadmaps/done/ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md
