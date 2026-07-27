@@ -180,4 +180,41 @@ assert_fails_with "integration-cli-parity/missing-agents" \
   "node: root help missing agents" \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T6/scripts/check-integration-cli-parity.sh"
 
-echo "Falsification checks passed (all 6 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 7 — check-artifact-parity.sh: drift de conteúdo em req do npm →
+#              gate detecta divergência byte-a-byte (go vs node)
+#
+# Objetivo (P4): provar que o gate REPROVA quando um template gera conteúdo
+# diferente do esperado — sem isso, um gate que nunca falha não é um gate,
+# é um ritual.
+#
+# Estratégia: copiar npm/src via setup_npm_tree, corromper req.js para emitir
+# "status: OPEN" em vez de "status: Open" no frontmatter do artefato.
+# Go gerará "status: Open"; Node gerará "status: OPEN" → diff detecta → exit 1.
+#
+# Guard de corrupção: cmp -s confirma que o sed realmente alterou o arquivo;
+# se não alterar (padrão não encontrado), a prova P4 seria inválida — o gate
+# passaria e assert_fails_with reportaria "saiu com 0, esperava != 0", o que
+# confundiria diagnóstico do gate com falha na montagem do cenário.
+# ---------------------------------------------------------------------------
+T7="$WORK/s7"
+mkdir -p "$T7/scripts"
+setup_npm_tree "$T7"
+ln -s "$ROOT_DIR/pypi" "$T7/pypi"
+cp "$ROOT_DIR/scripts/check-artifact-parity.sh" "$T7/scripts/"
+
+# Corromper: trocar "status: Open" por "status: OPEN" no gerador de req do npm.
+sed "s/status: Open/status: OPEN/" \
+  "$ROOT_DIR/npm/src/generators/req.js" > "$T7/npm/src/generators/req.js"
+
+# Guard: garantir que a corrupção foi aplicada antes de rodar o gate.
+if cmp -s "$ROOT_DIR/npm/src/generators/req.js" "$T7/npm/src/generators/req.js"; then
+  echo "FAIL [falsify/setup-s7]: sed não alterou req.js — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "artifact-parity/req-content-drift" \
+  "artifact parity drift: req" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T7/scripts/check-artifact-parity.sh"
+
+echo "Falsification checks passed (all 7 gates proved non-vacuous)"
