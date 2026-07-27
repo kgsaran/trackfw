@@ -13,6 +13,7 @@ import (
 // testStateDirs retorna os diretórios de estado padrão para uso em testes.
 var testStateDirs = []string{
 	"docs/roadmaps/backlog",
+	"docs/roadmaps/analyzing",
 	"docs/roadmaps/wip",
 	"docs/roadmaps/blocked",
 	"docs/roadmaps/done",
@@ -295,6 +296,19 @@ func assertMoveRoadmapAnalyzingContract(t *testing.T, byAgent bool) error {
 		if !strings.Contains(string(log), "zeus/ROADMAP-analyze-by-agent.md") || !strings.Contains(string(log), "backlog → analyzing") {
 			return &testExpectationError{message: "log by_agent não registrou backlog → analyzing preservando agente"}
 		}
+		found, err := findRoadmap("analyze-by-agent")
+		if err != nil {
+			return err
+		}
+		if found != dst {
+			return &testExpectationError{message: "findRoadmap by_agent não encontrou o arquivo em analyzing"}
+		}
+		if err := ShowRoadmap("analyze-by-agent"); err != nil {
+			return err
+		}
+		if err := ListRoadmaps(); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -334,19 +348,32 @@ func assertMoveRoadmapAnalyzingContract(t *testing.T, byAgent bool) error {
 	if !strings.Contains(string(log), "ROADMAP-analyze-flat.md") || !strings.Contains(string(log), "backlog → analyzing") {
 		return &testExpectationError{message: "log flat não registrou backlog → analyzing"}
 	}
+	found, err := findRoadmap("analyze-flat")
+	if err != nil {
+		return err
+	}
+	if found != "docs/roadmaps/analyzing/ROADMAP-analyze-flat.md" {
+		return &testExpectationError{message: "findRoadmap flat não encontrou o arquivo em analyzing"}
+	}
+	if err := ShowRoadmap("analyze-flat"); err != nil {
+		return err
+	}
+	if err := ListRoadmaps(); err != nil {
+		return err
+	}
 	return nil
 }
 
-func TestMoveRoadmap_AnalyzingFlat_XFail(t *testing.T) {
-	expectKnownFailure(t, "Go MoveRoadmap rejeita estado analyzing em layout flat", func() error {
-		return assertMoveRoadmapAnalyzingContract(t, false)
-	})
+func TestMoveRoadmap_AnalyzingFlat(t *testing.T) {
+	if err := assertMoveRoadmapAnalyzingContract(t, false); err != nil {
+		t.Fatalf("contrato analyzing flat falhou: %v", err)
+	}
 }
 
-func TestMoveRoadmap_AnalyzingByAgent_XFail(t *testing.T) {
-	expectKnownFailure(t, "Go MoveRoadmap rejeita estado analyzing em layout by_agent", func() error {
-		return assertMoveRoadmapAnalyzingContract(t, true)
-	})
+func TestMoveRoadmap_AnalyzingByAgent(t *testing.T) {
+	if err := assertMoveRoadmapAnalyzingContract(t, true); err != nil {
+		t.Fatalf("contrato analyzing by_agent falhou: %v", err)
+	}
 }
 
 // TestMoveRoadmap_InvalidState — estado inválido → erro descritivo

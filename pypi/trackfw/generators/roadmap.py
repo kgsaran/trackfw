@@ -10,8 +10,8 @@ import unicodedata
 
 from trackfw import config as cfg_module
 
-VALID_STATES = ["backlog", "wip", "blocked", "done", "abandoned"]
-STATE_ORDER = ["wip", "backlog", "blocked", "done", "abandoned"]
+VALID_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
+STATE_ORDER = ["analyzing", "wip", "backlog", "blocked", "done", "abandoned"]
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +284,10 @@ def move_roadmap(filename: str, to_state: str, cfg: dict) -> str:
         agent_dir = os.path.dirname(os.path.dirname(src))
         agent = os.path.basename(agent_dir)
         target_dir = _agent_state_dir(agent, to_state, cfg)
+        log_basename = os.path.join(agent, basename)
     else:
         target_dir = _state_dir(to_state, cfg)
+        log_basename = basename
 
     os.makedirs(target_dir, exist_ok=True)
     dst = os.path.join(target_dir, basename)
@@ -301,6 +303,6 @@ def move_roadmap(filename: str, to_state: str, cfg: dict) -> str:
 
     os.remove(src)
 
-    _append_transition_log(basename, from_state, to_state, cfg)
+    _append_transition_log(log_basename, from_state, to_state, cfg)
 
     return dst

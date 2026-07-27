@@ -155,7 +155,7 @@ python3 -m pytest pypi/tests/test_generators_init.py -q
 
 ### ML-2B — Estado analyzing completo nos três CLIs
 
-**Status:** in progress
+**Status:** done
 
 **Files affected:**
 - `internal/generators/roadmap.go`
@@ -177,11 +177,11 @@ python3 -m pytest pypi/tests/test_generators_init.py -q
 5. Reativar os testes correspondentes do ML-1A.
 
 **Acceptance criteria:**
-- [ ] `roadmap move <nome> analyzing` passa nos três CLIs.
-- [ ] Flat e `by_agent` cobertos.
-- [ ] `list`/`show` encontram o roadmap em analyzing.
-- [ ] Frontmatter, header e log sincronizados.
-- [ ] `trackfw validate` não gera `folder_status`.
+- [x] `roadmap move <nome> analyzing` passa nos três CLIs.
+- [x] Flat e `by_agent` cobertos.
+- [x] `list`/`show` encontram o roadmap em analyzing.
+- [x] Frontmatter, header e log sincronizados.
+- [x] `trackfw validate` não gera `folder_status`.
 
 **Validation commands:**
 ```bash
@@ -189,6 +189,27 @@ go test ./internal/generators ./internal/commands -run Analyzing -v
 (cd npm && npm test)
 python3 -m pytest pypi/tests/test_generators_roadmap.py pypi/tests/test_commands_roadmap_discover.py -q
 ```
+
+**Execution evidence (Apolo, 2026-07-27):**
+- Go: `roadmapStateOrder` e validação de estado em `internal/generators/roadmap.go` agora incluem
+  `analyzing`; `roadmap move` aceita o estado, move para `analyzing/`, sincroniza `status:` e
+  `| Status:`, e `findRoadmap`/`show`/`list` resolvem o arquivo em layout flat e `by_agent`.
+- Node.js: `VALID_STATES`/`STATE_ORDER` em `npm/src/generators/roadmap.js` agora incluem
+  `analyzing`; os testes de move foram reativados como obrigatórios e adicionam cobertura de
+  `listRoadmaps`/`showRoadmap` para flat e `by_agent`.
+- Python: `VALID_STATES`/`STATE_ORDER` em `pypi/trackfw/generators/roadmap.py` agora incluem
+  `analyzing`; `move_roadmap` preserva o prefixo do agente no `.trackfw-log`; argparse herda
+  `choices=VALID_STATES` e os helpers de `list`/`show` cobrem `analyzing`.
+- Mensagens públicas de `roadmap move` foram alinhadas em Go e nos catálogos i18n npm/PyPI
+  (`en-US`, `pt-BR`, `es-ES`) para listar `backlog|analyzing|wip|blocked|done|abandoned`.
+- Validação focada: `go test ./internal/generators ./internal/commands -run Analyzing -v` passou;
+  `(cd npm && npm test -- --test-name-pattern=roadmap_move)` passou com `264 pass`;
+  `python3 -m pytest pypi/tests/test_generators_roadmap.py pypi/tests/test_commands_roadmap_discover.py -q`
+  passou com `52 passed`.
+- Gates amplos: `go build ./...` passou com aviso não bloqueante de cache Go fora do sandbox;
+  `go test ./...` passou; `(cd npm && npm test)` passou com `264 pass`; `python3 -m pytest pypi/tests -q`
+  passou com `619 passed`; `git diff --check` passou; `bin/trackfw validate --json` retornou
+  `0 violations` e `0 warnings`.
 
 ---
 

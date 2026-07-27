@@ -4,6 +4,44 @@
 
 ---
 
+## Sessão 2026-07-27 — Apolo (ML-2B concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
+
+**Tarefa:** Implementar exclusivamente o estado `analyzing` em `roadmap move/list/show` nos três CLIs,
+preservando paridade Go/Node/Python, layout flat e `by_agent`, frontmatter/header sincronizados e
+`.trackfw-log` com agente.
+
+**Entregue:**
+- Go: `stateDir`, `agentStateDir`, `MoveRoadmap`, `findRoadmap` e `ListRoadmaps` agora usam estado
+  `analyzing`; help de `roadmap move` lista o estado.
+- Node.js: `VALID_STATES`/`STATE_ORDER` agora incluem `analyzing`; mensagens de erro e i18n de
+  `roadmap move` listam o estado.
+- Python: `VALID_STATES`/`STATE_ORDER` agora incluem `analyzing`; argparse aceita o estado por
+  `choices=VALID_STATES`; `move_roadmap` preserva `zeus/<arquivo>.md` no log em `by_agent`.
+- Testes xfail de `analyzing` do ML-1A foram convertidos em testes obrigatórios nos três runtimes.
+- Cobertura adicionada para `list`/`show` encontrarem roadmaps em `analyzing/` em layout flat e
+  `by_agent`.
+- O slash-command `/trackfw:roadmap` não foi alterado neste ML.
+
+**Validação:**
+- `go test ./internal/generators ./internal/commands -run Analyzing -v` → verde.
+- `(cd npm && npm test -- --test-name-pattern=roadmap_move)` → verde, `264 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests/test_generators_roadmap.py pypi/tests/test_commands_roadmap_discover.py -q`
+  → `52 passed`.
+- `go build ./...` → verde; aviso não bloqueante de cache Go fora do sandbox.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → verde, `264 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q` → `619 passed`.
+- `git diff --check` → verde.
+- `bin/trackfw validate --json` → `0 violations`, `0 warnings`.
+
+**Ressalva:**
+- `make quality` não foi executado neste ML por orientação do roadmap de deixar o gate composto para
+  auditoria central; os builds/testes amplos dos três runtimes foram executados.
+
+---
+
 ## Sessão 2026-07-27 — Apolo (ML-2A concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`

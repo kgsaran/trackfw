@@ -118,7 +118,7 @@ func newRoadmapShowCmd() *cobra.Command {
 func newRoadmapMoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "move <name> <state>",
-		Short: "Move a roadmap between states (backlog|wip|blocked|done|abandoned)",
+		Short: "Move a roadmap between states (backlog|analyzing|wip|blocked|done|abandoned)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return generators.MoveRoadmap(args[0], args[1])

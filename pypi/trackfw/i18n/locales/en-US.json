@@ -87,7 +87,7 @@
       "notFound": "Roadmap not found: {{name}}"
     },
     "move": {
-      "description": "Move a roadmap between states (backlog|wip|blocked|done|abandoned)",
+      "description": "Move a roadmap between states (backlog|analyzing|wip|blocked|done|abandoned)",
       "success": "✓ Moved {{name}} → {{state}}",
       "notFound": "Roadmap not found: {{name}}"
     },

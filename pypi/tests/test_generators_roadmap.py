@@ -7,8 +7,6 @@ import datetime
 import tempfile
 import unittest
 
-import pytest
-
 from trackfw import config as cfg_module
 from trackfw.generators.roadmap import (
     slugify,
@@ -204,8 +202,8 @@ class TestMoveBuscaEmTodosAgentes(unittest.TestCase):
         self.assertIn("status: wip", content)
 
 
-class TestMoveRoadmapAnalyzingXFail(unittest.TestCase):
-    """Caracterização negativa: analyzing deve ser movível, mas ainda é rejeitado."""
+class TestMoveRoadmapAnalyzing(unittest.TestCase):
+    """Contrato obrigatório: analyzing deve ser movível nos layouts flat e by_agent."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -222,7 +220,6 @@ class TestMoveRoadmapAnalyzingXFail(unittest.TestCase):
             f"> Created: 2026-07-27 | Status: {state}\n"
         )
 
-    @pytest.mark.xfail(strict=True, reason="Python move_roadmap rejeita estado analyzing em layout flat")
     def test_move_analyzing_flat_syncs_status_and_log(self):
         cfg = _make_cfg(self.tmpdir)
         for state in ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]:
@@ -243,7 +240,6 @@ class TestMoveRoadmapAnalyzingXFail(unittest.TestCase):
         self.assertIn("ROADMAP-analyze-flat.md", log)
         self.assertIn("backlog → analyzing", log)
 
-    @pytest.mark.xfail(strict=True, reason="Python move_roadmap rejeita estado analyzing em layout by_agent")
     def test_move_analyzing_by_agent_preserves_agent_path_and_log(self):
         cfg = _make_cfg(self.tmpdir, namespacing="by_agent", agents=["zeus"])
         backlog_dir = os.path.join(cfg["roadmap_dir"], "zeus", "backlog")
