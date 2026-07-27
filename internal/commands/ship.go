@@ -76,6 +76,9 @@ func newShipCmd() *cobra.Command {
 Stage your files explicitly before running ship.
 This command never executes 'git add .' or 'git add -A'.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Silence usage for runtime errors (governance failures, missing files, etc.).
+			// Flag-parse errors happen before RunE is reached; cobra still shows usage for those.
+			cmd.SilenceUsage = true
 			deps := shipDeps{
 				execGit:         defaultGitExec,
 				checkGovernance: defaultCheckGovernance,
@@ -272,7 +275,16 @@ func runShip(opts shipOpts, deps shipDeps) error {
 	}
 
 	if opts.dryRun {
-		fmt.Fprintf(deps.out, "[dry-run] would open %s via %s\n", adapter.Noun, resolution.Forge)
+		if !adapter.Available && resolution.Forge != "manual" {
+			url := adapter.FallbackURL(remoteURL, branch)
+			if url != "" {
+				fmt.Fprintf(deps.out, "[dry-run] %s CLI (%s) not available — would open in browser:\n  %s\n", adapter.Noun, adapter.CLIName, url)
+			} else {
+				fmt.Fprintf(deps.out, "[dry-run] %s CLI (%s) not available — would open %s manually\n", adapter.Noun, adapter.CLIName, adapter.Noun)
+			}
+		} else {
+			fmt.Fprintf(deps.out, "[dry-run] would open %s via %s CLI\n", adapter.Noun, resolution.Forge)
+		}
 		return nil
 	}
 

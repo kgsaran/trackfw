@@ -3,7 +3,9 @@ package commands
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -20,6 +22,7 @@ import (
 type mockGit struct {
 	branch      string   // returned for symbolic-ref --short HEAD
 	stagedFiles string   // returned for diff --cached --name-only (empty = nothing staged)
+	remoteURL   string   // returned for "remote get-url origin"
 	calls       [][]string
 }
 
@@ -47,6 +50,9 @@ func (m *mockGit) exec(args ...string) (string, error) {
 	case strings.HasPrefix(joined, "fetch"):
 		// Simulate offline — non-blocking
 		return "", errors.New("could not connect")
+
+	case joined == "remote get-url origin":
+		return m.remoteURL, nil
 	}
 
 	return "", nil
@@ -428,8 +434,10 @@ func TestShip_DryRun_NoForgeCLI(t *testing.T) {
 		t.Fatalf("execForgeCLI must not be called in dry-run mode")
 	}
 	out := d.out.(*bytes.Buffer).String()
-	if !strings.Contains(out, "[dry-run]") && !strings.Contains(out, "would open") {
-		t.Fatalf("expected dry-run marker for step 7, got:\n%s", out)
+	// dry-run output must contain either the would-open marker or the not-available marker.
+	hasDryRunMarker := strings.Contains(out, "[dry-run]") && (strings.Contains(out, "would open") || strings.Contains(out, "not available"))
+	if !hasDryRunMarker {
+		t.Fatalf("expected dry-run step-7 marker in output, got:\n%s", out)
 	}
 }
 
@@ -541,5 +549,396 @@ func TestIsGitWriteCmd(t *testing.T) {
 		if isGitWriteCmd(args) {
 			t.Errorf("isGitWriteCmd(%v) should be false (read-only)", args)
 		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// SilenceUsage — cobra shows usage on flag errors; hides it on runtime errors
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestShip_SilenceUsage_FlagErrorShowsUsage verifies that an unknown flag still
+// triggers cobra's usage output. SilenceUsage is only set inside RunE, which is
+// never reached when cobra itself rejects the flag.
+func TestShip_SilenceUsage_FlagErrorShowsUsage(t *testing.T) {
+	cmd := newShipCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"--bogus-unknown-flag-xyz"})
+	_ = cmd.Execute()
+	out := buf.String()
+	if !strings.Contains(out, "Usage:") {
+		t.Fatalf("flag error must show 'Usage:' so users know the right syntax; got:\n%s", out)
+	}
+}
+
+// TestShip_SilenceUsage_SetInRunE verifies at the source level that
+// "cmd.SilenceUsage = true" appears in ship.go's RunE, proving runtime errors
+// will not emit cobra's usage block.
+func TestShip_SilenceUsage_SetInRunE(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Skip("runtime.Caller unavailable")
+	}
+	shipFile := filepath.Join(filepath.Dir(thisFile), "ship.go")
+	src, err := os.ReadFile(shipFile)
+	if err != nil {
+		t.Skipf("could not read ship.go: %v", err)
+	}
+	if !strings.Contains(string(src), "cmd.SilenceUsage = true") {
+		t.Fatal("ship.go RunE must set cmd.SilenceUsage = true so runtime errors do not show cobra Usage:")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Forge matrix — 4 forges × CLI present/absent × known/self-hosted host
+// ────────────────────────────────────────────────────────────────────────────
+
+// forgeMatrixCase describes one cell of the 4×2×2 test matrix.
+type forgeMatrixCase struct {
+	name string
+	// Inputs to shipDeps
+	configForge string
+	remoteURL   string
+	cliAvail    bool // ignored for bitbucket (always Available=false)
+	// Expected outputs
+	wantForge  string
+	wantSource string // "remote" or "config"
+	wantNoun   string // "Pull Request" or "Merge Request"
+	wantMROnly bool   // if true, assert "Merge Request" in output (gitlab only)
+	wantNotMR  bool   // if true, assert "Merge Request" NOT in output
+	wantURL    bool   // if true, URL must appear (CLI absent / bitbucket)
+	wantCLI    bool   // if true, execForgeCLI must be called (CLI present, non-bitbucket)
+}
+
+func TestShip_ForgeMatrix(t *testing.T) {
+	cases := []forgeMatrixCase{
+		// ── GitHub ──────────────────────────────────────────────────────────
+		{
+			name: "github/known-host/cli-absent",
+			configForge: "", remoteURL: "https://github.com/org/repo.git", cliAvail: false,
+			wantForge: "github", wantSource: "remote", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: true, wantCLI: false,
+		},
+		{
+			name: "github/known-host/cli-present",
+			configForge: "", remoteURL: "https://github.com/org/repo.git", cliAvail: true,
+			wantForge: "github", wantSource: "remote", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: false, wantCLI: true,
+		},
+		{
+			name: "github/self-hosted/cli-absent",
+			configForge: "github", remoteURL: "https://git.company.com/org/repo.git", cliAvail: false,
+			wantForge: "github", wantSource: "config", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: true, wantCLI: false,
+		},
+		{
+			name: "github/self-hosted/cli-present",
+			configForge: "github", remoteURL: "https://git.company.com/org/repo.git", cliAvail: true,
+			wantForge: "github", wantSource: "config", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: false, wantCLI: true,
+		},
+		// ── GitLab ──────────────────────────────────────────────────────────
+		{
+			name: "gitlab/known-host/cli-absent",
+			configForge: "", remoteURL: "https://gitlab.com/org/repo.git", cliAvail: false,
+			wantForge: "gitlab", wantSource: "remote", wantNoun: "Merge Request",
+			wantMROnly: true, wantURL: true, wantCLI: false,
+		},
+		{
+			name: "gitlab/known-host/cli-present",
+			configForge: "", remoteURL: "https://gitlab.com/org/repo.git", cliAvail: true,
+			wantForge: "gitlab", wantSource: "remote", wantNoun: "Merge Request",
+			wantMROnly: true, wantURL: false, wantCLI: true,
+		},
+		{
+			name: "gitlab/self-hosted/cli-absent",
+			configForge: "gitlab", remoteURL: "https://gitlab.company.com/org/repo.git", cliAvail: false,
+			wantForge: "gitlab", wantSource: "config", wantNoun: "Merge Request",
+			wantMROnly: true, wantURL: true, wantCLI: false,
+		},
+		{
+			name: "gitlab/self-hosted/cli-present",
+			configForge: "gitlab", remoteURL: "https://gitlab.company.com/org/repo.git", cliAvail: true,
+			wantForge: "gitlab", wantSource: "config", wantNoun: "Merge Request",
+			wantMROnly: true, wantURL: false, wantCLI: true,
+		},
+		// ── Bitbucket — no official CLI; always falls back to URL ────────────
+		{
+			name: "bitbucket/known-host/cli-absent",
+			configForge: "", remoteURL: "https://bitbucket.org/org/repo.git", cliAvail: false,
+			wantForge: "bitbucket", wantSource: "remote", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: true, wantCLI: false,
+		},
+		{
+			// bitbucket adapter never calls availFn — Available is always false.
+			name: "bitbucket/known-host/cli-present",
+			configForge: "", remoteURL: "https://bitbucket.org/org/repo.git", cliAvail: true,
+			wantForge: "bitbucket", wantSource: "remote", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: true, wantCLI: false,
+		},
+		{
+			name: "bitbucket/self-hosted/cli-absent",
+			configForge: "bitbucket", remoteURL: "https://bitbucket.company.com/org/repo.git", cliAvail: false,
+			wantForge: "bitbucket", wantSource: "config", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: true, wantCLI: false,
+		},
+		{
+			name: "bitbucket/self-hosted/cli-present",
+			configForge: "bitbucket", remoteURL: "https://bitbucket.company.com/org/repo.git", cliAvail: true,
+			wantForge: "bitbucket", wantSource: "config", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: true, wantCLI: false,
+		},
+		// ── Azure ────────────────────────────────────────────────────────────
+		{
+			name: "azure/known-host/cli-absent",
+			configForge: "", remoteURL: "https://dev.azure.com/org/project/_git/repo", cliAvail: false,
+			wantForge: "azure", wantSource: "remote", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: true, wantCLI: false,
+		},
+		{
+			name: "azure/known-host/cli-present",
+			configForge: "", remoteURL: "https://dev.azure.com/org/project/_git/repo", cliAvail: true,
+			wantForge: "azure", wantSource: "remote", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: false, wantCLI: true,
+		},
+		{
+			name: "azure/self-hosted/cli-absent",
+			configForge: "azure", remoteURL: "https://azdo.company.com/org/project/_git/repo", cliAvail: false,
+			wantForge: "azure", wantSource: "config", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: true, wantCLI: false,
+		},
+		{
+			name: "azure/self-hosted/cli-present",
+			configForge: "azure", remoteURL: "https://azdo.company.com/org/project/_git/repo", cliAvail: true,
+			wantForge: "azure", wantSource: "config", wantNoun: "Pull Request",
+			wantNotMR: true, wantURL: false, wantCLI: true,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cliCalls := &mockForgeCLI{}
+
+			g := &mockGit{
+				branch:      "feat/matrix-test",
+				stagedFiles: "file.go",
+				remoteURL:   tc.remoteURL,
+			}
+			d := shipDeps{
+				execGit:         g.exec,
+				checkGovernance: func() []string { return nil },
+				out:             &bytes.Buffer{},
+				configForge:     tc.configForge,
+				repoDir:         "", // no CI file detection
+				availFn:         func(string) bool { return tc.cliAvail },
+				execForgeCLI:    cliCalls.exec,
+			}
+			opts := shipOpts{message: "feat(matrix): test", forge: ""}
+			err := runShip(opts, d)
+			if err != nil {
+				t.Fatalf("runShip returned unexpected error: %v", err)
+			}
+
+			out := d.out.(*bytes.Buffer).String()
+
+			// Forge line: "Forge:     <forge> (source: <source>)"
+			wantForgeLine := fmt.Sprintf("Forge:     %s (source: %s)", tc.wantForge, tc.wantSource)
+			if !strings.Contains(out, wantForgeLine) {
+				t.Errorf("want forge line %q in output, got:\n%s", wantForgeLine, out)
+			}
+
+			// Noun in output
+			if !strings.Contains(out, tc.wantNoun) {
+				t.Errorf("want noun %q in output, got:\n%s", tc.wantNoun, out)
+			}
+
+			// Negative: non-gitlab forges must not say "Merge Request"
+			if tc.wantNotMR && strings.Contains(out, "Merge Request") {
+				t.Errorf("non-gitlab forge %q must not output 'Merge Request', got:\n%s", tc.wantForge, out)
+			}
+
+			// URL assertion (fallback path / bitbucket)
+			if tc.wantURL {
+				// Extract expected URL host from remoteURL
+				urlHost := extractURLHost(tc.remoteURL)
+				if !strings.Contains(out, urlHost) {
+					t.Errorf("want fallback URL containing %q in output, got:\n%s", urlHost, out)
+				}
+			}
+
+			// CLI invocation assertion
+			if tc.wantCLI {
+				if len(cliCalls.calls) != 1 {
+					t.Errorf("want execForgeCLI called once, got %d calls", len(cliCalls.calls))
+				}
+			} else {
+				if len(cliCalls.calls) != 0 {
+					t.Errorf("want execForgeCLI NOT called, got %d calls", len(cliCalls.calls))
+				}
+			}
+		})
+	}
+}
+
+// extractURLHost extracts the hostname from a URL for assertion purposes.
+// e.g. "https://github.com/org/repo.git" → "github.com"
+func extractURLHost(rawURL string) string {
+	rawURL = strings.TrimPrefix(rawURL, "https://")
+	rawURL = strings.TrimPrefix(rawURL, "http://")
+	if idx := strings.IndexByte(rawURL, '/'); idx >= 0 {
+		return rawURL[:idx]
+	}
+	return rawURL
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Integration test — real binary with clean PATH (proves graceful degradation)
+// ────────────────────────────────────────────────────────────────────────────
+
+// findProjectRoot walks up from this test file's location until it finds go.mod.
+func findProjectRoot(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller unavailable")
+	}
+	dir := filepath.Dir(thisFile)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("go.mod not found: could not determine project root")
+		}
+		dir = parent
+	}
+}
+
+// TestShip_Integration_GracefulDegradation_RealBinary builds the trackfw binary and
+// runs it with a clean PATH that contains only git — proving that when gh/glab/az are
+// absent, ship still exits 0 and prints a browser URL.
+//
+// Uses --dry-run to avoid requiring network or a real git push target; --dry-run
+// exercises the CLI availability check (Step 7) because NewAdapter is called before
+// the dry-run guard.
+func TestShip_Integration_GracefulDegradation_RealBinary(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: skipped in short mode (-short)")
+	}
+
+	projRoot := findProjectRoot(t)
+
+	// ── Build binary ──────────────────────────────────────────────────────────
+	binaryDir := t.TempDir()
+	binary := filepath.Join(binaryDir, "trackfw")
+	buildCmd := exec.Command("go", "build", "-o", binary, "./cmd/trackfw")
+	buildCmd.Dir = projRoot
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build trackfw: %v\n%s", err, out)
+	}
+
+	// ── Create tmpbin with ONLY git ───────────────────────────────────────────
+	tmpBin := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(tmpBin, 0755); err != nil {
+		t.Fatalf("mkdir tmpbin: %v", err)
+	}
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not found in PATH — cannot run integration test")
+	}
+	if err := os.Symlink(gitPath, filepath.Join(tmpBin, "git")); err != nil {
+		t.Fatalf("symlink git: %v", err)
+	}
+	cleanPATH := tmpBin
+
+	// ── Verify gh/glab/az are NOT in cleanPATH ───────────────────────────────
+	for _, cli := range []string{"gh", "glab", "az"} {
+		// Temporarily set PATH to clean version and check.
+		orig := os.Getenv("PATH")
+		_ = os.Setenv("PATH", cleanPATH)
+		_, lErr := exec.LookPath(cli)
+		_ = os.Setenv("PATH", orig)
+		if lErr == nil {
+			t.Logf("note: %s found in cleanPATH despite our setup — test might not prove degradation", cli)
+		}
+	}
+
+	// ── Create temp git repo ──────────────────────────────────────────────────
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repoDir, 0755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(gitPath, args...)
+		cmd.Dir = repoDir
+		cmd.Env = []string{
+			"PATH=" + cleanPATH,
+			"HOME=" + t.TempDir(),
+			"GIT_AUTHOR_NAME=Test",
+			"GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=Test",
+			"GIT_COMMITTER_EMAIL=test@example.com",
+		}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "commit.gpgsign", "false")
+	runGit("checkout", "-b", "feat/ship-integration-test")
+	runGit("remote", "add", "origin", "https://github.com/org/repo.git")
+
+	// ── Create governance artifacts (default RoadmapDir = "docs/roadmaps") ───
+	wipDir := filepath.Join(repoDir, "docs", "roadmaps", "wip")
+	if err := os.MkdirAll(wipDir, 0755); err != nil {
+		t.Fatalf("mkdir wip: %v", err)
+	}
+	roadmapContent := "REQ: REQ-ship-integration-test\n\n# Roadmap: Integration Test\n\nTest roadmap for graceful degradation proof.\n"
+	roadmapPath := filepath.Join(wipDir, "ROADMAP-2026-07-26-ship-integration-test.md")
+	if err := os.WriteFile(roadmapPath, []byte(roadmapContent), 0644); err != nil {
+		t.Fatalf("write roadmap: %v", err)
+	}
+
+	// ── Stage a file ──────────────────────────────────────────────────────────
+	testFile := filepath.Join(repoDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("hello\n"), 0644); err != nil {
+		t.Fatalf("write test.txt: %v", err)
+	}
+	runGit("add", "test.txt")
+
+	// ── Run binary with clean PATH ────────────────────────────────────────────
+	shipCmd := exec.Command(binary, "ship", "--dry-run", "-m", "feat: integration test")
+	shipCmd.Dir = repoDir
+	shipCmd.Env = []string{
+		"PATH=" + cleanPATH,
+		"HOME=" + t.TempDir(),
+		"GIT_AUTHOR_NAME=Test",
+		"GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=Test",
+		"GIT_COMMITTER_EMAIL=test@example.com",
+	}
+
+	var stdout, stderr bytes.Buffer
+	shipCmd.Stdout = &stdout
+	shipCmd.Stderr = &stderr
+
+	if err := shipCmd.Run(); err != nil {
+		t.Fatalf("trackfw ship --dry-run must exit 0 when gh is absent:\nstdout: %s\nstderr: %s\nerror:  %v",
+			stdout.String(), stderr.String(), err)
+	}
+
+	combined := stdout.String() + "\n" + stderr.String()
+
+	// The dry-run now reports availability — expect the fallback URL.
+	if !strings.Contains(combined, "github.com") {
+		t.Fatalf("expected github.com fallback URL in dry-run output (proves graceful degradation), got:\n%s", combined)
 	}
 }
