@@ -95,13 +95,11 @@ func TestValidateRefTargetsExist_RejectsWrongStatePath(t *testing.T) {
 	}
 }
 
-// TestXFail_Escape3_SeveridadeWarning
-// REQ: REQ-2026-07-27-integridade-referencias | Reativar: ML-3A
-// Escape 3: severidade padrão de ref_targets_exist é "warning" — referência quebrada vai
-// para warnings, não violations → gate fica verde (exit 0) mesmo com ref inexistente.
-// Nota: configurar ref_targets_exist: error no fixture faria o teste passar hoje;
-// o escape é o *default* warning, que só é elevado para error no ML-3A.
-func TestXFail_Escape3_SeveridadeWarning(t *testing.T) {
+// TestValidateRefTargetsExist_DefaultError
+// REQ: REQ-2026-07-27-integridade-referencias | Reativado: ML-3A
+// Escape 3 corrigido: a severidade padrão de ref_targets_exist é "error", então
+// referência quebrada reprova o gate sem configuração explícita.
+func TestValidateRefTargetsExist_DefaultError(t *testing.T) {
 	dir := t.TempDir()
 	mkdirs(t, dir,
 		"docs/req",
@@ -115,26 +113,20 @@ func TestXFail_Escape3_SeveridadeWarning(t *testing.T) {
 	writeFile(t, dir, "docs/req/REQ-XFAIL-ESCAPE3.md",
 		"---\nstatus: Open\n---\n\n# REQ: Escape 3\n\n> Date: 2026-07-27 | Status: Open\n\n"+
 			"## Linked Roadmap\nRoadmap: docs/roadmaps/wip/ESCAPE3-TRULY-MISSING.md\n")
-	// Config padrão — ref_targets_exist mantém severidade "warning"
+	// Config padrão — ref_targets_exist deve reprovar como "error"
 	writeFile(t, dir, "trackfw.yaml",
 		"req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs:\n  - docs/adr\n")
 	chdir(t, dir)
 	config.Reset()
 	t.Cleanup(config.Reset)
 
-	xfailExpect(t,
-		"ML-3A",
-		"severidade padrão warning — referência quebrada vai para warnings, não violations; gate fica verde",
-		func() bool {
-			violations, _, err := ValidateUnfiltered()
-			if err != nil {
-				t.Fatalf("ValidateUnfiltered erro: %v", err)
-			}
-			// Defeito presente: violations não contém ESCAPE3-TRULY-MISSING
-			// (a mensagem existe mas em warnings, não violations)
-			return !hasViolation(violations, "ESCAPE3-TRULY-MISSING")
-		},
-	)
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered erro: %v", err)
+	}
+	if !hasViolation(violations, "ESCAPE3-TRULY-MISSING") {
+		t.Fatalf("esperava violation para ref quebrada com severidade default error; violations=%v warnings=%v", violations, warnings)
+	}
 }
 
 // TestValidateREQRoadmapLifecycle_REQAbertaRoadmapConcluido

@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-12
 author: Zeus
 adr: ""
-roadmap: roadmap-req-driven-adr-discovery-2026-06-12.md
+roadmap: "docs/roadmaps/done/roadmap-req-driven-adr-discovery-2026-06-12.md"
 ---
 
 # REQ: REQ-Driven ADR Discovery

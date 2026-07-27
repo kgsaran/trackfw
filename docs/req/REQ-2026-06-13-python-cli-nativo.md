@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-13
 author: zeus
 adr: ""
-roadmap: v2.2-python-cli-nativo-2026-06-13.md
+roadmap: "docs/roadmaps/done/v2.2-python-cli-nativo-2026-06-13.md"
 ---
 
 # REQ: Python CLI Nativo — Reimplementação em Python Puro

@@ -2,8 +2,8 @@
 status: Done
 date: 2026-07-20
 author: afrodite
-adr: ADR-2026-07-19-global-adrs-governance.md
-roadmap: ROADMAP-2026-07-19-global-adrs-governance-ML-2B.md
+adr: "docs/adr/ADR-2026-07-19-global-adrs-governance.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-19-global-adrs-governance-ML-2B.md"
 ---
 
 # REQ: ML-2B — Node.js: Bypass de CI/CD para Dirs Inexistentes + Isenção adr_orphan

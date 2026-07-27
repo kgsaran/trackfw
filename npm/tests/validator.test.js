@@ -822,11 +822,8 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
-  // Escape 3: severidade padrão warning — ref quebrada não vai para violations.
-  // Nota: configurar ref_targets_exist: error faria o teste passar hoje;
-  // o escape é o *default* warning, elevado para error no ML-3A.
-  // Reativar em ML-3A após elevar severidade para error.
-  testSkip('ML-1A Escape3: severidade warning — ref quebrada nao reprova gate (violations vazio) [reativar ML-3A REQ-2026-07-27-integridade-referencias]', () => {
+  // Escape 3 reativado no ML-3A: severidade padrão error reprova ref quebrada.
+  await testAsync('ML-3A Escape3 reativado: ref_targets_exist default error reprova gate', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-e3-'))
     try {
       fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
@@ -839,19 +836,17 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
       fs.writeFileSync(path.join(tmp, 'docs/req/REQ-XFAIL-ESCAPE3.md'),
         '---\nstatus: Open\n---\n\n' +
         '## Linked Roadmap\nRoadmap: docs/roadmaps/wip/ESCAPE3-TRULY-MISSING.md\n')
-      // Config padrão — ref_targets_exist mantém severidade "warning"
+      // Config padrão — ref_targets_exist deve reprovar como "error"
       fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
         'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
       const origDir = process.cwd()
       process.chdir(tmp)
       config.reset()
       try {
-        // Usa validate() que aplica severidade — warnings não reprovam
-        const violations = validator.validate()
-        // Defeito presente: violations não menciona ESCAPE3-TRULY-MISSING
-        // (a mensagem existe mas em warnings, não violations)
+        // Usa validateUnfiltered() que aplica severidade default antes do ratchet.
+        const { violations } = await validator.validateUnfiltered()
         assert(violations.some(v => v.includes('ESCAPE3-TRULY-MISSING')),
-          `esperava violation para ref quebrada com severidade error, mas nao houve (escape 3 ativo). violations=${JSON.stringify(violations)}`)
+          `esperava violation para ref quebrada com severidade default error. violations=${JSON.stringify(violations)}`)
       } finally {
         process.chdir(origDir)
         config.reset()

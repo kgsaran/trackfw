@@ -3,7 +3,7 @@ status: Done
 date: 2026-07-20
 author: afrodite
 adr: ""
-roadmap: ROADMAP-2026-06-20-attention-hooks-agent-clis-node.md
+roadmap: "docs/roadmaps/done/ROADMAP-2026-06-20-attention-hooks-agent-clis-node.md"
 ---
 
 # REQ: Injetores de Hooks de Atenção para os 7 CLIs no CLI Node.js (ML-2A a ML-2G)

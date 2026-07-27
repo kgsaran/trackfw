@@ -43,7 +43,7 @@ function defaults() {
       wip_limit:            'error',
       stale_wip:            'warning',
       adr_orphan:           'warning',
-      ref_targets_exist:    'warning',
+      ref_targets_exist:    'error',
       folder_status:        'warning',
       filename_uniqueness:  'error',
       blocked_by_draft_adr: 'error',
@@ -210,4 +210,3 @@ const NAMESPACING_FLAT = 'flat';
 const NAMESPACING_BY_AGENT = 'by_agent';
 
 module.exports = { load, reset, defaults, expandPath, NAMESPACING_FLAT, NAMESPACING_BY_AGENT };
-

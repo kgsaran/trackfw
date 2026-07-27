@@ -2,8 +2,8 @@
 status: Done
 date: 2026-06-13
 author: Zeus
-adr: ADR-001-trackfw-como-trilho-de-governanca-para-agentes-ia.md
-roadmap: trackfw-ai-agent-rail-2026-06-13.md
+adr: "docs/adr/ADR-001-trackfw-como-trilho-de-governanca-para-agentes-ia.md"
+roadmap: "docs/roadmaps/done/trackfw-ai-agent-rail-2026-06-13.md"
 ---
 
 # REQ — trackfw como trilho de governança para agentes de IA

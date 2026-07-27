@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-19
 author: "Zeus"
 adr: "docs/adr/ADR-2026-07-19-global-adrs-governance.md"
-roadmap: "docs/roadmaps/ROADMAP-2026-07-19-global-adrs-governance.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-19-global-adrs-governance.md"
 ---
 
 # REQ: Suporte a ADRs Globais Compartilhados e Diretivas de IA
 
-> Date: 2026-07-19 | Status: Open | Blocked by ADRs: 0
+> Date: 2026-07-19 | Status: Done | Blocked by ADRs: 0
 | Linear Issue:
 | Jira Issue:
 

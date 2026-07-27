@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-19
 author: zeus
 adr: ""
-roadmap: analyzing-state-ml-status-rules-2026-06-19.md
+roadmap: "docs/roadmaps/done/analyzing-state-ml-status-rules-2026-06-19.md"
 ---
 
 # REQ: Estado "Analyzing" no kanban e regras de marcação de ML

@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-18
 author: zeus
 adr: ""
-roadmap: trackfw-update-command-2026-06-18.md
+roadmap: "docs/roadmaps/done/trackfw-update-command-2026-06-18.md"
 ---
 
 # REQ-2026-06-18: trackfw update

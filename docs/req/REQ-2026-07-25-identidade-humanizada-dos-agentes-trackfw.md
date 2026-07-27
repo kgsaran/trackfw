@@ -2,8 +2,8 @@
 status: Done
 date: 2026-07-25
 author: "Zeus (Principal Software Architect)"
-adr: "ADR-2026-07-25-identidade-personalizavel-de-agentes.md"
-roadmap: "ROADMAP-2026-07-25-identidade-humanizada-agentes.md"
+adr: "docs/adr/ADR-2026-07-25-identidade-personalizavel-de-agentes.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-25-identidade-humanizada-agentes.md"
 ---
 
 # REQ: Identidade humanizada dos agentes trackfw

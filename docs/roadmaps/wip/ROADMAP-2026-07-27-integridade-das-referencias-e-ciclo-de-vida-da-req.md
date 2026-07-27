@@ -268,7 +268,7 @@ Validação:
 
 ### ML-3A — Normalizar as 38 referências e proteger com gate
 
-**Status:** pending
+**Status:** done
 **Files affected:** `docs/req/*.md`, `scripts/`, `Makefile`
 
 **Actions:**
@@ -288,11 +288,71 @@ Validação:
 5. Reativar o que restar dos testes do ML-1A (escape 3).
 
 **Acceptance criteria:**
-- [ ] 38 referências normalizadas; zero apontando para arquivo inexistente
-- [ ] 6 REQs fechadas **pelo comando**, não manualmente
-- [ ] `ref_targets_exist` elevado para `error` nos 3 CLIs, DEPOIS da normalização
-- [ ] Gate com prova negativa, rodando em `make quality`
-- [ ] `trackfw validate` verde; `git status` limpo após os testes
+- [x] 38 referências normalizadas; zero apontando para arquivo inexistente
+- [x] 6 REQs fechadas **pelo comando**, não manualmente
+- [x] `ref_targets_exist` elevado para `error` nos 3 CLIs, DEPOIS da normalização
+- [x] Gate com prova negativa, rodando em `make quality`
+- [x] `trackfw validate` verde; `git status` limpo após os testes
+
+**Relatório ML-3A — Apolo — 2026-07-27:**
+
+Arquivos alterados:
+- 38 REQs em `docs/req/*.md`
+- `internal/config/config.go`
+- `internal/validator/validator_integrity_xfail_test.go`
+- `npm/src/config/index.js`
+- `npm/tests/validator.test.js`
+- `pypi/trackfw/config.py`
+- `pypi/tests/test_validator.py`
+- `scripts/check-referential-integrity.sh`
+- `scripts/check-gates-falsify.sh`
+- `Makefile`
+
+Reconciliação das contagens:
+- Medição inicial com `bin/trackfw validate --json`: 41 warnings `ref_targets_exist`.
+- A divergência 41 × 38 ocorre porque os 41 eram itens de validação, não campos `roadmap:` únicos:
+  a saída incluía warnings de `adr:` não canônicos e não cobria o caso `ROADMAP-2026-07-25-escopo-...`
+  sem `.md`, ignorado pelo extrator.
+- A reconciliação estática do frontmatter confirmou 38 campos `roadmap:` não canônicos. A investigação
+  individual do caso `escopo` encontrou correspondência única em
+  `docs/roadmaps/done/ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md`
+  e ADR única em `docs/adr/ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md`.
+- Normalização aplicada em 38 arquivos: 38 campos `roadmap:` e 6 campos `adr:` passaram para caminho
+  relativo completo, com `.md`, sempre com correspondência única por basename. Nenhuma referência foi
+  inventada.
+
+Fechamento de REQs:
+- 6 REQs `Open` com roadmap em `done/` foram fechadas via `bin/trackfw req move ... Done`:
+  `REQ-2026-06-13-traceid-bidirecional.md`,
+  `REQ-2026-06-13-v2.4-config-evolution.md`,
+  `REQ-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md`,
+  `REQ-2026-07-19-corrigir-render-antigravity-com-tools-validos-e-model-tier-do-agy.md`,
+  `REQ-2026-07-19-global-adrs-governance.md`,
+  `REQ-2026-07-26-robustez-dos-gates-de-governanca-e-paridade.md`.
+- Resultado pós-normalização e fechamento, antes de elevar severidade: `bin/trackfw validate --json`
+  retornou 0 violations e 0 warnings.
+
+Gate e severidade:
+- `ref_targets_exist` elevado de `warning` para `error` nos defaults dos 3 CLIs.
+- Escape 3 reativado nos 3 runtimes: Go, Node.js e Python agora provam que referência quebrada vira
+  violation com a configuração padrão.
+- Novo gate `scripts/check-referential-integrity.sh` verifica `adr:` e `roadmap:` de frontmatter das
+  REQs por existência literal do arquivo.
+- `Makefile` integra o gate em `make quality`, sem variável auxiliar.
+- `scripts/check-gates-falsify.sh` ganhou P4 `referential-integrity/missing-roadmap`, com fixture
+  temporário quebrado e sem resíduo no workspace. O cenário 8 existente passou a usar `GOCACHE` local
+  ao diretório temporário para funcionar no sandbox.
+
+Validação:
+- `go build ./...` → verde; aviso não bloqueante de cache Go fora do workspace no sandbox.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → `263 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q -rxX` → `612 passed`.
+- `scripts/check-referential-integrity.sh` → `Referential integrity OK`.
+- `scripts/check-gates-falsify.sh` → `Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)`.
+- `bin/trackfw validate --json` → 0 violations, 0 warnings.
+- `make quality` → verde: Go, Node, Python, `go vet`, build, CLI/validate parity, integridade referencial,
+  static/integration assets, identity parity, artifact parity e falsification gates passaram.
 
 ## Acceptance Criteria
 

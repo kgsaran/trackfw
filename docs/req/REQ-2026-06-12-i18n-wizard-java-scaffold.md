@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-12
 author: ""
 adr: ""
-roadmap: v1.1.0-i18n-wizard-java-2026-06-12.md
+roadmap: "docs/roadmaps/done/v1.1.0-i18n-wizard-java-2026-06-12.md"
 ---
 
 # REQ: Melhorias v1.1.0 — i18n, Wizard init e Scaffold Java

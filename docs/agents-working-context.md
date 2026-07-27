@@ -4,6 +4,39 @@
 
 ---
 
+## Sessão 2026-07-27 — Apolo (ML-3A concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`
+
+**Tarefa:** Normalizar referências de REQ, fechar REQs concluídas e proteger integridade referencial no `make quality`.
+
+**Entregue:**
+- 38 arquivos em `docs/req/*.md` normalizados para referências canônicas de frontmatter:
+  38 campos `roadmap:` e 6 campos `adr:` agora usam caminho relativo completo, com `.md`.
+- Reconciliação registrada: `bin/trackfw validate --json` media 41 warnings antes da normalização;
+  esses 41 eram itens de validação, não campos `roadmap:` únicos. A reconciliação estática confirmou
+  38 campos `roadmap:` não canônicos, além de 6 campos `adr:` normalizados; o caso
+  `ROADMAP-2026-07-25-escopo-...` não aparecia como warning porque estava sem `.md`, mas tinha
+  correspondência única em `docs/roadmaps/done/`.
+- 6 REQs `Open` com roadmap em `done/` fechadas via `bin/trackfw req move ... Done`, sem edição manual.
+- `ref_targets_exist` elevado para `error` nos defaults dos 3 CLIs.
+- Escape 3 reativado nos testes Go, Node.js e Python.
+- `scripts/check-referential-integrity.sh` criado e integrado ao `make quality`.
+- `scripts/check-gates-falsify.sh` ganhou P4 `referential-integrity/missing-roadmap`; cenário 8 usa
+  `GOCACHE` temporário para build isolado no sandbox.
+
+**Validação:**
+- `go build ./...` → verde; aviso não bloqueante de cache Go fora do workspace.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → `263 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q -rxX` → `612 passed`.
+- `scripts/check-referential-integrity.sh` → `Referential integrity OK`.
+- `scripts/check-gates-falsify.sh` → `Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)`.
+- `bin/trackfw validate --json` → 0 violations, 0 warnings.
+- `make quality` → verde.
+
+---
+
 ## Sessão 2026-06-11 — Sessão inaugural
 
 ### O que foi decidido e construído

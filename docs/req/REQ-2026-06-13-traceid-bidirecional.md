@@ -1,9 +1,9 @@
 ---
 name: REQ-2026-06-13-traceid-bidirecional
 title: "v2.5 — req_id: ID de rastreabilidade estável com verificação bidirecional"
-status: Open
+status: Done
 adr: —
-roadmap: docs/roadmaps/claude/wip/v2.5-discovery-json-traceid-2026-06-13.md
+roadmap: "docs/roadmaps/done/v2.5-discovery-json-traceid-2026-06-13.md"
 created: 2026-06-13
 author: zeus
 ---

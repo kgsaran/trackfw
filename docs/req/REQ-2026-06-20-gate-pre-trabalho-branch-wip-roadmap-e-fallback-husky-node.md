@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-06-20
 author: Zeus
 adr: ""
-roadmap: "ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md"
 ---
 
 # REQ: gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node
 
-> Date: 2026-06-20 | Status: Open
+> Date: 2026-06-20 | Status: Done
 
 ## Motivation
 

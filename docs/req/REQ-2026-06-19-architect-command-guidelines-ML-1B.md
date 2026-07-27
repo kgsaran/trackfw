@@ -3,7 +3,7 @@ status: Done
 date: 2026-07-20
 author: afrodite
 adr: ""
-roadmap: ROADMAP-2026-06-19-architect-command-guidelines-ML-1B.md
+roadmap: "docs/roadmaps/done/ROADMAP-2026-06-19-architect-command-guidelines-ML-1B.md"
 ---
 
 # REQ: Slash command /trackfw:architect + diretrizes de arquitetura (Node.js ML-1B)

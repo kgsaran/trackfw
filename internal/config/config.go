@@ -85,7 +85,7 @@ func defaults() ProjectConfig {
 			"wip_limit":            "error",
 			"stale_wip":            "warning",
 			"adr_orphan":           "warning",
-			"ref_targets_exist":    "warning",
+			"ref_targets_exist":    "error",
 			"folder_status":        "warning",
 			"filename_uniqueness":  "error",
 			"blocked_by_draft_adr": "error",
@@ -365,4 +365,3 @@ func ExpandPath(p string) string {
 	}
 	return p
 }
-

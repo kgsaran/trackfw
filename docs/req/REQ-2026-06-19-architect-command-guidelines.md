@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-19
 author: zeus
 adr: ""
-roadmap: ROADMAP-2026-06-19-architect-command-guidelines.md
+roadmap: "docs/roadmaps/done/ROADMAP-2026-06-19-architect-command-guidelines.md"
 ---
 
 # REQ: Slash command /trackfw:architect + diretrizes de arquitetura

@@ -257,10 +257,39 @@ fi
 # Compilar binário corrompido
 T8_BIN="$WORK/s8-bin/trackfw"
 mkdir -p "$(dirname "$T8_BIN")"
-(cd "$T8_MOD" && go build -o "$T8_BIN" ./cmd/trackfw) 2>/dev/null
+(cd "$T8_MOD" && env GOCACHE="$WORK/go-build-cache" go build -o "$T8_BIN" ./cmd/trackfw) 2>/dev/null
 
 assert_fails_with "artifact-parity/req-name-drift" \
   "arquivo ausente" \
   env GO_BIN="$T8_BIN" bash "$T8/scripts/check-artifact-parity.sh"
 
-echo "Falsification checks passed (all 8 scenarios, 7 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 9 — check-referential-integrity.sh: REQ com roadmap quebrado →
+#              gate detecta referência inexistente no frontmatter.
+#
+# Objetivo (P4): provar que o gate de integridade referencial reprova uma
+# referência canônica quebrada sem deixar resíduo no workspace real.
+# ---------------------------------------------------------------------------
+T9="$WORK/s9"
+mkdir -p "$T9/scripts" "$T9/docs"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T9/scripts/"
+cp -r "$ROOT_DIR/docs/req" "$T9/docs/req"
+cp -r "$ROOT_DIR/docs/roadmaps" "$T9/docs/roadmaps"
+cp -r "$ROOT_DIR/docs/adr" "$T9/docs/adr"
+
+# Corromper: quebrar uma referência existente em cópia temporária.
+cat > "$T9/docs/req/REQ-adr-wizard-e-list-2026-06-11.md" <<'EOF'
+---
+status: Done
+adr: ""
+roadmap: "docs/roadmaps/done/MISSING-roadmap-adr-wizard-e-list-2026-06-11.md"
+---
+
+# REQ quebrada para prova P4
+EOF
+
+assert_fails_with "referential-integrity/missing-roadmap" \
+  "referential integrity failed" \
+  bash "$T9/scripts/check-referential-integrity.sh"
+
+echo "Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)"

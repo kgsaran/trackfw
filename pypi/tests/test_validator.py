@@ -1129,11 +1129,7 @@ def test_ml2a_escape2_fallback_basename_removido(tmp_path, monkeypatch):
     ), f"esperava warning para caminho errado wip/ vs done/; warnings={warnings}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="ML-1A Escape3 ativo: ref_targets_exist default warning nao reprova gate; reativar no ML-3A.",
-)
-def test_ml1a_xfail_escape3_severidade_warning_nao_reprova_gate(tmp_path, monkeypatch):
+def test_ml3a_escape3_ref_targets_exist_default_error_reprova_gate(tmp_path, monkeypatch):
     _ml1a_base(tmp_path, monkeypatch)
     (tmp_path / "docs/req/REQ-XFAIL-ESCAPE3.md").write_text(
         "---\nstatus: Open\n---\n\n# REQ: Escape 3\n\n"
@@ -1147,7 +1143,7 @@ def test_ml1a_xfail_escape3_severidade_warning_nao_reprova_gate(tmp_path, monkey
     assert any(
         "ESCAPE3-TRULY-MISSING" in item["message"]
         for item in result["violations"]
-    ), f"esperava violation para referencia quebrada; result={result}"
+    ), f"esperava violation para referencia quebrada com severidade default error; result={result}"
 
 
 def test_ml2b_defeito2_req_open_com_roadmap_done(tmp_path, monkeypatch):
