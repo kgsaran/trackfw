@@ -1428,3 +1428,56 @@ func TestFilenameUniqueness_OrdemDeterministica_P3(t *testing.T) {
 	}
 }
 
+// TestValidateBranchHasWIPRoadmap_TruncaMensagem — P3+P4: 4 candidatos devem gerar
+// mensagem truncada em 3 + "e mais 1", em ordem alfabética, string exata.
+func TestValidateBranchHasWIPRoadmap_TruncaMensagem(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "feat/minha-feature")
+	// 4 roadmaps sem slug da branch → todos são candidatos, nenhum casa
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-alpha.md", "REQ: REQ-001\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-bravo.md", "REQ: REQ-002\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-charlie.md", "REQ: REQ-003\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-delta.md", "REQ: REQ-004\n")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) == 0 {
+		t.Fatal("esperava violation com 4 candidatos sem slug correspondente")
+	}
+	// Exato: 3 primeiros em ordem alfabética + ", e mais 1"
+	want := "ROADMAP-alpha.md, ROADMAP-bravo.md, ROADMAP-charlie.md, e mais 1"
+	if !strings.Contains(violations[0], want) {
+		t.Errorf("mensagem truncada esperada contendo %q, obteve: %s", want, violations[0])
+	}
+}
+
+// TestWIPHasREQ_CRLF_Integracao — P3+P4: roadmap em wip com "REQ: \r\n" (CRLF vazio)
+// deve emitir violation de wip_has_req. Testa a integração do contentHasMarker
+// com validateWIPHasREQ (leitura de arquivo real, não mock).
+func TestWIPHasREQ_CRLF_Integracao(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	// Arquivo com CRLF: REQ: seguido de espaço + \r\n — campo vazio
+	content := "REQ: \r\n## Acceptance Criteria\r\n- [ ] ok\r\n"
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-crlf.md", content)
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateWIPHasREQ()
+	if err != nil {
+		t.Fatalf("validateWIPHasREQ() erro inesperado: %v", err)
+	}
+	if !hasViolation(violations, "wip but has no linked REQ") {
+		t.Errorf("esperava violation de REQ vazio com CRLF, obteve: %v", violations)
+	}
+}
+

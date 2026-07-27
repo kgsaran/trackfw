@@ -887,7 +887,11 @@ function validateBranchHasWIPRoadmap() {
   if (candidates.length === 0) {
     return [`branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new "title"\n  trackfw roadmap new "title"\n  trackfw roadmap move <name> wip`]
   }
-  return [`branch "${branch}" has no matching roadmap in wip/ nor done/ (found: ${candidates.join(', ')}) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI`]
+  // P3: sort for deterministic output regardless of filesystem ordering.
+  const sorted = [...candidates].sort()
+  const display = sorted.slice(0, 3)
+  const suffix = sorted.length > 3 ? `, e mais ${sorted.length - 3}` : ''
+  return [`branch "${branch}" has no matching roadmap in wip/ nor done/ (found: ${display.join(', ')}${suffix}) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI`]
 }
 
 function normalizeBranchSlug(value) {

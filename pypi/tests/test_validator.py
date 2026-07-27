@@ -1009,5 +1009,61 @@ class TestFilenameUniquenessOrdemDeterministica(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# Testes P3+P4 — adicionados pelo ML-3A (REQ-2026-07-26-robustez-gates)
+# ---------------------------------------------------------------------------
+
+class TestBranchHasWIPRoadmapTruncaMensagem(unittest.TestCase):
+    """P3+P4: 4 candidatos devem gerar mensagem truncada em 3 + 'e mais 1', em ordem alfabética."""
+
+    def test_trunca_em_3_mais_contagem(self):
+        from trackfw.validator import validate_branch_has_wip_roadmap
+        import os as _os
+        tmp = tempfile.mkdtemp()
+        try:
+            wip_dir = os.path.join(tmp, "docs", "roadmaps", "wip")
+            os.makedirs(wip_dir)
+            # 4 roadmaps sem slug da branch → todos são candidatos, nenhum casa
+            for name in ["ROADMAP-alpha.md", "ROADMAP-bravo.md", "ROADMAP-charlie.md", "ROADMAP-delta.md"]:
+                _write(os.path.join(wip_dir, name), "REQ: REQ-001\n")
+            cfg = {"roadmap_dir": os.path.join(tmp, "docs", "roadmaps")}
+            orig = _os.environ.get("TRACKFW_BRANCH")
+            _os.environ["TRACKFW_BRANCH"] = "feat/minha-feature"
+            try:
+                result = validate_branch_has_wip_roadmap(cfg)
+                self.assertTrue(len(result) > 0, "esperava violation com 4 candidatos sem slug correspondente")
+                want = "ROADMAP-alpha.md, ROADMAP-bravo.md, ROADMAP-charlie.md, e mais 1"
+                self.assertIn(want, result[0],
+                              f'mensagem truncada deve conter "{want}", obteve: {result[0]}')
+            finally:
+                if orig is None:
+                    _os.environ.pop("TRACKFW_BRANCH", None)
+                else:
+                    _os.environ["TRACKFW_BRANCH"] = orig
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestWIPHasREQCRLFIntegracao(unittest.TestCase):
+    """P3+P4: roadmap CRLF com REQ vazio deve emitir violation de wip_has_req (integração)."""
+
+    def test_crlf_vazio_emite_violation(self):
+        from trackfw.validator import validate_wip_has_req
+        tmp = tempfile.mkdtemp()
+        try:
+            wip_dir = os.path.join(tmp, "docs", "roadmaps", "wip")
+            os.makedirs(wip_dir)
+            # Arquivo CRLF: REQ: seguido de espaço + \r\n — campo vazio
+            with open(os.path.join(wip_dir, "ROADMAP-crlf.md"), "wb") as f:
+                f.write(b"REQ: \r\n## Acceptance Criteria\r\n- [ ] ok\r\n")
+            cfg = {"roadmap_dir": os.path.join(tmp, "docs", "roadmaps")}
+            violations = validate_wip_has_req(cfg)
+            msgs = [v if isinstance(v, str) else v.get("message", str(v)) for v in violations]
+            self.assertTrue(any("wip but has no linked REQ" in m for m in msgs),
+                            f"esperava violation de REQ vazio com CRLF, obteve: {violations}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

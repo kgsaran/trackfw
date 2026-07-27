@@ -1591,9 +1591,17 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 			branch,
 		)}, nil
 	}
+	// P3: sort for deterministic output regardless of filesystem ordering.
+	sort.Strings(candidates)
+	display := candidates
+	suffix := ""
+	if len(candidates) > 3 {
+		display = candidates[:3]
+		suffix = fmt.Sprintf(", e mais %d", len(candidates)-3)
+	}
 	return []string{fmt.Sprintf(
-		"branch %q has no matching roadmap in wip/ nor done/ (found: %s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
-		branch, strings.Join(candidates, ", "),
+		"branch %q has no matching roadmap in wip/ nor done/ (found: %s%s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
+		branch, strings.Join(display, ", "), suffix,
 	)}, nil
 }
 

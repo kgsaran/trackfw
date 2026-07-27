@@ -404,6 +404,17 @@ A resolução de diretórios (`wip/`, `done/`) é centralizada em `resolveStateD
 O ID da regra (`branch_has_wip_roadmap`) e o mecanismo de severidade configurável (`rules:`) são
 preservados — a aceitação de `done/` não altera a config key nem o comportamento de `off`/`warning`.
 
+## Princípios de design de gates (P1–P4)
+
+Todo gate de paridade e toda regra do validator devem seguir os quatro princípios documentados em
+[`docs/gate-design-principles.md`](gate-design-principles.md): nenhum número mágico (P1), falha
+explícita sem degradação silenciosa (P2), independência de ambiente (P3) e falsificabilidade
+obrigatória (P4). O arquivo inclui os quatro defeitos reais que motivaram os princípios e o
+checklist de aceite para gates novos.
+
+A implementação de P4 é `scripts/check-gates-falsify.sh` — todo gate novo de paridade registra
+ali sua prova negativa.
+
 ## Release rule
 
 Changes to commands, options, exit codes, JSON fields, validation rules, or

@@ -1044,9 +1044,13 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
             f'  trackfw roadmap new "title"\n'
             f'  trackfw roadmap move <name> wip'
         ]
+    # P3: sort for deterministic output regardless of filesystem ordering.
+    sorted_candidates = sorted(candidates)
+    display = sorted_candidates[:3]
+    suffix = f", e mais {len(sorted_candidates) - 3}" if len(sorted_candidates) > 3 else ""
     return [
         f'branch "{branch}" has no matching roadmap in wip/ nor done/ '
-        f'(found: {", ".join(candidates)}) — include the branch slug in the roadmap filename '
+        f'(found: {", ".join(display)}{suffix}) — include the branch slug in the roadmap filename '
         f'or set TRACKFW_BRANCH explicitly in CI'
     ]
 

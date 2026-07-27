@@ -596,6 +596,59 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
+  // -------------------------------------------------------------------------
+  // Testes P3+P4 adicionados pelo ML-3A (REQ-2026-07-26-robustez-gates)
+  // -------------------------------------------------------------------------
+
+  test('branch_has_wip_roadmap: 4 candidatos → mensagem truncada em 3 + "e mais 1" em ordem alfabética (P3+P4)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-trunc-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      // 4 roadmaps sem slug da branch → todos são candidatos, nenhum casa
+      for (const name of ['ROADMAP-alpha.md', 'ROADMAP-bravo.md', 'ROADMAP-charlie.md', 'ROADMAP-delta.md']) {
+        fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'wip', name), 'REQ: REQ-001\n')
+      }
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        process.env.TRACKFW_BRANCH = 'feat/minha-feature'
+        const violations = validator.validateBranchHasWIPRoadmap()
+        assert(violations.length > 0, 'esperava violation com 4 candidatos sem slug correspondente')
+        const want = 'ROADMAP-alpha.md, ROADMAP-bravo.md, ROADMAP-charlie.md, e mais 1'
+        assert(violations[0].includes(want),
+          `mensagem truncada deve conter "${want}", obteve: ${violations[0]}`)
+      } finally {
+        delete process.env.TRACKFW_BRANCH
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('wip_has_req: roadmap CRLF com REQ vazio emite violation (P3+P4 — integração)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-crlf-wip-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      // Arquivo CRLF: REQ: seguido de espaço + \r\n — campo vazio
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'wip', 'ROADMAP-crlf.md'),
+        'REQ: \r\n## Acceptance Criteria\r\n- [ ] ok\r\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const violations = validator.validateWIPHasREQ()
+        assert(violations.some(v => v.includes('wip but has no linked REQ')),
+          `esperava violation de REQ vazio com CRLF, obteve: ${JSON.stringify(violations)}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
   console.log(`\n${passed} passed, ${failed} failed`)
   if (failed > 0) process.exit(1)
 })()

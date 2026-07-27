@@ -3571,3 +3571,36 @@ Achados registrados:
 | `traceid_orphan_*` / `traceid_state_mismatch` | idem | idem | idem | REGISTRADO |
 
 ---
+
+## ML-3A — 2026-07-27 — Apolo
+
+**Tarefa:** fix(validator+gates): testes de falsificação P4 e documentação dos princípios (REQ-2026-07-26-gates)
+**Branch:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Status:** CONCLUÍDO
+
+**O que foi entregue:**
+
+1. **`scripts/check-gates-falsify.sh`** (novo, `100755` no git) — prova de falsificação dos 6 gates de
+   paridade: `static-assets`, `integration-assets`, `identity-parity`, `validate-parity`,
+   `cli-parity`, `integration-cli-parity`. Cada cenário monta o defeito, afirma `exit != 0` com
+   diagnóstico esperado e desmonta via `trap`. Integrado ao alvo `parity` do `Makefile`.
+
+2. **Testes negativos das regras corrigidas na Wave 2** nos 3 CLIs:
+   - `internal/validator/validator_test.go` — casos CRLF e truncamento `branch_has_wip_roadmap`
+   - `npm/tests/validator.test.js` — equivalentes Node.js
+   - `pypi/tests/test_validator.py` — equivalentes Python
+
+3. **Truncamento da mensagem `branch_has_wip_roadmap`** nos 3 CLIs: lista os 3 primeiros
+   candidatos em ordem determinística + "e mais N" quando há mais de 3 (P3: ordenar antes de fatiar).
+
+4. **`docs/gate-design-principles.md`** (novo) — P1–P4 documentados com os 4 defeitos reais como
+   exemplos vinculantes, tabela de neutralização de ambiente, checklist de aceite para gates novos,
+   referências às notas de vault. Linkado de `docs/cli-parity.md` (nova seção "Princípios de design
+   de gates (P1–P4)") imediatamente antes de "Release rule".
+
+**Verificação final:** `make quality` verde — Go build/vet/test ok, Node.js 228 pass, Python 588 pass,
+6 gates positivos + 6 falsificações passando, sem variável auxiliar.
+
+**Commit:** (a preencher após push) | **Push:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+
+---
