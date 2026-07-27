@@ -214,7 +214,7 @@ da ajuda colorida do argparse).
 
 ### ML-3A — Gate que executa os geradores e compara a saída
 
-**Status:** in progress
+**Status:** done
 **Files affected:** `scripts/` (gate novo ou cenário em `check-gates-falsify.sh`), `Makefile`,
 `docs/cli-parity.md`
 
@@ -286,6 +286,63 @@ Se o ML-2A converger os templates e esquecer de remover o `t.Skip` (linhas 1477 
 `internal/validator/validator_test.go`), o teste Go fica pulado indefinidamente e nada acusa. É
 degradação silenciosa **dentro do mecanismo criado para expor degradação silenciosa**. Registrado
 como ação explícita no ML-2A.
+
+---
+
+### ML-3B — Slug de título acentuado diverge entre CLIs (P3)
+
+**Status:** in progress
+**Files affected:** função de slug em `internal/generators/` e `npm/src/generators/`, o gate
+`scripts/check-artifact-parity.sh`, `scripts/check-gates-falsify.sh`, `docs/cli-parity.md`, testes
+
+**Como apareceu:** o agente do ML-3A encontrou ao sondar o gate e contornou usando título ASCII puro.
+O contorno é o problema — medição do orquestrador:
+
+```
+$ trackfw req new "Autenticação e Sessão"
+go    REQ-2026-07-27-autenticação-e-sessão.md
+node  REQ-2026-07-27-autenticação-e-sessão.md
+py    REQ-2026-07-27-autenticacao-e-sessao.md     ← sem acentos
+```
+
+O **conteúdo** é idêntico nos três; o **nome do arquivo** diverge.
+
+**Por que não é caso de borda:** este é um projeto em PT-BR — título acentuado é o caso comum, não a
+exceção. Um gate que só testa `"parity gate test"` é vacuoso para o uso real, e vacuidade por escolha
+de fixture é exatamente o defeito D2 desta linhagem (o argparse colorido, que "validava por
+coincidência de texto").
+
+**Dois defeitos reais além da paridade:**
+1. **Portabilidade**: macOS normaliza nomes para NFD, Linux não. O mesmo nome lógico tem bytes
+   diferentes entre plataformas — P3, e o repo tem job `windows-integrations-resolve` no CI.
+2. **Quebra o `branch_has_wip_roadmap`**: `normalizeBranchSlug` descarta tudo fora de `[a-z0-9]`, então
+   `...autenticação-e-sessão.md` normaliza para `autentica-o-e-sess-o`. Uma branch
+   `fix/autenticacao-e-sessao` **nunca casaria** e a regra reprovaria trabalho legítimo. O gate que me
+   pegou dois ciclos atrás quebra sozinho com título acentuado.
+
+**Canônico: a normalização do Python** (NFKD + remoção de diacríticos). É a única das três que produz
+nome de arquivo portável.
+
+**Actions:**
+1. Go e Node adotam NFKD + remoção de diacríticos antes do lowercase/hifenização já existente.
+2. Aplicar em **todos** os geradores — `req`, `adr`, `roadmap`, `note` compartilham o caminho de slug.
+3. **O gate passa a usar título acentuado** (ex.: `"Autenticação e Sessão"`). Remover o comentário de
+   limitação do script e a seção correspondente de `docs/cli-parity.md` — vira contrato cumprido, não
+   limitação documentada.
+4. **Segundo cenário negativo**: o gate compara conteúdo **e** nome de arquivo, mas só o caminho de
+   conteúdo tem prova (`sed` em `status: Open`). Adicionar cenário que diverge o **nome** num runtime e
+   afirma reprovação com diagnóstico distinto. Dois caminhos de comparação exigem duas provas.
+5. Teste dedicado nos 3 CLIs: título acentuado → mesmo slug nos três.
+
+**Escopo negativo deste ML:** não renomear artefatos existentes em `docs/`. A mudança é para frente;
+arquivos com acento continuam funcionando. `docs/requisições/` é diretório de config, não slug gerado.
+
+**Acceptance criteria:**
+- [ ] Título acentuado gera o mesmo nome de arquivo nos 3 CLIs
+- [ ] Gate usa título acentuado — sem contorno ASCII
+- [ ] Prova negativa para divergência de **nome de arquivo**, além da de conteúdo
+- [ ] Teste dedicado de slug acentuado nos 3 CLIs
+- [ ] `make quality` verde, `git status` limpo
 
 ---
 
