@@ -4316,3 +4316,11 @@ REQ ainda `Open`, `REQ-2026-06-13-validator-improvements.md`, era um artefato le
 já estava concluído. A REQ foi marcada `Done`, seus campos de referência foram normalizados e o
 roadmap correspondente passou a apontar para `docs/req/`. Mudança exclusivamente documental,
 dispensada de nova REQ/roadmap pela exceção objetiva do AGENTS.md.
+
+## Planejamento 2026-07-27 — Zeus — contrato canônico e analyzing
+
+Criadas a `REQ-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md` e a
+`ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`, consolidando dois débitos:
+o slash-command `/trackfw:roadmap` gera artefato sem frontmatter, e o estado `analyzing` é reconhecido
+pelo scaffold/validator mas rejeitado por `roadmap move`. Roadmap mantido em `backlog/`; nenhuma
+implementação iniciada. `trackfw validate` retornou 0 violations e 0 warnings.
