@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-27
 req: "docs/req/REQ-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Bloqueadores de release de paridade e precisão contratual
 
-> Created: 2026-07-27 | Status: wip
+> Created: 2026-07-27 | Status: done
 
 ## Context
 
@@ -94,9 +94,9 @@ make quality
 - Cobrir help, argumentos válidos, conflitos e saída gerada.
 
 **Acceptance criteria:**
-- [ ] Help e comportamento Python convergem com Go/Node.
-- [ ] Testes do ML-1A reativados e verdes.
-- [ ] Package Python build/install/smoke verde.
+- [x] Help e comportamento Python convergem com Go/Node.
+- [x] Testes do ML-1A reativados e verdes.
+- [x] Package Python build/install/smoke verde.
 
 ### ML-2B — Normalização de aspas no frontmatter Python
 
@@ -114,8 +114,8 @@ make quality
 - Cobrir valores vazios, aspas e conteúdo interno preservado.
 
 **Acceptance criteria:**
-- [ ] Fixtures aspeadas produzem paridade com Go/Node.
-- [ ] Nenhuma regressão em campos não aspeados.
+- [x] Fixtures aspeadas produzem paridade com Go/Node.
+- [x] Nenhuma regressão em campos não aspeados.
 
 ### ML-2C — Log `by_agent` com atribuição paritária
 
@@ -137,8 +137,8 @@ produção remanescente neste microlote.
 - Provar leitura por `log` e pelas métricas.
 
 **Acceptance criteria:**
-- [ ] Logs equivalentes byte a byte nos três CLIs para flat e `by_agent`.
-- [ ] Agente aparece uma única vez e no campo correto.
+- [x] Logs equivalentes byte a byte nos três CLIs para flat e `by_agent`.
+- [x] Agente aparece uma única vez e no campo correto.
 
 ### ML-2D — Contrato verdadeiro para JSON Schemas
 
@@ -157,9 +157,9 @@ produção remanescente neste microlote.
 - Adicionar gate contra a alegação antiga.
 
 **Acceptance criteria:**
-- [ ] Nenhuma página afirma validação automática inexistente.
-- [ ] Exemplos externos continuam corretos.
-- [ ] PT-BR e inglês convergem semanticamente.
+- [x] Nenhuma página afirma validação automática inexistente.
+- [x] Exemplos externos continuam corretos.
+- [x] PT-BR e inglês convergem semanticamente.
 
 ## Wave 3 — Release gate integrado (1 ML)
 
@@ -183,9 +183,9 @@ produção remanescente neste microlote.
 **Acceptance criteria:**
 - [x] Gates falham para cada regressão proposital.
 - [x] Go, Node e Python produzem resultados equivalentes.
-- [x] Gates de release curtos verdes; `make quality` verde na execução anterior desta sessão.
+- [x] `make quality` verde; smoke de npm e PyPI verde.
 - [x] `trackfw validate` retorna 0/0.
-- [x] REQ liberada para release, com package smoke não reexecutado por orientação explícita do handoff.
+- [x] REQ liberada para release.
 
 **ML-3A result — 2026-07-27 (Artemis):**
 - `scripts/check-cli-parity.sh` agora valida a superfície pública de `roadmap new` nos três runtimes,
@@ -211,4 +211,4 @@ produção remanescente neste microlote.
 - [x] Quatro bloqueadores encerrados.
 - [x] Zero divergências públicas não documentadas.
 - [x] Provas negativas preservadas.
-- [x] Release gate curto verde; package smoke pendente de evidência nesta retomada por orientação do handoff.
+- [x] `make quality` e package smoke verdes.

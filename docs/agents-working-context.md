@@ -4574,3 +4574,8 @@ flat com aspas externas agora normalizam identicamente no validator e trace ID; 
 passou a declarar JSON Schemas como auxiliares externos. O smoke de packages iniciado no ML-2A
 atingiu timeout local depois de sincronizar assets; sua execução completa foi transferida para o
 gate integrado do ML-3A.
+
+REQ concluída em 2026-07-27. O gate integrado passou com flags Python, parsing aspeado e logs
+flat/by-agent cobertos por paridade e falsificação (12 cenários). `make quality` passou completo;
+o smoke de tarball npm e wheel PyPI passou após instalar `build` em dependência temporária isolada.
+Roadmap movido para `docs/roadmaps/done/` e REQ marcada como Done, liberando a próxima versão.
