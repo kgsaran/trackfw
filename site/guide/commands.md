@@ -573,6 +573,58 @@ trackfw metrics-extended --since 2026-01-01
 
 ---
 
+## `trackfw ship`
+
+Executa a sequência de entrega governada em sete passos: valida branch, verifica governança (REQ + roadmap em wip/), detecta squash-merges pendentes, revisa staged, commita, faz push e abre PR/MR via CLI da forge detectada (ou imprime URL de fallback caso a CLI não esteja disponível).
+
+```bash
+trackfw ship -m "feat(auth): add login flow"
+trackfw ship -m "fix(api): correct 401 on refresh" --dry-run
+trackfw ship -m "refactor(core): simplify handler" --no-pr
+trackfw ship -m "feat(ui): new dashboard" --forge gitlab
+```
+
+### Flags
+
+| Flag | Tipo | Descrição |
+|------|------|-----------|
+| `-m` / `--message` | string | Mensagem de commit (formato Conventional Commits obrigatório) |
+| `--dry-run` | bool | Imprime o que seria feito sem executar comandos de escrita; no passo 7, também reporta disponibilidade da CLI e imprime URL de fallback |
+| `--no-pr` | bool | Pula a criação do PR/MR após o push (passos 1–6 ainda rodam) |
+| `--forge` | string | Sobrepõe a detecção de forge (`github`, `gitlab`, `bitbucket`, `azure`) |
+
+### Detecção de forge
+
+A forge é resolvida por precedência:
+
+1. `--forge` flag
+2. Campo `forge:` no `trackfw.yaml`
+3. URL do remote (ex.: `github.com`, `gitlab.com`, `bitbucket.org`, `dev.azure.com`)
+4. Arquivos de CI (`.gitlab-ci.yml` → gitlab; `.github/workflows/` → github)
+5. Manual — nenhuma forge detectada
+
+A forge e sua fonte são exibidas antes do passo 7:
+
+```
+Forge:     github (source: config)
+```
+
+### Exemplo
+
+```bash
+$ trackfw ship -m "feat(auth): add OAuth login"
+✓ Branch: feat/auth-oauth
+✓ Governance: REQ-2026-07-20-oauth.md + roadmap in wip/
+✓ No pending squash-merges detected
+  staged: auth/handler.go (+120 -5)
+✓ Committed: feat(auth): add OAuth login
+✓ Pushed to origin/feat/auth-oauth
+Forge:     github (source: remote)
+✓ Pull Request opened: https://github.com/org/repo/pull/42
+```
+
+---
+
 ## `trackfw version`
 
 Exibe a versão instalada do trackfw.

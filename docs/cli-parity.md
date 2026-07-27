@@ -27,7 +27,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `agents` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
-| `ship` | yes | yes | yes | Governed `git commit + push`; hard governance gate (see below) |
+| `ship` | yes | yes | yes | Governed `git commit + push + open PR/MR`; hard governance gate (see below) |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Prints `trackfw <version>` |
 
@@ -315,9 +315,9 @@ Precedence (highest to lowest):
 
 1. `--forge` flag (source: `flag`)
 2. `forge:` key in `trackfw.yaml` (source: `config`)
-3. Remote URL pattern (source: `url`) — `github.com`, `gitlab.com`, `bitbucket.org`, `dev.azure.com`
-4. CI file detection (source: `ci`) — `.github/workflows`, `.gitlab-ci.yml`, `azure-pipelines.yml`, `bitbucket-pipelines.yml`
-5. Manual (source: `manual`) — no forge detected; prints `Open your Pull Request manually at: <remote-url>`
+3. Remote URL pattern (source: `remote`) — `github.com`, `gitlab.com`, `bitbucket.org`, `dev.azure.com`
+4. CI file detection (source: `ci`) — `.gitlab-ci.yml` → gitlab; `.github/workflows/` → github
+5. Manual (source: `none`) — no forge detected; prints `Open your Pull Request manually at: <remote-url>`
 
 `trackfw discover` and `trackfw init --forge` both write `forge: <value>` to `trackfw.yaml`, enabling
 source `config` on subsequent `ship` calls.
@@ -380,6 +380,22 @@ Runtime errors (branch pattern, governance gate, nothing staged, missing `-m`) s
 code directly from the runner function (Node.js/Python), so the usage text is never
 printed for runtime errors. Parse-time errors (unknown flags) still show usage, because
 they are raised by cobra/commander/argparse before the command handler runs.
+
+### Known divergence — default `roadmap_dir`
+
+The governance gate in step 2 (`CheckShipGovernance`) searches for a REQ-linked roadmap
+in `wip/`. The root of the roadmap directory defaults differently per runtime:
+
+| Runtime | Default `roadmap_dir` |
+|---|---|
+| Go | `docs/roadmaps` |
+| Node.js | `docs/roadmaps/claude` |
+| Python | `docs/roadmaps/claude` |
+
+This divergence is intentional and preserved. Users who set `roadmap_dir:` in
+`trackfw.yaml` override the default and bring all runtimes to the same path. Integration
+tests for Node.js and Python place roadmaps in `docs/roadmaps/claude/wip/`; Go tests use
+`docs/roadmaps/wip/`.
 
 ## Release rule
 

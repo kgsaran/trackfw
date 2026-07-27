@@ -511,6 +511,79 @@ test('--no-pr wiring: commander negatable option sets options.pr=false', () => {
 })
 
 // ────────────────────────────────────────────────────────────────────────────
+// Integration test — --no-pr wiring at command layer (real subprocess)
+// Discriminates against the bug where `options.noPr || false` made noPR always
+// false, silently ignoring the --no-pr flag.
+// ────────────────────────────────────────────────────────────────────────────
+
+test('ship integration: --no-pr wiring reaches runner (command layer)', async () => {
+  const { spawnSync } = require('child_process')
+  const os = require('os')
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-ship-nopr-'))
+  try {
+    const tmpBin = path.join(tmpDir, 'bin')
+    fs.mkdirSync(tmpBin)
+    const gitWhich = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
+    if (!gitWhich) throw new Error('git not found in PATH')
+    fs.symlinkSync(gitWhich, path.join(tmpBin, 'git'))
+
+    const repoDir = path.join(tmpDir, 'repo')
+    fs.mkdirSync(repoDir)
+
+    const gitRun = (args) => spawnSync('git', args, { cwd: repoDir, encoding: 'utf8' })
+    gitRun(['init'])
+    gitRun(['config', 'user.email', 'test@example.com'])
+    gitRun(['config', 'user.name', 'Test'])
+    spawnSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/feat/nopr-test'], { cwd: repoDir, encoding: 'utf8' })
+    gitRun(['remote', 'add', 'origin', 'https://github.com/org/repo.git'])
+
+    fs.writeFileSync(path.join(repoDir, 'staged.txt'), 'content\n')
+    gitRun(['add', 'staged.txt'])
+
+    const wipDir = path.join(repoDir, 'docs', 'roadmaps', 'claude', 'wip')
+    fs.mkdirSync(wipDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(wipDir, 'ROADMAP-nopr-test.md'),
+      'REQ: REQ-ship-nopr-test\n\n# Roadmap: --no-pr wiring test\n'
+    )
+
+    const binPath = path.resolve(__dirname, '../bin/trackfw')
+    // --dry-run skips commit+push; --no-pr must fire in step 7 before dry-run fallback
+    const result = spawnSync(
+      process.execPath,
+      [binPath, 'ship', '--dry-run', '--no-pr', '--forge', 'github', '-m', 'feat: nopr test'],
+      {
+        cwd: repoDir,
+        encoding: 'utf8',
+        env: {
+          PATH: tmpBin,
+          HOME: tmpDir,
+          GIT_AUTHOR_NAME: 'Test',
+          GIT_AUTHOR_EMAIL: 'test@example.com',
+          GIT_COMMITTER_NAME: 'Test',
+          GIT_COMMITTER_EMAIL: 'test@example.com',
+        },
+      }
+    )
+
+    const out = (result.stdout || '') + (result.stderr || '')
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\noutput: ${out}`)
+    assert.ok(
+      out.includes('--no-pr: skipping'),
+      `expected "--no-pr: skipping" in output (wiring bug if absent), got: ${out}`
+    )
+    // Ensure no github.com URL was printed (noPR fired before dry-run URL block)
+    assert.ok(
+      !out.includes('github.com/compare'),
+      `should not print fallback URL when --no-pr is set, got: ${out}`
+    )
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  }
+})
+
+// ────────────────────────────────────────────────────────────────────────────
 // Integration test — real binary (node) with clean PATH (only git)
 // ────────────────────────────────────────────────────────────────────────────
 
