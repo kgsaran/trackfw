@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-27
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md"
 ---
 
 # REQ: integridade das referencias e ciclo de vida da REQ
 
-> Date: 2026-07-27 | Status: Open
+> Date: 2026-07-27 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -123,4 +123,4 @@ casos de P2, e a correção só é aceita com a prova negativa exigida por P4.
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-27
 req: "docs/req/REQ-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: integridade das referencias e ciclo de vida da REQ
 
-> Created: 2026-07-27 | Status: wip
+> Created: 2026-07-27 | Status: done
 
 ## Context
 
@@ -369,9 +369,9 @@ Correção pós-auditoria:
 
 ## Acceptance Criteria
 
-- [ ] As 3 waves concluídas, na ordem
-- [ ] Os três escapes eliminados, cada um com teste que provou a cegueira antes
-- [ ] Formato canônico documentado e aplicado nos 3 CLIs
-- [ ] REQ fecha por comando, sincronizando os dois lugares de status
-- [ ] `make quality` verde, sem variável auxiliar
-- [ ] Escopo negativo da REQ respeitado — os 5 grupos ficam registrados, não corrigidos
+- [x] As 3 waves concluídas, na ordem
+- [x] Os três escapes eliminados, cada um com teste que provou a cegueira antes
+- [x] Formato canônico documentado e aplicado nos 3 CLIs
+- [x] REQ fecha por comando, sincronizando os dois lugares de status
+- [x] `make quality` verde, sem variável auxiliar
+- [x] Escopo negativo da REQ respeitado — os 5 grupos ficam registrados, não corrigidos
