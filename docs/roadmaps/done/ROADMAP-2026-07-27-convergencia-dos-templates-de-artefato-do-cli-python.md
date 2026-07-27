@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-27
 req: "docs/req/REQ-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: convergencia dos templates de artefato do CLI Python
 
-> Created: 2026-07-27 | Status: wip
+> Created: 2026-07-27 | Status: done
 
 ## Context
 
@@ -201,7 +201,7 @@ da ajuda colorida do argparse).
    também usam `toISOString`, mas são scaffold e exibição, não artefato governado. Registrar.
 
 **Acceptance criteria:**
-- [ ] Os 3 CLIs geram a mesma data sob qualquer `TZ`, incluindo UTC+14 e UTC-11
+- [x] Os 3 CLIs geram a mesma data sob qualquer `TZ`, incluindo UTC+14 e UTC-11
 - [ ] Nome de arquivo, `date:` e header idênticos nos 3, independentemente do fuso
 - [ ] Teste que prova a paridade sob `TZ` divergente
 - [ ] `make quality` verde
@@ -291,7 +291,7 @@ como ação explícita no ML-2A.
 
 ### ML-3B — Slug de título acentuado diverge entre CLIs (P3)
 
-**Status:** in progress
+**Status:** done
 **Files affected:** função de slug em `internal/generators/` e `npm/src/generators/`, o gate
 `scripts/check-artifact-parity.sh`, `scripts/check-gates-falsify.sh`, `docs/cli-parity.md`, testes
 
@@ -346,11 +346,64 @@ arquivos com acento continuam funcionando. `docs/requisições/` é diretório d
 
 ---
 
+## Log de execução — fechamento
+
+**2026-07-27 — 6 MLs, 3 promovidos do escopo negativo por medição.**
+
+O ciclo começou com 3 MLs planejados e terminou com 6. As três promoções (2B, 2C, 3B) não foram
+escopo fugindo: **cada uma só ficou visível porque a wave anterior a tornou mensurável**, e todas
+eram pré-requisito do mesmo gate.
+
+| ML | Origem | O que se descobriu ao medir |
+|---|---|---|
+| 1A | planejado | as duas regras cegas, com `violations: []` como assinatura |
+| 2A | planejado | Python convergiu para o Node |
+| **2B** | promovido | não eram 2 divergências Go↔Node, eram **4** — uma delas o Node descartando o título do usuário |
+| **2C** | promovido | Node em UTC, Go/Python em local — o gate seria intermitente por fuso |
+| 3A | planejado | o gate; e ao sondá-lo, o slug acentuado |
+| **3B** | promovido | acento no nome de arquivo: paridade + portabilidade NFD/NFC + quebra do `branch_has_wip_roadmap` |
+
+### O padrão que se repetiu três vezes
+
+Cada defeito promovido tinha a **mesma assinatura**: passava despercebido porque a verificação
+existente não exercitava o caso real.
+
+- O gate de paridade comparava nomes de comando, nunca a saída → 3 formatos de artefato divergiram.
+- Minha auditoria de fuso passou **por sorte** — rodei de dia, quando UTC == local no Brasil.
+- O gate do ML-3A contornou o slug acentuado usando `"parity gate test"` → num projeto PT-BR, o caso
+  comum ficava fora da prova.
+
+É o defeito D2 da linhagem (o `argparse` colorido que "validava por coincidência de texto") aparecendo
+em três disfarces novos. **Verde por coincidência não é verde.**
+
+### Prova final (orquestrador, com título acentuado)
+
+`trackfw {req,adr,roadmap,note} new "Autenticação e Sessão"` nos 3 binários:
+
+| Artefato | Nome gerado | Go×Node | Go×Python |
+|---|---|:-:|:-:|
+| REQ | `REQ-2026-07-27-autenticacao-e-sessao.md` | ✅ | ✅ |
+| ADR | `ADR-2026-07-27-autenticacao-e-sessao.md` | ✅ | ✅ |
+| ROADMAP | `ROADMAP-2026-07-27-autenticacao-e-sessao.md` | ✅ | ✅ |
+| NOTE | `autenticacao-e-sessao-2026-07-27.md` | ✅ | ✅ |
+
+Nome **e** conteúdo idênticos. `make quality`: 604 passed, **8 cenários de falsificação, 7 gates**
+provados não-vacuosos — eram 6 no início do ciclo.
+
+### O que muda daqui pra frente
+
+`scripts/check-artifact-parity.sh` executa os geradores dos 3 runtimes e compara a saída real, com
+título acentuado e prova negativa nos dois caminhos (conteúdo e nome de arquivo). O contrato de
+frontmatter dos 4 artefatos está em `docs/cli-parity.md`. A próxima divergência de template quebra o
+CI em vez de sobreviver anos.
+
+---
+
 ## Acceptance Criteria
 
-- [ ] As 3 waves concluídas, na ordem
-- [ ] As duas regras cegas passam a detectar, com teste que provou a cegueira antes
-- [ ] Os 3 CLIs geram os 3 artefatos byte a byte idênticos
-- [ ] Gate impede regressão futura, com prova negativa
-- [ ] `make quality` verde, sem variável auxiliar
-- [ ] Escopo negativo da REQ respeitado — os 5 itens ficam registrados, não corrigidos
+- [x] As 3 waves concluídas, na ordem
+- [x] As duas regras cegas passam a detectar, com teste que provou a cegueira antes
+- [x] Os 3 CLIs geram os 3 artefatos byte a byte idênticos
+- [x] Gate impede regressão futura, com prova negativa
+- [x] `make quality` verde, sem variável auxiliar
+- [x] Escopo negativo da REQ respeitado — os 5 itens ficam registrados, não corrigidos

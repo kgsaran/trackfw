@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-27
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md"
 ---
 
 # REQ: convergencia dos templates de artefato do CLI Python
 
-> Date: 2026-07-27 | Status: Open
+> Date: 2026-07-27 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -76,15 +76,15 @@ documentação de arquitetura, não o formato de artefato que os CLIs emitem.
 
 ## Acceptance Criteria
 
-- [ ] Teste negativo que **expõe** as duas regras cegas: artefato no formato Python atual deve ser
+- [x] Teste negativo que **expõe** as duas regras cegas: artefato no formato Python atual deve ser
       detectado como `Open` / `Draft` — escrito **antes** da convergência, e visto falhar
-- [ ] `req new` do Python gera frontmatter e header idênticos a Go/Node, incluindo `> Date: … | Status: Open`
-- [ ] `adr new` do Python gera frontmatter e header idênticos a Go/Node, incluindo `> Date: … | Status: <status>`
-- [ ] `adr new` do Python usa `ADR-<YYYY-MM-DD>-<slug>.md`, como Go/Node
-- [ ] `roadmap new` do Python gera `status: backlog` · `date` · `req` · `squad`, em minúsculo
-- [ ] Os 3 CLIs produzem os 3 artefatos **byte a byte idênticos** para a mesma entrada
-- [ ] Gate que executa os geradores nos 3 CLIs e compara a saída, com prova negativa (P4)
-- [ ] `make quality` verde, sem variável de ambiente auxiliar
+- [x] `req new` do Python gera frontmatter e header idênticos a Go/Node, incluindo `> Date: … | Status: Open`
+- [x] `adr new` do Python gera frontmatter e header idênticos a Go/Node, incluindo `> Date: … | Status: <status>`
+- [x] `adr new` do Python usa `ADR-<YYYY-MM-DD>-<slug>.md`, como Go/Node
+- [x] `roadmap new` do Python gera `status: backlog` · `date` · `req` · `squad`, em minúsculo
+- [x] Os 3 CLIs produzem os 3 artefatos **byte a byte idênticos** para a mesma entrada
+- [x] Gate que executa os geradores nos 3 CLIs e compara a saída, com prova negativa (P4)
+- [x] `make quality` verde, sem variável de ambiente auxiliar
 
 ## Escopo negativo — registrado, não corrigido
 
@@ -119,4 +119,4 @@ P2 (degradação silenciosa) e a correção só é aceita com a prova negativa e
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md`

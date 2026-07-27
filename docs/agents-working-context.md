@@ -4009,3 +4009,29 @@ Semântica B adotada em todos os CLIs (NFKD → removing marks → lower → `[^
 - `make quality` verde: 604 passed · 0 failed · 8 falsification checks passed
 - `git status` limpo após `make quality`
 - Commit `dde3c94` na branch `fix/convergencia-dos-templates-de-artefato-do-cli-python` · push realizado
+
+---
+
+## Encerramento da REQ-2026-07-27-convergencia-templates-python — 2026-07-27 — Zeus
+
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**Status:** CONCLUÍDO
+
+6 MLs (3 promovidos do escopo negativo por medição empírica). `make quality` verde: 604 passed,
+8 cenários de falsificação cobrindo 7 gates — eram 6 no início do ciclo.
+
+**Prova final com título acentuado**, nos 4 artefatos × 3 CLIs: nome de arquivo E conteúdo idênticos.
+`trackfw req new "Autenticação e Sessão"` → `REQ-2026-07-27-autenticacao-e-sessao.md` nos três.
+
+**Padrão que se repetiu 3 vezes:** cada defeito promovido passava despercebido porque a verificação
+existente não exercitava o caso real — gate comparando nomes de comando em vez de saída; minha
+auditoria de fuso passando por sorte (rodei de dia, UTC == local); gate do ML-3A contornando slug
+acentuado com fixture ASCII num projeto PT-BR. Verde por coincidência não é verde.
+
+**Novo gate:** `scripts/check-artifact-parity.sh` executa os geradores dos 3 runtimes e compara saída
+real, com prova negativa nos dois caminhos (conteúdo e nome de arquivo).
+
+**Débito (fila do próximo ciclo):** migração dos 50 roadmaps em 12 formatos · slash-command
+`/trackfw:roadmap` gerando roadmap sem frontmatter nos 3 init · flags `--from-req`/`--req` ausentes no
+Python · `docs/schema/*.json` morto e `site/guide/ai-agents.md:68` afirmando falsamente que o validate
+os consome.
