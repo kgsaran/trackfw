@@ -81,7 +81,7 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A) ─ barrier ─> Wave 3 (3A)
 
 ### ML-2A — `req new`, `adr new` e `roadmap new` do Python adotam o formato canônico
 
-**Status:** in progress
+**Status:** done
 **Files affected:** `pypi/trackfw/generators/req.py`, `adr.py`, `roadmap.py`,
 `pypi/trackfw/commands/adr.py` (nomenclatura de arquivo), e os testes que travam o formato atual
 
@@ -116,6 +116,50 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A) ─ barrier ─> Wave 3 (3A)
 - [ ] Nome de arquivo ADR no padrão `ADR-<YYYY-MM-DD>-<slug>.md`
 - [ ] Testes do ML-1A reativados e **passando**
 - [ ] Asserções antigas corrigidas para o novo contrato
+- [ ] `make quality` verde
+
+### ML-2B — Eliminar as divergências Go↔Node (promovido do escopo negativo)
+
+**Status:** in progress
+**Files affected:** `internal/generators/req.go`, `internal/generators/roadmap.go`,
+`npm/src/commands/roadmap.js`, `npm/src/generators/req.js`, `pypi/trackfw/generators/req.py`,
+mais os testes afetados
+
+**Justificativa da promoção:** era o item 5 do escopo negativo, sob a premissa de "duas linhas
+cosméticas". A medição empírica após o ML-2A mostrou **quatro** divergências, duas nunca catalogadas,
+e uma delas é perda silenciosa de input do usuário. Sem corrigi-las, o gate do ML-3A nasceria com
+lista de exceções — o "número mágico" que P1 condena.
+
+**Medição (feita pelo orquestrador, com os 3 binários):**
+
+| Artefato | Go × Node | Node × Python |
+|---|---|---|
+| ADR | ✅ idênticos | ✅ idênticos |
+| REQ | ❌ Go emite `\| Linear Issue:` e `\| Jira Issue:` | ✅ idênticos |
+| ROADMAP | ❌ 3 divergências | ✅ idênticos |
+
+**Actions:**
+
+1. **Node `roadmap new` aceita título posicional.** Hoje só tem `--title`
+   (`npm/src/commands/roadmap.js:10`), e `roadmap new "auth strategy"` silenciosamente vira
+   `# Roadmap: New Roadmap`. **O próprio Node é inconsistente**: `adr new <title>` e `req new <title>`
+   usam posicional obrigatório. Adicionar `.argument('[title]')` mantendo `--title` como alias.
+   Este é o item mais grave — é o único que **descarta dado do usuário**.
+2. **`| Linear Issue:` / `| Jira Issue:` — adicionar a Node e Python.** Só o Go emite
+   (`internal/generators/req.go:58,60`) e nenhum código lê. São placeholders de rastreabilidade
+   externa para o humano preencher: **funcionalidade real, ausente em dois runtimes**. Convergir
+   adicionando, não removendo — não se apaga recurso para satisfazer gate. Cobrir também a variante
+   com `Blocked by ADRs` (`req.go:60`).
+3. **Roadmap Go — `REQ: <título>` na linha de contexto** (`internal/generators/roadmap.go`): o Go
+   grava o *título* onde deveria ir o caminho da REQ (o frontmatter `req:` fica vazio). Bug claro.
+4. **Roadmap Go — linha literal `squad:` no corpo e `### ML-1A — <title>` placeholder**: Node e Python
+   emitem o título real e não põem `squad:` no corpo. Go converge.
+
+**Acceptance criteria:**
+- [ ] `roadmap new "titulo"` funciona posicionalmente nos 3 CLIs, sem descartar o título
+- [ ] REQ gerada pelos 3 CLIs é byte a byte idêntica, incluindo as linhas de issue
+- [ ] ROADMAP gerado pelos 3 CLIs é byte a byte idêntico
+- [ ] ADR permanece byte a byte idêntico (já está — não regredir)
 - [ ] `make quality` verde
 
 ---

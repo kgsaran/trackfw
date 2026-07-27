@@ -100,9 +100,14 @@ documentação de arquitetura, não o formato de artefato que os CLIs emitem.
    não de formato.
 4. **`docs/schema/*.json` não é consumido por código nenhum**, e `site/guide/ai-agents.md:68` afirma
    falsamente que `trackfw validate` valida contra eles. Schema morto + doc incorreta.
-5. **Divergências menores Go↔Node** no template de roadmap: linha literal `squad:` no corpo
-   (`internal/generators/roadmap.go:105`) e `<title>` placeholder onde Node usa o título real
-   (`roadmap.go:112` vs `npm/src/generators/roadmap.js:322`).
+5. ~~**Divergências menores Go↔Node** no template de roadmap.~~
+   **PROMOVIDO AO ML-2B — 2026-07-27.** A medição empírica após o ML-2A invalidou a premissa deste
+   item. Não são duas divergências cosméticas: são **quatro**, duas nunca catalogadas, e uma delas é
+   o Node **descartando o título digitado pelo usuário** (`roadmap new "auth strategy"` gera
+   `# Roadmap: New Roadmap`) — perda silenciosa de input, P2, no caminho principal do comando.
+   Além disso, sem corrigi-las o gate da Wave 3 seria impossível: teria que nascer com lista de
+   exceções documentadas, que é exatamente o "número mágico" condenado por P1. Um gate com exceção
+   não impede regressão, legitima-a.
 
 ## Linked ADR
 
