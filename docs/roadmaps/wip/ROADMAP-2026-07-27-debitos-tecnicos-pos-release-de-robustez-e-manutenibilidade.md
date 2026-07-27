@@ -95,9 +95,9 @@ python3 -m pytest pypi/tests/test_validator.py -q -rxX
   - `scripts/check-gates-falsify.sh` →
     `Falsification checks passed (all 13 scenarios, 8 gates proved non-vacuous)`.
 
-## Wave 2 — Implementações independentes (3 MLs em paralelo)
+## Wave 2 — Implementações independentes (3 MLs em sequência controlada)
 
-> Dependencies: Wave 1 complete.
+> Dependencies: Wave 1 complete. MLs touch shared validator/config contracts and are therefore audited one at a time.
 
 ### ML-2A — `stale_wip` configurável e determinístico
 

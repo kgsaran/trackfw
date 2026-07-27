@@ -34,6 +34,37 @@ produção.
   movimentação do roadmap backlog→wip). Este ML preservou esse trabalho e só deve commitar os dois
   scripts, o roadmap WIP, o contexto e a deleção do roadmap em `backlog`.
 
+## Sessão 2026-07-27 — Apolo (ML-1A débitos técnicos concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
+
+**Tarefa:** Fechar o contrato documentado de `stale_wip` e política de erros de inspeção sem alterar
+código de produção.
+
+**Entregue:**
+- ADR de gates verificáveis recebeu adendo definindo idade de `stale_wip` como a entrada mais recente
+  em `wip/` registrada no `.trackfw-log`.
+- `docs/cli-parity.md` documenta o contrato cross-runtime: `.trackfw-log` como fonte canônica,
+  fallback retrocompatível por `mtime`, `git log` fora do contrato, default de 7 dias e severidade
+  default `warning`.
+- Política de inspeção documentada: `ENOENT` de estado opcional é vazio; permissão negada,
+  `ENOTDIR`/erro de walk, arquivo esperado ilegível e arquivo/linha de log inválidos geram
+  diagnóstico da regra.
+- Provas negativas strict adicionadas nos três runtimes, sem produção:
+  `internal/validator/validator_stale_wip_contract_xfail_test.go`,
+  `npm/tests/validator.test.js` e `pypi/tests/test_validator.py`.
+- ML-1A marcado como concluído no roadmap WIP.
+
+**Validação:**
+- `go test ./internal/validator -run 'StaleWIP' -v` → verde, 2 xfails esperados via helper.
+- `(cd npm && npm test -- --test-name-pattern='stale_wip')` → verde; `validator.test.js` reportou
+  `41 passed, 0 failed, 2 xfail`.
+- `python3 -m pytest pypi/tests/test_validator.py -q -rxX` → `70 passed, 2 xfailed`.
+
+**Ressalva:**
+- `scripts/check-gates-falsify.sh` e `scripts/check-identity-parity.sh` já estavam modificados por
+  outro escopo/ML paralelo e foram preservados fora deste ML.
+
 ## Sessão 2026-07-27 — Artemis (ML-3A bloqueadores concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
@@ -4613,6 +4644,9 @@ Roadmap movido para `docs/roadmaps/done/` e REQ marcada como Done, liberando a p
 ## Implementação 2026-07-27 — Zeus — débitos técnicos pós-release
 
 Após o merge dos bloqueadores de release, a última REQ pendente foi movida de `backlog/` para
-`analyzing/`, validada sem violações e iniciada em `wip/` na branch `fix/debitos-tecnicos-robustez`.
-ML-1A e ML-1B estão em andamento em paralelo: contrato determinístico de `stale_wip`/erros de I/O
-e prova negativa da lacuna do catálogo de identity parity.
+`analyzing/`, validada sem violações e iniciada em `wip/` na branch
+`fix/debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade`.
+Wave 1 foi auditada com sucesso: o contrato de `stale_wip`/erros de inspeção está documentado,
+as provas negativas passam como xfail esperado nos três runtimes e o gate de identity parity agora
+prova a lacuna de catálogo sem resíduos. Wave 2 está liberada para implementação sequencial dos
+três débitos, evitando sobreposição nos contratos compartilhados dos validators.
