@@ -107,6 +107,9 @@ func TestSlashRoadmapCommandRequiresCanonicalFrontmatter(t *testing.T) {
 		"> Created: <YYYY-MM-DD> | Status: backlog",
 		"docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md",
 		"Preencha `req:` com o caminho relativo completo da REQ selecionada",
+		"### ML-1B — <título> (se independente de ML-1A)",
+		"## Wave 2 — <nome> (depende de Wave 1)",
+		"> Dependências: Wave 1 completa",
 	}
 	for _, want := range required {
 		if !strings.Contains(body, want) {

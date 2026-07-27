@@ -148,6 +148,9 @@ python3 -m pytest pypi/tests/test_generators_init.py -q
   retornou `0 violations` e `0 warnings`.
 - Gate composto: `make quality` passou; Python completo reportou `613 passed, 2 xfailed` e
   `scripts/check-gates-falsify.sh` reportou `Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)`.
+- Correção pós-auditoria: restaurado o bloco estrutural `ML-1B` e `Wave 2` no template materializado
+  e nos geradores Go/Node/Python; os testes focados agora afirmam explicitamente esses trechos para
+  impedir nova remoção.
 - Escopo preservado: nenhum runtime de movimentação foi alterado; xfails de `analyzing`/`move` foram mantidos.
 
 ### ML-2B — Estado analyzing completo nos três CLIs

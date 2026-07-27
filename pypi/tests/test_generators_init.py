@@ -598,6 +598,9 @@ class TestGenerateClaudeCommands(unittest.TestCase):
             '> Created: <YYYY-MM-DD> | Status: backlog',
             'docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md',
             'Preencha `req:` com o caminho relativo completo da REQ selecionada',
+            '### ML-1B — <título> (se independente de ML-1A)',
+            '## Wave 2 — <nome> (depende de Wave 1)',
+            '> Dependências: Wave 1 completa',
         ]
         for snippet in required:
             self.assertIn(snippet, content, f"roadmap.md deveria conter trecho canônico: {snippet}")
@@ -890,4 +893,3 @@ class TestWindsurfHooks(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

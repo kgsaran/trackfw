@@ -300,6 +300,13 @@ trackfw não está instalado. Instale com:
    - [ ] build sem erros
    - [ ] testes verdes
    **Comandos de validação:** ` + "`<comando de build e teste do projeto>`" + `
+
+   ### ML-1B — <título> (se independente de ML-1A)
+   ...
+
+   ## Wave 2 — <nome> (depende de Wave 1)
+   > Dependências: Wave 1 completa
+   ...
    ` + "```" + `
 
    **Princípios obrigatórios:**

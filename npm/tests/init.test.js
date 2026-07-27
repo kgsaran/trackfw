@@ -25,6 +25,9 @@ test('SlashRoadmap command requires canonical frontmatter with selected REQ path
       '> Created: <YYYY-MM-DD> | Status: backlog',
       'docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md',
       'Preencha `req:` com o caminho relativo completo da REQ selecionada',
+      '### ML-1B — <título> (se independente de ML-1A)',
+      '## Wave 2 — <nome> (depende de Wave 1)',
+      '> Dependências: Wave 1 completa',
     ]
     for (const snippet of required) {
       assert.ok(roadmapCommand.includes(snippet), `roadmap.md should contain canonical snippet: ${snippet}`)

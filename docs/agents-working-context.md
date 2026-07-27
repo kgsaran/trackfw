@@ -19,6 +19,8 @@ reativando os testes de frontmatter canônico sem implementar `analyzing`.
 - O arquivo versionado `.claude/commands/trackfw/roadmap.md` foi alinhado ao conteúdo gerado.
 - Testes xfail do slash-command foram convertidos para testes obrigatórios nos três runtimes e passam
   comparando byte a byte o comando gerado com o arquivo versionado.
+- Correção pós-auditoria: restaurado o bloco estrutural `ML-1B` e `Wave 2` no template materializado
+  e nos geradores Go/Node/Python; os testes focados agora afirmam explicitamente esses trechos.
 
 **Decisão de interpolação do `req:`:**
 - O slash-command é uma instrução de geração, então mantém o placeholder
