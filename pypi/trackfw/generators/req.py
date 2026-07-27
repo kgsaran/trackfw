@@ -6,18 +6,23 @@ Stdlib apenas — sem dependências externas.
 """
 
 import os
+import re
 import unicodedata
 from datetime import date
 
 
 def slugify(title: str) -> str:
     """
-    Converte título em slug kebab-case lowercase.
-    Remove acentos via NFKD + encode ascii ignore, substitui espaços por hífens.
+    Converte título em slug kebab-case portável.
+    NFKD + remoção de diacríticos + lowercase + [^a-z0-9]+ → hífen.
+    Ex: "Autenticação e Sessão" → "autenticacao-e-sessao"
     """
     normalized = unicodedata.normalize("NFKD", title)
     ascii_str = normalized.encode("ascii", "ignore").decode("ascii")
-    return ascii_str.lower().replace(" ", "-")
+    slug = ascii_str.lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = re.sub(r"-+", "-", slug)
+    return slug.strip("-")
 
 
 def generate_req(title: str, req_dir: str = None, cwd: str = None) -> str:

@@ -14,12 +14,16 @@ INDEX_FILE = "vault/notes/index.md"
 
 def slugify(title: str) -> str:
     """
-    Converte título em slug kebab-case lowercase sem acentos.
-    Usa NFKD normalization + ascii ignore, substitui espaços por hífens.
+    Converte título em slug kebab-case portável.
+    NFKD + remoção de diacríticos + lowercase + [^a-z0-9]+ → hífen.
+    Ex: "Autenticação e Sessão" → "autenticacao-e-sessao"
     """
     normalized = unicodedata.normalize("NFKD", title)
     ascii_str = normalized.encode("ascii", "ignore").decode("ascii")
-    return ascii_str.lower().replace(" ", "-")
+    slug = ascii_str.lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = re.sub(r"-+", "-", slug)
+    return slug.strip("-")
 
 
 def new_note(title: str, cwd: str = None) -> str:

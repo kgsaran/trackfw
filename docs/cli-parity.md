@@ -538,20 +538,22 @@ related: []
 <!-- Como foi resolvido ou mitigado? O que deve ser feito? -->
 ```
 
-### Slug — escopo e limitação conhecida
+### Slug — normalização NFKD portável nos três runtimes
 
-Para títulos **ASCII puro**, o slug é idêntico nos três runtimes: lowercase + espaços
-substituídos por `-`. Caracteres não-ASCII produzem slugs distintos:
+Os três runtimes usam a mesma semântica: NFKD decomposition → remoção de
+combining marks (diacríticos) → lowercase → substituição de sequências
+`[^a-z0-9]+` por hífen → colapso de hífens múltiplos → trim.
 
-| Runtime | Estratégia | Exemplo: `"Autenticação"` |
-|---|---|---|
-| Go | Preserva chars Unicode | `autenticação` |
-| Node.js | Preserva chars Unicode | `autenticação` |
-| Python | NFKD + remove acentos | `autenticacao` |
+| Exemplo de título | Slug gerado (todos os runtimes) |
+|---|---|
+| `"Autenticação e Sessão"` | `autenticacao-e-sessao` |
+| `"ADR Config (v2)"` | `adr-config-v2` |
+| `"Minha Requisição #1"` | `minha-requisicao-1` |
 
-Esta divergência é conhecida e documentada; a geração de artefatos com título
-não-ASCII é, portanto, comportamento indefinido entre runtimes. Use títulos ASCII
-para garantir parity de nome de arquivo.
+Títulos com qualquer combinação de acentos (á é í ó ú), cedilha (ç), til (ã õ),
+crase (à) e caracteres não-alfanuméricos produzem slugs idênticos nos três
+runtimes. O gate `check-artifact-parity.sh` usa título acentuado
+(`"Autenticação e Sessão"`) para validar esse comportamento.
 
 ### Data — hora local nos três runtimes
 
@@ -569,9 +571,13 @@ arquivo foi gerado por runtime (vacuity guard), e faz diff byte-a-byte acumuland
 todos os erros antes de sair — o diagnóstico nomeia o tipo e os runtimes divergentes.
 Roda como parte de `make quality` (alvo `parity`), antes de `check-gates-falsify.sh`.
 
-O cenário negativo (P4) está em `scripts/check-gates-falsify.sh`, Cenário 7:
-corrompe o gerador de req do Node.js para emitir `status: OPEN` e afirma que o gate
-retorna exit != 0 com o diagnóstico `artifact parity drift: req`.
+Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
+
+- **Cenário 7** — drift de **conteúdo**: corrompe o gerador de req do Node.js para
+  emitir `status: OPEN`; asserta exit != 0 com `artifact parity drift: req (go vs node)`.
+- **Cenário 8** — drift de **nome de arquivo**: compila binário Go corrompido que usa
+  prefixo `RREQ-` em vez de `REQ-`; asserta exit != 0 com `arquivo ausente`.
+  Os dois caminhos de comparação (conteúdo e nome) têm provas independentes.
 
 ## Princípios de design de gates (P1–P4)
 

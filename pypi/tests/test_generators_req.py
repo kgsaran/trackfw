@@ -25,6 +25,26 @@ class TestSlugify(unittest.TestCase):
         result = slugify("autenticacao")
         self.assertEqual(result, "autenticacao")
 
+    # Testes de paridade cross-runtime (ML-3B) — mesmos vetores do Go e Node
+    def test_slugify_autenticacao_e_sessao(self):
+        """Título canônico do gate — ã ç ã."""
+        self.assertEqual(slugify("Autenticação e Sessão"), "autenticacao-e-sessao")
+
+    def test_slugify_agudo(self):
+        """á é í ó ú → a e i o u."""
+        self.assertEqual(slugify("á é í ó ú"), "a-e-i-o-u")
+
+    def test_slugify_cedilha_til_crase(self):
+        """ç ã õ à → c a o a."""
+        self.assertEqual(slugify("ç ã õ à"), "c-a-o-a")
+
+    def test_slugify_titulo_com_parentese(self):
+        """Caracteres não-alfanuméricos são removidos."""
+        self.assertEqual(slugify("ADR Config (v2)"), "adr-config-v2")
+
+    def test_slugify_configuracao_avancada(self):
+        self.assertEqual(slugify("Configuração Avançada"), "configuracao-avancada")
+
 
 class TestGenerateReq(unittest.TestCase):
     def setUp(self):

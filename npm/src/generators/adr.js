@@ -10,7 +10,13 @@ const { localDateISO } = require('./date')
  * @returns {string}
  */
 function toSlug(s) {
-  return s.toLowerCase().replace(/ /g, '-')
+  // NFKD normalization + remove combining marks (diacríticos) + lowercase + non-alphanumeric → hífen
+  return s
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 /**

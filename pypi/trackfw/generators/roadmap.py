@@ -6,6 +6,7 @@ Espelha npm/src/generators/roadmap.js em Python puro.
 import os
 import re
 import datetime
+import unicodedata
 
 from trackfw import config as cfg_module
 
@@ -18,11 +19,17 @@ STATE_ORDER = ["wip", "backlog", "blocked", "done", "abandoned"]
 # ---------------------------------------------------------------------------
 
 def slugify(title: str) -> str:
-    """Converte string para slug lowercase com hífens."""
-    slug = title.lower()
+    """
+    Converte string para slug kebab-case portável.
+    NFKD + remoção de diacríticos + lowercase + [^a-z0-9]+ → hífen.
+    Ex: "Autenticação e Sessão" → "autenticacao-e-sessao"
+    """
+    normalized = unicodedata.normalize("NFKD", title)
+    ascii_str = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = ascii_str.lower()
     slug = re.sub(r"[^a-z0-9]+", "-", slug)
-    slug = slug.strip("-")
-    return slug
+    slug = re.sub(r"-+", "-", slug)
+    return slug.strip("-")
 
 
 def _rewrite_roadmap_status(source: str, state: str) -> tuple[str, bool]:

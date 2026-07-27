@@ -510,7 +510,10 @@ function findRoadmapMatches(name) {
  * toSlug — converte string para slug lowercase com hífens.
  */
 function toSlug(s) {
+  // NFKD normalization + remove combining marks (diacríticos) + lowercase + non-alphanumeric → hífen
   return s
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
@@ -526,4 +529,5 @@ module.exports = {
   newRoadmapFromReq,
   stateDir,
   agentStateDir,
+  toSlug,
 }

@@ -4,12 +4,8 @@
 #
 # Artefatos verificados: req, adr, roadmap, note + vault/notes/index.md
 #
-# Título utilizado: ASCII puro para garantir slug idêntico nos 3 runtimes.
-# Nota de divergência residual conhecida: títulos com acentos ou caracteres
-# não-ASCII produzem slugs distintos — Python aplica normalização NFKD
-# (ex: "autenticação" → "autenticacao") enquanto Go e Node preservam os
-# chars Unicode no slug. Este gate não cobre esse caminho; a divergência foi
-# identificada e reportada ao orquestrador (REQ-2026-07-27-convergencia-templates-python).
+# Título utilizado: contém acento e cedilha para validar a normalização NFKD
+# de slug portável nos 3 runtimes (REQ-2026-07-27-convergencia-templates-python).
 set -euo pipefail
 
 export NO_COLOR=1
@@ -28,7 +24,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 mkdir -p "$WORK/go" "$WORK/node" "$WORK/python"
 
-TITLE="parity gate test"
+TITLE="Autenticação e Sessão"
 
 # ── Midnight rollover guard ──────────────────────────────────────────────────
 # Captura a data ANTES da geração. Se a data mudar durante o processo os nomes
@@ -60,7 +56,7 @@ if [[ "$DATE_BEFORE" != "$DATE_AFTER" ]]; then
 fi
 
 DATE="$DATE_AFTER"
-SLUG="parity-gate-test"
+SLUG="autenticacao-e-sessao"
 
 # ── Caminhos esperados por tipo ──────────────────────────────────────────────
 # EXPECTED_<KIND> é o caminho relativo dentro de cada WORK/<runtime>/.

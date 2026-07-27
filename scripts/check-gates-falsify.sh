@@ -214,7 +214,53 @@ if cmp -s "$ROOT_DIR/npm/src/generators/req.js" "$T7/npm/src/generators/req.js";
 fi
 
 assert_fails_with "artifact-parity/req-content-drift" \
-  "artifact parity drift: req" \
+  "artifact parity drift: req (go vs node)" \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T7/scripts/check-artifact-parity.sh"
 
-echo "Falsification checks passed (all 7 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 8 — check-artifact-parity.sh: drift de NOME de arquivo em req do Go →
+#              gate detecta ausência de arquivo com nome esperado (vacuity guard)
+#
+# Objetivo (P4): provar que o gate REPROVA quando o nome do arquivo gerado
+# diverge entre runtimes — o caminho de comparação de nome é independente
+# do caminho de comparação de conteúdo e exige prova separada.
+#
+# Estratégia: compilar um binário Go isolado que use o prefixo "RREQ-" em vez
+# de "REQ-" no gerador de req. O gate espera "REQ-<data>-<slug>.md"; o binário
+# gera "RREQ-<data>-<slug>.md" → vacuity guard falha com "arquivo ausente",
+# diagnóstico distinto do drift de conteúdo (Cenário 7).
+#
+# O binário isolado é compilado num GOPATH temporário para não contaminar
+# o working tree do projeto.
+# ---------------------------------------------------------------------------
+T8="$WORK/s8"
+mkdir -p "$T8/scripts"
+ln -s "$ROOT_DIR/pypi" "$T8/pypi"
+setup_npm_tree "$T8"
+cp "$ROOT_DIR/scripts/check-artifact-parity.sh" "$T8/scripts/"
+
+# Criar cópia isolada do módulo Go com o gerador de req corrompido
+T8_MOD="$WORK/s8-mod"
+cp -r "$ROOT_DIR/." "$T8_MOD"
+
+# Corromper: trocar "REQ-" por "RREQ-" no nome do arquivo gerado (req.go).
+# O padrão que ocorre no arquivo é: /REQ-%s-%s.md
+sed 's|/REQ-%s-%s\.md|/RREQ-%s-%s.md|' \
+  "$ROOT_DIR/internal/generators/req.go" > "$T8_MOD/internal/generators/req.go"
+
+# Guard: garantir que a corrupção foi aplicada.
+if cmp -s "$ROOT_DIR/internal/generators/req.go" "$T8_MOD/internal/generators/req.go"; then
+  echo "FAIL [falsify/setup-s8]: sed não alterou req.go — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+# Compilar binário corrompido
+T8_BIN="$WORK/s8-bin/trackfw"
+mkdir -p "$(dirname "$T8_BIN")"
+(cd "$T8_MOD" && go build -o "$T8_BIN" ./cmd/trackfw) 2>/dev/null
+
+assert_fails_with "artifact-parity/req-name-drift" \
+  "arquivo ausente" \
+  env GO_BIN="$T8_BIN" bash "$T8/scripts/check-artifact-parity.sh"
+
+echo "Falsification checks passed (all 8 scenarios, 7 gates proved non-vacuous)"

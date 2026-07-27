@@ -61,7 +61,13 @@ function parseREQStatus(filepath) {
  * @returns {string}
  */
 function toSlug(s) {
-  return s.toLowerCase().replace(/ /g, '-')
+  // NFKD normalization + remove combining marks (diacríticos) + lowercase + non-alphanumeric → hífen
+  return s
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 /**
@@ -246,4 +252,4 @@ function detectDomains(intention) {
   )
 }
 
-module.exports = { listREQs, parseREQStatus, newREQ, PROBES_CATALOG, detectDomains, localDateISO }
+module.exports = { listREQs, parseREQStatus, newREQ, PROBES_CATALOG, detectDomains, localDateISO, toSlug }
