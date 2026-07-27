@@ -4537,3 +4537,9 @@ ML-1A confirmou três bloqueadores reais (flags Python, valores aspeados e contr
 quarto, log `by_agent`, já estava corrigido na base e recebeu teste obrigatório de regressão; ML-2C
 foi encerrado por evidência, sem alteração de produção. ML-2A, ML-2B e ML-2D foram liberados em
 paralelo, com ownership de arquivos não sobreposto.
+
+Wave 2 concluída: o Python passou a aceitar `roadmap new --title/--req/--from-req`; valores YAML
+flat com aspas externas agora normalizam identicamente no validator e trace ID; e a documentação
+passou a declarar JSON Schemas como auxiliares externos. O smoke de packages iniciado no ML-2A
+atingiu timeout local depois de sincronizar assets; sua execução completa foi transferida para o
+gate integrado do ML-3A.

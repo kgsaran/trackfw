@@ -80,7 +80,7 @@ make quality
 
 ### ML-2A — Paridade das flags de roadmap no Python
 
-**Status:** in progress
+**Status:** done
 
 **Files affected:**
 - `pypi/trackfw/commands/roadmap.py`
@@ -100,7 +100,7 @@ make quality
 
 ### ML-2B — Normalização de aspas no frontmatter Python
 
-**Status:** in progress
+**Status:** done
 
 **Files affected:**
 - `pypi/trackfw/validator.py`
@@ -142,7 +142,7 @@ produção remanescente neste microlote.
 
 ### ML-2D — Contrato verdadeiro para JSON Schemas
 
-**Status:** in progress
+**Status:** done
 
 **Files affected:**
 - `site/guide/ai-agents.md`
