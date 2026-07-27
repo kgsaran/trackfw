@@ -3977,3 +3977,35 @@ O gate usa título ASCII puro (`"parity gate test"`) e documenta a limitação c
 - `make quality` verde: 599 passed · 0 failed · 7 falsification checks passed
 - `git status` limpo após `make quality`
 - Commit `6c4f295` na branch · push realizado
+
+---
+
+## Sessão 2026-07-27 — Apolo — ML-3B: Slug acentuado portável (CONCLUÍDO)
+
+**Tarefa:** Unificar normalização de slug nos 3 CLIs — NFKD portável para títulos PT-BR.
+
+**Contexto:** ML-3A (Cenário 7 / check-artifact-parity.sh) contornou o defeito usando título ASCII puro. O defeito real: título como "Autenticação e Sessão" gerava nomes de arquivo distintos: Go/Node preservavam Unicode (`autenticação-e-sessão`), Python removia diacríticos (`autenticacao-e-sessao`). Dois impactos adicionais: portabilidade NFD/NFC entre plataformas e quebra do `branch_has_wip_roadmap`.
+
+**Implementação:**
+
+Semântica B adotada em todos os CLIs (NFKD → removing marks → lower → `[^a-z0-9]+`→`-` → trim):
+
+- **Go** (`internal/generators/adr.go`): `norm.NFKD.String(s)` + loop de runes filtrando `unicode.Mn`. Dependência `golang.org/x/text` já estava no módulo (v0.27.0). Adicionado `regexp`, `unicode`.
+- **Node** (`npm/src/generators/adr.js`, `req.js`, `note.js`, `roadmap.js`): `String.normalize('NFKD')` + regex combining marks `[̀-ͯ]` + `[^a-z0-9]+`→`-`. Sem dependência nova. Exports de `toSlug` adicionados a `req.js` e `roadmap.js`.
+- **Python** (`pypi/trackfw/generators/req.py`, `note.py`, `roadmap.py`): unificados na semântica B (req e note tinham variante A sem `[^a-z0-9]`; roadmap não tinha NFKD).
+
+**Gate e prova negativa:**
+- `check-artifact-parity.sh`: título mudado para `"Autenticação e Sessão"`, SLUG para `autenticacao-e-sessao`. Comentário de limitação removido.
+- `check-gates-falsify.sh` Cenário 7: pattern tightened para `"artifact parity drift: req (go vs node)"` (evita colisão com cenário 8). Cenário 8 adicionado: binário Go corrompido com prefixo `RREQ-` comprova divergência de nome com diagnóstico `"arquivo ausente"` (caminho vacuity guard, distinto do de conteúdo).
+
+**Testes:**
+- Go: `TestToSlug_Acentuado` — 7 vetores (á é í ó ú, ç, ã õ, à, parêntese).
+- Node: `npm/tests/generators_slug.test.js` — 28 asserts (7 casos × 4 generators).
+- Python: 5 novos casos em `TestSlugify` (`test_generators_req.py`).
+
+**`docs/cli-parity.md`:** seção de limitação removida; substituída por tabela de exemplos e contrato declarado.
+
+**Verificação final:**
+- `make quality` verde: 604 passed · 0 failed · 8 falsification checks passed
+- `git status` limpo após `make quality`
+- Commit `dde3c94` na branch `fix/convergencia-dos-templates-de-artefato-do-cli-python` · push realizado
