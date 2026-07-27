@@ -4489,3 +4489,8 @@ layouts flat/by-agent, sincronização de status, log e promoção dos testes de
 ML-2B aprovado com paridade funcional e testes obrigatórios nos três CLIs. ML-3A liberado para
 auditoria transversal: contratos de paridade, documentação dos estados e cenário E2E
 `backlog → analyzing → wip`, seguido pelo gate composto `make quality`.
+
+REQ concluída em 2026-07-27. O ciclo canônico foi implementado nos três CLIs: slash-command com
+frontmatter (`status`, `date`, `req`, `squad`), `roadmap move ... analyzing` em layouts flat e
+by-agent, sincronização de pasta/frontmatter/header/log e gates E2E/falsificação. `make quality`
+passou integralmente; roadmap movido para `docs/roadmaps/done/` e REQ marcada como Done.

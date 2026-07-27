@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-27
 author: "zeus"
 adr: "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md"
 ---
 
 # REQ: Contrato canônico do roadmap e estado analyzing
 
-> Date: 2026-07-27 | Status: Open
+> Date: 2026-07-27 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -75,4 +75,4 @@ ADR: `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md`
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`

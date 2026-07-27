@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-27
 req: "docs/req/REQ-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Contrato canônico do roadmap e estado analyzing
 
-> Created: 2026-07-27 | Status: wip
+> Created: 2026-07-27 | Status: done
 
 ## Context
 
