@@ -4419,3 +4419,7 @@ de qualquer correção de produção.
 Após auditoria do ML-1A, as falhas atuais ficaram caracterizadas nos três runtimes: o slash-command
 não instrui frontmatter canônico e `roadmap move ... analyzing` é rejeitado. ML-2A liberado para
 corrigir exclusivamente o contrato do slash-command antes da implementação do novo estado.
+
+ML-2A aprovado após restaurar e proteger por testes o esqueleto de múltiplos microlotes e waves.
+ML-2B liberado para implementar `analyzing` nos comandos de movimentação dos três CLIs, incluindo
+layouts flat/by-agent, sincronização de status, log e promoção dos testes de caracterização.

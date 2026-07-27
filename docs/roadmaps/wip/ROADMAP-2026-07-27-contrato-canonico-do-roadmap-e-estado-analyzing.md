@@ -155,7 +155,7 @@ python3 -m pytest pypi/tests/test_generators_init.py -q
 
 ### ML-2B — Estado analyzing completo nos três CLIs
 
-**Status:** pending
+**Status:** in progress
 
 **Files affected:**
 - `internal/generators/roadmap.go`
