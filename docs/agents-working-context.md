@@ -4035,3 +4035,74 @@ real, com prova negativa nos dois caminhos (conteúdo e nome de arquivo).
 `/trackfw:roadmap` gerando roadmap sem frontmatter nos 3 init · flags `--from-req`/`--req` ausentes no
 Python · `docs/schema/*.json` morto e `site/guide/ai-agents.md:68` afirmando falsamente que o validate
 os consome.
+
+---
+
+## Migração do legado claude/ para estrutura flat — 2026-07-27 — Zeus
+
+**Branch:** `chore/migra-legado-claude-para-estrutura-flat`
+**Status:** CONCLUÍDO (parcial — ver pendências)
+
+Doc-only (§7 dispensa REQ+roadmap). Decisão do usuário: migrar para flat.
+
+**Migrado:** 33 roadmaps de `docs/roadmaps/claude/done/` → `docs/roadmaps/done/` (agora 50) ·
+2 ADRs de `docs/adr/claude/` → `docs/adr/` (agora 11) · duplicata idêntica de
+`trackfw-update-command-2026-06-18.md` em `claude/wip/` removida (o arquivo já existia em `done/`).
+
+**Veredito do roadmap parado há 39 dias:** `trackfw update` **foi entregue**. Os 5 MLs existem em
+código (`internal/generators/update.go`, force variants em `scaffold.go`, `internal/commands/update.go`,
+`npm/src/commands/update.js`, `pypi/trackfw/commands/update.py`) e o comando funciona nos 3 CLIs.
+Mergeado no PR #39 (v2.9.0). O roadmap só nunca foi encerrado.
+
+**A migração provou seu valor imediatamente:** 7 roadmaps com `folder_status` divergente
+(pasta `done/`, frontmatter `wip`/`backlog`) estavam **invisíveis** ao validator e passaram a acusar.
+Frontmatter corrigido nos 7. `validate` verde.
+
+**Pendências escaladas ao usuário (não migradas):**
+- `docs/requisições/` — 37 REQs em 4 subpastas de agente (claude 22, afrodite 10, artemis 2, apolo 3).
+  Zero colisão com `docs/req/`. Conflito documental: o CLAUDE.md global cita `docs/requisições/claude/`
+  mas o `req_dir` default do CLI é `docs/req`.
+- `docs/roadmap/` (singular, declarado descontinuado no CLAUDE.md) — 12 roadmaps, sendo 6 em estado
+  não-terminal (4 wip + 2 backlog). São fragmentos por ML (`-ML-1B`, `-ML-2B`); 4 têm roadmap-pai em
+  `done/` e 2 (`attention-hooks-agent-clis-node`) correspondem ao pai
+  `ROADMAP-2026-06-20-attention-hooks-agent-clis.md`, também em `done/`.
+
+---
+
+## Sessão 2026-07-27 — Normalização de REQs Legadas (Apolo)
+
+**Status:** IMPLEMENTANDO
+
+### Contexto
+Branch `chore/migra-legado-claude-para-estrutura-flat`. Zeus migrou 37 REQs de `docs/requisições/` para `docs/req/`. O `trackfw validate` acusa 58 violations em 29 arquivos (25 × req_has_adr, 24 × req_has_roadmap, 9 × no frontmatter).
+
+### O que foi feito
+Normalização doc-only dos 29 arquivos em `docs/req/`: adição de frontmatter canônico, header padronizado e seções `## Linked ADR` + `## Linked Roadmap` com marcadores que satisfazem as regras do validator.
+
+**Status:** CONCLUÍDO
+
+### Resultado
+- 29 arquivos normalizados (9 sem frontmatter + 20 com frontmatter legado)
+- `trackfw validate --json` → 0 violations, 0 warnings
+- `make quality` → todos os gates verdes (Go + Node.js + Python)
+- Nenhum arquivo fora de `docs/req/` foi tocado
+- Links ADR preenchidos apenas quando arquivo real encontrado por slug (ML-1B e ML-2B → `ADR-2026-07-19-global-adrs-governance.md`); demais com `ADR:` vazio
+- Links Roadmap preenchidos com basename do roadmap correspondente em `docs/roadmaps/`
+
+**Complemento — migração total concluída:**
+
+- `docs/requisições/` (37 REQs em 4 subpastas de agente) → `docs/req/`. 4 colisões de nome puladas
+  (arquivo já existia no destino). `docs/req/` agora tem 48.
+- `docs/roadmap/` (singular, descontinuado) → `docs/roadmaps/done/`. Eram 12 arquivos mas apenas
+  **7 nomes únicos**: os mesmos roadmaps existiam duplicados em `backlog/`, `wip/` e `done/`
+  simultaneamente. Mantida a versão mais avançada de cada (done > wip > backlog), status normalizado.
+  `docs/roadmaps/done/` agora tem 57.
+- **29 REQs legadas normalizadas** para o formato canônico: frontmatter, header
+  `> Date: … | Status: …` e seções `## Linked ADR` / `## Linked Roadmap`. 60 links preenchidos por
+  casamento de slug — **todos verificados como apontando para arquivo existente** — e 30 marcadores
+  deixados vazios em vez de inventar referência.
+- **`~/.claude/CLAUDE.md` atualizado** (fora deste repo): estrutura flat `docs/roadmaps/` sem subpasta
+  por agente, REQs em `docs/req/`, e instrução de usar `trackfw roadmap move` em vez de `git mv`.
+
+**Resultado:** zero diretórios órfãos em `docs/`. `validate` 0 violations, `make quality` verde.
+Os 85 artefatos antes invisíveis ao CLI agora estão sob governança.

@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Escopo de instalação selecionável para agents e skills
 
-> Criado em: 2026-07-25 | Status: ✅ Done
+> Criado em: 2026-07-25 | Status: done
 REQ: `docs/req/REQ-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md`
 ADR: `docs/adr/ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md`
 Branch: `fix/escopo-de-instalacao-selecionavel-para-agents-e-skills`
