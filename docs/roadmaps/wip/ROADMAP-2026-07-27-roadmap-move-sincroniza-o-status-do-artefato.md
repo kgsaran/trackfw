@@ -71,7 +71,7 @@ idênticos**; um "fix de paridade" que grava três formatos diferentes não é f
 
 ### ML-1A — `move` sincroniza frontmatter e cabeçalho nos 3 CLIs
 
-**Status:** pending
+**Status:** in progress
 
 **Files affected:**
 - `internal/generators/roadmap.go` (`MoveRoadmap`, ~linha 240) + `internal/generators/roadmap_test.go`
