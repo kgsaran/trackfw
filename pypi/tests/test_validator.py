@@ -1065,5 +1065,230 @@ class TestWIPHasREQCRLFIntegracao(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# ML-1A — REQ-2026-07-27-convergencia-templates-python
+# Testes negativos que provam a cegueira das regras para artefatos Python.
+# Escritos como funções de nível de módulo (não TestCase) para compatibilidade
+# com @pytest.mark.xfail, que não funciona em métodos unittest.TestCase.
+# O strict=True garante que quando o ML-2A corrigir os templates, o xfail
+# vira erro e força a reativação destes testes.
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "expõe defeito P2 (adrIsDraft cega para formato Python) — "
+        "reativado no ML-2A da REQ-2026-07-27-convergencia-templates-python"
+    ),
+)
+def test_adr_draft_formato_python_regra_cega():
+    """Defeito 2: ADR gerado pelo CLI Python tem 'status: Draft' no frontmatter e
+    '## Status\\nDraft' no corpo, mas NUNCA a string 'Status: Draft'.
+    _adr_is_draft() faz Contains('Status: Draft') → retorna False →
+    blocked_by_draft_adr não dispara → regra vacuamente verde.
+
+    Fixture: REQ no formato canônico Go/Node (tem 'Status: Open') +
+             ADR no formato Python atual.
+    Isolamento: REQ passa no guard de Open → só pode falhar em _adr_is_draft.
+    """
+    import tempfile
+    import shutil
+    from trackfw.validator import validate_reqs_not_blocked_by_draft_adrs, _adr_is_draft
+
+    tmp = tempfile.mkdtemp()
+    try:
+        req_dir = os.path.join(tmp, "docs", "req")
+        adr_dir = os.path.join(tmp, "docs", "adr")
+        os.makedirs(req_dir)
+        os.makedirs(adr_dir)
+
+        # ADR no formato exato que o gerador Python produz hoje:
+        # frontmatter com "status: Draft" (minúsculo) + seção "## Status\nDraft"
+        # NÃO contém a string "Status: Draft" que _adr_is_draft() procura.
+        adr_python_content = """\
+---
+name: ADR-001-auth-strategy
+title: "auth strategy"
+status: Draft
+created: 2026-07-27
+---
+
+# ADR-001: auth strategy
+
+## Status
+Draft
+
+## Context
+<!-- context -->
+
+## Decision
+<!-- decision -->
+
+## Consequences
+<!-- consequences -->
+"""
+        adr_path = os.path.join(adr_dir, "ADR-001-auth-strategy.md")
+        _write(adr_path, adr_python_content)
+
+        # REQ no formato canônico Go/Node: tem "> Date: … | Status: Open"
+        # para que a verificação de Open passe, isolando o defeito em _adr_is_draft.
+        req_canonical_content = """\
+# REQ: Login
+
+> Date: 2026-07-27 | Status: Open
+
+## Motivation
+
+## Acceptance Criteria
+
+- [ ] criterio
+
+## Linked ADR
+ADR:
+
+## Blocked by ADRs
+- ADR-001-auth-strategy.md (Draft)
+
+## Linked Roadmap
+Roadmap:
+"""
+        _write(os.path.join(req_dir, "REQ-2026-07-27-login.md"), req_canonical_content)
+
+        cfg = {
+            "req_dir": req_dir,
+            "adr_dirs": [adr_dir],
+        }
+
+        # Pré-condição: ADR deve ser encontrado (isola _adr_is_draft, não file-not-found)
+        assert os.path.exists(adr_path), f"pré-condição: ADR não encontrado em {adr_path}"
+
+        violations = validate_reqs_not_blocked_by_draft_adrs(cfg)
+
+        # DEVE disparar violation — hoje não dispara porque _adr_is_draft retorna False
+        # para ADR no formato Python (sem a string literal "Status: Draft")
+        assert len(violations) > 0, (
+            "DEFEITO P2 confirmado: blocked_by_draft_adr não detectou ADR Draft no formato Python. "
+            f"ADR existe em {adr_path} mas _adr_is_draft() retorna False "
+            "(procura 'Status: Draft', ADR Python tem 'status: Draft' no frontmatter e "
+            "'## Status\\nDraft' no corpo — nenhuma das duas é a string procurada). "
+            f"violations: {violations}"
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "expõe defeito P2 (Status: Open cego para tabela Python) — "
+        "reativado no ML-2A da REQ-2026-07-27-convergencia-templates-python"
+    ),
+)
+def test_req_open_formato_python_regra_cega():
+    """Defeito 1: REQ gerada pelo CLI Python usa tabela '| Status | Open |' em vez de
+    '> Date: … | Status: Open'. validate_reqs_not_blocked_by_draft_adrs() faz
+    Contains('Status: Open') → guard falha → REQ ignorada → nenhuma violation →
+    regra vacuamente verde.
+
+    Fixture: REQ no formato Python atual (com ## Blocked by ADRs adicionado) +
+             ADR no formato canônico Go/Node com Status: Draft.
+    Isolamento: ADR canônico é detectado corretamente → só pode falhar no guard de Open.
+    Nota: o gerador Python não emite '## Blocked by ADRs' — adicionamos a seção
+    para que a regra possa sequer tentar avaliar o bloqueio.
+    """
+    import tempfile
+    import shutil
+    from trackfw.validator import validate_reqs_not_blocked_by_draft_adrs, _adr_is_draft
+
+    tmp = tempfile.mkdtemp()
+    try:
+        req_dir = os.path.join(tmp, "docs", "req")
+        adr_dir = os.path.join(tmp, "docs", "adr")
+        os.makedirs(req_dir)
+        os.makedirs(adr_dir)
+
+        # ADR no formato canônico Go/Node: tem "> Date: … | Status: Draft"
+        # para que _adr_is_draft() o detecte corretamente, isolando o defeito no guard de Open.
+        adr_canonical_content = """\
+# ADR: Auth
+
+> Date: 2026-07-27 | Status: Draft
+
+## Context
+context
+"""
+        adr_path = os.path.join(adr_dir, "ADR-2026-07-27-auth-draft.md")
+        _write(adr_path, adr_canonical_content)
+
+        # REQ no formato exato que o gerador Python produz hoje:
+        # tabela "| Status | Open |" em vez de "> Date: … | Status: Open".
+        # Seção "## Blocked by ADRs" adicionada (o gerador Python não a emite).
+        req_python_content = """\
+---
+name: REQ-2026-07-27-login
+title: "login"
+status: Open
+linked_adr: —
+created: 2026-07-27
+author:
+---
+
+# REQ: login
+
+| Campo | Valor |
+|---|---|
+| Status | Open |
+| Criado | 2026-07-27 |
+
+---
+
+## Motivação
+
+<!-- Descreva o problema ou oportunidade -->
+
+---
+
+## Critérios de Aceite
+
+- [ ] critério 1
+
+---
+
+## Fora de Escopo
+
+<!-- O que esta REQ NÃO cobre -->
+
+## Blocked by ADRs
+- ADR-2026-07-27-auth-draft.md (Draft)
+"""
+        _write(os.path.join(req_dir, "REQ-2026-07-27-login.md"), req_python_content)
+
+        cfg = {
+            "req_dir": req_dir,
+            "adr_dirs": [adr_dir],
+        }
+
+        # Pré-condição: ADR canônico deve ser detectado como Draft (_adr_is_draft funciona para canônico)
+        adr_is_draft = _adr_is_draft("ADR-2026-07-27-auth-draft.md", cfg)
+        assert adr_is_draft, (
+            "pré-condição falhou: _adr_is_draft deve retornar True para ADR canônico com 'Status: Draft'"
+        )
+
+        violations = validate_reqs_not_blocked_by_draft_adrs(cfg)
+
+        # DEVE disparar violation — hoje não dispara porque a REQ Python não contém
+        # a string "Status: Open" (usa tabela) e é silenciosamente ignorada.
+        assert len(violations) > 0, (
+            "DEFEITO P2 confirmado: blocked_by_draft_adr não detectou REQ Open no formato Python. "
+            "REQ usa tabela '| Status | Open |' mas validator procura 'Status: Open' (inline). "
+            f"A REQ é silenciosamente ignorada — regra vacuamente verde. violations: {violations}"
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

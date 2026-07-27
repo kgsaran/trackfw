@@ -3716,7 +3716,7 @@ reprovou corretamente — era trabalho órfão. Branch renomeada antes do PR.
 ## REQ-2026-07-27-convergencia-templates-python — 2026-07-27 — Zeus
 
 **Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
-**Status:** IMPLEMENTANDO
+**Status:** IMPLEMENTANDO (Wave 1 concluída por Apolo, aguardando Wave 2)
 
 **Defeito:** templates de artefato do CLI Python divergem de Go/Node — mas o efeito real é que **duas
 regras do validator ficam vacuamente verdes** para artefatos gerados pelo Python:
@@ -3734,3 +3734,73 @@ executa os geradores e compara saída byte a byte.
 **Fora de escopo (5 itens na REQ):** migração dos 50 roadmaps existentes, slash-command que gera
 roadmap sem frontmatter nos 3 init, flags `--from-req`/`--req` ausentes no Python, schemas mortos +
 doc incorreta, divergências menores Go↔Node.
+
+---
+
+## ML-1A — REQ-2026-07-27-convergencia-templates-python — 2026-07-27 — Apolo
+
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**Status:** CONCLUÍDO
+
+**Objetivo:** escrever testes negativos que provam a cegueira das duas regras do validator para
+artefatos gerados pelo CLI Python — e vê-los falhar antes da convergência (Wave 2).
+
+**Testes criados (6 no total, 2 por runtime):**
+- Go: `TestADRDraftFormatoPython_regra_cega` + `TestREQOpenFormatoPython_regra_cega`
+  → `internal/validator/validator_test.go` — marcados com `t.Skip(...)`
+- Python: `test_adr_draft_formato_python_regra_cega` + `test_req_open_formato_python_regra_cega`
+  → `pypi/tests/test_validator.py` — funções de nível de módulo com `@pytest.mark.xfail(strict=True)`
+  (não TestCase: xfail não funciona em métodos unittest.TestCase)
+- Node: dois testes com `testSkip(...)` (helper adicionado ao harness existente — sem nova dependência)
+  → `npm/tests/validator.test.js` — `skipped` counter adicionado ao sumário
+
+**Estratégia de isolamento (por indicação do advisor):**
+- Teste A (Defeito 2 — ADR Draft): REQ no formato **canônico** (passa no guard `Status: Open`) +
+  ADR no formato **Python** → único fator que pode causar "sem violation" é `adrIsDraft` cego
+- Teste B (Defeito 1 — REQ Open): ADR no formato **canônico** (passa em `adrIsDraft`) +
+  REQ no formato **Python** (tabela) → único fator que pode causar "sem violation" é guard `Status: Open` cego
+  Obs: template Python não emite `## Blocked by ADRs` — seção adicionada nos fixtures para que a
+  regra possa sequer tentar avaliar o bloqueio.
+
+**Saída das falhas capturadas (evidência documental de P2):**
+
+Go:
+```
+=== RUN   TestADRDraftFormatoPython_regra_cega
+    validator_test.go:1547: DEFEITO P2 confirmado: blocked_by_draft_adr não detectou ADR Draft
+    no formato Python. ADR existe mas adrIsDraft() retorna false (procura 'Status: Draft',
+    ADR Python tem 'status: Draft' no frontmatter e '## Status\nDraft' no corpo — nenhuma das
+    duas é a string procurada). violations: []
+--- FAIL: TestADRDraftFormatoPython_regra_cega (0.01s)
+=== RUN   TestREQOpenFormatoPython_regra_cega
+    validator_test.go:1637: DEFEITO P2 confirmado: blocked_by_draft_adr não detectou REQ Open
+    no formato Python. REQ usa tabela '| Status | Open |' mas validator procura 'Status: Open'
+    (inline). A REQ é silenciosamente ignorada — regra vacuamente verde. violations: []
+--- FAIL: TestREQOpenFormatoPython_regra_cega (0.01s)
+FAIL	github.com/kgsaran/trackfw/internal/validator	0.479s
+```
+
+Python (--runxfail):
+```
+FAILED pypi/tests/test_validator.py::test_adr_draft_formato_python_regra_cega
+AssertionError: DEFEITO P2 confirmado: blocked_by_draft_adr não detectou ADR Draft no formato Python.
+ADR existe mas _adr_is_draft() retorna False (procura 'Status: Draft', ADR Python tem 'status: Draft'
+no frontmatter e '## Status\nDraft' no corpo — nenhuma das duas é a string procurada). violations: []
+
+FAILED pypi/tests/test_validator.py::test_req_open_formato_python_regra_cega
+AssertionError: DEFEITO P2 confirmado: blocked_by_draft_adr não detectou REQ Open no formato Python.
+REQ usa tabela '| Status | Open |' mas validator procura 'Status: Open' (inline).
+A REQ é silenciosamente ignorada — regra vacuamente verde. violations: []
+```
+
+Node:
+```
+↷ [xfail esperado] ML-1A: adrIsDraft cega — ADR Python "status: Draft" não detectado como Draft
+↷ [xfail esperado] ML-1A: Status: Open cego — REQ Python com tabela não detectada como Open
+35 passed, 0 failed, 2 xfail
+```
+
+**make quality:** 597 passed, 2 xfailed — verde.
+
+**Próximo passo:** ML-2A (Wave 2) — convergir os templates Python para o formato canônico Go/Node,
+reativar os 6 testes (remover t.Skip / --runxfail / testSkip e converter para asserções normais).
