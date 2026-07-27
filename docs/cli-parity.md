@@ -381,22 +381,6 @@ code directly from the runner function (Node.js/Python), so the usage text is ne
 printed for runtime errors. Parse-time errors (unknown flags) still show usage, because
 they are raised by cobra/commander/argparse before the command handler runs.
 
-### Known divergence — default `roadmap_dir`
-
-The governance gate in step 2 (`CheckShipGovernance`) searches for a REQ-linked roadmap
-in `wip/`. The root of the roadmap directory defaults differently per runtime:
-
-| Runtime | Default `roadmap_dir` |
-|---|---|
-| Go | `docs/roadmaps` |
-| Node.js | `docs/roadmaps/claude` |
-| Python | `docs/roadmaps/claude` |
-
-This divergence is intentional and preserved. Users who set `roadmap_dir:` in
-`trackfw.yaml` override the default and bring all runtimes to the same path. Integration
-tests for Node.js and Python place roadmaps in `docs/roadmaps/claude/wip/`; Go tests use
-`docs/roadmaps/wip/`.
-
 ## Release rule
 
 Changes to commands, options, exit codes, JSON fields, validation rules, or

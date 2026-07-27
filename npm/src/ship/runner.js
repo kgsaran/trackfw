@@ -10,6 +10,7 @@
 const { spawnSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
+const { load: loadConfig, reset: resetConfig } = require('../config')
 const { resolve: forgeResolve } = require('../forge/resolve')
 const { forgeAdapter } = require('../forge/adapter')
 
@@ -69,7 +70,7 @@ function defaultCheckGovernance() {
 function checkShipGovernance() {
   const violations = []
 
-  // Resolve roadmap dir from trackfw.yaml (default: docs/roadmaps/claude)
+  // Resolve roadmap dir via config module (single source of truth; default: docs/roadmaps)
   const roadmapDir = resolveRoadmapDir()
   const wipDir = path.join(roadmapDir, 'wip')
 
@@ -122,18 +123,14 @@ function checkShipGovernance() {
 }
 
 /**
- * resolveRoadmapDir reads trackfw.yaml to find roadmap_dir (default: docs/roadmaps/claude).
+ * resolveRoadmapDir delegates to config.load() — single source of truth for roadmap_dir.
+ * Accepts an optional cwd for testability (passed through to config.load).
+ * Default when no trackfw.yaml is present: docs/roadmaps.
+ * @param {string} [cwd]
  * @returns {string}
  */
-function resolveRoadmapDir() {
-  try {
-    const yaml = fs.readFileSync('trackfw.yaml', 'utf8')
-    for (const line of yaml.split('\n')) {
-      const m = line.match(/^roadmap_dir:\s*(.+)/)
-      if (m) return m[1].trim()
-    }
-  } catch (_) {}
-  return 'docs/roadmaps/claude'
+function resolveRoadmapDir(cwd) {
+  return loadConfig(cwd).roadmapDir
 }
 
 /**
@@ -449,6 +446,8 @@ module.exports = {
   isGitWriteCmd,
   normalizeBranchSlug,
   checkShipGovernance,
+  resolveRoadmapDir,
+  resetConfig,
   GIT_WRITE_COMMANDS,
   buildForgeCreateArgs,
   firstLine,

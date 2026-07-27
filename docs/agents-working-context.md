@@ -3444,3 +3444,19 @@ Achados registrados:
 
 **Commit:** b0433a8
 **Gates:** make quality ✅ | npm test 49 pass ✅ | trackfw validate ✅
+
+---
+
+## ML-4B — 2026-07-27 — Apolo
+
+**Tarefa:** Correção crítica — alinhar default de `roadmap_dir` entre os 3 runtimes
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**Status:** IMPLEMENTANDO
+
+**Diagnóstico confirmado:**
+- `npm/src/ship/runner.js` e `pypi/trackfw/ship/runner.py` tinham `resolveRoadmapDir()` com default `docs/roadmaps/claude` (errado)
+- Módulos de config (npm e PyPI) já usam `docs/roadmaps` como default correto
+- Testes de integração montavam cenário em `docs/roadmaps/claude/wip/` (errado)
+- `docs/cli-parity.md` documentava o defeito como "intencional"
+
+**Abordagem:** Reutilizar módulo de config existente em ambos os runners (elimina duplicação)

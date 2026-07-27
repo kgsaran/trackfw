@@ -21,10 +21,12 @@ from trackfw.ship.runner import (
     is_ship_branch,
     is_git_write_cmd,
     normalize_branch_slug,
+    _resolve_roadmap_dir,
     GIT_WRITE_COMMANDS,
     _first_line,
     _build_forge_create_args,
 )
+from trackfw import config as _trackfw_config
 from trackfw.forge.adapter import forge_adapter
 
 
@@ -583,6 +585,29 @@ def test_silence_usage_parse_error_shows_usage():
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# Parity test — _resolve_roadmap_dir default must be docs/roadmaps (not docs/roadmaps/claude)
+# Locks the default across all runtimes: Go, Node.js, Python all use docs/roadmaps.
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_resolve_roadmap_dir_default_is_docs_roadmaps():
+    """
+    Without a trackfw.yaml, _resolve_roadmap_dir() must return 'docs/roadmaps'.
+    This is the parity lock: Go, Node.js and Python must agree on the same default.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _trackfw_config.reset()
+        try:
+            result = _resolve_roadmap_dir(tmpdir)
+            assert result == 'docs/roadmaps', (
+                f'default roadmap_dir must be "docs/roadmaps", got "{result}" '
+                '— parity lock violated'
+            )
+        finally:
+            _trackfw_config.reset()  # clean singleton so subsequent tests are unaffected
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # Integration test — real Python binary with clean PATH (no gh/glab/az)
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -627,7 +652,7 @@ def test_ship_integration_graceful_degradation_clean_path():
         git('add', 'staged.txt')
 
         # Create governance: wip roadmap with branch slug and REQ
-        wip_dir = os.path.join(repo_dir, 'docs', 'roadmaps', 'claude', 'wip')
+        wip_dir = os.path.join(repo_dir, 'docs', 'roadmaps', 'wip')
         os.makedirs(wip_dir)
         with open(os.path.join(wip_dir, 'ROADMAP-my-feature-integration-test.md'), 'w') as f:
             f.write('REQ: REQ-ship-integration-test\n\n# Roadmap: Integration Test\n\n'

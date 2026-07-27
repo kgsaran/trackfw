@@ -4,7 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { runShip, isShipBranch, isGitWriteCmd, normalizeBranchSlug, GIT_WRITE_COMMANDS, buildForgeCreateArgs, firstLine } = require('../src/ship/runner')
+const { runShip, isShipBranch, isGitWriteCmd, normalizeBranchSlug, resolveRoadmapDir, resetConfig, GIT_WRITE_COMMANDS, buildForgeCreateArgs, firstLine } = require('../src/ship/runner')
 
 // ────────────────────────────────────────────────────────────────────────────
 // helpers
@@ -408,6 +408,25 @@ test('firstLine: returns only first line', () => {
 })
 
 // ────────────────────────────────────────────────────────────────────────────
+// Parity test — resolveRoadmapDir default must be docs/roadmaps (not docs/roadmaps/claude)
+// Locks the default across all runtimes: Go, Node.js, Python all use docs/roadmaps.
+// ────────────────────────────────────────────────────────────────────────────
+
+test('resolveRoadmapDir: default is docs/roadmaps when no trackfw.yaml present', () => {
+  const os = require('os')
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-parity-npm-'))
+  try {
+    resetConfig()
+    const result = resolveRoadmapDir(tmpDir)
+    assert.equal(result, 'docs/roadmaps',
+      `default roadmap_dir must be "docs/roadmaps", got "${result}" — parity lock violated`)
+  } finally {
+    resetConfig() // clean singleton so subsequent tests are unaffected
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  }
+})
+
+// ────────────────────────────────────────────────────────────────────────────
 // Forge matrix — 4 forges × 2 avail states × 2 host types (16 cells)
 // All cells run with --dry-run to skip real push.
 // ────────────────────────────────────────────────────────────────────────────
@@ -541,7 +560,7 @@ test('ship integration: --no-pr wiring reaches runner (command layer)', async ()
     fs.writeFileSync(path.join(repoDir, 'staged.txt'), 'content\n')
     gitRun(['add', 'staged.txt'])
 
-    const wipDir = path.join(repoDir, 'docs', 'roadmaps', 'claude', 'wip')
+    const wipDir = path.join(repoDir, 'docs', 'roadmaps', 'wip')
     fs.mkdirSync(wipDir, { recursive: true })
     fs.writeFileSync(
       path.join(wipDir, 'ROADMAP-nopr-test.md'),
@@ -618,7 +637,7 @@ test('ship integration: graceful degradation with clean PATH (no gh/glab/az)', a
     gitRun(['add', 'staged.txt'])
 
     // Create governance: wip roadmap with branch slug and REQ
-    const wipDir = path.join(repoDir, 'docs', 'roadmaps', 'claude', 'wip')
+    const wipDir = path.join(repoDir, 'docs', 'roadmaps', 'wip')
     fs.mkdirSync(wipDir, { recursive: true })
     fs.writeFileSync(
       path.join(wipDir, 'ROADMAP-my-feature-integration-test.md'),

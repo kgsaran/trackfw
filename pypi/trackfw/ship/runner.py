@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 
+from trackfw import config as _config
 from trackfw.forge.resolve import resolve as forge_resolve
 from trackfw.forge.adapter import forge_adapter
 
@@ -66,17 +67,13 @@ def default_exec_git(args):
         return ('', str(e))
 
 
-def _resolve_roadmap_dir():
-    """Reads trackfw.yaml to find roadmap_dir (default: docs/roadmaps/claude)."""
-    try:
-        with open('trackfw.yaml', 'r') as f:
-            for line in f:
-                m = re.match(r'^roadmap_dir:\s*(.+)', line)
-                if m:
-                    return m.group(1).strip()
-    except OSError:
-        pass
-    return 'docs/roadmaps/claude'
+def _resolve_roadmap_dir(cwd=None):
+    """
+    Delegates to config.load() — single source of truth for roadmap_dir.
+    Accepts an optional cwd for testability (passed through to config.load).
+    Default when no trackfw.yaml is present: docs/roadmaps.
+    """
+    return _config.load(cwd)["roadmap_dir"]
 
 
 def check_ship_governance():
@@ -89,6 +86,7 @@ def check_ship_governance():
     """
     violations = []
 
+    # Resolve via config module — single source of truth (default: docs/roadmaps)
     roadmap_dir = _resolve_roadmap_dir()
     wip_dir = os.path.join(roadmap_dir, 'wip')
 
