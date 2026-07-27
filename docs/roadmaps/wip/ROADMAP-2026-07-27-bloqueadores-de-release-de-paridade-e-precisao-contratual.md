@@ -167,7 +167,7 @@ produção remanescente neste microlote.
 
 ### ML-3A — Paridade cross-CLI e smoke de release
 
-**Status:** pending
+**Status:** in progress
 
 **Files affected:**
 - `scripts/check-cli-parity.sh`
