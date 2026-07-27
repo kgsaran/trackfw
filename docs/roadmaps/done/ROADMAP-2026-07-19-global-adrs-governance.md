@@ -8,7 +8,7 @@ branch: "feat/global-adrs-governance"
 
 # Roadmap: Suporte a ADRs Globais Compartilhados e Diretivas de IA
 
-> Criado em: 2026-07-19 | Status: ✅ Done
+> Criado em: 2026-07-19 | Status: done
 > REQ: `docs/req/REQ-2026-07-19-global-adrs-governance.md`
 > ADR: `docs/adr/ADR-2026-07-19-global-adrs-governance.md`
 

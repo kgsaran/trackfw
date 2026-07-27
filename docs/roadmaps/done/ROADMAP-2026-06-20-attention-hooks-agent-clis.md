@@ -7,7 +7,7 @@ branch: "feat/attention-hooks-agent-clis"
 
 # Roadmap: attention-hooks-agent-clis
 
-> Criado em: 2026-06-20 | Status: ✅ DONE (Movido para `docs/roadmaps/done/ROADMAP-2026-06-20-attention-hooks-agent-clis.md`)
+> Criado em: 2026-06-20 | Status: done
 
 REQ: REQ-2026-06-20-attention-hooks-agent-clis.md
 

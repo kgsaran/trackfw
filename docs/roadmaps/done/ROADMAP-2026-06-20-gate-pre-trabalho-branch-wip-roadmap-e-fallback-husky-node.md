@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node
 
-> Criado em: 2026-06-20 | Status: ✅ Done
+> Criado em: 2026-06-20 | Status: done
 
 REQ: REQ-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md
 

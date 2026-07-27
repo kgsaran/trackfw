@@ -4035,3 +4035,34 @@ real, com prova negativa nos dois caminhos (conteúdo e nome de arquivo).
 `/trackfw:roadmap` gerando roadmap sem frontmatter nos 3 init · flags `--from-req`/`--req` ausentes no
 Python · `docs/schema/*.json` morto e `site/guide/ai-agents.md:68` afirmando falsamente que o validate
 os consome.
+
+---
+
+## Migração do legado claude/ para estrutura flat — 2026-07-27 — Zeus
+
+**Branch:** `chore/migra-legado-claude-para-estrutura-flat`
+**Status:** CONCLUÍDO (parcial — ver pendências)
+
+Doc-only (§7 dispensa REQ+roadmap). Decisão do usuário: migrar para flat.
+
+**Migrado:** 33 roadmaps de `docs/roadmaps/claude/done/` → `docs/roadmaps/done/` (agora 50) ·
+2 ADRs de `docs/adr/claude/` → `docs/adr/` (agora 11) · duplicata idêntica de
+`trackfw-update-command-2026-06-18.md` em `claude/wip/` removida (o arquivo já existia em `done/`).
+
+**Veredito do roadmap parado há 39 dias:** `trackfw update` **foi entregue**. Os 5 MLs existem em
+código (`internal/generators/update.go`, force variants em `scaffold.go`, `internal/commands/update.go`,
+`npm/src/commands/update.js`, `pypi/trackfw/commands/update.py`) e o comando funciona nos 3 CLIs.
+Mergeado no PR #39 (v2.9.0). O roadmap só nunca foi encerrado.
+
+**A migração provou seu valor imediatamente:** 7 roadmaps com `folder_status` divergente
+(pasta `done/`, frontmatter `wip`/`backlog`) estavam **invisíveis** ao validator e passaram a acusar.
+Frontmatter corrigido nos 7. `validate` verde.
+
+**Pendências escaladas ao usuário (não migradas):**
+- `docs/requisições/` — 37 REQs em 4 subpastas de agente (claude 22, afrodite 10, artemis 2, apolo 3).
+  Zero colisão com `docs/req/`. Conflito documental: o CLAUDE.md global cita `docs/requisições/claude/`
+  mas o `req_dir` default do CLI é `docs/req`.
+- `docs/roadmap/` (singular, declarado descontinuado no CLAUDE.md) — 12 roadmaps, sendo 6 em estado
+  não-terminal (4 wip + 2 backlog). São fragmentos por ML (`-ML-1B`, `-ML-2B`); 4 têm roadmap-pai em
+  `done/` e 2 (`attention-hooks-agent-clis-node`) correspondem ao pai
+  `ROADMAP-2026-06-20-attention-hooks-agent-clis.md`, também em `done/`.

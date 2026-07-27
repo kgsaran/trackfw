@@ -7,7 +7,7 @@ branch: "feat/architect-command-guidelines"
 
 # Roadmap: Slash command /trackfw:architect + diretrizes de arquitetura
 
-> Criado em: 2026-06-19 | Status: ✅ Done
+> Criado em: 2026-06-19 | Status: done
 > REQ: `docs/requisições/claude/REQ-2026-06-19-architect-command-guidelines.md`
 
 ## Diagnóstico / Contexto
