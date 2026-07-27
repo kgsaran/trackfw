@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"golang.org/x/text/unicode/norm"
 )
 
 // ADRContent contém os campos de um ADR a ser gerado.
@@ -135,9 +138,35 @@ func parseADRMeta(path string) (title, status string) {
 	return title, status
 }
 
+// slugNonAlnum corresponde a sequências de caracteres fora de [a-z0-9].
+var slugNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
+
+// toSlug converte uma string em slug kebab-case portável:
+// 1. NFKD normalization — decompõe diacríticos em base + combining mark.
+// 2. Remove combining marks (categoria Unicode Mn) — elimina acentos.
+// 3. Lowercase.
+// 4. Substitui sequências de não-[a-z0-9] por hífen.
+// 5. Remove hífens nas extremidades.
+// Ex: "Autenticação e Sessão" → "autenticacao-e-sessao"
 func toSlug(s string) string {
+	// Passo 1+2: NFKD → filtrar combining marks
+	normalized := norm.NFKD.String(s)
+	var b strings.Builder
+	for _, r := range normalized {
+		if !unicode.Is(unicode.Mn, r) {
+			b.WriteRune(r)
+		}
+	}
+	s = b.String()
+
+	// Passo 3: lowercase
 	s = strings.ToLower(s)
-	s = strings.ReplaceAll(s, " ", "-")
+
+	// Passo 4: [^a-z0-9]+ → hífen
+	s = slugNonAlnum.ReplaceAllString(s, "-")
+
+	// Passo 5: trim hífens nas extremidades
+	s = strings.Trim(s, "-")
 	return s
 }
 

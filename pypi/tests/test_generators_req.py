@@ -1,5 +1,6 @@
 """
 Testes unitários para pypi/trackfw/generators/req.py
+Formato canônico Go/Node — REQ-2026-07-27-convergencia-templates-python.
 """
 
 import os
@@ -24,6 +25,26 @@ class TestSlugify(unittest.TestCase):
         result = slugify("autenticacao")
         self.assertEqual(result, "autenticacao")
 
+    # Testes de paridade cross-runtime (ML-3B) — mesmos vetores do Go e Node
+    def test_slugify_autenticacao_e_sessao(self):
+        """Título canônico do gate — ã ç ã."""
+        self.assertEqual(slugify("Autenticação e Sessão"), "autenticacao-e-sessao")
+
+    def test_slugify_agudo(self):
+        """á é í ó ú → a e i o u."""
+        self.assertEqual(slugify("á é í ó ú"), "a-e-i-o-u")
+
+    def test_slugify_cedilha_til_crase(self):
+        """ç ã õ à → c a o a."""
+        self.assertEqual(slugify("ç ã õ à"), "c-a-o-a")
+
+    def test_slugify_titulo_com_parentese(self):
+        """Caracteres não-alfanuméricos são removidos."""
+        self.assertEqual(slugify("ADR Config (v2)"), "adr-config-v2")
+
+    def test_slugify_configuracao_avancada(self):
+        self.assertEqual(slugify("Configuração Avançada"), "configuracao-avancada")
+
 
 class TestGenerateReq(unittest.TestCase):
     def setUp(self):
@@ -39,12 +60,24 @@ class TestGenerateReq(unittest.TestCase):
         self.assertEqual(os.path.basename(path), expected_filename)
 
     def test_frontmatter_correto(self):
-        """Frontmatter contém status: Open e linked_adr: —."""
+        """Frontmatter canônico: status: Open, date, author, adr, roadmap."""
         path = generate_req("Teste Frontmatter", req_dir=self.req_dir)
         with open(path, encoding="utf-8") as f:
             content = f.read()
+        today = date.today().isoformat()
         self.assertIn("status: Open", content)
-        self.assertIn("linked_adr: —", content)
+        self.assertIn(f"date: {today}", content)
+        self.assertIn('author: ""', content)
+        self.assertIn('adr: ""', content)
+        self.assertIn('roadmap: ""', content)
+
+    def test_header_inline_status(self):
+        """Header canônico: > Date: <data> | Status: Open."""
+        path = generate_req("Header Status", req_dir=self.req_dir)
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        today = date.today().isoformat()
+        self.assertIn(f"> Date: {today} | Status: Open", content)
 
     def test_cria_req_dir_se_nao_existir(self):
         """req_dir inexistente é criado automaticamente."""
@@ -60,14 +93,16 @@ class TestGenerateReq(unittest.TestCase):
         self.assertTrue(os.path.isabs(path))
 
     def test_conteudo_template(self):
-        """Arquivo gerado contém as seções obrigatórias do template."""
-        path = generate_req("Seções Obrigatórias", req_dir=self.req_dir)
+        """Arquivo gerado contém as seções obrigatórias do template canônico (inglês)."""
+        path = generate_req("Mandatory Sections", req_dir=self.req_dir)
         with open(path, encoding="utf-8") as f:
             content = f.read()
-        self.assertIn("## Motivação", content)
-        self.assertIn("## Critérios de Aceite", content)
-        self.assertIn("## Fora de Escopo", content)
-        self.assertIn("# REQ: Seções Obrigatórias", content)
+        self.assertIn("## Motivation", content)
+        self.assertIn("## Acceptance Criteria", content)
+        self.assertIn("## Linked ADR", content)
+        self.assertIn("## Blocked by ADRs", content)
+        self.assertIn("## Linked Roadmap", content)
+        self.assertIn("# REQ: Mandatory Sections", content)
 
 
 if __name__ == "__main__":

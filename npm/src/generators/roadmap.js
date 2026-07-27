@@ -2,6 +2,7 @@
 const fs = require('fs')
 const path = require('path')
 const config = require('../config')
+const { localDateISO } = require('./date')
 
 const STATE_ORDER = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
 
@@ -279,11 +280,7 @@ function appendTransitionLog(basename, fromState, toState) {
  */
 function newRoadmap(title, reqPath) {
   const cfg = config.load()
-  const now = new Date()
-  const yyyy = now.getFullYear()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  const date = `${yyyy}-${mm}-${dd}`
+  const date = localDateISO()
   const slug = toSlug(title)
 
   let backlogDir
@@ -352,11 +349,7 @@ function newRoadmapFromReq(reqPath) {
   const title = parsedTitle || basename.replace(/\.md$/, '').replace(/^REQ-/, '')
 
   const cfg = config.load()
-  const now = new Date()
-  const yyyy = now.getFullYear()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  const date = `${yyyy}-${mm}-${dd}`
+  const date = localDateISO()
   const slug = toSlug(title)
 
   let backlogDir
@@ -517,7 +510,10 @@ function findRoadmapMatches(name) {
  * toSlug — converte string para slug lowercase com hífens.
  */
 function toSlug(s) {
+  // NFKD normalization + remove combining marks (diacríticos) + lowercase + non-alphanumeric → hífen
   return s
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
@@ -533,4 +529,5 @@ module.exports = {
   newRoadmapFromReq,
   stateDir,
   agentStateDir,
+  toSlug,
 }

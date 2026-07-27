@@ -7,6 +7,29 @@ import (
 	"testing"
 )
 
+// TestToSlug_Acentuado — título acentuado gera slug ASCII portável nos 3 CLIs.
+// Cobre: á é í ó ú (agudo), ç (cedilha), ã õ (til), à (crase).
+func TestToSlug_Acentuado(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"Autenticação e Sessão", "autenticacao-e-sessao"},
+		{"Criação de Requisição", "criacao-de-requisicao"},
+		{"Configuração Avançada", "configuracao-avancada"},
+		{"Título com À crase e Ã til", "titulo-com-a-crase-e-a-til"},
+		{"ADR Config (v2)", "adr-config-v2"},
+		{"á é í ó ú", "a-e-i-o-u"},
+		{"ç ã õ à", "c-a-o-a"},
+	}
+	for _, tc := range cases {
+		got := toSlug(tc.input)
+		if got != tc.expected {
+			t.Errorf("toSlug(%q) = %q, queria %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
 // chdirADR muda para dir e restaura ao fim do teste
 func chdirADR(t *testing.T, dir string) {
 	t.Helper()

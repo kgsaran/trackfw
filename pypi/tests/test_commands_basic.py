@@ -62,7 +62,9 @@ class TestAdrNew(unittest.TestCase):
             files = os.listdir(adr_dir)
             self.assertEqual(len(files), 1, f"Esperava 1 arquivo, encontrei: {files}")
             self.assertTrue(files[0].endswith(".md"))
-            self.assertIn("ADR-001", files[0])
+            # Nome canônico: ADR-YYYY-MM-DD-<slug>.md
+            import re
+            self.assertRegex(files[0], r'^ADR-\d{4}-\d{2}-\d{2}-.*\.md$')
 
     def test_adr_new_com_status(self):
         """trackfw adr new com --status Accepted cria arquivo com status correto."""

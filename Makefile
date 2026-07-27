@@ -21,6 +21,7 @@ parity: build
 	scripts/check-static-assets.sh
 	scripts/check-integration-assets.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-identity-parity.sh
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-artifact-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-gates-falsify.sh
 
 sync-integration-assets:

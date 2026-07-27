@@ -2,6 +2,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const { localDateISO } = require('./date')
 
 /**
  * Converte uma string em slug: lowercase + espaços → hifens.
@@ -9,7 +10,13 @@ const path = require('path')
  * @returns {string}
  */
 function toSlug(s) {
-  return s.toLowerCase().replace(/ /g, '-')
+  // NFKD normalization + remove combining marks (diacríticos) + lowercase + non-alphanumeric → hífen
+  return s
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 /**
@@ -26,11 +33,13 @@ function slugToTitle(slug) {
 }
 
 /**
- * Retorna a data atual no formato YYYY-MM-DD.
+ * Retorna a data LOCAL atual no formato YYYY-MM-DD.
+ * Delega para localDateISO() — usa getDate/getMonth/getFullYear (hora local),
+ * não toISOString (UTC).
  * @returns {string}
  */
 function today() {
-  return new Date().toISOString().slice(0, 10)
+  return localDateISO()
 }
 
 /**
@@ -182,4 +191,4 @@ author: ""
   return filename
 }
 
-module.exports = { newADR, listADRs, newADRDraft, toSlug }
+module.exports = { newADR, listADRs, newADRDraft, toSlug, today }

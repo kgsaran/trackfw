@@ -22,9 +22,9 @@ def register(subparsers):
     new_parser.add_argument("title", help="ADR title")
     new_parser.add_argument(
         "--status",
-        default="Draft",
+        default="Proposed",
         choices=["Draft", "Proposed", "Accepted", "Deprecated", "Superseded"],
-        help="Initial ADR status (default: Draft)",
+        help="Initial ADR status (default: Proposed)",
     )
     new_parser.add_argument(
         "--dir",

@@ -1,6 +1,8 @@
 """
-generators/adr.py — geração de ADR sequencial com numeração automática.
-Espelha npm/src/generators/adr.js em Python puro (stdlib apenas).
+generators/adr.py — Gerador de ADRs para trackfw.
+Espelha npm/src/generators/adr.js (funções newADR, newADRDraft).
+Formato canônico Go/Node — REQ-2026-07-27-convergencia-templates-python.
+Stdlib apenas — sem dependências externas.
 """
 
 import os
@@ -9,45 +11,16 @@ import unicodedata
 from datetime import date
 
 
-def next_adr_number(adr_dir: str) -> int:
-    """
-    Escaneia adr_dir por arquivos ADR-NNN-*.md e retorna max(NNN)+1.
-    Retorna 1 se o diretório estiver vazio ou não existir.
-    """
-    if not os.path.isdir(adr_dir):
-        return 1
-
-    pattern = re.compile(r'^ADR-(\d+)-.*\.md$', re.IGNORECASE)
-    max_num = 0
-
-    for entry in os.listdir(adr_dir):
-        m = pattern.match(entry)
-        if m:
-            num = int(m.group(1))
-            if num > max_num:
-                max_num = num
-
-    return max_num + 1
-
-
 def slugify(title: str) -> str:
     """
     Converte título em slug: lowercase, acentos removidos via NFKD,
     espaços → hifens, remove chars não-alfanuméricos exceto hífen.
     """
-    # Normaliza para NFKD e descarta caracteres não-ASCII
     normalized = unicodedata.normalize('NFKD', title)
     ascii_str = normalized.encode('ascii', 'ignore').decode('ascii')
-
-    # Lowercase e espaços → hifens
     slug = ascii_str.lower().replace(' ', '-')
-
-    # Remove chars não-alfanuméricos exceto hífen
     slug = re.sub(r'[^a-z0-9-]', '', slug)
-
-    # Colapsa hifens múltiplos
     slug = re.sub(r'-+', '-', slug)
-
     return slug.strip('-')
 
 
@@ -57,14 +30,26 @@ def _today() -> str:
 
 def generate_adr(
     title: str,
-    status: str = 'Draft',
+    status: str = 'Proposed',
     adr_dirs: list = None,
     cwd: str = None,
 ) -> str:
     """
-    Gera arquivo ADR no primeiro diretório de adr_dirs (ou 'docs/adr' como default).
-    Cria o diretório se não existir.
-    Retorna o path absoluto do arquivo criado.
+    Cria docs/adr/ADR-YYYY-MM-DD-<slug>.md no formato canônico Go/Node.
+
+    Frontmatter: status · date · author: ""
+    Header: > Date: <data> | Status: <status>
+    Seções: ## Context, ## Decision, ## Consequences, ## Alternatives Considered
+    H1: # ADR: <title>
+
+    Args:
+        title: Título do ADR.
+        status: Status inicial (default: 'Proposed'). Use 'Draft' para rascunho.
+        adr_dirs: Lista de diretórios destino; usa o primeiro. Default: docs/adr.
+        cwd: Diretório de trabalho base (default: os.getcwd()).
+
+    Returns:
+        Path absoluto do arquivo criado.
     """
     base = cwd or os.getcwd()
 
@@ -73,40 +58,42 @@ def generate_adr(
     else:
         adr_dir = 'docs/adr'
 
-    # Tornar absoluto se relativo
     if not os.path.isabs(adr_dir):
         adr_dir = os.path.join(base, adr_dir)
 
     os.makedirs(adr_dir, exist_ok=True)
 
-    num = next_adr_number(adr_dir)
     slug = slugify(title)
-    num_str = str(num).zfill(3)
-    name = f'ADR-{num_str}-{slug}'
-    filename = f'{name}.md'
-    filepath = os.path.join(adr_dir, filename)
     today = _today()
+    filename = f'ADR-{today}-{slug}.md'
+    filepath = os.path.join(adr_dir, filename)
+
+    context_section = '<!-- What is the situation that motivates this decision? -->'
+    decision_section = '<!-- What was decided? -->'
+    consequences_section = '<!-- What are the positive and negative consequences of this decision? -->'
+    alternatives_section = '<!-- What other options were evaluated and why were they rejected? -->'
 
     body = f"""---
-name: {name}
-title: "{title}"
 status: {status}
-created: {today}
+date: {today}
+author: ""
 ---
 
-# ADR-{num_str}: {title}
+# ADR: {title}
 
-## Status
-{status}
+> Date: {today} | Status: {status}
 
 ## Context
-<!-- Descreva o contexto e o problema que motivou esta decisão -->
+{context_section}
 
 ## Decision
-<!-- Descreva a decisão tomada -->
+{decision_section}
 
 ## Consequences
-<!-- Descreva as consequências desta decisão -->
+{consequences_section}
+
+## Alternatives Considered
+{alternatives_section}
 """
 
     with open(filepath, 'w', encoding='utf-8') as f:

@@ -1458,6 +1458,169 @@ func TestValidateBranchHasWIPRoadmap_TruncaMensagem(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// ML-1A — REQ-2026-07-27-convergencia-templates-python
+// Testes negativos que provam a cegueira das regras para artefatos Python.
+// Estes testes DEVEM FALHAR contra o código atual — a falha é a evidência de P2.
+// Reativados no ML-2A após convergência dos templates.
+// ---------------------------------------------------------------------------
+
+// TestADRDraft_ValidadorDetectaFormatoCanônico — ML-2A (reativado):
+// Após convergência do template Python, ADRs gerados pelo CLI Python emitem
+// "> Date: … | Status: Draft" no header. adrIsDraft() deve detectar a string
+// e blocked_by_draft_adr deve disparar.
+//
+// Fixture: ADR no formato canônico Go/Node/Python (após ML-2A) + REQ canônica.
+// Resultado esperado: violation disparada.
+func TestADRDraft_ValidadorDetectaFormatoCanônico(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/req", "docs/adr")
+
+	// ADR no formato canônico (produzido pelo gerador Python após ML-2A):
+	// header "| Status: Draft" inline — detectado por adrIsDraft().
+	adrCanonicoContent := `---
+status: Draft
+date: 2026-07-27
+author: ""
+---
+
+# ADR: auth strategy
+
+> Date: 2026-07-27 | Status: Draft
+
+## Context
+<!-- What is the situation that motivates this decision? -->
+
+## Decision
+<!-- What was decided? -->
+
+## Consequences
+<!-- What are the positive and negative consequences of this decision? -->
+
+## Alternatives Considered
+<!-- What other options were evaluated and why were they rejected? -->
+`
+	writeFile(t, dir, "docs/adr/ADR-2026-07-27-auth-strategy.md", adrCanonicoContent)
+
+	// REQ no formato canônico Go/Node: tem "> Date: … | Status: Open"
+	// para que a verificação de Open passe, isolando o teste em adrIsDraft.
+	reqCanonicalContent := `# REQ: Login
+
+> Date: 2026-07-27 | Status: Open
+
+## Motivation
+
+## Acceptance Criteria
+
+- [ ] criterio
+
+## Linked ADR
+ADR:
+
+## Blocked by ADRs
+- ADR-2026-07-27-auth-strategy.md (Draft)
+
+## Linked Roadmap
+Roadmap:
+`
+	writeFile(t, dir, "docs/req/REQ-2026-07-27-login.md", reqCanonicalContent)
+	writeFile(t, dir, "trackfw.yaml", "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// Pré-condição: o ADR deve ser encontrado
+	adrPath := filepath.Join(dir, "docs", "adr", "ADR-2026-07-27-auth-strategy.md")
+	if _, err := os.Stat(adrPath); err != nil {
+		t.Fatalf("pré-condição: ADR não encontrado em %s: %v", adrPath, err)
+	}
+
+	violations, err := validateREQsNotBlockedByDraftADRs()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	// DEVE disparar violation — formato canônico contém "Status: Draft" que adrIsDraft detecta
+	if len(violations) == 0 {
+		t.Errorf("regressão: blocked_by_draft_adr não detectou ADR Draft no formato canônico. "+
+			"ADR existe em %s, adrIsDraft() deve retornar true para '>Status: Draft' inline. violations: %v", adrPath, violations)
+	}
+}
+
+// TestREQOpen_ValidadorDetectaFormatoCanônico — ML-2A (reativado):
+// Após convergência do template Python, REQs geradas pelo CLI Python emitem
+// "> Date: … | Status: Open" no header. validateREQsNotBlockedByDraftADRs() deve
+// detectar a REQ e disparar violation ao encontrar ADR Draft no bloqueio.
+//
+// Fixture: REQ no formato canônico Go/Node/Python (após ML-2A) + ADR canônico Draft.
+// Resultado esperado: violation disparada.
+func TestREQOpen_ValidadorDetectaFormatoCanônico(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/req", "docs/adr")
+
+	// ADR no formato canônico Go/Node: tem "> Date: … | Status: Draft"
+	// para que adrIsDraft() o detecte corretamente.
+	adrCanonicalContent := `# ADR: Auth
+
+> Date: 2026-07-27 | Status: Draft
+
+## Context
+context
+`
+	writeFile(t, dir, "docs/adr/ADR-2026-07-27-auth-draft.md", adrCanonicalContent)
+
+	// REQ no formato canônico (produzida pelo gerador Python após ML-2A):
+	// header "> Date: … | Status: Open" detectado pelo guard inicial.
+	reqCanonicoContent := `---
+status: Open
+date: 2026-07-27
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: login
+
+> Date: 2026-07-27 | Status: Open
+
+## Motivation
+<!-- Why is this requirement needed? What problem does it solve? -->
+
+## Acceptance Criteria
+- [ ] criterio 1
+
+## Linked ADR
+<!-- Reference the ADR that governs this requirement -->
+ADR:
+
+## Blocked by ADRs
+- ADR-2026-07-27-auth-draft.md (Draft)
+
+## Linked Roadmap
+<!-- Reference the roadmap that implements this requirement -->
+Roadmap:
+`
+	writeFile(t, dir, "docs/req/REQ-2026-07-27-login.md", reqCanonicoContent)
+	writeFile(t, dir, "trackfw.yaml", "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// Pré-condição: ADR canônico deve ser detectado como Draft
+	if !adrIsDraft("ADR-2026-07-27-auth-draft.md") {
+		t.Fatalf("pré-condição falhou: adrIsDraft deve retornar true para ADR canônico com '| Status: Draft'")
+	}
+
+	violations, err := validateREQsNotBlockedByDraftADRs()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	// DEVE disparar violation — formato canônico contém "Status: Open" que o guard detecta
+	if len(violations) == 0 {
+		t.Errorf("regressão: blocked_by_draft_adr não detectou REQ Open no formato canônico. "+
+			"REQ tem '> Date: … | Status: Open' (inline) — deve ser detectada. violations: %v", violations)
+	}
+}
+
 // TestWIPHasREQ_CRLF_Integracao — P3+P4: roadmap em wip com "REQ: \r\n" (CRLF vazio)
 // deve emitir violation de wip_has_req. Testa a integração do contentHasMarker
 // com validateWIPHasREQ (leitura de arquivo real, não mock).

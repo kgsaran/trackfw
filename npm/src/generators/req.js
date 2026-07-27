@@ -1,6 +1,7 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
+const { localDateISO } = require('./date')
 
 /**
  * listREQs — lista arquivos .md em dir, imprimindo filename e status (coluna 60 chars).
@@ -60,7 +61,13 @@ function parseREQStatus(filepath) {
  * @returns {string}
  */
 function toSlug(s) {
-  return s.toLowerCase().replace(/ /g, '-')
+  // NFKD normalization + remove combining marks (diacríticos) + lowercase + non-alphanumeric → hífen
+  return s
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 /**
@@ -73,7 +80,7 @@ async function newREQ(content) {
   fs.mkdirSync(reqDir, { recursive: true })
 
   const slug = toSlug(content.title)
-  const date = new Date().toISOString().slice(0, 10)
+  const date = localDateISO()
   const filename = `${reqDir}/REQ-${date}-${slug}.md`
 
   const motivationSection = content.motivation || '<!-- Why is this requirement needed? What problem does it solve? -->'
@@ -84,9 +91,9 @@ async function newREQ(content) {
   const dependsOnADRs = content.dependsOnADRs || []
 
   // Linha de status — inclui contador de ADRs bloqueantes quando presente
-  let statusLine = `> Date: ${date} | Status: Open`
+  let statusLine = `> Date: ${date} | Status: Open\n| Linear Issue: \n| Jira Issue: `
   if (dependsOnADRs.length > 0) {
-    statusLine = `> Date: ${date} | Status: Open | Blocked by ADRs: ${dependsOnADRs.length}`
+    statusLine = `> Date: ${date} | Status: Open | Blocked by ADRs: ${dependsOnADRs.length}\n| Linear Issue: \n| Jira Issue: `
   }
 
   // Seção "Blocked by ADRs"
@@ -245,4 +252,4 @@ function detectDomains(intention) {
   )
 }
 
-module.exports = { listREQs, parseREQStatus, newREQ, PROBES_CATALOG, detectDomains }
+module.exports = { listREQs, parseREQStatus, newREQ, PROBES_CATALOG, detectDomains, localDateISO, toSlug }

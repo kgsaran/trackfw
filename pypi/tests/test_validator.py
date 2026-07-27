@@ -1065,5 +1065,164 @@ class TestWIPHasREQCRLFIntegracao(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# ML-2A — REQ-2026-07-27-convergencia-templates-python (reativado)
+# Após convergência dos templates Python, as regras detectam artefatos canônicos.
+# Os testes chamam os geradores diretamente — se o template regredir, o teste falha.
+# ---------------------------------------------------------------------------
+
+
+def test_adr_draft_validador_detecta_formato_canonico():
+    """ML-2A (reativado): ADR gerado pelo CLI Python agora emite
+    '> Date: … | Status: Draft' no header.
+    _adr_is_draft() faz Contains('Status: Draft') → True →
+    blocked_by_draft_adr dispara.
+
+    Fixture: ADR criado pelo generate_adr() (formato canônico após ML-2A) +
+             REQ canônica que o referencia.
+    Se o template Python regredir, o ADR não terá 'Status: Draft' inline
+    e o teste falhará.
+    """
+    import tempfile
+    import shutil
+    from trackfw.validator import validate_reqs_not_blocked_by_draft_adrs, _adr_is_draft
+    from trackfw.generators.adr import generate_adr
+
+    tmp = tempfile.mkdtemp()
+    try:
+        req_dir = os.path.join(tmp, "docs", "req")
+        adr_dir = os.path.join(tmp, "docs", "adr")
+        os.makedirs(req_dir)
+        os.makedirs(adr_dir)
+
+        # ADR criado pelo gerador Python (formato canônico após ML-2A).
+        # Se o template regredir para o formato antigo, o teste quebra aqui.
+        adr_filepath = generate_adr(
+            title="auth strategy",
+            status="Draft",
+            adr_dirs=[adr_dir],
+            cwd=tmp,
+        )
+        adr_basename = os.path.basename(adr_filepath)
+
+        # REQ canônica que referencia o ADR na seção ## Blocked by ADRs.
+        req_canonical_content = f"""\
+# REQ: Login
+
+> Date: 2026-07-27 | Status: Open
+
+## Motivation
+
+## Acceptance Criteria
+
+- [ ] criterio
+
+## Linked ADR
+ADR:
+
+## Blocked by ADRs
+- {adr_basename} (Draft)
+
+## Linked Roadmap
+Roadmap:
+"""
+        _write(os.path.join(req_dir, "REQ-2026-07-27-login.md"), req_canonical_content)
+
+        cfg = {
+            "req_dir": req_dir,
+            "adr_dirs": [adr_dir],
+        }
+
+        # Pré-condição: ADR existe e é detectado como Draft
+        assert os.path.exists(adr_filepath), f"pré-condição: ADR não encontrado em {adr_filepath}"
+        assert _adr_is_draft(adr_basename, cfg), (
+            f"pré-condição: _adr_is_draft deve retornar True para ADR canônico. "
+            f"Conteúdo: {open(adr_filepath).read()[:200]}"
+        )
+
+        violations = validate_reqs_not_blocked_by_draft_adrs(cfg)
+
+        # DEVE disparar violation — ADR canônico tem 'Status: Draft' inline
+        assert len(violations) > 0, (
+            "regressão: blocked_by_draft_adr não detectou ADR Draft no formato canônico. "
+            f"ADR gerado em {adr_filepath}. violations: {violations}"
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_req_open_validador_detecta_formato_canonico():
+    """ML-2A (reativado): REQ gerada pelo CLI Python agora emite
+    '> Date: … | Status: Open' no header.
+    validate_reqs_not_blocked_by_draft_adrs() detecta a REQ →
+    verifica o ADR bloqueante → dispara violation.
+
+    Fixture: ADR canônico Draft + REQ criada pelo generate_req() +
+             seção ## Blocked by ADRs com o ADR referenciado.
+    Se o template Python regredir, a REQ não terá 'Status: Open' inline
+    e o teste falhará.
+    """
+    import tempfile
+    import shutil
+    from trackfw.validator import validate_reqs_not_blocked_by_draft_adrs, _adr_is_draft
+    from trackfw.generators.req import generate_req
+
+    tmp = tempfile.mkdtemp()
+    try:
+        req_dir = os.path.join(tmp, "docs", "req")
+        adr_dir = os.path.join(tmp, "docs", "adr")
+        os.makedirs(req_dir)
+        os.makedirs(adr_dir)
+
+        # ADR no formato canônico Go/Node: tem "> Date: … | Status: Draft"
+        adr_canonical_content = """\
+# ADR: Auth
+
+> Date: 2026-07-27 | Status: Draft
+
+## Context
+context
+"""
+        adr_path = os.path.join(adr_dir, "ADR-2026-07-27-auth-draft.md")
+        _write(adr_path, adr_canonical_content)
+
+        # REQ criada pelo gerador Python (formato canônico após ML-2A).
+        # Gera com '> Date: … | Status: Open' — detectado pelo guard inicial.
+        # ## Blocked by ADRs vem com '<!-- none -->' e é atualizado abaixo
+        # para incluir o ADR bloqueante (andaime de teste).
+        req_filepath = generate_req("login", req_dir=req_dir, cwd=tmp)
+        with open(req_filepath, encoding="utf-8") as f:
+            req_content = f.read()
+        # Substitui o placeholder pela referência ao ADR bloqueante
+        req_content = req_content.replace(
+            "<!-- none -->",
+            "- ADR-2026-07-27-auth-draft.md (Draft)",
+        )
+        with open(req_filepath, "w", encoding="utf-8") as f:
+            f.write(req_content)
+
+        cfg = {
+            "req_dir": req_dir,
+            "adr_dirs": [adr_dir],
+        }
+
+        # Pré-condição: ADR canônico deve ser detectado como Draft
+        adr_is_draft = _adr_is_draft("ADR-2026-07-27-auth-draft.md", cfg)
+        assert adr_is_draft, (
+            "pré-condição falhou: _adr_is_draft deve retornar True para ADR canônico com 'Status: Draft'"
+        )
+
+        violations = validate_reqs_not_blocked_by_draft_adrs(cfg)
+
+        # DEVE disparar violation — REQ canônica tem 'Status: Open' inline
+        assert len(violations) > 0, (
+            "regressão: blocked_by_draft_adr não detectou REQ Open no formato canônico. "
+            "REQ gerada em formato canônico deve ter '> Date: … | Status: Open' detectado. "
+            f"violations: {violations}"
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

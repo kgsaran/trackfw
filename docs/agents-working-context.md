@@ -3710,3 +3710,328 @@ slug que não casa com o roadmap `...sincroniza-o-status-do-artefato`. O `branch
 reprovou corretamente — era trabalho órfão. Branch renomeada antes do PR.
 
 **Débito:** 5 divergências adjacentes seguem abertas, registradas na REQ e na nota de vault.
+
+---
+
+## REQ-2026-07-27-convergencia-templates-python — 2026-07-27 — Zeus
+
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**Status:** IMPLEMENTANDO (Wave 1 concluída por Apolo, aguardando Wave 2)
+
+**Defeito:** templates de artefato do CLI Python divergem de Go/Node — mas o efeito real é que **duas
+regras do validator ficam vacuamente verdes** para artefatos gerados pelo Python:
+- `Status: Open` não casa (template Python usa tabela) → REQ escapa de `req_blocked_by_draft_adr` e do `sync`
+- `Status: Draft` não casa (template Python usa `## Status`) → `blocked_by_draft_adr` passa por ausência de match
+
+É P2 (degradação silenciosa) do ADR de gates. Sobreviveu porque nenhum gate jamais executou um gerador.
+
+**Ordem deliberada:** Wave 1 escreve os testes negativos ANTES da convergência. Convergir primeiro
+faria as regras casarem por efeito colateral e perderíamos a evidência da cegueira.
+
+**Escopo:** 3 waves sequenciais — expor as regras cegas / convergir templates Python / gate que
+executa os geradores e compara saída byte a byte.
+
+**Fora de escopo (5 itens na REQ):** migração dos 50 roadmaps existentes, slash-command que gera
+roadmap sem frontmatter nos 3 init, flags `--from-req`/`--req` ausentes no Python, schemas mortos +
+doc incorreta, divergências menores Go↔Node.
+
+---
+
+## ML-1A — REQ-2026-07-27-convergencia-templates-python — 2026-07-27 — Apolo
+
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**Status:** CONCLUÍDO
+
+**Objetivo:** escrever testes negativos que provam a cegueira das duas regras do validator para
+artefatos gerados pelo CLI Python — e vê-los falhar antes da convergência (Wave 2).
+
+**Testes criados (6 no total, 2 por runtime):**
+- Go: `TestADRDraftFormatoPython_regra_cega` + `TestREQOpenFormatoPython_regra_cega`
+  → `internal/validator/validator_test.go` — marcados com `t.Skip(...)`
+- Python: `test_adr_draft_formato_python_regra_cega` + `test_req_open_formato_python_regra_cega`
+  → `pypi/tests/test_validator.py` — funções de nível de módulo com `@pytest.mark.xfail(strict=True)`
+  (não TestCase: xfail não funciona em métodos unittest.TestCase)
+- Node: dois testes com `testSkip(...)` (helper adicionado ao harness existente — sem nova dependência)
+  → `npm/tests/validator.test.js` — `skipped` counter adicionado ao sumário
+
+**Estratégia de isolamento (por indicação do advisor):**
+- Teste A (Defeito 2 — ADR Draft): REQ no formato **canônico** (passa no guard `Status: Open`) +
+  ADR no formato **Python** → único fator que pode causar "sem violation" é `adrIsDraft` cego
+- Teste B (Defeito 1 — REQ Open): ADR no formato **canônico** (passa em `adrIsDraft`) +
+  REQ no formato **Python** (tabela) → único fator que pode causar "sem violation" é guard `Status: Open` cego
+  Obs: template Python não emite `## Blocked by ADRs` — seção adicionada nos fixtures para que a
+  regra possa sequer tentar avaliar o bloqueio.
+
+**Saída das falhas capturadas (evidência documental de P2):**
+
+Go:
+```
+=== RUN   TestADRDraftFormatoPython_regra_cega
+    validator_test.go:1547: DEFEITO P2 confirmado: blocked_by_draft_adr não detectou ADR Draft
+    no formato Python. ADR existe mas adrIsDraft() retorna false (procura 'Status: Draft',
+    ADR Python tem 'status: Draft' no frontmatter e '## Status\nDraft' no corpo — nenhuma das
+    duas é a string procurada). violations: []
+--- FAIL: TestADRDraftFormatoPython_regra_cega (0.01s)
+=== RUN   TestREQOpenFormatoPython_regra_cega
+    validator_test.go:1637: DEFEITO P2 confirmado: blocked_by_draft_adr não detectou REQ Open
+    no formato Python. REQ usa tabela '| Status | Open |' mas validator procura 'Status: Open'
+    (inline). A REQ é silenciosamente ignorada — regra vacuamente verde. violations: []
+--- FAIL: TestREQOpenFormatoPython_regra_cega (0.01s)
+FAIL	github.com/kgsaran/trackfw/internal/validator	0.479s
+```
+
+Python (--runxfail):
+```
+FAILED pypi/tests/test_validator.py::test_adr_draft_formato_python_regra_cega
+AssertionError: DEFEITO P2 confirmado: blocked_by_draft_adr não detectou ADR Draft no formato Python.
+ADR existe mas _adr_is_draft() retorna False (procura 'Status: Draft', ADR Python tem 'status: Draft'
+no frontmatter e '## Status\nDraft' no corpo — nenhuma das duas é a string procurada). violations: []
+
+FAILED pypi/tests/test_validator.py::test_req_open_formato_python_regra_cega
+AssertionError: DEFEITO P2 confirmado: blocked_by_draft_adr não detectou REQ Open no formato Python.
+REQ usa tabela '| Status | Open |' mas validator procura 'Status: Open' (inline).
+A REQ é silenciosamente ignorada — regra vacuamente verde. violations: []
+```
+
+Node:
+```
+↷ [xfail esperado] ML-1A: adrIsDraft cega — ADR Python "status: Draft" não detectado como Draft
+↷ [xfail esperado] ML-1A: Status: Open cego — REQ Python com tabela não detectada como Open
+35 passed, 0 failed, 2 xfail
+```
+
+**make quality:** 597 passed, 2 xfailed — verde.
+
+**Próximo passo:** ML-2A (Wave 2) — convergir os templates Python para o formato canônico Go/Node,
+reativar os 6 testes (remover t.Skip / --runxfail / testSkip e converter para asserções normais).
+
+---
+
+## Sessão 2026-07-27 — ML-2A em andamento
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** IMPLEMENTANDO
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md`
+**REQ:** `docs/req/REQ-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md`
+
+### O que está sendo feito
+
+Executando ML-2A: convergência dos templates Python para o formato canônico Go/Node.
+
+**Alterações em andamento:**
+- `pypi/trackfw/generators/req.py` — formato canônico (status:Open, date, author, adr, roadmap; header inline; seções inglês + Blocked by ADRs)
+- `pypi/trackfw/generators/adr.py` — formato canônico (status:Proposed, date, author; header inline; Alternatives Considered; nome por data sem numeração sequencial)
+- `pypi/trackfw/generators/roadmap.py` — `_roadmap_template` canônica (status:backlog minúsculo, date, req, squad; seções inglês)
+- `pypi/trackfw/commands/adr.py` — default status Draft → Proposed
+- `internal/validator/validator_test.go` — remove t.Skip nas linhas 1477/1564, renomeia testes, atualiza fixtures para formato canônico
+- `npm/tests/validator.test.js` — converte testSkip → test, atualiza fixtures e nomes
+- `pypi/tests/test_validator.py` — remove @pytest.mark.xfail, renomeia testes, usa geradores reais para criar fixtures
+- `pypi/tests/test_generators_adr.py` — remove TestNextAdrNumber, atualiza asserções para formato canônico, status padrão Proposed
+- `pypi/tests/test_generators_req.py` — remove linked_adr, atualiza seções para inglês
+- `pypi/tests/test_generators_roadmap.py:70` — status: Backlog → status: backlog
+- `pypi/tests/test_commands_roadmap_discover.py:55` — status: Backlog → status: backlog
+
+---
+
+## Sessão 2026-07-27 — ML-2A concluído
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** CONCLUÍDO
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**Commit:** `2ee4f2b`
+
+### O que foi entregue
+
+**Geradores Python convergidos para formato canônico Go/Node:**
+- `pypi/trackfw/generators/req.py`: frontmatter canônico, header inline `> Date: | Status: Open`, 5 seções em inglês incluindo `## Blocked by ADRs`
+- `pypi/trackfw/generators/adr.py`: remove `next_adr_number`, nome por data `ADR-YYYY-MM-DD-<slug>.md`, frontmatter canônico, header inline, `## Alternatives Considered`, status padrão `Proposed`
+- `pypi/trackfw/generators/roadmap.py`: `_roadmap_template` canônica, `status: backlog` (minúsculo), seções em inglês, Node ≡ Python byte-a-byte
+- `pypi/trackfw/commands/adr.py`: default status `Draft` → `Proposed`
+
+**6 testes reativados (2 por runtime) — todos passando:**
+- Go: t.Skip removido das linhas 1477 e 1564, fixtures canônicos, testes renomeados
+- Node: testSkip → test, fixtures canônicos
+- Python: xfail removido, testes chamam geradores reais (regressão garantida)
+
+**Asserções antigas corrigidas em 5 arquivos de teste**
+
+**make quality:** 596 passed, 0 failed, 0 xfail
+
+**Diff empírico:**
+- ADR: Go = Node = Python (byte-idêntico)
+- REQ: Node = Python; Go diverge com `| Linear Issue: ` e `| Jira Issue: ` (terceira divergência Go↔Node, fora do escopo negativo)
+- ROADMAP: Node = Python; Go diverge com REQ preenchido + squad: + ML-1A literal (divergências 1-2 do escopo negativo)
+
+**Escopo negativo respeitado:** validator não alterado, branch não criada, PR não aberto, main não tocada, docs/schema não alterados.
+
+**Próximo passo:** ML-3A (gate de paridade de saída, executa os 3 geradores e compara byte a byte — é do orquestrador)
+
+---
+
+## Sessão 2026-07-27 — ML-2B: Convergência Go↔Node (paridade de templates)
+
+**Agente:** Apolo | **Status:** CONCLUÍDO
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**REQ:** `REQ-2026-07-27-convergencia-templates-python`
+**Commit:** `ddec027`
+
+**Escopo executado:**
+1. `npm/src/commands/roadmap.js` — `.argument('[title]')` + action `(titleArg, opts)` com precedência posicional > --title > 'New Roadmap'
+2. `npm/src/generators/req.js` — `\n| Linear Issue: \n| Jira Issue: ` adicionado a ambas as variantes de statusLine
+3. `pypi/trackfw/generators/req.py` — idem no status_line
+4. `internal/generators/roadmap.go` — `squad:` removido do body; `### ML-1A — %s` com content.Title interpolado
+5. `internal/commands/roadmap.go` — args[0] → title (não selectedREQ); selectedREQ permanece ""
+
+**Verificação empírica (entrada "auth strategy" nos 3 CLIs):**
+- ADR Go↔Node: IDENTICAL | ADR Go↔Python: IDENTICAL
+- REQ Go↔Node: IDENTICAL | REQ Go↔Python: IDENTICAL
+- ROADMAP Go↔Node: IDENTICAL | ROADMAP Go↔Python: IDENTICAL
+
+**`make quality`:** 596 passed · 0 failed · 6 falsification checks passed
+
+**Divergências residuais (report-only, fora do escopo):**
+- Python imprime `Roadmap criado:` vs Go/Node `✓ created` (mensagem de saída, não conteúdo de arquivo)
+- Node `req.js` usa `new Date().toISOString().slice(0,10)` (UTC) vs Go/Python local — sem impacto hoje (UTC == local-time), identificado como risco para ML-3A
+
+---
+
+## Sessão 2026-07-27 — ML-2C: Node converge para hora local (paridade de fuso)
+
+**Agente:** Apolo | **Status:** CONCLUÍDO
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**REQ:** `REQ-2026-07-27-convergencia-templates-python`
+
+**Problema corrigido:** `req.js:76`, `adr.js:today()`, `note.js:today()` usavam `new Date().toISOString().slice(0,10)` (UTC). Go e Python já usavam hora local. Em UTC+14 ou UTC-11, isso causava nomes de arquivo e datas diferentes entre os 3 CLIs — gate do ML-3A seria intermitente.
+
+**Arquivos modificados:**
+- `npm/src/generators/date.js` — helper `localDateISO()` criado (usa `getFullYear/getMonth/getDate`, não `toISOString`)
+- `npm/src/generators/req.js` — `const date = localDateISO()` substituindo `toISOString`; exporta `localDateISO`
+- `npm/src/generators/adr.js` — `today()` delega para `localDateISO()`; exporta `today`
+- `npm/src/generators/note.js` — `today()` delega para `localDateISO()`; exporta `today`
+- `npm/src/generators/roadmap.js` — dedup: `const date = localDateISO()` substituindo bloco de 4 linhas em `newRoadmap` e `newRoadmapFromReq` (comportamento já era local, mudança é structural)
+- `npm/tests/generators_tz.test.js` — 4 testes de TZ determinísticos (UTC+14 × UTC-11, span 25h)
+- `internal/generators/tz_test.go` — 3 testes Go com `time.Local = loc14`
+- `pypi/tests/test_generators_tz.py` — 3 testes Python com `timezone()` context manager + `time.tzset()`
+
+**Verificação empírica (UTC 2026-07-27T15:19Z):**
+| Fuso | GO | NODE | PYTHON |
+|---|---|---|---|
+| Pacific/Kiritimati (UTC+14) | REQ-2026-07-28 | 2026-07-28 | REQ-2026-07-28 |
+| Pacific/Midway (UTC-11) | REQ-2026-07-27 | 2026-07-27 | REQ-2026-07-27 |
+
+GO=NODE=PYTHON em cada fuso; UTC+14 ≠ UTC-11 (confirmado).
+
+**Ocorrências `toISOString` deixadas intocadas (report-only, não são artefatos governados):**
+- `npm/src/generators/init.js:73,93,497` — scaffold de CLAUDE.md e lenient dates
+- `npm/src/commands/discover.js:180` — exibição de timestamp de mtime
+- `npm/src/commands/metrics.js:128` — exibição de timestamp de log
+- `npm/src/validator/index.js:527,628,1009` — comparação de datas de validação e baseline
+- `npm/src/serve/api_metrics.js:83` — cálculo de semanas para métricas de display
+
+**`make quality`:** 599 passed · 0 failed · 6 falsification checks passed
+
+---
+
+## Sessão 2026-07-27 — ML-3A: gate de paridade de artefatos (Apolo)
+
+**Status:** CONCLUÍDO
+
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md`
+
+### O que foi implementado
+
+**`scripts/check-artifact-parity.sh`** (novo gate):
+- Invoca `req new`, `adr new`, `roadmap new` e `note new` nos 3 CLIs (Go, Node.js, Python) dentro de `mktemp -d`
+- Compara arquivos gerados byte-a-byte — conteúdo e nome de arquivo
+- Vacuity guard: falha explicitamente se nenhum arquivo foi gerado por runtime/tipo
+- Guard de midnight rollover: falha com mensagem clara se a data mudar durante a geração
+- Diagnóstico acumulado: coleta todos os erros antes de sair, identifica tipo e runtimes divergentes
+- Caminho absoluto para GO_BIN: resolve path relativo do Makefile antes de entrar nas subshells
+
+**`scripts/check-gates-falsify.sh`** (Cenário 7 adicionado):
+- Corrompe `npm/src/generators/req.js` via `sed` para emitir `status: OPEN` no frontmatter
+- Guard de corrupção via `cmp -s` (falha se sed não alterou nada — prova P4 inválida sem esse guard)
+- `assert_fails_with "artifact-parity/req-content-drift" "artifact parity drift: req" ...`
+
+**`Makefile`**: gate adicionado ao alvo `parity` após `check-identity-parity.sh`, antes de `check-gates-falsify.sh`
+
+**`docs/cli-parity.md`**: nova seção "Contrato de artefatos gerados" documentando:
+- Frontmatter completo de `req`, `adr`, `roadmap` e `note` como contrato explícito
+- Limitação de slug não-ASCII (divergência residual: Python normaliza NFKD; Go/Node preserva Unicode)
+- Comportamento de data local (nunca UTC)
+- Referência ao gate e ao cenário negativo P4
+
+### Divergência residual encontrada e reportada
+
+Títulos com acentos ou caracteres não-ASCII produzem slugs distintos:
+- Go: `autenticação:-sso-&-oauth2` (preserva Unicode)
+- Node.js: `autenticação:-sso-&-oauth2` (preserva Unicode)
+- Python: `autenticacao:-sso-&-oauth2` (NFKD → remove acentos)
+
+O gate usa título ASCII puro (`"parity gate test"`) e documenta a limitação com comentário no script. A divergência está fora do escopo do ML (não tocar nos geradores).
+
+### Verificação final
+- `make quality` verde: 599 passed · 0 failed · 7 falsification checks passed
+- `git status` limpo após `make quality`
+- Commit `6c4f295` na branch · push realizado
+
+---
+
+## Sessão 2026-07-27 — Apolo — ML-3B: Slug acentuado portável (CONCLUÍDO)
+
+**Tarefa:** Unificar normalização de slug nos 3 CLIs — NFKD portável para títulos PT-BR.
+
+**Contexto:** ML-3A (Cenário 7 / check-artifact-parity.sh) contornou o defeito usando título ASCII puro. O defeito real: título como "Autenticação e Sessão" gerava nomes de arquivo distintos: Go/Node preservavam Unicode (`autenticação-e-sessão`), Python removia diacríticos (`autenticacao-e-sessao`). Dois impactos adicionais: portabilidade NFD/NFC entre plataformas e quebra do `branch_has_wip_roadmap`.
+
+**Implementação:**
+
+Semântica B adotada em todos os CLIs (NFKD → removing marks → lower → `[^a-z0-9]+`→`-` → trim):
+
+- **Go** (`internal/generators/adr.go`): `norm.NFKD.String(s)` + loop de runes filtrando `unicode.Mn`. Dependência `golang.org/x/text` já estava no módulo (v0.27.0). Adicionado `regexp`, `unicode`.
+- **Node** (`npm/src/generators/adr.js`, `req.js`, `note.js`, `roadmap.js`): `String.normalize('NFKD')` + regex combining marks `[̀-ͯ]` + `[^a-z0-9]+`→`-`. Sem dependência nova. Exports de `toSlug` adicionados a `req.js` e `roadmap.js`.
+- **Python** (`pypi/trackfw/generators/req.py`, `note.py`, `roadmap.py`): unificados na semântica B (req e note tinham variante A sem `[^a-z0-9]`; roadmap não tinha NFKD).
+
+**Gate e prova negativa:**
+- `check-artifact-parity.sh`: título mudado para `"Autenticação e Sessão"`, SLUG para `autenticacao-e-sessao`. Comentário de limitação removido.
+- `check-gates-falsify.sh` Cenário 7: pattern tightened para `"artifact parity drift: req (go vs node)"` (evita colisão com cenário 8). Cenário 8 adicionado: binário Go corrompido com prefixo `RREQ-` comprova divergência de nome com diagnóstico `"arquivo ausente"` (caminho vacuity guard, distinto do de conteúdo).
+
+**Testes:**
+- Go: `TestToSlug_Acentuado` — 7 vetores (á é í ó ú, ç, ã õ, à, parêntese).
+- Node: `npm/tests/generators_slug.test.js` — 28 asserts (7 casos × 4 generators).
+- Python: 5 novos casos em `TestSlugify` (`test_generators_req.py`).
+
+**`docs/cli-parity.md`:** seção de limitação removida; substituída por tabela de exemplos e contrato declarado.
+
+**Verificação final:**
+- `make quality` verde: 604 passed · 0 failed · 8 falsification checks passed
+- `git status` limpo após `make quality`
+- Commit `dde3c94` na branch `fix/convergencia-dos-templates-de-artefato-do-cli-python` · push realizado
+
+---
+
+## Encerramento da REQ-2026-07-27-convergencia-templates-python — 2026-07-27 — Zeus
+
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**Status:** CONCLUÍDO
+
+6 MLs (3 promovidos do escopo negativo por medição empírica). `make quality` verde: 604 passed,
+8 cenários de falsificação cobrindo 7 gates — eram 6 no início do ciclo.
+
+**Prova final com título acentuado**, nos 4 artefatos × 3 CLIs: nome de arquivo E conteúdo idênticos.
+`trackfw req new "Autenticação e Sessão"` → `REQ-2026-07-27-autenticacao-e-sessao.md` nos três.
+
+**Padrão que se repetiu 3 vezes:** cada defeito promovido passava despercebido porque a verificação
+existente não exercitava o caso real — gate comparando nomes de comando em vez de saída; minha
+auditoria de fuso passando por sorte (rodei de dia, UTC == local); gate do ML-3A contornando slug
+acentuado com fixture ASCII num projeto PT-BR. Verde por coincidência não é verde.
+
+**Novo gate:** `scripts/check-artifact-parity.sh` executa os geradores dos 3 runtimes e compara saída
+real, com prova negativa nos dois caminhos (conteúdo e nome de arquivo).
+
+**Débito (fila do próximo ciclo):** migração dos 50 roadmaps em 12 formatos · slash-command
+`/trackfw:roadmap` gerando roadmap sem frontmatter nos 3 init · flags `--from-req`/`--req` ausentes no
+Python · `docs/schema/*.json` morto e `site/guide/ai-agents.md:68` afirmando falsamente que o validate
+os consome.

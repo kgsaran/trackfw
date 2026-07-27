@@ -404,6 +404,181 @@ A resolução de diretórios (`wip/`, `done/`) é centralizada em `resolveStateD
 O ID da regra (`branch_has_wip_roadmap`) e o mecanismo de severidade configurável (`rules:`) são
 preservados — a aceitação de `done/` não altera a config key nem o comportamento de `off`/`warning`.
 
+## Contrato de artefatos gerados (req, adr, roadmap, note)
+
+Os quatro comandos de geração de artefatos produzem arquivos **byte-a-byte idênticos**
+nos três runtimes para a mesma entrada. Isso inclui conteúdo e nome de arquivo.
+
+### Frontmatter e formato — contrato explícito
+
+#### `req new <title>`
+
+Arquivo: `docs/req/REQ-YYYY-MM-DD-<slug>.md`
+
+```
+---
+status: Open
+date: YYYY-MM-DD
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: <title>
+
+> Date: YYYY-MM-DD | Status: Open
+| Linear Issue: 
+| Jira Issue: 
+
+## Motivation
+<!-- Why is this requirement needed? What problem does it solve? -->
+
+## Acceptance Criteria
+- [ ]
+- [ ]
+
+## Linked ADR
+<!-- Reference the ADR that governs this requirement -->
+ADR: 
+
+## Blocked by ADRs
+<!-- none -->
+
+## Linked Roadmap
+<!-- Reference the roadmap that implements this requirement -->
+Roadmap: 
+```
+
+#### `adr new <title>`
+
+Arquivo: `docs/adr/ADR-YYYY-MM-DD-<slug>.md`
+
+```
+---
+status: Proposed
+date: YYYY-MM-DD
+author: ""
+---
+
+# ADR: <title>
+
+> Date: YYYY-MM-DD | Status: Proposed
+
+## Context
+<!-- What is the situation that motivates this decision? -->
+
+## Decision
+<!-- What was decided? -->
+
+## Consequences
+<!-- What are the positive and negative consequences of this decision? -->
+
+## Alternatives Considered
+<!-- What other options were evaluated and why were they rejected? -->
+```
+
+#### `roadmap new <title>`
+
+Arquivo: `docs/roadmaps/backlog/ROADMAP-YYYY-MM-DD-<slug>.md`
+
+```
+---
+status: backlog
+date: YYYY-MM-DD
+req: ""
+squad: ""
+---
+
+# Roadmap: <title>
+
+> Created: YYYY-MM-DD | Status: backlog
+
+## Context
+<!-- What problem does this roadmap solve? Link the REQ. -->
+REQ: 
+
+## Wave 1 — <name> (parallel MLs)
+> Dependencies: none
+
+### ML-1A — <title>
+**Status:** pending
+**Files affected:**
+**Actions:**
+**Acceptance criteria:**
+- [ ] build passes
+- [ ] tests green
+- [ ] validate passes
+```
+
+#### `note new <title>`
+
+Arquivo: `vault/notes/<slug>-YYYY-MM-DD.md` (slug antes da data, inverso do req/adr/roadmap).
+Cria ou atualiza `vault/notes/index.md` com uma linha de link no formato `- [<slug>-YYYY-MM-DD](<slug>-YYYY-MM-DD.md)`.
+
+```
+---
+title: "<title>"
+tags: []
+date: YYYY-MM-DD
+related: []
+---
+
+# <title>
+
+## Problem
+
+<!-- Descreva o problema ou situação que motivou esta nota. -->
+
+## Root cause
+
+<!-- Qual foi a causa raiz identificada? -->
+
+## Solution
+
+<!-- Como foi resolvido ou mitigado? O que deve ser feito? -->
+```
+
+### Slug — normalização NFKD portável nos três runtimes
+
+Os três runtimes usam a mesma semântica: NFKD decomposition → remoção de
+combining marks (diacríticos) → lowercase → substituição de sequências
+`[^a-z0-9]+` por hífen → colapso de hífens múltiplos → trim.
+
+| Exemplo de título | Slug gerado (todos os runtimes) |
+|---|---|
+| `"Autenticação e Sessão"` | `autenticacao-e-sessao` |
+| `"ADR Config (v2)"` | `adr-config-v2` |
+| `"Minha Requisição #1"` | `minha-requisicao-1` |
+
+Títulos com qualquer combinação de acentos (á é í ó ú), cedilha (ç), til (ã õ),
+crase (à) e caracteres não-alfanuméricos produzem slugs idênticos nos três
+runtimes. O gate `check-artifact-parity.sh` usa título acentuado
+(`"Autenticação e Sessão"`) para validar esse comportamento.
+
+### Data — hora local nos três runtimes
+
+Todos os CLIs usam a data local (`date +%F` / `time.Now().Format("2006-01-02")` /
+`datetime.date.today().isoformat()`) — nunca UTC. Geração cruzando meia-noite num
+fuso horário avançado pode produzir datas distintas entre runtimes; o gate detecta
+essa condição e falha explicitamente.
+
+### Parity gate
+
+`scripts/check-artifact-parity.sh` é o gate transversal que verifica esse contrato.
+Para cada tipo de artefato (req, adr, roadmap, note, vault/notes/index.md), ele
+invoca os três runtimes com título posicional ASCII, confirma que exatamente um
+arquivo foi gerado por runtime (vacuity guard), e faz diff byte-a-byte acumulando
+todos os erros antes de sair — o diagnóstico nomeia o tipo e os runtimes divergentes.
+Roda como parte de `make quality` (alvo `parity`), antes de `check-gates-falsify.sh`.
+
+Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
+
+- **Cenário 7** — drift de **conteúdo**: corrompe o gerador de req do Node.js para
+  emitir `status: OPEN`; asserta exit != 0 com `artifact parity drift: req (go vs node)`.
+- **Cenário 8** — drift de **nome de arquivo**: compila binário Go corrompido que usa
+  prefixo `RREQ-` em vez de `REQ-`; asserta exit != 0 com `arquivo ausente`.
+  Os dois caminhos de comparação (conteúdo e nome) têm provas independentes.
+
 ## Princípios de design de gates (P1–P4)
 
 Todo gate de paridade e toda regra do validator devem seguir os quatro princípios documentados em

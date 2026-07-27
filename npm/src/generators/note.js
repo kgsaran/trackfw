@@ -2,6 +2,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const { localDateISO } = require('./date')
 
 const VAULT_DIR = 'vault/notes'
 const INDEX_FILE = 'vault/notes/index.md'
@@ -13,15 +14,23 @@ const INDEX_FILE = 'vault/notes/index.md'
  * @returns {string}
  */
 function toSlug(s) {
-  return s.toLowerCase().replace(/ /g, '-')
+  // NFKD normalization + remove combining marks (diacríticos) + lowercase + non-alphanumeric → hífen
+  return s
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 /**
- * Retorna a data atual no formato YYYY-MM-DD.
+ * Retorna a data LOCAL atual no formato YYYY-MM-DD.
+ * Delega para localDateISO() — usa getDate/getMonth/getFullYear (hora local),
+ * não toISOString (UTC).
  * @returns {string}
  */
 function today() {
-  return new Date().toISOString().slice(0, 10)
+  return localDateISO()
 }
 
 /**
@@ -142,4 +151,4 @@ function indexContains(filename, cwd) {
   )
 }
 
-module.exports = { newNote, appendNoteToIndex, noteFiles, indexContains, toSlug }
+module.exports = { newNote, appendNoteToIndex, noteFiles, indexContains, toSlug, today }

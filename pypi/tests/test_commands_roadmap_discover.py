@@ -52,7 +52,7 @@ class TestRoadmapNew(unittest.TestCase):
 
         with open(path, encoding="utf-8") as f:
             content = f.read()
-        self.assertIn("status: Backlog", content)
+        self.assertIn("status: backlog", content)
         self.assertIn("# Roadmap: Nova Feature", content)
 
     def test_roadmap_new_by_agent(self):

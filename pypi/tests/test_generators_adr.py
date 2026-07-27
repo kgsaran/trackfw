@@ -1,44 +1,15 @@
 """
 Testes unitários para pypi/trackfw/generators/adr.py
+Formato canônico Go/Node — REQ-2026-07-27-convergencia-templates-python.
 """
 
 import os
 import re
 import tempfile
 import unittest
+from datetime import date
 
-from trackfw.generators.adr import next_adr_number, slugify, generate_adr
-
-
-class TestNextAdrNumber(unittest.TestCase):
-
-    def test_next_number_dir_vazio(self):
-        """Diretório vazio deve retornar 1."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = next_adr_number(tmpdir)
-            self.assertEqual(result, 1)
-
-    def test_next_number_com_arquivos(self):
-        """Diretório com ADR-001 e ADR-003 deve retornar 4."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Cria arquivos simulando ADRs existentes
-            open(os.path.join(tmpdir, 'ADR-001-primeiro.md'), 'w').close()
-            open(os.path.join(tmpdir, 'ADR-003-terceiro.md'), 'w').close()
-            result = next_adr_number(tmpdir)
-            self.assertEqual(result, 4)
-
-    def test_next_number_dir_inexistente(self):
-        """Diretório inexistente deve retornar 1."""
-        result = next_adr_number('/tmp/trackfw-dir-que-nao-existe-xyz')
-        self.assertEqual(result, 1)
-
-    def test_next_number_ignora_arquivos_nao_adr(self):
-        """Arquivos não-ADR no diretório não devem influenciar a numeração."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            open(os.path.join(tmpdir, 'README.md'), 'w').close()
-            open(os.path.join(tmpdir, 'ADR-002-segundo.md'), 'w').close()
-            result = next_adr_number(tmpdir)
-            self.assertEqual(result, 3)
+from trackfw.generators.adr import slugify, generate_adr
 
 
 class TestSlugify(unittest.TestCase):
@@ -70,7 +41,7 @@ class TestSlugify(unittest.TestCase):
 class TestGenerateAdr(unittest.TestCase):
 
     def test_generate_adr_cria_arquivo(self):
-        """generate_adr deve criar o arquivo com nome e frontmatter corretos."""
+        """generate_adr deve criar o arquivo com nome baseado em data e frontmatter canônico."""
         with tempfile.TemporaryDirectory() as tmpdir:
             adr_dir = os.path.join(tmpdir, 'docs', 'adr')
             filepath = generate_adr(
@@ -80,29 +51,35 @@ class TestGenerateAdr(unittest.TestCase):
                 cwd=tmpdir,
             )
 
-            # Arquivo deve existir
             self.assertTrue(os.path.isfile(filepath))
 
-            # Nome do arquivo deve conter o número e o slug
+            # Nome do arquivo: ADR-YYYY-MM-DD-<slug>.md
             basename = os.path.basename(filepath)
-            self.assertRegex(basename, r'^ADR-001-minha-decisao-tecnica\.md$')
+            self.assertRegex(basename, r'^ADR-\d{4}-\d{2}-\d{2}-minha-decisao-tecnica\.md$')
 
-            # Conteúdo deve ter frontmatter
             with open(filepath, encoding='utf-8') as f:
                 content = f.read()
 
-            self.assertIn('name: ADR-001-minha-decisao-tecnica', content)
-            self.assertIn('title: "Minha Decisão Técnica"', content)
+            today = date.today().isoformat()
+            # Frontmatter canônico
             self.assertIn('status: Draft', content)
-            self.assertIn('## Status', content)
+            self.assertIn(f'date: {today}', content)
+            self.assertIn('author: ""', content)
+            # Header inline
+            self.assertIn(f'> Date: {today} | Status: Draft', content)
+            # H1 canônico
+            self.assertIn('# ADR: Minha Decisão Técnica', content)
+            # Seções canônicas
             self.assertIn('## Context', content)
             self.assertIn('## Decision', content)
             self.assertIn('## Consequences', content)
+            self.assertIn('## Alternatives Considered', content)
 
-    def test_generate_adr_numero_sequencial(self):
-        """Dois ADRs gerados no mesmo diretório devem ter números 1 e 2."""
+    def test_generate_adr_nomes_com_data(self):
+        """Dois ADRs gerados no mesmo diretório devem ter nomes baseados em data."""
         with tempfile.TemporaryDirectory() as tmpdir:
             adr_dir = os.path.join(tmpdir, 'docs', 'adr')
+            today = date.today().isoformat()
 
             path1 = generate_adr(
                 title='Primeira Decisão',
@@ -118,11 +95,15 @@ class TestGenerateAdr(unittest.TestCase):
             name1 = os.path.basename(path1)
             name2 = os.path.basename(path2)
 
-            self.assertIn('ADR-001', name1)
-            self.assertIn('ADR-002', name2)
+            # Ambos devem conter a data atual no nome
+            self.assertIn(today, name1)
+            self.assertIn(today, name2)
+            # Slugs distintos
+            self.assertIn('primeira-decisao', name1)
+            self.assertIn('segunda-decisao', name2)
 
-    def test_generate_adr_status_padrao_draft(self):
-        """Status padrão deve ser 'Draft'."""
+    def test_generate_adr_status_padrao_proposed(self):
+        """Status padrão deve ser 'Proposed' (canônico Go/Node)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             adr_dir = os.path.join(tmpdir, 'docs', 'adr')
             filepath = generate_adr(
@@ -132,7 +113,7 @@ class TestGenerateAdr(unittest.TestCase):
             )
             with open(filepath, encoding='utf-8') as f:
                 content = f.read()
-            self.assertIn('status: Draft', content)
+            self.assertIn('status: Proposed', content)
 
     def test_generate_adr_cria_dir_se_inexistente(self):
         """O diretório de ADRs deve ser criado automaticamente."""
