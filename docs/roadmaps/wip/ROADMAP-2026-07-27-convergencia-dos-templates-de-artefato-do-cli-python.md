@@ -120,7 +120,7 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A) ─ barrier ─> Wave 3 (3A)
 
 ### ML-2B — Eliminar as divergências Go↔Node (promovido do escopo negativo)
 
-**Status:** in progress
+**Status:** done
 **Files affected:** `internal/generators/req.go`, `internal/generators/roadmap.go`,
 `npm/src/commands/roadmap.js`, `npm/src/generators/req.js`, `pypi/trackfw/generators/req.py`,
 mais os testes afetados
@@ -160,6 +160,50 @@ lista de exceções — o "número mágico" que P1 condena.
 - [ ] REQ gerada pelos 3 CLIs é byte a byte idêntica, incluindo as linhas de issue
 - [ ] ROADMAP gerado pelos 3 CLIs é byte a byte idêntico
 - [ ] ADR permanece byte a byte idêntico (já está — não regredir)
+- [ ] `make quality` verde
+
+### ML-2C — Node usa UTC onde Go e Python usam hora local (P3)
+
+**Status:** in progress
+**Files affected:** `npm/src/generators/req.js:76`, `adr.js:33`, `note.js:24`, e o gerador de roadmap
+do Node; mais os testes afetados
+
+**Como apareceu:** levantado pelo agente do ML-2B como observação e **confirmado empiricamente pelo
+orquestrador**. Não é teórico:
+
+```
+$ TZ=Pacific/Kiritimati   (UTC+14 — local 2026-07-28, UTC 2026-07-27)
+GO:   REQ-2026-07-28-tz-test.md
+NODE: REQ-2026-07-27-tz-test.md     ← dia diferente, arquivo diferente
+```
+
+O Node usa `new Date().toISOString().slice(0,10)` — **UTC**. Go usa `time.Now().Format(...)` e Python
+usa `date.today()` — **hora local**. A divergência afeta o nome do arquivo, o `date:` do frontmatter
+e a linha de header.
+
+**Por que é bloqueante para o ML-3A:** o gate compararia os 3 CLIs byte a byte e passaria ou falharia
+**conforme o horário e o fuso da máquina**. Em UTC-3, das 21h à meia-noite, quebraria; durante o dia,
+passaria. Um gate intermitente é pior que nenhum — alguém acaba desabilitando.
+
+**A paridade que auditei hoje passou por sorte:** rodei durante o dia, quando UTC e local coincidem.
+É exatamente o "verde por coincidência" que o ADR de gates existe para eliminar (foi o defeito D2,
+da ajuda colorida do argparse).
+
+**Actions:**
+1. **Node converge para hora local** nos geradores de artefato — `req.js`, `adr.js`, `note.js` e o de
+   roadmap. Go e Python já usam local, e é a semântica correta: uma REQ criada às 22h do dia 27 no
+   Brasil é do dia 27, não do 28.
+2. Cobrir `note.js` mesmo sendo o artefato cuja paridade já estava documentada
+   (`docs/cli-parity.md:38-40`) — o contrato está declarado, mas a data diverge do mesmo jeito.
+3. **Teste que fixa o comportamento sob fuso**: rodar o gerador com `TZ` que force divergência
+   UTC↔local e afirmar que os 3 produzem a mesma data. Sem isso, a regressão volta invisível.
+4. **Report-only, não corrigir:** `npm/src/generators/init.js:73,93,497` e `npm/src/commands/*.js`
+   também usam `toISOString`, mas são scaffold e exibição, não artefato governado. Registrar.
+
+**Acceptance criteria:**
+- [ ] Os 3 CLIs geram a mesma data sob qualquer `TZ`, incluindo UTC+14 e UTC-11
+- [ ] Nome de arquivo, `date:` e header idênticos nos 3, independentemente do fuso
+- [ ] Teste que prova a paridade sob `TZ` divergente
 - [ ] `make quality` verde
 
 ---
