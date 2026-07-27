@@ -30,7 +30,7 @@ except Exception as exc:
 PY
 ) || { echo "ERROR: failed to parse catalog at $CATALOG_FILE" >&2; exit 1; }
 read -r EXPECTED_AGENTS_COUNT EXPECTED_SKILLS_COUNT <<<"$_catalog_counts"
-export EXPECTED_AGENTS_COUNT EXPECTED_SKILLS_COUNT
+export CATALOG_FILE EXPECTED_AGENTS_COUNT EXPECTED_SKILLS_COUNT
 
 TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-integration-parity.XXXXXX")
 trap 'rm -rf "$TMP_ROOT"' EXIT INT TERM
@@ -99,12 +99,27 @@ PY
 assert_catalog_targets() {
   local filename=$1
   python3 - "$filename" <<'PY'
-import json, sys
-expected = {"claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "kiro"}
+# P1: derive the expected target set from the catalog (CATALOG_FILE env var) so
+# the gate stays accurate automatically when new targets are added, without
+# requiring a manual edit to a hardcoded constant in this script.
+import json, sys, os
+catalog_path = os.environ.get("CATALOG_FILE", "")
+if not catalog_path:
+    print("assert_catalog_targets: CATALOG_FILE env var not set", file=sys.stderr)
+    sys.exit(1)
+try:
+    with open(catalog_path, encoding="utf-8") as f:
+        cat = json.load(f)
+    expected = {t["id"] for t in cat["targets"]}
+except Exception as exc:
+    print(f"assert_catalog_targets: failed to read catalog: {exc}", file=sys.stderr)
+    sys.exit(1)
 with open(sys.argv[1], encoding="utf-8") as stream:
     payload = json.load(stream)
 actual = {row["target"] for row in payload["deployments"]}
-assert actual == expected, (actual, expected)
+assert actual == expected, (
+    f"target set mismatch\n  got:      {sorted(actual)}\n  expected: {sorted(expected)}"
+)
 rows = [(row["target"], row["surface"], row["item"]) for row in payload["deployments"]]
 assert rows == sorted(rows), rows
 PY
