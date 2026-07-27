@@ -4106,3 +4106,29 @@ Normalização doc-only dos 29 arquivos em `docs/req/`: adição de frontmatter 
 
 **Resultado:** zero diretórios órfãos em `docs/`. `validate` 0 violations, `make quality` verde.
 Os 85 artefatos antes invisíveis ao CLI agora estão sob governança.
+
+---
+
+## REQ-2026-07-27-integridade-referencias — 2026-07-27 — Zeus
+
+**Branch:** `fix/integridade-das-referencias-e-ciclo-de-vida-da-req`
+**Status:** IMPLEMENTANDO
+
+**Defeito 1:** 38 de 48 REQs (79%) com `roadmap:` apontando para caminho inexistente, `validate`
+verde. Três escapes independentes: frontmatter nunca é lido (extrator busca `Roadmap:` no corpo);
+fallback por basename recursivo em `referenceExists`; severidade `warning`. 37 das 38 apontam para
+arquivo que existe — é ausência de formato canônico, não rastreabilidade perdida.
+
+**Defeito 2:** nada fecha a REQ. 6 com `Status: Open` e roadmap em `done/`. `blocked_by_draft_adr` é
+`error` → falso positivo (REQ entregue reprova o gate se um ADR dela virar Draft) e falso negativo
+(REQ marcada Done à mão é excluída do check).
+
+**Formato canônico decidido e verificado:** caminho relativo completo com `.md`. `api_chain.go` monta
+o nó com `ID: path` de `filepath.WalkDir(cfg.RoadmapDir,...)` e a aresta é `{From: path, To: val}` —
+qualquer outro formato gera aresta órfã no grafo do serve.
+
+**Ordem crítica:** a elevação de `ref_targets_exist` para `error` fica no ML-3A, **depois** da
+normalização dos dados. Elevar na Wave 2 deixaria `make quality` vermelho na barrier.
+
+**Fora de escopo:** slash-command sem frontmatter · `stale_wip` inócuo (mtime) · schemas mortos ·
+flags do Python · 6 itens de higiene menores.
