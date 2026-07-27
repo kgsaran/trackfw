@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-27
 req: "docs/req/REQ-2026-07-26-robustez-dos-gates-de-governanca-e-paridade.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: robustez dos gates de governanca e paridade
 
-> Created: 2026-07-27 | Status: wip
+> Created: 2026-07-27 | Status: done
 
 ## Context
 
@@ -135,7 +135,7 @@ Registrar no relatório os 7 scripts com o veredito de cada um.
 > Dependências: **barrier** — Wave 2 concluída.
 
 ### ML-3A — Testes de falsificação (P4) e documentação dos princípios
-**Status:** in progress
+**Status:** done
 **Files affected:** testes nos 3 CLIs, `scripts/`, `docs/`
 
 **Actions:**
@@ -201,11 +201,51 @@ O item de usabilidade herdado do ML-1A (mensagem do `branch_has_wip_roadmap` lis
 **não foi corrigido**: o ML-2A tinha instrução explícita de não alterar essa regra e o ML-2B não
 mexe no validator. Fica para o ML-3A, que já toca as regras corrigidas.
 
+**2026-07-27 — ML-3A concluído e auditado. Roadmap encerrado.**
+
+A primeira tentativa do ML-3A caiu por erro de API com o trabalho ainda no working tree; a segunda
+completou a documentação e commitou tudo junto (`dc9a18f`), sem refazer o que já estava pronto.
+
+Entregue:
+- `scripts/check-gates-falsify.sh` — prova que os **6 gates de paridade reprovam** cenário negativo
+  concreto (byte drift em static/integration assets, slug drift de identidade, regra removida do npm,
+  comando ausente em duas superfícies). Cada asserção exige exit != 0 **e** o diagnóstico esperado —
+  um gate que falhasse pelo motivo errado não passaria. Integrado ao alvo `parity`, roda em
+  `make quality` sem variável auxiliar.
+- Testes negativos das regras corrigidas na Wave 2 nos 3 CLIs.
+- Mensagem do `branch_has_wip_roadmap` truncada em 3 + `", e mais N"` — mesma formatação nos 3 CLIs.
+- `docs/gate-design-principles.md` — P1–P4 ancorados nos 4 defeitos reais desta REQ, com checklist
+  reutilizável e `check-gates-falsify.sh` apontado como o lugar canônico da prova negativa. Linkado
+  de `docs/cli-parity.md`.
+
+Auditoria do orquestrador: `make quality` verde (Go ok | Node 228 pass | Python 588 pass | 6 gates
+positivos + 6 falsificações), `git status` sem resíduo após execução, `scripts/check-gates-falsify.sh`
+commitado com modo `100755` — o Makefile o invoca sem `bash`.
+
+**O encerramento deste roadmap é, ele próprio, a prova do ML-1A**: mover o arquivo de `wip/` para
+`done/` nesta branch mantém `trackfw validate` verde. Era exatamente o cenário que reprovava antes.
+
 ## Acceptance Criteria
 
-- [ ] Todas as waves concluídas
-- [ ] Encerrar roadmap na própria branch deixa `trackfw validate` verde
-- [ ] Inventário completo das 17 regras e dos 7 scripts, com veredito individual
-- [ ] Todo gate corrigido tem prova de que ainda reprova
-- [ ] `make quality` verde nos 3 CLIs, sem variável auxiliar
-- [ ] Escopo negativo respeitado (sem framework novo, sem dependência nova, sem rebaixar severidade)
+- [x] Todas as waves concluídas
+- [x] Encerrar roadmap na própria branch deixa `trackfw validate` verde
+- [x] Inventário completo das 17 regras e dos 7 scripts, com veredito individual
+- [x] Todo gate corrigido tem prova de que ainda reprova
+- [x] `make quality` verde nos 3 CLIs, sem variável auxiliar
+- [x] Escopo negativo respeitado (sem framework novo, sem dependência nova, sem rebaixar severidade)
+
+## Débito registrado (candidatos a REQ própria, não esquecimento)
+
+Levantados na auditoria da Wave 2 e conscientemente deixados fora de escopo:
+
+1. `adr_orphan` silencia erros de walk — exige refator da assinatura de `walkADRFilePaths`.
+2. Padrão sistêmico `os.ReadFile → continue` (~30 sites × 3 CLIs) — viola P2 de forma difusa.
+3. `staleWIPDays = 7` hardcoded — viola P1; o campo não existe em `ProjectConfig`.
+4. `check-identity-parity.sh` com `TARGETS` hardcoded — derivar do catálogo exige lógica não-trivial
+   de superfícies padrão.
+5. **`trackfw roadmap move` não atualiza o `status` do frontmatter** — encontrado ao encerrar este
+   próprio roadmap. `move ... done` reposiciona o arquivo mas deixa `status: wip`, e o `folder_status`
+   imediatamente acusa `folder is "done" but status declares "wip"`. O comando que existe para cumprir
+   a DoD produz um estado que o próprio validador reprova, e a correção fica manual. É o mesmo tipo de
+   defeito do D4 (`branch_has_wip_roadmap` punindo a DoD) e merece REQ própria: o `move` deve reescrever
+   o frontmatter, nos 3 CLIs.

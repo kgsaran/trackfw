@@ -3604,3 +3604,25 @@ Achados registrados:
 **Commit:** `dc9a18f` | **Push:** `feat/robustez-dos-gates-de-governanca-e-paridade`
 
 ---
+
+---
+
+## Encerramento da REQ-2026-07-26-gates — 2026-07-27 — Zeus
+
+**Tarefa:** auditoria final das 3 waves e encerramento do roadmap
+**Branch:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Status:** CONCLUÍDO
+
+Sessão anterior foi interrompida após os commits dos MLs 2A/2B, antes da barrier. Retomado:
+barrier da Wave 2 executada (`make quality` verde), ML-3A spawnado, concluído e auditado.
+
+**Resultado:** 4 MLs concluídos. 6 gates de paridade agora têm prova de falsificação
+(`scripts/check-gates-falsify.sh`), as regras corrigidas na Wave 2 têm teste negativo nos 3 CLIs,
+e os princípios P1–P4 estão em `docs/gate-design-principles.md` ancorados nos 4 defeitos reais.
+
+**Achado do encerramento:** `trackfw roadmap move <nome> done` NÃO reescreve o `status` do
+frontmatter — o arquivo muda de pasta e o `folder_status` acusa divergência na hora. O comando
+que existe para cumprir a DoD gera um estado que o próprio validador reprova. Registrado como
+débito nº 5 no roadmap; é candidato a REQ própria (corrigir nos 3 CLIs).
+
+**Débito registrado (não esquecido):** 5 itens no fim do roadmap em `docs/roadmaps/done/`.
