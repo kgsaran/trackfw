@@ -4532,3 +4532,8 @@ Após o merge do contrato canônico, a REQ de bloqueadores de release foi movida
 `fix/bloqueadores-release-paridade`. ML-1A está em andamento para caracterizar, antes de alterar
 produção, as quatro divergências: flags Python, frontmatter com aspas, log `by_agent` e alegação
 documental de JSON Schema.
+
+ML-1A confirmou três bloqueadores reais (flags Python, valores aspeados e contrato documental). O
+quarto, log `by_agent`, já estava corrigido na base e recebeu teste obrigatório de regressão; ML-2C
+foi encerrado por evidência, sem alteração de produção. ML-2A, ML-2B e ML-2D foram liberados em
+paralelo, com ownership de arquivos não sobreposto.

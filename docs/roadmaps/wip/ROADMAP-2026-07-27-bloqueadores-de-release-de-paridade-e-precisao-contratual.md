@@ -80,7 +80,7 @@ make quality
 
 ### ML-2A — Paridade das flags de roadmap no Python
 
-**Status:** pending
+**Status:** in progress
 
 **Files affected:**
 - `pypi/trackfw/commands/roadmap.py`
@@ -100,7 +100,7 @@ make quality
 
 ### ML-2B — Normalização de aspas no frontmatter Python
 
-**Status:** pending
+**Status:** in progress
 
 **Files affected:**
 - `pypi/trackfw/validator.py`
@@ -119,7 +119,11 @@ make quality
 
 ### ML-2C — Log `by_agent` com atribuição paritária
 
-**Status:** pending
+**Status:** done
+
+**Resultado da Wave 1:** a implementação já está presente na base (`log_basename` preserva
+`<agent>/ROADMAP-…`); o ML-1A adicionou a prova obrigatória de regressão. Não há correção de
+produção remanescente neste microlote.
 
 **Files affected:**
 - `pypi/trackfw/generators/roadmap.py`
@@ -138,7 +142,7 @@ make quality
 
 ### ML-2D — Contrato verdadeiro para JSON Schemas
 
-**Status:** pending
+**Status:** in progress
 
 **Files affected:**
 - `site/guide/ai-agents.md`
