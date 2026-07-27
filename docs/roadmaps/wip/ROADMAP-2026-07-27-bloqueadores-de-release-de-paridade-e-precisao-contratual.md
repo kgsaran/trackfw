@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-07-27
 req: "docs/req/REQ-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Bloqueadores de release de paridade e precisão contratual
 
-> Created: 2026-07-27 | Status: backlog
+> Created: 2026-07-27 | Status: wip
 
 ## Context
 
@@ -22,7 +22,7 @@ negativas antes das correções e fecha com gates cross-CLI e package smoke.
 
 ### ML-1A — Testes negativos de flags, aspas, log e schemas
 
-**Status:** pending
+**Status:** in progress
 
 **Files affected:**
 - `pypi/tests/test_commands_roadmap_discover.py`
@@ -165,7 +165,7 @@ make quality
 - [ ] `trackfw validate` retorna 0/0.
 - [ ] REQ liberada para release.
 
-## Global Acceptance Criteria
+## Acceptance Criteria
 
 - [ ] Quatro bloqueadores encerrados.
 - [ ] Zero divergências públicas não documentadas.

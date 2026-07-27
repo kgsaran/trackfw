@@ -4494,3 +4494,11 @@ REQ concluída em 2026-07-27. O ciclo canônico foi implementado nos três CLIs:
 frontmatter (`status`, `date`, `req`, `squad`), `roadmap move ... analyzing` em layouts flat e
 by-agent, sincronização de pasta/frontmatter/header/log e gates E2E/falsificação. `make quality`
 passou integralmente; roadmap movido para `docs/roadmaps/done/` e REQ marcada como Done.
+
+## Implementação 2026-07-27 — Zeus — bloqueadores de release
+
+Após o merge do contrato canônico, a REQ de bloqueadores de release foi movida de `backlog/` para
+`analyzing/`, validada sem violações e iniciada em `wip/` na branch
+`fix/bloqueadores-release-paridade`. ML-1A está em andamento para caracterizar, antes de alterar
+produção, as quatro divergências: flags Python, frontmatter com aspas, log `by_agent` e alegação
+documental de JSON Schema.

@@ -3,7 +3,7 @@ status: Open
 date: 2026-07-27
 author: "zeus"
 adr: "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md"
 ---
 
 # REQ: Bloqueadores de release de paridade e precisão contratual
@@ -74,4 +74,4 @@ ADR: `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md`
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
