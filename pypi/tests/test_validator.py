@@ -9,6 +9,7 @@ import time
 import unittest
 import tempfile
 import shutil
+import pytest
 
 # Garante que importamos a versão local do pacote
 import sys
@@ -1261,6 +1262,49 @@ def test_ml2b_defeito2_req_open_com_roadmap_done(tmp_path, monkeypatch):
     assert any(
         "DONE-ROADMAP-DEFEITO2" in message for message in all_messages
     ), f"esperava mensagem sobre REQ Open com roadmap done; result={result}"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="ML-1A: stale_wip Python ainda usa git/mtime, não a entrada .trackfw-log backlog → wip.",
+)
+def test_ml2a_stale_wip_usa_entrada_log_de_wip(tmp_path, monkeypatch):
+    _ml1a_base(tmp_path, monkeypatch)
+    roadmap = tmp_path / "docs/roadmaps/wip/ROADMAP-old-wip.md"
+    roadmap.write_text(
+        "---\nstatus: wip\n---\n# Roadmap\nREQ: docs/req/REQ-001.md\n## Acceptance Criteria\n- [ ] ok\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docs/roadmaps/.trackfw-log").write_text(
+        "2026-07-10 10:00  ROADMAP-old-wip.md                                backlog → wip\n",
+        encoding="utf-8",
+    )
+    now = time.time()
+    os.utime(roadmap, (now, now))
+
+    warnings = v.validate_stale_wip(_config.load(), days=7)
+    messages = [item["message"] for item in warnings]
+
+    assert any(
+        "ROADMAP-old-wip.md" in message for message in messages
+    ), f"esperava stale_wip pela entrada antiga do .trackfw-log; warnings={warnings}"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="ML-1A: stale_wip Python silencia erro de walk/ENOTDIR em wip/.",
+)
+def test_ml2b_stale_wip_diagnostica_erro_de_walk(tmp_path, monkeypatch):
+    _ml1a_base(tmp_path, monkeypatch)
+    shutil.rmtree(tmp_path / "docs/roadmaps/wip")
+    (tmp_path / "docs/roadmaps/wip").write_text("not a directory\n", encoding="utf-8")
+
+    warnings = v.validate_stale_wip(_config.load(), days=7)
+    messages = [item["message"] for item in warnings]
+
+    assert any(
+        "wip" in message for message in messages
+    ), f"esperava diagnostico para erro de walk/ENOTDIR em wip/; warnings={warnings}"
 
 
 # ---------------------------------------------------------------------------

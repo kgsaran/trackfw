@@ -22,7 +22,7 @@ manual depois da próxima release.
 
 ### ML-1A — Definir contrato de idade e erros de inspeção
 
-**Status:** in progress
+**Status:** done
 
 **Files affected:**
 - novo ADR ou adendo explícito ao ADR de gates verificáveis
@@ -36,9 +36,31 @@ manual depois da próxima release.
 - Registrar compatibilidade e defaults.
 
 **Acceptance criteria:**
-- [ ] Decisões fechadas antes de implementação.
-- [ ] Casos negativos reproduzidos nos três runtimes.
-- [ ] Nenhuma alteração de produção.
+- [x] Decisões fechadas antes de implementação.
+- [x] Casos negativos reproduzidos nos três runtimes.
+- [x] Nenhuma alteração de produção.
+
+**ML-1A result — 2026-07-27 (Apolo):**
+- Contrato registrado como adendo em
+  `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md` e em
+  `docs/cli-parity.md`.
+- Decisão temporal: idade de `stale_wip` é a entrada mais recente do roadmap em `wip/` no
+  `.trackfw-log`; fallback retrocompatível fora de log é `mtime`; `git log` deixa de ser fonte
+  contratual de idade.
+- Política de inspeção definida: `ENOENT` de diretório de estado opcional não gera finding;
+  permissão negada, `ENOTDIR`/erro de walk, arquivo esperado ilegível e arquivo/linha de log inválidos
+  devem emitir diagnóstico da regra, com severidade configurável da própria regra.
+- Provas negativas adicionadas nos três runtimes para a lacuna temporal e para erro de walk em `wip/`:
+  `internal/validator/validator_stale_wip_contract_xfail_test.go`,
+  `npm/tests/validator.test.js` e `pypi/tests/test_validator.py`.
+- Nenhum arquivo de produção foi alterado neste ML.
+
+**Validation:**
+```bash
+go test ./internal/validator -run 'StaleWIP' -v
+(cd npm && npm test -- --test-name-pattern='stale_wip')
+python3 -m pytest pypi/tests/test_validator.py -q -rxX
+```
 
 ### ML-1B — Provar lacuna do catálogo no gate de identidade
 

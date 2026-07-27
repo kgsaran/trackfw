@@ -81,6 +81,40 @@ the internal validation rules documented in this contract, including
 frontmatter presence, folder/status coherence, reference integrity, and
 traceability checks.
 
+## Validator `stale_wip` and inspection errors
+
+The Go, Node.js, and Python validators share the same `stale_wip` contract:
+
+- A roadmap's WIP age is measured from its latest transition into `wip/` in
+  `docs/roadmaps/.trackfw-log`.
+- Valid WIP-entry transitions include any log line for the current roadmap whose
+  destination state is `wip`, such as `backlog → wip`, `analyzing → wip`, or
+  `blocked → wip`.
+- In `roadmap_namespacing: by_agent`, the roadmap identity includes the agent
+  prefix exactly as written in the log, for example
+  `zeus/ROADMAP-YYYY-MM-DD-<slug>.md`.
+- If `.trackfw-log` is absent, or if the current roadmap has no parseable entry
+  into `wip`, the backward-compatible fallback is the file `mtime`.
+- Git commit time is not part of the cross-runtime contract for WIP age. It
+  describes file edit history, not time spent in the WIP state.
+- The default stale threshold remains 7 days and the default rule severity
+  remains `warning` unless `rules.stale_wip` overrides it.
+
+Inspection failures must not degrade silently:
+
+| Condition | Contract |
+|---|---|
+| Missing optional state directory such as `wip/`, `blocked/`, or `done/` | No finding; missing state directories are treated as empty states. |
+| Permission denied, `ENOTDIR`, or walk/list failure for an existing configured directory | Emit a diagnostic for the owning rule, including the path and cause. Severity follows that rule's configured severity. |
+| Expected file exists but cannot be `stat`ed or read | Emit a diagnostic for the owning rule and continue inspecting the remaining files. |
+| Invalid support file or invalid transition-log line | Emit a diagnostic and use the documented fallback for the affected artifact when available. |
+
+ML-1A of
+`ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
+captures negative tests in all three runtimes for the current drift: stale age
+still follows git/mtime instead of `.trackfw-log`, and walk errors in `wip/` are
+currently silent.
+
 ## AI integration lifecycle
 
 The Go, Node.js, and Python runtimes expose the same public lifecycle:

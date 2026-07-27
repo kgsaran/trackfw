@@ -889,6 +889,58 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
+  testSkip('ML-2A stale_wip usa entrada .trackfw-log backlog → wip como idade', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-stale-log-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+      const roadmapPath = path.join(tmp, 'docs/roadmaps/wip/ROADMAP-old-wip.md')
+      fs.writeFileSync(roadmapPath,
+        '---\nstatus: wip\n---\n# Roadmap\nREQ: docs/req/REQ-001.md\n## Acceptance Criteria\n- [ ] ok\n')
+      fs.writeFileSync(path.join(tmp, 'docs/roadmaps/.trackfw-log'),
+        '2026-07-10 10:00  ROADMAP-old-wip.md                                backlog → wip\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+        'roadmap_dir: docs/roadmaps\nreq_dir: docs/req\nadr_dirs:\n  - docs/adr\n')
+      const now = new Date()
+      fs.utimesSync(roadmapPath, now, now)
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const warnings = validator.validateStaleWIP()
+        assert(warnings.some(w => w.includes('ROADMAP-old-wip.md')),
+          `esperava stale_wip pela entrada antiga do .trackfw-log; warnings=${JSON.stringify(warnings)}`)
+      } finally {
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  testSkip('ML-2B stale_wip diagnostica erro de walk em wip/', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-stale-walk-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'docs/roadmaps/wip'), 'not a directory\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+        'roadmap_dir: docs/roadmaps\nreq_dir: docs/req\nadr_dirs:\n  - docs/adr\n')
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const warnings = validator.validateStaleWIP()
+        assert(warnings.some(w => w.includes('wip')),
+          `esperava diagnostico para erro de walk/ENOTDIR em wip/; warnings=${JSON.stringify(warnings)}`)
+      } finally {
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
   console.log(`\n${passed} passed, ${failed} failed, ${skipped} xfail`)
   if (failed > 0) process.exit(1)
 })()
