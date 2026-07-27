@@ -23,8 +23,11 @@ _ROADMAP_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"
 def _parse_frontmatter(content: str) -> dict:
     """
     Extrai campos entre --- e --- do início do arquivo.
-    Duplicado aqui para evitar importação circular com validator.py.
+    Mantém parser local para evitar acoplar traceid ao validator completo, mas
+    reutiliza a normalização central de valores YAML flat.
     """
+    from .validator import normalize_yaml_flat_value
+
     result = {}
     if not content.startswith("---"):
         return result
@@ -41,7 +44,7 @@ def _parse_frontmatter(content: str) -> dict:
             colon_idx = stripped.find(":")
             if colon_idx >= 0:
                 key = stripped[:colon_idx].strip().replace("-", "_")
-                val = stripped[colon_idx + 1:].strip()
+                val = normalize_yaml_flat_value(stripped[colon_idx + 1:].strip())
                 result[key] = val
     return result
 

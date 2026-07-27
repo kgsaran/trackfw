@@ -213,7 +213,7 @@ def _extract_ref_path(content: str, field: str) -> str:
                 return ""
             # Primeira "palavra" (antes de espaço)
             val = val.split()[0] if val.split() else ""
-            val = val.strip("\"'")
+            val = normalize_yaml_flat_value(val)
             if val.endswith(".md"):
                 return val
     return ""
@@ -289,6 +289,13 @@ def resolve_done_dirs(cfg: dict) -> list:
     return _resolve_state_dirs(cfg, "done")
 
 
+def normalize_yaml_flat_value(value: str) -> str:
+    """Normaliza valor YAML flat removendo apenas aspas externas correspondentes."""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        return value[1:-1]
+    return value
+
+
 def parse_frontmatter(content: str) -> dict:
     """
     Extrai campos entre --- e --- do início do arquivo.
@@ -310,7 +317,7 @@ def parse_frontmatter(content: str) -> dict:
             colon_idx = stripped.find(":")
             if colon_idx >= 0:
                 key = stripped[:colon_idx].strip().replace("-", "_")
-                val = stripped[colon_idx + 1:].strip()
+                val = normalize_yaml_flat_value(stripped[colon_idx + 1:].strip())
                 result[key] = val
     return result
 
@@ -377,6 +384,7 @@ def _read_wip_config(cwd: str = None) -> dict:
         trimmed = line.strip()
         if trimmed.startswith("wip_limit:"):
             val = trimmed[len("wip_limit:"):].strip().split()[0] if trimmed[len("wip_limit:"):].strip() else ""
+            val = normalize_yaml_flat_value(val)
             try:
                 n = int(val)
                 if n > 0:
@@ -385,6 +393,7 @@ def _read_wip_config(cwd: str = None) -> dict:
                 pass
         if trimmed.startswith("wip_by_squad:"):
             val = trimmed[len("wip_by_squad:"):].strip().split()[0] if trimmed[len("wip_by_squad:"):].strip() else ""
+            val = normalize_yaml_flat_value(val)
             if val == "true":
                 cfg_result["by_squad"] = True
 
@@ -405,7 +414,7 @@ def _parse_squad_from_frontmatter(file_path: str) -> str:
     for line in content.split("\n"):
         trimmed = line.strip()
         if trimmed.startswith("squad:"):
-            return trimmed[len("squad:"):].strip()
+            return normalize_yaml_flat_value(trimmed[len("squad:"):].strip())
     return ""
 
 
@@ -428,13 +437,13 @@ def _read_governance_mode(cwd: str = None) -> dict:
             val_part = trimmed[len("governance_mode:"):].strip()
             vals = val_part.split()
             if vals:
-                result["mode"] = vals[0]
+                result["mode"] = normalize_yaml_flat_value(vals[0])
         if trimmed.startswith("lenient_until:"):
             val_part = trimmed[len("lenient_until:"):].strip()
             vals = val_part.split()
             if vals:
                 try:
-                    d = datetime.fromisoformat(vals[0])
+                    d = datetime.fromisoformat(normalize_yaml_flat_value(vals[0]))
                     # Garantir que é aware ou naive consistente
                     result["lenient_until"] = d
                 except ValueError:
@@ -900,7 +909,7 @@ def _req_status_is_open(content: str) -> bool:
         if ":" in trimmed:
             key, val = trimmed.split(":", 1)
             if key.strip().lower() == "status":
-                return val.strip().strip("\"'").lower() == "open"
+                return normalize_yaml_flat_value(val.strip()).lower() == "open"
         marker = "| Status: "
         idx = trimmed.find(marker)
         if idx >= 0:

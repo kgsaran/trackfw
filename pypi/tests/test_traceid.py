@@ -113,6 +113,69 @@ def test_traceid_valid_pair(tmp_path):
     assert traceid_rules == [], f"Par valido nao deveria gerar violations traceid, obteve: {violations}"
 
 
+def test_traceid_normaliza_aspas_duplas_em_ids_e_status(tmp_path):
+    """Valores de frontmatter com aspas duplas devem casar com valores sem aspas."""
+    cfg = _make_cfg(tmp_path)
+
+    _write(
+        str(tmp_path / "docs/req/REQ-008.md"),
+        '---\nreq_id: "REQ-008"\nstatus: "wip"\n---\n\n# REQ\n',
+    )
+    _write(str(tmp_path / "docs/roadmaps/wip/RM-008.md"), _roadmap_content("REQ-008"))
+
+    violations = check_traceid(cfg)
+    traceid_rules = [v["rule"] for v in violations if v["rule"].startswith("traceid_")]
+    assert traceid_rules == [], f"Aspas duplas nao deveriam gerar violations traceid, obteve: {violations}"
+
+
+def test_traceid_normaliza_aspas_simples_em_ids_e_status(tmp_path):
+    """Valores de frontmatter com aspas simples devem casar com valores sem aspas."""
+    cfg = _make_cfg(tmp_path)
+
+    _write(
+        str(tmp_path / "docs/req/REQ-009.md"),
+        "---\nreq_id: 'REQ-009'\nstatus: 'wip'\n---\n\n# REQ\n",
+    )
+    _write(str(tmp_path / "docs/roadmaps/wip/RM-009.md"), _roadmap_content("REQ-009"))
+
+    violations = check_traceid(cfg)
+    traceid_rules = [v["rule"] for v in violations if v["rule"].startswith("traceid_")]
+    assert traceid_rules == [], f"Aspas simples nao deveriam gerar violations traceid, obteve: {violations}"
+
+
+def test_traceid_preserva_conteudo_interno_do_id(tmp_path):
+    """A normalização remove só aspas externas e preserva aspas internas no trace ID."""
+    cfg = _make_cfg(tmp_path)
+
+    _write(
+        str(tmp_path / "docs/req/REQ-010.md"),
+        "---\nreq_id: \"REQ-'010'\"\nstatus: wip\n---\n\n# REQ\n",
+    )
+    _write(
+        str(tmp_path / "docs/roadmaps/wip/RM-010.md"),
+        "---\nreq_id: REQ-'010'\nstatus: wip\n---\n\n# Roadmap\n",
+    )
+
+    violations = check_traceid(cfg)
+    traceid_rules = [v["rule"] for v in violations if v["rule"].startswith("traceid_")]
+    assert traceid_rules == [], f"Conteudo interno deveria ser preservado e casar, obteve: {violations}"
+
+
+def test_traceid_ignora_id_vazio_aspeado(tmp_path):
+    """req_id: "" normaliza para vazio e não deve ser indexado como ID real."""
+    cfg = _make_cfg(tmp_path)
+
+    _write(str(tmp_path / "docs/req/REQ-011.md"), '---\nreq_id: ""\nstatus: wip\n---\n\n# REQ\n')
+    _write(str(tmp_path / "docs/roadmaps/wip/RM-011.md"), '---\nreq_id: ""\nstatus: wip\n---\n\n# Roadmap\n')
+
+    violations = check_traceid(cfg)
+    assert any(
+        v["rule"] == "traceid_config_warning"
+        and "no REQ/Roadmap entries were indexed" in v.get("message", "")
+        for v in violations
+    ), f"IDs vazios aspeados nao deveriam ser indexados, obteve: {violations}"
+
+
 def test_traceid_disabled(tmp_path):
     """Sem trace_id_field configurado → nenhuma verificação traceid é feita."""
     cfg = _make_cfg(tmp_path, trace_id_field="")
