@@ -321,21 +321,88 @@ assert_fails_with "artifact-parity/slash-roadmap-content-drift" \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T9/scripts/check-artifact-parity.sh"
 
 # ---------------------------------------------------------------------------
-# Cenário 10 — check-referential-integrity.sh: REQ com roadmap quebrado →
+# Cenário 10 — check-cli-parity.sh: Python sem --from-req em roadmap new →
+#               gate detecta drift de flags do subcomando.
+#
+# Objetivo (P4): provar que o gate de CLI não verifica só comandos de topo;
+# ele também reprova se uma flag pública obrigatória de `roadmap new` sumir
+# em qualquer runtime.
+# ---------------------------------------------------------------------------
+T10="$WORK/s10"
+mkdir -p "$T10/scripts" "$T10/bin"
+setup_npm_tree "$T10"
+cp -r "$ROOT_DIR/pypi" "$T10/pypi"
+ln -s "$ROOT_DIR/internal" "$T10/internal"
+cp "$ROOT_DIR/scripts/check-cli-parity.sh" "$T10/scripts/"
+ln -s "$ROOT_DIR/scripts/check-integration-cli-parity.sh" "$T10/scripts/check-integration-cli-parity.sh"
+
+# Corromper: remover apenas o registro de --from-req do argparse Python.
+python3 - "$ROOT_DIR/pypi/trackfw/commands/roadmap.py" "$T10/pypi/trackfw/commands/roadmap.py" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+old = '''    new_p.add_argument(
+        "--from-req",
+        default=None,
+        help="Generate roadmap with ML stubs from REQ acceptance criteria",
+    )
+'''
+if old not in source:
+    raise SystemExit("pattern not found")
+pathlib.Path(sys.argv[2]).write_text(source.replace(old, ""), encoding="utf-8")
+PY
+
+assert_fails_with "cli-parity/roadmap-new-flag-drift" \
+  "python: roadmap new help missing --from-req" \
+  bash "$T10/scripts/check-cli-parity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 11 — check-artifact-parity.sh: log by_agent sem prefixo de agente →
+#               gate detecta drift na trilha de transição.
+#
+# Objetivo (P4): provar que o ciclo E2E do gate verifica a atribuição de agente
+# no `.trackfw-log`, não apenas a movimentação física do arquivo.
+# ---------------------------------------------------------------------------
+T11="$WORK/s11"
+mkdir -p "$T11/scripts"
+setup_npm_tree "$T11"
+ln -s "$ROOT_DIR/pypi" "$T11/pypi"
+cp "$ROOT_DIR/scripts/check-artifact-parity.sh" "$T11/scripts/"
+
+# Corromper: remover prefixo agent/ do log by_agent no runtime Node.
+python3 - "$ROOT_DIR/npm/src/generators/roadmap.js" "$T11/npm/src/generators/roadmap.js" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+old = "    logBasename = agent + '/' + basename\n"
+new = "    logBasename = basename\n"
+if old not in source:
+    raise SystemExit("pattern not found")
+pathlib.Path(sys.argv[2]).write_text(source.replace(old, new), encoding="utf-8")
+PY
+
+assert_fails_with "artifact-parity/by-agent-log-drift" \
+  ".trackfw-log não registrou backlog → analyzing" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T11/scripts/check-artifact-parity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 12 — check-referential-integrity.sh: REQ com roadmap quebrado →
 #              gate detecta referência inexistente no frontmatter.
 #
 # Objetivo (P4): provar que o gate de integridade referencial reprova uma
 # referência canônica quebrada sem deixar resíduo no workspace real.
 # ---------------------------------------------------------------------------
-T10="$WORK/s10"
-mkdir -p "$T10/scripts" "$T10/docs"
-cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T10/scripts/"
-cp -r "$ROOT_DIR/docs/req" "$T10/docs/req"
-cp -r "$ROOT_DIR/docs/roadmaps" "$T10/docs/roadmaps"
-cp -r "$ROOT_DIR/docs/adr" "$T10/docs/adr"
+T12="$WORK/s12"
+mkdir -p "$T12/scripts" "$T12/docs"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12/scripts/"
+cp -r "$ROOT_DIR/docs/req" "$T12/docs/req"
+cp -r "$ROOT_DIR/docs/roadmaps" "$T12/docs/roadmaps"
+cp -r "$ROOT_DIR/docs/adr" "$T12/docs/adr"
 
 # Corromper: quebrar uma referência existente em cópia temporária.
-cat > "$T10/docs/req/REQ-adr-wizard-e-list-2026-06-11.md" <<'EOF'
+cat > "$T12/docs/req/REQ-adr-wizard-e-list-2026-06-11.md" <<'EOF'
 ---
 status: Done
 adr: ""
@@ -347,6 +414,6 @@ EOF
 
 assert_fails_with "referential-integrity/missing-roadmap" \
   "referential integrity failed" \
-  bash "$T10/scripts/check-referential-integrity.sh"
+  bash "$T12/scripts/check-referential-integrity.sh"
 
-echo "Falsification checks passed (all 10 scenarios, 8 gates proved non-vacuous)"
+echo "Falsification checks passed (all 12 scenarios, 8 gates proved non-vacuous)"

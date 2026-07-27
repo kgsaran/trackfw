@@ -4,6 +4,37 @@
 
 ---
 
+## Sessão 2026-07-27 — Artemis (ML-3A bloqueadores concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
+
+**Tarefa:** Fechar o gate cross-CLI dos bloqueadores de release de paridade/contrato, preservando as
+provas negativas e validando flags, artefatos, status aspeado e log `by_agent` nos três runtimes.
+
+**Entregue:**
+- `scripts/check-cli-parity.sh` agora exige `--title`, `--req` e `--from-req` no help de
+  `roadmap new` em Go, Node e Python.
+- `scripts/check-artifact-parity.sh` cobre 8 tipos de artefato nos três runtimes, exercita geração real
+  com `--title/--req` e `--from-req`, valida `status: "wip"` como 0/0 e mantém o ciclo flat/`by_agent`.
+- `scripts/check-gates-falsify.sh` cobre 12 cenários P4, incluindo drift de flag pública em
+  `roadmap new` e drift do log `by_agent`.
+
+**Validação:**
+- `GO_BIN=bin/trackfw scripts/check-cli-parity.sh` → `CLI parity smoke checks passed`.
+- `GO_BIN=bin/trackfw scripts/check-artifact-parity.sh` →
+  `Artifact parity checks passed (8 artifact types × 3 runtimes; roadmap flags, quoted status, analyzing cycle flat/by_agent)`.
+- `GO_BIN=bin/trackfw scripts/check-gates-falsify.sh` →
+  `Falsification checks passed (all 12 scenarios, 8 gates proved non-vacuous)`.
+- `bin/trackfw validate --json` → `0 violations`, `0 warnings`.
+- `git diff --check` → verde.
+- `make quality` → verde em execução anterior desta mesma sessão; package smoke não foi reexecutado na
+  retomada por orientação explícita do handoff.
+
+**Ressalva:**
+- Nenhum código de produção foi alterado neste ML; o escopo ficou restrito a gates e documentação de
+  execução. Package smoke permanece sem nova evidência nesta retomada porque o handoff determinou não
+  rodar `make quality/smoke`.
+
 ## Sessão 2026-07-27 — Artemis (ML-1A concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
