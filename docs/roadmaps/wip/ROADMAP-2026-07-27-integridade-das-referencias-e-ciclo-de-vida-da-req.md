@@ -354,6 +354,19 @@ Validação:
 - `make quality` → verde: Go, Node, Python, `go vet`, build, CLI/validate parity, integridade referencial,
   static/integration assets, identity parity, artifact parity e falsification gates passaram.
 
+Correção pós-auditoria:
+- Auditoria reprovou a primeira entrega porque `scripts/check-gates-falsify.sh` podia abortar no
+  `go build` isolado do cenário 8 com stderr suprimido, encerrando após
+  `artifact-parity/req-content-drift` sem rodar `artifact-parity/req-name-drift`,
+  `referential-integrity/missing-roadmap` ou o resumo final.
+- O cenário 8 compila uma cópia temporária do módulo Go com `internal/generators/req.go` corrompido
+  para gerar `RREQ-...`; nesta sessão a compilação completou, mas a falha era opaca quando o build
+  retornava erro.
+- `scripts/check-gates-falsify.sh` agora usa `build_go_or_fail`, que mantém `GOCACHE` temporário e,
+  em falha, imprime `FAIL [falsify/setup-s8-build]`, o comando exato e stdout/stderr capturados.
+- Validação pós-correção: `scripts/check-gates-falsify.sh` executou os 9 cenários e finalizou com
+  `Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)`; `make quality` verde.
+
 ## Acceptance Criteria
 
 - [ ] As 3 waves concluídas, na ordem

@@ -54,6 +54,34 @@ setup_npm_tree() {
 }
 
 # ---------------------------------------------------------------------------
+# Helper: compila um binário Go isolado e falha com diagnóstico explícito.
+# Sem isso, `set -e` aborta o harness antes dos cenários seguintes e esconde
+# stderr do `go build`, tornando a prova P4 opaca.
+# ---------------------------------------------------------------------------
+build_go_or_fail() {
+  local label=$1
+  local module_dir=$2
+  local output_bin=$3
+  local log_file="$WORK/${label}.log"
+
+  set +e
+  (
+    cd "$module_dir" &&
+      env GOCACHE="$WORK/go-build-cache" go build -o "$output_bin" ./cmd/trackfw
+  ) >"$log_file" 2>&1
+  local status=$?
+  set -e
+
+  if [[ $status -ne 0 ]]; then
+    echo "FAIL [falsify/$label]: go build saiu com $status" >&2
+    echo "  command: (cd \"$module_dir\" && GOCACHE=\"$WORK/go-build-cache\" go build -o \"$output_bin\" ./cmd/trackfw)" >&2
+    echo "  output:" >&2
+    sed 's/^/    /' "$log_file" >&2
+    exit 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Cenário 1 — check-static-assets.sh: byte drift em npm/src/serve/static/app.js
 # ---------------------------------------------------------------------------
 T1="$WORK/s1"
@@ -257,7 +285,7 @@ fi
 # Compilar binário corrompido
 T8_BIN="$WORK/s8-bin/trackfw"
 mkdir -p "$(dirname "$T8_BIN")"
-(cd "$T8_MOD" && env GOCACHE="$WORK/go-build-cache" go build -o "$T8_BIN" ./cmd/trackfw) 2>/dev/null
+build_go_or_fail "setup-s8-build" "$T8_MOD" "$T8_BIN"
 
 assert_fails_with "artifact-parity/req-name-drift" \
   "arquivo ausente" \

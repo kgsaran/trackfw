@@ -35,6 +35,19 @@
 - `bin/trackfw validate --json` → 0 violations, 0 warnings.
 - `make quality` → verde.
 
+**Correção pós-auditoria:**
+- Auditoria reprovou o harness porque o cenário 8 de `scripts/check-gates-falsify.sh` podia abortar
+  no `go build` isolado com stderr suprimido, impedindo a execução dos cenários 8/9 e ocultando a
+  causa.
+- Diagnóstico local: o cenário 8 compila uma cópia temporária do módulo Go com `internal/generators/req.go`
+  corrompido para gerar `RREQ-...`; nesta sessão o build completou, mas o harness ainda era opaco em
+  caso de falha por causa de `set -e` + `2>/dev/null`.
+- Correção: criado helper `build_go_or_fail` em `scripts/check-gates-falsify.sh`, com `GOCACHE`
+  temporário, captura de stdout/stderr e mensagem `FAIL [falsify/setup-s8-build]` contendo comando
+  exato e log do `go build`.
+- Validação pós-correção: `scripts/check-gates-falsify.sh` → cenários 1-9 executados e resumo
+  `Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)`; `make quality` → verde.
+
 ---
 
 ## Sessão 2026-06-11 — Sessão inaugural
