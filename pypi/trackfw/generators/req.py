@@ -56,7 +56,7 @@ def generate_req(title: str, req_dir: str = None, cwd: str = None) -> str:
     linked_adr_section = ""
     linked_roadmap_section = ""
     blocked_section = "<!-- none -->"
-    status_line = f"> Date: {today} | Status: Open"
+    status_line = f"> Date: {today} | Status: Open\n| Linear Issue: \n| Jira Issue: "
 
     content = f"""---
 status: Open

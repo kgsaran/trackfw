@@ -68,7 +68,10 @@ func newRoadmapNewCmd() *cobra.Command {
 					return fmt.Errorf("wizard: %w", err)
 				}
 			} else if len(args) > 0 {
-				selectedREQ = args[0]
+				if title == "" {
+					title = args[0]
+				}
+				// selectedREQ permanece vazio — argumento posicional é o título, não um caminho de REQ
 			} else if len(reqFiles) == 0 {
 				fmt.Fprintln(os.Stderr, "Nenhuma REQ encontrada em docs/req/. Crie uma REQ primeiro com 'trackfw req new'.")
 				return nil

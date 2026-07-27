@@ -84,9 +84,9 @@ async function newREQ(content) {
   const dependsOnADRs = content.dependsOnADRs || []
 
   // Linha de status — inclui contador de ADRs bloqueantes quando presente
-  let statusLine = `> Date: ${date} | Status: Open`
+  let statusLine = `> Date: ${date} | Status: Open\n| Linear Issue: \n| Jira Issue: `
   if (dependsOnADRs.length > 0) {
-    statusLine = `> Date: ${date} | Status: Open | Blocked by ADRs: ${dependsOnADRs.length}`
+    statusLine = `> Date: ${date} | Status: Open | Blocked by ADRs: ${dependsOnADRs.length}\n| Linear Issue: \n| Jira Issue: `
   }
 
   // Seção "Blocked by ADRs"

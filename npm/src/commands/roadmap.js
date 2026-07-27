@@ -8,15 +8,16 @@ cmd.description(t('roadmap.description'))
 
 cmd.command('new')
   .description(t('roadmap.new.description'))
-  .option('-t, --title <title>', 'Roadmap title')
+  .argument('[title]', 'Roadmap title')
+  .option('-t, --title <title>', 'Roadmap title (alias)')
   .option('-r, --req <path>', 'Path to the linked REQ')
   .option('--from-req <path>', 'Generate roadmap with ML stubs from REQ acceptance criteria')
-  .action(async (opts) => {
+  .action(async (titleArg, opts) => {
     if (opts.fromReq) {
       newRoadmapFromReq(opts.fromReq)
       return
     }
-    const title = opts.title || 'New Roadmap'
+    const title = titleArg || opts.title || 'New Roadmap'
     const reqPath = opts.req || ''
     newRoadmap(title, reqPath)
   })

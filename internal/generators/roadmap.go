@@ -102,12 +102,11 @@ squad: ""
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
 REQ: %s
-squad:
 
 ## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
-### ML-1A — <title>
+### ML-1A — %s
 **Status:** pending
 **Files affected:**
 **Actions:**
@@ -115,7 +114,7 @@ squad:
 - [ ] build passes
 - [ ] tests green
 - [ ] validate passes
-`, date, content.Title, date, content.REQPath)
+`, date, content.Title, date, content.REQPath, content.Title)
 	}
 
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {

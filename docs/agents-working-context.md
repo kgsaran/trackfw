@@ -3866,3 +3866,18 @@ Executando ML-2A: convergência dos templates Python para o formato canônico Go
 **Escopo negativo respeitado:** validator não alterado, branch não criada, PR não aberto, main não tocada, docs/schema não alterados.
 
 **Próximo passo:** ML-3A (gate de paridade de saída, executa os 3 geradores e compara byte a byte — é do orquestrador)
+
+---
+
+## Sessão 2026-07-27 — ML-2B: Convergência Go↔Node (paridade de templates)
+
+**Agente:** Apolo | **Status:** IMPLEMENTANDO
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**REQ:** `REQ-2026-07-27-convergencia-templates-python`
+
+**Escopo:**
+1. `npm/src/commands/roadmap.js` — adicionar `.argument('[title]')` ao `roadmap new` (P2: título posicional silenciosamente descartado)
+2. `npm/src/generators/req.js` — adicionar `| Linear Issue: ` e `| Jira Issue: ` ao statusLine
+3. `pypi/trackfw/generators/req.py` — idem no status_line
+4. `internal/generators/roadmap.go` — remover `squad:` do body; mudar `### ML-1A — <title>` para interpolação real
+5. `internal/commands/roadmap.go` — corrigir args[0] atribuído a selectedREQ (deveria ser title)
