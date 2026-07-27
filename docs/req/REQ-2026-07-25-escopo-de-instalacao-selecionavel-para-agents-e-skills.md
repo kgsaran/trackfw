@@ -2,8 +2,8 @@
 status: Done
 date: 2026-07-25
 author: "Zeus"
-adr: "ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills"
-roadmap: "ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills"
+adr: "docs/adr/ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md"
 ---
 
 # REQ: Escopo de instalação selecionável para agents e skills

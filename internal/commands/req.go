@@ -18,6 +18,7 @@ func newReqCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newReqNewCmd())
 	cmd.AddCommand(newReqListCmd())
+	cmd.AddCommand(newReqMoveCmd())
 	return cmd
 }
 
@@ -150,6 +151,17 @@ func newReqListCmd() *cobra.Command {
 		Short: "List all REQs in docs/req/",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return generators.ListREQs(config.Load().REQDir)
+		},
+	}
+}
+
+func newReqMoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "move <name> <status>",
+		Short: "Update a REQ status in place",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return generators.MoveREQ(args[0], args[1])
 		},
 	}
 }

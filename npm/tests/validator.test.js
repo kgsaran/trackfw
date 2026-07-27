@@ -149,7 +149,7 @@ test('validateRefTargetsExist returns array', () => {
   assert(Array.isArray(result))
 })
 
-test('validateRefTargetsExist accepts generated basename references', () => {
+test('validateRefTargetsExist rejects generated basename references', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ref-'))
   fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
   fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
@@ -161,7 +161,9 @@ test('validateRefTargetsExist accepts generated basename references', () => {
   process.chdir(tmp)
   config.reset()
   try {
-    assert.deepStrictEqual(validator.validateRefTargetsExist(), [])
+    const warnings = validator.validateRefTargetsExist()
+    assert(warnings.some(w => w.includes('REQ-001.md')), `Expected REQ basename warning, got ${JSON.stringify(warnings)}`)
+    assert(warnings.some(w => w.includes('ROADMAP-001.md')), `Expected roadmap basename warning, got ${JSON.stringify(warnings)}`)
   } finally {
     process.chdir(origDir)
     config.reset()
@@ -273,8 +275,11 @@ test('acceptance_markers custom: custom marker satisfies check', () => {
 
 // ML-1B — Validação de adr_dirs com ~/
 test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () => {
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-home-'))
   const testSubdir = '.trackfw-test-adrs-' + Date.now()
-  const fullHomeSubdir = path.join(os.homedir(), testSubdir)
+  const fullHomeSubdir = path.join(fakeHome, testSubdir)
+  const oldHome = process.env.HOME
+  process.env.HOME = fakeHome
   fs.mkdirSync(fullHomeSubdir, { recursive: true })
   fs.writeFileSync(path.join(fullHomeSubdir, 'ADR-GLOBAL-001.md'), '---\nstatus: Accepted\n---\n# Global ADR\n')
 
@@ -292,6 +297,9 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     config.reset()
     fs.rmSync(tmp, { recursive: true, force: true })
     fs.rmSync(fullHomeSubdir, { recursive: true, force: true })
+    fs.rmSync(fakeHome, { recursive: true, force: true })
+    if (oldHome === undefined) delete process.env.HOME
+    else process.env.HOME = oldHome
   }
 })
 
@@ -744,6 +752,138 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
           `REQ tem '> Date: ... | Status: Open' (inline) — deve ser detectada. violations: ${JSON.stringify(violations)}`)
       } finally {
         process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  // ---------------------------------------------------------------------------
+  // ML-1A — REQ-2026-07-27-integridade-referencias — testes negativos xfail
+  // Semântica strict: testSkip executa o corpo; se o defeito for corrigido sem reativação
+  // do teste, reporta XPASS e incrementa failed → make quality fica vermelho.
+  // ---------------------------------------------------------------------------
+
+  // Escape 1 reativado no ML-2A: frontmatter roadmap: é validado.
+  test('ML-2A Escape1 reativado: frontmatter roadmap: inexistente gera aviso', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-e1-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/done'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+      // REQ: frontmatter aponta para inexistente; corpo não tem Roadmap:
+      fs.writeFileSync(path.join(tmp, 'docs/req/REQ-XFAIL-ESCAPE1.md'),
+        '---\nstatus: Open\nroadmap: "docs/roadmaps/wip/NAO-EXISTE-ESCAPE-1.md"\n---\n\n' +
+        '## Linked Roadmap\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const warnings = validator.validateRefTargetsExist()
+        assert(warnings.some(w => w.includes('NAO-EXISTE-ESCAPE-1')),
+          `esperava aviso para frontmatter roadmap: inexistente. warnings=${JSON.stringify(warnings)}`)
+      } finally {
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  // Escape 2 reativado no ML-2A: fallback por basename foi removido.
+  test('ML-2A Escape2 reativado: caminho errado wip/ vs done/ gera aviso', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-e2-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/done'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+      // Arquivo real em done/ — basename fallback o encontra mesmo com path errado em wip/
+      fs.writeFileSync(path.join(tmp, 'docs/roadmaps/done/ESCAPE2-ROADMAP.md'),
+        '# Roadmap\n## Acceptance Criteria\n- [x] done\n')
+      // REQ: corpo aponta para wip/ (errado) — arquivo real está em done/
+      fs.writeFileSync(path.join(tmp, 'docs/req/REQ-XFAIL-ESCAPE2.md'),
+        '---\nstatus: Open\n---\n\n' +
+        '## Linked Roadmap\nRoadmap: docs/roadmaps/wip/ESCAPE2-ROADMAP.md\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const warnings = validator.validateRefTargetsExist()
+        assert(warnings.some(w => w.includes('ESCAPE2-ROADMAP')),
+          `esperava aviso para caminho errado (wip/ vs done/). warnings=${JSON.stringify(warnings)}`)
+      } finally {
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  // Escape 3 reativado no ML-3A: severidade padrão error reprova ref quebrada.
+  await testAsync('ML-3A Escape3 reativado: ref_targets_exist default error reprova gate', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-e3-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/done'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/backlog'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/blocked'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+      // REQ com Roadmap: verdadeiramente inexistente (não há match de basename)
+      fs.writeFileSync(path.join(tmp, 'docs/req/REQ-XFAIL-ESCAPE3.md'),
+        '---\nstatus: Open\n---\n\n' +
+        '## Linked Roadmap\nRoadmap: docs/roadmaps/wip/ESCAPE3-TRULY-MISSING.md\n')
+      // Config padrão — ref_targets_exist deve reprovar como "error"
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        // Usa validateUnfiltered() que aplica severidade default antes do ratchet.
+        const { violations } = await validator.validateUnfiltered()
+        assert(violations.some(v => v.includes('ESCAPE3-TRULY-MISSING')),
+          `esperava violation para ref quebrada com severidade default error. violations=${JSON.stringify(violations)}`)
+      } finally {
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  // Defeito 2 reativado no ML-2B: REQ Open com roadmap em done/ é sinalizada.
+  await testAsync('ML-2B Defeito2 reativado: REQ Open com roadmap em done/ gera warning', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-d2-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/done'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/blocked'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs/adr'), { recursive: true })
+      // Roadmap real em done/ — entregue
+      fs.writeFileSync(path.join(tmp, 'docs/roadmaps/done/DONE-ROADMAP-DEFEITO2.md'),
+        '---\nstatus: Done\n---\n# Roadmap concluído\n## Acceptance Criteria\n- [x] done\n')
+      // REQ ainda Open mas roadmap está em done/
+      fs.writeFileSync(path.join(tmp, 'docs/req/REQ-XFAIL-DEFEITO2.md'),
+        '---\nstatus: Open\nroadmap: "docs/roadmaps/done/DONE-ROADMAP-DEFEITO2.md"\n---\n\n' +
+        '# REQ: Defeito 2\n\n> Date: 2026-07-27 | Status: Open\n\n' +
+        '## Linked Roadmap\nRoadmap: docs/roadmaps/done/DONE-ROADMAP-DEFEITO2.md\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const { violations, warnings } = await validator.validateUnfiltered()
+        // Defeito corrigido: a inconsistência de ciclo de vida deve aparecer.
+        const allMsgs = [...violations, ...warnings]
+        assert(allMsgs.some(m => m.includes('DONE-ROADMAP-DEFEITO2')),
+          `esperava mensagem sobre REQ Open com roadmap em done/. allMsgs=${JSON.stringify(allMsgs)}`)
+      } finally {
+        process.chdir(origDir)
         config.reset()
       }
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }

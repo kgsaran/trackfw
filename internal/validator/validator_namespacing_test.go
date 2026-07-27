@@ -120,3 +120,39 @@ func TestByAgentNamespacingFlat(t *testing.T) {
 		t.Errorf("esperado warning de WIP limit no modo flat (2 WIPs, limit=1), obteve: %v", warnings)
 	}
 }
+
+func TestByAgentNamespacingBlockedHasREQ(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	yaml := "roadmap_namespacing: by_agent\nagents:\n  - zeus\n  - apolo\nroadmap_dir: docs/roadmaps\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("escrever trackfw.yaml: %v", err)
+	}
+
+	if err := os.MkdirAll("docs/roadmaps/zeus/blocked", 0755); err != nil {
+		t.Fatalf("mkdir zeus/blocked: %v", err)
+	}
+	if err := os.MkdirAll("docs/roadmaps/apolo/blocked", 0755); err != nil {
+		t.Fatalf("mkdir apolo/blocked: %v", err)
+	}
+	if err := os.WriteFile("docs/roadmaps/zeus/blocked/ZEUS-BLOCKED.md", []byte("# bloqueado sem req\n"), 0644); err != nil {
+		t.Fatalf("escrever ZEUS-BLOCKED.md: %v", err)
+	}
+	if err := os.WriteFile("docs/roadmaps/apolo/blocked/APOLO-BLOCKED.md", []byte("REQ: docs/req/REQ-001.md\n"), 0644); err != nil {
+		t.Fatalf("escrever APOLO-BLOCKED.md: %v", err)
+	}
+
+	violations, err := validateBlockedHasREQ()
+	if err != nil {
+		t.Fatalf("validateBlockedHasREQ erro: %v", err)
+	}
+	if !hasViolation(violations, "ZEUS-BLOCKED.md") {
+		t.Fatalf("esperava violation para blocked sem REQ em by_agent; violations=%v", violations)
+	}
+	if hasViolation(violations, "APOLO-BLOCKED.md") {
+		t.Fatalf("não esperava violation para blocked com REQ em by_agent; violations=%v", violations)
+	}
+}

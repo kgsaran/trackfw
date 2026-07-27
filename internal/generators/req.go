@@ -167,3 +167,113 @@ func parseREQMeta(path string) (title, status string) {
 	}
 	return title, status
 }
+
+// rewriteREQStatus rewrites only the "status:" field in the frontmatter block
+// and the first "| Status: <value>" marker before the first section heading.
+// Other bytes, keys and body occurrences are preserved.
+func rewriteREQStatus(source []byte, status string) ([]byte, bool) {
+	s := string(source)
+	if !strings.HasPrefix(s, "---\n") {
+		return source, false
+	}
+	end := strings.Index(s[4:], "\n---")
+	if end < 0 {
+		return source, false
+	}
+
+	frontmatter := s[4 : 4+end]
+	rest := s[4+end:]
+	changed := false
+
+	lines := strings.Split(frontmatter, "\n")
+	for i, line := range lines {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(key) != "status" {
+			continue
+		}
+		trimmedValue := strings.TrimSpace(value)
+		quoted := len(trimmedValue) >= 2 && strings.HasPrefix(trimmedValue, `"`) && strings.HasSuffix(trimmedValue, `"`)
+		newLine := key + ": " + status
+		if quoted {
+			newLine = key + ": \"" + status + "\""
+		}
+		if lines[i] != newLine {
+			lines[i] = newLine
+			changed = true
+		}
+		break
+	}
+
+	if len(rest) > 4 {
+		body := rest[4:]
+		bodyLines := strings.Split(body, "\n")
+		const marker = "| Status: "
+		for i, bline := range bodyLines {
+			if strings.HasPrefix(strings.TrimSpace(bline), "## ") {
+				break
+			}
+			idx := strings.Index(bline, marker)
+			if idx < 0 {
+				continue
+			}
+			prefix := bline[:idx+len(marker)]
+			after := bline[idx+len(marker):]
+			suffix := ""
+			if pipeIdx := strings.Index(after, " |"); pipeIdx >= 0 {
+				suffix = after[pipeIdx:]
+			}
+			newLine := prefix + status + suffix
+			if bodyLines[i] != newLine {
+				bodyLines[i] = newLine
+				changed = true
+				rest = "\n---" + strings.Join(bodyLines, "\n")
+			}
+			break
+		}
+	}
+
+	if !changed {
+		return source, false
+	}
+	return []byte("---\n" + strings.Join(lines, "\n") + rest), true
+}
+
+func MoveREQ(name, status string) error {
+	if strings.TrimSpace(status) == "" {
+		return fmt.Errorf("status is required")
+	}
+	cfg := config.Load()
+	path, err := findREQ(name, cfg.REQDir)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading REQ: %w", err)
+	}
+	updated, changed := rewriteREQStatus(raw, status)
+	if !changed {
+		return fmt.Errorf("REQ %q has no frontmatter status/header Status to update", filepath.Base(path))
+	}
+	if err := os.WriteFile(path, updated, 0644); err != nil {
+		return fmt.Errorf("writing REQ: %w", err)
+	}
+	fmt.Printf("✓ updated %s status → %s\n", filepath.Base(path), status)
+	return nil
+}
+
+func findREQ(name, dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("reading REQ dir: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		if containsIgnoreCase(e.Name(), name) {
+			return filepath.Join(dir, e.Name()), nil
+		}
+	}
+	return "", fmt.Errorf("REQ %q not found in %s", name, dir)
+}

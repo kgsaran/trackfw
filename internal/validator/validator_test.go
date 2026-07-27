@@ -1028,12 +1028,12 @@ func TestValidate_WithTildeInADRDirs(t *testing.T) {
 	yamlContent := "adr_dirs:\n  - " + tildePath + "\n  - docs/adr\n"
 	writeFile(t, dir, "trackfw.yaml", yamlContent)
 
-	// REQ referenciando o ADR global
-	reqContent := "---\nstatus: Open\ndate: 2026-07-20\n---\n# REQ 001\nADR: ADR-001-global.md\nRoadmap: ROADMAP-001.md\n"
+	// REQ referenciando o ADR global por caminho literal com ~/ e roadmap por caminho canônico.
+	reqContent := "---\nstatus: Open\ndate: 2026-07-20\n---\n# REQ 001\nADR: " + tildePath + "/ADR-001-global.md\nRoadmap: docs/roadmaps/wip/ROADMAP-001.md\n"
 	writeFile(t, dir, "docs/req/REQ-001.md", reqContent)
 
 	// Roadmap linkando REQ
-	rmContent := "---\nstatus: WIP\ndate: 2026-07-20\n---\n# Roadmap 001\nREQ: REQ-001.md\n## Acceptance Criteria\n- AC1\n"
+	rmContent := "---\nstatus: WIP\ndate: 2026-07-20\n---\n# Roadmap 001\nREQ: docs/req/REQ-001.md\n## Acceptance Criteria\n- AC1\n"
 	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-001.md", rmContent)
 
 	config.Reset()
@@ -1139,8 +1139,8 @@ func TestValidate_ExternalADROrphanExemption(t *testing.T) {
 	adrLocalContent := "---\nstatus: Accepted\ndate: 2026-07-20\n---\n# ADR 001 Local\n"
 	writeFile(t, dir, "docs/adr/ADR-001-local.md", adrLocalContent)
 
-	// REQ e Roadmap validos linkando o ADR externo
-	reqContent := "---\nstatus: Open\ndate: 2026-07-20\nadr: ADR-999-external.md\nroadmap: ROADMAP-001.md\n---\n# REQ 001\nRoadmap: ROADMAP-001.md\nADR: ADR-999-external.md\n"
+	// REQ e Roadmap validos linkando o ADR externo por caminho literal.
+	reqContent := "---\nstatus: Open\ndate: 2026-07-20\nadr: " + filepath.Join(externalDir, "ADR-999-external.md") + "\nroadmap: docs/roadmaps/wip/ROADMAP-001.md\n---\n# REQ 001\nRoadmap: docs/roadmaps/wip/ROADMAP-001.md\nADR: " + filepath.Join(externalDir, "ADR-999-external.md") + "\n"
 	writeFile(t, dir, "docs/req/REQ-001.md", reqContent)
 
 	rmContent := "---\nstatus: WIP\ndate: 2026-07-20\n---\n# Roadmap 001\nREQ: REQ-001.md\n## Acceptance Criteria\n- AC1\n"
@@ -1643,4 +1643,3 @@ func TestWIPHasREQ_CRLF_Integracao(t *testing.T) {
 		t.Errorf("esperava violation de REQ vazio com CRLF, obteve: %v", violations)
 	}
 }
-

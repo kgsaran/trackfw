@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-14
 author: zeus
 adr: ""
-roadmap: v2.6.0-rules-req-configuraveis-2026-06-14.md
+roadmap: "docs/roadmaps/done/v2.6.0-rules-req-configuraveis-2026-06-14.md"
 ---
 
 # REQ — v2.6.0 Feat: tornar req_has_adr / req_has_roadmap / blocked_has_req configuráveis

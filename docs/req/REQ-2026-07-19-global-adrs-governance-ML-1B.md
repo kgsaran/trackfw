@@ -2,8 +2,8 @@
 status: Done
 date: 2026-07-19
 author: afrodite
-adr: ADR-2026-07-19-global-adrs-governance.md
-roadmap: ROADMAP-2026-07-19-global-adrs-governance-ML-1B.md
+adr: "docs/adr/ADR-2026-07-19-global-adrs-governance.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-19-global-adrs-governance-ML-1B.md"
 ---
 
 # REQ: ML-1B - Suporte à Expansão de Til (~) no Node.js CLI (`adr_dirs`)

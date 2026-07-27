@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-26
 author: "KG"
 adr: "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md"
 ---
 
 # REQ: robustez dos gates de governanca e paridade
 
-> Date: 2026-07-26 | Status: Open
+> Date: 2026-07-26 | Status: Done
 
 ## Motivation
 

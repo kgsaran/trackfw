@@ -49,6 +49,25 @@ Regra de validação `note_orphan` — notas em `vault/notes/` não referenciada
 | `index.md` | não conta como nota órfã |
 | Detecção de link | aceita `[texto](arquivo.md)` e `[[nome-da-nota]]` |
 
+## Canonical governance references
+
+REQ frontmatter fields `adr:` and `roadmap:` use the same canonical reference
+format in Go, Node.js, and Python: a complete path from the project root,
+including the `.md` suffix.
+
+Examples:
+
+```yaml
+adr: docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md
+roadmap: docs/roadmaps/done/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md
+```
+
+The validator checks the referenced path literally after normal path expansion
+such as `~/`. It does not fall back to recursive basename matching. A basename
+like `ROADMAP-001.md`, or a path that points to the wrong state directory such
+as `docs/roadmaps/wip/X.md` when the file is in `done/`, is invalid even when a
+file with the same basename exists elsewhere under `docs/roadmaps/`.
+
 ## AI integration lifecycle
 
 The Go, Node.js, and Python runtimes expose the same public lifecycle:

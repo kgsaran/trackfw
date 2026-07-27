@@ -54,6 +54,34 @@ setup_npm_tree() {
 }
 
 # ---------------------------------------------------------------------------
+# Helper: compila um binário Go isolado e falha com diagnóstico explícito.
+# Sem isso, `set -e` aborta o harness antes dos cenários seguintes e esconde
+# stderr do `go build`, tornando a prova P4 opaca.
+# ---------------------------------------------------------------------------
+build_go_or_fail() {
+  local label=$1
+  local module_dir=$2
+  local output_bin=$3
+  local log_file="$WORK/${label}.log"
+
+  set +e
+  (
+    cd "$module_dir" &&
+      env GOCACHE="$WORK/go-build-cache" go build -o "$output_bin" ./cmd/trackfw
+  ) >"$log_file" 2>&1
+  local status=$?
+  set -e
+
+  if [[ $status -ne 0 ]]; then
+    echo "FAIL [falsify/$label]: go build saiu com $status" >&2
+    echo "  command: (cd \"$module_dir\" && GOCACHE=\"$WORK/go-build-cache\" go build -o \"$output_bin\" ./cmd/trackfw)" >&2
+    echo "  output:" >&2
+    sed 's/^/    /' "$log_file" >&2
+    exit 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Cenário 1 — check-static-assets.sh: byte drift em npm/src/serve/static/app.js
 # ---------------------------------------------------------------------------
 T1="$WORK/s1"
@@ -257,10 +285,39 @@ fi
 # Compilar binário corrompido
 T8_BIN="$WORK/s8-bin/trackfw"
 mkdir -p "$(dirname "$T8_BIN")"
-(cd "$T8_MOD" && go build -o "$T8_BIN" ./cmd/trackfw) 2>/dev/null
+build_go_or_fail "setup-s8-build" "$T8_MOD" "$T8_BIN"
 
 assert_fails_with "artifact-parity/req-name-drift" \
   "arquivo ausente" \
   env GO_BIN="$T8_BIN" bash "$T8/scripts/check-artifact-parity.sh"
 
-echo "Falsification checks passed (all 8 scenarios, 7 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 9 — check-referential-integrity.sh: REQ com roadmap quebrado →
+#              gate detecta referência inexistente no frontmatter.
+#
+# Objetivo (P4): provar que o gate de integridade referencial reprova uma
+# referência canônica quebrada sem deixar resíduo no workspace real.
+# ---------------------------------------------------------------------------
+T9="$WORK/s9"
+mkdir -p "$T9/scripts" "$T9/docs"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T9/scripts/"
+cp -r "$ROOT_DIR/docs/req" "$T9/docs/req"
+cp -r "$ROOT_DIR/docs/roadmaps" "$T9/docs/roadmaps"
+cp -r "$ROOT_DIR/docs/adr" "$T9/docs/adr"
+
+# Corromper: quebrar uma referência existente em cópia temporária.
+cat > "$T9/docs/req/REQ-adr-wizard-e-list-2026-06-11.md" <<'EOF'
+---
+status: Done
+adr: ""
+roadmap: "docs/roadmaps/done/MISSING-roadmap-adr-wizard-e-list-2026-06-11.md"
+---
+
+# REQ quebrada para prova P4
+EOF
+
+assert_fails_with "referential-integrity/missing-roadmap" \
+  "referential integrity failed" \
+  bash "$T9/scripts/check-referential-integrity.sh"
+
+echo "Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)"

@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-13
 author: zeus
 adr: ""
-roadmap: v2.1-discovery-mode-2026-06-13.md
+roadmap: "docs/roadmaps/done/v2.1-discovery-mode-2026-06-13.md"
 ---
 
 # REQ: Discovery Mode — Suporte a repositórios densos como o CMDB

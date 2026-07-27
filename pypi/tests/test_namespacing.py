@@ -162,6 +162,19 @@ class TestValidatorByAgentWipLimit(unittest.TestCase):
         self.assertIn(roadmap_dir + "/zeus/wip", result)
         self.assertIn(roadmap_dir + "/apolo/wip", result)
 
+    def test_validator_by_agent_blocked_has_req(self):
+        """validate_blocked_has_req varre <roadmap_dir>/<agente>/blocked/."""
+        roadmap_dir = os.path.join(self.tmp, "docs/roadmaps")
+        _write(os.path.join(roadmap_dir, "zeus", "blocked", "ZEUS-BLOCKED.md"), "# sem req\n")
+        _write(os.path.join(roadmap_dir, "apolo", "blocked", "APOLO-BLOCKED.md"), "REQ: docs/req/REQ-001.md\n")
+
+        cfg = self._make_cfg(agents=["zeus", "apolo"], roadmap_dir=roadmap_dir)
+        violations = v.validate_blocked_has_req(cfg)
+        messages = [item["message"] for item in violations]
+
+        self.assertTrue(any("ZEUS-BLOCKED.md" in message for message in messages), messages)
+        self.assertFalse(any("APOLO-BLOCKED.md" in message for message in messages), messages)
+
 
 class TestValidatorFlatUnchanged(unittest.TestCase):
     """test_validator_flat_unchanged: sem namespacing → comportamento flat inalterado."""

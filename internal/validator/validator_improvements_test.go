@@ -207,7 +207,7 @@ func TestRefTargetsExistWarning(t *testing.T) {
 	}
 }
 
-func TestRefTargetsExistAcceptsGeneratedBasenames(t *testing.T) {
+func TestRefTargetsExistRejectsGeneratedBasenames(t *testing.T) {
 	dir := t.TempDir()
 	config.Reset()
 	t.Cleanup(config.Reset)
@@ -220,8 +220,8 @@ func TestRefTargetsExistAcceptsGeneratedBasenames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(warnings) != 0 {
-		t.Errorf("generated basename references should resolve, got: %v", warnings)
+	if !hasWarning(warnings, "REQ-001.md") || !hasWarning(warnings, "ROADMAP-001.md") {
+		t.Errorf("basename references should not resolve without canonical paths, got: %v", warnings)
 	}
 }
 

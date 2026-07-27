@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-14
 author: ""
 adr: ""
-roadmap: ROADMAP-2026-06-14-serve-api-tests-nodejs.md
+roadmap: "docs/roadmaps/done/ROADMAP-2026-06-14-serve-api-tests-nodejs.md"
 ---
 
 # REQ: serve — Testes Node.js para api_board, api_file e api_metrics

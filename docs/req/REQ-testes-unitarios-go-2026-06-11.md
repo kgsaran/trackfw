@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-11
 author: Artemis
 adr: ""
-roadmap: ROADMAP-testes-unitarios-go-2026-06-11.md
+roadmap: "docs/roadmaps/done/ROADMAP-testes-unitarios-go-2026-06-11.md"
 ---
 
 # REQ: Testes Unitários Go — validator e generators

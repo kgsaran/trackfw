@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-14
 author: zeus
 adr: ""
-roadmap: v2.5.4-context-req-by-agent-2026-06-14.md
+roadmap: "docs/roadmaps/done/v2.5.4-context-req-by-agent-2026-06-14.md"
 ---
 
 # REQ — v2.5.4 Fix: context e validateADRsAreReferenced cegos a REQs by_agent

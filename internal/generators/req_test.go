@@ -264,3 +264,41 @@ func TestListREQs_ParsesMeta(t *testing.T) {
 		t.Errorf("status esperado 'Open', obteve: %q", status)
 	}
 }
+
+func TestMoveREQ_RewritesStatusInPlace(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+
+	reqPath := filepath.Join("docs", "req", "REQ-2026-07-27-fechar.md")
+	if err := os.MkdirAll(filepath.Dir(reqPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	original := "---\nstatus: Open\ndate: 2026-07-27\nroadmap: \"docs/roadmaps/done/RM.md\"\n---\n\n" +
+		"# REQ: Fechar\n\n> Date: 2026-07-27 | Status: Open | Linear Issue: X\n\n" +
+		"## Notes\nstatus: Open\n| Status: Open\n"
+	if err := os.WriteFile(reqPath, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveREQ("fechar", "done"); err != nil {
+		t.Fatalf("MoveREQ: %v", err)
+	}
+
+	updated, err := os.ReadFile(reqPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(updated)
+	if !strings.Contains(body, "status: done\n") {
+		t.Fatalf("frontmatter status nao atualizado:\n%s", body)
+	}
+	if !strings.Contains(body, "> Date: 2026-07-27 | Status: done | Linear Issue: X") {
+		t.Fatalf("header Status nao atualizado:\n%s", body)
+	}
+	if !strings.Contains(body, "## Notes\nstatus: Open\n| Status: Open\n") {
+		t.Fatalf("status no corpo deveria ser preservado:\n%s", body)
+	}
+	if _, err := os.Stat(reqPath); err != nil {
+		t.Fatalf("REQ deveria permanecer no mesmo caminho flat: %v", err)
+	}
+}

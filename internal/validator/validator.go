@@ -376,6 +376,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("ref_targets_exist", refWarnings, &violations, &warnings)
 
+	reqLifecycleWarnings, e := validateREQRoadmapLifecycle()
+	if e != nil {
+		return nil, nil, e
+	}
+	warnings = append(warnings, reqLifecycleWarnings...)
+
 	coherenceWarnings, e := validateFolderStatusCoherence()
 	if e != nil {
 		return nil, nil, e
@@ -531,6 +537,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("ref_targets_exist", refWarnings, &violations, &warnings)
+
+	reqLifecycleWarnings, e := validateREQRoadmapLifecycle()
+	if e != nil {
+		return nil, nil, e
+	}
+	for _, m := range reqLifecycleWarnings {
+		warnings = append(warnings, TaggedMsg{Rule: "req_roadmap_lifecycle", Msg: m})
+	}
 
 	coherenceWarnings, e := validateFolderStatusCoherence()
 	if e != nil {
@@ -868,19 +882,21 @@ func validateREQsHaveADR() ([]string, error) {
 
 func validateBlockedHasREQ() ([]string, error) {
 	cfg := config.Load()
-	entries, err := listDir(cfg.RoadmapDir + "/blocked")
-	if err != nil {
-		return nil, nil
-	}
 
 	var violations []string
-	for _, name := range entries {
-		content, err := os.ReadFile(filepath.Join(cfg.RoadmapDir+"/blocked", name))
+	for _, blockedDir := range resolveStateDirs(cfg, "blocked") {
+		entries, err := listDir(blockedDir)
 		if err != nil {
 			continue
 		}
-		if !contentHasMarker(string(content), cfg.LinkFieldsReq) {
-			violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ", name))
+		for _, name := range entries {
+			content, err := os.ReadFile(filepath.Join(blockedDir, name))
+			if err != nil {
+				continue
+			}
+			if !contentHasMarker(string(content), cfg.LinkFieldsReq) {
+				violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ", name))
+			}
 		}
 	}
 	return violations, nil
@@ -1291,9 +1307,9 @@ func gitLastModifiedTime(path string) (time.Time, bool) {
 func extractRefPath(content, field string) string {
 	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
-		prefix := field + ":"
-		if strings.HasPrefix(trimmed, prefix) {
-			val := strings.TrimSpace(trimmed[len(prefix):])
+		key, val, ok := strings.Cut(trimmed, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(key), field) {
+			val := strings.TrimSpace(val)
 			if val == "" || val == "—" || val == "-" || val == "–" {
 				return ""
 			}
@@ -1301,7 +1317,7 @@ func extractRefPath(content, field string) string {
 			if len(fields) == 0 {
 				return ""
 			}
-			v := fields[0]
+			v := strings.Trim(fields[0], `"'`)
 			if strings.HasSuffix(v, ".md") {
 				return v
 			}
@@ -1315,9 +1331,8 @@ func validateRefTargetsExist() ([]string, error) {
 	cfg := config.Load()
 	var warnings []string
 
-	wipDirs := resolveWIPDirs(cfg)
-	blockedDir := cfg.RoadmapDir + "/blocked"
-	for _, dir := range append(wipDirs, blockedDir) {
+	dirs := append(resolveWIPDirs(cfg), resolveStateDirs(cfg, "blocked")...)
+	for _, dir := range dirs {
 		entries, _ := listDir(dir)
 		for _, name := range entries {
 			content, err := os.ReadFile(filepath.Join(dir, name))
@@ -1359,19 +1374,50 @@ func referenceExists(ref string, roots []string) bool {
 	if _, err := os.Stat(expandedRef); err == nil {
 		return true
 	}
-	base := filepath.Base(ref)
-	for _, root := range roots {
-		expandedRoot := config.ExpandPath(root)
-		found := false
-		_ = filepath.WalkDir(expandedRoot, func(path string, entry os.DirEntry, err error) error {
-			if err == nil && !entry.IsDir() && entry.Name() == base {
-				found = true
-				return filepath.SkipAll
+	return false
+}
+
+func validateREQRoadmapLifecycle() ([]string, error) {
+	cfg := config.Load()
+	var warnings []string
+	for _, reqPath := range resolveREQFiles(cfg) {
+		content, err := os.ReadFile(reqPath)
+		if err != nil {
+			continue
+		}
+		s := string(content)
+		if !reqStatusIsOpen(s) {
+			continue
+		}
+		ref := extractRefPath(s, "Roadmap")
+		if ref == "" {
+			continue
+		}
+		expandedRef := config.ExpandPath(ref)
+		info, err := os.Stat(expandedRef)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if filepath.Base(filepath.Dir(expandedRef)) == "done" {
+			warnings = append(warnings, fmt.Sprintf("req %q is Open but linked Roadmap %q is in done/", filepath.Base(reqPath), ref))
+		}
+	}
+	return warnings, nil
+}
+
+func reqStatusIsOpen(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		key, val, ok := strings.Cut(trimmed, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(key), "status") {
+			return strings.EqualFold(strings.Trim(strings.TrimSpace(val), `"'`), "open")
+		}
+		if idx := strings.Index(trimmed, "| Status: "); idx >= 0 {
+			rest := trimmed[idx+len("| Status: "):]
+			if pipeIdx := strings.Index(rest, " |"); pipeIdx >= 0 {
+				rest = rest[:pipeIdx]
 			}
-			return nil
-		})
-		if found {
-			return true
+			return strings.EqualFold(strings.TrimSpace(rest), "open")
 		}
 	}
 	return false

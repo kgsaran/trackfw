@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-11
 author: Zeus
 adr: ""
-roadmap: roadmap-multi-ai-support-2026-06-11.md
+roadmap: "docs/roadmaps/done/roadmap-multi-ai-support-2026-06-11.md"
 ---
 
 # REQ: Suporte Multi-AI — Subcomandos por Ferramenta

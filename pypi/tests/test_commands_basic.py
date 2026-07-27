@@ -94,38 +94,40 @@ class TestAdrNew(unittest.TestCase):
 
 
 class TestLog(unittest.TestCase):
-    def test_log_cria_arquivo(self):
-        """trackfw log 'mensagem teste' cria .trackfw-log com a mensagem."""
+    def test_log_le_roadmap_dir_configurado(self):
+        """trackfw log lê .trackfw-log em roadmap_dir."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            result = run_trackfw("log", "mensagem teste", cwd=tmpdir)
+            log_dir = os.path.join(tmpdir, "custom", "roadmaps")
+            os.makedirs(log_dir)
+            with open(os.path.join(tmpdir, "trackfw.yaml"), "w", encoding="utf-8") as f:
+                f.write("roadmap_dir: custom/roadmaps\n")
+            with open(os.path.join(log_dir, ".trackfw-log"), "w", encoding="utf-8") as f:
+                f.write("2026-07-27 10:00  RM.md  wip -> done\n")
+
+            result = run_trackfw("log", "--tail", "1", cwd=tmpdir)
             self.assertEqual(result.returncode, 0, msg=result.stderr)
-            log_path = os.path.join(tmpdir, ".trackfw-log")
-            self.assertTrue(os.path.isfile(log_path), ".trackfw-log não criado")
-            with open(log_path, encoding="utf-8") as f:
-                content = f.read()
-            self.assertIn("mensagem teste", content)
+            self.assertIn("RM.md", result.stdout)
 
-    def test_log_append(self):
-        """trackfw log faz append — múltiplas chamadas acumulam linhas."""
+    def test_log_tail_limita_saida(self):
+        """trackfw log --tail mostra apenas as últimas linhas."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            run_trackfw("log", "primeira mensagem", cwd=tmpdir)
-            run_trackfw("log", "segunda mensagem", cwd=tmpdir)
-            log_path = os.path.join(tmpdir, ".trackfw-log")
-            with open(log_path, encoding="utf-8") as f:
-                lines = [l for l in f.read().splitlines() if l.strip()]
-            self.assertEqual(len(lines), 2, f"Esperava 2 linhas, encontrei: {lines}")
-            self.assertIn("primeira mensagem", lines[0])
-            self.assertIn("segunda mensagem", lines[1])
+            log_dir = os.path.join(tmpdir, "docs", "roadmaps")
+            os.makedirs(log_dir)
+            with open(os.path.join(log_dir, ".trackfw-log"), "w", encoding="utf-8") as f:
+                f.write("2026-07-27 10:00  RM-1.md  backlog -> wip\n")
+                f.write("2026-07-27 11:00  RM-2.md  wip -> done\n")
 
-    def test_log_formato_timestamp(self):
-        """Linha do log tem timestamp no formato YYYY-MM-DD HH:MM."""
-        import re
+            result = run_trackfw("log", "--tail", "1", cwd=tmpdir)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertNotIn("RM-1.md", result.stdout)
+            self.assertIn("RM-2.md", result.stdout)
+
+    def test_log_vazio_quando_arquivo_ausente(self):
+        """Sem .trackfw-log em roadmap_dir, comando retorna sucesso com mensagem vazia."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            run_trackfw("log", "teste timestamp", cwd=tmpdir)
-            log_path = os.path.join(tmpdir, ".trackfw-log")
-            with open(log_path, encoding="utf-8") as f:
-                content = f.read()
-            self.assertRegex(content, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}")
+            result = run_trackfw("log", cwd=tmpdir)
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertIn("No transition log found", result.stdout)
 
 
 class TestRealCommands(unittest.TestCase):

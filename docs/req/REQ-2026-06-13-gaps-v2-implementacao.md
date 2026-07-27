@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-13
 author: zeus
 adr: ""
-roadmap: v2.0-gaps-implementacao-2026-06-13.md
+roadmap: "docs/roadmaps/done/v2.0-gaps-implementacao-2026-06-13.md"
 ---
 
 # REQ: Implementação dos Gaps v2.0 — trackfw

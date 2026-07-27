@@ -4,6 +4,52 @@
 
 ---
 
+## Sessão 2026-07-27 — Apolo (ML-3A concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`
+
+**Tarefa:** Normalizar referências de REQ, fechar REQs concluídas e proteger integridade referencial no `make quality`.
+
+**Entregue:**
+- 38 arquivos em `docs/req/*.md` normalizados para referências canônicas de frontmatter:
+  38 campos `roadmap:` e 6 campos `adr:` agora usam caminho relativo completo, com `.md`.
+- Reconciliação registrada: `bin/trackfw validate --json` media 41 warnings antes da normalização;
+  esses 41 eram itens de validação, não campos `roadmap:` únicos. A reconciliação estática confirmou
+  38 campos `roadmap:` não canônicos, além de 6 campos `adr:` normalizados; o caso
+  `ROADMAP-2026-07-25-escopo-...` não aparecia como warning porque estava sem `.md`, mas tinha
+  correspondência única em `docs/roadmaps/done/`.
+- 6 REQs `Open` com roadmap em `done/` fechadas via `bin/trackfw req move ... Done`, sem edição manual.
+- `ref_targets_exist` elevado para `error` nos defaults dos 3 CLIs.
+- Escape 3 reativado nos testes Go, Node.js e Python.
+- `scripts/check-referential-integrity.sh` criado e integrado ao `make quality`.
+- `scripts/check-gates-falsify.sh` ganhou P4 `referential-integrity/missing-roadmap`; cenário 8 usa
+  `GOCACHE` temporário para build isolado no sandbox.
+
+**Validação:**
+- `go build ./...` → verde; aviso não bloqueante de cache Go fora do workspace.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → `263 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q -rxX` → `612 passed`.
+- `scripts/check-referential-integrity.sh` → `Referential integrity OK`.
+- `scripts/check-gates-falsify.sh` → `Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)`.
+- `bin/trackfw validate --json` → 0 violations, 0 warnings.
+- `make quality` → verde.
+
+**Correção pós-auditoria:**
+- Auditoria reprovou o harness porque o cenário 8 de `scripts/check-gates-falsify.sh` podia abortar
+  no `go build` isolado com stderr suprimido, impedindo a execução dos cenários 8/9 e ocultando a
+  causa.
+- Diagnóstico local: o cenário 8 compila uma cópia temporária do módulo Go com `internal/generators/req.go`
+  corrompido para gerar `RREQ-...`; nesta sessão o build completou, mas o harness ainda era opaco em
+  caso de falha por causa de `set -e` + `2>/dev/null`.
+- Correção: criado helper `build_go_or_fail` em `scripts/check-gates-falsify.sh`, com `GOCACHE`
+  temporário, captura de stdout/stderr e mensagem `FAIL [falsify/setup-s8-build]` contendo comando
+  exato e log do `go build`.
+- Validação pós-correção: `scripts/check-gates-falsify.sh` → cenários 1-9 executados e resumo
+  `Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)`; `make quality` → verde.
+
+---
+
 ## Sessão 2026-06-11 — Sessão inaugural
 
 ### O que foi decidido e construído
@@ -4106,3 +4152,159 @@ Normalização doc-only dos 29 arquivos em `docs/req/`: adição de frontmatter 
 
 **Resultado:** zero diretórios órfãos em `docs/`. `validate` 0 violations, `make quality` verde.
 Os 85 artefatos antes invisíveis ao CLI agora estão sob governança.
+
+---
+
+## REQ-2026-07-27-integridade-referencias — 2026-07-27 — Zeus
+
+**Branch:** `fix/integridade-das-referencias-e-ciclo-de-vida-da-req`
+**Status:** IMPLEMENTANDO
+
+**Defeito 1:** 38 de 48 REQs (79%) com `roadmap:` apontando para caminho inexistente, `validate`
+verde. Três escapes independentes: frontmatter nunca é lido (extrator busca `Roadmap:` no corpo);
+fallback por basename recursivo em `referenceExists`; severidade `warning`. 37 das 38 apontam para
+arquivo que existe — é ausência de formato canônico, não rastreabilidade perdida.
+
+**Defeito 2:** nada fecha a REQ. 6 com `Status: Open` e roadmap em `done/`. `blocked_by_draft_adr` é
+`error` → falso positivo (REQ entregue reprova o gate se um ADR dela virar Draft) e falso negativo
+(REQ marcada Done à mão é excluída do check).
+
+**Formato canônico decidido e verificado:** caminho relativo completo com `.md`. `api_chain.go` monta
+o nó com `ID: path` de `filepath.WalkDir(cfg.RoadmapDir,...)` e a aresta é `{From: path, To: val}` —
+qualquer outro formato gera aresta órfã no grafo do serve.
+
+**Ordem crítica:** a elevação de `ref_targets_exist` para `error` fica no ML-3A, **depois** da
+normalização dos dados. Elevar na Wave 2 deixaria `make quality` vermelho na barrier.
+
+**Fora de escopo:** slash-command sem frontmatter · `stale_wip` inócuo (mtime) · schemas mortos ·
+flags do Python · 6 itens de higiene menores.
+
+## Retomada 2026-07-27 — Zeus
+
+Retomado o roadmap `ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`
+na branch `fix/integridade-das-referencias-e-ciclo-de-vida-da-req`. O `trackfw validate` passou
+sem violações. O ML-1A estava parcial, com testes negativos locais em Go e Node; Python, relatório
+das falhas, `make quality`, commit e push permaneciam pendentes. Handoff realizado para Artemis
+concluir e validar exclusivamente o ML-1A antes da barrier da Wave 2.
+
+## ML-1A 2026-07-27 — Artemis
+
+**Status:** CONCLUÍDO na branch `fix/integridade-das-referencias-e-ciclo-de-vida-da-req`.
+
+**Escopo entregue:** 4 cenários negativos de integridade referencial/ciclo de vida nos 3 runtimes,
+sem alteração de código de produção:
+- Escape 1: `roadmap:` no frontmatter aponta para arquivo inexistente e não há `Roadmap:` no corpo.
+- Escape 2: `Roadmap: docs/roadmaps/wip/X.md` enquanto o arquivo real está em `docs/roadmaps/done/X.md`.
+- Escape 3: `ref_targets_exist` default `warning` não reprova o gate.
+- Defeito 2: REQ `Open` com roadmap em `done/` não é sinalizada.
+
+**Arquivos alterados:** `internal/validator/validator_integrity_xfail_test.go`,
+`npm/tests/validator.test.js`, `pypi/tests/test_validator.py`,
+`docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`,
+`docs/agents-working-context.md`.
+
+**Evidência das falhas esperadas:**
+- `go test ./internal/validator -run 'TestXFail' -v` → 4 testes executados com logs
+  `[xfail esperado]`; helper Go falha em XPASS via `t.Errorf`, sem `t.Skip`.
+- `npm test -- --runInBand --test-name-pattern=validator` → `37 passed, 0 failed, 4 xfail`
+  no validator.
+- `python3 -m pytest pypi/tests/test_validator.py -q -rxX -k ml1a` →
+  `59 deselected, 4 xfailed`; marcado com `pytest.mark.xfail(strict=True)`.
+
+**Validação final:**
+- `python3 -m pytest pypi/tests/test_validator.py -q -rxX` no sandbox falhou em dois testes legados
+  por `PermissionError` ao criar diretórios temporários em `~/`; classificado como limitação ambiental.
+- `make quality` executado fora do sandbox → verde: Go `ok`; Node `261 pass` e validator
+  `37 passed, 0 failed, 4 xfail`; Python `604 passed, 4 xfailed`; `go vet`, build, parity,
+  static/integration assets, identity parity, artifact parity e falsification gates passaram.
+
+## Finalização ML-1A 2026-07-27 — Artemis
+
+**Status:** auditado e pronto para handoff da Wave 1.
+
+**Validações executadas nesta finalização:**
+- `go test ./internal/validator -run TestXFail -v` → 4/4 `PASS` com logs `[xfail esperado]`.
+- `npm test -- --runInBand --test-name-pattern=validator` na raiz → falhou por ausência de
+  `package.json` na raiz; reexecutado no workspace `npm/`.
+- `npm test -- --runInBand --test-name-pattern=validator` em `npm/` → `37 passed, 0 failed, 4 xfail`
+  no `tests/validator.test.js`; suíte Node total reportou `261 pass`.
+- `python3 -m pytest pypi/tests/test_validator.py -q -rxX` → `59 passed, 4 xfailed`.
+- `make quality` → verde: Go `ok`; Node `261 pass`; Python `604 passed, 4 xfailed`; `go vet`,
+  build, parity, static/integration assets, identity parity, artifact parity e falsification gates
+  passaram.
+
+**Observação:** o commit `fef4184 test(validator): expose reference integrity escapes` já estava no
+topo da branch local e sincronizado com `origin/fix/integridade-das-referencias-e-ciclo-de-vida-da-req`
+antes desta nota; esta finalização registra a auditoria posterior e não toca Wave 2.
+
+## ML-2A 2026-07-27 — Apolo
+
+**Status:** CONCLUÍDO na branch `fix/integridade-das-referencias-e-ciclo-de-vida-da-req`.
+
+**Escopo entregue:** formato canônico e validação real de referências em Go, Node.js e Python:
+- `adr:` e `roadmap:` em frontmatter agora são lidos de forma case-insensitive e com strip de aspas.
+- Referências são validadas por caminho literal expandido; o fallback recursivo por basename foi
+  removido.
+- `blocked` passou a usar resolução namespace-aware (`resolveStateDirs(..., "blocked")`) em
+  `blocked_has_req` e `ref_targets_exist`.
+- Testes dos escapes 1 e 2 foram reativados nos 3 runtimes. Escape 3 segue para ML-3A; Defeito 2
+  segue para ML-2B.
+- `docs/cli-parity.md` documenta o contrato de caminho relativo completo desde a raiz, com `.md`.
+
+**Arquivos alterados:** `internal/validator/validator.go`,
+`internal/validator/validator_integrity_xfail_test.go`,
+`internal/validator/validator_improvements_test.go`, `internal/validator/validator_namespacing_test.go`,
+`internal/validator/validator_test.go`, `npm/src/validator/index.js`, `npm/tests/validator.test.js`,
+`npm/tests/namespacing.test.js`, `pypi/trackfw/validator.py`, `pypi/tests/test_validator.py`,
+`pypi/tests/test_namespacing.py`, `docs/cli-parity.md`,
+`docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`.
+
+**Validação final:**
+- `go build ./...` → exit 0; aviso não bloqueante de cache Go fora do workspace no sandbox.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → `261 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q -rxX` → `607 passed, 2 xfailed`.
+- `bin/trackfw validate` → exit 0, com 41 warnings de referências canônicas pendentes para ML-3A.
+- `make quality` → verde: Go, Node, Python, vet, build e gates de paridade/falsificação passaram.
+
+## ML-2B 2026-07-27 — Apolo
+
+**Status:** CONCLUÍDO na branch `fix/integridade-das-referencias-e-ciclo-de-vida-da-req`.
+
+**Escopo entregue:** fechamento de REQ e higiene de paridade nos três runtimes:
+- `req move <nome> <status>` implementado em Go, Node.js e Python sem mover arquivo; reescreve somente
+  o `status:` do frontmatter e o primeiro `| Status: ...` no header, preservando demais bytes.
+- `trackfw log` em Node.js e Python passou a usar `<roadmap_dir>/.trackfw-log`, alinhado ao Go.
+- Strip de aspas em `forge` e `trace_id_field` no Go ficou coberto por teste de regressão.
+- Defeito 2 reativado nos 3 runtimes: REQ `Open` com roadmap referenciado em `done/` agora gera warning
+  de ciclo de vida (`req_roadmap_lifecycle`). Escape 3 permanece xfail para ML-3A.
+
+**Arquivos alterados:** `internal/commands/req.go`, `internal/commands/log_test.go`,
+`internal/config/config_test.go`, `internal/generators/req.go`, `internal/generators/req_test.go`,
+`internal/validator/validator.go`, `internal/validator/validator_integrity_xfail_test.go`,
+`npm/src/commands/log.js`, `npm/src/commands/req.js`, `npm/src/generators/req.js`,
+`npm/src/validator/index.js`, `npm/tests/config.test.js`, `npm/tests/log_path.test.js`,
+`npm/tests/req_move.test.js`, `npm/tests/validator.test.js`, `pypi/trackfw/commands/log.py`,
+`pypi/trackfw/commands/req.py`, `pypi/trackfw/generators/req.py`, `pypi/trackfw/validator.py`,
+`pypi/tests/test_commands_basic.py`, `pypi/tests/test_config.py`, `pypi/tests/test_generators_req.py`,
+`pypi/tests/test_log_command.py`, `pypi/tests/test_validator.py`,
+`docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`,
+`docs/agents-working-context.md`.
+
+**Validação final:**
+- `go build ./...` → exit 0; aviso não bloqueante de cache Go fora do workspace no sandbox.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → `263 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q -rxX` → `611 passed, 1 xfailed`.
+- `git diff --check` → verde.
+- `make quality` → verde: Go, Node, Python, vet, build, paridade CLI/validate, assets,
+  identity/artifact parity e falsification gates passaram.
+
+## Encerramento 2026-07-27 — Zeus
+
+Roadmap de integridade das referências e ciclo de vida da REQ auditado após as três waves.
+`bin/trackfw validate --json` retornou 0 violations e 0 warnings; o gate positivo de integridade
+passou; o harness de falsificação executou os 9 cenários fora do sandbox, incluindo
+`artifact-parity/req-name-drift` e `referential-integrity/missing-roadmap`, com exit 0.
+A interrupção observada dentro do sandbox ocorreu na cópia/compilação isolada do cenário 8 e não
+se reproduziu no ambiente autorizado. Todos os critérios globais foram marcados como concluídos.

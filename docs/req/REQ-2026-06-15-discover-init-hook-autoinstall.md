@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-15
 author: zeus
 adr: ""
-roadmap: discover-init-hook-autoinstall-2026-06-15.md
+roadmap: "docs/roadmaps/done/discover-init-hook-autoinstall-2026-06-15.md"
 ---
 
 # REQ — discover --init: auto-instalação de hook framework

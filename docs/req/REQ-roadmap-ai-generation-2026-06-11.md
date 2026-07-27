@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-11
 author: Apolo
 adr: ""
-roadmap: roadmap-roadmap-ai-generation-2026-06-11.md
+roadmap: "docs/roadmaps/done/roadmap-roadmap-ai-generation-2026-06-11.md"
 ---
 
 # REQ: Geração de Roadmap por IA

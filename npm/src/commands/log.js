@@ -3,13 +3,14 @@ const { Command } = require('commander')
 const fs = require('fs')
 const path = require('path')
 const { t } = require('../i18n')
+const config = require('../config')
 
 const cmd = new Command('log')
 cmd.description(t('log.description'))
 cmd.option('--tail <n>', t('log.tail'), '20')
 cmd.action(async (opts) => {
   const tail = parseInt(opts.tail, 10)
-  const logPath = path.join('docs', 'roadmaps', '.trackfw-log')
+  const logPath = path.join(config.load().roadmapDir, '.trackfw-log')
 
   if (!fs.existsSync(logPath)) {
     console.log(t('log.empty'))

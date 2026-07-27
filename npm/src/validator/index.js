@@ -274,16 +274,18 @@ function validateREQsHaveADR() {
 // validateBlockedHasREQ — roadmaps em <roadmapDir>/blocked/ sem marker REQ → violation
 function validateBlockedHasREQ() {
   const cfg = config.load()
-  const entries = listDir(cfg.roadmapDir + '/blocked')
   const violations = []
-  for (const name of entries) {
-    try {
-      const content = fs.readFileSync(path.join(cfg.roadmapDir + '/blocked', name), 'utf8')
-      if (!contentHasMarker(content, cfg.linkFields.req)) {
-        violations.push(`roadmap "${name}" is in blocked but has no linked REQ`)
+  for (const blockedDir of resolveStateDirs(cfg, 'blocked')) {
+    const entries = listDir(blockedDir)
+    for (const name of entries) {
+      try {
+        const content = fs.readFileSync(path.join(blockedDir, name), 'utf8')
+        if (!contentHasMarker(content, cfg.linkFields.req)) {
+          violations.push(`roadmap "${name}" is in blocked but has no linked REQ`)
+        }
+      } catch (_) {
+        // ignorar
       }
-    } catch (_) {
-      // ignorar
     }
   }
   return violations
@@ -663,11 +665,12 @@ function validateFrontmatterPresence() {
 function extractRefPath(content, field) {
   for (const line of content.split('\n')) {
     const trimmed = line.trim()
-    const prefix = field + ':'
-    if (trimmed.startsWith(prefix)) {
-      let val = trimmed.slice(prefix.length).trim()
+    const idx = trimmed.indexOf(':')
+    if (idx !== -1 && trimmed.slice(0, idx).trim().toLowerCase() === field.toLowerCase()) {
+      let val = trimmed.slice(idx + 1).trim()
       if (!val || val === '—' || val === '-' || val === '–') return null
       val = val.split(/\s+/)[0]
+      val = val.replace(/^["']|["']$/g, '')
       if (val.endsWith('.md')) return val
     }
   }
@@ -680,7 +683,7 @@ function validateRefTargetsExist() {
   const warnings = []
 
   // Roadmaps em wip e blocked: verificar REQ:
-  const dirs = [...resolveWIPDirs(cfg), cfg.roadmapDir + '/blocked']
+  const dirs = [...resolveWIPDirs(cfg), ...resolveStateDirs(cfg, 'blocked')]
   for (const dir of dirs) {
     for (const name of listDir(dir)) {
       try {
@@ -715,10 +718,43 @@ function validateRefTargetsExist() {
 function referenceExists(ref, roots) {
   const expandedRef = config.expandPath ? config.expandPath(ref) : ref
   if (fs.existsSync(expandedRef)) return true
-  const basename = path.basename(ref)
-  for (const root of roots || []) {
-    const expandedRoot = config.expandPath ? config.expandPath(root) : root
-    if (walkDirMd(expandedRoot).some(filePath => path.basename(filePath) === basename)) return true
+  return false
+}
+
+function validateREQRoadmapLifecycle() {
+  const cfg = config.load()
+  const warnings = []
+  for (const filePath of resolveReqFiles(cfg)) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf8')
+      if (!reqStatusIsOpen(content)) continue
+      const ref = extractRefPath(content, 'Roadmap')
+      if (!ref) continue
+      const expandedRef = config.expandPath ? config.expandPath(ref) : ref
+      if (!fs.existsSync(expandedRef)) continue
+      if (path.basename(path.dirname(expandedRef)) === 'done') {
+        warnings.push(`req "${path.basename(filePath)}" is Open but linked Roadmap "${ref}" is in done/`)
+      }
+    } catch (_) {}
+  }
+  return warnings
+}
+
+function reqStatusIsOpen(content) {
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    const idx = trimmed.indexOf(':')
+    if (idx >= 0 && trimmed.slice(0, idx).trim().toLowerCase() === 'status') {
+      return trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '').toLowerCase() === 'open'
+    }
+    const marker = '| Status: '
+    const markerIdx = trimmed.indexOf(marker)
+    if (markerIdx >= 0) {
+      let rest = trimmed.slice(markerIdx + marker.length)
+      const pipeIdx = rest.indexOf(' |')
+      if (pipeIdx >= 0) rest = rest.slice(0, pipeIdx)
+      return rest.trim().toLowerCase() === 'open'
+    }
   }
   return false
 }
@@ -1027,6 +1063,7 @@ async function validateUnfiltered() {
   applyRule('adr_orphan',           validateADRsAreReferenced(),           violations, warnings)
   applyRule('stale_wip',            validateStaleWIP(),                    violations, warnings)
   applyRule('ref_targets_exist',    validateRefTargetsExist(),             violations, warnings)
+  for (const msg of validateREQRoadmapLifecycle()) { _setMeta(msg, 'req_roadmap_lifecycle'); warnings.push(msg) }
   applyRule('folder_status',        validateFolderStatusCoherence(),       violations, warnings)
   applyRule('filename_uniqueness',  validateFilenameUniqueness(),          violations, warnings)
   applyRule('branch_has_wip_roadmap', validateBranchHasWIPRoadmap(),      violations, warnings)
@@ -1198,6 +1235,7 @@ module.exports = {
   gitLastModifiedTime,
   extractRefPath,
   validateRefTargetsExist,
+  validateREQRoadmapLifecycle,
   validateFolderStatusCoherence,
   validateFilenameUniqueness,
   validateBranchHasWIPRoadmap,

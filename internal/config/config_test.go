@@ -238,3 +238,26 @@ func TestReset(t *testing.T) {
 		t.Errorf("after Reset: WipLimit want 5, got %d", cfg2.WipLimit)
 	}
 }
+
+func TestLoad_StripsQuotesFromForgeAndTraceIDField(t *testing.T) {
+	Reset()
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	yaml := "forge: \"github\"\ntrace_id_field: 'req_id'\n"
+	if err := os.WriteFile(filepath.Join(tmp, "trackfw.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	if cfg.Forge != "github" {
+		t.Fatalf("Forge: want github, got %q", cfg.Forge)
+	}
+	if cfg.TraceIdField != "req_id" {
+		t.Fatalf("TraceIdField: want req_id, got %q", cfg.TraceIdField)
+	}
+}

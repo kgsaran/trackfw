@@ -1,6 +1,6 @@
 'use strict'
 const { Command } = require('commander')
-const { listREQs } = require('../generators/req')
+const { listREQs, moveREQ } = require('../generators/req')
 const { t } = require('../i18n')
 
 const cmd = new Command('req')
@@ -65,6 +65,12 @@ cmd.command('list')
   .description(t('req.list.description'))
   .action(async () => {
     listREQs(require('../config').load().reqDir)
+  })
+
+cmd.command('move <name> <status>')
+  .description('Update a REQ status in place')
+  .action(async (name, status) => {
+    moveREQ(name, status)
   })
 
 module.exports = cmd

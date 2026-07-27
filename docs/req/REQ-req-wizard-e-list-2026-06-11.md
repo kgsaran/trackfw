@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-11
 author: Apolo
 adr: ""
-roadmap: roadmap-req-wizard-e-list-2026-06-11.md
+roadmap: "docs/roadmaps/done/roadmap-req-wizard-e-list-2026-06-11.md"
 ---
 
 # REQ: REQ — Wizard Interativo nas Seções e req list

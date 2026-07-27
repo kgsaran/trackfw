@@ -202,15 +202,18 @@ def _extract_ref_path(content: str, field: str) -> str:
     Extrai o caminho .md após 'field: valor' na mesma linha.
     Retorna '' se não encontrado ou não terminar em .md.
     """
-    prefix = field + ":"
     for line in content.split("\n"):
         trimmed = line.strip()
-        if trimmed.startswith(prefix):
-            val = trimmed[len(prefix):].strip()
+        if ":" not in trimmed:
+            continue
+        key, val = trimmed.split(":", 1)
+        if key.strip().lower() == field.lower():
+            val = val.strip()
             if not val or val in ("—", "-", "–"):
                 return ""
             # Primeira "palavra" (antes de espaço)
             val = val.split()[0] if val.split() else ""
+            val = val.strip("\"'")
             if val.endswith(".md"):
                 return val
     return ""
@@ -543,20 +546,19 @@ def validate_reqs_have_adr(cfg: dict) -> list:
 
 def validate_blocked_has_req(cfg: dict) -> list:
     """Roadmaps em blocked/ sem marcador req → violation."""
-    blocked_dir = cfg.get("roadmap_dir", "docs/roadmaps") + "/blocked"
-    entries = list_dir(blocked_dir)
     req_markers = cfg.get("link_fields", {}).get("req", ["REQ:"])
     violations = []
-    for name in entries:
-        try:
-            with open(os.path.join(blocked_dir, name), "r", encoding="utf-8") as f:
-                content = f.read()
-            if not _content_has_marker(content, req_markers):
-                violations.append(
-                    {"type": "violation", "message": f'roadmap "{name}" is in blocked but has no linked REQ'}
-                )
-        except OSError:
-            pass
+    for blocked_dir in _resolve_state_dirs(cfg, "blocked"):
+        for name in list_dir(blocked_dir):
+            try:
+                with open(os.path.join(blocked_dir, name), "r", encoding="utf-8") as f:
+                    content = f.read()
+                if not _content_has_marker(content, req_markers):
+                    violations.append(
+                        {"type": "violation", "message": f'roadmap "{name}" is in blocked but has no linked REQ'}
+                    )
+            except OSError:
+                pass
     return violations
 
 
@@ -821,7 +823,7 @@ def validate_ref_targets_exist(cfg: dict) -> list:
     warnings = []
 
     # Roadmaps em wip e blocked: verificar REQ:
-    dirs = resolve_wip_dirs(cfg) + [cfg.get("roadmap_dir", "docs/roadmaps") + "/blocked"]
+    dirs = resolve_wip_dirs(cfg) + _resolve_state_dirs(cfg, "blocked")
     for wip_dir in dirs:
         for name in list_dir(wip_dir):
             try:
@@ -864,13 +866,49 @@ def validate_ref_targets_exist(cfg: dict) -> list:
 
 
 def _reference_exists(ref: str, roots: list[str]) -> bool:
-    if os.path.exists(ref):
-        return True
-    basename = os.path.basename(ref)
-    for root in roots:
-        for dirpath, _, filenames in os.walk(root):
-            if basename in filenames:
-                return True
+    return os.path.exists(os.path.expanduser(ref))
+
+
+def validate_req_roadmap_lifecycle(cfg: dict) -> list:
+    """Sinaliza REQ Open cujo roadmap canônico referenciado já está em done/."""
+    warnings = []
+    for file_path in resolve_req_files(cfg):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            if not _req_status_is_open(content):
+                continue
+            ref = _extract_ref_path(content, "Roadmap")
+            if not ref:
+                continue
+            expanded_ref = os.path.expanduser(ref)
+            if not os.path.isfile(expanded_ref):
+                continue
+            if os.path.basename(os.path.dirname(expanded_ref)) == "done":
+                warnings.append({
+                    "type": "warning",
+                    "message": f'req "{os.path.basename(file_path)}" is Open but linked Roadmap "{ref}" is in done/'
+                })
+        except OSError:
+            pass
+    return warnings
+
+
+def _req_status_is_open(content: str) -> bool:
+    for line in content.split("\n"):
+        trimmed = line.strip()
+        if ":" in trimmed:
+            key, val = trimmed.split(":", 1)
+            if key.strip().lower() == "status":
+                return val.strip().strip("\"'").lower() == "open"
+        marker = "| Status: "
+        idx = trimmed.find(marker)
+        if idx >= 0:
+            rest = trimmed[idx + len(marker):]
+            pipe_idx = rest.find(" |")
+            if pipe_idx >= 0:
+                rest = rest[:pipe_idx]
+            return rest.strip().lower() == "open"
     return False
 
 
@@ -1165,6 +1203,7 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule("filename_uniqueness",  validate_filename_uniqueness(cfg),            violations, warnings, cfg)
     _apply_rule("branch_has_wip_roadmap", validate_branch_has_wip_roadmap(cfg),      violations, warnings, cfg)
     _apply_rule("ref_targets_exist",    validate_ref_targets_exist(cfg),              violations, warnings, cfg)
+    warnings += _enrich_items(validate_req_roadmap_lifecycle(cfg), "req_roadmap_lifecycle")
     _apply_rule("folder_status",        validate_folder_status_coherence(cfg),        violations, warnings, cfg)
     _apply_rule("stale_wip",            validate_stale_wip(cfg),                      violations, warnings, cfg)
     _apply_rule("note_orphan",          validate_note_orphan(cfg, cwd),               violations, warnings, cfg)

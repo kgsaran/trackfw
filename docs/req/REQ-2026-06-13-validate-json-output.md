@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-13
 author: zeus
 adr: ""
-roadmap: v2.5-discovery-json-traceid-2026-06-13.md
+roadmap: "docs/roadmaps/done/v2.5-discovery-json-traceid-2026-06-13.md"
 ---
 
 # REQ — validate --json

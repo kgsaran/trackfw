@@ -3,7 +3,7 @@ status: Done
 date: 2026-06-14
 author: zeus
 adr: ""
-roadmap: v2.5.3-req-indexing-by-agent-2026-06-14.md
+roadmap: "docs/roadmaps/done/v2.5.3-req-indexing-by-agent-2026-06-14.md"
 ---
 
 # REQ — v2.5.3 Fix: REQ scanner não percorre layout by_agent

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-19
 author: "Zeus"
 adr: "docs/adr/ADR-2026-07-19-antigravity-agent-tools.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-19-antigravity-agent-tools.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-19-antigravity-agent-tools.md"
 ---
 
 # REQ: Corrigir render Antigravity com tools validos e model tier do agy
 
-> Date: 2026-07-19 | Status: Open
+> Date: 2026-07-19 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
