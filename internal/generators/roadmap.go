@@ -237,6 +237,92 @@ func parseREQForRoadmap(content string) (title string, criteria []string, linked
 	return title, criteria, linkedADR
 }
 
+// rewriteRoadmapStatus rewrites the "status:" field in the frontmatter block and
+// the "| Status: <value>" portion of the first matching header line in the body.
+//
+// Mirrors the semantics of rewriteFrontmatterFields (internal/integrations/render.go):
+//   - Scoped strictly to the frontmatter block (between opening "---\n" and closing "\n---").
+//   - Every other line is preserved byte-for-byte (order, spacing, quote style).
+//   - The key is NOT invented if absent; source is returned unchanged.
+//   - If source has no recognizable frontmatter, source is returned unchanged without error.
+//
+// The body "| Status: " sync is also scoped: only the first occurrence before the
+// first "## " heading is updated; any occurrence inside sections or code blocks is left intact.
+//
+// Returns the (possibly modified) content and a bool indicating whether anything changed.
+func rewriteRoadmapStatus(source []byte, state string) ([]byte, bool) {
+	s := string(source)
+	if !strings.HasPrefix(s, "---\n") {
+		return source, false
+	}
+	end := strings.Index(s[4:], "\n---")
+	if end < 0 {
+		return source, false
+	}
+	frontmatter := s[4 : 4+end]
+	rest := s[4+end:] // starts with "\n---", followed by the body
+
+	changed := false
+	lines := strings.Split(frontmatter, "\n")
+	for i, line := range lines {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(key) != "status" {
+			continue
+		}
+		trimmedValue := strings.TrimSpace(value)
+		quoted := len(trimmedValue) >= 2 && strings.HasPrefix(trimmedValue, `"`) && strings.HasSuffix(trimmedValue, `"`)
+		var newLine string
+		if quoted {
+			newLine = key + ": \"" + state + "\""
+		} else {
+			newLine = key + ": " + state
+		}
+		if lines[i] != newLine {
+			lines[i] = newLine
+			changed = true
+		}
+		break // only the first status: in frontmatter
+	}
+
+	// Sync "| Status: <value>" in the header line of the body (after the closing ---).
+	// Only the first occurrence before the first "## " heading is updated.
+	if len(rest) > 4 {
+		body := rest[4:] // skip "\n---"
+		bodyLines := strings.Split(body, "\n")
+		const marker = "| Status: "
+		for i, bline := range bodyLines {
+			if strings.HasPrefix(strings.TrimSpace(bline), "## ") {
+				break
+			}
+			idx := strings.Index(bline, marker)
+			if idx < 0 {
+				continue
+			}
+			prefix := bline[:idx+len(marker)]
+			after := bline[idx+len(marker):]
+			var suffix string
+			if pipeIdx := strings.Index(after, " |"); pipeIdx >= 0 {
+				suffix = after[pipeIdx:]
+			}
+			newLine := prefix + state + suffix
+			if bodyLines[i] != newLine {
+				bodyLines[i] = newLine
+				changed = true
+				rest = "\n---" + strings.Join(bodyLines, "\n")
+			}
+			break // only the first | Status: before ##
+		}
+	}
+
+	if !changed {
+		return source, false
+	}
+	return []byte("---\n" + strings.Join(lines, "\n") + rest), true
+}
+
 func MoveRoadmap(name, state string) error {
 	cfg := config.Load()
 
@@ -282,6 +368,13 @@ func MoveRoadmap(name, state string) error {
 	dst := filepath.Join(targetDir, filepath.Base(src))
 	if err := os.Rename(src, dst); err != nil {
 		return fmt.Errorf("moving roadmap: %w", err)
+	}
+
+	// Synchronize status: in the frontmatter (and header line in body) to match the new state.
+	if rawContent, readErr := os.ReadFile(dst); readErr == nil {
+		if updated, changed := rewriteRoadmapStatus(rawContent, state); changed {
+			_ = os.WriteFile(dst, updated, 0644)
+		}
 	}
 
 	logBasename := filepath.Base(src)

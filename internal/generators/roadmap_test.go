@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // testStateDirs retorna os diretórios de estado padrão para uso em testes.
@@ -62,23 +63,21 @@ func TestNewRoadmap_CreatesFile(t *testing.T) {
 	}
 }
 
-// TestMoveRoadmap_Valid — cria roadmap em backlog e move para wip
-func TestMoveRoadmap_Valid(t *testing.T) {
-	dir := t.TempDir()
-	chdirRoadmap(t, dir)
-
-	// Criar estrutura de diretórios necessária
-	for _, d := range []string{
-		"docs/roadmaps/backlog",
-		"docs/roadmaps/wip",
-		"docs/roadmaps/blocked",
-		"docs/roadmaps/done",
-		"docs/roadmaps/abandoned",
-	} {
+// mkRoadmapDirs cria a estrutura padrão de diretórios de roadmap no diretório corrente.
+func mkRoadmapDirs(t *testing.T) {
+	t.Helper()
+	for _, d := range testStateDirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			t.Fatalf("MkdirAll %s: %v", d, err)
 		}
 	}
+}
+
+// TestMoveRoadmap_Valid — cria roadmap em backlog, move para wip e verifica frontmatter sincronizado.
+func TestMoveRoadmap_Valid(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	mkRoadmapDirs(t)
 
 	if err := NewRoadmap("Move Test"); err != nil {
 		t.Fatalf("NewRoadmap() erro: %v", err)
@@ -101,6 +100,158 @@ func TestMoveRoadmap_Valid(t *testing.T) {
 	backlogMatches, _ := filepath.Glob("docs/roadmaps/backlog/*.md")
 	if len(backlogMatches) != 0 {
 		t.Errorf("esperado 0 arquivos em backlog após move, obteve %d: %v", len(backlogMatches), backlogMatches)
+	}
+
+	// Frontmatter deve ter status: wip (minúsculo, igual ao nome do estado)
+	content, err := os.ReadFile(wipMatches[0])
+	if err != nil {
+		t.Fatalf("ReadFile após move: %v", err)
+	}
+	if !strings.Contains(string(content), "status: wip") {
+		t.Errorf("frontmatter deveria conter 'status: wip', obteve:\n%s", string(content))
+	}
+	// Cabeçalho também deve ter | Status: wip
+	if !strings.Contains(string(content), "| Status: wip") {
+		t.Errorf("cabeçalho deveria conter '| Status: wip', obteve:\n%s", string(content))
+	}
+}
+
+// TestMoveRoadmap_FrontmatterSync_ValidateAfterMove — prova P4: nenhum warning folder_status após move.
+// Controle positivo garante que o validador está de fato inspecionando os arquivos.
+func TestMoveRoadmap_FrontmatterSync_ValidateAfterMove(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	mkRoadmapDirs(t)
+
+	// Criar e mover um roadmap real: backlog → wip → done
+	if err := NewRoadmap("Validate Test"); err != nil {
+		t.Fatalf("NewRoadmap() erro: %v", err)
+	}
+	if err := MoveRoadmap("validate-test", "wip"); err != nil {
+		t.Fatalf("MoveRoadmap wip: %v", err)
+	}
+	if err := MoveRoadmap("validate-test", "done"); err != nil {
+		t.Fatalf("MoveRoadmap done: %v", err)
+	}
+
+	// Controle positivo: escrever manualmente um arquivo em wip com status: backlog → DEVE gerar warning
+	controlContent := "---\nstatus: backlog\ndate: 2026-01-01\n---\n# Roadmap: Control\n\n> Created: 2026-01-01 | Status: backlog\n"
+	controlPath := "docs/roadmaps/wip/ROADMAP-control.md"
+	if err := os.WriteFile(controlPath, []byte(controlContent), 0644); err != nil {
+		t.Fatalf("WriteFile controle: %v", err)
+	}
+
+	_, warnings, err := validator.ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered(): %v", err)
+	}
+
+	// O arquivo movido NÃO deve gerar warning de folder_status
+	for _, w := range warnings {
+		if strings.Contains(w, "folder_status") && strings.Contains(w, "validate-test") {
+			t.Errorf("roadmap movido gerou warning folder_status inesperado: %s", w)
+		}
+	}
+
+	// O controle positivo DEVE gerar warning de folder_status
+	hasControlWarning := false
+	for _, w := range warnings {
+		if strings.Contains(w, "ROADMAP-control.md") && strings.Contains(w, "folder") {
+			hasControlWarning = true
+			break
+		}
+	}
+	if !hasControlWarning {
+		t.Errorf("controle positivo não gerou warning folder_status — o validador pode não estar inspecionando os arquivos; warnings: %v", warnings)
+	}
+}
+
+// TestMoveRoadmap_BodyStatusIntact — status: no corpo e | Status: em bloco de código NÃO são tocados.
+// Reprova a implementação Python original (re.sub não escopado).
+func TestMoveRoadmap_BodyStatusIntact(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	mkRoadmapDirs(t)
+
+	// Roadmap cujo corpo contém 'status: backlog' (em tabela) e '| Status: backlog' (em seção)
+	bodyWithStatusLines := "---\nstatus: backlog\ndate: 2026-01-01\n---\n" +
+		"# Roadmap: Body Status Test\n\n" +
+		"> Created: 2026-01-01 | Status: backlog\n\n" +
+		"## Context\n\n" +
+		"A tabela abaixo documenta os estados:\n\n" +
+		"| Estado | status: backlog |\n" +
+		"|--------|----------------|\n" +
+		"| Inicial | backlog |\n\n" +
+		"Código de exemplo com header:\n\n" +
+		"```\n" +
+		"> Created: 2026-01-01 | Status: backlog\n" +
+		"```\n"
+
+	roadmapPath := "docs/roadmaps/backlog/ROADMAP-body-status-test.md"
+	if err := os.WriteFile(roadmapPath, []byte(bodyWithStatusLines), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := MoveRoadmap("body-status-test", "wip"); err != nil {
+		t.Fatalf("MoveRoadmap(): %v", err)
+	}
+
+	wipMatches, _ := filepath.Glob("docs/roadmaps/wip/*.md")
+	if len(wipMatches) != 1 {
+		t.Fatalf("esperado 1 arquivo em wip, obteve %d", len(wipMatches))
+	}
+	content, err := os.ReadFile(wipMatches[0])
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(content)
+
+	// Frontmatter deve ter status: wip
+	if !strings.Contains(body, "status: wip") {
+		t.Errorf("frontmatter deveria conter 'status: wip'")
+	}
+	// Cabeçalho deve ter | Status: wip
+	if !strings.Contains(body, "| Status: wip") {
+		t.Errorf("cabeçalho deveria conter '| Status: wip'")
+	}
+	// A linha do corpo '| Estado | status: backlog |' NÃO deve ter sido tocada
+	if !strings.Contains(body, "| Estado | status: backlog |") {
+		t.Errorf("linha do corpo 'status: backlog' foi modificada incorretamente; corpo:\n%s", body)
+	}
+	// O '| Status: backlog' dentro do bloco de código (após ## ) NÃO deve ter sido tocado
+	if !strings.Contains(body, "```\n> Created: 2026-01-01 | Status: backlog\n```") {
+		t.Errorf("'| Status: backlog' no bloco de código foi modificado incorretamente; corpo:\n%s", body)
+	}
+}
+
+// TestMoveRoadmap_NoFrontmatter — arquivo sem frontmatter é movido sem corrupção.
+func TestMoveRoadmap_NoFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	mkRoadmapDirs(t)
+
+	// Arquivo sem frontmatter reconhecível
+	plainContent := "# Roadmap sem frontmatter\n\nConteúdo simples sem bloco ---.\n"
+	roadmapPath := "docs/roadmaps/backlog/ROADMAP-no-frontmatter.md"
+	if err := os.WriteFile(roadmapPath, []byte(plainContent), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := MoveRoadmap("no-frontmatter", "wip"); err != nil {
+		t.Fatalf("MoveRoadmap() erro: %v", err)
+	}
+
+	wipMatches, _ := filepath.Glob("docs/roadmaps/wip/*.md")
+	if len(wipMatches) != 1 {
+		t.Fatalf("esperado 1 arquivo em wip, obteve %d", len(wipMatches))
+	}
+	content, err := os.ReadFile(wipMatches[0])
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	// Conteúdo deve ser idêntico ao original (sem chave inventada, sem corrupção)
+	if string(content) != plainContent {
+		t.Errorf("conteúdo do arquivo sem frontmatter foi alterado;\noriginal: %q\nobteve: %q", plainContent, string(content))
 	}
 }
 

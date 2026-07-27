@@ -3626,3 +3626,87 @@ que existe para cumprir a DoD gera um estado que o próprio validador reprova. R
 débito nº 5 no roadmap; é candidato a REQ própria (corrigir nos 3 CLIs).
 
 **Débito registrado (não esquecido):** 5 itens no fim do roadmap em `docs/roadmaps/done/`.
+
+---
+
+## REQ-2026-07-27-roadmap-move — 2026-07-27 — Zeus
+
+**Tarefa:** abertura da REQ e do roadmap para o débito nº 5 da REQ anterior
+**Branch:** `fix/roadmap-move-sincroniza-status`
+**Status:** IMPLEMENTANDO
+
+**Defeito:** `roadmap move` não sincroniza `status:` do frontmatter — o comando da DoD gera warning
+de `folder_status`. Mesmo formato do D4 da REQ-2026-07-26.
+
+**Reprodução:** o defeito apareceu ao criar este próprio roadmap, na sequência
+`req new → roadmap new → roadmap move wip`. O artefato que autoriza o conserto nasceu com o defeito.
+
+**Escopo:** reescrita escopada de frontmatter nos 3 CLIs (espelhando `rewriteFrontmatterFields`),
+correção do `re.sub` não escopado do Python, sincronização do cabeçalho, e testes P4 que rodam
+`validate` após o `move`. Node.js ganha suíte de `moveRoadmap`, hoje inexistente.
+
+**Fora de escopo (5 achados adjacentes registrados na REQ):** divergência de templates Python×Go/Node,
+estado `analyzing` não movível, aspas no `parse_frontmatter` do Python, ambiguidade do `findRoadmap`
+do Go, prefixo de agente no log Python.
+
+---
+
+## ML-1A — REQ-2026-07-27-roadmap-move — 2026-07-27 — Apolo
+
+**Tarefa:** ML-1A do roadmap `ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md`
+— sincronizar `status:` do frontmatter e cabeçalho em `roadmap move` nos 3 CLIs.
+**Branch:** `fix/roadmap-move-sincroniza-status`
+**Commit:** `385df5b`
+**Status:** CONCLUÍDO
+
+**O que foi feito:**
+
+- **Go** (`internal/generators/roadmap.go`): adicionou `rewriteRoadmapStatus(source []byte, state string) ([]byte, bool)` espelhando a semântica de `rewriteFrontmatterFields`. `MoveRoadmap` lê o arquivo após `os.Rename` e chama a função; só escreve se `changed == true`. Frontmatter escopado; `| Status: ` no cabeçalho sincronizado antes do primeiro `## `.
+
+- **Node.js** (`npm/src/generators/roadmap.js`): adicionou `rewriteRoadmapStatus(source, state)` com mesma semântica. `moveRoadmap` chama após `fs.renameSync`. Exportada para testes.
+
+- **Python** (`pypi/trackfw/generators/roadmap.py`): adicionou `_rewrite_roadmap_status(source, state)` substituindo o `re.sub` não escopado da linha ~213. State gravado em minúsculo (bytes idênticos nos 3 CLIs). Import `re` mantido (usado em `slugify`).
+
+**Testes criados:**
+
+- **Go** (`internal/generators/roadmap_test.go`):
+  - `TestMoveRoadmap_FrontmatterSync_ValidateAfterMove` — P4: controle positivo + ausência de `folder_status` após move
+  - `TestMoveRoadmap_BodyStatusIntact` — escopo: `status:` no corpo e `| Status:` em seção não tocados
+  - `TestMoveRoadmap_NoFrontmatter` — arquivo sem frontmatter: conteúdo intacto
+  - `TestMoveRoadmap_Valid` — atualizado para verificar `status: wip` e `| Status: wip`
+
+- **Node.js** (`npm/tests/roadmap_move.test.js` — novo, 10 testes): move válido, estado inválido, não encontrado, validate P4 com controle positivo, escopo do frontmatter, sem frontmatter, testes unitários de `rewriteRoadmapStatus`
+
+- **Python** (`pypi/tests/test_generators_roadmap.py`):
+  - `TestRewriteRoadmapStatus` (5 testes unitários)
+  - `TestMoveRoadmapFrontmatterSync` (4 testes: casing minúsculo, P4 validate, sem frontmatter, corpo intocado)
+  - `assertIn("status: WIP")` corrigidos em 2 arquivos de teste para `"status: wip"`
+
+**Divergências deliberadas não corrigidas (escopo negativo da REQ):**
+1. Template Python gera `status: Backlog` (não `status: backlog`) — divergência de template, REQ própria
+2. Prefixo de agente no log Python (ausente); Go/Node prefixam — REQ própria
+3. `parse_frontmatter` Python não remove aspas → `status: "wip"` gera warning — REQ própria
+
+**Qualidade:** `make quality` verde, sem variável de ambiente auxiliar.
+
+---
+
+## Encerramento da REQ-2026-07-27-roadmap-move — 2026-07-27 — Zeus
+
+**Branch:** `fix/roadmap-move-sincroniza-o-status-do-artefato`
+**Status:** CONCLUÍDO
+
+ML-1A e ML-2A concluídos e auditados. `make quality` verde.
+
+**Prova de paridade de bytes** (feita pelo orquestrador — os testes de cada CLI, isolados, não
+verificam isso entre si): mesmo roadmap movido pelos 3 binários em diretórios separados →
+Go × Node e Go × Python **idênticos byte a byte**. Fixture com `status:` no corpo ficou intacto.
+
+**ML-2A:** este roadmap nasceu com o defeito (o `move` para wip gerou warning) e foi encerrado sem
+ele — `status: wip` → `done` automático, cabeçalho junto, zero edição manual.
+
+**Gate pegou erro do orquestrador:** a branch fora criada como `fix/roadmap-move-sincroniza-status`,
+slug que não casa com o roadmap `...sincroniza-o-status-do-artefato`. O `branch_has_wip_roadmap`
+reprovou corretamente — era trabalho órfão. Branch renomeada antes do PR.
+
+**Débito:** 5 divergências adjacentes seguem abertas, registradas na REQ e na nota de vault.

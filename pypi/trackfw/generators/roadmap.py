@@ -25,6 +25,80 @@ def slugify(title: str) -> str:
     return slug
 
 
+def _rewrite_roadmap_status(source: str, state: str) -> tuple[str, bool]:
+    """Reescreve o campo "status:" no bloco de frontmatter e a linha
+    "| Status: <valor>" do cabeçalho no corpo.
+
+    Espelha a semântica de _rewrite_frontmatter_fields
+    (pypi/trackfw/integrations/renderers.py):
+    - Escopo estrito ao bloco de frontmatter (entre "---\\n" de abertura e
+      "\\n---" de fechamento).
+    - Demais linhas preservadas byte a byte (ordem, espaçamento, estilo de aspas).
+    - A chave NÃO é inventada se ausente; source é devolvida inalterada.
+    - Sem frontmatter reconhecível → source é devolvida inalterada, sem erro.
+
+    A sincronização de "| Status: " no corpo é escopada: apenas a primeira
+    ocorrência antes do primeiro "## " heading é atualizada.
+
+    Retorna (conteúdo_possivelmente_modificado, changed: bool).
+    """
+    if not source.startswith("---\n"):
+        return source, False
+    end = source.find("\n---", 4)
+    if end < 0:
+        return source, False
+
+    frontmatter = source[4:end]
+    rest = source[end:]  # starts with "\n---"
+
+    changed = False
+    lines = frontmatter.split("\n")
+    for index, line in enumerate(lines):
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        if key.strip() != "status":
+            continue
+        trimmed_value = value.strip()
+        quoted = len(trimmed_value) >= 2 and trimmed_value.startswith('"') and trimmed_value.endswith('"')
+        if quoted:
+            new_line = f'{key}: "{state}"'
+        else:
+            new_line = f"{key}: {state}"
+        if lines[index] != new_line:
+            lines[index] = new_line
+            changed = True
+        break  # only the first status: in frontmatter
+
+    # Sync "| Status: <valor>" in the header line of the body (after closing ---).
+    # Only the first occurrence before the first "## " heading is updated.
+    new_rest = rest
+    marker = "| Status: "
+    if len(rest) > 4:
+        body = rest[4:]  # skip "\n---"
+        body_lines = body.split("\n")
+        for i, bline in enumerate(body_lines):
+            if bline.lstrip().startswith("## "):
+                break
+            idx = bline.find(marker)
+            if idx < 0:
+                continue
+            prefix = bline[:idx + len(marker)]
+            after = bline[idx + len(marker):]
+            pipe_idx = after.find(" |")
+            suffix = after[pipe_idx:] if pipe_idx >= 0 else ""
+            new_line = prefix + state + suffix
+            if body_lines[i] != new_line:
+                body_lines[i] = new_line
+                changed = True
+                new_rest = "\n---" + "\n".join(body_lines)
+            break  # only the first | Status: before ##
+
+    if not changed:
+        return source, False
+    return "---\n" + "\n".join(lines) + new_rest, True
+
+
 def _state_dir(state: str, cfg: dict) -> str | None:
     """Retorna diretório do estado em modo flat, ou None se estado inválido."""
     if state not in VALID_STATES:
@@ -200,29 +274,14 @@ def move_roadmap(filename: str, to_state: str, cfg: dict) -> str:
     os.makedirs(target_dir, exist_ok=True)
     dst = os.path.join(target_dir, basename)
 
-    # Lê conteúdo e atualiza status: no frontmatter
+    # Lê conteúdo, sincroniza status: no frontmatter (e cabeçalho no corpo) e escreve no destino.
     with open(src, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Mapeamento de estado para label legível do frontmatter
-    state_labels = {
-        "backlog": "Backlog",
-        "wip": "WIP",
-        "blocked": "Blocked",
-        "done": "Done",
-        "abandoned": "Abandoned",
-    }
-    new_label = state_labels.get(to_state, to_state.capitalize())
-    content = re.sub(
-        r"^(status:\s*).*$",
-        f"\\g<1>{new_label}",
-        content,
-        count=1,
-        flags=re.MULTILINE,
-    )
+    updated, _ = _rewrite_roadmap_status(content, to_state)
 
     with open(dst, "w", encoding="utf-8") as f:
-        f.write(content)
+        f.write(updated)
 
     os.remove(src)
 

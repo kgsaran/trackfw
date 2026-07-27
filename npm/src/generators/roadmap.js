@@ -115,6 +115,76 @@ function showRoadmap(name) {
 }
 
 /**
+ * rewriteRoadmapStatus — reescreve o campo "status:" no bloco de frontmatter e a
+ * linha "| Status: <valor>" do cabeçalho no corpo.
+ *
+ * Espelha a semântica de rewriteFrontmatterFields (npm/src/integrations/render.js):
+ * - Escopo estrito ao bloco de frontmatter (entre "---\n" de abertura e "\n---" de fechamento).
+ * - Demais linhas preservadas byte a byte (ordem, espaçamento, estilo de aspas).
+ * - A chave NÃO é inventada se ausente; source é devolvida inalterada.
+ * - Sem frontmatter reconhecível → source é devolvida inalterada.
+ *
+ * A sincronização do "| Status: " no corpo é escopada: apenas a primeira ocorrência
+ * antes do primeiro "## " heading é atualizada.
+ *
+ * Retorna { content: string, changed: boolean }.
+ */
+function rewriteRoadmapStatus(source, state) {
+  const s = String(source)
+  if (!s.startsWith('---\n')) return { content: s, changed: false }
+  const end = s.indexOf('\n---', 4)
+  if (end < 0) return { content: s, changed: false }
+
+  const frontmatter = s.slice(4, end)
+  const rest = s.slice(end) // starts with "\n---"
+
+  let changed = false
+  const fmLines = frontmatter.split('\n')
+  for (let i = 0; i < fmLines.length; i++) {
+    const sep = fmLines[i].indexOf(':')
+    if (sep < 0) continue
+    const key = fmLines[i].slice(0, sep).trim()
+    if (key !== 'status') continue
+    const value = fmLines[i].slice(sep + 1).trim()
+    const quoted = value.length >= 2 && value.startsWith('"') && value.endsWith('"')
+    const newLine = quoted ? `${fmLines[i].slice(0, sep)}: "${state}"` : `${fmLines[i].slice(0, sep)}: ${state}`
+    if (fmLines[i] !== newLine) {
+      fmLines[i] = newLine
+      changed = true
+    }
+    break // only the first status: in frontmatter
+  }
+
+  // Sync "| Status: <valor>" in the header line (body, after the closing ---).
+  // Only the first occurrence before the first "## " heading is updated.
+  let newRest = rest
+  if (rest.length > 4) {
+    const body = rest.slice(4) // skip "\n---"
+    const bodyLines = body.split('\n')
+    const marker = '| Status: '
+    for (let i = 0; i < bodyLines.length; i++) {
+      if (bodyLines[i].trimStart().startsWith('## ')) break
+      const idx = bodyLines[i].indexOf(marker)
+      if (idx < 0) continue
+      const prefix = bodyLines[i].slice(0, idx + marker.length)
+      const after = bodyLines[i].slice(idx + marker.length)
+      const pipeIdx = after.indexOf(' |')
+      const suffix = pipeIdx >= 0 ? after.slice(pipeIdx) : ''
+      const newLine = prefix + state + suffix
+      if (bodyLines[i] !== newLine) {
+        bodyLines[i] = newLine
+        changed = true
+        newRest = '\n---' + bodyLines.join('\n')
+      }
+      break // only the first | Status: before ##
+    }
+  }
+
+  if (!changed) return { content: s, changed: false }
+  return { content: '---\n' + fmLines.join('\n') + newRest, changed: true }
+}
+
+/**
  * moveRoadmap — move arquivo para diretório do estado alvo.
  * Em modo by_agent, mantém o agente na hierarquia.
  */
@@ -171,6 +241,13 @@ function moveRoadmap(name, state) {
 
   const dst = path.join(targetDir, basename)
   fs.renameSync(src, dst)
+
+  // Sincroniza status: no frontmatter (e cabeçalho no corpo) com o novo estado.
+  try {
+    const rawContent = fs.readFileSync(dst, 'utf8')
+    const { content: updated, changed } = rewriteRoadmapStatus(rawContent, state)
+    if (changed) fs.writeFileSync(dst, updated, 'utf8')
+  } catch (_) {}
 
   appendTransitionLog(logBasename, fromState, state)
   console.log(`✓ moved ${basename} → ${targetDir}`)
@@ -450,6 +527,7 @@ module.exports = {
   listRoadmaps,
   showRoadmap,
   moveRoadmap,
+  rewriteRoadmapStatus,
   appendTransitionLog,
   newRoadmap,
   newRoadmapFromReq,
