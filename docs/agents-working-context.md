@@ -4461,3 +4461,7 @@ corrigir exclusivamente o contrato do slash-command antes da implementação do 
 ML-2A aprovado após restaurar e proteger por testes o esqueleto de múltiplos microlotes e waves.
 ML-2B liberado para implementar `analyzing` nos comandos de movimentação dos três CLIs, incluindo
 layouts flat/by-agent, sincronização de status, log e promoção dos testes de caracterização.
+
+ML-2B aprovado com paridade funcional e testes obrigatórios nos três CLIs. ML-3A liberado para
+auditoria transversal: contratos de paridade, documentação dos estados e cenário E2E
+`backlog → analyzing → wip`, seguido pelo gate composto `make quality`.

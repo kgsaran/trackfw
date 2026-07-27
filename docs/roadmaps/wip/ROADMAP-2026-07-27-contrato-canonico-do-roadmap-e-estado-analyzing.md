@@ -219,7 +219,7 @@ python3 -m pytest pypi/tests/test_generators_roadmap.py pypi/tests/test_commands
 
 ### ML-3A — Gate cross-CLI e prova de ciclo completo
 
-**Status:** pending
+**Status:** in progress
 
 **Files affected:**
 - `scripts/check-artifact-parity.sh` ou novo gate específico reutilizando seu harness
