@@ -14,10 +14,56 @@ GO_BIN=${GO_BIN:-"$ROOT_DIR/bin/trackfw"}
 mkdir -p "$(dirname "$GO_BIN")"
 GOCACHE=${GOCACHE:-/tmp/trackfw-go-cache} go build -o "$GO_BIN" ./cmd/trackfw
 
-commands=(
+# Floor: minimum set of cross-runtime commands that must always be present.
+# Used as a vacuity guard — if parsing Go's "Available Commands:" block
+# produces fewer commands than the floor (indicating a parser breakage), we
+# exit 1 rather than silently running a vacuous check.
+floor_commands=(
   init adr req roadmap validate status log plugins discover update metrics
   sync context baseline help configure serve version agents skills note ship
 )
+
+# Go-only commands: documented in docs/cli-parity.md as exceptions to the
+# cross-runtime parity contract. These exist in the Go binary for historical
+# compatibility and must NOT be required of the Node.js and Python CLIs.
+#  · amazonq / copilot / cursor / gemini / windsurf — legacy forge-specific
+#    integration aliases (use `agents` / `skills` in new automation)
+#  · completion — cobra built-in shell-completion helper, not cross-runtime
+go_only_commands=(amazonq copilot cursor gemini windsurf completion)
+
+# Derive the canonical command set from the Go CLI (the reference implementation).
+# P1: never hardcode the command list; derive it so the gate stays accurate
+# automatically when new commands are added to the Go CLI.
+# Strip ANSI before parsing in case any colour slips through despite NO_COLOR.
+_go_help=$("$GO_BIN" --help 2>&1 | sed 's/\x1b\[[0-9;]*m//g')
+
+# All commands the Go CLI advertises (deduped; cobra may list "help" twice).
+all_go_commands=()
+while IFS= read -r _cmd; do
+  [[ -n "$_cmd" ]] && all_go_commands+=("$_cmd")
+done < <(
+  awk '/^Available Commands:/{f=1;next}
+       f && /^[[:space:]]{2,}[a-zA-Z]/{print $1}
+       f && /^[[:space:]]*$/{exit}' <<< "$_go_help" \
+  | awk '!seen[$0]++'
+)
+
+# Vacuity guard: a parse failure must be visible, not a silent vacuous pass.
+if [[ ${#all_go_commands[@]} -lt ${#floor_commands[@]} ]]; then
+  echo "check-cli-parity: Go help parsing yielded only ${#all_go_commands[@]} commands (floor=${#floor_commands[@]})" >&2
+  echo "  Check that 'Available Commands:' block format has not changed." >&2
+  exit 1
+fi
+
+# Cross-runtime commands: everything Go has, minus the documented Go-only set.
+commands=()
+for _cmd in "${all_go_commands[@]}"; do
+  _is_go_only=0
+  for _exc in "${go_only_commands[@]}"; do
+    [[ "$_cmd" == "$_exc" ]] && _is_go_only=1 && break
+  done
+  [[ $_is_go_only -eq 0 ]] && commands+=("$_cmd")
+done
 
 check_help() {
   local runtime=$1
@@ -34,7 +80,8 @@ check_help() {
   done
 }
 
-check_help "go" "$("$GO_BIN" --help)"
+# Node and Python must expose everything in the cross-runtime command set
+# (all Go commands minus the documented Go-only exceptions).
 check_help "node" "$(node "$ROOT_DIR/npm/bin/trackfw" --help)"
 check_help "python" "$(PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw --help)"
 

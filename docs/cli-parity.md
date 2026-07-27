@@ -285,7 +285,7 @@ change.
 
 ```
 1. Validates branch name — must match feat|fix|refactor/<slug>
-2. Validates governance — REQ + roadmap in wip/ must exist
+2. Validates governance — REQ + roadmap in wip/ or done/ must exist
    (hard gate: not affected by lenient mode or per-rule severity)
 3. Detects pending squash-merges in other branches (advisory only)
 4. Reviews what is staged (git status --short + git diff --cached --stat)
@@ -363,7 +363,7 @@ and exit code is 0.
 
 `trackfw ship` does **not** respect lenient mode or per-rule severity. The governance
 check in step 2 (`CheckShipGovernance`) is always a hard gate: a branch without a linked
-REQ and a roadmap in `wip/` **always** aborts ship with exit code 1, regardless of
+REQ and a roadmap in `wip/` or `done/` **always** aborts ship with exit code 1, regardless of
 `governance_mode` or `rules:` configuration.
 
 **Why:** `ship` is a delivery gate, not an audit tool. Lenient mode exists for teams
@@ -380,6 +380,40 @@ Runtime errors (branch pattern, governance gate, nothing staged, missing `-m`) s
 code directly from the runner function (Node.js/Python), so the usage text is never
 printed for runtime errors. Parse-time errors (unknown flags) still show usage, because
 they are raised by cobra/commander/argparse before the command handler runs.
+
+## Regra `branch_has_wip_roadmap` — comportamento unificado nos 3 runtimes
+
+A regra verifica que toda branch `feat/`, `fix/` ou `refactor/` possui um roadmap cujo nome
+contém o slug da branch. Desde REQ-2026-07-26-robustez-dos-gates-de-governanca-e-paridade, a regra
+procura o slug em **`wip/` e `done/`**, não apenas em `wip/`.
+
+| Cenário | Comportamento esperado (Go / Node.js / Python) |
+|---|---|
+| Roadmap em `wip/` com slug da branch | Sem violação — comportamento original preservado |
+| Roadmap em `done/` com slug da branch | Sem violação — permite encerrar o roadmap na própria branch (Definition of Done) |
+| Nenhum roadmap em `wip/` nem em `done/` | Violação com mensagem "no roadmap is in wip/ nor done/" + orientação de remediação |
+| Roadmap em `done/` com slug **diferente** da branch | Violação com mensagem "no matching roadmap in wip/ nor done/" — casamento de slug é obrigatório |
+
+O casamento é feito por `normalizeBranchSlug(filename).contains(branchSlug)` (substring, não
+igualdade), pois nomes de roadmap carregam prefixos de data (`ROADMAP-2026-07-27-<slug>.md`).
+
+A resolução de diretórios (`wip/`, `done/`) é centralizada em `resolveStateDirs` (Go),
+`resolveStateDirs` (Node.js) e `_resolve_state_dirs` (Python) — as variantes por agente
+(`by_agent`) são suportadas via os mesmos wrappers `resolveWIPDirs`/`resolveDoneDirs`.
+
+O ID da regra (`branch_has_wip_roadmap`) e o mecanismo de severidade configurável (`rules:`) são
+preservados — a aceitação de `done/` não altera a config key nem o comportamento de `off`/`warning`.
+
+## Princípios de design de gates (P1–P4)
+
+Todo gate de paridade e toda regra do validator devem seguir os quatro princípios documentados em
+[`docs/gate-design-principles.md`](gate-design-principles.md): nenhum número mágico (P1), falha
+explícita sem degradação silenciosa (P2), independência de ambiente (P3) e falsificabilidade
+obrigatória (P4). O arquivo inclui os quatro defeitos reais que motivaram os princípios e o
+checklist de aceite para gates novos.
+
+A implementação de P4 é `scripts/check-gates-falsify.sh` — todo gate novo de paridade registra
+ali sua prova negativa.
 
 ## Release rule
 

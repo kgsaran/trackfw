@@ -3467,3 +3467,162 @@ Achados registrados:
 **make quality:** ✅ | **trackfw validate:** ✅
 
 **Commit:** 442bcf1 | **Push:** feat/comando-trackfw-ship-agnostico-de-forge
+
+---
+
+## ML-1A — 2026-07-27 — Apolo
+
+**Tarefa:** fix(validator): branch_has_wip_roadmap aceita roadmap concluído na própria branch
+**Branch:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Status:** IMPLEMENTANDO
+
+**Problema:** regra `branch_has_wip_roadmap` só busca em `wip/`; mover o roadmap para `done/` durante o DoD na branch reprova o gate.
+**Correção:** procurar slug em `wip/` E `done/`; reprovar apenas se não houver correspondência em nenhum dos dois; casamento de slug obrigatório também em `done/`.
+**Status:** CONCLUÍDO
+
+**Implementação:**
+- `resolveStateDirs(cfg, state)` adicionado nos 3 runtimes como fonte única de resolução de caminho; `resolveWIPDirs` e `resolveDoneDirs` são wrappers finos.
+- `validateBranchHasWIPRoadmap` itera `candidates` de `wip/` + `done/`; retorna sem violação se slug casar em qualquer um.
+- Mensagens atualizadas: "wip/ nor done/" nas duas variantes.
+- 4 cenários cobertos por teste nos 3 CLIs (P4 do ADR).
+- `docs/cli-parity.md` atualizado com tabela dos 4 cenários.
+- `make quality` verde (Go: ok | Node.js: 228 pass | Python: 580 pass) | `trackfw validate`: 0 violações.
+
+---
+
+## ML-2B — 2026-07-27 — Apolo
+
+**Tarefa:** fix(ci): auditoria P1–P3 dos 7 scripts de gate
+**Branch:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Status:** IMPLEMENTANDO
+
+**Escopo:** auditar `check-cli-parity.sh`, `check-identity-parity.sh`, `check-integration-assets.sh`, `check-integration-cli-parity.sh`, `check-static-assets.sh`, `check-validate-parity.sh`, `smoke-integration-packages.sh` e `Makefile` contra P1–P3 do ADR.
+
+**Status:** CONCLUÍDO
+
+**Correções implementadas:**
+
+1. `check-cli-parity.sh` — P1: `commands` derivado do `--help` do Go (antes hardcoded); `go_only_commands` isola exceções documentadas (`amazonq copilot cursor gemini windsurf completion`); vacuity guard (parsing < floor → exit 1). Verificação P4: vacuity guard ativado, comando faltante detectado.
+
+2. `check-integration-cli-parity.sh` — P1: `assert_catalog_targets` derivava targets de set hardcoded; agora lê de `$CATALOG_FILE` (exportado). Verificação P4: target fora do catálogo detectado com mensagem clara.
+
+3. `check-static-assets.sh` — P1: lista de assets era `index.html app.js style.css`; agora derivada via `find` no diretório canônico. Verificação bidirecional (arquivo extra detectado). Vacuity guard. P4: drift de conteúdo e arquivo extra detectados.
+
+4. `check-integration-assets.sh` — P2 (sh sem pipefail): `find | sort` separado em dois comandos; se `find` falhar, o erro é visível sob `set -eu`. Vacuity guard para canonical-files vazio.
+
+5. `check-validate-parity.sh` — P2: vacuity guard para validadores que retornam exit 1 mas zero violações (saída trivialmente idêntica). `mktemp -d` com template portável.
+
+**Não alterado (report apenas):**
+- `check-identity-parity.sh`: `TARGETS` hardcoded (P1 documentado); line-143 `diff|awk` NÃO é P2 (set -e suprimido em contexto `||`). Sem correção — derivação do catalog requer lógica não-trivial de superfícies padrão.
+- `smoke-integration-packages.sh`: conforme. Verifica pré-requisito `build` explicitamente; pipes protegidos por `test -n`.
+- `Makefile`: conforme. Apontamentos: `check-integration-cli-parity.sh` só roda como tail-call de `check-cli-parity.sh`; `smoke-integration-packages.sh` fora do alvo `quality` (design intencional — smoke é mais pesado).
+- Mensagem `branch_has_wip_roadmap`: herdada do ML-1A. Com `done/` incluído na busca, lista 15 roadmaps em uma linha. NÃO editado o validator (escopo proibido). Sugestão registrada: truncar em 3 primeiros + contagem, ou listar apenas os de `wip/`.
+
+**Commit:** 80746b4 | **Push:** feat/robustez-dos-gates-de-governanca-e-paridade
+
+---
+
+## ML-2A — 2026-07-27 — Apolo
+
+**Tarefa:** fix(validator): auditoria P1–P3 das 17 regras do validator
+**Branch:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Status:** IMPLEMENTANDO
+
+**Escopo:** auditar as 17 regras contra P1–P3 do ADR. Corrigir defeitos encontrados nos 3 CLIs.
+
+**Defeitos identificados para correção:**
+- P3 + P2 em `contentHasMarker` (3 CLIs): guarda `marker+" \n"` não detecta CRLF (`\r\n`) → empty markers em arquivos CRLF passam sem violation
+- P2 em `folder_status` (Go): `entries, _ := listDir(dir.path)` — erros non-ENOENT silenciados
+- P2 em `filename_uniqueness` (Go): `names, _ := listDir(dir)` — mesmo padrão
+- P3 em `filename_uniqueness` (Go): iteração de map → mensagens não-determinísticas
+- P3 em `adr_dir_exists` (Node.js): tag `adr_dirs_exist` ≠ `adr_dir_exists` (Go/Python); mensagem diverge
+- P2 em `folder_status` e `filename_uniqueness` (Node.js + Python): `listDir` engole erros não-ENOENT
+
+**Itens registrados sem correção (fora de escopo/complexidade):**
+- `adr_orphan`: `walkADRFilePaths` silencia walk errors — requer refator de assinatura
+- Todos os padrões `os.ReadFile → continue` (~30 sites × 3 CLIs) — sistêmico, fora de escopo
+- `staleWIPDays = 7` — P1 parcial, mas campo não existe em ProjectConfig
+- `branch_has_wip_roadmap`: não alterar por instrução explícita
+- `traceid_*`: parcialmente mitigado pela salvaguarda de zero entries
+
+
+**Status:** CONCLUÍDO | Commit: 3dbeae5
+
+**Inventário das 17 regras (P1 / P2 / P3 / Ação):**
+
+| Regra | P1 | P2 | P3 | Ação |
+|---|---|---|---|---|
+| `adr_dir_exists` | OK | OK (non-ENOENT stat: minor) | Tag npm: `adr_dirs_exist` → diverge de Go/Python; msg diverge | **CORRIGIDO** npm: tag + msg |
+| `adr_orphan` | OK | `walkADRFilePaths`: erros de walk silenciados | OK | REGISTRADO — requer refator |
+| `blocked_by_draft_adr` | OK | `os.ReadFile → continue`; `adrIsDraft → return false` | OK | REGISTRADO |
+| `blocked_has_req` | OK | `os.ReadFile → continue` | OK | REGISTRADO |
+| `branch_has_wip_roadmap` | OK | `entries, _ := listDir` | OK | AUDITADO APENAS (não alterar) |
+| `filename_uniqueness` | OK | `names, _ := listDir` — non-ENOENT silenciado | Iteração de mapa → msg não-determinística | **CORRIGIDO** (3 CLIs) |
+| `folder_status` | OK | `entries, _ := listDir` — non-ENOENT silenciado | OK | **CORRIGIDO** (3 CLIs) |
+| `note_orphan` | OK | Go: OK (Glob error propagado); npm: OK (throw); py: ENOENT vs outros OK | OK | OK |
+| `ref_targets_exist` | OK | `os.ReadFile → continue` | OK | REGISTRADO |
+| `req_has_adr` | OK | `os.ReadFile → continue`; CRLF em contentHasMarker | CRLF em contentHasMarker | **CORRIGIDO** contentHasMarker (3 CLIs) |
+| `req_has_roadmap` | OK | `os.ReadFile → continue`; CRLF em contentHasMarker | CRLF em contentHasMarker | **CORRIGIDO** contentHasMarker (3 CLIs) |
+| `stale_wip` | P1 parcial: `staleWIPDays=7` (sem campo em ProjectConfig) | `Glob → continue` (raro) | OK | REGISTRADO — stale_wip_days não está em config |
+| `wip_acceptance` | OK | `os.ReadFile → continue`; CRLF em contentHasMarker | CRLF em contentHasMarker | **CORRIGIDO** contentHasMarker (3 CLIs) |
+| `wip_has_req` | OK | `os.ReadFile → continue`; CRLF em contentHasMarker | CRLF em contentHasMarker | **CORRIGIDO** contentHasMarker (3 CLIs) |
+| `wip_limit` | OK | OK | OK | OK |
+| `traceid_duplicate_*` | Estados hardcoded (produto, OK) | `collectTraceIdEntries` errors descartados; parcialmente mitigado por salvaguarda | Msg-ordering de mapa (menor) | REGISTRADO — salvaguarda cobre cenário principal |
+| `traceid_orphan_*` / `traceid_state_mismatch` | idem | idem | idem | REGISTRADO |
+
+---
+
+## ML-3A — 2026-07-27 — Apolo
+
+**Tarefa:** fix(validator+gates): testes de falsificação P4 e documentação dos princípios (REQ-2026-07-26-gates)
+**Branch:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Status:** CONCLUÍDO
+
+**O que foi entregue:**
+
+1. **`scripts/check-gates-falsify.sh`** (novo, `100755` no git) — prova de falsificação dos 6 gates de
+   paridade: `static-assets`, `integration-assets`, `identity-parity`, `validate-parity`,
+   `cli-parity`, `integration-cli-parity`. Cada cenário monta o defeito, afirma `exit != 0` com
+   diagnóstico esperado e desmonta via `trap`. Integrado ao alvo `parity` do `Makefile`.
+
+2. **Testes negativos das regras corrigidas na Wave 2** nos 3 CLIs:
+   - `internal/validator/validator_test.go` — casos CRLF e truncamento `branch_has_wip_roadmap`
+   - `npm/tests/validator.test.js` — equivalentes Node.js
+   - `pypi/tests/test_validator.py` — equivalentes Python
+
+3. **Truncamento da mensagem `branch_has_wip_roadmap`** nos 3 CLIs: lista os 3 primeiros
+   candidatos em ordem determinística + "e mais N" quando há mais de 3 (P3: ordenar antes de fatiar).
+
+4. **`docs/gate-design-principles.md`** (novo) — P1–P4 documentados com os 4 defeitos reais como
+   exemplos vinculantes, tabela de neutralização de ambiente, checklist de aceite para gates novos,
+   referências às notas de vault. Linkado de `docs/cli-parity.md` (nova seção "Princípios de design
+   de gates (P1–P4)") imediatamente antes de "Release rule".
+
+**Verificação final:** `make quality` verde — Go build/vet/test ok, Node.js 228 pass, Python 588 pass,
+6 gates positivos + 6 falsificações passando, sem variável auxiliar.
+
+**Commit:** `dc9a18f` | **Push:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+
+---
+
+---
+
+## Encerramento da REQ-2026-07-26-gates — 2026-07-27 — Zeus
+
+**Tarefa:** auditoria final das 3 waves e encerramento do roadmap
+**Branch:** `feat/robustez-dos-gates-de-governanca-e-paridade`
+**Status:** CONCLUÍDO
+
+Sessão anterior foi interrompida após os commits dos MLs 2A/2B, antes da barrier. Retomado:
+barrier da Wave 2 executada (`make quality` verde), ML-3A spawnado, concluído e auditado.
+
+**Resultado:** 4 MLs concluídos. 6 gates de paridade agora têm prova de falsificação
+(`scripts/check-gates-falsify.sh`), as regras corrigidas na Wave 2 têm teste negativo nos 3 CLIs,
+e os princípios P1–P4 estão em `docs/gate-design-principles.md` ancorados nos 4 defeitos reais.
+
+**Achado do encerramento:** `trackfw roadmap move <nome> done` NÃO reescreve o `status` do
+frontmatter — o arquivo muda de pasta e o `folder_status` acusa divergência na hora. O comando
+que existe para cumprir a DoD gera um estado que o próprio validador reprova. Registrado como
+débito nº 5 no roadmap; é candidato a REQ própria (corrigir nos 3 CLIs).
+
+**Débito registrado (não esquecido):** 5 itens no fim do roadmap em `docs/roadmaps/done/`.

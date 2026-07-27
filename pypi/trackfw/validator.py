@@ -25,10 +25,11 @@ def _content_has_marker(content: str, markers: list) -> bool:
     """
     Retorna True se content contém qualquer marcador com valor não-vazio.
     Um marcador é considerado "sem valor" se a linha for exatamente
-    "MARKER \n" (espaço + newline) — espelhando a lógica anterior.
+    "MARKER \n" ou "MARKER \r\n" (espaço + newline/CRLF) — P3: detecta
+    campos vazios em arquivos CRLF além de arquivos LF.
     """
     for marker in markers:
-        if marker in content and (marker + " \n") not in content:
+        if marker in content and (marker + " \n") not in content and (marker + " \r\n") not in content:
             return True
     return False
 
@@ -117,6 +118,29 @@ def list_dir(path: str) -> list:
         return entries
     except OSError:
         return []
+
+
+def _try_list_dir(dir_path: str):
+    """
+    Tenta listar o diretório distinguindo "não existe" de outros erros.
+    Retorna (entries: list, error: OSError|None).
+    - error=None: sucesso, ou diretório ausente (ENOENT) — esperado para estados não usados.
+    - error não-None: diretório EXISTE mas não pôde ser lido (ENOTDIR, EPERM…) — P2: reportar.
+    """
+    try:
+        entries = []
+        for name in os.listdir(dir_path):
+            try:
+                full = os.path.join(dir_path, name)
+                if not os.path.isdir(full):
+                    entries.append(name)
+            except OSError:
+                pass
+        return entries, None
+    except FileNotFoundError:
+        return [], None  # diretório ausente — esperado
+    except OSError as e:
+        return [], e  # existe mas inacessível (ENOTDIR, EPERM…)
 
 
 def _walk_dir_md(dir_path: str) -> list:
@@ -218,11 +242,14 @@ def resolve_req_files(cfg: dict) -> list:
     return _glob.glob(os.path.join(req_dir, "*.md"))
 
 
-def resolve_wip_dirs(cfg: dict) -> list:
+def _resolve_state_dirs(cfg: dict, state: str) -> list:
     """
-    Retorna lista de diretórios wip/ conforme o modo de namespacing.
-    flat     → [cfg["roadmap_dir"] + "/wip"]
-    by_agent → [cfg["roadmap_dir"] + "/" + agent + "/wip" for agent in agents]
+    Fonte única de resolução de caminho por estado (ex: 'wip', 'done') conforme o modo de
+    namespacing. resolve_wip_dirs e resolve_done_dirs são wrappers finos sobre esta função.
+    Duplicar a lógica aqui foi a causa raiz de defeitos anteriores (roadmap_dir divergente entre
+    runtimes).
+    flat     → [cfg["roadmap_dir"] + "/" + state]
+    by_agent → [cfg["roadmap_dir"] + "/" + agent + "/" + state for agent in agents]
     """
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
         agents = cfg.get("agents") or []
@@ -236,9 +263,27 @@ def resolve_wip_dirs(cfg: dict) -> list:
             except OSError:
                 agents = []
         roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
-        return [roadmap_dir + "/" + agent + "/wip" for agent in agents]
+        return [roadmap_dir + "/" + agent + "/" + state for agent in agents]
 
-    return [cfg.get("roadmap_dir", "docs/roadmaps") + "/wip"]
+    return [cfg.get("roadmap_dir", "docs/roadmaps") + "/" + state]
+
+
+def resolve_wip_dirs(cfg: dict) -> list:
+    """
+    Retorna lista de diretórios wip/ conforme o modo de namespacing.
+    flat     → [cfg["roadmap_dir"] + "/wip"]
+    by_agent → [cfg["roadmap_dir"] + "/" + agent + "/wip" for agent in agents]
+    """
+    return _resolve_state_dirs(cfg, "wip")
+
+
+def resolve_done_dirs(cfg: dict) -> list:
+    """
+    Retorna lista de diretórios done/ conforme o modo de namespacing.
+    flat     → [cfg["roadmap_dir"] + "/done"]
+    by_agent → [cfg["roadmap_dir"] + "/" + agent + "/done" for agent in agents]
+    """
+    return _resolve_state_dirs(cfg, "done")
 
 
 def parse_frontmatter(content: str) -> dict:
@@ -864,7 +909,15 @@ def validate_folder_status_coherence(cfg: dict) -> list:
             dirs.append((os.path.join(roadmap_dir, state), state))
 
     for dir_path, state in dirs:
-        for name in list_dir(dir_path):
+        # P2: distinguir "diretório ausente" (esperado) de outros erros (reportar).
+        entries, read_error = _try_list_dir(dir_path)
+        if read_error is not None:
+            warnings.append({
+                "type": "warning",
+                "message": f'folder_status: could not read directory "{dir_path}": {read_error}'
+            })
+            continue
+        for name in entries:
             if not name.endswith(".md"):
                 continue
             try:
@@ -892,6 +945,7 @@ def validate_filename_uniqueness(cfg: dict) -> list:
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
     seen = {}  # filename → [states]
 
+    list_errors = []
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
         agents = cfg.get("agents") or []
         if not agents:
@@ -901,20 +955,39 @@ def validate_filename_uniqueness(cfg: dict) -> list:
                 agents = []
         for agent in agents:
             for state in states:
-                for name in list_dir(os.path.join(roadmap_dir, agent, state)):
+                dir_path = os.path.join(roadmap_dir, agent, state)
+                entries, read_error = _try_list_dir(dir_path)
+                if read_error is not None:
+                    list_errors.append({
+                        "type": "violation",
+                        "message": f'filename_uniqueness: could not read directory "{dir_path}": {read_error}'
+                    })
+                    continue
+                for name in entries:
                     key = agent + "/" + name
                     seen.setdefault(key, []).append(state)
     else:
         for state in states:
-            for name in list_dir(os.path.join(roadmap_dir, state)):
+            dir_path = os.path.join(roadmap_dir, state)
+            entries, read_error = _try_list_dir(dir_path)
+            if read_error is not None:
+                list_errors.append({
+                    "type": "violation",
+                    "message": f'filename_uniqueness: could not read directory "{dir_path}": {read_error}'
+                })
+                continue
+            for name in entries:
                 seen.setdefault(name, []).append(state)
 
-    violations = []
-    for name, state_list in seen.items():
+    violations = list(list_errors)
+    # P3: ordenar os nomes e os estados para saída determinística.
+    for name in sorted(seen.keys()):
+        state_list = seen[name]
         if len(state_list) > 1:
+            sorted_states = sorted(state_list)
             violations.append({
                 "type": "violation",
-                "message": f'roadmap "{name}" appears in multiple states: {state_list}'
+                "message": f'roadmap "{name}" appears in multiple states: {sorted_states}'
             })
     return violations
 
@@ -952,26 +1025,32 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
         return []
 
     wip_dirs = resolve_wip_dirs(cfg)
+    done_dirs = resolve_done_dirs(cfg)
     branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.split("/", 1)[1].lower()).strip("-")
-    wip_files = []
-    for wip_dir in wip_dirs:
-        if os.path.isdir(wip_dir):
-            files = [f for f in os.listdir(wip_dir) if f.endswith('.md')]
-            wip_files.extend(files)
+    # candidates reúne todos os roadmaps encontrados em wip/ e done/.
+    candidates = []
+    for search_dir in wip_dirs + done_dirs:
+        if os.path.isdir(search_dir):
+            files = [f for f in os.listdir(search_dir) if f.endswith('.md')]
+            candidates.extend(files)
             if any(branch_slug in re.sub(r"[^a-z0-9]+", "-", f.lower()).strip("-") for f in files):
                 return []
 
-    if not wip_files:
+    if not candidates:
         return [
-            f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ — '
+            f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — '
             f'create governance artifacts first:\n'
             f'  trackfw req new "title"\n'
             f'  trackfw roadmap new "title"\n'
             f'  trackfw roadmap move <name> wip'
         ]
+    # P3: sort for deterministic output regardless of filesystem ordering.
+    sorted_candidates = sorted(candidates)
+    display = sorted_candidates[:3]
+    suffix = f", e mais {len(sorted_candidates) - 3}" if len(sorted_candidates) > 3 else ""
     return [
-        f'branch "{branch}" has no matching roadmap in wip/ '
-        f'(found: {", ".join(wip_files)}) — include the branch slug in the roadmap filename '
+        f'branch "{branch}" has no matching roadmap in wip/ nor done/ '
+        f'(found: {", ".join(display)}{suffix}) — include the branch slug in the roadmap filename '
         f'or set TRACKFW_BRANCH explicitly in CI'
     ]
 

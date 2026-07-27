@@ -854,8 +854,8 @@ func TestValidateBranchHasWIPRoadmap_Violation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
-	if !hasViolation(violations, "no roadmap is in wip/") {
-		t.Errorf("esperava violation de wip vazio, obteve: %v", violations)
+	if !hasViolation(violations, "no roadmap is in wip/ nor done/") {
+		t.Errorf("esperava violation de wip/done vazios, obteve: %v", violations)
 	}
 }
 
@@ -893,6 +893,47 @@ func TestValidateBranchHasWIPRoadmap_MismatchedRoadmap(t *testing.T) {
 	}
 	if !hasViolation(violations, "no matching roadmap") {
 		t.Errorf("expected mismatch violation, got: %v", violations)
+	}
+}
+
+// TestValidateBranchHasWIPRoadmap_DonePass — feat/ com roadmap em done/ com slug da branch → sem violation (P4: cenário 2)
+func TestValidateBranchHasWIPRoadmap_DonePass(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "feat/my-feature")
+	// wip/ existe mas vazio; roadmap movido para done/ com slug correspondente
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-my-feature.md", "REQ: REQ-001\n")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) > 0 {
+		t.Errorf("roadmap em done/ com slug correspondente não deve gerar violation, obteve: %v", violations)
+	}
+}
+
+// TestValidateBranchHasWIPRoadmap_DoneMismatch — feat/ com roadmap em done/ com slug DIFERENTE → violation (P4: cenário 4)
+func TestValidateBranchHasWIPRoadmap_DoneMismatch(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "feat/my-feature")
+	// roadmap em done/ com slug que NÃO corresponde à branch
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-outra-coisa.md", "REQ: REQ-001\n")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(violations, "no matching roadmap in wip/ nor done/") {
+		t.Errorf("roadmap em done/ com slug diferente deve reprovar, obteve: %v", violations)
 	}
 }
 
@@ -948,7 +989,7 @@ func TestValidateBranchHasWIPRoadmap_RuleOff(t *testing.T) {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 	// com regra "off" não deve aparecer nem como violation nem como warning
-	if hasViolation(violations, "no roadmap is in wip/") || hasWarning(warnings, "no roadmap is in wip/") {
+	if hasViolation(violations, "no roadmap is in wip/ nor done/") || hasWarning(warnings, "no roadmap is in wip/ nor done/") {
 		t.Errorf("regra off deve suprimir a mensagem, obteve violations=%v warnings=%v", violations, warnings)
 	}
 }
@@ -1291,6 +1332,152 @@ func TestNoteOrphan_NotaLinkadaNaoGera(t *testing.T) {
 	}
 	if len(msgs) != 0 {
 		t.Errorf("nota linkada não deve gerar msg, obteve: %v", msgs)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Testes P2/P3 — adicionados pelo ML-2A (REQ-2026-07-26-robustez-gates)
+// ---------------------------------------------------------------------------
+
+// TestContentHasMarker_CRLF_P3 — P3: marcador com campo vazio em arquivo CRLF
+// não deve ser tratado como "presente" (gate precisa reprovar).
+// Fixture: "REQ: \r\n" — campo vazio com terminação CRLF.
+func TestContentHasMarker_CRLF_P3(t *testing.T) {
+	t.Run("campo_vazio_crlf_nao_conta_como_presente", func(t *testing.T) {
+		content := "# Roadmap\r\nREQ: \r\n## Seção\r\n"
+		if contentHasMarker(content, []string{"REQ:"}) {
+			t.Error("campo vazio com CRLF não deve ser tratado como marcador presente")
+		}
+	})
+	t.Run("campo_preenchido_crlf_deve_contar", func(t *testing.T) {
+		content := "# Roadmap\r\nREQ: REQ-001-titulo.md\r\n## Seção\r\n"
+		if !contentHasMarker(content, []string{"REQ:"}) {
+			t.Error("campo preenchido com CRLF deve ser tratado como marcador presente")
+		}
+	})
+	t.Run("campo_vazio_lf_nao_conta_como_presente", func(t *testing.T) {
+		content := "# Roadmap\nREQ: \n## Seção\n"
+		if contentHasMarker(content, []string{"REQ:"}) {
+			t.Error("campo vazio com LF não deve ser tratado como marcador presente")
+		}
+	})
+}
+
+// TestFolderStatus_DiretorioNaoLegivel_P2 — P2: pasta de estado que EXISTE mas não pode ser
+// lida (ENOTDIR — criada como arquivo regular) deve gerar warning, não silenciar.
+// Vetor: "docs/roadmaps/analyzing" é um arquivo regular, não um diretório.
+func TestFolderStatus_DiretorioNaoLegivel_P2(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps")
+	// Criar "analyzing" como arquivo regular — os.ReadDir retornará ENOTDIR.
+	writeFile(t, dir, "docs/roadmaps/analyzing", "eu sou um arquivo, nao um diretorio")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	warnings, err := validateFolderStatusCoherence()
+	if err != nil {
+		t.Fatalf("validateFolderStatusCoherence() erro inesperado: %v", err)
+	}
+	if !hasWarning(warnings, "could not read directory") {
+		t.Errorf("esperado warning sobre diretório ilegível, obteve: %v", warnings)
+	}
+}
+
+// TestFilenameUniqueness_DiretorioNaoLegivel_P2 — P2: pasta de estado que EXISTE mas não pode
+// ser lida deve gerar violation, não silenciar (ENOTDIR via arquivo regular).
+func TestFilenameUniqueness_DiretorioNaoLegivel_P2(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps")
+	// "wip" como arquivo regular — os.ReadDir retornará ENOTDIR.
+	writeFile(t, dir, "docs/roadmaps/wip", "eu sou um arquivo, nao um diretorio")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	violations, err := validateFilenameUniqueness()
+	if err != nil {
+		t.Fatalf("validateFilenameUniqueness() erro inesperado: %v", err)
+	}
+	if !hasViolation(violations, "could not read directory") {
+		t.Errorf("esperado violation sobre diretório ilegível, obteve: %v", violations)
+	}
+}
+
+// TestFilenameUniqueness_OrdemDeterministica_P3 — P3: mesma roadmap em dois estados
+// deve produzir mensagem com estados em ordem alfabética entre execuções.
+func TestFilenameUniqueness_OrdemDeterministica_P3(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/done")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-duplicado.md", "# Duplicado\n")
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-duplicado.md", "# Duplicado\n")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	violations, err := validateFilenameUniqueness()
+	if err != nil {
+		t.Fatalf("validateFilenameUniqueness() erro: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("esperado 1 violation, obteve %d: %v", len(violations), violations)
+	}
+	// Estados devem aparecer em ordem alfabética: [done wip]
+	if !strings.Contains(violations[0], "[done wip]") {
+		t.Errorf("estados devem estar em ordem alfabética (done antes de wip), obteve: %s", violations[0])
+	}
+}
+
+// TestValidateBranchHasWIPRoadmap_TruncaMensagem — P3+P4: 4 candidatos devem gerar
+// mensagem truncada em 3 + "e mais 1", em ordem alfabética, string exata.
+func TestValidateBranchHasWIPRoadmap_TruncaMensagem(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "feat/minha-feature")
+	// 4 roadmaps sem slug da branch → todos são candidatos, nenhum casa
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-alpha.md", "REQ: REQ-001\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-bravo.md", "REQ: REQ-002\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-charlie.md", "REQ: REQ-003\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-delta.md", "REQ: REQ-004\n")
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateBranchHasWIPRoadmap()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) == 0 {
+		t.Fatal("esperava violation com 4 candidatos sem slug correspondente")
+	}
+	// Exato: 3 primeiros em ordem alfabética + ", e mais 1"
+	want := "ROADMAP-alpha.md, ROADMAP-bravo.md, ROADMAP-charlie.md, e mais 1"
+	if !strings.Contains(violations[0], want) {
+		t.Errorf("mensagem truncada esperada contendo %q, obteve: %s", want, violations[0])
+	}
+}
+
+// TestWIPHasREQ_CRLF_Integracao — P3+P4: roadmap em wip com "REQ: \r\n" (CRLF vazio)
+// deve emitir violation de wip_has_req. Testa a integração do contentHasMarker
+// com validateWIPHasREQ (leitura de arquivo real, não mock).
+func TestWIPHasREQ_CRLF_Integracao(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip")
+	// Arquivo com CRLF: REQ: seguido de espaço + \r\n — campo vazio
+	content := "REQ: \r\n## Acceptance Criteria\r\n- [ ] ok\r\n"
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-crlf.md", content)
+	writeFile(t, dir, "trackfw.yaml", "roadmap_dir: docs/roadmaps\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateWIPHasREQ()
+	if err != nil {
+		t.Fatalf("validateWIPHasREQ() erro inesperado: %v", err)
+	}
+	if !hasViolation(violations, "wip but has no linked REQ") {
+		t.Errorf("esperava violation de REQ vazio com CRLF, obteve: %v", violations)
 	}
 }
 

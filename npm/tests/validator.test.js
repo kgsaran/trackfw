@@ -410,6 +410,245 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     }
   })
 
+  // ── validateBranchHasWIPRoadmap — 4 cenários (P4 do ADR) ──────────────────
+  test('branch_has_wip_roadmap: cenário 1 — roadmap em wip/ com slug → sem violation', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bwip1-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'wip', 'ROADMAP-my-feature.md'), 'REQ: REQ-001\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        process.env.TRACKFW_BRANCH = 'feat/my-feature'
+        const violations = validator.validateBranchHasWIPRoadmap()
+        assert.strictEqual(violations.length, 0, `roadmap em wip/ com slug deve passar, obteve: ${JSON.stringify(violations)}`)
+      } finally {
+        delete process.env.TRACKFW_BRANCH
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('branch_has_wip_roadmap: cenário 2 — roadmap em done/ com slug → sem violation', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bwip2-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'done', 'ROADMAP-my-feature.md'), 'REQ: REQ-001\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        process.env.TRACKFW_BRANCH = 'feat/my-feature'
+        const violations = validator.validateBranchHasWIPRoadmap()
+        assert.strictEqual(violations.length, 0, `roadmap em done/ com slug deve passar, obteve: ${JSON.stringify(violations)}`)
+      } finally {
+        delete process.env.TRACKFW_BRANCH
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('branch_has_wip_roadmap: cenário 3 — nenhum roadmap em wip/ nem done/ → violation', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bwip3-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        process.env.TRACKFW_BRANCH = 'feat/my-feature'
+        const violations = validator.validateBranchHasWIPRoadmap()
+        assert(violations.length > 0, 'sem roadmap em wip/ nem done/ deve reprovar')
+        assert(violations[0].includes('no roadmap is in wip/ nor done/'), `mensagem esperada, obteve: ${violations[0]}`)
+      } finally {
+        delete process.env.TRACKFW_BRANCH
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('branch_has_wip_roadmap: cenário 4 — roadmap em done/ com slug DIFERENTE → violation', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bwip4-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'done', 'ROADMAP-outra-coisa.md'), 'REQ: REQ-001\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        process.env.TRACKFW_BRANCH = 'feat/my-feature'
+        const violations = validator.validateBranchHasWIPRoadmap()
+        assert(violations.length > 0, 'slug diferente em done/ deve reprovar')
+        assert(violations[0].includes('no matching roadmap in wip/ nor done/'), `mensagem esperada, obteve: ${violations[0]}`)
+      } finally {
+        delete process.env.TRACKFW_BRANCH
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  // -------------------------------------------------------------------------
+  // Testes P2/P3 — adicionados pelo ML-2A (REQ-2026-07-26-robustez-gates)
+  // -------------------------------------------------------------------------
+
+  test('contentHasMarker: campo vazio CRLF não deve contar como presente (P3)', () => {
+    const content = '# Roadmap\r\nREQ: \r\n## Seção\r\n'
+    assert(!validator.contentHasMarker(content, ['REQ:']), 'campo vazio com CRLF não deve ser tratado como presente')
+  })
+
+  test('contentHasMarker: campo preenchido CRLF deve contar como presente (P3)', () => {
+    const content = '# Roadmap\r\nREQ: REQ-001-titulo.md\r\n## Seção\r\n'
+    assert(validator.contentHasMarker(content, ['REQ:']), 'campo preenchido com CRLF deve ser tratado como presente')
+  })
+
+  test('validateFolderStatusCoherence: diretório não legível (ENOTDIR) gera warning (P2)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-fsc-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps'), { recursive: true })
+      // "analyzing" como arquivo regular — ENOTDIR ao tentar listar
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'analyzing'), 'eu sou um arquivo')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const warnings = validator.validateFolderStatusCoherence()
+        assert(warnings.some(w => w.includes('could not read directory')),
+          `esperado warning sobre diretório ilegível, obteve: ${JSON.stringify(warnings)}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('validateFilenameUniqueness: diretório não legível (ENOTDIR) gera violation (P2)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-fnu-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps'), { recursive: true })
+      // "wip" como arquivo regular — ENOTDIR ao tentar listar
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), 'eu sou um arquivo')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const violations = validator.validateFilenameUniqueness()
+        assert(violations.some(v => v.includes('could not read directory')),
+          `esperado violation sobre diretório ilegível, obteve: ${JSON.stringify(violations)}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('validateFilenameUniqueness: estados na mensagem em ordem alfabética (P3)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-p3-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'wip', 'ROADMAP-duplicado.md'), '# Dup\n')
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'done', 'ROADMAP-duplicado.md'), '# Dup\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const violations = validator.validateFilenameUniqueness()
+        assert(violations.length === 1, `esperado 1 violation, obteve ${violations.length}`)
+        assert(violations[0].includes('[done, wip]'),
+          `estados devem estar em ordem alfabética (done antes de wip), obteve: ${violations[0]}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('adr_dir_exists: tag correta em Node.js (P3 — paridade com Go/Python)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-adr-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs'), { recursive: true })
+      // NÃO criar docs/adr — forçar violação
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'strict_ci_paths: true\nadr_dirs:\n  - docs/adr\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const result = validator.validateADRDirsExist()
+        assert(result.violations.length > 0, 'esperado violation quando adr_dir não existe')
+        assert(result.violations[0].includes('adr_dir "'), `mensagem deve usar 'adr_dir "', obteve: ${result.violations[0]}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  // -------------------------------------------------------------------------
+  // Testes P3+P4 adicionados pelo ML-3A (REQ-2026-07-26-robustez-gates)
+  // -------------------------------------------------------------------------
+
+  test('branch_has_wip_roadmap: 4 candidatos → mensagem truncada em 3 + "e mais 1" em ordem alfabética (P3+P4)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-trunc-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      // 4 roadmaps sem slug da branch → todos são candidatos, nenhum casa
+      for (const name of ['ROADMAP-alpha.md', 'ROADMAP-bravo.md', 'ROADMAP-charlie.md', 'ROADMAP-delta.md']) {
+        fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'wip', name), 'REQ: REQ-001\n')
+      }
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        process.env.TRACKFW_BRANCH = 'feat/minha-feature'
+        const violations = validator.validateBranchHasWIPRoadmap()
+        assert(violations.length > 0, 'esperava violation com 4 candidatos sem slug correspondente')
+        const want = 'ROADMAP-alpha.md, ROADMAP-bravo.md, ROADMAP-charlie.md, e mais 1'
+        assert(violations[0].includes(want),
+          `mensagem truncada deve conter "${want}", obteve: ${violations[0]}`)
+      } finally {
+        delete process.env.TRACKFW_BRANCH
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('wip_has_req: roadmap CRLF com REQ vazio emite violation (P3+P4 — integração)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-crlf-wip-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      // Arquivo CRLF: REQ: seguido de espaço + \r\n — campo vazio
+      fs.writeFileSync(path.join(tmp, 'docs', 'roadmaps', 'wip', 'ROADMAP-crlf.md'),
+        'REQ: \r\n## Acceptance Criteria\r\n- [ ] ok\r\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const violations = validator.validateWIPHasREQ()
+        assert(violations.some(v => v.includes('wip but has no linked REQ')),
+          `esperava violation de REQ vazio com CRLF, obteve: ${JSON.stringify(violations)}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
   console.log(`\n${passed} passed, ${failed} failed`)
   if (failed > 0) process.exit(1)
 })()

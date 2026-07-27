@@ -815,5 +815,255 @@ class TestAdrOrphanExemptOutsideCwd(unittest.TestCase):
         self.assertEqual(violations, [], "Arquivo com caminho resolvido fora do CWD deve ser isento por-arquivo")
 
 
+class TestValidateBranchHasWIPRoadmap(unittest.TestCase):
+    """4 cenários obrigatórios (P4 do ADR): a regra não afrouxou."""
+
+    def _cfg(self, roadmap_dir: str) -> dict:
+        return {
+            "roadmap_dir": roadmap_dir,
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+
+    def test_cenario1_wip_com_slug_passa(self):
+        """Cenário 1 — roadmap em wip/ com slug da branch → sem violação (comportamento preservado)."""
+        import os as _os
+        from trackfw.validator import validate_branch_has_wip_roadmap
+        tmp = tempfile.mkdtemp()
+        try:
+            wip_dir = os.path.join(tmp, "docs", "roadmaps", "wip")
+            os.makedirs(wip_dir)
+            _write(os.path.join(wip_dir, "ROADMAP-my-feature.md"), "REQ: REQ-001\n")
+            cfg = self._cfg(os.path.join(tmp, "docs", "roadmaps"))
+            orig = _os.environ.get("TRACKFW_BRANCH")
+            _os.environ["TRACKFW_BRANCH"] = "feat/my-feature"
+            try:
+                result = validate_branch_has_wip_roadmap(cfg)
+                self.assertEqual(result, [], f"roadmap em wip/ com slug deve passar, obteve: {result}")
+            finally:
+                if orig is None:
+                    _os.environ.pop("TRACKFW_BRANCH", None)
+                else:
+                    _os.environ["TRACKFW_BRANCH"] = orig
+        finally:
+            import shutil; shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_cenario2_done_com_slug_passa(self):
+        """Cenário 2 — roadmap em done/ com slug da branch → sem violação (novo comportamento)."""
+        import os as _os
+        from trackfw.validator import validate_branch_has_wip_roadmap
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, "docs", "roadmaps", "wip"))
+            done_dir = os.path.join(tmp, "docs", "roadmaps", "done")
+            os.makedirs(done_dir)
+            _write(os.path.join(done_dir, "ROADMAP-my-feature.md"), "REQ: REQ-001\n")
+            cfg = self._cfg(os.path.join(tmp, "docs", "roadmaps"))
+            orig = _os.environ.get("TRACKFW_BRANCH")
+            _os.environ["TRACKFW_BRANCH"] = "feat/my-feature"
+            try:
+                result = validate_branch_has_wip_roadmap(cfg)
+                self.assertEqual(result, [], f"roadmap em done/ com slug deve passar, obteve: {result}")
+            finally:
+                if orig is None:
+                    _os.environ.pop("TRACKFW_BRANCH", None)
+                else:
+                    _os.environ["TRACKFW_BRANCH"] = orig
+        finally:
+            import shutil; shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_cenario3_sem_roadmap_reprova(self):
+        """Cenário 3 — nenhum roadmap em wip/ nem done/ → continua reprovando."""
+        import os as _os
+        from trackfw.validator import validate_branch_has_wip_roadmap
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, "docs", "roadmaps", "wip"))
+            cfg = self._cfg(os.path.join(tmp, "docs", "roadmaps"))
+            orig = _os.environ.get("TRACKFW_BRANCH")
+            _os.environ["TRACKFW_BRANCH"] = "feat/my-feature"
+            try:
+                result = validate_branch_has_wip_roadmap(cfg)
+                self.assertTrue(len(result) > 0, "sem roadmap em wip/ nem done/ deve reprovar")
+                self.assertIn("no roadmap is in wip/ nor done/", result[0])
+            finally:
+                if orig is None:
+                    _os.environ.pop("TRACKFW_BRANCH", None)
+                else:
+                    _os.environ["TRACKFW_BRANCH"] = orig
+        finally:
+            import shutil; shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_cenario4_done_slug_diferente_reprova(self):
+        """Cenário 4 — roadmap em done/ com slug DIFERENTE → continua reprovando (casamento obrigatório)."""
+        import os as _os
+        from trackfw.validator import validate_branch_has_wip_roadmap
+        tmp = tempfile.mkdtemp()
+        try:
+            done_dir = os.path.join(tmp, "docs", "roadmaps", "done")
+            os.makedirs(done_dir)
+            _write(os.path.join(done_dir, "ROADMAP-outra-coisa.md"), "REQ: REQ-001\n")
+            cfg = self._cfg(os.path.join(tmp, "docs", "roadmaps"))
+            orig = _os.environ.get("TRACKFW_BRANCH")
+            _os.environ["TRACKFW_BRANCH"] = "feat/my-feature"
+            try:
+                result = validate_branch_has_wip_roadmap(cfg)
+                self.assertTrue(len(result) > 0, "slug diferente em done/ deve reprovar")
+                self.assertIn("no matching roadmap in wip/ nor done/", result[0])
+            finally:
+                if orig is None:
+                    _os.environ.pop("TRACKFW_BRANCH", None)
+                else:
+                    _os.environ["TRACKFW_BRANCH"] = orig
+        finally:
+            import shutil; shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Testes P2/P3 — adicionados pelo ML-2A (REQ-2026-07-26-robustez-gates)
+# ---------------------------------------------------------------------------
+
+class TestContentHasMarkerCRLF(unittest.TestCase):
+    """P3: contentHasMarker deve detectar campos vazios em arquivos CRLF."""
+
+    def test_campo_vazio_crlf_nao_conta_como_presente(self):
+        from trackfw.validator import _content_has_marker
+        content = "# Roadmap\r\nREQ: \r\n## Seção\r\n"
+        self.assertFalse(_content_has_marker(content, ["REQ:"]),
+                         "campo vazio com CRLF não deve ser tratado como presente")
+
+    def test_campo_preenchido_crlf_conta_como_presente(self):
+        from trackfw.validator import _content_has_marker
+        content = "# Roadmap\r\nREQ: REQ-001-titulo.md\r\n## Seção\r\n"
+        self.assertTrue(_content_has_marker(content, ["REQ:"]),
+                        "campo preenchido com CRLF deve ser tratado como presente")
+
+    def test_campo_vazio_lf_nao_conta_como_presente(self):
+        from trackfw.validator import _content_has_marker
+        content = "# Roadmap\nREQ: \n## Seção\n"
+        self.assertFalse(_content_has_marker(content, ["REQ:"]),
+                         "campo vazio com LF não deve ser tratado como presente")
+
+
+class TestFolderStatusDirNaoLegivel(unittest.TestCase):
+    """P2: pasta de estado que EXISTE mas não pode ser lida deve gerar warning."""
+
+    def test_enotdir_gera_warning(self):
+        from trackfw.validator import validate_folder_status_coherence
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, "docs", "roadmaps"))
+            # "analyzing" como arquivo regular — NotADirectoryError ao listar
+            _write(os.path.join(tmp, "docs", "roadmaps", "analyzing"),
+                   "eu sou um arquivo, nao um diretorio")
+            cfg = {"roadmap_dir": os.path.join(tmp, "docs", "roadmaps")}
+            warnings = validate_folder_status_coherence(cfg)
+            msgs = [w["message"] for w in warnings]
+            self.assertTrue(any("could not read directory" in m for m in msgs),
+                            f"esperado warning sobre diretório ilegível, obteve: {msgs}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestFilenameUniquenessDirNaoLegivel(unittest.TestCase):
+    """P2: pasta de estado que EXISTE mas não pode ser lida deve gerar violation."""
+
+    def test_enotdir_gera_violation(self):
+        from trackfw.validator import validate_filename_uniqueness
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, "docs", "roadmaps"))
+            # "wip" como arquivo regular — NotADirectoryError ao listar
+            _write(os.path.join(tmp, "docs", "roadmaps", "wip"),
+                   "eu sou um arquivo, nao um diretorio")
+            cfg = {"roadmap_dir": os.path.join(tmp, "docs", "roadmaps")}
+            violations = validate_filename_uniqueness(cfg)
+            msgs = [v["message"] for v in violations]
+            self.assertTrue(any("could not read directory" in m for m in msgs),
+                            f"esperado violation sobre diretório ilegível, obteve: {msgs}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestFilenameUniquenessOrdemDeterministica(unittest.TestCase):
+    """P3: estados na mensagem devem estar em ordem alfabética."""
+
+    def test_estados_em_ordem_alfabetica(self):
+        from trackfw.validator import validate_filename_uniqueness
+        tmp = tempfile.mkdtemp()
+        try:
+            wip_dir = os.path.join(tmp, "docs", "roadmaps", "wip")
+            done_dir = os.path.join(tmp, "docs", "roadmaps", "done")
+            os.makedirs(wip_dir)
+            os.makedirs(done_dir)
+            _write(os.path.join(wip_dir, "ROADMAP-duplicado.md"), "# Dup\n")
+            _write(os.path.join(done_dir, "ROADMAP-duplicado.md"), "# Dup\n")
+            cfg = {"roadmap_dir": os.path.join(tmp, "docs", "roadmaps")}
+            violations = validate_filename_uniqueness(cfg)
+            self.assertEqual(len(violations), 1,
+                             f"esperado 1 violation, obteve {len(violations)}: {violations}")
+            msg = violations[0]["message"]
+            self.assertIn("['done', 'wip']", msg,
+                          f"estados devem estar em ordem alfabética, obteve: {msg}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Testes P3+P4 — adicionados pelo ML-3A (REQ-2026-07-26-robustez-gates)
+# ---------------------------------------------------------------------------
+
+class TestBranchHasWIPRoadmapTruncaMensagem(unittest.TestCase):
+    """P3+P4: 4 candidatos devem gerar mensagem truncada em 3 + 'e mais 1', em ordem alfabética."""
+
+    def test_trunca_em_3_mais_contagem(self):
+        from trackfw.validator import validate_branch_has_wip_roadmap
+        import os as _os
+        tmp = tempfile.mkdtemp()
+        try:
+            wip_dir = os.path.join(tmp, "docs", "roadmaps", "wip")
+            os.makedirs(wip_dir)
+            # 4 roadmaps sem slug da branch → todos são candidatos, nenhum casa
+            for name in ["ROADMAP-alpha.md", "ROADMAP-bravo.md", "ROADMAP-charlie.md", "ROADMAP-delta.md"]:
+                _write(os.path.join(wip_dir, name), "REQ: REQ-001\n")
+            cfg = {"roadmap_dir": os.path.join(tmp, "docs", "roadmaps")}
+            orig = _os.environ.get("TRACKFW_BRANCH")
+            _os.environ["TRACKFW_BRANCH"] = "feat/minha-feature"
+            try:
+                result = validate_branch_has_wip_roadmap(cfg)
+                self.assertTrue(len(result) > 0, "esperava violation com 4 candidatos sem slug correspondente")
+                want = "ROADMAP-alpha.md, ROADMAP-bravo.md, ROADMAP-charlie.md, e mais 1"
+                self.assertIn(want, result[0],
+                              f'mensagem truncada deve conter "{want}", obteve: {result[0]}')
+            finally:
+                if orig is None:
+                    _os.environ.pop("TRACKFW_BRANCH", None)
+                else:
+                    _os.environ["TRACKFW_BRANCH"] = orig
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestWIPHasREQCRLFIntegracao(unittest.TestCase):
+    """P3+P4: roadmap CRLF com REQ vazio deve emitir violation de wip_has_req (integração)."""
+
+    def test_crlf_vazio_emite_violation(self):
+        from trackfw.validator import validate_wip_has_req
+        tmp = tempfile.mkdtemp()
+        try:
+            wip_dir = os.path.join(tmp, "docs", "roadmaps", "wip")
+            os.makedirs(wip_dir)
+            # Arquivo CRLF: REQ: seguido de espaço + \r\n — campo vazio
+            with open(os.path.join(wip_dir, "ROADMAP-crlf.md"), "wb") as f:
+                f.write(b"REQ: \r\n## Acceptance Criteria\r\n- [ ] ok\r\n")
+            cfg = {"roadmap_dir": os.path.join(tmp, "docs", "roadmaps")}
+            violations = validate_wip_has_req(cfg)
+            msgs = [v if isinstance(v, str) else v.get("message", str(v)) for v in violations]
+            self.assertTrue(any("wip but has no linked REQ" in m for m in msgs),
+                            f"esperava violation de REQ vazio com CRLF, obteve: {violations}")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

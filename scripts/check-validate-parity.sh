@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-TMP_DIR=$(mktemp -d)
+TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-validate-parity.XXXXXX")
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 mkdir -p \
@@ -65,6 +65,18 @@ def contract(path):
     }
 
 contracts = [contract(path) for path in sys.argv[1:]]
+
+# P2 vacuity guard: if all three validators produce zero violations their
+# outputs trivially match — a silent pass when the test fixture is broken.
+# The run_validator() guard (exit code must be 1) catches the case where the
+# validator exits 0, but it does not catch a validator that exits 1 with an
+# empty violations list, so we check here explicitly.
+if not contracts[0]["violations"]:
+    raise SystemExit(
+        "validate parity: go output has no violations — "
+        "the test fixture may be wrong (vacuous check)"
+    )
+
 if contracts[1:] != contracts[:-1]:
     for path, value in zip(sys.argv[1:], contracts):
         print(path, json.dumps(value, indent=2), file=sys.stderr)

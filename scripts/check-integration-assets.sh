@@ -11,7 +11,18 @@ if [ ! -f "$SOURCE/catalog.json" ]; then
   exit 1
 fi
 
-(cd "$SOURCE" && find . -type f -print | LC_ALL=C sort) > "$TMP_ROOT/canonical-files"
+# P2: this script uses #!/bin/sh which does not support `set -o pipefail`.
+# Separate find from sort so that a find failure is visible under `set -eu`
+# rather than silently swallowed by sort returning 0 on empty input.
+(cd "$SOURCE" && find . -type f -print) > "$TMP_ROOT/find-raw.tmp"
+LC_ALL=C sort "$TMP_ROOT/find-raw.tmp" > "$TMP_ROOT/canonical-files"
+
+# P2 vacuity guard: an empty canonical list would make every destination look
+# synchronized — silence that is worse than an explicit failure.
+if [ ! -s "$TMP_ROOT/canonical-files" ]; then
+  echo "Integration assets: no files found in canonical source; check $SOURCE" >&2
+  exit 1
+fi
 
 check_destination() {
   destination=$1
@@ -22,7 +33,10 @@ check_destination() {
     return 1
   fi
 
-  (cd "$destination" && find . -type f -print | LC_ALL=C sort) > "$TMP_ROOT/destination-files"
+  # Same separation pattern: detect find failure explicitly.
+  (cd "$destination" && find . -type f -print) > "$TMP_ROOT/find-dest.tmp"
+  LC_ALL=C sort "$TMP_ROOT/find-dest.tmp" > "$TMP_ROOT/destination-files"
+
   if ! diff -u "$TMP_ROOT/canonical-files" "$TMP_ROOT/destination-files"; then
     echo "Integration asset file-list drift detected in $label" >&2
     echo "Run scripts/sync-integration-assets.sh" >&2

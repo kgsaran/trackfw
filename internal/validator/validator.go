@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -56,9 +57,13 @@ func SaveBaseline(violations, warnings []string) error {
 const staleWIPDays = 7
 
 // contentHasMarker retorna true se content contém algum dos marcadores com valor não-vazio.
+// P3: verifica tanto "\n" quanto "\r\n" para detectar campos vazios em arquivos CRLF.
+// Um marcador seguido de " \n" ou " \r\n" é tratado como "sem valor" (campo vazio).
 func contentHasMarker(content string, markers []string) bool {
 	for _, marker := range markers {
-		if strings.Contains(content, marker) && !strings.Contains(content, marker+" \n") {
+		if strings.Contains(content, marker) &&
+			!strings.Contains(content, marker+" \n") &&
+			!strings.Contains(content, marker+" \r\n") {
 			return true
 		}
 	}
@@ -745,8 +750,11 @@ func GetStatus() (string, error) {
 	return sb.String(), nil
 }
 
-// resolveWIPDirs retorna todos os diretórios wip/ conforme o modo de namespacing.
-func resolveWIPDirs(cfg config.ProjectConfig) []string {
+// resolveStateDirs retorna todos os diretórios de um estado (ex: "wip", "done") conforme o modo de
+// namespacing. É a fonte única de resolução de caminho por estado — resolveWIPDirs e resolveDoneDirs
+// são wrappers finos sobre esta função. Duplicar a lógica aqui foi a causa raiz de defeitos
+// anteriores (roadmap_dir divergente entre runtimes).
+func resolveStateDirs(cfg config.ProjectConfig, state string) []string {
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		agents := cfg.Agents
 		if len(agents) == 0 {
@@ -761,11 +769,21 @@ func resolveWIPDirs(cfg config.ProjectConfig) []string {
 		}
 		var dirs []string
 		for _, agent := range agents {
-			dirs = append(dirs, cfg.RoadmapDir+"/"+agent+"/wip")
+			dirs = append(dirs, cfg.RoadmapDir+"/"+agent+"/"+state)
 		}
 		return dirs
 	}
-	return []string{cfg.RoadmapDir + "/wip"}
+	return []string{cfg.RoadmapDir + "/" + state}
+}
+
+// resolveWIPDirs retorna todos os diretórios wip/ conforme o modo de namespacing.
+func resolveWIPDirs(cfg config.ProjectConfig) []string {
+	return resolveStateDirs(cfg, "wip")
+}
+
+// resolveDoneDirs retorna todos os diretórios done/ conforme o modo de namespacing.
+func resolveDoneDirs(cfg config.ProjectConfig) []string {
+	return resolveStateDirs(cfg, "done")
 }
 
 // resolveREQFiles retorna paths completos de todos os .md em req_dir,
@@ -1406,7 +1424,17 @@ func validateFolderStatusCoherence() ([]string, error) {
 	}
 
 	for _, dir := range dirs {
-		entries, _ := listDir(dir.path)
+		entries, err := listDir(dir.path)
+		if err != nil {
+			// P2: diretório ausente é esperado (projeto não usa esse estado);
+			// qualquer outro erro (ENOTDIR, EPERM…) deve ser reportado.
+			if !os.IsNotExist(err) {
+				warnings = append(warnings, fmt.Sprintf(
+					"folder_status: could not read directory %q: %v", dir.path, err,
+				))
+			}
+			continue
+		}
 		for _, name := range entries {
 			if !strings.HasSuffix(name, ".md") {
 				continue
@@ -1444,6 +1472,7 @@ func validateFilenameUniqueness() ([]string, error) {
 
 	seen := map[string][]string{}
 
+	var listErrors []string
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		agents := cfg.Agents
 		if len(agents) == 0 {
@@ -1457,7 +1486,16 @@ func validateFilenameUniqueness() ([]string, error) {
 		for _, agent := range agents {
 			for _, state := range states {
 				dir := filepath.Join(cfg.RoadmapDir, agent, state)
-				names, _ := listDir(dir)
+				names, err := listDir(dir)
+				if err != nil {
+					// P2: apenas reportar erros que não sejam "diretório ausente".
+					if !os.IsNotExist(err) {
+						listErrors = append(listErrors, fmt.Sprintf(
+							"filename_uniqueness: could not read directory %q: %v", dir, err,
+						))
+					}
+					continue
+				}
 				for _, name := range names {
 					key := agent + "/" + name
 					seen[key] = append(seen[key], state)
@@ -1467,7 +1505,15 @@ func validateFilenameUniqueness() ([]string, error) {
 	} else {
 		for _, state := range states {
 			dir := filepath.Join(cfg.RoadmapDir, state)
-			names, _ := listDir(dir)
+			names, err := listDir(dir)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					listErrors = append(listErrors, fmt.Sprintf(
+						"filename_uniqueness: could not read directory %q: %v", dir, err,
+					))
+				}
+				continue
+			}
 			for _, name := range names {
 				seen[name] = append(seen[name], state)
 			}
@@ -1475,10 +1521,22 @@ func validateFilenameUniqueness() ([]string, error) {
 	}
 
 	var violations []string
-	for name, stateList := range seen {
+	violations = append(violations, listErrors...)
+	// P3: ordenar a lista de estados em cada mensagem e depois as próprias mensagens
+	// para garantir saída determinística independente de ordem de iteração do mapa.
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		stateList := seen[name]
 		if len(stateList) > 1 {
+			sorted := make([]string, len(stateList))
+			copy(sorted, stateList)
+			sort.Strings(sorted)
 			violations = append(violations, fmt.Sprintf(
-				"roadmap %q appears in multiple states: %v", name, stateList,
+				"roadmap %q appears in multiple states: %v", name, sorted,
 			))
 		}
 	}
@@ -1509,14 +1567,17 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
+	doneDirs := resolveDoneDirs(cfg)
 
 	branchSlug := normalizeBranchSlug(strings.SplitN(branch, "/", 2)[1])
-	var wipFiles []string
-	for _, wipDir := range wipDirs {
-		entries, _ := listDir(wipDir)
+	// candidates reúne todos os roadmaps encontrados em wip/ e done/.
+	// O casamento de slug é testado ao iterar — se encontrado, retorna sem violação.
+	var candidates []string
+	for _, dir := range append(wipDirs, doneDirs...) {
+		entries, _ := listDir(dir)
 		for _, name := range entries {
 			if strings.HasSuffix(name, ".md") {
-				wipFiles = append(wipFiles, name)
+				candidates = append(candidates, name)
 				if strings.Contains(normalizeBranchSlug(name), branchSlug) {
 					return nil, nil
 				}
@@ -1524,15 +1585,23 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 		}
 	}
 
-	if len(wipFiles) == 0 {
+	if len(candidates) == 0 {
 		return []string{fmt.Sprintf(
-			"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ — create governance artifacts first:\n  trackfw req new \"title\"\n  trackfw roadmap new \"title\"\n  trackfw roadmap move <name> wip",
+			"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new \"title\"\n  trackfw roadmap new \"title\"\n  trackfw roadmap move <name> wip",
 			branch,
 		)}, nil
 	}
+	// P3: sort for deterministic output regardless of filesystem ordering.
+	sort.Strings(candidates)
+	display := candidates
+	suffix := ""
+	if len(candidates) > 3 {
+		display = candidates[:3]
+		suffix = fmt.Sprintf(", e mais %d", len(candidates)-3)
+	}
 	return []string{fmt.Sprintf(
-		"branch %q has no matching roadmap in wip/ (found: %s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
-		branch, strings.Join(wipFiles, ", "),
+		"branch %q has no matching roadmap in wip/ nor done/ (found: %s%s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
+		branch, strings.Join(display, ", "), suffix,
 	)}, nil
 }
 
@@ -1628,7 +1697,7 @@ func (e *GovernanceViolation) Error() string {
 // governance regardless of project settings.
 //
 // It checks:
-//  1. The current branch has a matching roadmap in wip/ (branch_has_wip_roadmap)
+//  1. The current branch has a matching roadmap in wip/ or done/ (branch_has_wip_roadmap)
 //  2. All WIP roadmaps have a linked REQ (wip_has_req)
 //
 // Returns nil when all checks pass. Returns *GovernanceViolation otherwise.
