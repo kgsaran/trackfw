@@ -219,7 +219,7 @@ python3 -m pytest pypi/tests/test_generators_roadmap.py pypi/tests/test_commands
 
 ### ML-3A — Gate cross-CLI e prova de ciclo completo
 
-**Status:** in progress
+**Status:** done
 
 **Files affected:**
 - `scripts/check-artifact-parity.sh` ou novo gate específico reutilizando seu harness
@@ -245,12 +245,12 @@ python3 -m pytest pypi/tests/test_generators_roadmap.py pypi/tests/test_commands
 5. Integrar o gate ao `make quality` sem variável auxiliar e sem resíduos.
 
 **Acceptance criteria:**
-- [ ] Gate detecta drift real entre templates dos três runtimes.
-- [ ] Prova negativa P4 falha pelo motivo esperado.
-- [ ] Ciclo completo verde nos três runtimes, flat e `by_agent`.
-- [ ] Documentação PT-BR/EN atualizada.
-- [ ] `make quality` e `trackfw validate` verdes.
-- [ ] `git status` limpo após os testes.
+- [x] Gate detecta drift real entre templates dos três runtimes.
+- [x] Prova negativa P4 falha pelo motivo esperado.
+- [x] Ciclo completo verde nos três runtimes, flat e `by_agent`.
+- [x] Documentação PT-BR/EN atualizada.
+- [x] `make quality` e `trackfw validate` verdes.
+- [x] `git status` limpo após os testes.
 
 **Validation commands:**
 ```bash

@@ -4,6 +4,30 @@
 
 ---
 
+## Sessão 2026-07-27 — Artemis (ML-3A concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
+
+**Tarefa:** Fechar o gate cross-CLI e a prova de ciclo `backlog → analyzing` nos três runtimes,
+documentar o frontmatter/estado canônico em PT-BR e inglês e auditar a paridade i18n do ML-2B.
+
+**Entregue:**
+- `scripts/check-artifact-parity.sh` compara também o slash-command `/trackfw:roadmap` byte a byte
+  e executa ciclo E2E em layouts flat e `by_agent`, conferindo pasta, frontmatter, header, log e
+  ausência de `folder_status`.
+- `scripts/check-gates-falsify.sh` inclui prova P4 de drift do slash-command (cenário 9), mantendo
+  a prova de integridade referencial como cenário 10.
+- Documentação atualizada em `docs/cli-parity.md`, `site/guide/commands.md` e
+  `site/en/guide/commands.md`; estados válidos incluem `analyzing` e frontmatter canônico é exigido.
+
+**Validação:**
+- `scripts/check-artifact-parity.sh` → `Artifact parity checks passed (6 artifact types × 3 runtimes; analyzing cycle flat/by_agent)`.
+- `scripts/check-gates-falsify.sh` → todos os cenários P4 verdes.
+- `make quality` → verde.
+- `go test ./...`, `npm test`, `pytest`, `bin/trackfw validate --json` e `git diff --check` → verdes.
+
+---
+
 ## Sessão 2026-07-27 — Apolo (ML-2B concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`

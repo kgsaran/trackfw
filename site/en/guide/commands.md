@@ -238,7 +238,7 @@ Moves a roadmap between kanban states.
 trackfw roadmap move <partial-name> <state>
 ```
 
-Valid states: `backlog`, `wip`, `blocked`, `done`, `abandoned`
+Valid states: `backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`
 
 ### Example
 
@@ -247,7 +247,10 @@ trackfw roadmap move oauth wip
 # ✓ moved ROADMAP-2026-06-13-implement-oauth.md → docs/roadmaps/wip
 ```
 
-The transition is automatically logged to `docs/roadmaps/.trackfw-log`.
+The transition is automatically logged to `docs/roadmaps/.trackfw-log`. The
+`analyzing` state represents the reading, validation, and planning phase before
+execution begins in `wip`. The CLI keeps the roadmap folder, `status:`
+frontmatter, and `| Status:` header synchronized.
 
 ---
 

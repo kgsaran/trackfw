@@ -239,7 +239,7 @@ Move um roadmap entre estados do kanban.
 trackfw roadmap move <nome-parcial> <estado>
 ```
 
-Estados válidos: `backlog`, `wip`, `blocked`, `done`, `abandoned`
+Estados válidos: `backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`
 
 ### Exemplo
 
@@ -249,6 +249,9 @@ trackfw roadmap move oauth wip
 ```
 
 A transição é registrada automaticamente em `docs/roadmaps/.trackfw-log`.
+Ao mover, o CLI sincroniza a pasta, o frontmatter `status:` e o header
+`| Status:`. O estado `analyzing` representa a fase de leitura, validação e
+planejamento antes de iniciar execução em `wip`.
 
 ---
 

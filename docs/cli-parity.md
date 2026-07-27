@@ -529,6 +529,25 @@ REQ:
 - [ ] validate passes
 ```
 
+O mesmo frontmatter é obrigatório para roadmaps criados por interfaces de agente,
+incluindo o slash-command `/trackfw:roadmap`: `status`, `date`, `req` e `squad`.
+O campo `req:` deve receber o caminho relativo completo da REQ selecionada, com
+prefixo `docs/req/` e sufixo `.md`; basename solto e link Markdown não são
+formato canônico.
+
+Estados válidos para `roadmap move`, `roadmap list`, `roadmap show`, validação e
+resolução de paths nos três runtimes:
+
+```
+backlog → analyzing → wip → blocked → done → abandoned
+```
+
+Ao mover um roadmap para `analyzing`, os três CLIs devem manter pasta,
+frontmatter (`status: analyzing`), header (`| Status: analyzing`) e
+`docs/roadmaps/.trackfw-log` sincronizados. Em `roadmap_namespacing: by_agent`,
+o log preserva o prefixo do agente, por exemplo
+`zeus/ROADMAP-YYYY-MM-DD-<slug>.md`.
+
 #### `note new <title>`
 
 Arquivo: `vault/notes/<slug>-YYYY-MM-DD.md` (slug antes da data, inverso do req/adr/roadmap).
@@ -584,11 +603,15 @@ essa condição e falha explicitamente.
 ### Parity gate
 
 `scripts/check-artifact-parity.sh` é o gate transversal que verifica esse contrato.
-Para cada tipo de artefato (req, adr, roadmap, note, vault/notes/index.md), ele
-invoca os três runtimes com título posicional ASCII, confirma que exatamente um
-arquivo foi gerado por runtime (vacuity guard), e faz diff byte-a-byte acumulando
-todos os erros antes de sair — o diagnóstico nomeia o tipo e os runtimes divergentes.
-Roda como parte de `make quality` (alvo `parity`), antes de `check-gates-falsify.sh`.
+Para cada tipo de artefato (req, adr, roadmap, slash-command roadmap, note,
+vault/notes/index.md), ele invoca os três runtimes com título posicional ASCII,
+confirma que exatamente um arquivo foi gerado por runtime (vacuity guard), e faz
+diff byte-a-byte acumulando todos os erros antes de sair — o diagnóstico nomeia
+o tipo e os runtimes divergentes. O mesmo gate executa um ciclo E2E
+`backlog → analyzing` em cada runtime nos layouts `flat` e `by_agent`,
+verificando pasta, frontmatter, header, `.trackfw-log` e ausência de
+`folder_status` no `validate --json`. Roda como parte de `make quality` (alvo
+`parity`), antes de `check-gates-falsify.sh`.
 
 Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
 
@@ -597,6 +620,9 @@ Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
 - **Cenário 8** — drift de **nome de arquivo**: compila binário Go corrompido que usa
   prefixo `RREQ-` em vez de `REQ-`; asserta exit != 0 com `arquivo ausente`.
   Os dois caminhos de comparação (conteúdo e nome) têm provas independentes.
+- **Cenário 9** — drift de **slash-command roadmap**: corrompe o gerador de init
+  do Node.js para emitir `status: backlogged` no `/trackfw:roadmap`; asserta
+  exit != 0 com `artifact parity drift: slash_roadmap (go vs node)`.
 
 ## Princípios de design de gates (P1–P4)
 
