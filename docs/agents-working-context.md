@@ -3871,13 +3871,25 @@ Executando ML-2A: convergência dos templates Python para o formato canônico Go
 
 ## Sessão 2026-07-27 — ML-2B: Convergência Go↔Node (paridade de templates)
 
-**Agente:** Apolo | **Status:** IMPLEMENTANDO
+**Agente:** Apolo | **Status:** CONCLUÍDO
 **Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
 **REQ:** `REQ-2026-07-27-convergencia-templates-python`
+**Commit:** `ddec027`
 
-**Escopo:**
-1. `npm/src/commands/roadmap.js` — adicionar `.argument('[title]')` ao `roadmap new` (P2: título posicional silenciosamente descartado)
-2. `npm/src/generators/req.js` — adicionar `| Linear Issue: ` e `| Jira Issue: ` ao statusLine
+**Escopo executado:**
+1. `npm/src/commands/roadmap.js` — `.argument('[title]')` + action `(titleArg, opts)` com precedência posicional > --title > 'New Roadmap'
+2. `npm/src/generators/req.js` — `\n| Linear Issue: \n| Jira Issue: ` adicionado a ambas as variantes de statusLine
 3. `pypi/trackfw/generators/req.py` — idem no status_line
-4. `internal/generators/roadmap.go` — remover `squad:` do body; mudar `### ML-1A — <title>` para interpolação real
-5. `internal/commands/roadmap.go` — corrigir args[0] atribuído a selectedREQ (deveria ser title)
+4. `internal/generators/roadmap.go` — `squad:` removido do body; `### ML-1A — %s` com content.Title interpolado
+5. `internal/commands/roadmap.go` — args[0] → title (não selectedREQ); selectedREQ permanece ""
+
+**Verificação empírica (entrada "auth strategy" nos 3 CLIs):**
+- ADR Go↔Node: IDENTICAL | ADR Go↔Python: IDENTICAL
+- REQ Go↔Node: IDENTICAL | REQ Go↔Python: IDENTICAL
+- ROADMAP Go↔Node: IDENTICAL | ROADMAP Go↔Python: IDENTICAL
+
+**`make quality`:** 596 passed · 0 failed · 6 falsification checks passed
+
+**Divergências residuais (report-only, fora do escopo):**
+- Python imprime `Roadmap criado:` vs Go/Node `✓ created` (mensagem de saída, não conteúdo de arquivo)
+- Node `req.js` usa `new Date().toISOString().slice(0,10)` (UTC) vs Go/Python local — sem impacto hoje (UTC == local-time), identificado como risco para ML-3A
