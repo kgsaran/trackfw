@@ -178,7 +178,7 @@ novo `internal/forge/resolve.go`, equivalentes em `npm/src/` e `pypi/trackfw/`, 
 > Dependências: **barrier** — Wave 3 concluída.
 
 ### ML-4A — Matriz de testes e documentação
-**Status:** in progress
+**Status:** done
 **Files affected:** testes nos 3 CLIs, `docs/cli-parity.md`, `README.md`, `site/`
 
 **Actions:**
@@ -303,9 +303,52 @@ falhava nos 3 cenários; depois cortei a mensagem de erro do `ship` com `tail` e
 mensagem inexistente. Nos dois casos, verifiquei o comportamento antes de confirmar que sabia
 invocá-lo. Mesma disciplina que exijo dos agentes.
 
+**2026-07-27 — Wave 4 concluída. ROADMAP ENCERRADO.**
+
+O ML-4A morreu duas vezes: primeiro por erro de rede (nada escrito), depois por limite de sessão —
+esta com ~400 linhas de Go verificadas no working tree. **Commitei como checkpoint** (`6afbf5e`) em
+vez de arriscar perder: três agentes morreram nesta REQ, e deixar trabalho verde solto seria repetir
+o erro por escolha. O respawn recebeu o contexto e a instrução de replicar, não refazer.
+
+Entregue: matriz 4 forges × CLI presente/ausente × host conhecido/self-hosted nos 3 runtimes,
+`SilenceUsage` em erro de runtime (preservado em erro de uso, que ocorre antes do `RunE`), e o
+`--dry-run` passou a **consultar a disponibilidade** do CLI da forge e imprimir a URL de fallback.
+Isso fechou a lacuna declarada na Wave 3: a degradação graciosa deixou de ser garantida só por
+injeção e virou observável de fora.
+
+### ⚠️ ML-4B — bug de governança pego na auditoria, quase documentado como contrato
+
+`npm/src/ship/runner.js` e `pypi/trackfw/ship/runner.py` resolviam `roadmap_dir` com default
+`docs/roadmaps/claude` — o layout por-agente descartado na decisão D4 — enquanto o Go e os **próprios
+validators** desses runtimes usam `docs/roadmaps`. Num projeto sem a chave configurada, o mesmo
+repositório **entregava pelo Go e era bloqueado pelo npm**. O PyPI ficava incoerente consigo mesmo.
+
+**O agravante foi a resolução proposta:** o agente documentou a divergência em `cli-parity.md` como
+*"intentional and preserved"*. Um defeito documentado como contrato deixa de ser defeito aos olhos de
+quem vier depois — e ninguém mais o corrige. Com `make quality` verde, isso iria para a `main` como
+comportamento oficial de um produto que vende paridade de governança.
+
+**Causa raiz apontada pelo ML-4B:** os runners de npm/PyPI reimplementaram a resolução da chave em vez
+de usar o módulo de config, e os testes injetavam `checkGovernance` — nunca exercitando o caminho real.
+Corrigido reutilizando o config de cada runtime, com teste de paridade travando o default nos três.
+
+**Verificação empírica do orquestrador, nas duas direções:**
+
+| Cenário (sem `roadmap_dir:` no yaml) | Go | Node | Python |
+|---|:-:|:-:|:-:|
+| roadmap em `docs/roadmaps/wip/` | Governance: OK | Governance: OK | Governance: OK |
+| roadmap em `docs/roadmaps/claude/wip/` | reprova | reprova | reprova |
+
+**Regra derivada:** divergência entre runtimes tem como hipótese padrão **bug**, não contrato.
+Documentar divergência como intencional exige ADR — nunca uma nota de rodapé no `cli-parity.md`.
+
 ## Acceptance Criteria
 
-- [ ] Todas as waves concluídas
+- [x] Todas as waves concluídas (1, 2 + 2C, 3, 4 + 4B)
+- [x] `trackfw ship` idêntico nos 3 CLIs
+- [x] Todos os critérios de aceite da REQ atendidos
+- [x] Escopo negativo respeitado (sem merge automático, sem `--force`, sem `git add .`, 4 forges)
+- [x] `make quality` verde e `trackfw validate` sem violações
 - [ ] `trackfw ship` idêntico nos 3 CLIs
 - [ ] Todos os critérios de aceite da REQ atendidos
 - [ ] Escopo negativo respeitado (sem merge automático, sem `--force`, sem `git add .`, sem forge além das 4)
