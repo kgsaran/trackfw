@@ -4220,3 +4220,36 @@ antes desta nota; esta finalização registra a auditoria posterior e não toca 
 - `python3 -m pytest pypi/tests -q -rxX` → `607 passed, 2 xfailed`.
 - `bin/trackfw validate` → exit 0, com 41 warnings de referências canônicas pendentes para ML-3A.
 - `make quality` → verde: Go, Node, Python, vet, build e gates de paridade/falsificação passaram.
+
+## ML-2B 2026-07-27 — Apolo
+
+**Status:** CONCLUÍDO na branch `fix/integridade-das-referencias-e-ciclo-de-vida-da-req`.
+
+**Escopo entregue:** fechamento de REQ e higiene de paridade nos três runtimes:
+- `req move <nome> <status>` implementado em Go, Node.js e Python sem mover arquivo; reescreve somente
+  o `status:` do frontmatter e o primeiro `| Status: ...` no header, preservando demais bytes.
+- `trackfw log` em Node.js e Python passou a usar `<roadmap_dir>/.trackfw-log`, alinhado ao Go.
+- Strip de aspas em `forge` e `trace_id_field` no Go ficou coberto por teste de regressão.
+- Defeito 2 reativado nos 3 runtimes: REQ `Open` com roadmap referenciado em `done/` agora gera warning
+  de ciclo de vida (`req_roadmap_lifecycle`). Escape 3 permanece xfail para ML-3A.
+
+**Arquivos alterados:** `internal/commands/req.go`, `internal/commands/log_test.go`,
+`internal/config/config_test.go`, `internal/generators/req.go`, `internal/generators/req_test.go`,
+`internal/validator/validator.go`, `internal/validator/validator_integrity_xfail_test.go`,
+`npm/src/commands/log.js`, `npm/src/commands/req.js`, `npm/src/generators/req.js`,
+`npm/src/validator/index.js`, `npm/tests/config.test.js`, `npm/tests/log_path.test.js`,
+`npm/tests/req_move.test.js`, `npm/tests/validator.test.js`, `pypi/trackfw/commands/log.py`,
+`pypi/trackfw/commands/req.py`, `pypi/trackfw/generators/req.py`, `pypi/trackfw/validator.py`,
+`pypi/tests/test_commands_basic.py`, `pypi/tests/test_config.py`, `pypi/tests/test_generators_req.py`,
+`pypi/tests/test_log_command.py`, `pypi/tests/test_validator.py`,
+`docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`,
+`docs/agents-working-context.md`.
+
+**Validação final:**
+- `go build ./...` → exit 0; aviso não bloqueante de cache Go fora do workspace no sandbox.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → `263 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q -rxX` → `611 passed, 1 xfailed`.
+- `git diff --check` → verde.
+- `make quality` → verde: Go, Node, Python, vet, build, paridade CLI/validate, assets,
+  identity/artifact parity e falsification gates passaram.

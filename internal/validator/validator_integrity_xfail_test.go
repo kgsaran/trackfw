@@ -137,11 +137,11 @@ func TestXFail_Escape3_SeveridadeWarning(t *testing.T) {
 	)
 }
 
-// TestXFail_Defeito2_REQAbertaRoadmapConcluido
-// REQ: REQ-2026-07-27-integridade-referencias | Reativar: ML-2B
-// Defeito 2: REQ com Status: Open cujo roadmap referenciado está em done/ → nenhuma
-// regra atual verifica o ciclo de vida da REQ e sinaliza a inconsistência.
-func TestXFail_Defeito2_REQAbertaRoadmapConcluido(t *testing.T) {
+// TestValidateREQRoadmapLifecycle_REQAbertaRoadmapConcluido
+// REQ: REQ-2026-07-27-integridade-referencias | Reativado: ML-2B
+// Defeito 2 corrigido: REQ com Status: Open cujo roadmap referenciado está em done/
+// é sinalizada como inconsistência de ciclo de vida.
+func TestValidateREQRoadmapLifecycle_REQAbertaRoadmapConcluido(t *testing.T) {
 	dir := t.TempDir()
 	mkdirs(t, dir,
 		"docs/req",
@@ -165,18 +165,11 @@ func TestXFail_Defeito2_REQAbertaRoadmapConcluido(t *testing.T) {
 	config.Reset()
 	t.Cleanup(config.Reset)
 
-	xfailExpect(t,
-		"ML-2B",
-		"REQ Open com roadmap em done/ não é sinalizada — nenhuma regra verifica o ciclo de vida da REQ",
-		func() bool {
-			violations, warnings, err := ValidateUnfiltered()
-			if err != nil {
-				t.Fatalf("ValidateUnfiltered erro: %v", err)
-			}
-			// Defeito presente: nenhuma mensagem menciona DONE-ROADMAP-DEFEITO2 em contexto
-			// de inconsistência de ciclo de vida (REQ Open + roadmap Done)
-			return !hasViolation(violations, "DONE-ROADMAP-DEFEITO2") &&
-				!hasWarning(warnings, "DONE-ROADMAP-DEFEITO2")
-		},
-	)
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered erro: %v", err)
+	}
+	if !hasViolation(violations, "DONE-ROADMAP-DEFEITO2") && !hasWarning(warnings, "DONE-ROADMAP-DEFEITO2") {
+		t.Fatalf("esperava mensagem sobre REQ Open com roadmap done; violations=%v warnings=%v", violations, warnings)
+	}
 }

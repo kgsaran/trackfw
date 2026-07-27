@@ -97,3 +97,89 @@ Roadmap: {linked_roadmap_section}
         f.write(content)
 
     return filepath
+
+
+def rewrite_req_status(source: str, status: str) -> tuple[str, bool]:
+    """Reescreve status no frontmatter e no header, preservando o restante."""
+    if not source.startswith("---\n"):
+        return source, False
+    end = source[4:].find("\n---")
+    if end < 0:
+        return source, False
+
+    frontmatter = source[4:4 + end]
+    rest = source[4 + end:]
+    changed = False
+    lines = frontmatter.split("\n")
+
+    for i, line in enumerate(lines):
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        if key.strip() != "status":
+            continue
+        trimmed = value.strip()
+        quoted = len(trimmed) >= 2 and trimmed.startswith('"') and trimmed.endswith('"')
+        new_line = f'{key}: "{status}"' if quoted else f"{key}: {status}"
+        if lines[i] != new_line:
+            lines[i] = new_line
+            changed = True
+        break
+
+    if len(rest) > 4:
+        body_lines = rest[4:].split("\n")
+        marker = "| Status: "
+        for i, line in enumerate(body_lines):
+            if line.strip().startswith("## "):
+                break
+            idx = line.find(marker)
+            if idx < 0:
+                continue
+            prefix = line[:idx + len(marker)]
+            after = line[idx + len(marker):]
+            pipe_idx = after.find(" |")
+            suffix = after[pipe_idx:] if pipe_idx >= 0 else ""
+            new_line = f"{prefix}{status}{suffix}"
+            if body_lines[i] != new_line:
+                body_lines[i] = new_line
+                changed = True
+                rest = "\n---" + "\n".join(body_lines)
+            break
+
+    if not changed:
+        return source, False
+    return "---\n" + "\n".join(lines) + rest, True
+
+
+def find_req(name: str, req_dir: str) -> str:
+    try:
+        files = [f for f in os.listdir(req_dir) if f.endswith(".md")]
+    except OSError as exc:
+        raise RuntimeError(f"reading REQ dir: {exc}") from exc
+
+    lowered = name.lower()
+    for filename in files:
+        if lowered in filename.lower():
+            return os.path.join(req_dir, filename)
+    raise RuntimeError(f'REQ "{name}" not found in {req_dir}')
+
+
+def move_req(name: str, status: str, req_dir: str = None, cwd: str = None) -> str:
+    if not status or not status.strip():
+        raise RuntimeError("status is required")
+
+    base = cwd or os.getcwd()
+    if req_dir is None:
+        req_dir = os.path.join(base, "docs", "req")
+    elif not os.path.isabs(req_dir):
+        req_dir = os.path.join(base, req_dir)
+
+    filepath = find_req(name, req_dir)
+    with open(filepath, "r", encoding="utf-8") as f:
+        source = f.read()
+    updated, changed = rewrite_req_status(source, status)
+    if not changed:
+        raise RuntimeError(f'REQ "{os.path.basename(filepath)}" has no frontmatter status/header Status to update')
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(updated)
+    return filepath

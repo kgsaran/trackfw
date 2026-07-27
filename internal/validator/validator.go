@@ -376,6 +376,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("ref_targets_exist", refWarnings, &violations, &warnings)
 
+	reqLifecycleWarnings, e := validateREQRoadmapLifecycle()
+	if e != nil {
+		return nil, nil, e
+	}
+	warnings = append(warnings, reqLifecycleWarnings...)
+
 	coherenceWarnings, e := validateFolderStatusCoherence()
 	if e != nil {
 		return nil, nil, e
@@ -531,6 +537,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("ref_targets_exist", refWarnings, &violations, &warnings)
+
+	reqLifecycleWarnings, e := validateREQRoadmapLifecycle()
+	if e != nil {
+		return nil, nil, e
+	}
+	for _, m := range reqLifecycleWarnings {
+		warnings = append(warnings, TaggedMsg{Rule: "req_roadmap_lifecycle", Msg: m})
+	}
 
 	coherenceWarnings, e := validateFolderStatusCoherence()
 	if e != nil {
@@ -1359,6 +1373,52 @@ func referenceExists(ref string, roots []string) bool {
 	expandedRef := config.ExpandPath(ref)
 	if _, err := os.Stat(expandedRef); err == nil {
 		return true
+	}
+	return false
+}
+
+func validateREQRoadmapLifecycle() ([]string, error) {
+	cfg := config.Load()
+	var warnings []string
+	for _, reqPath := range resolveREQFiles(cfg) {
+		content, err := os.ReadFile(reqPath)
+		if err != nil {
+			continue
+		}
+		s := string(content)
+		if !reqStatusIsOpen(s) {
+			continue
+		}
+		ref := extractRefPath(s, "Roadmap")
+		if ref == "" {
+			continue
+		}
+		expandedRef := config.ExpandPath(ref)
+		info, err := os.Stat(expandedRef)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if filepath.Base(filepath.Dir(expandedRef)) == "done" {
+			warnings = append(warnings, fmt.Sprintf("req %q is Open but linked Roadmap %q is in done/", filepath.Base(reqPath), ref))
+		}
+	}
+	return warnings, nil
+}
+
+func reqStatusIsOpen(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		key, val, ok := strings.Cut(trimmed, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(key), "status") {
+			return strings.EqualFold(strings.Trim(strings.TrimSpace(val), `"'`), "open")
+		}
+		if idx := strings.Index(trimmed, "| Status: "); idx >= 0 {
+			rest := trimmed[idx+len("| Status: "):]
+			if pipeIdx := strings.Index(rest, " |"); pipeIdx >= 0 {
+				rest = rest[:pipeIdx]
+			}
+			return strings.EqualFold(strings.TrimSpace(rest), "open")
+		}
 	}
 	return false
 }

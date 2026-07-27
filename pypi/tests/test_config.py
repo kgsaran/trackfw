@@ -204,6 +204,15 @@ class TestConfigEvolution(unittest.TestCase):
         cfg = config.load(cwd=self.tmpdir)
         self.assertEqual(cfg["rules"]["stale_wip"], "warning")
 
+    def test_forge_e_trace_id_field_com_aspas_sao_normalizados(self):
+        self._write_yaml(
+            'forge: "github"\n'
+            "trace_id_field: 'req_id'\n"
+        )
+        cfg = config.load(cwd=self.tmpdir)
+        self.assertEqual(cfg["forge"], "github")
+        self.assertEqual(cfg["trace_id_field"], "req_id")
+
 
 class TestConfigPaths(unittest.TestCase):
     """Testes ML-2C: paths configuráveis adr_dirs, req_dir, roadmap_dir."""

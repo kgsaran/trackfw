@@ -1150,11 +1150,7 @@ def test_ml1a_xfail_escape3_severidade_warning_nao_reprova_gate(tmp_path, monkey
     ), f"esperava violation para referencia quebrada; result={result}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="ML-1A Defeito2 ativo: REQ Open com roadmap done nao e sinalizada; reativar no ML-2B.",
-)
-def test_ml1a_xfail_defeito2_req_open_com_roadmap_done(tmp_path, monkeypatch):
+def test_ml2b_defeito2_req_open_com_roadmap_done(tmp_path, monkeypatch):
     _ml1a_base(tmp_path, monkeypatch)
     (tmp_path / "docs/roadmaps/done/DONE-ROADMAP-DEFEITO2.md").write_text(
         "---\nstatus: Done\ndate: 2026-07-01\n---\n"

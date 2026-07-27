@@ -859,9 +859,8 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
-  // Defeito 2: REQ Open com roadmap em done/ — nenhuma regra sinaliza a inconsistência.
-  // Reativar em ML-2B após adicionar regra de ciclo de vida da REQ.
-  testSkip('ML-1A Defeito2: REQ Open com roadmap em done/ nao e sinalizada [reativar ML-2B REQ-2026-07-27-integridade-referencias]', () => {
+  // Defeito 2 reativado no ML-2B: REQ Open com roadmap em done/ é sinalizada.
+  await testAsync('ML-2B Defeito2 reativado: REQ Open com roadmap em done/ gera warning', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-d2-'))
     try {
       fs.mkdirSync(path.join(tmp, 'docs/req'), { recursive: true })
@@ -883,12 +882,11 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
       process.chdir(tmp)
       config.reset()
       try {
-        const violations = validator.validate()
-        const warnings = validator.validateRefTargetsExist()
-        // Defeito presente: nem violations nem warnings mencionam a inconsistência de ciclo de vida
+        const { violations, warnings } = await validator.validateUnfiltered()
+        // Defeito corrigido: a inconsistência de ciclo de vida deve aparecer.
         const allMsgs = [...violations, ...warnings]
         assert(allMsgs.some(m => m.includes('DONE-ROADMAP-DEFEITO2')),
-          `esperava mensagem sobre REQ Open com roadmap em done/, mas nao houve (defeito 2 ativo). allMsgs=${JSON.stringify(allMsgs)}`)
+          `esperava mensagem sobre REQ Open com roadmap em done/. allMsgs=${JSON.stringify(allMsgs)}`)
       } finally {
         process.chdir(origDir)
         config.reset()

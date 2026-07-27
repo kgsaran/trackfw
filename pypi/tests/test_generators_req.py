@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from datetime import date
 
-from trackfw.generators.req import generate_req, slugify
+from trackfw.generators.req import generate_req, move_req, slugify
 
 
 class TestSlugify(unittest.TestCase):
@@ -103,6 +103,25 @@ class TestGenerateReq(unittest.TestCase):
         self.assertIn("## Blocked by ADRs", content)
         self.assertIn("## Linked Roadmap", content)
         self.assertIn("# REQ: Mandatory Sections", content)
+
+    def test_move_req_rewrites_status_in_place(self):
+        os.makedirs(self.req_dir, exist_ok=True)
+        req_path = os.path.join(self.req_dir, "REQ-2026-07-27-fechar.md")
+        with open(req_path, "w", encoding="utf-8") as f:
+            f.write(
+                "---\nstatus: Open\ndate: 2026-07-27\nroadmap: \"docs/roadmaps/done/RM.md\"\n---\n\n"
+                "# REQ: Fechar\n\n> Date: 2026-07-27 | Status: Open | Linear Issue: X\n\n"
+                "## Notes\nstatus: Open\n| Status: Open\n"
+            )
+
+        moved_path = move_req("fechar", "done", req_dir=self.req_dir)
+
+        self.assertEqual(moved_path, req_path)
+        with open(req_path, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("status: done\n", content)
+        self.assertIn("> Date: 2026-07-27 | Status: done | Linear Issue: X", content)
+        self.assertIn("## Notes\nstatus: Open\n| Status: Open\n", content)
 
 
 if __name__ == "__main__":

@@ -163,6 +163,14 @@ test('strict_ci_paths — default é false, aceita true via yaml', () => {
   })
 })
 
+test('forge e trace_id_field com aspas sao normalizados', () => {
+  const yaml = `forge: "github"\ntrace_id_field: 'req_id'\n`
+  withTmpDir(yaml, (tmp) => {
+    const cfg = config.load(tmp)
+    assert.strictEqual(cfg.forge, 'github')
+    assert.strictEqual(cfg.traceIdField, 'req_id')
+  })
+})
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)
-

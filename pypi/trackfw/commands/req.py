@@ -7,7 +7,7 @@ import sys
 
 
 def register(subparsers):
-    """Adiciona subcomando `req` com sub-subcomando `new` ao parser principal."""
+    """Adiciona subcomando `req` ao parser principal."""
     req_parser = subparsers.add_parser(
         "req",
         help="Manage Requirements",
@@ -26,6 +26,13 @@ def register(subparsers):
         help="REQ title (prompted if omitted)",
     )
 
+    move_parser = req_sub.add_parser(
+        "move",
+        help="Update a REQ status in place",
+    )
+    move_parser.add_argument("name", help="REQ filename fragment")
+    move_parser.add_argument("status", help="New status")
+
     req_parser.set_defaults(func=_dispatch)
 
 
@@ -33,9 +40,11 @@ def _dispatch(args):
     """Despacha para o sub-subcomando correto."""
     if args.req_command == "new":
         _cmd_new(args)
+    elif args.req_command == "move":
+        _cmd_move(args)
     else:
         print("Usage: trackfw req <command>")
-        print("Commands: new")
+        print("Commands: new, move")
         sys.exit(0)
 
 
@@ -60,3 +69,17 @@ def _cmd_new(args):
 
     filepath = generate_req(title=title, req_dir=req_dir)
     print(f"created {filepath}")
+
+
+def _cmd_move(args):
+    from trackfw.config import load as load_config
+    from trackfw.generators.req import move_req
+
+    cfg = load_config()
+    req_dir = cfg.get("req_dir", "docs/req")
+    try:
+        filepath = move_req(args.name, args.status, req_dir=req_dir)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print(f"updated {filepath} status -> {args.status}")

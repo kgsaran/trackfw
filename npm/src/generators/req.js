@@ -55,6 +55,82 @@ function parseREQStatus(filepath) {
   return 'unknown'
 }
 
+function rewriteREQStatus(source, status) {
+  if (!source.startsWith('---\n')) return { content: source, changed: false }
+  const end = source.slice(4).indexOf('\n---')
+  if (end < 0) return { content: source, changed: false }
+
+  let changed = false
+  const frontmatter = source.slice(4, 4 + end)
+  let rest = source.slice(4 + end)
+  const lines = frontmatter.split('\n')
+
+  for (let i = 0; i < lines.length; i++) {
+    const idx = lines[i].indexOf(':')
+    if (idx < 0) continue
+    const rawKey = lines[i].slice(0, idx)
+    if (rawKey.trim() !== 'status') continue
+    const value = lines[i].slice(idx + 1).trim()
+    const quoted = value.length >= 2 && value.startsWith('"') && value.endsWith('"')
+    const newLine = quoted ? `${rawKey}: "${status}"` : `${rawKey}: ${status}`
+    if (lines[i] !== newLine) {
+      lines[i] = newLine
+      changed = true
+    }
+    break
+  }
+
+  if (rest.length > 4) {
+    const bodyLines = rest.slice(4).split('\n')
+    const marker = '| Status: '
+    for (let i = 0; i < bodyLines.length; i++) {
+      if (bodyLines[i].trim().startsWith('## ')) break
+      const idx = bodyLines[i].indexOf(marker)
+      if (idx < 0) continue
+      const prefix = bodyLines[i].slice(0, idx + marker.length)
+      const after = bodyLines[i].slice(idx + marker.length)
+      const pipeIdx = after.indexOf(' |')
+      const suffix = pipeIdx >= 0 ? after.slice(pipeIdx) : ''
+      const newLine = `${prefix}${status}${suffix}`
+      if (bodyLines[i] !== newLine) {
+        bodyLines[i] = newLine
+        changed = true
+        rest = '\n---' + bodyLines.join('\n')
+      }
+      break
+    }
+  }
+
+  if (!changed) return { content: source, changed: false }
+  return { content: `---\n${lines.join('\n')}${rest}`, changed: true }
+}
+
+function findREQ(name, reqDir) {
+  let files = []
+  try {
+    files = fs.readdirSync(reqDir).filter(f => f.endsWith('.md'))
+  } catch (e) {
+    throw new Error(`reading REQ dir: ${e.message}`)
+  }
+  const lower = name.toLowerCase()
+  const found = files.find(f => f.toLowerCase().includes(lower))
+  if (!found) throw new Error(`REQ "${name}" not found in ${reqDir}`)
+  return path.join(reqDir, found)
+}
+
+function moveREQ(name, status) {
+  if (!String(status || '').trim()) throw new Error('status is required')
+  const reqDir = require('../config').load().reqDir
+  const filepath = findREQ(name, reqDir)
+  const source = fs.readFileSync(filepath, 'utf8')
+  const result = rewriteREQStatus(source, status)
+  if (!result.changed) {
+    throw new Error(`REQ "${path.basename(filepath)}" has no frontmatter status/header Status to update`)
+  }
+  fs.writeFileSync(filepath, result.content, 'utf8')
+  console.log(`✓ updated ${path.basename(filepath)} status → ${status}`)
+}
+
 /**
  * toSlug — converte string em slug kebab-case lowercase.
  * @param {string} s
@@ -252,4 +328,4 @@ function detectDomains(intention) {
   )
 }
 
-module.exports = { listREQs, parseREQStatus, newREQ, PROBES_CATALOG, detectDomains, localDateISO, toSlug }
+module.exports = { listREQs, parseREQStatus, rewriteREQStatus, moveREQ, newREQ, PROBES_CATALOG, detectDomains, localDateISO, toSlug }

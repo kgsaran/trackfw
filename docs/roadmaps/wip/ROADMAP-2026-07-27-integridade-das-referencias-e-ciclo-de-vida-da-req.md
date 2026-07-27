@@ -185,7 +185,7 @@ Validação:
 
 ### ML-2B — Fechamento da REQ e higiene de paridade
 
-**Status:** pending
+**Status:** done
 **Files affected:** `internal/commands/req.go`, `internal/generators/req.go`,
 `npm/src/commands/{req,log}.js`, `pypi/trackfw/commands/{req,log}.py`, `internal/commands/log.go`,
 `internal/config/config.go`
@@ -209,10 +209,56 @@ Validação:
 4. Reativar o teste do ML-1A referente ao Defeito 2.
 
 **Acceptance criteria:**
-- [ ] Comando de fechamento da REQ nos 3 CLIs, sincronizando frontmatter **e** header
-- [ ] `trackfw log` grava no mesmo caminho nos 3, respeitando `roadmap_dir`
-- [ ] `forge` e `trace_id_field` com strip de aspas no Go
-- [ ] Teste do Defeito 2 reativado e passando
+- [x] Comando de fechamento da REQ nos 3 CLIs, sincronizando frontmatter **e** header
+- [x] `trackfw log` grava no mesmo caminho nos 3, respeitando `roadmap_dir`
+- [x] `forge` e `trace_id_field` com strip de aspas no Go
+- [x] Teste do Defeito 2 reativado e passando
+
+**Relatório ML-2B — Apolo — 2026-07-27:**
+
+Arquivos alterados:
+- `internal/commands/req.go`
+- `internal/commands/log_test.go`
+- `internal/config/config_test.go`
+- `internal/generators/req.go`
+- `internal/generators/req_test.go`
+- `internal/validator/validator.go`
+- `internal/validator/validator_integrity_xfail_test.go`
+- `npm/src/commands/log.js`
+- `npm/src/commands/req.js`
+- `npm/src/generators/req.js`
+- `npm/src/validator/index.js`
+- `npm/tests/config.test.js`
+- `npm/tests/log_path.test.js`
+- `npm/tests/req_move.test.js`
+- `npm/tests/validator.test.js`
+- `pypi/trackfw/commands/log.py`
+- `pypi/trackfw/commands/req.py`
+- `pypi/trackfw/generators/req.py`
+- `pypi/trackfw/validator.py`
+- `pypi/tests/test_commands_basic.py`
+- `pypi/tests/test_config.py`
+- `pypi/tests/test_generators_req.py`
+- `pypi/tests/test_log_command.py`
+- `pypi/tests/test_validator.py`
+
+Entregue:
+- `req move <nome> <status>` nos 3 CLIs, reescrevendo somente `status:` do frontmatter e o primeiro
+  `| Status: ...` no header antes de seções `##`, sem mover a REQ flat e preservando ocorrências no corpo.
+- `trackfw log` em Node e Python convergido para o contrato do Go: leitura de
+  `<roadmap_dir>/.trackfw-log` com `--tail`; testes legados Python atualizados para essa semântica.
+- Teste Go travando strip de aspas em `forge` e `trace_id_field` via `splitKV`, alinhado a Node/Python.
+- Regra de ciclo de vida `req_roadmap_lifecycle` nos 3 validadores: REQ `Open` com roadmap canônico em
+  `done/` gera warning. O teste do Defeito 2 foi reativado nos 3 runtimes; Escape 3 permanece para ML-3A.
+
+Validação:
+- `go build ./...` → exit 0; aviso não bloqueante de cache Go fora do workspace no sandbox.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → `263 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q -rxX` → `611 passed, 1 xfailed`.
+- `git diff --check` → verde.
+- `make quality` → verde: Go, Node, Python, `go vet`, build, CLI/validate parity, static/integration
+  assets, identity parity, artifact parity e falsification gates passaram.
 
 ---
 

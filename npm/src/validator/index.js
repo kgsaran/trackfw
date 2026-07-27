@@ -721,6 +721,44 @@ function referenceExists(ref, roots) {
   return false
 }
 
+function validateREQRoadmapLifecycle() {
+  const cfg = config.load()
+  const warnings = []
+  for (const filePath of resolveReqFiles(cfg)) {
+    try {
+      const content = fs.readFileSync(filePath, 'utf8')
+      if (!reqStatusIsOpen(content)) continue
+      const ref = extractRefPath(content, 'Roadmap')
+      if (!ref) continue
+      const expandedRef = config.expandPath ? config.expandPath(ref) : ref
+      if (!fs.existsSync(expandedRef)) continue
+      if (path.basename(path.dirname(expandedRef)) === 'done') {
+        warnings.push(`req "${path.basename(filePath)}" is Open but linked Roadmap "${ref}" is in done/`)
+      }
+    } catch (_) {}
+  }
+  return warnings
+}
+
+function reqStatusIsOpen(content) {
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    const idx = trimmed.indexOf(':')
+    if (idx >= 0 && trimmed.slice(0, idx).trim().toLowerCase() === 'status') {
+      return trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '').toLowerCase() === 'open'
+    }
+    const marker = '| Status: '
+    const markerIdx = trimmed.indexOf(marker)
+    if (markerIdx >= 0) {
+      let rest = trimmed.slice(markerIdx + marker.length)
+      const pipeIdx = rest.indexOf(' |')
+      if (pipeIdx >= 0) rest = rest.slice(0, pipeIdx)
+      return rest.trim().toLowerCase() === 'open'
+    }
+  }
+  return false
+}
+
 // FOLDER_TO_STATUS mapeia pasta de estado para os valores válidos de status no frontmatter
 const FOLDER_TO_STATUS = {
   wip:       ['WIP', 'wip', 'In Progress'],
@@ -1025,6 +1063,7 @@ async function validateUnfiltered() {
   applyRule('adr_orphan',           validateADRsAreReferenced(),           violations, warnings)
   applyRule('stale_wip',            validateStaleWIP(),                    violations, warnings)
   applyRule('ref_targets_exist',    validateRefTargetsExist(),             violations, warnings)
+  for (const msg of validateREQRoadmapLifecycle()) { _setMeta(msg, 'req_roadmap_lifecycle'); warnings.push(msg) }
   applyRule('folder_status',        validateFolderStatusCoherence(),       violations, warnings)
   applyRule('filename_uniqueness',  validateFilenameUniqueness(),          violations, warnings)
   applyRule('branch_has_wip_roadmap', validateBranchHasWIPRoadmap(),      violations, warnings)
@@ -1196,6 +1235,7 @@ module.exports = {
   gitLastModifiedTime,
   extractRefPath,
   validateRefTargetsExist,
+  validateREQRoadmapLifecycle,
   validateFolderStatusCoherence,
   validateFilenameUniqueness,
   validateBranchHasWIPRoadmap,

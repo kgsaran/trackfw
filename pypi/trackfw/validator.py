@@ -869,6 +869,49 @@ def _reference_exists(ref: str, roots: list[str]) -> bool:
     return os.path.exists(os.path.expanduser(ref))
 
 
+def validate_req_roadmap_lifecycle(cfg: dict) -> list:
+    """Sinaliza REQ Open cujo roadmap canônico referenciado já está em done/."""
+    warnings = []
+    for file_path in resolve_req_files(cfg):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            if not _req_status_is_open(content):
+                continue
+            ref = _extract_ref_path(content, "Roadmap")
+            if not ref:
+                continue
+            expanded_ref = os.path.expanduser(ref)
+            if not os.path.isfile(expanded_ref):
+                continue
+            if os.path.basename(os.path.dirname(expanded_ref)) == "done":
+                warnings.append({
+                    "type": "warning",
+                    "message": f'req "{os.path.basename(file_path)}" is Open but linked Roadmap "{ref}" is in done/'
+                })
+        except OSError:
+            pass
+    return warnings
+
+
+def _req_status_is_open(content: str) -> bool:
+    for line in content.split("\n"):
+        trimmed = line.strip()
+        if ":" in trimmed:
+            key, val = trimmed.split(":", 1)
+            if key.strip().lower() == "status":
+                return val.strip().strip("\"'").lower() == "open"
+        marker = "| Status: "
+        idx = trimmed.find(marker)
+        if idx >= 0:
+            rest = trimmed[idx + len(marker):]
+            pipe_idx = rest.find(" |")
+            if pipe_idx >= 0:
+                rest = rest[:pipe_idx]
+            return rest.strip().lower() == "open"
+    return False
+
+
 _FOLDER_TO_STATUS = {
     "wip":       ["WIP", "wip", "In Progress"],
     "backlog":   ["Backlog", "backlog"],
@@ -1160,6 +1203,7 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule("filename_uniqueness",  validate_filename_uniqueness(cfg),            violations, warnings, cfg)
     _apply_rule("branch_has_wip_roadmap", validate_branch_has_wip_roadmap(cfg),      violations, warnings, cfg)
     _apply_rule("ref_targets_exist",    validate_ref_targets_exist(cfg),              violations, warnings, cfg)
+    warnings += _enrich_items(validate_req_roadmap_lifecycle(cfg), "req_roadmap_lifecycle")
     _apply_rule("folder_status",        validate_folder_status_coherence(cfg),        violations, warnings, cfg)
     _apply_rule("stale_wip",            validate_stale_wip(cfg),                      violations, warnings, cfg)
     _apply_rule("note_orphan",          validate_note_orphan(cfg, cwd),               violations, warnings, cfg)
