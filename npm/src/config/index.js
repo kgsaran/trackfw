@@ -26,6 +26,7 @@ function defaults() {
     lenientUntil: '',
     wipLimit: 1,
     wipBySquad: false,
+    staleWipDays: 7,
     requireReqInCommit: false,
     strictCiPaths: false,
     traceIdField: '',
@@ -192,6 +193,7 @@ function parse(content, cfg) {
       case 'lenient_until':         cfg.lenientUntil = val; break;
       case 'wip_limit':             { const n = parseInt(val, 10); if (n > 0) cfg.wipLimit = n; break; }
       case 'wip_by_squad':          cfg.wipBySquad = val === 'true'; break;
+      case 'stale_wip_days':        { const n = parseInt(val, 10); if (n > 0) cfg.staleWipDays = n; break; }
       case 'require_req_in_commit': cfg.requireReqInCommit = val === 'true'; break;
       case 'strict_ci_paths':       cfg.strictCiPaths = val === 'true'; break;
       case 'trace_id_field':        cfg.traceIdField = val.replace(/^["']|["']$/g, ''); break;

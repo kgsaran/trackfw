@@ -7,6 +7,7 @@ const config = require('../config')
 const { checkTraceIds } = require('./traceid')
 
 const STALE_WIP_DAYS = 7
+let staleWipNowMs = () => Date.now()
 
 // listDir retorna array de nomes de arquivo (não-diretórios) em dir.
 // Retorna [] se o diretório não existir.
@@ -502,11 +503,46 @@ function validateSingleWIP() {
 
 // validateStaleWIP — roadmaps wip com mtime >= 7 dias → warning
 // Suporta modo by_agent via resolveWIPDirs.
+function roadmapLogIdentity(cfg, filePath) {
+  const basename = path.basename(filePath)
+  if (cfg.roadmapNamespacing !== config.NAMESPACING_BY_AGENT) return basename
+  const agent = path.basename(path.dirname(path.dirname(filePath)))
+  return `${agent}/${basename}`
+}
+
+function parseTransitionLogLine(line) {
+  const fields = String(line).trim().split(/\s+/).filter(Boolean)
+  if (fields.length < 5) return null
+  const timestamp = Date.parse(`${fields[0]}T${fields[1]}:00`)
+  if (Number.isNaN(timestamp)) return null
+  const arrow = fields.findIndex((field, index) => index >= 3 && (field === '→' || field === '->'))
+  if (arrow < 0 || arrow + 1 >= fields.length) return null
+  return { timestamp, name: fields[2], toState: fields[arrow + 1] }
+}
+
+function latestWipTransitionTime(cfg, filePath) {
+  let content
+  try {
+    content = fs.readFileSync(path.join(cfg.roadmapDir, '.trackfw-log'), 'utf8')
+  } catch (_) {
+    return null
+  }
+  const identity = roadmapLogIdentity(cfg, filePath)
+  let latest = null
+  for (const line of content.split('\n')) {
+    const parsed = parseTransitionLogLine(line)
+    if (!parsed || parsed.name !== identity || parsed.toState !== 'wip') continue
+    if (latest === null || parsed.timestamp > latest) latest = parsed.timestamp
+  }
+  return latest
+}
+
 function validateStaleWIP() {
   const cfg = config.load()
   const wipDirs = resolveWIPDirs(cfg)
   const warnings = []
-  const now = Date.now()
+  const now = staleWipNowMs()
+  const thresholdDays = cfg.staleWipDays > 0 ? cfg.staleWipDays : STALE_WIP_DAYS
 
   for (const wipDir of wipDirs) {
     let files = []
@@ -521,11 +557,11 @@ function validateStaleWIP() {
     for (const filePath of files) {
       try {
         const stat = fs.statSync(filePath)
-        const gitTime = gitLastModifiedTime(filePath)
-        const ageMs = now - (gitTime !== null ? gitTime : stat.mtimeMs)
+        const logTime = latestWipTransitionTime(cfg, filePath)
+        const refTime = logTime !== null ? logTime : stat.mtimeMs
+        const ageMs = now - refTime
         const days = Math.floor(ageMs / (1000 * 60 * 60 * 24))
-        if (days >= STALE_WIP_DAYS) {
-          const refTime = gitTime !== null ? gitTime : stat.mtimeMs
+        if (days >= thresholdDays) {
           const lastModified = new Date(refTime).toISOString().slice(0, 10)
           const basename = path.basename(filePath)
           warnings.push(
@@ -538,6 +574,10 @@ function validateStaleWIP() {
     }
   }
   return warnings
+}
+
+function setStaleWipNowForTests(fn) {
+  staleWipNowMs = fn || (() => Date.now())
 }
 
 // validateREQsNotBlockedByDraftADRs — REQs Open com ADRs Draft na seção "## Blocked by ADRs" → violation
@@ -1218,6 +1258,7 @@ module.exports = {
   validateWIPLimit,
   validateSingleWIP,
   validateStaleWIP,
+  setStaleWipNowForTests,
   validateREQsNotBlockedByDraftADRs,
   parseBlockedADRs,
   adrIsDraft,

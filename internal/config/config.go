@@ -24,6 +24,7 @@ type ProjectConfig struct {
 	LenientUntil       string   // date string YYYY-MM-DD
 	WipLimit           int      // default: 1
 	WipBySquad         bool
+	StaleWIPDays       int // default: 7
 	RequireReqInCommit bool
 
 	// v2.4 fields
@@ -75,6 +76,7 @@ func defaults() ProjectConfig {
 		RoadmapDir:         "docs/roadmaps",
 		RoadmapNamespacing: "flat",
 		WipLimit:           1,
+		StaleWIPDays:       7,
 		LinkFieldsReq:      []string{"REQ:"},
 		LinkFieldsADR:      []string{"ADR:"},
 		LinkFieldsRoadmap:  []string{"Roadmap:"},
@@ -106,9 +108,9 @@ func parse(content string, cfg *ProjectConfig) {
 	var agents []string
 
 	// v2.4 nested block states
-	inLinkFields        := false
-	inLinkFieldsReq     := false
-	inLinkFieldsADR     := false
+	inLinkFields := false
+	inLinkFieldsReq := false
+	inLinkFieldsADR := false
 	inLinkFieldsRoadmap := false
 	var linkFieldsReq, linkFieldsADR, linkFieldsRoadmap []string
 
@@ -116,7 +118,7 @@ func parse(content string, cfg *ProjectConfig) {
 	var acceptanceMarkers []string
 
 	inRules := false
-	rules   := map[string]string{}
+	rules := map[string]string{}
 
 	for _, rawLine := range lines {
 		trimmed := strings.TrimSpace(rawLine)
@@ -275,6 +277,8 @@ func parse(content string, cfg *ProjectConfig) {
 			cfg.WipLimit = parseInt(val, 1)
 		case "wip_by_squad":
 			cfg.WipBySquad = val == "true"
+		case "stale_wip_days":
+			cfg.StaleWIPDays = parseInt(val, 7)
 		case "require_req_in_commit":
 			cfg.RequireReqInCommit = val == "true"
 		case "link_fields":

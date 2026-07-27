@@ -889,7 +889,7 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
-  testSkip('ML-2A stale_wip usa entrada .trackfw-log backlog → wip como idade', () => {
+  test('ML-2A stale_wip usa entrada .trackfw-log backlog → wip como idade', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-stale-log-'))
     try {
       fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
@@ -907,11 +907,68 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
       const origDir = process.cwd()
       process.chdir(tmp)
       config.reset()
+      validator.setStaleWipNowForTests(() => Date.parse('2026-07-27T12:00:00'))
       try {
         const warnings = validator.validateStaleWIP()
         assert(warnings.some(w => w.includes('ROADMAP-old-wip.md')),
           `esperava stale_wip pela entrada antiga do .trackfw-log; warnings=${JSON.stringify(warnings)}`)
       } finally {
+        validator.setStaleWipNowForTests(null)
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('ML-2A stale_wip respeita latest transition boundary e stale_wip_days', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-stale-boundary-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      const roadmapPath = path.join(tmp, 'docs/roadmaps/wip/ROADMAP-boundary.md')
+      fs.writeFileSync(roadmapPath, '---\nstatus: wip\n---\n# Roadmap\nREQ: docs/req/REQ-001.md\n## Acceptance Criteria\n- [ ] ok\n')
+      fs.writeFileSync(path.join(tmp, 'docs/roadmaps/.trackfw-log'),
+        '2026-07-01 10:00  ROADMAP-boundary.md                               backlog → wip\n' +
+        '2026-07-26 10:01  ROADMAP-boundary.md                               blocked → wip\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\nstale_wip_days: 2\n')
+      fs.utimesSync(roadmapPath, new Date('2026-06-01T10:00:00'), new Date('2026-06-01T10:00:00'))
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        validator.setStaleWipNowForTests(() => Date.parse('2026-07-28T10:01:00'))
+        let warnings = validator.validateStaleWIP()
+        assert(warnings.some(w => w.includes('ROADMAP-boundary.md')),
+          `boundary de 2 dias deveria gerar warning; warnings=${JSON.stringify(warnings)}`)
+        validator.setStaleWipNowForTests(() => Date.parse('2026-07-28T10:00:59'))
+        warnings = validator.validateStaleWIP()
+        assert(!warnings.some(w => w.includes('ROADMAP-boundary.md')),
+          `abaixo do boundary não deveria gerar warning; warnings=${JSON.stringify(warnings)}`)
+      } finally {
+        validator.setStaleWipNowForTests(null)
+        process.chdir(origDir)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  test('ML-2A stale_wip usa mtime quando log está ausente', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-stale-mtime-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs/roadmaps/wip'), { recursive: true })
+      const roadmapPath = path.join(tmp, 'docs/roadmaps/wip/ROADMAP-mtime.md')
+      fs.writeFileSync(roadmapPath, '---\nstatus: wip\n---\n# Roadmap\nREQ: docs/req/REQ-001.md\n## Acceptance Criteria\n- [ ] ok\n')
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\nstale_wip_days: 3\n')
+      fs.utimesSync(roadmapPath, new Date('2026-07-20T09:00:00'), new Date('2026-07-20T09:00:00'))
+      const origDir = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      validator.setStaleWipNowForTests(() => Date.parse('2026-07-24T09:00:00'))
+      try {
+        const warnings = validator.validateStaleWIP()
+        assert(warnings.some(w => w.includes('ROADMAP-mtime.md')),
+          `fallback por mtime deveria gerar warning; warnings=${JSON.stringify(warnings)}`)
+      } finally {
+        validator.setStaleWipNowForTests(null)
         process.chdir(origDir)
         config.reset()
       }

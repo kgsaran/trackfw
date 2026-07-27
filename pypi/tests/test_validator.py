@@ -10,6 +10,7 @@ import unittest
 import tempfile
 import shutil
 import pytest
+from datetime import datetime
 
 # Garante que importamos a versão local do pacote
 import sys
@@ -1264,10 +1265,6 @@ def test_ml2b_defeito2_req_open_com_roadmap_done(tmp_path, monkeypatch):
     ), f"esperava mensagem sobre REQ Open com roadmap done; result={result}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="ML-1A: stale_wip Python ainda usa git/mtime, não a entrada .trackfw-log backlog → wip.",
-)
 def test_ml2a_stale_wip_usa_entrada_log_de_wip(tmp_path, monkeypatch):
     _ml1a_base(tmp_path, monkeypatch)
     roadmap = tmp_path / "docs/roadmaps/wip/ROADMAP-old-wip.md"
@@ -1282,12 +1279,80 @@ def test_ml2a_stale_wip_usa_entrada_log_de_wip(tmp_path, monkeypatch):
     now = time.time()
     os.utime(roadmap, (now, now))
 
-    warnings = v.validate_stale_wip(_config.load(), days=7)
+    warnings = v.validate_stale_wip(
+        _config.load(),
+        days=7,
+        now=datetime(2026, 7, 27, 12, 0).timestamp(),
+    )
     messages = [item["message"] for item in warnings]
 
     assert any(
         "ROADMAP-old-wip.md" in message for message in messages
     ), f"esperava stale_wip pela entrada antiga do .trackfw-log; warnings={warnings}"
+
+
+def test_ml2a_stale_wip_usa_latest_transition_e_limite_configuravel(tmp_path, monkeypatch):
+    _ml1a_base(tmp_path, monkeypatch)
+    (tmp_path / "trackfw.yaml").write_text(
+        "roadmap_dir: docs/roadmaps\nstale_wip_days: 2\n",
+        encoding="utf-8",
+    )
+    _config.reset()
+
+    roadmap = tmp_path / "docs/roadmaps/wip/ROADMAP-boundary.md"
+    roadmap.write_text(
+        "---\nstatus: wip\n---\n# Roadmap\nREQ: docs/req/REQ-001.md\n## Acceptance Criteria\n- [ ] ok\n",
+        encoding="utf-8",
+    )
+    old_mtime = datetime(2026, 6, 1, 8, 0).timestamp()
+    os.utime(roadmap, (old_mtime, old_mtime))
+    (tmp_path / "docs/roadmaps/.trackfw-log").write_text(
+        "2026-07-01 10:00  ROADMAP-boundary.md                               backlog → wip\n"
+        "2026-07-20 10:00  ROADMAP-boundary.md                               wip → blocked\n"
+        "2026-07-26 10:01  ROADMAP-boundary.md                               blocked → wip\n",
+        encoding="utf-8",
+    )
+
+    cfg = _config.load()
+    before_boundary = v.validate_stale_wip(
+        cfg,
+        now=datetime(2026, 7, 28, 10, 0, 59).timestamp(),
+    )
+    at_boundary = v.validate_stale_wip(
+        cfg,
+        now=datetime(2026, 7, 28, 10, 1).timestamp(),
+    )
+
+    assert before_boundary == []
+    assert any(
+        "ROADMAP-boundary.md" in item["message"] for item in at_boundary
+    ), f"esperava warning exatamente no limite configurado; warnings={at_boundary}"
+
+
+def test_ml2a_stale_wip_fallback_mtime_quando_log_ausente(tmp_path, monkeypatch):
+    _ml1a_base(tmp_path, monkeypatch)
+    (tmp_path / "trackfw.yaml").write_text(
+        "roadmap_dir: docs/roadmaps\nstale_wip_days: 3\n",
+        encoding="utf-8",
+    )
+    _config.reset()
+
+    roadmap = tmp_path / "docs/roadmaps/wip/ROADMAP-fallback.md"
+    roadmap.write_text(
+        "---\nstatus: wip\n---\n# Roadmap\nREQ: docs/req/REQ-001.md\n## Acceptance Criteria\n- [ ] ok\n",
+        encoding="utf-8",
+    )
+    old_mtime = datetime(2026, 7, 20, 9, 0).timestamp()
+    os.utime(roadmap, (old_mtime, old_mtime))
+
+    warnings = v.validate_stale_wip(
+        _config.load(),
+        now=datetime(2026, 7, 24, 9, 0).timestamp(),
+    )
+
+    assert any(
+        "ROADMAP-fallback.md" in item["message"] for item in warnings
+    ), f"esperava fallback para mtime quando .trackfw-log está ausente; warnings={warnings}"
 
 
 @pytest.mark.xfail(

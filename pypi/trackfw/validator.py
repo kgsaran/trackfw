@@ -724,14 +724,84 @@ def validate_wip_limit(cfg: dict) -> dict:
     return {"violations": violations, "warnings": warnings}
 
 
-def validate_stale_wip(cfg: dict, days: int = STALE_WIP_DAYS) -> list:
+def _roadmap_log_identity(cfg: dict, file_path: str) -> str:
+    basename = os.path.basename(file_path)
+    if cfg.get("roadmap_namespacing") != _config.NAMESPACING_BY_AGENT:
+        return basename
+
+    state_dir = os.path.dirname(file_path)
+    agent_dir = os.path.dirname(state_dir)
+    agent = os.path.basename(agent_dir)
+    if agent:
+        return f"{agent}/{basename}"
+    return basename
+
+
+def _parse_transition_log_line(line: str):
+    fields = line.split()
+    if len(fields) < 5:
+        return None
+
+    try:
+        timestamp = datetime.strptime(f"{fields[0]} {fields[1]}", "%Y-%m-%d %H:%M").timestamp()
+    except ValueError:
+        return None
+
+    arrow_idx = -1
+    for idx in range(3, len(fields)):
+        if fields[idx] in ("→", "->"):
+            arrow_idx = idx
+            break
+
+    if arrow_idx < 0 or arrow_idx + 1 >= len(fields):
+        return None
+
+    return {
+        "timestamp": timestamp,
+        "name": fields[2],
+        "to_state": fields[arrow_idx + 1],
+    }
+
+
+def _latest_wip_transition_time(cfg: dict, file_path: str):
+    log_path = os.path.join(cfg.get("roadmap_dir", "docs/roadmaps"), ".trackfw-log")
+    expected_name = _roadmap_log_identity(cfg, file_path)
+    latest = None
+
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                parsed = _parse_transition_log_line(line.strip())
+                if not parsed:
+                    continue
+                if parsed["name"] != expected_name or parsed["to_state"] != "wip":
+                    continue
+                if latest is None or parsed["timestamp"] > latest:
+                    latest = parsed["timestamp"]
+    except OSError:
+        return None
+
+    return latest
+
+
+def validate_stale_wip(cfg: dict, days: int = None, now: float = None) -> list:
     """
-    Arquivos em wip/ com mtime >= days dias → warning.
+    Arquivos em wip/ com idade desde a última transição para wip >= days dias → warning.
+    Quando o log não existe ou não possui entrada parseável, usa mtime como fallback.
     Suporta modo by_agent via resolve_wip_dirs.
     """
     wip_dirs = resolve_wip_dirs(cfg)
     warnings = []
-    now = datetime.now().timestamp()
+    threshold_days = days
+    if threshold_days is None:
+        try:
+            threshold_days = int(cfg.get("stale_wip_days", STALE_WIP_DAYS))
+        except (TypeError, ValueError):
+            threshold_days = STALE_WIP_DAYS
+    if threshold_days <= 0:
+        threshold_days = STALE_WIP_DAYS
+
+    now_ts = now if now is not None else datetime.now().timestamp()
 
     for wip_dir in wip_dirs:
         try:
@@ -746,11 +816,11 @@ def validate_stale_wip(cfg: dict, days: int = STALE_WIP_DAYS) -> list:
         for file_path in md_files:
             try:
                 stat = os.stat(file_path)
-                git_time = _git_last_modified_time(file_path)
-                ref_time = git_time if git_time is not None else stat.st_mtime
-                age_seconds = now - ref_time
+                log_time = _latest_wip_transition_time(cfg, file_path)
+                ref_time = log_time if log_time is not None else stat.st_mtime
+                age_seconds = now_ts - ref_time
                 age_days = int(age_seconds / (60 * 60 * 24))
-                if age_days >= days:
+                if age_days >= threshold_days:
                     last_modified = datetime.fromtimestamp(ref_time).strftime("%Y-%m-%d")
                     basename = os.path.basename(file_path)
                     warnings.append({

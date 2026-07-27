@@ -56,6 +56,8 @@ func SaveBaseline(violations, warnings []string) error {
 
 const staleWIPDays = 7
 
+var staleWIPNow = time.Now
+
 // contentHasMarker retorna true se content contém algum dos marcadores com valor não-vazio.
 // P3: verifica tanto "\n" quanto "\r\n" para detectar campos vazios em arquivos CRLF.
 // Um marcador seguido de " \n" ou " \r\n" é tratado como "sem valor" (campo vazio).
@@ -979,6 +981,11 @@ func validateWIPHasAcceptanceCriteria() ([]string, error) {
 func validateStaleWIP() ([]string, error) {
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
+	thresholdDays := cfg.StaleWIPDays
+	if thresholdDays <= 0 {
+		thresholdDays = staleWIPDays
+	}
+	now := staleWIPNow()
 
 	var warnings []string
 	for _, wipDir := range wipDirs {
@@ -991,21 +998,80 @@ func validateStaleWIP() ([]string, error) {
 			if err != nil {
 				continue
 			}
-			modTime := info.ModTime()
-			if gitTime, ok := gitLastModifiedTime(path); ok {
-				modTime = gitTime
+			refTime := info.ModTime()
+			if logTime, ok := latestWIPTransitionTime(cfg, path); ok {
+				refTime = logTime
 			}
-			age := time.Since(modTime)
+			age := now.Sub(refTime)
 			days := int(age.Hours() / 24)
-			if days >= staleWIPDays {
+			if days >= thresholdDays {
 				warnings = append(warnings, fmt.Sprintf(
 					"roadmap/wip/%s has been in WIP for %d days (last modified %s)",
-					filepath.Base(path), days, modTime.Format("2006-01-02"),
+					filepath.Base(path), days, refTime.Format("2006-01-02"),
 				))
 			}
 		}
 	}
 	return warnings, nil
+}
+
+func latestWIPTransitionTime(cfg config.ProjectConfig, roadmapPath string) (time.Time, bool) {
+	data, err := os.ReadFile(filepath.Join(cfg.RoadmapDir, ".trackfw-log"))
+	if err != nil {
+		return time.Time{}, false
+	}
+	identity := roadmapLogIdentity(cfg, roadmapPath)
+	var latest time.Time
+	found := false
+	for _, line := range strings.Split(string(data), "\n") {
+		timestamp, name, toState, ok := parseTransitionLogLine(line)
+		if !ok || name != identity || toState != "wip" {
+			continue
+		}
+		if !found || timestamp.After(latest) {
+			latest = timestamp
+			found = true
+		}
+	}
+	return latest, found
+}
+
+func roadmapLogIdentity(cfg config.ProjectConfig, roadmapPath string) string {
+	basename := filepath.Base(roadmapPath)
+	if cfg.RoadmapNamespacing != config.NamespacingByAgent {
+		return basename
+	}
+	stateDir := filepath.Dir(roadmapPath)
+	agentDir := filepath.Dir(stateDir)
+	agent := filepath.Base(agentDir)
+	if agent == "." || agent == string(filepath.Separator) || agent == "" {
+		return basename
+	}
+	return filepath.ToSlash(filepath.Join(agent, basename))
+}
+
+func parseTransitionLogLine(line string) (time.Time, string, string, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 5 {
+		return time.Time{}, "", "", false
+	}
+	timestamp, err := time.ParseInLocation("2006-01-02 15:04", fields[0]+" "+fields[1], time.Local)
+	if err != nil {
+		return time.Time{}, "", "", false
+	}
+	arrow := -1
+	for i := 3; i < len(fields); i++ {
+		if fields[i] == "→" || fields[i] == "->" {
+			arrow = i
+			break
+		}
+	}
+	if arrow < 0 || arrow+1 >= len(fields) {
+		return time.Time{}, "", "", false
+	}
+	name := fields[2]
+	toState := fields[arrow+1]
+	return timestamp, name, toState, true
 }
 
 // blockedREQs retorna um mapa de REQ-basename → lista de ADR-basenames Draft que a bloqueiam.
