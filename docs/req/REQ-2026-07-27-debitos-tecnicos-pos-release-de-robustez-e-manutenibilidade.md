@@ -3,7 +3,7 @@ status: Open
 date: 2026-07-27
 author: "zeus"
 adr: "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md"
 ---
 
 # REQ: Débitos técnicos pós-release de robustez e manutenibilidade
@@ -68,4 +68,4 @@ ADR: `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md`
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`

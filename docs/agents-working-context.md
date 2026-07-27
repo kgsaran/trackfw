@@ -4579,3 +4579,10 @@ REQ concluída em 2026-07-27. O gate integrado passou com flags Python, parsing 
 flat/by-agent cobertos por paridade e falsificação (12 cenários). `make quality` passou completo;
 o smoke de tarball npm e wheel PyPI passou após instalar `build` em dependência temporária isolada.
 Roadmap movido para `docs/roadmaps/done/` e REQ marcada como Done, liberando a próxima versão.
+
+## Implementação 2026-07-27 — Zeus — débitos técnicos pós-release
+
+Após o merge dos bloqueadores de release, a última REQ pendente foi movida de `backlog/` para
+`analyzing/`, validada sem violações e iniciada em `wip/` na branch `fix/debitos-tecnicos-robustez`.
+ML-1A e ML-1B estão em andamento em paralelo: contrato determinístico de `stale_wip`/erros de I/O
+e prova negativa da lacuna do catálogo de identity parity.
