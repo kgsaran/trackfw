@@ -3,7 +3,7 @@ status: Open
 date: 2026-07-26
 author: "KG"
 adr: "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md"
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md"
 ---
 
 # REQ: robustez dos gates de governanca e paridade
@@ -67,4 +67,4 @@ ADR: docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md
 
 ## Linked Roadmap
 <!-- Roadmap será criado quando esta REQ entrar em execução -->
-Roadmap:
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md
