@@ -1,6 +1,7 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
+const { localDateISO } = require('./date')
 
 /**
  * listREQs — lista arquivos .md em dir, imprimindo filename e status (coluna 60 chars).
@@ -73,7 +74,7 @@ async function newREQ(content) {
   fs.mkdirSync(reqDir, { recursive: true })
 
   const slug = toSlug(content.title)
-  const date = new Date().toISOString().slice(0, 10)
+  const date = localDateISO()
   const filename = `${reqDir}/REQ-${date}-${slug}.md`
 
   const motivationSection = content.motivation || '<!-- Why is this requirement needed? What problem does it solve? -->'
@@ -245,4 +246,4 @@ function detectDomains(intention) {
   )
 }
 
-module.exports = { listREQs, parseREQStatus, newREQ, PROBES_CATALOG, detectDomains }
+module.exports = { listREQs, parseREQStatus, newREQ, PROBES_CATALOG, detectDomains, localDateISO }

@@ -3893,3 +3893,40 @@ Executando ML-2A: convergência dos templates Python para o formato canônico Go
 **Divergências residuais (report-only, fora do escopo):**
 - Python imprime `Roadmap criado:` vs Go/Node `✓ created` (mensagem de saída, não conteúdo de arquivo)
 - Node `req.js` usa `new Date().toISOString().slice(0,10)` (UTC) vs Go/Python local — sem impacto hoje (UTC == local-time), identificado como risco para ML-3A
+
+---
+
+## Sessão 2026-07-27 — ML-2C: Node converge para hora local (paridade de fuso)
+
+**Agente:** Apolo | **Status:** CONCLUÍDO
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**REQ:** `REQ-2026-07-27-convergencia-templates-python`
+
+**Problema corrigido:** `req.js:76`, `adr.js:today()`, `note.js:today()` usavam `new Date().toISOString().slice(0,10)` (UTC). Go e Python já usavam hora local. Em UTC+14 ou UTC-11, isso causava nomes de arquivo e datas diferentes entre os 3 CLIs — gate do ML-3A seria intermitente.
+
+**Arquivos modificados:**
+- `npm/src/generators/date.js` — helper `localDateISO()` criado (usa `getFullYear/getMonth/getDate`, não `toISOString`)
+- `npm/src/generators/req.js` — `const date = localDateISO()` substituindo `toISOString`; exporta `localDateISO`
+- `npm/src/generators/adr.js` — `today()` delega para `localDateISO()`; exporta `today`
+- `npm/src/generators/note.js` — `today()` delega para `localDateISO()`; exporta `today`
+- `npm/src/generators/roadmap.js` — dedup: `const date = localDateISO()` substituindo bloco de 4 linhas em `newRoadmap` e `newRoadmapFromReq` (comportamento já era local, mudança é structural)
+- `npm/tests/generators_tz.test.js` — 4 testes de TZ determinísticos (UTC+14 × UTC-11, span 25h)
+- `internal/generators/tz_test.go` — 3 testes Go com `time.Local = loc14`
+- `pypi/tests/test_generators_tz.py` — 3 testes Python com `timezone()` context manager + `time.tzset()`
+
+**Verificação empírica (UTC 2026-07-27T15:19Z):**
+| Fuso | GO | NODE | PYTHON |
+|---|---|---|---|
+| Pacific/Kiritimati (UTC+14) | REQ-2026-07-28 | 2026-07-28 | REQ-2026-07-28 |
+| Pacific/Midway (UTC-11) | REQ-2026-07-27 | 2026-07-27 | REQ-2026-07-27 |
+
+GO=NODE=PYTHON em cada fuso; UTC+14 ≠ UTC-11 (confirmado).
+
+**Ocorrências `toISOString` deixadas intocadas (report-only, não são artefatos governados):**
+- `npm/src/generators/init.js:73,93,497` — scaffold de CLAUDE.md e lenient dates
+- `npm/src/commands/discover.js:180` — exibição de timestamp de mtime
+- `npm/src/commands/metrics.js:128` — exibição de timestamp de log
+- `npm/src/validator/index.js:527,628,1009` — comparação de datas de validação e baseline
+- `npm/src/serve/api_metrics.js:83` — cálculo de semanas para métricas de display
+
+**`make quality`:** 599 passed · 0 failed · 6 falsification checks passed
