@@ -666,30 +666,27 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
   })
 
   // ---------------------------------------------------------------------------
-  // ML-1A — REQ-2026-07-27-convergencia-templates-python
-  // Testes negativos que provam a cegueira das regras para artefatos Python.
-  // Usam testSkip (xfail strict): se passarem após a Wave 2, incrementam failed.
-  // Reativados no ML-2A da REQ-2026-07-27-convergencia-templates-python.
+  // ML-2A — REQ-2026-07-27-convergencia-templates-python (reativado)
+  // Após convergência dos templates Python, as regras devem detectar os artefatos
+  // no formato canônico Go/Node/Python. Testes convertidos de testSkip para test.
   // ---------------------------------------------------------------------------
 
-  // Defeito 2: adrIsDraft cega para formato Python
-  // ADR Python tem "status: Draft" (frontmatter) + "## Status\nDraft" mas NUNCA "Status: Draft".
-  // adrIsDraft() faz includes('Status: Draft') → false → blocked_by_draft_adr não dispara.
-  // Fixture: REQ canônica (passa no guard de Open) + ADR no formato Python atual.
-  testSkip('ML-1A: adrIsDraft cega — ADR Python "status: Draft" não detectado como Draft (REQ-2026-07-27-convergencia-templates-python)', () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-adr-py-'))
+  // ML-2A: adrIsDraft detecta ADR no formato canônico (após convergência Python)
+  // ADR canônico tem "> Date: … | Status: Draft" — detectado por adrIsDraft().
+  // Fixture: ADR canônico + REQ canônica.
+  test('ML-2A: adrIsDraft detecta ADR Draft no formato canonico (REQ-2026-07-27-convergencia-templates-python)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-adr-can-'))
     try {
       fs.mkdirSync(path.join(tmp, 'docs', 'req'), { recursive: true })
       fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
 
-      // ADR no formato exato que o gerador Python produz hoje:
-      // NÃO contém "Status: Draft" — tem "status: Draft" (frontmatter) e "## Status\nDraft"
-      const adrPythonContent = `---\nname: ADR-001-auth-strategy\ntitle: "auth strategy"\nstatus: Draft\ncreated: 2026-07-27\n---\n\n# ADR-001: auth strategy\n\n## Status\nDraft\n\n## Context\n<!-- context -->\n\n## Decision\n<!-- decision -->\n\n## Consequences\n<!-- consequences -->\n`
-      fs.writeFileSync(path.join(tmp, 'docs', 'adr', 'ADR-001-auth-strategy.md'), adrPythonContent)
+      // ADR no formato canônico (produzido pelo gerador Python após ML-2A):
+      // header "> Date: … | Status: Draft" — detectado por adrIsDraft()
+      const adrCanonico = `---\nstatus: Draft\ndate: 2026-07-27\nauthor: ""\n---\n\n# ADR: auth strategy\n\n> Date: 2026-07-27 | Status: Draft\n\n## Context\n<!-- What is the situation that motivates this decision? -->\n\n## Decision\n<!-- What was decided? -->\n\n## Consequences\n<!-- What are the positive and negative consequences of this decision? -->\n\n## Alternatives Considered\n<!-- What other options were evaluated and why were they rejected? -->\n`
+      fs.writeFileSync(path.join(tmp, 'docs', 'adr', 'ADR-2026-07-27-auth-strategy.md'), adrCanonico)
 
       // REQ no formato canônico Go/Node: tem "> Date: … | Status: Open"
-      // para isolar o defeito em adrIsDraft (não no guard de Open)
-      const reqCanonicalContent = `# REQ: Login\n\n> Date: 2026-07-27 | Status: Open\n\n## Motivation\n\n## Acceptance Criteria\n\n- [ ] criterio\n\n## Linked ADR\nADR:\n\n## Blocked by ADRs\n- ADR-001-auth-strategy.md (Draft)\n\n## Linked Roadmap\nRoadmap:\n`
+      const reqCanonicalContent = `# REQ: Login\n\n> Date: 2026-07-27 | Status: Open\n\n## Motivation\n\n## Acceptance Criteria\n\n- [ ] criterio\n\n## Linked ADR\nADR:\n\n## Blocked by ADRs\n- ADR-2026-07-27-auth-strategy.md (Draft)\n\n## Linked Roadmap\nRoadmap:\n`
       fs.writeFileSync(path.join(tmp, 'docs', 'req', 'REQ-2026-07-27-login.md'), reqCanonicalContent)
       fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), `req_dir: docs/req\nadr_dirs:\n  - docs/adr\n`)
 
@@ -697,16 +694,15 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
       process.chdir(tmp)
       config.reset()
       try {
-        // Pré-condição: ADR existe (isola adrIsDraft, não file-not-found)
-        assert(fs.existsSync(path.join(tmp, 'docs', 'adr', 'ADR-001-auth-strategy.md')),
+        // Pré-condição: ADR existe
+        assert(fs.existsSync(path.join(tmp, 'docs', 'adr', 'ADR-2026-07-27-auth-strategy.md')),
           'pré-condição: ADR não encontrado')
 
         const violations = validator.validateREQsNotBlockedByDraftADRs()
-        // DEVE disparar violation — hoje não dispara (adrIsDraft retorna false para formato Python)
+        // DEVE disparar violation — formato canônico tem "Status: Draft" que adrIsDraft detecta
         assert(violations.length > 0,
-          `DEFEITO P2 confirmado: blocked_by_draft_adr não detectou ADR Draft no formato Python. ` +
-          `adrIsDraft procura 'Status: Draft', ADR Python tem 'status: Draft' no frontmatter e ` +
-          `'## Status\\nDraft' no corpo. violations: ${JSON.stringify(violations)}`)
+          `regressao: blocked_by_draft_adr nao detectou ADR Draft no formato canonico. ` +
+          `adrIsDraft deve encontrar '| Status: Draft' inline. violations: ${JSON.stringify(violations)}`)
       } finally {
         process.chdir(origCwd)
         config.reset()
@@ -714,26 +710,23 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
-  // Defeito 1: Status: Open cego para tabela Python
-  // REQ Python usa "| Status | Open |" em vez de "> Date: … | Status: Open".
-  // validateREQsNotBlockedByDraftADRs() faz includes('Status: Open') → false → REQ ignorada.
-  // Fixture: REQ no formato Python (+ ## Blocked by ADRs adicionado) + ADR canônico Draft.
-  testSkip('ML-1A: Status: Open cego — REQ Python com tabela não detectada como Open (REQ-2026-07-27-convergencia-templates-python)', () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-req-py-'))
+  // ML-2A: validator detecta REQ Open no formato canônico (após convergência Python)
+  // REQ canônica tem "> Date: … | Status: Open" — detectada pelo guard inicial.
+  // Fixture: REQ canônica + ADR canônico Draft.
+  test('ML-2A: validator detecta REQ Open no formato canonico (REQ-2026-07-27-convergencia-templates-python)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-req-can-'))
     try {
       fs.mkdirSync(path.join(tmp, 'docs', 'req'), { recursive: true })
       fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
 
       // ADR no formato canônico Go/Node: tem "> Date: … | Status: Draft"
-      // para isolar o defeito no guard de Open (adrIsDraft funciona para canônico)
       const adrCanonicalContent = `# ADR: Auth\n\n> Date: 2026-07-27 | Status: Draft\n\n## Context\ncontext\n`
       fs.writeFileSync(path.join(tmp, 'docs', 'adr', 'ADR-2026-07-27-auth-draft.md'), adrCanonicalContent)
 
-      // REQ no formato exato que o gerador Python produz hoje: tabela "| Status | Open |"
-      // Nota: gerador Python não emite "## Blocked by ADRs" — adicionado aqui para
-      // que a regra possa sequer tentar avaliar o bloqueio.
-      const reqPythonContent = `---\nname: REQ-2026-07-27-login\ntitle: "login"\nstatus: Open\nlinked_adr: —\ncreated: 2026-07-27\nauthor:\n---\n\n# REQ: login\n\n| Campo | Valor |\n|---|---|\n| Status | Open |\n| Criado | 2026-07-27 |\n\n---\n\n## Motivação\n\n<!-- Descreva o problema ou oportunidade -->\n\n---\n\n## Critérios de Aceite\n\n- [ ] critério 1\n\n---\n\n## Fora de Escopo\n\n<!-- O que esta REQ NÃO cobre -->\n\n## Blocked by ADRs\n- ADR-2026-07-27-auth-draft.md (Draft)\n`
-      fs.writeFileSync(path.join(tmp, 'docs', 'req', 'REQ-2026-07-27-login.md'), reqPythonContent)
+      // REQ no formato canônico (produzida pelo gerador Python após ML-2A):
+      // header "> Date: … | Status: Open" detectado pelo guard inicial.
+      const reqCanonico = `---\nstatus: Open\ndate: 2026-07-27\nauthor: ""\nadr: ""\nroadmap: ""\n---\n\n# REQ: login\n\n> Date: 2026-07-27 | Status: Open\n\n## Motivation\n<!-- Why is this requirement needed? What problem does it solve? -->\n\n## Acceptance Criteria\n- [ ]\n- [ ]\n\n## Linked ADR\n<!-- Reference the ADR that governs this requirement -->\nADR: \n\n## Blocked by ADRs\n- ADR-2026-07-27-auth-draft.md (Draft)\n\n## Linked Roadmap\n<!-- Reference the roadmap that implements this requirement -->\nRoadmap: \n`
+      fs.writeFileSync(path.join(tmp, 'docs', 'req', 'REQ-2026-07-27-login.md'), reqCanonico)
       fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), `req_dir: docs/req\nadr_dirs:\n  - docs/adr\n`)
 
       const origCwd = process.cwd()
@@ -745,11 +738,10 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
           'pré-condição falhou: adrIsDraft deve retornar true para ADR canônico com Status: Draft')
 
         const violations = validator.validateREQsNotBlockedByDraftADRs()
-        // DEVE disparar violation — hoje não dispara (REQ Python ignorada pelo guard de Open)
+        // DEVE disparar violation — formato canônico tem "Status: Open" que o guard detecta
         assert(violations.length > 0,
-          `DEFEITO P2 confirmado: blocked_by_draft_adr não detectou REQ Open no formato Python. ` +
-          `REQ usa tabela '| Status | Open |' mas validator procura 'Status: Open' (inline). ` +
-          `A REQ é silenciosamente ignorada. violations: ${JSON.stringify(violations)}`)
+          `regressao: blocked_by_draft_adr nao detectou REQ Open no formato canonico. ` +
+          `REQ tem '> Date: ... | Status: Open' (inline) — deve ser detectada. violations: ${JSON.stringify(violations)}`)
       } finally {
         process.chdir(origCwd)
         config.reset()

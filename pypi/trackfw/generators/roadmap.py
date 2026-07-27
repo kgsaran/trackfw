@@ -172,31 +172,40 @@ def _append_transition_log(basename: str, from_state: str, to_state: str, cfg: d
 
 
 def _roadmap_template(title: str, slug: str, date: str) -> str:
-    """Retorna conteúdo do roadmap conforme o template do projeto."""
+    """
+    Retorna conteúdo do roadmap no formato canônico Go/Node (inglês).
+    Frontmatter: status: backlog · date · req: "" · squad: "" (minúsculo).
+    Header: > Created: <data> | Status: backlog.
+    Seções e labels de ML em inglês.
+    REQ-2026-07-27-convergencia-templates-python.
+    """
+    req_path = ""
     return f"""---
-name: {slug}
-title: "{title}"
-status: Backlog
-created: {date}
-author:
+status: backlog
+date: {date}
+req: ""
+squad: ""
 ---
 
 # Roadmap: {title}
 
-> Criado em: {date} | Status: ⬜ Backlog
+> Created: {date} | Status: backlog
 
-## Diagnóstico / Contexto
+## Context
+<!-- What problem does this roadmap solve? Link the REQ. -->
+REQ: {req_path}
 
-<!-- Descreva o problema a resolver -->
+## Wave 1 — <name> (parallel MLs)
+> Dependencies: none
 
-## Wave 1 — <Nome>
-
-### ML-1A — <Título>
-**Status:** ⬜ Pendente
-**Arquivos afetados:**
-**Ações:**
-**Critérios de aceite:**
-- [ ]
+### ML-1A — {title}
+**Status:** pending
+**Files affected:**
+**Actions:**
+**Acceptance criteria:**
+- [ ] build passes
+- [ ] tests green
+- [ ] validate passes
 """
 
 

@@ -1,6 +1,7 @@
 """
 generators/req.py — Gerador de REQs para trackfw.
 Espelha npm/src/generators/req.js (funções newREQ, listREQs, parseREQStatus).
+Formato canônico Go/Node, em inglês — REQ-2026-07-27-convergencia-templates-python.
 Stdlib apenas — sem dependências externas.
 """
 
@@ -21,11 +22,16 @@ def slugify(title: str) -> str:
 
 def generate_req(title: str, req_dir: str = None, cwd: str = None) -> str:
     """
-    Cria docs/requisições/<req_dir>/REQ-YYYY-MM-DD-<slug>.md.
+    Cria docs/req/REQ-YYYY-MM-DD-<slug>.md no formato canônico Go/Node.
+
+    Frontmatter: status: Open · date · author: "" · adr: "" · roadmap: ""
+    Header: > Date: <data> | Status: Open
+    Seções: ## Motivation, ## Acceptance Criteria, ## Linked ADR,
+            ## Blocked by ADRs, ## Linked Roadmap
 
     Args:
         title: Título da REQ.
-        req_dir: Diretório destino (default: docs/requisicoes/claude).
+        req_dir: Diretório destino (default: docs/req relativo a cwd).
         cwd: Diretório de trabalho base (default: os.getcwd()).
 
     Returns:
@@ -34,7 +40,7 @@ def generate_req(title: str, req_dir: str = None, cwd: str = None) -> str:
     base = cwd or os.getcwd()
 
     if req_dir is None:
-        req_dir = os.path.join(base, "docs", "requisicoes", "claude")
+        req_dir = os.path.join(base, "docs", "req")
     elif not os.path.isabs(req_dir):
         req_dir = os.path.join(base, req_dir)
 
@@ -45,39 +51,41 @@ def generate_req(title: str, req_dir: str = None, cwd: str = None) -> str:
     filename = f"REQ-{today}-{slug}.md"
     filepath = os.path.join(req_dir, filename)
 
+    motivation_section = "<!-- Why is this requirement needed? What problem does it solve? -->"
+    criteria_section = "- [ ]\n- [ ]"
+    linked_adr_section = ""
+    linked_roadmap_section = ""
+    blocked_section = "<!-- none -->"
+    status_line = f"> Date: {today} | Status: Open"
+
     content = f"""---
-name: REQ-{today}-{slug}
-title: "{title}"
 status: Open
-linked_adr: —
-created: {today}
-author:
+date: {today}
+author: ""
+adr: ""
+roadmap: ""
 ---
 
 # REQ: {title}
 
-| Campo | Valor |
-|---|---|
-| Status | Open |
-| Criado | {today} |
+{status_line}
 
----
+## Motivation
+{motivation_section}
 
-## Motivação
+## Acceptance Criteria
+{criteria_section}
 
-<!-- Descreva o problema ou oportunidade -->
+## Linked ADR
+<!-- Reference the ADR that governs this requirement -->
+ADR: {linked_adr_section}
 
----
+## Blocked by ADRs
+{blocked_section}
 
-## Critérios de Aceite
-
-- [ ] critério 1
-
----
-
-## Fora de Escopo
-
-<!-- O que esta REQ NÃO cobre -->
+## Linked Roadmap
+<!-- Reference the roadmap that implements this requirement -->
+Roadmap: {linked_roadmap_section}
 """
 
     with open(filepath, "w", encoding="utf-8") as f:

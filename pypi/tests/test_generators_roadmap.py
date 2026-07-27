@@ -67,7 +67,7 @@ class TestGenerateFlat(unittest.TestCase):
         # Conteúdo contém frontmatter e seção de wave
         with open(path, encoding="utf-8") as f:
             content = f.read()
-        self.assertIn("status: Backlog", content)
+        self.assertIn("status: backlog", content)
         self.assertIn("# Roadmap: Minha Feature", content)
         self.assertIn("## Wave 1", content)
         self.assertIn("ML-1A", content)

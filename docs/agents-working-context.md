@@ -3804,3 +3804,30 @@ Node:
 
 **Próximo passo:** ML-2A (Wave 2) — convergir os templates Python para o formato canônico Go/Node,
 reativar os 6 testes (remover t.Skip / --runxfail / testSkip e converter para asserções normais).
+
+---
+
+## Sessão 2026-07-27 — ML-2A em andamento
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Status:** IMPLEMENTANDO
+**Branch:** `fix/convergencia-dos-templates-de-artefato-do-cli-python`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md`
+**REQ:** `docs/req/REQ-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md`
+
+### O que está sendo feito
+
+Executando ML-2A: convergência dos templates Python para o formato canônico Go/Node.
+
+**Alterações em andamento:**
+- `pypi/trackfw/generators/req.py` — formato canônico (status:Open, date, author, adr, roadmap; header inline; seções inglês + Blocked by ADRs)
+- `pypi/trackfw/generators/adr.py` — formato canônico (status:Proposed, date, author; header inline; Alternatives Considered; nome por data sem numeração sequencial)
+- `pypi/trackfw/generators/roadmap.py` — `_roadmap_template` canônica (status:backlog minúsculo, date, req, squad; seções inglês)
+- `pypi/trackfw/commands/adr.py` — default status Draft → Proposed
+- `internal/validator/validator_test.go` — remove t.Skip nas linhas 1477/1564, renomeia testes, atualiza fixtures para formato canônico
+- `npm/tests/validator.test.js` — converte testSkip → test, atualiza fixtures e nomes
+- `pypi/tests/test_validator.py` — remove @pytest.mark.xfail, renomeia testes, usa geradores reais para criar fixtures
+- `pypi/tests/test_generators_adr.py` — remove TestNextAdrNumber, atualiza asserções para formato canônico, status padrão Proposed
+- `pypi/tests/test_generators_req.py` — remove linked_adr, atualiza seções para inglês
+- `pypi/tests/test_generators_roadmap.py:70` — status: Backlog → status: backlog
+- `pypi/tests/test_commands_roadmap_discover.py:55` — status: Backlog → status: backlog
