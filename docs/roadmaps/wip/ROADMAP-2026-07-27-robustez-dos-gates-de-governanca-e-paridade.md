@@ -77,7 +77,7 @@ Wave 1 (1A) ─ barrier ─> Wave 2 (2A ‖ 2B) ─ barrier ─> Wave 3 (3A)
 > ⚠️ Nenhum dos dois roda `make quality`; o orquestrador roda na barrier.
 
 ### ML-2A — Auditoria das regras do validator
-**Status:** in progress
+**Status:** done
 **Files affected:** `internal/validator/` e equivalentes; correções onde houver defeito
 
 **Actions:**
@@ -101,7 +101,7 @@ uma** — inclusive as conformes. Auditoria sem inventário não é auditoria.
 - [ ] `go build`, `go test` e `go vet` verdes; testes dos 3 CLIs verdes
 
 ### ML-2B — Auditoria dos scripts de gate
-**Status:** in progress
+**Status:** done
 **Files affected:** `scripts/check-*.sh`, `scripts/smoke-integration-packages.sh`, `Makefile`
 
 **Actions:**
@@ -135,7 +135,7 @@ Registrar no relatório os 7 scripts com o veredito de cada um.
 > Dependências: **barrier** — Wave 2 concluída.
 
 ### ML-3A — Testes de falsificação (P4) e documentação dos princípios
-**Status:** pending
+**Status:** in progress
 **Files affected:** testes nos 3 CLIs, `scripts/`, `docs/`
 
 **Actions:**
@@ -181,6 +181,25 @@ teria feito o gate nunca mais reprovar.
 **Efeito colateral encontrado na prova negativa** → movido para o ML-2B: com `done/` na busca, a
 mensagem passa a listar todos os roadmaps encontrados — 15 numa linha só neste repositório. Orienta
 menos do que antes.
+
+**2026-07-27 — Wave 2 concluída e auditada na barrier.**
+
+A sessão anterior foi interrompida após os commits `3dbeae5` (ML-2A) e `ea79082` (ML-2B), antes de o
+orquestrador rodar a barrier e marcar o status. Barrier executada agora: `make quality` **verde** —
+Go build/vet/test ok, Node.js 228 pass, Python 586 pass, e os 6 gates de paridade
+(`cli-parity`, `integration-cli-parity`, `validate-parity`, `static-assets`, `integration-assets`,
+`identity-parity`) passando.
+
+Inventários exigidos entregues: as 17 regras do validator com veredito individual (ML-2A) e os 7
+scripts de gate com veredito individual (ML-2B), ambos registrados em `docs/agents-working-context.md`.
+Itens fora de escopo foram **registrados com justificativa**, não silenciados — em particular
+`adr_orphan` (walk errors, exige refator de assinatura), o padrão sistêmico `os.ReadFile → continue`
+(~30 sites × 3 CLIs) e `stale_wip_days` ausente de `ProjectConfig`. Esses três são candidatos a REQ
+própria, não dívida esquecida.
+
+O item de usabilidade herdado do ML-1A (mensagem do `branch_has_wip_roadmap` listando 15 roadmaps)
+**não foi corrigido**: o ML-2A tinha instrução explícita de não alterar essa regra e o ML-2B não
+mexe no validator. Fica para o ML-3A, que já toca as regras corrigidas.
 
 ## Acceptance Criteria
 
