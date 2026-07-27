@@ -25,6 +25,63 @@ TARGETS=(
   antigravity=legacy-cli kiro=cli
 )
 
+assert_catalog_targets_covered() {
+  local catalog="$ROOT_DIR/internal/integrations/assets/catalog.json"
+  local expected="$WORK_DIR/identity-required-targets.txt"
+  local actual="$WORK_DIR/identity-configured-targets.txt"
+  local missing="$WORK_DIR/identity-missing-targets.txt"
+  local extra="$WORK_DIR/identity-extra-targets.txt"
+
+  python3 - "$catalog" >"$expected" <<'PY'
+import json
+import sys
+
+catalog_path = sys.argv[1]
+with open(catalog_path, "r", encoding="utf-8") as stream:
+    catalog = json.load(stream)
+
+required = []
+for target in catalog.get("targets", []):
+    supported = [
+        surface
+        for surface in target.get("surfaces", [])
+        if surface.get("capabilities", {})
+        .get("agents", {})
+        .get("support_level") != "unsupported"
+    ]
+    if not supported:
+        continue
+    default_surface = supported[0].get("id")
+    for surface in supported:
+        surface_id = surface.get("id")
+        if not surface_id:
+            continue
+        if surface_id == default_surface:
+            required.append(target["id"])
+        else:
+            required.append(f"{target['id']}={surface_id}")
+
+for spec in sorted(set(required)):
+    print(spec)
+PY
+
+  printf '%s\n' "${TARGETS[@]}" | LC_ALL=C sort -u >"$actual"
+
+  comm -23 "$expected" "$actual" >"$missing"
+  comm -13 "$expected" "$actual" >"$extra"
+
+  if [[ -s "$missing" ]]; then
+    echo "Identity parity: catalog target/surface not covered by TARGETS:" >&2
+    sed 's/^/  - /' "$missing" >&2
+    exit 1
+  fi
+  if [[ -s "$extra" ]]; then
+    echo "Identity parity: TARGETS contains unknown catalog target/surface:" >&2
+    sed 's/^/  - /' "$extra" >&2
+    exit 1
+  fi
+}
+
 # Nem todo ambiente tem as duas ferramentas: macOS traz shasum, Linux traz
 # sha256sum. Escolhido uma vez para manter o formato de saída estável.
 if command -v sha256sum >/dev/null 2>&1; then
@@ -60,6 +117,8 @@ for mirror in "$ROOT_DIR/npm/tests/fixtures/slug_vectors.json" "$ROOT_DIR/pypi/t
     exit 1
   fi
 done
+
+assert_catalog_targets_covered
 
 # ---------------------------------------------------------------------------
 # 2. Helpers

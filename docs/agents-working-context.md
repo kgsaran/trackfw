@@ -4,6 +4,36 @@
 
 ---
 
+## Sessão 2026-07-27 — Apolo (ML-1B débitos técnicos concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
+
+**Tarefa:** Provar a lacuna do gate de identidade quando o catálogo ganha alvo/superfície de agente
+suportado que não está na lista hardcoded de `TARGETS`, sem alterar catálogo real ou código de
+produção.
+
+**Entregue:**
+- `scripts/check-identity-parity.sh` agora valida que `TARGETS` cobre as superfícies de agentes
+  suportadas no catálogo canônico, mantendo a lista hardcoded até o ML-2C.
+- `scripts/check-gates-falsify.sh` adicionou o cenário
+  `identity-parity/catalog-target-missing`, que injeta temporariamente `codex=experimental` numa
+  cópia do catálogo e exige falha por alvo/superfície ausente.
+- A fixture temporária fica isolada em `mktemp` e é removida pelo `trap`; nenhum asset de catálogo
+  real foi alterado.
+
+**Validação:**
+- `scripts/check-identity-parity.sh` →
+  `Identity parity verified across Go/Node/Python for 11 target/surface combinations (with and without identity)`.
+- `scripts/check-gates-falsify.sh` →
+  `Falsification checks passed (all 13 scenarios, 8 gates proved non-vacuous)`.
+- `bin/trackfw validate --json` → `0 violations`, `0 warnings`.
+- `git diff --check` → verde.
+
+**Ressalva:**
+- O worktree já continha alterações de outro ML (`ADR`, `docs/cli-parity.md`, testes de validator e
+  movimentação do roadmap backlog→wip). Este ML preservou esse trabalho e só deve commitar os dois
+  scripts, o roadmap WIP, o contexto e a deleção do roadmap em `backlog`.
+
 ## Sessão 2026-07-27 — Artemis (ML-3A bloqueadores concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`

@@ -42,7 +42,7 @@ manual depois da próxima release.
 
 ### ML-1B — Provar lacuna do catálogo no gate de identidade
 
-**Status:** in progress
+**Status:** done
 
 **Files affected:**
 - `scripts/check-identity-parity.sh`
@@ -54,8 +54,24 @@ manual depois da próxima release.
 - Criar expectativa de falha estrita sem resíduo.
 
 **Acceptance criteria:**
-- [ ] Gate atual demonstrado como incompleto.
-- [ ] Prova negativa identifica o alvo ausente.
+- [x] Gate atual demonstrado como incompleto.
+- [x] Prova negativa identifica o alvo ausente.
+
+**ML-1B result — 2026-07-27 (Apolo):**
+- `scripts/check-identity-parity.sh` passou a validar que `TARGETS` cobre todas as superfícies de
+  agentes suportadas no catálogo canônico. A lista continua hardcoded; este ML apenas impede que um
+  alvo/superfície novo entre no catálogo sem prova no gate.
+- `scripts/check-gates-falsify.sh` ganhou o cenário P4
+  `identity-parity/catalog-target-missing`, que injeta temporariamente a superfície
+  `codex=experimental` numa cópia do catálogo e exige falha por
+  `catalog target/surface not covered by TARGETS`.
+- A fixture temporária fica sob o diretório `mktemp` do harness e é removida pelo `trap`; nenhum
+  catálogo real é alterado.
+- Validation:
+  - `scripts/check-identity-parity.sh` →
+    `Identity parity verified across Go/Node/Python for 11 target/surface combinations (with and without identity)`.
+  - `scripts/check-gates-falsify.sh` →
+    `Falsification checks passed (all 13 scenarios, 8 gates proved non-vacuous)`.
 
 ## Wave 2 — Implementações independentes (3 MLs em paralelo)
 
