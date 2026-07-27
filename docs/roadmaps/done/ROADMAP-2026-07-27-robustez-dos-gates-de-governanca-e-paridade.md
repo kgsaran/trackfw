@@ -212,7 +212,12 @@ Entregue:
   comando ausente em duas superfícies). Cada asserção exige exit != 0 **e** o diagnóstico esperado —
   um gate que falhasse pelo motivo errado não passaria. Integrado ao alvo `parity`, roda em
   `make quality` sem variável auxiliar.
-- Testes negativos das regras corrigidas na Wave 2 nos 3 CLIs.
+  **6 gates, não 7:** a Wave 2 inventariou 7 scripts, mas `smoke-integration-packages.sh` não é gate
+  de paridade — é smoke de empacotamento, roda fora do alvo `quality` por decisão de custo, e foi
+  auditado como conforme no ML-2B. Falsificá-lo exigiria montar pacotes npm/PyPI quebrados a cada
+  `make quality`. Fica de fora conscientemente; os 6 gates que reprovam PR são os que ganharam prova.
+- Testes negativos das regras corrigidas na Wave 2 nos 3 CLIs — inclusive o truncamento, com 4
+  candidatos e asserção de string exata em ordem alfabética, nos três.
 - Mensagem do `branch_has_wip_roadmap` truncada em 3 + `", e mais N"` — mesma formatação nos 3 CLIs.
 - `docs/gate-design-principles.md` — P1–P4 ancorados nos 4 defeitos reais desta REQ, com checklist
   reutilizável e `check-gates-falsify.sh` apontado como o lugar canônico da prova negativa. Linkado
