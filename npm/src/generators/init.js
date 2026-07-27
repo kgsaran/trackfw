@@ -785,9 +785,16 @@ trackfw não está instalado. Instale com:
    Com base no conteúdo da REQ, gere um roadmap seguindo **estritamente** este formato:
 
    \`\`\`markdown
+   ---
+   status: backlog
+   date: <YYYY-MM-DD>
+   req: "docs/req/<arquivo-selecionado>.md"
+   squad: ""
+   ---
+
    # Roadmap: <título derivado da REQ>
 
-   > Criado em: <YYYY-MM-DD> | Status: ⬜ Backlog
+   > Created: <YYYY-MM-DD> | Status: backlog
 
    ## Diagnóstico / Contexto
    <resumo do problema, motivação e escopo extraídos da REQ>
@@ -805,6 +812,13 @@ trackfw não está instalado. Instale com:
    - [ ] build sem erros
    - [ ] testes verdes
    **Comandos de validação:** \`<comando de build e teste do projeto>\`
+
+   ### ML-1B — <título> (se independente de ML-1A)
+   ...
+
+   ## Wave 2 — <nome> (depende de Wave 1)
+   > Dependências: Wave 1 completa
+   ...
    \`\`\`
 
    **Princípios obrigatórios:**
@@ -817,10 +831,12 @@ trackfw não está instalado. Instale com:
 4. **Salvar o arquivo**
    - Calcule o slug: título em lowercase, espaços → hifens, remova caracteres especiais
    - Crie o arquivo em \`docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md\`
+   - Preencha \`req:\` com o caminho relativo completo da REQ selecionada
    - Use a data de hoje
 
 5. **Confirmar**
-   Informe o caminho do arquivo criado e um resumo das Waves e total de MLs gerados.`,
+   Informe o caminho do arquivo criado e um resumo das Waves e total de MLs gerados.
+`,
 
     'implement.md': `Você é o orquestrador de implementação do trackfw. Siga o fluxo abaixo **sem pular etapas**.
 

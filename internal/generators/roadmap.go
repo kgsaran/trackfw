@@ -18,13 +18,17 @@ type RoadmapContent struct {
 	Body    string
 }
 
+var roadmapStateOrder = []string{"analyzing", "wip", "backlog", "blocked", "done", "abandoned"}
+var roadmapValidStateNames = map[string]bool{
+	"backlog": true, "analyzing": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
+}
+
+const roadmapValidStatesMessage = "backlog, analyzing, wip, blocked, done, abandoned"
+
 // stateDir retorna o caminho do diretório para um estado válido no modo flat, ou "", false se inválido.
 func stateDir(state string) (string, bool) {
 	cfg := config.Load()
-	validStateNames := map[string]bool{
-		"backlog": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
-	}
-	if !validStateNames[state] {
+	if !roadmapValidStateNames[state] {
 		return "", false
 	}
 	return cfg.RoadmapDir + "/" + state, true
@@ -34,10 +38,7 @@ func stateDir(state string) (string, bool) {
 // agent="" usa o primeiro agente configurado (ou "default" se lista vazia).
 func agentStateDir(agent, state string) (string, bool) {
 	cfg := config.Load()
-	validStateNames := map[string]bool{
-		"backlog": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
-	}
-	if !validStateNames[state] {
+	if !roadmapValidStateNames[state] {
 		return "", false
 	}
 	if agent == "" {
@@ -326,11 +327,8 @@ func MoveRoadmap(name, state string) error {
 	cfg := config.Load()
 
 	// Validar estado antes de buscar o roadmap (melhor UX)
-	validStateNames := map[string]bool{
-		"backlog": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
-	}
-	if !validStateNames[state] {
-		return fmt.Errorf("invalid state %q — valid states: backlog, wip, blocked, done, abandoned", state)
+	if !roadmapValidStateNames[state] {
+		return fmt.Errorf("invalid state %q — valid states: %s", state, roadmapValidStatesMessage)
 	}
 
 	src, err := findRoadmap(name)
@@ -349,14 +347,14 @@ func MoveRoadmap(name, state string) error {
 		var ok bool
 		targetDir, ok = agentStateDir(agent, state)
 		if !ok {
-			return fmt.Errorf("invalid state %q — valid states: backlog, wip, blocked, done, abandoned", state)
+			return fmt.Errorf("invalid state %q — valid states: %s", state, roadmapValidStatesMessage)
 		}
 	} else {
 		fromState = filepath.Base(filepath.Dir(src))
 		var ok bool
 		targetDir, ok = stateDir(state)
 		if !ok {
-			return fmt.Errorf("invalid state %q — valid states: backlog, wip, blocked, done, abandoned", state)
+			return fmt.Errorf("invalid state %q — valid states: %s", state, roadmapValidStatesMessage)
 		}
 	}
 
@@ -389,7 +387,6 @@ func MoveRoadmap(name, state string) error {
 
 func findRoadmap(name string) (string, error) {
 	cfg := config.Load()
-	states := []string{"backlog", "wip", "blocked", "done", "abandoned"}
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		agents := cfg.Agents
@@ -404,7 +401,7 @@ func findRoadmap(name string) (string, error) {
 			}
 		}
 		for _, agent := range agents {
-			for _, state := range states {
+			for _, state := range roadmapStateOrder {
 				dir := cfg.RoadmapDir + "/" + agent + "/" + state
 				entries, err := os.ReadDir(dir)
 				if err != nil {
@@ -418,7 +415,7 @@ func findRoadmap(name string) (string, error) {
 			}
 		}
 	} else {
-		for _, state := range states {
+		for _, state := range roadmapStateOrder {
 			dir := cfg.RoadmapDir + "/" + state
 			entries, err := os.ReadDir(dir)
 			if err != nil {
@@ -495,7 +492,6 @@ func ShowRoadmap(name string) error {
 // ListRoadmaps imprime todos os roadmaps agrupados por estado (e por agente em modo by_agent).
 func ListRoadmaps() error {
 	cfg := config.Load()
-	stateOrder := []string{"wip", "backlog", "blocked", "done", "abandoned"}
 	found := false
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
@@ -512,7 +508,7 @@ func ListRoadmaps() error {
 			}
 		}
 		for _, agent := range agents {
-			for _, state := range stateOrder {
+			for _, state := range roadmapStateOrder {
 				dir := cfg.RoadmapDir + "/" + agent + "/" + state
 				entries, err := os.ReadDir(dir)
 				if err != nil {
@@ -535,7 +531,7 @@ func ListRoadmaps() error {
 			}
 		}
 	} else {
-		for _, state := range stateOrder {
+		for _, state := range roadmapStateOrder {
 			dir := cfg.RoadmapDir + "/" + state
 			entries, err := os.ReadDir(dir)
 			if err != nil {

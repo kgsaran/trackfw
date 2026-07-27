@@ -10,7 +10,7 @@ const os = require('os')
 const path = require('path')
 
 const config = require('../src/config/index.js')
-const { moveRoadmap, rewriteRoadmapStatus, newRoadmap } = require('../src/generators/roadmap')
+const { listRoadmaps, showRoadmap, moveRoadmap, rewriteRoadmapStatus, newRoadmap } = require('../src/generators/roadmap')
 const { validateFolderStatusCoherence } = require('../src/validator/index.js')
 
 let passed = 0, failed = 0
@@ -45,9 +45,25 @@ function withRoadmapDir(fn) {
  * Cria os subdiretórios de estado padrão dentro de roadmapDir.
  */
 function mkStateDirs(roadmapDir) {
-  for (const state of ['backlog', 'wip', 'blocked', 'done', 'abandoned']) {
+  for (const state of ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']) {
     fs.mkdirSync(path.join(roadmapDir, state), { recursive: true })
   }
+}
+
+function canonicalRoadmap(title, state = 'backlog') {
+  return `---\nstatus: ${state}\ndate: 2026-07-27\nreq: "docs/req/REQ-demo.md"\nsquad: ""\n---\n\n# Roadmap: ${title}\n\n> Created: 2026-07-27 | Status: ${state}\n`
+}
+
+function captureConsoleLog(fn) {
+  const original = console.log
+  const lines = []
+  try {
+    console.log = (...args) => lines.push(args.join(' '))
+    fn()
+  } finally {
+    console.log = original
+  }
+  return lines.join('\n')
 }
 
 // ─── Testes básicos de moveRoadmap ────────────────────────────────────────────
@@ -188,6 +204,107 @@ test('moveRoadmap — arquivo sem frontmatter: move funciona, conteúdo intacto'
 
     const content = fs.readFileSync(path.join(roadmapDir, 'wip', files[0]), 'utf8')
     assert.strictEqual(content, plainContent, 'conteúdo deve ser idêntico ao original')
+  })
+})
+
+test('moveRoadmap — analyzing flat: move, sincroniza frontmatter/header e registra log', () => {
+  withRoadmapDir((tmp, roadmapDir) => {
+    for (const state of ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']) {
+      fs.mkdirSync(path.join(roadmapDir, state), { recursive: true })
+    }
+    fs.writeFileSync(
+      path.join(roadmapDir, 'backlog', 'ROADMAP-analyze-flat.md'),
+      canonicalRoadmap('Analyze Flat'),
+      'utf8'
+    )
+
+    const savedExit = process.exitCode
+    try {
+      process.exitCode = undefined
+      moveRoadmap('analyze-flat', 'analyzing')
+      assert.notStrictEqual(process.exitCode, 1, 'moveRoadmap não deve marcar exitCode=1 para analyzing')
+    } finally {
+      process.exitCode = savedExit
+    }
+
+    const dst = path.join(roadmapDir, 'analyzing', 'ROADMAP-analyze-flat.md')
+    const content = fs.readFileSync(dst, 'utf8')
+    assert.ok(content.includes('status: analyzing'), 'frontmatter deve sincronizar status: analyzing')
+    assert.ok(content.includes('| Status: analyzing'), 'header deve sincronizar | Status: analyzing')
+    const log = fs.readFileSync(path.join(roadmapDir, '.trackfw-log'), 'utf8')
+    assert.ok(log.includes('ROADMAP-analyze-flat.md') && log.includes('backlog → analyzing'), 'log deve registrar backlog → analyzing')
+  })
+})
+
+test('moveRoadmap — analyzing by_agent: preserva agente no path e no log', () => {
+  withRoadmapDir((tmp, roadmapDir) => {
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\nroadmap_namespacing: by_agent\nagents:\n- zeus\n', 'utf8')
+    config.reset()
+    fs.mkdirSync(path.join(roadmapDir, 'zeus', 'backlog'), { recursive: true })
+    fs.mkdirSync(path.join(roadmapDir, 'zeus', 'analyzing'), { recursive: true })
+    fs.writeFileSync(
+      path.join(roadmapDir, 'zeus', 'backlog', 'ROADMAP-analyze-by-agent.md'),
+      canonicalRoadmap('Analyze By Agent'),
+      'utf8'
+    )
+
+    const savedExit = process.exitCode
+    try {
+      process.exitCode = undefined
+      moveRoadmap('analyze-by-agent', 'analyzing')
+      assert.notStrictEqual(process.exitCode, 1, 'moveRoadmap não deve marcar exitCode=1 para analyzing')
+    } finally {
+      process.exitCode = savedExit
+    }
+
+    const dst = path.join(roadmapDir, 'zeus', 'analyzing', 'ROADMAP-analyze-by-agent.md')
+    const content = fs.readFileSync(dst, 'utf8')
+    assert.ok(content.includes('status: analyzing'), 'frontmatter deve sincronizar status: analyzing')
+    assert.ok(content.includes('| Status: analyzing'), 'header deve sincronizar | Status: analyzing')
+    const log = fs.readFileSync(path.join(roadmapDir, '.trackfw-log'), 'utf8')
+    assert.ok(log.includes('zeus/ROADMAP-analyze-by-agent.md') && log.includes('backlog → analyzing'), 'log deve preservar agente e registrar backlog → analyzing')
+  })
+})
+
+test('listRoadmaps/showRoadmap — encontram roadmap em analyzing flat', () => {
+  withRoadmapDir((tmp, roadmapDir) => {
+    mkStateDirs(roadmapDir)
+    fs.writeFileSync(
+      path.join(roadmapDir, 'backlog', 'ROADMAP-analyze-show-flat.md'),
+      canonicalRoadmap('Analyze Show Flat'),
+      'utf8'
+    )
+    moveRoadmap('analyze-show-flat', 'analyzing')
+
+    const listOutput = captureConsoleLog(() => listRoadmaps())
+    assert.ok(listOutput.includes('[analyzing]'), `list deve exibir seção analyzing; obteve:\n${listOutput}`)
+    assert.ok(listOutput.includes('ROADMAP-analyze-show-flat.md'), `list deve exibir arquivo em analyzing; obteve:\n${listOutput}`)
+
+    const showOutput = captureConsoleLog(() => showRoadmap('analyze-show-flat'))
+    assert.ok(showOutput.includes('[ANALYZING]'), `show deve localizar analyzing; obteve:\n${showOutput}`)
+    assert.ok(showOutput.includes('status: analyzing'), `show deve imprimir conteúdo sincronizado; obteve:\n${showOutput}`)
+  })
+})
+
+test('listRoadmaps/showRoadmap — encontram roadmap em analyzing by_agent', () => {
+  withRoadmapDir((tmp, roadmapDir) => {
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\nroadmap_namespacing: by_agent\nagents:\n- zeus\n', 'utf8')
+    config.reset()
+    fs.mkdirSync(path.join(roadmapDir, 'zeus', 'backlog'), { recursive: true })
+    fs.writeFileSync(
+      path.join(roadmapDir, 'zeus', 'backlog', 'ROADMAP-analyze-show-by-agent.md'),
+      canonicalRoadmap('Analyze Show By Agent'),
+      'utf8'
+    )
+    moveRoadmap('analyze-show-by-agent', 'analyzing')
+
+    const listOutput = captureConsoleLog(() => listRoadmaps())
+    assert.ok(listOutput.includes('[zeus/analyzing]'), `list deve exibir seção zeus/analyzing; obteve:\n${listOutput}`)
+    assert.ok(listOutput.includes('ROADMAP-analyze-show-by-agent.md'), `list deve exibir arquivo em analyzing; obteve:\n${listOutput}`)
+
+    const showOutput = captureConsoleLog(() => showRoadmap('analyze-show-by-agent'))
+    assert.ok(showOutput.includes('[ANALYZING]'), `show deve localizar analyzing; obteve:\n${showOutput}`)
+    assert.ok(showOutput.includes('status: analyzing'), `show deve imprimir conteúdo sincronizado; obteve:\n${showOutput}`)
   })
 })
 

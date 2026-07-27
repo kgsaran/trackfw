@@ -292,21 +292,50 @@ assert_fails_with "artifact-parity/req-name-drift" \
   env GO_BIN="$T8_BIN" bash "$T8/scripts/check-artifact-parity.sh"
 
 # ---------------------------------------------------------------------------
-# Cenário 9 — check-referential-integrity.sh: REQ com roadmap quebrado →
+# ---------------------------------------------------------------------------
+# Cenário 9 — check-artifact-parity.sh: drift de conteúdo no slash-command
+#              roadmap do npm → gate detecta divergência byte-a-byte.
+#
+# Objetivo (P4): provar que a comparação de artefatos também cobre o
+# slash-command `/trackfw:roadmap`, não apenas os artefatos criados por
+# comandos como `req new` e `roadmap new`.
+# ---------------------------------------------------------------------------
+T9="$WORK/s9"
+mkdir -p "$T9/scripts"
+setup_npm_tree "$T9"
+ln -s "$ROOT_DIR/pypi" "$T9/pypi"
+cp "$ROOT_DIR/scripts/check-artifact-parity.sh" "$T9/scripts/"
+
+# Corromper: trocar o status canônico do slash-command no gerador de init npm.
+sed "s/status: backlog/status: backlogged/" \
+  "$ROOT_DIR/npm/src/generators/init.js" > "$T9/npm/src/generators/init.js"
+
+# Guard: garantir que a corrupção foi aplicada antes de rodar o gate.
+if cmp -s "$ROOT_DIR/npm/src/generators/init.js" "$T9/npm/src/generators/init.js"; then
+  echo "FAIL [falsify/setup-s9]: sed não alterou init.js — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "artifact-parity/slash-roadmap-content-drift" \
+  "artifact parity drift: slash_roadmap (go vs node)" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T9/scripts/check-artifact-parity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 10 — check-referential-integrity.sh: REQ com roadmap quebrado →
 #              gate detecta referência inexistente no frontmatter.
 #
 # Objetivo (P4): provar que o gate de integridade referencial reprova uma
 # referência canônica quebrada sem deixar resíduo no workspace real.
 # ---------------------------------------------------------------------------
-T9="$WORK/s9"
-mkdir -p "$T9/scripts" "$T9/docs"
-cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T9/scripts/"
-cp -r "$ROOT_DIR/docs/req" "$T9/docs/req"
-cp -r "$ROOT_DIR/docs/roadmaps" "$T9/docs/roadmaps"
-cp -r "$ROOT_DIR/docs/adr" "$T9/docs/adr"
+T10="$WORK/s10"
+mkdir -p "$T10/scripts" "$T10/docs"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T10/scripts/"
+cp -r "$ROOT_DIR/docs/req" "$T10/docs/req"
+cp -r "$ROOT_DIR/docs/roadmaps" "$T10/docs/roadmaps"
+cp -r "$ROOT_DIR/docs/adr" "$T10/docs/adr"
 
 # Corromper: quebrar uma referência existente em cópia temporária.
-cat > "$T9/docs/req/REQ-adr-wizard-e-list-2026-06-11.md" <<'EOF'
+cat > "$T10/docs/req/REQ-adr-wizard-e-list-2026-06-11.md" <<'EOF'
 ---
 status: Done
 adr: ""
@@ -318,6 +347,6 @@ EOF
 
 assert_fails_with "referential-integrity/missing-roadmap" \
   "referential integrity failed" \
-  bash "$T9/scripts/check-referential-integrity.sh"
+  bash "$T10/scripts/check-referential-integrity.sh"
 
-echo "Falsification checks passed (all 9 scenarios, 8 gates proved non-vacuous)"
+echo "Falsification checks passed (all 10 scenarios, 8 gates proved non-vacuous)"

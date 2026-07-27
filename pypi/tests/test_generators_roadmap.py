@@ -202,6 +202,66 @@ class TestMoveBuscaEmTodosAgentes(unittest.TestCase):
         self.assertIn("status: wip", content)
 
 
+class TestMoveRoadmapAnalyzing(unittest.TestCase):
+    """Contrato obrigatório: analyzing deve ser movível nos layouts flat e by_agent."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        cfg_module.reset()
+
+    def tearDown(self):
+        cfg_module.reset()
+
+    def _canonical_roadmap(self, title: str, state: str = "backlog") -> str:
+        return (
+            f"---\nstatus: {state}\ndate: 2026-07-27\n"
+            'req: "docs/req/REQ-demo.md"\nsquad: ""\n---\n\n'
+            f"# Roadmap: {title}\n\n"
+            f"> Created: 2026-07-27 | Status: {state}\n"
+        )
+
+    def test_move_analyzing_flat_syncs_status_and_log(self):
+        cfg = _make_cfg(self.tmpdir)
+        for state in ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]:
+            os.makedirs(os.path.join(cfg["roadmap_dir"], state), exist_ok=True)
+        src = os.path.join(cfg["roadmap_dir"], "backlog", "ROADMAP-analyze-flat.md")
+        with open(src, "w", encoding="utf-8") as f:
+            f.write(self._canonical_roadmap("Analyze Flat"))
+
+        dst = move_roadmap("analyze-flat", "analyzing", cfg)
+
+        self.assertEqual(os.path.dirname(dst), os.path.join(cfg["roadmap_dir"], "analyzing"))
+        with open(dst, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("status: analyzing", content)
+        self.assertIn("| Status: analyzing", content)
+        with open(os.path.join(cfg["roadmap_dir"], ".trackfw-log"), encoding="utf-8") as f:
+            log = f.read()
+        self.assertIn("ROADMAP-analyze-flat.md", log)
+        self.assertIn("backlog → analyzing", log)
+
+    def test_move_analyzing_by_agent_preserves_agent_path_and_log(self):
+        cfg = _make_cfg(self.tmpdir, namespacing="by_agent", agents=["zeus"])
+        backlog_dir = os.path.join(cfg["roadmap_dir"], "zeus", "backlog")
+        os.makedirs(backlog_dir, exist_ok=True)
+        os.makedirs(os.path.join(cfg["roadmap_dir"], "zeus", "analyzing"), exist_ok=True)
+        src = os.path.join(backlog_dir, "ROADMAP-analyze-by-agent.md")
+        with open(src, "w", encoding="utf-8") as f:
+            f.write(self._canonical_roadmap("Analyze By Agent"))
+
+        dst = move_roadmap("analyze-by-agent", "analyzing", cfg)
+
+        self.assertEqual(os.path.dirname(dst), os.path.join(cfg["roadmap_dir"], "zeus", "analyzing"))
+        with open(dst, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("status: analyzing", content)
+        self.assertIn("| Status: analyzing", content)
+        with open(os.path.join(cfg["roadmap_dir"], ".trackfw-log"), encoding="utf-8") as f:
+            log = f.read()
+        self.assertIn("zeus/ROADMAP-analyze-by-agent.md", log)
+        self.assertIn("backlog → analyzing", log)
+
+
 class TestRewriteRoadmapStatus(unittest.TestCase):
     """Testes unitários para _rewrite_roadmap_status."""
 

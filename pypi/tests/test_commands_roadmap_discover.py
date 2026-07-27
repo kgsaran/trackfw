@@ -172,6 +172,34 @@ class TestRoadmapList(unittest.TestCase):
         self.assertEqual(len(entries_wip), 1)
         self.assertEqual(len(entries_backlog), 1)
 
+    def test_list_flat_encontra_analyzing(self):
+        """_list_flat encontra roadmaps em analyzing/."""
+        cfg = _make_cfg(self.tmpdir)
+        src = generate_roadmap("Analyze Item", cfg)
+        move_roadmap(os.path.basename(src), "analyzing", cfg)
+
+        entries = roadmap_cmd._list_flat(cfg["roadmap_dir"], filter_state="analyzing")
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0][0], "analyzing")
+        self.assertIn("analyze-item", entries[0][2])
+
+    def test_list_by_agent_encontra_analyzing(self):
+        """_list_by_agent encontra roadmaps em analyzing/ preservando agente."""
+        cfg = _make_cfg(self.tmpdir, namespacing="by_agent", agents=["zeus"])
+        src = generate_roadmap("Analyze Agent", cfg, agent="zeus")
+        move_roadmap(os.path.basename(src), "analyzing", cfg)
+
+        entries = roadmap_cmd._list_by_agent(
+            cfg["roadmap_dir"],
+            filter_state="analyzing",
+            agents=["zeus"],
+        )
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0][0], "analyzing")
+        self.assertEqual(entries[0][1], "zeus")
+
 
 # ---------------------------------------------------------------------------
 # tests roadmap show
@@ -222,6 +250,35 @@ class TestRoadmapShow(unittest.TestCase):
             "flat",
         )
         self.assertIsNone(found)
+
+    def test_find_file_flat_em_analyzing(self):
+        """_find_file encontra roadmap em analyzing/ no modo flat."""
+        cfg = _make_cfg(self.tmpdir)
+        path = generate_roadmap("Show Analyze", cfg)
+        moved = move_roadmap(os.path.basename(path), "analyzing", cfg)
+
+        found = roadmap_cmd._find_file(
+            "show-analyze",
+            cfg["roadmap_dir"],
+            "flat",
+        )
+
+        self.assertEqual(found, moved)
+
+    def test_find_file_by_agent_em_analyzing(self):
+        """_find_file encontra roadmap em analyzing/ no modo by_agent."""
+        cfg = _make_cfg(self.tmpdir, namespacing="by_agent", agents=["zeus"])
+        path = generate_roadmap("Show Analyze Agent", cfg, agent="zeus")
+        moved = move_roadmap(os.path.basename(path), "analyzing", cfg)
+
+        found = roadmap_cmd._find_file(
+            "show-analyze-agent",
+            cfg["roadmap_dir"],
+            "by_agent",
+            agents=["zeus"],
+        )
+
+        self.assertEqual(found, moved)
 
 
 # ---------------------------------------------------------------------------

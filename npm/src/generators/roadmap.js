@@ -4,13 +4,14 @@ const path = require('path')
 const config = require('../config')
 const { localDateISO } = require('./date')
 
-const STATE_ORDER = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
+const VALID_STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
+const STATE_ORDER = ['analyzing', 'wip', 'backlog', 'blocked', 'done', 'abandoned']
+const VALID_STATES_MESSAGE = VALID_STATES.join(', ')
 
 // stateDir retorna o caminho do diretório para um estado válido no modo flat, ou null se inválido.
 function stateDir(state) {
   const cfg = config.load()
-  const valid = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
-  if (!valid.includes(state)) return null
+  if (!VALID_STATES.includes(state)) return null
   return cfg.roadmapDir + '/' + state
 }
 
@@ -18,8 +19,7 @@ function stateDir(state) {
 // agent=null usa o primeiro agente configurado (ou "default" se lista vazia).
 function agentStateDir(agent, state) {
   const cfg = config.load()
-  const valid = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
-  if (!valid.includes(state)) return null
+  if (!VALID_STATES.includes(state)) return null
   if (!agent) {
     agent = cfg.agents && cfg.agents.length > 0 ? cfg.agents[0] : 'default'
   }
@@ -191,9 +191,8 @@ function rewriteRoadmapStatus(source, state) {
  */
 function moveRoadmap(name, state) {
   const cfg = config.load()
-  const valid = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
-  if (!valid.includes(state)) {
-    console.error(`invalid state "${state}" — valid states: backlog, wip, blocked, done, abandoned`)
+  if (!VALID_STATES.includes(state)) {
+    console.error(`invalid state "${state}" — valid states: ${VALID_STATES_MESSAGE}`)
     process.exitCode = 1
     return
   }
@@ -222,7 +221,7 @@ function moveRoadmap(name, state) {
     fromState = path.basename(path.dirname(src))
     targetDir = agentStateDir(agent, state)
     if (!targetDir) {
-      console.error(`invalid state "${state}"`)
+      console.error(`invalid state "${state}" — valid states: ${VALID_STATES_MESSAGE}`)
       process.exitCode = 1
       return
     }
@@ -231,7 +230,7 @@ function moveRoadmap(name, state) {
     fromState = path.basename(path.dirname(src))
     targetDir = stateDir(state)
     if (!targetDir) {
-      console.error(`invalid state "${state}"`)
+      console.error(`invalid state "${state}" — valid states: ${VALID_STATES_MESSAGE}`)
       process.exitCode = 1
       return
     }
@@ -529,5 +528,7 @@ module.exports = {
   newRoadmapFromReq,
   stateDir,
   agentStateDir,
+  VALID_STATES,
+  STATE_ORDER,
   toSlug,
 }

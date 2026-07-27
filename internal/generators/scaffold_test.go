@@ -51,6 +51,15 @@ var expectedCommands = []string{
 	"validate.md", "status.md", "move.md",
 }
 
+func expectKnownFailure(t *testing.T, defect string, check func() error) {
+	t.Helper()
+	if err := check(); err != nil {
+		t.Logf("xfail esperado (%s): %v", defect, err)
+		return
+	}
+	t.Fatalf("XPASS inesperado (%s): remova o xfail e reative o teste como obrigatório", defect)
+}
+
 func TestGenerateClaudeCommands_CreatesAllFiles(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
@@ -73,6 +82,55 @@ func TestGenerateClaudeCommands_CreatesAllFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestSlashRoadmapCommandRequiresCanonicalFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	if err := generateClaudeCommands(); err != nil {
+		t.Fatalf("generateClaudeCommands() erro: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(".claude", "commands", "trackfw", "roadmap.md"))
+	if err != nil {
+		t.Fatalf("roadmap.md não encontrado: %v", err)
+	}
+	body := string(content)
+	required := []string{
+		"```markdown\n   ---",
+		"status: backlog",
+		"date: <YYYY-MM-DD>",
+		`req: "docs/req/<arquivo-selecionado>.md"`,
+		`squad: ""`,
+		"---\n\n   # Roadmap:",
+		"> Created: <YYYY-MM-DD> | Status: backlog",
+		"docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md",
+		"Preencha `req:` com o caminho relativo completo da REQ selecionada",
+		"### ML-1B — <título> (se independente de ML-1A)",
+		"## Wave 2 — <nome> (depende de Wave 1)",
+		"> Dependências: Wave 1 completa",
+	}
+	for _, want := range required {
+		if !strings.Contains(body, want) {
+			t.Fatalf("roadmap.md não contém trecho canônico esperado: %s", want)
+		}
+	}
+
+	versioned, err := os.ReadFile(filepath.Join(orig, "..", "..", ".claude", "commands", "trackfw", "roadmap.md"))
+	if err != nil {
+		t.Fatalf("roadmap.md versionado não encontrado: %v", err)
+	}
+	if body != string(versioned) {
+		t.Fatal("roadmap.md gerado diverge do arquivo versionado em .claude/commands/trackfw/roadmap.md")
+	}
+}
+
+type testExpectationError struct {
+	message string
+}
+
+func (e *testExpectationError) Error() string { return e.message }
 
 // TestGenerateClaudeCommands_Idempotente — segundo init não sobrescreve arquivos customizados
 func TestGenerateClaudeCommands_Idempotente(t *testing.T) {
@@ -369,4 +427,3 @@ func TestAttentionScripts_FallbackWithoutJQ(t *testing.T) {
 		t.Errorf("Message esperada 'Testing fallback without jq', obteve %q", payload.Message)
 	}
 }
-

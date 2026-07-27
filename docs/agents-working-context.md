@@ -4,6 +4,137 @@
 
 ---
 
+## Sessão 2026-07-27 — Artemis (ML-3A concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
+
+**Tarefa:** Fechar o gate cross-CLI e a prova de ciclo `backlog → analyzing` nos três runtimes,
+documentar o frontmatter/estado canônico em PT-BR e inglês e auditar a paridade i18n do ML-2B.
+
+**Entregue:**
+- `scripts/check-artifact-parity.sh` compara também o slash-command `/trackfw:roadmap` byte a byte
+  e executa ciclo E2E em layouts flat e `by_agent`, conferindo pasta, frontmatter, header, log e
+  ausência de `folder_status`.
+- `scripts/check-gates-falsify.sh` inclui prova P4 de drift do slash-command (cenário 9), mantendo
+  a prova de integridade referencial como cenário 10.
+- Documentação atualizada em `docs/cli-parity.md`, `site/guide/commands.md` e
+  `site/en/guide/commands.md`; estados válidos incluem `analyzing` e frontmatter canônico é exigido.
+
+**Validação:**
+- `scripts/check-artifact-parity.sh` → `Artifact parity checks passed (6 artifact types × 3 runtimes; analyzing cycle flat/by_agent)`.
+- `scripts/check-gates-falsify.sh` → todos os cenários P4 verdes.
+- `make quality` → verde.
+- `go test ./...`, `npm test`, `pytest`, `bin/trackfw validate --json` e `git diff --check` → verdes.
+
+---
+
+## Sessão 2026-07-27 — Apolo (ML-2B concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
+
+**Tarefa:** Implementar exclusivamente o estado `analyzing` em `roadmap move/list/show` nos três CLIs,
+preservando paridade Go/Node/Python, layout flat e `by_agent`, frontmatter/header sincronizados e
+`.trackfw-log` com agente.
+
+**Entregue:**
+- Go: `stateDir`, `agentStateDir`, `MoveRoadmap`, `findRoadmap` e `ListRoadmaps` agora usam estado
+  `analyzing`; help de `roadmap move` lista o estado.
+- Node.js: `VALID_STATES`/`STATE_ORDER` agora incluem `analyzing`; mensagens de erro e i18n de
+  `roadmap move` listam o estado.
+- Python: `VALID_STATES`/`STATE_ORDER` agora incluem `analyzing`; argparse aceita o estado por
+  `choices=VALID_STATES`; `move_roadmap` preserva `zeus/<arquivo>.md` no log em `by_agent`.
+- Testes xfail de `analyzing` do ML-1A foram convertidos em testes obrigatórios nos três runtimes.
+- Cobertura adicionada para `list`/`show` encontrarem roadmaps em `analyzing/` em layout flat e
+  `by_agent`.
+- O slash-command `/trackfw:roadmap` não foi alterado neste ML.
+
+**Validação:**
+- `go test ./internal/generators ./internal/commands -run Analyzing -v` → verde.
+- `(cd npm && npm test -- --test-name-pattern=roadmap_move)` → verde, `264 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests/test_generators_roadmap.py pypi/tests/test_commands_roadmap_discover.py -q`
+  → `52 passed`.
+- `go build ./...` → verde; aviso não bloqueante de cache Go fora do sandbox.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → verde, `264 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests -q` → `619 passed`.
+- `git diff --check` → verde.
+- `bin/trackfw validate --json` → `0 violations`, `0 warnings`.
+
+**Ressalva:**
+- `make quality` não foi executado neste ML por orientação do roadmap de deixar o gate composto para
+  auditoria central; os builds/testes amplos dos três runtimes foram executados.
+
+---
+
+## Sessão 2026-07-27 — Apolo (ML-2A concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
+
+**Tarefa:** Corrigir somente o slash-command `/trackfw:roadmap` e seus geradores/templates nos três CLIs,
+reativando os testes de frontmatter canônico sem implementar `analyzing`.
+
+**Entregue:**
+- Go, Node.js e Python agora geram `.claude/commands/trackfw/roadmap.md` com frontmatter canônico:
+  `status: backlog`, `date: <YYYY-MM-DD>`, `req: "docs/req/<arquivo-selecionado>.md"` e `squad: ""`.
+- Header mantido no contrato canônico `> Created: <YYYY-MM-DD> | Status: backlog`, com waves e
+  microlotes preservados.
+- O arquivo versionado `.claude/commands/trackfw/roadmap.md` foi alinhado ao conteúdo gerado.
+- Testes xfail do slash-command foram convertidos para testes obrigatórios nos três runtimes e passam
+  comparando byte a byte o comando gerado com o arquivo versionado.
+- Correção pós-auditoria: restaurado o bloco estrutural `ML-1B` e `Wave 2` no template materializado
+  e nos geradores Go/Node/Python; os testes focados agora afirmam explicitamente esses trechos.
+
+**Decisão de interpolação do `req:`:**
+- O slash-command é uma instrução de geração, então mantém o placeholder
+  `docs/req/<arquivo-selecionado>.md` no template e instrui preencher esse campo com o caminho relativo
+  completo da REQ selecionada. Isso evita basename/link Markdown e preserva o caminho real no artefato
+  materializado pelo agente.
+
+**Validação:**
+- `go test ./internal/generators -run SlashRoadmap -v` → verde.
+- `npm test -- --test-name-pattern=SlashRoadmap` → verde, `264 pass`, `0 fail`.
+- `python3 -m pytest pypi/tests/test_generators_init.py -q` → `39 passed`.
+- `go build ./...` → verde; aviso não bloqueante de cache Go fora do sandbox.
+- `go test ./...` → verde.
+- `(cd npm && npm test)` → verde, `264 pass`, `0 fail`.
+- `bin/trackfw validate --json` → `0 violations`, `0 warnings`.
+- `make quality` → verde; Python completo `613 passed, 2 xfailed`; falsificação `all 9 scenarios, 8 gates proved non-vacuous`.
+
+**Ressalva:**
+- Nenhum runtime de `roadmap move` foi alterado neste ML; os xfails de `analyzing` permanecem para o ML-2B.
+
+---
+
+## Sessão 2026-07-27 — Artemis (ML-1A concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`
+
+**Tarefa:** Adicionar testes negativos/caracterização para o contrato canônico de `/trackfw:roadmap`
+e para `roadmap move <name> analyzing`, sem corrigir código de produção.
+
+**Entregue:**
+- Go: xfail estrito em `internal/generators/scaffold_test.go` para exigir frontmatter canônico no
+  slash-command e xfails em `internal/generators/roadmap_test.go` para `analyzing` flat/by_agent.
+- Node.js: xfail estrito novo em `npm/tests/init.test.js` para slash-command e xfails em
+  `npm/tests/roadmap_move.test.js` para `analyzing` flat/by_agent.
+- Python: `pytest.mark.xfail(strict=True)` em `pypi/tests/test_generators_init.py` e
+  `pypi/tests/test_generators_roadmap.py` cobrindo os mesmos defeitos.
+- Evidências negativas capturadas: slash-command não contém o início canônico ` ```markdown` seguido
+  de `---`; Go/Node rejeitam `analyzing` com `invalid state "analyzing"`; Python reporta
+  três xfails strict nos cenários equivalentes.
+
+**Validação:**
+- `go test ./internal/generators -run 'SlashRoadmap|Analyzing' -v` → verde, 3 xfails esperados via helper.
+- `(cd npm && npm test)` → `264 pass`, `0 fail`, com xfails esperados logados.
+- `python3 -m pytest pypi/tests/test_generators_init.py pypi/tests/test_generators_roadmap.py -q -rxX` → `58 passed, 3 xfailed`.
+- `make quality` → verde; Python completo `612 passed, 3 xfailed`; falsificação `all 9 scenarios, 8 gates proved non-vacuous`.
+
+**Ressalva:**
+- O xfail Node de slash-command foi criado no arquivo previsto pelo roadmap (`npm/tests/init.test.js`),
+  que não existia antes; `npm/tests/generators.test.js` foi mantido sem mudança funcional final.
+
+---
+
 ## Sessão 2026-07-27 — Apolo (ML-3A concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`
@@ -4316,3 +4447,50 @@ REQ ainda `Open`, `REQ-2026-06-13-validator-improvements.md`, era um artefato le
 já estava concluído. A REQ foi marcada `Done`, seus campos de referência foram normalizados e o
 roadmap correspondente passou a apontar para `docs/req/`. Mudança exclusivamente documental,
 dispensada de nova REQ/roadmap pela exceção objetiva do AGENTS.md.
+
+## Planejamento 2026-07-27 — Zeus — contrato canônico e analyzing
+
+Criadas a `REQ-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md` e a
+`ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md`, consolidando dois débitos:
+o slash-command `/trackfw:roadmap` gera artefato sem frontmatter, e o estado `analyzing` é reconhecido
+pelo scaffold/validator mas rejeitado por `roadmap move`. Roadmap mantido em `backlog/`; nenhuma
+implementação iniciada. `trackfw validate` retornou 0 violations e 0 warnings.
+
+## Formalização de follow-ups 2026-07-27 — Zeus
+
+Os achados remanescentes deixaram de ser follow-ups soltos de sessões anteriores e foram separados
+por impacto:
+
+- **Bloqueantes de release:** `REQ-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
+  + roadmap homônimo em `backlog/` — flags Python, strip de aspas, log `by_agent` e contrato de schemas.
+- **Não bloqueantes:** `REQ-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
+  + roadmap homônimo em `backlog/` — `stale_wip`, política de I/O e catálogo do gate de identidade.
+
+A memória Claude específica do workspace contém somente a regra permanente de paridade dos três
+CLIs e não armazenava esses follow-ups; nada foi removido dela. A fonte de verdade para execução
+passa a ser exclusivamente as REQs e roadmaps acima.
+
+## Implementação 2026-07-27 — Zeus — contrato canônico e analyzing
+
+Implementação autorizada da REQ de contrato canônico do roadmap e estado `analyzing`. Como
+`roadmap move ... analyzing` é um dos defeitos desta própria demanda, a etapa intermediária do skill
+não pôde ser executada pelo comando oficial; o roadmap foi movido de `backlog/` diretamente para
+`wip/` ao iniciar a codificação. ML-1A marcado em andamento para produzir as provas negativas antes
+de qualquer correção de produção.
+
+Após auditoria do ML-1A, as falhas atuais ficaram caracterizadas nos três runtimes: o slash-command
+não instrui frontmatter canônico e `roadmap move ... analyzing` é rejeitado. ML-2A liberado para
+corrigir exclusivamente o contrato do slash-command antes da implementação do novo estado.
+
+ML-2A aprovado após restaurar e proteger por testes o esqueleto de múltiplos microlotes e waves.
+ML-2B liberado para implementar `analyzing` nos comandos de movimentação dos três CLIs, incluindo
+layouts flat/by-agent, sincronização de status, log e promoção dos testes de caracterização.
+
+ML-2B aprovado com paridade funcional e testes obrigatórios nos três CLIs. ML-3A liberado para
+auditoria transversal: contratos de paridade, documentação dos estados e cenário E2E
+`backlog → analyzing → wip`, seguido pelo gate composto `make quality`.
+
+REQ concluída em 2026-07-27. O ciclo canônico foi implementado nos três CLIs: slash-command com
+frontmatter (`status`, `date`, `req`, `squad`), `roadmap move ... analyzing` em layouts flat e
+by-agent, sincronização de pasta/frontmatter/header/log e gates E2E/falsificação. `make quality`
+passou integralmente; roadmap movido para `docs/roadmaps/done/` e REQ marcada como Done.
