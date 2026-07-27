@@ -3418,3 +3418,29 @@ Achados registrados:
 - Divergência documentada: Go usa `docs/roadmaps/wip/` (default `docs/roadmaps`) como roadmap dir;
   npm e pypi usam `docs/roadmaps/claude/wip/` (default `docs/roadmaps/claude`). Não corrigida nesta
   sessão — é divergência pré-existente e ortogonal ao ML-4A
+
+---
+
+## Sessão 2026-07-27 — Apolo — Correções pós-auditoria ML-4A
+
+**Agente:** Apolo (Backend Senior Specialist)
+**Branch:** `feat/comando-trackfw-ship-agnostico-de-forge`
+**Status:** CONCLUÍDO
+
+### Correções realizadas após revisão do advisor
+
+1. **cli-parity.md — labels de source incorretos corrigidos:**
+   - `source: url` → `source: remote` (valor real retornado pelo resolver em Go e npm)
+   - `source: manual` → `source: none` (valor real para o caso "nenhuma forge detectada")
+   - CI detection: removidos `azure-pipelines.yml` e `bitbucket-pipelines.yml` (o código não detecta esses arquivos — apenas `.gitlab-ci.yml` e `.github/workflows/`)
+
+2. **cli-parity.md — tabela de paridade:** row do ship atualizada para "open PR/MR" (step 7)
+
+3. **cli-parity.md — divergência roadmap_dir documentada:** seção explícita registrando que Go usa `docs/roadmaps` e npm/pypi usam `docs/roadmaps/claude` como padrão; divergência intencional preservada
+
+4. **site/guide/commands.md + site/en/guide/commands.md:** seção `trackfw ship` adicionada (PT-BR e EN)
+
+5. **npm/tests/ship.test.js — integration test --no-pr command-layer:** novo teste que detecta regressão onde `options.noPr || false` silenciava o flag; usa `--dry-run --no-pr` juntos (noPR é checado antes do dry-run no passo 7); 49 testes (era 48)
+
+**Commit:** b0433a8
+**Gates:** make quality ✅ | npm test 49 pass ✅ | trackfw validate ✅
