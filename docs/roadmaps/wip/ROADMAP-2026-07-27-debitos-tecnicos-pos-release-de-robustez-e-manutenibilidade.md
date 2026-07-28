@@ -101,7 +101,7 @@ python3 -m pytest pypi/tests/test_validator.py -q -rxX
 
 ### ML-2A — `stale_wip` configurável e determinístico
 
-**Status:** pending
+**Status:** done
 
 **Files affected:**
 - `internal/config/config.go`
@@ -118,12 +118,23 @@ python3 -m pytest pypi/tests/test_validator.py -q -rxX
 - Injetar relógio/fonte temporal em testes para remover dependência do horário real.
 
 **Acceptance criteria:**
-- [ ] Paridade dos três CLIs.
-- [ ] Testes determinísticos para limite, boundary e fallback.
+- [x] Paridade dos três CLIs.
+- [x] Testes determinísticos para limite, boundary e fallback.
+
+**ML-2A result — 2026-07-27 (Apolo):**
+- `stale_wip_days` foi adicionado nos três runtimes com default retrocompatível de 7 dias.
+- A idade de `stale_wip` passou a usar a última entrada do roadmap em `wip/` no
+  `.trackfw-log`, com fallback por `mtime` quando o log está ausente ou sem entrada parseável.
+- Testes determinísticos cobrem entrada antiga no log, última transição para `wip`, boundary
+  configurável e fallback por `mtime`.
+- Validation:
+  - `go test ./internal/validator -run 'TestStaleWIP'` → verde.
+  - `(cd npm && npm test -- --test-name-pattern='stale_wip')` → verde.
+  - `python3 -m pytest pypi/tests/test_validator.py -q -k 'stale_wip'` → verde.
 
 ### ML-2B — Política explícita de erros de I/O
 
-**Status:** pending
+**Status:** done
 
 **Files affected:**
 - validators Go/Node/Python
@@ -136,13 +147,25 @@ python3 -m pytest pypi/tests/test_validator.py -q -rxX
   `ref_targets_exist` e demais sites inventariados no ML-1A.
 
 **Acceptance criteria:**
-- [ ] Nenhuma falha de permissão vira sucesso silencioso.
-- [ ] Diagnóstico contém regra e arquivo/diretório.
-- [ ] ENOENT opcional mantém comportamento documentado.
+- [x] Nenhuma falha de permissão vira sucesso silencioso.
+- [x] Diagnóstico contém regra e arquivo/diretório.
+- [x] ENOENT opcional mantém comportamento documentado.
+
+**ML-2B result — 2026-07-27 (Apolo):**
+- Helpers de inspeção em Go/Node/Python passaram a distinguir diretório opcional ausente de falha
+  real de `read`, `stat`, walk/list e log.
+- Regras cobertas inicialmente: `wip_has_req`, `wip_acceptance`, `blocked_has_req`,
+  `adr_orphan`, `blocked_by_draft_adr`, `ref_targets_exist` e `stale_wip`.
+- O xfail/skip de `ENOTDIR` em `wip/` foi reativado como teste obrigatório nos três runtimes.
+- Validation:
+  - `go test ./internal/validator -run 'TestStaleWIP|ValidateRefTargets|Blocked|ADR|WIPHasREQ|Acceptance'` → verde.
+  - `(cd npm && npm test -- --test-name-pattern='stale_wip|blocked|ref_targets|adr_orphan|walk|validator')` → `265 pass`.
+  - `python3 -m pytest pypi/tests/test_validator.py -q -k 'stale_wip or blocked or ref_targets or adr_orphan or walk'` → `13 passed`.
+  - `go build ./...` e `git diff --check` → verdes.
 
 ### ML-2C — Gate de identidade derivado do catálogo
 
-**Status:** pending
+**Status:** done
 
 **Files affected:**
 - `scripts/check-identity-parity.sh`
@@ -155,9 +178,23 @@ python3 -m pytest pypi/tests/test_validator.py -q -rxX
 - Reativar a prova negativa do ML-1B.
 
 **Acceptance criteria:**
-- [ ] Todo alvo/superfície aplicável é exercitado.
-- [ ] Alvo novo entra no gate sem edição manual da lista.
-- [ ] Gate continua isolado do HOME real.
+- [x] Todo alvo/superfície aplicável é exercitado.
+- [x] Alvo novo entra no gate sem edição manual da lista.
+- [x] Gate continua isolado do HOME real.
+
+**ML-2C result — 2026-07-27 (Apolo):**
+- `scripts/check-identity-parity.sh` deriva a matriz de targets/surfaces do catálogo canônico de
+  integrações e valida previamente que cada target/surface é aceito pelo CLI Go.
+- Superfícies default são exercitadas como `target`; superfícies adicionais são exercitadas como
+  `target=surface`, preservando a semântica pública de `--surface`.
+- `scripts/check-gates-falsify.sh` mantém o cenário
+  `identity-parity/catalog-target-missing`, provando que uma nova surface agent-capable sem suporte
+  no CLI quebra o gate.
+- Validation:
+  - `scripts/check-identity-parity.sh` →
+    `Identity parity verified across Go/Node/Python for 11 target/surface combinations (with and without identity)`.
+  - `scripts/check-gates-falsify.sh` →
+    `Falsification checks passed (all 13 scenarios, 8 gates proved non-vacuous)`.
 
 ## Wave 3 — Consolidação e compatibilidade (1 ML)
 
@@ -165,7 +202,7 @@ python3 -m pytest pypi/tests/test_validator.py -q -rxX
 
 ### ML-3A — Paridade, documentação e regressão
 
-**Status:** pending
+**Status:** done
 
 **Files affected:**
 - `docs/cli-parity.md`
@@ -180,14 +217,29 @@ python3 -m pytest pypi/tests/test_validator.py -q -rxX
 - Confirmar que projetos sem novas chaves preservam o comportamento anterior.
 
 **Acceptance criteria:**
-- [ ] Paridade dos três runtimes.
-- [ ] Compatibilidade retroativa comprovada.
-- [ ] `make quality` e `trackfw validate` verdes.
-- [ ] Gates negativos falham pelos motivos esperados.
+- [x] Paridade dos três runtimes.
+- [x] Compatibilidade retroativa comprovada.
+- [x] `make quality` e `trackfw validate` verdes.
+- [x] Gates negativos falham pelos motivos esperados.
+
+**ML-3A result — 2026-07-27 (Apolo):**
+- `docs/cli-parity.md` consolidou o contrato final de `stale_wip_days`, fonte temporal via
+  `.trackfw-log`, fallback por `mtime`, política explícita de I/O e gate de identidade derivado do
+  catálogo.
+- `site/guide/commands.md` e `site/en/guide/commands.md` documentam `stale_wip_days`, contrato de
+  transição/log, fallback, política de I/O do validator e a derivação do gate de identidade pelo
+  catálogo.
+- Validation:
+  - `make quality` → verde; inclui Go, Node, Python, vet/build, paridade de CLI/validate/assets,
+    identity parity, artifact parity e falsificação P4.
+  - `scripts/check-identity-parity.sh` →
+    `Identity parity verified across Go/Node/Python for 11 target/surface combinations (with and without identity)`.
+  - `scripts/check-gates-falsify.sh` →
+    `Falsification checks passed (all 13 scenarios, 8 gates proved non-vacuous)`.
 
 ## Acceptance Criteria
 
-- [ ] Três débitos eliminados.
-- [ ] Nenhuma degradação silenciosa nos casos cobertos.
-- [ ] Catálogo e gate permanecem sincronizados automaticamente.
-- [ ] Trabalho concluído sem bloquear indevidamente a release anterior.
+- [x] Três débitos eliminados.
+- [x] Nenhuma degradação silenciosa nos casos cobertos.
+- [x] Catálogo e gate permanecem sincronizados automaticamente.
+- [x] Trabalho concluído sem bloquear indevidamente a release anterior.

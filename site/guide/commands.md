@@ -105,6 +105,11 @@ com hash conhecido é adotada sem overwrite e aparece como `outdated`; `update`
 faz a migração. Conteúdo unmanaged desconhecido nunca é adotado por update,
 mesmo com `--force`.
 
+O gate de paridade de identidade é derivado do catálogo canônico de integrações:
+toda surface com suporte a agents entra automaticamente na matriz Go/Node/Python.
+Surfaces não-default são exercitadas como `target=surface`, o mesmo formato usado
+por `--surface`.
+
 Os comandos standalone `gemini`, `cursor`, `copilot`, `windsurf` e `amazonq`
 existem apenas na distribuição Go como aliases de compatibilidade histórica.
 Eles não fazem parte do contrato npm/PyPI; use `agents` e `skills` em novas
@@ -306,8 +311,34 @@ trackfw validate
 5. REQs devem ter Roadmap vinculado
 6. ADRs devem ser referenciados em pelo menos uma REQ
 7. REQs Open não podem estar bloqueadas por ADRs em Draft
-8. Roadmaps em WIP há mais de 7 dias são marcados como stale
+8. Roadmaps em WIP há mais de `stale_wip_days` dias são marcados como stale
 9. ADRs e REQs devem ter frontmatter YAML válido
+
+### `stale_wip`
+
+`stale_wip` usa a entrada mais recente do roadmap em `wip/` no
+`docs/roadmaps/.trackfw-log`, incluindo transições `backlog → wip`,
+`analyzing → wip` e `blocked → wip`. Em `roadmap_namespacing: by_agent`, a
+identidade do roadmap inclui o prefixo do agente registrado no log, por exemplo
+`zeus/ROADMAP-2026-07-27-exemplo.md`.
+
+Se o log não existir ou não houver entrada parseável para o roadmap atual, o
+fallback retrocompatível é o `mtime` do arquivo. Tempo de commit Git não faz
+parte do contrato.
+
+```yaml
+stale_wip_days: 14 # default: 7
+rules:
+  stale_wip: warning
+```
+
+### Política de I/O do validator
+
+Diretórios opcionais de estado ausentes, como `wip/`, `blocked/` ou `done/`,
+são tratados como vazios. Falhas reais de inspeção, como permissão negada,
+`ENOTDIR`, erro de walk/list, arquivo esperado ilegível ou linha inválida no
+`.trackfw-log`, geram diagnóstico com regra, caminho e causa; a severidade segue
+a configuração da regra (`off`, `warning` ou `error`).
 
 ### Saída esperada — sem violações
 

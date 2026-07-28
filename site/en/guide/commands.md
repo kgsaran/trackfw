@@ -105,6 +105,11 @@ an artifact that is still shared. A historical installation with a known hash
 is adopted without overwrite and reported as `outdated`; `update` migrates it.
 Unknown unmanaged content is never adopted by update, even with `--force`.
 
+The identity parity gate is derived from the canonical integration catalog:
+every agent-capable surface automatically enters the Go/Node/Python matrix.
+Non-default surfaces are exercised as `target=surface`, the same format used by
+`--surface`.
+
 The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` commands
 exist only in the Go distribution as historical compatibility aliases. They are
 not part of the npm/PyPI contract; use `agents` and `skills` in new automation.
@@ -305,8 +310,34 @@ trackfw validate
 5. REQs must have a linked Roadmap
 6. ADRs must be referenced in at least one REQ
 7. Open REQs cannot be blocked by Draft ADRs
-8. WIP roadmaps older than 7 days are marked as stale
+8. WIP roadmaps older than `stale_wip_days` are marked as stale
 9. ADRs and REQs must have valid YAML frontmatter
+
+### `stale_wip`
+
+`stale_wip` uses the roadmap's latest transition into `wip/` in
+`docs/roadmaps/.trackfw-log`, including `backlog → wip`,
+`analyzing → wip`, and `blocked → wip`. In
+`roadmap_namespacing: by_agent`, the roadmap identity includes the agent prefix
+recorded in the log, for example `zeus/ROADMAP-2026-07-27-example.md`.
+
+If the log is absent or has no parseable entry for the current roadmap, the
+backward-compatible fallback is the file `mtime`. Git commit time is not part
+of the contract.
+
+```yaml
+stale_wip_days: 14 # default: 7
+rules:
+  stale_wip: warning
+```
+
+### Validator I/O Policy
+
+Missing optional state directories such as `wip/`, `blocked/`, or `done/` are
+treated as empty. Real inspection failures, such as permission denied,
+`ENOTDIR`, walk/list failures, unreadable expected files, or invalid
+`.trackfw-log` lines, emit a diagnostic with rule, path, and cause; severity
+follows the rule configuration (`off`, `warning`, or `error`).
 
 ### Expected output — no violations
 
