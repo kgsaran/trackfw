@@ -7,6 +7,7 @@ const config = require('../config')
 const { checkTraceIds } = require('./traceid')
 
 const STALE_WIP_DAYS = 7
+let staleWipNowMs = () => Date.now()
 
 // listDir retorna array de nomes de arquivo (não-diretórios) em dir.
 // Retorna [] se o diretório não existir.
@@ -43,6 +44,26 @@ function tryListDir(dir) {
   }
 }
 
+function inspectionDiagnostic(rule, target, err) {
+  const cause = err && err.message ? err.message : String(err)
+  return `${rule}: could not inspect "${target}": ${cause}`
+}
+
+function listDirForRule(rule, dir, messages) {
+  const { entries, readError } = tryListDir(dir)
+  if (readError) messages.push(inspectionDiagnostic(rule, dir, readError))
+  return entries
+}
+
+function readFileForRule(rule, filePath, messages) {
+  try {
+    return fs.readFileSync(filePath, 'utf8')
+  } catch (err) {
+    messages.push(inspectionDiagnostic(rule, filePath, err))
+    return null
+  }
+}
+
 // isInsideDir retorna true se childPath estiver contido ou for igual a parentDir.
 function isInsideDir(parentDir, childPath) {
   if (!parentDir || !childPath) return false
@@ -52,17 +73,28 @@ function isInsideDir(parentDir, childPath) {
 
 // walkDirMdWithPaths retorna { name, fullPath } de todos .md recursivamente dentro de dir.
 function walkDirMdWithPaths(dir) {
+  return walkDirMdWithPathsForRule(null, dir, null)
+}
+
+function walkDirMdWithPathsForRule(rule, dir, messages) {
   const results = []
   const expandedDir = config.expandPath ? config.expandPath(dir) : dir
   function walk(d) {
     let entries
-    try { entries = fs.readdirSync(d) } catch (_) { return }
+    try {
+      entries = fs.readdirSync(d)
+    } catch (err) {
+      if (messages && err && err.code !== 'ENOENT') messages.push(inspectionDiagnostic(rule, d, err))
+      return
+    }
     for (const name of entries) {
       const full = path.join(d, name)
       try {
         if (fs.statSync(full).isDirectory()) { walk(full) }
         else if (name.endsWith('.md')) { results.push({ name, fullPath: full }) }
-      } catch (_) {}
+      } catch (err) {
+        if (messages) messages.push(inspectionDiagnostic(rule, full, err))
+      }
     }
   }
   walk(expandedDir)
@@ -224,11 +256,18 @@ function contentHasMarker(content, markers) {
 
 // adrIsDraft verifica se <adrBasename> contém "Status: Draft" buscando recursivamente nas adrDirs.
 function adrIsDraft(basename) {
+  return adrDraftStatusForRule(basename, null).draft
+}
+
+function adrDraftStatusForRule(basename, messages) {
   const p = findAdrFile(basename)
-  if (!p) return false
+  if (!p) return { draft: false, inspected: true }
   try {
-    return fs.readFileSync(p, 'utf8').includes('Status: Draft')
-  } catch (_) { return false }
+    return { draft: fs.readFileSync(p, 'utf8').includes('Status: Draft'), inspected: true }
+  } catch (err) {
+    if (messages) messages.push(inspectionDiagnostic('blocked_by_draft_adr', p, err))
+    return { draft: false, inspected: false }
+  }
 }
 
 // validateWIPHasREQ — roadmaps em wip/ sem marker REQ no conteúdo → violation
@@ -238,15 +277,12 @@ function validateWIPHasREQ() {
   const wipDirs = resolveWIPDirs(cfg)
   const violations = []
   for (const wipDir of wipDirs) {
-    const entries = listDir(wipDir)
+    const entries = listDirForRule('wip_has_req', wipDir, violations)
     for (const name of entries) {
-      try {
-        const content = fs.readFileSync(path.join(wipDir, name), 'utf8')
-        if (!contentHasMarker(content, cfg.linkFields.req)) {
-          violations.push(`roadmap "${name}" is in wip but has no linked REQ`)
-        }
-      } catch (_) {
-        // ignorar erro de leitura
+      const content = readFileForRule('wip_has_req', path.join(wipDir, name), violations)
+      if (content === null) continue
+      if (!contentHasMarker(content, cfg.linkFields.req)) {
+        violations.push(`roadmap "${name}" is in wip but has no linked REQ`)
       }
     }
   }
@@ -276,15 +312,12 @@ function validateBlockedHasREQ() {
   const cfg = config.load()
   const violations = []
   for (const blockedDir of resolveStateDirs(cfg, 'blocked')) {
-    const entries = listDir(blockedDir)
+    const entries = listDirForRule('blocked_has_req', blockedDir, violations)
     for (const name of entries) {
-      try {
-        const content = fs.readFileSync(path.join(blockedDir, name), 'utf8')
-        if (!contentHasMarker(content, cfg.linkFields.req)) {
-          violations.push(`roadmap "${name}" is in blocked but has no linked REQ`)
-        }
-      } catch (_) {
-        // ignorar
+      const content = readFileForRule('blocked_has_req', path.join(blockedDir, name), violations)
+      if (content === null) continue
+      if (!contentHasMarker(content, cfg.linkFields.req)) {
+        violations.push(`roadmap "${name}" is in blocked but has no linked REQ`)
       }
     }
   }
@@ -335,6 +368,7 @@ function validateADRDirsExist() {
 function validateADRsAreReferenced() {
   const cfg = config.load()
   const cwd = process.cwd()
+  const violations = []
   let adrs = []
   for (const adrDir of cfg.adrDirs || []) {
     const expanded = config.expandPath ? config.expandPath(adrDir) : adrDir
@@ -343,7 +377,7 @@ function validateADRsAreReferenced() {
     if (!isInsideDir(cwd, absDir)) {
       continue
     }
-    for (const item of walkDirMdWithPaths(absDir)) {
+    for (const item of walkDirMdWithPathsForRule('adr_orphan', absDir, violations)) {
       if (isInsideDir(cwd, item.fullPath)) {
         adrs.push(item.name)
       }
@@ -353,14 +387,10 @@ function validateADRsAreReferenced() {
   const reqFiles = resolveReqFiles(cfg)
   let combined = ''
   for (const filePath of reqFiles) {
-    try {
-      combined += fs.readFileSync(filePath, 'utf8')
-    } catch (_) {
-      // ignorar
-    }
+    const content = readFileForRule('adr_orphan', filePath, violations)
+    if (content !== null) combined += content
   }
 
-  const violations = []
   for (const adr of adrs) {
     if (!combined.includes(adr)) {
       violations.push(`adr "${adr}" is not referenced by any REQ`)
@@ -376,16 +406,13 @@ function validateWIPHasAcceptanceCriteria() {
   const wipDirs = resolveWIPDirs(cfg)
   const violations = []
   for (const wipDir of wipDirs) {
-    const entries = listDir(wipDir)
+    const entries = listDirForRule('wip_acceptance', wipDir, violations)
     for (const name of entries) {
-      try {
-        const content = fs.readFileSync(path.join(wipDir, name), 'utf8')
-        const hasBlock = contentHasMarker(content, cfg.acceptanceMarkers)
-        if (!hasBlock) {
-          violations.push(`roadmap "${name}" is in wip but has no acceptance criteria block`)
-        }
-      } catch (_) {
-        // ignorar
+      const content = readFileForRule('wip_acceptance', path.join(wipDir, name), violations)
+      if (content === null) continue
+      const hasBlock = contentHasMarker(content, cfg.acceptanceMarkers)
+      if (!hasBlock) {
+        violations.push(`roadmap "${name}" is in wip but has no acceptance criteria block`)
       }
     }
   }
@@ -502,42 +529,84 @@ function validateSingleWIP() {
 
 // validateStaleWIP — roadmaps wip com mtime >= 7 dias → warning
 // Suporta modo by_agent via resolveWIPDirs.
+function roadmapLogIdentity(cfg, filePath) {
+  const basename = path.basename(filePath)
+  if (cfg.roadmapNamespacing !== config.NAMESPACING_BY_AGENT) return basename
+  const agent = path.basename(path.dirname(path.dirname(filePath)))
+  return `${agent}/${basename}`
+}
+
+function parseTransitionLogLine(line) {
+  const fields = String(line).trim().split(/\s+/).filter(Boolean)
+  if (fields.length < 5) return null
+  const timestamp = Date.parse(`${fields[0]}T${fields[1]}:00`)
+  if (Number.isNaN(timestamp)) return null
+  const arrow = fields.findIndex((field, index) => index >= 3 && (field === '→' || field === '->'))
+  if (arrow < 0 || arrow + 1 >= fields.length) return null
+  return { timestamp, name: fields[2], toState: fields[arrow + 1] }
+}
+
+function latestWipTransitionTime(cfg, filePath) {
+  let content
+  const logPath = path.join(cfg.roadmapDir, '.trackfw-log')
+  try {
+    content = fs.readFileSync(logPath, 'utf8')
+  } catch (err) {
+    return { time: null, diagnostics: err && err.code === 'ENOENT' ? [] : [inspectionDiagnostic('stale_wip', logPath, err)] }
+  }
+  const identity = roadmapLogIdentity(cfg, filePath)
+  let latest = null
+  const diagnostics = []
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue
+    const parsed = parseTransitionLogLine(line)
+    if (!parsed) {
+      diagnostics.push(`stale_wip: invalid support line in "${logPath}": "${line}"`)
+      continue
+    }
+    if (parsed.name !== identity || parsed.toState !== 'wip') continue
+    if (latest === null || parsed.timestamp > latest) latest = parsed.timestamp
+  }
+  return { time: latest, diagnostics }
+}
+
 function validateStaleWIP() {
   const cfg = config.load()
   const wipDirs = resolveWIPDirs(cfg)
   const warnings = []
-  const now = Date.now()
+  const now = staleWipNowMs()
+  const thresholdDays = cfg.staleWipDays > 0 ? cfg.staleWipDays : STALE_WIP_DAYS
 
   for (const wipDir of wipDirs) {
-    let files = []
-    try {
-      files = fs.readdirSync(wipDir)
-        .filter(f => f.endsWith('.md'))
-        .map(f => path.join(wipDir, f))
-    } catch (_) {
-      continue
-    }
+    const files = listDirForRule('stale_wip', wipDir, warnings)
+      .filter(f => f.endsWith('.md'))
+      .map(f => path.join(wipDir, f))
 
     for (const filePath of files) {
       try {
         const stat = fs.statSync(filePath)
-        const gitTime = gitLastModifiedTime(filePath)
-        const ageMs = now - (gitTime !== null ? gitTime : stat.mtimeMs)
+        const logResult = latestWipTransitionTime(cfg, filePath)
+        warnings.push(...logResult.diagnostics)
+        const refTime = logResult.time !== null ? logResult.time : stat.mtimeMs
+        const ageMs = now - refTime
         const days = Math.floor(ageMs / (1000 * 60 * 60 * 24))
-        if (days >= STALE_WIP_DAYS) {
-          const refTime = gitTime !== null ? gitTime : stat.mtimeMs
+        if (days >= thresholdDays) {
           const lastModified = new Date(refTime).toISOString().slice(0, 10)
           const basename = path.basename(filePath)
           warnings.push(
             `roadmap/wip/${basename} has been in WIP for ${days} days (last modified ${lastModified})`
           )
         }
-      } catch (_) {
-        // ignorar
+      } catch (err) {
+        warnings.push(inspectionDiagnostic('stale_wip', filePath, err))
       }
     }
   }
   return warnings
+}
+
+function setStaleWipNowForTests(fn) {
+  staleWipNowMs = fn || (() => Date.now())
 }
 
 // validateREQsNotBlockedByDraftADRs — REQs Open com ADRs Draft na seção "## Blocked by ADRs" → violation
@@ -546,17 +615,13 @@ function validateREQsNotBlockedByDraftADRs() {
   const files = resolveReqFiles(cfg)
   const violations = []
   for (const filePath of files) {
-    let content
-    try {
-      content = fs.readFileSync(filePath, 'utf8')
-    } catch (_) {
-      continue
-    }
+    const content = readFileForRule('blocked_by_draft_adr', filePath, violations)
+    if (content === null) continue
     if (!content.includes('Status: Open')) continue
 
     const blockedADRs = parseBlockedADRs(filePath)
     for (const adrBasename of blockedADRs) {
-      if (adrIsDraft(adrBasename)) {
+      if (adrDraftStatusForRule(adrBasename, violations).draft) {
         violations.push(`REQ ${path.basename(filePath)} is blocked by Draft ADR: ${adrBasename}`)
       }
     }
@@ -685,31 +750,29 @@ function validateRefTargetsExist() {
   // Roadmaps em wip e blocked: verificar REQ:
   const dirs = [...resolveWIPDirs(cfg), ...resolveStateDirs(cfg, 'blocked')]
   for (const dir of dirs) {
-    for (const name of listDir(dir)) {
-      try {
-        const content = fs.readFileSync(path.join(dir, name), 'utf8')
-        const ref = extractRefPath(content, 'REQ')
-        if (ref && !referenceExists(ref, [cfg.reqDir])) {
-          warnings.push(`roadmap "${name}" links to REQ "${ref}" which does not exist`)
-        }
-      } catch (_) {}
+    for (const name of listDirForRule('ref_targets_exist', dir, warnings)) {
+      const content = readFileForRule('ref_targets_exist', path.join(dir, name), warnings)
+      if (content === null) continue
+      const ref = extractRefPath(content, 'REQ')
+      if (ref && !referenceExists(ref, [cfg.reqDir])) {
+        warnings.push(`roadmap "${name}" links to REQ "${ref}" which does not exist`)
+      }
     }
   }
 
   // REQs: verificar ADR: e Roadmap:
   for (const filePath of resolveReqFiles(cfg)) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8')
-      const name = path.basename(filePath)
-      const adrRef = extractRefPath(content, 'ADR')
-      if (adrRef && !referenceExists(adrRef, cfg.adrDirs)) {
-        warnings.push(`req "${name}" links to ADR "${adrRef}" which does not exist`)
-      }
-      const roadmapRef = extractRefPath(content, 'Roadmap')
-      if (roadmapRef && !referenceExists(roadmapRef, [cfg.roadmapDir])) {
-        warnings.push(`req "${name}" links to Roadmap "${roadmapRef}" which does not exist`)
-      }
-    } catch (_) {}
+    const content = readFileForRule('ref_targets_exist', filePath, warnings)
+    if (content === null) continue
+    const name = path.basename(filePath)
+    const adrRef = extractRefPath(content, 'ADR')
+    if (adrRef && !referenceExists(adrRef, cfg.adrDirs)) {
+      warnings.push(`req "${name}" links to ADR "${adrRef}" which does not exist`)
+    }
+    const roadmapRef = extractRefPath(content, 'Roadmap')
+    if (roadmapRef && !referenceExists(roadmapRef, [cfg.roadmapDir])) {
+      warnings.push(`req "${name}" links to Roadmap "${roadmapRef}" which does not exist`)
+    }
   }
 
   return warnings
@@ -1218,6 +1281,7 @@ module.exports = {
   validateWIPLimit,
   validateSingleWIP,
   validateStaleWIP,
+  setStaleWipNowForTests,
   validateREQsNotBlockedByDraftADRs,
   parseBlockedADRs,
   adrIsDraft,

@@ -16,14 +16,82 @@ GO_BIN=${GO_BIN:-"$ROOT_DIR/bin/trackfw"}
 # run_install faz `cd` para o diretório do projeto — GO_BIN precisa ser absoluto.
 case "$GO_BIN" in /*) ;; *) GO_BIN="$ROOT_DIR/$GO_BIN" ;; esac
 
-# Cada entrada é "target" (superfície default) ou "target=surface" (superfície
-# explícita). As duas últimas cobrem a representação "agent-json", que só
-# aparece em superfícies não-default e portanto ficaria fora do gate se
-# usássemos apenas a lista de alvos.
-TARGETS=(
-  claude codex antigravity amazonq gemini cursor copilot windsurf kiro
-  antigravity=legacy-cli kiro=cli
-)
+load_catalog_targets() {
+  local catalog="$ROOT_DIR/internal/integrations/assets/catalog.json"
+  local specs="$WORK_DIR/identity-catalog-targets.txt"
+
+  if [[ ! -f "$catalog" ]]; then
+    echo "Identity parity: missing canonical catalog ${catalog#$ROOT_DIR/}" >&2
+    exit 1
+  fi
+
+  python3 - "$catalog" >"$specs" <<'PY'
+import json
+import sys
+
+catalog_path = sys.argv[1]
+with open(catalog_path, "r", encoding="utf-8") as stream:
+    catalog = json.load(stream)
+
+required = []
+for target in catalog.get("targets", []):
+    supported = [
+        surface
+        for surface in target.get("surfaces", [])
+        if surface.get("capabilities", {})
+        .get("agents", {})
+        .get("support_level") != "unsupported"
+    ]
+    if not supported:
+        continue
+    # O CLI usa a primeira superfície suportada como default. Emitimos "target"
+    # para ela e "target=surface" para as demais. Isso mantém a semântica de
+    # usuário e ainda exercita superfícies não-default como antigravity=legacy-cli
+    # e kiro=cli, hoje necessárias para cobrir a representação agent-json.
+    default_surface = supported[0].get("id")
+    for surface in supported:
+        surface_id = surface.get("id")
+        if not surface_id:
+            continue
+        if surface_id == default_surface:
+            required.append(target["id"])
+        else:
+            required.append(f"{target['id']}={surface_id}")
+
+for spec in sorted(set(required)):
+    print(spec)
+PY
+
+  if [[ ! -s "$specs" ]]; then
+    echo "Identity parity: canonical catalog has no agent-capable target/surface" >&2
+    exit 1
+  fi
+
+  TARGETS=()
+  while IFS= read -r spec; do
+    [[ -n "$spec" ]] && TARGETS+=("$spec")
+  done <"$specs"
+}
+
+assert_catalog_targets_supported_by_go_cli() {
+  local home="$WORK_DIR/home-catalog-preflight"
+  local project="$WORK_DIR/project-catalog-preflight"
+  mkdir -p "$home" "$project"
+
+  local spec target
+  for spec in "${TARGETS[@]}"; do
+    target=${spec%%=*}
+    local args=(agents list --targets "$target" --scope project --json)
+    if [[ "$spec" == *=* ]]; then
+      args+=(--surface "$spec")
+    fi
+    if ! (cd "$project" && HOME="$home" "$GO_BIN" "${args[@]}") >"$WORK_DIR/catalog-preflight.log" 2>&1; then
+      echo "Identity parity: catalog-derived target/surface is not accepted by the Go CLI: $spec" >&2
+      cat "$WORK_DIR/catalog-preflight.log" >&2
+      exit 1
+    fi
+  done
+}
 
 # Nem todo ambiente tem as duas ferramentas: macOS traz shasum, Linux traz
 # sha256sum. Escolhido uma vez para manter o formato de saída estável.
@@ -60,6 +128,9 @@ for mirror in "$ROOT_DIR/npm/tests/fixtures/slug_vectors.json" "$ROOT_DIR/pypi/t
     exit 1
   fi
 done
+
+load_catalog_targets
+assert_catalog_targets_supported_by_go_cli
 
 # ---------------------------------------------------------------------------
 # 2. Helpers

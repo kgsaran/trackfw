@@ -144,6 +144,72 @@ assert_fails_with "identity-parity/slug-drift" \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T3/scripts/check-identity-parity.sh"
 
 # ---------------------------------------------------------------------------
+# Cenário 3b — check-identity-parity.sh: catálogo ganha superfície nova de
+#               agente → gate derivado do catálogo deve tentar exercitá-la e
+#               reprovar enquanto os CLIs/binários não a reconhecerem.
+#
+# Objetivo (ML-1B): provar que o gate não depende de edição manual de uma lista
+# TARGETS. O catálogo temporário adiciona `codex=experimental`; nenhum arquivo
+# real do workspace é alterado.
+# ---------------------------------------------------------------------------
+T3B="$WORK/s3b"
+mkdir -p "$T3B/scripts" "$T3B/internal/integrations/assets" \
+         "$T3B/internal/identity/testdata" "$T3B/npm/tests/fixtures" \
+         "$T3B/pypi/tests/fixtures"
+cp "$ROOT_DIR/scripts/check-identity-parity.sh" "$T3B/scripts/"
+cp "$ROOT_DIR/internal/integrations/assets/catalog.json" "$T3B/internal/integrations/assets/catalog.json"
+cp "$ROOT_DIR/internal/identity/testdata/slug_vectors.json" \
+   "$T3B/internal/identity/testdata/slug_vectors.json"
+cp "$ROOT_DIR/npm/tests/fixtures/slug_vectors.json" \
+   "$T3B/npm/tests/fixtures/slug_vectors.json"
+cp "$ROOT_DIR/pypi/tests/fixtures/slug_vectors.json" \
+   "$T3B/pypi/tests/fixtures/slug_vectors.json"
+
+python3 - "$T3B/internal/integrations/assets/catalog.json" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+catalog = json.loads(path.read_text(encoding="utf-8"))
+for target in catalog["targets"]:
+    if target["id"] == "codex":
+        target["surfaces"].append({
+            "id": "experimental",
+            "name": "Codex Experimental",
+            "scopes": ["project"],
+            "capabilities": {
+                "agents": {
+                    "support_level": "native",
+                    "representation": "custom-agent-toml",
+                },
+                "skills": {
+                    "support_level": "unsupported",
+                    "representation": "none",
+                },
+            },
+            "paths": {
+                "agents": [
+                    {
+                        "scope": "project",
+                        "path": ".codex-experimental/agents/trackfw-{{id}}.toml",
+                        "extension": ".toml",
+                    }
+                ],
+                "skills": [],
+            },
+        })
+        break
+else:
+    raise SystemExit("codex target not found")
+path.write_text(json.dumps(catalog, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+PY
+
+assert_fails_with "identity-parity/catalog-target-missing" \
+  "catalog-derived target/surface is not accepted by the Go CLI" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T3B/scripts/check-identity-parity.sh"
+
+# ---------------------------------------------------------------------------
 # Cenário 4 — check-validate-parity.sh: npm sem regra wip_has_req → contrato diverge
 #
 # O script compila Go a partir do CWD (ROOT_DIR), usa npm/$T4 e pypi/$T4.
@@ -416,4 +482,4 @@ assert_fails_with "referential-integrity/missing-roadmap" \
   "referential integrity failed" \
   bash "$T12/scripts/check-referential-integrity.sh"
 
-echo "Falsification checks passed (all 12 scenarios, 8 gates proved non-vacuous)"
+echo "Falsification checks passed (all 13 scenarios, 8 gates proved non-vacuous)"

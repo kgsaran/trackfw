@@ -25,6 +25,7 @@ def defaults():
         "lenient_until": "",
         "wip_limit": 1,
         "wip_by_squad": False,
+        "stale_wip_days": 7,
         "require_req_in_commit": False,
         # novos campos
         "trace_id_field": "",
@@ -252,6 +253,13 @@ def _parse(content, cfg):
                 pass
         elif key == "wip_by_squad":
             cfg["wip_by_squad"] = val == "true"
+        elif key == "stale_wip_days":
+            try:
+                n = int(val)
+                if n > 0:
+                    cfg["stale_wip_days"] = n
+            except ValueError:
+                pass
         elif key == "require_req_in_commit":
             cfg["require_req_in_commit"] = val == "true"
         elif key == "trace_id_field":

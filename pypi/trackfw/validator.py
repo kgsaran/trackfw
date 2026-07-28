@@ -143,16 +143,43 @@ def _try_list_dir(dir_path: str):
         return [], e  # existe mas inacessível (ENOTDIR, EPERM…)
 
 
+def _inspection_item(rule: str, target: str, err) -> dict:
+    return {"type": "violation", "message": f'{rule}: could not inspect "{target}": {err}'}
+
+
+def _list_dir_for_rule(rule: str, dir_path: str, messages: list) -> list:
+    entries, err = _try_list_dir(dir_path)
+    if err is not None:
+        messages.append(_inspection_item(rule, dir_path, err))
+    return entries
+
+
+def _read_file_for_rule(rule: str, file_path: str, messages: list):
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError as e:
+        messages.append(_inspection_item(rule, file_path, e))
+        return None
+
+
 def _walk_dir_md(dir_path: str) -> list:
     """Retorna basenames de todos .md recursivamente em dir_path."""
+    return [os.path.basename(p) for p in _walk_dir_md_paths_for_rule("", dir_path, None)]
+
+
+def _walk_dir_md_paths_for_rule(rule: str, dir_path: str, messages: list | None) -> list:
+    """Retorna paths de todos .md recursivamente em dir_path e reporta falhas de walk."""
     result = []
-    try:
-        for root, dirs, files in os.walk(dir_path):
-            for name in files:
-                if name.endswith('.md'):
-                    result.append(name)
-    except OSError:
-        pass
+
+    def onerror(err):
+        if messages is not None and not isinstance(err, FileNotFoundError):
+            messages.append(_inspection_item(rule, getattr(err, "filename", dir_path), err))
+
+    for root, _, files in os.walk(dir_path, onerror=onerror):
+        for name in files:
+            if name.endswith(".md"):
+                result.append(os.path.join(root, name))
     return result
 
 
@@ -352,6 +379,10 @@ def _parse_blocked_adrs(file_path: str) -> list:
 
 
 def _adr_is_draft(basename: str, cfg: dict) -> bool:
+    return _adr_draft_status_for_rule(basename, cfg, None)[0]
+
+
+def _adr_draft_status_for_rule(basename: str, cfg: dict, messages: list | None):
     """
     Verifica se <basename> contém 'Status: Draft' em algum dos adrDirs configurados.
     Busca recursivamente nas subpastas via _find_adr_file.
@@ -359,12 +390,14 @@ def _adr_is_draft(basename: str, cfg: dict) -> bool:
     adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
     p = _find_adr_file(basename, adr_dirs)
     if not p:
-        return False
+        return False, True
     try:
         with open(p, "r", encoding="utf-8") as f:
-            return "Status: Draft" in f.read()
-    except OSError:
-        return False
+            return "Status: Draft" in f.read(), True
+    except OSError as e:
+        if messages is not None:
+            messages.append(_inspection_item("blocked_by_draft_adr", p, e))
+        return False, False
 
 
 def _read_wip_config(cwd: str = None) -> dict:
@@ -520,17 +553,15 @@ def validate_wip_has_req(cfg: dict) -> list:
     req_markers = cfg.get("link_fields", {}).get("req", ["REQ:"])
     violations = []
     for wip_dir in wip_dirs:
-        entries = list_dir(wip_dir)
+        entries = _list_dir_for_rule("wip_has_req", wip_dir, violations)
         for name in entries:
-            try:
-                with open(os.path.join(wip_dir, name), "r", encoding="utf-8") as f:
-                    content = f.read()
-                if not _content_has_marker(content, req_markers):
-                    violations.append(
-                        {"type": "violation", "message": f'roadmap "{name}" is in wip but has no linked REQ'}
-                    )
-            except OSError:
-                pass
+            content = _read_file_for_rule("wip_has_req", os.path.join(wip_dir, name), violations)
+            if content is None:
+                continue
+            if not _content_has_marker(content, req_markers):
+                violations.append(
+                    {"type": "violation", "message": f'roadmap "{name}" is in wip but has no linked REQ'}
+                )
     return violations
 
 
@@ -558,16 +589,14 @@ def validate_blocked_has_req(cfg: dict) -> list:
     req_markers = cfg.get("link_fields", {}).get("req", ["REQ:"])
     violations = []
     for blocked_dir in _resolve_state_dirs(cfg, "blocked"):
-        for name in list_dir(blocked_dir):
-            try:
-                with open(os.path.join(blocked_dir, name), "r", encoding="utf-8") as f:
-                    content = f.read()
-                if not _content_has_marker(content, req_markers):
-                    violations.append(
-                        {"type": "violation", "message": f'roadmap "{name}" is in blocked but has no linked REQ'}
-                    )
-            except OSError:
-                pass
+        for name in _list_dir_for_rule("blocked_has_req", blocked_dir, violations):
+            content = _read_file_for_rule("blocked_has_req", os.path.join(blocked_dir, name), violations)
+            if content is None:
+                continue
+            if not _content_has_marker(content, req_markers):
+                violations.append(
+                    {"type": "violation", "message": f'roadmap "{name}" is in blocked but has no linked REQ'}
+                )
     return violations
 
 
@@ -595,33 +624,25 @@ def validate_adrs_are_referenced(cfg: dict, cwd: str = None) -> list:
     Isenta arquivos localizados fora do diretório raiz (cwd).
     """
     abs_cwd = os.path.realpath(os.path.abspath(cwd or os.getcwd()))
+    violations = []
     adrs = []
     adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
     for adr_dir in adr_dirs:
         expanded_dir = os.path.expanduser(adr_dir)
-        try:
-            for root, _, files in os.walk(expanded_dir):
-                for name in files:
-                    if not name.endswith(".md"):
-                        continue
-                    real_path = os.path.realpath(os.path.join(root, name))
-                    # Isenta arquivos localizados fora do CWD (ex.: ADRs globais compartilhados ou symlinks externos)
-                    if not _is_subpath(real_path, abs_cwd):
-                        continue
-                    adrs.append(name)
-        except OSError:
-            pass
+        for file_path in _walk_dir_md_paths_for_rule("adr_orphan", expanded_dir, violations):
+            real_path = os.path.realpath(file_path)
+            # Isenta arquivos localizados fora do CWD (ex.: ADRs globais compartilhados ou symlinks externos)
+            if not _is_subpath(real_path, abs_cwd):
+                continue
+            adrs.append(os.path.basename(file_path))
 
     req_files = resolve_req_files(cfg)
     combined = ""
     for file_path in req_files:
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                combined += f.read()
-        except OSError:
-            pass
+        content = _read_file_for_rule("adr_orphan", file_path, violations)
+        if content is not None:
+            combined += content
 
-    violations = []
     for adr in adrs:
         if adr not in combined:
             violations.append(
@@ -638,17 +659,15 @@ def validate_wip_has_acceptance_criteria(cfg: dict) -> list:
     acceptance_markers = cfg.get("acceptance_markers", ["## Acceptance Criteria", "## Critérios de Aceite"])
     violations = []
     for wip_dir in wip_dirs:
-        entries = list_dir(wip_dir)
+        entries = _list_dir_for_rule("wip_acceptance", wip_dir, violations)
         for name in entries:
-            try:
-                with open(os.path.join(wip_dir, name), "r", encoding="utf-8") as f:
-                    content = f.read()
-                if not _content_has_marker(content, acceptance_markers):
-                    violations.append(
-                        {"type": "violation", "message": f'roadmap "{name}" is in wip but has no acceptance criteria block'}
-                    )
-            except OSError:
-                pass
+            content = _read_file_for_rule("wip_acceptance", os.path.join(wip_dir, name), violations)
+            if content is None:
+                continue
+            if not _content_has_marker(content, acceptance_markers):
+                violations.append(
+                    {"type": "violation", "message": f'roadmap "{name}" is in wip but has no acceptance criteria block'}
+                )
     return violations
 
 
@@ -724,41 +743,119 @@ def validate_wip_limit(cfg: dict) -> dict:
     return {"violations": violations, "warnings": warnings}
 
 
-def validate_stale_wip(cfg: dict, days: int = STALE_WIP_DAYS) -> list:
+def _roadmap_log_identity(cfg: dict, file_path: str) -> str:
+    basename = os.path.basename(file_path)
+    if cfg.get("roadmap_namespacing") != _config.NAMESPACING_BY_AGENT:
+        return basename
+
+    state_dir = os.path.dirname(file_path)
+    agent_dir = os.path.dirname(state_dir)
+    agent = os.path.basename(agent_dir)
+    if agent:
+        return f"{agent}/{basename}"
+    return basename
+
+
+def _parse_transition_log_line(line: str):
+    fields = line.split()
+    if len(fields) < 5:
+        return None
+
+    try:
+        timestamp = datetime.strptime(f"{fields[0]} {fields[1]}", "%Y-%m-%d %H:%M").timestamp()
+    except ValueError:
+        return None
+
+    arrow_idx = -1
+    for idx in range(3, len(fields)):
+        if fields[idx] in ("→", "->"):
+            arrow_idx = idx
+            break
+
+    if arrow_idx < 0 or arrow_idx + 1 >= len(fields):
+        return None
+
+    return {
+        "timestamp": timestamp,
+        "name": fields[2],
+        "to_state": fields[arrow_idx + 1],
+    }
+
+
+def _latest_wip_transition_time(cfg: dict, file_path: str):
+    log_path = os.path.join(cfg.get("roadmap_dir", "docs/roadmaps"), ".trackfw-log")
+    expected_name = _roadmap_log_identity(cfg, file_path)
+    latest = None
+    diagnostics = []
+
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                parsed = _parse_transition_log_line(stripped)
+                if not parsed:
+                    diagnostics.append({
+                        "type": "warning",
+                        "message": f'stale_wip: invalid support line in "{log_path}": "{stripped}"'
+                    })
+                    continue
+                if parsed["name"] != expected_name or parsed["to_state"] != "wip":
+                    continue
+                if latest is None or parsed["timestamp"] > latest:
+                    latest = parsed["timestamp"]
+    except FileNotFoundError:
+        return None, []
+    except OSError as e:
+        return None, [_inspection_item("stale_wip", log_path, e)]
+
+    return latest, diagnostics
+
+
+def validate_stale_wip(cfg: dict, days: int = None, now: float = None) -> list:
     """
-    Arquivos em wip/ com mtime >= days dias → warning.
+    Arquivos em wip/ com idade desde a última transição para wip >= days dias → warning.
+    Quando o log não existe ou não possui entrada parseável, usa mtime como fallback.
     Suporta modo by_agent via resolve_wip_dirs.
     """
     wip_dirs = resolve_wip_dirs(cfg)
     warnings = []
-    now = datetime.now().timestamp()
+    threshold_days = days
+    if threshold_days is None:
+        try:
+            threshold_days = int(cfg.get("stale_wip_days", STALE_WIP_DAYS))
+        except (TypeError, ValueError):
+            threshold_days = STALE_WIP_DAYS
+    if threshold_days <= 0:
+        threshold_days = STALE_WIP_DAYS
+
+    now_ts = now if now is not None else datetime.now().timestamp()
 
     for wip_dir in wip_dirs:
-        try:
-            md_files = [
-                os.path.join(wip_dir, f)
-                for f in os.listdir(wip_dir)
-                if f.endswith(".md")
-            ]
-        except OSError:
-            continue
+        md_files = [
+            os.path.join(wip_dir, f)
+            for f in _list_dir_for_rule("stale_wip", wip_dir, warnings)
+            if f.endswith(".md")
+        ]
 
         for file_path in md_files:
             try:
                 stat = os.stat(file_path)
-                git_time = _git_last_modified_time(file_path)
-                ref_time = git_time if git_time is not None else stat.st_mtime
-                age_seconds = now - ref_time
+                log_time, diagnostics = _latest_wip_transition_time(cfg, file_path)
+                warnings.extend(diagnostics)
+                ref_time = log_time if log_time is not None else stat.st_mtime
+                age_seconds = now_ts - ref_time
                 age_days = int(age_seconds / (60 * 60 * 24))
-                if age_days >= days:
+                if age_days >= threshold_days:
                     last_modified = datetime.fromtimestamp(ref_time).strftime("%Y-%m-%d")
                     basename = os.path.basename(file_path)
                     warnings.append({
                         "type": "warning",
                         "message": f"roadmap/wip/{basename} has been in WIP for {age_days} days (last modified {last_modified})"
                     })
-            except OSError:
-                pass
+            except OSError as e:
+                warnings.append(_inspection_item("stale_wip", file_path, e))
 
     return warnings
 
@@ -769,10 +866,8 @@ def validate_reqs_not_blocked_by_draft_adrs(cfg: dict) -> list:
     violations = []
     for file_path in files:
         name = os.path.basename(file_path)
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except OSError:
+        content = _read_file_for_rule("blocked_by_draft_adr", file_path, violations)
+        if content is None:
             continue
 
         if "Status: Open" not in content:
@@ -780,7 +875,7 @@ def validate_reqs_not_blocked_by_draft_adrs(cfg: dict) -> list:
 
         blocked_adrs = _parse_blocked_adrs(file_path)
         for adr_basename in blocked_adrs:
-            if _adr_is_draft(adr_basename, cfg):
+            if _adr_draft_status_for_rule(adr_basename, cfg, violations)[0]:
                 violations.append({
                     "type": "violation",
                     "message": f"REQ {name} is blocked by Draft ADR: {adr_basename}"
@@ -834,42 +929,38 @@ def validate_ref_targets_exist(cfg: dict) -> list:
     # Roadmaps em wip e blocked: verificar REQ:
     dirs = resolve_wip_dirs(cfg) + _resolve_state_dirs(cfg, "blocked")
     for wip_dir in dirs:
-        for name in list_dir(wip_dir):
-            try:
-                with open(os.path.join(wip_dir, name), "r", encoding="utf-8") as f:
-                    content = f.read()
-                ref = _extract_ref_path(content, "REQ")
-                if ref and not _reference_exists(ref, [cfg.get("req_dir", "docs/req")]):
-                    warnings.append({
-                        "type": "warning",
-                        "message": f'roadmap "{name}" links to REQ "{ref}" which does not exist'
-                    })
-            except OSError:
-                pass
+        for name in _list_dir_for_rule("ref_targets_exist", wip_dir, warnings):
+            content = _read_file_for_rule("ref_targets_exist", os.path.join(wip_dir, name), warnings)
+            if content is None:
+                continue
+            ref = _extract_ref_path(content, "REQ")
+            if ref and not _reference_exists(ref, [cfg.get("req_dir", "docs/req")]):
+                warnings.append({
+                    "type": "warning",
+                    "message": f'roadmap "{name}" links to REQ "{ref}" which does not exist'
+                })
 
     # REQs: verificar ADR: e Roadmap:
     for file_path in resolve_req_files(cfg):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            name = os.path.basename(file_path)
-            adr_ref = _extract_ref_path(content, "ADR")
-            adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
-            if adr_ref and not _reference_exists(adr_ref, adr_dirs):
-                warnings.append({
-                    "type": "warning",
-                    "message": f'req "{name}" links to ADR "{adr_ref}" which does not exist'
-                })
-            roadmap_ref = _extract_ref_path(content, "Roadmap")
-            if roadmap_ref and not _reference_exists(
-                roadmap_ref, [cfg.get("roadmap_dir", "docs/roadmaps")]
-            ):
-                warnings.append({
-                    "type": "warning",
-                    "message": f'req "{name}" links to Roadmap "{roadmap_ref}" which does not exist'
-                })
-        except OSError:
-            pass
+        content = _read_file_for_rule("ref_targets_exist", file_path, warnings)
+        if content is None:
+            continue
+        name = os.path.basename(file_path)
+        adr_ref = _extract_ref_path(content, "ADR")
+        adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
+        if adr_ref and not _reference_exists(adr_ref, adr_dirs):
+            warnings.append({
+                "type": "warning",
+                "message": f'req "{name}" links to ADR "{adr_ref}" which does not exist'
+            })
+        roadmap_ref = _extract_ref_path(content, "Roadmap")
+        if roadmap_ref and not _reference_exists(
+            roadmap_ref, [cfg.get("roadmap_dir", "docs/roadmaps")]
+        ):
+            warnings.append({
+                "type": "warning",
+                "message": f'req "{name}" links to Roadmap "{roadmap_ref}" which does not exist'
+            })
 
     return warnings
 

@@ -54,6 +54,33 @@ cujo slug case com a branch**, resolvendo a contradição com a Definition of Do
 da regra — pegar branch de feature sem governança — é preservada: reprova apenas quando não há
 roadmap correspondente em `wip/` **nem** em `done/`.
 
+### Adendo 2026-07-27 — contrato de idade `stale_wip` e erros de inspeção
+
+Para a regra `stale_wip`, **idade significa tempo desde a entrada mais recente do roadmap em `wip/`**,
+não tempo desde o último commit nem desde a última alteração do arquivo. A fonte canônica é
+`docs/roadmaps/.trackfw-log`, usando a linha mais recente do artefato atual cujo destino seja
+`wip` (`backlog → wip`, `analyzing → wip`, `blocked → wip` etc.). Em
+`roadmap_namespacing: by_agent`, o identificador inclui o prefixo do agente exatamente como gravado
+no log, por exemplo `zeus/ROADMAP-...md`.
+
+Fallback documentado: se o projeto ainda não possui `.trackfw-log`, ou se o artefato em `wip/` não
+tem transição de entrada em WIP parseável, os três runtimes usam o `mtime` do arquivo como
+compatibilidade retroativa. `git log` deixa de ser fonte contratual para idade de WIP, porque mede
+edição/commit do arquivo e não permanência no estado. O limite default permanece 7 dias e a
+severidade default da regra permanece `warning`.
+
+Política de inspeção para validators:
+
+| Caso | Contrato |
+|---|---|
+| `ENOENT` de diretórios de estado opcionais (`wip/`, `blocked/`, `done/` etc.) | Sem finding; diretório ausente continua significando estado vazio. |
+| Permissão negada, `ENOTDIR` ou erro de walk em diretório configurado/existente | Emitir diagnóstico da regra, com caminho e causa; severidade segue a configuração da regra (`stale_wip` default `warning`). |
+| Arquivo esperado mas ilegível (`stat`/read falha) | Emitir diagnóstico da regra para o arquivo; não converter em sucesso silencioso. |
+| Arquivo de apoio inválido ou linha de log inválida | Emitir diagnóstico da regra e aplicar fallback documentado quando houver; nunca ocultar parse falho. |
+
+Essas decisões preservam P2: ausência esperada não é erro, mas falha real de inspeção não pode
+parecer gate verde.
+
 ## Consequences
 
 ### Positivas

@@ -4,6 +4,67 @@
 
 ---
 
+## Sessão 2026-07-27 — Apolo (ML-1B débitos técnicos concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
+
+**Tarefa:** Provar a lacuna do gate de identidade quando o catálogo ganha alvo/superfície de agente
+suportado que não está na lista hardcoded de `TARGETS`, sem alterar catálogo real ou código de
+produção.
+
+**Entregue:**
+- `scripts/check-identity-parity.sh` agora valida que `TARGETS` cobre as superfícies de agentes
+  suportadas no catálogo canônico, mantendo a lista hardcoded até o ML-2C.
+- `scripts/check-gates-falsify.sh` adicionou o cenário
+  `identity-parity/catalog-target-missing`, que injeta temporariamente `codex=experimental` numa
+  cópia do catálogo e exige falha por alvo/superfície ausente.
+- A fixture temporária fica isolada em `mktemp` e é removida pelo `trap`; nenhum asset de catálogo
+  real foi alterado.
+
+**Validação:**
+- `scripts/check-identity-parity.sh` →
+  `Identity parity verified across Go/Node/Python for 11 target/surface combinations (with and without identity)`.
+- `scripts/check-gates-falsify.sh` →
+  `Falsification checks passed (all 13 scenarios, 8 gates proved non-vacuous)`.
+- `bin/trackfw validate --json` → `0 violations`, `0 warnings`.
+- `git diff --check` → verde.
+
+**Ressalva:**
+- O worktree já continha alterações de outro ML (`ADR`, `docs/cli-parity.md`, testes de validator e
+  movimentação do roadmap backlog→wip). Este ML preservou esse trabalho e só deve commitar os dois
+  scripts, o roadmap WIP, o contexto e a deleção do roadmap em `backlog`.
+
+## Sessão 2026-07-27 — Apolo (ML-1A débitos técnicos concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
+
+**Tarefa:** Fechar o contrato documentado de `stale_wip` e política de erros de inspeção sem alterar
+código de produção.
+
+**Entregue:**
+- ADR de gates verificáveis recebeu adendo definindo idade de `stale_wip` como a entrada mais recente
+  em `wip/` registrada no `.trackfw-log`.
+- `docs/cli-parity.md` documenta o contrato cross-runtime: `.trackfw-log` como fonte canônica,
+  fallback retrocompatível por `mtime`, `git log` fora do contrato, default de 7 dias e severidade
+  default `warning`.
+- Política de inspeção documentada: `ENOENT` de estado opcional é vazio; permissão negada,
+  `ENOTDIR`/erro de walk, arquivo esperado ilegível e arquivo/linha de log inválidos geram
+  diagnóstico da regra.
+- Provas negativas strict adicionadas nos três runtimes, sem produção:
+  `internal/validator/validator_stale_wip_contract_xfail_test.go`,
+  `npm/tests/validator.test.js` e `pypi/tests/test_validator.py`.
+- ML-1A marcado como concluído no roadmap WIP.
+
+**Validação:**
+- `go test ./internal/validator -run 'StaleWIP' -v` → verde, 2 xfails esperados via helper.
+- `(cd npm && npm test -- --test-name-pattern='stale_wip')` → verde; `validator.test.js` reportou
+  `41 passed, 0 failed, 2 xfail`.
+- `python3 -m pytest pypi/tests/test_validator.py -q -rxX` → `70 passed, 2 xfailed`.
+
+**Ressalva:**
+- `scripts/check-gates-falsify.sh` e `scripts/check-identity-parity.sh` já estavam modificados por
+  outro escopo/ML paralelo e foram preservados fora deste ML.
+
 ## Sessão 2026-07-27 — Artemis (ML-3A bloqueadores concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md`
@@ -4579,3 +4640,20 @@ REQ concluída em 2026-07-27. O gate integrado passou com flags Python, parsing 
 flat/by-agent cobertos por paridade e falsificação (12 cenários). `make quality` passou completo;
 o smoke de tarball npm e wheel PyPI passou após instalar `build` em dependência temporária isolada.
 Roadmap movido para `docs/roadmaps/done/` e REQ marcada como Done, liberando a próxima versão.
+
+## Implementação 2026-07-27 — Zeus — débitos técnicos pós-release
+
+Após o merge dos bloqueadores de release, a última REQ pendente foi movida de `backlog/` para
+`analyzing/`, validada sem violações e iniciada em `wip/` na branch
+`fix/debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade`.
+Wave 1 foi auditada com sucesso: o contrato de `stale_wip`/erros de inspeção está documentado,
+as provas negativas passam como xfail esperado nos três runtimes e o gate de identity parity agora
+prova a lacuna de catálogo sem resíduos. Wave 2 está liberada para implementação sequencial dos
+três débitos, evitando sobreposição nos contratos compartilhados dos validators.
+
+Wave 2 e Wave 3 foram concluídas na mesma branch: `stale_wip` passou a usar a última transição
+para `wip`, com fallback `mtime` e limiar configurável nos três CLIs; erros de inspeção passaram a
+gerar diagnósticos explícitos; e o gate de identity parity passou a derivar targets/surfaces do
+catálogo. A documentação foi atualizada, `make quality` passou com 643 testes Python, os gates de
+falsificação passaram com 13 cenários e 8 gates não-vazios, e `trackfw validate --json` retornou 0
+violações e 0 avisos. REQ e roadmap foram concluídos.

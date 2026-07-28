@@ -81,6 +81,46 @@ the internal validation rules documented in this contract, including
 frontmatter presence, folder/status coherence, reference integrity, and
 traceability checks.
 
+## Validator `stale_wip` and inspection errors
+
+The Go, Node.js, and Python validators share the same `stale_wip` contract:
+
+- A roadmap's WIP age is measured from its latest transition into `wip/` in
+  `docs/roadmaps/.trackfw-log`.
+- Valid WIP-entry transitions include any log line for the current roadmap whose
+  destination state is `wip`, such as `backlog → wip`, `analyzing → wip`, or
+  `blocked → wip`.
+- In `roadmap_namespacing: by_agent`, the roadmap identity includes the agent
+  prefix exactly as written in the log, for example
+  `zeus/ROADMAP-YYYY-MM-DD-<slug>.md`.
+- If `.trackfw-log` is absent, or if the current roadmap has no parseable entry
+  into `wip`, the backward-compatible fallback is the file `mtime`.
+- Git commit time is not part of the cross-runtime contract for WIP age. It
+  describes file edit history, not time spent in the WIP state.
+- The default stale threshold remains 7 days and the default rule severity
+  remains `warning` unless `rules.stale_wip` overrides it.
+- Projects may override the threshold with `stale_wip_days` in `trackfw.yaml`.
+  Values less than or equal to zero are ignored and fall back to the default.
+
+```yaml
+stale_wip_days: 14
+rules:
+  stale_wip: warning
+```
+
+Inspection failures must not degrade silently:
+
+| Condition | Contract |
+|---|---|
+| Missing optional state directory such as `wip/`, `blocked/`, or `done/` | No finding; missing state directories are treated as empty states. |
+| Permission denied, `ENOTDIR`, or walk/list failure for an existing configured directory | Emit a diagnostic for the owning rule, including the path and cause. Severity follows that rule's configured severity. |
+| Expected file exists but cannot be `stat`ed or read | Emit a diagnostic for the owning rule and continue inspecting the remaining files. |
+| Invalid support file or invalid transition-log line | Emit a diagnostic and use the documented fallback for the affected artifact when available. |
+
+The implemented coverage is intentionally cross-runtime: Go, Node.js, and
+Python test the `.trackfw-log` source of truth, configurable boundary behavior,
+`mtime` fallback, and `ENOTDIR`/walk-error diagnostics for `wip/`.
+
 ## AI integration lifecycle
 
 The Go, Node.js, and Python runtimes expose the same public lifecycle:
@@ -277,8 +317,19 @@ adding a vector in one runtime without propagating it is a contract break.
 `scripts/check-identity-parity.sh` is the cross-CLI gate for this contract. It
 verifies that the three `slug_vectors.json` copies are byte-identical and that
 the three runtimes render the same artifact for the same `identity.json`.
+Target/surface coverage is derived from the canonical integration catalog
+(`internal/integrations/assets/catalog.json`): every surface whose `agents`
+support level is not `unsupported` is exercised, using the default target name
+for the default surface and `target=surface` for additional surfaces. This means
+a new agent-capable catalog surface enters the gate without editing a manual
+target list.
 It runs as part of `make quality`, alongside `check-cli-parity.sh` and
 `check-integration-assets.sh`.
+
+`scripts/check-gates-falsify.sh` includes the P4 scenario
+`identity-parity/catalog-target-missing`, which mutates a temporary catalog copy
+to add an uncovered agent-capable surface and requires
+`check-identity-parity.sh` to fail with a catalog coverage diagnostic.
 
 ### The wizard's UX is also part of the contract
 

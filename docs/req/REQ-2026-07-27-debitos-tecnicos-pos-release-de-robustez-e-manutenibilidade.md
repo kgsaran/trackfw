@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-27
 author: "zeus"
 adr: "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md"
 ---
 
 # REQ: Débitos técnicos pós-release de robustez e manutenibilidade
 
-> Date: 2026-07-27 | Status: Open
+> Date: 2026-07-27 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -29,13 +29,13 @@ tag enquanto os gates e funcionalidades existentes estiverem verdes.
 
 ## Acceptance Criteria
 
-- [ ] Política de idade do `stale_wip` documentada e configurável nos três CLIs.
-- [ ] Fonte temporal e fallback possuem semântica explícita e testes determinísticos.
-- [ ] Erros relevantes de I/O deixam de ser convertidos silenciosamente em sucesso.
-- [ ] Severidade/diagnóstico de falhas de inspeção é consistente nos três CLIs.
-- [ ] Alvos do gate de identidade são derivados do catálogo ou validados contra ele.
-- [ ] Provas negativas demonstram que arquivo ilegível e alvo novo não passam silenciosamente.
-- [ ] Compatibilidade com configurações existentes preservada.
+- [x] Política de idade do `stale_wip` documentada e configurável nos três CLIs.
+- [x] Fonte temporal e fallback possuem semântica explícita e testes determinísticos.
+- [x] Erros relevantes de I/O deixam de ser convertidos silenciosamente em sucesso.
+- [x] Severidade/diagnóstico de falhas de inspeção é consistente nos três CLIs.
+- [x] Alvos do gate de identidade são derivados do catálogo ou validados contra ele.
+- [x] Provas negativas demonstram que arquivo ilegível e alvo novo não passam silenciosamente.
+- [x] Compatibilidade com configurações existentes preservada.
 
 ## Priority
 
@@ -68,4 +68,4 @@ ADR: `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md`
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
