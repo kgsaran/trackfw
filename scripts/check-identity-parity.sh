@@ -16,23 +16,16 @@ GO_BIN=${GO_BIN:-"$ROOT_DIR/bin/trackfw"}
 # run_install faz `cd` para o diretório do projeto — GO_BIN precisa ser absoluto.
 case "$GO_BIN" in /*) ;; *) GO_BIN="$ROOT_DIR/$GO_BIN" ;; esac
 
-# Cada entrada é "target" (superfície default) ou "target=surface" (superfície
-# explícita). As duas últimas cobrem a representação "agent-json", que só
-# aparece em superfícies não-default e portanto ficaria fora do gate se
-# usássemos apenas a lista de alvos.
-TARGETS=(
-  claude codex antigravity amazonq gemini cursor copilot windsurf kiro
-  antigravity=legacy-cli kiro=cli
-)
-
-assert_catalog_targets_covered() {
+load_catalog_targets() {
   local catalog="$ROOT_DIR/internal/integrations/assets/catalog.json"
-  local expected="$WORK_DIR/identity-required-targets.txt"
-  local actual="$WORK_DIR/identity-configured-targets.txt"
-  local missing="$WORK_DIR/identity-missing-targets.txt"
-  local extra="$WORK_DIR/identity-extra-targets.txt"
+  local specs="$WORK_DIR/identity-catalog-targets.txt"
 
-  python3 - "$catalog" >"$expected" <<'PY'
+  if [[ ! -f "$catalog" ]]; then
+    echo "Identity parity: missing canonical catalog ${catalog#$ROOT_DIR/}" >&2
+    exit 1
+  fi
+
+  python3 - "$catalog" >"$specs" <<'PY'
 import json
 import sys
 
@@ -51,6 +44,10 @@ for target in catalog.get("targets", []):
     ]
     if not supported:
         continue
+    # O CLI usa a primeira superfície suportada como default. Emitimos "target"
+    # para ela e "target=surface" para as demais. Isso mantém a semântica de
+    # usuário e ainda exercita superfícies não-default como antigravity=legacy-cli
+    # e kiro=cli, hoje necessárias para cobrir a representação agent-json.
     default_surface = supported[0].get("id")
     for surface in supported:
         surface_id = surface.get("id")
@@ -65,21 +62,35 @@ for spec in sorted(set(required)):
     print(spec)
 PY
 
-  printf '%s\n' "${TARGETS[@]}" | LC_ALL=C sort -u >"$actual"
-
-  comm -23 "$expected" "$actual" >"$missing"
-  comm -13 "$expected" "$actual" >"$extra"
-
-  if [[ -s "$missing" ]]; then
-    echo "Identity parity: catalog target/surface not covered by TARGETS:" >&2
-    sed 's/^/  - /' "$missing" >&2
+  if [[ ! -s "$specs" ]]; then
+    echo "Identity parity: canonical catalog has no agent-capable target/surface" >&2
     exit 1
   fi
-  if [[ -s "$extra" ]]; then
-    echo "Identity parity: TARGETS contains unknown catalog target/surface:" >&2
-    sed 's/^/  - /' "$extra" >&2
-    exit 1
-  fi
+
+  TARGETS=()
+  while IFS= read -r spec; do
+    [[ -n "$spec" ]] && TARGETS+=("$spec")
+  done <"$specs"
+}
+
+assert_catalog_targets_supported_by_go_cli() {
+  local home="$WORK_DIR/home-catalog-preflight"
+  local project="$WORK_DIR/project-catalog-preflight"
+  mkdir -p "$home" "$project"
+
+  local spec target
+  for spec in "${TARGETS[@]}"; do
+    target=${spec%%=*}
+    local args=(agents list --targets "$target" --scope project --json)
+    if [[ "$spec" == *=* ]]; then
+      args+=(--surface "$spec")
+    fi
+    if ! (cd "$project" && HOME="$home" "$GO_BIN" "${args[@]}") >"$WORK_DIR/catalog-preflight.log" 2>&1; then
+      echo "Identity parity: catalog-derived target/surface is not accepted by the Go CLI: $spec" >&2
+      cat "$WORK_DIR/catalog-preflight.log" >&2
+      exit 1
+    fi
+  done
 }
 
 # Nem todo ambiente tem as duas ferramentas: macOS traz shasum, Linux traz
@@ -118,7 +129,8 @@ for mirror in "$ROOT_DIR/npm/tests/fixtures/slug_vectors.json" "$ROOT_DIR/pypi/t
   fi
 done
 
-assert_catalog_targets_covered
+load_catalog_targets
+assert_catalog_targets_supported_by_go_cli
 
 # ---------------------------------------------------------------------------
 # 2. Helpers

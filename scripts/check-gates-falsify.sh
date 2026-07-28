@@ -145,11 +145,12 @@ assert_fails_with "identity-parity/slug-drift" \
 
 # ---------------------------------------------------------------------------
 # Cenário 3b — check-identity-parity.sh: catálogo ganha superfície nova de
-#               agente, mas TARGETS não a exercita → gate deve acusar lacuna.
+#               agente → gate derivado do catálogo deve tentar exercitá-la e
+#               reprovar enquanto os CLIs/binários não a reconhecerem.
 #
-# Objetivo (ML-1B): provar que a lista hardcoded de target/surface não pode
-# ficar dissociada do catálogo canônico. O catálogo temporário adiciona
-# `codex=experimental`; nenhum arquivo real do workspace é alterado.
+# Objetivo (ML-1B): provar que o gate não depende de edição manual de uma lista
+# TARGETS. O catálogo temporário adiciona `codex=experimental`; nenhum arquivo
+# real do workspace é alterado.
 # ---------------------------------------------------------------------------
 T3B="$WORK/s3b"
 mkdir -p "$T3B/scripts" "$T3B/internal/integrations/assets" \
@@ -205,7 +206,7 @@ path.write_text(json.dumps(catalog, ensure_ascii=False, separators=(",", ":")), 
 PY
 
 assert_fails_with "identity-parity/catalog-target-missing" \
-  "catalog target/surface not covered by TARGETS" \
+  "catalog-derived target/surface is not accepted by the Go CLI" \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T3B/scripts/check-identity-parity.sh"
 
 # ---------------------------------------------------------------------------
