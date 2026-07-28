@@ -10,6 +10,24 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [3.1.0] - 2026-07-27
+
+### Added
+- `trackfw ship` com fluxo governado de commit, push e abertura de PR/MR, agnóstico de forge.
+- Harness convergente para os CLIs e integrações de agentes/skills.
+
+### Fixed
+- Robustez dos gates de governança e paridade entre Go, Node.js e Python.
+- Integridade referencial e ciclo de vida das REQs, incluindo estado `analyzing`.
+- Convergência de templates, flags Python, parsing de valores YAML e contrato de schemas.
+- `stale_wip` determinístico e configurável, diagnóstico explícito de erros de I/O e identity parity
+  derivado do catálogo canônico.
+
+### Changed
+- Estrutura e frontmatter dos roadmaps canonicalizados, com documentação e artefatos sincronizados.
+
+Nenhuma mudança breaking após a versão 3.0.0.
+
 ## [3.0.0] - 2026-07-25
 
 ### Por que esta versão é major
