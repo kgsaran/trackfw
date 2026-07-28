@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-27
 req: "docs/req/REQ-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Débitos técnicos pós-release de robustez e manutenibilidade
 
-> Created: 2026-07-27 | Status: wip
+> Created: 2026-07-27 | Status: done
 
 ## Context
 

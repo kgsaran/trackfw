@@ -4650,3 +4650,10 @@ Wave 1 foi auditada com sucesso: o contrato de `stale_wip`/erros de inspeção e
 as provas negativas passam como xfail esperado nos três runtimes e o gate de identity parity agora
 prova a lacuna de catálogo sem resíduos. Wave 2 está liberada para implementação sequencial dos
 três débitos, evitando sobreposição nos contratos compartilhados dos validators.
+
+Wave 2 e Wave 3 foram concluídas na mesma branch: `stale_wip` passou a usar a última transição
+para `wip`, com fallback `mtime` e limiar configurável nos três CLIs; erros de inspeção passaram a
+gerar diagnósticos explícitos; e o gate de identity parity passou a derivar targets/surfaces do
+catálogo. A documentação foi atualizada, `make quality` passou com 643 testes Python, os gates de
+falsificação passaram com 13 cenários e 8 gates não-vazios, e `trackfw validate --json` retornou 0
+violações e 0 avisos. REQ e roadmap foram concluídos.
