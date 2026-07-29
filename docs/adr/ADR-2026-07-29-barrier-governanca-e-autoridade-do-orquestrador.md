@@ -56,6 +56,17 @@ apenas nomes de apresentação e não alteram o papel.
 13. **Ausência de bloco de critérios de aceite em um ML reprova a wave.** A regra é
     deliberadamente não-vacuosa: um ML sem critérios não passa "por não ter o que falhar".
 
+14. **A remoção dos aliases é breaking change e NÃO é registrada no `CHANGELOG.md` durante os MLs.**
+    O protocolo de release do projeto edita o `CHANGELOG.md` exclusivamente no PR de release, junto
+    com o bump de versão, nunca em commit separado. O ML que remove os aliases não toca o arquivo.
+    Registro para o PR de release consumir:
+
+    > **BREAKING CHANGE:** os aliases de integração `trackfw copilot`, `trackfw cursor`,
+    > `trackfw gemini`, `trackfw windsurf` e `trackfw amazonq` foram removidos. Use
+    > `trackfw agents` e `trackfw skills`. Os aliases existiam apenas no CLI Go; Node.js e Python
+    > nunca os registraram. As superfícies de instalação marcadas como `legacy` no catálogo
+    > **não** foram removidas — elas não são aliases de CLI e continuam necessárias para migração.
+
 ## Consequências
 
 ### Positivas
