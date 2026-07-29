@@ -235,16 +235,25 @@ bin/trackfw validate --json
 ### ML-3A — Atualizar agentes e gerar `/trackfw:barrier`
 **Status:** ⬜ Pendente
 **Arquivos afetados:**
-- `internal/integrations/assets/agents/architect.md`
-- `internal/integrations/assets/agents/backend.md`
-- `internal/integrations/assets/agents/frontend.md`
-- `internal/integrations/assets/agents/qa.md`
-- `internal/integrations/assets/agents/infra.md`
-- `internal/integrations/assets/agents/security.md`
-- `internal/integrations/assets/agents/code-quality.md`
-- demais assets especialistas aplicáveis
-- `internal/generators/` e testes de assets/slash commands
-- árvores `npm/src/integrations/` e `pypi/trackfw/integrations/` apenas via sincronização canônica
+- Os **12** assets de agente em `internal/integrations/assets/agents/`, enumerados: `architect.md`
+  (autoridade Git) e os 11 especialistas `backend.md`, `code-quality.md`, `data.md`, `dba.md`,
+  `frontend.md`, `iac.md`, `infra.md`, `qa.md`, `security.md`, `tooling.md`, `ux.md`.
+- `internal/generators/scaffold.go` — novo slash command `barrier.md` no mapa `commands`
+- `npm/src/generators/init.js` e `pypi/trackfw/generators/init_gen.py` — gêmeos manuais do slash
+  command e da tabela de slash commands do CLAUDE.md gerado
+- `internal/generators/claudemd.go` + testes — anunciar `/trackfw:barrier` na tabela gerada
+- testes de generators nos três runtimes
+- árvores `npm/src/integrations/assets/agents/` e `pypi/trackfw/integrations/assets/agents/`
+  **apenas** via `scripts/sync-integration-assets.sh`
+
+**Duas superfícies distintas — não confundir:**
+1. Assets de agente: editar a árvore Go e propagar por `scripts/sync-integration-assets.sh`.
+   `check-static-assets.sh` e `check-integration-assets.sh` provam ausência de byte-drift.
+2. Slash commands: literais de string em `internal/generators/scaffold.go`, com gêmeos
+   **mantidos à mão** em `npm/src/generators/init.js` e `pypi/trackfw/generators/init_gen.py`.
+   Nenhum script sincroniza esses três. `check-artifact-parity.sh` cobre apenas `slash_roadmap` —
+   o novo `barrier.md` **não terá gate automático**, então a prova de equivalência é manual e
+   obrigatória no retorno do ML.
 
 **Ações:**
 1. Documentar `trackfw_architect` como única autoridade Git.
