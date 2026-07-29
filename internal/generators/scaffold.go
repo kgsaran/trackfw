@@ -119,17 +119,36 @@ func installGlobalSkillInner(force bool) error {
 		return fmt.Errorf("localizando home dir: %w", err)
 	}
 
-	skillDir := filepath.Join(home, ".claude", "skills", "trackfw")
+	skillPath := GlobalClaudeSkillPath(home)
+	skillDir := filepath.Dir(skillPath)
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		return fmt.Errorf("creating %s: %w", skillDir, err)
 	}
 
-	skillPath := filepath.Join(skillDir, "SKILL.md")
 	if _, err := os.Stat(skillPath); err == nil && !force {
 		fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md (já existe — não sobrescrito)\n")
 		return nil
 	}
 
+	if err := os.WriteFile(skillPath, GlobalClaudeSkillContent(), 0644); err != nil {
+		return fmt.Errorf("writing SKILL.md: %w", err)
+	}
+	fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md\n")
+	return nil
+}
+
+// GlobalClaudeSkillPath resolves the path of the historical, global-scope
+// Claude compatibility skill given a home directory. It is not part of the
+// catalog-managed integrations manifest — a legacy artifact predating that
+// mechanism — so its lifecycle (existence/content) is tracked by direct
+// inspection rather than through internal/integrations.
+func GlobalClaudeSkillPath(home string) string {
+	return filepath.Join(home, ".claude", "skills", "trackfw", "SKILL.md")
+}
+
+// GlobalClaudeSkillContent returns the current canonical content of the
+// historical global Claude compatibility skill.
+func GlobalClaudeSkillContent() []byte {
 	content := `---
 name: trackfw
 description: "trackfw — Governed Software Delivery: ADR → REQ → ROADMAP → kanban"
@@ -170,12 +189,7 @@ A cadeia obrigatória é: **ADR → REQ → ROADMAP → backlog/wip/blocked/done
 7. Roadmap        → marcar ML como ✅ Concluído
 ` + "```" + `
 `
-
-	if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("writing SKILL.md: %w", err)
-	}
-	fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md\n")
-	return nil
+	return []byte(content)
 }
 
 // ForceGenerateClaudeCommands re-gera todos os slash commands, sobrescrevendo arquivos existentes.

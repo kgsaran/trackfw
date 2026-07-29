@@ -14,3 +14,5 @@
 - [slash-commands-cross-runtime-content-drift-2026-07-29](slash-commands-cross-runtime-content-drift-2026-07-29.md)
 - [rules-block-content-drift-3-clis-2026-07-29](rules-block-content-drift-3-clis-2026-07-29.md)
 - [cobra-help-cmd-duplicate-registration-2026-07-29](cobra-help-cmd-duplicate-registration-2026-07-29.md)
+- [update-harness-project-scope-json-gap-2026-07-29](update-harness-project-scope-json-gap-2026-07-29.md)
+- [commander-nested-subcommand-duplicate-flag-drops-parent-2026-07-29](commander-nested-subcommand-duplicate-flag-drops-parent-2026-07-29.md)

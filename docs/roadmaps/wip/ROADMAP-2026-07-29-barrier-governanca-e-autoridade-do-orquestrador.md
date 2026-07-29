@@ -671,7 +671,7 @@ bin/trackfw validate --json
 ```
 
 ### ML-6B — Implementar updates separados no Go
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/commands/update.go`
 - `internal/commands/update_harness.go`
@@ -688,10 +688,10 @@ bin/trackfw validate --json
    não gerenciados.
 
 **Critérios de aceite:**
-- [ ] Executar `trackfw update` em 20 projetos não repete update global.
-- [ ] `trackfw update harness` atualiza o global uma única vez.
-- [ ] Saída, estados e filtros seguem o contrato do ML-6A.
-- [ ] `go build ./...`, `go test ./...` e `go vet ./...` passam.
+- [x] Executar `trackfw update` em 20 projetos não repete update global.
+- [x] `trackfw update harness` atualiza o global uma única vez.
+- [x] Saída, estados e filtros seguem o contrato do ML-6A.
+- [x] `go build ./...`, `go test ./...` e `go vet ./...` passam.
 
 **Comandos de validação:**
 ```bash
@@ -701,7 +701,7 @@ go vet ./...
 ```
 
 ### ML-6C — Implementar updates separados no Node.js
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `npm/src/commands/update.js`
 - `npm/src/commands/update-harness.js`
@@ -714,10 +714,10 @@ go vet ./...
 escopo global sem depender de projeto.
 
 **Critérios de aceite:**
-- [ ] Saída, flags, estados e exit codes equivalentes ao Go.
-- [ ] `update` não muta global.
-- [ ] `update harness` atualiza somente global já instalado por padrão.
-- [ ] `npm test` passa.
+- [x] Saída, flags, estados e exit codes equivalentes ao Go.
+- [x] `update` não muta global.
+- [x] `update harness` atualiza somente global já instalado por padrão.
+- [x] `npm test` passa.
 
 **Comandos de validação:**
 ```bash
@@ -725,7 +725,7 @@ cd npm && npm test
 ```
 
 ### ML-6D — Implementar updates separados no Python
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `pypi/trackfw/commands/update.py`
 - `pypi/trackfw/commands/update_harness.py`
@@ -739,15 +739,83 @@ slash commands deve ser removida do update local ou formalizada como escopo sepa
 `update harness` deve funcionar autonomamente no Python.
 
 **Critérios de aceite:**
-- [ ] Saída, flags, estados e exit codes equivalentes ao Go e Node.
-- [ ] `update` não muta global.
-- [ ] `update harness` atualiza o global já instalado.
-- [ ] `--dry-run` e `--json` funcionam nos dois comandos.
-- [ ] Suíte Python passa.
+- [x] Saída, flags, estados e exit codes equivalentes ao Go e Node.
+- [x] `update` não muta global.
+- [x] `update harness` atualiza o global já instalado.
+- [x] `--dry-run` e `--json` funcionam nos dois comandos.
+- [x] Suíte Python passa.
 
 **Comandos de validação:**
 ```bash
 python3 -m pytest pypi/tests -k update -q
+```
+
+### ML-6F — Alinhar os três runtimes à lista de targets pinada (corretivo)
+**Status:** ⬜ Pendente
+**Origem:** auditoria cruzada da Wave 6. O contrato do ML-6A fixou estados, flags e ordem de
+chaves, mas **não** fixou o conjunto de targets — e os três runtimes produziram três respostas.
+Falha do contrato, não dos implementadores; os três reportaram a lacuna honestamente.
+**Arquivos afetados:**
+- `internal/generators/update.go`, `internal/commands/update*.go`
+- `npm/src/lib/update-engine.js`, `npm/src/commands/update*.js`
+- `pypi/trackfw/commands/update*.py`
+- testes correspondentes
+
+**Divergências medidas empiricamente:**
+1. Contagem de targets do harness: Go=3, Node=19, Python=19.
+2. Renderização de `path`: Node usa `~/...`, Python usa caminho absoluto.
+3. Artefato de `claude-skills`: Node aponta `trackfw-architecture-skill`, Python `trackfw-governance`.
+4. Escopo do contrato completo: Node aplicou as 4 flags e o JSON também ao `update` de projeto;
+   Go e Python deixaram o `update` de projeto sem flags.
+
+**Resolução (agora pinada em `docs/cli-parity.md`):**
+1. Lista fixa de 19 targets, na ordem declarada do catálogo. Go se alinha a Node/Python.
+2. `path` sempre tilde-abreviado. Python se alinha.
+3. `claude-skills` resolve pelo catálogo; adotar o id que o catálogo declara.
+4. O contrato diz "Applies to: both" — o `update` de projeto também expõe as 4 flags e o JSON.
+   Go e Python se alinham a Node.
+
+**Critérios de aceite:**
+- [ ] Os três runtimes declaram os mesmos 19 targets, na mesma ordem.
+- [ ] `path` é tilde-abreviado nos três.
+- [ ] `update` de projeto expõe `--dry-run`, `--json`, `--targets` e `--install-missing` nos três.
+- [ ] JSON byte-idêntico entre os três para o mesmo HOME e projeto, com ordem preservada.
+- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+
+**Comandos de validação:**
+```bash
+make quality
+```
+
+### ML-6E — `trackfw init --ai-tools` não deve mutar o harness global
+**Status:** ⬜ Pendente
+**Origem:** constatado pelo orquestrador ao validar a regressão do ML-5E.
+**Arquivos afetados:**
+- caminho de `init --ai-tools` nos três runtimes
+- testes correspondentes
+
+**Diagnóstico:** `trackfw init --ai-tools gemini`, executado dentro de um projeto, grava em
+`~/.gemini/agents/`. Constatado empiricamente: a execução falhou com
+`artifact "/Users/<user>/.gemini/agents/trackfw-architect.md" is outdated; use update`, provando
+que o comando alcança o HOME do usuário.
+
+É a **mesma classe de defeito** que a Wave 6 corrige em `trackfw update`: um comando de escopo de
+projeto mutando o harness global. O contrato do ML-6A cobre `update`; `init` ficou de fora.
+
+**Ações:**
+1. Restringir `init --ai-tools` ao escopo do projeto, seguindo o contrato do ML-6A.
+2. Instalação global passa a exigir escopo explícito, coerente com `trackfw update harness`.
+3. Teste com HOME isolado provando que `init` não escreve fora do projeto.
+
+**Critérios de aceite:**
+- [ ] `init --ai-tools` não escreve fora do diretório do projeto.
+- [ ] Teste com HOME isolado prova a ausência de escrita global.
+- [ ] Comportamento idêntico nos três runtimes.
+- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+
+**Comandos de validação:**
+```bash
+make quality
 ```
 
 ## Protocolo de conclusão do roadmap

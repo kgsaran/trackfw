@@ -1,11 +1,23 @@
 """
 commands/update.py — trackfw update (Python CLI).
-Escopo reduzido: atualiza somente as regras de agente (blocos marker-delimited).
-Gates (hooks/CI) e Claude commands requerem o CLI Go ou Node.js.
+
+Scope: the current repository only (docs/cli-parity.md, "`trackfw update`
+vs `trackfw update harness`"). This command never mutates global state —
+every write below is rooted at `cwd`, and the Codex integration block below
+plans/applies with `scope="project"` explicitly. `trackfw update harness`
+(trackfw/commands/update_harness.py) is the counterpart that refreshes the
+user's global harness (`~/.claude`, `~/.codex`, etc.) and runs from
+anywhere, without a `trackfw.yaml`.
+
+Escopo reduzido: atualiza somente as regras de agente (blocos marker-delimited)
+e a integração Codex de projeto já instalada. Gates (hooks/CI) e Claude
+commands requerem o CLI Go ou Node.js — ver docs/cli-parity.md.
 """
 
 import os
 import argparse
+
+from trackfw.commands import update_harness
 
 
 def register(subparsers: argparse.ArgumentParser) -> None:
@@ -13,6 +25,12 @@ def register(subparsers: argparse.ArgumentParser) -> None:
         "update",
         help="Update trackfw rules in agent config files (agent rules only)",
     )
+    # `update_action` is optional (required=False, the argparse default) so
+    # bare `trackfw update` keeps running `_run` below via `set_defaults`.
+    # Only when the user types `trackfw update harness` does the child
+    # parser's own `set_defaults(func=...)` override it.
+    update_actions = parser.add_subparsers(dest="update_action")
+    update_harness.register(update_actions)
     parser.set_defaults(func=_run)
 
 

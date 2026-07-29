@@ -1,6 +1,7 @@
 package generators
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,13 +34,14 @@ func TestUpdateDoesNotImplicitlyInstallAgentIntegrations(t *testing.T) {
 			t.Fatalf("governance update implicitly installed integration %s: %v", unexpected, err)
 		}
 	}
-	for _, expected := range []string{
-		filepath.Join(root, ".claude", "commands", "trackfw", "adr.md"),
-		filepath.Join(home, ".claude", "skills", "trackfw", "SKILL.md"),
-	} {
-		if _, err := os.Stat(expected); err != nil {
-			t.Fatalf("historical update auxiliary was not preserved: %s: %v", expected, err)
-		}
+	if _, err := os.Stat(filepath.Join(root, ".claude", "commands", "trackfw", "adr.md")); err != nil {
+		t.Fatalf("historical update auxiliary was not preserved: %v", err)
+	}
+	// trackfw update is project-scope only: it must never write the global
+	// legacy Claude skill in the user's home directory. That is the job of
+	// 'trackfw update harness' (see TestUpdateHarness*).
+	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "trackfw", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("trackfw update must not write the global harness skill: %v", err)
 	}
 }
 
@@ -94,6 +96,180 @@ Run focused tests and report changed files, validation evidence, and remaining r
 	}
 	if !strings.Contains(string(manifest), backendPath) || strings.Contains(string(manifest), frontendPath) {
 		t.Fatalf("unexpected Codex ownership manifest:\n%s", manifest)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// trackfw update harness — every test below redirects HOME to a t.TempDir()
+// and never touches the real user home directory.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestUpdateHarnessRunsWithoutProjectOrTrackfwYAML(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{})
+	if err != nil {
+		t.Fatalf("UpdateHarness() erro inesperado: %v", err)
+	}
+	if report.Scope != "harness" {
+		t.Fatalf("scope = %q, want harness", report.Scope)
+	}
+	if len(report.Targets) != len(HarnessTargetIDs) {
+		t.Fatalf("got %d targets, want %d (%v)", len(report.Targets), len(HarnessTargetIDs), HarnessTargetIDs)
+	}
+}
+
+func TestUpdateHarnessEmptyHomeReportsAllMissingAndDoesNotFail(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{})
+	if err != nil {
+		t.Fatalf("UpdateHarness() erro inesperado: %v", err)
+	}
+	summary := report.Summary()
+	if summary.Missing != len(HarnessTargetIDs) {
+		t.Fatalf("summary.Missing = %d, want %d (every target missing on an empty harness): %+v", summary.Missing, len(HarnessTargetIDs), report.Targets)
+	}
+	if summary.Updated != 0 || summary.Skipped != 0 || summary.Failed != 0 {
+		t.Fatalf("expected only missing targets on an empty harness, got %+v", summary)
+	}
+}
+
+func TestUpdateHarnessUnknownTargetIsUsageError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	_, err := UpdateHarness(UpdateOptions{Targets: []string{"not-a-real-target"}})
+	if err == nil {
+		t.Fatal("expected an error for an unknown --targets id")
+	}
+	var unknown *UnknownHarnessTargetError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("expected *UnknownHarnessTargetError, got %T: %v", err, err)
+	}
+}
+
+func TestUpdateHarnessTargetsFilterPreservesDeclaredOrder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"codex-agents", "claude-skill"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Targets) != 2 {
+		t.Fatalf("got %d targets, want 2: %+v", len(report.Targets), report.Targets)
+	}
+	// HarnessTargetIDs declares claude-skill before codex-agents — the
+	// output must follow that declared order, not the --targets argument order.
+	if report.Targets[0].ID != "claude-skill" || report.Targets[1].ID != "codex-agents" {
+		t.Fatalf("targets not in declared order: %+v", report.Targets)
+	}
+}
+
+func TestUpdateHarnessNeverTouchesHomeInDryRun(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{DryRun: true, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.DryRun {
+		t.Fatal("report.DryRun = false, want true")
+	}
+	entries, _ := os.ReadDir(home)
+	if len(entries) != 0 {
+		t.Fatalf("dry-run wrote to HOME: %v", entries)
+	}
+}
+
+func TestUpdateHarnessClaudeSkillInstallsOnlyWithInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-skill"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetMissing {
+		t.Fatalf("state = %q, want missing (no --install-missing)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(GlobalClaudeSkillPath(home)); !os.IsNotExist(err) {
+		t.Fatalf("claude-skill was installed without --install-missing: %v", err)
+	}
+
+	report, err = UpdateHarness(UpdateOptions{Targets: []string{"claude-skill"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (--install-missing)", report.Targets[0].State)
+	}
+	data, err := os.ReadFile(GlobalClaudeSkillPath(home))
+	if err != nil {
+		t.Fatalf("claude-skill was not installed with --install-missing: %v", err)
+	}
+	if string(data) != string(GlobalClaudeSkillContent()) {
+		t.Fatal("installed claude-skill content does not match GlobalClaudeSkillContent()")
+	}
+}
+
+func TestUpdateHarnessClaudeSkillUpdatesStaleContentAndSkipsCurrent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	path := GlobalClaudeSkillPath(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("stale content from a previous trackfw version\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-skill"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (stale content)", report.Targets[0].State)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != string(GlobalClaudeSkillContent()) {
+		t.Fatal("stale claude-skill content was not rewritten to the current template")
+	}
+
+	// Second run: content is now current — must report skipped, not updated.
+	report, err = UpdateHarness(UpdateOptions{Targets: []string{"claude-skill"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetSkipped {
+		t.Fatalf("state = %q, want skipped (already current)", report.Targets[0].State)
+	}
+}
+
+func TestUpdateHarnessDoesNotWriteAnythingOutsideHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cwd := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	if _, err := UpdateHarness(UpdateOptions{InstallMissing: true}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("trackfw update harness wrote into the current working directory: %v", entries)
 	}
 }
 
@@ -191,4 +367,3 @@ func TestUpdateInjectsAndUpdatesAttentionHooksIdempotently(t *testing.T) {
 		t.Fatalf("claude attention hooks duplicated on re-update. Expected 2 occurrences of AskUserQuestion, got %d:\n%s", count, claudeContentSecond)
 	}
 }
-

@@ -296,21 +296,34 @@ test('CLI emits the exact deterministic JSON envelope and supports lifecycle', (
   assert.match(missing.stderr, /install requires --targets/)
 })
 
-test('legacy trackfw update alias preserves unknown Codex bytes and warns', () => {
+// ML-6C (ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador)
+// reworked `trackfw update` into the missing/updated/skipped/failed target
+// contract (docs/cli-parity.md). The codex-project-agents target now
+// classifies items via IntegrationManager.inspect() first and only ever
+// calls manager.update() on the subset that is actually 'outdated' (or
+// 'not-installed' with --install-missing) — an unmanaged/modified file is
+// excluded from that call entirely, so it is preserved without ever
+// throwing, and the target simply reports 'skipped' (nothing about it
+// needed writing). This replaces the old behavior of calling
+// manager.update() on every present item and letting it throw + warn on
+// conflict — same outcome for the file on disk, quieter and cheaper.
+test('legacy trackfw update alias preserves unknown Codex bytes without a warning', () => {
   const dirs = roots()
   const bin = path.resolve(__dirname, '../bin/trackfw')
   fs.writeFileSync(path.join(dirs.projectRoot, 'trackfw.yaml'), 'hooks: none\nci: none\n')
   const unknown = path.join(dirs.projectRoot, '.codex/agents/trackfw-backend.toml')
   fs.mkdirSync(path.dirname(unknown), { recursive: true })
   fs.writeFileSync(unknown, 'user-owned unknown bytes\n')
-  const run = spawnSync(process.execPath, [bin, 'update'], {
+  const run = spawnSync(process.execPath, [bin, 'update', '--json'], {
     cwd: dirs.projectRoot,
     env: { ...process.env, HOME: dirs.homeRoot },
     encoding: 'utf8',
   })
   assert.equal(run.status, 0, run.stderr)
   assert.equal(fs.readFileSync(unknown, 'utf8'), 'user-owned unknown bytes\n')
-  assert.match(run.stderr, /Codex integration:.*Unmanaged artifact/i)
+  const doc = JSON.parse(run.stdout)
+  const target = doc.targets.find(t => t.id === 'codex-project-agents')
+  assert.equal(target.state, 'skipped')
 })
 
 test('legacy trackfw update alias converts only present Codex artifacts', () => {

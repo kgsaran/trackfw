@@ -706,6 +706,26 @@ outcome, not a usage error. Exit is non-zero only when at least one target is `f
 
 `scope` is `"project"` or `"harness"`. Key order is fixed as shown; `targets` follows the declared
 target order, not filesystem order. `summary` always carries all four counters, including zeros.
+`message` is present **only** when `state == "failed"`, positioned after `path`.
+
+### Declared harness targets — pinned list
+
+The harness target list is **not** derived at runtime; it is this fixed sequence of 19 ids, in this
+exact order: `claude-skill`, then `<tool>-agents` and `<tool>-skills` for each of the nine catalog
+tools in `catalog.json` declaration order — `claude`, `codex`, `gemini`, `antigravity`, `cursor`,
+`copilot`, `windsurf`, `amazonq`, `kiro`.
+
+Each `<tool>-<kind>` target is a **roll-up over every catalog item** for that pair, not one row per
+item; per-item granularity already exists via `trackfw agents update` and `trackfw skills update`.
+Roll-up precedence: `failed` > `updated` > `skipped`; all-not-installed → `missing`.
+
+`path` is rendered **tilde-abbreviated** (`~/.claude/agents`), never as an absolute path. Absolute
+paths make the JSON machine-dependent and break byte-comparison across runtimes.
+
+This list was pinned after the first implementation round produced three different answers — Go
+declared 3 targets, Node.js and Python 19 — because the contract specified states, flags and key
+order but left the target set to interpretation. Leaving a set unpinned is the same failure mode as
+leaving a string unpinned.
 
 **Parity auditing note:** compare these documents across runtimes with key order **preserved**
 (`object_pairs_hook=OrderedDict` and `dumps` without `sort_keys`). Normalizing key order hides

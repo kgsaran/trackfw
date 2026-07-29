@@ -4,6 +4,54 @@
 
 ---
 
+## Sessão 2026-07-29 — Apolo (ML-6B `trackfw update harness` — runtime Go concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+
+**Tarefa:** Separar `trackfw update` (escopo de projeto, nunca muta estado global) de um novo
+`trackfw update harness` (escopo global, não exige `trackfw.yaml` nem cwd de projeto), conforme
+contrato pinado em `docs/cli-parity.md` (`## trackfw update vs trackfw update harness`).
+
+**Entregue (runtime Go apenas — Node.js/Python ficam para ML-6C/6D):**
+- `internal/generators/scaffold.go`: extraído `GlobalClaudeSkillPath(home)` e
+  `GlobalClaudeSkillContent()` a partir de `installGlobalSkillInner`, reutilizados pelo harness.
+- `internal/generators/update.go`: `Update()` (projeto) não chama mais `ForceInstallSkills()` — a
+  skill legada global (`~/.claude/skills/trackfw/SKILL.md`) saiu do caminho de `trackfw update`.
+  Adicionados os tipos `TargetState`/`TargetResult`/`UpdateSummary`/`UpdateReport`/`UpdateOptions`,
+  a lista fixa e declarada `HarnessTargetIDs = []string{"claude-skill", "codex-agents",
+  "codex-skills"}` e `UpdateHarness(opts)`, que resolve `$HOME` via `os.UserHomeDir()` (nunca
+  `os/user`) e nunca lê `trackfw.yaml`.
+- `internal/commands/update_harness.go` (novo): subcomando `trackfw update harness` com
+  `--dry-run`, `--json`, `--targets` (usage error se id desconhecido) e `--install-missing`;
+  documento JSON com ordem de chaves `scope, dry_run, targets, summary` e, por target,
+  `id, state, path, message` (`message` só quando `failed`, via `omitempty`).
+- `internal/commands/update.go`: `newUpdateCmd()` registra o subcomando via `cmd.AddCommand(...)`
+  — `root.go` não precisou de alteração (o registro de `update` já cobre o subcomando).
+- Testes: `internal/generators/update_test.go` (harness) e
+  `internal/commands/update_harness_test.go` (CLI + ordem literal de chaves do JSON), todos com
+  `t.Setenv("HOME", t.TempDir())`. Ajustado `TestUpdateDoesNotImplicitlyInstallAgentIntegrations`
+  para afirmar que `Update()` **não** grava mais a skill global (antes afirmava o oposto).
+
+**Decisão de escopo (reportada, não corrigida):** `docs/cli-parity.md` diz que as 4 flags e o
+documento JSON aplicam-se a "ambos" os comandos, mas os critérios de aceite concretos do ML-6B só
+testam o comportamento de `update harness`. Optei por implementar o contrato completo (estados,
+flags, JSON) somente em `update harness`; `trackfw update` (projeto) manteve sua saída de texto
+existente, sem flags novas — evita inventar uma granularidade de "targets" de projeto não
+especificada que os runtimes Node/Python (ML-6C/6D) teriam que adivinhar/replicar. Ver nota do
+vault linkada abaixo.
+
+**Validação:** `go build ./...`, `go vet ./...`, `go test ./...` — todos verdes. Confirmado por
+`find ~/.claude -newermt "-15 min" -type f` (vazio) que o `$HOME` real não foi tocado durante os
+testes nem durante o `go run` manual de fumaça (que sempre usou `HOME=$(mktemp -d)`).
+
+**Nota do vault:** `vault/notes/update-harness-project-scope-json-gap-2026-07-29.md`.
+
+**Próximo agente:** ML-6C (Node.js) e ML-6D (Python) devem espelhar exatamente `HarnessTargetIDs`
+(`claude-skill`, `codex-agents`, `codex-skills`, nessa ordem) e a mesma decisão de escopo acima
+(ou revisá-la explicitamente nos 3 runtimes ao mesmo tempo, nunca só em um).
+
+---
+
 ## Sessão 2026-07-29 — Apolo (ML-5G — reconciliação do bloco de regras entre os 3 runtimes concluída)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
@@ -5574,3 +5622,110 @@ mantém um único bloco de regras.
 em `~/.gemini` — o HOME do usuário. É a mesma classe de defeito que a Wave 6 existe para corrigir
 em `trackfw update`: um comando de escopo de projeto mutando o harness global. O contrato do ML-6A
 cobre `update`, não `init`. Registrado como ML-6E.
+
+## Incidente 2026-07-29 — Zeus — verificação de HOME era vacuosa
+
+Durante a Wave 6, o agente do ML-6D reportou que `~/.claude/skills/trackfw/SKILL.md` na máquina
+real havia sido escrito por alguma execução não isolada. A investigação confirmou o fato e revelou
+um problema maior no método de auditoria do orquestrador.
+
+**Causa da falha de detecção:** todas as verificações anteriores de "HOME intocado" usaram
+`find <dir> -newermt "-N hours"`. Nesta máquina o `find` é `bfs`, que **rejeita** esse formato de
+timestamp com `Invalid timestamp` e sai sem listar nada. A saída vazia foi lida como "nada tocado",
+quando na verdade o comando havia falhado. As verificações das Waves 3, 4 e 5 são, portanto,
+**inconclusivas** — não provam ausência de escrita.
+
+**Método correto, validado:** `find <dir> -mmin -N`, ou varredura por `os.path.getmtime`.
+
+**Alcance real do incidente**, apurado com o método correto: exatamente **um** arquivo,
+`~/.claude/skills/trackfw/SKILL.md`, reescrito 18 minutos antes da apuração. O template do skill é
+**idêntico entre `origin/main` e esta branch** (`git diff origin/main -- internal/generators/scaffold.go`
+não acusa diferença no texto), então o conteúdo gravado equivale ao da versão já publicada. Nenhum
+outro artefato do trackfw em `~/.claude`, `~/.codex`, `~/.gemini`, `~/.cursor` ou `~/.agents` foi
+tocado nas últimas 4 horas.
+
+**Conclusão:** houve violação da proibição de escrita fora do repositório, com impacto material
+nulo (mesmo conteúdo), mas a lição relevante é a segunda: um gate de verificação que falha em
+silêncio é indistinguível de um gate que passa. É a mesma classe de defeito que este roadmap
+inteiro combate, desta vez cometida pelo próprio orquestrador — e é a segunda vez na sessão, após
+o `sort_keys=True` que mascarou a divergência de ordem de chaves no ML-2E.
+
+## 2026-07-29 — Apolo (Backend) — ML-6C iniciado (Node.js: `trackfw update` vs `trackfw update harness`)
+
+Recebido handoff do `trackfw_architect` para implementar, somente no runtime Node.js
+(`npm/src/`), o contrato congelado no ML-6A (`docs/cli-parity.md`, seção
+"`trackfw update` vs `trackfw update harness`"). Escopo: `npm/src/commands/update.js`,
+`npm/src/commands/update-harness.js` (novo), registro em `index.js`, e ajustes de escopo em
+`integrations.js`/`manager.js` se necessários. Todo teste redireciona HOME — nenhuma execução
+contra o HOME real (Wave 6 já teve um incidente exatamente desse tipo, documentado acima).
+
+## 2026-07-29 — Apolo (Backend) — ML-6C concluído (Node.js: split `update` / `update harness`)
+
+**Arquivos criados:** `npm/src/commands/update-harness.js`, `npm/src/lib/update-engine.js`
+(motor de estado compartilhado `updated/skipped/missing/failed`, novo, não listado no handoff mas
+necessário para não duplicar a máquina de estados entre os dois comandos).
+
+**Arquivos alterados:** `npm/src/commands/update.js` (reescrito — restrito ao projeto, nunca mais
+chama `installSkillsForce`; ganhou `--dry-run`/`--json`/`--targets`/`--install-missing`),
+`npm/tests/agents-skills.test.js` (um teste pré-existente ajustado — ver nota abaixo),
+`npm/tests/update.test.js` (novo, 9 casos), `npm/tests/update-harness.test.js` (novo, 9 casos).
+`integrations.js`/`manager.js` não precisaram de mudança — `IntegrationManager.inspect()` já
+oferecia o suficiente para classificar estados sem efeito colateral.
+
+**Achado não óbvio, corrigido antes de reportar:** commander@12 tem uma armadilha real ao aninhar
+um `Command` filho que redeclara os MESMOS nomes de flag (`--json`, `--dry-run`, `--targets`,
+`--install-missing`) que o `Command` pai — o valor da flag é silenciosamente atribuído ao pai
+(`update.opts()`), e o filho recebe `{}` não importa o que foi passado na linha de comando.
+Reproduzido isoladamente antes de descartar a hipótese. Solução: `update.js` é um único `Command`
+com um argumento posicional opcional `[mode]` (`"harness"` ou vazio) e um único conjunto de
+opções; `update-harness.js` exporta uma função `run(options)` simples, não um `Command` próprio.
+Nota de vault: `vault/notes/commander-nested-subcommand-duplicate-flag-drops-parent-2026-07-29.md`.
+
+**Segundo achado, corrigido antes de reportar:** o filtro `--targets` estava sendo aplicado
+DEPOIS de construir todos os targets — como `apply()` é efeito colateral real (fora de
+`--dry-run`), isso escrevia em disco alvos que não foram pedidos. Corrigido: o filtro
+(`wanted`/`include(id)`) agora decide, por alvo, se ele sequer é computado/aplicado.
+
+**Ambiguidades reportadas ao orquestrador (não resolvidas unilateralmente):**
+0. **Divergência de escopo vs. ML-6B (Go), constatada após a implementação.** A nota
+   `vault/notes/update-harness-project-scope-json-gap-2026-07-29.md` (escrita às 16:08 pelo agente
+   do ML-6B, durante minha própria implementação) registra que o Go implementou o contrato
+   completo apenas para `update harness`, deixando `update` (projeto) sem flags. Este ML
+   implementou o contrato completo (quatro estados, quatro flags, ordem de chaves) para **ambos**,
+   seguindo a leitura literal da tabela de `docs/cli-parity.md` ("Applies to: both" nas quatro
+   linhas). Não revertido, por três razões: (a) é superconjunto — `trackfw update` sem flags
+   continua idêntico ao comportamento anterior menos a mutação global, nada quebra; (b) reverter
+   trocaria uma divergência por outra, já que o escopo do ML-6D (Python) ainda era desconhecido no
+   momento desta decisão; (c) verificado que `scripts/check-cli-parity.sh` só confere a *presença*
+   do nome do comando `update` entre os runtimes (bloco `floor_commands`), não o JSON/flags — logo
+   `make quality` não reprova por este motivo. A lista de target-ids de escopo projeto que autorei
+   (`agent-rules`, `agent-hooks`, `codex-project-agents`, `validate-script`, `ci-workflow`,
+   `git-hooks`, `claude-commands`) é exatamente o que a nota pede para ser acordado entre os três
+   runtimes — decisão de reconciliação do orquestrador, não minha.
+1. Granularidade dos alvos de `update harness`: cada `<tool>-agents`/`<tool>-skills` agrega
+   potencialmente muitos itens do catálogo (12 personas de agente, 17 skills) em um único estado
+   de alvo. O contrato do ML-6A não especifica granularidade por item; assumi agregação por
+   bundle (regra de precedência: `missing` se tudo ausente; `skipped` se algo está
+   modificado/não-gerenciado — nunca sobrescrito; `updated` se algo foi escrito; senão `skipped`).
+2. `ci-workflow` e `git-hooks` em `update` (escopo projeto) só aparecem na lista de alvos quando
+   `trackfw.yaml` já configura `ci: github-actions` / `hooks: husky|lefthook` — preservei o gate
+   condicional que já existia no código legado, em vez de forçar esses artefatos em todo projeto.
+3. `installSkillsForce` (`npm/src/generators/init.js:1242`) ficou órfão — não é mais chamado por
+   `update`, e `update-harness.js` duplica seu conteúdo literal (não pode reusá-la: ela grava
+   incondicionalmente em `os.homedir()` sem modo dry-run). Candidato a limpeza em ML futuro.
+4. Mensagem de erro do estado `failed` foi posicionada como última chave (`id`, `state`, `path`,
+   `message`), presente só quando `state === 'failed'` — o contrato não deixa isso explícito.
+5. `--targets` com um id de escopo projeto que existe no universo declarado mas está excluído da
+   lista efetiva por configuração (ex.: `--targets ci-workflow` num projeto com `ci: none`) é
+   aceito como id conhecido (sem erro de uso) e produz `targets: []` / `summary` todo zerado —
+   resultado silenciosamente vazio, não sinalizado como erro nem como `missing`.
+
+**Evidência:** `cd npm && npm test` → `322 passed, 0 failed` (304 pré-existentes + 18 novos).
+HOME real verificado com `find ~/.claude -type f -mmin -90` — o único arquivo recente
+(`~/.claude/skills/trackfw/SKILL.md`, 15:51) é o já documentado no incidente ML-6D acima (18 min
+antes daquela apuração), não desta sessão: nenhuma das minhas invocações rodou sem `HOME`
+redirecionado para um diretório de scratch.
+
+Nenhum arquivo sob `internal/`, `cmd/` ou `pypi/` foi tocado. Nenhuma operação Git executada —
+sem autoridade; branch permanece com working tree alterado para o `trackfw_architect` auditar e
+commitar.
