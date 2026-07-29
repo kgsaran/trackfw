@@ -231,3 +231,60 @@ cd pypi && python -m pytest
 make quality
 bin/trackfw validate --json
 ```
+
+---
+
+## Wave 2-bis — Convergir a semântica do observador (2 MLs em paralelo, corretivo)
+> Dependências: ML-2A, ML-2B e ML-2C concluídos. Emenda do contrato feita (ML-1A-bis).
+> Arquivos disjuntos entre Node.js e Python — **spawn simultâneo**.
+
+**Origem:** auditoria cruzada da Wave 2 pelo orquestrador. O contrato do ML-1A pinou os **nomes** dos
+parâmetros do observador e a string de aviso literal, mas deixou os **valores** dos parâmetros e a
+origem da remediação à interpretação. Falha do contrato, não dos implementadores — os três reportaram
+seus desvios honestamente.
+
+**Enquadramento honesto:** as strings em stderr saem **byte-idênticas hoje** nos três runtimes. Isto
+não é regressão visível ao usuário. O que diverge é a forma interna e a robustez da derivação de
+escopo. O trabalho é endurecimento preventivo mais um bug latente de escopo misto.
+
+**Divergências medidas no código (não em relatórios):**
+1. Valor de `reason`: linha de aviso completa (Go) · `'outdated+owned'` (Node) · `"outdated"` (Python).
+2. Valor de `destination`: tilde-abreviado (Go, Python) · caminho absoluto (Node).
+3. Quem compõe a linha: o manager (Go) · o caller (Node, Python).
+4. Origem da remediação: `Claim.Scope` por artefato (Go) · `tilde.startsWith('~/')` (Node) · closure
+   sobre o escopo de nível de comando (Python). As duas últimas acertam só com lote de escopo
+   uniforme — corretas por acidente, não por construção.
+5. Node compõe em **dois sites do mesmo runtime** (`init.js` e `integrations.js`), que podem divergir
+   entre si sem nenhum teste de paridade entre runtimes perceber.
+
+**Resolução (pinada em `docs/cli-parity.md`):** Go é a implementação canônica. O manager compõe a
+linha completa; `destination` é o caminho tilde-abreviado; `reason` é a linha pronta para impressão;
+callers imprimem verbatim e não compõem, abreviam nem derivam remediação; a remediação vem de
+`plan.claim.scope` por artefato.
+
+### ML-2D — Convergir o Node.js para a forma canônica
+**Status:** ⬜ Pendente
+**Agente:** Apolo
+**Arquivos afetados:** `npm/src/integrations/manager.js`, `npm/src/commands/init.js`,
+`npm/src/commands/integrations.js`, `npm/src/integrations/index.js`, `npm/src/generators/init.js`,
+`npm/tests/agents-skills.test.js`
+
+**Critérios de aceite:**
+- [ ] Manager compõe a linha; `onSkip(destinoTilde, linhaCompleta)`.
+- [ ] Nenhum caller compõe, abrevia ou deriva remediação — ambos os sites eliminados.
+- [ ] Remediação derivada de `plan.claim.scope`, não de `tilde.startsWith('~/')`.
+- [ ] Aviso em stderr inalterado, byte-idêntico ao Go.
+- [ ] `cd npm && npm test` passa.
+
+### ML-2E — Convergir o Python para a forma canônica
+**Status:** ⬜ Pendente
+**Agente:** Apolo
+**Arquivos afetados:** `pypi/trackfw/integrations/manager.py`, `pypi/trackfw/commands/init.py`,
+`pypi/trackfw/integrations/command.py`, `pypi/tests/test_agents_skills.py`
+
+**Critérios de aceite:**
+- [ ] Manager compõe a linha; `on_skip(destino_tilde, linha_completa)`.
+- [ ] Nenhum caller compõe — closures de `init.py` e `command.py` reduzidas a imprimir `reason`.
+- [ ] Remediação derivada de `plan["claim"]["scope"]` por artefato, não da closure de comando.
+- [ ] Aviso em stderr inalterado, byte-idêntico ao Go.
+- [ ] Suíte Python passa.
