@@ -364,6 +364,7 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     lines.append('| `/trackfw:validate` | Run governance validation |\n')
     lines.append('| `/trackfw:status` | Check what is in flight |\n')
     lines.append('| `/trackfw:architect` | Guide stack and architecture decisions |\n')
+    lines.append('| `/trackfw:barrier` | Run the wave-release checklist before liberating the next wave |\n')
     lines.append('\n## CLI commands (terminal / CI)\n')
     lines.append('\n| Command | When to use |\n')
     lines.append('|---|---|\n')
@@ -618,6 +619,36 @@ def generate_claude_commands(cwd: str) -> None:
             'Roadmap: docs/roadmaps/done/<nome>.md\n'
             'Próximo passo: abrir PR com gh pr create\n'
             '```'
+        ),
+        'barrier.md': (
+            'Você é o `trackfw_architect`, a única autoridade Git deste projeto. Este comando executa o checklist operacional de liberação de uma wave — nenhum outro agente commita, faz push ou libera a próxima wave.\n\n'
+            '## Argumento\n\n'
+            '`$ARGUMENTS` no formato `<roadmap> <wave>`. Se ausente ou incompleto, pergunte ao usuário qual roadmap (em `docs/roadmaps/wip/`) e qual número de wave validar.\n\n'
+            '---\n\n'
+            '## Núcleo determinístico\n\n'
+            'Execute primeiro:\n'
+            '```bash\n'
+            'trackfw barrier <roadmap> --wave <n> --json\n'
+            '```\n\n'
+            'Este comando é **necessário mas não suficiente**. Ele verifica MLs concluídos, evidências e `trackfw validate`, mas não substitui as inspeções especializadas nem a auditoria de diff abaixo — nenhuma delas é avaliada pelo binário. Consulte a seção `trackfw barrier` em `docs/cli-parity.md` para o contrato completo (estados, exit codes, saída JSON).\n\n'
+            'Se o comando retornar exit code não-zero (`blocked` ou erro de resolução): pare, reporte a falha ao usuário e não prossiga no checklist até que a wave passe.\n\n'
+            '---\n\n'
+            '## Definição de pronto da barrier — checklist completo\n\n'
+            'Antes de liberar a próxima wave, confirme cada item com evidência concreta — não presuma:\n\n'
+            '1. **Todos os MLs da wave concluídos e marcados** — cada ML da wave está com `**Status:** ✅ Concluído` no roadmap.\n'
+            '2. **Testes unitários e E2E aplicáveis executados** — rode os comandos de validação declarados em cada ML.\n'
+            '3. **Build aplicável sem erros** — rode o comando de build do(s) workspace(s) afetado(s).\n'
+            '4. **Cada critério de aceite inspecionado com evidência** — leia os arquivos modificados e confirme contra os critérios listados, não apenas contra os testes.\n'
+            '5. **Agente code-quality reportou conformidade, performance, robustez e clareza** — invoque o agente `code-quality` quando a mudança introduzir lógica nova, duplicação relevante ou risco de manutenibilidade.\n'
+            '6. **Agente security reportou SAST, privilégios, controle de acesso e camadas aplicáveis** — invoque o agente `security` quando a mudança tocar autenticação, segredos, entrada externa ou permissões.\n'
+            '7. **Gates pré-commit declarados pelo projeto executados** — rode os hooks/gates configurados (lint, format, testes de contrato).\n'
+            '8. **`trackfw validate --json` aprovado** — execute e confirme zero violações.\n'
+            '9. **Diff auditado contra o escopo** — revise o diff completo; confirme que não há alterações de agentes concorrentes nem arquivos fora do escopo do ML (ex: `docs/adr/`, `docs/req/`, `docs/roadmaps/` quando não autorizado ao especialista).\n'
+            '10. **Resultado registrado antes de liberar a próxima wave** — anote no roadmap ou na resposta ao usuário que a wave passou, com a evidência de cada item acima.\n\n'
+            'Se qualquer item falhar: bloqueie a próxima wave, identifique o item e o agente responsável, e despache um microlote corretivo. Só repita o checklist depois que o corretivo for concluído.\n\n'
+            '---\n\n'
+            '## Autoridade Git\n\n'
+            'Somente o `trackfw_architect` cria branch, audita diff, commita e faz push. Especialistas entregam trabalho sem commit — cabe a este papel revisar, commitar e sugerir a abertura de PR/MR (sem abrir automaticamente sem autorização do usuário).\n'
         ),
         'architect.md': (
             'Você é o guia de arquitetura do trackfw (`/trackfw:architect`). Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.\n\n'

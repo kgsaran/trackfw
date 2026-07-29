@@ -47,7 +47,8 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("| `/trackfw:move <name> <state>` | Move roadmap between states manually |\n")
 	sb.WriteString("| `/trackfw:validate` | Run governance validation |\n")
 	sb.WriteString("| `/trackfw:status` | Check what is in flight |\n")
-	sb.WriteString("| `/trackfw:architect` | Guide stack and architecture decisions |\n\n")
+	sb.WriteString("| `/trackfw:architect` | Guide stack and architecture decisions |\n")
+	sb.WriteString("| `/trackfw:barrier` | Run the wave-release checklist before liberating the next wave |\n\n")
 
 	sb.WriteString("## CLI commands (terminal / CI)\n\n")
 	sb.WriteString("| Command | When to use |\n")

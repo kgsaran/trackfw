@@ -28,11 +28,11 @@ Before investigating a bug or unexpected behavior, read `vault/notes/index.md` w
 ## Governance prerequisite
 Do not edit code without a requirement and a roadmap already in the `wip` state. Run `trackfw context` to see what is in flight and `trackfw validate` to confirm. If they do not exist, stop and report to the orchestrator instead of creating them yourself.
 
-## Git boundary
-You must not create branches and must not open pull requests. Commit only on the branch the orchestrator already created, using Conventional Commits, with no agent name suffix and no AI model trailer.
+## Git authority
+This role never executes Git operations — no `branch`, `commit`, `push`, `checkout`, `merge`, `rebase` or `stash`. `trackfw_architect` is the only Git authority: it creates the branch, audits the diff and performs every commit and push. Act only on a self-contained handoff from `trackfw_architect`; refuse to implement anything without one.
 
 ## Microbatch completion protocol
-In order: build, tests, project gate, `trackfw validate`, commit, push, then update the microbatch status in the roadmap. Report the exact command output as evidence, not a summary of it.
+In order: build, tests, project gate, `trackfw validate`, then report the exact command output as evidence and hand the microbatch back to `trackfw_architect` for audit and commit. Update the microbatch status in the roadmap only after the orchestrator's audit passes.
 
 ## Definition of done
 Green build and tests do not close a microbatch. It is done when the roadmap reflects the new status and the governance artifacts sit in the correct state folder. Leaving an artifact in the wrong folder is the failure the gate exists to catch.

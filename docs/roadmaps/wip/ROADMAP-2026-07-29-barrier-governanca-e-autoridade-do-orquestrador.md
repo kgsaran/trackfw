@@ -233,7 +233,7 @@ bin/trackfw validate --json
 ```
 
 ### ML-3A — Atualizar agentes e gerar `/trackfw:barrier`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - Os **12** assets de agente em `internal/integrations/assets/agents/`, enumerados: `architect.md`
   (autoridade Git) e os 11 especialistas `backend.md`, `code-quality.md`, `data.md`, `dba.md`,
@@ -268,13 +268,13 @@ bin/trackfw validate --json
 9. Manter o nome público abstrato `trackfw_architect`; nunca depender de `zeus-tf`.
 
 **Critérios de aceite:**
-- [ ] `/trackfw:barrier` contém o checklist operacional completo.
-- [ ] Assets Go/Node/Python permanecem byte-equivalentes após sincronização.
-- [ ] Especialistas não possuem protocolo autorizando operações Git.
-- [ ] `trackfw_architect` possui protocolo explícito de auditoria, commit e push.
-- [ ] Testes cobrem a presença da barrier, a autoridade do orquestrador e a ausência de regras de
+- [x] `/trackfw:barrier` contém o checklist operacional completo.
+- [x] Assets Go/Node/Python permanecem byte-equivalentes após sincronização.
+- [x] Especialistas não possuem protocolo autorizando operações Git.
+- [x] `trackfw_architect` possui protocolo explícito de auditoria, commit e push.
+- [x] Testes cobrem a presença da barrier, a autoridade do orquestrador e a ausência de regras de
       paridade universal.
-- [ ] `make quality` passa.
+- [x] `make quality` passa.
 
 **Comandos de validação:**
 ```bash
@@ -407,6 +407,37 @@ go vet ./...
 go test ./internal/commands -run Help -v
 cd npm && npm test -- --test-name-pattern='help'
 python3 -m pytest pypi/tests -k help -q
+```
+
+### ML-5C — Eliminar o mapa duplicado de slash commands no Node.js
+**Status:** ⬜ Pendente
+**Origem:** defeito pré-existente detectado durante a auditoria do ML-3A.
+**Arquivos afetados:**
+- `npm/src/generators/init.js`
+- testes de generators do Node.js
+
+**Diagnóstico:** o Node.js mantém dois mapas de slash commands. `generateClaudeCommands` lista os
+9 comandos; `generateClaudeCommandsForce` lista apenas 6 — faltam `roadmap.md`, `implement.md` e
+`barrier.md`. Consequência: `trackfw skills --force` no Node instala menos comandos do que a
+instalação normal, e menos do que Go e Python, que usam um único mapa com flag de força.
+
+**Ações:**
+1. Eliminar a duplicação: `generateClaudeCommandsForce` deve reusar o mesmo mapa de
+   `generateClaudeCommands`, variando apenas o comportamento de sobrescrita — o padrão já adotado
+   por `installSkillsInner(force)` no Go.
+2. Adicionar teste que prove que os caminhos normal e forçado instalam exatamente o mesmo conjunto
+   de comandos, para que a divergência não possa voltar.
+
+**Critérios de aceite:**
+- [ ] Existe um único mapa de slash commands no Node.js.
+- [ ] Os caminhos normal e `--force` instalam o mesmo conjunto nos três runtimes.
+- [ ] Teste de regressão prova a equivalência entre os dois caminhos.
+- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+
+**Comandos de validação:**
+```bash
+cd npm && npm test
+make quality
 ```
 
 ## Wave 6 — Separação entre update de projeto e update do harness (4 MLs)

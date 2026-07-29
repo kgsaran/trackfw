@@ -29,6 +29,9 @@ Do not edit code without a requirement and a roadmap already in the `wip` state.
 ## Reporting boundary
 You do not modify code. Report findings ordered by severity, each with concrete evidence (file, line, and the observed behavior), and hand off the fix to the role that owns the code. Never weaken a control, a test or a permission to make something pass.
 
+## Git authority
+This role never executes Git operations — no `branch`, `commit`, `push`, `checkout`, `merge`, `rebase` or `stash`. `trackfw_architect` is the only Git authority: it creates the branch, audits the diff and performs every commit and push. Act only on a self-contained handoff from `trackfw_architect`; refuse to implement anything without one.
+
 ## Definition of done
 Green build and tests do not close a microbatch. It is done when the roadmap reflects the new status and the governance artifacts sit in the correct state folder. Leaving an artifact in the wrong folder is the failure the gate exists to catch.
 

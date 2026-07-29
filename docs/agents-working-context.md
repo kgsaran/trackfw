@@ -4,6 +4,55 @@
 
 ---
 
+## Sessão 2026-07-29 — Prometeu (ML-3A `/trackfw:barrier` e autoridade Git dos agentes concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+
+**Tarefa:** Retirar toda autoridade Git dos 11 agentes especialistas e concentrá-la em
+`trackfw_architect`; criar o slash command `/trackfw:barrier` nos três runtimes; anunciá-lo na
+tabela de slash commands do CLAUDE.md gerado.
+
+**Entregue:**
+- `internal/integrations/assets/agents/architect.md`: seção `## Git authority` revisada (agora
+  cobre commit de código de produto, já que especialistas não commitam mais) + nova seção
+  `## Barrier protocol` (invocar code-quality/security, bloquear wave em falha, auditar antes de
+  commitar). Propagado para `npm/` e `pypi/` via `scripts/sync-integration-assets.sh`.
+- Os 11 especialistas (`backend`, `code-quality`, `data`, `dba`, `frontend`, `iac`, `infra`, `qa`,
+  `security`, `tooling`, `ux`): `## Git boundary` → `## Git authority` (ou seção nova para os 3
+  read-only) declarando que nunca executam operações Git e só atuam por handoff autocontido de
+  `trackfw_architect`.
+- Slash command `barrier.md` (checklist operacional de 10 itens) adicionado como literal idêntico
+  em `internal/generators/scaffold.go`, `npm/src/generators/init.js` e
+  `pypi/trackfw/generators/init_gen.py` — equivalência byte-a-byte provada via SHA256 (mesmo hash
+  nos três runtimes, verificação manual pois não há gate automático para esta superfície).
+- `/trackfw:barrier` anunciado na tabela de slash commands do CLAUDE.md gerado
+  (`internal/generators/claudemd.go` + gêmeos Node/Python).
+- Golden tests re-congelados (`internal/integrations/testdata/*.golden.*`) e literais equivalentes
+  em `npm/tests/agents-skills.test.js` atualizados para refletir o novo texto de `architect.md` e
+  `backend.md`.
+- Novo teste `internal/integrations/agents_git_authority_test.go`: prova que só `architect` tem
+  protocolo de autoridade Git/barrier e que os outros 11 desautorizam operações Git.
+
+**Validação:**
+- `go build ./... && go vet ./... && go test ./...` → verde.
+- `cd npm && npm test` → 301 passed, 0 failed.
+- `python3 -m pytest pypi/tests -q` → 670 passed.
+- `make quality` → verde (inclui `check-integration-assets.sh`, `check-static-assets.sh`,
+  `check-artifact-parity.sh`, `check-gates-falsify.sh`).
+- `bin/trackfw validate --json` → `{"violations":0,"warnings":0}`.
+- `grep -rniE 'git (add|commit|push|checkout|branch|merge|rebase|stash|reset)'` nos três diretórios
+  de assets → só `architect.md` aparece, e apenas no protocolo de autoridade.
+
+**Ambiguidade reportada, não corrigida:** o critério de aceite do ML-3A no roadmap lista "Testes
+cobrem... a ausência de regras de paridade universal", frase que parece copiada do critério de
+Wave 1/2 (CLI `trackfw barrier`) — não há regra de paridade universal no escopo de assets de agente
+e slash commands desta ML. Também identificado (pré-existente, fora de escopo): `npm/src/generators/init.js`
+tem uma segunda função `generateClaudeCommandsForce` cujo mapa de comandos já omitia `roadmap.md` e
+`implement.md` antes desta ML — não recebeu `barrier.md` para não aprofundar essa divergência
+pré-existente sem decisão do orquestrador.
+
+---
+
 ## Sessão 2026-07-29 — Apolo (ML-2A `trackfw barrier` — runtime Go concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
@@ -4919,3 +4968,24 @@ Gates: `make quality` exit 0 (300 testes Node, 669 Python, Go verde, 13 cenário
 Dogfooding: `bin/trackfw barrier <este-roadmap> --wave 2 --json` retornou exit 0 e
 `status: passed`, com os quatro checks verdes e os gates reais da wave efetivamente executados.
 A barrier validou a própria wave que a implementou. Wave 3 liberada.
+
+## Auditoria 2026-07-29 — Zeus — barrier da Wave 3: APROVADA
+
+ML-3A concentrou a autoridade Git no `trackfw_architect` e criou o slash command
+`/trackfw:barrier`. Verificação independente:
+
+- Grep de operações Git nos 36 assets (12 por runtime): somente `architect.md` aparece, e apenas
+  no protocolo de autoridade. Os 11 especialistas declaram explicitamente que não executam Git e
+  que só atuam por handoff autocontido.
+- Equivalência do slash command: os literais de `barrier.md` extraídos dos três fontes têm SHA-256
+  idêntico (3091 bytes). Essa superfície não tem gate automático — `check-artifact-parity.sh`
+  cobre apenas `slash_roadmap` —, então a prova é manual e precisa ser repetida a cada alteração.
+- `~/.claude` intocado: o agente foi proibido de rodar instaladores, já que
+  `installGlobalSkillInner` escreve no HOME de forma invisível ao `git status`.
+- Gates: `make quality` exit 0, `validate --json` 0 violações, `git diff --check` limpo.
+- Dogfooding: `bin/trackfw barrier <este-roadmap> --wave 3` retornou exit 0 e `status: passed`.
+
+Defeito pré-existente detectado na auditoria e registrado como ML-5C: o Node.js mantém dois mapas
+de slash commands; `generateClaudeCommandsForce` lista 6 dos 9 comandos. `trackfw skills --force`
+instala menos comandos que a instalação normal e menos que Go e Python, que usam um único mapa com
+flag. Não corrigido aqui para não expandir a Wave 3.

@@ -72,6 +72,27 @@ test('generateClaudeCommands and generateClaudeCommandsForce create architect.md
 })
 
 
+test('generateClaudeCommands creates barrier.md with the operational checklist', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-barrier-test-'))
+  const origCwd = process.cwd()
+  try {
+    process.chdir(tmpDir)
+    generateClaudeCommands()
+    const barrierPath = path.join(tmpDir, '.claude', 'commands', 'trackfw', 'barrier.md')
+    assert.ok(fs.existsSync(barrierPath), 'barrier.md should exist after generateClaudeCommands()')
+
+    const content = fs.readFileSync(barrierPath, 'utf8')
+    assert.ok(content.includes('trackfw_architect'), 'barrier.md should name trackfw_architect as the Git authority')
+    assert.ok(content.includes('trackfw barrier <roadmap> --wave <n> --json'), 'barrier.md should invoke the deterministic core command')
+    assert.ok(content.includes('Todos os MLs da wave concluídos e marcados'), 'barrier.md should contain checklist item 1')
+    assert.ok(content.includes('Agente code-quality reportou'), 'barrier.md should require the code-quality agent review')
+    assert.ok(content.includes('Agente security reportou'), 'barrier.md should require the security agent review')
+    assert.ok(content.includes('Resultado registrado antes de liberar a próxima wave'), 'barrier.md should contain checklist item 10')
+  } finally {
+    process.chdir(origCwd)
+  }
+})
+
 test('generateClaudeMD includes mandatory global ADRs directive in CLAUDE.md', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gen-test-'))
   const origCwd = process.cwd()
@@ -124,6 +145,11 @@ test('generateClaudeMD includes all 9 harness sections', () => {
     for (const snippet of harnessSnippets) {
       assert.ok(content.includes(snippet), `CLAUDE.md should contain harness snippet: "${snippet}"`)
     }
+
+    assert.ok(
+      content.includes('| `/trackfw:barrier` | Run the wave-release checklist before liberating the next wave |'),
+      'CLAUDE.md should announce the /trackfw:barrier slash command in the table'
+    )
 
     // Pre-existing sections must still be present
     const preExisting = [
