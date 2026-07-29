@@ -73,9 +73,11 @@ def _resolve_roadmap_path(cfg: dict, roadmap_arg: str) -> str:
         candidate = os.path.join(d, basename)
         if os.path.isfile(candidate):
             return candidate
+    # Pinned literally by docs/cli-parity.md (`## trackfw barrier`): roadmap_arg is
+    # the argument exactly as the user typed it, with no .md normalization.
+    roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
     raise BarrierUsageError(
-        f"roadmap not found: {roadmap_arg!r} (searched wip/ and done/ under "
-        f"{cfg.get('roadmap_dir', 'docs/roadmaps')!r})"
+        f'roadmap "{roadmap_arg}" not found in wip/ nor done/ under {roadmap_dir}'
     )
 
 
@@ -95,10 +97,12 @@ _CRITERIA_UNMET_RE = re.compile(r"^- \[ \]")
 _GATES_HEADER_RE = re.compile(r"^\*\*Gates da wave:\*\*")
 
 
-def _find_wave(lines: list, wave_number: int, roadmap_arg: str) -> tuple:
+def _find_wave(lines: list, wave_number: int, roadmap_basename: str) -> tuple:
     """Retorna (start, end) — índices (inclusivo/exclusivo) do corpo da wave
     solicitada. Lança BarrierUsageError se a wave não existir ou se um cabeçalho
-    de wave malformado for encontrado antes dela."""
+    de wave malformado for encontrado antes dela. roadmap_basename é o basename
+    resolvido (incluindo .md), usado apenas na mensagem de erro — pinned
+    literalmente por docs/cli-parity.md."""
     n = len(lines)
     i = 0
     found = None
@@ -122,7 +126,7 @@ def _find_wave(lines: list, wave_number: int, roadmap_arg: str) -> tuple:
             i += 1
     if found is None:
         raise BarrierUsageError(
-            f"wave {wave_number} not found in roadmap {roadmap_arg!r}"
+            f'wave {wave_number} not found in roadmap "{roadmap_basename}"'
         )
     return found
 
@@ -208,7 +212,7 @@ def _find_gates(lines: list, start: int, end: int):
 # Avaliação dos checks embutidos
 # ────────────────────────────────────────────────────────────────────────────
 
-def _check_mls_complete(mls: list) -> dict:
+def _check_mls_complete(mls: list, wave_number: int) -> dict:
     evidence = []
     failures = []
     for ml in mls:
@@ -219,7 +223,8 @@ def _check_mls_complete(mls: list) -> dict:
             failures.append(f"{ml['id']}: not complete (status: {marker if marker else 'missing'})")
     status = "passed" if (mls and not failures) else "blocked"
     if not mls:
-        failures.append("wave contains no ML headings")
+        # Pinned literally by docs/cli-parity.md ("Wave contains zero MLs" case).
+        failures.append(f"wave {wave_number}: no ML found")
     return {"name": "mls_complete", "status": status, "evidence": evidence, "failures": failures}
 
 
@@ -296,13 +301,14 @@ def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_number: int
     content = open(roadmap_path, "r", encoding="utf-8").read()
     _LINES_CACHE = content.split("\n")
 
+    roadmap_basename = os.path.basename(roadmap_path)
     started_at = _now_rfc3339()
-    wave_start, wave_end = _find_wave(_LINES_CACHE, wave_number, roadmap_arg)
+    wave_start, wave_end = _find_wave(_LINES_CACHE, wave_number, roadmap_basename)
     mls = _find_mls(_LINES_CACHE, wave_start, wave_end)
     gate_commands = _find_gates(_LINES_CACHE, wave_start, wave_end)
 
     checks = [
-        _check_mls_complete(mls),
+        _check_mls_complete(mls, wave_number),
         _check_acceptance_evidence(mls),
         _check_gates(gate_commands),
         _check_validate(),
@@ -356,7 +362,9 @@ def run(args):
         roadmap_path = _resolve_roadmap_path(cfg, args.roadmap)
         doc = _build_result_document(args.roadmap, roadmap_path, wave_number)
     except BarrierUsageError as exc:
-        sys.stderr.write(f"trackfw barrier: error: {exc}\n")
+        # No argparse "error:" prefix — pinned literally by docs/cli-parity.md
+        # (`## trackfw barrier`), so the message is byte-identical across runtimes.
+        sys.stderr.write(f"trackfw barrier: {exc}\n")
         sys.exit(2)
         return
 

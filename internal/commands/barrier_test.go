@@ -6,6 +6,9 @@ package commands
 // These tests call the unexported parsing helpers directly and do not build a binary.
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -223,5 +226,77 @@ func TestRunGateCommand_ExitCodes(t *testing.T) {
 	}
 	if code := runGateCommand("exit 7"); code != 7 {
 		t.Fatalf("expected exit 7 for 'exit 7', got %d", code)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Regression tests — ML-2D. These two cases had zero coverage before ML-2D,
+// which is exactly why the cross-runtime divergence (Go vs Node.js vs Python)
+// slipped through the per-runtime suites in the Wave 2 barrier run.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestBarrierRegression_WaveWithNoMLProducesPinnedFailureMessage(t *testing.T) {
+	dir := t.TempDir()
+	for _, d := range []string{"docs/roadmaps/wip", "docs/req", "docs/adr"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	content := "# Roadmap: No ML\n\nREQ: REQ-x\n\n" +
+		"## Acceptance Criteria\n- [x] fixture\n\n" +
+		"## Wave 1 — Sem MLs\n> Dependências: nenhuma\n\n" +
+		"Some prose, no ML heading at all.\n"
+	roadmapPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-no-ml.md")
+	if err := os.WriteFile(roadmapPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write roadmap: %v", err)
+	}
+
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-no-ml", "--wave", "1", "--json")
+	if code != 1 {
+		t.Fatalf("expected exit 1 (blocked), got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	var doc barrierResultDoc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	var mlsCheck *barrierCheckDoc
+	for i := range doc.Checks {
+		if doc.Checks[i].Name == "mls_complete" {
+			mlsCheck = &doc.Checks[i]
+		}
+	}
+	if mlsCheck == nil {
+		t.Fatalf("mls_complete check not found in: %+v", doc.Checks)
+	}
+	want := []string{"wave 1: no ML found"}
+	if len(mlsCheck.Failures) != 1 || mlsCheck.Failures[0] != want[0] {
+		t.Fatalf("expected mls_complete failures %v, got %v", want, mlsCheck.Failures)
+	}
+}
+
+func TestBarrierRegression_Exit2MessagesArePinnedLiterally(t *testing.T) {
+	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
+		linkedREQ:     true,
+		mlStatus:      "✅",
+		criteriaLines: []string{"- [x] build passes"},
+	})
+
+	_, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "99", "--json")
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d, stderr=%s", code, stderr)
+	}
+	wantWave := "trackfw barrier: wave 99 not found in roadmap \"ROADMAP-barrier-fixture.md\"\n"
+	if stderr != wantWave {
+		t.Fatalf("wave-not-found message mismatch:\nwant: %q\ngot:  %q", wantWave, stderr)
+	}
+
+	_, stderr2, code2 := runBarrierCLI(t, dir, "ROADMAP-nao-existe", "--wave", "1", "--json")
+	if code2 != 2 {
+		t.Fatalf("expected exit 2, got %d, stderr=%s", code2, stderr2)
+	}
+	wantRoadmap := "trackfw barrier: roadmap \"ROADMAP-nao-existe\" not found in wip/ nor done/ under docs/roadmaps\n"
+	if stderr2 != wantRoadmap {
+		t.Fatalf("roadmap-not-found message mismatch:\nwant: %q\ngot:  %q", wantRoadmap, stderr2)
 	}
 }

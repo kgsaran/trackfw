@@ -4857,3 +4857,65 @@ Duas divergências reais, nenhuma capturada pelos 8 cenários de contrato:
 
 Ambas foram fixadas literalmente em `docs/cli-parity.md`, adotando o texto do Go como canônico
 para minimizar churn. ML corretivo despachado; a Wave 3 permanece bloqueada até nova barrier verde.
+
+## 2026-07-29 — Apolo (Backend) — ML-2D: alinhamento das strings divergentes (corretivo)
+
+Início: recebido handoff do `trackfw_architect` para o ML-2D corretivo. `trackfw context`/`validate`
+confirmados verdes (score 100/100, 0 violações) e roadmap já em `wip/` antes de qualquer edição.
+Escopo: apenas `npm/src/commands/barrier.js`, `pypi/trackfw/commands/barrier.py` e os testes
+próprios (não-contrato) dos três runtimes. `internal/commands/barrier.go` já estava conforme —
+só recebeu os dois testes de regressão que faltavam.
+
+Correções aplicadas:
+1. Node.js `evalMlsComplete` emitia `"wave has no ML"` sem o número da wave — passou a receber
+   `waveNumber` e emitir `` `wave ${waveNumber}: no ML found` ``, igual ao Go.
+2. Python `_check_mls_complete` emitia `"wave contains no ML headings"` (sem número) — passou a
+   receber `wave_number` e emitir `f"wave {wave_number}: no ML found"`.
+3. Node.js `resolveRoadmapFile` normalizava `.md` no argumento antes de reportar o erro e omitia
+   `under <roadmap_dir>` — corrigido para usar `roadmapArg` cru e incluir `cfg.roadmapDir`.
+4. Python `_resolve_roadmap_path` usava formato totalmente diferente do contrato
+   (`roadmap not found: 'X' (searched wip/ and done/ under 'Y')`, aspas simples via `!r`) —
+   reescrito para o texto pinado com aspas duplas.
+5. Node.js `findWave` não nomeava o roadmap na mensagem de wave-not-found — passou a receber
+   `roadmapBasename` (parâmetro opcional, retrocompatível com os testes de parsing puro que não
+   precisam do CLI completo) e emitir `` `wave ${n} not found in roadmap "${basename}"` ``.
+6. Python `_find_wave` recebia `roadmap_arg` (cru) e usava aspas simples — passou a receber
+   `roadmap_basename` (resolvido, com `.md`, via `os.path.basename(roadmap_path)`) e aspas duplas.
+7. Node.js e Python prefixavam o erro de exit 2 como `"barrier: ..."` / `"...error: ..."` —
+   ambos alinhados para `"trackfw barrier: ..."`, sem o prefixo `error:` do argparse.
+
+Testes de regressão adicionados (arquivos próprios, não os `*barrier_contract*` congelados):
+`internal/commands/barrier_test.go`, `npm/tests/barrier.test.js`, `pypi/tests/test_barrier.py` —
+cobrindo os dois casos que antes tinham zero cobertura (é por isso que a divergência passou
+despercebida por MLs 2A/2B/2C).
+
+Evidência de validação (comandos e saída completos, não resumidos):
+- `go build ./... && go vet ./... && go test ./...` → build/vet limpos, todos os pacotes `ok`.
+- `cd npm && npm test` → `300 pass, 0 fail`.
+- `python3 -m pytest pypi/tests -q` → `669 passed`.
+- `make quality` → `Falsification checks passed (all 13 scenarios, 8 gates proved non-vacuous)`,
+  exit 0.
+- `bin/trackfw validate --json` → `{"summary":{"violations":0,"warnings":0,"mode":"strict","exit_code":0}...}`.
+- Prova cross-runtime manual (fixture idêntica, os três binários invocados na mesma pasta):
+  defeito 1 → `['wave 1: no ML found']` nos três; defeito 2 (wave 99) →
+  `trackfw barrier: wave 99 not found in roadmap "ROADMAP-parity-check.md"` nos três; defeito 2
+  (roadmap ausente) → `trackfw barrier: roadmap "ROADMAP-does-not-exist" not found in wip/ nor
+  done/ under docs/roadmaps` nos três — byte-idênticas, `exit=2` nos três.
+
+Nenhuma operação Git executada por este agente. Não editei `docs/adr/`, `docs/req/`,
+`docs/roadmaps/` nem `docs/cli-parity.md` — o roadmap aparece modificado no `git status` porque o
+`trackfw_architect` já havia acrescentado o ML-2D ao arquivo antes do handoff, não por ação minha.
+Aguardando auditoria do `trackfw_architect` para nova barrier da Wave 2 e liberação da Wave 3.
+
+## Auditoria 2026-07-29 — Zeus — barrier da Wave 2: APROVADA
+
+ML-2D corretivo alinhou Node.js e Python ao Go nos dois pontos divergentes. Reverificação
+independente sobre a mesma fixture: `wave <n>: no ML found` idêntico nos três runtimes; as duas
+mensagens de exit 2 byte-idênticas nos três; JSON do caminho principal byte-idêntico.
+
+Gates: `make quality` exit 0 (300 testes Node, 669 Python, Go verde, 13 cenários de falsificação),
+`bin/trackfw validate --json` 0 violações, `git diff --check` limpo.
+
+Dogfooding: `bin/trackfw barrier <este-roadmap> --wave 2 --json` retornou exit 0 e
+`status: passed`, com os quatro checks verdes e os gates reais da wave efetivamente executados.
+A barrier validou a própria wave que a implementou. Wave 3 liberada.

@@ -25,7 +25,8 @@ class UsageError extends Error {}
 
 // resolveRoadmapFile finds <roadmapArg> (basename with or without .md) under
 // wip/ then done/ (both flat and by_agent layouts). Throws UsageError naming the
-// roadmap basename when not found.
+// roadmap exactly as the user typed it (no .md normalization) when not found —
+// pinned literally by docs/cli-parity.md (`## trackfw barrier`).
 function resolveRoadmapFile(cfg, roadmapArg) {
   const base = roadmapArg.endsWith('.md') ? roadmapArg : `${roadmapArg}.md`
   const dirs = [...validator.resolveWIPDirs(cfg), ...validator.resolveDoneDirs(cfg)]
@@ -35,7 +36,7 @@ function resolveRoadmapFile(cfg, roadmapArg) {
       return { path: candidate, basename: base }
     }
   }
-  throw new UsageError(`roadmap "${base}" not found in wip/ nor done/`)
+  throw new UsageError(`roadmap "${roadmapArg}" not found in wip/ nor done/ under ${cfg.roadmapDir}`)
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -44,8 +45,11 @@ function resolveRoadmapFile(cfg, roadmapArg) {
 
 // findWave locates the `## Wave <n> ` heading matching waveNumber and returns its
 // line range [startLine, endLine) within `lines`. Throws UsageError naming the wave
-// number when not found, or naming the offending line number for a malformed heading.
-function findWave(lines, waveNumber) {
+// number and the resolved roadmap basename when not found (pinned literally by
+// docs/cli-parity.md), or naming the offending line number for a malformed heading.
+// roadmapBasename is optional so existing unit tests that only exercise parsing can
+// omit it; the CLI path always supplies it.
+function findWave(lines, waveNumber, roadmapBasename) {
   let startLine = -1
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -60,7 +64,7 @@ function findWave(lines, waveNumber) {
     }
   }
   if (startLine === -1) {
-    throw new UsageError(`wave ${waveNumber} not found in roadmap`)
+    throw new UsageError(`wave ${waveNumber} not found in roadmap "${roadmapBasename}"`)
   }
   let endLine = lines.length
   for (let j = startLine + 1; j < lines.length; j++) {
@@ -162,7 +166,7 @@ function parseGates(lines, startLine, endLine) {
 // Checks (fixed evaluation order: mls_complete, acceptance_evidence, gates, validate)
 // ────────────────────────────────────────────────────────────────────────────
 
-function evalMlsComplete(mls) {
+function evalMlsComplete(mls, waveNumber) {
   const evidence = []
   const failures = []
   for (const ml of mls) {
@@ -171,7 +175,8 @@ function evalMlsComplete(mls) {
     else failures.push(`${ml.id}: not complete (status: ${marker})`)
   }
   const status = mls.length > 0 && failures.length === 0 ? 'passed' : 'blocked'
-  if (mls.length === 0) failures.push('wave has no ML')
+  // Pinned literally by docs/cli-parity.md ("Wave contains zero MLs" case).
+  if (mls.length === 0) failures.push(`wave ${waveNumber}: no ML found`)
   return { name: 'mls_complete', status, evidence, failures }
 }
 
@@ -286,12 +291,12 @@ async function runBarrier(roadmapArg, waveOption, jsonOutput) {
   const lines = content.split('\n')
 
   const startedAt = new Date()
-  const wave = findWave(lines, waveNumber)
+  const wave = findWave(lines, waveNumber, resolved.basename)
   const mls = findMLs(lines, wave.startLine, wave.endLine)
   const gates = parseGates(lines, wave.startLine, wave.endLine)
 
   const checks = []
-  checks.push(evalMlsComplete(mls))
+  checks.push(evalMlsComplete(mls, waveNumber))
   checks.push(evalAcceptanceEvidence(mls))
   checks.push(evalGates(gates.commands, process.cwd()))
   checks.push(await evalValidate())
@@ -325,11 +330,11 @@ function createBarrierCommand() {
         process.exit(exitCode)
       } catch (err) {
         if (err instanceof UsageError) {
-          process.stderr.write(`barrier: ${err.message}\n`)
+          process.stderr.write(`trackfw barrier: ${err.message}\n`)
           process.exit(2)
           return
         }
-        process.stderr.write(`barrier: unexpected error: ${err && err.message ? err.message : err}\n`)
+        process.stderr.write(`trackfw barrier: unexpected error: ${err && err.message ? err.message : err}\n`)
         process.exit(2)
       }
     })

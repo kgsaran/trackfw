@@ -6,8 +6,81 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 
 const barrier = require('../src/commands/barrier')
+
+const CLI = path.resolve(__dirname, '../bin/trackfw')
+
+// ────────────────────────────────────────────────────────────────────────────
+// CLI-level regression fixtures — the two defects found while cross-checking
+// the three runtimes over the same fixture (ML-2D). These are NOT part of the
+// frozen contract in barrier-contract.test.js; they cover concrete literal
+// messages that had zero coverage before ML-2D.
+// ────────────────────────────────────────────────────────────────────────────
+
+function setupRegressionFixture(roadmapContent) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-barrier-regression-'))
+  for (const d of [
+    'docs/roadmaps/wip', 'docs/roadmaps/backlog', 'docs/roadmaps/blocked',
+    'docs/roadmaps/done', 'docs/roadmaps/abandoned', 'docs/req', 'docs/adr',
+  ]) {
+    fs.mkdirSync(path.join(dir, d), { recursive: true })
+  }
+  fs.writeFileSync(path.join(dir, 'docs/roadmaps/wip/ROADMAP-regression.md'), roadmapContent)
+  return dir
+}
+
+function runBarrierCLI(cwd, ...args) {
+  const result = spawnSync(process.execPath, [CLI, 'barrier', ...args], { encoding: 'utf8', cwd })
+  return { stdout: result.stdout || '', stderr: result.stderr || '', status: result.status }
+}
+
+test('barrier regression: wave with zero MLs fails mls_complete with the pinned message', () => {
+  const content =
+    '# Roadmap: No ML\n\nREQ: REQ-2026-07-29-barrier-fixture\n\n' +
+    '## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n' +
+    '## Wave 1 — Sem MLs\n> Dependências: nenhuma\n\nSome prose, no ML heading at all.\n'
+  const dir = setupRegressionFixture(content)
+  try {
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json')
+    assert.equal(status, 1, `expected exit 1 (blocked), got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
+    const doc = JSON.parse(stdout)
+    const mlsCheck = doc.checks.find((c) => c.name === 'mls_complete')
+    assert.deepEqual(mlsCheck.failures, ['wave 1: no ML found'])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('barrier regression: exit-2 messages are pinned literally and byte-identical to the contract', () => {
+  const content =
+    '# Roadmap: Fixture\n\nREQ: REQ-2026-07-29-barrier-fixture\n\n' +
+    '## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n' +
+    '## Wave 1 — Fixture Wave\n> Dependências: nenhuma\n\n' +
+    '### ML-1A — Fixture ML\n**Status:** ✅\n**Critérios de aceite:**\n- [x] build passes\n\n'
+  const dir = setupRegressionFixture(content)
+  try {
+    const wave = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '99', '--json')
+    assert.equal(wave.status, 2, `expected exit 2, got ${wave.status}\nstderr: ${wave.stderr}`)
+    assert.equal(
+      wave.stderr,
+      'trackfw barrier: wave 99 not found in roadmap "ROADMAP-regression.md"\n'
+    )
+
+    const missing = runBarrierCLI(dir, 'ROADMAP-nao-existe', '--wave', '1', '--json')
+    assert.equal(missing.status, 2, `expected exit 2, got ${missing.status}\nstderr: ${missing.stderr}`)
+    assert.equal(
+      missing.stderr,
+      'trackfw barrier: roadmap "ROADMAP-nao-existe" not found in wip/ nor done/ under docs/roadmaps\n'
+    )
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
 
 // ────────────────────────────────────────────────────────────────────────────
 // findWave — rule 1 (wave heading) + malformed detection (rule 6)
@@ -36,6 +109,15 @@ test('findWave: throws UsageError naming the wave number when not found', () => 
   assert.throws(() => barrier.findWave(lines, 7), (err) => {
     assert.ok(err instanceof barrier.UsageError)
     assert.match(err.message, /wave 7/)
+    return true
+  })
+})
+
+test('findWave: usage error message is pinned literally (docs/cli-parity.md)', () => {
+  const lines = ['## Wave 1 — Only']
+  assert.throws(() => barrier.findWave(lines, 7, 'ROADMAP-example.md'), (err) => {
+    assert.ok(err instanceof barrier.UsageError)
+    assert.equal(err.message, 'wave 7 not found in roadmap "ROADMAP-example.md"')
     return true
   })
 })
@@ -202,8 +284,13 @@ test('evalMlsComplete: pinned evidence/failures string formats', () => {
 })
 
 test('evalMlsComplete: wave with zero MLs is blocked', () => {
-  const check = barrier.evalMlsComplete([])
+  const check = barrier.evalMlsComplete([], 1)
   assert.equal(check.status, 'blocked')
+})
+
+test('evalMlsComplete: wave with zero MLs pins the failure message literally (docs/cli-parity.md)', () => {
+  const check = barrier.evalMlsComplete([], 3)
+  assert.deepEqual(check.failures, ['wave 3: no ML found'])
 })
 
 test('evalAcceptanceEvidence: pinned evidence/failures string formats', () => {
@@ -275,7 +362,18 @@ test('resolveRoadmapFile: throws UsageError naming the roadmap basename when unr
   const cfg = { roadmapNamespacing: 'flat', roadmapDir: '/nonexistent/dir/for/barrier/tests', agents: [] }
   assert.throws(() => barrier.resolveRoadmapFile(cfg, 'ROADMAP-does-not-exist'), (err) => {
     assert.ok(err instanceof barrier.UsageError)
-    assert.match(err.message, /ROADMAP-does-not-exist\.md/)
+    assert.match(err.message, /ROADMAP-does-not-exist/)
+    return true
+  })
+})
+
+test('resolveRoadmapFile: usage error message is pinned literally, using the arg as typed (no .md normalization)', () => {
+  const cfg = { roadmapNamespacing: 'flat', roadmapDir: '/nonexistent/dir/for/barrier/tests', agents: [] }
+  assert.throws(() => barrier.resolveRoadmapFile(cfg, 'ROADMAP-does-not-exist'), (err) => {
+    assert.equal(
+      err.message,
+      'roadmap "ROADMAP-does-not-exist" not found in wip/ nor done/ under /nonexistent/dir/for/barrier/tests'
+    )
     return true
   })
 })

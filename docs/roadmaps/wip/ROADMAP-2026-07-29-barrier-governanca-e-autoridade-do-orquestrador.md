@@ -122,7 +122,7 @@ bin/trackfw validate --json
 ```
 
 ### ML-2A — Implementar `trackfw barrier` no Go
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/commands/barrier.go`
 - `internal/commands/root.go`
@@ -137,13 +137,13 @@ bin/trackfw validate --json
 5. Emitir resultado JSON estável conforme o contrato da Wave 1.
 
 **Critérios de aceite:**
-- [ ] ML pendente impede a passagem.
-- [ ] Falta de evidência impede a passagem.
-- [ ] Wave verde retorna exit code 0 e `status: passed`.
-- [ ] Saída textual e JSON são determinísticos.
-- [ ] Os testes de contrato criados no ML-1A estão ativos neste runtime (sem `t.Skip`, sem
+- [x] ML pendente impede a passagem.
+- [x] Falta de evidência impede a passagem.
+- [x] Wave verde retorna exit code 0 e `status: passed`.
+- [x] Saída textual e JSON são determinísticos.
+- [x] Os testes de contrato criados no ML-1A estão ativos neste runtime (sem `t.Skip`, sem
       `{ skip: true }`, sem `xfail`) e passam.
-- [ ] `go build ./...`, `go test ./...` e `go vet ./...` passam.
+- [x] `go build ./...`, `go test ./...` e `go vet ./...` passam.
 
 **Comandos de validação:**
 ```bash
@@ -153,7 +153,7 @@ go vet ./...
 ```
 
 ### ML-2B — Implementar `trackfw barrier` no Node.js
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `npm/src/commands/barrier.js`
 - `npm/src/commands/index.js`
@@ -163,11 +163,11 @@ go vet ./...
    da implementação necessária.
 
 **Critérios de aceite:**
-- [ ] Paridade de flags, estados, exit codes e JSON com Go.
-- [ ] Casos verde, ML pendente, evidência ausente e `validate` falho cobertos.
-- [ ] Os testes de contrato criados no ML-1A estão ativos neste runtime (sem `t.Skip`, sem
+- [x] Paridade de flags, estados, exit codes e JSON com Go.
+- [x] Casos verde, ML pendente, evidência ausente e `validate` falho cobertos.
+- [x] Os testes de contrato criados no ML-1A estão ativos neste runtime (sem `t.Skip`, sem
       `{ skip: true }`, sem `xfail`) e passam.
-- [ ] `npm test` passa.
+- [x] `npm test` passa.
 
 **Comandos de validação:**
 ```bash
@@ -175,7 +175,7 @@ cd npm && npm test
 ```
 
 ### ML-2C — Implementar `trackfw barrier` no Python
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `pypi/trackfw/commands/barrier.py`
 - `pypi/trackfw/cli.py`
@@ -185,15 +185,42 @@ cd npm && npm test
    Python.
 
 **Critérios de aceite:**
-- [ ] Paridade de flags, estados, exit codes e JSON com Go e Node.
-- [ ] Casos verde, ML pendente, evidência ausente e `validate` falho cobertos.
-- [ ] Os testes de contrato criados no ML-1A estão ativos neste runtime (sem `t.Skip`, sem
+- [x] Paridade de flags, estados, exit codes e JSON com Go e Node.
+- [x] Casos verde, ML pendente, evidência ausente e `validate` falho cobertos.
+- [x] Os testes de contrato criados no ML-1A estão ativos neste runtime (sem `t.Skip`, sem
       `{ skip: true }`, sem `xfail`) e passam.
-- [ ] Suíte Python passa.
+- [x] Suíte Python passa.
 
 **Comandos de validação:**
 ```bash
 python3 -m pytest pypi/tests/test_barrier.py -q
+```
+
+### ML-2D — Alinhar as strings divergentes entre os três runtimes (corretivo)
+**Status:** ✅ Concluído
+**Origem:** reprovação da barrier da Wave 2. Os MLs 2A/2B/2C passaram nos próprios testes mas
+produziram textos diferentes em dois pontos não cobertos pelos 8 cenários de contrato.
+**Arquivos afetados:**
+- `internal/commands/barrier.go`
+- `npm/src/commands/barrier.js`
+- `pypi/trackfw/commands/barrier.py`
+- testes correspondentes nos três runtimes
+
+**Ações:**
+1. Alinhar a falha de wave sem MLs para exatamente `wave <n>: no ML found` nos três runtimes.
+2. Alinhar as duas mensagens de exit 2 aos textos literais fixados em `docs/cli-parity.md`.
+3. Adicionar teste de regressão por runtime para os dois casos, que hoje não têm cobertura.
+
+**Critérios de aceite:**
+- [x] Wave sem MLs produz a mesma string de falha nos três runtimes.
+- [x] As duas mensagens de exit 2 são byte-idênticas nos três runtimes.
+- [x] Os dois casos passam a ter teste de regressão em cada runtime.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+
+**Comandos de validação:**
+```bash
+make quality
+bin/trackfw validate --json
 ```
 
 ## Wave 3 — Orquestração e autoridade dos agentes (1 ML)

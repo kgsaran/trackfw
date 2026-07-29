@@ -104,6 +104,46 @@ def test_wave_nao_numerica_e_erro_de_uso():
     assert "wave" in stderr.lower()
 
 
+def test_wave_inexistente_mensagem_pinada_literalmente():
+    dir_ = _setup_dir(
+        linked_req=True,
+        ml_status="✅",
+        criteria_lines=["- [x] build passes"],
+    )
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "99", "--json")
+    assert code == 2
+    assert stderr == 'trackfw barrier: wave 99 not found in roadmap "ROADMAP-barrier-fixture.md"\n'
+
+
+def test_roadmap_inexistente_mensagem_pinada_literalmente():
+    empty_dir = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-empty-"))
+    (empty_dir / "docs/roadmaps/wip").mkdir(parents=True, exist_ok=True)
+    _, stderr, code = _run_barrier_cli(empty_dir, "ROADMAP-nao-existe", "--wave", "1", "--json")
+    assert code == 2
+    assert stderr == (
+        'trackfw barrier: roadmap "ROADMAP-nao-existe" not found in wip/ nor done/ under docs/roadmaps\n'
+    )
+
+
+def test_wave_sem_mls_produz_mensagem_pinada_literalmente():
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: No ML\n\n"
+        "REQ: REQ-x\n\n"
+        "## Acceptance Criteria\n- [x] fixture\n\n"
+        "## Wave 1 — Sem MLs\n> Dependências: nenhuma\n\n"
+        "Some prose, no ML heading at all.\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-no-ml.md").write_text(content, encoding="utf-8")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-no-ml", "--wave", "1", "--json")
+    assert code == 1, f"stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    mls_check = next(c for c in doc["checks"] if c["name"] == "mls_complete")
+    assert mls_check["failures"] == ["wave 1: no ML found"]
+
+
 def test_wave_flag_ausente_e_erro_de_uso():
     dir_ = _setup_dir(
         linked_req=True,
