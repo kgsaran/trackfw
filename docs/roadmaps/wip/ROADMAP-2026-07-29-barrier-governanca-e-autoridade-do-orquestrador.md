@@ -68,7 +68,7 @@ bin/trackfw validate --json
 ```
 
 ### ML-1A — Congelar o contrato universal da barrier
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
 - `docs/req/REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
@@ -100,11 +100,11 @@ do `node:test`; Python → `@pytest.mark.xfail(strict=True)`.
    sem implementar a produção neste ML.
 
 **Critérios de aceite:**
-- [ ] Contrato textual e JSON documentado em `docs/cli-parity.md`.
-- [ ] Testes negativos reproduzem cada falha obrigatória nos três runtimes.
-- [ ] Nenhum arquivo de `docs/adr/`, `docs/req/` ou `docs/roadmaps/` foi alterado pelo especialista.
-- [ ] Nenhum gate específico do trackfw é tratado como regra universal.
-- [ ] `trackfw validate --json` permanece verde.
+- [x] Contrato textual e JSON documentado em `docs/cli-parity.md`.
+- [x] Testes negativos reproduzem cada falha obrigatória nos três runtimes.
+- [x] Nenhum arquivo de `docs/adr/`, `docs/req/` ou `docs/roadmaps/` foi alterado pelo especialista.
+- [x] Nenhum gate específico do trackfw é tratado como regra universal.
+- [x] `trackfw validate --json` permanece verde.
 
 **Comandos de validação:**
 ```bash

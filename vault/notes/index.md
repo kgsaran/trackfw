@@ -9,3 +9,4 @@
 - [ship-roadmap-dir-default-divergencia-2026-07-27](ship-roadmap-dir-default-divergencia-2026-07-27.md)
 - [roadmap-move-nao-atualiza-frontmatter-2026-07-27](roadmap-move-nao-atualiza-frontmatter-2026-07-27.md)
 - [barrier-git-authority-subagents-2026-07-29](barrier-git-authority-subagents-2026-07-29.md)
+- [barrier-contract-xfail-false-positive-2026-07-29](barrier-contract-xfail-false-positive-2026-07-29.md)

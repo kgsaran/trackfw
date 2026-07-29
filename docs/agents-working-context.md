@@ -4687,3 +4687,61 @@ criada. Duas decisões congeladas antes do primeiro handoff:
 2. **Escopo dos testes negativos**: criados nos três runtimes já na Wave 1 (Go `t.Skip`, Node
    `{ skip: true }`, Python `@pytest.mark.xfail(strict=True)`), garantindo baseline vermelha
    idêntica para os MLs 2A/2B/2C e tornando a paridade verificável no barrier da Wave 2.
+
+## QA 2026-07-29 — Ártemis — ML-1A: testes de contrato da barrier (INÍCIO)
+
+Handoff recebido do `trackfw_architect` para o ML-1A: criar, nos três runtimes, os testes de
+contrato de `trackfw barrier` a partir da seção `## trackfw barrier` já congelada em
+`docs/cli-parity.md`. Nenhuma operação Git executada; nenhum arquivo de `docs/adr/`, `docs/req/`,
+`docs/roadmaps/` ou `docs/cli-parity.md` tocado — apenas os três arquivos de teste do ML-1A.
+
+## QA 2026-07-29 — Ártemis — ML-1A: testes de contrato da barrier (CONCLUÍDO)
+
+Criados `internal/commands/barrier_contract_test.go`, `npm/tests/barrier-contract.test.js` e
+`pypi/tests/test_barrier_contract.py`, cobrindo os oito cenários obrigatórios do handoff
+(`wave_verde_passa`, `ml_pendente_bloqueia`, `evidencia_ausente_bloqueia`,
+`ml_sem_bloco_de_criterios_bloqueia`, `gate_falho_bloqueia`, `validate_falho_bloqueia`,
+`roadmap_ou_wave_inexistente_e_erro_de_uso`, `json_deterministico`) com fixtures reais de roadmap
+(regras de parsing string-level da seção do contrato) e invocação do binário/CLI real de cada
+runtime via subprocess.
+
+Descoberta durante a implementação: no cenário 7 (erro de uso, exit 2), o Python CLI atual
+(argparse) já rejeita `barrier` como comando desconhecido com exit code 2 — coincidindo
+acidentalmente com o exit code esperado do contrato antes mesmo da implementação existir. Isso
+fazia o `xfail(strict=True)` reportar XPASS (falso positivo de "já pendente corretamente"). Corrigido
+adicionando a asserção de que o stderr deve nomear explicitamente o wave/roadmap não resolvido —
+asserção que só uma implementação real do contrato pode satisfazer. Mesma asserção replicada em
+Go e Node para equivalência semântica entre runtimes.
+
+Nenhum arquivo de produção foi criado ou alterado; nenhum arquivo em `docs/` foi tocado.
+
+Evidência de validação:
+- `go build ./... && go vet ./... && go test ./...` — verde (todos os pacotes ok; 8 testes da
+  barrier em `SKIP`).
+- `cd npm && npm test` — `265 passed, 0 failed`, `8 skipped` (barrier).
+- `python3 -m pytest pypi/tests -q` — `643 passed, 8 xfailed` (barrier).
+- `git diff --check` — sem saída (limpo).
+- `bin/trackfw validate --json` — `{"summary":{"violations":0,"warnings":0,"mode":"strict","exit_code":0}}`.
+
+Nenhuma operação Git foi executada por este agente (sem add/commit/push/branch). Aguardando
+auditoria e commit pelo `trackfw_architect`.
+
+## Auditoria 2026-07-29 — Zeus — Wave 1 (ML-1A) aprovada
+
+Contrato da barrier congelado em `docs/cli-parity.md` pelo orquestrador antes do handoff, incluindo
+regras de parsing string-level do roadmap, os quatro checks embutidos, o documento JSON
+determinístico e a distinção entre exit 1 (`blocked`) e exit 2 (erro de uso).
+
+Ártemis entregou os testes de contrato nos três runtimes (1188 linhas, 8 cenários idênticos por
+runtime, corpos reais atrás da marcação de pendência). Auditoria de escopo: nenhum arquivo de
+produção criado, nenhum artefato de governança alterado pelo especialista, nenhuma operação Git
+executada por ele.
+
+Achado incorporado ao contrato: `@pytest.mark.xfail(strict=True)` executa o corpo do teste, ao
+contrário de `t.Skip`/`{ skip: true }`. O cenário 7 passava acidentalmente porque o argparse do
+Python já rejeita subcomando desconhecido com exit 2 genérico. O contrato passou a exigir que a
+mensagem de exit 2 nomeie o roadmap/wave não resolvido, tornando a asserção não-vacuosa.
+
+Gates da Wave 1: `make quality` exit 0 (643 testes Python + 8 xfailed, suíte Node e Go verdes,
+13 cenários de falsificação, 8 gates provados não-vacuosos) e `bin/trackfw validate --json` com
+0 violações. Wave 2 liberada.

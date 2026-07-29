@@ -487,6 +487,14 @@ in the binary.
 Exit code 2 is **not** `blocked`: a barrier that could not be evaluated is distinct from a
 barrier that evaluated to a failure. The three runtimes must agree on this distinction.
 
+**Exit-2 messages must be specific.** The message on `stderr` must name the unresolved entity —
+the roadmap basename that could not be found, or the wave number that does not exist in the
+roadmap. A generic parser error ("invalid choice", "unknown command") does not satisfy the
+contract: it is indistinguishable from the CLI not implementing `barrier` at all, which makes any
+exit-2 assertion vacuously true before implementation. This is the exact false positive found
+while characterizing the contract in ML-1A; see
+`vault/notes/barrier-contract-xfail-false-positive-2026-07-29.md`.
+
 ### States
 
 | State | Meaning |
