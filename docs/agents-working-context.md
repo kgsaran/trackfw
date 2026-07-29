@@ -5729,3 +5729,89 @@ redirecionado para um diretório de scratch.
 Nenhum arquivo sob `internal/`, `cmd/` ou `pypi/` foi tocado. Nenhuma operação Git executada —
 sem autoridade; branch permanece com working tree alterado para o `trackfw_architect` auditar e
 commitar.
+
+## 2026-07-29 — Ártemis (QA) — ML-6G iniciado
+
+Handoff do `trackfw_architect` para o roadmap
+`ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md` — ML-6G. Escopo: novo
+gate `scripts/check-update-parity.sh` provando paridade cross-runtime de `trackfw update` e
+`trackfw update harness` (contrato do ML-6A), wiring no Makefile e cenário de falsificação em
+`scripts/check-gates-falsify.sh`. Restrito a `scripts/` e `Makefile`; ML-6F roda em paralelo sobre
+`internal/`, `npm/src/` e `pypi/trackfw/` corrigindo as 4 divergências conhecidas (contagem de
+targets, renderização de `path`, id de `claude-skills`, escopo das flags no `update` de projeto).
+Branch: `feat/barrier-governanca-e-autoridade-do-orquestrador` (já criada pelo orquestrador).
+
+## 2026-07-29 — Ártemis (QA) — ML-6G concluído (gate wired, 1 achado novo não-óbvio reportado)
+
+**Entregável 1 — gate de paridade:** `scripts/check-update-parity.sh` (novo), 5 cenários: (1)
+`update harness --json` em harness vazio — todos `missing`, exit 0, JSON idêntico nos 3 runtimes;
+(2) idem em harness populado (via `trackfw agents install --targets claude --scope global` rodado
+com o binário Go em 3 homes isolados, para que a própria fixture seja idêntica antes de cada
+runtime rodar seu próprio `update harness`); (3) `update --json` (escopo projeto) — `scope`,
+exit 0, JSON idêntico; (4) `--dry-run` em harness — semeia um `claude-skill` deliberadamente
+"stale" (conteúdo divergente do template) para que a asserção "zero escritas" tenha algo real a
+suprimir, e não seja vácua; compara snapshot sha256 da árvore de `$HOME` antes/depois; (5) lista
+de target ids extraída do cenário 1, comparando conjunto E ordem nos 3 runtimes. Comparação via
+reparse+redump Python (`object_pairs_hook=OrderedDict`, sem `sort_keys`) preservando ordem de
+chaves e de targets — mesmo racional do `normalize_barrier_json` do ML-4A, para não repetir o
+mascaramento do ML-2E. `HOME` é redirecionado em toda invocação (`run_update` isola por
+runtime/cenário); nenhuma chamada toca o `$HOME` real.
+
+**Entregável 2 — wiring e falsificação:** encadeado no alvo `parity` do Makefile, logo após
+`check-rules-parity.sh`. Cenário 17 de `check-gates-falsify.sh`: copia `npm/src` para uma árvore
+descartável (`setup_npm_tree`) e remove, via `sed`, o único `if (dryRun) return ...` que impede
+`claudeSkillTarget` (Node.js) de escrever de verdade durante `--dry-run`; roda o gate completo
+contra essa árvore corrompida e confirma o diagnóstico
+`filesystem tree under HOME changed during --dry-run`. Guard de corrupção (`cmp -s`) confirma que
+o `sed` de fato alterou o arquivo antes de rodar o gate. `scripts/check-gates-falsify.sh` completo:
+18/18 cenários OK.
+
+**Estado encontrado ao rodar o gate (ML-6F em andamento):** a auditoria cruzada da Wave 6 já havia
+medido 4 divergências; ao final desta sessão, com o ML-6F parcialmente aplicado (arquivos
+`internal/generators/update.go`, `internal/integrations/plan.go`, `npm/src/commands/
+update-harness.js`, `npm/src/integrations/catalog.js`, `pypi/trackfw/commands/update_harness.py`,
+`pypi/trackfw/integrations/catalog.py` já modificados no working tree, não commitados), o gate já
+confirma paridade na lista de 19 targets e na comparação de harness vazio Go-vs-Python. Restam,
+neste momento: (a) `go-vs-node` em harness vazio, isolado ao campo `path` de um único target
+(ver achado abaixo); (b) `update --json` (escopo projeto) ainda ausente em Go e Python (exit 1 e
+exit 2 respectivamente, "unknown flag"/"unrecognized arguments: --json") — item 4 do ML-6F, ainda
+não iniciado. `make parity` permanece vermelho até o ML-6F fechar os dois itens; é o resultado
+esperado, não um defeito do gate.
+
+**Achado novo, não óbvio, registrado em vault (não corrigido — fora do escopo `scripts/`+`Makefile`
+desta ML):** `npm/src/lib/update-engine.js:tildeify` falha em abreviar `path` com `~` quando
+`$HOME` contém uma barra dupla (`//`) em qualquer posição — `path.join` normaliza o `absPath`
+comparado, mas o `homeRoot` bruto usado no `startsWith` não é normalizado, então a comparação nunca
+bate e a função devolve o caminho absoluto cru. Isso não aparece com um `$HOME` real de
+desenvolvedor, mas aparece de imediato no fixture do próprio gate porque `mktemp -d
+"${TMPDIR:-/tmp}/..."` — o mesmo padrão já usado por `check-rules-parity.sh`/
+`check-slash-parity.sh`/`check-barrier.sh` — herda um `$TMPDIR` do macOS que já termina em `/`,
+produzindo `//` no `$WORK` e, por extensão, no `$HOME` de cada cenário. Nenhum gate anterior
+exercitava renderização de `path`, então nenhum tinha motivo para revelar isso antes. Nota:
+`vault/notes/node-tildeify-double-slash-home-2026-07-29.md`, linkada no índice. Nenhuma
+contorno foi aplicado dentro do gate (ex.: normalizar `$TMPDIR` antes do `mktemp`) — isso
+mascararia o defeito real que o gate existe para expor.
+
+**Prova de não-vacuidade:** cada cenário tem guard explícito (targets não-vazios/parseáveis no
+cenário 1; ao menos um target não-`missing` no cenário 2, para que "harness populado" não degenere
+silenciosamente no cenário 1) antes de qualquer comparação; cenário 17 do `check-gates-falsify.sh`
+prova que a asserção "zero escritas sob `--dry-run`" tem poder de reprovação real.
+
+**HOME real confirmado intocado:**
+```
+find ~/.claude ~/.codex ~/.gemini -mmin -30 -type f | grep -i trackfw
+```
+retornou apenas artefatos de sessão do próprio Claude Code (`~/.claude/projects/.../*.jsonl`,
+`*.meta.json`) e cache/log do Codex (`~/.codex/logs_2.sqlite*`, `models_cache.json`) — nenhum
+arquivo de agente/skill/regra `trackfw-*` sob o `$HOME` real.
+
+**Ambiguidade reportada, não corrigida:** `CLAUDE.md` na raiz do repositório aparece modificado no
+working tree (bloco `<!-- trackfw:rules:start -->` injetado) e vários arquivos de runtime das
+árvores `internal/`, `npm/src/` e `pypi/trackfw/` estão em andamento — atribuído ao agente do
+ML-6F rodando em paralelo (fora do escopo desta ML, que é restrita a `scripts/`+`Makefile`); não
+investigado nem revertido.
+
+Nenhum arquivo fora de `scripts/check-update-parity.sh`, `scripts/check-gates-falsify.sh`,
+`Makefile`, `vault/notes/node-tildeify-double-slash-home-2026-07-29.md` e `vault/notes/index.md`
+foi alterado por este ML. Nenhuma operação Git executada — sem autoridade; branch permanece com
+working tree alterado para o `trackfw_architect` auditar e commitar.

@@ -131,3 +131,47 @@ func pathForScope(paths []InstallPath, scope string) (InstallPath, bool) {
 	}
 	return InstallPath{}, false
 }
+
+// GlobalGroupPath returns the tilde-abbreviated directory shared by every
+// catalog item of (targetID, kind) at global scope. It is derived by
+// truncating the catalog's path template immediately before the first path
+// segment that contains the "{{id}}" placeholder — e.g.
+// "~/.codex/agents/trackfw-{{id}}.toml" truncates to "~/.codex/agents".
+//
+// This is a roll-up display path used by `trackfw update harness` to report
+// one target per (tool, kind) pair without depending on catalog item
+// iteration order (see docs/cli-parity.md, "Declared harness targets —
+// pinned list"). The surface selection mirrors BuildPlans' default (first
+// non-legacy, non-unsupported surface for the requested kind), so the same
+// surface that would be installed to is the one whose path is reported.
+func GlobalGroupPath(catalog *Catalog, targetID string, kind ItemKind) (string, error) {
+	target, ok := catalog.Target(targetID)
+	if !ok {
+		return "", fmt.Errorf("unknown target %q", targetID)
+	}
+	surfaces, err := selectedSurfaces(target, kind, "", false)
+	if err != nil {
+		return "", err
+	}
+	paths := surfaces[0].Paths.Agents
+	if kind == KindSkills {
+		paths = surfaces[0].Paths.Skills
+	}
+	installPath, ok := pathForScope(paths, "global")
+	if !ok {
+		return "", fmt.Errorf("target %s has no global %s path", targetID, kind)
+	}
+	return truncateBeforeIDSegment(installPath.Path), nil
+}
+
+// truncateBeforeIDSegment drops the "{{id}}"-bearing path segment and
+// everything after it, returning the shared parent directory.
+func truncateBeforeIDSegment(p string) string {
+	segments := strings.Split(p, "/")
+	for i, seg := range segments {
+		if strings.Contains(seg, "{{id}}") {
+			return strings.Join(segments[:i], "/")
+		}
+	}
+	return p
+}

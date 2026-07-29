@@ -4,7 +4,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const identityStore = require('../identity')
-const { catalog, buildPlans, IntegrationManager } = require('../integrations')
+const { catalog, buildPlans, IntegrationManager, globalGroupPath } = require('../integrations')
 const { tildeify, validateTargets, buildDocument, humanReport, silenceConsole } = require('../lib/update-engine')
 
 // `trackfw update harness` is the global counterpart to `trackfw update` —
@@ -96,16 +96,21 @@ function claudeSkillTarget(homeRoot, { dryRun, installMissing }) {
 // catalogBundleTarget — one target per (tool, kind) pair at global scope.
 // Uses IntegrationManager.inspect (read-only) to classify every catalog
 // item under that pair, then only calls manager.update() for the subset
-// that needs a write — and never for --dry-run.
+// that needs a write — and never for --dry-run. displayPath is derived from
+// the catalog itself (globalGroupPath), not from any individual plan's
+// destination, so it never depends on catalog item iteration order (this is
+// what previously caused the claude-skills path to diverge from the Python
+// CLI — see docs/cli-parity.md, "Declared harness targets — pinned list").
 function catalogBundleTarget(toolId, kind, homeRoot, identityConfig, { dryRun, installMissing }) {
   const id = `${toolId}-${kind}`
+  let displayPath = `~/.${toolId}`
   try {
+    displayPath = globalGroupPath(toolId, kind)
     const plans = buildPlans(kind, { targets: [toolId], scope: 'global', identity: identityConfig })
-    if (!plans.length) return { id, state: 'missing', path: `~/.${toolId}` }
+    if (!plans.length) return { id, state: 'missing', path: displayPath }
 
     const manager = new IntegrationManager({ homeRoot })
     const statuses = manager.inspect(plans)
-    const displayPath = tildeify(homeRoot, path.dirname(plans[0].destination))
 
     const allNotInstalled = statuses.every((s) => s.state === 'not-installed')
     const anyModified = statuses.some((s) => s.state === 'modified')
@@ -127,7 +132,7 @@ function catalogBundleTarget(toolId, kind, homeRoot, identityConfig, { dryRun, i
     if (!dryRun) manager.update(toWrite)
     return { id, state: 'updated', path: displayPath }
   } catch (e) {
-    return { id, state: 'failed', path: `~/.${toolId}`, message: e.message }
+    return { id, state: 'failed', path: displayPath, message: e.message }
   }
 }
 

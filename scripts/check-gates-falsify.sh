@@ -602,4 +602,40 @@ assert_fails_with "rules-parity/content-drift" \
   "rules parity drift: GEMINI.md differs between go and node" \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T16/scripts/check-rules-parity.sh"
 
-echo "Falsification checks passed (all 17 scenarios, 11 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 17 — check-update-parity.sh: `update harness --dry-run` do Node.js
+#              deixa de honrar o guard de dry-run em um alvo → o gate detecta
+#              a escrita real no disco que --dry-run deveria suprimir.
+#
+# Objetivo (ML-6G): provar que a asserção "zero escritas sob --dry-run" do
+# novo gate tem poder de reprovação, não apenas de leitura de JSON. O
+# fixture do próprio check-update-parity.sh (cenário 4) já semeia um
+# claude-skill "stale" (precisa de rewrite) especificamente para que este
+# guard tenha algo real a suprimir — sem isso a prova seria vácua (o guard
+# passaria mesmo com a corrupção, porque não haveria escrita pendente para
+# revelar a ausência do early-return).
+#
+# Corrompe `claudeSkillTarget` em npm/src/commands/update-harness.js,
+# removendo o único `if (dryRun) return ...` que impede a escrita real do
+# arquivo de skill legado durante --dry-run.
+# ---------------------------------------------------------------------------
+T17="$WORK/s17"
+mkdir -p "$T17/scripts"
+setup_npm_tree "$T17"
+ln -s "$ROOT_DIR/pypi" "$T17/pypi"
+cp "$ROOT_DIR/scripts/check-update-parity.sh" "$T17/scripts/"
+
+sed "s/    if (dryRun) return { id, state: 'updated', path: displayPath }/    \/\/ [falsified] dry-run guard removed — write proceeds unconditionally/" \
+  "$ROOT_DIR/npm/src/commands/update-harness.js" > "$T17/npm/src/commands/update-harness.js"
+
+# Guard: garantir que a corrupção foi aplicada antes de rodar o gate.
+if cmp -s "$ROOT_DIR/npm/src/commands/update-harness.js" "$T17/npm/src/commands/update-harness.js"; then
+  echo "FAIL [falsify/setup-s17]: sed não alterou update-harness.js — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "update-parity/dry-run-write-leak" \
+  "filesystem tree under HOME changed during --dry-run" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T17/scripts/check-update-parity.sh"
+
+echo "Falsification checks passed (all 18 scenarios, 12 gates proved non-vacuous)"

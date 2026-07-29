@@ -162,7 +162,10 @@ def test_harness_claude_skill_path_matches_contract_example(tmp_path):
     payload = json.loads(result.stdout)
     target = payload["targets"][0]
     assert target["id"] == "claude-skill"
-    assert target["path"] == str(home / ".claude" / "skills" / "trackfw" / "SKILL.md")
+    # Path is tilde-abbreviated per contract (docs/cli-parity.md, "Declared
+    # harness targets — pinned list": "path is rendered tilde-abbreviated,
+    # never as an absolute path").
+    assert target["path"] == "~/.claude/skills/trackfw/SKILL.md"
     assert target["state"] == "missing"
 
 
@@ -249,7 +252,8 @@ def test_harness_catalog_group_reports_updated_for_a_stale_installed_item(tmp_pa
     payload = json.loads(result.stdout)
     target = payload["targets"][0]
     assert target["id"] == "codex-agents"
-    assert target["path"] == str(home / ".codex" / "agents")
+    # Tilde-abbreviated per contract — see the claude-skill test above.
+    assert target["path"] == "~/.codex/agents"
     assert target["state"] in ("failed", "updated")
 
 

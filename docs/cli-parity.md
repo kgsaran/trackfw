@@ -708,6 +708,22 @@ outcome, not a usage error. Exit is non-zero only when at least one target is `f
 target order, not filesystem order. `summary` always carries all four counters, including zeros.
 `message` is present **only** when `state == "failed"`, positioned after `path`.
 
+### Declared project targets — pinned list
+
+`trackfw update` declares this fixed sequence of 5 ids, in this exact order:
+`agent-rules`, `agent-hooks`, `codex-project-agents`, `validate-script`, `claude-commands`.
+
+All three runtimes declare all five. A runtime that cannot manage a target still declares it and
+reports its honest state — silently shortening the list makes the JSON incomparable across runtimes.
+
+### `updated` vs `skipped` — the discriminator is content, not action
+
+`updated` means the target's content **actually changed**. A target that already matches the current
+template is `skipped`, even if the implementation rewrote the bytes. Deciding by "did I call write()"
+instead of "did the content change" makes an idempotent re-run report `updated` in one runtime and
+`skipped` in another for the same input — measured divergence between Go and Node.js in the first
+Wave 6 round.
+
 ### Declared harness targets — pinned list
 
 The harness target list is **not** derived at runtime; it is this fixed sequence of 19 ids, in this

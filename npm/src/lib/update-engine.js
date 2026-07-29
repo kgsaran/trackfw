@@ -136,10 +136,22 @@ function summarize(targets) {
 // tildeify — the contract's JSON example shows global paths abbreviated as
 // `~/...`; emitting the absolute path would both break byte-parity with the
 // other runtimes and leak the local username into committed/shared output.
+//
+// Both operands are run through path.normalize before comparison: a raw
+// process.env.HOME can contain a redundant separator (e.g. macOS's default
+// $TMPDIR ends in "/", so a test harness building HOME as `"$TMPDIR/foo"`
+// yields ".../T//foo"), while `absPath` here is always produced via
+// path.join, which normalizes internally — comparing the two without
+// normalizing homeRoot first made the prefix check silently fail and fall
+// through to the absolute-path branch. Mirrors Python's _tildeify
+// (pypi/trackfw/commands/update_harness.py), which normalizes both sides
+// via os.path.normpath for the same reason.
 function tildeify(homeRoot, absPath) {
-  if (absPath === homeRoot) return '~'
-  if (absPath.startsWith(homeRoot + path.sep)) return '~' + absPath.slice(homeRoot.length)
-  return absPath
+  const normalizedHome = path.normalize(homeRoot)
+  const normalizedPath = path.normalize(absPath)
+  if (normalizedPath === normalizedHome) return '~'
+  if (normalizedPath.startsWith(normalizedHome + path.sep)) return '~' + normalizedPath.slice(normalizedHome.length)
+  return normalizedPath
 }
 
 // validateTargets — throws (usage error) when the caller asked for an id

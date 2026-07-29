@@ -2,7 +2,7 @@
 
 const os = require('node:os')
 
-const { catalog, items, target, surfaceFor, readAsset } = require('./catalog')
+const { catalog, items, target, surfaceFor, readAsset, globalGroupPath } = require('./catalog')
 const { render } = require('./render')
 const { IntegrationManager } = require('./manager')
 const { legacyHashes } = require('./legacy')
@@ -128,4 +128,4 @@ function execute(kind, operation, options = {}, roots = {}) {
   return result(kind, plans, statuses)
 }
 
-module.exports = { catalog, buildPlans, execute, IntegrationManager, parseSurfaces }
+module.exports = { catalog, buildPlans, execute, IntegrationManager, parseSurfaces, globalGroupPath }

@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from trackfw.identity import IdentityError, load as load_identity
-from trackfw.integrations.catalog import plan_deployments
+from trackfw.integrations.catalog import global_group_path, load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
 
 STATE_UPDATED = "updated"
@@ -80,15 +80,21 @@ LEGACY_SKILL_CONTENT = (
 )
 
 
-def _resolve_destination(raw: str, home: str) -> str:
-    """Renders the `~/`-relative destination template plan_deployments
-    returns into an absolute path rooted at `home`, mirroring
-    IntegrationManager._resolve's global-scope branch (that method is
-    private, so this is a read-only, side-effect-free re-derivation used
-    only to compute the reported `path` field)."""
-    if raw.startswith("~/"):
-        return os.path.normpath(os.path.join(home, raw[2:]))
-    return os.path.normpath(raw)
+def _tildeify(home: str, absolute: str) -> str:
+    """Renders an absolute path rooted at `home` back into its `~/`-relative
+    form for display — the contract's JSON example shows global paths
+    abbreviated as `~/...` (docs/cli-parity.md, "Declared harness targets —
+    pinned list": "path is rendered tilde-abbreviated ... never as an
+    absolute path"). Mirrors npm/src/lib/update-engine.js:tildeify and
+    internal/generators/update.go's harness display paths."""
+    normalized_home = os.path.normpath(home)
+    normalized = os.path.normpath(absolute)
+    if normalized == normalized_home:
+        return "~"
+    prefix = normalized_home + os.sep
+    if normalized.startswith(prefix):
+        return "~/" + normalized[len(prefix):]
+    return normalized
 
 
 def declared_target_ids() -> list[str]:
@@ -134,29 +140,30 @@ def _resolve_targets(raw: str | None) -> list[str]:
 
 def _legacy_skill_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
     path = os.path.join(home, LEGACY_SKILL_RELATIVE)
+    display_path = _tildeify(home, path)
     desired = LEGACY_SKILL_CONTENT.encode("utf-8")
     try:
         existing = Path(path).read_bytes()
     except FileNotFoundError:
         if not install_missing:
-            return {"id": "claude-skill", "state": STATE_MISSING, "path": path}
+            return {"id": "claude-skill", "state": STATE_MISSING, "path": display_path}
         if dry_run:
-            return {"id": "claude-skill", "state": STATE_UPDATED, "path": path}
+            return {"id": "claude-skill", "state": STATE_UPDATED, "path": display_path}
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             Path(path).write_bytes(desired)
         except OSError as error:
-            return {"id": "claude-skill", "state": STATE_FAILED, "path": path, "message": str(error)}
-        return {"id": "claude-skill", "state": STATE_UPDATED, "path": path}
+            return {"id": "claude-skill", "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": "claude-skill", "state": STATE_UPDATED, "path": display_path}
     if existing == desired:
-        return {"id": "claude-skill", "state": STATE_SKIPPED, "path": path}
+        return {"id": "claude-skill", "state": STATE_SKIPPED, "path": display_path}
     if dry_run:
-        return {"id": "claude-skill", "state": STATE_UPDATED, "path": path}
+        return {"id": "claude-skill", "state": STATE_UPDATED, "path": display_path}
     try:
         Path(path).write_bytes(desired)
     except OSError as error:
-        return {"id": "claude-skill", "state": STATE_FAILED, "path": path, "message": str(error)}
-    return {"id": "claude-skill", "state": STATE_UPDATED, "path": path}
+        return {"id": "claude-skill", "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": "claude-skill", "state": STATE_UPDATED, "path": display_path}
 
 
 def _catalog_group_result(
@@ -170,14 +177,18 @@ def _catalog_group_result(
 ) -> dict[str, Any]:
     target_id = f"{tool}-{kind}"
     try:
-        _, plans = plan_deployments(kind, target_ids=[tool], scope="global", identity_cfg=identity_cfg)
+        directory = global_group_path(load_catalog(), tool, kind)
     except ValueError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": "", "message": str(error)}
 
-    if not plans:
-        return {"id": target_id, "state": STATE_MISSING, "path": ""}
+    try:
+        _, plans = plan_deployments(kind, target_ids=[tool], scope="global", identity_cfg=identity_cfg)
+    except ValueError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": directory, "message": str(error)}
 
-    directory = os.path.dirname(_resolve_destination(plans[0]["destination"], home))
+    if not plans:
+        return {"id": target_id, "state": STATE_MISSING, "path": directory}
+
     inspections = manager.list(plans)
 
     installed = [(plan, inspection) for plan, inspection in zip(plans, inspections) if inspection["state"] != "not-installed"]
