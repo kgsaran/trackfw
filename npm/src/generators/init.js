@@ -101,13 +101,26 @@ roadmap_namespacing: flat
 // scripts/trackfw-validate.sh
 // ---------------------------------------------------------------------------
 
-function generateValidateScript(cfg) {
-  fs.mkdirSync('scripts', { recursive: true })
+// generateValidateScript — cwd is optional and defaults to process.cwd() so
+// existing callers (scaffold(), which always runs with process.cwd() already
+// at the project root) keep working unchanged. `trackfw update`'s
+// validate-script target passes cwd explicitly so this can be applied
+// against a --dry-run sandbox root without ever touching the real project
+// tree — this is the SAME canonical generator scaffold() uses for `init`,
+// not a separate copy (see npm/src/commands/discover.js's writeValidateScript,
+// which is a different, simpler generator used only by `discover`/legacy
+// paths and must never be reused here — that mismatch was the ML-6H
+// validate-script parity bug: init wrote the rich per-backend script,
+// `update` overwrote it with the static 3-line one, so idempotent re-runs
+// reported "updated" instead of "skipped").
+function generateValidateScript(cfg, cwd) {
+  const root = cwd || process.cwd()
+  fs.mkdirSync(path.join(root, 'scripts'), { recursive: true })
 
   const script = buildValidateScript(cfg)
-  const scriptPath = path.join('scripts', 'trackfw-validate.sh')
+  const scriptPath = path.join(root, 'scripts', 'trackfw-validate.sh')
   fs.writeFileSync(scriptPath, script, { encoding: 'utf8', mode: 0o755 })
-  console.log(`  ✓ ${scriptPath}`)
+  console.log(`  ✓ ${path.join('scripts', 'trackfw-validate.sh')}`)
 }
 
 function buildValidateScript(cfg) {

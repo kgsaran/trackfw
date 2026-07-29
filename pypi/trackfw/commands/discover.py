@@ -286,13 +286,11 @@ def install_gates(result: dict, root_dir: str) -> None:
 
 
 def _write_validate_script(root_dir: str) -> None:
-    scripts_dir = os.path.join(root_dir, "scripts")
-    os.makedirs(scripts_dir, exist_ok=True)
-    content = "#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n"
-    dest = os.path.join(scripts_dir, "trackfw-validate.sh")
-    with open(dest, "w", encoding="utf-8") as f:
-        f.write(content)
-    os.chmod(dest, 0o755)
+    # Delegates to the single canonical generator shared with `trackfw init`
+    # and `trackfw update`'s `validate-script` target — see
+    # trackfw/generators/init_gen.py:generate_validate_script (ML-6H).
+    from trackfw.generators.init_gen import generate_validate_script
+    generate_validate_script(root_dir)
 
 
 def _install_hook(framework: str, root_dir: str) -> None:

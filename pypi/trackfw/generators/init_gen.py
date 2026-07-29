@@ -86,6 +86,7 @@ def scaffold(cwd: str, opts: dict) -> None:
     _write_example_adr(cwd, opts)
     generate_claude_md(cwd, opts)
     generate_claude_commands(cwd)
+    generate_validate_script(cwd)
     _generate_attention_scripts(cwd)
     try:
         from trackfw.generators.hooks import inject_hooks_detected
@@ -457,6 +458,39 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     header = ''.join(lines)
     _inject_or_update_rules(os.path.join(cwd, 'CLAUDE.md'), header)
     print('  checkmark CLAUDE.md')
+
+
+def generate_validate_script(cwd: str) -> None:
+    """Escreve scripts/trackfw-validate.sh.
+
+    This is the SINGLE canonical generator for this file in the Python
+    runtime — both `trackfw init` (via scaffold(), above) and `trackfw
+    update`'s `validate-script` target (pypi/trackfw/commands/update.py)
+    call this same function. Previously this file was written only by the
+    `discover` command's own private `_write_validate_script` (never by
+    `init`), so a freshly-`init`-ed Python project had no
+    scripts/trackfw-validate.sh at all and `trackfw update` always reported
+    it `missing` — diverging in target-count AND state from the Go and
+    Node.js CLIs, which both write this file at init time (ML-6H,
+    docs/cli-parity.md, "Declared project targets — pinned list").
+
+    Unlike Go's/Node's per-backend script (buildValidateScript), this
+    runtime's `init` has no --backend/--frontend/--pkg-manager flags (a
+    pre-existing, intentionally reduced Python `init` CLI surface — see
+    trackfw/commands/init.py), so the generated script is intentionally the
+    simpler, backend-agnostic form. Only the update-state contract (missing/
+    skipped/updated/failed) and the JSON document shape are pinned across
+    runtimes for this target — the script's own bytes are not (see
+    docs/cli-parity.md's declared-targets note on Python's reduced surface).
+    """
+    scripts_dir = os.path.join(cwd, 'scripts')
+    os.makedirs(scripts_dir, exist_ok=True)
+    content = "#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n"
+    dest = os.path.join(scripts_dir, 'trackfw-validate.sh')
+    with open(dest, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.chmod(dest, 0o755)
+    print('  checkmark scripts/trackfw-validate.sh')
 
 
 def generate_claude_commands(cwd: str) -> None:

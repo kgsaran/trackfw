@@ -751,7 +751,7 @@ python3 -m pytest pypi/tests -k update -q
 ```
 
 ### ML-6F — Alinhar os três runtimes à lista de targets pinada (corretivo)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (parcial pelo agente; completado no ML-6H)
 **Origem:** auditoria cruzada da Wave 6. O contrato do ML-6A fixou estados, flags e ordem de
 chaves, mas **não** fixou o conjunto de targets — e os três runtimes produziram três respostas.
 Falha do contrato, não dos implementadores; os três reportaram a lacuna honestamente.
@@ -787,36 +787,44 @@ Falha do contrato, não dos implementadores; os três reportaram a lacuna honest
 make quality
 ```
 
-### ML-6E — `trackfw init --ai-tools` não deve mutar o harness global
-**Status:** ⬜ Pendente
-**Origem:** constatado pelo orquestrador ao validar a regressão do ML-5E.
-**Arquivos afetados:**
-- caminho de `init --ai-tools` nos três runtimes
-- testes correspondentes
-
-**Diagnóstico:** `trackfw init --ai-tools gemini`, executado dentro de um projeto, grava em
-`~/.gemini/agents/`. Constatado empiricamente: a execução falhou com
-`artifact "/Users/<user>/.gemini/agents/trackfw-architect.md" is outdated; use update`, provando
-que o comando alcança o HOME do usuário.
-
-É a **mesma classe de defeito** que a Wave 6 corrige em `trackfw update`: um comando de escopo de
-projeto mutando o harness global. O contrato do ML-6A cobre `update`; `init` ficou de fora.
-
-**Ações:**
-1. Restringir `init --ai-tools` ao escopo do projeto, seguindo o contrato do ML-6A.
-2. Instalação global passa a exigir escopo explícito, coerente com `trackfw update harness`.
-3. Teste com HOME isolado provando que `init` não escreve fora do projeto.
+### ML-6H — Alinhar o `update` de projeto entre os runtimes (corretivo)
+**Status:** ✅ Concluído
+**Origem:** o ML-6F falhou por erro de API no meio do trabalho, deixando o escopo de projeto
+pendente. Divergências medidas: Python declarava 3 dos 5 targets; Node marcava `updated` onde Go
+marcava `skipped`; `tildeify` no Node falhava com `$HOME` contendo barra dupla.
+**Resolução:** lista de 5 targets pinada e adotada nos três; `updated` passa a significar mudança
+real de conteúdo; `tildeify` corrigido com teste. Descobertas duas lacunas de paridade `init`↔`update`
+no caminho: o `init` do Go nunca escrevia agent-hooks e o do Python nunca escrevia
+`scripts/trackfw-validate.sh`.
 
 **Critérios de aceite:**
-- [ ] `init --ai-tools` não escreve fora do diretório do projeto.
-- [ ] Teste com HOME isolado prova a ausência de escrita global.
-- [ ] Comportamento idêntico nos três runtimes.
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] Os três declaram os mesmos 5 targets de projeto, na mesma ordem.
+- [x] `updated` reflete mudança real; idempotência produz `skipped` nos três.
+- [x] JSON byte-idêntico entre os três, ordem preservada, normal e `--dry-run`.
 
-**Comandos de validação:**
-```bash
-make quality
-```
+### ML-6I — Impedir que os gates mutem o repositório (corretivo)
+**Status:** ✅ Concluído
+**Origem:** `scripts/check-update-parity.sh` injetava o bloco `trackfw:rules` no `CLAUDE.md` do
+próprio repositório — e **passava** enquanto fazia isso. A causa era `install_claude_agents()`
+redirecionar `HOME` mas não fazer `cd` para diretório descartável, herdando o `cwd` de quem invocava.
+Como o gate está no alvo `parity`, `make quality` mutava a árvore de trabalho.
+**Resolução:** invocação isolada em scratch dir; auditados os quatro gates novos; adicionado cenário
+`falsify/no-repo-mutation` que compara `git status --porcelain` antes e depois de rodar os gates.
+Transforma "eu conferi" em "o pipeline confere".
+
+**Critérios de aceite:**
+- [x] Rodar os quatro gates da raiz não altera nenhum arquivo versionado.
+- [x] `make quality` passa e não muta a árvore de trabalho.
+- [x] Cenário de falsificação prova que a ausência de mutação é verificada.
+
+
+> **Defeito extraído.** Durante a validação da Wave 5 constatei que `trackfw init --ai-tools`
+> grava em `~/.gemini` — um comando de escopo de projeto mutando o harness global, mesma classe de
+> defeito que esta wave corrige em `update`. Como está fora da REQ desta entrega (que trata de
+> `update`, não de `init`), foi extraído para
+> `docs/req/REQ-2026-07-29-escopo-de-init-ai-tools-nao-deve-mutar-o-harness-global.md` e
+> `docs/roadmaps/backlog/ROADMAP-2026-07-29-escopo-de-init-ai-tools-nao-deve-mutar-o-harness-global.md`,
+> em vez de inflar um roadmap que já cresceu de 9 para 21 MLs.
 
 ## Protocolo de conclusão do roadmap
 

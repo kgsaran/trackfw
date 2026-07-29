@@ -9,23 +9,33 @@ plans/applies with `scope="project"` explicitly. `trackfw update harness`
 user's global harness (`~/.claude`, `~/.codex`, etc.) and runs from
 anywhere, without a `trackfw.yaml`.
 
-Escopo reduzido: atualiza somente as regras de agente (blocos marker-delimited),
-os agent hooks e a integração Codex de projeto já instalada. Gates (hooks/CI)
-e Claude commands requerem o CLI Go ou Node.js — ver docs/cli-parity.md.
-
 --dry-run, --json, --targets and --install-missing (added for
-REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador, ML-6F) report
-the same four-state model (updated/skipped/missing/failed) as `trackfw update
-harness`, over a "scope": "project" JSON document — see docs/cli-parity.md.
-The declared PROJECT_TARGET_IDS below is this runtime's reduced surface; it is
-NOT required to match Go/Node.js's project target list byte-for-byte — only
-the states, flags and JSON document shape are shared (see the docstring on
-"Escopo reduzido" above, which the Go/Node.js CLIs do not implement).
+REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador, ML-6F/ML-6H)
+report the same four-state model (updated/skipped/missing/failed) as
+`trackfw update harness`, over a "scope": "project" JSON document — see
+docs/cli-parity.md.
+
+PROJECT_TARGET_IDS declares the same 5 ids, in the same order, as Go and
+Node.js (docs/cli-parity.md, "Declared project targets — pinned list"):
+`agent-rules`, `agent-hooks`, `codex-project-agents`, `validate-script`,
+`claude-commands`. `ci-workflow` and `git-hooks` are Go/Node.js-only:
+this runtime has no CLI surface to configure a CI system or a git-hooks
+framework at `init` time (no --ci/--hooks flags — see
+trackfw/commands/init.py), so there is nothing for those two targets to
+manage here; they are correctly absent, not silently shortened. Per
+contract, a runtime that cannot manage a target still declares it and
+reports an honest state rather than omitting it — `validate-script` and
+`claude-commands` are both fully implementable in this runtime (see
+trackfw/generators/init_gen.py's generate_validate_script and
+generate_claude_commands, the same generators `trackfw init` uses) and are
+implemented below, closing the ML-6C/ML-6F gap where this runtime declared
+only 3 of the 5 pinned ids.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -63,11 +73,33 @@ AGENT_HOOKS_RELATIVE_PATHS = [
     os.path.join("scripts", "trackfw-attention-cleanup.sh"),
 ]
 
+# AGENT_HOOKS_DISPLAY_PATH — the reported `path` string for the agent-hooks
+# target. Pinned to match Go's and Node.js's rendering exactly: the two
+# per-file attention scripts are collapsed into a single glob
+# ("scripts/trackfw-attention-*.sh"), not spelled out individually —
+# ML-6H fix (this runtime previously listed both full paths, diverging from
+# the other two even when every underlying state agreed).
+AGENT_HOOKS_DISPLAY_PATH = ", ".join(
+    AGENT_HOOKS_RELATIVE_PATHS[:-2] + ["scripts/trackfw-attention-*.sh"]
+)
+
 CODEX_PROJECT_AGENTS_DISPLAY_PATH = ".codex/agents, .agents/skills"
 
+VALIDATE_SCRIPT_RELATIVE_PATH = os.path.join("scripts", "trackfw-validate.sh")
+CLAUDE_COMMANDS_RELATIVE_PATH = os.path.join(".claude", "commands", "trackfw")
+
 # PROJECT_TARGET_IDS — this runtime's declared, fixed-order project-scope
-# target list (see module docstring: reduced scope, documented exception).
-PROJECT_TARGET_IDS = ["agent-rules", "agent-hooks", "codex-project-agents"]
+# target list. Matches Go's and Node.js's 5 pinned ids and order exactly
+# (see module docstring and docs/cli-parity.md, "Declared project targets —
+# pinned list"); `ci-workflow` and `git-hooks` are absent because this
+# runtime's `init` has no CI/hooks configuration surface to manage.
+PROJECT_TARGET_IDS = [
+    "agent-rules",
+    "agent-hooks",
+    "codex-project-agents",
+    "validate-script",
+    "claude-commands",
+]
 
 
 def register(subparsers: argparse.ArgumentParser) -> None:
@@ -279,6 +311,24 @@ def _resolve_project_targets(raw: str | None) -> list[str]:
     return [target_id for target_id in PROJECT_TARGET_IDS if target_id in selected]
 
 
+@contextlib.contextmanager
+def _silence_stdout(active: bool):
+    """Redirects stdout to /dev/null for the duration of the context when
+    `active` is True. `generate_validate_script`, `generate_claude_commands`,
+    `inject_rules_detected`, etc. print human progress lines as a side
+    effect of writing; with --json, stdout must carry only the result
+    document. Mirrors Go's silenceStdout (internal/commands/update.go) and
+    Node's silenceConsole (npm/src/lib/update-engine.js) — added in ML-6H
+    when validate-script/claude-commands were wired into this runtime's
+    `update` and their print()s broke `--json` output parsing."""
+    if not active:
+        yield
+        return
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
+        with contextlib.redirect_stdout(devnull):
+            yield
+
+
 def _copy_project_tree(src: str, dst: str) -> None:
     """Copies src into dst, skipping .git and node_modules, for use as a
     --dry-run sandbox that the real project tree is never written through."""
@@ -318,33 +368,62 @@ def _run_project(args: argparse.Namespace) -> None:
         from trackfw.generators.hooks import inject_hooks_detected
 
         targets: list[dict[str, Any]] = []
-        for target_id in target_ids:
-            if target_id == "agent-rules":
-                targets.append(
-                    _run_file_target(
-                        "agent-rules",
-                        ", ".join(AGENT_RULES_RELATIVE_PATHS),
-                        apply_root,
-                        AGENT_RULES_RELATIVE_PATHS,
-                        inject_rules_detected,
-                        dry_run,
-                        install_missing,
+        with _silence_stdout(bool(args.json)):
+            for target_id in target_ids:
+                if target_id == "agent-rules":
+                    targets.append(
+                        _run_file_target(
+                            "agent-rules",
+                            ", ".join(AGENT_RULES_RELATIVE_PATHS),
+                            apply_root,
+                            AGENT_RULES_RELATIVE_PATHS,
+                            inject_rules_detected,
+                            dry_run,
+                            install_missing,
+                        )
                     )
-                )
-            elif target_id == "agent-hooks":
-                targets.append(
-                    _run_file_target(
-                        "agent-hooks",
-                        ", ".join(AGENT_HOOKS_RELATIVE_PATHS),
-                        apply_root,
-                        AGENT_HOOKS_RELATIVE_PATHS,
-                        inject_hooks_detected,
-                        dry_run,
-                        install_missing,
+                elif target_id == "agent-hooks":
+                    targets.append(
+                        _run_file_target(
+                            "agent-hooks",
+                            AGENT_HOOKS_DISPLAY_PATH,
+                            apply_root,
+                            AGENT_HOOKS_RELATIVE_PATHS,
+                            inject_hooks_detected,
+                            dry_run,
+                            install_missing,
+                        )
                     )
-                )
-            elif target_id == "codex-project-agents":
-                targets.append(_codex_project_agents_target(apply_root, dry_run, install_missing))
+                elif target_id == "codex-project-agents":
+                    targets.append(_codex_project_agents_target(apply_root, dry_run, install_missing))
+                elif target_id == "validate-script":
+                    from trackfw.generators.init_gen import generate_validate_script
+
+                    targets.append(
+                        _run_file_target(
+                            "validate-script",
+                            VALIDATE_SCRIPT_RELATIVE_PATH,
+                            apply_root,
+                            [VALIDATE_SCRIPT_RELATIVE_PATH],
+                            generate_validate_script,
+                            dry_run,
+                            install_missing,
+                        )
+                    )
+                elif target_id == "claude-commands":
+                    from trackfw.generators.init_gen import generate_claude_commands
+
+                    targets.append(
+                        _run_file_target(
+                            "claude-commands",
+                            CLAUDE_COMMANDS_RELATIVE_PATH,
+                            apply_root,
+                            [CLAUDE_COMMANDS_RELATIVE_PATH],
+                            generate_claude_commands,
+                            dry_run,
+                            install_missing,
+                        )
+                    )
     finally:
         if tmp_dir:
             shutil.rmtree(tmp_dir, ignore_errors=True)

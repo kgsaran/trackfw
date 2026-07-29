@@ -159,7 +159,19 @@ function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing 
     path: 'scripts/trackfw-validate.sh',
     root: cwd,
     relPaths: ['scripts/trackfw-validate.sh'],
-    apply: (root) => discover.writeValidateScript(root),
+    // Reuses generators/init.js's generateValidateScript — the SAME
+    // generator `trackfw init` uses to write this file — not
+    // discover.js's writeValidateScript, which produces a different
+    // (simpler, non-per-backend) script and made every `update` re-run
+    // report "updated" against a project actually already current
+    // (ML-6H fix). readUpdateConfig returns raw trackfw.yaml keys
+    // (snake_case, e.g. "pkg_manager"); buildValidateScript expects the
+    // camelCase shape used by the rest of the init generators.
+    apply: (root) => generators.generateValidateScript({
+      backend: cfg.backend,
+      frontend: cfg.frontend,
+      pkgManager: cfg.pkg_manager,
+    }, root),
     dryRun,
     installMissing,
   }));

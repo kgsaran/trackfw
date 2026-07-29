@@ -88,6 +88,21 @@ func Scaffold(cfg Config) error {
 		fmt.Println("  ✓ pom.xml")
 	}
 
+	// Agent hooks (attention signal): injected at init time so a freshly
+	// scaffolded project already carries them, matching npm's
+	// generators/init.js:scaffold (which calls injectHooksDetected(root) as
+	// its last step). Non-fatal like the same call in trackfw update
+	// (internal/generators/update.go) — a hook-injection failure must not
+	// abort project scaffolding. Ported to close the cross-runtime `init`
+	// parity gap surfaced while proving `trackfw update` idempotency
+	// byte-identical across Go/Node.js/Python (ML-6H, docs/cli-parity.md
+	// "`trackfw update` vs `trackfw update harness`").
+	if cwd, err := os.Getwd(); err == nil {
+		if err := InjectHooksDetected(cwd); err != nil {
+			fmt.Printf("  ⚠ agent hooks: %v\n", err)
+		}
+	}
+
 	return nil
 }
 

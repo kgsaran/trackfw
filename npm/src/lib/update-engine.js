@@ -146,8 +146,22 @@ function summarize(targets) {
 // through to the absolute-path branch. Mirrors Python's _tildeify
 // (pypi/trackfw/commands/update_harness.py), which normalizes both sides
 // via os.path.normpath for the same reason.
+//
+// A second, subtler case (ML-6H): path.normalize PRESERVES a trailing
+// separator when the input already has one (macOS's default $TMPDIR itself
+// ends in "/", so a HOME built as "$TMPDIR/foo" collapses the internal
+// "//" but still ends in a single trailing "/"). The prefix check below
+// then appended ANOTHER path.sep, comparing against ".../foo//" — which
+// normalizedPath (which never carries a trailing separator, since it comes
+// from path.join) never starts with — so the check silently failed and
+// fell through to the absolute-path branch even though homeRoot had
+// already been normalized. Stripping a trailing separator from
+// normalizedHome (root "/" excepted) before the prefix check closes this.
 function tildeify(homeRoot, absPath) {
-  const normalizedHome = path.normalize(homeRoot)
+  let normalizedHome = path.normalize(homeRoot)
+  if (normalizedHome.length > path.sep.length && normalizedHome.endsWith(path.sep)) {
+    normalizedHome = normalizedHome.slice(0, -path.sep.length)
+  }
   const normalizedPath = path.normalize(absPath)
   if (normalizedPath === normalizedHome) return '~'
   if (normalizedPath.startsWith(normalizedHome + path.sep)) return '~' + normalizedPath.slice(normalizedHome.length)

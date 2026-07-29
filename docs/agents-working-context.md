@@ -4,6 +4,124 @@
 
 ---
 
+## Sessão 2026-07-29 — Ártemis/QA (ML-6I — corretivo: gate `check-update-parity.sh` mutava o repositório)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+
+**Tarefa:** Handoff do `trackfw_architect` — corrigir o achado colateral registrado por Apolo
+(ML-6H) e em `vault/notes/update-parity-gate-writes-real-claude-md-2026-07-29.md`:
+`scripts/check-update-parity.sh`'s `install_claude_agents()` rodava `agents install --scope global`
+sem isolar `cwd`, mutando o `CLAUDE.md` real do repositório sempre que o gate era executado da raiz
+(`make quality`/`make parity`/direto) — enquanto reportava `OK` em todos os cenários e saía com 0.
+
+**Entregue:**
+- `scripts/check-update-parity.sh`: `install_claude_agents()` agora roda dentro de um `scratch_dir`
+  descartável criado sob `$WORK` (removido pelo `trap ... EXIT` do topo do script), em vez do `cwd`
+  herdado do chamador.
+- Auditados todos os outros pontos de invocação de CLI em `check-update-parity.sh`,
+  `check-barrier.sh`, `check-slash-parity.sh` e `check-rules-parity.sh` — nenhum outro caso do mesmo
+  padrão encontrado; todas as demais chamadas já estavam em subshell `(cd "$scratch_dir" && ...)`.
+  `check-cli-parity.sh` invoca as CLIs sem `cd`, mas apenas para `--help`/`version`/`--version`
+  (sem efeito colateral) — gate antigo, já verde, fora do escopo do corretivo.
+- `scripts/check-gates-falsify.sh`: novo Cenário 18 (`falsify/no-repo-mutation`) — captura
+  `git status --porcelain` na raiz antes/depois de rodar os quatro gates que invocam CLIs reais e
+  reprova o pipeline se a árvore de trabalho mudar. Contagem final atualizada para 19 cenários.
+- `vault/notes/update-parity-gate-writes-real-claude-md-2026-07-29.md`: atualizado de "fix não
+  aplicado" para "fix aplicado", com o trecho de código corrigido e a descrição do Cenário 18.
+
+**Validação (evidência exata, ver transcript):**
+- `git checkout -- CLAUDE.md && git status --short CLAUDE.md` → limpo antes de começar.
+- `git status --porcelain` antes/depois dos 4 gates rodados individualmente da raiz → `diff` vazio,
+  `"NENHUMA MUTACAO"`.
+- `GO_BIN=bin/trackfw scripts/check-gates-falsify.sh` → 19/19 cenários `OK`, incluindo
+  `falsify/no-repo-mutation`.
+- `make quality` (execução completa) → `EXIT_CODE=0`; `git status --porcelain` antes/depois idêntico;
+  `git status --short CLAUDE.md` limpo ao final.
+- `trackfw validate` → `✓ No violations found.`
+- `find ~/.claude ~/.codex ~/.gemini -mmin -30 -type f | grep -i trackfw` → só logs de sessão do
+  próprio Claude Code, nenhum artefato de instalação indevido.
+
+**Escopo respeitado:** nenhuma edição em `docs/adr/`, `docs/req/`, `docs/roadmaps/`,
+`docs/cli-parity.md`, `CHANGELOG.md`, ou código de runtime (`internal/`, `npm/src/`,
+`pypi/trackfw/`). Nenhuma operação Git além de leitura/`checkout -- CLAUDE.md`.
+
+**Ambiguidade reportada, não corrigida:** nenhuma. Todos os critérios de aceite do handoff foram
+atendidos sem decisão bloqueante.
+
+**Próximo agente:** commit/push e atualização de status do ML ficam para quem detém a branch — este
+agente (QA) não executa operações Git de escrita.
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-6H — `trackfw update` escopo de projeto, corretivo final concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+
+**Tarefa:** Fechar a paridade de `trackfw update` (escopo de projeto) entre Go/Node.js/Python —
+`scripts/check-update-parity.sh` estava falhando em `update-project/json/go-vs-node` e
+`update-project/json/go-vs-python`.
+
+**Entregue:**
+- **Python** (`pypi/trackfw/commands/update.py`, `pypi/trackfw/generators/init_gen.py`,
+  `pypi/trackfw/commands/discover.py`): `PROJECT_TARGET_IDS` passou de 3 para os 5 ids pinados
+  (`agent-rules, agent-hooks, codex-project-agents, validate-script, claude-commands`, nessa ordem).
+  Novo gerador único `generate_validate_script(cwd)` em `init_gen.py`, chamado tanto por `scaffold()`
+  (agora `trackfw init` também escreve `scripts/trackfw-validate.sh`, o que antes nunca acontecia)
+  quanto pelo novo alvo `validate-script` de `update`; `discover.py` delega para o mesmo gerador em
+  vez de duplicar o template. Novo alvo `claude-commands` reaproveita `generate_claude_commands`
+  (já existente). Corrigido `path` de `agent-hooks` para o glob `scripts/trackfw-attention-*.sh`
+  (igual Go/Node, antes listava os dois arquivos por extenso). Adicionado `_silence_stdout` (mirror
+  de `silenceStdout`/`silenceConsole` do Go/Node) porque os novos geradores imprimem progresso e
+  quebravam o parse de `--json`.
+- **Node.js** (`npm/src/commands/update.js`, `npm/src/generators/init.js`): o alvo `validate-script`
+  usava `discover.js:writeValidateScript` (gerador simples e diferente) em vez do
+  `generators/init.js:generateValidateScript` que `trackfw init` de fato usa — cada `update` reescrevia
+  o script com bytes diferentes dos que `init` escreveu, reportando `updated` num projeto na verdade
+  já corrente. `generateValidateScript` ganhou um segundo parâmetro `cwd` (antes assumia
+  `process.cwd()`, inseguro para o sandbox de `--dry-run`) e `update.js` agora chama esse único gerador,
+  mapeando `cfg.pkg_manager` (snake_case, como vem de `readUpdateConfig`) para `pkgManager`.
+- **Go** (`internal/generators/scaffold.go`): `Scaffold()` nunca chamava `InjectHooksDetected` — só
+  `update` chamava. Node.js e Python já chamavam essa injeção dentro do próprio `scaffold`/`init`, então
+  um projeto recém-`init`-ado no Go não tinha `.claude/settings.json` etc., e o primeiro `update`
+  reportava `updated` (arquivo genuinamente novo) onde Node/Python reportavam `skipped` (já corrente) —
+  gap de paridade real em `init`, não bug no discriminador de `update`. Corrigido adicionando a mesma
+  chamada `InjectHooksDetected(cwd)` (não-fatal, mesmo padrão de `update`) como último passo de
+  `Scaffold`, espelhando a posição em Node/Python.
+- **Node.js** (`npm/src/lib/update-engine.js`): `tildeify` já normalizava os dois lados (fix de uma
+  ML anterior — ver `vault/notes/node-tildeify-double-slash-home-2026-07-29.md`), mas `path.normalize`
+  preserva um separador final quando o `$HOME` já termina em `/` (comum no macOS, cujo `$TMPDIR`
+  default já termina em `/`), e o código então comparava com um separador duplicado, falhando
+  silenciosamente. Corrigido removendo o separador final de `normalizedHome` antes da comparação de
+  prefixo. Teste novo: `npm/tests/update-engine.test.js`.
+
+**Achado colateral (fora do escopo do handoff, mitigado, não corrigido no código):**
+`scripts/check-update-parity.sh`'s `install_claude_agents()` (fixture da Cenário 4) roda
+`"$GO_BIN" agents install --scope global` sem isolar `cwd` — se o gate for executado a partir da raiz
+do repo (`make quality`/`make parity`/direto), a injeção de regras do `agents install` (que não é
+gated por `--scope`) escreve no `CLAUDE.md` real do próprio repositório. Reproduzido e revertido duas
+vezes durante esta sessão (`git checkout -- CLAUDE.md`); `scripts/` está fora do meu escopo de edição
+(handoff ML-6H). Documentado em
+`vault/notes/update-parity-gate-writes-real-claude-md-2026-07-29.md` para o próximo agente
+QA/Zeus corrigir com um `cd` isolado nessa função específica.
+
+**Validação:** `go build ./... && go vet ./... && go test ./...` verde (todos os pacotes);
+`cd npm && npm test` — 328 passed, 0 failed; `python3 -m pytest pypi/tests -q` — 691 passed;
+`scripts/check-update-parity.sh` — todos os cenários `OK`; `make quality` — verde (18/18 cenários de
+`check-gates-falsify.sh`, todos os demais gates); `bin/trackfw validate --json` — `violations: 0,
+warnings: 0`. Confirmado `git status --short CLAUDE.md` limpo ao final (revertido o achado colateral
+acima) e `find ~/.claude ~/.codex ~/.gemini -mmin -N` sem artefatos trackfw fora da sessão do próprio
+agente.
+
+**Notas do vault:** `vault/notes/update-project-scope-duplicate-generators-2026-07-29.md` (causas-raiz
+1–3 acima), `vault/notes/node-tildeify-trailing-separator-2026-07-29.md` (bug residual do tildeify),
+`vault/notes/update-parity-gate-writes-real-claude-md-2026-07-29.md` (achado colateral do gate).
+
+**Próximo agente (Zeus/orquestrador):** este agente não executa git — commit/push/ML status ficam
+para quem detém a branch. Considerar abrir REQ/roadmap-item para corrigir `install_claude_agents()`
+em `scripts/check-update-parity.sh` (achado colateral, fora do escopo desta ML).
+
+---
+
 ## Sessão 2026-07-29 — Apolo (ML-6B `trackfw update harness` — runtime Go concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
@@ -5815,3 +5933,37 @@ Nenhum arquivo fora de `scripts/check-update-parity.sh`, `scripts/check-gates-fa
 `Makefile`, `vault/notes/node-tildeify-double-slash-home-2026-07-29.md` e `vault/notes/index.md`
 foi alterado por este ML. Nenhuma operação Git executada — sem autoridade; branch permanece com
 working tree alterado para o `trackfw_architect` auditar e commitar.
+
+## Auditoria 2026-07-29 — Zeus — Wave 6 completa e roadmap fechado
+
+O ML-6F falhou por erro de API no meio do trabalho. O trabalho parcial foi preservado e commitado
+(harness já alinhado nos três runtimes), e o restante foi concluído pelo ML-6H.
+
+Duas lacunas do meu contrato apareceram nesta wave, ambas da mesma natureza — eu pinei estados,
+flags e ordem de chaves, mas deixei **conjuntos** em aberto:
+
+1. Lista de targets do harness: Go declarou 3, Node e Python 19. Pinada em 19.
+2. Lista de targets de projeto: Python declarou 3 dos 5. Pinada em 5.
+
+E uma lacuna de semântica: `updated` vs `skipped`. Go comparava conteúdo, Node reescrevia sempre —
+mesma entrada, estados diferentes. Pinado: o discriminador é o conteúdo ter mudado, não a
+implementação ter chamado `write()`.
+
+O ML-6H descobriu duas lacunas de paridade `init`↔`update` no caminho: o `init` do Go nunca escrevia
+agent-hooks e o do Python nunca escrevia `scripts/trackfw-validate.sh`.
+
+**Incidente do ML-6I — o gate mutava o repositório e passava.**
+`scripts/check-update-parity.sh` injetava o bloco `trackfw:rules` no `CLAUDE.md` deste repositório,
+porque `install_claude_agents()` redirecionava `HOME` mas não fazia `cd` para diretório descartável,
+herdando o `cwd` de quem invocava. Como o gate está no alvo `parity`, `make quality` mutava a árvore
+de trabalho — e o gate retornava exit 0 enquanto fazia isso. Reproduzido, corrigido, e coberto pelo
+cenário `falsify/no-repo-mutation`, que compara `git status --porcelain` antes e depois de rodar os
+gates. Transforma "eu conferi" em "o pipeline confere".
+
+Verificação final independente: `make quality` exit 0; 19 cenários de falsificação e 12 gates
+provados não-vacuosos (eram 13 e 8 no início da sessão); os quatro gates novos rodados da raiz não
+alteram nenhum arquivo versionado; `CLAUDE.md` limpo; zero artefatos trackfw tocados no HOME real;
+`validate --json` 0 violações. Barriers das waves 1 a 3 retornam `passed`.
+
+Defeito extraído em vez de inflar o roadmap: `init --ai-tools` mutando o harness global virou REQ e
+roadmap próprios em `backlog/`.

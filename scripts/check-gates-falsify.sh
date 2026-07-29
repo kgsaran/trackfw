@@ -638,4 +638,45 @@ assert_fails_with "update-parity/dry-run-write-leak" \
   "filesystem tree under HOME changed during --dry-run" \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T17/scripts/check-update-parity.sh"
 
-echo "Falsification checks passed (all 18 scenarios, 12 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 18 — não-mutação: os gates que invocam CLIs reais (agents install,
+# init, update, barrier) não alteram a árvore de trabalho do repositório
+# quando rodados a partir da raiz — exatamente como `make quality`/`make
+# parity` já fazem.
+#
+# Objetivo (ML-6I): o bug corrigido em install_claude_agents() de
+# check-update-parity.sh (ver
+# vault/notes/update-parity-gate-writes-real-claude-md-2026-07-29.md) fazia
+# o gate passar — `exit 0`, todas as scenarios "OK" — enquanto injetava o
+# bloco trackfw:rules no CLAUDE.md do próprio repositório. "Gate verde" não
+# provava "repositório intocado"; esta prova fecha esse buraco de forma
+# automática em vez de depender de um agente lembrar de rodar `git status`
+# manualmente. Captura `git status --porcelain` antes/depois de rodar,
+# a partir de ROOT_DIR, os gates que exercitam CLIs reais (não os que operam
+# só sobre cópias isoladas em $WORK) e reprova se houver qualquer diferença.
+# ---------------------------------------------------------------------------
+GATES_MUTATION_CHECK=(
+  scripts/check-update-parity.sh
+  scripts/check-barrier.sh
+  scripts/check-slash-parity.sh
+  scripts/check-rules-parity.sh
+)
+
+before_status=$(cd "$ROOT_DIR" && git status --porcelain)
+for gate in "${GATES_MUTATION_CHECK[@]}"; do
+  if ! (cd "$ROOT_DIR" && GO_BIN="$ROOT_DIR/bin/trackfw" bash "$gate") >"$WORK/mutation-check.$(basename "$gate").log" 2>&1; then
+    echo "FAIL [falsify/no-repo-mutation]: $gate saiu != 0 rodando limpo (não corrompido) — não é possível provar não-mutação" >&2
+    sed 's/^/    /' "$WORK/mutation-check.$(basename "$gate").log" >&2
+    exit 1
+  fi
+done
+after_status=$(cd "$ROOT_DIR" && git status --porcelain)
+
+if [[ "$before_status" != "$after_status" ]]; then
+  echo "FAIL [falsify/no-repo-mutation]: rodar os gates a partir da raiz alterou a árvore de trabalho do repositório" >&2
+  diff <(echo "$before_status") <(echo "$after_status") >&2 || true
+  exit 1
+fi
+echo "OK   [falsify/no-repo-mutation]"
+
+echo "Falsification checks passed (all 19 scenarios, 12 gates proved non-vacuous)"
