@@ -86,6 +86,7 @@ def scaffold(cwd: str, opts: dict) -> None:
     _write_example_adr(cwd, opts)
     generate_claude_md(cwd, opts)
     generate_claude_commands(cwd)
+    generate_validate_script(cwd)
     _generate_attention_scripts(cwd)
     try:
         from trackfw.generators.hooks import inject_hooks_detected
@@ -223,7 +224,7 @@ Proposed
 # ---------------------------------------------------------------------------
 
 GLOBAL_ADR_DIRECTIVE = (
-    '- Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs '
+    'Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs '
     '(inclusive caminhos ~/...) antes de propor alterações de arquitetura.'
 )
 
@@ -235,13 +236,19 @@ def _trackfw_rules_block() -> str:
         'This project uses **trackfw** for AI-native delivery governance.\n'
         'Chain: `ADR → REQ → ROADMAP` · States: `backlog / analyzing / wip / blocked / done / abandoned`\n\n'
         '### Agent Protocol\n'
-        '1. **Before starting:** run `trackfw context` · read `docs/agents-working-context.md`\n'
-        '2. **After finishing:** update `docs/agents-working-context.md` with what changed\n'
-        '3. **Before PR:** `trackfw validate` must pass\n'
-        '4. **ML lifecycle — mandatory:**\n'
+        '1. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:\n'
+        '   `trackfw req new "title"` → `trackfw roadmap new "title"` → `trackfw roadmap move <name> wip` → `git checkout -b feat/<branch>`\n'
+        '   ❌ Never create a branch before REQ + ROADMAP are in wip/\n'
+        '   ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables\n'
+        '   ✓ `trackfw validate` enforces this via `branch_has_wip_roadmap` rule (v2.7.0+)\n'
+        '2. **Before starting:** run `trackfw context` · read `docs/agents-working-context.md`\n'
+        '3. **After finishing:** update `docs/agents-working-context.md` with what changed\n'
+        '4. **Before PR:** `trackfw validate` must pass\n'
+        '5. **ML lifecycle — mandatory:**\n'
         '   - Starting a ML: edit roadmap `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` + commit.\n'
         '   - Completing a ML: edit roadmap → `**Status:** ✅ Concluído` + include in ML commit.\n'
-        '   - Analyzing a roadmap: move from `backlog/` to `analyzing/`; to `wip/` only when coding starts.\n\n'
+        '   - Analyzing a roadmap: move from `backlog/` to `analyzing/`; to `wip/` only when coding starts.\n'
+        f'6. **{GLOBAL_ADR_DIRECTIVE}**\n\n'
         '### Attention Signal (when you need user input during a task)\n'
         'Write `docs/roadmaps/.trackfw-attention.json`:\n'
         '```json\n'
@@ -252,7 +259,6 @@ def _trackfw_rules_block() -> str:
         '> `<roadmap_dir>/.trackfw-attention.json` manually — there is no automatic hook for this.\n'
         '> Delete the file after the user responds.\n'
         '\n### Architecture Directives (mandatory)\n'
-        f'{GLOBAL_ADR_DIRECTIVE}\n'
         '- **3-layer separation:** frontend / backend / database — never mix concerns\n'
         '- **No in-memory data:** always database + ORM (never arrays/globals for persistence)\n'
         '- **Auth from day 1:** never defer — refactoring auth later is very costly\n'
@@ -262,6 +268,12 @@ def _trackfw_rules_block() -> str:
         '- **Security wave:** include a red-team review wave in every feature roadmap\n'
         '- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)\n'
         '- Use `/trackfw:architect` to define stack before the first REQ\n'
+        '\n### Key Commands\n'
+        '- `trackfw context` — current governance state (always run first)\n'
+        '- `trackfw status` — all artifacts and states\n'
+        '- `trackfw validate` — governance consistency check\n'
+        '- `trackfw roadmap move <name> <state>` — transition roadmap state\n'
+        '- `trackfw serve` — live Kanban board at http://localhost:4080\n'
         + RULES_END
     )
 
@@ -352,7 +364,7 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     lines.append('5. **Run `trackfw validate` before every commit.** Zero violations required.\n')
     lines.append('6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n')
     lines.append('6a. **Usar `/trackfw:architect` para definir stack e arquitetura antes da primeira REQ.**\n')
-    lines.append(f'7. **{GLOBAL_ADR_DIRECTIVE.lstrip("- ")}**\n')
+    lines.append(f'7. **{GLOBAL_ADR_DIRECTIVE}**\n')
     lines.append('\n## Slash commands (Claude Code)\n')
     lines.append('\n| Command | When to use |\n')
     lines.append('|---|---|\n')
@@ -364,6 +376,7 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     lines.append('| `/trackfw:validate` | Run governance validation |\n')
     lines.append('| `/trackfw:status` | Check what is in flight |\n')
     lines.append('| `/trackfw:architect` | Guide stack and architecture decisions |\n')
+    lines.append('| `/trackfw:barrier` | Run the wave-release checklist before liberating the next wave |\n')
     lines.append('\n## CLI commands (terminal / CI)\n')
     lines.append('\n| Command | When to use |\n')
     lines.append('|---|---|\n')
@@ -447,6 +460,39 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     print('  checkmark CLAUDE.md')
 
 
+def generate_validate_script(cwd: str) -> None:
+    """Escreve scripts/trackfw-validate.sh.
+
+    This is the SINGLE canonical generator for this file in the Python
+    runtime — both `trackfw init` (via scaffold(), above) and `trackfw
+    update`'s `validate-script` target (pypi/trackfw/commands/update.py)
+    call this same function. Previously this file was written only by the
+    `discover` command's own private `_write_validate_script` (never by
+    `init`), so a freshly-`init`-ed Python project had no
+    scripts/trackfw-validate.sh at all and `trackfw update` always reported
+    it `missing` — diverging in target-count AND state from the Go and
+    Node.js CLIs, which both write this file at init time (ML-6H,
+    docs/cli-parity.md, "Declared project targets — pinned list").
+
+    Unlike Go's/Node's per-backend script (buildValidateScript), this
+    runtime's `init` has no --backend/--frontend/--pkg-manager flags (a
+    pre-existing, intentionally reduced Python `init` CLI surface — see
+    trackfw/commands/init.py), so the generated script is intentionally the
+    simpler, backend-agnostic form. Only the update-state contract (missing/
+    skipped/updated/failed) and the JSON document shape are pinned across
+    runtimes for this target — the script's own bytes are not (see
+    docs/cli-parity.md's declared-targets note on Python's reduced surface).
+    """
+    scripts_dir = os.path.join(cwd, 'scripts')
+    os.makedirs(scripts_dir, exist_ok=True)
+    content = "#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n"
+    dest = os.path.join(scripts_dir, 'trackfw-validate.sh')
+    with open(dest, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.chmod(dest, 0o755)
+    print('  checkmark scripts/trackfw-validate.sh')
+
+
 def generate_claude_commands(cwd: str) -> None:
     """Instala os slash commands do trackfw em .claude/commands/trackfw/."""
     cmd_dir = os.path.join(cwd, '.claude', 'commands', 'trackfw')
@@ -482,8 +528,8 @@ def generate_claude_commands(cwd: str) -> None:
         'move.md': (
             'Execute o seguinte comando bash: `trackfw roadmap move $ARGUMENTS`\n\n'
             'O formato esperado é: `<nome-do-roadmap> <estado>`\n\n'
-            'Estados válidos: `backlog`, `wip`, `blocked`, `done`, `abandoned`\n\n'
-            'Exemplo: `/trackfw:move meu-roadmap wip`\n\n'
+            'Estados válidos: `backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`\n\n'
+            'Exemplo: `/trackfw:move meu-roadmap analyzing`\n\n'
             'Se o comando falhar com `trackfw: command not found` ou similar, informe ao usuário:\n'
             'trackfw não está instalado. Instale com:\n'
             '  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n'
@@ -619,8 +665,38 @@ def generate_claude_commands(cwd: str) -> None:
             'Próximo passo: abrir PR com gh pr create\n'
             '```'
         ),
+        'barrier.md': (
+            'Você é o `trackfw_architect`, a única autoridade Git deste projeto. Este comando executa o checklist operacional de liberação de uma wave — nenhum outro agente commita, faz push ou libera a próxima wave.\n\n'
+            '## Argumento\n\n'
+            '`$ARGUMENTS` no formato `<roadmap> <wave>`. Se ausente ou incompleto, pergunte ao usuário qual roadmap (em `docs/roadmaps/wip/`) e qual número de wave validar.\n\n'
+            '---\n\n'
+            '## Núcleo determinístico\n\n'
+            'Execute primeiro:\n'
+            '```bash\n'
+            'trackfw barrier <roadmap> --wave <n> --json\n'
+            '```\n\n'
+            'Este comando é **necessário mas não suficiente**. Ele verifica MLs concluídos, evidências e `trackfw validate`, mas não substitui as inspeções especializadas nem a auditoria de diff abaixo — nenhuma delas é avaliada pelo binário. Consulte a seção `trackfw barrier` em `docs/cli-parity.md` para o contrato completo (estados, exit codes, saída JSON).\n\n'
+            'Se o comando retornar exit code não-zero (`blocked` ou erro de resolução): pare, reporte a falha ao usuário e não prossiga no checklist até que a wave passe.\n\n'
+            '---\n\n'
+            '## Definição de pronto da barrier — checklist completo\n\n'
+            'Antes de liberar a próxima wave, confirme cada item com evidência concreta — não presuma:\n\n'
+            '1. **Todos os MLs da wave concluídos e marcados** — cada ML da wave está com `**Status:** ✅ Concluído` no roadmap.\n'
+            '2. **Testes unitários e E2E aplicáveis executados** — rode os comandos de validação declarados em cada ML.\n'
+            '3. **Build aplicável sem erros** — rode o comando de build do(s) workspace(s) afetado(s).\n'
+            '4. **Cada critério de aceite inspecionado com evidência** — leia os arquivos modificados e confirme contra os critérios listados, não apenas contra os testes.\n'
+            '5. **Agente code-quality reportou conformidade, performance, robustez e clareza** — invoque o agente `code-quality` quando a mudança introduzir lógica nova, duplicação relevante ou risco de manutenibilidade.\n'
+            '6. **Agente security reportou SAST, privilégios, controle de acesso e camadas aplicáveis** — invoque o agente `security` quando a mudança tocar autenticação, segredos, entrada externa ou permissões.\n'
+            '7. **Gates pré-commit declarados pelo projeto executados** — rode os hooks/gates configurados (lint, format, testes de contrato).\n'
+            '8. **`trackfw validate --json` aprovado** — execute e confirme zero violações.\n'
+            '9. **Diff auditado contra o escopo** — revise o diff completo; confirme que não há alterações de agentes concorrentes nem arquivos fora do escopo do ML (ex: `docs/adr/`, `docs/req/`, `docs/roadmaps/` quando não autorizado ao especialista).\n'
+            '10. **Resultado registrado antes de liberar a próxima wave** — anote no roadmap ou na resposta ao usuário que a wave passou, com a evidência de cada item acima.\n\n'
+            'Se qualquer item falhar: bloqueie a próxima wave, identifique o item e o agente responsável, e despache um microlote corretivo. Só repita o checklist depois que o corretivo for concluído.\n\n'
+            '---\n\n'
+            '## Autoridade Git\n\n'
+            'Somente o `trackfw_architect` cria branch, audita diff, commita e faz push. Especialistas entregam trabalho sem commit — cabe a este papel revisar, commitar e sugerir a abertura de PR/MR (sem abrir automaticamente sem autorização do usuário).\n'
+        ),
         'architect.md': (
-            'Você é o guia de arquitetura do trackfw (`/trackfw:architect`). Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.\n\n'
+            'Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.\n\n'
             '## Passo 1 — Descoberta de Negócio\n\n'
             'Faça ao usuário as seguintes perguntas em linguagem simples, uma por vez:\n\n'
             '1. "O que sua aplicação vai fazer? Descreva em 2-3 frases como se fosse explicar para alguém de fora da TI."\n'

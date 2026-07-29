@@ -1,8 +1,9 @@
 'use strict'
 const assert = require('assert')
 const helpCmd = require('../src/commands/help')
+const { createProgram } = require('../src/commands/index')
 
-const { listKeys, describeKey } = helpCmd
+const { listKeys, describeKey, listCommands, suggestTopic } = helpCmd
 
 let passed = 0, failed = 0
 const tests = []
@@ -132,6 +133,36 @@ test('help key inválida — chave vazia retorna null', () => {
 test('help key inválida — chave com espaço retorna null', () => {
   const output = describeKey('wip limit')
   assert.strictEqual(output, null, 'describeKey deve retornar null para key com espaço')
+})
+
+// listCommands + resolução por comando conhecido
+test('help lista comandos disponíveis, incluindo init e uma única entrada help', () => {
+  const program = createProgram()
+  const output = listCommands(program)
+  assert(output.includes('init'), 'listCommands deve conter "init"')
+  const helpOccurrences = program.commands.filter((c) => c.name() === 'help').length
+  assert.strictEqual(helpOccurrences, 1, 'deve existir exatamente 1 comando "help" registrado')
+})
+
+test('help resolve nome de comando via program.commands.find', () => {
+  const program = createProgram()
+  const sub = program.commands.find((c) => c.name() === 'init')
+  assert(sub, 'comando init deve existir no programa raiz')
+  const info = sub.helpInformation()
+  assert(info.includes('trackfw init'), 'helpInformation de init deve conter "trackfw init"')
+})
+
+// suggestTopic
+test('suggestTopic não sugere nada para assunto muito distante', () => {
+  const program = createProgram()
+  const suggestion = suggestTopic('chave-que-nao-existe', program)
+  assert.strictEqual(suggestion, null, 'não deve sugerir nada para string sem candidato próximo')
+})
+
+test('suggestTopic sugere wip_limit para erro de digitação próximo', () => {
+  const program = createProgram()
+  const suggestion = suggestTopic('wip_limi', program)
+  assert.strictEqual(suggestion, 'wip_limit', 'deve sugerir "wip_limit"')
 })
 
 ;(async () => {

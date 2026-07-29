@@ -72,6 +72,111 @@ test('generateClaudeCommands and generateClaudeCommandsForce create architect.md
 })
 
 
+test('generateClaudeCommands and generateClaudeCommandsForce install the exact same set of slash commands', () => {
+  const EXPECTED_COMMANDS = [
+    'adr.md',
+    'req.md',
+    'validate.md',
+    'status.md',
+    'move.md',
+    'roadmap.md',
+    'implement.md',
+    'barrier.md',
+    'architect.md',
+  ].sort()
+
+  // Normal path (idempotent, cwd-relative)
+  const normalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cmds-normal-'))
+  const origCwd = process.cwd()
+  try {
+    process.chdir(normalDir)
+    generateClaudeCommands()
+  } finally {
+    process.chdir(origCwd)
+  }
+  const normalFiles = fs.readdirSync(path.join(normalDir, '.claude', 'commands', 'trackfw')).sort()
+
+  // Forced path (overwrite, rootDir-relative)
+  const forceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cmds-force-'))
+  generateClaudeCommandsForce(forceDir)
+  const forceFiles = fs.readdirSync(path.join(forceDir, '.claude', 'commands', 'trackfw')).sort()
+
+  assert.deepEqual(normalFiles, EXPECTED_COMMANDS, 'normal path should install the canonical 9-command set')
+  assert.deepEqual(forceFiles, EXPECTED_COMMANDS, 'force path should install the exact same 9-command set as the normal path')
+  assert.deepEqual(normalFiles, forceFiles, 'normal and force paths must install identical command sets')
+
+  // Content must be identical too, not just filenames (both draw from CLAUDE_COMMANDS).
+  for (const filename of EXPECTED_COMMANDS) {
+    const normalContent = fs.readFileSync(path.join(normalDir, '.claude', 'commands', 'trackfw', filename), 'utf8')
+    const forceContent = fs.readFileSync(path.join(forceDir, '.claude', 'commands', 'trackfw', filename), 'utf8')
+    assert.equal(normalContent, forceContent, `${filename} content should be identical between normal and force paths`)
+  }
+})
+
+test('generateClaudeCommands honors an explicit rootDir argument (ML-5D)', () => {
+  // Regression test: generateClaudeCommands(root) used to accept `root` but
+  // silently ignore it, always writing relative to process.cwd() — the
+  // forced twin (generateClaudeCommandsForce) already honored rootDir
+  // correctly, and scaffold() calls generateClaudeCommands(root) expecting
+  // the argument to be respected.
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cmds-root-'))
+  const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cmds-cwd-'))
+  const origCwd = process.cwd()
+  try {
+    process.chdir(cwdDir)
+    generateClaudeCommands(rootDir)
+
+    const archInRoot = path.join(rootDir, '.claude', 'commands', 'trackfw', 'architect.md')
+    assert.ok(fs.existsSync(archInRoot), 'slash commands should be written under the passed rootDir')
+
+    const archInCwd = path.join(cwdDir, '.claude', 'commands', 'trackfw', 'architect.md')
+    assert.ok(!fs.existsSync(archInCwd), 'slash commands must not also be written relative to process.cwd() when rootDir is given')
+  } finally {
+    process.chdir(origCwd)
+  }
+})
+
+test('generateClaudeCommands does not overwrite an existing file; generateClaudeCommandsForce does', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cmds-overwrite-'))
+  const origCwd = process.cwd()
+  const cmdDir = path.join(tmpDir, '.claude', 'commands', 'trackfw')
+  fs.mkdirSync(cmdDir, { recursive: true })
+  const adrPath = path.join(cmdDir, 'adr.md')
+  fs.writeFileSync(adrPath, 'custom user content', 'utf8')
+
+  try {
+    process.chdir(tmpDir)
+    generateClaudeCommands()
+    assert.equal(fs.readFileSync(adrPath, 'utf8'), 'custom user content', 'normal path must not overwrite an existing file')
+  } finally {
+    process.chdir(origCwd)
+  }
+
+  generateClaudeCommandsForce(tmpDir)
+  assert.notEqual(fs.readFileSync(adrPath, 'utf8'), 'custom user content', 'force path must overwrite an existing file')
+})
+
+test('generateClaudeCommands creates barrier.md with the operational checklist', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-barrier-test-'))
+  const origCwd = process.cwd()
+  try {
+    process.chdir(tmpDir)
+    generateClaudeCommands()
+    const barrierPath = path.join(tmpDir, '.claude', 'commands', 'trackfw', 'barrier.md')
+    assert.ok(fs.existsSync(barrierPath), 'barrier.md should exist after generateClaudeCommands()')
+
+    const content = fs.readFileSync(barrierPath, 'utf8')
+    assert.ok(content.includes('trackfw_architect'), 'barrier.md should name trackfw_architect as the Git authority')
+    assert.ok(content.includes('trackfw barrier <roadmap> --wave <n> --json'), 'barrier.md should invoke the deterministic core command')
+    assert.ok(content.includes('Todos os MLs da wave concluídos e marcados'), 'barrier.md should contain checklist item 1')
+    assert.ok(content.includes('Agente code-quality reportou'), 'barrier.md should require the code-quality agent review')
+    assert.ok(content.includes('Agente security reportou'), 'barrier.md should require the security agent review')
+    assert.ok(content.includes('Resultado registrado antes de liberar a próxima wave'), 'barrier.md should contain checklist item 10')
+  } finally {
+    process.chdir(origCwd)
+  }
+})
+
 test('generateClaudeMD includes mandatory global ADRs directive in CLAUDE.md', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gen-test-'))
   const origCwd = process.cwd()
@@ -124,6 +229,11 @@ test('generateClaudeMD includes all 9 harness sections', () => {
     for (const snippet of harnessSnippets) {
       assert.ok(content.includes(snippet), `CLAUDE.md should contain harness snippet: "${snippet}"`)
     }
+
+    assert.ok(
+      content.includes('| `/trackfw:barrier` | Run the wave-release checklist before liberating the next wave |'),
+      'CLAUDE.md should announce the /trackfw:barrier slash command in the table'
+    )
 
     // Pre-existing sections must still be present
     const preExisting = [

@@ -192,6 +192,12 @@ func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 // domínio como Terraform/Pulumi/MCP); assets architect e backend (escopo dos goldens) inalterados.
 // greetingLine migrada de PT-BR ("Você é/Trate o usuário") para EN ("You are/Address the user")
 // nos 3 CLIs por coerência com D2 do ADR de convergência. Goldens permanecem válidos.
+//
+// Re-congelados em 2026-07-29 pela REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador
+// (ML-3A): architect.md ganhou o parágrafo revisado de "## Git authority" (agora cobrindo commit
+// de código de produto, já que especialistas não commitam mais) e a nova seção "## Barrier
+// protocol". backend.md trocou "## Git boundary" (permitia commit/push na branch do orquestrador)
+// por "## Git authority" (nenhuma operação Git; atua somente por handoff de trackfw_architect).
 
 func readGolden(t *testing.T, name string) []byte {
 	t.Helper()

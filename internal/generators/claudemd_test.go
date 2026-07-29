@@ -92,6 +92,7 @@ func TestGenerateClaudeMD_ArchitectCommandAndDirectives(t *testing.T) {
 		"6a. **Usar `/trackfw:architect` para definir stack e arquitetura antes da primeira REQ.**",
 		"## Architecture Directives (mandatory)",
 		"| `/trackfw:architect` | Guide stack and architecture decisions |",
+		"| `/trackfw:barrier` | Run the wave-release checklist before liberating the next wave |",
 		"1. **3-layer separation** — frontend / backend / database. Never mix concerns.",
 	}
 

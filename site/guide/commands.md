@@ -111,9 +111,8 @@ Surfaces não-default são exercitadas como `target=surface`, o mesmo formato us
 por `--surface`.
 
 Os comandos standalone `gemini`, `cursor`, `copilot`, `windsurf` e `amazonq`
-existem apenas na distribuição Go como aliases de compatibilidade histórica.
-Eles não fazem parte do contrato npm/PyPI; use `agents` e `skills` em novas
-automações.
+foram removidos. Use `agents` e `skills` com `--targets` (os nomes de target
+acima continuam válidos ali) para todos os fluxos de instalação e atualização.
 
 ---
 
@@ -395,6 +394,91 @@ trackfw — project status
 ⏳ REQs blocked by Draft ADRs:
   REQ-2026-06-13-login-via-oauth.md → ADR-2026-06-13-provider-oauth.md
 ```
+
+---
+
+## `trackfw barrier`
+
+Barreira determinística de liberação de wave. É **agnóstica de stack**: nunca assume ferramenta de
+build, test runner ou regra de paridade — todo check executável vem do próprio roadmap (os gates
+declarados na wave) ou do `trackfw validate` rodado em processo.
+
+```bash
+trackfw barrier <roadmap> --wave <n> [--json]
+```
+
+`<roadmap>` é o basename com ou sem `.md`, resolvido em `wip/` e depois em `done/` sob
+`roadmap_dir` (inclusive no layout `by_agent`). `--wave` é obrigatório.
+
+### Checks embutidos
+
+| Check | Passa quando |
+|---|---|
+| `mls_complete` | A wave tem ao menos um ML e todos estão `**Status:** ✅` |
+| `acceptance_evidence` | Todo ML tem um bloco `**Critérios de aceite:**` não vazio, sem nenhuma linha `- [ ]` |
+| `gates` | Todo comando declarado em `**Gates da wave:**` sai com código 0 — uma wave sem esse bloco declara zero gates, e a barrier nunca inventa um |
+| `validate` | `trackfw validate --json` reporta `violations: 0` |
+
+### Exit codes
+
+| Exit | Significado |
+|---|---|
+| `0` | `status: "passed"` — todos os checks passaram, a wave pode ser liberada |
+| `1` | `status: "blocked"` — pelo menos um check falhou; o relatório (texto ou `--json`) diz qual |
+| `2` | Erro de uso/resolução — roadmap ou wave não encontrados. **Não** é `blocked`: uma barrier que não pôde rodar é diferente de uma que rodou e reprovou |
+
+### Fluxo de correção
+
+```bash
+$ trackfw barrier ROADMAP-example --wave 2
+✗ mls_complete: ML-2C: not complete (status: 🔄)
+✗ acceptance_evidence: ML-2C: 2 unmet acceptance criteria
+wave 2: blocked
+```
+
+Corrija o roadmap (marque o ML como `✅`, feche os critérios pendentes) e rode o **mesmo comando** de
+novo — a barrier não é uma negação permanente; a wave corrigida passa na próxima invocação:
+
+```bash
+$ trackfw barrier ROADMAP-example --wave 2
+✓ mls_complete
+✓ acceptance_evidence
+✓ gates
+✓ validate
+wave 2: passed
+```
+
+### Saída JSON
+
+```bash
+trackfw barrier ROADMAP-example --wave 2 --json
+```
+
+```json
+{
+  "roadmap": "ROADMAP-example.md",
+  "wave": 2,
+  "status": "blocked",
+  "started_at": "2026-07-29T10:30:00Z",
+  "finished_at": "2026-07-29T10:30:04Z",
+  "checks": [
+    { "name": "mls_complete", "status": "passed", "evidence": ["ML-2A: ✅"], "failures": [] },
+    { "name": "acceptance_evidence", "status": "blocked", "evidence": [], "failures": ["ML-2C: 2 unmet acceptance criteria"] },
+    { "name": "gates", "status": "passed", "commands": ["make quality"], "evidence": ["make quality: exit 0"], "failures": [] },
+    { "name": "validate", "status": "passed", "evidence": ["0 violations, 0 warnings"], "failures": [] }
+  ],
+  "failures": ["acceptance_evidence: ML-2C: 2 unmet acceptance criteria"]
+}
+```
+
+### `trackfw barrier` vs. `/trackfw:barrier`
+
+`trackfw barrier` é o núcleo determinístico e reproduzível — nunca invoca agentes, nunca executa
+Git. O slash command `/trackfw:barrier` orquestra em torno dele: dispara as revisões de
+`code-quality`/`security` quando aplicável, audita o diff contra o escopo combinado, e — apenas o
+`trackfw_architect`, única autoridade Git do fluxo — comita e faz push quando tudo estiver verde.
+Uma barrier de CLI verde é necessária, mas não suficiente, para liberar uma wave. Contrato completo:
+`docs/cli-parity.md` → `## trackfw barrier`.
 
 ---
 

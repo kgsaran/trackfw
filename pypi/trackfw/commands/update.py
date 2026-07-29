@@ -1,11 +1,105 @@
 """
 commands/update.py — trackfw update (Python CLI).
-Escopo reduzido: atualiza somente as regras de agente (blocos marker-delimited).
-Gates (hooks/CI) e Claude commands requerem o CLI Go ou Node.js.
+
+Scope: the current repository only (docs/cli-parity.md, "`trackfw update`
+vs `trackfw update harness`"). This command never mutates global state —
+every write below is rooted at `cwd`, and the Codex integration block below
+plans/applies with `scope="project"` explicitly. `trackfw update harness`
+(trackfw/commands/update_harness.py) is the counterpart that refreshes the
+user's global harness (`~/.claude`, `~/.codex`, etc.) and runs from
+anywhere, without a `trackfw.yaml`.
+
+--dry-run, --json, --targets and --install-missing (added for
+REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador, ML-6F/ML-6H)
+report the same four-state model (updated/skipped/missing/failed) as
+`trackfw update harness`, over a "scope": "project" JSON document — see
+docs/cli-parity.md.
+
+PROJECT_TARGET_IDS declares the same 5 ids, in the same order, as Go and
+Node.js (docs/cli-parity.md, "Declared project targets — pinned list"):
+`agent-rules`, `agent-hooks`, `codex-project-agents`, `validate-script`,
+`claude-commands`. `ci-workflow` and `git-hooks` are Go/Node.js-only:
+this runtime has no CLI surface to configure a CI system or a git-hooks
+framework at `init` time (no --ci/--hooks flags — see
+trackfw/commands/init.py), so there is nothing for those two targets to
+manage here; they are correctly absent, not silently shortened. Per
+contract, a runtime that cannot manage a target still declares it and
+reports an honest state rather than omitting it — `validate-script` and
+`claude-commands` are both fully implementable in this runtime (see
+trackfw/generators/init_gen.py's generate_validate_script and
+generate_claude_commands, the same generators `trackfw init` uses) and are
+implemented below, closing the ML-6C/ML-6F gap where this runtime declared
+only 3 of the 5 pinned ids.
 """
 
-import os
+from __future__ import annotations
+
 import argparse
+import contextlib
+import hashlib
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from trackfw.commands import update_harness
+from trackfw.commands.update_harness import (
+    STATE_FAILED,
+    STATE_MISSING,
+    STATE_SKIPPED,
+    STATE_UPDATED,
+)
+
+AGENT_RULES_RELATIVE_PATHS = [
+    "CLAUDE.md",
+    "AGENTS.md",
+    "GEMINI.md",
+    os.path.join(".github", "copilot-instructions.md"),
+    ".windsurfrules",
+    os.path.join(".amazonq", "developer", "guidelines.md"),
+    os.path.join(".cursor", "rules", "trackfw.mdc"),
+]
+
+AGENT_HOOKS_RELATIVE_PATHS = [
+    os.path.join(".claude", "settings.json"),
+    os.path.join(".codex", "hooks.json"),
+    os.path.join(".gemini", "settings.json"),
+    os.path.join(".kiro", "hooks", "trackfw-attention.json"),
+    os.path.join(".github", "hooks", "trackfw-attention.json"),
+    os.path.join(".cursor", "hooks.json"),
+    os.path.join("scripts", "trackfw-attention-signal.sh"),
+    os.path.join("scripts", "trackfw-attention-cleanup.sh"),
+]
+
+# AGENT_HOOKS_DISPLAY_PATH — the reported `path` string for the agent-hooks
+# target. Pinned to match Go's and Node.js's rendering exactly: the two
+# per-file attention scripts are collapsed into a single glob
+# ("scripts/trackfw-attention-*.sh"), not spelled out individually —
+# ML-6H fix (this runtime previously listed both full paths, diverging from
+# the other two even when every underlying state agreed).
+AGENT_HOOKS_DISPLAY_PATH = ", ".join(
+    AGENT_HOOKS_RELATIVE_PATHS[:-2] + ["scripts/trackfw-attention-*.sh"]
+)
+
+CODEX_PROJECT_AGENTS_DISPLAY_PATH = ".codex/agents, .agents/skills"
+
+VALIDATE_SCRIPT_RELATIVE_PATH = os.path.join("scripts", "trackfw-validate.sh")
+CLAUDE_COMMANDS_RELATIVE_PATH = os.path.join(".claude", "commands", "trackfw")
+
+# PROJECT_TARGET_IDS — this runtime's declared, fixed-order project-scope
+# target list. Matches Go's and Node.js's 5 pinned ids and order exactly
+# (see module docstring and docs/cli-parity.md, "Declared project targets —
+# pinned list"); `ci-workflow` and `git-hooks` are absent because this
+# runtime's `init` has no CI/hooks configuration surface to manage.
+PROJECT_TARGET_IDS = [
+    "agent-rules",
+    "agent-hooks",
+    "codex-project-agents",
+    "validate-script",
+    "claude-commands",
+]
 
 
 def register(subparsers: argparse.ArgumentParser) -> None:
@@ -13,7 +107,28 @@ def register(subparsers: argparse.ArgumentParser) -> None:
         "update",
         help="Update trackfw rules in agent config files (agent rules only)",
     )
-    parser.set_defaults(func=_run)
+    parser.add_argument("--dry-run", action="store_true", help="Compute and report states without writing anything")
+    parser.add_argument("--json", action="store_true", help="Emit the result document instead of the text report")
+    parser.add_argument("--targets", help="Comma-separated subset of target ids")
+    parser.add_argument(
+        "--install-missing",
+        action="store_true",
+        help="Allow missing targets to be installed instead of merely reported",
+    )
+    # `update_action` is optional (required=False, the argparse default) so
+    # bare `trackfw update` keeps running `_run` below via `set_defaults`.
+    # Only when the user types `trackfw update harness` does the child
+    # parser's own `set_defaults(func=...)` override it.
+    update_actions = parser.add_subparsers(dest="update_action")
+    update_harness.register(update_actions)
+    parser.set_defaults(func=_dispatch)
+
+
+def _dispatch(args: argparse.Namespace) -> None:
+    if args.dry_run or args.json or args.targets or args.install_missing:
+        _run_project(args)
+        return
+    _run(args)
 
 
 def _run(args: argparse.Namespace) -> None:
@@ -77,3 +192,267 @@ def _run(args: argparse.Namespace) -> None:
         print_architect_next_steps(cwd)
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# --dry-run / --json / --targets / --install-missing — four-state model,
+# mirroring internal/generators/update.go's runFileTarget and
+# npm/src/lib/update-engine.js's runFileTarget for this runtime's reduced
+# project-scope target set.
+# ---------------------------------------------------------------------------
+
+
+def _hash_path(path: str) -> str | None:
+    """Returns None when path does not exist, a content hash for a file, or
+    a hash of the recursive (relative-path, content-hash) listing for a
+    directory."""
+    if not os.path.exists(path):
+        return None
+    if os.path.isfile(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    entries = []
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            full = os.path.join(root, name)
+            rel = os.path.relpath(full, path)
+            entries.append(f"{rel}:{hashlib.sha256(Path(full).read_bytes()).hexdigest()}")
+    entries.sort()
+    return hashlib.sha256("\n".join(entries).encode("utf-8")).hexdigest()
+
+
+def _hash_rel_paths(root: str, rel_paths: list[str]) -> list[str | None]:
+    return [_hash_path(os.path.join(root, rel)) for rel in rel_paths]
+
+
+def _all_missing(hashes: list[str | None]) -> bool:
+    return all(h is None for h in hashes)
+
+
+def _run_file_target(
+    target_id: str,
+    display_path: str,
+    root: str,
+    rel_paths: list[str],
+    apply,
+    dry_run: bool,
+    install_missing: bool,
+) -> dict[str, Any]:
+    """Computes updated/skipped/missing/failed for a target whose only
+    observable effect is writing under rel_paths (relative to root), by
+    diffing content hashes before/after invoking apply(root). "missing"
+    never installs: apply is never called when every rel_path is absent and
+    install_missing is not set."""
+    before = _hash_rel_paths(root, rel_paths)
+    if _all_missing(before) and not install_missing:
+        return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+
+    try:
+        apply(root)
+    except Exception as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    after = _hash_rel_paths(root, rel_paths)
+    if _all_missing(before) and _all_missing(after):
+        return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+    if before == after:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
+def _codex_project_agents_target(root: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    detected = os.path.exists(os.path.join(root, "AGENTS.md")) or os.path.isdir(os.path.join(root, ".codex"))
+    if not detected:
+        return {"id": "codex-project-agents", "state": STATE_MISSING, "path": CODEX_PROJECT_AGENTS_DISPLAY_PATH}
+
+    try:
+        from trackfw import identity
+        from trackfw.identity import IdentityError
+        from trackfw.integrations.catalog import plan_deployments
+        from trackfw.integrations.manager import IntegrationManager
+
+        try:
+            ident = identity.load(os.path.expanduser("~"))
+        except IdentityError as error:
+            raise RuntimeError(f"identidade invalida: {error}") from error
+
+        manager = IntegrationManager(root)
+        wrote_any = False
+        for kind in ("agents", "skills"):
+            _, plans = plan_deployments(kind, target_ids=["codex"], scope="project", identity_cfg=ident)
+            statuses = manager.list(plans)
+            to_write = [
+                plan
+                for plan, status in zip(plans, statuses)
+                if status["state"] == "outdated" or (install_missing and status["state"] == "not-installed")
+            ]
+            if to_write:
+                wrote_any = True
+                manager.update(to_write)
+        state = STATE_UPDATED if wrote_any else STATE_SKIPPED
+        return {"id": "codex-project-agents", "state": state, "path": CODEX_PROJECT_AGENTS_DISPLAY_PATH}
+    except Exception as error:
+        return {
+            "id": "codex-project-agents",
+            "state": STATE_FAILED,
+            "path": CODEX_PROJECT_AGENTS_DISPLAY_PATH,
+            "message": str(error),
+        }
+
+
+def _resolve_project_targets(raw: str | None) -> list[str]:
+    if not raw:
+        return list(PROJECT_TARGET_IDS)
+    requested = [value.strip() for value in raw.split(",") if value.strip()]
+    unknown = [value for value in requested if value not in PROJECT_TARGET_IDS]
+    if unknown:
+        print(f"trackfw update: unknown target id(s): {', '.join(unknown)}")
+        raise SystemExit(2)
+    selected = set(requested)
+    return [target_id for target_id in PROJECT_TARGET_IDS if target_id in selected]
+
+
+@contextlib.contextmanager
+def _silence_stdout(active: bool):
+    """Redirects stdout to /dev/null for the duration of the context when
+    `active` is True. `generate_validate_script`, `generate_claude_commands`,
+    `inject_rules_detected`, etc. print human progress lines as a side
+    effect of writing; with --json, stdout must carry only the result
+    document. Mirrors Go's silenceStdout (internal/commands/update.go) and
+    Node's silenceConsole (npm/src/lib/update-engine.js) — added in ML-6H
+    when validate-script/claude-commands were wired into this runtime's
+    `update` and their print()s broke `--json` output parsing."""
+    if not active:
+        yield
+        return
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
+        with contextlib.redirect_stdout(devnull):
+            yield
+
+
+def _copy_project_tree(src: str, dst: str) -> None:
+    """Copies src into dst, skipping .git and node_modules, for use as a
+    --dry-run sandbox that the real project tree is never written through."""
+    def _ignore(directory: str, names: list[str]) -> set[str]:
+        return {name for name in names if name in (".git", "node_modules")}
+
+    for name in os.listdir(src):
+        source_path = os.path.join(src, name)
+        dest_path = os.path.join(dst, name)
+        if name in (".git", "node_modules"):
+            continue
+        if os.path.isdir(source_path):
+            shutil.copytree(source_path, dest_path, ignore=_ignore)
+        else:
+            shutil.copy2(source_path, dest_path)
+
+
+def _run_project(args: argparse.Namespace) -> None:
+    cwd = os.getcwd()
+    if not os.path.exists(os.path.join(cwd, "trackfw.yaml")):
+        print("Erro: trackfw.yaml não encontrado — execute trackfw init primeiro")
+        raise SystemExit(1)
+
+    target_ids = _resolve_project_targets(args.targets)
+    dry_run = bool(args.dry_run)
+    install_missing = bool(args.install_missing)
+
+    apply_root = cwd
+    tmp_dir = None
+    if dry_run:
+        tmp_dir = tempfile.mkdtemp(prefix="trackfw-update-")
+        _copy_project_tree(cwd, tmp_dir)
+        apply_root = tmp_dir
+
+    try:
+        from trackfw.generators.init_gen import inject_rules_detected
+        from trackfw.generators.hooks import inject_hooks_detected
+
+        targets: list[dict[str, Any]] = []
+        with _silence_stdout(bool(args.json)):
+            for target_id in target_ids:
+                if target_id == "agent-rules":
+                    targets.append(
+                        _run_file_target(
+                            "agent-rules",
+                            ", ".join(AGENT_RULES_RELATIVE_PATHS),
+                            apply_root,
+                            AGENT_RULES_RELATIVE_PATHS,
+                            inject_rules_detected,
+                            dry_run,
+                            install_missing,
+                        )
+                    )
+                elif target_id == "agent-hooks":
+                    targets.append(
+                        _run_file_target(
+                            "agent-hooks",
+                            AGENT_HOOKS_DISPLAY_PATH,
+                            apply_root,
+                            AGENT_HOOKS_RELATIVE_PATHS,
+                            inject_hooks_detected,
+                            dry_run,
+                            install_missing,
+                        )
+                    )
+                elif target_id == "codex-project-agents":
+                    targets.append(_codex_project_agents_target(apply_root, dry_run, install_missing))
+                elif target_id == "validate-script":
+                    from trackfw.generators.init_gen import generate_validate_script
+
+                    targets.append(
+                        _run_file_target(
+                            "validate-script",
+                            VALIDATE_SCRIPT_RELATIVE_PATH,
+                            apply_root,
+                            [VALIDATE_SCRIPT_RELATIVE_PATH],
+                            generate_validate_script,
+                            dry_run,
+                            install_missing,
+                        )
+                    )
+                elif target_id == "claude-commands":
+                    from trackfw.generators.init_gen import generate_claude_commands
+
+                    targets.append(
+                        _run_file_target(
+                            "claude-commands",
+                            CLAUDE_COMMANDS_RELATIVE_PATH,
+                            apply_root,
+                            [CLAUDE_COMMANDS_RELATIVE_PATH],
+                            generate_claude_commands,
+                            dry_run,
+                            install_missing,
+                        )
+                    )
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    summary = {
+        STATE_UPDATED: sum(1 for target in targets if target["state"] == STATE_UPDATED),
+        STATE_SKIPPED: sum(1 for target in targets if target["state"] == STATE_SKIPPED),
+        STATE_MISSING: sum(1 for target in targets if target["state"] == STATE_MISSING),
+        STATE_FAILED: sum(1 for target in targets if target["state"] == STATE_FAILED),
+    }
+
+    payload = {
+        "scope": "project",
+        "dry_run": dry_run,
+        "targets": targets,
+        "summary": summary,
+    }
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print("trackfw update — scope: project" + (" (dry-run)" if dry_run else ""))
+        for target in targets:
+            suffix = f" — {target['message']}" if target["state"] == STATE_FAILED and "message" in target else ""
+            print(f"  {target['id']:<24} {target['state']:<8} ({target['path']}){suffix}")
+        print(
+            f"\nupdated={summary[STATE_UPDATED]} skipped={summary[STATE_SKIPPED]} "
+            f"missing={summary[STATE_MISSING]} failed={summary[STATE_FAILED]}"
+        )
+
+    if summary[STATE_FAILED] > 0:
+        raise SystemExit(1)

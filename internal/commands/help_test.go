@@ -65,3 +65,58 @@ func TestHelpUnknownKey(t *testing.T) {
 		t.Errorf("esperava 'nao_existe' na mensagem de erro, obteve: %v", err)
 	}
 }
+
+func TestHelpUnknownTopicHasNoSuggestionWhenTooDistant(t *testing.T) {
+	cmd := newHelpCmd()
+	cmd.SetOut(&bytes.Buffer{})
+
+	err := cmd.RunE(cmd, []string{"chave-que-nao-existe"})
+	if err == nil {
+		t.Fatal("esperava erro para assunto desconhecido, obteve nil")
+	}
+	if strings.Contains(err.Error(), "Você quis dizer") {
+		t.Errorf("não esperava sugestão para um assunto sem candidato próximo, obteve: %v", err)
+	}
+}
+
+func TestHelpUnknownTopicSuggestsNearMatch(t *testing.T) {
+	cmd := newHelpCmd()
+	cmd.SetOut(&bytes.Buffer{})
+
+	err := cmd.RunE(cmd, []string{"wip_limi"})
+	if err == nil {
+		t.Fatal("esperava erro para assunto desconhecido, obteve nil")
+	}
+	if !strings.Contains(err.Error(), "Você quis dizer: wip_limit?") {
+		t.Errorf("esperava sugestão 'wip_limit', obteve: %v", err)
+	}
+}
+
+func TestHelpKnownCommand(t *testing.T) {
+	root := newRootCmd()
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetArgs([]string{"help", "init"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("esperava sem erro, obteve: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "trackfw init") {
+		t.Errorf("esperava ajuda do comando init na saída, obteve:\n%s", out)
+	}
+}
+
+func TestHelpDoesNotRegisterDuplicateEntry(t *testing.T) {
+	root := newRootCmd()
+	count := 0
+	for _, sub := range root.Commands() {
+		if sub.Name() == "help" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("esperava exatamente 1 comando 'help' registrado, obteve %d", count)
+	}
+}

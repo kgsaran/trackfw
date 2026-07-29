@@ -106,6 +106,10 @@ def main():
     agents_cmd.register(subparsers)
     skills_cmd.register(subparsers)
 
+    # --- barrier ---
+    from trackfw.commands import barrier as barrier_cmd
+    barrier_cmd.register(subparsers)
+
     args = parser.parse_args()
 
     if args.command is None:

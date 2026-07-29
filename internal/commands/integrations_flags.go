@@ -221,6 +221,24 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	if err != nil {
 		return err
 	}
+	// Auxiliary rules files (GEMINI.md, .github/copilot-instructions.md,
+	// .windsurfrules, .amazonq/developer/guidelines.md, etc.) are outside the
+	// agents/skills catalog managed by Manager above — they are a separate,
+	// tool-specific mechanism (generators.InjectRulesForTool), and this is
+	// the canonical catalog-based install path (`trackfw agents|skills
+	// install --targets <tool>`). Restores the behavior the removed
+	// deprecated CLI aliases used to provide (ML-5E of ROADMAP-2026-07-29-
+	// barrier-governanca-e-autoridade-do-orquestrador). Scoped to "install"
+	// only, mirroring the one-shot semantics the old aliases had.
+	// InjectRulesForTool no-ops for targets without a rules surface (e.g.
+	// antigravity, kiro) and is idempotent for repeated runs.
+	if operation == "install" {
+		for _, target := range opts.targets {
+			if err := generators.InjectRulesForTool(target, manager.ProjectRoot); err != nil {
+				return fmt.Errorf("install %s auxiliary rules: %w", target, err)
+			}
+		}
+	}
 	if opts.json {
 		return printLifecycleOutput(cmd, catalog, kind, plans, manager)
 	}
@@ -484,28 +502,4 @@ func surfaceCapability(target integrations.Target, surfaceID string, kind integr
 		}
 	}
 	return integrations.Surface{}, integrations.Capability{}
-}
-
-func runDeprecatedIntegrationAlias(cmd *cobra.Command, target string, scopes []string) error {
-	fmt.Fprintf(cmd.ErrOrStderr(), "warning: trackfw %s is deprecated; use trackfw agents|skills install --targets %s\n", target, target)
-	for _, scope := range scopes {
-		for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
-			// scopeExplicit: true — deprecated aliases pass their own fixed
-			// scopes and never go through cmd.Flags(), so resolveScope must
-			// treat this exactly like an explicit --scope and never prompt
-			// (ADR "fora de escopo": alias behavior does not change).
-			opts := integrationOptions{targets: []string{target}, scope: scope, scopeExplicit: true}
-			if err := executeIntegrationMutation(cmd, kind, "install", &opts); err != nil {
-				return err
-			}
-		}
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	if err := generators.InjectRulesForTool(target, cwd); err != nil {
-		return fmt.Errorf("install %s auxiliary rules: %w", target, err)
-	}
-	return nil
 }

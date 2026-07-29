@@ -16,7 +16,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `context` | yes | yes | yes | Markdown/JSON context |
 | `log` | yes | yes | yes | Append/read transition log |
 | `baseline` | yes | yes | yes | Persist accepted findings |
-| `help` | yes | yes | yes | Configuration key documentation |
+| `help` | yes | yes | yes | Single explicit help surface: `trackfw help` lists commands and config keys; `trackfw help <command>` shows that command's help; `trackfw help <key>` shows config key documentation; unknown topic exits non-zero with a suggestion when a close match exists. Native `--help` on root/subcommands is preserved separately by each runtime's framework (cobra/commander/argparse) |
 | `configure` | yes | yes | yes | Generate configuration |
 | `discover` | yes | yes | yes | Inspect existing repository |
 | `update` | yes | yes | yes | Refresh managed artifacts |
@@ -463,6 +463,290 @@ Runtime errors (branch pattern, governance gate, nothing staged, missing `-m`) s
 code directly from the runner function (Node.js/Python), so the usage text is never
 printed for runtime errors. Parse-time errors (unknown flags) still show usage, because
 they are raised by cobra/commander/argparse before the command handler runs.
+
+## `trackfw barrier`
+
+`trackfw barrier <roadmap> --wave <n>` is the deterministic core of the wave-release barrier.
+It is **stack-agnostic**: it never assumes a build tool, a test runner or a parity rule. Every
+executable check comes from the roadmap itself. The agent-orchestration layer (specialist
+inspections for code quality and security) lives in the `/trackfw:barrier` slash command, never
+in the binary.
+
+### Command surface
+
+| Element | Value |
+|---|---|
+| Invocation | `trackfw barrier <roadmap> --wave <n>` |
+| `<roadmap>` | Basename with or without `.md`, resolved against `wip/` then `done/` under `roadmap_dir` (both `flat` and `by_agent` layouts) |
+| `--wave` | Integer ≥ 1. Required. |
+| `--json` | Emit the result document instead of the text report |
+| Exit 0 | `status: "passed"` |
+| Exit 1 | `status: "blocked"` — at least one check failed |
+| Exit 2 | Usage/resolution error (roadmap not found, wave not found, malformed `--wave`) |
+
+Exit code 2 is **not** `blocked`: a barrier that could not be evaluated is distinct from a
+barrier that evaluated to a failure. The three runtimes must agree on this distinction.
+
+**Exit-2 messages must be specific.** The message on `stderr` must name the unresolved entity —
+the roadmap basename that could not be found, or the wave number that does not exist in the
+roadmap. A generic parser error ("invalid choice", "unknown command") does not satisfy the
+contract: it is indistinguishable from the CLI not implementing `barrier` at all, which makes any
+exit-2 assertion vacuously true before implementation. This is the exact false positive found
+while characterizing the contract in ML-1A; see
+`vault/notes/barrier-contract-xfail-false-positive-2026-07-29.md`.
+
+The two exit-2 messages are **pinned literally** — all three runtimes must emit these byte-for-byte
+on `stderr`. `<roadmap-arg>` is the argument exactly as the user typed it, with no `.md`
+normalization; `<roadmap-file>` is the resolved basename including `.md`:
+
+```
+trackfw barrier: roadmap "<roadmap-arg>" not found in wip/ nor done/ under <roadmap_dir>
+trackfw barrier: wave <n> not found in roadmap "<roadmap-file>"
+```
+
+Pinning the text matters because these messages are the only observable difference between "the
+CLI does not implement barrier" and "barrier ran and could not resolve its input". A runtime that
+paraphrases them satisfies its own tests while breaking cross-runtime equivalence.
+
+### States
+
+| State | Meaning |
+|---|---|
+| `pending` | Check declared but not yet evaluated (only ever appears mid-run, and in `--json` when a preceding check aborted the run) |
+| `running` | Check currently executing (text output only; never present in a final JSON document) |
+| `passed` | Check evaluated and green |
+| `blocked` | Check evaluated and red |
+
+The wave-level `status` is `passed` only when **every** check is `passed`; otherwise `blocked`.
+
+### Roadmap parsing rules (string-level — no heuristics)
+
+These are literal parsing rules. All three runtimes must implement them identically.
+
+1. **Wave heading.** A wave starts at a line matching `^## Wave <n> ` (H2, the literal word
+   `Wave`, the integer, then a space). The wave ends at the next `^## ` line or EOF.
+2. **ML heading.** Inside a wave, an ML starts at a line matching `^### ML-` (H3). The ML ends
+   at the next `^### ` or `^## ` line or EOF.
+3. **ML completion.** An ML is complete when its body contains a line matching
+   `^\*\*Status:\*\*` whose remainder contains `✅`. Any other marker (`⬜`, `🔄`, `❌`) is
+   incomplete. Absence of a `**Status:**` line is incomplete.
+4. **Acceptance evidence.** Inside an ML, the acceptance block starts at a line matching
+   `^\*\*Critérios de aceite:\*\*` and ends at the next `^\*\*` line or at the ML boundary.
+   Every line in that block matching `^- \[ \]` is unmet evidence. The ML has evidence only
+   when the block exists, is non-empty, and contains zero `- [ ]` lines.
+   **An ML with no acceptance block at all is `blocked`, not vacuously passed.**
+5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` line immediately
+   followed by a fenced ```` ```bash ```` block. Each non-empty, non-comment line in that block
+   is one gate command, executed from the repository root, in declaration order.
+   A wave with no `**Gates da wave:**` block declares zero gates — that is legal and yields a
+   `gates` check with `status: "passed"` and an empty `commands` array. The barrier **never**
+   invents a gate.
+6. **Malformed input.** A wave heading whose number is not parseable, an ML whose body cannot
+   be delimited, or an unterminated fence is a usage error (exit 2) with an explicit message
+   naming the offending line number — never a silent pass.
+
+### Built-in checks
+
+Evaluated in this fixed order; the run continues through all checks so the report is complete.
+
+| `name` | Passes when |
+|---|---|
+| `mls_complete` | Wave contains ≥ 1 ML and every ML satisfies rule 3 |
+| `acceptance_evidence` | Every ML in the wave satisfies rule 4 |
+| `gates` | Every command from rule 5 exits 0 |
+| `validate` | `trackfw validate --json` reports `violations: 0` |
+
+`trackfw validate` is invoked in-process (Go/Node/Python each call their own validator), not by
+shelling out to a `trackfw` binary that may not be on `PATH`.
+
+### JSON document
+
+```json
+{
+  "roadmap": "ROADMAP-2026-07-29-example.md",
+  "wave": 2,
+  "status": "blocked",
+  "started_at": "2026-07-29T10:30:00Z",
+  "finished_at": "2026-07-29T10:30:04Z",
+  "checks": [
+    {
+      "name": "mls_complete",
+      "status": "passed",
+      "evidence": ["ML-2A: ✅", "ML-2B: ✅", "ML-2C: ✅"],
+      "failures": []
+    },
+    {
+      "name": "acceptance_evidence",
+      "status": "blocked",
+      "evidence": [],
+      "failures": ["ML-2C: 2 unmet acceptance criteria"]
+    },
+    {
+      "name": "gates",
+      "status": "passed",
+      "commands": ["make quality"],
+      "evidence": ["make quality: exit 0"],
+      "failures": []
+    },
+    {
+      "name": "validate",
+      "status": "passed",
+      "evidence": ["0 violations, 0 warnings"],
+      "failures": []
+    }
+  ],
+  "failures": ["acceptance_evidence: ML-2C: 2 unmet acceptance criteria"]
+}
+```
+
+Evidence and failure string formats are **pinned** — the three runtimes must emit these literally,
+so that a diff of two runtimes' JSON output for the same fixture is empty:
+
+| Check | `evidence` entry | `failures` entry |
+|---|---|---|
+| `mls_complete` | `<ML-id>: ✅` | `<ML-id>: not complete (status: <marker or "missing">)` |
+| `acceptance_evidence` | `<ML-id>: <n> criteria met` | `<ML-id>: <n> unmet acceptance criteria` or `<ML-id>: no acceptance block` |
+| `gates` | `<command>: exit 0` | `<command>: exit <code>` |
+| `validate` | `<v> violations, <w> warnings` | `<v> violations, <w> warnings` |
+
+Determinism contract:
+
+- Key order is fixed as shown; `checks` is always in the built-in evaluation order.
+- `evidence` and `failures` are always arrays, never `null`, never omitted.
+- `commands` is present only on the `gates` check.
+- Timestamps are RFC 3339 UTC with second precision.
+- The top-level `failures` array is the concatenation of every check's `failures`, each prefixed
+  with `<check-name>: `.
+
+### Edge cases not reached by the eight mandated scenarios
+
+These were surfaced while implementing the runtimes. They are pinned here because each is a point
+where three independent implementations would otherwise drift silently — no contract test exercises
+them, so the parity gate is the only thing that would catch it, and only much later.
+
+| Case | Resolution |
+|---|---|
+| Acceptance block header present but body empty | Same as absent: check `blocked`, failure `<ML-id>: no acceptance block`. Rule 4 requires the block to be non-empty to count as evidence, so an empty block provides none. |
+| Wave contains zero MLs | `mls_complete` is `blocked` with failure exactly `wave <n>: no ML found`. A wave with nothing in it must never release. |
+| Wave heading with no title (`## Wave 1` with no trailing text) | Valid. Rule 6 makes only an *unparseable number* a usage error; the title is cosmetic. |
+| Gate process terminated by a signal (no numeric exit code) | Recorded as `<command>: exit 1`. The format is defined only for numeric codes, and a signal kill is a failure. |
+
+### `trackfw barrier` vs `/trackfw:barrier`
+
+| | `trackfw barrier` (CLI) | `/trackfw:barrier` (slash command) |
+|---|---|---|
+| Nature | Deterministic, reproducible, exit-code driven | Orchestration checklist for `trackfw_architect` |
+| Runs gates | Yes, only those declared in the roadmap | Delegates to the CLI |
+| Invokes agents | **Never** | Yes — `code-quality` and `security` when applicable |
+| Audits the diff | No | Yes, human/agent judgement |
+| Git operations | **Never** | Only `trackfw_architect`, after a green barrier |
+
+A green CLI barrier is **necessary but not sufficient** to release a wave. The specialist
+inspections and diff audit are conditions the binary cannot evaluate.
+
+## `trackfw update` vs `trackfw update harness`
+
+Update is split by **scope**. The split exists because `trackfw update` today mutates global state
+(`~/.claude` skill, global Codex deployments) as a side effect of being run inside a project — so a
+user visiting twenty repositories re-runs the same global write twenty times, and a project-local
+command silently reaches outside the repository.
+
+| | `trackfw update` | `trackfw update harness` |
+|---|---|---|
+| Scope | The current repository only | The user's global harness (`~/.claude` and equivalents) |
+| Requires `trackfw.yaml` / project cwd | Yes | **No** — runs from anywhere |
+| Touches global state | **Never** | Yes, that is its only job |
+| Typical frequency | Once per repository | Once per machine, per upgrade |
+
+`trackfw update` covers: the trackfw rules block in agent config files, `scripts/trackfw-validate.sh`,
+the CI workflow, project-level slash commands, and Git hooks. Any global mutation is removed from
+its contract.
+
+`trackfw update harness` covers: rules, agents and skills **already installed** in the user's home
+directory.
+
+### States
+
+Both commands report one state per target. These four strings are pinned:
+
+| State | Meaning |
+|---|---|
+| `updated` | Target existed and was rewritten to the current template |
+| `skipped` | Target existed and was already current, or is unmanaged and must not be overwritten |
+| `missing` | Target is not installed. **Not an error** — see below |
+| `failed` | Target exists but the write failed; carries a message |
+
+**`missing` never installs.** A target that is not present is reported and left alone unless
+`--install-missing` is passed explicitly. A `trackfw update harness` run on a machine where nothing
+is installed reports every target as `missing` and exits **0** — "nothing to do" is a successful
+outcome, not a usage error. Exit is non-zero only when at least one target is `failed`.
+
+### Flags
+
+| Flag | Applies to | Behaviour |
+|---|---|---|
+| `--dry-run` | both | Compute and report states without writing anything |
+| `--json` | both | Emit the result document instead of the text report |
+| `--targets` | both | Comma-separated subset of target ids; unknown id is a usage error |
+| `--install-missing` | both | Allow `missing` targets to be installed instead of merely reported |
+
+### JSON document
+
+```json
+{
+  "scope": "harness",
+  "dry_run": false,
+  "targets": [
+    {"id": "claude-skill", "state": "updated", "path": "~/.claude/skills/trackfw/SKILL.md"},
+    {"id": "codex-agents", "state": "missing", "path": "~/.codex/agents"}
+  ],
+  "summary": {"updated": 1, "skipped": 0, "missing": 1, "failed": 0}
+}
+```
+
+`scope` is `"project"` or `"harness"`. Key order is fixed as shown; `targets` follows the declared
+target order, not filesystem order. `summary` always carries all four counters, including zeros.
+`message` is present **only** when `state == "failed"`, positioned after `path`.
+
+### Declared project targets — pinned list
+
+`trackfw update` declares this fixed sequence of 5 ids, in this exact order:
+`agent-rules`, `agent-hooks`, `codex-project-agents`, `validate-script`, `claude-commands`.
+
+All three runtimes declare all five. A runtime that cannot manage a target still declares it and
+reports its honest state — silently shortening the list makes the JSON incomparable across runtimes.
+
+### `updated` vs `skipped` — the discriminator is content, not action
+
+`updated` means the target's content **actually changed**. A target that already matches the current
+template is `skipped`, even if the implementation rewrote the bytes. Deciding by "did I call write()"
+instead of "did the content change" makes an idempotent re-run report `updated` in one runtime and
+`skipped` in another for the same input — measured divergence between Go and Node.js in the first
+Wave 6 round.
+
+### Declared harness targets — pinned list
+
+The harness target list is **not** derived at runtime; it is this fixed sequence of 19 ids, in this
+exact order: `claude-skill`, then `<tool>-agents` and `<tool>-skills` for each of the nine catalog
+tools in `catalog.json` declaration order — `claude`, `codex`, `gemini`, `antigravity`, `cursor`,
+`copilot`, `windsurf`, `amazonq`, `kiro`.
+
+Each `<tool>-<kind>` target is a **roll-up over every catalog item** for that pair, not one row per
+item; per-item granularity already exists via `trackfw agents update` and `trackfw skills update`.
+Roll-up precedence: `failed` > `updated` > `skipped`; all-not-installed → `missing`.
+
+`path` is rendered **tilde-abbreviated** (`~/.claude/agents`), never as an absolute path. Absolute
+paths make the JSON machine-dependent and break byte-comparison across runtimes.
+
+This list was pinned after the first implementation round produced three different answers — Go
+declared 3 targets, Node.js and Python 19 — because the contract specified states, flags and key
+order but left the target set to interpretation. Leaving a set unpinned is the same failure mode as
+leaving a string unpinned.
+
+**Parity auditing note:** compare these documents across runtimes with key order **preserved**
+(`object_pairs_hook=OrderedDict` and `dumps` without `sort_keys`). Normalizing key order hides
+declaration-order drift — that is exactly how the `gates` check divergence survived Wave 2 of the
+barrier roadmap and had to be fixed later in ML-2E.
 
 ## Regra `branch_has_wip_roadmap` — comportamento unificado nos 3 runtimes
 

@@ -8,35 +8,35 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var rootCmd = &cobra.Command{
-	Use:   "trackfw",
-	Short: "trackfw — governed software delivery framework",
-	Long: `trackfw enforces a traceable delivery chain:
+// newRootCmd builds the full trackfw command tree. It is extracted from
+// Execute so tests can inspect the real, registered subcommand set (e.g. to
+// prove a command was removed) without depending on os.Exit side effects.
+func newRootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:   "trackfw",
+		Short: "trackfw — governed software delivery framework",
+		Long: `trackfw enforces a traceable delivery chain:
 ADR → REQ → ROADMAP → backlog/wip/done
 
 Run 'trackfw init' to set up governance in your project.`,
-	Version: trackversion.Version,
-}
+		Version: trackversion.Version,
+	}
 
-func Execute() {
-	rootCmd.SetVersionTemplate("trackfw {{.Version}}\n")
-	rootCmd.AddCommand(
+	helpCmd := newHelpCmd()
+
+	root.SetVersionTemplate("trackfw {{.Version}}\n")
+	root.AddCommand(
 		newInitCmd(),
 		newUpdateCmd(),
 		newSkillsCmd(),
 		newAgentsCmd(),
-		newGeminiCmd(),
-		newCursorCmd(),
-		newCopilotCmd(),
-		newWindsurfCmd(),
-		newAmazonQCmd(),
 		newADRCmd(),
 		newReqCmd(),
 		newRoadmapCmd(),
 		newStatusCmd(),
 		newValidateCmd(),
 		newBaselineCmd(),
-		newHelpCmd(),
+		helpCmd,
 		newConfigureCmd(),
 		newVersionCmd(),
 		newLogCmd(),
@@ -48,17 +48,27 @@ func Execute() {
 		newContextCmd(),
 		newNoteCmd(),
 		newShipCmd(),
+		newBarrierCmd(),
 	)
 
-	rootCmd.Args = cobra.ArbitraryArgs
-	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+	// trackfw expõe uma única superfície explícita de ajuda ("help").
+	// Sem isto, cobra registra seu próprio comando "help" default além do
+	// nosso, duplicando a entrada em `trackfw --help` (Available Commands).
+	root.SetHelpCommand(helpCmd)
+
+	root.Args = cobra.ArbitraryArgs
+	root.RunE = func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
 			return RunPlugin(args[0], args[1:])
 		}
 		return cmd.Help()
 	}
 
-	if err := rootCmd.Execute(); err != nil {
+	return root
+}
+
+func Execute() {
+	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

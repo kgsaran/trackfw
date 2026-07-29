@@ -431,6 +431,20 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 	if err := manager.Install(plans, false); err != nil {
 		return fmt.Errorf("instalando AI tools: %w", err)
 	}
+	// Auxiliary rules files (GEMINI.md, .github/copilot-instructions.md,
+	// .windsurfrules, .amazonq/developer/guidelines.md, etc.) are not part of
+	// the agents/skills catalog above — they are a separate, tool-specific
+	// mechanism (generators.InjectRulesForTool). Without this call, selecting
+	// a tool here silently installs agents/skills but never creates its
+	// governance rules file in a brand-new project (regression fixed in
+	// ML-5E of ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-
+	// orquestrador). InjectRulesForTool no-ops for targets with no rules
+	// surface (e.g. antigravity, kiro) and is idempotent for repeated runs.
+	for _, tool := range aiTools {
+		if err := generators.InjectRulesForTool(tool, cwd); err != nil {
+			return fmt.Errorf("instalando AI tools: regras auxiliares de %s: %w", tool, err)
+		}
+	}
 	for _, tool := range aiTools {
 		fmt.Printf("  ✓ %s agents and skills\n", tool)
 	}

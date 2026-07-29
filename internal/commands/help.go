@@ -3,7 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 	"text/tabwriter"
 
@@ -270,47 +270,155 @@ var configDocs = []configKeyDoc{
 	},
 }
 
+// printCommandList escreve a lista de comandos disponíveis de root em out.
+func printCommandList(out io.Writer, root *cobra.Command) {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "Comandos disponíveis:")
+	for _, sub := range root.Commands() {
+		if !sub.IsAvailableCommand() {
+			continue
+		}
+		fmt.Fprintf(w, "  %s\t%s\n", sub.Name(), sub.Short)
+	}
+	w.Flush()
+}
+
+// printConfigKeyList escreve a tabela KEY/DEFAULT/DESCRIÇÃO em out.
+func printConfigKeyList(out io.Writer) {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "Chaves de configuração (trackfw.yaml):")
+	fmt.Fprintln(w, "KEY\tDEFAULT\tDESCRIÇÃO")
+	fmt.Fprintln(w, strings.Repeat("─", 80))
+	for _, d := range configDocs {
+		fmt.Fprintf(w, "%s\t%s\t%s\n", d.Key, d.Default, d.Description)
+	}
+	w.Flush()
+}
+
+// printConfigKeyDoc escreve a documentação completa de uma chave em out.
+func printConfigKeyDoc(out io.Writer, d configKeyDoc) {
+	fmt.Fprintf(out, "%s\n", d.Key)
+	fmt.Fprintf(out, "  Type:    %s\n", d.Type)
+	fmt.Fprintf(out, "  Default: %s\n", d.Default)
+	fmt.Fprintf(out, "  Desc:    %s\n", d.Description)
+	fmt.Fprintf(out, "  Example:\n")
+	for _, line := range strings.Split(d.Example, "\n") {
+		fmt.Fprintf(out, "    %s\n", line)
+	}
+	fmt.Fprintf(out, "  Impact:  %s\n", d.Impact)
+}
+
+// levenshtein calcula a distância de edição entre a e b.
+func levenshtein(a, b string) int {
+	ra, rb := []rune(a), []rune(b)
+	la, lb := len(ra), len(rb)
+	prev := make([]int, lb+1)
+	curr := make([]int, lb+1)
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		curr[0] = i
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			min := curr[j-1] + 1
+			if prev[j]+1 < min {
+				min = prev[j] + 1
+			}
+			if prev[j-1]+cost < min {
+				min = prev[j-1] + cost
+			}
+			curr[j] = min
+		}
+		prev, curr = curr, prev
+	}
+	return prev[lb]
+}
+
+// suggestTopic retorna o comando ou chave de configuração conhecida mais
+// próxima de topic (distância de edição <= 3), ou "" se nenhuma for próxima
+// o suficiente. Usado para compor a mensagem de erro de assunto desconhecido.
+func suggestTopic(topic string, root *cobra.Command) string {
+	const threshold = 3
+	best := ""
+	bestDist := threshold + 1
+
+	candidates := make([]string, 0)
+	for _, sub := range root.Commands() {
+		if sub.IsAvailableCommand() {
+			candidates = append(candidates, sub.Name())
+		}
+	}
+	for _, d := range configDocs {
+		candidates = append(candidates, d.Key)
+	}
+
+	for _, c := range candidates {
+		dist := levenshtein(topic, c)
+		if dist < bestDist {
+			bestDist = dist
+			best = c
+		}
+	}
+	if bestDist > threshold {
+		return ""
+	}
+	return best
+}
+
 func newHelpCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "help [key]",
-		Short: "Exibe documentação das chaves de configuração do trackfw.yaml",
-		Long: `Sem argumento: lista todas as chaves configuráveis com tipo, default e descrição.
-Com argumento: exibe documentação completa da chave especificada.`,
+		Use:   "help [comando|chave]",
+		Short: "Exibe ajuda de comandos e documentação das chaves de configuração do trackfw.yaml",
+		Long: `Sem argumento: lista os comandos disponíveis e as chaves configuráveis do trackfw.yaml.
+Com argumento: mostra a ajuda do comando informado, ou a documentação completa da
+chave de configuração especificada.`,
 		Args:               cobra.MaximumNArgs(1),
 		DisableFlagParsing: false,
+		// Silenciados: a mensagem de erro é composta e impressa por nós mesmos
+		// (ver caso 3 abaixo), para que a saída seja idêntica à de Node/Python
+		// — sem o bloco "Error: ...\nUsage: ..." que o cobra imprimiria por
+		// padrão, o que duplicaria a mensagem quando o processo top-level
+		// (Execute em root.go) também reimprime o erro retornado.
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
+			root := cmd.Root()
 
 			if len(args) == 0 {
-				// Lista tabular: KEY | DEFAULT | DESCRIÇÃO
-				w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-				fmt.Fprintln(w, "KEY\tDEFAULT\tDESCRIÇÃO")
-				fmt.Fprintln(w, strings.Repeat("─", 80))
-				for _, d := range configDocs {
-					fmt.Fprintf(w, "%s\t%s\t%s\n", d.Key, d.Default, d.Description)
-				}
-				return w.Flush()
+				printCommandList(out, root)
+				fmt.Fprintln(out)
+				printConfigKeyList(out)
+				return nil
 			}
 
-			// Busca chave específica
-			key := args[0]
+			topic := args[0]
+
+			// 1) comando conhecido → ajuda do comando.
+			if sub, _, err := root.Find([]string{topic}); err == nil && sub != root {
+				sub.SetOut(out)
+				sub.InitDefaultHelpFlag()
+				return sub.Help()
+			}
+
+			// 2) chave de configuração conhecida → documentação da chave.
 			for _, d := range configDocs {
-				if d.Key == key {
-					fmt.Fprintf(out, "%s\n", d.Key)
-					fmt.Fprintf(out, "  Type:    %s\n", d.Type)
-					fmt.Fprintf(out, "  Default: %s\n", d.Default)
-					fmt.Fprintf(out, "  Desc:    %s\n", d.Description)
-					fmt.Fprintf(out, "  Example:\n")
-					for _, line := range strings.Split(d.Example, "\n") {
-						fmt.Fprintf(out, "    %s\n", line)
-					}
-					fmt.Fprintf(out, "  Impact:  %s\n", d.Impact)
+				if d.Key == topic {
+					printConfigKeyDoc(out, d)
 					return nil
 				}
 			}
 
-			fmt.Fprintf(os.Stderr, "chave desconhecida: %s\n", key)
-			return errors.New("chave desconhecida: " + key)
+			// 3) assunto desconhecido → erro com sugestão útil.
+			msg := "assunto desconhecido: " + topic
+			if s := suggestTopic(topic, root); s != "" {
+				msg += "\nVocê quis dizer: " + s + "?"
+			}
+			return errors.New(msg)
 		},
 	}
 }

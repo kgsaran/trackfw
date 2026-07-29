@@ -482,4 +482,201 @@ assert_fails_with "referential-integrity/missing-roadmap" \
   "referential integrity failed" \
   bash "$T12/scripts/check-referential-integrity.sh"
 
-echo "Falsification checks passed (all 13 scenarios, 8 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 13 — check-barrier.sh: a própria prova E2E da barrier é falsificável.
+#
+# Objetivo (P4): check-barrier.sh (ML-4A) não implementa `trackfw barrier` — ele
+# delega aos três runtimes. Falsificar seu conteúdo não é corromper a
+# implementação (isso é escopo do ML-2A/2B/2C), mas provar que a asserção do
+# próprio harness ("Wave 2 continua bloqueada antes da correção") tem poder de
+# reprovação. BARRIER_SELFTEST_BREAK=1 é um seam dedicado (documentado no
+# cabeçalho de check-barrier.sh) que corrompe deliberadamente a fixture da
+# Wave 2 do cenário 1 para já vir ✅ — reproduzindo a classe exata de defeito
+# que a checagem `mls_complete` deveria capturar — e o script deve reportar
+# essa reprovação com diagnóstico explícito em vez de sair verde.
+# ---------------------------------------------------------------------------
+assert_fails_with "barrier/blocked-not-detected" \
+  "FAIL [barrier/two-wave-flow/wave2-blocked]: expected exit 1 for Wave 2, got 0" \
+  env BARRIER_SELFTEST_BREAK=1 GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-barrier.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 14 — check-slash-parity.sh: drift de conteúdo em status.md do npm →
+#              gate detecta divergência byte-a-byte entre runtimes, nomeando
+#              o arquivo específico.
+#
+# Objetivo (P4, ML-5D): provar que check-slash-parity.sh REPROVA quando um
+# comando slash diverge em conteúdo entre runtimes, e que o diagnóstico nomeia
+# o arquivo e o par de runtimes divergentes — não apenas "algo diverge".
+#
+# Nota: HEAD já tem drift pré-existente conhecido em move.md e architect.md
+# (ver vault/notes/, reportado fora do escopo do ML-5D). Por isso o padrão
+# de falsificação abaixo usa status.md — um arquivo hoje idêntico nos três
+# runtimes — para que a reprovação observada seja inequivocamente a
+# corrupção deste cenário, não o ruído pré-existente.
+# ---------------------------------------------------------------------------
+T14="$WORK/s14"
+mkdir -p "$T14/scripts"
+setup_npm_tree "$T14"
+ln -s "$ROOT_DIR/pypi" "$T14/pypi"
+cp "$ROOT_DIR/scripts/check-slash-parity.sh" "$T14/scripts/"
+
+# Corromper: alterar o texto do comando executado por status.md no gerador npm.
+# O literal na fonte é um template string com backticks escapados
+# (Execute o seguinte comando bash: \`trackfw status\`); o padrão do sed
+# precisa incluir as barras invertidas para casar com o texto real.
+sed 's/Execute o seguinte comando bash: \\`trackfw status\\`/Execute o seguinte comando bash: \\`trackfw statuz\\`/' \
+  "$ROOT_DIR/npm/src/generators/init.js" > "$T14/npm/src/generators/init.js"
+
+# Guard: garantir que a corrupção foi aplicada antes de rodar o gate.
+if cmp -s "$ROOT_DIR/npm/src/generators/init.js" "$T14/npm/src/generators/init.js"; then
+  echo "FAIL [falsify/setup-s14]: sed não alterou init.js — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "slash-parity/status-content-drift" \
+  "slash parity drift: status.md (go vs node)" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T14/scripts/check-slash-parity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 15 — check-slash-parity.sh: comando removido/renomeado do npm →
+#              gate detecta drift de NOME (vacuity guard), independente do
+#              caminho de comparação de conteúdo (Cenário 14).
+#
+# Objetivo (P4, ML-5D): provar que a prova de não-vacuidade do gate cobre os
+# dois critérios de aceite separadamente — nome do conjunto de comandos E
+# conteúdo — e não apenas o conteúdo (Cenário 14 já cobre esse). Renomear a
+# chave 'status.md' para 'status-renamed.md' no mapa CLAUDE_COMMANDS do npm
+# faz o Node.js instalar 9 arquivos (contagem correta) mas sem 'status.md'
+# — o vacuity guard por-nome-de-arquivo deve reprovar antes de qualquer diff
+# de conteúdo ser calculado, com diagnóstico distinto do Cenário 14.
+# ---------------------------------------------------------------------------
+T15="$WORK/s15"
+mkdir -p "$T15/scripts"
+setup_npm_tree "$T15"
+ln -s "$ROOT_DIR/pypi" "$T15/pypi"
+cp "$ROOT_DIR/scripts/check-slash-parity.sh" "$T15/scripts/"
+
+sed "s/'status.md': \`Execute/'status-renamed.md': \`Execute/" \
+  "$ROOT_DIR/npm/src/generators/init.js" > "$T15/npm/src/generators/init.js"
+
+# Guard: garantir que a corrupção foi aplicada antes de rodar o gate.
+if cmp -s "$ROOT_DIR/npm/src/generators/init.js" "$T15/npm/src/generators/init.js"; then
+  echo "FAIL [falsify/setup-s15]: sed não alterou init.js — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "slash-parity/status-name-drift" \
+  "slash parity drift: status.md missing (node) — vacuity guard failed" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T15/scripts/check-slash-parity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 16 — check-rules-parity.sh: drift de conteúdo no bloco de regras do
+#              npm (omitindo o estado `analyzing`) → gate detecta divergência
+#              byte-a-byte entre runtimes num dos 4 arquivos auxiliares.
+#
+# Objetivo (ML-5G): provar que check-rules-parity.sh REPROVA quando o texto
+# do bloco de regras (trackfwRulesBlock/_trackfw_rules_block) diverge entre
+# runtimes — o próprio defeito que motivou este gate (Go omitia `analyzing`
+# e o item de ciclo de vida de ML antes desta ML). Corrompe a linha de
+# estados no gerador npm; como os 4 arquivos auxiliares recebem o mesmo
+# bloco, qualquer um deles evidencia a reprovação.
+# ---------------------------------------------------------------------------
+T16="$WORK/s16"
+mkdir -p "$T16/scripts"
+setup_npm_tree "$T16"
+ln -s "$ROOT_DIR/pypi" "$T16/pypi"
+cp "$ROOT_DIR/scripts/check-rules-parity.sh" "$T16/scripts/"
+
+# Corromper: remover o estado `analyzing` da chain de estados injetada pelo
+# bloco de regras do npm.
+sed "s/backlog \/ analyzing \/ wip \/ blocked \/ done \/ abandoned/backlog \/ wip \/ blocked \/ done \/ abandoned/" \
+  "$ROOT_DIR/npm/src/generators/init.js" > "$T16/npm/src/generators/init.js"
+
+# Guard: garantir que a corrupção foi aplicada antes de rodar o gate.
+if cmp -s "$ROOT_DIR/npm/src/generators/init.js" "$T16/npm/src/generators/init.js"; then
+  echo "FAIL [falsify/setup-s16]: sed não alterou init.js — padrão não encontrado; prova de falsificação inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "rules-parity/content-drift" \
+  "rules parity drift: GEMINI.md differs between go and node" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T16/scripts/check-rules-parity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 17 — check-update-parity.sh: `update harness --dry-run` do Node.js
+#              deixa de honrar o guard de dry-run em um alvo → o gate detecta
+#              a escrita real no disco que --dry-run deveria suprimir.
+#
+# Objetivo (ML-6G): provar que a asserção "zero escritas sob --dry-run" do
+# novo gate tem poder de reprovação, não apenas de leitura de JSON. O
+# fixture do próprio check-update-parity.sh (cenário 4) já semeia um
+# claude-skill "stale" (precisa de rewrite) especificamente para que este
+# guard tenha algo real a suprimir — sem isso a prova seria vácua (o guard
+# passaria mesmo com a corrupção, porque não haveria escrita pendente para
+# revelar a ausência do early-return).
+#
+# Corrompe `claudeSkillTarget` em npm/src/commands/update-harness.js,
+# removendo o único `if (dryRun) return ...` que impede a escrita real do
+# arquivo de skill legado durante --dry-run.
+# ---------------------------------------------------------------------------
+T17="$WORK/s17"
+mkdir -p "$T17/scripts"
+setup_npm_tree "$T17"
+ln -s "$ROOT_DIR/pypi" "$T17/pypi"
+cp "$ROOT_DIR/scripts/check-update-parity.sh" "$T17/scripts/"
+
+sed "s/    if (dryRun) return { id, state: 'updated', path: displayPath }/    \/\/ [falsified] dry-run guard removed — write proceeds unconditionally/" \
+  "$ROOT_DIR/npm/src/commands/update-harness.js" > "$T17/npm/src/commands/update-harness.js"
+
+# Guard: garantir que a corrupção foi aplicada antes de rodar o gate.
+if cmp -s "$ROOT_DIR/npm/src/commands/update-harness.js" "$T17/npm/src/commands/update-harness.js"; then
+  echo "FAIL [falsify/setup-s17]: sed não alterou update-harness.js — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "update-parity/dry-run-write-leak" \
+  "filesystem tree under HOME changed during --dry-run" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T17/scripts/check-update-parity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 18 — não-mutação: os gates que invocam CLIs reais (agents install,
+# init, update, barrier) não alteram a árvore de trabalho do repositório
+# quando rodados a partir da raiz — exatamente como `make quality`/`make
+# parity` já fazem.
+#
+# Objetivo (ML-6I): o bug corrigido em install_claude_agents() de
+# check-update-parity.sh (ver
+# vault/notes/update-parity-gate-writes-real-claude-md-2026-07-29.md) fazia
+# o gate passar — `exit 0`, todas as scenarios "OK" — enquanto injetava o
+# bloco trackfw:rules no CLAUDE.md do próprio repositório. "Gate verde" não
+# provava "repositório intocado"; esta prova fecha esse buraco de forma
+# automática em vez de depender de um agente lembrar de rodar `git status`
+# manualmente. Captura `git status --porcelain` antes/depois de rodar,
+# a partir de ROOT_DIR, os gates que exercitam CLIs reais (não os que operam
+# só sobre cópias isoladas em $WORK) e reprova se houver qualquer diferença.
+# ---------------------------------------------------------------------------
+GATES_MUTATION_CHECK=(
+  scripts/check-update-parity.sh
+  scripts/check-barrier.sh
+  scripts/check-slash-parity.sh
+  scripts/check-rules-parity.sh
+)
+
+before_status=$(cd "$ROOT_DIR" && git status --porcelain)
+for gate in "${GATES_MUTATION_CHECK[@]}"; do
+  if ! (cd "$ROOT_DIR" && GO_BIN="$ROOT_DIR/bin/trackfw" bash "$gate") >"$WORK/mutation-check.$(basename "$gate").log" 2>&1; then
+    echo "FAIL [falsify/no-repo-mutation]: $gate saiu != 0 rodando limpo (não corrompido) — não é possível provar não-mutação" >&2
+    sed 's/^/    /' "$WORK/mutation-check.$(basename "$gate").log" >&2
+    exit 1
+  fi
+done
+after_status=$(cd "$ROOT_DIR" && git status --porcelain)
+
+if [[ "$before_status" != "$after_status" ]]; then
+  echo "FAIL [falsify/no-repo-mutation]: rodar os gates a partir da raiz alterou a árvore de trabalho do repositório" >&2
+  diff <(echo "$before_status") <(echo "$after_status") >&2 || true
+  exit 1
+fi
+echo "OK   [falsify/no-repo-mutation]"
+
+echo "Falsification checks passed (all 19 scenarios, 12 gates proved non-vacuous)"

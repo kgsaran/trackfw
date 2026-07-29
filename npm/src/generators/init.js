@@ -101,13 +101,26 @@ roadmap_namespacing: flat
 // scripts/trackfw-validate.sh
 // ---------------------------------------------------------------------------
 
-function generateValidateScript(cfg) {
-  fs.mkdirSync('scripts', { recursive: true })
+// generateValidateScript — cwd is optional and defaults to process.cwd() so
+// existing callers (scaffold(), which always runs with process.cwd() already
+// at the project root) keep working unchanged. `trackfw update`'s
+// validate-script target passes cwd explicitly so this can be applied
+// against a --dry-run sandbox root without ever touching the real project
+// tree — this is the SAME canonical generator scaffold() uses for `init`,
+// not a separate copy (see npm/src/commands/discover.js's writeValidateScript,
+// which is a different, simpler generator used only by `discover`/legacy
+// paths and must never be reused here — that mismatch was the ML-6H
+// validate-script parity bug: init wrote the rich per-backend script,
+// `update` overwrote it with the static 3-line one, so idempotent re-runs
+// reported "updated" instead of "skipped").
+function generateValidateScript(cfg, cwd) {
+  const root = cwd || process.cwd()
+  fs.mkdirSync(path.join(root, 'scripts'), { recursive: true })
 
   const script = buildValidateScript(cfg)
-  const scriptPath = path.join('scripts', 'trackfw-validate.sh')
+  const scriptPath = path.join(root, 'scripts', 'trackfw-validate.sh')
   fs.writeFileSync(scriptPath, script, { encoding: 'utf8', mode: 0o755 })
-  console.log(`  ✓ ${scriptPath}`)
+  console.log(`  ✓ ${path.join('scripts', 'trackfw-validate.sh')}`)
 }
 
 function buildValidateScript(cfg) {
@@ -381,14 +394,19 @@ This project uses **trackfw** for AI-native delivery governance.
 Chain: \`ADR → REQ → ROADMAP\` · States: \`backlog / analyzing / wip / blocked / done / abandoned\`
 
 ### Agent Protocol
-1. **Before starting:** run \`trackfw context\` · read \`docs/agents-working-context.md\`
-2. **After finishing:** update \`docs/agents-working-context.md\` with what changed
-3. **Before PR:** \`trackfw validate\` must pass
-4. **ML lifecycle — mandatory:**
+1. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:
+   \`trackfw req new "title"\` → \`trackfw roadmap new "title"\` → \`trackfw roadmap move <name> wip\` → \`git checkout -b feat/<branch>\`
+   ❌ Never create a branch before REQ + ROADMAP are in wip/
+   ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables
+   ✓ \`trackfw validate\` enforces this via \`branch_has_wip_roadmap\` rule (v2.7.0+)
+2. **Before starting:** run \`trackfw context\` · read \`docs/agents-working-context.md\`
+3. **After finishing:** update \`docs/agents-working-context.md\` with what changed
+4. **Before PR:** \`trackfw validate\` must pass
+5. **ML lifecycle — mandatory:**
    - Starting a ML: edit roadmap \`**Status:** ⬜ Pendente\` → \`**Status:** 🔄 Em andamento\` + commit.
    - Completing a ML: edit roadmap → \`**Status:** ✅ Concluído\` + include in ML commit.
    - Analyzing a roadmap: move from \`backlog/\` to \`analyzing/\`; to \`wip/\` only when coding starts.
-5. **${GLOBAL_ADRS_DIRECTIVE}**
+6. **${GLOBAL_ADRS_DIRECTIVE}**
 
 ### Attention Signal (when you need user input during a task)
 Write \`docs/roadmaps/.trackfw-attention.json\`:
@@ -411,6 +429,13 @@ Delete the file when resolved. Visible as a live banner in \`trackfw serve\`.
 - **Security wave:** include a red-team review wave in every feature roadmap
 - **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)
 - Use \`/trackfw:architect\` to define stack before the first REQ
+
+### Key Commands
+- \`trackfw context\` — current governance state (always run first)
+- \`trackfw status\` — all artifacts and states
+- \`trackfw validate\` — governance consistency check
+- \`trackfw roadmap move <name> <state>\` — transition roadmap state
+- \`trackfw serve\` — live Kanban board at http://localhost:4080
 ` + RULES_END
 }
 
@@ -529,7 +554,8 @@ function generateClaudeMD(cfg) {
   content += '| `/trackfw:roadmap <req>` | Generate AI roadmap from a REQ |\n'
   content += '| `/trackfw:move <name> <state>` | Move roadmap between states manually |\n'
   content += '| `/trackfw:validate` | Run governance validation |\n'
-  content += '| `/trackfw:status` | Check what is in flight |\n\n'
+  content += '| `/trackfw:status` | Check what is in flight |\n'
+  content += '| `/trackfw:barrier` | Run the wave-release checklist before liberating the next wave |\n\n'
 
   content += '## CLI commands (terminal / CI)\n\n'
   content += '| Command | When to use |\n'
@@ -698,14 +724,20 @@ function backendCommands(cfg) {
 }
 
 // ---------------------------------------------------------------------------
-// .claude/commands/trackfw/ — 7 slash commands
+// .claude/commands/trackfw/ — slash commands
+//
+// CLAUDE_COMMANDS is the single source of truth for the set of slash
+// commands installed by trackfw. Both generateClaudeCommands (normal path,
+// idempotent — never overwrites an existing file) and
+// generateClaudeCommandsForce (force path — always overwrites) install
+// from this same map; they only differ in overwrite behavior. This mirrors
+// the Go CLI's installSkillsInner(force) and the Python CLI's single
+// generate_claude_commands — one list, one force flag. Do not fork this map
+// again: a prior divergence let the force path fall behind the normal path
+// (missing roadmap.md, implement.md, barrier.md) undetected.
 // ---------------------------------------------------------------------------
 
-function generateClaudeCommands() {
-  const dir = '.claude/commands/trackfw'
-  fs.mkdirSync(dir, { recursive: true })
-
-  const commands = {
+const CLAUDE_COMMANDS = {
     'adr.md': `Execute o seguinte comando bash: \`trackfw adr new "$ARGUMENTS"\`
 
 Se o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:
@@ -949,6 +981,51 @@ Roadmap: docs/roadmaps/done/<nome>.md
 Próximo passo: abrir PR com gh pr create
 \`\`\``,
 
+    'barrier.md': `Você é o \`trackfw_architect\`, a única autoridade Git deste projeto. Este comando executa o checklist operacional de liberação de uma wave — nenhum outro agente commita, faz push ou libera a próxima wave.
+
+## Argumento
+
+\`$ARGUMENTS\` no formato \`<roadmap> <wave>\`. Se ausente ou incompleto, pergunte ao usuário qual roadmap (em \`docs/roadmaps/wip/\`) e qual número de wave validar.
+
+---
+
+## Núcleo determinístico
+
+Execute primeiro:
+\`\`\`bash
+trackfw barrier <roadmap> --wave <n> --json
+\`\`\`
+
+Este comando é **necessário mas não suficiente**. Ele verifica MLs concluídos, evidências e \`trackfw validate\`, mas não substitui as inspeções especializadas nem a auditoria de diff abaixo — nenhuma delas é avaliada pelo binário. Consulte a seção \`trackfw barrier\` em \`docs/cli-parity.md\` para o contrato completo (estados, exit codes, saída JSON).
+
+Se o comando retornar exit code não-zero (\`blocked\` ou erro de resolução): pare, reporte a falha ao usuário e não prossiga no checklist até que a wave passe.
+
+---
+
+## Definição de pronto da barrier — checklist completo
+
+Antes de liberar a próxima wave, confirme cada item com evidência concreta — não presuma:
+
+1. **Todos os MLs da wave concluídos e marcados** — cada ML da wave está com \`**Status:** ✅ Concluído\` no roadmap.
+2. **Testes unitários e E2E aplicáveis executados** — rode os comandos de validação declarados em cada ML.
+3. **Build aplicável sem erros** — rode o comando de build do(s) workspace(s) afetado(s).
+4. **Cada critério de aceite inspecionado com evidência** — leia os arquivos modificados e confirme contra os critérios listados, não apenas contra os testes.
+5. **Agente code-quality reportou conformidade, performance, robustez e clareza** — invoque o agente \`code-quality\` quando a mudança introduzir lógica nova, duplicação relevante ou risco de manutenibilidade.
+6. **Agente security reportou SAST, privilégios, controle de acesso e camadas aplicáveis** — invoque o agente \`security\` quando a mudança tocar autenticação, segredos, entrada externa ou permissões.
+7. **Gates pré-commit declarados pelo projeto executados** — rode os hooks/gates configurados (lint, format, testes de contrato).
+8. **\`trackfw validate --json\` aprovado** — execute e confirme zero violações.
+9. **Diff auditado contra o escopo** — revise o diff completo; confirme que não há alterações de agentes concorrentes nem arquivos fora do escopo do ML (ex: \`docs/adr/\`, \`docs/req/\`, \`docs/roadmaps/\` quando não autorizado ao especialista).
+10. **Resultado registrado antes de liberar a próxima wave** — anote no roadmap ou na resposta ao usuário que a wave passou, com a evidência de cada item acima.
+
+Se qualquer item falhar: bloqueie a próxima wave, identifique o item e o agente responsável, e despache um microlote corretivo. Só repita o checklist depois que o corretivo for concluído.
+
+---
+
+## Autoridade Git
+
+Somente o \`trackfw_architect\` cria branch, audita diff, commita e faz push. Especialistas entregam trabalho sem commit — cabe a este papel revisar, commitar e sugerir a abertura de PR/MR (sem abrir automaticamente sem autorização do usuário).
+`,
+
     'architect.md': `Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.
 
 ## Passo 1 — Descoberta de Negócio
@@ -1027,13 +1104,21 @@ Oriente o usuário:
 2. Gere o roadmap em microlotes com /trackfw:roadmap
 3. Inicie a implementação com /trackfw:implement
 \`\`\``,
-  }
+}
+
+/**
+ * installClaudeCommandsInner — fonte única de escrita dos slash commands.
+ * @param {string} dir diretório de destino (já resolvido)
+ * @param {boolean} force quando true, sobrescreve arquivos existentes
+ */
+function installClaudeCommandsInner(dir, force) {
+  fs.mkdirSync(dir, { recursive: true })
 
   let created = 0
   let skipped = 0
-  for (const [filename, content] of Object.entries(commands)) {
+  for (const [filename, content] of Object.entries(CLAUDE_COMMANDS)) {
     const filePath = path.join(dir, filename)
-    if (fs.existsSync(filePath)) {
+    if (!force && fs.existsSync(filePath)) {
       skipped++
       continue
     }
@@ -1041,11 +1126,26 @@ Oriente o usuário:
     created++
   }
 
-  if (skipped > 0) {
+  if (force) {
+    console.log(`  ✓ ${dir} (${created} slash commands sobrescritos)`)
+  } else if (skipped > 0) {
     console.log(`  ✓ ${dir} (${created} slash commands criados, ${skipped} já existiam — não sobrescritos)`)
   } else {
     console.log(`  ✓ ${dir} (${created} slash commands)`)
   }
+}
+
+/**
+ * generateClaudeCommands — instala os slash commands de forma idempotente:
+ * nunca sobrescreve um arquivo já existente. Honra o `rootDir` recebido
+ * (mesma convenção do gêmeo forçado generateClaudeCommandsForce e do
+ * generate_claude_commands(cwd) do Python); quando omitido, cai no
+ * caminho relativo ao cwd do processo, preservando o comportamento
+ * histórico consumido pelos testes que chamam sem argumento.
+ */
+function generateClaudeCommands(rootDir) {
+  const dir = rootDir ? path.join(rootDir, '.claude', 'commands', 'trackfw') : '.claude/commands/trackfw'
+  installClaudeCommandsInner(dir, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,25 +1240,13 @@ async function installIntegrationTarget(target, cwd = process.cwd(), scope = 'pr
 }
 
 /**
- * generateClaudeCommandsForce — re-gera todos os slash commands, sobrescrevendo arquivos existentes.
+ * generateClaudeCommandsForce — re-gera todos os slash commands, sobrescrevendo
+ * arquivos existentes. Instala exatamente o mesmo conjunto de CLAUDE_COMMANDS
+ * usado por generateClaudeCommands — só o comportamento de sobrescrita difere.
  */
 function generateClaudeCommandsForce(rootDir) {
   const dir = rootDir ? path.join(rootDir, '.claude', 'commands', 'trackfw') : '.claude/commands/trackfw'
-  fs.mkdirSync(dir, { recursive: true })
-
-  const commands = {
-    'adr.md': `Execute o seguinte comando bash: \`trackfw adr new "$ARGUMENTS"\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
-    'req.md': `Execute o seguinte comando bash: \`trackfw req new "$ARGUMENTS"\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
-    'validate.md': `Execute o seguinte comando bash: \`trackfw validate\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
-    'status.md': `Execute o seguinte comando bash: \`trackfw status\`\n\nSe o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:\n\n\`\`\`\ntrackfw não está instalado. Instale com uma das opções:\n\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n  npm install -g trackfw\n  pip install trackfw\n\`\`\``,
-    'move.md': `Execute o seguinte comando bash: \`trackfw roadmap move $ARGUMENTS\`\n\nO formato esperado é: \`<nome-do-roadmap> <estado>\`\nEstados válidos: \`backlog\`, \`analyzing\`, \`wip\`, \`blocked\`, \`done\`, \`abandoned\`\n\nSe o comando falhar, instale trackfw com:\n  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh`,
-    'architect.md': `Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.\n\n## Passo 1 — Descoberta de Negócio\n\nFaça ao usuário as seguintes perguntas em linguagem simples, uma por vez:\n\n1. "O que sua aplicação vai fazer? Descreva em 2-3 frases como se fosse explicar para alguém de fora da TI."\n2. "Quantas pessoas vão usar esse sistema simultaneamente? (< 10 pessoas / 10-100 pessoas / > 100 pessoas)"\n3. "Esse sistema vai para produção de verdade ou é um protótipo para validar uma ideia?"\n4. "Você precisa de login/autenticação de usuários? (Sim / Não / Não sei)"\n5. "Tem alguma restrição de tecnologia ou preferência da empresa? (ex: só Java, só Microsoft, etc.)"\n\n---\n\n## Passo 2 — Recomendação de Stack\n\nCom base nas respostas, escolha **UM** dos combos pré-validados:\n\n### Combo A — Protótipo Rápido\n**Quando usar:** prototipagem, validação de ideia, até ~10 usuários, sem pressão de produção.\n- **Frontend:** React + Vite\n- **Backend:** FastAPI (Python) ou Express (Node.js)\n- **Banco:** SQLite + SQLAlchemy / Prisma\n- **Auth:** JWT simples quando necessário\n- **Docker:** Dockerfile básico para o backend\n\n### Combo B — Sistema Pequeno/Médio em Produção\n**Quando usar:** sistema real, 10-100 usuários, robustez e manutenibilidade.\n- **Frontend:** Next.js (SSR + rotas prontas)\n- **Backend:** FastAPI (Python) ou NestJS (Node.js)\n- **Banco:** PostgreSQL + ORM (SQLAlchemy / Prisma / TypeORM)\n- **Auth:** OAuth2 com JWT (Supabase Auth ou Auth0)\n- **Docker:** docker-compose com frontend + backend + banco\n\n### Combo C — Enterprise / Java\n**Quando usar:** integração com sistemas corporativos, > 100 usuários, exigência de Java.\n- **Frontend:** Angular\n- **Backend:** Spring Boot\n- **Banco:** PostgreSQL + Hibernate\n- **Auth:** Spring Security + OAuth2 (Keycloak ou Azure AD)\n- **Docker:** docker-compose com todos os serviços\n\nApresente o combo recomendado com explicação simples do motivo.\n\n---\n\n## Passo 3 — Arquitetura em Camadas (explicação simples)\n\nExplique a arquitetura com uma metáfora de negócio:\n\n"Pense na aplicação como um restaurante:\n- **Frontend** = o salão: o que o cliente vê e interage\n- **Backend** = a cozinha: onde as regras de negócio acontecem, nunca exposta diretamente\n- **Banco de dados** = a despensa: onde os dados ficam guardados, acessada só pela cozinha"\n\nReforce as **Architecture Directives** já injetadas no CLAUDE.md deste projeto: separação em 3 camadas sem dados em memória (sempre DB + ORM), auth + Docker + .env desde o dia 1, validação em 2 camadas, contrato OpenAPI antes de codar, wave de segurança em todo roadmap e cobertura mínima de testes (60% protótipo / 80% produção).\n\n---\n\n## Passo 4 — Gerar o ADR de Stack\n\nExecute \`/trackfw:adr\` com o título: \`"Stack e arquitetura em camadas — [nome do projeto]"\`\n\nO ADR deve registrar a stack escolhida (combo e componentes), motivação baseada nas respostas, alternativas descartadas e princípios de arquitetura adotados.\n\n---\n\n## Passo 5 — Próximos Passos\n\nOriente o usuário:\n\n\`\`\`\n✅ Stack definida. Próximos passos:\n\n1. Crie a REQ da primeira feature com /trackfw:req\n2. Gere o roadmap em microlotes com /trackfw:roadmap\n3. Inicie a implementação com /trackfw:implement\n\`\`\``,
-  }
-
-  for (const [filename, content] of Object.entries(commands)) {
-    fs.writeFileSync(path.join(dir, filename), content, 'utf8')
-  }
-  console.log(`  ✓ .claude/commands/trackfw/ (${Object.keys(commands).length} slash commands sobrescritos)`)
+  installClaudeCommandsInner(dir, true)
 }
 
 /**

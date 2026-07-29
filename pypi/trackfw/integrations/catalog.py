@@ -125,3 +125,32 @@ def plan_deployments(
                         }
                     )
     return catalog, result
+
+
+def _truncate_before_id_segment(template: str) -> str:
+    """Drops the "{{id}}"-bearing path segment and everything after it,
+    returning the shared parent directory — mirrors
+    internal/integrations/plan.go:truncateBeforeIDSegment and
+    npm/src/integrations/catalog.js:truncateBeforeIdSegment."""
+    segments = template.split("/")
+    for index, segment in enumerate(segments):
+        if "{{id}}" in segment:
+            return "/".join(segments[:index])
+    return template
+
+
+def global_group_path(catalog: dict[str, Any], tool_id: str, kind: str) -> str:
+    """Returns the tilde-abbreviated directory shared by every catalog item
+    of (tool_id, kind) at global scope, derived from the catalog's own path
+    template rather than any individual plan's destination — so the
+    reported path never depends on catalog item iteration order. See
+    docs/cli-parity.md, "Declared harness targets — pinned list"."""
+    target = next((entry for entry in catalog["targets"] if entry["id"] == tool_id), None)
+    if target is None:
+        raise ValueError(f"unknown target {tool_id!r}")
+    surfaces = _surfaces(target, kind, {}, False)
+    surface = surfaces[0]
+    install_path = next((entry for entry in surface["paths"][kind] if entry["scope"] == "global"), None)
+    if install_path is None:
+        raise ValueError(f"target {tool_id} has no global {kind} path")
+    return _truncate_before_id_segment(install_path["path"])

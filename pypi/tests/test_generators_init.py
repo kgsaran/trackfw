@@ -327,6 +327,12 @@ class TestGenerateClaudeMDHarnessSections(unittest.TestCase):
         for snippet in harness_snippets:
             self.assertIn(snippet, content, f'CLAUDE.md não contém o trecho de harness: {snippet!r}')
 
+        self.assertIn(
+            '| `/trackfw:barrier` | Run the wave-release checklist before liberating the next wave |',
+            content,
+            'CLAUDE.md não anuncia o slash command /trackfw:barrier na tabela',
+        )
+
     def test_generate_claude_md_preserves_pre_existing_sections(self):
         from trackfw.generators.init_gen import generate_claude_md
 
@@ -577,7 +583,25 @@ class TestGenerateClaudeCommands(unittest.TestCase):
         self.assertIn('Passo 3 — Arquitetura em Camadas', content)
         self.assertIn('Passo 4 — Gerar o ADR de Stack', content)
         self.assertIn('Passo 5 — Próximos Passos', content)
-        self.assertIn('/trackfw:architect', content)
+
+    def test_generate_claude_commands_creates_barrier_md(self):
+        from trackfw.generators.init_gen import generate_claude_commands
+
+        generate_claude_commands(self.tmp)
+
+        cmd_dir = os.path.join(self.tmp, '.claude', 'commands', 'trackfw')
+        barrier_file = os.path.join(cmd_dir, 'barrier.md')
+        self.assertTrue(os.path.isfile(barrier_file), 'barrier.md não foi criado')
+
+        with open(barrier_file, encoding='utf-8') as f:
+            content = f.read()
+
+        self.assertIn('trackfw_architect', content)
+        self.assertIn('trackfw barrier <roadmap> --wave <n> --json', content)
+        self.assertIn('Todos os MLs da wave concluídos e marcados', content)
+        self.assertIn('Agente code-quality reportou', content)
+        self.assertIn('Agente security reportou', content)
+        self.assertIn('Resultado registrado antes de liberar a próxima wave', content)
 
     def test_slash_roadmap_command_requires_canonical_frontmatter(self):
         from trackfw.generators.init_gen import generate_claude_commands
@@ -615,7 +639,7 @@ class TestGenerateClaudeCommands(unittest.TestCase):
         cmd_dir = os.path.join(self.tmp, '.claude', 'commands', 'trackfw')
         expected_commands = [
             'adr.md', 'req.md', 'validate.md', 'status.md',
-            'move.md', 'roadmap.md', 'implement.md', 'architect.md'
+            'move.md', 'roadmap.md', 'implement.md', 'architect.md', 'barrier.md'
         ]
         for cmd in expected_commands:
             cmd_path = os.path.join(cmd_dir, cmd)

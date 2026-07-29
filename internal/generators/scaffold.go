@@ -88,6 +88,21 @@ func Scaffold(cfg Config) error {
 		fmt.Println("  ✓ pom.xml")
 	}
 
+	// Agent hooks (attention signal): injected at init time so a freshly
+	// scaffolded project already carries them, matching npm's
+	// generators/init.js:scaffold (which calls injectHooksDetected(root) as
+	// its last step). Non-fatal like the same call in trackfw update
+	// (internal/generators/update.go) — a hook-injection failure must not
+	// abort project scaffolding. Ported to close the cross-runtime `init`
+	// parity gap surfaced while proving `trackfw update` idempotency
+	// byte-identical across Go/Node.js/Python (ML-6H, docs/cli-parity.md
+	// "`trackfw update` vs `trackfw update harness`").
+	if cwd, err := os.Getwd(); err == nil {
+		if err := InjectHooksDetected(cwd); err != nil {
+			fmt.Printf("  ⚠ agent hooks: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
@@ -119,17 +134,36 @@ func installGlobalSkillInner(force bool) error {
 		return fmt.Errorf("localizando home dir: %w", err)
 	}
 
-	skillDir := filepath.Join(home, ".claude", "skills", "trackfw")
+	skillPath := GlobalClaudeSkillPath(home)
+	skillDir := filepath.Dir(skillPath)
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		return fmt.Errorf("creating %s: %w", skillDir, err)
 	}
 
-	skillPath := filepath.Join(skillDir, "SKILL.md")
 	if _, err := os.Stat(skillPath); err == nil && !force {
 		fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md (já existe — não sobrescrito)\n")
 		return nil
 	}
 
+	if err := os.WriteFile(skillPath, GlobalClaudeSkillContent(), 0644); err != nil {
+		return fmt.Errorf("writing SKILL.md: %w", err)
+	}
+	fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md\n")
+	return nil
+}
+
+// GlobalClaudeSkillPath resolves the path of the historical, global-scope
+// Claude compatibility skill given a home directory. It is not part of the
+// catalog-managed integrations manifest — a legacy artifact predating that
+// mechanism — so its lifecycle (existence/content) is tracked by direct
+// inspection rather than through internal/integrations.
+func GlobalClaudeSkillPath(home string) string {
+	return filepath.Join(home, ".claude", "skills", "trackfw", "SKILL.md")
+}
+
+// GlobalClaudeSkillContent returns the current canonical content of the
+// historical global Claude compatibility skill.
+func GlobalClaudeSkillContent() []byte {
 	content := `---
 name: trackfw
 description: "trackfw — Governed Software Delivery: ADR → REQ → ROADMAP → kanban"
@@ -170,12 +204,7 @@ A cadeia obrigatória é: **ADR → REQ → ROADMAP → backlog/wip/blocked/done
 7. Roadmap        → marcar ML como ✅ Concluído
 ` + "```" + `
 `
-
-	if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("writing SKILL.md: %w", err)
-	}
-	fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md\n")
-	return nil
+	return []byte(content)
 }
 
 // ForceGenerateClaudeCommands re-gera todos os slash commands, sobrescrevendo arquivos existentes.
@@ -248,7 +277,7 @@ O formato esperado é: ` + "`<nome-do-roadmap> <estado>`" + `
 
 Estados válidos: ` + "`backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`" + `
 
-Exemplo: ` + "`/trackfw:move meu-roadmap wip`" + `
+Exemplo: ` + "`/trackfw:move meu-roadmap analyzing`" + `
 
 Se o comando falhar com ` + "`trackfw: command not found`" + ` ou similar, informe ao usuário:
 trackfw não está instalado. Instale com:
@@ -325,6 +354,50 @@ trackfw não está instalado. Instale com:
 5. **Confirmar**
    Informe o caminho do arquivo criado e um resumo das Waves e total de MLs gerados.
 `,
+
+		"barrier.md": "Você é o `trackfw_architect`, a única autoridade Git deste projeto. Este comando executa o checklist operacional de liberação de uma wave — nenhum outro agente commita, faz push ou libera a próxima wave.\n" +
+			"\n" +
+			"## Argumento\n" +
+			"\n" +
+			"`$ARGUMENTS` no formato `<roadmap> <wave>`. Se ausente ou incompleto, pergunte ao usuário qual roadmap (em `docs/roadmaps/wip/`) e qual número de wave validar.\n" +
+			"\n" +
+			"---\n" +
+			"\n" +
+			"## Núcleo determinístico\n" +
+			"\n" +
+			"Execute primeiro:\n" +
+			"```bash\n" +
+			"trackfw barrier <roadmap> --wave <n> --json\n" +
+			"```\n" +
+			"\n" +
+			"Este comando é **necessário mas não suficiente**. Ele verifica MLs concluídos, evidências e `trackfw validate`, mas não substitui as inspeções especializadas nem a auditoria de diff abaixo — nenhuma delas é avaliada pelo binário. Consulte a seção `trackfw barrier` em `docs/cli-parity.md` para o contrato completo (estados, exit codes, saída JSON).\n" +
+			"\n" +
+			"Se o comando retornar exit code não-zero (`blocked` ou erro de resolução): pare, reporte a falha ao usuário e não prossiga no checklist até que a wave passe.\n" +
+			"\n" +
+			"---\n" +
+			"\n" +
+			"## Definição de pronto da barrier — checklist completo\n" +
+			"\n" +
+			"Antes de liberar a próxima wave, confirme cada item com evidência concreta — não presuma:\n" +
+			"\n" +
+			"1. **Todos os MLs da wave concluídos e marcados** — cada ML da wave está com `**Status:** ✅ Concluído` no roadmap.\n" +
+			"2. **Testes unitários e E2E aplicáveis executados** — rode os comandos de validação declarados em cada ML.\n" +
+			"3. **Build aplicável sem erros** — rode o comando de build do(s) workspace(s) afetado(s).\n" +
+			"4. **Cada critério de aceite inspecionado com evidência** — leia os arquivos modificados e confirme contra os critérios listados, não apenas contra os testes.\n" +
+			"5. **Agente code-quality reportou conformidade, performance, robustez e clareza** — invoque o agente `code-quality` quando a mudança introduzir lógica nova, duplicação relevante ou risco de manutenibilidade.\n" +
+			"6. **Agente security reportou SAST, privilégios, controle de acesso e camadas aplicáveis** — invoque o agente `security` quando a mudança tocar autenticação, segredos, entrada externa ou permissões.\n" +
+			"7. **Gates pré-commit declarados pelo projeto executados** — rode os hooks/gates configurados (lint, format, testes de contrato).\n" +
+			"8. **`trackfw validate --json` aprovado** — execute e confirme zero violações.\n" +
+			"9. **Diff auditado contra o escopo** — revise o diff completo; confirme que não há alterações de agentes concorrentes nem arquivos fora do escopo do ML (ex: `docs/adr/`, `docs/req/`, `docs/roadmaps/` quando não autorizado ao especialista).\n" +
+			"10. **Resultado registrado antes de liberar a próxima wave** — anote no roadmap ou na resposta ao usuário que a wave passou, com a evidência de cada item acima.\n" +
+			"\n" +
+			"Se qualquer item falhar: bloqueie a próxima wave, identifique o item e o agente responsável, e despache um microlote corretivo. Só repita o checklist depois que o corretivo for concluído.\n" +
+			"\n" +
+			"---\n" +
+			"\n" +
+			"## Autoridade Git\n" +
+			"\n" +
+			"Somente o `trackfw_architect` cria branch, audita diff, commita e faz push. Especialistas entregam trabalho sem commit — cabe a este papel revisar, commitar e sugerir a abertura de PR/MR (sem abrir automaticamente sem autorização do usuário).\n",
 
 		"architect.md": `Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.
 

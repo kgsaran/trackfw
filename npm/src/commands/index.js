@@ -31,6 +31,7 @@ function createProgram() {
   program.addCommand(require('./skills'))
   program.addCommand(require('./note'))
   program.addCommand(require('./ship'))
+  program.addCommand(require('./barrier'))
 
   const { createServeCommand } = require('./serve')
   program.addCommand(createServeCommand())
