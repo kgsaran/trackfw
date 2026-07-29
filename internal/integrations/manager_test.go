@@ -403,3 +403,198 @@ func readFile(t *testing.T, filename string) string {
 	}
 	return string(data)
 }
+
+// TestManagerInstallSkipsOwnedOutdatedPreservesBytes verifies the contract
+// from docs/cli-parity.md §"install sobre artefato gerenciado desatualizado":
+//
+//  1. Install v1 of an artifact → artifact is owned+current in manifest.
+//  2. Attempt Install of v2 (same claim, new content/version) in a batch that
+//     also contains a second artifact at a different destination.
+//  3. The skipped artifact's bytes are preserved (v1content), the second
+//     artifact is applied normally, and Install returns nil.
+//  4. OnSkip is called exactly once with a tilde-abbreviated destination and
+//     a warning line byte-identical to the pinned contract string.
+//  5. OnSkip=nil does not panic.
+func TestManagerInstallSkipsOwnedOutdatedPreservesBytes(t *testing.T) {
+	manager, project, home := testManager(t)
+
+	// --- global scope: install v1 → outdated+owned skip scenario ---
+	planV1 := PlannedArtifact{
+		Claim:          Claim{Target: "gemini", Surface: "cli", Scope: "global", Kind: KindAgents, Item: "architect"},
+		Destination:    "~/.gemini/agents/trackfw-architect.md",
+		Content:        []byte("v1content"),
+		CatalogVersion: "v1",
+		SupportLevel:   "native",
+	}
+	// Install v1: file is written, claim is recorded in manifest.
+	if err := manager.Install([]PlannedArtifact{planV1}, false); err != nil {
+		t.Fatalf("Install v1 failed: %v", err)
+	}
+	globalDest := filepath.Join(home, ".gemini/agents/trackfw-architect.md")
+	if got := readFile(t, globalDest); got != "v1content" {
+		t.Fatalf("after Install v1, file = %q, want %q", got, "v1content")
+	}
+
+	// planV2: new version, different content — file is now outdated+owned.
+	planV2 := PlannedArtifact{
+		Claim:          planV1.Claim,
+		Destination:    planV1.Destination,
+		Content:        []byte("v2content"),
+		CatalogVersion: "v2",
+		SupportLevel:   "native",
+		// v1content in LegacyHashes matches the handoff description; for a
+		// managed artifact inspectResolved does not use LegacyHashes, so this
+		// is informational only and harmless.
+		LegacyHashes: []string{contentHash([]byte("v1content"))},
+	}
+
+	// Second artifact in the same batch: project-scoped, different destination.
+	secondPlan := PlannedArtifact{
+		Claim:          Claim{Target: "claude", Surface: "code", Scope: "project", Kind: KindAgents, Item: "backend"},
+		Destination:    ".claude/agents/trackfw-backend.md",
+		Content:        []byte("backend-content"),
+		CatalogVersion: "v1",
+		SupportLevel:   "native",
+	}
+
+	var skipDestinations []string
+	var skipReasons []string
+	manager.OnSkip = func(destination, reason string) {
+		skipDestinations = append(skipDestinations, destination)
+		skipReasons = append(skipReasons, reason)
+	}
+
+	if err := manager.Install([]PlannedArtifact{planV2, secondPlan}, false); err != nil {
+		t.Fatalf("Install batch failed: %v", err)
+	}
+
+	// (a) bytes of skipped artifact preserved.
+	if got := readFile(t, globalDest); got != "v1content" {
+		t.Fatalf("skipped artifact bytes changed: got %q, want %q", got, "v1content")
+	}
+
+	// (b) second artifact applied normally.
+	secondDest := filepath.Join(project, ".claude/agents/trackfw-backend.md")
+	if got := readFile(t, secondDest); got != "backend-content" {
+		t.Fatalf("second artifact = %q, want %q", got, "backend-content")
+	}
+
+	// (c) OnSkip called exactly once.
+	if len(skipDestinations) != 1 {
+		t.Fatalf("OnSkip called %d times, want 1; destinations=%v", len(skipDestinations), skipDestinations)
+	}
+
+	// (c) destination is tilde-abbreviated.
+	wantDest := "~/.gemini/agents/trackfw-architect.md"
+	if skipDestinations[0] != wantDest {
+		t.Fatalf("OnSkip destination = %q, want %q", skipDestinations[0], wantDest)
+	}
+
+	// (c) reason is byte-identical to the pinned contract string (global scope →
+	// 'trackfw update harness').
+	wantReason := "warning: skipping outdated artifact ~/.gemini/agents/trackfw-architect.md; run 'trackfw update harness' to refresh it"
+	if skipReasons[0] != wantReason {
+		t.Fatalf("OnSkip reason = %q\nwant            %q", skipReasons[0], wantReason)
+	}
+
+	// (d) second artifact absent from skipped destinations.
+	for _, d := range skipDestinations {
+		if d == secondPlan.Destination || strings.HasSuffix(d, "trackfw-backend.md") {
+			t.Fatalf("second artifact should not have been skipped: %v", skipDestinations)
+		}
+	}
+
+	// --- project scope: verify tilde abbreviation and remediation command ---
+	manager2, project2, home2 := testManager(t)
+	_ = home2
+	projectPlanV1 := PlannedArtifact{
+		Claim:          Claim{Target: "claude", Surface: "code", Scope: "project", Kind: KindAgents, Item: "architect"},
+		Destination:    ".claude/agents/trackfw-architect.md",
+		Content:        []byte("p-v1content"),
+		CatalogVersion: "v1",
+		SupportLevel:   "native",
+	}
+	if err := manager2.Install([]PlannedArtifact{projectPlanV1}, false); err != nil {
+		t.Fatalf("project Install v1 failed: %v", err)
+	}
+	projectPlanV2 := projectPlanV1
+	projectPlanV2.Content = []byte("p-v2content")
+	projectPlanV2.CatalogVersion = "v2"
+
+	var projectSkipDests []string
+	var projectSkipReasons []string
+	manager2.OnSkip = func(destination, reason string) {
+		projectSkipDests = append(projectSkipDests, destination)
+		projectSkipReasons = append(projectSkipReasons, reason)
+	}
+	if err := manager2.Install([]PlannedArtifact{projectPlanV2}, false); err != nil {
+		t.Fatalf("project Install v2 failed: %v", err)
+	}
+	if len(projectSkipDests) != 1 {
+		t.Fatalf("project OnSkip called %d times, want 1", len(projectSkipDests))
+	}
+	wantProjectDest := ".claude/agents/trackfw-architect.md"
+	if projectSkipDests[0] != wantProjectDest {
+		t.Fatalf("project OnSkip destination = %q, want %q", projectSkipDests[0], wantProjectDest)
+	}
+	wantProjectReason := "warning: skipping outdated artifact .claude/agents/trackfw-architect.md; run 'trackfw update' to refresh it"
+	if projectSkipReasons[0] != wantProjectReason {
+		t.Fatalf("project OnSkip reason = %q\nwant               %q", projectSkipReasons[0], wantProjectReason)
+	}
+	projectArtifact := filepath.Join(project2, ".claude/agents/trackfw-architect.md")
+	if got := readFile(t, projectArtifact); got != "p-v1content" {
+		t.Fatalf("project skipped artifact bytes changed: got %q, want %q", got, "p-v1content")
+	}
+}
+
+// TestManagerInstallSkipOnSkipNilNoPanic verifies that Install does not panic
+// when Manager.OnSkip is nil and an artifact is skipped (outdated+owned).
+func TestManagerInstallSkipOnSkipNilNoPanic(t *testing.T) {
+	manager, _, _ := testManager(t)
+	planV1 := PlannedArtifact{
+		Claim:          Claim{Target: "claude", Surface: "code", Scope: "project", Kind: KindAgents, Item: "architect"},
+		Destination:    ".claude/agents/trackfw-architect.md",
+		Content:        []byte("v1"),
+		CatalogVersion: "v1",
+		SupportLevel:   "native",
+	}
+	if err := manager.Install([]PlannedArtifact{planV1}, false); err != nil {
+		t.Fatal(err)
+	}
+	planV2 := planV1
+	planV2.Content = []byte("v2")
+	planV2.CatalogVersion = "v2"
+	manager.OnSkip = nil // explicitly nil — must not panic
+	if err := manager.Install([]PlannedArtifact{planV2}, false); err != nil {
+		t.Fatalf("Install with nil OnSkip failed: %v", err)
+	}
+}
+
+// TestManagerInstallOwnedModifiedRemainsError verifies that an owned artifact
+// with user-modified bytes still returns an error on Install without --force.
+// This guards against accidentally simetrizing the Modified and Outdated cases
+// in preflight (the contract explicitly requires them to be asymmetric).
+func TestManagerInstallOwnedModifiedRemainsError(t *testing.T) {
+	manager, project, _ := testManager(t)
+	plan := testPlan("project", ".claude/agents/trackfw-architect.md", "v1", "managed")
+	if err := manager.Install([]PlannedArtifact{plan}, false); err != nil {
+		t.Fatal(err)
+	}
+	filename := filepath.Join(project, plan.Destination)
+	// Overwrite with user bytes — artifact is now owned+modified.
+	if err := os.WriteFile(filename, []byte("user-modified"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Install without --force must error.
+	if err := manager.Install([]PlannedArtifact{plan}, false); err == nil {
+		t.Fatal("Install() should error on owned+modified artifact without --force")
+	}
+	// Bytes must be preserved.
+	if got := readFile(t, filename); got != "user-modified" {
+		t.Fatalf("modified bytes overwritten: got %q", got)
+	}
+	// Install with --force must succeed.
+	if err := manager.Install([]PlannedArtifact{plan}, true); err != nil {
+		t.Fatalf("Install(force) on owned+modified failed: %v", err)
+	}
+}

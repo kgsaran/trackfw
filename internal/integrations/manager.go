@@ -41,6 +41,49 @@ type Inspection struct {
 type Manager struct {
 	ProjectRoot string
 	HomeDir     string
+
+	// OnSkip is called once per artifact skipped during Install when the
+	// artifact is outdated+owned and --force is not set. destination is the
+	// tilde-abbreviated path; reason is the full warning line ready to print
+	// to stderr. Nil → no-op. Called in the order of resolved items; never
+	// called twice for the same destination (deduped inside mutate).
+	OnSkip func(destination, reason string)
+}
+
+// tildeAbbrev converts an absolute destination path to a tilde-abbreviated
+// display path.
+//
+// There is no pre-existing Go helper for this in the codebase: update.go
+// uses hardcoded "~/.…" string constants, and integrations.GlobalGroupPath
+// derives tilde paths by truncating catalog *template* strings — neither can
+// abbreviate an arbitrary resolved absolute path. This helper is introduced
+// for ML-2A; the Node.js equivalent is tildeify in
+// npm/src/lib/update-engine.js (read for byte-parity reference).
+//
+// Both operands are run through filepath.Clean before comparison, which
+// strips any redundant separators (including the ML-6H double-slash that
+// arises when $HOME or a test tempdir already ends with a path separator).
+// filepath.Clean never adds a trailing separator to a non-root path, so the
+// "startsWith(normalizedHome + sep)" check is safe without a separate
+// trailing-sep strip.
+func (m Manager) tildeAbbrev(destination string) string {
+	cleanDest := filepath.Clean(destination)
+	if m.HomeDir != "" {
+		cleanHome := filepath.Clean(m.HomeDir)
+		if cleanDest == cleanHome {
+			return "~"
+		}
+		if strings.HasPrefix(cleanDest, cleanHome+string(filepath.Separator)) {
+			return "~" + cleanDest[len(cleanHome):]
+		}
+	}
+	if m.ProjectRoot != "" {
+		cleanRoot := filepath.Clean(m.ProjectRoot)
+		if strings.HasPrefix(cleanDest, cleanRoot+string(filepath.Separator)) {
+			return cleanDest[len(cleanRoot)+1:]
+		}
+	}
+	return destination
 }
 
 func (m Manager) Inspect(plan PlannedArtifact) (Inspection, error) {
@@ -119,15 +162,43 @@ func (m Manager) mutate(plans []PlannedArtifact, force bool, operation mutation)
 
 	// Preflight every operation before touching disk. This also catches duplicate
 	// destinations with incompatible desired content.
+	//
+	// Items that should be skipped (outdated+owned Install without --force) are
+	// collected in skippedDests for dedup, separated into `active`, and handled
+	// via OnSkip. They are excluded from the snapshot and applyMutation phases so
+	// that (a) their bytes are never overwritten and (b) their manifest entry is
+	// not updated to the new desired hash.
 	desired := make(map[string]string)
+	active := make([]resolvedPlan, 0, len(resolved))
+	skippedDests := make(map[string]struct{})
 	for _, item := range resolved {
 		hash := contentHash(item.plan.Content)
 		if prior, ok := desired[item.destination]; ok && prior != hash && operation != mutationUninstall {
 			return fmt.Errorf("conflicting content planned for %q", item.destination)
 		}
 		desired[item.destination] = hash
-		if err := preflight(item, manifests[item.manifest], force, operation); err != nil {
+		skip, err := preflight(item, manifests[item.manifest], force, operation)
+		if err != nil {
 			return err
+		}
+		if skip {
+			// Fire OnSkip once per destination (contract: "nunca duas vezes para
+			// o mesmo destino"). Filtering by destination rather than by item
+			// preserves the adoption path for a second claim that is not yet owned.
+			if _, already := skippedDests[item.destination]; !already {
+				skippedDests[item.destination] = struct{}{}
+				if m.OnSkip != nil {
+					abbrev := m.tildeAbbrev(item.destination)
+					remediation := "trackfw update"
+					if item.plan.Claim.Scope == "global" {
+						remediation = "trackfw update harness"
+					}
+					reason := fmt.Sprintf("warning: skipping outdated artifact %s; run '%s' to refresh it", abbrev, remediation)
+					m.OnSkip(abbrev, reason)
+				}
+			}
+		} else {
+			active = append(active, item)
 		}
 	}
 
@@ -154,7 +225,7 @@ func (m Manager) mutate(plans []PlannedArtifact, force bool, operation mutation)
 		snapshots[filename] = fileSnapshot{exists: true, data: data, mode: info.Mode().Perm()}
 		return nil
 	}
-	for _, item := range resolved {
+	for _, item := range active {
 		if err := remember(item.destination); err != nil {
 			return err
 		}
@@ -179,7 +250,7 @@ func (m Manager) mutate(plans []PlannedArtifact, force bool, operation mutation)
 		}
 	}()
 
-	for _, item := range resolved {
+	for _, item := range active {
 		manifest := manifests[item.manifest]
 		if err := applyMutation(item, &manifest, force, operation); err != nil {
 			return err
@@ -200,44 +271,57 @@ func (m Manager) mutate(plans []PlannedArtifact, force bool, operation mutation)
 	return nil
 }
 
-func preflight(item resolvedPlan, manifest Manifest, force bool, operation mutation) error {
+// preflight validates the planned mutation for one artifact. It returns
+// (skip=true, nil) when the artifact should be silently skipped (Install on
+// an outdated+owned artifact without --force — bytes belong to a previous
+// trackfw template, not to the user, so skipping is safe and non-destructive).
+// It returns (false, err) for hard failures, and (false, nil) when the
+// mutation may proceed normally.
+//
+// The Modified case in mutationInstall remains a hard error: bytes modified
+// by the user must not be silently ignored. The two cases are intentionally
+// asymmetric — do not simetrize them.
+func preflight(item resolvedPlan, manifest Manifest, force bool, operation mutation) (skip bool, err error) {
 	if operation != mutationUninstall {
 		if err := detectNameCollision(item, force); err != nil {
-			return err
+			return false, err
 		}
 	}
 	inspection, err := inspectResolved(item.plan, item.destination, manifest)
 	if err != nil {
-		return err
+		return false, err
 	}
 	owned := claimOwned(manifest.Artifacts[item.destination], item.plan.Claim)
 	switch operation {
 	case mutationInstall:
 		if inspection.State == StateModified && !force {
-			return fmt.Errorf("artifact %q is modified; use force to replace it", item.destination)
+			return false, fmt.Errorf("artifact %q is modified; use force to replace it", item.destination)
 		}
 		if inspection.State == StateOutdated && owned && !force {
-			return fmt.Errorf("artifact %q is outdated; use update", item.destination)
+			// Skip: the artifact is a previous trackfw-owned template. Bytes are
+			// not the user's, so skipping is safe. The caller is notified via
+			// Manager.OnSkip and the rest of the batch continues.
+			return true, nil
 		}
 	case mutationUpdate:
 		// Force only authorizes replacing a modified artifact whose ownership is
 		// already proven. Unknown unmanaged bytes must go through install --force;
 		// update may adopt only the desired or a declared legacy template.
 		if !owned && inspection.State == StateModified {
-			return fmt.Errorf("unmanaged artifact %q does not match a trackfw template", item.destination)
+			return false, fmt.Errorf("unmanaged artifact %q does not match a trackfw template", item.destination)
 		}
 		if inspection.State == StateModified && !force {
-			return fmt.Errorf("artifact %q is modified; use force to update it", item.destination)
+			return false, fmt.Errorf("artifact %q is modified; use force to update it", item.destination)
 		}
 	case mutationUninstall:
 		if !owned {
-			return nil
+			return false, nil
 		}
 		if inspection.State == StateModified && !force {
-			return fmt.Errorf("artifact %q is modified; use force to remove it", item.destination)
+			return false, fmt.Errorf("artifact %q is modified; use force to remove it", item.destination)
 		}
 	}
-	return nil
+	return false, nil
 }
 
 // detectNameCollision guards against two distinct managed agent artifacts

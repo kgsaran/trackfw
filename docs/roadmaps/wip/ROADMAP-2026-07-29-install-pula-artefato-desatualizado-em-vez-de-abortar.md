@@ -87,7 +87,7 @@ roadmap da barrier. Os MLs 2A/2B/2C implementam contra ele e não o alteram.
 **Gates da wave (cada ML roda o seu):** ver "Comandos de validação" por ML.
 
 ### ML-2A — Implementar o skip no Go
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
 **Arquivos afetados:**
 - `internal/integrations/manager.go` — `preflight` (linha ~219), `mutate` (linha ~102), struct `Manager`
@@ -112,12 +112,12 @@ roadmap da barrier. Os MLs 2A/2B/2C implementam contra ele e não o alteram.
    tilde-abreviado, (d) um segundo artefato no mesmo lote foi aplicado normalmente.
 
 **Critérios de aceite:**
-- [ ] `install` em `outdated`+`owned` não retorna erro e preserva os bytes.
-- [ ] Demais itens do lote são aplicados; artefato pulado ausente do manifest write.
-- [ ] `modified` continua erro sem `--force` (teste existente ou novo comprova).
-- [ ] `OnSkip` nil não causa panic.
-- [ ] Aviso em stderr, byte-idêntico ao contrato, caminho tilde-abreviado.
-- [ ] `go build ./...`, `go test ./...` e `go vet ./...` passam.
+- [x] `install` em `outdated`+`owned` não retorna erro e preserva os bytes.
+- [x] Demais itens do lote são aplicados; artefato pulado ausente do manifest write.
+- [x] `modified` continua erro sem `--force` (teste existente ou novo comprova).
+- [x] `OnSkip` nil não causa panic.
+- [x] Aviso em stderr, byte-idêntico ao contrato, caminho tilde-abreviado.
+- [x] `go build ./...`, `go test ./...` e `go vet ./...` passam.
 
 **Comandos de validação:**
 ```bash

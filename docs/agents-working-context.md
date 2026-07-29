@@ -68,6 +68,23 @@ em `docs/cli-parity.md` (seção "install sobre artefato gerenciado desatualizad
 - `internal/commands/init.go` — liga `OnSkip` em `installAITools`
 - `internal/commands/integrations_flags.go` — liga `OnSkip` em `runIntegrationsOperation`
 
+**Status:** CONCLUÍDO
+
+**Entregue:**
+- `Manager.OnSkip func(destination, reason string)` adicionado à struct.
+- `tildeAbbrev(destination)` implementado na Manager (sem helper Go pré-existente — contrato defect reportado; Node.js tildeify lido para paridade byte-a-byte).
+- `preflight` agora retorna `(skip bool, err error)`: caso `StateOutdated && owned && !force` de `mutationInstall` sinaliza skip em vez de erro; caso `StateModified` permanece erro.
+- `mutate` filtra itens pulados de `resolved` antes das fases de snapshot e `applyMutation`. `OnSkip` chamado uma vez por destino (deduplicado); artefato pulado não entra no rollback nem no manifest write.
+- `OnSkip` ligado em `init.go:installAITools` e `integrations_flags.go` imprimindo em stderr.
+- Três novos testes: (1) skip batch com dois escopos verificando string byte-idêntica ao contrato; (2) OnSkip nil sem panic; (3) owned+modified continua erro (guarda contra simetrização).
+
+**Validação:**
+- `go build ./...` → sem erros
+- `go test ./...` → 15/15 pacotes OK
+- `go vet ./...` → sem erros
+
+**Divergência reportada (contrato defect):** o contrato diz "reutilize o helper de tilde já existente em `internal/generators/update.go`", mas nenhum helper Go de tilde-abbreviação existe no codebase (update.go usa constantes hardcoded; `GlobalGroupPath` trunca templates de catálogo). O `tildeify` existe apenas no Node.js (`npm/src/lib/update-engine.js`). A lógica foi reimplementada nativamente em Go com o mesmo cuidado do ML-6H (strip de trailing separator via `filepath.Clean`). Reportado como defect do contrato, não como bug de implementação.
+
 ---
 
 ## Sessão 2026-07-29 — Apolo (ML-2B — skip de artefato outdated+owned no Node.js)

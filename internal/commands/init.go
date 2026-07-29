@@ -428,6 +428,9 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 		fmt.Printf("  %s\n", plan.Destination)
 	}
 	manager := integrations.Manager{ProjectRoot: cwd, HomeDir: home}
+	manager.OnSkip = func(_ string, reason string) {
+		fmt.Fprintln(os.Stderr, reason)
+	}
 	if err := manager.Install(plans, false); err != nil {
 		return fmt.Errorf("instalando AI tools: %w", err)
 	}

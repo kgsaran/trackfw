@@ -208,6 +208,11 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", plan.Destination)
 		}
 	}
+	if operation == "install" {
+		manager.OnSkip = func(_ string, reason string) {
+			fmt.Fprintln(os.Stderr, reason)
+		}
+	}
 	switch operation {
 	case "install":
 		err = manager.Install(plans, opts.force)
