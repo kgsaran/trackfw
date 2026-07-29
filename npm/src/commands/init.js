@@ -5,6 +5,7 @@ const identityStore = require('../identity')
 const identityWizard = require('./identity-wizard')
 const { resolveIdentityPreset, identityFileExists } = identityWizard
 const { resolveScope } = require('./integrations')
+const { tildeify } = require('../lib/update-engine')
 
 const cmd = new Command('init')
 cmd.description(t('init.description'))
@@ -61,9 +62,14 @@ cmd.action(async (options, command) => {
     const supported = new Set(['claude', 'codex', 'gemini', 'antigravity', 'cursor', 'copilot', 'windsurf', 'amazonq', 'kiro'])
     // Sem TTY, o escopo nunca é perguntado: default `global` (ADR D1/D4).
     const scope = await resolveScope({}, { interactive: false })
+    const makeOnSkip = () => (destination, _reason) => {
+      const tilde = tildeify(home, destination)
+      const cmd = tilde.startsWith('~/') ? 'trackfw update harness' : 'trackfw update'
+      process.stderr.write(`warning: skipping outdated artifact ${tilde}; run '${cmd}' to refresh it\n`)
+    }
     for (const tool of aiTools) {
       if (!supported.has(tool)) throw new Error(`Unsupported AI tool: ${tool}`)
-      await generators.installIntegrationTarget(tool, process.cwd(), scope)
+      await generators.installIntegrationTarget(tool, process.cwd(), scope, { onSkip: makeOnSkip() })
     }
     console.log(`\n${t('init.success')}`)
     require('../generators/init').printArchitectNextSteps(process.cwd())
@@ -277,7 +283,14 @@ cmd.action(async (options, command) => {
   const cfg = { projectName, projectType, frontend, backend, backendFramework, pkgManager, hooks, ci, forge: forgeValue || '', requireReqInCommit }
   await generators.scaffold(cfg)
 
-  for (const tool of (aiTools || [])) await generators.installIntegrationTarget(tool, process.cwd(), scope)
+  for (const tool of (aiTools || [])) {
+    const onSkip = (destination, _reason) => {
+      const tilde = tildeify(home, destination)
+      const remCmd = tilde.startsWith('~/') ? 'trackfw update harness' : 'trackfw update'
+      process.stderr.write(`warning: skipping outdated artifact ${tilde}; run '${remCmd}' to refresh it\n`)
+    }
+    await generators.installIntegrationTarget(tool, process.cwd(), scope, { onSkip })
+  }
 
   console.log(`\n${t('init.success')}`)
   require('../generators/init').printArchitectNextSteps(process.cwd())

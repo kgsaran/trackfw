@@ -125,12 +125,14 @@ go build ./... && go test ./... && go vet ./...
 ```
 
 ### ML-2B — Implementar o skip no Node.js
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
 **Arquivos afetados:**
 - `npm/src/integrations/manager.js` — `preflight` (linha ~149), `mutate` (linha ~125), construtor
-- `npm/src/commands/init.js` — apenas ligar `onSkip`
-- `npm/src/commands/integrations.js` — apenas ligar `onSkip`
+- `npm/src/integrations/index.js` — `execute()` repassa `options.onSkip` ao construtor do manager
+- `npm/src/generators/init.js` — `installIntegrationTarget` aceita e repassa `{ onSkip }`
+- `npm/src/commands/init.js` — ligar `onSkip` (modos TTY e não-TTY)
+- `npm/src/commands/integrations.js` — ligar `onSkip`
 - `npm/tests/agents-skills.test.js` — **inverter** a asserção da linha 193
 
 **Ações:**
@@ -152,11 +154,11 @@ go build ./... && go test ./... && go vet ./...
    para `$HOME` com barra dupla no ML-6H; reimplementar reintroduz o bug).
 
 **Critérios de aceite:**
-- [ ] Comportamento, estados e exit codes equivalentes ao Go.
-- [ ] Linha 193 do teste invertida; demais asserções do teste preservadas.
-- [ ] `onSkip` ausente não causa erro.
-- [ ] Aviso em stderr byte-idêntico ao Go.
-- [ ] `cd npm && npm test` passa.
+- [x] Comportamento, estados e exit codes equivalentes ao Go.
+- [x] Linha 193 do teste invertida; demais asserções do teste preservadas.
+- [x] `onSkip` ausente não causa erro.
+- [x] Aviso em stderr byte-idêntico ao Go.
+- [x] `cd npm && npm test` passa.
 
 **Comandos de validação:**
 ```bash

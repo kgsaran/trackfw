@@ -1217,10 +1217,10 @@ async function installAmazonQ(cwd = process.cwd()) {
  * resolved (ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-
  * skills, D4).
  */
-async function installIntegrationTarget(target, cwd = process.cwd(), scope = 'project') {
+async function installIntegrationTarget(target, cwd = process.cwd(), scope = 'project', { onSkip } = {}) {
   const { execute, buildPlans } = require('../integrations')
   const roots = { projectRoot: cwd }
-  const options = { targets: [target], scope }
+  const options = { targets: [target], scope, onSkip }
   // D5 — transparency: print resolved destinations before writing anything.
   // buildPlans has no side effects, so it is safe to call here purely to
   // enumerate destinations; the actual write happens below via execute().

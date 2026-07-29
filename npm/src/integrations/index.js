@@ -101,7 +101,7 @@ function execute(kind, operation, options = {}, roots = {}) {
   const homeRoot = roots.homeRoot || os.homedir()
   const identityConfig = options.identity !== undefined ? options.identity : identityStore.load(homeRoot)
   const plans = buildPlans(kind, { ...options, identity: identityConfig })
-  const manager = new IntegrationManager(roots)
+  const manager = new IntegrationManager(roots, { onSkip: options.onSkip })
   let statuses
   if (operation === 'list') statuses = manager.inspect(plans)
   else if (operation === 'install') statuses = manager.install(plans, { force: options.force })

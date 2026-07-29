@@ -6,6 +6,7 @@ const { catalog, execute, parseSurfaces, buildPlans } = require('../integrations
 const identityStore = require('../identity')
 const identityWizard = require('./identity-wizard')
 const { t } = require('../i18n')
+const { tildeify } = require('../lib/update-engine')
 
 const csv = value => String(value).split(',').map(entry => entry.trim()).filter(Boolean)
 const collect = (value, previous) => previous.concat(value)
@@ -182,6 +183,18 @@ function createLifecycleCommand(kind) {
       // D5: caminhos de destino impressos antes da gravação, apenas para
       // operações de mutação (install/update/uninstall) e fora de --json.
       if (mutation) printResolvedDestinations(kind, options)
+
+      // Ligar onSkip: aviso em stderr por artefato outdated+owned pulado pelo
+      // preflight de install (contrato: docs/cli-parity.md, seção "install
+      // sobre artefato gerenciado desatualizado — skip, não erro fatal").
+      if (mutation) {
+        const homeRoot = os.homedir()
+        options.onSkip = (destination, _reason) => {
+          const tilde = tildeify(homeRoot, destination)
+          const cmd = tilde.startsWith('~/') ? 'trackfw update harness' : 'trackfw update'
+          process.stderr.write(`warning: skipping outdated artifact ${tilde}; run '${cmd}' to refresh it\n`)
+        }
+      }
 
       const output = execute(kind, operation, options)
       console.log(options.json ? JSON.stringify(output) : human(output))

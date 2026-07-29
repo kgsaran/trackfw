@@ -178,7 +178,7 @@ test('install force replaces unknown unmanaged content while update force never 
   assert.throws(() => new IntegrationManager(dirs2).update([plan], { force: true }), /unmanaged/i)
 })
 
-test('unmanaged desired is current, legacy is outdated, and owned outdated requires update', () => {
+test('unmanaged desired is current, legacy is outdated, and owned outdated skips install', () => {
   const dirs = roots()
   const [plan] = buildPlans('agents', options(['claude'], ['architect']))
   const manager = new IntegrationManager(dirs)
@@ -190,7 +190,14 @@ test('unmanaged desired is current, legacy is outdated, and owned outdated requi
   const legacy = { ...plan, legacyHashes: [sha256('recognized old template')] }
   assert.deepEqual(manager.inspect([legacy]).map(x => [x.state, x.managed]), [['outdated', false]])
   manager.install([legacy])
-  assert.throws(() => manager.install([plan]), /outdated.*update/i)
+  // owned + outdated → skip em vez de erro (contrato: cli-parity.md, seção
+  // "install sobre artefato gerenciado desatualizado — skip, não erro fatal")
+  const skips = []
+  const managerWithSkip = new IntegrationManager(dirs, { onSkip: dest => skips.push(dest) })
+  assert.doesNotThrow(() => managerWithSkip.install([plan]))
+  assert.equal(fs.readFileSync(file, 'utf8'), 'recognized old template')
+  assert.equal(skips.length, 1)
+  assert.equal(skips[0], file)
 })
 
 test('Go manifest fixture is interoperable for inspect, update and uninstall', () => {

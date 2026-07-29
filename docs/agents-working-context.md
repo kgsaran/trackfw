@@ -53,6 +53,61 @@ agente (QA) não executa operações Git de escrita.
 
 ---
 
+## Sessão 2026-07-29 — Apolo (ML-2A — skip de artefato outdated+owned no runtime Go)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+
+**Status:** IMPLEMENTANDO
+
+**Tarefa:** Implementar o skip de artefato `outdated + owned` no runtime Go conforme contrato congelado
+em `docs/cli-parity.md` (seção "install sobre artefato gerenciado desatualizado — skip, não erro fatal").
+
+**Arquivos afetados:**
+- `internal/integrations/manager.go` — campo `OnSkip`, helper `tildeAbbrev`, `preflight` (nova assinatura), `mutate` (filtro de skips)
+- `internal/integrations/manager_test.go` — novos testes
+- `internal/commands/init.go` — liga `OnSkip` em `installAITools`
+- `internal/commands/integrations_flags.go` — liga `OnSkip` em `runIntegrationsOperation`
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-2B — skip de artefato outdated+owned no Node.js)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+
+**Status:** CONCLUÍDO
+
+**Tarefa:** Implementar skip de artefato `outdated`+`owned` sem `--force` no runtime Node.js do
+`IntegrationManager`. Artefatos `modified` continuam lançando erro — não simetrizar os casos.
+Inverter asserção na linha 193 de `npm/tests/agents-skills.test.js`. Ligar `onSkip` nos callers
+(`commands/init.js`, `commands/integrations.js`) imprimindo em stderr a string pinada no contrato.
+
+**Entregue:**
+- `npm/src/integrations/manager.js`: construtor aceita `{ onSkip }`; `preflight` retorna `true`
+  (skip) em vez de lançar para `outdated`+`owned`+sem force em `install`; `modified` continua
+  lançando sem alteração; `mutate` filtra pulados antes de snapshot/apply e chama `onSkip` uma vez
+  por item na ordem de `resolved`.
+- `npm/src/integrations/index.js`: `execute()` passa `options.onSkip` ao construtor do manager.
+- `npm/src/generators/init.js`: `installIntegrationTarget` aceita `{ onSkip }` como 4º parâmetro
+  e inclui em `options` repassados ao `execute`.
+- `npm/src/commands/init.js`: importa `tildeify`; cria callback `onSkip` nos dois loops de
+  `aiTools` (TTY e não-TTY) que emite a string pinada em stderr com tilde-abreviado e remediação
+  por escopo.
+- `npm/src/commands/integrations.js`: importa `tildeify`; cria callback `onSkip` antes de
+  `execute()` para operações `mutation`.
+- `npm/tests/agents-skills.test.js`: nome do teste atualizado (linha 181); linha 193 invertida —
+  `assert.throws` substituído por `doesNotThrow` + bytes preservados + `onSkip` observado 1x.
+
+**Validação:**
+- `cd npm && npm test` → 328 passed, 0 failed.
+- Teste `'unmanaged desired is current, legacy is outdated, and owned outdated skips install'` passou.
+- `onSkip` ausente (manager sem segundo parâmetro) funciona silenciosamente em outros testes.
+
+**Divergência do contrato:** nenhuma. Os intermediários `integrations/index.js` e `generators/init.js`
+precisaram ser tocados para que o `onSkip` fluísse do caller até o `IntegrationManager` — isso era
+implícito no contrato mas não listado explicitamente nos "arquivos afetados" do ML-2B.
+
+---
+
 ## Sessão 2026-07-29 — Apolo (ML-6H — `trackfw update` escopo de projeto, corretivo final concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
