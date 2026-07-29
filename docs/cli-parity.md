@@ -586,6 +586,16 @@ shelling out to a `trackfw` binary that may not be on `PATH`.
 }
 ```
 
+Evidence and failure string formats are **pinned** — the three runtimes must emit these literally,
+so that a diff of two runtimes' JSON output for the same fixture is empty:
+
+| Check | `evidence` entry | `failures` entry |
+|---|---|---|
+| `mls_complete` | `<ML-id>: ✅` | `<ML-id>: not complete (status: <marker or "missing">)` |
+| `acceptance_evidence` | `<ML-id>: <n> criteria met` | `<ML-id>: <n> unmet acceptance criteria` or `<ML-id>: no acceptance block` |
+| `gates` | `<command>: exit 0` | `<command>: exit <code>` |
+| `validate` | `<v> violations, <w> warnings` | `<v> violations, <w> warnings` |
+
 Determinism contract:
 
 - Key order is fixed as shown; `checks` is always in the built-in evaluation order.
