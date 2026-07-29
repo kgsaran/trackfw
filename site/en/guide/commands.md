@@ -397,6 +397,91 @@ trackfw — project status
 
 ---
 
+## `trackfw barrier`
+
+Deterministic wave-release barrier. It is **stack-agnostic**: it never assumes a build tool, a
+test runner, or a parity rule — every executable check comes from the roadmap itself (the wave's
+declared gates) or from `trackfw validate` run in-process.
+
+```bash
+trackfw barrier <roadmap> --wave <n> [--json]
+```
+
+`<roadmap>` is the basename with or without `.md`, resolved against `wip/` then `done/` under
+`roadmap_dir` (including the `by_agent` layout). `--wave` is required.
+
+### Built-in checks
+
+| Check | Passes when |
+|---|---|
+| `mls_complete` | The wave has at least one ML and every ML is `**Status:** ✅` |
+| `acceptance_evidence` | Every ML has a non-empty `**Critérios de aceite:**` block with no `- [ ]` line |
+| `gates` | Every command declared under `**Gates da wave:**` exits 0 — a wave with no such block declares zero gates, and the barrier never invents one |
+| `validate` | `trackfw validate --json` reports `violations: 0` |
+
+### Exit codes
+
+| Exit | Meaning |
+|---|---|
+| `0` | `status: "passed"` — every check is green, the wave may release |
+| `1` | `status: "blocked"` — at least one check failed; the report (text or `--json`) says which |
+| `2` | Usage/resolution error — the roadmap or the wave could not be resolved. This is **not** `blocked`: a barrier that could not run is distinct from one that ran and failed |
+
+### Correction flow
+
+```bash
+$ trackfw barrier ROADMAP-example --wave 2
+✗ mls_complete: ML-2C: not complete (status: 🔄)
+✗ acceptance_evidence: ML-2C: 2 unmet acceptance criteria
+wave 2: blocked
+```
+
+Fix the roadmap (mark the ML `✅`, close the remaining criteria) and rerun the **same command** —
+the barrier is not a permanent denial; a corrected wave passes on the next invocation:
+
+```bash
+$ trackfw barrier ROADMAP-example --wave 2
+✓ mls_complete
+✓ acceptance_evidence
+✓ gates
+✓ validate
+wave 2: passed
+```
+
+### JSON output
+
+```bash
+trackfw barrier ROADMAP-example --wave 2 --json
+```
+
+```json
+{
+  "roadmap": "ROADMAP-example.md",
+  "wave": 2,
+  "status": "blocked",
+  "started_at": "2026-07-29T10:30:00Z",
+  "finished_at": "2026-07-29T10:30:04Z",
+  "checks": [
+    { "name": "mls_complete", "status": "passed", "evidence": ["ML-2A: ✅"], "failures": [] },
+    { "name": "acceptance_evidence", "status": "blocked", "evidence": [], "failures": ["ML-2C: 2 unmet acceptance criteria"] },
+    { "name": "gates", "status": "passed", "commands": ["make quality"], "evidence": ["make quality: exit 0"], "failures": [] },
+    { "name": "validate", "status": "passed", "evidence": ["0 violations, 0 warnings"], "failures": [] }
+  ],
+  "failures": ["acceptance_evidence: ML-2C: 2 unmet acceptance criteria"]
+}
+```
+
+### `trackfw barrier` vs. `/trackfw:barrier`
+
+`trackfw barrier` is the deterministic, reproducible core — it never invokes agents and never
+performs Git operations. The `/trackfw:barrier` slash command orchestrates around it: it dispatches
+`code-quality`/`security` reviews when applicable, audits the diff against scope, and — only for
+`trackfw_architect`, the sole Git authority in the workflow — commits and pushes once every check
+and review is green. A green CLI barrier is necessary but not sufficient to release a wave. Full
+contract: `docs/cli-parity.md` → `## trackfw barrier`.
+
+---
+
 ## `trackfw context`
 
 Emits governance context for LLM and AI agent consumption.

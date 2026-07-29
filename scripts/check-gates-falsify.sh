@@ -482,4 +482,21 @@ assert_fails_with "referential-integrity/missing-roadmap" \
   "referential integrity failed" \
   bash "$T12/scripts/check-referential-integrity.sh"
 
-echo "Falsification checks passed (all 13 scenarios, 8 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 13 — check-barrier.sh: a própria prova E2E da barrier é falsificável.
+#
+# Objetivo (P4): check-barrier.sh (ML-4A) não implementa `trackfw barrier` — ele
+# delega aos três runtimes. Falsificar seu conteúdo não é corromper a
+# implementação (isso é escopo do ML-2A/2B/2C), mas provar que a asserção do
+# próprio harness ("Wave 2 continua bloqueada antes da correção") tem poder de
+# reprovação. BARRIER_SELFTEST_BREAK=1 é um seam dedicado (documentado no
+# cabeçalho de check-barrier.sh) que corrompe deliberadamente a fixture da
+# Wave 2 do cenário 1 para já vir ✅ — reproduzindo a classe exata de defeito
+# que a checagem `mls_complete` deveria capturar — e o script deve reportar
+# essa reprovação com diagnóstico explícito em vez de sair verde.
+# ---------------------------------------------------------------------------
+assert_fails_with "barrier/blocked-not-detected" \
+  "FAIL [barrier/two-wave-flow/wave2-blocked]: expected exit 1 for Wave 2, got 0" \
+  env BARRIER_SELFTEST_BREAK=1 GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-barrier.sh"
+
+echo "Falsification checks passed (all 14 scenarios, 9 gates proved non-vacuous)"

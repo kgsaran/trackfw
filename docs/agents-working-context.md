@@ -4989,3 +4989,30 @@ Defeito pré-existente detectado na auditoria e registrado como ML-5C: o Node.js
 de slash commands; `generateClaudeCommandsForce` lista 6 dos 9 comandos. `trackfw skills --force`
 instala menos comandos que a instalação normal e menos que Go e Python, que usam um único mapa com
 flag. Não corrigido aqui para não expandir a Wave 3.
+
+## Auditoria 2026-07-29 — Zeus — barrier da Wave 4: APROVADA (após corretivo ML-2E)
+
+O ML-4A entregou `scripts/check-barrier.sh` com 15 cenários, encadeado no alvo `parity` do
+Makefile, mais um cenário de falsificação do próprio script, e a documentação de uso em README e
+`site/guide` PT/EN.
+
+O cenário de paridade do ML-4A reprovou de imediato e expôs um defeito que a auditoria da Wave 2
+não pegou: no Go, o struct `barrierCheck` declarava os campos na ordem
+`Name, Status, Evidence, Failures, Commands`, e `encoding/json` serializa por ordem de declaração.
+O check `gates` saía com `commands` por último no Go e em terceiro no Node e no Python.
+
+**Causa da falha de detecção: método de auditoria do orquestrador.** A comparação de paridade da
+Wave 2 usou `json.dumps(..., sort_keys=True)`, que normaliza a ordem das chaves e torna a
+divergência invisível. O contrato em `docs/cli-parity.md` fixa a ordem explicitamente. Auditorias
+de paridade de JSON passam a exigir comparação com a ordem preservada
+(`object_pairs_hook=OrderedDict` e `dumps` sem `sort_keys`).
+
+ML-2E corrigiu o struct e adicionou teste que assevera a ordem literal das chaves — a ausência
+desse teste é o que permitiu a divergência sobreviver.
+
+Verificação independente com ordem preservada: os três runtimes emitem
+`name, status, commands, evidence, failures`, JSON idêntico. `scripts/check-barrier.sh` passa nos
+15 cenários. `make quality` exit 0 com 14 cenários de falsificação e 9 gates provados não-vacuosos.
+`validate --json` 0 violações. `~/.claude` intocado.
+
+Barriers reexecutadas após o corretivo: waves 2, 3 e 4 retornam `passed`.

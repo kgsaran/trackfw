@@ -217,6 +217,59 @@ func TestParseGates_MissingFenceRightAfterHeaderIsUsageError(t *testing.T) {
 	}
 }
 
+// TestBarrierCheck_JSONKeyOrderMatchesCliParityContract asserts the literal key
+// order of a serialized barrierCheck — not just presence of keys. This is the
+// regression coverage for the Go-vs-Node/Python "gates" check key-order
+// divergence described in vault/notes/barrier-gates-check-key-order-divergence-go-2026-07-29.md:
+// encoding/json serializes struct fields in declaration order, so reordering the
+// barrierCheck struct silently changes the emitted JSON. docs/cli-parity.md pins
+// "commands" as the third key (right after "status") for the gates check.
+func TestBarrierCheck_JSONKeyOrderMatchesCliParityContract(t *testing.T) {
+	cmds := []string{"go build ./..."}
+	check := barrierCheck{
+		Name:     "gates",
+		Status:   "passed",
+		Commands: &cmds,
+		Evidence: []string{"go build ./...: exit 0"},
+		Failures: []string{},
+	}
+	out, err := json.Marshal(check)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	wantOrder := []string{`"name"`, `"status"`, `"commands"`, `"evidence"`, `"failures"`}
+	var positions []int
+	for _, key := range wantOrder {
+		pos := strings.Index(string(out), key)
+		if pos < 0 {
+			t.Fatalf("expected key %s to be present in %s", key, out)
+		}
+		positions = append(positions, pos)
+	}
+	for i := 1; i < len(positions); i++ {
+		if positions[i-1] >= positions[i] {
+			t.Fatalf("expected key order %v, got JSON with wrong order: %s", wantOrder, out)
+		}
+	}
+
+	// A check without gates (Commands == nil) must omit "commands" entirely —
+	// never emit it as null.
+	nonGatesCheck := barrierCheck{
+		Name:     "mls_complete",
+		Status:   "passed",
+		Evidence: []string{},
+		Failures: []string{},
+	}
+	nonGatesOut, err := json.Marshal(nonGatesCheck)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(nonGatesOut), "commands") {
+		t.Fatalf("expected non-gates check to omit \"commands\" entirely, got: %s", nonGatesOut)
+	}
+}
+
 func TestRunGateCommand_ExitCodes(t *testing.T) {
 	if code := runGateCommand("true"); code != 0 {
 		t.Fatalf("expected exit 0 for 'true', got %d", code)

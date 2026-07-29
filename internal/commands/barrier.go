@@ -33,9 +33,9 @@ import (
 type barrierCheck struct {
 	Name     string    `json:"name"`
 	Status   string    `json:"status"`
+	Commands *[]string `json:"commands,omitempty"`
 	Evidence []string  `json:"evidence"`
 	Failures []string  `json:"failures"`
-	Commands *[]string `json:"commands,omitempty"`
 }
 
 // barrierResult is the root JSON document emitted by --json.

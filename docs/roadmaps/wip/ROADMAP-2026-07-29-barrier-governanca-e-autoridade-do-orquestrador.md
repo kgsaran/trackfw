@@ -223,6 +223,43 @@ make quality
 bin/trackfw validate --json
 ```
 
+### ML-2E — Corrigir a ordem de chaves do check `gates` no Go (corretivo)
+**Status:** ✅ Concluído
+**Origem:** detectado pelo cenário de paridade do ML-4A. A auditoria da Wave 2 comparou os JSONs
+dos três runtimes com `sort_keys=True`, o que normalizou a ordem das chaves e mascarou a
+divergência. Falha do método de auditoria do orquestrador, não dos MLs 2A/2B/2C.
+**Arquivos afetados:**
+- `internal/commands/barrier.go`
+- `internal/commands/barrier_test.go`
+
+**Diagnóstico:** o struct `barrierCheck` em Go declara os campos na ordem
+`Name, Status, Evidence, Failures, Commands`, e `encoding/json` serializa por ordem de declaração.
+Resultado observado no check `gates`:
+
+- Go:     `name, status, evidence, failures, commands`
+- Node:   `name, status, commands, evidence, failures`
+- Python: `name, status, commands, evidence, failures`
+
+O contrato em `docs/cli-parity.md` fixa a ordem do exemplo, na qual `commands` vem em terceiro.
+Node e Python estão corretos; o Go diverge.
+
+**Ações:**
+1. Reordenar os campos do struct para `Name, Status, Commands, Evidence, Failures`.
+2. Adicionar teste que asseverre a **ordem literal** das chaves no JSON serializado, não apenas a
+   presença — a ausência desse teste é o motivo de a divergência ter sobrevivido à Wave 2.
+
+**Critérios de aceite:**
+- [x] Os três runtimes emitem as chaves do check `gates` na mesma ordem.
+- [x] Existe teste que falha se a ordem das chaves regredir.
+- [x] `scripts/check-barrier.sh` passa integralmente, incluindo o cenário de paridade.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+
+**Comandos de validação:**
+```bash
+scripts/check-barrier.sh
+make quality
+```
+
 ## Wave 3 — Orquestração e autoridade dos agentes (1 ML)
 > Dependências: Wave 2 concluída e auditada.
 
@@ -293,7 +330,7 @@ bin/trackfw validate --json
 ```
 
 ### ML-4A — Provar o fluxo E2E da barrier
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `scripts/check-barrier.sh`
 - `scripts/check-gates-falsify.sh`
@@ -311,12 +348,12 @@ bin/trackfw validate --json
 6. Documentar uso, saída JSON, estados e fluxo de correção.
 
 **Critérios de aceite:**
-- [ ] Cenários positivos e negativos são não-vacuous.
-- [ ] O fluxo E2E demonstra `passed` e `blocked`.
-- [ ] Nenhuma operação Git é executada por especialista.
-- [ ] Documentação em inglês e português mantém o contrato consistente.
-- [ ] `make quality` passa.
-- [ ] `trackfw validate --json` passa sem violações.
+- [x] Cenários positivos e negativos são não-vacuous.
+- [x] O fluxo E2E demonstra `passed` e `blocked`.
+- [x] Nenhuma operação Git é executada por especialista.
+- [x] Documentação em inglês e português mantém o contrato consistente.
+- [x] `make quality` passa.
+- [x] `trackfw validate --json` passa sem violações.
 
 **Comandos de validação:**
 ```bash
