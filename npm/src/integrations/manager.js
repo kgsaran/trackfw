@@ -6,6 +6,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const { frontmatterName } = require('./render')
+const { tildeify } = require('../lib/update-engine')
 
 const SCHEMA_VERSION = 1
 const sha256 = content => crypto.createHash('sha256').update(content).digest('hex')
@@ -136,7 +137,17 @@ class IntegrationManager {
       const skip = this.preflight(operation, item, manifests.get(item.plan.claim.scope), force)
       if (skip) {
         skippedFiles.add(item.file)
-        if (typeof this.onSkip === 'function') this.onSkip(item.file, 'outdated+owned')
+        if (typeof this.onSkip === 'function') {
+          // O manager compõe a linha completa e passa tilde-abreviado como
+          // destination (contrato: docs/cli-parity.md, "Valor de cada
+          // parâmetro — pinado"). A remediação é derivada de
+          // plan.claim.scope por artefato, nunca de inferência sobre o
+          // caminho renderizado.
+          const abbrev = this.tildeAbbrev(item.file, item.plan.claim.scope)
+          const remediation = item.plan.claim.scope === 'global' ? 'trackfw update harness' : 'trackfw update'
+          const reason = `warning: skipping outdated artifact ${abbrev}; run '${remediation}' to refresh it`
+          this.onSkip(abbrev, reason)
+        }
       }
     }
     const active = resolved.filter(item => !skippedFiles.has(item.file))
@@ -279,6 +290,16 @@ class IntegrationManager {
         else this.atomicWrite(file, snapshot.content, snapshot.mode)
       } catch { /* preserve original error */ }
     }
+  }
+
+  // tildeAbbrev — retorna o caminho de exibição abreviado para uso em mensagens
+  // de aviso de skip. Espelha internal/integrations/manager.go:tildeAbbrev.
+  // - scope global: substitui homeRoot por '~' (via tildeify, com salvaguarda
+  //   de barra dupla corrigida no ML-6H).
+  // - scope de projeto: caminho relativo ao projectRoot, sem './' prefixo.
+  tildeAbbrev(file, scope) {
+    if (scope === 'global') return tildeify(this.roots.global, file)
+    return path.relative(this.roots.project, file)
   }
 
   cleanEmpty(directory, root) {

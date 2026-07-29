@@ -31,13 +31,15 @@ class IntegrationManager:
         self.project_root = Path(project_root).absolute()
         self.home_dir = Path(home_dir or Path.home()).absolute()
         # Optional observer: called once per skipped artifact (outdated+owned+no-force)
-        # during the preflight phase, in resolved order, never twice for the same
-        # destination.  Signature: on_skip(destination: str, reason: str) -> None.
-        # ``destination`` is tilde-abbreviated for global scope ("~/...") or
-        # project-relative for project scope (".claude/...").
-        # ``reason`` is always "outdated" for the only skip condition this version
-        # implements.  Cannot import _tildeify from commands/update_harness.py here
-        # because update_harness.py already imports from integrations/manager.py
+        # in resolved order, never twice for the same destination.
+        # Signature: on_skip(destination: str, reason: str) -> None.
+        # ``destination`` is the tilde-abbreviated display path — global scope
+        # yields "~/...", project scope yields the project-relative path (no "~/").
+        # ``reason`` is the complete warning line, ready to print verbatim,
+        # without a trailing newline.  Callers MUST NOT compose, abbreviate, or
+        # derive anything from it — just write it to stderr.
+        # Cannot import _tildeify from commands/update_harness.py here because
+        # update_harness.py already imports from integrations/manager.py
         # (circular import); display formatting is inlined in _mutate instead.
         self.on_skip = on_skip
 
@@ -213,11 +215,22 @@ class IntegrationManager:
                     # Cannot call _tildeify from commands/update_harness.py here:
                     # that module imports from integrations/manager.py, so importing
                     # back would be circular.  Inline equivalent 2-branch logic.
+                    # .as_posix() ensures forward slashes on all platforms and makes
+                    # the ML-6H double-slash guard explicit (Path normalisation in
+                    # _resolve already removes trailing separators from home_dir,
+                    # so "~/" is the only possible doubling site — as_posix() on
+                    # relative_to() output never carries a leading separator).
                     if scope == "global":
-                        display = "~/" + str(destination.relative_to(root))
+                        display = "~/" + destination.relative_to(root).as_posix()
+                        remediation = "trackfw update harness"
                     else:
-                        display = str(destination.relative_to(root))
-                    self.on_skip(display, "outdated")
+                        display = destination.relative_to(root).as_posix()
+                        remediation = "trackfw update"
+                    reason = (
+                        f"warning: skipping outdated artifact {display};"
+                        f" run '{remediation}' to refresh it"
+                    )
+                    self.on_skip(display, reason)
 
         # Phase 3 — snapshot only active destinations (not skipped ones) plus all
         # manifest files (for rollback safety even when a scope had all items skipped).

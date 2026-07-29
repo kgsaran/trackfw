@@ -6118,3 +6118,37 @@ Notas de contrato para ML-3A (auditoria de paridade):
 - Teste test_legacy_adoption_then_update (linhas 232-243) inalterado e verde.
 
 ---
+
+## Sessão 2026-07-29 — Apolo (ML-2E — corretivo: manager compõe reason; callers apenas imprimem)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+
+**Status:** IMPLEMENTANDO
+
+**Tarefa:** ML-2E (Wave 2-bis) — mover composição da linha de aviso de skip para dentro do manager Python.
+- `manager.py`: compor `reason` = linha completa; derivar remediação de `plan["claim"]["scope"]` por artefato; chamar `on_skip(display, reason)`.
+- `init.py` e `command.py`: reduzir closures `_on_skip` a `print(reason, file=sys.stderr)`.
+- Testes: atualizar asserção de `reason`; adicionar caso de lote de escopo misto.
+
+---
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-2D — corretivo: manager Node.js compõe reason; callers apenas imprimem)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+
+**Status:** CONCLUÍDO
+
+**Tarefa:** ML-2D (Wave 2-bis) — mover composição da linha de aviso de skip para dentro do manager Node.js.
+
+**O que mudou:**
+- `npm/src/integrations/manager.js`: import `tildeify` de `../lib/update-engine` (sem ciclo — update-engine só importa built-ins). Adicionado método `tildeAbbrev(file, scope)`: escopo global → `tildeify(homeRoot, file)`; escopo projeto → `path.relative(projectRoot, file)`. Bloco `onSkip` em `mutate()` agora deriva `remediation` de `item.plan.claim.scope` por artefato e chama `this.onSkip(abbrev, reason)` com linha completa.
+- `npm/src/commands/init.js`: removido import `tildeify`; ambas as closures `onSkip` simplificadas para `process.stderr.write(\`${reason}\n\`)`.
+- `npm/src/commands/integrations.js`: removido import `tildeify`; closure `onSkip` simplificada para `process.stderr.write(\`${reason}\n\`)`.
+- `npm/tests/agents-skills.test.js`: asserção do teste existente atualizada para `{ dest: plan.destination, reason: linha-completa }`; adicionado teste `mixed-scope batch` com artefatos de projeto e global no mesmo lote — prova que cada um recebe a remediação correta por `claim.scope`.
+
+**Resultado:** `cd npm && npm test` → 329 passed, 0 failed.
+**Import de tildeify criou ciclo?** Não. `update-engine.js` importa apenas `fs`, `os`, `path`, `crypto`.
+**Caso de escopo misto construtível?** Sim — teste adicionado e verde.
+

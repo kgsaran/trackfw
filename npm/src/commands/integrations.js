@@ -6,7 +6,6 @@ const { catalog, execute, parseSurfaces, buildPlans } = require('../integrations
 const identityStore = require('../identity')
 const identityWizard = require('./identity-wizard')
 const { t } = require('../i18n')
-const { tildeify } = require('../lib/update-engine')
 
 const csv = value => String(value).split(',').map(entry => entry.trim()).filter(Boolean)
 const collect = (value, previous) => previous.concat(value)
@@ -188,11 +187,8 @@ function createLifecycleCommand(kind) {
       // preflight de install (contrato: docs/cli-parity.md, seção "install
       // sobre artefato gerenciado desatualizado — skip, não erro fatal").
       if (mutation) {
-        const homeRoot = os.homedir()
-        options.onSkip = (destination, _reason) => {
-          const tilde = tildeify(homeRoot, destination)
-          const cmd = tilde.startsWith('~/') ? 'trackfw update harness' : 'trackfw update'
-          process.stderr.write(`warning: skipping outdated artifact ${tilde}; run '${cmd}' to refresh it\n`)
+        options.onSkip = (_destination, reason) => {
+          process.stderr.write(`${reason}\n`)
         }
       }
 

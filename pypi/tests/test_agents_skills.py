@@ -279,13 +279,92 @@ def test_install_skips_owned_outdated_artifact(tmp_path):
     assert len(skipped) == 1
     assert skipped[0][0] == plan_a["destination"], f"esperado {plan_a['destination']!r}, obtido {skipped[0][0]!r}"
     assert skipped[0][0].startswith("~/"), f"caminho global deve ter tilde, obtido {skipped[0][0]!r}"
-    assert skipped[0][1] == "outdated"
+    # (c2) reason é a linha completa (não etiqueta) — escopo global → "trackfw update harness"
+    expected_reason_a = (
+        f"warning: skipping outdated artifact {skipped[0][0]};"
+        " run 'trackfw update harness' to refresh it"
+    )
+    assert skipped[0][1] == expected_reason_a, (
+        f"reason incorreta.\nEsperado: {expected_reason_a!r}\nObtido:   {skipped[0][1]!r}"
+    )
     # (d) plan_b aplicado normalmente
     assert (tmp_path / plan_b["destination"]).is_file()
 
     # (e) on_skip=None não causa erro
     IntegrationManager(tmp_path, home).install([plan_a])
     assert destination_a.read_bytes() == legacy  # bytes ainda preservados (ainda pulado)
+
+
+def test_install_skip_mixed_scope_batch(tmp_path):
+    """ML-2E: lote de escopo misto — cada artefato pulado recebe remediação correta por artefato.
+
+    Prova que a derivação ocorre por plan["claim"]["scope"], não via closure sobre escopo de comando.
+    Um lote de escopo uniforme é correto por acidente (closure sobre scope); apenas o lote misto
+    discrimina a implementação por artefato da implementação por closure.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+
+    # Plan A — global (gemini/backend): será adotado via legacy_hashes + depois pulado
+    _, plans_a = plan_deployments("agents", ["gemini"], ["backend"], "global")
+    plan_a = {**plans_a[0]}
+    legacy_a = b"old template bytes for mixed-scope skip test"
+    plan_a["legacy_hashes"] = [hashlib.sha256(legacy_a).hexdigest()]
+
+    destination_a = home / plan_a["destination"][2:]  # strip "~/"
+    destination_a.parent.mkdir(parents=True, exist_ok=True)
+    destination_a.write_bytes(legacy_a)
+
+    # Adota plan_a: owned=True, state=outdated (legacy bytes no disco)
+    IntegrationManager(tmp_path, home).install([plan_a])
+    assert IntegrationManager(tmp_path, home).inspect(plan_a)["state"] == "outdated"
+    assert IntegrationManager(tmp_path, home).inspect(plan_a)["managed"] is True
+
+    # Plan B — project (claude/backend): instala normalmente, depois simulamos outdated
+    _, plans_b = plan_deployments("agents", ["claude"], ["backend"], "project")
+    plan_b = plans_b[0]
+    IntegrationManager(tmp_path, home).install([plan_b])
+    assert IntegrationManager(tmp_path, home).inspect(plan_b)["state"] == "current"
+
+    # Simular outdated para plan_b: alterar catalog_version no manifesto de projeto
+    project_manifest = tmp_path / ".trackfw" / "integrations-manifest.json"
+    manifest_data = json.loads(project_manifest.read_text(encoding="utf-8"))
+    dest_key_b = str(tmp_path / plan_b["destination"])
+    manifest_data["artifacts"][dest_key_b]["catalog_version"] = "simulated-old"
+    project_manifest.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+    assert IntegrationManager(tmp_path, home).inspect(plan_b)["state"] == "outdated"
+    assert IntegrationManager(tmp_path, home).inspect(plan_b)["managed"] is True
+
+    # Lote misto: plan_a (global) e plan_b (project) — ambos outdated+owned → ambos pulados
+    skipped: list[tuple[str, str]] = []
+    IntegrationManager(tmp_path, home, on_skip=lambda d, r: skipped.append((d, r))).install(
+        [plan_a, plan_b]
+    )
+
+    # Ambos devem ter sido pulados
+    assert len(skipped) == 2, f"esperado 2 skips, obtido {len(skipped)}: {skipped}"
+
+    # Indexar por destination para ordem-independente
+    skipped_by_dest = {d: r for d, r in skipped}
+
+    dest_a = plan_a["destination"]  # "~/.gemini/agents/trackfw-backend.md"
+    dest_b = plan_b["destination"]  # ".claude/agents/trackfw-backend.md"
+    assert dest_a in skipped_by_dest, f"plan_a não pulado; skips: {list(skipped_by_dest)}"
+    assert dest_b in skipped_by_dest, f"plan_b não pulado; skips: {list(skipped_by_dest)}"
+
+    # Remediação por artefato (diferente do que uma closure sobre escopo uniforme produziria)
+    assert "trackfw update harness" in skipped_by_dest[dest_a], (
+        f"plan_a (global) deve usar 'trackfw update harness';\n"
+        f"reason obtida: {skipped_by_dest[dest_a]!r}"
+    )
+    assert "trackfw update harness" not in skipped_by_dest[dest_b], (
+        f"plan_b (project) NÃO deve usar 'trackfw update harness';\n"
+        f"reason obtida: {skipped_by_dest[dest_b]!r}"
+    )
+    assert "'trackfw update'" in skipped_by_dest[dest_b] or "run 'trackfw update'" in skipped_by_dest[dest_b], (
+        f"plan_b (project) deve usar 'trackfw update';\n"
+        f"reason obtida: {skipped_by_dest[dest_b]!r}"
+    )
 
 
 def test_install_skip_warning_string_project_scope(tmp_path):

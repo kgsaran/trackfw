@@ -154,12 +154,7 @@ def run(args):
         print(f"Escopo de instalação: {scope}")
 
         def _on_skip(destination: str, reason: str) -> None:
-            cmd = "trackfw update harness" if scope == "global" else "trackfw update"
-            print(
-                f"warning: skipping outdated artifact {destination};"
-                f" run '{cmd}' to refresh it",
-                file=sys.stderr,
-            )
+            print(reason, file=sys.stderr)
 
         _, plans = plan_deployments("agents", target_ids=ai_tools, scope=scope, identity_cfg=ident)
         print("Destino:")

@@ -5,7 +5,6 @@ const identityStore = require('../identity')
 const identityWizard = require('./identity-wizard')
 const { resolveIdentityPreset, identityFileExists } = identityWizard
 const { resolveScope } = require('./integrations')
-const { tildeify } = require('../lib/update-engine')
 
 const cmd = new Command('init')
 cmd.description(t('init.description'))
@@ -62,10 +61,8 @@ cmd.action(async (options, command) => {
     const supported = new Set(['claude', 'codex', 'gemini', 'antigravity', 'cursor', 'copilot', 'windsurf', 'amazonq', 'kiro'])
     // Sem TTY, o escopo nunca é perguntado: default `global` (ADR D1/D4).
     const scope = await resolveScope({}, { interactive: false })
-    const makeOnSkip = () => (destination, _reason) => {
-      const tilde = tildeify(home, destination)
-      const cmd = tilde.startsWith('~/') ? 'trackfw update harness' : 'trackfw update'
-      process.stderr.write(`warning: skipping outdated artifact ${tilde}; run '${cmd}' to refresh it\n`)
+    const makeOnSkip = () => (_destination, reason) => {
+      process.stderr.write(`${reason}\n`)
     }
     for (const tool of aiTools) {
       if (!supported.has(tool)) throw new Error(`Unsupported AI tool: ${tool}`)
@@ -284,10 +281,8 @@ cmd.action(async (options, command) => {
   await generators.scaffold(cfg)
 
   for (const tool of (aiTools || [])) {
-    const onSkip = (destination, _reason) => {
-      const tilde = tildeify(home, destination)
-      const remCmd = tilde.startsWith('~/') ? 'trackfw update harness' : 'trackfw update'
-      process.stderr.write(`warning: skipping outdated artifact ${tilde}; run '${remCmd}' to refresh it\n`)
+    const onSkip = (_destination, reason) => {
+      process.stderr.write(`${reason}\n`)
     }
     await generators.installIntegrationTarget(tool, process.cwd(), scope, { onSkip })
   }

@@ -277,14 +277,14 @@ callers imprimem verbatim e não compõem, abreviam nem derivam remediação; a 
 - [ ] `cd npm && npm test` passa.
 
 ### ML-2E — Convergir o Python para a forma canônica
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
 **Arquivos afetados:** `pypi/trackfw/integrations/manager.py`, `pypi/trackfw/commands/init.py`,
 `pypi/trackfw/integrations/command.py`, `pypi/tests/test_agents_skills.py`
 
 **Critérios de aceite:**
-- [ ] Manager compõe a linha; `on_skip(destino_tilde, linha_completa)`.
-- [ ] Nenhum caller compõe — closures de `init.py` e `command.py` reduzidas a imprimir `reason`.
-- [ ] Remediação derivada de `plan["claim"]["scope"]` por artefato, não da closure de comando.
-- [ ] Aviso em stderr inalterado, byte-idêntico ao Go.
-- [ ] Suíte Python passa.
+- [x] Manager compõe a linha; `on_skip(destino_tilde, linha_completa)`.
+- [x] Nenhum caller compõe — closures de `init.py` e `command.py` reduzidas a imprimir `reason`.
+- [x] Remediação derivada de `plan["claim"]["scope"]` por artefato, não da closure de comando.
+- [x] Aviso em stderr inalterado, byte-idêntico ao Go.
+- [x] Suíte Python passa.
