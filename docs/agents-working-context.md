@@ -6108,3 +6108,13 @@ Wave 2 = 3 MLs paralelos (Go ‖ Node ‖ Python); Wave 3 = auditoria de paridad
 
 Implementando ML-2C (Python-only): manager.py, command.py, init.py e testes.
 
+
+**Status:** CONCLUÍDO — commit 4f25e1e pushed em fix/install-pula-artefato-desatualizado.
+693 testes Python passados.
+
+Notas de contrato para ML-3A (auditoria de paridade):
+- _tildeify não importado (import circular) — lógica inlinada em _mutate com comentário.
+- update_harness.py/_catalog_group_result usa IntegrationManager sem on_skip (fora do allowlist ML-2C).
+- Teste test_legacy_adoption_then_update (linhas 232-243) inalterado e verde.
+
+---

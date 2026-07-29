@@ -166,7 +166,7 @@ cd npm && npm test
 ```
 
 ### ML-2C — Implementar o skip no Python
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
 **Arquivos afetados:**
 - `pypi/trackfw/integrations/manager.py` — `preflight` (linha ~213), `mutate`, `__init__`
@@ -186,11 +186,11 @@ cd npm && npm test
 5. Ligar `on_skip` nos callers, imprimindo em stderr a string pinada, com tilde.
 
 **Critérios de aceite:**
-- [ ] Comportamento, estados e exit codes equivalentes ao Go e Node.
-- [ ] Teste de adoção de legacy (linhas 232–243) permanece verde e inalterado.
-- [ ] `on_skip=None` não causa erro.
-- [ ] Aviso em stderr byte-idêntico ao Go e Node.
-- [ ] Suíte Python passa.
+- [x] Comportamento, estados e exit codes equivalentes ao Go e Node.
+- [x] Teste de adoção de legacy (linhas 232–243) permanece verde e inalterado.
+- [x] `on_skip=None` não causa erro.
+- [x] Aviso em stderr byte-idêntico ao Go e Node.
+- [x] Suíte Python passa. (693 passed)
 
 **Comandos de validação:**
 ```bash
