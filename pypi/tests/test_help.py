@@ -1,8 +1,10 @@
+import argparse
 import unittest
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from trackfw.commands.help_cmd import list_keys, describe_key
+from trackfw.commands import help_cmd
+from trackfw.commands.help_cmd import list_keys, describe_key, suggest_topic, list_commands
 
 
 class TestHelp(unittest.TestCase):
@@ -110,6 +112,50 @@ class TestHelp(unittest.TestCase):
         self.assertIsNotNone(output)
         self.assertIn("off|warning|error", output)
         self.assertIn("error", output)
+
+
+class TestHelpCommandResolution(unittest.TestCase):
+    """Cobre a resolução por nome de comando registrada no ML-5B, e prova
+    que apenas um subparser 'help' existe (sem duplicação)."""
+
+    def setUp(self):
+        self.parser = argparse.ArgumentParser(prog="trackfw")
+        self.subparsers = self.parser.add_subparsers(dest="command")
+        init_parser = self.subparsers.add_parser(
+            "init", help="Initialize trackfw governance in the current project"
+        )
+        init_parser.add_argument("--forge")
+        help_cmd.register(self.subparsers)
+
+    def tearDown(self):
+        help_cmd._subparsers = None
+
+    def test_single_help_subparser_registered(self):
+        occurrences = [
+            a.dest for a in self.subparsers._choices_actions if a.dest == "help"
+        ]
+        self.assertEqual(len(occurrences), 1)
+
+    def test_list_commands_includes_init(self):
+        output = list_commands()
+        self.assertIn("init", output)
+
+    def test_run_with_known_command_prints_its_help(self, capsys=None):
+        import io
+        import contextlib
+
+        args = argparse.Namespace(topic="init")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            help_cmd.run(args)
+        output = buf.getvalue()
+        self.assertIn("trackfw init", output)
+
+    def test_suggest_topic_no_match_for_distant_string(self):
+        self.assertIsNone(suggest_topic("chave-que-nao-existe"))
+
+    def test_suggest_topic_matches_near_miss_key(self):
+        self.assertEqual(suggest_topic("wip_limi"), "wip_limit")
 
 
 if __name__ == "__main__":

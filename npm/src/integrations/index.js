@@ -7,6 +7,7 @@ const { render } = require('./render')
 const { IntegrationManager } = require('./manager')
 const { legacyHashes } = require('./legacy')
 const identityStore = require('../identity')
+const { injectRulesForTool } = require('../generators/init')
 
 function parseSurfaces(values = []) {
   const result = {}
@@ -107,6 +108,23 @@ function execute(kind, operation, options = {}, roots = {}) {
   else if (operation === 'update') statuses = manager.update(plans, { force: options.force })
   else if (operation === 'uninstall') statuses = manager.uninstall(plans, { force: options.force })
   else throw new Error(`Unsupported integration operation: ${operation}`)
+
+  // Auxiliary rules files (GEMINI.md, .github/copilot-instructions.md,
+  // .windsurfrules, .amazonq/developer/guidelines.md, etc.) are outside the
+  // agents/skills catalog managed by IntegrationManager above — they are a
+  // separate, tool-specific mechanism (injectRulesForTool), and this is the
+  // canonical catalog-based install path (`trackfw agents|skills install
+  // --targets <tool>`). Mirrors internal/commands/integrations_flags.go:
+  // executeIntegrationMutation (ML-5E/ML-5G of ROADMAP-2026-07-29-barrier-
+  // governanca-e-autoridade-do-orquestrador). Scoped to "install" only,
+  // mirroring the one-shot semantics the removed deprecated CLI aliases had.
+  // injectRulesForTool no-ops for targets without a rules surface (e.g.
+  // antigravity, kiro) and is idempotent for repeated runs.
+  if (operation === 'install') {
+    const targetValues = options.targets && options.targets.length ? options.targets : catalog.targets.map(entry => entry.id)
+    for (const targetID of targetValues) injectRulesForTool(targetID, manager.roots.project)
+  }
+
   return result(kind, plans, statuses)
 }
 

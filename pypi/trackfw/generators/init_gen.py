@@ -223,7 +223,7 @@ Proposed
 # ---------------------------------------------------------------------------
 
 GLOBAL_ADR_DIRECTIVE = (
-    '- Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs '
+    'Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs '
     '(inclusive caminhos ~/...) antes de propor alterações de arquitetura.'
 )
 
@@ -235,13 +235,19 @@ def _trackfw_rules_block() -> str:
         'This project uses **trackfw** for AI-native delivery governance.\n'
         'Chain: `ADR → REQ → ROADMAP` · States: `backlog / analyzing / wip / blocked / done / abandoned`\n\n'
         '### Agent Protocol\n'
-        '1. **Before starting:** run `trackfw context` · read `docs/agents-working-context.md`\n'
-        '2. **After finishing:** update `docs/agents-working-context.md` with what changed\n'
-        '3. **Before PR:** `trackfw validate` must pass\n'
-        '4. **ML lifecycle — mandatory:**\n'
+        '1. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:\n'
+        '   `trackfw req new "title"` → `trackfw roadmap new "title"` → `trackfw roadmap move <name> wip` → `git checkout -b feat/<branch>`\n'
+        '   ❌ Never create a branch before REQ + ROADMAP are in wip/\n'
+        '   ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables\n'
+        '   ✓ `trackfw validate` enforces this via `branch_has_wip_roadmap` rule (v2.7.0+)\n'
+        '2. **Before starting:** run `trackfw context` · read `docs/agents-working-context.md`\n'
+        '3. **After finishing:** update `docs/agents-working-context.md` with what changed\n'
+        '4. **Before PR:** `trackfw validate` must pass\n'
+        '5. **ML lifecycle — mandatory:**\n'
         '   - Starting a ML: edit roadmap `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` + commit.\n'
         '   - Completing a ML: edit roadmap → `**Status:** ✅ Concluído` + include in ML commit.\n'
-        '   - Analyzing a roadmap: move from `backlog/` to `analyzing/`; to `wip/` only when coding starts.\n\n'
+        '   - Analyzing a roadmap: move from `backlog/` to `analyzing/`; to `wip/` only when coding starts.\n'
+        f'6. **{GLOBAL_ADR_DIRECTIVE}**\n\n'
         '### Attention Signal (when you need user input during a task)\n'
         'Write `docs/roadmaps/.trackfw-attention.json`:\n'
         '```json\n'
@@ -252,7 +258,6 @@ def _trackfw_rules_block() -> str:
         '> `<roadmap_dir>/.trackfw-attention.json` manually — there is no automatic hook for this.\n'
         '> Delete the file after the user responds.\n'
         '\n### Architecture Directives (mandatory)\n'
-        f'{GLOBAL_ADR_DIRECTIVE}\n'
         '- **3-layer separation:** frontend / backend / database — never mix concerns\n'
         '- **No in-memory data:** always database + ORM (never arrays/globals for persistence)\n'
         '- **Auth from day 1:** never defer — refactoring auth later is very costly\n'
@@ -262,6 +267,12 @@ def _trackfw_rules_block() -> str:
         '- **Security wave:** include a red-team review wave in every feature roadmap\n'
         '- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)\n'
         '- Use `/trackfw:architect` to define stack before the first REQ\n'
+        '\n### Key Commands\n'
+        '- `trackfw context` — current governance state (always run first)\n'
+        '- `trackfw status` — all artifacts and states\n'
+        '- `trackfw validate` — governance consistency check\n'
+        '- `trackfw roadmap move <name> <state>` — transition roadmap state\n'
+        '- `trackfw serve` — live Kanban board at http://localhost:4080\n'
         + RULES_END
     )
 
@@ -352,7 +363,7 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     lines.append('5. **Run `trackfw validate` before every commit.** Zero violations required.\n')
     lines.append('6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n')
     lines.append('6a. **Usar `/trackfw:architect` para definir stack e arquitetura antes da primeira REQ.**\n')
-    lines.append(f'7. **{GLOBAL_ADR_DIRECTIVE.lstrip("- ")}**\n')
+    lines.append(f'7. **{GLOBAL_ADR_DIRECTIVE}**\n')
     lines.append('\n## Slash commands (Claude Code)\n')
     lines.append('\n| Command | When to use |\n')
     lines.append('|---|---|\n')
@@ -483,8 +494,8 @@ def generate_claude_commands(cwd: str) -> None:
         'move.md': (
             'Execute o seguinte comando bash: `trackfw roadmap move $ARGUMENTS`\n\n'
             'O formato esperado é: `<nome-do-roadmap> <estado>`\n\n'
-            'Estados válidos: `backlog`, `wip`, `blocked`, `done`, `abandoned`\n\n'
-            'Exemplo: `/trackfw:move meu-roadmap wip`\n\n'
+            'Estados válidos: `backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`\n\n'
+            'Exemplo: `/trackfw:move meu-roadmap analyzing`\n\n'
             'Se o comando falhar com `trackfw: command not found` ou similar, informe ao usuário:\n'
             'trackfw não está instalado. Instale com:\n'
             '  curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh\n'
@@ -651,7 +662,7 @@ def generate_claude_commands(cwd: str) -> None:
             'Somente o `trackfw_architect` cria branch, audita diff, commita e faz push. Especialistas entregam trabalho sem commit — cabe a este papel revisar, commitar e sugerir a abertura de PR/MR (sem abrir automaticamente sem autorização do usuário).\n'
         ),
         'architect.md': (
-            'Você é o guia de arquitetura do trackfw (`/trackfw:architect`). Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.\n\n'
+            'Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.\n\n'
             '## Passo 1 — Descoberta de Negócio\n\n'
             'Faça ao usuário as seguintes perguntas em linguagem simples, uma por vez:\n\n'
             '1. "O que sua aplicação vai fazer? Descreva em 2-3 frases como se fosse explicar para alguém de fora da TI."\n'

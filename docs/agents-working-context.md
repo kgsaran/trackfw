@@ -4,6 +4,77 @@
 
 ---
 
+## Sessão 2026-07-29 — Apolo (ML-5G — reconciliação do bloco de regras entre os 3 runtimes concluída)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+
+**Tarefa:** Remover a duplicação do bloco `Architecture Directives` em
+`internal/generators/agentfiles.go` e unificar o texto do bloco de regras (`trackfwRulesBlock` /
+`_trackfw_rules_block`) injetado em `GEMINI.md`, `.github/copilot-instructions.md`,
+`.windsurfrules` e `.amazonq/developer/guidelines.md` entre Go, Node.js e Python, para desbloquear
+o ML-5E (ligar essa injeção ao caminho de instalação por catálogo nos três runtimes).
+
+**Entregue:**
+- `internal/generators/agentfiles.go`: removida a duplicação literal do bloco `### Architecture
+  Directives`; texto reconciliado (ver decisões abaixo).
+- `npm/src/generators/init.js` (`trackfwRulesBlock`) e `pypi/trackfw/generators/init_gen.py`
+  (`_trackfw_rules_block`, constante `GLOBAL_ADR_DIRECTIVE` sem o prefixo `"- "` que só ela tinha):
+  texto reconciliado para bater byte-a-byte com o Go.
+- Como a divergência de conteúdo era só metade do bloqueio do ML-5E, também liguei a injeção
+  (`InjectRulesForTool`/`injectRulesForTool`/`inject_rules_for_tool`) no caminho de instalação por
+  catálogo do Node.js (`npm/src/integrations/index.js:execute`, escopo `install`) e do Python
+  (`pypi/trackfw/integrations/command.py:run`, escopo `install`, e `pypi/trackfw/commands/init.py`
+  no bloco `--ai-tools`) — espelhando exatamente `internal/commands/integrations_flags.go` e
+  `internal/commands/init.go:installAITools`, que já faziam isso só no Go. Sem isso,
+  `check-identity-parity.sh` reprovava por contagem de artefatos (`go=13 node=12 python=12`), não
+  só por conteúdo — reconciliar o texto sozinho nunca teria deixado o gate verde.
+- Novo gate `scripts/check-rules-parity.sh` (adicionado ao target `parity` do `Makefile`): roda
+  `<cli> init --ai-tools gemini,copilot,windsurf,amazonq` (sem `--scope`, que `init` não tem — vai
+  para `$HOME` isolado por runtime, como `check-identity-parity.sh`) nos três runtimes e compara os
+  4 arquivos de regras byte-a-byte, com vacuity guard.
+- Cenário 16 novo em `scripts/check-gates-falsify.sh` (`rules-parity/content-drift`): prova que
+  `check-rules-parity.sh` reprova quando o npm volta a omitir `analyzing` da chain de estados —
+  17 cenários / 11 gates provados não-vácuos ao final.
+- `pypi/trackfw/generators/init_gen.py` linha ~355 (`generate_claude_md`, gerador do CLAUDE.md
+  completo, função fora do escopo do bloco de regras): removido o `.lstrip("- ")` sobre
+  `GLOBAL_ADR_DIRECTIVE` — ficou inerte depois que o prefixo `"- "` saiu da constante, mantido só
+  por clareza; nenhum comportamento mudou (coberto por `check-artifact-parity.sh`).
+
+**Decisões de reconciliação sem maioria clara (reportadas por instrução do handoff):**
+- Ordem das seções dentro do bloco: adotei a ordem de Node/Python (Protocol → Attention Signal →
+  Architecture Directives), maioria 2-1 sobre a ordem do Go (Protocol → Architecture → Key Commands
+  → Attention). `Key Commands` foi anexado ao final, por ser conteúdo novo sem posição disputada.
+- Item "0. Before any implementation" (branch só após REQ+ROADMAP em wip/) existia só no Go
+  (1-0-0, não maioria) — mantido e propagado para os três por ser reconciliação "para cima"
+  (não perder conteúdo), renumerado como item 1 dos 6 itens finais do Agent Protocol.
+- Placement da diretiva de ADRs globais: Go e Node já a tratavam como item numerado do Agent
+  Protocol (agora item 6); só o Python a colocava como primeira linha solta dentro de Architecture
+  Directives — maioria 2-1 a favor do item numerado, aplicada ao Python.
+
+**Validação:**
+- `go build ./... && go vet ./... && go test ./...` → verde.
+- `cd npm && npm test` → 304 passed, 0 failed.
+- `python3 -m pytest pypi/tests -q` → 675 passed.
+- `GO_BIN=bin/trackfw scripts/check-identity-parity.sh` → verde (11 combinações target/surface).
+- `GO_BIN=bin/trackfw scripts/check-slash-parity.sh` → verde (pré-existente, não regressivo).
+- `GO_BIN=bin/trackfw scripts/check-rules-parity.sh` (novo) → verde (4 arquivos x 3 runtimes).
+- `make quality` → verde, incluindo `check-gates-falsify.sh` (16 cenários, 10 gates não-vácuos).
+- `bin/trackfw validate --json` → `{"violations":0,"warnings":0,"exit_code":0}`.
+- Idempotência confirmada manualmente: `init --ai-tools gemini` duas vezes seguidas não duplica o
+  marcador `trackfw:rules:start` em `GEMINI.md`.
+
+**Nota do vault:** `vault/notes/rules-block-content-drift-3-clis-2026-07-29.md` (achado do ML-5E)
+recebeu uma seção `## Resolução (ML-5G...)` explícita, substituindo as três alternativas em aberto
+(a/b/c) que ela listava — sem essa atualização, quem lesse a nota concluiria que o ML-5E ainda
+está bloqueado. Já estava linkada em `vault/notes/index.md`.
+
+**ML-5E:** os critérios de aceite restantes desse ML ("teste cobre os quatro arquivos a partir de
+projeto vazio", "paridade verificada entre os runtimes que possuem a superfície") estão satisfeitos
+em substância pelo trabalho acima — não editei o roadmap (fora do meu escopo/permissão), mas o
+orquestrador pode fechá-lo em vez de redespachar.
+
+---
+
 ## Sessão 2026-07-29 — Prometeu (ML-3A `/trackfw:barrier` e autoridade Git dos agentes concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
@@ -5191,3 +5262,315 @@ Dois achados registrados como MLs próprios em vez de expandir a wave:
 - **ML-5D (lacuna de gate).** Nenhum gate compara o conjunto de slash commands entre os três
   runtimes; `check-artifact-parity.sh` cobre apenas o conteúdo de `roadmap.md`. Os dois defeitos
   desta wave e a prova de equivalência do `barrier.md` no ML-3A dependeram de inspeção manual.
+
+## 2026-07-29 — Ártemis (QA) — ML-5D iniciado
+
+Handoff do `trackfw_architect` para o roadmap
+`ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md` — ML-5D. Escopo: novo
+gate de paridade de slash commands (`scripts/check-slash-parity.sh`), wiring no Makefile,
+cenário de falsificação em `scripts/check-gates-falsify.sh`, e correção de defeito latente em
+`npm/src/generators/init.js` (`generateClaudeCommands(root)` ignorava o parâmetro `root`).
+Branch: `feat/barrier-governanca-e-autoridade-do-orquestrador` (já criada pelo orquestrador).
+
+## 2026-07-29 — Ártemis (QA) — ML-5D concluído (gate wired, 1 achado bloqueante reportado)
+
+**Entregável 1 — gate de paridade:** `scripts/check-slash-parity.sh` (novo script, não extensão
+de `check-artifact-parity.sh` — decisão: scenario 9 daquele gate já cobre `slash_roadmap`
+isoladamente, e este gate precisa de um alvo de falsificação independente). Roda `<cli> init`
+em diretório descartável para os três runtimes, então `diff -ru` os três
+`.claude/commands/trackfw/` resultantes — cobre nome+conteúdo em uma operação e evita
+mojibake por nunca fazer parsing de literais de código-fonte. Vacuity guard confirma os 9
+comandos esperados nos 3 runtimes antes de comparar. Acumula todas as divergências antes de
+sair (padrão `FAIL=1` de `check-artifact-parity.sh`), não fail-fast — necessário para que uma
+futura corrupção isolada não seja mascarada por drift pré-existente.
+
+**Entregável 2 — wiring e falsificação:** encadeado no alvo `parity` do Makefile, logo após
+`check-barrier.sh`. Dois cenários novos em `check-gates-falsify.sh`, um por critério de aceite:
+Cenário 14 corrompe o *conteúdo* de `status.md` no gerador Node.js (arquivo hoje idêntico nos 3
+runtimes, escolhido deliberadamente para não colidir com o drift pré-existente de
+`move.md`/`architect.md`) e confirma `slash parity drift: status.md (go vs node)`. Cenário 15
+renomeia a *chave* `'status.md'` para `'status-renamed.md'` no mesmo mapa (drift de nome, não de
+conteúdo) e confirma que o vacuity guard reprova com diagnóstico distinto:
+`slash parity drift: status.md missing (node) — vacuity guard failed`. 16/16 cenários de
+falsificação passam.
+
+**Entregável 3 — defeito latente:** `generateClaudeCommands(root)` em
+`npm/src/generators/init.js` recebia `root` mas sempre escrevia relativo a `process.cwd()`,
+descartando o argumento silenciosamente — `scaffold()` chama `generateClaudeCommands(root)`
+esperando o argumento honrado, e o gêmeo forçado (`generateClaudeCommandsForce`) já fazia isso
+corretamente. Corrigido para espelhar o gêmeo forçado, preservando o comportamento cwd-relativo
+quando `root` é omitido (todos os testes existentes chamam sem argumento). Novo teste em
+`npm/tests/generators.test.js` prova ambas as direções: arquivos aparecem sob o `rootDir`
+passado E não aparecem sob `process.cwd()`.
+
+**Achado bloqueante (fora do escopo do ML-5D, reportado — não corrigido):** o novo gate
+encontrou 3 divergências de conteúdo PRÉ-EXISTENTES entre os 3 geradores, cada uma com maioria
+2-1 clara — `move.md` "Estados válidos" (Go+Node têm `analyzing`, Python não), `move.md`
+"Exemplo" (Go+Python usam `wip`, Node usa `analyzing`) e `architect.md` (frase de abertura com
+parêntese extra só no Python). O fix (ML-5F) é mecânico: 3 edições de uma linha aplicando o
+texto majoritário — não há decisão arquitetural a arbitrar, só uma pergunta de conteúdo aberta
+(se o Exemplo de `move.md` deveria mostrar `wip` ou o mais didático `analyzing`). Detalhe
+completo e prova empírica (diff bruto) em
+`vault/notes/slash-commands-cross-runtime-content-drift-2026-07-29.md`. Confirmado que nem
+ML-5B (`*/help*`, `root.go`, `commands/index.js`, `cli.py`) nem ML-5E (`agentfiles.go`, catálogo)
+tocam esses 3 arquivos geradores — não é ruído de agente paralelo, é drift pré-existente à
+wave. `.trackfw-attention.json` escrito pedindo a decisão de conteúdo em aberto (recomendação:
+ML-5F corretivo).
+
+**Validação:**
+- `go build ./...` → OK.
+- `go vet ./...` → OK.
+- `go test ./...` (`make test`) → todos os pacotes OK.
+- `cd npm && npm test` → 304 passed, 0 failed (inclui o novo teste do ML-5D).
+- `python3 -m pytest pypi/tests -q` → 670 passed.
+- `GO_BIN=bin/trackfw scripts/check-slash-parity.sh` → exit 1, reportando exatamente os 2
+  arquivos com drift pré-existente (evidência esperada, documentada na nota do vault).
+- `GO_BIN=bin/trackfw scripts/check-barrier.sh` → 15/15 OK.
+- `GO_BIN=bin/trackfw scripts/check-artifact-parity.sh` → OK.
+- `bash scripts/check-gates-falsify.sh` → 16/16 cenários, incluindo os dois novos
+  (`slash-parity/status-content-drift` prova o caminho de conteúdo;
+  `slash-parity/status-name-drift` prova separadamente o caminho de nome/vacuity-guard,
+  renomeando uma chave do mapa em vez de alterar seu conteúdo).
+- `bin/trackfw validate --json` → `{"summary":{"violations":0,"warnings":0,"mode":"strict","exit_code":0}}`.
+- `make parity` → **vermelho por dois motivos independentes, em sequência** (o Makefile roda os
+  gates um após o outro; o segundo nunca é alcançado enquanto o primeiro falhar):
+  1. `scripts/check-identity-parity.sh` (linha 24 do alvo `parity`, roda ANTES do meu gate) —
+     artifact count mismatch go=13 vs node=12/python=12 nos 7 targets. Não pertence ao meu
+     escopo; aparenta ser trabalho em voo do ML-5E (`agentfiles.go`/catálogo). Reportado, não
+     investigado nem corrigido.
+  2. `scripts/check-slash-parity.sh` (meu gate, ML-5D) — drift pré-existente de `move.md`/
+     `architect.md` descrito acima. Verificado standalone (`GO_BIN=bin/trackfw
+     scripts/check-slash-parity.sh`), já que `make parity` não chega a ele enquanto (1) não for
+     resolvido. Reexecutado `make parity` ao final desta ML (evidência, não resumo):
+     ```
+     GO_BIN=bin/trackfw scripts/check-identity-parity.sh
+     Identity parity [with-identity] target 'amazonq': artifact count mismatch (go=13 node=12 python=12)
+     ... (mesmo padrão para claude, codex, copilot, cursor, gemini, windsurf)
+     Identity parity: 14 check(s) failed
+     make: *** [parity] Error 1
+     ```
+     Confirma que `check-identity-parity.sh` (linha 24, ML-5E) para o `parity` target antes de
+     `check-slash-parity.sh` (linha 27) ser alcançado nesta execução.
+
+**Critérios de aceite do ML-5D — status final:** gate compara nome+conteúdo nos 3 runtimes ✅ ·
+encadeado no `parity` do Makefile ✅ · falsificação prova não-vacuidade (nome E conteúdo, 2
+cenários distintos) ✅ · comparação sem falso positivo de encoding (comparação via `diff -ru`
+sobre arquivos gerados pelos geradores reais, nunca parsing de literais) ✅ ·
+`generateClaudeCommands` honra `rootDir` com teste ✅ · **`make quality` passa** ❌ — vermelho
+por 2 causas independentes e de terceiros: (a) `check-identity-parity.sh` falhando primeiro
+(ML-5E em voo) e (b) drift de conteúdo pré-existente que meu próprio gate corretamente
+detecta (ML-5F recomendado). `validate --json` limpo ✅.
+
+## 2026-07-29 — Apolo (Backend) — ML-5E iniciado
+
+Handoff do `trackfw_architect` para o roadmap
+`ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md` — ML-5E (corretivo).
+Escopo: `internal/generators/agentfiles.go`, o caminho de instalação por catálogo
+(`internal/commands/init.go` e `internal/commands/integrations_flags.go`) e testes
+correspondentes. Objetivo: religar `generators.InjectRulesForTool` ao caminho de instalação por
+catálogo, restaurando a criação de `GEMINI.md`, `.github/copilot-instructions.md`,
+`.windsurfrules` e `.amazonq/developer/guidelines.md` a partir de projeto novo — regressão
+introduzida pelo ML-5A ao remover os aliases deprecated. Branch:
+`feat/barrier-governanca-e-autoridade-do-orquestrador` (já criada pelo orquestrador).
+
+## 2026-07-29 — Apolo (Backend) — ML-5E bloqueado (código pronto, gate de paridade cross-CLI conflita)
+
+**Implementado:** hook em dois call sites — `installAITools` (`internal/commands/init.go`,
+fluxo `trackfw init --ai-tools`) e `executeIntegrationMutation` (
+`internal/commands/integrations_flags.go`, operação `install`, fluxo canônico `trackfw
+agents|skills install --targets <tool>`, exatamente o pedido pelo handoff). Ambos chamam
+`generators.InjectRulesForTool(target, cwd)` por target selecionado, reutilizando
+`injectOrUpdateRules` (idempotente) já existente — nenhuma reimplementação. `cwd` é sempre a
+raiz do projeto, independente de `--scope` (mesma semântica do alias removido, confirmada em
+`git show b37c064^:internal/commands/integrations_flags.go`, função
+`runDeprecatedIntegrationAlias`). Hook em `update`/`uninstall` deliberadamente **não** adicionado
+— mantém a semântica one-shot do alias removido (decisão registrada para o orquestrador poder
+sobrepor). Testes novos em `internal/commands/agentfiles_catalog_install_test.go`: criação a
+partir de projeto vazio para os 4 targets, idempotência (2 instalações → 1 bloco), paridade
+entre `agents install` e `skills install`, não-regressão do gatilho por diretório do Cursor
+(`InjectRulesDetected`), e prova de que `update` não cria o arquivo.
+
+**Bloqueio descoberto (não é ambiguidade resolvível por mim):** ligar o hook ao fluxo canônico
+`agents install --targets <tool>` faz `scripts/check-identity-parity.sh` (parte de `make
+quality`) falhar nos 7 targets com superfície de regras — Go passa a emitir 1 artefato a mais
+que Node/Python (`go=13 node=12 python=12`), porque **só o Go foi corrigido**. Investiguei se
+"religar Node/Python também" resolveria: não. Gerei `.windsurfrules` via
+`InjectRulesForTool`/`injectRulesForTool`/`inject_rules_for_tool` nos 3 runtimes a partir de
+diretório vazio e o conteúdo **já diverge entre os 3 hoje**, independente deste ML (chain de
+estados, item "ML lifecycle", bloco "Architecture Directives" — que além disso está **duplicado
+dentro do próprio Go**). Reconciliar esse texto é mudança de conteúdo fora do que a ADR do
+ML-5E sancionou e precisa de REQ própria. Diagnóstico completo, diffs e as 3 opções de decisão
+em `vault/notes/rules-block-content-drift-3-clis-2026-07-29.md`. Não escrevi
+`.trackfw-attention.json` porque o arquivo já contém o achado concorrente do ML-5D
+(`slash-commands-cross-runtime-content-drift`) — sinalizando aqui e na nota do vault para não
+sobrescrever o achado de outro agente.
+
+**Validação:**
+- `go build ./...` → OK.
+- `go vet ./...` → OK.
+- `go test ./internal/generators/... ./internal/commands/...` → OK (inclui os 6 testes novos).
+- `go test ./...` → todos os pacotes OK.
+- `make quality` → **vermelho** em `scripts/check-identity-parity.sh` (14 mismatches, ver
+  acima); todos os demais gates do `make quality` (Go, Node 304 testes, Python 670 testes,
+  `go vet`, `check-cli-parity.sh`, `check-validate-parity.sh`,
+  `check-referential-integrity.sh`, `check-static-assets.sh`,
+  `check-integration-assets.sh`) passaram antes do bloco de identity-parity.
+- `bin/trackfw validate --json` (binário gerado com sucesso pelo próprio `make quality`, antes de
+  falhar em `check-identity-parity.sh`) → `{"summary":{"violations":0,"warnings":0,"mode":"strict","exit_code":0},"violations":[],"warnings":[]}`.
+- `scripts/check-referential-integrity.sh` (standalone, cobrindo a nota do vault e o link em
+  `index.md` já no disco) → `Referential integrity OK`.
+
+**Decisão pendente do orquestrador (3 opções, recomendo (c) com (b) como interino):**
+(a) aceitar `check-identity-parity.sh` vermelho e landar só no Go; (b) reverter o hook em
+`integrations_flags.go` e manter só o de `init.go` (não exercitado por nenhum gate hoje, mas
+descumpre a instrução explícita de ligar ao fluxo `agents install`); (c) bloquear ML-5E até uma
+REQ nova reconciliar o bloco de regras nos 3 runtimes.
+
+**Arquivos alterados:** `internal/commands/init.go`, `internal/commands/integrations_flags.go`,
+`internal/commands/agentfiles_catalog_install_test.go` (novo),
+`vault/notes/rules-block-content-drift-3-clis-2026-07-29.md` (novo), `vault/notes/index.md`.
+Nada commitado — sem autoridade Git (barrier), branch permanece com working tree alterado para
+o `trackfw_architect` auditar e decidir.
+
+## 2026-07-29 — Apolo (Backend) — ML-5B concluído (consolidação da superfície de ajuda)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+
+**Tarefa:** Consolidar `trackfw help [comando|chave]` como superfície explícita única nos 3
+CLIs, preservando `--help` nativo, com resolução determinística (comando → chave de config →
+erro com sugestão) e paridade comprovada empiricamente.
+
+**Bug real encontrado e corrigido (Go apenas):** `trackfw --help` listava **duas** entradas
+`help` em "Available Commands" — a nossa customizada e a que o cobra injeta sozinho via
+`InitDefaultHelpCmd()`, que ignora comandos chamados "help" registrados via `AddCommand` (só
+respeita o campo interno `c.helpCommand`). `scripts/check-cli-parity.sh` já escondia o sintoma
+com um `awk '!seen[$0]++'` comentado "cobra may list help twice" — o defeito nunca tinha sido
+corrigido na raiz. Fix: `root.SetHelpCommand(helpCmd)` além do `AddCommand`. Diagnóstico
+completo em `vault/notes/cobra-help-cmd-duplicate-registration-2026-07-29.md`. Node
+(commander) e Python (argparse) nunca tiveram esse problema.
+
+**Implementado nos 3 CLIs (mesma lógica, replicada por linguagem):**
+1. `help` sem argumento → lista comandos disponíveis + tabela de chaves de config (antes: só
+   a tabela de chaves).
+2. `help <comando>` → agora resolve e imprime a ajuda nativa do comando (antes: sempre
+   "chave desconhecida"). Go via `root.Find`+`sub.Help()`; Node via
+   `program.commands.find(...)`+`.helpInformation()`; Python via
+   `subparsers.choices[topic].format_help()`.
+3. `help <chave>` → inalterado (documentação da chave).
+4. Assunto desconhecido → mensagem "assunto desconhecido: X" + "Você quis dizer: Y?" quando
+   houver candidato a distância de Levenshtein ≤ 3 (comandos + chaves como candidatos);
+   exit code 1 nos 3 runtimes. Implementei Levenshtein idêntico nas 3 linguagens.
+5. Go: `SilenceUsage`/`SilenceErrors` no comando `help` para não duplicar a mensagem de erro
+   (antes: "chave desconhecida" aparecia 3x — nosso print, "Error: " do cobra, e o reprint do
+   `Execute()` em `root.go`). Alinhado ao comportamento single-line de Node/Python.
+6. `<comando> --help` e `trackfw --help` preservados como flags nativas dos 3 frameworks —
+   nenhum segundo comando `help` foi registrado em nenhum runtime.
+
+**Prova de equivalência (saída literal, ver evidência completa na resposta ao orquestrador):**
+`help`, `help init`, `help wip_limit`, `help chave-que-nao-existe` (sem sugestão, os 3
+concordam) e `help wip_limi` (sugere `wip_limit` nos 3) produzem mensagem e exit code
+equivalentes nos 3 runtimes.
+
+**Limpeza adicional (autorizada no handoff):** `scripts/check-cli-parity.sh` — removidos os 5
+aliases mortos (`amazonq copilot cursor gemini windsurf`) de `go_only_commands`, mantendo só
+`completion`. `docs/cli-parity.md` — só a linha da tabela do `help` foi editada, para descrever
+a superfície unificada.
+
+**Validação:**
+- `go build ./...`, `go vet ./...` → OK.
+- `go test ./internal/commands -run Help -v` → 9/9 (inclui `TestHelpKnownCommand` e
+  `TestHelpDoesNotRegisterDuplicateEntry`, novos).
+- `go test ./...` → todos os pacotes OK.
+- `cd npm && npm test -- --test-name-pattern='help'` → suíte completa roda (custom test
+  runner, não usa `describe`/`it` do `node:test`), 304/304 (inclui os testes novos de
+  `listCommands`/`suggestTopic`).
+- `python3 -m pytest pypi/tests -k help -q` → 23/23 (nova classe
+  `TestHelpCommandResolution`).
+- `python3 -m pytest pypi/tests -q` → 675/675.
+- `bash scripts/check-cli-parity.sh` (isolado) → OK.
+- `bin/trackfw validate --json` → `{"summary":{"violations":0,"warnings":0,...,"exit_code":0}}`.
+- `make quality` → **vermelho**, mas em `scripts/check-identity-parity.sh`
+  (go=13 vs node/python=12), que é o bloqueio pré-existente do ML-5E em voo (não relacionado ao
+  meu escopo — confirmado por `docs/roadmaps/.trackfw-attention.json`, já escrito pelo agente do
+  ML-5D, e pela entrada acima deste registro). Todos os gates anteriores no pipeline de `make
+  quality` (Go completo, Node 304 testes, Python 675 testes, `go vet`, `check-cli-parity.sh`,
+  `check-validate-parity.sh`, `check-referential-integrity.sh`, `check-static-assets.sh`,
+  `check-integration-assets.sh`) passaram.
+
+**Arquivos alterados:** `internal/commands/help.go`, `internal/commands/help_test.go`,
+`internal/commands/root.go`, `npm/src/commands/help.js`, `npm/tests/help.test.js`,
+`pypi/trackfw/commands/help_cmd.py`, `pypi/tests/test_help.py`, `scripts/check-cli-parity.sh`,
+`docs/cli-parity.md`, `vault/notes/cobra-help-cmd-duplicate-registration-2026-07-29.md` (novo),
+`vault/notes/index.md`. Nada commitado — sem autoridade Git; branch permanece com working tree
+alterado (compartilhado com o trabalho em voo do ML-5D/ML-5E) para o `trackfw_architect`
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-5F resolução das 3 divergências de `scripts/check-slash-parity.sh`)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+
+**Tarefa:** Resolver as 3 divergências pré-existentes acusadas por
+`scripts/check-slash-parity.sh` (criado no ML-5D) entre os mapas de slash commands dos 3
+runtimes, sem tocar em `internal/generators/agentfiles.go` nem nos injetores de regras
+(escopo do ML-5G).
+
+**Entregue:**
+1. `move.md` — exemplo `wip` → `analyzing` em Go (`internal/generators/scaffold.go`) e Python
+   (`pypi/trackfw/generators/init_gen.py`); decisão deliberada do usuário, não é maioria (foi a
+   única das 3 que NÃO seguiu maioria 2-1, ver handoff).
+2. `move.md` — lista "Estados válidos" agora inclui `analyzing` também no Python
+   (`init_gen.py`); Go e Node já tinham. Maioria 2-1.
+3. `architect.md` — removido o parêntese `` (`/trackfw:architect`) `` da frase de abertura no
+   Python (`init_gen.py`), para igualar Go/Node. Maioria 2-1.
+
+**Efeito colateral corrigido:** `pypi/tests/test_generators_init.py` tinha um
+`assertIn('/trackfw:architect', content)` que só passava por causa da divergência #3 (nenhum
+teste equivalente existe em Go/Node para essa frase — os testes Go/Node que citam
+`/trackfw:architect` são sobre a tabela do CLAUDE.md, não sobre a abertura do architect.md).
+Removida a asserção obsoleta; sem ela, o teste continua cobrindo o resto do conteúdo.
+
+**Validação:**
+- `go build -o bin/trackfw ./cmd/trackfw && scripts/check-slash-parity.sh` → `OK
+  [slash-parity/vacuity-guard]`, `OK [slash-parity/three-runtimes-identical]`, "Slash command
+  parity checks passed (9 commands x 3 runtimes)." — zero divergências.
+- `go build ./... && go test ./...` → todos os pacotes OK.
+- `cd npm && npm test` → 14+45 testes de validate/validator + 304 no total, 0 falhas.
+- `python3 -m pytest pypi/tests -q` → 675 passed (após a correção do teste obsoleto).
+- `bin/trackfw validate --json` → `{"summary":{"violations":0,"warnings":0,"mode":"strict","exit_code":0}}`.
+- `make quality` não foi rodado (vermelho por causa pré-existente do ML-5E/`check-identity-parity.sh`,
+  fora do meu escopo, conforme o handoff).
+
+**Arquivos alterados:** `internal/generators/scaffold.go`, `pypi/trackfw/generators/init_gen.py`,
+`pypi/tests/test_generators_init.py`. Nenhum arquivo fora dos 3 mapas de slash commands (e o
+teste que os cobre) foi tocado. Nada commitado — sem autoridade Git; branch permanece com
+working tree alterado (inclui trabalho em voo de outros MLs, não meu) para o
+`trackfw_architect` revisar e commitar.
+revisar e commitar.
+
+## Auditoria 2026-07-29 — Zeus — Wave 5 completa e aprovada
+
+Sete MLs: 5A (aliases removidos), 5B (help unificado), 5C (mapa único no Node), 5D (gate de
+paridade dos slash commands), 5E (regressão dos arquivos de regras), 5F (conteúdo dos slash
+commands reconciliado), 5G (bloco de regras reconciliado).
+
+A wave revelou uma cadeia de dependência que o roadmap original não previa: o ML-5A introduziu uma
+regressão, o ML-5E não pôde corrigi-la porque o texto do bloco de regras divergia entre os
+runtimes, e o `check-identity-parity.sh` compara sha256 por artefato — então contagens iguais com
+conteúdo diferente continuam reprovando. Decisão do usuário: reconciliar o texto nesta branch em
+vez de adiar. O ML-5G removeu a duplicação do bloco `Architecture Directives` no Go, unificou o
+texto e ligou a injeção nos três runtimes.
+
+Decisão de produto do usuário registrada: o exemplo de `move.md` passa a usar `analyzing` em vez de
+`wip`, por ensinar o ciclo completo. É a única das três reconciliações do ML-5F que não segue a
+maioria, e é deliberada.
+
+Verificação independente: `make quality` exit 0 com 17 cenários de falsificação e 11 gates provados
+não-vacuosos — eram 8 no início da sessão. `Architecture Directives` aparece uma única vez no Go.
+Em projeto novo com HOME isolado, `init --ai-tools gemini` cria `GEMINI.md` (3100 bytes) e reexecutar
+mantém um único bloco de regras.
+
+**Observação para a Wave 6:** ao validar a regressão, constatei que `trackfw init --ai-tools` grava
+em `~/.gemini` — o HOME do usuário. É a mesma classe de defeito que a Wave 6 existe para corrigir
+em `trackfw update`: um comando de escopo de projeto mutando o harness global. O contrato do ML-6A
+cobre `update`, não `init`. Registrado como ML-6E.

@@ -410,7 +410,7 @@ go vet ./...
 ```
 
 ### ML-5B — Consolidar a superfície de ajuda
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/commands/help.go`
 - `internal/commands/root.go`
@@ -432,12 +432,12 @@ go vet ./...
 5. Remover a duplicação de registro/renderer sem apagar a documentação das chaves existentes.
 
 **Critérios de aceite:**
-- [ ] Existe uma única entrada explícita `help` em cada CLI.
-- [ ] `trackfw help`, `trackfw help <comando>` e `trackfw help <chave>` funcionam.
-- [ ] `trackfw --help` e `<comando> --help` continuam funcionando.
-- [ ] Chave desconhecida retorna erro não-zero e sugestão útil.
-- [ ] Saída e exit codes são equivalentes nos três CLIs.
-- [ ] Testes dos três runtimes passam.
+- [x] Existe uma única entrada explícita `help` em cada CLI.
+- [x] `trackfw help`, `trackfw help <comando>` e `trackfw help <chave>` funcionam.
+- [x] `trackfw --help` e `<comando> --help` continuam funcionando.
+- [x] Chave desconhecida retorna erro não-zero e sugestão útil.
+- [x] Saída e exit codes são equivalentes nos três CLIs.
+- [x] Testes dos três runtimes passam.
 
 **Comandos de validação:**
 ```bash
@@ -478,7 +478,7 @@ make quality
 ```
 
 ### ML-5D — Criar gate de paridade do conjunto de slash commands
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Origem:** lacuna estrutural apontada nas auditorias do ML-3A e do ML-5C.
 **Arquivos afetados:**
 - `scripts/check-artifact-parity.sh` (ou novo `scripts/check-slash-parity.sh`)
@@ -504,11 +504,11 @@ inspeção manual. A prova de equivalência do `barrier.md` no ML-3A também foi
    argumento silenciosamente. O gêmeo forçado honra `rootDir` corretamente.
 
 **Critérios de aceite:**
-- [ ] O gate compara nomes e conteúdo de todos os slash commands nos três runtimes.
-- [ ] O gate está encadeado no alvo `parity`.
-- [ ] Cenário de falsificação prova que o gate não é vacuoso.
-- [ ] `generateClaudeCommands` honra o diretório recebido.
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] O gate compara nomes e conteúdo de todos os slash commands nos três runtimes.
+- [x] O gate está encadeado no alvo `parity`.
+- [x] Cenário de falsificação prova que o gate não é vacuoso.
+- [x] `generateClaudeCommands` honra o diretório recebido.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
 
 **Comandos de validação:**
 ```bash
@@ -517,7 +517,10 @@ scripts/check-gates-falsify.sh
 ```
 
 ### ML-5E — Restaurar a criação dos arquivos auxiliares de regras (corretivo)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (desbloqueado pelo ML-5G)
+**Dependência:** o código já está implementado no working tree, mas só pode ser concluído após o
+ML-5G reconciliar o bloco de regras. Ligar a injeção nos três runtimes exige conteúdo idêntico,
+porque `check-identity-parity.sh` compara sha256 por artefato.
 **Origem:** regressão funcional detectada na auditoria do ML-5A.
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go`
@@ -548,15 +551,84 @@ corrigido, não documentado como comportamento aceito.
 4. Verificar se Node.js e Python têm superfície equivalente e, em caso positivo, manter paridade.
 
 **Critérios de aceite:**
-- [ ] Em projeto novo, instalar o target cria o arquivo de regras correspondente.
-- [ ] Reinstalar não duplica o bloco de regras.
-- [ ] Teste cobre os quatro arquivos a partir de projeto vazio.
-- [ ] Paridade verificada entre os runtimes que possuem a superfície.
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] Em projeto novo, instalar o target cria o arquivo de regras correspondente.
+- [x] Reinstalar não duplica o bloco de regras.
+- [x] Teste cobre os quatro arquivos a partir de projeto vazio.
+- [x] Paridade verificada entre os runtimes que possuem a superfície.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
 
 **Comandos de validação:**
 ```bash
 go test ./internal/generators/... ./internal/commands/...
+make quality
+```
+
+### ML-5F — Reconciliar o conteúdo dos slash commands entre os runtimes
+**Status:** ✅ Concluído
+**Origem:** o gate criado no ML-5D acusou 3 divergências pré-existentes de conteúdo.
+**Arquivos afetados:**
+- `internal/generators/scaffold.go`
+- `npm/src/generators/init.js`
+- `pypi/trackfw/generators/init_gen.py`
+
+**Divergências e resolução:**
+1. `move.md`, "Estados válidos" — Go e Node listam `analyzing`, Python não. Resolução: incluir
+   `analyzing` no Python (maioria 2-1).
+2. `move.md`, "Exemplo" — Go e Python usam `wip`, Node usa `analyzing`. **Decisão de produto do
+   usuário: usar `analyzing`**, por ser o estado intermediário antes de `wip` e ensinar o ciclo
+   completo em vez do atalho. Ajustar Go e Python. Esta é a única resolução que **não** segue a
+   maioria, e é deliberada.
+3. `architect.md`, frase de abertura — Python tem um parêntese extra. Resolução: remover do Python
+   (maioria 2-1).
+
+**Critérios de aceite:**
+- [x] `scripts/check-slash-parity.sh` passa sem divergências.
+- [x] O exemplo de `move.md` usa `analyzing` nos três runtimes.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+
+**Comandos de validação:**
+```bash
+scripts/check-slash-parity.sh
+make quality
+```
+
+### ML-5G — Reconciliar o bloco de regras entre os runtimes (desbloqueia ML-5E)
+**Status:** ✅ Concluído
+**Origem:** bloqueio do ML-5E. **Decisão do usuário: reconciliar agora, nesta branch**, em vez de
+adiar para REQ própria.
+**Arquivos afetados:**
+- `internal/generators/agentfiles.go`
+- os injetores de regras equivalentes em `npm/src/` e `pypi/trackfw/`
+- testes correspondentes
+
+**Diagnóstico:** o texto do bloco de regras injetado em `GEMINI.md`,
+`.github/copilot-instructions.md`, `.windsurfrules` e `.amazonq/developer/guidelines.md` diverge
+entre os três runtimes. O Go omite `analyzing` na lista de estados e o item de ciclo de vida de ML,
+tem uma seção `Key Commands` ausente nos outros dois, e **repete o bloco `Architecture Directives`
+duas vezes dentro do próprio arquivo** (`agentfiles.go` ~52-61 e ~63-72). Node e Python divergem no
+sentido oposto.
+
+Enquanto isso não for reconciliado, o ML-5E não pode ligar a injeção nos três runtimes:
+`scripts/check-identity-parity.sh` compara **sha256 por artefato**, então contagens iguais com
+conteúdo diferente continuam reprovando.
+
+**Ações:**
+1. Remover a duplicação do bloco `Architecture Directives` no Go — é bug, não conteúdo.
+2. Unificar o texto do bloco de regras nos três runtimes, incluindo lista de estados
+   (com `analyzing`), item de ciclo de vida de ML e a seção `Key Commands`.
+3. Adicionar teste que prove que os três runtimes emitem bloco byte-idêntico a partir de projeto
+   vazio, para que a divergência não volte.
+
+**Critérios de aceite:**
+- [x] O bloco `Architecture Directives` aparece uma única vez no Go.
+- [x] Os três runtimes emitem bloco de regras byte-idêntico.
+- [x] Existe teste que falha se a divergência regredir.
+- [x] `scripts/check-identity-parity.sh` passa com a injeção do ML-5E ligada nos três runtimes.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+
+**Comandos de validação:**
+```bash
+scripts/check-identity-parity.sh
 make quality
 ```
 

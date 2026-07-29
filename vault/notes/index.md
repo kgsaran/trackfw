@@ -11,3 +11,6 @@
 - [barrier-git-authority-subagents-2026-07-29](barrier-git-authority-subagents-2026-07-29.md)
 - [barrier-contract-xfail-false-positive-2026-07-29](barrier-contract-xfail-false-positive-2026-07-29.md)
 - [barrier-gates-check-key-order-divergence-go-2026-07-29](barrier-gates-check-key-order-divergence-go-2026-07-29.md)
+- [slash-commands-cross-runtime-content-drift-2026-07-29](slash-commands-cross-runtime-content-drift-2026-07-29.md)
+- [rules-block-content-drift-3-clis-2026-07-29](rules-block-content-drift-3-clis-2026-07-29.md)
+- [cobra-help-cmd-duplicate-registration-2026-07-29](cobra-help-cmd-duplicate-registration-2026-07-29.md)

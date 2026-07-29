@@ -26,10 +26,8 @@ floor_commands=(
 # Go-only commands: documented in docs/cli-parity.md as exceptions to the
 # cross-runtime parity contract. These exist in the Go binary for historical
 # compatibility and must NOT be required of the Node.js and Python CLIs.
-#  · amazonq / copilot / cursor / gemini / windsurf — legacy forge-specific
-#    integration aliases (use `agents` / `skills` in new automation)
 #  · completion — cobra built-in shell-completion helper, not cross-runtime
-go_only_commands=(amazonq copilot cursor gemini windsurf completion)
+go_only_commands=(completion)
 
 # Derive the canonical command set from the Go CLI (the reference implementation).
 # P1: never hardcode the command list; derive it so the gate stays accurate

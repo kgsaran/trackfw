@@ -13,6 +13,7 @@ from trackfw.identity import IdentityError, load as load_identity
 
 from .catalog import plan_deployments
 from .manager import IntegrationError, IntegrationManager
+from trackfw.generators.init_gen import inject_rules_for_tool
 
 # trackfw.commands.identity_wizard is imported lazily inside run(), as a
 # defensive measure: this module lives in trackfw.integrations, and
@@ -298,6 +299,23 @@ def run(args: argparse.Namespace, kind: str) -> int:
             manager.update(plans, force=args.force)
         elif args.action == "uninstall":
             manager.uninstall(plans, force=args.force)
+
+        # Auxiliary rules files (GEMINI.md, .github/copilot-instructions.md,
+        # .windsurfrules, .amazonq/developer/guidelines.md, etc.) are outside
+        # the agents/skills catalog managed by IntegrationManager above — they
+        # are a separate, tool-specific mechanism (inject_rules_for_tool), and
+        # this is the canonical catalog-based install path (`trackfw
+        # agents|skills install --targets <tool>`). Mirrors
+        # internal/commands/integrations_flags.go:executeIntegrationMutation
+        # (ML-5E/ML-5G of ROADMAP-2026-07-29-barrier-governanca-e-autoridade-
+        # do-orquestrador). Scoped to "install" only, mirroring the one-shot
+        # semantics the removed deprecated CLI aliases had.
+        # inject_rules_for_tool no-ops for targets without a rules surface
+        # (e.g. antigravity, kiro) and is idempotent for repeated runs.
+        if args.action == "install":
+            for target_id in targets:
+                inject_rules_for_tool(target_id, str(manager.project_root))
+
         deployments = manager.list(plans)
         deployments.sort(key=lambda deployment: (deployment["target"], deployment["surface"], deployment["item"]))
         payload: dict[str, Any] = {

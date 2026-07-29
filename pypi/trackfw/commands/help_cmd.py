@@ -245,17 +245,66 @@ def describe_key(key: str):
     return "\n".join(lines)
 
 
+_subparsers = None
+
+
+def list_commands():
+    """Retorna a string formatada com os comandos disponíveis do parser principal."""
+    if _subparsers is None:
+        return "Comandos disponíveis:"
+    entries = [(a.dest, a.help or "") for a in _subparsers._choices_actions]
+    name_width = max((len(name) for name, _ in entries), default=0) + 2
+    lines = ["Comandos disponíveis:"]
+    for name, help_text in entries:
+        lines.append(f"  {name:<{name_width}}{help_text}")
+    return "\n".join(lines)
+
+
+def levenshtein(a: str, b: str) -> int:
+    """Distância de edição entre a e b."""
+    la, lb = len(a), len(b)
+    prev = list(range(lb + 1))
+    for i in range(1, la + 1):
+        curr = [i] + [0] * lb
+        for j in range(1, lb + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            curr[j] = min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
+        prev = curr
+    return prev[lb]
+
+
+def suggest_topic(topic: str):
+    """Retorna o comando ou chave de configuração conhecida mais próxima de
+    topic (distância de edição <= 3), ou None se nenhuma for próxima o
+    suficiente."""
+    threshold = 3
+    candidates = list(CONFIG_DOCS.keys())
+    if _subparsers is not None:
+        candidates += [a.dest for a in _subparsers._choices_actions]
+
+    best = None
+    best_dist = threshold + 1
+    for candidate in candidates:
+        dist = levenshtein(topic, candidate)
+        if dist < best_dist:
+            best_dist = dist
+            best = candidate
+    return best if best_dist <= threshold else None
+
+
 def register(subparsers):
     """Registra o subcomando 'help' no parser principal."""
+    global _subparsers
+    _subparsers = subparsers
     parser = subparsers.add_parser(
         "help",
-        help="Lista as keys configuráveis ou exibe doc de uma key específica",
+        help="Exibe ajuda de comandos e documentação das chaves de configuração do trackfw.yaml",
     )
     parser.add_argument(
-        "key",
+        "topic",
         nargs="?",
         default=None,
-        help="Nome da chave de configuração (opcional)",
+        help="Comando ou chave de configuração para detalhar (opcional)",
     )
     parser.set_defaults(func=run)
     return parser
@@ -263,11 +312,29 @@ def register(subparsers):
 
 def run(args):
     """Executa o comando help."""
-    if args.key is None:
+    topic = args.topic
+
+    if topic is None:
+        print(list_commands())
+        print()
         print(list_keys())
-    else:
-        result = describe_key(args.key)
-        if result is None:
-            print(f"chave desconhecida: {args.key}")
-            sys.exit(1)
+        return
+
+    # 1) comando conhecido → ajuda do comando.
+    if _subparsers is not None and topic in _subparsers.choices:
+        print(_subparsers.choices[topic].format_help().rstrip())
+        return
+
+    # 2) chave de configuração conhecida → documentação da chave.
+    result = describe_key(topic)
+    if result is not None:
         print(result)
+        return
+
+    # 3) assunto desconhecido → erro com sugestão útil.
+    msg = f"assunto desconhecido: {topic}"
+    suggestion = suggest_topic(topic)
+    if suggestion:
+        msg += f"\nVocê quis dizer: {suggestion}?"
+    print(msg)
+    sys.exit(1)

@@ -381,14 +381,19 @@ This project uses **trackfw** for AI-native delivery governance.
 Chain: \`ADR → REQ → ROADMAP\` · States: \`backlog / analyzing / wip / blocked / done / abandoned\`
 
 ### Agent Protocol
-1. **Before starting:** run \`trackfw context\` · read \`docs/agents-working-context.md\`
-2. **After finishing:** update \`docs/agents-working-context.md\` with what changed
-3. **Before PR:** \`trackfw validate\` must pass
-4. **ML lifecycle — mandatory:**
+1. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:
+   \`trackfw req new "title"\` → \`trackfw roadmap new "title"\` → \`trackfw roadmap move <name> wip\` → \`git checkout -b feat/<branch>\`
+   ❌ Never create a branch before REQ + ROADMAP are in wip/
+   ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables
+   ✓ \`trackfw validate\` enforces this via \`branch_has_wip_roadmap\` rule (v2.7.0+)
+2. **Before starting:** run \`trackfw context\` · read \`docs/agents-working-context.md\`
+3. **After finishing:** update \`docs/agents-working-context.md\` with what changed
+4. **Before PR:** \`trackfw validate\` must pass
+5. **ML lifecycle — mandatory:**
    - Starting a ML: edit roadmap \`**Status:** ⬜ Pendente\` → \`**Status:** 🔄 Em andamento\` + commit.
    - Completing a ML: edit roadmap → \`**Status:** ✅ Concluído\` + include in ML commit.
    - Analyzing a roadmap: move from \`backlog/\` to \`analyzing/\`; to \`wip/\` only when coding starts.
-5. **${GLOBAL_ADRS_DIRECTIVE}**
+6. **${GLOBAL_ADRS_DIRECTIVE}**
 
 ### Attention Signal (when you need user input during a task)
 Write \`docs/roadmaps/.trackfw-attention.json\`:
@@ -411,6 +416,13 @@ Delete the file when resolved. Visible as a live banner in \`trackfw serve\`.
 - **Security wave:** include a red-team review wave in every feature roadmap
 - **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)
 - Use \`/trackfw:architect\` to define stack before the first REQ
+
+### Key Commands
+- \`trackfw context\` — current governance state (always run first)
+- \`trackfw status\` — all artifacts and states
+- \`trackfw validate\` — governance consistency check
+- \`trackfw roadmap move <name> <state>\` — transition roadmap state
+- \`trackfw serve\` — live Kanban board at http://localhost:4080
 ` + RULES_END
 }
 
@@ -1112,11 +1124,15 @@ function installClaudeCommandsInner(dir, force) {
 
 /**
  * generateClaudeCommands — instala os slash commands de forma idempotente:
- * nunca sobrescreve um arquivo já existente. Usa cwd (caminho relativo),
- * preservando o comportamento histórico consumido por scaffold()/tests.
+ * nunca sobrescreve um arquivo já existente. Honra o `rootDir` recebido
+ * (mesma convenção do gêmeo forçado generateClaudeCommandsForce e do
+ * generate_claude_commands(cwd) do Python); quando omitido, cai no
+ * caminho relativo ao cwd do processo, preservando o comportamento
+ * histórico consumido pelos testes que chamam sem argumento.
  */
-function generateClaudeCommands() {
-  installClaudeCommandsInner('.claude/commands/trackfw', false)
+function generateClaudeCommands(rootDir) {
+  const dir = rootDir ? path.join(rootDir, '.claude', 'commands', 'trackfw') : '.claude/commands/trackfw'
+  installClaudeCommandsInner(dir, false)
 }
 
 // ---------------------------------------------------------------------------

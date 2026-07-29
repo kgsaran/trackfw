@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
@@ -219,6 +220,24 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	}
 	if err != nil {
 		return err
+	}
+	// Auxiliary rules files (GEMINI.md, .github/copilot-instructions.md,
+	// .windsurfrules, .amazonq/developer/guidelines.md, etc.) are outside the
+	// agents/skills catalog managed by Manager above — they are a separate,
+	// tool-specific mechanism (generators.InjectRulesForTool), and this is
+	// the canonical catalog-based install path (`trackfw agents|skills
+	// install --targets <tool>`). Restores the behavior the removed
+	// deprecated CLI aliases used to provide (ML-5E of ROADMAP-2026-07-29-
+	// barrier-governanca-e-autoridade-do-orquestrador). Scoped to "install"
+	// only, mirroring the one-shot semantics the old aliases had.
+	// InjectRulesForTool no-ops for targets without a rules surface (e.g.
+	// antigravity, kiro) and is idempotent for repeated runs.
+	if operation == "install" {
+		for _, target := range opts.targets {
+			if err := generators.InjectRulesForTool(target, manager.ProjectRoot); err != nil {
+				return fmt.Errorf("install %s auxiliary rules: %w", target, err)
+			}
+		}
 	}
 	if opts.json {
 		return printLifecycleOutput(cmd, catalog, kind, plans, manager)

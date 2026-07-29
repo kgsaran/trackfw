@@ -583,7 +583,6 @@ class TestGenerateClaudeCommands(unittest.TestCase):
         self.assertIn('Passo 3 — Arquitetura em Camadas', content)
         self.assertIn('Passo 4 — Gerar o ADR de Stack', content)
         self.assertIn('Passo 5 — Próximos Passos', content)
-        self.assertIn('/trackfw:architect', content)
 
     def test_generate_claude_commands_creates_barrier_md(self):
         from trackfw.generators.init_gen import generate_claude_commands

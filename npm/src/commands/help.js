@@ -247,22 +247,112 @@ function describeKey(key) {
   ].join('\n')
 }
 
+/**
+ * Retorna a listagem de comandos disponíveis a partir do programa raiz.
+ * @param {import('commander').Command} root
+ * @returns {string}
+ */
+function listCommands(root) {
+  const visible = root.commands.filter((sub) => !sub._hidden)
+  const nameWidth = Math.max(...visible.map((sub) => sub.name().length)) + 2
+  const lines = ['Comandos disponíveis:']
+  for (const sub of visible) {
+    lines.push(`  ${sub.name().padEnd(nameWidth)}${sub.description()}`)
+  }
+  return lines.join('\n')
+}
+
+/**
+ * Distância de edição (Levenshtein) entre duas strings.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function levenshtein(a, b) {
+  const la = a.length
+  const lb = b.length
+  let prev = new Array(lb + 1)
+  let curr = new Array(lb + 1)
+  for (let j = 0; j <= lb; j++) prev[j] = j
+  for (let i = 1; i <= la; i++) {
+    curr[0] = i
+    for (let j = 1; j <= lb; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
+    }
+    const tmp = prev
+    prev = curr
+    curr = tmp
+  }
+  return prev[lb]
+}
+
+/**
+ * Retorna o comando ou chave de configuração conhecida mais próxima de
+ * topic (distância de edição <= 3), ou null se nenhuma for próxima o
+ * suficiente.
+ * @param {string} topic
+ * @param {import('commander').Command} root
+ * @returns {string|null}
+ */
+function suggestTopic(topic, root) {
+  const threshold = 3
+  const candidates = [
+    ...root.commands.filter((sub) => !sub._hidden).map((sub) => sub.name()),
+    ...Object.keys(configDocs)
+  ]
+  let best = null
+  let bestDist = threshold + 1
+  for (const candidate of candidates) {
+    const dist = levenshtein(topic, candidate)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = candidate
+    }
+  }
+  return bestDist <= threshold ? best : null
+}
+
 const cmd = new Command('help')
-cmd.description('Exibe documentação das keys configuráveis do trackfw.yaml')
-cmd.argument('[key]', 'key específica para detalhar')
-cmd.action((key) => {
-  if (!key) {
+cmd.description('Exibe ajuda de comandos e documentação das chaves de configuração do trackfw.yaml')
+cmd.argument('[topic]', 'comando ou chave de configuração para detalhar')
+cmd.action(function (topic, options, thisCommand) {
+  const self = thisCommand || this
+  const root = self.parent || self
+
+  if (!topic) {
+    console.log(listCommands(root))
+    console.log()
     console.log(listKeys())
     return
   }
-  const output = describeKey(key)
-  if (!output) {
-    console.error(`chave desconhecida: ${key}`)
-    process.exit(1)
+
+  // 1) comando conhecido → ajuda do comando.
+  const sub = root.commands.find((c) => c.name() === topic)
+  if (sub) {
+    console.log(sub.helpInformation().trimEnd())
+    return
   }
-  console.log(output)
+
+  // 2) chave de configuração conhecida → documentação da chave.
+  const output = describeKey(topic)
+  if (output) {
+    console.log(output)
+    return
+  }
+
+  // 3) assunto desconhecido → erro com sugestão útil.
+  let msg = `assunto desconhecido: ${topic}`
+  const suggestion = suggestTopic(topic, root)
+  if (suggestion) {
+    msg += `\nVocê quis dizer: ${suggestion}?`
+  }
+  console.error(msg)
+  process.exitCode = 1
 })
 
 module.exports = cmd
 module.exports.listKeys = listKeys
 module.exports.describeKey = describeKey
+module.exports.listCommands = listCommands
+module.exports.suggestTopic = suggestTopic

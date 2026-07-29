@@ -113,6 +113,29 @@ test('generateClaudeCommands and generateClaudeCommandsForce install the exact s
   }
 })
 
+test('generateClaudeCommands honors an explicit rootDir argument (ML-5D)', () => {
+  // Regression test: generateClaudeCommands(root) used to accept `root` but
+  // silently ignore it, always writing relative to process.cwd() — the
+  // forced twin (generateClaudeCommandsForce) already honored rootDir
+  // correctly, and scaffold() calls generateClaudeCommands(root) expecting
+  // the argument to be respected.
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cmds-root-'))
+  const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cmds-cwd-'))
+  const origCwd = process.cwd()
+  try {
+    process.chdir(cwdDir)
+    generateClaudeCommands(rootDir)
+
+    const archInRoot = path.join(rootDir, '.claude', 'commands', 'trackfw', 'architect.md')
+    assert.ok(fs.existsSync(archInRoot), 'slash commands should be written under the passed rootDir')
+
+    const archInCwd = path.join(cwdDir, '.claude', 'commands', 'trackfw', 'architect.md')
+    assert.ok(!fs.existsSync(archInCwd), 'slash commands must not also be written relative to process.cwd() when rootDir is given')
+  } finally {
+    process.chdir(origCwd)
+  }
+})
+
 test('generateClaudeCommands does not overwrite an existing file; generateClaudeCommandsForce does', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cmds-overwrite-'))
   const origCwd = process.cwd()

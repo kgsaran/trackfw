@@ -22,6 +22,8 @@ Run 'trackfw init' to set up governance in your project.`,
 		Version: trackversion.Version,
 	}
 
+	helpCmd := newHelpCmd()
+
 	root.SetVersionTemplate("trackfw {{.Version}}\n")
 	root.AddCommand(
 		newInitCmd(),
@@ -34,7 +36,7 @@ Run 'trackfw init' to set up governance in your project.`,
 		newStatusCmd(),
 		newValidateCmd(),
 		newBaselineCmd(),
-		newHelpCmd(),
+		helpCmd,
 		newConfigureCmd(),
 		newVersionCmd(),
 		newLogCmd(),
@@ -48,6 +50,11 @@ Run 'trackfw init' to set up governance in your project.`,
 		newShipCmd(),
 		newBarrierCmd(),
 	)
+
+	// trackfw expõe uma única superfície explícita de ajuda ("help").
+	// Sem isto, cobra registra seu próprio comando "help" default além do
+	// nosso, duplicando a entrada em `trackfw --help` (Available Commands).
+	root.SetHelpCommand(helpCmd)
 
 	root.Args = cobra.ArbitraryArgs
 	root.RunE = func(cmd *cobra.Command, args []string) error {

@@ -16,7 +16,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `context` | yes | yes | yes | Markdown/JSON context |
 | `log` | yes | yes | yes | Append/read transition log |
 | `baseline` | yes | yes | yes | Persist accepted findings |
-| `help` | yes | yes | yes | Configuration key documentation |
+| `help` | yes | yes | yes | Single explicit help surface: `trackfw help` lists commands and config keys; `trackfw help <command>` shows that command's help; `trackfw help <key>` shows config key documentation; unknown topic exits non-zero with a suggestion when a close match exists. Native `--help` on root/subcommands is preserved separately by each runtime's framework (cobra/commander/argparse) |
 | `configure` | yes | yes | yes | Generate configuration |
 | `discover` | yes | yes | yes | Inspect existing repository |
 | `update` | yes | yes | yes | Refresh managed artifacts |
