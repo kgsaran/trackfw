@@ -10,7 +10,6 @@ import (
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
-	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
@@ -484,28 +483,4 @@ func surfaceCapability(target integrations.Target, surfaceID string, kind integr
 		}
 	}
 	return integrations.Surface{}, integrations.Capability{}
-}
-
-func runDeprecatedIntegrationAlias(cmd *cobra.Command, target string, scopes []string) error {
-	fmt.Fprintf(cmd.ErrOrStderr(), "warning: trackfw %s is deprecated; use trackfw agents|skills install --targets %s\n", target, target)
-	for _, scope := range scopes {
-		for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
-			// scopeExplicit: true — deprecated aliases pass their own fixed
-			// scopes and never go through cmd.Flags(), so resolveScope must
-			// treat this exactly like an explicit --scope and never prompt
-			// (ADR "fora de escopo": alias behavior does not change).
-			opts := integrationOptions{targets: []string{target}, scope: scope, scopeExplicit: true}
-			if err := executeIntegrationMutation(cmd, kind, "install", &opts); err != nil {
-				return err
-			}
-		}
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	if err := generators.InjectRulesForTool(target, cwd); err != nil {
-		return fmt.Errorf("install %s auxiliary rules: %w", target, err)
-	}
-	return nil
 }

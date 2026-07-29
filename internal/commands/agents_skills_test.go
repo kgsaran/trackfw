@@ -143,33 +143,35 @@ func TestListWithTargetStillIncludesAllCompatibleSurfaces(t *testing.T) {
 	}
 }
 
-func TestDeprecatedCursorAliasUsesLifecycleManager(t *testing.T) {
-	project, _ := integrationCommandFixture(t)
-	cmd := newCursorCmd()
-	var stderr bytes.Buffer
-	cmd.SetErr(&stderr)
-	cmd.SetOut(&bytes.Buffer{})
-	if err := cmd.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(stderr.String(), "deprecated") {
-		t.Fatalf("missing deprecation warning: %s", stderr.String())
-	}
-	for _, path := range []string{
-		filepath.Join(project, ".cursor", "agents", "trackfw-architect.md"),
-		filepath.Join(project, ".cursor", "skills", "trackfw-governance", "SKILL.md"),
-		filepath.Join(project, ".cursor", "rules", "trackfw.mdc"),
-	} {
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("alias did not install %s: %v", path, err)
-		}
-	}
-	manifest, err := os.ReadFile(filepath.Join(project, ".trackfw", "integrations-manifest.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(manifest), filepath.Join(project, ".cursor", "rules", "trackfw.mdc")) {
-		t.Fatal("auxiliary legacy rule must not receive lifecycle ownership")
+// TestRemovedIntegrationAliasesAreUnknownCommands proves the five deprecated
+// integration aliases (copilot, cursor, gemini, windsurf, amazonq) no longer
+// exist as top-level CLI commands. The canonical flow is exclusively
+// `trackfw agents|skills`; the catalog targets with the same names remain
+// valid values for `trackfw agents/skills install --targets` and
+// `trackfw init --ai-tools`, which is a separate surface not covered here.
+func TestRemovedIntegrationAliasesAreUnknownCommands(t *testing.T) {
+	for _, name := range []string{"copilot", "cursor", "gemini", "windsurf", "amazonq"} {
+		t.Run(name, func(t *testing.T) {
+			// First: the name must not be a registered subcommand in the real,
+			// fully-built command tree — this fails if the alias is ever
+			// re-registered in root.go, unlike a bare RunPlugin call.
+			root := newRootCmd()
+			if child, _, err := root.Find([]string{name}); err == nil && child != root {
+				t.Fatalf("%q is still a registered command: %s", name, child.CommandPath())
+			}
+
+			// Second: end-to-end, `trackfw <name>` falls through to the plugin
+			// resolver and is reported as unknown with the exact message.
+			integrationCommandFixture(t)
+			err := RunPlugin(name, nil)
+			if err == nil {
+				t.Fatalf("expected %q to be reported as unknown, got success", name)
+			}
+			want := `unknown command or plugin: "` + name + `"`
+			if err.Error() != want {
+				t.Fatalf("unexpected error message for %q: got %q, want %q", name, err.Error(), want)
+			}
+		})
 	}
 }
 
@@ -355,40 +357,5 @@ func TestListWithoutScopeReportsGlobalDestinations(t *testing.T) {
 	path := filepath.Join(home, ".claude", "agents", "trackfw-backend.md")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("install without --scope must have written under home: %v", err)
-	}
-}
-
-func TestDeprecatedAliasesPreserveAuxiliaryRulesWithoutOwnership(t *testing.T) {
-	tests := []struct {
-		name     string
-		command  func() *cobra.Command
-		rulePath string
-	}{
-		{"gemini", newGeminiCmd, "GEMINI.md"},
-		{"copilot", newCopilotCmd, filepath.Join(".github", "copilot-instructions.md")},
-		{"windsurf", newWindsurfCmd, ".windsurfrules"},
-		{"amazonq", newAmazonQCmd, filepath.Join(".amazonq", "developer", "guidelines.md")},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			project, _ := integrationCommandFixture(t)
-			cmd := test.command()
-			cmd.SetOut(&bytes.Buffer{})
-			cmd.SetErr(&bytes.Buffer{})
-			if err := cmd.Execute(); err != nil {
-				t.Fatal(err)
-			}
-			rule := filepath.Join(project, test.rulePath)
-			if _, err := os.Stat(rule); err != nil {
-				t.Fatalf("legacy alias rule missing: %s: %v", rule, err)
-			}
-			manifest, err := os.ReadFile(filepath.Join(project, ".trackfw", "integrations-manifest.json"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if strings.Contains(string(manifest), rule) {
-				t.Fatalf("auxiliary rule unexpectedly owned by lifecycle: %s", rule)
-			}
-		})
 	}
 }

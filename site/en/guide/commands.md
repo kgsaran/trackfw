@@ -111,8 +111,8 @@ Non-default surfaces are exercised as `target=surface`, the same format used by
 `--surface`.
 
 The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` commands
-exist only in the Go distribution as historical compatibility aliases. They are
-not part of the npm/PyPI contract; use `agents` and `skills` in new automation.
+have been removed. Use `agents` and `skills` with `--targets` (the target names
+above remain valid catalog values there) for all installation and update flows.
 
 ---
 

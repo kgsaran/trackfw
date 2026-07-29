@@ -375,7 +375,7 @@ bin/trackfw validate --json
 ```
 
 ### ML-5A — Remover aliases deprecated de integração
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/commands/copilot.go`
 - `internal/commands/cursor.go`
@@ -396,11 +396,11 @@ bin/trackfw validate --json
 5. Registrar a remoção como breaking change no changelog da versão de release.
 
 **Critérios de aceite:**
-- [ ] Nenhum dos cinco aliases aparece em `trackfw --help`.
-- [ ] Os comandos `trackfw agents|skills` continuam funcionando.
-- [ ] Superfícies `legacy` do catálogo continuam listáveis e atualizáveis explicitamente.
-- [ ] Nenhuma documentação orienta os aliases removidos.
-- [ ] `go build ./...`, `go test ./...` e `go vet ./...` passam.
+- [x] Nenhum dos cinco aliases aparece em `trackfw --help`.
+- [x] Os comandos `trackfw agents|skills` continuam funcionando.
+- [x] Superfícies `legacy` do catálogo continuam listáveis e atualizáveis explicitamente.
+- [x] Nenhuma documentação orienta os aliases removidos.
+- [x] `go build ./...`, `go test ./...` e `go vet ./...` passam.
 
 **Comandos de validação:**
 ```bash
@@ -447,7 +447,7 @@ python3 -m pytest pypi/tests -k help -q
 ```
 
 ### ML-5C — Eliminar o mapa duplicado de slash commands no Node.js
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Origem:** defeito pré-existente detectado durante a auditoria do ML-3A.
 **Arquivos afetados:**
 - `npm/src/generators/init.js`
@@ -466,14 +466,97 @@ instalação normal, e menos do que Go e Python, que usam um único mapa com fla
    de comandos, para que a divergência não possa voltar.
 
 **Critérios de aceite:**
-- [ ] Existe um único mapa de slash commands no Node.js.
-- [ ] Os caminhos normal e `--force` instalam o mesmo conjunto nos três runtimes.
-- [ ] Teste de regressão prova a equivalência entre os dois caminhos.
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] Existe um único mapa de slash commands no Node.js.
+- [x] Os caminhos normal e `--force` instalam o mesmo conjunto nos três runtimes.
+- [x] Teste de regressão prova a equivalência entre os dois caminhos.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
 
 **Comandos de validação:**
 ```bash
 cd npm && npm test
+make quality
+```
+
+### ML-5D — Criar gate de paridade do conjunto de slash commands
+**Status:** ⬜ Pendente
+**Origem:** lacuna estrutural apontada nas auditorias do ML-3A e do ML-5C.
+**Arquivos afetados:**
+- `scripts/check-artifact-parity.sh` (ou novo `scripts/check-slash-parity.sh`)
+- `Makefile` (alvo `parity`)
+- `npm/src/generators/init.js`
+
+**Diagnóstico:** o conjunto de slash commands é mantido à mão em três geradores
+(`internal/generators/scaffold.go`, `npm/src/generators/init.js`,
+`pypi/trackfw/generators/init_gen.py`) e **nenhum gate compara os três**.
+`check-artifact-parity.sh` verifica apenas o conteúdo de `roadmap.md`
+(`slash-roadmap-content-drift`). Consequência: os dois defeitos desta wave — `barrier.md` ausente
+do mapa forçado do Node e o mapa duplicado com 6 de 9 comandos — só foram encontrados por
+inspeção manual. A prova de equivalência do `barrier.md` no ML-3A também foi manual.
+
+**Ações:**
+1. Criar gate que compare, entre os três runtimes, **o conjunto de nomes** de slash commands e
+   **o conteúdo** de cada um, não apenas o de `roadmap.md`.
+2. Encadear o gate no alvo `parity` do Makefile.
+3. Adicionar cenário de falsificação em `scripts/check-gates-falsify.sh` provando que o novo gate
+   acusa quando um comando é removido de um runtime ou tem o texto alterado.
+4. Corrigir o defeito latente reportado no ML-5C: `generateClaudeCommands(root)` em
+   `npm/src/generators/init.js` recebe `root` mas escreve sempre relativo ao `cwd`, descartando o
+   argumento silenciosamente. O gêmeo forçado honra `rootDir` corretamente.
+
+**Critérios de aceite:**
+- [ ] O gate compara nomes e conteúdo de todos os slash commands nos três runtimes.
+- [ ] O gate está encadeado no alvo `parity`.
+- [ ] Cenário de falsificação prova que o gate não é vacuoso.
+- [ ] `generateClaudeCommands` honra o diretório recebido.
+- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+
+**Comandos de validação:**
+```bash
+make quality
+scripts/check-gates-falsify.sh
+```
+
+### ML-5E — Restaurar a criação dos arquivos auxiliares de regras (corretivo)
+**Status:** ⬜ Pendente
+**Origem:** regressão funcional detectada na auditoria do ML-5A.
+**Arquivos afetados:**
+- `internal/generators/agentfiles.go`
+- o caminho de instalação baseado em catálogo (`installAITools` e chamadores)
+- equivalentes em `npm/src/` e `pypi/trackfw/` se a superfície existir nesses runtimes
+- testes correspondentes
+
+**Diagnóstico:** os quatro arquivos auxiliares de regras — `GEMINI.md`,
+`.github/copilot-instructions.md`, `.windsurfrules` e `.amazonq/developer/guidelines.md` — só eram
+**criados pela primeira vez** pelo alias deprecated removido no ML-5A, via `InjectRulesForTool`.
+Os demais chamadores (`trackfw discover` e `trackfw update`) usam `InjectRulesDetected`, que só
+injeta em arquivo **já existente** (exceto `cursor`, que dispara pela existência do diretório
+`.cursor/`). O caminho de instalação por catálogo nunca chama `InjectRulesForTool`.
+
+Efeito líquido: em projeto novo, nenhum comando do produto cria esses quatro arquivos — eles só
+são atualizados se o usuário os criar à mão.
+
+**Decisão do orquestrador:** isto é **regressão**, não parte do breaking change. O ADR sancionou a
+remoção dos aliases de CLI, não a perda da capacidade de criar os arquivos de regras. Deve ser
+corrigido, não documentado como comportamento aceito.
+
+**Ações:**
+1. Ligar a injeção de regras ao caminho de instalação baseado em catálogo, de modo que instalar o
+   target correspondente crie o arquivo de regras quando ele não existir.
+2. Preservar a idempotência: instalar de novo não pode duplicar o bloco de regras.
+3. Adicionar teste que, a partir de projeto vazio, prove que instalar cada um dos quatro targets
+   cria o arquivo de regras correspondente.
+4. Verificar se Node.js e Python têm superfície equivalente e, em caso positivo, manter paridade.
+
+**Critérios de aceite:**
+- [ ] Em projeto novo, instalar o target cria o arquivo de regras correspondente.
+- [ ] Reinstalar não duplica o bloco de regras.
+- [ ] Teste cobre os quatro arquivos a partir de projeto vazio.
+- [ ] Paridade verificada entre os runtimes que possuem a superfície.
+- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+
+**Comandos de validação:**
+```bash
+go test ./internal/generators/... ./internal/commands/...
 make quality
 ```
 

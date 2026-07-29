@@ -5016,3 +5016,178 @@ Verificação independente com ordem preservada: os três runtimes emitem
 `validate --json` 0 violações. `~/.claude` intocado.
 
 Barriers reexecutadas após o corretivo: waves 2, 3 e 4 retornam `passed`.
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-5C `npm/src/generators/init.js` — unificação do mapa de slash commands, concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+
+**Tarefa:** eliminar a duplicação de dois mapas de slash commands no Node
+(`generateClaudeCommands` com 9 comandos vs `generateClaudeCommandsForce` com 6 — faltavam
+`roadmap.md`, `implement.md`, `barrier.md` no caminho forçado), seguindo o padrão de fonte única
+já usado por Go (`installSkillsInner(force)`) e Python (`generate_claude_commands`).
+
+**Entregue (escopo restrito a `npm/src/generators/` e testes de generators do Node):**
+- `npm/src/generators/init.js`: extraído o objeto `CLAUDE_COMMANDS` (módulo-scope, 9 entradas) como
+  fonte única. Nova função `installClaudeCommandsInner(dir, force)` escreve a partir desse mapa;
+  `force=false` preserva o comportamento idempotente (não sobrescreve arquivo existente),
+  `force=true` sempre sobrescreve. `generateClaudeCommands()` e `generateClaudeCommandsForce(rootDir)`
+  agora só variam a flag `force` e a resolução do diretório (cwd-relativo vs `rootDir`-relativo) —
+  assinaturas preservadas para não quebrar `scaffold()` nem `internal/commands` equivalente Node
+  (`npm/src/commands/update.js`).
+- `npm/tests/generators.test.js`: dois testes novos — (1) prova que os caminhos normal e forçado
+  instalam exatamente o mesmo conjunto de 9 arquivos com conteúdo idêntico; (2) prova que o
+  comportamento de sobrescrita permanece diferenciado (normal preserva conteúdo customizado
+  existente, forçado sobrescreve).
+
+**Validação:**
+- `cd npm && npm test` → 303 passed, 0 failed (301 prévios + 2 novos, incluindo o teste de
+  regressão que prova conjunto e conteúdo idênticos entre `generateClaudeCommands()` e
+  `generateClaudeCommandsForce()`, e o teste que prova a diferença de sobrescrita entre os dois).
+- `bin/trackfw validate --json` → `{"summary":{"violations":0,"warnings":0,"mode":"strict","exit_code":0}}`.
+- `make quality` → exit 0 (`check-barrier.sh` 15/15 OK, `check-gates-falsify.sh` 14/14 OK, 9 gates
+  não-vacuosos). Correção: a saída dessa execução mostra apenas o caminho normal do Node (`trackfw
+  init`, log `.claude/commands/trackfw (9 slash commands)`) e o caminho Python; **não** contém a
+  string `sobrescritos` em nenhuma linha, logo `make quality` **não** exercitou o caminho forçado do
+  Node (`update --force` → `generateClaudeCommandsForce`) nesta rodada — confirmado por
+  `grep -n sobrescritos` no log, vazio. A prova de que o caminho forçado do Node instala o mesmo
+  conjunto/conteúdo é o teste unitário novo em `npm/tests/generators.test.js`, não uma evidência de
+  `make quality`.
+- Paridade Node == Go == Python do **conjunto** de 9 comandos: verificada nesta sessão por grep
+  manual dos três `init.js`/`scaffold.go`/`init_gen.py` (relatado acima), não por um gate
+  automatizado. `scripts/check-artifact-parity.sh` (usado em `check-gates-falsify.sh`) só compara
+  drift de **conteúdo** de `roadmap.md` entre runtimes (cenário
+  `artifact-parity/slash-roadmap-content-drift`), não o conjunto completo dos 9 arquivos. A única
+  garantia automática de que o conjunto **dentro do Node** não diverge de novo é o teste que
+  adicionei; a paridade **entre** os 3 runtimes para o conjunto completo permanece evidência manual.
+- `git diff --stat` confirma que só `npm/src/generators/init.js` e `npm/tests/generators.test.js`
+  foram tocados no código; `internal/`, `pypi/`, `README.md`, `site/` e `~/.claude` intocados
+  (mudanças vistas em `README.md`/`site/`/`internal/` no `git status` são do ML-5A rodando em
+  paralelo, fora do meu escopo). Esta própria entrada em `docs/agents-working-context.md` é a
+  exceção declarada — fora do handoff de restrição de escopo, mas exigida pelo protocolo de
+  persona; o ML-5A concorrente também deve gravar nesse mesmo arquivo.
+
+**Ambiguidades/observações — não corrigidas, apenas reportadas:**
+- `generateClaudeCommands(root)` é chamada em `scaffold()` passando `root`, mas a função não aceita
+  parâmetros e sempre escreve em `.claude/commands/trackfw` relativo ao `cwd` — o argumento é
+  descartado silenciosamente. O gêmeo forçado honra `rootDir` corretamente. Não é uma regressão
+  desta sessão (comportamento pré-existente e fora do escopo — o handoff pediu convergência da
+  *lista*, não da assinatura/resolução de diretório) mas é uma armadilha latente: qualquer chamador
+  futuro que passe um `root` diferente do `cwd` para `generateClaudeCommands` terá a escrita
+  silenciosamente redirecionada para o `cwd` em vez do `root` pretendido.
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-5A `internal/commands/` — remoção dos cinco aliases deprecated de integração, concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+
+**Tarefa:** remover os cinco aliases de CLI deprecated (`trackfw copilot|cursor|gemini|windsurf|amazonq`),
+único mecanismo canônico passa a ser `trackfw agents|skills`. Confirmado no handoff que os cinco
+aliases existem só no CLI Go — sem paridade a implementar em Node/Python neste ML.
+
+**Discriminador aplicado:** os nomes `copilot`/`cursor`/`gemini`/`windsurf`/`amazonq` também existem
+como **targets do catálogo canônico** (`internal/integrations/assets/catalog.json`), usados por
+`trackfw agents|skills install --targets` e por `trackfw init --ai-tools`. Essas superfícies
+**não foram tocadas** — só os cinco comandos top-level do cobra e sua função de suporte.
+
+**Entregue:**
+- Apagados: `internal/commands/copilot.go`, `cursor.go`, `gemini.go`, `windsurf.go`, `amazonq.go`.
+- `internal/commands/root.go`: removidas as 5 chamadas `new*Cmd()` do `rootCmd.AddCommand`.
+- `internal/commands/integrations_flags.go`: removida `runDeprecatedIntegrationAlias` (ficou sem
+  caller) e o import `internal/generators` que só ela usava.
+- `internal/commands/agents_skills_test.go`: removidos `TestDeprecatedCursorAliasUsesLifecycleManager`
+  e `TestDeprecatedAliasesPreserveAuxiliaryRulesWithoutOwnership` (esperavam os aliases). Adicionado
+  `TestRemovedIntegrationAliasesAreUnknownCommands`, com **duas** asserções por nome: (1)
+  `newRootCmd().Find([]string{name})` prova que o nome não é mais um subcomando registrado na
+  árvore cobra real; (2) `RunPlugin(name, nil)` prova a mensagem literal de erro fim-a-fim
+  `unknown command or plugin: "<nome>"`. `TestInitAIToolsHelpIncludesEveryCatalogTarget` (linha
+  ~200) foi preservado sem alteração: cobre os targets do catálogo, superfície distinta dos
+  aliases removidos.
+- `internal/commands/root.go`: refatorado — `newRootCmd()` extrai a construção da árvore completa
+  (antes só existia inline em `Execute()`), para que o teste acima inspecione o registro real em
+  vez de uma árvore vazia. `Execute()` passou a ser só `newRootCmd().Execute()` + tratamento de
+  erro/exit. **Falsificação verificada**: reintroduzi temporariamente um comando `cursor` fake em
+  `newRootCmd()`, rodei o teste (falhou com `"cursor" is still a registered command: trackfw
+  cursor`), revertei e confirmei `diff` idêntico ao original antes do commit.
+- Documentação: `README.md` (linha da tabela de comandos com os 5 aliases removida),
+  `site/guide/commands.md` e `site/en/guide/commands.md` (parágrafo atualizado de "aliases
+  existem só no Go" para "removidos, use `agents`/`skills` --targets"). As menções aos mesmos
+  nomes como *targets* (linhas "Supported targets: ..." e exemplos `--targets gemini,kiro`)
+  foram preservadas intactas.
+- `CHANGELOG.md` não foi alterado (breaking change já registrado no ADR pelo orquestrador).
+
+**Validação:**
+- `go build ./...`, `go vet ./...`, `go test ./...` → todos verdes.
+- `bin/trackfw --help` → nenhum dos 5 aliases aparece na lista de `Available Commands`.
+- Prova manual de que a superfície `legacy`/catálogo continua funcional:
+  - Instalação: `trackfw agents install --targets cursor --items backend --scope project` em
+    projeto isolado → instala `.cursor/agents/trackfw-backend.md` normalmente.
+  - Surface `legacy-cli` explícita: `trackfw agents install --targets antigravity --surface
+    antigravity=legacy-cli --items backend --scope project` → instala
+    `.agents/agents/trackfw-backend/agent.json`.
+  - Update: `trackfw agents update --targets cursor --items backend --scope project` (após
+    install prévio) → `update complete: 1 agents artifact(s)`.
+- `scripts/check-integration-cli-parity.sh` → "Integration CLI parity lifecycle checks passed".
+- `make quality` → exit 0 (Go+Node+Python+contratos de paridade, incluindo `check-barrier.sh`
+  15/15 e `check-gates-falsify.sh` 14/14), reexecutado após o refactor de `root.go`.
+- `bin/trackfw validate --json` → `{"summary":{"violations":0,"warnings":0,"mode":"strict","exit_code":0}}`.
+- `git status --short` confirma que `npm/src/generators/init.js` e `npm/tests/generators.test.js`
+  aparecem modificados por conta do ML-5C rodando em paralelo — não tocados por mim.
+
+**Ambiguidades/observações — não corrigidas, apenas reportadas (decisão do orquestrador):**
+- **Risco de regressão em superfícies auxiliares (achado não trivial).** As 4 rule-files
+  auxiliares — `GEMINI.md`, `.github/copilot-instructions.md`, `.windsurfrules`,
+  `.amazonq/developer/guidelines.md` (mapeadas em `internal/generators/agentfiles.go:
+  agentFiles`) — só eram criadas **pela primeira vez** por `runDeprecatedIntegrationAlias`
+  (via `InjectRulesForTool`), que este ML removeu. As outras duas chamadas a
+  `InjectRulesForTool`/`InjectRulesDetected` que sobrevivem (`trackfw discover` em
+  `internal/commands/discover.go:130` e `trackfw update` em `internal/generators/update.go:77`)
+  só injetam regras **se o arquivo já existir** (`os.Stat` prévio) — exceto `cursor`, que
+  `InjectRulesDetected` cria sempre que `.cursor/` já existe. `installAITools` (usado por
+  `trackfw init --ai-tools` e pelos comandos `agents/skills install`) **nunca** chama
+  `InjectRulesForTool` — ele só instala agents/skills via `integrations.Manager`, não os arquivos
+  de regra auxiliares do mapa `agentFiles`. Resultado prático: em um projeto **novo**, não existe
+  mais nenhum comando do produto capaz de criar `GEMINI.md`/`copilot-instructions.md`/
+  `.windsurfrules`/`.amazonq/developer/guidelines.md` pela primeira vez — apenas de atualizá-los
+  se já existirem por outro meio (ex.: criados manualmente pelo usuário). Isso é uma perda de
+  funcionalidade além do que o handoff descrevia ("remover 5 aliases de CLI, preservar
+  superfícies de catálogo") — os 4 arquivos de regra não são superfícies de catálogo, são um
+  mecanismo à parte que dependia exclusivamente do alias removido para o caso de primeira
+  instalação. Recomendo ao orquestrador decidir entre: (a) aceitar a perda como parte do
+  breaking change e documentá-la explicitamente, ou (b) adicionar uma chamada a
+  `InjectRulesForTool` no fluxo de `installAITools`/`agents install` para os 4 tools afetados.
+- **Allowlist obsoleta em `scripts/check-cli-parity.sh`** (não editado — fora da minha lista de
+  arquivos afetados, e é infraestrutura de contrato compartilhado como `docs/cli-parity.md`):
+  a linha 32 mantém `go_only_commands=(amazonq copilot cursor gemini windsurf completion)`, um
+  allowlist de comandos que existiam só no Go e deviam ser subtraídos do conjunto comparado com
+  Node/Python. Como os 5 nomes não aparecem mais em `trackfw --help`, a subtração agora é
+  inofensiva (no-op) — não mascara nada, `make quality` confirma. Mas a lista ficou referenciando
+  comandos que não existem em runtime nenhum; vale limpar no ML-5B (que já mexe em
+  `docs/cli-parity.md` e na superfície de ajuda) para não confundir o próximo leitor do script.
+
+## Auditoria 2026-07-29 — Zeus — Wave 5 parcial (ML-5A e ML-5C) aprovada
+
+Os cinco aliases deprecated saíram do CLI Go — não aparecem em `trackfw --help` — e as superfícies
+`legacy` do catálogo continuam instaláveis e atualizáveis. O `CHANGELOG.md` não foi tocado: o texto
+do breaking change está no ADR, para o PR de release consumir.
+
+O Node passou a ter um único mapa de slash commands. Verificação independente: os três runtimes
+expõem o mesmo conjunto de 9 comandos, e há teste comparando nomes e conteúdo entre os caminhos
+normal e forçado.
+
+Gates: `make quality` exit 0, `check-barrier.sh` 15/15, falsificação 14/14, `validate --json` 0
+violações.
+
+Dois achados registrados como MLs próprios em vez de expandir a wave:
+
+- **ML-5E (regressão).** Os quatro arquivos auxiliares de regras — `GEMINI.md`,
+  `.github/copilot-instructions.md`, `.windsurfrules` e `.amazonq/developer/guidelines.md` — só
+  eram criados pela primeira vez pelo alias removido. `InjectRulesDetected` apenas atualiza arquivo
+  já existente, e o caminho de instalação por catálogo nunca chama `InjectRulesForTool`. Em projeto
+  novo, nenhum comando do produto cria mais esses arquivos. Decisão: é regressão, não parte do
+  breaking change sancionado pelo ADR — deve ser corrigida.
+- **ML-5D (lacuna de gate).** Nenhum gate compara o conjunto de slash commands entre os três
+  runtimes; `check-artifact-parity.sh` cobre apenas o conteúdo de `roadmap.md`. Os dois defeitos
+  desta wave e a prova de equivalência do `barrier.md` no ML-3A dependeram de inspeção manual.

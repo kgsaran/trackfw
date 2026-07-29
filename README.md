@@ -165,7 +165,6 @@ trackfw ship -m "feat(auth): add login flow"
 | `trackfw agents uninstall` | Remove selected owned agent deployments |
 | `trackfw skills list` | List available governance skills and deployment state |
 | `trackfw skills install/update/uninstall` | Manage selected governance skills |
-| `trackfw gemini`, `cursor`, `copilot`, `windsurf`, `amazonq` | Historical aliases in the Go distribution only; use `agents`/`skills` |
 | `trackfw version` | Print version |
 
 The same lifecycle contract is available from the Go/Homebrew, npm, and PyPI
