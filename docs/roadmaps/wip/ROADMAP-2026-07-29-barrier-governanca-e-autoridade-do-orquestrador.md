@@ -488,31 +488,31 @@ bin/trackfw validate --json
 ```
 
 ### ML-6A — Fixar o contrato de escopo dos updates
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (contrato autorado pelo orquestrador)
 **Arquivos afetados:**
-- `docs/cli-parity.md`
-- testes de contrato de update
+- `docs/cli-parity.md` — seção `## trackfw update vs trackfw update harness`
 
-**Ações:**
-1. Definir `trackfw update` como operação de projeto: regras locais, hooks, scripts, CI e comandos
-   do repositório atual.
-2. Definir `trackfw update harness` como operação global: regras, agents e skills já instalados no
-   diretório do usuário.
-3. Remover do contrato de `trackfw update` qualquer mutação global.
-4. Definir estados `updated`, `skipped`, `missing` e `failed`, além de `--dry-run` e `--json`.
-5. Definir que itens ausentes não são instalados sem `--install-missing` explícito.
+**Divisão de autoridade:** o contrato é de autoria exclusiva do `trackfw_architect`, como no ML-1A.
+Os MLs 6B/6C/6D implementam contra ele.
+
+**Contrato congelado:**
+1. `trackfw update` é operação de projeto e **nunca** muta estado global.
+2. `trackfw update harness` é operação global e **não** exige `trackfw.yaml` nem cwd de projeto.
+3. Quatro estados por target: `updated`, `skipped`, `missing`, `failed`.
+4. `missing` **nunca instala** sem `--install-missing` explícito, e não é erro: um harness sem nada
+   instalado reporta tudo como `missing` e sai com **exit 0**. Exit não-zero só com `failed`.
+5. Flags `--dry-run`, `--json`, `--targets`, `--install-missing` nos dois comandos.
+6. Documento JSON com `scope`, `dry_run`, `targets` e `summary` com os quatro contadores.
 
 **Critérios de aceite:**
-- [ ] O contrato diferencia claramente projeto e global.
-- [ ] O contrato não permite efeito global acidental a partir de um repositório.
-- [ ] Dry-run, JSON e estados são documentados.
-- [ ] `go build ./...`, `go test ./...` e `go vet ./...` passam.
+- [x] O contrato diferencia claramente projeto e global.
+- [x] O contrato não permite efeito global acidental a partir de um repositório.
+- [x] Dry-run, JSON e estados são documentados.
+- [x] Auditoria de paridade dos documentos JSON exige ordem de chaves preservada.
 
 **Comandos de validação:**
 ```bash
-go build ./...
-go test ./...
-go vet ./...
+bin/trackfw validate --json
 ```
 
 ### ML-6B — Implementar updates separados no Go

@@ -644,6 +644,74 @@ them, so the parity gate is the only thing that would catch it, and only much la
 A green CLI barrier is **necessary but not sufficient** to release a wave. The specialist
 inspections and diff audit are conditions the binary cannot evaluate.
 
+## `trackfw update` vs `trackfw update harness`
+
+Update is split by **scope**. The split exists because `trackfw update` today mutates global state
+(`~/.claude` skill, global Codex deployments) as a side effect of being run inside a project — so a
+user visiting twenty repositories re-runs the same global write twenty times, and a project-local
+command silently reaches outside the repository.
+
+| | `trackfw update` | `trackfw update harness` |
+|---|---|---|
+| Scope | The current repository only | The user's global harness (`~/.claude` and equivalents) |
+| Requires `trackfw.yaml` / project cwd | Yes | **No** — runs from anywhere |
+| Touches global state | **Never** | Yes, that is its only job |
+| Typical frequency | Once per repository | Once per machine, per upgrade |
+
+`trackfw update` covers: the trackfw rules block in agent config files, `scripts/trackfw-validate.sh`,
+the CI workflow, project-level slash commands, and Git hooks. Any global mutation is removed from
+its contract.
+
+`trackfw update harness` covers: rules, agents and skills **already installed** in the user's home
+directory.
+
+### States
+
+Both commands report one state per target. These four strings are pinned:
+
+| State | Meaning |
+|---|---|
+| `updated` | Target existed and was rewritten to the current template |
+| `skipped` | Target existed and was already current, or is unmanaged and must not be overwritten |
+| `missing` | Target is not installed. **Not an error** — see below |
+| `failed` | Target exists but the write failed; carries a message |
+
+**`missing` never installs.** A target that is not present is reported and left alone unless
+`--install-missing` is passed explicitly. A `trackfw update harness` run on a machine where nothing
+is installed reports every target as `missing` and exits **0** — "nothing to do" is a successful
+outcome, not a usage error. Exit is non-zero only when at least one target is `failed`.
+
+### Flags
+
+| Flag | Applies to | Behaviour |
+|---|---|---|
+| `--dry-run` | both | Compute and report states without writing anything |
+| `--json` | both | Emit the result document instead of the text report |
+| `--targets` | both | Comma-separated subset of target ids; unknown id is a usage error |
+| `--install-missing` | both | Allow `missing` targets to be installed instead of merely reported |
+
+### JSON document
+
+```json
+{
+  "scope": "harness",
+  "dry_run": false,
+  "targets": [
+    {"id": "claude-skill", "state": "updated", "path": "~/.claude/skills/trackfw/SKILL.md"},
+    {"id": "codex-agents", "state": "missing", "path": "~/.codex/agents"}
+  ],
+  "summary": {"updated": 1, "skipped": 0, "missing": 1, "failed": 0}
+}
+```
+
+`scope` is `"project"` or `"harness"`. Key order is fixed as shown; `targets` follows the declared
+target order, not filesystem order. `summary` always carries all four counters, including zeros.
+
+**Parity auditing note:** compare these documents across runtimes with key order **preserved**
+(`object_pairs_hook=OrderedDict` and `dumps` without `sort_keys`). Normalizing key order hides
+declaration-order drift — that is exactly how the `gates` check divergence survived Wave 2 of the
+barrier roadmap and had to be fixed later in ML-2E.
+
 ## Regra `branch_has_wip_roadmap` — comportamento unificado nos 3 runtimes
 
 A regra verifica que toda branch `feat/`, `fix/` ou `refactor/` possui um roadmap cujo nome
