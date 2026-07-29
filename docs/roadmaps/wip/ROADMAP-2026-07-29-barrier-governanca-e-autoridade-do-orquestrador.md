@@ -61,6 +61,12 @@ Este roadmap só é considerado concluído quando todos os itens abaixo forem ve
 ## Wave 1 — Contrato e caracterização (1 ML)
 > Dependências: nenhuma
 
+**Gates da wave:**
+```bash
+make quality
+bin/trackfw validate --json
+```
+
 ### ML-1A — Congelar o contrato universal da barrier
 **Status:** ⬜ Pendente
 **Arquivos afetados:**
@@ -109,6 +115,12 @@ bin/trackfw validate --json
 ## Wave 2 — Núcleo nativo do comando (3 MLs em paralelo)
 > Dependências: Wave 1 concluída e auditada. Os MLs tocam árvores de runtime disjuntas.
 
+**Gates da wave:**
+```bash
+make quality
+bin/trackfw validate --json
+```
+
 ### ML-2A — Implementar `trackfw barrier` no Go
 **Status:** ⬜ Pendente
 **Arquivos afetados:**
@@ -129,6 +141,8 @@ bin/trackfw validate --json
 - [ ] Falta de evidência impede a passagem.
 - [ ] Wave verde retorna exit code 0 e `status: passed`.
 - [ ] Saída textual e JSON são determinísticos.
+- [ ] Os testes de contrato criados no ML-1A estão ativos neste runtime (sem `t.Skip`, sem
+      `{ skip: true }`, sem `xfail`) e passam.
 - [ ] `go build ./...`, `go test ./...` e `go vet ./...` passam.
 
 **Comandos de validação:**
@@ -151,6 +165,8 @@ go vet ./...
 **Critérios de aceite:**
 - [ ] Paridade de flags, estados, exit codes e JSON com Go.
 - [ ] Casos verde, ML pendente, evidência ausente e `validate` falho cobertos.
+- [ ] Os testes de contrato criados no ML-1A estão ativos neste runtime (sem `t.Skip`, sem
+      `{ skip: true }`, sem `xfail`) e passam.
 - [ ] `npm test` passa.
 
 **Comandos de validação:**
@@ -171,6 +187,8 @@ cd npm && npm test
 **Critérios de aceite:**
 - [ ] Paridade de flags, estados, exit codes e JSON com Go e Node.
 - [ ] Casos verde, ML pendente, evidência ausente e `validate` falho cobertos.
+- [ ] Os testes de contrato criados no ML-1A estão ativos neste runtime (sem `t.Skip`, sem
+      `{ skip: true }`, sem `xfail`) e passam.
 - [ ] Suíte Python passa.
 
 **Comandos de validação:**
@@ -180,6 +198,12 @@ python3 -m pytest pypi/tests/test_barrier.py -q
 
 ## Wave 3 — Orquestração e autoridade dos agentes (1 ML)
 > Dependências: Wave 2 concluída e auditada.
+
+**Gates da wave:**
+```bash
+make quality
+bin/trackfw validate --json
+```
 
 ### ML-3A — Atualizar agentes e gerar `/trackfw:barrier`
 **Status:** ⬜ Pendente
@@ -226,6 +250,12 @@ bin/trackfw validate --json
 ## Wave 4 — Auditoria final e documentação (1 ML)
 > Dependências: Wave 3 concluída e auditada.
 
+**Gates da wave:**
+```bash
+make quality
+bin/trackfw validate --json
+```
+
 ### ML-4A — Provar o fluxo E2E da barrier
 **Status:** ⬜ Pendente
 **Arquivos afetados:**
@@ -264,6 +294,12 @@ git diff --check
 ## Wave 5 — Limpeza de superfície pública (2 MLs sequenciais)
 > Dependências: Wave 4 concluída e auditada. O ML-5B vem depois do ML-5A porque a documentação
 > compartilhada de paridade e help precisa refletir a remoção dos aliases antes da consolidação.
+
+**Gates da wave:**
+```bash
+make quality
+bin/trackfw validate --json
+```
 
 ### ML-5A — Remover aliases deprecated de integração
 **Status:** ⬜ Pendente
@@ -340,6 +376,12 @@ python3 -m pytest pypi/tests -k help -q
 ## Wave 6 — Separação entre update de projeto e update do harness (4 MLs)
 > Dependências: Wave 5 concluída e auditada. Os MLs implementam o mesmo contrato em árvores de
 > runtime disjuntas. O ML-6A define a fronteira antes dos três MLs de runtime.
+
+**Gates da wave:**
+```bash
+make quality
+bin/trackfw validate --json
+```
 
 ### ML-6A — Fixar o contrato de escopo dos updates
 **Status:** ⬜ Pendente

@@ -42,6 +42,20 @@ apenas nomes de apresentação e não alteram o papel.
     do projeto atual; `trackfw update harness` atualiza o harness global já instalado, sem depender
     de um repositório específico.
 
+11. **Gates são declarados no roadmap, não em nova chave de configuração.** Cada wave declara
+    seus gates em um bloco `**Gates da wave:**` seguido de fence ```bash. A alternativa —
+    introduzir uma chave `gates:` em `trackfw.yaml` — foi rejeitada nesta entrega porque exigiria
+    alterar os parsers de configuração dos três runtimes (`internal/config/config.go`,
+    `npm/src/`, `pypi/trackfw/`), arquivos que não constam no escopo dos MLs 2A/2B/2C. O roadmap
+    já é lido pelo comando e já é um artefato do projeto, satisfazendo "gates declarados pelo
+    projeto" sem nova superfície pública.
+12. **Exit code 2 é distinto de `blocked`.** Uma barrier que não pôde ser avaliada (roadmap ou
+    wave inexistente, roadmap malformado) é um erro de uso, não uma reprovação. Confundir os dois
+    permitiria que um roadmap malformado fosse lido como "wave reprovada" e mascararia o defeito
+    real.
+13. **Ausência de bloco de critérios de aceite em um ML reprova a wave.** A regra é
+    deliberadamente não-vacuosa: um ML sem critérios não passa "por não ter o que falhar".
+
 ## Consequências
 
 ### Positivas
@@ -71,3 +85,6 @@ apenas nomes de apresentação e não alteram o papel.
 - Remover as flags nativas `--help` dos frameworks.
 - Fazer `trackfw update` mutar artefatos globais.
 - Instalar automaticamente agents ou skills ausentes durante um update sem uma opção explícita.
+- Introduzir a chave `gates:` em `trackfw.yaml` (adiada — ver decisão 11). Se surgir demanda por
+  gates repo-wide independentes de roadmap, será uma REQ própria, com os três parsers de
+  configuração no escopo.

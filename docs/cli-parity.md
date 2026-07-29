@@ -464,6 +464,142 @@ code directly from the runner function (Node.js/Python), so the usage text is ne
 printed for runtime errors. Parse-time errors (unknown flags) still show usage, because
 they are raised by cobra/commander/argparse before the command handler runs.
 
+## `trackfw barrier`
+
+`trackfw barrier <roadmap> --wave <n>` is the deterministic core of the wave-release barrier.
+It is **stack-agnostic**: it never assumes a build tool, a test runner or a parity rule. Every
+executable check comes from the roadmap itself. The agent-orchestration layer (specialist
+inspections for code quality and security) lives in the `/trackfw:barrier` slash command, never
+in the binary.
+
+### Command surface
+
+| Element | Value |
+|---|---|
+| Invocation | `trackfw barrier <roadmap> --wave <n>` |
+| `<roadmap>` | Basename with or without `.md`, resolved against `wip/` then `done/` under `roadmap_dir` (both `flat` and `by_agent` layouts) |
+| `--wave` | Integer ≥ 1. Required. |
+| `--json` | Emit the result document instead of the text report |
+| Exit 0 | `status: "passed"` |
+| Exit 1 | `status: "blocked"` — at least one check failed |
+| Exit 2 | Usage/resolution error (roadmap not found, wave not found, malformed `--wave`) |
+
+Exit code 2 is **not** `blocked`: a barrier that could not be evaluated is distinct from a
+barrier that evaluated to a failure. The three runtimes must agree on this distinction.
+
+### States
+
+| State | Meaning |
+|---|---|
+| `pending` | Check declared but not yet evaluated (only ever appears mid-run, and in `--json` when a preceding check aborted the run) |
+| `running` | Check currently executing (text output only; never present in a final JSON document) |
+| `passed` | Check evaluated and green |
+| `blocked` | Check evaluated and red |
+
+The wave-level `status` is `passed` only when **every** check is `passed`; otherwise `blocked`.
+
+### Roadmap parsing rules (string-level — no heuristics)
+
+These are literal parsing rules. All three runtimes must implement them identically.
+
+1. **Wave heading.** A wave starts at a line matching `^## Wave <n> ` (H2, the literal word
+   `Wave`, the integer, then a space). The wave ends at the next `^## ` line or EOF.
+2. **ML heading.** Inside a wave, an ML starts at a line matching `^### ML-` (H3). The ML ends
+   at the next `^### ` or `^## ` line or EOF.
+3. **ML completion.** An ML is complete when its body contains a line matching
+   `^\*\*Status:\*\*` whose remainder contains `✅`. Any other marker (`⬜`, `🔄`, `❌`) is
+   incomplete. Absence of a `**Status:**` line is incomplete.
+4. **Acceptance evidence.** Inside an ML, the acceptance block starts at a line matching
+   `^\*\*Critérios de aceite:\*\*` and ends at the next `^\*\*` line or at the ML boundary.
+   Every line in that block matching `^- \[ \]` is unmet evidence. The ML has evidence only
+   when the block exists, is non-empty, and contains zero `- [ ]` lines.
+   **An ML with no acceptance block at all is `blocked`, not vacuously passed.**
+5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` line immediately
+   followed by a fenced ```` ```bash ```` block. Each non-empty, non-comment line in that block
+   is one gate command, executed from the repository root, in declaration order.
+   A wave with no `**Gates da wave:**` block declares zero gates — that is legal and yields a
+   `gates` check with `status: "passed"` and an empty `commands` array. The barrier **never**
+   invents a gate.
+6. **Malformed input.** A wave heading whose number is not parseable, an ML whose body cannot
+   be delimited, or an unterminated fence is a usage error (exit 2) with an explicit message
+   naming the offending line number — never a silent pass.
+
+### Built-in checks
+
+Evaluated in this fixed order; the run continues through all checks so the report is complete.
+
+| `name` | Passes when |
+|---|---|
+| `mls_complete` | Wave contains ≥ 1 ML and every ML satisfies rule 3 |
+| `acceptance_evidence` | Every ML in the wave satisfies rule 4 |
+| `gates` | Every command from rule 5 exits 0 |
+| `validate` | `trackfw validate --json` reports `violations: 0` |
+
+`trackfw validate` is invoked in-process (Go/Node/Python each call their own validator), not by
+shelling out to a `trackfw` binary that may not be on `PATH`.
+
+### JSON document
+
+```json
+{
+  "roadmap": "ROADMAP-2026-07-29-example.md",
+  "wave": 2,
+  "status": "blocked",
+  "started_at": "2026-07-29T10:30:00Z",
+  "finished_at": "2026-07-29T10:30:04Z",
+  "checks": [
+    {
+      "name": "mls_complete",
+      "status": "passed",
+      "evidence": ["ML-2A: ✅", "ML-2B: ✅", "ML-2C: ✅"],
+      "failures": []
+    },
+    {
+      "name": "acceptance_evidence",
+      "status": "blocked",
+      "evidence": [],
+      "failures": ["ML-2C: 2 unmet acceptance criteria"]
+    },
+    {
+      "name": "gates",
+      "status": "passed",
+      "commands": ["make quality"],
+      "evidence": ["make quality: exit 0"],
+      "failures": []
+    },
+    {
+      "name": "validate",
+      "status": "passed",
+      "evidence": ["0 violations, 0 warnings"],
+      "failures": []
+    }
+  ],
+  "failures": ["acceptance_evidence: ML-2C: 2 unmet acceptance criteria"]
+}
+```
+
+Determinism contract:
+
+- Key order is fixed as shown; `checks` is always in the built-in evaluation order.
+- `evidence` and `failures` are always arrays, never `null`, never omitted.
+- `commands` is present only on the `gates` check.
+- Timestamps are RFC 3339 UTC with second precision.
+- The top-level `failures` array is the concatenation of every check's `failures`, each prefixed
+  with `<check-name>: `.
+
+### `trackfw barrier` vs `/trackfw:barrier`
+
+| | `trackfw barrier` (CLI) | `/trackfw:barrier` (slash command) |
+|---|---|---|
+| Nature | Deterministic, reproducible, exit-code driven | Orchestration checklist for `trackfw_architect` |
+| Runs gates | Yes, only those declared in the roadmap | Delegates to the CLI |
+| Invokes agents | **Never** | Yes — `code-quality` and `security` when applicable |
+| Audits the diff | No | Yes, human/agent judgement |
+| Git operations | **Never** | Only `trackfw_architect`, after a green barrier |
+
+A green CLI barrier is **necessary but not sufficient** to release a wave. The specialist
+inspections and diff audit are conditions the binary cannot evaluate.
+
 ## Regra `branch_has_wip_roadmap` — comportamento unificado nos 3 runtimes
 
 A regra verifica que toda branch `feat/`, `fix/` ou `refactor/` possui um roadmap cujo nome
