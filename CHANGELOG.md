@@ -10,6 +10,70 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [4.0.0] - 2026-07-29
+
+### Por que esta versão é major
+
+Os cinco aliases de integração deprecated foram **removidos** do CLI Go:
+`trackfw copilot`, `trackfw cursor`, `trackfw gemini`, `trackfw windsurf` e
+`trackfw amazonq`. O fluxo canônico passa a ser exclusivamente `trackfw agents`
+e `trackfw skills`.
+
+Contexto que reduz o impacto real da quebra:
+
+- Os aliases existiam **apenas no CLI Go**. Node.js e Python nunca os
+  registraram, então usuários desses runtimes não são afetados.
+- As superfícies de instalação marcadas como `legacy` no catálogo **não** foram
+  removidas. Elas não são aliases de CLI e continuam listáveis e atualizáveis
+  explicitamente, preservando o caminho de migração.
+
+**Migração:** substitua `trackfw <tool>` por
+`trackfw agents install --targets <tool>` ou
+`trackfw skills install --targets <tool>`.
+
+### Added
+- `trackfw barrier <roadmap> --wave <n> [--json]` nos três CLIs: núcleo
+  determinístico de liberação de wave, agnóstico de stack. Verifica MLs
+  concluídos, evidências dos critérios de aceite, gates declarados no roadmap e
+  `trackfw validate`. Retorna `passed` ou `blocked`, com exit code 2 reservado
+  para erro de uso — distinto de reprovação.
+- Slash command `/trackfw:barrier` com o checklist operacional completo,
+  explicitando que a barrier verde do CLI é necessária mas não suficiente: as
+  inspeções especializadas e a auditoria de diff não são avaliadas pelo binário.
+- `trackfw update harness`: atualização do harness global em escopo próprio, sem
+  exigir projeto. Quatro estados (`updated`, `skipped`, `missing`, `failed`),
+  `--dry-run`, `--json`, `--targets` e `--install-missing`.
+- Quatro gates de paridade cross-runtime, todos com cenário de falsificação:
+  `check-barrier.sh`, `check-slash-parity.sh`, `check-rules-parity.sh` e
+  `check-update-parity.sh`.
+
+### Changed
+- **Autoridade Git concentrada no orquestrador.** Os 11 agentes especialistas
+  passam a declarar que não executam operações Git e que atuam somente por
+  handoff autocontido. Apenas `trackfw_architect` cria branch, audita diff,
+  commita e faz push.
+- **`trackfw update` deixa de mutar estado global.** Antes, rodá-lo em vinte
+  projetos repetia a mesma escrita global vinte vezes.
+- Superfície única `trackfw help [assunto|chave]` nos três CLIs, com resolução
+  determinística e sugestão em caso de assunto desconhecido. As flags nativas
+  `--help` seguem preservadas.
+
+### Fixed
+- Paridade real entre os três runtimes em saída JSON, mensagens de erro, ordem de
+  chaves e conjuntos de targets — divergências que as suítes por runtime não
+  detectavam porque cada uma passava isoladamente.
+- Bloco `Architecture Directives` estava duplicado dentro do gerador Go.
+- Mapa duplicado de slash commands no Node.js: `--force` instalava 6 dos 9.
+- Em projeto novo, `GEMINI.md`, `.github/copilot-instructions.md`,
+  `.windsurfrules` e `.amazonq/developer/guidelines.md` voltam a ser criados de
+  forma idempotente.
+- `check-update-parity.sh` mutava o `CLAUDE.md` do repositório e retornava exit 0
+  ao fazê-lo; agora há cenário que compara `git status --porcelain` antes e
+  depois de rodar os gates.
+
+### Internal
+- Cenários de falsificação: 13 → 19. Gates provados não-vacuosos: 8 → 12.
+
 ## [3.1.0] - 2026-07-27
 
 ### Added
