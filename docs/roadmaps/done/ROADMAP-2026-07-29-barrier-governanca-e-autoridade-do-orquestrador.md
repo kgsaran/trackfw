@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-29
 req: "REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Barrier de governança e autoridade exclusiva do orquestrador
 
-> Criado em: 2026-07-29 | Status: wip
+> Criado em: 2026-07-29 | Status: done
 REQ: `docs/req/REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
 ADR: `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
 Branch: `feat/barrier-governanca-e-autoridade-do-orquestrador`
@@ -44,19 +44,19 @@ Uma wave só pode ser liberada quando todos os itens abaixo estiverem verdes:
 
 Este roadmap só é considerado concluído quando todos os itens abaixo forem verdadeiros:
 
-- [ ] `trackfw barrier <roadmap> --wave <n>` existe e é funcionalmente equivalente nos três CLIs
+- [x] `trackfw barrier <roadmap> --wave <n>` existe e é funcionalmente equivalente nos três CLIs
       (Go, Node.js e Python), com paridade de flags, estados, exit codes e saída JSON.
-- [ ] A barrier bloqueia a liberação de wave quando qualquer item da "Definição de pronto" falha,
+- [x] A barrier bloqueia a liberação de wave quando qualquer item da "Definição de pronto" falha,
       retornando exit code não-zero e `status: blocked`.
-- [ ] Uma wave integralmente verde retorna exit code 0 e `status: passed`.
-- [ ] O CLI executa somente gates declarados pelo projeto; nenhuma regra específica do trackfw é
+- [x] Uma wave integralmente verde retorna exit code 0 e `status: passed`.
+- [x] O CLI executa somente gates declarados pelo projeto; nenhuma regra específica do trackfw é
       tratada como universal (sem paridade hardcoded).
-- [ ] O slash command `/trackfw:barrier` existe e contém o checklist operacional completo da REQ.
-- [ ] Nenhum agente especialista possui protocolo autorizando operações Git; `trackfw_architect` é
+- [x] O slash command `/trackfw:barrier` existe e contém o checklist operacional completo da REQ.
+- [x] Nenhum agente especialista possui protocolo autorizando operações Git; `trackfw_architect` é
       a única autoridade de branch, commit e push.
-- [ ] `trackfw update` opera exclusivamente no projeto e `trackfw update harness` no escopo global.
-- [ ] Os cinco aliases deprecated de integração foram removidos e há uma única superfície `help`.
-- [ ] `make quality` passa e `trackfw validate --json` retorna 0 violações.
+- [x] `trackfw update` opera exclusivamente no projeto e `trackfw update harness` no escopo global.
+- [x] Os cinco aliases deprecated de integração foram removidos e há uma única superfície `help`.
+- [x] `make quality` passa e `trackfw validate --json` retorna 0 violações.
 
 ## Wave 1 — Contrato e caracterização (1 ML)
 > Dependências: nenhuma
@@ -751,7 +751,10 @@ python3 -m pytest pypi/tests -k update -q
 ```
 
 ### ML-6F — Alinhar os três runtimes à lista de targets pinada (corretivo)
-**Status:** ✅ Concluído (parcial pelo agente; completado no ML-6H)
+**Status:** ✅ Concluído (parcial pelo agente, que falhou por erro de API; completado no ML-6H)
+**Nota de auditoria:** os critérios abaixo foram atendidos em conjunto por este ML e pelo ML-6H. A
+barrier da Wave 6 reprovou na primeira execução porque eu marquei este ML como concluído sem marcar
+os critérios — o check `acceptance_evidence` pegou o descuido do orquestrador.
 **Origem:** auditoria cruzada da Wave 6. O contrato do ML-6A fixou estados, flags e ordem de
 chaves, mas **não** fixou o conjunto de targets — e os três runtimes produziram três respostas.
 Falha do contrato, não dos implementadores; os três reportaram a lacuna honestamente.
@@ -776,11 +779,11 @@ Falha do contrato, não dos implementadores; os três reportaram a lacuna honest
    Go e Python se alinham a Node.
 
 **Critérios de aceite:**
-- [ ] Os três runtimes declaram os mesmos 19 targets, na mesma ordem.
-- [ ] `path` é tilde-abreviado nos três.
-- [ ] `update` de projeto expõe `--dry-run`, `--json`, `--targets` e `--install-missing` nos três.
-- [ ] JSON byte-idêntico entre os três para o mesmo HOME e projeto, com ordem preservada.
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] Os três runtimes declaram os mesmos 19 targets, na mesma ordem.
+- [x] `path` é tilde-abreviado nos três.
+- [x] `update` de projeto expõe `--dry-run`, `--json`, `--targets` e `--install-missing` nos três.
+- [x] JSON byte-idêntico entre os três para o mesmo HOME e projeto, com ordem preservada.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
 
 **Comandos de validação:**
 ```bash

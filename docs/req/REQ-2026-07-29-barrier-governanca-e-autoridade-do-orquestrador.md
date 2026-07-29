@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-07-29
 author: "trackfw_architect"
 adr: "docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md"
 ---
 
 # REQ: barrier de governança e autoridade exclusiva do orquestrador
@@ -65,34 +65,34 @@ ambiente do usuário, como `zeus-tf`, não deve fazer parte do contrato.
 
 ## Critérios de aceite
 
-- [ ] `trackfw barrier <roadmap> --wave <n>` existe nos três CLIs e possui saída textual e `--json`.
-- [ ] A barrier falha quando qualquer ML da wave não está marcado como concluído.
-- [ ] A barrier falha quando falta evidência de build, testes, gates ou critérios de aceite exigidos.
-- [ ] A barrier executa os comandos declarados pelo projeto sem assumir uma stack específica.
-- [ ] `trackfw validate` é executado como parte da barrier e violações impedem a liberação.
-- [ ] O resultado registra wave, checks, comandos, status, timestamps e mensagens de falha.
-- [ ] Falha em qualquer check produz resultado `blocked` e impede a próxima wave.
-- [ ] `/trackfw:barrier` instrui o `trackfw_architect` a invocar os agentes `code-quality` e `security`
+- [x] `trackfw barrier <roadmap> --wave <n>` existe nos três CLIs e possui saída textual e `--json`.
+- [x] A barrier falha quando qualquer ML da wave não está marcado como concluído.
+- [x] A barrier falha quando falta evidência de build, testes, gates ou critérios de aceite exigidos.
+- [x] A barrier executa os comandos declarados pelo projeto sem assumir uma stack específica.
+- [x] `trackfw validate` é executado como parte da barrier e violações impedem a liberação.
+- [x] O resultado registra wave, checks, comandos, status, timestamps e mensagens de falha.
+- [x] Falha em qualquer check produz resultado `blocked` e impede a próxima wave.
+- [x] `/trackfw:barrier` instrui o `trackfw_architect` a invocar os agentes `code-quality` e `security`
       quando a mudança exigir análise especializada.
-- [ ] Os agentes especialistas declaram que não executam operações Git e recusam trabalho direto
+- [x] Os agentes especialistas declaram que não executam operações Git e recusam trabalho direto
       sem handoff do `trackfw_architect`.
-- [ ] Somente o `trackfw_architect` recebe autoridade documentada para branch, commit e push.
-- [ ] O framework não contém regra universal de paridade entre implementações ou stacks.
-- [ ] Os comandos `copilot`, `cursor`, `gemini`, `windsurf` e `amazonq` não existem mais no CLI Go.
-- [ ] A documentação não orienta o uso dos aliases removidos e aponta para `agents|skills`.
-- [ ] Existe uma única superfície explícita `trackfw help` nos três CLIs.
-- [ ] `--help` continua funcionando no root e nos subcomandos.
-- [ ] A documentação de configuração continua acessível pelo help consolidado.
-- [ ] `trackfw update` atualiza somente regras, hooks, scripts, CI e comandos do projeto atual.
-- [ ] `trackfw update` não altera agents, skills ou regras globais.
-- [ ] `trackfw update harness` atualiza agents, skills e regras globais já instalados.
-- [ ] `trackfw update harness` não exige `trackfw.yaml` nem estar dentro de um repositório.
-- [ ] Nenhum dos dois comandos instala itens ausentes sem uma opção explícita.
-- [ ] Ambos preservam artefatos desconhecidos ou não gerenciados e reportam-nos como ignorados.
-- [ ] Go, Node.js e Python oferecem o mesmo contrato de update ou documentam uma exceção temporária
+- [x] Somente o `trackfw_architect` recebe autoridade documentada para branch, commit e push.
+- [x] O framework não contém regra universal de paridade entre implementações ou stacks.
+- [x] Os comandos `copilot`, `cursor`, `gemini`, `windsurf` e `amazonq` não existem mais no CLI Go.
+- [x] A documentação não orienta o uso dos aliases removidos e aponta para `agents|skills`.
+- [x] Existe uma única superfície explícita `trackfw help` nos três CLIs.
+- [x] `--help` continua funcionando no root e nos subcomandos.
+- [x] A documentação de configuração continua acessível pelo help consolidado.
+- [x] `trackfw update` atualiza somente regras, hooks, scripts, CI e comandos do projeto atual.
+- [x] `trackfw update` não altera agents, skills ou regras globais.
+- [x] `trackfw update harness` atualiza agents, skills e regras globais já instalados.
+- [x] `trackfw update harness` não exige `trackfw.yaml` nem estar dentro de um repositório.
+- [x] Nenhum dos dois comandos instala itens ausentes sem uma opção explícita.
+- [x] Ambos preservam artefatos desconhecidos ou não gerenciados e reportam-nos como ignorados.
+- [x] Go, Node.js e Python oferecem o mesmo contrato de update ou documentam uma exceção temporária
       com comportamento equivalente no fluxo suportado.
-- [ ] `trackfw update --dry-run` e `trackfw update --json` permitem inspeção antes da alteração.
-- [ ] `make quality` e `trackfw validate --json` passam no repositório trackfw.
+- [x] `trackfw update --dry-run` e `trackfw update --json` permitem inspeção antes da alteração.
+- [x] `make quality` e `trackfw validate --json` passam no repositório trackfw.
 
 ## Linked ADR
 
@@ -100,4 +100,4 @@ ADR: `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`

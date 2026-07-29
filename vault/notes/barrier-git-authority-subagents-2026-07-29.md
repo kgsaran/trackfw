@@ -20,5 +20,5 @@ e commitar as alterações.
 
 - `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
 - `docs/req/REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
-- `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+- `docs/roadmaps/done/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
 

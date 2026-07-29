@@ -5967,3 +5967,20 @@ alteram nenhum arquivo versionado; `CLAUDE.md` limpo; zero artefatos trackfw toc
 
 Defeito extraído em vez de inflar o roadmap: `init --ai-tools` mutando o harness global virou REQ e
 roadmap próprios em `backlog/`.
+
+## Auditoria 2026-07-29 — Zeus — barriers das 6 waves e fechamento
+
+Barriers finais: waves 1, 2, 3, 4 e 5 retornaram `passed` de primeira. **A Wave 6 reprovou**, com
+`acceptance_evidence: ML-6F: 5 unmet acceptance criteria`.
+
+A causa não foi código: eu marquei o ML-6F como `✅ Concluído` e deixei os cinco critérios de aceite
+com `- [ ]`. Os critérios estavam de fato atendidos — em conjunto pelo ML-6F parcial e pelo ML-6H —
+mas o registro não refletia isso. O check `acceptance_evidence` existe exatamente para isso e pegou
+o descuido do orquestrador.
+
+Vale registrar porque fecha o argumento da sessão: a barrier reprovou a Wave 2 por divergência entre
+runtimes que as suítes individuais não viam, e reprovou a Wave 6 por bookkeeping do próprio
+orquestrador. Nas duas vezes o mecanismo funcionou contra quem o construiu. Marcar ML como concluído
+sem evidência é o comportamento vacuoso que a regra 13 do ADR proíbe.
+
+Após corrigir o registro: `barrier --wave 6` retorna exit 0 e `status: passed`. As seis waves passam.
