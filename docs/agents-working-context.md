@@ -5984,3 +5984,44 @@ orquestrador. Nas duas vezes o mecanismo funcionou contra quem o construiu. Marc
 sem evidência é o comportamento vacuoso que a regra 13 do ADR proíbe.
 
 Após corrigir o registro: `barrier --wave 6` retorna exit 0 e `status: passed`. As seis waves passam.
+
+## 2026-07-29 — Zeus — IMPLEMENTANDO: refino da REQ órfã em backlog + contrato de skip de artefato desatualizado
+
+Único par REQ→Roadmap em backlog era `escopo-de-init-ai-tools-nao-deve-mutar-o-harness-global`,
+extraído do roadmap da barrier. Ao refiná-lo para handoff, a premissa **não sobreviveu à
+verificação** — registro aqui porque o erro é instrutivo e não deve ser repetido.
+
+A REQ afirmava que `init --ai-tools` gravar em `~/.gemini/agents/` era defeito, invocando o contrato
+do ML-6A. Duas verificações refutaram isso:
+
+1. `ADR-2026-07-25-escopo-de-instalacao-selecionavel` **decide o oposto de forma deliberada** — D1
+   (sem TTY → `global`, registrado como breaking change) e D4 (`init` sem TTY → `global`), com
+   consequência positiva declarada "elimina instalação surpresa no repositório do usuário".
+   `init.go:118` e o comentário da linha 395 (`defaults to "global" (D1)`) são implementação fiel.
+2. O contrato de `docs/cli-parity.md` invocado é titulado `trackfw update vs trackfw update harness`
+   e abre com "Update is split by scope". Pina 5 targets de projeto e 19 de harness, todos do domínio
+   `update`. **Não menciona `init`** — não é fronteira projeto/global geral.
+
+A evidência empírica citada (`artifact ... is outdated; use update`) vem de `manager.go:220`, o
+preflight de install recusando artefato `outdated`+`owned`. Prova que `init` alcança o HOME — o que o
+D4 manda. **Não** prova que alcançá-lo seja errado.
+
+Lição: uma REQ extraída às pressas de outro roadmap herda a interpretação de quem extraiu, não o
+contrato real. Generalizar um contrato escopado ("update nunca muta global" → "nenhum comando de
+projeto muta global") é o tipo de salto que só aparece lendo o ADR original.
+
+O defeito **real** que a evidência expõe é outro: `install` sobre artefato `outdated`+`owned` retorna
+erro, e como `mutate` é lote atômico com rollback, **aborta o scaffold inteiro** de um projeto novo
+por causa do estado de um artefato que não pertence a esse projeto. Decisão do usuário: manter
+D1/D4, reescopar para o defeito de robustez.
+
+Achado que muda o conteúdo dos MLs: `npm/tests/agents-skills.test.js:193` contém
+`assert.throws(() => manager.install([plan]), /outdated.*update/i)` — asserção que **codifica o
+contrato antigo** e precisa ser invertida. Go e Python não tinham cobertura equivalente. Sem pinar
+isso no roadmap, três agentes paralelos decidiriam independentemente entre apagar, inverter ou
+contornar a asserção — exatamente o modo de falha que o ML-6F mediu.
+
+Artefatos: REQ e roadmap antigos removidos; novos em
+`install-pula-artefato-desatualizado-em-vez-de-abortar` (roadmap em `wip/`). Contrato do ML-1A
+escrito em `docs/cli-parity.md`. Branch `fix/install-pula-artefato-desatualizado`.
+Wave 2 = 3 MLs paralelos (Go ‖ Node ‖ Python); Wave 3 = auditoria de paridade após barrier.
