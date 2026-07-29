@@ -243,6 +243,95 @@ def test_legacy_adoption_then_update(tmp_path):
     assert destination.read_bytes() == plans[0]["content"]
 
 
+def test_install_skips_owned_outdated_artifact(tmp_path):
+    """ML-2C: outdated+owned+sem-force → skip; bytes preservados; lote continua; on_skip=None seguro."""
+    home = tmp_path / "home"
+    home.mkdir()
+
+    # Plan A — escopo global (gemini/backend): será adotado e depois pulado
+    _, plans_a = plan_deployments("agents", ["gemini"], ["backend"], "global")
+    plan_a = {**plans_a[0]}
+    legacy = b"old template bytes for skip test"
+    plan_a["legacy_hashes"] = [hashlib.sha256(legacy).hexdigest()]
+
+    destination_a = home / plan_a["destination"][2:]  # strip "~/"
+    destination_a.parent.mkdir(parents=True, exist_ok=True)
+    destination_a.write_bytes(legacy)
+
+    # Primeira instalação: adota o artefato legado (owned=True, state=outdated)
+    IntegrationManager(tmp_path, home).install([plan_a])
+    assert IntegrationManager(tmp_path, home).inspect(plan_a)["state"] == "outdated"
+    assert IntegrationManager(tmp_path, home).inspect(plan_a)["managed"] is True
+
+    # Plan B — escopo de projeto (claude/backend): deve ser aplicado normalmente no mesmo lote
+    _, plans_b = plan_deployments("agents", ["claude"], ["backend"], "project")
+    plan_b = plans_b[0]
+
+    # (c) on_skip chamado exatamente uma vez com caminho tilde-abreviado
+    skipped: list[tuple[str, str]] = []
+    IntegrationManager(tmp_path, home, on_skip=lambda d, r: skipped.append((d, r))).install(
+        [plan_a, plan_b]
+    )  # (a) sem exceção
+
+    # (b) bytes de plan_a preservados
+    assert destination_a.read_bytes() == legacy
+    # (c) on_skip chamado exatamente uma vez, caminho tilde-abreviado (global → "~/...")
+    assert len(skipped) == 1
+    assert skipped[0][0] == plan_a["destination"], f"esperado {plan_a['destination']!r}, obtido {skipped[0][0]!r}"
+    assert skipped[0][0].startswith("~/"), f"caminho global deve ter tilde, obtido {skipped[0][0]!r}"
+    assert skipped[0][1] == "outdated"
+    # (d) plan_b aplicado normalmente
+    assert (tmp_path / plan_b["destination"]).is_file()
+
+    # (e) on_skip=None não causa erro
+    IntegrationManager(tmp_path, home).install([plan_a])
+    assert destination_a.read_bytes() == legacy  # bytes ainda preservados (ainda pulado)
+
+
+def test_install_skip_warning_string_project_scope(tmp_path):
+    """Warning stderr byte-idêntico ao contrato — escopo de projeto (docs/cli-parity.md §install sobre artefato gerenciado desatualizado)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (tmp_path / "trackfw.yaml").write_text("hooks: none\nci: none\n", encoding="utf-8")
+
+    _, plans = plan_deployments("agents", ["claude"], ["backend"], "project")
+    plan = plans[0]
+
+    # Instalar normalmente para obter owned+current
+    IntegrationManager(tmp_path, home).install([plan])
+
+    # Simular outdated: alterar catalog_version no manifesto sem tocar os bytes
+    manifest_path = tmp_path / ".trackfw/integrations-manifest.json"
+    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    dest_key = str(tmp_path / plan["destination"])
+    manifest_data["artifacts"][dest_key]["catalog_version"] = "simulated-old"
+    manifest_path.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+
+    assert IntegrationManager(tmp_path, home).inspect(plan)["state"] == "outdated"
+    assert IntegrationManager(tmp_path, home).inspect(plan)["managed"] is True
+
+    result = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "project",
+        cwd=tmp_path,
+        home=home,
+    )
+    assert result.returncode == 0, result.stderr
+
+    # String pinada no contrato (docs/cli-parity.md §install sobre artefato gerenciado desatualizado)
+    expected = (
+        "warning: skipping outdated artifact .claude/agents/trackfw-backend.md;"
+        " run 'trackfw update' to refresh it"
+    )
+    assert expected in result.stderr, (
+        f"esperado aviso pinado no contrato em stderr.\n"
+        f"Esperado: {expected!r}\n"
+        f"Stderr obtido:\n{result.stderr}"
+    )
+
+
 def test_released_claude_hashes_are_global_only():
     historical_root = PYPI_ROOT.parent / "internal/generators/templates/agents"
     _, global_plans = plan_deployments("agents", ["claude"], scope="global")

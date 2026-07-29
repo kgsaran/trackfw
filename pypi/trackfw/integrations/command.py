@@ -283,7 +283,15 @@ def run(args: argparse.Namespace, kind: str) -> int:
             all_surfaces=not mutation,
             identity_cfg=ident,
         )
-        manager = IntegrationManager(os.getcwd())
+        def _on_skip(destination: str, reason: str) -> None:
+            cmd = "trackfw update harness" if resolved_scope == "global" else "trackfw update"
+            print(
+                f"warning: skipping outdated artifact {destination};"
+                f" run '{cmd}' to refresh it",
+                file=sys.stderr,
+            )
+
+        manager = IntegrationManager(os.getcwd(), on_skip=_on_skip)
         # D5 — transparency without an extra confirmation step: print the
         # resolved destinations before writing anything, so the effect of
         # the command is auditable. Only for mutating actions (install/

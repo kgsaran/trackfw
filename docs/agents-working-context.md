@@ -6097,3 +6097,14 @@ Artefatos: REQ e roadmap antigos removidos; novos em
 `install-pula-artefato-desatualizado-em-vez-de-abortar` (roadmap em `wip/`). Contrato do ML-1A
 escrito em `docs/cli-parity.md`. Branch `fix/install-pula-artefato-desatualizado`.
 Wave 2 = 3 MLs paralelos (Go ‖ Node ‖ Python); Wave 3 = auditoria de paridade após barrier.
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-2C — Python: install pula artefato outdated+owned)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+**Status:** IMPLEMENTANDO
+**Branch:** `fix/install-pula-artefato-desatualizado`
+
+Implementando ML-2C (Python-only): manager.py, command.py, init.py e testes.
+
