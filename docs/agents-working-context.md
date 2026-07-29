@@ -4657,3 +4657,33 @@ gerar diagnósticos explícitos; e o gate de identity parity passou a derivar ta
 catálogo. A documentação foi atualizada, `make quality` passou com 643 testes Python, os gates de
 falsificação passaram com 13 cenários e 8 gates não-vazios, e `trackfw validate --json` retornou 0
 violações e 0 avisos. REQ e roadmap foram concluídos.
+
+## Planejamento 2026-07-29 — barrier de governança e autoridade do orquestrador
+
+Solicitada a formalização da barrier como funcionalidade do trackfw. Criados o ADR
+`docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`, a REQ
+`docs/req/REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md` e o roadmap em
+`docs/roadmaps/backlog/`.
+
+Decisões registradas: `trackfw barrier` será o núcleo determinístico; `/trackfw:barrier` será a
+camada de orquestração; gates de stack são configuráveis pelo projeto; `trackfw_architect` é a única
+autoridade Git; especialistas não fazem operações Git e só atuam por handoff.
+
+Validação do planejamento: `git diff --check` verde e `bin/trackfw validate --json` com 0 violações
+e 0 avisos. Nenhuma branch foi criada e nenhuma implementação foi iniciada.
+
+## Implementação 2026-07-29 — Zeus — barrier de governança (IMPLEMENTANDO)
+
+O roadmap da barrier foi reordenado para ordem lógica de execução (Waves 1→2→3→4→5→6). As Waves 5 e
+6 apareciam fisicamente antes das Waves 2–4, o que confundia a execução; o bloco foi movido para
+depois da Wave 4 como permutação pura, sem alterar numeração, dependências ou referências cruzadas.
+
+Roadmap movido para `docs/roadmaps/wip/` e branch `feat/barrier-governanca-e-autoridade-do-orquestrador`
+criada. Duas decisões congeladas antes do primeiro handoff:
+
+1. **Autoridade de artefatos no ML-1A**: o `trackfw_architect` é o único autor de `docs/adr/`,
+   `docs/req/`, `docs/roadmaps/` e `docs/cli-parity.md`. O especialista do ML-1A implementa
+   exclusivamente os testes negativos/xfail.
+2. **Escopo dos testes negativos**: criados nos três runtimes já na Wave 1 (Go `t.Skip`, Node
+   `{ skip: true }`, Python `@pytest.mark.xfail(strict=True)`), garantindo baseline vermelha
+   idêntica para os MLs 2A/2B/2C e tornando a paridade verificável no barrier da Wave 2.

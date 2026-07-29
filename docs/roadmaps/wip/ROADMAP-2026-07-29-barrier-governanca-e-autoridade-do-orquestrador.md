@@ -1,0 +1,462 @@
+---
+status: wip
+date: 2026-07-29
+req: "REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador"
+squad: ""
+---
+
+# Roadmap: Barrier de governança e autoridade exclusiva do orquestrador
+
+> Criado em: 2026-07-29 | Status: wip
+REQ: `docs/req/REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+ADR: `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+Branch: `feat/barrier-governanca-e-autoridade-do-orquestrador`
+
+## Diagnóstico / Contexto
+
+O agente arquiteto já menciona barrier entre waves e auditoria pós-ML, mas não existe uma operação
+do produto que reúna os checks, registre evidências e impeça o avanço quando uma etapa falha. O
+contrato também precisa refletir a política de segurança operacional: agentes especialistas não
+executam Git; somente o `trackfw_architect` possui autoridade para branch, commit e push.
+
+O comando nativo será agnóstico de stack. Build, testes, E2E e gates são comandos declarados pelo
+projeto ou pelo roadmap. A invocação dos agentes `code-quality` e `security` pertence ao slash
+command e ao fluxo do orquestrador, não ao binário autônomo.
+
+## Definição de pronto da barrier
+
+Uma wave só pode ser liberada quando todos os itens abaixo estiverem verdes:
+
+1. Todos os MLs da wave estão presentes e marcados como concluídos.
+2. Testes unitários e E2E aplicáveis foram executados.
+3. Build aplicável foi executado sem erros.
+4. Cada critério de aceite foi inspecionado e possui evidência.
+5. O agente de qualidade de código reportou conformidade, performance, robustez e clareza.
+6. O agente de segurança reportou a análise aplicável de SAST, privilégios, controle de acesso e
+   demais camadas relevantes.
+7. Todos os gates pré-commit declarados pelo projeto passaram.
+8. `trackfw validate --json` passou.
+9. O diff foi auditado contra o escopo e não contém alterações de agentes concorrentes ou arquivos
+   proibidos.
+10. O resultado foi registrado antes de liberar a próxima wave.
+
+## Critérios de Aceite
+
+Este roadmap só é considerado concluído quando todos os itens abaixo forem verdadeiros:
+
+- [ ] `trackfw barrier <roadmap> --wave <n>` existe e é funcionalmente equivalente nos três CLIs
+      (Go, Node.js e Python), com paridade de flags, estados, exit codes e saída JSON.
+- [ ] A barrier bloqueia a liberação de wave quando qualquer item da "Definição de pronto" falha,
+      retornando exit code não-zero e `status: blocked`.
+- [ ] Uma wave integralmente verde retorna exit code 0 e `status: passed`.
+- [ ] O CLI executa somente gates declarados pelo projeto; nenhuma regra específica do trackfw é
+      tratada como universal (sem paridade hardcoded).
+- [ ] O slash command `/trackfw:barrier` existe e contém o checklist operacional completo da REQ.
+- [ ] Nenhum agente especialista possui protocolo autorizando operações Git; `trackfw_architect` é
+      a única autoridade de branch, commit e push.
+- [ ] `trackfw update` opera exclusivamente no projeto e `trackfw update harness` no escopo global.
+- [ ] Os cinco aliases deprecated de integração foram removidos e há uma única superfície `help`.
+- [ ] `make quality` passa e `trackfw validate --json` retorna 0 violações.
+
+## Wave 1 — Contrato e caracterização (1 ML)
+> Dependências: nenhuma
+
+### ML-1A — Congelar o contrato universal da barrier
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+- `docs/req/REQ-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+- `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+- `docs/cli-parity.md`
+- testes de contrato nos **três runtimes**: `internal/commands/barrier_contract_test.go`,
+  `npm/tests/barrier-contract.test.js`, `pypi/tests/test_barrier_contract.py`
+
+**Divisão de responsabilidade (autoridade de artefatos):**
+- O `trackfw_architect` é o **único** autor de `docs/adr/`, `docs/req/`, `docs/roadmaps/` e
+  `docs/cli-parity.md`. Especialistas **não editam** esses caminhos.
+- O especialista designado para o ML-1A implementa **exclusivamente** os testes negativos/xfail
+  dos três runtimes, a partir do contrato já congelado pelo orquestrador.
+
+**Escopo dos testes negativos (decisão congelada — não delegável ao agente):**
+Os testes de contrato são criados nos **três CLIs** já na Wave 1, para que os MLs 2A/2B/2C partam
+de uma baseline vermelha idêntica e a regra dura de paridade seja verificável no barrier da Wave 2.
+Mecanismo de pendência por runtime: Go → `t.Skip` com motivo explícito; Node.js → `{ skip: true }`
+do `node:test`; Python → `@pytest.mark.xfail(strict=True)`.
+
+**Ações:**
+1. Definir o schema lógico de um resultado de barrier: `roadmap`, `wave`, `status`, `checks`,
+   `evidence`, `failures` e timestamps.
+2. Definir estados `pending`, `running`, `passed` e `blocked`.
+3. Definir que o CLI executa somente gates declarados pelo projeto e não contém paridade hardcoded.
+4. Definir a diferença entre `trackfw barrier` (validação determinística) e
+   `/trackfw:barrier` (orquestração de agentes).
+5. Adicionar testes negativos/xfail para ML incompleto, evidência ausente e barrier bloqueada,
+   sem implementar a produção neste ML.
+
+**Critérios de aceite:**
+- [ ] Contrato textual e JSON documentado em `docs/cli-parity.md`.
+- [ ] Testes negativos reproduzem cada falha obrigatória nos três runtimes.
+- [ ] Nenhum arquivo de `docs/adr/`, `docs/req/` ou `docs/roadmaps/` foi alterado pelo especialista.
+- [ ] Nenhum gate específico do trackfw é tratado como regra universal.
+- [ ] `trackfw validate --json` permanece verde.
+
+**Comandos de validação:**
+```bash
+git diff --check
+bin/trackfw validate --json
+```
+
+## Wave 2 — Núcleo nativo do comando (3 MLs em paralelo)
+> Dependências: Wave 1 concluída e auditada. Os MLs tocam árvores de runtime disjuntas.
+
+### ML-2A — Implementar `trackfw barrier` no Go
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `internal/commands/barrier.go`
+- `internal/commands/root.go`
+- `internal/commands/*barrier*_test.go`
+- `internal/validator/` somente se a integração exigir novo contrato compartilhado
+
+**Ações:**
+1. Adicionar `trackfw barrier <roadmap> --wave <n>` e `--json`.
+2. Descobrir a wave e os MLs pelo roadmap canônico, incluindo layout `by_agent`.
+3. Verificar status concluído, evidências e gates declarados.
+4. Executar `trackfw validate` e retornar exit code não-zero em falha.
+5. Emitir resultado JSON estável conforme o contrato da Wave 1.
+
+**Critérios de aceite:**
+- [ ] ML pendente impede a passagem.
+- [ ] Falta de evidência impede a passagem.
+- [ ] Wave verde retorna exit code 0 e `status: passed`.
+- [ ] Saída textual e JSON são determinísticos.
+- [ ] `go build ./...`, `go test ./...` e `go vet ./...` passam.
+
+**Comandos de validação:**
+```bash
+go build ./...
+go test ./...
+go vet ./...
+```
+
+### ML-2B — Implementar `trackfw barrier` no Node.js
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `npm/src/commands/barrier.js`
+- `npm/src/commands/index.js`
+- `npm/tests/barrier.test.js`
+
+**Ações:** Espelhar o contrato do ML-2A sem introduzir comportamento específico de Node.js além
+   da implementação necessária.
+
+**Critérios de aceite:**
+- [ ] Paridade de flags, estados, exit codes e JSON com Go.
+- [ ] Casos verde, ML pendente, evidência ausente e `validate` falho cobertos.
+- [ ] `npm test` passa.
+
+**Comandos de validação:**
+```bash
+cd npm && npm test
+```
+
+### ML-2C — Implementar `trackfw barrier` no Python
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `pypi/trackfw/commands/barrier.py`
+- `pypi/trackfw/cli.py`
+- `pypi/tests/test_barrier.py`
+
+**Ações:** Espelhar o contrato dos MLs 2A/2B usando argparse e as convenções existentes do CLI
+   Python.
+
+**Critérios de aceite:**
+- [ ] Paridade de flags, estados, exit codes e JSON com Go e Node.
+- [ ] Casos verde, ML pendente, evidência ausente e `validate` falho cobertos.
+- [ ] Suíte Python passa.
+
+**Comandos de validação:**
+```bash
+python3 -m pytest pypi/tests/test_barrier.py -q
+```
+
+## Wave 3 — Orquestração e autoridade dos agentes (1 ML)
+> Dependências: Wave 2 concluída e auditada.
+
+### ML-3A — Atualizar agentes e gerar `/trackfw:barrier`
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `internal/integrations/assets/agents/architect.md`
+- `internal/integrations/assets/agents/backend.md`
+- `internal/integrations/assets/agents/frontend.md`
+- `internal/integrations/assets/agents/qa.md`
+- `internal/integrations/assets/agents/infra.md`
+- `internal/integrations/assets/agents/security.md`
+- `internal/integrations/assets/agents/code-quality.md`
+- demais assets especialistas aplicáveis
+- `internal/generators/` e testes de assets/slash commands
+- árvores `npm/src/integrations/` e `pypi/trackfw/integrations/` apenas via sincronização canônica
+
+**Ações:**
+1. Documentar `trackfw_architect` como única autoridade Git.
+2. Remover dos especialistas qualquer instrução que permita commit, push, checkout, branch, merge
+   ou rebase.
+3. Instruir especialistas a atuar somente por handoff autocontido do `trackfw_architect`.
+4. Fazer especialistas recusarem implementação direta quando não houver handoff válido.
+5. Criar o slash command `/trackfw:barrier` com o checklist completo da REQ.
+6. Instruir o orquestrador a invocar `code-quality` e `security` quando aplicável.
+7. Instruir o orquestrador a bloquear a próxima wave após qualquer falha e despachar ML corretivo.
+8. Instruir o orquestrador a auditar e somente então executar commit/push.
+9. Manter o nome público abstrato `trackfw_architect`; nunca depender de `zeus-tf`.
+
+**Critérios de aceite:**
+- [ ] `/trackfw:barrier` contém o checklist operacional completo.
+- [ ] Assets Go/Node/Python permanecem byte-equivalentes após sincronização.
+- [ ] Especialistas não possuem protocolo autorizando operações Git.
+- [ ] `trackfw_architect` possui protocolo explícito de auditoria, commit e push.
+- [ ] Testes cobrem a presença da barrier, a autoridade do orquestrador e a ausência de regras de
+      paridade universal.
+- [ ] `make quality` passa.
+
+**Comandos de validação:**
+```bash
+scripts/sync-integration-assets.sh
+make quality
+bin/trackfw validate --json
+```
+
+## Wave 4 — Auditoria final e documentação (1 ML)
+> Dependências: Wave 3 concluída e auditada.
+
+### ML-4A — Provar o fluxo E2E da barrier
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `scripts/check-barrier.sh`
+- `scripts/check-gates-falsify.sh`
+- `docs/cli-parity.md`
+- `README.md`
+- `site/guide/` e `site/en/guide/` quando aplicável
+- roadmap e REQ vinculados
+
+**Ações:**
+1. Criar fixture temporária com duas waves e MLs concluídos/pendentes.
+2. Provar passagem da primeira wave e bloqueio da segunda quando qualquer check falhar.
+3. Provar reexecução após correção e liberação somente com todos os checks verdes.
+4. Provar que gates definidos pelo projeto são executados e gates não definidos não são inventados.
+5. Provar que a execução do especialista não cria commit ou push.
+6. Documentar uso, saída JSON, estados e fluxo de correção.
+
+**Critérios de aceite:**
+- [ ] Cenários positivos e negativos são não-vacuous.
+- [ ] O fluxo E2E demonstra `passed` e `blocked`.
+- [ ] Nenhuma operação Git é executada por especialista.
+- [ ] Documentação em inglês e português mantém o contrato consistente.
+- [ ] `make quality` passa.
+- [ ] `trackfw validate --json` passa sem violações.
+
+**Comandos de validação:**
+```bash
+scripts/check-barrier.sh
+scripts/check-gates-falsify.sh
+make quality
+bin/trackfw validate --json
+git diff --check
+```
+
+## Wave 5 — Limpeza de superfície pública (2 MLs sequenciais)
+> Dependências: Wave 4 concluída e auditada. O ML-5B vem depois do ML-5A porque a documentação
+> compartilhada de paridade e help precisa refletir a remoção dos aliases antes da consolidação.
+
+### ML-5A — Remover aliases deprecated de integração
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `internal/commands/copilot.go`
+- `internal/commands/cursor.go`
+- `internal/commands/gemini.go`
+- `internal/commands/windsurf.go`
+- `internal/commands/amazonq.go`
+- `internal/commands/root.go`
+- testes de comandos e integração correspondentes
+- `README.md`, `site/guide/` e `site/en/guide/` quando houver referência
+
+**Ações:**
+1. Remover os cinco aliases deprecated do registro do CLI Go e apagar implementações sem callers.
+2. Remover testes que esperam a presença dos aliases e adicionar testes que confirmem a mensagem de
+   comando desconhecido/ausente.
+3. Atualizar documentação para usar exclusivamente `trackfw agents|skills`.
+4. Preservar superfícies de instalação marcadas como `legacy`; elas não são aliases CLI e continuam
+   necessárias para migração segura.
+5. Registrar a remoção como breaking change no changelog da versão de release.
+
+**Critérios de aceite:**
+- [ ] Nenhum dos cinco aliases aparece em `trackfw --help`.
+- [ ] Os comandos `trackfw agents|skills` continuam funcionando.
+- [ ] Superfícies `legacy` do catálogo continuam listáveis e atualizáveis explicitamente.
+- [ ] Nenhuma documentação orienta os aliases removidos.
+- [ ] `go build ./...`, `go test ./...` e `go vet ./...` passam.
+
+**Comandos de validação:**
+```bash
+go build ./...
+go test ./...
+go vet ./...
+```
+
+### ML-5B — Consolidar a superfície de ajuda
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `internal/commands/help.go`
+- `internal/commands/root.go`
+- `npm/src/commands/help.js`
+- `npm/src/commands/index.js`
+- `pypi/trackfw/commands/help_cmd.py`
+- `pypi/trackfw/cli.py`
+- testes de help dos três CLIs
+- `docs/cli-parity.md`, `README.md`, `site/guide/` e `site/en/guide/`
+
+**Ações:**
+1. Manter uma única superfície explícita `trackfw help [assunto|chave]` para documentação de
+   comandos e chaves de configuração.
+2. Preservar `trackfw --help` e `<comando> --help` como flags nativas, encaminhando para a ajuda
+   contextual sem registrar um segundo comando `help`.
+3. Definir resolução determinística: comando conhecido → ajuda do comando; chave de configuração
+   conhecida → documentação da chave; valor desconhecido → erro com sugestão.
+4. Alinhar saída, exit codes e comportamento entre Go, Node.js e Python.
+5. Remover a duplicação de registro/renderer sem apagar a documentação das chaves existentes.
+
+**Critérios de aceite:**
+- [ ] Existe uma única entrada explícita `help` em cada CLI.
+- [ ] `trackfw help`, `trackfw help <comando>` e `trackfw help <chave>` funcionam.
+- [ ] `trackfw --help` e `<comando> --help` continuam funcionando.
+- [ ] Chave desconhecida retorna erro não-zero e sugestão útil.
+- [ ] Saída e exit codes são equivalentes nos três CLIs.
+- [ ] Testes dos três runtimes passam.
+
+**Comandos de validação:**
+```bash
+go test ./internal/commands -run Help -v
+cd npm && npm test -- --test-name-pattern='help'
+python3 -m pytest pypi/tests -k help -q
+```
+
+## Wave 6 — Separação entre update de projeto e update do harness (4 MLs)
+> Dependências: Wave 5 concluída e auditada. Os MLs implementam o mesmo contrato em árvores de
+> runtime disjuntas. O ML-6A define a fronteira antes dos três MLs de runtime.
+
+### ML-6A — Fixar o contrato de escopo dos updates
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `docs/cli-parity.md`
+- testes de contrato de update
+
+**Ações:**
+1. Definir `trackfw update` como operação de projeto: regras locais, hooks, scripts, CI e comandos
+   do repositório atual.
+2. Definir `trackfw update harness` como operação global: regras, agents e skills já instalados no
+   diretório do usuário.
+3. Remover do contrato de `trackfw update` qualquer mutação global.
+4. Definir estados `updated`, `skipped`, `missing` e `failed`, além de `--dry-run` e `--json`.
+5. Definir que itens ausentes não são instalados sem `--install-missing` explícito.
+
+**Critérios de aceite:**
+- [ ] O contrato diferencia claramente projeto e global.
+- [ ] O contrato não permite efeito global acidental a partir de um repositório.
+- [ ] Dry-run, JSON e estados são documentados.
+- [ ] `go build ./...`, `go test ./...` e `go vet ./...` passam.
+
+**Comandos de validação:**
+```bash
+go build ./...
+go test ./...
+go vet ./...
+```
+
+### ML-6B — Implementar updates separados no Go
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `internal/commands/update.go`
+- `internal/commands/update_harness.go`
+- `internal/generators/update.go`
+- `internal/commands/root.go`
+- testes correspondentes
+
+**Ações:**
+1. Manter `trackfw update` restrito ao projeto atual.
+2. Mover a atualização de skill global para `trackfw update harness`.
+3. Criar `trackfw update harness` sem exigir `trackfw.yaml` ou cwd de projeto.
+4. Atualizar somente deployments globais já existentes por padrão.
+5. Implementar `--dry-run`, `--json`, `--targets`, `--install-missing` e preservação de artefatos
+   não gerenciados.
+
+**Critérios de aceite:**
+- [ ] Executar `trackfw update` em 20 projetos não repete update global.
+- [ ] `trackfw update harness` atualiza o global uma única vez.
+- [ ] Saída, estados e filtros seguem o contrato do ML-6A.
+- [ ] `go build ./...`, `go test ./...` e `go vet ./...` passam.
+
+**Comandos de validação:**
+```bash
+go build ./...
+go test ./...
+go vet ./...
+```
+
+### ML-6C — Implementar updates separados no Node.js
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `npm/src/commands/update.js`
+- `npm/src/commands/update-harness.js`
+- `npm/src/commands/index.js`
+- `npm/src/commands/integrations.js`
+- `npm/src/integrations/manager.js`
+- testes correspondentes
+
+**Ações:** Espelhar o contrato dos MLs 6A/6B. `update` permanece local; `update harness` opera no
+escopo global sem depender de projeto.
+
+**Critérios de aceite:**
+- [ ] Saída, flags, estados e exit codes equivalentes ao Go.
+- [ ] `update` não muta global.
+- [ ] `update harness` atualiza somente global já instalado por padrão.
+- [ ] `npm test` passa.
+
+**Comandos de validação:**
+```bash
+cd npm && npm test
+```
+
+### ML-6D — Implementar updates separados no Python
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `pypi/trackfw/commands/update.py`
+- `pypi/trackfw/commands/update_harness.py`
+- `pypi/trackfw/cli.py`
+- `pypi/trackfw/integrations/manager.py`
+- `pypi/trackfw/integrations/command.py`
+- testes correspondentes
+
+**Ações:** Espelhar o contrato dos MLs 6A–6C. A limitação atual que exige Go/Node para gates, CI e
+slash commands deve ser removida do update local ou formalizada como escopo separado; o novo
+`update harness` deve funcionar autonomamente no Python.
+
+**Critérios de aceite:**
+- [ ] Saída, flags, estados e exit codes equivalentes ao Go e Node.
+- [ ] `update` não muta global.
+- [ ] `update harness` atualiza o global já instalado.
+- [ ] `--dry-run` e `--json` funcionam nos dois comandos.
+- [ ] Suíte Python passa.
+
+**Comandos de validação:**
+```bash
+python3 -m pytest pypi/tests -k update -q
+```
+
+## Protocolo de conclusão do roadmap
+
+Após a auditoria verde da Wave 4, o `trackfw_architect` deve:
+
+1. marcar todos os MLs e o roadmap como concluídos;
+2. executar `trackfw validate --json`;
+3. revisar o diff completo;
+4. commitar os artefatos consolidados, incluindo código produzido pelos especialistas;
+5. fazer push da branch;
+6. sugerir a abertura de PR/MR, sem abrir automaticamente sem autorização do usuário;
+7. mover este roadmap para `docs/roadmaps/done/`.

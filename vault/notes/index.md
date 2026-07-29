@@ -8,3 +8,4 @@
 - [argparse-ansi-parity-gate-python313-2026-07-26](argparse-ansi-parity-gate-python313-2026-07-26.md)
 - [ship-roadmap-dir-default-divergencia-2026-07-27](ship-roadmap-dir-default-divergencia-2026-07-27.md)
 - [roadmap-move-nao-atualiza-frontmatter-2026-07-27](roadmap-move-nao-atualiza-frontmatter-2026-07-27.md)
+- [barrier-git-authority-subagents-2026-07-29](barrier-git-authority-subagents-2026-07-29.md)
