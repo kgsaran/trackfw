@@ -107,7 +107,7 @@ function cleanupFixture(dir) {
 // 1 — wave_verde_passa
 // ────────────────────────────────────────────────────────────────────────────
 
-test('barrier contract: wave_verde_passa', { skip: SKIP_REASON }, () => {
+test('barrier contract: wave_verde_passa', () => {
   const dir = setupBarrierFixture({
     linkedREQ: true,
     mlStatus: '✅',
@@ -134,7 +134,7 @@ test('barrier contract: wave_verde_passa', { skip: SKIP_REASON }, () => {
 // 2 — ml_pendente_bloqueia
 // ────────────────────────────────────────────────────────────────────────────
 
-test('barrier contract: ml_pendente_bloqueia', { skip: SKIP_REASON }, () => {
+test('barrier contract: ml_pendente_bloqueia', () => {
   const dir = setupBarrierFixture({
     linkedREQ: true,
     mlStatus: '⬜ Pendente',
@@ -159,7 +159,7 @@ test('barrier contract: ml_pendente_bloqueia', { skip: SKIP_REASON }, () => {
 // 3 — evidencia_ausente_bloqueia
 // ────────────────────────────────────────────────────────────────────────────
 
-test('barrier contract: evidencia_ausente_bloqueia', { skip: SKIP_REASON }, () => {
+test('barrier contract: evidencia_ausente_bloqueia', () => {
   const dir = setupBarrierFixture({
     linkedREQ: true,
     mlStatus: '✅',
@@ -184,7 +184,7 @@ test('barrier contract: evidencia_ausente_bloqueia', { skip: SKIP_REASON }, () =
 // 4 — ml_sem_bloco_de_criterios_bloqueia (caso anti-vacuidade)
 // ────────────────────────────────────────────────────────────────────────────
 
-test('barrier contract: ml_sem_bloco_de_criterios_bloqueia', { skip: SKIP_REASON }, () => {
+test('barrier contract: ml_sem_bloco_de_criterios_bloqueia', () => {
   const dir = setupBarrierFixture({
     linkedREQ: true,
     mlStatus: '✅',
@@ -209,7 +209,7 @@ test('barrier contract: ml_sem_bloco_de_criterios_bloqueia', { skip: SKIP_REASON
 // 5 — gate_falho_bloqueia
 // ────────────────────────────────────────────────────────────────────────────
 
-test('barrier contract: gate_falho_bloqueia', { skip: SKIP_REASON }, () => {
+test('barrier contract: gate_falho_bloqueia', () => {
   const dir = setupBarrierFixture({
     linkedREQ: true,
     mlStatus: '✅',
@@ -236,7 +236,7 @@ test('barrier contract: gate_falho_bloqueia', { skip: SKIP_REASON }, () => {
 // 6 — validate_falho_bloqueia
 // ────────────────────────────────────────────────────────────────────────────
 
-test('barrier contract: validate_falho_bloqueia', { skip: SKIP_REASON }, () => {
+test('barrier contract: validate_falho_bloqueia', () => {
   // Wave/ML/gates estão inteiramente verdes; a única falha é de governança
   // (roadmap em wip sem REQ vinculada), que só o check "validate" deve capturar.
   const dir = setupBarrierFixture({
@@ -270,7 +270,7 @@ test('barrier contract: validate_falho_bloqueia', { skip: SKIP_REASON }, () => {
 // 7 — roadmap_ou_wave_inexistente_e_erro_de_uso
 // ────────────────────────────────────────────────────────────────────────────
 
-test('barrier contract: roadmap_ou_wave_inexistente_e_erro_de_uso', { skip: SKIP_REASON }, () => {
+test('barrier contract: roadmap_ou_wave_inexistente_e_erro_de_uso', () => {
   // Sub-caso 1 — wave inexistente
   const dir = setupBarrierFixture({
     linkedREQ: true,
@@ -315,7 +315,7 @@ test('barrier contract: roadmap_ou_wave_inexistente_e_erro_de_uso', { skip: SKIP
 // 8 — json_deterministico
 // ────────────────────────────────────────────────────────────────────────────
 
-test('barrier contract: json_deterministico', { skip: SKIP_REASON }, () => {
+test('barrier contract: json_deterministico', () => {
   const dir = setupBarrierFixture({
     linkedREQ: true,
     mlStatus: '✅',

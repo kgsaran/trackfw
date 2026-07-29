@@ -4,6 +4,41 @@
 
 ---
 
+## Sessão 2026-07-29 — Apolo (ML-2A `trackfw barrier` — runtime Go concluído)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
+
+**Tarefa:** Implementar `trackfw barrier <roadmap> --wave <n> [--json]` no runtime Go, exatamente
+conforme o contrato congelado em `docs/cli-parity.md` (`## trackfw barrier`), e remover os 8
+`t.Skip` do ML-1A em `internal/commands/barrier_contract_test.go`. Escopo restrito ao runtime Go —
+MLs 2B (Node.js) e 2C (Python) executando em paralelo, sem tocar `npm/` nem `pypi/`.
+
+**Entregue:**
+- `internal/commands/barrier.go` (novo): parser string-level das seis regras do roadmap (waves,
+  MLs, `**Status:**`, bloco de critérios de aceite, bloco de gates com fence ```bash),
+  quatro checks embutidos (`mls_complete`, `acceptance_evidence`, `gates`, `validate`), resolução
+  de roadmap por basename em `wip/` depois `done/` (flat e by_agent), exit codes 0/1/2 via
+  `os.Exit` explícito (necessário porque `root.go Execute()` força exit 1 em qualquer erro não-nulo
+  — por isso o flag `--wave` é `StringVar` + parse manual, não `IntVar`, para controlar a mensagem e
+  o exit code de uso malformado).
+- `internal/commands/barrier_test.go` (novo): testes unitários do parser e dos checks, isolados do
+  binário compilado.
+- `internal/commands/root.go`: registra `newBarrierCmd()`.
+- `internal/commands/barrier_contract_test.go`: removidos os 8 `t.Skip` do ML-1A — corpos
+  preservados sem reescrita.
+
+**Validação:**
+- `go build ./...` → sem erros.
+- `go vet ./...` → sem erros.
+- `go test ./...` → verde em todos os pacotes; os 8 testes de contrato (`TestBarrierContract_*`)
+  passam sem skip.
+- Nenhum arquivo sob `npm/` ou `pypi/` foi tocado (confirmado via `git status --short`).
+
+**Ressalva:** `Commands` no `barrierCheck` é `*[]string` (ponteiro), não `[]string`, para que
+`omitempty` só suprima o campo quando nil — o check `gates` sempre define um ponteiro não-nil
+(mesmo para lista vazia), garantindo que `"commands": []` apareça sempre nesse check e nunca nos
+demais, conforme a tabela de determinismo do contrato.
+
 ## Sessão 2026-07-27 — Apolo (ML-1B débitos técnicos concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md`
@@ -4745,3 +4780,80 @@ mensagem de exit 2 nomeie o roadmap/wave não resolvido, tornando a asserção n
 Gates da Wave 1: `make quality` exit 0 (643 testes Python + 8 xfailed, suíte Node e Go verdes,
 13 cenários de falsificação, 8 gates provados não-vacuosos) e `bin/trackfw validate --json` com
 0 violações. Wave 2 liberada.
+
+## Backend 2026-07-29 — Apolo — ML-2C: implementa `trackfw barrier` no Python (INÍCIO/CONCLUÍDO)
+
+Handoff recebido do `trackfw_architect` para o ML-2C: implementar `trackfw barrier <roadmap> --wave
+<n> [--json]` no runtime Python (`pypi/`), espelhando o contrato congelado em `docs/cli-parity.md` e
+a paridade dos MLs 2A/2B (Go/Node, em execução paralela). Apenas arquivos sob `pypi/` tocados;
+nenhum arquivo sob `internal/`, `cmd/` ou `npm/` foi tocado; nenhum arquivo de `docs/adr/`,
+`docs/req/`, `docs/roadmaps/` ou `docs/cli-parity.md` foi editado; nenhuma operação Git executada
+por este agente.
+
+Criado `pypi/trackfw/commands/barrier.py`: parser string-level das seis regras de parsing (wave
+heading, ML heading, status ✅, bloco de critérios de aceite, bloco de gates com fence bash,
+detecção de entrada malformada com número de linha), os quatro checks embutidos na ordem fixa
+(`mls_complete`, `acceptance_evidence`, `gates`, `validate` — `validate` invocado in-process via
+`trackfw.validator.validate()`, nunca via subprocess do binário), documento JSON determinístico com
+ordem de chaves fixa e `ensure_ascii=False` (evidence/failures carregam ✅), exit 0/1/2 distintos
+(exit 2 nunca executa gates). Resolução de roadmap reaproveita
+`validator.resolve_wip_dirs`/`resolve_done_dirs` (wip então done, layouts flat e by_agent). Mensagens
+de exit 2 nomeiam explicitamente o roadmap ou a wave não resolvida (evita o falso positivo do
+cenário 7 documentado em `vault/notes/barrier-contract-xfail-false-positive-2026-07-29.md`).
+
+Removidas as 8 marcações `@pytest.mark.xfail(strict=True)` de `pypi/tests/test_barrier_contract.py`
+(corpos dos testes preservados, não reescritos). Criado `pypi/tests/test_barrier.py` com 15 testes
+unitários adicionais (resolução em `done/`, mensagens de erro de uso, parsing malformado — wave
+heading não numérico, fence de gates não terminada —, múltiplos MLs, múltiplos gates, isolamento de
+stdout do gate vs documento JSON, modo texto, contagem de critérios). Registrado o subcomando em
+`pypi/trackfw/cli.py`.
+
+Verificação empírica pré-implementação (sugerida por revisor): confirmado que o fixture do ML-1A é
+satisfazível antes de escrever qualquer código — `trackfw validate --json` sobre o fixture com
+`linked_req=True` reporta 0 violations (necessário para os cenários 1 e 8, status `passed`) e com
+`linked_req=False` reporta exatamente 1 violation isolada (`wip_has_req`), sem ruído de outras regras
+de governança (necessário para o cenário 6, que exige todos os demais checks verdes).
+
+Ambiguidades de contrato encontradas e resolvidas por leitura literal (reportadas, não corrigidas no
+contrato, que permanece congelado):
+1. Extração do `<ML-id>` não é explicitada além de "começa com `### ML-`" — implementado como o
+   token até o primeiro espaço após `### ` (regex `^### (ML-\S+)`), consistente com os exemplos
+   ML-2A/ML-2C da tabela de evidence/failures.
+2. Wave com zero ML headings: `mls_complete` bloqueia (per definição "Wave contains ≥ 1 ML"), mas
+   nenhum formato de failure está pinado para esse caso — implementado como `"wave contains no ML
+   headings"`, não literal ao contrato.
+3. Bloco de critérios de aceite presente mas vazio (sem nenhuma linha `- [ ]`/`- [x]`): rule 4 diz
+   que precisa ser "non-empty", mas só existem dois formatos de failure pinados — reaproveitado
+   `"<ML-id>: no acceptance block"` para esse caso, escolha de implementação, não contrato.
+
+Evidência de validação:
+- `python3 -m pytest pypi/tests/test_barrier_contract.py -q` → `8 passed` (sem xfail, sem XPASS).
+- `python3 -m pytest pypi/tests/test_barrier.py -q` → `15 passed`.
+- `python3 -m pytest pypi/tests -q` → `666 passed` (suíte completa do runtime Python).
+- `make quality` NÃO executado por instrução explícita do handoff (Go/Node ainda em execução
+  paralela nos MLs 2A/2B).
+
+Nenhuma operação Git foi executada por este agente (sem add/commit/push/branch). Aguardando
+auditoria do `trackfw_architect` e consolidação após os três runtimes convergirem.
+
+## Auditoria 2026-07-29 — Zeus — barrier da Wave 2: BLOQUEADA
+
+Os três MLs da Wave 2 aterrissaram com escopo perfeitamente disjunto e suítes verdes em cada
+runtime (`make quality` exit 0, `bin/trackfw validate --json` 0 violações). Ainda assim a barrier
+reprovou: suíte verde por runtime não prova equivalência entre runtimes.
+
+Auditoria de paridade executada rodando os três binários sobre a mesma fixture:
+
+- Caminho principal: JSON byte-idêntico nos três (roadmap, wave, status, checks, evidence,
+  failures, commands). ✅
+- Bloco de critérios presente mas vazio: os três convergiram em `no acceptance block`. ✅
+- Exit 2: os três retornam exit 2 e nomeiam a entidade não resolvida. ✅
+
+Duas divergências reais, nenhuma capturada pelos 8 cenários de contrato:
+
+1. Wave sem MLs produziu três strings diferentes: `wave 1: no ML found` (Go),
+   `wave has no ML` (Node), `wave contains no ML headings` (Python).
+2. As mensagens de exit 2 divergem em texto nos três runtimes.
+
+Ambas foram fixadas literalmente em `docs/cli-parity.md`, adotando o texto do Go como canônico
+para minimizar churn. ML corretivo despachado; a Wave 3 permanece bloqueada até nova barrier verde.

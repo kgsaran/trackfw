@@ -48,6 +48,7 @@ func Execute() {
 		newContextCmd(),
 		newNoteCmd(),
 		newShipCmd(),
+		newBarrierCmd(),
 	)
 
 	rootCmd.Args = cobra.ArbitraryArgs

@@ -191,7 +191,6 @@ func runBarrierCLI(t *testing.T, dir string, args ...string) (stdout, stderr str
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierContract_WaveVerdePassa(t *testing.T) {
-	t.Skip("pendente até ML-2A: trackfw barrier ainda não implementado")
 
 	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
 		linkedREQ:     true,
@@ -235,7 +234,6 @@ func TestBarrierContract_WaveVerdePassa(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierContract_MLPendenteBloqueia(t *testing.T) {
-	t.Skip("pendente até ML-2A: trackfw barrier ainda não implementado")
 
 	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
 		linkedREQ:     true,
@@ -274,7 +272,6 @@ func TestBarrierContract_MLPendenteBloqueia(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierContract_EvidenciaAusenteBloqueia(t *testing.T) {
-	t.Skip("pendente até ML-2A: trackfw barrier ainda não implementado")
 
 	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
 		linkedREQ:     true,
@@ -313,7 +310,6 @@ func TestBarrierContract_EvidenciaAusenteBloqueia(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierContract_MLSemBlocoDeCriteriosBloqueia(t *testing.T) {
-	t.Skip("pendente até ML-2A: trackfw barrier ainda não implementado")
 
 	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
 		linkedREQ:         true,
@@ -352,7 +348,6 @@ func TestBarrierContract_MLSemBlocoDeCriteriosBloqueia(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierContract_GateFalhoBloqueia(t *testing.T) {
-	t.Skip("pendente até ML-2A: trackfw barrier ainda não implementado")
 
 	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
 		linkedREQ:     true,
@@ -395,7 +390,6 @@ func TestBarrierContract_GateFalhoBloqueia(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierContract_ValidateFalhoBloqueia(t *testing.T) {
-	t.Skip("pendente até ML-2A: trackfw barrier ainda não implementado")
 
 	// Wave/ML/gates estão inteiramente verdes; a única falha é de governança
 	// (roadmap em wip sem REQ vinculada), que só o check "validate" deve capturar.
@@ -440,7 +434,6 @@ func TestBarrierContract_ValidateFalhoBloqueia(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierContract_RoadmapOuWaveInexistenteEErroDeUso(t *testing.T) {
-	t.Skip("pendente até ML-2A: trackfw barrier ainda não implementado")
 
 	t.Run("wave_inexistente", func(t *testing.T) {
 		dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
@@ -483,7 +476,6 @@ func TestBarrierContract_RoadmapOuWaveInexistenteEErroDeUso(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierContract_JSONDeterministico(t *testing.T) {
-	t.Skip("pendente até ML-2A: trackfw barrier ainda não implementado")
 
 	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
 		linkedREQ:     true,

@@ -97,7 +97,6 @@ def _run_barrier_cli(cwd: Path, *args: str):
 # 1 — wave_verde_passa
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
 def test_wave_verde_passa():
     dir_ = _setup_barrier_fixture(
         linked_req=True,
@@ -121,7 +120,6 @@ def test_wave_verde_passa():
 # 2 — ml_pendente_bloqueia
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
 def test_ml_pendente_bloqueia():
     dir_ = _setup_barrier_fixture(
         linked_req=True,
@@ -143,7 +141,6 @@ def test_ml_pendente_bloqueia():
 # 3 — evidencia_ausente_bloqueia
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
 def test_evidencia_ausente_bloqueia():
     dir_ = _setup_barrier_fixture(
         linked_req=True,
@@ -165,7 +162,6 @@ def test_evidencia_ausente_bloqueia():
 # 4 — ml_sem_bloco_de_criterios_bloqueia (caso anti-vacuidade)
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
 def test_ml_sem_bloco_de_criterios_bloqueia():
     dir_ = _setup_barrier_fixture(
         linked_req=True,
@@ -187,7 +183,6 @@ def test_ml_sem_bloco_de_criterios_bloqueia():
 # 5 — gate_falho_bloqueia
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
 def test_gate_falho_bloqueia():
     dir_ = _setup_barrier_fixture(
         linked_req=True,
@@ -211,7 +206,6 @@ def test_gate_falho_bloqueia():
 # 6 — validate_falho_bloqueia
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
 def test_validate_falho_bloqueia():
     # Wave/ML/gates estão inteiramente verdes; a única falha é de governança
     # (roadmap em wip sem REQ vinculada), que só o check "validate" deve capturar.
@@ -240,7 +234,6 @@ def test_validate_falho_bloqueia():
 # 7 — roadmap_ou_wave_inexistente_e_erro_de_uso
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
 def test_roadmap_ou_wave_inexistente_e_erro_de_uso():
     # Sub-caso 1 — wave inexistente
     dir_ = _setup_barrier_fixture(
@@ -274,7 +267,6 @@ def test_roadmap_ou_wave_inexistente_e_erro_de_uso():
 # 8 — json_deterministico
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON)
 def test_json_deterministico():
     dir_ = _setup_barrier_fixture(
         linked_req=True,

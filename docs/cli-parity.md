@@ -495,6 +495,19 @@ exit-2 assertion vacuously true before implementation. This is the exact false p
 while characterizing the contract in ML-1A; see
 `vault/notes/barrier-contract-xfail-false-positive-2026-07-29.md`.
 
+The two exit-2 messages are **pinned literally** — all three runtimes must emit these byte-for-byte
+on `stderr`. `<roadmap-arg>` is the argument exactly as the user typed it, with no `.md`
+normalization; `<roadmap-file>` is the resolved basename including `.md`:
+
+```
+trackfw barrier: roadmap "<roadmap-arg>" not found in wip/ nor done/ under <roadmap_dir>
+trackfw barrier: wave <n> not found in roadmap "<roadmap-file>"
+```
+
+Pinning the text matters because these messages are the only observable difference between "the
+CLI does not implement barrier" and "barrier ran and could not resolve its input". A runtime that
+paraphrases them satisfies its own tests while breaking cross-runtime equivalence.
+
 ### States
 
 | State | Meaning |
@@ -604,6 +617,19 @@ Determinism contract:
 - Timestamps are RFC 3339 UTC with second precision.
 - The top-level `failures` array is the concatenation of every check's `failures`, each prefixed
   with `<check-name>: `.
+
+### Edge cases not reached by the eight mandated scenarios
+
+These were surfaced while implementing the runtimes. They are pinned here because each is a point
+where three independent implementations would otherwise drift silently — no contract test exercises
+them, so the parity gate is the only thing that would catch it, and only much later.
+
+| Case | Resolution |
+|---|---|
+| Acceptance block header present but body empty | Same as absent: check `blocked`, failure `<ML-id>: no acceptance block`. Rule 4 requires the block to be non-empty to count as evidence, so an empty block provides none. |
+| Wave contains zero MLs | `mls_complete` is `blocked` with failure exactly `wave <n>: no ML found`. A wave with nothing in it must never release. |
+| Wave heading with no title (`## Wave 1` with no trailing text) | Valid. Rule 6 makes only an *unparseable number* a usage error; the title is cosmetic. |
+| Gate process terminated by a signal (no numeric exit code) | Recorded as `<command>: exit 1`. The format is defined only for numeric codes, and a signal kill is a failure. |
 
 ### `trackfw barrier` vs `/trackfw:barrier`
 
