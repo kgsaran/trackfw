@@ -29,7 +29,71 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
 | `ship` | yes | yes | yes | Governed `git commit + push + open PR/MR`; hard governance gate (see below) |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
-| `version` / `--version` | yes | yes | yes | Prints `trackfw <version>` |
+| `version` / `--version` | yes | yes | yes | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
+
+## Version output
+
+Both surfaces — the `version` subcommand and the `--version` flag — print **the same single line** to
+stdout, in all three runtimes:
+
+```
+trackfw 5.0.0
+```
+
+Pinned literally:
+
+| Element | Rule |
+|---|---|
+| Program name | Literal `trackfw`, then a single space |
+| Version | SemVer `<major>.<minor>.<patch>`, **no `v` prefix**, no suffix |
+| Line | Exactly one, terminated by `\n`, on **stdout** |
+| `version` ≡ `--version` | Byte-identical to each other, within and across runtimes |
+
+**No `v` prefix.** The `v` is a Git *tag* convention, not a version-string convention — SemVer states
+that `v1.2.3` is not a semantic version. `npm/package.json` and `pypi/pyproject.toml` cannot carry it
+(npm rejects it), and those manifests are the source of the string in two of the three runtimes.
+Printing with `v` would force Node.js and Python to concatenate a prefix, creating two representations
+of the same version inside one runtime.
+
+**The Git tag stays `v<x.y.z>`.** That is where the prefix belongs and it does not change.
+`scripts/install.sh` already strips it (`VERSION_BARE="${VERSION#v}"`) and is unaffected.
+
+### Source of the string per runtime
+
+| Runtime | Source |
+|---|---|
+| Go | `internal/version/version.go`, stored **without** the `v` |
+| Node.js | `npm/package.json` |
+| Python | `importlib.metadata`, with a literal fallback in `pypi/trackfw/__init__.py` |
+
+In Go both surfaces consume `version.Version` — `internal/commands/version.go` for the subcommand and
+the cobra `Version` field in `internal/commands/root.go` for the flag — so the stored value governs
+both.
+
+### Gate assertion — pinned, and why the old one was vacuous
+
+The parity gate must apply **the same assertion to all three runtimes**:
+
+```
+^trackfw [0-9]+\.[0-9]+\.[0-9]+$
+```
+
+and must additionally compare the **bytes** of both surfaces across runtimes. The regex alone is not
+sufficient evidence.
+
+This is pinned because the previous gate hid the divergence instead of catching it.
+`scripts/check-cli-parity.sh` asserted `^trackfw .+` for Go and Python — loose enough to accept
+`trackfw v5.0.0` and `trackfw 5.0.0` equally, which is precisely why the `v` prefix survived every
+audit — and used a **different regex for Node.js**
+(`^([0-9]+\.){2}[0-9]+|^0\.0\.0-dev$`), which encoded that runtime's divergence as expected behaviour.
+A per-runtime exemption in a parity gate makes the difference permanent and invisible.
+
+### Out of scope: the `-v` shorthand
+
+`-v` is accepted **only by Go**; Node.js answers `error: unknown option '-v'` and Python falls through
+to `usage:`. That is a divergence in *which flags exist*, not in *output format*, and it is deliberately
+not addressed here: adding `-v` to two runtimes is a feature, removing it from Go is a breaking change.
+It needs its own decision.
 
 ## Vault de conhecimento
 

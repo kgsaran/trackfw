@@ -744,4 +744,73 @@ assert_fails_with "roadmap-move-parity/discriminant-wrong-order-not-detected" \
   "roadmap-move-parity/by_agent-discriminant/node" \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T20/scripts/check-roadmap-move-parity.sh"
 
-echo "Falsification checks passed (all 21 scenarios, 14 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 21 — check-cli-parity.sh: Node.js version subcommand reintroduz o
+#              prefixo `v` → gate detecta formato inválido (prova do braço
+#              de asserção de formato — regex arm).
+#
+# Objetivo (ML-3A, ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis):
+# A asserção unificada ('^trackfw [0-9]+\.[0-9]+\.[0-9]+$') deve reprovar quando
+# um runtime imprime 'trackfw v5.0.0' em vez de 'trackfw 5.0.0'. A asserção
+# anterior ('^trackfw .+') aceitava os dois formatos, tornando o gate vacuoso
+# com respeito ao prefixo `v`. Corrupção na implementação, nunca na asserção.
+# ---------------------------------------------------------------------------
+T21="$WORK/s21"
+mkdir -p "$T21/scripts" "$T21/bin"
+setup_npm_tree "$T21"
+ln -s "$ROOT_DIR/pypi" "$T21/pypi"
+ln -s "$ROOT_DIR/internal" "$T21/internal"
+cp "$ROOT_DIR/scripts/check-cli-parity.sh" "$T21/scripts/"
+ln -s "$ROOT_DIR/scripts/check-integration-cli-parity.sh" "$T21/scripts/check-integration-cli-parity.sh"
+
+# Corromper: reintroduzir o prefixo `v` no subcomando `version` do Node.js.
+sed 's/`trackfw ${version}`/`trackfw v${version}`/' \
+  "$ROOT_DIR/npm/src/commands/version.js" > "$T21/npm/src/commands/version.js"
+
+# Guard: garantir que a corrupção foi aplicada.
+if cmp -s "$ROOT_DIR/npm/src/commands/version.js" "$T21/npm/src/commands/version.js"; then
+  echo "FAIL [falsify/setup-s21]: sed não alterou version.js — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "cli-parity/version-v-prefix" \
+  "node version format invalid" \
+  bash "$T21/scripts/check-cli-parity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 22 — check-cli-parity.sh: versão do npm/package.json diverge dos
+#              demais runtimes → gate detecta mismatch byte-a-byte (prova do
+#              braço de comparação — byte-comparison arm).
+#
+# Objetivo (ML-3A): a comparação byte-a-byte não pode ser provada pelo Cenário 21
+# (que falha antes, no braço de formato). Este cenário corrompe package.json para
+# 9.9.9 — Node imprime 'trackfw 9.9.9', Go e Python continuam em 5.0.0.
+# Formato sintaticamente correto para todos os seis; apenas a comparação
+# byte-a-byte detecta a divergência. Corrupção na implementação, nunca na asserção.
+# ---------------------------------------------------------------------------
+T22="$WORK/s22"
+mkdir -p "$T22/scripts" "$T22/bin"
+setup_npm_tree "$T22"
+ln -s "$ROOT_DIR/pypi" "$T22/pypi"
+ln -s "$ROOT_DIR/internal" "$T22/internal"
+cp "$ROOT_DIR/scripts/check-cli-parity.sh" "$T22/scripts/"
+ln -s "$ROOT_DIR/scripts/check-integration-cli-parity.sh" "$T22/scripts/check-integration-cli-parity.sh"
+
+# Corromper: substituir a versão do npm/package.json por 9.9.9.
+# Node.js lê a versão de package.json (via require('../../package.json')) em
+# ambas as superfícies (version subcommand e --version flag); Go e Python
+# permanecem em 5.0.0. Formato passa a regex; comparação byte-a-byte reprova.
+sed 's/"version": "[^"]*"/"version": "9.9.9"/' \
+  "$ROOT_DIR/npm/package.json" > "$T22/npm/package.json"
+
+# Guard: garantir que a corrupção foi aplicada.
+if cmp -s "$ROOT_DIR/npm/package.json" "$T22/npm/package.json"; then
+  echo "FAIL [falsify/setup-s22]: sed não alterou package.json — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "cli-parity/version-byte-mismatch" \
+  "version byte mismatch — go vs node/version" \
+  bash "$T22/scripts/check-cli-parity.sh"
+
+echo "Falsification checks passed (all 23 scenarios, 14 gates proved non-vacuous)"

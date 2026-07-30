@@ -4,6 +4,83 @@
 
 ---
 
+## Sessão 2026-07-30 — Artemis (ML-3A — Gate unificado + falsificação) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
+
+**Tarefa:** ML-3A — Unificar a asserção de versão em `check-cli-parity.sh` e adicionar duas provas P4
+de não-vacuidade (seam A = regex arm; seam B = byte-comparison arm).
+
+**Branch:** `feat/padrao-unico-de-saida-de-versao-nos-tres-clis`
+
+**Commit:** 459edd6
+
+**Arquivos modificados:**
+- `scripts/check-cli-parity.sh`: linhas 103-109 substituídas por bloco com capture guards, vacuity
+  guard, single-line guard, format assertion unificada (`^trackfw [0-9]+\.[0-9]+\.[0-9]+$`) e
+  byte-comparison das 6 saídas.
+- `scripts/check-gates-falsify.sh`: Cenário 21 (seam A — regex arm, corrupts `version.js`) e
+  Cenário 22 (seam B — byte-comparison arm, corrupts `package.json`). Total: 21 → 23 cenários.
+
+**Evidência:**
+- `bash scripts/check-cli-parity.sh` → EXIT=0
+- `bash scripts/check-gates-falsify.sh` → 23/23 OK, EXIT=0
+- `make quality` → EXIT=0
+- `bin/trackfw validate --json` → 0 violações
+- `git status` → limpo
+
+**Status:** todos os critérios de aceite do ML-3A atendidos. Wave 3 concluída.
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2B — Node.js: alinhar `--version` com subcomando `version`) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
+
+**Tarefa:** ML-2B — Node.js: fazer `--version` imprimir `trackfw <semver>`, byte-idêntico ao subcomando `version`.
+
+**Branch:** `feat/padrao-unico-de-saida-de-versao-nos-tres-clis`
+
+**Entregue:**
+- `npm/src/commands/index.js`: `.version(version)` → `.version(`trackfw ${version}`)` — commander agora imprime o formato correto na flag `--version`.
+- `npm/tests/version.test.js`: 3 testes travando o formato exato (`^trackfw [0-9]+\.[0-9]+\.[0-9]+$`) para `version` e `--version` e igualdade byte-a-byte entre ambos.
+
+**Saída verificada:**
+```
+node npm/bin/trackfw version   → trackfw 5.0.0
+node npm/bin/trackfw --version → trackfw 5.0.0
+BYTE-IDENTICAL: ok
+```
+
+**Testes:** 342 pass, 0 failed (`cd npm && npm test`).
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2A — Go: remover prefixo `v` da constante de versão) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
+
+**Tarefa:** ML-2A — Remover o `v` de `var Version = "v5.0.0"` em `internal/version/version.go` e adicionar teste travando o formato exato das duas superfícies.
+
+**Branch:** `feat/padrao-unico-de-saida-de-versao-nos-tres-clis`
+**Commit:** `f7785ea`
+
+**Entregue:**
+- `internal/version/version.go`: `"v5.0.0"` → `"5.0.0"` (sem prefixo `v`).
+- `internal/commands/version.go`: `fmt.Println` → `fmt.Fprintln(cmd.OutOrStdout())` para capturabilidade nos testes.
+- `internal/commands/version_test.go`: testes `TestVersionSubcmdFormat`, `TestVersionFlagFormat`, `TestVersionSurfacesByteIdentical` travando o formato exato e igualdade byte-a-byte.
+
+**Saída verificada empiricamente:**
+```
+bin/trackfw version   → trackfw 5.0.0
+bin/trackfw --version → trackfw 5.0.0
+diff → byte-idênticos
+```
+
+**Coverage:** go build ok · go test ./... ok (todos os pacotes) · go vet ok.
+
+---
+
 ## Sessão 2026-07-30 — Artemis (ML-3A — Auditar paridade e provar não-vacuidade) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
@@ -6812,3 +6889,127 @@ vacuosa em silêncio. Não foi pedido — foi iniciativa do Artemis.
 **Release não feito.** Agora são 4 commits desde `v4.0.0` com mudanças observáveis acumuladas: campo
 `wave` do JSON (número → string), textos de mensagens do barrier, `## Wave 0` rejeitada, e a linha
 `moved` do Python. Critério do projeto (`feat` breaking → major) aponta **v5.0.0**.
+
+## 2026-07-30 — Zeus — IMPLEMENTANDO: padrão único de saída de versão (ML-1A feito)
+
+Release v5.0.0 publicada e tag no remoto. Backlog vazio; usuário pediu para ajustar o padrão de
+versionamento. Decisão dele: **sem o `v`**, alinhado ao padrão de versões do Python.
+
+**A feature de ontem já pagou:** `roadmap move ... wip` imprimiu `✓ synced REQ-...` e atualizou a
+referência sozinho. A correção manual que eu fazia a cada transição não foi necessária.
+
+### Não era uma divergência, eram três
+
+Medi as três superfícies em vez de assumir que era só o prefixo `v`:
+
+| Superfície | Go | Node.js | Python |
+|---|---|---|---|
+| `version` | `trackfw v5.0.0` | `trackfw 5.0.0` | `trackfw 5.0.0` |
+| `--version` | `trackfw v5.0.0` | **`5.0.0`** | `trackfw 5.0.0` |
+| `-v` | funciona | `error: unknown option` | cai no `usage:` |
+
+O `--version` do Node imprime o número puro, sem `trackfw ` — default do `.version()` do commander.
+Divergência maior que a do prefixo e que eu não teria visto se parasse na primeira superfície.
+
+### O gate assinava a divergência
+
+`check-cli-parity.sh:108` usa **regex própria para o Node**
+(`^([0-9]+\.){2}[0-9]+|^0\.0\.0-dev$`) enquanto Go e Python usam `^trackfw .+`. O gate que existe para
+detectar divergência a **codificava como esperada**. Enquanto essa linha existir, nenhuma auditoria
+futura reporta.
+
+E o `^trackfw .+` dos outros dois é frouxo demais: aceita `trackfw v5.0.0` e `trackfw 5.0.0`
+igualmente — **é exatamente por isso que o `v` sobreviveu a todas as auditorias até agora**. Uma
+asserção permissiva não é um gate fraco, é um gate que mente.
+
+### ML-1A — contrato
+
+`## Version output` em `docs/cli-parity.md` pina o texto literal, a equivalência byte-idêntica entre
+`version` e `--version`, a fonte da string por runtime, e — o ponto que importa — **a asserção literal
+do gate** mais a exigência de comparação byte-a-byte entre runtimes. Registrei por que a asserção
+anterior era vacuosa, para ninguém reintroduzir uma regex permissiva.
+
+Quinta iteração aplicando a mesma lição: pinar o comportamento observável, não a descrição do formato.
+
+### Escopo negativo deliberado
+
+O `-v` ficou **fora**. É divergência de *quais flags existem*, não de *formato de saída*, e resolvê-la
+exige decisão própria: adicionar `-v` a dois runtimes é feature, removê-lo do Go é breaking change.
+Registrado na REQ e no contrato para não se perder. Candidato a REQ separada.
+
+Barrier da Wave 1: `passed`. Wave 2 (3 runtimes) a seguir.
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2C — Python: cobertura de testes de formato de version) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
+
+**Tarefa:** ML-2C — Verificar empiricamente o formato Python e adicionar testes que travam o contrato byte-a-byte.
+
+**Branch:** `feat/padrao-unico-de-saida-de-versao-nos-tres-clis`
+
+**Entregue:**
+- `pypi/tests/test_commands_basic.py`: substituiu teste vacuoso por 3 asserções precisas:
+  1. `test_version_flag_format_exact`: `--version` → `^trackfw [0-9]+\.[0-9]+\.[0-9]+$` em stdout.
+  2. `test_version_subcommand_format_exact`: `version` → mesmo padrão canônico em stdout.
+  3. `test_version_surfaces_byte_identical`: as duas superfícies são byte-a-byte idênticas.
+
+**Saída verificada (xxd):**
+```
+version:   74 72 61 63 6b 66 77 20 35 2e 30 2e 30 0a  → trackfw 5.0.0\n
+--version: 74 72 61 63 6b 66 77 20 35 2e 30 2e 30 0a  → trackfw 5.0.0\n
+BYTE-IDENTICAL: ok
+```
+
+**Testes:** 727 pass, 0 failed (`cd pypi && python3 -m pytest`).
+**Nenhuma mudança de comportamento:** `__init__.py` sem prefixo `v`; fallback literal `"5.0.0"` correto.
+
+## 2026-07-30 — Zeus — CONCLUÍDO: padrão único de saída de versão, 3 waves verdes
+
+`make quality` exit 0 · **23 cenários de falsificação** (eram 21) · Go limpo · npm 342 · pytest 727 ·
+`validate --json` 0 violações · barrier das três waves `passed`.
+
+Resultado: as **seis** saídas (3 runtimes × 2 superfícies) são byte-idênticas — `hexdump` confirma
+14 bytes, `trackfw 5.0.0\n`.
+
+### O achado que sustentou a REQ
+
+A exceção por runtime no gate não era tolerância inofensiva: era **o mecanismo que mantinha o problema
+invisível**. Prova direta, observada durante a Wave 2 — assim que o `--version` do Node passou a
+imprimir `trackfw 5.0.0`, a regex de exceção da linha 108 deixou de casar e `check-cli-parity.sh`
+passou a **reprovar**. A linha que assinava a divergência passou a bloquear a convergência.
+
+E o `^trackfw .+` dos outros dois aceitava `trackfw v5.0.0` e `trackfw 5.0.0` igualmente — é
+literalmente por isso que o prefixo `v` sobreviveu a todas as auditorias anteriores. **Asserção
+permissiva não é gate fraco; é gate que mente.**
+
+### Não era uma divergência, eram três
+
+Medir as três superfícies em vez de assumir "é só o prefixo" revelou que o `--version` do Node imprimia
+o número puro, sem `trackfw ` — divergência maior que a do `v`, e invisível se eu tivesse parado na
+primeira superfície.
+
+### Qualidade do trabalho dos agentes
+
+- **Go** trocou `fmt.Println` por `fmt.Fprintln(cmd.OutOrStdout(), ...)`. Sem isso o teste não captura a
+  saída: `fmt.Println` escreve em `os.Stdout` e ignora o `SetOut` do cobra. Correção que só aparece
+  quando alguém tenta de fato escrever o teste.
+- **Node** testou via `spawnSync` no binário real. Teste in-process poderia passar enquanto o binário
+  divergisse, porque o `--version` é resolvido pelo commander no processo.
+- **Artemis** identificou que **um** seam não bastava: o Cenário 21 (reintroduz o `v`) falha no braço de
+  formato e por isso **não alcança** o braço de comparação byte-a-byte. Criou o Cenário 22, que corrompe
+  `package.json` para `9.9.9` — formato válido nos seis, só a comparação de bytes detecta. Sem ele,
+  metade da asserção composta ficaria não-provada. Não foi pedido.
+
+### Débito registrado, não resolvido
+
+A flag curta **`-v` funciona apenas no Go** (Node: `error: unknown option`; Python: cai no `usage:`).
+Deixada fora por ser divergência de *quais flags existem*, não de *formato* — adicionar a dois runtimes
+é feature, removê-la do Go é breaking change. Registrada na REQ e no contrato. **Candidata a REQ
+própria.**
+
+### Para o próximo release
+
+Duas mudanças observáveis a constar no CHANGELOG: o Go deixa de imprimir o prefixo `v`, e o `--version`
+do Node passa a incluir `trackfw `. Conforme o protocolo, o CHANGELOG é editado apenas no PR de release.

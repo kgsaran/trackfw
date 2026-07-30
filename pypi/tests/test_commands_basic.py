@@ -36,16 +36,64 @@ def run_trackfw(*args, cwd=None, env=None):
 
 
 class TestVersion(unittest.TestCase):
-    def test_version(self):
-        """trackfw --version retorna código 0 e imprime a versão."""
+    # Regex que pina o formato canônico do contrato de paridade:
+    #   ^trackfw [0-9]+\.[0-9]+\.[0-9]+$
+    # (sem prefixo 'v', sem sufixo, exatamente uma linha)
+    _CANONICAL_RE = r"^trackfw [0-9]+\.[0-9]+\.[0-9]+$"
+
+    def test_version_flag_format_exact(self):
+        """--version imprime exatamente 'trackfw <semver>' em stdout, sem prefixo v."""
         result = run_trackfw("--version")
         self.assertEqual(result.returncode, 0)
-        # argparse imprime versão em stdout (Python 3.9+) ou stderr (versões anteriores)
+        # O contrato exige stdout (não stderr) em Python 3.9+.
+        output = result.stdout.strip()
+        import re
+        self.assertRegex(
+            output,
+            self._CANONICAL_RE,
+            msg=(
+                f"--version deve imprimir 'trackfw X.Y.Z' (sem prefixo v) em stdout; "
+                f"obtido: {result.stdout!r}"
+            ),
+        )
+
+    def test_version_subcommand_format_exact(self):
+        """O subcomando 'version' imprime exatamente 'trackfw <semver>' em stdout, sem prefixo v."""
+        result = run_trackfw("version")
+        self.assertEqual(result.returncode, 0)
+        output = result.stdout.strip()
+        import re
+        self.assertRegex(
+            output,
+            self._CANONICAL_RE,
+            msg=(
+                f"'version' deve imprimir 'trackfw X.Y.Z' (sem prefixo v) em stdout; "
+                f"obtido: {result.stdout!r}"
+            ),
+        )
+
+    def test_version_surfaces_byte_identical(self):
+        """As duas superfícies ('version' e '--version') produzem saída idêntica byte a byte."""
+        flag_result = run_trackfw("--version")
+        sub_result = run_trackfw("version")
+        self.assertEqual(flag_result.returncode, 0)
+        self.assertEqual(sub_result.returncode, 0)
+        # Comparação byte-a-byte: os bytes de stdout devem ser iguais.
+        self.assertEqual(
+            flag_result.stdout,
+            sub_result.stdout,
+            msg=(
+                f"'--version' e 'version' devem produzir saída byte-a-byte idêntica; "
+                f"--version: {flag_result.stdout!r}, version: {sub_result.stdout!r}"
+            ),
+        )
+
+    def test_version(self):
+        """trackfw --version retorna código 0 e imprime a versão (legado — mantido para compatibilidade)."""
+        result = run_trackfw("--version")
+        self.assertEqual(result.returncode, 0)
         combined = result.stdout + result.stderr
         self.assertIn("trackfw", combined)
-        # Verifica que há uma versão no formato X.Y.Z
-        import re
-        self.assertRegex(combined, r"\d+\.\d+\.\d+")
 
 
 class TestAdrNew(unittest.TestCase):
