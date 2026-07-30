@@ -174,6 +174,116 @@ def test_wave_heading_numero_nao_parseavel_e_erro_de_uso():
     assert "line" in stderr.lower()
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# Sufixo de wave (ML-2C — gramática <inteiro>[-<sufixo>])
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_wave_sufixo_bis_resolve_heading_bis():
+    """--wave 2-bis deve resolver ## Wave 2-bis e avaliar a wave com sucesso."""
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Suffix\n\n"
+        "REQ: REQ-x\n\n"
+        # Bloco de aceite no nível do roadmap — satisfaz wip_acceptance (governança).
+        "## Acceptance Criteria\n- [x] fixture criterion\n\n"
+        "## Wave 1 — Primeira Wave\n> Dependências: nenhuma\n\n"
+        "### ML-1A — X\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+        "## Wave 2-bis — Wave Corretiva\n> Dependências: Wave 1\n\n"
+        "### ML-2bisA — Y\n**Status:** ✅\n**Critérios de aceite:**\n- [x] b\n\n"
+        "## Wave 3 — Terceira Wave\n> Dependências: Wave 2-bis\n\n"
+        "### ML-3A — Z\n**Status:** ✅\n**Critérios de aceite:**\n- [x] c\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-suffix.md").write_text(content, encoding="utf-8")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-suffix", "--wave", "2-bis", "--json")
+    assert code == 0, f"expected exit 0 for --wave 2-bis, got {code}\nstdout={stdout}\nstderr={stderr}"
+    doc = json.loads(stdout)
+    assert doc["status"] == "passed"
+    assert doc["wave"] == "2-bis"
+
+
+def test_wave_inteiro_nao_casa_heading_bis():
+    """--wave 2 NÃO deve casar com ## Wave 2-bis — labels são identidades distintas."""
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Suffix\n\n"
+        "REQ: REQ-x\n\n"
+        "## Wave 2-bis — Wave Corretiva\n> Dependências: nenhuma\n\n"
+        "### ML-2bisA — X\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-suffix.md").write_text(content, encoding="utf-8")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-suffix", "--wave", "2", "--json")
+    assert code == 2, f"expected exit 2 (wave not found), got {code}\nstdout={stdout}\nstderr={stderr}"
+    assert "wave 2 not found" in stderr
+
+
+def test_wave_heading_malformada_aborta_documento_inteiro():
+    """Regressão ADR decisão 16: heading fora da gramática aborta o documento inteiro,
+    mesmo quando --wave pede uma wave válida que existe DEPOIS da malformada.
+    Isso impede que uma wave seja avaliada vacuamente sem auditoria dos MLs malformados."""
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Abort\n\n"
+        "REQ: REQ-x\n\n"
+        # Heading malformada ANTES da wave solicitada — deve abortar.
+        "## Wave X — Heading Invalida\n> Dependências: nenhuma\n\n"
+        "### ML-XA — Bad\n**Status:** ✅\n**Critérios de aceite:**\n- [x] x\n\n"
+        "## Wave 1 — Wave Valida\n> Dependências: Wave X\n\n"
+        "### ML-1A — Good\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-abort.md").write_text(content, encoding="utf-8")
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-abort", "--wave", "1", "--json")
+    assert code == 2, (
+        f"expected exit 2 (malformed heading aborts document), got {code}\nstderr={stderr}"
+    )
+    # Mensagem pinada byte-a-byte: aspas duplas, token capturado, número de linha 1-based
+    assert stderr == 'trackfw barrier: malformed wave heading at line 5: "X" is not a valid wave label\n', (
+        f"stderr mismatch: got [{stderr!r}]"
+    )
+
+
+def test_wave_heading_malformada_uppercase_aborta():
+    """Sufixo em maiúsculas é inválido — ## Wave 2-BIS deve abortar o documento."""
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Uppercase\n\n"
+        "REQ: REQ-x\n\n"
+        "## Wave 2-BIS — Invalida Uppercase\n> Dependências: nenhuma\n\n"
+        "### ML-1A — X\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-uppercase.md").write_text(content, encoding="utf-8")
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-uppercase", "--wave", "1", "--json")
+    assert code == 2
+    assert '"2-BIS" is not a valid wave label' in stderr
+
+
+def test_wave_heading_malformada_mensagem_tem_aspas_duplas():
+    """A mensagem de heading malformada deve usar aspas duplas ao redor do token,
+    não aspas simples do !r. Pinado em docs/cli-parity.md § exit-2 messages."""
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Quotes\n\n"
+        "REQ: REQ-x\n\n"
+        "## Wave abc — Invalida\n> Dependências: nenhuma\n\n"
+        "### ML-1A — X\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-quotes.md").write_text(content, encoding="utf-8")
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-quotes", "--wave", "1", "--json")
+    assert code == 2
+    # Aspas duplas — NÃO aspas simples do !r ('abc')
+    assert '"abc" is not a valid wave label' in stderr
+    assert "'abc'" not in stderr
+
+
 def test_gates_fence_nao_terminada_e_erro_de_uso():
     dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
     for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):

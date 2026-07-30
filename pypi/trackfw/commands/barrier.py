@@ -50,7 +50,7 @@ def register(subparsers):
         "--wave",
         dest="wave",
         required=True,
-        help="Número da wave a avaliar (inteiro >= 1)",
+        help="Rótulo da wave a avaliar. Gramática: <inteiro>[-<sufixo>], inteiro >= 1. Ex: 1, 2, 2-bis, 2-hotfix.",
     )
     parser.add_argument(
         "--json",
@@ -85,7 +85,12 @@ def _resolve_roadmap_path(cfg: dict, roadmap_arg: str) -> str:
 # Parsing string-level do roadmap (docs/cli-parity.md § Roadmap parsing rules)
 # ────────────────────────────────────────────────────────────────────────────
 
-_WAVE_HEADING_RE = re.compile(r"^## Wave (\S+) ")
+# Pinned grammar: ^## Wave (\d+(?:-[a-z0-9]+)?) — docs/cli-parity.md § "Wave label grammar"
+# Trailing space is part of rule 1 and is preserved.
+_WAVE_HEADING_RE = re.compile(r"^## Wave (\d+(?:-[a-z0-9]+)?) ")
+# Broad detector: any ## Wave <token><space> line — used to identify malformed headings that
+# don't satisfy the pinned grammar (e.g. ## Wave X — Title, ## Wave 2-BIS — Title).
+_ANY_WAVE_H2_RE = re.compile(r"^## Wave (\S+) ")
 _H2_BOUNDARY_RE = re.compile(r"^## ")
 _ML_HEADING_RE = re.compile(r"^### (ML-\S+)")
 _H3_OR_H2_BOUNDARY_RE = re.compile(r"^(?:### |## )")
@@ -97,12 +102,18 @@ _CRITERIA_UNMET_RE = re.compile(r"^- \[ \]")
 _GATES_HEADER_RE = re.compile(r"^\*\*Gates da wave:\*\*")
 
 
-def _find_wave(lines: list, wave_number: int, roadmap_basename: str) -> tuple:
+def _find_wave(lines: list, wave_label: str, roadmap_basename: str) -> tuple:
     """Retorna (start, end) — índices (inclusivo/exclusivo) do corpo da wave
     solicitada. Lança BarrierUsageError se a wave não existir ou se um cabeçalho
     de wave malformado for encontrado antes dela. roadmap_basename é o basename
     resolvido (incluindo .md), usado apenas na mensagem de erro — pinned
-    literalmente por docs/cli-parity.md."""
+    literalmente por docs/cli-parity.md.
+
+    Gramática do rótulo: ^## Wave (\\d+(?:-[a-z0-9]+)?) — pinada em docs/cli-parity.md
+    § "Wave label grammar". Um cabeçalho fora dessa gramática aborta o documento inteiro
+    — decisão 16 do ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md.
+    Labels são identidades distintas: '2' não casa com '## Wave 2-bis '.
+    """
     n = len(lines)
     i = 0
     found = None
@@ -111,22 +122,28 @@ def _find_wave(lines: list, wave_number: int, roadmap_basename: str) -> tuple:
         m = _WAVE_HEADING_RE.match(line)
         if m:
             token = m.group(1)
-            if not re.match(r"^\d+$", token):
-                raise BarrierUsageError(
-                    f"malformed wave heading at line {i + 1}: number {token!r} is not parseable"
-                )
+            # Valid grammar match — compute span and check identity.
             j = i + 1
             while j < n and not _H2_BOUNDARY_RE.match(lines[j]):
                 j += 1
-            if int(token) == wave_number:
+            if token == wave_label:
                 found = (i, j)
                 break
             i = j
         else:
+            # Check whether the line looks like a wave heading outside the grammar.
+            # If so, abort the document — see ADR decision 16 and cli-parity.md
+            # § "A heading outside this grammar still aborts the whole document".
+            m_loose = _ANY_WAVE_H2_RE.match(line)
+            if m_loose:
+                token = m_loose.group(1)
+                raise BarrierUsageError(
+                    f'malformed wave heading at line {i + 1}: "{token}" is not a valid wave label'
+                )
             i += 1
     if found is None:
         raise BarrierUsageError(
-            f'wave {wave_number} not found in roadmap "{roadmap_basename}"'
+            f'wave {wave_label} not found in roadmap "{roadmap_basename}"'
         )
     return found
 
@@ -212,7 +229,7 @@ def _find_gates(lines: list, start: int, end: int):
 # Avaliação dos checks embutidos
 # ────────────────────────────────────────────────────────────────────────────
 
-def _check_mls_complete(mls: list, wave_number: int) -> dict:
+def _check_mls_complete(mls: list, wave_label: str) -> dict:
     evidence = []
     failures = []
     for ml in mls:
@@ -224,7 +241,7 @@ def _check_mls_complete(mls: list, wave_number: int) -> dict:
     status = "passed" if (mls and not failures) else "blocked"
     if not mls:
         # Pinned literally by docs/cli-parity.md ("Wave contains zero MLs" case).
-        failures.append(f"wave {wave_number}: no ML found")
+        failures.append(f"wave {wave_label}: no ML found")
     return {"name": "mls_complete", "status": status, "evidence": evidence, "failures": failures}
 
 
@@ -286,29 +303,41 @@ def _check_validate() -> dict:
 _LINES_CACHE: list = []
 
 
-def _parse_wave_int(raw: str, roadmap_arg: str) -> int:
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        raise BarrierUsageError(f"malformed --wave value: {raw!r} is not an integer")
-    if value < 1:
-        raise BarrierUsageError(f"malformed --wave value: {raw!r} must be an integer >= 1")
-    return value
+def _parse_wave_label(raw: str) -> str:
+    """Valida e retorna o rótulo de wave passado via --wave.
+
+    Gramática: <inteiro>[-<sufixo>], sufixo [a-z0-9]+, inteiro >= 1.
+    Exemplos válidos: "1", "2", "2-bis", "2-hotfix", "10-a2".
+    Exemplos inválidos: "abc", "0", "2-BIS", "2-", "2-bis-ter".
+
+    Usa re.fullmatch para garantir correspondência completa do token —
+    re.match sem $ aceitaria "2-bis-ter" ao corresponder apenas "2-bis".
+    """
+    if not re.fullmatch(r"\d+(?:-[a-z0-9]+)?", raw):
+        raise BarrierUsageError(
+            f'malformed --wave value: "{raw}" is not a valid wave label'
+        )
+    int_part = raw.split("-")[0]
+    if int(int_part) < 1:
+        raise BarrierUsageError(
+            f'malformed --wave value: "{raw}" is not a valid wave label'
+        )
+    return raw
 
 
-def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_number: int) -> dict:
+def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_label: str) -> dict:
     global _LINES_CACHE
     content = open(roadmap_path, "r", encoding="utf-8").read()
     _LINES_CACHE = content.split("\n")
 
     roadmap_basename = os.path.basename(roadmap_path)
     started_at = _now_rfc3339()
-    wave_start, wave_end = _find_wave(_LINES_CACHE, wave_number, roadmap_basename)
+    wave_start, wave_end = _find_wave(_LINES_CACHE, wave_label, roadmap_basename)
     mls = _find_mls(_LINES_CACHE, wave_start, wave_end)
     gate_commands = _find_gates(_LINES_CACHE, wave_start, wave_end)
 
     checks = [
-        _check_mls_complete(mls, wave_number),
+        _check_mls_complete(mls, wave_label),
         _check_acceptance_evidence(mls),
         _check_gates(gate_commands),
         _check_validate(),
@@ -323,7 +352,7 @@ def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_number: int
 
     doc = {
         "roadmap": os.path.basename(roadmap_path),
-        "wave": wave_number,
+        "wave": wave_label,  # string, não int — mudança observável (ver relatório do ML-2C)
         "status": status,
         "started_at": started_at,
         "finished_at": finished_at,
@@ -358,9 +387,9 @@ def run(args):
     cfg = _config.load()
 
     try:
-        wave_number = _parse_wave_int(args.wave, args.roadmap)
+        wave_label = _parse_wave_label(args.wave)
         roadmap_path = _resolve_roadmap_path(cfg, args.roadmap)
-        doc = _build_result_document(args.roadmap, roadmap_path, wave_number)
+        doc = _build_result_document(args.roadmap, roadmap_path, wave_label)
     except BarrierUsageError as exc:
         # No argparse "error:" prefix — pinned literally by docs/cli-parity.md
         # (`## trackfw barrier`), so the message is byte-identical across runtimes.
