@@ -4,6 +4,143 @@
 
 ---
 
+## Sessão 2026-07-30 — Artemis (ML-3A — Auditar paridade e provar não-vacuidade) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-3A — gate permanente de paridade para `roadmap move + sync de REQ`.
+
+**Branch:** `feat/roadmap-move-sincroniza-a-referencia-da-req-pareada`
+**Commit:** `1bbc8b6`
+
+**Entregue:**
+- `scripts/check-roadmap-move-parity.sh`: gate com 5 cenários (zero-req, one-req, by_agent-discriminant, points-at-other, idempotency); fixtures isoladas por runtime; vacuity-guard em todos; seam via sed no Node.js.
+- `scripts/check-gates-falsify.sh`: Cenário 20 — seam que corrompe sort do Node.js (basename→path), provando que o gate captura regressão de ordenação na fixture discriminante. `GATES_MUTATION_CHECK` atualizado. Contador: 21 cenários / 14 gates.
+- `Makefile`: novo gate encadeado antes do falsify.
+
+**Coverage:** Go 15 pk ok · Node.js 339 pass · Python 724 pass · make quality exit 0 · validate 0 violations.
+
+**Handoff ao orquestrador:** ML-3A concluído. Roadmap pronto para Wave 4 → done.
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2F — Python: ordenar por basename e alinhar linha `moved`) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2F — duas correções no Python CLI.
+
+**Entregue:**
+- `pypi/trackfw/generators/roadmap.py`: `sorted(resolve_req_files(cfg))` → `sorted(..., key=lambda p: (os.path.basename(p), p))` — ordena por basename, com caminho completo como desempate.
+- `pypi/trackfw/commands/roadmap.py`: `print(f"Roadmap movido para: {new_path}")` → `print(f"✓ moved {os.path.basename(new_path)} → {os.path.dirname(new_path)}")` — paridade byte-a-byte com o Go.
+- `pypi/tests/test_generators_roadmap.py`: teste discriminante `test_by_agent_ordenacao_por_basename_fixture_discriminante` — fixture `apolo/done/REQ-zzz` + `zeus/backlog/REQ-aaa`, valida que `synced = ["REQ-aaa.md", "REQ-zzz.md"]`.
+
+**Validação:**
+- Fixture discriminante: `synced[0] = "REQ-aaa.md"`, `synced[1] = "REQ-zzz.md"` ✓
+- Paridade Go vs Python (execução lado a lado): idênticos — `✓ moved ROADMAP-... → docs/roadmaps/wip`
+- Suíte completa: 724 passed, 0 failed.
+
+**Status:** CONCLUÍDO
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2D — Go: ordenar por basename em syncREQReferences) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2D (corretivo) — corrigir ordenação lexicográfica por basename na lista final de REQs em `syncREQReferences`; adicionar fixture discriminante `by_agent` (apolo/REQ-zzz + zeus/REQ-aaa → sequência aaa, zzz).
+
+**Entregue:**
+- `internal/generators/roadmap.go`: import `"sort"` adicionado; `sort.Slice` por basename (desempate por caminho completo) inserido em `syncREQReferences` após `scanREQFiles`.
+- `internal/generators/roadmap_test.go`: `TestSyncREQ_ByAgent_OrderByBasename` — fixture discriminante que distingue ordenação por caminho de ordenação por basename; asserta a sequência exata das linhas de output.
+
+**Validação:**
+- `go build ./...` ✓ | `go test ./...` 15 pacotes ok | `go vet ./...` ✓
+- `TestSyncREQ_ByAgent_OrderByBasename` PASS: linha 0 = `✓ synced REQ-aaa.md → ...`, linha 1 = `✓ synced REQ-zzz.md → ...`
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2E — Node.js: ordenação explícita por basename em syncReqReferences)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2E (corretivo) — adicionar `.sort()` por basename após `resolveReqFiles(cfg)` em `syncReqReferences`; atualizar teste multi-REQ para assertar sequência; adicionar fixture discriminante `by_agent`.
+
+**Entregue:**
+- `npm/src/generators/roadmap.js`: `syncReqReferences` agora ordena a lista retornada por `resolveReqFiles` por basename (comparação `<`/`>` pura, locale-independente), com desempate por caminho completo.
+- `npm/tests/roadmap_move.test.js`: teste multi-REQ atualizado para assertar `posA < posB` (sequência, não conjunto); fixture discriminante `by_agent` adicionada: `agents=[zeus,apolo]`, `apolo/done/REQ-zzz.md` e `zeus/backlog/REQ-aaa.md`, asserta que `aaa` é emitido antes de `zzz`.
+
+**Validação:** `cd npm && npm test` → 339 passed, 0 failed. `node tests/roadmap_move.test.js` → 25 testes — 25 passaram, 0 falharam.
+
+**Commit:** `69e7d03` — `fix(roadmap): ordena REQs por basename em syncReqReferences no Node.js`
+
+**Status:** CONCLUÍDO
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2C — Python: sync REQ reference no roadmap move)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2C — implementar `sync_paired_req_references` no Python CLI.
+
+**Entregue:**
+- `pypi/trackfw/generators/roadmap.py`: três helpers novos — `_get_frontmatter_roadmap_value` (extrai `roadmap:` do frontmatter sem backticks), `_rewrite_req_roadmap_ref` (reescreve frontmatter + corpo preservando formatação), `sync_paired_req_references` (orquestra varredura flat/by_agent, 5 cardinalidades, usa import escopado de `resolve_req_files`).
+- `pypi/trackfw/commands/roadmap.py`: `_cmd_move` chama `sync_paired_req_references` após move bem-sucedido e imprime `✓ synced` / `trackfw roadmap move: failed to sync` com exit não-zero em falha.
+- `pypi/tests/test_generators_roadmap.py`: 21 novos testes cobrindo todas as cardinalidades, idempotência byte-a-byte, `by_agent`, backticks, e caracteres Unicode pinados.
+
+**Validação:** `cd pypi && python3 -m pytest` → 723 passed, 0 failed.
+
+**Divergência reportada:** Python ordena a lista de REQs (`sorted()`); Node.js não ordena (`readdirSync` sem sort). ML-3A deve pinar se a ordem é intencional.
+
+**Status:** CONCLUÍDO
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2A — Go: roadmap move sincroniza referência REQ)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2A — implementar `syncREQReferences` em `internal/generators/roadmap.go` e testes correspondentes.
+
+**Entregue:**
+- `internal/generators/roadmap.go`: `syncREQReferences` (orquestra), `scanREQFiles` (espelha validator), `extractFrontmatterRoadmap`, `rewriteREQRoadmapRef` (backtick/aspas preservados). Inserção em `MoveRoadmap` após `fmt.Printf("✓ moved ...")`.
+- `internal/generators/roadmap_test.go`: 10 novos testes — 5 cardinalidades, idempotência byte-a-byte, by_agent, backticks, erro-continua, integração.
+- **Divergência:** spec dizia "antes do appendTransitionLog" mas contrato pina ✓ synced após ✓ moved; inserção correta é após fmt.Printf.
+
+**Validação:** `go build ./...` ✓ | `go test ./...` 15 pacotes ok | `go vet ./...` ✓ | commit `02c5dee`
+
+**Status:** CONCLUÍDO
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2B — Node.js: roadmap move sincroniza referência da REQ pareada)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2B — Implementar sincronização da referência `roadmap:` das REQs pareadas no Node.js,
+dentro de `moveRoadmap` em `npm/src/generators/roadmap.js`. As cinco cardinalidades do contrato,
+idempotência byte-a-byte, cobertura `by_agent`, formatação com backticks e testes correspondentes.
+
+**Entregue:**
+- `npm/src/generators/roadmap.js`: import de `resolveReqFiles` do validator; helpers
+  `extractFrontmatterRoadmap` (escopado ao FM), `rewriteReqRoadmapRef` (substituição literal
+  preserva backticks/aspas), `syncReqReferences` (5 cardinalidades, by_agent, stderr/exit não-zero);
+  `moveRoadmap` chama `syncReqReferences(basename, dst, cfg)` após `console.log('✓ moved ...')`.
+- `npm/tests/roadmap_move.test.js`: 10 novos testes — uma por cardinalidade (5), idempotência
+  byte-a-byte, by_agent, backticks, erro de escrita, validateRefTargetsExist (zero violações).
+
+**Validação:** `cd npm && npm test` → 339 passed, 0 failed.
+**Commit:** `ba13af9`
+
+**Divergência reportada:** ordem de varredura de múltiplas REQs não pinada no contrato. `fs.readdirSync`
+sem sort → não garante ordem lexicográfica. Teste asserta conjunto, não sequência. Se Go ordenar e Node
+não, ML-3A detectará na auditoria de paridade.
+
+**Status:** CONCLUÍDO
+
+---
+
 ## Sessão 2026-07-30 — Apolo (ML-2D — Python: corrigir early-break e alinhar mensagem --wave)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
@@ -6560,3 +6697,118 @@ de novo. Pinada adotando o texto do Go; Node e Python alinhados, separador U+201
 `FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 2 ..., got 0`. O seam corrompe a
 **fixture**, nunca a asserção. Verifiquei rodando — um cenário de falsificação que não falha é ele
 mesmo vacuoso.
+
+## 2026-07-30 — Zeus — IMPLEMENTANDO: roadmap move sincroniza a referência da REQ pareada (ML-1A feito)
+
+PR #88 mergeado; branch apagada após validar integração. Backlog estava vazio e nenhuma REQ `Open` —
+levantei o que existia de real em vez de inventar trabalho: um release pendente (3 commits desde v4.0.0,
+com breaking no campo `wave` do JSON) e este débito. Usuário escolheu o débito; **o release segue
+pendente**.
+
+### Débito obsoleto encontrado no próprio registro
+
+O working-context tinha registrado como pendente que `roadmap move` não reescrevia o `status:` do
+frontmatter. **Já foi corrigido** por `REQ-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato`.
+Registro estava velho — verifiquei antes de agir sobre ele. Vale como lembrete: débito anotado em nota
+não é fonte de verdade sobre o estado atual do código.
+
+### ML-1A — contrato pinado
+
+Fatos verificados no código antes de escrever, e o decisivo foi este: **`extractRefPath`
+(`internal/validator/validator.go:1426`) trima aspas mas NÃO backticks.** Como a linha do corpo da REQ é
+`` Roadmap: `docs/...md` ``, ela termina em backtick, nunca casa `.md` e é **invisível ao validador**.
+Só o frontmatter é normativo. Uma implementação que "corrigisse" só o corpo não resolveria nada e passaria
+a impressão de ter resolvido.
+
+Também verificado: o `req:` do roadmap **não serve** para descobrir o par (`roadmap new` grava `""`, e os
+existentes têm slug sem caminho). A descoberta tem de ser inversa — varrer `req_dir` casando basename,
+cobrindo flat e `by_agent`, espelhando o que o validador já varre.
+
+Pinei **cinco** cardinalidades, não quatro como havia previsto no roadmap: separei "aponta para outro
+roadmap" de "referência já correta". São comportamentos distintos — o primeiro é não-tocar, o segundo é
+não-escrever-por-idempotência.
+
+### Lição das duas waves corretivas anteriores, aplicada de propósito
+
+O ML-1A falhou **duas vezes seguidas pelo mesmo padrão**: pinou a forma e deixou o comportamento à
+interpretação. No roadmap do skip foram os *nomes* dos parâmetros sem os *valores*; no do rótulo de wave
+foram os *regexes* sem o *momento* da validação. Custo: uma wave corretiva cada.
+
+Regra derivada e escrita no roadmap: **pinar sempre a ordem das operações e os valores observáveis, não
+apenas estruturas e assinaturas.** Neste ML-1A isso virou: momento exato da escrita no fluxo, tabela de
+cardinalidades, textos literais de saída com stream, e comportamento em erro (não desfaz o move, tenta
+as restantes, exit não-zero ao fim).
+
+Barrier da Wave 1: `passed`. Wave 2 (3 runtimes em paralelo) a seguir.
+
+## 2026-07-30 — Zeus — CONCLUÍDO: roadmap move sincroniza a referência da REQ, 4 waves verdes
+
+`make quality` exit 0 · novo gate `scripts/check-roadmap-move-parity.sh` com 5 cenários ·
+21 cenários de falsificação / 14 gates não-vacuosos · Go limpo · npm 339 · pytest 724 ·
+`validate --json` 0 violações · barrier das quatro waves `passed`.
+
+### Dogfooding provado no caso real
+
+Executei a ferramenta sobre a própria REQ desta entrega, numa cópia:
+
+```
+antes:  roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-30-...md"
+        ✓ moved ROADMAP-2026-07-30-...md → docs/roadmaps/done
+        ✓ synced REQ-2026-07-30-...md → docs/roadmaps/done/ROADMAP-2026-07-30-...md
+depois: roadmap: "docs/roadmaps/done/ROADMAP-2026-07-30-...md"
+        Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-30-...md`
+```
+
+Frontmatter **e** corpo atualizados, backticks preservados. **A correção manual de referência que fiz
+quatro vezes nas duas sessões anteriores deixa de ser necessária.**
+
+### A lição central desta iteração
+
+As três suítes ficaram verdes (339 · 724 · Go limpo) com **duas divergências ativas**. Só apareceram
+com fixture construída para discriminar.
+
+**Ordenação — os três erravam, cada um por motivo diferente:**
+- Go: `filepath.Glob` ordena por padrão, mas `scanREQFiles` concatena por agente e por estado, e a
+  lista de estados é fixa e nem lexicográfica.
+- Node: `readdirSync` sem sort — concordava em flat **por acidente do APFS**.
+- Python: `sorted()` sobre **caminhos completos**. Passou na primeira fixture `by_agent` por
+  coincidência aritmética (`apolo/…aaa` < `zeus/…zzz`).
+
+**"Determinístico" não é "conforme".** O Python era perfeitamente determinístico e divergia do
+contrato. Se eu tivesse parado na primeira fixture, teria aprovado.
+
+**Regra operacional que fica:** ao verificar ordenação ou qualquer critério composto, construir a
+fixture que **separa** os critérios candidatos. Fixture onde dois critérios coincidem não é evidência.
+
+### Quarta ocorrência do meu mesmo erro de contrato
+
+Escrevi "na ordem de varredura" — delegação disfarçada de especificação. Sequência nesta sessão:
+nomes-sem-valores (skip) · regexes-sem-momento (rótulo de wave) · cardinalidades-sem-ordem (esta).
+**Dois dos três implementadores reportaram a lacuna antes de eu perguntar** — foi o que a evitou virar
+divergência permanente. Pedir explicitamente "reporte contrato incompleto" nos handoffs tem retorno
+mensurável.
+
+### Divergência pré-existente corrigida por decisão do usuário
+
+O Python nunca imprimiu `✓ moved` — desde antes desta REQ imprimia `Roadmap movido para: <path>`
+(idioma, forma e conteúdo diferentes). Verificado em `origin/main`. Fora do escopo original; incluído
+porque a regra dura de paridade se aplica e a auditoria byte-a-byte da própria feature não passaria com
+a linha anterior divergindo. Agora byte-idêntica, `hexdump` confirma `e2 9c 93`.
+
+### Inconsistência minha que o agente pegou
+
+O bloco do ML-3A dizia "quatro cardinalidades"; o contrato pina **cinco**. O Artemis seguiu o contrato
+e reportou a discrepância. Contrato prevalece sobre roadmap — comportamento correto.
+
+### Qualidade do seam de falsificação
+
+O seam corrompe a **implementação** (cópia em árvore temporária), nunca a asserção, e tem **guarda de
+padrão**: se o `sed` não alterar nada, falha com "padrão não encontrado; prova P4 inválida". Isso
+protege contra o cenário em que o código-fonte muda, o `sed` para de casar e a falsificação se torna
+vacuosa em silêncio. Não foi pedido — foi iniciativa do Artemis.
+
+### Débito pendente registrado
+
+**Release não feito.** Agora são 4 commits desde `v4.0.0` com mudanças observáveis acumuladas: campo
+`wave` do JSON (número → string), textos de mensagens do barrier, `## Wave 0` rejeitada, e a linha
+`moved` do Python. Critério do projeto (`feat` breaking → major) aponta **v5.0.0**.

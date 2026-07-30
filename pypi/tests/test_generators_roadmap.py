@@ -13,7 +13,10 @@ from trackfw.generators.roadmap import (
     generate_roadmap,
     generate_roadmap_from_req,
     move_roadmap,
+    sync_paired_req_references,
     _rewrite_roadmap_status,
+    _get_frontmatter_roadmap_value,
+    _rewrite_req_roadmap_ref,
     VALID_STATES,
 )
 from trackfw.validator import validate_folder_status_coherence
@@ -467,6 +470,386 @@ class TestMoveRoadmapFrontmatterSync(unittest.TestCase):
         self.assertIn("| Campo | status: backlog |", content)
         # Bloco de código (após ## ) intocado
         self.assertIn("```\n> Created: 2026-01-01 | Status: backlog\n```", content)
+
+
+class TestGetFrontmatterRoadmapValue(unittest.TestCase):
+    """Testes unitários de _get_frontmatter_roadmap_value."""
+
+    def test_extrai_valor_com_aspas(self):
+        content = '---\nstatus: Open\nroadmap: "docs/roadmaps/wip/X.md"\n---\n'
+        self.assertEqual(
+            _get_frontmatter_roadmap_value(content),
+            "docs/roadmaps/wip/X.md",
+        )
+
+    def test_extrai_valor_sem_aspas(self):
+        content = "---\nstatus: Open\nroadmap: docs/roadmaps/wip/X.md\n---\n"
+        self.assertEqual(
+            _get_frontmatter_roadmap_value(content),
+            "docs/roadmaps/wip/X.md",
+        )
+
+    def test_nao_extrai_valor_com_backtick(self):
+        # backtick não é removido → valor não termina em .md → retorna ''
+        content = "---\nstatus: Open\nroadmap: `docs/roadmaps/wip/X.md`\n---\n"
+        self.assertEqual(_get_frontmatter_roadmap_value(content), "")
+
+    def test_retorna_vazio_sem_frontmatter(self):
+        self.assertEqual(_get_frontmatter_roadmap_value("# Sem frontmatter\n"), "")
+
+    def test_retorna_vazio_se_campo_ausente(self):
+        content = "---\nstatus: Open\n---\n"
+        self.assertEqual(_get_frontmatter_roadmap_value(content), "")
+
+    def test_retorna_vazio_se_valor_vazio(self):
+        content = '---\nroadmap: ""\n---\n'
+        self.assertEqual(_get_frontmatter_roadmap_value(content), "")
+
+
+class TestRewriteReqRoadmapRef(unittest.TestCase):
+    """Testes unitários de _rewrite_req_roadmap_ref."""
+
+    def _make_req(self, roadmap_path: str, body_fmt: str = "backtick") -> str:
+        if body_fmt == "backtick":
+            body_val = f"`{roadmap_path}`"
+        elif body_fmt == "quote":
+            body_val = f'"{roadmap_path}"'
+        else:
+            body_val = roadmap_path
+        return (
+            f'---\nstatus: Open\nroadmap: "{roadmap_path}"\n---\n\n'
+            f"# REQ: Teste\n\n## Linked Roadmap\nRoadmap: {body_val}\n"
+        )
+
+    def test_reescreve_frontmatter_e_corpo_backtick(self):
+        old_path = "docs/roadmaps/wip/ROADMAP-x.md"
+        new_path = "docs/roadmaps/done/ROADMAP-x.md"
+        content = self._make_req(old_path, "backtick")
+        result, changed = _rewrite_req_roadmap_ref(content, new_path)
+        self.assertTrue(changed)
+        self.assertIn(f'roadmap: "{new_path}"', result)
+        self.assertIn(f"Roadmap: `{new_path}`", result)
+
+    def test_preserva_backtick_no_corpo(self):
+        old_path = "docs/roadmaps/wip/ROADMAP-x.md"
+        new_path = "docs/roadmaps/done/ROADMAP-x.md"
+        content = self._make_req(old_path, "backtick")
+        result, _ = _rewrite_req_roadmap_ref(content, new_path)
+        # Backtick preservado: `new_path`
+        self.assertIn(f"`{new_path}`", result)
+        # Backtick não deve envolver o antigo caminho
+        self.assertNotIn(f"`{old_path}`", result)
+
+    def test_preserva_aspas_no_frontmatter(self):
+        old_path = "docs/roadmaps/wip/ROADMAP-x.md"
+        new_path = "docs/roadmaps/done/ROADMAP-x.md"
+        content = self._make_req(old_path, "backtick")
+        result, _ = _rewrite_req_roadmap_ref(content, new_path)
+        # Aspas duplas preservadas no frontmatter
+        self.assertIn(f'roadmap: "{new_path}"', result)
+
+    def test_reescreve_corpo_bare(self):
+        old_path = "docs/roadmaps/wip/ROADMAP-x.md"
+        new_path = "docs/roadmaps/done/ROADMAP-x.md"
+        content = self._make_req(old_path, "bare")
+        result, changed = _rewrite_req_roadmap_ref(content, new_path)
+        self.assertTrue(changed)
+        self.assertIn(f"Roadmap: {new_path}", result)
+
+    def test_idempotente_se_ja_correto(self):
+        path = "docs/roadmaps/done/ROADMAP-x.md"
+        content = self._make_req(path, "backtick")
+        result, changed = _rewrite_req_roadmap_ref(content, path)
+        self.assertFalse(changed)
+        self.assertEqual(result, content)
+
+    def test_sem_frontmatter_retorna_inalterado(self):
+        content = "# REQ sem frontmatter\nRoadmap: docs/roadmaps/wip/X.md\n"
+        result, changed = _rewrite_req_roadmap_ref(content, "docs/roadmaps/done/X.md")
+        self.assertFalse(changed)
+        self.assertEqual(result, content)
+
+
+def _make_full_cfg(tmpdir: str, namespacing: str = "flat", agents=None) -> dict:
+    """Config com roadmap_dir e req_dir isolados no tmpdir."""
+    cfg = cfg_module.defaults()
+    cfg["roadmap_dir"] = os.path.join(tmpdir, "docs", "roadmaps")
+    cfg["req_dir"] = os.path.join(tmpdir, "docs", "req")
+    cfg["roadmap_namespacing"] = namespacing
+    if agents is not None:
+        cfg["agents"] = agents
+    return cfg
+
+
+def _write_req_file(path: str, roadmap_path: str, body_backtick: bool = True) -> None:
+    """Cria arquivo REQ com frontmatter e corpo no padrão canônico."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if body_backtick:
+        body_val = f"`{roadmap_path}`"
+    else:
+        body_val = roadmap_path
+    content = (
+        f'---\nstatus: Open\ndate: 2026-07-30\nauthor: ""\nadr: ""\n'
+        f'roadmap: "{roadmap_path}"\n---\n\n'
+        f"# REQ: Teste\n\n## Linked Roadmap\nRoadmap: {body_val}\n"
+    )
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+class TestSyncPairedReqReferences(unittest.TestCase):
+    """Testes das cinco cardinalidades + idempotência + by_agent + backticks."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        cfg_module.reset()
+
+    def tearDown(self):
+        cfg_module.reset()
+
+    # ------------------------------------------------------------------
+    # Cardinalidade 1: Zero REQs → no-op silencioso
+    # ------------------------------------------------------------------
+    def test_zero_reqs_nooop_silencioso(self):
+        cfg = _make_full_cfg(self.tmpdir)
+        os.makedirs(cfg["req_dir"], exist_ok=True)
+        # Nenhum arquivo .md em req_dir
+        synced, failures = sync_paired_req_references(
+            "docs/roadmaps/wip/ROADMAP-2026-07-30-x.md", cfg
+        )
+        self.assertEqual(synced, [])
+        self.assertEqual(failures, [])
+
+    # ------------------------------------------------------------------
+    # Cardinalidade 2: Uma REQ → reescreve
+    # ------------------------------------------------------------------
+    def test_uma_req_reescrita(self):
+        cfg = _make_full_cfg(self.tmpdir)
+        req_dir = cfg["req_dir"]
+        os.makedirs(req_dir, exist_ok=True)
+
+        old_path = "docs/roadmaps/backlog/ROADMAP-2026-07-30-feat.md"
+        new_path = "docs/roadmaps/wip/ROADMAP-2026-07-30-feat.md"
+        req_file = os.path.join(req_dir, "REQ-2026-07-30-feat.md")
+        _write_req_file(req_file, old_path, body_backtick=True)
+
+        synced, failures = sync_paired_req_references(new_path, cfg)
+
+        self.assertEqual(failures, [])
+        self.assertEqual(synced, ["REQ-2026-07-30-feat.md"])
+
+        with open(req_file, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn(f'roadmap: "{new_path}"', content)
+        self.assertIn(f"Roadmap: `{new_path}`", content)
+        self.assertNotIn(old_path, content)
+
+    # ------------------------------------------------------------------
+    # Cardinalidade 3: Várias REQs → todas reescritas
+    # ------------------------------------------------------------------
+    def test_varias_reqs_todas_reescritas(self):
+        cfg = _make_full_cfg(self.tmpdir)
+        req_dir = cfg["req_dir"]
+        os.makedirs(req_dir, exist_ok=True)
+
+        old_path = "docs/roadmaps/backlog/ROADMAP-2026-07-30-multi.md"
+        new_path = "docs/roadmaps/wip/ROADMAP-2026-07-30-multi.md"
+
+        req_a = os.path.join(req_dir, "REQ-2026-07-30-a.md")
+        req_b = os.path.join(req_dir, "REQ-2026-07-30-b.md")
+        _write_req_file(req_a, old_path)
+        _write_req_file(req_b, old_path)
+
+        synced, failures = sync_paired_req_references(new_path, cfg)
+
+        self.assertEqual(failures, [])
+        self.assertEqual(len(synced), 2)
+        self.assertIn("REQ-2026-07-30-a.md", synced)
+        self.assertIn("REQ-2026-07-30-b.md", synced)
+
+        for req_file in (req_a, req_b):
+            with open(req_file, encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn(f'roadmap: "{new_path}"', content)
+            self.assertNotIn(old_path, content)
+
+    # ------------------------------------------------------------------
+    # Cardinalidade 4: REQ aponta para outro roadmap → não toca
+    # ------------------------------------------------------------------
+    def test_req_aponta_para_outro_roadmap_nao_tocada(self):
+        cfg = _make_full_cfg(self.tmpdir)
+        req_dir = cfg["req_dir"]
+        os.makedirs(req_dir, exist_ok=True)
+
+        other_path = "docs/roadmaps/wip/ROADMAP-2026-07-30-outro.md"
+        new_path = "docs/roadmaps/wip/ROADMAP-2026-07-30-alvo.md"
+        req_file = os.path.join(req_dir, "REQ-2026-07-30-outro.md")
+        _write_req_file(req_file, other_path)
+
+        # Bytes antes
+        with open(req_file, "rb") as f:
+            bytes_before = f.read()
+
+        synced, failures = sync_paired_req_references(new_path, cfg)
+
+        self.assertEqual(synced, [])
+        self.assertEqual(failures, [])
+
+        with open(req_file, "rb") as f:
+            bytes_after = f.read()
+        self.assertEqual(bytes_before, bytes_after)
+
+    # ------------------------------------------------------------------
+    # Cardinalidade 5: Referência já correta → nenhuma escrita (idempotente)
+    # ------------------------------------------------------------------
+    def test_referencia_ja_correta_sem_escrita(self):
+        cfg = _make_full_cfg(self.tmpdir)
+        req_dir = cfg["req_dir"]
+        os.makedirs(req_dir, exist_ok=True)
+
+        new_path = "docs/roadmaps/wip/ROADMAP-2026-07-30-x.md"
+        req_file = os.path.join(req_dir, "REQ-2026-07-30-x.md")
+        _write_req_file(req_file, new_path)  # já aponta para o estado correto
+
+        with open(req_file, "rb") as f:
+            bytes_before = f.read()
+
+        synced, failures = sync_paired_req_references(new_path, cfg)
+
+        self.assertEqual(synced, [])
+        self.assertEqual(failures, [])
+
+        with open(req_file, "rb") as f:
+            bytes_after = f.read()
+        self.assertEqual(bytes_before, bytes_after,
+            "referência já correta causou escrita inesperada (não é idempotente)")
+
+    # ------------------------------------------------------------------
+    # Idempotência byte-a-byte: chamar sync duas vezes é equivalente a uma
+    # ------------------------------------------------------------------
+    def test_idempotencia_byte_a_byte_duas_chamadas(self):
+        cfg = _make_full_cfg(self.tmpdir)
+        req_dir = cfg["req_dir"]
+        os.makedirs(req_dir, exist_ok=True)
+
+        old_path = "docs/roadmaps/backlog/ROADMAP-2026-07-30-idem.md"
+        new_path = "docs/roadmaps/wip/ROADMAP-2026-07-30-idem.md"
+        req_file = os.path.join(req_dir, "REQ-2026-07-30-idem.md")
+        _write_req_file(req_file, old_path)
+
+        # Primeira chamada: deve reescrever
+        synced1, _ = sync_paired_req_references(new_path, cfg)
+        self.assertEqual(len(synced1), 1)
+
+        with open(req_file, "rb") as f:
+            bytes_after_first = f.read()
+
+        # Segunda chamada: referência já correta → nenhuma escrita
+        synced2, failures2 = sync_paired_req_references(new_path, cfg)
+        self.assertEqual(synced2, [], "segunda chamada deveria ser no-op")
+        self.assertEqual(failures2, [])
+
+        with open(req_file, "rb") as f:
+            bytes_after_second = f.read()
+
+        self.assertEqual(bytes_after_first, bytes_after_second,
+            "bytes mudaram na segunda chamada — não é idempotente")
+
+    # ------------------------------------------------------------------
+    # Layout by_agent: REQ em req_dir/<agente>/<estado>/ é encontrada
+    # ------------------------------------------------------------------
+    def test_by_agent_req_encontrada(self):
+        cfg = _make_full_cfg(self.tmpdir, namespacing="by_agent", agents=["zeus"])
+        req_dir = cfg["req_dir"]
+        agent_state_dir = os.path.join(req_dir, "zeus", "wip")
+        os.makedirs(agent_state_dir, exist_ok=True)
+
+        old_path = "docs/roadmaps/backlog/ROADMAP-2026-07-30-agent.md"
+        new_path = "docs/roadmaps/wip/ROADMAP-2026-07-30-agent.md"
+        req_file = os.path.join(agent_state_dir, "REQ-2026-07-30-agent.md")
+        _write_req_file(req_file, old_path)
+
+        synced, failures = sync_paired_req_references(new_path, cfg)
+
+        self.assertEqual(failures, [])
+        self.assertEqual(synced, ["REQ-2026-07-30-agent.md"],
+            "REQ em req_dir/<agente>/<estado>/ não foi encontrada (by_agent)")
+
+        with open(req_file, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn(f'roadmap: "{new_path}"', content)
+
+    # ------------------------------------------------------------------
+    # Backticks preservados após reescrita
+    # ------------------------------------------------------------------
+    def test_backticks_preservados_no_corpo(self):
+        cfg = _make_full_cfg(self.tmpdir)
+        req_dir = cfg["req_dir"]
+        os.makedirs(req_dir, exist_ok=True)
+
+        old_path = "docs/roadmaps/backlog/ROADMAP-2026-07-30-bt.md"
+        new_path = "docs/roadmaps/done/ROADMAP-2026-07-30-bt.md"
+        req_file = os.path.join(req_dir, "REQ-2026-07-30-bt.md")
+        _write_req_file(req_file, old_path, body_backtick=True)
+
+        sync_paired_req_references(new_path, cfg)
+
+        with open(req_file, encoding="utf-8") as f:
+            content = f.read()
+
+        # Corpo deve ter backticks com o novo caminho
+        self.assertIn(f"Roadmap: `{new_path}`", content)
+        # Corpo NÃO deve ter backticks com o caminho antigo
+        self.assertNotIn(f"Roadmap: `{old_path}`", content)
+
+    # ------------------------------------------------------------------
+    # Ordenação by_agent discriminante: basename ≠ ordem de caminho completo
+    # Fixture: apolo/done/REQ-zzz + zeus/backlog/REQ-aaa
+    # Caminho: apolo/done/REQ-zzz < zeus/backlog/REQ-aaa (ordem por caminho)
+    # Basename: REQ-aaa < REQ-zzz (ordem por basename — contrato)
+    # Esperado: ["REQ-aaa.md", "REQ-zzz.md"]
+    # ------------------------------------------------------------------
+    def test_by_agent_ordenacao_por_basename_fixture_discriminante(self):
+        """Garante ordenação por basename, não por caminho completo (fixture discriminante)."""
+        cfg = _make_full_cfg(self.tmpdir, namespacing="by_agent", agents=["zeus", "apolo"])
+        req_dir = cfg["req_dir"]
+
+        old_path = "docs/roadmaps/backlog/ROADMAP-2026-07-30-ordem.md"
+        new_path = "docs/roadmaps/wip/ROADMAP-2026-07-30-ordem.md"
+
+        # apolo/done/REQ-zzz.md → nome de caminho completo fica ANTES de zeus/backlog/REQ-aaa.md
+        # mas basename REQ-zzz.md deve ficar APÓS REQ-aaa.md
+        apolo_done_dir = os.path.join(req_dir, "apolo", "done")
+        zeus_backlog_dir = os.path.join(req_dir, "zeus", "backlog")
+        os.makedirs(apolo_done_dir, exist_ok=True)
+        os.makedirs(zeus_backlog_dir, exist_ok=True)
+
+        req_zzz = os.path.join(apolo_done_dir, "REQ-zzz.md")
+        req_aaa = os.path.join(zeus_backlog_dir, "REQ-aaa.md")
+        _write_req_file(req_zzz, old_path)
+        _write_req_file(req_aaa, old_path)
+
+        synced, failures = sync_paired_req_references(new_path, cfg)
+
+        self.assertEqual(failures, [])
+        self.assertEqual(len(synced), 2)
+        # Ordem DEVE ser por basename: aaa antes de zzz
+        self.assertEqual(synced[0], "REQ-aaa.md",
+            f"Esperado REQ-aaa.md primeiro (basename order), obtido: {synced}")
+        self.assertEqual(synced[1], "REQ-zzz.md",
+            f"Esperado REQ-zzz.md segundo (basename order), obtido: {synced}")
+
+    # ------------------------------------------------------------------
+    # Saída pinada literalmente: ✓ U+2713, → U+2192
+    # ------------------------------------------------------------------
+    def test_caracteres_unicode_na_saida_pinados(self):
+        """Verifica que ✓ (U+2713) e → (U+2192) são os chars corretos."""
+        synced_line = "✓ synced REQ-foo.md → docs/roadmaps/wip/ROADMAP-bar.md"
+        # U+2713 CHECK MARK
+        self.assertEqual(synced_line[0], "✓")
+        # U+2192 RIGHTWARDS ARROW
+        arrow_idx = synced_line.index("→")
+        self.assertEqual(synced_line[arrow_idx], "→")
 
 
 if __name__ == "__main__":

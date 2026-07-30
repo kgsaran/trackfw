@@ -68,6 +68,67 @@ like `ROADMAP-001.md`, or a path that points to the wrong state directory such
 as `docs/roadmaps/wip/X.md` when the file is in `done/`, is invalid even when a
 file with the same basename exists elsewhere under `docs/roadmaps/`.
 
+### `roadmap move` synchronizes the paired REQ reference
+
+Because the reference is checked literally against the state directory, moving a roadmap invalidates
+every REQ that points at it. `trackfw roadmap move` therefore rewrites those references as part of the
+move. Without this, the command that exists to satisfy governance produces a state the validator
+rejects — observed four times across two consecutive sessions, once per transition.
+
+**Direction and timing.** Synchronization is **unidirectional**: the move knows the roadmap's new path
+and fixes whoever points at it. It runs **after** a successful rename, at the same point in the flow
+where the roadmap's own `status:` is already rewritten — never before, so a failed rename leaves no
+dangling edit.
+
+**Discovery source.** Scan `req_dir` for REQs whose `roadmap:` **basename** equals the moved roadmap's
+basename. Cover both the flat layout (`req_dir/*.md`) and `by_agent`
+(`req_dir/<agent>/<state>/*.md`), mirroring what the validator already scans.
+
+Do **not** use the roadmap's own `req:` field for discovery. `trackfw roadmap new` writes `req: ""`, and
+existing roadmaps carry a bare slug there with no path and no `.md`. Discovery must run in the inverse
+direction.
+
+**Which field is normative.** The **frontmatter** `roadmap:` is what the validator reads. `extractRefPath`
+returns the first `Roadmap`-keyed value ending in `.md` and trims only quotes, not backticks — so the
+body form `` Roadmap: `docs/roadmaps/wip/X.md` `` ends in a backtick, never matches, and is invisible to
+the validator. The body line is updated anyway, **preserving its existing formatting including
+backticks**, because a body that disagrees with the frontmatter misleads the human reader. An
+implementation that updates only the body fixes nothing.
+
+**Cardinality — every case pinned:**
+
+| REQs pointing at the moved roadmap | Behaviour |
+|---|---|
+| Zero | No-op, **no output**, exit 0. A roadmap without a REQ is legitimate. |
+| One | Rewrite both fields; one output line. |
+| Several | Rewrite **all**; one output line each, sorted **lexicographically by REQ basename**. |
+| Points at a **different** roadmap | Not touched. |
+| Reference already correct | **No write at all** — byte-level idempotent. Moving twice changes nothing. |
+
+**Order is pinned, not delegated to the filesystem.** Sort by REQ basename before emitting. An earlier
+draft of this contract said "in `req_dir` scan order", which is not an order at all: Go's
+`filepath.Glob` returns sorted results, while Node.js `fs.readdirSync` and Python `glob` guarantee
+nothing across filesystems. Two runtimes would agree on macOS and diverge elsewhere — a divergence no
+test on a single machine would catch. Reported by the ML-2B implementer rather than silently absorbed.
+
+**Output, pinned literally.** One line per REQ actually rewritten, on **stdout**, after the existing
+`✓ moved ...` line:
+
+```
+✓ synced <req-basename> → <new-roadmap-path>
+```
+
+**On failure.** A REQ that cannot be rewritten does **not** roll back the move — the roadmap has already
+been renamed and reverting would create a worse inconsistency. Emit a diagnostic on **stderr** naming
+the REQ, and exit non-zero:
+
+```
+trackfw roadmap move: failed to sync <req-basename>: <cause>
+```
+
+Remaining REQs are still attempted; the command reports the first failure's cause and exits non-zero
+after processing all of them, so one unwritable file does not hide the rest.
+
 ## JSON Schema artifacts
 
 `trackfw init` publishes `docs/schema/adr.schema.json`,

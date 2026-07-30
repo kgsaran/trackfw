@@ -660,6 +660,7 @@ GATES_MUTATION_CHECK=(
   scripts/check-barrier.sh
   scripts/check-slash-parity.sh
   scripts/check-rules-parity.sh
+  scripts/check-roadmap-move-parity.sh
 )
 
 before_status=$(cd "$ROOT_DIR" && git status --porcelain)
@@ -703,4 +704,44 @@ assert_fails_with "barrier/early-break-after-target-not-detected" \
   'FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 2 for after-position malformed heading, got 0' \
   env BARRIER_BIS_SELFTEST_BREAK=1 GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-barrier.sh"
 
-echo "Falsification checks passed (all 20 scenarios, 13 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 20 — check-roadmap-move-parity.sh: ordenação por caminho completo no
+#              Node.js em vez de basename → gate detecta divergência na fixture
+#              discriminante (apolo/REQ-zzz + zeus/REQ-aaa → aaa, zzz esperado).
+#
+# Objetivo (ML-3A, ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada):
+# A fixture discriminante (Cenário 3) inverte os basenames entre os agentes —
+# `apolo/done/REQ-zzz.md` e `zeus/backlog/REQ-aaa.md` — de modo que ordenação
+# por caminho completo (apolo < zeus) produz `zzz, aaa` (ERRADO) enquanto
+# ordenação por basename produz `aaa, zzz` (CORRETO). Uma implementação que usa
+# o caminho completo como chave de sort concorda com a fixture COINCIDENTE
+# (`apolo/REQ-aaa` + `zeus/REQ-zzz`) mas diverge aqui — e sem esta prova o
+# cenário 3 seria vacuoso com respeito a essa classe de regressão.
+#
+# Seam: sed troca `path.basename(a)` → `a` e `path.basename(b)` → `b` no
+# comparador de `syncReqReferences` em npm/src/generators/roadmap.js.
+# Corrompe a IMPLEMENTAÇÃO (fixture do gate), nunca a asserção do gate —
+# mesmo padrão dos Cenários 14/16/17.
+# ---------------------------------------------------------------------------
+T20="$WORK/s20"
+mkdir -p "$T20/scripts"
+setup_npm_tree "$T20"
+ln -s "$ROOT_DIR/pypi" "$T20/pypi"
+cp "$ROOT_DIR/scripts/check-roadmap-move-parity.sh" "$T20/scripts/"
+
+# Corromper: sort por caminho completo em vez de basename
+sed -e 's/const ba = path\.basename(a)/const ba = a/' \
+    -e 's/const bb = path\.basename(b)/const bb = b/' \
+    "$ROOT_DIR/npm/src/generators/roadmap.js" > "$T20/npm/src/generators/roadmap.js"
+
+# Guard: garantir que a corrupção foi aplicada
+if cmp -s "$ROOT_DIR/npm/src/generators/roadmap.js" "$T20/npm/src/generators/roadmap.js"; then
+  echo "FAIL [falsify/setup-s20]: sed não alterou roadmap.js — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "roadmap-move-parity/discriminant-wrong-order-not-detected" \
+  "roadmap-move-parity/by_agent-discriminant/node" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T20/scripts/check-roadmap-move-parity.sh"
+
+echo "Falsification checks passed (all 21 scenarios, 14 gates proved non-vacuous)"

@@ -3,6 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const config = require('../config')
 const { localDateISO } = require('./date')
+const { resolveReqFiles } = require('../validator/index.js')
 
 const VALID_STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
 const STATE_ORDER = ['analyzing', 'wip', 'backlog', 'blocked', 'done', 'abandoned']
@@ -251,6 +252,9 @@ function moveRoadmap(name, state) {
 
   appendTransitionLog(logBasename, fromState, state)
   console.log(`✓ moved ${basename} → ${targetDir}`)
+
+  // Sincroniza o roadmap: das REQs que apontem para este roadmap.
+  syncReqReferences(basename, dst, cfg)
 }
 
 /**
@@ -271,6 +275,124 @@ function appendTransitionLog(basename, fromState, toState) {
     fs.mkdirSync(path.dirname(lp), { recursive: true })
     fs.appendFileSync(lp, line, 'utf8')
   } catch (_) {}
+}
+
+/**
+ * extractFrontmatterRoadmap — extrai o valor do campo `roadmap:` SOMENTE do frontmatter.
+ * Retorna null se não encontrado ou se não termina em .md.
+ * Não usa extractRefPath do validator porque este percorre todo o conteúdo (inclusive corpo)
+ * sem distinguir frontmatter de body — geraria falsos positivos em REQs sem roadmap: no FM.
+ */
+function extractFrontmatterRoadmap(content) {
+  const lines = content.split('\n')
+  let inFm = false
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (i === 0 && line.trim() === '---') { inFm = true; continue }
+    if (inFm && line.trim() === '---') return null // fechou frontmatter sem encontrar
+    if (!inFm) return null // nunca entrou no frontmatter
+    const idx = line.indexOf(':')
+    if (idx === -1) continue
+    if (line.slice(0, idx).trim() !== 'roadmap') continue
+    let val = line.slice(idx + 1).trim()
+    val = val.replace(/^["']|["']$/g, '').trim()
+    if (val.endsWith('.md')) return val
+    return null // roadmap: existe mas sem .md (ex: "" ou slug)
+  }
+  return null
+}
+
+/**
+ * rewriteReqRoadmapRef — reescreve o campo `roadmap:` no frontmatter e a linha `Roadmap:` no
+ * corpo de uma REQ, substituindo oldRef por newRef.
+ * Preserva toda formatação existente (aspas, backticks) via substituição literal de string.
+ */
+function rewriteReqRoadmapRef(content, oldRef, newRef) {
+  const lines = content.split('\n')
+  let inFm = false
+  let fmDone = false
+  const result = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (i === 0 && line.trim() === '---') { inFm = true; result.push(line); continue }
+    if (inFm && line.trim() === '---') { inFm = false; fmDone = true; result.push(line); continue }
+    if (inFm) {
+      const idx = line.indexOf(':')
+      if (idx !== -1 && line.slice(0, idx).trim() === 'roadmap' && line.includes(oldRef)) {
+        result.push(line.replace(oldRef, newRef))
+        continue
+      }
+      result.push(line)
+      continue
+    }
+    if (fmDone) {
+      // No corpo: reescreve linhas `Roadmap:` que contenham oldRef
+      if (line.trim().toLowerCase().startsWith('roadmap:') && line.includes(oldRef)) {
+        result.push(line.replace(oldRef, newRef))
+        continue
+      }
+    }
+    result.push(line)
+  }
+
+  return result.join('\n')
+}
+
+/**
+ * syncReqReferences — após rename bem-sucedido, varre req_dir (flat + by_agent) e reescreve o
+ * frontmatter `roadmap:` e a linha `Roadmap:` do corpo em toda REQ que aponte para o roadmap
+ * movido. Implementa as cinco cardinalidades do contrato:
+ *   zero → no-op silencioso; uma → reescreve; várias → reescreve todas; aponta para outro →
+ *   não toca; já correta → nenhuma escrita (idempotente byte-a-byte).
+ * Erros: diagnóstico em stderr nomeando a REQ; tenta as restantes; exit não-zero ao fim.
+ */
+function syncReqReferences(movedBasename, newRoadmapPath, cfg) {
+  // Ordenação explícita por basename (independente de locale) para garantir saída determinística
+  // independente do filesystem. Desempate por caminho completo quando dois agentes têm REQs de
+  // mesmo basename. Não confiar na ordem do readdirSync — varia entre filesystems.
+  const files = resolveReqFiles(cfg).sort((a, b) => {
+    const ba = path.basename(a)
+    const bb = path.basename(b)
+    if (ba < bb) return -1
+    if (ba > bb) return 1
+    if (a < b) return -1
+    if (a > b) return 1
+    return 0
+  })
+  let anyError = false
+
+  for (const filePath of files) {
+    let content
+    try {
+      content = fs.readFileSync(filePath, 'utf8')
+    } catch (e) {
+      console.error(`trackfw roadmap move: failed to sync ${path.basename(filePath)}: ${e.message}`)
+      anyError = true
+      continue
+    }
+
+    const currentRef = extractFrontmatterRoadmap(content)
+    if (!currentRef) continue
+    if (path.basename(currentRef) !== movedBasename) continue // aponta para outro roadmap
+    if (currentRef === newRoadmapPath) {
+      // Guarda rápida: frontmatter já correto — confirma idempotência com reescrita estrutural
+      const updated = rewriteReqRoadmapRef(content, currentRef, newRoadmapPath)
+      if (updated === content) continue // sem escrita, sem output
+    }
+
+    try {
+      const updated = rewriteReqRoadmapRef(content, currentRef, newRoadmapPath)
+      if (updated === content) continue // nenhuma escrita, nenhum output (idempotência byte-a-byte)
+      fs.writeFileSync(filePath, updated, 'utf8')
+      console.log(`✓ synced ${path.basename(filePath)} → ${newRoadmapPath}`)
+    } catch (e) {
+      console.error(`trackfw roadmap move: failed to sync ${path.basename(filePath)}: ${e.message}`)
+      anyError = true
+    }
+  }
+
+  if (anyError) process.exitCode = 1
 }
 
 /**
@@ -524,6 +646,9 @@ module.exports = {
   moveRoadmap,
   rewriteRoadmapStatus,
   appendTransitionLog,
+  extractFrontmatterRoadmap,
+  rewriteReqRoadmapRef,
+  syncReqReferences,
   newRoadmap,
   newRoadmapFromReq,
   stateDir,
