@@ -4,6 +4,16 @@
 
 ---
 
+## Sessão 2026-07-30 — Apolo (ML-2A — Go: remover prefixo `v` da constante de versão) — IMPLEMENTANDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
+
+**Tarefa:** ML-2A — Remover o `v` de `var Version = "v5.0.0"` em `internal/version/version.go` e adicionar teste travando o formato exato das duas superfícies.
+
+**Branch:** `feat/padrao-unico-de-saida-de-versao-nos-tres-clis`
+
+---
+
 ## Sessão 2026-07-30 — Artemis (ML-3A — Auditar paridade e provar não-vacuidade) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
