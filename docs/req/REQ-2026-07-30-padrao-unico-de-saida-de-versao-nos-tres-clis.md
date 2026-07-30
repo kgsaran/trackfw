@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-30
 author: "trackfw_architect"
 adr: "docs/adr/ADR-001-trackfw-como-trilho-de-governanca-para-agentes-ia.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md"
 ---
 
 # REQ: padrao unico de saida de versao nos tres CLIs
 
-> Date: 2026-07-30 | Status: Open
+> Date: 2026-07-30 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -77,17 +77,17 @@ A **tag Git permanece `v5.0.0`** — ali o prefixo é a convenção correta e n�
 
 ## Acceptance Criteria
 
-- [ ] `trackfw version` imprime `trackfw <semver>` sem prefixo `v`, byte-idêntico nos três runtimes.
-- [ ] `trackfw --version` imprime exatamente a mesma linha que `trackfw version`, nos três runtimes.
-- [ ] `internal/version/version.go` passa a armazenar a versão **sem** o `v`.
-- [ ] `scripts/check-cli-parity.sh` usa **a mesma asserção para os três runtimes** nas duas superfícies —
+- [x] `trackfw version` imprime `trackfw <semver>` sem prefixo `v`, byte-idêntico nos três runtimes.
+- [x] `trackfw --version` imprime exatamente a mesma linha que `trackfw version`, nos três runtimes.
+- [x] `internal/version/version.go` passa a armazenar a versão **sem** o `v`.
+- [x] `scripts/check-cli-parity.sh` usa **a mesma asserção para os três runtimes** nas duas superfícies —
       a regex específica do Node.js é removida.
-- [ ] A asserção passa a exigir o formato exato (`^trackfw [0-9]+\.[0-9]+\.[0-9]+`), não `^trackfw .+`,
+- [x] A asserção passa a exigir o formato exato (`^trackfw [0-9]+\.[0-9]+\.[0-9]+`), não `^trackfw .+`,
       que era frouxa o bastante para deixar o `v` sobreviver.
-- [ ] Cenário de comparação byte-a-byte das duas superfícies entre os três runtimes, encadeado em
+- [x] Cenário de comparação byte-a-byte das duas superfícies entre os três runtimes, encadeado em
       `make quality`, com prova de falsificação.
-- [ ] Protocolo de release em `CLAUDE.md` atualizado, se citar o formato com `v`.
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] Protocolo de release em `CLAUDE.md` atualizado, se citar o formato com `v`.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
 
 ## Escopo negativo
 
@@ -114,4 +114,4 @@ havia dispensado.
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
