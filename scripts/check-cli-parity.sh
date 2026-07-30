@@ -100,13 +100,59 @@ check_roadmap_new_flags "go" "$("$GO_BIN" roadmap new --help)"
 check_roadmap_new_flags "node" "$(node "$ROOT_DIR/npm/bin/trackfw" roadmap new --help)"
 check_roadmap_new_flags "python" "$(PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw roadmap new --help)"
 
-"$GO_BIN" version | grep -Eq '^trackfw .+'
-node "$ROOT_DIR/npm/bin/trackfw" version | grep -Eq '^trackfw .+'
-PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw version | grep -Eq '^trackfw .+'
+# Version output — unified assertion across all three runtimes and both surfaces.
+# Regex pinned in docs/cli-parity.md § "Gate assertion — pinned, and why the old one was vacuous".
+# The previous gate used '^trackfw .+' (loose) for Go/Python and a Node.js-specific
+# regex '^([0-9]+\.){2}[0-9]+|^0\.0\.0-dev$' that encoded format divergence as
+# expected behaviour. Both are replaced here with the same strict assertion plus
+# byte-by-byte comparison across runtimes and surfaces.
+_VERSION_RE='^trackfw [0-9]+\.[0-9]+\.[0-9]+$'
 
-"$GO_BIN" --version | grep -Eq '^trackfw .+'
-node "$ROOT_DIR/npm/bin/trackfw" --version | grep -Eq '^([0-9]+\.){2}[0-9]+|^0\.0\.0-dev$'
-PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw --version | grep -Eq '^trackfw .+'
+_GO_VER=$("$GO_BIN" version) \
+  || { echo "check-cli-parity: go version exited non-zero" >&2; exit 1; }
+_NODE_VER=$(node "$ROOT_DIR/npm/bin/trackfw" version) \
+  || { echo "check-cli-parity: node version exited non-zero" >&2; exit 1; }
+_PY_VER=$(PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw version) \
+  || { echo "check-cli-parity: python version exited non-zero" >&2; exit 1; }
+_GO_FLAG=$("$GO_BIN" --version) \
+  || { echo "check-cli-parity: go --version exited non-zero" >&2; exit 1; }
+_NODE_FLAG=$(node "$ROOT_DIR/npm/bin/trackfw" --version) \
+  || { echo "check-cli-parity: node --version exited non-zero" >&2; exit 1; }
+_PY_FLAG=$(PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw --version) \
+  || { echo "check-cli-parity: python --version exited non-zero" >&2; exit 1; }
+
+# Vacuity guard: all six outputs must be non-empty before format and byte checks.
+[[ -n "$_GO_VER" ]]    || { echo "check-cli-parity: go version output empty — vacuity guard failed" >&2; exit 1; }
+[[ -n "$_NODE_VER" ]]  || { echo "check-cli-parity: node version output empty — vacuity guard failed" >&2; exit 1; }
+[[ -n "$_PY_VER" ]]    || { echo "check-cli-parity: python version output empty — vacuity guard failed" >&2; exit 1; }
+[[ -n "$_GO_FLAG" ]]   || { echo "check-cli-parity: go --version output empty — vacuity guard failed" >&2; exit 1; }
+[[ -n "$_NODE_FLAG" ]] || { echo "check-cli-parity: node --version output empty — vacuity guard failed" >&2; exit 1; }
+[[ -n "$_PY_FLAG" ]]   || { echo "check-cli-parity: python --version output empty — vacuity guard failed" >&2; exit 1; }
+
+# Single-line guard: contract requires exactly one line on stdout (no warning preamble).
+# Command substitution strips the trailing newline, so a single-line output has
+# `wc -l` == 0; two or more lines have `wc -l` >= 1.
+[[ $(printf '%s' "$_GO_VER"    | wc -l) -eq 0 ]] || { echo "check-cli-parity: go version emitted more than one line (got: '$_GO_VER')" >&2; exit 1; }
+[[ $(printf '%s' "$_NODE_VER"  | wc -l) -eq 0 ]] || { echo "check-cli-parity: node version emitted more than one line (got: '$_NODE_VER')" >&2; exit 1; }
+[[ $(printf '%s' "$_PY_VER"    | wc -l) -eq 0 ]] || { echo "check-cli-parity: python version emitted more than one line (got: '$_PY_VER')" >&2; exit 1; }
+[[ $(printf '%s' "$_GO_FLAG"   | wc -l) -eq 0 ]] || { echo "check-cli-parity: go --version emitted more than one line (got: '$_GO_FLAG')" >&2; exit 1; }
+[[ $(printf '%s' "$_NODE_FLAG" | wc -l) -eq 0 ]] || { echo "check-cli-parity: node --version emitted more than one line (got: '$_NODE_FLAG')" >&2; exit 1; }
+[[ $(printf '%s' "$_PY_FLAG"   | wc -l) -eq 0 ]] || { echo "check-cli-parity: python --version emitted more than one line (got: '$_PY_FLAG')" >&2; exit 1; }
+
+# Format assertion — same strict regex for all six (three runtimes × two surfaces).
+grep -Eq "$_VERSION_RE" <<<"$_GO_VER"    || { echo "check-cli-parity: go version format invalid (got: '$_GO_VER')" >&2; exit 1; }
+grep -Eq "$_VERSION_RE" <<<"$_NODE_VER"  || { echo "check-cli-parity: node version format invalid (got: '$_NODE_VER')" >&2; exit 1; }
+grep -Eq "$_VERSION_RE" <<<"$_PY_VER"    || { echo "check-cli-parity: python version format invalid (got: '$_PY_VER')" >&2; exit 1; }
+grep -Eq "$_VERSION_RE" <<<"$_GO_FLAG"   || { echo "check-cli-parity: go --version format invalid (got: '$_GO_FLAG')" >&2; exit 1; }
+grep -Eq "$_VERSION_RE" <<<"$_NODE_FLAG" || { echo "check-cli-parity: node --version format invalid (got: '$_NODE_FLAG')" >&2; exit 1; }
+grep -Eq "$_VERSION_RE" <<<"$_PY_FLAG"   || { echo "check-cli-parity: python --version format invalid (got: '$_PY_FLAG')" >&2; exit 1; }
+
+# Byte-comparison: all six outputs must be identical (version ≡ --version, within and across runtimes).
+[[ "$_GO_VER" == "$_NODE_VER" ]]   || { echo "check-cli-parity: version byte mismatch — go vs node/version (got: '$_GO_VER' vs '$_NODE_VER')" >&2; exit 1; }
+[[ "$_GO_VER" == "$_PY_VER" ]]     || { echo "check-cli-parity: version byte mismatch — go vs python/version (got: '$_GO_VER' vs '$_PY_VER')" >&2; exit 1; }
+[[ "$_GO_VER" == "$_GO_FLAG" ]]    || { echo "check-cli-parity: version byte mismatch — go/version vs go/--version (got: '$_GO_VER' vs '$_GO_FLAG')" >&2; exit 1; }
+[[ "$_GO_VER" == "$_NODE_FLAG" ]]  || { echo "check-cli-parity: version byte mismatch — go/version vs node/--version (got: '$_GO_VER' vs '$_NODE_FLAG')" >&2; exit 1; }
+[[ "$_GO_VER" == "$_PY_FLAG" ]]    || { echo "check-cli-parity: version byte mismatch — go/version vs python/--version (got: '$_GO_VER' vs '$_PY_FLAG')" >&2; exit 1; }
 
 GO_BIN="$GO_BIN" bash "$ROOT_DIR/scripts/check-integration-cli-parity.sh"
 
