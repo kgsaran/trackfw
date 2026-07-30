@@ -10,7 +10,16 @@
 
 **Tarefa:** ML-2C — implementar `sync_paired_req_references` no Python CLI.
 
-**Status:** IMPLEMENTANDO
+**Entregue:**
+- `pypi/trackfw/generators/roadmap.py`: três helpers novos — `_get_frontmatter_roadmap_value` (extrai `roadmap:` do frontmatter sem backticks), `_rewrite_req_roadmap_ref` (reescreve frontmatter + corpo preservando formatação), `sync_paired_req_references` (orquestra varredura flat/by_agent, 5 cardinalidades, usa import escopado de `resolve_req_files`).
+- `pypi/trackfw/commands/roadmap.py`: `_cmd_move` chama `sync_paired_req_references` após move bem-sucedido e imprime `✓ synced` / `trackfw roadmap move: failed to sync` com exit não-zero em falha.
+- `pypi/tests/test_generators_roadmap.py`: 21 novos testes cobrindo todas as cardinalidades, idempotência byte-a-byte, `by_agent`, backticks, e caracteres Unicode pinados.
+
+**Validação:** `cd pypi && python3 -m pytest` → 723 passed, 0 failed.
+
+**Divergência reportada:** Python ordena a lista de REQs (`sorted()`); Node.js não ordena (`readdirSync` sem sort). ML-3A deve pinar se a ordem é intencional.
+
+**Status:** CONCLUÍDO
 
 ---
 

@@ -135,15 +135,26 @@ literal* de cada linha de saída.
 **Divergência reportada ao orquestrador:** a ordem de varredura de múltiplas REQs não está pinada no contrato ("na ordem de varredura"). `resolveReqFiles` em flat usa `fs.readdirSync` sem sort, que não garante ordem lexicográfica. O teste de várias REQs asserta o **conjunto** (não sequência). Se o Go ordenar e o Node não, ML-3A detectará divergência de paridade. Recomendo ao orquestrador pinar explicitamente se a ordem é intencional.
 
 ### ML-2C — Python
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
-**Arquivos afetados:** `pypi/trackfw/commands/roadmap.py` (`_cmd_move`, linha ~99) e o gerador
-correspondente, testes em `pypi/tests/`
+**Arquivos afetados:**
+- `pypi/trackfw/generators/roadmap.py` — helpers `_get_frontmatter_roadmap_value`, `_rewrite_req_roadmap_ref` e `sync_paired_req_references`
+- `pypi/trackfw/commands/roadmap.py` — `_cmd_move` chama `sync_paired_req_references` e imprime saída pinada
+- `pypi/tests/test_generators_roadmap.py` — 21 novos testes (5 cardinalidades + idempotência + by_agent + backticks)
 
 **Critérios de aceite:**
-- [ ] Comportamento e textos equivalentes ao Go e Node.
-- [ ] Idempotência e `by_agent` cobertos.
-- [ ] Suíte Python passa.
+- [x] Comportamento e textos equivalentes ao Go e Node.
+  **Evidência:** todas as 5 cardinalidades testadas e passando; saída `✓ synced` (U+2713 + U+2192) e `trackfw roadmap move: failed to sync` implementadas conforme contrato. `_cmd_move` imprime após o move bem-sucedido.
+- [x] Idempotência provada por comparação de bytes após dois moves.
+  **Evidência:** `test_idempotencia_byte_a_byte_duas_chamadas` — segunda chamada retorna `synced=[]` e bytes do arquivo REQ são idênticos.
+- [x] `by_agent` coberto por teste.
+  **Evidência:** `test_by_agent_req_encontrada` — REQ em `req_dir/zeus/wip/` localizada e sincronizada via `resolve_req_files`.
+- [x] Formatação do corpo (backticks) preservada.
+  **Evidência:** `test_backticks_preservados_no_corpo` — `Roadmap: \`{new_path}\`` verificado literalmente.
+- [x] Suíte Python passa.
+  **Evidência:** `cd pypi && python3 -m pytest` → 723 passed, 0 failed (21 testes novos adicionados ao total de 701 anteriores).
+
+**Divergência reportada ao orquestrador:** Python ordena a lista de REQs (`sorted(resolve_req_files(cfg))`). Node.js não ordena (`readdirSync` sem sort). Se o Go também não ordena, o ML-3A detectará divergência de paridade na cardinalidade "várias REQs". Recomendo pinar explicitamente se a ordem é determinística.
 
 ---
 

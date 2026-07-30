@@ -11,6 +11,7 @@ from trackfw.generators.roadmap import (
     generate_roadmap,
     generate_roadmap_from_req,
     move_roadmap,
+    sync_paired_req_references,
     VALID_STATES,
 )
 
@@ -105,6 +106,20 @@ def _cmd_move(args):
         print(f"Roadmap movido para: {new_path}")
     except (ValueError, FileNotFoundError) as e:
         print(f"Erro: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Sincroniza referências das REQs pareadas após o move bem-sucedido.
+    # Cardinalidades: zero → no-op silencioso; uma/várias → reescreve;
+    # outra → não toca; já correta → idempotente.
+    synced, failures = sync_paired_req_references(new_path, cfg)
+    for req_basename in synced:
+        print(f"✓ synced {req_basename} → {new_path}")
+    for req_basename, cause in failures:
+        print(
+            f"trackfw roadmap move: failed to sync {req_basename}: {cause}",
+            file=sys.stderr,
+        )
+    if failures:
         sys.exit(1)
 
 

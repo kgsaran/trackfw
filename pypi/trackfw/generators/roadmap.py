@@ -350,6 +350,165 @@ REQ: {req_path}{adr_ref}
     return filepath
 
 
+def _get_frontmatter_roadmap_value(content: str) -> str:
+    """
+    Extrai o valor do campo 'roadmap:' do bloco de frontmatter de uma REQ.
+    Remove aspas externas (não backticks) — mesma semântica de normalize_yaml_flat_value
+    do validator (trim apenas ' e ", não `).
+    Retorna '' se ausente ou se o valor não terminar em '.md'.
+    """
+    if not content.startswith("---\n"):
+        return ""
+    end = content.find("\n---", 4)
+    if end < 0:
+        return ""
+    for line in content[4:end].split("\n"):
+        if ":" not in line:
+            continue
+        key, val = line.split(":", 1)
+        if key.strip().lower() != "roadmap":
+            continue
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+            val = val[1:-1]
+        return val if val.endswith(".md") else ""
+    return ""
+
+
+def _rewrite_req_roadmap_ref(content: str, new_path: str) -> tuple[str, bool]:
+    """
+    Reescreve o campo 'roadmap:' no frontmatter e a linha 'Roadmap:' no corpo de uma REQ.
+
+    - Frontmatter: preserva estilo de aspas existente.
+    - Corpo: preserva formatação existente, inclusive backticks.
+    - Idempotente: se o valor já for new_path, retorna (content, False).
+
+    Espelha a semântica de _rewrite_roadmap_status: escopo estrito ao frontmatter,
+    sem inventar chave ausente, sem alterar outras linhas.
+    """
+    if not content.startswith("---\n"):
+        return content, False
+    end = content.find("\n---", 4)
+    if end < 0:
+        return content, False
+
+    frontmatter = content[4:end]
+    rest = content[end:]  # começa com "\n---"
+
+    changed = False
+    fm_lines = frontmatter.split("\n")
+    for i, line in enumerate(fm_lines):
+        if ":" not in line:
+            continue
+        key, val = line.split(":", 1)
+        if key.strip().lower() != "roadmap":
+            continue
+        val_stripped = val.strip()
+        # Preserva estilo de aspas
+        if len(val_stripped) >= 2 and val_stripped[0] == val_stripped[-1] and val_stripped[0] in ('"', "'"):
+            q = val_stripped[0]
+            new_line = f'{key}: {q}{new_path}{q}'
+        else:
+            new_line = f'{key}: {new_path}'
+        if fm_lines[i] != new_line:
+            fm_lines[i] = new_line
+            changed = True
+        break  # apenas o primeiro 'roadmap:' no frontmatter
+
+    # Atualiza 'Roadmap:' no corpo (após o fechamento ---), preservando formatação
+    new_rest = rest
+    if len(rest) > 4:
+        body = rest[4:]  # pula "\n---"
+        body_lines = body.split("\n")
+        for i, bline in enumerate(body_lines):
+            m = re.match(r'^(\s*[Rr]oadmap:\s*)(.+)$', bline)
+            if not m:
+                continue
+            prefix = m.group(1)   # "Roadmap: " — preserva caixa original
+            value = m.group(2)    # "`path`", "path", '"path"', etc.
+            # Preserva delimitadores: backtick, aspas ou bare
+            if value.startswith("`") and value.endswith("`"):
+                new_value = f"`{new_path}`"
+            elif len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                q = value[0]
+                new_value = f'{q}{new_path}{q}'
+            else:
+                new_value = new_path
+            new_bline = f"{prefix}{new_value}"
+            if body_lines[i] != new_bline:
+                body_lines[i] = new_bline
+                changed = True
+                new_rest = "\n---" + "\n".join(body_lines)
+            break  # apenas a primeira linha 'Roadmap:' no corpo
+
+    if not changed:
+        return content, False
+    return "---\n" + "\n".join(fm_lines) + new_rest, True
+
+
+def sync_paired_req_references(
+    new_roadmap_path: str, cfg: dict
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """
+    Após mover um roadmap, varre req_dir procurando REQs cujo frontmatter 'roadmap:'
+    aponte para o basename do roadmap movido, e atualiza essas referências.
+
+    Cobre layout flat (req_dir/*.md) e by_agent (req_dir/<agente>/<estado>/*.md),
+    espelhando exatamente resolve_req_files do validator.
+
+    Cardinalidades (todas pinadas no contrato cli-parity.md):
+    - Zero REQs → no-op silencioso.
+    - Uma      → reescreve.
+    - Várias   → reescreve todas, na ordem de varredura.
+    - Aponta para outro roadmap → não toca.
+    - Já correta → nenhuma escrita (idempotente byte-a-byte).
+
+    Retorna (synced, failures):
+    - synced:   lista de basenames de REQs efetivamente reescritas.
+    - failures: lista de (basename, causa) para REQs que falharam.
+    """
+    # Import escopado: validator não importa generators → sem ciclo.
+    # (Inline seria necessário apenas se houvesse ciclo; não há, mas o import
+    # dentro da função evita qualquer dependência circular futura.)
+    from trackfw.validator import resolve_req_files  # noqa: PLC0415
+
+    roadmap_basename = os.path.basename(new_roadmap_path)
+    req_files = sorted(resolve_req_files(cfg))
+
+    synced: list[str] = []
+    failures: list[tuple[str, str]] = []
+
+    for req_path in req_files:
+        try:
+            with open(req_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError:
+            # Não consegue ler → não sabemos se aponta para nós → skip
+            continue
+
+        current_ref = _get_frontmatter_roadmap_value(content)
+        if not current_ref:
+            continue
+        if os.path.basename(current_ref) != roadmap_basename:
+            continue  # aponta para outro roadmap → não toca
+        if current_ref == new_roadmap_path:
+            continue  # já correta → idempotente, nenhuma escrita
+
+        new_content, changed = _rewrite_req_roadmap_ref(content, new_roadmap_path)
+        if not changed:
+            continue  # sem campo a reescrever (frontmatter ausente)
+
+        req_basename = os.path.basename(req_path)
+        try:
+            with open(req_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            synced.append(req_basename)
+        except OSError as e:
+            failures.append((req_basename, str(e)))
+
+    return synced, failures
+
+
 def move_roadmap(filename: str, to_state: str, cfg: dict) -> str:
     """
     Move um roadmap de um estado para outro, atualizando status: no frontmatter.
