@@ -4,13 +4,23 @@
 
 ---
 
-## Sessão 2026-07-30 — Artemis (ML-3A — Auditar paridade e provar não-vacuidade) — TESTANDO
+## Sessão 2026-07-30 — Artemis (ML-3A — Auditar paridade e provar não-vacuidade) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
 
-**Tarefa:** ML-3A — criar `scripts/check-roadmap-move-parity.sh` (5 cardinalidades, vacuity-guard, seam discriminante), adicionar cenário de falsificação em `check-gates-falsify.sh`, encadear em `make quality`.
+**Tarefa:** ML-3A — gate permanente de paridade para `roadmap move + sync de REQ`.
 
 **Branch:** `feat/roadmap-move-sincroniza-a-referencia-da-req-pareada`
+**Commit:** `1bbc8b6`
+
+**Entregue:**
+- `scripts/check-roadmap-move-parity.sh`: gate com 5 cenários (zero-req, one-req, by_agent-discriminant, points-at-other, idempotency); fixtures isoladas por runtime; vacuity-guard em todos; seam via sed no Node.js.
+- `scripts/check-gates-falsify.sh`: Cenário 20 — seam que corrompe sort do Node.js (basename→path), provando que o gate captura regressão de ordenação na fixture discriminante. `GATES_MUTATION_CHECK` atualizado. Contador: 21 cenários / 14 gates.
+- `Makefile`: novo gate encadeado antes do falsify.
+
+**Coverage:** Go 15 pk ok · Node.js 339 pass · Python 724 pass · make quality exit 0 · validate 0 violations.
+
+**Handoff ao orquestrador:** ML-3A concluído. Roadmap pronto para Wave 4 → done.
 
 ---
 

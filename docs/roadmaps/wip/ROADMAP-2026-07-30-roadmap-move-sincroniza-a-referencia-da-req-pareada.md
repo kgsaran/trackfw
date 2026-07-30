@@ -282,22 +282,54 @@ agents=[zeus,apolo]; apolo/done/REQ-zzz.md + zeus/backlog/REQ-aaa.md: aaa emitid
 > Dependências: **barrier** — Waves 2 e 3 completas (ML-2A a ML-2F).
 
 ### ML-3A — Auditar paridade e provar não-vacuidade
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Artemis
+**Commit:** `1bbc8b6`
 
-**Ações:**
-1. Cenário de paridade executando os **três** CLIs sobre a mesma árvore, comparando **bytes** da saída
-   e do conteúdo resultante das REQs, nas quatro cardinalidades. Com vacuity-guard.
-2. Cenário de falsificação provando que o gate **detecta** a regressão — seam que corrompe a fixture,
-   nunca a asserção, seguindo o padrão de `BARRIER_SELFTEST_BREAK`.
-3. Cenário `by_agent`, que é onde a varredura tende a divergir entre runtimes.
-4. Encadear em `make quality`.
+**Ações executadas:**
+1. `scripts/check-roadmap-move-parity.sh` criado: executa os três runtimes em fixtures isoladas
+   (cp-r por runtime para evitar conflito de filesystem), compara stdout byte-a-byte nas
+   **cinco** cardinalidades (contrato tem cinco — ML-3A dizia quatro, mas `cli-parity.md` pina cinco;
+   implementado conforme o contrato, divergência reportada aqui).
+2. Seam de falsificação: Cenário 20 em `check-gates-falsify.sh` — sed corrompe o comparador de sort
+   do Node.js (`path.basename(a)` → `a`), gate detecta divergência na fixture discriminante.
+   Seam verificado manualmente: exit 1, diagnóstico `roadmap-move-parity/by_agent-discriminant/node`.
+3. Fixture discriminante `by_agent` (`apolo/done/REQ-zzz` + `zeus/backlog/REQ-aaa`) asserta
+   sequência posicional (linha 0 = aaa, linha 1 = zzz). Coincident fixture excluída intencionalmente.
+4. Gate encadeado no `parity` do Makefile antes do `check-gates-falsify.sh`.
+   `GATES_MUTATION_CHECK` atualizado (Cenário 18). Contador: 21 cenários / 14 gates.
+
+**Evidências de aceite:**
+```
+make quality exit 0
+validate --json: 0 violations
+git status: limpo após commit
+
+Go: 15 pacotes ok
+Node.js: 339 pass, 0 fail
+Python: 724 passed
+
+Seam ativo (Node.js corrompido):
+  FAIL [roadmap-move-parity/by_agent-discriminant/node]: line 0 must be REQ-aaa.md
+  (basename order); got: [✓ synced REQ-zzz.md → docs/roadmaps/zeus/wip/...]; exit 1
+
+Gate limpo:
+  OK [roadmap-move-parity/zero-req]
+  OK [roadmap-move-parity/one-req]
+  OK [roadmap-move-parity/by_agent-discriminant]
+  OK [roadmap-move-parity/points-at-other]
+  OK [roadmap-move-parity/idempotency]
+  Falsification: OK [falsify/roadmap-move-parity/discriminant-wrong-order-not-detected]
+```
 
 **Critérios de aceite:**
-- [ ] Quatro cardinalidades cobertas nos três runtimes, byte-a-byte.
-- [ ] Vacuity-guard presente; seam de falsificação prova poder de reprovação.
-- [ ] `by_agent` coberto.
-- [ ] `make quality` exit 0, `validate --json` 0 violações, `git status` limpo.
+- [x] Cinco cardinalidades cobertas nos três runtimes, byte-a-byte. (contrato tem 5, não 4)
+- [x] Vacuity-guard presente; seam de falsificação prova poder de reprovação.
+- [x] Fixture `by_agent` discriminante assertando sequência posicional.
+- [x] Linha `moved` comparada indiretamente via stdout byte-a-byte em todos os cenários (flat + by_agent).
+- [x] Idempotência: dois moves, bytes da REQ inalterados.
+- [x] Seam verificado por execução: exit 1 com diagnóstico exato.
+- [x] `make quality` exit 0, `validate --json` 0 violações, `git status` limpo.
 
 ---
 
