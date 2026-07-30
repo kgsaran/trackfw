@@ -348,7 +348,18 @@ function rewriteReqRoadmapRef(content, oldRef, newRef) {
  * Erros: diagnóstico em stderr nomeando a REQ; tenta as restantes; exit não-zero ao fim.
  */
 function syncReqReferences(movedBasename, newRoadmapPath, cfg) {
-  const files = resolveReqFiles(cfg)
+  // Ordenação explícita por basename (independente de locale) para garantir saída determinística
+  // independente do filesystem. Desempate por caminho completo quando dois agentes têm REQs de
+  // mesmo basename. Não confiar na ordem do readdirSync — varia entre filesystems.
+  const files = resolveReqFiles(cfg).sort((a, b) => {
+    const ba = path.basename(a)
+    const bb = path.basename(b)
+    if (ba < bb) return -1
+    if (ba > bb) return 1
+    if (a < b) return -1
+    if (a > b) return 1
+    return 0
+  })
   let anyError = false
 
   for (const filePath of files) {

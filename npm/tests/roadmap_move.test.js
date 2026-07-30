@@ -456,7 +456,7 @@ test('syncReqReferences — uma REQ: reescreve frontmatter roadmap: e corpo Road
 
 // ─── Cardinalidade: várias REQs → todas reescritas ───────────────────────────
 
-test('syncReqReferences — várias REQs: todas reescritas, uma linha cada', () => {
+test('syncReqReferences — várias REQs: todas reescritas, uma linha cada, sequência lexicográfica por basename', () => {
   withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
     mkAllStateDirs(roadmapDir)
     const roadmapFile = 'ROADMAP-2026-07-30-multi-req.md'
@@ -469,9 +469,14 @@ test('syncReqReferences — várias REQs: todas reescritas, uma linha cada', () 
 
     const { stdout } = captureOutput(() => moveRoadmap('multi-req', 'wip'))
 
-    // Ambas as REQs devem aparecer no stdout (ordem de varredura não pinada)
+    // Ambas as REQs devem aparecer no stdout
     assert.ok(stdout.includes('✓ synced REQ-A.md'), `REQ-A deve ser sincronizada; stdout: ${stdout}`)
     assert.ok(stdout.includes('✓ synced REQ-B.md'), `REQ-B deve ser sincronizada; stdout: ${stdout}`)
+
+    // Sequência deve ser lexicográfica por basename: REQ-A antes de REQ-B
+    const posA = stdout.indexOf('✓ synced REQ-A.md')
+    const posB = stdout.indexOf('✓ synced REQ-B.md')
+    assert.ok(posA < posB, `REQ-A deve ser sincronizada antes de REQ-B (ordem por basename); stdout:\n${stdout}`)
 
     const cA = fs.readFileSync(path.join(reqDir, 'REQ-A.md'), 'utf8')
     const cB = fs.readFileSync(path.join(reqDir, 'REQ-B.md'), 'utf8')
@@ -623,6 +628,88 @@ test('syncReqReferences — by_agent: REQ em req_dir/<agente>/<estado>/ é encon
     const reqContent = fs.readFileSync(reqPath, 'utf8')
     assert.ok(reqContent.includes(`roadmap: "${newPath}"`), `frontmatter by_agent deve ter novo caminho; got:\n${reqContent}`)
     assert.ok(reqContent.includes(`Roadmap: \`${newPath}\``), `corpo by_agent deve ter novo caminho com backticks; got:\n${reqContent}`)
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// ─── ML-2E: ordenação discriminante by_agent — basename vs caminho completo ───
+//
+// Fixture: agents: [zeus, apolo]
+//   docs/req/apolo/done/REQ-zzz.md  → aponta para o roadmap
+//   docs/req/zeus/backlog/REQ-aaa.md → aponta para o roadmap
+//
+// Por caminho: apolo/...zzz < zeus/...aaa → zzz, aaa  (ERRADO)
+// Por basename: aaa < zzz               → aaa, zzz  (CORRETO)
+//
+// Um teste onde os dois critérios coincidem não prova nada.
+
+test('syncReqReferences — by_agent discriminante: ordenação por basename, não por caminho completo', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-sort-discrim-'))
+  const origCwd = process.cwd()
+  try {
+    const roadmapDir = path.join(tmp, 'docs', 'roadmaps')
+    const reqDir = path.join(tmp, 'docs', 'req')
+
+    // Estrutura de roadmap em by_agent para zeus
+    fs.mkdirSync(path.join(roadmapDir, 'zeus', 'backlog'), { recursive: true })
+    fs.mkdirSync(path.join(roadmapDir, 'zeus', 'wip'), { recursive: true })
+    for (const s of ['analyzing', 'blocked', 'done', 'abandoned']) {
+      fs.mkdirSync(path.join(roadmapDir, 'zeus', s), { recursive: true })
+    }
+
+    // REQs: apolo/done/REQ-zzz.md e zeus/backlog/REQ-aaa.md
+    // agents: [zeus, apolo] — zeus vem primeiro, mas REQ-aaa tem basename menor
+    fs.mkdirSync(path.join(reqDir, 'apolo', 'done'), { recursive: true })
+    fs.mkdirSync(path.join(reqDir, 'zeus', 'backlog'), { recursive: true })
+
+    fs.writeFileSync(
+      path.join(tmp, 'trackfw.yaml'),
+      'roadmap_dir: docs/roadmaps\nreq_dir: docs/req\nroadmap_namespacing: by_agent\nagents:\n- zeus\n- apolo\n',
+      'utf8'
+    )
+    config.reset()
+    process.chdir(tmp)
+
+    const roadmapFile = 'ROADMAP-2026-07-30-sort-discrim.md'
+    const oldPath = `docs/roadmaps/zeus/backlog/${roadmapFile}`
+    const newPath = `docs/roadmaps/zeus/wip/${roadmapFile}`
+
+    fs.writeFileSync(
+      path.join(roadmapDir, 'zeus', 'backlog', roadmapFile),
+      canonicalRoadmap('Sort Discrim Test'),
+      'utf8'
+    )
+
+    // REQ-zzz em apolo/done (caminho apolo/... vem antes de zeus/... alfabeticamente)
+    const reqZzzPath = path.join(reqDir, 'apolo', 'done', 'REQ-zzz.md')
+    // REQ-aaa em zeus/backlog (basename aaa < zzz — deve aparecer primeiro na saída)
+    const reqAaaPath = path.join(reqDir, 'zeus', 'backlog', 'REQ-aaa.md')
+
+    fs.writeFileSync(reqZzzPath, makeReqContent(oldPath), 'utf8')
+    fs.writeFileSync(reqAaaPath, makeReqContent(oldPath), 'utf8')
+
+    const { stdout } = captureOutput(() => moveRoadmap('sort-discrim', 'wip'))
+
+    // Ambas devem ser sincronizadas
+    assert.ok(stdout.includes('✓ synced REQ-aaa.md'), `REQ-aaa deve ser sincronizada; stdout:\n${stdout}`)
+    assert.ok(stdout.includes('✓ synced REQ-zzz.md'), `REQ-zzz deve ser sincronizada; stdout:\n${stdout}`)
+
+    // Sequência: REQ-aaa (basename menor) deve aparecer ANTES de REQ-zzz
+    const posAaa = stdout.indexOf('✓ synced REQ-aaa.md')
+    const posZzz = stdout.indexOf('✓ synced REQ-zzz.md')
+    assert.ok(
+      posAaa < posZzz,
+      `REQ-aaa deve ser emitida antes de REQ-zzz (ordenação por basename, não por caminho); stdout:\n${stdout}`
+    )
+
+    // Conteúdo correto após sync
+    const cZzz = fs.readFileSync(reqZzzPath, 'utf8')
+    const cAaa = fs.readFileSync(reqAaaPath, 'utf8')
+    assert.ok(cZzz.includes(`roadmap: "${newPath}"`), `REQ-zzz deve ter novo path; got:\n${cZzz}`)
+    assert.ok(cAaa.includes(`roadmap: "${newPath}"`), `REQ-aaa deve ter novo path; got:\n${cAaa}`)
   } finally {
     process.chdir(origCwd)
     config.reset()
