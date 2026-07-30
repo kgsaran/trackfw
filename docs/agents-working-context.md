@@ -4,6 +4,28 @@
 
 ---
 
+## Sessão 2026-07-30 — Apolo (ML-2C — Python: barrier aceita wave com sufixo bis)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
+
+**Tarefa:** Implementar suporte ao sufixo de wave no runtime Python (`pypi/trackfw/commands/barrier.py`).
+
+**Entregue:**
+- `_WAVE_HEADING_RE` atualizado para gramática pinada: `^## Wave (\d+(?:-[a-z0-9]+)?) `
+- `_ANY_WAVE_H2_RE` novo: detector amplo para headings fora da gramática (abort de documento)
+- `_parse_wave_int` → `_parse_wave_label`: valida com `re.fullmatch`, aceita `2-bis`, rejeita `2-bis-ter`, `2-BIS`, `0`, `abc`
+- `_find_wave` agora aceita `wave_label: str`; identidade exata (`== wave_label`), sem prefix match
+- Mensagem de heading malformada usa aspas duplas explícitas (não `!r`)
+- `doc["wave"]` mudou de `int` para `str` — nenhum teste ou gate externo assertava no tipo
+- 6 novos testes em `pypi/tests/test_barrier.py` incluindo regressão de abort (ADR decisão 16)
+- Heading fora da gramática continua abortando o documento inteiro — abort é feature, não bug
+
+**Validação:** 699/699 testes passando (`cd pypi && python3 -m pytest`)
+**Commit:** `feat/barrier-aceita-wave-com-sufixo-bis` — `15f8ed8`
+**Status:** CONCLUÍDO
+
+---
+
 ## Sessão 2026-07-29 — Apolo (ML-2B — Node.js: barrier aceita wave com sufixo bis)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
@@ -6372,3 +6394,34 @@ seus **valores**, e custou uma wave corretiva inteira com três respostas diverg
 a ordenação **e** o texto literal foram pinados antes de qualquer código.
 
 `barrier --wave 1` retorna `passed`. Wave 2 (3 runtimes em paralelo) a seguir.
+
+---
+
+## 2026-07-29 — Apolo — CONCLUÍDO: ML-2A Go (barrier aceita rótulo de wave com sufixo)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
+**Branch:** `feat/barrier-aceita-wave-com-sufixo-bis`
+**Commits:** `751180b` (código) + `8284ad9` (roadmap)
+
+**Arquivos editados:** `internal/commands/barrier.go`, `internal/commands/barrier_test.go`,
+`internal/commands/barrier_contract_test.go` (APENAS Go — npm/ e pypi/ intocados).
+
+**O que mudou:**
+- `waveBlock.label string` (era `.number int`); `barrierResult.Wave string` (era `int`)
+- `waveLabelRe = `^\d+(?:-[a-z0-9]+)?$`` adicionado para validar token capturado pelo broad regex
+- `parseWaves`: usa detect (broad regex) + validate (waveLabelRe + inteiro>=1) — heading fora da gramática continua abortando o documento inteiro (ADR dec.16 preservado)
+- Mensagem usa `"%s"` (verbatim) em vez de `%q` — sem escape de caracteres não-ASCII cross-runtime
+- `--wave 2-bis` resolve `## Wave 2-bis`; `--wave 2` nunca casa com `## Wave 2-bis`
+- `splitWaveLabel` e `compareWaveLabels` adicionados (ordenação: numérica > sem-sufixo > lexicográfico)
+- Teste E2E de regressão: `--wave 1` em documento com `## Wave X — ...` → exit 2, stderr byte-exato
+
+**Validação:** `go build ./...`, `go test ./...`, `go vet ./...` — todos verdes.
+
+**Observações para o orquestrador:**
+1. `"wave"` no JSON mudou de `number` para `string` (`"wave":"1"` em vez de `"wave":1`).
+   O exemplo em `docs/cli-parity.md` `### JSON document` mostra `"wave": 2` (número) — divergência.
+   Precisa de atualização pelo orquestrador (seção diferente da `### Wave label grammar` congelada).
+2. Mensagem `--wave` inválido está despinada: Go usa `not a valid wave label`, Node usa
+   `must be an integer >= 1`, Python usa `is not an integer`. Necessita pinagem antes do ML-3A.
+3. `compareWaveLabels` implementado mas não usado no fluxo de barrier (barrier não lista/ordena waves).
+   Disponível para uso futuro.
