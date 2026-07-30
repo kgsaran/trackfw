@@ -478,7 +478,7 @@ in the binary.
 |---|---|
 | Invocation | `trackfw barrier <roadmap> --wave <n>` |
 | `<roadmap>` | Basename with or without `.md`, resolved against `wip/` then `done/` under `roadmap_dir` (both `flat` and `by_agent` layouts) |
-| `--wave` | Integer ≥ 1. Required. |
+| `--wave` | Wave **label**, required. Grammar `<integer>[-<suffix>]` — see "Wave label grammar" below. `2`, `2-bis`, `2-hotfix` are valid; the integer part must be ≥ 1. |
 | `--json` | Emit the result document instead of the text report |
 | Exit 0 | `status: "passed"` |
 | Exit 1 | `status: "blocked"` — at least one check failed |
@@ -501,12 +501,59 @@ normalization; `<roadmap-file>` is the resolved basename including `.md`:
 
 ```
 trackfw barrier: roadmap "<roadmap-arg>" not found in wip/ nor done/ under <roadmap_dir>
-trackfw barrier: wave <n> not found in roadmap "<roadmap-file>"
+trackfw barrier: wave <label> not found in roadmap "<roadmap-file>"
+trackfw barrier: malformed wave heading at line <n>: "<token>" is not a valid wave label
 ```
 
 Pinning the text matters because these messages are the only observable difference between "the
 CLI does not implement barrier" and "barrier ran and could not resolve its input". A runtime that
 paraphrases them satisfies its own tests while breaking cross-runtime equivalence.
+
+The third message was added when the wave label grammar was introduced. Before that it was
+**unpinned, and all three runtimes diverged**: Go said `%q is not a valid wave number`, Python said
+`number {token!r} is not parseable`, and Node.js dumped the whole line without naming the cause at
+all. `<token>` is the captured label, **never** the whole line — a caller must be able to tell which
+token was rejected. `<n>` is 1-based.
+
+### Wave label grammar
+
+A wave label is `<integer>[-<suffix>]`:
+
+| Element | Rule |
+|---|---|
+| Integer part | One or more digits, value ≥ 1. Required. |
+| Suffix | Optional. A single `-` followed by `[a-z0-9]+` — lowercase only. |
+
+Valid: `1`, `2`, `2-bis`, `2-hotfix`, `10-a2`. Invalid: `X`, `2-BIS` (uppercase), `-bis` (no integer),
+`2-` (empty suffix), `2-bis-ter` (two suffixes), `0` (integer < 1).
+
+Regex, pinned: `^## Wave (\d+(?:-[a-z0-9]+)?) ` — the trailing space is part of rule 1 and is
+preserved.
+
+**Labels are distinct identities.** `--wave 2` matches `## Wave 2 ` and **never** `## Wave 2-bis `.
+There is no prefix or fuzzy matching: a label either matches exactly or it does not.
+
+**Ordering** — used only where waves must be listed or compared, never to infer that one wave gates
+another:
+
+1. Compare the integer parts numerically.
+2. On a tie, a label with no suffix precedes a label with a suffix.
+3. On a tie between two suffixes, compare the suffixes lexicographically.
+
+So `2` < `2-bis` < `2-hotfix` < `3`.
+
+**Why the suffix exists.** A corrective wave appended *after* an earlier wave was already executed and
+committed needs a label that signals the correction without renumbering the following waves, which are
+already cited in commit messages. Observed in the roadmap
+`install-pula-artefato-desatualizado-em-vez-de-abortar` (PR #86): the cross-audit of Wave 2 required a
+convergence wave, and the barrier rejected **all four waves** with `malformed wave heading`.
+
+**A heading outside this grammar still aborts the whole document — intentionally.** The parser scans
+every heading looking for the requested wave and raises before deciding whether that heading is the
+one asked for. Scoping the error to the requested wave was considered and **rejected**: silently
+ignoring a malformed heading would leave the MLs inside it **unaudited**, so a typo like
+`## Wave X — ...` would produce a green barrier over unverified work. That is the same vacuity that
+ADR decision 13 forbids ("an ML must not pass for having nothing to fail"). See ADR decision 16.
 
 ### States
 
@@ -523,8 +570,9 @@ The wave-level `status` is `passed` only when **every** check is `passed`; other
 
 These are literal parsing rules. All three runtimes must implement them identically.
 
-1. **Wave heading.** A wave starts at a line matching `^## Wave <n> ` (H2, the literal word
-   `Wave`, the integer, then a space). The wave ends at the next `^## ` line or EOF.
+1. **Wave heading.** A wave starts at a line matching `^## Wave <label> ` (H2, the literal word
+   `Wave`, the **label**, then a space). The wave ends at the next `^## ` line or EOF. See
+   "Wave label grammar" below — the label is not necessarily an integer.
 2. **ML heading.** Inside a wave, an ML starts at a line matching `^### ML-` (H3). The ML ends
    at the next `^### ` or `^## ` line or EOF.
 3. **ML completion.** An ML is complete when its body contains a line matching

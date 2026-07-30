@@ -67,6 +67,27 @@ apenas nomes de apresentação e não alteram o papel.
     > nunca os registraram. As superfícies de instalação marcadas como `legacy` no catálogo
     > **não** foram removidas — elas não são aliases de CLI e continuam necessárias para migração.
 
+15. **Wave é identificada por um rótulo, não por um inteiro** (emenda de 2026-07-29,
+    REQ-2026-07-29-barrier-aceita-wave-com-sufixo-bis). A decisão original tratava `--wave` como
+    "inteiro ≥ 1". A prática desmentiu a suficiência disso: waves corretivas acrescentadas **depois**
+    que uma wave já foi executada e commitada precisam de um rótulo que sinalize a correção sem
+    renumerar as waves seguintes, já citadas em mensagens de commit. `Wave 2-bis` é a nomenclatura
+    natural. Constatado empiricamente no roadmap
+    `install-pula-artefato-desatualizado-em-vez-de-abortar` (PR #86), onde a auditoria cruzada da
+    Wave 2 exigiu wave corretiva e o barrier reprovou **as quatro waves** com
+    `malformed wave heading`.
+
+    Gramática do rótulo: `<inteiro>[-<sufixo>]`, sufixo `[a-z0-9]+`. `--wave` aceita o rótulo
+    verbatim. Rótulos são identidades distintas: `--wave 2` **não** casa com `Wave 2-bis`.
+
+16. **Heading fora da gramática continua abortando o documento inteiro — é feature, não defeito.**
+    Durante a análise da emenda 15 considerou-se escopar o erro à wave solicitada, tornando as
+    demais headings malformadas inócuas. **Rejeitado.** Ignorar silenciosamente uma heading
+    malformada faria os MLs contidos nela **deixarem de ser auditados**: um typo (`## Wave X — ...`)
+    produziria barrier verde sobre trabalho não verificado. É a mesma vacuidade que a decisão 13
+    proíbe — um ML "passar por não ter o que falhar". O parser não pode escolher entre "ignorar o que
+    não entende" e "reprovar"; deve reprovar alto.
+
 ## Consequências
 
 ### Positivas

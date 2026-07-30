@@ -6294,3 +6294,44 @@ Linkada.
 
 Roadmap movido para `done/`, REQ fechada como `Done`. Branch `fix/install-pula-artefato-desatualizado`
 pronta. PR **não** aberto — aguardando solicitação explícita do usuário.
+
+## 2026-07-29 — Zeus — IMPLEMENTANDO: barrier aceita rótulo de wave com sufixo (ML-1A concluído)
+
+PRs #86 e #87 mergeados; branches apagadas após validar integração por diff contra o tip da main.
+Roadmap movido para `wip` antes da criação da branch, conforme o protocolo.
+
+**O gate pegou meu nome de branch.** Criei `feat/barrier-wave-sufixo` e o `validate` reprovou com
+`branch_has_wip_roadmap`: o casamento é `normalizeBranchSlug(filename).contains(branchSlug)`, e
+`barrier-wave-sufixo` **não** é substring de `barrier-aceita-wave-com-sufixo-bis`. Renomeada para
+`feat/barrier-aceita-wave-com-sufixo-bis`. Registrar porque é fácil errar: o slug da branch precisa ser
+substring do nome do roadmap, não apenas "parecido".
+
+**Segunda violação, também instrutiva:** `roadmap move` sincroniza o `status:` do frontmatter e a pasta,
+mas **não** atualiza a referência `roadmap:` da REQ que aponta para a pasta antiga — `ref_targets_exist`
+reprovou com `links to Roadmap "docs/roadmaps/backlog/..." which does not exist`. Corrigi à mão.
+Candidato a REQ futura: `roadmap move` poderia atualizar a REQ pareada.
+
+### ML-1A — contrato congelado
+
+ADR emendado com duas decisões:
+- **15** — wave é identificada por **rótulo**, não inteiro. Gramática `<inteiro>[-<sufixo>]`, sufixo
+  `[a-z0-9]+`. Rótulos são identidades distintas: `--wave 2` nunca casa com `Wave 2-bis`.
+- **16** — heading fora da gramática **continua abortando o documento inteiro**, e isso é feature.
+  Escopar o erro à wave solicitada foi rejeitado: ignorar heading malformada deixaria seus MLs sem
+  auditoria, e um typo produziria barrier verde sobre trabalho não verificado. É a mesma vacuidade que
+  a decisão 13 proíbe.
+
+`docs/cli-parity.md` ganhou a seção `### Wave label grammar` com regex pinada
+`^## Wave (\d+(?:-[a-z0-9]+)?) `, tabela de válidos/inválidos, ordenação em 3 passos
+(`2` < `2-bis` < `2-hotfix` < `3`) e a terceira mensagem de exit-2 pinada.
+
+Registrei no contrato que essa terceira mensagem estava **despinada** e por isso divergia nos três
+runtimes — Go dizia `is not a valid wave number`, Python `number ... is not parseable`, e o Node
+despejava a linha inteira **sem nomear a causa**. Novo texto pinado usa `wave label` e carrega o
+`<token>`, nunca a linha inteira.
+
+Lição do roadmap anterior aplicada de propósito: lá o ML-1A pinou os **nomes** dos parâmetros e não
+seus **valores**, e custou uma wave corretiva inteira com três respostas divergentes. Aqui a gramática,
+a ordenação **e** o texto literal foram pinados antes de qualquer código.
+
+`barrier --wave 1` retorna `passed`. Wave 2 (3 runtimes em paralelo) a seguir.

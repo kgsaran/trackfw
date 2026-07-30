@@ -3,7 +3,7 @@ status: Open
 date: 2026-07-29
 author: "trackfw_architect"
 adr: "docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md"
 ---
 
 # REQ: barrier aceita wave com sufixo bis
@@ -92,4 +92,4 @@ exigir inteiro. Exige emenda ao ADR **antes** da implementação.
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`

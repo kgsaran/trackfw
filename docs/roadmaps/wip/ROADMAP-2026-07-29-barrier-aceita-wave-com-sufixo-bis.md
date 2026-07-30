@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-07-29
 req: "REQ-2026-07-29-barrier-aceita-wave-com-sufixo-bis"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: barrier aceita wave com sufixo bis
 
-> Created: 2026-07-29 | Status: backlog
+> Created: 2026-07-29 | Status: wip
 
 ## Contexto
 
@@ -51,7 +51,7 @@ o texto literal da mensagem antes de qualquer implementação.
 > Dependências: nenhuma
 
 ### ML-1A — Emendar o ADR e pinar a gramática de rótulo de wave
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (contrato autorado pelo orquestrador)
 **Agente:** orquestrador (`trackfw_architect`) — autoria exclusiva, como no ML-6A do roadmap da barrier
 **Arquivos afetados:**
 - `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md` — emenda
@@ -76,9 +76,15 @@ o texto literal da mensagem antes de qualquer implementação.
    vacuidade, para que nenhuma implementação futura o relaxe.
 
 **Critérios de aceite:**
-- [ ] Gramática, ordenação, identidade e mensagem pinadas literalmente.
-- [ ] ADR emendado antes de qualquer implementação.
-- [ ] O caráter intencional do abort documentado.
+- [x] Gramática, ordenação, identidade e mensagem pinadas literalmente — seção
+      `### Wave label grammar` em `docs/cli-parity.md`, com regex
+      `^## Wave (\d+(?:-[a-z0-9]+)?) `, tabela de válidos/inválidos e regra de ordenação em 3 passos.
+- [x] ADR emendado antes de qualquer implementação — decisões **15** (rótulo em vez de inteiro) e
+      **16** (abort do documento é feature) em
+      `ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`.
+- [x] O caráter intencional do abort documentado, com o vínculo à decisão 13 (não-vacuidade).
+- [x] Terceira mensagem de exit-2 pinada, com registro de que estava **despinada** e divergia nos três
+      runtimes.
 
 ---
 
