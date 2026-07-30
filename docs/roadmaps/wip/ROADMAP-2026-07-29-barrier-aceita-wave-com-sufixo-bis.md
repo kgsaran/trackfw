@@ -92,15 +92,37 @@ o texto literal da mensagem antes de qualquer implementação.
 > Dependências: ML-1A completo. Arquivos disjuntos — **spawn simultâneo**.
 
 ### ML-2A — Go
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
 **Arquivos afetados:** `internal/commands/barrier.go` (`waveHeadingRe` linha ~146, validação de
 `--wave` linhas ~78-88, mensagem linha ~183), testes correspondentes
 
 **Critérios de aceite:**
-- [ ] `--wave 2-bis` resolve `## Wave 2-bis`; `--wave 2` não.
-- [ ] Rótulo inválido aborta o documento, com a mensagem pinada.
-- [ ] `go build ./...`, `go test ./...`, `go vet ./...` passam.
+- [x] `--wave 2-bis` resolve `## Wave 2-bis`; `--wave 2` não.
+- [x] Rótulo inválido aborta o documento, com a mensagem pinada.
+- [x] `go build ./...`, `go test ./...`, `go vet ./...` passam.
+
+**Evidência:**
+- `go build ./...` — limpo (sem saída).
+- `go test ./... ` — todos os 15 pacotes verdes, `internal/commands` em 8.8 s.
+- `go vet ./...` — limpo (sem saída).
+- `TestParseWaves_BisSuffix` PASS — label "2-bis" aceito.
+- `TestParseWaves_LabelIdentityDistinct` PASS — "2" e "2-bis" são blocos distintos.
+- `TestParseWaves_MalformedHeadingAbortsEntireDocument_Regression` PASS — `--wave 1`
+  em documento com `## Wave X — ...` na linha 16 retorna exit 2, stderr byte-exato:
+  `trackfw barrier: malformed wave heading at line 16: "X" is not a valid wave label`.
+- `TestWaveLabelOrdering` PASS — incluindo caso discriminante 10 > 2 (numérico).
+- Commit `751180b` na branch `feat/barrier-aceita-wave-com-sufixo-bis`.
+
+**Observações reportadas ao orquestrador:**
+1. `barrierResult.Wave` virou `string` → JSON emite `"wave":"1"` em vez de `"wave":1`.
+   O exemplo `"wave": 2` em `docs/cli-parity.md` (seção `### JSON document`) diverge; ML-1A
+   não atualizou esse bloco. Precisa de correção no contrato pelo orquestrador.
+2. A mensagem de `--wave` inválido (`invalid --wave %q — not a valid wave label`) está despinada.
+   Node emite `invalid --wave value: "…" (must be an integer >= 1)`, Python emite
+   `malformed --wave value: …`. Todas três divergem. Requer pinagem antes de ML-3A.
+3. `compareWaveLabels` foi implementado mas não é usado no fluxo de barrier (barrier não
+   lista/ordena waves). Está disponível para uso futuro ou listagem de waves.
 
 ### ML-2B — Node.js
 **Status:** ✅ Concluído
