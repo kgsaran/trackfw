@@ -4,6 +4,16 @@
 
 ---
 
+## Sessão 2026-07-30 — Artemis (ML-3A — Auditar paridade e provar não-vacuidade) — TESTANDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-3A — criar `scripts/check-roadmap-move-parity.sh` (5 cardinalidades, vacuity-guard, seam discriminante), adicionar cenário de falsificação em `check-gates-falsify.sh`, encadear em `make quality`.
+
+**Branch:** `feat/roadmap-move-sincroniza-a-referencia-da-req-pareada`
+
+---
+
 ## Sessão 2026-07-30 — Apolo (ML-2F — Python: ordenar por basename e alinhar linha `moved`) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
