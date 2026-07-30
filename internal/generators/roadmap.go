@@ -382,6 +382,13 @@ func MoveRoadmap(name, state string) error {
 	appendTransitionLog(logBasename, fromState, state)
 
 	fmt.Printf("✓ moved %s → %s\n", filepath.Base(src), targetDir)
+
+	// Synchronize roadmap: reference in every paired REQ that points at the moved roadmap.
+	// Runs after ✓ moved is printed so ✓ synced always follows it in stdout.
+	// A sync failure does NOT roll back the move; the error causes non-zero exit.
+	if syncErr := syncREQReferences(filepath.Base(src), dst); syncErr != nil {
+		return syncErr
+	}
 	return nil
 }
 
@@ -558,4 +565,219 @@ func ListRoadmaps() error {
 		fmt.Println("Nenhum roadmap encontrado. Crie um com 'trackfw roadmap new'.")
 	}
 	return nil
+}
+
+// ─── REQ synchronization helpers ─────────────────────────────────────────────
+
+// scanREQFiles retorna os caminhos de todos os .md no req_dir,
+// espelhando exatamente o comportamento de resolveREQFiles do validador:
+//   - flat (padrão)   → req_dir/*.md
+//   - by_agent        → req_dir/<agente>/<estado>/*.md
+func scanREQFiles(cfg config.ProjectConfig) []string {
+	reqDir := cfg.REQDir
+	if reqDir == "" {
+		return nil
+	}
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		stateDirs := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+		agents := cfg.Agents
+		if len(agents) == 0 {
+			entries, err := os.ReadDir(reqDir)
+			if err == nil {
+				for _, e := range entries {
+					if e.IsDir() {
+						agents = append(agents, e.Name())
+					}
+				}
+			}
+		}
+		var files []string
+		for _, agent := range agents {
+			for _, state := range stateDirs {
+				pattern := filepath.Join(reqDir, agent, state, "*.md")
+				matches, _ := filepath.Glob(pattern)
+				files = append(files, matches...)
+			}
+		}
+		return files
+	}
+	matches, _ := filepath.Glob(filepath.Join(reqDir, "*.md"))
+	return matches
+}
+
+// extractFrontmatterRoadmap extrai o valor do campo roadmap: do bloco frontmatter YAML.
+// Retorna string vazia se o campo estiver ausente, vazio ou fora do frontmatter.
+// Trima aspas simples e duplas mas NÃO backticks — espelha o comportamento de
+// extractRefPath do validador, onde a forma com backtick não termina em ".md"
+// e é ignorada pelo validador.
+func extractFrontmatterRoadmap(content string) string {
+	lines := strings.Split(content, "\n")
+	inFM := false
+	fmCount := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			fmCount++
+			if fmCount == 1 {
+				inFM = true
+				continue
+			}
+			break // fechou o bloco frontmatter
+		}
+		if !inFM {
+			break // sem frontmatter
+		}
+		k, v, ok := strings.Cut(line, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(k), "roadmap") {
+			val := strings.TrimSpace(v)
+			return strings.Trim(val, `"'`)
+		}
+	}
+	return ""
+}
+
+// rewriteREQRoadmapRef reescreve o campo roadmap: no frontmatter e a linha Roadmap: no
+// corpo da REQ quando o basename do valor atual coincide com roadmapBasename.
+// Preserva o estilo de formatação existente (aspas e backticks no corpo).
+// Retorna (conteúdo atualizado, true) se houve mudança; (original, false) caso contrário.
+//
+// Nota: um REQ sem bloco frontmatter (sem par "---") não tem fmClosed=true,
+// portanto o corpo não é varrido — situação não esperada pelos templates do projeto.
+func rewriteREQRoadmapRef(content []byte, roadmapBasename, newRoadmapPath string) ([]byte, bool) {
+	text := string(content)
+	lines := strings.Split(text, "\n")
+
+	changed := false
+	inFM := false
+	fmClosed := false
+	fmCount := 0
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if !fmClosed {
+			if trimmed == "---" {
+				fmCount++
+				if fmCount == 1 {
+					inFM = true
+					continue
+				}
+				fmClosed = true
+				inFM = false
+				continue
+			}
+			if inFM {
+				k, v, ok := strings.Cut(line, ":")
+				if ok && strings.EqualFold(strings.TrimSpace(k), "roadmap") {
+					rawVal := strings.TrimSpace(v)
+					plainVal := strings.Trim(rawVal, `"'`)
+					if filepath.Base(plainVal) == roadmapBasename {
+						// Preservar estilo de aspas do valor original
+						var newLine string
+						switch {
+						case strings.HasPrefix(rawVal, `"`) || strings.HasSuffix(rawVal, `"`):
+							newLine = fmt.Sprintf("%s: \"%s\"", strings.TrimSpace(k), newRoadmapPath)
+						case strings.HasPrefix(rawVal, `'`) || strings.HasSuffix(rawVal, `'`):
+							newLine = fmt.Sprintf("%s: '%s'", strings.TrimSpace(k), newRoadmapPath)
+						default:
+							newLine = fmt.Sprintf("%s: %s", strings.TrimSpace(k), newRoadmapPath)
+						}
+						if lines[i] != newLine {
+							lines[i] = newLine
+							changed = true
+						}
+					}
+				}
+				continue
+			}
+		}
+
+		// Corpo (pós-frontmatter): reescrever linha "Roadmap: <valor>" preservando formato.
+		if fmClosed {
+			k, v, ok := strings.Cut(line, ":")
+			if ok && strings.EqualFold(strings.TrimSpace(k), "Roadmap") {
+				rawVal := strings.TrimSpace(v)
+				plainVal := strings.Trim(rawVal, "`\"'")
+				if filepath.Base(plainVal) == roadmapBasename {
+					// Preservar backticks ou aspas do valor original
+					var newVal string
+					switch {
+					case strings.HasPrefix(rawVal, "`") && strings.HasSuffix(rawVal, "`"):
+						newVal = "`" + newRoadmapPath + "`"
+					case strings.HasPrefix(rawVal, `"`) && strings.HasSuffix(rawVal, `"`):
+						newVal = `"` + newRoadmapPath + `"`
+					case strings.HasPrefix(rawVal, `'`) && strings.HasSuffix(rawVal, `'`):
+						newVal = `'` + newRoadmapPath + `'`
+					default:
+						newVal = newRoadmapPath
+					}
+					newLine := fmt.Sprintf("%s: %s", strings.TrimSpace(k), newVal)
+					if lines[i] != newLine {
+						lines[i] = newLine
+						changed = true
+					}
+				}
+			}
+		}
+	}
+
+	if !changed {
+		return content, false
+	}
+	return []byte(strings.Join(lines, "\n")), true
+}
+
+// syncREQReferences atualiza o campo roadmap: no frontmatter (e a linha Roadmap: no corpo)
+// de todas as REQs em req_dir cujo frontmatter roadmap: aponta para roadmapBasename.
+//
+// Cardinalidades (contrato pinado em docs/cli-parity.md):
+//   - zero REQs apontando → no-op, sem output, exit 0
+//   - uma ou mais       → reescreve todas, uma linha em stdout por REQ atualizada
+//   - aponta para outro → não toca
+//   - já correta        → nenhuma escrita (idempotente byte-a-byte)
+//   - falha de escrita  → imprime diagnóstico em stderr, continua nas demais, retorna erro
+func syncREQReferences(roadmapBasename, newRoadmapPath string) error {
+	cfg := config.Load()
+	reqFiles := scanREQFiles(cfg)
+
+	var firstErr error
+	for _, reqPath := range reqFiles {
+		reqBase := filepath.Base(reqPath)
+		content, err := os.ReadFile(reqPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "trackfw roadmap move: failed to sync %s: %v\n", reqBase, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		// Descoberta: frontmatter roadmap: aponta para este roadmap?
+		fmVal := extractFrontmatterRoadmap(string(content))
+		if fmVal == "" || filepath.Base(fmVal) != roadmapBasename {
+			continue // sem referência ou aponta para outro roadmap
+		}
+
+		// Idempotência: referência já está correta → nenhuma escrita
+		if fmVal == newRoadmapPath {
+			continue
+		}
+
+		updated, changed := rewriteREQRoadmapRef(content, roadmapBasename, newRoadmapPath)
+		if !changed {
+			continue
+		}
+
+		if err := os.WriteFile(reqPath, updated, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "trackfw roadmap move: failed to sync %s: %v\n", reqBase, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		fmt.Printf("✓ synced %s → %s\n", reqBase, newRoadmapPath)
+	}
+
+	return firstErr
 }

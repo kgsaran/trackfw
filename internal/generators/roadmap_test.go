@@ -1,6 +1,8 @@
 package generators
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -609,5 +611,418 @@ func TestContainsIgnoreCase(t *testing.T) {
 		if got != c.want {
 			t.Errorf("containsIgnoreCase(%q, %q) = %v, quer %v", c.s, c.sub, got, c.want)
 		}
+	}
+}
+
+// ─── helpers para testes de sincronização de REQ ──────────────────────────────
+
+// captureStdout executa fn e retorna tudo que foi escrito em os.Stdout durante a execução.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("captureStdout: os.Pipe: %v", err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = orig })
+
+	fn()
+
+	w.Close()
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("captureStdout: io.Copy: %v", err)
+	}
+	return buf.String()
+}
+
+// mkReqDir cria docs/req/ no diretório corrente e retorna o caminho.
+func mkReqDir(t *testing.T) string {
+	t.Helper()
+	d := "docs/req"
+	if err := os.MkdirAll(d, 0755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", d, err)
+	}
+	return d
+}
+
+// writeREQ escreve um arquivo REQ com frontmatter roadmap: apontando para roadmapPath.
+// Usa backtick no corpo, espelhando o template real gerado por trackfw req new.
+func writeREQ(t *testing.T, reqPath, roadmapPath string) {
+	t.Helper()
+	content := "---\nstatus: Open\ndate: 2026-07-30\nauthor: \"\"\nadr: \"\"\nroadmap: \"" + roadmapPath + "\"\n---\n\n# REQ: Sync Test\n\n> Date: 2026-07-30 | Status: Open\n\n## Linked Roadmap\nRoadmap: `" + roadmapPath + "`\n"
+	if err := os.WriteFile(reqPath, []byte(content), 0644); err != nil {
+		t.Fatalf("writeREQ %s: %v", reqPath, err)
+	}
+}
+
+// mkMinimalRoadmap escreve um roadmap mínimo válido em roadmapPath.
+func mkMinimalRoadmap(t *testing.T, roadmapPath, state string) {
+	t.Helper()
+	body := "---\nstatus: " + state + "\ndate: 2026-07-30\nreq: \"\"\nsquad: \"\"\n---\n\n# Roadmap: Sync Test\n\n> Created: 2026-07-30 | Status: " + state + "\n"
+	if err := os.WriteFile(roadmapPath, []byte(body), 0644); err != nil {
+		t.Fatalf("mkMinimalRoadmap %s: %v", roadmapPath, err)
+	}
+}
+
+// ─── testes de cardinalidade — contrato de docs/cli-parity.md ─────────────────
+
+// TestSyncREQ_ZeroREQs: zero REQs apontando → no-op, sem output, exit 0.
+func TestSyncREQ_ZeroREQs(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+	mkReqDir(t)
+
+	out := captureStdout(t, func() {
+		if err := syncREQReferences("ROADMAP-nonexistent.md", "docs/roadmaps/wip/ROADMAP-nonexistent.md"); err != nil {
+			t.Errorf("esperado nil, obteve: %v", err)
+		}
+	})
+
+	if out != "" {
+		t.Errorf("cardinalidade zero deve produzir output vazio; obteve: %q", out)
+	}
+}
+
+// TestSyncREQ_OneREQ: uma REQ apontando → reescrita, linha de output correta.
+func TestSyncREQ_OneREQ(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-one.md")
+	oldPath := "docs/roadmaps/backlog/ROADMAP-one.md"
+	newPath := "docs/roadmaps/wip/ROADMAP-one.md"
+	writeREQ(t, reqPath, oldPath)
+
+	out := captureStdout(t, func() {
+		if err := syncREQReferences("ROADMAP-one.md", newPath); err != nil {
+			t.Errorf("esperado nil, obteve: %v", err)
+		}
+	})
+
+	wantLine := "✓ synced REQ-one.md → " + newPath + "\n"
+	if out != wantLine {
+		t.Errorf("output incorreto\nqueria:  %q\nobteve: %q", wantLine, out)
+	}
+
+	content, _ := os.ReadFile(reqPath)
+	s := string(content)
+	if !strings.Contains(s, "roadmap: \""+newPath+"\"") {
+		t.Errorf("frontmatter não atualizado;\nconteúdo:\n%s", s)
+	}
+	if !strings.Contains(s, "Roadmap: `"+newPath+"`") {
+		t.Errorf("corpo não atualizado com backticks;\nconteúdo:\n%s", s)
+	}
+}
+
+// TestSyncREQ_SeveralREQs: várias REQs apontando → todas reescritas, uma linha cada.
+func TestSyncREQ_SeveralREQs(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	oldPath := "docs/roadmaps/backlog/ROADMAP-multi.md"
+	newPath := "docs/roadmaps/wip/ROADMAP-multi.md"
+
+	names := []string{"REQ-A.md", "REQ-B.md", "REQ-C.md"}
+	for _, n := range names {
+		writeREQ(t, filepath.Join(reqDir, n), oldPath)
+	}
+
+	out := captureStdout(t, func() {
+		if err := syncREQReferences("ROADMAP-multi.md", newPath); err != nil {
+			t.Errorf("esperado nil, obteve: %v", err)
+		}
+	})
+
+	for _, n := range names {
+		wantLine := "✓ synced " + n + " → " + newPath
+		if !strings.Contains(out, wantLine) {
+			t.Errorf("linha %q ausente no output:\n%s", wantLine, out)
+		}
+		content, _ := os.ReadFile(filepath.Join(reqDir, n))
+		if !strings.Contains(string(content), "roadmap: \""+newPath+"\"") {
+			t.Errorf("frontmatter de %s não atualizado", n)
+		}
+	}
+}
+
+// TestSyncREQ_PointsAtOtherRoadmap: REQ apontando para outro roadmap → não tocada.
+func TestSyncREQ_PointsAtOtherRoadmap(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-other.md")
+	otherPath := "docs/roadmaps/wip/ROADMAP-other.md"
+	writeREQ(t, reqPath, otherPath)
+
+	origContent, _ := os.ReadFile(reqPath)
+
+	out := captureStdout(t, func() {
+		if err := syncREQReferences("ROADMAP-moved.md", "docs/roadmaps/done/ROADMAP-moved.md"); err != nil {
+			t.Errorf("esperado nil, obteve: %v", err)
+		}
+	})
+
+	if out != "" {
+		t.Errorf("REQ apontando para outro roadmap não deve gerar output; obteve: %q", out)
+	}
+
+	newContent, _ := os.ReadFile(reqPath)
+	if !bytes.Equal(origContent, newContent) {
+		t.Errorf("REQ apontando para outro roadmap foi modificada (bytes divergem)")
+	}
+}
+
+// TestSyncREQ_AlreadyCorrect: referência já correta → nenhuma escrita (byte-level idempotente).
+func TestSyncREQ_AlreadyCorrect(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-correct.md")
+	newPath := "docs/roadmaps/wip/ROADMAP-correct.md"
+	writeREQ(t, reqPath, newPath) // já aponta para o estado correto
+
+	origContent, _ := os.ReadFile(reqPath)
+	origMtime, _ := os.Stat(reqPath)
+
+	out := captureStdout(t, func() {
+		if err := syncREQReferences("ROADMAP-correct.md", newPath); err != nil {
+			t.Errorf("esperado nil, obteve: %v", err)
+		}
+	})
+
+	if out != "" {
+		t.Errorf("referência já correta não deve gerar output; obteve: %q", out)
+	}
+
+	newContent, _ := os.ReadFile(reqPath)
+	if !bytes.Equal(origContent, newContent) {
+		t.Errorf("bytes da REQ alterados mesmo com referência já correta")
+	}
+
+	newInfo, _ := os.Stat(reqPath)
+	if newInfo.ModTime() != origMtime.ModTime() {
+		t.Errorf("mtime da REQ alterado mesmo sem escrita (arquivo foi regravado)")
+	}
+}
+
+// TestSyncREQ_Idempotency_ByteLevel: mover duas vezes não altera bytes da REQ.
+// Prova: primeira chamada atualiza; segunda é no-op byte-a-byte.
+func TestSyncREQ_Idempotency_ByteLevel(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+	mkRoadmapDirs(t)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-idempotent.md")
+	oldPath := "docs/roadmaps/backlog/ROADMAP-idempotent.md"
+	newPath := "docs/roadmaps/wip/ROADMAP-idempotent.md"
+	writeREQ(t, reqPath, oldPath)
+	mkMinimalRoadmap(t, oldPath, "backlog")
+
+	// Primeira sincronização: atualiza backlog → wip
+	if err := syncREQReferences("ROADMAP-idempotent.md", newPath); err != nil {
+		t.Fatalf("primeira sincronização falhou: %v", err)
+	}
+	bytesAfterFirst, _ := os.ReadFile(reqPath)
+
+	// Segunda sincronização com o mesmo alvo: não deve alterar bytes
+	if err := syncREQReferences("ROADMAP-idempotent.md", newPath); err != nil {
+		t.Fatalf("segunda sincronização falhou: %v", err)
+	}
+	bytesAfterSecond, _ := os.ReadFile(reqPath)
+
+	if !bytes.Equal(bytesAfterFirst, bytesAfterSecond) {
+		t.Errorf("idempotência violada: bytes diferem após segunda sincronização\napós 1ª:\n%s\napós 2ª:\n%s",
+			bytesAfterFirst, bytesAfterSecond)
+	}
+}
+
+// TestSyncREQ_ByAgent: REQ em req_dir/<agente>/<estado>/ é encontrada no modo by_agent.
+func TestSyncREQ_ByAgent(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// Configurar by_agent com um agente explícito
+	yaml := "roadmap_namespacing: by_agent\nagents:\n- apolo\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("WriteFile trackfw.yaml: %v", err)
+	}
+	config.Reset() // recarregar config com o yaml recém-escrito
+	t.Cleanup(config.Reset)
+
+	// REQ em docs/req/apolo/wip/
+	reqDir := "docs/req/apolo/wip"
+	if err := os.MkdirAll(reqDir, 0755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", reqDir, err)
+	}
+	reqPath := filepath.Join(reqDir, "REQ-byagent.md")
+	oldPath := "docs/roadmaps/apolo/backlog/ROADMAP-byagent.md"
+	newPath := "docs/roadmaps/apolo/wip/ROADMAP-byagent.md"
+	writeREQ(t, reqPath, oldPath)
+
+	out := captureStdout(t, func() {
+		if err := syncREQReferences("ROADMAP-byagent.md", newPath); err != nil {
+			t.Errorf("esperado nil, obteve: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "✓ synced REQ-byagent.md → "+newPath) {
+		t.Errorf("REQ em by_agent não foi sincronizada; output: %q", out)
+	}
+
+	content, _ := os.ReadFile(reqPath)
+	if !strings.Contains(string(content), "roadmap: \""+newPath+"\"") {
+		t.Errorf("frontmatter da REQ by_agent não atualizado:\n%s", content)
+	}
+}
+
+// TestSyncREQ_BackticksPreservedInBody: backticks no corpo da REQ são preservados após reescrita.
+func TestSyncREQ_BackticksPreservedInBody(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-backtick.md")
+	oldPath := "docs/roadmaps/backlog/ROADMAP-backtick.md"
+	newPath := "docs/roadmaps/wip/ROADMAP-backtick.md"
+
+	// Conteúdo com backtick explícito no corpo
+	content := "---\nstatus: Open\ndate: 2026-07-30\nroadmap: \"" + oldPath + "\"\n---\n\n# REQ: Backtick Test\n\n## Linked Roadmap\nRoadmap: `" + oldPath + "`\n"
+	if err := os.WriteFile(reqPath, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := syncREQReferences("ROADMAP-backtick.md", newPath); err != nil {
+		t.Fatalf("syncREQReferences: %v", err)
+	}
+
+	result, _ := os.ReadFile(reqPath)
+	s := string(result)
+
+	if !strings.Contains(s, "Roadmap: `"+newPath+"`") {
+		t.Errorf("backticks não foram preservados no corpo;\nconteúdo:\n%s", s)
+	}
+	if strings.Contains(s, oldPath) {
+		t.Errorf("caminho antigo ainda presente no conteúdo:\n%s", s)
+	}
+}
+
+// TestSyncREQ_ErrorContinues: falha de escrita em uma REQ não interrompe as demais;
+// o erro é reportado em stderr e syncREQReferences retorna erro não-nulo.
+func TestSyncREQ_ErrorContinues(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("chmod 0444 não bloqueia escrita como root")
+	}
+
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	oldPath := "docs/roadmaps/backlog/ROADMAP-err.md"
+	newPath := "docs/roadmaps/wip/ROADMAP-err.md"
+
+	// REQ não-gravável (unwritable)
+	reqUnwritable := filepath.Join(reqDir, "REQ-A-unwritable.md")
+	writeREQ(t, reqUnwritable, oldPath)
+	if err := os.Chmod(reqUnwritable, 0444); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(reqUnwritable, 0644) })
+
+	// REQ normal — deve ser atualizada mesmo com a outra falhando
+	reqOK := filepath.Join(reqDir, "REQ-B-ok.md")
+	writeREQ(t, reqOK, oldPath)
+
+	out := captureStdout(t, func() {
+		err := syncREQReferences("ROADMAP-err.md", newPath)
+		if err == nil {
+			t.Errorf("esperado erro não-nulo pela REQ não-gravável")
+		}
+	})
+
+	// A REQ gravável deve ter sido atualizada
+	if !strings.Contains(out, "✓ synced REQ-B-ok.md") {
+		t.Errorf("REQ gravável não foi sincronizada; output: %q", out)
+	}
+	okContent, _ := os.ReadFile(reqOK)
+	if !strings.Contains(string(okContent), newPath) {
+		t.Errorf("REQ gravável não foi atualizada após falha da outra")
+	}
+}
+
+// TestMoveRoadmap_SyncsREQFrontmatter: integração completa — move via MoveRoadmap e verifica
+// que a REQ pareada é atualizada (frontmatter + corpo com backticks).
+func TestMoveRoadmap_SyncsREQFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+	mkRoadmapDirs(t)
+
+	reqDir := mkReqDir(t)
+	roadmapBase := "ROADMAP-integration.md"
+	backlogPath := "docs/roadmaps/backlog/" + roadmapBase
+	wipPath := "docs/roadmaps/wip/" + roadmapBase
+
+	mkMinimalRoadmap(t, backlogPath, "backlog")
+
+	reqPath := filepath.Join(reqDir, "REQ-integration.md")
+	writeREQ(t, reqPath, backlogPath)
+
+	out := captureStdout(t, func() {
+		if err := MoveRoadmap("integration", "wip"); err != nil {
+			t.Fatalf("MoveRoadmap: %v", err)
+		}
+	})
+
+	// Output deve ter ✓ moved seguido de ✓ synced
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("esperado pelo menos 2 linhas de output; obteve: %q", out)
+	}
+	if !strings.HasPrefix(lines[0], "✓ moved") {
+		t.Errorf("primeira linha deve ser '✓ moved', obteve: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "✓ synced REQ-integration.md → "+wipPath) {
+		t.Errorf("segunda linha deve ser '✓ synced'; obteve: %q", lines[1])
+	}
+
+	// Roadmap deve estar em wip
+	if _, err := os.Stat(wipPath); err != nil {
+		t.Errorf("roadmap não encontrado em wip: %v", err)
+	}
+
+	// REQ deve apontar para wip
+	content, _ := os.ReadFile(reqPath)
+	s := string(content)
+	if !strings.Contains(s, "roadmap: \""+wipPath+"\"") {
+		t.Errorf("frontmatter da REQ não atualizado;\nconteúdo:\n%s", s)
+	}
+	if !strings.Contains(s, "Roadmap: `"+wipPath+"`") {
+		t.Errorf("corpo da REQ não atualizado (backticks);\nconteúdo:\n%s", s)
 	}
 }
