@@ -56,6 +56,79 @@ test('barrier regression: wave with zero MLs fails mls_complete with the pinned 
   }
 })
 
+test('barrier regression: --wave 2-bis resolves ## Wave 2-bis heading at CLI level', () => {
+  const content =
+    '# Roadmap: Suffix\n\nREQ: REQ-2026-07-29-barrier-fixture\n\n' +
+    '## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n' +
+    '## Wave 2-bis — Corrective\n> Dependências: nenhuma\n\n' +
+    '### ML-2A — Fixture ML\n**Status:** ✅\n**Critérios de aceite:**\n- [x] build passes\n\n'
+  const dir = setupRegressionFixture(content)
+  try {
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '2-bis', '--json')
+    assert.equal(status, 0, `expected exit 0 (passed), got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
+    const doc = JSON.parse(stdout)
+    assert.equal(doc.status, 'passed')
+    assert.equal(doc.wave, '2-bis', `expected doc.wave to be string "2-bis", got ${JSON.stringify(doc.wave)}`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('barrier regression: --wave 2 does NOT match ## Wave 2-bis at CLI level', () => {
+  const content =
+    '# Roadmap: Suffix\n\nREQ: REQ-2026-07-29-barrier-fixture\n\n' +
+    '## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n' +
+    '## Wave 2-bis — Corrective\n> Dependências: nenhuma\n\n' +
+    '### ML-2A — Fixture ML\n**Status:** ✅\n**Critérios de aceite:**\n- [x] build passes\n\n'
+  const dir = setupRegressionFixture(content)
+  try {
+    const { stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '2', '--json')
+    assert.equal(status, 2, `expected exit 2 (wave not found), got ${status}`)
+    assert.equal(
+      stderr,
+      'trackfw barrier: wave 2 not found in roadmap "ROADMAP-regression.md"\n'
+    )
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('barrier regression: ABORT — malformed wave heading aborts entire document for every --wave value', () => {
+  // Document has a malformed heading (## Wave X) plus valid waves 1 and 2.
+  // Every --wave request must exit 2 with the pinned malformed message, proving
+  // decision 16 (abort is intentional, not a skip).
+  const content =
+    '# Roadmap: Malformed\n\nREQ: REQ-2026-07-29-barrier-fixture\n\n' +
+    '## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n' +
+    '## Wave X — Malformed heading intentionally\n> this causes the full document abort\n\n' +
+    '### ML-XA — ML under malformed wave\n**Status:** ✅\n**Critérios de aceite:**\n- [x] x\n\n' +
+    '## Wave 1 — First\n> Dependências: nenhuma\n\n' +
+    '### ML-1A — First ML\n**Status:** ✅\n**Critérios de aceite:**\n- [x] build passes\n\n' +
+    '## Wave 2 — Second\n> Dependências: nenhuma\n\n' +
+    '### ML-2A — Second ML\n**Status:** ✅\n**Critérios de aceite:**\n- [x] tests pass\n\n'
+  const dir = setupRegressionFixture(content)
+  try {
+    for (const waveArg of ['1', '2', 'X']) {
+      const { stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', waveArg)
+      // --wave X is itself an invalid label → exit 2 from CLI validation, not from parser
+      // --wave 1 and --wave 2 must abort due to ## Wave X heading in the document
+      assert.equal(status, 2, `--wave ${waveArg}: expected exit 2, got ${status}\nstderr: ${stderr}`)
+      if (waveArg !== 'X') {
+        assert.match(
+          stderr, /malformed wave heading/,
+          `--wave ${waveArg}: expected "malformed wave heading" in stderr, got: ${stderr}`
+        )
+        assert.match(
+          stderr, /"X" is not a valid wave label/,
+          `--wave ${waveArg}: expected token "X" named in stderr, got: ${stderr}`
+        )
+      }
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('barrier regression: exit-2 messages are pinned literally and byte-identical to the contract', () => {
   const content =
     '# Roadmap: Fixture\n\nREQ: REQ-2026-07-29-barrier-fixture\n\n' +
@@ -82,6 +155,24 @@ test('barrier regression: exit-2 messages are pinned literally and byte-identica
   }
 })
 
+test('barrier regression: invalid --wave message is pinned literally (fourth exit-2 message)', () => {
+  // The fourth pinned exit-2 message is the invalid --wave argument.
+  // Canonical text (from Go): trackfw barrier: invalid --wave "<value>" — not a valid wave label
+  // The separator is an em dash U+2014, not a hyphen.
+  // This test verifies byte-identity against the Go canonical form.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-barrier-invalid-wave-'))
+  try {
+    const result = runBarrierCLI(dir, 'any-roadmap', '--wave', '2-BIS')
+    assert.equal(result.status, 2, `expected exit 2, got ${result.status}\nstderr: ${result.stderr}`)
+    assert.equal(
+      result.stderr,
+      'trackfw barrier: invalid --wave "2-BIS" — not a valid wave label\n'
+    )
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 // ────────────────────────────────────────────────────────────────────────────
 // findWave — rule 1 (wave heading) + malformed detection (rule 6)
 // ────────────────────────────────────────────────────────────────────────────
@@ -95,18 +186,18 @@ test('findWave: locates the matching wave and its line range', () => {
     '## Wave 2 — Second',
     'content B',
   ]
-  const wave1 = barrier.findWave(lines, 1)
+  const wave1 = barrier.findWave(lines, '1')
   assert.equal(wave1.startLine, 2)
   assert.equal(wave1.endLine, 4)
 
-  const wave2 = barrier.findWave(lines, 2)
+  const wave2 = barrier.findWave(lines, '2')
   assert.equal(wave2.startLine, 4)
   assert.equal(wave2.endLine, 6)
 })
 
-test('findWave: throws UsageError naming the wave number when not found', () => {
+test('findWave: throws UsageError naming the wave label when not found', () => {
   const lines = ['## Wave 1 — Only']
-  assert.throws(() => barrier.findWave(lines, 7), (err) => {
+  assert.throws(() => barrier.findWave(lines, '7'), (err) => {
     assert.ok(err instanceof barrier.UsageError)
     assert.match(err.message, /wave 7/)
     return true
@@ -115,18 +206,100 @@ test('findWave: throws UsageError naming the wave number when not found', () => 
 
 test('findWave: usage error message is pinned literally (docs/cli-parity.md)', () => {
   const lines = ['## Wave 1 — Only']
-  assert.throws(() => barrier.findWave(lines, 7, 'ROADMAP-example.md'), (err) => {
+  assert.throws(() => barrier.findWave(lines, '7', 'ROADMAP-example.md'), (err) => {
     assert.ok(err instanceof barrier.UsageError)
     assert.equal(err.message, 'wave 7 not found in roadmap "ROADMAP-example.md"')
     return true
   })
 })
 
-test('findWave: throws UsageError naming the line number for a malformed wave number', () => {
+test('findWave: throws UsageError naming the line number for a malformed wave label', () => {
   const lines = ['# Title', '## Wave abc — Broken']
-  assert.throws(() => barrier.findWave(lines, 1), (err) => {
+  assert.throws(() => barrier.findWave(lines, '1'), (err) => {
     assert.ok(err instanceof barrier.UsageError)
     assert.match(err.message, /line 2/)
+    return true
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// findWave — wave label with suffix (ML-2B: barrier aceita wave com sufixo bis)
+// ────────────────────────────────────────────────────────────────────────────
+
+test('isValidWaveLabel: valid labels (contract table)', () => {
+  for (const label of ['1', '2', '2-bis', '2-hotfix', '10-a2']) {
+    assert.ok(barrier.isValidWaveLabel(label), `expected "${label}" to be valid`)
+  }
+})
+
+test('isValidWaveLabel: invalid labels (contract table)', () => {
+  for (const label of ['X', '2-BIS', '-bis', '2-', '2-bis-ter', '0']) {
+    assert.ok(!barrier.isValidWaveLabel(label), `expected "${label}" to be invalid`)
+  }
+})
+
+test('findWave: resolves wave by label including suffix (2-bis)', () => {
+  const lines = [
+    '## Wave 2 — Second',
+    'content 2',
+    '## Wave 2-bis — Corrective',
+    'content 2-bis',
+    '## Wave 3 — Third',
+    'content 3',
+  ]
+  const wave = barrier.findWave(lines, '2-bis')
+  assert.equal(wave.startLine, 2)
+  assert.equal(wave.endLine, 4)
+})
+
+test('findWave: --wave 2 does not match ## Wave 2-bis (labels are distinct identities)', () => {
+  const lines = [
+    '## Wave 2-bis — Corrective',
+    'content 2-bis',
+  ]
+  assert.throws(() => barrier.findWave(lines, '2', 'ROADMAP-example.md'), (err) => {
+    assert.ok(err instanceof barrier.UsageError)
+    assert.equal(err.message, 'wave 2 not found in roadmap "ROADMAP-example.md"')
+    return true
+  })
+})
+
+test('findWave: malformed error message contains the token, not the entire heading line', () => {
+  const lines = ['## Wave 2-BIS — Uppercase suffix should be rejected']
+  assert.throws(() => barrier.findWave(lines, '1'), (err) => {
+    assert.ok(err instanceof barrier.UsageError)
+    // Token is '2-BIS'; line starts with '## Wave 2-BIS ...'
+    assert.match(err.message, /"2-BIS" is not a valid wave label/)
+    assert.ok(
+      !err.message.includes('## Wave 2-BIS — Uppercase suffix should be rejected'),
+      'error message must not contain the full heading line'
+    )
+    return true
+  })
+})
+
+test('findWave: REGRESSION — malformed heading aborts entire document regardless of which wave is requested (ADR decision 16)', () => {
+  // ## Wave X appears before ## Wave 1. Even requesting '1' (which comes after)
+  // must abort because all headings are pre-validated before any search.
+  const lines = [
+    '## Wave X — Malformed heading',
+    'content X',
+    '## Wave 1 — First',
+    'content 1',
+    '## Wave 2 — Second',
+    'content 2',
+  ]
+  // Requesting wave '1': scanner hits '## Wave X' first → must abort
+  assert.throws(() => barrier.findWave(lines, '1'), (err) => {
+    assert.ok(err instanceof barrier.UsageError)
+    assert.match(err.message, /malformed wave heading at line 1/)
+    assert.match(err.message, /"X" is not a valid wave label/)
+    return true
+  })
+  // Requesting wave '2': same abort
+  assert.throws(() => barrier.findWave(lines, '2'), (err) => {
+    assert.ok(err instanceof barrier.UsageError)
+    assert.match(err.message, /malformed wave heading/)
     return true
   })
 })
@@ -284,12 +457,12 @@ test('evalMlsComplete: pinned evidence/failures string formats', () => {
 })
 
 test('evalMlsComplete: wave with zero MLs is blocked', () => {
-  const check = barrier.evalMlsComplete([], 1)
+  const check = barrier.evalMlsComplete([], '1')
   assert.equal(check.status, 'blocked')
 })
 
 test('evalMlsComplete: wave with zero MLs pins the failure message literally (docs/cli-parity.md)', () => {
-  const check = barrier.evalMlsComplete([], 3)
+  const check = barrier.evalMlsComplete([], '3')
   assert.deepEqual(check.failures, ['wave 3: no ML found'])
 })
 

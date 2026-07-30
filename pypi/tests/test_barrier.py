@@ -174,6 +174,177 @@ def test_wave_heading_numero_nao_parseavel_e_erro_de_uso():
     assert "line" in stderr.lower()
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# Sufixo de wave (ML-2C — gramática <inteiro>[-<sufixo>])
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_wave_sufixo_bis_resolve_heading_bis():
+    """--wave 2-bis deve resolver ## Wave 2-bis e avaliar a wave com sucesso."""
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Suffix\n\n"
+        "REQ: REQ-x\n\n"
+        # Bloco de aceite no nível do roadmap — satisfaz wip_acceptance (governança).
+        "## Acceptance Criteria\n- [x] fixture criterion\n\n"
+        "## Wave 1 — Primeira Wave\n> Dependências: nenhuma\n\n"
+        "### ML-1A — X\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+        "## Wave 2-bis — Wave Corretiva\n> Dependências: Wave 1\n\n"
+        "### ML-2bisA — Y\n**Status:** ✅\n**Critérios de aceite:**\n- [x] b\n\n"
+        "## Wave 3 — Terceira Wave\n> Dependências: Wave 2-bis\n\n"
+        "### ML-3A — Z\n**Status:** ✅\n**Critérios de aceite:**\n- [x] c\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-suffix.md").write_text(content, encoding="utf-8")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-suffix", "--wave", "2-bis", "--json")
+    assert code == 0, f"expected exit 0 for --wave 2-bis, got {code}\nstdout={stdout}\nstderr={stderr}"
+    doc = json.loads(stdout)
+    assert doc["status"] == "passed"
+    assert doc["wave"] == "2-bis"
+
+
+def test_wave_inteiro_nao_casa_heading_bis():
+    """--wave 2 NÃO deve casar com ## Wave 2-bis — labels são identidades distintas."""
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Suffix\n\n"
+        "REQ: REQ-x\n\n"
+        "## Wave 2-bis — Wave Corretiva\n> Dependências: nenhuma\n\n"
+        "### ML-2bisA — X\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-suffix.md").write_text(content, encoding="utf-8")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-suffix", "--wave", "2", "--json")
+    assert code == 2, f"expected exit 2 (wave not found), got {code}\nstdout={stdout}\nstderr={stderr}"
+    assert "wave 2 not found" in stderr
+
+
+def test_wave_heading_malformada_aborta_documento_inteiro():
+    """Regressão ADR decisão 16: heading fora da gramática aborta o documento inteiro,
+    mesmo quando --wave pede uma wave válida que existe DEPOIS da malformada.
+    Isso impede que uma wave seja avaliada vacuamente sem auditoria dos MLs malformados.
+
+    Posição: malformada ANTES da wave alvo (posição clássica). Complementado por
+    test_wave_heading_malformada_depois_da_wave_alvo_aborta_documento (posição "depois"),
+    que cobre o early-break corrigido no ML-2D.
+    """
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Abort\n\n"
+        "REQ: REQ-x\n\n"
+        # Heading malformada ANTES da wave solicitada — deve abortar.
+        "## Wave X — Heading Invalida\n> Dependências: nenhuma\n\n"
+        "### ML-XA — Bad\n**Status:** ✅\n**Critérios de aceite:**\n- [x] x\n\n"
+        "## Wave 1 — Wave Valida\n> Dependências: Wave X\n\n"
+        "### ML-1A — Good\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-abort.md").write_text(content, encoding="utf-8")
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-abort", "--wave", "1", "--json")
+    assert code == 2, (
+        f"expected exit 2 (malformed heading aborts document), got {code}\nstderr={stderr}"
+    )
+    # Mensagem pinada byte-a-byte: aspas duplas, token capturado, número de linha 1-based
+    assert stderr == 'trackfw barrier: malformed wave heading at line 5: "X" is not a valid wave label\n', (
+        f"stderr mismatch: got [{stderr!r}]"
+    )
+
+
+def test_wave_heading_malformada_depois_da_wave_alvo_aborta_documento():
+    """Regressão ML-2D (pré-passo completo): heading malformada DEPOIS da wave alvo
+    também aborta o documento com exit 2 — o pré-passo não deve ter break antecipado.
+
+    Antes da correção do ML-2D, o Python retornava exit 1 'blocked' porque
+    _find_wave saía do laço ao encontrar a wave pedida, deixando a heading
+    posterior nunca visitada. Isso violava ADR decisões 16 (abort é feature)
+    e 12 (roadmap malformado nunca deve ser lido como 'wave reprovada').
+
+    Nota: esta é a posição complementar ao test_wave_heading_malformada_aborta_documento_inteiro.
+    Ambas devem estar presentes — teste de uma só posição é vacuoso quanto ao early-break.
+    """
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Abort After\n\n"
+        "REQ: REQ-x\n\n"
+        # Wave alvo válida PRIMEIRO — se o early-break sobreviveu, a malformada
+        # abaixo seria ignorada e o exit seria 1 (blocked por validação de governança),
+        # não 2. O pré-passo completo deve detectá-la antes de qualquer exit 1.
+        "## Wave 1 — Wave Valida\n> Dependências: nenhuma\n\n"
+        "### ML-1A — Good\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+        # Heading malformada DEPOIS da wave solicitada — deve abortar mesmo assim.
+        "## Wave X — Heading Malformada Depois\n> Posição: depois da wave alvo\n\n"
+        "### ML-XA — Bad\n**Status:** ✅\n**Critérios de aceite:**\n- [x] x\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-abort-after.md").write_text(content, encoding="utf-8")
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-abort-after", "--wave", "1", "--json")
+    assert code == 2, (
+        f"expected exit 2 (malformed heading after target aborts document), got {code}\nstderr={stderr}"
+    )
+    # Mensagem pinada byte-a-byte — número de linha 1-based da heading malformada.
+    # A heading '## Wave X — ...' é a 13ª linha do documento (linha 13 = índice 12).
+    assert stderr == 'trackfw barrier: malformed wave heading at line 13: "X" is not a valid wave label\n', (
+        f"stderr mismatch: got [{stderr!r}]"
+    )
+
+
+def test_wave_argumento_invalido_mensagem_pinada_literalmente():
+    """Quarta mensagem de exit-2 pinada (docs/cli-parity.md §trackfw barrier):
+    'trackfw barrier: invalid --wave "<value>" — not a valid wave label'
+    O separador é travessão U+2014, não hífen. <value> é o argumento exato.
+    """
+    dir_ = _setup_dir(
+        linked_req=True,
+        ml_status="✅",
+        criteria_lines=["- [x] build passes"],
+    )
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "2-BIS", "--json")
+    assert code == 2, f"expected exit 2, got {code}\nstderr={stderr}"
+    assert stderr == 'trackfw barrier: invalid --wave "2-BIS" — not a valid wave label\n', (
+        f"stderr mismatch: got [{stderr!r}]"
+    )
+
+
+def test_wave_heading_malformada_uppercase_aborta():
+    """Sufixo em maiúsculas é inválido — ## Wave 2-BIS deve abortar o documento."""
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Uppercase\n\n"
+        "REQ: REQ-x\n\n"
+        "## Wave 2-BIS — Invalida Uppercase\n> Dependências: nenhuma\n\n"
+        "### ML-1A — X\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-uppercase.md").write_text(content, encoding="utf-8")
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-uppercase", "--wave", "1", "--json")
+    assert code == 2
+    assert '"2-BIS" is not a valid wave label' in stderr
+
+
+def test_wave_heading_malformada_mensagem_tem_aspas_duplas():
+    """A mensagem de heading malformada deve usar aspas duplas ao redor do token,
+    não aspas simples do !r. Pinado em docs/cli-parity.md § exit-2 messages."""
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Quotes\n\n"
+        "REQ: REQ-x\n\n"
+        "## Wave abc — Invalida\n> Dependências: nenhuma\n\n"
+        "### ML-1A — X\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-quotes.md").write_text(content, encoding="utf-8")
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-quotes", "--wave", "1", "--json")
+    assert code == 2
+    # Aspas duplas — NÃO aspas simples do !r ('abc')
+    assert '"abc" is not a valid wave label' in stderr
+    assert "'abc'" not in stderr
+
+
 def test_gates_fence_nao_terminada_e_erro_de_uso():
     dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
     for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
@@ -296,3 +467,32 @@ def test_acceptance_evidence_conta_nao_atendidos():
     doc = json.loads(stdout)
     evidence_check = next(c for c in doc["checks"] if c["name"] == "acceptance_evidence")
     assert evidence_check["failures"] == ["ML-1A: 2 unmet acceptance criteria"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Tabela completa da gramática de rótulo de wave (ML-3A, pinned)
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_is_valid_wave_label_tabela_completa():
+    """Testa _is_valid_wave_label contra a tabela completa de docs/cli-parity.md.
+
+    Node.js já tinha este teste de tabela via isValidWaveLabel (barrier.test.js).
+    Go cobre via TestWaveLabelGrammar_ValidAndInvalid usando parseWaves.
+    Este teste fecha a mesma lacuna em Python: verifica a função diretamente,
+    garantindo que a implementação nativa (re.fullmatch + int>=1) corresponde
+    ao contrato em todos os seis rótulos inválidos e cinco válidos da tabela.
+    """
+    from trackfw.commands.barrier import _is_valid_wave_label
+
+    valid = ["1", "2", "2-bis", "2-hotfix", "10-a2"]
+    invalid = ["X", "2-BIS", "-bis", "2-", "2-bis-ter", "0"]
+
+    for lbl in valid:
+        assert _is_valid_wave_label(lbl), (
+            f"_is_valid_wave_label({lbl!r}) deve retornar True (rótulo válido per contrato)"
+        )
+
+    for lbl in invalid:
+        assert not _is_valid_wave_label(lbl), (
+            f"_is_valid_wave_label({lbl!r}) deve retornar False (rótulo inválido per contrato)"
+        )

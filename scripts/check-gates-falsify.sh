@@ -679,4 +679,28 @@ if [[ "$before_status" != "$after_status" ]]; then
 fi
 echo "OK   [falsify/no-repo-mutation]"
 
-echo "Falsification checks passed (all 19 scenarios, 12 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 19 — check-barrier.sh: o gate de heading-malformada-after-target
+# (Cenário 9) é falsificável com respeito à classe de bug early-break.
+#
+# Objetivo (ML-3A, ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis):
+# O Cenário 9 de check-barrier.sh cobre a posição "depois da wave alvo" —
+# a posição crítica que uma implementação com early-break NÃO detecta.
+# Sem esta prova, o cenário seria vacuoso: mesmo que todos os runtimes
+# tivessem o bug de early-break (voltando exit 0), o cenário passaria
+# verde (cli-parity.md §detection-is-a-full-pre-pass, regra "both positions").
+#
+# BARRIER_BIS_SELFTEST_BREAK=1 ativa o seam dedicado em check-barrier.sh:
+# o Cenário 9 escreve uma fixture válida (sem o heading malformado), fazendo
+# todos os runtimes retornar exit 0. A asserção espera exit 2 → falha com o
+# diagnóstico explícito abaixo — provando que o cenário tem poder de reprovação
+# sobre a classe de defeito de early-break.
+#
+# Nota: o seam corrompe a FIXTURE, nunca a asserção (mesmo padrão que
+# BARRIER_SELFTEST_BREAK do Cenário 13) — não é uma mudança tautológica.
+# ---------------------------------------------------------------------------
+assert_fails_with "barrier/early-break-after-target-not-detected" \
+  'FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 2 for after-position malformed heading, got 0' \
+  env BARRIER_BIS_SELFTEST_BREAK=1 GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-barrier.sh"
+
+echo "Falsification checks passed (all 20 scenarios, 13 gates proved non-vacuous)"

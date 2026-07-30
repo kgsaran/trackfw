@@ -40,37 +40,64 @@ function resolveRoadmapFile(cfg, roadmapArg) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Wave label grammar (pinned by docs/cli-parity.md, "Wave label grammar" section)
+// ────────────────────────────────────────────────────────────────────────────
+
+// Scan regex (mirrors Go's waveHeadingRe): catches any "## Wave <token> " line.
+// The trailing space is part of rule 1 — a heading whose label touches EOL is not
+// recognised as a wave heading (neither valid nor malformed).
+const WAVE_SCAN_RE = /^## Wave (\S+) /
+
+// Grammar: <integer>[-<suffix>] where integer >= 1 and suffix is [a-z0-9]+ (lowercase).
+// Valid: 1, 2, 2-bis, 2-hotfix, 10-a2.
+// Invalid: X, 2-BIS, -bis, 2-, 2-bis-ter, 0.
+const WAVE_LABEL_RE = /^(\d+)(?:-([a-z0-9]+))?$/
+
+// isValidWaveLabel returns true iff token matches the grammar above.
+// Exported so unit tests can assert the full table of valid/invalid examples.
+function isValidWaveLabel(token) {
+  const m = WAVE_LABEL_RE.exec(String(token))
+  if (!m) return false
+  return parseInt(m[1], 10) >= 1
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Roadmap parsing rules (string-level, see docs/cli-parity.md)
 // ────────────────────────────────────────────────────────────────────────────
 
-// findWave locates the `## Wave <n> ` heading matching waveNumber and returns its
-// line range [startLine, endLine) within `lines`. Throws UsageError naming the wave
-// number and the resolved roadmap basename when not found (pinned literally by
-// docs/cli-parity.md), or naming the offending line number for a malformed heading.
-// roadmapBasename is optional so existing unit tests that only exercise parsing can
-// omit it; the CLI path always supplies it.
-function findWave(lines, waveNumber, roadmapBasename) {
-  let startLine = -1
+// findWave locates the `## Wave <label> ` heading matching waveLabel and returns its
+// line range [startLine, endLine) within `lines`. Performs a full pre-pass over all
+// wave headings (mirroring Go's parseWaves): throws UsageError for the first malformed
+// heading regardless of position — this ensures a typo like `## Wave X — ...` aborts
+// the entire document (ADR decision 16, non-vacuity). Throws UsageError naming the
+// wave label and the resolved roadmap basename when not found (pinned literally by
+// docs/cli-parity.md). roadmapBasename is optional so unit tests that only exercise
+// parsing can omit it; the CLI path always supplies it.
+function findWave(lines, waveLabel, roadmapBasename) {
+  // Pre-pass: validate ALL wave headings and collect them.
+  // Abort immediately on the first malformed heading — this is intentional and
+  // mirrors Go's parseWaves() full-scan approach (ADR decision 16).
+  const waves = []
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    const attempt = /^## Wave (\S+)/.exec(line)
+    const attempt = WAVE_SCAN_RE.exec(lines[i])
     if (!attempt) continue
-    if (!/^\d+$/.test(attempt[1])) {
-      throw new UsageError(`malformed wave heading at line ${i + 1}: "${line}"`)
+    const token = attempt[1]
+    if (!isValidWaveLabel(token)) {
+      throw new UsageError(`malformed wave heading at line ${i + 1}: "${token}" is not a valid wave label`)
     }
-    if (parseInt(attempt[1], 10) === waveNumber) {
-      startLine = i
-      break
+    let endLine = lines.length
+    for (let j = i + 1; j < lines.length; j++) {
+      if (/^## /.test(lines[j])) { endLine = j; break }
     }
+    waves.push({ label: token, startLine: i, endLine })
   }
-  if (startLine === -1) {
-    throw new UsageError(`wave ${waveNumber} not found in roadmap "${roadmapBasename}"`)
+
+  // Find the requested wave by exact label match (no prefix/fuzzy matching).
+  const wave = waves.find(w => w.label === String(waveLabel))
+  if (!wave) {
+    throw new UsageError(`wave ${waveLabel} not found in roadmap "${roadmapBasename}"`)
   }
-  let endLine = lines.length
-  for (let j = startLine + 1; j < lines.length; j++) {
-    if (/^## /.test(lines[j])) { endLine = j; break }
-  }
-  return { startLine, endLine }
+  return { startLine: wave.startLine, endLine: wave.endLine }
 }
 
 // findMLs locates every `### ML-` heading inside [startLine, endLine) and returns
@@ -166,7 +193,7 @@ function parseGates(lines, startLine, endLine) {
 // Checks (fixed evaluation order: mls_complete, acceptance_evidence, gates, validate)
 // ────────────────────────────────────────────────────────────────────────────
 
-function evalMlsComplete(mls, waveNumber) {
+function evalMlsComplete(mls, waveLabel) {
   const evidence = []
   const failures = []
   for (const ml of mls) {
@@ -176,7 +203,7 @@ function evalMlsComplete(mls, waveNumber) {
   }
   const status = mls.length > 0 && failures.length === 0 ? 'passed' : 'blocked'
   // Pinned literally by docs/cli-parity.md ("Wave contains zero MLs" case).
-  if (mls.length === 0) failures.push(`wave ${waveNumber}: no ML found`)
+  if (mls.length === 0) failures.push(`wave ${waveLabel}: no ML found`)
   return { name: 'mls_complete', status, evidence, failures }
 }
 
@@ -280,10 +307,10 @@ async function runBarrier(roadmapArg, waveOption, jsonOutput) {
   if (waveOption === undefined || waveOption === null || String(waveOption).trim() === '') {
     throw new UsageError('--wave is required')
   }
-  if (!/^\d+$/.test(String(waveOption).trim()) || parseInt(waveOption, 10) < 1) {
-    throw new UsageError(`invalid --wave value: "${waveOption}" (must be an integer >= 1)`)
+  const waveLabel = String(waveOption).trim()
+  if (!isValidWaveLabel(waveLabel)) {
+    throw new UsageError(`invalid --wave "${waveOption}" — not a valid wave label`)
   }
-  const waveNumber = parseInt(waveOption, 10)
 
   const cfg = config.load()
   const resolved = resolveRoadmapFile(cfg, roadmapArg)
@@ -291,18 +318,18 @@ async function runBarrier(roadmapArg, waveOption, jsonOutput) {
   const lines = content.split('\n')
 
   const startedAt = new Date()
-  const wave = findWave(lines, waveNumber, resolved.basename)
+  const wave = findWave(lines, waveLabel, resolved.basename)
   const mls = findMLs(lines, wave.startLine, wave.endLine)
   const gates = parseGates(lines, wave.startLine, wave.endLine)
 
   const checks = []
-  checks.push(evalMlsComplete(mls, waveNumber))
+  checks.push(evalMlsComplete(mls, waveLabel))
   checks.push(evalAcceptanceEvidence(mls))
   checks.push(evalGates(gates.commands, process.cwd()))
   checks.push(await evalValidate())
   const finishedAt = new Date()
 
-  const doc = buildDoc(resolved.basename, waveNumber, checks, startedAt, finishedAt)
+  const doc = buildDoc(resolved.basename, waveLabel, checks, startedAt, finishedAt)
 
   if (jsonOutput) {
     console.log(JSON.stringify(doc, null, 2))
@@ -322,7 +349,7 @@ function createBarrierCommand() {
       'declared in a roadmap.'
     )
     .argument('<roadmap>', 'Roadmap basename, with or without .md')
-    .option('--wave <n>', 'Wave number to evaluate (integer >= 1)')
+    .option('--wave <label>', 'Wave label to evaluate (e.g. 1, 2-bis, 2-hotfix)')
     .option('--json', 'Emit the result document as JSON instead of a text report')
     .action(async (roadmapArg, options) => {
       try {
@@ -344,6 +371,7 @@ function createBarrierCommand() {
 
 module.exports = createBarrierCommand()
 module.exports.UsageError = UsageError
+module.exports.isValidWaveLabel = isValidWaveLabel
 module.exports.resolveRoadmapFile = resolveRoadmapFile
 module.exports.findWave = findWave
 module.exports.findMLs = findMLs

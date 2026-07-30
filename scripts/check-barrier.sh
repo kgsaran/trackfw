@@ -37,7 +37,7 @@ elif [[ "$GO_BIN" != /* ]]; then
   GO_BIN="$ROOT_DIR/$GO_BIN"
 fi
 NODE_CLI="$ROOT_DIR/npm/bin/trackfw"
-PY_ROOT="$ROOT_DIR/pypi"
+PY_ROOT="${PY_ROOT:-$ROOT_DIR/pypi}"
 
 if [[ ! -x "$GO_BIN" ]]; then
   echo "check-barrier: Go binary not found/executable at $GO_BIN" >&2
@@ -57,6 +57,13 @@ fi
 # itself is falsifiable, without sed-ing a private copy of this script.
 # ---------------------------------------------------------------------------
 SELFTEST_BREAK="${BARRIER_SELFTEST_BREAK:-0}"
+# Seam for check-gates-falsify.sh Cenário 19 (early-break regression on after position).
+# When BARRIER_BIS_SELFTEST_BREAK=1, scenario 9 writes a fully valid fixture (no malformed
+# heading), so all runtimes return exit 0 while the assertion expects exit 2 — producing the
+# explicit diagnostic the falsify script asserts. This does NOT flip the assertion; it
+# corrupts the fixture (same pattern as BARRIER_SELFTEST_BREAK), proving the scenario is
+# non-vacuous with respect to the class of early-break bug fixed in ML-2D.
+BIS_SELFTEST_BREAK="${BARRIER_BIS_SELFTEST_BREAK:-0}"
 
 ok() { echo "OK   [$1]"; }
 fail() {
@@ -555,6 +562,236 @@ if ! grep -qE '`git checkout -b`' "$ARCHITECT"; then
   fail "barrier/git-authority/architect" "architect.md does not document branch creation as its own responsibility"
 fi
 ok "barrier/git-authority/architect-has-protocol"
+
+# ---------------------------------------------------------------------------
+# Scenario 8 — malformed heading BEFORE the target wave (third pinned message).
+# All three runtimes must detect the malformed heading in the pre-pass and abort
+# the entire document before even resolving the requested label.
+# Vacuity guard: assert stderr is non-empty before comparing bytes — three empty
+# stderrs would agree trivially and prove nothing.
+# ---------------------------------------------------------------------------
+S8="$WORK/s8-malformed-before"
+common_dirs "$S8"
+cat >"$S8/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
+# Roadmap: Barrier Before Fixture
+
+## Wave X — Bad Heading
+
+### ML-XA — Bad ML
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+
+## Wave 1 — Fixture Wave
+
+### ML-1A — Fixture ML
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+EOF
+# ## Wave X is at line 3 in the file above.
+WANT8='trackfw barrier: malformed wave heading at line 3: "X" is not a valid wave label'
+for runtime in go node py; do
+  run_barrier "$runtime" "$S8" ROADMAP-barrier-fixture --wave 1
+  [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "expected exit 2, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "stderr is empty — vacuity guard failed"
+  [[ "$BARRIER_STDERR" == "$WANT8"$'\n' || "$BARRIER_STDERR" == "$WANT8" ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "stderr mismatch, want [$WANT8], got [$BARRIER_STDERR]"
+  [[ "$BARRIER_STDOUT" != *'"status": "blocked"'* && "$BARRIER_STDOUT" != *'"status":"blocked"'* ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "usage error must never emit a blocked status document"
+  ok "barrier/wave-label/malformed-before-target/$runtime"
+done
+
+# ---------------------------------------------------------------------------
+# Scenario 9 — malformed heading AFTER the target wave (early-break regression).
+# Both heading positions together are non-vacuous with respect to the early-break
+# bug class (cli-parity.md §detection-is-a-full-pre-pass, pinned): a pre-pass
+# that stops at the target wave label will miss this heading and exit 0 instead
+# of exit 2. Without testing this position, the scenario is vacuous.
+#
+# BARRIER_BIS_SELFTEST_BREAK seam: when active, the fixture is written without the
+# malformed heading (a fully valid document), so all runtimes return exit 0 while
+# the assertion expects exit 2 — producing the explicit "expected exit 2 ... got 0"
+# diagnostic that check-gates-falsify.sh Cenário 19 asserts. The assertion is never
+# changed; only the fixture data changes — same pattern as BARRIER_SELFTEST_BREAK.
+# ---------------------------------------------------------------------------
+S9="$WORK/s9-malformed-after"
+common_dirs "$S9"
+ROADMAP9="$S9/docs/roadmaps/wip/ROADMAP-barrier-fixture.md"
+
+if [[ "$BIS_SELFTEST_BREAK" == "1" ]]; then
+  # Seam active: omit the malformed heading so runtimes return exit 0.
+  # REQ + Acceptance Criteria included so the validate check also passes
+  # (exit 0 = all four checks pass), making the assertion for exit 2 fail.
+  # → falsification proof for Cenário 19.
+  cat >"$ROADMAP9" <<'EOF'
+# Roadmap: Barrier After Fixture (seam: no malformed heading)
+
+REQ: REQ-2026-07-29-barrier-fixture
+
+## Acceptance Criteria
+- [x] fixture roadmap-level criterion
+
+## Wave 1 — Fixture Wave
+
+### ML-1A — Fixture ML
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+
+## Wave 2 — Valid Second Wave
+
+### ML-2A — Fixture ML
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+EOF
+else
+  # Normal: Wave X heading at line 10 (after the target Wave 1 block).
+  cat >"$ROADMAP9" <<'EOF'
+# Roadmap: Barrier After Fixture
+
+## Wave 1 — Fixture Wave
+
+### ML-1A — Fixture ML
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+
+## Wave X — Bad Heading After Target
+
+### ML-XA — Bad ML
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+EOF
+fi
+# ## Wave X is at line 10 in the normal fixture above.
+WANT9='trackfw barrier: malformed wave heading at line 10: "X" is not a valid wave label'
+for runtime in go node py; do
+  run_barrier "$runtime" "$S9" ROADMAP-barrier-fixture --wave 1
+  [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "expected exit 2 for after-position malformed heading, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "stderr is empty — vacuity guard failed"
+  [[ "$BARRIER_STDERR" == "$WANT9"$'\n' || "$BARRIER_STDERR" == "$WANT9" ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "stderr mismatch, want [$WANT9], got [$BARRIER_STDERR]"
+  [[ "$BARRIER_STDOUT" != *'"status": "blocked"'* && "$BARRIER_STDOUT" != *'"status":"blocked"'* ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "usage error must never emit a blocked status document"
+  ok "barrier/wave-label/malformed-after-target/$runtime"
+done
+
+# ---------------------------------------------------------------------------
+# Scenario 10 — --wave 2-bis resolves Wave 2-bis; --wave 2 resolves Wave 2 and
+# does NOT match Wave 2-bis (identity-distinct, grammar: no prefix match).
+# Vacuity guard: assert the `wave` field in the JSON document equals the expected
+# label — exit 0 alone is insufficient if routing resolves the wrong wave.
+# ---------------------------------------------------------------------------
+S10="$WORK/s10-bis-identity"
+common_dirs "$S10"
+cat >"$S10/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
+# Roadmap: Barrier Bis-Identity Fixture
+
+REQ: REQ-2026-07-29-barrier-fixture
+
+## Acceptance Criteria
+- [x] fixture roadmap-level criterion
+
+## Wave 1 — Fixture Wave One
+
+### ML-1A — Fixture ML One
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+
+## Wave 2 — Fixture Wave Two
+
+### ML-2A — Fixture ML Two-A
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+
+## Wave 2-bis — Fixture Wave Two-Bis
+
+### ML-2Z — Fixture ML Two-Z
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+EOF
+get_wave_field() {
+  python3 -c "import json,sys; print(json.loads(sys.argv[1])['wave'])" "$1"
+}
+for runtime in go node py; do
+  # --wave 2-bis must resolve Wave 2-bis (wave field = "2-bis", not "2")
+  run_barrier "$runtime" "$S10" ROADMAP-barrier-fixture --wave 2-bis --json
+  [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/wave-label/bis-identity/$runtime/bis-resolves" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  GOT_WAVE=$(get_wave_field "$BARRIER_STDOUT")
+  [[ "$GOT_WAVE" == "2-bis" ]] || fail "barrier/wave-label/bis-identity/$runtime/bis-resolves" "expected wave=2-bis, got $GOT_WAVE"
+  ok "barrier/wave-label/bis-identity/$runtime/bis-resolves"
+
+  # --wave 2 must resolve Wave 2, not Wave 2-bis (wave field = "2")
+  run_barrier "$runtime" "$S10" ROADMAP-barrier-fixture --wave 2 --json
+  [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/wave-label/bis-identity/$runtime/2-not-bis" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  GOT_WAVE=$(get_wave_field "$BARRIER_STDOUT")
+  [[ "$GOT_WAVE" == "2" ]] || fail "barrier/wave-label/bis-identity/$runtime/2-not-bis" "expected wave=2 (not 2-bis), got $GOT_WAVE"
+  ok "barrier/wave-label/bis-identity/$runtime/2-not-bis"
+done
+
+# ---------------------------------------------------------------------------
+# Scenario 11 — ## Wave 0 is a malformed heading: integer part must be ≥1.
+# All three runtimes must detect it in the pre-pass (same code path as "X").
+# ---------------------------------------------------------------------------
+S11="$WORK/s11-wave-zero"
+common_dirs "$S11"
+cat >"$S11/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
+# Roadmap: Barrier Wave-Zero Fixture
+
+## Wave 0 — Bad Zero Wave
+
+### ML-0A — Bad ML
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+EOF
+# ## Wave 0 is at line 3.
+WANT11='trackfw barrier: malformed wave heading at line 3: "0" is not a valid wave label'
+for runtime in go node py; do
+  run_barrier "$runtime" "$S11" ROADMAP-barrier-fixture --wave 1
+  [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/wave-zero/$runtime" "expected exit 2, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/wave-zero/$runtime" "stderr is empty — vacuity guard failed"
+  [[ "$BARRIER_STDERR" == "$WANT11"$'\n' || "$BARRIER_STDERR" == "$WANT11" ]] || fail "barrier/wave-label/wave-zero/$runtime" "stderr mismatch, want [$WANT11], got [$BARRIER_STDERR]"
+  ok "barrier/wave-label/wave-zero/$runtime"
+done
+
+# ---------------------------------------------------------------------------
+# Scenario 12 — --wave 2-BIS is an invalid argument (fourth pinned exit-2
+# message, cli-parity.md §four-pinned-exit-2-messages). Stderr must be
+# non-empty and byte-identical across all three runtimes.
+# ---------------------------------------------------------------------------
+S12="$WORK/s12-invalid-arg"
+common_dirs "$S12"
+cat >"$S12/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
+# Roadmap: Barrier Invalid-Arg Fixture
+
+## Wave 1 — Fixture Wave
+
+### ML-1A — Fixture ML
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+EOF
+WANT12='trackfw barrier: invalid --wave "2-BIS" — not a valid wave label'
+for runtime in go node py; do
+  run_barrier "$runtime" "$S12" ROADMAP-barrier-fixture --wave 2-BIS
+  [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/invalid-arg/$runtime" "expected exit 2, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/invalid-arg/$runtime" "stderr is empty — vacuity guard failed"
+  [[ "$BARRIER_STDERR" == "$WANT12"$'\n' || "$BARRIER_STDERR" == "$WANT12" ]] || fail "barrier/wave-label/invalid-arg/$runtime" "stderr mismatch, want [$WANT12], got [$BARRIER_STDERR]"
+  ok "barrier/wave-label/invalid-arg/$runtime"
+done
+# Byte-identical parity across runtimes for the fourth exit-2 message.
+run_barrier go "$S12" ROADMAP-barrier-fixture --wave 2-BIS
+GO_STDERR4="$BARRIER_STDERR"
+run_barrier node "$S12" ROADMAP-barrier-fixture --wave 2-BIS
+NODE_STDERR4="$BARRIER_STDERR"
+run_barrier py "$S12" ROADMAP-barrier-fixture --wave 2-BIS
+PY_STDERR4="$BARRIER_STDERR"
+[[ "$GO_STDERR4" == "$NODE_STDERR4" ]] || fail "barrier/wave-label/invalid-arg/parity/go-vs-node" "stderr diverges: go=[$GO_STDERR4] node=[$NODE_STDERR4]"
+[[ "$GO_STDERR4" == "$PY_STDERR4" ]] || fail "barrier/wave-label/invalid-arg/parity/go-vs-py" "stderr diverges: go=[$GO_STDERR4] py=[$PY_STDERR4]"
+ok "barrier/wave-label/invalid-arg/parity/three-runtimes-identical"
 
 echo
 echo "All check-barrier.sh scenarios passed."

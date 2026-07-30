@@ -41,7 +41,7 @@ type barrierCheck struct {
 // barrierResult is the root JSON document emitted by --json.
 type barrierResult struct {
 	Roadmap    string         `json:"roadmap"`
-	Wave       int            `json:"wave"`
+	Wave       string         `json:"wave"`
 	Status     string         `json:"status"`
 	StartedAt  string         `json:"started_at"`
 	FinishedAt string         `json:"finished_at"`
@@ -79,18 +79,24 @@ zero violations. It never invents a gate and never assumes a build tool.`,
 				fmt.Fprintln(cmd.ErrOrStderr(), "trackfw barrier: --wave is required")
 				os.Exit(2)
 			}
-			waveNum, convErr := strconv.Atoi(strings.TrimSpace(waveStr))
-			if convErr != nil || waveNum < 1 {
-				fmt.Fprintf(cmd.ErrOrStderr(), "trackfw barrier: invalid --wave %q — must be an integer >= 1\n", waveStr)
+			waveLabel := strings.TrimSpace(waveStr)
+			if !waveLabelRe.MatchString(waveLabel) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "trackfw barrier: invalid --wave %q — not a valid wave label\n", waveStr)
+				os.Exit(2)
+			}
+			// Integer part must be >= 1 (grammar: integer value constraint, not enforced by regex).
+			waveInt, _ := splitWaveLabel(waveLabel)
+			if waveInt < 1 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "trackfw barrier: invalid --wave %q — not a valid wave label\n", waveStr)
 				os.Exit(2)
 			}
 
-			runBarrier(cmd, args[0], waveNum, jsonOut)
+			runBarrier(cmd, args[0], waveLabel, jsonOut)
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&waveStr, "wave", "", "Wave number to evaluate (required, integer >= 1)")
+	cmd.Flags().StringVar(&waveStr, "wave", "", "Wave label to evaluate (required, grammar: <integer>[-<suffix>], e.g. 2 or 2-bis)")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit the result document as JSON instead of the text report")
 	return cmd
 }
@@ -143,7 +149,13 @@ func resolveBarrierRoadmap(name string) (string, error) {
 // ────────────────────────────────────────────────────────────────────────────
 
 var (
-	waveHeadingRe    = regexp.MustCompile(`^## Wave (\S+) `)
+	// waveHeadingRe detects any "## Wave <token> " heading, including malformed ones.
+	// The captured token is validated separately by waveLabelRe before being stored.
+	waveHeadingRe = regexp.MustCompile(`^## Wave (\S+) `)
+	// waveLabelRe validates a wave label token in isolation against the grammar pinned in
+	// docs/cli-parity.md ("Wave label grammar"): <integer>[-<suffix>] where suffix is [a-z0-9]+.
+	// Equivalent to the capture group of the heading regex ^## Wave (\d+(?:-[a-z0-9]+)?) .
+	waveLabelRe      = regexp.MustCompile(`^\d+(?:-[a-z0-9]+)?$`)
 	mlHeadingRe      = regexp.MustCompile(`^### (ML-\S+)`)
 	statusLineRe     = regexp.MustCompile(`^\*\*Status:\*\*(.*)$`)
 	criteriaHeaderRe = regexp.MustCompile(`^\*\*Crit[eé]rios de aceite:\*\*`)
@@ -153,11 +165,12 @@ var (
 	gatesHeaderRe    = regexp.MustCompile(`^\*\*Gates da wave:\*\*`)
 )
 
-// waveBlock delimits one "## Wave <n> ..." section: [start, end) line indices (0-based).
+// waveBlock delimits one "## Wave <label> ..." section: [start, end) line indices (0-based).
+// label is the wave label string (e.g. "1", "2-bis") per the grammar in docs/cli-parity.md.
 type waveBlock struct {
-	number int
-	start  int
-	end    int
+	label string
+	start int
+	end   int
 }
 
 // mlBlock delimits one "### ML-..." section within a wave: [start, end) line indices.
@@ -168,7 +181,8 @@ type mlBlock struct {
 }
 
 // parseWaves splits the roadmap into wave blocks (rule 1). Returns a *barrierUsageError
-// (never a plain error) when a wave heading's number cannot be parsed (rule 6).
+// (never a plain error) when a wave heading's label is outside the grammar (rule 6).
+// A heading outside the grammar aborts the entire document — intentionally (ADR decision 16).
 func parseWaves(lines []string) ([]waveBlock, *barrierUsageError) {
 	var waves []waveBlock
 	n := len(lines)
@@ -177,10 +191,19 @@ func parseWaves(lines []string) ([]waveBlock, *barrierUsageError) {
 		if m == nil {
 			continue
 		}
-		num, err := strconv.Atoi(m[1])
-		if err != nil {
+		token := m[1]
+		// Validate label against the grammar pinned in docs/cli-parity.md.
+		// Using literal quotes (not %q) so the token is emitted verbatim across runtimes.
+		if !waveLabelRe.MatchString(token) {
 			return nil, &barrierUsageError{
-				msg: fmt.Sprintf("malformed wave heading at line %d: %q is not a valid wave number", i+1, m[1]),
+				msg: fmt.Sprintf("malformed wave heading at line %d: \"%s\" is not a valid wave label", i+1, token),
+			}
+		}
+		// Integer part must be >= 1 (regex allows "0" since \d+ matches any digits).
+		intVal, _ := splitWaveLabel(token)
+		if intVal < 1 {
+			return nil, &barrierUsageError{
+				msg: fmt.Sprintf("malformed wave heading at line %d: \"%s\" is not a valid wave label", i+1, token),
 			}
 		}
 		end := n
@@ -190,9 +213,55 @@ func parseWaves(lines []string) ([]waveBlock, *barrierUsageError) {
 				break
 			}
 		}
-		waves = append(waves, waveBlock{number: num, start: i, end: end})
+		waves = append(waves, waveBlock{label: token, start: i, end: end})
 	}
 	return waves, nil
+}
+
+// splitWaveLabel splits a valid wave label into its integer and optional suffix parts.
+// For "2-bis" it returns (2, "bis"); for "3" it returns (3, "").
+// The label must already be valid per waveLabelRe; behaviour on invalid input is undefined.
+func splitWaveLabel(label string) (integer int, suffix string) {
+	if idx := strings.Index(label, "-"); idx >= 0 {
+		integer, _ = strconv.Atoi(label[:idx])
+		suffix = label[idx+1:]
+	} else {
+		integer, _ = strconv.Atoi(label)
+	}
+	return
+}
+
+// compareWaveLabels returns -1, 0, or 1 comparing two wave labels per the ordering defined
+// in docs/cli-parity.md (§ "Wave label grammar"):
+//  1. Compare integer parts numerically.
+//  2. On a tie, no-suffix precedes with-suffix.
+//  3. On a tie between two suffixes, compare lexicographically.
+//
+// So "2" < "2-bis" < "2-hotfix" < "3". Used where waves must be listed or compared.
+func compareWaveLabels(a, b string) int {
+	aInt, aSuf := splitWaveLabel(a)
+	bInt, bSuf := splitWaveLabel(b)
+	if aInt != bInt {
+		if aInt < bInt {
+			return -1
+		}
+		return 1
+	}
+	// integers equal — no-suffix before with-suffix
+	if aSuf == "" && bSuf != "" {
+		return -1
+	}
+	if aSuf != "" && bSuf == "" {
+		return 1
+	}
+	// both have a suffix (or both have none): compare lexicographically
+	if aSuf < bSuf {
+		return -1
+	}
+	if aSuf > bSuf {
+		return 1
+	}
+	return 0
 }
 
 // parseMLs splits a wave block into ML blocks (rule 2).
@@ -336,9 +405,9 @@ func usageExit(cmd *cobra.Command, format string, args ...interface{}) {
 	os.Exit(2)
 }
 
-// runBarrier evaluates <roadmap> --wave <n> and prints the report (text or JSON),
+// runBarrier evaluates <roadmap> --wave <label> and prints the report (text or JSON),
 // exiting 0 (passed), 1 (blocked) or 2 (usage/resolution error, handled via usageExit).
-func runBarrier(cmd *cobra.Command, roadmapArg string, waveNum int, jsonOut bool) {
+func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut bool) {
 	startedAt := time.Now().UTC()
 
 	roadmapPath, err := resolveBarrierRoadmap(roadmapArg)
@@ -362,13 +431,13 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveNum int, jsonOut bool
 
 	var target *waveBlock
 	for i := range waves {
-		if waves[i].number == waveNum {
+		if waves[i].label == waveLabel {
 			target = &waves[i]
 			break
 		}
 	}
 	if target == nil {
-		usageExit(cmd, "wave %d not found in roadmap %q", waveNum, filepath.Base(roadmapPath))
+		usageExit(cmd, "wave %s not found in roadmap %q", waveLabel, filepath.Base(roadmapPath))
 		return
 	}
 
@@ -378,7 +447,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveNum int, jsonOut bool
 	mlsCheck := barrierCheck{Name: "mls_complete", Evidence: []string{}, Failures: []string{}}
 	if len(mls) == 0 {
 		mlsCheck.Status = "blocked"
-		mlsCheck.Failures = append(mlsCheck.Failures, fmt.Sprintf("wave %d: no ML found", waveNum))
+		mlsCheck.Failures = append(mlsCheck.Failures, fmt.Sprintf("wave %s: no ML found", waveLabel))
 	} else {
 		ok := true
 		for _, ml := range mls {
@@ -484,7 +553,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveNum int, jsonOut bool
 	finishedAt := time.Now().UTC()
 	result := barrierResult{
 		Roadmap:    filepath.Base(roadmapPath),
-		Wave:       waveNum,
+		Wave:       waveLabel,
 		Status:     overallStatus,
 		StartedAt:  startedAt.Format(time.RFC3339),
 		FinishedAt: finishedAt.Format(time.RFC3339),
@@ -507,7 +576,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveNum int, jsonOut bool
 // printBarrierText renders a human-readable report of the barrier result.
 func printBarrierText(cmd *cobra.Command, result barrierResult) {
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "trackfw barrier — %s — wave %d\n", result.Roadmap, result.Wave)
+	fmt.Fprintf(out, "trackfw barrier — %s — wave %s\n", result.Roadmap, result.Wave)
 	for _, c := range result.Checks {
 		symbol := "✓"
 		if c.Status != "passed" {
