@@ -4,6 +4,36 @@
 
 ---
 
+## Sessão 2026-07-30 — Artemis (ML-3A — Gate -v e falsificação seam Go) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md`
+
+**Tarefa:** ML-3A — Cobrir `-v` no gate (`check-cli-parity.sh`) com duas asserções por runtime (exit
+não-zero + saída não casa `^trackfw [0-9]+\.[0-9]+\.[0-9]+$`) e provar não-vacuidade com Cenário 23
+(seam Go: remoção de `root.Flags().Bool("version", ...)` → cobra reregistra `-v` → gate falha).
+
+**Branch:** `feat/reservar-v-para-verbose-e-remover-atalho-de-versao-no-go`
+
+**Arquivos modificados:**
+- `scripts/check-cli-parity.sh`: bloco `-v flag` inserido antes de `check-integration-cli-parity.sh`.
+  Dois estágios por runtime: vacuity-guard (saída não-vazia), Assertion-1 (exit -ne 0), Assertion-2
+  (grep -Eq negativo contra _VERSION_RE). Verificação empírica: nenhum runtime produz linha matching
+  a regex com `-v` rejeitado (Go: erro+usage; Node: `error: unknown option '-v'`; Python: usage+erro).
+- `scripts/check-gates-falsify.sh`: Cenário 23 com guarda de padrão (sed), guarda de vivacidade
+  (build_go_or_fail + execução do binário corrompido confirmando exit 0 + formato de versão), e
+  `assert_fails_with "cli-parity/v-flag-accepted"` rodando o gate a partir de T23 (cd T23 →
+  `go build ./cmd/trackfw` pega o internal/ corrompido). Total: 23 → 24 cenários (gates: 14).
+
+**Evidência:**
+- `bash scripts/check-cli-parity.sh` → EXIT=0 (cenário positivo)
+- `bash scripts/check-gates-falsify.sh` → 24/24 OK, EXIT=0 (incluindo `cli-parity/v-flag-accepted`)
+- `make quality` → EXIT=0
+- Cenários 21 e 22 permanecem verdes (não regressão PR #91)
+
+**Status:** todos os critérios de aceite do ML-3A atendidos.
+
+---
+
 ## Sessão 2026-07-30 — Artemis (ML-3A — Gate unificado + falsificação) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
@@ -7013,3 +7043,80 @@ própria.**
 
 Duas mudanças observáveis a constar no CHANGELOG: o Go deixa de imprimir o prefixo `v`, e o `--version`
 do Node passa a incluir `trackfw `. Conforme o protocolo, o CHANGELOG é editado apenas no PR de release.
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2A — Desvincular `-v` de `--version` no Go) — IMPLEMENTANDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md`
+**Branch:** `feat/reservar-v-para-verbose-e-remover-atalho-de-versao-no-go`
+
+**Abordagem:** Pré-registrar `root.Flags().Bool("version", false, "version for trackfw")` em `newRootCmd()`
+antes que `InitDefaultVersionFlag()` do cobra seja chamado. O cobra só adiciona a flag se
+`Flags().Lookup("version") == nil`, portanto o shorthand `v` nunca é registrado.
+
+**Status final:** CONCLUÍDO
+
+**Mudanças:**
+- `internal/commands/root.go`: pré-registra `Flags().Bool("version", false, ...)` antes de `AddCommand`,
+  bloqueando o registro automático do shorthand `v` pelo cobra.
+- `internal/commands/version_test.go`: adiciona `TestShorthandVNotRegistered` (asserção estrutural sobre
+  a flag set) e `TestShortVFlagRejected` (asserção comportamental sobre stdout + erro).
+
+**Divergência de contrato registrada:** nenhuma. O contrato não exige identidade de mensagem/exit entre
+os três runtimes para flags desconhecidas — cobra emite exit 1, o que satisfaz "não-zero".
+
+## 2026-07-30 — Zeus — CONCLUÍDO: -v reservado para verbose, 3 waves verdes
+
+`make quality` exit 0 · **24 cenários de falsificação** (eram 23) · Go limpo · npm 342 · pytest 727 ·
+`validate --json` 0 violações · barrier das três waves `passed`.
+
+| Invocação | Go | Node.js | Python |
+|---|---|---|---|
+| `version` / `--version` | `trackfw 5.0.0` | idem | idem |
+| `-v` | `unknown shorthand flag` exit 1 | exit 1 | exit 2 |
+
+### A solução foi mais elegante do que o roadmap previa
+
+Eu havia alertado que remover o shorthand poderia perder o `SetVersionTemplate` e regredir o
+`--version` recém-alinhado no PR #91. Não ocorreu: o caminho escolhido **pré-registra**
+`root.Flags().Bool("version", false, ...)` sem shorthand. O cobra só adiciona a flag dele quando
+`Flags().Lookup("version") == nil`, então o `v` nunca entra no mapa do pflag — **mas** o cobra continua
+detectando `version=true` em execução e aplicando o template. Remove o atalho sem tocar no caminho que
+produz a saída.
+
+### Padrão que se repetiu nos dois agentes: asserções complementares
+
+- **Apolo** escreveu duas: `ShorthandLookup("v") == nil` (estrutural) e `Execute()` com erro + stdout
+  que não casa a linha de versão (comportamental). A primeira sozinha passaria se `-v` fosse registrado
+  por outro caminho; a segunda sozinha passaria se `-v` falhasse por motivo alheio.
+- **Artemis** fez o mesmo no gate: exit não-zero **e** saída que não casa o formato de versão. Só o exit
+  code não distingue "rejeitada" de "aceita mas falhou por outro motivo".
+
+### Guarda de vivacidade no seam — não pedida, e fecha lacuna real
+
+Pedi guarda de padrão (`sed` que não altera nada → falha). O Artemis acrescentou **guarda de
+vivacidade**: após corromper, **compila** e verifica que o binário corrompido de fato **aceita** `-v`
+com exit 0 e formato de versão. Se não exibir o bug, falha com `seam inativo`.
+
+A diferença importa: o `sed` pode alterar o arquivo **sem** restaurar o shorthand — por exemplo se o
+comportamento do cobra mudar numa atualização. Nesse caso a guarda de padrão passa e a falsificação
+vira vacuosa em silêncio. A guarda de vivacidade verifica o **efeito**, não a **edição**.
+
+Padrão a reaproveitar: **seam precisa provar que a corrupção produziu o defeito, não apenas que o
+arquivo mudou.**
+
+### Estrutura sem paralelismo — deliberada
+
+Três waves, um ML cada. Só o Go mudava código; Node e Python já rejeitavam `-v`. Não criei MLs vazios
+para eles: seria cerimônia sem conteúdo, e a paridade é verificada pelo gate no ML-3A, que é onde
+pertence.
+
+### Pendente para o release
+
+Dois breaking changes acumulados desde a `v5.0.0`, ambos de saída observável:
+1. **#91** — Go deixa de imprimir o prefixo `v`; `--version` do Node passa a incluir `trackfw `.
+2. **este** — `trackfw -v` deixa de funcionar no Go.
+
+Aponta **v6.0.0**. Migração do segundo: usar `--version` ou `version`, que funcionam nos três desde a
+v5.0.0.

@@ -813,4 +813,78 @@ assert_fails_with "cli-parity/version-byte-mismatch" \
   "version byte mismatch — go vs node/version" \
   bash "$T22/scripts/check-cli-parity.sh"
 
-echo "Falsification checks passed (all 23 scenarios, 14 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 23 — check-cli-parity.sh: Go reintroduz -v como atalho de --version
+#              (seam: remoção da pré-declaração de "version" sem shorthand em
+#              internal/commands/root.go) → gate detecta que -v exita 0.
+#
+# Objetivo (ML-3A, ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go):
+# Sem `root.Flags().Bool("version", false, "version for trackfw")`, cobra executa
+# InitDefaultVersionFlag e registra --version com shorthand v, fazendo `trackfw -v`
+# sair com exit 0 e imprimir a versão. O gate do ML-3A detecta isso com o
+# diagnóstico "go -v exited 0 — -v must be rejected (non-zero exit)".
+#
+# Seam: APENAS Go é falsificado — é o único runtime que carregava o defeito
+# (cobra InitDefaultVersionFlag). Node.js e Python já rejeitavam -v antes do
+# ML-2A; adicionar seams neles estaria fora do escopo negativo do roadmap.
+#
+# Guarda de padrão (sed): confirma que o sed encontrou e alterou o alvo antes
+# de construir o binário — se o padrão mudou de nome, a prova é inválida.
+# Guarda de vivacidade: constrói e executa o binário corrompido para confirmar
+# que -v é aceito antes de rodar o gate — distingue "seam inativo" de "gate
+# não reprova".
+# ---------------------------------------------------------------------------
+T23="$WORK/s23"
+mkdir -p "$T23/scripts"
+# Go: cópia real (não symlink) para isolar a corrupção em internal/commands/root.go.
+mkdir -p "$T23/cmd" "$T23/internal"
+cp -r "$ROOT_DIR/cmd/." "$T23/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T23/internal/"
+cp "$ROOT_DIR/go.mod" "$T23/go.mod"
+cp "$ROOT_DIR/go.sum"  "$T23/go.sum"
+# Node.js e Python: symlinks (não modificados — seam é Go-only).
+ln -s "$ROOT_DIR/npm"  "$T23/npm"
+ln -s "$ROOT_DIR/pypi" "$T23/pypi"
+# Scripts: copiar o gate; symlink para check-integration (lido como ROOT_DIR=$T23).
+cp "$ROOT_DIR/scripts/check-cli-parity.sh" "$T23/scripts/"
+ln -s "$ROOT_DIR/scripts/check-integration-cli-parity.sh" \
+      "$T23/scripts/check-integration-cli-parity.sh"
+
+# Corromper: remover a pré-declaração que impede o cobra de registrar -v.
+# Sem esta linha, cobra.InitDefaultVersionFlag registra --version com shorthand v.
+sed 's/root\.Flags()\.Bool("version", false, "version for trackfw")/\/\/ [falsified] root.Flags().Bool("version", false, "version for trackfw") — removed/' \
+  "$ROOT_DIR/internal/commands/root.go" > "$T23/internal/commands/root.go"
+
+# Guarda de padrão: garantir que o sed encontrou e alterou o alvo.
+if cmp -s "$ROOT_DIR/internal/commands/root.go" "$T23/internal/commands/root.go"; then
+  echo "FAIL [falsify/setup-s23]: sed não alterou root.go — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+# Guarda de vivacidade: compilar e exercitar o binário corrompido antes de rodar o gate.
+# Separa "seam inativo" (buildou mas -v continua rejeitado) de "gate não reprova".
+T23_BIN="$WORK/s23-bin/trackfw"
+mkdir -p "$(dirname "$T23_BIN")"
+build_go_or_fail "setup-s23-liveness-build" "$T23" "$T23_BIN"
+
+set +e
+_S23_V_OUT=$("$T23_BIN" -v 2>&1)
+_S23_V_EXIT=$?
+set -e
+
+if [[ $_S23_V_EXIT -ne 0 ]]; then
+  echo "FAIL [falsify/setup-s23-liveness]: seam inativo — binário corrompido ainda rejeita -v (exit $_S23_V_EXIT; got: '$_S23_V_OUT')" >&2
+  exit 1
+fi
+if ! grep -Eq '^trackfw [0-9]+\.[0-9]+\.[0-9]+$' <<<"$_S23_V_OUT"; then
+  echo "FAIL [falsify/setup-s23-liveness]: seam ativo mas -v não imprimiu versão no formato esperado (exit $_S23_V_EXIT; got: '$_S23_V_OUT')" >&2
+  exit 1
+fi
+
+# Rodar o gate a partir do módulo corrompido: `cd T23` faz `go build ./cmd/trackfw`
+# compilar a partir do internal/ corrompido (cobra RegisterVersion com shorthand v).
+assert_fails_with "cli-parity/v-flag-accepted" \
+  "go -v exited 0 — -v must be rejected" \
+  bash -c 'cd "$1" && bash scripts/check-cli-parity.sh' _ "$T23"
+
+echo "Falsification checks passed (all 24 scenarios, 14 gates proved non-vacuous)"

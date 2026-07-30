@@ -88,12 +88,48 @@ audit — and used a **different regex for Node.js**
 (`^([0-9]+\.){2}[0-9]+|^0\.0\.0-dev$`), which encoded that runtime's divergence as expected behaviour.
 A per-runtime exemption in a parity gate makes the difference permanent and invisible.
 
-### Out of scope: the `-v` shorthand
+### `-v` is reserved for verbose — never bound to `--version`
 
-`-v` is accepted **only by Go**; Node.js answers `error: unknown option '-v'` and Python falls through
-to `usage:`. That is a divergence in *which flags exist*, not in *output format*, and it is deliberately
-not addressed here: adding `-v` to two runtimes is a feature, removing it from Go is a breaking change.
-It needs its own decision.
+`-v` is **not** a shorthand for `--version` in any runtime. All three reject it with a **non-zero exit**.
+Resolved by `REQ-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go`; previously it was
+accepted **only by Go**, and nobody had decided that — cobra's `InitDefaultVersionFlag` registers
+`--version` with the shorthand `v` whenever the `Version` field is set and the shorthand is free. The
+flag was exposed by framework default, not by design.
+
+**`-v` and `--verbose` are reserved for a future verbose mode. No runtime may bind them to any other
+semantics.** In much of the ecosystem — `docker`, `kubectl`, `ansible`, `ssh`, `curl` — `-v` means
+*verbose*, not *version*; and none of the three CLIs has `--verbose` today. Keeping `-v` bound to
+version would burn the shorthand permanently, and freeing it later would be another breaking change.
+`--version` and the `version` subcommand already cover the use case in all three.
+
+**The reservation is contractual, not a surface.** No runtime accepts `-v` as a no-op. A flag that is
+accepted but does nothing is worse than `unknown option`: the caller passes it, expects verbose output,
+gets silence with no error, and cannot tell "reserved" from "broken".
+
+Implementing the verbose semantics is **not** part of this reservation — deciding what becomes verbose
+per command, and in what format, needs a concrete use case. It gets its own REQ when one exists.
+
+#### What is *not* unified — measured, and deliberately left alone
+
+After rejection, the three emit **different messages and exit codes**, because those are produced by the
+frameworks. Baseline measured with an arbitrary unknown flag (`--zzz`):
+
+| Runtime | Message | Exit |
+|---|---|---|
+| Go (cobra) | `Error: unknown flag: --zzz` | 1 |
+| Node.js (commander) | `error: unknown option '--zzz'` | 1 |
+| Python (argparse) | `trackfw: error: unrecognized arguments: --zzz` | **2** |
+
+This divergence is **pre-existing and applies to every unknown flag**, not just `-v`. Argparse's exit 2
+is the POSIX convention for a usage error.
+
+The contract therefore requires only that `-v` **is not bound** and **exits non-zero** in all three. It
+does **not** require a byte-identical message or an identical exit code: forcing that would mean
+overriding the error handling of cobra, commander and argparse globally — a far larger change affecting
+every command and every flag, which needs its own REQ if ever desired.
+
+This boundary is written down on purpose. Without it, an implementer would chase byte-identity here,
+fail, and most likely reach for a hack in one framework's error path.
 
 ## Vault de conhecimento
 

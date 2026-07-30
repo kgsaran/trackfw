@@ -68,3 +68,37 @@ func TestVersionSurfacesByteIdentical(t *testing.T) {
 		t.Errorf("superfícies divergem:\n  version   = %q\n  --version = %q", subcmd, flag)
 	}
 }
+
+// TestShorthandVNotRegistered garante que o shorthand "v" nunca está registrado
+// na flag set do root. Esta é a asserção estrutural que blinda contra regressão:
+// se alguém reintroduzir o atalho (ex: removendo a pré-declaração em root.go),
+// este teste falha imediatamente, antes mesmo de executar o binário.
+// Motivação: -v/-−verbose é reservado para modo verboso (cli-parity.md).
+func TestShorthandVNotRegistered(t *testing.T) {
+	root := newRootCmd()
+	if f := root.Flags().ShorthandLookup("v"); f != nil {
+		t.Errorf("shorthand 'v' está registrado na flag %q — deve ser removido (cli-parity.md reserva -v para verbose)", f.Name)
+	}
+}
+
+// TestShortVFlagRejected garante que "-v" retorna erro não-nulo e não imprime
+// a linha de versão no stdout (contrato cli-parity.md §-v is reserved for verbose).
+// O teste captura stdout separadamente do stderr para provar que a saída de
+// versão não vazou — exit code sozinho não distingue "rejeitada" de "aceita com falha".
+func TestShortVFlagRejected(t *testing.T) {
+	root := newRootCmd()
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs([]string{"-v"})
+
+	err := root.Execute()
+
+	if err == nil {
+		t.Fatal("trackfw -v: esperava erro, obteve nil")
+	}
+	got := strings.TrimRight(stdout.String(), "\n")
+	if versionLineRE.MatchString(got) {
+		t.Errorf("trackfw -v: linha de versão não deve aparecer no stdout, obteve %q", got)
+	}
+}
