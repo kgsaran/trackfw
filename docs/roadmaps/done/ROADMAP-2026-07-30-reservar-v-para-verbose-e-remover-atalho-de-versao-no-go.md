@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-30
 req: "REQ-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: reservar -v para verbose e remover atalho de versao no Go
 
-> Created: 2026-07-30 | Status: wip
+> Created: 2026-07-30 | Status: done
 
 ## Contexto
 
@@ -22,11 +22,16 @@ exit code de flag desconhecida (divergência pré-existente de framework, vale p
 
 ## Critérios de Aceite
 
-- [ ] `trackfw -v` não imprime versão em runtime nenhum e sai com código não-zero nos três.
-- [ ] `--version` e `version` permanecem inalterados, byte-idênticos nos três.
-- [ ] `cli-parity.md` registra `-v` / `--verbose` como reservado, com proibição explícita e motivo.
-- [ ] Gate cobre `-v` nos três, com prova de falsificação reintroduzindo o atalho.
-- [ ] `make quality` exit 0 e `validate --json` 0 violações.
+- [x] `trackfw -v` não imprime versão em runtime nenhum e sai com código não-zero nos três — Go passa a
+      `Error: unknown shorthand flag: 'v' in -v` (exit 1); Node.js exit 1; Python exit 2.
+- [x] `--version` e `version` permanecem inalterados, byte-idênticos nos três. A regressão do
+      `SetVersionTemplate` que este roadmap antecipou **não** ocorreu.
+- [x] `cli-parity.md` registra `-v` / `--verbose` como reservado, com proibição explícita, motivo, e a
+      fronteira do que **não** é unificado, com baseline medido.
+- [x] Gate cobre `-v` nos três com **duas** asserções (exit não-zero **e** saída que não casa o formato
+      de versão), com vacuity-guard. Falsificação no Cenário 23.
+- [x] `make quality` exit 0 (**24** cenários de falsificação, eram 23) e `validate --json` 0 violações.
+      Barrier das três waves: `passed`.
 
 ## Mapa de dependências
 

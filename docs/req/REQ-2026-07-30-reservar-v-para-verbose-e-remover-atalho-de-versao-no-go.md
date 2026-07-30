@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-30
 author: "trackfw_architect"
 adr: "docs/adr/ADR-001-trackfw-como-trilho-de-governanca-para-agentes-ia.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md"
 ---
 
 # REQ: reservar -v para verbose e remover atalho de versao no Go
 
-> Date: 2026-07-30 | Status: Open
+> Date: 2026-07-30 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -82,15 +82,15 @@ falharia, e provavelmente recorreria a um hack no tratamento de erro de um dos f
 
 ## Acceptance Criteria
 
-- [ ] `trackfw -v` **não** imprime a versão em runtime nenhum.
-- [ ] `trackfw -v` sai com código **não-zero** nos três runtimes.
-- [ ] `trackfw --version` e `trackfw version` permanecem **inalterados** — `trackfw <semver>`,
+- [x] `trackfw -v` **não** imprime a versão em runtime nenhum.
+- [x] `trackfw -v` sai com código **não-zero** nos três runtimes.
+- [x] `trackfw --version` e `trackfw version` permanecem **inalterados** — `trackfw <semver>`,
       byte-idênticos nos três, conforme já pinado em `## Version output`.
-- [ ] `docs/cli-parity.md` registra `-v` / `--verbose` como **reservado**, com a proibição explícita de
+- [x] `docs/cli-parity.md` registra `-v` / `--verbose` como **reservado**, com a proibição explícita de
       vinculá-lo a qualquer outra semântica e o motivo.
-- [ ] Gate de paridade cobre o comportamento de `-v` nos três, com prova de falsificação que reintroduza
+- [x] Gate de paridade cobre o comportamento de `-v` nos três, com prova de falsificação que reintroduza
       o atalho e demonstre reprovação.
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
 
 ## Escopo negativo
 
@@ -117,4 +117,4 @@ framework, e registra uma reserva de nomenclatura para evitar decisão implícit
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md`

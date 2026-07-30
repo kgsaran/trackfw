@@ -7065,3 +7065,58 @@ antes que `InitDefaultVersionFlag()` do cobra seja chamado. O cobra só adiciona
 
 **Divergência de contrato registrada:** nenhuma. O contrato não exige identidade de mensagem/exit entre
 os três runtimes para flags desconhecidas — cobra emite exit 1, o que satisfaz "não-zero".
+
+## 2026-07-30 — Zeus — CONCLUÍDO: -v reservado para verbose, 3 waves verdes
+
+`make quality` exit 0 · **24 cenários de falsificação** (eram 23) · Go limpo · npm 342 · pytest 727 ·
+`validate --json` 0 violações · barrier das três waves `passed`.
+
+| Invocação | Go | Node.js | Python |
+|---|---|---|---|
+| `version` / `--version` | `trackfw 5.0.0` | idem | idem |
+| `-v` | `unknown shorthand flag` exit 1 | exit 1 | exit 2 |
+
+### A solução foi mais elegante do que o roadmap previa
+
+Eu havia alertado que remover o shorthand poderia perder o `SetVersionTemplate` e regredir o
+`--version` recém-alinhado no PR #91. Não ocorreu: o caminho escolhido **pré-registra**
+`root.Flags().Bool("version", false, ...)` sem shorthand. O cobra só adiciona a flag dele quando
+`Flags().Lookup("version") == nil`, então o `v` nunca entra no mapa do pflag — **mas** o cobra continua
+detectando `version=true` em execução e aplicando o template. Remove o atalho sem tocar no caminho que
+produz a saída.
+
+### Padrão que se repetiu nos dois agentes: asserções complementares
+
+- **Apolo** escreveu duas: `ShorthandLookup("v") == nil` (estrutural) e `Execute()` com erro + stdout
+  que não casa a linha de versão (comportamental). A primeira sozinha passaria se `-v` fosse registrado
+  por outro caminho; a segunda sozinha passaria se `-v` falhasse por motivo alheio.
+- **Artemis** fez o mesmo no gate: exit não-zero **e** saída que não casa o formato de versão. Só o exit
+  code não distingue "rejeitada" de "aceita mas falhou por outro motivo".
+
+### Guarda de vivacidade no seam — não pedida, e fecha lacuna real
+
+Pedi guarda de padrão (`sed` que não altera nada → falha). O Artemis acrescentou **guarda de
+vivacidade**: após corromper, **compila** e verifica que o binário corrompido de fato **aceita** `-v`
+com exit 0 e formato de versão. Se não exibir o bug, falha com `seam inativo`.
+
+A diferença importa: o `sed` pode alterar o arquivo **sem** restaurar o shorthand — por exemplo se o
+comportamento do cobra mudar numa atualização. Nesse caso a guarda de padrão passa e a falsificação
+vira vacuosa em silêncio. A guarda de vivacidade verifica o **efeito**, não a **edição**.
+
+Padrão a reaproveitar: **seam precisa provar que a corrupção produziu o defeito, não apenas que o
+arquivo mudou.**
+
+### Estrutura sem paralelismo — deliberada
+
+Três waves, um ML cada. Só o Go mudava código; Node e Python já rejeitavam `-v`. Não criei MLs vazios
+para eles: seria cerimônia sem conteúdo, e a paridade é verificada pelo gate no ML-3A, que é onde
+pertence.
+
+### Pendente para o release
+
+Dois breaking changes acumulados desde a `v5.0.0`, ambos de saída observável:
+1. **#91** — Go deixa de imprimir o prefixo `v`; `--version` do Node passa a incluir `trackfw `.
+2. **este** — `trackfw -v` deixa de funcionar no Go.
+
+Aponta **v6.0.0**. Migração do segundo: usar `--version` ou `version`, que funcionam nos três desde a
+v5.0.0.
