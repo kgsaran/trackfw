@@ -263,18 +263,27 @@ callers imprimem verbatim e não compõem, abreviam nem derivam remediação; a 
 `plan.claim.scope` por artefato.
 
 ### ML-2D — Convergir o Node.js para a forma canônica
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (status marcado pelo orquestrador — ver nota de rastreabilidade)
 **Agente:** Apolo
 **Arquivos afetados:** `npm/src/integrations/manager.js`, `npm/src/commands/init.js`,
-`npm/src/commands/integrations.js`, `npm/src/integrations/index.js`, `npm/src/generators/init.js`,
-`npm/tests/agents-skills.test.js`
+`npm/src/commands/integrations.js`, `npm/tests/agents-skills.test.js`
 
 **Critérios de aceite:**
-- [ ] Manager compõe a linha; `onSkip(destinoTilde, linhaCompleta)`.
-- [ ] Nenhum caller compõe, abrevia ou deriva remediação — ambos os sites eliminados.
-- [ ] Remediação derivada de `plan.claim.scope`, não de `tilde.startsWith('~/')`.
-- [ ] Aviso em stderr inalterado, byte-idêntico ao Go.
-- [ ] `cd npm && npm test` passa.
+- [x] Manager compõe a linha; `onSkip(destinoTilde, linhaCompleta)` — `manager.js:146-149`.
+- [x] Nenhum caller compõe, abrevia ou deriva remediação — `init.js:284` e `integrations.js:190`
+      recebem `(_destination, reason)` e apenas escrevem em stderr; imports de `tildeify` removidos
+      dos callers.
+- [x] Remediação derivada de `plan.claim.scope` — `manager.js:147`. A inferência
+      `tilde.startsWith('~/')` foi eliminada.
+- [x] Aviso em stderr inalterado, byte-idêntico ao Go (auditado pelo orquestrador, ver ML-3A).
+- [x] `npm test` → **329 passed, 0 failed** (verificado pelo orquestrador).
+
+**Nota de rastreabilidade — desvio de processo:** os agentes do ML-2D e do ML-2E morreram por limite
+de sessão de API. O agente do ML-2D commitou com os arquivos do ML-2E já staged pelo agente paralelo,
+de modo que **d737b15 contém os dois MLs** embora sua mensagem descreva apenas o Node.js. O código dos
+dois está presente e auditado; o defeito é de rastreabilidade, não de conteúdo. Causa: dois agentes
+paralelos compartilhando o index do Git. `git add <caminhos>` explícito por ML não é suficiente quando
+outro agente já fez staging — o correto seria `git commit -- <caminhos>` ou worktrees isoladas.
 
 ### ML-2E — Convergir o Python para a forma canônica
 **Status:** ✅ Concluído

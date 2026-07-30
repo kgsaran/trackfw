@@ -6152,3 +6152,50 @@ Notas de contrato para ML-3A (auditoria de paridade):
 **Import de tildeify criou ciclo?** Não. `update-engine.js` importa apenas `fs`, `os`, `path`, `crypto`.
 **Caso de escopo misto construtível?** Sim — teste adicionado e verde.
 
+
+## 2026-07-29 — Zeus — Wave 2-bis convergida; dois achados de processo
+
+Os agentes do ML-2D (Node) e ML-2E (Python) morreram por **limite de sessão de API** no meio do
+commit. Auditei a árvore em vez de confiar nos relatórios parciais. Estado real:
+
+**Código: presente e convergido.** Verificado no código, não em relatório:
+- Node `manager.js:146-149` compõe a linha, remediação de `item.plan.claim.scope`; callers
+  `init.js:284` e `integrations.js:190` recebem `(_destination, reason)` e só escrevem em stderr.
+- Python `manager.py:211-233` compõe a linha, remediação de `plan["claim"]["scope"]`; closures de
+  `init.py:157` e `command.py:287` reduzidas a `print(reason, file=sys.stderr)`.
+- Go intocado (era o canônico).
+- As três strings de formato são idênticas: `warning: skipping outdated artifact %s; run '%s' to
+  refresh it`. Testes de lote de escopo misto existem no Node (`agents-skills.test.js:208`) e no
+  Python (`test_agents_skills.py:298`).
+
+**Validação independente:** `go build`/`go test`/`go vet` limpos · `npm test` 329 passed ·
+`python3 -m pytest` 694 passed · `make quality` exit 0 com os 19 cenários de falsificação, incluindo
+`falsify/no-repo-mutation`. Nenhuma suíte suja a árvore.
+
+### Achado 1 — dois agentes paralelos compartilham o index do Git
+
+O agente do ML-2D commitou com os arquivos do ML-2E já staged pelo agente paralelo: **d737b15 contém
+os dois MLs** com mensagem que descreve só o Node. Defeito de rastreabilidade, não de conteúdo.
+
+`git add <caminhos>` explícito por ML **não é suficiente** — não desfaz o staging que o outro agente
+já fez. Para MLs paralelos no mesmo repo, o correto é `git commit -- <caminhos>` (que ignora o index)
+ou worktrees isoladas por agente. Registrar porque a instrução "commite apenas seus arquivos" que eu
+dei nos handoffs é insuficiente e vai falhar de novo.
+
+### Achado 2 — poluição do repo por invocação manual do CLI (nota de vault criada)
+
+`git status` acusava `AGENTS.md` e `CLAUDE.md` com +51 linhas (bloco `trackfw:rules`) e `.cursor/`
+novo. Um agente rodou `init --ai-tools` com cwd na raiz do repo real para validar à mão.
+
+O ponto não óbvio: **`make quality` passa exit 0 com a árvore poluída.** O cenário
+`falsify/no-repo-mutation` do ML-6I funciona — mas guarda os **gates**, não a sessão do agente. Comando
+ad-hoc escapa por construção. Se o agente commitasse com `git add -A`, entraria no PR como trabalho.
+Revertido. Detalhes e prevenção em
+`vault/notes/agente-poluindo-repo-ao-rodar-cli-manualmente-2026-07-29.md`.
+
+### Correção de enquadramento minha
+
+Eu havia dito que a divergência da Wave 2 era "literalmente o ML-6F repetindo". Não era: o ML-6F
+produziu saída observavelmente diferente (3 vs 19 targets); aqui as strings em stderr saíam
+byte-idênticas desde o início. O que divergia era forma interna e robustez da derivação de escopo —
+endurecimento preventivo mais um bug latente de escopo misto, não regressão visível ao usuário.
