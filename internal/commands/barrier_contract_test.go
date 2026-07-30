@@ -155,7 +155,7 @@ type barrierCheckDoc struct {
 
 type barrierResultDoc struct {
 	Roadmap    string            `json:"roadmap"`
-	Wave       int               `json:"wave"`
+	Wave       string            `json:"wave"` // string since wave label grammar was introduced (ML-2A)
 	Status     string            `json:"status"`
 	StartedAt  string            `json:"started_at"`
 	FinishedAt string            `json:"finished_at"`
