@@ -6812,3 +6812,52 @@ vacuosa em silêncio. Não foi pedido — foi iniciativa do Artemis.
 **Release não feito.** Agora são 4 commits desde `v4.0.0` com mudanças observáveis acumuladas: campo
 `wave` do JSON (número → string), textos de mensagens do barrier, `## Wave 0` rejeitada, e a linha
 `moved` do Python. Critério do projeto (`feat` breaking → major) aponta **v5.0.0**.
+
+## 2026-07-30 — Zeus — IMPLEMENTANDO: padrão único de saída de versão (ML-1A feito)
+
+Release v5.0.0 publicada e tag no remoto. Backlog vazio; usuário pediu para ajustar o padrão de
+versionamento. Decisão dele: **sem o `v`**, alinhado ao padrão de versões do Python.
+
+**A feature de ontem já pagou:** `roadmap move ... wip` imprimiu `✓ synced REQ-...` e atualizou a
+referência sozinho. A correção manual que eu fazia a cada transição não foi necessária.
+
+### Não era uma divergência, eram três
+
+Medi as três superfícies em vez de assumir que era só o prefixo `v`:
+
+| Superfície | Go | Node.js | Python |
+|---|---|---|---|
+| `version` | `trackfw v5.0.0` | `trackfw 5.0.0` | `trackfw 5.0.0` |
+| `--version` | `trackfw v5.0.0` | **`5.0.0`** | `trackfw 5.0.0` |
+| `-v` | funciona | `error: unknown option` | cai no `usage:` |
+
+O `--version` do Node imprime o número puro, sem `trackfw ` — default do `.version()` do commander.
+Divergência maior que a do prefixo e que eu não teria visto se parasse na primeira superfície.
+
+### O gate assinava a divergência
+
+`check-cli-parity.sh:108` usa **regex própria para o Node**
+(`^([0-9]+\.){2}[0-9]+|^0\.0\.0-dev$`) enquanto Go e Python usam `^trackfw .+`. O gate que existe para
+detectar divergência a **codificava como esperada**. Enquanto essa linha existir, nenhuma auditoria
+futura reporta.
+
+E o `^trackfw .+` dos outros dois é frouxo demais: aceita `trackfw v5.0.0` e `trackfw 5.0.0`
+igualmente — **é exatamente por isso que o `v` sobreviveu a todas as auditorias até agora**. Uma
+asserção permissiva não é um gate fraco, é um gate que mente.
+
+### ML-1A — contrato
+
+`## Version output` em `docs/cli-parity.md` pina o texto literal, a equivalência byte-idêntica entre
+`version` e `--version`, a fonte da string por runtime, e — o ponto que importa — **a asserção literal
+do gate** mais a exigência de comparação byte-a-byte entre runtimes. Registrei por que a asserção
+anterior era vacuosa, para ninguém reintroduzir uma regex permissiva.
+
+Quinta iteração aplicando a mesma lição: pinar o comportamento observável, não a descrição do formato.
+
+### Escopo negativo deliberado
+
+O `-v` ficou **fora**. É divergência de *quais flags existem*, não de *formato de saída*, e resolvê-la
+exige decisão própria: adicionar `-v` a dois runtimes é feature, removê-lo do Go é breaking change.
+Registrado na REQ e no contrato para não se perder. Candidato a REQ separada.
+
+Barrier da Wave 1: `passed`. Wave 2 (3 runtimes) a seguir.
