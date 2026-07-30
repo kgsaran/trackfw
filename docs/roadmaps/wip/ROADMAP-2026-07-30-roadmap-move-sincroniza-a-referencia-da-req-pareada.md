@@ -298,3 +298,34 @@ agents=[zeus,apolo]; apolo/done/REQ-zzz.md + zeus/backlog/REQ-aaa.md: aaa emitid
 - [ ] Vacuity-guard presente; seam de falsificação prova poder de reprovação.
 - [ ] `by_agent` coberto.
 - [ ] `make quality` exit 0, `validate --json` 0 violações, `git status` limpo.
+
+---
+
+## Matriz de verificação empírica do orquestrador (Wave 3)
+
+Executando os três CLIs, não lendo relatórios.
+
+**Ordenação — as duas fixtures `by_agent`, `agents: [zeus, apolo]`:**
+
+| Fixture | Esperado | Go | Node.js | Python |
+|---|---|---|---|---|
+| Coincidente (`apolo/REQ-aaa` + `zeus/REQ-zzz`) | `aaa, zzz` | `aaa, zzz` | `aaa, zzz` | `aaa, zzz` |
+| **Discriminante** (`apolo/REQ-zzz` + `zeus/REQ-aaa`) | `aaa, zzz` | `aaa, zzz` | `aaa, zzz` | `aaa, zzz` |
+
+A fixture coincidente é a que **não prova nada** — foi nela que o Python passou por acidente na Wave 2,
+porque `apolo/…aaa` < `zeus/…zzz` casa com a ordem de basename. A discriminante inverte os basenames
+entre os agentes e separa os dois critérios. Qualquer gate desta feature **precisa** usar a
+discriminante, ou nasce vacuoso.
+
+**Linha `moved` — byte-a-byte:**
+
+```
+go   : ✓ moved ROADMAP-2026-01-01-t.md → docs/roadmaps/wip
+node : ✓ moved ROADMAP-2026-01-01-t.md → docs/roadmaps/wip
+py   : ✓ moved ROADMAP-2026-01-01-t.md → docs/roadmaps/wip
+```
+
+`diff` go↔node e go↔py sem diferenças. `hexdump` confirma `e2 9c 93` (U+2713) no início.
+
+**Suítes:** `go build`/`test`/`vet` limpos · `npm test` 339 passed · `pytest` **724 passed** ·
+`make quality` exit 0 (20 cenários de falsificação, 13 gates não-vacuosos) · árvore limpa.
