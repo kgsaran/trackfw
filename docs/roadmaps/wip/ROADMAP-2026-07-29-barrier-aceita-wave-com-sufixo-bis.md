@@ -295,3 +295,33 @@ Python foi absorvida pelo ML-2D justamente para evitar dois agentes no mesmo arq
 - [ ] `--wave 2-bis` resolve; `--wave 2` não casa com `2-bis`.
 - [ ] Abort de heading inválida preservado e testado nos três.
 - [ ] `make quality` exit 0 e `bin/trackfw validate --json` 0 violações.
+
+---
+
+## Matriz de verificação empírica do orquestrador (Wave 3)
+
+Executando os três CLIs, não lendo relatórios. Todas as células byte-idênticas, incluindo o número de
+linha na mensagem.
+
+**Heading malformada × posição** (`## Wave X`, `--wave 1`):
+
+| Posição | Go | Node.js | Python |
+|---|---|---|---|
+| Antes da wave alvo | exit 2, linha 7 | exit 2, linha 7 | exit 2, linha 7 |
+| Depois da wave alvo | exit 2, linha 12 | exit 2, linha 12 | exit 2, linha 12 |
+
+**Rótulo com sufixo:**
+
+| Cenário | Go | Node.js | Python |
+|---|---|---|---|
+| `--wave 2-bis` num roadmap com `Wave 2` e `Wave 2-bis` | resolve, `wave: "2-bis"` | idem | idem |
+| `--wave 2` no mesmo roadmap | resolve `Wave 2`, `wave: "2"` | idem | idem |
+| `## Wave 0` | exit 2, mensagem pinada | idem | idem |
+| `--wave 2-BIS` | exit 2, quarta mensagem pinada | idem | idem |
+
+A identidade distinta está provada: `--wave 2` resolve a `Wave 2` e **não** a `Wave 2-bis`, apesar de
+`2` ser prefixo de `2-bis`.
+
+**Suítes:** `go build`/`test`/`vet` limpos · `npm test` 339 passed · `pytest` 701 passed ·
+`make quality` exit 0 (inclui `barrier/parity/three-runtimes-identical`, `barrier/usage-error/{go,node,py}`
+e os 19 cenários de falsificação) · árvore limpa.
