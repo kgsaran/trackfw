@@ -339,6 +339,397 @@ test('rewriteRoadmapStatus — preserva aspas ao redor do valor', () => {
   assert.ok(content.includes('status: "wip"'), `deve preservar aspas; obteve:\n${content}`)
 })
 
+// ─── ML-2B: syncReqReferences — cinco cardinalidades + idempotência + by_agent ───────────────
+
+const { extractFrontmatterRoadmap, rewriteReqRoadmapRef, syncReqReferences } = require('../src/generators/roadmap')
+const { validateRefTargetsExist } = require('../src/validator/index.js')
+
+/**
+ * Helper: cria tmpdir com roadmap_dir + req_dir configurados.
+ */
+function withReqAndRoadmapDir(fn) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-sync-'))
+  const origCwd = process.cwd()
+  try {
+    const roadmapDir = path.join(tmp, 'docs', 'roadmaps')
+    const reqDir = path.join(tmp, 'docs', 'req')
+    fs.mkdirSync(roadmapDir, { recursive: true })
+    fs.mkdirSync(reqDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(tmp, 'trackfw.yaml'),
+      `roadmap_dir: docs/roadmaps\nreq_dir: docs/req\n`,
+      'utf8'
+    )
+    config.reset()
+    process.chdir(tmp)
+    fn(tmp, roadmapDir, reqDir)
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+}
+
+function mkAllStateDirs(roadmapDir) {
+  for (const s of ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']) {
+    fs.mkdirSync(path.join(roadmapDir, s), { recursive: true })
+  }
+}
+
+/**
+ * Cria uma REQ canônica com frontmatter roadmap: e linha Roadmap: no corpo (com backticks).
+ */
+function makeReqContent(roadmapPath) {
+  return (
+    `---\nstatus: Open\ndate: 2026-07-30\nauthor: "test"\n` +
+    `roadmap: "${roadmapPath}"\n---\n\n` +
+    `# REQ: test\n\n` +
+    `## Linked Roadmap\n` +
+    `Roadmap: \`${roadmapPath}\`\n`
+  )
+}
+
+function captureOutput(fn) {
+  const origLog = console.log
+  const origErr = console.error
+  const stdout = [], stderr = []
+  try {
+    console.log = (...a) => stdout.push(a.join(' '))
+    console.error = (...a) => stderr.push(a.join(' '))
+    fn()
+  } finally {
+    console.log = origLog
+    console.error = origErr
+  }
+  return { stdout: stdout.join('\n'), stderr: stderr.join('\n') }
+}
+
+// ─── Cardinalidade: zero REQs → no-op silencioso ─────────────────────────────
+
+test('syncReqReferences — zero REQs: no-op silencioso, exit 0', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-07-30-zero-req.md'
+    fs.writeFileSync(
+      path.join(roadmapDir, 'backlog', roadmapFile),
+      canonicalRoadmap('Zero Req Test'),
+      'utf8'
+    )
+
+    const savedExit = process.exitCode
+    try {
+      process.exitCode = undefined
+      const { stdout, stderr } = captureOutput(() => moveRoadmap('zero-req', 'wip'))
+      // Apenas a linha ✓ moved, sem nenhuma linha ✓ synced
+      assert.ok(!stdout.includes('synced'), `não deve imprimir synced; stdout: ${stdout}`)
+      assert.strictEqual(stderr, '', `stderr deve estar vazio; stderr: ${stderr}`)
+      assert.notStrictEqual(process.exitCode, 1, 'exit code não deve ser 1')
+    } finally {
+      process.exitCode = savedExit
+    }
+  })
+})
+
+// ─── Cardinalidade: uma REQ → reescreve frontmatter e corpo ──────────────────
+
+test('syncReqReferences — uma REQ: reescreve frontmatter roadmap: e corpo Roadmap: com backticks', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-07-30-one-req.md'
+    const oldPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const newPath = `docs/roadmaps/wip/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-one.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('One Req Test'), 'utf8')
+    fs.writeFileSync(reqPath, makeReqContent(oldPath), 'utf8')
+
+    const { stdout } = captureOutput(() => moveRoadmap('one-req', 'wip'))
+
+    assert.ok(stdout.includes(`✓ synced REQ-one.md → ${newPath}`), `deve imprimir synced; stdout: ${stdout}`)
+
+    const reqContent = fs.readFileSync(reqPath, 'utf8')
+    assert.ok(reqContent.includes(`roadmap: "${newPath}"`), `frontmatter deve ter novo caminho; got:\n${reqContent}`)
+    assert.ok(reqContent.includes(`Roadmap: \`${newPath}\``), `corpo deve ter novo caminho com backticks; got:\n${reqContent}`)
+    assert.ok(!reqContent.includes(oldPath), `oldPath não deve aparecer na REQ; got:\n${reqContent}`)
+  })
+})
+
+// ─── Cardinalidade: várias REQs → todas reescritas ───────────────────────────
+
+test('syncReqReferences — várias REQs: todas reescritas, uma linha cada', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-07-30-multi-req.md'
+    const oldPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const newPath = `docs/roadmaps/wip/${roadmapFile}`
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('Multi Req Test'), 'utf8')
+    fs.writeFileSync(path.join(reqDir, 'REQ-A.md'), makeReqContent(oldPath), 'utf8')
+    fs.writeFileSync(path.join(reqDir, 'REQ-B.md'), makeReqContent(oldPath), 'utf8')
+
+    const { stdout } = captureOutput(() => moveRoadmap('multi-req', 'wip'))
+
+    // Ambas as REQs devem aparecer no stdout (ordem de varredura não pinada)
+    assert.ok(stdout.includes('✓ synced REQ-A.md'), `REQ-A deve ser sincronizada; stdout: ${stdout}`)
+    assert.ok(stdout.includes('✓ synced REQ-B.md'), `REQ-B deve ser sincronizada; stdout: ${stdout}`)
+
+    const cA = fs.readFileSync(path.join(reqDir, 'REQ-A.md'), 'utf8')
+    const cB = fs.readFileSync(path.join(reqDir, 'REQ-B.md'), 'utf8')
+    assert.ok(cA.includes(`roadmap: "${newPath}"`), `REQ-A frontmatter deve ter novo path`)
+    assert.ok(cB.includes(`roadmap: "${newPath}"`), `REQ-B frontmatter deve ter novo path`)
+  })
+})
+
+// ─── Cardinalidade: aponta para outro roadmap → não toca ─────────────────────
+
+test('syncReqReferences — REQ aponta para outro roadmap: não é tocada', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-07-30-move-me.md'
+    const otherRoadmap = 'docs/roadmaps/done/ROADMAP-2026-07-30-outro.md'
+    const reqPath = path.join(reqDir, 'REQ-other.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('Move Me Test'), 'utf8')
+    fs.writeFileSync(reqPath, makeReqContent(otherRoadmap), 'utf8')
+    const originalContent = fs.readFileSync(reqPath)
+
+    const { stdout } = captureOutput(() => moveRoadmap('move-me', 'wip'))
+
+    assert.ok(!stdout.includes('synced'), `REQ apontando para outro roadmap não deve ser tocada; stdout: ${stdout}`)
+    const after = fs.readFileSync(reqPath)
+    assert.ok(originalContent.equals(after), 'conteúdo da REQ deve ser idêntico byte-a-byte')
+  })
+})
+
+// ─── Cardinalidade: referência já correta → nenhuma escrita (idempotência) ───
+
+test('syncReqReferences — referência já correta: nenhuma escrita, idempotência byte-a-byte', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-07-30-idem.md'
+    const oldPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const newPath = `docs/roadmaps/wip/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-idem.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('Idem Test'), 'utf8')
+    fs.writeFileSync(reqPath, makeReqContent(oldPath), 'utf8')
+
+    // Primeiro move: deve reescrever a REQ
+    captureOutput(() => moveRoadmap('idem', 'wip'))
+    const afterFirst = fs.readFileSync(reqPath)
+    assert.ok(afterFirst.toString().includes(`roadmap: "${newPath}"`), 'primeiro move deve atualizar a REQ')
+
+    // Cria o roadmap novamente em wip para simular segundo move (done)
+    const newPath2 = `docs/roadmaps/done/${roadmapFile}`
+    fs.writeFileSync(path.join(roadmapDir, 'wip', roadmapFile), canonicalRoadmap('Idem Test', 'wip'), 'utf8')
+
+    // Segundo move: deve reescrever a REQ de wip → done
+    captureOutput(() => moveRoadmap('idem', 'done'))
+    const afterSecond = fs.readFileSync(reqPath)
+    assert.ok(afterSecond.toString().includes(`roadmap: "${newPath2}"`), 'segundo move deve atualizar a REQ para done')
+
+    // Terceiro move simulado: REQ já aponta para done — forçar idempotência via terceiro move artificial
+    // Recria o roadmap em done para testar que a REQ não é tocada se já correta
+    fs.writeFileSync(path.join(reqDir, 'REQ-idem.md'), makeReqContent(newPath2), 'utf8')
+    const beforeThird = fs.readFileSync(reqPath)
+    fs.writeFileSync(path.join(roadmapDir, 'done', roadmapFile), canonicalRoadmap('Idem Test', 'done'), 'utf8')
+
+    // Simula o sync diretamente: referência já correta → sem escrita
+    const cfg = config.load()
+    const { stdout } = captureOutput(() => syncReqReferences(roadmapFile, newPath2, cfg))
+    const afterThird = fs.readFileSync(reqPath)
+    assert.ok(beforeThird.equals(afterThird), 'bytes da REQ não devem mudar quando referência já está correta')
+    assert.ok(!stdout.includes('synced'), `não deve imprimir synced quando já correto; stdout: ${stdout}`)
+  })
+})
+
+// ─── Idempotência byte-a-byte: mover duas vezes, comparar bytes ──────────────
+
+test('syncReqReferences — idempotência byte-a-byte: mover duas vezes não altera bytes da REQ', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-07-30-byte-idem.md'
+    const oldPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-byte.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('Byte Idem Test'), 'utf8')
+    fs.writeFileSync(reqPath, makeReqContent(oldPath), 'utf8')
+
+    // Primeiro move: backlog → wip
+    captureOutput(() => moveRoadmap('byte-idem', 'wip'))
+    const afterFirstMove = fs.readFileSync(reqPath)
+
+    // Recria roadmap em wip para segundo move
+    fs.writeFileSync(path.join(roadmapDir, 'wip', roadmapFile), canonicalRoadmap('Byte Idem Test', 'wip'), 'utf8')
+    // Recria a REQ apontando para wip (simula estado após primeiro move)
+    // Segundo move: wip → done
+    captureOutput(() => moveRoadmap('byte-idem', 'done'))
+    const afterSecondMove = fs.readFileSync(reqPath)
+
+    // Os bytes da REQ após o segundo move devem diferir do primeiro (caminho mudou)
+    // mas o conteúdo deve ser consistente e a REQ não deve estar duplicada
+    assert.ok(afterSecondMove.toString().includes('docs/roadmaps/done/'), 'REQ deve apontar para done após segundo move')
+
+    // Agora simula: sync com mesma REQ já correta (terceiro chamado, idempotência pura)
+    const cfg = config.load()
+    const newPath = `docs/roadmaps/done/${roadmapFile}`
+    syncReqReferences(roadmapFile, newPath, cfg) // REQ já aponta para done
+    const afterThirdCall = fs.readFileSync(reqPath)
+    assert.ok(afterSecondMove.equals(afterThirdCall), 'bytes da REQ não devem mudar na terceira chamada (idempotência)')
+  })
+})
+
+// ─── by_agent: REQ em req_dir/<agente>/<estado>/ é encontrada ────────────────
+
+test('syncReqReferences — by_agent: REQ em req_dir/<agente>/<estado>/ é encontrada e reescrita', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-byagent-'))
+  const origCwd = process.cwd()
+  try {
+    const roadmapDir = path.join(tmp, 'docs', 'roadmaps')
+    const reqDir = path.join(tmp, 'docs', 'req')
+
+    fs.mkdirSync(path.join(roadmapDir, 'zeus', 'backlog'), { recursive: true })
+    fs.mkdirSync(path.join(roadmapDir, 'zeus', 'wip'), { recursive: true })
+    // resolveReqFiles em by_agent usa os estados de roadmap: backlog, wip, done, etc.
+    fs.mkdirSync(path.join(reqDir, 'zeus', 'wip'), { recursive: true })
+    for (const s of ['analyzing', 'blocked', 'done', 'abandoned']) {
+      fs.mkdirSync(path.join(roadmapDir, 'zeus', s), { recursive: true })
+    }
+
+    fs.writeFileSync(
+      path.join(tmp, 'trackfw.yaml'),
+      'roadmap_dir: docs/roadmaps\nreq_dir: docs/req\nroadmap_namespacing: by_agent\nagents:\n- zeus\n',
+      'utf8'
+    )
+    config.reset()
+    process.chdir(tmp)
+
+    const roadmapFile = 'ROADMAP-2026-07-30-by-agent-req.md'
+    const oldPath = `docs/roadmaps/zeus/backlog/${roadmapFile}`
+    const newPath = `docs/roadmaps/zeus/wip/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'zeus', 'wip', 'REQ-by-agent.md')
+
+    fs.writeFileSync(
+      path.join(roadmapDir, 'zeus', 'backlog', roadmapFile),
+      canonicalRoadmap('By Agent Req Test'),
+      'utf8'
+    )
+    fs.writeFileSync(reqPath, makeReqContent(oldPath), 'utf8')
+
+    const { stdout } = captureOutput(() => moveRoadmap('by-agent-req', 'wip'))
+
+    assert.ok(stdout.includes(`✓ synced REQ-by-agent.md → ${newPath}`), `by_agent REQ deve ser encontrada e sincronizada; stdout: ${stdout}`)
+
+    const reqContent = fs.readFileSync(reqPath, 'utf8')
+    assert.ok(reqContent.includes(`roadmap: "${newPath}"`), `frontmatter by_agent deve ter novo caminho; got:\n${reqContent}`)
+    assert.ok(reqContent.includes(`Roadmap: \`${newPath}\``), `corpo by_agent deve ter novo caminho com backticks; got:\n${reqContent}`)
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// ─── Corpo com backticks preservados ─────────────────────────────────────────
+
+test('syncReqReferences — backticks no corpo são preservados após reescrita', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-07-30-backtick.md'
+    const oldPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const newPath = `docs/roadmaps/wip/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-bt.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('Backtick Test'), 'utf8')
+    // REQ com backticks no corpo
+    const reqContent =
+      `---\nstatus: Open\ndate: 2026-07-30\nroadmap: "${oldPath}"\n---\n\n` +
+      `# REQ: backtick\n\n## Linked Roadmap\n` +
+      `Roadmap: \`${oldPath}\`\n`
+    fs.writeFileSync(reqPath, reqContent, 'utf8')
+
+    captureOutput(() => moveRoadmap('backtick', 'wip'))
+
+    const after = fs.readFileSync(reqPath, 'utf8')
+    // Corpo deve ter backticks ao redor do novo caminho
+    assert.ok(after.includes(`Roadmap: \`${newPath}\``), `backticks devem ser preservados no corpo; got:\n${after}`)
+    // Frontmatter não deve ter backticks (só aspas, como estava antes)
+    assert.ok(after.includes(`roadmap: "${newPath}"`), `frontmatter deve ter aspas, não backticks; got:\n${after}`)
+  })
+})
+
+// ─── Erro ao gravar REQ: diagnóstico em stderr, exit não-zero, move não desfeito ───
+
+test('syncReqReferences — erro ao gravar REQ: stderr nomeia a REQ, exit não-zero, move não desfeito', () => {
+  // Pula em root (chmod não bloqueia root)
+  if (process.getuid && process.getuid() === 0) return
+
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-07-30-write-err.md'
+    const oldPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-werr.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('Write Error Test'), 'utf8')
+    fs.writeFileSync(reqPath, makeReqContent(oldPath), 'utf8')
+    // Torna a REQ não-gravável
+    fs.chmodSync(reqPath, 0o444)
+
+    const savedExit = process.exitCode
+    try {
+      process.exitCode = undefined
+      const { stderr } = captureOutput(() => moveRoadmap('write-err', 'wip'))
+
+      // Diagnóstico em stderr nomeando a REQ
+      assert.ok(
+        stderr.includes('trackfw roadmap move: failed to sync REQ-werr.md:'),
+        `stderr deve nomear a REQ; stderr: ${stderr}`
+      )
+      // Exit não-zero
+      assert.strictEqual(process.exitCode, 1, 'exitCode deve ser 1 em erro de escrita')
+      // Move não desfeito
+      const wipFiles = fs.readdirSync(path.join(roadmapDir, 'wip')).filter(f => f.endsWith('.md'))
+      assert.strictEqual(wipFiles.length, 1, 'roadmap deve ter sido movido para wip mesmo com erro na REQ')
+    } finally {
+      process.exitCode = savedExit
+      try { fs.chmodSync(reqPath, 0o644) } catch (_) {}
+    }
+  })
+})
+
+// ─── validateRefTargetsExist: zero violações após o move ─────────────────────
+
+test('syncReqReferences — validateRefTargetsExist: zero violações ref_targets_exist após move', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-07-30-validate-sync.md'
+    const oldPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-vsync.md')
+
+    // Cria o ADR referenciado pela REQ (req precisa de ADR para não disparar outra violação)
+    const adrDir = path.join(tmp, 'docs', 'adr')
+    fs.mkdirSync(adrDir, { recursive: true })
+    const adrPath = 'docs/adr/ADR-001-test.md'
+    fs.writeFileSync(path.join(tmp, adrPath), '---\nstatus: accepted\n---\n# ADR-001\n', 'utf8')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('Validate Sync Test'), 'utf8')
+    // REQ com roadmap: apontando para backlog (estado pré-move)
+    const reqContent =
+      `---\nstatus: Open\ndate: 2026-07-30\nadr: "${adrPath}"\nroadmap: "${oldPath}"\n---\n\n` +
+      `# REQ: validate sync\n\n## Linked Roadmap\nRoadmap: \`${oldPath}\`\n`
+    fs.writeFileSync(reqPath, reqContent, 'utf8')
+
+    // Executa o move
+    captureOutput(() => moveRoadmap('validate-sync', 'wip'))
+
+    // Verifica que o validador não gera violação ref_targets_exist para esta REQ
+    const violations = validateRefTargetsExist()
+    const refViolations = violations.filter(v => v.includes('REQ-vsync.md') && v.includes('ref_targets_exist') || (v.includes('REQ-vsync') && v.includes('does not exist')))
+    assert.strictEqual(refViolations.length, 0,
+      `não deve haver violação ref_targets_exist para REQ-vsync.md; violations: ${JSON.stringify(violations)}`)
+  })
+})
+
 // ─── Relatório final ─────────────────────────────────────────────────────────
 
 console.log(`\n${passed + failed} testes — ${passed} passaram, ${failed} falharam`)

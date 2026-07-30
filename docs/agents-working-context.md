@@ -4,6 +4,18 @@
 
 ---
 
+## Sessão 2026-07-30 — Apolo (ML-2B — Node.js: roadmap move sincroniza referência da REQ pareada)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2B — Implementar sincronização da referência `roadmap:` das REQs pareadas no Node.js,
+dentro de `moveRoadmap` em `npm/src/generators/roadmap.js`. As cinco cardinalidades do contrato,
+idempotência byte-a-byte, cobertura `by_agent`, formatação com backticks e testes correspondentes.
+
+**Status:** IMPLEMENTANDO
+
+---
+
 ## Sessão 2026-07-30 — Apolo (ML-2D — Python: corrigir early-break e alinhar mensagem --wave)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
