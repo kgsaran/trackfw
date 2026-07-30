@@ -309,7 +309,7 @@ async function runBarrier(roadmapArg, waveOption, jsonOutput) {
   }
   const waveLabel = String(waveOption).trim()
   if (!isValidWaveLabel(waveLabel)) {
-    throw new UsageError(`invalid --wave value: "${waveOption}" (must be a valid wave label, e.g. 1, 2-bis)`)
+    throw new UsageError(`invalid --wave "${waveOption}" — not a valid wave label`)
   }
 
   const cfg = config.load()

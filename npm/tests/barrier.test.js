@@ -155,6 +155,24 @@ test('barrier regression: exit-2 messages are pinned literally and byte-identica
   }
 })
 
+test('barrier regression: invalid --wave message is pinned literally (fourth exit-2 message)', () => {
+  // The fourth pinned exit-2 message is the invalid --wave argument.
+  // Canonical text (from Go): trackfw barrier: invalid --wave "<value>" — not a valid wave label
+  // The separator is an em dash U+2014, not a hyphen.
+  // This test verifies byte-identity against the Go canonical form.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-barrier-invalid-wave-'))
+  try {
+    const result = runBarrierCLI(dir, 'any-roadmap', '--wave', '2-BIS')
+    assert.equal(result.status, 2, `expected exit 2, got ${result.status}\nstderr: ${result.stderr}`)
+    assert.equal(
+      result.stderr,
+      'trackfw barrier: invalid --wave "2-BIS" — not a valid wave label\n'
+    )
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 // ────────────────────────────────────────────────────────────────────────────
 // findWave — rule 1 (wave heading) + malformed detection (rule 6)
 // ────────────────────────────────────────────────────────────────────────────
