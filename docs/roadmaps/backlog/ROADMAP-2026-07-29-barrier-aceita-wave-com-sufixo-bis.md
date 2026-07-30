@@ -1,0 +1,141 @@
+---
+status: backlog
+date: 2026-07-29
+req: "REQ-2026-07-29-barrier-aceita-wave-com-sufixo-bis"
+squad: ""
+---
+
+# Roadmap: barrier aceita wave com sufixo bis
+
+> Created: 2026-07-29 | Status: backlog
+
+## Contexto
+
+REQ: `docs/req/REQ-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
+
+`trackfw barrier` rejeita `## Wave 2-bis` com `malformed wave heading`, e o erro **aborta as quatro
+waves** do documento, não só a malformada: o parser varre todas as headings procurando a wave alvo e
+levanta o erro antes de decidir se aquela heading interessa.
+
+**Escopo negativo explícito:** este roadmap **não** relaxa a rigidez do parser. Heading fora da
+gramática continua abortando o documento inteiro — ignorar silenciosamente uma heading malformada
+deixaria seus MLs sem auditoria e produziria barrier verde sobre trabalho não verificado. Ver a seção
+"Decisão de design que mudou durante a análise" na REQ.
+
+## Critérios de Aceite
+
+- [ ] Gramática `<inteiro>[-<sufixo>]` com sufixo `[a-z0-9]+` minúsculo.
+- [ ] `--wave 2-bis` funciona; `--wave 2` não casa com `Wave 2-bis`.
+- [ ] Ordenação: `2-bis` após `2`, antes de `3`; sufixos entre si lexicográficos.
+- [ ] Heading inválida continua abortando o documento — teste explícito de regressão.
+- [ ] Terceira mensagem de exit-2 pinada e byte-idêntica nos três runtimes.
+- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+
+## Mapa de dependências
+
+```
+Wave 1 — ML-1A (emenda do ADR + contrato, orquestrador)
+   ↓ barrier — os três runtimes implementam contra o contrato congelado
+Wave 2 — ML-2A (Go) ‖ ML-2B (Node.js) ‖ ML-2C (Python)   ← spawn simultâneo, arquivos disjuntos
+   ↓ barrier — exige os três concluídos
+Wave 3 — ML-3A (auditoria de paridade byte-a-byte)
+```
+
+Lição incorporada do roadmap anterior: o contrato do ML-1A lá pinou os **nomes** dos parâmetros e não
+seus **valores**, e custou uma wave corretiva inteira. Aqui o ML-1A pina a gramática, a ordenação **e**
+o texto literal da mensagem antes de qualquer implementação.
+
+---
+
+## Wave 1 — Emendar o ADR e congelar o contrato (1 ML)
+> Dependências: nenhuma
+
+### ML-1A — Emendar o ADR e pinar a gramática de rótulo de wave
+**Status:** ⬜ Pendente
+**Agente:** orquestrador (`trackfw_architect`) — autoria exclusiva, como no ML-6A do roadmap da barrier
+**Arquivos afetados:**
+- `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md` — emenda
+- `docs/cli-parity.md` — seção `## trackfw barrier`: linha `--wave` da tabela de command surface,
+  regra 1 de "Roadmap parsing rules", bloco de mensagens de exit-2 pinadas
+
+**Ações:**
+1. Emendar o ADR: `--wave` deixa de ser "Integer ≥ 1" e passa a aceitar rótulo.
+2. Pinar a gramática: `^## Wave (\d+(?:-[a-z0-9]+)?) ` — inteiro, sufixo opcional minúsculo após
+   hífen, seguido de espaço. A exigência do espaço final é preservada da regra 1 atual.
+3. Pinar a ordenação: comparar primeiro o inteiro; em empate, rótulo sem sufixo precede rótulo com
+   sufixo, e sufixos entre si comparam lexicograficamente.
+4. Pinar a identidade: `--wave 2` casa **apenas** com `Wave 2`, nunca com `Wave 2-bis`.
+5. Pinar literalmente a terceira mensagem de exit-2, escolhendo o texto do Go como base por já nomear
+   a causa (Node hoje despeja a linha inteira sem motivo):
+   ```
+   trackfw barrier: malformed wave heading at line <n>: "<token>" is not a valid wave label
+   ```
+   `<token>` é o rótulo capturado, não a linha inteira. Registrar que o texto muda de
+   `wave number` para `wave label`, e que essa é uma mudança observável de mensagem.
+6. Registrar no contrato que abortar o documento inteiro é **intencional**, com a justificativa da
+   vacuidade, para que nenhuma implementação futura o relaxe.
+
+**Critérios de aceite:**
+- [ ] Gramática, ordenação, identidade e mensagem pinadas literalmente.
+- [ ] ADR emendado antes de qualquer implementação.
+- [ ] O caráter intencional do abort documentado.
+
+---
+
+## Wave 2 — Implementar nos três runtimes (3 MLs em paralelo)
+> Dependências: ML-1A completo. Arquivos disjuntos — **spawn simultâneo**.
+
+### ML-2A — Go
+**Status:** ⬜ Pendente
+**Agente:** Apolo
+**Arquivos afetados:** `internal/commands/barrier.go` (`waveHeadingRe` linha ~146, validação de
+`--wave` linhas ~78-88, mensagem linha ~183), testes correspondentes
+
+**Critérios de aceite:**
+- [ ] `--wave 2-bis` resolve `## Wave 2-bis`; `--wave 2` não.
+- [ ] Rótulo inválido aborta o documento, com a mensagem pinada.
+- [ ] `go build ./...`, `go test ./...`, `go vet ./...` passam.
+
+### ML-2B — Node.js
+**Status:** ⬜ Pendente
+**Agente:** Apolo
+**Arquivos afetados:** `npm/src/commands/barrier.js` (`findWave` linha ~52, regex linha ~56,
+mensagem linha ~59), testes correspondentes
+
+**Critérios de aceite:**
+- [ ] Comportamento equivalente ao Go.
+- [ ] Mensagem passa a nomear a causa e o token, não a linha inteira.
+- [ ] `cd npm && npm test` passa.
+
+### ML-2C — Python
+**Status:** ⬜ Pendente
+**Agente:** Apolo
+**Arquivos afetados:** `pypi/trackfw/commands/barrier.py` (`_WAVE_HEADING_RE`, validação de token
+linha ~115, mensagem linha ~116), testes correspondentes
+
+**Critérios de aceite:**
+- [ ] Comportamento equivalente ao Go e Node.
+- [ ] Suíte Python passa.
+
+---
+
+## Wave 3 — Auditoria de paridade (1 ML)
+> Dependências: **barrier** — ML-2A, ML-2B e ML-2C concluídos.
+
+### ML-3A — Auditar paridade e provar não-vacuidade
+**Status:** ⬜ Pendente
+**Agente:** Artemis
+
+**Ações:**
+1. Cenário de paridade comparando **bytes** de stderr dos três CLIs para rótulo inválido, encadeado em
+   `make quality`, com vacuity-guard.
+2. Cenário provando que `--wave 2-bis` resolve nos três e que `--wave 2` não casa com `Wave 2-bis`.
+3. **Teste de regressão do abort:** roadmap com heading `## Wave X — ...` deve abortar em todas as
+   waves nos três runtimes. É o teste que impede alguém de "corrigir" o abort para skip silencioso.
+4. Cenário de ordenação com `2`, `2-bis`, `2-hotfix`, `3`.
+
+**Critérios de aceite:**
+- [ ] Mensagens byte-idênticas nos três.
+- [ ] `--wave 2-bis` resolve; `--wave 2` não casa com `2-bis`.
+- [ ] Abort de heading inválida preservado e testado nos três.
+- [ ] `make quality` exit 0 e `bin/trackfw validate --json` 0 violações.
