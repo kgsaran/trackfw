@@ -473,7 +473,7 @@ def sync_paired_req_references(
     from trackfw.validator import resolve_req_files  # noqa: PLC0415
 
     roadmap_basename = os.path.basename(new_roadmap_path)
-    req_files = sorted(resolve_req_files(cfg))
+    req_files = sorted(resolve_req_files(cfg), key=lambda p: (os.path.basename(p), p))
 
     synced: list[str] = []
     failures: list[tuple[str, str]] = []

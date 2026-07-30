@@ -239,27 +239,42 @@ Ordem por caminho teria produzido `zzz, aaa` (errado). Ordem por basename produz
 - [x] `go build ./...`, `go test ./...`, `go vet ./...` passam. (15 pacotes ok)
 
 ### ML-2E — Node.js: ordenar por basename
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
 **Arquivos afetados:** `npm/src/generators/roadmap.js` (`syncReqReferences`), testes em `npm/tests/`
 
 **Critérios de aceite:**
-- [ ] Ordenação **explícita** por basename — não confiar na ordem do `readdirSync`.
-- [ ] Teste com fixture `by_agent` discriminante.
-- [ ] Teste de múltiplas REQs asserta a **sequência**, não apenas o conjunto.
-- [ ] `cd npm && npm test` passa.
+- [x] Ordenação **explícita** por basename — não confiar na ordem do `readdirSync`.
+- [x] Teste com fixture `by_agent` discriminante.
+- [x] Teste de múltiplas REQs asserta a **sequência**, não apenas o conjunto.
+- [x] `cd npm && npm test` passa.
+
+**Evidência da fixture discriminante:**
+```
+✓ syncReqReferences — by_agent discriminante: ordenação por basename, não por caminho completo
+25 testes — 25 passaram, 0 falharam
+ℹ pass 339 (suite completa)
+```
+agents=[zeus,apolo]; apolo/done/REQ-zzz.md + zeus/backlog/REQ-aaa.md: aaa emitido antes de zzz ✓
 
 ### ML-2F — Python: ordenar por basename e alinhar a linha `moved`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
 **Arquivos afetados:** `pypi/trackfw/generators/roadmap.py` (~476), `pypi/trackfw/commands/roadmap.py`
 (~106), testes em `pypi/tests/`
 
 **Critérios de aceite:**
-- [ ] Ordenação por **basename**, não por caminho completo.
-- [ ] Teste com fixture `by_agent` discriminante.
-- [ ] `✓ moved <basename> → <targetDir>` byte-idêntico ao Go, com U+2713 e U+2192.
-- [ ] Suíte Python passa.
+- [x] Ordenação por **basename**, não por caminho completo.
+- [x] Teste com fixture `by_agent` discriminante.
+- [x] `✓ moved <basename> → <targetDir>` byte-idêntico ao Go, com U+2713 e U+2192.
+- [x] Suíte Python passa.
+
+**Evidências:**
+- Fixture discriminante `by_agent` (`apolo/done/REQ-zzz` + `zeus/backlog/REQ-aaa`) → `synced = ["REQ-aaa.md", "REQ-zzz.md"]` ✓
+- Comparação lado a lado Go vs Python:
+  - Go: `✓ moved ROADMAP-2026-07-29-test-move.md → docs/roadmaps/wip`
+  - Python: `✓ moved ROADMAP-2026-07-29-test-move.md → docs/roadmaps/wip`
+- Suíte completa: 724 passed, 0 failed.
 
 **Disjunção:** um ML por runtime, arquivos sem interseção. Paralelizáveis.
 

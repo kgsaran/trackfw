@@ -803,6 +803,43 @@ class TestSyncPairedReqReferences(unittest.TestCase):
         self.assertNotIn(f"Roadmap: `{old_path}`", content)
 
     # ------------------------------------------------------------------
+    # Ordenação by_agent discriminante: basename ≠ ordem de caminho completo
+    # Fixture: apolo/done/REQ-zzz + zeus/backlog/REQ-aaa
+    # Caminho: apolo/done/REQ-zzz < zeus/backlog/REQ-aaa (ordem por caminho)
+    # Basename: REQ-aaa < REQ-zzz (ordem por basename — contrato)
+    # Esperado: ["REQ-aaa.md", "REQ-zzz.md"]
+    # ------------------------------------------------------------------
+    def test_by_agent_ordenacao_por_basename_fixture_discriminante(self):
+        """Garante ordenação por basename, não por caminho completo (fixture discriminante)."""
+        cfg = _make_full_cfg(self.tmpdir, namespacing="by_agent", agents=["zeus", "apolo"])
+        req_dir = cfg["req_dir"]
+
+        old_path = "docs/roadmaps/backlog/ROADMAP-2026-07-30-ordem.md"
+        new_path = "docs/roadmaps/wip/ROADMAP-2026-07-30-ordem.md"
+
+        # apolo/done/REQ-zzz.md → nome de caminho completo fica ANTES de zeus/backlog/REQ-aaa.md
+        # mas basename REQ-zzz.md deve ficar APÓS REQ-aaa.md
+        apolo_done_dir = os.path.join(req_dir, "apolo", "done")
+        zeus_backlog_dir = os.path.join(req_dir, "zeus", "backlog")
+        os.makedirs(apolo_done_dir, exist_ok=True)
+        os.makedirs(zeus_backlog_dir, exist_ok=True)
+
+        req_zzz = os.path.join(apolo_done_dir, "REQ-zzz.md")
+        req_aaa = os.path.join(zeus_backlog_dir, "REQ-aaa.md")
+        _write_req_file(req_zzz, old_path)
+        _write_req_file(req_aaa, old_path)
+
+        synced, failures = sync_paired_req_references(new_path, cfg)
+
+        self.assertEqual(failures, [])
+        self.assertEqual(len(synced), 2)
+        # Ordem DEVE ser por basename: aaa antes de zzz
+        self.assertEqual(synced[0], "REQ-aaa.md",
+            f"Esperado REQ-aaa.md primeiro (basename order), obtido: {synced}")
+        self.assertEqual(synced[1], "REQ-zzz.md",
+            f"Esperado REQ-zzz.md segundo (basename order), obtido: {synced}")
+
+    # ------------------------------------------------------------------
     # Saída pinada literalmente: ✓ U+2713, → U+2192
     # ------------------------------------------------------------------
     def test_caracteres_unicode_na_saida_pinados(self):

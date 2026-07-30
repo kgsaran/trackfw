@@ -4,6 +4,26 @@
 
 ---
 
+## Sessão 2026-07-30 — Apolo (ML-2F — Python: ordenar por basename e alinhar linha `moved`) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2F — duas correções no Python CLI.
+
+**Entregue:**
+- `pypi/trackfw/generators/roadmap.py`: `sorted(resolve_req_files(cfg))` → `sorted(..., key=lambda p: (os.path.basename(p), p))` — ordena por basename, com caminho completo como desempate.
+- `pypi/trackfw/commands/roadmap.py`: `print(f"Roadmap movido para: {new_path}")` → `print(f"✓ moved {os.path.basename(new_path)} → {os.path.dirname(new_path)}")` — paridade byte-a-byte com o Go.
+- `pypi/tests/test_generators_roadmap.py`: teste discriminante `test_by_agent_ordenacao_por_basename_fixture_discriminante` — fixture `apolo/done/REQ-zzz` + `zeus/backlog/REQ-aaa`, valida que `synced = ["REQ-aaa.md", "REQ-zzz.md"]`.
+
+**Validação:**
+- Fixture discriminante: `synced[0] = "REQ-aaa.md"`, `synced[1] = "REQ-zzz.md"` ✓
+- Paridade Go vs Python (execução lado a lado): idênticos — `✓ moved ROADMAP-... → docs/roadmaps/wip`
+- Suíte completa: 724 passed, 0 failed.
+
+**Status:** CONCLUÍDO
+
+---
+
 ## Sessão 2026-07-30 — Apolo (ML-2D — Go: ordenar por basename em syncREQReferences) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
@@ -26,7 +46,15 @@
 
 **Tarefa:** ML-2E (corretivo) — adicionar `.sort()` por basename após `resolveReqFiles(cfg)` em `syncReqReferences`; atualizar teste multi-REQ para assertar sequência; adicionar fixture discriminante `by_agent`.
 
-**Status:** IMPLEMENTANDO
+**Entregue:**
+- `npm/src/generators/roadmap.js`: `syncReqReferences` agora ordena a lista retornada por `resolveReqFiles` por basename (comparação `<`/`>` pura, locale-independente), com desempate por caminho completo.
+- `npm/tests/roadmap_move.test.js`: teste multi-REQ atualizado para assertar `posA < posB` (sequência, não conjunto); fixture discriminante `by_agent` adicionada: `agents=[zeus,apolo]`, `apolo/done/REQ-zzz.md` e `zeus/backlog/REQ-aaa.md`, asserta que `aaa` é emitido antes de `zzz`.
+
+**Validação:** `cd npm && npm test` → 339 passed, 0 failed. `node tests/roadmap_move.test.js` → 25 testes — 25 passaram, 0 falharam.
+
+**Commit:** `69e7d03` — `fix(roadmap): ordena REQs por basename em syncReqReferences no Node.js`
+
+**Status:** CONCLUÍDO
 
 ---
 

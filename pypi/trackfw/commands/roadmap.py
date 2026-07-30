@@ -103,7 +103,7 @@ def _cmd_move(args):
     state = args.state
     try:
         new_path = move_roadmap(filename, state, cfg)
-        print(f"Roadmap movido para: {new_path}")
+        print(f"✓ moved {os.path.basename(new_path)} → {os.path.dirname(new_path)}")
     except (ValueError, FileNotFoundError) as e:
         print(f"Erro: {e}", file=sys.stderr)
         sys.exit(1)
