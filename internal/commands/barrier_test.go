@@ -534,3 +534,66 @@ func TestBarrierRegression_Exit2MessagesArePinnedLiterally(t *testing.T) {
 		t.Fatalf("roadmap-not-found message mismatch:\nwant: %q\ngot:  %q", wantRoadmap, stderr2)
 	}
 }
+
+// TestWaveLabelGrammar_ValidAndInvalid is a table test of the full contract table
+// from docs/cli-parity.md §wave-label-grammar (pinned in ML-3A). It exercises
+// the composite predicate used in the heading pre-pass: waveLabelRe (regex) +
+// int≥1 guard in parseWaves. "0" is the only label that passes the regex but
+// fails the int≥1 rule — parseWaves is the correct surface to test for that case.
+func TestWaveLabelGrammar_ValidAndInvalid(t *testing.T) {
+	valid := []string{"1", "2", "2-bis", "2-hotfix", "10-a2"}
+	invalid := []string{"X", "2-BIS", "-bis", "2-", "2-bis-ter", "0"}
+
+	for _, lbl := range valid {
+		lbl := lbl
+		t.Run("valid/"+lbl, func(t *testing.T) {
+			if !waveLabelRe.MatchString(lbl) {
+				t.Errorf("waveLabelRe: expected %q to match (valid per contract), but it did not", lbl)
+			}
+			// Composite check: heading pre-pass must also accept it.
+			content := "## Wave " + lbl + " — Test Heading\nbody\n"
+			lines := strings.Split(content, "\n")
+			_, uerr := parseWaves(lines)
+			if uerr != nil {
+				t.Errorf("parseWaves: expected no error for valid label %q, got: %v", lbl, uerr)
+			}
+		})
+	}
+
+	for _, lbl := range invalid {
+		lbl := lbl
+		t.Run("invalid/"+lbl, func(t *testing.T) {
+			// Use parseWaves (not waveLabelRe alone) to exercise the full composite
+			// predicate — "0" passes the regex but is caught by the int≥1 guard.
+			content := "## Wave " + lbl + " — Bad Heading\nbody\n"
+			lines := strings.Split(content, "\n")
+			_, uerr := parseWaves(lines)
+			if uerr == nil {
+				t.Errorf("parseWaves: expected usage error for invalid label %q, got nil", lbl)
+			}
+		})
+	}
+}
+
+// TestBarrierRegression_FourthExitTwoMessage proves the fourth pinned exit-2
+// message (cli-parity.md §four-pinned-exit-2-messages) is emitted byte-for-byte
+// when --wave receives a syntactically invalid label. This is the message class
+// that distinguished from the third message (malformed heading) — same exit code,
+// different trigger surface (argument, not document). Node.js had complete coverage
+// of this path before ML-3A; this test closes the gap in Go.
+func TestBarrierRegression_FourthExitTwoMessage(t *testing.T) {
+	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
+		linkedREQ:     true,
+		mlStatus:      "✅",
+		criteriaLines: []string{"- [x] build passes"},
+	})
+
+	_, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "2-BIS")
+	if code != 2 {
+		t.Fatalf("expected exit 2 for invalid --wave label, got %d; stderr=%s", code, stderr)
+	}
+	want := "trackfw barrier: invalid --wave \"2-BIS\" — not a valid wave label\n"
+	if stderr != want {
+		t.Fatalf("fourth pinned message mismatch:\nwant: %q\ngot:  %q", want, stderr)
+	}
+}

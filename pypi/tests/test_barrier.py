@@ -467,3 +467,32 @@ def test_acceptance_evidence_conta_nao_atendidos():
     doc = json.loads(stdout)
     evidence_check = next(c for c in doc["checks"] if c["name"] == "acceptance_evidence")
     assert evidence_check["failures"] == ["ML-1A: 2 unmet acceptance criteria"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Tabela completa da gramática de rótulo de wave (ML-3A, pinned)
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_is_valid_wave_label_tabela_completa():
+    """Testa _is_valid_wave_label contra a tabela completa de docs/cli-parity.md.
+
+    Node.js já tinha este teste de tabela via isValidWaveLabel (barrier.test.js).
+    Go cobre via TestWaveLabelGrammar_ValidAndInvalid usando parseWaves.
+    Este teste fecha a mesma lacuna em Python: verifica a função diretamente,
+    garantindo que a implementação nativa (re.fullmatch + int>=1) corresponde
+    ao contrato em todos os seis rótulos inválidos e cinco válidos da tabela.
+    """
+    from trackfw.commands.barrier import _is_valid_wave_label
+
+    valid = ["1", "2", "2-bis", "2-hotfix", "10-a2"]
+    invalid = ["X", "2-BIS", "-bis", "2-", "2-bis-ter", "0"]
+
+    for lbl in valid:
+        assert _is_valid_wave_label(lbl), (
+            f"_is_valid_wave_label({lbl!r}) deve retornar True (rótulo válido per contrato)"
+        )
+
+    for lbl in invalid:
+        assert not _is_valid_wave_label(lbl), (
+            f"_is_valid_wave_label({lbl!r}) deve retornar False (rótulo inválido per contrato)"
+        )
