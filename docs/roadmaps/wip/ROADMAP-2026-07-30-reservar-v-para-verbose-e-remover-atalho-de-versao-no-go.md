@@ -150,3 +150,29 @@ EXIT_V: 1
 - [ ] Seam verificado por execução: com o atalho reintroduzido, o gate **falha**.
 - [ ] Cenários de `version` / `--version` inalterados e verdes.
 - [ ] `make quality` exit 0, `validate --json` 0 violações, `git status` limpo.
+
+---
+
+## Matriz de verificação empírica do orquestrador (Wave 2)
+
+Executando os CLIs, não lendo relatórios.
+
+| Invocação | Go | Node.js | Python |
+|---|---|---|---|
+| `version` | `trackfw 5.0.0` (exit 0) | `trackfw 5.0.0` | `trackfw 5.0.0` |
+| `--version` | `trackfw 5.0.0` (exit 0) | `trackfw 5.0.0` | `trackfw 5.0.0` |
+| `-v` | `Error: unknown shorthand flag: 'v' in -v` (**exit 1**) | rejeitado (exit 1) | rejeitado (exit 2) |
+
+`diff` entre `version` e `--version` no Go: **sem diferenças**. Os três rejeitam `-v` com código
+não-zero, e nenhum imprime a versão.
+
+**A regressão que o roadmap antecipou não ocorreu.** O `SetVersionTemplate("trackfw {{.Version}}\n")`
+continua sendo aplicado: o caminho escolhido pré-registra `Flags().Bool("version", ...)` **sem**
+shorthand, e o cobra só adiciona a flag dele quando `Flags().Lookup("version") == nil` — então o
+template permanece ativo porque o cobra ainda detecta `version=true` em execução e o aplica. O
+`--version` do PR #91 não regrediu.
+
+Os exit codes divergentes (1 · 1 · 2) são exatamente o baseline pré-existente de framework registrado
+no contrato, e **não** são objeto desta entrega.
+
+**Suítes:** Go limpo · `npm test` 342 passed · `pytest` 727 passed.
