@@ -6199,3 +6199,56 @@ Eu havia dito que a divergência da Wave 2 era "literalmente o ML-6F repetindo".
 produziu saída observavelmente diferente (3 vs 19 targets); aqui as strings em stderr saíam
 byte-idênticas desde o início. O que divergia era forma interna e robustez da derivação de escopo —
 endurecimento preventivo mais um bug latente de escopo misto, não regressão visível ao usuário.
+
+---
+
+## Sessão 2026-07-29 — Artemis/QA (ML-3A — auditoria de paridade byte-a-byte)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+
+**Tarefa:** ML-3A — três lacunas de cobertura pós-Wave-2-bis:
+1. Teste E2E com HOME isolado para os três runtimes (`init` + artefato global outdated → exit 0 + scaffold + bytes preservados + aviso)
+2. Teste de lote de escopo misto no Go (espelho de Node.js:208 e Python:298)
+3. Cenário de paridade comparando bytes de stderr dos três CLIs (global + project)
+
+**Entregue:**
+
+### Lacuna 2 — TestManagerInstallSkipMixedScopeBatch (Go)
+
+Adicionado em `internal/integrations/manager_test.go`. Instala v1 para dois artefatos (global e
+projeto) na mesma chamada `Install`, depois instala v2 para ambos → ambos outdated+owned → ambos
+pulados. Verifica que cada um recebe a remediação correta pelo seu `plan.Claim.Scope` (não por closure
+sobre escopo uniforme do lote). Mirrors Node.js:208 e Python:298.
+
+Resultado: `go test ./internal/integrations/ -run TestManagerInstallSkipMixedScopeBatch` → **PASS**.
+`go test ./...` → **todos passam**.
+
+### Lacuna 1 + 3 — Cenários 6, 7 e 8 em check-update-parity.sh
+
+Adicionados três cenários em `scripts/check-update-parity.sh`:
+
+**Cenário 6 (skip-parity/global-scope):** cada runtime instala gemini/architect globalmente em HOME
+próprio, manifesto é patchado para outdated+owned (sentinel bytes + sha256 + catalog_version antigo),
+re-install captura aviso de stderr. Compara bytes entre os três: `three-runtimes-identical`.
+
+**Cenário 7 (skip-parity/project-scope):** mesmo para escopo de projeto. Cada runtime usa projeto e
+manifesto próprios (necessário: Node.js/Python resolvem `process.cwd()` via `/private/` no macOS,
+produzindo chave de manifest diferente da do Go). Aviso byte-idêntico.
+
+**Cenário 8 (e2e/init-outdated-global):** para cada runtime — instala gemini/architect globalmente,
+patcha para outdated+owned, executa `init --ai-tools gemini`, afirma: (a) exit 0; (b) `trackfw.yaml`
+criado; (c) sentinel preservado em `trackfw-architect.md`; (c-sibling) `trackfw-backend.md` gravado
+(skip ≠ abort); (d) aviso em stderr.
+
+Resultado: `bash scripts/check-update-parity.sh` → **todos os cenários novos: OK**.
+`make quality` → **exit 0**, 19 cenários de falsificação, `git status` limpo.
+`bin/trackfw validate --json` → **0 violações**.
+
+### Evidência D1/D4
+
+`git diff origin/main..HEAD -- internal/commands/init.go npm/src/commands/init.js pypi/trackfw/commands/init.py`
+mostra apenas adição de `OnSkip` callback — lógica de resolução de escopo inalterada. O Cenário 8
+confirma empiricamente: init instala em `$HOME/.gemini/...` (artefato irmão encontrado em HOME, não no
+projeto), provando que D1/D4 estão em vigor.
+
+**Status:** CONCLUÍDO

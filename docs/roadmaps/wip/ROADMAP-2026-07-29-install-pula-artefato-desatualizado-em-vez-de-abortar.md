@@ -203,11 +203,11 @@ cd pypi && python -m pytest
 > Dependências: **barrier** — ML-2A, ML-2B e ML-2C todos concluídos.
 
 ### ML-3A — Auditar paridade e provar o cenário de ponta a ponta
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Artemis
 **Arquivos afetados:**
-- testes de paridade dos três runtimes
-- `docs/cli-parity.md` — apenas se uma divergência exigir emenda ao contrato
+- `internal/integrations/manager_test.go` — novo `TestManagerInstallSkipMixedScopeBatch`
+- `scripts/check-update-parity.sh` — cenários 6 (global-scope), 7 (project-scope), 8 (E2E init)
 
 **Ações:**
 1. Comparar as strings de aviso dos três runtimes **byte-a-byte** para o mesmo HOME e projeto, nos
@@ -220,11 +220,24 @@ cd pypi && python -m pytest
 3. Confirmar que nenhum ML da Wave 2 alterou a resolução de escopo de `init` — D1/D4 intactos.
 
 **Critérios de aceite:**
-- [ ] Avisos byte-idênticos nos três runtimes, nos dois escopos.
-- [ ] `init --ai-tools` com artefato global desatualizado → exit 0 e scaffold completo, nos três.
-- [ ] `modified` continua erro nos três.
-- [ ] Nenhuma mudança na resolução de escopo de `init` (D1/D4 preservados).
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] Avisos byte-idênticos nos três runtimes, nos dois escopos.
+  - Evidência: `skip-parity/global-scope/three-runtimes-identical` e `skip-parity/project-scope/three-runtimes-identical` — OK em `make quality`.
+- [x] `init --ai-tools` com artefato global desatualizado → exit 0 e scaffold completo, nos três.
+  - Evidência: cenários `e2e/init-outdated-global/go`, `/node`, `/py` — todos OK.
+- [x] `modified` continua erro nos três.
+  - Evidência: `TestManagerInstallOwnedModifiedRemainsError` (Go, pré-existente), Node.js test line 195+, Python test line 397+ — todos verdes.
+- [x] Nenhuma mudança na resolução de escopo de `init` (D1/D4 preservados).
+  - Evidência: `git diff origin/main..HEAD -- internal/commands/init.go` mostra apenas adição de `OnSkip`; cenário 8 confirma instalação em `$HOME/.gemini/...` (global).
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+  - Evidência: `make quality` exit 0, 19 cenários de falsificação; `bin/trackfw validate --json` → 0 violações.
+- [x] Go ganha teste de lote de escopo misto (`TestManagerInstallSkipMixedScopeBatch`).
+  - Evidência: `go test ./internal/integrations/ -run TestManagerInstallSkipMixedScopeBatch` → PASS.
+
+**Nota sobre Lacuna 3 (project scope — macOS):** Node.js e Python resolvem `process.cwd()` via
+`/private/var/...` (symlink macOS), diferente do `filepath.Abs` do Go que retorna `/var/...`. Para
+o escopo de projeto, cada runtime usa seu próprio manifesto criado por si mesmo — os avisos em stderr
+são byte-idênticos entre os três porque a string usa o caminho relativo (`.claude/agents/...`), não
+o caminho absoluto da chave do manifesto.
 
 **Comandos de validação:**
 ```bash
