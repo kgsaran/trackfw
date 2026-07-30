@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-30
 req: "REQ-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: roadmap move sincroniza a referencia da REQ pareada
 
-> Created: 2026-07-30 | Status: wip
+> Created: 2026-07-30 | Status: done
 
 ## Contexto
 
@@ -19,14 +19,24 @@ apontando para o estado anterior — o comando de governança produz um estado q
 
 ## Critérios de Aceite
 
-- [ ] `roadmap move` atualiza o `roadmap:` do frontmatter de toda REQ que aponte para o roadmap movido.
-- [ ] Linha `Roadmap:` do corpo também atualizada, preservando backticks.
-- [ ] Descoberta por varredura do `req_dir` casando basename, em layout flat e `by_agent`.
-- [ ] Zero REQs → no-op silencioso; múltiplas → todas atualizadas; outra REQ → não tocada.
-- [ ] Idempotente: mover duas vezes não altera bytes.
-- [ ] Falha de escrita → diagnóstico nomeando a REQ + exit não-zero, sem desfazer o move.
-- [ ] Paridade nos 3 CLIs com cenário byte-a-byte em `make quality`.
-- [ ] `make quality` exit 0 e `validate --json` 0 violações.
+- [x] `roadmap move` atualiza o `roadmap:` do frontmatter de toda REQ que aponte para o roadmap movido.
+- [x] Linha `Roadmap:` do corpo também atualizada, preservando backticks.
+- [x] Descoberta por varredura do `req_dir` casando basename, em layout flat e `by_agent` — cenário
+      `roadmap-move-parity/by_agent-discriminant` nos três runtimes.
+- [x] Zero REQs → no-op silencioso; múltiplas → todas atualizadas; outra REQ → não tocada — cenários
+      `zero-req`, `by_agent-discriminant` e `points-at-other`, todos com vacuity-guard.
+- [x] Idempotente: mover duas vezes não altera bytes — cenário `idempotency`, comparando bytes das REQs
+      após o segundo move.
+- [x] Falha de escrita → diagnóstico nomeando a REQ + exit não-zero, sem desfazer o move — coberto por
+      teste unitário nos três runtimes.
+- [x] Paridade nos 3 CLIs com cenário byte-a-byte em `make quality` — `scripts/check-roadmap-move-parity.sh`,
+      5 cenários, todos comparando Go == Node == Python.
+- [x] `make quality` exit 0 (21 cenários de falsificação, 14 gates não-vacuosos) e `validate --json`
+      0 violações. Barrier das quatro waves: `passed`.
+- [x] **Ordenação lexicográfica por basename** — emenda do contrato durante a Wave 2, após dois dos três
+      implementadores reportarem que a ordem estava despinada. Provada nas duas fixtures.
+- [x] **Linha `moved` byte-idêntica nos três** — divergência pré-existente do Python corrigida por decisão
+      explícita do usuário. `hexdump` confirma `e2 9c 93` (U+2713).
 
 ## Mapa de dependências
 

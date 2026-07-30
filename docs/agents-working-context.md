@@ -6740,3 +6740,75 @@ cardinalidades, textos literais de saída com stream, e comportamento em erro (n
 as restantes, exit não-zero ao fim).
 
 Barrier da Wave 1: `passed`. Wave 2 (3 runtimes em paralelo) a seguir.
+
+## 2026-07-30 — Zeus — CONCLUÍDO: roadmap move sincroniza a referência da REQ, 4 waves verdes
+
+`make quality` exit 0 · novo gate `scripts/check-roadmap-move-parity.sh` com 5 cenários ·
+21 cenários de falsificação / 14 gates não-vacuosos · Go limpo · npm 339 · pytest 724 ·
+`validate --json` 0 violações · barrier das quatro waves `passed`.
+
+### Dogfooding provado no caso real
+
+Executei a ferramenta sobre a própria REQ desta entrega, numa cópia:
+
+```
+antes:  roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-30-...md"
+        ✓ moved ROADMAP-2026-07-30-...md → docs/roadmaps/done
+        ✓ synced REQ-2026-07-30-...md → docs/roadmaps/done/ROADMAP-2026-07-30-...md
+depois: roadmap: "docs/roadmaps/done/ROADMAP-2026-07-30-...md"
+        Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-30-...md`
+```
+
+Frontmatter **e** corpo atualizados, backticks preservados. **A correção manual de referência que fiz
+quatro vezes nas duas sessões anteriores deixa de ser necessária.**
+
+### A lição central desta iteração
+
+As três suítes ficaram verdes (339 · 724 · Go limpo) com **duas divergências ativas**. Só apareceram
+com fixture construída para discriminar.
+
+**Ordenação — os três erravam, cada um por motivo diferente:**
+- Go: `filepath.Glob` ordena por padrão, mas `scanREQFiles` concatena por agente e por estado, e a
+  lista de estados é fixa e nem lexicográfica.
+- Node: `readdirSync` sem sort — concordava em flat **por acidente do APFS**.
+- Python: `sorted()` sobre **caminhos completos**. Passou na primeira fixture `by_agent` por
+  coincidência aritmética (`apolo/…aaa` < `zeus/…zzz`).
+
+**"Determinístico" não é "conforme".** O Python era perfeitamente determinístico e divergia do
+contrato. Se eu tivesse parado na primeira fixture, teria aprovado.
+
+**Regra operacional que fica:** ao verificar ordenação ou qualquer critério composto, construir a
+fixture que **separa** os critérios candidatos. Fixture onde dois critérios coincidem não é evidência.
+
+### Quarta ocorrência do meu mesmo erro de contrato
+
+Escrevi "na ordem de varredura" — delegação disfarçada de especificação. Sequência nesta sessão:
+nomes-sem-valores (skip) · regexes-sem-momento (rótulo de wave) · cardinalidades-sem-ordem (esta).
+**Dois dos três implementadores reportaram a lacuna antes de eu perguntar** — foi o que a evitou virar
+divergência permanente. Pedir explicitamente "reporte contrato incompleto" nos handoffs tem retorno
+mensurável.
+
+### Divergência pré-existente corrigida por decisão do usuário
+
+O Python nunca imprimiu `✓ moved` — desde antes desta REQ imprimia `Roadmap movido para: <path>`
+(idioma, forma e conteúdo diferentes). Verificado em `origin/main`. Fora do escopo original; incluído
+porque a regra dura de paridade se aplica e a auditoria byte-a-byte da própria feature não passaria com
+a linha anterior divergindo. Agora byte-idêntica, `hexdump` confirma `e2 9c 93`.
+
+### Inconsistência minha que o agente pegou
+
+O bloco do ML-3A dizia "quatro cardinalidades"; o contrato pina **cinco**. O Artemis seguiu o contrato
+e reportou a discrepância. Contrato prevalece sobre roadmap — comportamento correto.
+
+### Qualidade do seam de falsificação
+
+O seam corrompe a **implementação** (cópia em árvore temporária), nunca a asserção, e tem **guarda de
+padrão**: se o `sed` não alterar nada, falha com "padrão não encontrado; prova P4 inválida". Isso
+protege contra o cenário em que o código-fonte muda, o `sed` para de casar e a falsificação se torna
+vacuosa em silêncio. Não foi pedido — foi iniciativa do Artemis.
+
+### Débito pendente registrado
+
+**Release não feito.** Agora são 4 commits desde `v4.0.0` com mudanças observáveis acumuladas: campo
+`wave` do JSON (número → string), textos de mensagens do barrier, `## Wave 0` rejeitada, e a linha
+`moved` do Python. Critério do projeto (`feat` breaking → major) aponta **v5.0.0**.

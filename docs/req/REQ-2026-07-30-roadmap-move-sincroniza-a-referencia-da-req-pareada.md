@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-30
 author: "trackfw_architect"
 adr: "docs/adr/ADR-001-trackfw-como-trilho-de-governanca-para-agentes-ia.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md"
 ---
 
 # REQ: roadmap move sincroniza a referencia da REQ pareada
 
-> Date: 2026-07-30 | Status: Open
+> Date: 2026-07-30 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -57,21 +57,21 @@ fora: a referência do lado da REQ.
 
 ## Acceptance Criteria
 
-- [ ] `roadmap move` reescreve o `roadmap:` do frontmatter de **toda** REQ que aponte para o roadmap
+- [x] `roadmap move` reescreve o `roadmap:` do frontmatter de **toda** REQ que aponte para o roadmap
       movido, com o caminho completo do novo estado, incluindo `.md`.
-- [ ] A linha `Roadmap:` do **corpo** da REQ também é atualizada, preservando a formatação existente
+- [x] A linha `Roadmap:` do **corpo** da REQ também é atualizada, preservando a formatação existente
       (inclusive backticks). Não é lida pelo validador, mas divergir do frontmatter engana o leitor.
-- [ ] Descoberta do par por varredura do `req_dir` casando o **basename** do roadmap, cobrindo layout
+- [x] Descoberta do par por varredura do `req_dir` casando o **basename** do roadmap, cobrindo layout
       flat **e** `by_agent`.
-- [ ] **Zero** REQs apontando para o roadmap → no-op silencioso, exit 0. Roadmap sem REQ é legítimo.
-- [ ] **Múltiplas** REQs apontando para o mesmo roadmap → todas atualizadas, uma linha de saída por REQ.
-- [ ] REQ cujo `roadmap:` aponta para **outro** roadmap → não tocada.
-- [ ] Referência já correta → nenhuma escrita (idempotente); mover duas vezes seguidas não altera bytes.
-- [ ] Saída informa cada REQ atualizada; nenhuma REQ atualizada não imprime ruído.
-- [ ] Falha ao reescrever uma REQ **não** desfaz o move e **não** falha em silêncio: diagnóstico
+- [x] **Zero** REQs apontando para o roadmap → no-op silencioso, exit 0. Roadmap sem REQ é legítimo.
+- [x] **Múltiplas** REQs apontando para o mesmo roadmap → todas atualizadas, uma linha de saída por REQ.
+- [x] REQ cujo `roadmap:` aponta para **outro** roadmap → não tocada.
+- [x] Referência já correta → nenhuma escrita (idempotente); mover duas vezes seguidas não altera bytes.
+- [x] Saída informa cada REQ atualizada; nenhuma REQ atualizada não imprime ruído.
+- [x] Falha ao reescrever uma REQ **não** desfaz o move e **não** falha em silêncio: diagnóstico
       nomeando a REQ e exit não-zero.
-- [ ] Paridade nos três CLIs, com cenário de comparação byte-a-byte encadeado em `make quality`.
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] Paridade nos três CLIs, com cenário de comparação byte-a-byte encadeado em `make quality`.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
 
 ## Escopo negativo
 
@@ -91,4 +91,4 @@ estabelece. Se a análise revelar necessidade de decisão nova, o ML-1A abre eme
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
