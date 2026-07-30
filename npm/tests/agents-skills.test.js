@@ -178,7 +178,7 @@ test('install force replaces unknown unmanaged content while update force never 
   assert.throws(() => new IntegrationManager(dirs2).update([plan], { force: true }), /unmanaged/i)
 })
 
-test('unmanaged desired is current, legacy is outdated, and owned outdated requires update', () => {
+test('unmanaged desired is current, legacy is outdated, and owned outdated skips install', () => {
   const dirs = roots()
   const [plan] = buildPlans('agents', options(['claude'], ['architect']))
   const manager = new IntegrationManager(dirs)
@@ -190,7 +190,67 @@ test('unmanaged desired is current, legacy is outdated, and owned outdated requi
   const legacy = { ...plan, legacyHashes: [sha256('recognized old template')] }
   assert.deepEqual(manager.inspect([legacy]).map(x => [x.state, x.managed]), [['outdated', false]])
   manager.install([legacy])
-  assert.throws(() => manager.install([plan]), /outdated.*update/i)
+  // owned + outdated → skip em vez de erro (contrato: cli-parity.md, seção
+  // "install sobre artefato gerenciado desatualizado — skip, não erro fatal").
+  // onSkip recebe (destination=tilde-abreviado, reason=linha completa pronta
+  // para impressão) — contrato "Valor de cada parâmetro — pinado".
+  const skips = []
+  const managerWithSkip = new IntegrationManager(dirs, { onSkip: (dest, reason) => skips.push({ dest, reason }) })
+  assert.doesNotThrow(() => managerWithSkip.install([plan]))
+  assert.equal(fs.readFileSync(file, 'utf8'), 'recognized old template')
+  assert.equal(skips.length, 1)
+  // destination é o caminho relativo ao projectRoot (escopo project, sem './')
+  assert.equal(skips[0].dest, plan.destination)
+  // reason é a linha de aviso completa e pronta para impressão
+  assert.equal(skips[0].reason, `warning: skipping outdated artifact ${plan.destination}; run 'trackfw update' to refresh it`)
+})
+
+test('mixed-scope batch: each artifact receives remediation derived from claim.scope', () => {
+  // Caso que distingue derivação por artefato (plan.claim.scope) de derivação
+  // por closure ou por inferência sobre o caminho. Um lote com artefatos de
+  // projeto e globais deve emitir remediação correta para cada um.
+  const dirs = roots()
+  const [projectPlan] = buildPlans('agents', { targets: ['claude'], items: ['architect'], scope: 'project' })
+  const [globalPlan] = buildPlans('agents', { targets: ['gemini'], items: ['architect'], scope: 'global' })
+
+  const legacyContent = 'recognized old template for mixed-scope test'
+  const legacyHash = sha256(legacyContent)
+  const projectLegacy = { ...projectPlan, legacyHashes: [legacyHash] }
+  const globalLegacy = { ...globalPlan, legacyHashes: [legacyHash] }
+
+  // Escrever conteúdo legado em ambos os arquivos para permitir adoção
+  const projectFile = path.join(dirs.projectRoot, projectPlan.destination)
+  const globalFile = path.join(dirs.homeRoot, '.gemini', 'agents', 'trackfw-architect.md')
+  fs.mkdirSync(path.dirname(projectFile), { recursive: true })
+  fs.writeFileSync(projectFile, legacyContent)
+  fs.mkdirSync(path.dirname(globalFile), { recursive: true })
+  fs.writeFileSync(globalFile, legacyContent)
+
+  const manager = new IntegrationManager(dirs)
+  // Adoção: instala ambos os legacy plans → owned com state outdated
+  manager.install([projectLegacy, globalLegacy])
+
+  // Instala os planos desejados → ambos devem ser pulados (outdated + owned)
+  const skips = []
+  const managerWithSkip = new IntegrationManager(dirs, { onSkip: (dest, reason) => skips.push({ dest, reason }) })
+  assert.doesNotThrow(() => managerWithSkip.install([projectPlan, globalPlan]))
+  assert.equal(skips.length, 2)
+
+  // Artefato de projeto: caminho relativo, remediação 'trackfw update'
+  const projectSkip = skips.find(s => s.dest === projectPlan.destination)
+  assert.ok(projectSkip, 'project artifact should be skipped with relative dest')
+  assert.equal(
+    projectSkip.reason,
+    `warning: skipping outdated artifact ${projectPlan.destination}; run 'trackfw update' to refresh it`
+  )
+
+  // Artefato global: caminho tilde-abreviado, remediação 'trackfw update harness'
+  const globalSkip = skips.find(s => s.dest === '~/.gemini/agents/trackfw-architect.md')
+  assert.ok(globalSkip, 'global artifact should be skipped with tilde dest')
+  assert.equal(
+    globalSkip.reason,
+    `warning: skipping outdated artifact ~/.gemini/agents/trackfw-architect.md; run 'trackfw update harness' to refresh it`
+  )
 })
 
 test('Go manifest fixture is interoperable for inspect, update and uninstall', () => {

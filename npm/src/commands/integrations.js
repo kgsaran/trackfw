@@ -183,6 +183,15 @@ function createLifecycleCommand(kind) {
       // operações de mutação (install/update/uninstall) e fora de --json.
       if (mutation) printResolvedDestinations(kind, options)
 
+      // Ligar onSkip: aviso em stderr por artefato outdated+owned pulado pelo
+      // preflight de install (contrato: docs/cli-parity.md, seção "install
+      // sobre artefato gerenciado desatualizado — skip, não erro fatal").
+      if (mutation) {
+        options.onSkip = (_destination, reason) => {
+          process.stderr.write(`${reason}\n`)
+        }
+      }
+
       const output = execute(kind, operation, options)
       console.log(options.json ? JSON.stringify(output) : human(output))
     })

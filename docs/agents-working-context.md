@@ -53,6 +53,78 @@ agente (QA) não executa operações Git de escrita.
 
 ---
 
+## Sessão 2026-07-29 — Apolo (ML-2A — skip de artefato outdated+owned no runtime Go)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+
+**Status:** IMPLEMENTANDO
+
+**Tarefa:** Implementar o skip de artefato `outdated + owned` no runtime Go conforme contrato congelado
+em `docs/cli-parity.md` (seção "install sobre artefato gerenciado desatualizado — skip, não erro fatal").
+
+**Arquivos afetados:**
+- `internal/integrations/manager.go` — campo `OnSkip`, helper `tildeAbbrev`, `preflight` (nova assinatura), `mutate` (filtro de skips)
+- `internal/integrations/manager_test.go` — novos testes
+- `internal/commands/init.go` — liga `OnSkip` em `installAITools`
+- `internal/commands/integrations_flags.go` — liga `OnSkip` em `runIntegrationsOperation`
+
+**Status:** CONCLUÍDO
+
+**Entregue:**
+- `Manager.OnSkip func(destination, reason string)` adicionado à struct.
+- `tildeAbbrev(destination)` implementado na Manager (sem helper Go pré-existente — contrato defect reportado; Node.js tildeify lido para paridade byte-a-byte).
+- `preflight` agora retorna `(skip bool, err error)`: caso `StateOutdated && owned && !force` de `mutationInstall` sinaliza skip em vez de erro; caso `StateModified` permanece erro.
+- `mutate` filtra itens pulados de `resolved` antes das fases de snapshot e `applyMutation`. `OnSkip` chamado uma vez por destino (deduplicado); artefato pulado não entra no rollback nem no manifest write.
+- `OnSkip` ligado em `init.go:installAITools` e `integrations_flags.go` imprimindo em stderr.
+- Três novos testes: (1) skip batch com dois escopos verificando string byte-idêntica ao contrato; (2) OnSkip nil sem panic; (3) owned+modified continua erro (guarda contra simetrização).
+
+**Validação:**
+- `go build ./...` → sem erros
+- `go test ./...` → 15/15 pacotes OK
+- `go vet ./...` → sem erros
+
+**Divergência reportada (contrato defect):** o contrato diz "reutilize o helper de tilde já existente em `internal/generators/update.go`", mas nenhum helper Go de tilde-abbreviação existe no codebase (update.go usa constantes hardcoded; `GlobalGroupPath` trunca templates de catálogo). O `tildeify` existe apenas no Node.js (`npm/src/lib/update-engine.js`). A lógica foi reimplementada nativamente em Go com o mesmo cuidado do ML-6H (strip de trailing separator via `filepath.Clean`). Reportado como defect do contrato, não como bug de implementação.
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-2B — skip de artefato outdated+owned no Node.js)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+
+**Status:** CONCLUÍDO
+
+**Tarefa:** Implementar skip de artefato `outdated`+`owned` sem `--force` no runtime Node.js do
+`IntegrationManager`. Artefatos `modified` continuam lançando erro — não simetrizar os casos.
+Inverter asserção na linha 193 de `npm/tests/agents-skills.test.js`. Ligar `onSkip` nos callers
+(`commands/init.js`, `commands/integrations.js`) imprimindo em stderr a string pinada no contrato.
+
+**Entregue:**
+- `npm/src/integrations/manager.js`: construtor aceita `{ onSkip }`; `preflight` retorna `true`
+  (skip) em vez de lançar para `outdated`+`owned`+sem force em `install`; `modified` continua
+  lançando sem alteração; `mutate` filtra pulados antes de snapshot/apply e chama `onSkip` uma vez
+  por item na ordem de `resolved`.
+- `npm/src/integrations/index.js`: `execute()` passa `options.onSkip` ao construtor do manager.
+- `npm/src/generators/init.js`: `installIntegrationTarget` aceita `{ onSkip }` como 4º parâmetro
+  e inclui em `options` repassados ao `execute`.
+- `npm/src/commands/init.js`: importa `tildeify`; cria callback `onSkip` nos dois loops de
+  `aiTools` (TTY e não-TTY) que emite a string pinada em stderr com tilde-abreviado e remediação
+  por escopo.
+- `npm/src/commands/integrations.js`: importa `tildeify`; cria callback `onSkip` antes de
+  `execute()` para operações `mutation`.
+- `npm/tests/agents-skills.test.js`: nome do teste atualizado (linha 181); linha 193 invertida —
+  `assert.throws` substituído por `doesNotThrow` + bytes preservados + `onSkip` observado 1x.
+
+**Validação:**
+- `cd npm && npm test` → 328 passed, 0 failed.
+- Teste `'unmanaged desired is current, legacy is outdated, and owned outdated skips install'` passou.
+- `onSkip` ausente (manager sem segundo parâmetro) funciona silenciosamente em outros testes.
+
+**Divergência do contrato:** nenhuma. Os intermediários `integrations/index.js` e `generators/init.js`
+precisaram ser tocados para que o `onSkip` fluísse do caller até o `IntegrationManager` — isso era
+implícito no contrato mas não listado explicitamente nos "arquivos afetados" do ML-2B.
+
+---
+
 ## Sessão 2026-07-29 — Apolo (ML-6H — `trackfw update` escopo de projeto, corretivo final concluído)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
@@ -5984,3 +6056,241 @@ orquestrador. Nas duas vezes o mecanismo funcionou contra quem o construiu. Marc
 sem evidência é o comportamento vacuoso que a regra 13 do ADR proíbe.
 
 Após corrigir o registro: `barrier --wave 6` retorna exit 0 e `status: passed`. As seis waves passam.
+
+## 2026-07-29 — Zeus — IMPLEMENTANDO: refino da REQ órfã em backlog + contrato de skip de artefato desatualizado
+
+Único par REQ→Roadmap em backlog era `escopo-de-init-ai-tools-nao-deve-mutar-o-harness-global`,
+extraído do roadmap da barrier. Ao refiná-lo para handoff, a premissa **não sobreviveu à
+verificação** — registro aqui porque o erro é instrutivo e não deve ser repetido.
+
+A REQ afirmava que `init --ai-tools` gravar em `~/.gemini/agents/` era defeito, invocando o contrato
+do ML-6A. Duas verificações refutaram isso:
+
+1. `ADR-2026-07-25-escopo-de-instalacao-selecionavel` **decide o oposto de forma deliberada** — D1
+   (sem TTY → `global`, registrado como breaking change) e D4 (`init` sem TTY → `global`), com
+   consequência positiva declarada "elimina instalação surpresa no repositório do usuário".
+   `init.go:118` e o comentário da linha 395 (`defaults to "global" (D1)`) são implementação fiel.
+2. O contrato de `docs/cli-parity.md` invocado é titulado `trackfw update vs trackfw update harness`
+   e abre com "Update is split by scope". Pina 5 targets de projeto e 19 de harness, todos do domínio
+   `update`. **Não menciona `init`** — não é fronteira projeto/global geral.
+
+A evidência empírica citada (`artifact ... is outdated; use update`) vem de `manager.go:220`, o
+preflight de install recusando artefato `outdated`+`owned`. Prova que `init` alcança o HOME — o que o
+D4 manda. **Não** prova que alcançá-lo seja errado.
+
+Lição: uma REQ extraída às pressas de outro roadmap herda a interpretação de quem extraiu, não o
+contrato real. Generalizar um contrato escopado ("update nunca muta global" → "nenhum comando de
+projeto muta global") é o tipo de salto que só aparece lendo o ADR original.
+
+O defeito **real** que a evidência expõe é outro: `install` sobre artefato `outdated`+`owned` retorna
+erro, e como `mutate` é lote atômico com rollback, **aborta o scaffold inteiro** de um projeto novo
+por causa do estado de um artefato que não pertence a esse projeto. Decisão do usuário: manter
+D1/D4, reescopar para o defeito de robustez.
+
+Achado que muda o conteúdo dos MLs: `npm/tests/agents-skills.test.js:193` contém
+`assert.throws(() => manager.install([plan]), /outdated.*update/i)` — asserção que **codifica o
+contrato antigo** e precisa ser invertida. Go e Python não tinham cobertura equivalente. Sem pinar
+isso no roadmap, três agentes paralelos decidiriam independentemente entre apagar, inverter ou
+contornar a asserção — exatamente o modo de falha que o ML-6F mediu.
+
+Artefatos: REQ e roadmap antigos removidos; novos em
+`install-pula-artefato-desatualizado-em-vez-de-abortar` (roadmap em `wip/`). Contrato do ML-1A
+escrito em `docs/cli-parity.md`. Branch `fix/install-pula-artefato-desatualizado`.
+Wave 2 = 3 MLs paralelos (Go ‖ Node ‖ Python); Wave 3 = auditoria de paridade após barrier.
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-2C — Python: install pula artefato outdated+owned)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+**Status:** IMPLEMENTANDO
+**Branch:** `fix/install-pula-artefato-desatualizado`
+
+Implementando ML-2C (Python-only): manager.py, command.py, init.py e testes.
+
+
+**Status:** CONCLUÍDO — commit 4f25e1e pushed em fix/install-pula-artefato-desatualizado.
+693 testes Python passados.
+
+Notas de contrato para ML-3A (auditoria de paridade):
+- _tildeify não importado (import circular) — lógica inlinada em _mutate com comentário.
+- update_harness.py/_catalog_group_result usa IntegrationManager sem on_skip (fora do allowlist ML-2C).
+- Teste test_legacy_adoption_then_update (linhas 232-243) inalterado e verde.
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-2E — corretivo: manager compõe reason; callers apenas imprimem)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+
+**Status:** IMPLEMENTANDO
+
+**Tarefa:** ML-2E (Wave 2-bis) — mover composição da linha de aviso de skip para dentro do manager Python.
+- `manager.py`: compor `reason` = linha completa; derivar remediação de `plan["claim"]["scope"]` por artefato; chamar `on_skip(display, reason)`.
+- `init.py` e `command.py`: reduzir closures `_on_skip` a `print(reason, file=sys.stderr)`.
+- Testes: atualizar asserção de `reason`; adicionar caso de lote de escopo misto.
+
+---
+
+---
+
+## Sessão 2026-07-29 — Apolo (ML-2D — corretivo: manager Node.js compõe reason; callers apenas imprimem)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+
+**Status:** CONCLUÍDO
+
+**Tarefa:** ML-2D (Wave 2-bis) — mover composição da linha de aviso de skip para dentro do manager Node.js.
+
+**O que mudou:**
+- `npm/src/integrations/manager.js`: import `tildeify` de `../lib/update-engine` (sem ciclo — update-engine só importa built-ins). Adicionado método `tildeAbbrev(file, scope)`: escopo global → `tildeify(homeRoot, file)`; escopo projeto → `path.relative(projectRoot, file)`. Bloco `onSkip` em `mutate()` agora deriva `remediation` de `item.plan.claim.scope` por artefato e chama `this.onSkip(abbrev, reason)` com linha completa.
+- `npm/src/commands/init.js`: removido import `tildeify`; ambas as closures `onSkip` simplificadas para `process.stderr.write(\`${reason}\n\`)`.
+- `npm/src/commands/integrations.js`: removido import `tildeify`; closure `onSkip` simplificada para `process.stderr.write(\`${reason}\n\`)`.
+- `npm/tests/agents-skills.test.js`: asserção do teste existente atualizada para `{ dest: plan.destination, reason: linha-completa }`; adicionado teste `mixed-scope batch` com artefatos de projeto e global no mesmo lote — prova que cada um recebe a remediação correta por `claim.scope`.
+
+**Resultado:** `cd npm && npm test` → 329 passed, 0 failed.
+**Import de tildeify criou ciclo?** Não. `update-engine.js` importa apenas `fs`, `os`, `path`, `crypto`.
+**Caso de escopo misto construtível?** Sim — teste adicionado e verde.
+
+
+## 2026-07-29 — Zeus — Wave 2-bis convergida; dois achados de processo
+
+Os agentes do ML-2D (Node) e ML-2E (Python) morreram por **limite de sessão de API** no meio do
+commit. Auditei a árvore em vez de confiar nos relatórios parciais. Estado real:
+
+**Código: presente e convergido.** Verificado no código, não em relatório:
+- Node `manager.js:146-149` compõe a linha, remediação de `item.plan.claim.scope`; callers
+  `init.js:284` e `integrations.js:190` recebem `(_destination, reason)` e só escrevem em stderr.
+- Python `manager.py:211-233` compõe a linha, remediação de `plan["claim"]["scope"]`; closures de
+  `init.py:157` e `command.py:287` reduzidas a `print(reason, file=sys.stderr)`.
+- Go intocado (era o canônico).
+- As três strings de formato são idênticas: `warning: skipping outdated artifact %s; run '%s' to
+  refresh it`. Testes de lote de escopo misto existem no Node (`agents-skills.test.js:208`) e no
+  Python (`test_agents_skills.py:298`).
+
+**Validação independente:** `go build`/`go test`/`go vet` limpos · `npm test` 329 passed ·
+`python3 -m pytest` 694 passed · `make quality` exit 0 com os 19 cenários de falsificação, incluindo
+`falsify/no-repo-mutation`. Nenhuma suíte suja a árvore.
+
+### Achado 1 — dois agentes paralelos compartilham o index do Git
+
+O agente do ML-2D commitou com os arquivos do ML-2E já staged pelo agente paralelo: **d737b15 contém
+os dois MLs** com mensagem que descreve só o Node. Defeito de rastreabilidade, não de conteúdo.
+
+`git add <caminhos>` explícito por ML **não é suficiente** — não desfaz o staging que o outro agente
+já fez. Para MLs paralelos no mesmo repo, o correto é `git commit -- <caminhos>` (que ignora o index)
+ou worktrees isoladas por agente. Registrar porque a instrução "commite apenas seus arquivos" que eu
+dei nos handoffs é insuficiente e vai falhar de novo.
+
+### Achado 2 — poluição do repo por invocação manual do CLI (nota de vault criada)
+
+`git status` acusava `AGENTS.md` e `CLAUDE.md` com +51 linhas (bloco `trackfw:rules`) e `.cursor/`
+novo. Um agente rodou `init --ai-tools` com cwd na raiz do repo real para validar à mão.
+
+O ponto não óbvio: **`make quality` passa exit 0 com a árvore poluída.** O cenário
+`falsify/no-repo-mutation` do ML-6I funciona — mas guarda os **gates**, não a sessão do agente. Comando
+ad-hoc escapa por construção. Se o agente commitasse com `git add -A`, entraria no PR como trabalho.
+Revertido. Detalhes e prevenção em
+`vault/notes/agente-poluindo-repo-ao-rodar-cli-manualmente-2026-07-29.md`.
+
+### Correção de enquadramento minha
+
+Eu havia dito que a divergência da Wave 2 era "literalmente o ML-6F repetindo". Não era: o ML-6F
+produziu saída observavelmente diferente (3 vs 19 targets); aqui as strings em stderr saíam
+byte-idênticas desde o início. O que divergia era forma interna e robustez da derivação de escopo —
+endurecimento preventivo mais um bug latente de escopo misto, não regressão visível ao usuário.
+
+---
+
+## Sessão 2026-07-29 — Artemis/QA (ML-3A — auditoria de paridade byte-a-byte)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+
+**Tarefa:** ML-3A — três lacunas de cobertura pós-Wave-2-bis:
+1. Teste E2E com HOME isolado para os três runtimes (`init` + artefato global outdated → exit 0 + scaffold + bytes preservados + aviso)
+2. Teste de lote de escopo misto no Go (espelho de Node.js:208 e Python:298)
+3. Cenário de paridade comparando bytes de stderr dos três CLIs (global + project)
+
+**Entregue:**
+
+### Lacuna 2 — TestManagerInstallSkipMixedScopeBatch (Go)
+
+Adicionado em `internal/integrations/manager_test.go`. Instala v1 para dois artefatos (global e
+projeto) na mesma chamada `Install`, depois instala v2 para ambos → ambos outdated+owned → ambos
+pulados. Verifica que cada um recebe a remediação correta pelo seu `plan.Claim.Scope` (não por closure
+sobre escopo uniforme do lote). Mirrors Node.js:208 e Python:298.
+
+Resultado: `go test ./internal/integrations/ -run TestManagerInstallSkipMixedScopeBatch` → **PASS**.
+`go test ./...` → **todos passam**.
+
+### Lacuna 1 + 3 — Cenários 6, 7 e 8 em check-update-parity.sh
+
+Adicionados três cenários em `scripts/check-update-parity.sh`:
+
+**Cenário 6 (skip-parity/global-scope):** cada runtime instala gemini/architect globalmente em HOME
+próprio, manifesto é patchado para outdated+owned (sentinel bytes + sha256 + catalog_version antigo),
+re-install captura aviso de stderr. Compara bytes entre os três: `three-runtimes-identical`.
+
+**Cenário 7 (skip-parity/project-scope):** mesmo para escopo de projeto. Cada runtime usa projeto e
+manifesto próprios (necessário: Node.js/Python resolvem `process.cwd()` via `/private/` no macOS,
+produzindo chave de manifest diferente da do Go). Aviso byte-idêntico.
+
+**Cenário 8 (e2e/init-outdated-global):** para cada runtime — instala gemini/architect globalmente,
+patcha para outdated+owned, executa `init --ai-tools gemini`, afirma: (a) exit 0; (b) `trackfw.yaml`
+criado; (c) sentinel preservado em `trackfw-architect.md`; (c-sibling) `trackfw-backend.md` gravado
+(skip ≠ abort); (d) aviso em stderr.
+
+Resultado: `bash scripts/check-update-parity.sh` → **todos os cenários novos: OK**.
+`make quality` → **exit 0**, 19 cenários de falsificação, `git status` limpo.
+`bin/trackfw validate --json` → **0 violações**.
+
+### Evidência D1/D4
+
+`git diff origin/main..HEAD -- internal/commands/init.go npm/src/commands/init.js pypi/trackfw/commands/init.py`
+mostra apenas adição de `OnSkip` callback — lógica de resolução de escopo inalterada. O Cenário 8
+confirma empiricamente: init instala em `$HOME/.gemini/...` (artefato irmão encontrado em HOME, não no
+projeto), provando que D1/D4 estão em vigor.
+
+**Status:** CONCLUÍDO
+
+## 2026-07-29 — Zeus — CONCLUÍDO: roadmap fechado, quatro waves com barrier verde
+
+ML-3A (Artemis) entregou as três lacunas. Auditei independentemente em vez de aceitar o relatório:
+`make quality` exit 0 com os sete cenários novos — `skip-parity/{global,project}-scope/three-runtimes-identical`
+(ambos com vacuity-guard) e `e2e/init-outdated-global/{go,node,py}` — mais os 19 de falsificação.
+`validate --json` 0 violações, árvore limpa. Barrier das waves 1–4: todas `passed`.
+
+O E2E era a lacuna que importava: todo teste anterior exercitava o *manager*: nenhum provava o
+sintoma originalmente reportado. Agora os três runtimes provam `init --ai-tools` com artefato global
+desatualizado → exit 0, `trackfw.yaml` criado, bytes do desatualizado preservados e artefato irmão
+gravado (skip ≠ abort).
+
+### Achado — `trackfw barrier` rejeita wave não-inteira
+
+Nomeei a wave corretiva de "Wave 2-bis". A barrier falhou nas **quatro** waves com
+`malformed wave heading at line 250: "2-bis" is not a valid wave number` — o parser exige inteiro e
+aborta o documento inteiro, não só a wave malformada. Renumerei para Wave 3 (corretivo) e Wave 4
+(auditoria), reordenando os blocos para refletir a ordem real de execução.
+
+Os ids dos MLs ficaram fora de sincronia com as waves (`ML-2D`/`ML-2E` na Wave 3, `ML-3A` na Wave 4).
+Deliberado: renumerar quebraria a rastreabilidade de mensagens de commit já publicadas.
+
+Candidato a REQ futura (não expandi escopo agora): "wave N-bis" é nomenclatura natural para wave
+corretiva acrescentada após execução, e o produto não a aceita. Ou o parser passa a aceitar sufixo,
+ou a documentação declara explicitamente que wave é sempre inteiro.
+
+### A barrier funcionou contra o orquestrador — de novo
+
+Desmarquei dois critérios que forward-referenciavam o ML-3A. A barrier da Wave 3 retornou `blocked`
+com `ML-2D: 1 unmet acceptance criteria` / `ML-2E: 1 unmet` e **segurou a wave até a evidência
+existir**. Depois que o ML-3A rodou e produziu os cenários, marquei com referência ao cenário concreto
+e a wave passou. É o segundo ciclo em que o `acceptance_evidence` pega bookkeeping meu — na sessão
+anterior foi o ML-6F.
+
+### Também corrigido
+
+Minha nota de vault não estava linkada em `vault/notes/index.md`; `validate` acusou `note_orphan`.
+Linkada.
+
+Roadmap movido para `done/`, REQ fechada como `Done`. Branch `fix/install-pula-artefato-desatualizado`
+pronta. PR **não** aberto — aguardando solicitação explícita do usuário.

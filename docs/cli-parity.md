@@ -748,6 +748,141 @@ leaving a string unpinned.
 declaration-order drift — that is exactly how the `gates` check divergence survived Wave 2 of the
 barrier roadmap and had to be fixed later in ML-2E.
 
+## `install` sobre artefato gerenciado desatualizado — skip, não erro fatal
+
+Escopo desta seção: o preflight de `mutationInstall` no `IntegrationManager` dos três runtimes.
+Afeta todo caller de `install` — `trackfw init --ai-tools`, `trackfw agents install`,
+`trackfw skills install` e `trackfw update --install-missing`.
+
+**Esta seção não altera o escopo de instalação.** As decisões D1 e D4 de
+`ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md` permanecem em vigor:
+`trackfw init --ai-tools`, sem TTY e sem `--scope`, instala em escopo **global**. O contrato
+`trackfw update` vs `trackfw update harness` acima é escopado à **família `update`** e não impõe
+fronteira projeto/global aos demais comandos.
+
+### Problema
+
+Um artefato `outdated` **e** `owned` (declarado no manifest com o mesmo claim, bytes correspondentes
+a um template trackfw anterior) fazia o preflight de `install` retornar erro. Como `mutate` é um lote
+atômico com rollback, o erro **aborta a operação inteira**: um harness global desatualizado impedia
+`trackfw init --ai-tools gemini` de fazer o scaffold de um projeto novo, com
+
+```
+artifact "/home/<user>/.gemini/agents/trackfw-architect.md" is outdated; use update
+```
+
+### Contrato
+
+| Estado do artefato | `owned` | `install` sem `--force` |
+|---|---|---|
+| `current` | qualquer | grava/no-op — inalterado |
+| `outdated` | **sim** | **skip**: bytes preservados, lote continua, exit **0** |
+| `outdated` | não | adoção — inalterado (`install` grava e assume o claim) |
+| `modified` | qualquer | **erro** — inalterado, exige `--force` |
+
+1. `outdated` + `owned` + sem `--force` → o artefato é **pulado**. Seus bytes são preservados, os
+   demais itens do lote são aplicados e o exit code é **0**.
+2. **`modified` continua sendo erro.** Bytes modificados são do usuário e nunca podem ser pulados
+   silenciosamente. Não "simetrizar" os dois casos.
+3. `install` não é caminho de upgrade — `update` é. Pular um artefato `owned`+`outdated` não perde
+   informação alguma: seus bytes são um template trackfw anterior, não conteúdo do usuário.
+
+### Superfície do sinal de skip
+
+O observador opcional de skip é a **única** superfície sancionada para o sinal. Nenhum runtime deve
+propagá-lo por outro caminho — em particular, o `mutate` do Node.js já retorna `this.inspect(plans)`,
+e esse retorno **não** deve ser usado para comunicar skips, sob pena de divergência com Go e Python.
+
+| Runtime | Assinatura | Quando ausente |
+|---|---|---|
+| Go | campo `Manager.OnSkip func(destination, reason string)` | nil → no-op |
+| Node.js | `new IntegrationManager(dirs, { onSkip })` | `undefined` → no-op |
+| Python | `IntegrationManager(root, on_skip=None)` | `None` → no-op |
+
+O observador é chamado **uma vez por artefato pulado**, na fase de preflight, na ordem de
+`resolved` — nunca duas vezes para o mesmo destino.
+
+#### Valor de cada parâmetro — pinado
+
+A primeira rodada de implementação pinou os **nomes** dos parâmetros e deixou os **valores** à
+interpretação. Os três runtimes produziram três respostas para `reason`: a linha de aviso completa
+(Go), a etiqueta `'outdated+owned'` (Node.js) e a etiqueta `"outdated"` (Python). Nome de parâmetro
+não é contrato; valor é.
+
+- **`destination`**: o caminho de exibição **tilde-abreviado** — exatamente a mesma string que
+  aparece dentro de `reason`. Nunca o caminho absoluto.
+- **`reason`**: a linha de aviso **completa e pronta para impressão**, sem `\n` terminal. Não é
+  etiqueta, código nem categoria.
+
+**Os callers NÃO devem compor, abreviar nem derivar o comando de remediação.** Um caller recebe
+`reason` e escreve em stderr *verbatim*, sem acrescentar nada. Esta frase existe porque a primeira
+rodada produziu **dois sites de composição dentro do mesmo runtime** (`init.js` e `integrations.js`
+no Node.js), que podem divergir entre si sem que nenhum teste de paridade entre runtimes perceba.
+
+#### Origem do comando de remediação — pinada
+
+A remediação é derivada de **`plan.claim.scope`, por artefato**, dentro do manager.
+
+Proibido derivá-la de: inferência sobre o caminho renderizado (`tilde.startsWith('~/')`) ou closure
+sobre o escopo de nível de comando. Ambas acertam apenas enquanto o lote é de escopo uniforme — são
+corretas por acidente, não por construção. Um lote de escopo misto produziria a remediação errada
+para parte dos artefatos.
+
+A abreviação tilde vive **no manager**. Não existe helper compartilhado utilizável em todos os
+runtimes: o `tildeify` existe apenas em `npm/src/lib/update-engine.js`; o `update.go` usa constantes
+hardcoded (`const displayPath = "~/.claude/..."`), não um helper; e em Python o `_tildeify` de
+`commands/update_harness.py` é inalcançável de `integrations/manager.py` por import circular
+(`integrations` → `commands` → `integrations`). Quando o helper não for importável sem ciclo,
+**inline a lógica com a salvaguarda de `Clean`/barra dupla** — reimplementar sem ela reintroduz o bug
+de `$HOME` com barra dupla corrigido no ML-6H.
+
+#### `update --install-missing` não requer observador — intencional
+
+Nenhum caller da família `update` precisa ligar o observador, e isso **não é omissão**. Verificado
+em todos os call sites: `install` só é invocado para targets `not-installed` —
+`internal/generators/update.go:502` e `:720` (ambos sob `case integrations.StateNotInstalled`),
+`pypi/trackfw/commands/update_harness.py:222` (itera apenas `not_installed`), e
+`npm/src/integrations/index.js:107` (único caller de `install` no Node, já recebe `onSkip` via
+`execute`). Um artefato `not-installed` não pode ser `outdated` + `owned`, logo o branch de skip é
+**inalcançável** por esses caminhos. Não "corrigir" ligando observadores ali.
+
+### Aviso ao usuário — string pinada
+
+Emitido em **stderr**, uma linha por artefato pulado, com o caminho **tilde-abreviado** (mesma regra
+já pinada para `path` na seção de `update`; caminho absoluto torna a saída dependente da máquina e
+quebra comparação byte-a-byte entre runtimes).
+
+Escopo global:
+```
+warning: skipping outdated artifact ~/.gemini/agents/trackfw-architect.md; run 'trackfw update harness' to refresh it
+```
+
+Escopo de projeto:
+```
+warning: skipping outdated artifact .claude/agents/trackfw-architect.md; run 'trackfw update' to refresh it
+```
+
+O comando de remediação **varia por escopo do claim** — `update harness` para global, `update` para
+projeto — porque indicar o comando errado manda o usuário a uma operação que não toca o artefato
+citado. Em escopo de projeto o caminho é relativo à raiz do projeto, sem `./`.
+
+Exit code é **0**. As linhas de sucesso por ferramenta (`✓ <tool> agents and skills`) continuam
+sendo impressas: são por ferramenta, não por artefato, e a ferramenta foi de fato processada. O aviso
+em stderr é a única indicação de skip.
+
+### Implementação canônica
+
+O runtime **Go** é a referência: o manager compõe a linha completa, derivando a remediação de
+`item.plan.Claim.Scope` por artefato, e os callers apenas imprimem `reason`. Node.js e Python
+convergem para essa forma. Go não deve ser alterado para se alinhar aos outros dois.
+
+### Nota de teste
+
+`npm/tests/agents-skills.test.js` continha `assert.throws(() => manager.install([plan]),
+/outdated.*update/i)` — asserção que codificava o contrato antigo e é **invertida** por esta seção.
+Go e Python não tinham cobertura equivalente; ambos passam a tê-la. Auditoria de paridade compara as
+strings de aviso **byte-a-byte** entre os três runtimes.
+
 ## Regra `branch_has_wip_roadmap` — comportamento unificado nos 3 runtimes
 
 A regra verifica que toda branch `feat/`, `fix/` ou `refactor/` possui um roadmap cujo nome

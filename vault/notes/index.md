@@ -20,3 +20,4 @@
 - [node-tildeify-trailing-separator-2026-07-29](node-tildeify-trailing-separator-2026-07-29.md)
 - [update-project-scope-duplicate-generators-2026-07-29](update-project-scope-duplicate-generators-2026-07-29.md)
 - [update-parity-gate-writes-real-claude-md-2026-07-29](update-parity-gate-writes-real-claude-md-2026-07-29.md)
+- [agente-poluindo-repo-ao-rodar-cli-manualmente-2026-07-29](agente-poluindo-repo-ao-rodar-cli-manualmente-2026-07-29.md)

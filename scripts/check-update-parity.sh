@@ -434,6 +434,286 @@ if python3 -c "import json,sys" 2>/dev/null && [[ -n "${S1_GO_OUT:-}" && -n "${S
   fi
 fi
 
+# ===========================================================================
+# Scenario 6 — skip-parity/global-scope
+#
+# Proves that all three runtimes emit byte-identical skip warnings when
+# `agents install` encounters a global artifact that is outdated+owned.
+# The fixture simulates the outdated state by patching the manifest after a
+# real install, as described in docs/cli-parity.md §install sobre artefato
+# gerenciado desatualizado. ML-3A.
+#
+# For global scope the HOME path is taken from the env var `$HOME`, resolved
+# via os.homedir()/os.UserHomeDir() which all three runtimes read without
+# symlink expansion when the value is already absolute. A single Go-created
+# manifest is therefore readable by all three runtimes.
+# ===========================================================================
+
+# patch_manifest_outdated MANIFEST ARTIFACT SENTINEL
+# Overwrites ARTIFACT with SENTINEL (+ newline), then patches MANIFEST so that
+# the entry for ARTIFACT has sha256 = sha256(SENTINEL+newline) and an old
+# catalog_version. This makes the artifact state outdated+owned (sha256 still
+# matches → not modified; catalog_version differs → outdated).
+patch_manifest_outdated() {
+  local manifest=$1 artifact=$2 sentinel=$3
+  printf '%s\n' "$sentinel" > "$artifact"
+  python3 - "$manifest" "$artifact" "$sentinel" <<'PY'
+import json, hashlib, sys
+manifest_path, artifact_key, sentinel = sys.argv[1], sys.argv[2], sys.argv[3]
+new_sha = hashlib.sha256((sentinel + "\n").encode()).hexdigest()
+with open(manifest_path) as f:
+    data = json.load(f)
+if artifact_key not in data["artifacts"]:
+    print(f"patch_manifest_outdated: key {artifact_key!r} not in manifest", file=sys.stderr)
+    sys.exit(1)
+data["artifacts"][artifact_key]["sha256"] = new_sha
+data["artifacts"][artifact_key]["catalog_version"] = "simulated-old-0.9.0"
+with open(manifest_path, "w") as f:
+    json.dump(data, f, indent=2)
+PY
+}
+
+# install_agent_global RUNTIME HOME_DIR TARGET ITEM
+# Installs a single agent into an isolated HOME using the given runtime.
+# Runs from a scratch cwd to avoid mutating the caller's project.
+install_agent_global() {
+  local runtime=$1 home_dir=$2 target=$3 item=$4
+  local scratch
+  scratch=$(mktemp -d "$WORK/install-global-cwd.XXXXXX")
+  case "$runtime" in
+  go)   (cd "$scratch" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --items "$item" --scope global >/dev/null 2>&1) ;;
+  node) (cd "$scratch" && HOME="$home_dir" node "$NODE_CLI" agents install --targets "$target" --items "$item" --scope global >/dev/null 2>&1) ;;
+  py)   (cd "$scratch" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" PYTHONDONTWRITEBYTECODE=1 python3 -m trackfw agents install --targets "$target" --items "$item" --scope global >/dev/null 2>&1) ;;
+  esac
+}
+
+# install_agent_project RUNTIME PROJECT_DIR HOME_DIR TARGET ITEM
+# Installs a single agent into an isolated project using the given runtime.
+install_agent_project() {
+  local runtime=$1 project_dir=$2 home_dir=$3 target=$4 item=$5
+  case "$runtime" in
+  go)   (cd "$project_dir" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --items "$item" --scope project >/dev/null 2>&1) ;;
+  node) (cd "$project_dir" && HOME="$home_dir" node "$NODE_CLI" agents install --targets "$target" --items "$item" --scope project >/dev/null 2>&1) ;;
+  py)   (cd "$project_dir" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" PYTHONDONTWRITEBYTECODE=1 python3 -m trackfw agents install --targets "$target" --items "$item" --scope project >/dev/null 2>&1) ;;
+  esac
+}
+
+# run_agents_install RUNTIME HOME_DIR PROJECT_DIR TARGET ITEM SCOPE
+# Sets AGENTS_INSTALL_EXIT, AGENTS_INSTALL_STDERR as globals.
+run_agents_install() {
+  local runtime=$1 home_dir=$2 project_dir=$3 target=$4 item=$5 scope=$6
+  local err_file="$WORK/err.$$.$RANDOM"
+  set +e
+  case "$runtime" in
+  go)   (cd "$project_dir" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --items "$item" --scope "$scope" >/dev/null 2>"$err_file") ;;
+  node) (cd "$project_dir" && HOME="$home_dir" node "$NODE_CLI" agents install --targets "$target" --items "$item" --scope "$scope" >/dev/null 2>"$err_file") ;;
+  py)   (cd "$project_dir" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" PYTHONDONTWRITEBYTECODE=1 python3 -m trackfw agents install --targets "$target" --items "$item" --scope "$scope" >/dev/null 2>"$err_file") ;;
+  *) echo "run_agents_install: unknown runtime '$runtime'" >&2; exit 1 ;;
+  esac
+  AGENTS_INSTALL_EXIT=$?
+  set -e
+  AGENTS_INSTALL_STDERR=$(cat "$err_file")
+  rm -f "$err_file"
+}
+
+# run_init RUNTIME HOME_DIR PROJECT_DIR AI_TOOL
+# Sets INIT_EXIT, INIT_STDERR as globals.
+run_init() {
+  local runtime=$1 home_dir=$2 project_dir=$3 tool=$4
+  local err_file="$WORK/err.$$.$RANDOM"
+  set +e
+  case "$runtime" in
+  go)   (cd "$project_dir" && HOME="$home_dir" "$GO_BIN" init --ai-tools "$tool" >/dev/null 2>"$err_file") ;;
+  node) (cd "$project_dir" && HOME="$home_dir" node "$NODE_CLI" init --ai-tools "$tool" >/dev/null 2>"$err_file") ;;
+  py)   (cd "$project_dir" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" PYTHONDONTWRITEBYTECODE=1 python3 -m trackfw init --ai-tools "$tool" >/dev/null 2>"$err_file") ;;
+  *) echo "run_init: unknown runtime '$runtime'" >&2; exit 1 ;;
+  esac
+  INIT_EXIT=$?
+  set -e
+  INIT_STDERR=$(cat "$err_file")
+  rm -f "$err_file"
+}
+
+SKIP_SENTINEL="OUTDATED-SENTINEL-DO-NOT-OVERWRITE-by-check-update-parity"
+
+# Scenario 6: skip warning byte-identical, global scope.
+# One fresh HOME per runtime; fixture built by the respective runtime.
+S6_PROJ="$WORK/s6-project"
+mkdir -p "$S6_PROJ"
+for h in go node py; do
+  home="$WORK/s6-home-$h"
+  install_agent_global "$h" "$home" "gemini" "architect"
+  artifact="$home/.gemini/agents/trackfw-architect.md"
+  manifest="$home/.trackfw/integrations-manifest.json"
+  art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])")
+  patch_manifest_outdated "$manifest" "$art_key" "$SKIP_SENTINEL"
+done
+
+run_agents_install go   "$WORK/s6-home-go"   "$S6_PROJ" "gemini" "architect" "global"
+S6_GO_EXIT=$AGENTS_INSTALL_EXIT
+S6_GO_WARN=$(grep '^warning: skipping outdated artifact ' <<<"$AGENTS_INSTALL_STDERR" || true)
+run_agents_install node "$WORK/s6-home-node" "$S6_PROJ" "gemini" "architect" "global"
+S6_NODE_EXIT=$AGENTS_INSTALL_EXIT
+S6_NODE_WARN=$(grep '^warning: skipping outdated artifact ' <<<"$AGENTS_INSTALL_STDERR" || true)
+run_agents_install py   "$WORK/s6-home-py"   "$S6_PROJ" "gemini" "architect" "global"
+S6_PY_EXIT=$AGENTS_INSTALL_EXIT
+S6_PY_WARN=$(grep '^warning: skipping outdated artifact ' <<<"$AGENTS_INSTALL_STDERR" || true)
+
+for pair in "go:$S6_GO_EXIT" "node:$S6_NODE_EXIT" "python:$S6_PY_EXIT"; do
+  rt=${pair%%:*}; ec=${pair##*:}
+  if [[ "$ec" != "0" ]]; then
+    diag "skip-parity/global-scope/exit-zero" "$rt exited $ec — install over outdated+owned must be exit 0"
+  fi
+done
+
+# Vacuity guard: Go must have produced a non-empty skip warning.
+if [[ -z "${S6_GO_WARN:-}" ]]; then
+  diag "skip-parity/global-scope/vacuity-guard" "Go emitted no skip warning — fixture may be broken; nothing to compare"
+else
+  ok "skip-parity/global-scope/vacuity-guard"
+
+  if [[ "$S6_GO_WARN" != "$S6_NODE_WARN" ]]; then
+    diag "skip-parity/global-scope/go-vs-node" "skip warning diverges
+  go:   $S6_GO_WARN
+  node: $S6_NODE_WARN"
+  fi
+  if [[ "$S6_GO_WARN" != "$S6_PY_WARN" ]]; then
+    diag "skip-parity/global-scope/go-vs-python" "skip warning diverges
+  go:     $S6_GO_WARN
+  python: $S6_PY_WARN"
+  fi
+  if [[ "$S6_GO_WARN" == "$S6_NODE_WARN" && "$S6_GO_WARN" == "$S6_PY_WARN" ]]; then
+    ok "skip-parity/global-scope/three-runtimes-identical"
+  fi
+fi
+
+# ===========================================================================
+# Scenario 7 — skip-parity/project-scope
+#
+# Proves byte-identical skip warnings for project scope. Each runtime sets up
+# its own project fixture because Node.js and Python resolve process.cwd()
+# through /private/ on macOS (symlink), producing absolute paths different
+# from Go's filepath.Abs output for the same directory. Using runtime-specific
+# manifests sidesteps this platform difference.
+# ===========================================================================
+for h in go node py; do
+  proj="$WORK/s7-proj-$h"
+  home="$WORK/s7-home-$h"
+  mkdir -p "$proj" "$home"
+  install_agent_project "$h" "$proj" "$home" "claude" "architect"
+  manifest="$proj/.trackfw/integrations-manifest.json"
+  art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])")
+  artifact="$art_key"  # manifest key IS the absolute artifact path for project scope
+  patch_manifest_outdated "$manifest" "$artifact" "$SKIP_SENTINEL"
+done
+
+S7_PROJ_GO="$WORK/s7-proj-go";   S7_HOME_GO="$WORK/s7-home-go"
+S7_PROJ_NODE="$WORK/s7-proj-node"; S7_HOME_NODE="$WORK/s7-home-node"
+S7_PROJ_PY="$WORK/s7-proj-py";   S7_HOME_PY="$WORK/s7-home-py"
+
+run_agents_install go   "$S7_HOME_GO"   "$S7_PROJ_GO"   "claude" "architect" "project"
+S7_GO_EXIT=$AGENTS_INSTALL_EXIT
+S7_GO_WARN=$(grep '^warning: skipping outdated artifact ' <<<"$AGENTS_INSTALL_STDERR" || true)
+run_agents_install node "$S7_HOME_NODE" "$S7_PROJ_NODE" "claude" "architect" "project"
+S7_NODE_EXIT=$AGENTS_INSTALL_EXIT
+S7_NODE_WARN=$(grep '^warning: skipping outdated artifact ' <<<"$AGENTS_INSTALL_STDERR" || true)
+run_agents_install py   "$S7_HOME_PY"   "$S7_PROJ_PY"   "claude" "architect" "project"
+S7_PY_EXIT=$AGENTS_INSTALL_EXIT
+S7_PY_WARN=$(grep '^warning: skipping outdated artifact ' <<<"$AGENTS_INSTALL_STDERR" || true)
+
+for pair in "go:$S7_GO_EXIT" "node:$S7_NODE_EXIT" "python:$S7_PY_EXIT"; do
+  rt=${pair%%:*}; ec=${pair##*:}
+  if [[ "$ec" != "0" ]]; then
+    diag "skip-parity/project-scope/exit-zero" "$rt exited $ec — install over outdated+owned must be exit 0"
+  fi
+done
+
+if [[ -z "${S7_GO_WARN:-}" ]]; then
+  diag "skip-parity/project-scope/vacuity-guard" "Go emitted no skip warning — fixture may be broken; nothing to compare"
+else
+  ok "skip-parity/project-scope/vacuity-guard"
+
+  if [[ "$S7_GO_WARN" != "$S7_NODE_WARN" ]]; then
+    diag "skip-parity/project-scope/go-vs-node" "skip warning diverges
+  go:   $S7_GO_WARN
+  node: $S7_NODE_WARN"
+  fi
+  if [[ "$S7_GO_WARN" != "$S7_PY_WARN" ]]; then
+    diag "skip-parity/project-scope/go-vs-python" "skip warning diverges
+  go:     $S7_GO_WARN
+  python: $S7_PY_WARN"
+  fi
+  if [[ "$S7_GO_WARN" == "$S7_NODE_WARN" && "$S7_GO_WARN" == "$S7_PY_WARN" ]]; then
+    ok "skip-parity/project-scope/three-runtimes-identical"
+  fi
+fi
+
+# ===========================================================================
+# Scenario 8 — E2E: init with outdated global artifact
+#
+# The original symptom (REQ-2026-07-29-install-pula-artefato-desatualizado-
+# em-vez-de-abortar): `trackfw init --ai-tools gemini` aborted when a global
+# artifact was outdated+owned. This scenario proves exit 0 + scaffold complete
+# + bytes preserved + sibling artifact written (skip ≠ abort) for all three
+# runtimes.
+#
+# Strategy: install gemini/architect globally (using the respective runtime),
+# patch to outdated+owned (sentinel bytes), run `init --ai-tools gemini`,
+# then assert the four criteria. For global scope the Go-created manifest is
+# readable by all three runtimes (HOME path not symlink-expanded by
+# os.homedir()/os.UserHomeDir()), so this scenario uses each runtime for
+# both install and init to keep the manifest paths consistent.
+# ===========================================================================
+for h in go node py; do
+  home="$WORK/s8-home-$h"
+  proj="$WORK/s8-proj-$h"
+  mkdir -p "$home" "$proj"
+  install_agent_global "$h" "$home" "gemini" "architect"
+  manifest="$home/.trackfw/integrations-manifest.json"
+  art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])")
+  patch_manifest_outdated "$manifest" "$art_key" "$SKIP_SENTINEL"
+done
+
+for h in go node py; do
+  home="$WORK/s8-home-$h"
+  proj="$WORK/s8-proj-$h"
+  architect="$home/.gemini/agents/trackfw-architect.md"
+  backend="$home/.gemini/agents/trackfw-backend.md"
+
+  run_init "$h" "$home" "$proj" "gemini"
+  if [[ "$INIT_EXIT" -ne 0 ]]; then
+    diag "e2e/init-outdated-global/$h/exit-zero" "init exited $INIT_EXIT — expected 0 with outdated+owned global artifact"
+    continue
+  fi
+
+  # (b) project scaffold: trackfw.yaml must exist
+  if [[ ! -f "$proj/trackfw.yaml" ]]; then
+    diag "e2e/init-outdated-global/$h/scaffold" "trackfw.yaml missing — scaffold incomplete"
+  fi
+
+  # (c) outdated artifact bytes preserved (sentinel untouched)
+  if [[ ! -f "$architect" ]]; then
+    diag "e2e/init-outdated-global/$h/bytes-preserved" "architect artifact was removed"
+  elif ! grep -qF "$SKIP_SENTINEL" "$architect"; then
+    diag "e2e/init-outdated-global/$h/bytes-preserved" "sentinel bytes overwritten — skip did not preserve artifact"
+  fi
+
+  # (c-sibling) a sibling gemini artifact was written (proves skip ≠ abort)
+  if [[ ! -f "$backend" ]]; then
+    diag "e2e/init-outdated-global/$h/sibling-written" "trackfw-backend.md was not written — init may have aborted"
+  fi
+
+  # (d) skip warning in stderr
+  warn_line=$(grep '^warning: skipping outdated artifact ' <<<"$INIT_STDERR" || true)
+  if [[ -z "$warn_line" ]]; then
+    diag "e2e/init-outdated-global/$h/warning-in-stderr" "no skip warning in stderr — expected 'warning: skipping outdated artifact'"
+  fi
+
+  if [[ "$FAIL" -eq 0 ]]; then
+    ok "e2e/init-outdated-global/$h"
+  fi
+done
+
 # ---------------------------------------------------------------------------
 if [[ "$FAIL" -ne 0 ]]; then
   echo "check-update-parity: drift detected — see FAIL lines above." >&2

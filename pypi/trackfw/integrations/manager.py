@@ -21,9 +21,27 @@ def _hash(content: bytes) -> str:
 
 
 class IntegrationManager:
-    def __init__(self, project_root: str | os.PathLike[str], home_dir: str | os.PathLike[str] | None = None):
+    def __init__(
+        self,
+        project_root: str | os.PathLike[str],
+        home_dir: str | os.PathLike[str] | None = None,
+        *,
+        on_skip=None,
+    ):
         self.project_root = Path(project_root).absolute()
         self.home_dir = Path(home_dir or Path.home()).absolute()
+        # Optional observer: called once per skipped artifact (outdated+owned+no-force)
+        # in resolved order, never twice for the same destination.
+        # Signature: on_skip(destination: str, reason: str) -> None.
+        # ``destination`` is the tilde-abbreviated display path — global scope
+        # yields "~/...", project scope yields the project-relative path (no "~/").
+        # ``reason`` is the complete warning line, ready to print verbatim,
+        # without a trailing newline.  Callers MUST NOT compose, abbreviate, or
+        # derive anything from it — just write it to stderr.
+        # Cannot import _tildeify from commands/update_harness.py here because
+        # update_harness.py already imports from integrations/manager.py
+        # (circular import); display formatting is inlined in _mutate instead.
+        self.on_skip = on_skip
 
     def _resolve(self, plan: dict[str, Any]) -> tuple[Path, Path, Path]:
         raw = plan["destination"]
@@ -165,16 +183,59 @@ class IntegrationManager:
             destination, manifest_file, root = self._resolve(plan)
             manifests.setdefault(manifest_file, self._load_manifest(manifest_file))
             resolved.append((plan, destination, manifest_file, root))
+
+        # Phase 1 — conflict detection + preflight (all items).  Errors raise
+        # immediately; skips are collected to call on_skip after all preflights
+        # succeed, so the observer is never called when the batch will abort.
         desired_by_path: dict[Path, str] = {}
-        for plan, destination, manifest_file, _ in resolved:
+        skip_items: list[tuple[dict[str, Any], Path, Path, Path]] = []
+        active: list[tuple[dict[str, Any], Path, Path, Path]] = []
+        for plan, destination, manifest_file, root in resolved:
             desired = _hash(plan["content"])
             if destination in desired_by_path and desired_by_path[destination] != desired and operation != "uninstall":
                 raise IntegrationError(f"conflicting content planned for {destination}")
             desired_by_path[destination] = desired
-            self._preflight(plan, destination, manifests[manifest_file], operation, force)
+            skip = self._preflight(plan, destination, manifests[manifest_file], operation, force)
+            if skip:
+                skip_items.append((plan, destination, manifest_file, root))
+            else:
+                active.append((plan, destination, manifest_file, root))
 
+        # Phase 2 — notify observer for each unique skipped destination in
+        # resolved order; guard against None and against duplicate destinations.
+        notified: set[Path] = set()
+        for plan, destination, manifest_file, root in skip_items:
+            if destination not in notified:
+                notified.add(destination)
+                if self.on_skip is not None:
+                    scope = plan["claim"]["scope"]
+                    # Display path mirrors Go/Node conventions:
+                    #   global  → "~/..."  (tilde-abbreviated; relative to home_dir)
+                    #   project → "..."    (relative to project_root; no leading "./")
+                    # Cannot call _tildeify from commands/update_harness.py here:
+                    # that module imports from integrations/manager.py, so importing
+                    # back would be circular.  Inline equivalent 2-branch logic.
+                    # .as_posix() ensures forward slashes on all platforms and makes
+                    # the ML-6H double-slash guard explicit (Path normalisation in
+                    # _resolve already removes trailing separators from home_dir,
+                    # so "~/" is the only possible doubling site — as_posix() on
+                    # relative_to() output never carries a leading separator).
+                    if scope == "global":
+                        display = "~/" + destination.relative_to(root).as_posix()
+                        remediation = "trackfw update harness"
+                    else:
+                        display = destination.relative_to(root).as_posix()
+                        remediation = "trackfw update"
+                    reason = (
+                        f"warning: skipping outdated artifact {display};"
+                        f" run '{remediation}' to refresh it"
+                    )
+                    self.on_skip(display, reason)
+
+        # Phase 3 — snapshot only active destinations (not skipped ones) plus all
+        # manifest files (for rollback safety even when a scope had all items skipped).
         snapshots: dict[Path, tuple[bool, bytes, int]] = {}
-        for filename in [entry[1] for entry in resolved] + list(manifests):
+        for filename in [entry[1] for entry in active] + list(manifests):
             if filename in snapshots:
                 continue
             try:
@@ -185,7 +246,7 @@ class IntegrationManager:
             except FileNotFoundError:
                 snapshots[filename] = (False, b"", 0)
         try:
-            for plan, destination, manifest_file, root in resolved:
+            for plan, destination, manifest_file, root in active:
                 self._apply(plan, destination, manifests[manifest_file], root, operation, force)
             for filename in sorted(manifests, key=str):
                 self._write_manifest(filename, manifests[filename])
@@ -200,7 +261,14 @@ class IntegrationManager:
                         pass
             raise
 
-    def _preflight(self, plan, destination, manifest, operation, force) -> None:
+    def _preflight(self, plan, destination, manifest, operation, force) -> bool:
+        """Returns True if the item should be skipped (not an error).
+
+        The only skip condition is install on an outdated+owned artifact without
+        --force: bytes are already on disk from a previous install; the user
+        must run ``trackfw update`` (or ``trackfw update harness``) to refresh.
+        All other abnormal states continue to raise IntegrationError.
+        """
         if operation != "uninstall":
             self._detect_name_collision(plan, destination, force)
         state = self.inspect_with(plan, destination, manifest)
@@ -210,7 +278,9 @@ class IntegrationManager:
             if state == "modified" and not force:
                 raise IntegrationError(f"artifact {destination} is modified; use force")
             if state == "outdated" and owned and not force:
-                raise IntegrationError(f"artifact {destination} is outdated; use update")
+                # Skip silently: artifact is managed and on-disk bytes are intact.
+                # Caller notifies via on_skip observer; the batch continues.
+                return True
         elif operation == "update":
             if not owned and state == "modified":
                 raise IntegrationError(f"unmanaged artifact {destination} does not match a trackfw template")
@@ -218,6 +288,7 @@ class IntegrationManager:
                 raise IntegrationError(f"artifact {destination} is modified; use force")
         elif operation == "uninstall" and owned and state == "modified" and not force:
             raise IntegrationError(f"artifact {destination} is modified; use force")
+        return False
 
     @staticmethod
     def _frontmatter_name(content: bytes) -> str | None:

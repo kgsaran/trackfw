@@ -6,6 +6,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const { frontmatterName } = require('./render')
+const { tildeify } = require('../lib/update-engine')
 
 const SCHEMA_VERSION = 1
 const sha256 = content => crypto.createHash('sha256').update(content).digest('hex')
@@ -13,8 +14,9 @@ const claimKey = claim => [claim.target, claim.surface, claim.scope, claim.kind,
 const cleanClaim = claim => ({ target: claim.target, surface: claim.surface, scope: claim.scope, kind: claim.kind, item: claim.item })
 
 class IntegrationManager {
-  constructor({ projectRoot = process.cwd(), homeRoot = os.homedir() } = {}) {
+  constructor({ projectRoot = process.cwd(), homeRoot = os.homedir() } = {}, { onSkip } = {}) {
     this.roots = { project: path.resolve(projectRoot), global: path.resolve(homeRoot) }
+    this.onSkip = onSkip
   }
 
   manifestPath(scope) { return path.join(this.roots[scope], '.trackfw', 'integrations-manifest.json') }
@@ -127,17 +129,33 @@ class IntegrationManager {
     const manifests = new Map()
     for (const { plan } of resolved) if (!manifests.has(plan.claim.scope)) manifests.set(plan.claim.scope, this.loadManifest(plan.claim.scope))
     const desiredByFile = new Map()
+    const skippedFiles = new Set()
     for (const item of resolved) {
       const desired = sha256(item.plan.content)
       if (operation !== 'uninstall' && desiredByFile.has(item.file) && desiredByFile.get(item.file) !== desired) throw new Error(`Conflicting content planned for: ${item.file}`)
       desiredByFile.set(item.file, desired)
-      this.preflight(operation, item, manifests.get(item.plan.claim.scope), force)
+      const skip = this.preflight(operation, item, manifests.get(item.plan.claim.scope), force)
+      if (skip) {
+        skippedFiles.add(item.file)
+        if (typeof this.onSkip === 'function') {
+          // O manager compõe a linha completa e passa tilde-abreviado como
+          // destination (contrato: docs/cli-parity.md, "Valor de cada
+          // parâmetro — pinado"). A remediação é derivada de
+          // plan.claim.scope por artefato, nunca de inferência sobre o
+          // caminho renderizado.
+          const abbrev = this.tildeAbbrev(item.file, item.plan.claim.scope)
+          const remediation = item.plan.claim.scope === 'global' ? 'trackfw update harness' : 'trackfw update'
+          const reason = `warning: skipping outdated artifact ${abbrev}; run '${remediation}' to refresh it`
+          this.onSkip(abbrev, reason)
+        }
+      }
     }
+    const active = resolved.filter(item => !skippedFiles.has(item.file))
     const snapshots = new Map()
-    for (const item of resolved) this.snapshot(snapshots, item.file)
+    for (const item of active) this.snapshot(snapshots, item.file)
     for (const scope of manifests.keys()) this.snapshot(snapshots, this.manifestPath(scope))
     try {
-      for (const item of resolved) this.apply(operation, item, manifests.get(item.plan.claim.scope), force)
+      for (const item of active) this.apply(operation, item, manifests.get(item.plan.claim.scope), force)
       for (const [scope, manifest] of [...manifests].sort(([a], [b]) => a.localeCompare(b))) this.saveManifest(scope, manifest)
     } catch (error) {
       this.rollback(snapshots)
@@ -153,13 +171,14 @@ class IntegrationManager {
     const owned = Boolean(record && record.claims.some(claim => claimKey(claim) === claimKey(plan.claim)))
     if (operation === 'install') {
       if (status.state === 'modified' && !force) throw new Error(`Artifact is modified; use --force: ${file}`)
-      if (status.state === 'outdated' && owned && !force) throw new Error(`Artifact is outdated; use update: ${file}`)
+      if (status.state === 'outdated' && owned && !force) return true // skip: bytes preserved, batch continues
     } else if (operation === 'update') {
       if (!owned && status.state === 'modified') throw new Error(`Unmanaged artifact does not match a trackfw template: ${file}`)
       if (status.state === 'modified' && !force) throw new Error(`Artifact is modified; use --force: ${file}`)
     } else if (operation === 'uninstall' && owned && status.state === 'modified' && !force) {
       throw new Error(`Artifact is modified; use --force: ${file}`)
     }
+    return false
   }
 
   // detectNameCollision protege contra dois artefatos de agente gerenciados
@@ -271,6 +290,16 @@ class IntegrationManager {
         else this.atomicWrite(file, snapshot.content, snapshot.mode)
       } catch { /* preserve original error */ }
     }
+  }
+
+  // tildeAbbrev — retorna o caminho de exibição abreviado para uso em mensagens
+  // de aviso de skip. Espelha internal/integrations/manager.go:tildeAbbrev.
+  // - scope global: substitui homeRoot por '~' (via tildeify, com salvaguarda
+  //   de barra dupla corrigida no ML-6H).
+  // - scope de projeto: caminho relativo ao projectRoot, sem './' prefixo.
+  tildeAbbrev(file, scope) {
+    if (scope === 'global') return tildeify(this.roots.global, file)
+    return path.relative(this.roots.project, file)
   }
 
   cleanEmpty(directory, root) {

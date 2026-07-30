@@ -61,9 +61,12 @@ cmd.action(async (options, command) => {
     const supported = new Set(['claude', 'codex', 'gemini', 'antigravity', 'cursor', 'copilot', 'windsurf', 'amazonq', 'kiro'])
     // Sem TTY, o escopo nunca é perguntado: default `global` (ADR D1/D4).
     const scope = await resolveScope({}, { interactive: false })
+    const makeOnSkip = () => (_destination, reason) => {
+      process.stderr.write(`${reason}\n`)
+    }
     for (const tool of aiTools) {
       if (!supported.has(tool)) throw new Error(`Unsupported AI tool: ${tool}`)
-      await generators.installIntegrationTarget(tool, process.cwd(), scope)
+      await generators.installIntegrationTarget(tool, process.cwd(), scope, { onSkip: makeOnSkip() })
     }
     console.log(`\n${t('init.success')}`)
     require('../generators/init').printArchitectNextSteps(process.cwd())
@@ -277,7 +280,12 @@ cmd.action(async (options, command) => {
   const cfg = { projectName, projectType, frontend, backend, backendFramework, pkgManager, hooks, ci, forge: forgeValue || '', requireReqInCommit }
   await generators.scaffold(cfg)
 
-  for (const tool of (aiTools || [])) await generators.installIntegrationTarget(tool, process.cwd(), scope)
+  for (const tool of (aiTools || [])) {
+    const onSkip = (_destination, reason) => {
+      process.stderr.write(`${reason}\n`)
+    }
+    await generators.installIntegrationTarget(tool, process.cwd(), scope, { onSkip })
+  }
 
   console.log(`\n${t('init.success')}`)
   require('../generators/init').printArchitectNextSteps(process.cwd())

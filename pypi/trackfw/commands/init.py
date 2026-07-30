@@ -153,16 +153,19 @@ def run(args):
         scope = resolve_scope(None)
         print(f"Escopo de instalação: {scope}")
 
+        def _on_skip(destination: str, reason: str) -> None:
+            print(reason, file=sys.stderr)
+
         _, plans = plan_deployments("agents", target_ids=ai_tools, scope=scope, identity_cfg=ident)
         print("Destino:")
         for plan in plans:
             print(f"  {plan['destination']}")
-        IntegrationManager(cwd).install(plans)
+        IntegrationManager(cwd, on_skip=_on_skip).install(plans)
         _, plans = plan_deployments("skills", target_ids=ai_tools, scope=scope, identity_cfg=ident)
         print("Destino:")
         for plan in plans:
             print(f"  {plan['destination']}")
-        IntegrationManager(cwd).install(plans)
+        IntegrationManager(cwd, on_skip=_on_skip).install(plans)
 
         # Auxiliary rules files (GEMINI.md, .github/copilot-instructions.md,
         # .windsurfrules, .amazonq/developer/guidelines.md, etc.) are not part
