@@ -168,8 +168,92 @@ linha ~115, mensagem linha ~116), testes correspondentes
 
 ---
 
-## Wave 3 — Auditoria de paridade (1 ML)
-> Dependências: **barrier** — ML-2A, ML-2B e ML-2C concluídos.
+## Wave 3 — Convergir Python e alinhar mensagens (2 MLs em paralelo, corretivo)
+> Dependências: Wave 2 completa. Emenda do contrato feita. Arquivos disjuntos — **spawn simultâneo**.
+
+**Origem:** auditoria do orquestrador **executando os três CLIs**, não lendo relatórios. Um dos três
+relatórios afirmava preservar o abort e não preservava.
+
+**Nota de nomenclatura:** esta wave corretiva **não** se chama `Wave 2-bis`, apesar de ser exatamente
+o caso de uso da feature. Motivo: o Python ainda não trata o rótulo corretamente, e `make quality`
+executa `check-barrier.sh` nos três runtimes — batizar a wave de `2-bis` codificaria o defeito
+não-corrigido dentro do artefato de governança que controla a correção. Dogfooding fica para um
+roadmap posterior, depois que o ML-3A provar que os três concordam.
+
+### Divergências medidas empiricamente
+
+**1. Python não aborta quando a heading malformada vem DEPOIS da wave alvo.**
+
+| Posição da heading malformada | Esperado | Go | Node.js | Python |
+|---|---|---|---|---|
+| Antes da wave alvo | exit 2 | exit 2 | exit 2 | exit 2 |
+| **Depois** da wave alvo | **exit 2** | exit 2 | exit 2 | **exit 1 `blocked`** |
+
+Causa: `_find_wave` sai do laço ao encontrar a wave pedida, então a heading posterior nunca é
+visitada. É o mesmo early-break que o Node corrigiu no próprio ML-2B. **Viola duas decisões do ADR**:
+a 16 (abort é feature) e a 12 (roadmap malformado nunca deve ser lido como "wave reprovada", porque
+mascara o defeito real).
+
+O teste de regressão do ML-2C cobre **apenas** a posição "antes" — passa enquanto o bug sobrevive.
+Vacuidade parcial: o teste é real, a cobertura é incompleta.
+
+**2. Mensagem de `--wave` inválido divergia nos três:**
+
+| Runtime | Texto emitido |
+|---|---|
+| Go | `trackfw barrier: invalid --wave "2-BIS" — not a valid wave label` |
+| Node.js | `trackfw barrier: invalid --wave value: "2-BIS" (must be a valid wave label, e.g. 1, 2-bis)` |
+| Python | `trackfw barrier: malformed --wave value: "2-BIS" is not a valid wave label` |
+
+Falha do contrato: pinei a mensagem de *heading* malformada e esqueci a de *argumento* inválido.
+Agora pinada como a quarta mensagem de exit-2, adotando o texto do Go.
+
+### Convergências que não exigem ação
+
+- **Campo `wave` do JSON:** os três emitem string (`"wave": "1"`). A diferença de espaçamento
+  (Go compacto vs Node/Python espaçado) é **normalizada** por `check-barrier.sh`, que não faz
+  `sort_keys`. Não mexer.
+- **Detector amplo + validador estrito:** os três convergiram espontaneamente para a estrutura de dois
+  regexes. Agora pinada no contrato, incluindo a exigência de pré-passo completo.
+- **Comparador de ordenação:** não há call site em runtime nenhum. Go tem `compareWaveLabels` coberto
+  por testes; Node e Python declinaram corretamente em vez de criar código morto. Pinado como opcional.
+
+### ML-2D — Corrigir o early-break do Python e alinhar sua mensagem
+**Status:** ⬜ Pendente
+**Agente:** Apolo
+**Arquivos afetados:** `pypi/trackfw/commands/barrier.py`, `pypi/tests/test_barrier.py`
+
+**Ações:**
+1. Mover a validação de heading para **pré-passo completo**: visitar todas as headings do documento
+   antes de resolver o rótulo pedido, sem `break` antecipado.
+2. Alinhar a mensagem de `--wave` inválido ao texto canônico do Go.
+3. Teste cobrindo a heading malformada nas **duas** posições — antes e depois da wave alvo.
+
+**Critérios de aceite:**
+- [ ] Heading malformada **depois** da wave alvo aborta com exit 2 e a mensagem pinada.
+- [ ] Heading malformada antes continua abortando (não regredir).
+- [ ] Teste cobre ambas as posições.
+- [ ] Mensagem de `--wave` inválido byte-idêntica ao Go.
+- [ ] Suíte Python passa.
+
+### ML-2E — Alinhar a mensagem de `--wave` inválido no Node.js
+**Status:** ⬜ Pendente
+**Agente:** Apolo
+**Arquivos afetados:** `npm/src/commands/barrier.js`, testes correspondentes em `npm/tests/`
+
+**Ações:** trocar `invalid --wave value: "<v>" (must be a valid wave label, e.g. 1, 2-bis)` pelo texto
+canônico `invalid --wave "<v>" — not a valid wave label`. Atenção ao travessão `—` (U+2014), não hífen.
+
+**Critérios de aceite:**
+- [ ] Node.js emite `trackfw barrier: invalid --wave "<value>" — not a valid wave label`.
+- [ ] Go inalterado (já é o texto canônico).
+- [ ] `npm test` passa.
+
+**Disjunção:** ML-2D toca só `pypi/`, ML-2E toca só `npm/`. Paralelizáveis. A mudança de mensagem do
+Python foi absorvida pelo ML-2D justamente para evitar dois agentes no mesmo arquivo.
+
+## Wave 4 — Auditoria de paridade (1 ML)
+> Dependências: **barrier** — Waves 2 e 3 completas (ML-2A a ML-2E).
 
 ### ML-3A — Auditar paridade e provar não-vacuidade
 **Status:** ⬜ Pendente

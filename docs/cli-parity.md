@@ -503,6 +503,7 @@ normalization; `<roadmap-file>` is the resolved basename including `.md`:
 trackfw barrier: roadmap "<roadmap-arg>" not found in wip/ nor done/ under <roadmap_dir>
 trackfw barrier: wave <label> not found in roadmap "<roadmap-file>"
 trackfw barrier: malformed wave heading at line <n>: "<token>" is not a valid wave label
+trackfw barrier: invalid --wave "<value>" — not a valid wave label
 ```
 
 Pinning the text matters because these messages are the only observable difference between "the
@@ -514,6 +515,18 @@ The third message was added when the wave label grammar was introduced. Before t
 `number {token!r} is not parseable`, and Node.js dumped the whole line without naming the cause at
 all. `<token>` is the captured label, **never** the whole line — a caller must be able to tell which
 token was rejected. `<n>` is 1-based.
+
+The fourth message — an invalid `--wave` **argument**, as opposed to a malformed heading in the file —
+was pinned for the same reason, one round later. Leaving it unpinned produced three texts again:
+`invalid --wave "X" — not a valid wave label` (Go), `invalid --wave value: "X" (must be a valid wave
+label, e.g. 1, 2-bis)` (Node.js), `malformed --wave value: "X" is not a valid wave label` (Python).
+The pinned text is Go's. Both other runtimes align to it. `<value>` is the argument exactly as the
+user typed it.
+
+**JSON whitespace is normalized by the gate, key order is not.** `scripts/check-barrier.sh` strips
+formatting differences before diffing (Go emits compact JSON, Node.js and Python emit spaced), so
+`"wave":"1"` and `"wave": "1"` are equivalent for parity purposes. It deliberately does **not**
+`sort_keys` — declaration order is part of the contract. Do not "fix" the spacing.
 
 ### Wave label grammar
 
@@ -548,12 +561,50 @@ already cited in commit messages. Observed in the roadmap
 `install-pula-artefato-desatualizado-em-vez-de-abortar` (PR #86): the cross-audit of Wave 2 required a
 convergence wave, and the barrier rejected **all four waves** with `malformed wave heading`.
 
-**A heading outside this grammar still aborts the whole document — intentionally.** The parser scans
-every heading looking for the requested wave and raises before deciding whether that heading is the
-one asked for. Scoping the error to the requested wave was considered and **rejected**: silently
-ignoring a malformed heading would leave the MLs inside it **unaudited**, so a typo like
-`## Wave X — ...` would produce a green barrier over unverified work. That is the same vacuity that
-ADR decision 13 forbids ("an ML must not pass for having nothing to fail"). See ADR decision 16.
+**A heading outside this grammar still aborts the whole document — intentionally.** Scoping the error
+to the requested wave was considered and **rejected**: silently ignoring a malformed heading would
+leave the MLs inside it **unaudited**, so a typo like `## Wave X — ...` would produce a green barrier
+over unverified work. That is the same vacuity that ADR decision 13 forbids ("an ML must not pass for
+having nothing to fail"), and it would also let a malformed roadmap read as "wave blocked", which ADR
+decision 12 forbids. See ADR decision 16.
+
+#### Detection is a full pre-pass — pinned
+
+Two regexes are required, and **the order of operations matters more than the regexes**:
+
+| Regex | Role |
+|---|---|
+| `^## Wave (\S+) ` | **Broad detector.** Decides "this line is a wave heading". |
+| `^\d+(?:-[a-z0-9]+)?$` | **Strict validator**, applied to the token the broad detector captured. |
+
+A line that matches the broad detector but fails the strict validator is a **malformed wave heading**
+and aborts. Without the broad detector, a strict-only regex would simply not match `## Wave X — ...`,
+the line would be treated as "not a wave heading at all", and the abort would silently disappear —
+taking the regression test with it, since the heading would never be seen.
+
+**The scan must visit every heading in the document before resolving the requested label, and must
+not break early on a match.** This sentence is the contract, not an implementation hint. Both Node.js
+and Python originally broke out of the loop as soon as the requested wave was found, so a malformed
+heading **positioned after** the target wave was never reached: the barrier returned exit 1 `blocked`
+instead of exit 2. Node.js was corrected in its first pass; Python's own regression test only covered
+the "before" position and passed while the bug survived. Measured empirically, not reported:
+
+| Malformed heading position | Expected | Go | Node.js | Python (before fix) |
+|---|---|---|---|---|
+| Before the target wave | exit 2 | exit 2 | exit 2 | exit 2 |
+| **After** the target wave | **exit 2** | exit 2 | exit 2 | **exit 1 `blocked`** |
+
+Any test of this behavior must cover **both positions**. A test at the "before" position alone is
+vacuous with respect to the early-break bug.
+
+#### Ordering has no call site — helper is optional
+
+No runtime currently lists or compares waves; `--wave` resolution is exact-match only. The ordering
+rule above stays **normative** — it applies the moment a listing surface appears — but implementing a
+comparator is **optional** until then. Go has `compareWaveLabels` covered by unit tests, which proves
+the rule is implementable; Node.js and Python correctly declined to add one rather than ship dead
+code. Do not "fix" this asymmetry in either direction: adding dead comparators to two runtimes is not
+parity, and deleting Go's loses the tested proof.
 
 ### States
 
@@ -612,7 +663,7 @@ shelling out to a `trackfw` binary that may not be on `PATH`.
 ```json
 {
   "roadmap": "ROADMAP-2026-07-29-example.md",
-  "wave": 2,
+  "wave": "2",
   "status": "blocked",
   "started_at": "2026-07-29T10:30:00Z",
   "finished_at": "2026-07-29T10:30:04Z",
