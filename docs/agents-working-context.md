@@ -7013,3 +7013,25 @@ própria.**
 
 Duas mudanças observáveis a constar no CHANGELOG: o Go deixa de imprimir o prefixo `v`, e o `--version`
 do Node passa a incluir `trackfw `. Conforme o protocolo, o CHANGELOG é editado apenas no PR de release.
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2A — Desvincular `-v` de `--version` no Go) — IMPLEMENTANDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md`
+**Branch:** `feat/reservar-v-para-verbose-e-remover-atalho-de-versao-no-go`
+
+**Abordagem:** Pré-registrar `root.Flags().Bool("version", false, "version for trackfw")` em `newRootCmd()`
+antes que `InitDefaultVersionFlag()` do cobra seja chamado. O cobra só adiciona a flag se
+`Flags().Lookup("version") == nil`, portanto o shorthand `v` nunca é registrado.
+
+**Status final:** CONCLUÍDO
+
+**Mudanças:**
+- `internal/commands/root.go`: pré-registra `Flags().Bool("version", false, ...)` antes de `AddCommand`,
+  bloqueando o registro automático do shorthand `v` pelo cobra.
+- `internal/commands/version_test.go`: adiciona `TestShorthandVNotRegistered` (asserção estrutural sobre
+  a flag set) e `TestShortVFlagRejected` (asserção comportamental sobre stdout + erro).
+
+**Divergência de contrato registrada:** nenhuma. O contrato não exige identidade de mensagem/exit entre
+os três runtimes para flags desconhecidas — cobra emite exit 1, o que satisfaz "não-zero".

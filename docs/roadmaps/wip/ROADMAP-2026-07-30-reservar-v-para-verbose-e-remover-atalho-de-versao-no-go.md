@@ -88,29 +88,43 @@ verificar por **execução**, não por leitura.
 > Dependências: ML-1A completo.
 
 ### ML-2A — Desvincular `-v` de `--version` no Go
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
-**Arquivos afetados:** `internal/commands/root.go`, testes correspondentes
+**Arquivos afetados:** `internal/commands/root.go`, `internal/commands/version_test.go`
 
 **Diagnóstico:** o shorthand vem do cobra, não do código do projeto. Com `Version` preenchido
 (`root.go:22`), o `InitDefaultVersionFlag` registra `--version` com shorthand `v` se o atalho estiver
 livre. **Não existe nenhuma declaração de `-v` para procurar e apagar.**
 
-**Caminhos candidatos** (escolha do implementador, desde que o comportamento observável bata):
-- Chamar `InitDefaultVersionFlag()` e então zerar o shorthand:
-  `root.Flags().Lookup("version").Shorthand = ""`.
-- Declarar a flag `version` manualmente **sem** shorthand antes que o cobra a registre — o cobra só
-  adiciona a dele se `Flags().Lookup("version") == nil`.
+**Solução aplicada:** pré-registrar `root.Flags().Bool("version", false, "version for trackfw")` em
+`newRootCmd()` antes de `AddCommand`. O cobra só executa `InitDefaultVersionFlag` se
+`Flags().Lookup("version") == nil` — portanto a pré-declaração impede o registro do shorthand `v`.
+O `SetVersionTemplate` continua ativo porque o cobra detecta `version=true` na execução e aplica o
+template normalmente.
 
-**Cuidado:** o `SetVersionTemplate("trackfw {{.Version}}\n")` de `root.go:27` deve continuar valendo. Se
-o caminho escolhido substituir a flag do cobra, o template pode deixar de ser aplicado e o `--version`
-regride — o que os testes do PR #91 devem pegar, mas confirme por execução.
+**Evidência de execução:**
+```
+$ bin/trackfw version
+trackfw 5.0.0
+EXIT_VERSION: 0
+
+$ bin/trackfw --version
+trackfw 5.0.0
+EXIT_FLAG: 0
+
+$ diff <(bin/trackfw version) <(bin/trackfw --version)
+[vazio — byte-idênticos]
+
+$ bin/trackfw -v
+Error: unknown shorthand flag: 'v' in -v
+EXIT_V: 1
+```
 
 **Critérios de aceite:**
-- [ ] `trackfw -v` não imprime versão e sai com código não-zero.
-- [ ] `trackfw --version` e `trackfw version` inalterados: `trackfw <semver>`, byte-idênticos entre si.
-- [ ] Teste travando a rejeição de `-v` **e** a preservação das duas superfícies.
-- [ ] `go build ./...`, `go test ./...`, `go vet ./...` passam.
+- [x] `trackfw -v` não imprime versão e sai com código não-zero.
+- [x] `trackfw --version` e `trackfw version` inalterados: `trackfw 5.0.0`, byte-idênticos entre si.
+- [x] Teste travando a rejeição de `-v` (`TestShortVFlagRejected`, `TestShorthandVNotRegistered`) e a preservação das duas superfícies (testes do PR #91 inalterados).
+- [x] `go build ./...`, `go test ./...`, `go vet ./...` passam.
 
 ---
 

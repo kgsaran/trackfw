@@ -25,6 +25,14 @@ Run 'trackfw init' to set up governance in your project.`,
 	helpCmd := newHelpCmd()
 
 	root.SetVersionTemplate("trackfw {{.Version}}\n")
+
+	// Pré-registra a flag "version" sem shorthand, impedindo que o cobra
+	// registre automaticamente "--version / -v" via InitDefaultVersionFlag.
+	// O cobra só adiciona a flag padrão quando Flags().Lookup("version") == nil,
+	// portanto esta declaração reserva o slot sem o atalho -v.
+	// Motivação: -v/-−verbose é reservado para modo verboso futuro (cli-parity.md).
+	root.Flags().Bool("version", false, "version for trackfw")
+
 	root.AddCommand(
 		newInitCmd(),
 		newUpdateCmd(),
