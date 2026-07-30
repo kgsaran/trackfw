@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-29
 author: "trackfw_architect"
 adr: "docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md"
 ---
 
 # REQ: barrier aceita wave com sufixo bis
 
-> Date: 2026-07-29 | Status: Open
+> Date: 2026-07-29 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -68,19 +68,19 @@ terceira mensagem precisa ser pinada literalmente.
 
 ## Acceptance Criteria
 
-- [ ] Gramática do rótulo de wave estendida para `<inteiro>[-<sufixo>]`, com sufixo em minúsculas
+- [x] Gramática do rótulo de wave estendida para `<inteiro>[-<sufixo>]`, com sufixo em minúsculas
       (`[a-z0-9]+`). Válidos: `2`, `2-bis`, `2-hotfix`. Inválidos: `X`, `2-BIS`, `-bis`, `2-`.
-- [ ] `--wave` aceita o rótulo verbatim (`--wave 2-bis`) e continua aceitando inteiro (`--wave 2`).
+- [x] `--wave` aceita o rótulo verbatim (`--wave 2-bis`) e continua aceitando inteiro (`--wave 2`).
       `--wave 2` **não** casa com `Wave 2-bis`: são rótulos distintos.
-- [ ] Ordenação pinada: `2-bis` ordena imediatamente após `2` e antes de `3`; sufixos entre si ordenam
+- [x] Ordenação pinada: `2-bis` ordena imediatamente após `2` e antes de `3`; sufixos entre si ordenam
       lexicograficamente.
-- [ ] Heading fora da gramática estendida **continua abortando o documento inteiro** — preservado por
+- [x] Heading fora da gramática estendida **continua abortando o documento inteiro** — preservado por
       teste explícito, para que ninguém o "corrija" depois.
-- [ ] Terceira mensagem de exit-2 pinada literalmente e byte-idêntica nos três runtimes.
-- [ ] `docs/cli-parity.md` atualizado: linha `--wave` da tabela de command surface, regra 1 de parsing
+- [x] Terceira mensagem de exit-2 pinada literalmente e byte-idêntica nos três runtimes.
+- [x] `docs/cli-parity.md` atualizado: linha `--wave` da tabela de command surface, regra 1 de parsing
       e o bloco de mensagens pinadas.
-- [ ] Paridade nos três CLIs, com cenário de comparação byte-a-byte encadeado em `make quality`.
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] Paridade nos três CLIs, com cenário de comparação byte-a-byte encadeado em `make quality`.
+- [x] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
 
 ## Linked ADR
 ADR: `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
@@ -92,4 +92,4 @@ exigir inteiro. Exige emenda ao ADR **antes** da implementação.
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`

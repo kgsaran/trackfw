@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-29
 req: "REQ-2026-07-29-barrier-aceita-wave-com-sufixo-bis"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: barrier aceita wave com sufixo bis
 
-> Created: 2026-07-29 | Status: wip
+> Created: 2026-07-29 | Status: done
 
 ## Contexto
 
@@ -24,12 +24,25 @@ deixaria seus MLs sem auditoria e produziria barrier verde sobre trabalho não v
 
 ## Critérios de Aceite
 
-- [ ] Gramática `<inteiro>[-<sufixo>]` com sufixo `[a-z0-9]+` minúsculo.
-- [ ] `--wave 2-bis` funciona; `--wave 2` não casa com `Wave 2-bis`.
-- [ ] Ordenação: `2-bis` após `2`, antes de `3`; sufixos entre si lexicográficos.
-- [ ] Heading inválida continua abortando o documento — teste explícito de regressão.
-- [ ] Terceira mensagem de exit-2 pinada e byte-idêntica nos três runtimes.
-- [ ] `make quality` passa e `bin/trackfw validate --json` retorna 0 violações.
+- [x] Gramática `<inteiro>[-<sufixo>]` com sufixo `[a-z0-9]+` minúsculo — regex pinada nos três, tabela
+      de inválidos (`X`, `2-BIS`, `-bis`, `2-`, `2-bis-ter`, `0`) coberta em teste unitário nos três.
+- [x] `--wave 2-bis` funciona; `--wave 2` não casa com `Wave 2-bis` — cenário
+      `barrier/wave-label/bis-identity/{go,node,py}`, com vacuity-guard pelo campo `wave` do JSON, não
+      apenas pelo exit code.
+- [x] Ordenação: `2-bis` após `2`, antes de `3` — regra normativa no contrato; **sem call site em
+      runtime nenhum**, portanto o comparador é opcional. Go tem `compareWaveLabels` coberto por
+      testes; Node e Python declinaram corretamente em vez de shipar código morto. Registrado no
+      contrato para ninguém "corrigir" a assimetria em nenhuma das duas direções.
+- [x] Heading inválida continua abortando o documento — cenários
+      `barrier/wave-label/malformed-{before,after}-target/{go,node,py}`. A posição **depois** é a que
+      importa: era a célula que escondia o early-break do Python.
+- [x] Mensagens de exit-2 pinadas e byte-idênticas nos três — a **terceira** (heading malformada) e a
+      **quarta** (argumento `--wave` inválido), esta última descoberta despinada durante a Wave 2.
+- [x] `make quality` exit 0 (34 cenários de barrier, 20 de falsificação, 13 gates não-vacuosos) e
+      `bin/trackfw validate --json` 0 violações. Barrier das quatro waves: `passed`.
+- [x] **Não-vacuidade provada por execução:** `BARRIER_BIS_SELFTEST_BREAK=1` faz o gate reprovar com
+      `FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 2 ..., got 0`. O seam corrompe
+      a **fixture**, nunca a asserção — verificado pelo orquestrador.
 
 ## Mapa de dependências
 

@@ -6497,3 +6497,66 @@ a ordenação **e** o texto literal foram pinados antes de qualquer código.
 
 **Handoffs:** Nenhum. ML-3A é o último ML do roadmap.
 **Status:** CONCLUÍDO
+
+## 2026-07-29 — Zeus — CONCLUÍDO: barrier aceita rótulo de wave com sufixo, 4 waves verdes
+
+REQ+roadmap fechados. Auditoria independente: `make quality` exit 0 com **34 cenários de barrier** e
+**20 de falsificação / 13 gates não-vacuosos**; `validate --json` 0 violações; árvore limpa; barrier das
+quatro waves `passed`.
+
+### O que a auditoria empírica pegou — a lição da sessão
+
+Executei os três CLIs em vez de ler relatórios. O ML-2C (Python) **afirmava** preservar o abort de
+heading malformada e **não preservava**: `_find_wave` saía do laço ao achar a wave pedida, então uma
+heading malformada **posicionada depois** da wave alvo nunca era visitada → exit 1 `blocked` em vez de
+exit 2. Violava a decisão 16 do ADR e, pior, a **12** — roadmap malformado lido como "wave reprovada"
+mascara o defeito real.
+
+O teste de regressão do ML-2C era **real** mas cobria só a posição "antes". Passava enquanto o bug
+sobrevivia. Não foi má-fé: foi cobertura incompleta numa dimensão que o contrato não nomeava.
+
+### A frase que faltava no contrato
+
+Pinei os dois regexes (detector amplo + validador estrito) e esqueci de pinar **quando** a validação
+roda. Os regexes sozinhos não evitariam o bug. O contrato agora exige, como texto normativo:
+
+> A varredura deve visitar todas as headings do documento antes de resolver o rótulo pedido, e não pode
+> sair antecipadamente ao casar.
+
+Com tabela empírica das duas posições e a nota de que teste de uma posição só é vacuoso.
+
+Padrão que se repete e vale internalizar: **pinar a estrutura sem pinar a ordem das operações produz
+divergência**. É a terceira variação do mesmo erro nesta sessão — no roadmap anterior foram os *valores*
+dos parâmetros do observador (pinei os nomes); aqui foi o *momento* da validação (pinei os regexes).
+
+### Ganhos não pedidos, confirmados
+
+- `## Wave 0` passa a ser rejeitada nos três. O `_is_valid_wave_label` do Python valida inteiro ≥ 1,
+  gap que o check por linha não detectava; Go e Node já rejeitavam.
+- Node corrigiu no próprio ML-2B um early-break **pré-existente** que ninguém conhecia: antes desta REQ,
+  Go abortava em qualquer heading malformada e o Node só nas anteriores à wave alvo. A divergência
+  sobrevivia porque a mensagem estava despinada e cada suíte testava o próprio comportamento.
+
+### Quarta mensagem de exit-2
+
+Pinei a de *heading* malformada e esqueci a de *argumento* `--wave` inválido — três textos divergentes
+de novo. Pinada adotando o texto do Go; Node e Python alinhados, separador U+2014 conferido byte a byte.
+
+### Decisões de escopo negativo registradas no contrato
+
+- **Comparador de ordenação é opcional:** sem call site em runtime nenhum. Go tem um coberto por testes;
+  Node e Python declinaram corretamente. Documentado para ninguém "corrigir" a assimetria em nenhuma
+  das duas direções — código morto em dois runtimes não é paridade.
+- **Espaçamento do JSON não se mexe:** `check-barrier.sh` normaliza whitespace de propósito e não faz
+  `sort_keys`.
+- **Não batizei a wave corretiva de `Wave 2-bis`**, apesar de ser o caso de uso da feature: o Python
+  ainda não tratava o rótulo e `make quality` roda `check-barrier.sh` nos três — batizar assim
+  codificaria o defeito não-corrigido dentro do artefato que controla a correção. **Dogfooding agora
+  está liberado** para o próximo roadmap corretivo.
+
+### Não-vacuidade provada por execução
+
+`BARRIER_BIS_SELFTEST_BREAK=1` faz o gate reprovar com
+`FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 2 ..., got 0`. O seam corrompe a
+**fixture**, nunca a asserção. Verifiquei rodando — um cenário de falsificação que não falha é ele
+mesmo vacuoso.
