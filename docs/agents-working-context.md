@@ -4,6 +4,26 @@
 
 ---
 
+## Sessão 2026-07-30 — Apolo (ML-2C — Python: sync REQ reference no roadmap move)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2C — implementar `sync_paired_req_references` no Python CLI.
+
+**Status:** IMPLEMENTANDO
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2A — Go: roadmap move sincroniza referência REQ)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2A — implementar `syncREQReferences` em `internal/generators/roadmap.go` e testes correspondentes.
+
+**Status:** IMPLEMENTANDO
+
+---
+
 ## Sessão 2026-07-30 — Apolo (ML-2B — Node.js: roadmap move sincroniza referência da REQ pareada)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
@@ -12,7 +32,22 @@
 dentro de `moveRoadmap` em `npm/src/generators/roadmap.js`. As cinco cardinalidades do contrato,
 idempotência byte-a-byte, cobertura `by_agent`, formatação com backticks e testes correspondentes.
 
-**Status:** IMPLEMENTANDO
+**Entregue:**
+- `npm/src/generators/roadmap.js`: import de `resolveReqFiles` do validator; helpers
+  `extractFrontmatterRoadmap` (escopado ao FM), `rewriteReqRoadmapRef` (substituição literal
+  preserva backticks/aspas), `syncReqReferences` (5 cardinalidades, by_agent, stderr/exit não-zero);
+  `moveRoadmap` chama `syncReqReferences(basename, dst, cfg)` após `console.log('✓ moved ...')`.
+- `npm/tests/roadmap_move.test.js`: 10 novos testes — uma por cardinalidade (5), idempotência
+  byte-a-byte, by_agent, backticks, erro de escrita, validateRefTargetsExist (zero violações).
+
+**Validação:** `cd npm && npm test` → 339 passed, 0 failed.
+**Commit:** `ba13af9`
+
+**Divergência reportada:** ordem de varredura de múltiplas REQs não pinada no contrato. `fs.readdirSync`
+sem sort → não garante ordem lexicográfica. Teste asserta conjunto, não sequência. Se Go ordenar e Node
+não, ML-3A detectará na auditoria de paridade.
+
+**Status:** CONCLUÍDO
 
 ---
 

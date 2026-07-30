@@ -115,14 +115,24 @@ literal* de cada linha de saída.
 - [ ] `go build ./...`, `go test ./...`, `go vet ./...` passam.
 
 ### ML-2B — Node.js
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
-**Arquivos afetados:** `npm/src/generators/roadmap.js` (`moveRoadmap`), testes em `npm/tests/`
+**Commit:** `ba13af9`
+**Arquivos afetados:** `npm/src/generators/roadmap.js` (`moveRoadmap`), `npm/tests/roadmap_move.test.js`
 
 **Critérios de aceite:**
-- [ ] Comportamento e textos equivalentes ao Go.
-- [ ] Idempotência e `by_agent` cobertos.
-- [ ] `cd npm && npm test` passa.
+- [x] Comportamento e textos equivalentes ao Go (5 cardinalidades + output pinado literalmente).
+  **Evidência:** 9 testes dedicados ao syncReqReferences cobrindo zero/uma/várias/outro/já-correta.
+- [x] Idempotência provada por comparação de bytes após dois moves.
+  **Evidência:** teste "idempotência byte-a-byte: mover duas vezes não altera bytes da REQ" + teste "referência já correta: nenhuma escrita" usando `Buffer.equals`.
+- [x] `by_agent` coberto por teste.
+  **Evidência:** teste "REQ em req_dir/<agente>/<estado>/ é encontrada e reescrita" — REQ em `req_dir/zeus/wip/` localizada e sincronizada.
+- [x] Formatação do corpo (backticks) preservada.
+  **Evidência:** teste "backticks no corpo são preservados após reescrita" — `Roadmap: \`${newPath}\`` verificado byte-exato.
+- [x] `cd npm && npm test` passa.
+  **Evidência:** 339 testes, 0 falhas.
+
+**Divergência reportada ao orquestrador:** a ordem de varredura de múltiplas REQs não está pinada no contrato ("na ordem de varredura"). `resolveReqFiles` em flat usa `fs.readdirSync` sem sort, que não garante ordem lexicográfica. O teste de várias REQs asserta o **conjunto** (não sequência). Se o Go ordenar e o Node não, ML-3A detectará divergência de paridade. Recomendo ao orquestrador pinar explicitamente se a ordem é intencional.
 
 ### ML-2C — Python
 **Status:** ⬜ Pendente
