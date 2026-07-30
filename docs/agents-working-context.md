@@ -29,7 +29,14 @@
 
 **Tarefa:** ML-2A — implementar `syncREQReferences` em `internal/generators/roadmap.go` e testes correspondentes.
 
-**Status:** IMPLEMENTANDO
+**Entregue:**
+- `internal/generators/roadmap.go`: `syncREQReferences` (orquestra), `scanREQFiles` (espelha validator), `extractFrontmatterRoadmap`, `rewriteREQRoadmapRef` (backtick/aspas preservados). Inserção em `MoveRoadmap` após `fmt.Printf("✓ moved ...")`.
+- `internal/generators/roadmap_test.go`: 10 novos testes — 5 cardinalidades, idempotência byte-a-byte, by_agent, backticks, erro-continua, integração.
+- **Divergência:** spec dizia "antes do appendTransitionLog" mas contrato pina ✓ synced após ✓ moved; inserção correta é após fmt.Printf.
+
+**Validação:** `go build ./...` ✓ | `go test ./...` 15 pacotes ok | `go vet ./...` ✓ | commit `02c5dee`
+
+**Status:** CONCLUÍDO
 
 ---
 

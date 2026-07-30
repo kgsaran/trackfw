@@ -103,16 +103,26 @@ literal* de cada linha de saída.
 > Dependências: ML-1A completo. Arquivos disjuntos — **spawn simultâneo**.
 
 ### ML-2A — Go
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (commit `02c5dee`)
 **Agente:** Apolo
 **Arquivos afetados:** `internal/generators/roadmap.go` (`MoveRoadmap`, linha ~326, após o
 `rewriteRoadmapStatus` da linha ~372), testes correspondentes
 
+**Evidência de implementação:**
+- `syncREQReferences`, `scanREQFiles`, `extractFrontmatterRoadmap`, `rewriteREQRoadmapRef` adicionadas em `internal/generators/roadmap.go`
+- 10 testes novos em `internal/generators/roadmap_test.go` (9 unitários + 1 integração)
+- `go build ./...` ✓ | `go test ./...` 15 pacotes ok | `go vet ./...` ✓
+
+**Divergência relatada (contrato incompleto):** A spec do ML diz inserir "antes do `appendTransitionLog`",
+mas o contrato `cli-parity.md` pina que `✓ synced` vem APÓS `✓ moved`. O `fmt.Printf("✓ moved ...")` está
+APÓS `appendTransitionLog` no código. Inserção correta: após o `fmt.Printf("✓ moved ...")`, antes do
+`return nil`. Contrato é a autoridade; spec do ML estava inconsistente com ele.
+
 **Critérios de aceite:**
-- [ ] Todas as cardinalidades conforme o contrato.
-- [ ] Idempotência provada por comparação de bytes após dois moves.
-- [ ] `by_agent` coberto por teste.
-- [ ] `go build ./...`, `go test ./...`, `go vet ./...` passam.
+- [x] Todas as cardinalidades conforme o contrato. (zero, uma, várias, outro roadmap, já correta)
+- [x] Idempotência provada por comparação de bytes após dois moves. (`TestSyncREQ_Idempotency_ByteLevel`)
+- [x] `by_agent` coberto por teste. (`TestSyncREQ_ByAgent`)
+- [x] `go build ./...`, `go test ./...`, `go vet ./...` passam.
 
 ### ML-2B — Node.js
 **Status:** ✅ Concluído
@@ -158,8 +168,89 @@ literal* de cada linha de saída.
 
 ---
 
-## Wave 3 — Auditoria de paridade (1 ML)
-> Dependências: **barrier** — ML-2A, ML-2B e ML-2C concluídos.
+## Wave 3 — Convergir ordenação e a linha `moved` (3 MLs em paralelo, corretivo)
+> Dependências: Wave 2 completa. Emenda do contrato feita. Um ML por runtime — **spawn simultâneo**.
+
+**Origem:** auditoria do orquestrador **executando os três CLIs**, com fixture `by_agent` construída
+para discriminar ordenação por caminho de ordenação por basename. As três suítes estavam verdes
+(339 · 723 · Go limpo) e mesmo assim havia duas divergências.
+
+### Divergência 1 — ordenação: nenhum dos três cumpre o contrato
+
+Dois dos três implementadores **reportaram** que a ordem não estava pinada — e estavam certos: o
+contrato dizia "na ordem de varredura", que não é uma ordem. Emendado para **lexicográfica por
+basename da REQ**. Medido depois da emenda:
+
+| Fixture | Go | Node.js | Python |
+|---|---|---|---|
+| flat, 3 REQs | ordenado | ordenado | ordenado |
+| `by_agent`, `apolo/REQ-aaa` + `zeus/REQ-zzz` | `zzz, aaa` ❌ | `zzz, aaa` ❌ | `aaa, zzz` ✅ |
+| `by_agent`, `apolo/REQ-zzz` + `zeus/REQ-aaa` | — | — | `zzz, aaa` ❌ |
+
+**Os três estão errados, e cada um por um motivo diferente:**
+- **Go** — `filepath.Glob` ordena dentro de cada padrão, mas `scanREQFiles` concatena por agente e por
+  estado, e a lista de estados é fixa (`backlog, analyzing, wip, blocked, done, abandoned`), que nem é
+  lexicográfica.
+- **Node.js** — `fs.readdirSync` sem `.sort()`. Concordava em flat **por acidente do APFS**; não há
+  garantia entre sistemas de arquivos.
+- **Python** — `sorted()` sobre a lista de **caminhos completos**, não de basenames. Passou na primeira
+  fixture por coincidência (`apolo/…aaa` < `zeus/…zzz`) e falha na fixture discriminante.
+
+Lição: "determinístico" não é "conforme". Python era determinístico e ainda assim divergente do
+contrato.
+
+### Divergência 2 — linha `moved` divergente desde antes desta REQ
+
+| Runtime | Saída em `origin/main` |
+|---|---|
+| Go | `✓ moved <basename> → <targetDir>` |
+| Node.js | `✓ moved <basename> → <targetDir>` |
+| Python | `Roadmap movido para: <caminho completo>` |
+
+Três diferenças: idioma, forma e conteúdo. **Pré-existente**, verificado em
+`git show origin/main:pypi/trackfw/commands/roadmap.py`. Fora do escopo original desta REQ, incluída
+por decisão explícita do usuário: a regra dura de paridade do projeto se aplica, e a auditoria
+byte-a-byte da própria feature não passa com a linha anterior divergindo.
+
+**Mudança observável:** o CLI Python deixa de imprimir `Roadmap movido para: <path>`.
+
+### ML-2D — Go: ordenar por basename
+**Status:** ⬜ Pendente
+**Agente:** Apolo
+**Arquivos afetados:** `internal/generators/roadmap.go` (`scanREQFiles` ~576, `syncREQReferences`), testes
+
+**Critérios de aceite:**
+- [ ] Ordenação lexicográfica por basename, aplicada à lista final combinada.
+- [ ] Teste com fixture `by_agent` discriminante (`apolo/REQ-zzz` + `zeus/REQ-aaa` → `aaa, zzz`).
+- [ ] `go build ./...`, `go test ./...`, `go vet ./...` passam.
+
+### ML-2E — Node.js: ordenar por basename
+**Status:** ⬜ Pendente
+**Agente:** Apolo
+**Arquivos afetados:** `npm/src/generators/roadmap.js` (`syncReqReferences`), testes em `npm/tests/`
+
+**Critérios de aceite:**
+- [ ] Ordenação **explícita** por basename — não confiar na ordem do `readdirSync`.
+- [ ] Teste com fixture `by_agent` discriminante.
+- [ ] Teste de múltiplas REQs asserta a **sequência**, não apenas o conjunto.
+- [ ] `cd npm && npm test` passa.
+
+### ML-2F — Python: ordenar por basename e alinhar a linha `moved`
+**Status:** ⬜ Pendente
+**Agente:** Apolo
+**Arquivos afetados:** `pypi/trackfw/generators/roadmap.py` (~476), `pypi/trackfw/commands/roadmap.py`
+(~106), testes em `pypi/tests/`
+
+**Critérios de aceite:**
+- [ ] Ordenação por **basename**, não por caminho completo.
+- [ ] Teste com fixture `by_agent` discriminante.
+- [ ] `✓ moved <basename> → <targetDir>` byte-idêntico ao Go, com U+2713 e U+2192.
+- [ ] Suíte Python passa.
+
+**Disjunção:** um ML por runtime, arquivos sem interseção. Paralelizáveis.
+
+## Wave 4 — Auditoria de paridade (1 ML)
+> Dependências: **barrier** — Waves 2 e 3 completas (ML-2A a ML-2F).
 
 ### ML-3A — Auditar paridade e provar não-vacuidade
 **Status:** ⬜ Pendente
