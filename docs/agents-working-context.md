@@ -4,6 +4,36 @@
 
 ---
 
+## Sessão 2026-07-30 — Artemis (ML-3A — Gate -v e falsificação seam Go) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md`
+
+**Tarefa:** ML-3A — Cobrir `-v` no gate (`check-cli-parity.sh`) com duas asserções por runtime (exit
+não-zero + saída não casa `^trackfw [0-9]+\.[0-9]+\.[0-9]+$`) e provar não-vacuidade com Cenário 23
+(seam Go: remoção de `root.Flags().Bool("version", ...)` → cobra reregistra `-v` → gate falha).
+
+**Branch:** `feat/reservar-v-para-verbose-e-remover-atalho-de-versao-no-go`
+
+**Arquivos modificados:**
+- `scripts/check-cli-parity.sh`: bloco `-v flag` inserido antes de `check-integration-cli-parity.sh`.
+  Dois estágios por runtime: vacuity-guard (saída não-vazia), Assertion-1 (exit -ne 0), Assertion-2
+  (grep -Eq negativo contra _VERSION_RE). Verificação empírica: nenhum runtime produz linha matching
+  a regex com `-v` rejeitado (Go: erro+usage; Node: `error: unknown option '-v'`; Python: usage+erro).
+- `scripts/check-gates-falsify.sh`: Cenário 23 com guarda de padrão (sed), guarda de vivacidade
+  (build_go_or_fail + execução do binário corrompido confirmando exit 0 + formato de versão), e
+  `assert_fails_with "cli-parity/v-flag-accepted"` rodando o gate a partir de T23 (cd T23 →
+  `go build ./cmd/trackfw` pega o internal/ corrompido). Total: 23 → 24 cenários (gates: 14).
+
+**Evidência:**
+- `bash scripts/check-cli-parity.sh` → EXIT=0 (cenário positivo)
+- `bash scripts/check-gates-falsify.sh` → 24/24 OK, EXIT=0 (incluindo `cli-parity/v-flag-accepted`)
+- `make quality` → EXIT=0
+- Cenários 21 e 22 permanecem verdes (não regressão PR #91)
+
+**Status:** todos os critérios de aceite do ML-3A atendidos.
+
+---
+
 ## Sessão 2026-07-30 — Artemis (ML-3A — Gate unificado + falsificação) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`

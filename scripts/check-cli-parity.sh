@@ -154,6 +154,48 @@ grep -Eq "$_VERSION_RE" <<<"$_PY_FLAG"   || { echo "check-cli-parity: python --v
 [[ "$_GO_VER" == "$_NODE_FLAG" ]]  || { echo "check-cli-parity: version byte mismatch — go/version vs node/--version (got: '$_GO_VER' vs '$_NODE_FLAG')" >&2; exit 1; }
 [[ "$_GO_VER" == "$_PY_FLAG" ]]    || { echo "check-cli-parity: version byte mismatch — go/version vs python/--version (got: '$_GO_VER' vs '$_PY_FLAG')" >&2; exit 1; }
 
+# -v flag — reserved for verbose; must be rejected (non-zero exit + no version
+# output) in all three runtimes. Two assertions per runtime:
+#   1. Exit code is non-zero  — proves the flag is not silently accepted.
+#   2. Output does not match _VERSION_RE — proves -v did not bind to --version.
+# Together they characterize genuine rejection; each alone has a false-positive case:
+#   exit-code alone does not distinguish "flag rejected" from "flag accepted but
+#   something else went wrong"; format-check alone is vacuous when output is empty.
+# Pinned in docs/cli-parity.md § "-v is reserved for verbose — never bound to --version".
+#
+# Note: exit codes for unknown flags are NOT unified across runtimes (cobra=1,
+# commander=1, argparse=2 — framework divergence, deliberately preserved).
+# The assertion uses -ne 0 rather than -eq N to remain runtime-agnostic.
+
+set +e
+_GO_V_OUT=$("$GO_BIN" -v 2>&1);                                       _GO_V_EXIT=$?
+_NODE_V_OUT=$(node "$ROOT_DIR/npm/bin/trackfw" -v 2>&1);               _NODE_V_EXIT=$?
+_PY_V_OUT=$(PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw -v 2>&1);  _PY_V_EXIT=$?
+set -e
+
+# Vacuity guard: each runtime must produce non-empty output so the format
+# assertion is not trivially satisfied by an empty string that never matched.
+[[ -n "$_GO_V_OUT" ]]   || { echo "check-cli-parity: go -v output empty — vacuity guard failed" >&2; exit 1; }
+[[ -n "$_NODE_V_OUT" ]] || { echo "check-cli-parity: node -v output empty — vacuity guard failed" >&2; exit 1; }
+[[ -n "$_PY_V_OUT" ]]   || { echo "check-cli-parity: python -v output empty — vacuity guard failed" >&2; exit 1; }
+
+# Assertion 1: exit code must be non-zero (flag must be rejected).
+[[ $_GO_V_EXIT   -ne 0 ]] || { echo "check-cli-parity: go -v exited 0 — -v must be rejected (non-zero exit)" >&2;     exit 1; }
+[[ $_NODE_V_EXIT -ne 0 ]] || { echo "check-cli-parity: node -v exited 0 — -v must be rejected (non-zero exit)" >&2;   exit 1; }
+[[ $_PY_V_EXIT   -ne 0 ]] || { echo "check-cli-parity: python -v exited 0 — -v must be rejected (non-zero exit)" >&2; exit 1; }
+
+# Assertion 2: output must not match the version format.
+# grep runs line-by-line, so a single matching line in a multi-line block fails.
+if grep -Eq "$_VERSION_RE" <<<"$_GO_V_OUT"; then
+  echo "check-cli-parity: go -v printed version string — -v must not bind to --version (got: '$_GO_V_OUT')" >&2; exit 1
+fi
+if grep -Eq "$_VERSION_RE" <<<"$_NODE_V_OUT"; then
+  echo "check-cli-parity: node -v printed version string — -v must not bind to --version (got: '$_NODE_V_OUT')" >&2; exit 1
+fi
+if grep -Eq "$_VERSION_RE" <<<"$_PY_V_OUT"; then
+  echo "check-cli-parity: python -v printed version string — -v must not bind to --version (got: '$_PY_V_OUT')" >&2; exit 1
+fi
+
 GO_BIN="$GO_BIN" bash "$ROOT_DIR/scripts/check-integration-cli-parity.sh"
 
 echo "CLI parity smoke checks passed"
