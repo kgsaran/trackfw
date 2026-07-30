@@ -134,18 +134,26 @@ BYTE-IDENTICAL: ok
 - [x] `cd npm && npm test` passa (342 pass, 0 failed).
 
 ### ML-2C — Python
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
-**Arquivos afetados:** testes em `pypi/tests/`
+**Arquivos afetados:** `pypi/tests/test_commands_basic.py`
 
-**Ação:** o Python **já está no formato canônico** nas duas superfícies. Este ML é apenas cobertura:
-adicionar teste que trave o formato exato, para que uma mudança futura no argparse não regrida em
-silêncio.
+**Ação:** o Python **já estava no formato canônico** nas duas superfícies — verificado empiricamente via
+`xxd`. Este ML adicionou cobertura: três testes que travam o contrato byte-a-byte.
+
+**Saída verificada (xxd):**
+```
+version:   74 72 61 63 6b 66 77 20 35 2e 30 2e 30 0a  → trackfw 5.0.0\n
+--version: 74 72 61 63 6b 66 77 20 35 2e 30 2e 30 0a  → trackfw 5.0.0\n
+BYTE-IDENTICAL: ok
+```
 
 **Critérios de aceite:**
-- [ ] Teste travando o formato exato de `version` e `--version`.
-- [ ] Nenhuma mudança de comportamento.
-- [ ] Suíte Python passa.
+- [x] Formato verificado empiricamente nas duas superfícies, com comparação byte-a-byte entre elas.
+- [x] Teste travando o formato exato de `version` e `--version` (`test_version_flag_format_exact`,
+      `test_version_subcommand_format_exact`, `test_version_surfaces_byte_identical`).
+- [x] Nenhuma mudança de comportamento — `__init__.py` sem prefixo `v`, fallback `"5.0.0"` correto.
+- [x] Suíte Python passa: 727 pass, 0 failed.
 
 ---
 
@@ -168,3 +176,35 @@ silêncio.
 - [ ] Comparação byte-a-byte das duas superfícies.
 - [ ] Seam verificado por execução: com o `v` reintroduzido, o gate **falha**.
 - [ ] `make quality` exit 0, `validate --json` 0 violações, `git status` limpo.
+
+---
+
+## Matriz de verificação empírica do orquestrador (Wave 2)
+
+Executando os três CLIs, não lendo relatórios.
+
+| Superfície | Go | Node.js | Python |
+|---|---|---|---|
+| `version` | `trackfw 5.0.0` | `trackfw 5.0.0` | `trackfw 5.0.0` |
+| `--version` | `trackfw 5.0.0` | `trackfw 5.0.0` | `trackfw 5.0.0` |
+
+`diff` entre os três runtimes e entre as duas superfícies: **sem diferenças**.
+`hexdump`: `74 72 61 63 6b 66 77 20 35 2e 30 2e 30 0a` — 14 bytes, `trackfw 5.0.0\n`.
+
+**Suítes:** Go limpo · `npm test` 342 passed · `pytest` 727 passed.
+
+### O gate agora reprova — e isso é o resultado esperado
+
+```
+$ bash scripts/check-cli-parity.sh
+EXIT=1
+```
+
+A regex de exceção do Node.js (`^([0-9]+\.){2}[0-9]+|^0\.0\.0-dev$`, linha 108) deixou de casar assim
+que o `--version` do Node passou a imprimir `trackfw 5.0.0`. A linha que **assinava** a divergência
+agora **bloqueia** a convergência — prova direta de que a exceção por runtime era o que mantinha o
+problema invisível.
+
+`make quality` permanece vermelho até o ML-3A remover a exceção. Estado intermediário legítimo: os
+critérios de aceite da Wave 2 exigem as suítes por runtime, não o gate agregado, justamente porque o
+gate é o objeto do ML-3A.

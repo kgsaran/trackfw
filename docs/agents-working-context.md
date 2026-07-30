@@ -27,13 +27,28 @@ BYTE-IDENTICAL: ok
 
 ---
 
-## Sessão 2026-07-30 — Apolo (ML-2A — Go: remover prefixo `v` da constante de versão) — IMPLEMENTANDO
+## Sessão 2026-07-30 — Apolo (ML-2A — Go: remover prefixo `v` da constante de versão) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
 
 **Tarefa:** ML-2A — Remover o `v` de `var Version = "v5.0.0"` em `internal/version/version.go` e adicionar teste travando o formato exato das duas superfícies.
 
 **Branch:** `feat/padrao-unico-de-saida-de-versao-nos-tres-clis`
+**Commit:** `f7785ea`
+
+**Entregue:**
+- `internal/version/version.go`: `"v5.0.0"` → `"5.0.0"` (sem prefixo `v`).
+- `internal/commands/version.go`: `fmt.Println` → `fmt.Fprintln(cmd.OutOrStdout())` para capturabilidade nos testes.
+- `internal/commands/version_test.go`: testes `TestVersionSubcmdFormat`, `TestVersionFlagFormat`, `TestVersionSurfacesByteIdentical` travando o formato exato e igualdade byte-a-byte.
+
+**Saída verificada empiricamente:**
+```
+bin/trackfw version   → trackfw 5.0.0
+bin/trackfw --version → trackfw 5.0.0
+diff → byte-idênticos
+```
+
+**Coverage:** go build ok · go test ./... ok (todos os pacotes) · go vet ok.
 
 ---
 
@@ -6894,3 +6909,29 @@ exige decisão própria: adicionar `-v` a dois runtimes é feature, removê-lo d
 Registrado na REQ e no contrato para não se perder. Candidato a REQ separada.
 
 Barrier da Wave 1: `passed`. Wave 2 (3 runtimes) a seguir.
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2C — Python: cobertura de testes de formato de version) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
+
+**Tarefa:** ML-2C — Verificar empiricamente o formato Python e adicionar testes que travam o contrato byte-a-byte.
+
+**Branch:** `feat/padrao-unico-de-saida-de-versao-nos-tres-clis`
+
+**Entregue:**
+- `pypi/tests/test_commands_basic.py`: substituiu teste vacuoso por 3 asserções precisas:
+  1. `test_version_flag_format_exact`: `--version` → `^trackfw [0-9]+\.[0-9]+\.[0-9]+$` em stdout.
+  2. `test_version_subcommand_format_exact`: `version` → mesmo padrão canônico em stdout.
+  3. `test_version_surfaces_byte_identical`: as duas superfícies são byte-a-byte idênticas.
+
+**Saída verificada (xxd):**
+```
+version:   74 72 61 63 6b 66 77 20 35 2e 30 2e 30 0a  → trackfw 5.0.0\n
+--version: 74 72 61 63 6b 66 77 20 35 2e 30 2e 30 0a  → trackfw 5.0.0\n
+BYTE-IDENTICAL: ok
+```
+
+**Testes:** 727 pass, 0 failed (`cd pypi && python3 -m pytest`).
+**Nenhuma mudança de comportamento:** `__init__.py` sem prefixo `v`; fallback literal `"5.0.0"` correto.
