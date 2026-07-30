@@ -570,6 +570,87 @@ func TestManagerInstallSkipOnSkipNilNoPanic(t *testing.T) {
 	}
 }
 
+// TestManagerInstallSkipMixedScopeBatch mirrors Node.js agents-skills.test.js:208
+// and Python test_agents_skills.py:298. It proves that the remediation command
+// is derived from plan.Claim.Scope per artifact, NOT from a uniform batch-scope
+// closure — a closure would be correct by accident for uniform-scope batches;
+// only a mixed-scope batch (global + project in the same Install call)
+// distinguishes per-artifact derivation from per-batch derivation.
+func TestManagerInstallSkipMixedScopeBatch(t *testing.T) {
+	manager, _, _ := testManager(t)
+
+	// Install v1 for a global artifact and a project artifact.
+	globalV1 := PlannedArtifact{
+		Claim:          Claim{Target: "gemini", Surface: "cli", Scope: "global", Kind: KindAgents, Item: "architect"},
+		Destination:    "~/.gemini/agents/trackfw-architect.md",
+		Content:        []byte("global-v1"),
+		CatalogVersion: "v1",
+		SupportLevel:   "native",
+	}
+	projectV1 := PlannedArtifact{
+		Claim:          Claim{Target: "claude", Surface: "code", Scope: "project", Kind: KindAgents, Item: "backend"},
+		Destination:    ".claude/agents/trackfw-backend.md",
+		Content:        []byte("project-v1"),
+		CatalogVersion: "v1",
+		SupportLevel:   "native",
+	}
+	if err := manager.Install([]PlannedArtifact{globalV1, projectV1}, false); err != nil {
+		t.Fatalf("Install v1 batch failed: %v", err)
+	}
+
+	// v2 plans: bump CatalogVersion → both become outdated+owned.
+	globalV2 := globalV1
+	globalV2.Content = []byte("global-v2")
+	globalV2.CatalogVersion = "v2"
+	projectV2 := projectV1
+	projectV2.Content = []byte("project-v2")
+	projectV2.CatalogVersion = "v2"
+
+	type skipRecord struct{ dest, reason string }
+	var skips []skipRecord
+	manager.OnSkip = func(destination, reason string) {
+		skips = append(skips, skipRecord{destination, reason})
+	}
+
+	// Mixed-scope batch: both outdated+owned → both must be skipped, each with
+	// the remediation correct for its own scope (derived from plan.Claim.Scope,
+	// not from a shared batch closure).
+	if err := manager.Install([]PlannedArtifact{globalV2, projectV2}, false); err != nil {
+		t.Fatalf("Install mixed-scope batch failed: %v", err)
+	}
+
+	if len(skips) != 2 {
+		t.Fatalf("OnSkip called %d times, want 2; skips=%v", len(skips), skips)
+	}
+
+	// Index by destination for order-independent assertion.
+	byDest := make(map[string]string, 2)
+	for _, s := range skips {
+		byDest[s.dest] = s.reason
+	}
+
+	wantGlobalDest := "~/.gemini/agents/trackfw-architect.md"
+	wantProjectDest := ".claude/agents/trackfw-backend.md"
+
+	globalReason, ok := byDest[wantGlobalDest]
+	if !ok {
+		t.Fatalf("no skip for global artifact %q; byDest=%v", wantGlobalDest, byDest)
+	}
+	projectReason, ok := byDest[wantProjectDest]
+	if !ok {
+		t.Fatalf("no skip for project artifact %q; byDest=%v", wantProjectDest, byDest)
+	}
+
+	wantGlobal := "warning: skipping outdated artifact ~/.gemini/agents/trackfw-architect.md; run 'trackfw update harness' to refresh it"
+	if globalReason != wantGlobal {
+		t.Fatalf("global reason =  %q\nwant             %q", globalReason, wantGlobal)
+	}
+	wantProject := "warning: skipping outdated artifact .claude/agents/trackfw-backend.md; run 'trackfw update' to refresh it"
+	if projectReason != wantProject {
+		t.Fatalf("project reason = %q\nwant            %q", projectReason, wantProject)
+	}
+}
+
 // TestManagerInstallOwnedModifiedRemainsError verifies that an owned artifact
 // with user-modified bytes still returns an error on Install without --force.
 // This guards against accidentally simetrizing the Modified and Outdated cases
