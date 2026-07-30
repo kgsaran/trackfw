@@ -6252,3 +6252,45 @@ confirma empiricamente: init instala em `$HOME/.gemini/...` (artefato irmão enc
 projeto), provando que D1/D4 estão em vigor.
 
 **Status:** CONCLUÍDO
+
+## 2026-07-29 — Zeus — CONCLUÍDO: roadmap fechado, quatro waves com barrier verde
+
+ML-3A (Artemis) entregou as três lacunas. Auditei independentemente em vez de aceitar o relatório:
+`make quality` exit 0 com os sete cenários novos — `skip-parity/{global,project}-scope/three-runtimes-identical`
+(ambos com vacuity-guard) e `e2e/init-outdated-global/{go,node,py}` — mais os 19 de falsificação.
+`validate --json` 0 violações, árvore limpa. Barrier das waves 1–4: todas `passed`.
+
+O E2E era a lacuna que importava: todo teste anterior exercitava o *manager*: nenhum provava o
+sintoma originalmente reportado. Agora os três runtimes provam `init --ai-tools` com artefato global
+desatualizado → exit 0, `trackfw.yaml` criado, bytes do desatualizado preservados e artefato irmão
+gravado (skip ≠ abort).
+
+### Achado — `trackfw barrier` rejeita wave não-inteira
+
+Nomeei a wave corretiva de "Wave 2-bis". A barrier falhou nas **quatro** waves com
+`malformed wave heading at line 250: "2-bis" is not a valid wave number` — o parser exige inteiro e
+aborta o documento inteiro, não só a wave malformada. Renumerei para Wave 3 (corretivo) e Wave 4
+(auditoria), reordenando os blocos para refletir a ordem real de execução.
+
+Os ids dos MLs ficaram fora de sincronia com as waves (`ML-2D`/`ML-2E` na Wave 3, `ML-3A` na Wave 4).
+Deliberado: renumerar quebraria a rastreabilidade de mensagens de commit já publicadas.
+
+Candidato a REQ futura (não expandi escopo agora): "wave N-bis" é nomenclatura natural para wave
+corretiva acrescentada após execução, e o produto não a aceita. Ou o parser passa a aceitar sufixo,
+ou a documentação declara explicitamente que wave é sempre inteiro.
+
+### A barrier funcionou contra o orquestrador — de novo
+
+Desmarquei dois critérios que forward-referenciavam o ML-3A. A barrier da Wave 3 retornou `blocked`
+com `ML-2D: 1 unmet acceptance criteria` / `ML-2E: 1 unmet` e **segurou a wave até a evidência
+existir**. Depois que o ML-3A rodou e produziu os cenários, marquei com referência ao cenário concreto
+e a wave passou. É o segundo ciclo em que o `acceptance_evidence` pega bookkeeping meu — na sessão
+anterior foi o ML-6F.
+
+### Também corrigido
+
+Minha nota de vault não estava linkada em `vault/notes/index.md`; `validate` acusou `note_orphan`.
+Linkada.
+
+Roadmap movido para `done/`, REQ fechada como `Done`. Branch `fix/install-pula-artefato-desatualizado`
+pronta. PR **não** aberto — aguardando solicitação explícita do usuário.

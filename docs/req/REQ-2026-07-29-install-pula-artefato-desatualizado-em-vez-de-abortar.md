@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-29
 author: "trackfw_architect"
 adr: "docs/adr/ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md"
 ---
 
 # REQ: install pula artefato desatualizado em vez de abortar
 
-> Date: 2026-07-29 | Status: Open
+> Date: 2026-07-29 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -76,4 +76,4 @@ o escopo de instalação cuja fronteira foi verificada durante a análise deste 
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md`
