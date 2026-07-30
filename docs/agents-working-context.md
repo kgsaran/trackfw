@@ -8,10 +8,36 @@
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
 
-**Status:** IMPLEMENTANDO
+**Status:** CONCLUÍDO
 
 **Tarefa:** Implementar suporte a rótulo de wave com sufixo (`2-bis`, `2-hotfix`) no runtime Node.js.
-Escopo: `npm/src/commands/barrier.js` e `npm/tests/`. NÃO toca em `internal/` nem `pypi/`.
+Escopo: `npm/src/commands/barrier.js` e `npm/tests/`. NÃO tocou em `internal/` nem `pypi/`.
+
+**Entregue:**
+- `npm/src/commands/barrier.js`: `WAVE_SCAN_RE = /^## Wave (\S+) /` (trailing space, espelho do Go),
+  `WAVE_LABEL_RE`, `isValidWaveLabel` exportada; `findWave` migrado para pré-passo completo
+  (valida todas as headings antes de buscar); comparação `token === String(waveLabel)` (string exata,
+  nunca `parseInt`); mensagem de malformed pinada: `"<token>" is not a valid wave label`; mensagem
+  "wave not found" usa rótulo; campo `wave` no JSON agora é string.
+- `npm/tests/barrier.test.js`: tabela grammar, resolução de 2-bis, não-match 2 vs 2-bis, token na
+  mensagem, regressão de abort (unit + CLI level).
+
+**Validação:** `cd npm && npm test` → 338 passed, 0 failed.
+
+**Impacto da mudança `wave` string:**
+- Nenhum teste asserta o tipo numérico de `doc.wave`.
+- Nenhum script em `scripts/` consome `.wave` via jq ou outro.
+- `printTextReport` usa interpolação `${doc.wave}`, que funciona igual com string.
+- Mudança é observável apenas em `--json` output: `"wave": 1` → `"wave": "1"`.
+
+**Mensagem `invalid --wave value` (não pinada):**
+`invalid --wave value: "<label>" (must be a valid wave label, e.g. 1, 2-bis)`
+
+**Ordenação:** N/A — `barrier.js` não lista nem ordena waves; `findWave` faz exact-match apenas.
+
+**`barrier-contract.test.js`:** não editado (frozen contract file).
+
+**Commit:** `6df987b` em `feat/barrier-aceita-wave-com-sufixo-bis`.
 
 ---
 

@@ -103,25 +103,46 @@ o texto literal da mensagem antes de qualquer implementação.
 - [ ] `go build ./...`, `go test ./...`, `go vet ./...` passam.
 
 ### ML-2B — Node.js
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
-**Arquivos afetados:** `npm/src/commands/barrier.js` (`findWave` linha ~52, regex linha ~56,
-mensagem linha ~59), testes correspondentes
+**Arquivos afetados:** `npm/src/commands/barrier.js` (`findWave` refatorado, `WAVE_SCAN_RE`,
+`WAVE_LABEL_RE`, `isValidWaveLabel`), `npm/tests/barrier.test.js`
 
 **Critérios de aceite:**
-- [ ] Comportamento equivalente ao Go.
-- [ ] Mensagem passa a nomear a causa e o token, não a linha inteira.
-- [ ] `cd npm && npm test` passa.
+- [x] Comportamento equivalente ao Go.
+- [x] Mensagem passa a nomear a causa e o token, não a linha inteira.
+- [x] `cd npm && npm test` passa.
+
+**Evidência:** `npm test` → 338 passed, 0 failed. Novos testes:
+- `isValidWaveLabel`: tabela completa de válidos/inválidos.
+- `findWave: resolves wave by label including suffix (2-bis)` — `--wave 2-bis` resolve.
+- `findWave: --wave 2 does not match ## Wave 2-bis` — identidades distintas.
+- `findWave: malformed error message contains the token` — token, não linha inteira.
+- `findWave: REGRESSION — malformed heading aborts entire document` — decisão 16.
+- CLI: `barrier regression: --wave 2-bis resolves ## Wave 2-bis heading at CLI level`.
+- CLI: `barrier regression: --wave 2 does NOT match ## Wave 2-bis at CLI level`.
+- CLI: `barrier regression: ABORT — malformed wave heading aborts entire document for every --wave value`.
 
 ### ML-2C — Python
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
 **Arquivos afetados:** `pypi/trackfw/commands/barrier.py` (`_WAVE_HEADING_RE`, validação de token
 linha ~115, mensagem linha ~116), testes correspondentes
 
 **Critérios de aceite:**
-- [ ] Comportamento equivalente ao Go e Node.
-- [ ] Suíte Python passa.
+- [x] `--wave 2-bis` resolve `## Wave 2-bis`; `--wave 2` **não** casa com `Wave 2-bis`
+- [x] Rótulo/heading inválido aborta o documento inteiro, com a mensagem pinada e exit 2
+- [x] Aspas duplas na mensagem, não as aspas simples do `!r`
+- [x] Teste de regressão do abort presente (`test_wave_heading_malformada_aborta_documento_inteiro`)
+- [x] Suíte Python passa: 699/699 (`cd pypi && python3 -m pytest`)
+
+**Evidência:**
+- `_WAVE_HEADING_RE = re.compile(r"^## Wave (\d+(?:-[a-z0-9]+)?) ")` — gramática pinada
+- `_ANY_WAVE_H2_RE = re.compile(r"^## Wave (\S+) ")` — detector de headings malformadas
+- `_parse_wave_int` substituído por `_parse_wave_label` com `re.fullmatch` (previne aceitar `2-bis-ter`)
+- Mensagem usa f-string com aspas duplas explícitas: `"{token}" is not a valid wave label`
+- `doc["wave"]` agora é `str` em vez de `int` — nenhum teste da suíte assertava no tipo; `check-barrier.sh` não grepou o campo — mudança sem impacto observável externo
+- 6 novos testes adicionados em `pypi/tests/test_barrier.py`
 
 ---
 
