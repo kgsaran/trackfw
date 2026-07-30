@@ -10,6 +10,63 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.0.0] - 2026-07-30
+
+### Por que esta versão é major
+
+Duas mudanças na superfície de versão do CLI quebram consumidores:
+
+1. **O CLI Go deixa de imprimir o prefixo `v`.** `trackfw v5.0.0` passa a
+   `trackfw 6.0.0`, em `version` e em `--version`. O `v` é convenção de *tag
+   Git*, não de string de versão — o SemVer especifica que `v1.2.3` não é uma
+   versão semântica, e `npm/package.json` e `pypi/pyproject.toml` não podem
+   carregá-lo. A **tag Git permanece `v<x.y.z>`**.
+2. **`trackfw -v` deixa de funcionar no CLI Go.** O atalho era aceito apenas
+   pelo Go, exposto por default do cobra e não por decisão de design. `-v` e
+   `--verbose` passam a ser **reservados** para um futuro modo verboso, alinhado
+   à convenção de `docker`, `kubectl`, `ansible`, `ssh` e `curl`.
+
+**Migração:**
+
+- Scripts que parseiem a saída de `trackfw version` ou `trackfw --version` devem
+  esperar `trackfw <semver>` **sem** o prefixo `v`, nos três runtimes.
+- Substitua `trackfw -v` por `trackfw --version` ou `trackfw version`, que
+  funcionam nos três runtimes desde a `5.0.0`.
+
+### Changed
+- **Saída de versão unificada nos três CLIs.** `version` e `--version` passam a
+  imprimir **a mesma linha**, `trackfw <semver>`, byte-idêntica entre as duas
+  superfícies e entre os três runtimes. Antes, o Go emitia o prefixo `v` e o
+  `--version` do Node.js imprimia o número puro, sem o nome do programa —
+  comportamento default do `.version()` do commander.
+- **`-v` reservado para verbose.** Nenhum runtime o vincula a `--version`; os
+  três o rejeitam com código de saída não-zero. A reserva é **contratual**:
+  nenhum runtime o aceita como no-op, porque uma flag aceita sem efeito é
+  indistinguível de uma flag quebrada.
+
+### Fixed
+- **O gate de paridade deixa de assinar divergências.** `check-cli-parity.sh`
+  usava uma regex específica para o Node.js, que codificava a divergência do
+  `--version` como comportamento esperado, e `^trackfw .+` para os outros dois —
+  frouxa o bastante para aceitar `trackfw v5.0.0` e `trackfw 5.0.0` igualmente.
+  Era por isso que o prefixo `v` sobrevivia a todas as auditorias. Os três
+  passam a usar a mesma asserção literal, mais comparação byte-a-byte das seis
+  saídas.
+
+### Internal
+- Seção `## Version output` em `docs/cli-parity.md` pina o formato literal, a
+  equivalência entre as duas superfícies, a fonte da string por runtime, a
+  asserção do gate e a reserva do `-v`.
+- Registrada a fronteira do que **não** é unificado: mensagem e exit code de
+  flag desconhecida seguem divergindo (cobra 1, commander 1, argparse 2), por
+  serem gerados pelos frameworks e valerem para toda flag. Unificá-los exigiria
+  sobrescrever o tratamento de erro dos três globalmente.
+- Contagem de cenários de falsificação sobe de 21 para **24**, incluindo dois
+  seams que provam **braços independentes** da asserção de versão (formato e
+  comparação de bytes) e um seam com **guarda de vivacidade**, que compila o
+  binário corrompido e confirma que ele exibe o defeito — não apenas que o
+  arquivo mudou.
+
 ## [5.0.0] - 2026-07-30
 
 ### Por que esta versão é major
