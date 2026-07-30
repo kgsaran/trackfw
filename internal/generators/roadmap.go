@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -739,6 +740,17 @@ func rewriteREQRoadmapRef(content []byte, roadmapBasename, newRoadmapPath string
 func syncREQReferences(roadmapBasename, newRoadmapPath string) error {
 	cfg := config.Load()
 	reqFiles := scanREQFiles(cfg)
+
+	// Ordenação lexicográfica por basename — contrato pinado em docs/cli-parity.md
+	// ("Order is pinned, not delegated to the filesystem").
+	// Desempate por caminho completo para dois agentes com REQ de mesmo basename.
+	sort.Slice(reqFiles, func(i, j int) bool {
+		bi, bj := filepath.Base(reqFiles[i]), filepath.Base(reqFiles[j])
+		if bi != bj {
+			return bi < bj
+		}
+		return reqFiles[i] < reqFiles[j]
+	})
 
 	var firstErr error
 	for _, reqPath := range reqFiles {

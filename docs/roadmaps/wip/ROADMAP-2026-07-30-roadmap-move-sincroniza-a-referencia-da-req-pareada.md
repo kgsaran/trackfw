@@ -215,14 +215,28 @@ byte-a-byte da própria feature não passa com a linha anterior divergindo.
 **Mudança observável:** o CLI Python deixa de imprimir `Roadmap movido para: <path>`.
 
 ### ML-2D — Go: ordenar por basename
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
-**Arquivos afetados:** `internal/generators/roadmap.go` (`scanREQFiles` ~576, `syncREQReferences`), testes
+**Arquivos afetados:** `internal/generators/roadmap.go` (`syncREQReferences`), `internal/generators/roadmap_test.go`
+
+**Implementação:** `sort.Slice` por basename (desempate por caminho completo) inserido em `syncREQReferences` logo após `scanREQFiles`, antes do loop de varredura. Import `"sort"` adicionado.
+
+**Evidência — fixture discriminante (`by_agent`, agents: [zeus, apolo]):**
+```
+docs/req/apolo/done/REQ-zzz.md  → aponta para ROADMAP-order.md
+docs/req/zeus/backlog/REQ-aaa.md → aponta para ROADMAP-order.md
+```
+Saída observada (TestSyncREQ_ByAgent_OrderByBasename PASS):
+```
+✓ synced REQ-aaa.md → docs/roadmaps/zeus/wip/ROADMAP-order.md   ← linha 0
+✓ synced REQ-zzz.md → docs/roadmaps/zeus/wip/ROADMAP-order.md   ← linha 1
+```
+Ordem por caminho teria produzido `zzz, aaa` (errado). Ordem por basename produz `aaa, zzz` (correto).
 
 **Critérios de aceite:**
-- [ ] Ordenação lexicográfica por basename, aplicada à lista final combinada.
-- [ ] Teste com fixture `by_agent` discriminante (`apolo/REQ-zzz` + `zeus/REQ-aaa` → `aaa, zzz`).
-- [ ] `go build ./...`, `go test ./...`, `go vet ./...` passam.
+- [x] Ordenação lexicográfica por basename, aplicada à lista final combinada.
+- [x] Teste com fixture `by_agent` discriminante (`apolo/REQ-zzz` + `zeus/REQ-aaa` → `aaa, zzz`). (`TestSyncREQ_ByAgent_OrderByBasename` — asserta sequência exata)
+- [x] `go build ./...`, `go test ./...`, `go vet ./...` passam. (15 pacotes ok)
 
 ### ML-2E — Node.js: ordenar por basename
 **Status:** ⬜ Pendente

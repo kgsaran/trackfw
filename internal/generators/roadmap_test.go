@@ -896,6 +896,81 @@ func TestSyncREQ_ByAgent(t *testing.T) {
 	}
 }
 
+// TestSyncREQ_ByAgent_OrderByBasename: fixture discriminante — dois agentes com REQs
+// cujos basenames são invertidos em relação à ordem de caminho completo.
+//
+// Fixture:
+//   docs/req/apolo/done/REQ-zzz.md   → aponta para o roadmap
+//   docs/req/zeus/backlog/REQ-aaa.md  → aponta para o roadmap
+//   agents: [zeus, apolo]             → ordem de varredura natural: zeus/…aaa, apolo/…zzz
+//
+// Por caminho completo: apolo/…zzz < zeus/…aaa → zzz, aaa (errado).
+// Por basename:          aaa < zzz                → aaa, zzz (correto — contrato pinado).
+//
+// O teste asserta a SEQUÊNCIA exata das linhas de output, não apenas o conjunto.
+func TestSyncREQ_ByAgent_OrderByBasename(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// by_agent com dois agentes — ordem intencional invertida (zeus antes de apolo)
+	// para que a varredura natural produza a ordem errada se não houver sort.
+	yaml := "roadmap_namespacing: by_agent\nagents:\n- zeus\n- apolo\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("WriteFile trackfw.yaml: %v", err)
+	}
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	oldPath := "docs/roadmaps/zeus/backlog/ROADMAP-order.md"
+	newPath := "docs/roadmaps/zeus/wip/ROADMAP-order.md"
+
+	// REQ-zzz.md em apolo/done/
+	reqDirApolo := filepath.Join("docs", "req", "apolo", "done")
+	if err := os.MkdirAll(reqDirApolo, 0755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", reqDirApolo, err)
+	}
+	reqZzz := filepath.Join(reqDirApolo, "REQ-zzz.md")
+	writeREQ(t, reqZzz, oldPath)
+
+	// REQ-aaa.md em zeus/backlog/
+	reqDirZeus := filepath.Join("docs", "req", "zeus", "backlog")
+	if err := os.MkdirAll(reqDirZeus, 0755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", reqDirZeus, err)
+	}
+	reqAaa := filepath.Join(reqDirZeus, "REQ-aaa.md")
+	writeREQ(t, reqAaa, oldPath)
+
+	out := captureStdout(t, func() {
+		if err := syncREQReferences("ROADMAP-order.md", newPath); err != nil {
+			t.Errorf("syncREQReferences: %v", err)
+		}
+	})
+
+	// Asserta a SEQUÊNCIA: aaa deve aparecer ANTES de zzz
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("esperado 2 linhas de output; obteve %d:\n%s", len(lines), out)
+	}
+	wantFirst := "✓ synced REQ-aaa.md → " + newPath
+	wantSecond := "✓ synced REQ-zzz.md → " + newPath
+	if lines[0] != wantFirst {
+		t.Errorf("linha 0: esperado %q, obteve %q\noutput completo:\n%s", wantFirst, lines[0], out)
+	}
+	if lines[1] != wantSecond {
+		t.Errorf("linha 1: esperado %q, obteve %q\noutput completo:\n%s", wantSecond, lines[1], out)
+	}
+
+	// Ambas as REQs devem ter sido atualizadas
+	for _, p := range []string{reqAaa, reqZzz} {
+		content, _ := os.ReadFile(p)
+		if !strings.Contains(string(content), "roadmap: \""+newPath+"\"") {
+			t.Errorf("frontmatter de %s não atualizado:\n%s", filepath.Base(p), content)
+		}
+	}
+}
+
 // TestSyncREQ_BackticksPreservedInBody: backticks no corpo da REQ são preservados após reescrita.
 func TestSyncREQ_BackticksPreservedInBody(t *testing.T) {
 	dir := t.TempDir()

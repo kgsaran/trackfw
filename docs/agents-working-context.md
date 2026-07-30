@@ -4,6 +4,32 @@
 
 ---
 
+## Sessão 2026-07-30 — Apolo (ML-2D — Go: ordenar por basename em syncREQReferences) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2D (corretivo) — corrigir ordenação lexicográfica por basename na lista final de REQs em `syncREQReferences`; adicionar fixture discriminante `by_agent` (apolo/REQ-zzz + zeus/REQ-aaa → sequência aaa, zzz).
+
+**Entregue:**
+- `internal/generators/roadmap.go`: import `"sort"` adicionado; `sort.Slice` por basename (desempate por caminho completo) inserido em `syncREQReferences` após `scanREQFiles`.
+- `internal/generators/roadmap_test.go`: `TestSyncREQ_ByAgent_OrderByBasename` — fixture discriminante que distingue ordenação por caminho de ordenação por basename; asserta a sequência exata das linhas de output.
+
+**Validação:**
+- `go build ./...` ✓ | `go test ./...` 15 pacotes ok | `go vet ./...` ✓
+- `TestSyncREQ_ByAgent_OrderByBasename` PASS: linha 0 = `✓ synced REQ-aaa.md → ...`, linha 1 = `✓ synced REQ-zzz.md → ...`
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2E — Node.js: ordenação explícita por basename em syncReqReferences)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
+
+**Tarefa:** ML-2E (corretivo) — adicionar `.sort()` por basename após `resolveReqFiles(cfg)` em `syncReqReferences`; atualizar teste multi-REQ para assertar sequência; adicionar fixture discriminante `by_agent`.
+
+**Status:** IMPLEMENTANDO
+
+---
+
 ## Sessão 2026-07-30 — Apolo (ML-2C — Python: sync REQ reference no roadmap move)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md`
