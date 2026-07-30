@@ -132,24 +132,29 @@ EXIT_V: 1
 > Dependências: **barrier** — ML-2A concluído.
 
 ### ML-3A — Cobrir `-v` no gate e provar não-vacuidade
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Artemis
+**Commits:** `6b8011c` (gate positivo), `f110c02` (Cenário 23)
 
-**Ações:**
-1. Cenário em `scripts/check-cli-parity.sh` afirmando, para os **três** runtimes: `-v` sai com código
-   não-zero **e** sua saída **não** casa `^trackfw [0-9]+\.[0-9]+\.[0-9]+$`.
-   A segunda asserção é a que importa — só o exit code não distingue "flag rejeitada" de "flag aceita
-   que falhou por outro motivo".
-2. Cenário de falsificação: seam que reintroduz o shorthand no Go e prova que o gate reprova. Corromper
-   a **implementação**, nunca a asserção, com guarda de padrão contra `sed` obsoleto.
-3. Confirmar que os cenários de `version` / `--version` do PR #91 continuam verdes — esta entrega não
-   pode regredi-los.
+**Ações realizadas:**
+1. Bloco `-v flag` inserido em `scripts/check-cli-parity.sh` antes de `check-integration-cli-parity.sh`.
+   Três estágios por runtime: vacuity-guard (saída não-vazia), Assertion-1 (exit -ne 0), Assertion-2
+   (grep -Eq negativo contra `_VERSION_RE`). Nenhum runtime produz linha matching a regex na rejeição:
+   Go (`Error: unknown shorthand flag: 'v' in -v` + usage), Node (`error: unknown option '-v'`),
+   Python (usage + `error: unrecognized arguments: -v`).
+2. Cenário 23 em `scripts/check-gates-falsify.sh`: copia cmd/ + internal/ + go.mod/go.sum; remove a
+   pré-declaração `root.Flags().Bool("version", ...)` via sed (guarda de padrão: `cmp -s`); guarda de
+   vivacidade (`build_go_or_fail` + confirmação que `-v` exits 0 com versão no formato esperado);
+   `assert_fails_with "cli-parity/v-flag-accepted"` rodando o gate com `cd T23` para que
+   `go build ./cmd/trackfw` use o internal/ corrompido. Seam Go-only (Node/Python já rejeitavam -v).
+3. Cenários 21 e 22 do PR #91 permanecem verdes (`cli-parity/version-v-prefix`,
+   `cli-parity/version-byte-mismatch`). Total: 23 → 24 cenários; 14 gates.
 
 **Critérios de aceite:**
-- [ ] Cenário cobre `-v` nos três, com as duas asserções.
-- [ ] Seam verificado por execução: com o atalho reintroduzido, o gate **falha**.
-- [ ] Cenários de `version` / `--version` inalterados e verdes.
-- [ ] `make quality` exit 0, `validate --json` 0 violações, `git status` limpo.
+- [x] Cenário cobre `-v` nos três, com as duas asserções.
+- [x] Seam verificado por execução: com o atalho reintroduzido, o gate **falha**.
+- [x] Cenários de `version` / `--version` inalterados e verdes.
+- [x] `make quality` exit 0, `validate --json` 0 violações, `git status` limpo.
 
 ---
 
