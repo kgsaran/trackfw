@@ -619,9 +619,16 @@ ROADMAP9="$S9/docs/roadmaps/wip/ROADMAP-barrier-fixture.md"
 
 if [[ "$BIS_SELFTEST_BREAK" == "1" ]]; then
   # Seam active: omit the malformed heading so runtimes return exit 0.
-  # Assertion expects exit 2 → fails → falsification proof for Cenário 19.
+  # REQ + Acceptance Criteria included so the validate check also passes
+  # (exit 0 = all four checks pass), making the assertion for exit 2 fail.
+  # → falsification proof for Cenário 19.
   cat >"$ROADMAP9" <<'EOF'
 # Roadmap: Barrier After Fixture (seam: no malformed heading)
+
+REQ: REQ-2026-07-29-barrier-fixture
+
+## Acceptance Criteria
+- [x] fixture roadmap-level criterion
 
 ## Wave 1 — Fixture Wave
 
