@@ -279,7 +279,7 @@ Python foi absorvida pelo ML-2D justamente para evitar dois agentes no mesmo arq
 > Dependências: **barrier** — Waves 2 e 3 completas (ML-2A a ML-2E).
 
 ### ML-3A — Auditar paridade e provar não-vacuidade
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-07-30)
 **Agente:** Artemis
 
 **Ações:**
@@ -291,10 +291,26 @@ Python foi absorvida pelo ML-2D justamente para evitar dois agentes no mesmo arq
 4. Cenário de ordenação com `2`, `2-bis`, `2-hotfix`, `3`.
 
 **Critérios de aceite:**
-- [ ] Mensagens byte-idênticas nos três.
-- [ ] `--wave 2-bis` resolve; `--wave 2` não casa com `2-bis`.
-- [ ] Abort de heading inválida preservado e testado nos três.
-- [ ] `make quality` exit 0 e `bin/trackfw validate --json` 0 violações.
+- [x] Cenário de paridade cobre a matriz completa, com as **duas** posições de heading malformada
+      (`scripts/check-barrier.sh` Cenários 8 e 9, `OK` confirmado nos três runtimes).
+- [x] Vacuity-guard presente nos cenários novos (stderr não-vazio antes de byte-diff; wave field
+      verificada no JSON para identidade).
+- [x] Guarda de falsificação prova que o gate detecta a regressão do early-break: `BARRIER_BIS_SELFTEST_BREAK=1`
+      em `check-gates-falsify.sh` Cenário 19 → `OK [falsify/barrier/early-break-after-target-not-detected]`.
+- [x] Gramática inválida coberta nos testes unitários: Go `TestWaveLabelGrammar_ValidAndInvalid` (6 inválidos + 5 válidos
+      via `parseWaves`), Python `test_is_valid_wave_label_tabela_completa` (6 inválidos + 5 válidos via
+      `_is_valid_wave_label`), Node.js já completo antes de ML-3A.
+- [x] `make quality` exit 0 (34 OK em `check-barrier.sh`, 20 OK em `check-gates-falsify.sh`,
+      `bin/trackfw validate --json` 0 violações, `git status` limpo).
+
+**Evidência real (2026-07-30):**
+- Go: `go test ./internal/commands/ -count=1` → ok (8.7s)
+- Python: `pytest pypi/tests/` → 702 passed (28.5s)
+- Node.js: `npm test --prefix npm` → 0 fail
+- `check-barrier.sh`: 34 OK incluindo Cenários 8–12 novos
+- `check-gates-falsify.sh`: `OK [falsify/barrier/early-break-after-target-not-detected]`
+- `Falsification checks passed (all 20 scenarios, 13 gates proved non-vacuous)`
+- `bin/trackfw validate --json`: violations: []
 
 ---
 
@@ -322,6 +338,6 @@ linha na mensagem.
 A identidade distinta está provada: `--wave 2` resolve a `Wave 2` e **não** a `Wave 2-bis`, apesar de
 `2` ser prefixo de `2-bis`.
 
-**Suítes:** `go build`/`test`/`vet` limpos · `npm test` 339 passed · `pytest` 701 passed ·
-`make quality` exit 0 (inclui `barrier/parity/three-runtimes-identical`, `barrier/usage-error/{go,node,py}`
-e os 19 cenários de falsificação) · árvore limpa.
+**Suítes (pós-ML-3A):** `go build`/`test`/`vet` limpos · `npm test` 0 fail · `pytest` 702 passed ·
+`make quality` exit 0 (inclui `barrier/parity/three-runtimes-identical`, `barrier/usage-error/{go,node,py}`,
+Cenários 8–12 novos em `check-barrier.sh`, e os 20 cenários de falsificação) · árvore limpa.
