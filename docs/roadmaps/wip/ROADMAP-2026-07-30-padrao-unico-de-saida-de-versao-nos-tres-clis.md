@@ -96,28 +96,42 @@ tabela de comandos.
 > Dependências: ML-1A completo. Arquivos disjuntos — **spawn simultâneo**.
 
 ### ML-2A — Go
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
-**Arquivos afetados:** `internal/version/version.go`, testes correspondentes
+**Arquivos afetados:** `internal/version/version.go`, `internal/commands/version.go`, `internal/commands/version_test.go`
 
 **Ação:** remover o `v` da constante. Isso corrige `version` e `--version` de uma vez, porque ambas
 consomem `version.Version` (`internal/commands/version.go:15` e `internal/commands/root.go:22`).
 
+Adicionalmente, `internal/commands/version.go` foi ajustado para usar `fmt.Fprintln(cmd.OutOrStdout(), ...)` em vez de `fmt.Println(...)`, tornando a saída capturável pelo writer do cobra nos testes.
+
+**Evidência empírica (commit f7785ea):**
+```
+bin/trackfw version   → trackfw 5.0.0
+bin/trackfw --version → trackfw 5.0.0
+diff → byte-idênticos
+```
+
 **Critérios de aceite:**
-- [ ] `version` e `--version` imprimem `trackfw <semver>` sem `v`, idênticos entre si.
-- [ ] `go build ./...`, `go test ./...`, `go vet ./...` passam.
+- [x] `version` e `--version` imprimem `trackfw <semver>` sem `v`, idênticos entre si.
+- [x] Teste travando o formato exato das duas superfícies (`^trackfw [0-9]+\.[0-9]+\.[0-9]+$`) e igualdade byte-a-byte (`TestVersionSurfacesByteIdentical`).
+- [x] `go build ./...`, `go test ./...`, `go vet ./...` passam.
 
 ### ML-2B — Node.js
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
-**Arquivos afetados:** `npm/src/commands/version.js` e/ou a configuração do commander, testes
+**Arquivos afetados:** `npm/src/commands/index.js`, `npm/tests/version.test.js`
 
-**Ação:** fazer o `--version` imprimir `trackfw <semver>` em vez do número puro. O default do
-`.version()` do commander imprime só o número — é preciso sobrescrever.
+**Ação:** `.version(version)` → `.version(`trackfw ${version}`)` no commander. Saída verificada:
+```
+node npm/bin/trackfw version   → trackfw 5.0.0
+node npm/bin/trackfw --version → trackfw 5.0.0
+BYTE-IDENTICAL: ok
+```
 
 **Critérios de aceite:**
-- [ ] `--version` passa a imprimir `trackfw <semver>`, idêntico ao `version`.
-- [ ] `cd npm && npm test` passa.
+- [x] `--version` passa a imprimir `trackfw <semver>`, idêntico ao `version`.
+- [x] `cd npm && npm test` passa (342 pass, 0 failed).
 
 ### ML-2C — Python
 **Status:** ⬜ Pendente
