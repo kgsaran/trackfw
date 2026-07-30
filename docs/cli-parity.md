@@ -101,9 +101,15 @@ implementation that updates only the body fixes nothing.
 |---|---|
 | Zero | No-op, **no output**, exit 0. A roadmap without a REQ is legitimate. |
 | One | Rewrite both fields; one output line. |
-| Several | Rewrite **all**; one output line each, in `req_dir` scan order. |
+| Several | Rewrite **all**; one output line each, sorted **lexicographically by REQ basename**. |
 | Points at a **different** roadmap | Not touched. |
 | Reference already correct | **No write at all** — byte-level idempotent. Moving twice changes nothing. |
+
+**Order is pinned, not delegated to the filesystem.** Sort by REQ basename before emitting. An earlier
+draft of this contract said "in `req_dir` scan order", which is not an order at all: Go's
+`filepath.Glob` returns sorted results, while Node.js `fs.readdirSync` and Python `glob` guarantee
+nothing across filesystems. Two runtimes would agree on macOS and diverge elsewhere — a divergence no
+test on a single machine would catch. Reported by the ML-2B implementer rather than silently absorbed.
 
 **Output, pinned literally.** One line per REQ actually rewritten, on **stdout**, after the existing
 `✓ moved ...` line:
