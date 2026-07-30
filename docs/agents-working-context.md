@@ -6560,3 +6560,46 @@ de novo. Pinada adotando o texto do Go; Node e Python alinhados, separador U+201
 `FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 2 ..., got 0`. O seam corrompe a
 **fixture**, nunca a asserção. Verifiquei rodando — um cenário de falsificação que não falha é ele
 mesmo vacuoso.
+
+## 2026-07-30 — Zeus — IMPLEMENTANDO: roadmap move sincroniza a referência da REQ pareada (ML-1A feito)
+
+PR #88 mergeado; branch apagada após validar integração. Backlog estava vazio e nenhuma REQ `Open` —
+levantei o que existia de real em vez de inventar trabalho: um release pendente (3 commits desde v4.0.0,
+com breaking no campo `wave` do JSON) e este débito. Usuário escolheu o débito; **o release segue
+pendente**.
+
+### Débito obsoleto encontrado no próprio registro
+
+O working-context tinha registrado como pendente que `roadmap move` não reescrevia o `status:` do
+frontmatter. **Já foi corrigido** por `REQ-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato`.
+Registro estava velho — verifiquei antes de agir sobre ele. Vale como lembrete: débito anotado em nota
+não é fonte de verdade sobre o estado atual do código.
+
+### ML-1A — contrato pinado
+
+Fatos verificados no código antes de escrever, e o decisivo foi este: **`extractRefPath`
+(`internal/validator/validator.go:1426`) trima aspas mas NÃO backticks.** Como a linha do corpo da REQ é
+`` Roadmap: `docs/...md` ``, ela termina em backtick, nunca casa `.md` e é **invisível ao validador**.
+Só o frontmatter é normativo. Uma implementação que "corrigisse" só o corpo não resolveria nada e passaria
+a impressão de ter resolvido.
+
+Também verificado: o `req:` do roadmap **não serve** para descobrir o par (`roadmap new` grava `""`, e os
+existentes têm slug sem caminho). A descoberta tem de ser inversa — varrer `req_dir` casando basename,
+cobrindo flat e `by_agent`, espelhando o que o validador já varre.
+
+Pinei **cinco** cardinalidades, não quatro como havia previsto no roadmap: separei "aponta para outro
+roadmap" de "referência já correta". São comportamentos distintos — o primeiro é não-tocar, o segundo é
+não-escrever-por-idempotência.
+
+### Lição das duas waves corretivas anteriores, aplicada de propósito
+
+O ML-1A falhou **duas vezes seguidas pelo mesmo padrão**: pinou a forma e deixou o comportamento à
+interpretação. No roadmap do skip foram os *nomes* dos parâmetros sem os *valores*; no do rótulo de wave
+foram os *regexes* sem o *momento* da validação. Custo: uma wave corretiva cada.
+
+Regra derivada e escrita no roadmap: **pinar sempre a ordem das operações e os valores observáveis, não
+apenas estruturas e assinaturas.** Neste ML-1A isso virou: momento exato da escrita no fluxo, tabela de
+cardinalidades, textos literais de saída com stream, e comportamento em erro (não desfaz o move, tenta
+as restantes, exit não-zero ao fim).
+
+Barrier da Wave 1: `passed`. Wave 2 (3 runtimes em paralelo) a seguir.
