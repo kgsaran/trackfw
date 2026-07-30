@@ -4,6 +4,29 @@
 
 ---
 
+## Sessão 2026-07-30 — Apolo (ML-2B — Node.js: alinhar `--version` com subcomando `version`) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`
+
+**Tarefa:** ML-2B — Node.js: fazer `--version` imprimir `trackfw <semver>`, byte-idêntico ao subcomando `version`.
+
+**Branch:** `feat/padrao-unico-de-saida-de-versao-nos-tres-clis`
+
+**Entregue:**
+- `npm/src/commands/index.js`: `.version(version)` → `.version(`trackfw ${version}`)` — commander agora imprime o formato correto na flag `--version`.
+- `npm/tests/version.test.js`: 3 testes travando o formato exato (`^trackfw [0-9]+\.[0-9]+\.[0-9]+$`) para `version` e `--version` e igualdade byte-a-byte entre ambos.
+
+**Saída verificada:**
+```
+node npm/bin/trackfw version   → trackfw 5.0.0
+node npm/bin/trackfw --version → trackfw 5.0.0
+BYTE-IDENTICAL: ok
+```
+
+**Testes:** 342 pass, 0 failed (`cd npm && npm test`).
+
+---
+
 ## Sessão 2026-07-30 — Apolo (ML-2A — Go: remover prefixo `v` da constante de versão) — IMPLEMENTANDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md`

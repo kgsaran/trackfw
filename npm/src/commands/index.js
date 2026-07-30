@@ -8,7 +8,7 @@ function createProgram() {
   program
     .name('trackfw')
     .description('trackfw — governed software delivery framework\nADR → REQ → ROADMAP → kanban')
-    .version(version)
+    .version(`trackfw ${version}`)
 
   program.addCommand(require('./init'))
   program.addCommand(require('./adr'))
