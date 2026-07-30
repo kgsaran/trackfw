@@ -219,7 +219,7 @@ Agora pinada como a quarta mensagem de exit-2, adotando o texto do Go.
   por testes; Node e Python declinaram corretamente em vez de criar código morto. Pinado como opcional.
 
 ### ML-2D — Corrigir o early-break do Python e alinhar sua mensagem
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
 **Arquivos afetados:** `pypi/trackfw/commands/barrier.py`, `pypi/tests/test_barrier.py`
 
@@ -230,24 +230,47 @@ Agora pinada como a quarta mensagem de exit-2, adotando o texto do Go.
 3. Teste cobrindo a heading malformada nas **duas** posições — antes e depois da wave alvo.
 
 **Critérios de aceite:**
-- [ ] Heading malformada **depois** da wave alvo aborta com exit 2 e a mensagem pinada.
-- [ ] Heading malformada antes continua abortando (não regredir).
-- [ ] Teste cobre ambas as posições.
-- [ ] Mensagem de `--wave` inválido byte-idêntica ao Go.
-- [ ] Suíte Python passa.
+- [x] Heading malformada **depois** da wave alvo aborta com exit 2 e a mensagem pinada.
+- [x] Heading malformada antes continua abortando (não regredir).
+- [x] Teste cobre ambas as posições.
+- [x] Mensagem de `--wave` inválido byte-idêntica ao Go.
+- [x] Suíte Python passa — 701/701.
+
+**Evidência empírica (duas posições):**
+
+| Posição da heading malformada | Exit code | Stderr (byte-exato) |
+|---|---|---|
+| ANTES da wave alvo (linha 5) | 2 | `trackfw barrier: malformed wave heading at line 5: "X" is not a valid wave label` |
+| DEPOIS da wave alvo (linha 13) | 2 | `trackfw barrier: malformed wave heading at line 13: "X" is not a valid wave label` |
+
+**Mensagem `--wave` inválido:**
+`trackfw barrier: invalid --wave "2-BIS" — not a valid wave label` (U+2014, byte-idêntico ao Go)
+
+**Alterações em `barrier.py`:**
+- Novo helper `_is_valid_wave_label(token)` — regra `fullmatch(\d+(?:-[a-z0-9]+)?) AND int >= 1` compartilhada por heading pre-pass e `_parse_wave_label`.
+- `_find_wave` reescrito em dois passos: pré-passo completo (Fase 1) coleta todas as headings e aborta na primeira inválida; busca por label exata (Fase 2) sem break antecipado.
+- `_parse_wave_label` usa `_is_valid_wave_label` e emite mensagem canônica com travessão U+2014.
 
 ### ML-2E — Alinhar a mensagem de `--wave` inválido no Node.js
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** Apolo
-**Arquivos afetados:** `npm/src/commands/barrier.js`, testes correspondentes em `npm/tests/`
+**Arquivos afetados:** `npm/src/commands/barrier.js`, `npm/tests/barrier.test.js`
 
-**Ações:** trocar `invalid --wave value: "<v>" (must be a valid wave label, e.g. 1, 2-bis)` pelo texto
-canônico `invalid --wave "<v>" — not a valid wave label`. Atenção ao travessão `—` (U+2014), não hífen.
+**Ações:** trocado `invalid --wave value: "<v>" (must be a valid wave label, e.g. 1, 2-bis)` pelo texto
+canônico `invalid --wave "<v>" — not a valid wave label`. Separador U+2014 (`\xe2\x80\x94`), não hífen.
+Adicionado teste `barrier regression: invalid --wave message is pinned literally (fourth exit-2 message)`
+que verifica o texto byte-exato ao rodar o CLI com `--wave 2-BIS`.
 
 **Critérios de aceite:**
-- [ ] Node.js emite `trackfw barrier: invalid --wave "<value>" — not a valid wave label`.
-- [ ] Go inalterado (já é o texto canônico).
-- [ ] `npm test` passa.
+- [x] Node.js emite `trackfw barrier: invalid --wave "<value>" — not a valid wave label`.
+- [x] Go inalterado (já era o texto canônico, não foi tocado).
+- [x] `npm test` passa — 339 passed, 0 failed.
+
+**Evidência:**
+- Node.js: `trackfw barrier: invalid --wave "2-BIS" — not a valid wave label`
+- Go:      `trackfw barrier: invalid --wave "2-BIS" — not a valid wave label`
+- Comparação xxd byte-a-byte: BYTE-IDÊNTICO (`\xe2\x80\x94` U+2014 em ambos).
+- `npm test`: 339 passed, 0 failed — commit `b55393d`.
 
 **Disjunção:** ML-2D toca só `pypi/`, ML-2E toca só `npm/`. Paralelizáveis. A mudança de mensagem do
 Python foi absorvida pelo ML-2D justamente para evitar dois agentes no mesmo arquivo.

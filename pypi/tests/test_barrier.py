@@ -223,7 +223,12 @@ def test_wave_inteiro_nao_casa_heading_bis():
 def test_wave_heading_malformada_aborta_documento_inteiro():
     """Regressão ADR decisão 16: heading fora da gramática aborta o documento inteiro,
     mesmo quando --wave pede uma wave válida que existe DEPOIS da malformada.
-    Isso impede que uma wave seja avaliada vacuamente sem auditoria dos MLs malformados."""
+    Isso impede que uma wave seja avaliada vacuamente sem auditoria dos MLs malformados.
+
+    Posição: malformada ANTES da wave alvo (posição clássica). Complementado por
+    test_wave_heading_malformada_depois_da_wave_alvo_aborta_documento (posição "depois"),
+    que cobre o early-break corrigido no ML-2D.
+    """
     dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
     for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
         (dir_ / d).mkdir(parents=True, exist_ok=True)
@@ -243,6 +248,62 @@ def test_wave_heading_malformada_aborta_documento_inteiro():
     )
     # Mensagem pinada byte-a-byte: aspas duplas, token capturado, número de linha 1-based
     assert stderr == 'trackfw barrier: malformed wave heading at line 5: "X" is not a valid wave label\n', (
+        f"stderr mismatch: got [{stderr!r}]"
+    )
+
+
+def test_wave_heading_malformada_depois_da_wave_alvo_aborta_documento():
+    """Regressão ML-2D (pré-passo completo): heading malformada DEPOIS da wave alvo
+    também aborta o documento com exit 2 — o pré-passo não deve ter break antecipado.
+
+    Antes da correção do ML-2D, o Python retornava exit 1 'blocked' porque
+    _find_wave saía do laço ao encontrar a wave pedida, deixando a heading
+    posterior nunca visitada. Isso violava ADR decisões 16 (abort é feature)
+    e 12 (roadmap malformado nunca deve ser lido como 'wave reprovada').
+
+    Nota: esta é a posição complementar ao test_wave_heading_malformada_aborta_documento_inteiro.
+    Ambas devem estar presentes — teste de uma só posição é vacuoso quanto ao early-break.
+    """
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-unit-"))
+    for d in ("docs/roadmaps/wip", "docs/req", "docs/adr"):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    content = (
+        "# Roadmap: Abort After\n\n"
+        "REQ: REQ-x\n\n"
+        # Wave alvo válida PRIMEIRO — se o early-break sobreviveu, a malformada
+        # abaixo seria ignorada e o exit seria 1 (blocked por validação de governança),
+        # não 2. O pré-passo completo deve detectá-la antes de qualquer exit 1.
+        "## Wave 1 — Wave Valida\n> Dependências: nenhuma\n\n"
+        "### ML-1A — Good\n**Status:** ✅\n**Critérios de aceite:**\n- [x] a\n\n"
+        # Heading malformada DEPOIS da wave solicitada — deve abortar mesmo assim.
+        "## Wave X — Heading Malformada Depois\n> Posição: depois da wave alvo\n\n"
+        "### ML-XA — Bad\n**Status:** ✅\n**Critérios de aceite:**\n- [x] x\n\n"
+    )
+    (dir_ / "docs/roadmaps/wip/ROADMAP-abort-after.md").write_text(content, encoding="utf-8")
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-abort-after", "--wave", "1", "--json")
+    assert code == 2, (
+        f"expected exit 2 (malformed heading after target aborts document), got {code}\nstderr={stderr}"
+    )
+    # Mensagem pinada byte-a-byte — número de linha 1-based da heading malformada.
+    # A heading '## Wave X — ...' é a 13ª linha do documento (linha 13 = índice 12).
+    assert stderr == 'trackfw barrier: malformed wave heading at line 13: "X" is not a valid wave label\n', (
+        f"stderr mismatch: got [{stderr!r}]"
+    )
+
+
+def test_wave_argumento_invalido_mensagem_pinada_literalmente():
+    """Quarta mensagem de exit-2 pinada (docs/cli-parity.md §trackfw barrier):
+    'trackfw barrier: invalid --wave "<value>" — not a valid wave label'
+    O separador é travessão U+2014, não hífen. <value> é o argumento exato.
+    """
+    dir_ = _setup_dir(
+        linked_req=True,
+        ml_status="✅",
+        criteria_lines=["- [x] build passes"],
+    )
+    _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "2-BIS", "--json")
+    assert code == 2, f"expected exit 2, got {code}\nstderr={stderr}"
+    assert stderr == 'trackfw barrier: invalid --wave "2-BIS" — not a valid wave label\n', (
         f"stderr mismatch: got [{stderr!r}]"
     )
 

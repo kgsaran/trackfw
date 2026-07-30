@@ -4,6 +4,52 @@
 
 ---
 
+## Sessão 2026-07-30 — Apolo (ML-2D — Python: corrigir early-break e alinhar mensagem --wave)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
+
+**Tarefa:** ML-2D (corretivo Wave 3) — corrigir early-break em `_find_wave` (Python não detectava heading
+malformada depois da wave alvo) e alinhar mensagem de `--wave` inválido ao texto canônico do Go.
+
+**Entregue:**
+- `pypi/trackfw/commands/barrier.py`: novo helper `_is_valid_wave_label` (fullmatch + `>= 1`); `_find_wave`
+  reescrito com pré-passo completo em dois passos (Fase 1: validar todas as headings; Fase 2: buscar label);
+  `_parse_wave_label` usa `_is_valid_wave_label` e emite `invalid --wave "<v>" — not a valid wave label` (U+2014).
+- `pypi/tests/test_barrier.py`: dois novos testes de posição (`antes` e `depois`), mais teste de mensagem
+  `--wave` byte-exata (`test_wave_argumento_invalido_mensagem_pinada_literalmente`).
+
+**Evidência empírica (duas posições):**
+- Malformada ANTES wave alvo: exit 2, `malformed wave heading at line 5: "X" is not a valid wave label`
+- Malformada DEPOIS wave alvo: exit 2, `malformed wave heading at line 13: "X" is not a valid wave label`
+
+**Validação:** 701/701 testes passando (`cd pypi && python3 -m pytest`)
+**Status:** CONCLUÍDO
+
+---
+
+## Sessão 2026-07-30 — Apolo (ML-2E — Node.js: alinhar mensagem --wave inválido)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
+
+**Tarefa:** ML-2E (corretivo Wave 3) — alinhar a mensagem de `--wave` inválido no Node.js ao texto canônico do Go:
+`trackfw barrier: invalid --wave "<value>" — not a valid wave label` (travessão U+2014).
+
+**Entregue:**
+- `npm/src/commands/barrier.js` linha 312: removida mensagem antiga com dica `(must be a valid wave label, e.g. 1, 2-bis)`.
+- `npm/tests/barrier.test.js`: adicionado teste `barrier regression: invalid --wave message is pinned literally (fourth exit-2 message)` verificando texto byte-exato com `--wave 2-BIS`.
+- Go inalterado — já era o texto canônico.
+
+**Verificação byte-a-byte:**
+- Node.js: `trackfw barrier: invalid --wave "2-BIS" — not a valid wave label`
+- Go:      `trackfw barrier: invalid --wave "2-BIS" — not a valid wave label`
+- Comparação xxd: BYTE-IDÊNTICO (separador `\xe2\x80\x94` U+2014 em ambos).
+
+**Validação:** `cd npm && npm test` → 339 passed, 0 failed.
+**Commit:** `b55393d` em `feat/barrier-aceita-wave-com-sufixo-bis`.
+**Status:** CONCLUÍDO
+
+---
+
 ## Sessão 2026-07-30 — Apolo (ML-2C — Python: barrier aceita wave com sufixo bis)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`

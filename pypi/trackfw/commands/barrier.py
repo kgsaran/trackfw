@@ -102,10 +102,27 @@ _CRITERIA_UNMET_RE = re.compile(r"^- \[ \]")
 _GATES_HEADER_RE = re.compile(r"^\*\*Gates da wave:\*\*")
 
 
+def _is_valid_wave_label(token: str) -> bool:
+    """Valida o token de rótulo de wave contra a gramática pinada.
+
+    Gramática: <inteiro>[-<sufixo>], inteiro >= 1, sufixo [a-z0-9]+.
+    Válidos: "1", "2", "2-bis", "2-hotfix", "10-a2".
+    Inválidos: "X", "0", "2-BIS", "2-", "2-bis-ter", "-bis".
+
+    Usa re.fullmatch para garantir correspondência completa do token —
+    re.match sem $ aceitaria "2-bis-ter" ao corresponder apenas "2-bis".
+    A exigência >= 1 garante que "0" seja rejeitado (Node.js: parseInt >= 1).
+    Usado pelo pré-passo de heading E pela validação de --wave, para que
+    as duas superfícies compartilhem exatamente a mesma regra.
+    """
+    m = re.fullmatch(r"(\d+)(?:-[a-z0-9]+)?", token)
+    return bool(m) and int(m.group(1)) >= 1
+
+
 def _find_wave(lines: list, wave_label: str, roadmap_basename: str) -> tuple:
     """Retorna (start, end) — índices (inclusivo/exclusivo) do corpo da wave
-    solicitada. Lança BarrierUsageError se a wave não existir ou se um cabeçalho
-    de wave malformado for encontrado antes dela. roadmap_basename é o basename
+    solicitada. Lança BarrierUsageError se a wave não existir ou se qualquer
+    cabeçalho de wave no documento for malformado. roadmap_basename é o basename
     resolvido (incluindo .md), usado apenas na mensagem de erro — pinned
     literalmente por docs/cli-parity.md.
 
@@ -113,39 +130,44 @@ def _find_wave(lines: list, wave_label: str, roadmap_basename: str) -> tuple:
     § "Wave label grammar". Um cabeçalho fora dessa gramática aborta o documento inteiro
     — decisão 16 do ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md.
     Labels são identidades distintas: '2' não casa com '## Wave 2-bis '.
+
+    Detection is a full pre-pass (pinned by docs/cli-parity.md §
+    "Detection is a full pre-pass — pinned"): TODAS as headings de wave são
+    validadas antes de resolver o rótulo pedido, sem break antecipado. Uma heading
+    malformada em qualquer posição do documento — inclusive depois da wave alvo —
+    aborta imediatamente com exit 2. Isso espelha o comportamento do Go
+    (parseWaves) e do Node.js (findWave two-phase), e impede que um documento
+    malformado seja lido como "wave reprovada" (ADR decisão 12).
     """
     n = len(lines)
-    i = 0
-    found = None
-    while i < n:
-        line = lines[i]
-        m = _WAVE_HEADING_RE.match(line)
-        if m:
-            token = m.group(1)
-            # Valid grammar match — compute span and check identity.
-            j = i + 1
-            while j < n and not _H2_BOUNDARY_RE.match(lines[j]):
-                j += 1
-            if token == wave_label:
-                found = (i, j)
-                break
-            i = j
-        else:
-            # Check whether the line looks like a wave heading outside the grammar.
-            # If so, abort the document — see ADR decision 16 and cli-parity.md
-            # § "A heading outside this grammar still aborts the whole document".
-            m_loose = _ANY_WAVE_H2_RE.match(line)
-            if m_loose:
-                token = m_loose.group(1)
-                raise BarrierUsageError(
-                    f'malformed wave heading at line {i + 1}: "{token}" is not a valid wave label'
-                )
-            i += 1
-    if found is None:
-        raise BarrierUsageError(
-            f'wave {wave_label} not found in roadmap "{roadmap_basename}"'
-        )
-    return found
+
+    # Fase 1 — pré-passo completo: percorre TODAS as linhas e valida cada
+    # heading de wave. Aborta na primeira heading malformada, independentemente
+    # de sua posição em relação à wave pedida.
+    waves: list = []
+    for i, line in enumerate(lines):
+        m_loose = _ANY_WAVE_H2_RE.match(line)
+        if not m_loose:
+            continue
+        token = m_loose.group(1)
+        if not _is_valid_wave_label(token):
+            raise BarrierUsageError(
+                f'malformed wave heading at line {i + 1}: "{token}" is not a valid wave label'
+            )
+        # Heading válida — calcula o span.
+        j = i + 1
+        while j < n and not _H2_BOUNDARY_RE.match(lines[j]):
+            j += 1
+        waves.append((token, i, j))
+
+    # Fase 2 — encontra a wave alvo por correspondência exata de rótulo.
+    for token, start, end in waves:
+        if token == wave_label:
+            return (start, end)
+
+    raise BarrierUsageError(
+        f'wave {wave_label} not found in roadmap "{roadmap_basename}"'
+    )
 
 
 def _find_mls(lines: list, start: int, end: int) -> list:
@@ -310,17 +332,15 @@ def _parse_wave_label(raw: str) -> str:
     Exemplos válidos: "1", "2", "2-bis", "2-hotfix", "10-a2".
     Exemplos inválidos: "abc", "0", "2-BIS", "2-", "2-bis-ter".
 
-    Usa re.fullmatch para garantir correspondência completa do token —
-    re.match sem $ aceitaria "2-bis-ter" ao corresponder apenas "2-bis".
+    Mensagem de erro pinada literalmente por docs/cli-parity.md (quarta mensagem
+    de exit-2): 'invalid --wave "<value>" — not a valid wave label'. O separador
+    é travessão U+2014 (—), não hífen. <value> é o argumento exatamente como
+    o usuário digitou. Usa _is_valid_wave_label para compartilhar a mesma regra
+    da validação de heading (pré-passo).
     """
-    if not re.fullmatch(r"\d+(?:-[a-z0-9]+)?", raw):
+    if not _is_valid_wave_label(raw):
         raise BarrierUsageError(
-            f'malformed --wave value: "{raw}" is not a valid wave label'
-        )
-    int_part = raw.split("-")[0]
-    if int(int_part) < 1:
-        raise BarrierUsageError(
-            f'malformed --wave value: "{raw}" is not a valid wave label'
+            f'invalid --wave "{raw}" — not a valid wave label'
         )
     return raw
 
