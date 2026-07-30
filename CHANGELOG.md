@@ -10,6 +10,83 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [5.0.0] - 2026-07-30
+
+### Por que esta versão é major
+
+Quatro mudanças observáveis quebram consumidores que parseiam saída do CLI:
+
+1. **Campo `wave` do documento JSON do barrier passa de número para string.**
+   `{"wave": 2}` vira `{"wave": "2"}`. Necessário para suportar rótulos com
+   sufixo (`2-bis`), que não são inteiros.
+2. **Mensagens de erro do barrier mudam de `wave number` para `wave label`.**
+   O texto é pinado literalmente em `docs/cli-parity.md` e agora nomeia o token
+   rejeitado em vez de despejar a linha inteira.
+3. **`## Wave 0` passa a ser rejeitada.** A gramática exige parte inteira ≥ 1.
+   Roadmaps que usassem `Wave 0` deixam de ser auditáveis pelo barrier.
+4. **`trackfw roadmap move` no CLI Python deixa de imprimir
+   `Roadmap movido para: <caminho>`** e passa a imprimir
+   `✓ moved <basename> → <diretório>`, alinhado a Go e Node.js. Era divergência
+   de paridade pré-existente: idioma, forma e conteúdo diferiam dos outros dois
+   runtimes.
+
+**Migração:** consumidores de `trackfw barrier --json` devem tratar `wave` como
+string. Scripts que casem mensagens de erro do barrier ou a saída de
+`roadmap move` no Python precisam atualizar os padrões. Roadmaps com `Wave 0`
+devem renumerar a partir de 1.
+
+### Added
+- **Rótulo de wave com sufixo no barrier**, nos três CLIs. Gramática
+  `<inteiro>[-<sufixo>]` com sufixo `[a-z0-9]+`: `2`, `2-bis`, `2-hotfix`.
+  Resolve o caso real de wave corretiva acrescentada **depois** que uma wave já
+  foi executada e commitada, sem renumerar as waves seguintes já citadas em
+  mensagens de commit. Rótulos são identidades distintas — `--wave 2` nunca casa
+  com `Wave 2-bis`. Ordenação pinada: `2` < `2-bis` < `2-hotfix` < `3`.
+- **`trackfw roadmap move` sincroniza a referência `roadmap:` da REQ pareada**,
+  nos três CLIs. Antes, mover um roadmap deixava toda REQ que apontava para ele
+  com referência inválida, e `trackfw validate` reprovava com
+  `ref_targets_exist` — o comando de governança produzia um estado que o próprio
+  validador rejeita. Cinco cardinalidades pinadas: zero REQs (no-op silencioso),
+  uma, várias (ordenadas por basename), aponta para outro roadmap (não tocada) e
+  referência já correta (nenhuma escrita, idempotente byte-a-byte).
+- Novo gate de paridade `scripts/check-roadmap-move-parity.sh` com 5 cenários
+  cross-runtime, todos com vacuity-guard, e cenário de falsificação que corrompe
+  a implementação (nunca a asserção) com guarda contra padrão de `sed` obsoleto.
+- Cenários de paridade do rótulo de wave em `scripts/check-barrier.sh`:
+  heading malformada nas **duas** posições (antes e depois da wave alvo),
+  identidade `2-bis` vs `2`, `Wave 0` e argumento `--wave` inválido.
+
+### Fixed
+- **`trackfw init --ai-tools <tool>` abortava o scaffold de um projeto novo**
+  quando o harness global do usuário continha um artefato trackfw desatualizado.
+  O preflight de `install` retornava erro para artefato `outdated` + `owned` e,
+  como o lote é atômico com rollback, descartava a operação inteira. Agora o
+  artefato é **pulado** com aviso em stderr, os bytes preservados e o restante do
+  lote aplicado, com exit 0. Artefato `modified` continua sendo erro sem
+  `--force` — bytes do usuário nunca são pulados em silêncio.
+- **Heading de wave malformada abortava apenas quando posicionada antes da wave
+  solicitada** no Node.js e no Python. Uma heading inválida depois da wave alvo
+  não era visitada, e o barrier retornava exit 1 `blocked` em vez de exit 2 —
+  fazendo um roadmap malformado ser lido como "wave reprovada", o que a decisão
+  12 do ADR do barrier proíbe explicitamente. A detecção passa a ser pré-passo
+  completo nos três runtimes.
+- **Ordenação de REQs sincronizadas divergia nos três runtimes**, cada um por um
+  motivo diferente: Go concatenava globs por agente e por estado; Node.js usava
+  `readdirSync` sem `sort`; Python ordenava por caminho completo em vez de
+  basename. Pinada como lexicográfica por basename.
+
+### Internal
+- Contrato de escopo de `install` documentado em `docs/cli-parity.md`, com o
+  registro explícito de que as decisões D1/D4 do ADR de escopo de instalação
+  permanecem em vigor: `trackfw init --ai-tools` sem TTY instala em escopo
+  **global**, por decisão deliberada.
+- ADR do barrier emendado com as decisões **15** (wave identificada por rótulo,
+  não por inteiro) e **16** (heading fora da gramática aborta o documento
+  inteiro — é feature, não defeito: ignorá-la deixaria os MLs daquela wave sem
+  auditoria).
+- Contagem de gates de falsificação sobe de 19 para 21 cenários, e de 12 para 14
+  gates provados não-vacuosos.
+
 ## [4.0.0] - 2026-07-29
 
 ### Por que esta versão é major
