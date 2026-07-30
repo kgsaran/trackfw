@@ -4,6 +4,17 @@
 
 ---
 
+## Sessão 2026-07-29 — Apolo (ML-2B — Node.js: barrier aceita wave com sufixo bis)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
+
+**Status:** IMPLEMENTANDO
+
+**Tarefa:** Implementar suporte a rótulo de wave com sufixo (`2-bis`, `2-hotfix`) no runtime Node.js.
+Escopo: `npm/src/commands/barrier.js` e `npm/tests/`. NÃO toca em `internal/` nem `pypi/`.
+
+---
+
 ## Sessão 2026-07-29 — Ártemis/QA (ML-6I — corretivo: gate `check-update-parity.sh` mutava o repositório)
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`
