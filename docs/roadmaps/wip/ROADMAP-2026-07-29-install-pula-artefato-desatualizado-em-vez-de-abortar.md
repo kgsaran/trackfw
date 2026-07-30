@@ -275,7 +275,10 @@ callers imprimem verbatim e não compõem, abreviam nem derivam remediação; a 
       dos callers.
 - [x] Remediação derivada de `plan.claim.scope` — `manager.js:147`. A inferência
       `tilde.startsWith('~/')` foi eliminada.
-- [x] Aviso em stderr inalterado, byte-idêntico ao Go (auditado pelo orquestrador, ver ML-3A).
+- [x] Strings de **formato** idênticas nos três runtimes, auditadas no código pelo orquestrador em
+      941ac15: `warning: skipping outdated artifact %s; run '%s' to refresh it`.
+- [ ] Byte-identidade da saída **executada** dos três CLIs — pendente, é escopo do ML-3A. Não marcar
+      aqui: comparar formato lido no código não é o mesmo que diffar bytes de três execuções.
 - [x] `npm test` → **329 passed, 0 failed** (verificado pelo orquestrador).
 
 **Nota de rastreabilidade — desvio de processo:** os agentes do ML-2D e do ML-2E morreram por limite
@@ -295,5 +298,8 @@ outro agente já fez staging — o correto seria `git commit -- <caminhos>` ou w
 - [x] Manager compõe a linha; `on_skip(destino_tilde, linha_completa)`.
 - [x] Nenhum caller compõe — closures de `init.py` e `command.py` reduzidas a imprimir `reason`.
 - [x] Remediação derivada de `plan["claim"]["scope"]` por artefato, não da closure de comando.
-- [x] Aviso em stderr inalterado, byte-idêntico ao Go.
-- [x] Suíte Python passa.
+- [x] Strings de **formato** idênticas nos três, auditadas no código pelo orquestrador em 941ac15.
+- [ ] Byte-identidade da saída **executada** dos três CLIs — pendente, escopo do ML-3A. O agente do
+      ML-2E marcou este critério antes de morrer por limite de sessão; a referência era circular
+      (apontava para um ML que não havia rodado). Desmarcado pelo orquestrador.
+- [x] Suíte Python passa — **694 passed** (verificado pelo orquestrador).
