@@ -6471,3 +6471,29 @@ a ordenação **e** o texto literal foram pinados antes de qualquer código.
    `must be an integer >= 1`, Python usa `is not an integer`. Necessita pinagem antes do ML-3A.
 3. `compareWaveLabels` implementado mas não usado no fluxo de barrier (barrier não lista/ordena waves).
    Disponível para uso futuro.
+
+---
+
+## Sessão 2026-07-30 — Artemis (ML-3A — Auditoria de paridade e não-vacuidade)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`
+
+**Tarefa:** ML-3A (Wave 4) — transformar a verificação manual do orquestrador em gates automáticos permanentes.
+
+**Entregue:**
+- `scripts/check-barrier.sh`: Cenários 8–12 adicionados (heading malformada antes e depois da wave alvo; identidade `--wave 2-bis`/`--wave 2`; `## Wave 0`; `--wave 2-BIS`). PY_ROOT agora overridable. BARRIER_BIS_SELFTEST_BREAK seam para falsificação. 34 cenários OK.
+- `scripts/check-gates-falsify.sh`: Cenário 19 adicionado — `BARRIER_BIS_SELFTEST_BREAK=1` prova que o Cenário 9 detecta early-break. Contador atualizado para 20 cenários, 13 gates não-vacuosos.
+- `internal/commands/barrier_test.go`: `TestWaveLabelGrammar_ValidAndInvalid` (tabela completa 6 inválidos + 5 válidos via `parseWaves`) + `TestBarrierRegression_FourthExitTwoMessage` (quarta mensagem byte-exata via `--wave 2-BIS`).
+- `pypi/tests/test_barrier.py`: `test_is_valid_wave_label_tabela_completa` (tabela completa via `_is_valid_wave_label`).
+- `docs/roadmaps/wip/ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md`: ML-3A ✅ Concluído.
+
+**Validação:**
+- `go test ./internal/commands/`: ok (8.7s)
+- `pytest pypi/tests/`: 702 passed
+- `npm test --prefix npm`: 0 fail
+- `make quality`: exit 0 (20 cenários de falsificação, 13 gates não-vacuosos)
+- `bin/trackfw validate --json`: violations: []
+- `git status`: limpo
+
+**Handoffs:** Nenhum. ML-3A é o último ML do roadmap.
+**Status:** CONCLUÍDO
