@@ -23,3 +23,4 @@
 - [agente-poluindo-repo-ao-rodar-cli-manualmente-2026-07-29](agente-poluindo-repo-ao-rodar-cli-manualmente-2026-07-29.md)
 - [roadmap-new-gera-marcador-de-aceite-invalido-2026-07-31](roadmap-new-gera-marcador-de-aceite-invalido-2026-07-31.md)
 - [security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31](security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31.md)
+- [dashboard-serve-e-light-only-2026-07-31](dashboard-serve-e-light-only-2026-07-31.md)

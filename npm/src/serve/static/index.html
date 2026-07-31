@@ -40,6 +40,18 @@
         class="tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors"
         aria-pressed="false"
       >Metrics</button>
+      <button
+        id="tab-adr"
+        onclick="switchView('adr')"
+        class="tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors"
+        aria-pressed="false"
+      >ADRs</button>
+      <button
+        id="tab-req"
+        onclick="switchView('req')"
+        class="tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors"
+        aria-pressed="false"
+      >REQs</button>
     </nav>
   </header>
 
@@ -173,6 +185,76 @@
           <canvas id="burndown-chart" style="height: 240px;" aria-label="Gráfico de burndown: abertos e fechados ao longo do tempo"></canvas>
         </div>
       </div>
+    </section>
+
+    <!-- View: ADRs -->
+    <section id="view-adr" class="view-section w-full hidden p-6 overflow-auto" aria-label="Lista de ADRs">
+      <div class="flex items-center gap-3 flex-wrap mb-4">
+        <input
+          type="search"
+          id="adr-search"
+          oninput="onListSearch('adr', this.value)"
+          placeholder="Buscar por título ou identificador..."
+          class="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-1 min-w-[220px]"
+          aria-label="Buscar ADRs por título ou identificador"
+        />
+        <label for="adr-status-filter" class="text-sm font-medium text-gray-600 sr-only">Filtrar por status</label>
+        <select
+          id="adr-status-filter"
+          onchange="onListStatusChange('adr', this.value)"
+          class="text-sm border border-gray-300 rounded px-2 py-1.5 bg-white"
+          aria-label="Filtrar ADRs por status"
+        >
+          <option value="">Todos</option>
+        </select>
+        <span id="adr-count" class="text-xs text-gray-500 ml-auto" aria-live="polite"></span>
+      </div>
+
+      <div id="adr-loading" class="flex items-center gap-2 text-gray-500 text-sm">
+        <svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        Carregando ADRs...
+      </div>
+      <div id="adr-error" class="hidden text-red-600 text-sm mt-4" role="alert"></div>
+      <div id="adr-empty" class="hidden text-sm text-gray-400 text-center py-8"></div>
+      <div id="adr-list" class="list-view-container"></div>
+    </section>
+
+    <!-- View: REQs -->
+    <section id="view-req" class="view-section w-full hidden p-6 overflow-auto" aria-label="Lista de REQs">
+      <div class="flex items-center gap-3 flex-wrap mb-4">
+        <input
+          type="search"
+          id="req-search"
+          oninput="onListSearch('req', this.value)"
+          placeholder="Buscar por título ou identificador..."
+          class="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-1 min-w-[220px]"
+          aria-label="Buscar REQs por título ou identificador"
+        />
+        <label for="req-status-filter" class="text-sm font-medium text-gray-600 sr-only">Filtrar por status</label>
+        <select
+          id="req-status-filter"
+          onchange="onListStatusChange('req', this.value)"
+          class="text-sm border border-gray-300 rounded px-2 py-1.5 bg-white"
+          aria-label="Filtrar REQs por status"
+        >
+          <option value="">Todos</option>
+        </select>
+        <span id="req-count" class="text-xs text-gray-500 ml-auto" aria-live="polite"></span>
+      </div>
+
+      <div id="req-loading" class="flex items-center gap-2 text-gray-500 text-sm">
+        <svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        Carregando REQs...
+      </div>
+      <div id="req-error" class="hidden text-red-600 text-sm mt-4" role="alert"></div>
+      <div id="req-empty" class="hidden text-sm text-gray-400 text-center py-8"></div>
+      <div id="req-list" class="list-view-container"></div>
     </section>
 
   </main>

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-31
 req: "docs/req/REQ-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Views de lista para ADRs e REQs no dashboard
 
-> Created: 2026-07-31 | Status: wip
+> Created: 2026-07-31 | Status: done
 
 ## Context
 
@@ -43,8 +43,8 @@ Consolidados da REQ (AC1–AC12). Detalhamento por microlote nas waves abaixo.
 - [x] Acessibilidade: `aria-pressed` nas abas, linhas focáveis, `aria-label` nas sections
 - [x] Estados vazio e de erro tratados
 - [x] Nenhum arquivo novo em `internal/serve/static/`; nenhum endpoint novo
-- [ ] npm e pypi byte-a-byte idênticos ao canônico *(ML-2A)*
-- [ ] `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes *(parity/quality no ML-2A)*
+- [x] npm e pypi byte-a-byte idênticos ao canônico
+- [x] `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes
 
 ---
 
@@ -151,8 +151,8 @@ Num SO em modo escuro só as linhas novas trocavam de tema.
 > Dependências: **Wave 1 completa e auditada**
 
 ### ML-2A — Espelhar assets para npm e pypi
-**Status:** pending
-**Agente:** Hefesto
+**Status:** ✅ concluído (auditado 2026-07-31)
+**Agente:** Afrodite (reatribuído — Hefesto recusou corretamente: não modifica código)
 **Arquivos afetados:**
 - `npm/src/serve/static/{app.js,index.html,style.css}`
 - `pypi/trackfw/serve/static/{app.js,index.html,style.css}`
@@ -174,12 +174,12 @@ Num SO em modo escuro só as linhas novas trocavam de tema.
 - Não tocar em `internal/serve/static/`.
 
 **Critérios de aceite:**
-- [ ] `scripts/check-static-assets.sh` imprime `Static assets are synchronized`
-- [ ] `make parity` passa por inteiro
-- [ ] `make quality` passa (`test` + `test-node` + `test-python` + `lint` + `parity`)
-- [ ] md5 idêntico nos três diretórios para os três arquivos
-- [ ] `node npm/bin/trackfw.js serve` exibe as cinco abas com 12 ADRs e 58 REQs
-- [ ] `python -m trackfw serve` exibe as cinco abas com 12 ADRs e 58 REQs
+- [x] `scripts/check-static-assets.sh` imprime `Static assets are synchronized`
+- [x] `make parity` passa por inteiro
+- [x] `make quality` passa — exit 0, incluindo 24 cenários de falsificação (14 gates não vacuosos)
+- [x] md5 idêntico nos três diretórios para os três arquivos (verificado por `cmp` na auditoria)
+- [x] Runtime Node exibe as cinco abas; `/api/chain` → 13 adr, 59 req
+- [x] Runtime Python exibe as cinco abas; `/api/chain` → 13 adr, 59 req
 
 **Comandos de validação:**
 ```bash
@@ -189,3 +189,22 @@ md5 -q internal/serve/static/index.html npm/src/serve/static/index.html pypi/tra
 md5 -q internal/serve/static/style.css npm/src/serve/static/style.css pypi/trackfw/serve/static/style.css
 make quality
 ```
+
+---
+
+## Fechamento
+
+Todos os microlotes concluídos e auditados em 2026-07-31.
+
+**Barreira de segurança:** Hades revisou o commit `007ebab` — **APROVADO**. `escapeHtml` cobre os
+três sinks da lista nova, inclusive valor de atributo. Achado colateral **não bloqueante**:
+`openDrawer` renderiza `marked.parse()` sem DOMPurify — **pré-existente**, verificado em
+`007ebab~1` e já alcançável pelo grafo da view Chain. Requer REQ própria nos 3 CLIs.
+Nota: `vault/notes/security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31.md`.
+
+**Desvio de contagem:** os critérios foram redigidos com 12 ADRs / 58 REQs; o valor real na
+entrega é 13 / 59, porque a própria ADR e a própria REQ desta feature entraram na varredura de
+`/api/chain`. Não é regressão.
+
+**Reatribuição:** o ML-2A havia sido atribuído a Hefesto por erro de orquestração. Ele recusou
+corretamente — o papel de code quality não modifica código. Redirecionado a Afrodite.
