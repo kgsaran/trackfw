@@ -66,7 +66,7 @@ Consolidados da REQ (AC1–AC9). Detalhamento por microlote nas waves abaixo.
 > Dependências: nenhuma
 
 ### ML-1A — DOMPurify no `openDrawer` de `internal/serve/static/`
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-07-31)
 **Agente:** Afrodite
 **Arquivos afetados (exclusivamente estes dois):**
 - `internal/serve/static/index.html`
@@ -98,10 +98,22 @@ Consolidados da REQ (AC1–AC9). Detalhamento por microlote nas waves abaixo.
 - Não alterar `style.css` (nada visual muda neste ML).
 
 **Critérios de aceite:**
-- [ ] `make build`, `make test`, `make lint` verdes
-- [ ] `git status --porcelain` mostra **exatamente** `index.html` e `app.js` do canônico
-- [ ] Nenhum `innerHTML` recebe saída de `marked.parse()` sem passar pelo sanitizador
-- [ ] Tag do DOMPurify com versão fixada, `integrity` e `crossorigin`
+- [x] `make build`, `make test`, `make lint` verdes
+- [x] `git status --porcelain` mostra **exatamente** `index.html` e `app.js` do canônico
+- [x] Nenhum `innerHTML` recebe saída de `marked.parse()` sem passar pelo sanitizador
+- [x] Tag do DOMPurify com versão fixada, `integrity` e `crossorigin`
+      (SRI reconferido pela Afrodite contra o CDN real, não copiado do roadmap)
+
+**Notas da auditoria de Zeus:**
+- Ponto de sanitização **único e removível** (`renderMarkdownSafe`) — requisito para o seam do ML-2A.
+- Fail-safe devolve `null`, nunca HTML; o chamador degrada para `textContent` + aviso.
+- Segundo sink verificado: `renderFrontmatterTable` (~1044) usa `createElement` + `textContent`,
+  sem interpolação — já seguro. Frontmatter vem do mesmo arquivo não confiável que o corpo.
+- **Allowlist sem `img`:** levantei o risco de quebrar diagramas em ADRs de projetos downstream.
+  **Descartado por verificação:** o servidor só expõe `/`, `/static/` e `/api/*`; imagens relativas
+  já retornavam **404** antes desta mudança (`curl localhost:8793/docs/adr/diagrama.png` → 404).
+  Excluir `img` preserva o status quo em vez de regredir, e evita que URLs http(s) absolutas
+  virem vetor de tracking/exfiltração disparado automaticamente.
 
 ---
 
