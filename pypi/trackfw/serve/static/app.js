@@ -14,6 +14,12 @@ let _burnChart   = null;     // instância Chart.js burndown
 let _d3Sim       = null;     // simulação D3 force
 let _drawerPath  = null;     // path atualmente aberto no drawer
 
+// ─── Views de lista (ADRs / REQs) ──────────────────────────────────────────────
+let _listState = {
+  adr: { search: '', status: '' },
+  req: { search: '', status: '' },
+};
+
 // ─── Auto-refresh ─────────────────────────────────────────────────────────────
 let _refreshInterval = parseInt(localStorage.getItem('trackfw_refresh_interval') || '60');
 let _refreshPaused   = localStorage.getItem('trackfw_refresh_paused') === 'true';
@@ -98,6 +104,8 @@ function switchView(view) {
     loadChain();
   } else if (view === 'metrics') {
     loadMetrics();
+  } else if (view === 'adr' || view === 'req') {
+    loadListView(view);
   }
 }
 
@@ -570,6 +578,169 @@ function renderChain(data) {
 
     node.attr('transform', d => `translate(${d.x},${d.y})`);
   });
+}
+
+// ─── View: ADRs / REQs (listas navegáveis) ────────────────────────────────────
+
+function normalizeText(str) {
+  return (str || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+}
+
+async function loadListView(type) {
+  hide(`${type}-error`);
+
+  // Reusa o cache de /api/chain já usado pela aba Chain. Se o cache já foi
+  // aquecido (ex.: usuário visitou a aba Chain antes), o spinner nunca chega
+  // a ser exibido por show('${type}-loading') — mas ele parte visível no
+  // HTML (sem classe "hidden"), então precisa ser escondido explicitamente
+  // aqui também, não só no ramo de erro/loading do fetch abaixo.
+  hide(`${type}-loading`);
+  if (_chainData) {
+    renderListView(type);
+    return;
+  }
+
+  show(`${type}-loading`);
+
+  try {
+    const res = await fetch('/api/chain');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    _chainData = await res.json();
+    hide(`${type}-loading`);
+    renderListView(type);
+  } catch (err) {
+    hide(`${type}-loading`);
+    const errEl = el(`${type}-error`);
+    if (errEl) {
+      errEl.textContent = `Erro ao carregar ${type === 'adr' ? 'ADRs' : 'REQs'}: ${err.message}`;
+      errEl.classList.remove('hidden');
+    }
+  }
+}
+
+function getListNodes(type) {
+  if (!_chainData) return [];
+  return (_chainData.nodes || []).filter(n => n.type === type);
+}
+
+// Popula o <select> de status a partir dos valores distintos presentes na
+// resposta do /api/chain. NUNCA hardcodar uma lista fixa de estados aqui:
+// state é texto livre e uma lista fixa esconderia silenciosamente artefatos
+// com status inesperado (ex.: "unknown").
+function populateStatusFilter(type, nodes) {
+  const select = el(`${type}-status-filter`);
+  if (!select) return;
+
+  const current = select.value;
+  const states = Array.from(new Set(nodes.map(n => n.state || 'unknown'))).sort((a, b) => a.localeCompare(b));
+
+  select.innerHTML = '<option value="">Todos</option>';
+  states.forEach(state => {
+    const opt = document.createElement('option');
+    opt.value = state;
+    opt.textContent = state;
+    select.appendChild(opt);
+  });
+
+  if (states.includes(current)) {
+    select.value = current;
+  } else {
+    select.value = '';
+    _listState[type].status = '';
+  }
+}
+
+function renderListView(type) {
+  const nodes = getListNodes(type);
+  populateStatusFilter(type, nodes);
+  applyListFilters(type);
+}
+
+function onListSearch(type, value) {
+  _listState[type].search = value;
+  applyListFilters(type);
+}
+
+function onListStatusChange(type, value) {
+  _listState[type].status = value;
+  applyListFilters(type);
+}
+
+function applyListFilters(type) {
+  const nodes = getListNodes(type);
+  const { search, status } = _listState[type];
+  const normSearch = normalizeText(search);
+
+  const filtered = nodes.filter(n => {
+    if (status && (n.state || 'unknown') !== status) return false;
+    if (!normSearch) return true;
+    const haystack = normalizeText(`${n.title || ''} ${n.id || ''}`);
+    return haystack.includes(normSearch);
+  });
+
+  renderListRows(type, filtered, nodes.length);
+}
+
+function renderListRows(type, filtered, total) {
+  const listEl  = el(`${type}-list`);
+  const emptyEl = el(`${type}-empty`);
+  const countEl = el(`${type}-count`);
+  if (!listEl) return;
+
+  const typeLabel = type === 'adr' ? 'ADRs' : 'REQs';
+  listEl.innerHTML = '';
+
+  if (countEl) {
+    countEl.textContent = `${filtered.length} de ${total} ${typeLabel}`;
+  }
+
+  if (filtered.length === 0) {
+    if (emptyEl) {
+      emptyEl.textContent = total === 0
+        ? `Nenhum ${type === 'adr' ? 'ADR' : 'REQ'} encontrado.`
+        : 'Nenhum item corresponde à busca/filtro atual.';
+      emptyEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (emptyEl) emptyEl.classList.add('hidden');
+
+  filtered
+    .slice()
+    .sort((a, b) => (a.id || '').localeCompare(b.id || ''))
+    .forEach(node => listEl.appendChild(createListRow(node)));
+}
+
+function createListRow(node) {
+  const identifier = (node.id || '').split('/').pop();
+  const title      = node.title || identifier;
+  const state      = node.state || 'unknown';
+
+  const row = document.createElement('div');
+  row.className = 'list-row';
+  row.setAttribute('tabindex', '0');
+  row.setAttribute('role', 'button');
+  row.setAttribute('aria-label', `Abrir: ${title}`);
+
+  row.innerHTML = `
+    <span class="list-row-id">${escapeHtml(identifier)}</span>
+    <span class="list-row-title">${escapeHtml(title)}</span>
+    <span class="status-chip" data-state="${escapeHtml(state.toLowerCase())}">${escapeHtml(state)}</span>`;
+
+  row.addEventListener('click', () => openDrawer(node.id));
+  row.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openDrawer(node.id);
+    }
+  });
+
+  return row;
 }
 
 // ─── View: Metrics ────────────────────────────────────────────────────────────

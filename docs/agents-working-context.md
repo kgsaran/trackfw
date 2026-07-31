@@ -4,6 +4,127 @@
 
 ---
 
+## Sessão 2026-07-31 — Hades (Revisão de segurança — barreira pré-Wave 2) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md`
+
+**Tarefa:** revisar exclusivamente o diff do commit `007ebab` (abas ADRs/REQs) como barreira antes de
+liberar a Wave 2 (espelhamento npm/pypi).
+
+**Veredito:** **APROVADO**. `escapeHtml()` neutraliza corretamente os três contextos usados em
+`createListRow()` (conteúdo, atributo `data-state` entre aspas duplas, e `aria-label` — este via
+`setAttribute`, que não interpreta HTML, portanto seguro mesmo sem escape). `populateStatusFilter()`
+usa `createElement`/`textContent`/`.value` — sem sink de HTML. `normalizeText()` com `\p{Diacritic}`
+é uma classe de caracteres única, sem alternância/backtracking — sem risco de ReDoS. Nenhum endpoint
+novo, nenhum código `.go` alterado, whitelist de `api_file.go` intocada. Nenhum segredo/caminho
+absoluto exposto.
+
+**Achado real, não-bloqueante (pré-existente):** `openDrawer()` faz `mdEl.innerHTML =
+marked.parse(body || raw)` sem `DOMPurify`/sanitizador — stored XSS se o **corpo** de um artefato
+markdown contiver HTML malicioso. Confirmado via `git show 007ebab~1` que o sink já era alcançável
+para nós `type === 'adr'`/`'req'` através do grafo D3 da view Chain, antes desta feature — a nova
+lista apenas adiciona um segundo caminho de navegação ao mesmo sink. Não bloqueia este commit. Nota
+detalhada em
+`vault/notes/security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31.md`. Recomendação:
+Hefesto/Zeus abrir REQ própria para sanitizar `marked.parse()` nos três CLIs antes de tratar como
+não-issue.
+
+**Próximo:** Wave 2 (ML-2A, espelhamento npm/pypi) liberada para prosseguir.
+
+---
+
+## Sessão 2026-07-31 — Zeus (orquestração — Views de lista para ADRs e REQs) — CONCLUÍDO
+
+**Branch:** `feat/views-de-lista-para-adrs-e-reqs-no-dashboard`
+**ADR:** `docs/adr/ADR-2026-07-31-listas-de-adr-e-req-no-dashboard-derivadas-de-api-chain.md`
+**REQ:** `docs/req/REQ-2026-07-31-...` (Done) | **Roadmap:** `docs/roadmaps/done/ROADMAP-2026-07-31-...`
+
+### Pedido e diagnóstico
+
+KG perguntou se dava para ver ADRs e REQs pelo dashboard. **Já dava** — mas só pelo grafo da aba
+Chain, com 137 nós, o que inviabiliza busca dirigida. O backend estava pronto: `/api/chain` devolve
+`id` = caminho relativo, e `openDrawer(id)` → `/api/file` respondeu 200 numa verificação empírica.
+O gap era só de navegação.
+
+### Decisões (AskUserQuestion)
+
+Duas abas separadas (não uma "Docs" unificada) e reuso de `/api/chain` (nenhum endpoint novo).
+Isso reduziu a entrega a **frontend puro**.
+
+### Execução
+
+- **ML-1A** (Afrodite) — abas ADRs/REQs em `internal/serve/static/`. Commit `007ebab`.
+- **ML-1B** (Afrodite, corretivo) — auditoria visual em navegador real com o SO em modo escuro
+  flagrou as linhas renderizando escuras num dashboard light-only. Removido o bloco
+  `@media (prefers-color-scheme: dark)`, que era o **primeiro do projeto inteiro**.
+- **Barreira de segurança** (Hades) — APROVADO. Achado colateral não bloqueante: `marked.parse()`
+  sem DOMPurify no drawer, **pré-existente** (verificado em `007ebab~1`).
+- **ML-2A** (Afrodite) — espelho byte-a-byte para npm e pypi. `make quality` exit 0.
+
+### Aprendizados
+
+1. **Gates verdes não provam UX.** `build`/`test`/`lint`/`quality` passaram no ML-1A com o defeito
+   visual presente. Só o navegador real pegou — e só porque o SO estava em modo escuro.
+2. **Reatribuição de papel:** o ML-2A foi atribuído a Hefesto por erro meu. Ele recusou
+   corretamente — code quality não modifica código. Cópia mecânica ainda é implementação.
+3. **Contagem nos critérios de aceite envelhece:** escrevi 12 ADRs/58 REQs; a entrega deu 13/59
+   porque a própria ADR e REQ desta feature entraram na varredura. Prever isso quando o critério
+   conta artefatos do próprio repositório.
+
+### Notas de vault criadas
+
+- `roadmap-new-gera-marcador-de-aceite-invalido-2026-07-31.md` — `roadmap new` gera
+  `**Acceptance criteria:**` mas o validador exige o heading `## Acceptance Criteria`; todo roadmap
+  novo falha no `validate` ao entrar em `wip`. **Defeito aberto do trackfw, não corrigido.**
+- `dashboard-serve-e-light-only-2026-07-31.md` — não adicionar `prefers-color-scheme` ao dashboard.
+- `security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31.md` (Hades).
+
+### Pendências geradas (REQs próprias, fora deste escopo)
+
+1. Sanitizar `marked.parse()` no drawer com DOMPurify nos 3 CLIs.
+2. Alinhar `internal/generators/roadmap.go` para emitir o heading de critérios de aceite (3 CLIs).
+
+---
+
+## Sessão 2026-07-31 — Afrodite (ML-1A — Abas ADRs/REQs no dashboard) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md`
+
+**Tarefa:** ML-1A — Adicionar abas ADRs e REQs ao `trackfw serve`, como listas navegáveis com busca
+(texto, acento-insensitive) e filtro de status derivado dinamicamente de `/api/chain` (nunca hardcoded).
+
+**Branch:** `feat/views-de-lista-para-adrs-e-reqs-no-dashboard` (entregue **uncommitted** — Afrodite não
+tem autoridade Git; aguardando auditoria/commit por trackfw_architect).
+
+**Arquivos modificados (exclusivamente os três do escopo):**
+- `internal/serve/static/index.html`: dois botões (`tab-adr`, `tab-req`) no `<nav>` e duas `<section>`
+  (`view-adr`, `view-req`) espelhando estrutura/convenções das views existentes (busca, select de
+  status, contador, loading, empty, `role="alert"`).
+- `internal/serve/static/app.js`: `switchView()` estendido com ramos `'adr'`/`'req'`; novo bloco
+  "Views de lista" reusando o cache `_chainData` (sem fetch novo) — `loadListView`,
+  `populateStatusFilter` (popula `<select>` a partir dos valores distintos de `state`, nunca hardcoded),
+  `applyListFilters`, `createListRow` (linha focável, `openDrawer(node.id)` no click/Enter/Space),
+  `normalizeText` (NFD + remoção de diacríticos para busca acento-insensitive).
+- `internal/serve/static/style.css`: `.list-view-container`, `.list-row`, `.status-chip` (+ variantes
+  `data-state` conhecidas com fallback cinza genérico) e bloco `@media (prefers-color-scheme: dark)`
+  para legibilidade dos chips em tema escuro.
+
+**Evidência:**
+- `make build && make test && make lint` → EXIT=0 (test: todos os pacotes `ok`; lint: sem saída)
+- `git status --porcelain` → exatamente os três arquivos do escopo, nada mais
+- `bin/trackfw serve --port 8791` (binário rebuilded pós-edit, pois assets são `go:embed`):
+  `/api/chain` retorna `Counter({'roadmap': 68, 'req': 59, 'adr': 13})` — 13/59 em vez de 12/58 porque
+  o próprio ROADMAP+REQ desta feature somaram 1 a cada contagem; comportamento correto, não regressão.
+  ADR `docs/adr/ADR-001-...md` com `state: unknown` presente na resposta — confirmado renderizável com
+  filtro "Todos" (chip cai no fallback cinza genérico do CSS, não é ocultado).
+  `tab-adr`, `tab-req`, `view-adr`, `view-req` presentes no HTML servido; `/api/file` retorna 200 para
+  nós de ambos os tipos — `openDrawer` reusado sem alteração.
+
+**Status:** todos os critérios de aceite do ML-1A atendidos. Próximo: Wave 2 (ML-2A, Hefesto) espelha
+os três arquivos para `npm/` e `pypi/` — **estritamente sequencial**, depende desta auditoria.
+
+---
+
 ## Sessão 2026-07-30 — Artemis (ML-3A — Gate -v e falsificação seam Go) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md`
@@ -7120,3 +7241,4 @@ Dois breaking changes acumulados desde a `v5.0.0`, ambos de saída observável:
 
 Aponta **v6.0.0**. Migração do segundo: usar `--version` ou `version`, que funcionam nos três desde a
 v5.0.0.
+
