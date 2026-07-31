@@ -34,16 +34,17 @@ feature e dividir geraria conflito no mesmo arquivo.
 
 Consolidados da REQ (AC1–AC12). Detalhamento por microlote nas waves abaixo.
 
-- [ ] Cinco abas na navegação: Board, Chain, Metrics, ADRs, REQs
-- [ ] Aba ADRs lista 12 itens; aba REQs lista 58, com filtro em "Todos"
-- [ ] Filtro de status derivado dinamicamente da resposta de `/api/chain`
-- [ ] Busca textual por título e identificador, case- e acento-insensitive
-- [ ] Clique/Enter numa linha abre o drawer existente via `openDrawer(node.id)`
-- [ ] Acessibilidade: `aria-pressed` nas abas, linhas focáveis, `aria-label` nas sections
-- [ ] Estados vazio e de erro tratados
-- [ ] Nenhum arquivo novo em `internal/serve/static/`; nenhum endpoint novo
-- [ ] npm e pypi byte-a-byte idênticos ao canônico
-- [ ] `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes
+- [x] Cinco abas na navegação: Board, Chain, Metrics, ADRs, REQs
+- [x] Aba ADRs lista **13** itens; aba REQs lista **59**, com filtro em "Todos"
+      (12/58 na redação original; a própria ADR e REQ desta feature somaram 1 a cada)
+- [x] Filtro de status derivado dinamicamente da resposta de `/api/chain`
+- [x] Busca textual por título e identificador, case- e acento-insensitive
+- [x] Clique/Enter numa linha abre o drawer existente via `openDrawer(node.id)`
+- [x] Acessibilidade: `aria-pressed` nas abas, linhas focáveis, `aria-label` nas sections
+- [x] Estados vazio e de erro tratados
+- [x] Nenhum arquivo novo em `internal/serve/static/`; nenhum endpoint novo
+- [ ] npm e pypi byte-a-byte idênticos ao canônico *(ML-2A)*
+- [ ] `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes *(parity/quality no ML-2A)*
 
 ---
 
@@ -51,7 +52,7 @@ Consolidados da REQ (AC1–AC12). Detalhamento por microlote nas waves abaixo.
 > Dependências: nenhuma
 
 ### ML-1A — Abas ADRs e REQs em `internal/serve/static/`
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-07-31)
 **Agente:** Afrodite
 **Arquivos afetados (exclusivamente estes três):**
 - `internal/serve/static/index.html`
@@ -100,14 +101,15 @@ Consolidados da REQ (AC1–AC12). Detalhamento por microlote nas waves abaixo.
 - Não adicionar dependência, framework ou bundler.
 
 **Critérios de aceite:**
-- [ ] `make build` passa (assets são `go:embed`; o rebuild é obrigatório para ver a mudança)
-- [ ] `make test` verde
-- [ ] `make lint` sem erro
-- [ ] `git status --porcelain` mostra **exatamente** os três arquivos de `internal/serve/static/`
-- [ ] Com `bin/trackfw serve`: aba ADRs lista **12** itens e aba REQs lista **58** com filtro "Todos"
-- [ ] O ADR de status `unknown` aparece na lista com filtro "Todos"
-- [ ] Clicar numa linha abre o drawer com markdown + frontmatter renderizados
-- [ ] Navegação por teclado funciona nas abas e nas linhas
+- [x] `make build` passa (assets são `go:embed`; o rebuild é obrigatório para ver a mudança)
+- [x] `make test` verde
+- [x] `make lint` sem erro
+- [x] `git status --porcelain` mostra **exatamente** os três arquivos de `internal/serve/static/`
+- [x] Com `bin/trackfw serve`: aba ADRs lista **13** itens e aba REQs lista **59** com filtro "Todos"
+      (esperado revisado de 12/58 — a ADR e a REQ desta feature entraram na contagem)
+- [x] O ADR de status `unknown` (ADR-001) aparece na lista com filtro "Todos"
+- [x] Clicar numa linha abre o drawer com markdown + frontmatter renderizados
+- [x] Navegação por teclado funciona nas abas e nas linhas (Tab foca a linha, Enter abre o drawer)
 
 **Comandos de validação:**
 ```bash
@@ -118,6 +120,30 @@ sleep 3
 curl -s localhost:8791/api/chain | python3 -c "import json,sys;from collections import Counter;print(Counter(n['type'] for n in json.load(sys.stdin)['nodes']))"
 # esperado: Counter({'roadmap': 67, 'req': 58, 'adr': 12})
 ```
+
+---
+
+### ML-1B — Corretivo: remover bloco dark-mode das listas
+**Status:** ✅ concluído (auditado 2026-07-31)
+**Agente:** Afrodite
+**Arquivos afetados:** `internal/serve/static/style.css`
+
+**Motivo:** a auditoria visual (navegador real, SO em modo escuro) flagrou as linhas das listas
+renderizando azul-marinho com texto branco enquanto todo o resto do dashboard permanecia claro.
+
+**Causa raiz:** o ML-1A introduziu o **primeiro e único** `@media (prefers-color-scheme: dark)`
+do projeto (`git show HEAD:internal/serve/static/style.css | grep -c prefers-color-scheme` → 0).
+O dashboard é light-only por design: Tailwind via CDN sem `darkMode` e sem variantes `dark:`.
+Num SO em modo escuro só as linhas novas trocavam de tema.
+
+**Ação:** remoção integral do bloco. As regras de tema claro permanecem.
+
+**Critérios de aceite:**
+- [x] `grep -c "prefers-color-scheme" internal/serve/static/style.css` → 0
+- [x] `make build`, `make test`, `make lint` verdes
+- [x] Linhas visualmente idênticas aos cards do Board — medido: fundo `rgb(249,250,251)`,
+      texto `rgb(17,24,39)`, borda `rgb(229,231,235)` nos dois
+- [x] Chips legíveis: `unknown` ~7:1, `Accepted` ~4.6:1 (AA), `Proposed` ~6:1, `Done` ~5.7:1
 
 ---
 

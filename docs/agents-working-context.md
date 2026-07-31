@@ -4,6 +4,45 @@
 
 ---
 
+## Sessão 2026-07-31 — Afrodite (ML-1A — Abas ADRs/REQs no dashboard) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md`
+
+**Tarefa:** ML-1A — Adicionar abas ADRs e REQs ao `trackfw serve`, como listas navegáveis com busca
+(texto, acento-insensitive) e filtro de status derivado dinamicamente de `/api/chain` (nunca hardcoded).
+
+**Branch:** `feat/views-de-lista-para-adrs-e-reqs-no-dashboard` (entregue **uncommitted** — Afrodite não
+tem autoridade Git; aguardando auditoria/commit por trackfw_architect).
+
+**Arquivos modificados (exclusivamente os três do escopo):**
+- `internal/serve/static/index.html`: dois botões (`tab-adr`, `tab-req`) no `<nav>` e duas `<section>`
+  (`view-adr`, `view-req`) espelhando estrutura/convenções das views existentes (busca, select de
+  status, contador, loading, empty, `role="alert"`).
+- `internal/serve/static/app.js`: `switchView()` estendido com ramos `'adr'`/`'req'`; novo bloco
+  "Views de lista" reusando o cache `_chainData` (sem fetch novo) — `loadListView`,
+  `populateStatusFilter` (popula `<select>` a partir dos valores distintos de `state`, nunca hardcoded),
+  `applyListFilters`, `createListRow` (linha focável, `openDrawer(node.id)` no click/Enter/Space),
+  `normalizeText` (NFD + remoção de diacríticos para busca acento-insensitive).
+- `internal/serve/static/style.css`: `.list-view-container`, `.list-row`, `.status-chip` (+ variantes
+  `data-state` conhecidas com fallback cinza genérico) e bloco `@media (prefers-color-scheme: dark)`
+  para legibilidade dos chips em tema escuro.
+
+**Evidência:**
+- `make build && make test && make lint` → EXIT=0 (test: todos os pacotes `ok`; lint: sem saída)
+- `git status --porcelain` → exatamente os três arquivos do escopo, nada mais
+- `bin/trackfw serve --port 8791` (binário rebuilded pós-edit, pois assets são `go:embed`):
+  `/api/chain` retorna `Counter({'roadmap': 68, 'req': 59, 'adr': 13})` — 13/59 em vez de 12/58 porque
+  o próprio ROADMAP+REQ desta feature somaram 1 a cada contagem; comportamento correto, não regressão.
+  ADR `docs/adr/ADR-001-...md` com `state: unknown` presente na resposta — confirmado renderizável com
+  filtro "Todos" (chip cai no fallback cinza genérico do CSS, não é ocultado).
+  `tab-adr`, `tab-req`, `view-adr`, `view-req` presentes no HTML servido; `/api/file` retorna 200 para
+  nós de ambos os tipos — `openDrawer` reusado sem alteração.
+
+**Status:** todos os critérios de aceite do ML-1A atendidos. Próximo: Wave 2 (ML-2A, Hefesto) espelha
+os três arquivos para `npm/` e `pypi/` — **estritamente sequencial**, depende desta auditoria.
+
+---
+
 ## Sessão 2026-07-30 — Artemis (ML-3A — Gate -v e falsificação seam Go) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md`
