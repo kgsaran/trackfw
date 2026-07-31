@@ -22,3 +22,4 @@
 - [update-parity-gate-writes-real-claude-md-2026-07-29](update-parity-gate-writes-real-claude-md-2026-07-29.md)
 - [agente-poluindo-repo-ao-rodar-cli-manualmente-2026-07-29](agente-poluindo-repo-ao-rodar-cli-manualmente-2026-07-29.md)
 - [roadmap-new-gera-marcador-de-aceite-invalido-2026-07-31](roadmap-new-gera-marcador-de-aceite-invalido-2026-07-31.md)
+- [security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31](security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31.md)

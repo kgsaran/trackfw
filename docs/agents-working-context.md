@@ -4,6 +4,35 @@
 
 ---
 
+## Sessão 2026-07-31 — Hades (Revisão de segurança — barreira pré-Wave 2) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md`
+
+**Tarefa:** revisar exclusivamente o diff do commit `007ebab` (abas ADRs/REQs) como barreira antes de
+liberar a Wave 2 (espelhamento npm/pypi).
+
+**Veredito:** **APROVADO**. `escapeHtml()` neutraliza corretamente os três contextos usados em
+`createListRow()` (conteúdo, atributo `data-state` entre aspas duplas, e `aria-label` — este via
+`setAttribute`, que não interpreta HTML, portanto seguro mesmo sem escape). `populateStatusFilter()`
+usa `createElement`/`textContent`/`.value` — sem sink de HTML. `normalizeText()` com `\p{Diacritic}`
+é uma classe de caracteres única, sem alternância/backtracking — sem risco de ReDoS. Nenhum endpoint
+novo, nenhum código `.go` alterado, whitelist de `api_file.go` intocada. Nenhum segredo/caminho
+absoluto exposto.
+
+**Achado real, não-bloqueante (pré-existente):** `openDrawer()` faz `mdEl.innerHTML =
+marked.parse(body || raw)` sem `DOMPurify`/sanitizador — stored XSS se o **corpo** de um artefato
+markdown contiver HTML malicioso. Confirmado via `git show 007ebab~1` que o sink já era alcançável
+para nós `type === 'adr'`/`'req'` através do grafo D3 da view Chain, antes desta feature — a nova
+lista apenas adiciona um segundo caminho de navegação ao mesmo sink. Não bloqueia este commit. Nota
+detalhada em
+`vault/notes/security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31.md`. Recomendação:
+Hefesto/Zeus abrir REQ própria para sanitizar `marked.parse()` nos três CLIs antes de tratar como
+não-issue.
+
+**Próximo:** Wave 2 (ML-2A, espelhamento npm/pypi) liberada para prosseguir.
+
+---
+
 ## Sessão 2026-07-31 — Afrodite (ML-1A — Abas ADRs/REQs no dashboard) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md`
