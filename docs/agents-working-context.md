@@ -7120,3 +7120,53 @@ Dois breaking changes acumulados desde a `v5.0.0`, ambos de saída observável:
 
 Aponta **v6.0.0**. Migração do segundo: usar `--version` ou `version`, que funcionam nos três desde a
 v5.0.0.
+
+---
+
+## 2026-07-31 — Zeus — Views de lista para ADRs e REQs no dashboard (INÍCIO)
+
+**Branch:** `feat/views-de-lista-para-adrs-e-reqs-no-dashboard`
+**ADR:** `docs/adr/ADR-2026-07-31-listas-de-adr-e-req-no-dashboard-derivadas-de-api-chain.md`
+**REQ:** `docs/req/REQ-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md`
+
+### Pedido
+
+KG perguntou se seria possível ver ADRs e REQs pelo dashboard.
+
+### Diagnóstico empírico (servidor rodando, porta 8791)
+
+Já é possível — mas só pelo grafo da aba Chain. `/api/chain` devolve 137 nós
+(67 roadmaps, 58 REQs, 12 ADRs) e 118 arestas. O `id` do nó **é o caminho relativo**, e
+`openDrawer(id)` → `/api/file?path=` respondeu **200** para uma ADR. Backend pronto nos 3
+CLIs; o whitelist de `api_file` já cobre `ADRDirs`/`REQDir`/`RoadmapDir`.
+
+O gap é de navegação: 137 nós num force-directed não permitem busca dirigida.
+
+### Decisões travadas com KG (AskUserQuestion)
+
+1. **Duas abas separadas** `ADRs` e `REQs` — não uma aba "Docs" unificada (12 vs 58 itens;
+   domínios de status disjuntos).
+2. **Reusar `/api/chain`** — nenhum endpoint novo. Entrega é frontend puro.
+
+### Fato que reduziu o escopo
+
+`scripts/check-static-assets.sh` já trata `internal/serve/static/` como fonte canônica e
+exige espelho byte-a-byte em npm e pypi. Os três diretórios têm md5 idêntico hoje. Logo a
+paridade dos 3 CLIs se resolve por cópia mecânica, não por reimplementação — Wave 1
+(canônico, Afrodite) → Wave 2 (espelho + paridade, Hefesto). Sem paralelismo possível:
+arquivo canônico único.
+
+`internal/serve/serve.go:12` usa `go:embed` — o Go exige `make build` para ver a mudança;
+npm e pypi servem do disco.
+
+### Achado colateral — defeito do próprio trackfw
+
+`trackfw roadmap new` gera `**Acceptance criteria:**` (negrito), mas o validador exige o
+heading `## Acceptance Criteria` / `## Critérios de Aceite`. Todo roadmap recém-criado
+falha no `validate` ao entrar em `wip`. Contornado manualmente; **não corrigido** para não
+expandir o escopo desta REQ. Registrado em
+`vault/notes/roadmap-new-gera-marcador-de-aceite-invalido-2026-07-31.md`, que também
+documenta a regra do slug de branch (o slug precisa ser substring do nome do roadmap).
+
+**Status:** artefatos de governança commitados; Wave 1 pronta para despacho.
