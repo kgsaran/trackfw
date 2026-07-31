@@ -121,7 +121,7 @@ Consolidados da REQ (AC1–AC9). Detalhamento por microlote nas waves abaixo.
 > Dependências: **Wave 1 completa**
 
 ### ML-2A — Provar o efeito em navegador real
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-07-31)
 **Agente:** Ártemis (+ auditoria de Zeus)
 **Arquivos afetados:** nenhum de produto — apenas fixture temporária, removida ao final
 
@@ -146,13 +146,27 @@ Consolidados da REQ (AC1–AC9). Detalhamento por microlote nas waves abaixo.
 10. **Remover a fixture** e confirmar `git status --porcelain` limpo de resíduo.
 
 **Critérios de aceite:**
-- [ ] Payload inerte com sanitização ativa (flag não definida, nós removidos do DOM)
-- [ ] Payload **executa** com a sanitização removida — seam provado vivo
-- [ ] Sanitização restaurada e reconfirmada
-- [ ] Fail-safe verificado: sem DOMPurify, nada de HTML bruto
-- [ ] Markdown legítimo e links `.md` internos intactos
-- [ ] Três caminhos de abertura do drawer funcionam; console limpo
-- [ ] Nenhuma fixture residual no repositório
+- [x] Payload inerte com sanitização ativa — quatro flags `undefined`, sem `img`/`script` no DOM
+- [x] Seam provado vivo com a sanitização removida
+- [x] Sanitização restaurada e Fase 1 reconfirmada
+- [x] Fail-safe verificado: `is_plain_text: true`, nenhum vetor executa, aviso exibido
+- [x] Markdown legítimo intacto; link `.md` interno interceptado com `preventDefault`
+- [x] Três caminhos verificados **com clique real dispatchado**, não chamada direta a `openDrawer`
+- [x] Fixtures removidas; `git status --porcelain` vazio; build/test/lint verdes
+
+**Notas da auditoria de Zeus:**
+- Verificado independentemente: árvore limpa, zero diff contra `fd7459b`, sem fixture residual,
+  `DOMPurify.sanitize` e `integrity` presentes.
+- **Rigor do seam:** `__XSS_SCRIPT` **não** dispara nem com a sanitização removida — `<script>`
+  inserido via `innerHTML` nunca executa, por especificação HTML. A Ártemis identificou isso e
+  provou o vetor por **diferencial de presença do nó** (`has_script` false → true) em vez de
+  tratar a flag ausente como sucesso. Sem essa distinção a asserção seria vacuosa.
+- Os vetores decisivos foram os de **tag permitida**: `onclick` removido com `href` preservado, e
+  `href="javascript:"` neutralizado. Provam a filtragem de atributos, não só a allowlist de tags.
+- Achado colateral **não corrigido**: links `.md` relativos com `../` retornam 403 no `/api/file`
+  (o interceptador passa o href bruto). Pré-existente, merece REQ própria.
+- Armadilhas de instrumentação registradas em
+  `vault/notes/seam-xss-drawer-armadilhas-de-verificacao-2026-07-31.md`.
 
 ---
 
