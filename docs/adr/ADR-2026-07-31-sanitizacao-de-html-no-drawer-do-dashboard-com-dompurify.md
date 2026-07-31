@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-07-31
 author: "Zeus"
 ---
 
 # ADR: Sanitizacao de HTML no drawer do dashboard com DOMPurify
 
-> Date: 2026-07-31 | Status: Proposed
+> Date: 2026-07-31 | Status: Accepted
 
 ## Context
 
@@ -30,14 +30,25 @@ A questão a decidir: **como neutralizar o HTML sem quebrar o markdown legítimo
 **Sanitizar a saída de `marked.parse()` com DOMPurify antes de atribuir a `innerHTML`.**
 
 1. DOMPurify é carregado por **CDN em `index.html`**, no mesmo padrão de `marked`, `chart.js` e
-   `d3`, com **versão fixada** (nunca `@latest`) e, quando viável, `integrity` + `crossorigin`.
+   `d3`, com **versão fixada** (nunca `@latest`) e `integrity` + `crossorigin`.
+   Valores definidos em 2026-07-31: **3.4.12**,
+   `https://cdn.jsdelivr.net/npm/dompurify@3.4.12/dist/purify.min.js`,
+   SRI `sha384-piCcpDdJ7qVeK4Tv8Z6Hpcr3ZBIgP16TxQTPVfsLFdZ5uDgwc3Y8Ho7oUnqf12qu`.
+   O `integrity` é aplicado **somente** à tag do DOMPurify — nenhuma das seis tags CDN atuais o
+   possui, e estendê-lo às demais é REQ própria. Inconsistente, porém estritamente melhor, e
+   trata-se justamente da tag de um controle de segurança.
 2. A sanitização acontece em **um único ponto**, dentro de `openDrawer()`. Os três caminhos de
    acesso ao drawer — card do Board, nó do grafo Chain, linha das listas ADRs/REQs — convergem
    ali, então uma correção cobre todos.
 3. **Fail-safe explícito:** se DOMPurify não estiver disponível (CDN fora do ar, uso offline), o
    drawer **não** renderiza HTML bruto. Degrada para texto puro ou exibe erro. É proibido cair no
    caminho inseguro por ausência da dependência.
-4. A correção é **frontend puro**. `internal/serve/static/` é canônico; npm e pypi são espelhos
+4. **A prova do AC4 é seam de navegador em auditoria, não gate de CI.** `npm/package.json` não
+   tem nenhuma devDependency e não há infra de DOM; introduzir jsdom mudaria uma propriedade do
+   projeto. O seam prova o **efeito** — payload inerte com sanitização, e executando ao removê-la
+   — o que um gate de grep não faz. Trade-off aceito: não há barreira automática contra regressão
+   futura em CI.
+5. A correção é **frontend puro**. `internal/serve/static/` é canônico; npm e pypi são espelhos
    byte-a-byte. Nenhum código de servidor muda.
 
 ## Consequences

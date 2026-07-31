@@ -4,6 +4,48 @@
 
 ---
 
+## Sessão 2026-07-31 — Zeus (orquestração — XSS do drawer / DOMPurify) — INÍCIO
+
+**Branch:** `fix/sanitizar-html-do-drawer-do-dashboard-com-dompurify`
+**ADR:** `docs/adr/ADR-2026-07-31-sanitizacao-de-html-no-drawer-do-dashboard-com-dompurify.md` (Accepted)
+**REQ:** `docs/req/REQ-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md`
+
+PR #94 mergeado; branch anterior validada como squash-mergeada (diff vazio contra `origin/main`)
+e apagada. Estado limpo antes de iniciar.
+
+### Escopo
+
+Corrigir o XSS armazenado do drawer — `app.js:919` faz `innerHTML = marked.parse(...)` sem
+sanitização. Achado por Hades e confirmado pré-existente ao commit `007ebab`.
+
+### Valores verificados (não presumir — foram medidos)
+
+- DOMPurify **3.4.12**, `https://cdn.jsdelivr.net/npm/dompurify@3.4.12/dist/purify.min.js`
+- SRI `sha384-piCcpDdJ7qVeK4Tv8Z6Hpcr3ZBIgP16TxQTPVfsLFdZ5uDgwc3Y8Ho7oUnqf12qu`
+  (conferido em dois downloads independentes)
+- Global UMD: `DOMPurify`
+
+### Decisões com o usuário (AskUserQuestion)
+
+1. **AC4 é seam de navegador em auditoria, não gate de CI.** `npm/package.json` tem zero
+   devDependency e não há infra de DOM; jsdom mudaria uma propriedade do projeto. O seam prova o
+   efeito (payload inerte → remove sanitização → payload executa); um gate de grep provaria só o
+   padrão. Trade-off aceito: sem barreira automática de regressão em CI.
+2. **SRI só na tag do DOMPurify.** Nenhuma das seis tags CDN atuais tem `integrity`.
+
+### Estrutura
+
+Três waves sequenciais: ML-1A (Afrodite, sanitização canônica) → ML-2A (Ártemis, seam de
+falsificação em navegador) → ML-3A (Afrodite, espelho npm/pypi). Sem paralelismo — arquivo
+canônico único por asset, e cada wave depende do produto da anterior.
+
+Lição aplicada do ciclo anterior: adicionei o heading `## Critérios de Aceite` ao roadmap **antes**
+do `move ... wip`, e nomeei a branch a partir do slug do roadmap. Sem isso o `validate` falharia
+duas vezes — ver `vault/notes/roadmap-new-gera-marcador-de-aceite-invalido-2026-07-31.md`.
+
+---
+
 ## Sessão 2026-07-31 — Hades (Revisão de segurança — barreira pré-Wave 2) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md`

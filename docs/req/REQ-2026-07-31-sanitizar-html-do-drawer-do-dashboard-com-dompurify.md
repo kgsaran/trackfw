@@ -3,7 +3,7 @@ status: Open
 date: 2026-07-31
 author: "Zeus"
 adr: "docs/adr/ADR-2026-07-31-sanitizacao-de-html-no-drawer-do-dashboard-com-dompurify.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md"
 ---
 
 # REQ: Sanitizar HTML do drawer do dashboard com DOMPurify
@@ -118,4 +118,4 @@ ADR: docs/adr/ADR-2026-07-31-sanitizacao-de-html-no-drawer-do-dashboard-com-domp
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md
