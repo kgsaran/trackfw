@@ -4,7 +4,7 @@
 
 ---
 
-## Sessão 2026-08-01 — Zeus (orquestração — links `.md` relativos no drawer) — INÍCIO
+## Sessão 2026-08-01 — Zeus (orquestração — links `.md` relativos no drawer) — CONCLUÍDO
 
 **Branch:** `fix/corrigir-403-em-links-markdown-relativos-dentro-do-drawer`
 **ADR:** `docs/adr/ADR-2026-08-01-resolucao-de-links-markdown-relativos-...md` (Accepted)
@@ -50,6 +50,38 @@ espelhamento. Mesma forma do ciclo do DOMPurify.
 **Caso de maior risco, explicitado no roadmap:** navegação encadeada A → B → C precisa resolver
 cada salto contra o documento **então** aberto, não contra o primeiro. É o que falha numa
 implementação ingênua que fixe a base uma vez.
+
+### Execução e fechamento
+
+- **ML-1A** (Afrodite) — `resolveRelativeMdHref` + erro 403 explicativo. Commit `fd04979`.
+- **ML-2A** (Ártemis) — prova em navegador real.
+- **ML-3A** (Afrodite) — espelho npm/pypi. `make quality` exit 0, 42 cenários.
+
+### O que elevou a qualidade desta rodada
+
+**O teste encadeado foi desenhado para ser discriminante.** Eu pedi "A → B → C em diretórios
+diferentes". A Ártemis foi além: escolheu A em profundidade 2 e B em profundidade 3, com o link
+B→C sendo `../../roadmaps/done/x.md`. Com base congelada o resultado seria
+`roadmaps/done/x.md` (403); com base correta, `docs/roadmaps/done/x.md` (200). Sem essa diferença
+de profundidade o teste passaria mesmo numa implementação ingênua. Não estava no meu handoff.
+
+**Fragilidade reconhecida em vez de escondida.** A Afrodite documentou em comentário que
+`resolveRelativeMdHref` **não é idempotente** para caminho já completo, e que a segurança vem do
+isolamento do ponto de chamada, não do algoritmo. A Ártemis então **verificou** isso na prática:
+o card do Board resolve com prefixo único, não duplicado.
+
+**Separação de ruído no console.** Aviso do CDN Tailwind e 404 de favicon do próprio Chrome
+identificados como benignos e não confundidos com erro de aplicação.
+
+### Estado da fila
+
+Resta **um** follow-up: SRI nas outras cinco tags CDN do dashboard. Com ele, a fila de achados
+colaterais acumulada desde o ciclo das abas ADRs/REQs zera.
+
+### Nota operacional (repetida, vale fixar)
+
+`make quality` passa de 2 min por causa do `check-gates-falsify.sh` (42 cenários). Rodar em
+background e aguardar com until-loop — o timeout padrão do Bash tool não basta.
 
 ---
 

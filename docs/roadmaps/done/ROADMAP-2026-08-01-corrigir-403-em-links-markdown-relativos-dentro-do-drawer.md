@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-01
 req: "docs/req/REQ-2026-08-01-corrigir-403-em-links-markdown-relativos-dentro-do-drawer.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Corrigir 403 em links markdown relativos dentro do drawer
 
-> Created: 2026-08-01 | Status: wip
+> Created: 2026-08-01 | Status: done
 
 ## Context
 
@@ -50,13 +50,13 @@ Wave 1 e a Wave 3 espelha o que a Wave 2 aprovou. Sem paralelismo possível.
 
 Consolidados da REQ (AC1–AC11). Detalhamento por microlote abaixo.
 
-- [ ] Href relativo resolvido contra `dirname` do documento aberto, normalizando `.` e `..`
-- [ ] As três formas funcionam: `./X.md`, `X.md` nu, `../dir/X.md`
-- [ ] Navegação encadeada A → B → C resolve cada salto contra o documento **então** aberto
-- [ ] Fora do whitelist → mensagem explicativa com o caminho resolvido, não `Forbidden` cru
-- [ ] Links externos, âncoras e não-`.md` seguem não interceptados
-- [ ] Caminho de entrada (Board / Chain / listas) continua funcionando
-- [ ] npm e pypi byte-a-byte idênticos; `make quality` exit 0
+- [x] Href relativo resolvido contra `dirname` do documento aberto, normalizando `.` e `..`
+- [x] As três formas funcionam: `./X.md`, `X.md` nu, `../dir/X.md`
+- [x] Navegação encadeada A → B → C resolve cada salto contra o documento **então** aberto
+- [x] Fora do whitelist → mensagem explicativa com o caminho resolvido, não `Forbidden` cru
+- [x] Links externos, âncoras e não-`.md` seguem não interceptados
+- [x] Caminho de entrada (Board / Chain / listas) continua funcionando
+- [x] npm e pypi byte-a-byte idênticos; `make quality` exit 0
 
 ---
 
@@ -111,7 +111,7 @@ Consolidados da REQ (AC1–AC11). Detalhamento por microlote abaixo.
 > Dependências: **Wave 1 completa**
 
 ### ML-2A — Provar a navegação em navegador real
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Ártemis
 
 **Ações e verificações:**
@@ -135,12 +135,28 @@ Consolidados da REQ (AC1–AC11). Detalhamento por microlote abaixo.
 `getComputedStyle(el).display`.
 
 **Acceptance criteria:**
-- [ ] Caso real do repositório navega
-- [ ] Três formas relativas funcionam
-- [ ] Encadeamento A → B → C correto em cada salto
-- [ ] Fora do whitelist → mensagem explicativa, não erro cru
-- [ ] Externos e caminho de entrada intactos; console limpo
-- [ ] Fixtures removidas; `git status --porcelain` sem resíduo
+- [x] Caso real navega: `docs/req/REQ-2026-06-13-...` → `docs/roadmaps/done/v2.3-...`
+- [x] Três formas relativas funcionam (`./X.md`, `X.md` nu, `../dir/X.md`)
+- [x] Encadeamento A → B → C correto **em cada salto**
+- [x] Fora do whitelist → `Arquivo fora dos diretórios permitidos: vault/notes/...`
+- [x] Externos e os **quatro** pontos de entrada intactos; console limpo
+- [x] Fixtures removidas; `git status --porcelain` vazio; build/test/lint verdes
+
+**Notas da auditoria de Zeus:**
+- **O teste encadeado foi desenhado para ser discriminante**, não apenas para passar: A em
+  profundidade 2 (`docs/req/`), B em profundidade 3 (`docs/adr/tmp_qa_b/`), com o link B→C sendo
+  `../../roadmaps/done/tmp-qa-c.md`. Com base congelada em A o resultado seria
+  `roadmaps/done/tmp-qa-c.md` (403); com base correta, `docs/roadmaps/done/tmp-qa-c.md` (200).
+  A diferença de profundidade é o que impede o teste de ser vacuoso — mérito dela, não estava no
+  meu handoff.
+- Ela verificou o `_drawerPath` **após cada salto**, não só no final.
+- Verificou também que o card do Board resolve com **prefixo único, não duplicado** — exatamente
+  o risco do helper não-idempotente documentado no ML-1A. Confirma que o isolamento do ponto de
+  chamada segura.
+- Console: separou ruído benigno (aviso do CDN Tailwind, 404 de favicon do próprio Chrome) de
+  erro de aplicação. Zero exceções de `app.js`.
+- Verificação independente de Zeus: árvore limpa, zero fixtures residuais, `app.js` idêntico ao
+  commit `fd04979`.
 
 ---
 
@@ -148,7 +164,7 @@ Consolidados da REQ (AC1–AC11). Detalhamento por microlote abaixo.
 > Dependências: **Wave 2 aprovada**
 
 ### ML-3A — Espelhar assets para npm e pypi
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Afrodite
 **Arquivos afetados:** `npm/src/serve/static/{app.js,index.html,style.css}`, `pypi/trackfw/serve/static/{...}`
 
@@ -156,7 +172,30 @@ Cópia mecânica dos **três** arquivos do canônico, inclusive os que não muda
 byte-a-byte toda a lista derivada do canônico.
 
 **Acceptance criteria:**
-- [ ] `scripts/check-static-assets.sh` imprime `Static assets are synchronized`
-- [ ] `make quality` exit 0
-- [ ] Runtimes Node e Python servem o app.js corrigido
-- [ ] `git status --porcelain` sem arquivo inesperado
+- [x] `scripts/check-static-assets.sh` imprime `Static assets are synchronized`
+- [x] `make quality` exit 0 — 42 cenários de falsificação, incluindo `static-assets/byte-drift`
+- [x] Runtimes Node e Python servem `app.js` com `resolveRelativeMdHref`
+- [x] `git status --porcelain` mostra **2** arquivos, não 6: `index.html` e `style.css` já estavam
+      byte-idênticos nos espelhos, então o `cp` não gerou diff. Discrepância explicada
+      espontaneamente por ela, e confirmada por `cmp` na auditoria.
+
+---
+
+## Fechamento
+
+Concluído e auditado em 2026-08-01. `make quality` exit 0; falsificação 42/42.
+
+**Entrega:** links `.md` relativos passam a navegar dentro do drawer nos 3 CLIs, cobrindo
+`./X.md`, `X.md` nu e `../` encadeados. Link que resolva para fora dos diretórios permitidos
+exibe o caminho resolvido em mensagem explicativa, em vez de `Forbidden` cru.
+
+**Whitelist inalterado** — `vault/` segue fora, por decisão do usuário. Os 3 links para vault
+agora falham de forma compreensível em vez de silenciosa. Os 5 links
+`../../../requisições/claude/*.md` (legado de outro projeto, apontam para fora do repositório)
+seguem falhando, também com mensagem clara.
+
+**Fragilidade conhecida e documentada:** `resolveRelativeMdHref` **não é idempotente** para
+caminho já completo. A segurança vem do isolamento do ponto de chamada — só o interceptador de
+links do markdown o invoca; os quatro pontos de entrada chamam `openDrawer` direto. Está em
+comentário no código, e a Wave 2 confirmou empiricamente (prefixo único no card do Board).
+Quem for rotear um caminho de entrada pelo helper no futuro precisa reler isso.
