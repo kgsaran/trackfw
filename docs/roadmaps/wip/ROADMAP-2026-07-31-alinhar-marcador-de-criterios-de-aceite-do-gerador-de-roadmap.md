@@ -97,7 +97,7 @@ Consolidados da REQ (AC1–AC7). Detalhamento por microlote nas waves abaixo.
 > Dependências: nenhuma. Arquivos disjuntos — rodam simultaneamente.
 
 ### ML-1A — Gerador Go
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Apolo
 **Arquivos afetados:** `internal/generators/roadmap.go` + testes Go afetados
 
@@ -114,7 +114,7 @@ atualizar os testes Go que asseguram o template.
 - [ ] Não tocar em `npm/`, `pypi/`, `internal/config/` nem `internal/validator/`
 
 ### ML-1B — Gerador Node
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Apolo
 **Arquivos afetados:** `npm/src/generators/roadmap.js` + testes Node afetados
 
@@ -126,7 +126,7 @@ atualizar os testes Go que asseguram o template.
 - [ ] Não tocar em `internal/`, `pypi/`
 
 ### ML-1C — Gerador Python
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Apolo
 **Arquivos afetados:** `pypi/trackfw/generators/roadmap.py` + testes Python afetados
 
@@ -136,6 +136,28 @@ atualizar os testes Go que asseguram o template.
 - [ ] Idem `--from-req`
 - [ ] Blocos por ML preservados
 - [ ] Não tocar em `internal/`, `npm/`, `pypi/build/lib/`
+
+---
+
+### Auditoria da Wave 1 (Zeus, 2026-08-01)
+
+- Bloco presente **2×** em cada gerador (template simples + `--from-req`), comentário
+  byte-idêntico nos três (`sort -u` → 1 linha), **sem espaço à direita** em nenhuma linha nova.
+- `scripts/check-artifact-parity.sh` passa: 8 tipos de artefato × 3 runtimes.
+- `make quality` exit 0; `trackfw validate` verde; o gate roda em sandbox e **não** poluiu o repo.
+- Os três MLs rodaram de fato em paralelo sem colisão de arquivo.
+
+**Lacuna identificada:** só o ML-1C fixou o contrato em teste
+(`pypi/tests/test_generators_roadmap.py`). Go e Node não têm asserção sobre o bloco — nenhum teste
+quebrou porque nenhum estava acoplado ao corpo gerado. `check-artifact-parity.sh` pega
+*divergência entre* CLIs, mas **não** pega remoção coordenada nos três. É exatamente o que o
+cenário permanente do ML-2A deve cobrir.
+
+**Achado colateral reportado independentemente por dois agentes:** em `NewRoadmapFromREQ`
+(Go, ~175) o campo `req:` do frontmatter recebe apenas `filepath.Base(reqPath)`, enquanto o
+validador resolve esse valor como caminho relativo ao cwd — resultando em
+`roadmap "..." links to REQ "..." which does not exist` até o usuário editar à mão. Reproduzido
+também no Node e no Python. **Pré-existente e fora do escopo** — candidato a REQ própria.
 
 ---
 

@@ -434,6 +434,11 @@ squad: ""
 <!-- What problem does this roadmap solve? Link the REQ. -->
 REQ: ${reqPath || ''}
 
+## Acceptance Criteria
+<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
+- [ ]
+- [ ]
+
 ## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
@@ -520,6 +525,11 @@ squad: ""
 ## Context
 <!-- Derived from REQ: ${basename} -->
 REQ: ${reqPath}${adrRef}
+
+## Acceptance Criteria
+<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
+- [ ]
+- [ ]
 
 ${mlSection}
 `

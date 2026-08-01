@@ -105,6 +105,11 @@ squad: ""
 <!-- What problem does this roadmap solve? Link the REQ. -->
 REQ: %s
 
+## Acceptance Criteria
+<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
+- [ ]
+- [ ]
+
 ## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
@@ -178,6 +183,11 @@ squad: ""
 ## Context
 <!-- Derived from REQ: %s -->
 REQ: %s%s
+
+## Acceptance Criteria
+<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
+- [ ]
+- [ ]
 
 %s`, date, filepath.Base(reqPath), title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())
 
