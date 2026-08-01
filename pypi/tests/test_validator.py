@@ -1610,6 +1610,18 @@ class TestAdrNotAcceptedHelper(unittest.TestCase):
         )
         self.assertTrue(_adr_not_accepted(content))
 
+    def test_frontmatter_sem_linha_de_cabecalho(self):
+        """ML-1D (2026-08-01) — divergência A da auditoria de paridade: um ADR pode
+        ter frontmatter `status:` sem NENHUMA linha de cabeçalho '| Status: X'. É o
+        caso que discriminava o Node (que lia só o cabeçalho) do Go e do Python."""
+        from trackfw.validator import _adr_not_accepted
+
+        content = "---\nstatus: Proposed\ndate: 2026-08-01\n---\n\n# ADR: sem cabecalho\n\n## Context\nctx\n"
+        self.assertTrue(_adr_not_accepted(content))
+
+        accepted_content = "---\nstatus: Accepted\ndate: 2026-08-01\n---\n\n# ADR: sem cabecalho\n\n## Context\nctx\n"
+        self.assertFalse(_adr_not_accepted(accepted_content))
+
     def test_cabecalho_como_fallback_sem_frontmatter(self):
         """ADRs legados (ex.: ADR-001) sem bloco frontmatter continuam detectáveis
         via a linha de cabeçalho '> Date: ... | Status: X'."""
@@ -1617,6 +1629,38 @@ class TestAdrNotAcceptedHelper(unittest.TestCase):
 
         content = "**Status:** Draft\n\n> Date: 2026-08-01 | Status: Draft\n"
         self.assertTrue(_adr_not_accepted(content))
+
+    def test_cabecalho_trunca_no_proximo_pipe(self):
+        """ML-1D (2026-08-01) — paridade com Go/Node: o fallback de cabeçalho deve
+        truncar o valor no próximo ' |' (ex.: '| Status: Draft | Owner: kg'). Sem
+        truncar, _extract_adr_status devolveria 'Draft | Owner: kg', que não bate com
+        nem 'draft' nem 'proposed' após lower() -> falso-negativo divergente do Go/Node."""
+        from trackfw.validator import _adr_not_accepted, _extract_adr_status
+
+        content = "# ADR: legado\n\n> Date: 2026-08-01 | Status: Draft | Owner: kg\n"
+        self.assertEqual(_extract_adr_status(content), "Draft")
+        self.assertTrue(_adr_not_accepted(content))
+
+    def test_prosa_com_status_draft_nao_engana_quando_frontmatter_aceito(self):
+        """Regressão do falso-positivo por substring livre: um ADR com frontmatter
+        Accepted cuja prosa cita literalmente 'Status: Draft'/'Status: Proposed' não
+        deve ser classificado como não aceito (ver Go
+        TestAdrStatusIsNotAccepted_FrontmatterPrecedeProse e o teste de anchoring do
+        Node)."""
+        from trackfw.validator import _adr_not_accepted
+
+        content = (
+            "---\n"
+            "status: Accepted\n"
+            "date: 2026-08-01\n"
+            "---\n\n"
+            "# ADR: x\n\n"
+            "> Date: 2026-08-01 | Status: Accepted\n\n"
+            "## Context\n"
+            "Este ADR substitui uma proposta anterior que ficou em Status: Draft "
+            "por meses, e chegou a ser Status: Proposed antes disso.\n"
+        )
+        self.assertFalse(_adr_not_accepted(content))
 
 
 def _write_adr(adr_dir: str, basename: str, status: str) -> str:

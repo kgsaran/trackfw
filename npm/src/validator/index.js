@@ -274,26 +274,57 @@ function extractAdrHeaderStatus(content) {
   return ''
 }
 
+// extractFrontmatterField extrai o valor de um campo do bloco frontmatter YAML
+// (delimitado por "---" ... "---" no início do arquivo). Retorna '' se o frontmatter
+// estiver ausente ou o campo não existir/estiver vazio.
+function extractFrontmatterField(content, field) {
+  if (!content.startsWith('---')) return ''
+  const rest = content.slice(3)
+  const end = rest.indexOf('\n---')
+  if (end < 0) return ''
+  const block = rest.slice(0, end)
+  for (const line of block.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith(field + ':')) {
+      let val = trimmed.slice(field.length + 1).trim()
+      val = val.replace(/^["']|["']$/g, '')
+      return val
+    }
+  }
+  return ''
+}
+
+// resolveAdrStatus extrai o valor bruto do status de um ADR: frontmatter `status:`
+// primeiro — é o campo machine-readable canônico, o mesmo que os geradores (`adr new`,
+// NewADRDraft) escrevem e que a regra folder_status já usa como fonte de verdade — com
+// fallback para a linha de cabeçalho ("> Date: ... | Status: X") somente se o
+// frontmatter estiver ausente ou sem o campo (cobre ADRs legados sem frontmatter). Em um
+// ADR bem formado os dois concordam. ML-1D (2026-08-01): alinha o Node ao Go e ao
+// Python, que já liam frontmatter-first (ADR-2026-08-01-nocao-canonica-de-adr-nao-aceito).
+function resolveAdrStatus(content) {
+  const fm = extractFrontmatterField(content, 'status')
+  if (fm) return fm
+  return extractAdrHeaderStatus(content)
+}
+
 // adrNotAcceptedStatusForRule é o helper canônico de "ADR não aceito": único lugar que conhece o
 // vocabulário Draft/Proposed. Verdadeiro para ADR cujo status seja "Draft" ou "Proposed"; qualquer
 // outro status (Accepted, Superseded, Deprecated, Rejected, ...) conta como aceito por exclusão —
 // não há allowlist fechada de status aceitos.
 //
-// Decisão sobre onde ler o status: casa a linha de cabeçalho ("> Date: ... | Status: X"), não o
-// frontmatter ("status:") — mesmo mecanismo que os chamadores existentes (adrDraftStatusForRule e
-// os ~42 cenários herdados de blocked_by_draft_adr) já usam e testam; frontmatter e cabeçalho são
-// gerados em sincronia por adr.go/req.go, então ler só o cabeçalho não perde sinal em uso normal.
-// Crucial: extrai o valor de UMA linha específica (extractAdrHeaderStatus), não faz
-// content.includes('Status: Draft') sobre o documento inteiro — esse era o defeito do código
-// herdado (adrDraftStatusForRule original): um ADR com status real "Accepted" mas cuja prosa cita
-// literalmente a string "Status: Draft" (ex: este próprio ADR, que documenta o bug) seria
-// classificado como não aceito. Ver vault/notes para o caso concreto que expôs isso.
+// A fonte do status é resolveAdrStatus (frontmatter-first, fallback de cabeçalho — ver acima).
+// Crucial: o fallback de cabeçalho extrai o valor de UMA linha específica
+// (extractAdrHeaderStatus), não faz content.includes('Status: Draft') sobre o documento
+// inteiro — esse era o defeito do código herdado (adrDraftStatusForRule original): um ADR
+// com status real "Accepted" mas cuja prosa cita literalmente a string "Status: Draft"
+// (ex: este próprio ADR, que documenta o bug) seria classificado como não aceito. Ver
+// vault/notes para o caso concreto que expôs isso.
 function adrNotAcceptedStatusForRule(rule, basename, messages) {
   const p = findAdrFile(basename)
   if (!p) return { notAccepted: false, status: '', inspected: true }
   try {
     const content = fs.readFileSync(p, 'utf8')
-    const status = extractAdrHeaderStatus(content)
+    const status = resolveAdrStatus(content)
     const notAccepted = status.toLowerCase() === 'draft' || status.toLowerCase() === 'proposed'
     return { notAccepted, status, inspected: true }
   } catch (err) {
@@ -666,7 +697,7 @@ function validateREQsNotBlockedByDraftADRs() {
     const blockedADRs = parseBlockedADRs(filePath)
     for (const adrBasename of blockedADRs) {
       if (adrDraftStatusForRule(adrBasename, violations).draft) {
-        violations.push(`REQ ${path.basename(filePath)} is blocked by Draft ADR: ${adrBasename}`)
+        violations.push(`REQ ${path.basename(filePath)} is blocked by not-accepted ADR: ${adrBasename}`)
       }
     }
   }
@@ -1337,14 +1368,19 @@ async function getStatus() {
       for (const w of staleWIPs) out += `   ${w}\n`
     }
 
+    // Seção: REQs bloqueadas por ADRs não aceitos (Draft ou Proposed). O status exibido por
+    // ADR é resolvido via adrNotAcceptedStatusForRule (helper canônico) em vez de hardcodar
+    // "Draft" — blockedREQs() cobre ambos os status desde que delega em adrIsDraft/
+    // adrDraftStatusForRule, e um rótulo fixo "(Draft)" mentiria para um ADR Proposed.
     const blockedByDraft = blockedREQs()
     const blockedKeys = Object.keys(blockedByDraft)
     if (blockedKeys.length > 0) {
-      out += `\n⏳ REQs blocked by Draft ADRs (${blockedKeys.length})\n`
+      out += `\n⏳ REQs blocked by not-accepted ADRs (${blockedKeys.length})\n`
       for (const reqFile of blockedKeys) {
         out += `   ${reqFile}\n`
         for (const adr of blockedByDraft[reqFile]) {
-          out += `     → ${adr} (Draft)\n`
+          const { status } = adrNotAcceptedStatusForRule('blocked_by_draft_adr', adr, null)
+          out += `     → ${adr} (${status})\n`
         }
       }
     }
@@ -1416,4 +1452,7 @@ module.exports = {
   adrNotAcceptedStatusForRule,
   reqStatusEquals,
   validateADRAcceptedWhenREQDone,
+  // ML-1D (2026-08-01 — reconciliação de paridade: frontmatter-first)
+  extractFrontmatterField,
+  resolveAdrStatus,
 }

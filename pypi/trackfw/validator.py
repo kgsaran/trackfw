@@ -396,9 +396,14 @@ def _extract_adr_status(content: str) -> str:
         return fm_status
     marker = "| Status: "
     for line in content.split("\n"):
-        idx = line.find(marker)
+        trimmed = line.strip()
+        idx = trimmed.find(marker)
         if idx >= 0:
-            return line[idx + len(marker):].strip()
+            rest = trimmed[idx + len(marker):]
+            pipe_idx = rest.find(" |")
+            if pipe_idx >= 0:
+                rest = rest[:pipe_idx]
+            return rest.strip()
     return ""
 
 
@@ -911,14 +916,12 @@ def validate_reqs_not_blocked_by_draft_adrs(cfg: dict) -> list:
         blocked_adrs = _parse_blocked_adrs(file_path)
         for adr_basename in blocked_adrs:
             if _adr_draft_status_for_rule(adr_basename, cfg, violations)[0]:
-                # NOTA DE PARIDADE (2026-08-01): texto mantido igual ao Node ("is
-                # blocked by Draft ADR:"), que também não alterou esta string ao
-                # ampliar a detecção para Proposed. O Go mudou para "is blocked by
-                # not-accepted ADR:". Divergência real entre os 3 CLIs — reconciliar
-                # na Wave 2 (barreira de paridade).
+                # ML-1D (2026-08-01): reconciliação de paridade — "Draft" saiu porque a
+                # regra cobre Proposed também; texto agora byte-idêntico ao Go/Node
+                # ("is blocked by not-accepted ADR:").
                 violations.append({
                     "type": "violation",
-                    "message": f"REQ {name} is blocked by Draft ADR: {adr_basename}"
+                    "message": f"REQ {name} is blocked by not-accepted ADR: {adr_basename}"
                 })
     return violations
 
@@ -1096,17 +1099,11 @@ def validate_adr_accepted_when_req_done(cfg: dict) -> list:
             continue
         if _adr_not_accepted(adr_content):
             status = _extract_adr_status(adr_content) or "unknown"
-            # NOTA DE PARIDADE (2026-08-01): a mensagem diverge entre os 3 CLIs neste
-            # momento — Go emite "REQ %s is Done but linked ADR %s is not accepted"
-            # (sem sufixo de status); Node emite
-            # 'REQ "%s" is Done but linked ADR "%s" is not accepted (status: %s)' (com
-            # aspas). Esta escolha ("linked", minúsculo, com sufixo de status, sem
-            # aspas) é a interseção mais próxima das duas, mas não é idêntica a
-            # nenhuma — reconciliação é responsabilidade da Wave 2 (barreira de
-            # paridade, ML-2A) via scripts/check-validate-parity.sh.
+            # ML-1D (2026-08-01): reconciliação de paridade — texto agora byte-idêntico
+            # ao Go/Node: aspas em torno dos dois basenames + sufixo "(status: X)".
             violations.append({
                 "type": "violation",
-                "message": f"REQ {req_name} is Done but linked ADR {adr_basename} is not accepted (status: {status})"
+                "message": f'REQ "{req_name}" is Done but linked ADR "{adr_basename}" is not accepted (status: {status})'
             })
     return violations
 

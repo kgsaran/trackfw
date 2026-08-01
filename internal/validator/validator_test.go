@@ -325,11 +325,49 @@ func TestGetStatus_REQsBloqueadas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStatus erro: %v", err)
 	}
-	if !strings.Contains(output, "⏳ REQs blocked by Draft ADRs") {
+	if !strings.Contains(output, "⏳ REQs blocked by not-accepted ADRs") {
 		t.Error("output não contém seção de REQs bloqueadas")
 	}
-	if !strings.Contains(output, "ADR-2026-06-12-auth.md") {
-		t.Error("output não menciona o ADR bloqueante")
+	if !strings.Contains(output, "ADR-2026-06-12-auth.md (Draft)") {
+		t.Error("output não menciona o ADR bloqueante com o status Draft")
+	}
+}
+
+// TestGetStatus_REQsBloqueadasPorADRProposed — REQ Open com ADR Proposed aparece na seção
+// ⏳ com o status real "(Proposed)", não o literal "(Draft)". ML-1E (2026-08-01): o resumo
+// hardcodava "(Draft)" para qualquer ADR não aceito — corrigido para exibir o status
+// resolvido via adrStatusForRule.
+func TestGetStatus_REQsBloqueadasPorADRProposed(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/req",
+		"docs/adr",
+		"docs/roadmaps/wip",
+		"docs/roadmaps/blocked",
+		"docs/roadmaps/done",
+	)
+	chdir(t, dir)
+
+	// ADR Proposed
+	adrContent := "# ADR: Auth\n\n> Date: 2026-06-12 | Status: Proposed\n"
+	writeFile(t, dir, "docs/adr/ADR-2026-06-12-auth.md", adrContent)
+
+	// REQ bloqueada (Status: Open + seção ## Blocked by ADRs)
+	reqContent := "# REQ: Login\n\n> Date: 2026-06-12 | Status: Open | Blocked by ADRs: 1\n\n## Blocked by ADRs\n- ADR-2026-06-12-auth.md (Proposed)\n\n## Linked Roadmap\nRoadmap: \n"
+	writeFile(t, dir, "docs/req/REQ-2026-06-12-login.md", reqContent)
+
+	output, err := GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus erro: %v", err)
+	}
+	if !strings.Contains(output, "⏳ REQs blocked by not-accepted ADRs") {
+		t.Error("output não contém seção de REQs bloqueadas")
+	}
+	if !strings.Contains(output, "ADR-2026-06-12-auth.md (Proposed)") {
+		t.Error("output deveria mostrar o status real (Proposed), não (Draft)")
+	}
+	if strings.Contains(output, "ADR-2026-06-12-auth.md (Draft)") {
+		t.Error("output rotulou incorretamente um ADR Proposed como (Draft)")
 	}
 }
 
@@ -1880,6 +1918,23 @@ func TestADRAcceptedWhenREQDone_FrontmatterStatusVazio_CaiParaCabecalho(t *testi
 	}
 	if len(violations) == 0 {
 		t.Fatal("esperava violation: REQ Done via cabeçalho (frontmatter status vazio) + ADR Proposed")
+	}
+}
+
+// TestAdrStatusIsNotAccepted_FrontmatterOnly_SemLinhaDeCabecalho — ML-1D, divergência A
+// da auditoria de paridade: um ADR pode ter frontmatter `status:` sem nenhuma linha de
+// cabeçalho "| Status: X" (ex.: cabeçalho reescrito ou omitido). O resultado deve vir
+// do frontmatter, não exigir o cabeçalho como pré-condição. Este é o caso que
+// discriminava o Node (que lia só a linha de cabeçalho) do Go e do Python.
+func TestAdrStatusIsNotAccepted_FrontmatterOnly_SemLinhaDeCabecalho(t *testing.T) {
+	content := "---\nstatus: Proposed\ndate: 2026-08-01\n---\n\n# ADR: sem cabeçalho\n\n## Context\nctx\n"
+	if !adrStatusIsNotAccepted(content) {
+		t.Error("esperava true a partir do frontmatter mesmo sem linha de cabeçalho '| Status:'")
+	}
+
+	acceptedContent := "---\nstatus: Accepted\ndate: 2026-08-01\n---\n\n# ADR: sem cabeçalho\n\n## Context\nctx\n"
+	if adrStatusIsNotAccepted(acceptedContent) {
+		t.Error("frontmatter Accepted sem linha de cabeçalho não deve ser tratado como não-aceito")
 	}
 }
 

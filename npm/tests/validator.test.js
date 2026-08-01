@@ -1107,6 +1107,31 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     })
   })
 
+  // ML-1D (2026-08-01) — divergência A da auditoria de paridade: o Node lia só a linha
+  // de cabeçalho ("| Status: X"), ignorando o frontmatter. Um ADR com frontmatter
+  // `status:` e SEM nenhuma linha de cabeçalho é o caso que discriminava o Node do Go e
+  // do Python. Esta prova de teste falha antes da correção (com extractAdrHeaderStatus
+  // como única fonte, o status resolvido seria '' -> não-aceito ficaria false).
+  test('adr_accepted_when_req_done: ADR com frontmatter status e SEM linha de cabeçalho -> resolve pelo frontmatter', () => {
+    withTmpProject((tmp) => {
+      const adrContent = `---\nstatus: Proposed\ndate: 2026-08-01\nauthor: ""\n---\n\n# ADR: sem cabeçalho\n\n## Context\ncontext\n`
+      fs.writeFileSync(path.join(tmp, 'docs', 'adr', 'ADR-2026-08-01-fixture.md'), adrContent)
+      writeReq(tmp, 'REQ-2026-08-01-fixture.md', 'Done', 'ADR-2026-08-01-fixture.md')
+
+      // Pré-condição: prova que a fixture de fato não tem linha "| Status: ".
+      assert(!adrContent.includes('| Status: '), 'pré-condição: fixture não deve ter linha de cabeçalho')
+
+      const violations = validator.validateADRAcceptedWhenREQDone()
+      assert.strictEqual(violations.length, 1,
+        `esperava violation resolvida via frontmatter mesmo sem cabeçalho; got ${JSON.stringify(violations)}`)
+    })
+  })
+
+  test('resolveAdrStatus: frontmatter presente e sem linha de cabeçalho -> resolve pelo frontmatter', () => {
+    const content = '---\nstatus: Accepted\ndate: 2026-08-01\n---\n\n# ADR: sem cabeçalho\n\n## Context\nctx\n'
+    assert.strictEqual(validator.resolveAdrStatus(content), 'Accepted')
+  })
+
   test('extractAdrHeaderStatus: ancorado na linha de cabeçalho, ignora ocorrências soltas no corpo', () => {
     const content = 'texto solto contendo Status: Draft em algum lugar\n\n> Date: 2026-08-01 | Status: Accepted\n'
     assert.strictEqual(validator.extractAdrHeaderStatus(content), 'Accepted')
@@ -1115,6 +1140,44 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
   test('adr_accepted_when_req_done: registrada em config.defaults() com severidade error', () => {
     const defaults = config.defaults()
     assert.strictEqual(defaults.rules.adr_accepted_when_req_done, 'error')
+  })
+
+  // ML-1E (2026-08-01) — o bloco de resumo de getStatus() hardcodava "(Draft)" para
+  // qualquer ADR não aceito, mesmo quando o status real era "Proposed". Um ADR Proposed
+  // bloqueador deve aparecer com o status real "(Proposed)", nunca "(Draft)".
+  await testAsync('getStatus: REQ bloqueada por ADR Proposed exibe "(Proposed)" no resumo, não "(Draft)"', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-status-proposed-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'blocked'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+      fs.writeFileSync(
+        path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nadr_dirs:\n  - docs/adr\nroadmap_dir: docs/roadmaps\n'
+      )
+
+      writeAdr(tmp, 'ADR-2026-08-01-fixture.md', 'Proposed')
+      const reqContent = `---\nstatus: Open\ndate: 2026-08-01\nauthor: ""\nadr: ""\n---\n\n# REQ: fixture\n\n> Date: 2026-08-01 | Status: Open\n\n## Motivation\n\n## Acceptance Criteria\n- [ ]\n\n## Linked ADR\nADR:\n\n## Blocked by ADRs\n- ADR-2026-08-01-fixture.md (Proposed)\n\n## Linked Roadmap\nRoadmap:\n`
+      fs.writeFileSync(path.join(tmp, 'docs', 'req', 'REQ-2026-08-01-fixture.md'), reqContent)
+
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const out = await validator.getStatus()
+        assert(out.includes('⏳ REQs blocked by not-accepted ADRs'),
+          `resumo deve usar o cabeçalho neutro; got: ${out}`)
+        assert(out.includes('ADR-2026-08-01-fixture.md (Proposed)'),
+          `resumo deve mostrar o status real (Proposed); got: ${out}`)
+        assert(!out.includes('ADR-2026-08-01-fixture.md (Draft)'),
+          `regressao: resumo rotulou um ADR Proposed como (Draft); got: ${out}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
   console.log(`\n${passed} passed, ${failed} failed, ${skipped} xfail`)

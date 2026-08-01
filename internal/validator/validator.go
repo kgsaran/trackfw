@@ -776,14 +776,18 @@ func GetStatus() (string, error) {
 			}
 		}
 
-		// Seção: REQs bloqueadas por ADRs Draft
+		// Seção: REQs bloqueadas por ADRs não aceitos (Draft ou Proposed). O status exibido
+		// por ADR é resolvido via adrStatusForRule (helper canônico) em vez de hardcodar
+		// "Draft" — blockedREQs() cobre ambos os status desde que passou a delegar em
+		// adrDraftStatusForRule, e um rótulo fixo "(Draft)" mentiria para um ADR Proposed.
 		blockedByDraft, err := blockedREQs()
 		if err == nil && len(blockedByDraft) > 0 {
-			sb.WriteString(fmt.Sprintf("\n⏳ REQs blocked by Draft ADRs (%d)\n", len(blockedByDraft)))
+			sb.WriteString(fmt.Sprintf("\n⏳ REQs blocked by not-accepted ADRs (%d)\n", len(blockedByDraft)))
 			for reqFile, adrs := range blockedByDraft {
 				sb.WriteString(fmt.Sprintf("   %s\n", reqFile))
 				for _, adr := range adrs {
-					sb.WriteString(fmt.Sprintf("     → %s (Draft)\n", adr))
+					status, _ := adrStatusForRule("blocked_by_draft_adr", adr, nil)
+					sb.WriteString(fmt.Sprintf("     → %s (%s)\n", adr, status))
 				}
 			}
 		}
@@ -1252,9 +1256,12 @@ func adrIsDraft(adrBasename string) bool {
 // do documento, inclusive em prosa (ex.: uma seção de Contexto mencionando "estava em
 // Status: Draft") — um falso positivo que piora ao somar "Proposed", string bem mais
 // comum em texto corrido. A extração por linha de cabeçalho evita essa classe de erro.
-func adrStatusIsNotAccepted(content string) bool {
+// resolveAdrStatus extrai o valor bruto do status de um ADR: frontmatter `status:`
+// primeiro, com fallback para a linha de cabeçalho "> Date: ... | Status: X". Retorna
+// string vazia se nenhuma das duas fontes tiver o campo.
+func resolveAdrStatus(content string) string {
 	if status := extractFrontmatterField(content, "status"); status != "" {
-		return strings.EqualFold(status, "Draft") || strings.EqualFold(status, "Proposed")
+		return status
 	}
 	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -1266,10 +1273,33 @@ func adrStatusIsNotAccepted(content string) bool {
 		if pipeIdx := strings.Index(rest, " |"); pipeIdx >= 0 {
 			rest = rest[:pipeIdx]
 		}
-		rest = strings.TrimSpace(rest)
-		return strings.EqualFold(rest, "Draft") || strings.EqualFold(rest, "Proposed")
+		return strings.TrimSpace(rest)
 	}
-	return false
+	return ""
+}
+
+func adrStatusIsNotAccepted(content string) bool {
+	status := resolveAdrStatus(content)
+	return strings.EqualFold(status, "Draft") || strings.EqualFold(status, "Proposed")
+}
+
+// adrStatusForRule resolve o basename do ADR nos adrDirs configurados e retorna o valor
+// bruto do status (via resolveAdrStatus). O segundo retorno indica se a resolução foi
+// bem-sucedida (ADR não encontrado conta como sucesso, com status vazio).
+func adrStatusForRule(rule, adrBasename string, msgs *[]string) (string, bool) {
+	cfg := config.Load()
+	p := findADRFile(adrBasename, cfg.ADRDirs)
+	if p == "" {
+		return "", true
+	}
+	content, err := os.ReadFile(p)
+	if err != nil {
+		if msgs != nil {
+			*msgs = append(*msgs, inspectionDiagnostic(rule, p, err))
+		}
+		return "", false
+	}
+	return resolveAdrStatus(string(content)), true
 }
 
 // adrDraftStatusForRule resolve o basename do ADR nos adrDirs configurados e aplica
@@ -1277,19 +1307,11 @@ func adrStatusIsNotAccepted(content string) bool {
 // histórica — usado por 3 chamadores, incluindo adrIsDraft), hoje cobre Draft e
 // Proposed via o helper canônico, não apenas Draft.
 func adrDraftStatusForRule(rule, adrBasename string, msgs *[]string) (bool, bool) {
-	cfg := config.Load()
-	p := findADRFile(adrBasename, cfg.ADRDirs)
-	if p == "" {
-		return false, true
-	}
-	content, err := os.ReadFile(p)
-	if err != nil {
-		if msgs != nil {
-			*msgs = append(*msgs, inspectionDiagnostic(rule, p, err))
-		}
+	status, ok := adrStatusForRule(rule, adrBasename, msgs)
+	if !ok {
 		return false, false
 	}
-	return adrStatusIsNotAccepted(string(content)), true
+	return strings.EqualFold(status, "Draft") || strings.EqualFold(status, "Proposed"), true
 }
 
 // extractFrontmatterField extrai o valor de um campo do bloco frontmatter YAML.
@@ -1634,8 +1656,12 @@ func validateADRAcceptedWhenREQDone() ([]string, error) {
 		}
 		adrBasename := filepath.Base(adrRef)
 		reqBasename := filepath.Base(path)
-		if notAccepted, _ := adrDraftStatusForRule("adr_accepted_when_req_done", adrBasename, &violations); notAccepted {
-			violations = append(violations, fmt.Sprintf("REQ %s is Done but linked ADR %s is not accepted", reqBasename, adrBasename))
+		status, ok := adrStatusForRule("adr_accepted_when_req_done", adrBasename, &violations)
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(status, "Draft") || strings.EqualFold(status, "Proposed") {
+			violations = append(violations, fmt.Sprintf("REQ %q is Done but linked ADR %q is not accepted (status: %s)", reqBasename, adrBasename, status))
 		}
 	}
 	return violations, nil
