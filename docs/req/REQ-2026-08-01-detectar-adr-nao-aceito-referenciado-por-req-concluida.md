@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-01
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-01-nocao-canonica-de-adr-nao-aceito-e-regra-de-aceite-exigido-por-req-concluida.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md"
 ---
 
 # REQ: Detectar ADR nao aceito referenciado por REQ concluida
@@ -108,4 +108,4 @@ ADR: docs/adr/ADR-2026-08-01-nocao-canonica-de-adr-nao-aceito-e-regra-de-aceite-
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md

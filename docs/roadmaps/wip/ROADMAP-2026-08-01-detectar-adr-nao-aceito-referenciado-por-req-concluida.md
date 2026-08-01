@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-08-01
 req: "docs/req/REQ-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Detectar ADR nao aceito referenciado por REQ concluida
 
-> Created: 2026-08-01 | Status: backlog
+> Created: 2026-08-01 | Status: wip
 
 ## Context
 
