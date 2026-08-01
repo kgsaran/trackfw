@@ -72,6 +72,7 @@ class TestGenerateFlat(unittest.TestCase):
         with open(path, encoding="utf-8") as f:
             content = f.read()
         self.assertIn("status: backlog", content)
+        self.assertIn('req: ""', content)
         self.assertIn("# Roadmap: Minha Feature", content)
         self.assertIn("## Wave 1", content)
         self.assertIn("ML-1A", content)
@@ -91,7 +92,7 @@ class TestGenerateFlat(unittest.TestCase):
         with open(path, encoding="utf-8") as f:
             content = f.read()
 
-        self.assertIn('req: ""', content)
+        self.assertIn('req: "docs/req/REQ-linked.md"', content)
         self.assertIn("REQ: docs/req/REQ-linked.md", content)
 
     def test_generate_from_req_derives_title_criteria_and_adr(self):
@@ -116,8 +117,9 @@ class TestGenerateFlat(unittest.TestCase):
         with open(path, encoding="utf-8") as f:
             content = f.read()
 
-        self.assertIn('req: "REQ-checkout.md"', content)
+        self.assertIn(f'req: "{req_path}"', content)
         self.assertIn("# Roadmap: Checkout seguro", content)
+        self.assertIn("<!-- Derived from REQ: REQ-checkout.md -->", content)
         self.assertIn(f"REQ: {req_path}", content)
         self.assertIn("ADR: docs/adr/ADR-checkout.md", content)
         self.assertIn("### ML-1A — Validar token de pagamento", content)

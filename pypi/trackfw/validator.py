@@ -934,7 +934,7 @@ def validate_ref_targets_exist(cfg: dict) -> list:
             if content is None:
                 continue
             ref = _extract_ref_path(content, "REQ")
-            if ref and not _reference_exists(ref, [cfg.get("req_dir", "docs/req")]):
+            if ref and not _reference_exists(ref):
                 warnings.append({
                     "type": "warning",
                     "message": f'roadmap "{name}" links to REQ "{ref}" which does not exist'
@@ -947,16 +947,13 @@ def validate_ref_targets_exist(cfg: dict) -> list:
             continue
         name = os.path.basename(file_path)
         adr_ref = _extract_ref_path(content, "ADR")
-        adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
-        if adr_ref and not _reference_exists(adr_ref, adr_dirs):
+        if adr_ref and not _reference_exists(adr_ref):
             warnings.append({
                 "type": "warning",
                 "message": f'req "{name}" links to ADR "{adr_ref}" which does not exist'
             })
         roadmap_ref = _extract_ref_path(content, "Roadmap")
-        if roadmap_ref and not _reference_exists(
-            roadmap_ref, [cfg.get("roadmap_dir", "docs/roadmaps")]
-        ):
+        if roadmap_ref and not _reference_exists(roadmap_ref):
             warnings.append({
                 "type": "warning",
                 "message": f'req "{name}" links to Roadmap "{roadmap_ref}" which does not exist'
@@ -965,7 +962,7 @@ def validate_ref_targets_exist(cfg: dict) -> list:
     return warnings
 
 
-def _reference_exists(ref: str, roots: list[str]) -> bool:
+def _reference_exists(ref: str) -> bool:
     return os.path.exists(os.path.expanduser(ref))
 
 

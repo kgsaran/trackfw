@@ -1459,7 +1459,7 @@ func validateRefTargetsExist() ([]string, error) {
 				continue
 			}
 			if ref := extractRefPath(string(content), "REQ"); ref != "" {
-				if !referenceExists(ref, []string{cfg.REQDir}) {
+				if !referenceExists(ref) {
 					warnings = append(warnings, fmt.Sprintf("roadmap %q links to REQ %q which does not exist", name, ref))
 				}
 			}
@@ -1475,12 +1475,12 @@ func validateRefTargetsExist() ([]string, error) {
 		s := string(content)
 		name := filepath.Base(reqPath)
 		if ref := extractRefPath(s, "ADR"); ref != "" {
-			if !referenceExists(ref, cfg.ADRDirs) {
+			if !referenceExists(ref) {
 				warnings = append(warnings, fmt.Sprintf("req %q links to ADR %q which does not exist", name, ref))
 			}
 		}
 		if ref := extractRefPath(s, "Roadmap"); ref != "" {
-			if !referenceExists(ref, []string{cfg.RoadmapDir}) {
+			if !referenceExists(ref) {
 				warnings = append(warnings, fmt.Sprintf("req %q links to Roadmap %q which does not exist", name, ref))
 			}
 		}
@@ -1488,7 +1488,7 @@ func validateRefTargetsExist() ([]string, error) {
 	return warnings, nil
 }
 
-func referenceExists(ref string, roots []string) bool {
+func referenceExists(ref string) bool {
 	expandedRef := config.ExpandPath(ref)
 	if _, err := os.Stat(expandedRef); err == nil {
 		return true

@@ -4,6 +4,99 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (orquestração — falso-positivo ref_targets_exist) — CONCLUÍDO
+
+**Branch:** `fix/corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req`
+**ADR:** `docs/adr/ADR-2026-08-01-caminho-completo-no-campo-req-...md` (Accepted)
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-...md`
+
+PR #96 mergeado; branch anterior apagada; `origin/main` em `b2d33b6`.
+
+### Confirmação de que o ciclo anterior funcionou
+
+O roadmap deste ciclo saiu do gerador **já com** `## Acceptance Criteria`. Primeiro ciclo em
+quatro que **não** precisou de contorno manual. (Atenção: `/tmp/tfw` estava obsoleto e me enganou
+por um momento — rebuild obrigatório após merge.)
+
+### Escopo
+
+Corrigir o falso-positivo `ref_targets_exist` no `--from-req`. Causa raiz já vinha documentada por
+Ártemis; **verifiquei por reprodução** em diretório limpo antes de planejar:
+
+```
+frontmatter → req: "REQ-....md"           ← basename
+corpo       → REQ: docs/req/REQ-....md    ← correto
+validate    → links to REQ "..." which does not exist
+```
+
+### Decisão do usuário (AskUserQuestion)
+
+Contrato = **caminho completo**. O parâmetro `roots` de `referenceExists` é **removido**, não
+implementado — validação segue estrita. Rejeitadas: tolerar basename (afrouxa e é ambíguo com
+`ADRDirs` plural) e mudar `extractRefPath` (trata o sintoma no lugar errado).
+
+### Quarto bug descoberto no próprio setup
+
+`roadmap new --title <t> --req <path>` grava `req: ""` **vazio** no frontmatter. Como
+`extractRefPath` tem early-return para vazio, **nenhuma** violação dispara — falso-**negativo**,
+complementar ao falso-positivo do `--from-req`. Mesmo campo, mesmos arquivos: **incorporado**
+como AC2b em vez de virar ciclo separado. Este roadmap é a prova viva — foi gerado com `--req` e
+saiu com `req: ""`.
+
+### Risco herdado a confirmar (não presumir)
+
+Os 6 cenários `roadmap-acceptance-heading/*/from-req` do PR #96 rodam hoje com
+`ref_targets_exist` **co-ocorrendo**. A nota de vault prevê que a correção não os quebra, porque
+o `assert_fails_with` casa a substring de `wip_acceptance`. **A Wave 2 confirma empiricamente.**
+
+### Execução e fechamento
+
+- **Wave 1 — 3 MLs em paralelo** (Apolo × 3), um por CLI. Commit `1b82d99`.
+- **Wave 2 — barreira** (Ártemis): dois cenários de falsificação, contador **30 → 42**.
+
+### Quatro defeitos fechados
+
+1. Falso-**positivo** do `--from-req` (basename no frontmatter).
+2. Falso-**negativo** do `--req` simples (`req: ""` vazio) — descoberto no próprio setup.
+3. Parâmetro `roots` morto, que enganava três chamadores em cada CLI.
+4. Comentário obsoleto no gate, que passaria a afirmar o oposto do cenário recém-adicionado —
+   a Ártemis pegou e reescreveu.
+
+### Falsificação independente (auditoria de Zeus)
+
+Não aceitei 42 OK como prova. Reverti o gerador Go para `filepath.Base(reqPath)`:
+
+```
+EXIT=1
+FAIL [falsify/roadmap-req-frontmatter-path/go/from-req-baseline]: ciclo limpo saiu com 1, esperava 0
+```
+
+O braço de **baseline** é o que detecta. Restaurado: 42/42, `make quality` exit 0.
+
+### Convergência independente como sinal de handoff preciso
+
+Os três agentes, sem se comunicarem, decidiram igual sobre manter o basename no comentário
+`<!-- Derived from REQ: -->` — leitura humana, não campo validado. Paridade textual preservada
+sem coordenação, o que indica que o handoff estava suficientemente específico.
+
+### Correção do handoff pela executora
+
+Eu havia sugerido casar o padrão `does not exist`. A Ártemis usou o texto completo
+`links to REQ "REQ-flag-source.md" which does not exist` — mais discriminante, porque o genérico
+casaria também as violações irmãs de ADR/Roadmap ausentes. Correção dela, e correta.
+
+### Detalhe operacional
+
+`check-gates-falsify.sh` agora leva **mais de 2 min** — acima do timeout padrão do Bash tool.
+Rodar em background (`run_in_background`) e aguardar com until-loop.
+
+### Fila de follow-ups (sem REQ)
+
+1. Links `.md` relativos com `../` retornam 403 no `/api/file` do dashboard.
+2. SRI nas outras cinco tags CDN do dashboard.
+
+---
+
 ## Sessão 2026-08-01 — Zeus (orquestração — marcador de aceite do gerador) — CONCLUÍDO
 
 **Branch:** `fix/alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap`

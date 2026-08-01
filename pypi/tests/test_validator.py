@@ -526,6 +526,48 @@ class TestValidatorImprovements(unittest.TestCase):
         warnings = validate_ref_targets_exist(cfg)
         self.assertTrue(any("ROADMAP-001.md" in w["message"] for w in warnings))
 
+    def test_validate_ref_targets_rejects_frontmatter_basename_req(self):
+        """
+        Regressão: req: "<basename>" no frontmatter deve continuar reprovando
+        mesmo quando o corpo (REQ: <caminho completo>) aponta para uma REQ
+        que de fato existe. O extrator lê o primeiro campo casado (frontmatter
+        precede corpo), então basename no frontmatter nunca pode ser tolerado
+        por _reference_exists — ver ADR-2026-08-01.
+        """
+        from trackfw.validator import validate_ref_targets_exist
+
+        req_dir = os.path.join(self.tmp, "docs", "req")
+        roadmap_wip = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        os.makedirs(req_dir)
+        os.makedirs(roadmap_wip)
+
+        req_basename = "REQ-2026-08-01-fonte.md"
+        req_full_path = os.path.join(req_dir, req_basename)
+        with open(req_full_path, "w") as f:
+            f.write("# REQ: Fonte\n")
+
+        with open(os.path.join(roadmap_wip, "ROADMAP-002.md"), "w") as f:
+            f.write(
+                "---\n"
+                f'req: "{req_basename}"\n'
+                "---\n"
+                "# Roadmap\n"
+                f"REQ: {req_full_path}\n"
+            )
+
+        cfg = {
+            "adr_dirs": [os.path.join(self.tmp, "docs", "adr")],
+            "req_dir": req_dir,
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        warnings = validate_ref_targets_exist(cfg)
+        self.assertTrue(
+            any(req_basename in w["message"] for w in warnings),
+            f"esperava warning citando basename '{req_basename}'; warnings={warnings}",
+        )
+
     def test_validate_folder_status_coherence_warning(self):
         """Arquivo em wip/ com status: Done gera warning."""
         from trackfw import config as cfg_mod

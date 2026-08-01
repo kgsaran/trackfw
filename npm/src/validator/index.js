@@ -754,7 +754,7 @@ function validateRefTargetsExist() {
       const content = readFileForRule('ref_targets_exist', path.join(dir, name), warnings)
       if (content === null) continue
       const ref = extractRefPath(content, 'REQ')
-      if (ref && !referenceExists(ref, [cfg.reqDir])) {
+      if (ref && !referenceExists(ref)) {
         warnings.push(`roadmap "${name}" links to REQ "${ref}" which does not exist`)
       }
     }
@@ -766,11 +766,11 @@ function validateRefTargetsExist() {
     if (content === null) continue
     const name = path.basename(filePath)
     const adrRef = extractRefPath(content, 'ADR')
-    if (adrRef && !referenceExists(adrRef, cfg.adrDirs)) {
+    if (adrRef && !referenceExists(adrRef)) {
       warnings.push(`req "${name}" links to ADR "${adrRef}" which does not exist`)
     }
     const roadmapRef = extractRefPath(content, 'Roadmap')
-    if (roadmapRef && !referenceExists(roadmapRef, [cfg.roadmapDir])) {
+    if (roadmapRef && !referenceExists(roadmapRef)) {
       warnings.push(`req "${name}" links to Roadmap "${roadmapRef}" which does not exist`)
     }
   }
@@ -778,7 +778,7 @@ function validateRefTargetsExist() {
   return warnings
 }
 
-function referenceExists(ref, roots) {
+function referenceExists(ref) {
   const expandedRef = config.expandPath ? config.expandPath(ref) : ref
   if (fs.existsSync(expandedRef)) return true
   return false

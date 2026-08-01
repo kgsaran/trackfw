@@ -83,7 +83,25 @@ NÃO quebra aquele cenário: só reduz o cenário `from-req` corrompido de 2 vio
 (a que o cenário verifica). Confirmado empiricamente nesta sessão — ver o roadmap ML-2A
 para os dois outputs (limpo vs. corrompido).
 
-## Correção pendente (sugestão)
+## ✅ CORRIGIDO em 2026-08-01
+
+Entregue em `ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req`
+(ADR `ADR-2026-08-01-caminho-completo-no-campo-req-...`). O contrato do campo `req:` é **caminho
+relativo completo**; o parâmetro `roots` foi **removido** (não implementado) — a validação segue
+**estrita**. `extractRefPath` não mudou.
+
+Um **quarto** defeito foi descoberto durante o setup e corrigido junto: `roadmap new --req <path>`
+gravava `req: ""` vazio no frontmatter, produzindo falso-**negativo** silencioso (o early-return
+para valor vazio faz nenhuma violação disparar).
+
+Proteção de CI: cenários `roadmap-req-frontmatter-path/*` em `scripts/check-gates-falsify.sh`,
+cobrindo os 3 CLIs e os dois caminhos de geração, com braços de baseline e de detecção.
+Contador 30 → 42.
+
+A previsão registrada abaixo — de que a correção **não** quebraria os cenários
+`roadmap-acceptance-heading/*/from-req` — **confirmou-se empiricamente**.
+
+## Correção sugerida na época (histórico)
 
 - Parte 1: gravar o caminho relativo completo (`reqPath`, não `filepath.Base(reqPath)`) no
   campo `req:` do frontmatter, nos três CLIs.
