@@ -64,7 +64,25 @@ Todo agente que criar um roadmap pelo caminho oficial e mover para `wip` vai bat
 duas violações e perder tempo investigando um "erro" que é do próprio tooling. Os dois
 casos custam facilmente 10–20 min sem esta nota.
 
-## Correção pendente
+## ✅ CORRIGIDO em 2026-08-01
+
+Entregue no **PR #96** (`ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap`,
+ADR `ADR-2026-07-31-gerador-de-roadmap-emite-heading-consolidado-...`).
+
+Os três geradores passaram a emitir, além dos blocos `**Acceptance criteria:**` por microlote, um
+heading consolidado `## Acceptance Criteria` após o contexto e antes da primeira wave — nos dois
+caminhos (`roadmap new` e `roadmap new --from-req`). `roadmap new` → `move wip` → `validate` agora
+passa **sem edição manual**.
+
+Rejeitado explicitamente: relaxar `AcceptanceMarkers` para aceitar o marcador em negrito. Isso
+mascararia o defeito e esvaziaria a regra do validador.
+
+**Proteção de CI:** cenários `roadmap-acceptance-heading/{go,node,python}/{simple,from-req}` em
+`scripts/check-gates-falsify.sh`. Contador de cenários subiu 24 → 30.
+
+**A armadilha do slug de branch, abaixo, CONTINUA VÁLIDA** — não foi alterada por aquele PR.
+
+## Correção sugerida na época (histórico)
 
 Alinhar `internal/generators/roadmap.go` para emitir também um heading
 `## Acceptance Criteria` consolidado — **nos três CLIs** (Go, npm, pypi), pela regra dura

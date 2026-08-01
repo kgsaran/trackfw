@@ -47,17 +47,24 @@ aparece como "aberto" depois de fechado. Use `getComputedStyle(el).display`.
 cria binding léxico de módulo/script, não propriedade do objeto global. `window._drawerPath` é
 `undefined`. Em `Runtime.evaluate` (CDP) ou no console, use o identificador puro `_drawerPath`.
 
-## Achado colateral — links `.md` relativos com `../` dão 403
+## ✅ CORRIGIDO — links `.md` relativos com `../` davam 403
 
 O interceptador de links passa o `href` **bruto** para `openDrawer`, e o whitelist de
 `api_file.go` rejeita caminhos com `../`. Verificado:
 `GET /api/file?path=../roadmaps/done/v2.3-validator-improvements-2026-06-13.md` → **403**.
 
-Documentos reais usam essa forma — por exemplo
-`docs/req/REQ-2026-06-13-validator-improvements.md`. Ou seja: links relativos com `../` dentro do
-drawer estão quebrados hoje. **Gap pré-existente**, não relacionado à sanitização e não corrigido
-nesse ciclo. Merece REQ própria: normalizar o href relativo ao diretório do documento aberto
-antes de chamar `openDrawer`.
+Documentos reais usavam essa forma — por exemplo
+`docs/req/REQ-2026-06-13-validator-improvements.md`.
+
+**Corrigido em 2026-08-01 no PR #98** (ADR
+`ADR-2026-08-01-resolucao-de-links-markdown-relativos-ao-documento-aberto-no-drawer`), exatamente
+como sugerido aqui: `resolveRelativeMdHref` normaliza o href contra o `dirname` do documento
+aberto antes de chamar `openDrawer`. O whitelist do servidor **não** foi alterado — `vault/`
+segue fora, e link que resolva para fora dos diretórios permitidos passa a exibir
+`Arquivo fora dos diretórios permitidos: <caminho resolvido>` em vez de `Forbidden` cru.
+
+**As três armadilhas de instrumentação acima CONTINUAM VÁLIDAS** — não foram alteradas por aquele
+PR, e seguem sendo o motivo principal desta nota existir.
 
 Relacionado: `vault/notes/security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31.md`,
 `vault/notes/dashboard-serve-e-light-only-2026-07-31.md`.

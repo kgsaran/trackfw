@@ -10,6 +10,52 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.1.0] - 2026-08-01
+
+### Added
+
+- **Dashboard: abas ADRs e REQs** (#94) — ADRs e REQs deixam de ser alcançáveis apenas como nós
+  do grafo da aba Chain e ganham listas navegáveis, com busca textual (case- e acento-insensitive)
+  e filtro de status derivado dinamicamente dos valores presentes na resposta. Clicar numa linha
+  reusa o drawer existente. Nenhum endpoint novo: as listas derivam de `/api/chain`.
+
+### Fixed
+
+- **Segurança — XSS armazenado no drawer** (#95) — `openDrawer` renderizava a saída de
+  `marked.parse()` diretamente em `innerHTML`, sem sanitização. Uma ADR maliciosa vinda de um PR
+  executava script quando o mantenedor abria o drawer para revisar. Introduz DOMPurify 3.4.12 com
+  SRI, sanitizando num ponto único, e fail-safe que degrada para texto puro quando o sanitizador
+  não carrega — nunca HTML bruto.
+- **`roadmap new` gerava artefato que o próprio `validate` rejeitava** (#96) — o gerador emitia
+  `**Acceptance criteria:**` (negrito) enquanto o validador exige o heading `## Acceptance
+  Criteria`. Todo roadmap novo falhava na primeira transição para `wip`, nos 3 CLIs. Os geradores
+  passam a emitir também o heading consolidado, preservando os blocos por microlote.
+- **Falso-positivo `ref_targets_exist` em `roadmap new --from-req`** (#97) — o campo `req:` do
+  frontmatter recebia apenas o basename, e o validador o resolve relativo ao cwd. Passa a gravar
+  o caminho relativo completo, nos 3 CLIs. Corrige junto o falso-**negativo** do caminho simples,
+  em que `roadmap new --req <path>` gravava `req: ""` vazio e nenhuma violação disparava.
+- **Links `.md` relativos no drawer retornavam 403** (#98) — o interceptador passava o href bruto
+  para `openDrawer`. Passa a resolver o href contra o diretório do documento aberto, cobrindo
+  `./X.md`, `X.md` e `../` encadeados. Link que resolva para fora dos diretórios permitidos exibe
+  o caminho resolvido em mensagem explicativa, em vez de `Forbidden` cru.
+- **Cadeia de suprimentos do dashboard** (#99) — `marked`, `chart.js` e `d3` ganham `integrity`
+  (SRI), `crossorigin` e `referrerpolicy`. O `htmx` é **removido** por não ter nenhum uso,
+  eliminando o `unpkg.com` da cadeia. O Tailwind permanece sem SRI de forma deliberada — a URL é
+  não-versionada e um hash fixo quebraria o dashboard no próximo release deles; a razão está
+  documentada no próprio `index.html`.
+
+### Changed
+
+- **Remoção do parâmetro morto `roots`** de `referenceExists` / `_reference_exists` nos 3 CLIs
+  (#97). O parâmetro era recebido e nunca usado, enquanto três chamadores em cada CLI o passavam
+  de boa-fé. A validação permanece estrita: um `req:` com basename continua reprovando.
+
+### Internal
+
+- Proteção de falsificação em CI ampliada de **24 para 42 cenários** em
+  `scripts/check-gates-falsify.sh`, cobrindo o contrato gerador↔validador do heading de critérios
+  de aceite e do campo `req:` do frontmatter, nos 3 CLIs e nos dois caminhos de geração.
+
 ## [6.0.0] - 2026-07-30
 
 ### Por que esta versão é major
