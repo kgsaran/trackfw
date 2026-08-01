@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-01
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-01-caminho-completo-no-campo-req-do-frontmatter-e-remocao-do-parametro-roots-morto.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md"
 ---
 
 # REQ: Corrigir falso-positivo ref_targets_exist em roadmap new --from-req
 
-> Date: 2026-08-01 | Status: Open
+> Date: 2026-08-01 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -28,34 +28,35 @@ Diagnóstico completo em
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — `roadmap new --from-req <req>` grava o **caminho relativo completo** no campo
+- [x] **AC1** — `roadmap new --from-req <req>` grava o **caminho relativo completo** no campo
       `req:` do frontmatter, nos 3 CLIs. Verificado por inspeção do artefato gerado.
-- [ ] **AC2** — Ciclo ponta a ponta em diretório temporário nos 3 CLIs: `req new` →
+- [x] **AC2** — Ciclo ponta a ponta em diretório temporário nos 3 CLIs: `req new` →
       `roadmap new --from-req` → `roadmap move ... wip` → `validate` **sem** a violação
       `links to REQ ... which does not exist`.
-- [ ] **AC2b** — **Bug irmão, descoberto em 2026-08-01 durante o setup deste ciclo:**
+- [x] **AC2b** — **Bug irmão, descoberto em 2026-08-01 durante o setup deste ciclo:**
       `roadmap new --title <t> --req <path>` (caminho simples, sem `--from-req`) grava
       `req: ""` **vazio** no frontmatter, embora preencha o corpo corretamente. Mesmo campo,
       mesma família de defeito. O caminho simples passa a gravar o `reqPath` completo no
       frontmatter quando `--req` é informado, nos 3 CLIs. Quando `--req` **não** é informado,
       `req: ""` permanece — é o comportamento correto.
-- [ ] **AC3** — O parâmetro `roots` é **removido** da assinatura de
+- [x] **AC3** — O parâmetro `roots` é **removido** da assinatura de
       `referenceExists` (Go), `referenceExists` (Node) e `_reference_exists` (Python), com os
       **três chamadores de cada** ajustados. Nenhum parâmetro morto remanescente.
-- [ ] **AC4** — A validação permanece **estrita**: um `req:` contendo apenas basename continua
+- [x] **AC4** — A validação permanece **estrita**: um `req:` contendo apenas basename continua
       produzindo a violação. Coberto por teste.
-- [ ] **AC5** — `extractRefPath` e equivalentes **não** são alterados.
-- [ ] **AC6** — `trackfw validate` verde neste repositório — nenhum roadmap existente invalidado.
-- [ ] **AC7** — `scripts/check-artifact-parity.sh` passa; os 3 CLIs geram artefato idêntico.
-- [ ] **AC8** — O cenário `roadmap-acceptance-heading/*/from-req` de
+- [x] **AC5** — `extractRefPath` e equivalentes **não** são alterados.
+- [x] **AC6** — `trackfw validate` verde neste repositório — nenhum roadmap existente invalidado.
+- [x] **AC7** — `scripts/check-artifact-parity.sh` passa; os 3 CLIs geram artefato idêntico.
+- [x] **AC8** — O cenário `roadmap-acceptance-heading/*/from-req` de
       `scripts/check-gates-falsify.sh` continua passando. A nota de vault prevê que sim (o
       `assert_fails_with` casa a substring de `wip_acceptance`, não a ausência de outras
       violações), mas isso deve ser **confirmado empiricamente**, não presumido.
-- [ ] **AC9** — Cenário de falsificação permanente para **esta** correção em
-      `check-gates-falsify.sh`: revertendo o gerador para gravar basename, o ciclo
-      `--from-req` → `wip` → `validate` deve **falhar** com `ref_targets_exist`. Shell puro,
-      viável em CI.
-- [ ] **AC10** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+- [x] **AC9** — **Dois** cenários permanentes adicionados (não um), cada um com braço de
+      *baseline* e de *detecção*, nos 3 CLIs: `roadmap-req-frontmatter-path/*/from-req` e
+      `.../simple` (AC2b). Contador de cenários **30 → 42**. Falsificação independente por Zeus:
+      revertendo o gerador Go para `filepath.Base(reqPath)`, o gate sai com **exit 1** e
+      `FAIL [.../go/from-req-baseline]: ciclo limpo saiu com 1, esperava 0`.
+- [x] **AC10** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
 
 ## Negative Scope (fora do escopo — NÃO fazer)
 
@@ -98,4 +99,4 @@ ADR: docs/adr/ADR-2026-08-01-caminho-completo-no-campo-req-do-frontmatter-e-remo
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md

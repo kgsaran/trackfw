@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-01
 req: "docs/req/REQ-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Corrigir falso-positivo ref_targets_exist em roadmap new --from-req
 
-> Created: 2026-08-01 | Status: wip
+> Created: 2026-08-01 | Status: done
 
 ## Context
 
@@ -62,15 +62,15 @@ presumido.
 
 Consolidados da REQ (AC1–AC10). Detalhamento por microlote abaixo.
 
-- [ ] `--from-req` grava caminho completo no `req:` do frontmatter, nos 3 CLIs
-- [ ] `--req` no caminho simples também grava o caminho completo (AC2b)
-- [ ] `roots` removido da assinatura e dos 3 chamadores, nos 3 CLIs
-- [ ] Validação segue estrita: `req:` com basename continua reprovando, coberto por teste
-- [ ] `extractRefPath` intocado
-- [ ] `validate` verde no repositório; `check-artifact-parity.sh` passa
-- [ ] Cenário `roadmap-acceptance-heading/*/from-req` continua passando (confirmado, não presumido)
-- [ ] Cenário de falsificação novo para esta correção
-- [ ] `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes
+- [x] `--from-req` grava caminho completo no `req:` do frontmatter, nos 3 CLIs
+- [x] `--req` no caminho simples também grava o caminho completo (AC2b)
+- [x] `roots` removido da assinatura e dos 3 chamadores, nos 3 CLIs
+- [x] Validação segue estrita: `req:` com basename continua reprovando, coberto por teste
+- [x] `extractRefPath` intocado
+- [x] `validate` verde no repositório; `check-artifact-parity.sh` passa
+- [x] Cenário `roadmap-acceptance-heading/*/from-req` continua passando (confirmado empiricamente)
+- [x] Cenário de falsificação novo para esta correção — na verdade dois, contador 30 → 42
+- [x] `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes
 
 ---
 
@@ -144,7 +144,7 @@ textual preservada sem coordenação explícita, o que valida a precisão do han
 > Dependências: **ML-1A, ML-1B e ML-1C completos e auditados**
 
 ### ML-2A — Paridade, regressão do gate herdado e seam novo
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Ártemis
 
 **Ações:**
@@ -157,8 +157,55 @@ textual preservada sem coordenação explícita, o que valida a precisão do han
 4. Provar que o cenário novo é capaz de falhar.
 
 **Acceptance criteria:**
-- [ ] `check-artifact-parity.sh` passa; `make quality` exit 0; `validate` verde
-- [ ] 6 cenários herdados confirmados passando
-- [ ] Cenário novo adicionado, contador atualizado na linha final
-- [ ] Cenário novo provado não vacuoso
-- [ ] `git status --porcelain` sem resíduo de teste
+- [x] `check-artifact-parity.sh` passa; `make quality` exit 0; `validate` verde
+- [x] 6 cenários herdados confirmados passando
+- [x] Cenário novo adicionado; contador **30 → 42**
+- [x] Cenário novo provado não vacuoso
+- [x] `git status --porcelain` sem resíduo de teste
+
+**Entrega acima do pedido.** Foram criados **dois** cenários, cada um com braço de *baseline* e
+braço de *detecção*, nos 3 CLIs:
+
+- **Cenário 25 — `--from-req`:** casa o texto completo
+  `links to REQ "REQ-flag-source.md" which does not exist`, e não o genérico `does not exist`
+  que o handoff sugeriu. Correção dela, e correta: o padrão genérico casaria também as violações
+  irmãs de ADR/Roadmap ausentes. Efeito colateral útil — a corrupção deixa o caminho completo no
+  corpo e o basename só no frontmatter, o que **pina a precedência frontmatter-sobre-corpo** do
+  `extractRefPath`.
+- **Cenário 26 — `--req` simples (AC2b):** aqui a regressão **não** produz violação
+  (`extractRefPath` tem early-return para vazio — é silêncio, não erro), então `assert_fails_with`
+  não serviria. Ela inspeciona o artefato e compara o campo `req:` contra o caminho exato passado
+  a `--req` — não apenas "não-vazio", o que também pega uma regressão para basename.
+
+**Falsificação independente de Zeus:** reverti o gerador Go para `filepath.Base(reqPath)` no
+`--from-req` e rodei o gate:
+
+```
+EXIT=1
+FAIL [falsify/roadmap-req-frontmatter-path/go/from-req-baseline]: ciclo limpo saiu com 1, esperava 0
+```
+
+O braço de baseline é o que detecta — comprova que a proteção é real, não decorativa.
+
+**Comentário obsoleto corrigido por ela:** o Cenário 24 afirmava que "o ciclo com REQ nunca reprova
+limpo" — verdade antes da Wave 1, falsa depois, e contradita pelo braço de baseline novo no mesmo
+arquivo. Reescrito. Dois comentários adjacentes afirmando fatos opostos seria armadilha garantida.
+
+---
+
+## Fechamento
+
+Concluído e auditado em 2026-08-01. `make quality` exit 0; falsificação **42/42**.
+
+**Entrega:** os 3 CLIs gravam caminho completo no campo `req:` (nos dois caminhos de geração), o
+parâmetro `roots` morto foi removido de `referenceExists` com os 3 chamadores de cada CLI
+ajustados, e a validação segue **estrita** — com teste em cada CLI garantindo que basename
+continua reprovando.
+
+**Proteção de CI:** contador de cenários de falsificação **30 → 42**. Dois cenários novos, cada um
+com baseline e detecção, cobrindo os 3 CLIs e os dois caminhos de geração.
+
+**Quatro defeitos fechados neste ciclo:** o falso-positivo do `--from-req` (basename), o
+falso-**negativo** do `--req` simples (`req: ""` vazio, descoberto durante o próprio setup), o
+parâmetro `roots` morto que enganava três chamadores em cada CLI, e um comentário obsoleto no
+gate que afirmaria o oposto do cenário recém-adicionado.

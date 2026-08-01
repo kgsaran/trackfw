@@ -912,16 +912,26 @@ assert_fails_with "cli-parity/v-flag-accepted" \
 # dois, alguém poderia remover só o bloco do --from-req nos três CLIs e este
 # cenário continuaria verde.
 #
-# Nota sobre o caminho --from-req: o ciclo com REQ nunca reprova "limpo" —
-# NewRoadmapFromREQ grava `req: "<basename>"` no frontmatter (bug
-# pré-existente e fora de escopo, documentado na auditoria da Wave 1 deste
-# roadmap) e `ref_targets_exist` sempre reprova essa referência. Isso NÃO
-# invalida a prova: com o gerador correto a violação de wip_acceptance está
-# ausente da saída (só aparece a de ref_targets_exist); com o gerador
-# corrompido as duas aparecem juntas. O padrão buscado por assert_fails_with
-# é o diagnóstico específico de wip_acceptance, não a ausência de outras
-# violações — a prova de vivacidade abaixo confirma isso empiricamente antes
-# do cenário ser aceito nesta ML.
+# Nota sobre o caminho --from-req (HISTÓRICA — obsoleta a partir da Wave 1 do
+# ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req):
+# até essa Wave 1, o ciclo com REQ NUNCA reprovava "limpo" — NewRoadmapFromREQ
+# gravava `req: "<basename>"` no frontmatter e `ref_targets_exist` sempre
+# reprovava essa referência co-ocorrendo com wip_acceptance. Isso NÃO
+# invalidava a prova daquele momento: com o gerador correto (pré-Wave 1) a
+# violação de wip_acceptance estava ausente da saída (só aparecia a de
+# ref_targets_exist); com o gerador corrompido as duas apareciam juntas. O
+# padrão buscado por assert_fails_with é o diagnóstico específico de
+# wip_acceptance, não a ausência de outras violações — a prova de vivacidade
+# abaixo confirmava isso empiricamente.
+#
+# A partir da Wave 1, o `req:` do frontmatter passou a gravar o caminho
+# relativo completo (não mais o basename), então o ciclo `--from-req` AGORA
+# reprova limpo sem `ref_targets_exist` co-ocorrente — o Cenário 25 (braço
+# de linha de base `*/from-req-baseline`, via assert_lacks_pattern) prova
+# isso diretamente. Este parágrafo permanece para explicar por que o
+# Cenário 24 nunca precisou de um braço de linha de base equivalente: quando
+# foi escrito, o ciclo `--from-req` nunca vinha "limpo" e a ausência de
+# `wip_acceptance` já bastava como sinal.
 #
 # Corrompe a IMPLEMENTAÇÃO (gerador), nunca a asserção — mesmo padrão dos
 # Cenários 14/16/17/20/21. Cobre os três CLIs: cada runtime tem seu próprio
@@ -1093,4 +1103,370 @@ for occ_label in "0:simple" "1:from-req"; do
     bash -c "${!script_var}" _ "$T24P" env "PYTHONPATH=$T24P/pypi" python3 -m trackfw
 done
 
-echo "Falsification checks passed (all 30 scenarios, 14 gates + 1 generator/validator contract — roadmap acceptance heading, both simple and --from-req paths, 3 CLIs — proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Helpers reused pelos Cenários 25 e 26 abaixo.
+# ---------------------------------------------------------------------------
+
+# Substitui a única ocorrência de `old` por `new` em todo o arquivo. Falha se
+# a contagem de ocorrências não for exatamente 1 — evita corromper o alvo
+# errado silenciosamente e evita "passar" sem corromper nada.
+corrupt_literal() {
+  local src=$1 dest=$2 old=$3 new=$4 label=$5
+  python3 - "$src" "$dest" "$old" "$new" "$label" <<'PY'
+import pathlib
+import sys
+
+src, dest, old, new, label = sys.argv[1:6]
+source = pathlib.Path(src).read_text(encoding="utf-8")
+count = source.count(old)
+if count != 1:
+    raise SystemExit(f"[{label}] expected exactly 1 occurrence of pattern, got {count}")
+pathlib.Path(dest).write_text(source.replace(old, new, 1), encoding="utf-8")
+PY
+}
+
+# Substitui a primeira ocorrência de `old` por `new`, restrita ao corpo de
+# `func_name` (de `def func_name(` até o próximo `\ndef ` ou fim de arquivo).
+# Necessário no Python: o literal `req: "{req_path}"` ocorre IDÊNTICO em duas
+# funções distintas (_roadmap_template para --req simples,
+# generate_roadmap_from_req para --from-req) — sem escopo de função, corromper
+# uma corromperia as duas ao mesmo tempo.
+corrupt_python_func_literal() {
+  local src=$1 dest=$2 func_name=$3 old=$4 new=$5
+  python3 - "$src" "$dest" "$func_name" "$old" "$new" <<'PY'
+import pathlib
+import re
+import sys
+
+src, dest, func_name, old, new = sys.argv[1:6]
+source = pathlib.Path(src).read_text(encoding="utf-8")
+marker = f"def {func_name}("
+start = source.index(marker)
+tail = source[start + 1:]
+next_def = re.search(r"\ndef ", tail)
+end = start + 1 + next_def.start() if next_def else len(source)
+segment = source[start:end]
+if segment.count(old) != 1:
+    raise SystemExit(f"[{func_name}] expected exactly 1 occurrence of pattern, got {segment.count(old)}")
+new_segment = segment.replace(old, new, 1)
+pathlib.Path(dest).write_text(source[:start] + new_segment + source[end:], encoding="utf-8")
+PY
+}
+
+# Helper: assert que o comando retorna exit 0 E a saída NÃO contém `pattern`.
+# Usado para provar que o ciclo LIMPO (código correto, sem corrupção) não
+# emite o diagnóstico da corrupção — sem esta prova, o braço de detecção
+# (assert_fails_with) sozinho não descarta a hipótese de que o ciclo já
+# reprovaria por qualquer outro motivo (seam inativo mascarado por ruído
+# alheio à corrupção).
+assert_lacks_pattern() {
+  local label=$1
+  local pattern=$2
+  shift 2
+  local out
+  set +e
+  out=$("$@" 2>&1)
+  local status=$?
+  set -e
+  if [[ $status -ne 0 ]]; then
+    echo "FAIL [falsify/$label]: ciclo limpo saiu com $status, esperava 0" >&2
+    echo "  output: $out" >&2
+    exit 1
+  fi
+  if grep -qF "$pattern" <<<"$out"; then
+    echo "FAIL [falsify/$label]: seam inativo — o ciclo LIMPO já emite '$pattern'; o cenário de corrupção passaria mesmo sem a corrupção" >&2
+    echo "  output: $out" >&2
+    exit 1
+  fi
+  echo "OK   [falsify/$label]"
+}
+
+# ---------------------------------------------------------------------------
+# Cenário 25 — ciclo `roadmap new --from-req` → `roadmap move ... wip` →
+# `validate`: revertendo os 3 geradores para gravar `filepath.Base`/`basename`
+# (em vez do caminho relativo completo) no campo `req:` do frontmatter — o
+# bug corrigido por
+# ADR-2026-08-01-caminho-completo-no-campo-req-do-frontmatter-e-remocao-do-parametro-roots-morto
+# (ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req)
+# — o ciclo deve reprovar em `validate` com `ref_targets_exist`.
+#
+# Objetivo (ML-2A): nenhum gate de paridade existente cobre o CONTRATO
+# gerador→validador para o campo `req:` — check-artifact-parity.sh só compara
+# os runtimes ENTRE si (byte-a-byte), nunca contra o `os.Stat`/
+# `referenceExists` do validador. Sem esta prova, os três geradores poderiam
+# voltar a gravar basename simultaneamente (o defeito original deste
+# roadmap, "a ferramenta reprova o que ela mesma gerou" pela terceira vez) e
+# `make quality` continuaria verde.
+#
+# Reusa write_roadmap_acceptance_req_fixture e ROADMAP_CYCLE_SCRIPT_FROM_REQ
+# (definidos no Cenário 24) — mesma fixture de REQ válida, mesmo idioma de
+# ciclo E2E. O diagnóstico esperado ("which does not exist") é a substring
+# estática da mensagem de ref_targets_exist nos três runtimes (`roadmap "%s"
+# links to REQ "%s" which does not exist` / equivalentes) quando o `req:` do
+# frontmatter aponta para um caminho que a validação estrita (sem `roots`,
+# conforme o ADR) não resolve — exatamente o que acontece quando o campo
+# grava só o basename em vez do caminho relativo completo docs/req/....
+#
+# Corrompe a IMPLEMENTAÇÃO (gerador), nunca a asserção — mesmo padrão dos
+# Cenários 14/16/17/20/21/24. Cobre os três CLIs.
+# ---------------------------------------------------------------------------
+
+# Diagnóstico estático e discriminante: com a fixture REQ-flag-source.md, o
+# ref corrompido é sempre filepath.Base("docs/req/REQ-flag-source.md") =
+# "REQ-flag-source.md" — mensagem byte-idêntica nos 3 runtimes
+# (validator.go:1463, index.js:758, validator.py:940). Mais específico que
+# "which does not exist" isolado, que também casa com as mensagens de
+# req→ADR e req→Roadmap ausentes (não aplicáveis aqui, mas indistinguíveis
+# por um grep genérico).
+S25_PATTERN='links to REQ "REQ-flag-source.md" which does not exist'
+
+# --- Go -----------------------------------------------------------------
+# Braço de linha de base (ciclo LIMPO, sem corrupção): prova que o gerador
+# correto (pós-Wave 1) não emite mais o diagnóstico — sem isto, o braço de
+# detecção abaixo não descartaria "o ciclo já reprovava por outro motivo".
+T25G_BASE_BIN="$WORK/s25-go-base-bin/trackfw"
+mkdir -p "$(dirname "$T25G_BASE_BIN")"
+build_go_or_fail "setup-s25-go-baseline-build" "$ROOT_DIR" "$T25G_BASE_BIN"
+
+T25G_BASE="$WORK/s25-go-base"
+mkdir -p "$T25G_BASE"
+write_roadmap_acceptance_req_fixture "$T25G_BASE/docs/req/REQ-flag-source.md"
+
+assert_lacks_pattern "roadmap-req-frontmatter-path/go/from-req-baseline" \
+  "$S25_PATTERN" \
+  bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25G_BASE" "$T25G_BASE_BIN"
+
+# Braço de detecção: gerador revertido para gravar basename.
+T25G_MOD="$WORK/s25-go-mod"
+mkdir -p "$T25G_MOD/cmd" "$T25G_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T25G_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T25G_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T25G_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T25G_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/generators/roadmap.go" "$T25G_MOD/internal/generators/roadmap.go" \
+  'date, reqPath, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())' \
+  'date, filepath.Base(reqPath), title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())' \
+  "s25-go"
+
+T25G_BIN="$WORK/s25-go-bin/trackfw"
+mkdir -p "$(dirname "$T25G_BIN")"
+build_go_or_fail "setup-s25-go-build" "$T25G_MOD" "$T25G_BIN"
+
+T25G="$WORK/s25-go"
+mkdir -p "$T25G"
+write_roadmap_acceptance_req_fixture "$T25G/docs/req/REQ-flag-source.md"
+
+assert_fails_with "roadmap-req-frontmatter-path/go/from-req" \
+  "$S25_PATTERN" \
+  bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25G" "$T25G_BIN"
+
+# --- Node -----------------------------------------------------------------
+# Braço de linha de base.
+T25N_BASE="$WORK/s25-node-base"
+mkdir -p "$T25N_BASE"
+setup_npm_tree "$T25N_BASE"
+write_roadmap_acceptance_req_fixture "$T25N_BASE/docs/req/REQ-flag-source.md"
+
+assert_lacks_pattern "roadmap-req-frontmatter-path/node/from-req-baseline" \
+  "$S25_PATTERN" \
+  bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25N_BASE" node npm/bin/trackfw
+
+# Braço de detecção.
+T25N="$WORK/s25-node"
+mkdir -p "$T25N"
+setup_npm_tree "$T25N"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/generators/roadmap.js" "$T25N/npm/src/generators/roadmap.js" \
+  'req: "${reqPath}"' \
+  'req: "${basename}"' \
+  "s25-node"
+
+write_roadmap_acceptance_req_fixture "$T25N/docs/req/REQ-flag-source.md"
+
+assert_fails_with "roadmap-req-frontmatter-path/node/from-req" \
+  "$S25_PATTERN" \
+  bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25N" node npm/bin/trackfw
+
+# --- Python -----------------------------------------------------------------
+# Braço de linha de base.
+T25P_BASE="$WORK/s25-python-base"
+mkdir -p "$T25P_BASE"
+cp -r "$ROOT_DIR/pypi" "$T25P_BASE/pypi"
+write_roadmap_acceptance_req_fixture "$T25P_BASE/docs/req/REQ-flag-source.md"
+
+assert_lacks_pattern "roadmap-req-frontmatter-path/python/from-req-baseline" \
+  "$S25_PATTERN" \
+  bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25P_BASE" env "PYTHONPATH=$T25P_BASE/pypi" python3 -m trackfw
+
+# Braço de detecção.
+T25P="$WORK/s25-python"
+mkdir -p "$T25P"
+cp -r "$ROOT_DIR/pypi" "$T25P/pypi"
+corrupt_python_func_literal \
+  "$ROOT_DIR/pypi/trackfw/generators/roadmap.py" "$T25P/pypi/trackfw/generators/roadmap.py" \
+  "generate_roadmap_from_req" \
+  'req: "{req_path}"' \
+  'req: "{basename}"'
+
+write_roadmap_acceptance_req_fixture "$T25P/docs/req/REQ-flag-source.md"
+
+assert_fails_with "roadmap-req-frontmatter-path/python/from-req" \
+  "$S25_PATTERN" \
+  bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25P" env "PYTHONPATH=$T25P/pypi" python3 -m trackfw
+
+# ---------------------------------------------------------------------------
+# Cenário 26 — AC2b: o caminho SIMPLES (`roadmap new --title <t> --req
+# <path>`) também deve gravar o caminho completo no `req:` do frontmatter.
+#
+# Diferente do Cenário 25, uma regressão aqui NÃO produz uma violação de
+# `validate` — `extractRefPath` tem early-return para valor vazio, então
+# `req: ""` é um falso-NEGATIVO silencioso (documentado no roadmap como "bug
+# irmão AC2b": este próprio ciclo de trabalho foi gerado com `--req` e saiu
+# com `req: ""` antes da Wave 1). `assert_fails_with` não serve para provar
+# a REGRESSÃO em si — validate não reprova nem antes nem depois — então este
+# cenário inspeciona o artefato gerado diretamente:
+#   1. prova positiva: com o gerador correto, o campo `req:` sai não-vazio
+#      nos 3 CLIs (regressão NÃO presente);
+#   2. prova de detecção: revertendo o gerador para gravar `req: ""` sempre
+#      (o defeito original), a MESMA checagem reprova com diagnóstico
+#      explícito — provando que a checagem tem poder de reprovação, não é
+#      vácua.
+# Sem o passo 2, o passo 1 sozinho não provaria nada: um `grep` que sempre
+# retorna "ok" também "passaria" o passo 1.
+#
+# Corrompe a IMPLEMENTAÇÃO (gerador), nunca a asserção. Cobre os três CLIs.
+# ---------------------------------------------------------------------------
+
+# Ciclo simples (--req) num sandbox $1 usando o runtime dado em "$@": roda
+# `init` + `roadmap new --req`, localiza o arquivo gerado e extrai o valor
+# do campo `req:` do frontmatter. Compara contra o caminho EXATO passado a
+# --req (não apenas "não-vazio") — uma regressão que gravasse o basename em
+# vez do caminho completo no caminho simples (a mesma classe de defeito do
+# Cenário 25, só que aqui) passaria despercebida por um teste de
+# não-vazio. Sai com exit 1 e diagnóstico explícito se o campo divergir —
+# usado tanto para a prova positiva (código correto, chamado diretamente)
+# quanto para a prova de detecção (código corrompido, via assert_fails_with).
+SIMPLE_REQ_FIELD_SCRIPT='
+  set -e
+  cd "$1"
+  shift
+  "$@" init >/dev/null
+  "$@" roadmap new --title "AC2b Flag Source" --req docs/req/REQ-flag-source.md >/dev/null
+  name=$(basename "$(find docs/roadmaps/backlog -name "*.md")")
+  value=$(grep -m1 "^req: " "docs/roadmaps/backlog/$name" | sed -E "s/^req: \"?([^\"]*)\"?\$/\1/")
+  if [[ "$value" != "docs/req/REQ-flag-source.md" ]]; then
+    echo "req: field mismatch in roadmap generated via --req simple path (AC2b regression — expected docs/req/REQ-flag-source.md, got $value; validate does not flag this silently)"
+    exit 1
+  fi
+  echo "req: field = $value (matches --req path, AC2b holds)"
+'
+
+# Helper: assert que o comando retorna exit 0 (prova positiva). Espelha
+# assert_fails_with, mas na direção inversa — necessário porque o
+# Cenário 26 primeiro precisa provar "código correto não regride" antes de
+# provar "código corrompido é detectado".
+assert_succeeds() {
+  local label=$1
+  shift
+  local out
+  set +e
+  out=$("$@" 2>&1)
+  local status=$?
+  set -e
+  if [[ $status -ne 0 ]]; then
+    echo "FAIL [falsify/$label]: saiu com $status, esperava 0" >&2
+    echo "  output: $out" >&2
+    exit 1
+  fi
+  echo "OK   [falsify/$label]: $out"
+}
+
+# --- Go: prova positiva --------------------------------------------------
+# Binário isolado (não $ROOT_DIR/bin/trackfw): a prova não pode depender de
+# `make build` já ter rodado antes deste script — mesmo padrão de
+# auto-suficiência do braço de detecção logo abaixo.
+T26_BASE_GO_BIN="$WORK/s26-base-go-bin/trackfw"
+mkdir -p "$(dirname "$T26_BASE_GO_BIN")"
+build_go_or_fail "setup-s26-go-baseline-build" "$ROOT_DIR" "$T26_BASE_GO_BIN"
+
+T26_BASE_GO="$WORK/s26-base-go"
+mkdir -p "$T26_BASE_GO"
+write_roadmap_acceptance_req_fixture "$T26_BASE_GO/docs/req/REQ-flag-source.md"
+assert_succeeds "roadmap-req-frontmatter-path/go/simple-baseline" \
+  bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26_BASE_GO" "$T26_BASE_GO_BIN"
+
+# --- Go: prova de detecção (gerador corrompido para req: "" sempre) -------
+T26C_GO_MOD="$WORK/s26-corrupt-go-mod"
+mkdir -p "$T26C_GO_MOD/cmd" "$T26C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T26C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T26C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T26C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T26C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/generators/roadmap.go" "$T26C_GO_MOD/internal/generators/roadmap.go" \
+  ', date, content.REQPath, content.Title, date, content.REQPath, content.Title)' \
+  ', date, "", content.Title, date, content.REQPath, content.Title)' \
+  "s26-go"
+
+T26C_GO_BIN="$WORK/s26-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T26C_GO_BIN")"
+build_go_or_fail "setup-s26-go-build" "$T26C_GO_MOD" "$T26C_GO_BIN"
+
+T26C_GO="$WORK/s26-corrupt-go"
+mkdir -p "$T26C_GO"
+write_roadmap_acceptance_req_fixture "$T26C_GO/docs/req/REQ-flag-source.md"
+
+assert_fails_with "roadmap-req-frontmatter-path/go/simple-detects-regression" \
+  "AC2b regression" \
+  bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26C_GO" "$T26C_GO_BIN"
+
+# --- Node: prova positiva --------------------------------------------------
+T26_BASE_N="$WORK/s26-base-node"
+mkdir -p "$T26_BASE_N"
+setup_npm_tree "$T26_BASE_N"
+write_roadmap_acceptance_req_fixture "$T26_BASE_N/docs/req/REQ-flag-source.md"
+assert_succeeds "roadmap-req-frontmatter-path/node/simple-baseline" \
+  bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26_BASE_N" node npm/bin/trackfw
+
+# --- Node: prova de detecção ------------------------------------------------
+T26C_N="$WORK/s26-corrupt-node"
+mkdir -p "$T26C_N"
+setup_npm_tree "$T26C_N"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/generators/roadmap.js" "$T26C_N/npm/src/generators/roadmap.js" \
+  "const reqField = reqPath ? \`\"\${reqPath}\"\` : '\"\"'" \
+  "const reqField = '\"\"'" \
+  "s26-node"
+
+write_roadmap_acceptance_req_fixture "$T26C_N/docs/req/REQ-flag-source.md"
+
+assert_fails_with "roadmap-req-frontmatter-path/node/simple-detects-regression" \
+  "AC2b regression" \
+  bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26C_N" node npm/bin/trackfw
+
+# --- Python: prova positiva -------------------------------------------------
+T26_BASE_P="$WORK/s26-base-python"
+mkdir -p "$T26_BASE_P"
+cp -r "$ROOT_DIR/pypi" "$T26_BASE_P/pypi"
+write_roadmap_acceptance_req_fixture "$T26_BASE_P/docs/req/REQ-flag-source.md"
+assert_succeeds "roadmap-req-frontmatter-path/python/simple-baseline" \
+  bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26_BASE_P" env "PYTHONPATH=$T26_BASE_P/pypi" python3 -m trackfw
+
+# --- Python: prova de detecção ----------------------------------------------
+T26C_P="$WORK/s26-corrupt-python"
+mkdir -p "$T26C_P"
+cp -r "$ROOT_DIR/pypi" "$T26C_P/pypi"
+corrupt_python_func_literal \
+  "$ROOT_DIR/pypi/trackfw/generators/roadmap.py" "$T26C_P/pypi/trackfw/generators/roadmap.py" \
+  "_roadmap_template" \
+  'req: "{req_path}"' \
+  'req: ""'
+
+write_roadmap_acceptance_req_fixture "$T26C_P/docs/req/REQ-flag-source.md"
+
+assert_fails_with "roadmap-req-frontmatter-path/python/simple-detects-regression" \
+  "AC2b regression" \
+  bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26C_P" env "PYTHONPATH=$T26C_P/pypi" python3 -m trackfw
+
+echo "Falsification checks passed (all 42 scenarios, 14 gates + 3 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), 3 CLIs — proved non-vacuous)"
