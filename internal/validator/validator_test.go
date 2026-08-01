@@ -1643,3 +1643,262 @@ func TestWIPHasREQ_CRLF_Integracao(t *testing.T) {
 		t.Errorf("esperava violation de REQ vazio com CRLF, obteve: %v", violations)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-1A — REQ-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida
+// adrStatusIsNotAccepted() (helper canônico) + regra nova adr_accepted_when_req_done
+// + correção da cegueira de blocked_by_draft_adr a Status: Proposed.
+// ---------------------------------------------------------------------------
+
+// adrFixtureContent monta o conteúdo de um ADR fixture com o status dado, alinhado
+// entre frontmatter e cabeçalho (caso canônico bem formado).
+func adrFixtureContent(status string) string {
+	return "---\n" +
+		"status: " + status + "\n" +
+		"date: 2026-08-01\n" +
+		"author: \"\"\n" +
+		"---\n\n" +
+		"# ADR: fixture\n\n" +
+		"> Date: 2026-08-01 | Status: " + status + "\n\n" +
+		"## Context\nctx\n\n" +
+		"## Decision\ndecision\n"
+}
+
+// reqDoneFixtureContent monta um REQ Done canônico referenciando o basename de ADR
+// dado via frontmatter `adr:` e via a seção "## Linked ADR" (mesmo campo "ADR:" que
+// extractRefPath e validateRefTargetsExist já leem).
+func reqDoneFixtureContent(adrRelPath string) string {
+	return "---\n" +
+		"status: Done\n" +
+		"date: 2026-08-01\n" +
+		"author: \"\"\n" +
+		"adr: \"" + adrRelPath + "\"\n" +
+		"roadmap: \"\"\n" +
+		"---\n\n" +
+		"# REQ: fixture\n\n" +
+		"> Date: 2026-08-01 | Status: Done\n\n" +
+		"## Motivation\nmotivo\n\n" +
+		"## Acceptance Criteria\n- [x] feito\n\n" +
+		"## Linked ADR\nADR: " + adrRelPath + "\n\n" +
+		"## Linked Roadmap\nRoadmap:\n"
+}
+
+// TestADRAcceptedWhenREQDone_ProposedADR_Violates — REQ Done + ADR Proposed deve
+// disparar violation citando os dois artefatos (REQ e ADR).
+func TestADRAcceptedWhenREQDone_ProposedADR_Violates(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/req", "docs/adr")
+
+	adrRel := "docs/adr/ADR-2026-08-01-proposed-fixture.md"
+	writeFile(t, dir, adrRel, adrFixtureContent("Proposed"))
+	writeFile(t, dir, "docs/req/REQ-2026-08-01-done-fixture.md", reqDoneFixtureContent(adrRel))
+	writeFile(t, dir, "trackfw.yaml", "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateADRAcceptedWhenREQDone()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) == 0 {
+		t.Fatal("esperava violation para REQ Done com ADR Proposed, obteve nenhuma")
+	}
+	if !hasViolation(violations, "REQ-2026-08-01-done-fixture.md") {
+		t.Errorf("mensagem deve citar a REQ, obteve: %v", violations)
+	}
+	if !hasViolation(violations, "ADR-2026-08-01-proposed-fixture.md") {
+		t.Errorf("mensagem deve citar o ADR, obteve: %v", violations)
+	}
+}
+
+// TestADRAcceptedWhenREQDone_DraftADR_Violates — REQ Done + ADR Draft também dispara
+// (a definição de "não aceito" cobre os dois status, não só Proposed).
+func TestADRAcceptedWhenREQDone_DraftADR_Violates(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/req", "docs/adr")
+
+	adrRel := "docs/adr/ADR-2026-08-01-draft-fixture.md"
+	writeFile(t, dir, adrRel, adrFixtureContent("Draft"))
+	writeFile(t, dir, "docs/req/REQ-2026-08-01-done-fixture.md", reqDoneFixtureContent(adrRel))
+	writeFile(t, dir, "trackfw.yaml", "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateADRAcceptedWhenREQDone()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) == 0 {
+		t.Fatal("esperava violation para REQ Done com ADR Draft, obteve nenhuma")
+	}
+}
+
+// TestADRAcceptedWhenREQDone_SupersededADR_SemViolation — "aceito" é por exclusão:
+// Superseded não é Draft nem Proposed, então não deve violar mesmo com REQ Done.
+func TestADRAcceptedWhenREQDone_SupersededADR_SemViolation(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/req", "docs/adr")
+
+	adrRel := "docs/adr/ADR-2026-08-01-superseded-fixture.md"
+	writeFile(t, dir, adrRel, adrFixtureContent("Superseded"))
+	writeFile(t, dir, "docs/req/REQ-2026-08-01-done-fixture.md", reqDoneFixtureContent(adrRel))
+	writeFile(t, dir, "trackfw.yaml", "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateADRAcceptedWhenREQDone()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("não esperava violation para ADR Superseded (aceito por exclusão), obteve: %v", violations)
+	}
+}
+
+// TestADRAcceptedWhenREQDone_REQOpen_ProposedADR_SemViolationDaRegraNova — a regra
+// nova só olha REQs Done; uma REQ Open com ADR Proposed é responsabilidade de
+// blocked_by_draft_adr (se estiver na seção "## Blocked by ADRs"), não desta regra.
+func TestADRAcceptedWhenREQDone_REQOpen_ProposedADR_SemViolationDaRegraNova(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/req", "docs/adr")
+
+	adrRel := "docs/adr/ADR-2026-08-01-proposed-open-fixture.md"
+	writeFile(t, dir, adrRel, adrFixtureContent("Proposed"))
+
+	reqOpenContent := "---\n" +
+		"status: Open\n" +
+		"date: 2026-08-01\n" +
+		"author: \"\"\n" +
+		"adr: \"" + adrRel + "\"\n" +
+		"roadmap: \"\"\n" +
+		"---\n\n" +
+		"# REQ: fixture aberta\n\n" +
+		"> Date: 2026-08-01 | Status: Open\n\n" +
+		"## Motivation\nmotivo\n\n" +
+		"## Acceptance Criteria\n- [ ] pendente\n\n" +
+		"## Linked ADR\nADR: " + adrRel + "\n\n" +
+		"## Linked Roadmap\nRoadmap:\n"
+	writeFile(t, dir, "docs/req/REQ-2026-08-01-open-fixture.md", reqOpenContent)
+	writeFile(t, dir, "trackfw.yaml", "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateADRAcceptedWhenREQDone()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("não esperava violation de adr_accepted_when_req_done para REQ Open, obteve: %v", violations)
+	}
+}
+
+// TestBlockedByDraftADR_REQOpen_ProposedADR_Violates — corrige a cegueira: antes,
+// adrDraftStatusForRule só reconhecia "Status: Draft"; um ADR criado por `adr new`
+// (o caminho normal, que emite Status: Proposed) bloqueando uma REQ Open não disparava
+// nada. Agora deve disparar via blocked_by_draft_adr (nome da regra preservado).
+func TestBlockedByDraftADR_REQOpen_ProposedADR_Violates(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/req", "docs/adr")
+
+	adrRel := "docs/adr/ADR-2026-08-01-proposed-blocker.md"
+	writeFile(t, dir, adrRel, adrFixtureContent("Proposed"))
+
+	reqOpenContent := "# REQ: bloqueada por Proposed\n\n" +
+		"> Date: 2026-08-01 | Status: Open\n\n" +
+		"## Motivation\nmotivo\n\n" +
+		"## Acceptance Criteria\n- [ ] pendente\n\n" +
+		"## Linked ADR\nADR:\n\n" +
+		"## Blocked by ADRs\n- ADR-2026-08-01-proposed-blocker.md (Proposed)\n\n" +
+		"## Linked Roadmap\nRoadmap:\n"
+	writeFile(t, dir, "docs/req/REQ-2026-08-01-blocked-fixture.md", reqOpenContent)
+	writeFile(t, dir, "trackfw.yaml", "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// Pré-condição: sem a correção, o ADR não seria reconhecido como não-aceito.
+	if !adrStatusIsNotAccepted(adrFixtureContent("Proposed")) {
+		t.Fatalf("pré-condição falhou: adrStatusIsNotAccepted deve retornar true para Status: Proposed")
+	}
+
+	violations, err := validateREQsNotBlockedByDraftADRs()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) == 0 {
+		t.Fatal("regressão: blocked_by_draft_adr não detectou ADR Proposed bloqueando REQ Open")
+	}
+	if !hasViolation(violations, "REQ-2026-08-01-blocked-fixture.md") {
+		t.Errorf("mensagem deve citar a REQ, obteve: %v", violations)
+	}
+	if !hasViolation(violations, "ADR-2026-08-01-proposed-blocker.md") {
+		t.Errorf("mensagem deve citar o ADR, obteve: %v", violations)
+	}
+}
+
+// TestADRAcceptedWhenREQDone_FrontmatterStatusVazio_CaiParaCabecalho — REQ com
+// `status: ""` no frontmatter (campo presente mas vazio, formato real usado pelos
+// geradores para campos não preenchidos) deve cair para o cabeçalho "| Status: Done"
+// em vez de ser tratada como "não é Done" por engano.
+func TestADRAcceptedWhenREQDone_FrontmatterStatusVazio_CaiParaCabecalho(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/req", "docs/adr")
+
+	adrRel := "docs/adr/ADR-2026-08-01-proposed-fallback.md"
+	writeFile(t, dir, adrRel, adrFixtureContent("Proposed"))
+
+	reqContent := "---\n" +
+		"status: \"\"\n" +
+		"date: 2026-08-01\n" +
+		"author: \"\"\n" +
+		"adr: \"" + adrRel + "\"\n" +
+		"roadmap: \"\"\n" +
+		"---\n\n" +
+		"# REQ: fixture status vazio no frontmatter\n\n" +
+		"> Date: 2026-08-01 | Status: Done\n\n" +
+		"## Motivation\nmotivo\n\n" +
+		"## Acceptance Criteria\n- [x] feito\n\n" +
+		"## Linked ADR\nADR: " + adrRel + "\n\n" +
+		"## Linked Roadmap\nRoadmap:\n"
+	writeFile(t, dir, "docs/req/REQ-2026-08-01-status-vazio-fixture.md", reqContent)
+	writeFile(t, dir, "trackfw.yaml", "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	if !reqStatusIsDone(reqContent) {
+		t.Fatalf("reqStatusIsDone deve cair para o cabeçalho quando frontmatter status está vazio")
+	}
+
+	violations, err := validateADRAcceptedWhenREQDone()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) == 0 {
+		t.Fatal("esperava violation: REQ Done via cabeçalho (frontmatter status vazio) + ADR Proposed")
+	}
+}
+
+// TestAdrStatusIsNotAccepted_HeaderFallback — sem frontmatter, cai para o cabeçalho.
+func TestAdrStatusIsNotAccepted_HeaderFallback(t *testing.T) {
+	content := "# ADR: legado\n\n> Date: 2026-08-01 | Status: Proposed\n\n## Context\nctx\n"
+	if !adrStatusIsNotAccepted(content) {
+		t.Error("esperava true via fallback de cabeçalho para ADR sem frontmatter")
+	}
+}
+
+// TestAdrStatusIsNotAccepted_FrontmatterPrecedeProse — o valor do frontmatter decide;
+// uma menção solta a "Status: Draft" na prosa do corpo não deve enganar o helper
+// (prova de que não é mais um strings.Contains ingênuo no corpo inteiro).
+func TestAdrStatusIsNotAccepted_FrontmatterPrecedeProse(t *testing.T) {
+	content := "---\nstatus: Accepted\ndate: 2026-08-01\n---\n\n" +
+		"# ADR: x\n\n> Date: 2026-08-01 | Status: Accepted\n\n" +
+		"## Context\nEste ADR substitui uma proposta anterior que ficou em Status: Draft por meses.\n"
+	if adrStatusIsNotAccepted(content) {
+		t.Error("frontmatter Accepted deve prevalecer sobre menção a 'Status: Draft' na prosa")
+	}
+}

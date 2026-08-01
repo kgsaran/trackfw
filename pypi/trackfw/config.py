@@ -46,6 +46,7 @@ def defaults():
             "folder_status":        "warning",
             "filename_uniqueness":  "error",
             "blocked_by_draft_adr": "error",
+            "adr_accepted_when_req_done": "error",
         },
     }
 

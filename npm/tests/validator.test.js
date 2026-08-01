@@ -998,6 +998,125 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
+  // ---------------------------------------------------------------------------
+  // ML-1B — REQ-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida
+  // Helper canônico adrNotAcceptedStatusForRule (Draft ou Proposed) + regra nova
+  // adr_accepted_when_req_done. blocked_by_draft_adr deixa de ser cega a Proposed.
+  // ---------------------------------------------------------------------------
+
+  function withTmpProject(fn) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-adr-accepted-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
+      fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'req_dir: docs/req\nadr_dirs:\n  - docs/adr\n')
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        fn(tmp)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+
+  function writeAdr(tmp, basename, status) {
+    fs.writeFileSync(
+      path.join(tmp, 'docs', 'adr', basename),
+      `---\nstatus: ${status}\ndate: 2026-08-01\nauthor: ""\n---\n\n# ADR: fixture\n\n> Date: 2026-08-01 | Status: ${status}\n\n## Context\ncontext\n`
+    )
+  }
+
+  function writeReq(tmp, basename, reqStatus, adrBasename) {
+    fs.writeFileSync(
+      path.join(tmp, 'docs', 'req', basename),
+      `---\nstatus: ${reqStatus}\ndate: 2026-08-01\nauthor: ""\nadr: "docs/adr/${adrBasename}"\n---\n\n# REQ: fixture\n\n> Date: 2026-08-01 | Status: ${reqStatus}\n\n## Motivation\n\n## Acceptance Criteria\n- [ ]\n\n## Linked ADR\nADR: docs/adr/${adrBasename}\n\n## Linked Roadmap\nRoadmap:\n`
+    )
+  }
+
+  test('adr_accepted_when_req_done: REQ Done + ADR Proposed -> violation citando ambos', () => {
+    withTmpProject((tmp) => {
+      writeAdr(tmp, 'ADR-2026-08-01-fixture.md', 'Proposed')
+      writeReq(tmp, 'REQ-2026-08-01-fixture.md', 'Done', 'ADR-2026-08-01-fixture.md')
+      const violations = validator.validateADRAcceptedWhenREQDone()
+      assert.strictEqual(violations.length, 1, `esperava 1 violation; got ${JSON.stringify(violations)}`)
+      assert(violations[0].includes('REQ-2026-08-01-fixture.md'), 'mensagem deve citar a REQ')
+      assert(violations[0].includes('ADR-2026-08-01-fixture.md'), 'mensagem deve citar o ADR')
+    })
+  })
+
+  test('adr_accepted_when_req_done: REQ Done + ADR Draft -> violation', () => {
+    withTmpProject((tmp) => {
+      writeAdr(tmp, 'ADR-2026-08-01-fixture.md', 'Draft')
+      writeReq(tmp, 'REQ-2026-08-01-fixture.md', 'Done', 'ADR-2026-08-01-fixture.md')
+      const violations = validator.validateADRAcceptedWhenREQDone()
+      assert.strictEqual(violations.length, 1, `esperava 1 violation; got ${JSON.stringify(violations)}`)
+    })
+  })
+
+  test('adr_accepted_when_req_done: REQ Done + ADR Superseded -> sem violation (aceito por exclusao)', () => {
+    withTmpProject((tmp) => {
+      writeAdr(tmp, 'ADR-2026-08-01-fixture.md', 'Superseded')
+      writeReq(tmp, 'REQ-2026-08-01-fixture.md', 'Done', 'ADR-2026-08-01-fixture.md')
+      const violations = validator.validateADRAcceptedWhenREQDone()
+      assert.strictEqual(violations.length, 0, `esperava 0 violations; got ${JSON.stringify(violations)}`)
+    })
+  })
+
+  test('adr_accepted_when_req_done: REQ Open + ADR Proposed -> sem violation da regra nova', () => {
+    withTmpProject((tmp) => {
+      writeAdr(tmp, 'ADR-2026-08-01-fixture.md', 'Proposed')
+      writeReq(tmp, 'REQ-2026-08-01-fixture.md', 'Open', 'ADR-2026-08-01-fixture.md')
+      const violations = validator.validateADRAcceptedWhenREQDone()
+      assert.strictEqual(violations.length, 0, `esperava 0 violations; got ${JSON.stringify(violations)}`)
+    })
+  })
+
+  test('blocked_by_draft_adr: REQ Open bloqueada por ADR Proposed -> violation (correcao da cegueira)', () => {
+    withTmpProject((tmp) => {
+      writeAdr(tmp, 'ADR-2026-08-01-fixture.md', 'Proposed')
+      const reqContent = `---\nstatus: Open\ndate: 2026-08-01\nauthor: ""\nadr: ""\n---\n\n# REQ: fixture\n\n> Date: 2026-08-01 | Status: Open\n\n## Motivation\n\n## Acceptance Criteria\n- [ ]\n\n## Linked ADR\nADR:\n\n## Blocked by ADRs\n- ADR-2026-08-01-fixture.md (Proposed)\n\n## Linked Roadmap\nRoadmap:\n`
+      fs.writeFileSync(path.join(tmp, 'docs', 'req', 'REQ-2026-08-01-fixture.md'), reqContent)
+      const violations = validator.validateREQsNotBlockedByDraftADRs()
+      assert.strictEqual(violations.length, 1,
+        `regressao: blocked_by_draft_adr continua cego a Proposed; got ${JSON.stringify(violations)}`)
+      assert(violations[0].includes('ADR-2026-08-01-fixture.md'))
+    })
+  })
+
+  test('adr_accepted_when_req_done: ADR Accepted cuja PROSA cita "Status: Draft"/"Proposed" -> sem violation (anchoring, nao substring livre)', () => {
+    withTmpProject((tmp) => {
+      // Cabeçalho real é "Accepted"; o corpo do documento (prosa) menciona literalmente as strings
+      // "Status: Draft" e "Status: Proposed" ao documentar o próprio defeito que este ADR corrige.
+      // Uma detecção por content.includes() classificaria isso erroneamente como "não aceito".
+      const adrContent = `---\nstatus: Accepted\ndate: 2026-08-01\nauthor: ""\n---\n\n# ADR: fixture\n\n> Date: 2026-08-01 | Status: Accepted\n\n## Context\n\nO defeito antigo testava \`content.includes("Status: Draft")\`. Um ADR emitido por\n\`adr new\` produz \`Status: Proposed\` no cabeçalho.\n`
+      fs.writeFileSync(path.join(tmp, 'docs', 'adr', 'ADR-2026-08-01-fixture.md'), adrContent)
+      writeReq(tmp, 'REQ-2026-08-01-fixture.md', 'Done', 'ADR-2026-08-01-fixture.md')
+
+      // Pré-condição: prova que a fixture de fato contém as substrings problemáticas na prosa.
+      assert(adrContent.includes('Status: Draft'), 'pré-condição: fixture deve conter "Status: Draft" na prosa')
+      assert(adrContent.includes('Status: Proposed'), 'pré-condição: fixture deve conter "Status: Proposed" na prosa')
+
+      const violations = validator.validateADRAcceptedWhenREQDone()
+      assert.strictEqual(violations.length, 0,
+        `regressao: ADR Accepted classificado como nao aceito por causa de menção na prosa; got ${JSON.stringify(violations)}`)
+    })
+  })
+
+  test('extractAdrHeaderStatus: ancorado na linha de cabeçalho, ignora ocorrências soltas no corpo', () => {
+    const content = 'texto solto contendo Status: Draft em algum lugar\n\n> Date: 2026-08-01 | Status: Accepted\n'
+    assert.strictEqual(validator.extractAdrHeaderStatus(content), 'Accepted')
+  })
+
+  test('adr_accepted_when_req_done: registrada em config.defaults() com severidade error', () => {
+    const defaults = config.defaults()
+    assert.strictEqual(defaults.rules.adr_accepted_when_req_done, 'error')
+  })
+
   console.log(`\n${passed} passed, ${failed} failed, ${skipped} xfail`)
   if (failed > 0) process.exit(1)
 })()

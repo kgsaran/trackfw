@@ -254,20 +254,64 @@ function contentHasMarker(content, markers) {
   return false
 }
 
-// adrIsDraft verifica se <adrBasename> contém "Status: Draft" buscando recursivamente nas adrDirs.
+// extractAdrHeaderStatus extrai o valor declarado na linha de cabeçalho
+// ("> Date: ... | Status: X") de um ADR. Ancorado à linha — não é substring livre sobre o
+// documento inteiro — para não confundir texto de prosa que mencione "Status: Draft"/"Proposed"
+// (ex: citações de código, exemplos) com o status real do artefato. Retorna '' se a linha não
+// existir.
+function extractAdrHeaderStatus(content) {
+  const marker = '| Status: '
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    const idx = trimmed.indexOf(marker)
+    if (idx >= 0) {
+      let rest = trimmed.slice(idx + marker.length)
+      const pipeIdx = rest.indexOf(' |')
+      if (pipeIdx >= 0) rest = rest.slice(0, pipeIdx)
+      return rest.trim()
+    }
+  }
+  return ''
+}
+
+// adrNotAcceptedStatusForRule é o helper canônico de "ADR não aceito": único lugar que conhece o
+// vocabulário Draft/Proposed. Verdadeiro para ADR cujo status seja "Draft" ou "Proposed"; qualquer
+// outro status (Accepted, Superseded, Deprecated, Rejected, ...) conta como aceito por exclusão —
+// não há allowlist fechada de status aceitos.
+//
+// Decisão sobre onde ler o status: casa a linha de cabeçalho ("> Date: ... | Status: X"), não o
+// frontmatter ("status:") — mesmo mecanismo que os chamadores existentes (adrDraftStatusForRule e
+// os ~42 cenários herdados de blocked_by_draft_adr) já usam e testam; frontmatter e cabeçalho são
+// gerados em sincronia por adr.go/req.go, então ler só o cabeçalho não perde sinal em uso normal.
+// Crucial: extrai o valor de UMA linha específica (extractAdrHeaderStatus), não faz
+// content.includes('Status: Draft') sobre o documento inteiro — esse era o defeito do código
+// herdado (adrDraftStatusForRule original): um ADR com status real "Accepted" mas cuja prosa cita
+// literalmente a string "Status: Draft" (ex: este próprio ADR, que documenta o bug) seria
+// classificado como não aceito. Ver vault/notes para o caso concreto que expôs isso.
+function adrNotAcceptedStatusForRule(rule, basename, messages) {
+  const p = findAdrFile(basename)
+  if (!p) return { notAccepted: false, status: '', inspected: true }
+  try {
+    const content = fs.readFileSync(p, 'utf8')
+    const status = extractAdrHeaderStatus(content)
+    const notAccepted = status.toLowerCase() === 'draft' || status.toLowerCase() === 'proposed'
+    return { notAccepted, status, inspected: true }
+  } catch (err) {
+    if (messages) messages.push(inspectionDiagnostic(rule, p, err))
+    return { notAccepted: false, status: '', inspected: false }
+  }
+}
+
+// adrIsDraft verifica se <adrBasename> está em status não aceito (Draft ou Proposed) buscando
+// recursivamente nas adrDirs. Nome mantido por compatibilidade (chamadores existentes); delega no
+// helper canônico adrNotAcceptedStatusForRule.
 function adrIsDraft(basename) {
   return adrDraftStatusForRule(basename, null).draft
 }
 
 function adrDraftStatusForRule(basename, messages) {
-  const p = findAdrFile(basename)
-  if (!p) return { draft: false, inspected: true }
-  try {
-    return { draft: fs.readFileSync(p, 'utf8').includes('Status: Draft'), inspected: true }
-  } catch (err) {
-    if (messages) messages.push(inspectionDiagnostic('blocked_by_draft_adr', p, err))
-    return { draft: false, inspected: false }
-  }
+  const result = adrNotAcceptedStatusForRule('blocked_by_draft_adr', basename, messages)
+  return { draft: result.notAccepted, inspected: result.inspected }
 }
 
 // validateWIPHasREQ — roadmaps em wip/ sem marker REQ no conteúdo → violation
@@ -624,6 +668,56 @@ function validateREQsNotBlockedByDraftADRs() {
       if (adrDraftStatusForRule(adrBasename, violations).draft) {
         violations.push(`REQ ${path.basename(filePath)} is blocked by Draft ADR: ${adrBasename}`)
       }
+    }
+  }
+  return violations
+}
+
+// reqStatusEquals compara o status de uma REQ (case-insensitive) contra o valor esperado.
+// Casa tanto o frontmatter ("status: X") quanto a linha de cabeçalho ("> Date: ... | Status: X"),
+// mesma lógica de detecção usada por reqStatusIsOpen — duplicada aqui (em vez de generalizar
+// reqStatusIsOpen) para não alterar o comportamento de req_roadmap_lifecycle, que já a consome.
+function reqStatusEquals(content, status) {
+  const target = String(status).toLowerCase()
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    const idx = trimmed.indexOf(':')
+    if (idx >= 0 && trimmed.slice(0, idx).trim().toLowerCase() === 'status') {
+      return trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '').toLowerCase() === target
+    }
+    const marker = '| Status: '
+    const markerIdx = trimmed.indexOf(marker)
+    if (markerIdx >= 0) {
+      let rest = trimmed.slice(markerIdx + marker.length)
+      const pipeIdx = rest.indexOf(' |')
+      if (pipeIdx >= 0) rest = rest.slice(0, pipeIdx)
+      return rest.trim().toLowerCase() === target
+    }
+  }
+  return false
+}
+
+// validateADRAcceptedWhenREQDone — REQ Done cujo ADR vinculado (campo "ADR:") não está aceito
+// (Draft ou Proposed, via o helper canônico adrNotAcceptedStatusForRule) → violation. Fecha a
+// lacuna que deixou um ADR Proposed atravessar sete REQs Done sem nenhum gate detectar.
+function validateADRAcceptedWhenREQDone() {
+  const cfg = config.load()
+  const files = resolveReqFiles(cfg)
+  const violations = []
+  for (const filePath of files) {
+    const content = readFileForRule('adr_accepted_when_req_done', filePath, violations)
+    if (content === null) continue
+    if (!reqStatusEquals(content, 'done')) continue
+
+    const adrRef = extractRefPath(content, 'ADR')
+    if (!adrRef) continue
+    const adrBasename = path.basename(adrRef)
+    const status = adrNotAcceptedStatusForRule('adr_accepted_when_req_done', adrBasename, violations)
+    if (status.notAccepted) {
+      const reqBasename = path.basename(filePath)
+      violations.push(
+        `REQ "${reqBasename}" is Done but linked ADR "${adrBasename}" is not accepted (status: ${status.status})`
+      )
     }
   }
   return violations
@@ -1131,6 +1225,7 @@ async function validateUnfiltered() {
   applyRule('filename_uniqueness',  validateFilenameUniqueness(),          violations, warnings)
   applyRule('branch_has_wip_roadmap', validateBranchHasWIPRoadmap(),      violations, warnings)
   applyRule('blocked_by_draft_adr', validateREQsNotBlockedByDraftADRs(),  violations, warnings)
+  applyRule('adr_accepted_when_req_done', validateADRAcceptedWhenREQDone(), violations, warnings)
   applyRule('note_orphan',           validateNoteOrphan(),                 violations, warnings)
 
   // Regras configuráveis via applyRule (popula _itemMeta automaticamente)
@@ -1316,4 +1411,9 @@ module.exports = {
   isInsideDir,
   walkDirMdWithPaths,
   validateADRDirsExist,
+  // novas funções ML-1B (2026-08-01 — adr_accepted_when_req_done)
+  extractAdrHeaderStatus,
+  adrNotAcceptedStatusForRule,
+  reqStatusEquals,
+  validateADRAcceptedWhenREQDone,
 }
