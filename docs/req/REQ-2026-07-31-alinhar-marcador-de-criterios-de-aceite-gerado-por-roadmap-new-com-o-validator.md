@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-31
 author: "Zeus"
 adr: "docs/adr/ADR-2026-07-31-gerador-de-roadmap-emite-heading-consolidado-de-criterios-de-aceite.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md"
 ---
 
 # REQ: Alinhar marcador de criterios de aceite gerado por roadmap new com o validator
 
-> Date: 2026-07-31 | Status: Open
+> Date: 2026-07-31 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -58,22 +58,23 @@ Nota de vault: `vault/notes/roadmap-new-gera-marcador-de-aceite-invalido-2026-07
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Um roadmap recém-criado por `trackfw roadmap new` e movido para `wip` passa em
+- [x] **AC1** — Um roadmap recém-criado por `trackfw roadmap new` e movido para `wip` passa em
       `trackfw validate` **sem nenhuma edição manual**, nos três CLIs.
-- [ ] **AC2** — O gerador emite um heading consolidado que casa com `cfg.AcceptanceMarkers`,
+- [x] **AC2** — O gerador emite um heading consolidado que casa com `cfg.AcceptanceMarkers`,
       **sem remover** os blocos `**Acceptance criteria:**` por microlote, que continuam sendo a
       unidade operacional de cada ML.
-- [ ] **AC3** — Paridade: os três geradores produzem o **mesmo** artefato byte-a-byte para a
+- [x] **AC3** — Paridade: os três geradores produzem o **mesmo** artefato byte-a-byte para a
       mesma entrada. `scripts/check-artifact-parity.sh` passa.
-- [ ] **AC4** — Vale também para `roadmap new --from-req`, que gera stubs de ML a partir dos
+- [x] **AC4** — Vale também para `roadmap new --from-req`, que gera stubs de ML a partir dos
       critérios de aceite da REQ.
-- [ ] **AC5** — Teste de falsificação no padrão `scripts/check-gates-falsify.sh`: ao reverter o
-      gerador para emitir apenas `**Acceptance criteria:**`, o teste deve **falhar** com a
-      violação `wip_acceptance`. Provar o efeito de ponta a ponta (gerar → mover → validar),
-      não apenas a presença da string no template.
-- [ ] **AC6** — Roadmaps **já existentes** em `docs/roadmaps/` não são invalidados pela mudança.
+- [x] **AC5** — Cenário permanente adicionado a `scripts/check-gates-falsify.sh`: 6 asserções
+      (`roadmap-acceptance-heading/{go,node,python}/{simple,from-req}`), contador 24 → 30.
+      Prova o efeito de ponta a ponta (gerar → mover → validar). Falsificação independente feita
+      por Zeus na auditoria: removendo um dos dois blocos do gerador Go, o gate sai com
+      **exit 1** e `expected 2 occurrences of the heading block, got 1`.
+- [x] **AC6** — Roadmaps **já existentes** em `docs/roadmaps/` não são invalidados pela mudança.
       `trackfw validate` continua verde no repositório.
-- [ ] **AC7** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+- [x] **AC7** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
 
 ## Negative Scope (fora do escopo — NÃO fazer)
 
@@ -110,4 +111,4 @@ ADR: docs/adr/ADR-2026-07-31-gerador-de-roadmap-emite-heading-consolidado-de-cri
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md

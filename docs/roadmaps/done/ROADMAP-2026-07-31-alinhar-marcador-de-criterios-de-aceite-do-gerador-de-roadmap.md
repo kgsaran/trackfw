@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-31
 req: "docs/req/REQ-2026-07-31-alinhar-marcador-de-criterios-de-aceite-gerado-por-roadmap-new-com-o-validator.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Alinhar marcador de criterios de aceite do gerador de roadmap
 
-> Created: 2026-07-31 | Status: wip
+> Created: 2026-07-31 | Status: done
 
 ## Context
 
@@ -83,13 +83,13 @@ valida só o próprio CLI. A paridade é a **Wave 2**, que funciona como barreir
 
 Consolidados da REQ (AC1–AC7). Detalhamento por microlote nas waves abaixo.
 
-- [ ] Roadmap gerado e movido para `wip` passa em `validate` sem edição manual, nos 3 CLIs
-- [ ] Heading consolidado emitido **sem remover** os blocos `**Acceptance criteria:**` por ML
-- [ ] Vale também para `roadmap new --from-req`
-- [ ] Os três geradores produzem artefato byte-a-byte idêntico
-- [ ] Roadmaps existentes não são invalidados — `validate` segue verde no repositório
-- [ ] Seam de falsificação prova que o ciclo falha se o gerador voltar ao marcador antigo
-- [ ] `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes
+- [x] Roadmap gerado e movido para `wip` passa em `validate` sem edição manual, nos 3 CLIs
+- [x] Heading consolidado emitido **sem remover** os blocos `**Acceptance criteria:**` por ML
+- [x] Vale também para `roadmap new --from-req`
+- [x] Os três geradores produzem artefato byte-a-byte idêntico
+- [x] Roadmaps existentes não são invalidados — `validate` segue verde no repositório
+- [x] Seam de falsificação prova que o ciclo falha se o gerador voltar ao marcador antigo
+- [x] `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes
 
 ---
 
@@ -165,7 +165,7 @@ também no Node e no Python. **Pré-existente e fora do escopo** — candidato a
 > Dependências: **ML-1A, ML-1B e ML-1C completos e auditados**
 
 ### ML-2A — Paridade dos 3 CLIs e seam de falsificação
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Ártemis
 
 **Ações:**
@@ -181,9 +181,45 @@ também no Node e no Python. **Pré-existente e fora do escopo** — candidato a
    `scripts/check-gates-falsify.sh`.
 
 **Acceptance criteria:**
-- [ ] `scripts/check-artifact-parity.sh` passa
-- [ ] `make quality` exit 0
-- [ ] `trackfw validate` verde
-- [ ] Seam provado vivo: com o gerador corrompido, o ciclo falha com `wip_acceptance`
-- [ ] Gerador restaurado; `git status --porcelain` sem resíduo
-- [ ] Nenhum artefato de teste deixado no repositório
+- [x] `scripts/check-artifact-parity.sh` passa (8 tipos × 3 runtimes)
+- [x] `make quality` exit 0
+- [x] `trackfw validate` verde
+- [x] Seam provado vivo
+- [x] Gerador restaurado; sem resíduo de teste
+- [x] **Cenário permanente em CI** — 6 asserções novas
+      (`roadmap-acceptance-heading/{go,node,python}/{simple,from-req}`), contador 24 → 30
+
+**Auditoria de Zeus (2026-08-01) — falsificação independente do próprio gate:**
+
+Não bastava ver 30 OK. Removi **um** dos dois blocos do gerador Go e rodei o gate:
+
+```
+EXIT=1
+expected 2 occurrences of the heading block, got 1
+```
+
+O gate falha por **guarda de pré-condição** — detecta que a fonte não casa mais o contrato e
+aborta, em vez de rodar um ciclo já inválido. Restaurado, volta a 30/30 e `make quality` exit 0.
+A lacuna apontada na auditoria da Wave 1 (remoção coordenada nos três CLIs passar despercebida)
+**está fechada**: agora existe barreira de CI, não só paridade entre CLIs.
+
+Diferente do ciclo do DOMPurify, onde o seam não pôde virar gate — aqui é shell puro, sem DOM e
+sem dependência.
+
+---
+
+## Fechamento
+
+Concluído e auditado em 2026-08-01. `make quality` exit 0; falsificação 30/30.
+
+**Entrega:** os três geradores emitem o heading consolidado nos dois caminhos, e existe **gate de
+CI** que prova a regressão — 6 asserções cobrindo 3 CLIs × 2 caminhos.
+
+**Achado colateral root-caused, não corrigido** — `roadmap new --from-req` sempre dispara
+`ref_targets_exist`, por **três** causas independentes: (1) `NewRoadmapFromREQ` grava apenas o
+basename no campo `req:` do frontmatter, nos 3 CLIs; (2) `extractRefPath` retorna no primeiro
+campo casado, e a linha `req:` do frontmatter precede a linha `REQ:` do corpo, então lê sempre o
+valor errado; (3) `referenceExists(ref, roots)` nunca usa `roots` — faz `os.Stat(ref)` relativo ao
+cwd. Documentado em `vault/notes/roadmap-from-req-ref-targets-exist-falso-positivo-2026-08-01.md`.
+Dois agentes haviam reportado o sintoma sem diagnóstico; agora está com causa raiz e sugestão de
+correção. **Candidato a REQ própria.**
