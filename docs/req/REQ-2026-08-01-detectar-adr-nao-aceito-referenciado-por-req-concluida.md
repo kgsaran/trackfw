@@ -1,0 +1,111 @@
+---
+status: Open
+date: 2026-08-01
+author: "Zeus"
+adr: "docs/adr/ADR-2026-08-01-nocao-canonica-de-adr-nao-aceito-e-regra-de-aceite-exigido-por-req-concluida.md"
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md"
+---
+
+# REQ: Detectar ADR nao aceito referenciado por REQ concluida
+
+> Date: 2026-08-01 | Status: Open
+| Linear Issue: 
+| Jira Issue: 
+
+## Motivation
+
+O `ADR-2026-07-26-principios-de-design-de-gates-verificaveis` permaneceu `Proposed` enquanto
+**7 REQs que ele governa** foram todas concluídas. Nenhum gate detectou. Descoberto por auditoria
+manual de backlog em 2026-08-01.
+
+Investigando a causa, encontrei uma lacuna maior: **o vocabulário de "ADR não aceito" está
+fragmentado**. O validador reconhece apenas `Status: Draft`
+(`internal/validator/validator.go:1221-1235`), mas `trackfw adr new` — o caminho normal — emite
+`Proposed`. Só `NewADRDraft` (chamado por `req new`, `internal/commands/req.go:110`) produz
+`Draft`.
+
+Duas consequências verificadas:
+
+1. A regra existente `blocked_by_draft_adr` é **cega a `Proposed`** — uma REQ `Open` bloqueada
+   por ADR criado com `adr new` não dispara nada.
+2. **Não existe regra** para ADR não aceito referenciado por REQ `Done`.
+
+Mesma raiz: não há noção canônica de "ADR não aceito", há um literal espalhado pelo código.
+
+## Acceptance Criteria
+
+- [ ] **AC1** — Existe um helper canônico único por CLI (sugestão: `adrNotAccepted` /
+      `adr_not_accepted`) que devolve verdadeiro para ADR com status `Draft` **ou** `Proposed`.
+      Nenhum outro ponto do código testa esses literais diretamente.
+- [ ] **AC2** — `blocked_by_draft_adr` passa a usar o helper e **deixa de ser cega a `Proposed`**:
+      REQ `Open` bloqueada por ADR `Proposed` produz violação. O **nome da regra não muda**.
+- [ ] **AC3** — Regra nova `adr_accepted_when_req_done`, severidade **`error`**, registrada no
+      mapa `Rules` default (`internal/config/config.go:84` e equivalentes): ADR não aceito
+      referenciado por REQ `Done` é violação.
+- [ ] **AC4** — A mensagem de violação identifica **os dois artefatos** — qual ADR e qual REQ —
+      para que o usuário saiba o que corrigir sem investigar.
+- [ ] **AC5** — **"Aceito" é definido por exclusão**: qualquer status que não seja `Draft` nem
+      `Proposed` conta como aceito. `Superseded`, `Deprecated` e `Rejected` **não** produzem
+      violação — REQ `Done` apoiada em ADR posteriormente substituído é histórico legítimo.
+      Coberto por teste explícito.
+- [ ] **AC6** — REQ `Open` (ou qualquer status que não `Done`) referenciando ADR não aceito
+      **não** dispara a regra nova — é o fluxo normal de trabalho em andamento.
+- [ ] **AC7** — `trackfw validate` **verde neste repositório** após a mudança. Nenhum artefato
+      existente é invalidado — todos os 17 ADRs estão `Accepted` hoje.
+- [ ] **AC8** — Paridade dos 3 CLIs: mesma regra, mesmo nome, mesma severidade default, mesma
+      mensagem. `scripts/check-artifact-parity.sh` e `scripts/check-validate-parity.sh` passam.
+- [ ] **AC9** — Cenário de falsificação permanente em `scripts/check-gates-falsify.sh`, cobrindo
+      **as duas** regras afetadas e os **três** CLIs: com a regra removida ou o helper neutralizado,
+      um cenário que deveria falhar precisa **passar** — provando que a checagem não é vacuosa.
+      Contador e linha final atualizados.
+- [ ] **AC10** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+
+## Negative Scope (fora do escopo — NÃO fazer)
+
+- **Não renomear `blocked_by_draft_adr`.** Nomes de regra são chave pública de configuração
+  (`rules:` no `trackfw.yaml`); renomear quebraria silenciosamente projetos que ajustaram a
+  severidade. O nome fica historicamente impreciso — aceito no ADR.
+- **Não unificar os geradores** fazendo `NewADRDraft` emitir `Proposed`. `Draft` (stub automático)
+  e `Proposed` (decisão redigida) têm semânticas distintas, e a mudança invalidaria ADRs `Draft`
+  existentes em projetos downstream.
+- **Não usar allowlist fechada de status aceitos.** A definição é por exclusão — enumerar
+  quebraria projetos com vocabulário próprio.
+- Não alterar `extractRefPath`, `referenceExists` nem as demais regras existentes.
+- Não alterar o status de nenhum ADR ou REQ do repositório como forma de "passar" no gate.
+- Não mexer em `pypi/build/lib/`.
+- Não adicionar devDependency nem dependência Python.
+
+## Notas de implementação
+
+Pontos exatos verificados em 2026-08-01:
+
+| | Helper atual (`Draft` hardcoded) | Regras default | Regra a corrigir |
+|---|---|---|---|
+| Go | `internal/validator/validator.go:1221-1235` | `internal/config/config.go:84` | chamadas em `:1136`, `:1172`, `:1217` |
+| Node | equivalente em `npm/src/validator/index.js` | config Node | idem |
+| Python | `pypi/trackfw/validator.py:396` | config Python | `:864`, `:881` |
+
+Geradores: `internal/generators/adr.go:60,67` emite `Proposed`; `:214` (`NewADRDraft`) emite
+`Draft`.
+
+Os três CLIs têm arquivos disjuntos → os MLs de implementação podem rodar **em paralelo**. Mas
+`make parity` e `make quality` só fecham com os três prontos, porque os gates comparam
+comportamento entre CLIs — a paridade é barreira de wave posterior, não critério dos MLs
+individuais. Mesmo padrão do ciclo do PR #96.
+
+**Atenção ao AC9:** diferente do caso do DOMPurify, aqui o seam é shell puro (gerar artefato,
+rodar `validate`, conferir violação) — portanto **é viável em CI** e deve ser gate permanente,
+não verificação de auditoria.
+
+`check-gates-falsify.sh` leva mais de 2 min; rodar em background.
+
+## Linked ADR
+
+ADR: docs/adr/ADR-2026-08-01-nocao-canonica-de-adr-nao-aceito-e-regra-de-aceite-exigido-por-req-concluida.md
+
+## Blocked by ADRs
+<!-- none -->
+
+## Linked Roadmap
+
+Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md
