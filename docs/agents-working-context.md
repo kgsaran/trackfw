@@ -4,6 +4,36 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (tag v6.1.0 + aceite do ADR de gates) — CONCLUÍDO
+
+PR #100 mergeado; `origin/main` em `cb09ec9`; nenhuma branch aberta.
+
+### Tag v6.1.0 publicada
+
+Anotada, com o corpo extraído da seção `[6.1.0]` do CHANGELOG. Aponta para `cb09ec9` — conferido
+que é exatamente o commit de `origin/main`, não um ancestral.
+
+**Ordem deliberada: tag ANTES do aceite do ADR.** A tag deve ser reproduzível a partir do
+CHANGELOG — `git show v6.1.0` corresponde ao que está documentado. O aceite do ADR é metadado de
+governança que não consta do CHANGELOG, então entra depois e cai na próxima release. Decisão de
+baixo risco, tomada e comunicada.
+
+### ADR aceito
+
+`ADR-2026-07-26-principios-de-design-de-gates-verificaveis` (autoria KG) → `Accepted`, com linha
+`Accepted: 2026-08-01` acrescentada para preservar a data original de criação (26/07) distinta da
+data de aceite. As **7 REQs** que ele governa foram reconferidas: todas `Done`.
+
+**Não restam ADRs `Proposed`** no repositório.
+
+### Lacuna de governança identificada (sem REQ ainda)
+
+Nenhum gate detecta ADR `Proposed` referenciado por REQ `Done`. Foi assim que esse estado
+sobreviveu a sete entregas. É o mesmo padrão dos defeitos corrigidos nesta sessão: estado
+inconsistente que nenhuma verificação automática pega. Candidato natural a REQ — regra nova no
+`validate` mais cenário em `check-gates-falsify.sh`. **Sugerido a KG, aguardando decisão.**
+
+---
 ## Sessão 2026-08-01 — Zeus (release v6.1.0 + housekeeping de vault) — CONCLUÍDO
 
 **Branch:** `chore/release-6.1.0`
