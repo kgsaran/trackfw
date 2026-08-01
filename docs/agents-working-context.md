@@ -4,6 +4,99 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (orquestração — SRI nas CDNs / htmx morto) — CONCLUÍDO
+
+**Branch:** `fix/proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto`
+**ADR:** `docs/adr/ADR-2026-08-01-sri-nas-dependencias-cdn-versionadas-...md` (Accepted)
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-01-proteger-dependencias-cdn-...md`
+
+PR #98 mergeado; branch anterior apagada; `origin/main` em `e9c8b37`.
+**Último item** da fila de follow-ups aberta desde o ciclo das abas ADRs/REQs.
+
+### O levantamento mudou o escopo — não era "SRI em 5 tags"
+
+1. **htmx tem ZERO usos.** Varredura nos 3 CLIs: nenhum atributo `hx-*`, nenhuma referência no
+   `app.js`. Dependência morta baixada em toda visita. Decisão: **remover**, não proteger.
+   Eliminar o vetor é estritamente melhor que mitigá-lo — e tira o `unpkg.com` da cadeia.
+2. **O Tailwind não pode receber SRI.** URL não-versionada, `HTTP/2 302`,
+   `cache-control: max-age=14400`. Hash fixo quebraria o dashboard **inteiro** — sem estilo
+   nenhum — no próximo release deles, e silenciosamente para quem não olhasse o console.
+
+Se eu tivesse tratado a tarefa como "adicionar integrity em cinco tags", teria protegido código
+morto e quebrado o dashboard num release futuro do Tailwind.
+
+### Decisões do usuário (AskUserQuestion)
+
+htmx **removido**; Tailwind **sem SRI**, com o motivo em comentário no próprio `index.html` para
+ninguém "uniformizar" a inconsistência depois. Saldo: dashboard passa de 1/6 para **5/6** tags
+tratadas.
+
+### Buraco que esta decisão NÃO fecha
+
+O Tailwind é a **maior** dependência do dashboard e segue desprotegido. Está explícito no ADR
+como consequência negativa aceita, não escondido. Fechar exigiria trocar a Play CDN (compilador
+JIT em runtime) por artefato estático versionado — mudança de comportamento, com auditoria visual
+completa. REQ própria se um dia for exigido.
+
+### Hashes (conferidos em dois downloads independentes cada)
+
+- marked 12.0.0 — `sha384-NNQgBjjuhtXzPmmy4gurS5X7P4uTt1DThyevz4Ua0IVK5+kazYQI1W27JHjbbxQz`
+- chart.js 4.4.4 — `sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt`
+- d3 7.9.0 — `sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i`
+
+### Exigência central da Wave 2
+
+`integrity` **presente no atributo não prova nada**. O ML-2A precisa corromper um hash e confirmar
+que o navegador **bloqueia** o script — em pelo menos 2 das 3 tags, para não provar um caminho só.
+Sem isso o AC2 é decorativo.
+
+### Execução e fechamento
+
+- **ML-1A** (Afrodite) — htmx removido, SRI em marked/chart.js/d3, comentário no Tailwind.
+- **ML-1B** (Afrodite, corretivo) — cabeçalho do `app.js` declarava HTMX e omitia DOMPurify.
+  Ela **reportou no ML-1A e não alterou**, porque o escopo proibia tocar no arquivo. Autorizei
+  em seguida. Reportar em vez de extrapolar é o comportamento certo.
+- **ML-2A** (Ártemis) — prova de bloqueio em navegador real.
+- **ML-3A** (Afrodite) — espelho. `make quality` exit 0, 42 cenários.
+
+### Saldo: dashboard de 1/6 para 5/6 tags tratadas
+
+Tailwind sem SRI (deliberado) · htmx **removida** · marked, chart.js, d3 e DOMPurify com SRI.
+O `unpkg.com` saiu inteiro da cadeia.
+
+### O levantamento valeu mais que a execução
+
+Tratada como "adicionar integrity em cinco tags", esta REQ teria **protegido dependência morta**
+e **quebrado o dashboard** num release futuro do Tailwind. Verificar cada tag antes de agir mudou
+o resultado: uma virou remoção, outra virou exceção documentada.
+
+### Confirmação cruzada não planejada
+
+O hash que o **Chrome** computou nas mensagens de erro de integridade bate com os valores
+aplicados na Wave 1 — verificação independente dos hashes, vinda do navegador e não de recálculo
+nosso.
+
+### Buraco declarado, não escondido
+
+O Tailwind é a maior dependência do dashboard e segue desprotegido. Está no ADR como consequência
+negativa aceita e em comentário no `index.html`. REQ própria se a proteção passar a ser exigida.
+
+### FILA DE FOLLOW-UPS: ZERADA
+
+Todos os achados colaterais acumulados desde o ciclo das abas ADRs/REQs foram fechados.
+
+**Saldo dos seis ciclos**, todos originados de uma pergunta sobre visualizar ADRs no dashboard:
+XSS armazenado corrigido · dois casos de "a ferramenta reprova o próprio artefato" · parâmetro
+morto que enganava nove chamadores · navegação do drawer · cadeia de suprimentos endurecida.
+Proteção de falsificação em CI subiu de **24 para 42** cenários.
+
+### Nota operacional persistente
+
+`make quality` passa de 2 min (42 cenários de falsificação). Rodar em background com until-loop —
+o timeout padrão do Bash tool não basta.
+
+---
+
 ## Sessão 2026-08-01 — Zeus (orquestração — links `.md` relativos no drawer) — CONCLUÍDO
 
 **Branch:** `fix/corrigir-403-em-links-markdown-relativos-dentro-do-drawer`

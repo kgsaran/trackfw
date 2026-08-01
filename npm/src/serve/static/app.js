@@ -1,5 +1,5 @@
 /* trackfw dashboard — app.js
-   Tecnologias: HTMX + marked.js + Chart.js + D3.js (todos via CDN)
+   Tecnologias: Tailwind CSS + marked.js + DOMPurify + Chart.js + D3.js (todos via CDN)
    Sem bundler, sem npm no runtime.
 */
 
