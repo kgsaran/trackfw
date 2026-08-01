@@ -181,7 +181,7 @@ def _append_transition_log(basename: str, from_state: str, to_state: str, cfg: d
 def _roadmap_template(title: str, slug: str, date: str, req_path: str = "") -> str:
     """
     Retorna conteúdo do roadmap no formato canônico Go/Node (inglês).
-    Frontmatter: status: backlog · date · req: "" · squad: "" (minúsculo).
+    Frontmatter: status: backlog · date · req: "<req_path>" (vazio se não informado) · squad: "" (minúsculo).
     Header: > Created: <data> | Status: backlog.
     Seções e labels de ML em inglês.
     REQ-2026-07-27-convergencia-templates-python.
@@ -189,7 +189,7 @@ def _roadmap_template(title: str, slug: str, date: str, req_path: str = "") -> s
     return f"""---
 status: backlog
 date: {date}
-req: ""
+req: "{req_path}"
 squad: ""
 ---
 
@@ -334,7 +334,7 @@ def generate_roadmap_from_req(req_path: str, cfg: dict, agent: str = None) -> st
     body = f"""---
 status: backlog
 date: {today}
-req: "{basename}"
+req: "{req_path}"
 squad: ""
 ---
 

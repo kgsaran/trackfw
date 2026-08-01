@@ -419,10 +419,12 @@ function newRoadmap(title, reqPath) {
   const filename = `${backlogDir}/ROADMAP-${date}-${slug}.md`
   fs.mkdirSync(backlogDir, { recursive: true })
 
+  const reqField = reqPath ? `"${reqPath}"` : '""'
+
   const body = `---
 status: backlog
 date: ${date}
-req: ""
+req: ${reqField}
 squad: ""
 ---
 
@@ -514,7 +516,7 @@ function newRoadmapFromReq(reqPath) {
   const body = `---
 status: backlog
 date: ${date}
-req: "${basename}"
+req: "${reqPath}"
 squad: ""
 ---
 

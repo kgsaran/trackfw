@@ -78,7 +78,7 @@ Consolidados da REQ (AC1–AC10). Detalhamento por microlote abaixo.
 > Dependências: nenhuma. Arquivos disjuntos por CLI.
 
 ### ML-1A — CLI Go
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Apolo
 **Arquivos afetados:** `internal/generators/roadmap.go`, `internal/validator/validator.go` + testes Go
 
@@ -92,7 +92,7 @@ Consolidados da REQ (AC1–AC10). Detalhamento por microlote abaixo.
 - [ ] Não tocar em `npm/`, `pypi/`, nem em `extractRefPath`
 
 ### ML-1B — CLI Node
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Apolo
 **Arquivos afetados:** `npm/src/generators/roadmap.js`, `npm/src/validator/index.js` + testes Node
 
@@ -100,12 +100,43 @@ Consolidados da REQ (AC1–AC10). Detalhamento por microlote abaixo.
 - [ ] Não tocar em `internal/`, `pypi/`
 
 ### ML-1C — CLI Python
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Apolo
 **Arquivos afetados:** `pypi/trackfw/generators/roadmap.py`, `pypi/trackfw/validator.py` + testes Python
 
 **Acceptance criteria:** equivalentes ao ML-1A, no CLI Python.
 - [ ] Não tocar em `internal/`, `npm/`, `pypi/build/lib/`
+
+---
+
+### Auditoria da Wave 1 (Zeus, 2026-08-01)
+
+Verificação independente, não por relato:
+
+- `roots` removido da assinatura nos três: `referenceExists(ref string)`,
+  `referenceExists(ref)`, `_reference_exists(ref: str)`. **Nenhum chamador** ainda passa o
+  segundo argumento — varredura limpa nos três arquivos.
+- **Ciclo real nos 3 CLIs**, em diretórios temporários, com os binários/módulos de verdade:
+
+  | CLI | `req:` gerado | violações `does not exist` |
+  |---|---|---|
+  | Go | `docs/req/REQ-2026-08-01-fonte-go.md` | **0** |
+  | Node | `docs/req/REQ-2026-08-01-fonte-node.md` | **0** |
+  | Python | `docs/req/REQ-2026-08-01-fonte-python.md` | **0** |
+
+- **Risco herdado resolvido:** os 6 cenários `roadmap-acceptance-heading/*` do PR #96 **continuam
+  passando** (30/30, exit 0). A previsão da nota de vault se confirmou — o `assert_fails_with`
+  casa a substring de `wip_acceptance`, então perder a violação co-ocorrente não afeta. Confirmado
+  empiricamente, como o roadmap exigia.
+- `check-artifact-parity.sh` passa; `make quality` exit 0; `validate` verde.
+
+**Convergência independente:** os três agentes, sem se comunicarem, decidiram manter o basename no
+comentário `<!-- Derived from REQ: -->` — texto de leitura humana, não campo validado. Paridade
+textual preservada sem coordenação explícita, o que valida a precisão do handoff.
+
+**Cobertura de validação estrita:** os três adicionaram (ou confirmaram) teste provando que um
+`req:` com basename **continua** reprovando, e os três demonstraram que o teste é capaz de falhar.
+É o que impede alguém de "consertar" um sintoma futuro afrouxando o validador.
 
 ---
 

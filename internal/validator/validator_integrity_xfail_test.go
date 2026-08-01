@@ -129,6 +129,47 @@ func TestValidateRefTargetsExist_DefaultError(t *testing.T) {
 	}
 }
 
+// TestValidateRefTargetsExist_FrontmatterReqBasenameStillFails
+// REQ: REQ-2026-08-01-caminho-completo-no-campo-req-do-frontmatter-e-remocao-do-parametro-roots-morto
+// ADR-2026-08-01: o contrato do campo req: é caminho relativo completo; um roadmap cujo
+// frontmatter grava apenas o basename (mesmo que a REQ exista de verdade em docs/req/ e o
+// corpo aponte para o caminho correto) DEVE continuar reprovando ref_targets_exist. A
+// precedência frontmatter-sobre-corpo em extractRefPath não muda, e referenceExists NÃO
+// resolve contra raízes (roots foi removido, não implementado) — este teste é o que impede
+// alguém de "consertar" o falso positivo afrouxando o validador em vez de corrigir o gerador.
+func TestValidateRefTargetsExist_FrontmatterReqBasenameStillFails(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/req",
+		"docs/roadmaps/done",
+		"docs/roadmaps/wip",
+		"docs/roadmaps/backlog",
+		"docs/roadmaps/blocked",
+		"docs/adr",
+	)
+	// REQ real existe em docs/req/ — não é o caso de referência quebrada de verdade.
+	writeFile(t, dir, "docs/req/REQ-BASENAME-TEST.md",
+		"---\nstatus: Open\n---\n\n# REQ: Basename Test\n\n> Date: 2026-08-01 | Status: Open\n")
+	// Roadmap: frontmatter grava só o basename; corpo grava o caminho completo correto.
+	// extractRefPath lê o frontmatter primeiro (precedência), então o basename é o que conta.
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-BASENAME-TEST.md",
+		"---\nstatus: wip\nreq: \"REQ-BASENAME-TEST.md\"\n---\n\n"+
+			"# Roadmap: Basename Test\n\n## Context\nREQ: docs/req/REQ-BASENAME-TEST.md\n")
+	writeFile(t, dir, "trackfw.yaml",
+		"req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs:\n  - docs/adr\n")
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	warnings, err := validateRefTargetsExist()
+	if err != nil {
+		t.Fatalf("validateRefTargetsExist erro: %v", err)
+	}
+	if !hasWarning(warnings, `roadmap "ROADMAP-BASENAME-TEST.md" links to REQ "REQ-BASENAME-TEST.md" which does not exist`) {
+		t.Fatalf("esperava reprovação para req: com basename apenas no frontmatter, mesmo com REQ existente em docs/req/ e corpo correto; warnings=%v", warnings)
+	}
+}
+
 // TestValidateREQRoadmapLifecycle_REQAbertaRoadmapConcluido
 // REQ: REQ-2026-07-27-integridade-referencias | Reativado: ML-2B
 // Defeito 2 corrigido: REQ com Status: Open cujo roadmap referenciado está em done/
