@@ -4,6 +4,57 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (release v6.1.0 + housekeeping de vault) — CONCLUÍDO
+
+**Branch:** `chore/release-6.1.0`
+
+PR #99 mergeado; `origin/main` em `1c9e6ea`; todas as branches anteriores apagadas.
+
+### Auditoria de backlog pedida por KG
+
+Varredura factual, não de memória:
+
+| Fonte | Estado |
+|---|---|
+| `backlog/`, `analyzing/`, `wip/`, `blocked/`, `abandoned/` | **0** cada |
+| `done/` | 73 roadmaps |
+| REQs | 63 `Done` + 1 `Closed` — nenhuma aberta |
+| `.trackfw-attention.json` | ausente |
+| `TODO`/`FIXME` no código dos 3 CLIs | 0 |
+| `docs/roadmap/` singular descontinuado | não existe |
+
+Três pontas soltas encontradas — duas eram **dívida minha**.
+
+### 1. Notas de vault desatualizadas (corrigido aqui)
+
+Eu havia marcado `roadmap-from-req-ref-targets-exist-...` como CORRIGIDO, mas esqueci de duas:
+
+- `roadmap-new-gera-marcador-de-aceite-invalido-2026-07-31.md` — dizia "Correção pendente" mesmo
+  após o PR #96 ter corrigido.
+- `seam-xss-drawer-armadilhas-de-verificacao-2026-07-31.md` — o achado dos links `../` foi
+  corrigido no PR #98.
+
+Ambas marcadas, **preservando explicitamente o que continua válido** em cada uma: a armadilha do
+slug de branch na primeira, e as três armadilhas de instrumentação na segunda — que são a razão
+principal daquela nota existir. Nota corrigida não é nota apagada.
+
+Lição: ao fechar um ciclo, revisar **todas** as notas de vault que ele torna obsoletas, não só a
+que originou o trabalho.
+
+### 2. Release v6.1.0 (preparado aqui)
+
+Cinco PRs desde a `v6.0.0`: 1 `feat` + 5 `fix`, **zero breaking** → minor. CHANGELOG escrito a
+partir dos commits reais. Bump nos quatro arquivos de versão. Paridade conferida:
+`go 6.1.0 / node 6.1.0 / python 6.1.0`, saída byte-idêntica nos três.
+
+### 3. ADR ainda `Proposed` — pendente de decisão de KG, NÃO tocado
+
+`ADR-2026-07-26-principios-de-design-de-gates-verificaveis` (autoria **KG**, 26/07) segue
+`Proposed`, mas é referenciado por **7 REQs, todas `Done`**. Uma decisão que governou 7 entregas
+está formalmente como proposta. É inconsistência de estado, não trabalho pendente — e a decisão
+de aceitá-la é do autor. **Reportado, não alterado.**
+
+---
 ## Sessão 2026-08-01 — Zeus (orquestração — SRI nas CDNs / htmx morto) — CONCLUÍDO
 
 **Branch:** `fix/proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto`
