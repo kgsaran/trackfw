@@ -4,6 +4,87 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (orquestração — links `.md` relativos no drawer) — CONCLUÍDO
+
+**Branch:** `fix/corrigir-403-em-links-markdown-relativos-dentro-do-drawer`
+**ADR:** `docs/adr/ADR-2026-08-01-resolucao-de-links-markdown-relativos-...md` (Accepted)
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-01-corrigir-403-em-links-markdown-...md`
+
+PR #97 mergeado; branch anterior apagada; `origin/main` em `6cea9ec`.
+
+**Segunda confirmação seguida de ciclo anterior funcionando:** o roadmap deste ciclo saiu do
+gerador com `req:` **completo** no frontmatter (correção do PR #97), assim como o anterior já
+saíra com o heading de critérios (PR #96).
+
+### Escopo
+
+Links `.md` relativos dentro do drawer falham — o interceptador passa o href bruto e o whitelist
+rejeita. **Reproduzido** antes de planejar:
+
+```
+?path=../roadmaps/done/v2.3-...md   → 403
+?path=docs/roadmaps/done/v2.3-...md → 200
+```
+
+### Levantamento que eliminou a ambiguidade do projeto
+
+Antes de decidir o algoritmo, levantei **todas** as formas de link `.md` em `docs/`:
+`./X.md` (13), `X.md` nu (3), `../vault/notes/X.md` (3), `../../../requisições/claude/X.md` (5),
+`../roadmaps/done/X.md` (1), `../../req/X.md` (1).
+
+**Nenhuma é relativa à raiz.** Isso importa: se convivessem as duas formas, resolver contra o
+diretório do documento quebraria as raiz-relativas (`docs/adr/x.md` viraria
+`docs/req/docs/adr/x.md`). Como não convivem, a regra é inequívoca.
+
+### Decisão do usuário (AskUserQuestion)
+
+Whitelist **inalterado** — `vault/` fica fora, apesar dos 3 links. Correção é só de resolução, mais
+mensagem explicativa para links que caem fora dos diretórios permitidos. Mantém a superfície de
+leitura do servidor intacta, coerente com o ciclo de segurança recém-fechado.
+
+### Estrutura
+
+Três waves sequenciais (arquivo canônico único): resolução → verificação em navegador →
+espelhamento. Mesma forma do ciclo do DOMPurify.
+
+**Caso de maior risco, explicitado no roadmap:** navegação encadeada A → B → C precisa resolver
+cada salto contra o documento **então** aberto, não contra o primeiro. É o que falha numa
+implementação ingênua que fixe a base uma vez.
+
+### Execução e fechamento
+
+- **ML-1A** (Afrodite) — `resolveRelativeMdHref` + erro 403 explicativo. Commit `fd04979`.
+- **ML-2A** (Ártemis) — prova em navegador real.
+- **ML-3A** (Afrodite) — espelho npm/pypi. `make quality` exit 0, 42 cenários.
+
+### O que elevou a qualidade desta rodada
+
+**O teste encadeado foi desenhado para ser discriminante.** Eu pedi "A → B → C em diretórios
+diferentes". A Ártemis foi além: escolheu A em profundidade 2 e B em profundidade 3, com o link
+B→C sendo `../../roadmaps/done/x.md`. Com base congelada o resultado seria
+`roadmaps/done/x.md` (403); com base correta, `docs/roadmaps/done/x.md` (200). Sem essa diferença
+de profundidade o teste passaria mesmo numa implementação ingênua. Não estava no meu handoff.
+
+**Fragilidade reconhecida em vez de escondida.** A Afrodite documentou em comentário que
+`resolveRelativeMdHref` **não é idempotente** para caminho já completo, e que a segurança vem do
+isolamento do ponto de chamada, não do algoritmo. A Ártemis então **verificou** isso na prática:
+o card do Board resolve com prefixo único, não duplicado.
+
+**Separação de ruído no console.** Aviso do CDN Tailwind e 404 de favicon do próprio Chrome
+identificados como benignos e não confundidos com erro de aplicação.
+
+### Estado da fila
+
+Resta **um** follow-up: SRI nas outras cinco tags CDN do dashboard. Com ele, a fila de achados
+colaterais acumulada desde o ciclo das abas ADRs/REQs zera.
+
+### Nota operacional (repetida, vale fixar)
+
+`make quality` passa de 2 min por causa do `check-gates-falsify.sh` (42 cenários). Rodar em
+background e aguardar com until-loop — o timeout padrão do Bash tool não basta.
+
+---
+
 ## Sessão 2026-08-01 — Zeus (orquestração — falso-positivo ref_targets_exist) — CONCLUÍDO
 
 **Branch:** `fix/corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req`

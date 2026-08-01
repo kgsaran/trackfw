@@ -904,6 +904,51 @@ function renderMarkdownSafe(md) {
   return DOMPurify.sanitize(html, MARKDOWN_SANITIZE_CONFIG);
 }
 
+/**
+ * Resolve um href de link markdown relativo ao documento atualmente aberto no
+ * drawer, devolvendo um caminho normalizado relativo à raiz do repositório.
+ *
+ * Todos os links `.md` encontrados em docs/ são relativos ao documento que os
+ * contém (nunca à raiz) — ver ADR-2026-08-01. Formas tratadas:
+ *   - "./ARQUIVO.md"              → mesma pasta do documento atual
+ *   - "ARQUIVO.md"  (sem prefixo) → mesma pasta do documento atual
+ *   - "../dir/ARQUIVO.md"         → sobe um nível a partir da pasta atual
+ *   - "../../dir/ARQUIVO.md"      → ".." encadeados, sobe N níveis
+ *
+ * Algoritmo: concatena o href com o dirname do documento atual e resolve os
+ * segmentos com uma pilha — "." é descartado, ".." remove o topo da pilha (ou
+ * é descartado silenciosamente se a pilha já estiver vazia, para nunca deixar
+ * o resultado escapar acima da raiz do repositório).
+ *
+ * Este helper NÃO é idempotente para um caminho já completo (ex.:
+ * "docs/adr/X.md") — se recebesse um como `href`, o resultado ficaria
+ * prefixado incorretamente pelo dirname do documento atual. A segurança aqui
+ * não vem do algoritmo, vem do isolamento do ponto de chamada: os três
+ * pontos de entrada que já passam caminho completo (card do Board, nó do
+ * grafo Chain, linha das listas ADR/REQ) chamam `openDrawer` diretamente e
+ * nunca passam pelo interceptador de links do markdown renderizado — o único
+ * lugar onde este helper é invocado. O levantamento do corpus em docs/ (ver
+ * ADR-2026-08-01) confirma zero links `.md` raiz-relativos dentro de
+ * documentos, então este helper nunca recebe, na prática, algo que já não
+ * seja relativo ao documento que o contém.
+ */
+function resolveRelativeMdHref(href, currentDocPath) {
+  const lastSlash = (currentDocPath || '').lastIndexOf('/');
+  const baseDir = lastSlash === -1 ? '' : currentDocPath.slice(0, lastSlash);
+  const combined = baseDir ? `${baseDir}/${href}` : href;
+
+  const stack = [];
+  combined.split('/').forEach(part => {
+    if (part === '' || part === '.') return;
+    if (part === '..') {
+      if (stack.length > 0) stack.pop();
+      return;
+    }
+    stack.push(part);
+  });
+  return stack.join('/');
+}
+
 async function openDrawer(path) {
   if (!path) return;
   _drawerPath = path;
@@ -937,7 +982,11 @@ async function openDrawer(path) {
 
   try {
     const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const httpErr = new Error(`HTTP ${res.status}`);
+      httpErr.status = res.status;
+      throw httpErr;
+    }
     const raw = await res.text();
 
     hide('drawer-loading');
@@ -967,11 +1016,19 @@ async function openDrawer(path) {
           const href = a.getAttribute('href');
           if (!href) return;
           const isExternal = href.startsWith('http://') || href.startsWith('https://');
-          const isMdLink   = href.endsWith('.md');
+          // Um link pode carregar uma âncora de seção (ex.: "outro.md#secao").
+          // O drawer não tem conceito de rolagem para âncora dentro do markdown
+          // renderizado, então a âncora é descartada na resolução — apenas o
+          // caminho do arquivo é usado para decidir se é um link .md e para
+          // montar o caminho a buscar.
+          const hashIndex = href.indexOf('#');
+          const hrefPath  = hashIndex === -1 ? href : href.slice(0, hashIndex);
+          const isMdLink  = hrefPath.endsWith('.md');
           if (!isExternal && isMdLink) {
+            const resolved = resolveRelativeMdHref(hrefPath, _drawerPath);
             a.addEventListener('click', e => {
               e.preventDefault();
-              openDrawer(href);
+              openDrawer(resolved);
             });
           }
         });
@@ -983,7 +1040,11 @@ async function openDrawer(path) {
     hide('drawer-loading');
     const errEl = el('drawer-error');
     if (errEl) {
-      errEl.textContent = `Erro ao carregar arquivo: ${err.message}`;
+      if (err.status === 403) {
+        errEl.textContent = `Arquivo fora dos diretórios permitidos: ${path}`;
+      } else {
+        errEl.textContent = `Erro ao carregar arquivo: ${err.message}`;
+      }
       errEl.classList.remove('hidden');
     }
   }
