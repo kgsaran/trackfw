@@ -4,6 +4,53 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (orquestração — falso-positivo ref_targets_exist) — INÍCIO
+
+**Branch:** `fix/corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req`
+**ADR:** `docs/adr/ADR-2026-08-01-caminho-completo-no-campo-req-...md` (Accepted)
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-...md`
+
+PR #96 mergeado; branch anterior apagada; `origin/main` em `b2d33b6`.
+
+### Confirmação de que o ciclo anterior funcionou
+
+O roadmap deste ciclo saiu do gerador **já com** `## Acceptance Criteria`. Primeiro ciclo em
+quatro que **não** precisou de contorno manual. (Atenção: `/tmp/tfw` estava obsoleto e me enganou
+por um momento — rebuild obrigatório após merge.)
+
+### Escopo
+
+Corrigir o falso-positivo `ref_targets_exist` no `--from-req`. Causa raiz já vinha documentada por
+Ártemis; **verifiquei por reprodução** em diretório limpo antes de planejar:
+
+```
+frontmatter → req: "REQ-....md"           ← basename
+corpo       → REQ: docs/req/REQ-....md    ← correto
+validate    → links to REQ "..." which does not exist
+```
+
+### Decisão do usuário (AskUserQuestion)
+
+Contrato = **caminho completo**. O parâmetro `roots` de `referenceExists` é **removido**, não
+implementado — validação segue estrita. Rejeitadas: tolerar basename (afrouxa e é ambíguo com
+`ADRDirs` plural) e mudar `extractRefPath` (trata o sintoma no lugar errado).
+
+### Quarto bug descoberto no próprio setup
+
+`roadmap new --title <t> --req <path>` grava `req: ""` **vazio** no frontmatter. Como
+`extractRefPath` tem early-return para vazio, **nenhuma** violação dispara — falso-**negativo**,
+complementar ao falso-positivo do `--from-req`. Mesmo campo, mesmos arquivos: **incorporado**
+como AC2b em vez de virar ciclo separado. Este roadmap é a prova viva — foi gerado com `--req` e
+saiu com `req: ""`.
+
+### Risco herdado a confirmar (não presumir)
+
+Os 6 cenários `roadmap-acceptance-heading/*/from-req` do PR #96 rodam hoje com
+`ref_targets_exist` **co-ocorrendo**. A nota de vault prevê que a correção não os quebra, porque
+o `assert_fails_with` casa a substring de `wip_acceptance`. **A Wave 2 confirma empiricamente.**
+
+---
+
 ## Sessão 2026-08-01 — Zeus (orquestração — marcador de aceite do gerador) — CONCLUÍDO
 
 **Branch:** `fix/alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap`
