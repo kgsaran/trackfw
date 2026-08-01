@@ -4,6 +4,54 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (orquestração — marcador de aceite do gerador) — INÍCIO
+
+**Branch:** `fix/alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap`
+**ADR:** `docs/adr/ADR-2026-07-31-gerador-de-roadmap-emite-heading-consolidado-...md` (Accepted)
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-alinhar-marcador-de-criterios-...md`
+
+PR #95 mergeado, branch anterior apagada, `origin/main` em `e6cdd10`.
+
+### Escopo
+
+Corrigir o defeito que venho contornando à mão há **três ciclos**: `roadmap new` emite
+`**Acceptance criteria:**` mas o validador exige o heading `## Acceptance Criteria`. Todo roadmap
+novo falha no `validate` ao entrar em `wip`, nos 3 CLIs.
+
+Contornei manualmente **de novo** para criar o roadmap desta própria correção.
+
+### Bloco decidido (byte-a-byte nos 3 CLIs)
+
+```
+## Acceptance Criteria
+<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
+- [ ]
+- [ ]
+```
+
+Após `## Context`, antes de `## Wave 1`. Sem espaço à direita. Convenção espelhada de
+`internal/generators/req.go:93`, que já está correto.
+
+### Estrutura — primeiro ciclo com paralelismo real
+
+Wave 1 tem **3 MLs em paralelo** (Apolo × 3): `internal/generators/roadmap.go`,
+`npm/src/generators/roadmap.js`, `pypi/trackfw/generators/roadmap.py`. Arquivos disjuntos, cada um
+com os testes do próprio CLI. Diferente dos dois ciclos anteriores, onde havia um único arquivo
+canônico e tudo era sequencial.
+
+**Ponto de atenção que moldou os critérios:** `make parity`/`make quality` **falham** enquanto os
+três não estiverem prontos — `check-artifact-parity.sh` compara os artefatos gerados entre CLIs.
+Por isso nenhum ML da Wave 1 tem `parity` nos critérios; cada um valida só o próprio CLI. A
+paridade é a Wave 2, que age como barreira.
+
+### Diferença relevante em relação ao ciclo do DOMPurify
+
+Lá o seam de falsificação não pôde virar gate de CI (exigiria jsdom num projeto de zero
+devDependency). **Aqui é shell puro** — gerar, mover, validar. Então o ML-2A avalia acrescentar
+cenário permanente a `scripts/check-gates-falsify.sh`.
+
+---
+
 ## Sessão 2026-07-31 — Zeus (orquestração — XSS do drawer / DOMPurify) — CONCLUÍDO
 
 **Branch:** `fix/sanitizar-html-do-drawer-do-dashboard-com-dompurify`

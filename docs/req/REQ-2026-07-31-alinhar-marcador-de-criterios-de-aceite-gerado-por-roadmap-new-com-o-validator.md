@@ -3,7 +3,7 @@ status: Open
 date: 2026-07-31
 author: "Zeus"
 adr: "docs/adr/ADR-2026-07-31-gerador-de-roadmap-emite-heading-consolidado-de-criterios-de-aceite.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md"
 ---
 
 # REQ: Alinhar marcador de criterios de aceite gerado por roadmap new com o validator
@@ -110,4 +110,4 @@ ADR: docs/adr/ADR-2026-07-31-gerador-de-roadmap-emite-heading-consolidado-de-cri
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md

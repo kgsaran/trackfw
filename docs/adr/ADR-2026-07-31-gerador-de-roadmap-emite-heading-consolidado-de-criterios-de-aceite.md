@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-07-31
 author: "Zeus"
 ---
 
 # ADR: Gerador de roadmap emite heading consolidado de criterios de aceite
 
-> Date: 2026-07-31 | Status: Proposed
+> Date: 2026-07-31 | Status: Accepted
 
 ## Context
 
