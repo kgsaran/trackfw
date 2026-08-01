@@ -4,6 +4,54 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (orquestração — SRI nas CDNs / htmx morto) — INÍCIO
+
+**Branch:** `fix/proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto`
+**ADR:** `docs/adr/ADR-2026-08-01-sri-nas-dependencias-cdn-versionadas-...md` (Accepted)
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-01-proteger-dependencias-cdn-...md`
+
+PR #98 mergeado; branch anterior apagada; `origin/main` em `e9c8b37`.
+**Último item** da fila de follow-ups aberta desde o ciclo das abas ADRs/REQs.
+
+### O levantamento mudou o escopo — não era "SRI em 5 tags"
+
+1. **htmx tem ZERO usos.** Varredura nos 3 CLIs: nenhum atributo `hx-*`, nenhuma referência no
+   `app.js`. Dependência morta baixada em toda visita. Decisão: **remover**, não proteger.
+   Eliminar o vetor é estritamente melhor que mitigá-lo — e tira o `unpkg.com` da cadeia.
+2. **O Tailwind não pode receber SRI.** URL não-versionada, `HTTP/2 302`,
+   `cache-control: max-age=14400`. Hash fixo quebraria o dashboard **inteiro** — sem estilo
+   nenhum — no próximo release deles, e silenciosamente para quem não olhasse o console.
+
+Se eu tivesse tratado a tarefa como "adicionar integrity em cinco tags", teria protegido código
+morto e quebrado o dashboard num release futuro do Tailwind.
+
+### Decisões do usuário (AskUserQuestion)
+
+htmx **removido**; Tailwind **sem SRI**, com o motivo em comentário no próprio `index.html` para
+ninguém "uniformizar" a inconsistência depois. Saldo: dashboard passa de 1/6 para **5/6** tags
+tratadas.
+
+### Buraco que esta decisão NÃO fecha
+
+O Tailwind é a **maior** dependência do dashboard e segue desprotegido. Está explícito no ADR
+como consequência negativa aceita, não escondido. Fechar exigiria trocar a Play CDN (compilador
+JIT em runtime) por artefato estático versionado — mudança de comportamento, com auditoria visual
+completa. REQ própria se um dia for exigido.
+
+### Hashes (conferidos em dois downloads independentes cada)
+
+- marked 12.0.0 — `sha384-NNQgBjjuhtXzPmmy4gurS5X7P4uTt1DThyevz4Ua0IVK5+kazYQI1W27JHjbbxQz`
+- chart.js 4.4.4 — `sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt`
+- d3 7.9.0 — `sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i`
+
+### Exigência central da Wave 2
+
+`integrity` **presente no atributo não prova nada**. O ML-2A precisa corromper um hash e confirmar
+que o navegador **bloqueia** o script — em pelo menos 2 das 3 tags, para não provar um caminho só.
+Sem isso o AC2 é decorativo.
+
+---
+
 ## Sessão 2026-08-01 — Zeus (orquestração — links `.md` relativos no drawer) — CONCLUÍDO
 
 **Branch:** `fix/corrigir-403-em-links-markdown-relativos-dentro-do-drawer`
