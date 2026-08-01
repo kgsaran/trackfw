@@ -4,6 +4,86 @@
 
 ---
 
+## Sessão 2026-07-31 — Zeus (orquestração — XSS do drawer / DOMPurify) — CONCLUÍDO
+
+**Branch:** `fix/sanitizar-html-do-drawer-do-dashboard-com-dompurify`
+**ADR:** `docs/adr/ADR-2026-07-31-sanitizacao-de-html-no-drawer-do-dashboard-com-dompurify.md` (Accepted)
+**REQ:** `docs/req/REQ-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md`
+
+PR #94 mergeado; branch anterior validada como squash-mergeada (diff vazio contra `origin/main`)
+e apagada. Estado limpo antes de iniciar.
+
+### Escopo
+
+Corrigir o XSS armazenado do drawer — `app.js:919` faz `innerHTML = marked.parse(...)` sem
+sanitização. Achado por Hades e confirmado pré-existente ao commit `007ebab`.
+
+### Valores verificados (não presumir — foram medidos)
+
+- DOMPurify **3.4.12**, `https://cdn.jsdelivr.net/npm/dompurify@3.4.12/dist/purify.min.js`
+- SRI `sha384-piCcpDdJ7qVeK4Tv8Z6Hpcr3ZBIgP16TxQTPVfsLFdZ5uDgwc3Y8Ho7oUnqf12qu`
+  (conferido em dois downloads independentes)
+- Global UMD: `DOMPurify`
+
+### Decisões com o usuário (AskUserQuestion)
+
+1. **AC4 é seam de navegador em auditoria, não gate de CI.** `npm/package.json` tem zero
+   devDependency e não há infra de DOM; jsdom mudaria uma propriedade do projeto. O seam prova o
+   efeito (payload inerte → remove sanitização → payload executa); um gate de grep provaria só o
+   padrão. Trade-off aceito: sem barreira automática de regressão em CI.
+2. **SRI só na tag do DOMPurify.** Nenhuma das seis tags CDN atuais tem `integrity`.
+
+### Estrutura
+
+Três waves sequenciais: ML-1A (Afrodite, sanitização canônica) → ML-2A (Ártemis, seam de
+falsificação em navegador) → ML-3A (Afrodite, espelho npm/pypi). Sem paralelismo — arquivo
+canônico único por asset, e cada wave depende do produto da anterior.
+
+Lição aplicada do ciclo anterior: adicionei o heading `## Critérios de Aceite` ao roadmap **antes**
+do `move ... wip`, e nomeei a branch a partir do slug do roadmap. Sem isso o `validate` falharia
+duas vezes — ver `vault/notes/roadmap-new-gera-marcador-de-aceite-invalido-2026-07-31.md`.
+
+### Execução e fechamento
+
+- **ML-1A** (Afrodite) — `renderMarkdownSafe()` como ponto único de sanitização, allowlist restrita,
+  fail-safe devolvendo `null`. Tag DOMPurify 3.4.12 com SRI **reconferido por ela** contra o CDN,
+  não copiado do roadmap. Commit `fd7459b`.
+- **ML-2A** (Ártemis) — seam de falsificação em navegador real. Commit `7023cde`.
+- **ML-3A** (Afrodite) — espelho byte-a-byte para npm e pypi. `make quality` exit 0, 82 checks.
+
+### O que mais valeu nesta rodada
+
+**A Ártemis evitou uma asserção vacuosa.** O vetor `<script>` não dispara *nem com a sanitização
+removida* — por especificação HTML, script inserido via `innerHTML` nunca executa. Se ela tivesse
+lido "flag undefined" como sucesso, teríamos uma prova que passaria igualmente com o sanitizador
+desligado. Ela provou por **diferencial de presença do nó**. Registrado em
+`vault/notes/seam-xss-drawer-armadilhas-de-verificacao-2026-07-31.md`.
+
+**Reforcei o seam antes de despachar:** os vetores originais (`img`, `script`) eram tags
+*bloqueadas* — provariam só a allowlist de tags, passando mesmo com a filtragem de atributos
+quebrada. Acrescentei vetores em tags *permitidas* (`onclick` em `<a>`, `href="javascript:"`),
+que são os que realmente exercitam a camada de filtragem.
+
+**Uma preocupação minha que a verificação derrubou:** questionei a exclusão de `img` da allowlist,
+temendo quebrar diagramas em ADRs de projetos downstream. Verifiquei: o servidor só expõe `/`,
+`/static/` e `/api/*` — imagens relativas **já retornavam 404** antes da mudança. Excluir `img`
+preserva o status quo. Não abri ML corretivo.
+
+### Achados colaterais não corrigidos
+
+1. **Links `.md` relativos com `../` retornam 403** no `/api/file` — o interceptador passa o href
+   bruto e o whitelist rejeita. Pré-existente, afeta documentos reais (ex.:
+   `docs/req/REQ-2026-06-13-validator-improvements.md`). Candidato a REQ própria.
+2. As outras cinco tags CDN seguem sem `integrity`.
+3. `closeDrawer()` não readiciona a classe `hidden` que `openDrawer()` remove — não é bug visível
+   (usa `style.display`), mas invalida checagens por `classList`.
+
+**Pendente do ciclo anterior:** REQ do marcador de critérios de aceite do gerador de roadmap
+(`docs/roadmaps/backlog/ROADMAP-2026-07-31-alinhar-marcador-...`), ainda em backlog.
+
+---
+
 ## Sessão 2026-07-31 — Hades (Revisão de segurança — barreira pré-Wave 2) — CONCLUÍDO
 
 **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md`

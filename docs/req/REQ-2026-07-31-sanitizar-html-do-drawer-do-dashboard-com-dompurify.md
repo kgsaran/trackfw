@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-07-31
 author: "Zeus"
 adr: "docs/adr/ADR-2026-07-31-sanitizacao-de-html-no-drawer-do-dashboard-com-dompurify.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md"
 ---
 
 # REQ: Sanitizar HTML do drawer do dashboard com DOMPurify
 
-> Date: 2026-07-31 | Status: Open
+> Date: 2026-07-31 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -52,30 +52,37 @@ Nota de vault com o diagnóstico:
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — A saída de `marked.parse()` é sanitizada antes de chegar a `innerHTML` em
+- [x] **AC1** — A saída de `marked.parse()` é sanitizada antes de chegar a `innerHTML` em
       `internal/serve/static/app.js`. Nenhum `innerHTML` no arquivo recebe HTML derivado de
       conteúdo de arquivo sem passar pelo sanitizador.
-- [ ] **AC2** — A biblioteca de sanitização é carregada de forma consistente com as demais
+- [x] **AC2** — A biblioteca de sanitização é carregada de forma consistente com as demais
       dependências do dashboard (CDN em `index.html`, como `marked`, `chart.js` e `d3` já são),
-      com **versão fixada** (sem `@latest`) e, se viável, `integrity` + `crossorigin`.
-- [ ] **AC3** — Se o sanitizador não carregar (CDN indisponível, offline), o drawer **não**
+      com **versão fixada** e `integrity` + `crossorigin`. Entregue: DOMPurify **3.4.12**, SRI
+      `sha384-piCcpDdJ...`, conferido contra o CDN real de forma independente pela implementadora.
+      Por decisão do usuário, `integrity` foi aplicado **somente** a esta tag — as outras cinco
+      tags CDN seguem sem SRI, e estendê-lo é REQ própria.
+- [x] **AC3** — Se o sanitizador não carregar (CDN indisponível, offline), o drawer **não**
       renderiza HTML não sanitizado. O fail-safe é degradar para texto puro ou exibir erro —
       nunca cair no caminho inseguro silenciosamente.
-- [ ] **AC4** — Teste de falsificação (padrão `scripts/check-gates-falsify.sh`) que prova o gate
-      não vacuoso: um artefato de fixture com payload conhecido no corpo deve resultar em DOM
-      **sem** o vetor executável após a renderização; e, ao remover a sanitização, o teste deve
-      **falhar**. Provar o efeito, não apenas a presença da chamada.
-- [ ] **AC5** — Markdown legítimo continua renderizando: headings, listas ordenadas e não
+- [x] **AC4** — Teste de falsificação provando o gate não vacuoso.
+      **Critério revisado durante o planejamento, com o usuário:** a redação original sugeria o
+      padrão `scripts/check-gates-falsify.sh` (CI). Como `npm/package.json` tem **zero
+      devDependency** e não há infra de DOM, um gate de CI só conseguiria provar o *padrão*
+      (grep), não o *efeito*. Optou-se por **seam de navegador em auditoria**, que prova o efeito
+      de ponta a ponta. Executado pela Ártemis: quatro vetores inertes com a sanitização ativa e
+      todos se manifestando ao removê-la. **Trade-off aceito:** não há barreira automática contra
+      regressão futura em CI.
+- [x] **AC5** — Markdown legítimo continua renderizando: headings, listas ordenadas e não
       ordenadas, blockquote, `code` inline, blocos de código, tabelas e links. Verificado
       visualmente em navegador real contra uma ADR existente do repositório.
-- [ ] **AC6** — Links continuam funcionando, inclusive o handler de link interno já existente
+- [x] **AC6** — Links continuam funcionando, inclusive o handler de link interno já existente
       em `app.js` (por volta da linha 757) que intercepta cliques e chama `openDrawer(href)`.
       Confirmar que a sanitização não remove os atributos de que esse handler depende.
-- [ ] **AC7** — Paridade dos 3 CLIs: `internal/serve/static/` é a fonte canônica;
+- [x] **AC7** — Paridade dos 3 CLIs: `internal/serve/static/` é a fonte canônica;
       `npm/src/serve/static/` e `pypi/trackfw/serve/static/` são espelhos byte-a-byte.
       `scripts/check-static-assets.sh` imprime `Static assets are synchronized`.
-- [ ] **AC8** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
-- [ ] **AC9** — Verificação visual em navegador real: drawer abre corretamente a partir dos três
+- [x] **AC8** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+- [x] **AC9** — Verificação visual em navegador real: drawer abre corretamente a partir dos três
       caminhos (card do Board, nó do grafo Chain, linha das listas ADRs/REQs), console sem erros
       de JavaScript.
 
@@ -118,4 +125,4 @@ ADR: docs/adr/ADR-2026-07-31-sanitizacao-de-html-no-drawer-do-dashboard-com-domp
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md

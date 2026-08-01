@@ -870,6 +870,40 @@ function renderMetrics(data) {
 
 // ─── Drawer lateral ───────────────────────────────────────────────────────────
 
+// Allowlist do DOMPurify: cobre o markdown legítimo de ADRs/REQs/roadmaps
+// (headings, listas ordenadas/não ordenadas, blockquote, code inline e em bloco,
+// tabelas, links e checklists GFM `- [ ]`). Não inclui `img`, `iframe`, `style`,
+// `on*` (event handlers) nem `script` — nenhum é usado pelo markdown do projeto
+// e cada um ampliaria a superfície de ataque sem necessidade.
+const MARKDOWN_SANITIZE_CONFIG = {
+  ALLOWED_TAGS: [
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'p', 'br', 'hr',
+    'ul', 'ol', 'li',
+    'blockquote', 'pre', 'code',
+    'strong', 'em', 'b', 'i', 'del', 's', 'u',
+    'a',
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+    'input',
+  ],
+  ALLOWED_ATTR: ['href', 'title', 'class', 'id', 'align', 'type', 'checked', 'disabled'],
+  ALLOW_DATA_ATTR: false,
+};
+
+/**
+ * Converte markdown em HTML e sanitiza o resultado antes de expor ao DOM.
+ * Fail-safe: se DOMPurify não estiver carregado (CDN fora do ar, SRI falhou,
+ * uso offline), NUNCA devolve HTML — devolve null para o chamador decidir
+ * como degradar (texto puro / erro). Não há caminho silencioso e inseguro.
+ */
+function renderMarkdownSafe(md) {
+  if (typeof DOMPurify === 'undefined') {
+    return null;
+  }
+  const html = marked.parse(md || '');
+  return DOMPurify.sanitize(html, MARKDOWN_SANITIZE_CONFIG);
+}
+
 async function openDrawer(path) {
   if (!path) return;
   _drawerPath = path;
@@ -914,23 +948,34 @@ async function openDrawer(path) {
       renderFrontmatterTable(frontmatter);
     }
 
-    // Renderizar markdown
+    // Renderizar markdown (sanitizado — ver renderMarkdownSafe)
     if (mdEl) {
-      mdEl.innerHTML = marked.parse(body || raw);
-
-      // Interceptar links internos .md
-      mdEl.querySelectorAll('a[href]').forEach(a => {
-        const href = a.getAttribute('href');
-        if (!href) return;
-        const isExternal = href.startsWith('http://') || href.startsWith('https://');
-        const isMdLink   = href.endsWith('.md');
-        if (!isExternal && isMdLink) {
-          a.addEventListener('click', e => {
-            e.preventDefault();
-            openDrawer(href);
-          });
+      const safeHtml = renderMarkdownSafe(body || raw);
+      if (safeHtml === null) {
+        // Fail-safe: sem DOMPurify carregado, nunca renderizar HTML bruto.
+        mdEl.textContent = body || raw;
+        const errEl = el('drawer-error');
+        if (errEl) {
+          errEl.textContent = 'Aviso: sanitizador de HTML indisponível — conteúdo exibido como texto puro.';
+          errEl.classList.remove('hidden');
         }
-      });
+      } else {
+        mdEl.innerHTML = safeHtml;
+
+        // Interceptar links internos .md
+        mdEl.querySelectorAll('a[href]').forEach(a => {
+          const href = a.getAttribute('href');
+          if (!href) return;
+          const isExternal = href.startsWith('http://') || href.startsWith('https://');
+          const isMdLink   = href.endsWith('.md');
+          if (!isExternal && isMdLink) {
+            a.addEventListener('click', e => {
+              e.preventDefault();
+              openDrawer(href);
+            });
+          }
+        });
+      }
     }
 
     show('drawer-content');
