@@ -4,6 +4,63 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (REQ: ADR não aceito referenciado por REQ Done) — CONCLUÍDO
+
+**Branch:** `docs/req-adr-nao-aceito-por-req-concluida`
+Tag `v6.1.0` publicada; PR #101 mergeado; `origin/main` limpa.
+
+### Pedido
+
+KG pediu a REQ para a lacuna que eu havia sinalizado: nenhum gate detecta ADR `Proposed`
+referenciado por REQ `Done`.
+
+### A investigação encontrou algo maior
+
+Ao rastrear **por que** o validador não pegava, descobri que o vocabulário de "ADR não aceito"
+está **fragmentado entre gerador e validador**:
+
+| Estado | Origem | Validador reconhece? |
+|---|---|---|
+| `Proposed` | `adr new` — o caminho **normal** | **não** |
+| `Draft` | `NewADRDraft`, via `req new` (`internal/commands/req.go:110`) | sim |
+
+`adrDraftStatusForRule` (`validator.go:1221-1235`) decide com um único
+`strings.Contains(content, "Status: Draft")`.
+
+Ou seja, além da lacuna que KG apontou, a regra **existente** `blocked_by_draft_adr` é **cega a
+`Proposed`** — só funciona para stubs gerados automaticamente, não para ADRs criados pelo caminho
+normal. Duas lacunas, mesma raiz.
+
+### Decisão do usuário (AskUserQuestion)
+
+Escopo ampliado: helper canônico `adrNotAccepted` (`Draft` ou `Proposed`) como dono único do
+vocabulário, `blocked_by_draft_adr` migrada para ele, **mais** a regra nova.
+
+### Decisões de design registradas no ADR
+
+- **Não renomear `blocked_by_draft_adr`** — nomes de regra são chave pública de configuração
+  (`rules:` no `trackfw.yaml`); renomear quebraria silenciosamente projetos downstream. O nome
+  fica historicamente impreciso; a alternativa é pior.
+- **"Aceito" por exclusão**, não por allowlist — preserva `Superseded`/`Deprecated`/`Rejected`
+  sem enumerar, e não quebra projetos com vocabulário próprio. Trade-off aceito: um status
+  digitado errado conta como aceito.
+- **Severidade `error`, não `warning`** — o caso original passou despercebido justamente por não
+  haver sinal; um warning a mais teria a mesma sorte.
+- **Não unificar os geradores** (fazer `NewADRDraft` emitir `Proposed`): `Draft` e `Proposed` têm
+  semânticas distintas e a mudança invalidaria ADRs `Draft` downstream.
+
+### Estado da entrega
+
+Artefatos criados; roadmap em **`backlog/`**, não em `wip`. KG pediu para **gerar** a REQ, não
+para implementar — o roadmap entra em execução quando ele decidir.
+
+### Consequência a destacar no futuro CHANGELOG
+
+A `blocked_by_draft_adr` fica **mais rigorosa**: projetos com ADR `Proposed` ligado a REQ `Open`
+passarão a ver violações que antes não viam. É a regra passando a fazer o que o nome sempre
+prometeu, mas é mudança de comportamento observável.
+
+---
 ## Sessão 2026-08-01 — Zeus (tag v6.1.0 + aceite do ADR de gates) — CONCLUÍDO
 
 PR #100 mergeado; `origin/main` em `cb09ec9`; nenhuma branch aberta.
