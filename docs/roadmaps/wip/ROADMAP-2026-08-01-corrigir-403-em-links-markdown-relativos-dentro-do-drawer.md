@@ -64,7 +64,7 @@ Consolidados da REQ (AC1–AC11). Detalhamento por microlote abaixo.
 > Dependências: nenhuma
 
 ### ML-1A — Resolver href relativo e melhorar o erro
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Afrodite
 **Arquivos afetados:** `internal/serve/static/app.js` (apenas este)
 
@@ -88,10 +88,22 @@ Consolidados da REQ (AC1–AC11). Detalhamento por microlote abaixo.
 - Não reescrever links em `docs/`.
 
 **Acceptance criteria:**
-- [ ] `make build`, `make test`, `make lint` verdes
-- [ ] `git status --porcelain` mostra **apenas** `internal/serve/static/app.js`
-- [ ] Helper de resolução isolado e legível, coberto por raciocínio explícito no relatório
-- [ ] Erro 403 distinguido, com caminho resolvido na mensagem
+- [x] `make build`, `make test`, `make lint` verdes
+- [x] `git status --porcelain` mostra **apenas** `internal/serve/static/app.js`
+- [x] Helper `resolveRelativeMdHref` isolado, com clamp que impede escapar acima da raiz
+- [x] Erro 403 distinguido, com caminho resolvido na mensagem
+
+**Notas da auditoria de Zeus:**
+- `const resolved` é computado **no render**, dentro do `forEach`, quando `_drawerPath` já é o
+  documento sendo exibido. É isso que faz o encadeamento A → B → C funcionar sem base fixa —
+  cada render reexecuta a resolução com o `_drawerPath` novo.
+- Ela tratou `arquivo.md#ancora` sem que eu pedisse: separa a âncora antes de testar `.endsWith`.
+  Nenhum caso no corpus atual, mas torna o interceptador robusto.
+- **Fragilidade reconhecida e documentada no código:** o helper **não é idempotente** para
+  caminho já completo. A segurança vem do isolamento do ponto de chamada — os três caminhos de
+  entrada chamam `openDrawer` direto e nunca passam pelo interceptador. Ela documentou isso em
+  comentário, o que é o tratamento certo: quem rotear um caminho de entrada pelo helper no futuro
+  vai ler o aviso.
 
 ---
 
