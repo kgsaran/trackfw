@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-07-31
 req: "docs/req/REQ-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Sanitizar HTML do drawer do dashboard com DOMPurify
 
-> Created: 2026-07-31 | Status: wip
+> Created: 2026-07-31 | Status: done
 
 ## Context
 
@@ -51,14 +51,14 @@ por asset.
 
 Consolidados da REQ (AC1–AC9). Detalhamento por microlote nas waves abaixo.
 
-- [ ] `marked.parse()` sanitizado antes de qualquer `innerHTML`
-- [ ] DOMPurify por CDN com versão fixada e `integrity` + `crossorigin`
-- [ ] Fail-safe: sem DOMPurify carregado, o drawer não renderiza HTML bruto
-- [ ] Seam de navegador prova o efeito (payload inerte; sem sanitização, payload executa)
-- [ ] Markdown legítimo intacto: headings, listas, blockquote, code, tabelas, links
-- [ ] Handler de link interno `.md` continua funcionando
-- [ ] npm e pypi byte-a-byte idênticos ao canônico
-- [ ] `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes
+- [x] `marked.parse()` sanitizado antes de qualquer `innerHTML`
+- [x] DOMPurify por CDN com versão fixada e `integrity` + `crossorigin`
+- [x] Fail-safe: sem DOMPurify carregado, o drawer não renderiza HTML bruto
+- [x] Seam de navegador prova o efeito (payload inerte; sem sanitização, payload se manifesta)
+- [x] Markdown legítimo intacto: headings, listas, blockquote, code, tabelas, links
+- [x] Handler de link interno `.md` continua funcionando
+- [x] npm e pypi byte-a-byte idênticos ao canônico
+- [x] `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes
 
 ---
 
@@ -174,7 +174,7 @@ Consolidados da REQ (AC1–AC9). Detalhamento por microlote nas waves abaixo.
 > Dependências: **Wave 2 aprovada**
 
 ### ML-3A — Espelhar assets para npm e pypi
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-07-31)
 **Agente:** Afrodite
 **Arquivos afetados:**
 - `npm/src/serve/static/{app.js,index.html,style.css}`
@@ -193,8 +193,30 @@ cp internal/serve/static/app.js internal/serve/static/index.html internal/serve/
 `internal/serve/static/`, `pypi/build/lib/` nem em `scripts/check-static-assets.sh`.
 
 **Critérios de aceite:**
-- [ ] `scripts/check-static-assets.sh` imprime `Static assets are synchronized`
-- [ ] md5 idêntico nos três diretórios para os três arquivos
-- [ ] `make quality` exit 0
-- [ ] Runtimes Node e Python servem o drawer sanitizado
-- [ ] `git status --porcelain` mostra exatamente os seis arquivos
+- [x] `scripts/check-static-assets.sh` imprime `Static assets are synchronized`
+- [x] md5 idêntico nos três diretórios (confirmado por `cmp` na auditoria)
+- [x] `make quality` exit 0 — 82 checks OK, 24 cenários de falsificação
+- [x] Runtimes Node e Python servem `dompurify@3.4.12` com `integrity` e `DOMPurify.sanitize`
+- [x] `git status --porcelain` mostra **quatro** arquivos, não seis: `style.css` já estava
+      byte-idêntico nos espelhos (não mudou neste ciclo), então o `cp` não gerou diff.
+      Discrepância explicada e correta — a Afrodite reportou espontaneamente em vez de omitir.
+
+---
+
+## Fechamento
+
+Todos os microlotes concluídos e auditados em 2026-07-31. `make quality` exit 0 (82 checks).
+
+**Correção entregue:** `openDrawer` deixa de expor HTML não sanitizado. Ponto único
+`renderMarkdownSafe()` com allowlist restrita ao markdown real de ADRs/REQs, e fail-safe que
+degrada para `textContent` quando o DOMPurify não carrega.
+
+**Prova:** seam de falsificação em navegador real. Não é gate de CI — decisão consciente do
+usuário, porque o projeto tem zero devDependency e jsdom mudaria essa propriedade. O trade-off
+aceito é a ausência de barreira automática contra regressão futura.
+
+**Achados colaterais não corrigidos** (candidatos a REQ própria):
+1. Links `.md` relativos com `../` retornam **403** no `/api/file` — o interceptador passa o href
+   bruto e o whitelist rejeita. Pré-existente. Afeta documentos reais do repositório.
+2. Nenhuma das outras cinco tags CDN tem `integrity` — SRI foi aplicado só ao DOMPurify,
+   por decisão do usuário.
