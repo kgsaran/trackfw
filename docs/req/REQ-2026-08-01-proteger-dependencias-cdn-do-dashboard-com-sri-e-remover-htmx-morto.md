@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-01
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-01-sri-nas-dependencias-cdn-versionadas-e-remocao-do-htmx-nao-utilizado.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md"
 ---
 
 # REQ: Proteger dependencias CDN do dashboard com SRI e remover htmx morto
 
-> Date: 2026-08-01 | Status: Open
+> Date: 2026-08-01 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -29,29 +29,31 @@ Ao levantar as cinco, dois fatos mudaram o escopo:
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — A tag do **htmx é removida** de `internal/serve/static/index.html`. Não recebe SRI.
-- [ ] **AC2** — `marked@12.0.0`, `chart.js@4.4.4` e `d3@7.9.0` recebem `integrity`,
+- [x] **AC1** — A tag do **htmx é removida** de `internal/serve/static/index.html`. Não recebe SRI.
+- [x] **AC2** — `marked@12.0.0`, `chart.js@4.4.4` e `d3@7.9.0` recebem `integrity`,
       `crossorigin="anonymous"` e `referrerpolicy="no-referrer"`, no padrão já usado pelo DOMPurify.
       Hashes exatos (conferidos em dois downloads independentes cada):
       - marked: `sha384-NNQgBjjuhtXzPmmy4gurS5X7P4uTt1DThyevz4Ua0IVK5+kazYQI1W27JHjbbxQz`
       - chart.js: `sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt`
       - d3: `sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i`
-- [ ] **AC3** — O **Tailwind permanece sem SRI**, com **comentário no próprio `index.html`**
+- [x] **AC3** — O **Tailwind permanece sem SRI**, com **comentário no próprio `index.html`**
       explicando que a URL é não-versionada e que um hash fixo quebraria o dashboard. Isso impede
       que alguém "uniformize" a inconsistência sem entender o motivo.
-- [ ] **AC4** — O dashboard funciona integralmente após a mudança: as cinco abas
+- [x] **AC4** — O dashboard funciona integralmente após a mudança: as cinco abas
       (Board, Chain, Metrics, ADRs, REQs) renderizam, o grafo D3 desenha, os gráficos Chart.js
       desenham, o drawer renderiza markdown (marked) sanitizado (DOMPurify) e o Tailwind estiliza.
       Verificado em **navegador real**.
-- [ ] **AC5** — **Prova de que o SRI está de fato ativo** (não apenas presente no atributo):
-      corromper um dos hashes deve fazer o navegador **bloquear** o script, quebrando a
-      funcionalidade correspondente e registrando erro de integridade no console. Restaurar e
-      reconfirmar. Sem isso, o AC2 é decorativo.
-- [ ] **AC6** — Console sem erros de integridade com os hashes corretos.
-- [ ] **AC7** — Nenhuma referência remanescente a htmx em `internal/`, `npm/` ou `pypi/`.
-- [ ] **AC8** — npm e pypi byte-a-byte idênticos ao canônico;
+- [x] **AC5** — **SRI provado ativo** em 2 das 3 tags (d3 e chart.js). Chrome recusou o recurso
+      com `The resource has been blocked`; `typeof d3 === "undefined"` e grafo com 0 elementos;
+      `typeof Chart === "undefined"` e `charts-container` sem renderizar. Restaurado byte-a-byte
+      e reconfirmado. **Confirmação cruzada não planejada:** o hash que o próprio Chrome computou
+      nas mensagens de erro bate com os valores aplicados — verificação independente vinda do
+      navegador.
+- [x] **AC6** — Console sem erros de integridade com os hashes corretos.
+- [x] **AC7** — Nenhuma referência remanescente a htmx em `internal/`, `npm/` ou `pypi/`.
+- [x] **AC8** — npm e pypi byte-a-byte idênticos ao canônico;
       `scripts/check-static-assets.sh` imprime `Static assets are synchronized`.
-- [ ] **AC9** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+- [x] **AC9** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
 
 ## Negative Scope (fora do escopo — NÃO fazer)
 
@@ -93,4 +95,4 @@ ADR: docs/adr/ADR-2026-08-01-sri-nas-dependencias-cdn-versionadas-e-remocao-do-h
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md

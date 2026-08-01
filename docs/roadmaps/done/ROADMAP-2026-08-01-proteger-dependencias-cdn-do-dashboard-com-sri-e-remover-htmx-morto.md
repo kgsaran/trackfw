@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-01
 req: "docs/req/REQ-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Proteger dependencias CDN do dashboard com SRI e remover htmx morto
 
-> Created: 2026-08-01 | Status: wip
+> Created: 2026-08-01 | Status: done
 
 ## Context
 
@@ -41,12 +41,12 @@ Wave 1 e a Wave 3 espelha o que a Wave 2 aprovou.
 
 ## Critérios de Aceite
 
-- [ ] htmx removido; nenhuma referência remanescente nos 3 CLIs
-- [ ] marked, chart.js e d3 com `integrity`, `crossorigin` e `referrerpolicy`
-- [ ] Tailwind sem SRI, com comentário explicando o porquê
-- [ ] Dashboard íntegro em navegador real: 5 abas, grafo D3, gráficos Chart.js, drawer, estilo
-- [ ] **SRI provado ativo** — hash corrompido bloqueia o script
-- [ ] npm e pypi byte-a-byte idênticos; `make quality` exit 0
+- [x] htmx removido; `grep -ril htmx internal/ npm/src/ pypi/trackfw/` sem resultado
+- [x] marked, chart.js e d3 com `integrity`, `crossorigin` e `referrerpolicy`
+- [x] Tailwind sem SRI, com comentário explicando o porquê
+- [x] Dashboard íntegro em navegador real
+- [x] **SRI provado ativo** — hash corrompido bloqueia o script (d3 e chart.js)
+- [x] npm e pypi byte-a-byte idênticos; `make quality` exit 0
 
 ---
 
@@ -112,7 +112,7 @@ linha de código.
 > Dependências: **Wave 1 completa**
 
 ### ML-2A — Provar integridade e ausência de regressão
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Ártemis
 
 **Ações:**
@@ -126,10 +126,29 @@ linha de código.
 4. Confirmar que a remoção do htmx não quebrou nada — nenhuma funcionalidade dependia dele.
 
 **Acceptance criteria:**
-- [ ] Dashboard íntegro; console limpo
-- [ ] SRI provado ativo em ao menos 2 das 3 tags
-- [ ] Restauração confirmada
-- [ ] `git status --porcelain` sem resíduo
+- [x] Dashboard íntegro: 5 abas, grafo D3 com **465** elementos SVG, gráficos Chart.js, drawer
+      com markdown sanitizado (**0** nós `<script>`), Tailwind estilizando
+- [x] **SRI provado ativo em 2 das 3** — d3 e chart.js
+- [x] Restauração confirmada byte-a-byte após cada corrupção
+- [x] `git status --porcelain` vazio
+
+**Evidência da prova de bloqueio (o que este ML existia para produzir):**
+
+```
+Failed to find a valid digest in the 'integrity' attribute for resource
+'https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js' with computed SHA-384
+integrity 'CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i'.
+The resource has been blocked.
+```
+
+Com d3 bloqueado: `typeof d3 === "undefined"`, grafo com **0** elementos.
+Com chart.js bloqueado: `typeof Chart === "undefined"`, `charts-container` permaneceu `hidden`.
+
+**Confirmação cruzada não planejada:** o hash que o **próprio Chrome** computou nas mensagens de
+erro **bate exatamente** com os valores aplicados na Wave 1. É verificação independente de que os
+hashes estão corretos — vinda do navegador, não de recálculo nosso.
+
+`typeof htmx === "undefined"` em todos os ciclos, sem erro de símbolo ausente.
 
 ---
 
@@ -137,7 +156,7 @@ linha de código.
 > Dependências: **Wave 2 aprovada**
 
 ### ML-3A — Espelhar para npm e pypi
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Afrodite
 **Arquivos afetados:** `npm/src/serve/static/{app.js,index.html,style.css}`, `pypi/trackfw/serve/static/{...}`
 
@@ -145,7 +164,38 @@ Cópia mecânica dos três arquivos do canônico. Só `index.html` deve gerar di
 contagem e explicá-la.
 
 **Acceptance criteria:**
-- [ ] `scripts/check-static-assets.sh` imprime `Static assets are synchronized`
-- [ ] `make quality` exit 0
-- [ ] Runtimes Node e Python servem o `index.html` sem htmx e com os três `integrity`
-- [ ] `git status --porcelain` sem arquivo inesperado
+- [x] `scripts/check-static-assets.sh` imprime `Static assets are synchronized`
+- [x] `make quality` exit 0 — 42 cenários de falsificação
+- [x] Runtimes Node e Python: HTTP 200, **0** ocorrências de `htmx`, **4** `integrity`
+- [x] `git status --porcelain` mostra **4** arquivos, não 6: `style.css` já era byte-idêntico
+      (a Wave 1 não o tocou), então o `cp` não gerou diff. Explicado espontaneamente por ela e
+      confirmado por `cmp` na auditoria.
+
+---
+
+## Fechamento
+
+Concluído e auditado em 2026-08-01. `make quality` exit 0; falsificação 42/42.
+
+**Saldo de supply-chain do dashboard:** de **1/6** tags tratadas para **5/6**.
+
+| Dependência | Antes | Depois |
+|---|---|---|
+| Tailwind | sem SRI | sem SRI — **deliberado e documentado no HTML** |
+| htmx | sem SRI | **removida** (zero usos) |
+| marked | sem SRI | SRI |
+| chart.js | sem SRI | SRI |
+| d3 | sem SRI | SRI |
+| DOMPurify | SRI (PR #95) | SRI |
+
+O `unpkg.com` saiu inteiro da cadeia.
+
+**O buraco que este ciclo NÃO fecha, explicitamente:** o Tailwind é a **maior** dependência do
+dashboard e segue desprotegido. Está no ADR como consequência negativa aceita e em comentário no
+`index.html`, não escondido. Fechá-lo exigiria trocar a Play CDN (compilador JIT em runtime) por
+artefato versionado — mudança de comportamento com auditoria visual completa. REQ própria se a
+proteção passar a ser exigida.
+
+**Por que o levantamento importou mais que a execução:** tratada como "adicionar integrity em
+cinco tags", esta REQ teria protegido uma dependência morta e quebrado o dashboard num release
+futuro do Tailwind. O que mudou o resultado foi verificar cada tag antes de agir.

@@ -4,7 +4,7 @@
 
 ---
 
-## Sessão 2026-08-01 — Zeus (orquestração — SRI nas CDNs / htmx morto) — INÍCIO
+## Sessão 2026-08-01 — Zeus (orquestração — SRI nas CDNs / htmx morto) — CONCLUÍDO
 
 **Branch:** `fix/proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto`
 **ADR:** `docs/adr/ADR-2026-08-01-sri-nas-dependencias-cdn-versionadas-...md` (Accepted)
@@ -49,6 +49,51 @@ completa. REQ própria se um dia for exigido.
 `integrity` **presente no atributo não prova nada**. O ML-2A precisa corromper um hash e confirmar
 que o navegador **bloqueia** o script — em pelo menos 2 das 3 tags, para não provar um caminho só.
 Sem isso o AC2 é decorativo.
+
+### Execução e fechamento
+
+- **ML-1A** (Afrodite) — htmx removido, SRI em marked/chart.js/d3, comentário no Tailwind.
+- **ML-1B** (Afrodite, corretivo) — cabeçalho do `app.js` declarava HTMX e omitia DOMPurify.
+  Ela **reportou no ML-1A e não alterou**, porque o escopo proibia tocar no arquivo. Autorizei
+  em seguida. Reportar em vez de extrapolar é o comportamento certo.
+- **ML-2A** (Ártemis) — prova de bloqueio em navegador real.
+- **ML-3A** (Afrodite) — espelho. `make quality` exit 0, 42 cenários.
+
+### Saldo: dashboard de 1/6 para 5/6 tags tratadas
+
+Tailwind sem SRI (deliberado) · htmx **removida** · marked, chart.js, d3 e DOMPurify com SRI.
+O `unpkg.com` saiu inteiro da cadeia.
+
+### O levantamento valeu mais que a execução
+
+Tratada como "adicionar integrity em cinco tags", esta REQ teria **protegido dependência morta**
+e **quebrado o dashboard** num release futuro do Tailwind. Verificar cada tag antes de agir mudou
+o resultado: uma virou remoção, outra virou exceção documentada.
+
+### Confirmação cruzada não planejada
+
+O hash que o **Chrome** computou nas mensagens de erro de integridade bate com os valores
+aplicados na Wave 1 — verificação independente dos hashes, vinda do navegador e não de recálculo
+nosso.
+
+### Buraco declarado, não escondido
+
+O Tailwind é a maior dependência do dashboard e segue desprotegido. Está no ADR como consequência
+negativa aceita e em comentário no `index.html`. REQ própria se a proteção passar a ser exigida.
+
+### FILA DE FOLLOW-UPS: ZERADA
+
+Todos os achados colaterais acumulados desde o ciclo das abas ADRs/REQs foram fechados.
+
+**Saldo dos seis ciclos**, todos originados de uma pergunta sobre visualizar ADRs no dashboard:
+XSS armazenado corrigido · dois casos de "a ferramenta reprova o próprio artefato" · parâmetro
+morto que enganava nove chamadores · navegação do drawer · cadeia de suprimentos endurecida.
+Proteção de falsificação em CI subiu de **24 para 42** cenários.
+
+### Nota operacional persistente
+
+`make quality` passa de 2 min (42 cenários de falsificação). Rodar em background com until-loop —
+o timeout padrão do Bash tool não basta.
 
 ---
 
