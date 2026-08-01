@@ -25,3 +25,4 @@
 - [security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31](security-drawer-marked-parse-unsanitized-stored-xss-2026-07-31.md)
 - [dashboard-serve-e-light-only-2026-07-31](dashboard-serve-e-light-only-2026-07-31.md)
 - [seam-xss-drawer-armadilhas-de-verificacao-2026-07-31](seam-xss-drawer-armadilhas-de-verificacao-2026-07-31.md)
+- [roadmap-from-req-ref-targets-exist-falso-positivo-2026-08-01](roadmap-from-req-ref-targets-exist-falso-positivo-2026-08-01.md)

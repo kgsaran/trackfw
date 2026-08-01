@@ -887,4 +887,210 @@ assert_fails_with "cli-parity/v-flag-accepted" \
   "go -v exited 0 — -v must be rejected" \
   bash -c 'cd "$1" && bash scripts/check-cli-parity.sh' _ "$T23"
 
-echo "Falsification checks passed (all 24 scenarios, 14 gates proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 24 — ciclo `roadmap new` → `roadmap move ... wip` → `validate`:
+#              gerador de roadmap sem o heading `## Acceptance Criteria` faz
+#              o roadmap movido para wip reprovar em `validate` com o
+#              diagnóstico `wip_acceptance`
+#              (ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap).
+#
+# Objetivo (ML-2A): nenhum gate de paridade existente detecta a remoção
+# COORDENADA do heading nos três geradores — check-artifact-parity.sh só
+# compara os runtimes ENTRE si (byte-a-byte), nunca contra o contrato do
+# validador. Sem esta prova, os três geradores poderiam voltar a perder o
+# heading simultaneamente (o defeito original, contornado manualmente em
+# três ciclos consecutivos — ver Wave 1 do roadmap) e `make quality`
+# continuaria verde. Reproduz o ciclo real (`init` → `roadmap new` →
+# `roadmap move ... wip` → `validate`) num sandbox isolado por runtime, e
+# exige que `validate` reprove com o diagnóstico exato do validador — texto
+# idêntico nos três (internal/validator/validator.go:989,
+# npm/src/validator/index.js:415, pypi/trackfw/validator.py:669).
+#
+# Cobre os DOIS caminhos de geração por CLI (AC3 da REQ: "vale também para
+# roadmap new --from-req") — não apenas o template simples. O heading ocorre
+# 2x, byte-idêntico, em cada gerador (simples e --from-req); sem cobrir os
+# dois, alguém poderia remover só o bloco do --from-req nos três CLIs e este
+# cenário continuaria verde.
+#
+# Nota sobre o caminho --from-req: o ciclo com REQ nunca reprova "limpo" —
+# NewRoadmapFromREQ grava `req: "<basename>"` no frontmatter (bug
+# pré-existente e fora de escopo, documentado na auditoria da Wave 1 deste
+# roadmap) e `ref_targets_exist` sempre reprova essa referência. Isso NÃO
+# invalida a prova: com o gerador correto a violação de wip_acceptance está
+# ausente da saída (só aparece a de ref_targets_exist); com o gerador
+# corrompido as duas aparecem juntas. O padrão buscado por assert_fails_with
+# é o diagnóstico específico de wip_acceptance, não a ausência de outras
+# violações — a prova de vivacidade abaixo confirma isso empiricamente antes
+# do cenário ser aceito nesta ML.
+#
+# Corrompe a IMPLEMENTAÇÃO (gerador), nunca a asserção — mesmo padrão dos
+# Cenários 14/16/17/20/21. Cobre os três CLIs: cada runtime tem seu próprio
+# gerador disjunto e portanto sua própria prova de vivacidade.
+# ---------------------------------------------------------------------------
+
+# Fixture de REQ válida (ADR/Roadmap preenchidos) reaproveitada nos sandboxes
+# — evita disparar wip_has_req/req_has_adr/req_has_roadmap, que reprovariam
+# por motivo diferente do heading e confundiriam o diagnóstico.
+write_roadmap_acceptance_req_fixture() {
+  local dest=$1
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<'REQEOF'
+---
+status: Open
+date: 2026-08-01
+adr: ""
+roadmap: ""
+---
+
+# REQ: Flag Source
+
+## Acceptance Criteria
+- [ ] Something
+
+## Linked ADR
+ADR: none
+
+## Linked Roadmap
+Roadmap: none
+REQEOF
+}
+
+# Remove a n-ésima ocorrência (0-based) do bloco de heading consolidado.
+# O bloco é byte-idêntico nas 2 ocorrências (template simples e --from-req)
+# em Go/Node/Python — só o texto QUE SEGUE difere — então localizamos por
+# índice de ocorrência em vez de âncora de sufixo (frágil e específica por
+# linguagem).
+remove_roadmap_acceptance_heading() {
+  local src_file=$1
+  local dest_file=$2
+  local occurrence=$3   # 0 = template simples, 1 = --from-req
+  local label=$4
+  python3 - "$src_file" "$dest_file" "$occurrence" <<'PY'
+import pathlib
+import sys
+
+src_path, dest_path, occurrence = sys.argv[1], sys.argv[2], int(sys.argv[3])
+source = pathlib.Path(src_path).read_text(encoding="utf-8")
+block = ("## Acceptance Criteria\n"
+         "<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->\n"
+         "- [ ]\n- [ ]\n\n")
+positions = [i for i in range(len(source)) if source.startswith(block, i)]
+if len(positions) != 2:
+    raise SystemExit(f"expected 2 occurrences of the heading block, got {len(positions)}")
+start = positions[occurrence]
+end = start + len(block)
+pathlib.Path(dest_path).write_text(source[:start] + source[end:], encoding="utf-8")
+PY
+  if cmp -s "$src_file" "$dest_file"; then
+    echo "FAIL [falsify/setup-s24-$label]: heading não removido — prova P4 inválida" >&2
+    exit 1
+  fi
+}
+
+# Executa o ciclo completo init → roadmap new (simples ou --from-req) →
+# roadmap move wip → validate contra um binário/runtime já preparado no
+# sandbox $1, e imprime a saída de `validate` (stdout+stderr) preservando o
+# exit code — para ser usado dentro de assert_fails_with. $1 é o workdir; o
+# restante dos argumentos ("$@" após o shift) é o comando do runtime como
+# argv (ex: "$T24G_BIN", ou "node" "npm/bin/trackfw") — sem eval, mesmo
+# idioma de invocação direta usado no resto do script (Cenário 23).
+ROADMAP_CYCLE_SCRIPT_SIMPLE='
+  set -e
+  cd "$1"
+  shift
+  "$@" init >/dev/null
+  "$@" roadmap new --title "Falsify Test" --req docs/req/REQ-flag-source.md >/dev/null
+  name=$(basename "$(find docs/roadmaps/backlog -name "*.md")")
+  "$@" roadmap move "$name" wip >/dev/null
+  exec "$@" validate
+'
+ROADMAP_CYCLE_SCRIPT_FROM_REQ='
+  set -e
+  cd "$1"
+  shift
+  "$@" init >/dev/null
+  "$@" roadmap new --from-req docs/req/REQ-flag-source.md >/dev/null
+  name=$(basename "$(find docs/roadmaps/backlog -name "*.md")")
+  "$@" roadmap move "$name" wip >/dev/null
+  exec "$@" validate
+'
+
+# --- Go -------------------------------------------------------------------
+# Cópia enxuta do módulo (cmd/ + internal/ + go.mod/go.sum), não o repo
+# inteiro — mesmo padrão do Cenário 23; evita I/O desnecessário e não
+# arrasta node_modules/pypi/build para dentro do sandbox de compilação.
+for occ_label in "0:simple" "1:from-req"; do
+  occ="${occ_label%%:*}"
+  path_name="${occ_label##*:}"
+
+  T24G_MOD="$WORK/s24-go-mod-$path_name"
+  mkdir -p "$T24G_MOD/cmd" "$T24G_MOD/internal"
+  cp -r "$ROOT_DIR/cmd/." "$T24G_MOD/cmd/"
+  cp -r "$ROOT_DIR/internal/." "$T24G_MOD/internal/"
+  cp "$ROOT_DIR/go.mod" "$T24G_MOD/go.mod"
+  cp "$ROOT_DIR/go.sum" "$T24G_MOD/go.sum"
+  remove_roadmap_acceptance_heading \
+    "$ROOT_DIR/internal/generators/roadmap.go" "$T24G_MOD/internal/generators/roadmap.go" \
+    "$occ" "go-$path_name"
+
+  T24G_BIN="$WORK/s24-go-bin-$path_name/trackfw"
+  mkdir -p "$(dirname "$T24G_BIN")"
+  build_go_or_fail "setup-s24-go-$path_name-build" "$T24G_MOD" "$T24G_BIN"
+
+  T24G="$WORK/s24-go-$path_name"
+  mkdir -p "$T24G"
+  write_roadmap_acceptance_req_fixture "$T24G/docs/req/REQ-flag-source.md"
+
+  script_var="ROADMAP_CYCLE_SCRIPT_SIMPLE"
+  [[ "$path_name" == "from-req" ]] && script_var="ROADMAP_CYCLE_SCRIPT_FROM_REQ"
+
+  assert_fails_with "roadmap-acceptance-heading/go/$path_name" \
+    "is in wip but has no acceptance criteria block" \
+    bash -c "${!script_var}" _ "$T24G" "$T24G_BIN"
+done
+
+# --- Node -------------------------------------------------------------------
+for occ_label in "0:simple" "1:from-req"; do
+  occ="${occ_label%%:*}"
+  path_name="${occ_label##*:}"
+
+  T24N="$WORK/s24-node-$path_name"
+  mkdir -p "$T24N"
+  setup_npm_tree "$T24N"
+  remove_roadmap_acceptance_heading \
+    "$ROOT_DIR/npm/src/generators/roadmap.js" "$T24N/npm/src/generators/roadmap.js" \
+    "$occ" "node-$path_name"
+
+  write_roadmap_acceptance_req_fixture "$T24N/docs/req/REQ-flag-source.md"
+
+  script_var="ROADMAP_CYCLE_SCRIPT_SIMPLE"
+  [[ "$path_name" == "from-req" ]] && script_var="ROADMAP_CYCLE_SCRIPT_FROM_REQ"
+
+  assert_fails_with "roadmap-acceptance-heading/node/$path_name" \
+    "is in wip but has no acceptance criteria block" \
+    bash -c "${!script_var}" _ "$T24N" node npm/bin/trackfw
+done
+
+# --- Python -------------------------------------------------------------------
+for occ_label in "0:simple" "1:from-req"; do
+  occ="${occ_label%%:*}"
+  path_name="${occ_label##*:}"
+
+  T24P="$WORK/s24-python-$path_name"
+  mkdir -p "$T24P"
+  cp -r "$ROOT_DIR/pypi" "$T24P/pypi"
+  remove_roadmap_acceptance_heading \
+    "$ROOT_DIR/pypi/trackfw/generators/roadmap.py" "$T24P/pypi/trackfw/generators/roadmap.py" \
+    "$occ" "python-$path_name"
+
+  write_roadmap_acceptance_req_fixture "$T24P/docs/req/REQ-flag-source.md"
+
+  script_var="ROADMAP_CYCLE_SCRIPT_SIMPLE"
+  [[ "$path_name" == "from-req" ]] && script_var="ROADMAP_CYCLE_SCRIPT_FROM_REQ"
+
+  assert_fails_with "roadmap-acceptance-heading/python/$path_name" \
+    "is in wip but has no acceptance criteria block" \
+    bash -c "${!script_var}" _ "$T24P" env "PYTHONPATH=$T24P/pypi" python3 -m trackfw
+done
+
+echo "Falsification checks passed (all 30 scenarios, 14 gates + 1 generator/validator contract — roadmap acceptance heading, both simple and --from-req paths, 3 CLIs — proved non-vacuous)"

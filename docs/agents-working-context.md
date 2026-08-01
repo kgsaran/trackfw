@@ -4,6 +4,97 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (orquestração — marcador de aceite do gerador) — CONCLUÍDO
+
+**Branch:** `fix/alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap`
+**ADR:** `docs/adr/ADR-2026-07-31-gerador-de-roadmap-emite-heading-consolidado-...md` (Accepted)
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-07-31-alinhar-marcador-de-criterios-...md`
+
+PR #95 mergeado, branch anterior apagada, `origin/main` em `e6cdd10`.
+
+### Escopo
+
+Corrigir o defeito que venho contornando à mão há **três ciclos**: `roadmap new` emite
+`**Acceptance criteria:**` mas o validador exige o heading `## Acceptance Criteria`. Todo roadmap
+novo falha no `validate` ao entrar em `wip`, nos 3 CLIs.
+
+Contornei manualmente **de novo** para criar o roadmap desta própria correção.
+
+### Bloco decidido (byte-a-byte nos 3 CLIs)
+
+```
+## Acceptance Criteria
+<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
+- [ ]
+- [ ]
+```
+
+Após `## Context`, antes de `## Wave 1`. Sem espaço à direita. Convenção espelhada de
+`internal/generators/req.go:93`, que já está correto.
+
+### Estrutura — primeiro ciclo com paralelismo real
+
+Wave 1 tem **3 MLs em paralelo** (Apolo × 3): `internal/generators/roadmap.go`,
+`npm/src/generators/roadmap.js`, `pypi/trackfw/generators/roadmap.py`. Arquivos disjuntos, cada um
+com os testes do próprio CLI. Diferente dos dois ciclos anteriores, onde havia um único arquivo
+canônico e tudo era sequencial.
+
+**Ponto de atenção que moldou os critérios:** `make parity`/`make quality` **falham** enquanto os
+três não estiverem prontos — `check-artifact-parity.sh` compara os artefatos gerados entre CLIs.
+Por isso nenhum ML da Wave 1 tem `parity` nos critérios; cada um valida só o próprio CLI. A
+paridade é a Wave 2, que age como barreira.
+
+### Diferença relevante em relação ao ciclo do DOMPurify
+
+Lá o seam de falsificação não pôde virar gate de CI (exigiria jsdom num projeto de zero
+devDependency). **Aqui é shell puro** — gerar, mover, validar. Então o ML-2A avalia acrescentar
+cenário permanente a `scripts/check-gates-falsify.sh`.
+
+### Execução e fechamento
+
+- **Wave 1 — 3 MLs em paralelo real** (Apolo × 3), arquivos disjuntos, sem colisão. Commit `8abfa0f`.
+  Bloco byte-idêntico nos três, 2 ocorrências cada (template simples + `--from-req`).
+- **Wave 2 — barreira** (Ártemis): cenário permanente em `scripts/check-gates-falsify.sh` com
+  6 asserções cobrindo 3 CLIs × 2 caminhos. Contador 24 → 30.
+
+### A lacuna que a auditoria da Wave 1 pegou
+
+Só o ML-1C (Python) fixou o contrato em teste. Go e Node não ganharam asserção — **nenhum teste
+quebrou** porque nenhum estava acoplado ao corpo gerado. E `check-artifact-parity.sh` pega
+*divergência entre* CLIs, mas não pega **remoção coordenada nos três**: alguém removeria o heading
+dos três, a paridade continuaria verde, e o defeito voltaria em silêncio.
+
+Foi isso que direcionou a Wave 2. Aqui o seam **pôde** virar gate de CI — shell puro, ao contrário
+do ciclo do DOMPurify, que exigiria jsdom num projeto de zero devDependency.
+
+### Falsificação independente do gate (auditoria de Zeus)
+
+Não aceitei "30 OK" como prova. Removi **um** dos dois blocos do gerador Go:
+
+```
+EXIT=1
+expected 2 occurrences of the heading block, got 1
+```
+
+Falha por guarda de pré-condição — aborta em vez de rodar ciclo já inválido. Restaurado: 30/30 e
+`make quality` exit 0.
+
+### Achado colateral com causa raiz (não corrigido)
+
+`roadmap new --from-req` sempre dispara `ref_targets_exist`, por **três** causas independentes:
+basename no campo `req:` do frontmatter (3 CLIs); `extractRefPath` retornando no primeiro campo
+casado, e o `req:` do frontmatter precede o `REQ:` do corpo; e `referenceExists(ref, roots)` que
+nunca usa `roots`. Documentado em
+`vault/notes/roadmap-from-req-ref-targets-exist-falso-positivo-2026-08-01.md`.
+
+### Fila de follow-ups (sem REQ ainda)
+
+1. `ref_targets_exist` falso-positivo no `--from-req` — causa raiz já documentada.
+2. Links `.md` relativos com `../` retornam 403 no `/api/file`.
+3. SRI nas outras cinco tags CDN do dashboard.
+
+---
+
 ## Sessão 2026-07-31 — Zeus (orquestração — XSS do drawer / DOMPurify) — CONCLUÍDO
 
 **Branch:** `fix/sanitizar-html-do-drawer-do-dashboard-com-dompurify`

@@ -76,6 +76,14 @@ class TestGenerateFlat(unittest.TestCase):
         self.assertIn("## Wave 1", content)
         self.assertIn("ML-1A", content)
 
+        # Bloco consolidado de critérios de aceite (contrato de paridade com Go/Node)
+        self.assertIn(
+            "## Acceptance Criteria\n"
+            "<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->\n"
+            "- [ ]\n- [ ]\n",
+            content,
+        )
+
     def test_generate_flat_with_req_path_sets_context_link(self):
         cfg = _make_cfg(self.tmpdir)
         path = generate_roadmap("Linked Roadmap", cfg, req_path="docs/req/REQ-linked.md")
@@ -114,6 +122,16 @@ class TestGenerateFlat(unittest.TestCase):
         self.assertIn("ADR: docs/adr/ADR-checkout.md", content)
         self.assertIn("### ML-1A — Validar token de pagamento", content)
         self.assertIn("### ML-1B — Persistir recibo", content)
+
+        # Bloco consolidado de critérios de aceite (contrato de paridade com Go/Node)
+        self.assertIn(
+            "## Acceptance Criteria\n"
+            "<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->\n"
+            "- [ ]\n- [ ]\n",
+            content,
+        )
+        # Bloco por ML preservado (unidade operacional de cada microlote)
+        self.assertIn("**Acceptance criteria:**", content)
 
 
 class TestGenerateByAgent(unittest.TestCase):
