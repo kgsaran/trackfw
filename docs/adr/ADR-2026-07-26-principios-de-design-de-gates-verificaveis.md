@@ -1,12 +1,13 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-07-26
 author: "KG"
 ---
 
 # ADR: principios de design de gates verificaveis
 
-> Date: 2026-07-26 | Status: Proposed
+> Date: 2026-07-26 | Status: Accepted
+> Accepted: 2026-08-01
 
 ## Context
 
