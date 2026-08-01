@@ -54,7 +54,7 @@ Wave 1 e a Wave 3 espelha o que a Wave 2 aprovou.
 > Dependências: nenhuma
 
 ### ML-1A — Remover htmx e aplicar SRI
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-01)
 **Agente:** Afrodite
 **Arquivos afetados:** `internal/serve/static/index.html` (apenas este)
 
@@ -70,10 +70,41 @@ Wave 1 e a Wave 3 espelha o que a Wave 2 aprovou.
 em `app.js`, `style.css`, `npm/`, `pypi/`, código de servidor ou whitelist; não criar arquivo novo.
 
 **Acceptance criteria:**
-- [ ] `make build`, `make test`, `make lint` verdes
-- [ ] `git status --porcelain` mostra **apenas** `internal/serve/static/index.html`
-- [ ] `grep -ri htmx internal/serve/` sem resultado
-- [ ] Os três `integrity` conferem com os valores acima, byte a byte
+- [x] `make build`, `make test`, `make lint` verdes
+- [x] `git status --porcelain` mostra **apenas** `internal/serve/static/index.html`
+- [x] Os três `integrity` conferem byte a byte — ela **reconferiu os hashes por download próprio**
+      antes de aplicar, em vez de copiar do handoff
+- [x] Tailwind sem `integrity`, com comentário explicativo; tag do DOMPurify inalterada
+- [x] `grep -ri htmx internal/serve/` sem resultado — **após o ML-1B** (ver abaixo)
+
+**Notas da auditoria de Zeus:**
+- Contagem real de atributos: `grep -c 'integrity="sha384-'` → **4** (marked, chart.js, d3,
+  DOMPurify). O roadmap previa 4; a Afrodite reportou 5 no `grep -c integrity` genérico porque a
+  palavra também aparece na prosa do comentário do Tailwind. Explicação dela, correta.
+
+---
+
+### ML-1B — Corretivo: cabeçalho do `app.js` declarava HTMX
+**Status:** ✅ concluído (auditado 2026-08-01)
+**Agente:** Afrodite
+**Arquivos afetados:** `internal/serve/static/app.js` (apenas o comentário de cabeçalho)
+
+**Motivo:** a Afrodite reportou, ainda no ML-1A, que o cabeçalho do `app.js` declarava
+`Tecnologias: HTMX + marked.js + Chart.js + D3.js`. **Não alterou** porque o ML-1A proibia tocar
+no arquivo — decisão certa, reportou em vez de extrapolar escopo.
+
+O comentário passou a ser **falso por causa desta mudança**, e ainda omitia o DOMPurify, que
+entrou no PR #95. Cabeçalho que descreve a stack errada faz o próximo leitor acreditar que htmx
+está disponível.
+
+**Ação:** uma linha de comentário. Diff verificado como **exclusivamente comentário**, nenhuma
+linha de código.
+
+**Critérios de aceite:**
+- [x] `grep -ri htmx internal/serve/` sem nenhum resultado
+- [x] Cabeçalho menciona DOMPurify e não menciona HTMX
+- [x] Diff contém apenas comentário — confirmado por Zeus
+- [x] build/test/lint verdes
 
 ---
 
