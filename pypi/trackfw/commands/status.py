@@ -253,7 +253,7 @@ def get_status(cwd: str = None) -> str:
 
         # ── ⚙ WIP by Squad (condicional) — espelha readWIPConfig()/bySquad de
         # internal/validator/validator.go e npm/src/validator/index.js.
-        wip_cfg = _validator._read_wip_config(base)
+        wip_cfg = _validator._wip_config_from(cfg)
         if wip_cfg.get("by_squad") and wip:
             by_squad = {}
             for f in wip:

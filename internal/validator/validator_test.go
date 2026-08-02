@@ -73,7 +73,10 @@ func hasWarning(ws []string, substr string) bool {
 	return false
 }
 
-// chdir muda para dir e restaura ao fim do teste
+// chdir muda para dir e restaura ao fim do teste. Também reseta o singleton de config.Load(),
+// já que ele é cacheado por processo e lê trackfw.yaml relativo ao CWD — sem o reset, um teste
+// que roda após outro no mesmo pacote herdaria o ProjectConfig da fixture anterior (ML-3A:
+// validateWIPLimit/IsLenient passaram a consumir config.Load() em vez de reler o arquivo).
 func chdir(t *testing.T, dir string) {
 	t.Helper()
 	orig, err := os.Getwd()
@@ -83,7 +86,11 @@ func chdir(t *testing.T, dir string) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chdir(orig) })
+	config.Reset()
+	t.Cleanup(func() {
+		_ = os.Chdir(orig)
+		config.Reset()
+	})
 }
 
 // TestValidate_Clean — estrutura vazia sem nenhuma violação nem warning
