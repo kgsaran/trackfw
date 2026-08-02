@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-02
 req: "docs/req/REQ-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Substituir os parsers artesanais de config por biblioteca YAML nos tres CLIs
 
-> Created: 2026-08-02 | Status: wip
+> Created: 2026-08-02 | Status: done
 
 ## Context
 
@@ -99,7 +99,7 @@ primeira tentativa dele), e `yaml` tem zero deps de runtime enquanto `js-yaml` a
 > Dependências: **ML-0A concluído**
 
 ### ML-1A — Biblioteca + normalização nos três CLIs
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo (executor **único**)
 **Arquivos afetados:** `internal/config/config.go`, `npm/src/config/index.js`,
 `pypi/trackfw/config.py`, manifestos (`go.mod`, `npm/package.json`, `pypi/pyproject.toml`) + testes
@@ -132,7 +132,7 @@ contrato.
 > Dependências: **Wave 1 completa**
 
 ### ML-2A — Paridade e seam de schema
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Ártemis
 
 **Ações:**
@@ -150,3 +150,81 @@ contrato.
 - [ ] Cenário novo com fixture discriminante de schema; não vacuoso
 - [ ] Contador atualizado
 - [ ] `git status --porcelain` sem resíduo
+
+
+---
+
+## MLs corretivos, todos vindos de auditoria
+
+### ML-1B — Config malformada falhava em SILÊNCIO (regressão nossa)
+**Status:** ✅ concluído (auditado 2026-08-02)
+
+O ML-1A introduziu parser **all-or-nothing**: uma vírgula errada descartava a config inteira sem
+avisar. **Medido contra a `main`**, é regressão, não preservação:
+
+```
+trackfw.yaml:  agents: [zeus, apolo      ← colchete não fechado
+               wip_limit: 3
+
+parser antigo (linha a linha) → wip_limit = 3   (leu a linha válida)
+parser novo (ML-1A)           → wip_limit = 1   (descartou tudo, exit 0, sem mensagem)
+```
+
+Virou a **pior** instância da classe que o ciclo existe para eliminar. Agora falha alto:
+mensagem e exit **idênticos** nos 3, verificado byte a byte.
+
+Ele ainda fechou **três divergências** que só apareceram ao auditar o caminho de erro:
+chaves duplicadas (só o Node rejeitava), multi-documento (só o Go aceitava, lendo o primeiro em
+silêncio) e alias referenciado antes da âncora (só o Node aceitava, virando string vazia).
+
+### ML-3A — O `validate` contornava a biblioteca
+**Status:** ✅ concluído (auditado 2026-08-02)
+
+A barreira descobriu que o objetivo do ciclo estava **metade cumprido**: a config passava por
+biblioteca YAML, mas o `validate` — o caminho que mais importa — relia `trackfw.yaml` com
+leitores artesanais próprios.
+
+```
+wip_limit: "3"      config.Load() → 3        validate → limit: 1
+```
+
+`readWIPConfig` e `readGovernanceMode` eliminados nos 3; nenhum ponto do validator lê o arquivo
+diretamente. Correção majoritariamente por **deleção**.
+
+**Ele parou onde devia:** `update.go`, `sync/linear.go` e `sync/jira.go` também leem
+`trackfw.yaml`, mas para campos que **não existem** em `ProjectConfig` (`hooks`, `ci`,
+`linear_api_key`, `jira_base_url`). Corrigi-los exigiria ampliar o contrato — decisão de ADR.
+Reportou em vez de decidir. **Fica na fila.**
+
+### ML-3B — A regressão não tinha teste
+**Status:** ✅ concluído (auditado 2026-08-02)
+
+O executor do ML-3A sinalizou honestamente: nenhum teste fixava o bug. O existente usa
+`wip_limit` **sem aspas**, que passava antes e depois.
+
+A fixture precisa do **escalar citado** para discriminar:
+
+| `trackfw.yaml` | binário correto | com leitor artesanal de volta |
+|---|---|---|
+| `wip_limit: "3"` | `limit: 3` | `limit: 1` ← **discrimina** |
+| `wip_limit: 3` | `limit: 3` | `limit: 3` ← **vácuo** |
+
+Contador **88 → 92**.
+
+---
+
+## Fechamento
+
+Concluído e auditado em 2026-08-02. `make quality` exit 0; falsificação **82 → 92**.
+
+**O que muda:** ~1085 linhas de parser artesanal saem; entram `yaml.v3` (Go), `yaml` 2.x (Node) e
+`PyYAML` (Python — **primeira dependência de runtime** do pacote). Qualquer YAML válido passa a
+ser aceito no config, e o que não parseia **falha alto** em vez de sumir.
+
+**A lição do ciclo:** a decisão que importava não era "adotar biblioteca" — era **normalizar para
+string na fronteira**. As três bibliotecas divergem em três direções (`yes`, octal, data), e
+adotá-las sem normalizar teria trocado a divergência artesanal por divergência de schema. Medir
+**antes** de escrever código foi o que revelou isso.
+
+**Fica na fila:** `update.go`, `sync/linear.go` e `sync/jira.go` ainda leem `trackfw.yaml`
+diretamente, para campos fora do `ProjectConfig`. Ampliar o contrato é decisão de ADR.

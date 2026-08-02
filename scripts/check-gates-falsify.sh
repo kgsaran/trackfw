@@ -3019,4 +3019,154 @@ else
   exit 1
 fi
 
-echo "Falsification checks passed (all 88 scenarios, 14 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 38 — wipConfigFrom (e equivalentes _wip_config_from/JS) volta a ler
+# trackfw.yaml artesanalmente em vez de consumir o cfg já normalizado por
+# config.Load() — regressão descoberta na auditoria do ML-3A (elimina os
+# leitores readWIPConfig/readGovernanceMode em 74d70ee). Nenhum cenário deste
+# harness fixava essa regressão: o teste unitário existente
+# (TestValidateWIPLimit_Global_HighLimit) usa `wip_limit: 3` SEM aspas — valor
+# que um leitor artesanal (Sscanf %d / parseInt / int()) lê corretamente,
+# igual à biblioteca YAML. Sem aspas o cenário é vácuo: os dois caminhos
+# concordam e nenhuma regressão é detectada.
+#
+# Fixture discriminante: `wip_limit: "3"` — COM aspas. Um leitor artesanal
+# falha ao interpretar o valor citado (Sscanf/parseInt/int() encontram `"3"`,
+# não `3`) e cai no default 1; a biblioteca YAML resolve o escalar tipado
+# normalmente para 3.
+#
+#   - baseline: projeto com wip_limit: "3" (citado) e 4 roadmaps em wip/ → os
+#     3 CLIs devem reportar o warning "4 roadmaps in wip/ (limit: 3) —
+#     consider focusing" (cfg.WipLimit == 3, valor lido pela biblioteca).
+#   - detecção: reintroduz, em cada CLI, exatamente o padrão do
+#     readWIPConfig/wipConfigFrom eliminado por 74d70ee — releitura artesanal
+#     de trackfw.yaml em vez de consumir o cfg já carregado — e prova que a
+#     saída volta a "(limit: 1)" nos 3 CLIs.
+#
+# Corrompe a IMPLEMENTAÇÃO (wipConfigFrom/_wip_config_from e equivalente
+# Node), nunca a asserção — mesmo padrão dos cenários anteriores.
+# ---------------------------------------------------------------------------
+
+write_wip_roadmap_fixture() {
+  local dest=$1 title=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+# Roadmap: $title
+
+REQ: REQ-001
+
+## Acceptance Criteria
+- [ ] item
+EOF
+}
+
+S38_PROJECT="$WORK/s38-wip-limit-quoted-project"
+scaffold_adr_req_project "$S38_PROJECT"
+cat > "$S38_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+wip_limit: "3"
+wip_by_squad: false
+EOF
+for n in 1 2 3 4; do
+  write_wip_roadmap_fixture "$S38_PROJECT/docs/roadmaps/wip/ROADMAP-wip-$n.md" "wip fixture $n"
+done
+
+S38_EXPECTED_WARNING='4 roadmaps in wip/ (limit: 3) — consider focusing'
+S38_REGRESSED_WARNING='4 roadmaps in wip/ (limit: 1) — consider focusing'
+
+# --- prova positiva: os 3 CLIs, com a fixture citada -------------------------
+set +e
+s38_go_out=$(cd "$S38_PROJECT" && "$T27_GO_BIN" validate 2>&1)
+s38_node_out=$(cd "$S38_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" validate 2>&1)
+s38_python_out=$(cd "$S38_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate 2>&1)
+set -e
+
+if grep -qF "$S38_EXPECTED_WARNING" <<<"$s38_go_out" \
+    && grep -qF "$S38_EXPECTED_WARNING" <<<"$s38_node_out" \
+    && grep -qF "$S38_EXPECTED_WARNING" <<<"$s38_python_out"; then
+  echo "OK   [falsify/wip-limit-quoted/baseline-3-clis]"
+else
+  echo "FAIL [falsify/wip-limit-quoted/baseline-3-clis]: esperava '$S38_EXPECTED_WARNING' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s38_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s38_node_out")" >&2
+  echo "  python: $(printf '%q' "$s38_python_out")" >&2
+  exit 1
+fi
+
+# --- Go: prova de detecção (wipConfigFrom volta a ler trackfw.yaml direto) --
+GO_S38_OLD=$'func wipConfigFrom(cfg config.ProjectConfig) WIPConfig {\n\treturn WIPConfig{Limit: cfg.WipLimit, BySquad: cfg.WipBySquad}\n}'
+GO_S38_NEW=$'func wipConfigFrom(cfg config.ProjectConfig) WIPConfig {\n\twc := WIPConfig{Limit: 1, BySquad: cfg.WipBySquad}\n\tcontent, err := os.ReadFile("trackfw.yaml")\n\tif err != nil {\n\t\treturn wc\n\t}\n\tfor _, line := range strings.Split(string(content), "\\n") {\n\t\tline = strings.TrimSpace(line)\n\t\tif strings.HasPrefix(line, "wip_limit:") {\n\t\t\tval := strings.TrimSpace(strings.TrimPrefix(line, "wip_limit:"))\n\t\t\tfields := strings.Fields(val)\n\t\t\tif len(fields) > 0 {\n\t\t\t\tvar n int\n\t\t\t\tif _, err := fmt.Sscanf(fields[0], "%d", &n); err == nil && n > 0 {\n\t\t\t\t\twc.Limit = n\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\treturn wc\n}'
+
+T38C_GO_MOD="$WORK/s38-corrupt-go"
+mkdir -p "$T38C_GO_MOD/cmd" "$T38C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T38C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T38C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T38C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T38C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T38C_GO_MOD/internal/validator/validator.go" \
+  "$GO_S38_OLD" "$GO_S38_NEW" "s38-go"
+
+T38C_GO_BIN="$WORK/s38-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T38C_GO_BIN")"
+build_go_or_fail "setup-s38-go-corrupt-build" "$T38C_GO_MOD" "$T38C_GO_BIN"
+
+set +e
+s38c_go_out=$(cd "$S38_PROJECT" && "$T38C_GO_BIN" validate 2>&1)
+set -e
+if grep -qF "$S38_REGRESSED_WARNING" <<<"$s38c_go_out" && ! grep -qF "$S38_EXPECTED_WARNING" <<<"$s38c_go_out"; then
+  echo "OK   [falsify/wip-limit-quoted/go-detects-artisanal-reader-reintroduced]"
+else
+  echo "FAIL [falsify/wip-limit-quoted/go-detects-artisanal-reader-reintroduced]: leitor artesanal reintroduzido mas a saída não voltou a '(limit: 1)' — checagem vácua" >&2
+  echo "  output: $(printf '%q' "$s38c_go_out")" >&2
+  exit 1
+fi
+
+# --- Node: prova de detecção -------------------------------------------------
+NODE_S38_OLD=$'function wipConfigFrom(cfg) {\n  return { limit: cfg.wipLimit > 0 ? cfg.wipLimit : 1, bySquad: !!cfg.wipBySquad }\n}'
+NODE_S38_NEW=$'function wipConfigFrom(cfg) {\n  let limit = 1\n  try {\n    const content = fs.readFileSync(\'trackfw.yaml\', \'utf8\')\n    for (const line of content.split(\'\\n\')) {\n      const t = line.trim()\n      if (t.startsWith(\'wip_limit:\')) {\n        const val = t.slice(\'wip_limit:\'.length).trim().split(/\\s+/)[0]\n        const n = parseInt(val, 10)\n        if (!isNaN(n) && n > 0) limit = n\n      }\n    }\n  } catch (_) {}\n  return { limit, bySquad: !!cfg.wipBySquad }\n}'
+
+T38C_NODE="$WORK/s38-corrupt-node"
+setup_npm_tree "$T38C_NODE"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$T38C_NODE/npm/src/validator/index.js" \
+  "$NODE_S38_OLD" "$NODE_S38_NEW" "s38-node"
+
+set +e
+s38c_node_out=$(cd "$S38_PROJECT" && node "$T38C_NODE/npm/bin/trackfw" validate 2>&1)
+set -e
+if grep -qF "$S38_REGRESSED_WARNING" <<<"$s38c_node_out" && ! grep -qF "$S38_EXPECTED_WARNING" <<<"$s38c_node_out"; then
+  echo "OK   [falsify/wip-limit-quoted/node-detects-artisanal-reader-reintroduced]"
+else
+  echo "FAIL [falsify/wip-limit-quoted/node-detects-artisanal-reader-reintroduced]: leitor artesanal reintroduzido mas a saída não voltou a '(limit: 1)' — checagem vácua" >&2
+  echo "  output: $(printf '%q' "$s38c_node_out")" >&2
+  exit 1
+fi
+
+# --- Python: prova de detecção ------------------------------------------------
+PY_S38_OLD=$'def _wip_config_from(cfg: dict) -> dict:\n    """\n    Deriva {"limit": int, "by_squad": bool} a partir do dict de config já normalizado por\n    _config.load() — nenhuma releitura de trackfw.yaml acontece aqui.\n    """\n    limit = cfg.get("wip_limit", 1)\n    if not isinstance(limit, int) or limit <= 0:\n        limit = 1\n    return {"limit": limit, "by_squad": bool(cfg.get("wip_by_squad", False))}'
+PY_S38_NEW=$'def _wip_config_from(cfg: dict) -> dict:\n    limit = 1\n    try:\n        with open("trackfw.yaml", "r", encoding="utf-8") as f:\n            content = f.read()\n        for line in content.split("\\n"):\n            t = line.strip()\n            if t.startswith("wip_limit:"):\n                fields = t[len("wip_limit:"):].strip().split()\n                if fields:\n                    try:\n                        n = int(fields[0])\n                        if n > 0:\n                            limit = n\n                    except ValueError:\n                        pass\n    except OSError:\n        pass\n    return {"limit": limit, "by_squad": bool(cfg.get("wip_by_squad", False))}'
+
+T38C_PYTHON="$WORK/s38-corrupt-python"
+mkdir -p "$T38C_PYTHON"
+cp -r "$ROOT_DIR/pypi" "$T38C_PYTHON/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/validator.py" "$T38C_PYTHON/pypi/trackfw/validator.py" \
+  "$PY_S38_OLD" "$PY_S38_NEW" "s38-python"
+
+set +e
+s38c_python_out=$(cd "$S38_PROJECT" && env PYTHONPATH="$T38C_PYTHON/pypi" python3 -m trackfw validate 2>&1)
+set -e
+if grep -qF "$S38_REGRESSED_WARNING" <<<"$s38c_python_out" && ! grep -qF "$S38_EXPECTED_WARNING" <<<"$s38c_python_out"; then
+  echo "OK   [falsify/wip-limit-quoted/python-detects-artisanal-reader-reintroduced]"
+else
+  echo "FAIL [falsify/wip-limit-quoted/python-detects-artisanal-reader-reintroduced]: leitor artesanal reintroduzido mas a saída não voltou a '(limit: 1)' — checagem vácua" >&2
+  echo "  output: $(printf '%q' "$s38c_python_out")" >&2
+  exit 1
+fi
+
+echo "Falsification checks passed (all 92 scenarios, 14 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee))"

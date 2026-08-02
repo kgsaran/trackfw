@@ -4,7 +4,7 @@
 
 ---
 
-## Sessão 2026-08-02 — Zeus (parser de config por biblioteca YAML) — INÍCIO
+## Sessão 2026-08-02 — Zeus (parser de config por biblioteca YAML) — CONCLUÍDO
 
 **Branch:** `refactor/substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis`
 PR #105 mergeado; `origin/main` em `909e2b5`; fila zerada antes de começar.
@@ -56,6 +56,49 @@ reconciliação. Aqui o alvo é mais difícil — semântica idêntica entre tr�
 **Maior risco:** fidelidade textual. `time.Time` de volta a `2026-08-02` e `8` de volta a `010`
 são irreversíveis **depois** da coerção. Se a biblioteca perder a forma original, a normalização
 tem de acontecer antes — lendo o nó bruto. Está escrito como contrato no roadmap.
+
+### Execução e fechamento
+
+ML-0A (medir Node) → ML-1A (implementar) → **ML-1B** → ML-2A (barreira) → **ML-3A** → **ML-3B**.
+`make quality` exit 0; falsificação **82 → 92**.
+
+Três dos seis MLs foram **corretivos vindos de auditoria**.
+
+### A medição pré-código foi o que salvou o ciclo
+
+Medir as bibliotecas **antes** de escrever mostrou que adotá-las sem normalizar trocaria a
+divergência artesanal por divergência de **schema**. A decisão central virou **normalizar para
+string na fronteira**, lendo o **nó bruto** — não revertendo valor tipado, que é irreversível.
+
+O ML-0A (só medição) rendeu três achados que teriam virado bug: octal diverge em **três**
+direções (Go/Python `8`, Node `10`); Node **não** converte data, logo um teste de `lenient_until`
+passaria lá sem normalização; e âncoras corrompem normalização ingênua.
+
+### Os três corretivos
+
+- **ML-1B** — o ML-1A introduziu **regressão**: parser all-or-nothing descartando a config
+  inteira em silêncio. Medido contra a `main`: o parser antigo lia `wip_limit: 3` do arquivo
+  malformado; o novo caía no default. Virou a pior instância da classe que o ciclo combatia.
+  Agora falha alto. Fechou de quebra três divergências do caminho de erro.
+- **ML-3A** — a barreira achou que o `validate` **contornava** o `config.Load()`. O objetivo
+  estava metade cumprido. Eliminados os leitores sombra; correção por deleção.
+- **ML-3B** — a regressão não tinha teste. A fixture precisa de **escalar citado**
+  (`wip_limit: "3"`) para discriminar; sem aspas é vácuo — que era exatamente por que o teste
+  existente não pegava nada.
+
+### Padrão que se repetiu e vale nomear
+
+Em **três** momentos o executor **parou e reportou** em vez de decidir: a divergência `by_agent`,
+os campos fora do `ProjectConfig` em `update.go`/`sync`, e a ausência de teste da regressão. Nos
+três a decisão era de arquitetura, não de implementação. Isso é o que fez a auditoria funcionar.
+
+### FILA
+
+`update.go`, `sync/linear.go` e `sync/jira.go` ainda leem `trackfw.yaml` diretamente, para campos
+que **não existem** no `ProjectConfig` (`hooks`, `ci`, `linear_api_key`, `jira_base_url`).
+Ampliar o contrato é decisão de ADR — **não** foi feito por decisão do executor, corretamente.
+
+Pronto para merge e tag.
 
 ---
 

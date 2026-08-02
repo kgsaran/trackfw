@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-02
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-02-parsing-de-config-por-biblioteca-yaml-com-normalizacao-para-string-na-fronteira.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md"
 ---
 
 # REQ: Substituir os parsers artesanais de config por biblioteca YAML nos tres CLIs
 
-> Date: 2026-08-02 | Status: Open
+> Date: 2026-08-02 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -33,12 +33,12 @@ artesanal por divergência de schema. Medido em 2026-08-02:
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Os 3 CLIs carregam `trackfw.yaml` com biblioteca YAML: Go `gopkg.in/yaml.v3`
+- [x] **AC1** — Os 3 CLIs carregam `trackfw.yaml` com biblioteca YAML: Go `gopkg.in/yaml.v3`
       (promover de indirect a direta), Node `js-yaml` ou `yaml`, Python `PyYAML`.
-- [ ] **AC2** — **Normalização para string na fronteira.** Após o `load`, escalares chegam aos
+- [x] **AC2** — **Normalização para string na fronteira.** Após o `load`, escalares chegam aos
       consumidores como **string**, listas como listas de string. Nenhum consumidor recebe
       `time.Time`, `date`, `int`, `float` ou `bool` da biblioteca.
-- [ ] **AC3** — **Fidelidade textual**, verificada caso a caso nos 3 CLIs:
+- [x] **AC3** — **Fidelidade textual**, verificada caso a caso nos 3 CLIs:
       | Entrada | Valor esperado no consumidor |
       |---|---|
       | `lenient_until: 2026-08-02` | `"2026-08-02"` — **não** timestamp formatado |
@@ -48,26 +48,26 @@ artesanal por divergência de schema. Medido em 2026-08-02:
       | `wip_by_squad: yes` | `"yes"` — os 3 **iguais**; hoje Go e Python divergem |
       | `k: 1.0` | `"1.0"` — não `"1"` |
       | `k: null` / `k: ~` | mesmo resultado nos 3 |
-- [ ] **AC4** — **Comportamento do Node medido**, não presumido. A tabela do AC3 e a de tipos do
+- [x] **AC4** — **Comportamento do Node medido**, não presumido. A tabela do AC3 e a de tipos do
       ADR devem ser executadas contra a biblioteca escolhida e o resultado reportado. Se a
       biblioteca escolhida divergir de forma que a normalização não resolva, **reportar** antes de
       seguir.
-- [ ] **AC5** — Todas as ~20 chaves de config seguem funcionando: `adr_dirs`, `agents`,
+- [x] **AC5** — Todas as ~20 chaves de config seguem funcionando: `adr_dirs`, `agents`,
       `req_dir`, `roadmap_dir`, `roadmap_namespacing`, `acceptance_markers`, `link_fields`
       (e sub-chaves), `rules`, `wip_limit`, `wip_by_squad`, `stale_wip_days`, `lenient_until`,
       `governance_mode`, `require_req_in_commit`, `strict_ci_paths`, `trace_id_field`, `forge`,
       `squad`. Teste **por chave**.
-- [ ] **AC6** — **Não regride nada dos quatro ciclos anteriores:** lista em bloco indentada e não
+- [x] **AC6** — **Não regride nada dos quatro ciclos anteriores:** lista em bloco indentada e não
       indentada, lista inline (incluindo vírgula dentro de aspas), delimitador não pareado,
       ordenação do fallback de agentes.
-- [ ] **AC7** — Formas antes **não suportadas** passam a funcionar: mapa inline (`{a: 1}`), lista
+- [x] **AC7** — Formas antes **não suportadas** passam a funcionar: mapa inline (`{a: 1}`), lista
       aninhada inline, âncoras. Pelo menos uma de cada, testada.
-- [ ] **AC8** — `config` ausente ou vazio continua caindo nos defaults, sem erro.
-- [ ] **AC9** — `validate` e `status` verdes e **byte-idênticos** nos 3 no repositório real.
-- [ ] **AC10** — `scripts/check-artifact-parity.sh` e `scripts/check-validate-parity.sh` passam.
-- [ ] **AC11** — Cenário de falsificação com fixture contendo **`yes`, valor com cara de octal e
+- [x] **AC8** — `config` ausente ou vazio continua caindo nos defaults, sem erro.
+- [x] **AC9** — `validate` e `status` verdes e **byte-idênticos** nos 3 no repositório real.
+- [x] **AC10** — `scripts/check-artifact-parity.sh` e `scripts/check-validate-parity.sh` passam.
+- [x] **AC11** — Cenário de falsificação com fixture contendo **`yes`, valor com cara de octal e
       data nua** — fixture de strings simples passa sob qualquer schema e não prova nada.
-- [ ] **AC12** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+- [x] **AC12** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
 
 ## Negative Scope (fora do escopo — NÃO fazer)
 
@@ -107,4 +107,4 @@ ADR: docs/adr/ADR-2026-08-02-parsing-de-config-por-biblioteca-yaml-com-normaliza
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md
