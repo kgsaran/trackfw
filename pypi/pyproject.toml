@@ -18,6 +18,9 @@ keywords = [
   "openai-codex", "claude-code", "gemini-cli", "gemini",
   "github-copilot", "cursor", "copilot", "windsurf", "amazon-q", "trackfw"
 ]
+dependencies = [
+  "PyYAML>=6.0",
+]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Console",

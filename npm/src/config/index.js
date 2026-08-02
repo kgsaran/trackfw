@@ -3,48 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-
-// isInlineList detecta a forma flow-style de lista YAML na própria linha da chave:
-// "chave: [a, b]". Não confundir com bloco (linhas seguintes com "- item").
-function isInlineList(val) {
-  return typeof val === 'string' && val.trim().startsWith('[');
-}
-
-// splitTopLevelCommas separa s por vírgulas fora de aspas (simples ou duplas), preservando
-// vírgulas dentro de itens citados (caso 8 do contrato: ["a, b", "c"]).
-function splitTopLevelCommas(s) {
-  const tokens = [];
-  let cur = '';
-  let quote = null;
-  for (const ch of s) {
-    if (quote) {
-      cur += ch;
-      if (ch === quote) quote = null;
-    } else if (ch === '"' || ch === "'") {
-      quote = ch;
-      cur += ch;
-    } else if (ch === ',') {
-      tokens.push(cur);
-      cur = '';
-    } else {
-      cur += ch;
-    }
-  }
-  tokens.push(cur);
-  return tokens;
-}
-
-// parseInlineList decompõe uma lista YAML inline ("[a, b]") em itens, respeitando aspas
-// simples e duplas ao redor de itens. "[]" retorna array vazio (não undefined), para
-// distinguir "presente e vazio" de "ausente" no chamador.
-function parseInlineList(val) {
-  let inner = val.trim();
-  if (inner.startsWith('[')) inner = inner.slice(1);
-  if (inner.endsWith(']')) inner = inner.slice(0, -1);
-  inner = inner.trim();
-  if (inner === '') return [];
-  return splitTopLevelCommas(inner).map((t) => t.trim().replace(/^["']|["']$/g, ''));
-}
+const { parseDocument, isScalar, isAlias, isSeq, isMap } = require('yaml');
 
 function expandPath(filePath) {
   if (!filePath || typeof filePath !== 'string') return filePath;
@@ -97,13 +56,23 @@ function defaults() {
 
 let _instance = null;
 
+// MALFORMED_CONFIG_MESSAGE is written to stderr, verbatim, when trackfw.yaml exists but fails to
+// parse as YAML. Kept identical, character-for-character, to Go's MalformedConfigMessage and
+// Python's MALFORMED_CONFIG_MESSAGE — see the comment on parse() below for why the text is
+// static rather than built from the underlying library's error.
+const MALFORMED_CONFIG_MESSAGE = 'trackfw: erro ao carregar "trackfw.yaml": YAML malformado. Corrija a sintaxe do arquivo antes de continuar.';
+
 function load(cwd) {
   if (_instance) return _instance;
   _instance = defaults();
   const yamlPath = path.join(cwd || process.cwd(), 'trackfw.yaml');
   if (!fs.existsSync(yamlPath)) return _instance;
   const content = fs.readFileSync(yamlPath, 'utf8');
-  parse(content, _instance);
+  const malformed = parse(content, _instance);
+  if (malformed) {
+    process.stderr.write(MALFORMED_CONFIG_MESSAGE + '\n');
+    process.exit(1);
+  }
   return _instance;
 }
 
@@ -111,170 +80,166 @@ function reset() {
   _instance = null;
 }
 
+// resolveAlias segue a cadeia de um Alias (b: *x) até o nó âncora. Ler .source direto de um
+// Alias não resolvido devolveria o NOME da âncora, não o valor — risco confirmado no ML-0A.
+//
+// state (opcional) é marcado como { unresolved: true } quando node.resolve(doc) devolve
+// undefined — caso de uma âncora referenciada antes de ser definida (b: *x / a: &x 3), que a
+// spec YAML trata como inválido. gopkg.in/yaml.v3 e PyYAML rejeitam esse arquivo (yaml.v3:
+// "unknown anchor 'x' referenced"; PyYAML: ComposerError "found undefined alias"); a lib `yaml`
+// do Node não popula doc.errors para isso — resolve() simplesmente devolve undefined em tempo
+// de leitura. Sem este sinalizador, o valor viraria string vazia em silêncio (divergência de
+// exit code encontrada na auditoria cruzada do ML-1B); com ele, parse() devolve malformado=true
+// e load() converge com Go/Python.
+function resolveAlias(doc, node, state) {
+  let n = node;
+  while (isAlias(n)) {
+    const resolved = n.resolve(doc);
+    if (resolved === undefined) {
+      if (state) state.unresolved = true;
+      return null;
+    }
+    n = resolved;
+  }
+  return n;
+}
+
+// normalizeNode converte um nó da árvore `yaml` (Scalar/Seq/Map/Alias) para uma string
+// (escalar, usando o texto bruto pré-coerção via Scalar.source), um array de strings
+// (sequência) ou um objeto plano (mapeamento) — recursivamente.
+//
+// Scalar.source já devolve o texto correto tanto para escalares "plain" (não processados —
+// preserva "yes", "010", "2026-08-02" como estão no arquivo) quanto para escalares quoted/bloco
+// (já des-escapados, iguais ao .value) — confirmado empiricamente no ML-1A: não há necessidade
+// de tratar quoted e plain de formas diferentes.
+function normalizeNode(doc, node, state) {
+  const n = resolveAlias(doc, node, state);
+  if (n == null) return '';
+  if (isScalar(n)) {
+    return n.source != null ? n.source : (n.value == null ? '' : String(n.value));
+  }
+  if (isSeq(n)) {
+    return n.items.map((item) => normalizeNode(doc, item, state));
+  }
+  if (isMap(n)) {
+    const result = {};
+    for (const pair of n.items) {
+      const key = resolveAlias(doc, pair.key, state);
+      const keyStr = isScalar(key) ? (key.source != null ? key.source : String(key.value)) : String(key);
+      result[keyStr] = normalizeNode(doc, pair.value, state);
+    }
+    return result;
+  }
+  return '';
+}
+
+function stringVal(m, key) {
+  const v = m[key];
+  return typeof v === 'string' ? v : undefined;
+}
+
+// stringList converte um valor normalizado (array) em array de strings. Uma sequência
+// presente-porém-vazia devolve array vazio (não undefined), distinguindo "presente e vazio" de
+// "ausente" — contrato herdado do fix de lista inline.
+function stringList(v) {
+  if (!Array.isArray(v)) return undefined;
+  return v.filter((item) => typeof item === 'string');
+}
+
+// NON_FATAL_ERROR_CODES holds `yaml` package error codes that must NOT trigger the fatal path,
+// because gopkg.in/yaml.v3 (decoding into a generic Node, not a struct) and PyYAML's
+// yaml.compose() silently accept the same input — divergence found by ML-1B audit: a
+// "wip_limit: 3\nwip_limit: 4\n" duplicate-key file made Node exit 1 while Go and Python both
+// parsed it fine (both resolve to "last key wins", same value trackfw ends up using in all
+// three once DUPLICATE_KEY is excluded here). Only Node's `yaml` treats duplicate keys as a
+// composer-level error; treating it as fatal here would make the fatal trigger itself diverge
+// across CLIs, which is exactly the defect this ML exists to avoid. Any other doc.errors entry
+// (e.g. BAD_INDENT — an actually-unparseable document) still triggers the fatal path below.
+const NON_FATAL_ERROR_CODES = new Set(['DUPLICATE_KEY']);
+
+// parse applies the ~20 known keys from content onto cfg. Returns true when content is
+// malformed YAML (the caller, load(), turns that into a fatal stderr message + exit 1) and
+// false otherwise — including the benign cases of an absent/empty/comments-only document
+// (doc.contents === null with no errors) or a document whose top-level node parses fine but
+// isn't a mapping (valid YAML, unexpected shape): neither of those is a parse failure, so both
+// stay silent no-ops, same as before this function grew an error signal.
+//
+// The `yaml` package doesn't throw on syntax errors — parseDocument() always returns a Document,
+// and populates doc.errors instead (a passive failure channel). The try/catch below is kept as
+// defense-in-depth for library versions/inputs that do throw, but the actual malformed-YAML path
+// exercised by trackfw.yaml goes through the doc.errors.length > 0 check.
 function parse(content, cfg) {
-  const lines = content.split('\n');
-
-  // estados existentes
-  let inAdrDirs = false;
-  let inAgents = false;
-  let adrDirs = [];
-  let agents = [];
-
-  // NOVOS estados
-  let inLinkFields = false;
-  let inLinkFieldsReq = false;
-  let inLinkFieldsAdr = false;
-  let inLinkFieldsRoadmap = false;
-  let linkFieldsReq = [];
-  let linkFieldsAdr = [];
-  let linkFieldsRoadmap = [];
-
-  let inAcceptanceMarkers = false;
-  let acceptanceMarkers = [];
-
-  let inRules = false;
-  let rules = {};
-
-  function flushBlocks() {
-    if (inAdrDirs && adrDirs.length) cfg.adrDirs = adrDirs.map(expandPath);
-    if (inAgents && agents.length) cfg.agents = agents;
-    if (inLinkFields) {
-      if (inLinkFieldsReq && linkFieldsReq.length) cfg.linkFields.req = linkFieldsReq;
-      if (inLinkFieldsAdr && linkFieldsAdr.length) cfg.linkFields.adr = linkFieldsAdr;
-      if (inLinkFieldsRoadmap && linkFieldsRoadmap.length) cfg.linkFields.roadmap = linkFieldsRoadmap;
-    }
-    if (inAcceptanceMarkers && acceptanceMarkers.length) cfg.acceptanceMarkers = acceptanceMarkers;
-    if (inRules && Object.keys(rules).length) Object.assign(cfg.rules, rules);
-    // reset
-    inAdrDirs = false; adrDirs = [];
-    inAgents = false; agents = [];
-    inLinkFields = false;
-    inLinkFieldsReq = false; inLinkFieldsAdr = false; inLinkFieldsRoadmap = false;
-    linkFieldsReq = []; linkFieldsAdr = []; linkFieldsRoadmap = [];
-    inAcceptanceMarkers = false; acceptanceMarkers = [];
-    inRules = false; rules = {};
+  let doc;
+  try {
+    doc = parseDocument(content);
+  } catch (e) {
+    return true;
   }
+  if (doc && doc.errors && doc.errors.some((e) => !NON_FATAL_ERROR_CODES.has(e.code))) return true;
+  if (!doc || !doc.contents) return false;
+  if (!isMap(doc.contents)) return false;
 
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const hasIndent = rawLine.length > 0 && (rawLine[0] === ' ' || rawLine[0] === '\t');
+  const state = { unresolved: false };
+  const m = normalizeNode(doc, doc.contents, state);
+  if (state.unresolved) return true;
+  if (typeof m !== 'object' || m === null || Array.isArray(m)) return false;
 
-    // Uma sequência em bloco pode estar no mesmo nível de indentação da chave que a abre
-    // (YAML válido: "agents:\n- zeus\n- apolo"). Uma linha "- " sem indentação continua a
-    // lista aberta em vez de ser tratada como nova chave top-level.
-    const isListItem = line.startsWith('- ');
-    const continuesOpenList = isListItem && (inAdrDirs || inAgents || inAcceptanceMarkers);
-
-    if (!hasIndent && !continuesOpenList) {
-      flushBlocks();
-    }
-
-    if (hasIndent || continuesOpenList) {
-      if (inAdrDirs) {
-        if (line.startsWith('- ')) {
-          let val = line.slice(2).trim();
-          val = val.replace(/^["']|["']$/g, '');
-          adrDirs.push(expandPath(val));
-        }
-        continue;
-      }
-      if (inAgents) {
-        if (line.startsWith('- ')) agents.push(line.slice(2).trim());
-        continue;
-      }
-      if (inAcceptanceMarkers) {
-        if (line.startsWith('- ')) {
-          let val = line.slice(2).trim();
-          val = val.replace(/^["']|["']$/g, '');
-          acceptanceMarkers.push(val);
-        }
-        continue;
-      }
-      if (inRules) {
-        const colonIdx = line.indexOf(':');
-        if (colonIdx > 0) {
-          const k = line.slice(0, colonIdx).trim();
-          const v = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, '');
-          if (k) rules[k] = v;
-        }
-        continue;
-      }
-      if (inLinkFields) {
-        if (line.startsWith('- ')) {
-          let val = line.slice(2).trim();
-          val = val.replace(/^["']|["']$/g, '');
-          if (inLinkFieldsReq) linkFieldsReq.push(val);
-          else if (inLinkFieldsAdr) linkFieldsAdr.push(val);
-          else if (inLinkFieldsRoadmap) linkFieldsRoadmap.push(val);
-        } else {
-          // sub-chave dentro de link_fields
-          const colonIdx = line.indexOf(':');
-          const subKey = colonIdx > 0 ? line.slice(0, colonIdx).trim() : line.replace(':', '').trim();
-          const subVal = colonIdx > 0 ? line.slice(colonIdx + 1).trim() : '';
-          // flush sub-campo anterior
-          if (inLinkFieldsReq && linkFieldsReq.length) { cfg.linkFields.req = linkFieldsReq; linkFieldsReq = []; }
-          if (inLinkFieldsAdr && linkFieldsAdr.length) { cfg.linkFields.adr = linkFieldsAdr; linkFieldsAdr = []; }
-          if (inLinkFieldsRoadmap && linkFieldsRoadmap.length) { cfg.linkFields.roadmap = linkFieldsRoadmap; linkFieldsRoadmap = []; }
-          inLinkFieldsReq = false; inLinkFieldsAdr = false; inLinkFieldsRoadmap = false;
-          if (isInlineList(subVal)) {
-            const items = parseInlineList(subVal);
-            if (subKey === 'req') cfg.linkFields.req = items;
-            else if (subKey === 'adr') cfg.linkFields.adr = items;
-            else if (subKey === 'roadmap') cfg.linkFields.roadmap = items;
-          } else {
-            if (subKey === 'req') inLinkFieldsReq = true;
-            else if (subKey === 'adr') inLinkFieldsAdr = true;
-            else if (subKey === 'roadmap') inLinkFieldsRoadmap = true;
-          }
-        }
-        continue;
-      }
-      continue;
-    }
-
-    // linha top-level
-    const colonIdx = line.indexOf(':');
-    if (colonIdx < 0) continue;
-    const key = line.slice(0, colonIdx).trim();
-    const val = line.slice(colonIdx + 1).trim();
-    if (!key) continue;
-
-    switch (key) {
-      case 'adr_dirs':
-        if (isInlineList(val)) { cfg.adrDirs = parseInlineList(val).map(expandPath); }
-        else { inAdrDirs = true; adrDirs = []; }
-        break;
-      case 'req_dir':               cfg.reqDir = expandPath(val.replace(/^["']|["']$/g, '')); break;
-      case 'roadmap_dir':           cfg.roadmapDir = expandPath(val.replace(/^["']|["']$/g, '')); break;
-      case 'roadmap_namespacing':   cfg.roadmapNamespacing = val; break;
-      case 'agents':
-        if (isInlineList(val)) { cfg.agents = parseInlineList(val); }
-        else { inAgents = true; agents = []; }
-        break;
-      case 'governance_mode':       cfg.governanceMode = val; break;
-      case 'lenient_until':         cfg.lenientUntil = val; break;
-      case 'wip_limit':             { const n = parseInt(val, 10); if (n > 0) cfg.wipLimit = n; break; }
-      case 'wip_by_squad':          cfg.wipBySquad = val === 'true'; break;
-      case 'stale_wip_days':        { const n = parseInt(val, 10); if (n > 0) cfg.staleWipDays = n; break; }
-      case 'require_req_in_commit': cfg.requireReqInCommit = val === 'true'; break;
-      case 'strict_ci_paths':       cfg.strictCiPaths = val === 'true'; break;
-      case 'trace_id_field':        cfg.traceIdField = val.replace(/^["']|["']$/g, ''); break;
-      case 'forge':                 cfg.forge = val.replace(/^["']|["']$/g, ''); break;
-      case 'link_fields':           inLinkFields = true; break;
-      case 'acceptance_markers':
-        if (isInlineList(val)) { cfg.acceptanceMarkers = parseInlineList(val); }
-        else { inAcceptanceMarkers = true; acceptanceMarkers = []; }
-        break;
-      case 'rules':                 inRules = true; rules = {}; break;
+  if (m.adr_dirs !== undefined) {
+    const items = stringList(m.adr_dirs);
+    if (items) cfg.adrDirs = items.map(expandPath);
+  }
+  if (stringVal(m, 'req_dir') !== undefined) cfg.reqDir = expandPath(m.req_dir);
+  if (stringVal(m, 'roadmap_dir') !== undefined) cfg.roadmapDir = expandPath(m.roadmap_dir);
+  if (stringVal(m, 'roadmap_namespacing') !== undefined) cfg.roadmapNamespacing = m.roadmap_namespacing;
+  if (m.agents !== undefined) {
+    const items = stringList(m.agents);
+    if (items) cfg.agents = items;
+  }
+  if (stringVal(m, 'governance_mode') !== undefined) cfg.governanceMode = m.governance_mode;
+  if (stringVal(m, 'lenient_until') !== undefined) cfg.lenientUntil = m.lenient_until;
+  if (stringVal(m, 'wip_limit') !== undefined) {
+    const n = parseInt(m.wip_limit, 10);
+    if (n > 0) cfg.wipLimit = n;
+  }
+  if (stringVal(m, 'wip_by_squad') !== undefined) cfg.wipBySquad = m.wip_by_squad === 'true';
+  if (stringVal(m, 'stale_wip_days') !== undefined) {
+    const n = parseInt(m.stale_wip_days, 10);
+    if (n > 0) cfg.staleWipDays = n;
+  }
+  if (stringVal(m, 'require_req_in_commit') !== undefined) cfg.requireReqInCommit = m.require_req_in_commit === 'true';
+  if (stringVal(m, 'strict_ci_paths') !== undefined) cfg.strictCiPaths = m.strict_ci_paths === 'true';
+  if (stringVal(m, 'trace_id_field') !== undefined) cfg.traceIdField = m.trace_id_field;
+  if (stringVal(m, 'forge') !== undefined) cfg.forge = m.forge;
+  if (m.acceptance_markers !== undefined) {
+    const items = stringList(m.acceptance_markers);
+    if (items) cfg.acceptanceMarkers = items;
+  }
+  if (m.link_fields !== undefined && typeof m.link_fields === 'object' && !Array.isArray(m.link_fields)) {
+    const lf = m.link_fields;
+    const req = stringList(lf.req);
+    if (req) cfg.linkFields.req = req;
+    const adr = stringList(lf.adr);
+    if (adr) cfg.linkFields.adr = adr;
+    const roadmap = stringList(lf.roadmap);
+    if (roadmap) cfg.linkFields.roadmap = roadmap;
+  }
+  if (m.rules !== undefined && typeof m.rules === 'object' && !Array.isArray(m.rules)) {
+    for (const [k, v] of Object.entries(m.rules)) {
+      if (typeof v === 'string') cfg.rules[k] = v;
     }
   }
-
-  // flush final (EOF)
-  flushBlocks();
+  return false;
 }
 
 const NAMESPACING_FLAT = 'flat';
 const NAMESPACING_BY_AGENT = 'by_agent';
 
-module.exports = { load, reset, defaults, expandPath, NAMESPACING_FLAT, NAMESPACING_BY_AGENT };
+module.exports = {
+  load,
+  reset,
+  defaults,
+  expandPath,
+  NAMESPACING_FLAT,
+  NAMESPACING_BY_AGENT,
+  MALFORMED_CONFIG_MESSAGE,
+};
