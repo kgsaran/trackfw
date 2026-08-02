@@ -57,7 +57,7 @@ prontos — **nenhum ML da Wave 1 tem `parity` nos critérios**; a paridade é a
 > Dependências: nenhuma. Arquivos disjuntos por CLI.
 
 ### ML-1A — CLI Go
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo
 **Arquivos afetados:** `internal/validator/validator.go` + testes Go
 
@@ -74,7 +74,7 @@ da tabela do AC5.
 - [ ] Não tocar em `npm/`, `pypi/`; não unificar mecanismos; não mexer no early-return
 
 ### ML-1B — CLI Node
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo
 **Arquivos afetados:** `npm/src/validator/index.js` + testes Node
 
@@ -84,7 +84,7 @@ da tabela do AC5.
 - [ ] Não tocar em `internal/`, `pypi/`
 
 ### ML-1C — CLI Python (extrator **e** mensagem)
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo
 **Arquivos afetados:** `pypi/trackfw/validator.py`, `pypi/trackfw/commands/validate.py` + testes
 
@@ -96,6 +96,54 @@ par casado; trocar o literal `"✓ Governance OK"` (`commands/validate.py:104`) 
 - [ ] `PYTHONPATH=pypi python3 -m trackfw validate` imprime `✓ No violations found.`
 - [ ] Nenhum literal `Governance OK` remanescente em `pypi/`
 - [ ] Não tocar em `internal/`, `npm/`, `pypi/build/lib/`
+
+---
+
+### Resultado da medição do AC5 (os 3 CLIs, tabela compartilhada)
+
+| # | Entrada | Go | Node | Python |
+|---|---|---|---|---|
+| 1 | `` ADR: `X.md` `` | `X.md` | `X.md` | `X.md` |
+| 2 | `ADR: "X.md"` | `X.md` | `X.md` | `X.md` |
+| 3 | `ADR: 'X.md'` | `X.md` | `X.md` | `X.md` |
+| 4 | `ADR: X.md` | `X.md` | `X.md` | `X.md` |
+| 5 | `` ADR: `X.md` (prosa) `` | `X.md` | `X.md` | `X.md` |
+| 6 | `ADR: "X.md'` **não pareado** | `X.md` | `X.md` | **`''`** |
+| 7 | `ADR:` | vazio | `null` | vazio |
+| 8 | `ADR: —` | vazio | `null` | vazio |
+
+**Caso 6 diverge, como previsto.** Go e Node removem delimitador não pareado; Python exige par
+casado. **Medido e deliberadamente não resolvido** — o ADR decidiu medir, não unificar, e o escopo
+negativo proíbe. Nenhum caso real no repositório usa delimitador não pareado. **Vira item 4 da
+fila de follow-ups.**
+
+---
+
+### ML-1D — Estreitar o raio da mudança no Python (corretivo)
+**Status:** ✅ concluído (auditado 2026-08-02)
+**Agente:** Apolo
+
+**Divergência NOVA, introduzida pela própria Wave 1 e pega na auditoria.** Go e Node alteraram
+**só** `extractRefPath`; o parser de frontmatter de ambos continua sem backtick. O Python alterou
+`normalize_yaml_flat_value` — helper compartilhado por **10 call sites**, incluindo
+`parse_frontmatter`, `status`, `squad`, `governance_mode` e `traceid.py`. Resultado: no Python o
+backtick passou a ser removido **em todo o frontmatter**.
+
+Provado empiricamente antes de corrigir:
+
+```
+Python parse_frontmatter('adr: `docs/adr/X.md`')  → 'docs/adr/X.md'   ← removia
+Go     extractFrontmatterField                     → mantinha os backticks
+```
+
+**Corrigido:** `normalize_yaml_flat_value` voltou a conhecer só aspas; `_extract_ref_path` ganhou
+remoção própria de par de backticks. Reverificado: frontmatter **preserva** nos três, extrator
+**resolve** nos três. Teste de regressão adicionado para impedir que alguém "simplifique"
+reusando o helper compartilhado.
+
+**Lição:** "mesma correção nos 3 CLIs" não basta — é preciso conferir se o **raio de alcance** é o
+mesmo. Um CLI editar um helper compartilhado enquanto os outros editam o ponto de uso produz
+divergência silenciosa que nenhum teste de unidade pega.
 
 ---
 

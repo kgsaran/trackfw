@@ -1523,7 +1523,7 @@ func extractRefPath(content, field string) string {
 			if len(fields) == 0 {
 				return ""
 			}
-			v := strings.Trim(fields[0], `"'`)
+			v := strings.Trim(fields[0], "\"'`")
 			if strings.HasSuffix(v, ".md") {
 				return v
 			}

@@ -241,6 +241,8 @@ def _extract_ref_path(content: str, field: str) -> str:
             # Primeira "palavra" (antes de espaço)
             val = val.split()[0] if val.split() else ""
             val = normalize_yaml_flat_value(val)
+            if len(val) >= 2 and val[0] == val[-1] == "`":
+                val = val[1:-1]
             if val.endswith(".md"):
                 return val
     return ""
@@ -317,7 +319,7 @@ def resolve_done_dirs(cfg: dict) -> list:
 
 
 def normalize_yaml_flat_value(value: str) -> str:
-    """Normaliza valor YAML flat removendo apenas aspas externas correspondentes."""
+    """Normaliza valor YAML flat removendo apenas delimitador externo pareado (aspas)."""
     if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
         return value[1:-1]
     return value

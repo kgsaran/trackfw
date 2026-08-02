@@ -113,6 +113,47 @@ class TestValidateComViolation(unittest.TestCase):
             _config.reset()
 
 
+class TestValidateOkMessageUsaI18n(unittest.TestCase):
+    """ML-1C — o texto de sucesso do comando `validate` deve vir da chave de
+    i18n 'validate.ok' (mesmo mecanismo do Go/Node), não de um literal
+    hardcoded no comando."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _make_dirs(
+            os.path.join(self.tmp, "docs", "adr"),
+            os.path.join(self.tmp, "docs", "req"),
+            os.path.join(self.tmp, "docs", "roadmaps", "wip"),
+            os.path.join(self.tmp, "docs", "roadmaps", "blocked"),
+        )
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_validate_ok_imprime_chave_i18n(self):
+        import io
+        import types
+        from trackfw.i18n import t as i18n_t
+
+        old_cwd = os.getcwd()
+        os.chdir(self.tmp)
+        captured = io.StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = captured
+        try:
+            _validate_cmd.run(types.SimpleNamespace(json=False))
+        finally:
+            sys.stdout = old_stdout
+            os.chdir(old_cwd)
+            _config.reset()
+        output = captured.getvalue()
+        # io.StringIO().isatty() é False -> _supports_color() é False -> sem ANSI.
+        # Único print no cenário sem violations/warnings em modo strict: a linha de i18n.
+        self.assertEqual(output.strip(), i18n_t("validate.ok"))
+
+
 class TestValidateLenientExitZero(unittest.TestCase):
     """Modo lenient: violations existem mas são convertidas em warnings (exit 0)."""
 

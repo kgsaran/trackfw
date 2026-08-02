@@ -1957,3 +1957,105 @@ func TestAdrStatusIsNotAccepted_FrontmatterPrecedeProse(t *testing.T) {
 		t.Error("frontmatter Accepted deve prevalecer sobre menção a 'Status: Draft' na prosa")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-1A — REQ-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python
+// extractRefPath deve remover backticks, não só aspas, ao extrair o valor do campo
+// ADR:/REQ:/Roadmap:. Sem isso, `` ADR: `docs/adr/X.md` (prosa) `` não termina em
+// ".md" e a referência fica invisível em silêncio.
+// ---------------------------------------------------------------------------
+
+// TestADRAcceptedWhenREQDone_ADREntreBackticksSemFrontmatter_Violates — teste
+// discriminante do backtick: REQ Done SEM `adr:` no frontmatter (como as 3 REQs reais
+// do repositório), referenciando o ADR só no corpo via "ADR: `caminho` (prosa)". Antes
+// da correção do ML-1A, extractRefPath não reconhecia esse valor como .md (o cutset de
+// strings.Trim não incluía backtick) e a regra não enxergava a referência — provado
+// abaixo por uma simulação inline do cutset antigo. Depois da correção, a mesma fixture
+// deve violar adr_accepted_when_req_done porque o ADR está Proposed.
+func TestADRAcceptedWhenREQDone_ADREntreBackticksSemFrontmatter_Violates(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/req", "docs/adr")
+
+	adrRel := "docs/adr/ADR-2026-08-02-proposed-backtick-fixture.md"
+	writeFile(t, dir, adrRel, adrFixtureContent("Proposed"))
+
+	// REQ Done sem `adr:` no frontmatter (igual às 3 REQs reais afetadas) — a única
+	// referência ao ADR está no corpo, entre backticks, seguida de prosa.
+	reqContent := "---\n" +
+		"status: Done\n" +
+		"date: 2026-08-02\n" +
+		"author: \"\"\n" +
+		"roadmap: \"\"\n" +
+		"---\n\n" +
+		"# REQ: fixture com ADR entre backticks\n\n" +
+		"> Date: 2026-08-02 | Status: Done\n\n" +
+		"## Motivation\nmotivo\n\n" +
+		"## Acceptance Criteria\n- [x] feito\n\n" +
+		"## Linked ADR\nADR: `" + adrRel + "` (P1–P4; esta REQ é referenciada por prosa após o backtick)\n\n" +
+		"## Linked Roadmap\nRoadmap:\n"
+	writeFile(t, dir, "docs/req/REQ-2026-08-02-backtick-fixture.md", reqContent)
+	writeFile(t, dir, "trackfw.yaml", "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// Pré-condição — prova do comportamento ANTES da correção: o cutset antigo de
+	// strings.Trim (só aspas) não removia o backtick, então o token não terminava em
+	// ".md" e a referência ficava invisível.
+	rawField := "`" + adrRel + "`"
+	oldTrim := strings.Trim(rawField, `"'`)
+	if strings.HasSuffix(oldTrim, ".md") {
+		t.Fatalf("pré-condição inválida: cutset antigo (sem backtick) não deveria produzir sufixo .md, obteve %q", oldTrim)
+	}
+
+	// Comportamento ATUAL — extractRefPath deve resolver a referência corretamente.
+	if got := extractRefPath(reqContent, "ADR"); got != adrRel {
+		t.Fatalf("extractRefPath deve resolver %q entre backticks, obteve %q", adrRel, got)
+	}
+
+	violations, err := validateADRAcceptedWhenREQDone()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) == 0 {
+		t.Fatal("regressão do ML-1A: ADR entre backticks + prosa não foi detectado como não-aceito")
+	}
+	if !hasViolation(violations, "REQ-2026-08-02-backtick-fixture.md") {
+		t.Errorf("mensagem deve citar a REQ, obteve: %v", violations)
+	}
+	if !hasViolation(violations, "ADR-2026-08-02-proposed-backtick-fixture.md") {
+		t.Errorf("mensagem deve citar o ADR, obteve: %v", violations)
+	}
+}
+
+// TestExtractRefPath_TresREQsReaisDoRepositorio — as 3 REQs reais do repositório sem
+// `adr:` no frontmatter, cujo ADR só é referenciado no corpo entre backticks, devem ter
+// o ADR resolvido pelo extrator após a correção do ML-1A.
+func TestExtractRefPath_TresREQsReaisDoRepositorio(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("erro ao resolver raiz do repositório: %v", err)
+	}
+
+	reqs := []string{
+		"docs/req/REQ-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md",
+		"docs/req/REQ-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md",
+		"docs/req/REQ-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md",
+	}
+
+	for _, rel := range reqs {
+		t.Run(rel, func(t *testing.T) {
+			content, err := os.ReadFile(filepath.Join(repoRoot, rel))
+			if err != nil {
+				t.Fatalf("erro ao ler REQ real %q: %v", rel, err)
+			}
+			got := extractRefPath(string(content), "ADR")
+			if got == "" {
+				t.Fatalf("extractRefPath não resolveu o ADR de %q — regressão do ML-1A", rel)
+			}
+			if !strings.HasSuffix(got, ".md") {
+				t.Errorf("ADR resolvido de %q deveria terminar em .md, obteve %q", rel, got)
+			}
+		})
+	}
+}

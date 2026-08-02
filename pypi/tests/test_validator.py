@@ -107,6 +107,17 @@ class TestParseFrontmatter(unittest.TestCase):
         self.assertEqual(result.get("slug"), 'fix/"release"')
         self.assertEqual(result.get("raw"), '"wip')
 
+    def test_valor_entre_backticks_no_frontmatter_preserva_os_backticks(self):
+        """ML-1D — regressão: normalize_yaml_flat_value (usada por
+        parse_frontmatter) NÃO conhece backtick como delimitador; a remoção
+        de backtick é responsabilidade exclusiva de _extract_ref_path.
+        Backtick não é delimitador de string em YAML — removê-lo aqui em
+        parse_frontmatter divergiria de Go/Node, que só tratam backtick em
+        extractRefPath (ver ADR / ML-1C)."""
+        content = "---\nadr: `docs/adr/X.md`\n---\n"
+        result = v.parse_frontmatter(content)
+        self.assertEqual(result.get("adr"), "`docs/adr/X.md`")
+
 
 class TestValidateWipHasReq(unittest.TestCase):
     def setUp(self):
@@ -469,6 +480,46 @@ class TestValidatorImprovements(unittest.TestCase):
         from trackfw.validator import _extract_ref_path
         content = "REQ: algum texto sem extensao\n"
         self.assertEqual(_extract_ref_path(content, "REQ"), "")
+
+    def test_extract_ref_path_backtick_com_prosa(self):
+        """ML-1C — backtick pareado ao redor do caminho, com prosa após: o
+        primeiro token (antes do espaço) é o caminho entre backticks; deve
+        resolver para o .md sem os delimitadores."""
+        from trackfw.validator import _extract_ref_path
+        content = (
+            "ADR: `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md` "
+            "(P1–P4; esta REQ é ...)\n"
+        )
+        self.assertEqual(
+            _extract_ref_path(content, "ADR"),
+            "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md",
+        )
+
+    def test_extract_ref_path_resolve_reqs_reais_com_backtick(self):
+        """ML-1C — as 3 REQs reais do repositório cujo campo ADR usa backtick
+        (sem `adr:` no frontmatter) devem ter o ADR resolvido pelo extrator."""
+        from trackfw.validator import _extract_ref_path
+
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        reqs = [
+            "docs/req/REQ-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md",
+            "docs/req/REQ-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md",
+            "docs/req/REQ-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md",
+        ]
+        for rel_path in reqs:
+            full_path = os.path.join(repo_root, rel_path)
+            with open(full_path, "r", encoding="utf-8") as fh:
+                content = fh.read()
+            resolved = _extract_ref_path(content, "ADR")
+            self.assertTrue(
+                resolved.endswith(".md"),
+                f"{rel_path}: esperava resolver ADR .md, obteve {resolved!r}",
+            )
+            self.assertEqual(
+                resolved,
+                "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md",
+                f"{rel_path}: ADR resolvido inesperado: {resolved!r}",
+            )
 
     def test_validate_ref_targets_exist_warning(self):
         """Ref a arquivo inexistente gera warning."""
@@ -1696,6 +1747,26 @@ ADR: docs/adr/{adr_basename}
     return path
 
 
+def _write_req_done_backtick(req_dir: str, basename: str, adr_basename: str, req_status: str = "Done") -> str:
+    """Igual a _write_req_done, mas com o ADR referenciado entre backticks e
+    prosa após — o formato real presente em REQs do repositório (ML-1C)."""
+    path = os.path.join(req_dir, basename)
+    _write(path, f"""\
+---
+status: {req_status}
+date: 2026-08-01
+---
+
+# REQ: Fixture
+
+> Date: 2026-08-01 | Status: {req_status}
+
+## Linked ADR
+ADR: `docs/adr/{adr_basename}` (P1–P4; esta REQ é derivada deste ADR)
+""")
+    return path
+
+
 class TestAdrAcceptedWhenReqDone(unittest.TestCase):
     """validate_adr_accepted_when_req_done: REQ Done referenciando ADR Draft/Proposed
     -> violation citando ambos. Superseded/Deprecated/Rejected e REQ não-Done não disparam."""
@@ -1764,6 +1835,24 @@ class TestAdrAcceptedWhenReqDone(unittest.TestCase):
         cfg_mod.reset()
         defaults = cfg_mod.defaults()
         self.assertEqual(defaults["rules"].get("adr_accepted_when_req_done"), "error")
+
+    def test_req_done_adr_entre_backticks_dispara_teste_discriminante(self):
+        """ML-1C — teste discriminante: REQ Done referenciando um ADR Proposed
+        através de um campo `ADR:` com o caminho entre backticks (formato real
+        presente em REQs do repositório) DEVE disparar a violação. Antes desta
+        mudança, normalize_yaml_flat_value não removia o par de backticks, o
+        token não terminava em '.md', e _extract_ref_path retornava '' em
+        silêncio — nenhuma violação era reportada para esse formato."""
+        from trackfw.validator import validate_adr_accepted_when_req_done
+
+        _write_adr(self.adr_dir, "ADR-bt.md", "Proposed")
+        _write_req_done_backtick(self.req_dir, "REQ-bt.md", "ADR-bt.md", req_status="Done")
+
+        violations = validate_adr_accepted_when_req_done(self._cfg(self.req_dir, self.adr_dir))
+
+        self.assertEqual(len(violations), 1)
+        self.assertIn("REQ-bt.md", violations[0]["message"])
+        self.assertIn("ADR-bt.md", violations[0]["message"])
 
 
 class TestBlockedByDraftAdrDeixaDeSerCegaAProposed(unittest.TestCase):
