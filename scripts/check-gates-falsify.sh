@@ -1759,4 +1759,222 @@ assert_lacks_pattern "adr-not-accepted/python/blocked_by_draft_adr-detects-regre
   "$S27_MSG_BLOCKED" \
   bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27C_P/pypi' python3 -m trackfw validate"
 
-echo "Falsification checks passed (all 57 scenarios, 14 gates + 3 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), 3 CLIs — proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 28 — extractRefPath (e equivalentes) removem backtick da referência
+# (REQ-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-
+# validate-no-python)
+#
+# `` ADR: `docs/adr/X.md` (prosa) `` é a forma real usada em REQs do próprio
+# repositório. SEM remoção de backtick, o token extraído é "`docs/adr/X.md`"
+# — não termina em ".md" — e a referência fica invisível EM SILÊNCIO: nenhuma
+# regra que use extractRefPath a alcança. É especialmente grave quando a REQ
+# NÃO tem `adr:` no frontmatter (só a prosa do corpo referencia o ADR) — o
+# cenário aqui reproduz exatamente essa forma, sem fixture com backtick a
+# checagem seria vácua (vault/notes/deteccao-de-status-de-adr-divergencias-
+# entre-clis-2026-08-01.md).
+#
+# Cobre os TRÊS CLIs, dois braços cada:
+#   - baseline: REQ Done SEM `adr:` no frontmatter, referenciando o ADR só via
+#     `` ADR: `docs/adr/X.md` (prosa) `` na seção "## Linked ADR"; ADR alvo
+#     Proposed. Código correto → assert_fails_with adr_accepted_when_req_done.
+#   - detecção: reverte a remoção do backtick no extrator do CLI (mesmo ponto
+#     de código alterado pela Wave 1, revertido ao estado anterior) e roda
+#     validate contra o MESMO projeto-fixture violador — prova, via
+#     assert_lacks_pattern, que a violação desaparece (a referência volta a
+#     ficar invisível), confirmando que a checagem tem poder de reprovação.
+#
+# Corrompe a IMPLEMENTAÇÃO (extrator), nunca a asserção — mesmo padrão do
+# Cenário 27.
+# ---------------------------------------------------------------------------
+
+# REQ Done SEM `adr:` no frontmatter, referenciando o ADR só via backtick na
+# seção "## Linked ADR" — a forma real usada em REQs do repositório.
+write_req_done_fixture_backtick_body_only() {
+  local dest=$1 adr_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: Done
+date: 2026-08-02
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: fixture com backtick
+
+> Date: 2026-08-02 | Status: Done
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [x] feito
+
+## Linked ADR
+ADR: \`$adr_rel\` (prosa)
+
+## Linked Roadmap
+Roadmap:
+EOF
+}
+
+S28_MSG_ACCEPTED='is not accepted (status: Proposed)'
+
+# --- Go: prova positiva -----------------------------------------------------
+# Reusa T27_GO_BIN (binário Go limpo, construído a partir do ROOT_DIR sem
+# corrupção) — não precisa recompilar. Se o Cenário 27 for removido, mova a
+# compilação para cá.
+T28_GO_VIOLATING="$WORK/s28-go-violating"
+scaffold_adr_req_project "$T28_GO_VIOLATING"
+write_adr_status_fixture "$T28_GO_VIOLATING/docs/adr/ADR-2026-08-02-proposed-fixture.md" "Proposed"
+write_req_done_fixture_backtick_body_only "$T28_GO_VIOLATING/docs/req/REQ-2026-08-02-backtick-fixture.md" \
+  "docs/adr/ADR-2026-08-02-proposed-fixture.md"
+
+assert_fails_with "backtick-ref/go/adr_accepted_when_req_done-baseline" \
+  "$S28_MSG_ACCEPTED" \
+  bash -c "cd '$T28_GO_VIOLATING' && exec '$T27_GO_BIN' validate"
+
+# --- Go: prova de detecção (backtick reintroduzido em extractRefPath) ------
+T28C_GO_MOD="$WORK/s28-corrupt-go-mod"
+mkdir -p "$T28C_GO_MOD/cmd" "$T28C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T28C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T28C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T28C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T28C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T28C_GO_MOD/internal/validator/validator.go" \
+  'v := strings.Trim(fields[0], "\"'"'"'`")' \
+  'v := strings.Trim(fields[0], "\"'"'"'")' \
+  "s28-go"
+
+T28C_GO_BIN="$WORK/s28-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T28C_GO_BIN")"
+build_go_or_fail "setup-s28-go-build" "$T28C_GO_MOD" "$T28C_GO_BIN"
+
+assert_lacks_pattern "backtick-ref/go/adr_accepted_when_req_done-detects-regression" \
+  "$S28_MSG_ACCEPTED" \
+  bash -c "cd '$T28_GO_VIOLATING' && exec '$T28C_GO_BIN' validate"
+
+# --- Node: prova positiva ---------------------------------------------------
+T28_N_VIOLATING="$WORK/s28-node-violating"
+setup_npm_tree "$T28_N_VIOLATING"
+scaffold_adr_req_project "$T28_N_VIOLATING"
+write_adr_status_fixture "$T28_N_VIOLATING/docs/adr/ADR-2026-08-02-proposed-fixture.md" "Proposed"
+write_req_done_fixture_backtick_body_only "$T28_N_VIOLATING/docs/req/REQ-2026-08-02-backtick-fixture.md" \
+  "docs/adr/ADR-2026-08-02-proposed-fixture.md"
+
+assert_fails_with "backtick-ref/node/adr_accepted_when_req_done-baseline" \
+  "$S28_MSG_ACCEPTED" \
+  bash -c "cd '$T28_N_VIOLATING' && exec node npm/bin/trackfw validate"
+
+# --- Node: prova de detecção (backtick reintroduzido em extractRefPath) ----
+T28C_N="$WORK/s28-corrupt-node"
+setup_npm_tree "$T28C_N"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$T28C_N/npm/src/validator/index.js" \
+  "      val = val.replace(/^[\"'\`]|[\"'\`]\$/g, '')
+" \
+  "      val = val.replace(/^[\"']|[\"']\$/g, '')
+" \
+  "s28-node"
+
+assert_lacks_pattern "backtick-ref/node/adr_accepted_when_req_done-detects-regression" \
+  "$S28_MSG_ACCEPTED" \
+  bash -c "cd '$T28_N_VIOLATING' && exec node '$T28C_N/npm/bin/trackfw' validate"
+
+# --- Python: prova positiva -------------------------------------------------
+T28_P_VIOLATING="$WORK/s28-python-violating"
+mkdir -p "$T28_P_VIOLATING"
+cp -r "$ROOT_DIR/pypi" "$T28_P_VIOLATING/pypi"
+scaffold_adr_req_project "$T28_P_VIOLATING"
+write_adr_status_fixture "$T28_P_VIOLATING/docs/adr/ADR-2026-08-02-proposed-fixture.md" "Proposed"
+write_req_done_fixture_backtick_body_only "$T28_P_VIOLATING/docs/req/REQ-2026-08-02-backtick-fixture.md" \
+  "docs/adr/ADR-2026-08-02-proposed-fixture.md"
+
+assert_fails_with "backtick-ref/python/adr_accepted_when_req_done-baseline" \
+  "$S28_MSG_ACCEPTED" \
+  bash -c "cd '$T28_P_VIOLATING' && exec env PYTHONPATH='$T28_P_VIOLATING/pypi' python3 -m trackfw validate"
+
+# --- Python: prova de detecção (backtick reintroduzido em _extract_ref_path)
+T28C_P="$WORK/s28-corrupt-python"
+mkdir -p "$T28C_P"
+cp -r "$ROOT_DIR/pypi" "$T28C_P/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/validator.py" "$T28C_P/pypi/trackfw/validator.py" \
+  '            val = normalize_yaml_flat_value(val)
+            if len(val) >= 2 and val[0] == val[-1] == "`":
+                val = val[1:-1]
+            if val.endswith(".md"):
+' \
+  '            val = normalize_yaml_flat_value(val)
+            if val.endswith(".md"):
+' \
+  "s28-python"
+
+assert_lacks_pattern "backtick-ref/python/adr_accepted_when_req_done-detects-regression" \
+  "$S28_MSG_ACCEPTED" \
+  bash -c "cd '$T28_P_VIOLATING' && exec env PYTHONPATH='$T28C_P/pypi' python3 -m trackfw validate"
+
+# ---------------------------------------------------------------------------
+# Cenário 29 — os 3 CLIs imprimem a MESMA mensagem de sucesso do `validate`
+# sem violações (REQ-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-
+# de-sucesso-do-validate-no-python, ponto 3)
+#
+# Nada em CI garantia isto até agora — foi exatamente por não haver gate que
+# o Python ficou meses imprimindo o literal hardcoded "✓ Governance OK" em
+# vez da chave `validate.ok` do i18n (que os 3 CLIs compartilham e que os
+# outros dois já usavam). Um diff três-a-três puro (sem pin) passaria mesmo
+# se os 3 imprimissem a mesma coisa errada, ou nada — por isso o baseline
+# também compara contra o literal esperado pinado, não só entre si.
+#
+#   - baseline: projeto-fixture sem nenhum arquivo em docs/adr, docs/req ou
+#     docs/roadmaps/* (zero violações) — os 3 CLIs devem imprimir,
+#     byte-a-byte, exatamente "✓ No violations found." E os três devem ser
+#     idênticos entre si.
+#   - detecção: reverte SÓ o Python para o literal hardcoded antigo
+#     ("✓ Governance OK") no ponto exato onde a Wave 1 trocou pela chave
+#     `validate.ok` (commands/validate.py) — prova que a comparação
+#     byte-a-byte reprova a regressão que viveu meses sem detecção.
+#
+# Corrompe a IMPLEMENTAÇÃO (mensagem do Python), nunca a asserção.
+# ---------------------------------------------------------------------------
+
+S29_EXPECTED=$'\xe2\x9c\x93 No violations found.\n'
+
+T29_PROJECT="$WORK/s29-clean-project"
+scaffold_adr_req_project "$T29_PROJECT"
+
+s29_go_out=$(cd "$T29_PROJECT" && "$T27_GO_BIN" validate)$'\n'
+s29_node_out=$(cd "$T29_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" validate)$'\n'
+s29_python_out=$(cd "$T29_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate)$'\n'
+
+if [[ "$s29_go_out" == "$S29_EXPECTED" && "$s29_node_out" == "$S29_EXPECTED" && "$s29_python_out" == "$S29_EXPECTED" ]]; then
+  echo "OK   [falsify/validate-ok-message/baseline-byte-identical-and-pinned]"
+else
+  echo "FAIL [falsify/validate-ok-message/baseline-byte-identical-and-pinned]: esperava '$S29_EXPECTED' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s29_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s29_node_out")" >&2
+  echo "  python: $(printf '%q' "$s29_python_out")" >&2
+  exit 1
+fi
+
+# --- Python: prova de detecção (literal hardcoded antigo reintroduzido) ----
+T29C_P="$WORK/s29-corrupt-python"
+mkdir -p "$T29C_P"
+cp -r "$ROOT_DIR/pypi" "$T29C_P/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/commands/validate.py" "$T29C_P/pypi/trackfw/commands/validate.py" \
+  'print(_green(i18n_t("validate.ok")))' \
+  'print(_green("✓ Governance OK"))' \
+  "s29-python"
+
+s29c_python_out=$(cd "$T29_PROJECT" && env PYTHONPATH="$T29C_P/pypi" python3 -m trackfw validate)$'\n'
+if [[ "$s29c_python_out" != "$S29_EXPECTED" ]]; then
+  echo "OK   [falsify/validate-ok-message/python-detects-regression]"
+else
+  echo "FAIL [falsify/validate-ok-message/python-detects-regression]: literal hardcoded reintroduzido mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+
+echo "Falsification checks passed (all 65 scenarios, 14 gates + 3 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), 3 CLIs — proved non-vacuous)"

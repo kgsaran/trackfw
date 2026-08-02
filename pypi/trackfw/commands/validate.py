@@ -10,6 +10,7 @@ import sys
 
 from .. import validator as _validator
 from .. import config as _config
+from trackfw.i18n import t as i18n_t
 
 # Códigos ANSI
 _RED = "\033[31m"
@@ -101,7 +102,7 @@ def run(args):
             print("[LENIENT MODE] Governance em modo permissivo")
 
     if not violations and not warnings:
-        print(_green("✓ Governance OK"))
+        print(_green(i18n_t("validate.ok")))
         return 0
 
     if violations:

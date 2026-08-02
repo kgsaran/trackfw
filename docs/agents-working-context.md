@@ -4,6 +4,94 @@
 
 ---
 
+## Sessão 2026-08-02 — Zeus (pontos 2 e 3 da fila: backticks + mensagem do validate) — CONCLUÍDO
+
+**Branch:** `fix/backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python`
+PR #103 mergeado; `origin/main` em `c7a2a34`; fila em backlog/wip zerada antes de começar.
+
+### Pedido
+
+KG pediu os três pontos abertos na ordem **2 → 3 → 1**. Este ciclo cobre **2 e 3**; o ponto 1 vai
+em REQ própria — e **cresceu** (ver abaixo).
+
+### Empacotamento decidido
+
+Pontos 2 e 3 são ambos correções pequenas da **superfície do validador**, em arquivos do mesmo
+domínio → **um** ADR + **uma** REQ com duas frentes. O ponto 1 é feature com mudança de saída →
+REQ separada.
+
+### Investigação — o que mudou em relação ao que eu havia reportado
+
+**Ponto 2 tem causa ÚNICA, não dupla.** Eu suspeitava que `adr: ""` no frontmatter causasse
+early-return, mascarando a linha do corpo. **Reproduzi e é falso:** `""` reduz a string vazia,
+falha o teste de `.md`, e o laço **continua** corretamente. O backtick é a única causa. Instruí
+explicitamente a **não** "corrigir" o early-return.
+
+**Ponto 3 não é divergência de tradução.** Os três CLIs **já têm** `validate.ok` =
+`"✓ No violations found."` no próprio `i18n/locales/en-US.json`. O Python simplesmente **não usa**
+— `commands/validate.py:104` tem o literal `"✓ Governance OK"` hardcoded. A correção é fazê-lo
+usar o recurso que já carrega.
+
+**Divergência estrutural encontrada de brinde:** os três extratores tokenizam igual (primeiro
+token), mas removem delimitadores de três formas diferentes — Go `strings.Trim` (conjunto), Node
+regex de uma ocorrência por ponta, Python só **par casado**. Decidi **medir, não unificar**:
+o AC5 exige tabela compartilhada de entradas com saída idêntica, e manda **reportar** divergência
+em vez de o executor escolher sozinho. Unificar mudaria comportamento em delimitador não pareado
+sem nenhum caso real.
+
+### PONTO 1 É MAIOR DO QUE EU REPORTEI — precisa de decisão de KG
+
+Eu disse "Python não tem o bloco de resumo". **Errado.** O comando `status` tem **duas
+implementações completamente diferentes**:
+
+- Go/Node: `🔄 WIP (n)` · `❌ Blocked (n)` · `✅ Done (last 5)` com listagem de arquivos
+- Python: `Governance Status` com **contagens** — `ADRs: 19`, `REQs: 65 (0 Open, 65 Closed)`,
+  `Roadmaps: backlog 0 / wip 0 / ...`
+
+Portar significa **apagar a saída atual do Python** — mudança observável e breaking para quem
+faz parsing. Alternativas: substituir, manter as duas (acrescentar o bloco ao formato atual), ou
+adiar. **É decisão de KG e foi levada a ele antes de eu escrever o ADR do ponto 1.**
+
+### Execução e fechamento
+
+Wave 1 com 3 MLs paralelos + **ML-1D corretivo** + Wave 2 de barreira.
+`make quality` exit 0; falsificação **57 → 65**.
+
+### O corretivo mais instrutivo do ciclo (ML-1D)
+
+Os três agentes fizeram "a mesma correção". Mas Go e Node alteraram **só** o `extractRefPath`,
+enquanto o Python alterou `normalize_yaml_flat_value` — helper compartilhado por **10 call sites**,
+incluindo `parse_frontmatter`, `status`, `squad`, `governance_mode` e `traceid.py`.
+
+Resultado: no Python o backtick passou a ser removido **em todo o frontmatter**. Provei antes de
+corrigir:
+
+```
+Python parse_frontmatter('adr: `docs/adr/X.md`') → 'docs/adr/X.md'   ← removia
+Go     extractFrontmatterField                    → mantinha
+```
+
+**Lição transferível:** "mesma correção nos 3 CLIs" não basta — é preciso conferir se o **raio de
+alcance** é o mesmo. Um CLI editar helper compartilhado enquanto os outros editam o ponto de uso
+produz divergência silenciosa que nenhum teste de unidade e nenhum gate existente pega.
+
+### Entrega acima do pedido na Wave 2
+
+A Ártemis acrescentou cenário para a **mensagem de sucesso** — nada em CI garantia que os 3
+imprimissem o mesmo texto, e foi por isso que o Python passou meses com literal hardcoded.
+
+Decisão dela que vale carregar: comparar os três **contra um literal pinado**, não entre si. Um
+diff a três passaria se todos derivassem juntos ou imprimissem vazio.
+
+### FILA — item 2 e 3 fechados; itens restantes
+
+1. **Ponto 1 — comando `status`** — aguardando decisão de KG (ver entrada de INÍCIO: são duas
+   implementações completamente diferentes, não um bloco faltando; portar é breaking).
+2. **Item 4, criado por este ciclo** — delimitador **não pareado** (`ADR: "X.md'`) resolve em
+   Go/Node e não no Python. Medido, sem caso real, deliberadamente não resolvido.
+
+---
+
 ## Sessão 2026-08-01 — Zeus (execução: regra adr_accepted_when_req_done) — CONCLUÍDO
 
 **Branch:** `feat/detectar-adr-nao-aceito-referenciado-por-req-concluida`

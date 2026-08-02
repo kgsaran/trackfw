@@ -84,6 +84,43 @@ test('extractRefPath returns null for empty field', () => {
   assert.strictEqual(result, null)
 })
 
+// ML-1B — backtick não pode tornar a referência invisível (ADR-2026-08-02)
+test('extractRefPath strips backticks and resolves the path', () => {
+  const content = 'ADR: `docs/adr/X.md`\n'
+  const result = validator.extractRefPath(content, 'ADR')
+  assert.strictEqual(result, 'docs/adr/X.md')
+})
+
+test('extractRefPath strips backticks with trailing prose', () => {
+  const content = 'ADR: `docs/adr/X.md` (P1–P4; esta REQ é derivada)\n'
+  const result = validator.extractRefPath(content, 'ADR')
+  assert.strictEqual(result, 'docs/adr/X.md')
+})
+
+// Tabela do AC5 — mede a saída literal para as 8 entradas do ADR-2026-08-02.
+// Não força igualdade entre CLIs; apenas documenta o comportamento do Node.
+test('extractRefPath AC5 table — measured outputs (Node)', () => {
+  const cases = [
+    ['ADR: `docs/adr/X.md`', 'docs/adr/X.md'],
+    ['ADR: "docs/adr/X.md"', 'docs/adr/X.md'],
+    ["ADR: 'docs/adr/X.md'", 'docs/adr/X.md'],
+    ['ADR: docs/adr/X.md', 'docs/adr/X.md'],
+    ['ADR: `docs/adr/X.md` (P1–P4; prosa após)', 'docs/adr/X.md'],
+    // caso 6 — delimitador não pareado. O regex de uma ocorrência por ponta remove
+    // o `"` inicial e o `'` final independentemente (não exige par casado), então
+    // o Node RESOLVE este caso — divergência esperada frente a mecanismos de par casado.
+    ['ADR: "docs/adr/X.md\'', 'docs/adr/X.md'],
+    ['ADR:', null],
+    ['ADR: —', null],
+  ]
+  for (const [line, expected] of cases) {
+    const result = validator.extractRefPath(line + '\n', 'ADR')
+    console.log(`  [AC5/Node] ${JSON.stringify(line)} -> ${JSON.stringify(result)}`)
+    assert.strictEqual(result, expected,
+      `AC5 caso ${JSON.stringify(line)}: esperado ${JSON.stringify(expected)}, obtido ${JSON.stringify(result)}`)
+  }
+})
+
 // validateFolderStatusCoherence
 test('validateFolderStatusCoherence returns array', () => {
   const result = validator.validateFolderStatusCoherence()
@@ -1105,6 +1142,71 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
       assert.strictEqual(violations.length, 0,
         `regressao: ADR Accepted classificado como nao aceito por causa de menção na prosa; got ${JSON.stringify(violations)}`)
     })
+  })
+
+  // ML-1B (2026-08-02) — teste discriminante do ADR-2026-08-02: REQ Done com `adr: ""` no
+  // frontmatter (early-return legítimo, não é a causa) e o campo `ADR:` real só no CORPO,
+  // entre backticks — réplica fiel da forma real usada em 13 REQs do repositório. Antes
+  // da correção do regex de extractRefPath, este caso não violava (falso negativo, em
+  // silêncio); depois, deve violar.
+  test('adr_accepted_when_req_done: ADR referenciado entre backticks no corpo (frontmatter adr vazio) -> viola', () => {
+    withTmpProject((tmp) => {
+      writeAdr(tmp, 'ADR-2026-08-02-fixture.md', 'Proposed')
+      const reqContent = `---\nstatus: Done\ndate: 2026-08-02\nauthor: ""\nadr: ""\n---\n\n# REQ: fixture\n\n> Date: 2026-08-02 | Status: Done\n\n## Motivation\n\n## Acceptance Criteria\n- [ ]\n\n## Linked ADR\nADR: \`docs/adr/ADR-2026-08-02-fixture.md\` (P1–P4; esta REQ é derivada)\n\n## Linked Roadmap\nRoadmap:\n`
+      fs.writeFileSync(path.join(tmp, 'docs', 'req', 'REQ-2026-08-02-fixture.md'), reqContent)
+
+      // Prova "antes": simula o regex antigo (sem backtick no charset) sobre o mesmo conteúdo —
+      // deve extrair um valor que NÃO termina em .md, ou seja, extractRefPath antigo retornaria
+      // null e a violação NÃO seria detectada.
+      const oldExtract = (content, field) => {
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim()
+          const idx = trimmed.indexOf(':')
+          if (idx !== -1 && trimmed.slice(0, idx).trim().toLowerCase() === field.toLowerCase()) {
+            let val = trimmed.slice(idx + 1).trim()
+            if (!val || val === '—' || val === '-' || val === '–') return null
+            val = val.split(/\s+/)[0]
+            val = val.replace(/^["']|["']$/g, '') // regex ANTIGO — sem backtick
+            if (val.endsWith('.md')) return val
+          }
+        }
+        return null
+      }
+      const before = oldExtract(reqContent, 'ADR')
+      assert.strictEqual(before, null,
+        `pré-condição do teste discriminante falhou: mecanismo antigo deveria retornar null (referência invisível), obteve ${JSON.stringify(before)}`)
+
+      // Depois da correção: extractRefPath (atual) resolve o caminho normalmente.
+      const after = validator.extractRefPath(reqContent, 'ADR')
+      assert.strictEqual(after, 'docs/adr/ADR-2026-08-02-fixture.md',
+        `extractRefPath atual deveria resolver a referência entre backticks; obteve ${JSON.stringify(after)}`)
+
+      const violations = validator.validateADRAcceptedWhenREQDone()
+      assert.strictEqual(violations.length, 1,
+        `esperava 1 violation (ADR Proposed referenciado entre backticks por REQ Done); got ${JSON.stringify(violations)}`)
+      assert(violations[0].includes('REQ-2026-08-02-fixture.md'))
+      assert(violations[0].includes('ADR-2026-08-02-fixture.md'))
+    })
+  })
+
+  // Prova direta com as 3 REQs REAIS do repositório citadas no ADR-2026-08-02 — sem `adr:`
+  // efetivo no frontmatter, ADR referenciado só no corpo entre backticks. Deve resolver.
+  test('extractRefPath resolve o ADR das 3 REQs reais do repositório com backtick no corpo', () => {
+    const repoRoot = path.resolve(__dirname, '..', '..')
+    const reqFiles = [
+      'docs/req/REQ-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md',
+      'docs/req/REQ-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md',
+      'docs/req/REQ-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md',
+    ]
+    for (const rel of reqFiles) {
+      const full = path.join(repoRoot, rel)
+      const content = fs.readFileSync(full, 'utf8')
+      const ref = validator.extractRefPath(content, 'ADR')
+      assert(ref && ref.endsWith('.md'),
+        `REQ real ${rel}: esperava ADR resolvido (.md), obteve ${JSON.stringify(ref)}`)
+      assert.strictEqual(path.basename(ref), 'ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md',
+        `REQ real ${rel}: ADR resolvido inesperado ${JSON.stringify(ref)}`)
+    }
   })
 
   // ML-1D (2026-08-01) — divergência A da auditoria de paridade: o Node lia só a linha

@@ -860,7 +860,7 @@ function extractRefPath(content, field) {
       let val = trimmed.slice(idx + 1).trim()
       if (!val || val === '—' || val === '-' || val === '–') return null
       val = val.split(/\s+/)[0]
-      val = val.replace(/^["']|["']$/g, '')
+      val = val.replace(/^["'`]|["'`]$/g, '')
       if (val.endsWith('.md')) return val
     }
   }
