@@ -226,7 +226,7 @@ func parse(content string, cfg *ProjectConfig) {
 					}
 				} else {
 					// sub-chave dentro de link_fields
-					key, _, _ := splitKV(trimmed)
+					key, subVal, _ := splitKV(trimmed)
 					// flush sub-campo anterior
 					if inLinkFieldsReq && len(linkFieldsReq) > 0 {
 						cfg.LinkFieldsReq = linkFieldsReq
@@ -243,13 +243,25 @@ func parse(content string, cfg *ProjectConfig) {
 					inLinkFieldsReq = false
 					inLinkFieldsADR = false
 					inLinkFieldsRoadmap = false
-					switch key {
-					case "req":
-						inLinkFieldsReq = true
-					case "adr":
-						inLinkFieldsADR = true
-					case "roadmap":
-						inLinkFieldsRoadmap = true
+					if isInlineList(subVal) {
+						items := parseInlineList(subVal)
+						switch key {
+						case "req":
+							cfg.LinkFieldsReq = items
+						case "adr":
+							cfg.LinkFieldsADR = items
+						case "roadmap":
+							cfg.LinkFieldsRoadmap = items
+						}
+					} else {
+						switch key {
+						case "req":
+							inLinkFieldsReq = true
+						case "adr":
+							inLinkFieldsADR = true
+						case "roadmap":
+							inLinkFieldsRoadmap = true
+						}
 					}
 				}
 				continue
@@ -265,8 +277,16 @@ func parse(content string, cfg *ProjectConfig) {
 
 		switch key {
 		case "adr_dirs":
-			inADRDirs = true
-			adrDirs = nil
+			if isInlineList(val) {
+				items := parseInlineList(val)
+				for i, v := range items {
+					items[i] = ExpandPath(v)
+				}
+				cfg.ADRDirs = items
+			} else {
+				inADRDirs = true
+				adrDirs = nil
+			}
 		case "req_dir":
 			cfg.REQDir = val
 		case "roadmap_dir":
@@ -274,8 +294,12 @@ func parse(content string, cfg *ProjectConfig) {
 		case "roadmap_namespacing":
 			cfg.RoadmapNamespacing = val
 		case "agents":
-			inAgents = true
-			agents = nil
+			if isInlineList(val) {
+				cfg.Agents = parseInlineList(val)
+			} else {
+				inAgents = true
+				agents = nil
+			}
 		case "governance_mode":
 			cfg.GovernanceMode = val
 		case "lenient_until":
@@ -291,7 +315,11 @@ func parse(content string, cfg *ProjectConfig) {
 		case "link_fields":
 			inLinkFields = true
 		case "acceptance_markers":
-			inAcceptanceMarkers = true
+			if isInlineList(val) {
+				cfg.AcceptanceMarkers = parseInlineList(val)
+			} else {
+				inAcceptanceMarkers = true
+			}
 		case "rules":
 			inRules = true
 			rules = map[string]string{}
@@ -355,6 +383,61 @@ func parseInt(s string, def int) int {
 		return def
 	}
 	return n
+}
+
+// isInlineList detecta a forma flow-style de lista YAML na própria linha da chave:
+// "chave: [a, b]". Não confundir com bloco (linhas seguintes com "- item").
+func isInlineList(val string) bool {
+	return strings.HasPrefix(strings.TrimSpace(val), "[")
+}
+
+// parseInlineList decompõe uma lista YAML inline ("[a, b]") em itens, respeitando aspas
+// simples e duplas ao redor de itens (para não quebrar itens que contêm vírgula, ex:
+// ["a, b", "c"]). Espaços em torno de colchetes e itens são descartados. "[]" retorna
+// slice vazio (não nil), para distinguir "presente e vazio" de "ausente" no chamador.
+func parseInlineList(val string) []string {
+	inner := strings.TrimSpace(val)
+	inner = strings.TrimPrefix(inner, "[")
+	inner = strings.TrimSuffix(inner, "]")
+	inner = strings.TrimSpace(inner)
+	if inner == "" {
+		return []string{}
+	}
+	tokens := splitTopLevelCommas(inner)
+	result := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		t = strings.TrimSpace(t)
+		t = strings.Trim(t, `"'`)
+		result = append(result, t)
+	}
+	return result
+}
+
+// splitTopLevelCommas separa s por vírgulas que estão fora de aspas (simples ou duplas),
+// preservando vírgulas dentro de itens citados (caso 8 do contrato: ["a, b", "c"]).
+func splitTopLevelCommas(s string) []string {
+	var tokens []string
+	var cur strings.Builder
+	var quote rune
+	for _, r := range s {
+		switch {
+		case quote != 0:
+			cur.WriteRune(r)
+			if r == quote {
+				quote = 0
+			}
+		case r == '"' || r == '\'':
+			quote = r
+			cur.WriteRune(r)
+		case r == ',':
+			tokens = append(tokens, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	tokens = append(tokens, cur.String())
+	return tokens
 }
 
 // ExpandPath substitui o prefixo ~ ou ~/ pelo diretório home do usuário (os.UserHomeDir()).
