@@ -55,7 +55,7 @@ referência. Um ML de implementação + barreira.
 > Dependências: nenhuma
 
 ### ML-1A — Delimitador não pareado e ordenação do fallback
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo
 **Arquivos afetados:** `pypi/trackfw/validator.py`, `pypi/trackfw/commands/status.py` + testes
 
@@ -75,6 +75,40 @@ referência. Um ML de implementação + barreira.
 
 ---
 
+### ML-1B — Go e Node aceitam sequência em bloco não indentada
+**Status:** pending
+**Agente:** Apolo
+**Arquivos afetados:** `internal/config/config.go`, `npm/src/config/index.js` + testes
+
+**Terceiro defeito, descoberto ao validar o ML-1A — e aqui quem erra são Go e Node.**
+
+```yaml
+agents:
+- zeus
+- apolo
+```
+
+É **YAML válido** (confirmado com parser real). Go (`config.go:129-132`) e Node classificam
+qualquer linha sem indentação como top-level, encerrando a lista aberta → a lista é
+**silenciosamente descartada** e o CLI cai no fallback. O Python lê certo.
+
+**Alcance:** o mesmo `hasIndent` governa `adr_dirs`, `agents`, `acceptance_markers`,
+`link_fields` e `rules`. Não é uma chave — é o laço do parser.
+
+**Inverte a heurística do ciclo.** Vínhamos usando "dois concordam, o terceiro se alinha". Aqui a
+maioria está errada: **maioria não é autoridade quando há especificação**, e o YAML dá razão ao
+Python.
+
+**Acceptance criteria:**
+- [ ] Linha iniciada por `- ` deixa de encerrar lista aberta apenas por falta de indentação
+- [ ] Vale para **todas** as cinco chaves de lista, com fixture **por chave** — não só `agents`
+- [ ] Forma **indentada** continua funcionando (não regride)
+- [ ] `by_agent` com lista não indentada: as 3 saídas byte-idênticas
+- [ ] `make build`, `make lint`, `go test ./...`, `npm test` verdes
+- [ ] Não tocar em `pypi/` — o Python já está correto
+
+---
+
 ## Wave 2 — Barreira (1 ML)
 > Dependências: **Wave 1 completa**
 
@@ -89,12 +123,14 @@ referência. Um ML de implementação + barreira.
    - delimitador não pareado — sem essa fixture o cenário não exercita o item 1
    - `by_agent` **sem `agents:` configurado**, com subdiretórios fora de ordem alfabética — os
      cenários 31 existentes usam lista em bloco e portanto **não** passam pelo fallback
-4. Braços de detecção para os dois.
+   - **lista em bloco NÃO indentada** — item 3. Os cenários existentes usam forma indentada e
+     portanto **não** exercitam o defeito.
+4. Braços de detecção para os três.
 5. Contador e linha final atualizados.
 
 **Acceptance criteria:**
 - [ ] Gates passam; `make quality` exit 0
 - [ ] 69 cenários herdados confirmados
-- [ ] Cenários novos com fixtures discriminantes; provados não vacuosos
+- [ ] Cenários novos para os **três** itens, com fixtures discriminantes; não vacuosos
 - [ ] Contador atualizado
 - [ ] `git status --porcelain` sem resíduo
