@@ -4,7 +4,7 @@
 
 ---
 
-## Sessão 2026-08-02 — Zeus (pontos 2 e 3 da fila: backticks + mensagem do validate) — INÍCIO
+## Sessão 2026-08-02 — Zeus (pontos 2 e 3 da fila: backticks + mensagem do validate) — CONCLUÍDO
 
 **Branch:** `fix/backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python`
 PR #103 mergeado; `origin/main` em `c7a2a34`; fila em backlog/wip zerada antes de começar.
@@ -51,6 +51,44 @@ implementações completamente diferentes**:
 Portar significa **apagar a saída atual do Python** — mudança observável e breaking para quem
 faz parsing. Alternativas: substituir, manter as duas (acrescentar o bloco ao formato atual), ou
 adiar. **É decisão de KG e foi levada a ele antes de eu escrever o ADR do ponto 1.**
+
+### Execução e fechamento
+
+Wave 1 com 3 MLs paralelos + **ML-1D corretivo** + Wave 2 de barreira.
+`make quality` exit 0; falsificação **57 → 65**.
+
+### O corretivo mais instrutivo do ciclo (ML-1D)
+
+Os três agentes fizeram "a mesma correção". Mas Go e Node alteraram **só** o `extractRefPath`,
+enquanto o Python alterou `normalize_yaml_flat_value` — helper compartilhado por **10 call sites**,
+incluindo `parse_frontmatter`, `status`, `squad`, `governance_mode` e `traceid.py`.
+
+Resultado: no Python o backtick passou a ser removido **em todo o frontmatter**. Provei antes de
+corrigir:
+
+```
+Python parse_frontmatter('adr: `docs/adr/X.md`') → 'docs/adr/X.md'   ← removia
+Go     extractFrontmatterField                    → mantinha
+```
+
+**Lição transferível:** "mesma correção nos 3 CLIs" não basta — é preciso conferir se o **raio de
+alcance** é o mesmo. Um CLI editar helper compartilhado enquanto os outros editam o ponto de uso
+produz divergência silenciosa que nenhum teste de unidade e nenhum gate existente pega.
+
+### Entrega acima do pedido na Wave 2
+
+A Ártemis acrescentou cenário para a **mensagem de sucesso** — nada em CI garantia que os 3
+imprimissem o mesmo texto, e foi por isso que o Python passou meses com literal hardcoded.
+
+Decisão dela que vale carregar: comparar os três **contra um literal pinado**, não entre si. Um
+diff a três passaria se todos derivassem juntos ou imprimissem vazio.
+
+### FILA — item 2 e 3 fechados; itens restantes
+
+1. **Ponto 1 — comando `status`** — aguardando decisão de KG (ver entrada de INÍCIO: são duas
+   implementações completamente diferentes, não um bloco faltando; portar é breaking).
+2. **Item 4, criado por este ciclo** — delimitador **não pareado** (`ADR: "X.md'`) resolve em
+   Go/Node e não no Python. Medido, sem caso real, deliberadamente não resolvido.
 
 ---
 

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-02
 req: "docs/req/REQ-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Backticks em campos de referencia e mensagem de sucesso do validate no Python
 
-> Created: 2026-08-02 | Status: wip
+> Created: 2026-08-02 | Status: done
 
 ## Context
 
@@ -42,14 +42,14 @@ prontos — **nenhum ML da Wave 1 tem `parity` nos critérios**; a paridade é a
 
 ## Critérios de Aceite
 
-- [ ] Backtick removido nos 3 CLIs, mantendo o mecanismo próprio de cada um
-- [ ] As 3 REQs invisíveis passam a ter o ADR resolvido — provado por teste
-- [ ] Fixture com backtick + ADR `Proposed` **viola**; antes não violaria
-- [ ] `validate` verde nos 3 no repositório (reachability sobe, violações não)
-- [ ] Tabela compartilhada de entradas produz saída idêntica nos 3 — divergência reportada, não resolvida
-- [ ] Python usa `validate.ok`; os 3 imprimem `✓ No violations found.`
-- [ ] Cenário de falsificação **com fixture contendo backtick**
-- [ ] `make build`, `make test`, `make lint`, `make parity`, `make quality` verdes
+- [x] Backtick removido nos 3 CLIs, mantendo o mecanismo próprio de cada um
+- [x] As 3 REQs invisíveis passam a ter o ADR resolvido — provado por teste
+- [x] Fixture com backtick + ADR `Proposed` **viola**; antes não violaria
+- [x] `validate` verde nos 3 no repositório (reachability sobe, violações não)
+- [x] Tabela executada nos 3 — caso 6 diverge, **reportado e não resolvido** (vira item 4 da fila)
+- [x] Python usa `validate.ok`; os 3 imprimem `✓ No violations found.`
+- [x] Cenário de falsificação **com fixture contendo backtick**
+- [x] `make build`, `make test`, `make lint`, `make parity`, `make quality` verdes
 
 ---
 
@@ -151,7 +151,7 @@ divergência silenciosa que nenhum teste de unidade pega.
 > Dependências: **ML-1A, ML-1B e ML-1C completos e auditados**
 
 ### ML-2A — Paridade e seam com fixture de backtick
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Ártemis
 
 **Ações:**
@@ -164,8 +164,38 @@ divergência silenciosa que nenhum teste de unidade pega.
 5. Contador e linha final atualizados.
 
 **Acceptance criteria:**
-- [ ] Gates de paridade passam; `make quality` exit 0
-- [ ] Os 3 CLIs imprimem a **mesma** mensagem de sucesso
-- [ ] 57 cenários herdados confirmados
-- [ ] Cenário novo com backtick, provado não vacuoso; contador atualizado
-- [ ] `git status --porcelain` sem resíduo
+- [x] Gates de paridade passam; `make quality` exit 0
+- [x] Os 3 CLIs imprimem a mesma mensagem — verificado **byte a byte** com `od -c` + `diff`
+- [x] 57 cenários herdados confirmados
+- [x] **Dois** cenários novos; contador **57 → 65**, contado por `grep -c`, não estimado
+- [x] Provados não vacuosos
+- [x] `git status --porcelain` mostra só o script
+
+**Entrega acima do pedido — cenário 29, mensagem de sucesso.** Nada em CI garantia que os 3 CLIs
+imprimissem a mesma mensagem, e foi por isso que o Python passou meses com o literal hardcoded.
+
+Decisão dela que vale registrar: o cenário compara os três **contra um literal pinado**, não os
+três entre si. Um diff a três passaria se os três derivassem **juntos**, ou se todos imprimissem
+vazio. Pinando o literal, a comparação continua válida mesmo nesse caso.
+
+Ressalva honesta que ela levantou: a comparação usa `$(...)`, que normaliza newline final — drift
+de linha em branco ao final não seria pego por esse gate. Verificado à parte com `od -c` que os
+três têm exatamente um `\n`.
+
+---
+
+## Fechamento
+
+Concluído e auditado em 2026-08-02. `make quality` exit 0; falsificação **57 → 65** cenários.
+
+**Pontos 2 e 3 da fila fechados.** Três REQs saíram da invisibilidade; os três CLIs passaram a
+imprimir a mesma mensagem de sucesso, e agora há gate de CI garantindo ambas as coisas.
+
+**Item 4 da fila, criado por este ciclo:** delimitador **não pareado** (`ADR: "X.md'`) resolve em
+Go e Node e **não** resolve em Python. Medido, documentado, sem caso real no repositório.
+Deliberadamente não resolvido — o ADR decidiu medir, não unificar.
+
+**A lição do ML-1D é a mais transferível:** "mesma correção nos 3 CLIs" não basta. É preciso
+conferir se o **raio de alcance** é o mesmo. Aqui, um CLI editou um helper compartilhado por 10
+call sites enquanto os outros dois editaram só o ponto de uso — divergência silenciosa que
+nenhum teste de unidade e nenhum gate existente pegaria.

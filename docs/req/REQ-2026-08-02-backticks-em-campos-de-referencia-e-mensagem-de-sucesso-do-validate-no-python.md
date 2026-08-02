@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-02
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-02-extracao-de-referencia-tolerante-a-markdown-e-saida-do-validate-via-i18n.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md"
 ---
 
 # REQ: Backticks em campos de referencia e mensagem de sucesso do validate no Python
 
-> Date: 2026-08-02 | Status: Open
+> Date: 2026-08-02 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -38,32 +38,32 @@ string vazia, falha o teste de `.md` e o laço continua corretamente.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — `extractRefPath` / equivalentes removem **backtick** além de aspas simples e
+- [x] **AC1** — `extractRefPath` / equivalentes removem **backtick** além de aspas simples e
       duplas, nos 3 CLIs. Cada CLI **mantém o próprio mecanismo** — só o backtick é acrescentado
       ao conjunto.
-- [ ] **AC2** — **Reachability provada:** as 3 REQs hoje invisíveis
+- [x] **AC2** — **Reachability provada:** as 3 REQs hoje invisíveis
       (`roadmap-move-sincroniza-o-status-do-artefato`,
       `integridade-das-referencias-e-ciclo-de-vida-da-req`,
       `convergencia-dos-templates-de-artefato-do-cli-python`) passam a ter o ADR resolvido pelo
       extrator. Provado por teste, não por inspeção visual.
-- [ ] **AC3** — **Reachability discriminante:** fixture com ADR entre backticks e status
+- [x] **AC3** — **Reachability discriminante:** fixture com ADR entre backticks e status
       `Proposed` **viola** `adr_accepted_when_req_done`. Antes da correção, a mesma fixture
       **não** violaria. É o que prova que a mudança tem efeito — observar `validate` verde não
       prova nada.
-- [ ] **AC4** — `validate` **verde neste repositório** nos 3 CLIs: as 3 REQs saem da
+- [x] **AC4** — `validate` **verde neste repositório** nos 3 CLIs: as 3 REQs saem da
       invisibilidade mas apontam para ADR `Accepted`, logo reachability aumenta e violações não.
-- [ ] **AC5** — **Divergência medida, não presumida:** os 3 CLIs produzem saída **idêntica** para
+- [x] **AC5** — **Divergência medida, não presumida:** os 3 CLIs produzem saída **idêntica** para
       uma tabela compartilhada de entradas, incluindo: valor entre backticks, entre aspas duplas,
       entre aspas simples, sem delimitador, com prosa após o caminho, e com **delimitador não
       pareado** (`"x.md'`). Se algum divergir, **reportar** — não escolher sozinho.
-- [ ] **AC6** — Python passa a usar a chave `validate.ok` do próprio i18n; o literal
+- [x] **AC6** — Python passa a usar a chave `validate.ok` do próprio i18n; o literal
       `"✓ Governance OK"` é removido. Os 3 CLIs imprimem `✓ No violations found.`
-- [ ] **AC7** — `scripts/check-validate-parity.sh` e `scripts/check-artifact-parity.sh` passam.
-- [ ] **AC8** — Cenário de falsificação permanente em `check-gates-falsify.sh` com **fixture
+- [x] **AC7** — `scripts/check-validate-parity.sh` e `scripts/check-artifact-parity.sh` passam.
+- [x] **AC8** — Cenário de falsificação permanente em `check-gates-falsify.sh` com **fixture
       contendo backtick**: revertendo a remoção do backtick, a violação **desaparece**. Sem fixture
       com backtick o cenário seria vacuoso — lição registrada em
       `vault/notes/deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01.md`.
-- [ ] **AC9** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+- [x] **AC9** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
 
 ## Negative Scope (fora do escopo — NÃO fazer)
 
@@ -106,4 +106,4 @@ ADR: docs/adr/ADR-2026-08-02-extracao-de-referencia-tolerante-a-markdown-e-saida
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md
