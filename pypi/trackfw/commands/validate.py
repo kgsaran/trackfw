@@ -73,7 +73,7 @@ def run(args):
     violations = result.get("violations", [])
     warnings = result.get("warnings", [])
 
-    gm = _validator._read_governance_mode()
+    gm = _validator._governance_mode_from(_config.load())
     mode = "lenient" if gm["mode"] == "lenient" else "strict"
     exit_code = 1 if violations else 0
 

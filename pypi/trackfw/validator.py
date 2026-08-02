@@ -455,37 +455,15 @@ def _adr_draft_status_for_rule(basename: str, cfg: dict, messages: list | None):
         return False, False
 
 
-def _read_wip_config(cwd: str = None) -> dict:
+def _wip_config_from(cfg: dict) -> dict:
     """
-    Lê wip_limit e wip_by_squad do trackfw.yaml no CWD.
-    Retorna {"limit": 1, "by_squad": False} se o arquivo não existir.
+    Deriva {"limit": int, "by_squad": bool} a partir do dict de config já normalizado por
+    _config.load() — nenhuma releitura de trackfw.yaml acontece aqui.
     """
-    cfg_result = {"limit": 1, "by_squad": False}
-    yaml_path = os.path.join(cwd or os.getcwd(), "trackfw.yaml")
-    try:
-        with open(yaml_path, "r", encoding="utf-8") as f:
-            content = f.read()
-    except OSError:
-        return cfg_result
-
-    for line in content.split("\n"):
-        trimmed = line.strip()
-        if trimmed.startswith("wip_limit:"):
-            val = trimmed[len("wip_limit:"):].strip().split()[0] if trimmed[len("wip_limit:"):].strip() else ""
-            val = normalize_yaml_flat_value(val)
-            try:
-                n = int(val)
-                if n > 0:
-                    cfg_result["limit"] = n
-            except (ValueError, IndexError):
-                pass
-        if trimmed.startswith("wip_by_squad:"):
-            val = trimmed[len("wip_by_squad:"):].strip().split()[0] if trimmed[len("wip_by_squad:"):].strip() else ""
-            val = normalize_yaml_flat_value(val)
-            if val == "true":
-                cfg_result["by_squad"] = True
-
-    return cfg_result
+    limit = cfg.get("wip_limit", 1)
+    if not isinstance(limit, int) or limit <= 0:
+        limit = 1
+    return {"limit": limit, "by_squad": bool(cfg.get("wip_by_squad", False))}
 
 
 def _parse_squad_from_frontmatter(file_path: str) -> str:
@@ -506,37 +484,24 @@ def _parse_squad_from_frontmatter(file_path: str) -> str:
     return ""
 
 
-def _read_governance_mode(cwd: str = None) -> dict:
+def _governance_mode_from(cfg: dict) -> dict:
     """
-    Lê governance_mode e lenient_until do trackfw.yaml.
-    Retorna {"mode": "strict", "lenient_until": None} por padrão.
+    Deriva {"mode": str, "lenient_until": datetime|None} a partir do dict de config já
+    normalizado por _config.load() — nenhuma releitura de trackfw.yaml acontece aqui.
+    cfg["governance_mode"] chega como o valor bruto do campo (string vazia se ausente);
+    cfg["lenient_until"] chega como a data literal (ex.: "2026-08-02"), convertida aqui
+    para datetime.
     """
     result = {"mode": "strict", "lenient_until": None}
-    yaml_path = os.path.join(cwd or os.getcwd(), "trackfw.yaml")
-    try:
-        with open(yaml_path, "r", encoding="utf-8") as f:
-            content = f.read()
-    except OSError:
-        return result
-
-    for line in content.split("\n"):
-        trimmed = line.strip()
-        if trimmed.startswith("governance_mode:"):
-            val_part = trimmed[len("governance_mode:"):].strip()
-            vals = val_part.split()
-            if vals:
-                result["mode"] = normalize_yaml_flat_value(vals[0])
-        if trimmed.startswith("lenient_until:"):
-            val_part = trimmed[len("lenient_until:"):].strip()
-            vals = val_part.split()
-            if vals:
-                try:
-                    d = datetime.fromisoformat(normalize_yaml_flat_value(vals[0]))
-                    # Garantir que é aware ou naive consistente
-                    result["lenient_until"] = d
-                except ValueError:
-                    pass
-
+    mode = cfg.get("governance_mode")
+    if mode:
+        result["mode"] = mode
+    lenient_until = cfg.get("lenient_until")
+    if lenient_until:
+        try:
+            result["lenient_until"] = datetime.fromisoformat(lenient_until)
+        except ValueError:
+            pass
     return result
 
 
@@ -580,7 +545,7 @@ def save_baseline(violations: list, warnings: list) -> None:
 
 def _is_lenient(cwd: str = None) -> bool:
     """Retorna True se o projeto está em modo lenient e o prazo não expirou."""
-    gm = _read_governance_mode(cwd)
+    gm = _governance_mode_from(_config.load(cwd))
     if gm["mode"] != "lenient":
         return False
     if gm["lenient_until"] is None:
@@ -770,7 +735,7 @@ def validate_wip_limit(cfg: dict) -> dict:
     except OSError:
         return {"violations": violations, "warnings": warnings}
 
-    wip_cfg = _read_wip_config()
+    wip_cfg = _wip_config_from(cfg)
 
     if not wip_cfg["by_squad"]:
         if len(files) > wip_cfg["limit"]:

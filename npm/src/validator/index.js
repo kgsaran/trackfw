@@ -494,29 +494,10 @@ function validateWIPHasAcceptanceCriteria() {
   return violations
 }
 
-// readWIPConfig lê wip_limit e wip_by_squad do trackfw.yaml no CWD.
-// Retorna { limit: 1, bySquad: false } se o arquivo não existe ou campos ausentes.
-function readWIPConfig() {
-  const cfg = { limit: 1, bySquad: false }
-  let content
-  try {
-    content = fs.readFileSync('trackfw.yaml', 'utf8')
-  } catch (_) {
-    return cfg
-  }
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim()
-    if (trimmed.startsWith('wip_limit:')) {
-      const val = trimmed.slice('wip_limit:'.length).trim().split(/\s+/)[0]
-      const n = parseInt(val, 10)
-      if (!isNaN(n) && n > 0) cfg.limit = n
-    }
-    if (trimmed.startsWith('wip_by_squad:')) {
-      const val = trimmed.slice('wip_by_squad:'.length).trim().split(/\s+/)[0]
-      if (val === 'true') cfg.bySquad = true
-    }
-  }
-  return cfg
+// wipConfigFrom deriva { limit, bySquad } a partir do ProjectConfig já normalizado por
+// config.load() — nenhuma releitura de trackfw.yaml acontece aqui.
+function wipConfigFrom(cfg) {
+  return { limit: cfg.wipLimit > 0 ? cfg.wipLimit : 1, bySquad: !!cfg.wipBySquad }
 }
 
 // parseSquadFromFrontmatter extrai o valor do campo "squad:" de um arquivo markdown.
@@ -573,7 +554,7 @@ function validateWIPLimit() {
     return { violations, warnings }
   }
 
-  const wipCfg = readWIPConfig()
+  const wipCfg = wipConfigFrom(cfg)
 
   if (!wipCfg.bySquad) {
     if (files.length > wipCfg.limit) {
@@ -777,37 +758,23 @@ function blockedREQs() {
   return result
 }
 
-// readGovernanceMode lê governance_mode e lenient_until do trackfw.yaml no CWD.
-// Retorna { mode: 'strict', lenientUntil: null } se o arquivo não existe ou campos ausentes.
-function readGovernanceMode() {
-  let content
-  try {
-    content = fs.readFileSync('trackfw.yaml', 'utf8')
-  } catch (_) {
-    return { mode: 'strict', lenientUntil: null }
-  }
-  let mode = 'strict'
+// governanceModeFrom deriva { mode, lenientUntil } a partir do ProjectConfig já normalizado por
+// config.load() — nenhuma releitura de trackfw.yaml acontece aqui. cfg.governanceMode chega como
+// o valor bruto do campo (string vazia se ausente); cfg.lenientUntil chega como a data literal
+// (ex.: "2026-08-02"), convertida aqui para Date.
+function governanceModeFrom(cfg) {
+  const mode = cfg.governanceMode ? cfg.governanceMode : 'strict'
   let lenientUntil = null
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim()
-    if (trimmed.startsWith('governance_mode:')) {
-      const val = trimmed.slice('governance_mode:'.length).trim().split(/\s+/)[0]
-      if (val) mode = val
-    }
-    if (trimmed.startsWith('lenient_until:')) {
-      const val = trimmed.slice('lenient_until:'.length).trim().split(/\s+/)[0]
-      if (val) {
-        const d = new Date(val)
-        if (!isNaN(d.getTime())) lenientUntil = d
-      }
-    }
+  if (cfg.lenientUntil) {
+    const d = new Date(cfg.lenientUntil)
+    if (!isNaN(d.getTime())) lenientUntil = d
   }
   return { mode, lenientUntil }
 }
 
 // isLenient retorna true se o projeto está em modo lenient e o prazo não expirou.
 function isLenient() {
-  const gm = readGovernanceMode()
+  const gm = governanceModeFrom(config.load())
   if (gm.mode !== 'lenient') return false
   if (!gm.lenientUntil) return true
   return new Date() < gm.lenientUntil
@@ -815,7 +782,7 @@ function isLenient() {
 
 // lenientUntilDate retorna a data de expiração formatada (YYYY-MM-DD) ou ''.
 function lenientUntilDate() {
-  const gm = readGovernanceMode()
+  const gm = governanceModeFrom(config.load())
   if (gm.mode !== 'lenient' || !gm.lenientUntil) return ''
   return gm.lenientUntil.toISOString().slice(0, 10)
 }
@@ -1393,7 +1360,7 @@ async function getStatus() {
     out += `\n🔄 WIP (${wip.length})\n`
     for (const f of wip) out += `   ${f}\n`
 
-    const wipCfg = readWIPConfig()
+    const wipCfg = wipConfigFrom(cfg)
     if (wipCfg.bySquad && wip.length > 0) {
       const bySquad = {}
       for (const f of wip) {
@@ -1472,8 +1439,6 @@ module.exports = {
   resolveStateDirs,
   resolveWIPDirs,
   resolveDoneDirs,
-  readGovernanceMode,
-  readWIPConfig,
   parseSquadFromFrontmatter,
   validateFrontmatterPresence,
   // novas funções ML-1B

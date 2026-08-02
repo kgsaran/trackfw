@@ -151,41 +151,17 @@ func applyRuleTagged(ruleName string, msgs []string, violations, warnings *[]Tag
 	}
 }
 
-// WIPConfig armazena configuração de WIP limit lida do trackfw.yaml.
+// WIPConfig armazena configuração de WIP limit derivada do config.ProjectConfig já carregado.
 type WIPConfig struct {
 	Limit   int  // default 1
 	BySquad bool // default false
 }
 
-// readWIPConfig lê wip_limit e wip_by_squad do trackfw.yaml no CWD.
-// Retorna {Limit: 1, BySquad: false} se o arquivo não existe ou os campos estão ausentes.
-func readWIPConfig() WIPConfig {
-	cfg := WIPConfig{Limit: 1, BySquad: false}
-	content, err := os.ReadFile("trackfw.yaml")
-	if err != nil {
-		return cfg
-	}
-	for _, line := range strings.Split(string(content), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "wip_limit:") {
-			val := strings.TrimSpace(strings.TrimPrefix(line, "wip_limit:"))
-			fields := strings.Fields(val)
-			if len(fields) > 0 {
-				var n int
-				if _, err := fmt.Sscanf(fields[0], "%d", &n); err == nil && n > 0 {
-					cfg.Limit = n
-				}
-			}
-		}
-		if strings.HasPrefix(line, "wip_by_squad:") {
-			val := strings.TrimSpace(strings.TrimPrefix(line, "wip_by_squad:"))
-			fields := strings.Fields(val)
-			if len(fields) > 0 && fields[0] == "true" {
-				cfg.BySquad = true
-			}
-		}
-	}
-	return cfg
+// wipConfigFrom deriva WIPConfig a partir do ProjectConfig já normalizado por config.Load() —
+// nenhuma releitura de trackfw.yaml acontece aqui. cfg.WipLimit já traz o default 1 aplicado
+// pelo loader quando o campo está ausente ou é <= 0 (config.parseInt cai no default nesse caso).
+func wipConfigFrom(cfg config.ProjectConfig) WIPConfig {
+	return WIPConfig{Limit: cfg.WipLimit, BySquad: cfg.WipBySquad}
 }
 
 // parseSquadFromFrontmatter lê um arquivo markdown e extrai o valor da linha "squad: <valor>".
@@ -221,7 +197,7 @@ func validateWIPLimit() (violations []string, warnings []string, err error) {
 				}
 			}
 		}
-		wipCfg := readWIPConfig()
+		wipCfg := wipConfigFrom(projectCfg)
 		for _, agent := range agents {
 			files, globErr := filepath.Glob(filepath.Join(projectCfg.RoadmapDir, agent, "wip", "*.md"))
 			if globErr != nil {
@@ -242,7 +218,7 @@ func validateWIPLimit() (violations []string, warnings []string, err error) {
 		return nil, nil, globErr
 	}
 
-	wipCfg := readWIPConfig()
+	wipCfg := wipConfigFrom(projectCfg)
 
 	if !wipCfg.BySquad {
 		if len(files) > wipCfg.Limit {
@@ -279,33 +255,18 @@ type GovernanceMode struct {
 	LenientUntil time.Time // zero se strict ou sem data definida
 }
 
-// readGovernanceMode lê os campos governance_mode e lenient_until do trackfw.yaml no CWD.
-// Retorna GovernanceMode{Mode: "strict"} se o arquivo não existe ou os campos estão ausentes.
-func readGovernanceMode() GovernanceMode {
-	content, err := os.ReadFile("trackfw.yaml")
-	if err != nil {
-		return GovernanceMode{Mode: "strict"}
-	}
+// governanceModeFrom deriva GovernanceMode a partir do ProjectConfig já normalizado por
+// config.Load() — nenhuma releitura de trackfw.yaml acontece aqui. cfg.GovernanceMode chega
+// como o valor bruto do campo (string vazia se ausente); lenient_until chega como a data literal
+// (ex.: "2026-08-02"), convertida aqui para time.Time.
+func governanceModeFrom(cfg config.ProjectConfig) GovernanceMode {
 	gm := GovernanceMode{Mode: "strict"}
-	for _, line := range strings.Split(string(content), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "governance_mode:") {
-			val := strings.TrimSpace(strings.TrimPrefix(line, "governance_mode:"))
-			// Pegar apenas a primeira palavra (ignorar comentários inline)
-			fields := strings.Fields(val)
-			if len(fields) > 0 {
-				gm.Mode = fields[0]
-			}
-		}
-		if strings.HasPrefix(line, "lenient_until:") {
-			val := strings.TrimSpace(strings.TrimPrefix(line, "lenient_until:"))
-			fields := strings.Fields(val)
-			if len(fields) > 0 {
-				t, parseErr := time.Parse("2006-01-02", fields[0])
-				if parseErr == nil {
-					gm.LenientUntil = t
-				}
-			}
+	if cfg.GovernanceMode != "" {
+		gm.Mode = cfg.GovernanceMode
+	}
+	if cfg.LenientUntil != "" {
+		if t, err := time.Parse("2006-01-02", cfg.LenientUntil); err == nil {
+			gm.LenientUntil = t
 		}
 	}
 	return gm
@@ -313,7 +274,7 @@ func readGovernanceMode() GovernanceMode {
 
 // IsLenient retorna true se o projeto está em modo lenient e o prazo ainda não expirou.
 func IsLenient() bool {
-	gm := readGovernanceMode()
+	gm := governanceModeFrom(config.Load())
 	if gm.Mode != "lenient" {
 		return false
 	}
@@ -326,7 +287,7 @@ func IsLenient() bool {
 // LenientUntilDate retorna a data de expiração do modo lenient formatada em "2006-01-02".
 // Retorna string vazia se o modo não for lenient ou a data não estiver definida.
 func LenientUntilDate() string {
-	gm := readGovernanceMode()
+	gm := governanceModeFrom(config.Load())
 	if gm.Mode != "lenient" || gm.LenientUntil.IsZero() {
 		return ""
 	}
@@ -790,7 +751,7 @@ func GetStatus() (string, error) {
 			sb.WriteString(fmt.Sprintf("   %s\n", f))
 		}
 
-		wipCfg := readWIPConfig()
+		wipCfg := wipConfigFrom(cfg)
 		if wipCfg.BySquad && len(wip) > 0 {
 			bySquad := map[string]int{}
 			for _, f := range wip {

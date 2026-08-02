@@ -261,3 +261,110 @@ func TestLoad_StripsQuotesFromForgeAndTraceIDField(t *testing.T) {
 		t.Fatalf("TraceIdField: want req_id, got %q", cfg.TraceIdField)
 	}
 }
+
+// TestLoad_Malformed_FailsLoud proves Load — unlike parse — turns a genuine YAML syntax error
+// into a fatal stderr message + non-zero exit, instead of the pre-ML-1B silent fallback to
+// defaults (which was a regression relative to the handcrafted parser: an invalid file used to
+// leave the rest of the config readable line-by-line; the library-based parser discards the
+// whole document, so silently keeping defaults meant a typo could make trackfw quietly run with
+// wip_limit=1 instead of the value actually configured).
+func TestLoad_Malformed_FailsLoud(t *testing.T) {
+	assertLoadFailsLoud(t, "agents: [zeus, apolo\nwip_limit: 3\n")
+}
+
+// TestLoad_MultipleDocuments_FailsLoud closes a divergence found in the ML-1B cross-CLI audit:
+// yaml.Unmarshal silently decodes only the first "---"-delimited document in a stream (no
+// error), while Node's `yaml` (MULTIPLE_DOCS) and PyYAML's yaml.compose() ("expected a single
+// document in the stream") both reject a multi-document trackfw.yaml outright. Without
+// hasMultipleDocuments, Go alone would exit 0 (silently reading only the first document) where
+// Node and Python exit 1 — see hasMultipleDocuments's doc comment.
+func TestLoad_MultipleDocuments_FailsLoud(t *testing.T) {
+	assertLoadFailsLoud(t, "wip_limit: 3\n---\nwip_limit: 5\n")
+}
+
+// TestLoad_UndefinedAliasReference_FailsLoud closes a second divergence found in the same
+// audit: a forward reference to an anchor not yet defined (b: *x / a: &x 3) is invalid per the
+// YAML spec — yaml.v3 errors with "unknown anchor 'x' referenced" and PyYAML raises a
+// ComposerError. This document has no "---" and no flow-sequence issue, so it exercises the
+// primary yaml.Unmarshal error path, not hasMultipleDocuments.
+func TestLoad_UndefinedAliasReference_FailsLoud(t *testing.T) {
+	assertLoadFailsLoud(t, "b: *x\na: &x 3\n")
+}
+
+// TestLoad_DuplicateKeys_NotMalformed proves duplicate top-level keys do NOT trigger the fatal
+// path in Go: yaml.Unmarshal into a generic *yaml.Node does not validate key uniqueness (only
+// Decode into a typed struct would), and PyYAML's yaml.compose() is equally permissive — both
+// silently resolve to "last key wins". Node's `yaml` package is the outlier here (it flags
+// DUPLICATE_KEY as a composer error), so Node's parse() explicitly whitelists that one error
+// code as non-fatal (see NON_FATAL_ERROR_CODES in npm/src/config/index.js) to keep the three
+// CLIs' fatal trigger identical. This test guards the Go side of that convergence: Go must
+// stay silent here, or the three would diverge again in the opposite direction.
+func TestLoad_DuplicateKeys_NotMalformed(t *testing.T) {
+	Reset()
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	dup := "wip_limit: 3\nwip_limit: 4\n"
+	if err := os.WriteFile(filepath.Join(tmp, "trackfw.yaml"), []byte(dup), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	if cfg.WipLimit != 4 {
+		t.Errorf("WipLimit: got %d, want 4 (last key wins, no fatal exit)", cfg.WipLimit)
+	}
+}
+
+// assertLoadFailsLoud writes content as trackfw.yaml in a fresh temp cwd, calls Load(), and
+// asserts it hit the fatal path (osExit(1) + MalformedConfigMessage on stderr).
+func assertLoadFailsLoud(t *testing.T, content string) {
+	t.Helper()
+	Reset()
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(tmp, "trackfw.yaml"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	origExit := osExit
+	var gotCode int
+	exited := false
+	osExit = func(code int) {
+		exited = true
+		gotCode = code
+	}
+	defer func() { osExit = origExit }()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = w
+	Load()
+	_ = w.Close()
+	os.Stderr = origStderr
+
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	stderr := string(buf[:n])
+
+	if !exited {
+		t.Fatal("Load did not call osExit on malformed YAML")
+	}
+	if gotCode != 1 {
+		t.Errorf("exit code: got %d, want 1", gotCode)
+	}
+	if stderr != MalformedConfigMessage+"\n" {
+		t.Errorf("stderr: got %q, want %q", stderr, MalformedConfigMessage+"\n")
+	}
+}
