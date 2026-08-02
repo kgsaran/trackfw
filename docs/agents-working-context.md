@@ -8300,3 +8300,54 @@ Dois breaking changes acumulados desde a `v5.0.0`, ambos de saída observável:
 Aponta **v6.0.0**. Migração do segundo: usar `--version` ou `version`, que funcionam nos três desde a
 v5.0.0.
 
+
+## 2026-08-02 — Zeus — ARTEFATOS DE GOVERNANÇA: unificar a leitura do trackfw.yaml nos 3 CLIs
+
+Ciclo aberto por pedido do KG após a tag `v6.2.0`, para fechar o único item que restava na fila —
+reportado pelo executor do PR #106, que corretamente parou por ser decisão de ADR.
+
+**Entrega de hoje é só governança**: ADR + REQ + Roadmap em `backlog/`. Sem implementação, sem
+barreira especializada — o diff é markdown.
+
+### O levantamento mudou o tamanho do problema
+
+Eu havia dito ao KG "3 arquivos + equivalentes". Errado por baixo. O inventário por categoria achou
+**cinco** scanners artesanais sobreviventes (não dois), e uma sexta via de parsing que fica fora de
+escopo por construção (o shell dos git hooks, que roda sem o CLI).
+
+E achou uma coisa que ninguém tinha registrado: **o `update` do Python não lê nenhum desses
+campos.** `grep -rn pkg_manager pypi/trackfw` retorna vazio. Go e Node decidem quais hooks e qual
+CI gerar com base em `hooks`/`ci`/`backend`/`frontend`/`pkg_manager`; o Python simplesmente não
+tem o leitor. Não é divergência de implementação — é funcionalidade ausente, invisível porque
+nenhum gate compara o comportamento de `update` entre os CLIs.
+
+**Lição de processo:** meu resumo de fila era de memória, não de medição. Antes de escrever escopo
+em REQ, enumerar por categoria (parseia / só checa existência / escreve) nos três CLIs.
+
+### Duas decisões que exigiram cuidado
+
+**Escotilha genérica rejeitada.** Expor `Raw map[string]string` e deixar cada consumidor colher a
+chave resolveria com menos código, mas recria a divergência que o #106 eliminou: um caminho de
+parsing e N de interpretação. O critério que separou as opções foi *deixa exatamente um caminho de
+parsing?*
+
+**Segredos: preservação mecânica, sem endosso.** `linear_api_key` e `jira_token` precisam passar
+pelo carregador, senão um scanner sobrevive e a AC1 é falsa. Mas ampliar o contrato sem ressalva
+ratificaria em silêncio segredo em arquivo versionado — desenho que ninguém avaliou. Ficou em
+Negative Scope com sucessor nomeado e revisão do Hades pendente.
+
+### Escolha de branch — deliberada
+
+`docs/`, não `feat/`. A regra `branch_has_wip_roadmap` só enforça em `feat|fix|refactor`, e o
+roadmap nasce em `backlog/`. Usar `feat/` obrigaria a pôr o roadmap em `wip/` para o `validate`
+passar — estado falso, já que nada está em execução.
+
+### Decomposição — o gerador propôs errado, e isso é dado
+
+`roadmap new --from-req` emitiu um ML por AC. Aqui é a decomposição errada: os ACs são propriedades
+transversais (paridade, ausência de segundo parser), não unidades de trabalho — daria oito lotes
+tocando os mesmos arquivos, todos sequenciais. Reescrevi por arquivo: 4 waves, 1 ML cada.
+
+**Executor único por wave, cobrindo os 3 CLIs** — não é falta de paralelismo por descuido. Toda
+wave paralela com um agente por CLI divergiu nos ciclos de 2026-08-01/02, sempre nos casos que
+nenhuma fixture cobria. O único ciclo sem divergência foi o de executor único.
