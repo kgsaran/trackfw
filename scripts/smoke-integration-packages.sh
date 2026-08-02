@@ -41,7 +41,11 @@ mkdir -p "$TMP_ROOT/wheels" "$TMP_ROOT/python-project"
 WHEEL=$(find "$TMP_ROOT/wheels" -type f -name '*.whl' -print | head -n 1)
 test -n "$WHEEL"
 "$PYTHON_BIN" -m venv "$TMP_ROOT/venv"
-"$TMP_ROOT/venv/bin/python" -m pip install --quiet --no-deps "$WHEEL"
+# --no-deps foi removido: o pacote deixou de ser zero-dep (ver
+# pypi/pyproject.toml `dependencies`). Deixar o pip resolver as dependências
+# a partir dos metadados da wheel também passa a validar que a declaração de
+# dependências está correta -- teste mais forte do que instalar isolado.
+"$TMP_ROOT/venv/bin/python" -m pip install --quiet "$WHEEL"
 PY_TRACKFW="$TMP_ROOT/venv/bin/trackfw"
 PY_ASSET=$(find "$TMP_ROOT/venv" -type f -path '*/trackfw/integrations/assets/catalog.json' -print | head -n 1)
 test -n "$PY_ASSET"
