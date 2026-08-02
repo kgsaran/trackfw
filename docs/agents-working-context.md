@@ -4,6 +4,50 @@
 
 ---
 
+## Sessão 2026-08-02 — Zeus (ponto 1: convergir o comando `status`) — INÍCIO
+
+**Branch:** `feat/convergir-o-comando-status-dos-tres-clis-num-formato-unico`
+PR #104 mergeado; `origin/main` em `590cce8`; fila zerada antes de começar.
+
+### Correção de premissa vinda de KG — importante
+
+Eu enquadrei a convergência do `status` como **breaking change**. KG corrigiu: **o trackfw ainda
+não tem usuários externos.** Não há saída consumida por script de terceiro, não há migração a
+proteger. O custo é **interno** — fixtures e asserções dos 3 CLIs.
+
+Isso invalida um argumento que usei **várias vezes** nesta sessão para deixar defeito de pé:
+manter o nome impreciso `blocked_by_draft_adr` ("chave pública de configuração"), não unificar os
+mecanismos de strip, manter `Draft` e `Proposed` separados. Nenhum tem o peso que dei.
+Registrado em memória de projeto; **vale revisitar** se algum voltar à pauta.
+
+### Decisão de KG: opção 2 — convergir preservando
+
+Não substituir a saída do Python pela de Go/Node (que descartaria a visão de inventário), mas
+**somar as duas visões** num formato único.
+
+### Dois defeitos silenciosos descobertos ao comparar
+
+1. **`analyzing` omitido no Python** — `commands/status.py` enumera 5 dos 6 estados em **três**
+   pontos (~73, ~81, ~141). Roadmap em `analyzing/` some da contagem.
+2. **`Done` e `Closed` agrupados** — apaga a distinção entre REQ entregue e encerrada sem entrega.
+
+### Detalhe que mudou o desenho
+
+O preview que KG aprovou dizia `📊 Inventário`. Mas os rótulos do `status` (`WIP`, `Blocked`,
+`Done (last 5)`) são **hardcoded em inglês** — o bloco `status` do i18n só tem `description`.
+Usar `Inventário` misturaria idiomas. Decidido: **`Inventory`**, em inglês, e i18n do `status`
+fica como candidato próprio. Comunicado a KG.
+
+### Estrutura — com ML de reconciliação PRÉ-ALOCADO
+
+Wave 1 (3 MLs paralelos) → **Wave 2 de reconciliação** → Wave 3 de barreira.
+
+A Wave 2 não é contingência: nos ciclos anteriores deste projeto os três MLs paralelos divergiram
+**todas as vezes** — em fonte de dado, em texto de mensagem, e em raio de alcance. Aqui a exigência
+é saída **byte-idêntica**, o alvo mais sensível até agora. Um executor **único** nos 3 CLIs.
+
+---
+
 ## Sessão 2026-08-02 — Zeus (pontos 2 e 3 da fila: backticks + mensagem do validate) — CONCLUÍDO
 
 **Branch:** `fix/backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python`
