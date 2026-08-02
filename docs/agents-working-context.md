@@ -4,6 +4,61 @@
 
 ---
 
+## Sessão 2026-08-02 — Zeus (parser de config por biblioteca YAML) — INÍCIO
+
+**Branch:** `refactor/substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis`
+PR #105 mergeado; `origin/main` em `909e2b5`; fila zerada antes de começar.
+
+### Pedido
+
+KG: "não podemos seguir sem corrigir sabendo de um bug". Os parsers artesanais são subconjunto de
+YAML — quatro defeitos silenciosos em dois dias, cada um corrigido pontualmente, mas listas
+aninhadas inline, mapas inline e âncoras seguem sem suporte e **sem aviso**.
+
+### A medição que redefiniu o trabalho — feita ANTES de escrever código
+
+Adotar bibliotecas **sem mais nada** não resolve: **troca** a divergência artesanal por
+divergência de **schema**.
+
+| Entrada | Go `yaml.v3` | Python `PyYAML` |
+|---|---|---|
+| `yes` | `"yes"` string | **`True` bool** |
+| `010` | **`8` int (octal)** | **`8` int (octal)** |
+| `2026-08-02` | **`time.Time`** | **`datetime.date`** |
+
+PyYAML é YAML **1.1**; `yaml.v3` é 1.2. **Go e Python divergem entre si** em `yes`.
+
+Impacto concreto: `lenient_until` é `string // date string YYYY-MM-DD` (`config.go:24`) e
+**quebraria no dia 1**. `wip_limit: 010` viraria **8**, não 10.
+
+**A decisão central passou a ser a normalização para string na fronteira**, não a adoção da
+biblioteca. Sem ela, três bibliotecas dão três resultados para o mesmo arquivo.
+
+### Lacuna declarada, não presumida
+
+**O Node não foi medido** — sem rede para instalar `js-yaml`/`yaml`. Em vez de escrever
+comportamento suposto no ADR, virou **ML-0A**: uma wave só de medição, antes da implementação.
+Escolher a biblioteca depende de dado que ainda não existe.
+
+### Fronteira de escopo fixada
+
+**O parser de frontmatter fica FORA.** É separado do config; convertê-lo aplicaria coerção de
+data em **todo** campo `date:` de **todo** ADR e REQ — risco muito maior. Está no escopo negativo.
+
+### Estrutura
+
+ML-0A (medir Node) → ML-1A (implementar, **executor único** nos 3) → ML-2A (barreira).
+
+Executor único de novo: no ciclo anterior foi o primeiro multi-CLI sem divergência nem
+reconciliação. Aqui o alvo é mais difícil — semântica idêntica entre três bibliotecas
+**diferentes**.
+
+**Maior risco:** fidelidade textual. `time.Time` de volta a `2026-08-02` e `8` de volta a `010`
+são irreversíveis **depois** da coerção. Se a biblioteca perder a forma original, a normalização
+tem de acontecer antes — lendo o nó bruto. Está escrito como contrato no roadmap.
+
+---
+
 ## Sessão 2026-08-02 — Zeus (fila ZERADA: lista YAML inline) — CONCLUÍDO
 
 Último item, fechado na mesma branch do PR #105 a pedido de KG — mergear e tagear de uma vez.

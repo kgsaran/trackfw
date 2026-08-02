@@ -71,3 +71,4 @@
 2026-08-02 15:13  ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md  wip → done
 2026-08-02 15:24  ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md  backlog → wip
 2026-08-02 16:16  ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md  wip → done
+2026-08-02 16:32  ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md  backlog → wip
