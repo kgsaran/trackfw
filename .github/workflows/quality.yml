@@ -129,6 +129,15 @@ jobs:
           python-version: "3.12"
       - run: npm ci --ignore-scripts
         working-directory: npm
+      # Instala o pacote (e suas dependências declaradas em pypi/pyproject.toml,
+      # ex. PyYAML) para que os scripts de paridade, que invocam o CLI Python a
+      # partir do código-fonte via PYTHONPATH, tenham as libs de runtime
+      # disponíveis. PYTHONPATH é preposto ao sys.path, então o código
+      # importado continua sendo o do repositório — só as deps de runtime vêm
+      # do pacote instalado. Mesmo padrão do job `python` (zero drift: nomes
+      # de dependência não são hardcodados aqui).
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install pypi/
       - run: scripts/check-cli-parity.sh
       - run: scripts/check-validate-parity.sh
       - run: scripts/check-static-assets.sh
