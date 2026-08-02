@@ -4,7 +4,7 @@
 
 ---
 
-## Sessão 2026-08-02 — Zeus (ponto 1: convergir o comando `status`) — INÍCIO
+## Sessão 2026-08-02 — Zeus (ponto 1: convergir o comando `status`) — CONCLUÍDO
 
 **Branch:** `feat/convergir-o-comando-status-dos-tres-clis-num-formato-unico`
 PR #104 mergeado; `origin/main` em `590cce8`; fila zerada antes de começar.
@@ -45,6 +45,45 @@ Wave 1 (3 MLs paralelos) → **Wave 2 de reconciliação** → Wave 3 de barreir
 A Wave 2 não é contingência: nos ciclos anteriores deste projeto os três MLs paralelos divergiram
 **todas as vezes** — em fonte de dado, em texto de mensagem, e em raio de alcance. Aqui a exigência
 é saída **byte-idêntica**, o alvo mais sensível até agora. Um executor **único** nos 3 CLIs.
+
+### Execução e fechamento
+
+Wave 1 (3 MLs paralelos) → **ML-2A reconciliação** → **ML-2B corretivo** → Wave 3 barreira.
+`make quality` exit 0; falsificação **65 → 69**.
+
+Os três CLIs produzem saída **byte-idêntica** em três cenários verificados: repositório real
+(749 B), fixture flat com `analyzing` e os 3 status de REQ, e fixture `by_agent`.
+
+### O ML de reconciliação pré-alocado se pagou — de novo
+
+Eu havia reservado a Wave 2 prevendo divergência, com base no histórico. Veio, e em dois níveis:
+
+- **ML-2A** — o Node tinha um `\n` extra. Meu handoff apontava `getStatus()` como origem; o
+  executor leu os três pontos de impressão e achou o real: `console.log()` em
+  `commands/status.js` somava `\n` ao que a string já trazia, enquanto Go usa `fmt.Print` e
+  Python `print(..., end="")`. Diagnóstico melhor que o meu. Achou também que o Python não tinha
+  `⚙ WIP by Squad` nem `⚠ Stale WIP`.
+- **ML-2B** — ele sinalizou o modo `by_agent` **sem decidir sozinho**. Fui medir: a saída do
+  Python não era só diferente, estava **errada** — listava nomes de estado como agentes e dizia
+  `WIP (0)` havendo 1. E a seção tinha sido **adicionada nesta wave**, não era pré-existente.
+  Divergência que nós introduzimos → corrigir, não diferir.
+
+### Autocorreção na barreira que vale carregar
+
+O primeiro braço de detecção do cenário `by_agent` corrompia a lista de agentes — o que derrubava
+o bloco `Inventory` inteiro e **mascarava** se a comparação pegava divergência na seção sob teste.
+A Ártemis detectou e trocou por corrupção que altera só o subdiretório lido no loop, isolando a
+seção. **É a diferença entre "o gate falhou" e "o gate falhou pelo motivo certo".**
+
+### FILA — pontos 1, 2 e 3 fechados. Dois itens novos, ambos criados por medição
+
+1. **Delimitador não pareado** (`ADR: "X.md'`) resolve em Go/Node e não no Python (PR #104).
+2. **Parser YAML do Python não trata lista inline** — com `agents: [zeus, apolo]` a ordem diverge
+   de Go/Node; com lista em bloco os três concordam. Causa raiz em `pypi/trackfw/config.py`,
+   **pré-existente** (não tocado neste ciclo) e com alcance além do `status`. As fixtures da
+   barreira usam lista em bloco de propósito, para não mascarar.
+
+Nenhum dos dois tem caso real no repositório.
 
 ---
 

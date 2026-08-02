@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-02
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-02-formato-unico-do-comando-status-nos-tres-clis.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md"
 ---
 
 # REQ: Convergir o comando status dos tres CLIs num formato unico
 
-> Date: 2026-08-02 | Status: Open
+> Date: 2026-08-02 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -28,7 +28,7 @@ Ao comparar, dois defeitos silenciosos do Python vieram junto:
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Os 3 CLIs produzem saída **byte-idêntica** para o mesmo projeto, no formato:
+- [x] **AC1** — Os 3 CLIs produzem saída **byte-idêntica** para o mesmo projeto, no formato:
 
 ```
 ── trackfw status ──────────────────────
@@ -50,21 +50,21 @@ Ao comparar, dois defeitos silenciosos do Python vieram junto:
 ────────────────────────────────────────
 ```
 
-- [ ] **AC2** — Os **seis** estados de roadmap são enumerados, incluindo `analyzing`. Teste com
+- [x] **AC2** — Os **seis** estados de roadmap são enumerados, incluindo `analyzing`. Teste com
       roadmap em `analyzing/` prova que ele **é contado** — antes não era.
-- [ ] **AC3** — REQs discriminadas por status real (`Open`, `Done`, `Closed`), não agrupadas.
+- [x] **AC3** — REQs discriminadas por status real (`Open`, `Done`, `Closed`), não agrupadas.
       Teste com um de cada.
-- [ ] **AC4** — A seção condicional `⏳ REQs blocked by not-accepted ADRs` passa a existir também
+- [x] **AC4** — A seção condicional `⏳ REQs blocked by not-accepted ADRs` passa a existir também
       no **Python**, com texto idêntico ao de Go/Node, incluindo o sufixo de status real por ADR.
-- [ ] **AC5** — Rótulos permanecem **hardcoded em inglês** (`Inventory`, não `Inventário`).
+- [x] **AC5** — Rótulos permanecem **hardcoded em inglês** (`Inventory`, não `Inventário`).
       **Não** passar a saída do `status` por i18n neste ciclo.
-- [ ] **AC6** — Nenhuma informação das duas visões originais é perdida.
-- [ ] **AC7** — `scripts/check-artifact-parity.sh` e `scripts/check-validate-parity.sh` passam.
-- [ ] **AC8** — Cenário de falsificação permanente comparando a saída do `status` dos 3 CLIs
+- [x] **AC6** — Nenhuma informação das duas visões originais é perdida.
+- [x] **AC7** — `scripts/check-artifact-parity.sh` e `scripts/check-validate-parity.sh` passam.
+- [x] **AC8** — Cenário de falsificação permanente comparando a saída do `status` dos 3 CLIs
       **contra um literal pinado** — não os três entre si, que passaria se todos derivassem
       juntos. Fixture com **roadmap em `analyzing/`** e **REQs `Open`/`Done`/`Closed`**, senão o
       cenário não discrimina os AC2 e AC3.
-- [ ] **AC9** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+- [x] **AC9** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
 
 ## Negative Scope (fora do escopo — NÃO fazer)
 
@@ -105,4 +105,4 @@ ADR: docs/adr/ADR-2026-08-02-formato-unico-do-comando-status-nos-tres-clis.md
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md

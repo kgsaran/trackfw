@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-02
 req: "docs/req/REQ-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Convergir o comando status dos tres CLIs num formato unico
 
-> Created: 2026-08-02 | Status: wip
+> Created: 2026-08-02 | Status: done
 
 ## Context
 
@@ -74,7 +74,7 @@ mudança. A **Wave 2 é um ML de reconciliação já previsto**, executado por *
 > Dependências: nenhuma. Arquivos disjuntos.
 
 ### ML-1A — CLI Go
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo
 **Arquivos afetados:** `internal/validator/validator.go` (`GetStatus`, ~701) + testes Go
 
@@ -89,7 +89,7 @@ mudança. A **Wave 2 é um ML de reconciliação já previsto**, executado por *
 - [ ] Não tocar em `npm/`, `pypi/`; não mexer em `validate`; não adicionar i18n
 
 ### ML-1B — CLI Node
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo
 **Arquivos afetados:** `npm/src/validator/index.js` (`getStatus`, ~1317, **async**) + testes Node
 
@@ -97,7 +97,7 @@ mudança. A **Wave 2 é um ML de reconciliação já previsto**, executado por *
 - [ ] Não tocar em `internal/`, `pypi/`
 
 ### ML-1C — CLI Python
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo
 **Arquivos afetados:** `pypi/trackfw/commands/status.py` + testes Python
 
@@ -115,7 +115,7 @@ e a seção condicional `⏳ REQs blocked by not-accepted ADRs`, que hoje não e
 > Dependências: **Wave 1 completa**
 
 ### ML-2A — Saída byte-idêntica nos 3
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo (executor **único**, deliberadamente)
 
 Comparar a saída dos 3 CLIs contra a **mesma** fixture e eliminar qualquer divergência de
@@ -123,9 +123,41 @@ espaçamento, alinhamento, pluralização ou ordem. Provar igualdade **rodando o
 diferenciando a saída** (`diff`/`od -c`), não comparando literais no código.
 
 **Acceptance criteria:**
-- [ ] `diff` das três saídas contra a mesma fixture: vazio
-- [ ] Divergências encontradas listadas no relatório, com a decisão tomada em cada uma
-- [ ] Testes dos 3 CLIs verdes
+- [x] `diff` das três saídas: vazio no repositório real (749 B), na fixture flat e na `by_agent`
+- [x] Divergências listadas com decisão em cada uma
+- [x] Testes dos 3 CLIs verdes
+
+**Diagnóstico melhor que o do handoff:** eu apontei `getStatus()` como origem do `\n` extra do
+Node. Ele leu os três pontos de impressão e achou o real: `console.log()` em
+`npm/src/commands/status.js` adicionava `\n` **por cima** do que a string já trazia, enquanto Go
+usa `fmt.Print` e Python `print(..., end="")`. Corrigiu na camada de impressão, preservando
+`getStatus()` idêntica às irmãs — o que importa para o gate de literal pinado da Wave 3.
+
+**Achou também** que o Python não tinha `⚙ WIP by Squad` nem `⚠ Stale WIP`, que Go e Node já
+exibiam. Acrescentou usando helpers existentes.
+
+---
+
+### ML-2B — Corretivo: `by_agent` do Python estava errado
+**Status:** ✅ concluído (auditado 2026-08-02)
+**Agente:** Apolo
+
+O ML-2A sinalizou divergência no modo `by_agent` **sem decidir sozinho** — comportamento certo.
+Fui medir, e não era só diferença de formato: **a saída do Python estava errada.**
+
+```
+Go/Node:            Python:
+⚙ WIP by Agent      ⚙ Roadmaps by Agent
+  [zeus] WIP (1)       backlog:   (empty)   ← nome de ESTADO como se fosse agente
+    R-a.md             done:      (empty)
+(omitem as flat)       zeus:   wip=1
+                    🔄 WIP (0)              ← ERRADO: existe 1 em wip
+```
+
+E a seção `⚙ Roadmaps by Agent` do Python **foi adicionada nesta wave** — não existia em
+`origin/main`. Divergência que **nós** introduzimos, então corrigir, não diferir.
+
+Alinhado a Go/Node (2 de 3 concordam e a saída deles é coerente). Verificado byte-a-byte.
 
 ---
 
@@ -133,7 +165,7 @@ diferenciando a saída** (`diff`/`od -c`), não comparando literais no código.
 > Dependências: **Wave 2 aprovada**
 
 ### ML-3A — Paridade e seam
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Ártemis
 
 **Ações:**
@@ -146,8 +178,16 @@ diferenciando a saída** (`diff`/`od -c`), não comparando literais no código.
 5. Contador e linha final atualizados.
 
 **Acceptance criteria:**
-- [ ] Gates passam; `make quality` exit 0
-- [ ] 65 cenários herdados confirmados
-- [ ] Cenário novo com fixture discriminante; provado não vacuoso
-- [ ] Contador atualizado
-- [ ] `git status --porcelain` sem resíduo
+- [x] Gates passam; `make quality` exit 0
+- [x] 65 cenários herdados confirmados — rodados **antes** de tocar no script e depois
+- [x] **Dois** cenários novos (flat e `by_agent`); contador **65 → 67**
+- [x] Provados não vacuosos
+- [x] `git status --porcelain` mostra só o script
+
+**Autocorreção que vale registrar:** o primeiro braço de detecção do cenário `by_agent`
+corrompia a lista de agentes, o que derrubava o bloco `Inventory` inteiro (`Roadmaps 0`) e
+**mascarava** se a comparação estava mesmo pegando divergência no corpo de `⚙ WIP by Agent`.
+Ela detectou e trocou por uma corrupção que altera **apenas** o subdiretório lido no loop por
+agente — deixando o `Inventory` idêntico e isolando a seção sob teste.
+
+É a diferença entre "o gate falhou" e "o gate falhou **pelo motivo certo**".

@@ -1977,4 +1977,209 @@ else
   exit 1
 fi
 
-echo "Falsification checks passed (all 65 scenarios, 14 gates + 3 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), 3 CLIs — proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 30 — `trackfw status`: bloco 📊 Inventory byte-idêntico nos 3 CLIs
+# no modo flat, com fixture DISCRIMINANTE (roadmap em analyzing/ + REQs
+# Open/Done/Closed) — prova ROADMAP-2026-08-02-convergir-o-comando-status-
+# dos-tres-clis-num-formato-unico (ML-3A), AC2 (analyzing contado, antes
+# omitido em 5 de 6 pontos de enumeração no Python) e AC3 (REQs
+# discriminadas por status real, antes Done/Closed agrupados no Python).
+#
+# O repositório real deste projeto tem "analyzing 0" — não exercitaria a
+# correção principal. A fixture PRECISA ter >=1 roadmap em analyzing/ e as
+# 3 combinações de status de REQ, senão o cenário não discrimina nada.
+#
+# Mesmo padrão dos Cenários 28/29: compara contra um LITERAL PINADO, não os
+# 3 CLIs entre si — um diff três-a-três passaria se todos derivassem juntos
+# do mesmo bug (ex: todos omitindo analyzing), ou se todos imprimissem
+# vazio.
+#
+# Corrompe a IMPLEMENTAÇÃO (Go: a lista de estados enumerados em
+# inventoryBlock), nunca a asserção — mesmo padrão dos Cenários
+# 14/16/17/20/21/24/25/26/27/28/29.
+# ---------------------------------------------------------------------------
+
+# REQ mínima com status controlado — só o frontmatter importa para o bloco
+# Inventory (contagem por status), mas o corpo segue o mesmo esqueleto das
+# demais fixtures de REQ do harness (write_req_done_fixture etc.).
+write_req_status_fixture() {
+  local dest=$1 status=$2 title=$3
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: $status
+date: 2026-08-02
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: $title
+
+> Date: 2026-08-02 | Status: $status
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] item
+
+## Linked ADR
+ADR:
+
+## Linked Roadmap
+Roadmap:
+EOF
+}
+
+# Roadmap mínimo com status controlado, para popular um estado específico
+# (ex: analyzing/) na contagem do bloco Inventory.
+write_roadmap_state_fixture() {
+  local dest=$1 status=$2 title=$3
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: $status
+date: 2026-08-02
+---
+
+# Roadmap: $title
+
+> Status: $status
+EOF
+}
+
+S30_PROJECT="$WORK/s30-status-project"
+scaffold_adr_req_project "$S30_PROJECT"
+write_req_status_fixture "$S30_PROJECT/docs/req/REQ-open.md" "Open" "open fixture"
+write_req_status_fixture "$S30_PROJECT/docs/req/REQ-done.md" "Done" "done fixture"
+write_req_status_fixture "$S30_PROJECT/docs/req/REQ-closed.md" "Closed" "closed fixture"
+write_roadmap_state_fixture "$S30_PROJECT/docs/roadmaps/analyzing/ROADMAP-analyzing.md" "analyzing" "analyzing fixture"
+
+S30_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        3  (1 Open · 1 Done · 1 Closed)\n   Roadmaps    1\n     backlog 0 · analyzing 1 · wip 0\n     blocked 0 · done 0 · abandoned 0\n\n🔄 WIP (0)\n\n❌ Blocked (0)\n\n✅ Done (last 5)\n\n────────────────────────────────────────\n'
+
+# --- prova positiva: os 3 CLIs, contra o literal pinado ---------------------
+s30_go_out=$(cd "$S30_PROJECT" && "$T27_GO_BIN" status)$'\n'
+s30_node_out=$(cd "$S30_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
+s30_python_out=$(cd "$S30_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+
+if [[ "$s30_go_out" == "$S30_EXPECTED" && "$s30_node_out" == "$S30_EXPECTED" && "$s30_python_out" == "$S30_EXPECTED" ]]; then
+  echo "OK   [falsify/status-inventory/baseline-byte-identical-and-pinned]"
+else
+  echo "FAIL [falsify/status-inventory/baseline-byte-identical-and-pinned]: esperava '$S30_EXPECTED' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s30_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s30_node_out")" >&2
+  echo "  python: $(printf '%q' "$s30_python_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Go reverte a enumeração de analyzing (5 de 6 -------
+# estados) — reproduz o defeito histórico do Python pré-Wave-1 num CLI
+# concreto e prova que a comparação byte-a-byte reprova a omissão.
+T30C_GO_MOD="$WORK/s30-corrupt-go"
+mkdir -p "$T30C_GO_MOD/cmd" "$T30C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T30C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T30C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T30C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T30C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T30C_GO_MOD/internal/validator/validator.go" \
+  'states := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}' \
+  'states := []string{"backlog", "wip", "blocked", "done", "abandoned"}' \
+  "s30-go"
+
+T30C_GO_BIN="$WORK/s30-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T30C_GO_BIN")"
+build_go_or_fail "setup-s30-go-corrupt-build" "$T30C_GO_MOD" "$T30C_GO_BIN"
+
+s30c_go_out=$(cd "$S30_PROJECT" && "$T30C_GO_BIN" status)$'\n'
+if [[ "$s30c_go_out" != "$S30_EXPECTED" ]]; then
+  echo "OK   [falsify/status-inventory/go-detects-analyzing-omission]"
+else
+  echo "FAIL [falsify/status-inventory/go-detects-analyzing-omission]: enumeração de analyzing revertida mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Cenário 31 — `trackfw status` no modo `by_agent`: bloco 📊 Inventory +
+# "⚙ WIP by Agent" byte-idênticos nos 3 CLIs, contra literal pinado.
+#
+# Foi exatamente no by_agent que o Python divergiu historicamente — a seção
+# listava os NOMES DE ESTADO (backlog/wip/blocked/...) como se fossem
+# agentes, em vez de agregar por agente configurado. check-artifact-parity.sh
+# e check-validate-parity.sh não cobrem `status`; nenhum gate de paridade
+# existente comparava os 3 CLIs nesse modo — por isso este cenário próprio.
+#
+# `agents:` em lista de BLOCO (não flow-style `[apolo, zeus]`) — o parser
+# YAML leve do Python (pypi/trackfw/config.py) não trata flow-style, e isso
+# é um defeito PRÉ-EXISTENTE e distinto do `status` (não corrigido aqui, já
+# reportado para fila própria). Lista em bloco evita acoplar este cenário a
+# esse defeito conhecido.
+# ---------------------------------------------------------------------------
+
+S31_PROJECT="$WORK/s31-status-by-agent-project"
+mkdir -p "$S31_PROJECT/docs/adr" "$S31_PROJECT/docs/req"
+mkdir -p "$S31_PROJECT/docs/roadmaps/apolo"/{backlog,analyzing,wip,blocked,done,abandoned}
+mkdir -p "$S31_PROJECT/docs/roadmaps/zeus"/{backlog,analyzing,wip,blocked,done,abandoned}
+cat > "$S31_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: by_agent
+agents:
+- apolo
+- zeus
+EOF
+# zeus tem roadmap em analyzing/ mas NENHUM em wip/ — discriminante
+# deliberado: prova que o bloco Inventory agrega através de TODOS os
+# agentes (Roadmaps total = 2, analyzing 1 · wip 1), enquanto a seção
+# "⚙ WIP by Agent" só lista quem tem wip não-vazio (só [apolo] aparece).
+write_roadmap_state_fixture "$S31_PROJECT/docs/roadmaps/apolo/wip/ROADMAP-apolo-wip.md" "wip" "apolo wip fixture"
+write_roadmap_state_fixture "$S31_PROJECT/docs/roadmaps/zeus/analyzing/ROADMAP-zeus-analyzing.md" "analyzing" "zeus analyzing fixture"
+
+S31_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        0  (0 Open · 0 Done · 0 Closed)\n   Roadmaps    2\n     backlog 0 · analyzing 1 · wip 1\n     blocked 0 · done 0 · abandoned 0\n\n⚙ WIP by Agent\n  [apolo] WIP (1)\n    ROADMAP-apolo-wip.md\n\n────────────────────────────────────────\n'
+
+s31_go_out=$(cd "$S31_PROJECT" && "$T27_GO_BIN" status)$'\n'
+s31_node_out=$(cd "$S31_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
+s31_python_out=$(cd "$S31_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+
+if [[ "$s31_go_out" == "$S31_EXPECTED" && "$s31_node_out" == "$S31_EXPECTED" && "$s31_python_out" == "$S31_EXPECTED" ]]; then
+  echo "OK   [falsify/status-inventory-by-agent/baseline-byte-identical-and-pinned]"
+else
+  echo "FAIL [falsify/status-inventory-by-agent/baseline-byte-identical-and-pinned]: esperava '$S31_EXPECTED' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s31_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s31_node_out")" >&2
+  echo "  python: $(printf '%q' "$s31_python_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Python corrompe SÓ o subdiretório lido pelo loop de
+# listagem por agente (wip → backlog), deixando a agregação do Inventory
+# (_roadmap_counts_by_agent/totals, função separada) intacta. Isolado desta
+# forma porque um swap de `agents` inteiro (ex: por _ROADMAP_STATES, o bug
+# histórico literal) já derruba o bloco Inventory sozinho — a asserção
+# passaria mesmo que o corpo da seção "⚙ WIP by Agent" nunca fosse
+# comparado byte-a-byte, mascarando exatamente o que este cenário promete
+# cobrir. Com o Inventory permanecendo idêntico ao pinado, a única forma da
+# reprovação abaixo passar é a comparação byte-a-byte ter de fato pego a
+# divergência na seção "⚙ WIP by Agent" (a linha "[apolo] WIP (1)" some).
+T31C_PY="$WORK/s31-corrupt-python"
+mkdir -p "$T31C_PY"
+cp -r "$ROOT_DIR/pypi" "$T31C_PY/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/commands/status.py" "$T31C_PY/pypi/trackfw/commands/status.py" \
+  '            agent_wip = _list_files(os.path.join(roadmap_dir, agent, "wip"))' \
+  '            agent_wip = _list_files(os.path.join(roadmap_dir, agent, "backlog"))' \
+  "s31-python"
+
+s31c_python_out=$(cd "$S31_PROJECT" && env PYTHONPATH="$T31C_PY/pypi" python3 -m trackfw status)$'\n'
+if [[ "$s31c_python_out" != "$S31_EXPECTED" ]]; then
+  echo "OK   [falsify/status-inventory-by-agent/python-detects-wip-by-agent-body-drift]"
+else
+  echo "FAIL [falsify/status-inventory-by-agent/python-detects-wip-by-agent-body-drift]: subdiretório do loop por agente trocado mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+
+echo "Falsification checks passed (all 67 scenarios, 14 gates + 3 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection) — proved non-vacuous)"
