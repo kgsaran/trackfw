@@ -240,23 +240,30 @@ class TestStatusFlat(unittest.TestCase):
     def test_status_flat_conta_adrs(self):
         """Conta 3 ADRs corretamente."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertIn("ADRs:      3", out)
+        self.assertIn("ADRs        3", out)
 
     def test_status_flat_conta_reqs(self):
-        """Conta 3 REQs (2 Open, 1 Closed)."""
+        """Conta 3 REQs (2 Open, 1 Closed) — discriminação Open/Done/Closed."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertIn("REQs:      3", out)
-        self.assertIn("2 Open", out)
-        self.assertIn("1 Closed", out)
+        self.assertIn("REQs        3", out)
+        self.assertIn("2 Open · 0 Done · 1 Closed", out)
 
     def test_status_flat_conta_roadmaps(self):
-        """Conta roadmaps por estado."""
+        """Conta roadmaps por estado, incluindo analyzing (0 neste fixture)."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertIn("backlog:  5", out)
-        self.assertIn("wip:      1", out)
-        self.assertIn("blocked:  0", out)
-        self.assertIn("done:     23", out)
-        self.assertIn("abandoned: 2", out)
+        self.assertIn("backlog 5 · analyzing 0 · wip 1", out)
+        self.assertIn("blocked 0 · done 23 · abandoned 2", out)
+        self.assertIn("Roadmaps    31", out)
+
+    def test_status_flat_tem_moldura_e_secoes(self):
+        """Formato consolidado: moldura, Inventory, WIP, Blocked, Done."""
+        out = _status_cmd.get_status(cwd=self.tmp)
+        self.assertIn("── trackfw status ──", out)
+        self.assertIn("────────────────────────────────────────", out)
+        self.assertIn("📊 Inventory", out)
+        self.assertIn("🔄 WIP (1)", out)
+        self.assertIn("❌ Blocked (0)", out)
+        self.assertIn("✅ Done (last 5)", out)
 
 
 # ---------------------------------------------------------------------------
@@ -297,29 +304,38 @@ class TestStatusByAgent(unittest.TestCase):
         _config.reset()
 
     def test_status_by_agent_breakdown(self):
-        """Modo by_agent exibe seção 'Roadmaps (by agent):' com dados por agente."""
+        """Modo by_agent exibe a seção '⚙ WIP by Agent' — espelha GetStatus() em
+        internal/validator/validator.go e getStatus() em npm/src/validator/index.js.
+        Reescrito no ML-2B: a seção antiga '⚙ Roadmaps by Agent' misturava nomes de
+        estado (backlog/done/...) com nomes de agente e mantinha as seções flat
+        zeradas — divergência corrigida alinhando Python a Go/Node."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertIn("by agent", out.lower(),
-                      "Deve conter seção by agent")
+        self.assertIn("⚙ WIP by Agent", out)
         self.assertIn("zeus", out)
-        self.assertIn("apolo", out)
+        # As seções flat não se aplicam no modo by_agent e devem ser omitidas,
+        # tal como em Go/Node.
+        self.assertNotIn("🔄 WIP (", out)
+        self.assertNotIn("❌ Blocked (", out)
+        self.assertNotIn("✅ Done (last 5)", out)
 
     def test_status_by_agent_totais(self):
-        """Totais agregados: wip=1, done=15."""
+        """Totais agregados no bloco Inventory: wip=1, done=15."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertIn("wip:      1", out)
-        self.assertIn("done:     15", out)
+        self.assertIn("wip 1", out)
+        self.assertIn("done 15", out)
 
     def test_status_by_agent_zeus_wip(self):
-        """zeus deve aparecer com wip=1."""
+        """zeus tem wip=1 e deve aparecer em '[zeus] WIP (1)' listando o arquivo."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        # Zeus tem wip=1 e done=10
-        self.assertRegex(out, r"zeus.*wip=1")
+        self.assertRegex(out, r"\[zeus\] WIP \(1\)")
+        self.assertIn("rm-1.md", out)
 
-    def test_status_by_agent_apolo_done(self):
-        """apolo deve aparecer com done=5."""
+    def test_status_by_agent_apolo_sem_wip_nao_listado(self):
+        """apolo tem wip=0 — não deve aparecer na seção '⚙ WIP by Agent', pois
+        Go/Node só listam agentes com wip > 0 (GetStatus, validator.go linhas
+        774-782). apolo só tem roadmaps em done/, que não é exibido por agente."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertRegex(out, r"apolo.*done=5")
+        self.assertNotIn("apolo", out)
 
 
 class TestAnalyzingStateNoFolderStatusViolation(unittest.TestCase):

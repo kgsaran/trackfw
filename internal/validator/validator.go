@@ -698,10 +698,65 @@ func ValidateTagged() (violations []TaggedMsg, warnings []TaggedMsg, err error) 
 	return
 }
 
+// inventoryBlock monta a seção "📊 Inventory" exibida no topo de `trackfw status`,
+// somando o total de ADRs, REQs (discriminadas por status real) e roadmaps (pelos
+// 6 estados de pasta, incluindo analyzing — antes ausente de qualquer contagem).
+// Roadmaps são somados via resolveStateDirs, que já resolve namespacing flat/by_agent,
+// para que a contagem funcione igual nos dois modos.
+func inventoryBlock(cfg config.ProjectConfig) string {
+	var sb strings.Builder
+
+	adrCount := 0
+	for _, adrDir := range cfg.ADRDirs {
+		adrCount += len(walkADRFilePaths(adrDir))
+	}
+
+	reqFiles := resolveREQFiles(cfg)
+	var reqOpen, reqDone, reqClosed int
+	for _, p := range reqFiles {
+		content, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		switch strings.ToLower(reqStatusValue(string(content))) {
+		case "open":
+			reqOpen++
+		case "done":
+			reqDone++
+		case "closed":
+			reqClosed++
+		}
+	}
+
+	states := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+	roadmapCounts := make(map[string]int, len(states))
+	roadmapTotal := 0
+	for _, state := range states {
+		total := 0
+		for _, dir := range resolveStateDirs(cfg, state) {
+			entries, _ := listDir(dir)
+			total += len(entries)
+		}
+		roadmapCounts[state] = total
+		roadmapTotal += total
+	}
+
+	sb.WriteString("\n📊 Inventory\n")
+	sb.WriteString(fmt.Sprintf("   %-12s%d\n", "ADRs", adrCount))
+	sb.WriteString(fmt.Sprintf("   %-12s%d  (%d Open · %d Done · %d Closed)\n", "REQs", len(reqFiles), reqOpen, reqDone, reqClosed))
+	sb.WriteString(fmt.Sprintf("   %-12s%d\n", "Roadmaps", roadmapTotal))
+	sb.WriteString(fmt.Sprintf("     backlog %d · analyzing %d · wip %d\n", roadmapCounts["backlog"], roadmapCounts["analyzing"], roadmapCounts["wip"]))
+	sb.WriteString(fmt.Sprintf("     blocked %d · done %d · abandoned %d\n", roadmapCounts["blocked"], roadmapCounts["done"], roadmapCounts["abandoned"]))
+
+	return sb.String()
+}
+
 func GetStatus() (string, error) {
 	cfg := config.Load()
 	var sb strings.Builder
 	sb.WriteString("── trackfw status ──────────────────────\n")
+
+	sb.WriteString(inventoryBlock(cfg))
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		agents := cfg.Agents
@@ -1690,6 +1745,33 @@ func reqStatusIsOpen(content string) bool {
 		}
 	}
 	return false
+}
+
+// reqStatusValue extrai o valor bruto do campo Status de uma REQ, priorizando o
+// frontmatter (status: ...) e caindo para o cabeçalho "| Status: ... |" como fallback.
+// Usada pelo bloco de Inventory de GetStatus para discriminar Open/Done/Closed —
+// mesmo padrão de leitura que reqStatusIsOpen/reqStatusIsDone, mas devolvendo o
+// literal em vez de um bool para uma única string específica.
+func reqStatusValue(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		key, val, ok := strings.Cut(trimmed, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(key), "status") {
+			v := strings.Trim(strings.TrimSpace(val), `"'`)
+			if v != "" {
+				return v
+			}
+			continue
+		}
+		if idx := strings.Index(trimmed, "| Status: "); idx >= 0 {
+			rest := trimmed[idx+len("| Status: "):]
+			if pipeIdx := strings.Index(rest, " |"); pipeIdx >= 0 {
+				rest = rest[:pipeIdx]
+			}
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
 }
 
 // folderToExpectedStatus mapeia o nome da pasta para os valores de status aceitos.

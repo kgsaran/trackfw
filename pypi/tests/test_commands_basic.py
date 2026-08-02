@@ -190,7 +190,7 @@ class TestRealCommands(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             result = run_trackfw("status", cwd=tmpdir)
         self.assertEqual(result.returncode, 0)
-        self.assertIn("Governance Status", result.stdout)
+        self.assertIn("📊 Inventory", result.stdout)
 
     def test_metrics_uses_real_handler(self):
         with tempfile.TemporaryDirectory() as tmpdir:
