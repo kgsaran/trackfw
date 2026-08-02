@@ -4,6 +4,51 @@
 
 ---
 
+## Sessão 2026-08-02 — Zeus (CI verde + release v6.2.0) — CONCLUÍDO
+
+PR #106 mergeado; `origin/main` em `c46598a`; fila com um item de decisão de ADR.
+
+### CI quebrou — e o diagnóstico foi único
+
+Adicionar o **PyYAML**, primeira dependência de runtime de um pacote que era zero-dep, expôs que
+**nenhum job do CI instalava dependências Python** — nunca houve nenhuma. `make quality` passava
+localmente porque a máquina tinha PyYAML transitivamente.
+
+Correções, ambas deixando os gates **mais** rigorosos:
+
+- jobs `python` e `parity`: `pip install pypi/`, derivando do `pyproject.toml` em vez de hardcodar
+  `PyYAML` no workflow — nova dependência futura entra sem editar o CI
+- `package-smoke`: removido `--no-deps`. Era correto quando o pacote era zero-dep; agora testaria
+  configuração inexistente. Sem ele, o gate **também** valida a declaração de dependências.
+
+### Erro meu de processo, que rendeu uma rodada extra
+
+Na primeira rodada corrigi **os dois jobs vermelhos** e empurrei. Mas o `parity` estava
+**skipped** — dependia dos que falhavam — e nunca tinha sido exercitado. Apareceu vermelho só na
+segunda rodada, pela mesma causa.
+
+Deveria ter varrido o workflow inteiro de saída, não tratado os sintomas visíveis. **Job skipped
+esconde tanto quanto gate vacuoso** — mesma lição que se repetiu a sessão toda, em outra roupa.
+Na segunda rodada varri os 7 jobs antes de corrigir; não houve terceira.
+
+### Armadilha de ambiente na verificação da tag
+
+Ao conferir a paridade de versão, o Python reportou **6.1.0** enquanto Go e Node reportavam 6.2.0.
+Não era bug do bump: o `pip install pypi/` que **eu mesmo** rodei ao validar o CI deixou o pacote
+instalado, e `importlib.metadata.version()` lê a **distribuição instalada**, não o fonte.
+
+Confirmado em venv limpo: instalado corretamente, reporta 6.2.0. Desinstalei o resíduo local.
+
+**Vale lembrar:** `trackfw version` no Python reflete o pacote instalado. Ao verificar bump a
+partir do fonte, garantir que não há instalação obsoleta no ambiente.
+
+### Release v6.2.0
+
+Seis commits desde a `v6.1.0` (#101–#106), dois `feat`, um `fix`, um `refactor`, zero breaking →
+minor. A adição do PyYAML **não** é breaking: pip resolve na instalação.
+
+---
+
 ## Sessão 2026-08-02 — Zeus (parser de config por biblioteca YAML) — CONCLUÍDO
 
 **Branch:** `refactor/substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis`

@@ -10,6 +10,69 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.2.0] - 2026-08-02
+
+### Added
+
+- **Regra `adr_accepted_when_req_done`** (#103) — ADR não aceito referenciado por REQ `Done` passa
+  a ser violação (`error`). Fecha a lacuna que deixou um ADR em `Proposed` governar sete REQs
+  concluídas sem nenhum gate detectar. Introduz noção canônica de "ADR não aceito" cobrindo
+  `Draft` **e** `Proposed`, e com isso corrige a `blocked_by_draft_adr`, que era cega a `Proposed`
+  — ou seja, só funcionava para stubs gerados por `req new`, não para ADRs criados por `adr new`.
+- **Comando `status` unificado nos 3 CLIs** (#105) — Go/Node exibiam uma visão acionável e o
+  Python um inventário de contagens; agora os três produzem a **mesma** saída, somando as duas
+  visões. Inclui bloco `📊 Inventory` com ADRs, REQs discriminadas por status real
+  (`Open`/`Done`/`Closed`) e roadmaps pelos **seis** estados.
+
+### Fixed
+
+- **`analyzing` omitido na contagem do Python** (#105) — o comando `status` enumerava 5 dos 6
+  estados, em três pontos do código. Roadmap em `analyzing/` sumia da contagem, em silêncio.
+- **Backticks tornavam a referência invisível** (#104) — ``ADR: `docs/adr/X.md` `` produzia um token
+  que não terminava em `.md`, e a referência não era encontrada. 13 REQs do repositório usam essa
+  forma; três ficavam inalcançáveis por qualquer regra que dependesse do extrator.
+- **Python ignorava a própria chave de i18n** (#104) — `validate.ok` existia nos três locales, mas
+  o CLI Python imprimia `"✓ Governance OK"` hardcoded. Os três agora imprimem a mesma mensagem.
+- **Delimitador não pareado e ordenação do fallback de agentes** (#105) — `ADR: "X.md'` resolvia em
+  Go/Node e não no Python; e `_list_dirs` não ordenava, deixando a ordem dos agentes dependente da
+  ordem de criação no filesystem.
+- **Sequência YAML em bloco não indentada descartada por Go e Node** (#105) — `agents:\n- zeus` é
+  YAML válido, mas os dois tratavam linha sem indentação como top-level e **descartavam a lista em
+  silêncio**. O Python lia corretamente. Afetava `adr_dirs`, `agents`, `acceptance_markers` e
+  `link_fields`.
+- **Lista YAML inline descartada pelos três** (#105) — `agents: [zeus, apolo]` era ignorada sem
+  aviso.
+- **Config malformada era descartada em silêncio** (#106) — passa a falhar com mensagem clara e
+  exit não-zero, idênticos nos três CLIs. Config ausente, vazia ou só com comentários continua
+  caindo nos defaults, sem erro.
+- **`validate` contornava o carregador de config** (#106) — lia `trackfw.yaml` com leitores
+  artesanais próprios. Com `wip_limit: "3"`, o carregador lia 3 e o `validate` reportava 1.
+
+### Changed
+
+- **Parser de config passa a usar biblioteca YAML** (#106) — `gopkg.in/yaml.v3` (Go, promovida de
+  indirect), `yaml` 2.x (Node) e **`PyYAML` (Python — primeira dependência de runtime do pacote,
+  que era zero-dep)**. Substitui ~1085 linhas de parser artesanal. Qualquer YAML válido passa a
+  ser aceito, incluindo mapas inline, listas aninhadas e âncoras.
+
+  As três bibliotecas divergem em coerção de tipo — `yes` vira booleano só no Python, `010` vira
+  `8` em Go/Python e `10` no Node, datas viram tipo data em Go/Python. Por isso todo escalar é
+  **normalizado para string na fronteira do parser**, lendo o nó bruto: os consumidores existentes
+  não mudam e os três CLIs concordam por construção.
+- **Remoção do parâmetro morto `roots`** de `referenceExists` nos 3 CLIs (#104) — era recebido e
+  nunca usado, enquanto três chamadores em cada CLI o passavam de boa-fé.
+
+### Internal
+
+- Proteção de falsificação em CI ampliada de **24 para 92 cenários** em
+  `scripts/check-gates-falsify.sh`, cobrindo contratos gerador↔validador, paridade de saída entre
+  CLIs e coerção de schema YAML.
+- `scripts/check-validate-parity.sh` ganhou fixture violadora e guard de vacuidade por regra —
+  antes passava sem discriminar nada, porque o repositório não tinha artefato que violasse.
+- CI passa a instalar as dependências Python declaradas em `pypi/pyproject.toml` nos jobs `python`
+  e `parity`, e o smoke de pacote deixou de usar `--no-deps`, o que também valida a declaração de
+  dependências.
+
 ## [6.1.0] - 2026-08-01
 
 ### Added
