@@ -338,6 +338,82 @@ class TestStatusByAgent(unittest.TestCase):
         self.assertNotIn("apolo", out)
 
 
+class TestListDirsOrdena(unittest.TestCase):
+    """ML-1A — _list_dirs (status.py) deve ordenar como a irmã _list_files já
+    faz, alinhado a Go (sort.Strings) e Node (.sort())."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_list_dirs_ordena_subdirs_criados_fora_de_ordem(self):
+        # Criados fora de ordem alfabética de propósito.
+        _make_dirs(
+            os.path.join(self.tmp, "zeus"),
+            os.path.join(self.tmp, "apolo"),
+        )
+        result = _status_cmd._list_dirs(self.tmp)
+        self.assertEqual(result, ["apolo", "zeus"])
+
+
+class TestStatusByAgentFallbackSemAgentsConfigurados(unittest.TestCase):
+    """ML-1A — fixture by_agent SEM `agents:` no trackfw.yaml, portanto via
+    fallback de _get_agents/_list_dirs, com subdiretórios criados fora de
+    ordem alfabética. As 3 CLIs devem produzir a mesma ordem de agentes."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+        # trackfw.yaml SEM a chave "agents" — força o fallback de varredura
+        # de subdiretórios.
+        _make_file(
+            os.path.join(self.tmp, "trackfw.yaml"),
+            "roadmap_dir: docs/roadmaps\nroadmap_namespacing: by_agent\n",
+        )
+
+        # Subdiretórios de agente criados fora de ordem alfabética
+        # (zeus antes de apolo) para exercitar a ordenação do fallback.
+        roadmap_dir = os.path.join(self.tmp, "docs", "roadmaps")
+        for agent in ["zeus", "apolo"]:
+            for state in ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]:
+                d = os.path.join(roadmap_dir, agent, state)
+                _make_dirs(d)
+                if state == "wip":
+                    _make_file(os.path.join(d, "rm-1.md"), "# Roadmap\n")
+
+        _make_dirs(
+            os.path.join(self.tmp, "docs", "adr"),
+            os.path.join(self.tmp, "docs", "req"),
+        )
+
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_fallback_lista_agentes_em_ordem_alfabetica(self):
+        """_get_agents() via fallback (_list_dirs) devolve ['apolo', 'zeus'],
+        não a ordem de criação no filesystem ('zeus', 'apolo'). roadmap_dir é
+        resolvido contra self.tmp, espelhando cfg_local em get_status()."""
+        cfg = _config.load(self.tmp)
+        cfg["roadmap_dir"] = os.path.join(self.tmp, cfg.get("roadmap_dir", "docs/roadmaps"))
+        agents = _status_cmd._get_agents(cfg)
+        self.assertEqual(agents, ["apolo", "zeus"])
+
+    def test_fallback_ordena_saida_de_status(self):
+        """A seção '⚙ WIP by Agent' lista apolo antes de zeus, refletindo a
+        ordenação alfabética do fallback."""
+        out = _status_cmd.get_status(cwd=self.tmp)
+        pos_apolo = out.find("[apolo]")
+        pos_zeus = out.find("[zeus]")
+        self.assertGreater(pos_apolo, -1)
+        self.assertGreater(pos_zeus, -1)
+        self.assertLess(pos_apolo, pos_zeus)
+
+
 class TestAnalyzingStateNoFolderStatusViolation(unittest.TestCase):
     """Roadmap em analyzing/ com status: analyzing não deve gerar folder_status warning."""
 

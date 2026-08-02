@@ -224,6 +224,25 @@ def _git_last_modified_time(file_path: str):
     return None
 
 
+_REF_DELIMITERS = ("\"", "'", "`")
+
+
+def _strip_ref_delimiters(value: str) -> str:
+    """
+    Remove um delimitador (aspas duplas, simples ou backtick) de cada ponta,
+    independentemente, sem exigir par casado — alinhado a Go (strings.Trim
+    com cutset) e Node (regex de borda única). Uso contido ao caminho de
+    extração de referência (_extract_ref_path); não afeta
+    normalize_yaml_flat_value, que segue exigindo par casado para todo o
+    resto do frontmatter (contrato do PR #104).
+    """
+    if value and value[0] in _REF_DELIMITERS:
+        value = value[1:]
+    if value and value[-1] in _REF_DELIMITERS:
+        value = value[:-1]
+    return value
+
+
 def _extract_ref_path(content: str, field: str) -> str:
     """
     Extrai o caminho .md após 'field: valor' na mesma linha.
@@ -240,9 +259,7 @@ def _extract_ref_path(content: str, field: str) -> str:
                 return ""
             # Primeira "palavra" (antes de espaço)
             val = val.split()[0] if val.split() else ""
-            val = normalize_yaml_flat_value(val)
-            if len(val) >= 2 and val[0] == val[-1] == "`":
-                val = val[1:-1]
+            val = _strip_ref_delimiters(val)
             if val.endswith(".md"):
                 return val
     return ""

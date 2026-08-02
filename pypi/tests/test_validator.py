@@ -521,6 +521,35 @@ class TestValidatorImprovements(unittest.TestCase):
                 f"{rel_path}: ADR resolvido inesperado: {resolved!r}",
             )
 
+    def test_extract_ref_path_delimitador_nao_pareado(self):
+        """ML-1A — delimitador aberto com aspa dupla e fechado com aspa
+        simples (`ADR: "docs/adr/X.md'`) deve resolver como Go
+        (strings.Trim(v, "\\"'`")) e Node (regex de borda única): remove um
+        delimitador de cada ponta, mesmo sem par casado. Antes desta
+        correção, normalize_yaml_flat_value (que exige par casado) fazia o
+        Python devolver ''."""
+        from trackfw.validator import _extract_ref_path
+        content = "ADR: \"docs/adr/X.md'\n"
+        self.assertEqual(_extract_ref_path(content, "ADR"), "docs/adr/X.md")
+
+    def test_extract_ref_path_tabela_oito_entradas(self):
+        """ML-1A — tabela completa do ADR de convergência: os 8 casos devem
+        resolver de forma idêntica a Go/Node."""
+        from trackfw.validator import _extract_ref_path
+        casos = [
+            ("ADR: `docs/adr/X.md`", "docs/adr/X.md"),
+            ('ADR: "docs/adr/X.md"', "docs/adr/X.md"),
+            ("ADR: 'docs/adr/X.md'", "docs/adr/X.md"),
+            ("ADR: docs/adr/X.md", "docs/adr/X.md"),
+            ("ADR: `docs/adr/X.md` (prosa)", "docs/adr/X.md"),
+            ("ADR: \"docs/adr/X.md'", "docs/adr/X.md"),
+            ("ADR:", ""),
+            ("ADR: —", ""),
+        ]
+        for linha, esperado in casos:
+            with self.subTest(linha=linha):
+                self.assertEqual(_extract_ref_path(linha, "ADR"), esperado)
+
     def test_validate_ref_targets_exist_warning(self):
         """Ref a arquivo inexistente gera warning."""
         from trackfw import config as cfg_mod

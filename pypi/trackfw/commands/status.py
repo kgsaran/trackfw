@@ -40,7 +40,7 @@ def _list_dirs(path: str) -> list:
     """Retorna lista de subdiretórios em path. Retorna [] se não existir."""
     try:
         return [
-            name for name in os.listdir(path)
+            name for name in sorted(os.listdir(path))
             if os.path.isdir(os.path.join(path, name))
         ]
     except OSError:
