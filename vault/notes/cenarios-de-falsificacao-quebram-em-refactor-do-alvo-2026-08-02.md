@@ -63,4 +63,49 @@ Trocado por `sorted(..., reverse=True)`, que é determinístico em qualquer file
 depende de ambiente é cenário vacuoso intermitente — pior que cenário ausente, porque dá
 falsa confiança.
 
+## Segunda ocorrência — `set -euo pipefail` esconde o SEGUNDO cenário quebrado atrás do primeiro
+
+No ML-2A do ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-
+biblioteca-yaml-nos-tres-clis (a própria substituição por `yaml.v3`/`yaml`
+2.x/PyYAML descrita no título deste roadmap), os Cenários 34 E 35 tinham o MESMO
+sintoma: ambos corrompiam literais de um scanner linha-a-linha
+(`continuesOpenList` no 34, `splitTopLevelCommas` no 35) que a própria REQ
+eliminou por inteiro nos 3 CLIs — Wave 1 substituiu TODO o parsing manual por
+biblioteca real, então nenhum dos dois pontos de código sobreviveu.
+
+Rodar os 82 cenários herdados ANTES de editar (protocolo obrigatório) mostrou só
+UM erro: `[s34-go] expected exactly 1 occurrence... got 0` — porque
+`set -euo pipefail` faz o script abortar no PRIMEIRO `exit 1`, antes de chegar ao
+Cenário 35. Depois de consertar e reverificar o 34 isoladamente (script mínimo em
+scratch, sem rodar os 82 inteiros de novo), rodar a suíte COMPLETA revelou o
+34 verde mas o 35 quebrado pelo MESMO motivo.
+
+**Lição adicional**: depois de corrigir um cenário quebrado por refactor-do-alvo,
+rodar a suíte INTEIRA de novo antes de declarar "os herdados estão verdes" — não
+basta validar o cenário corrigido isoladamente. Um `set -euo pipefail` que aborta
+no primeiro erro pode estar escondendo mais de um cenário obsoleto atrás do
+primeiro; corrigir um e nunca rodar a suíte completa de novo deixa o segundo
+silenciosamente quebrado até a próxima vez que alguém rodar tudo do zero.
+
+## Terceira nuance — quando o mecanismo inteiro (não só um branch) foi eliminado, o braço de detecção perde seletividade
+
+Nos Cenários 28/28-como-descrito-acima, o retarget preservou a MESMA
+seletividade (corrompendo o ponto novo equivalente, ainda especializado no
+mesmo defeito). No 34/35 isso não foi possível: `continuesOpenList` (indentação)
+e `splitTopLevelCommas` (vírgula dentro de aspas) eram branches ESPECÍFICOS de
+um scanner artesanal — depois que a biblioteca YAML assumiu o parsing por
+inteiro, não existe mais NENHUM branch especializado nesses dois casos (a
+biblioteca trata ambos de forma genérica, sem código próprio para nenhum dos
+dois). O retarget, nesses dois casos, teve que subir um nível de abstração — de
+"corromper o branch que trata o caso específico" para "corromper a atribuição
+final do valor já parseado" (`cfg.Agents = items` / `cfg.agents = items` /
+`cfg["agents"] = items`). Isso preserva a INTENÇÃO operacional do cenário ("a
+fixture ainda usada continua sendo lida corretamente"), mas o braço de detecção
+deixa de provar a coisa especializada original — passa a provar só "a chave é
+lida", que é mais fraco, mas ainda genuíno (não vira `assert True`). Sinal para
+reconhecer esse caso: o retarget do Cenário 28 trocou uma função por outra
+equivalente; aqui não havia mais NENHUMA função equivalente para apontar —
+sintoma de que a mudança de wave anterior era estrutural (trocar o mecanismo
+inteiro), não um refactor local.
+
 Relacionado: `vault/notes/deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01.md`.

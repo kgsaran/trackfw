@@ -2389,6 +2389,31 @@ fi
 # em silêncio, caindo no fallback de varrer subdiretórios. O Python já lia
 # corretamente (referência).
 #
+# RETARGET (ML-2A, 2026-08-02, Ártemis): a Wave 1 do ROADMAP-substituir-os-
+# parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis substituiu o
+# scanner linha-a-linha do Go e do Node por gopkg.in/yaml.v3 / `yaml` 2.x —
+# os literais originais (`isListItem`/`continuesOpenList`) não existem mais;
+# rodar os 82 cenários herdados ANTES de editar (exigido pelo ML-2A) falhou
+# no setup deste cenário com "expected exactly 1 occurrence of pattern, got
+# 0", o sintoma descrito em vault/notes/cenarios-de-falsificacao-quebram-em-
+# refactor-do-alvo-2026-08-02.md. Diferença deste caso para o do vault: ali
+# havia um ponto de código NOVO equivalente para retargetar a corrupção
+# preservando a MESMA propriedade (suporte a backtick). Aqui não há mais
+# nenhum código que trate "sequência não-indentada" como caso especial — uma
+# biblioteca YAML de verdade não tem esse conceito, a fixture não-indentada é
+# só YAML válido comum. A corrupção foi retargetada para o ponto genérico
+# mais próximo que ainda preserva a intenção operacional do cenário — "a
+# lista `agents:` é lida, não descartada" — corrompendo a atribuição de
+# `cfg.Agents`/`cfg.agents` a partir do valor já parseado. Isso já NÃO prova
+# mais nada sobre indentação especificamente (yaml.v3/`yaml` tratam bloco
+# indentado e não-indentado de forma idêntica — não há mais um branch de
+# código que só dispara para um dos dois); prova que a leitura da chave
+# `agents:` (SEQUÊNCIA em bloco, incluindo a forma não-indentada que a
+# fixture já usa) ainda popula `cfg.Agents`, e que removê-la reproduz o
+# MESMO sintoma observável de antes (fallback devolve `zeus` extra) — a
+# fixture não-indentada permanece no cenário como o vestígio do caso
+# histórico original, mas o BRAÇO de detecção não é mais seletivo por
+# indentação.
 # Fixture discriminante: `agents:` em lista de bloco NÃO indentada,
 # configurando SÓ `apolo`, enquanto `docs/roadmaps/` no disco tem `apolo`
 # **e** `zeus` (zeus com roadmap em wip/). Os cenários existentes (ex. 31)
@@ -2447,7 +2472,9 @@ else
   exit 1
 fi
 
-# --- braço de detecção: Go reverte continuesOpenList para false ------------
+# --- braço de detecção: Go deixa de atribuir cfg.Agents a partir da lista --
+# lida (RETARGET — ver comentário no topo do Cenário 34: isListItem/
+# continuesOpenList não existem mais pós-yaml.v3)
 T34C_GO_MOD="$WORK/s34-corrupt-go"
 mkdir -p "$T34C_GO_MOD/cmd" "$T34C_GO_MOD/internal"
 cp -r "$ROOT_DIR/cmd/." "$T34C_GO_MOD/cmd/"
@@ -2456,8 +2483,8 @@ cp "$ROOT_DIR/go.mod" "$T34C_GO_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T34C_GO_MOD/go.sum"
 corrupt_literal \
   "$ROOT_DIR/internal/config/config.go" "$T34C_GO_MOD/internal/config/config.go" \
-  $'\t\tisListItem := strings.HasPrefix(trimmed, "- ")\n\t\tcontinuesOpenList := isListItem && (inADRDirs || inAgents || inAcceptanceMarkers)\n' \
-  $'\t\tcontinuesOpenList := false\n' \
+  $'\t\t\tcfg.Agents = items\n' \
+  $'\t\t\t_ = items\n' \
   "s34-go"
 
 T34C_GO_BIN="$WORK/s34-corrupt-go-bin/trackfw"
@@ -2466,7 +2493,7 @@ build_go_or_fail "setup-s34-go-corrupt-build" "$T34C_GO_MOD" "$T34C_GO_BIN"
 
 s34c_go_out=$(cd "$S34_PROJECT" && "$T34C_GO_BIN" status)$'\n'
 if [[ "$s34c_go_out" == "$S34_EXPECTED" ]]; then
-  echo "FAIL [falsify/config-unindented-agents/go-detects-list-discarded]: continuesOpenList revertido mas a comparação continuou passando (checagem vácua)" >&2
+  echo "FAIL [falsify/config-unindented-agents/go-detects-list-discarded]: cfg.Agents deixou de ser atribuido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
 if grep -qF "[zeus]" <<<"$s34c_go_out"; then
@@ -2477,18 +2504,19 @@ else
   exit 1
 fi
 
-# --- braço de detecção: Node reverte continuesOpenList para false ----------
+# --- braço de detecção: Node deixa de atribuir cfg.agents a partir da lista
+# lida (RETARGET — mesmo motivo do braço Go acima)
 T34C_N="$WORK/s34-corrupt-node"
 setup_npm_tree "$T34C_N"
 corrupt_literal \
   "$ROOT_DIR/npm/src/config/index.js" "$T34C_N/npm/src/config/index.js" \
-  $'    const isListItem = line.startsWith(\'- \');\n    const continuesOpenList = isListItem && (inAdrDirs || inAgents || inAcceptanceMarkers);\n' \
-  $'    const continuesOpenList = false\n' \
+  $'    if (items) cfg.agents = items;\n' \
+  $'    if (items) { /* no-op */ }\n' \
   "s34-node"
 
 s34c_node_out=$(cd "$S34_PROJECT" && node "$T34C_N/npm/bin/trackfw" status)$'\n'
 if [[ "$s34c_node_out" == "$S34_EXPECTED" ]]; then
-  echo "FAIL [falsify/config-unindented-agents/node-detects-list-discarded]: continuesOpenList revertido mas a comparação continuou passando (checagem vácua)" >&2
+  echo "FAIL [falsify/config-unindented-agents/node-detects-list-discarded]: cfg.agents deixou de ser atribuido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
 if grep -qF "[zeus]" <<<"$s34c_node_out"; then
@@ -2549,17 +2577,33 @@ fi
 #   - baseline: os 3 CLIs, contra o literal PINADO (capturado rodando os 3
 #     CLIs reais contra a fixture), byte-idênticos — `[ka, tsu] WIP (1)`
 #     aparece com o roadmap listado, Inventory Roadmaps total 1 (wip 1).
-#   - detecção: os 3 CLIs revertem, cada um em sua função
-#     `splitTopLevelCommas`/`_split_top_level_commas`, o ramo que detecta
-#     aspas (`case r == '"' || r == '\''`/`ch === '"' || ch === "'"`/
-#     `ch in ('"', "'")`) para uma condição sempre falsa — a vírgula deixa
-#     de ser tratada como "dentro de aspas" e volta a separar o item em
-#     dois. Prova, por asserção POSITIVA em duas frentes (saída diverge do
-#     pinado E o nome do roadmap desaparece), que a comparação capta a
-#     regressão pelo motivo certo — não por acaso.
+#   - detecção: originalmente revertia, em cada CLI, o ramo de detecção de
+#     aspas de `splitTopLevelCommas`/`_split_top_level_commas` (`case r ==
+#     '"' || r == '\''`/`ch === '"' || ch === "'"`/`ch in ('"', "'")`).
 #
-# Corrompe a IMPLEMENTAÇÃO (o ponto exato que trata aspas em
-# splitTopLevelCommas, introduzido por bc00010), nunca a asserção — mesmo
+# RETARGET (ML-2A, 2026-08-02, Ártemis): rodar os 82 cenários herdados ANTES
+# de editar (exigido pelo ML-2A) — depois de consertado o Cenário 34 (ver
+# comentário no topo dele) — revelou o MESMO sintoma aqui: a Wave 1 desta
+# REQ eliminou `splitTopLevelCommas`/`_split_top_level_commas` por inteiro
+# nos 3 CLIs (`grep -rn splitTopLevelCommas internal/ npm/src/ pypi/` não
+# encontra mais nada) — uma biblioteca YAML de verdade faz o parsing de
+# sequência em fluxo (incluindo vírgula dentro de aspas) nativamente, sem
+# precisar de scanner próprio. Não há mais um "ramo de detecção de aspas"
+# para reverter seletivamente — é a MESMA classe de obsolescência do
+# Cenário 34 (vault/notes/cenarios-de-falsificacao-quebram-em-refactor-do-
+# alvo-2026-08-02.md), desta vez mascarada porque `set -euo pipefail` fazia
+# o script abortar no Cenário 34 antes de alcançar este. Retargetado para o
+# mesmo ponto genérico usado no Cenário 34 (`cfg.Agents = items` /
+# `cfg.agents = items` / `cfg["agents"] = items` — a atribuição final a
+# partir do valor já parseado pela biblioteca). A fixture (vírgula dentro de
+# aspas) continua no cenário como vestígio do caso histórico original, mas o
+# braço de detecção deixou de ser seletivo por aspas — prova "a chave
+# `agents:` inline é lida", não mais "vírgula dentro de aspas
+# especificamente" (que agora é responsabilidade estrutural da biblioteca,
+# sem código próprio para corromper).
+#
+# Corrompe a IMPLEMENTAÇÃO (o ponto de atribuição final de `agents:`, não
+# mais `splitTopLevelCommas` — ver RETARGET acima), nunca a asserção — mesmo
 # padrão dos Cenários 14/16/17/20/21/24/25/26/27/28/29/30/31/32/33/34. Não
 # amplia o suporte YAML (mapas inline, listas aninhadas) — fora de escopo,
 # registrado no ADR.
@@ -2598,8 +2642,9 @@ else
   exit 1
 fi
 
-# --- braço de detecção: Go desativa o ramo de detecção de aspas em ---------
-# splitTopLevelCommas (a vírgula citada volta a separar o item em dois)
+# --- braço de detecção: Go deixa de atribuir cfg.Agents a partir da lista --
+# lida (RETARGET — ver comentário no topo do Cenário 35: splitTopLevelCommas
+# não existe mais pós-yaml.v3; mesmo ponto usado no Cenário 34)
 T35C_GO_MOD="$WORK/s35-corrupt-go"
 mkdir -p "$T35C_GO_MOD/cmd" "$T35C_GO_MOD/internal"
 cp -r "$ROOT_DIR/cmd/." "$T35C_GO_MOD/cmd/"
@@ -2608,8 +2653,8 @@ cp "$ROOT_DIR/go.mod" "$T35C_GO_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T35C_GO_MOD/go.sum"
 corrupt_literal \
   "$ROOT_DIR/internal/config/config.go" "$T35C_GO_MOD/internal/config/config.go" \
-  $'\t\tcase r == \'"\' || r == \'\\\'\':\n\t\t\tquote = r\n\t\t\tcur.WriteRune(r)\n' \
-  $'\t\tcase false:\n\t\t\tquote = r\n\t\t\tcur.WriteRune(r)\n' \
+  $'\t\t\tcfg.Agents = items\n' \
+  $'\t\t\t_ = items\n' \
   "s35-go"
 
 T35C_GO_BIN="$WORK/s35-corrupt-go-bin/trackfw"
@@ -2618,60 +2663,360 @@ build_go_or_fail "setup-s35-go-corrupt-build" "$T35C_GO_MOD" "$T35C_GO_BIN"
 
 s35c_go_out=$(cd "$S35_PROJECT" && "$T35C_GO_BIN" status)$'\n'
 if [[ "$s35c_go_out" == "$S35_EXPECTED" ]]; then
-  echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-item-split]: detecção de aspas revertida mas a comparação continuou passando (checagem vácua)" >&2
+  echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-agents-discarded]: cfg.Agents deixou de ser atribuido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
-if grep -qF "ROADMAP-ka-tsu-wip.md" <<<"$s35c_go_out"; then
-  echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-item-split]: saída corrompida diverge do pinado, mas o roadmap não sumiu — diagnóstico pelo motivo errado" >&2
+if grep -qF "[zeta]" <<<"$s35c_go_out"; then
+  echo "OK   [falsify/config-inline-comma-in-quotes/go-detects-agents-discarded]"
+else
+  echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-agents-discarded]: saída corrompida diverge do pinado, mas zeta não reapareceu — diagnóstico pelo motivo errado" >&2
   echo "  output: $(printf '%q' "$s35c_go_out")" >&2
   exit 1
-else
-  echo "OK   [falsify/config-inline-comma-in-quotes/go-detects-item-split]"
 fi
 
-# --- braço de detecção: Node desativa o mesmo ramo -------------------------
+# --- braço de detecção: Node deixa de atribuir cfg.agents a partir da
+# lista lida (RETARGET — mesmo motivo do braço Go acima)
 T35C_N="$WORK/s35-corrupt-node"
 setup_npm_tree "$T35C_N"
 corrupt_literal \
   "$ROOT_DIR/npm/src/config/index.js" "$T35C_N/npm/src/config/index.js" \
-  $'  } else if (ch === \'"\' || ch === "\'") {\n      quote = ch;\n      cur += ch;\n' \
-  $'  } else if (false) {\n      quote = ch;\n      cur += ch;\n' \
+  $'    if (items) cfg.agents = items;\n' \
+  $'    if (items) { /* no-op */ }\n' \
   "s35-node"
 
 s35c_node_out=$(cd "$S35_PROJECT" && node "$T35C_N/npm/bin/trackfw" status)$'\n'
 if [[ "$s35c_node_out" == "$S35_EXPECTED" ]]; then
-  echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-item-split]: detecção de aspas revertida mas a comparação continuou passando (checagem vácua)" >&2
+  echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-agents-discarded]: cfg.agents deixou de ser atribuido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
-if grep -qF "ROADMAP-ka-tsu-wip.md" <<<"$s35c_node_out"; then
-  echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-item-split]: saída corrompida diverge do pinado, mas o roadmap não sumiu — diagnóstico pelo motivo errado" >&2
+if grep -qF "[zeta]" <<<"$s35c_node_out"; then
+  echo "OK   [falsify/config-inline-comma-in-quotes/node-detects-agents-discarded]"
+else
+  echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-agents-discarded]: saída corrompida diverge do pinado, mas zeta não reapareceu — diagnóstico pelo motivo errado" >&2
   echo "  output: $(printf '%q' "$s35c_node_out")" >&2
   exit 1
-else
-  echo "OK   [falsify/config-inline-comma-in-quotes/node-detects-item-split]"
 fi
 
-# --- braço de detecção: Python desativa o mesmo ramo ------------------------
+# --- braço de detecção: Python deixa de atribuir cfg["agents"] a partir da
+# lista lida (RETARGET — mesmo motivo dos braços Go/Node acima)
 T35C_P="$WORK/s35-corrupt-python"
 mkdir -p "$T35C_P"
 cp -r "$ROOT_DIR/pypi" "$T35C_P/pypi"
 corrupt_literal \
   "$ROOT_DIR/pypi/trackfw/config.py" "$T35C_P/pypi/trackfw/config.py" \
-  $'        elif ch in (\'"\', "\'"):\n            quote = ch\n            cur.append(ch)\n' \
-  $'        elif False:\n            quote = ch\n            cur.append(ch)\n' \
+  $'    if "agents" in m:\n        items = _string_list(m["agents"])\n        if items is not None:\n            cfg["agents"] = items\n' \
+  $'    if "agents" in m:\n        items = _string_list(m["agents"])\n' \
   "s35-python"
 
 s35c_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$T35C_P/pypi" python3 -m trackfw status)$'\n'
 if [[ "$s35c_python_out" == "$S35_EXPECTED" ]]; then
-  echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-item-split]: detecção de aspas revertida mas a comparação continuou passando (checagem vácua)" >&2
+  echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-agents-discarded]: cfg[\"agents\"] deixou de ser atribuido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
-if grep -qF "ROADMAP-ka-tsu-wip.md" <<<"$s35c_python_out"; then
-  echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-item-split]: saída corrompida diverge do pinado, mas o roadmap não sumiu — diagnóstico pelo motivo errado" >&2
+if grep -qF "[zeta]" <<<"$s35c_python_out"; then
+  echo "OK   [falsify/config-inline-comma-in-quotes/python-detects-agents-discarded]"
+else
+  echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-agents-discarded]: saída corrompida diverge do pinado, mas zeta não reapareceu — diagnóstico pelo motivo errado" >&2
   echo "  output: $(printf '%q' "$s35c_python_out")" >&2
   exit 1
-else
-  echo "OK   [falsify/config-inline-comma-in-quotes/python-detects-item-split]"
 fi
 
-echo "Falsification checks passed (all 82 scenarios, 14 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion) — proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 36 — ML-2A do ROADMAP-2026-08-02-substituir-os-parsers-artesanais-
+# de-config-por-biblioteca-yaml-nos-tres-clis: fidelidade textual de escalar
+# YAML (AC3 do roadmap) — a normalização para string na fronteira, feita em
+# normalizeNode (Go) / normalizeNode (Node) / _normalize_node (Python), não
+# pode regredir para o valor JÁ TIPADO que cada biblioteca resolveria por
+# padrão (int/bool/date), ou os 3 CLIs voltam a divergir por schema — a
+# MESMA divergência de 3 vias medida no ML-0A (ver Wave 0 do roadmap):
+#
+#   entrada            Go (typed)      Node (typed)    Python (typed)
+#   "010"              int 8           number 10       int 8
+#   "2026-08-02"       time.Time       string (nao      date
+#                                       converte)
+#   "yes"              string (nao     string (nao      bool True
+#                       coage)          coage)
+#
+# Os TRÊS valores do contrato (octal, data nua, "yes") são necessários na
+# MESMA fixture — cada um cobre um CLI diferente, e nenhum par prova os 3:
+#   - octal ("010") é o ÚNICO dos três que produz tipo não-string em Node
+#     (number). Sem ele, uma regressão de normalização em Node passaria
+#     despercebida pela fixture inteira (nem a data nem "yes" mudam de tipo
+#     em Node — ver tabela acima).
+#   - data nua ("2026-08-02") produz tipo não-string em Go E Python
+#     (time.Time / date) — mas em Node o valor já chega como string mesmo
+#     sem normalização (Node não tem resolver de data), então sozinha ela
+#     não prova nada sobre Node.
+#   - "yes" produz tipo não-string SÓ em Python (bool True, resolução YAML
+#     1.1) — Go e `yaml` (Node) seguem o núcleo YAML 1.2 e não coagem
+#     yes/no para booleano, então "yes" chega como string nos dois mesmo
+#     sem normalização.
+#
+# Cada CLI usa o guard de tipo já existente (stringVal: `v.(string)` em Go,
+# `typeof v === 'string'` em Node, `isinstance(v, str)` em Python) para só
+# aceitar escalares vindos como string. Quando a normalização é removida (a
+# corrupção abaixo faz normalizeNode devolver o valor TIPADO em vez do texto
+# bruto), um valor que se tipifica como não-string faz o guard reprovar
+# SILENCIOSAMENTE — a chave é descartada e o default do campo prevalece, sem
+# erro. É exatamente esse efeito observável (queda para o default) que os
+# três braços de detecção abaixo verificam.
+#
+# NÃO usa wip_limit/governance_mode/lenient_until (os campos citados
+# literalmente no ADR): esses três são lidos, para o propósito de
+# `trackfw validate`, por um leitor artesanal linha-a-linha SEPARADO
+# (readWIPConfig/readGovernanceMode em internal/validator/validator.go, e os
+# gêmeos em npm/src/validator/index.js e pypi/trackfw/validator.py) que a
+# Wave 1 desta REQ NÃO tocou — ProjectConfig.WipLimit/GovernanceMode/
+# LenientUntil (o caminho que passa pela biblioteca YAML) fica sombreado e
+# nunca chega ao `validate` real. Uma fixture nessas chaves seria vácua para
+# este cenário porque não exercitaria normalizeNode nenhuma. Ver achado
+# registrado em vault/notes/config-legacy-line-reader-sombreia-yaml-lib-no-
+# validate-2026-08-02.md. Em vez disso, a fixture usa `roadmap_dir`,
+# `req_dir` e `adr_dirs` — os três são lidos via config.Load() (o caminho
+# real da biblioteca YAML) e aparecem, cada um, no bloco Inventory de
+# `trackfw status`, dando um sinal visível e determinístico por campo.
+#
+# Fixture: `roadmap_dir: 010`, `req_dir: 2026-08-02`, `adr_dirs: [yes]` —
+# cada um aponta para um diretório NO DISCO com nome literal igual ao valor
+# bruto ("010/", "2026-08-02/", "yes/"), cada um com exatamente 1 item
+# (roadmap wip, REQ, ADR). Os caminhos DEFAULT (docs/roadmaps, docs/req,
+# docs/adr) também têm conteúdo — mas em quantidade DIFERENTE (2 roadmaps,
+# 2 REQs, 2 ADRs) — para que, se a corrupção fizer o parser cair no default,
+# a divergência apareça como um número POSITIVO diferente do pinado, nunca
+# como zero-por-coincidência (mesma lição do Cenário 35 e de
+# vault/notes/falsificacao-fixture-vacua-contra-reversao-total-vs-parcial-
+# 2026-08-02.md).
+#
+# Medido empiricamente (não apenas deduzido) contra os binários reais antes
+# de fechar o cenário: a matriz de divergência por CLI corrompido é
+#   - Go corrompido:     REQs 1→2, Roadmaps 1→2 (backlog 0→1, wip 1→1);
+#                        ADRs PERMANECE 1 (Go não diverge em "yes")
+#   - Node corrompido:   Roadmaps 1→2 (backlog 0→1); ADRs e REQs PERMANECEM
+#                        1 (Node não diverge em data nua nem em "yes")
+#   - Python corrompido: ADRs 1→0 (adr_dirs vira lista vazia, não cai no
+#     default — stringList filtra o item não-string e devolve [] "presente
+#     e vazio", contrato herdado do fix de lista inline), REQs 1→2,
+#     Roadmaps 1→2
+# Isso prova, por CLI, exatamente a matriz de discriminação do contrato:
+# Node só diverge por causa do octal; Go e Python divergem por causa da
+# data; só Python diverge por causa do "yes".
+#
+# Corrompe a IMPLEMENTAÇÃO (o branch de escalar de normalizeNode/
+# _normalize_node), nunca a asserção — mesmo padrão dos cenários anteriores.
+# ---------------------------------------------------------------------------
+
+S36_PROJECT="$WORK/s36-config-schema-discriminant-project"
+mkdir -p "$S36_PROJECT/docs/adr" "$S36_PROJECT/docs/req"
+mkdir -p "$S36_PROJECT/docs/roadmaps"/{backlog,analyzing,wip,blocked,done,abandoned}
+mkdir -p "$S36_PROJECT/010"/{backlog,analyzing,wip,blocked,done,abandoned}
+mkdir -p "$S36_PROJECT/2026-08-02"
+mkdir -p "$S36_PROJECT/yes"
+cat > "$S36_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+roadmap_dir: 010
+req_dir: 2026-08-02
+adr_dirs:
+  - yes
+EOF
+write_roadmap_state_fixture "$S36_PROJECT/010/wip/ROADMAP-s36-custom-wip.md" "wip" "s36 custom wip fixture"
+write_req_status_fixture "$S36_PROJECT/2026-08-02/REQ-s36-custom.md" "Open" "s36 custom req fixture"
+write_adr_status_fixture "$S36_PROJECT/yes/ADR-s36-custom.md" "Accepted"
+
+# Conteúdo diferente (em quantidade) nos caminhos DEFAULT — ver comentário
+# acima sobre por que isso é necessário para não mascarar a corrupção.
+write_roadmap_state_fixture "$S36_PROJECT/docs/roadmaps/wip/ROADMAP-s36-default-wip.md" "wip" "s36 default wip fixture"
+write_roadmap_state_fixture "$S36_PROJECT/docs/roadmaps/backlog/ROADMAP-s36-default-backlog.md" "backlog" "s36 default backlog fixture"
+write_req_status_fixture "$S36_PROJECT/docs/req/REQ-s36-default-1.md" "Open" "s36 default req 1"
+write_req_status_fixture "$S36_PROJECT/docs/req/REQ-s36-default-2.md" "Open" "s36 default req 2"
+write_adr_status_fixture "$S36_PROJECT/docs/adr/ADR-s36-default-1.md" "Accepted"
+write_adr_status_fixture "$S36_PROJECT/docs/adr/ADR-s36-default-2.md" "Accepted"
+
+S36_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        1\n   REQs        1  (1 Open · 0 Done · 0 Closed)\n   Roadmaps    1\n     backlog 0 · analyzing 0 · wip 1\n     blocked 0 · done 0 · abandoned 0\n\n🔄 WIP (1)\n   ROADMAP-s36-custom-wip.md\n\n❌ Blocked (0)\n\n✅ Done (last 5)\n\n────────────────────────────────────────\n'
+
+s36_go_out=$(cd "$S36_PROJECT" && "$T27_GO_BIN" status)$'\n'
+s36_node_out=$(cd "$S36_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
+s36_python_out=$(cd "$S36_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+
+if [[ "$s36_go_out" == "$S36_EXPECTED" && "$s36_node_out" == "$S36_EXPECTED" && "$s36_python_out" == "$S36_EXPECTED" ]]; then
+  echo "OK   [falsify/config-schema-discriminant/baseline-byte-identical-and-pinned]"
+else
+  echo "FAIL [falsify/config-schema-discriminant/baseline-byte-identical-and-pinned]: esperava '$S36_EXPECTED' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s36_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s36_node_out")" >&2
+  echo "  python: $(printf '%q' "$s36_python_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Go devolve o valor TIPADO em vez do texto bruto ----
+# (octal "010" -> int 8: roadmap_dir cai no default; data nua -> time.Time:
+# req_dir cai no default; "yes" -> string "yes": adr_dirs NÃO diverge — Go
+# não coage yes/no para booleano)
+T36C_GO_MOD="$WORK/s36-corrupt-go"
+mkdir -p "$T36C_GO_MOD/cmd" "$T36C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T36C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T36C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T36C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T36C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/config/config.go" "$T36C_GO_MOD/internal/config/config.go" \
+  $'\tcase yaml.ScalarNode:\n\t\treturn n.Value\n' \
+  $'\tcase yaml.ScalarNode:\n\t\tvar typed interface{}\n\t\tn.Decode(&typed)\n\t\treturn typed\n' \
+  "s36-go"
+
+T36C_GO_BIN="$WORK/s36-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T36C_GO_BIN")"
+build_go_or_fail "setup-s36-go-corrupt-build" "$T36C_GO_MOD" "$T36C_GO_BIN"
+
+s36c_go_out=$(cd "$S36_PROJECT" && "$T36C_GO_BIN" status)$'\n'
+if [[ "$s36c_go_out" == "$S36_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-schema-discriminant/go-detects-typed-scalar-regression]: normalizeNode revertido mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "ADRs        1" <<<"$s36c_go_out" && grep -qF "REQs        2" <<<"$s36c_go_out" && grep -qF "backlog 1" <<<"$s36c_go_out"; then
+  echo "OK   [falsify/config-schema-discriminant/go-detects-typed-scalar-regression]"
+else
+  echo "FAIL [falsify/config-schema-discriminant/go-detects-typed-scalar-regression]: saída corrompida diverge do pinado, mas não no padrão esperado (ADRs deveria permanecer 1; REQs e Roadmaps deveriam cair para o default) — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s36c_go_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Node devolve o valor TIPADO em vez do texto bruto --
+# (octal "010" -> number 10: roadmap_dir cai no default; data nua e "yes"
+# chegam como string mesmo tipadas em Node -> NÃO divergem)
+T36C_N="$WORK/s36-corrupt-node"
+setup_npm_tree "$T36C_N"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/config/index.js" "$T36C_N/npm/src/config/index.js" \
+  $'    return n.source != null ? n.source : (n.value == null ? \'\' : String(n.value));\n' \
+  $'    return n.value;\n' \
+  "s36-node"
+
+s36c_node_out=$(cd "$S36_PROJECT" && node "$T36C_N/npm/bin/trackfw" status)$'\n'
+if [[ "$s36c_node_out" == "$S36_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-schema-discriminant/node-detects-typed-scalar-regression]: normalizeNode revertido mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "ADRs        1" <<<"$s36c_node_out" && grep -qF "REQs        1" <<<"$s36c_node_out" && grep -qF "backlog 1" <<<"$s36c_node_out"; then
+  echo "OK   [falsify/config-schema-discriminant/node-detects-typed-scalar-regression]"
+else
+  echo "FAIL [falsify/config-schema-discriminant/node-detects-typed-scalar-regression]: saída corrompida diverge do pinado, mas não no padrão esperado (ADRs e REQs deveriam permanecer inalterados; só Roadmaps deveria cair para o default) — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s36c_node_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Python devolve o valor CONSTRUÍDO (via
+# SafeConstructor) em vez do texto bruto do nó — único dos 3 em que "yes"
+# também diverge (bool True -> filtrado de adr_dirs -> lista vazia, não
+# default)
+T36C_P="$WORK/s36-corrupt-python"
+mkdir -p "$T36C_P"
+cp -r "$ROOT_DIR/pypi" "$T36C_P/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/config.py" "$T36C_P/pypi/trackfw/config.py" \
+  $'    if isinstance(node, yaml.ScalarNode):\n        return node.value\n' \
+  $'    if isinstance(node, yaml.ScalarNode):\n        return yaml.constructor.SafeConstructor().construct_object(node, deep=True)\n' \
+  "s36-python"
+
+s36c_python_out=$(cd "$S36_PROJECT" && env PYTHONPATH="$T36C_P/pypi" python3 -m trackfw status)$'\n'
+if [[ "$s36c_python_out" == "$S36_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-schema-discriminant/python-detects-typed-scalar-regression]: _normalize_node revertido mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "ADRs        0" <<<"$s36c_python_out" && grep -qF "REQs        2" <<<"$s36c_python_out" && grep -qF "backlog 1" <<<"$s36c_python_out"; then
+  echo "OK   [falsify/config-schema-discriminant/python-detects-typed-scalar-regression]"
+else
+  echo "FAIL [falsify/config-schema-discriminant/python-detects-typed-scalar-regression]: saída corrompida diverge do pinado, mas não no padrão esperado (ADRs deveria cair para 0 — adr_dirs vazio, não default; REQs e Roadmaps deveriam cair para o default) — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s36c_python_out")" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Cenário 37 — ML-2A: caminho de erro de config malformada — os 3 CLIs
+# imprimem a MESMA mensagem em stderr (MalformedConfigMessage /
+# MALFORMED_CONFIG_MESSAGE) e saem com o MESMO exit code (1) quando
+# trackfw.yaml existe mas não é YAML válido. Comportamento NOVO desta REQ
+# (ML-1B, addendum ao ML-1A) — nada em CI garantia isso antes deste cenário;
+# as suítes unitárias por CLI provam a mensagem isoladamente, mas nenhum
+# gate cruzava os 3 binários reais contra a MESMA fixture malformada.
+#
+# Fixture: sequência de fluxo (`[...]`) aberta e nunca fechada — inválida
+# nas 3 bibliotecas (confirmado empiricamente: gopkg.in/yaml.v3, `yaml` 2.x
+# e PyYAML rejeitam as 3, cada uma com sua própria mensagem nativa
+# diferente — exatamente por isso a mensagem trackfw é estática, não
+# derivada do erro da biblioteca, ver comentário de MalformedConfigMessage
+# em internal/config/config.go).
+#
+# Braço de detecção: só Go (a checagem de erro de sintaxe do Go, além de ser
+# a mais recente/complexa das 3 — soma o probe de yaml.Unmarshal com
+# hasMultipleDocuments — é também o ponto onde uma regressão de "parei de
+# tratar erro de sintaxe como fatal" é mais fácil de introduzir sem querer
+# ao mexer no probe). Não repete o braço nos 3 CLIs: o mecanismo (parse ->
+# erro -> flag "malformed" -> stderr fatal + exit 1) é estruturalmente
+# idêntico nos 3 (mesmo comentário-fonte, ver MALFORMED_CONFIG_MESSAGE nos 3
+# arquivos), e o objetivo deste cenário é provar que o gate cruzado existe e
+# pega uma regressão — não re-provar a suíte unitária de cada CLI.
+# ---------------------------------------------------------------------------
+
+S37_PROJECT="$WORK/s37-config-malformed-project"
+mkdir -p "$S37_PROJECT/docs/adr" "$S37_PROJECT/docs/req" \
+  "$S37_PROJECT/docs/roadmaps"/{backlog,analyzing,wip,blocked,done,abandoned}
+printf 'agents: [a, b\ngovernance_mode: strict\n' > "$S37_PROJECT/trackfw.yaml"
+
+S37_EXPECTED_STDERR='trackfw: erro ao carregar "trackfw.yaml": YAML malformado. Corrija a sintaxe do arquivo antes de continuar.'
+
+set +e
+s37_go_out=$(cd "$S37_PROJECT" && "$T27_GO_BIN" status 2>&1)
+s37_go_status=$?
+s37_node_out=$(cd "$S37_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status 2>&1)
+s37_node_status=$?
+s37_python_out=$(cd "$S37_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status 2>&1)
+s37_python_status=$?
+set -e
+
+if [[ "$s37_go_status" -eq 1 && "$s37_node_status" -eq 1 && "$s37_python_status" -eq 1 \
+      && "$s37_go_out" == "$S37_EXPECTED_STDERR" && "$s37_node_out" == "$S37_EXPECTED_STDERR" \
+      && "$s37_python_out" == "$S37_EXPECTED_STDERR" ]]; then
+  echo "OK   [falsify/config-malformed-error-path/baseline-byte-identical-exit-1-3-clis]"
+else
+  echo "FAIL [falsify/config-malformed-error-path/baseline-byte-identical-exit-1-3-clis]: esperava stderr '$S37_EXPECTED_STDERR' e exit 1 nos 3 CLIs" >&2
+  echo "  go:     status=$s37_go_status out=$(printf '%q' "$s37_go_out")" >&2
+  echo "  node:   status=$s37_node_status out=$(printf '%q' "$s37_node_out")" >&2
+  echo "  python: status=$s37_python_status out=$(printf '%q' "$s37_python_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Go deixa de tratar erro de sintaxe/multi-documento
+# como fatal (probe sempre "ok") ------------------------------------------
+T37C_GO_MOD="$WORK/s37-corrupt-go"
+mkdir -p "$T37C_GO_MOD/cmd" "$T37C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T37C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T37C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T37C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T37C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/config/config.go" "$T37C_GO_MOD/internal/config/config.go" \
+  $'\t\tif err := yaml.Unmarshal(data, &probe); err != nil || hasMultipleDocuments(data) {\n' \
+  $'\t\tif err := yaml.Unmarshal(data, &probe); err == nil && false {\n' \
+  "s37-go"
+
+T37C_GO_BIN="$WORK/s37-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T37C_GO_BIN")"
+build_go_or_fail "setup-s37-go-corrupt-build" "$T37C_GO_MOD" "$T37C_GO_BIN"
+
+set +e
+s37c_go_out=$(cd "$S37_PROJECT" && "$T37C_GO_BIN" status 2>&1)
+s37c_go_status=$?
+set -e
+if [[ "$s37c_go_status" -eq 1 && "$s37c_go_out" == "$S37_EXPECTED_STDERR" ]]; then
+  echo "FAIL [falsify/config-malformed-error-path/go-detects-fatal-check-removed]: checagem de erro de sintaxe revertida mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if [[ "$s37c_go_status" -eq 0 ]]; then
+  echo "OK   [falsify/config-malformed-error-path/go-detects-fatal-check-removed]"
+else
+  echo "FAIL [falsify/config-malformed-error-path/go-detects-fatal-check-removed]: saída corrompida diverge do pinado, mas o exit não caiu para 0 — diagnóstico pelo motivo errado" >&2
+  echo "  status=$s37c_go_status output: $(printf '%q' "$s37c_go_out")" >&2
+  exit 1
+fi
+
+echo "Falsification checks passed (all 88 scenarios, 14 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous)"
