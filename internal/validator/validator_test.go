@@ -390,6 +390,72 @@ func TestGetStatus_SemREQsBloqueadas(t *testing.T) {
 	}
 }
 
+// TestGetStatus_InventoryAnalyzingCount — roadmap discriminante: um roadmap em
+// docs/roadmaps/analyzing/ precisa aparecer na contagem "analyzing <n>" do bloco
+// 📊 Inventory. Antes desta mudança (ML-1A), analyzing/ não era contado em lugar
+// nenhum da saída de `status` — nem no bloco antigo (que só listava wip/blocked/done),
+// nem em nenhuma outra seção. Este teste prova que o roadmap em analyzing/ agora é
+// contado, o que falsifica esse defeito.
+func TestGetStatus_InventoryAnalyzingCount(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/req",
+		"docs/adr",
+		"docs/roadmaps/backlog",
+		"docs/roadmaps/analyzing",
+		"docs/roadmaps/wip",
+		"docs/roadmaps/blocked",
+		"docs/roadmaps/done",
+		"docs/roadmaps/abandoned",
+	)
+	chdir(t, dir)
+
+	writeFile(t, dir, "docs/roadmaps/analyzing/ROADMAP-em-analise.md", "# Roadmap\n\n> Status: analyzing\n")
+
+	output, err := GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus erro: %v", err)
+	}
+	if !strings.Contains(output, "📊 Inventory") {
+		t.Fatal("output não contém o bloco 📊 Inventory")
+	}
+	if !strings.Contains(output, "analyzing 1") {
+		t.Errorf("output deveria contar 1 roadmap em analyzing/, obtido:\n%s", output)
+	}
+}
+
+// TestGetStatus_InventoryREQsDiscriminadas — uma REQ Open, uma Done e uma Closed
+// devem aparecer discriminadas como "(1 Open · 1 Done · 1 Closed)" — não agrupadas.
+func TestGetStatus_InventoryREQsDiscriminadas(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/req",
+		"docs/adr",
+		"docs/roadmaps/backlog",
+		"docs/roadmaps/analyzing",
+		"docs/roadmaps/wip",
+		"docs/roadmaps/blocked",
+		"docs/roadmaps/done",
+		"docs/roadmaps/abandoned",
+	)
+	chdir(t, dir)
+
+	writeFile(t, dir, "docs/req/REQ-open.md", "---\nstatus: Open\n---\n\n# REQ: Open\n")
+	writeFile(t, dir, "docs/req/REQ-done.md", "---\nstatus: Done\n---\n\n# REQ: Done\n")
+	writeFile(t, dir, "docs/req/REQ-closed.md", "---\nstatus: Closed\n---\n\n# REQ: Closed\n")
+
+	output, err := GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus erro: %v", err)
+	}
+	if !strings.Contains(output, "(1 Open · 1 Done · 1 Closed)") {
+		t.Errorf("output deveria discriminar REQs em (1 Open · 1 Done · 1 Closed), obtido:\n%s", output)
+	}
+	if !strings.Contains(output, "REQs        3") {
+		t.Errorf("output deveria mostrar o total de 3 REQs, obtido:\n%s", output)
+	}
+}
+
 // TestValidateWIPLimit_ByAgent — by_agent: 2 roadmaps em zeus/wip com limit 1 → 1 warning
 func TestValidateWIPLimit_ByAgent(t *testing.T) {
 	dir := t.TempDir()

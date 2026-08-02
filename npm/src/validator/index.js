@@ -1313,10 +1313,60 @@ async function validate() {
   return { violations, warnings }
 }
 
+// ROADMAP_STATES enumera os 6 estados de roadmap na ordem exibida pelo bloco Inventory.
+const ROADMAP_STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
+
+// buildInventorySection monta o bloco "📊 Inventory" — contagem agregada de ADRs, REQs
+// (discriminadas por status real via reqStatusEquals) e roadmaps (pelos 6 estados, incluindo
+// "analyzing", historicamente omitido). Namespacing-agnóstico: agrega através de
+// resolveStateDirs()/resolveReqFiles(), que já resolvem flat vs by_agent.
+function buildInventorySection(cfg) {
+  let adrCount = 0
+  for (const adrDir of cfg.adrDirs || []) {
+    adrCount += walkDirMdWithPathsForRule('status_inventory', adrDir, []).length
+  }
+
+  const reqFiles = resolveReqFiles(cfg)
+  let reqOpen = 0
+  let reqDone = 0
+  let reqClosed = 0
+  for (const filePath of reqFiles) {
+    let content
+    try {
+      content = fs.readFileSync(filePath, 'utf8')
+    } catch (_) {
+      continue
+    }
+    if (reqStatusEquals(content, 'open')) reqOpen++
+    else if (reqStatusEquals(content, 'done')) reqDone++
+    else if (reqStatusEquals(content, 'closed')) reqClosed++
+  }
+
+  const roadmapCounts = {}
+  let roadmapTotal = 0
+  for (const state of ROADMAP_STATES) {
+    let count = 0
+    for (const dir of resolveStateDirs(cfg, state)) {
+      count += listDir(dir).length
+    }
+    roadmapCounts[state] = count
+    roadmapTotal += count
+  }
+
+  let section = '\n📊 Inventory\n'
+  section += `   ${'ADRs'.padEnd(12)}${adrCount}\n`
+  section += `   ${'REQs'.padEnd(12)}${reqFiles.length}  (${reqOpen} Open · ${reqDone} Done · ${reqClosed} Closed)\n`
+  section += `   ${'Roadmaps'.padEnd(12)}${roadmapTotal}\n`
+  section += `     backlog ${roadmapCounts.backlog} · analyzing ${roadmapCounts.analyzing} · wip ${roadmapCounts.wip}\n`
+  section += `     blocked ${roadmapCounts.blocked} · done ${roadmapCounts.done} · abandoned ${roadmapCounts.abandoned}\n`
+  return section
+}
+
 // getStatus retorna string formatada com o status de governança do projeto
 async function getStatus() {
   const cfg = config.load()
   let out = '── trackfw status ──────────────────────\n'
+  out += buildInventorySection(cfg)
 
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
     let agents = cfg.agents || []

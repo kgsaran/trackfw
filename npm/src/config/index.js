@@ -4,6 +4,48 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+// isInlineList detecta a forma flow-style de lista YAML na própria linha da chave:
+// "chave: [a, b]". Não confundir com bloco (linhas seguintes com "- item").
+function isInlineList(val) {
+  return typeof val === 'string' && val.trim().startsWith('[');
+}
+
+// splitTopLevelCommas separa s por vírgulas fora de aspas (simples ou duplas), preservando
+// vírgulas dentro de itens citados (caso 8 do contrato: ["a, b", "c"]).
+function splitTopLevelCommas(s) {
+  const tokens = [];
+  let cur = '';
+  let quote = null;
+  for (const ch of s) {
+    if (quote) {
+      cur += ch;
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      cur += ch;
+    } else if (ch === ',') {
+      tokens.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  tokens.push(cur);
+  return tokens;
+}
+
+// parseInlineList decompõe uma lista YAML inline ("[a, b]") em itens, respeitando aspas
+// simples e duplas ao redor de itens. "[]" retorna array vazio (não undefined), para
+// distinguir "presente e vazio" de "ausente" no chamador.
+function parseInlineList(val) {
+  let inner = val.trim();
+  if (inner.startsWith('[')) inner = inner.slice(1);
+  if (inner.endsWith(']')) inner = inner.slice(0, -1);
+  inner = inner.trim();
+  if (inner === '') return [];
+  return splitTopLevelCommas(inner).map((t) => t.trim().replace(/^["']|["']$/g, ''));
+}
+
 function expandPath(filePath) {
   if (!filePath || typeof filePath !== 'string') return filePath;
   if (filePath === '~') {
@@ -118,11 +160,17 @@ function parse(content, cfg) {
     if (!line) continue;
     const hasIndent = rawLine.length > 0 && (rawLine[0] === ' ' || rawLine[0] === '\t');
 
-    if (!hasIndent) {
+    // Uma sequência em bloco pode estar no mesmo nível de indentação da chave que a abre
+    // (YAML válido: "agents:\n- zeus\n- apolo"). Uma linha "- " sem indentação continua a
+    // lista aberta em vez de ser tratada como nova chave top-level.
+    const isListItem = line.startsWith('- ');
+    const continuesOpenList = isListItem && (inAdrDirs || inAgents || inAcceptanceMarkers);
+
+    if (!hasIndent && !continuesOpenList) {
       flushBlocks();
     }
 
-    if (hasIndent) {
+    if (hasIndent || continuesOpenList) {
       if (inAdrDirs) {
         if (line.startsWith('- ')) {
           let val = line.slice(2).trim();
@@ -163,14 +211,22 @@ function parse(content, cfg) {
           // sub-chave dentro de link_fields
           const colonIdx = line.indexOf(':');
           const subKey = colonIdx > 0 ? line.slice(0, colonIdx).trim() : line.replace(':', '').trim();
+          const subVal = colonIdx > 0 ? line.slice(colonIdx + 1).trim() : '';
           // flush sub-campo anterior
           if (inLinkFieldsReq && linkFieldsReq.length) { cfg.linkFields.req = linkFieldsReq; linkFieldsReq = []; }
           if (inLinkFieldsAdr && linkFieldsAdr.length) { cfg.linkFields.adr = linkFieldsAdr; linkFieldsAdr = []; }
           if (inLinkFieldsRoadmap && linkFieldsRoadmap.length) { cfg.linkFields.roadmap = linkFieldsRoadmap; linkFieldsRoadmap = []; }
           inLinkFieldsReq = false; inLinkFieldsAdr = false; inLinkFieldsRoadmap = false;
-          if (subKey === 'req') inLinkFieldsReq = true;
-          else if (subKey === 'adr') inLinkFieldsAdr = true;
-          else if (subKey === 'roadmap') inLinkFieldsRoadmap = true;
+          if (isInlineList(subVal)) {
+            const items = parseInlineList(subVal);
+            if (subKey === 'req') cfg.linkFields.req = items;
+            else if (subKey === 'adr') cfg.linkFields.adr = items;
+            else if (subKey === 'roadmap') cfg.linkFields.roadmap = items;
+          } else {
+            if (subKey === 'req') inLinkFieldsReq = true;
+            else if (subKey === 'adr') inLinkFieldsAdr = true;
+            else if (subKey === 'roadmap') inLinkFieldsRoadmap = true;
+          }
         }
         continue;
       }
@@ -185,11 +241,17 @@ function parse(content, cfg) {
     if (!key) continue;
 
     switch (key) {
-      case 'adr_dirs':              inAdrDirs = true; adrDirs = []; break;
+      case 'adr_dirs':
+        if (isInlineList(val)) { cfg.adrDirs = parseInlineList(val).map(expandPath); }
+        else { inAdrDirs = true; adrDirs = []; }
+        break;
       case 'req_dir':               cfg.reqDir = expandPath(val.replace(/^["']|["']$/g, '')); break;
       case 'roadmap_dir':           cfg.roadmapDir = expandPath(val.replace(/^["']|["']$/g, '')); break;
       case 'roadmap_namespacing':   cfg.roadmapNamespacing = val; break;
-      case 'agents':                inAgents = true; agents = []; break;
+      case 'agents':
+        if (isInlineList(val)) { cfg.agents = parseInlineList(val); }
+        else { inAgents = true; agents = []; }
+        break;
       case 'governance_mode':       cfg.governanceMode = val; break;
       case 'lenient_until':         cfg.lenientUntil = val; break;
       case 'wip_limit':             { const n = parseInt(val, 10); if (n > 0) cfg.wipLimit = n; break; }
@@ -200,7 +262,10 @@ function parse(content, cfg) {
       case 'trace_id_field':        cfg.traceIdField = val.replace(/^["']|["']$/g, ''); break;
       case 'forge':                 cfg.forge = val.replace(/^["']|["']$/g, ''); break;
       case 'link_fields':           inLinkFields = true; break;
-      case 'acceptance_markers':    inAcceptanceMarkers = true; acceptanceMarkers = []; break;
+      case 'acceptance_markers':
+        if (isInlineList(val)) { cfg.acceptanceMarkers = parseInlineList(val); }
+        else { inAcceptanceMarkers = true; acceptanceMarkers = []; }
+        break;
       case 'rules':                 inRules = true; rules = {}; break;
     }
   }

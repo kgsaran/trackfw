@@ -240,23 +240,30 @@ class TestStatusFlat(unittest.TestCase):
     def test_status_flat_conta_adrs(self):
         """Conta 3 ADRs corretamente."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertIn("ADRs:      3", out)
+        self.assertIn("ADRs        3", out)
 
     def test_status_flat_conta_reqs(self):
-        """Conta 3 REQs (2 Open, 1 Closed)."""
+        """Conta 3 REQs (2 Open, 1 Closed) — discriminação Open/Done/Closed."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertIn("REQs:      3", out)
-        self.assertIn("2 Open", out)
-        self.assertIn("1 Closed", out)
+        self.assertIn("REQs        3", out)
+        self.assertIn("2 Open · 0 Done · 1 Closed", out)
 
     def test_status_flat_conta_roadmaps(self):
-        """Conta roadmaps por estado."""
+        """Conta roadmaps por estado, incluindo analyzing (0 neste fixture)."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertIn("backlog:  5", out)
-        self.assertIn("wip:      1", out)
-        self.assertIn("blocked:  0", out)
-        self.assertIn("done:     23", out)
-        self.assertIn("abandoned: 2", out)
+        self.assertIn("backlog 5 · analyzing 0 · wip 1", out)
+        self.assertIn("blocked 0 · done 23 · abandoned 2", out)
+        self.assertIn("Roadmaps    31", out)
+
+    def test_status_flat_tem_moldura_e_secoes(self):
+        """Formato consolidado: moldura, Inventory, WIP, Blocked, Done."""
+        out = _status_cmd.get_status(cwd=self.tmp)
+        self.assertIn("── trackfw status ──", out)
+        self.assertIn("────────────────────────────────────────", out)
+        self.assertIn("📊 Inventory", out)
+        self.assertIn("🔄 WIP (1)", out)
+        self.assertIn("❌ Blocked (0)", out)
+        self.assertIn("✅ Done (last 5)", out)
 
 
 # ---------------------------------------------------------------------------
@@ -297,29 +304,114 @@ class TestStatusByAgent(unittest.TestCase):
         _config.reset()
 
     def test_status_by_agent_breakdown(self):
-        """Modo by_agent exibe seção 'Roadmaps (by agent):' com dados por agente."""
+        """Modo by_agent exibe a seção '⚙ WIP by Agent' — espelha GetStatus() em
+        internal/validator/validator.go e getStatus() em npm/src/validator/index.js.
+        Reescrito no ML-2B: a seção antiga '⚙ Roadmaps by Agent' misturava nomes de
+        estado (backlog/done/...) com nomes de agente e mantinha as seções flat
+        zeradas — divergência corrigida alinhando Python a Go/Node."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertIn("by agent", out.lower(),
-                      "Deve conter seção by agent")
+        self.assertIn("⚙ WIP by Agent", out)
         self.assertIn("zeus", out)
-        self.assertIn("apolo", out)
+        # As seções flat não se aplicam no modo by_agent e devem ser omitidas,
+        # tal como em Go/Node.
+        self.assertNotIn("🔄 WIP (", out)
+        self.assertNotIn("❌ Blocked (", out)
+        self.assertNotIn("✅ Done (last 5)", out)
 
     def test_status_by_agent_totais(self):
-        """Totais agregados: wip=1, done=15."""
+        """Totais agregados no bloco Inventory: wip=1, done=15."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertIn("wip:      1", out)
-        self.assertIn("done:     15", out)
+        self.assertIn("wip 1", out)
+        self.assertIn("done 15", out)
 
     def test_status_by_agent_zeus_wip(self):
-        """zeus deve aparecer com wip=1."""
+        """zeus tem wip=1 e deve aparecer em '[zeus] WIP (1)' listando o arquivo."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        # Zeus tem wip=1 e done=10
-        self.assertRegex(out, r"zeus.*wip=1")
+        self.assertRegex(out, r"\[zeus\] WIP \(1\)")
+        self.assertIn("rm-1.md", out)
 
-    def test_status_by_agent_apolo_done(self):
-        """apolo deve aparecer com done=5."""
+    def test_status_by_agent_apolo_sem_wip_nao_listado(self):
+        """apolo tem wip=0 — não deve aparecer na seção '⚙ WIP by Agent', pois
+        Go/Node só listam agentes com wip > 0 (GetStatus, validator.go linhas
+        774-782). apolo só tem roadmaps em done/, que não é exibido por agente."""
         out = _status_cmd.get_status(cwd=self.tmp)
-        self.assertRegex(out, r"apolo.*done=5")
+        self.assertNotIn("apolo", out)
+
+
+class TestListDirsOrdena(unittest.TestCase):
+    """ML-1A — _list_dirs (status.py) deve ordenar como a irmã _list_files já
+    faz, alinhado a Go (sort.Strings) e Node (.sort())."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_list_dirs_ordena_subdirs_criados_fora_de_ordem(self):
+        # Criados fora de ordem alfabética de propósito.
+        _make_dirs(
+            os.path.join(self.tmp, "zeus"),
+            os.path.join(self.tmp, "apolo"),
+        )
+        result = _status_cmd._list_dirs(self.tmp)
+        self.assertEqual(result, ["apolo", "zeus"])
+
+
+class TestStatusByAgentFallbackSemAgentsConfigurados(unittest.TestCase):
+    """ML-1A — fixture by_agent SEM `agents:` no trackfw.yaml, portanto via
+    fallback de _get_agents/_list_dirs, com subdiretórios criados fora de
+    ordem alfabética. As 3 CLIs devem produzir a mesma ordem de agentes."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+        # trackfw.yaml SEM a chave "agents" — força o fallback de varredura
+        # de subdiretórios.
+        _make_file(
+            os.path.join(self.tmp, "trackfw.yaml"),
+            "roadmap_dir: docs/roadmaps\nroadmap_namespacing: by_agent\n",
+        )
+
+        # Subdiretórios de agente criados fora de ordem alfabética
+        # (zeus antes de apolo) para exercitar a ordenação do fallback.
+        roadmap_dir = os.path.join(self.tmp, "docs", "roadmaps")
+        for agent in ["zeus", "apolo"]:
+            for state in ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]:
+                d = os.path.join(roadmap_dir, agent, state)
+                _make_dirs(d)
+                if state == "wip":
+                    _make_file(os.path.join(d, "rm-1.md"), "# Roadmap\n")
+
+        _make_dirs(
+            os.path.join(self.tmp, "docs", "adr"),
+            os.path.join(self.tmp, "docs", "req"),
+        )
+
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_fallback_lista_agentes_em_ordem_alfabetica(self):
+        """_get_agents() via fallback (_list_dirs) devolve ['apolo', 'zeus'],
+        não a ordem de criação no filesystem ('zeus', 'apolo'). roadmap_dir é
+        resolvido contra self.tmp, espelhando cfg_local em get_status()."""
+        cfg = _config.load(self.tmp)
+        cfg["roadmap_dir"] = os.path.join(self.tmp, cfg.get("roadmap_dir", "docs/roadmaps"))
+        agents = _status_cmd._get_agents(cfg)
+        self.assertEqual(agents, ["apolo", "zeus"])
+
+    def test_fallback_ordena_saida_de_status(self):
+        """A seção '⚙ WIP by Agent' lista apolo antes de zeus, refletindo a
+        ordenação alfabética do fallback."""
+        out = _status_cmd.get_status(cwd=self.tmp)
+        pos_apolo = out.find("[apolo]")
+        pos_zeus = out.find("[zeus]")
+        self.assertGreater(pos_apolo, -1)
+        self.assertGreater(pos_zeus, -1)
+        self.assertLess(pos_apolo, pos_zeus)
 
 
 class TestAnalyzingStateNoFolderStatusViolation(unittest.TestCase):

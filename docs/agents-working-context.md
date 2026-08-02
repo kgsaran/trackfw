@@ -4,6 +4,200 @@
 
 ---
 
+## Sessão 2026-08-02 — Zeus (fila ZERADA: lista YAML inline) — CONCLUÍDO
+
+Último item, fechado na mesma branch do PR #105 a pedido de KG — mergear e tagear de uma vez.
+
+### Entrega
+
+Os três CLIs deixam de descartar `agents: [zeus, apolo]` em silêncio. Vale para `adr_dirs`,
+`agents`, `acceptance_markers` e as sub-listas de `link_fields`. `rules` fica fora com razão —
+é mapeamento, não sequência.
+
+`make quality` exit 0; falsificação **78 → 82**.
+
+### Decisão de estrutura que se pagou
+
+**Executor único nos 3 CLIs**, não três paralelos. Justificativa registrada no ADR: os MLs
+paralelos divergiram em **todos** os ciclos deste projeto, e aqui a exigência era semântica
+idêntica em nove casos de parsing. Resultado: **zero divergência**, nenhum ML de reconciliação
+necessário — o primeiro ciclo multi-CLI da sessão em que isso acontece.
+
+### O caso difícil
+
+`["a, b", "c"]` são **dois** itens. Separação ingênua por vírgula quebraria, e há caso real:
+`acceptance_markers` já carrega valores com espaço e acento. Resolvido com scanner char-a-char
+que rastreia aspas — mesma estratégia nos três.
+
+### O achado mais fino: vacuidade no próprio cenário de falsificação
+
+A Ártemis, ao escrever o cenário, foi verificar "e se alguém reverter o ML-1A **inteiro**, não só
+o trecho que eu corrompo?". Confirmou com `git apply -R` que a saída ficaria **byte-idêntica ao
+pinado** — o cenário seria **cego** a essa classe de regressão, e morreria no setup assim que as
+funções fossem apagadas.
+
+Corrigiu acrescentando um agente **presente no disco mas fora da lista configurada**. Reversão
+total → o agente extra reaparece; reversão pontual → o item com vírgula some.
+
+**Regra generalizada**, em `vault/notes/falsificacao-fixture-vacua-contra-reversao-total-vs-parcial-2026-08-02.md`:
+cenário sobre mecanismo com **fallback** precisa de fixture com algo no conjunto de fallback que
+não esteja no configurado — senão fica cego a "componente inteiro removido".
+
+Ela também verificou **antes de editar** se o refactor da Wave 1 quebrara algum cenário herdado —
+a armadilha exata do ciclo anterior. Não quebrara.
+
+### FILA ZERADA
+
+Nada em `backlog/`, `analyzing/`, `wip/` ou `blocked/`.
+
+**Limite honesto do que foi entregue:** o parser continua sendo um **subconjunto** de YAML.
+Listas aninhadas inline, mapas inline e âncoras seguem sem suporte **e sem aviso**. A classe foi
+reduzida, não eliminada. A solução a prazo é biblioteca YAML de verdade — barata no Go
+(`yaml.v3` já é indirect), mas dependência de runtime nova no Node e no Python. Mudança de
+política; ADR próprio se o parser artesanal voltar a dar problema.
+
+Pronto para merge do PR #105 e tag.
+
+---
+
+## Sessão 2026-08-02 — Zeus (fila zerada: 3 defeitos de parsing) — CONCLUÍDO
+
+**Branch:** a mesma do PR #105, por pedido de KG — fechar os itens **antes da tag**, para não
+versionar defeito conhecido.
+
+### Três defeitos, e a direção da correção NÃO foi a mesma
+
+| Item | Quem errava | Correção |
+|---|---|---|
+| Delimitador não pareado (`ADR: "X.md'`) | Python | alinha a Go/Node |
+| Ordenação do fallback de agentes (`_list_dirs`) | Python | alinha a Go/Node |
+| **Sequência YAML não indentada** | **Go e Node** | **alinham ao Python** |
+
+### A lição do ciclo
+
+Viemos aplicando a heurística "dois concordam, o terceiro se alinha". No item 3 ela **falharia**:
+`agents:\n- zeus\n- apolo` é YAML válido — confirmei com parser real — e Go/Node descartavam a
+lista **em silêncio**, caindo no fallback. O Python lia certo.
+
+**Maioria não é autoridade quando existe especificação.** Verificar contra o padrão custou um
+comando e evitou alinhar dois CLIs a um bug.
+
+O alcance também era maior que o sintoma: o mesmo `hasIndent` governa `adr_dirs`,
+`acceptance_markers` e `link_fields`, não só `agents`. E `rules` fica de fora **com razão** — é
+mapeamento, não sequência; verificado que sub-chave não indentada é top-level também no YAML
+padrão.
+
+### Falha minha, pega pela barreira
+
+O Cenário 28 quebrou com o ML-1A — ele corrompia um bloco que o ML-1A refatorou, então o literal
+sumiu e o cenário passou a falhar **no setup**, não como veredito. **`make quality` ficou vermelho
+nesta branch por dois commits meus.**
+
+Na auditoria de cada ML rodei `go test`, `npm test` e `pytest` — mas **não** a suíte de
+falsificação, que era exatamente a quebrada.
+
+**Regra a incorporar:** rodar as suítes de teste não substitui rodar o gate completo. Se o ML
+tocou código que algum cenário de falsificação corrompe, `check-gates-falsify.sh` precisa entrar
+na auditoria **daquele ML**, não só na barreira final.
+
+Registrado em `vault/notes/cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02.md`,
+junto de um segundo acerto dela: o braço de detecção do Cenário 33 usava `os.listdir()` sem
+ordenar — **dependente do filesystem**, ficaria inerte no CI. Trocado por `reverse=True`.
+Corrupção que depende de ambiente é cenário vacuoso intermitente, pior que cenário ausente.
+
+### Estado
+
+`make quality` exit 0; falsificação **69 → 78**. Fila com **um** item, de decisão de produto:
+os três CLIs ignoram lista **inline** (`agents: [a, b]`) em silêncio — consistente entre CLIs,
+logo não é paridade, mas é config válida descartada sem aviso.
+
+Pronto para tag após o merge.
+
+---
+
+## Sessão 2026-08-02 — Zeus (ponto 1: convergir o comando `status`) — CONCLUÍDO
+
+**Branch:** `feat/convergir-o-comando-status-dos-tres-clis-num-formato-unico`
+PR #104 mergeado; `origin/main` em `590cce8`; fila zerada antes de começar.
+
+### Correção de premissa vinda de KG — importante
+
+Eu enquadrei a convergência do `status` como **breaking change**. KG corrigiu: **o trackfw ainda
+não tem usuários externos.** Não há saída consumida por script de terceiro, não há migração a
+proteger. O custo é **interno** — fixtures e asserções dos 3 CLIs.
+
+Isso invalida um argumento que usei **várias vezes** nesta sessão para deixar defeito de pé:
+manter o nome impreciso `blocked_by_draft_adr` ("chave pública de configuração"), não unificar os
+mecanismos de strip, manter `Draft` e `Proposed` separados. Nenhum tem o peso que dei.
+Registrado em memória de projeto; **vale revisitar** se algum voltar à pauta.
+
+### Decisão de KG: opção 2 — convergir preservando
+
+Não substituir a saída do Python pela de Go/Node (que descartaria a visão de inventário), mas
+**somar as duas visões** num formato único.
+
+### Dois defeitos silenciosos descobertos ao comparar
+
+1. **`analyzing` omitido no Python** — `commands/status.py` enumera 5 dos 6 estados em **três**
+   pontos (~73, ~81, ~141). Roadmap em `analyzing/` some da contagem.
+2. **`Done` e `Closed` agrupados** — apaga a distinção entre REQ entregue e encerrada sem entrega.
+
+### Detalhe que mudou o desenho
+
+O preview que KG aprovou dizia `📊 Inventário`. Mas os rótulos do `status` (`WIP`, `Blocked`,
+`Done (last 5)`) são **hardcoded em inglês** — o bloco `status` do i18n só tem `description`.
+Usar `Inventário` misturaria idiomas. Decidido: **`Inventory`**, em inglês, e i18n do `status`
+fica como candidato próprio. Comunicado a KG.
+
+### Estrutura — com ML de reconciliação PRÉ-ALOCADO
+
+Wave 1 (3 MLs paralelos) → **Wave 2 de reconciliação** → Wave 3 de barreira.
+
+A Wave 2 não é contingência: nos ciclos anteriores deste projeto os três MLs paralelos divergiram
+**todas as vezes** — em fonte de dado, em texto de mensagem, e em raio de alcance. Aqui a exigência
+é saída **byte-idêntica**, o alvo mais sensível até agora. Um executor **único** nos 3 CLIs.
+
+### Execução e fechamento
+
+Wave 1 (3 MLs paralelos) → **ML-2A reconciliação** → **ML-2B corretivo** → Wave 3 barreira.
+`make quality` exit 0; falsificação **65 → 69**.
+
+Os três CLIs produzem saída **byte-idêntica** em três cenários verificados: repositório real
+(749 B), fixture flat com `analyzing` e os 3 status de REQ, e fixture `by_agent`.
+
+### O ML de reconciliação pré-alocado se pagou — de novo
+
+Eu havia reservado a Wave 2 prevendo divergência, com base no histórico. Veio, e em dois níveis:
+
+- **ML-2A** — o Node tinha um `\n` extra. Meu handoff apontava `getStatus()` como origem; o
+  executor leu os três pontos de impressão e achou o real: `console.log()` em
+  `commands/status.js` somava `\n` ao que a string já trazia, enquanto Go usa `fmt.Print` e
+  Python `print(..., end="")`. Diagnóstico melhor que o meu. Achou também que o Python não tinha
+  `⚙ WIP by Squad` nem `⚠ Stale WIP`.
+- **ML-2B** — ele sinalizou o modo `by_agent` **sem decidir sozinho**. Fui medir: a saída do
+  Python não era só diferente, estava **errada** — listava nomes de estado como agentes e dizia
+  `WIP (0)` havendo 1. E a seção tinha sido **adicionada nesta wave**, não era pré-existente.
+  Divergência que nós introduzimos → corrigir, não diferir.
+
+### Autocorreção na barreira que vale carregar
+
+O primeiro braço de detecção do cenário `by_agent` corrompia a lista de agentes — o que derrubava
+o bloco `Inventory` inteiro e **mascarava** se a comparação pegava divergência na seção sob teste.
+A Ártemis detectou e trocou por corrupção que altera só o subdiretório lido no loop, isolando a
+seção. **É a diferença entre "o gate falhou" e "o gate falhou pelo motivo certo".**
+
+### FILA — pontos 1, 2 e 3 fechados. Dois itens novos, ambos criados por medição
+
+1. **Delimitador não pareado** (`ADR: "X.md'`) resolve em Go/Node e não no Python (PR #104).
+2. **Parser YAML do Python não trata lista inline** — com `agents: [zeus, apolo]` a ordem diverge
+   de Go/Node; com lista em bloco os três concordam. Causa raiz em `pypi/trackfw/config.py`,
+   **pré-existente** (não tocado neste ciclo) e com alcance além do `status`. As fixtures da
+   barreira usam lista em bloco de propósito, para não mascarar.
+
+Nenhum dos dois tem caso real no repositório.
+
+---
+
 ## Sessão 2026-08-02 — Zeus (pontos 2 e 3 da fila: backticks + mensagem do validate) — CONCLUÍDO
 
 **Branch:** `fix/backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python`

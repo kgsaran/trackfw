@@ -8,6 +8,51 @@ import os
 NAMESPACING_FLAT = "flat"
 NAMESPACING_BY_AGENT = "by_agent"
 
+
+def _is_inline_list(val):
+    """Detecta a forma flow-style de lista YAML na própria linha da chave:
+    "chave: [a, b]". Não confundir com bloco (linhas seguintes com "- item")."""
+    return isinstance(val, str) and val.strip().startswith("[")
+
+
+def _split_top_level_commas(s):
+    """Separa s por vírgulas fora de aspas (simples ou duplas), preservando vírgulas
+    dentro de itens citados (caso 8 do contrato: ["a, b", "c"])."""
+    tokens = []
+    cur = []
+    quote = None
+    for ch in s:
+        if quote:
+            cur.append(ch)
+            if ch == quote:
+                quote = None
+        elif ch in ('"', "'"):
+            quote = ch
+            cur.append(ch)
+        elif ch == ",":
+            tokens.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    tokens.append("".join(cur))
+    return tokens
+
+
+def _parse_inline_list(val):
+    """Decompõe uma lista YAML inline ("[a, b]") em itens, respeitando aspas simples e
+    duplas ao redor de itens. "[]" retorna lista vazia (não None), para distinguir
+    "presente e vazio" de "ausente" no chamador."""
+    inner = val.strip()
+    if inner.startswith("["):
+        inner = inner[1:]
+    if inner.endswith("]"):
+        inner = inner[:-1]
+    inner = inner.strip()
+    if inner == "":
+        return []
+    return [t.strip().strip("\"'") for t in _split_top_level_commas(inner)]
+
+
 _instance = None
 
 
@@ -207,14 +252,24 @@ def _parse(content, cfg):
                 # sub-chave dentro de link_fields (ex: "  req:", "  adr:")
                 colon_idx = line.find(":")
                 sub_key = line[:colon_idx].strip() if colon_idx > 0 else line.replace(":", "").strip()
+                sub_val = line[colon_idx + 1:].strip() if colon_idx > 0 else ""
                 # flush sub-campo anterior antes de mudar
                 _flush_link_fields_sub()
-                if sub_key == "req":
-                    in_link_fields_req = True
-                elif sub_key == "adr":
-                    in_link_fields_adr = True
-                elif sub_key == "roadmap":
-                    in_link_fields_roadmap = True
+                if _is_inline_list(sub_val):
+                    items = _parse_inline_list(sub_val)
+                    if sub_key == "req":
+                        cfg["link_fields"]["req"] = items
+                    elif sub_key == "adr":
+                        cfg["link_fields"]["adr"] = items
+                    elif sub_key == "roadmap":
+                        cfg["link_fields"]["roadmap"] = items
+                else:
+                    if sub_key == "req":
+                        in_link_fields_req = True
+                    elif sub_key == "adr":
+                        in_link_fields_adr = True
+                    elif sub_key == "roadmap":
+                        in_link_fields_roadmap = True
                 continue
             continue
 
@@ -228,8 +283,11 @@ def _parse(content, cfg):
             continue
 
         if key == "adr_dirs":
-            in_adr_dirs = True
-            adr_dirs.clear()
+            if _is_inline_list(val):
+                cfg["adr_dirs"] = [os.path.expanduser(v) for v in _parse_inline_list(val)]
+            else:
+                in_adr_dirs = True
+                adr_dirs.clear()
         elif key == "strict_ci_paths":
             cfg["strict_ci_paths"] = val.strip("\"'").lower() == "true"
         elif key == "req_dir":
@@ -239,8 +297,11 @@ def _parse(content, cfg):
         elif key == "roadmap_namespacing":
             cfg["roadmap_namespacing"] = val.strip("\"'")
         elif key == "agents":
-            in_agents = True
-            agents.clear()
+            if _is_inline_list(val):
+                cfg["agents"] = _parse_inline_list(val)
+            else:
+                in_agents = True
+                agents.clear()
         elif key == "governance_mode":
             cfg["governance_mode"] = val.strip("\"'")
         elif key == "lenient_until":
@@ -270,8 +331,11 @@ def _parse(content, cfg):
         elif key == "link_fields":
             in_link_fields = True
         elif key == "acceptance_markers":
-            in_acceptance_markers = True
-            acceptance_markers.clear()
+            if _is_inline_list(val):
+                cfg["acceptance_markers"] = _parse_inline_list(val)
+            else:
+                in_acceptance_markers = True
+                acceptance_markers.clear()
         elif key == "rules":
             in_rules = True
             rules.clear()

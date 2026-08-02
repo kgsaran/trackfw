@@ -1897,19 +1897,23 @@ assert_fails_with "backtick-ref/python/adr_accepted_when_req_done-baseline" \
   bash -c "cd '$T28_P_VIOLATING' && exec env PYTHONPATH='$T28_P_VIOLATING/pypi' python3 -m trackfw validate"
 
 # --- Python: prova de detecção (backtick reintroduzido em _extract_ref_path)
+#
+# Nota (ML-2A, ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-
+# remanescentes-no-python): a extração de referência foi refatorada em
+# 588b9b8 (item 1 deste roadmap — delimitador não pareado) para
+# _strip_ref_delimiters()/_REF_DELIMITERS; o literal original deste cenário
+# (normalize_yaml_flat_value + par casado de backtick) não existe mais em
+# validator.py e corrupt_literal reprovaria com "got 0 occurrences". Alvo
+# ajustado para remover só o backtick de _REF_DELIMITERS — corrupção mínima
+# equivalente (isola o item 1, que segue coberto pelo Cenário 32 abaixo, do
+# suporte a backtick que este cenário prova).
 T28C_P="$WORK/s28-corrupt-python"
 mkdir -p "$T28C_P"
 cp -r "$ROOT_DIR/pypi" "$T28C_P/pypi"
 corrupt_literal \
   "$ROOT_DIR/pypi/trackfw/validator.py" "$T28C_P/pypi/trackfw/validator.py" \
-  '            val = normalize_yaml_flat_value(val)
-            if len(val) >= 2 and val[0] == val[-1] == "`":
-                val = val[1:-1]
-            if val.endswith(".md"):
-' \
-  '            val = normalize_yaml_flat_value(val)
-            if val.endswith(".md"):
-' \
+  '_REF_DELIMITERS = ("\"", "'"'"'", "`")' \
+  '_REF_DELIMITERS = ("\"", "'"'"'")' \
   "s28-python"
 
 assert_lacks_pattern "backtick-ref/python/adr_accepted_when_req_done-detects-regression" \
@@ -1977,4 +1981,697 @@ else
   exit 1
 fi
 
-echo "Falsification checks passed (all 65 scenarios, 14 gates + 3 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), 3 CLIs — proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 30 — `trackfw status`: bloco 📊 Inventory byte-idêntico nos 3 CLIs
+# no modo flat, com fixture DISCRIMINANTE (roadmap em analyzing/ + REQs
+# Open/Done/Closed) — prova ROADMAP-2026-08-02-convergir-o-comando-status-
+# dos-tres-clis-num-formato-unico (ML-3A), AC2 (analyzing contado, antes
+# omitido em 5 de 6 pontos de enumeração no Python) e AC3 (REQs
+# discriminadas por status real, antes Done/Closed agrupados no Python).
+#
+# O repositório real deste projeto tem "analyzing 0" — não exercitaria a
+# correção principal. A fixture PRECISA ter >=1 roadmap em analyzing/ e as
+# 3 combinações de status de REQ, senão o cenário não discrimina nada.
+#
+# Mesmo padrão dos Cenários 28/29: compara contra um LITERAL PINADO, não os
+# 3 CLIs entre si — um diff três-a-três passaria se todos derivassem juntos
+# do mesmo bug (ex: todos omitindo analyzing), ou se todos imprimissem
+# vazio.
+#
+# Corrompe a IMPLEMENTAÇÃO (Go: a lista de estados enumerados em
+# inventoryBlock), nunca a asserção — mesmo padrão dos Cenários
+# 14/16/17/20/21/24/25/26/27/28/29.
+# ---------------------------------------------------------------------------
+
+# REQ mínima com status controlado — só o frontmatter importa para o bloco
+# Inventory (contagem por status), mas o corpo segue o mesmo esqueleto das
+# demais fixtures de REQ do harness (write_req_done_fixture etc.).
+write_req_status_fixture() {
+  local dest=$1 status=$2 title=$3
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: $status
+date: 2026-08-02
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: $title
+
+> Date: 2026-08-02 | Status: $status
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] item
+
+## Linked ADR
+ADR:
+
+## Linked Roadmap
+Roadmap:
+EOF
+}
+
+# Roadmap mínimo com status controlado, para popular um estado específico
+# (ex: analyzing/) na contagem do bloco Inventory.
+write_roadmap_state_fixture() {
+  local dest=$1 status=$2 title=$3
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: $status
+date: 2026-08-02
+---
+
+# Roadmap: $title
+
+> Status: $status
+EOF
+}
+
+S30_PROJECT="$WORK/s30-status-project"
+scaffold_adr_req_project "$S30_PROJECT"
+write_req_status_fixture "$S30_PROJECT/docs/req/REQ-open.md" "Open" "open fixture"
+write_req_status_fixture "$S30_PROJECT/docs/req/REQ-done.md" "Done" "done fixture"
+write_req_status_fixture "$S30_PROJECT/docs/req/REQ-closed.md" "Closed" "closed fixture"
+write_roadmap_state_fixture "$S30_PROJECT/docs/roadmaps/analyzing/ROADMAP-analyzing.md" "analyzing" "analyzing fixture"
+
+S30_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        3  (1 Open · 1 Done · 1 Closed)\n   Roadmaps    1\n     backlog 0 · analyzing 1 · wip 0\n     blocked 0 · done 0 · abandoned 0\n\n🔄 WIP (0)\n\n❌ Blocked (0)\n\n✅ Done (last 5)\n\n────────────────────────────────────────\n'
+
+# --- prova positiva: os 3 CLIs, contra o literal pinado ---------------------
+s30_go_out=$(cd "$S30_PROJECT" && "$T27_GO_BIN" status)$'\n'
+s30_node_out=$(cd "$S30_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
+s30_python_out=$(cd "$S30_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+
+if [[ "$s30_go_out" == "$S30_EXPECTED" && "$s30_node_out" == "$S30_EXPECTED" && "$s30_python_out" == "$S30_EXPECTED" ]]; then
+  echo "OK   [falsify/status-inventory/baseline-byte-identical-and-pinned]"
+else
+  echo "FAIL [falsify/status-inventory/baseline-byte-identical-and-pinned]: esperava '$S30_EXPECTED' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s30_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s30_node_out")" >&2
+  echo "  python: $(printf '%q' "$s30_python_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Go reverte a enumeração de analyzing (5 de 6 -------
+# estados) — reproduz o defeito histórico do Python pré-Wave-1 num CLI
+# concreto e prova que a comparação byte-a-byte reprova a omissão.
+T30C_GO_MOD="$WORK/s30-corrupt-go"
+mkdir -p "$T30C_GO_MOD/cmd" "$T30C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T30C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T30C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T30C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T30C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T30C_GO_MOD/internal/validator/validator.go" \
+  'states := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}' \
+  'states := []string{"backlog", "wip", "blocked", "done", "abandoned"}' \
+  "s30-go"
+
+T30C_GO_BIN="$WORK/s30-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T30C_GO_BIN")"
+build_go_or_fail "setup-s30-go-corrupt-build" "$T30C_GO_MOD" "$T30C_GO_BIN"
+
+s30c_go_out=$(cd "$S30_PROJECT" && "$T30C_GO_BIN" status)$'\n'
+if [[ "$s30c_go_out" != "$S30_EXPECTED" ]]; then
+  echo "OK   [falsify/status-inventory/go-detects-analyzing-omission]"
+else
+  echo "FAIL [falsify/status-inventory/go-detects-analyzing-omission]: enumeração de analyzing revertida mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Cenário 31 — `trackfw status` no modo `by_agent`: bloco 📊 Inventory +
+# "⚙ WIP by Agent" byte-idênticos nos 3 CLIs, contra literal pinado.
+#
+# Foi exatamente no by_agent que o Python divergiu historicamente — a seção
+# listava os NOMES DE ESTADO (backlog/wip/blocked/...) como se fossem
+# agentes, em vez de agregar por agente configurado. check-artifact-parity.sh
+# e check-validate-parity.sh não cobrem `status`; nenhum gate de paridade
+# existente comparava os 3 CLIs nesse modo — por isso este cenário próprio.
+#
+# `agents:` em lista de BLOCO (não flow-style `[apolo, zeus]`) — o parser
+# YAML leve do Python (pypi/trackfw/config.py) não trata flow-style, e isso
+# é um defeito PRÉ-EXISTENTE e distinto do `status` (não corrigido aqui, já
+# reportado para fila própria). Lista em bloco evita acoplar este cenário a
+# esse defeito conhecido.
+# ---------------------------------------------------------------------------
+
+S31_PROJECT="$WORK/s31-status-by-agent-project"
+mkdir -p "$S31_PROJECT/docs/adr" "$S31_PROJECT/docs/req"
+mkdir -p "$S31_PROJECT/docs/roadmaps/apolo"/{backlog,analyzing,wip,blocked,done,abandoned}
+mkdir -p "$S31_PROJECT/docs/roadmaps/zeus"/{backlog,analyzing,wip,blocked,done,abandoned}
+cat > "$S31_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: by_agent
+agents:
+- apolo
+- zeus
+EOF
+# zeus tem roadmap em analyzing/ mas NENHUM em wip/ — discriminante
+# deliberado: prova que o bloco Inventory agrega através de TODOS os
+# agentes (Roadmaps total = 2, analyzing 1 · wip 1), enquanto a seção
+# "⚙ WIP by Agent" só lista quem tem wip não-vazio (só [apolo] aparece).
+write_roadmap_state_fixture "$S31_PROJECT/docs/roadmaps/apolo/wip/ROADMAP-apolo-wip.md" "wip" "apolo wip fixture"
+write_roadmap_state_fixture "$S31_PROJECT/docs/roadmaps/zeus/analyzing/ROADMAP-zeus-analyzing.md" "analyzing" "zeus analyzing fixture"
+
+S31_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        0  (0 Open · 0 Done · 0 Closed)\n   Roadmaps    2\n     backlog 0 · analyzing 1 · wip 1\n     blocked 0 · done 0 · abandoned 0\n\n⚙ WIP by Agent\n  [apolo] WIP (1)\n    ROADMAP-apolo-wip.md\n\n────────────────────────────────────────\n'
+
+s31_go_out=$(cd "$S31_PROJECT" && "$T27_GO_BIN" status)$'\n'
+s31_node_out=$(cd "$S31_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
+s31_python_out=$(cd "$S31_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+
+if [[ "$s31_go_out" == "$S31_EXPECTED" && "$s31_node_out" == "$S31_EXPECTED" && "$s31_python_out" == "$S31_EXPECTED" ]]; then
+  echo "OK   [falsify/status-inventory-by-agent/baseline-byte-identical-and-pinned]"
+else
+  echo "FAIL [falsify/status-inventory-by-agent/baseline-byte-identical-and-pinned]: esperava '$S31_EXPECTED' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s31_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s31_node_out")" >&2
+  echo "  python: $(printf '%q' "$s31_python_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Python corrompe SÓ o subdiretório lido pelo loop de
+# listagem por agente (wip → backlog), deixando a agregação do Inventory
+# (_roadmap_counts_by_agent/totals, função separada) intacta. Isolado desta
+# forma porque um swap de `agents` inteiro (ex: por _ROADMAP_STATES, o bug
+# histórico literal) já derruba o bloco Inventory sozinho — a asserção
+# passaria mesmo que o corpo da seção "⚙ WIP by Agent" nunca fosse
+# comparado byte-a-byte, mascarando exatamente o que este cenário promete
+# cobrir. Com o Inventory permanecendo idêntico ao pinado, a única forma da
+# reprovação abaixo passar é a comparação byte-a-byte ter de fato pego a
+# divergência na seção "⚙ WIP by Agent" (a linha "[apolo] WIP (1)" some).
+T31C_PY="$WORK/s31-corrupt-python"
+mkdir -p "$T31C_PY"
+cp -r "$ROOT_DIR/pypi" "$T31C_PY/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/commands/status.py" "$T31C_PY/pypi/trackfw/commands/status.py" \
+  '            agent_wip = _list_files(os.path.join(roadmap_dir, agent, "wip"))' \
+  '            agent_wip = _list_files(os.path.join(roadmap_dir, agent, "backlog"))' \
+  "s31-python"
+
+s31c_python_out=$(cd "$S31_PROJECT" && env PYTHONPATH="$T31C_PY/pypi" python3 -m trackfw status)$'\n'
+if [[ "$s31c_python_out" != "$S31_EXPECTED" ]]; then
+  echo "OK   [falsify/status-inventory-by-agent/python-detects-wip-by-agent-body-drift]"
+else
+  echo "FAIL [falsify/status-inventory-by-agent/python-detects-wip-by-agent-body-drift]: subdiretório do loop por agente trocado mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Cenário 32 — item 1 do ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-
+# parsing-remanescentes-no-python: _extract_ref_path (Python) remove um
+# delimitador NÃO PAREADO (aspas/backtick só de um lado) tão bem quanto
+# Go/Node — antes (pré-588b9b8) devolvia "" e a referência ficava invisível
+# em silêncio.
+#
+# Fixture discriminante: `ADR: "docs/adr/X.md'` no corpo (aspa dupla
+# abrindo, aspa simples fechando — delimitadores MISTOS, não pareados). Os
+# Cenários 27/28 já existentes usam aspas pareadas ou backtick pareado —
+# nenhum dos dois exercita esta classe. Sem a correção, val termina em "'"
+# (não ".md") e _extract_ref_path descarta a referência silenciosamente — a
+# violação adr_accepted_when_req_done nunca dispara.
+#
+#   - baseline: os 3 CLIs, contra o MESMO projeto-fixture, reprovam com o
+#     diagnóstico de ADR não aceito (S27_MSG_ACCEPTED) — prova que os 3
+#     concordam (Go/Node já eram a referência; Python alinhado por 588b9b8).
+#   - detecção: reverte SÓ o Python — o call site exato alterado por
+#     588b9b8 (_strip_ref_delimiters → normalize_yaml_flat_value, que exige
+#     par casado) — e prova, via assert_lacks_pattern, que a violação
+#     desaparece na MESMA fixture.
+#
+# Corrompe a IMPLEMENTAÇÃO (o ponto exato revertido por 588b9b8), nunca a
+# asserção — mesmo padrão dos Cenários 27/28/29/30/31. Reusa T27_GO_BIN
+# (binário Go limpo) e S27_MSG_ACCEPTED.
+# ---------------------------------------------------------------------------
+
+write_req_done_fixture_unpaired_delimiter_body_only() {
+  local dest=$1 adr_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: Done
+date: 2026-08-02
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: fixture com delimitador não pareado
+
+> Date: 2026-08-02 | Status: Done
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [x] feito
+
+## Linked ADR
+ADR: "$adr_rel'
+
+## Linked Roadmap
+Roadmap:
+EOF
+}
+
+T32_PROJECT="$WORK/s32-unpaired-delimiter-project"
+scaffold_adr_req_project "$T32_PROJECT"
+write_adr_status_fixture "$T32_PROJECT/docs/adr/ADR-2026-08-02-proposed-fixture.md" "Proposed"
+write_req_done_fixture_unpaired_delimiter_body_only \
+  "$T32_PROJECT/docs/req/REQ-2026-08-02-unpaired-delimiter-fixture.md" \
+  "docs/adr/ADR-2026-08-02-proposed-fixture.md"
+
+assert_fails_with "unpaired-delimiter/go/adr_accepted_when_req_done-baseline" \
+  "$S27_MSG_ACCEPTED" \
+  bash -c "cd '$T32_PROJECT' && exec '$T27_GO_BIN' validate"
+assert_fails_with "unpaired-delimiter/node/adr_accepted_when_req_done-baseline" \
+  "$S27_MSG_ACCEPTED" \
+  bash -c "cd '$T32_PROJECT' && exec node '$ROOT_DIR/npm/bin/trackfw' validate"
+assert_fails_with "unpaired-delimiter/python/adr_accepted_when_req_done-baseline" \
+  "$S27_MSG_ACCEPTED" \
+  bash -c "cd '$T32_PROJECT' && exec env PYTHONPATH='$ROOT_DIR/pypi' python3 -m trackfw validate"
+
+# --- Python: prova de detecção (delimitador não pareado deixa de ser -------
+# removido — reverte exatamente o call site alterado por 588b9b8)
+T32C_P="$WORK/s32-corrupt-python"
+mkdir -p "$T32C_P"
+cp -r "$ROOT_DIR/pypi" "$T32C_P/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/validator.py" "$T32C_P/pypi/trackfw/validator.py" \
+  '            val = _strip_ref_delimiters(val)
+' \
+  '            val = normalize_yaml_flat_value(val)
+' \
+  "s32-python"
+
+assert_lacks_pattern "unpaired-delimiter/python/adr_accepted_when_req_done-detects-regression" \
+  "$S27_MSG_ACCEPTED" \
+  bash -c "cd '$T32_PROJECT' && exec env PYTHONPATH='$T32C_P/pypi' python3 -m trackfw validate"
+
+# ---------------------------------------------------------------------------
+# Cenário 33 — item 2 do ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-
+# parsing-remanescentes-no-python: `trackfw status` no fallback de agentes
+# (by_agent SEM `agents:` configurado) lista os subdiretórios em ordem
+# ALFABÉTICA nos 3 CLIs — antes (pré-588b9b8) o Python (_list_dirs, pypi/
+# trackfw/commands/status.py) devolvia a ordem crua do filesystem,
+# divergindo de Go (os.ReadDir, ordenado por contrato da stdlib) e Node
+# (fs.readdirSync, ordenado neste filesystem).
+#
+# Fixture discriminante: `by_agent` SEM `agents:` no trackfw.yaml (força o
+# fallback) — o Cenário 31 já existente configura `agents:` em lista de
+# bloco e por isso NÃO passa pelo fallback; não cobre este item. Os
+# subdiretórios são criados FORA de ordem alfabética (zeus antes de apolo) —
+# documenta a intenção do defeito histórico (a ordem devolvida dependia da
+# ordem de criação no filesystem), mesmo que o braço de detecção abaixo não
+# dependa dela para reprovar (ver nota). AMBOS os agentes têm roadmap em
+# wip/ — com só um WIP não-vazio (padrão do Cenário 31), a ordenação não
+# apareceria na saída e a checagem seria vácua.
+#
+#   - baseline: os 3 CLIs, contra o literal PINADO (capturado rodando os 3
+#     CLIs reais contra a fixture, não construído à mão), byte-idênticos —
+#     [apolo] antes de [zeus] em "⚙ WIP by Agent" e no total do Inventory.
+#   - detecção: Python reverte `_list_dirs` para `sorted(..., reverse=True)`
+#     — mesma linha alterada por 588b9b8, mesmo ponto de código — e prova,
+#     por asserção POSITIVA (não só "!= esperado", que também passaria por
+#     um crash ou saída vazia), que [zeus] passa a aparecer ANTES de
+#     [apolo] na saída corrompida.
+#
+#     NOTA: o braço de detecção usa `reverse=True`, não `os.listdir` cru
+#     (sem sorted nenhum) como o defeito histórico literal. `os.listdir`
+#     cru depende da ordem de readdir() do filesystem — em APFS (macOS,
+#     testado aqui) ela preserva ordem de criação e o cenário reprova; em
+#     ext4 com dir_index (Linux, comum em CI) readdir devolve ordem hash,
+#     que para {apolo, zeus} pode sair alfabética por coincidência,
+#     tornando o braço inerte (falso "checagem vácua") nessa máquina.
+#     `reverse=True` é determinística em qualquer filesystem — mais forte
+#     que o defeito original (que era não-determinístico), mas prova
+#     exatamente o que o cenário promete: que a comparação byte-a-byte tem
+#     poder de reprovação sobre a ORDEM dos agentes, não apenas sobre o
+#     conjunto.
+#
+# Corrompe a IMPLEMENTAÇÃO, nunca a asserção — mesmo padrão dos Cenários
+# 14/16/17/20/21/24/25/26/27/28/29/30/31/32.
+# ---------------------------------------------------------------------------
+
+S33_PROJECT="$WORK/s33-status-by-agent-fallback-order-project"
+mkdir -p "$S33_PROJECT/docs/adr" "$S33_PROJECT/docs/req"
+mkdir -p "$S33_PROJECT/docs/roadmaps/zeus"/{backlog,analyzing,wip,blocked,done,abandoned}
+mkdir -p "$S33_PROJECT/docs/roadmaps/apolo"/{backlog,analyzing,wip,blocked,done,abandoned}
+cat > "$S33_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: by_agent
+EOF
+# zeus criado ANTES de apolo — sem sorted(), listdir cru preserva esta ordem
+# de criação neste filesystem, tornando a fixture discriminante.
+write_roadmap_state_fixture "$S33_PROJECT/docs/roadmaps/zeus/wip/ROADMAP-zeus-wip.md" "wip" "zeus wip fixture"
+write_roadmap_state_fixture "$S33_PROJECT/docs/roadmaps/apolo/wip/ROADMAP-apolo-wip.md" "wip" "apolo wip fixture"
+
+S33_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        0  (0 Open · 0 Done · 0 Closed)\n   Roadmaps    2\n     backlog 0 · analyzing 0 · wip 2\n     blocked 0 · done 0 · abandoned 0\n\n⚙ WIP by Agent\n  [apolo] WIP (1)\n    ROADMAP-apolo-wip.md\n  [zeus] WIP (1)\n    ROADMAP-zeus-wip.md\n\n────────────────────────────────────────\n'
+
+s33_go_out=$(cd "$S33_PROJECT" && "$T27_GO_BIN" status)$'\n'
+s33_node_out=$(cd "$S33_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
+s33_python_out=$(cd "$S33_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+
+if [[ "$s33_go_out" == "$S33_EXPECTED" && "$s33_node_out" == "$S33_EXPECTED" && "$s33_python_out" == "$S33_EXPECTED" ]]; then
+  echo "OK   [falsify/status-by-agent-fallback-order/baseline-byte-identical-and-pinned]"
+else
+  echo "FAIL [falsify/status-by-agent-fallback-order/baseline-byte-identical-and-pinned]: esperava '$S33_EXPECTED' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s33_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s33_node_out")" >&2
+  echo "  python: $(printf '%q' "$s33_python_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Python reverte _list_dirs para ordem determinística
+# invertida (ver nota acima sobre por que não usar os.listdir cru) --------
+T33C_PY="$WORK/s33-corrupt-python"
+mkdir -p "$T33C_PY"
+cp -r "$ROOT_DIR/pypi" "$T33C_PY/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/commands/status.py" "$T33C_PY/pypi/trackfw/commands/status.py" \
+  '            name for name in sorted(os.listdir(path))
+' \
+  '            name for name in sorted(os.listdir(path), reverse=True)
+' \
+  "s33-python"
+
+s33c_python_out=$(cd "$S33_PROJECT" && env PYTHONPATH="$T33C_PY/pypi" python3 -m trackfw status)$'\n'
+if [[ "$s33c_python_out" == "$S33_EXPECTED" ]]; then
+  echo "FAIL [falsify/status-by-agent-fallback-order/python-detects-order-regression]: _list_dirs revertido para ordem invertida mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF $'[zeus] WIP (1)\n    ROADMAP-zeus-wip.md\n  [apolo]' <<<"$s33c_python_out"; then
+  echo "OK   [falsify/status-by-agent-fallback-order/python-detects-order-regression]"
+else
+  echo "FAIL [falsify/status-by-agent-fallback-order/python-detects-order-regression]: saída corrompida diverge do pinado, mas não pela ordem esperada (zeus antes de apolo) — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s33c_python_out")" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Cenário 34 — item 3 do ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-
+# parsing-remanescentes-no-python: Go e Node aceitam sequência YAML em bloco
+# NÃO indentada ("agents:\n- apolo") — antes (pré-d208971) tratavam a linha
+# "- apolo" como top-level (por falta de indentação) e DESCARTAVAM a lista
+# em silêncio, caindo no fallback de varrer subdiretórios. O Python já lia
+# corretamente (referência).
+#
+# Fixture discriminante: `agents:` em lista de bloco NÃO indentada,
+# configurando SÓ `apolo`, enquanto `docs/roadmaps/` no disco tem `apolo`
+# **e** `zeus` (zeus com roadmap em wip/). Os cenários existentes (ex. 31)
+# usam forma indentada — não exercitam o defeito. Se a fixture configurasse
+# o MESMO conjunto de agentes que existe no disco, reverter o parser cairia
+# no fallback e reproduziria a MESMA saída (fallback enumera exatamente
+# [apolo, zeus] = o que o parser corrigido já devolvia) — o braço de
+# detecção seria vácuo. Com `agents: [apolo]` configurado e `zeus/` extra no
+# disco, a divergência é inequívoca: parser correto → só apolo aparece
+# (zeus invisível); parser quebrado → cai no fallback → zeus reaparece.
+#
+#   - baseline: os 3 CLIs, contra o literal PINADO (capturado rodando os 3
+#     CLIs reais contra a fixture), byte-idênticos — só [apolo] aparece,
+#     Inventory Roadmaps total 1 (wip 1); zeus invisível nos 3.
+#   - detecção: Go e Node revertem o ponto exato alterado por d208971
+#     (continuesOpenList sempre false — a lista não-indentada volta a ser
+#     descartada) e provam, por asserção POSITIVA, que zeus reaparece na
+#     saída corrompida.
+#
+# Corrompe a IMPLEMENTAÇÃO (o ponto exato revertido por d208971), nunca a
+# asserção — mesmo padrão dos Cenários 14/16/17/20/21/24/25/26/27/28/29/30/
+# 31/32/33. Não toca em pypi/ — o Python já está correto (item fora do
+# escopo negativo deste roadmap).
+# ---------------------------------------------------------------------------
+
+S34_PROJECT="$WORK/s34-config-unindented-agents-project"
+mkdir -p "$S34_PROJECT/docs/adr" "$S34_PROJECT/docs/req"
+mkdir -p "$S34_PROJECT/docs/roadmaps/zeus"/{backlog,analyzing,wip,blocked,done,abandoned}
+mkdir -p "$S34_PROJECT/docs/roadmaps/apolo"/{backlog,analyzing,wip,blocked,done,abandoned}
+cat > "$S34_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: by_agent
+agents:
+- apolo
+EOF
+write_roadmap_state_fixture "$S34_PROJECT/docs/roadmaps/zeus/wip/ROADMAP-zeus-wip.md" "wip" "zeus wip fixture (fora da lista configurada)"
+write_roadmap_state_fixture "$S34_PROJECT/docs/roadmaps/apolo/wip/ROADMAP-apolo-wip.md" "wip" "apolo wip fixture"
+
+S34_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        0  (0 Open · 0 Done · 0 Closed)\n   Roadmaps    1\n     backlog 0 · analyzing 0 · wip 1\n     blocked 0 · done 0 · abandoned 0\n\n⚙ WIP by Agent\n  [apolo] WIP (1)\n    ROADMAP-apolo-wip.md\n\n────────────────────────────────────────\n'
+
+s34_go_out=$(cd "$S34_PROJECT" && "$T27_GO_BIN" status)$'\n'
+s34_node_out=$(cd "$S34_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
+s34_python_out=$(cd "$S34_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+
+if [[ "$s34_go_out" == "$S34_EXPECTED" && "$s34_node_out" == "$S34_EXPECTED" && "$s34_python_out" == "$S34_EXPECTED" ]]; then
+  echo "OK   [falsify/config-unindented-agents/baseline-byte-identical-and-pinned]"
+else
+  echo "FAIL [falsify/config-unindented-agents/baseline-byte-identical-and-pinned]: esperava '$S34_EXPECTED' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s34_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s34_node_out")" >&2
+  echo "  python: $(printf '%q' "$s34_python_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Go reverte continuesOpenList para false ------------
+T34C_GO_MOD="$WORK/s34-corrupt-go"
+mkdir -p "$T34C_GO_MOD/cmd" "$T34C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T34C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T34C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T34C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T34C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/config/config.go" "$T34C_GO_MOD/internal/config/config.go" \
+  $'\t\tisListItem := strings.HasPrefix(trimmed, "- ")\n\t\tcontinuesOpenList := isListItem && (inADRDirs || inAgents || inAcceptanceMarkers)\n' \
+  $'\t\tcontinuesOpenList := false\n' \
+  "s34-go"
+
+T34C_GO_BIN="$WORK/s34-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T34C_GO_BIN")"
+build_go_or_fail "setup-s34-go-corrupt-build" "$T34C_GO_MOD" "$T34C_GO_BIN"
+
+s34c_go_out=$(cd "$S34_PROJECT" && "$T34C_GO_BIN" status)$'\n'
+if [[ "$s34c_go_out" == "$S34_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-unindented-agents/go-detects-list-discarded]: continuesOpenList revertido mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "[zeus]" <<<"$s34c_go_out"; then
+  echo "OK   [falsify/config-unindented-agents/go-detects-list-discarded]"
+else
+  echo "FAIL [falsify/config-unindented-agents/go-detects-list-discarded]: saída corrompida diverge do pinado, mas zeus não reapareceu — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s34c_go_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Node reverte continuesOpenList para false ----------
+T34C_N="$WORK/s34-corrupt-node"
+setup_npm_tree "$T34C_N"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/config/index.js" "$T34C_N/npm/src/config/index.js" \
+  $'    const isListItem = line.startsWith(\'- \');\n    const continuesOpenList = isListItem && (inAdrDirs || inAgents || inAcceptanceMarkers);\n' \
+  $'    const continuesOpenList = false\n' \
+  "s34-node"
+
+s34c_node_out=$(cd "$S34_PROJECT" && node "$T34C_N/npm/bin/trackfw" status)$'\n'
+if [[ "$s34c_node_out" == "$S34_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-unindented-agents/node-detects-list-discarded]: continuesOpenList revertido mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "[zeus]" <<<"$s34c_node_out"; then
+  echo "OK   [falsify/config-unindented-agents/node-detects-list-discarded]"
+else
+  echo "FAIL [falsify/config-unindented-agents/node-detects-list-discarded]: saída corrompida diverge do pinado, mas zeus não reapareceu — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s34c_node_out")" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Cenário 35 — ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-
+# config-dos-tres-clis (ML-2A): `agents:` em lista YAML INLINE cujo item
+# contém vírgula DENTRO de aspas ("caso 8" do contrato — `["a, b", "c"]` são
+# DOIS itens, não três) precisa ser preservado como um único nome de agente
+# nos 3 CLIs.
+#
+# Nenhum cenário existente exercita este caso: o 34 cobre lista em BLOCO não
+# indentada (defeito de outro parser, já corrigido antes desta Wave); os
+# Cenários 30/31/33 usam `agents:` em bloco, sem flow-style. A tabela de 9
+# casos do ADR-2026-08-02-suporte-a-lista-yaml-inline-nos-parsers-de-config-
+# dos-tres-clis foi verificada por teste unitário em cada CLI (ML-1A), mas
+# nenhum gate de PARIDADE cross-CLI cobria o caso 8 especificamente — e é o
+# único dos nove que uma separação ingênua por vírgula quebra.
+#
+# Fixture discriminante: agente real chamado `ka, tsu` — diretório em disco
+# `docs/roadmaps/ka, tsu/` (vírgula+espaço é caractere válido em nome de
+# diretório Unix) contendo um roadmap em wip/. `trackfw.yaml` configura
+# `agents: ["ka, tsu", "obi"]` (flow-style, item citado com vírgula
+# embutida). Escolhido deliberadamente para não ser vácuo por acidente: um
+# parser que separa a vírgula ingenuamente (fora de aspas) produz os
+# fragmentos "ka" e "tsu" como agentes SEPARADOS — nenhum dos dois casa com
+# o diretório real `ka, tsu` no disco, então o roadmap correspondente
+# desaparece INTEIRO da saída (não apenas o nome do agente muda formatação
+# — a seção "⚙ WIP by Agent" fica vazia e o Inventory some a contagem).
+# Uma fixture só com `[a, b]` (sem vírgula em item) não teria essa
+# propriedade: qualquer separação, ingênua ou correta, produziria os mesmos
+# dois nomes.
+#
+# Segunda camada de discriminação, decisiva contra reversão TOTAL do suporte
+# inline (não só o ramo de aspas): `docs/roadmaps/zeta/` também existe no
+# disco, com wip roadmap PRÓPRIO, mas `zeta` NÃO está na lista configurada.
+# Com `agents:` corretamente parseado (inline, não-vazio), `resolveStateDirs`
+# itera só os agentes configurados — `zeta` nunca entra na conta, igual ao
+# papel de `zeus` no Cenário 34. Se alguém revertesse `isInlineList` por
+# inteiro (não só o scanner de aspas), `agents: [...]` cairia no modo bloco,
+# não encontraria `- item` nas linhas seguintes, produziria `cfg.Agents`
+# vazio, e o CÓDIGO cairia no fallback de varrer `docs/roadmaps/*` — que
+# encontraria `ka, tsu`, `obi` E `zeta`. Sem `zeta` no disco, esse fallback
+# reproduziria por acidente a MESMA saída do parser correto (mesmo conjunto
+# efetivo de agentes com wip), e os três braços de detecção abaixo
+# morreriam no setup com "expected exactly 1 occurrence... got 0" — o
+# defeito descrito em vault/notes/cenarios-de-falsificacao-quebram-em-
+# refactor-do-alvo-2026-08-02.md, aqui por reversão total em vez de
+# refactor. Com `zeta` presente e fora da lista, o fallback reintroduziria
+# `[zeta] WIP (1)` na saída — divergência inequívoca do pinado.
+#
+#   - baseline: os 3 CLIs, contra o literal PINADO (capturado rodando os 3
+#     CLIs reais contra a fixture), byte-idênticos — `[ka, tsu] WIP (1)`
+#     aparece com o roadmap listado, Inventory Roadmaps total 1 (wip 1).
+#   - detecção: os 3 CLIs revertem, cada um em sua função
+#     `splitTopLevelCommas`/`_split_top_level_commas`, o ramo que detecta
+#     aspas (`case r == '"' || r == '\''`/`ch === '"' || ch === "'"`/
+#     `ch in ('"', "'")`) para uma condição sempre falsa — a vírgula deixa
+#     de ser tratada como "dentro de aspas" e volta a separar o item em
+#     dois. Prova, por asserção POSITIVA em duas frentes (saída diverge do
+#     pinado E o nome do roadmap desaparece), que a comparação capta a
+#     regressão pelo motivo certo — não por acaso.
+#
+# Corrompe a IMPLEMENTAÇÃO (o ponto exato que trata aspas em
+# splitTopLevelCommas, introduzido por bc00010), nunca a asserção — mesmo
+# padrão dos Cenários 14/16/17/20/21/24/25/26/27/28/29/30/31/32/33/34. Não
+# amplia o suporte YAML (mapas inline, listas aninhadas) — fora de escopo,
+# registrado no ADR.
+# ---------------------------------------------------------------------------
+
+S35_PROJECT="$WORK/s35-config-inline-comma-in-quotes-project"
+mkdir -p "$S35_PROJECT/docs/adr" "$S35_PROJECT/docs/req"
+mkdir -p "$S35_PROJECT/docs/roadmaps/ka, tsu"/{backlog,analyzing,wip,blocked,done,abandoned}
+mkdir -p "$S35_PROJECT/docs/roadmaps/obi"/{backlog,analyzing,wip,blocked,done,abandoned}
+mkdir -p "$S35_PROJECT/docs/roadmaps/zeta"/{backlog,analyzing,wip,blocked,done,abandoned}
+cat > "$S35_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: by_agent
+agents: ["ka, tsu", "obi"]
+EOF
+write_roadmap_state_fixture "$S35_PROJECT/docs/roadmaps/ka, tsu/wip/ROADMAP-ka-tsu-wip.md" "wip" "ka tsu wip fixture (caso 8)"
+write_roadmap_state_fixture "$S35_PROJECT/docs/roadmaps/zeta/wip/ROADMAP-zeta-wip.md" "wip" "zeta wip fixture (fora da lista configurada)"
+
+S35_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        0  (0 Open · 0 Done · 0 Closed)\n   Roadmaps    1\n     backlog 0 · analyzing 0 · wip 1\n     blocked 0 · done 0 · abandoned 0\n\n⚙ WIP by Agent\n  [ka, tsu] WIP (1)\n    ROADMAP-ka-tsu-wip.md\n\n────────────────────────────────────────\n'
+
+s35_go_out=$(cd "$S35_PROJECT" && "$T27_GO_BIN" status)$'\n'
+s35_node_out=$(cd "$S35_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
+s35_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+
+if [[ "$s35_go_out" == "$S35_EXPECTED" && "$s35_node_out" == "$S35_EXPECTED" && "$s35_python_out" == "$S35_EXPECTED" ]]; then
+  echo "OK   [falsify/config-inline-comma-in-quotes/baseline-byte-identical-and-pinned]"
+else
+  echo "FAIL [falsify/config-inline-comma-in-quotes/baseline-byte-identical-and-pinned]: esperava '$S35_EXPECTED' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s35_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s35_node_out")" >&2
+  echo "  python: $(printf '%q' "$s35_python_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Go desativa o ramo de detecção de aspas em ---------
+# splitTopLevelCommas (a vírgula citada volta a separar o item em dois)
+T35C_GO_MOD="$WORK/s35-corrupt-go"
+mkdir -p "$T35C_GO_MOD/cmd" "$T35C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T35C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T35C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T35C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T35C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/config/config.go" "$T35C_GO_MOD/internal/config/config.go" \
+  $'\t\tcase r == \'"\' || r == \'\\\'\':\n\t\t\tquote = r\n\t\t\tcur.WriteRune(r)\n' \
+  $'\t\tcase false:\n\t\t\tquote = r\n\t\t\tcur.WriteRune(r)\n' \
+  "s35-go"
+
+T35C_GO_BIN="$WORK/s35-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T35C_GO_BIN")"
+build_go_or_fail "setup-s35-go-corrupt-build" "$T35C_GO_MOD" "$T35C_GO_BIN"
+
+s35c_go_out=$(cd "$S35_PROJECT" && "$T35C_GO_BIN" status)$'\n'
+if [[ "$s35c_go_out" == "$S35_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-item-split]: detecção de aspas revertida mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "ROADMAP-ka-tsu-wip.md" <<<"$s35c_go_out"; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-item-split]: saída corrompida diverge do pinado, mas o roadmap não sumiu — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s35c_go_out")" >&2
+  exit 1
+else
+  echo "OK   [falsify/config-inline-comma-in-quotes/go-detects-item-split]"
+fi
+
+# --- braço de detecção: Node desativa o mesmo ramo -------------------------
+T35C_N="$WORK/s35-corrupt-node"
+setup_npm_tree "$T35C_N"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/config/index.js" "$T35C_N/npm/src/config/index.js" \
+  $'  } else if (ch === \'"\' || ch === "\'") {\n      quote = ch;\n      cur += ch;\n' \
+  $'  } else if (false) {\n      quote = ch;\n      cur += ch;\n' \
+  "s35-node"
+
+s35c_node_out=$(cd "$S35_PROJECT" && node "$T35C_N/npm/bin/trackfw" status)$'\n'
+if [[ "$s35c_node_out" == "$S35_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-item-split]: detecção de aspas revertida mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "ROADMAP-ka-tsu-wip.md" <<<"$s35c_node_out"; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-item-split]: saída corrompida diverge do pinado, mas o roadmap não sumiu — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s35c_node_out")" >&2
+  exit 1
+else
+  echo "OK   [falsify/config-inline-comma-in-quotes/node-detects-item-split]"
+fi
+
+# --- braço de detecção: Python desativa o mesmo ramo ------------------------
+T35C_P="$WORK/s35-corrupt-python"
+mkdir -p "$T35C_P"
+cp -r "$ROOT_DIR/pypi" "$T35C_P/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/config.py" "$T35C_P/pypi/trackfw/config.py" \
+  $'        elif ch in (\'"\', "\'"):\n            quote = ch\n            cur.append(ch)\n' \
+  $'        elif False:\n            quote = ch\n            cur.append(ch)\n' \
+  "s35-python"
+
+s35c_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$T35C_P/pypi" python3 -m trackfw status)$'\n'
+if [[ "$s35c_python_out" == "$S35_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-item-split]: detecção de aspas revertida mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "ROADMAP-ka-tsu-wip.md" <<<"$s35c_python_out"; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-item-split]: saída corrompida diverge do pinado, mas o roadmap não sumiu — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s35c_python_out")" >&2
+  exit 1
+else
+  echo "OK   [falsify/config-inline-comma-in-quotes/python-detects-item-split]"
+fi
+
+echo "Falsification checks passed (all 82 scenarios, 14 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion) — proved non-vacuous)"

@@ -1282,6 +1282,83 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
+  // ML-1B (2026-08-02) — getStatus() ganhou o bloco "📊 Inventory" no topo, discriminando
+  // roadmaps pelos 6 estados (incluindo "analyzing", historicamente omitido) e REQs por status
+  // real (Open/Done/Closed). Este teste prova que "analyzing" é contado — não apenas presente na
+  // enumeração de estados, mas efetivamente encontrado num fixture com 1 roadmap lá dentro.
+  await testAsync('getStatus Inventory: roadmap em analyzing/ é contado (antes não aparecia)', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-status-analyzing-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'backlog'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'analyzing'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'blocked'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'abandoned'), { recursive: true })
+      fs.writeFileSync(
+        path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nadr_dirs:\n  - docs/adr\nroadmap_dir: docs/roadmaps\n'
+      )
+      fs.writeFileSync(
+        path.join(tmp, 'docs', 'roadmaps', 'analyzing', 'ROADMAP-fixture.md'),
+        '---\nstatus: analyzing\ndate: 2026-08-02\n---\n# Roadmap em análise\n'
+      )
+
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const out = await validator.getStatus()
+        assert(out.includes('backlog 0 · analyzing 1 · wip 0'),
+          `esperava "analyzing 1" na linha de contagem; got: ${out}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
+  await testAsync('getStatus Inventory: REQs discriminadas em Open/Done/Closed', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-status-reqs-'))
+    try {
+      fs.mkdirSync(path.join(tmp, 'docs', 'req'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'blocked'), { recursive: true })
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+      fs.writeFileSync(
+        path.join(tmp, 'trackfw.yaml'),
+        'req_dir: docs/req\nadr_dirs:\n  - docs/adr\nroadmap_dir: docs/roadmaps\n'
+      )
+      fs.writeFileSync(
+        path.join(tmp, 'docs', 'req', 'REQ-2026-08-02-open.md'),
+        '---\nstatus: Open\ndate: 2026-08-02\n---\n# REQ: open\n'
+      )
+      fs.writeFileSync(
+        path.join(tmp, 'docs', 'req', 'REQ-2026-08-02-done.md'),
+        '---\nstatus: Done\ndate: 2026-08-02\n---\n# REQ: done\n'
+      )
+      fs.writeFileSync(
+        path.join(tmp, 'docs', 'req', 'REQ-2026-08-02-closed.md'),
+        '---\nstatus: Closed\ndate: 2026-08-02\n---\n# REQ: closed\n'
+      )
+
+      const origCwd = process.cwd()
+      process.chdir(tmp)
+      config.reset()
+      try {
+        const out = await validator.getStatus()
+        assert(out.includes('REQs        3  (1 Open · 1 Done · 1 Closed)'),
+          `esperava discriminação "(1 Open · 1 Done · 1 Closed)"; got: ${out}`)
+      } finally {
+        process.chdir(origCwd)
+        config.reset()
+      }
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
+  })
+
   console.log(`\n${passed} passed, ${failed} failed, ${skipped} xfail`)
   if (failed > 0) process.exit(1)
 })()
