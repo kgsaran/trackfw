@@ -33,3 +33,4 @@
 - [falsificacao-fixture-vacua-contra-reversao-total-vs-parcial-2026-08-02](falsificacao-fixture-vacua-contra-reversao-total-vs-parcial-2026-08-02.md)
 - [config-legacy-line-reader-sombreia-yaml-lib-no-validate-2026-08-02](config-legacy-line-reader-sombreia-yaml-lib-no-validate-2026-08-02.md)
 - [falsificacao-config-parser-fixture-precisa-de-escalar-citado-2026-08-02](falsificacao-config-parser-fixture-precisa-de-escalar-citado-2026-08-02.md)
+- [req-frontmatter-roadmap-nao-satisfaz-req-has-roadmap-2026-08-02](req-frontmatter-roadmap-nao-satisfaz-req-has-roadmap-2026-08-02.md)
