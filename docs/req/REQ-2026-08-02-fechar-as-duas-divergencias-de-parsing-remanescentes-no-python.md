@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-02
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-02-python-alinha-delimitador-nao-pareado-e-ordenacao-do-fallback-de-agentes.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md"
 ---
 
 # REQ: Fechar as duas divergencias de parsing remanescentes no Python
 
-> Date: 2026-08-02 | Status: Open
+> Date: 2026-08-02 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -28,21 +28,21 @@ fallback**: `_list_dirs` (`pypi/trackfw/commands/status.py`) **não ordena**, en
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Delimitador não pareado: os 3 CLIs produzem **a mesma** saída para
+- [x] **AC1** — Delimitador não pareado: os 3 CLIs produzem **a mesma** saída para
       `ADR: "docs/adr/X.md'`. O Python passa a resolver `docs/adr/X.md`.
-- [ ] **AC2** — A tabela de 8 entradas do PR #104 é reexecutada nos 3 CLIs e agora dá
+- [x] **AC2** — A tabela de 8 entradas do PR #104 é reexecutada nos 3 CLIs e agora dá
       **idêntica nos 8 casos**, incluindo o caso 6. Saída literal no relatório.
-- [ ] **AC3** — `_list_dirs` ordena. Fixture com subdiretórios criados fora de ordem alfabética
+- [x] **AC3** — `_list_dirs` ordena. Fixture com subdiretórios criados fora de ordem alfabética
       → os 3 CLIs listam agentes na **mesma** ordem.
-- [ ] **AC4** — `status` em modo `by_agent` **sem** `agents:` configurado (portanto via
+- [x] **AC4** — `status` em modo `by_agent` **sem** `agents:` configurado (portanto via
       fallback): as 3 saídas **byte-idênticas**. Hoje divergem.
-- [ ] **AC5** — Não regride: `status` flat e `by_agent` **com** `agents:` em bloco continuam
+- [x] **AC5** — Não regride: `status` flat e `by_agent` **com** `agents:` em bloco continuam
       byte-idênticos nos 3; repositório real continua em 749 bytes.
-- [ ] **AC6** — `validate` verde nos 3 CLIs no repositório.
-- [ ] **AC7** — Cenário de falsificação cobrindo **os dois** itens: fixture com delimitador não
+- [x] **AC6** — `validate` verde nos 3 CLIs no repositório.
+- [x] **AC7** — Cenário de falsificação cobrindo **os dois** itens: fixture com delimitador não
       pareado e fixture `by_agent` **sem `agents:`** (subdiretórios fora de ordem alfabética).
       Sem essas fixtures os cenários não discriminam.
-- [ ] **AC8** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+- [x] **AC8** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
 
 ## Negative Scope (fora do escopo — NÃO fazer)
 
@@ -86,4 +86,4 @@ ADR: docs/adr/ADR-2026-08-02-python-alinha-delimitador-nao-pareado-e-ordenacao-d
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md

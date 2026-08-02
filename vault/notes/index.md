@@ -29,3 +29,4 @@
 - [adr-status-substring-livre-falso-positivo-2026-08-01](adr-status-substring-livre-falso-positivo-2026-08-01.md)
 - [deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01](deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01.md)
 - [validate-parity-gate-vacuo-e-go-sem-helper-unico-2026-08-01](validate-parity-gate-vacuo-e-go-sem-helper-unico-2026-08-01.md)
+- [cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02](cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02.md)

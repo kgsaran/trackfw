@@ -4,6 +4,61 @@
 
 ---
 
+## Sessão 2026-08-02 — Zeus (fila zerada: 3 defeitos de parsing) — CONCLUÍDO
+
+**Branch:** a mesma do PR #105, por pedido de KG — fechar os itens **antes da tag**, para não
+versionar defeito conhecido.
+
+### Três defeitos, e a direção da correção NÃO foi a mesma
+
+| Item | Quem errava | Correção |
+|---|---|---|
+| Delimitador não pareado (`ADR: "X.md'`) | Python | alinha a Go/Node |
+| Ordenação do fallback de agentes (`_list_dirs`) | Python | alinha a Go/Node |
+| **Sequência YAML não indentada** | **Go e Node** | **alinham ao Python** |
+
+### A lição do ciclo
+
+Viemos aplicando a heurística "dois concordam, o terceiro se alinha". No item 3 ela **falharia**:
+`agents:\n- zeus\n- apolo` é YAML válido — confirmei com parser real — e Go/Node descartavam a
+lista **em silêncio**, caindo no fallback. O Python lia certo.
+
+**Maioria não é autoridade quando existe especificação.** Verificar contra o padrão custou um
+comando e evitou alinhar dois CLIs a um bug.
+
+O alcance também era maior que o sintoma: o mesmo `hasIndent` governa `adr_dirs`,
+`acceptance_markers` e `link_fields`, não só `agents`. E `rules` fica de fora **com razão** — é
+mapeamento, não sequência; verificado que sub-chave não indentada é top-level também no YAML
+padrão.
+
+### Falha minha, pega pela barreira
+
+O Cenário 28 quebrou com o ML-1A — ele corrompia um bloco que o ML-1A refatorou, então o literal
+sumiu e o cenário passou a falhar **no setup**, não como veredito. **`make quality` ficou vermelho
+nesta branch por dois commits meus.**
+
+Na auditoria de cada ML rodei `go test`, `npm test` e `pytest` — mas **não** a suíte de
+falsificação, que era exatamente a quebrada.
+
+**Regra a incorporar:** rodar as suítes de teste não substitui rodar o gate completo. Se o ML
+tocou código que algum cenário de falsificação corrompe, `check-gates-falsify.sh` precisa entrar
+na auditoria **daquele ML**, não só na barreira final.
+
+Registrado em `vault/notes/cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02.md`,
+junto de um segundo acerto dela: o braço de detecção do Cenário 33 usava `os.listdir()` sem
+ordenar — **dependente do filesystem**, ficaria inerte no CI. Trocado por `reverse=True`.
+Corrupção que depende de ambiente é cenário vacuoso intermitente, pior que cenário ausente.
+
+### Estado
+
+`make quality` exit 0; falsificação **69 → 78**. Fila com **um** item, de decisão de produto:
+os três CLIs ignoram lista **inline** (`agents: [a, b]`) em silêncio — consistente entre CLIs,
+logo não é paridade, mas é config válida descartada sem aviso.
+
+Pronto para tag após o merge.
+
+---
+
 ## Sessão 2026-08-02 — Zeus (ponto 1: convergir o comando `status`) — CONCLUÍDO
 
 **Branch:** `feat/convergir-o-comando-status-dos-tres-clis-num-formato-unico`

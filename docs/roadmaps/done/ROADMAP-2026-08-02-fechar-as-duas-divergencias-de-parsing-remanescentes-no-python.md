@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-02
 req: "docs/req/REQ-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Fechar as duas divergencias de parsing remanescentes no Python
 
-> Created: 2026-08-02 | Status: wip
+> Created: 2026-08-02 | Status: done
 
 ## Context
 
@@ -76,7 +76,7 @@ referência. Um ML de implementação + barreira.
 ---
 
 ### ML-1B — Go e Node aceitam sequência em bloco não indentada
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo
 **Arquivos afetados:** `internal/config/config.go`, `npm/src/config/index.js` + testes
 
@@ -112,8 +112,8 @@ Python.
 ## Wave 2 — Barreira (1 ML)
 > Dependências: **Wave 1 completa**
 
-### ML-2A — Paridade e seam dos dois itens
-**Status:** pending
+### ML-2A — Paridade e seam dos três itens
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Ártemis
 
 **Ações:**
@@ -129,8 +129,52 @@ Python.
 5. Contador e linha final atualizados.
 
 **Acceptance criteria:**
-- [ ] Gates passam; `make quality` exit 0
-- [ ] 69 cenários herdados confirmados
-- [ ] Cenários novos para os **três** itens, com fixtures discriminantes; não vacuosos
-- [ ] Contador atualizado
-- [ ] `git status --porcelain` sem resíduo
+- [x] Gates passam; `make quality` exit 0
+- [x] Herdados confirmados — **e um estava quebrado** (ver abaixo)
+- [x] Cenários 32, 33 e 34, um por item, com fixtures discriminantes; não vacuosos
+- [x] Contador **69 → 78**
+- [x] `git status --porcelain` mostra só o script
+
+**A barreira pegou o que a minha auditoria deixou passar.** O Cenário 28 quebrou com o ML-1A:
+ele corrompia um bloco de `_extract_ref_path` que o ML-1A refatorou para `_strip_ref_delimiters`.
+O literal sumiu, e o cenário passou a falhar **no setup**, não como veredito:
+
+```
+[s28-python] expected exactly 1 occurrence of pattern, got 0
+EXIT:1
+```
+
+`make quality` estava **vermelho** nesta branch em dois commits meus. Rodei `go test`, `npm test`
+e `pytest` na auditoria de cada ML — mas **não** a suíte de falsificação, que era justamente a
+que estava quebrada. Registrado em
+`vault/notes/cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02.md`.
+
+**Segundo acerto dela:** o braço de detecção do Cenário 33 corrompia `sorted(os.listdir())` para
+`os.listdir()` — ordem "natural", que é **dependente do filesystem**. Em ext4 com `dir_index`
+poderia sair alfabética por acaso e o cenário ficaria **inerte no CI**, sem ninguém notar.
+Trocado por `sorted(..., reverse=True)`, determinístico em qualquer ambiente.
+
+Corrupção que depende de ambiente é cenário vacuoso intermitente — pior que cenário ausente,
+porque dá falsa confiança.
+
+---
+
+## Fechamento
+
+Concluído e auditado em 2026-08-02. `make quality` exit 0; falsificação **69 → 78**.
+
+**Três defeitos fechados**, e a direção da correção não foi a mesma nos três:
+
+| Item | Quem errava | Correção |
+|---|---|---|
+| Delimitador não pareado | Python | alinha a Go/Node |
+| Ordenação do fallback de agentes | Python | alinha a Go/Node |
+| Sequência YAML não indentada | **Go e Node** | alinham ao Python |
+
+**A lição do ciclo:** viemos aplicando "dois concordam, o terceiro se alinha". No item 3 a maioria
+estava errada — `agents:\n- zeus` é YAML válido, confirmado com parser real, e Go/Node
+descartavam a lista em silêncio. **Maioria não é autoridade quando existe especificação.**
+
+**Permanece aberto, com decisão de produto pendente:** os três CLIs ignoram lista **inline**
+(`agents: [a, b]`) em silêncio. Consistente entre CLIs, portanto não é paridade — mas é
+configuração válida sendo descartada sem aviso. Único item da fila.
