@@ -128,8 +128,14 @@ func parse(content string, cfg *ProjectConfig) {
 		}
 		hasIndent := len(rawLine) > 0 && (rawLine[0] == ' ' || rawLine[0] == '\t')
 
+		// Uma sequência em bloco pode estar no mesmo nível de indentação da chave que a abre
+		// (YAML válido: "agents:\n- zeus\n- apolo"). Uma linha "- " sem indentação continua a
+		// lista aberta em vez de ser tratada como nova chave top-level.
+		isListItem := strings.HasPrefix(trimmed, "- ")
+		continuesOpenList := isListItem && (inADRDirs || inAgents || inAcceptanceMarkers)
+
 		// Sair de todos os blocos aninhados ao encontrar linha top-level
-		if !hasIndent {
+		if !hasIndent && !continuesOpenList {
 			// flush blocos existentes
 			if inADRDirs && len(adrDirs) > 0 {
 				cfg.ADRDirs = adrDirs
@@ -176,7 +182,7 @@ func parse(content string, cfg *ProjectConfig) {
 		}
 
 		// Processar linha dentro de bloco aninhado
-		if hasIndent {
+		if hasIndent || continuesOpenList {
 			if inADRDirs {
 				if strings.HasPrefix(trimmed, "- ") {
 					val := strings.TrimPrefix(trimmed, "- ")

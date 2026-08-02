@@ -118,11 +118,17 @@ function parse(content, cfg) {
     if (!line) continue;
     const hasIndent = rawLine.length > 0 && (rawLine[0] === ' ' || rawLine[0] === '\t');
 
-    if (!hasIndent) {
+    // Uma sequência em bloco pode estar no mesmo nível de indentação da chave que a abre
+    // (YAML válido: "agents:\n- zeus\n- apolo"). Uma linha "- " sem indentação continua a
+    // lista aberta em vez de ser tratada como nova chave top-level.
+    const isListItem = line.startsWith('- ');
+    const continuesOpenList = isListItem && (inAdrDirs || inAgents || inAcceptanceMarkers);
+
+    if (!hasIndent && !continuesOpenList) {
       flushBlocks();
     }
 
-    if (hasIndent) {
+    if (hasIndent || continuesOpenList) {
       if (inAdrDirs) {
         if (line.startsWith('- ')) {
           let val = line.slice(2).trim();
