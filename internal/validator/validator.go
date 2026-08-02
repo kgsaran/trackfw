@@ -1278,9 +1278,16 @@ func resolveAdrStatus(content string) string {
 	return ""
 }
 
-func adrStatusIsNotAccepted(content string) bool {
-	status := resolveAdrStatus(content)
+// statusIsNotAccepted é a única expressão do pacote que conhece o vocabulário
+// "Draft"/"Proposed" de status de ADR não aceito. Todo ponto do código que precisa
+// dessa checagem deve chamar este helper (ou adrStatusIsNotAccepted, que o aplica
+// diretamente sobre o conteúdo de um ADR) em vez de comparar os literais.
+func statusIsNotAccepted(status string) bool {
 	return strings.EqualFold(status, "Draft") || strings.EqualFold(status, "Proposed")
+}
+
+func adrStatusIsNotAccepted(content string) bool {
+	return statusIsNotAccepted(resolveAdrStatus(content))
 }
 
 // adrStatusForRule resolve o basename do ADR nos adrDirs configurados e retorna o valor
@@ -1311,7 +1318,7 @@ func adrDraftStatusForRule(rule, adrBasename string, msgs *[]string) (bool, bool
 	if !ok {
 		return false, false
 	}
-	return strings.EqualFold(status, "Draft") || strings.EqualFold(status, "Proposed"), true
+	return statusIsNotAccepted(status), true
 }
 
 // extractFrontmatterField extrai o valor de um campo do bloco frontmatter YAML.
@@ -1660,7 +1667,7 @@ func validateADRAcceptedWhenREQDone() ([]string, error) {
 		if !ok {
 			continue
 		}
-		if strings.EqualFold(status, "Draft") || strings.EqualFold(status, "Proposed") {
+		if statusIsNotAccepted(status) {
 			violations = append(violations, fmt.Sprintf("REQ %q is Done but linked ADR %q is not accepted (status: %s)", reqBasename, adrBasename, status))
 		}
 	}
