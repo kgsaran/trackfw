@@ -65,7 +65,7 @@ foi feita; fazer isso dentro do ML de implementação misturaria decisão com ex
 > Dependências: nenhuma
 
 ### ML-0A — Medição de schema do Node
-**Status:** pending
+**Status:** ✅ concluído (auditado 2026-08-02)
 **Agente:** Apolo
 **Arquivos afetados:** nenhum de produto — é investigação
 
@@ -74,10 +74,24 @@ foi feita; fazer isso dentro do ML de implementação misturaria decisão com ex
 medições de Go e Python já registradas no ADR.
 
 **Acceptance criteria:**
-- [ ] Tabela executada nas **duas** bibliotecas, saída literal no relatório
-- [ ] Recomendação de qual adotar, com justificativa
-- [ ] Se alguma se comportar de modo que a normalização **não** resolva, **reportar e parar**
-- [ ] Nenhum arquivo de produto alterado; nada instalado no repositório
+- [x] Tabela executada nas duas bibliotecas (`js-yaml` 5.2.3, `yaml` 2.9.0)
+- [x] Recomendação: **`yaml` 2.x**, com justificativa
+- [x] Normalização resolve nas duas — critério de parada não acionado
+- [x] `git status --porcelain` vazio
+
+**Três achados que a tabela do ADR não previa:**
+
+1. **Octal é divisão de TRÊS vias.** Go e Python → `8`; **as duas libs Node → `10`**.
+   Nenhum par concorda por padrão.
+2. **Node não converte data** — `2026-08-02` volta string. Logo **um teste de `lenient_until`
+   passaria no Node sem normalização alguma**. É o **octal** que discrimina o Node, não a data.
+   Isso vai direto para o AC11: a fixture precisa do octal, senão é vacuosa no Node.
+3. **Âncoras corrompem normalização ingênua.** Em `yaml` 2.x, `b: *x` produz um `Alias`, cujo
+   `.source` é o **nome da âncora**, não o valor.
+
+**Escolha da biblioteca:** `yaml` 2.x sobre `js-yaml` — `Scalar.source` é API pública e
+documentada (em `js-yaml` seria `parseEvents`+`eventsToAst`, não documentado, que já falhou na
+primeira tentativa dele), e `yaml` tem zero deps de runtime enquanto `js-yaml` arrasta `argparse`.
 
 ---
 
@@ -89,6 +103,12 @@ medições de Go e Python já registradas no ADR.
 **Agente:** Apolo (executor **único**)
 **Arquivos afetados:** `internal/config/config.go`, `npm/src/config/index.js`,
 `pypi/trackfw/config.py`, manifestos (`go.mod`, `npm/package.json`, `pypi/pyproject.toml`) + testes
+
+**Riscos confirmados pelo ML-0A, além do AC3:**
+- **Âncoras/aliases:** `b: *x` vira `Alias`, não `Scalar`; `.source` devolve o nome da âncora.
+  Resolver o alias antes de ler, ou o campo sai corrompido. A lib aceita em silêncio.
+- **Octal diverge em três direções** — reforça que a normalização deve ler o **nó bruto**, não
+  reverter o valor tipado.
 
 **Ponto de maior risco — AC3, fidelidade textual.** Ler com a biblioteca e depois "des-tipar" não
 é trivial: `time.Time` de volta a `2026-08-02` e `8` de volta a `010` são **irreversíveis** depois

@@ -30,15 +30,15 @@ que não se pode seguir sabendo do defeito.
 Adotar bibliotecas YAML **sem mais nada** não resolve — **troca** a divergência artesanal por
 divergência de schema. Medido empiricamente em 2026-08-02:
 
-| Entrada | Go `yaml.v3` | Python `PyYAML` |
-|---|---|---|
-| `k: yes` | `"yes"` string | **`True` bool** |
-| `k: no` / `k: on` | string | **bool** |
-| `k: 010` | **`8` int (octal)** | **`8` int (octal)** |
-| `k: 1.0` | `1` float64 | `1.0` float |
-| `k: null` / `k: ~` | `nil` | `None` |
-| `k: 2026-08-02` | **`time.Time`** | **`datetime.date`** |
-| `k: true` | `true` bool | `True` bool |
+| Entrada | Go `yaml.v3` | Python `PyYAML` | Node `js-yaml` 5.2.3 | Node `yaml` 2.9.0 |
+|---|---|---|---|---|
+| `k: yes` | `"yes"` string | **`True` bool** | `"yes"` string | `"yes"` string |
+| `k: no` / `k: on` | string | **bool** | string | string |
+| `k: 010` | **`8` int (octal)** | **`8` int (octal)** | **`10` int** | **`10` int** |
+| `k: 1.0` | `1` float64 | `1.0` float | `1` number | `1` number |
+| `k: null` / `k: ~` | `nil` | `None` | `null` | `null` |
+| `k: 2026-08-02` | **`time.Time`** | **`datetime.date`** | **`"2026-08-02"` string** | **`"2026-08-02"` string** |
+| `k: true` | `true` bool | `True` bool | `true` bool | `true` bool |
 
 PyYAML implementa **YAML 1.1** (onde `yes`/`no`/`on`/`off` são booleanos); `yaml.v3` implementa
 1.2. **Go e Python divergem entre si** em `yes`.
@@ -50,8 +50,20 @@ Consequências concretas para o trackfw:
 - **`wip_limit: 010` viraria 8**, não 10 — e o `parseInt(val, 1)` atual nunca veria o problema.
 - Os booleanos hoje são `val == "true"`; sob PyYAML, `yes` já chegaria como bool.
 
-**O comportamento do Node NÃO foi medido** — não houve rede para instalar `js-yaml`/`yaml`.
-Isso é declarado aqui como lacuna, não presumido, e vira critério de aceite.
+**Node medido no ML-0A** (2026-08-02), e trouxe três achados que a tabela original não previa:
+
+1. **O octal é divisão de três vias, não duas.** Go e Python dão `8`; **as duas libs Node dão
+   `10`** — YAML 1.2 core não reconhece a notação octal legada. Ou seja, nenhum par de CLIs
+   concorda por padrão nesse caso.
+2. **As libs Node NÃO convertem data** — `2026-08-02` volta string. Consequência para o teste:
+   um caso de `lenient_until` **passaria no Node mesmo sem normalização alguma**, porque não há
+   coerção a reverter ali. **É o octal que discrimina o Node**, não a data.
+3. **Âncoras são um risco real.** Em `yaml` 2.x, o nó de `b` em `a: &x 3` / `b: *x` é um `Alias`,
+   não um `Scalar`: `.source` devolve o **nome da âncora**, não o valor. Normalização por
+   caminhada de nós corrompe o campo se não resolver o alias antes.
+
+Esses três reforçam a decisão: a normalização precisa ser **textual sobre o nó bruto**, não
+reversão do valor tipado — porque os valores tipados divergem em três direções.
 
 ## Decision
 
@@ -62,7 +74,11 @@ diferentes produzem três resultados diferentes para o mesmo arquivo.
 
 1. **Biblioteca por CLI:**
    - Go: `gopkg.in/yaml.v3` — já está no `go.sum` como *indirect*; passa a direta.
-   - Node: `js-yaml` **ou** `yaml`, o que for medido como mais próximo do comportamento alvo.
+   - Node: **`yaml` 2.x** (eemeli). Escolhida no ML-0A sobre `js-yaml` por dois motivos: expõe o
+     texto original do escalar via **API pública e documentada** (`Scalar.source`), enquanto
+     `js-yaml` exige combinar `parseEvents` + `eventsToAst` — não documentado e frágil; e tem
+     **zero dependências de runtime**, enquanto `js-yaml` arrasta `argparse`. Em schema as duas
+     empatam.
    - Python: `PyYAML` — **primeira dependência de runtime** do pacote, que hoje é zero-dep.
 2. **Normalização imediata:** após o `load`, a árvore é convertida para strings —
    escalares viram sua representação textual; listas viram listas de string; `null` vira string
