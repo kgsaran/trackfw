@@ -1569,5 +1569,236 @@ context
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# ML-1C — adr_accepted_when_req_done + helper canônico _adr_not_accepted
+# REQ-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida
+# ---------------------------------------------------------------------------
+
+
+class TestAdrNotAcceptedHelper(unittest.TestCase):
+    """Cobre o helper canônico _adr_not_accepted: Draft ou Proposed -> True;
+    qualquer outro status (Accepted, Superseded, Deprecated, Rejected) -> False,
+    por exclusão (sem allowlist fechada)."""
+
+    def test_draft_e_proposed_sao_nao_aceitos(self):
+        from trackfw.validator import _adr_not_accepted
+
+        self.assertTrue(_adr_not_accepted("> Date: 2026-08-01 | Status: Draft\n"))
+        self.assertTrue(_adr_not_accepted("> Date: 2026-08-01 | Status: Proposed\n"))
+
+    def test_aceito_por_exclusao(self):
+        from trackfw.validator import _adr_not_accepted
+
+        for status in ("Accepted", "Superseded", "Deprecated", "Rejected"):
+            content = f"> Date: 2026-08-01 | Status: {status}\n"
+            self.assertFalse(
+                _adr_not_accepted(content),
+                f"status {status} deveria contar como aceito (definição por exclusão)",
+            )
+
+    def test_frontmatter_tem_precedencia_sobre_cabecalho(self):
+        """Frontmatter status: é a fonte estruturada; se presente, prevalece sobre
+        a linha de cabeçalho (que pode estar dessincronizada em edição manual)."""
+        from trackfw.validator import _adr_not_accepted
+
+        content = (
+            "---\n"
+            "status: Proposed\n"
+            "date: 2026-08-01\n"
+            "---\n\n"
+            "> Date: 2026-08-01 | Status: Accepted\n"
+        )
+        self.assertTrue(_adr_not_accepted(content))
+
+    def test_frontmatter_sem_linha_de_cabecalho(self):
+        """ML-1D (2026-08-01) — divergência A da auditoria de paridade: um ADR pode
+        ter frontmatter `status:` sem NENHUMA linha de cabeçalho '| Status: X'. É o
+        caso que discriminava o Node (que lia só o cabeçalho) do Go e do Python."""
+        from trackfw.validator import _adr_not_accepted
+
+        content = "---\nstatus: Proposed\ndate: 2026-08-01\n---\n\n# ADR: sem cabecalho\n\n## Context\nctx\n"
+        self.assertTrue(_adr_not_accepted(content))
+
+        accepted_content = "---\nstatus: Accepted\ndate: 2026-08-01\n---\n\n# ADR: sem cabecalho\n\n## Context\nctx\n"
+        self.assertFalse(_adr_not_accepted(accepted_content))
+
+    def test_cabecalho_como_fallback_sem_frontmatter(self):
+        """ADRs legados (ex.: ADR-001) sem bloco frontmatter continuam detectáveis
+        via a linha de cabeçalho '> Date: ... | Status: X'."""
+        from trackfw.validator import _adr_not_accepted
+
+        content = "**Status:** Draft\n\n> Date: 2026-08-01 | Status: Draft\n"
+        self.assertTrue(_adr_not_accepted(content))
+
+    def test_cabecalho_trunca_no_proximo_pipe(self):
+        """ML-1D (2026-08-01) — paridade com Go/Node: o fallback de cabeçalho deve
+        truncar o valor no próximo ' |' (ex.: '| Status: Draft | Owner: kg'). Sem
+        truncar, _extract_adr_status devolveria 'Draft | Owner: kg', que não bate com
+        nem 'draft' nem 'proposed' após lower() -> falso-negativo divergente do Go/Node."""
+        from trackfw.validator import _adr_not_accepted, _extract_adr_status
+
+        content = "# ADR: legado\n\n> Date: 2026-08-01 | Status: Draft | Owner: kg\n"
+        self.assertEqual(_extract_adr_status(content), "Draft")
+        self.assertTrue(_adr_not_accepted(content))
+
+    def test_prosa_com_status_draft_nao_engana_quando_frontmatter_aceito(self):
+        """Regressão do falso-positivo por substring livre: um ADR com frontmatter
+        Accepted cuja prosa cita literalmente 'Status: Draft'/'Status: Proposed' não
+        deve ser classificado como não aceito (ver Go
+        TestAdrStatusIsNotAccepted_FrontmatterPrecedeProse e o teste de anchoring do
+        Node)."""
+        from trackfw.validator import _adr_not_accepted
+
+        content = (
+            "---\n"
+            "status: Accepted\n"
+            "date: 2026-08-01\n"
+            "---\n\n"
+            "# ADR: x\n\n"
+            "> Date: 2026-08-01 | Status: Accepted\n\n"
+            "## Context\n"
+            "Este ADR substitui uma proposta anterior que ficou em Status: Draft "
+            "por meses, e chegou a ser Status: Proposed antes disso.\n"
+        )
+        self.assertFalse(_adr_not_accepted(content))
+
+
+def _write_adr(adr_dir: str, basename: str, status: str) -> str:
+    path = os.path.join(adr_dir, basename)
+    _write(path, f"""\
+---
+status: {status}
+date: 2026-08-01
+---
+
+# ADR: Fixture
+
+> Date: 2026-08-01 | Status: {status}
+""")
+    return path
+
+
+def _write_req_done(req_dir: str, basename: str, adr_basename: str, req_status: str = "Done") -> str:
+    path = os.path.join(req_dir, basename)
+    _write(path, f"""\
+---
+status: {req_status}
+date: 2026-08-01
+---
+
+# REQ: Fixture
+
+> Date: 2026-08-01 | Status: {req_status}
+
+## Linked ADR
+ADR: docs/adr/{adr_basename}
+""")
+    return path
+
+
+class TestAdrAcceptedWhenReqDone(unittest.TestCase):
+    """validate_adr_accepted_when_req_done: REQ Done referenciando ADR Draft/Proposed
+    -> violation citando ambos. Superseded/Deprecated/Rejected e REQ não-Done não disparam."""
+
+    def _cfg(self, req_dir, adr_dir):
+        return {"req_dir": req_dir, "adr_dirs": [adr_dir]}
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.req_dir = os.path.join(self.tmp, "docs", "req")
+        self.adr_dir = os.path.join(self.tmp, "docs", "adr")
+        os.makedirs(self.req_dir)
+        os.makedirs(self.adr_dir)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_req_done_adr_proposed_dispara_e_cita_ambos(self):
+        from trackfw.validator import validate_adr_accepted_when_req_done
+
+        _write_adr(self.adr_dir, "ADR-x.md", "Proposed")
+        _write_req_done(self.req_dir, "REQ-x.md", "ADR-x.md", req_status="Done")
+
+        violations = validate_adr_accepted_when_req_done(self._cfg(self.req_dir, self.adr_dir))
+
+        self.assertEqual(len(violations), 1)
+        msg = violations[0]["message"]
+        self.assertIn("REQ-x.md", msg)
+        self.assertIn("ADR-x.md", msg)
+
+    def test_req_done_adr_draft_dispara(self):
+        from trackfw.validator import validate_adr_accepted_when_req_done
+
+        _write_adr(self.adr_dir, "ADR-y.md", "Draft")
+        _write_req_done(self.req_dir, "REQ-y.md", "ADR-y.md", req_status="Done")
+
+        violations = validate_adr_accepted_when_req_done(self._cfg(self.req_dir, self.adr_dir))
+
+        self.assertEqual(len(violations), 1)
+        self.assertIn("REQ-y.md", violations[0]["message"])
+        self.assertIn("ADR-y.md", violations[0]["message"])
+
+    def test_req_done_adr_superseded_nao_dispara(self):
+        from trackfw.validator import validate_adr_accepted_when_req_done
+
+        _write_adr(self.adr_dir, "ADR-z.md", "Superseded")
+        _write_req_done(self.req_dir, "REQ-z.md", "ADR-z.md", req_status="Done")
+
+        violations = validate_adr_accepted_when_req_done(self._cfg(self.req_dir, self.adr_dir))
+
+        self.assertEqual(violations, [])
+
+    def test_req_open_adr_proposed_nao_dispara_regra_nova(self):
+        from trackfw.validator import validate_adr_accepted_when_req_done
+
+        _write_adr(self.adr_dir, "ADR-w.md", "Proposed")
+        _write_req_done(self.req_dir, "REQ-w.md", "ADR-w.md", req_status="Open")
+
+        violations = validate_adr_accepted_when_req_done(self._cfg(self.req_dir, self.adr_dir))
+
+        self.assertEqual(violations, [])
+
+    def test_rule_registrada_como_error_no_default(self):
+        from trackfw import config as cfg_mod
+
+        cfg_mod.reset()
+        defaults = cfg_mod.defaults()
+        self.assertEqual(defaults["rules"].get("adr_accepted_when_req_done"), "error")
+
+
+class TestBlockedByDraftAdrDeixaDeSerCegaAProposed(unittest.TestCase):
+    """A correção da cegueira do ADR: REQ Open bloqueada por ADR Proposed agora
+    dispara blocked_by_draft_adr (regressão de AC2 sem renomear a regra)."""
+
+    def test_req_open_bloqueada_por_adr_proposed_dispara(self):
+        from trackfw.validator import validate_reqs_not_blocked_by_draft_adrs
+
+        tmp = tempfile.mkdtemp()
+        try:
+            req_dir = os.path.join(tmp, "docs", "req")
+            adr_dir = os.path.join(tmp, "docs", "adr")
+            os.makedirs(req_dir)
+            os.makedirs(adr_dir)
+
+            _write_adr(adr_dir, "ADR-proposed.md", "Proposed")
+            _write(os.path.join(req_dir, "REQ-blocked.md"), """\
+# REQ: Fixture
+
+> Date: 2026-08-01 | Status: Open
+
+## Blocked by ADRs
+- ADR-proposed.md (Proposed)
+""")
+
+            cfg = {"req_dir": req_dir, "adr_dirs": [adr_dir]}
+            violations = validate_reqs_not_blocked_by_draft_adrs(cfg)
+
+            self.assertEqual(len(violations), 1)
+            self.assertIn("REQ-blocked.md", violations[0]["message"])
+            self.assertIn("ADR-proposed.md", violations[0]["message"])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

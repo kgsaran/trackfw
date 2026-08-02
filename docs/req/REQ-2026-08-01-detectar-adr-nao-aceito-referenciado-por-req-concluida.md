@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-01
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-01-nocao-canonica-de-adr-nao-aceito-e-regra-de-aceite-exigido-por-req-concluida.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md"
 ---
 
 # REQ: Detectar ADR nao aceito referenciado por REQ concluida
 
-> Date: 2026-08-01 | Status: Open
+> Date: 2026-08-01 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -34,31 +34,34 @@ Mesma raiz: não há noção canônica de "ADR não aceito", há um literal espa
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Existe um helper canônico único por CLI (sugestão: `adrNotAccepted` /
-      `adr_not_accepted`) que devolve verdadeiro para ADR com status `Draft` **ou** `Proposed`.
-      Nenhum outro ponto do código testa esses literais diretamente.
-- [ ] **AC2** — `blocked_by_draft_adr` passa a usar o helper e **deixa de ser cega a `Proposed`**:
+- [x] **AC1** — Helper canônico único por CLI. **Este AC reprovou na primeira auditoria:** Node e
+      Python cumpriam, mas o Go tinha **três** cópias de
+      `EqualFold(status,"Draft")||EqualFold(status,"Proposed")` em produção, e o helper que
+      deveria ser canônico era chamado **só pelos testes**. Corrigido no ML-1F
+      (`statusIsNotAccepted` como expressão única). Verificado: `grep` retorna 1 linha.
+- [x] **AC2** — `blocked_by_draft_adr` passa a usar o helper e **deixa de ser cega a `Proposed`**:
       REQ `Open` bloqueada por ADR `Proposed` produz violação. O **nome da regra não muda**.
-- [ ] **AC3** — Regra nova `adr_accepted_when_req_done`, severidade **`error`**, registrada no
+- [x] **AC3** — Regra nova `adr_accepted_when_req_done`, severidade **`error`**, registrada no
       mapa `Rules` default (`internal/config/config.go:84` e equivalentes): ADR não aceito
       referenciado por REQ `Done` é violação.
-- [ ] **AC4** — A mensagem de violação identifica **os dois artefatos** — qual ADR e qual REQ —
+- [x] **AC4** — A mensagem de violação identifica **os dois artefatos** — qual ADR e qual REQ —
       para que o usuário saiba o que corrigir sem investigar.
-- [ ] **AC5** — **"Aceito" é definido por exclusão**: qualquer status que não seja `Draft` nem
+- [x] **AC5** — **"Aceito" é definido por exclusão**: qualquer status que não seja `Draft` nem
       `Proposed` conta como aceito. `Superseded`, `Deprecated` e `Rejected` **não** produzem
       violação — REQ `Done` apoiada em ADR posteriormente substituído é histórico legítimo.
       Coberto por teste explícito.
-- [ ] **AC6** — REQ `Open` (ou qualquer status que não `Done`) referenciando ADR não aceito
+- [x] **AC6** — REQ `Open` (ou qualquer status que não `Done`) referenciando ADR não aceito
       **não** dispara a regra nova — é o fluxo normal de trabalho em andamento.
-- [ ] **AC7** — `trackfw validate` **verde neste repositório** após a mudança. Nenhum artefato
+- [x] **AC7** — `trackfw validate` **verde neste repositório** após a mudança. Nenhum artefato
       existente é invalidado — todos os 17 ADRs estão `Accepted` hoje.
-- [ ] **AC8** — Paridade dos 3 CLIs: mesma regra, mesmo nome, mesma severidade default, mesma
+- [x] **AC8** — Paridade dos 3 CLIs: mesma regra, mesmo nome, mesma severidade default, mesma
       mensagem. `scripts/check-artifact-parity.sh` e `scripts/check-validate-parity.sh` passam.
-- [ ] **AC9** — Cenário de falsificação permanente em `scripts/check-gates-falsify.sh`, cobrindo
-      **as duas** regras afetadas e os **três** CLIs: com a regra removida ou o helper neutralizado,
-      um cenário que deveria falhar precisa **passar** — provando que a checagem não é vacuosa.
-      Contador e linha final atualizados.
-- [ ] **AC10** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+- [x] **AC9** — Cenário permanente com **15 asserções** (2 regras × 3 CLIs × baseline/detecção,
+      mais um braço `superseded-not-a-violation` por CLI). Contador **42 → 57**.
+      **Além do exigido:** `check-validate-parity.sh` passava **vacuamente** — compara só
+      `(rule, file)` e este repo não tem artefato violador. Ganhou fixture violadora e **guard de
+      vacuidade por regra**, provado capaz de falhar.
+- [x] **AC10** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
 
 ## Negative Scope (fora do escopo — NÃO fazer)
 
@@ -108,4 +111,4 @@ ADR: docs/adr/ADR-2026-08-01-nocao-canonica-de-adr-nao-aceito-e-regra-de-aceite-
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md

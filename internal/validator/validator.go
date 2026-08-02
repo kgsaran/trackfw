@@ -393,6 +393,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("blocked_by_draft_adr", draftBlockedViolations, &violations, &warnings)
 
+	adrAcceptedViolations, e := validateADRAcceptedWhenREQDone()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("adr_accepted_when_req_done", adrAcceptedViolations, &violations, &warnings)
+
 	frontmatterViolations := validateFrontmatterPresence()
 	violations = append(violations, frontmatterViolations...) // sem regra configurável
 
@@ -552,6 +558,12 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("blocked_by_draft_adr", draftBlockedViolations, &violations, &warnings)
+
+	adrAcceptedViolations, e := validateADRAcceptedWhenREQDone()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("adr_accepted_when_req_done", adrAcceptedViolations, &violations, &warnings)
 
 	frontmatterViolations := validateFrontmatterPresence()
 	for _, m := range frontmatterViolations {
@@ -764,14 +776,18 @@ func GetStatus() (string, error) {
 			}
 		}
 
-		// Seção: REQs bloqueadas por ADRs Draft
+		// Seção: REQs bloqueadas por ADRs não aceitos (Draft ou Proposed). O status exibido
+		// por ADR é resolvido via adrStatusForRule (helper canônico) em vez de hardcodar
+		// "Draft" — blockedREQs() cobre ambos os status desde que passou a delegar em
+		// adrDraftStatusForRule, e um rótulo fixo "(Draft)" mentiria para um ADR Proposed.
 		blockedByDraft, err := blockedREQs()
 		if err == nil && len(blockedByDraft) > 0 {
-			sb.WriteString(fmt.Sprintf("\n⏳ REQs blocked by Draft ADRs (%d)\n", len(blockedByDraft)))
+			sb.WriteString(fmt.Sprintf("\n⏳ REQs blocked by not-accepted ADRs (%d)\n", len(blockedByDraft)))
 			for reqFile, adrs := range blockedByDraft {
 				sb.WriteString(fmt.Sprintf("   %s\n", reqFile))
 				for _, adr := range adrs {
-					sb.WriteString(fmt.Sprintf("     → %s (Draft)\n", adr))
+					status, _ := adrStatusForRule("blocked_by_draft_adr", adr, nil)
+					sb.WriteString(fmt.Sprintf("     → %s (%s)\n", adr, status))
 				}
 			}
 		}
@@ -1111,8 +1127,8 @@ func parseTransitionLogLine(line string) (time.Time, string, string, bool) {
 	return timestamp, name, toState, true
 }
 
-// blockedREQs retorna um mapa de REQ-basename → lista de ADR-basenames Draft que a bloqueiam.
-// Somente REQs com Status: Open e ADRs com Status: Draft são incluídas.
+// blockedREQs retorna um mapa de REQ-basename → lista de ADR-basenames não aceitos
+// (Draft ou Proposed) que a bloqueiam. Somente REQs com Status: Open são incluídas.
 func blockedREQs() (map[string][]string, error) {
 	cfg := config.Load()
 	files := resolveREQFiles(cfg)
@@ -1131,21 +1147,23 @@ func blockedREQs() (map[string][]string, error) {
 		if err != nil {
 			continue
 		}
-		var draftADRs []string
+		var notAcceptedADRs []string
 		for _, adrBasename := range adrNames {
-			if draft, _ := adrDraftStatusForRule("blocked_by_draft_adr", adrBasename, nil); draft {
-				draftADRs = append(draftADRs, adrBasename)
+			if notAccepted, _ := adrDraftStatusForRule("blocked_by_draft_adr", adrBasename, nil); notAccepted {
+				notAcceptedADRs = append(notAcceptedADRs, adrBasename)
 			}
 		}
-		if len(draftADRs) > 0 {
-			result[filepath.Base(reqPath)] = draftADRs
+		if len(notAcceptedADRs) > 0 {
+			result[filepath.Base(reqPath)] = notAcceptedADRs
 		}
 	}
 	return result, nil
 }
 
-// validateREQsNotBlockedByDraftADRs verifica se REQs com Status Open têm ADRs Draft vinculados.
-// Uma REQ Open com ADR Draft é uma violação: o roadmap não pode ser criado até os ADRs serem aceitos.
+// validateREQsNotBlockedByDraftADRs verifica se REQs com Status Open têm ADRs não aceitos
+// (Draft ou Proposed) vinculados. Uma REQ Open bloqueada por um ADR não aceito é uma
+// violação: o roadmap não pode ser criado até o ADR ser aceito. Corrige a cegueira
+// anterior a Proposed — ADRs criados por `adr new` (o caminho normal) não eram detectados.
 func validateREQsNotBlockedByDraftADRs() ([]string, error) {
 	cfg := config.Load()
 	entries := resolveREQFiles(cfg)
@@ -1169,8 +1187,8 @@ func validateREQsNotBlockedByDraftADRs() ([]string, error) {
 		}
 		reqBasename := filepath.Base(path)
 		for _, adrBasename := range blockedADRs {
-			if draft, _ := adrDraftStatusForRule("blocked_by_draft_adr", adrBasename, &violations); draft {
-				violations = append(violations, fmt.Sprintf("REQ %s is blocked by Draft ADR: %s", reqBasename, adrBasename))
+			if notAccepted, _ := adrDraftStatusForRule("blocked_by_draft_adr", adrBasename, &violations); notAccepted {
+				violations = append(violations, fmt.Sprintf("REQ %s is blocked by not-accepted ADR: %s", reqBasename, adrBasename))
 			}
 		}
 	}
@@ -1211,27 +1229,96 @@ func parseBlockedADRs(path string) ([]string, error) {
 	return adrs, nil
 }
 
-// adrIsDraft verifica se o ADR identificado pelo basename contém "Status: Draft".
-// Busca recursivamente em todas as ADRDirs configuradas.
+// adrIsDraft verifica se o ADR identificado pelo basename está não-aceito (Draft ou
+// Proposed) via adrStatusIsNotAccepted. Busca recursivamente em todas as ADRDirs
+// configuradas. Nome preservado por compatibilidade com os testes existentes.
 func adrIsDraft(adrBasename string) bool {
-	draft, _ := adrDraftStatusForRule("", adrBasename, nil)
-	return draft
+	notAccepted, _ := adrDraftStatusForRule("", adrBasename, nil)
+	return notAccepted
 }
 
-func adrDraftStatusForRule(rule, adrBasename string, msgs *[]string) (bool, bool) {
+// adrStatusIsNotAccepted é o helper canônico para decidir se um ADR NÃO está aceito
+// (ADR-2026-08-01-nocao-canonica-de-adr-nao-aceito...). "Não aceito" cobre os status
+// Draft e Proposed — os dois caminhos de criação de ADR no trackfw (`adr new` gera
+// Proposed; `req new` gera Draft via NewADRDraft). Qualquer outro status (Accepted,
+// Superseded, Deprecated, Rejected, ou até um status desconhecido/ausente) conta como
+// aceito por exclusão — este helper nunca usa allowlist fechada.
+//
+// Prioridade de leitura: frontmatter `status:` primeiro — é o campo machine-readable
+// canônico, o mesmo que os geradores (`adr new`, `NewADRDraft`) escrevem e que a regra
+// `folder_status` já usa como fonte de verdade. Cai para a linha de cabeçalho
+// "> Date: ... | Status: X" somente se o frontmatter estiver ausente ou sem o campo —
+// cobre ADRs legados sem frontmatter. Em um ADR bem formado os dois concordam.
+//
+// Este fallback é uma extração posicional da linha de cabeçalho (não um
+// strings.Contains no corpo inteiro do arquivo): o valor hardcoded anterior
+// (`strings.Contains(content, "Status: Draft")`) casava a substring em qualquer lugar
+// do documento, inclusive em prosa (ex.: uma seção de Contexto mencionando "estava em
+// Status: Draft") — um falso positivo que piora ao somar "Proposed", string bem mais
+// comum em texto corrido. A extração por linha de cabeçalho evita essa classe de erro.
+// resolveAdrStatus extrai o valor bruto do status de um ADR: frontmatter `status:`
+// primeiro, com fallback para a linha de cabeçalho "> Date: ... | Status: X". Retorna
+// string vazia se nenhuma das duas fontes tiver o campo.
+func resolveAdrStatus(content string) string {
+	if status := extractFrontmatterField(content, "status"); status != "" {
+		return status
+	}
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		idx := strings.Index(trimmed, "| Status: ")
+		if idx < 0 {
+			continue
+		}
+		rest := trimmed[idx+len("| Status: "):]
+		if pipeIdx := strings.Index(rest, " |"); pipeIdx >= 0 {
+			rest = rest[:pipeIdx]
+		}
+		return strings.TrimSpace(rest)
+	}
+	return ""
+}
+
+// statusIsNotAccepted é a única expressão do pacote que conhece o vocabulário
+// "Draft"/"Proposed" de status de ADR não aceito. Todo ponto do código que precisa
+// dessa checagem deve chamar este helper (ou adrStatusIsNotAccepted, que o aplica
+// diretamente sobre o conteúdo de um ADR) em vez de comparar os literais.
+func statusIsNotAccepted(status string) bool {
+	return strings.EqualFold(status, "Draft") || strings.EqualFold(status, "Proposed")
+}
+
+func adrStatusIsNotAccepted(content string) bool {
+	return statusIsNotAccepted(resolveAdrStatus(content))
+}
+
+// adrStatusForRule resolve o basename do ADR nos adrDirs configurados e retorna o valor
+// bruto do status (via resolveAdrStatus). O segundo retorno indica se a resolução foi
+// bem-sucedida (ADR não encontrado conta como sucesso, com status vazio).
+func adrStatusForRule(rule, adrBasename string, msgs *[]string) (string, bool) {
 	cfg := config.Load()
 	p := findADRFile(adrBasename, cfg.ADRDirs)
 	if p == "" {
-		return false, true
+		return "", true
 	}
 	content, err := os.ReadFile(p)
 	if err != nil {
 		if msgs != nil {
 			*msgs = append(*msgs, inspectionDiagnostic(rule, p, err))
 		}
+		return "", false
+	}
+	return resolveAdrStatus(string(content)), true
+}
+
+// adrDraftStatusForRule resolve o basename do ADR nos adrDirs configurados e aplica
+// adrStatusIsNotAccepted() ao conteúdo. Apesar do nome (preservado por compatibilidade
+// histórica — usado por 3 chamadores, incluindo adrIsDraft), hoje cobre Draft e
+// Proposed via o helper canônico, não apenas Draft.
+func adrDraftStatusForRule(rule, adrBasename string, msgs *[]string) (bool, bool) {
+	status, ok := adrStatusForRule(rule, adrBasename, msgs)
+	if !ok {
 		return false, false
 	}
-	return strings.Contains(string(content), "Status: Draft"), true
+	return statusIsNotAccepted(status), true
 }
 
 // extractFrontmatterField extrai o valor de um campo do bloco frontmatter YAML.
@@ -1522,6 +1609,69 @@ func validateREQRoadmapLifecycle() ([]string, error) {
 		}
 	}
 	return warnings, nil
+}
+
+// reqStatusIsDone verifica se a REQ está com Status: Done, priorizando o frontmatter
+// (status: Done) e caindo para a linha de cabeçalho "| Status: Done" como fallback.
+// Mesmo padrão de reqStatusIsOpen.
+func reqStatusIsDone(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		key, val, ok := strings.Cut(trimmed, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(key), "status") {
+			val = strings.Trim(strings.TrimSpace(val), `"'`)
+			// Campo de frontmatter presente mas vazio (ex.: `status: ""`) não é
+			// resposta — cai para o cabeçalho em vez de decidir "não é Done" aqui.
+			if val == "" {
+				continue
+			}
+			return strings.EqualFold(val, "done")
+		}
+		if idx := strings.Index(trimmed, "| Status: "); idx >= 0 {
+			rest := trimmed[idx+len("| Status: "):]
+			if pipeIdx := strings.Index(rest, " |"); pipeIdx >= 0 {
+				rest = rest[:pipeIdx]
+			}
+			return strings.EqualFold(strings.TrimSpace(rest), "done")
+		}
+	}
+	return false
+}
+
+// validateADRAcceptedWhenREQDone verifica REQs com Status Done cujo ADR vinculado
+// ainda não está aceito (Draft ou Proposed). Fecha a lacuna que blocked_by_draft_adr
+// não cobre: essa regra só olha REQs Open no momento em que são bloqueadas; uma REQ
+// que já foi concluída sem o ADR nunca ter sido aceito passava despercebida
+// (ADR-2026-08-01-nocao-canonica-de-adr-nao-aceito...).
+func validateADRAcceptedWhenREQDone() ([]string, error) {
+	cfg := config.Load()
+	files := resolveREQFiles(cfg)
+
+	var violations []string
+	for _, path := range files {
+		content, ok := readFileForRule("adr_accepted_when_req_done", path, &violations)
+		if !ok {
+			continue
+		}
+		s := string(content)
+		if !reqStatusIsDone(s) {
+			continue
+		}
+		adrRef := extractRefPath(s, "ADR")
+		if adrRef == "" {
+			continue
+		}
+		adrBasename := filepath.Base(adrRef)
+		reqBasename := filepath.Base(path)
+		status, ok := adrStatusForRule("adr_accepted_when_req_done", adrBasename, &violations)
+		if !ok {
+			continue
+		}
+		if statusIsNotAccepted(status) {
+			violations = append(violations, fmt.Sprintf("REQ %q is Done but linked ADR %q is not accepted (status: %s)", reqBasename, adrBasename, status))
+		}
+	}
+	return violations, nil
 }
 
 func reqStatusIsOpen(content string) bool {

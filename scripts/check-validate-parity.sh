@@ -25,6 +25,85 @@ status: WIP
 # Roadmap without required governance links
 EOF
 
+# ADR não aceito (Status: Proposed) referenciado por REQ Done + REQ Open bloqueada
+# pelo mesmo ADR — sem esta fixture, `adr_accepted_when_req_done` e
+# `blocked_by_draft_adr` nunca apareciam no corpus comparado abaixo: o guard de
+# vacuidade só olha o TOTAL de violações (não por regra), então um CLI poderia
+# perder qualquer uma das duas regras e este gate continuaria verde
+# (vault/notes/deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01.md).
+cat >"$TMP_DIR/project/docs/adr/ADR-proposed-fixture.md" <<'EOF'
+---
+status: Proposed
+date: 2026-08-01
+author: ""
+---
+
+# ADR: fixture
+
+> Date: 2026-08-01 | Status: Proposed
+
+## Context
+ctx
+
+## Decision
+decision
+EOF
+
+cat >"$TMP_DIR/project/docs/req/REQ-done-fixture.md" <<'EOF'
+---
+status: Done
+date: 2026-08-01
+author: ""
+adr: "docs/adr/ADR-proposed-fixture.md"
+roadmap: ""
+---
+
+# REQ: fixture
+
+> Date: 2026-08-01 | Status: Done
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [x] feito
+
+## Linked ADR
+ADR: docs/adr/ADR-proposed-fixture.md
+
+## Linked Roadmap
+Roadmap:
+EOF
+
+cat >"$TMP_DIR/project/docs/req/REQ-blocked-fixture.md" <<'EOF'
+---
+status: Open
+date: 2026-08-01
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: bloqueada
+
+> Date: 2026-08-01 | Status: Open
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] pendente
+
+## Linked ADR
+ADR:
+
+## Blocked by ADRs
+- ADR-proposed-fixture.md (Proposed)
+
+## Linked Roadmap
+Roadmap:
+EOF
+
 GOCACHE=${GOCACHE:-/tmp/trackfw-go-cache} go build -o "$TMP_DIR/trackfw-go" ./cmd/trackfw
 
 run_validator() {
@@ -76,6 +155,21 @@ if not contracts[0]["violations"]:
         "validate parity: go output has no violations — "
         "the test fixture may be wrong (vacuous check)"
     )
+
+# P2 vacuity guard, per-rule: a total-count check alone would still pass if a
+# CLI silently dropped one specific rule while others kept firing (masking a
+# real regression instead of catching it). Require both rules exercised by
+# the ADR/REQ fixture above to be present in every runtime's output.
+expected_rules = {"adr_accepted_when_req_done", "blocked_by_draft_adr"}
+for path, value in zip(sys.argv[1:], contracts):
+    got_rules = {rule for rule, _file in value["violations"]}
+    missing = expected_rules - got_rules
+    if missing:
+        raise SystemExit(
+            f"validate parity: {path} is missing expected violation rule(s) "
+            f"{sorted(missing)} — the fixture no longer exercises them or a "
+            "CLI regressed (vacuous check)"
+        )
 
 if contracts[1:] != contracts[:-1]:
     for path, value in zip(sys.argv[1:], contracts):

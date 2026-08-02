@@ -26,3 +26,6 @@
 - [dashboard-serve-e-light-only-2026-07-31](dashboard-serve-e-light-only-2026-07-31.md)
 - [seam-xss-drawer-armadilhas-de-verificacao-2026-07-31](seam-xss-drawer-armadilhas-de-verificacao-2026-07-31.md)
 - [roadmap-from-req-ref-targets-exist-falso-positivo-2026-08-01](roadmap-from-req-ref-targets-exist-falso-positivo-2026-08-01.md)
+- [adr-status-substring-livre-falso-positivo-2026-08-01](adr-status-substring-livre-falso-positivo-2026-08-01.md)
+- [deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01](deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01.md)
+- [validate-parity-gate-vacuo-e-go-sem-helper-unico-2026-08-01](validate-parity-gate-vacuo-e-go-sem-helper-unico-2026-08-01.md)

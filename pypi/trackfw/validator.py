@@ -382,9 +382,45 @@ def _adr_is_draft(basename: str, cfg: dict) -> bool:
     return _adr_draft_status_for_rule(basename, cfg, None)[0]
 
 
+def _extract_adr_status(content: str) -> str:
+    """
+    Extrai o status declarado de um ADR. Tenta primeiro o frontmatter (`status:`),
+    a fonte estruturada e canônica emitida por todos os geradores (`adr new` e
+    `NewADRDraft` escrevem `status:` e a linha de cabeçalho em sincronia). Cai para a
+    linha de cabeçalho ('> Date: ... | Status: X') quando não há frontmatter, para
+    cobrir ADRs legados sem bloco YAML (ex.: ADR-001). Retorna '' se nenhum for encontrado.
+    """
+    fm = parse_frontmatter(content)
+    fm_status = fm.get("status", "").strip()
+    if fm_status:
+        return fm_status
+    marker = "| Status: "
+    for line in content.split("\n"):
+        trimmed = line.strip()
+        idx = trimmed.find(marker)
+        if idx >= 0:
+            rest = trimmed[idx + len(marker):]
+            pipe_idx = rest.find(" |")
+            if pipe_idx >= 0:
+                rest = rest[:pipe_idx]
+            return rest.strip()
+    return ""
+
+
+def _adr_not_accepted(content: str) -> bool:
+    """
+    Helper canônico único: verdadeiro se o status do ADR for 'Draft' ou 'Proposed'
+    (comparação case-insensitive, espelhando strings.EqualFold do CLI Go). 'Aceito' é
+    definido por exclusão — qualquer outro status (Accepted, Superseded, Deprecated,
+    Rejected, ...) conta como aceito e não deve ser enumerado aqui.
+    """
+    return _extract_adr_status(content).strip().lower() in ("draft", "proposed")
+
+
 def _adr_draft_status_for_rule(basename: str, cfg: dict, messages: list | None):
     """
-    Verifica se <basename> contém 'Status: Draft' em algum dos adrDirs configurados.
+    Verifica se <basename> está em status não aceito (Draft ou Proposed, via
+    _adr_not_accepted) em algum dos adrDirs configurados.
     Busca recursivamente nas subpastas via _find_adr_file.
     """
     adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
@@ -393,7 +429,7 @@ def _adr_draft_status_for_rule(basename: str, cfg: dict, messages: list | None):
         return False, True
     try:
         with open(p, "r", encoding="utf-8") as f:
-            return "Status: Draft" in f.read(), True
+            return _adr_not_accepted(f.read()), True
     except OSError as e:
         if messages is not None:
             messages.append(_inspection_item("blocked_by_draft_adr", p, e))
@@ -861,7 +897,11 @@ def validate_stale_wip(cfg: dict, days: int = None, now: float = None) -> list:
 
 
 def validate_reqs_not_blocked_by_draft_adrs(cfg: dict) -> list:
-    """REQs Open com ADRs Draft na seção '## Blocked by ADRs' → violation."""
+    """REQs Open com ADRs não aceitos (Draft ou Proposed, via _adr_not_accepted) na
+    seção '## Blocked by ADRs' → violation. A regra deixou de ser cega a Proposed
+    (ADR-2026-08-01), mas o **nome da regra permanece** blocked_by_draft_adr — é
+    chave pública de config.
+    """
     files = resolve_req_files(cfg)
     violations = []
     for file_path in files:
@@ -876,9 +916,12 @@ def validate_reqs_not_blocked_by_draft_adrs(cfg: dict) -> list:
         blocked_adrs = _parse_blocked_adrs(file_path)
         for adr_basename in blocked_adrs:
             if _adr_draft_status_for_rule(adr_basename, cfg, violations)[0]:
+                # ML-1D (2026-08-01): reconciliação de paridade — "Draft" saiu porque a
+                # regra cobre Proposed também; texto agora byte-idêntico ao Go/Node
+                # ("is blocked by not-accepted ADR:").
                 violations.append({
                     "type": "violation",
-                    "message": f"REQ {name} is blocked by Draft ADR: {adr_basename}"
+                    "message": f"REQ {name} is blocked by not-accepted ADR: {adr_basename}"
                 })
     return violations
 
@@ -1007,6 +1050,62 @@ def _req_status_is_open(content: str) -> bool:
                 rest = rest[:pipe_idx]
             return rest.strip().lower() == "open"
     return False
+
+
+def _req_status_is_done(content: str) -> bool:
+    for line in content.split("\n"):
+        trimmed = line.strip()
+        if ":" in trimmed:
+            key, val = trimmed.split(":", 1)
+            if key.strip().lower() == "status":
+                return normalize_yaml_flat_value(val.strip()).lower() == "done"
+        marker = "| Status: "
+        idx = trimmed.find(marker)
+        if idx >= 0:
+            rest = trimmed[idx + len(marker):]
+            pipe_idx = rest.find(" |")
+            if pipe_idx >= 0:
+                rest = rest[:pipe_idx]
+            return rest.strip().lower() == "done"
+    return False
+
+
+def validate_adr_accepted_when_req_done(cfg: dict) -> list:
+    """
+    REQ com Status: Done referenciando (campo 'ADR:') um ADR ainda não aceito
+    (Draft ou Proposed, via _adr_not_accepted) -> violation. 'Aceito' é definido por
+    exclusão: Superseded/Deprecated/Rejected (e qualquer status != Draft/Proposed)
+    não disparam a regra — REQ Done apoiada em ADR posteriormente substituído é
+    histórico legítimo. REQ que não está Done nunca dispara esta regra.
+    """
+    violations = []
+    adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
+    for file_path in resolve_req_files(cfg):
+        req_name = os.path.basename(file_path)
+        content = _read_file_for_rule("adr_accepted_when_req_done", file_path, violations)
+        if content is None:
+            continue
+        if not _req_status_is_done(content):
+            continue
+        adr_ref = _extract_ref_path(content, "ADR")
+        if not adr_ref:
+            continue
+        adr_basename = os.path.basename(adr_ref)
+        adr_path = _find_adr_file(adr_basename, adr_dirs)
+        if not adr_path:
+            continue
+        adr_content = _read_file_for_rule("adr_accepted_when_req_done", adr_path, violations)
+        if adr_content is None:
+            continue
+        if _adr_not_accepted(adr_content):
+            status = _extract_adr_status(adr_content) or "unknown"
+            # ML-1D (2026-08-01): reconciliação de paridade — texto agora byte-idêntico
+            # ao Go/Node: aspas em torno dos dois basenames + sufixo "(status: X)".
+            violations.append({
+                "type": "violation",
+                "message": f'REQ "{req_name}" is Done but linked ADR "{adr_basename}" is not accepted (status: {status})'
+            })
+    return violations
 
 
 _FOLDER_TO_STATUS = {
@@ -1297,6 +1396,7 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule("adr_orphan",           validate_adrs_are_referenced(cfg, cwd),       violations, warnings, cfg)
     _apply_rule("wip_acceptance",       validate_wip_has_acceptance_criteria(cfg),    violations, warnings, cfg)
     _apply_rule("blocked_by_draft_adr", validate_reqs_not_blocked_by_draft_adrs(cfg), violations, warnings, cfg)
+    _apply_rule("adr_accepted_when_req_done", validate_adr_accepted_when_req_done(cfg), violations, warnings, cfg)
     _apply_rule("filename_uniqueness",  validate_filename_uniqueness(cfg),            violations, warnings, cfg)
     _apply_rule("branch_has_wip_roadmap", validate_branch_has_wip_roadmap(cfg),      violations, warnings, cfg)
     _apply_rule("ref_targets_exist",    validate_ref_targets_exist(cfg),              violations, warnings, cfg)

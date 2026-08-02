@@ -4,6 +4,63 @@
 
 ---
 
+## Sessão 2026-08-01 — Zeus (execução: regra adr_accepted_when_req_done) — CONCLUÍDO
+
+**Branch:** `feat/detectar-adr-nao-aceito-referenciado-por-req-concluida`
+PR #102 mergeado; roadmap saiu de `backlog` para `wip` e agora `done`.
+
+### Entrega
+
+Regra `adr_accepted_when_req_done` (`error`) nos 3 CLIs + `blocked_by_draft_adr` migrada para um
+helper canônico que reconhece `Draft` **e** `Proposed`. `make quality` exit 0, **115 checks**,
+falsificação **42 → 57** cenários.
+
+### Três MLs corretivos, todos vindos da auditoria
+
+A wave paralela (3 agentes, 1 por CLI) entregou tudo funcionando e com testes verdes — e mesmo
+assim precisou de **três** correções que nenhum gate teria pego:
+
+- **ML-1D** — divergência tripla: (a) fonte do status (Node só cabeçalho, Go/Python
+  frontmatter-first), (b) falso-positivo de prosa (`Contains` no documento inteiro — o **próprio
+  ADR deste ciclo** cita `"Status: Draft"` e seria flagrado pela regra que documenta), (c) fallback
+  do Python não truncava no próximo pipe. Executado por **um único** agente nos 3 CLIs, de
+  propósito.
+- **ML-1E** — o bloco de resumo rotulava `(Draft)` um ADR `Proposed`. String **pré-existente** que
+  a nossa mudança tornou mentirosa. Mesma classe do cabeçalho do `app.js` em ciclo anterior.
+- **ML-1F** — **AC1 reprovou**: o Go tinha três cópias da expressão em produção e o helper
+  canônico só era chamado pelos testes. Sem bug funcional, mas é a dívida que o ciclo existia para
+  eliminar.
+
+### O achado mais importante: gate verde vacuamente
+
+`check-validate-parity.sh` **passava sem discriminar nada** — compara só `(rule, file)` e este
+repositório não tem artefato que viole a regra nova. Passaria igualmente se a regra não existisse
+em CLI nenhum.
+
+A Ártemis reforçou com fixture violadora e **guard de vacuidade por regra**, e provou o guard
+capaz de falhar. Sem isso teríamos "paridade verde" sem paridade verificada.
+
+**Regra a carregar:** gate verde sobre corpus sem caso positivo não é evidência. Ao criar regra
+nova, criar também a fixture que a viola.
+
+### Notas de vault criadas
+
+- `adr-status-substring-livre-falso-positivo-2026-08-01.md` (Apolo/Node)
+- `deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01.md` (Zeus — consolida as três
+  divergências e a regra prática)
+- `validate-parity-gate-vacuo-e-go-sem-helper-unico-2026-08-01.md` (Ártemis)
+
+### Lacunas pré-existentes reportadas, NÃO fechadas
+
+1. **Python não tem o bloco de resumo** (`⏳ REQs blocked by...`) que Go e Node têm — lacuna de
+   paridade anterior a este ciclo; fechá-la é feature nova.
+2. **`extractRefPath` não remove backticks**: REQs cujo único campo `ADR:` está como
+   `` ADR: `docs/adr/...` `` ficam invisíveis à regra nova. Três REQs no repo usam essa forma, mas
+   todas apontam para ADR `Accepted` — sem falso-negativo real hoje, buraco estrutural.
+3. Mensagem de sucesso do `validate` diverge: Go/Node `✓ No violations found.`, Python
+   `✓ Governance OK`.
+
+---
 ## Sessão 2026-08-01 — Zeus (REQ: ADR não aceito referenciado por REQ Done) — CONCLUÍDO
 
 **Branch:** `docs/req-adr-nao-aceito-por-req-concluida`

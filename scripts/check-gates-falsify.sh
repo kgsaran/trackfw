@@ -1469,4 +1469,294 @@ assert_fails_with "roadmap-req-frontmatter-path/python/simple-detects-regression
   "AC2b regression" \
   bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26C_P" env "PYTHONPATH=$T26C_P/pypi" python3 -m trackfw
 
-echo "Falsification checks passed (all 42 scenarios, 14 gates + 3 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), 3 CLIs — proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 27 — validate: adr_accepted_when_req_done + blocked_by_draft_adr
+# (ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida,
+# ML-2A). Sem este cenário, `check-validate-parity.sh` passava vacuamente
+# neste repositório — nenhum artefato aqui viola as regras novas, então um
+# gate "verde" não discriminava a existência das regras de sua ausência. O
+# mesmo valia para a correção da cegueira de `blocked_by_draft_adr` a
+# `Status: Proposed` (o caminho normal de `adr new`) — nenhuma REQ Open deste
+# repositório é bloqueada por ADR Proposed.
+#
+# Cobre as DUAS regras × os TRÊS CLIs, com dois braços por CLI:
+#   - baseline: projeto-fixture com ADR Proposed + REQ Done referenciando-o
+#     (deve violar adr_accepted_when_req_done) e REQ Open bloqueada pelo
+#     mesmo ADR (deve violar blocked_by_draft_adr) — código correto,
+#     assert_fails_with nos dois diagnósticos; e um segundo projeto com ADR
+#     Superseded (aceito por exclusão) + REQ Done referenciando-o — não deve
+#     violar, assert_succeeds.
+#   - detecção: neutraliza o helper de resolução de status do ADR
+#     (resolveAdrStatus/resolveAdrStatus/_extract_adr_status→_adr_not_accepted,
+#     conforme o CLI) para sempre resolver "aceito"; roda validate contra o
+#     MESMO projeto-fixture violador e prova, via assert_lacks_pattern (exige
+#     exit 0 E ausência do diagnóstico), que as duas violações desaparecem —
+#     a checagem tem poder de reprovação, não é vácua.
+#
+# Corrompe a IMPLEMENTAÇÃO (validador), nunca a asserção — mesmo padrão dos
+# Cenários 14/16/17/20/21/24/26.
+# ---------------------------------------------------------------------------
+
+# Scaffold mínimo de projeto trackfw (docs/adr, docs/req, docs/roadmaps/*,
+# trackfw.yaml) — mesma estrutura de check-validate-parity.sh.
+scaffold_adr_req_project() {
+  local dest=$1
+  mkdir -p "$dest/docs/adr" "$dest/docs/req" \
+    "$dest/docs/roadmaps"/{backlog,wip,blocked,done,abandoned}
+  cat > "$dest/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+EOF
+}
+
+# ADR fixture com status alinhado entre frontmatter e cabeçalho (caso
+# canônico bem formado) — mesmo padrão de adrFixtureContent (validator_test.go).
+write_adr_status_fixture() {
+  local dest=$1 status=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: $status
+date: 2026-08-01
+author: ""
+---
+
+# ADR: fixture
+
+> Date: 2026-08-01 | Status: $status
+
+## Context
+ctx
+
+## Decision
+decision
+EOF
+}
+
+# REQ Done referenciando o ADR via frontmatter \`adr:\` e via a seção
+# "## Linked ADR" — mesmo padrão de reqDoneFixtureContent (validator_test.go).
+write_req_done_fixture() {
+  local dest=$1 adr_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: Done
+date: 2026-08-01
+author: ""
+adr: "$adr_rel"
+roadmap: ""
+---
+
+# REQ: fixture
+
+> Date: 2026-08-01 | Status: Done
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [x] feito
+
+## Linked ADR
+ADR: $adr_rel
+
+## Linked Roadmap
+Roadmap:
+EOF
+}
+
+# REQ Open bloqueada pelo ADR via a seção "## Blocked by ADRs" — mesmo padrão
+# do fixture de TestBlockedByDraftADR_REQOpen_ProposedADR_Violates.
+write_req_open_blocked_fixture() {
+  local dest=$1 adr_basename=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: Open
+date: 2026-08-01
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: bloqueada
+
+> Date: 2026-08-01 | Status: Open
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] pendente
+
+## Linked ADR
+ADR:
+
+## Blocked by ADRs
+- $adr_basename (Proposed)
+
+## Linked Roadmap
+Roadmap:
+EOF
+}
+
+S27_MSG_ACCEPTED='is not accepted (status: Proposed)'
+S27_MSG_BLOCKED='is blocked by not-accepted ADR: ADR-2026-08-01-proposed-fixture.md'
+
+# --- Go: prova positiva (projeto violador + projeto não-violador) ---------
+T27_GO_BIN="$WORK/s27-go-bin/trackfw"
+mkdir -p "$(dirname "$T27_GO_BIN")"
+build_go_or_fail "setup-s27-go-baseline-build" "$ROOT_DIR" "$T27_GO_BIN"
+
+T27_GO_VIOLATING="$WORK/s27-go-violating"
+scaffold_adr_req_project "$T27_GO_VIOLATING"
+write_adr_status_fixture "$T27_GO_VIOLATING/docs/adr/ADR-2026-08-01-proposed-fixture.md" "Proposed"
+write_req_done_fixture "$T27_GO_VIOLATING/docs/req/REQ-2026-08-01-done-fixture.md" \
+  "docs/adr/ADR-2026-08-01-proposed-fixture.md"
+write_req_open_blocked_fixture "$T27_GO_VIOLATING/docs/req/REQ-2026-08-01-blocked-fixture.md" \
+  "ADR-2026-08-01-proposed-fixture.md"
+
+assert_fails_with "adr-not-accepted/go/adr_accepted_when_req_done-baseline" \
+  "$S27_MSG_ACCEPTED" \
+  bash -c "cd '$T27_GO_VIOLATING' && exec '$T27_GO_BIN' validate"
+assert_fails_with "adr-not-accepted/go/blocked_by_draft_adr-baseline" \
+  "$S27_MSG_BLOCKED" \
+  bash -c "cd '$T27_GO_VIOLATING' && exec '$T27_GO_BIN' validate"
+
+T27_GO_CLEAN="$WORK/s27-go-clean"
+scaffold_adr_req_project "$T27_GO_CLEAN"
+write_adr_status_fixture "$T27_GO_CLEAN/docs/adr/ADR-2026-08-01-superseded-fixture.md" "Superseded"
+write_req_done_fixture "$T27_GO_CLEAN/docs/req/REQ-2026-08-01-done-superseded-fixture.md" \
+  "docs/adr/ADR-2026-08-01-superseded-fixture.md"
+
+assert_succeeds "adr-not-accepted/go/superseded-not-a-violation-baseline" \
+  bash -c "cd '$T27_GO_CLEAN' && exec '$T27_GO_BIN' validate"
+
+# --- Go: prova de detecção (resolveAdrStatus neutralizado) -----------------
+T27C_GO_MOD="$WORK/s27-corrupt-go-mod"
+mkdir -p "$T27C_GO_MOD/cmd" "$T27C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T27C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T27C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T27C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T27C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T27C_GO_MOD/internal/validator/validator.go" \
+  'func resolveAdrStatus(content string) string {
+	if status := extractFrontmatterField(content, "status"); status != "" {
+		return status
+	}' \
+  'func resolveAdrStatus(content string) string {
+	return "Accepted"
+	if status := extractFrontmatterField(content, "status"); status != "" {
+		return status
+	}' \
+  "s27-go"
+
+T27C_GO_BIN="$WORK/s27-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T27C_GO_BIN")"
+build_go_or_fail "setup-s27-go-build" "$T27C_GO_MOD" "$T27C_GO_BIN"
+
+assert_lacks_pattern "adr-not-accepted/go/adr_accepted_when_req_done-detects-regression" \
+  "$S27_MSG_ACCEPTED" \
+  bash -c "cd '$T27_GO_VIOLATING' && exec '$T27C_GO_BIN' validate"
+assert_lacks_pattern "adr-not-accepted/go/blocked_by_draft_adr-detects-regression" \
+  "$S27_MSG_BLOCKED" \
+  bash -c "cd '$T27_GO_VIOLATING' && exec '$T27C_GO_BIN' validate"
+
+# --- Node: prova positiva ---------------------------------------------------
+T27_N_VIOLATING="$WORK/s27-node-violating"
+setup_npm_tree "$T27_N_VIOLATING"
+scaffold_adr_req_project "$T27_N_VIOLATING"
+write_adr_status_fixture "$T27_N_VIOLATING/docs/adr/ADR-2026-08-01-proposed-fixture.md" "Proposed"
+write_req_done_fixture "$T27_N_VIOLATING/docs/req/REQ-2026-08-01-done-fixture.md" \
+  "docs/adr/ADR-2026-08-01-proposed-fixture.md"
+write_req_open_blocked_fixture "$T27_N_VIOLATING/docs/req/REQ-2026-08-01-blocked-fixture.md" \
+  "ADR-2026-08-01-proposed-fixture.md"
+
+assert_fails_with "adr-not-accepted/node/adr_accepted_when_req_done-baseline" \
+  "$S27_MSG_ACCEPTED" \
+  bash -c "cd '$T27_N_VIOLATING' && exec node npm/bin/trackfw validate"
+assert_fails_with "adr-not-accepted/node/blocked_by_draft_adr-baseline" \
+  "$S27_MSG_BLOCKED" \
+  bash -c "cd '$T27_N_VIOLATING' && exec node npm/bin/trackfw validate"
+
+T27_N_CLEAN="$WORK/s27-node-clean"
+setup_npm_tree "$T27_N_CLEAN"
+scaffold_adr_req_project "$T27_N_CLEAN"
+write_adr_status_fixture "$T27_N_CLEAN/docs/adr/ADR-2026-08-01-superseded-fixture.md" "Superseded"
+write_req_done_fixture "$T27_N_CLEAN/docs/req/REQ-2026-08-01-done-superseded-fixture.md" \
+  "docs/adr/ADR-2026-08-01-superseded-fixture.md"
+
+assert_succeeds "adr-not-accepted/node/superseded-not-a-violation-baseline" \
+  bash -c "cd '$T27_N_CLEAN' && exec node npm/bin/trackfw validate"
+
+# --- Node: prova de detecção (adrNotAcceptedStatusForRule neutralizado) ----
+T27C_N="$WORK/s27-corrupt-node"
+setup_npm_tree "$T27C_N"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$T27C_N/npm/src/validator/index.js" \
+  "  const notAccepted = status.toLowerCase() === 'draft' || status.toLowerCase() === 'proposed'
+" \
+  "  const notAccepted = false
+" \
+  "s27-node"
+
+assert_lacks_pattern "adr-not-accepted/node/adr_accepted_when_req_done-detects-regression" \
+  "$S27_MSG_ACCEPTED" \
+  bash -c "cd '$T27_N_VIOLATING' && exec node '$T27C_N/npm/bin/trackfw' validate"
+assert_lacks_pattern "adr-not-accepted/node/blocked_by_draft_adr-detects-regression" \
+  "$S27_MSG_BLOCKED" \
+  bash -c "cd '$T27_N_VIOLATING' && exec node '$T27C_N/npm/bin/trackfw' validate"
+
+# --- Python: prova positiva -------------------------------------------------
+T27_P_VIOLATING="$WORK/s27-python-violating"
+mkdir -p "$T27_P_VIOLATING"
+cp -r "$ROOT_DIR/pypi" "$T27_P_VIOLATING/pypi"
+scaffold_adr_req_project "$T27_P_VIOLATING"
+write_adr_status_fixture "$T27_P_VIOLATING/docs/adr/ADR-2026-08-01-proposed-fixture.md" "Proposed"
+write_req_done_fixture "$T27_P_VIOLATING/docs/req/REQ-2026-08-01-done-fixture.md" \
+  "docs/adr/ADR-2026-08-01-proposed-fixture.md"
+write_req_open_blocked_fixture "$T27_P_VIOLATING/docs/req/REQ-2026-08-01-blocked-fixture.md" \
+  "ADR-2026-08-01-proposed-fixture.md"
+
+assert_fails_with "adr-not-accepted/python/adr_accepted_when_req_done-baseline" \
+  "$S27_MSG_ACCEPTED" \
+  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27_P_VIOLATING/pypi' python3 -m trackfw validate"
+assert_fails_with "adr-not-accepted/python/blocked_by_draft_adr-baseline" \
+  "$S27_MSG_BLOCKED" \
+  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27_P_VIOLATING/pypi' python3 -m trackfw validate"
+
+T27_P_CLEAN="$WORK/s27-python-clean"
+mkdir -p "$T27_P_CLEAN"
+cp -r "$ROOT_DIR/pypi" "$T27_P_CLEAN/pypi"
+scaffold_adr_req_project "$T27_P_CLEAN"
+write_adr_status_fixture "$T27_P_CLEAN/docs/adr/ADR-2026-08-01-superseded-fixture.md" "Superseded"
+write_req_done_fixture "$T27_P_CLEAN/docs/req/REQ-2026-08-01-done-superseded-fixture.md" \
+  "docs/adr/ADR-2026-08-01-superseded-fixture.md"
+
+assert_succeeds "adr-not-accepted/python/superseded-not-a-violation-baseline" \
+  bash -c "cd '$T27_P_CLEAN' && exec env PYTHONPATH='$T27_P_CLEAN/pypi' python3 -m trackfw validate"
+
+# --- Python: prova de detecção (_adr_not_accepted neutralizado) ------------
+T27C_P="$WORK/s27-corrupt-python"
+mkdir -p "$T27C_P"
+cp -r "$ROOT_DIR/pypi" "$T27C_P/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/validator.py" "$T27C_P/pypi/trackfw/validator.py" \
+  '    return _extract_adr_status(content).strip().lower() in ("draft", "proposed")
+' \
+  '    return False
+' \
+  "s27-python"
+
+assert_lacks_pattern "adr-not-accepted/python/adr_accepted_when_req_done-detects-regression" \
+  "$S27_MSG_ACCEPTED" \
+  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27C_P/pypi' python3 -m trackfw validate"
+assert_lacks_pattern "adr-not-accepted/python/blocked_by_draft_adr-detects-regression" \
+  "$S27_MSG_BLOCKED" \
+  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27C_P/pypi' python3 -m trackfw validate"
+
+echo "Falsification checks passed (all 57 scenarios, 14 gates + 3 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), 3 CLIs — proved non-vacuous)"
