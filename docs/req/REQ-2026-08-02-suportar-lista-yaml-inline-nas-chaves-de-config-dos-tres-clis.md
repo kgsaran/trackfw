@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-02
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-02-suporte-a-lista-yaml-inline-nos-parsers-de-config-dos-tres-clis.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md"
 ---
 
 # REQ: Suportar lista YAML inline nas chaves de config dos tres CLIs
 
-> Date: 2026-08-02 | Status: Open
+> Date: 2026-08-02 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -25,7 +25,7 @@ Afeta `adr_dirs`, `agents`, `acceptance_markers` e as sub-listas de `link_fields
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Os 3 CLIs produzem resultado **idêntico** para a tabela abaixo, em **cada** chave
+- [x] **AC1** — Os 3 CLIs produzem resultado **idêntico** para a tabela abaixo, em **cada** chave
       de lista. Esta tabela é o contrato:
 
   | # | Entrada | Resultado |
@@ -40,21 +40,21 @@ Afeta `adr_dirs`, `agents`, `acceptance_markers` e as sub-listas de `link_fields
   | 8 | `["a, b", "c"]` | **dois** itens: `a, b` e `c` |
   | 9 | `["## Acceptance Criteria", "## Critérios de Aceite"]` | os dois marcadores |
 
-- [ ] **AC2** — **Caso 8 é obrigatório.** Separar por vírgula sem respeitar aspas quebra valores
+- [x] **AC2** — **Caso 8 é obrigatório.** Separar por vírgula sem respeitar aspas quebra valores
       que contêm vírgula. O caso 9 é o caso real do projeto.
-- [ ] **AC3** — Cobertura **por chave**: `adr_dirs`, `agents`, `acceptance_markers` e as
+- [x] **AC3** — Cobertura **por chave**: `adr_dirs`, `agents`, `acceptance_markers` e as
       sub-listas de `link_fields`. Fixture só com `agents` **não** basta.
-- [ ] **AC4** — **Não regride:** forma em bloco **indentada** e **não indentada** continuam
+- [x] **AC4** — **Não regride:** forma em bloco **indentada** e **não indentada** continuam
       funcionando em todas as chaves.
-- [ ] **AC5** — `status` em `by_agent` com `agents:` inline: as **3** saídas byte-idênticas, e
+- [x] **AC5** — `status` em `by_agent` com `agents:` inline: as **3** saídas byte-idênticas, e
       respeitando a ordem **declarada** (não o fallback).
-- [ ] **AC6** — `validate` verde nos 3 no repositório; `status` no repositório real segue
+- [x] **AC6** — `validate` verde nos 3 no repositório; `status` no repositório real segue
       byte-idêntico nos 3.
-- [ ] **AC7** — `scripts/check-artifact-parity.sh` e `scripts/check-validate-parity.sh` passam.
-- [ ] **AC8** — Cenário de falsificação por caso da tabela, nos 3 CLIs, com braço de detecção.
+- [x] **AC7** — `scripts/check-artifact-parity.sh` e `scripts/check-validate-parity.sh` passam.
+- [x] **AC8** — Cenário de falsificação por caso da tabela, nos 3 CLIs, com braço de detecção.
       **A corrupção precisa ser determinística** — não dependente de filesystem ou ambiente
       (ver `vault/notes/cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02.md`).
-- [ ] **AC9** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
+- [x] **AC9** — `make build`, `make test`, `make lint`, `make parity` e `make quality` verdes.
 
 ## Negative Scope (fora do escopo — NÃO fazer)
 
@@ -95,4 +95,4 @@ ADR: docs/adr/ADR-2026-08-02-suporte-a-lista-yaml-inline-nos-parsers-de-config-d
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md

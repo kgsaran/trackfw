@@ -2499,4 +2499,179 @@ else
   exit 1
 fi
 
-echo "Falsification checks passed (all 78 scenarios, 14 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion) — proved non-vacuous)"
+# ---------------------------------------------------------------------------
+# Cenário 35 — ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-
+# config-dos-tres-clis (ML-2A): `agents:` em lista YAML INLINE cujo item
+# contém vírgula DENTRO de aspas ("caso 8" do contrato — `["a, b", "c"]` são
+# DOIS itens, não três) precisa ser preservado como um único nome de agente
+# nos 3 CLIs.
+#
+# Nenhum cenário existente exercita este caso: o 34 cobre lista em BLOCO não
+# indentada (defeito de outro parser, já corrigido antes desta Wave); os
+# Cenários 30/31/33 usam `agents:` em bloco, sem flow-style. A tabela de 9
+# casos do ADR-2026-08-02-suporte-a-lista-yaml-inline-nos-parsers-de-config-
+# dos-tres-clis foi verificada por teste unitário em cada CLI (ML-1A), mas
+# nenhum gate de PARIDADE cross-CLI cobria o caso 8 especificamente — e é o
+# único dos nove que uma separação ingênua por vírgula quebra.
+#
+# Fixture discriminante: agente real chamado `ka, tsu` — diretório em disco
+# `docs/roadmaps/ka, tsu/` (vírgula+espaço é caractere válido em nome de
+# diretório Unix) contendo um roadmap em wip/. `trackfw.yaml` configura
+# `agents: ["ka, tsu", "obi"]` (flow-style, item citado com vírgula
+# embutida). Escolhido deliberadamente para não ser vácuo por acidente: um
+# parser que separa a vírgula ingenuamente (fora de aspas) produz os
+# fragmentos "ka" e "tsu" como agentes SEPARADOS — nenhum dos dois casa com
+# o diretório real `ka, tsu` no disco, então o roadmap correspondente
+# desaparece INTEIRO da saída (não apenas o nome do agente muda formatação
+# — a seção "⚙ WIP by Agent" fica vazia e o Inventory some a contagem).
+# Uma fixture só com `[a, b]` (sem vírgula em item) não teria essa
+# propriedade: qualquer separação, ingênua ou correta, produziria os mesmos
+# dois nomes.
+#
+# Segunda camada de discriminação, decisiva contra reversão TOTAL do suporte
+# inline (não só o ramo de aspas): `docs/roadmaps/zeta/` também existe no
+# disco, com wip roadmap PRÓPRIO, mas `zeta` NÃO está na lista configurada.
+# Com `agents:` corretamente parseado (inline, não-vazio), `resolveStateDirs`
+# itera só os agentes configurados — `zeta` nunca entra na conta, igual ao
+# papel de `zeus` no Cenário 34. Se alguém revertesse `isInlineList` por
+# inteiro (não só o scanner de aspas), `agents: [...]` cairia no modo bloco,
+# não encontraria `- item` nas linhas seguintes, produziria `cfg.Agents`
+# vazio, e o CÓDIGO cairia no fallback de varrer `docs/roadmaps/*` — que
+# encontraria `ka, tsu`, `obi` E `zeta`. Sem `zeta` no disco, esse fallback
+# reproduziria por acidente a MESMA saída do parser correto (mesmo conjunto
+# efetivo de agentes com wip), e os três braços de detecção abaixo
+# morreriam no setup com "expected exactly 1 occurrence... got 0" — o
+# defeito descrito em vault/notes/cenarios-de-falsificacao-quebram-em-
+# refactor-do-alvo-2026-08-02.md, aqui por reversão total em vez de
+# refactor. Com `zeta` presente e fora da lista, o fallback reintroduziria
+# `[zeta] WIP (1)` na saída — divergência inequívoca do pinado.
+#
+#   - baseline: os 3 CLIs, contra o literal PINADO (capturado rodando os 3
+#     CLIs reais contra a fixture), byte-idênticos — `[ka, tsu] WIP (1)`
+#     aparece com o roadmap listado, Inventory Roadmaps total 1 (wip 1).
+#   - detecção: os 3 CLIs revertem, cada um em sua função
+#     `splitTopLevelCommas`/`_split_top_level_commas`, o ramo que detecta
+#     aspas (`case r == '"' || r == '\''`/`ch === '"' || ch === "'"`/
+#     `ch in ('"', "'")`) para uma condição sempre falsa — a vírgula deixa
+#     de ser tratada como "dentro de aspas" e volta a separar o item em
+#     dois. Prova, por asserção POSITIVA em duas frentes (saída diverge do
+#     pinado E o nome do roadmap desaparece), que a comparação capta a
+#     regressão pelo motivo certo — não por acaso.
+#
+# Corrompe a IMPLEMENTAÇÃO (o ponto exato que trata aspas em
+# splitTopLevelCommas, introduzido por bc00010), nunca a asserção — mesmo
+# padrão dos Cenários 14/16/17/20/21/24/25/26/27/28/29/30/31/32/33/34. Não
+# amplia o suporte YAML (mapas inline, listas aninhadas) — fora de escopo,
+# registrado no ADR.
+# ---------------------------------------------------------------------------
+
+S35_PROJECT="$WORK/s35-config-inline-comma-in-quotes-project"
+mkdir -p "$S35_PROJECT/docs/adr" "$S35_PROJECT/docs/req"
+mkdir -p "$S35_PROJECT/docs/roadmaps/ka, tsu"/{backlog,analyzing,wip,blocked,done,abandoned}
+mkdir -p "$S35_PROJECT/docs/roadmaps/obi"/{backlog,analyzing,wip,blocked,done,abandoned}
+mkdir -p "$S35_PROJECT/docs/roadmaps/zeta"/{backlog,analyzing,wip,blocked,done,abandoned}
+cat > "$S35_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: by_agent
+agents: ["ka, tsu", "obi"]
+EOF
+write_roadmap_state_fixture "$S35_PROJECT/docs/roadmaps/ka, tsu/wip/ROADMAP-ka-tsu-wip.md" "wip" "ka tsu wip fixture (caso 8)"
+write_roadmap_state_fixture "$S35_PROJECT/docs/roadmaps/zeta/wip/ROADMAP-zeta-wip.md" "wip" "zeta wip fixture (fora da lista configurada)"
+
+S35_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        0  (0 Open · 0 Done · 0 Closed)\n   Roadmaps    1\n     backlog 0 · analyzing 0 · wip 1\n     blocked 0 · done 0 · abandoned 0\n\n⚙ WIP by Agent\n  [ka, tsu] WIP (1)\n    ROADMAP-ka-tsu-wip.md\n\n────────────────────────────────────────\n'
+
+s35_go_out=$(cd "$S35_PROJECT" && "$T27_GO_BIN" status)$'\n'
+s35_node_out=$(cd "$S35_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
+s35_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+
+if [[ "$s35_go_out" == "$S35_EXPECTED" && "$s35_node_out" == "$S35_EXPECTED" && "$s35_python_out" == "$S35_EXPECTED" ]]; then
+  echo "OK   [falsify/config-inline-comma-in-quotes/baseline-byte-identical-and-pinned]"
+else
+  echo "FAIL [falsify/config-inline-comma-in-quotes/baseline-byte-identical-and-pinned]: esperava '$S35_EXPECTED' nos 3 CLIs" >&2
+  echo "  go:     $(printf '%q' "$s35_go_out")" >&2
+  echo "  node:   $(printf '%q' "$s35_node_out")" >&2
+  echo "  python: $(printf '%q' "$s35_python_out")" >&2
+  exit 1
+fi
+
+# --- braço de detecção: Go desativa o ramo de detecção de aspas em ---------
+# splitTopLevelCommas (a vírgula citada volta a separar o item em dois)
+T35C_GO_MOD="$WORK/s35-corrupt-go"
+mkdir -p "$T35C_GO_MOD/cmd" "$T35C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T35C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T35C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T35C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T35C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/config/config.go" "$T35C_GO_MOD/internal/config/config.go" \
+  $'\t\tcase r == \'"\' || r == \'\\\'\':\n\t\t\tquote = r\n\t\t\tcur.WriteRune(r)\n' \
+  $'\t\tcase false:\n\t\t\tquote = r\n\t\t\tcur.WriteRune(r)\n' \
+  "s35-go"
+
+T35C_GO_BIN="$WORK/s35-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T35C_GO_BIN")"
+build_go_or_fail "setup-s35-go-corrupt-build" "$T35C_GO_MOD" "$T35C_GO_BIN"
+
+s35c_go_out=$(cd "$S35_PROJECT" && "$T35C_GO_BIN" status)$'\n'
+if [[ "$s35c_go_out" == "$S35_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-item-split]: detecção de aspas revertida mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "ROADMAP-ka-tsu-wip.md" <<<"$s35c_go_out"; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-item-split]: saída corrompida diverge do pinado, mas o roadmap não sumiu — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s35c_go_out")" >&2
+  exit 1
+else
+  echo "OK   [falsify/config-inline-comma-in-quotes/go-detects-item-split]"
+fi
+
+# --- braço de detecção: Node desativa o mesmo ramo -------------------------
+T35C_N="$WORK/s35-corrupt-node"
+setup_npm_tree "$T35C_N"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/config/index.js" "$T35C_N/npm/src/config/index.js" \
+  $'  } else if (ch === \'"\' || ch === "\'") {\n      quote = ch;\n      cur += ch;\n' \
+  $'  } else if (false) {\n      quote = ch;\n      cur += ch;\n' \
+  "s35-node"
+
+s35c_node_out=$(cd "$S35_PROJECT" && node "$T35C_N/npm/bin/trackfw" status)$'\n'
+if [[ "$s35c_node_out" == "$S35_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-item-split]: detecção de aspas revertida mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "ROADMAP-ka-tsu-wip.md" <<<"$s35c_node_out"; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-item-split]: saída corrompida diverge do pinado, mas o roadmap não sumiu — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s35c_node_out")" >&2
+  exit 1
+else
+  echo "OK   [falsify/config-inline-comma-in-quotes/node-detects-item-split]"
+fi
+
+# --- braço de detecção: Python desativa o mesmo ramo ------------------------
+T35C_P="$WORK/s35-corrupt-python"
+mkdir -p "$T35C_P"
+cp -r "$ROOT_DIR/pypi" "$T35C_P/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/config.py" "$T35C_P/pypi/trackfw/config.py" \
+  $'        elif ch in (\'"\', "\'"):\n            quote = ch\n            cur.append(ch)\n' \
+  $'        elif False:\n            quote = ch\n            cur.append(ch)\n' \
+  "s35-python"
+
+s35c_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$T35C_P/pypi" python3 -m trackfw status)$'\n'
+if [[ "$s35c_python_out" == "$S35_EXPECTED" ]]; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-item-split]: detecção de aspas revertida mas a comparação continuou passando (checagem vácua)" >&2
+  exit 1
+fi
+if grep -qF "ROADMAP-ka-tsu-wip.md" <<<"$s35c_python_out"; then
+  echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-item-split]: saída corrompida diverge do pinado, mas o roadmap não sumiu — diagnóstico pelo motivo errado" >&2
+  echo "  output: $(printf '%q' "$s35c_python_out")" >&2
+  exit 1
+else
+  echo "OK   [falsify/config-inline-comma-in-quotes/python-detects-item-split]"
+fi
+
+echo "Falsification checks passed (all 82 scenarios, 14 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion) — proved non-vacuous)"

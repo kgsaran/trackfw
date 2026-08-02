@@ -4,6 +4,62 @@
 
 ---
 
+## Sessão 2026-08-02 — Zeus (fila ZERADA: lista YAML inline) — CONCLUÍDO
+
+Último item, fechado na mesma branch do PR #105 a pedido de KG — mergear e tagear de uma vez.
+
+### Entrega
+
+Os três CLIs deixam de descartar `agents: [zeus, apolo]` em silêncio. Vale para `adr_dirs`,
+`agents`, `acceptance_markers` e as sub-listas de `link_fields`. `rules` fica fora com razão —
+é mapeamento, não sequência.
+
+`make quality` exit 0; falsificação **78 → 82**.
+
+### Decisão de estrutura que se pagou
+
+**Executor único nos 3 CLIs**, não três paralelos. Justificativa registrada no ADR: os MLs
+paralelos divergiram em **todos** os ciclos deste projeto, e aqui a exigência era semântica
+idêntica em nove casos de parsing. Resultado: **zero divergência**, nenhum ML de reconciliação
+necessário — o primeiro ciclo multi-CLI da sessão em que isso acontece.
+
+### O caso difícil
+
+`["a, b", "c"]` são **dois** itens. Separação ingênua por vírgula quebraria, e há caso real:
+`acceptance_markers` já carrega valores com espaço e acento. Resolvido com scanner char-a-char
+que rastreia aspas — mesma estratégia nos três.
+
+### O achado mais fino: vacuidade no próprio cenário de falsificação
+
+A Ártemis, ao escrever o cenário, foi verificar "e se alguém reverter o ML-1A **inteiro**, não só
+o trecho que eu corrompo?". Confirmou com `git apply -R` que a saída ficaria **byte-idêntica ao
+pinado** — o cenário seria **cego** a essa classe de regressão, e morreria no setup assim que as
+funções fossem apagadas.
+
+Corrigiu acrescentando um agente **presente no disco mas fora da lista configurada**. Reversão
+total → o agente extra reaparece; reversão pontual → o item com vírgula some.
+
+**Regra generalizada**, em `vault/notes/falsificacao-fixture-vacua-contra-reversao-total-vs-parcial-2026-08-02.md`:
+cenário sobre mecanismo com **fallback** precisa de fixture com algo no conjunto de fallback que
+não esteja no configurado — senão fica cego a "componente inteiro removido".
+
+Ela também verificou **antes de editar** se o refactor da Wave 1 quebrara algum cenário herdado —
+a armadilha exata do ciclo anterior. Não quebrara.
+
+### FILA ZERADA
+
+Nada em `backlog/`, `analyzing/`, `wip/` ou `blocked/`.
+
+**Limite honesto do que foi entregue:** o parser continua sendo um **subconjunto** de YAML.
+Listas aninhadas inline, mapas inline e âncoras seguem sem suporte **e sem aviso**. A classe foi
+reduzida, não eliminada. A solução a prazo é biblioteca YAML de verdade — barata no Go
+(`yaml.v3` já é indirect), mas dependência de runtime nova no Node e no Python. Mudança de
+política; ADR próprio se o parser artesanal voltar a dar problema.
+
+Pronto para merge do PR #105 e tag.
+
+---
+
 ## Sessão 2026-08-02 — Zeus (fila zerada: 3 defeitos de parsing) — CONCLUÍDO
 
 **Branch:** a mesma do PR #105, por pedido de KG — fechar os itens **antes da tag**, para não

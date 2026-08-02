@@ -30,3 +30,4 @@
 - [deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01](deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01.md)
 - [validate-parity-gate-vacuo-e-go-sem-helper-unico-2026-08-01](validate-parity-gate-vacuo-e-go-sem-helper-unico-2026-08-01.md)
 - [cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02](cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02.md)
+- [falsificacao-fixture-vacua-contra-reversao-total-vs-parcial-2026-08-02](falsificacao-fixture-vacua-contra-reversao-total-vs-parcial-2026-08-02.md)
