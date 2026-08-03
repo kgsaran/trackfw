@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-08-02
 req: "docs/req/REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Unificar a leitura do trackfw.yaml em um unico carregador nos tres CLIs
 
-> Created: 2026-08-02 | Status: backlog
+> Created: 2026-08-02 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md -->

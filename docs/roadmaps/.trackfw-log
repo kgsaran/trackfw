@@ -73,3 +73,4 @@
 2026-08-02 16:16  ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md  wip → done
 2026-08-02 16:32  ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md  backlog → wip
 2026-08-02 18:58  ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md  wip → done
+2026-08-03 10:01  ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md  backlog → wip

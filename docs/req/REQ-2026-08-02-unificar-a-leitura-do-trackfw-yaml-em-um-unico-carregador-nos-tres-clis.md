@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-02
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-namespaces-tipados.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md"
 ---
 
 # REQ: Unificar a leitura do trackfw.yaml em um unico carregador nos tres CLIs
@@ -100,4 +100,4 @@ ADR: docs/adr/ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-namesp
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md
