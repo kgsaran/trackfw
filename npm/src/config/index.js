@@ -39,6 +39,24 @@ function defaults() {
       roadmap: ['Roadmap:'],
     },
     acceptanceMarkers: ['## Acceptance Criteria', '## Critérios de Aceite'],
+    // ML-1A namespaces — see ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-
+    // namespaces-tipados.md. Keys stay flat at the YAML root; these are memory-only groupings
+    // populated by the same single parse() below, not a second read of trackfw.yaml.
+    update: {
+      hooks: '',
+      ci: '',
+      backend: '',
+      frontend: '',
+      pkgManager: '',
+    },
+    sync: {
+      linearApiKey: '',
+      linearTeamId: '',
+      jiraBaseUrl: '',
+      jiraEmail: '',
+      jiraToken: '',
+      jiraProject: '',
+    },
     rules: {
       wip_has_req:          'error',
       wip_acceptance:       'error',
@@ -228,6 +246,20 @@ function parse(content, cfg) {
       if (typeof v === 'string') cfg.rules[k] = v;
     }
   }
+
+  // ML-1A — update and sync namespaces. Same normalized `m` as above, no second read.
+  if (stringVal(m, 'hooks') !== undefined) cfg.update.hooks = m.hooks;
+  if (stringVal(m, 'ci') !== undefined) cfg.update.ci = m.ci;
+  if (stringVal(m, 'backend') !== undefined) cfg.update.backend = m.backend;
+  if (stringVal(m, 'frontend') !== undefined) cfg.update.frontend = m.frontend;
+  if (stringVal(m, 'pkg_manager') !== undefined) cfg.update.pkgManager = m.pkg_manager;
+  if (stringVal(m, 'linear_api_key') !== undefined) cfg.sync.linearApiKey = m.linear_api_key;
+  if (stringVal(m, 'linear_team_id') !== undefined) cfg.sync.linearTeamId = m.linear_team_id;
+  if (stringVal(m, 'jira_base_url') !== undefined) cfg.sync.jiraBaseUrl = m.jira_base_url;
+  if (stringVal(m, 'jira_email') !== undefined) cfg.sync.jiraEmail = m.jira_email;
+  if (stringVal(m, 'jira_token') !== undefined) cfg.sync.jiraToken = m.jira_token;
+  if (stringVal(m, 'jira_project') !== undefined) cfg.sync.jiraProject = m.jira_project;
+
   return false;
 }
 

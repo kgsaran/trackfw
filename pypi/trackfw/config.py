@@ -96,6 +96,24 @@ def defaults():
             "roadmap": ["Roadmap:"],
         },
         "acceptance_markers": ["## Acceptance Criteria", "## Critérios de Aceite"],
+        # ML-1A namespaces — ver ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-
+        # namespaces-tipados.md. Chaves continuam planas na raiz do YAML; estes são agrupamentos
+        # em memória populados pelo mesmo _parse() único abaixo, sem segunda leitura do arquivo.
+        "update": {
+            "hooks": "",
+            "ci": "",
+            "backend": "",
+            "frontend": "",
+            "pkg_manager": "",
+        },
+        "sync": {
+            "linear_api_key": "",
+            "linear_team_id": "",
+            "jira_base_url": "",
+            "jira_email": "",
+            "jira_token": "",
+            "jira_project": "",
+        },
         "rules": {
             "wip_has_req":          "error",
             "wip_acceptance":       "error",
@@ -227,4 +245,29 @@ def _parse(content, cfg):
         for k, v in m["rules"].items():
             if isinstance(v, str):
                 cfg["rules"][k] = v
+
+    # ML-1A — namespaces update e sync. Mesmo dict normalizado m, sem segunda leitura.
+    if isinstance(m.get("hooks"), str):
+        cfg["update"]["hooks"] = m["hooks"]
+    if isinstance(m.get("ci"), str):
+        cfg["update"]["ci"] = m["ci"]
+    if isinstance(m.get("backend"), str):
+        cfg["update"]["backend"] = m["backend"]
+    if isinstance(m.get("frontend"), str):
+        cfg["update"]["frontend"] = m["frontend"]
+    if isinstance(m.get("pkg_manager"), str):
+        cfg["update"]["pkg_manager"] = m["pkg_manager"]
+    if isinstance(m.get("linear_api_key"), str):
+        cfg["sync"]["linear_api_key"] = m["linear_api_key"]
+    if isinstance(m.get("linear_team_id"), str):
+        cfg["sync"]["linear_team_id"] = m["linear_team_id"]
+    if isinstance(m.get("jira_base_url"), str):
+        cfg["sync"]["jira_base_url"] = m["jira_base_url"]
+    if isinstance(m.get("jira_email"), str):
+        cfg["sync"]["jira_email"] = m["jira_email"]
+    if isinstance(m.get("jira_token"), str):
+        cfg["sync"]["jira_token"] = m["jira_token"]
+    if isinstance(m.get("jira_project"), str):
+        cfg["sync"]["jira_project"] = m["jira_project"]
+
     return False

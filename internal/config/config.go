@@ -46,6 +46,35 @@ type ProjectConfig struct {
 
 	// forge field (ship command)
 	Forge string // "github", "gitlab", "bitbucket", "azure" or "" (auto-detect)
+
+	// ML-1A namespaces — see ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-
+	// namespaces-tipados.md. Keys stay flat at the YAML root; these are memory-only groupings
+	// populated by the same single parse() below, not a second read of trackfw.yaml.
+	Update UpdateConfig
+	Sync   SyncConfig
+}
+
+// UpdateConfig holds the fields `trackfw update` reads to decide which git hooks and CI
+// workflow to (re)generate. Absent fields default to "" in all three CLIs.
+type UpdateConfig struct {
+	Hooks      string // hooks: husky|native|... (default: "")
+	CI         string // ci: github|gitlab|... (default: "")
+	Backend    string // backend: ... (default: "")
+	Frontend   string // frontend: ... (default: "")
+	PkgManager string // pkg_manager: npm|yarn|pnpm|... (default: "")
+}
+
+// SyncConfig holds the fields `trackfw sync` reads for Linear/Jira integration. linear_api_key
+// and jira_token are mechanical preservation of the current behavior (secrets read from a
+// versioned file) — see the ADR's "O que esta decisão explicitamente NÃO decide" section; this
+// namespace does not endorse that design.
+type SyncConfig struct {
+	LinearAPIKey string // linear_api_key (default: "")
+	LinearTeamID string // linear_team_id (default: "")
+	JiraBaseURL  string // jira_base_url (default: "")
+	JiraEmail    string // jira_email (default: "")
+	JiraToken    string // jira_token (default: "")
+	JiraProject  string // jira_project (default: "")
 }
 
 var (
@@ -251,6 +280,41 @@ func parse(content string, cfg *ProjectConfig) {
 				}
 			}
 		}
+	}
+
+	// ML-1A — Update and Sync namespaces. Same normalizeMapping result as above, no second read.
+	if v, ok := stringVal(m, "hooks"); ok {
+		cfg.Update.Hooks = v
+	}
+	if v, ok := stringVal(m, "ci"); ok {
+		cfg.Update.CI = v
+	}
+	if v, ok := stringVal(m, "backend"); ok {
+		cfg.Update.Backend = v
+	}
+	if v, ok := stringVal(m, "frontend"); ok {
+		cfg.Update.Frontend = v
+	}
+	if v, ok := stringVal(m, "pkg_manager"); ok {
+		cfg.Update.PkgManager = v
+	}
+	if v, ok := stringVal(m, "linear_api_key"); ok {
+		cfg.Sync.LinearAPIKey = v
+	}
+	if v, ok := stringVal(m, "linear_team_id"); ok {
+		cfg.Sync.LinearTeamID = v
+	}
+	if v, ok := stringVal(m, "jira_base_url"); ok {
+		cfg.Sync.JiraBaseURL = v
+	}
+	if v, ok := stringVal(m, "jira_email"); ok {
+		cfg.Sync.JiraEmail = v
+	}
+	if v, ok := stringVal(m, "jira_token"); ok {
+		cfg.Sync.JiraToken = v
+	}
+	if v, ok := stringVal(m, "jira_project"); ok {
+		cfg.Sync.JiraProject = v
 	}
 }
 
