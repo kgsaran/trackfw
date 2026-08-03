@@ -96,6 +96,18 @@ preservação mecânica, ver Negative Scope da REQ. Não alterar sua origem nem 
 
 ## Barreira — revisão especializada
 > Bloqueia a Wave 3
+**Status:** ✅ Aprovada (Hefesto + Hades, sem bloqueios).
+- Hefesto: código morto/duplicação ausentes, `go vet`/parity scripts verdes. Achado não-bloqueante:
+  `pypi update --dry-run/--json/--targets/--install-missing` (caminho `_run_project`) nunca chama
+  `config.load()` — estrutural, pré-existente ao ML-2A, fora do escopo de AC6 (que fala do
+  `trackfw update` **bare**, via `_run`, já correto). Nota:
+  `vault/notes/python-update-run-project-bypassa-config-load-2026-08-03.md`. **Constraint para
+  ML-3A:** o cenário de falsificação Python deve exercitar `trackfw update` sem flags — usar
+  `--dry-run`/`--json`/`--targets` tornaria o cenário vazio (passa igual com scanner reintroduzido).
+- Hades: sem vazamento de `linear_api_key`/`jira_token`. Achado informativo não-bloqueante:
+  `trackfw serve` injeta `ProjectConfig` completo (incl. `Sync`) nos handlers HTTP de um processo de
+  vida longa — nenhum handler lê `Sync` hoje, mas é superfície nova de reachability. Recomendação
+  para ML de hardening futuro (fora deste roadmap): `json:"-"` em `SyncConfig` e equivalentes.
 
 - **Hefesto** (code quality): remoção completa dos helpers órfãos, ausência de código morto,
   duplicação entre os 3 CLIs.
