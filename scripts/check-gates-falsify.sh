@@ -3196,13 +3196,36 @@ fi
 # termina com "husky" em vez de "lefthook".
 #
 # Guarda de vivacidade: o efeito não é só "o arquivo lido mudou" — é
-# observável no comportamento de `updateHooksSurgical`/`_update_hooks_surgical`:
-# hooks=lefthook grava/reporta lefthook.yml; hooks=husky grava/reporta
-# .husky/pre-commit. Os dois braços (baseline e detecção) verificam qual dos
-# dois arquivos aparece na saída de `trackfw update` bare (sem flags — ver
+# observável no comportamento de `updateHooksSurgical`/`_update_hooks_surgical`.
+# Go e Python GRAVAM o arquivo incondicionalmente e imprimem "✓ <arquivo> —
+# trackfw[-]validate injetado" com hooks=lefthook (correto) ou hooks=husky
+# (regredido). Node.js, na invocação bare (sem --install-missing), reporta o
+# alvo `git-hooks` como `missing` — a escrita real fica atrás de
+# --install-missing (runFileTarget não chama `apply` quando o arquivo ainda
+# não existe e installMissing é false) — mas o CAMPO `path` do relatório
+# ainda diverge (`lefthook.yml` vs `.husky/pre-commit`), então o sinal
+# continua genuíno e não-vácuo: é o mesmo `cfg.hooks` resolvido pelo scanner
+# que decide qual nome aparece, escrito ou não. Os três braços verificam qual
+# dos dois nomes aparece na saída de `trackfw update` bare (sem flags — ver
 # constraint da barreira ML-2A/Hefesto para o braço Python, que possui um
 # segundo caminho, `_run_project`, atrás de --dry-run/--json/--targets/
 # --install-missing, que NUNCA chama o carregador — fora do escopo desta REQ).
+#
+# Duas provas foram feitas para cada CLI, complementares: (1) corrupção de
+# uma CÓPIA isolada em $WORK (os braços de detecção abaixo, que rodam sempre
+# dentro da suíte) e (2) corrupção do ARQUIVO REAL do working tree, rodada
+# manualmente uma única vez durante o desenvolvimento deste ML para confirmar
+# que os braços de baseline (que consomem `$T27_GO_BIN`/`$ROOT_DIR/npm/bin/
+# trackfw`/`PYTHONPATH=$ROOT_DIR/pypi` — código real, não corrompido) de fato
+# flipam se alguém regredir o código real — não só a cópia. Revertida
+# (`git checkout --`) e confirmada limpa (`git status --porcelain`) em
+# seguida; não faz parte da execução normal do gate (custaria 3 rebuilds/
+# reverts a cada corrida). Uma corrupção real também dispara um segundo
+# mecanismo independente do `corrupt_literal`/`assert_fails_with` normal: se
+# o literal-alvo mudar de forma (refactor), `corrupt_literal` falha primeiro
+# com "expected exactly 1 occurrence… got 0" — sintoma de setup, não de
+# veredito do gate (ver vault/notes/cenarios-de-falsificacao-quebram-em-
+# refactor-do-alvo-2026-08-02.md).
 #
 # Corrompe a IMPLEMENTAÇÃO (loadUpdateConfig/_load_update_config), nunca a
 # asserção — mesmo padrão dos cenários anteriores.
