@@ -4,6 +4,63 @@
 
 ---
 
+## Sessão 2026-08-03 — Apolo (ML-2A: substituir os 5 scanners artesanais pelo carregador único) — CONCLUÍDO
+
+Branch `refactor/unificar-leitura-trackfw-yaml`, commit `f9168bb`, push feito.
+
+REQ: `docs/req/REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`, ML-2A.
+
+Wave 2: os 5 consumidores (`ReadUpdateConfig`/`readConfigField` em Go, `readUpdateConfig`/
+`readConfigField` em Node, `_read_config_field` em Python) foram removidos e substituídos por
+`cfg.Update.*`/`cfg.Sync.*` resolvidos pelo carregador único (`config.Load()`/`.load()`), nos 3
+CLIs.
+
+### Arquivos alterados
+- Go: `internal/generators/update.go` (`loadUpdateConfig()` novo, chdir antes do `config.Load()`
+  já que o loader Go lê relativo ao cwd do processo), `internal/sync/linear.go`, `internal/sync/jira.go`
+- Node: `npm/src/commands/update.js` (`loadUpdateConfig(rootDir)`), `npm/src/commands/sync.js`
+  (`getConfig` agora lê `cfg.sync.<camelCase>`)
+- Python: `pypi/trackfw/commands/sync.py` (`_get_config` lê `cfg["sync"]`),
+  `pypi/trackfw/commands/update.py` (AC6, ver abaixo)
+- Testes novos: `internal/sync/config_loader_test.go`, `npm/tests/sync.test.js`,
+  `pypi/tests/test_sync.py`, `pypi/tests/test_update_hooks_ac6.py`
+- Testes existentes ajustados para o singleton `config.Load()`/`Reset()` (padrão já usado em
+  `roadmap_test.go`): `internal/generators/update_test.go`, `internal/generators/identity_wiring_test.go`
+
+### AC6 — decisão de escopo (consultei o advisor antes de implementar)
+Python nunca lia `hooks/ci/backend/frontend/pkg_manager` no `update`. Implementei a leitura dos 5
+campos e **agi apenas sobre `hooks`** (injeção cirúrgica de `trackfw validate` em
+`.husky/pre-commit` ou `lefthook.yml`, mesmo texto/mensagens do Go/Node). NÃO adicionei
+`ci-workflow`/`git-hooks` a `PROJECT_TARGET_IDS` do Python — esses dois ids não fazem parte da
+lista pinada de 5 em `docs/cli-parity.md` ("Declared project targets — pinned list"); adicioná-los
+seria expansão de contrato fora de escopo do ML-2A (território do Wave 4 / ML-4A). Ver
+`pypi/tests/test_update_hooks_ac6.py` para a prova (fixture com `.husky/pre-commit` pré-existente
+sem `trackfw validate`, que o Python nunca teria tocado antes desta mudança).
+
+### Efeito colateral esperado, não corrigido (fora de escopo do ML-2A)
+YAML malformado agora é **fatal** (exit 1) para `update`/`sync` nos 3 CLIs, porque passam a usar
+`config.Load()`, que chama `os.Exit(1)`/`process.exit(1)`/`sys.exit(1)` em YAML malformado — antes,
+os scanners artesanais liam `""` silenciosamente e o comando seguia com defaults vazios. É
+consequência intencional do "caminho único" (mesmo comportamento de `validate`/`status`/`roadmap`
+hoje), documentado aqui para Hades/Zeus não tratarem como regressão nova.
+
+### Resultado
+- `go build ./...` + `go test ./...` — verde (todos os pacotes)
+- `npm test` — 353 passed (345 pré-existentes + 8 novos em `sync.test.js`), 0 failed
+- `pytest` (pypi) — 860 passed (11 novos entre `test_sync.py` e `test_update_hooks_ac6.py`)
+- `make quality` — verde (rodado com `LC_ALL=en_US.UTF-8`; com o `LANG=pt_BR.UTF-8` do shell local
+  o cenário 29 de `check-gates-falsify.sh` reprova por mensagem localizada — confirmado
+  pré-existente/ambiental via `git stash` na `main`, não causado por este ML)
+- AC1: exatamente 1 ocorrência de leitura de `trackfw.yaml` por CLI (o carregador único) —
+  `internal/config/config.go:105`, `npm/src/config/index.js:88`, `pypi/trackfw/config.py:146`
+
+### Próximo passo (não iniciado)
+Barreira de revisão (Hefesto/Hades/Zeus) antes da Wave 3 (ML-3A, cenários de falsificação em
+`scripts/check-gates-falsify.sh`, por Ártemis).
+
+---
+
 ## Sessão 2026-08-03 — Apolo (ML-1A: namespaces Update/Sync no contrato de config) — CONCLUÍDO
 
 Branch `refactor/unificar-leitura-trackfw-yaml`, commit `853f1d3`, push feito.
