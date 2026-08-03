@@ -151,7 +151,9 @@ erro e pode esconder um segundo cenário quebrado atrás do primeiro — ver
 > Dependências: Wave 3 completa
 
 ### ML-4A — Registrar os 11 campos no contrato de configuração
-**Status:** pending
+**Status:** ✅ Concluído (commit a63f5a3). Documentado em `docs/cli-parity.md` e `README.md`; não
+havia entrada de exceção de paridade registrada para o gap do Python (só existia na REQ) — nada a
+remover, só a fechar. Nota do vault de Hefesto sobre `_run_project` commitada junto.
 **Executor:** Apolo
 **Arquivos afetados:** `docs/cli-parity.md` e a documentação de configuração.
 **Ações:**
