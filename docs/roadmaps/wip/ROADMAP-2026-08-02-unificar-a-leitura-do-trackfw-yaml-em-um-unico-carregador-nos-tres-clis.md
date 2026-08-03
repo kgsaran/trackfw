@@ -121,7 +121,12 @@ preservação mecânica, ver Negative Scope da REQ. Não alterar sua origem nem 
 > Dependências: barreira aprovada
 
 ### ML-3A — Cenários que reprovam a volta do scanner artesanal
-**Status:** pending
+**Status:** ✅ Concluído (commits 47a5074, 7ffca28). 3 cenários novos (39/40/41), 99/99 OK na
+suíte completa. Débito pré-existente registrado (não introduzido por este ML): Cenário 29 de
+`check-gates-falsify.sh` depende de `LANG=C` implícito e reprova sob locale pt_BR — ver
+`vault/notes/falsify-suite-locale-dependent-false-failure-2026-08-03.md`. `sync`'s
+`readConfigField`/`_read_config_field` seguem sem cobertura de falsificação — fora do escopo de
+3 cenários definido no roadmap (só `update`).
 **Executor:** Ártemis
 **Arquivos afetados:** `scripts/check-gates-falsify.sh` **apenas** (arquivo compartilhado — nenhum
 outro ML pode tocá-lo em paralelo).
