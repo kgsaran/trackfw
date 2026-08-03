@@ -7,10 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
 )
 
 func TestUpdateDoesNotImplicitlyInstallAgentIntegrations(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -46,6 +49,8 @@ func TestUpdateDoesNotImplicitlyInstallAgentIntegrations(t *testing.T) {
 }
 
 func TestUpdateMigratesKnownCodexAndPreservesUnknown(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
 	root, home := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
 	if err := os.WriteFile(filepath.Join(root, "trackfw.yaml"), []byte("hooks: none\nci: none\n"), 0o644); err != nil {
@@ -274,6 +279,8 @@ func TestUpdateHarnessDoesNotWriteAnythingOutsideHome(t *testing.T) {
 }
 
 func TestUpdateInjectsAndUpdatesAttentionHooksIdempotently(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)

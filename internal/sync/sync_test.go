@@ -238,31 +238,6 @@ text here
 	}
 }
 
-func TestReadConfigField(t *testing.T) {
-	dir := t.TempDir()
-	orig, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(orig)
-
-	// sem arquivo
-	if v := readConfigField("linear_api_key"); v != "" {
-		t.Errorf("expected empty without trackfw.yaml, got %q", v)
-	}
-
-	// com arquivo
-	if err := os.WriteFile("trackfw.yaml", []byte("linear_api_key: my-key\nlinear_team_id: team-123\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if v := readConfigField("linear_api_key"); v != "my-key" {
-		t.Errorf("expected 'my-key', got %q", v)
-	}
-	if v := readConfigField("linear_team_id"); v != "team-123" {
-		t.Errorf("expected 'team-123', got %q", v)
-	}
-}
-
 func TestExtractMotivation(t *testing.T) {
 	text := `# REQ: Feature
 

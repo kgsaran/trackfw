@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const identityStore = require('../identity');
+const projectConfig = require('../config');
 const { runFileTarget, validateTargets, buildDocument, humanReport, silenceConsole } = require('../lib/update-engine');
 
 // `trackfw update` is project-scoped only — see docs/cli-parity.md,
@@ -12,23 +13,20 @@ const { runFileTarget, validateTargets, buildDocument, humanReport, silenceConso
 // state (~/.claude, ~/.codex, etc.). Global artifacts moved to
 // `trackfw update harness` (update-harness.js).
 
-function readUpdateConfig(rootDir) {
-  const yaml = path.join(rootDir, 'trackfw.yaml');
-  if (!fs.existsSync(yaml)) return {};
-  const lines = fs.readFileSync(yaml, 'utf8').split('\n');
-  const cfg = {};
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('#')) continue;
-    const idx = trimmed.indexOf(':');
-    if (idx < 0) continue;
-    const key = trimmed.slice(0, idx).trim();
-    let val = trimmed.slice(idx + 1).trim();
-    const ci = val.indexOf(' #');
-    if (ci >= 0) val = val.slice(0, ci).trim();
-    cfg[key] = val;
-  }
-  return cfg;
+// loadUpdateConfig replaces the former artisanal line-by-line scanner (readUpdateConfig) with
+// the single config loader (../config, see ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-
+// yaml-com-namespaces-tipados.md). Returns the same snake_case shape the rest of this file
+// already consumes (cfg.hooks, cfg.ci, cfg.backend, cfg.frontend, cfg.pkg_manager) so downstream
+// code (updateHooksSurgical, buildProjectTargets) needs no further change.
+function loadUpdateConfig(rootDir) {
+  const u = projectConfig.load(rootDir).update;
+  return {
+    hooks: u.hooks,
+    ci: u.ci,
+    backend: u.backend,
+    frontend: u.frontend,
+    pkg_manager: u.pkgManager,
+  };
 }
 
 function updateHooksSurgical(cfg, rootDir) {
@@ -164,7 +162,7 @@ function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing 
     // discover.js's writeValidateScript, which produces a different
     // (simpler, non-per-backend) script and made every `update` re-run
     // report "updated" against a project actually already current
-    // (ML-6H fix). readUpdateConfig returns raw trackfw.yaml keys
+    // (ML-6H fix). loadUpdateConfig returns raw trackfw.yaml keys
     // (snake_case, e.g. "pkg_manager"); buildValidateScript expects the
     // camelCase shape used by the rest of the init generators.
     apply: (root) => generators.generateValidateScript({
@@ -252,7 +250,7 @@ cmd.action((mode, options) => {
     process.exit(1);
   }
 
-  const cfg = readUpdateConfig(cwd);
+  const cfg = loadUpdateConfig(cwd);
   const dryRun = Boolean(options.dryRun);
   const installMissing = Boolean(options.installMissing);
 

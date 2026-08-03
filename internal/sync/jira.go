@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 // JiraClient encapsula credenciais para a API do Jira Cloud.
@@ -23,19 +25,20 @@ type JiraClient struct {
 //
 //	2) env vars JIRA_BASE_URL, JIRA_EMAIL, JIRA_TOKEN, JIRA_PROJECT
 func NewJiraClient() (*JiraClient, error) {
-	baseURL := readConfigField("jira_base_url")
+	sc := config.Load().Sync
+	baseURL := sc.JiraBaseURL
 	if baseURL == "" {
 		baseURL = os.Getenv("JIRA_BASE_URL")
 	}
-	email := readConfigField("jira_email")
+	email := sc.JiraEmail
 	if email == "" {
 		email = os.Getenv("JIRA_EMAIL")
 	}
-	token := readConfigField("jira_token")
+	token := sc.JiraToken
 	if token == "" {
 		token = os.Getenv("JIRA_TOKEN")
 	}
-	project := readConfigField("jira_project")
+	project := sc.JiraProject
 	if project == "" {
 		project = os.Getenv("JIRA_PROJECT")
 	}

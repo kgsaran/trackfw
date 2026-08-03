@@ -5,38 +5,24 @@ const https = require('https')
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
+const projectConfig = require('../config')
 
 // ---------------------------------------------------------------------------
 // Config helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Lê um campo de trackfw.yaml (parse linha a linha, sem dependências externas).
- * @param {string} field
+ * Lê um campo de cfg.sync (namespace resolvido pelo carregador único, ../config —
+ * ver ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-namespaces-tipados.md),
+ * com fallback para variável de ambiente. Substitui o antigo scanner artesanal
+ * readConfigField (parse linha a linha de trackfw.yaml).
+ * @param {string} syncKey chave camelCase em cfg.sync (ex.: "linearApiKey")
+ * @param {string} envVar
  * @returns {string}
  */
-function readConfigField(field) {
-  try {
-    const data = fs.readFileSync('trackfw.yaml', 'utf8')
-    const prefix = field + ':'
-    for (const line of data.split('\n')) {
-      const trimmed = line.trimStart()
-      if (trimmed.startsWith(prefix)) {
-        let value = trimmed.slice(prefix.length).trim()
-        if (value.length >= 2 &&
-          ((value[0] === '"' && value[value.length - 1] === '"') ||
-           (value[0] === "'" && value[value.length - 1] === "'"))) {
-          value = value.slice(1, -1)
-        }
-        return value
-      }
-    }
-  } catch (_) { /* sem arquivo */ }
-  return ''
-}
-
-function getConfig(field, envVar) {
-  return readConfigField(field) || process.env[envVar] || ''
+function getConfig(syncKey, envVar) {
+  const cfg = projectConfig.load(process.cwd())
+  return cfg.sync[syncKey] || process.env[envVar] || ''
 }
 
 // ---------------------------------------------------------------------------
@@ -296,18 +282,18 @@ async function syncToProvider(createFn, issueField) {
 }
 
 async function syncToLinear() {
-  const apiKey = getConfig('linear_api_key', 'LINEAR_API_KEY')
-  const teamId = getConfig('linear_team_id', 'LINEAR_TEAM_ID')
+  const apiKey = getConfig('linearApiKey', 'LINEAR_API_KEY')
+  const teamId = getConfig('linearTeamId', 'LINEAR_TEAM_ID')
   if (!apiKey) throw new Error('Linear API key not found. Set LINEAR_API_KEY env var or linear_api_key in trackfw.yaml')
   if (!teamId) throw new Error('Linear Team ID not found. Set LINEAR_TEAM_ID env var or linear_team_id in trackfw.yaml')
   return syncToProvider((title, desc) => linearCreateIssue(apiKey, teamId, title, desc), 'linear_issue')
 }
 
 async function syncToJira() {
-  const baseUrl = getConfig('jira_base_url', 'JIRA_BASE_URL')
-  const email = getConfig('jira_email', 'JIRA_EMAIL')
-  const token = getConfig('jira_token', 'JIRA_TOKEN')
-  const project = getConfig('jira_project', 'JIRA_PROJECT')
+  const baseUrl = getConfig('jiraBaseUrl', 'JIRA_BASE_URL')
+  const email = getConfig('jiraEmail', 'JIRA_EMAIL')
+  const token = getConfig('jiraToken', 'JIRA_TOKEN')
+  const project = getConfig('jiraProject', 'JIRA_PROJECT')
   if (!baseUrl) throw new Error('Jira base URL not found. Set JIRA_BASE_URL env var or jira_base_url in trackfw.yaml')
   if (!email) throw new Error('Jira email not found. Set JIRA_EMAIL env var or jira_email in trackfw.yaml')
   if (!token) throw new Error('Jira API token not found. Set JIRA_TOKEN env var or jira_token in trackfw.yaml')
