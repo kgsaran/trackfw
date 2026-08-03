@@ -66,7 +66,10 @@ gastar um ML de reconciliação por wave.
 > Dependências: Wave 1 completa
 
 ### ML-2A — Substituir os 5 scanners artesanais pelo carregador
-**Status:** pending
+**Status:** ✅ Concluído (commits f9168bb, 2b01905). Nota: YAML malformado passou a ser fatal
+(exit 1) em `update`/`sync` nos 3 CLIs — antes os scanners liam `""` silenciosamente. Efeito
+colateral esperado de usar o carregador único (que já tinha esse comportamento em `validate`/
+`status`); revisar na barreira.
 **Executor:** Apolo
 **Arquivos afetados:** `internal/generators/update.go`, `internal/sync/linear.go`,
 `internal/sync/jira.go`, `npm/src/commands/update.js`, `npm/src/commands/sync.js`,
