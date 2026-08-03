@@ -45,7 +45,7 @@ gastar um ML de reconciliação por wave.
 > Dependências: nenhuma
 
 ### ML-1A — Adicionar `Update` e `Sync` ao contrato de config nos 3 CLIs
-**Status:** pending
+**Status:** ✅ Concluído (commits 853f1d3, 03c9206)
 **Executor:** Apolo
 **Arquivos afetados:** `internal/config/config.go`, `npm/src/config/index.js`,
 `pypi/trackfw/config.py` (+ testes correspondentes). **Nenhum outro arquivo.**
