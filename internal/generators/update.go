@@ -10,54 +10,26 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 )
 
-// ReadUpdateConfig lê hooks/ci/backend/frontend/pkg_manager de trackfw.yaml.
-// Sem dependências externas — parse linha a linha.
-func ReadUpdateConfig(cwd string) Config {
-	data, err := os.ReadFile(filepath.Join(cwd, "trackfw.yaml"))
-	if err != nil {
-		return Config{}
+// loadUpdateConfig converts the Update namespace resolved by the single config
+// loader (config.Load(), see internal/config/config.go and
+// ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-namespaces-tipados.md) into the
+// generators.Config shape this file's writers expect. Replaces the former artisanal scanner
+// ReadUpdateConfig — config.Load() reads relative to the process' current working directory, so
+// callers must invoke this only after chdir'ing into the target project root.
+func loadUpdateConfig() Config {
+	u := config.Load().Update
+	return Config{
+		Hooks:      u.Hooks,
+		CI:         u.CI,
+		Backend:    u.Backend,
+		Frontend:   u.Frontend,
+		PkgManager: u.PkgManager,
 	}
-	cfg := Config{}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, val, ok := splitKVupdate(line)
-		if !ok {
-			continue
-		}
-		switch key {
-		case "hooks":
-			cfg.Hooks = val
-		case "ci":
-			cfg.CI = val
-		case "backend":
-			cfg.Backend = val
-		case "frontend":
-			cfg.Frontend = val
-		case "pkg_manager":
-			cfg.PkgManager = val
-		}
-	}
-	return cfg
-}
-
-func splitKVupdate(line string) (key, val string, ok bool) {
-	idx := strings.Index(line, ":")
-	if idx < 0 {
-		return "", "", false
-	}
-	key = strings.TrimSpace(line[:idx])
-	val = strings.TrimSpace(line[idx+1:])
-	if ci := strings.Index(val, " #"); ci >= 0 {
-		val = strings.TrimSpace(val[:ci])
-	}
-	return key, val, key != ""
 }
 
 // Update re-aplica todos os templates atuais do trackfw ao projeto em cwd.
@@ -66,13 +38,13 @@ func Update(cwd string) error {
 		return fmt.Errorf("trackfw.yaml não encontrado — execute trackfw init primeiro")
 	}
 
-	cfg := ReadUpdateConfig(cwd)
-
 	orig, _ := os.Getwd()
 	if err := os.Chdir(cwd); err != nil {
 		return fmt.Errorf("não foi possível mudar para %s: %w", cwd, err)
 	}
 	defer os.Chdir(orig) //nolint:errcheck
+
+	cfg := loadUpdateConfig()
 
 	fmt.Println("trackfw update — re-aplicando templates atuais...")
 	fmt.Println()
@@ -581,7 +553,10 @@ func UpdateProject(cwd string, opts UpdateOptions) (UpdateReport, error) {
 	if _, err := os.Stat(filepath.Join(cwd, "trackfw.yaml")); err != nil {
 		return UpdateReport{}, fmt.Errorf("trackfw.yaml não encontrado — execute trackfw init primeiro")
 	}
-	cfg := ReadUpdateConfig(cwd)
+	var cfg Config
+	if err := withChdir(cwd, func() error { cfg = loadUpdateConfig(); return nil }); err != nil {
+		return UpdateReport{}, fmt.Errorf("loading trackfw.yaml: %w", err)
+	}
 
 	declared := ProjectTargetIDs(cfg)
 	selected, err := selectDeclaredTargets(declared, opts.Targets)

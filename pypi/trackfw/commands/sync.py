@@ -14,31 +14,21 @@ import urllib.request
 import urllib.error
 import base64
 
+from trackfw import config as project_config
+
 
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
 
-def _read_config_field(field):
-    """Lê campo do trackfw.yaml sem dependências externas."""
-    try:
-        with open("trackfw.yaml", "r", encoding="utf-8") as f:
-            content = f.read()
-    except OSError:
-        return ""
-    prefix = field + ":"
-    for line in content.split("\n"):
-        trimmed = line.strip()
-        if trimmed.startswith(prefix):
-            value = trimmed[len(prefix):].strip()
-            if len(value) >= 2 and value[0] in ('"', "'") and value[-1] == value[0]:
-                value = value[1:-1]
-            return value
-    return ""
-
-
-def _get_config(field, env_var):
-    return _read_config_field(field) or os.environ.get(env_var, "")
+def _get_config(sync_key, env_var):
+    """Lê um campo de cfg["sync"] (namespace resolvido pelo carregador único, trackfw.config —
+    ver ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-namespaces-tipados.md), com
+    fallback para variável de ambiente. Substitui o antigo scanner artesanal
+    _read_config_field (parse linha a linha de trackfw.yaml).
+    """
+    cfg = project_config.load(os.getcwd())
+    return cfg["sync"].get(sync_key, "") or os.environ.get(env_var, "")
 
 
 # ---------------------------------------------------------------------------

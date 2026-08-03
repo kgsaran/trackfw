@@ -34,3 +34,5 @@
 - [config-legacy-line-reader-sombreia-yaml-lib-no-validate-2026-08-02](config-legacy-line-reader-sombreia-yaml-lib-no-validate-2026-08-02.md)
 - [falsificacao-config-parser-fixture-precisa-de-escalar-citado-2026-08-02](falsificacao-config-parser-fixture-precisa-de-escalar-citado-2026-08-02.md)
 - [req-frontmatter-roadmap-nao-satisfaz-req-has-roadmap-2026-08-02](req-frontmatter-roadmap-nao-satisfaz-req-has-roadmap-2026-08-02.md)
+- [python-update-run-project-bypassa-config-load-2026-08-03](python-update-run-project-bypassa-config-load-2026-08-03.md)
+- [falsify-suite-locale-dependent-false-failure-2026-08-03](falsify-suite-locale-dependent-false-failure-2026-08-03.md)

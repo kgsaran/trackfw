@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 // LinearClient encapsula credenciais para a API do Linear.
@@ -20,11 +22,12 @@ type LinearClient struct {
 //
 //	2) env vars LINEAR_API_KEY, LINEAR_TEAM_ID
 func NewLinearClient() (*LinearClient, error) {
-	apiKey := readConfigField("linear_api_key")
+	sc := config.Load().Sync
+	apiKey := sc.LinearAPIKey
 	if apiKey == "" {
 		apiKey = os.Getenv("LINEAR_API_KEY")
 	}
-	teamID := readConfigField("linear_team_id")
+	teamID := sc.LinearTeamID
 	if teamID == "" {
 		teamID = os.Getenv("LINEAR_TEAM_ID")
 	}
@@ -113,61 +116,4 @@ func (c *LinearClient) CreateIssue(title, description string) (string, error) {
 	}
 
 	return result.Data.IssueCreate.Issue.Identifier, nil
-}
-
-// readConfigField lê um campo de trackfw.yaml pelo nome (parse linha a linha).
-func readConfigField(field string) string {
-	data, err := os.ReadFile("trackfw.yaml")
-	if err != nil {
-		return ""
-	}
-	prefix := field + ":"
-	for _, line := range splitLines(string(data)) {
-		trimmed := trimLeft(line)
-		if len(trimmed) > len(prefix) && trimmed[:len(prefix)] == prefix {
-			value := trimmed[len(prefix):]
-			value = trim(value)
-			// remover aspas simples ou duplas ao redor do valor
-			if len(value) >= 2 && ((value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'')) {
-				value = value[1 : len(value)-1]
-			}
-			return value
-		}
-	}
-	return ""
-}
-
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
-}
-
-func trimLeft(s string) string {
-	for i, c := range s {
-		if c != ' ' && c != '\t' {
-			return s[i:]
-		}
-	}
-	return ""
-}
-
-func trim(s string) string {
-	// trim spaces e tabs do início e fim
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t') {
-		s = s[1:]
-	}
-	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\t') {
-		s = s[:len(s)-1]
-	}
-	return s
 }

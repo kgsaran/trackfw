@@ -3169,4 +3169,240 @@ else
   exit 1
 fi
 
-echo "Falsification checks passed (all 92 scenarios, 14 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee))"
+
+# ---------------------------------------------------------------------------
+# Cenários 39/40/41 — ML-3A (REQ-2026-08-02-unificar-a-leitura-do-trackfw-
+# yaml-em-um-unico-carregador-nos-tres-clis): `trackfw update` volta a ler
+# hooks/ci/backend/frontend/pkg_manager com um scanner artesanal em vez de
+# consumir o namespace `Update` já resolvido pelo carregador único
+# (config.Load()/projectConfig.load()/project_config.load() — ver
+# internal/generators/update.go:loadUpdateConfig,
+# npm/src/commands/update.js:loadUpdateConfig,
+# pypi/trackfw/commands/update.py:_load_update_config).
+#
+# Fixture discriminante (AC4/AC7 — chave aninhada homônima, o candidato mais
+# forte da REQ): `hooks: lefthook` na raiz do YAML e uma seção NÃO relacionada
+# com uma chave `hooks:` homônima aninhada por baixo dela.
+#
+#   hooks: lefthook
+#   legacy_project_settings:
+#     hooks: husky
+#
+# O carregador único respeita a estrutura do mapeamento — só a chave `hooks`
+# da RAIZ é lida (ProjectConfig.Update.Hooks == "lefthook"). Um scanner
+# artesanal reintroduzido (mesmo padrão eliminado pelo ML-2A: itera linha a
+# linha, casa o prefixo `hooks:` em QUALQUER indentação, ignora nesting)
+# sobrescreve o valor a cada ocorrência — a última linha que casa vence — e
+# termina com "husky" em vez de "lefthook".
+#
+# Guarda de vivacidade: o efeito não é só "o arquivo lido mudou" — é
+# observável no comportamento de `updateHooksSurgical`/`_update_hooks_surgical`.
+# Go e Python GRAVAM o arquivo incondicionalmente e imprimem "✓ <arquivo> —
+# trackfw[-]validate injetado" com hooks=lefthook (correto) ou hooks=husky
+# (regredido). Node.js, na invocação bare (sem --install-missing), reporta o
+# alvo `git-hooks` como `missing` — a escrita real fica atrás de
+# --install-missing (runFileTarget não chama `apply` quando o arquivo ainda
+# não existe e installMissing é false) — mas o CAMPO `path` do relatório
+# ainda diverge (`lefthook.yml` vs `.husky/pre-commit`), então o sinal
+# continua genuíno e não-vácuo: é o mesmo `cfg.hooks` resolvido pelo scanner
+# que decide qual nome aparece, escrito ou não. Os três braços verificam qual
+# dos dois nomes aparece na saída de `trackfw update` bare (sem flags — ver
+# constraint da barreira ML-2A/Hefesto para o braço Python, que possui um
+# segundo caminho, `_run_project`, atrás de --dry-run/--json/--targets/
+# --install-missing, que NUNCA chama o carregador — fora do escopo desta REQ).
+#
+# Duas provas foram feitas para cada CLI, complementares: (1) corrupção de
+# uma CÓPIA isolada em $WORK (os braços de detecção abaixo, que rodam sempre
+# dentro da suíte) e (2) corrupção do ARQUIVO REAL do working tree, rodada
+# manualmente uma única vez durante o desenvolvimento deste ML para confirmar
+# que os braços de baseline (que consomem `$T27_GO_BIN`/`$ROOT_DIR/npm/bin/
+# trackfw`/`PYTHONPATH=$ROOT_DIR/pypi` — código real, não corrompido) de fato
+# flipam se alguém regredir o código real — não só a cópia. Revertida
+# (`git checkout --`) e confirmada limpa (`git status --porcelain`) em
+# seguida; não faz parte da execução normal do gate (custaria 3 rebuilds/
+# reverts a cada corrida). Uma corrupção real também dispara um segundo
+# mecanismo independente do `corrupt_literal`/`assert_fails_with` normal: se
+# o literal-alvo mudar de forma (refactor), `corrupt_literal` falha primeiro
+# com "expected exactly 1 occurrence… got 0" — sintoma de setup, não de
+# veredito do gate (ver vault/notes/cenarios-de-falsificacao-quebram-em-
+# refactor-do-alvo-2026-08-02.md).
+#
+# Corrompe a IMPLEMENTAÇÃO (loadUpdateConfig/_load_update_config), nunca a
+# asserção — mesmo padrão dos cenários anteriores.
+# ---------------------------------------------------------------------------
+
+write_update_hooks_discriminant_fixture() {
+  local dest=$1
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<'FIXEOF'
+hooks: lefthook
+legacy_project_settings:
+  hooks: husky
+FIXEOF
+}
+
+S39_EXPECTED_MSG='✓ lefthook.yml — trackfw-validate injetado'
+S39_REGRESSED_MSG='✓ .husky/pre-commit — trackfw validate injetado'
+
+# --- Cenário 39 — Go --------------------------------------------------------
+
+S39_BASE="$WORK/s39-go-baseline"
+mkdir -p "$S39_BASE"
+write_update_hooks_discriminant_fixture "$S39_BASE/trackfw.yaml"
+set +e
+s39_base_out=$(cd "$S39_BASE" && "$T27_GO_BIN" update 2>&1)
+s39_base_status=$?
+set -e
+if [[ $s39_base_status -eq 0 ]] \
+    && grep -qF "$S39_EXPECTED_MSG" <<<"$s39_base_out" \
+    && ! grep -qF "$S39_REGRESSED_MSG" <<<"$s39_base_out"; then
+  echo "OK   [falsify/update-config-loader/go-baseline]"
+else
+  echo "FAIL [falsify/update-config-loader/go-baseline]: esperava exit 0 e '$S39_EXPECTED_MSG'" >&2
+  echo "  status: $s39_base_status" >&2
+  echo "  output: $(printf '%q' "$s39_base_out")" >&2
+  exit 1
+fi
+
+GO_S39_OLD=$'func loadUpdateConfig() Config {\n\tu := config.Load().Update\n\treturn Config{\n\t\tHooks:      u.Hooks,\n\t\tCI:         u.CI,\n\t\tBackend:    u.Backend,\n\t\tFrontend:   u.Frontend,\n\t\tPkgManager: u.PkgManager,\n\t}\n}'
+GO_S39_NEW=$'func loadUpdateConfig() Config {\n\t// [falsified] artisanal line-by-line scanner reintroduced — matches the "hooks:" prefix at\n\t// ANY indentation and keeps overwriting, so the LAST matching line wins regardless of nesting.\n\t// config.Load() is still invoked (kept referenced) but its Update namespace is discarded.\n\t_ = config.Load()\n\tdata, err := os.ReadFile("trackfw.yaml")\n\tif err != nil {\n\t\treturn Config{}\n\t}\n\tcfg := Config{}\n\tfor _, line := range strings.Split(string(data), "\\n") {\n\t\tline = strings.TrimSpace(line)\n\t\tif strings.HasPrefix(line, "#") {\n\t\t\tcontinue\n\t\t}\n\t\tidx := strings.Index(line, ":")\n\t\tif idx < 0 {\n\t\t\tcontinue\n\t\t}\n\t\tkey := strings.TrimSpace(line[:idx])\n\t\tval := strings.TrimSpace(line[idx+1:])\n\t\tswitch key {\n\t\tcase "hooks":\n\t\t\tcfg.Hooks = val\n\t\tcase "ci":\n\t\t\tcfg.CI = val\n\t\tcase "backend":\n\t\t\tcfg.Backend = val\n\t\tcase "frontend":\n\t\t\tcfg.Frontend = val\n\t\tcase "pkg_manager":\n\t\t\tcfg.PkgManager = val\n\t\t}\n\t}\n\treturn cfg\n}'
+
+T39C_GO_MOD="$WORK/s39-corrupt-go"
+mkdir -p "$T39C_GO_MOD/cmd" "$T39C_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T39C_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T39C_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T39C_GO_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T39C_GO_MOD/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/generators/update.go" "$T39C_GO_MOD/internal/generators/update.go" \
+  "$GO_S39_OLD" "$GO_S39_NEW" "s39-go"
+
+T39C_GO_BIN="$WORK/s39-corrupt-go-bin/trackfw"
+mkdir -p "$(dirname "$T39C_GO_BIN")"
+build_go_or_fail "setup-s39-go-corrupt-build" "$T39C_GO_MOD" "$T39C_GO_BIN"
+
+S39C="$WORK/s39-go-corrupt"
+mkdir -p "$S39C"
+write_update_hooks_discriminant_fixture "$S39C/trackfw.yaml"
+set +e
+s39c_out=$(cd "$S39C" && "$T39C_GO_BIN" update 2>&1)
+set -e
+if grep -qF "$S39_REGRESSED_MSG" <<<"$s39c_out" && ! grep -qF "$S39_EXPECTED_MSG" <<<"$s39c_out"; then
+  echo "OK   [falsify/update-config-loader/go-detects-artisanal-scanner-reintroduced]"
+else
+  echo "FAIL [falsify/update-config-loader/go-detects-artisanal-scanner-reintroduced]: scanner artesanal reintroduzido mas a saída não regrediu para hooks=husky — checagem vácua" >&2
+  echo "  output: $(printf '%q' "$s39c_out")" >&2
+  exit 1
+fi
+
+# --- Cenário 40 — Node.js ----------------------------------------------------
+
+S40_BASE="$WORK/s40-node-baseline"
+mkdir -p "$S40_BASE"
+write_update_hooks_discriminant_fixture "$S40_BASE/trackfw.yaml"
+set +e
+s40_base_out=$(cd "$S40_BASE" && node "$ROOT_DIR/npm/bin/trackfw" update 2>&1)
+s40_base_status=$?
+set -e
+if [[ $s40_base_status -eq 0 ]] \
+    && grep -qF "lefthook.yml" <<<"$s40_base_out" \
+    && ! grep -qF ".husky/pre-commit" <<<"$s40_base_out"; then
+  echo "OK   [falsify/update-config-loader/node-baseline]"
+else
+  echo "FAIL [falsify/update-config-loader/node-baseline]: esperava exit 0 e 'lefthook.yml' no relatório de git-hooks" >&2
+  echo "  status: $s40_base_status" >&2
+  echo "  output: $(printf '%q' "$s40_base_out")" >&2
+  exit 1
+fi
+
+NODE_S40_OLD=$'function loadUpdateConfig(rootDir) {\n  const u = projectConfig.load(rootDir).update;\n  return {\n    hooks: u.hooks,\n    ci: u.ci,\n    backend: u.backend,\n    frontend: u.frontend,\n    pkg_manager: u.pkgManager,\n  };\n}'
+NODE_S40_NEW=$'function loadUpdateConfig(rootDir) {\n  // [falsified] artisanal line-by-line scanner reintroduced — matches the "hooks:" prefix at\n  // ANY indentation and keeps overwriting cfg[key], so the LAST matching line wins regardless\n  // of nesting. projectConfig.load() is no longer consulted at all.\n  const yamlPath = path.join(rootDir, \'trackfw.yaml\');\n  if (!fs.existsSync(yamlPath)) return {};\n  const lines = fs.readFileSync(yamlPath, \'utf8\').split(\'\\n\');\n  const cfg = {};\n  for (const line of lines) {\n    const trimmed = line.trim();\n    if (trimmed.startsWith(\'#\')) continue;\n    const idx = trimmed.indexOf(\':\');\n    if (idx < 0) continue;\n    const key = trimmed.slice(0, idx).trim();\n    let val = trimmed.slice(idx + 1).trim();\n    cfg[key] = val;\n  }\n  return {\n    hooks: cfg.hooks,\n    ci: cfg.ci,\n    backend: cfg.backend,\n    frontend: cfg.frontend,\n    pkg_manager: cfg.pkg_manager,\n  };\n}'
+
+T40C_NODE="$WORK/s40-corrupt-node"
+setup_npm_tree "$T40C_NODE"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/commands/update.js" "$T40C_NODE/npm/src/commands/update.js" \
+  "$NODE_S40_OLD" "$NODE_S40_NEW" "s40-node"
+
+S40C="$WORK/s40-node-corrupt"
+mkdir -p "$S40C"
+write_update_hooks_discriminant_fixture "$S40C/trackfw.yaml"
+set +e
+s40c_out=$(cd "$S40C" && node "$T40C_NODE/npm/bin/trackfw" update 2>&1)
+set -e
+if grep -qF ".husky/pre-commit" <<<"$s40c_out" && ! grep -qF "lefthook.yml" <<<"$s40c_out"; then
+  echo "OK   [falsify/update-config-loader/node-detects-artisanal-scanner-reintroduced]"
+else
+  echo "FAIL [falsify/update-config-loader/node-detects-artisanal-scanner-reintroduced]: scanner artesanal reintroduzido mas a saída não regrediu para hooks=husky — checagem vácua" >&2
+  echo "  output: $(printf '%q' "$s40c_out")" >&2
+  exit 1
+fi
+
+# --- Cenário 41 — Python -----------------------------------------------------
+#
+# Constraint da barreira (Hefesto): o braço Python precisa exercitar
+# `trackfw update` BARE (sem --dry-run/--json/--targets/--install-missing) —
+# esse é o único caminho (_run, via _load_update_config) que satisfaz AC6.
+# Os quatro flags caem em _run_project, que nunca chama o carregador de
+# config e por isso tornaria o cenário vácuo (passaria idêntico com o
+# scanner artesanal reintroduzido). Verificado empiricamente abaixo.
+
+S41_BASE="$WORK/s41-python-baseline"
+mkdir -p "$S41_BASE"
+write_update_hooks_discriminant_fixture "$S41_BASE/trackfw.yaml"
+set +e
+s41_base_out=$(cd "$S41_BASE" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw update 2>&1)
+s41_base_status=$?
+set -e
+if [[ $s41_base_status -eq 0 ]] \
+    && grep -qF "$S39_EXPECTED_MSG" <<<"$s41_base_out" \
+    && ! grep -qF "$S39_REGRESSED_MSG" <<<"$s41_base_out"; then
+  echo "OK   [falsify/update-config-loader/python-baseline]"
+else
+  echo "FAIL [falsify/update-config-loader/python-baseline]: esperava exit 0 e '$S39_EXPECTED_MSG' via 'trackfw update' bare" >&2
+  echo "  status: $s41_base_status" >&2
+  echo "  output: $(printf '%q' "$s41_base_out")" >&2
+  exit 1
+fi
+
+PY_S41_OLD=$'def _load_update_config(cwd: str) -> dict[str, str]:\n    """Reads the 5 fields `trackfw update` cares about via the single config loader\n    (trackfw.config, see ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-namespaces-\n    tipados.md) instead of a second, artisanal read of trackfw.yaml. config.load() reads\n    relative to the given cwd (unlike Go\'s process-cwd-only Load()), so no chdir is required."""\n    return dict(project_config.load(cwd)["update"])'
+PY_S41_NEW=$'def _load_update_config(cwd: str) -> dict[str, str]:\n    # [falsified] artisanal line-by-line scanner reintroduced — matches the "hooks:" prefix at\n    # ANY indentation and keeps overwriting cfg[key], so the LAST matching line wins regardless\n    # of nesting. project_config.load() is no longer consulted at all.\n    yaml_path = os.path.join(cwd, "trackfw.yaml")\n    try:\n        with open(yaml_path, "r", encoding="utf-8") as f:\n            content = f.read()\n    except OSError:\n        return {}\n    cfg: dict[str, str] = {}\n    for line in content.split("\\n"):\n        trimmed = line.strip()\n        if trimmed.startswith("#"):\n            continue\n        idx = trimmed.find(":")\n        if idx < 0:\n            continue\n        key = trimmed[:idx].strip()\n        val = trimmed[idx + 1:].strip()\n        cfg[key] = val\n    return cfg'
+
+T41C_PYTHON="$WORK/s41-corrupt-python"
+mkdir -p "$T41C_PYTHON"
+cp -r "$ROOT_DIR/pypi" "$T41C_PYTHON/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/commands/update.py" "$T41C_PYTHON/pypi/trackfw/commands/update.py" \
+  "$PY_S41_OLD" "$PY_S41_NEW" "s41-python"
+
+S41C="$WORK/s41-python-corrupt"
+mkdir -p "$S41C"
+write_update_hooks_discriminant_fixture "$S41C/trackfw.yaml"
+set +e
+s41c_out=$(cd "$S41C" && env PYTHONPATH="$T41C_PYTHON/pypi" python3 -m trackfw update 2>&1)
+set -e
+if grep -qF "$S39_REGRESSED_MSG" <<<"$s41c_out" && ! grep -qF "$S39_EXPECTED_MSG" <<<"$s41c_out"; then
+  echo "OK   [falsify/update-config-loader/python-detects-artisanal-scanner-reintroduced]"
+else
+  echo "FAIL [falsify/update-config-loader/python-detects-artisanal-scanner-reintroduced]: scanner artesanal reintroduzido mas a saída não regrediu para hooks=husky — checagem vácua (verifique se a invocação bare de fato passou por _run/_load_update_config)" >&2
+  echo "  output: $(printf '%q' "$s41c_out")" >&2
+  exit 1
+fi
+
+# Guarda de não-vacuidade adicional (constraint da barreira): confirma que o
+# caminho --dry-run (_run_project) do Python, mesmo com o carregador corrompido,
+# NÃO reproduz o diagnóstico de detecção acima — provando que o cenário
+# realmente depende da invocação bare (_run) e não passaria por acidente com
+# qualquer flag.
+set +e
+s41c_dryrun_out=$(cd "$S41C" && env PYTHONPATH="$T41C_PYTHON/pypi" python3 -m trackfw update --dry-run 2>&1)
+set -e
+if ! grep -qF "$S39_REGRESSED_MSG" <<<"$s41c_dryrun_out" && ! grep -qF "$S39_EXPECTED_MSG" <<<"$s41c_dryrun_out"; then
+  echo "OK   [falsify/update-config-loader/python-dry-run-path-confirmed-blind]"
+else
+  echo "FAIL [falsify/update-config-loader/python-dry-run-path-confirmed-blind]: --dry-run inesperadamente emitiu uma das mensagens de hooks — a constraint 'bare only' pode estar desatualizada" >&2
+  echo "  output: $(printf '%q' "$s41c_dryrun_out")" >&2
+  exit 1
+fi
+
+echo "Falsification checks passed (all 99 scenarios, 14 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader))"

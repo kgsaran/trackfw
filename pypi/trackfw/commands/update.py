@@ -44,6 +44,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from trackfw import config as project_config
 from trackfw.commands import update_harness
 from trackfw.commands.update_harness import (
     STATE_FAILED,
@@ -102,6 +103,66 @@ PROJECT_TARGET_IDS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# AC6 (REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis) —
+# this runtime's `update` historically never read hooks/ci/backend/frontend/pkg_manager at all
+# (grep -rn pkg_manager pypi/trackfw returned empty before this change). Closes that specific
+# functional gap for `hooks`, mirroring Go's updateHooksSurgical (internal/generators/update.go)
+# and Node's updateHooksSurgical (npm/src/commands/update.js) message-for-message: ensures
+# "trackfw validate" is present in the detected hook framework's config without overwriting
+# user content. `ci`/`backend`/`frontend`/`pkg_manager` are read (closing the "lê os cinco
+# campos" half of AC6) but intentionally left unacted upon here — see the module docstring and
+# docs/cli-parity.md, "Declared project targets — pinned list": this runtime's declared 5-id
+# project-scope target set is a documented, intentional reduction versus Go/Node.js (no --ci/
+# --hooks flags at `init` time), and `ci-workflow`/`git-hooks` are NOT part of that pinned list —
+# adding them would be an undeclared expansion of the target contract, which is Wave 4's
+# (docs/cli-parity.md) territory, not this microlote's.
+# ---------------------------------------------------------------------------
+
+
+def _load_update_config(cwd: str) -> dict[str, str]:
+    """Reads the 5 fields `trackfw update` cares about via the single config loader
+    (trackfw.config, see ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-namespaces-
+    tipados.md) instead of a second, artisanal read of trackfw.yaml. config.load() reads
+    relative to the given cwd (unlike Go's process-cwd-only Load()), so no chdir is required."""
+    return dict(project_config.load(cwd)["update"])
+
+
+def _update_hooks_surgical(hooks: str, root_dir: str) -> None:
+    """Ensures 'trackfw validate' is present in the detected hook framework's config without
+    overwriting user content — mirrors Go's updateHooksSurgical and Node's updateHooksSurgical
+    (same detection, same injected text, same printed messages)."""
+    if hooks == "husky":
+        hook_path = os.path.join(root_dir, ".husky", "pre-commit")
+        content = ""
+        if os.path.isfile(hook_path):
+            with open(hook_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        if "trackfw validate" in content:
+            print("  ✓ .husky/pre-commit — trackfw validate já presente")
+            return
+        os.makedirs(os.path.join(root_dir, ".husky"), exist_ok=True)
+        with open(hook_path, "a", encoding="utf-8") as f:
+            f.write("\ntrackfw validate\n")
+        try:
+            os.chmod(hook_path, 0o755)
+        except OSError:
+            pass
+        print("  ✓ .husky/pre-commit — trackfw validate injetado")
+    elif hooks == "lefthook":
+        lefthook_path = os.path.join(root_dir, "lefthook.yml")
+        content = ""
+        if os.path.isfile(lefthook_path):
+            with open(lefthook_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        if "trackfw-validate:" in content or "trackfw validate" in content:
+            print("  ✓ lefthook.yml — trackfw já presente")
+            return
+        with open(lefthook_path, "a", encoding="utf-8") as f:
+            f.write("\npre-commit:\n  commands:\n    trackfw-validate:\n      run: trackfw validate\n")
+        print("  ✓ lefthook.yml — trackfw-validate injetado")
+
+
 def register(subparsers: argparse.ArgumentParser) -> None:
     parser = subparsers.add_parser(
         "update",
@@ -140,6 +201,10 @@ def _run(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
     print("trackfw update — atualizando regras de agente...\n")
+
+    update_cfg = _load_update_config(cwd)
+    if update_cfg.get("hooks") in ("husky", "lefthook"):
+        _update_hooks_surgical(update_cfg["hooks"], cwd)
 
     from trackfw.generators.init_gen import inject_rules_detected
     try:
@@ -181,8 +246,8 @@ def _run(args: argparse.Namespace) -> None:
             print(f"  ⚠ Codex integration: {e}")
 
     print()
-    print("  Nota: este CLI Python atualiza apenas as regras de agente.")
-    print("  Para atualizar gates (hooks/CI) e Claude commands, use:")
+    print("  Nota: este CLI Python atualiza regras de agente e git hooks (husky/lefthook).")
+    print("  Para atualizar o workflow de CI e Claude commands, use:")
     print("    trackfw update   (CLI Go)")
     print("    npx trackfw update   (CLI Node.js)")
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 )
@@ -20,6 +21,8 @@ import (
 // caller resolves identity.Load fresh on every run instead of caching a
 // stale (or neutral-default) copy.
 func TestUpdateDetectedCodexIntegrationsPropagatesIdentity(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
 	root, home := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
 

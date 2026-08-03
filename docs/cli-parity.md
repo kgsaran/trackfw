@@ -925,6 +925,49 @@ its contract.
 `trackfw update harness` covers: rules, agents and skills **already installed** in the user's home
 directory.
 
+### `trackfw.yaml` fields consumed by `update` and `sync` — single loader, `Update`/`Sync` namespaces
+
+Since `REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis`, all
+eleven fields below are read exclusively by the shared config loader (Go `config.Load`, Node.js
+`loadConfig`, Python `load_config`) into two typed namespaces — `Update` (5 fields) and `Sync` (6
+fields). No module outside the loader opens, reads, or parses `trackfw.yaml` in any of the three
+runtimes; the five hand-rolled scanners that used to exist (`ReadUpdateConfig` in Go, the Node.js
+`readUpdateConfig`/`readConfigField`, and Python's `_read_config_field`) were removed. The keys stay
+**flat at the YAML root**, unchanged from before this refactor — only the internal representation
+gained a namespace.
+
+| Field (YAML key) | Namespace | Default (absent) | Consumed by |
+|---|---|---|---|
+| `hooks` | `Update` | `""` | `trackfw update` — selects which Git hook flavor (`husky`, `lefthook`, native) is (re)generated |
+| `ci` | `Update` | `""` | `trackfw update` — selects which CI workflow template is (re)generated |
+| `backend` | `Update` | `""` | `trackfw update` — backend stack used when regenerating `CLAUDE.md`/agent-config stack sections and stack-specific hook commands |
+| `frontend` | `Update` | `""` | `trackfw update` — frontend stack used the same way as `backend` |
+| `pkg_manager` | `Update` | `""` | `trackfw update` — package manager (`npm`, `yarn`, `pnpm`, …) used to compose the build/test commands written into generated hooks and `CLAUDE.md` |
+| `linear_api_key` | `Sync` | `""` | `trackfw sync` (Linear) — read first, environment variable is the fallback (AC5 precedence, unchanged) |
+| `linear_team_id` | `Sync` | `""` | `trackfw sync` (Linear) — same precedence as `linear_api_key` |
+| `jira_base_url` | `Sync` | `""` | `trackfw sync` (Jira) — same precedence |
+| `jira_email` | `Sync` | `""` | `trackfw sync` (Jira) — same precedence |
+| `jira_token` | `Sync` | `""` | `trackfw sync` (Jira) — same precedence |
+| `jira_project` | `Sync` | `""` | `trackfw sync` (Jira) — same precedence |
+
+**Python's `update` did not read these five `Update` fields at all — closed, not a registered
+exception.** Before this REQ, `trackfw update` in Go and Node.js decided which hooks/CI to generate
+based on `hooks`/`ci`/`backend`/`frontend`/`pkg_manager`; the Python runtime had no reader for them
+(`grep -rn pkg_manager pypi/trackfw` returned nothing) and silently produced a different observable
+result. This was a functional gap, not a documented exception — it is closed as of this REQ: Python's
+`update` now reads all five fields through the same loader and acts on them like Go and Node.js.
+
+**Intentional exception — generated shell hooks keep their own `grep`/`sed` read.** The Git hooks
+emitted by `scaffold.go:704,731` (Go), `hooks.js:77,104` (Node.js), and `init_gen.py:790,818`
+(Python) extract `roadmap_dir` from `trackfw.yaml` with `grep '^roadmap_dir:' … | sed …` — a sixth,
+deliberately separate parsing path. This is not the same defect class as the five scanners removed
+above: those ran **inside the CLI binary itself**, where the shared loader was already available and
+simply wasn't used. The generated shell runs as a Git hook **without the `trackfw` binary present in
+the user's environment** (it fires on the user's `git commit`/`pre-push`, potentially before the CLI
+is installed or on a machine that never installs it) — routing it through the loader would mean
+shelling out to `trackfw` from inside a hook, which is not guaranteed to exist. It reads only
+`roadmap_dir`, is intentionally minimal, and is not part of the `Update`/`Sync` namespaces above.
+
 ### States
 
 Both commands report one state per target. These four strings are pinned:

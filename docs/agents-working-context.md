@@ -4,6 +4,236 @@
 
 ---
 
+## Sessão 2026-08-03 — Hades (Barreira de segurança pré-Wave 3, ML-1A+ML-2A) — CONCLUÍDO
+
+Branch `refactor/unificar-leitura-trackfw-yaml`, revisão apenas (sem commits — Security não
+executa Git; correções, se houvesse, ficariam para o dono do código).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`
+Escopo: confirmar que `linear_api_key`/`jira_token` (agora em `cfg.Sync`/`cfg.sync`/`cfg["sync"]`)
+não vazam em log, mensagem de erro, `--json` ou config dumpado para diagnóstico, nos 3 CLIs.
+
+**Veredito: APROVADO.** Nenhum vazamento encontrado. Achados:
+- `internal/sync/{linear,jira}.go`, `npm/src/commands/sync.js`, `pypi/trackfw/commands/sync.py`:
+  segredos só chegam a headers HTTP (`Authorization`); mensagens de erro citam o nome do campo
+  ausente, nunca o valor — comportamento idêntico ao pré-refactor.
+- Caminho fatal de YAML malformado (novo para `sync`, que antes engolia erro silenciosamente):
+  Go emite `MalformedConfigMessage` estático; Node idem; Python usa
+  `except yaml.YAMLError: return True` e descarta a exceção — **não** imprime
+  `str(e)`/snippet do PyYAML, que poderia ecoar a linha com o segredo. Os 3 CLIs imprimem apenas
+  mensagem fixa, sem o conteúdo do YAML.
+- Nenhum `json.Marshal(cfg)`/`JSON.stringify(cfg)`/`json.dumps(cfg)` do `ProjectConfig`/dict de
+  config completo existe em nenhum dos 3 CLIs — `context`, `status --json`, `barrier --json` e
+  `validate --json` serializam structs próprias (sem campo `Sync`/`sync`), não o cfg bruto.
+- `trackfw serve`/`serve.py`/`serve.js`: o cfg completo (incluindo `Sync`) é injetado, por
+  singleton, em todos os handlers HTTP de um processo de vida longa — nenhum handler lê `Sync`
+  hoje (auditado: board, chain, metrics, file, attention nos 3 CLIs), mas é superfície de
+  reachability nova (antes, o segredo só era lido transitoriamente por um `sync` que processava e
+  saía). **Achado informativo/low, não bloqueante** — recomendação de hardening para ML futuro:
+  `json:"-"` em `SyncConfig` (Go) e equivalente de exclusão em Node/Python, para que um futuro
+  handler de debug não possa serializar `cfg` inteiro por engano.
+
+Nenhuma nota de vault criada — não há causa raiz não óbvia nova, apenas confirmação de ausência
+de regressão.
+
+---
+
+## Sessão 2026-08-03 — Apolo (ML-4A — documentação dos 11 campos, contrato de config) — INÍCIO/FIM
+
+Branch `refactor/unificar-a-leitura-do-trackfw-yaml`. Escopo: `docs/cli-parity.md` e a documentação
+de configuração (`README.md`, seção de `trackfw.yaml`) — registrar os 11 campos de `Update`/`Sync`
+(defaults e consumidores), conforme AC8.
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`
+
+**Ações:**
+- `docs/cli-parity.md`: nova subseção "`trackfw.yaml` fields consumed by `update` and `sync`" dentro
+  de `## trackfw update vs trackfw update harness`, com tabela dos 11 campos (chave, namespace,
+  default, consumidor), o fechamento explícito da lacuna do `update` do Python (nunca havia entrada
+  registrada em `cli-parity.md` — confirmado por leitura integral do arquivo, 1392 linhas) e a
+  exceção intencional do shell gerado (`scaffold.go:704,731`, `hooks.js:77,104`,
+  `init_gen.py:790,818`), distinta dos 5 scanners removidos.
+- `README.md`: nova subseção "`update` and `sync` configuration fields" com exemplo YAML dos 11
+  campos e link para o contrato completo em `cli-parity.md`. Não existe `docs/configuration.md`
+  dedicado no projeto; `README.md` é o doc de configuração user-facing existente.
+- **Não editado**: `internal/commands/help.go` / `npm/src/commands/help.js` /
+  `pypi/trackfw/commands/help_cmd.py` (`configDocs`/`CONFIG_DOCS`). Também não documentam os 11
+  campos, mas alterá-los mudaria o comportamento observável de `trackfw help` (lista de chaves e
+  resolução de `trackfw help <chave>`) nos 3 CLIs — fora do Negative Scope da REQ ("não altera o
+  comportamento de update e sync além do exigido pela AC6") e do escopo `docs(config)` deste ML.
+  **Gap reportado para REQ futura**, não corrigido silenciosamente aqui.
+- Nenhuma entrada de exceção de paridade preexistente para a lacuna do Python `update` foi
+  encontrada em `docs/cli-parity.md` para remover — a lacuna nunca havia sido registrada ali
+  (só na Motivation da REQ). Ação 2 do ML foi, portanto, um no-op confirmado, não uma remoção.
+
+`make quality`: ver resultado no fechamento do ciclo.
+
+---
+
+## Sessão 2026-08-03 — Hefesto (Barreira de qualidade pré-Wave 3, ML-1A+ML-2A) — CONCLUÍDO
+
+Branch `refactor/unificar-leitura-trackfw-yaml`, revisão apenas (Code Quality não executa Git;
+correções ficam para o dono do código, em microlote próprio).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`
+Escopo: remoção completa dos helpers órfãos, ausência de código morto, duplicação entre os 3 CLIs.
+
+**Veredito: APROVADO. Libera a Wave 3.** `go vet ./...`, `go test ./...`, `npm test` (353/353),
+`pytest` (860 passed + 8 subtests) e os 5 scripts de parity/quality do Makefile passam limpos.
+
+Achados:
+- `ReadUpdateConfig`/`splitKVupdate` (Go), `readUpdateConfig` (Node), `_read_config_field`
+  (Python) e os helpers privados que só eles usavam (`splitLines`, `trimLeft`, `trim`) —
+  confirmada ausência total por grep, não apenas desativação. Único hit restante de
+  `_read_config_field` está em `pypi/build/lib/...`, artefato de build não versionado
+  (`.gitignore`), fora do diff.
+- AC1 (nenhum módulo fora de `config` parseia `trackfw.yaml`): confirmado cruzando `ReadFile`/
+  `readFileSync`/`open(` com `trackfw.yaml` nos 3 CLIs — a única leitura de conteúdo é a do
+  carregador único; o resto são `os.Stat`/`fs.existsSync` (checagem de existência, não parse) ou
+  o `grep`/`sed` do shell dos git hooks, exceção documentada para a Wave 4.
+- Sem duplicação interna: cada CLI tem exatamente um `loadUpdateConfig`/`_load_update_config`,
+  chamado nos 2-3 pontos que precisam de `cfg.Update`.
+- Sem imports/símbolos órfãos remanescentes: `fs`/`path`/`https`/`http` (Node `sync.js`),
+  `fs`/`os`/`path` (Node `update.js`) e `os`/`urllib.request`/`urllib.error`/`base64` (Python
+  `sync.py`) — todos com uso real confirmado por grep, não sobras da remoção dos scanners.
+- Testes novos são direcionados, não apenas "passam": `internal/sync/config_loader_test.go`
+  prova precedência arquivo→env explicitamente; `pypi/tests/test_update_hooks_ac6.py` demonstra
+  o efeito observável da AC6 (injeção cirúrgica em `.husky/pre-commit`), não só reroda o
+  `update` e checa exit 0.
+- **Achado não-bloqueante**: `trackfw update` (Python, variante sem flags — `_run`) imprime o
+  banner "trackfw update — atualizando regras de agente..." **antes** de chamar
+  `_load_update_config`/`config.load()`, então em YAML malformado o Python imprime a mensagem de
+  erro fatal seguida do banner (saída de duas linhas antes do exit 1); Go e Node validam a config
+  antes de imprimir qualquer coisa, saída de uma linha só. Mesmo exit code (1) e mesma mensagem
+  de erro nos 3 — diverge só a ordem de output, não coberto pelo AC5. Achado de polimento, não
+  bloqueia a Wave 3.
+- **Constraint para o ML-3A (Ártemis), não achado informativo**: a variante `--dry-run`/`--json`/
+  `--targets`/`--install-missing` do Python (`_run_project`) nunca chama `config.load()` — YAML
+  malformado não é fatal nesse caminho. O cenário de falsificação Python de `update` **não pode**
+  usar essas flags como veículo de detecção (passaria idêntico com ou sem o scanner
+  reintroduzido — cenário morto que parece verde); precisa invocar `trackfw update` sem flags ou
+  `trackfw sync --to <provider>`, os únicos caminhos que chamam `config.load()`
+  incondicionalmente. Assimetria confirmada pré-existente ao ML-2A via `git show main:...` (não é
+  regressão desta ML), mas com efeito direto sobre como a Wave 3 deve ser escrita — detalhe em
+  `vault/notes/python-update-run-project-bypassa-config-load-2026-08-03.md`.
+- **Para Zeus, não decidido aqui**: AC6 diz "`update` do Python lê e age sobre os 5 campos, como
+  Go e Node" — verdadeiro só para `_run`, falso para `_run_project` (nunca lê os 5 campos).
+  Cobertura parcial satisfaz a redação do AC6 é chamada de auditoria, não achado de qualidade.
+- Efeito colateral do YAML malformado virar fatal em `update`/`sync`: avaliado como consistência,
+  não regressão — o carregador único já tinha esse comportamento em `validate`/`status` desde
+  antes do #106; agora os 5 scanners removidos convergem para o mesmo contrato. Mensagem estática
+  e idêntica nos 3 CLIs, sem eco de trecho do YAML.
+
+Nota de vault criada: `vault/notes/python-update-run-project-bypassa-config-load-2026-08-03.md`
+— o achado do `_run_project` custaria >10min ao Ártemis se descoberto só depois do ML-3A escrito.
+
+---
+
+## Sessão 2026-08-03 — Apolo (ML-2A: substituir os 5 scanners artesanais pelo carregador único) — CONCLUÍDO
+
+Branch `refactor/unificar-leitura-trackfw-yaml`, commit `f9168bb`, push feito.
+
+REQ: `docs/req/REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`, ML-2A.
+
+Wave 2: os 5 consumidores (`ReadUpdateConfig`/`readConfigField` em Go, `readUpdateConfig`/
+`readConfigField` em Node, `_read_config_field` em Python) foram removidos e substituídos por
+`cfg.Update.*`/`cfg.Sync.*` resolvidos pelo carregador único (`config.Load()`/`.load()`), nos 3
+CLIs.
+
+### Arquivos alterados
+- Go: `internal/generators/update.go` (`loadUpdateConfig()` novo, chdir antes do `config.Load()`
+  já que o loader Go lê relativo ao cwd do processo), `internal/sync/linear.go`, `internal/sync/jira.go`
+- Node: `npm/src/commands/update.js` (`loadUpdateConfig(rootDir)`), `npm/src/commands/sync.js`
+  (`getConfig` agora lê `cfg.sync.<camelCase>`)
+- Python: `pypi/trackfw/commands/sync.py` (`_get_config` lê `cfg["sync"]`),
+  `pypi/trackfw/commands/update.py` (AC6, ver abaixo)
+- Testes novos: `internal/sync/config_loader_test.go`, `npm/tests/sync.test.js`,
+  `pypi/tests/test_sync.py`, `pypi/tests/test_update_hooks_ac6.py`
+- Testes existentes ajustados para o singleton `config.Load()`/`Reset()` (padrão já usado em
+  `roadmap_test.go`): `internal/generators/update_test.go`, `internal/generators/identity_wiring_test.go`
+
+### AC6 — decisão de escopo (consultei o advisor antes de implementar)
+Python nunca lia `hooks/ci/backend/frontend/pkg_manager` no `update`. Implementei a leitura dos 5
+campos e **agi apenas sobre `hooks`** (injeção cirúrgica de `trackfw validate` em
+`.husky/pre-commit` ou `lefthook.yml`, mesmo texto/mensagens do Go/Node). NÃO adicionei
+`ci-workflow`/`git-hooks` a `PROJECT_TARGET_IDS` do Python — esses dois ids não fazem parte da
+lista pinada de 5 em `docs/cli-parity.md` ("Declared project targets — pinned list"); adicioná-los
+seria expansão de contrato fora de escopo do ML-2A (território do Wave 4 / ML-4A). Ver
+`pypi/tests/test_update_hooks_ac6.py` para a prova (fixture com `.husky/pre-commit` pré-existente
+sem `trackfw validate`, que o Python nunca teria tocado antes desta mudança).
+
+### Efeito colateral esperado, não corrigido (fora de escopo do ML-2A)
+YAML malformado agora é **fatal** (exit 1) para `update`/`sync` nos 3 CLIs, porque passam a usar
+`config.Load()`, que chama `os.Exit(1)`/`process.exit(1)`/`sys.exit(1)` em YAML malformado — antes,
+os scanners artesanais liam `""` silenciosamente e o comando seguia com defaults vazios. É
+consequência intencional do "caminho único" (mesmo comportamento de `validate`/`status`/`roadmap`
+hoje), documentado aqui para Hades/Zeus não tratarem como regressão nova.
+
+### Resultado
+- `go build ./...` + `go test ./...` — verde (todos os pacotes)
+- `npm test` — 353 passed (345 pré-existentes + 8 novos em `sync.test.js`), 0 failed
+- `pytest` (pypi) — 860 passed (11 novos entre `test_sync.py` e `test_update_hooks_ac6.py`)
+- `make quality` — verde (rodado com `LC_ALL=en_US.UTF-8`; com o `LANG=pt_BR.UTF-8` do shell local
+  o cenário 29 de `check-gates-falsify.sh` reprova por mensagem localizada — confirmado
+  pré-existente/ambiental via `git stash` na `main`, não causado por este ML)
+- AC1: exatamente 1 ocorrência de leitura de `trackfw.yaml` por CLI (o carregador único) —
+  `internal/config/config.go:105`, `npm/src/config/index.js:88`, `pypi/trackfw/config.py:146`
+
+### Próximo passo (não iniciado)
+Barreira de revisão (Hefesto/Hades/Zeus) antes da Wave 3 (ML-3A, cenários de falsificação em
+`scripts/check-gates-falsify.sh`, por Ártemis).
+
+---
+
+## Sessão 2026-08-03 — Apolo (ML-1A: namespaces Update/Sync no contrato de config) — CONCLUÍDO
+
+Branch `refactor/unificar-leitura-trackfw-yaml`, commit `853f1d3`, push feito.
+
+REQ: `docs/req/REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`
+ADR: `docs/adr/ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-namespaces-tipados.md`
+
+Wave 1 do roadmap: preparar o contrato de config para os 11 campos hoje lidos por scanners
+artesanais em `update`/`sync`, SEM tocar consumidores (Wave 2, ML separado, ainda não disparado).
+
+### 11 campos e distribuição
+
+- `Update` (Go)/`update` (Node/Python): `hooks`, `ci`, `backend`, `frontend`, `pkg_manager`
+- `Sync` (Go)/`sync` (Node/Python): `linear_api_key`, `linear_team_id`, `jira_base_url`,
+  `jira_email`, `jira_token`, `jira_project`
+
+Arquivos alterados (só estes + testes):
+- `internal/config/config.go` — structs `UpdateConfig`/`SyncConfig`, populadas em `parse()`
+- `npm/src/config/index.js` — `defaults().update`/`.sync`, populados em `parse()`
+- `pypi/trackfw/config.py` — `defaults()["update"]`/`["sync"]`, populados em `_parse()`
+
+Sem segundo parser/segunda leitura em nenhum CLI — reorganização da struct/dict em memória sobre
+o resultado do parse único já existente. Chaves YAML continuam planas na raiz. Default de campo
+ausente: string vazia nos 3 CLIs.
+
+### Resultado
+
+- `go build ./...` + `go test ./...` — verde (todos os pacotes)
+- `npm test` (em `npm/`) — 345 passed, 0 failed
+- `pytest` (em `pypi/`) — 849 passed, 8 subtests passed
+- `git diff --stat` confirmado: só `internal/config/config.go`, `npm/src/config/index.js`,
+  `pypi/trackfw/config.py` + 3 arquivos de teste novos. Nenhum consumidor
+  (`internal/generators/update.go`, `internal/sync/{linear,jira}.go`, `npm/src/commands/{update,sync}.js`,
+  `pypi/trackfw/commands/{update,sync}.py`) foi tocado.
+
+### Ambiguidade — nenhuma
+
+REQ/ADR foram explícitos nos 11 campos, na divisão em dois namespaces e no default. Sem decisão
+autônoma a registrar além de nomenclatura óbvia (`PkgManager`/`pkgManager`/`pkg_manager` seguindo
+convenção de cada linguagem).
+
+### Próximo passo (não iniciado)
+
+Wave 2 — migrar os 5 consumidores para ler de `cfg.Update`/`cfg.Sync` e remover os 5 scanners
+artesanais (AC1 da REQ). Inclui o gap do Python (`update.py` nunca leu esses campos — AC6).
+
+---
+
 ## Sessão 2026-08-02 — Zeus (CI verde + release v6.2.0) — CONCLUÍDO
 
 PR #106 mergeado; `origin/main` em `c46598a`; fila com um item de decisão de ADR.
@@ -8351,3 +8581,59 @@ tocando os mesmos arquivos, todos sequenciais. Reescrevi por arquivo: 4 waves, 1
 **Executor único por wave, cobrindo os 3 CLIs** — não é falta de paralelismo por descuido. Toda
 wave paralela com um agente por CLI divergiu nos ciclos de 2026-08-01/02, sempre nos casos que
 nenhuma fixture cobria. O único ciclo sem divergência foi o de executor único.
+
+---
+
+## Sessão 2026-08-03 — Ártemis (ML-3A, ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis) — CONCLUÍDO
+
+Branch `refactor/unificar-leitura-trackfw-yaml`. QA não executa Git — commit/push ficam para
+`trackfw_architect`.
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`
+Escopo: 3 cenários novos de falsificação (um por CLI) em `scripts/check-gates-falsify.sh` — AC7 —
+provando que reintroduzir o scanner artesanal eliminado pelo ML-2A em `loadUpdateConfig`
+(Go)/`loadUpdateConfig` (Node)/`_load_update_config` (Python) faz o gate reprovar.
+
+**Protocolo seguido:** suíte herdada rodada ANTES de editar. Achado não relacionado ao meu
+escopo: com `LANG=pt_BR.UTF-8` (locale desta máquina), o Cenário 29 (`validate-ok-message`)
+reprova porque compara contra uma mensagem pinada em inglês sem fixar `LANG=C` — falso positivo
+de ambiente, não regressão de código. Confirmado rodando com `env -u LANG -u LC_ALL -u LANGUAGE`:
+92/92 cenários herdados passam limpos. Nota:
+`vault/notes/falsify-suite-locale-dependent-false-failure-2026-08-03.md`. Não corrigi (fora do
+escopo do ML-3A — "arquivo compartilhado, exclusividade total" não inclui reabrir a asserção do
+Cenário 29).
+
+**Cenários 39/40/41 adicionados** (Go, Node.js, Python) — fixture discriminante compartilhada:
+```yaml
+hooks: lefthook
+legacy_project_settings:
+  hooks: husky
+```
+Chave aninhada homônima (candidato mais forte da AC4): o carregador único lê só `hooks` da raiz
+(`lefthook`); um scanner artesanal reintroduzido (any-indentation, last-match-wins — mesmo padrão
+eliminado pelo ML-2A) sobrescreve a cada linha que casa o prefixo e termina em `husky`. Guarda de
+vivacidade: o braço de detecção verifica o efeito observável real (`.husky/pre-commit` escrito e
+reportado em vez de `lefthook.yml`), não apenas que o arquivo mudou. Python exercita
+especificamente `trackfw update` **bare** (sem `--dry-run`/`--json`/`--targets`/
+`--install-missing`) por constraint da barreira do Hefesto — `_run_project` nunca chama o
+carregador (nota `python-update-run-project-bypassa-config-load-2026-08-03.md`) e tornaria o
+cenário vácuo; adicionei uma guarda extra confirmando que `--dry-run` de fato não emite nenhuma
+das duas mensagens (prova de que `_run_project` está "cego" ao hooks scanner, corrompido ou não).
+
+Detecção provada nos 3 CLIs: reintroduzi cada scanner artesanal (via `corrupt_literal`, mesmo
+padrão dos cenários 20/21/24/38), confirmei que o cenário correspondente passa a FAIL com o
+diagnóstico de vacuidade esperado, depois revertido (as cópias corrompidas vivem só em `$WORK`,
+nunca tocam o working tree — confirmado pelo Cenário 18, `no-repo-mutation`, que roda antes e
+continuou verde).
+
+**Resultado final:** `env -u LANG -u LC_ALL -u LANGUAGE bash scripts/check-gates-falsify.sh` →
+99/99 OK, 0 FAIL (92 herdados + 7 novas asserções dos cenários 39/40/41). `git status --porcelain`
+limpo após a corrida (sem mutação do working tree). Cabeçalho/contador final do script atualizado
+de "92 scenarios" para "99 scenarios" com a descrição dos 3 novos cenários.
+
+**Arquivos alterados:** `scripts/check-gates-falsify.sh` (único arquivo de implementação, conforme
+exclusividade do ML), `docs/agents-working-context.md`, `vault/notes/index.md`,
+`vault/notes/falsify-suite-locale-dependent-false-failure-2026-08-03.md` (nova).
+
+**Pendente para o próximo agente:** ML-4A (Apolo) — documentar os 11 campos em
+`docs/cli-parity.md`. Roadmap ainda não movido para `done` — decisão do orquestrador.

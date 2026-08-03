@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 date: 2026-08-02
 req: "docs/req/REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Unificar a leitura do trackfw.yaml em um unico carregador nos tres CLIs
 
-> Created: 2026-08-02 | Status: backlog
+> Created: 2026-08-02 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md -->
@@ -45,7 +45,7 @@ gastar um ML de reconciliação por wave.
 > Dependências: nenhuma
 
 ### ML-1A — Adicionar `Update` e `Sync` ao contrato de config nos 3 CLIs
-**Status:** pending
+**Status:** ✅ Concluído (commits 853f1d3, 03c9206)
 **Executor:** Apolo
 **Arquivos afetados:** `internal/config/config.go`, `npm/src/config/index.js`,
 `pypi/trackfw/config.py` (+ testes correspondentes). **Nenhum outro arquivo.**
@@ -66,7 +66,10 @@ gastar um ML de reconciliação por wave.
 > Dependências: Wave 1 completa
 
 ### ML-2A — Substituir os 5 scanners artesanais pelo carregador
-**Status:** pending
+**Status:** ✅ Concluído (commits f9168bb, 2b01905). Nota: YAML malformado passou a ser fatal
+(exit 1) em `update`/`sync` nos 3 CLIs — antes os scanners liam `""` silenciosamente. Efeito
+colateral esperado de usar o carregador único (que já tinha esse comportamento em `validate`/
+`status`); revisar na barreira.
 **Executor:** Apolo
 **Arquivos afetados:** `internal/generators/update.go`, `internal/sync/linear.go`,
 `internal/sync/jira.go`, `npm/src/commands/update.js`, `npm/src/commands/sync.js`,
@@ -93,6 +96,18 @@ preservação mecânica, ver Negative Scope da REQ. Não alterar sua origem nem 
 
 ## Barreira — revisão especializada
 > Bloqueia a Wave 3
+**Status:** ✅ Aprovada (Hefesto + Hades, sem bloqueios).
+- Hefesto: código morto/duplicação ausentes, `go vet`/parity scripts verdes. Achado não-bloqueante:
+  `pypi update --dry-run/--json/--targets/--install-missing` (caminho `_run_project`) nunca chama
+  `config.load()` — estrutural, pré-existente ao ML-2A, fora do escopo de AC6 (que fala do
+  `trackfw update` **bare**, via `_run`, já correto). Nota:
+  `vault/notes/python-update-run-project-bypassa-config-load-2026-08-03.md`. **Constraint para
+  ML-3A:** o cenário de falsificação Python deve exercitar `trackfw update` sem flags — usar
+  `--dry-run`/`--json`/`--targets` tornaria o cenário vazio (passa igual com scanner reintroduzido).
+- Hades: sem vazamento de `linear_api_key`/`jira_token`. Achado informativo não-bloqueante:
+  `trackfw serve` injeta `ProjectConfig` completo (incl. `Sync`) nos handlers HTTP de um processo de
+  vida longa — nenhum handler lê `Sync` hoje, mas é superfície nova de reachability. Recomendação
+  para ML de hardening futuro (fora deste roadmap): `json:"-"` em `SyncConfig` e equivalentes.
 
 - **Hefesto** (code quality): remoção completa dos helpers órfãos, ausência de código morto,
   duplicação entre os 3 CLIs.
@@ -106,7 +121,12 @@ preservação mecânica, ver Negative Scope da REQ. Não alterar sua origem nem 
 > Dependências: barreira aprovada
 
 ### ML-3A — Cenários que reprovam a volta do scanner artesanal
-**Status:** pending
+**Status:** ✅ Concluído (commits 47a5074, 7ffca28). 3 cenários novos (39/40/41), 99/99 OK na
+suíte completa. Débito pré-existente registrado (não introduzido por este ML): Cenário 29 de
+`check-gates-falsify.sh` depende de `LANG=C` implícito e reprova sob locale pt_BR — ver
+`vault/notes/falsify-suite-locale-dependent-false-failure-2026-08-03.md`. `sync`'s
+`readConfigField`/`_read_config_field` seguem sem cobertura de falsificação — fora do escopo de
+3 cenários definido no roadmap (só `update`).
 **Executor:** Ártemis
 **Arquivos afetados:** `scripts/check-gates-falsify.sh` **apenas** (arquivo compartilhado — nenhum
 outro ML pode tocá-lo em paralelo).
@@ -131,7 +151,9 @@ erro e pode esconder um segundo cenário quebrado atrás do primeiro — ver
 > Dependências: Wave 3 completa
 
 ### ML-4A — Registrar os 11 campos no contrato de configuração
-**Status:** pending
+**Status:** ✅ Concluído (commit a63f5a3). Documentado em `docs/cli-parity.md` e `README.md`; não
+havia entrada de exceção de paridade registrada para o gap do Python (só existia na REQ) — nada a
+remover, só a fechar. Nota do vault de Hefesto sobre `_run_project` commitada junto.
 **Executor:** Apolo
 **Arquivos afetados:** `docs/cli-parity.md` e a documentação de configuração.
 **Ações:**
