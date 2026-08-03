@@ -38,6 +38,38 @@ de regressão.
 
 ---
 
+## Sessão 2026-08-03 — Apolo (ML-4A — documentação dos 11 campos, contrato de config) — INÍCIO/FIM
+
+Branch `refactor/unificar-a-leitura-do-trackfw-yaml`. Escopo: `docs/cli-parity.md` e a documentação
+de configuração (`README.md`, seção de `trackfw.yaml`) — registrar os 11 campos de `Update`/`Sync`
+(defaults e consumidores), conforme AC8.
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`
+
+**Ações:**
+- `docs/cli-parity.md`: nova subseção "`trackfw.yaml` fields consumed by `update` and `sync`" dentro
+  de `## trackfw update vs trackfw update harness`, com tabela dos 11 campos (chave, namespace,
+  default, consumidor), o fechamento explícito da lacuna do `update` do Python (nunca havia entrada
+  registrada em `cli-parity.md` — confirmado por leitura integral do arquivo, 1392 linhas) e a
+  exceção intencional do shell gerado (`scaffold.go:704,731`, `hooks.js:77,104`,
+  `init_gen.py:790,818`), distinta dos 5 scanners removidos.
+- `README.md`: nova subseção "`update` and `sync` configuration fields" com exemplo YAML dos 11
+  campos e link para o contrato completo em `cli-parity.md`. Não existe `docs/configuration.md`
+  dedicado no projeto; `README.md` é o doc de configuração user-facing existente.
+- **Não editado**: `internal/commands/help.go` / `npm/src/commands/help.js` /
+  `pypi/trackfw/commands/help_cmd.py` (`configDocs`/`CONFIG_DOCS`). Também não documentam os 11
+  campos, mas alterá-los mudaria o comportamento observável de `trackfw help` (lista de chaves e
+  resolução de `trackfw help <chave>`) nos 3 CLIs — fora do Negative Scope da REQ ("não altera o
+  comportamento de update e sync além do exigido pela AC6") e do escopo `docs(config)` deste ML.
+  **Gap reportado para REQ futura**, não corrigido silenciosamente aqui.
+- Nenhuma entrada de exceção de paridade preexistente para a lacuna do Python `update` foi
+  encontrada em `docs/cli-parity.md` para remover — a lacuna nunca havia sido registrada ali
+  (só na Motivation da REQ). Ação 2 do ML foi, portanto, um no-op confirmado, não uma remoção.
+
+`make quality`: ver resultado no fechamento do ciclo.
+
+---
+
 ## Sessão 2026-08-03 — Hefesto (Barreira de qualidade pré-Wave 3, ML-1A+ML-2A) — CONCLUÍDO
 
 Branch `refactor/unificar-leitura-trackfw-yaml`, revisão apenas (Code Quality não executa Git;

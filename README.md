@@ -248,6 +248,32 @@ governance_mode: strict   # CI fails on any violation
 # governance_mode: lenient # CI passes with warnings only
 ```
 
+### `update` and `sync` configuration fields
+
+`trackfw update` and `trackfw sync` read the following keys, flat at the root of `trackfw.yaml`, through
+the same loader used by every other command. All default to an empty string when absent.
+
+```yaml
+# trackfw.yaml — consumed by `trackfw update`
+hooks: husky          # husky | lefthook | native | "" (no hooks regenerated)
+ci: github             # github | gitlab | "" (no CI workflow regenerated)
+backend: node          # backend stack — informs CLAUDE.md/agent stack sections and hook commands
+frontend: react         # frontend stack — same as backend
+pkg_manager: npm        # npm | yarn | pnpm | ... — composes build/test commands in generated hooks
+
+# trackfw.yaml — consumed by `trackfw sync` (checked before the matching env var, same order in all 3 CLIs)
+linear_api_key: ""
+linear_team_id: ""
+jira_base_url: ""
+jira_email: ""
+jira_token: ""
+jira_project: ""
+```
+
+Full contract, including per-field consumers and the intentional exception for generated Git hooks
+(which read `roadmap_dir` with their own `grep`/`sed`, since they run without the `trackfw` binary
+present): `docs/cli-parity.md` → `## trackfw update vs trackfw update harness`.
+
 ---
 
 ## REQ-driven ADR discovery
