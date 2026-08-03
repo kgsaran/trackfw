@@ -4,6 +4,54 @@
 
 ---
 
+## Sessão 2026-08-03 — Apolo (ML-1A: namespaces Update/Sync no contrato de config) — CONCLUÍDO
+
+Branch `refactor/unificar-leitura-trackfw-yaml`, commit `853f1d3`, push feito.
+
+REQ: `docs/req/REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md`
+ADR: `docs/adr/ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-namespaces-tipados.md`
+
+Wave 1 do roadmap: preparar o contrato de config para os 11 campos hoje lidos por scanners
+artesanais em `update`/`sync`, SEM tocar consumidores (Wave 2, ML separado, ainda não disparado).
+
+### 11 campos e distribuição
+
+- `Update` (Go)/`update` (Node/Python): `hooks`, `ci`, `backend`, `frontend`, `pkg_manager`
+- `Sync` (Go)/`sync` (Node/Python): `linear_api_key`, `linear_team_id`, `jira_base_url`,
+  `jira_email`, `jira_token`, `jira_project`
+
+Arquivos alterados (só estes + testes):
+- `internal/config/config.go` — structs `UpdateConfig`/`SyncConfig`, populadas em `parse()`
+- `npm/src/config/index.js` — `defaults().update`/`.sync`, populados em `parse()`
+- `pypi/trackfw/config.py` — `defaults()["update"]`/`["sync"]`, populados em `_parse()`
+
+Sem segundo parser/segunda leitura em nenhum CLI — reorganização da struct/dict em memória sobre
+o resultado do parse único já existente. Chaves YAML continuam planas na raiz. Default de campo
+ausente: string vazia nos 3 CLIs.
+
+### Resultado
+
+- `go build ./...` + `go test ./...` — verde (todos os pacotes)
+- `npm test` (em `npm/`) — 345 passed, 0 failed
+- `pytest` (em `pypi/`) — 849 passed, 8 subtests passed
+- `git diff --stat` confirmado: só `internal/config/config.go`, `npm/src/config/index.js`,
+  `pypi/trackfw/config.py` + 3 arquivos de teste novos. Nenhum consumidor
+  (`internal/generators/update.go`, `internal/sync/{linear,jira}.go`, `npm/src/commands/{update,sync}.js`,
+  `pypi/trackfw/commands/{update,sync}.py`) foi tocado.
+
+### Ambiguidade — nenhuma
+
+REQ/ADR foram explícitos nos 11 campos, na divisão em dois namespaces e no default. Sem decisão
+autônoma a registrar além de nomenclatura óbvia (`PkgManager`/`pkgManager`/`pkg_manager` seguindo
+convenção de cada linguagem).
+
+### Próximo passo (não iniciado)
+
+Wave 2 — migrar os 5 consumidores para ler de `cfg.Update`/`cfg.Sync` e remover os 5 scanners
+artesanais (AC1 da REQ). Inclui o gap do Python (`update.py` nunca leu esses campos — AC6).
+
+---
+
 ## Sessão 2026-08-02 — Zeus (CI verde + release v6.2.0) — CONCLUÍDO
 
 PR #106 mergeado; `origin/main` em `c46598a`; fila com um item de decisão de ADR.
