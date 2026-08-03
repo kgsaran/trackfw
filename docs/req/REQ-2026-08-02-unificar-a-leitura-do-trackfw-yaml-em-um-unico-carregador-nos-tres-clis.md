@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-08-02
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-02-caminho-unico-de-leitura-do-trackfw-yaml-com-namespaces-tipados.md"
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-ya
 
 # REQ: Unificar a leitura do trackfw.yaml em um unico carregador nos tres CLIs
 
-> Date: 2026-08-02 | Status: Open
+> Date: 2026-08-02 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
