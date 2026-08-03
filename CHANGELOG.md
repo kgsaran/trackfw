@@ -10,6 +10,34 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.3.0] - 2026-08-03
+
+### Fixed
+
+- **5 scanners artesanais de `trackfw.yaml` eliminados** (#109) — `update` e `sync`, nos 3 CLIs,
+  liam o arquivo linha a linha com uma gramática diferente da do carregador central (mesma classe
+  de defeito eliminada em #106 para `validate`, viva em outro endereço). Chave aninhada homônima
+  sequestrava o valor da raiz em silêncio; valor entre aspas, comentário à direita e escalar com
+  dois-pontos interno quebravam a leitura. Os 3 CLIs passam a resolver os mesmos 11 campos
+  (`hooks`, `ci`, `backend`, `frontend`, `pkg_manager`, `linear_api_key`, `linear_team_id`,
+  `jira_base_url`, `jira_email`, `jira_token`, `jira_project`) pelo carregador único.
+- **`trackfw update` do Python não lia `hooks`/`ci`/`backend`/`frontend`/`pkg_manager`** (#109) —
+  Go e Node decidiam quais git hooks e qual workflow de CI gerar com base nesses campos; o Python
+  não tinha o leitor. Fechado — mesmo efeito observável nos 3 CLIs, provado por teste que demonstra
+  a mudança (não apenas testes existentes permanecendo verdes).
+
+### Changed
+
+- **Namespaces `Update` e `Sync` no contrato de config** (#109) — `ProjectConfig` ganha os dois
+  namespaces tipados; chaves no `trackfw.yaml` permanecem planas na raiz, com os nomes atuais.
+  Documentado em `docs/cli-parity.md` e `README.md`.
+- **3 cenários novos de proteção de falsificação** (#109) — um por CLI em
+  `scripts/check-gates-falsify.sh`, provados por reintrodução temporária do scanner eliminado:
+  cada cenário falha se o scanner artesanal voltar.
+
+Breaking Changes: nenhuma. Preservação mecânica de `linear_api_key`/`jira_token` (roteamento pelo
+carregador, sem mudança de tratamento) e de todos os textos de erro de `sync`/`update`.
+
 ## [6.2.0] - 2026-08-02
 
 ### Added
