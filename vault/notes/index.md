@@ -36,3 +36,4 @@
 - [req-frontmatter-roadmap-nao-satisfaz-req-has-roadmap-2026-08-02](req-frontmatter-roadmap-nao-satisfaz-req-has-roadmap-2026-08-02.md)
 - [python-update-run-project-bypassa-config-load-2026-08-03](python-update-run-project-bypassa-config-load-2026-08-03.md)
 - [falsify-suite-locale-dependent-false-failure-2026-08-03](falsify-suite-locale-dependent-false-failure-2026-08-03.md)
+- [req-move-statedir-hardcoded-roadmapdir-2026-08-04](req-move-statedir-hardcoded-roadmapdir-2026-08-04.md)
