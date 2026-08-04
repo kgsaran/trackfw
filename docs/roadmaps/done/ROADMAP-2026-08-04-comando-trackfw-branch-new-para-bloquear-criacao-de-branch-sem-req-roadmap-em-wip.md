@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md"
 squad: "apolo-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf"
 
 # Roadmap: comando trackfw branch new para bloquear criação de branch sem REQ+roadmap em wip
 
-> Created: 2026-08-04 | Status: wip
+> Created: 2026-08-04 | Status: done
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
@@ -20,13 +20,13 @@ reutilizando a mesma lógica de matching de slug já implementada e testada em
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] `trackfw branch new <type>/<slug>` implementado nos 3 CLIs com contrato idêntico ao REQ
-- [ ] Lógica de matching compartilhada com o validador (extraída, não duplicada) — Go é a referência
+- [x] `trackfw branch new <type>/<slug>` implementado nos 3 CLIs com contrato idêntico ao REQ
+- [x] Lógica de matching compartilhada com o validador (extraída, não duplicada) — Go é a referência
       comportamental (`docs/cli-parity.md`: "Go is the behavioral reference")
-- [ ] `docs/cli-parity.md` documenta o novo comando
-- [ ] Testes replicados nos 3 runtimes cobrindo match em wip/, match em done/, sem match (bloqueia),
+- [x] `docs/cli-parity.md` documenta o novo comando
+- [x] Testes replicados nos 3 runtimes cobrindo match em wip/, match em done/, sem match (bloqueia),
       `--dry-run`, tipo inválido, branch já existente
-- [ ] `make quality` (Go/Node/Python/paridade) verde
+- [x] `make quality` (Go/Node/Python/paridade) verde
 
 ## Wave 1 — Go: extrair matching + implementar comando (referência comportamental)
 > Dependencies: none
@@ -108,13 +108,33 @@ reutilizando a mesma lógica de matching de slug já implementada e testada em
 > Dependencies: Wave 2 completa
 
 ### ML-3A — Documentar e cobrir com gate de paridade
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `docs/cli-parity.md`
-- `scripts/check-cli-parity.sh` (ou script de paridade equivalente)
+- `scripts/check-branch-new-parity.sh` (novo — dedicado, seguindo o padrão de `check-roadmap-move-parity.sh`)
+- `Makefile` (wired ao alvo `parity`, antes de `check-gates-falsify.sh`)
+- `scripts/check-gates-falsify.sh` (cenário 42, prova de falsificabilidade P4)
 **Actions:**
-1. Adicionar `branch` à tabela de comandos em `docs/cli-parity.md` e uma seção descrevendo o contrato (espelhando o estilo das seções `trackfw ship`/`trackfw barrier`).
-2. Adicionar cenário do novo comando ao gate de paridade existente.
+1. Adicionar `branch` à tabela de comandos em `docs/cli-parity.md` e uma seção completa descrevendo
+   o contrato, incluindo o achado de exit code da Wave 2 (documentado com histórico).
+2. Gate dedicado com 3 cenários (sem match / match + dry-run / match + git real com branch já
+   existente — este último é o único que exercita o wrapper de produção `defaultGitCheckout`, não
+   só o fake injetado pelos testes unitários), cada um comparando stdout+stderr+exit-code
+   byte-a-byte entre os 3 runtimes, com guarda de vacuidade.
+3. Cenário de falsificação (P4): corrompe a mensagem de stderr do Node.js, confirma que o gate
+   detecta e falha com o rótulo exato esperado.
 **Acceptance criteria:**
-- [ ] `make quality` verde
-- [ ] `trackfw validate` sem violações
+- [x] `make quality` verde — build/vet Go, `check-branch-new-parity.sh` (3/3), `check-gates-falsify.sh`
+      completo (100/100 cenários, incluindo o cenário 42 novo) — tudo reexecutado e confirmado
+      manualmente pelo orquestrador, não só relatado pelo agente
+- [x] `trackfw validate` sem violações
+
+> Achado fora de escopo (não corrigido aqui, reportado): `scripts/check-identity-parity.sh` falha
+> pré-existente por HTML-escaping assimétrico do `encoding/json` do Go (`<slug>` → `<slug>`)
+> em 3 targets (kiro/cli, amazonq/cli, antigravity/legacy-cli), todos usando a representação
+> `agent-json`/`cli-agent-json` (`internal/integrations/render.go:57`, um único `json.MarshalIndent`
+> sem `SetEscapeHTML(false)`). Reproduzido e causa raiz confirmada de forma independente pelo
+> orquestrador. **Não está no CI** — `.github/workflows/quality.yml` só roda `check-cli-parity.sh` e
+> `check-validate-parity.sh` no job `parity`, não `make parity` completo — então isso nunca bloqueou
+> PR nenhuma, só `make quality` local. Tratado como REQ própria, fora deste roadmap.
+> Nota: `vault/notes/check-identity-parity-json-html-escaping-pre-existing-2026-08-04.md`.

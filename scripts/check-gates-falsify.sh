@@ -3412,4 +3412,40 @@ else
   exit 1
 fi
 
-echo "Falsification checks passed (all 99 scenarios, 14 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader))"
+# ---------------------------------------------------------------------------
+# Cenário 42 — check-branch-new-parity.sh: Node.js reformata a mensagem
+#              "blocked: ..." de stderr → gate detecta divergência.
+#
+# Objetivo (ML-3A, ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-
+# criacao-de-branch-sem-req-roadmap-em-wip): o contrato de `trackfw branch new`
+# promete que a linha `blocked: no matching roadmap in wip/ nor done/ for "..."`
+# escrita em stderr é idêntica nos 3 runtimes (Go: root.go Execute() imprime o
+# erro retornado; Node.js: branch/runner.js's writeErr; Python: run_branch_new's
+# err_out.write). Corrompe o texto emitido pelo Node.js — o cenário (a) do gate
+# (no-match) deve detectar a divergência de stderr.
+#
+# Seam: sed troca a string `blocked: no matching roadmap in wip/ nor done/ for`
+# por uma paráfrase em npm/src/branch/runner.js — corrompe a IMPLEMENTAÇÃO
+# (fixture do gate), nunca a asserção do gate — mesmo padrão dos Cenários
+# 14/16/17/20.
+# ---------------------------------------------------------------------------
+T42="$WORK/s42"
+mkdir -p "$T42/scripts"
+setup_npm_tree "$T42"
+ln -s "$ROOT_DIR/pypi" "$T42/pypi"
+cp "$ROOT_DIR/scripts/check-branch-new-parity.sh" "$T42/scripts/"
+
+sed 's/blocked: no matching roadmap in wip\/ nor done\/ for/blocked: roadmap not found for branch/' \
+  "$ROOT_DIR/npm/src/branch/runner.js" > "$T42/npm/src/branch/runner.js"
+
+# Guard: garantir que a corrupção foi aplicada
+if cmp -s "$ROOT_DIR/npm/src/branch/runner.js" "$T42/npm/src/branch/runner.js"; then
+  echo "FAIL [falsify/setup-s42]: sed não alterou branch/runner.js — padrão não encontrado; prova P4 inválida" >&2
+  exit 1
+fi
+
+assert_fails_with "branch-new-parity/no-match/go-vs-node/err-message-reformatted-not-detected" \
+  "branch-new-parity/no-match/go-vs-node/err" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T42/scripts/check-branch-new-parity.sh"
+
+echo "Falsification checks passed (all 100 scenarios, 15 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42))"
