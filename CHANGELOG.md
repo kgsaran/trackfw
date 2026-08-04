@@ -10,6 +10,31 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.3.1] - 2026-08-04
+
+### Fixed
+
+- **`req list`/`req move` não enxergavam `REQDir` com subpastas, e `req move` não movia o arquivo**
+  (#116) — os 3 CLIs descobriam REQs só num nível de `req_dir`, ignorando layouts por-estado
+  (`req_dir/<estado>/`) e by_agent (`req_dir/<agente>/<estado>/`), mesmo com `trackfw context` já
+  enxergando os mesmos arquivos. `req move` também nunca movia o arquivo fisicamente, só reescrevia
+  `status:` no lugar, divergindo do padrão já usado por `roadmap move`. Agora os 3 CLIs descobrem
+  REQs nos 3 layouts sem flag adicional, e `req move` move fisicamente o arquivo quando ele já está
+  numa subpasta de estado reconhecida — permanecendo in-place, sem migração forçada, para REQs
+  soltas em `req_dir/`. Fecha também uma lacuna de paridade pré-existente: o CLI Python não tinha
+  `req list`.
+- **`make quality` falhava sob locale `pt_BR.UTF-8`** (#117) — o gate de falsificação pinava
+  byte-a-byte a mensagem de sucesso do `validate` contra um literal em inglês hardcoded, mas os 3
+  CLIs imprimem essa mensagem via i18n, dependente do locale do processo. O gate agora fixa o
+  locale nas comparações, tornando-o determinístico independente da máquina onde roda.
+- **`req move` no CLI Node.js despejava stack trace em vez de mensagem de erro limpa** (#118) —
+  erros de `req move` (REQ não encontrada, status inválido, etc.) subiam como rejeição de Promise
+  não tratada. Agora produz `Error: <mensagem>` em stderr e código de saída não-zero, como Go e
+  Python já faziam.
+
+Breaking Changes: nenhuma. REQs soltas em `req_dir/` continuam com comportamento in-place idêntico
+ao anterior — nenhum projeto existente é migrado automaticamente para o layout por-estado.
+
 ## [6.3.0] - 2026-08-03
 
 ### Fixed
