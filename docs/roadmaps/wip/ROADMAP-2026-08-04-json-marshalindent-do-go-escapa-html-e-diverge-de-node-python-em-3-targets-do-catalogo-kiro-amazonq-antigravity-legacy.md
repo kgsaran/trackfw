@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md"
 squad: "apolo-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf"
 
 # Roadmap: json.MarshalIndent do Go escapa HTML e diverge de Node/Python em 3 targets do catalogo (kiro amazonq antigravity-legacy)
 
-> Created: 2026-08-04 | Status: backlog
+> Created: 2026-08-04 | Status: wip
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
@@ -23,16 +23,16 @@ Node/Python.
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] `render.go:57` corrigido, `check-identity-parity.sh` com 0 falhas
-- [ ] Teste de regressão com caractere `<`/`>`/`&` no conteúdo de origem
-- [ ] Auditoria dos demais `json.Marshal*` com contrato de paridade cross-runtime concluída
-- [ ] `make quality` verde, `trackfw validate` sem violações
+- [x] `render.go:57` corrigido, `check-identity-parity.sh` com 0 falhas
+- [x] Teste de regressão com caractere `<`/`>`/`&` no conteúdo de origem
+- [ ] Auditoria dos demais `json.Marshal*` com contrato de paridade cross-runtime concluída (Wave 2, pendente)
+- [x] `make quality` verde (100/100 cenários de falsificação, incluindo `check-identity-parity.sh` já corrigido), `trackfw validate` sem violações
 
 ## Wave 1 — Fix pontual + regressão
 > Dependencies: none
 
 ### ML-1A — Corrigir render.go:57 e adicionar teste de regressão
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `internal/integrations/render.go` (linha ~57, `case "cli-agent-json", "agent-json":`)
 - `internal/integrations/render_test.go` (novo teste, ou extensão de existente)
@@ -46,9 +46,20 @@ Node/Python.
    `Render()` e confirma que a saída para `cli-agent-json`/`agent-json` não contém `<`,
    `>` nem `&`.
 **Acceptance criteria:**
-- [ ] `go build ./...`, `go test ./internal/integrations/...` verdes
-- [ ] `GO_BIN=bin/trackfw scripts/check-identity-parity.sh` com 0 falhas (hoje: 6)
-- [ ] `go build -o bin/trackfw ./cmd/trackfw && bin/trackfw agents list --targets kiro,amazonq,antigravity --json` inspecionado manualmente — nenhum `<`/`>`/`&` na saída
+- [x] `go build ./...`, `go test ./internal/integrations/...` verdes (e `go test ./...` completo também)
+- [x] `GO_BIN=bin/trackfw scripts/check-identity-parity.sh` com 0 falhas (era 6 → "Identity parity
+      verified across Go/Node/Python for 11 target/surface combinations")
+- [x] `bin/trackfw agents list --targets kiro,amazonq,antigravity --json` inspecionado manualmente
+      pelo orquestrador — 0 ocorrências de `<`/`>`/`&`
+
+> Auditoria manual (trackfw_architect): fix mínimo e correto — troca `json.MarshalIndent` por
+> `json.Encoder` com `SetEscapeHTML(false)`, com nota explícita no código sobre o `\n` que
+> `Encoder.Encode` já adiciona (evita duplicar). Teste novo cobre não-escaping, validade do JSON e
+> round-trip do valor decodificado. Nenhum golden existente precisou de ajuste — os 4 goldens
+> congelados cobrem outras representações (`subagent`, `custom-agent-toml`, `agent-directory`), não
+> `cli-agent-json`/`agent-json`. Revalidei tudo eu mesmo: `go test ./...` completo verde,
+> `check-identity-parity.sh` 0 falhas, inspeção manual da saída `--json` real confirmando ausência
+> de escaping.
 
 ## Wave 2 — Auditoria dos demais pontos de serialização
 > Dependencies: Wave 1 completa

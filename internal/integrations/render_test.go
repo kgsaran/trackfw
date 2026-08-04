@@ -39,6 +39,53 @@ func TestRenderNativeAgentFormats(t *testing.T) {
 	}
 }
 
+// TestRenderJSONRepresentationsDoNotHTMLEscape prova que "cli-agent-json" e
+// "agent-json" não aplicam o HTML-escaping padrão de encoding/json (<, >, &
+// virando <, >, &) — comportamento que diverge de Node.js
+// (JSON.stringify) e Python (json.dumps), nenhum dos quais escapa esses
+// caracteres por padrão. Ver check-identity-parity.sh e o "Dispatch contract"
+// do papel Architect, cujo placeholder literal "<slug>" expunha a divergência.
+func TestRenderJSONRepresentationsDoNotHTMLEscape(t *testing.T) {
+	source := []byte("---\n" +
+		"name: trackfw-architect\n" +
+		"description: Principal software architect for <slug> & friends.\n" +
+		"model: opus\n" +
+		"---\n\n" +
+		"# Architect\n\n" +
+		"Dispatch usa o valor de <slug> & outras convenções > baseline.\n")
+
+	item := Item{ID: "architect"}
+
+	for _, representation := range []string{"cli-agent-json", "agent-json"} {
+		t.Run(representation, func(t *testing.T) {
+			out, err := Render(item, KindAgents, Capability{Representation: representation}, source, identity.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			output := string(out)
+
+			for _, unicodeEscape := range []string{"\\u003c", "\\u003e", "\\u0026"} {
+				if strings.Contains(output, unicodeEscape) {
+					t.Fatalf("saída de %s não deve conter o HTML-escaping %s (comportamento default de encoding/json, ausente em Node.js/Python):\n%s", representation, unicodeEscape, output)
+				}
+			}
+			for _, literal := range []string{"<slug>", "&", ">"} {
+				if !strings.Contains(output, literal) {
+					t.Fatalf("saída de %s deve conter o caractere literal %q sem escape:\n%s", representation, literal, output)
+				}
+			}
+
+			var decoded map[string]string
+			if err := json.Unmarshal(out, &decoded); err != nil {
+				t.Fatalf("saída de %s deve ser JSON válido: %v\n%s", representation, err, output)
+			}
+			if decoded["description"] != "Principal software architect for <slug> & friends." {
+				t.Fatalf("%s: description decodificada divergiu: %q", representation, decoded["description"])
+			}
+		})
+	}
+}
+
 func TestRenderAgentDirectory(t *testing.T) {
 	catalog, err := LoadCatalog()
 	if err != nil {

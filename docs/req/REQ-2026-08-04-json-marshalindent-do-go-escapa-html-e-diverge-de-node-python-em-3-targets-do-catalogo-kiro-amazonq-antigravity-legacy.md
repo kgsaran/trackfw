@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-04
 author: "kg.saran@gmail.com"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md"
 ---
 
 # REQ: json.MarshalIndent do Go escapa HTML e diverge de Node/Python em 3 targets do catalogo (kiro amazonq antigravity-legacy)
@@ -81,4 +81,4 @@ ADR: N/A — correção de bug de serialização, sem decisão arquitetural nova
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md`
