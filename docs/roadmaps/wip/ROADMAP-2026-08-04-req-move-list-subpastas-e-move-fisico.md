@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-03-req-move-list-nao-suportam-subpastas-e-req-move-nao-move-arquivo.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: req move/list não enxergam REQDir com subpastas, e req move não move o arquivo
 
-> Created: 2026-08-04 | Status: backlog
+> Created: 2026-08-04 | Status: wip
 
 ## Diagnóstico / Contexto
 
