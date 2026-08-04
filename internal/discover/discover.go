@@ -58,6 +58,9 @@ func InstallGates(r DiscoveryResult, rootDir string, w io.Writer) error {
 			return err
 		}
 	}
+	if err := generators.GenerateAttentionScripts(rootDir); err != nil {
+		fmt.Fprintf(w, "  ⚠ attention scripts: %v\n", err)
+	}
 	if err := generators.InjectHooksDetected(rootDir); err != nil {
 		fmt.Fprintf(w, "  ⚠ agent hooks: %v\n", err)
 	}

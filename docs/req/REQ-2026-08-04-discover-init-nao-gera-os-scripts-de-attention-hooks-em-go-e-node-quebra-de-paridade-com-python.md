@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-04
 author: "kg.saran@gmail.com"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md"
 ---
 
 # REQ: discover --init nao gera os scripts de attention hooks em Go e Node (quebra de paridade com Python)
 
-> Date: 2026-08-04 | Status: Open
+> Date: 2026-08-04 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -36,19 +36,19 @@ regra). O caminho greenfield (`trackfw init`, que chama `generateAttentionScript
 (`discover --init`) tem a lacuna, e só em dois dos três runtimes.
 
 ## Acceptance Criteria
-- [ ] Go: `internal/discover/discover.go:InstallGates` chama a geração dos scripts de attention
+- [x] Go: `internal/discover/discover.go:InstallGates` chama a geração dos scripts de attention
       (exportar `generateAttentionScripts` de `internal/generators/scaffold.go` ou expor via
       `internal/generators/hooks.go`) **antes** de `generators.InjectHooksDetected(rootDir)` — mesma
       ordem do Python
-- [ ] Node.js: `npm/src/commands/discover.js` chama `generateAttentionScripts(cfg, cwd)`
+- [x] Node.js: `npm/src/commands/discover.js` chama `generateAttentionScripts(cfg, cwd)`
       (já exportada em `npm/src/generators/hooks.js:122`) **antes** de `injectHooksDetected(cwd)`
-- [ ] Python: nenhuma mudança necessária — já correto, serve de referência de comportamento
-- [ ] Idempotência preservada: rodar `discover --init` duas vezes não duplica nem corrompe os scripts
+- [x] Python: nenhuma mudança necessária — já correto, serve de referência de comportamento
+- [x] Idempotência preservada: rodar `discover --init` duas vezes não duplica nem corrompe os scripts
       (mesma garantia que `trackfw init`/`trackfw update` já dão)
-- [ ] Teste de regressão nos três runtimes: `discover --init` num diretório brownfield simulado deixa
+- [x] Teste de regressão nos três runtimes: `discover --init` num diretório brownfield simulado deixa
       `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh` no disco,
       executáveis, com o mesmo conteúdo que `trackfw init` geraria
-- [ ] `make quality` verde (Go + Node + Python + contratos de paridade)
+- [x] `make quality` verde (Go + Node + Python + contratos de paridade)
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -59,4 +59,4 @@ ADR: N/A — bug de paridade entre implementações já existentes, sem decisão
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md`

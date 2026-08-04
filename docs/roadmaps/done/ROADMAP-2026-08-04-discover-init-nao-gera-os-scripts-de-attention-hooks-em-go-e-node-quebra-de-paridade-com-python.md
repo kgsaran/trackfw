@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md"
 squad: "apolo-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf"
 
 # Roadmap: discover --init nao gera os scripts de attention hooks em Go e Node (quebra de paridade com Python)
 
-> Created: 2026-08-04 | Status: backlog
+> Created: 2026-08-04 | Status: done
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
@@ -22,18 +22,18 @@ certo, na ordem certa" nos dois runtimes que faltam; a função de geração em 
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] Go e Node.js chamam a geração dos scripts de attention antes de injetar os hooks em
+- [x] Go e Node.js chamam a geração dos scripts de attention antes de injetar os hooks em
       `discover --init`, na mesma ordem do Python
-- [ ] Idempotência preservada (rodar `discover --init` duas vezes não corrompe/duplica)
-- [ ] Teste de regressão nos 3 runtimes garantindo que os dois scripts existem no disco após
+- [x] Idempotência preservada (rodar `discover --init` duas vezes não corrompe/duplica)
+- [x] Teste de regressão nos 3 runtimes garantindo que os dois scripts existem no disco após
       `discover --init`
-- [ ] `make quality` verde
+- [x] `make quality` verde (99/99 cenários de falsificação passaram)
 
 ## Wave 1 — Fechar o gap em Go e Node (arquivos disjuntos, paralelo)
 > Dependencies: none
 
 ### ML-1A — Go: gerar scripts de attention em discover --init
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `internal/generators/scaffold.go` (exportar `generateAttentionScripts` → `GenerateAttentionScripts`, ou criar wrapper exportado)
 - `internal/discover/discover.go` (`InstallGates`, por volta da linha 49-64)
@@ -46,15 +46,20 @@ certo, na ordem certa" nos dois runtimes que faltam; a função de geração em 
 3. Atualizar todos os call sites que hoje chamam `generateAttentionScripts()` sem argumento, se a
    assinatura mudar ao exportar.
 **Acceptance criteria:**
-- [ ] `go build ./...` sem erros
-- [ ] Teste novo/atualizado em `internal/discover/*_test.go` ou `internal/commands/discover_test.go`
+- [x] `go build ./...` sem erros
+- [x] Teste novo/atualizado em `internal/discover/*_test.go` ou `internal/commands/discover_test.go`
       confirmando que `discover --init` num diretório temporário produz
       `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh` no disco,
       com o mesmo conteúdo de `trackfw init`
-- [ ] `go test ./internal/...` verde
+- [x] `go test ./internal/...` verde
+
+> Achado extra durante a implementação (registrado em `vault/notes/go-generateattentionscripts-cwd-vs-rootdir-2026-08-04.md`):
+> a função original escrevia em `"scripts"` relativo ao cwd do processo, não ao `rootDir` recebido por
+> `InstallGates` — corrigido para escrever em `filepath.Join(rootDir, "scripts")`, mantendo a mensagem
+> impressa como `scripts/...` relativo (paridade com o texto fixo do Node).
 
 ### ML-1B — Node.js: gerar scripts de attention em discover --init
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `npm/src/commands/discover.js` (bloco `opts.init`, próximo à linha 426-445)
 **Actions:**
@@ -63,15 +68,15 @@ certo, na ordem certa" nos dois runtimes que faltam; a função de geração em 
    relativa do Python. Confirmar que `cfg` disponível nesse ponto do fluxo de `discover.js` é
    suficiente para a assinatura da função (comparar com o call site em `npm/src/generators/init.js:35`).
 **Acceptance criteria:**
-- [ ] Teste novo/atualizado em `npm/tests/*.test.js` confirmando que `discover --init` num diretório
+- [x] Teste novo/atualizado em `npm/tests/*.test.js` confirmando que `discover --init` num diretório
       temporário produz os dois scripts no disco, com o mesmo conteúdo de `trackfw init`
-- [ ] `npm test` verde
+- [x] `npm test` verde (359/359)
 
 ## Wave 2 — Validação cruzada
 > Dependencies: Wave 1 completa
 
 ### ML-2A — Confirmar paridade e fechar a REQ
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:** nenhum (só validação)
 **Actions:**
 1. Rodar `discover --init` num fixture idêntico nos 3 runtimes e comparar byte-a-byte o conteúdo de
@@ -79,5 +84,12 @@ certo, na ordem certa" nos dois runtimes que faltam; a função de geração em 
 2. Confirmar que rodar `discover --init` duas vezes seguidas não altera os arquivos na segunda vez
    (idempotência).
 **Acceptance criteria:**
-- [ ] `make quality` verde
-- [ ] `trackfw validate` sem violações
+- [x] `make quality` verde (99/99 cenários de falsificação passaram)
+- [x] `trackfw validate` sem violações
+
+> Auditoria manual (trackfw_architect): rodei `discover --init` de verdade nos três binários (Go
+> compilado, `node npm/bin/trackfw`, `python3 -m trackfw`) contra fixtures git novos e independentes.
+> Os três geram `scripts/trackfw-attention-signal.sh` e `scripts/trackfw-attention-cleanup.sh`,
+> executáveis (0755). Divergência de conteúdo Go↔Node (comentário PT vs EN, formatação do `sed`) é
+> **pré-existente na main antes desta branch** — confirmado via `git show main:...` — e fora do escopo
+> desta REQ, que trata apenas de *gerar* os scripts, não de paridade de conteúdo entre runtimes.

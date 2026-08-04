@@ -171,8 +171,8 @@ func TestGenerateAttentionScripts(t *testing.T) {
 	_ = os.Chdir(dir)
 	t.Cleanup(func() { _ = os.Chdir(orig) })
 
-	if err := generateAttentionScripts(); err != nil {
-		t.Fatalf("generateAttentionScripts() erro: %v", err)
+	if err := GenerateAttentionScripts(""); err != nil {
+		t.Fatalf("GenerateAttentionScripts erro: %v", err)
 	}
 
 	signalPath := filepath.Join("scripts", "trackfw-attention-signal.sh")
@@ -214,7 +214,7 @@ func TestAttentionScripts_ExecutionContract(t *testing.T) {
 		if err := writeTrackfwConfig(Config{}); err != nil {
 			t.Fatalf("writeTrackfwConfig erro: %v", err)
 		}
-		if err := generateAttentionScripts(); err != nil {
+		if err := GenerateAttentionScripts(""); err != nil {
 			t.Fatalf("generateAttentionScripts erro: %v", err)
 		}
 
@@ -289,7 +289,7 @@ func TestAttentionScripts_ExecutionContract(t *testing.T) {
 				if err := os.WriteFile("trackfw.yaml", []byte(yamlContent), 0644); err != nil {
 					t.Fatalf("WriteFile trackfw.yaml erro: %v", err)
 				}
-				if err := generateAttentionScripts(); err != nil {
+				if err := GenerateAttentionScripts(""); err != nil {
 					t.Fatalf("generateAttentionScripts erro: %v", err)
 				}
 
@@ -329,7 +329,7 @@ func TestAttentionScripts_ExecutionContract(t *testing.T) {
 		if err := os.WriteFile("trackfw.yaml", []byte("roadmap_dir: docs/roadmaps\n"), 0644); err != nil {
 			t.Fatalf("WriteFile trackfw.yaml erro: %v", err)
 		}
-		if err := generateAttentionScripts(); err != nil {
+		if err := GenerateAttentionScripts(""); err != nil {
 			t.Fatalf("generateAttentionScripts erro: %v", err)
 		}
 
@@ -378,7 +378,7 @@ func TestAttentionScripts_FallbackWithoutJQ(t *testing.T) {
 	if err := os.WriteFile("trackfw.yaml", []byte("roadmap_dir: docs/roadmaps\n"), 0644); err != nil {
 		t.Fatalf("WriteFile trackfw.yaml erro: %v", err)
 	}
-	if err := generateAttentionScripts(); err != nil {
+	if err := GenerateAttentionScripts(""); err != nil {
 		t.Fatalf("generateAttentionScripts erro: %v", err)
 	}
 

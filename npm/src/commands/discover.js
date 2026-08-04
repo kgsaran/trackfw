@@ -436,6 +436,12 @@ cmd.action((opts) => {
         console.log(`⚠ agent rules inject partial: ${e.message}`);
       }
       try {
+        const { generateAttentionScripts } = require('../generators/hooks');
+        generateAttentionScripts({}, cwd);
+      } catch (e) {
+        console.warn(`⚠ attention scripts: ${e.message}`);
+      }
+      try {
         const { injectHooksDetected } = require('../generators/hooks');
         injectHooksDetected(cwd);
         console.log('✓ agent hooks injected');

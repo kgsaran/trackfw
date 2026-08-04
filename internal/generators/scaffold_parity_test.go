@@ -34,7 +34,7 @@ func getGoScripts(t *testing.T) (signal, cleanup string) {
 	_ = os.Chdir(dir)
 	defer func() { _ = os.Chdir(orig) }()
 
-	if err := generateAttentionScripts(); err != nil {
+	if err := GenerateAttentionScripts(""); err != nil {
 		t.Fatalf("generateAttentionScripts erro: %v", err)
 	}
 
