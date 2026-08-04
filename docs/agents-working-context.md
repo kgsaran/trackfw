@@ -9130,3 +9130,44 @@ o addendum sobre o stdout.
 `trackfw validate` → `✓ Nenhuma violação encontrada.`
 
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar.
+
+## Sessão 2026-08-04 — Apolo (Wave 1 Go: `trackfw branch new`) — CONCLUÍDO
+
+**Escopo**: REQ/roadmap `.../comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip`,
+Wave 1 (ML-1A + ML-1B), só Go. Branch: `feat/comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip`.
+
+**ML-1A — extração de matching (refactor puro)**: extraída `BranchSlugMatchesRoadmap(branchSlug string,
+wipDirs, doneDirs []string) (matched bool, candidates []string)` de dentro de
+`validateBranchHasWIPRoadmap` (`internal/validator/validator.go`). Também exportados wrappers finos
+`ResolveWIPDirs`, `ResolveDoneDirs`, `NormalizeBranchSlug` (chamam as versões não-exportadas já
+existentes, sem renomeá-las — evita mexer nos outros ~5 call-sites internos) e extraídas as duas
+mensagens de orientação para funções reutilizáveis `BranchGovernanceOrientation(branch string) string`
+(candidates vazio) e `BranchNoMatchingRoadmapMessage(branch string, candidates []string) string`
+(candidates não-vazio) — usadas tanto por `validateBranchHasWIPRoadmap` quanto pelo novo comando.
+`go test ./internal/validator/...` sem nenhuma asserção alterada (confirmado antes/depois do
+refactor).
+
+**ML-1B — comando `trackfw branch new <type>/<slug>`**: novo `internal/commands/branch.go`,
+registrado em `root.go` (`newBranchCmd()`). Fluxo: valida `type` ∈ {feat, fix, refactor} e slug
+não-vazio (`parseBranchSpec`) → normaliza slug e chama `validator.BranchSlugMatchesRoadmap` contra
+`ResolveWIPDirs`+`ResolveDoneDirs` → sem match: imprime a mesma mensagem de
+`BranchGovernanceOrientation`/`BranchNoMatchingRoadmapMessage` (nunca duplicada), exit não-zero, git
+nunca é chamado → com match: `git checkout -b <type>/<slug>` via `exec.Command` com stdio herdado
+(stdout/stderr diretos do processo, sem reformatar) → `--dry-run`: roda a mesma checagem e imprime
+"would create"/"would block: <mensagem>", nunca chama git, exit não-zero quando bloquearia. Erro de
+branch já existente propaga sem tratamento especial (delega ao erro nativo do `git checkout -b`,
+como pedido na REQ). Testado com `branchNewDeps` injetável (mesmo padrão de `shipDeps` em
+`ship.go`/`ship_test.go`) — 17 testes novos em `internal/commands/branch_test.go` cobrindo match em
+wip/done (via mock), sem match com/sem candidatos, dry-run nos dois cenários, tipo inválido, slug
+vazio, e propagação do erro nativo do Git.
+
+**Validação**: `go build ./...` OK; `go test ./internal/...` todos `ok`; `go vet ./...` limpo;
+`trackfw validate` → `✓ Nenhuma violação encontrada.`; `trackfw help branch` e
+`trackfw branch new --dry-run <slug-existente-em-wip>` / `<slug-órfão>` testados manualmente com o
+binário compilado — comportamento e mensagens conferem com `trackfw validate`.
+
+Fora de escopo desta sessão (Wave 2/3, outro agente): Node.js (`npm/`), Python (`pypi/`),
+`docs/cli-parity.md`, gate de paridade.
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem
+autoridade Git).

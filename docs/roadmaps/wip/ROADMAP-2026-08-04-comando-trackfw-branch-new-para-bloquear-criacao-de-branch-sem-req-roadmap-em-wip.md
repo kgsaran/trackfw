@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md"
 squad: "apolo-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf"
 
 # Roadmap: comando trackfw branch new para bloquear criação de branch sem REQ+roadmap em wip
 
-> Created: 2026-08-04 | Status: backlog
+> Created: 2026-08-04 | Status: wip
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
@@ -32,18 +32,18 @@ reutilizando a mesma lógica de matching de slug já implementada e testada em
 > Dependencies: none
 
 ### ML-1A — Extrair matching de slug do validador para função reutilizável
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `internal/validator/validator.go` (extrair `branchSlugMatchesRoadmap(slug string, wipDirs, doneDirs []string) (matched bool, candidates []string)` a partir do corpo de `validateBranchHasWIPRoadmap`, linhas ~1926-1944)
 **Actions:**
 1. Extrair a extração de `wipDirs`/`doneDirs` + o laço de matching (`normalizeBranchSlug` + `strings.Contains`) para uma função exportada ou de pacote reutilizável pelo novo comando `branch`.
 2. `validateBranchHasWIPRoadmap` passa a chamar essa função — comportamento observável idêntico (nenhuma mensagem muda).
 **Acceptance criteria:**
-- [ ] `go build ./...` sem erros
-- [ ] `go test ./internal/validator/...` verde, sem alterar nenhuma asserção existente (refactor puro)
+- [x] `go build ./...` sem erros
+- [x] `go test ./internal/validator/...` verde, sem alterar nenhuma asserção existente (refactor puro)
 
 ### ML-1B — Implementar `trackfw branch new` em Go
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `internal/commands/branch.go` (novo)
 - `internal/commands/root.go` (registrar subcomando)
@@ -57,10 +57,15 @@ reutilizando a mesma lógica de matching de slug já implementada e testada em
    code do Git literalmente (não reformatar a saída do Git).
 5. `--dry-run`: roda a checagem de match e imprime o resultado ("would create" / "would block: <motivo>"), nunca chama `git checkout`.
 **Acceptance criteria:**
-- [ ] `go build ./...` sem erros
-- [ ] Testes cobrindo: match em wip/, match em done/, sem match, `--dry-run` (ambos os casos), tipo
+- [x] `go build ./...` sem erros
+- [x] Testes cobrindo: match em wip/, match em done/, sem match, `--dry-run` (ambos os casos), tipo
       inválido, branch já existente (delega ao erro do Git)
-- [ ] `trackfw help branch` funcional
+- [x] `trackfw help branch` funcional
+
+> Auditoria manual (trackfw_architect): testei o binário real ponta a ponta (não só os testes
+> unitários) — `branch new --dry-run` sem match bloqueia sem tocar no git; sem `--dry-run` bloqueia
+> igual; tipo inválido rejeitado; com match real (slug desta própria REQ) reporta "would create"
+> corretamente. `go test ./internal/...` completo (não só os pacotes tocados) roda verde.
 
 ## Wave 2 — Node.js + Python (paralelo entre si, dependem da Wave 1 como referência de contrato)
 > Dependencies: Wave 1 completa (comportamento Go é a fonte da verdade)
