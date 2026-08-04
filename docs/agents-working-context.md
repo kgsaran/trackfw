@@ -4,6 +4,65 @@
 
 ---
 
+## Sessão 2026-08-04 — Apolo (ML-2A: paridade — status inválido no move físico de REQ) — CONCLUÍDO
+
+Branch `feat/req-move-list-subpastas-e-move-fisico` (já criada — Backend não executa Git; sem
+commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md`, ML-2A.
+
+**Achado da auditoria pós-Wave-1 corrigido:** as 3 implementações de `req move` divergiam no
+tratamento de status inválido quando a REQ já está numa subpasta de estado reconhecida (por-estado
+ou by_agent): Go rejeitava com erro, Node criava uma pasta arbitrária com o valor recebido
+(`targetDir = path.join(cfg.reqDir, status)` sem validar), e Python caía silenciosamente no fallback
+in-place (`_req_state_dir`/`_req_agent_state_dir` retornavam `None` para status inválido, sem avisar).
+
+**Correção:** alinhados Node.js (`npm/src/generators/req.js`, `moveREQ`) e Python
+(`pypi/trackfw/generators/req.py`, `move_req`) ao comportamento do Go — validação
+`status in VALID_STATES` logo após o branch in-place e antes do cálculo de `targetDir`, lançando erro
+equivalente (`invalid state "<status>" — valid states: backlog, analyzing, wip, blocked, done,
+abandoned`) via `throw new Error` (Node) / `raise RuntimeError` (Python). O modo in-place (REQ solta
+em `req_dir/`) não foi alterado — continua aceitando qualquer string livremente. Nota: o ponto de
+validação escolhido (espelhando o Go) valida em TODOS os caminhos não-in-place, inclusive layout não
+reconhecido (ex: `docs/req/claude/deep/nested/REQ.md`) — mais amplo que o caso descrito na tarefa
+(só "subpasta de estado reconhecida"), mas é a paridade estrita com o Go e fecha os 3 caminhos, não
+só 2.
+
+Testes de regressão adicionados nos 3 CLIs (layout por-estado E by_agent, este último era o caso mais
+grave em Python — `_req_agent_state_dir` retornava `None` e caía silenciosamente em in-place):
+`TestMoveREQ_RejectsInvalidStateInStateLayout` e `TestMoveREQ_RejectsInvalidStateInByAgentLayout`
+(Go); testes 7 e 8 em `npm/tests/req_list_move_subfolders.test.js`;
+`test_move_req_rejects_invalid_state_in_state_layout` e
+`test_move_req_rejects_invalid_state_in_by_agent_layout` (Python).
+
+**Evidência:** `go build ./... && go vet ./... && go test ./internal/...` verde · `npm --prefix npm
+test` verde (354/354, arquivo `req_list_move_subfolders.test.js` roda 9/9 standalone incluindo os 2
+novos casos) · `python3 -m pytest tests/` verde (872 passed, dentro de `pypi/`) · `trackfw validate`
+pós-edição sem violações · `make quality` (gate de contratos de paridade) verde sob
+`LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8` — sob o locale padrão da máquina (`pt_BR.UTF-8`) o cenário 29
+(`falsify/validate-ok-message`) falha por pinar o literal inglês "No violations found." contra a
+mensagem i18n em português; confirmado pré-existente e não-relacionado ao diff (reproduzido em árvore
+stashed, sem nenhuma mudança deste ML).
+
+**Prova de paridade manual** (fixture temporário fora do repo, `trackfw.yaml` com
+`roadmap_namespacing: by_agent`, `agents: [claude]`, REQs nos 3 layouts — flat, por-estado,
+by_agent): os 3 binários (`bin/trackfw`, `node npm/bin/trackfw`, `python3 -m trackfw` com
+`PYTHONPATH=pypi`) listaram exatamente o mesmo conjunto de 3 REQs via `req list`; `req move` físico
+produziu os mesmos destinos (`docs/req/done/REQ-state.md`, `docs/req/claude/done/REQ-agent.md`,
+REQ solta permanecendo in-place) nos 3; e `req move REQ-state.md status-invalido-xyz` agora é
+rejeitado com mensagem equivalente nos 3 (Node imprime stack trace não capturado — comportamento
+pré-existente de `npm/src/commands/req.js`, que não tem try/catch em `req move`, fora do escopo deste
+ML), sem criar `docs/req/status-invalido-xyz/` e sem alterar o arquivo original.
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
+Git). Arquivos tocados: `internal/generators/req.go` (nenhuma mudança — já estava correto),
+`internal/generators/req_test.go`, `npm/src/generators/req.js`,
+`npm/tests/req_list_move_subfolders.test.js`, `pypi/trackfw/generators/req.py`,
+`pypi/tests/test_req_list_move_subfolders.py`. A árvore também carrega `README.md` e
+`docs/cli-parity.md` modificados por outro agente em paralelo (ML-2B) — não tocados por este ML.
+
+---
+
 ## Sessão 2026-08-04 — Apolo (ML-1A: Go — req list/move recursivos + move físico) — CONCLUÍDO
 
 Branch `feat/req-move-list-subpastas-e-move-fisico` (já criada pelo orquestrador — Backend não
@@ -8801,3 +8860,49 @@ baseline + 10 novos).
 fiz commit nem push**. Arquivos modificados/novos ficam no working tree para auditoria e commit do
 orquestrador: `pypi/trackfw/generators/req.py`, `pypi/trackfw/commands/req.py`,
 `pypi/tests/test_req_list_move_subfolders.py`.
+
+---
+
+## Sessão 2026-08-04 — Apolo (ML-2B — documentação: namespacing by_agent + move condicional de REQ) — CONCLUÍDO (aguardando commit/push por trackfw_architect)
+
+Branch `feat/req-move-list-subpastas-e-move-fisico` (mesma branch do ML-1A/1B/1C, arquivos
+distintos — código já commitado em paralelo por outro agente no ML-2A).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md`, seção
+ML-2B. Escopo: atualizar `README.md`/`docs/cli-parity.md` para refletir o comportamento real de
+`req list`/`req move` implementado em `internal/generators/req.go` (`listREQFiles`, `findREQ`,
+`MoveREQ`) — nenhum arquivo de código tocado.
+
+**`README.md`:**
+- Tabela de comandos — nova linha `trackfw req move <name> <status>`; linha de `req list` ajustada
+  para citar os 3 layouts (não usei "recursivamente" — os 3 globs em `listREQFiles` são fixos e
+  não descem em profundidade arbitrária; "recursivo" seria uma alegação falsificável).
+- Seção "Multi-agent namespacing" estendida: REQs reusam o mesmo campo `roadmap_namespacing` (sem
+  `req_namespacing` separado, decisão do ADR-2026-08-04); descrição dos 3 layouts de descoberta
+  (flat, por-estado, by_agent); comportamento condicional do `req move` — move físico só quando a
+  REQ já está numa subpasta de estado reconhecida (nesse modo `<status>` é restrito aos 6 estados
+  de governança, `invalid state` caso contrário), in-place quando solta em `req_dir/` (nesse modo
+  `<status>` é gravado verbatim, aceitando valores livres como `Open`/`Done` que REQs legadas já
+  usam — vocabulário de status diverge por layout, achado confirmado lendo `req.go:317-330`).
+
+**`docs/cli-parity.md`:**
+- Linha `req` da tabela de paridade — adicionado `move` (estava só `new, list`).
+- Nova subseção "`req list` / `req move` — discovery layouts and conditional physical move" após a
+  seção de `roadmap move`: pina os 3 globs fixos de descoberta, o discriminador do modo de move
+  (localização do arquivo, não flag), a regra de vocabulário de status por modo, e que a transição
+  é gravada em `<req_dir>/.trackfw-log` — arquivo separado de `<roadmap_dir>/.trackfw-log` (`trackfw
+  log` só lê o log de roadmap; transições de REQ não aparecem em `trackfw log`, confirmado lendo
+  `internal/commands/log.go:27`). Confirmada paridade Go/Node/Python das duas regras (log path e
+  vocabulário de status) lendo `pypi/trackfw/generators/req.py` e `npm/src/generators/req.js`.
+
+**Não tocado:** `docs/roadmaps/done/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md`
+linhas 199/246, que ainda descrevem o comportamento antigo ("`req move` NÃO move arquivo",
+"reescrevendo somente `status:`") — decisão deliberada, não omissão: é um roadmap `done`, registro
+histórico do que foi implementado naquela sessão; reescrevê-lo falsificaria a trilha de auditoria.
+O comportamento atual está documentado no ADR-2026-08-04 e nesta atualização de README/cli-parity.
+
+**Validação:** `go build ./...` OK; `trackfw validate` → `✓ Nenhuma violação encontrada.` (doc-only,
+sem impacto em governança).
+
+**Git:** conforme mode lock de Backend, **não fiz commit nem push**. Arquivos modificados ficam no
+working tree para auditoria e commit do orquestrador: `README.md`, `docs/cli-parity.md`.
