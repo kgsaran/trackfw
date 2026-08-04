@@ -57,7 +57,7 @@ func Scaffold(cfg Config) error {
 		return err
 	}
 
-	if err := generateAttentionScripts(); err != nil {
+	if err := GenerateAttentionScripts(""); err != nil {
 		return err
 	}
 
@@ -679,8 +679,16 @@ func generateValidateScript(cfg Config) error {
 	return nil
 }
 
-func generateAttentionScripts() error {
-	if err := os.MkdirAll("scripts", 0755); err != nil {
+// GenerateAttentionScripts gera os scripts shell de attention signal/cleanup em
+// <rootDir>/scripts. Se rootDir for "", usa o diretório de trabalho atual (mesmo
+// comportamento de antes da exportação). O conteúdo gerado é idêntico ao produzido
+// por `trackfw init`.
+func GenerateAttentionScripts(rootDir string) error {
+	if rootDir == "" {
+		rootDir = "."
+	}
+	scriptsDir := filepath.Join(rootDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
 		return err
 	}
 
@@ -738,17 +746,21 @@ rm -f "$ROADMAP_DIR/.trackfw-attention.json"
 exit 0
 `
 
-	signalPath := filepath.Join("scripts", "trackfw-attention-signal.sh")
+	signalPath := filepath.Join(scriptsDir, "trackfw-attention-signal.sh")
 	if err := os.WriteFile(signalPath, []byte(signalScript), 0755); err != nil {
 		return fmt.Errorf("writing attention signal script: %w", err)
 	}
-	fmt.Printf("  ✓ %s\n", signalPath)
+	// Mensagem sempre com caminho relativo "scripts/..." — igual ao literal fixo
+	// que o Node.js imprime (npm/src/generators/hooks.js:generateAttentionScripts)
+	// — independente de rootDir ser "" (cwd, usado por init/update) ou um caminho
+	// absoluto (usado por discover --init via InstallGates).
+	fmt.Printf("  ✓ %s\n", filepath.Join("scripts", "trackfw-attention-signal.sh"))
 
-	cleanupPath := filepath.Join("scripts", "trackfw-attention-cleanup.sh")
+	cleanupPath := filepath.Join(scriptsDir, "trackfw-attention-cleanup.sh")
 	if err := os.WriteFile(cleanupPath, []byte(cleanupScript), 0755); err != nil {
 		return fmt.Errorf("writing attention cleanup script: %w", err)
 	}
-	fmt.Printf("  ✓ %s\n", cleanupPath)
+	fmt.Printf("  ✓ %s\n", filepath.Join("scripts", "trackfw-attention-cleanup.sh"))
 
 	return nil
 }

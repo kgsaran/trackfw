@@ -74,7 +74,7 @@ func Update(cwd string) error {
 		fmt.Printf("  ⚠ validate script: %v\n", err)
 	}
 
-	if err := generateAttentionScripts(); err != nil {
+	if err := GenerateAttentionScripts(""); err != nil {
 		fmt.Printf("  ⚠ attention scripts: %v\n", err)
 	}
 
@@ -614,7 +614,7 @@ func runProjectTarget(id, root string, cfg Config, opts UpdateOptions) TargetRes
 					if err := InjectHooksDetected(r); err != nil {
 						return err
 					}
-					return generateAttentionScripts()
+					return GenerateAttentionScripts("")
 				})
 			},
 			opts)
@@ -804,7 +804,7 @@ func hashPathContent(path string) string {
 
 // withChdir runs fn with the process working directory temporarily set to
 // root, restoring the original directory afterward. Several existing
-// generator functions (generateValidateScript, generateAttentionScripts,
+// generator functions (generateValidateScript, GenerateAttentionScripts,
 // generateCIWorkflow, updateHooksSurgical, ForceGenerateClaudeCommands)
 // write through relative paths and rely on the caller having already
 // changed directory — this lets UpdateProject reuse them unmodified against

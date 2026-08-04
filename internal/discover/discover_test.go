@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/generators"
 )
 
 func TestMain(m *testing.M) {
@@ -305,6 +307,88 @@ func TestInstallGates_Idempotente(t *testing.T) {
 	wfContent, _ := os.ReadFile(filepath.Join(dir, ".github/workflows/trackfw-validate.yml"))
 	if string(wfContent) != "# existing\n" {
 		t.Error("existing CI workflow should not be overwritten")
+	}
+}
+
+// TestInstallGates_GeraAttentionScripts confirma que `discover --init` (via InstallGates)
+// gera scripts/trackfw-attention-signal.sh e scripts/trackfw-attention-cleanup.sh no
+// rootDir, com o mesmo conteúdo produzido por `trackfw init` (generators.GenerateAttentionScripts),
+// executáveis (0755), e que a segunda execução é idempotente (conteúdo inalterado).
+func TestInstallGates_GeraAttentionScripts(t *testing.T) {
+	dir := t.TempDir()
+
+	r := DiscoveryResult{}
+	if err := InstallGates(r, dir, io.Discard); err != nil {
+		t.Fatalf("InstallGates error: %v", err)
+	}
+
+	signalPath := filepath.Join(dir, "scripts", "trackfw-attention-signal.sh")
+	cleanupPath := filepath.Join(dir, "scripts", "trackfw-attention-cleanup.sh")
+
+	signalInfo, err := os.Stat(signalPath)
+	if err != nil {
+		t.Fatalf("attention signal script not found: %v", err)
+	}
+	if signalInfo.Mode().Perm() != 0755 {
+		t.Errorf("attention signal script mode = %v, want 0755", signalInfo.Mode().Perm())
+	}
+
+	cleanupInfo, err := os.Stat(cleanupPath)
+	if err != nil {
+		t.Fatalf("attention cleanup script not found: %v", err)
+	}
+	if cleanupInfo.Mode().Perm() != 0755 {
+		t.Errorf("attention cleanup script mode = %v, want 0755", cleanupInfo.Mode().Perm())
+	}
+
+	signalGot, err := os.ReadFile(signalPath)
+	if err != nil {
+		t.Fatalf("reading signal script: %v", err)
+	}
+	cleanupGot, err := os.ReadFile(cleanupPath)
+	if err != nil {
+		t.Fatalf("reading cleanup script: %v", err)
+	}
+
+	// Compara byte-a-byte com o que `trackfw init` produziria via
+	// generators.GenerateAttentionScripts num diretório de referência independente.
+	refDir := t.TempDir()
+	if err := generators.GenerateAttentionScripts(refDir); err != nil {
+		t.Fatalf("GenerateAttentionScripts (reference) error: %v", err)
+	}
+	signalWant, err := os.ReadFile(filepath.Join(refDir, "scripts", "trackfw-attention-signal.sh"))
+	if err != nil {
+		t.Fatalf("reading reference signal script: %v", err)
+	}
+	cleanupWant, err := os.ReadFile(filepath.Join(refDir, "scripts", "trackfw-attention-cleanup.sh"))
+	if err != nil {
+		t.Fatalf("reading reference cleanup script: %v", err)
+	}
+
+	if string(signalGot) != string(signalWant) {
+		t.Error("discover --init attention signal script differs from trackfw init output")
+	}
+	if string(cleanupGot) != string(cleanupWant) {
+		t.Error("discover --init attention cleanup script differs from trackfw init output")
+	}
+
+	// Idempotência: rodar novamente não deve corromper nem alterar os arquivos.
+	if err := InstallGates(r, dir, io.Discard); err != nil {
+		t.Fatalf("InstallGates (2nd run) error: %v", err)
+	}
+	signalGot2, err := os.ReadFile(signalPath)
+	if err != nil {
+		t.Fatalf("reading signal script after 2nd run: %v", err)
+	}
+	if string(signalGot2) != string(signalGot) {
+		t.Error("attention signal script changed after re-running InstallGates (not idempotent)")
+	}
+	cleanupGot2, err := os.ReadFile(cleanupPath)
+	if err != nil {
+		t.Fatalf("reading cleanup script after 2nd run: %v", err)
+	}
+	if string(cleanupGot2) != string(cleanupGot) {
+		t.Error("attention cleanup script changed after re-running InstallGates (not idempotent)")
 	}
 }
 

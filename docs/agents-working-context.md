@@ -8987,3 +8987,146 @@ sem impacto em governança).
 
 **Git:** conforme mode lock de Backend, **não fiz commit nem push**. Arquivos modificados ficam no
 working tree para auditoria e commit do orquestrador: `README.md`, `docs/cli-parity.md`.
+
+---
+
+## Sessão 2026-08-04 — Apolo (ML-1B: `discover --init` não gera scripts de attention hooks — lado Node.js) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python`
+(já criada — Backend não executa Git; sem commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md`,
+ML-1B (ainda não marcado ✅ — só após auditoria do orquestrador).
+REQ: `docs/req/REQ-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md`.
+
+**Escopo desta sessão: somente o lado Node.js** (Go em paralelo por outro agente; Python já estava correto).
+
+**Correção**: em `npm/src/commands/discover.js`, bloco `opts.init`, adicionada a chamada
+`generateAttentionScripts({}, cwd)` (de `../generators/hooks`) **antes** de `injectHooksDetected(cwd)`
+— mesma posição relativa usada pelo Python (`pypi/trackfw/commands/discover.py`, depois de
+`inject_rules_detected`, antes de `inject_hooks_detected`). `cfg` não precisou de nenhum campo: o
+corpo de `generateAttentionScripts(cfg, cwd)` em `npm/src/generators/hooks.js` não lê nada de `cfg`
+(os scripts `SIGNAL_SCRIPT`/`CLEANUP_SCRIPT` são conteúdo estático) — confirmado também pelo Python,
+cuja `_generate_attention_scripts` nem recebe `cfg`, só `cwd`. Passei `{}` para deixar explícito que o
+parâmetro existe mas é irrelevante aqui, em vez de inventar um objeto `cfg` fictício.
+
+**Teste novo**: `npm/tests/discover-init-attention.test.js` (padrão `spawnSync` contra o binário real,
+seguindo `npm/tests/update.test.js`) com 3 casos: (1) `discover --init` gera os dois scripts em disco;
+(2) conteúdo byte-idêntico ao gerado por `trackfw init` (comparado gerando a referência via
+`generateAttentionScripts` num diretório descartável) + modo executável (`& 0o100`); (3) idempotência
+— rodar `discover --init` duas vezes não falha nem corrompe os arquivos (a segunda chamada é no-op
+porque `trackfw.yaml` já existe e o bloco inteiro de init é pulado, comportamento herdado e não
+alterado por este ML).
+
+**Validação**:
+- `cd npm && npm test` → `359 passed, 0 failed` (inclui os 3 testes novos, todos verdes).
+- `trackfw validate` (raiz do repo) → `✓ Nenhuma violação encontrada.`
+
+**Arquivos alterados**: `npm/src/commands/discover.js` (+5 linhas), `npm/tests/discover-init-attention.test.js` (novo).
+
+Fora de escopo, não tocado: `internal/` (Go), `pypi/` (Python — já correto), roadmap/REQ de
+`trackfw branch new` (não relacionado).
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
+Git).
+
+## Sessão 2026-08-04 — Apolo (ML-1A: `discover --init` não gera scripts de attention hooks — lado Go) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python`
+(já criada — Backend não executa Git; sem commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md`,
+ML-1A (ainda não marcado ✅ — só após auditoria do orquestrador).
+REQ: `docs/req/REQ-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md`.
+
+**Escopo desta sessão: somente o lado Go** (Node.js já concluído em paralelo por outro agente,
+ver entrada acima; Python já estava correto).
+
+**Achado durante a implementação (divergência do texto literal do ML)**: o texto do ML dizia só
+"exportar `generateAttentionScripts()`", mas a função original escrevia em `"scripts"` (caminho
+relativo ao **cwd do processo**), não a um `rootDir` explícito. `InstallGates(r, rootDir, w)` em
+`internal/discover/discover.go` é chamado com um `rootDir` que não é garantidamente o cwd do
+processo (confirmado pelos próprios testes de `InstallGates`, que usam `t.TempDir()` sem
+`os.Chdir`). Uma exportação ingênua sem parâmetro teria escrito os scripts no lugar errado sempre
+que `rootDir != cwd`. Comparando com Node.js (`generateAttentionScripts(cfg, cwd)`) e Python
+(`_generate_attention_scripts(cwd: str)`) confirmei que os dois outros CLIs já recebiam um
+parâmetro de diretório — então segui o mesmo padrão em Go em vez do texto literal do ML.
+Nota de vault criada com o detalhe completo:
+`vault/notes/go-generateattentionscripts-cwd-vs-rootdir-2026-08-04.md` (indexada em
+`vault/notes/index.md`).
+
+**Mudanças**:
+1. `internal/generators/scaffold.go` — `generateAttentionScripts()` → exportada como
+   `GenerateAttentionScripts(rootDir string) error`. `rootDir == ""` cai para `"."` (mesmo
+   comportamento de antes, para os call sites de `init`/`update`). Conteúdo dos scripts gerados
+   não mudou (só o caminho onde são escritos passou a ser `filepath.Join(rootDir, "scripts")` em
+   vez de `"scripts"` fixo). Call sites internos ao pacote (`scaffold.go:60`, `update.go:77`,
+   `update.go:617`) e nos testes (`scaffold_test.go`, `scaffold_parity_test.go`) atualizados para
+   `GenerateAttentionScripts("")`.
+2. `internal/discover/discover.go` — em `InstallGates`, adicionada a chamada
+   `generators.GenerateAttentionScripts(rootDir)` (não-fatal, `⚠ attention scripts: %v` em caso de
+   erro, mesmo padrão de `InjectHooksDetected`) **antes** de `generators.InjectHooksDetected(rootDir)`
+   — mesma posição relativa usada pelo Python.
+3. `internal/discover/discover_test.go` — novo teste `TestInstallGates_GeraAttentionScripts`:
+   confirma que os dois scripts existem no `rootDir` após `InstallGates`, modo 0755, conteúdo
+   byte-idêntico ao gerado por `generators.GenerateAttentionScripts` num diretório de referência
+   separado (prova de paridade com `trackfw init`), e que rodar `InstallGates` duas vezes não
+   altera o conteúdo (idempotência). Import `github.com/kgsaran/trackfw/internal/generators`
+   adicionado ao arquivo de teste.
+
+**Diff da assinatura exportada**:
+```go
+// antes (não exportada, internal/generators/scaffold.go:682)
+func generateAttentionScripts() error
+
+// depois
+func GenerateAttentionScripts(rootDir string) error
+```
+
+**Validação**:
+- `go build ./...` → sem erros.
+- `go test ./internal/discover/... ./internal/generators/... ./internal/commands/...` → todos `ok`.
+- `go test ./internal/...` (suíte completa) → todos `ok`.
+- `trackfw validate` → `✓ Nenhuma violação encontrada.`
+
+**Arquivos alterados**: `internal/generators/scaffold.go`, `internal/generators/scaffold_test.go`,
+`internal/generators/scaffold_parity_test.go`, `internal/generators/update.go`,
+`internal/discover/discover.go`, `internal/discover/discover_test.go` (+ nota de vault e esta
+entrada de working-context).
+
+Fora de escopo, não tocado: `npm/` (Node.js — já concluído em paralelo), `pypi/` (Python — já
+correto), roadmap/REQ de `trackfw branch new` (não relacionado).
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem
+autoridade Git).
+
+## Sessão 2026-08-04 — Apolo (ML-1A Go, ajuste pós-revisão do advisor) — CONCLUÍDO
+
+Correções adicionais após revisão do advisor sobre o trabalho de ML-1A relatado na sessão anterior
+(mesma branch, mesmo roadmap/REQ):
+
+1. **stdout parity**: `GenerateAttentionScripts` imprimia `fmt.Printf("  ✓ %s\n", signalPath)` usando
+   o caminho completo passado (que em `discover --init` é absoluto, já que
+   `internal/commands/discover.go` passa `cwd = os.Getwd()` como `rootDir`). Corrigido para sempre
+   imprimir o caminho relativo `filepath.Join("scripts", "trackfw-attention-signal.sh")` /
+   `"trackfw-attention-cleanup.sh"`, independentemente de `rootDir` — o disco continua sendo escrito
+   em `filepath.Join(rootDir, "scripts")`, só a mensagem impressa mudou. Confirmado empiricamente
+   rodando o binário Go compilado (`bin/trackfw discover --init`) e o Node
+   (`node npm/bin/trackfw discover --init`) num fixture `git init` vazio cada — as duas linhas de
+   saída (`  ✓ scripts/trackfw-attention-signal.sh` / `  ✓ scripts/trackfw-attention-cleanup.sh`)
+   ficaram byte-idênticas entre os dois runtimes. Python não imprime nada em sucesso para os
+   attention scripts em nenhum runtime (divergência pré-existente, fora do escopo desta REQ).
+2. **Comentário obsoleto**: `internal/generators/update.go:807` citava `generateAttentionScripts`
+   (nome antigo, não-exportado) numa lista de funções em comentário — atualizado para
+   `GenerateAttentionScripts`.
+3. Confirmado por grep que nenhum script de gate (`scripts/check-gates-*.sh`) ou `docs/cli-parity.md`
+   pina o nome antigo não-exportado — só comentários/docs/mensagens de teste, todos já corretos ou
+   inofensivos.
+
+Nota de vault `vault/notes/go-generateattentionscripts-cwd-vs-rootdir-2026-08-04.md` atualizada com
+o addendum sobre o stdout.
+
+**Validação re-executada**: `go build ./...` OK, `go test ./internal/...` todos `ok`,
+`trackfw validate` → `✓ Nenhuma violação encontrada.`
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar.
