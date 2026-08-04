@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [branch-new-exit-code-leak-vs-propagation-2026-08-04](branch-new-exit-code-leak-vs-propagation-2026-08-04.md)
 - [branch_has_wip_roadmap-conflita-com-a-definition-of-done-2026-07-26](branch_has_wip_roadmap-conflita-com-a-definition-of-done-2026-07-26.md)
 - [argparse-ansi-parity-gate-python313-2026-07-26](argparse-ansi-parity-gate-python313-2026-07-26.md)
 - [ship-roadmap-dir-default-divergencia-2026-07-27](ship-roadmap-dir-default-divergencia-2026-07-27.md)

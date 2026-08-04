@@ -858,6 +858,18 @@ func resolveDoneDirs(cfg config.ProjectConfig) []string {
 	return resolveStateDirs(cfg, "done")
 }
 
+// ResolveWIPDirs é o wrapper exportado de resolveWIPDirs, usado por consumidores fora do
+// pacote validator (ex: comando `trackfw branch new`).
+func ResolveWIPDirs(cfg config.ProjectConfig) []string {
+	return resolveWIPDirs(cfg)
+}
+
+// ResolveDoneDirs é o wrapper exportado de resolveDoneDirs, usado por consumidores fora do
+// pacote validator (ex: comando `trackfw branch new`).
+func ResolveDoneDirs(cfg config.ProjectConfig) []string {
+	return resolveDoneDirs(cfg)
+}
+
 // resolveREQFiles retorna paths completos de todos os .md em req_dir,
 // consciente de roadmap_namespacing: by_agent percorre req_dir/<agente>/<estado>/.
 func resolveREQFiles(cfg config.ProjectConfig) []string {
@@ -1901,6 +1913,28 @@ func validateFilenameUniqueness() ([]string, error) {
 	return violations, nil
 }
 
+// BranchSlugMatchesRoadmap verifica se branchSlug (já normalizado via normalizeBranchSlug) casa com o
+// nome de algum roadmap .md encontrado em wipDirs ou doneDirs. Reutilizada por
+// validateBranchHasWIPRoadmap e pelo comando `trackfw branch new` — nunca duplicar esta lógica.
+//
+// matched indica se algum candidato casou com o slug. candidates lista todos os roadmaps .md
+// encontrados em wipDirs+doneDirs (para diagnóstico/mensagem de orientação quando matched é false).
+func BranchSlugMatchesRoadmap(branchSlug string, wipDirs, doneDirs []string) (matched bool, candidates []string) {
+	dirs := append(append([]string{}, wipDirs...), doneDirs...)
+	for _, dir := range dirs {
+		entries, _ := listDir(dir)
+		for _, name := range entries {
+			if strings.HasSuffix(name, ".md") {
+				candidates = append(candidates, name)
+				if strings.Contains(normalizeBranchSlug(name), branchSlug) {
+					matched = true
+				}
+			}
+		}
+	}
+	return matched, candidates
+}
+
 // validateBranchHasWIPRoadmap verifica se a branch atual (feat/fix/refactor) tem ao menos um roadmap em wip/.
 // Retorna violation se a branch for de implementação mas wip/ estiver vazio — previne trabalho órfão.
 func validateBranchHasWIPRoadmap() ([]string, error) {
@@ -1928,39 +1962,45 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 	doneDirs := resolveDoneDirs(cfg)
 
 	branchSlug := normalizeBranchSlug(strings.SplitN(branch, "/", 2)[1])
-	// candidates reúne todos os roadmaps encontrados em wip/ e done/.
-	// O casamento de slug é testado ao iterar — se encontrado, retorna sem violação.
-	var candidates []string
-	for _, dir := range append(wipDirs, doneDirs...) {
-		entries, _ := listDir(dir)
-		for _, name := range entries {
-			if strings.HasSuffix(name, ".md") {
-				candidates = append(candidates, name)
-				if strings.Contains(normalizeBranchSlug(name), branchSlug) {
-					return nil, nil
-				}
-			}
-		}
+	matched, candidates := BranchSlugMatchesRoadmap(branchSlug, wipDirs, doneDirs)
+	if matched {
+		return nil, nil
 	}
 
 	if len(candidates) == 0 {
-		return []string{fmt.Sprintf(
-			"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new \"title\"\n  trackfw roadmap new \"title\"\n  trackfw roadmap move <name> wip",
-			branch,
-		)}, nil
+		return []string{BranchGovernanceOrientation(branch)}, nil
 	}
+	return []string{BranchNoMatchingRoadmapMessage(branch, candidates)}, nil
+}
+
+// BranchGovernanceOrientation is the guidance message printed when a feat/fix/refactor branch
+// has no roadmap in wip/ nor done/ at all (candidates is empty). Shared by
+// validateBranchHasWIPRoadmap and `trackfw branch new` — never duplicate this string.
+func BranchGovernanceOrientation(branch string) string {
+	return fmt.Sprintf(
+		"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new \"title\"\n  trackfw roadmap new \"title\"\n  trackfw roadmap move <name> wip",
+		branch,
+	)
+}
+
+// BranchNoMatchingRoadmapMessage is the guidance message printed when roadmaps exist in wip/ or
+// done/ but none of them match the branch's slug. Shared by validateBranchHasWIPRoadmap and
+// `trackfw branch new` — never duplicate this string. Does not mutate candidates.
+func BranchNoMatchingRoadmapMessage(branch string, candidates []string) string {
 	// P3: sort for deterministic output regardless of filesystem ordering.
-	sort.Strings(candidates)
-	display := candidates
+	sorted := make([]string, len(candidates))
+	copy(sorted, candidates)
+	sort.Strings(sorted)
+	display := sorted
 	suffix := ""
-	if len(candidates) > 3 {
-		display = candidates[:3]
-		suffix = fmt.Sprintf(", e mais %d", len(candidates)-3)
+	if len(sorted) > 3 {
+		display = sorted[:3]
+		suffix = fmt.Sprintf(", e mais %d", len(sorted)-3)
 	}
-	return []string{fmt.Sprintf(
+	return fmt.Sprintf(
 		"branch %q has no matching roadmap in wip/ nor done/ (found: %s%s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
 		branch, strings.Join(display, ", "), suffix,
-	)}, nil
+	)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -2021,6 +2061,12 @@ func validateNoteOrphan() ([]string, error) {
 		}
 	}
 	return msgs, nil
+}
+
+// NormalizeBranchSlug é o wrapper exportado de normalizeBranchSlug, usado por consumidores fora do
+// pacote validator (ex: comando `trackfw branch new`).
+func NormalizeBranchSlug(value string) string {
+	return normalizeBranchSlug(value)
 }
 
 func normalizeBranchSlug(value string) string {

@@ -1210,6 +1210,68 @@ def validate_filename_uniqueness(cfg: dict) -> list:
     return violations
 
 
+def normalize_branch_slug(value: str) -> str:
+    """Normaliza um slug de branch para comparação (lowercase, runs de não-alfanumérico → '-',
+    sem '-' nas pontas). Espelha internal/validator/validator.go normalizeBranchSlug /
+    NormalizeBranchSlug. Reutilizada por validate_branch_has_wip_roadmap e pelo comando
+    `trackfw branch new` — nunca duplicar esta lógica."""
+    return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+
+
+def branch_slug_matches_roadmap(branch_slug: str, wip_dirs: list, done_dirs: list):
+    """Verifica se branch_slug (já normalizado via normalize_branch_slug) casa com o nome de
+    algum roadmap .md encontrado em wip_dirs ou done_dirs. Espelha
+    internal/validator/validator.go BranchSlugMatchesRoadmap. Reutilizada por
+    validate_branch_has_wip_roadmap e pelo comando `trackfw branch new` — nunca duplicar esta
+    lógica.
+
+    Retorna (matched: bool, candidates: list) — candidates lista todos os roadmaps .md
+    encontrados em wip_dirs+done_dirs (para diagnóstico/mensagem de orientação quando matched é
+    False).
+    """
+    matched = False
+    candidates = []
+    for search_dir in wip_dirs + done_dirs:
+        if os.path.isdir(search_dir):
+            for f in os.listdir(search_dir):
+                if f.endswith('.md'):
+                    candidates.append(f)
+                    if branch_slug in normalize_branch_slug(f):
+                        matched = True
+    return matched, candidates
+
+
+def branch_governance_orientation(branch: str) -> str:
+    """Mensagem de orientação impressa quando uma branch feat/fix/refactor não tem nenhum
+    roadmap em wip/ nem em done/ (candidates vazio). Espelha
+    internal/validator/validator.go BranchGovernanceOrientation — byte-idêntica. Compartilhada
+    por validate_branch_has_wip_roadmap e `trackfw branch new` — nunca duplicar esta string."""
+    return (
+        f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — '
+        f'create governance artifacts first:\n'
+        f'  trackfw req new "title"\n'
+        f'  trackfw roadmap new "title"\n'
+        f'  trackfw roadmap move <name> wip'
+    )
+
+
+def branch_no_matching_roadmap_message(branch: str, candidates: list) -> str:
+    """Mensagem de orientação impressa quando existem roadmaps em wip/ ou done/ mas nenhum casa
+    com o slug da branch. Espelha internal/validator/validator.go
+    BranchNoMatchingRoadmapMessage — byte-idêntica. Compartilhada por
+    validate_branch_has_wip_roadmap e `trackfw branch new` — nunca duplicar esta string. Não
+    muta candidates."""
+    # P3: sort for deterministic output regardless of filesystem ordering.
+    sorted_candidates = sorted(candidates)
+    display = sorted_candidates[:3]
+    suffix = f", e mais {len(sorted_candidates) - 3}" if len(sorted_candidates) > 3 else ""
+    return (
+        f'branch "{branch}" has no matching roadmap in wip/ nor done/ '
+        f'(found: {", ".join(display)}{suffix}) — include the branch slug in the roadmap filename '
+        f'or set TRACKFW_BRANCH explicitly in CI'
+    )
+
+
 def validate_branch_has_wip_roadmap(cfg: dict) -> list:
     """Verifica que branch feat/fix/refactor tem ao menos um roadmap em wip/ antes de trabalhar."""
     import subprocess
@@ -1244,33 +1306,14 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
 
     wip_dirs = resolve_wip_dirs(cfg)
     done_dirs = resolve_done_dirs(cfg)
-    branch_slug = re.sub(r"[^a-z0-9]+", "-", branch.split("/", 1)[1].lower()).strip("-")
-    # candidates reúne todos os roadmaps encontrados em wip/ e done/.
-    candidates = []
-    for search_dir in wip_dirs + done_dirs:
-        if os.path.isdir(search_dir):
-            files = [f for f in os.listdir(search_dir) if f.endswith('.md')]
-            candidates.extend(files)
-            if any(branch_slug in re.sub(r"[^a-z0-9]+", "-", f.lower()).strip("-") for f in files):
-                return []
+    branch_slug = normalize_branch_slug(branch.split("/", 1)[1])
+    matched, candidates = branch_slug_matches_roadmap(branch_slug, wip_dirs, done_dirs)
+    if matched:
+        return []
 
     if not candidates:
-        return [
-            f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — '
-            f'create governance artifacts first:\n'
-            f'  trackfw req new "title"\n'
-            f'  trackfw roadmap new "title"\n'
-            f'  trackfw roadmap move <name> wip'
-        ]
-    # P3: sort for deterministic output regardless of filesystem ordering.
-    sorted_candidates = sorted(candidates)
-    display = sorted_candidates[:3]
-    suffix = f", e mais {len(sorted_candidates) - 3}" if len(sorted_candidates) > 3 else ""
-    return [
-        f'branch "{branch}" has no matching roadmap in wip/ nor done/ '
-        f'(found: {", ".join(display)}{suffix}) — include the branch slug in the roadmap filename '
-        f'or set TRACKFW_BRANCH explicitly in CI'
-    ]
+        return [branch_governance_orientation(branch)]
+    return [branch_no_matching_roadmap_message(branch, candidates)]
 
 
 def _is_git_worktree(cwd: str) -> bool:

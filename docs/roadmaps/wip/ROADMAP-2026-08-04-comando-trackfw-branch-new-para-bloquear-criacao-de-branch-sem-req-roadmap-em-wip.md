@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md"
 squad: "apolo-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf"
 
 # Roadmap: comando trackfw branch new para bloquear criação de branch sem REQ+roadmap em wip
 
-> Created: 2026-08-04 | Status: backlog
+> Created: 2026-08-04 | Status: wip
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
@@ -32,18 +32,18 @@ reutilizando a mesma lógica de matching de slug já implementada e testada em
 > Dependencies: none
 
 ### ML-1A — Extrair matching de slug do validador para função reutilizável
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `internal/validator/validator.go` (extrair `branchSlugMatchesRoadmap(slug string, wipDirs, doneDirs []string) (matched bool, candidates []string)` a partir do corpo de `validateBranchHasWIPRoadmap`, linhas ~1926-1944)
 **Actions:**
 1. Extrair a extração de `wipDirs`/`doneDirs` + o laço de matching (`normalizeBranchSlug` + `strings.Contains`) para uma função exportada ou de pacote reutilizável pelo novo comando `branch`.
 2. `validateBranchHasWIPRoadmap` passa a chamar essa função — comportamento observável idêntico (nenhuma mensagem muda).
 **Acceptance criteria:**
-- [ ] `go build ./...` sem erros
-- [ ] `go test ./internal/validator/...` verde, sem alterar nenhuma asserção existente (refactor puro)
+- [x] `go build ./...` sem erros
+- [x] `go test ./internal/validator/...` verde, sem alterar nenhuma asserção existente (refactor puro)
 
 ### ML-1B — Implementar `trackfw branch new` em Go
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `internal/commands/branch.go` (novo)
 - `internal/commands/root.go` (registrar subcomando)
@@ -57,35 +57,52 @@ reutilizando a mesma lógica de matching de slug já implementada e testada em
    code do Git literalmente (não reformatar a saída do Git).
 5. `--dry-run`: roda a checagem de match e imprime o resultado ("would create" / "would block: <motivo>"), nunca chama `git checkout`.
 **Acceptance criteria:**
-- [ ] `go build ./...` sem erros
-- [ ] Testes cobrindo: match em wip/, match em done/, sem match, `--dry-run` (ambos os casos), tipo
+- [x] `go build ./...` sem erros
+- [x] Testes cobrindo: match em wip/, match em done/, sem match, `--dry-run` (ambos os casos), tipo
       inválido, branch já existente (delega ao erro do Git)
-- [ ] `trackfw help branch` funcional
+- [x] `trackfw help branch` funcional
+
+> Auditoria manual (trackfw_architect): testei o binário real ponta a ponta (não só os testes
+> unitários) — `branch new --dry-run` sem match bloqueia sem tocar no git; sem `--dry-run` bloqueia
+> igual; tipo inválido rejeitado; com match real (slug desta própria REQ) reporta "would create"
+> corretamente. `go test ./internal/...` completo (não só os pacotes tocados) roda verde.
 
 ## Wave 2 — Node.js + Python (paralelo entre si, dependem da Wave 1 como referência de contrato)
 > Dependencies: Wave 1 completa (comportamento Go é a fonte da verdade)
 
 ### ML-2A — Implementar `trackfw branch new` em Node.js
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `npm/src/commands/branch.js` (novo)
 - `npm/src/cli.js` ou equivalente (registrar comando)
 - Função de matching equivalente ao ML-1A, extraída do validador Node existente
 **Actions:** Espelhar exatamente o contrato validado em Go (ML-1B): mesmos flags, mesmas mensagens, mesmo exit code, mesma decisão de dry-run.
 **Acceptance criteria:**
-- [ ] `npm test` verde com os mesmos cenários do ML-1B
-- [ ] Mensagens de erro/orientação byte-idênticas às do Go
+- [x] `npm test` verde com os mesmos cenários do ML-1B (374/374)
+- [x] Mensagens de erro/orientação byte-idênticas às do Go
+
+> Auditoria manual (trackfw_architect) encontrou um bug real de exit code no cenário "branch já
+> existe" — o único caminho que exercita o `defaultGitCheckout` de produção de ponta a ponta (os
+> testes unitários injetam fake e nunca o exercitam). Go vazava `"exit status 128"` como linha
+> extra (nunca produzida pelo git) por causa de `Execute()` sempre imprimir o erro retornado,
+> independente de `SilenceErrors`; Node "propagava" um exit code fixo (`1`) em vez do código real
+> do git. Python já estava correto (`return result.returncode`). Corrigido nos dois: Go agora sai
+> com `os.Exit(exitErr.ExitCode())` diretamente sem devolver erro pro cobra imprimir; Node mudou
+> `defaultGitCheckout` para retornar o exit code numérico real em vez de `Error|null`. Confirmado
+> empiricamente pós-fix: os três binários reais produzem `exit=128` idêntico para esse cenário.
+> Detalhe completo em `vault/notes/branch-new-exit-code-leak-vs-propagation-2026-08-04.md`.
 
 ### ML-2B — Implementar `trackfw branch new` em Python
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `pypi/trackfw/commands/branch.py` (novo)
 - `pypi/trackfw/cli.py` ou equivalente (registrar comando)
 - Função de matching equivalente, extraída do validador Python existente
 **Actions:** Espelhar exatamente o contrato validado em Go (ML-1B).
 **Acceptance criteria:**
-- [ ] `python3 -m pytest` verde com os mesmos cenários do ML-1B
-- [ ] Mensagens de erro/orientação byte-idênticas às do Go
+- [x] `python3 -m pytest` verde com os mesmos cenários do ML-1B (890 passed, 8 subtests)
+- [x] Mensagens de erro/orientação byte-idênticas às do Go — já corretas desde a primeira versão,
+      inclusive o exit code real do git (achado acima)
 
 ## Wave 3 — Documentação e gate de paridade
 > Dependencies: Wave 2 completa
