@@ -4,6 +4,85 @@
 
 ---
 
+## Sessão 2026-08-04 — Apolo (ML-3A: documentar `trackfw branch new` + gate de paridade) — INICIADO
+
+Branch `feat/comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip`
+(já criada pelo orquestrador — Backend não executa Git; sem commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md`,
+ML-3A (Wave 3, único ML pendente — Waves 1/2 já concluídas e auditadas).
+REQ: `docs/req/REQ-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md`.
+
+**Escopo**: documentar `trackfw branch new` em `docs/cli-parity.md` (tabela + seção própria) e criar
+gate de paridade automatizado (`scripts/check-branch-new-parity.sh`) + cenário de falsificação em
+`scripts/check-gates-falsify.sh` (P4), integrado a `make quality`. Não altero comportamento de
+`internal/commands/branch.go` / `npm/src/commands/branch.js` / `pypi/trackfw/commands/branch.py` —
+só leio para documentar/cobrir corretamente.
+
+Antes de escrever o gate, vou diffar empiricamente os três binários reais (dry-run com/sem match,
+e o caminho `git checkout -b` real com branch já existente) para confirmar que o texto que vou pinar
+no gate é de fato byte-idêntico nos 3 runtimes — não vou assumir a partir da leitura do Go sozinho.
+
+## Sessão 2026-08-04 — Apolo (ML-3A: documentar `trackfw branch new` + gate de paridade) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+**Diff empírico prévio** (3 binários reais, fixture `git init` real): confirmei stdout/stderr/exit
+code byte-idênticos nos 3 cenários — (a) sem match + `--dry-run` (exit 1, mensagem de orientação +
+linha `blocked: ...` em stderr), (b) com match + `--dry-run` (exit 0, "would create branch"), (c)
+com match, git real, branch já existente (exit 128, `git`'s próprio `fatal: a branch named '...'
+already exists`, sem vazamento de `exit status N`) — antes de escrever qualquer asserção do gate.
+
+**Arquivos criados/alterados**:
+- `docs/cli-parity.md` — nova linha `branch` na tabela de comandos (adjacente a `ship`) + nova seção
+  `## \`trackfw branch new\`` (command surface, decision flow, tabela de função de matching
+  compartilhada por runtime, seção sobre propagação literal do exit code do Git com o histórico do
+  achado da Wave 2, descrição do gate) + parágrafo de cross-link na seção existente
+  `## Regra \`branch_has_wip_roadmap\``.
+- `scripts/check-branch-new-parity.sh` (novo) — gate dedicado, 3 cenários (no-match, match+dry-run,
+  git-checkout-branch-exists real), diff -u byte-a-byte de stdout+stderr+exit code entre os 3
+  runtimes, guards de vacuidade em cada cenário.
+- `Makefile` — `check-branch-new-parity.sh` adicionado ao target `parity`, antes de
+  `check-gates-falsify.sh` (que roda por último).
+- `scripts/check-gates-falsify.sh` — Cenário 42 (P4): corrompe a mensagem `blocked: ...` no
+  Node.js (`npm/src/branch/runner.js`) via sed, confirma que `check-branch-new-parity.sh` detecta a
+  divergência (go-vs-node/err) — contagem do resumo final atualizada de 99→100 cenários, 14→15 gates.
+- `vault/notes/check-identity-parity-json-html-escaping-pre-existing-2026-08-04.md` (novo, ver
+  achado fora de escopo abaixo) + entrada no `index.md`.
+
+**Achado fora de escopo, reportado sem correção**: `scripts/check-identity-parity.sh` já falha nesta
+branch **antes** de qualquer mudança deste ML — 6 divergências (`amazonq`, `antigravity=legacy-cli`,
+`kiro=cli` × with/no-identity) causadas por `encoding/json.Marshal` do Go fazer HTML-escaping de
+`<slug>` (`<slug>`) enquanto Node.js/Python não escapam. Confirmado reproduzindo em árvore
+limpa via `git stash`. Detalhe em
+`vault/notes/check-identity-parity-json-html-escaping-pre-existing-2026-08-04.md`. Não corrigido —
+fora do escopo do ML-3A; reportado para triagem do orquestrador.
+
+**Evidência de validação**:
+- `go build ./...`, `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 2m ./...` → todos os
+  pacotes `ok`.
+- `go vet ./...` → limpo.
+- `GO_BIN=bin/trackfw scripts/check-branch-new-parity.sh` isolado → `OK` nos 3 cenários.
+- `GO_BIN=bin/trackfw scripts/check-gates-falsify.sh` completo → `Falsification checks passed (all
+  100 scenarios...)`, incluindo `OK [falsify/branch-new-parity/no-match/go-vs-node/err-message-
+  reformatted-not-detected]` (prova P4 de que o gate detecta a divergência injetada).
+- `make quality` (execução completa) → falha em `check-identity-parity.sh` (achado pré-existente
+  acima, não relacionado a este ML). Todos os demais gates de `parity` — incluindo
+  `check-roadmap-move-parity.sh`, `check-branch-new-parity.sh`, `check-artifact-parity.sh`,
+  `check-barrier.sh`, `check-slash-parity.sh`, `check-rules-parity.sh`, `check-update-parity.sh` —
+  rodados isoladamente com `GO_BIN=bin/trackfw`, todos verdes.
+- `trackfw validate` (binário real e binário `bin/trackfw` recompilado) → `✓ Nenhuma violação
+  encontrada.`
+
+**Git**: nenhum commit/push feito (Backend não tem autoridade Git). Working tree deixado para
+`trackfw_architect` auditar: `Makefile`, `docs/agents-working-context.md`, `docs/cli-parity.md`,
+`scripts/check-gates-falsify.sh` modificados; `scripts/check-branch-new-parity.sh` novo,
+`vault/notes/check-identity-parity-json-html-escaping-pre-existing-2026-08-04.md` novo.
+
+**Não alterei**: `internal/commands/branch.go`, `npm/src/commands/branch.js`,
+`npm/src/branch/runner.js`, `pypi/trackfw/commands/branch.py` — só li para documentar. Nenhum
+comportamento de `trackfw branch new` foi modificado.
+
+---
+
 ## Sessão 2026-08-04 — Ares (ML-1A: `make quality` sensível a locale no gate de falsify) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
 
 Branch `fix/make-quality-locale-fixo-no-falsify` (já criada — Infra não executa Git; sem commit/push

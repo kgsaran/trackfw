@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-04
 author: "kg.saran@gmail.com"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md"
 ---
 
 # REQ: comando trackfw branch new para bloquear criação de branch sem REQ+roadmap em wip
 
-> Date: 2026-08-04 | Status: Open
+> Date: 2026-08-04 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -27,30 +27,30 @@ Motivação secundária, mas real: `git checkout -b` errado hoje custa um `git b
 a branch.
 
 ## Acceptance Criteria
-- [ ] Novo comando `trackfw branch new <type>/<slug>` nos três CLIs (Go/Node/Python), `type` ∈
+- [x] Novo comando `trackfw branch new <type>/<slug>` nos três CLIs (Go/Node/Python), `type` ∈
       `{feat, fix, refactor}` — mesmo vocabulário que `trackfw ship` já valida
       (`docs/cli-parity.md` § `trackfw ship`, passo 1: `feat|fix|refactor/<slug>`)
-- [ ] Antes de criar a branch, reutiliza a **mesma** lógica de matching de slug já usada por
+- [x] Antes de criar a branch, reutiliza a **mesma** lógica de matching de slug já usada por
       `validateBranchHasWIPRoadmap` (`internal/validator/validator.go:1904-1964`) — normaliza o slug
       (`normalizeBranchSlug`) e verifica se algum `.md` em `wip/` ou `done/` (conforme `resolveWIPDirs`/
       `resolveDoneDirs`) contém esse slug normalizado. **Não duplicar a regra** — extrair para função
       compartilhada chamada tanto pelo validador quanto pelo novo comando, para nunca divergir do que
       `trackfw validate` aceita
-- [ ] Se não houver roadmap casando o slug em `wip/` nem `done/`: comando falha, `git checkout -b`
+- [x] Se não houver roadmap casando o slug em `wip/` nem `done/`: comando falha, `git checkout -b`
       **não é executado**, mensagem de erro orienta o fluxo (`trackfw req new` → `trackfw roadmap new`
       → `trackfw roadmap move <nome> wip`) — mesmo texto de orientação que
       `validateBranchHasWIPRoadmap` já usa, para não ter duas mensagens diferentes para o mesmo problema
-- [ ] Se houver match: executa `git checkout -b <type>/<slug>` e imprime a mesma confirmação que o Git
+- [x] Se houver match: executa `git checkout -b <type>/<slug>` e imprime a mesma confirmação que o Git
       já imprime (não reinventar saída)
-- [ ] `--dry-run`: reporta se criaria a branch ou bloquearia, sem executar `git checkout`
-- [ ] Exit code: 0 em sucesso, não-zero quando bloqueado por falta de governança, não-zero em erro de
+- [x] `--dry-run`: reporta se criaria a branch ou bloquearia, sem executar `git checkout`
+- [x] Exit code: 0 em sucesso, não-zero quando bloqueado por falta de governança, não-zero em erro de
       uso (tipo inválido, slug vazio, branch já existe — delega ao erro nativo do `git`)
-- [ ] Comando documentado em `docs/cli-parity.md` (nova linha na tabela de comandos + seção própria,
+- [x] Comando documentado em `docs/cli-parity.md` (nova linha na tabela de comandos + seção própria,
       seguindo o padrão de `trackfw ship`/`trackfw barrier`)
-- [ ] `trackfw help branch` funcional nos três CLIs
-- [ ] Testes cobrindo: slug com match em `wip/`, slug com match em `done/`, sem match (bloqueia),
+- [x] `trackfw help branch` funcional nos três CLIs
+- [x] Testes cobrindo: slug com match em `wip/`, slug com match em `done/`, sem match (bloqueia),
       `--dry-run` nos dois cenários, tipo inválido, branch já existente — replicados nos três runtimes
-- [ ] Gate de paridade (`scripts/check-cli-parity.sh` ou equivalente) cobre o novo comando
+- [x] Gate de paridade (`scripts/check-cli-parity.sh` ou equivalente) cobre o novo comando
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -62,4 +62,4 @@ execução mais cedo; não introduz novo modelo de governança.
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md`

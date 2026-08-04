@@ -28,6 +28,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
 | `ship` | yes | yes | yes | Governed `git commit + push + open PR/MR`; hard governance gate (see below) |
+| `branch` | yes | yes | yes | `new <type>/<slug>` — gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after (see below) |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
 
@@ -657,6 +658,104 @@ code directly from the runner function (Node.js/Python), so the usage text is ne
 printed for runtime errors. Parse-time errors (unknown flags) still show usage, because
 they are raised by cobra/commander/argparse before the command handler runs.
 
+## `trackfw branch new`
+
+`trackfw branch new <type>/<slug>` moves the `branch_has_wip_roadmap` governance gate — already
+enforced by `trackfw validate` and `trackfw ship` (see "Regra `branch_has_wip_roadmap`" below) —
+to **before** branch creation instead of after. It reuses the exact same matching logic those two
+commands already apply; the command never implements a second version of the rule.
+
+### Command surface
+
+| Element | Value |
+|---|---|
+| Invocation | `trackfw branch new <type>/<slug>` |
+| `<type>` | One of `feat`, `fix`, `refactor` — same vocabulary `trackfw ship` step 1 already validates |
+| `<slug>` | Non-empty; matched against roadmaps in `wip/` and `done/` the same way `branch_has_wip_roadmap` does |
+| `--dry-run` | Reports whether the branch would be created or blocked, without executing `git` |
+| Exit 0 | Match found, branch created (or `--dry-run` reports "would create") |
+| Exit non-zero, usage error | Malformed spec (missing `/`, empty slug, invalid `<type>`) |
+| Exit non-zero, blocked | No matching roadmap in `wip/` nor `done/` — `git checkout -b` is **never** executed |
+| Exit = Git's own code | Match found, `git checkout -b` ran and failed (e.g. branch already exists → Git's `128`) |
+
+### Decision flow
+
+```
+1. Parse "<type>/<slug>" — <type> must be feat|fix|refactor, <slug> non-empty.
+2. Normalize the slug and check whether any roadmap filename in wip/ or done/ contains it —
+   the same BranchSlugMatchesRoadmap (Go) / branchSlugMatchesRoadmap (Node.js) /
+   branch_slug_matches_roadmap (Python) function trackfw validate calls for
+   branch_has_wip_roadmap. Not a reimplementation — the same function, imported.
+3. No match: print the same governance orientation message trackfw validate already prints for
+   this rule, exit non-zero, never invoke git.
+4. --dry-run with a match: print "[dry-run] would create branch "<type>/<slug>" (git checkout -b
+   <type>/<slug>)", exit 0, never invoke git.
+5. Match, no --dry-run: run `git checkout -b <type>/<slug>` with inherited stdio.
+```
+
+### Shared matching logic — never duplicated
+
+The slug-matching rule is implemented once per runtime and called from both places:
+
+| Runtime | Shared function | Called by `trackfw validate` | Called by `trackfw branch new` |
+|---|---|---|---|
+| Go | `validator.BranchSlugMatchesRoadmap` | `validateBranchHasWIPRoadmap` (`internal/validator/validator.go`) | `runBranchNew` (`internal/commands/branch.go`) |
+| Node.js | `validator.branchSlugMatchesRoadmap` | `npm/src/validator.js` | `runBranchNew` (`npm/src/branch/runner.js`) |
+| Python | `_validator.branch_slug_matches_roadmap` | `pypi/trackfw/validator.py` | `run_branch_new` (`pypi/trackfw/commands/branch.py`) |
+
+Because both call sites share the same function, the "no match" message is byte-identical in
+both places — a project running `trackfw validate` and `trackfw branch new` never sees two
+different explanations for the same governance gap. The governance-orientation and
+no-matching-roadmap message builders (`BranchGovernanceOrientation` /
+`BranchNoMatchingRoadmapMessage` in Go, and their Node.js/Python equivalents) are shared the
+same way.
+
+### Git output and exit code are propagated literally
+
+`trackfw branch new` never reformats, wraps, or replaces `git checkout -b`'s own stdout, stderr,
+or exit code. This was **not** true by default in two of the three runtimes and required an
+explicit fix — see
+`vault/notes/branch-new-exit-code-leak-vs-propagation-2026-08-04.md` for the full incident:
+
+- **Go** originally leaked an extra stderr line, `exit status 128`, that Git itself never
+  produces — an artifact of `exec.ExitError.Error()` being printed a second time by
+  `root.go`'s `Execute()` (which prints any error returned from `RunE`, regardless of
+  `SilenceErrors`). Fixed: `defaultGitCheckout` now calls `os.Exit(exitErr.ExitCode())` directly
+  when the failure is a `*exec.ExitError`, so nothing propagates back through cobra to be
+  printed a second time.
+- **Node.js** originally translated any `git checkout -b` failure into a hardcoded exit code
+  `1`, discarding Git's actual code (`128` for "branch already exists", but not always).
+  Fixed: `defaultGitCheckout` (`npm/src/branch/runner.js`) now returns the real numeric exit
+  code from `spawnSync`, and `runBranchNew` returns it unchanged.
+- **Python** was correct from the first version — `_default_git_checkout`
+  (`pypi/trackfw/commands/branch.py`) returns `subprocess.run(...).returncode` directly.
+
+The net effect, confirmed empirically against real `git` subprocesses (not fakes) in all three
+runtimes: for the "branch already exists" scenario, stdout, stderr, and exit code (`128`) are
+byte-for-byte and numerically identical across Go, Node.js, and Python. No runtime prints an
+extra diagnostic line, and none substitutes a fixed exit code for Git's own.
+
+This matters because dependency-injected unit tests (all three runtimes inject a fake
+`execGitCheckout`/`exec_git_checkout` for testability) never exercise the production wrapper —
+the only way to verify "propagate literally" is to run a real `git` subprocess and compare, which
+is exactly what `scripts/check-branch-new-parity.sh` (see below) does.
+
+### Parity gate
+
+`scripts/check-branch-new-parity.sh` covers three scenarios, each asserting stdout, stderr, and
+exit code are byte-identical across all three runtimes:
+
+1. **No match** — blocks, `git checkout -b` never runs.
+2. **Match + `--dry-run`** — reports "would create", exit 0, never touches `git`.
+3. **Match, real `git`, target branch already exists** — the only scenario that exercises the
+   production `defaultGitCheckout` wrapper end-to-end rather than an injected fake; asserts
+   Git's own diagnostic and exit code (`128`) are propagated unmodified in all three runtimes,
+   and that no runtime leaks a Go-style `exit status N` artifact.
+
+Wired into `make quality` via the `parity` target. `scripts/check-gates-falsify.sh` proves the
+gate is non-vacuous (P4): a corrupted Node.js build that reformats the `blocked: ...` stderr
+message is a scenario the gate is asserted to reject.
+
 ## `trackfw barrier`
 
 `trackfw barrier <roadmap> --wave <n>` is the deterministic core of the wave-release barrier.
@@ -1240,6 +1339,11 @@ A resolução de diretórios (`wip/`, `done/`) é centralizada em `resolveStateD
 
 O ID da regra (`branch_has_wip_roadmap`) e o mecanismo de severidade configurável (`rules:`) são
 preservados — a aceitação de `done/` não altera a config key nem o comportamento de `off`/`warning`.
+
+`trackfw branch new` (ver "`trackfw branch new`" acima) aplica exatamente esta mesma regra **antes**
+da branch existir, chamando a mesma função de matching (`BranchSlugMatchesRoadmap` /
+`branchSlugMatchesRoadmap` / `branch_slug_matches_roadmap`) que `validateBranchHasWIPRoadmap`
+chama aqui — não uma segunda implementação.
 
 ## Contrato de artefatos gerados (req, adr, roadmap, note)
 
