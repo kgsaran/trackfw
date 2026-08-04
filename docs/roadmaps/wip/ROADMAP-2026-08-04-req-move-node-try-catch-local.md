@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-req-move-no-cli-node-nao-trata-erros-stack-trace-nao-capturado-em-vez-de-mensagem-limpa.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: req move no Node — try/catch local no comando, sem handler global
 
-> Created: 2026-08-04 | Status: backlog
+> Created: 2026-08-04 | Status: wip
 
 REQ: REQ-2026-08-04-req-move-no-cli-node-nao-trata-erros-stack-trace-nao-capturado-em-vez-de-mensagem-limpa.md
 

@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-04
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-04-req-move-no-node-try-catch-local-no-comando-sem-handler-global.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-04-req-move-node-try-catch-local.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-04-req-move-node-try-catch-local.md"
 ---
 
 # REQ: req move no CLI Node não trata erros — stack trace não capturado em vez de mensagem limpa
@@ -86,4 +86,4 @@ ADR: `docs/adr/ADR-2026-08-04-req-move-no-node-try-catch-local-no-comando-sem-ha
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-08-04-req-move-node-try-catch-local.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-req-move-node-try-catch-local.md`
