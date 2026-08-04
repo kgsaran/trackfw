@@ -70,7 +70,12 @@ cmd.command('list')
 cmd.command('move <name> <status>')
   .description('Update a REQ status in place')
   .action(async (name, status) => {
-    moveREQ(name, status)
+    try {
+      moveREQ(name, status)
+    } catch (err) {
+      console.error(`Error: ${err.message}`)
+      process.exitCode = 1
+    }
   })
 
 module.exports = cmd

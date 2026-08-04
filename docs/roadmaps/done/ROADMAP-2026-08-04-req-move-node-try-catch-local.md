@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-req-move-no-cli-node-nao-trata-erros-stack-trace-nao-capturado-em-vez-de-mensagem-limpa.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: req move no Node — try/catch local no comando, sem handler global
 
-> Created: 2026-08-04 | Status: backlog
+> Created: 2026-08-04 | Status: done
 
 REQ: REQ-2026-08-04-req-move-no-cli-node-nao-trata-erros-stack-trace-nao-capturado-em-vez-de-mensagem-limpa.md
 
@@ -24,18 +24,18 @@ mas fica para uma REQ própria).
 
 ## Acceptance Criteria
 
-- [ ] AC1 — `trackfw req move` (Node.js) imprime `Error: <mensagem>` em stderr e sai com código não-zero
+- [x] AC1 — `trackfw req move` (Node.js) imprime `Error: <mensagem>` em stderr e sai com código não-zero
       para todas as condições de erro hoje lançadas
-- [ ] AC2 — Nenhum stack trace JavaScript na saída para esses erros
-- [ ] AC3 — `trackfw req list` auditado quanto a caminhos de erro equivalentes
-- [ ] AC4 — Testes de regressão cobrindo pelo menos um caso de erro de `req move`, checando stderr e
+- [x] AC2 — Nenhum stack trace JavaScript na saída para esses erros
+- [x] AC3 — `trackfw req list` auditado quanto a caminhos de erro equivalentes
+- [x] AC4 — Testes de regressão cobrindo pelo menos um caso de erro de `req move`, checando stderr e
       exit code
 
 ## Wave 1 — Fix local no comando (1 ML)
 > Dependências: Independente
 
 ### ML-1A — try/catch em `req.js`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `npm/src/commands/req.js` (subcomando `move`, linha ~70-74; auditar `list`, linha ~64-67)
 - Teste novo em `npm/tests/` cobrindo o caminho de erro
@@ -53,8 +53,8 @@ mas fica para uma REQ própria).
    `Error:` e nenhum stack trace, e que o processo sai com código não-zero.
 
 **Critérios de aceite:**
-- [ ] `npm --prefix npm test` verde, incluindo o teste novo
-- [ ] `trackfw req move <nome-inexistente> done` (via `node npm/bin/trackfw`) imprime `Error: REQ "..."
+- [x] `npm --prefix npm test` verde, incluindo o teste novo
+- [x] `trackfw req move <nome-inexistente> done` (via `node npm/bin/trackfw`) imprime `Error: REQ "..."
       not found...` em stderr, sem stack trace, exit code != 0
 
 **Comandos de validação:** `npm --prefix npm test`
