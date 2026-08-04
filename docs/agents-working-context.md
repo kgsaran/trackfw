@@ -4,6 +4,52 @@
 
 ---
 
+## Sessão 2026-08-04 — Ares (ML-1A: `make quality` sensível a locale no gate de falsify) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/make-quality-locale-fixo-no-falsify` (já criada — Infra não executa Git; sem commit/push
+feitos por este agente, conforme Git authority de `trackfw_architect`).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-make-quality-locale-fixo-no-falsify.md`, ML-1A
+(ainda ⬜ Pendente — só será marcado ✅ após auditoria do orquestrador).
+REQ: `docs/req/REQ-2026-08-04-make-quality-falha-sob-locale-pt-br-teste-fixa-literal-em-ingles-no-violations-found.md`.
+ADR: `docs/adr/ADR-2026-08-04-make-quality-forca-locale-fixo-no-gate-de-falsificacao-em-vez-de-pin-em-ingles.md`.
+
+**Correção**: em `scripts/check-gates-falsify.sh`, Cenário 29 (`validate-ok-message`), as 4 chamadas
+que capturam `s29_go_out`, `s29_node_out`, `s29_python_out` e `s29c_python_out` agora fixam
+`env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 ...` (compondo com o `PYTHONPATH=` já existente no mesmo
+`env`, no estilo já usado no resto do script). Nenhum outro arquivo tocado.
+
+**Auditoria dos cenários irmãos** (30/31/33/34/35/36, que também pinam saída textual): não precisam
+da mesma correção — `trackfw status` nos 3 CLIs não passa nenhuma string do bloco Inventory/WIP/
+Blocked/Done por i18n (confirmado por grep; único uso de i18n em `status.js` é a descrição do
+`--help`, fora do que os cenários capturam). Também não há outro `_EXPECTED=` no script pinando as
+demais mensagens i18n existentes (`validate.violations`, `validate.warnings`,
+`validate.lenient_mode`) — só `validate.ok` (Cenário 29) é exercitado por um cenário.
+
+**Reprodução do bug antes da correção**: `LANG=pt_BR.UTF-8 LC_ALL=pt_BR.UTF-8 bash
+scripts/check-gates-falsify.sh` numa árvore com o script sem a correção (via `git stash`, revertido
+com `git stash pop` logo após) falhou exatamente como o vault previa: `esperava '✓ No violations
+found.' ... go/node/python: '✓ Nenhuma violação encontrada.'`.
+
+**Evidência pós-correção**: `LANG=pt_BR.UTF-8 LC_ALL=pt_BR.UTF-8 make quality` → 99/99 cenários OK,
+0 FAIL, incluindo `falsify/validate-ok-message/baseline-byte-identical-and-pinned` e
+`falsify/validate-ok-message/python-detects-regression` (prova de detecção da regressão continua
+reprovando o literal hardcoded do Python nos dois locales). `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 make
+quality` → mesmo resultado, 99/99 OK. `trackfw validate` (pós-edição) → `✓ Nenhuma violação
+encontrada.` — sem violações.
+
+Nota de vault atualizada com o achado + resolução:
+`vault/notes/falsify-suite-locale-dependent-false-failure-2026-08-03.md` (já indexada em
+`vault/notes/index.md`; o achado original já estava lá desde 2026-08-03 — Ártemis já havia
+diagnosticado a causa raiz e recomendado exatamente esta correção, só não a aplicou por estar fora do
+escopo do ML dela).
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Infra não tem autoridade
+Git). Único arquivo tocado: `scripts/check-gates-falsify.sh` (+ nota de vault e esta entrada de
+working-context, que são artefatos de orquestração/documentação, não código de produto).
+
+---
+
 ## Sessão 2026-08-04 — Apolo (ML-2A: paridade — status inválido no move físico de REQ) — CONCLUÍDO
 
 Branch `feat/req-move-list-subpastas-e-move-fisico` (já criada — Backend não executa Git; sem

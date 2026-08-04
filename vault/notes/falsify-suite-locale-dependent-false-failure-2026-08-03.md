@@ -74,3 +74,30 @@ no arquivo, ver protocolo de baseline em
   revisitar este achado.
 
 Relacionado: `vault/notes/cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02.md`.
+
+## Resolvido em 2026-08-04
+
+Correção aplicada (não `LANG=C` como sugerido acima, mas `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8`
+explícito — decisão registrada em
+`docs/adr/ADR-2026-08-04-make-quality-forca-locale-fixo-no-gate-de-falsificacao-em-vez-de-pin-em-ingles.md`,
+via `docs/req/REQ-2026-08-04-make-quality-falha-sob-locale-pt-br-teste-fixa-literal-em-ingles-no-violations-found.md`
+e `docs/roadmaps/wip/ROADMAP-2026-08-04-make-quality-locale-fixo-no-falsify.md`, ML-1A) em
+`scripts/check-gates-falsify.sh` Cenário 29: as 4 chamadas que capturam `s29_go_out`, `s29_node_out`,
+`s29_python_out` e `s29c_python_out` agora compõem `env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 ...` (e o
+`PYTHONPATH=` já existente é combinado no mesmo `env`, seguindo o padrão do restante do script).
+
+**Auditoria dos demais cenários pinados (30/31/33/34/35/36) confirmou que NÃO precisam da mesma
+correção**: `trackfw status` (Go/Node/Python) não passa nenhuma das suas strings de saída
+("Inventory", "WIP", "Blocked", "Done" etc.) por `i18n_t`/`i18n.T` — são literais hardcoded
+idênticos nos 3 CLIs independente de locale (confirmado por grep de `i18n` nos 3 `status.go` /
+`status.js` / `status.py`; o único uso de i18n em `status.js` é `t('status.description')`, que é a
+descrição do `--help`, não capturada por nenhum desses cenários). Também não há outro `_EXPECTED=`
+no script que pine uma das outras mensagens i18n existentes (`validate.violations`,
+`validate.warnings`, `validate.lenient_mode`) — só `validate.ok` (Cenário 29) é exercitado.
+
+Confirmado empiricamente: reprodução do bug ANTES da correção sob `LANG=pt_BR.UTF-8` reproduziu
+exatamente a falha documentada acima; após a correção, `make quality` passou 99/99 cenários sob
+`LANG=pt_BR.UTF-8` e sob `LANG=en_US.UTF-8`, incluindo a prova de detecção de regressão do Python
+(`s29c_python_out` reintroduzindo `"✓ Governance OK"` hardcoded continua reprovando corretamente nos
+dois locales) — isso descarta empiricamente sensibilidade a locale em qualquer outro dos 99 cenários,
+não só nos citados acima.
