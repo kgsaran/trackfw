@@ -8,5 +8,5 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@latest
+      - run: go build -o /usr/local/bin/trackfw ./cmd/trackfw
       - run: trackfw validate

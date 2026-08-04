@@ -38,6 +38,41 @@ reprovando o literal hardcoded do Python nos dois locales). `LANG=en_US.UTF-8 LC
 quality` → mesmo resultado, 99/99 OK. `trackfw validate` (pós-edição) → `✓ Nenhuma violação
 encontrada.` — sem violações.
 
+---
+
+## Sessão 2026-08-04 — Prometeu (ML-1A: dispatch contract sem `subagent_type` no template do Architect) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/corrigir-dispatch-sem-subagent-type-no-template-do-architect` (já criada por
+`trackfw_architect` — Tooling não executa Git; sem commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-corrigir-dispatch-sem-subagent-type-no-template-do-architect.md`,
+ML-1A (ainda pending — só será marcado ✅ após auditoria do orquestrador).
+REQ: `docs/req/REQ-2026-08-04-corrigir-dispatch-sem-subagent-type-no-template-do-architect.md`.
+
+**Correção**: adicionada a seção `## Dispatch contract` ao template canônico
+`internal/integrations/assets/agents/architect.md` (entre `## Workflow` e `## Post-microbatch
+audit`), explicando que nomear um especialista na prosa/`squad:` não roteia a chamada da Agent tool;
+todo dispatch exige `subagent_type` explícito (senão cai silenciosamente em `general-purpose`); o
+valor correto é o `name:` do frontmatter do agente instalado do role-alvo (`<slug>-tf`,
+identity-agnostic — nunca nome fixo); ler o arquivo do agente instalado antes de despachar se o valor
+não for conhecido.
+
+Propagado byte-a-byte via `scripts/sync-integration-assets.sh` para `npm/src/integrations/assets/agents/architect.md`
+e `pypi/trackfw/integrations/assets/agents/architect.md`. Goldens Go atualizados
+(`internal/integrations/testdata/architect.subagent.golden.md` e `architect.agent-directory.golden.md`)
+e comentário de re-congelamento acrescentado em `internal/integrations/render_test.go`. Fixture Node
+`npm/tests/agents-skills.test.js` (golden string `expectedArchitect`, teste "Antigravity
+agent-directory renderer é byte-equivalente ao contrato Go/Python") atualizada com a mesma seção.
+Nenhuma fixture Python compara o corpo completo do arquivo (só id/nome do agente) — confirmado por
+grep, nada a ajustar. Nenhuma menção a `subagent_type` vazou para templates Gemini/Copilot/Windsurf/
+Codex (confirmado por grep — só os 3 `architect.md`).
+
+**Evidência**: `go build ./...` limpo; `go test ./internal/integrations/...` → ok; `bash
+scripts/check-integration-assets.sh` → "Integration assets are synchronized (file lists and bytes
+match)"; `cd npm && npm test` → 356/356 passed (inclui `tests/validator.test.js` 63/63); `cd pypi &&
+python3 -m pytest -q` → 872 passed, 8 subtests passed; `trackfw validate` → `✓ Nenhuma violação
+encontrada.`.
+
 Nota de vault atualizada com o achado + resolução:
 `vault/notes/falsify-suite-locale-dependent-false-failure-2026-08-03.md` (já indexada em
 `vault/notes/index.md`; o achado original já estava lá desde 2026-08-03 — Ártemis já havia
