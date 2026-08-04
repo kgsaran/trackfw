@@ -71,26 +71,38 @@ reutilizando a mesma lógica de matching de slug já implementada e testada em
 > Dependencies: Wave 1 completa (comportamento Go é a fonte da verdade)
 
 ### ML-2A — Implementar `trackfw branch new` em Node.js
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `npm/src/commands/branch.js` (novo)
 - `npm/src/cli.js` ou equivalente (registrar comando)
 - Função de matching equivalente ao ML-1A, extraída do validador Node existente
 **Actions:** Espelhar exatamente o contrato validado em Go (ML-1B): mesmos flags, mesmas mensagens, mesmo exit code, mesma decisão de dry-run.
 **Acceptance criteria:**
-- [ ] `npm test` verde com os mesmos cenários do ML-1B
-- [ ] Mensagens de erro/orientação byte-idênticas às do Go
+- [x] `npm test` verde com os mesmos cenários do ML-1B (374/374)
+- [x] Mensagens de erro/orientação byte-idênticas às do Go
+
+> Auditoria manual (trackfw_architect) encontrou um bug real de exit code no cenário "branch já
+> existe" — o único caminho que exercita o `defaultGitCheckout` de produção de ponta a ponta (os
+> testes unitários injetam fake e nunca o exercitam). Go vazava `"exit status 128"` como linha
+> extra (nunca produzida pelo git) por causa de `Execute()` sempre imprimir o erro retornado,
+> independente de `SilenceErrors`; Node "propagava" um exit code fixo (`1`) em vez do código real
+> do git. Python já estava correto (`return result.returncode`). Corrigido nos dois: Go agora sai
+> com `os.Exit(exitErr.ExitCode())` diretamente sem devolver erro pro cobra imprimir; Node mudou
+> `defaultGitCheckout` para retornar o exit code numérico real em vez de `Error|null`. Confirmado
+> empiricamente pós-fix: os três binários reais produzem `exit=128` idêntico para esse cenário.
+> Detalhe completo em `vault/notes/branch-new-exit-code-leak-vs-propagation-2026-08-04.md`.
 
 ### ML-2B — Implementar `trackfw branch new` em Python
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `pypi/trackfw/commands/branch.py` (novo)
 - `pypi/trackfw/cli.py` ou equivalente (registrar comando)
 - Função de matching equivalente, extraída do validador Python existente
 **Actions:** Espelhar exatamente o contrato validado em Go (ML-1B).
 **Acceptance criteria:**
-- [ ] `python3 -m pytest` verde com os mesmos cenários do ML-1B
-- [ ] Mensagens de erro/orientação byte-idênticas às do Go
+- [x] `python3 -m pytest` verde com os mesmos cenários do ML-1B (890 passed, 8 subtests)
+- [x] Mensagens de erro/orientação byte-idênticas às do Go — já corretas desde a primeira versão,
+      inclusive o exit code real do git (achado acima)
 
 ## Wave 3 — Documentação e gate de paridade
 > Dependencies: Wave 2 completa

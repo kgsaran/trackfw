@@ -9171,3 +9171,112 @@ Fora de escopo desta sessão (Wave 2/3, outro agente): Node.js (`npm/`), Python 
 
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem
 autoridade Git).
+
+## Sessão 2026-08-04 — Apolo (Wave 2 Python: `trackfw branch new`) — CONCLUÍDO
+
+**Escopo**: mesmo REQ/roadmap acima, ML-2B (só Python — Go é a referência comportamental já
+auditada em Wave 1; ML-2A Node.js é de outro agente em paralelo). Branch
+`feat/comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip`.
+
+**Matching extraído (não duplicado)**: `pypi/trackfw/validator.py` ganhou
+`normalize_branch_slug`, `branch_slug_matches_roadmap(branch_slug, wip_dirs, done_dirs) ->
+(matched, candidates)`, `branch_governance_orientation(branch)` e
+`branch_no_matching_roadmap_message(branch, candidates)` — extraídas do corpo antigo de
+`validate_branch_has_wip_roadmap`, que agora só chama essas funções (refactor puro, nenhuma
+assertion de teste mudou). Mensagens byte-idênticas às Go
+(`BranchGovernanceOrientation`/`BranchNoMatchingRoadmapMessage` em
+`internal/validator/validator.go`) — confirmado por diff direto rodando os dois binários lado a
+lado no mesmo fixture.
+
+**Comando novo**: `pypi/trackfw/commands/branch.py` (`branch new <type>/<slug>`), registrado em
+`pypi/trackfw/cli.py`. `run_branch_new(...)` é testável por DI (mesmo padrão de
+`trackfw.ship.runner.run_ship`/`MockGit` em `test_ship.py`) — todas as dependências (config,
+resolve wip/done dirs, match_slug, exec_git_checkout, out/err_out) são injetáveis, default para
+as implementações reais. Contrato: tipo inválido/slug vazio → stderr (sem tocar match nem git),
+exit 1; sem match → mensagem de orientação no stdout + `blocked: no matching roadmap in wip/ nor
+done/ for "<branch>"` no stderr, git nunca chamado, exit 1 (`--dry-run` prefixa com `[dry-run]
+would block:` mas mesma msg); com match → `git checkout -b <branch>` via `subprocess.run` com
+stdio herdado, propaga o `returncode` literal (não intercepta nem reformata a saída do Git);
+`--dry-run` com match → só imprime `[dry-run] would create branch "<branch>" (git checkout -b
+<branch>)`, nunca chama git, exit 0.
+
+**Testes**: `pypi/tests/test_branch.py`, 21 casos novos cobrindo os mesmos 8 cenários do Go
+(`branch_test.go`) — match wip/done, sem match com/sem candidatos, dry-run nos dois casos, tipo
+inválido, slug vazio, branch já existe (propaga `returncode` do git fake), + normalização de slug
++ matching real contra filesystem via `tmp_path` para `branch_slug_matches_roadmap`.
+
+**Validação**: `cd pypi && python3 -m pytest -q` → 890 passed (nenhuma quebra pré-existente);
+`trackfw validate` (raiz) → `✓ Nenhuma violação encontrada.`; comparação byte-a-byte Python vs Go
+(binário compilado em `/tmp/trackfw-go`) em 5 cenários (`--dry-run` bloqueado, bloqueado sem
+dry-run, tipo inválido, slug vazio, `--dry-run` com match usando o próprio slug desta REQ) —
+stdout e stderr idênticos em todos.
+
+Fora de escopo desta sessão: Node.js (`npm/` — outro agente), `docs/cli-parity.md` e gate de
+paridade (Wave 3).
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem
+autoridade Git).
+
+## Sessão 2026-08-04 — Apolo (Wave 2 Node.js: `trackfw branch new`, ML-2A) — CONCLUÍDO
+
+**Escopo**: mesmo REQ/roadmap acima, ML-2A (só Node.js). Go (ML-1A/1B) é a referência
+comportamental — comparado byte a byte contra binário Go recompilado localmente
+(`go build -o /tmp/trackfw-go ./cmd/trackfw`).
+
+**Extração no validador Node** (`npm/src/validator/index.js`): de dentro de
+`validateBranchHasWIPRoadmap`, extraídas `branchSlugMatchesRoadmap(branchSlug, wipDirs, doneDirs)`
+→ `{matched, candidates}` (espelha `validator.BranchSlugMatchesRoadmap` do Go),
+`branchGovernanceOrientation(branch)` e `branchNoMatchingRoadmapMessage(branch, candidates)` —
+strings byte-idênticas às do Go. `validateBranchHasWIPRoadmap` passou a chamá-las; comportamento
+observável inalterado (os 5 testes existentes de `branch_has_wip_roadmap` em `tests/validator.test.js`
+continuam verdes sem alteração). Todas as 4 funções + `normalizeBranchSlug` (já existia, não estava
+exportada) foram adicionadas aos exports do módulo.
+
+**Novo módulo testável** `npm/src/branch/runner.js` (espelha o split `ship.js`/`ship/runner.js` já
+usado neste CLI): `parseBranchSpec`, `defaultGitCheckout` (spawnSync stdio:'inherit', git nunca
+reformatado) e `runBranchNew(spec, dryRun, deps)` com deps 100% injetáveis
+(`loadConfig/resolveWIPDirs/resolveDoneDirs/matchSlug/execGitCheckout/writeln/writeErr`) — nenhum
+teste toca git real. `npm/src/commands/branch.js` é só wiring do Commander (`branch new <spec>
+--dry-run`), registrado em `npm/src/commands/index.js`.
+
+**Achado não-óbvio de paridade byte-a-byte** (por isso vale registrar): o Go faz split
+stdout/stderr que não é óbvio olhando só `branch.go` — a mensagem de orientação (`deps.out`) vai
+para stdout, mas `root.go:Execute()` imprime o `error` retornado por `RunE` em stderr por cima
+disso (`fmt.Fprintln(os.Stderr, err)`), então o caso "bloqueado" produz DUAS linhas: a mensagem de
+orientação em stdout + `blocked: no matching roadmap in wip/ nor done/ for "<branch>"` em stderr.
+Sem inspecionar `root.go` isso não seria óbvio só lendo `branch.go`/`branch_test.go`. Reproduzido em
+`runBranchNew` via `writeErr` separado. Confirmado com `diff` lado a lado entre `node bin/trackfw` e
+o binário Go recompilado para: tipo inválido, slug vazio, sem match com `--dry-run`, sem match sem
+`--dry-run`, com match `--dry-run` — todos byte-idênticos. Único ponto que NÃO foi replicado
+literalmente: o erro de "branch já existe" do Go inclui uma segunda linha `exit status 128` (artefato
+de `exec.Command.Error.Error()` do Go, não parte do contrato da REQ) — Node só deixa passar o stderr
+nativo do git (`fatal: a branch named '...' already exists`) com exit code 1, que é o que a REQ pede
+("delega ao erro nativo do git").
+
+**Testes**: `npm/tests/branch.test.js`, 15 testes novos (mesmos 8 cenários da REQ + os 17 do Go
+condensados por equivalência). `npm test` → 374 passed, 0 failed (inclui os 63 de
+`validator.test.js` inalterados). Testado manualmente: `node bin/trackfw branch new --help`,
+`branch new feat/algum-slug-sem-match --dry-run` (bloqueia sem chamar git), checkout real e
+"already exists" em repo git descartável isolado em `/tmp`.
+
+**Verificação adicional pós-revisão (stdout/stderr capturados em arquivos separados, não via
+`2>&1` combinado)**: confirmado com `diff` independente por stream — Node vs Go idênticos byte a
+byte tanto em stdout quanto em stderr para os casos "sem match --dry-run" e "tipo inválido".
+`trackfw help branch` funciona nos dois CLIs (exit 0; conteúdo difere porque `help.js` do Node é
+dinâmico a partir de `root.commands`/description, sem tabela estática que precisasse de entrada
+nova — igual ao padrão já usado por `roadmap`/`req`/`adr`). `trackfw branch` sem subcomando diverge
+de exit code entre os CLIs (Node: exit 1, ajuda no stderr; Go/cobra: exit 0, ajuda no stdout) —
+comportamento **pré-existente e idêntico** ao de `roadmap`/`req` no Node (nenhum desses grupos tem
+`.action()` no comando pai; é a convenção já estabelecida no Commander deste CLI, confirmado
+comparando `node bin/trackfw roadmap`/`req` sem subcomando com os mesmos comandos em Go) — não é
+uma divergência introduzida por este ML, é um gap de paridade cross-CLI pré-existente e mais amplo
+que `branch`; fica fora do escopo do ML-2A (REQ não pede paridade de exit code para grupo sem
+subcomando, só "`trackfw help branch` funcional").
+
+Fora de escopo desta sessão (outro agente, em paralelo): Python (`pypi/`) — ML-2B, já com diffs
+próprios no working tree ao final desta sessão (`pypi/trackfw/validator.py`, `pypi/trackfw/cli.py`,
+`pypi/trackfw/commands/branch.py`, `pypi/tests/test_branch.py`), não tocados por mim.
+`docs/cli-parity.md` e gate de paridade — Wave 3, depois.
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem
+autoridade Git).

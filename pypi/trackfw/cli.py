@@ -110,6 +110,10 @@ def main():
     from trackfw.commands import barrier as barrier_cmd
     barrier_cmd.register(subparsers)
 
+    # --- branch ---
+    from trackfw.commands import branch as branch_cmd
+    branch_cmd.register(subparsers)
+
     args = parser.parse_args()
 
     if args.command is None:

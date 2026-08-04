@@ -1042,6 +1042,45 @@ function validateFilenameUniqueness() {
   return violations
 }
 
+// branchSlugMatchesRoadmap verifica se branchSlug (já normalizado via normalizeBranchSlug) casa com o
+// nome de algum roadmap .md encontrado em wipDirs ou doneDirs. Reutilizada por
+// validateBranchHasWIPRoadmap e pelo comando `trackfw branch new` — nunca duplicar esta lógica.
+//
+// Espelha internal/validator/validator.go:BranchSlugMatchesRoadmap. Retorna { matched, candidates }:
+// matched indica se algum candidato casou com o slug; candidates lista todos os roadmaps .md
+// encontrados em wipDirs+doneDirs (para diagnóstico/mensagem de orientação quando matched é false).
+function branchSlugMatchesRoadmap(branchSlug, wipDirs, doneDirs) {
+  const dirs = [...wipDirs, ...doneDirs]
+  const candidates = []
+  let matched = false
+  for (const dir of dirs) {
+    const files = listDir(dir).filter(f => f.endsWith('.md'))
+    candidates.push(...files)
+    if (files.some(file => normalizeBranchSlug(file).includes(branchSlug))) matched = true
+  }
+  return { matched, candidates }
+}
+
+// branchGovernanceOrientation is the guidance message printed when a feat/fix/refactor branch has
+// no roadmap in wip/ nor done/ at all (candidates is empty). Shared by validateBranchHasWIPRoadmap
+// and `trackfw branch new` — never duplicate this string. Byte-identical to Go's
+// BranchGovernanceOrientation.
+function branchGovernanceOrientation(branch) {
+  return `branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new "title"\n  trackfw roadmap new "title"\n  trackfw roadmap move <name> wip`
+}
+
+// branchNoMatchingRoadmapMessage is the guidance message printed when roadmaps exist in wip/ or
+// done/ but none of them match the branch's slug. Shared by validateBranchHasWIPRoadmap and
+// `trackfw branch new` — never duplicate this string. Byte-identical to Go's
+// BranchNoMatchingRoadmapMessage. Does not mutate candidates.
+function branchNoMatchingRoadmapMessage(branch, candidates) {
+  // P3: sort for deterministic output regardless of filesystem ordering.
+  const sorted = [...candidates].sort()
+  const display = sorted.slice(0, 3)
+  const suffix = sorted.length > 3 ? `, e mais ${sorted.length - 3}` : ''
+  return `branch "${branch}" has no matching roadmap in wip/ nor done/ (found: ${display.join(', ')}${suffix}) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI`
+}
+
 // validateBranchHasWIPRoadmap — verifica que branch feat/fix/refactor tem ao menos um roadmap em
 // wip/ ou done/ cujo slug case com a branch. Aceita done/ para permitir encerramento do roadmap na
 // própria branch, conforme a Definition of Done, sem reprovar o gate.
@@ -1067,22 +1106,13 @@ function validateBranchHasWIPRoadmap() {
   const wipDirs = resolveWIPDirs(cfg)
   const doneDirs = resolveDoneDirs(cfg)
   const branchSlug = normalizeBranchSlug(branch.split('/', 2)[1])
-  // candidates reúne todos os roadmaps encontrados em wip/ e done/.
-  const candidates = []
-  for (const dir of [...wipDirs, ...doneDirs]) {
-    const files = listDir(dir).filter(f => f.endsWith('.md'))
-    candidates.push(...files)
-    if (files.some(file => normalizeBranchSlug(file).includes(branchSlug))) return []
-  }
+  const { matched, candidates } = branchSlugMatchesRoadmap(branchSlug, wipDirs, doneDirs)
+  if (matched) return []
 
   if (candidates.length === 0) {
-    return [`branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new "title"\n  trackfw roadmap new "title"\n  trackfw roadmap move <name> wip`]
+    return [branchGovernanceOrientation(branch)]
   }
-  // P3: sort for deterministic output regardless of filesystem ordering.
-  const sorted = [...candidates].sort()
-  const display = sorted.slice(0, 3)
-  const suffix = sorted.length > 3 ? `, e mais ${sorted.length - 3}` : ''
-  return [`branch "${branch}" has no matching roadmap in wip/ nor done/ (found: ${display.join(', ')}${suffix}) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI`]
+  return [branchNoMatchingRoadmapMessage(branch, candidates)]
 }
 
 function normalizeBranchSlug(value) {
@@ -1451,6 +1481,11 @@ module.exports = {
   validateFolderStatusCoherence,
   validateFilenameUniqueness,
   validateBranchHasWIPRoadmap,
+  // novas funções — trackfw branch new (extraídas do gate branch_has_wip_roadmap)
+  branchSlugMatchesRoadmap,
+  branchGovernanceOrientation,
+  branchNoMatchingRoadmapMessage,
+  normalizeBranchSlug,
   // novas funções ML-2B
   contentHasMarker,
   ruleSeverity,

@@ -93,12 +93,24 @@ Create the governance artifacts first if this blocks you:
 
 // defaultGitCheckout runs `git checkout -b <branchName>` with inherited stdio, so Git's own
 // output (including branch-already-exists errors) reaches the user unmodified.
+//
+// On failure with a process exit (the common case — e.g. branch already exists), it exits the
+// process directly with Git's own exit code instead of returning the error: Git has already
+// written its diagnostic to the inherited stderr, and letting the error propagate back through
+// cobra would make Execute() print Go's own exec.ExitError string ("exit status 128") as an
+// extra, redundant line that Git itself never produced — breaking the "propagate literally"
+// contract this command promises. A non-ExitError failure (e.g. the git binary is missing) has
+// no Git-produced diagnostic to rely on, so it still returns normally to be reported the usual way.
 func defaultGitCheckout(branchName string) error {
 	c := exec.Command("git", "checkout", "-b", branchName)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
-	return c.Run()
+	err := c.Run()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		os.Exit(exitErr.ExitCode())
+	}
+	return err
 }
 
 // runBranchNew implements the `trackfw branch new <type>/<slug>` flow described in
