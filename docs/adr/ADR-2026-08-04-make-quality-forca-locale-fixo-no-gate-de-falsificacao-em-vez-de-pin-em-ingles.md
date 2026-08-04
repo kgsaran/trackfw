@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-08-04
 author: "Zeus"
 ---
 
 # ADR: make quality — força locale fixo no gate de falsificação em vez de pin em inglês
 
-> Date: 2026-08-04 | Status: Proposed
+> Date: 2026-08-04 | Status: Accepted
 
 ## Context
 
