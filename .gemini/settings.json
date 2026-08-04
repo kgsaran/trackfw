@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "AfterTool": [
+      {
+        "hooks": [
+          {
+            "command": "scripts/trackfw-attention-cleanup.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "command": "scripts/trackfw-attention-signal.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "ToolPermission"
+      }
+    ]
+  }
+}

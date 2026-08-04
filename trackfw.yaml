@@ -1,0 +1,13 @@
+# trackfw configuration — gerado por trackfw discover
+# governance_mode: lenient permite validação não-bloqueante durante onboarding
+
+governance_mode: lenient
+
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: flat
+hooks: none
+ci: github-actions
+forge: github
