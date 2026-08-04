@@ -434,6 +434,77 @@ func TestMoveREQ_PhysicallyMovesInStateLayout(t *testing.T) {
 	}
 }
 
+// TestMoveREQ_RejectsInvalidStateInStateLayout — REQ em subpasta de estado reconhecida
+// (docs/req/wip/) rejeita status inválido no move físico, sem criar pasta arbitrária e
+// sem mover o arquivo (AC5 — divergência de tratamento corrigida entre os 3 CLIs).
+func TestMoveREQ_RejectsInvalidStateInStateLayout(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs/req/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+	srcPath := filepath.Join("docs", "req", "wip", "REQ-2026-08-04-invalido.md")
+	content := "---\nstatus: wip\ndate: 2026-08-04\n---\n\n# REQ: Invalido\n\n> Date: 2026-08-04 | Status: wip\n"
+	if err := os.WriteFile(srcPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := MoveREQ("invalido", "status-invalido-xyz")
+	if err == nil {
+		t.Fatal("MoveREQ deveria retornar erro para status inválido")
+	}
+	if !strings.Contains(err.Error(), "invalid state") {
+		t.Fatalf("erro esperado deveria mencionar 'invalid state', obteve: %v", err)
+	}
+
+	if _, statErr := os.Stat(srcPath); statErr != nil {
+		t.Fatalf("REQ deveria permanecer no caminho original: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join("docs", "req", "status-invalido-xyz")); !os.IsNotExist(statErr) {
+		t.Fatal("não deveria ter criado pasta arbitrária docs/req/status-invalido-xyz")
+	}
+}
+
+// TestMoveREQ_RejectsInvalidStateInByAgentLayout — REQ em docs/req/claude/wip/ rejeita status
+// inválido no move físico, sem criar pasta arbitrária e sem mover o arquivo (AC5).
+func TestMoveREQ_RejectsInvalidStateInByAgentLayout(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	yamlContent := "roadmap_namespacing: by_agent\nagents:\n- claude\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/req/claude/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+	srcPath := filepath.Join("docs", "req", "claude", "wip", "REQ-2026-08-04-invalido-agente.md")
+	content := "---\nstatus: wip\ndate: 2026-08-04\n---\n\n# REQ: InvalidoAgente\n\n> Date: 2026-08-04 | Status: wip\n"
+	if err := os.WriteFile(srcPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := MoveREQ("invalido-agente", "status-invalido-xyz")
+	if err == nil {
+		t.Fatal("MoveREQ deveria retornar erro para status inválido")
+	}
+	if !strings.Contains(err.Error(), "invalid state") {
+		t.Fatalf("erro esperado deveria mencionar 'invalid state', obteve: %v", err)
+	}
+
+	if _, statErr := os.Stat(srcPath); statErr != nil {
+		t.Fatalf("REQ deveria permanecer no caminho original: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join("docs", "req", "claude", "status-invalido-xyz")); !os.IsNotExist(statErr) {
+		t.Fatal("não deveria ter criado pasta arbitrária docs/req/claude/status-invalido-xyz")
+	}
+}
+
 // TestMoveREQ_PhysicallyMovesInByAgentLayout — REQ em docs/req/claude/backlog/ é movida para docs/req/claude/wip/.
 func TestMoveREQ_PhysicallyMovesInByAgentLayout(t *testing.T) {
 	dir := t.TempDir()

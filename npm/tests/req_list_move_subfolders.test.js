@@ -133,6 +133,44 @@ test('moveREQ: registra a transição em docs/req/.trackfw-log ao mover fisicame
   })
 })
 
+// --- 7. moveREQ rejeita status inválido no move físico (AC5 — paridade com Go) ---
+test('moveREQ: rejeita status inválido quando REQ está em subpasta de estado reconhecida', () => {
+  withTmpProject(() => {
+    const reqDir = path.join(process.cwd(), 'docs', 'req')
+    const src = path.join(reqDir, 'wip', 'REQ-2026-08-04-invalido.md')
+    writeFile(src, reqBody('wip'))
+
+    assert.throws(
+      () => moveREQ('invalido', 'status-invalido-xyz'),
+      /invalid state/,
+      'moveREQ deveria lançar erro para status inválido'
+    )
+
+    assert(fs.existsSync(src), 'REQ deve permanecer no caminho original')
+    assert(!fs.existsSync(path.join(reqDir, 'status-invalido-xyz')), 'não deve criar pasta arbitrária')
+  })
+})
+
+// --- 8. moveREQ rejeita status inválido no move físico — layout by_agent ---
+test('moveREQ: rejeita status inválido quando REQ está em subpasta by_agent reconhecida', () => {
+  withTmpProject(() => {
+    const reqDir = path.join(process.cwd(), 'docs', 'req')
+    const src = path.join(reqDir, 'claude', 'wip', 'REQ-2026-08-04-invalido-agente.md')
+    writeFile(src, reqBody('wip'))
+    writeFile(path.join(process.cwd(), 'trackfw.yaml'), 'roadmap_namespacing: by_agent\nagents:\n  - claude\n')
+    config.reset()
+
+    assert.throws(
+      () => moveREQ('invalido-agente', 'status-invalido-xyz'),
+      /invalid state/,
+      'moveREQ deveria lançar erro para status inválido'
+    )
+
+    assert(fs.existsSync(src), 'REQ deve permanecer no caminho original')
+    assert(!fs.existsSync(path.join(reqDir, 'claude', 'status-invalido-xyz')), 'não deve criar pasta arbitrária')
+  })
+})
+
 // --- Bônus: listREQs imprime saída formatada e mensagem de vazio ---
 test('listREQs: imprime "No REQs found in <reqDir>" quando não há REQs em nenhum layout', () => {
   withTmpProject(() => {

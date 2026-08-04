@@ -147,6 +147,48 @@ def test_move_req_physically_moves_in_by_agent_layout(tmp_path):
     assert "status: done" in content
 
 
+def test_move_req_rejects_invalid_state_in_by_agent_layout(tmp_path):
+    """AC5 — o defeito mais grave era aqui: _req_agent_state_dir retornava None para status
+    inválido e o código caía silenciosamente no fallback in-place, sem avisar o usuário."""
+    req_dir = tmp_path / "req"
+    src = req_dir / "claude" / "wip" / "REQ-invalido-agente.md"
+    _write(str(src), _req_body("wip"))
+
+    cfg = {
+        "req_dir": str(req_dir),
+        "roadmap_namespacing": "by_agent",
+        "agents": ["claude"],
+    }
+
+    try:
+        move_req("invalido-agente", "status-invalido-xyz", cfg=cfg)
+        assert False, "move_req deveria lançar RuntimeError para status inválido"
+    except RuntimeError as exc:
+        assert "invalid state" in str(exc)
+
+    assert os.path.exists(str(src))
+    assert not os.path.exists(str(req_dir / "claude" / "status-invalido-xyz"))
+
+
+def test_move_req_rejects_invalid_state_in_state_layout(tmp_path):
+    """AC5 — paridade com Go: status inválido em layout por-estado deve lançar erro,
+    sem criar pasta arbitrária e sem mover o arquivo."""
+    req_dir = tmp_path / "req"
+    src = req_dir / "wip" / "REQ-invalido.md"
+    _write(str(src), _req_body("wip"))
+
+    cfg = {"req_dir": str(req_dir)}
+
+    try:
+        move_req("invalido", "status-invalido-xyz", cfg=cfg)
+        assert False, "move_req deveria lançar RuntimeError para status inválido"
+    except RuntimeError as exc:
+        assert "invalid state" in str(exc)
+
+    assert os.path.exists(str(src))
+    assert not os.path.exists(str(req_dir / "status-invalido-xyz"))
+
+
 def test_move_req_logs_transition(tmp_path):
     req_dir = tmp_path / "req"
     src = req_dir / "backlog" / "REQ-logado.md"

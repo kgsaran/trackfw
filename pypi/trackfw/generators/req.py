@@ -333,6 +333,9 @@ def move_req(name: str, status: str, cfg: dict = None, req_dir: str = None, cwd:
             f.write(updated)
         return filepath
 
+    if status not in VALID_STATES:
+        raise RuntimeError(f'invalid state "{status}" — valid states: {", ".join(VALID_STATES)}')
+
     target_dir = None
     from_state = None
     log_basename = None

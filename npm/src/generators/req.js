@@ -231,6 +231,10 @@ function moveREQ(name, status) {
     return
   }
 
+  if (!VALID_STATES.includes(status)) {
+    throw new Error(`invalid state "${status}" — valid states: ${VALID_STATES.join(', ')}`)
+  }
+
   let targetDir = null
   let logBasename = basename
 
