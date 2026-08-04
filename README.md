@@ -144,7 +144,8 @@ trackfw ship -m "feat(auth): add login flow"
 | `trackfw adr new "title"` | Create a new Architecture Decision Record |
 | `trackfw adr list` | List all ADRs with status |
 | `trackfw req new "title"` | Create a REQ with guided ADR discovery |
-| `trackfw req list` | List all REQs with status |
+| `trackfw req list` | List all REQs with status, discovered across flat, per-state, and by_agent layouts |
+| `trackfw req move <name> <status>` | Update a REQ's status; physically relocates the file when it already lives in a recognized state subfolder (see [Multi-agent namespacing](#multi-agent-namespacing)) |
 | `trackfw roadmap new "title"` | Create a roadmap in `backlog/` |
 | `trackfw roadmap show <name>` | Print a roadmap with its current state |
 | `trackfw roadmap move <name> <state>` | Move roadmap between states |
@@ -209,6 +210,29 @@ agents: [claude, gemini, copilot]
 ```
 
 Artifacts are organized by agent: `docs/roadmaps/claude/wip/`, `docs/req/gemini/done/`. `trackfw validate` and `trackfw context` are fully by_agent-aware — no false positives.
+
+REQs reuse this same `roadmap_namespacing` setting — there is no separate `req_namespacing` key. When
+`by_agent` is configured, REQs may live under `req_dir/<agent>/<state>/` just like roadmaps do.
+
+`trackfw req list` and `trackfw req move` discover REQs across three layouts at once (each is a fixed,
+non-recursive glob — a REQ nested deeper than these patterns is not found), with no extra flag required:
+
+- **Flat (legacy):** `req_dir/*.md` — REQs loose directly in the REQ directory.
+- **Per-state:** `req_dir/<state>/*.md` — organized by state, without an agent segment.
+- **By agent:** `req_dir/<agent>/<state>/*.md` — used when `roadmap_namespacing: by_agent` is set.
+
+`trackfw req move <name> <status>` behaves conditionally depending on where the REQ currently lives:
+
+- If the REQ already sits inside a recognized state subfolder (per-state or by_agent layout above), the
+  move **physically relocates the file** to the target state's folder, mirroring `trackfw roadmap move` —
+  the folder is the source of truth for state. In this mode `<status>` must be one of the six governance
+  states (`backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`) — any other value is rejected
+  with `invalid state`.
+- If the REQ is loose in `req_dir/` (flat legacy layout), the move rewrites the `status:` frontmatter
+  field **in place** and does not move or create any folder. `<status>` is written verbatim in this
+  mode — it accepts the free-form values existing REQs already use (`Open`, `Done`, ...), not just the
+  six governance state names. Existing flat REQs are never migrated automatically — you are not forced
+  to reorganize a project's existing REQs to adopt this behavior.
 
 ### Bidirectional traceability (`trace_id_field`)
 
