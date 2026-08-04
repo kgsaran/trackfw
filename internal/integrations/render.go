@@ -1,6 +1,7 @@
 package integrations
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -54,15 +55,21 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 		return []byte(fmt.Sprintf("name = %s\ndescription = %s\ndeveloper_instructions = %s\n",
 			strconv.Quote(strings.ReplaceAll(name, "-", "_")), strconv.Quote(description), strconv.Quote(body))), nil
 	case "cli-agent-json", "agent-json":
-		data, err := json.MarshalIndent(map[string]string{
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(map[string]string{
 			"name":        name,
 			"description": description,
 			"prompt":      body,
-		}, "", "  ")
-		if err != nil {
+		}); err != nil {
 			return nil, fmt.Errorf("render %s as JSON: %w", item.ID, err)
 		}
-		return append(data, '\n'), nil
+		// json.Encoder.Encode already appends a trailing '\n' — do not append
+		// another one (unlike the previous json.MarshalIndent call, which did
+		// not add a trailing newline on its own).
+		return buf.Bytes(), nil
 	case "agent-directory":
 		// Reconstrói o frontmatter para o Antigravity CLI:
 		// - mapeia model canônico para o valor aceito (opus→pro, sonnet→flash)
