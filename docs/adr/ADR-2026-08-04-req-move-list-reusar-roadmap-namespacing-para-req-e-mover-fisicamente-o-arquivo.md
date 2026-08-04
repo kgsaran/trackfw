@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-08-04
 author: "Zeus"
 ---
 
 # ADR: req move/list — reusar roadmap_namespacing para REQ e mover fisicamente o arquivo
 
-> Date: 2026-08-04 | Status: Proposed
+> Date: 2026-08-04 | Status: Accepted
 
 ## Context
 

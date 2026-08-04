@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-03
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-04-req-move-list-reusar-roadmap-namespacing-para-req-e-mover-fisicamente-o-arquivo.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md"
 ---
 
 # REQ: req move/list não enxergam REQDir com subpastas, e req move não move o arquivo
 
-> Date: 2026-08-03 | Status: Open
+> Date: 2026-08-03 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -128,4 +128,4 @@ corrente).
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md`
