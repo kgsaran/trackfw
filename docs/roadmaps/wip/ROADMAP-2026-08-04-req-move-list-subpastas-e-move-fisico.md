@@ -9,6 +9,8 @@ squad: ""
 
 > Created: 2026-08-04 | Status: wip
 
+REQ: REQ-2026-08-03-req-move-list-nao-suportam-subpastas-e-req-move-nao-move-arquivo.md
+
 ## Diagnóstico / Contexto
 
 `REQ-2026-08-03-req-move-list-nao-suportam-subpastas-e-req-move-nao-move-arquivo.md` documenta dois
@@ -64,6 +66,19 @@ já decidiu as duas questões de design em aberto:
    `targetDir/basename(path)`, remove o arquivo original (rename), registra a transição em
    `REQDir/.trackfw-log` no mesmo formato de `appendTransitionLog` do roadmap (linha:
    `<timestamp>  <basename ou agente/basename>  <estado-origem> → <estado-destino>`).
+
+## Acceptance Criteria
+
+Consolidado dos AC1-AC7 da REQ — critérios mensuráveis por ML nas seções de Wave abaixo:
+
+- [ ] AC1 — `req list` recursivo nos 3 layouts (flat, por-estado, by_agent), sem flag adicional
+- [ ] AC2 — `req move`/`findREQ` encontram REQs em subpastas nos 3 layouts
+- [ ] AC3 — `req move` move fisicamente o arquivo quando já há subpasta de estado; permanece in-place
+      para REQs soltas em `REQDir/`
+- [ ] AC4 — transição de REQ registrada em `.trackfw-log`, mesmo formato do roadmap
+- [ ] AC5 — paridade comprovada nos 3 CLIs (Go, Node.js, Python) contra o mesmo fixture
+- [ ] AC6 — testes de regressão cobrindo os 2 novos layouts, preservando a cobertura do modo legado
+- [ ] AC7 — README/docs atualizados sobre namespacing de REQ e comportamento condicional do move
 
 ## Wave 1 — Correção nos 3 CLIs (3 MLs em paralelo)
 > Dependências: Independente (arquivos/linguagens distintas, sem sobreposição)
