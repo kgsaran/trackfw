@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-08-04
 author: "Zeus"
 ---
 
 # ADR: req move no Node — try/catch local no comando, sem handler global
 
-> Date: 2026-08-04 | Status: Proposed
+> Date: 2026-08-04 | Status: Accepted
 
 ## Context
 
