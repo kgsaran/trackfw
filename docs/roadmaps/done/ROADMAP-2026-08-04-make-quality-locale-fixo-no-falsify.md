@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-make-quality-falha-sob-locale-pt-br-teste-fixa-literal-em-ingles-no-violations-found.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: make quality — força locale fixo no gate de falsificação em vez de pin em inglês
 
-> Created: 2026-08-04 | Status: backlog
+> Created: 2026-08-04 | Status: done
 
 REQ: REQ-2026-08-04-make-quality-falha-sob-locale-pt-br-teste-fixa-literal-em-ingles-no-violations-found.md
 
@@ -24,18 +24,18 @@ regressão).
 
 ## Acceptance Criteria
 
-- [ ] AC1 — `scripts/check-gates-falsify.sh` Cenário 29 passa deterministicamente sob `pt_BR.UTF-8` e
+- [x] AC1 — `scripts/check-gates-falsify.sh` Cenário 29 passa deterministicamente sob `pt_BR.UTF-8` e
       `en_US.UTF-8`
-- [ ] AC2 — A prova de detecção de regressão (Python reintroduzindo `"✓ Governance OK"` hardcoded)
+- [x] AC2 — A prova de detecção de regressão (Python reintroduzindo `"✓ Governance OK"` hardcoded)
       continua reprovando corretamente
-- [ ] AC3 — `make quality` roda verde numa máquina com `LANG=pt_BR.UTF-8` sem o desenvolvedor precisar
+- [x] AC3 — `make quality` roda verde numa máquina com `LANG=pt_BR.UTF-8` sem o desenvolvedor precisar
       trocar o locale manualmente
 
 ## Wave 1 — Fix do gate (1 ML)
 > Dependências: Independente
 
 ### ML-1A — Fixar locale no Cenário 29 (e cenários irmãos que comparam saída textual i18n)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `scripts/check-gates-falsify.sh` (Cenário 29, linhas ~1923-1985; auditar se outros cenários do script
   também comparam saída textual dependente de i18n e sofrem do mesmo problema — ex. Cenários 30/31 que
@@ -51,8 +51,8 @@ regressão).
    Cenário 29) e confirmar que passa a verde depois da correção, no mesmo locale.
 
 **Critérios de aceite:**
-- [ ] `LANG=pt_BR.UTF-8 LC_ALL=pt_BR.UTF-8 bash scripts/check-gates-falsify.sh` verde
-- [ ] `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 bash scripts/check-gates-falsify.sh` verde
-- [ ] `make quality` verde nos dois locales
+- [x] `LANG=pt_BR.UTF-8 LC_ALL=pt_BR.UTF-8 bash scripts/check-gates-falsify.sh` verde
+- [x] `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 bash scripts/check-gates-falsify.sh` verde
+- [x] `make quality` verde nos dois locales
 
 **Comandos de validação:** `LANG=pt_BR.UTF-8 make quality && LANG=en_US.UTF-8 make quality`

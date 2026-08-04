@@ -1944,14 +1944,21 @@ assert_lacks_pattern "backtick-ref/python/adr_accepted_when_req_done-detects-reg
 # Corrompe a IMPLEMENTAÇÃO (mensagem do Python), nunca a asserção.
 # ---------------------------------------------------------------------------
 
+# A mensagem esperada é resolvida via i18n_t("validate.ok") pelos 3 CLIs, que
+# depende do locale ativo do processo. Fixamos LANG/LC_ALL=en_US.UTF-8 nas
+# chamadas comparadas para que o cenário seja determinístico independente do
+# locale da máquina onde o gate roda (ADR-2026-08-04-make-quality-forca-
+# locale-fixo-no-gate-de-falsificacao-em-vez-de-pin-em-ingles) — em vez de
+# ler a expectativa dinamicamente, o que enfraqueceria a prova de detecção
+# de regressão abaixo.
 S29_EXPECTED=$'\xe2\x9c\x93 No violations found.\n'
 
 T29_PROJECT="$WORK/s29-clean-project"
 scaffold_adr_req_project "$T29_PROJECT"
 
-s29_go_out=$(cd "$T29_PROJECT" && "$T27_GO_BIN" validate)$'\n'
-s29_node_out=$(cd "$T29_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" validate)$'\n'
-s29_python_out=$(cd "$T29_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate)$'\n'
+s29_go_out=$(cd "$T29_PROJECT" && env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 "$T27_GO_BIN" validate)$'\n'
+s29_node_out=$(cd "$T29_PROJECT" && env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 node "$ROOT_DIR/npm/bin/trackfw" validate)$'\n'
+s29_python_out=$(cd "$T29_PROJECT" && env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate)$'\n'
 
 if [[ "$s29_go_out" == "$S29_EXPECTED" && "$s29_node_out" == "$S29_EXPECTED" && "$s29_python_out" == "$S29_EXPECTED" ]]; then
   echo "OK   [falsify/validate-ok-message/baseline-byte-identical-and-pinned]"
@@ -1973,7 +1980,7 @@ corrupt_literal \
   'print(_green("✓ Governance OK"))' \
   "s29-python"
 
-s29c_python_out=$(cd "$T29_PROJECT" && env PYTHONPATH="$T29C_P/pypi" python3 -m trackfw validate)$'\n'
+s29c_python_out=$(cd "$T29_PROJECT" && env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 PYTHONPATH="$T29C_P/pypi" python3 -m trackfw validate)$'\n'
 if [[ "$s29c_python_out" != "$S29_EXPECTED" ]]; then
   echo "OK   [falsify/validate-ok-message/python-detects-regression]"
 else
