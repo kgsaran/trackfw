@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-make-quality-falha-sob-locale-pt-br-teste-fixa-literal-em-ingles-no-violations-found.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: make quality — força locale fixo no gate de falsificação em vez de pin em inglês
 
-> Created: 2026-08-04 | Status: backlog
+> Created: 2026-08-04 | Status: wip
 
 REQ: REQ-2026-08-04-make-quality-falha-sob-locale-pt-br-teste-fixa-literal-em-ingles-no-violations-found.md
 

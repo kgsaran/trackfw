@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-04
 author: "Zeus"
 adr: "docs/adr/ADR-2026-08-04-make-quality-forca-locale-fixo-no-gate-de-falsificacao-em-vez-de-pin-em-ingles.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-04-make-quality-locale-fixo-no-falsify.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-04-make-quality-locale-fixo-no-falsify.md"
 ---
 
 # REQ: make quality falha sob locale pt_BR — teste fixa literal em inglês No violations found
@@ -70,4 +70,4 @@ ADR: `docs/adr/ADR-2026-08-04-make-quality-forca-locale-fixo-no-gate-de-falsific
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-08-04-make-quality-locale-fixo-no-falsify.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-make-quality-locale-fixo-no-falsify.md`
