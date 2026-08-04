@@ -198,6 +198,12 @@ func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 // de código de produto, já que especialistas não commitam mais) e a nova seção "## Barrier
 // protocol". backend.md trocou "## Git boundary" (permitia commit/push na branch do orquestrador)
 // por "## Git authority" (nenhuma operação Git; atua somente por handoff de trackfw_architect).
+//
+// Re-congelado em 2026-08-04 pela REQ-2026-08-04-corrigir-dispatch-sem-subagent-type-no-template-do-architect:
+// architect.md ganhou a nova seção "## Dispatch contract" entre "## Workflow" e "## Post-microbatch
+// audit", tornando explícito que nomear um especialista em prosa/`squad:` não roteia a chamada da
+// Agent tool — todo dispatch exige o parâmetro `subagent_type`, cujo valor correto é o `name:` do
+// agente instalado do role-alvo (identity-agnostic, nunca um nome fixo).
 
 func readGolden(t *testing.T, name string) []byte {
 	t.Helper()

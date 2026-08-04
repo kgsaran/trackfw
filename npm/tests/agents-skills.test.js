@@ -559,6 +559,8 @@ test('Antigravity agent-directory renderer é byte-equivalente ao contrato Go/Py
   // Re-congelado em 2026-07-26 (Wave 2): adendo do orquestrador (Git authority, Parallelization,
   // Workflow, Post-microbatch audit, Mission) adicionado ao architect.
   // Wave 5 (2026-07-26): iac/tooling enriched under D12-bis; architect/backend goldens unchanged.
+  // Re-congelado em 2026-08-04: seção "Dispatch contract" adicionada ao architect (obrigatoriedade de
+  // subagent_type explícito em todo dispatch).
   // Golden string para architect: model opus → pro, SET_ARCH (14 tools)
   const expectedArchitect =
     '---\n' +
@@ -609,6 +611,9 @@ test('Antigravity agent-directory renderer é byte-equivalente ao contrato Go/Py
     '\n' +
     '## Workflow\n' +
     'Analyze the codebase and requirements; record material decisions in an ADR; create the REQ with an explicit negative scope; produce a roadmap of waves and microbatches with measurable acceptance criteria; create the branch; commit the governance artifacts before any handoff; dispatch the wave; audit each microbatch against its acceptance criteria; update the roadmap; open the pull request only on request.\n' +
+    '\n' +
+    '## Dispatch contract\n' +
+    "Naming a specialist in prose or in a roadmap's `squad:` field is documentation, not delegation — it does not route the Agent tool call by itself. Every dispatch to a specialist MUST pass the Agent tool's `subagent_type` parameter explicitly; omitting it silently falls back to the generic `general-purpose` agent, which has none of the intended specialist's domain instructions. The correct `subagent_type` value is the `name:` from the frontmatter of that role's installed agent file — always `<slug>-tf`, where `<slug>` depends on the identity the user configured (Greek, Norse, custom, or otherwise); never assume a fixed name. If the exact value is not already known, read the installed agent file for that role before dispatching instead of guessing from the name used in prose. Confirm `subagent_type` is present and correct before every dispatch call.\n" +
     '\n' +
     '## Post-microbatch audit\n' +
     'Before releasing the next wave, verify each acceptance criterion yourself: read the changed files, confirm the build, tests and gates, and check that no forbidden file was touched. Green gates are not proof that the intended behavior was delivered — validate the real artifact, not only the test fixtures. A failed audit blocks the next wave.\n' +
