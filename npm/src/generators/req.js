@@ -2,27 +2,86 @@
 const fs = require('fs')
 const path = require('path')
 const { localDateISO } = require('./date')
+const roadmapGen = require('./roadmap')
+const config = require('../config')
+
+const VALID_STATES = roadmapGen.VALID_STATES
+const STATE_ORDER = roadmapGen.STATE_ORDER
 
 /**
- * listREQs — lista arquivos .md em dir, imprimindo filename e status (coluna 60 chars).
- * Extrai status da linha `> Date: ... | Status: ...`.
- * Se dir não existe ou vazio: imprime "No REQs found in <dir>".
+ * listREQFiles — descoberta recursiva de REQs nos 3 layouts suportados, mesmo algoritmo usado
+ * em Go/Python (ADR-2026-08-04): flat (reqDir/*.md), por-estado (reqDir/<estado>/*.md) e,
+ * quando roadmapNamespacing === 'by_agent', by_agent (reqDir/<agente>/<estado>/*.md).
+ * Os três conjuntos não são mutuamente exclusivos — concatena todos.
+ * @param {object} cfg — config completo (ver npm/src/config)
+ * @returns {string[]} paths completos, na ordem flat → por-estado → by_agent
  */
-function listREQs(dir) {
-  let files = []
+function listREQFiles(cfg) {
+  const reqDir = cfg.reqDir
+  const files = []
+
+  // (a) flat legado — reqDir/*.md
   try {
-    files = fs.readdirSync(dir).filter(f => f.endsWith('.md'))
-  } catch (_) {
-    // dir não existe
+    for (const f of fs.readdirSync(reqDir)) {
+      if (!f.endsWith('.md')) continue
+      const full = path.join(reqDir, f)
+      try {
+        if (!fs.statSync(full).isDirectory()) files.push(full)
+      } catch (_) { /* ignora */ }
+    }
+  } catch (_) { /* reqDir não existe */ }
+
+  // (b) por-estado, sem agente — reqDir/<estado>/*.md
+  for (const state of STATE_ORDER) {
+    const dir = path.join(reqDir, state)
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        if (f.endsWith('.md')) files.push(path.join(dir, f))
+      }
+    } catch (_) { /* estado não existe */ }
   }
 
+  // (c) by_agent — reqDir/<agente>/<estado>/*.md
+  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
+    let agents = cfg.agents || []
+    if (agents.length === 0) {
+      try {
+        agents = fs.readdirSync(reqDir).filter(f => {
+          try { return fs.statSync(path.join(reqDir, f)).isDirectory() } catch (_) { return false }
+        })
+      } catch (_) { agents = [] }
+    }
+    for (const agent of agents) {
+      for (const state of STATE_ORDER) {
+        const dir = path.join(reqDir, agent, state)
+        try {
+          for (const f of fs.readdirSync(dir)) {
+            if (f.endsWith('.md')) files.push(path.join(dir, f))
+          }
+        } catch (_) { /* agente/estado não existe */ }
+      }
+    }
+  }
+
+  return files
+}
+
+/**
+ * listREQs — lista REQs (recursivo nos 3 layouts), imprimindo filename e status (coluna 60 chars).
+ * Extrai status da linha `> Date: ... | Status: ...`.
+ * Se nenhum REQ encontrado: imprime "No REQs found in <reqDir>".
+ * @param {object} cfg — config completo (ver npm/src/config)
+ */
+function listREQs(cfg) {
+  const files = listREQFiles(cfg)
+
   if (files.length === 0) {
-    console.log(`No REQs found in ${dir}`)
+    console.log(`No REQs found in ${cfg.reqDir}`)
     return
   }
 
-  for (const filename of files) {
-    const filepath = path.join(dir, filename)
+  for (const filepath of files) {
+    const filename = path.basename(filepath)
     const status = parseREQStatus(filepath)
     console.log(`${filename.padEnd(60)} ${status}`)
   }
@@ -105,30 +164,105 @@ function rewriteREQStatus(source, status) {
   return { content: `---\n${lines.join('\n')}${rest}`, changed: true }
 }
 
-function findREQ(name, reqDir) {
-  let files = []
-  try {
-    files = fs.readdirSync(reqDir).filter(f => f.endsWith('.md'))
-  } catch (e) {
-    throw new Error(`reading REQ dir: ${e.message}`)
-  }
+/**
+ * findREQ — busca recursiva nos 3 layouts (flat → por-estado → by_agent), retornando o primeiro
+ * path cujo basename contém `name` (case-insensitive).
+ * @param {string} name
+ * @param {object} cfg — config completo (ver npm/src/config)
+ * @returns {string} path completo
+ */
+function findREQ(name, cfg) {
+  const files = listREQFiles(cfg)
   const lower = name.toLowerCase()
-  const found = files.find(f => f.toLowerCase().includes(lower))
-  if (!found) throw new Error(`REQ "${name}" not found in ${reqDir}`)
-  return path.join(reqDir, found)
+  const found = files.find(f => path.basename(f).toLowerCase().includes(lower))
+  if (!found) throw new Error(`REQ "${name}" not found in ${cfg.reqDir}`)
+  return found
 }
 
+/**
+ * appendREQTransitionLog — append em <reqDir>/.trackfw-log, mesmo formato de
+ * appendTransitionLog (roadmap.js), em arquivo de log separado (escopo de REQ, não roadmap).
+ */
+function appendREQTransitionLog(cfg, basename, fromState, toState) {
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const hh = String(now.getHours()).padStart(2, '0')
+  const min = String(now.getMinutes()).padStart(2, '0')
+  const timestamp = `${yyyy}-${mm}-${dd} ${hh}:${min}`
+  const line = `${timestamp}  ${basename.padEnd(50)}  ${fromState} → ${toState}\n`
+
+  try {
+    const lp = path.join(cfg.reqDir, '.trackfw-log')
+    fs.mkdirSync(path.dirname(lp), { recursive: true })
+    fs.appendFileSync(lp, line, 'utf8')
+  } catch (_) { /* best-effort, mesmo padrão do roadmap */ }
+}
+
+/**
+ * moveREQ — reescreve status: e, condicionalmente, move fisicamente o arquivo
+ * (ADR-2026-08-04, decisão D3):
+ * - REQ solta em `reqDir/` → modo in-place (comportamento legado: só reescreve status, sem mover).
+ * - REQ já organizada em `reqDir/<estado>/` ou `reqDir/<agente>/<estado>/` → move fisicamente
+ *   para o novo estado, preservando o layout (por-estado ou by_agent), e loga a transição.
+ */
 function moveREQ(name, status) {
   if (!String(status || '').trim()) throw new Error('status is required')
-  const reqDir = require('../config').load().reqDir
-  const filepath = findREQ(name, reqDir)
+  const cfg = require('../config').load()
+  const filepath = findREQ(name, cfg)
   const source = fs.readFileSync(filepath, 'utf8')
   const result = rewriteREQStatus(source, status)
   if (!result.changed) {
     throw new Error(`REQ "${path.basename(filepath)}" has no frontmatter status/header Status to update`)
   }
-  fs.writeFileSync(filepath, result.content, 'utf8')
-  console.log(`✓ updated ${path.basename(filepath)} status → ${status}`)
+
+  const basename = path.basename(filepath)
+  const parentDir = path.dirname(filepath)
+  const grandparentDir = path.dirname(parentDir)
+  const greatGrandparentDir = path.dirname(grandparentDir)
+  const reqDirAbs = path.resolve(cfg.reqDir)
+  const fromState = path.basename(parentDir)
+
+  if (path.resolve(parentDir) === reqDirAbs) {
+    // modo in-place — REQ solta em reqDir/, comportamento legado (sem mover)
+    fs.writeFileSync(filepath, result.content, 'utf8')
+    console.log(`✓ updated ${basename} status → ${status}`)
+    return
+  }
+
+  if (!VALID_STATES.includes(status)) {
+    throw new Error(`invalid state "${status}" — valid states: ${VALID_STATES.join(', ')}`)
+  }
+
+  let targetDir = null
+  let logBasename = basename
+
+  if (path.resolve(grandparentDir) === reqDirAbs && VALID_STATES.includes(fromState)) {
+    // layout por-estado — reqDir/<estado>/
+    targetDir = path.join(cfg.reqDir, status)
+  } else if (VALID_STATES.includes(fromState) && path.resolve(greatGrandparentDir) === reqDirAbs) {
+    // layout by_agent — reqDir/<agente>/<estado>/
+    const agent = path.basename(grandparentDir)
+    targetDir = path.join(cfg.reqDir, agent, status)
+    logBasename = `${agent}/${basename}`
+  }
+
+  if (!targetDir) {
+    // layout não reconhecido — fallback seguro para in-place (não inventa destino)
+    fs.writeFileSync(filepath, result.content, 'utf8')
+    console.log(`✓ updated ${basename} status → ${status}`)
+    return
+  }
+
+  fs.mkdirSync(targetDir, { recursive: true })
+  const dst = path.join(targetDir, basename)
+  fs.writeFileSync(dst, result.content, 'utf8')
+  if (path.resolve(dst) !== path.resolve(filepath)) {
+    fs.unlinkSync(filepath)
+  }
+  appendREQTransitionLog(cfg, logBasename, fromState, status)
+  console.log(`✓ moved ${basename} → ${targetDir}`)
 }
 
 /**
@@ -328,4 +462,4 @@ function detectDomains(intention) {
   )
 }
 
-module.exports = { listREQs, parseREQStatus, rewriteREQStatus, moveREQ, newREQ, PROBES_CATALOG, detectDomains, localDateISO, toSlug }
+module.exports = { listREQs, listREQFiles, findREQ, parseREQStatus, rewriteREQStatus, moveREQ, newREQ, PROBES_CATALOG, detectDomains, localDateISO, toSlug }

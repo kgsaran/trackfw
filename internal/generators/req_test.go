@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 // chdirREQ muda para dir e restaura ao fim do teste
@@ -139,7 +141,7 @@ func TestListREQs_Empty(t *testing.T) {
 	chdirREQ(t, dir)
 
 	// docs/req/ não existe — ListREQs deve retornar nil sem erro
-	if err := ListREQs("docs/req"); err != nil {
+	if err := ListREQs(); err != nil {
 		t.Fatalf("ListREQs() com diretório ausente deveria retornar nil, obteve: %v", err)
 	}
 }
@@ -161,7 +163,7 @@ func TestListREQs_WithFiles(t *testing.T) {
 		t.Fatalf("esperado 2 REQs, obteve %d", len(matches))
 	}
 
-	if err := ListREQs("docs/req"); err != nil {
+	if err := ListREQs(); err != nil {
 		t.Fatalf("ListREQs() com 2 arquivos deveria retornar nil, obteve: %v", err)
 	}
 }
@@ -300,5 +302,274 @@ func TestMoveREQ_RewritesStatusInPlace(t *testing.T) {
 	}
 	if _, err := os.Stat(reqPath); err != nil {
 		t.Fatalf("REQ deveria permanecer no mesmo caminho flat: %v", err)
+	}
+}
+
+// TestListREQs_ByState — REQ em docs/req/backlog/ deve aparecer em ListREQs (layout por-estado).
+func TestListREQs_ByState(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs/req/backlog", 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nstatus: backlog\ndate: 2026-08-04\n---\n\n# REQ: X\n\n> Date: 2026-08-04 | Status: backlog\n"
+	if err := os.WriteFile("docs/req/backlog/REQ-x.md", []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Load()
+	files := listREQFiles(cfg)
+	found := false
+	for _, f := range files {
+		if filepath.Base(f) == "REQ-x.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("listREQFiles deveria encontrar REQ-x.md em docs/req/backlog/, obteve: %v", files)
+	}
+
+	if err := ListREQs(); err != nil {
+		t.Fatalf("ListREQs() erro: %v", err)
+	}
+}
+
+// TestListREQs_ByAgent — REQ em docs/req/claude/wip/ (roadmap_namespacing: by_agent) deve aparecer.
+func TestListREQs_ByAgent(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	yamlContent := "roadmap_namespacing: by_agent\nagents:\n- claude\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/req/claude/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nstatus: wip\ndate: 2026-08-04\n---\n\n# REQ: Y\n\n> Date: 2026-08-04 | Status: wip\n"
+	if err := os.WriteFile("docs/req/claude/wip/REQ-y.md", []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Load()
+	files := listREQFiles(cfg)
+	found := false
+	for _, f := range files {
+		if filepath.Base(f) == "REQ-y.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("listREQFiles deveria encontrar REQ-y.md em docs/req/claude/wip/, obteve: %v", files)
+	}
+
+	if err := ListREQs(); err != nil {
+		t.Fatalf("ListREQs() erro: %v", err)
+	}
+}
+
+// TestFindREQ_RecursesSubfolders — findREQ deve localizar uma REQ dentro de docs/req/wip/.
+func TestFindREQ_RecursesSubfolders(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs/req/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nstatus: wip\ndate: 2026-08-04\n---\n\n# REQ: Sub\n\n> Date: 2026-08-04 | Status: wip\n"
+	reqPath := filepath.Join("docs", "req", "wip", "REQ-sub-pasta.md")
+	if err := os.WriteFile(reqPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Load()
+	found, err := findREQ("sub-pasta", cfg)
+	if err != nil {
+		t.Fatalf("findREQ erro: %v", err)
+	}
+	if found != reqPath {
+		t.Fatalf("findREQ esperava %q, obteve %q", reqPath, found)
+	}
+}
+
+// TestMoveREQ_PhysicallyMovesInStateLayout — REQ em docs/req/backlog/ é movida fisicamente para docs/req/done/.
+func TestMoveREQ_PhysicallyMovesInStateLayout(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs/req/backlog", 0755); err != nil {
+		t.Fatal(err)
+	}
+	srcPath := filepath.Join("docs", "req", "backlog", "REQ-2026-08-04-mover.md")
+	content := "---\nstatus: backlog\ndate: 2026-08-04\n---\n\n# REQ: Mover\n\n> Date: 2026-08-04 | Status: backlog\n"
+	if err := os.WriteFile(srcPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveREQ("mover", "done"); err != nil {
+		t.Fatalf("MoveREQ erro: %v", err)
+	}
+
+	if _, err := os.Stat(srcPath); !os.IsNotExist(err) {
+		t.Fatalf("REQ deveria ter sido removida do caminho original, err: %v", err)
+	}
+
+	dstPath := filepath.Join("docs", "req", "done", "REQ-2026-08-04-mover.md")
+	updated, err := os.ReadFile(dstPath)
+	if err != nil {
+		t.Fatalf("REQ deveria estar em docs/req/done/: %v", err)
+	}
+	body := string(updated)
+	if !strings.Contains(body, "status: done") {
+		t.Fatalf("status não atualizado no destino:\n%s", body)
+	}
+}
+
+// TestMoveREQ_RejectsInvalidStateInStateLayout — REQ em subpasta de estado reconhecida
+// (docs/req/wip/) rejeita status inválido no move físico, sem criar pasta arbitrária e
+// sem mover o arquivo (AC5 — divergência de tratamento corrigida entre os 3 CLIs).
+func TestMoveREQ_RejectsInvalidStateInStateLayout(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs/req/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+	srcPath := filepath.Join("docs", "req", "wip", "REQ-2026-08-04-invalido.md")
+	content := "---\nstatus: wip\ndate: 2026-08-04\n---\n\n# REQ: Invalido\n\n> Date: 2026-08-04 | Status: wip\n"
+	if err := os.WriteFile(srcPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := MoveREQ("invalido", "status-invalido-xyz")
+	if err == nil {
+		t.Fatal("MoveREQ deveria retornar erro para status inválido")
+	}
+	if !strings.Contains(err.Error(), "invalid state") {
+		t.Fatalf("erro esperado deveria mencionar 'invalid state', obteve: %v", err)
+	}
+
+	if _, statErr := os.Stat(srcPath); statErr != nil {
+		t.Fatalf("REQ deveria permanecer no caminho original: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join("docs", "req", "status-invalido-xyz")); !os.IsNotExist(statErr) {
+		t.Fatal("não deveria ter criado pasta arbitrária docs/req/status-invalido-xyz")
+	}
+}
+
+// TestMoveREQ_RejectsInvalidStateInByAgentLayout — REQ em docs/req/claude/wip/ rejeita status
+// inválido no move físico, sem criar pasta arbitrária e sem mover o arquivo (AC5).
+func TestMoveREQ_RejectsInvalidStateInByAgentLayout(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	yamlContent := "roadmap_namespacing: by_agent\nagents:\n- claude\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/req/claude/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+	srcPath := filepath.Join("docs", "req", "claude", "wip", "REQ-2026-08-04-invalido-agente.md")
+	content := "---\nstatus: wip\ndate: 2026-08-04\n---\n\n# REQ: InvalidoAgente\n\n> Date: 2026-08-04 | Status: wip\n"
+	if err := os.WriteFile(srcPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := MoveREQ("invalido-agente", "status-invalido-xyz")
+	if err == nil {
+		t.Fatal("MoveREQ deveria retornar erro para status inválido")
+	}
+	if !strings.Contains(err.Error(), "invalid state") {
+		t.Fatalf("erro esperado deveria mencionar 'invalid state', obteve: %v", err)
+	}
+
+	if _, statErr := os.Stat(srcPath); statErr != nil {
+		t.Fatalf("REQ deveria permanecer no caminho original: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join("docs", "req", "claude", "status-invalido-xyz")); !os.IsNotExist(statErr) {
+		t.Fatal("não deveria ter criado pasta arbitrária docs/req/claude/status-invalido-xyz")
+	}
+}
+
+// TestMoveREQ_PhysicallyMovesInByAgentLayout — REQ em docs/req/claude/backlog/ é movida para docs/req/claude/wip/.
+func TestMoveREQ_PhysicallyMovesInByAgentLayout(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	yamlContent := "roadmap_namespacing: by_agent\nagents:\n- claude\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/req/claude/backlog", 0755); err != nil {
+		t.Fatal(err)
+	}
+	srcPath := filepath.Join("docs", "req", "claude", "backlog", "REQ-2026-08-04-agente.md")
+	content := "---\nstatus: backlog\ndate: 2026-08-04\n---\n\n# REQ: Agente\n\n> Date: 2026-08-04 | Status: backlog\n"
+	if err := os.WriteFile(srcPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveREQ("agente", "wip"); err != nil {
+		t.Fatalf("MoveREQ erro: %v", err)
+	}
+
+	if _, err := os.Stat(srcPath); !os.IsNotExist(err) {
+		t.Fatalf("REQ deveria ter sido removida do caminho original, err: %v", err)
+	}
+
+	dstPath := filepath.Join("docs", "req", "claude", "wip", "REQ-2026-08-04-agente.md")
+	updated, err := os.ReadFile(dstPath)
+	if err != nil {
+		t.Fatalf("REQ deveria estar em docs/req/claude/wip/: %v", err)
+	}
+	body := string(updated)
+	if !strings.Contains(body, "status: wip") {
+		t.Fatalf("status não atualizado no destino:\n%s", body)
+	}
+}
+
+// TestMoveREQ_LogsTransition — transição de estado registrada em docs/req/.trackfw-log.
+func TestMoveREQ_LogsTransition(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs/req/backlog", 0755); err != nil {
+		t.Fatal(err)
+	}
+	srcPath := filepath.Join("docs", "req", "backlog", "REQ-2026-08-04-log.md")
+	content := "---\nstatus: backlog\ndate: 2026-08-04\n---\n\n# REQ: Log\n\n> Date: 2026-08-04 | Status: backlog\n"
+	if err := os.WriteFile(srcPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveREQ("log", "wip"); err != nil {
+		t.Fatalf("MoveREQ erro: %v", err)
+	}
+
+	log, err := os.ReadFile(filepath.Join("docs", "req", ".trackfw-log"))
+	if err != nil {
+		t.Fatalf("log de transição não foi criado: %v", err)
+	}
+	logBody := string(log)
+	if !strings.Contains(logBody, "REQ-2026-08-04-log.md") || !strings.Contains(logBody, "backlog → wip") {
+		t.Fatalf("log não registrou a transição esperada, obteve:\n%s", logBody)
 	}
 }

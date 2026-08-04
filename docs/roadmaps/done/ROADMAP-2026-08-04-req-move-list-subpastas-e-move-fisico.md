@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-03-req-move-list-nao-suportam-subpastas-e-req-move-nao-move-arquivo.md"
 squad: ""
@@ -7,7 +7,9 @@ squad: ""
 
 # Roadmap: req move/list não enxergam REQDir com subpastas, e req move não move o arquivo
 
-> Created: 2026-08-04 | Status: backlog
+> Created: 2026-08-04 | Status: done
+
+REQ: REQ-2026-08-03-req-move-list-nao-suportam-subpastas-e-req-move-nao-move-arquivo.md
 
 ## Diagnóstico / Contexto
 
@@ -65,11 +67,24 @@ já decidiu as duas questões de design em aberto:
    `REQDir/.trackfw-log` no mesmo formato de `appendTransitionLog` do roadmap (linha:
    `<timestamp>  <basename ou agente/basename>  <estado-origem> → <estado-destino>`).
 
+## Acceptance Criteria
+
+Consolidado dos AC1-AC7 da REQ — critérios mensuráveis por ML nas seções de Wave abaixo:
+
+- [x] AC1 — `req list` recursivo nos 3 layouts (flat, por-estado, by_agent), sem flag adicional
+- [x] AC2 — `req move`/`findREQ` encontram REQs em subpastas nos 3 layouts
+- [x] AC3 — `req move` move fisicamente o arquivo quando já há subpasta de estado; permanece in-place
+      para REQs soltas em `REQDir/`
+- [x] AC4 — transição de REQ registrada em `.trackfw-log`, mesmo formato do roadmap
+- [x] AC5 — paridade comprovada nos 3 CLIs (Go, Node.js, Python) contra o mesmo fixture
+- [x] AC6 — testes de regressão cobrindo os 2 novos layouts, preservando a cobertura do modo legado
+- [x] AC7 — README/docs atualizados sobre namespacing de REQ e comportamento condicional do move
+
 ## Wave 1 — Correção nos 3 CLIs (3 MLs em paralelo)
 > Dependências: Independente (arquivos/linguagens distintas, sem sobreposição)
 
 ### ML-1A — Go: recursão + move físico condicional em `internal/generators/req.go`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/req.go` (`ListREQs`, `findREQ`, `MoveREQ` — linhas 118, 265, 241)
 - `internal/commands/req.go` (linha ~153, call site de `ListREQs`)
@@ -105,17 +120,17 @@ já decidiu as duas questões de design em aberto:
    o modo legado é preservado).
 
 **Critérios de aceite:**
-- [ ] `go build ./...` sem erros
-- [ ] `go test ./internal/generators/... ./internal/commands/...` verde, incluindo
+- [x] `go build ./...` sem erros
+- [x] `go test ./internal/generators/... ./internal/commands/...` verde, incluindo
       `TestMoveREQ_RewritesStatusInPlace` inalterado e os 6 testes novos
-- [ ] `go vet ./...` sem avisos
+- [x] `go vet ./...` sem avisos
 
 **Comandos de validação:** `go build ./... && go test ./internal/... && go vet ./...`
 
 ---
 
 ### ML-1B — Node.js: recursão + move físico condicional em `npm/src/generators/req.js`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `npm/src/generators/req.js` (`listREQs`, `findREQ`, `moveREQ` — linhas 11, 108, 121)
 - `npm/src/commands/req.js` (linha ~64-67, call site de `listREQs`)
@@ -141,15 +156,15 @@ já decidiu as duas questões de design em aberto:
    (`npm/tests/req_move.test.js:15`) — deve continuar passando.
 
 **Critérios de aceite:**
-- [ ] `npm test` (workspace `npm/`) verde, incluindo o teste in-place existente e os novos
-- [ ] Nenhum warning de lint (se `npm run lint` existir no workspace)
+- [x] `npm test` (workspace `npm/`) verde, incluindo o teste in-place existente e os novos
+- [x] Nenhum warning de lint (se `npm run lint` existir no workspace)
 
 **Comandos de validação:** `npm --prefix npm test`
 
 ---
 
 ### ML-1C — Python: recursão + `req list` novo + move físico condicional em `pypi/trackfw/`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `pypi/trackfw/generators/req.py` (`find_req`, `move_req` — linhas 154, 167)
 - `pypi/trackfw/commands/req.py` (adicionar subcomando `list`, hoje só `new`/`move` — linhas 9-48)
@@ -181,8 +196,8 @@ já decidiu as duas questões de design em aberto:
    `test_move_req_rewrites_status_in_place` — deve continuar passando.
 
 **Critérios de aceite:**
-- [ ] `pytest pypi/tests/` verde, incluindo o teste in-place existente e os novos
-- [ ] `trackfw req list` funcional via CLI Python (antes inexistente) — provado por teste de CLI, não
+- [x] `pytest pypi/tests/` verde, incluindo o teste in-place existente e os novos
+- [x] `trackfw req list` funcional via CLI Python (antes inexistente) — provado por teste de CLI, não
       só de função
 
 **Comandos de validação:** `cd pypi && python -m pytest tests/`
@@ -191,7 +206,7 @@ já decidiu as duas questões de design em aberto:
 > Dependências: Wave 1 completa (os 3 CLIs precisam estar corrigidos para comparar comportamento)
 
 ### ML-2A — AC5: prova de paridade entre os 3 binários
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - Script/fixture temporário (não versionado) ou teste de integração dedicado, seguindo o mesmo padrão
   de prova usado em `REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-...md` AC3
@@ -208,14 +223,14 @@ já decidiu as duas questões de design em aberto:
    implementador, mas o resultado da comparação deve ficar registrado no PR).
 
 **Critérios de aceite:**
-- [ ] Os 3 CLIs produzem o mesmo conjunto de REQs listados e o mesmo destino físico pós-move no mesmo
+- [x] Os 3 CLIs produzem o mesmo conjunto de REQs listados e o mesmo destino físico pós-move no mesmo
       fixture
-- [ ] Evidência da comparação anexada ao PR (output ou teste versionado)
+- [x] Evidência da comparação anexada ao PR (output ou teste versionado)
 
 **Comandos de validação:** execução manual/scriptada dos 3 binários contra o fixture compartilhado
 
 ### ML-2B — AC7: documentação
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `README.md` (ou `docs/` — localizar seção de configuração/namespacing existente para
   `roadmap_namespacing`)
@@ -229,8 +244,8 @@ já decidiu as duas questões de design em aberto:
    migração automática de layout.
 
 **Critérios de aceite:**
-- [ ] README/docs atualizados refletindo o comportamento implementado na Wave 1
-- [ ] Nenhuma referência residual afirmando que `req move` "só reescreve status" sem mencionar o modo
+- [x] README/docs atualizados refletindo o comportamento implementado na Wave 1
+- [x] Nenhuma referência residual afirmando que `req move` "só reescreve status" sem mencionar o modo
       físico novo
 
 **Comandos de validação:** revisão manual do diff de documentação contra o comportamento implementado
@@ -239,7 +254,7 @@ já decidiu as duas questões de design em aberto:
 > Dependências: Wave 1 e Wave 2 completas
 
 ### ML-3A — Regressão completa + fechamento da REQ
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - Nenhum arquivo de produto — apenas execução de gates e atualização de metadados de governança
 
@@ -252,8 +267,8 @@ já decidiu as duas questões de design em aberto:
    `trackfw req move` (usando o próprio comando corrigido nesta implementação — dogfooding).
 
 **Critérios de aceite:**
-- [ ] `make quality` (ou os 3 comandos equivalentes) verde
-- [ ] `trackfw validate` sem violações
-- [ ] REQ-2026-08-03 movida para status `Done`
+- [x] `make quality` (ou os 3 comandos equivalentes) verde
+- [x] `trackfw validate` sem violações
+- [x] REQ-2026-08-03 movida para status `Done`
 
 **Comandos de validação:** `make quality && trackfw validate`

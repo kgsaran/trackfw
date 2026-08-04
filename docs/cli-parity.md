@@ -9,7 +9,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 |---|---:|---:|---:|---|
 | `init` | yes | yes | yes | Creates governance structure and `trackfw.yaml`; `--identity-preset` selects an agent identity preset |
 | `adr` | yes | yes | yes | `new`, `list` |
-| `req` | yes | yes | yes | `new`, `list` |
+| `req` | yes | yes | yes | `new`, `list`, `move` |
 | `roadmap` | yes | yes | yes | `new`, `move`, `list`, `show` |
 | `validate` | yes | yes | yes | Text and `--json`; nonzero on violations |
 | `status` | yes | yes | yes | Governance summary |
@@ -228,6 +228,38 @@ trackfw roadmap move: failed to sync <req-basename>: <cause>
 
 Remaining REQs are still attempted; the command reports the first failure's cause and exits non-zero
 after processing all of them, so one unwritable file does not hide the rest.
+
+### `req list` / `req move` — discovery layouts and conditional physical move
+
+`req_dir` reuses the roadmap's own `roadmap_namespacing` field — there is no separate `req_namespacing`
+key (see ADR-2026-08-04). `req list` and `req move <name> <status>` discover REQs by concatenating three
+fixed, non-recursive globs (not mutually exclusive, all three are always scanned):
+
+1. `req_dir/*.md` — flat legacy layout.
+2. `req_dir/<state>/*.md` for each of the six governance states — per-state layout, no agent segment.
+3. `req_dir/<agent>/<state>/*.md`, only when `roadmap_namespacing: by_agent` — by_agent layout, agents
+   from `agents:` in config or, if unset, the first-level subdirectories of `req_dir`.
+
+A REQ nested deeper than these three fixed patterns is invisible to both commands.
+
+**`req move` mode is discriminated by where the file currently lives**, not by a flag:
+
+- REQ found directly under `req_dir/` (flat) → **in-place**: only the `status:` frontmatter field (and
+  the first `| Status: ... |` marker in the body, if present) is rewritten; the file is not moved and no
+  folder is created. `<status>` is written verbatim — it accepts any string, including the free-form
+  values (`Open`, `Done`, ...) existing flat REQs already carry. Existing flat REQs are never migrated to
+  a state-subfolder layout automatically.
+- REQ found under `req_dir/<state>/` or `req_dir/<agent>/<state>/` (a recognized state subfolder) →
+  **physical move**: the file is relocated to `req_dir/<state-or-agent>/<new-status>/`, target directory
+  created if missing, mirroring `trackfw roadmap move`. In this mode `<status>` **must** be one of the
+  six governance state names (`backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`); any other
+  value is rejected with `invalid state` — the free-form vocabulary from the flat mode does not apply
+  here.
+- Any other layout under `req_dir/` (unrecognized) → falls back to the in-place behavior above.
+
+The transition is appended to `<req_dir>/.trackfw-log` — a log file separate from
+`<roadmap_dir>/.trackfw-log`; `trackfw log` reads only the roadmap log, so REQ transitions do not appear
+in `trackfw log` output.
 
 ## JSON Schema artifacts
 
