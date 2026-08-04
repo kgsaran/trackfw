@@ -64,7 +64,7 @@ cmd.command('new <title>')
 cmd.command('list')
   .description(t('req.list.description'))
   .action(async () => {
-    listREQs(require('../config').load().reqDir)
+    listREQs(require('../config').load())
   })
 
 cmd.command('move <name> <status>')
