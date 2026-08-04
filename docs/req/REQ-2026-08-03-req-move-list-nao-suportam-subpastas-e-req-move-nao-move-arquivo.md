@@ -2,7 +2,7 @@
 status: Open
 date: 2026-08-03
 author: "Zeus"
-adr: ""
+adr: "docs/adr/ADR-2026-08-04-req-move-list-reusar-roadmap-namespacing-para-req-e-mover-fisicamente-o-arquivo.md"
 roadmap: ""
 ---
 
@@ -118,8 +118,10 @@ quem a quebra.
 
 ## Linked ADR
 
-ADR: (a definir — decisão de design entre reusar `roadmap_namespacing` vs. campo próprio, e semântica
-exata do move físico condicional, merece ADR antes da implementação)
+ADR: `ADR-2026-08-04-req-move-list-reusar-roadmap-namespacing-para-req-e-mover-fisicamente-o-arquivo` —
+decide reusar `roadmap_namespacing` (sem campo `req_namespacing` novo) e define o critério de move
+físico condicional (só quando `REQDir/<estado>/` ou `<agente>/<estado>/` já existe como estrutura
+corrente).
 
 ## Blocked by ADRs
 <!-- none -->
