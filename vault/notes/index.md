@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [opencode-tools-key-hard-fail-carregamento-inteiro-2026-08-05](opencode-tools-key-hard-fail-carregamento-inteiro-2026-08-05.md)
+- [listas-de-targets-hardcoded-divergem-do-catalog-json-2026-08-05](listas-de-targets-hardcoded-divergem-do-catalog-json-2026-08-05.md)
 - [branch-new-exit-code-leak-vs-propagation-2026-08-04](branch-new-exit-code-leak-vs-propagation-2026-08-04.md)
 - [check-identity-parity-json-html-escaping-pre-existing-2026-08-04](check-identity-parity-json-html-escaping-pre-existing-2026-08-04.md)
 - [branch_has_wip_roadmap-conflita-com-a-definition-of-done-2026-07-26](branch_has_wip_roadmap-conflita-com-a-definition-of-done-2026-07-26.md)

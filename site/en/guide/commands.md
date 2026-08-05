@@ -59,7 +59,7 @@ trackfw skills list|install|uninstall|update [flags]
 ```
 
 Supported targets: `claude`, `codex`, `gemini`, `antigravity`, `cursor`,
-`copilot`, `windsurf`, `amazonq`, and `kiro`.
+`copilot`, `windsurf`, `amazonq`, `opencode`, and `kiro`.
 
 ### Flags
 
