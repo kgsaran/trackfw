@@ -138,7 +138,7 @@ jobs:
       # de dependência não são hardcodados aqui).
       - run: python -m pip install --upgrade pip
       - run: python -m pip install pypi/
-      # `make parity` roda os 14 scripts de scripts/check-*.sh (inclui os 100
+      # `make parity` roda os 15 scripts de scripts/check-*.sh (inclui os 101
       # cenários de falsificação de check-gates-falsify.sh e o
       # check-identity-parity.sh) em vez de uma lista manual parcial — ver
       # docs/req/REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md.

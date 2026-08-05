@@ -3448,4 +3448,45 @@ assert_fails_with "branch-new-parity/no-match/go-vs-node/err-message-reformatted
   "branch-new-parity/no-match/go-vs-node/err" \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T42/scripts/check-branch-new-parity.sh"
 
-echo "Falsification checks passed (all 100 scenarios, 15 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42))"
+# ---------------------------------------------------------------------------
+# Cenário 43 — check-attention-scripts-parity.sh: Python literal do texto
+#              "no-op fora da raiz" diverge de Go/Node.js → gate detecta.
+#
+# Objetivo (ROADMAP-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-
+# entre-go-node-e-python-sem-gate-de-paridade): os dois scripts de attention
+# hooks (signal e cleanup) são embutidos como literal-fonte independente em
+# cada runtime — nada além deste gate garante que ficam byte-idênticos. Esta
+# é exatamente a classe de regressão que motivou a REQ (o comentário já
+# divergiu em PT/EN/PT-diferente sem nenhum gate notar). Corrompe apenas o
+# literal `_ATTENTION_CLEANUP_SH` do Python numa cópia isolada de pypi/ — o
+# gate deve reprovar com o diff explícito entre Go e Python.
+#
+# Seam: corrupt_literal com contexto estendido até "ROADMAP_DIR=$(grep" —
+# a mesma frase de comentário aparece IDÊNTICA em _ATTENTION_SIGNAL_SH (que
+# tem "if command -v jq" logo depois, não "ROADMAP_DIR=$(grep"), então o
+# contexto extra restringe a substituição à única ocorrência do script de
+# cleanup — sem isso corrupt_literal aborta com "expected exactly 1
+# occurrence" (mesmo padrão de escopo do Cenário 34/corrupt_python_func_literal).
+#
+# Reaproveita o padrão dos Cenários 36/42: o gate roda a partir de sua própria
+# cópia (T43/scripts/), cujo ROOT_DIR relativo aponta para o fixture — NODE_CLI
+# vem de setup_npm_tree (não corrompido aqui) e PY_ROOT (default
+# $ROOT_DIR/pypi dentro do gate) aponta para a cópia corrompida de pypi/.
+# ---------------------------------------------------------------------------
+T43="$WORK/s43"
+mkdir -p "$T43/scripts"
+setup_npm_tree "$T43"
+cp -r "$ROOT_DIR/pypi" "$T43/pypi"
+cp "$ROOT_DIR/scripts/check-attention-scripts-parity.sh" "$T43/scripts/"
+
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/generators/init_gen.py" "$T43/pypi/trackfw/generators/init_gen.py" \
+  $'# Script is intentionally a no-op when executed outside the project root\n[ -f "trackfw.yaml" ] || exit 0\n\nROADMAP_DIR=$(grep' \
+  $'# Script disables itself outside the trackfw project root\n[ -f "trackfw.yaml" ] || exit 0\n\nROADMAP_DIR=$(grep' \
+  "s43-python-cleanup-comment"
+
+assert_fails_with "attention-scripts-parity/trackfw-attention-cleanup.sh/go-vs-py-comment-drift-not-detected" \
+  "attention-scripts-parity/trackfw-attention-cleanup.sh/go-vs-py" \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T43/scripts/check-attention-scripts-parity.sh"
+
+echo "Falsification checks passed (all 101 scenarios, 16 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43))"
