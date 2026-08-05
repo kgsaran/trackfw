@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-04
 author: "kg.saran@gmail.com"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md"
 ---
 
 # REQ: json.MarshalIndent do Go escapa HTML e diverge de Node/Python em 3 targets do catalogo (kiro amazonq antigravity-legacy)
 
-> Date: 2026-08-04 | Status: Open
+> Date: 2026-08-04 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -50,12 +50,12 @@ bug só é visível rodando `make quality` localmente. (A lacuna de cobertura do
 observação separada, potencialmente objeto de outra REQ — não faz parte do escopo deste REQ.)
 
 ## Acceptance Criteria
-- [ ] `internal/integrations/render.go:57` para de usar `json.MarshalIndent` puro; usa um
+- [x] `internal/integrations/render.go:57` para de usar `json.MarshalIndent` puro; usa um
       `json.Encoder` com `SetEscapeHTML(false)` (mantendo a mesma indentação de 2 espaços e, se
       necessário, removendo o `\n` extra que `Encoder.Encode` adiciona, já que `MarshalIndent` não
       adiciona — conferir o `append(data, '\n')` logo após, hoje presente no código)
-- [ ] `scripts/check-identity-parity.sh` passa com 0 falhas (hoje: 6)
-- [ ] Auditoria (não necessariamente fix, a menos que confirmado divergente) dos demais
+- [x] `scripts/check-identity-parity.sh` passa com 0 falhas (hoje: 6)
+- [x] Auditoria (não necessariamente fix, a menos que confirmado divergente) dos demais
       `json.Marshal`/`json.MarshalIndent`/`json.NewEncoder` em `internal/` cujo output é comparado
       byte-a-byte com Node.js/Python por algum gate de paridade existente — especificamente
       `internal/generators/agentfiles.go` (6 call sites, geram `.claude/settings.json` e
@@ -65,12 +65,12 @@ observação separada, potencialmente objeto de outra REQ — não faz parte do 
       teórico sem gate cobrindo. Chamadas Go-only sem equivalente cross-runtime (servidor HTTP em
       `internal/serve/`, payloads de saída para Jira/Linear em `internal/sync/`) estão fora — não há
       contrato de paridade byte-a-byte para elas
-- [ ] Teste de regressão: golden/fixture com um caractere `<`, `>` ou `&` no conteúdo de origem,
+- [x] Teste de regressão: golden/fixture com um caractere `<`, `>` ou `&` no conteúdo de origem,
       confirmando que a saída JSON do Go não escapa (byte-idêntica ao Node/Python para o mesmo
       cenário) — evita reintrodução silenciosa
-- [ ] `make quality` verde (incluindo `check-identity-parity.sh`, hoje não coberto pela suíte que
+- [x] `make quality` verde (incluindo `check-identity-parity.sh`, hoje não coberto pela suíte que
       falha silenciosamente por não estar no CI — mas continua sendo o critério local de "pronto")
-- [ ] `trackfw validate` sem violações
+- [x] `trackfw validate` sem violações
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -81,4 +81,4 @@ ADR: N/A — correção de bug de serialização, sem decisão arquitetural nova
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md`

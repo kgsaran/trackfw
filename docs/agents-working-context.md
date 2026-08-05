@@ -9359,3 +9359,40 @@ próprios no working tree ao final desta sessão (`pypi/trackfw/validator.py`, `
 
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem
 autoridade Git).
+
+## Sessão 2026-08-04 — Prometeu (ML-2A: auditoria pós-HTML-escaping — sem fix) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy`
+(já criada pelo orquestrador — Tooling não executa Git; sem commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md`,
+Wave 2 / ML-2A. Wave 1 (fix de `render.go:57`) já concluída e auditada anteriormente.
+
+**Escopo**: auditoria (não fix automático) de todo `json.Marshal`/`json.MarshalIndent`/
+`json.NewEncoder` restante em `internal/`, verificando gate de paridade cross-runtime real e
+plausibilidade de conteúdo com `<`/`>`/`&`.
+
+**Resultado — nenhum fix aplicado**, registrado item-por-item na seção do ML-2A do roadmap:
+- `agentfiles.go` (6 sites, settings.json/hooks), `manifest.go`, `validator.go:50` — sem gate,
+  conteúdo estruturado/enum, risco teórico.
+- `validate.go`/`barrier.go`/`update.go`/`update_harness.go` (saídas `--json`) — gate existe
+  (`check-validate-parity.sh`, `check-update-parity.sh`, `check-barrier.sh`, `check-artifact-parity.sh`)
+  mas todos reparseiam JSON (`json.loads`) antes de comparar, o que desfaz qualquer escaping HTML
+  antes da comparação — mesmo bug do ML-1A não seria pego por nenhum deles.
+- Achados fora da lista original da REQ: `integrations_flags.go:352` (`agents/skills list --json`,
+  gate `check-integration-cli-parity.sh` mas também mascarado por reparse) e **`context.go:185`**
+  (`trackfw context --format json`, inclui títulos reais de REQ/ADR/Roadmap — risco real e
+  plausível, mas **sem gate nenhum** cobrindo — candidato a REQ futura para criar o gate antes de
+  qualquer fix). `internal/server/server.go` confirmado sem import em nenhum lugar do código.
+- `internal/identity/identity.go:72` (`UserNickname` é texto livre do usuário) — sem gate byte-a-byte
+  do próprio `Save()`, mesmo padrão de risco-real-sem-gate do `context.go`.
+- Confirmado fora de escopo (Go-only, sem contrato de paridade): `internal/serve/*.go`,
+  `internal/sync/jira.go`, `internal/sync/linear.go` — não tocados.
+
+**Validação**: `go build ./...` OK, `go test ./...` OK (sem regressão, código não alterado),
+`GO_BIN=bin/trackfw scripts/check-identity-parity.sh` verde (11 combinações), `make quality` verde
+(100/100 cenários de falsify), `trackfw validate` sem violações. Único arquivo modificado: o
+roadmap (auditoria registrada). Nenhum código de produto tocado.
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Tooling não tem
+autoridade Git).
