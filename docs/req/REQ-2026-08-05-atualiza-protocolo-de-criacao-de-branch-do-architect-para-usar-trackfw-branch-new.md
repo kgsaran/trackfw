@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-05
-author: ""
+author: "kg.saran@gmail.com"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-05-atualiza-protocolo-de-criacao-de-branch-do-architect-para-usar-trackfw-branch-new.md"
 ---
 
 # REQ: atualiza protocolo de criação de branch do Architect para usar trackfw branch new
 
-> Date: 2026-08-05 | Status: Open
+> Date: 2026-08-05 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -44,11 +44,11 @@ também não está instruído a usá-lo, apesar do comando já existir e estar p
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
-ADR: 
+ADR: N/A — ajuste de texto de prompt/instrução de agente, sem decisão arquitetural nova.
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: 
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-05-atualiza-protocolo-de-criacao-de-branch-do-architect-para-usar-trackfw-branch-new.md`
