@@ -89,4 +89,4 @@ fora de escopo nativo, e extensão obrigatória do gate de paridade para cobrir 
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`
