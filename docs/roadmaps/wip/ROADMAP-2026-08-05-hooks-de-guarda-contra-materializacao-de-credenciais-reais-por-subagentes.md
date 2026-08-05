@@ -125,7 +125,7 @@ para não repetir o erro de `REQ-2026-08-04-scripts-de-attention-hooks-divergem-
 quebrada por lote parcial).
 
 ### ML-2A — Claude Code
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectClaudeHooks`, linha 182-227; usar
   `mergeClaudeHookArray`, linha 441, para adicionar entradas sem sobrescrever hooks existentes de
