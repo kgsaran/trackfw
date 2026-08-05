@@ -281,7 +281,7 @@ func TestInitAIToolsUsesCanonicalManagerAndValidatesTargets(t *testing.T) {
 
 func TestInitAIToolsHelpIncludesEveryCatalogTarget(t *testing.T) {
 	usage := newInitCmd().Flag("ai-tools").Usage
-	for _, target := range []string{"claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "kiro"} {
+	for _, target := range []string{"claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "opencode", "kiro"} {
 		if !strings.Contains(usage, target) {
 			t.Fatalf("--ai-tools help omits %s: %s", target, usage)
 		}

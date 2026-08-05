@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md"
 squad: "prometeu-tf"
@@ -7,7 +7,7 @@ squad: "prometeu-tf"
 
 # Roadmap: compatibilidade com OpenCode (opencode.ai) para uso de modelos open-source
 
-> Created: 2026-08-04 | Status: wip
+> Created: 2026-08-04 | Status: done
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
@@ -318,16 +318,73 @@ gap). Corrigido: `opencode` inserido entre `amazonq` e `kiro` nas duas listas fi
 `catalog.json`), contagem 19→21 ids atualizada nos comentários e em `docs/cli-parity.md` ("Declared
 harness targets — pinned list").
 
+### Achado extra (ML-4A): mais duas listas hardcoded de targets sem `opencode` (mesma classe da Wave 3)
+
+A varredura pedida na ML-4A (`grep` por `amazonq`/`kiro` fora de `catalog.json`) encontrou, além dos
+dois hits já corrigidos na Wave 3 (`internal/generators/update.go`,
+`pypi/trackfw/commands/update_harness.py`), mais duas listas hardcoded no fluxo de `trackfw init`
+que não tinham sido atualizadas quando `opencode` entrou no catálogo (Wave 2), uma delas um bug
+funcional real, não só cosmético:
+
+1. **`npm/src/commands/init.js:61` (bug funcional).** O `Set` `supported`, usado para validar
+   `--ai-tools` no modo não-interativo, não incluía `opencode` — `trackfw init --ai-tools opencode`
+   (sem TTY) lançava `Unsupported AI tool: opencode` no CLI Node.js, enquanto Go e Python aceitavam
+   normalmente (ambos validam via o catálogo, sem lista própria). Divergência real entre os 3
+   runtimes para o mesmo input — corrigido acrescentando `opencode` ao Set.
+2. **Wizards interativos inutilizáveis para o novo target.** Nem o wizard `huh` de
+   `internal/commands/init.go` (Go) nem o `checkbox` de `npm/src/commands/init.js` (Node.js) listavam
+   OpenCode como opção selecionável — o target ficava inacessível via `trackfw init` interativo em
+   ambos, apesar de já funcionar via `trackfw agents/skills install --targets opencode`. Python não
+   tem lista hardcoded equivalente em `pypi/trackfw/commands/init.py` (repassa `--ai-tools` direto
+   para `plan_deployments`, validado pelo catálogo), logo não tinha esse gap. Corrigido adicionando a
+   opção `OpenCode`/`opencode` nos dois wizards e nas duas help strings de `--ai-tools`. Verificado
+   antes de editar que `InjectRulesForTool` (Go) / `injectRulesForTool` (Node.js) fazem no-op seguro
+   para `opencode` (ausente dos mapas `agentFiles`/`AGENT_FILES`), então a opção nova não abre um
+   caminho de erro.
+3. **`internal/commands/agents_skills_test.go:284`
+   (`TestInitAIToolsHelpIncludesEveryCatalogTarget`)** tinha a mesma lista desatualizada — o teste
+   existe exatamente para pegar esse tipo de gap, mas estava passando vacuamente por nunca checar
+   `opencode`. Lista do teste atualizada para incluir o novo target.
+4. **Confirmado sem gap**: `pypi/trackfw/commands/init.py` (sem lista hardcoded, já genérico) e as
+   suítes `npm/tests/` / `pypi/tests/` (nenhum teste de `init`/`ai-tools` hardcoda a lista de 9/10
+   alvos, então nenhum teste precisou de atualização além do Go acima).
+
+**Lição para o vault/lições futuras**: essas listas (`update` harness targets, `init` wizard
+choices/help, Sets de validação não-interativa) são **intencionalmente estáticas por contrato**
+(`docs/cli-parity.md` pina a lista de harness targets como "not derived at runtime") — cada alvo novo
+no catálogo exige sincronizar manualmente todas essas listas nos 3 runtimes; não há um único ponto
+central que as force a crescer junto com `catalog.json`. Uma varredura por `grep` de "todo alvo já
+existente" (ex: `amazonq.*kiro`) é hoje o único jeito prático de achar as que ficaram para trás.
+
 ## Wave 4 — Documentação e gate de paridade
 > Dependencies: Wave 3 completa
 
 ### ML-4A — Documentar e validar o gate de paridade de identidade
-**Status:** pending
-**Files affected:** `docs/cli-parity.md`
+**Status:** ✅ Concluído
+**Files affected:**
+- `docs/cli-parity.md` — OpenCode adicionado à frase de targets suportados da seção "AI integration
+  lifecycle"; nova subseção `### OpenCode agent representation (opencode-agent)` documentando por
+  que o frontmatter é reconstruído do zero, por que `mode: subagent` é sempre fixo, e por que
+  `model:`/`tools:`/`memory:` são omitidos (com a evidência do `tools:` hard-fail no OpenCode
+  1.18.13 e o comportamento observado de `GET /agent`); cross-link explícito confirmando que a
+  tabela "Declared harness targets — pinned list" (já atualizada na Wave 3) não foi duplicada.
+- `internal/commands/init.go` — `--ai-tools` help string e opção `huh.NewOption("OpenCode",
+  "opencode")` no wizard interativo de `trackfw init` (achado extra, ver abaixo).
+- `internal/commands/agents_skills_test.go` — `TestInitAIToolsHelpIncludesEveryCatalogTarget` agora
+  cobre `opencode` (achado extra).
+- `npm/src/commands/init.js` — `--ai-tools` help string, `supported` Set (validação não-interativa)
+  e opção de checkbox `{ name: 'OpenCode', value: 'opencode' }` no wizard interativo (achado extra).
 **Actions:**
-1. Adicionar OpenCode à lista de CLIs suportados por `agents`/`skills` em `docs/cli-parity.md`.
-2. Confirmar que `scripts/check-identity-parity.sh` cobre o novo target automaticamente (derivação a
-   partir do catálogo, sem lista manual) — se não cobrir, é um bug no gate, corrigir.
+1. OpenCode adicionado à lista de CLIs suportados por `agents`/`skills` em `docs/cli-parity.md`,
+   com a decisão de representação documentada (ver Files affected).
+2. Confirmado que `scripts/check-identity-parity.sh` **já cobre o novo target automaticamente** —
+   `load_catalog_targets()` deriva a lista de `target/surface` a partir de
+   `internal/integrations/assets/catalog.json` (`support_level != "unsupported"`), sem lista manual;
+   `opencode` entra no gate sem nenhuma edição. **Não é um bug — nenhuma correção necessária aqui.**
+3. Varredura ampla (`grep -rn` por `amazonq`/`kiro` em `scripts/*.sh`, `internal/`, `npm/src/`,
+   `pypi/trackfw/`) encontrou mais duas ocorrências reais da mesma classe de defeito da Wave 3 (lista
+   de targets hardcoded que não cresce junto com o catálogo) — corrigidas nesta ML, ver "Achado
+   extra" abaixo.
 **Acceptance criteria:**
-- [ ] `make quality` verde
-- [ ] `trackfw validate` sem violações
+- [x] `make quality` verde
+- [x] `trackfw validate` sem violações

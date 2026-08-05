@@ -24,7 +24,7 @@ func newInitCmd() *cobra.Command {
 		RunE:  runInit,
 	}
 	cmd.Flags().Bool("brownfield", false, "Adopt governance gradually (lenient mode for 30 days)")
-	cmd.Flags().StringSlice("ai-tools", nil, "AI tools to configure (claude,codex,gemini,antigravity,cursor,copilot,windsurf,amazonq,kiro)")
+	cmd.Flags().StringSlice("ai-tools", nil, "AI tools to configure (claude,codex,gemini,antigravity,cursor,copilot,windsurf,amazonq,opencode,kiro)")
 	cmd.Flags().String("identity-preset", "none", "Agent identity preset: none, neutral, "+strings.Join(identity.PresetNames(), ", "))
 	cmd.Flags().String("forge", "", "Forge platform: "+strings.Join(forge.ValidForges, ", "))
 	return cmd
@@ -260,6 +260,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 					huh.NewOption("GitHub Copilot", "copilot"),
 					huh.NewOption("Windsurf", "windsurf"),
 					huh.NewOption("Amazon Q Developer", "amazonq"),
+					huh.NewOption("OpenCode", "opencode"),
 					huh.NewOption("Kiro", "kiro"),
 				).
 				Value(&aiTools),

@@ -8,7 +8,7 @@ const { resolveScope } = require('./integrations')
 
 const cmd = new Command('init')
 cmd.description(t('init.description'))
-cmd.option('--ai-tools <tools>', 'Comma-separated AI tools to configure (claude,codex,gemini,antigravity,cursor,copilot,windsurf,amazonq,kiro)', '')
+cmd.option('--ai-tools <tools>', 'Comma-separated AI tools to configure (claude,codex,gemini,antigravity,cursor,copilot,windsurf,amazonq,opencode,kiro)', '')
 cmd.option('--identity-preset <preset>', `Agent identity preset: none, neutral, ${identityStore.presetNames().join(', ')}`, 'none')
 cmd.option('--forge <value>', 'Forge platform: github, gitlab, bitbucket, azure', '')
 cmd.action(async (options, command) => {
@@ -58,7 +58,7 @@ cmd.action(async (options, command) => {
     }
     await generators.scaffold(cfg)
     const aiTools = String(options.aiTools || '').split(',').map(tool => tool.trim()).filter(Boolean)
-    const supported = new Set(['claude', 'codex', 'gemini', 'antigravity', 'cursor', 'copilot', 'windsurf', 'amazonq', 'kiro'])
+    const supported = new Set(['claude', 'codex', 'gemini', 'antigravity', 'cursor', 'copilot', 'windsurf', 'amazonq', 'opencode', 'kiro'])
     // Sem TTY, o escopo nunca é perguntado: default `global` (ADR D1/D4).
     const scope = await resolveScope({}, { interactive: false })
     const makeOnSkip = () => (_destination, reason) => {
@@ -222,6 +222,7 @@ cmd.action(async (options, command) => {
         { name: 'GitHub Copilot', value: 'copilot' },
         { name: 'Windsurf', value: 'windsurf' },
         { name: 'Amazon Q Developer', value: 'amazonq' },
+        { name: 'OpenCode', value: 'opencode' },
         { name: 'Kiro', value: 'kiro' },
       ],
     })
