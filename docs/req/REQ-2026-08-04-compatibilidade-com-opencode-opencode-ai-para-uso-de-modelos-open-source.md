@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-04
 author: "kg.saran@gmail.com"
 adr: "docs/adr/ADR-2026-07-18-catalogo-canonico-e-adapters-para-integracoes-de-agentes.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md"
 ---
 
 # REQ: compatibilidade com OpenCode (opencode.ai) para uso de modelos open-source
@@ -92,4 +92,4 @@ ADR complementar antes de prosseguir.
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md`
