@@ -24,7 +24,7 @@ MCP servers, hooks de atenção (plugin JS) e wizard de provider ficam fora (ver
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
 - [ ] Target `opencode` no catálogo canônico, agents+skills instaláveis/atualizáveis/desinstaláveis
       nos 3 CLIs via `--targets opencode`
-- [ ] Decisão de representação de agente documentada (reuso vs nova) antes de tocar código de produção
+- [x] Decisão de representação de agente documentada (reuso vs nova) antes de tocar código de produção
 - [ ] `AGENTS.md` confirmado funcionando para projetos OpenCode sem mudança de detecção (ou corrigido
       se a prática divergir da leitura de código)
 - [ ] Assets Go canônicos, cópias npm/PyPI byte-idênticas
@@ -230,27 +230,61 @@ opções são igualmente simples em `render.go`, então a decisão é puramente 
 > Dependencies: Wave 1 completa
 
 ### ML-2A — Adicionar target `opencode` a `internal/integrations/assets/catalog.json`
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
-- `internal/integrations/assets/catalog.json`
-- `internal/integrations/render.go` (se a Wave 1 decidiu por nova representação)
-**Actions:** Definir o target `opencode` seguindo exatamente o schema dos 9 targets existentes (surface
+- `internal/integrations/assets/catalog.json` — novo target `opencode`, surface `cli`, escopos
+  `global`+`project`, `agents.representation: "opencode-agent"`, `skills.representation: "skill"`
+- `internal/integrations/render.go` — novo case `"opencode-agent"` em `Render()`, reconstruindo o
+  frontmatter do zero (mesmo padrão de `"agent-directory"`): `description` mantida, `mode: subagent`
+  sempre fixo, `model:`/`tools:`/`memory:` omitidos (decisão de produto do orquestrador registrada na
+  Wave 1 — omitir em vez de mapear)
+- `internal/integrations/render_test.go` — `TestRenderOpenCodeAgent`
+- `internal/integrations/catalog_test.go` — `TestLoadCatalogHasCanonicalInventory` atualizado para 10
+  targets (inclui `opencode`)
+**Actions:** Definido o target `opencode` seguindo exatamente o schema dos 9 targets existentes (surface
 `cli`, escopos `global`+`project`, paths para agents/skills conforme decidido na Wave 1).
 **Acceptance criteria:**
-- [ ] `go build ./...`, `go test ./internal/integrations/...` verdes
-- [ ] `trackfw agents list --json` mostra o target `opencode`
+- [x] `go build ./...`, `go test ./internal/integrations/...` verdes
+- [x] `trackfw agents list --json` mostra o target `opencode`
 
 ### ML-2B — Lifecycle Go completo (install/uninstall/update) + AGENTS.md
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
-- `internal/generators/agentfiles.go` (só se a Wave 1 revelar necessidade de ajuste na detecção)
-- Testes cobrindo `agents`/`skills` `install|uninstall|update` com `--targets opencode`
-**Actions:** Confirmar que o lifecycle genérico já cobre o novo target sem código extra (esse é o
-ponto central do ADR-2026-07-18: "novas CLIs podem ser adicionadas por adapter sem duplicar o
-lifecycle") — se precisar de código além do catálogo, documentar por quê.
+- `internal/commands/agents_skills_test.go` — `TestOpenCodeAgentsLifecycleEndToEnd` (install → list →
+  update → uninstall com `--targets opencode`)
+- `internal/generators/agentfiles.go` — nenhuma mudança necessária, confirmado manualmente (ver Actions)
+**Actions:** Confirmado que o lifecycle genérico já cobre o novo target sem código extra (ponto central
+do ADR-2026-07-18). Validação contra o OpenCode real (1.18.13, `/opt/homebrew/bin/opencode`):
+1. `trackfw agents install --targets opencode --scope project --items architect,backend` gerou
+   `.opencode/agents/trackfw-architect.md` e `.opencode/agents/trackfw-backend.md` com frontmatter
+   correto (`description`, `mode: subagent`, sem `model:`/`tools:`/`memory:`).
+2. `opencode agent list` num projeto de teste isolado (`git init`, fora do repo) carregou ambos como
+   `trackfw-architect (subagent)` e `trackfw-backend (subagent)` sem nenhum erro de configuração —
+   confirma que o bug de `tools:` (achado #3 da Wave 1) está corrigido pela nova representação.
+3. `opencode serve` + `GET /agent` confirmou via JSON resolvido: `mode: "subagent"` correto, chave
+   `model` **ausente** do objeto (não apenas null — omitida de fato, comportamento pretendido), `prompt`
+   preservando o corpo completo (incluindo saudação/assinatura de identidade quando configurada).
+4. `opencode debug skill` confirmou a skill de projeto reconhecida (colidiu por nome com uma skill
+   global pré-existente do Claude Code na máquina de teste — comportamento de dedupe já documentado
+   como achado colateral não-acionável na Wave 1; conteúdo idêntico em ambos os caminhos).
+5. `trackfw agents list/update/uninstall --targets opencode` e `trackfw skills install/uninstall
+   --targets opencode` testados manualmente end-to-end, todos corretos.
+6. `AGENTS.md`: confirmado com `trackfw discover --init` num projeto de teste com `AGENTS.md`
+   pré-existente — o bloco de regras trackfw foi injetado corretamente, sem nenhuma mudança de código
+   (a detecção em `agentfiles.go` já é por path, independente da ferramenta que criou o arquivo).
 **Acceptance criteria:**
-- [ ] Testes end-to-end de install/uninstall/update com `--targets opencode` verdes
-- [ ] `go test ./internal/...` completo verde
+- [x] Testes end-to-end de install/uninstall/update com `--targets opencode` verdes
+- [x] `go test ./internal/...` completo verde
+
+> Auditoria manual (trackfw_architect): revalidei tudo de forma independente — `go build`,
+> `go test ./...` completo (todos os pacotes), `trackfw agents list --json` confirmando o target.
+> Instalei os agentes num projeto de teste real (`/tmp`, fora do repo) e rodei o binário OpenCode
+> de verdade: `opencode agent list` mostrou `trackfw-architect (subagent)` e
+> `trackfw-backend (subagent)` sem nenhum erro de configuração — confirma que o bug crítico da
+> Wave 1 (`tools:` derrubando o carregamento inteiro) está corrigido. Subi `opencode serve` e
+> consultei `GET /agent` via curl: `grep '"model"'` no JSON completo não encontrou **nenhuma**
+> ocorrência — confirma que o campo está de fato ausente (decisão de produto respeitada), não só
+> null. Diretório de teste removido ao final.
 
 ## Wave 3 — Node.js + Python (paralelo entre si)
 > Dependencies: Wave 2 completa

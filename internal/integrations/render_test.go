@@ -197,6 +197,56 @@ func TestRenderAgentDirectory(t *testing.T) {
 	})
 }
 
+// TestRenderOpenCodeAgent prova que a representação "opencode-agent"
+// reconstrói o frontmatter do zero (mesmo estilo do case "agent-directory")
+// de um jeito que o OpenCode real (1.18.13) aceita: description presente,
+// "mode: subagent" sempre fixo, e "model:"/"tools:"/"memory:" AUSENTES —
+// achado #3 da Wave 1 do roadmap ROADMAP-2026-08-04-compatibilidade-com-opencode:
+// "tools:" é chave reservada no schema do OpenCode (recusa TODO o carregamento
+// do projeto se receber a lista estilo Claude Code) e "model:" é omitido por
+// decisão de produto (deixar o OpenCode resolver pelo default já configurado
+// pelo usuário em opencode.json, alinhado com a motivação de negócio do REQ de
+// permitir modelos open-source/locais).
+func TestRenderOpenCodeAgent(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog.Item(KindAgents, "backend")
+	if !ok {
+		t.Fatal("agente 'backend' não encontrado no catalog")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := Render(item, KindAgents, Capability{Representation: "opencode-agent"}, source, identity.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := string(out)
+
+	if !strings.HasPrefix(output, "---\n") {
+		t.Fatalf("esperado frontmatter delimitado por ---, output:\n%s", output)
+	}
+	if !strings.Contains(output, "description:") {
+		t.Errorf("esperado campo 'description:' no frontmatter:\n%s", output)
+	}
+	if !strings.Contains(output, "mode: subagent\n") {
+		t.Errorf("esperado 'mode: subagent' fixo no frontmatter:\n%s", output)
+	}
+	for _, forbidden := range []string{"model:", "tools:", "memory:"} {
+		if strings.Contains(output, forbidden) {
+			t.Errorf("campo %q não deve aparecer no frontmatter do OpenCode (schema incompatível):\n%s", forbidden, output)
+		}
+	}
+	// corpo original preservado
+	if !strings.Contains(output, "# Backend") {
+		t.Errorf("corpo original perdido:\n%s", output)
+	}
+}
+
 func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 	catalog, err := LoadCatalog()
 	if err != nil {
