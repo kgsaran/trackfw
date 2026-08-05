@@ -1,0 +1,17 @@
+name: trackfw-gate
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install trackfw
+        run: |
+          curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+
+      - name: Governance gate
+        run: trackfw validate

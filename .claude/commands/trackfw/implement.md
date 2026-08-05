@@ -12,7 +12,7 @@ Use Glob para listar `docs/req/*.md`.
 
 - Se **nenhum arquivo encontrado**: informe que não há REQs disponíveis e sugira criar com `/trackfw:req`.
 - Se **`$ARGUMENTS` foi fornecido** e filtra para exatamente uma REQ: use-a diretamente.
-- Em **todos os outros casos** (sem argumento, ou argumento ambíguo): apresente a lista de REQs disponíveis e pergunte ao usuário qual deseja implementar. Exiba os nomes dos arquivos sem o path completo para facilitar a leitura.
+- Em **todos os outros casos** (sem argumento, ou argumento ambíguo): apresente a lista de REQs disponíveis e pergunte ao usuário qual deseja implementar.
 
 Leia o conteúdo completo da REQ selecionada.
 
@@ -70,7 +70,7 @@ Para cada Wave (em sequência), execute os MLs da Wave:
 
 **5b. Implementar:** execute as ações descritas no ML usando suas ferramentas (Read, Write, Edit, Bash). Siga exatamente os arquivos afetados, ações e critérios de aceite listados no roadmap.
 
-**5c. Validar:** execute os comandos de validação do ML (ex: `go build ./...`, `go test ./...`). Se falhar, corrija antes de avançar.
+**5c. Validar:** execute os comandos de validação do ML. Se falhar, corrija antes de avançar.
 
 **5d. Atualizar o roadmap:** edite o arquivo de roadmap em `docs/roadmaps/wip/` substituindo o status do ML:
 - `**Status:** ⬜ Pendente` → `**Status:** ✅ Concluído`
@@ -81,7 +81,7 @@ git add -A
 git commit -m "feat(<escopo>): <descrição do ML>"
 ```
 
-**Atenção:** MLs dentro da mesma Wave que forem marcados como independentes podem ser executados em sequência rápida. Só avance para a próxima Wave após todos os MLs da Wave atual estarem ✅.
+Só avance para a próxima Wave após todos os MLs da Wave atual estarem ✅.
 
 ---
 
