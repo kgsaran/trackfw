@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-04
 author: "kg.saran@gmail.com"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md"
 ---
 
 # REQ: job parity do CI so roda 4 de 14 scripts do make parity (falsificacao e identity-parity nunca rodam em CI)
@@ -75,4 +75,4 @@ ADR: N/A — correção de configuração de CI, sem decisão arquitetural nova.
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md`
