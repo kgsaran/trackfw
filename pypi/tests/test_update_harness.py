@@ -100,7 +100,7 @@ def test_harness_declared_target_list_and_order(tmp_path):
     assert ids[0] == "claude-skill"
     assert ids[1:3] == ["claude-agents", "claude-skills"]
     assert ids[-2:] == ["kiro-agents", "kiro-skills"]
-    assert len(ids) == 1 + 9 * 2
+    assert len(ids) == 1 + 10 * 2
 
     home = tmp_path / "home"
     home.mkdir()
