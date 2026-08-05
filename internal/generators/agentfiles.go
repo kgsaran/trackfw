@@ -210,11 +210,21 @@ func InjectClaudeHooks(cwd string) error {
 		"AskUserQuestion",
 		"scripts/trackfw-attention-signal.sh",
 	)
+	hooks["PreToolUse"] = mergeClaudeHookArray(
+		hooks["PreToolUse"],
+		"Bash",
+		"scripts/trackfw-credential-guard.sh",
+	)
 
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		"AskUserQuestion",
 		"scripts/trackfw-attention-cleanup.sh",
+	)
+	hooks["PostToolUse"] = mergeClaudeHookArray(
+		hooks["PostToolUse"],
+		"Bash",
+		"scripts/trackfw-credential-guard.sh",
 	)
 
 	root["hooks"] = hooks
@@ -456,6 +466,15 @@ func mergeClaudeHookArray(existing interface{}, matcher, command string) []inter
 				return arr
 			}
 		}
+		// Matcher already present but this command isn't yet: merge the new
+		// command into the existing entry instead of appending a duplicate
+		// matcher entry (keeps parity with npm/pypi's merge behavior and
+		// avoids two separate {"matcher":"Bash",...} blocks in the output).
+		obj["hooks"] = append(innerHooks, map[string]interface{}{
+			"type":    "command",
+			"command": command,
+		})
+		return arr
 	}
 
 	entry := map[string]interface{}{

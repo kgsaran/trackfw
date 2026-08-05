@@ -71,6 +71,12 @@ func TestInjectClaudeHooks_Create(t *testing.T) {
 	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse[AskUserQuestion] → cleanup.sh missing")
 	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Bash] → credential-guard.sh missing")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PostToolUse[Bash] → credential-guard.sh missing")
+	}
 }
 
 func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
@@ -104,11 +110,27 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
 		t.Error("PreToolUse signal hook missing")
 	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse credential-guard hook missing")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
+		t.Error("PostToolUse cleanup hook missing")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PostToolUse credential-guard hook missing")
+	}
 
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pr, _ := hooks["PreToolUse"].([]interface{})
+	// A pre-existing "Bash" matcher entry (third-party hook) must be merged with
+	// (not duplicated by) the new credential-guard "Bash" entry: 2 entries total
+	// -- {Bash: [other.sh, credential-guard.sh]}, {AskUserQuestion: [signal.sh]}.
 	if len(pr) != 2 {
 		t.Errorf("expected 2 PreToolUse entries, got %d", len(pr))
+	}
+	post, _ := hooks["PostToolUse"].([]interface{})
+	if len(post) != 2 {
+		t.Errorf("expected 2 PostToolUse entries, got %d", len(post))
 	}
 }
 

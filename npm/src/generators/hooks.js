@@ -234,6 +234,7 @@ function generateCredentialGuardScript(cwd) {
 
 const SIGNAL_CMD = 'scripts/trackfw-attention-signal.sh'
 const CLEANUP_CMD = 'scripts/trackfw-attention-cleanup.sh'
+const GUARD_CMD = 'scripts/trackfw-credential-guard.sh'
 
 // ---------------------------------------------------------------------------
 // generateAttentionScripts — writes the two shell scripts to scripts/
@@ -264,7 +265,9 @@ function injectClaudeHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'AskUserQuestion', SIGNAL_CMD)
+  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'AskUserQuestion', CLEANUP_CMD)
+  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
 
   writeJSON(filePath, data)
 }

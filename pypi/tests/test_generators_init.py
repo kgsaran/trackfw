@@ -417,13 +417,57 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data = json.load(f)
         self.assertIn('PreToolUse', data.get('hooks', {}))
         self.assertIn('PostToolUse', data.get('hooks', {}))
+        pre_matchers = {e.get('matcher') for e in data['hooks']['PreToolUse']}
+        post_matchers = {e.get('matcher') for e in data['hooks']['PostToolUse']}
+        self.assertEqual(pre_matchers, {'AskUserQuestion', 'Bash'})
+        self.assertEqual(post_matchers, {'AskUserQuestion', 'Bash'})
 
         # 2. Idempotência
         inject_claude_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
-        self.assertEqual(len(data2['hooks']['PreToolUse']), 1)
-        self.assertEqual(len(data2['hooks']['PostToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['PreToolUse']), 2)
+        self.assertEqual(len(data2['hooks']['PostToolUse']), 2)
+
+    def test_inject_claude_hooks_preserves_third_party_matcher(self):
+        """PreToolUse/PostToolUse com um matcher de terceiro (ex.: 'CustomTool')
+        deve ser preservado ao lado de AskUserQuestion + Bash, sem duplicar
+        entradas do mesmo matcher em execuções repetidas (ML-2A)."""
+        from trackfw.generators.hooks import inject_claude_hooks
+
+        settings_dir = os.path.join(self.tmp, '.claude')
+        os.makedirs(settings_dir, exist_ok=True)
+        settings_path = os.path.join(settings_dir, 'settings.json')
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'PreToolUse': [
+                        {'matcher': 'CustomTool', 'hooks': [{'type': 'command', 'command': 'custom.sh'}]}
+                    ]
+                }
+            }, f)
+
+        inject_claude_hooks(self.tmp)
+        inject_claude_hooks(self.tmp)  # idempotência
+
+        with open(settings_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        pre = data['hooks']['PreToolUse']
+        self.assertEqual(len(pre), 3)
+        matchers = {e['matcher'] for e in pre}
+        self.assertEqual(matchers, {'CustomTool', 'AskUserQuestion', 'Bash'})
+
+        bash_entry = next(e for e in pre if e['matcher'] == 'Bash')
+        self.assertEqual(
+            [h['command'] for h in bash_entry['hooks']],
+            ['scripts/trackfw-credential-guard.sh'],
+        )
+
+        post = data['hooks']['PostToolUse']
+        self.assertEqual(len(post), 2)
+        post_matchers = {e['matcher'] for e in post}
+        self.assertEqual(post_matchers, {'AskUserQuestion', 'Bash'})
 
     def test_inject_codex_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_codex_hooks

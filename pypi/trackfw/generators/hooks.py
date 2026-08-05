@@ -36,6 +36,29 @@ def _has_entry(lst: list, field: str, value: str) -> bool:
     return any(isinstance(e, dict) and e.get(field) == value for e in (lst or []))
 
 
+def _merge_claude_hook_array(hook_list: list, matcher: str, command: str) -> None:
+    """Garante (idempotente) que hook_list tenha uma entrada matcher→command.
+
+    Se já existir uma entrada com o matcher dado, apenas garante que o
+    command esteja presente nela (sem duplicar). Caso contrário, cria uma
+    nova entrada — preservando quaisquer outras entradas já presentes
+    (ex.: matcher diferente injetado por uma execução anterior).
+    """
+    for entry in hook_list:
+        if isinstance(entry, dict) and entry.get('matcher') == matcher:
+            inner = entry.setdefault('hooks', [])
+            if not _has_entry(inner, 'command', command):
+                inner.append({'type': 'command', 'command': command})
+            return
+
+    hook_list.append({
+        'matcher': matcher,
+        'hooks': [
+            {'type': 'command', 'command': command}
+        ],
+    })
+
+
 # ---------------------------------------------------------------------------
 # Claude Code — .claude/settings.json
 # ---------------------------------------------------------------------------
@@ -47,38 +70,15 @@ def inject_claude_hooks(cwd: str) -> None:
 
     hooks = data.setdefault('hooks', {})
 
-    # PreToolUse — AskUserQuestion matcher → signal
+    # PreToolUse — AskUserQuestion matcher → signal; Bash matcher → credential guard
     pre_hooks = hooks.setdefault('PreToolUse', [])
-    if not _has_entry(pre_hooks, 'matcher', 'AskUserQuestion'):
-        pre_hooks.append({
-            'matcher': 'AskUserQuestion',
-            'hooks': [
-                {'type': 'command', 'command': 'scripts/trackfw-attention-signal.sh'}
-            ],
-        })
-    else:
-        # garante que o command está presente na entrada existente
-        for entry in pre_hooks:
-            if isinstance(entry, dict) and entry.get('matcher') == 'AskUserQuestion':
-                inner = entry.setdefault('hooks', [])
-                if not _has_entry(inner, 'command', 'scripts/trackfw-attention-signal.sh'):
-                    inner.append({'type': 'command', 'command': 'scripts/trackfw-attention-signal.sh'})
+    _merge_claude_hook_array(pre_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh')
+    _merge_claude_hook_array(pre_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
 
-    # PostToolUse — AskUserQuestion matcher → cleanup
+    # PostToolUse — AskUserQuestion matcher → cleanup; Bash matcher → credential guard
     post_hooks = hooks.setdefault('PostToolUse', [])
-    if not _has_entry(post_hooks, 'matcher', 'AskUserQuestion'):
-        post_hooks.append({
-            'matcher': 'AskUserQuestion',
-            'hooks': [
-                {'type': 'command', 'command': 'scripts/trackfw-attention-cleanup.sh'}
-            ],
-        })
-    else:
-        for entry in post_hooks:
-            if isinstance(entry, dict) and entry.get('matcher') == 'AskUserQuestion':
-                inner = entry.setdefault('hooks', [])
-                if not _has_entry(inner, 'command', 'scripts/trackfw-attention-cleanup.sh'):
-                    inner.append({'type': 'command', 'command': 'scripts/trackfw-attention-cleanup.sh'})
+    _merge_claude_hook_array(post_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh')
+    _merge_claude_hook_array(post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
 
     _write_json(file_path, data)
 

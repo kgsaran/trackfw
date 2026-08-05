@@ -312,18 +312,25 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   // 2. Primeira injeção
   injectClaudeHooks(tmpDir)
   let data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
-  assert.equal(data.hooks.PreToolUse.length, 2)
+  assert.equal(data.hooks.PreToolUse.length, 3)
   assert.equal(data.hooks.PreToolUse[0].matcher, 'UserTool')
   assert.equal(data.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
   assert.equal(data.hooks.PreToolUse[1].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.PreToolUse[2].matcher, 'Bash')
+  assert.equal(data.hooks.PreToolUse[2].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[0].matcher, 'AskUserQuestion')
   assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
+  assert.equal(data.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
 
   // 3. Segunda injeção (idempotência)
   injectClaudeHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
-  assert.equal(data.hooks.PreToolUse.length, 2)
+  assert.equal(data.hooks.PreToolUse.length, 3)
   assert.equal(data.hooks.PreToolUse[1].hooks.length, 1)
+  assert.equal(data.hooks.PreToolUse[2].hooks.length, 1)
+  assert.equal(data.hooks.PostToolUse.length, 2)
+  assert.equal(data.hooks.PostToolUse[1].hooks.length, 1)
 })
 
 test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () => {
@@ -489,7 +496,11 @@ test('trackfw update command injects attention hooks and scripts idempotently pr
     const claudeData = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8'))
     assert.equal(claudeData.hooks.PreToolUse[0].matcher, 'CustomTool')
     assert.equal(claudeData.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
+    assert.equal(claudeData.hooks.PreToolUse[2].matcher, 'Bash')
+    assert.equal(claudeData.hooks.PreToolUse[2].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
     assert.equal(claudeData.hooks.PostToolUse[0].matcher, 'AskUserQuestion')
+    assert.equal(claudeData.hooks.PostToolUse[1].matcher, 'Bash')
+    assert.equal(claudeData.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
 
     // Validar Cursor
     const cursorData = JSON.parse(fs.readFileSync(path.join(cursorDir, 'hooks.json'), 'utf8'))
@@ -503,7 +514,8 @@ test('trackfw update command injects attention hooks and scripts idempotently pr
     await updateCmd.parseAsync(['node', 'update'])
 
     const claudeDataSecond = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8'))
-    assert.equal(claudeDataSecond.hooks.PreToolUse.length, 2)
+    assert.equal(claudeDataSecond.hooks.PreToolUse.length, 3)
+    assert.equal(claudeDataSecond.hooks.PostToolUse.length, 2)
   } finally {
     process.chdir(origCwd)
   }

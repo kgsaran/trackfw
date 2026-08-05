@@ -125,7 +125,15 @@ para não repetir o erro de `REQ-2026-08-04-scripts-de-attention-hooks-divergem-
 quebrada por lote parcial).
 
 ### ML-2A — Claude Code
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** confirmado que não há race real no `PostToolUse` — os matchers `AskUserQuestion`
+e `Bash` são mutuamente exclusivos por `tool_name` dentro do mesmo evento (`trackfw-attention-cleanup.sh`
+não lê `tool_name`, mas só é invocado pelo Claude Code quando o matcher bate); nenhum ajuste de
+ordenação foi necessário. Efeito colateral positivo: corrigido bug pré-existente em
+`mergeClaudeHookArray` (Go) que criava um bloco `{"matcher":...}` duplicado em vez de mesclar no
+array `hooks` existente quando o mesmo matcher já tinha outro comando — agora em paridade com o
+comportamento que Node já tinha; Python ganhou o helper equivalente.
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectClaudeHooks`, linha 182-227; usar
   `mergeClaudeHookArray`, linha 441, para adicionar entradas sem sobrescrever hooks existentes de
