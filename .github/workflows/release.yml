@@ -40,14 +40,16 @@ jobs:
       - run: python -m pip install pypi/
       - run: python -m pytest pypi/tests -q
       - run: python -m build pypi
-      # Subconjunto reduzido intencional (3 dos 14 scripts de `make parity`),
-      # não os 14 completos de quality.yml — decisão registrada em
-      # docs/req/REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md.
+      # Subconjunto reduzido intencional (3 dos 15 scripts de `make parity`),
+      # não os 15 completos de quality.yml — decisão registrada em
+      # docs/req/REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md
+      # (título referencia a contagem de 14 scripts vigente à data da REQ;
+      # check-attention-scripts-parity.sh elevou para 15 em 2026-08-05).
       # Tags só são criadas (conforme CLAUDE.md "Protocolo de Release") a
       # partir de um commit já mergeado na main, e quality.yml roda `make
-      # parity` completo (14 scripts) em todo push para main — logo, quando
-      # esta tag dispara, os 14 scripts já rodaram verdes nesse exato commit.
-      # Rodar os 14 de novo aqui seria redundância completa (~4min medidos
+      # parity` completo (15 scripts) em todo push para main — logo, quando
+      # esta tag dispara, os 15 scripts já rodaram verdes nesse exato commit.
+      # Rodar os 15 de novo aqui seria redundância completa (~4min medidos
       # localmente) sem ganho de sinal, só atraso na publicação de release.
       # Este smoke check reduzido existe apenas como defesa contra o caso
       # excepcional de alguém criar uma tag manualmente sobre um commit que

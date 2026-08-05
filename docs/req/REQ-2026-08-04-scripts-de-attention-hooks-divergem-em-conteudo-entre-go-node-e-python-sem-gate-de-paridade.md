@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-04
 author: "kg.saran@gmail.com"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md"
 ---
 
 # REQ: scripts de attention hooks divergem em conteudo entre Go Node e Python (sem gate de paridade)
 
-> Date: 2026-08-04 | Status: Open
+> Date: 2026-08-04 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -45,19 +45,19 @@ Localização exata dos três literais-fonte:
   definida em `:852`)
 
 ## Acceptance Criteria
-- [ ] Um texto canônico único escolhido para cada um dos dois scripts (signal e cleanup) — mesmo
+- [x] Um texto canônico único escolhido para cada um dos dois scripts (signal e cleanup) — mesmo
       comportamento observável dos três hoje, só resolvendo comentário, espaçamento e estilo do `sed`
       para uma única forma
-- [ ] Os três literais-fonte (Go/Node/Python, localizações acima) atualizados para ficarem
+- [x] Os três literais-fonte (Go/Node/Python, localizações acima) atualizados para ficarem
       **byte-idênticos** ao texto canônico
-- [ ] Novo gate de paridade cobrindo o conteúdo desses dois scripts nos três runtimes — seguindo o
+- [x] Novo gate de paridade cobrindo o conteúdo desses dois scripts nos três runtimes — seguindo o
       padrão de `scripts/check-integration-assets.sh` (comparação byte-a-byte) ou estendendo o gate
       de `discover --init`/`init` já testado nesta sessão para comparar Go×Node×Python diretamente em
       vez de só confirmar existência+conteúdo-consigo-mesmo em cada runtime isoladamente
-- [ ] Gate documentado em `docs/cli-parity.md` (nova entrada, seguindo o padrão de
+- [x] Gate documentado em `docs/cli-parity.md` (nova entrada, seguindo o padrão de
       `check-integration-assets.sh`)
-- [ ] Gate integrado a `make quality`
-- [ ] `trackfw init`, `trackfw update` e `trackfw discover --init` continuam funcionando sem
+- [x] Gate integrado a `make quality`
+- [x] `trackfw init`, `trackfw update` e `trackfw discover --init` continuam funcionando sem
       regressão em nenhum dos três runtimes (os scripts são só texto — nenhuma lógica de execução
       deve mudar)
 
@@ -70,4 +70,4 @@ ADR: N/A — correção de conteúdo de texto + gate de regressão, sem decisão
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md`

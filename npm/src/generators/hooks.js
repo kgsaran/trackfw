@@ -82,8 +82,9 @@ case "$ROADMAP_DIR" in
 esac
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-TOOL_ESC=$(echo "$TOOL" | tr -d '\\000-\\037' | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')
-MSG_ESC=$(echo "$MSG" | tr -d '\\000-\\037' | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g')
+
+TOOL_ESC=$(echo "$TOOL" | tr -d '\\000-\\037' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
+MSG_ESC=$(echo "$MSG" | tr -d '\\000-\\037' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
 
 mkdir -p "$ROADMAP_DIR"
 printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\\n' \\

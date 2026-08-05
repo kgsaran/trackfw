@@ -9396,3 +9396,55 @@ roadmap (auditoria registrada). Nenhum código de produto tocado.
 
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Tooling não tem
 autoridade Git).
+
+## Sessão 2026-08-05 — Apolo (Wave 1 + Wave 2: scripts de attention hooks divergentes, gate novo) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade`
+(já criada pelo orquestrador — sem commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md`,
+Wave 1 (ML-1A) + Wave 2 (ML-2A) — sequencial, uma mão só, conforme roadmap.
+
+**Wave 1 — texto canônico único aplicado nos 3 literais-fonte**: descoberto empiricamente (via
+`discover --init` real nos 3 runtimes + diff, não só leitura de código) que a divergência tinha
+4 dimensões, não 3 — o roadmap não mencionava a linha em branco entre `TIMESTAMP=...` e
+`TOOL_ESC=...` no script de signal (Go/Python tinham, Node.js não). Canônico escolhido:
+comentário em inglês ("Script is intentionally a no-op when executed outside the project root"),
+linha em branco presente após `ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}` E antes de `TOOL_ESC=`,
+`sed` de expressão única (`sed 'expr1; expr2'`). Aplicado em `internal/generators/scaffold.go`,
+`npm/src/generators/hooks.js` (linhas ~61/78/85-86/98/101/105), `pypi/trackfw/generators/init_gen.py`
+(comentário em ambos os literais). Nenhum golden/fixture de teste referenciava o texto antigo
+(`grep -rln` do roadmap não achou nada em `internal/discover`, `npm/tests`, `pypi/tests`).
+
+**Wave 2 — gate novo**: `scripts/check-attention-scripts-parity.sh` (padrão de
+`check-branch-new-parity.sh`: `GO_BIN` resolvido/buildável, roda `discover --init` real nos 3
+runtimes num fixture vazio por runtime, `diff -u` byte-a-byte go-vs-node e go-vs-py dos dois
+scripts, guard de vacuidade P2 se algum runtime não gerar os arquivos). Integrado ao `Makefile`
+(alvo `parity`, antes de `check-gates-falsify.sh`). Documentado em `docs/cli-parity.md` (nova
+seção antes de "Princípios de design de gates"). Cenário 43 adicionado a
+`scripts/check-gates-falsify.sh` (P4): corrompe só o comentário do literal Python
+`_ATTENTION_CLEANUP_SH` (via `corrupt_literal` com contexto estendido até `ROADMAP_DIR=$(grep`
+para isolar da ocorrência idêntica em `_ATTENTION_SIGNAL_SH` — sem isso `corrupt_literal` aborta
+com "expected exactly 1 occurrence"), roda o gate novo a partir de cópia própria (padrão dos
+Cenários 36/42) e confirma exit != 0 com o diff explícito no diagnóstico. Texto do resumo final
+do falsify (contagem "100 scenarios" → "101 scenarios", "15 gates" → "16 gates") atualizado.
+
+**Validação (evidência)**:
+- `go build ./...` OK, `go test ./internal/...` OK (todos os pacotes)
+- `npm test` — 374 passed, 0 failed
+- `python3 -m pytest` (a partir de `pypi/`) — 890 passed
+- `diff` vazio empírico confirmado entre os 3 binários reais (Go compilado, `node npm/bin/trackfw`,
+  `python3 -m trackfw`) para os dois scripts, via `discover --init` em fixtures novos
+- `GO_BIN=bin/trackfw scripts/check-attention-scripts-parity.sh` verde isoladamente
+- `make quality` verde (build + test + test-node + test-python + lint + parity completo, incluindo
+  o gate novo e o falsify)
+- `scripts/check-gates-falsify.sh` completo — 101/101 cenários OK, 0 FAIL, incluindo o Cenário 43
+  novo confirmando que a regressão injetada é detectada
+- `trackfw validate` — sem violações
+
+Arquivos modificados: `internal/generators/scaffold.go`, `npm/src/generators/hooks.js`,
+`pypi/trackfw/generators/init_gen.py`, `scripts/check-attention-scripts-parity.sh` (novo),
+`Makefile`, `docs/cli-parity.md`, `scripts/check-gates-falsify.sh`.
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem
+autoridade Git).

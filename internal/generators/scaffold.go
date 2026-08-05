@@ -698,7 +698,7 @@ set -euo pipefail
 
 INPUT=$(cat)
 
-# Script e intencionalmente no-op quando executado fora do diretorio raiz do projeto trackfw.
+# Script is intentionally a no-op when executed outside the project root
 [ -f "trackfw.yaml" ] || exit 0
 
 if command -v jq &>/dev/null; then
@@ -711,6 +711,7 @@ fi
 
 ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
+
 case "$ROADMAP_DIR" in
   /*|../*|*/../*|*/..|..) ROADMAP_DIR="docs/roadmaps" ;;
 esac
@@ -733,11 +734,12 @@ exit 0
 # trackfw attention cleanup — PostToolUse/AfterTool hook
 set -euo pipefail
 
-# Script e intencionalmente no-op quando executado fora do diretorio raiz do projeto trackfw.
+# Script is intentionally a no-op when executed outside the project root
 [ -f "trackfw.yaml" ] || exit 0
 
 ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
+
 case "$ROADMAP_DIR" in
   /*|../*|*/../*|*/..|..) ROADMAP_DIR="docs/roadmaps" ;;
 esac

@@ -1546,6 +1546,39 @@ Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
   do Node.js para emitir `status: backlogged` no `/trackfw:roadmap`; asserta
   exit != 0 com `artifact parity drift: slash_roadmap (go vs node)`.
 
+## Scripts de attention hooks (`trackfw-attention-signal.sh` / `trackfw-attention-cleanup.sh`) — byte-idênticos
+
+`trackfw discover --init` grava `scripts/trackfw-attention-signal.sh` e
+`scripts/trackfw-attention-cleanup.sh` a partir de um literal-fonte embutido em
+cada runtime (`internal/generators/scaffold.go`,
+`npm/src/generators/hooks.js`, `pypi/trackfw/generators/init_gen.py`) — não são
+arquivos estáticos compartilhados, cada runtime carrega sua própria cópia do
+texto. Isso já divergiu silenciosamente uma vez (comentário "no-op fora da
+raiz" em PT/EN/PT-diferente, presença/ausência de uma linha em branco após
+`ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}`, e dois estilos equivalentes de
+`sed` no cálculo de `TOOL_ESC`/`MSG_ESC`) sem nenhum gate detectar — ver
+`docs/req/REQ-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md`.
+O texto canônico atual: comentário em inglês ("Script is intentionally a
+no-op when executed outside the project root"), linha em branco presente após
+o default de `ROADMAP_DIR` (e entre `TIMESTAMP=...` e `TOOL_ESC=...` no script
+de signal), e `sed` de expressão única (`sed 'expr1; expr2'`, não
+`sed -e expr1 -e expr2`).
+
+### Parity gate
+
+`scripts/check-attention-scripts-parity.sh` roda `discover --init` com os três
+binários reais (Go compilado, Node.js, Python) num fixture vazio por runtime, e
+faz `diff -u` byte-a-byte dos dois scripts gerados entre Go×Node e Go×Python —
+falha com o diff explícito no diagnóstico se divergirem (P2, sem degradação
+silenciosa) e tem um guard de vacuidade (P2) que reprova se algum runtime não
+gerar os arquivos. Roda como parte de `make quality` (alvo `parity`), antes de
+`check-gates-falsify.sh`.
+
+A prova negativa (P4) está em `scripts/check-gates-falsify.sh` — corrompe o
+comentário "no-op" do literal Python (`pypi/trackfw/generators/init_gen.py`)
+numa cópia isolada do repositório e asserta que o gate reprova com o diff
+explícito no diagnóstico.
+
 ## Princípios de design de gates (P1–P4)
 
 Todo gate de paridade e toda regra do validator devem seguir os quatro princípios documentados em
