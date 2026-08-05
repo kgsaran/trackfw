@@ -9,7 +9,8 @@ squad: ""
 
 > Created: 2026-08-05 | Status: wip
 
-## Diagnóstico / Contexto
+## Context
+REQ: `docs/req/REQ-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`
 
 Achado em `ea-cmdb` (projeto consumidor do trackfw): subagentes especialistas (QA, backend)
 materializaram JWTs reais em texto plano (arquivos soltos + stdout) ao validar endpoints
@@ -35,11 +36,23 @@ Mecanismo já existente a reaproveitar: `internal/generators/hooks.go:InjectHook
 `internal/generators/scaffold.go:GenerateAttentionScripts` (linha 686, gera os scripts shell
 embutidos) — com paridade em `npm/src/generators/hooks.js` e `pypi/trackfw/generators/hooks.py`.
 
+## Acceptance Criteria
+<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
+- [ ] Roadmap executado com decisão explícita já registrada na ADR (bloqueante vs. avisador:
+      avisador por padrão, bloqueio opt-in via `trackfw.yaml`)
+- [ ] Script de guarda com paridade Go/Node/Python confirmada desde o primeiro commit
+- [ ] Claude Code coberto na Wave 2 (`PreToolUse`/`PostToolUse` em `Bash`); demais CLIs da wave
+      nativa (Codex, Gemini, Copilot, Cursor, Kiro) cobertos ou re-escopados com motivo documentado
+- [ ] Teste de sabotagem real (materializa JWT sintético, invoca o script como subprocesso) — não um
+      self-test que reimplementa a checagem em paralelo
+- [ ] Gate de paridade estendido para cobrir os `hooks.json`/`settings.json` por CLI
+- [ ] `make quality`/`make parity` verdes, `trackfw validate` sem violações novas
+
 ## Wave 1 — Script de guarda + config (1 ML)
 > Dependências: Independente
 
 ### ML-1A — Script `trackfw-credential-guard.sh` + campo de config `credential_guard.mode`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/generators/scaffold.go` (novo template de script embutido, seguindo o padrão de
   `signalScript`/`cleanupScript` em `GenerateAttentionScripts`, ~linha 686-733; nova função
