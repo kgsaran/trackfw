@@ -94,6 +94,86 @@ func TestAgentsJSONLifecycleIsCanonical(t *testing.T) {
 	}
 }
 
+// TestOpenCodeAgentsLifecycleEndToEnd cobre install → list → update →
+// uninstall com --targets opencode, análogo a TestAgentsJSONLifecycleIsCanonical
+// (codex), confirmando o 10º target do catálogo (ROADMAP-2026-08-04-compatibilidade-com-opencode)
+// no lifecycle genérico Go, sem código extra além do catálogo + representação.
+func TestOpenCodeAgentsLifecycleEndToEnd(t *testing.T) {
+	project, _ := integrationCommandFixture(t)
+	install := newAgentsCmd()
+	install.SetArgs([]string{"install", "--targets", "opencode", "--items", "backend", "--scope", "project", "--json"})
+	var installed bytes.Buffer
+	install.SetOut(&installed)
+	install.SetErr(&installed)
+	if err := install.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	var output lifecycleOutput
+	if err := json.Unmarshal(installed.Bytes(), &output); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, installed.String())
+	}
+	if output.Kind != "agents" || output.CatalogVersion == "" || len(output.Deployments) != 1 {
+		t.Fatalf("unexpected canonical output: %#v", output)
+	}
+	deployment := output.Deployments[0]
+	if deployment.Target != "opencode" || deployment.Surface != "cli" || deployment.Item != "backend" || deployment.State != "current" || !deployment.Managed {
+		t.Fatalf("unexpected deployment: %#v", deployment)
+	}
+
+	path := filepath.Join(project, ".opencode", "agents", "trackfw-backend.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("OpenCode agent artifact missing at %s: %v", path, err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "mode: subagent") {
+		t.Fatalf("OpenCode agent missing 'mode: subagent':\n%s", content)
+	}
+	for _, forbidden := range []string{"model:", "tools:", "memory:"} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("OpenCode agent must not contain %q (schema incompatível):\n%s", forbidden, content)
+		}
+	}
+
+	list := newAgentsCmd()
+	list.SetArgs([]string{"list", "--targets", "opencode", "--items", "backend", "--json"})
+	var listed bytes.Buffer
+	list.SetOut(&listed)
+	list.SetErr(&listed)
+	if err := list.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listed.String(), `"target": "opencode"`) {
+		t.Fatalf("list --targets opencode does not surface the target:\n%s", listed.String())
+	}
+
+	update := newAgentsCmd()
+	update.SetArgs([]string{"update", "--targets", "opencode", "--items", "backend", "--scope", "project", "--json"})
+	var updated bytes.Buffer
+	update.SetOut(&updated)
+	update.SetErr(&updated)
+	if err := update.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var updateOutput lifecycleOutput
+	if err := json.Unmarshal(updated.Bytes(), &updateOutput); err != nil {
+		t.Fatalf("invalid JSON output on update: %v\n%s", err, updated.String())
+	}
+	if len(updateOutput.Deployments) != 1 || updateOutput.Deployments[0].State != "current" {
+		t.Fatalf("unexpected update output: %#v", updateOutput)
+	}
+
+	uninstall := newAgentsCmd()
+	uninstall.SetArgs([]string{"uninstall", "--targets", "opencode", "--items", "backend", "--scope", "project"})
+	if err := uninstall.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("managed artifact still exists after uninstall: %v", err)
+	}
+}
+
 func TestListWithoutTargetIncludesAllCatalogSurfaces(t *testing.T) {
 	integrationCommandFixture(t)
 	cmd := newSkillsCmd()

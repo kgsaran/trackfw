@@ -88,6 +88,42 @@ class TestRotaAWithIdentity:
         assert "invoke_subagent" in got
 
 
+class TestRenderOpenCodeAgent:
+    """Prova que a representação "opencode-agent" reconstrói o frontmatter
+    do zero (mesmo estilo do ramo "agent-directory") de um jeito que o
+    OpenCode real (1.18.13) aceita: description presente, "mode: subagent"
+    sempre fixo, e "model:"/"tools:"/"memory:" AUSENTES — achado #3 da Wave 1
+    do roadmap ROADMAP-2026-08-04-compatibilidade-com-opencode: "tools:" é
+    chave reservada no schema do OpenCode (recusa TODO o carregamento do
+    projeto se receber a lista estilo Claude Code) e "model:" é omitido por
+    decisão de produto (deixar o OpenCode resolver pelo default já
+    configurado pelo usuário em opencode.json).
+
+    Espelha internal/integrations/render_test.go:TestRenderOpenCodeAgent.
+    """
+
+    def test_description_and_mode_present_model_tools_memory_absent(self):
+        capability = {"representation": "opencode-agent", "support_level": "native"}
+        got = render("agents", "opencode", "cli", ITEM, CLAUDE_SOURCE, capability, None)
+
+        assert got.startswith("---\n")
+        assert "description:" in got
+        assert "mode: subagent\n" in got
+        for forbidden in ("model:", "tools:", "memory:"):
+            assert forbidden not in got
+        assert "# Architect" in got
+        assert "Body text." in got
+
+    def test_identity_is_applied_to_description(self):
+        capability = {"representation": "opencode-agent", "support_level": "native"}
+        got = render("agents", "opencode", "cli", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
+
+        assert "description: Zeus — Principal software architect for system design." in got
+        assert "mode: subagent\n" in got
+        for forbidden in ("model:", "tools:", "memory:"):
+            assert forbidden not in got
+
+
 class TestSetArchByItemIdNotName:
     def test_non_architect_item_id_gets_set_impl_even_with_custom_name(self):
         item = {"id": "backend", "description": "Backend specialist."}

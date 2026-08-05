@@ -284,6 +284,38 @@ def render(
         if body:
             result += body + "\n"
         return result
+    if representation == "opencode-agent":
+        # Reconstrói o frontmatter para o OpenCode CLI (opencode.ai), seguindo
+        # o mesmo padrão de reconstrução-do-zero do ramo "agent-directory".
+        # Decisão registrada na Wave 1 do roadmap
+        # ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai (achado
+        # #3, pesquisa contra o binário real 1.18.13):
+        #   - "tools:" é uma chave RESERVADA no schema de agente do OpenCode
+        #     (espera um objeto de overrides por-ferramenta, ex. {bash: false},
+        #     não uma lista de nomes estilo Claude Code) — reutilizar o
+        #     frontmatter original faz o OpenCode recusar o carregamento
+        #     INTEIRO do projeto ("Configuration is invalid"), não só daquele
+        #     agente. Por isso "tools:" nunca é emitido aqui.
+        #   - sem "mode:" explícito, o OpenCode assume mode "all" (agente
+        #     selecionável como persona primária de chat) — os agentes
+        #     trackfw devem ser sempre subagentes puros, nunca primários,
+        #     para paridade com o comportamento nos demais targets. Por isso
+        #     "mode: subagent" é sempre fixo, nunca omitido.
+        #   - "model:" é deliberadamente OMITIDO (decisão de produto do
+        #     orquestrador, não uma limitação técnica): o OpenCode espera
+        #     "provider/model-id" (ex. "anthropic/claude-sonnet-4-5"), não os
+        #     aliases curtos do catálogo canônico ("opus"/"sonnet"), e mapear
+        #     para um provider fixo contradiria a motivação de negócio do REQ
+        #     (permitir que o usuário roteie os agentes trackfw para o
+        #     modelo open-source/local que ele já configurou em
+        #     opencode.json). Omitir deixa o OpenCode resolver pelo default
+        #     já configurado pelo usuário.
+        #   - "memory:" também não faz sentido no schema do OpenCode e é
+        #     descartado junto com "tools:".
+        result = f"---\ndescription: {description}\nmode: subagent\n---\n"
+        if body:
+            result += body + "\n"
+        return result
 
     # Rota B (default) — usada pela representação "subagent" e demais
     # representações que consomem o frontmatter cru (agent-markdown,

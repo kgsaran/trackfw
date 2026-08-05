@@ -92,6 +92,43 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 			sb.WriteString(body + "\n")
 		}
 		return []byte(sb.String()), nil
+	case "opencode-agent":
+		// Reconstrói o frontmatter para o OpenCode CLI (opencode.ai), seguindo
+		// o mesmo padrão de reconstrução-do-zero do case "agent-directory".
+		// Decisão registrada na Wave 1 do roadmap
+		// ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai (achado
+		// #3, pesquisa contra o binário real 1.18.13):
+		//   - "tools:" é uma chave RESERVADA no schema de agente do OpenCode
+		//     (espera um objeto de overrides por-ferramenta, ex. {bash: false},
+		//     não uma lista de nomes estilo Claude Code) — reutilizar o
+		//     frontmatter original faz o OpenCode recusar o carregamento
+		//     INTEIRO do projeto ("Configuration is invalid"), não só daquele
+		//     agente. Por isso "tools:" nunca é emitido aqui.
+		//   - sem "mode:" explícito, o OpenCode assume mode "all" (agente
+		//     selecionável como persona primária de chat) — os agentes trackfw
+		//     devem ser sempre subagentes puros, nunca primários, para
+		//     paridade com o comportamento nos demais targets. Por isso
+		//     "mode: subagent" é sempre fixo, nunca omitido.
+		//   - "model:" é deliberadamente OMITIDO (decisão de produto do
+		//     orquestrador, não uma limitação técnica): o OpenCode espera
+		//     "provider/model-id" (ex. "anthropic/claude-sonnet-4-5"), não os
+		//     aliases curtos do catálogo canônico ("opus"/"sonnet"), e mapear
+		//     para um provider fixo contradiria a motivação de negócio do REQ
+		//     (permitir que o usuário roteie os agentes trackfw para o modelo
+		//     open-source/local que ele já configurou em opencode.json). Omitir
+		//     deixa o OpenCode resolver pelo default já configurado pelo
+		//     usuário.
+		//   - "memory:" também não faz sentido no schema do OpenCode e é
+		//     descartado junto com "tools:".
+		var sb strings.Builder
+		sb.WriteString("---\n")
+		sb.WriteString("description: " + description + "\n")
+		sb.WriteString("mode: subagent\n")
+		sb.WriteString("---\n")
+		if body != "" {
+			sb.WriteString(body + "\n")
+		}
+		return []byte(sb.String()), nil
 	default:
 		if !hasIdentity {
 			return normalizeMarkdown(source), nil

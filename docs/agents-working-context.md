@@ -9448,3 +9448,52 @@ Arquivos modificados: `internal/generators/scaffold.go`, `npm/src/generators/hoo
 
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem
 autoridade Git).
+
+## Sessão 2026-08-05 — Prometeu (ML-2A + ML-2B: target `opencode` — catálogo + adapter Go) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source` (já criada pelo
+orquestrador; sem commit/push feitos por este agente — Tooling não tem autoridade Git).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md`,
+Wave 2 (ML-2A + ML-2B). REQ:
+`docs/req/REQ-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md`.
+Wave 1 (pesquisa contra o OpenCode real 1.18.13, já mergeada nesta branch) decidiu: skills sem
+mudança; agents exigem nova `Representation` `"opencode-agent"` (reconstrução de frontmatter do zero,
+mesmo padrão de `"agent-directory"`), com `mode: subagent` sempre fixo e `model:`/`tools:`/`memory:`
+sempre omitidos (decisão de produto — deixar o OpenCode resolver pelo default já configurado pelo
+usuário em `opencode.json`, alinhado à motivação de negócio de usar modelos open-source/locais).
+
+**ML-2A — catálogo + adapter Go**:
+- `internal/integrations/render.go` — novo case `"opencode-agent"` em `Render()`.
+- `internal/integrations/assets/catalog.json` — novo target `opencode` (surface `cli`, escopos
+  `global`+`project`, paths `.opencode/agents|skills/...` projeto e `~/.config/opencode/agents|
+  skills/...` global, confirmados experimentalmente na Wave 1).
+- `internal/integrations/render_test.go` — `TestRenderOpenCodeAgent`.
+- `internal/integrations/catalog_test.go` — contagem de targets atualizada de 9 para 10.
+
+**ML-2B — lifecycle + validação contra o binário real**:
+- `internal/commands/agents_skills_test.go` — `TestOpenCodeAgentsLifecycleEndToEnd` (install → list →
+  update → uninstall com `--targets opencode`, análogo ao teste já existente para `codex`).
+- Validado manualmente contra `opencode` 1.18.13 real (`/opt/homebrew/bin/opencode`) num projeto de
+  teste isolado (`git init` fora do repo, removido ao final): `opencode agent list` carregou
+  `trackfw-architect (subagent)` e `trackfw-backend (subagent)` sem NENHUM erro de config (confirma
+  que o bug de `tools:` da Wave 1 está corrigido); `opencode serve` + `GET /agent` confirmou
+  `mode: "subagent"` e a chave `model` de fato ausente do JSON resolvido (não só null); `opencode
+  debug skill` confirmou a skill reconhecida (colisão de nome com skill global do Claude Code
+  pré-existente na máquina — achado colateral já documentado na Wave 1, não-acionável); `trackfw
+  discover --init` num projeto com `AGENTS.md` pré-existente confirmou a injeção de regras
+  funcionando sem nenhuma mudança de código em `agentfiles.go`.
+- Nenhuma mudança foi necessária em `internal/generators/agentfiles.go` — a detecção já é por path,
+  independente de qual ferramenta criou o arquivo (confirma achado #5 do escopo original).
+
+**Validação (evidência)**:
+- `go build ./...` OK
+- `go test ./...` completo OK (todos os pacotes)
+- `trackfw agents list --json` mostra o target `opencode` com `representation: opencode-agent`
+- `trackfw validate` — sem violações
+
+Fora de escopo (Waves 3/4, outros agentes): Node.js (`npm/`), Python (`pypi/`),
+`docs/cli-parity.md`, gate de paridade de identidade.
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Tooling não tem
+autoridade Git).
