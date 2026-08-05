@@ -10,6 +10,26 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.4.1] - 2026-08-05
+
+### Fixed
+
+- **Template canônico do agente Architect ainda instruía `git checkout -b` cru** (#139) —
+  `trackfw branch new <type>/<slug>` (v6.4.0) foi criado exatamente para mover o gate
+  `branch_has_wip_roadmap` para antes da criação da branch, mas o parágrafo "Git authority" do
+  template — deployado como `~/.claude/agents/trackfw-architect.md` via `trackfw update harness` —
+  nunca mencionava o comando. Agora instrui `trackfw branch new` como forma preferencial, com
+  fallback documentado para `git checkout -b` cru quando o comando não existir (binário anterior a
+  v6.4.0) ou falhar por motivo diferente do bloqueio esperado por falta de roadmap.
+
+### Internal
+
+- Scaffold de governança do próprio repositório (slash commands `architect`/`barrier`, workflow de
+  CI `trackfw-gate.yml`, scripts de attention hooks) atualizado para os artefatos gerados pela
+  v6.4.0 (#138).
+
+Breaking Changes: nenhuma.
+
 ## [6.4.0] - 2026-08-05
 
 ### Added
