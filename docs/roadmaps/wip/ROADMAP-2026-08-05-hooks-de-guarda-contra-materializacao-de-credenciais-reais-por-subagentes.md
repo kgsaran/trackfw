@@ -52,18 +52,45 @@ embutidos) — com paridade em `npm/src/generators/hooks.js` e `pypi/trackfw/gen
 > Dependências: Independente
 
 ### ML-1A — Script `trackfw-credential-guard.sh` + campo de config `credential_guard.mode`
-**Status:** 🔄 Em andamento
-**Arquivos afetados:**
-- `internal/generators/scaffold.go` (novo template de script embutido, seguindo o padrão de
-  `signalScript`/`cleanupScript` em `GenerateAttentionScripts`, ~linha 686-733; nova função
-  `GenerateCredentialGuardScript(rootDir string) error`)
-- `npm/src/generators/scaffold.js` (equivalente Node — localizar função irmã de
-  `generateAttentionScripts`)
-- `pypi/trackfw/generators/scaffold.py` (equivalente Python)
-- `internal/config/config.go` (novo campo `CredentialGuard.Mode` no schema de `trackfw.yaml`,
-  default `"warn"`, valores válidos `warn`/`block`)
-- Equivalentes de config em `npm/src/config/` e `pypi/trackfw/config/` (localizar pelos nomes
-  irmãos de `config.go`)
+**Status:** ✅ Concluído
+**Arquivos afetados (reais):**
+- `internal/generators/scaffold.go` (`GenerateCredentialGuardScript` + const `credentialGuardScript`)
+- `internal/generators/credential_guard_test.go` (novo — geração, paridade cross-stack, 11 cenários
+  de comportamento via subprocess real)
+- `internal/config/config.go` (`CredentialGuardConfig{Mode string}`, default `"warn"`) +
+  `internal/config/config_test.go`
+- `npm/src/generators/hooks.js` (`CREDENTIAL_GUARD_SCRIPT` + `generateCredentialGuardScript`) —
+  localização real diferente do previsto (`hooks.js`, não `scaffold.js`, por ser onde a função irmã
+  de attention-hooks já vive)
+- `npm/src/config/index.js` + `npm/tests/credential_guard.test.js` (novo)
+- `pypi/trackfw/generators/init_gen.py` (`_CREDENTIAL_GUARD_SH` + `_generate_credential_guard_script`)
+  — localização real diferente do previsto (`init_gen.py`, não `generators/scaffold.py`)
+- `pypi/trackfw/config.py` + `pypi/tests/test_credential_guard.py` (novo)
+- `docs/cli-parity.md` (nova seção documentando `credential_guard.mode`)
+
+**Decisões de design registradas na auditoria (não 100% especificadas no ML original):**
+- Shebang `#!/usr/bin/env bash` (não POSIX `sh`) — alinhado aos scripts irmãos de attention-hook,
+  que já usam bash-only features.
+- Exceção de destino efêmero é mais estrita que "contém mktemp/dev-null": só isenta quando **todos**
+  os alvos de redirect são `/dev/null`, um `$(mktemp...)` direto, ou variável atribuída via
+  `VAR=$(mktemp...)`; match sem redirecionamento (stdout) ou redirecionado a caminho comum sempre
+  alerta.
+- Valor de `mode` inválido cai silenciosamente para `warn` nos 3 stacks — mesmo padrão de outros
+  campos de formato não reconhecido no parser (`roadmap_namespacing`, `forge`).
+- Formato do JSON de attention é `{tool, message, level, timestamp}` — espelha o que
+  `trackfw-attention-signal.sh` realmente escreve (não o schema `{roadmap, ml, ...}` documentado em
+  `CLAUDE.md` para sinalização autoral de agente).
+
+**Limitação conhecida para a Wave 2 (não é defeito deste ML, registrar ao conectar Claude Code):**
+`trackfw-attention-cleanup.sh` em `PostToolUse` apaga o mesmo `.trackfw-attention.json` que este hook
+escreve em modo `warn` — ordenação de hooks no mesmo evento pode apagar o aviso do credential-guard.
+Avaliar na Wave 2 (ML-2A) se precisa de arquivo de attention dedicado por hook ou de ordenação
+explícita.
+
+**Achado paralelo, fora de escopo:** `make parity` falha por divergência pré-existente de versão
+(`pypi/trackfw/__init__.py` com fallback `6.3.1` vs. `6.4.1` em Go/Node) — confirmado não relacionado
+a este ML (`git stash` + rerun reproduz a mesma falha sem as mudanças). Não corrigido aqui; registrar
+como achado separado antes do release.
 **Ações:**
 - Escrever o script `trackfw-credential-guard.sh` (POSIX sh, sem dependências externas) que:
   - Lê `tool_input.command` (para `PreToolUse`) ou a saída do comando (para `PostToolUse`) via
