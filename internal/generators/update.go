@@ -268,13 +268,13 @@ type UpdateOptions struct {
 // harnessCatalogTargetOrder is the fixed catalog target order the pinned
 // harness target list is built from (docs/cli-parity.md, "Declared harness
 // targets — pinned list"): claude-skill, then <tool>-agents/<tool>-skills
-// for each of these nine catalog.json targets, in this exact order.
+// for each of these ten catalog.json targets, in this exact order.
 var harnessCatalogTargetOrder = []string{
-	"claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "kiro",
+	"claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "opencode", "kiro",
 }
 
 // HarnessTargetIDs is the fixed, declared order of `trackfw update harness`
-// targets: 19 ids — "claude-skill", then "<tool>-agents" and "<tool>-skills"
+// targets: 21 ids — "claude-skill", then "<tool>-agents" and "<tool>-skills"
 // for each catalog target in harnessCatalogTargetOrder. Order here is
 // authoritative for both JSON output and iteration — it must never be
 // derived from the filesystem or from what happens to be installed on a

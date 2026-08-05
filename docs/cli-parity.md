@@ -1160,10 +1160,10 @@ Wave 6 round.
 
 ### Declared harness targets — pinned list
 
-The harness target list is **not** derived at runtime; it is this fixed sequence of 19 ids, in this
-exact order: `claude-skill`, then `<tool>-agents` and `<tool>-skills` for each of the nine catalog
+The harness target list is **not** derived at runtime; it is this fixed sequence of 21 ids, in this
+exact order: `claude-skill`, then `<tool>-agents` and `<tool>-skills` for each of the ten catalog
 tools in `catalog.json` declaration order — `claude`, `codex`, `gemini`, `antigravity`, `cursor`,
-`copilot`, `windsurf`, `amazonq`, `kiro`.
+`copilot`, `windsurf`, `amazonq`, `opencode`, `kiro`.
 
 Each `<tool>-<kind>` target is a **roll-up over every catalog item** for that pair, not one row per
 item; per-item granularity already exists via `trackfw agents update` and `trackfw skills update`.

@@ -15,7 +15,7 @@ JSON document follows, not filesystem order):
                                     ``~/.claude/skills/trackfw/SKILL.md``.
      For every catalog target ``<tool>`` (in catalog.json declaration
      order: claude, codex, gemini, antigravity, cursor, copilot, windsurf,
-     amazonq, kiro), two targets follow:
+     amazonq, opencode, kiro), two targets follow:
   N. ``<tool>-agents``           — every catalog *agent* item already
                                     deployed for ``<tool>`` at global scope.
   N. ``<tool>-skills``           — every catalog *skill* item already
@@ -52,7 +52,7 @@ STATE_MISSING = "missing"
 STATE_FAILED = "failed"
 
 _CATALOG_TARGET_ORDER = [
-    "claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "kiro",
+    "claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "opencode", "kiro",
 ]
 _CATALOG_KIND_ORDER = ["agents", "skills"]
 

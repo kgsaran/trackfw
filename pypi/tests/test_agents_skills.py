@@ -42,7 +42,7 @@ def test_packaged_catalog_and_assets_are_complete():
     assert len(catalog["agents"]) == 12
     assert len(catalog["skills"]) == 17
     assert [target["id"] for target in catalog["targets"]] == [
-        "claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "kiro"
+        "claude", "codex", "gemini", "antigravity", "cursor", "copilot", "windsurf", "amazonq", "opencode", "kiro"
     ]
     root = files("trackfw.integrations")
     for item in catalog["agents"] + catalog["skills"]:

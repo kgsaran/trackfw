@@ -290,18 +290,33 @@ do ADR-2026-07-18). Validação contra o OpenCode real (1.18.13, `/opt/homebrew/
 > Dependencies: Wave 2 completa
 
 ### ML-3A — Sincronizar assets + confirmar lifecycle Node.js
-**Status:** pending
-**Files affected:** `npm/src/integrations/assets/catalog.json` (via `scripts/sync-integration-assets.sh`)
+**Status:** ✅ Concluído
+**Files affected:** `npm/src/integrations/render.js`, `npm/tests/render_opencode.test.js`,
+`npm/src/integrations/assets/catalog.json` (via `scripts/sync-integration-assets.sh`, rodado pelo
+orquestrador após Wave 3A+3B prontas)
 **Acceptance criteria:**
-- [ ] `npm test` verde com os novos cenários
-- [ ] `bash scripts/check-integration-assets.sh` verde
+- [x] `npm test` verde com os novos cenários (375 passed)
+- [x] `bash scripts/check-integration-assets.sh` verde
 
 ### ML-3B — Sincronizar assets + confirmar lifecycle Python
-**Status:** pending
-**Files affected:** `pypi/trackfw/integrations/assets/catalog.json` (via sync script)
+**Status:** ✅ Concluído
+**Files affected:** `pypi/trackfw/integrations/renderers.py`,
+`pypi/tests/test_integrations_identity.py`, `pypi/tests/test_agents_skills.py` (fixture de 9→10
+targets atualizada, ordem `..., amazonq, opencode, kiro`),
+`pypi/trackfw/integrations/assets/catalog.json` (via sync script)
 **Acceptance criteria:**
-- [ ] `python3 -m pytest` verde com os novos cenários
-- [ ] `bash scripts/check-integration-assets.sh` verde
+- [x] `python3 -m pytest` verde com os novos cenários (892 passed)
+- [x] `bash scripts/check-integration-assets.sh` verde
+
+### Achado extra (auditoria pós-Wave 3): gap de paridade pré-existente no harness de `update`
+`internal/generators/update.go` (`harnessCatalogTargetOrder`) e
+`pypi/trackfw/commands/update_harness.py` (`_CATALOG_TARGET_ORDER`) hardcodam uma lista de targets
+**separada** de `catalog.json` (Node.js deriva a lista dinamicamente do catálogo, por isso já estava
+correto). A Wave 2 (Go) não atualizou essa lista fixa ao adicionar `opencode` — `check-update-parity.sh`
+pegou a divergência (Go emitia 19 ids, sem `opencode-agents`/`opencode-skills`; Python tinha o mesmo
+gap). Corrigido: `opencode` inserido entre `amazonq` e `kiro` nas duas listas fixas (ordem real do
+`catalog.json`), contagem 19→21 ids atualizada nos comentários e em `docs/cli-parity.md` ("Declared
+harness targets — pinned list").
 
 ## Wave 4 — Documentação e gate de paridade
 > Dependencies: Wave 3 completa
