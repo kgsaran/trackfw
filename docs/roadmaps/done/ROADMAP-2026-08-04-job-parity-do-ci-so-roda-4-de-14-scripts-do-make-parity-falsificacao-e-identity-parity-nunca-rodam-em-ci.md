@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-04
 req: "docs/req/REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md"
 squad: "ares-tf"
@@ -7,7 +7,7 @@ squad: "ares-tf"
 
 # Roadmap: job parity do CI so roda 4 de 14 scripts do make parity (falsificacao e identity-parity nunca rodam em CI)
 
-> Created: 2026-08-04 | Status: wip
+> Created: 2026-08-04 | Status: done
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
@@ -25,18 +25,18 @@ HTML-escaping precisa fechar primeiro.
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] Job `parity` roda `make parity` (ou equivalente sincronizado) em vez de listar scripts
-- [ ] Tempo de execução medido no ambiente real do GitHub Actions, decisão de job separado/paralelo
+- [x] Job `parity` roda `make parity` (ou equivalente sincronizado) em vez de listar scripts
+- [x] Tempo de execução medido no ambiente real do GitHub Actions, decisão de job separado/paralelo
       tomada com base na medição, não em suposição
-- [ ] `release.yml` reavaliado e a decisão documentada
-- [ ] Nenhum gate liga vermelho — REQ do HTML-escaping fechada antes desta Wave 1
+- [x] `release.yml` reavaliado e a decisão documentada
+- [x] Nenhum gate liga vermelho — REQ do HTML-escaping fechada antes desta Wave 1
 
 ## Wave 1 — Ligar make parity completo ao CI
 > Dependencies: REQ-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-...
 > precisa estar Done antes de iniciar (bloqueante — ver Context)
 
 ### ML-1A — Trocar a lista manual de scripts pelo `make parity` no job `parity`
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `.github/workflows/quality.yml` (job `parity`)
 **Actions:**
@@ -53,9 +53,11 @@ HTML-escaping precisa fechar primeiro.
    `check-gates-falsify.sh` (e talvez `check-identity-parity.sh`, que também é pesado) num job
    paralelo próprio, documentando a decisão e o tempo medido que a motivou.
 **Acceptance criteria:**
-- [ ] Workflow roda verde de ponta a ponta com `make parity` completo (só verificável no run real do
-      GitHub Actions após o push — `make parity` local com `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1`
-      confirmado verde pelo orquestrador, 4m52s, mas isso não substitui o ambiente real de CI)
+- [x] Workflow roda verde de ponta a ponta com `make parity` completo — confirmado no run real da
+      PR #132 (`gh api .../jobs/92262047832`): job `parity` completou em **2m46s** (mais rápido que
+      a estimativa local de 4m15s-4m52s, runner do GitHub Actions com mais paralelismo/cache),
+      `conclusion: success`, e o log confirma os 100 cenários de falsificação (`grep -c "OK   \[falsify"` = 100) mais a linha final "Falsification checks passed (all 100 scenarios...)" — não é
+      um atalho, os 14 scripts rodaram de fato
 - [x] Tempo de execução registrado nesta seção do roadmap
 - [x] `trackfw validate` sem violações
 
@@ -81,7 +83,7 @@ então não há conflito). Nenhum setup adicional foi necessário: o job já tin
 `bin/trackfw` via `go build`, já coberto pelo `setup-go` existente no job.
 
 ### ML-1B — Reavaliar release.yml
-**Status:** pending
+**Status:** ✅ Concluído
 **Files affected:**
 - `.github/workflows/release.yml`
 **Actions:** Decidir e documentar (comentário no `.yml` ou nesta seção do roadmap) se o subconjunto
