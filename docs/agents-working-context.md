@@ -9497,3 +9497,51 @@ Fora de escopo (Waves 3/4, outros agentes): Node.js (`npm/`), Python (`pypi/`),
 
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Tooling não tem
 autoridade Git).
+
+## Sessão 2026-08-05 — Prometeu (ML-4A: documentação + gate de paridade de identidade) — INICIADO
+
+Branch `feat/compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source` (recriada
+após merge do PR #134, Waves 1–3). Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md`,
+ML-4A (única pendente).
+
+**Escopo**: adicionar OpenCode a `docs/cli-parity.md` (lista de targets suportados por
+`agents`/`skills`); confirmar que `scripts/check-identity-parity.sh` cobre o novo target
+automaticamente; varredura ampla por listas hardcoded de targets com o mesmo defeito da Wave 3
+(harness `update`). Sem autoridade Git — devolvo para `trackfw_architect` auditar e commitar.
+
+## Sessão 2026-08-05 — Prometeu (ML-4A) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+**Arquivos alterados**:
+- `docs/cli-parity.md` — OpenCode incluído na frase de targets suportados de "AI integration
+  lifecycle" + nova subseção `### OpenCode agent representation (opencode-agent)` (frontmatter
+  reconstruído do zero, `mode: subagent` fixo, `model:`/`tools:`/`memory:` omitidos, com a evidência
+  empírica da Wave 1 sobre o hard-fail de `tools:` no OpenCode 1.18.13). Não dupliquei a tabela
+  "Declared harness targets — pinned list" (já atualizada na Wave 3) — só referenciei.
+- `scripts/check-identity-parity.sh` — **confirmado, sem alteração**: `load_catalog_targets()` já
+  deriva os targets de `catalog.json` dinamicamente, `opencode` entra no gate sem edição manual.
+- **Achado extra (mesma classe da Wave 3, fora do escopo original mas coberto pelo item 3 do
+  briefing)**: `npm/src/commands/init.js:61` tinha um `Set` hardcoded de AI tools que **rejeitava
+  `opencode`** no modo não-interativo (`Unsupported AI tool: opencode`) — divergência funcional real
+  vs Go/Python (que validam via catálogo). Corrigido. Também corrigidos, pelo mesmo motivo: wizard
+  interativo `huh` (Go, `internal/commands/init.go`) e `checkbox` (Node.js, `init.js`) não listavam
+  OpenCode como opção — corrigido nos dois, com verificação prévia de que `InjectRulesForTool`/
+  `injectRulesForTool` fazem no-op seguro para `opencode`. Teste Go
+  `TestInitAIToolsHelpIncludesEveryCatalogTarget` (`agents_skills_test.go`) tinha a mesma lista
+  desatualizada (passava vacuamente) — atualizado. Python (`init.py`) já era genérico, sem gap.
+  Detalhe completo na seção "Achado extra (ML-4A)" do roadmap.
+- Roadmap `docs/roadmaps/wip/ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md`
+  — ML-4A marcado `✅ Concluído`, critérios de aceite marcados, nova seção "Achado extra (ML-4A)".
+
+**Validação (evidência)**:
+- `go build ./...` OK; `go test ./...` completo OK
+- `npm test` (npm/) — 375 passed, 0 failed
+- `python3 -m pytest` (pypi/) — 892 passed, 8 subtests passed
+- `make quality` — verde (todos os gates, incluindo `check-identity-parity.sh` e
+  `check-gates-falsify.sh`, 101 cenários)
+- `make parity` — 101 cenários verdes
+- `trackfw validate` — sem violações
+
+Roadmap **não movido para `done/`** — deixado em `wip/` para o orquestrador (Zeus) auditar e mover.
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Tooling não tem autoridade
+Git).

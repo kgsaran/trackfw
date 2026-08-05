@@ -328,7 +328,57 @@ The common flags are `--targets`, `--items`, `--scope`, `--surface`, `--json`,
 and, for mutations that may replace or remove content, `--force`. Mutations
 without `--targets` open a TTY selector; in non-interactive execution the flag
 is required. Supported targets are Claude Code, Codex, Gemini CLI, Antigravity,
-Cursor, GitHub Copilot, Windsurf, Amazon Q, and Kiro.
+Cursor, GitHub Copilot, Windsurf, Amazon Q, OpenCode, and Kiro.
+
+### OpenCode agent representation (`opencode-agent`)
+
+OpenCode (opencode.ai) is the tenth catalog target
+(`REQ-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source`).
+Skills need no special handling — the OpenCode `SKILL.md` schema (`name`/`description`, optional
+`license`/`compatibility`/`metadata`) is already identical to the shared `skill` representation.
+Agents, however, use a dedicated `Render()` case, `"opencode-agent"`, that **reconstructs the
+frontmatter from scratch** instead of reusing the default `subagent` case — the same pattern
+already used for Antigravity's `agent-directory`. Confirmed experimentally against the real
+OpenCode binary (1.18.13):
+
+- **Frontmatter is rebuilt, not reused, because the source frontmatter hard-fails OpenCode's
+  loader.** The canonical asset frontmatter carries `tools:` as a flat list of tool names
+  (`tools: Agent, Read, Edit, Write, Bash, ...`). In OpenCode's agent schema `tools:` is a
+  **reserved key** expecting a per-tool override object (e.g. `tools: { bash: false }`), not a
+  list/string. Feeding the list verbatim does not just skip that one field — it makes OpenCode
+  **refuse to load the entire project configuration** (`Configuration is invalid at
+  .../agents/<file>.md`), reproduced against opencode 1.18.13. Reusing the existing `subagent`
+  render path would therefore break every OpenCode project that installs a trackfw agent, not
+  degrade gracefully.
+- **`mode: subagent` is always fixed.** Without an explicit `mode:`, OpenCode defaults an agent to
+  `mode: "all"` — selectable both as a subagent and as the primary/interactive persona in chat.
+  trackfw agents must never be selectable as the primary persona (parity with their behavior in
+  Claude Code, Cursor, and Gemini CLI), so `mode: subagent` is emitted unconditionally; it is never
+  derived from the source asset.
+- **`model:`, `tools:`, and `memory:` are omitted deliberately**, not mapped:
+  - `tools:` — omitted because of the hard-fail above; there is no safe list-based value to emit.
+  - `model:` — OpenCode expects `provider/model-id` (e.g. `anthropic/claude-sonnet-4-5`), while the
+    catalog's `model:` field carries Claude Code aliases (`opus`, `sonnet`). Passing an alias
+    through unmapped is accepted at load time but resolves to an invalid reference
+    (`{"providerID": "opus", "modelID": ""}`) that fails at request time — a silent, worse
+    fallback than omitting the field. Omitting `model:` lets OpenCode fall back to the model the
+    user already configured (globally or per-agent) in `opencode.json`, which also matches this
+    REQ's business motivation: routing trackfw agents to whatever open-source/local model
+    (Ollama, LM Studio) the user already runs, instead of pinning every agent to Anthropic.
+  - `memory:` — not part of OpenCode's schema; unknown non-reserved keys are silently absorbed
+    into `options` rather than rejected, but it carries no meaning there, so it is left out.
+  - Verified against the real `GET /agent` endpoint of a running `opencode serve`: the resolved
+    JSON for an installed trackfw agent has `mode: "subagent"` and no `model` key at all (not
+    `null` — absent), confirming the omission is honored end to end, not just at template level.
+
+This representation is implemented identically in `internal/integrations/render.go` (Go, canonical
+case), `npm/src/integrations/render.js`, and `pypi/trackfw/integrations/renderers.py`, and covered
+by `TestRenderOpenCodeAgent` (Go) and their Node.js/Python equivalents.
+
+The "Declared harness targets — pinned list" table further down this document already lists
+`opencode` between `amazonq` and `kiro` (added in Wave 3 of the same REQ, alongside the
+`harnessCatalogTargetOrder` / `_CATALOG_TARGET_ORDER` fix) — that entry is not duplicated here;
+this section only documents the agent-representation decision that entry depends on.
 
 Lifecycle state is one of `not-installed`, `current`, `outdated`, `modified`, or `analyzing`
 (a transient state set while the manager reads and hashes an artifact — not user-visible in
