@@ -10,6 +10,44 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.4.0] - 2026-08-05
+
+### Added
+
+- **OpenCode (opencode.ai) como 10º target de integração** (#126, #134, #135) — `agents`/`skills
+  install|uninstall|update`, `trackfw init --ai-tools opencode` e o harness de `update` passam a
+  suportar OpenCode nos 3 CLIs, permitindo rotear agentes trackfw para modelos open-source/locais
+  configurados pelo usuário (Ollama, LM Studio, etc.). O frontmatter do agente é reconstruído do
+  zero (`description` + `mode: subagent` fixo, sem `model:`/`tools:`/`memory:`) porque o schema do
+  OpenCode trata `tools:` como chave reservada — reutilizar o frontmatter original derruba o
+  carregamento do projeto inteiro no OpenCode real (confirmado contra o binário 1.18.13). Skills
+  não precisam de tratamento especial (schema já compatível). Documentado em `docs/cli-parity.md`.
+- **`trackfw branch new <tipo>/<slug>`** (#125) — bloqueia a criação de uma branch de
+  feature/fix/refactor antes de existir um REQ+roadmap correspondente em `wip/`, prevenindo
+  "trabalho órfão" sem rastreabilidade de governança. Complementa a regra `branch_has_wip_roadmap`
+  do `trackfw validate` com um gate preventivo no momento da criação da branch.
+
+### Fixed
+
+- **Dispatch de subagente sem `subagent_type` explícito** (#123) — o template do agente Architect
+  nomeava especialistas em prosa (`squad:`) sem instruir o harness a passar `subagent_type`
+  explicitamente, fazendo alguns harnesses (ex: Windsurf) invocarem `general-purpose` em vez do
+  especialista nomeado. Corrigido com uma seção de "contrato de dispatch" agnóstica de preset de
+  identidade.
+- **`json.MarshalIndent` do Go escapava HTML, divergindo de Node.js/Python** (#128, #130) — 3
+  targets do catálogo (Kiro, Amazon Q, Antigravity legacy) recebiam `<`, `>` e `&` como
+  `<`/`>`/`&` só no Go, quebrando paridade byte-a-byte. Corrigido com
+  `json.Encoder.SetEscapeHTML(false)`.
+- **`discover --init` não gerava os scripts de attention hooks em Go/Node.js** (#121, #124) —
+  lacuna de paridade pré-existente com o Python; e os 3 scripts (Go, Node.js, Python) divergiam em
+  conteúdo entre si sem nenhum gate de paridade cobrindo isso (#122, #133) — unificados e agora
+  cobertos por `check-attention-scripts-parity.sh`.
+- **Job `parity` do CI só rodava 4 dos 15 scripts de `make parity`** (#129, #132) — a suíte
+  inteira de 101 cenários de falsificação (prova de que os gates não são vazios) nunca rodava de
+  forma automatizada; o job agora roda `make parity` diretamente.
+
+Breaking Changes: nenhuma.
+
 ## [6.3.1] - 2026-08-04
 
 ### Fixed
