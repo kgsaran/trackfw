@@ -516,6 +516,40 @@ func InjectCopilotHooks(cwd string) error {
 }
 
 // InjectCursorHooks injects Cursor attention hooks into .cursor/hooks.json.
+//
+// Two independent things are wired here:
+//   - Top-level preToolUse/postToolUse (existing attention-signal/cleanup) — kept as-is,
+//     NOT migrated by this function. These keys do not match any event documented at
+//     https://cursor.com/docs/agent/hooks (retrieved 2026-08-05): the real Cursor hook
+//     config is `{"version": 1, "hooks": {"<eventName>": [...] }}`, and the documented
+//     event names are sessionStart/sessionEnd/beforeShellExecution/beforeMCPExecution/
+//     afterShellExecution/afterMCPExecution/beforeReadFile/afterFileEdit/
+//     beforeSubmitPrompt/preCompact/stop/beforeTabFileRead/afterTabFileEdit — there is no
+//     generic preToolUse/postToolUse event at all. Re-scoping the legacy attention hooks
+//     to a real event (e.g. stop/beforeSubmitPrompt) is out of scope for this ML; tracked
+//     for a follow-up (see docs/cli-parity.md, "Cursor wiring (ML-2E)").
+//   - hooks.beforeShellExecution + hooks.afterShellExecution (new, this ML) —
+//     credential-guard. beforeShellExecution is the real, Bash-specific, pre-execution
+//     event: input is `{"command","cwd","sandbox"}`, response (stdout JSON, only read on
+//     exit code 0) is `{"permission":"allow"|"deny"|"ask","user_message":"...",
+//     "agent_message":"..."}`. Per the documented "Exit code behavior": exit 0 uses the
+//     JSON output (or defaults to allow if stdout has none — confirmed by the doc's own
+//     minimal example hook, which exits 0 with no stdout at all), exit 2 blocks the
+//     action ("equivalent to returning permission: \"deny\""), any other exit code
+//     fail-opens (hook failed, action proceeds). This is already exactly
+//     trackfw-credential-guard.sh's existing contract (block mode → exit 2 + stderr, warn
+//     mode → exit 0), so no script changes were needed to wire Cursor. afterShellExecution
+//     is a post-execution audit-only event (input adds "output"/"duration", no
+//     allow/deny/ask response defined) — added in parallel for symmetry with the
+//     PostToolUse wiring already used for the other CLIs in this wave, so the guard also
+//     gets a chance to flag credentials that only appear in captured command output.
+//     Per-event `matcher` (regex against the command string itself, not a tool name — the
+//     event is already shell-specific) is optional and intentionally omitted: the guard
+//     must see every shell command, not a filtered subset.
+//     Concurrency between hooks registered on the same event was not documented on the
+//     page retrieved for this investigation (unlike Codex, which explicitly documents
+//     concurrent execution); not assumed either way. Not a blocker here regardless: this
+//     event array only ever contains the single credential-guard entry added by trackfw.
 func InjectCursorHooks(cwd string) error {
 	path := filepath.Join(cwd, ".cursor", "hooks.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -549,8 +583,21 @@ func InjectCursorHooks(cwd string) error {
 		return cmd
 	}
 
+	// Legacy attention-signal/cleanup wiring — preserved as-is, not migrated by this ML.
 	root["preToolUse"] = mergeSimpleCommandArray(root["preToolUse"], "scripts/trackfw-attention-signal.sh", makeEntry, getCmd)
 	root["postToolUse"] = mergeSimpleCommandArray(root["postToolUse"], "scripts/trackfw-attention-cleanup.sh", makeEntry, getCmd)
+
+	// credential-guard wiring — real Cursor hook config, nested under version/hooks.
+	if _, ok := root["version"]; !ok {
+		root["version"] = 1
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
+	hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
+	root["hooks"] = hooks
 
 	out, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {

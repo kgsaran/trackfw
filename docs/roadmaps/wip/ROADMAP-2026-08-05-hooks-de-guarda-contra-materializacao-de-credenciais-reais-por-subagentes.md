@@ -349,11 +349,49 @@ não-zero, em `docs/cli-parity.md` (seção "GitHub Copilot wiring (ML-2D)").
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2E — Cursor
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** confirmado via `https://cursor.com/docs/agent/hooks` (2026-08-05, RSC payload
+extraído por `curl -L` e desescapado com `python3`, sem acesso a WebFetch/WebSearch nesta execução):
+`beforeShellExecution` é de fato um evento real, distinto e Bash-specific ("Control shell commands"),
+com input `{command, cwd, sandbox}` e resposta `{"permission":"allow"|"deny"|"ask","user_message":...,
+"agent_message":...}`. `afterShellExecution` também é real — evento pós-execução, apenas auditoria
+(sem `permission` de saída). Achado crítico da investigação: o formato hoje usado pelo trackfw
+(`preToolUse`/`postToolUse` de nível superior) **não corresponde a nenhum evento documentado** — o
+schema real é `{"version":1,"hooks":{"<evento>":[...]}}`, e a lista completa de eventos não inclui
+`preToolUse`/`postToolUse` genérico algum. Conforme instrução explícita do ML, essa divergência não foi
+migrada aqui (apenas registrada) — a entrada nova foi adicionada em paralelo, sob `hooks.
+beforeShellExecution`/`hooks.afterShellExecution`, preservando as entradas legadas intactas.
+**Script não precisou de nenhuma mudança**: o contrato "exit 0 = allow (com JSON opcional no stdout,
+confirmado por um exemplo mínimo da própria doc que sai 0 sem stdout algum) / exit 2 = deny / outro
+código = fail-open" já é exatamente o que `trackfw-credential-guard.sh` faz hoje (`block` → exit 2 +
+stderr; `warn` → exit 0, aviso vai para `.trackfw-credential-guard.json` dedicado, não para stdout).
+Emitir JSON de resposta estruturado (`user_message`/`agent_message`) para enriquecer a UX do Cursor foi
+avaliado e descartado nesta ML: o script é compartilhado byte-a-byte pelos 6 CLIs já cobertos e nenhum
+dos outros 5 espera JSON no stdout do guard — a opção mais simples e já 100% compatível com o contrato
+documentado é não tocar no script. `matcher` em `beforeShellExecution` existe (regex contra o texto do
+comando, não contra `tool_name` — o evento já é shell-specific) mas foi omitido de propósito: o guard
+precisa ver todo comando shell, não um subconjunto. Concorrência entre hooks do mesmo evento não foi
+documentada na página recuperada (ao contrário de Codex/Copilot); não presumida — não bloqueante aqui,
+pois os arrays `beforeShellExecution`/`afterShellExecution` só contêm a entrada única do
+credential-guard. Detalhe completo, com citações da doc, em `docs/cli-parity.md` (seção "Cursor wiring
+(ML-2E)").
+**Achado fora de escopo, não corrigido aqui:** o wiring pré-existente de `preToolUse`/`postToolUse`
+(attention-signal/cleanup) usa um formato que não corresponde a evento real do Cursor documentado —
+re-escopar essa parte para um evento real (ex.: `stop`/`beforeSubmitPrompt`) fica para uma ML futura.
 **Arquivos afetados:**
-- `internal/generators/agentfiles.go` (`InjectCursorHooks`, linha 391-432)
-- `npm/src/generators/hooks.js` (linha ~235)
-- `pypi/trackfw/generators/hooks.py` (linha ~237)
+- `internal/generators/agentfiles.go` (`InjectCursorHooks`, linha 518-599 — merge de
+  `hooks.beforeShellExecution`/`hooks.afterShellExecution` adicionado, `preToolUse`/`postToolUse`
+  legado preservado sem migração)
+- `internal/generators/agentfiles_test.go` (`TestInjectCursorHooks` estendido +
+  `TestInjectCursorHooks_PreservesUserVersion` novo)
+- `npm/src/generators/hooks.js` (`injectCursorHooks`, linha ~235 — mesma extensão)
+- `npm/tests/generators.test.js` (`injectCursorHooks` — asserts estendidos + teste de
+  `version` preservado novo)
+- `pypi/trackfw/generators/hooks.py` (`inject_cursor_hooks` — mesma extensão)
+- `pypi/tests/test_generators_init.py` (`test_inject_cursor_hooks` — asserts estendidos +
+  `test_inject_cursor_hooks_preserves_existing_version` novo)
+- `docs/cli-parity.md` (nova seção "Cursor wiring (ML-2E)")
 **Ações:**
 - Migrar (ou adicionar em paralelo) do evento genérico `preToolUse` hoje usado pelo trackfw para o
   evento nativo `beforeShellExecution` (Bash-specific, confirmado por doc oficial pesquisada —
@@ -362,10 +400,10 @@ não-zero, em `docs/cli-parity.md` (seção "GitHub Copilot wiring (ML-2D)").
 - Preservar a entrada `preToolUse` existente do attention-signal (não migrar essa, só adicionar o
   novo hook em `beforeShellExecution`).
 **Critérios de aceite:**
-- [ ] `.cursor/hooks.json` gerado contém `beforeShellExecution` novo + `preToolUse`/`postToolUse`
+- [x] `.cursor/hooks.json` gerado contém `beforeShellExecution` novo + `preToolUse`/`postToolUse`
       existentes intactos
-- [ ] Resposta do script mapeada corretamente para o protocolo `allow`/`deny`/`ask` do Cursor
-- [ ] Testes de geração verdes nos 3 stacks
+- [x] Resposta do script mapeada corretamente para o protocolo `allow`/`deny`/`ask` do Cursor
+- [x] Testes de geração verdes nos 3 stacks
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2F — Kiro

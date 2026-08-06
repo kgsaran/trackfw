@@ -300,10 +300,44 @@ def inject_copilot_hooks(cwd: str) -> None:
 
 # ---------------------------------------------------------------------------
 # Cursor — .cursor/hooks.json
+#
+# Two independent things are wired here:
+#   - Top-level preToolUse/postToolUse (existing attention-signal/cleanup) -- kept as-is,
+#     NOT migrated by this function. These keys do not match any event documented at
+#     https://cursor.com/docs/agent/hooks (retrieved 2026-08-05): the real Cursor hook
+#     config is `{"version": 1, "hooks": {"<eventName>": [...] }}`, and the documented
+#     event names are sessionStart/sessionEnd/beforeShellExecution/beforeMCPExecution/
+#     afterShellExecution/afterMCPExecution/beforeReadFile/afterFileEdit/
+#     beforeSubmitPrompt/preCompact/stop/beforeTabFileRead/afterTabFileEdit -- there is no
+#     generic preToolUse/postToolUse event at all. Re-scoping the legacy attention hooks
+#     to a real event is out of scope for this ML; tracked as a follow-up (see
+#     docs/cli-parity.md, "Cursor wiring (ML-2E)").
+#   - hooks.beforeShellExecution + hooks.afterShellExecution (new, this ML) --
+#     credential-guard. beforeShellExecution is the real, Bash-specific, pre-execution
+#     event: input is `{"command","cwd","sandbox"}`, response (stdout JSON, only read on
+#     exit code 0) is `{"permission":"allow"|"deny"|"ask","user_message":"...",
+#     "agent_message":"..."}`. Per the documented "Exit code behavior": exit 0 uses the
+#     JSON output (or defaults to allow if stdout has none -- confirmed by the doc's own
+#     minimal example hook, which exits 0 with no stdout at all), exit 2 blocks the
+#     action ("equivalent to returning permission: \"deny\""), any other exit code
+#     fail-opens (hook failed, action proceeds). This is already exactly
+#     trackfw-credential-guard.sh's existing contract (block mode -> exit 2 + stderr, warn
+#     mode -> exit 0), so no script changes were needed to wire Cursor. afterShellExecution
+#     is a post-execution audit-only event (input adds "output"/"duration", no
+#     allow/deny/ask response defined) -- added in parallel for symmetry with the
+#     PostToolUse wiring already used for the other CLIs in this wave. Per-event `matcher`
+#     (regex against the command string itself, not a tool name -- the event is already
+#     shell-specific) is optional and intentionally omitted: the guard must see every
+#     shell command, not a filtered subset. Concurrency between hooks registered on the
+#     same event was not documented on the page retrieved for this investigation (unlike
+#     Codex, which explicitly documents concurrent execution); not assumed either way --
+#     not a blocker here since this event array only ever contains the single
+#     credential-guard entry added by trackfw.
 # ---------------------------------------------------------------------------
 
 def inject_cursor_hooks(cwd: str) -> None:
-    """Injeta hooks preToolUse/postToolUse no .cursor/hooks.json."""
+    """Injeta hooks preToolUse/postToolUse e hooks.beforeShellExecution/afterShellExecution
+    (credential-guard) no .cursor/hooks.json."""
     file_path = os.path.join(cwd, '.cursor', 'hooks.json')
     data = _read_json(file_path)
 
@@ -314,6 +348,21 @@ def inject_cursor_hooks(cwd: str) -> None:
     post = data.setdefault('postToolUse', [])
     if not _has_entry(post, 'command', 'scripts/trackfw-attention-cleanup.sh'):
         post.append({'command': 'scripts/trackfw-attention-cleanup.sh'})
+
+    if 'version' not in data:
+        data['version'] = 1
+    hooks = data.get('hooks')
+    if not isinstance(hooks, dict):
+        hooks = {}
+        data['hooks'] = hooks
+
+    before = hooks.setdefault('beforeShellExecution', [])
+    if not _has_entry(before, 'command', 'scripts/trackfw-credential-guard.sh'):
+        before.append({'command': 'scripts/trackfw-credential-guard.sh'})
+
+    after = hooks.setdefault('afterShellExecution', [])
+    if not _has_entry(after, 'command', 'scripts/trackfw-credential-guard.sh'):
+        after.append({'command': 'scripts/trackfw-credential-guard.sh'})
 
     _write_json(file_path, data)
 

@@ -414,6 +414,51 @@ func TestInjectCursorHooks(t *testing.T) {
 	if len(pre) != 1 || len(post) != 1 {
 		t.Fatalf("expected 1 pre and 1 post entry, got %d pre, %d post", len(pre), len(post))
 	}
+	if pre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
+		t.Errorf("preToolUse[0] should be the attention-signal script, got %v", pre[0])
+	}
+	if post[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
+		t.Errorf("postToolUse[0] should be the attention-cleanup script, got %v", post[0])
+	}
+
+	if data["version"] != float64(1) {
+		t.Errorf("expected version=1, got %v", data["version"])
+	}
+	hooks, _ := data["hooks"].(map[string]interface{})
+	if hooks == nil {
+		t.Fatalf("expected top-level hooks object, got none")
+	}
+	before, _ := hooks["beforeShellExecution"].([]interface{})
+	after, _ := hooks["afterShellExecution"].([]interface{})
+	if len(before) != 1 || len(after) != 1 {
+		t.Fatalf("expected 1 beforeShellExecution and 1 afterShellExecution entry, got %d before, %d after", len(before), len(after))
+	}
+	if before[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
+		t.Errorf("beforeShellExecution[0] should be the credential-guard script, got %v", before[0])
+	}
+	if after[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
+		t.Errorf("afterShellExecution[0] should be the credential-guard script, got %v", after[0])
+	}
+}
+
+func TestInjectCursorHooks_PreservesUserVersion(t *testing.T) {
+	dir := t.TempDir()
+	cursorDir := filepath.Join(dir, ".cursor")
+	if err := os.MkdirAll(cursorDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cursorDir, "hooks.json"), []byte(`{"version": 2, "hooks": {}}`), 0644); err != nil {
+		t.Fatalf("seed hooks.json: %v", err)
+	}
+
+	if err := InjectCursorHooks(dir); err != nil {
+		t.Fatalf("InjectCursorHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".cursor", "hooks.json"))
+	if data["version"] != float64(2) {
+		t.Errorf("expected pre-existing version=2 to be preserved, got %v", data["version"])
+	}
 }
 
 // --- Windsurf ---

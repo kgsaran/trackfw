@@ -502,10 +502,30 @@ test('injectCursorHooks creates and merges .cursor/hooks.json idempotently', () 
   assert.equal(data.preToolUse[1].command, 'scripts/trackfw-attention-signal.sh')
   assert.equal(data.postToolUse[0].command, 'scripts/trackfw-attention-cleanup.sh')
 
+  assert.equal(data.version, 1)
+  assert.equal(data.hooks.beforeShellExecution.length, 1)
+  assert.equal(data.hooks.beforeShellExecution[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.afterShellExecution.length, 1)
+  assert.equal(data.hooks.afterShellExecution[0].command, 'scripts/trackfw-credential-guard.sh')
+
   // Idempotência
   injectCursorHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
   assert.equal(data.preToolUse.length, 2)
+  assert.equal(data.hooks.beforeShellExecution.length, 1)
+  assert.equal(data.hooks.afterShellExecution.length, 1)
+})
+
+test('injectCursorHooks preserves a pre-existing top-level version field', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cursor-hooks-version-'))
+  const hooksPath = path.join(tmpDir, '.cursor', 'hooks.json')
+
+  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
+  fs.writeFileSync(hooksPath, JSON.stringify({ version: 2, hooks: {} }, null, 2))
+
+  injectCursorHooks(tmpDir)
+  const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  assert.equal(data.version, 2)
 })
 
 test('injectWindsurfHooks updates .windsurfrules', () => {

@@ -645,12 +645,40 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertIn('preToolUse', data)
         self.assertIn('postToolUse', data)
 
+        self.assertEqual(data.get('version'), 1)
+        self.assertIn('hooks', data)
+        self.assertEqual(len(data['hooks']['beforeShellExecution']), 1)
+        self.assertEqual(
+            data['hooks']['beforeShellExecution'][0]['command'],
+            'scripts/trackfw-credential-guard.sh',
+        )
+        self.assertEqual(len(data['hooks']['afterShellExecution']), 1)
+        self.assertEqual(
+            data['hooks']['afterShellExecution'][0]['command'],
+            'scripts/trackfw-credential-guard.sh',
+        )
+
         # Idempotência
         inject_cursor_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
         self.assertEqual(len(data2['preToolUse']), 1)
         self.assertEqual(len(data2['postToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['beforeShellExecution']), 1)
+        self.assertEqual(len(data2['hooks']['afterShellExecution']), 1)
+
+    def test_inject_cursor_hooks_preserves_existing_version(self):
+        from trackfw.generators.hooks import inject_cursor_hooks
+        cursor_dir = os.path.join(self.tmp, '.cursor')
+        os.makedirs(cursor_dir, exist_ok=True)
+        path = os.path.join(cursor_dir, 'hooks.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'version': 2, 'hooks': {}}, f)
+
+        inject_cursor_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        self.assertEqual(data['version'], 2)
 
     def test_inject_hooks_detected(self):
         from trackfw.generators.hooks import inject_hooks_detected

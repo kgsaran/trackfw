@@ -1410,6 +1410,102 @@ subprocess (Node via `node -e`-equivalent script, Python via `python3 -c`) and c
 JSON structurally (event keys, entry count, `bash`/`type`/`matcher` fields) rather than byte-for-byte,
 since each stack's own JSON serializer is free to choose its own formatting.
 
+#### Cursor wiring (ML-2E) — `.cursor/hooks.json`, `hooks.beforeShellExecution`/`hooks.afterShellExecution`
+
+`InjectCursorHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
+`npm/src/generators/hooks.js:injectCursorHooks`; Python:
+`pypi/trackfw/generators/hooks.py:inject_cursor_hooks`) merges into `.cursor/hooks.json`, which is
+read-modify-write (not a dedicated/overwritten file, same pattern as Claude/Codex/Gemini).
+
+**Pre-existing format was not a real Cursor event — left untouched, not migrated.** Before and after
+this ML, the pre-existing attention-signal/cleanup wiring writes to top-level `preToolUse`/`postToolUse`
+arrays of `{"command": "..."}` objects. Confirmed against the official documentation
+(<https://cursor.com/docs/agent/hooks>, retrieved 2026-08-05 via `curl -L` of the page's embedded
+Next.js RSC payload, unescaped and grepped) that this does **not** correspond to any hook event Cursor
+actually exposes: the real config schema is `{"version": 1, "hooks": {"<eventName>": [<entry>, ...]}}`,
+and the full documented event list is `sessionStart`, `sessionEnd`, `beforeShellExecution`,
+`beforeMCPExecution`, `afterShellExecution`, `afterMCPExecution`, `beforeReadFile`, `afterFileEdit`,
+`beforeSubmitPrompt`, `preCompact`, `stop`, `beforeTabFileRead`, `afterTabFileEdit` — there is no
+generic `preToolUse`/`postToolUse` event at all. This ML's brief explicitly scoped fixing this out
+("preserve the existing entries, do not migrate them, only add the new hook in parallel"); it is
+recorded here as a known, unresolved divergence for a future ML (re-scope the legacy attention hooks to
+a real event, e.g. `stop` or `beforeSubmitPrompt`), not a silent gap.
+
+**`beforeShellExecution` confirmed as the real, Bash-specific, pre-execution event.** From the doc's
+"Hook Types" reference:
+
+```json
+// beforeShellExecution input
+{
+  "command": "<full terminal command>",
+  "cwd": "<current working directory>",
+  "sandbox": false
+}
+
+// Output
+{
+  "permission": "allow" | "deny" | "ask",
+  "user_message": "<message shown in client>",
+  "agent_message": "<message sent to agent>"
+}
+```
+
+The event's own list entry describes it as "Control shell commands", distinct from
+`beforeMCPExecution`/`afterMCPExecution` ("Control MCP tool usage") — this answers the investigation's
+first question: yes, `beforeShellExecution` is a real, dedicated, pre-execution shell event, unrelated
+to the (non-existent) generic `preToolUse`.
+
+**`afterShellExecution` confirmed as the post-execution shell event — audit-only, no permission
+response.** "Fires after a shell command executes; useful for auditing or collecting metrics from
+command output." Input adds `output`/`duration` to the same base fields (`command`, `sandbox`); no
+`permission`/`allow`/`deny`/`ask` output is documented for it (the command has already run — there is
+nothing left to block). Wired here in parallel with `beforeShellExecution`, mirroring the
+`PreToolUse`+`PostToolUse` pairing already used for the other CLIs in this wave, so a credential that
+only surfaces in captured command *output* (not the command string itself) is still flagged.
+
+**Exit code behavior confirmed to already match `trackfw-credential-guard.sh`'s existing contract — no
+script change required.** Per the doc's "Exit code behavior" list: "Exit code `0` - Hook succeeded, use
+the JSON output"; "Exit code `2` - Block the action (equivalent to returning `permission: \"deny\"`)";
+"Other exit codes - Hook failed, action proceeds (fail-open by default)." A worked minimal example hook
+in the same doc exits `0` with **no stdout output at all** (`cat > /dev/null; exit 0`), confirming that
+an empty/absent JSON response on exit `0` is valid and does not error — the client defaults to
+proceeding. `trackfw-credential-guard.sh` (ML-1A) already exits `2` for `credential_guard.mode: block`
+detections (writing the reason to stderr) and exits `0` for everything else (`warn` mode included, which
+writes its own warning to the dedicated `.trackfw-credential-guard.json` file, not stdout) — this is
+**exactly** Cursor's `deny`/(implicit-)`allow` convention, so the script required zero modification to
+be wired under Cursor. Emitting an explicit `{"permission": "allow", "agent_message": "..."}` JSON body
+on `warn` (to additionally surface the warning inline to the agent, not just via the polled attention
+file) was considered and rejected for this ML: the script is byte-for-byte shared across all six wired
+CLIs (`internal/generators/credential_guard_parity_test.go`), and none of the other five parse or expect
+JSON on the guard's stdout — adding Cursor-specific stdout output would require either payload-sniffing
+logic (fragile, and every other CLI's investigation found the script is intentionally payload-shape
+agnostic) or risk polluting stdout for CLIs that do inspect it. Exit-code-only is the simplest option
+that is already fully correct per the documented contract.
+
+**Matcher — real, but intentionally omitted here.** A worked example shows `beforeShellExecution`
+entries support an optional `"matcher"` field: `{"command": "./scripts/approve-network.sh", "timeout":
+30, "matcher": "curl|wget|nc"}`. Unlike the tool-name matchers used for Claude/Codex/Gemini/Copilot,
+this `matcher` is a regex evaluated against the **command string itself** — the event is already
+shell-specific, so there is no `tool_name` to filter on (this answers the investigation's third
+question: no additional tool-type filtering is needed or possible at this level; the event boundary
+already does that job). `trackfw-credential-guard.sh` must see every shell command to scan for
+JWT/AWS-key patterns, so no `matcher` is set on the entries this ML adds.
+
+**Concurrency — not documented on the retrieved page; not assumed.** Unlike Codex (confirmed
+concurrent, ML-2B) or Copilot (confirmed serial-in-order, ML-2D), no statement about the execution
+order/model of multiple hooks registered on the same event was found in the Cursor hooks reference
+page as retrieved on 2026-08-05. Not a blocker for this ML: the `beforeShellExecution`/
+`afterShellExecution` arrays this wiring writes only ever contain the single credential-guard entry
+added by trackfw (the pre-existing `preToolUse`/`postToolUse` arrays are a structurally separate,
+unrelated part of the file, per the "not a real event" note above), so there is no same-event
+multi-hook race to reason about here regardless of Cursor's true concurrency model.
+
+Idempotency and version handling: `version` is set to `1` only if the field is absent from a
+pre-existing `.cursor/hooks.json` (a user-provided value, e.g. from a future schema bump, is never
+overwritten); `hooks.beforeShellExecution`/`hooks.afterShellExecution` are merged via the same
+flat-array `{command}`-dedup helper (`mergeSimpleCommandArray`/`hasEntry`/`_has_entry`) already used for
+the pre-existing `preToolUse`/`postToolUse` entries — re-running the injector never duplicates entries.
+
 ### States
 
 Both commands report one state per target. These four strings are pinned:
