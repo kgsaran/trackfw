@@ -199,7 +199,7 @@ só para essas chaves de topo — reaproveitando o helper de array por baixo.
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2D — Alvo `cursor-credential-guard`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
 `npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
 irmãos), seção Cursor — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
