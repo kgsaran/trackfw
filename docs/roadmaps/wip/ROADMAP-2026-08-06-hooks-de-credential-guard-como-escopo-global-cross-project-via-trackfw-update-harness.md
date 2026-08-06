@@ -127,7 +127,7 @@ idênticos nos 3 stacks. `docs/cli-parity.md` ("21 ids") corrigido para 22. Todo
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2B — Alvo `codex-credential-guard`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
 `npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
 irmãos), seção Codex — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
