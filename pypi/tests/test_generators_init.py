@@ -605,8 +605,29 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertTrue(os.path.isfile(path))
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
+        self.assertEqual(data.get('version'), 1)
         self.assertIn('preToolUse', data.get('hooks', {}))
         self.assertIn('postToolUse', data.get('hooks', {}))
+        self.assertEqual(len(data['hooks']['preToolUse']), 2)
+        self.assertEqual(len(data['hooks']['postToolUse']), 2)
+
+        def find_by_bash(entries, bash):
+            return next((e for e in entries if e.get('bash') == bash), None)
+
+        signal = find_by_bash(data['hooks']['preToolUse'], 'scripts/trackfw-attention-signal.sh')
+        self.assertIsNotNone(signal, 'preToolUse missing attention-signal entry')
+        self.assertNotIn('matcher', signal)
+
+        guard_pre = find_by_bash(data['hooks']['preToolUse'], 'scripts/trackfw-credential-guard.sh')
+        self.assertIsNotNone(guard_pre, 'preToolUse missing credential-guard entry')
+        self.assertEqual(guard_pre.get('matcher'), 'bash')
+
+        cleanup = find_by_bash(data['hooks']['postToolUse'], 'scripts/trackfw-attention-cleanup.sh')
+        self.assertIsNotNone(cleanup, 'postToolUse missing attention-cleanup entry')
+
+        guard_post = find_by_bash(data['hooks']['postToolUse'], 'scripts/trackfw-credential-guard.sh')
+        self.assertIsNotNone(guard_post, 'postToolUse missing credential-guard entry')
+        self.assertEqual(guard_post.get('matcher'), 'bash')
 
         # Idempotência
         inject_copilot_hooks(self.tmp)

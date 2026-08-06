@@ -233,6 +233,28 @@ def inject_kiro_hooks(cwd: str) -> None:
 
 # ---------------------------------------------------------------------------
 # Copilot — .github/hooks/trackfw-attention.json (arquivo dedicado, overwrite seguro)
+#
+# Format confirmed against https://docs.github.com/en/copilot/reference/hooks-reference (retrieved
+# 2026-08-05): repository-level hook files live at .github/hooks/*.json, using the schema
+# {"version": 1, "hooks": {"<event>": [<command entry>, ...]}}, where a command entry is
+# {"type": "command", "bash": "...", "cwd": "...", "timeoutSec": N}. This is the format this function
+# already used before this ML -- Go and Node previously emitted a different, undocumented
+# {"hooks": [{"event", "run"}]} shape and were aligned to this one (Python was correct).
+#
+# Matcher: the doc's matcher-filtering table lists `preToolUse -> toolName` and `postToolUse ->
+# toolName` (a regex, anchored `^(?:PATTERN)$`), and shows a worked `"matcher"` field inline on a
+# postToolUse command entry. With camelCase event names (preToolUse/postToolUse, used here), toolName
+# carries the runtime tool name, and the shell tool's runtime name is "bash" (lowercase) -- distinct
+# from PascalCase events, which report the Claude-mapped name "Bash". trackfw-credential-guard.sh
+# scans the raw JSON payload for JWT/AWS-key patterns regardless of field names (ML-1A), so it works
+# under either payload shape; the matcher below is a scope-narrowing optimization only.
+#
+# Concurrency: "If multiple hooks of the same type are configured, they execute in order" (same
+# section) -- Copilot hooks run serially, in configured order, for the same event, unlike Codex's
+# confirmed-concurrent or Gemini's undocumented cross-group model. The ML-1A fix (credential-guard's
+# "warn" mode writes to its own dedicated $ROADMAP_DIR/.trackfw-credential-guard.json, never touching
+# the shared .trackfw-attention.json that trackfw-attention-cleanup.sh deletes) makes ordering moot
+# regardless.
 # ---------------------------------------------------------------------------
 
 def inject_copilot_hooks(cwd: str) -> None:
@@ -241,18 +263,36 @@ def inject_copilot_hooks(cwd: str) -> None:
     data = {
         'version': 1,
         'hooks': {
-            'preToolUse': [{
-                'type': 'command',
-                'bash': 'scripts/trackfw-attention-signal.sh',
-                'cwd': '.',
-                'timeoutSec': 10,
-            }],
-            'postToolUse': [{
-                'type': 'command',
-                'bash': 'scripts/trackfw-attention-cleanup.sh',
-                'cwd': '.',
-                'timeoutSec': 10,
-            }],
+            'preToolUse': [
+                {
+                    'type': 'command',
+                    'bash': 'scripts/trackfw-attention-signal.sh',
+                    'cwd': '.',
+                    'timeoutSec': 10,
+                },
+                {
+                    'type': 'command',
+                    'matcher': 'bash',
+                    'bash': 'scripts/trackfw-credential-guard.sh',
+                    'cwd': '.',
+                    'timeoutSec': 10,
+                },
+            ],
+            'postToolUse': [
+                {
+                    'type': 'command',
+                    'bash': 'scripts/trackfw-attention-cleanup.sh',
+                    'cwd': '.',
+                    'timeoutSec': 10,
+                },
+                {
+                    'type': 'command',
+                    'matcher': 'bash',
+                    'bash': 'scripts/trackfw-credential-guard.sh',
+                    'cwd': '.',
+                    'timeoutSec': 10,
+                },
+            ],
         },
     }
     _write_json(file_path, data)

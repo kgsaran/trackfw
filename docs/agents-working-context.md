@@ -9604,3 +9604,52 @@ para ele.
 
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
 Git).
+
+## Sessão 2026-08-06 — Apolo (ML-2D: GitHub Copilot wiring + correção de divergência de formato) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/hooks-de-guarda-contra-materializacao-de-credenciais` (já criada — sem commit/push feitos
+por este agente). Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`,
+ML-2D (Wave 2 — GitHub Copilot).
+
+**Investigação (obrigatória antes de codar)**: confirmado via
+`https://docs.github.com/en/copilot/reference/hooks-reference` (2026-08-05, `curl` do JSON
+`renderedPage` embutido pelo Next.js) que o formato real de `.github/hooks/*.json` é
+`{"version": 1, "hooks": {"<event>": [{"type": "command", "bash": "...", "cwd": "...",
+"timeoutSec": N}, ...]}}` — Python já usava esse formato corretamente; Go e Node usavam
+`{"hooks": [{"event", "run"}]}`, que não corresponde a nenhum formato documentado. Alinhados Go/Node
+ao formato do Python. Confirmado também suporte real a `matcher` (regex ancorado contra `toolName`)
+em `preToolUse`/`postToolUse`, ao contrário do pressuposto do ADR de que não existia — usado
+`matcher: "bash"` (nome runtime do tool de shell em minúsculo, válido para eventos camelCase como os
+usados aqui). `trackfw-credential-guard.sh` foi inspecionado e não depende de nomes de campo
+específicos do payload (grep sobre o payload bruto inteiro), então funciona independente do
+camelCase/PascalCase do evento. Concorrência: "If multiple hooks of the same type are configured,
+they execute in order" — resposta mais definitiva entre todos os CLIs cobertos até aqui (serial, em
+ordem de configuração), ao contrário do Codex (concorrente, ML-2B) e do Gemini (indocumentado,
+ML-2C). Detalhe completo em `docs/cli-parity.md` (seção "GitHub Copilot wiring (ML-2D)").
+
+**Arquivos alterados**:
+- `internal/generators/agentfiles.go` (`InjectCopilotHooks` — formato realinhado + novas entradas
+  `matcher:"bash"` de credential-guard, com comentário de fonte/investigação)
+- `internal/generators/agentfiles_test.go` (`TestInjectCopilotHooks` — asserts reescritos para o novo
+  formato)
+- `internal/generators/copilot_hooks_parity_test.go` (novo —
+  `TestInjectCopilotHooks_StructuralParityAcrossStacks`, invoca Go/Node/Python como subprocessos
+  reais via `node`/`python3` e compara a estrutura JSON resultante, não byte-a-byte)
+- `npm/src/generators/hooks.js` (`injectCopilotHooks` — mesmo realinhamento)
+- `npm/tests/generators.test.js` (asserts reescritos)
+- `pypi/trackfw/generators/hooks.py` (`inject_copilot_hooks` — formato pré-existente mantido +
+  novas entradas de credential-guard)
+- `pypi/tests/test_generators_init.py` (asserts estendidos)
+- `docs/cli-parity.md` (nova seção "GitHub Copilot wiring (ML-2D)")
+- `docs/roadmaps/wip/ROADMAP-2026-08-05-...md` (ML-2D marcado ✅ Concluído com nota de auditoria)
+
+**Validação (evidência)**:
+- `go build ./...` OK; `go test ./...` OK (todos os pacotes, incluindo o novo teste de paridade
+  estrutural cross-stack)
+- `npm --prefix npm test` (`node --test tests/*.test.js`) — 380 passed, 0 failed
+- `python3 -m pytest pypi/tests/` — 913 passed, 8 subtests passed
+- `python3 -m pytest pypi/tests/ -k hooks` — 19 passed (subset relevante)
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
+Git). Não toquei em Cursor (ML-2E) nem Kiro (ML-2F), conforme escopo deste ML.

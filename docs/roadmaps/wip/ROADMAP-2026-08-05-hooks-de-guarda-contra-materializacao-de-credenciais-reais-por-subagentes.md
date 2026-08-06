@@ -297,26 +297,55 @@ nunca escreveram) foram removidos, para que a saída estruturada fique idêntica
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2D — GitHub Copilot
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** confirmado via `https://docs.github.com/en/copilot/reference/hooks-reference`
+(2026-08-05, texto extraído via `curl` do JSON `renderedPage` embutido pelo Next.js, sem acesso a
+WebFetch/WebSearch nesta execução) que o formato real de `.github/hooks/*.json` é
+`{"version": 1, "hooks": {"<event>": [{"type": "command", "bash": "...", "cwd": "...",
+"timeoutSec": N}, ...]}}` — exatamente o formato que **Python já usava**. O formato
+`{"hooks": [{"event", "run"}]}` que Go e Node emitiam não corresponde a nenhum formato documentado
+pelo GitHub; Go e Node foram alinhados ao formato do Python (que estava correto) neste ML. Confirmado
+também que existe suporte real a `matcher` (regex ancorado `^(?:PATTERN)$` testado contra `toolName`)
+em `preToolUse`/`postToolUse`, ao contrário do pressuposto inicial do ADR — usado `matcher: "bash"`
+(nome runtime do tool de shell, minúsculo, válido para eventos em camelCase como os usados aqui;
+`"Bash"` maiúsculo só se aplica a eventos PascalCase/payload formato VS Code). O script
+`trackfw-credential-guard.sh` foi inspecionado e não depende de nenhum nome de campo específico do
+payload (faz grep sobre o payload bruto inteiro) — a escolha de casing/matcher afeta só a precisão do
+escopo, nunca a detecção. Concorrência: "If multiple hooks of the same type are configured, they
+execute in order" — resposta mais definitiva entre todos os CLIs cobertos até aqui (serial, em ordem
+de configuração), ao contrário do modelo concorrente confirmado do Codex (ML-2B) ou do modelo
+indocumentado do Gemini (ML-2C). Arquivo dedicado (overwrite total, mesmo padrão do Kiro) — sem
+necessidade de merge helper. Detalhe completo, incluindo a citação da tabela de campos que omite
+`matcher` (tratado defensivamente, não como bloqueio) e a nota de fail-closed do `preToolUse` em erro
+não-zero, em `docs/cli-parity.md` (seção "GitHub Copilot wiring (ML-2D)").
 **Arquivos afetados:**
-- `internal/generators/agentfiles.go` (`InjectCopilotHooks`, linha 363-388)
-- `npm/src/generators/hooks.js` (linha ~214)
-- `pypi/trackfw/generators/hooks.py` (linha ~210 — **atenção**: este arquivo já diverge do Go/Node em
-  estrutura, ver Wave 1 do ADR; usar este ML para também corrigir a divergência de formato
-  `{event,run}` vs `{version,hooks:{preToolUse:[...]}}` confirmando qual é o formato real do Copilot
-  via `docs.github.com/en/copilot/reference/hooks-reference`)
+- `internal/generators/agentfiles.go` (`InjectCopilotHooks`, linha ~436-511 — formato realinhado ao
+  de Python + novas entradas `matcher:"bash"` para credential-guard)
+- `internal/generators/agentfiles_test.go` (`TestInjectCopilotHooks` — asserts reescritos para o novo
+  formato `{version, hooks:{preToolUse:[...], postToolUse:[...]}}`)
+- `internal/generators/copilot_hooks_parity_test.go` (novo — `TestInjectCopilotHooks_StructuralParityAcrossStacks`,
+  invoca Go/Node/Python como subprocessos reais e compara a estrutura JSON resultante)
+- `npm/src/generators/hooks.js` (`injectCopilotHooks`, linha ~365 — formato realinhado + novas
+  entradas)
+- `npm/tests/generators.test.js` (`injectCopilotHooks` — asserts reescritos)
+- `pypi/trackfw/generators/hooks.py` (`inject_copilot_hooks`, linha ~238 — novas entradas
+  `matcher:"bash"` de credential-guard; formato pré-existente mantido, era o correto)
+- `pypi/tests/test_generators_init.py` (`test_inject_copilot_hooks` — asserts estendidos)
+- `docs/cli-parity.md` (nova seção "GitHub Copilot wiring (ML-2D)")
 **Ações:**
 - Confirmar o formato real de `.github/hooks/hooks.json` do Copilot (a doc pesquisada usa
   `preToolUse`/`postToolUse` como chaves de nível superior — determinar qual dos dois formatos hoje
-  gerados pelos stacks está correto e alinhar os 3 antes de adicionar o novo hook).
+  gerados pelos stacks está correto e alinhar os 3 antes de adicionar o novo hook). ✅
 - O formato atual do trackfw para Copilot não tem campo de matcher por tool — o filtro para "só
   Bash" precisa acontecer dentro do próprio `trackfw-credential-guard.sh` inspecionando o payload
-  recebido via stdin (`tool_name`/`tool.name`, confirmar chave exata do payload do Copilot).
-- Adicionar entrada `preToolUse`/`postToolUse` apontando para o script, preservando a existente.
+  recebido via stdin (`tool_name`/`tool.name`, confirmar chave exata do payload do Copilot). ✅
+  (matcher real existe e foi usado; script já é agnóstico ao payload)
+- Adicionar entrada `preToolUse`/`postToolUse` apontando para o script, preservando a existente. ✅
 **Critérios de aceite:**
-- [ ] Divergência de formato Go/Node vs Python corrigida e documentada em `docs/cli-parity.md`
-- [ ] `.github/hooks/*.json` gerado idêntico em estrutura nos 3 stacks
-- [ ] Testes de geração verdes nos 3 stacks
+- [x] Divergência de formato Go/Node vs Python corrigida e documentada em `docs/cli-parity.md`
+- [x] `.github/hooks/*.json` gerado idêntico em estrutura nos 3 stacks
+- [x] Testes de geração verdes nos 3 stacks
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2E — Cursor

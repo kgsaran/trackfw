@@ -459,11 +459,26 @@ test('injectCopilotHooks creates .github/hooks/trackfw-attention.json idempotent
 
   injectCopilotHooks(tmpDir)
   let data1 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
-  assert.equal(data1.hooks.length, 2)
-  assert.equal(data1.hooks[0].event, 'preToolUse')
-  assert.equal(data1.hooks[0].run, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(data1.hooks[1].event, 'postToolUse')
-  assert.equal(data1.hooks[1].run, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data1.version, 1)
+  assert.equal(data1.hooks.preToolUse.length, 2)
+  assert.equal(data1.hooks.postToolUse.length, 2)
+
+  const findByBash = (arr, bash) => arr.find(e => e.bash === bash)
+
+  const signal = findByBash(data1.hooks.preToolUse, 'scripts/trackfw-attention-signal.sh')
+  assert.ok(signal, 'preToolUse missing attention-signal entry')
+  assert.equal(signal.matcher, undefined)
+
+  const guardPre = findByBash(data1.hooks.preToolUse, 'scripts/trackfw-credential-guard.sh')
+  assert.ok(guardPre, 'preToolUse missing credential-guard entry')
+  assert.equal(guardPre.matcher, 'bash')
+
+  const cleanup = findByBash(data1.hooks.postToolUse, 'scripts/trackfw-attention-cleanup.sh')
+  assert.ok(cleanup, 'postToolUse missing attention-cleanup entry')
+
+  const guardPost = findByBash(data1.hooks.postToolUse, 'scripts/trackfw-credential-guard.sh')
+  assert.ok(guardPost, 'postToolUse missing credential-guard entry')
+  assert.equal(guardPost.matcher, 'bash')
 
   injectCopilotHooks(tmpDir)
   let data2 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))

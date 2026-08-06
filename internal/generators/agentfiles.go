@@ -433,6 +433,38 @@ func InjectKiroHooks(cwd string) error {
 
 // InjectCopilotHooks injects GitHub Copilot attention hooks into .github/hooks/trackfw-attention.json.
 // Overwriting this file is intentional as trackfw-attention.json is a dedicated file owned exclusively by trackfw.
+//
+// Format confirmed against https://docs.github.com/en/copilot/reference/hooks-reference (retrieved
+// 2026-08-05): repository-level hook files live at .github/hooks/*.json (a directory of files that are
+// all loaded and combined), each using the schema {"version": 1, "hooks": {"<event>": [<command entry>,
+// ...]}}, where a command entry is {"type": "command", "bash": "...", "cwd": "...", "timeoutSec": N}.
+// This is the format `inject_copilot_hooks` (Python) already used; the {"hooks": [{"event", "run"}]}
+// shape this Go function and its Node sibling previously emitted does not match any format documented
+// by GitHub -- Go/Node were wrong, Python was right, and this ML aligns Go/Node to it.
+//
+// Matcher: the doc's matcher-filtering table lists `preToolUse -> toolName` and `postToolUse ->
+// toolName` (a regex, anchored `^(?:PATTERN)$`), and shows a worked `"matcher"` field inline on a
+// postToolUse command entry. The Command-hooks field table itself does not list `matcher` explicitly,
+// but per the doc's own malformed-item handling ("only that item is dropped and logged"), a rejected
+// field would silently drop the whole entry rather than error loudly -- so this is used defensively:
+// even if `matcher` were ignored by some Copilot version, trackfw-credential-guard.sh already filters
+// on its own raw-payload scan (ML-1A) and is a safe no-op when the match doesn't hit, so restricting
+// scope here is a hardening layer, not the sole line of defense.
+//
+// Tool name for matching: with camelCase event names (preToolUse/postToolUse, used here and by the
+// pre-existing signal/cleanup entries), the doc specifies the *runtime* tool name is reported in
+// `toolName`, and the shell tool's runtime name is "bash" (lowercase) -- distinct from the PascalCase
+// event/VS Code-compatible payload shape, which would report the Claude-mapped name "Bash". The script
+// itself scans the raw JSON payload for JWT/AWS-key patterns regardless of field names, so it works
+// under either payload shape; the matcher below is only a scope-narrowing optimization, not something
+// the script's own detection logic depends on.
+//
+// Concurrency: "If multiple hooks of the same type are configured, they execute in order" (same
+// section) -- Copilot hooks run serially, in configured order, for the same event. This makes the
+// postToolUse cleanup/guard ordering deterministic here (unlike Codex's confirmed-concurrent or
+// Gemini's undocumented cross-group model); the ML-1A fix (credential-guard's "warn" mode writes to
+// its own dedicated $ROADMAP_DIR/.trackfw-credential-guard.json, never touching the shared
+// .trackfw-attention.json that trackfw-attention-cleanup.sh deletes) makes this moot regardless.
 func InjectCopilotHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".github", "hooks")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -441,14 +473,37 @@ func InjectCopilotHooks(cwd string) error {
 	path := filepath.Join(dir, "trackfw-attention.json")
 
 	content := map[string]interface{}{
-		"hooks": []interface{}{
-			map[string]interface{}{
-				"event": "preToolUse",
-				"run":   "scripts/trackfw-attention-signal.sh",
+		"version": 1,
+		"hooks": map[string]interface{}{
+			"preToolUse": []interface{}{
+				map[string]interface{}{
+					"type":       "command",
+					"bash":       "scripts/trackfw-attention-signal.sh",
+					"cwd":        ".",
+					"timeoutSec": 10,
+				},
+				map[string]interface{}{
+					"type":       "command",
+					"matcher":    "bash",
+					"bash":       "scripts/trackfw-credential-guard.sh",
+					"cwd":        ".",
+					"timeoutSec": 10,
+				},
 			},
-			map[string]interface{}{
-				"event": "postToolUse",
-				"run":   "scripts/trackfw-attention-cleanup.sh",
+			"postToolUse": []interface{}{
+				map[string]interface{}{
+					"type":       "command",
+					"bash":       "scripts/trackfw-attention-cleanup.sh",
+					"cwd":        ".",
+					"timeoutSec": 10,
+				},
+				map[string]interface{}{
+					"type":       "command",
+					"matcher":    "bash",
+					"bash":       "scripts/trackfw-credential-guard.sh",
+					"cwd":        ".",
+					"timeoutSec": 10,
+				},
 			},
 		},
 	}

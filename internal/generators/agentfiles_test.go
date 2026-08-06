@@ -340,9 +340,60 @@ func TestInjectCopilotHooks(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, file)
-	hooks, ok := data["hooks"].([]interface{})
-	if !ok || len(hooks) != 2 {
-		t.Fatalf("expected hooks array of size 2, got %v", data["hooks"])
+	if data["version"] != float64(1) {
+		t.Fatalf("expected version 1, got %v", data["version"])
+	}
+	hooks, ok := data["hooks"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected hooks to be an object keyed by event, got %v", data["hooks"])
+	}
+
+	pre, ok := hooks["preToolUse"].([]interface{})
+	if !ok || len(pre) != 2 {
+		t.Fatalf("expected preToolUse array of size 2, got %v", hooks["preToolUse"])
+	}
+	post, ok := hooks["postToolUse"].([]interface{})
+	if !ok || len(post) != 2 {
+		t.Fatalf("expected postToolUse array of size 2, got %v", hooks["postToolUse"])
+	}
+
+	helperFindCopilotEntry := func(arr []interface{}, bash string) map[string]interface{} {
+		for _, item := range arr {
+			obj, ok := item.(map[string]interface{})
+			if ok && obj["bash"] == bash {
+				return obj
+			}
+		}
+		return nil
+	}
+
+	signal := helperFindCopilotEntry(pre, "scripts/trackfw-attention-signal.sh")
+	if signal == nil {
+		t.Fatal("preToolUse missing attention-signal entry")
+	}
+	if signal["matcher"] != nil {
+		t.Errorf("attention-signal entry should not have a matcher, got %v", signal["matcher"])
+	}
+
+	guardPre := helperFindCopilotEntry(pre, "scripts/trackfw-credential-guard.sh")
+	if guardPre == nil {
+		t.Fatal("preToolUse missing credential-guard entry")
+	}
+	if guardPre["matcher"] != "bash" {
+		t.Errorf("credential-guard preToolUse entry should have matcher=bash, got %v", guardPre["matcher"])
+	}
+
+	cleanup := helperFindCopilotEntry(post, "scripts/trackfw-attention-cleanup.sh")
+	if cleanup == nil {
+		t.Fatal("postToolUse missing attention-cleanup entry")
+	}
+
+	guardPost := helperFindCopilotEntry(post, "scripts/trackfw-credential-guard.sh")
+	if guardPost == nil {
+		t.Fatal("postToolUse missing credential-guard entry")
+	}
+	if guardPost["matcher"] != "bash" {
+		t.Errorf("credential-guard postToolUse entry should have matcher=bash, got %v", guardPost["matcher"])
 	}
 }
 

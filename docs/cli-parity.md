@@ -1333,6 +1333,83 @@ needs its own fix — most likely calling the script generator alongside
 `InjectHooksDetected`/`injectHooksDetected`/`inject_hooks_detected` — tracked as a follow-up, not fixed
 here to avoid expanding this ML's scope.
 
+#### GitHub Copilot wiring (ML-2D) — `.github/hooks/trackfw-attention.json` format correction + matcher `"bash"`
+
+`InjectCopilotHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
+`npm/src/generators/hooks.js:injectCopilotHooks`; Python:
+`pypi/trackfw/generators/hooks.py:inject_copilot_hooks`) writes a dedicated (overwritten wholesale, same
+pattern as Kiro) `.github/hooks/trackfw-attention.json`.
+
+**Format divergence found and corrected.** Before this ML, Go and Node.js emitted
+`{"hooks": [{"event": "preToolUse", "run": "..."}, {"event": "postToolUse", "run": "..."}]}`, while
+Python emitted `{"version": 1, "hooks": {"preToolUse": [{"type": "command", "bash": "...", "cwd": ".",
+"timeoutSec": 10}], "postToolUse": [...]}}`. Confirmed against the official documentation
+(<https://docs.github.com/en/copilot/reference/hooks-reference>, retrieved 2026-08-05 via `curl` of the
+page's embedded Next.js `renderedPage` JSON, stripped of markup):
+
+- "Repository-level hook files — `.github/hooks/*.json` in the repository root" — files use "JSON
+  format with version 1", schema `{"version": 1, "hooks": {"<event>": [<entry>, ...]}}`.
+- The documented Command-hook entry shape is `{"type": "command", "bash": "YOUR_BASH_COMMAND",
+  "powershell": "YOUR_POWERSHELL_COMMAND", "cwd": "OPTIONAL/WORKING/DIRECTORY", "env": {"VAR": "VALUE"},
+  "timeoutSec": 30}` — this is **exactly** the shape Python already used (`type`/`bash`/`cwd`/
+  `timeoutSec`), confirming Python was correct. The `{"hooks": [{"event", "run"}]}` array-of-flat-objects
+  shape Go/Node emitted does not match any format documented by GitHub and was not a legacy/deprecated
+  variant found anywhere in the retrieved doc — it appears to have been an unverified guess baked in
+  before this REQ. **Go and Node were aligned to Python's pre-existing (correct) format in this ML.**
+
+**Matcher — real support confirmed, contrary to the pre-ML assumption that Copilot had none.** The
+"Matcher filtering" table lists `preToolUse -> toolName` and `postToolUse -> toolName` — "Optional regex
+tested against `toolName`... compiled as `^(?:PATTERN)$`... must match the entire tool name." A worked
+example is shown inline on a `postToolUse` command entry: `{"type": "command", "matcher": "bash|edit",
+"bash": "./scripts/log-tool.sh"}`. The per-field reference table for command hooks (`bash`/`command`/
+`cwd`/`env`/`powershell`/`timeout`/`timeoutSec`/`type`) does not itself list `matcher` as a field, even
+though the matcher-filtering section documents and shows it — this is treated as defensive evidence, not
+a blocker: per the doc's own malformed-item handling ("If a hook configuration file... contains a
+malformed hook item, only that item is dropped and logged"), if some Copilot version silently rejected
+`matcher` as an unknown field, the whole entry (not just the field) would be the risk. `matcher: "bash"`
+is used on both new `preToolUse`/`postToolUse` credential-guard entries to scope them to the shell tool,
+as a hardening layer on top of — not a replacement for — `trackfw-credential-guard.sh`'s own raw-payload
+JWT/AWS-key scan (ML-1A), which does not depend on any specific field name and would still work as a
+no-op-when-no-match filter even if the matcher were ignored by a given Copilot version.
+
+**Tool name casing depends on event-name casing (camelCase vs PascalCase), not fixed.** The doc: "Two
+payload formats are supported, selected by the event name used in the hook configuration: camelCase
+format... Fields use camelCase [and] `toolName` [carries] the runtime tool name" vs. "VS Code compatible
+format — Configure the event name in PascalCase (for example, `SessionStart`). Fields use snake_case...
+Payloads for PascalCase `PreToolUse` report `tool_name` as the Claude tool name (for example, `Bash`, not
+`bash`)." The tool-name mapping table lists the shell tool's **runtime** name as `bash` (lowercase). Since
+this wiring uses camelCase event keys (`preToolUse`/`postToolUse`, matching the pre-existing
+signal/cleanup entries), `matcher: "bash"` (lowercase) is correct — using `"Bash"` (the PascalCase/Claude
+name) would silently never match under this event-casing scheme. `trackfw-credential-guard.sh` was
+inspected directly to confirm it does not depend on this distinction either way: it greps the *entire*
+raw stdin payload for the JWT/AWS-key regex and a redirect-target heuristic, with no field-name lookup at
+all — so the payload-shape choice affects only the matcher's scoping precision, never detection
+correctness.
+
+**Concurrency (explicitly investigated per this ML's brief) — the most definitive answer found across
+all CLIs wired so far.** The doc states plainly: "If multiple hooks of the same type are configured,
+they execute in order." Unlike Codex (confirmed concurrent, ML-2B) or Gemini (undocumented cross-group
+model, ML-2C), Copilot hooks for the same event run **serially, in configuration order** — no race is
+possible between `trackfw-attention-cleanup.sh` (index 0 in `postToolUse`) and
+`trackfw-credential-guard.sh` (index 1) here even setting aside the ML-1A dedicated-file fix. Related
+exit-code behavior worth flagging for anyone editing the script later: "Command `preToolUse` hooks are
+fail-closed on errors — a crash or non-zero exit (including exit 2) denies the tool call, even if the
+hook's stdout JSON reports `permissionDecision: "allow"`" — so any future bug causing
+`trackfw-credential-guard.sh` to exit non-zero for reasons unrelated to a real "block" decision would
+deny the tool call under Copilot, not just genuine `credential_guard.mode: block` detections. Timeouts,
+by contrast, are always fail-open per the same section.
+
+Idempotency: the file is regenerated wholesale on every call (same "dedicated file, safe overwrite"
+pattern as Kiro's `trackfw-attention.json`) — no merge helper is needed because trackfw is the sole owner
+of this filename and always emits the same two events/four entries.
+
+Cross-stack structural parity (Go vs. Node.js vs. Python) is covered by
+`internal/generators/copilot_hooks_parity_test.go` (`TestInjectCopilotHooks_StructuralParityAcrossStacks`),
+which invokes each stack's real `injectCopilotHooks`/`inject_copilot_hooks` implementation as a
+subprocess (Node via `node -e`-equivalent script, Python via `python3 -c`) and compares the resulting
+JSON structurally (event keys, entry count, `bash`/`type`/`matcher` fields) rather than byte-for-byte,
+since each stack's own JSON serializer is free to choose its own formatting.
+
 ### States
 
 Both commands report one state per target. These four strings are pinned:
