@@ -117,7 +117,7 @@ Dois achados fora de escopo, documentados durante a auditoria do
 > Dependências: Wave 1 completa
 
 ### ML-2A — `make quality` verde de ponta a ponta + encerramento
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - Nenhum (só validação — a menos que `make quality` revele mais alguma coisa a corrigir, caso em que
   volta para uma ML própria, não se expande esta)
