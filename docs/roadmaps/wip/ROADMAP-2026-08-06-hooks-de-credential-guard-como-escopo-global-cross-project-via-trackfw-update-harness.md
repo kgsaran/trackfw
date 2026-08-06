@@ -448,7 +448,7 @@ Wave 4 (`ML-4A` — estender o gate de paridade estrutural para os alvos harness
 > Dependências: Wave 2 completa
 
 ### ML-4A — Estender gate de paridade estrutural para os alvos harness
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `scripts/check-agent-hooks-parity.sh` (estender) ou novo script dedicado seguindo o mesmo padrão
 - `Makefile`, `scripts/check-gates-falsify.sh` (prova negativa, mesmo padrão do Cenário 44)
