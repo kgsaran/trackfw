@@ -7,6 +7,7 @@ package commands
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -150,6 +151,292 @@ func TestUpdateHarnessCmd_FailedTargetIncludesMessageAndExitsNonZero(t *testing.
 	}
 	if !strings.Contains(line, `"message"`) {
 		t.Fatalf("failed target must include a message: %s", line)
+	}
+}
+
+// TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI exercises the
+// claude-credential-guard target through the full `trackfw update harness`
+// CLI surface (not just the generators.UpdateHarness API), confirming the
+// --targets/--install-missing/--json flags all thread through correctly for
+// this new target.
+func TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd := newUpdateHarnessCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--json", "--targets", "claude-credential-guard", "--install-missing"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("trackfw update harness --targets claude-credential-guard --install-missing failed: %v", err)
+	}
+
+	line := strings.TrimSpace(out.String())
+	var doc struct {
+		Targets []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Path  string `json:"path"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(line), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, line)
+	}
+	if len(doc.Targets) != 1 || doc.Targets[0].ID != "claude-credential-guard" {
+		t.Fatalf("unexpected targets: %+v", doc.Targets)
+	}
+	if doc.Targets[0].State != "updated" {
+		t.Fatalf("state = %q, want updated", doc.Targets[0].State)
+	}
+	if doc.Targets[0].Path != "~/.claude/settings.json" {
+		t.Fatalf("path = %q, want ~/.claude/settings.json", doc.Targets[0].Path)
+	}
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("~/.claude/settings.json was not written: %v", err)
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !strings.Contains(string(data), wantScript) {
+		t.Fatalf("settings.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	}
+}
+
+// TestUpdateHarnessCmd_CredentialGuardCodexInstallsViaCLI mirrors
+// TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI for the
+// codex-credential-guard target (ROADMAP-2026-08-06 Wave 2/ML-2B).
+func TestUpdateHarnessCmd_CredentialGuardCodexInstallsViaCLI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd := newUpdateHarnessCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--json", "--targets", "codex-credential-guard", "--install-missing"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("trackfw update harness --targets codex-credential-guard --install-missing failed: %v", err)
+	}
+
+	line := strings.TrimSpace(out.String())
+	var doc struct {
+		Targets []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Path  string `json:"path"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(line), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, line)
+	}
+	if len(doc.Targets) != 1 || doc.Targets[0].ID != "codex-credential-guard" {
+		t.Fatalf("unexpected targets: %+v", doc.Targets)
+	}
+	if doc.Targets[0].State != "updated" {
+		t.Fatalf("state = %q, want updated", doc.Targets[0].State)
+	}
+	if doc.Targets[0].Path != "~/.codex/hooks.json" {
+		t.Fatalf("path = %q, want ~/.codex/hooks.json", doc.Targets[0].Path)
+	}
+
+	hooksPath := filepath.Join(home, ".codex", "hooks.json")
+	data, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatalf("~/.codex/hooks.json was not written: %v", err)
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !strings.Contains(string(data), wantScript) {
+		t.Fatalf("hooks.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	}
+}
+
+// TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI mirrors
+// TestUpdateHarnessCmd_CredentialGuardCodexInstallsViaCLI for the
+// gemini-credential-guard target (ROADMAP-2026-08-06 Wave 2/ML-2C).
+func TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd := newUpdateHarnessCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--json", "--targets", "gemini-credential-guard", "--install-missing"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("trackfw update harness --targets gemini-credential-guard --install-missing failed: %v", err)
+	}
+
+	line := strings.TrimSpace(out.String())
+	var doc struct {
+		Targets []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Path  string `json:"path"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(line), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, line)
+	}
+	if len(doc.Targets) != 1 || doc.Targets[0].ID != "gemini-credential-guard" {
+		t.Fatalf("unexpected targets: %+v", doc.Targets)
+	}
+	if doc.Targets[0].State != "updated" {
+		t.Fatalf("state = %q, want updated", doc.Targets[0].State)
+	}
+	if doc.Targets[0].Path != "~/.gemini/settings.json" {
+		t.Fatalf("path = %q, want ~/.gemini/settings.json", doc.Targets[0].Path)
+	}
+
+	settingsPath := filepath.Join(home, ".gemini", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("~/.gemini/settings.json was not written: %v", err)
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !strings.Contains(string(data), wantScript) {
+		t.Fatalf("settings.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	}
+}
+
+// TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI mirrors
+// TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI for the
+// cursor-credential-guard target (ROADMAP-2026-08-06 Wave 2/ML-2D).
+func TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd := newUpdateHarnessCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--json", "--targets", "cursor-credential-guard", "--install-missing"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("trackfw update harness --targets cursor-credential-guard --install-missing failed: %v", err)
+	}
+
+	line := strings.TrimSpace(out.String())
+	var doc struct {
+		Targets []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Path  string `json:"path"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(line), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, line)
+	}
+	if len(doc.Targets) != 1 || doc.Targets[0].ID != "cursor-credential-guard" {
+		t.Fatalf("unexpected targets: %+v", doc.Targets)
+	}
+	if doc.Targets[0].State != "updated" {
+		t.Fatalf("state = %q, want updated", doc.Targets[0].State)
+	}
+	if doc.Targets[0].Path != "~/.cursor/hooks.json" {
+		t.Fatalf("path = %q, want ~/.cursor/hooks.json", doc.Targets[0].Path)
+	}
+
+	hooksPath := filepath.Join(home, ".cursor", "hooks.json")
+	data, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatalf("~/.cursor/hooks.json was not written: %v", err)
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !strings.Contains(string(data), wantScript) {
+		t.Fatalf("hooks.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	}
+}
+
+// TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI mirrors
+// TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI for the
+// copilot-credential-guard target (ROADMAP-2026-08-06 Wave 2/ML-2E).
+func TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd := newUpdateHarnessCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--json", "--targets", "copilot-credential-guard", "--install-missing"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("trackfw update harness --targets copilot-credential-guard --install-missing failed: %v", err)
+	}
+
+	line := strings.TrimSpace(out.String())
+	var doc struct {
+		Targets []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Path  string `json:"path"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(line), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, line)
+	}
+	if len(doc.Targets) != 1 || doc.Targets[0].ID != "copilot-credential-guard" {
+		t.Fatalf("unexpected targets: %+v", doc.Targets)
+	}
+	if doc.Targets[0].State != "updated" {
+		t.Fatalf("state = %q, want updated", doc.Targets[0].State)
+	}
+	if doc.Targets[0].Path != "~/.copilot/settings.json" {
+		t.Fatalf("path = %q, want ~/.copilot/settings.json", doc.Targets[0].Path)
+	}
+
+	settingsPath := filepath.Join(home, ".copilot", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("~/.copilot/settings.json was not written: %v", err)
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !strings.Contains(string(data), wantScript) {
+		t.Fatalf("settings.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	}
+}
+
+// TestUpdateHarnessCmd_CredentialGuardKiroInstallsViaCLI mirrors
+// TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI for the
+// kiro-credential-guard target (ROADMAP-2026-08-06 Wave 2/ML-2F) — a
+// dedicated file (~/.kiro/hooks/trackfw-credential-guard.json), not a merge
+// into a shared settings file.
+func TestUpdateHarnessCmd_CredentialGuardKiroInstallsViaCLI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd := newUpdateHarnessCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--json", "--targets", "kiro-credential-guard", "--install-missing"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("trackfw update harness --targets kiro-credential-guard --install-missing failed: %v", err)
+	}
+
+	line := strings.TrimSpace(out.String())
+	var doc struct {
+		Targets []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Path  string `json:"path"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(line), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, line)
+	}
+	if len(doc.Targets) != 1 || doc.Targets[0].ID != "kiro-credential-guard" {
+		t.Fatalf("unexpected targets: %+v", doc.Targets)
+	}
+	if doc.Targets[0].State != "updated" {
+		t.Fatalf("state = %q, want updated", doc.Targets[0].State)
+	}
+	if doc.Targets[0].Path != "~/.kiro/hooks/trackfw-credential-guard.json" {
+		t.Fatalf("path = %q, want ~/.kiro/hooks/trackfw-credential-guard.json", doc.Targets[0].Path)
+	}
+
+	hookPath := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("~/.kiro/hooks/trackfw-credential-guard.json was not written: %v", err)
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !strings.Contains(string(data), wantScript) {
+		t.Fatalf("trackfw-credential-guard.json does not reference the absolute global script path %s:\n%s", wantScript, data)
 	}
 }
 

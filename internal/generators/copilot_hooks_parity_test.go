@@ -135,6 +135,9 @@ func assertCopilotHookEntry(t *testing.T, stack string, entries []map[string]int
 }
 
 func TestInjectCopilotHooks_StructuralParityAcrossStacks(t *testing.T) {
+	// Isolate global credential-guard dedup check (ML-3A) from the real $HOME —
+	// subprocesses spawned below (node/python3) inherit this via os.Environ().
+	t.Setenv("HOME", t.TempDir())
 	repoRoot := findRepoRoot(t)
 
 	goData := getGoCopilotHooks(t)

@@ -36,6 +36,180 @@ def _has_entry(lst: list, field: str, value: str) -> bool:
     return any(isinstance(e, dict) and e.get(field) == value for e in (lst or []))
 
 
+def _merge_simple_command_array(hook_list: list, command: str) -> None:
+    """Garante (idempotente) que hook_list tenha uma entrada {"command": ...}.
+
+    Mirrors internal/generators/agentfiles.go:mergeSimpleCommandArray — para
+    arrays de hooks "simples" tipo Cursor (hooks.beforeShellExecution/
+    afterShellExecution): cada entry é um objeto plano {"command": "..."},
+    sem matcher, sem {type, hooks:[...]} aninhado como Claude/Codex/Gemini.
+    """
+    if not _has_entry(hook_list, 'command', command):
+        hook_list.append({'command': command})
+
+
+def _merge_copilot_hook_array(hook_list: list, script_path: str) -> None:
+    """Garante (idempotente) que hook_list tenha uma entrada
+    {"type":"command","matcher":"bash","bash":script_path,"cwd":".","timeoutSec":10}.
+
+    Mirrors internal/generators/update.go:mergeCredentialGuardCopilotHooks —
+    for GitHub Copilot's command-hook entry shape (hooks.preToolUse/
+    postToolUse), matched on the "bash" field (not "command", Cursor's flat
+    shape, nor a nested {"matcher","hooks":[...]}, Claude/Codex/Gemini's
+    shape). See that Go function's doc comment for the full
+    ~/.copilot/settings.json format investigation (ROADMAP-2026-08-06 Wave 2
+    /ML-2E).
+    """
+    if not _has_entry(hook_list, 'bash', script_path):
+        hook_list.append({
+            'type': 'command',
+            'matcher': 'bash',
+            'bash': script_path,
+            'cwd': '.',
+            'timeoutSec': 10,
+        })
+
+
+# ---------------------------------------------------------------------------
+# Global credential-guard dedup (ROADMAP-2026-08-06 Wave 3/ML-3A)
+# ---------------------------------------------------------------------------
+# inject_claude_hooks/inject_codex_hooks/inject_gemini_hooks/inject_cursor_hooks/
+# inject_copilot_hooks/inject_kiro_hooks each check, read-only, whether the
+# user already has the global-scope credential-guard wiring installed for
+# that CLI (via `trackfw update harness --targets <tool>-credential-guard`,
+# pypi/trackfw/commands/update_harness.py) before adding the project-scope
+# credential-guard entry. If the global entry is already present, the
+# project-scope entry is skipped entirely -- attention-signal/cleanup are
+# unaffected (inherently project-scoped, ADR-2026-08-06 Decision #4).
+#
+# Fail-open is mandatory: any failure to resolve $HOME, read the global
+# file, or parse its JSON is treated as "not installed globally" -- this
+# section never writes to the global file (read-only by construction).
+# ---------------------------------------------------------------------------
+
+def _global_credential_guard_script_path() -> str | None:
+    """Mirrors Go's globalCredentialGuardScriptPath / Node's
+    globalCredentialGuardScriptPath."""
+    home = os.path.expanduser('~')
+    if not home or home == '~':
+        return None
+    return os.path.join(home, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+
+
+def _read_global_hook_json(*rel_parts: str) -> dict | None:
+    """Reads+parses JSON at $HOME/<...rel_parts>; returns None on any failure
+    (fail-open)."""
+    home = os.path.expanduser('~')
+    if not home or home == '~':
+        return None
+    try:
+        with open(os.path.join(home, *rel_parts), 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _hook_array_has_command(existing, matcher: str, command: str) -> bool:
+    """Read-only counterpart of _merge_claude_hook_array."""
+    if not isinstance(existing, list):
+        return False
+    for entry in existing:
+        if not isinstance(entry, dict) or entry.get('matcher') != matcher:
+            continue
+        inner = entry.get('hooks')
+        if isinstance(inner, list) and _has_entry(inner, 'command', command):
+            return True
+    return False
+
+
+def _simple_array_has_value(existing, field: str, value: str) -> bool:
+    """Read-only check for flat arrays (Cursor's {"command":...} / Copilot's
+    {"bash":...} shape)."""
+    if not isinstance(existing, list):
+        return False
+    return _has_entry(existing, field, value)
+
+
+def _global_credential_guard_installed_claude() -> bool:
+    script_path = _global_credential_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.claude', 'settings.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _hook_array_has_command(hooks.get('PreToolUse'), 'Bash', script_path)
+
+
+def _global_credential_guard_installed_codex() -> bool:
+    script_path = _global_credential_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.codex', 'hooks.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _hook_array_has_command(hooks.get('PreToolUse'), 'Bash', script_path)
+
+
+def _global_credential_guard_installed_gemini() -> bool:
+    script_path = _global_credential_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.gemini', 'settings.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _hook_array_has_command(hooks.get('BeforeTool'), 'run_shell_command', script_path)
+
+
+def _global_credential_guard_installed_cursor() -> bool:
+    script_path = _global_credential_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.cursor', 'hooks.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _simple_array_has_value(hooks.get('beforeShellExecution'), 'command', script_path)
+
+
+def _global_credential_guard_installed_copilot() -> bool:
+    script_path = _global_credential_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.copilot', 'settings.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _simple_array_has_value(hooks.get('preToolUse'), 'bash', script_path)
+
+
+def _global_credential_guard_installed_kiro() -> bool:
+    """~/.kiro/hooks/trackfw-credential-guard.json is 100% dedicated to the
+    global credential-guard wiring (overwritten wholesale, never merged), so
+    presence + non-empty content is sufficient -- matches the roadmap's
+    explicit instruction for Kiro."""
+    home = os.path.expanduser('~')
+    if not home or home == '~':
+        return False
+    path = os.path.join(home, '.kiro', 'hooks', 'trackfw-credential-guard.json')
+    try:
+        return os.path.getsize(path) > 0
+    except OSError:
+        return False
+
+
 def _merge_claude_hook_array(hook_list: list, matcher: str, command: str) -> None:
     """Garante (idempotente) que hook_list tenha uma entrada matcher→command.
 
@@ -73,12 +247,17 @@ def inject_claude_hooks(cwd: str) -> None:
     # PreToolUse — AskUserQuestion matcher → signal; Bash matcher → credential guard
     pre_hooks = hooks.setdefault('PreToolUse', [])
     _merge_claude_hook_array(pre_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh')
-    _merge_claude_hook_array(pre_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+    # credential-guard when the global one is already installed.
+    skip_cg = _global_credential_guard_installed_claude()
+    if not skip_cg:
+        _merge_claude_hook_array(pre_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
 
     # PostToolUse — AskUserQuestion matcher → cleanup; Bash matcher → credential guard
     post_hooks = hooks.setdefault('PostToolUse', [])
     _merge_claude_hook_array(post_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh')
-    _merge_claude_hook_array(post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
+    if not skip_cg:
+        _merge_claude_hook_array(post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
 
     _write_json(file_path, data)
 
@@ -145,18 +324,24 @@ def inject_codex_hooks(cwd: str) -> None:
         pre_permission_hooks, '.*', 'scripts/trackfw-attention-signal.sh',
     )
 
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+    # credential-guard when the global one is already installed.
+    skip_cg = _global_credential_guard_installed_codex()
+
     pre_tool_hooks = hooks.setdefault('PreToolUse', [])
-    _merge_codex_hook_entry(
-        pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
-    )
+    if not skip_cg:
+        _merge_codex_hook_entry(
+            pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+        )
 
     post_hooks = hooks.setdefault('PostToolUse', [])
     _merge_codex_hook_entry(
         post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh',
     )
-    _merge_codex_hook_entry(
-        post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
-    )
+    if not skip_cg:
+        _merge_codex_hook_entry(
+            post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+        )
 
     _write_json(file_path, data)
 
@@ -203,12 +388,18 @@ def inject_gemini_hooks(cwd: str) -> None:
     notifications = hooks.setdefault('Notification', [])
     _merge_claude_hook_array(notifications, 'ToolPermission', 'scripts/trackfw-attention-signal.sh')
 
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+    # credential-guard when the global one is already installed.
+    skip_cg = _global_credential_guard_installed_gemini()
+
     before = hooks.setdefault('BeforeTool', [])
-    _merge_claude_hook_array(before, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
+    if not skip_cg:
+        _merge_claude_hook_array(before, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
 
     after = hooks.setdefault('AfterTool', [])
     _merge_claude_hook_array(after, '*', 'scripts/trackfw-attention-cleanup.sh')
-    _merge_claude_hook_array(after, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
+    if not skip_cg:
+        _merge_claude_hook_array(after, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
 
     _write_json(file_path, data)
 
@@ -239,39 +430,42 @@ def inject_gemini_hooks(cwd: str) -> None:
 def inject_kiro_hooks(cwd: str) -> None:
     """Cria/sobrescreve .kiro/hooks/trackfw-attention.json."""
     file_path = os.path.join(cwd, '.kiro', 'hooks', 'trackfw-attention.json')
-    data = {
-        'version': 'v1',
-        'hooks': [
-            {
-                'name': 'trackfw-attention-signal',
-                'description': 'Signals trackfw board when agent executes a tool',
-                'trigger': 'PreToolUse',
-                'matcher': '*',
-                'action': {'type': 'command', 'command': 'scripts/trackfw-attention-signal.sh'},
-            },
-            {
-                'name': 'trackfw-attention-cleanup',
-                'description': 'Clears trackfw board attention after tool completes',
-                'trigger': 'PostToolUse',
-                'matcher': '*',
-                'action': {'type': 'command', 'command': 'scripts/trackfw-attention-cleanup.sh'},
-            },
-            {
-                'name': 'trackfw-credential-guard-pre',
-                'description': 'Blocks/warns on possible plaintext credential materialization before a shell command executes',
-                'trigger': 'PreToolUse',
-                'matcher': 'shell',
-                'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
-            },
-            {
-                'name': 'trackfw-credential-guard-post',
-                'description': 'Warns on possible plaintext credential materialization after a shell command executes',
-                'trigger': 'PostToolUse',
-                'matcher': 'shell',
-                'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
-            },
-        ]
-    }
+    hooks = [
+        {
+            'name': 'trackfw-attention-signal',
+            'description': 'Signals trackfw board when agent executes a tool',
+            'trigger': 'PreToolUse',
+            'matcher': '*',
+            'action': {'type': 'command', 'command': 'scripts/trackfw-attention-signal.sh'},
+        },
+        {
+            'name': 'trackfw-attention-cleanup',
+            'description': 'Clears trackfw board attention after tool completes',
+            'trigger': 'PostToolUse',
+            'matcher': '*',
+            'action': {'type': 'command', 'command': 'scripts/trackfw-attention-cleanup.sh'},
+        },
+    ]
+
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+    # credential-guard entries when the global one is already installed.
+    if not _global_credential_guard_installed_kiro():
+        hooks.append({
+            'name': 'trackfw-credential-guard-pre',
+            'description': 'Blocks/warns on possible plaintext credential materialization before a shell command executes',
+            'trigger': 'PreToolUse',
+            'matcher': 'shell',
+            'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
+        })
+        hooks.append({
+            'name': 'trackfw-credential-guard-post',
+            'description': 'Warns on possible plaintext credential materialization after a shell command executes',
+            'trigger': 'PostToolUse',
+            'matcher': 'shell',
+            'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
+        })
+
+    data = {'version': 'v1', 'hooks': hooks}
     _write_json(file_path, data)
 
 
@@ -304,39 +498,42 @@ def inject_kiro_hooks(cwd: str) -> None:
 def inject_copilot_hooks(cwd: str) -> None:
     """Cria/sobrescreve .github/hooks/trackfw-attention.json."""
     file_path = os.path.join(cwd, '.github', 'hooks', 'trackfw-attention.json')
+
+    pre_tool_use = [
+        {
+            'type': 'command',
+            'bash': 'scripts/trackfw-attention-signal.sh',
+            'cwd': '.',
+            'timeoutSec': 10,
+        },
+    ]
+    post_tool_use = [
+        {
+            'type': 'command',
+            'bash': 'scripts/trackfw-attention-cleanup.sh',
+            'cwd': '.',
+            'timeoutSec': 10,
+        },
+    ]
+
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+    # credential-guard entries when the global one is already installed.
+    if not _global_credential_guard_installed_copilot():
+        guard_entry = {
+            'type': 'command',
+            'matcher': 'bash',
+            'bash': 'scripts/trackfw-credential-guard.sh',
+            'cwd': '.',
+            'timeoutSec': 10,
+        }
+        pre_tool_use.append(dict(guard_entry))
+        post_tool_use.append(dict(guard_entry))
+
     data = {
         'version': 1,
         'hooks': {
-            'preToolUse': [
-                {
-                    'type': 'command',
-                    'bash': 'scripts/trackfw-attention-signal.sh',
-                    'cwd': '.',
-                    'timeoutSec': 10,
-                },
-                {
-                    'type': 'command',
-                    'matcher': 'bash',
-                    'bash': 'scripts/trackfw-credential-guard.sh',
-                    'cwd': '.',
-                    'timeoutSec': 10,
-                },
-            ],
-            'postToolUse': [
-                {
-                    'type': 'command',
-                    'bash': 'scripts/trackfw-attention-cleanup.sh',
-                    'cwd': '.',
-                    'timeoutSec': 10,
-                },
-                {
-                    'type': 'command',
-                    'matcher': 'bash',
-                    'bash': 'scripts/trackfw-credential-guard.sh',
-                    'cwd': '.',
-                    'timeoutSec': 10,
-                },
-            ],
+            'preToolUse': pre_tool_use,
+            'postToolUse': post_tool_use,
         },
     }
     _write_json(file_path, data)
@@ -432,14 +629,16 @@ def inject_cursor_hooks(cwd: str) -> None:
         post.append({'command': 'scripts/trackfw-attention-cleanup.sh'})
     _remove_known_command_from_legacy_top_level_array(data, 'postToolUse', 'scripts/trackfw-attention-cleanup.sh')
 
-    # credential-guard -- inalterado por este ML.
-    before = hooks.setdefault('beforeShellExecution', [])
-    if not _has_entry(before, 'command', 'scripts/trackfw-credential-guard.sh'):
-        before.append({'command': 'scripts/trackfw-credential-guard.sh'})
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+    # credential-guard entries when the global one is already installed.
+    if not _global_credential_guard_installed_cursor():
+        before = hooks.setdefault('beforeShellExecution', [])
+        if not _has_entry(before, 'command', 'scripts/trackfw-credential-guard.sh'):
+            before.append({'command': 'scripts/trackfw-credential-guard.sh'})
 
-    after = hooks.setdefault('afterShellExecution', [])
-    if not _has_entry(after, 'command', 'scripts/trackfw-credential-guard.sh'):
-        after.append({'command': 'scripts/trackfw-credential-guard.sh'})
+        after = hooks.setdefault('afterShellExecution', [])
+        if not _has_entry(after, 'command', 'scripts/trackfw-credential-guard.sh'):
+            after.append({'command': 'scripts/trackfw-credential-guard.sh'})
 
     _write_json(file_path, data)
 

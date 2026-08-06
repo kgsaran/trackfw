@@ -142,6 +142,617 @@ test('paths are tilde-abbreviated relative to HOME, never the absolute filesyste
   for (const t of doc.targets) assert.ok(!t.path.includes(homeRoot), `${t.id} path leaked the absolute HOME: ${t.path}`)
 })
 
+// ---------------------------------------------------------------------------
+// `claude-credential-guard` — global-scope credential-guard hook wiring for
+// Claude Code, ROADMAP-2026-08-06 Wave 2 ML-2A. Mirrors the Go tests in
+// internal/generators/update_test.go/internal/commands/update_harness_test.go.
+// ---------------------------------------------------------------------------
+
+test('claude-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'claude-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.claude', 'settings.json')), false)
+})
+
+test('claude-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'claude-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.claude/settings.json')
+
+  const settingsPath = path.join(homeRoot, '.claude', 'settings.json')
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+
+  for (const event of ['PreToolUse', 'PostToolUse']) {
+    const bashEntries = (settings.hooks[event] || []).filter((e) => e.matcher === 'Bash')
+    assert.equal(bashEntries.length, 1)
+    const commands = bashEntries[0].hooks.map((h) => h.command)
+    assert.ok(commands.includes(wantScript))
+  }
+})
+
+test('claude-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'claude-credential-guard'], homeRoot)
+  const settingsPath = path.join(homeRoot, '.claude', 'settings.json')
+  const firstRun = fs.readFileSync(settingsPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'claude-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(settingsPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+
+  const settings = JSON.parse(secondRun)
+  const bashEntries = settings.hooks.PreToolUse.filter((e) => e.matcher === 'Bash')
+  assert.equal(bashEntries.length, 1)
+})
+
+test('claude-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'claude-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.claude', 'settings.json')), false)
+})
+
+test('claude-credential-guard preserves pre-existing content in ~/.claude/settings.json', () => {
+  const homeRoot = scratchHome()
+  const settingsPath = path.join(homeRoot, '.claude', 'settings.json')
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(
+    settingsPath,
+    JSON.stringify(
+      {
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'AskUserQuestion',
+              hooks: [{ type: 'command', command: 'scripts/trackfw-attention-signal.sh' }],
+            },
+          ],
+        },
+        userSetting: 'keep-me',
+      },
+      null,
+      2
+    )
+  )
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'claude-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  assert.equal(settings.userSetting, 'keep-me')
+  const askEntries = settings.hooks.PreToolUse.filter((e) => e.matcher === 'AskUserQuestion')
+  assert.equal(askEntries.length, 1)
+  assert.equal(askEntries[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  for (const event of ['PreToolUse', 'PostToolUse']) {
+    const bashEntries = settings.hooks[event].filter((e) => e.matcher === 'Bash')
+    assert.equal(bashEntries.length, 1)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// `codex-credential-guard` — global-scope credential-guard hook wiring for
+// Codex CLI, ROADMAP-2026-08-06 Wave 2 ML-2B. Mirrors the claude-credential-
+// guard tests above and internal/generators/update_test.go's Codex tests.
+// ---------------------------------------------------------------------------
+
+test('codex-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'codex-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.codex', 'hooks.json')), false)
+})
+
+test('codex-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'codex-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.codex/hooks.json')
+
+  const hooksPath = path.join(homeRoot, '.codex', 'hooks.json')
+  const hooksDoc = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+
+  for (const event of ['PreToolUse', 'PostToolUse']) {
+    const bashEntries = (hooksDoc.hooks[event] || []).filter((e) => e.matcher === 'Bash')
+    assert.equal(bashEntries.length, 1)
+    const commands = bashEntries[0].hooks.map((h) => h.command)
+    assert.ok(commands.includes(wantScript))
+  }
+})
+
+test('codex-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'codex-credential-guard'], homeRoot)
+  const hooksPath = path.join(homeRoot, '.codex', 'hooks.json')
+  const firstRun = fs.readFileSync(hooksPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'codex-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(hooksPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+
+  const hooksDoc = JSON.parse(secondRun)
+  const bashEntries = hooksDoc.hooks.PreToolUse.filter((e) => e.matcher === 'Bash')
+  assert.equal(bashEntries.length, 1)
+})
+
+test('codex-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'codex-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.codex', 'hooks.json')), false)
+})
+
+test('codex-credential-guard preserves pre-existing content in ~/.codex/hooks.json', () => {
+  const homeRoot = scratchHome()
+  const hooksPath = path.join(homeRoot, '.codex', 'hooks.json')
+  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
+  fs.writeFileSync(
+    hooksPath,
+    JSON.stringify(
+      {
+        hooks: {
+          PermissionRequest: [
+            {
+              matcher: '.*',
+              hooks: [{ type: 'command', command: 'scripts/trackfw-attention-signal.sh' }],
+            },
+          ],
+        },
+        userSetting: 'keep-me',
+      },
+      null,
+      2
+    )
+  )
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'codex-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+
+  const hooksDoc = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  assert.equal(hooksDoc.userSetting, 'keep-me')
+  const permEntries = hooksDoc.hooks.PermissionRequest.filter((e) => e.matcher === '.*')
+  assert.equal(permEntries.length, 1)
+  for (const event of ['PreToolUse', 'PostToolUse']) {
+    const bashEntries = hooksDoc.hooks[event].filter((e) => e.matcher === 'Bash')
+    assert.equal(bashEntries.length, 1)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// `gemini-credential-guard` — global-scope credential-guard hook wiring for
+// Gemini CLI, ROADMAP-2026-08-06 Wave 2 ML-2C. Mirrors the codex-credential-
+// guard tests above and internal/generators/update_test.go's Gemini tests —
+// only the event names differ (BeforeTool/AfterTool, matcher
+// "run_shell_command" instead of PreToolUse/PostToolUse, matcher "Bash").
+// ---------------------------------------------------------------------------
+
+test('gemini-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'gemini-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.gemini', 'settings.json')), false)
+})
+
+test('gemini-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'gemini-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.gemini/settings.json')
+
+  const settingsPath = path.join(homeRoot, '.gemini', 'settings.json')
+  const settingsDoc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+
+  for (const event of ['BeforeTool', 'AfterTool']) {
+    const shellEntries = (settingsDoc.hooks[event] || []).filter((e) => e.matcher === 'run_shell_command')
+    assert.equal(shellEntries.length, 1)
+    const commands = shellEntries[0].hooks.map((h) => h.command)
+    assert.ok(commands.includes(wantScript))
+  }
+})
+
+test('gemini-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'gemini-credential-guard'], homeRoot)
+  const settingsPath = path.join(homeRoot, '.gemini', 'settings.json')
+  const firstRun = fs.readFileSync(settingsPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'gemini-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(settingsPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+
+  const settingsDoc = JSON.parse(secondRun)
+  const shellEntries = settingsDoc.hooks.BeforeTool.filter((e) => e.matcher === 'run_shell_command')
+  assert.equal(shellEntries.length, 1)
+})
+
+test('gemini-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'gemini-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.gemini', 'settings.json')), false)
+})
+
+test('gemini-credential-guard preserves pre-existing content in ~/.gemini/settings.json', () => {
+  const homeRoot = scratchHome()
+  const settingsPath = path.join(homeRoot, '.gemini', 'settings.json')
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(
+    settingsPath,
+    JSON.stringify(
+      {
+        hooks: {
+          Notification: [
+            {
+              matcher: 'ToolPermission',
+              hooks: [{ type: 'command', command: 'scripts/trackfw-attention-signal.sh' }],
+            },
+          ],
+        },
+        userSetting: 'keep-me',
+      },
+      null,
+      2
+    )
+  )
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'gemini-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+
+  const settingsDoc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  assert.equal(settingsDoc.userSetting, 'keep-me')
+  const notifEntries = settingsDoc.hooks.Notification.filter((e) => e.matcher === 'ToolPermission')
+  assert.equal(notifEntries.length, 1)
+  for (const event of ['BeforeTool', 'AfterTool']) {
+    const shellEntries = settingsDoc.hooks[event].filter((e) => e.matcher === 'run_shell_command')
+    assert.equal(shellEntries.length, 1)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// `cursor-credential-guard` — global-scope credential-guard hook wiring for
+// Cursor, ROADMAP-2026-08-06 Wave 2 ML-2D. Mirrors the gemini-credential-
+// guard tests above, but reads hooks[event] as a flat array of
+// {"command":"..."} entries — no "matcher" — since Cursor's hooks.json
+// schema differs structurally from Claude/Codex/Gemini's (see
+// generators/hooks.js:injectCursorHooks).
+// ---------------------------------------------------------------------------
+
+test('cursor-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'cursor-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.cursor', 'hooks.json')), false)
+})
+
+test('cursor-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'cursor-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.cursor/hooks.json')
+
+  const hooksPath = path.join(homeRoot, '.cursor', 'hooks.json')
+  const hooksDoc = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  assert.equal(hooksDoc.version, 1)
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+
+  for (const event of ['beforeShellExecution', 'afterShellExecution']) {
+    const commands = (hooksDoc.hooks[event] || []).map((e) => e.command)
+    assert.ok(commands.includes(wantScript))
+  }
+})
+
+test('cursor-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'cursor-credential-guard'], homeRoot)
+  const hooksPath = path.join(homeRoot, '.cursor', 'hooks.json')
+  const firstRun = fs.readFileSync(hooksPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'cursor-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(hooksPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+
+  const hooksDoc = JSON.parse(secondRun)
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  const shellEntries = hooksDoc.hooks.beforeShellExecution.filter((e) => e.command === wantScript)
+  assert.equal(shellEntries.length, 1)
+})
+
+test('cursor-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'cursor-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.cursor', 'hooks.json')), false)
+})
+
+test('cursor-credential-guard preserves pre-existing content in ~/.cursor/hooks.json', () => {
+  const homeRoot = scratchHome()
+  const hooksPath = path.join(homeRoot, '.cursor', 'hooks.json')
+  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
+  fs.writeFileSync(
+    hooksPath,
+    JSON.stringify(
+      {
+        version: 1,
+        hooks: {
+          preToolUse: [{ command: 'scripts/trackfw-attention-signal.sh' }],
+        },
+        userSetting: 'keep-me',
+      },
+      null,
+      2
+    )
+  )
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'cursor-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+
+  const hooksDoc = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  assert.equal(hooksDoc.userSetting, 'keep-me')
+  assert.equal(hooksDoc.hooks.preToolUse.length, 1)
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  for (const event of ['beforeShellExecution', 'afterShellExecution']) {
+    const commands = hooksDoc.hooks[event].map((e) => e.command)
+    assert.ok(commands.includes(wantScript))
+  }
+})
+
+// ---------------------------------------------------------------------------
+// `copilot-credential-guard` — global-scope credential-guard hook wiring for
+// GitHub Copilot, ROADMAP-2026-08-06 Wave 2 ML-2E. Mirrors the cursor-
+// credential-guard tests above, but reads hooks[event] as an array of
+// {"type":"command","matcher":"bash","bash":"...",...} entries (matched on
+// "bash", not "command") — Copilot's ~/.copilot/settings.json entry shape
+// (confirmed by generators/hooks.js:mergeCopilotHookArray) matches the
+// project-scope entries injectCopilotHooks already emits.
+// ---------------------------------------------------------------------------
+
+test('copilot-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'copilot-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.copilot', 'settings.json')), false)
+})
+
+test('copilot-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'copilot-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.copilot/settings.json')
+
+  const settingsPath = path.join(homeRoot, '.copilot', 'settings.json')
+  const settingsDoc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  assert.equal(settingsDoc.version, undefined, '~/.copilot/settings.json is a general config file — no unconfirmed top-level "version" key')
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+
+  for (const event of ['preToolUse', 'postToolUse']) {
+    const entries = settingsDoc.hooks[event] || []
+    const entry = entries.find((e) => e.bash === wantScript)
+    assert.ok(entry, `${event} missing entry pointing at ${wantScript}`)
+    assert.equal(entry.type, 'command')
+    assert.equal(entry.matcher, 'bash')
+  }
+})
+
+test('copilot-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'copilot-credential-guard'], homeRoot)
+  const settingsPath = path.join(homeRoot, '.copilot', 'settings.json')
+  const firstRun = fs.readFileSync(settingsPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'copilot-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(settingsPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+
+  const settingsDoc = JSON.parse(secondRun)
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  const shellEntries = settingsDoc.hooks.preToolUse.filter((e) => e.bash === wantScript)
+  assert.equal(shellEntries.length, 1)
+})
+
+test('copilot-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'copilot-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.copilot', 'settings.json')), false)
+})
+
+test('copilot-credential-guard preserves pre-existing content in ~/.copilot/settings.json', () => {
+  const homeRoot = scratchHome()
+  const settingsPath = path.join(homeRoot, '.copilot', 'settings.json')
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(
+    settingsPath,
+    JSON.stringify(
+      {
+        model: 'gpt-5',
+        hooks: {
+          preToolUse: [{ type: 'command', matcher: 'curl', bash: 'echo hi' }],
+        },
+        userSetting: 'keep-me',
+      },
+      null,
+      2
+    )
+  )
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'copilot-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+
+  const settingsDoc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  assert.equal(settingsDoc.userSetting, 'keep-me')
+  assert.equal(settingsDoc.model, 'gpt-5')
+  assert.equal(settingsDoc.hooks.preToolUse.length, 2)
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  const guardEntries = settingsDoc.hooks.preToolUse.filter((e) => e.bash === wantScript)
+  assert.equal(guardEntries.length, 1)
+})
+
+// ---------------------------------------------------------------------------
+// `kiro-credential-guard` — global-scope credential-guard hook wiring for
+// Kiro, ROADMAP-2026-08-06 Wave 2 ML-2F. Unlike claude/codex/gemini/cursor/
+// copilot-credential-guard above, ~/.kiro/hooks/trackfw-credential-guard.json
+// is a DEDICATED file (only trackfw ever writes it) — mirrors
+// claude-skill's wholesale-overwrite contract, not the merge-and-preserve
+// contract of the settings-file targets.
+// ---------------------------------------------------------------------------
+
+test('kiro-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'kiro-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')), false)
+})
+
+test('kiro-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'kiro-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.kiro/hooks/trackfw-credential-guard.json')
+
+  const hookPath = path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')
+  const hooksDoc = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
+  assert.equal(hooksDoc.version, 'v1')
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+  assert.equal(hooksDoc.hooks.length, 2)
+  const triggers = hooksDoc.hooks.map((h) => h.trigger).sort()
+  assert.deepEqual(triggers, ['PostToolUse', 'PreToolUse'])
+  for (const entry of hooksDoc.hooks) {
+    assert.equal(entry.matcher, 'shell')
+    assert.equal(entry.action.type, 'command')
+    assert.equal(entry.action.command, wantScript)
+  }
+})
+
+test('kiro-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'kiro-credential-guard'], homeRoot)
+  const hookPath = path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')
+  const firstRun = fs.readFileSync(hookPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'kiro-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(hookPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+})
+
+test('kiro-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'kiro-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')), false)
+})
+
+test('kiro-credential-guard rewrites stale content (dedicated file, never merged)', () => {
+  const homeRoot = scratchHome()
+  const hookPath = path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')
+  fs.mkdirSync(path.dirname(hookPath), { recursive: true })
+  fs.writeFileSync(hookPath, JSON.stringify({ version: 'v1', hooks: [{ name: 'stale' }] }))
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'kiro-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  const rewritten = fs.readFileSync(hookPath, 'utf8')
+  assert.ok(!rewritten.includes('"stale"'))
+})
+
 test('a project-scoped catalog install under HOME is not touched by trackfw update (project scope stays project scope)', () => {
   const homeRoot = scratchHome()
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-harness-project-'))

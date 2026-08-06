@@ -98,9 +98,26 @@ def test_harness_declared_target_list_and_order(tmp_path):
 
     ids = declared_target_ids()
     assert ids[0] == "claude-skill"
-    assert ids[1:3] == ["claude-agents", "claude-skills"]
-    assert ids[-2:] == ["kiro-agents", "kiro-skills"]
-    assert len(ids) == 1 + 10 * 2
+    assert ids[1] == "claude-credential-guard"
+    assert ids[2:4] == ["claude-agents", "claude-skills"]
+    # codex-credential-guard sits immediately before codex-agents/codex-skills
+    # — same relative position as claude-credential-guard before
+    # claude-agents/claude-skills (ROADMAP-2026-08-06 Wave 2/ML-2B).
+    assert ids[4:7] == ["codex-credential-guard", "codex-agents", "codex-skills"]
+    # gemini-credential-guard sits immediately before gemini-agents/
+    # gemini-skills — same relative position (ROADMAP-2026-08-06 Wave 2/ML-2C).
+    assert ids[7:10] == ["gemini-credential-guard", "gemini-agents", "gemini-skills"]
+    assert ids[10:12] == ["antigravity-agents", "antigravity-skills"]
+    # cursor-credential-guard sits immediately before cursor-agents/
+    # cursor-skills — same relative position (ROADMAP-2026-08-06 Wave 2/ML-2D).
+    assert ids[12:15] == ["cursor-credential-guard", "cursor-agents", "cursor-skills"]
+    # copilot-credential-guard sits immediately before copilot-agents/
+    # copilot-skills — same relative position (ROADMAP-2026-08-06 Wave 2/ML-2E).
+    assert ids[15:18] == ["copilot-credential-guard", "copilot-agents", "copilot-skills"]
+    # kiro-credential-guard sits immediately before kiro-agents/kiro-skills —
+    # same relative position (ROADMAP-2026-08-06 Wave 2/ML-2F).
+    assert ids[-3:] == ["kiro-credential-guard", "kiro-agents", "kiro-skills"]
+    assert len(ids) == 7 + 10 * 2
 
     home = tmp_path / "home"
     home.mkdir()
@@ -334,3 +351,805 @@ def test_project_update_requires_trackfw_yaml_but_harness_does_not(tmp_path):
 
     harness_update = cli("update", "harness", "--json", cwd=project, home=home)
     assert harness_update.returncode == 0, harness_update.stderr
+
+
+# ---------------------------------------------------------------------------
+# `claude-credential-guard` — global-scope credential-guard hook wiring for
+# Claude Code, ROADMAP-2026-08-06 Wave 2 ML-2A. Mirrors the Go tests in
+# internal/generators/update_test.go/internal/commands/update_harness_test.go.
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_claude_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "claude-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".claude" / "settings.json").exists()
+
+
+def test_credential_guard_claude_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "claude-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.claude/settings.json"
+
+    settings_path = home / ".claude" / "settings.json"
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+
+    for event in ("PreToolUse", "PostToolUse"):
+        entries = doc["hooks"][event]
+        bash_entries = [entry for entry in entries if entry.get("matcher") == "Bash"]
+        assert len(bash_entries) == 1
+        commands = [h["command"] for h in bash_entries[0]["hooks"]]
+        assert want_script in commands
+
+
+def test_credential_guard_claude_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "claude-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    settings_path = home / ".claude" / "settings.json"
+    first_bytes = settings_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "claude-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = settings_path.read_bytes()
+    assert first_bytes == second_bytes
+
+    doc = json.loads(second_bytes)
+    bash_entries = [entry for entry in doc["hooks"]["PreToolUse"] if entry.get("matcher") == "Bash"]
+    assert len(bash_entries) == 1
+
+
+def test_credential_guard_claude_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "claude-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".claude" / "settings.json").exists()
+
+
+def test_credential_guard_claude_preserves_existing_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    settings_path = home / ".claude" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "AskUserQuestion",
+                            "hooks": [{"type": "command", "command": "scripts/trackfw-attention-signal.sh"}],
+                        }
+                    ]
+                },
+                "userSetting": "keep-me",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = cli(
+        "update", "harness", "--targets", "claude-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert doc["userSetting"] == "keep-me"
+    ask_entries = [entry for entry in doc["hooks"]["PreToolUse"] if entry.get("matcher") == "AskUserQuestion"]
+    assert len(ask_entries) == 1
+    assert ask_entries[0]["hooks"][0]["command"] == "scripts/trackfw-attention-signal.sh"
+    for event in ("PreToolUse", "PostToolUse"):
+        bash_entries = [entry for entry in doc["hooks"][event] if entry.get("matcher") == "Bash"]
+        assert len(bash_entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# `codex-credential-guard` — global-scope credential-guard hook wiring for
+# Codex CLI, ROADMAP-2026-08-06 Wave 2 ML-2B. Mirrors the claude-credential-
+# guard tests above and internal/generators/update_test.go's Codex tests.
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_codex_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "codex-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".codex" / "hooks.json").exists()
+
+
+def test_credential_guard_codex_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "codex-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.codex/hooks.json"
+
+    hooks_path = home / ".codex" / "hooks.json"
+    doc = json.loads(hooks_path.read_text(encoding="utf-8"))
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+
+    for event in ("PreToolUse", "PostToolUse"):
+        entries = doc["hooks"][event]
+        bash_entries = [entry for entry in entries if entry.get("matcher") == "Bash"]
+        assert len(bash_entries) == 1
+        commands = [h["command"] for h in bash_entries[0]["hooks"]]
+        assert want_script in commands
+
+
+def test_credential_guard_codex_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "codex-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    hooks_path = home / ".codex" / "hooks.json"
+    first_bytes = hooks_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "codex-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = hooks_path.read_bytes()
+    assert first_bytes == second_bytes
+
+    doc = json.loads(second_bytes)
+    bash_entries = [entry for entry in doc["hooks"]["PreToolUse"] if entry.get("matcher") == "Bash"]
+    assert len(bash_entries) == 1
+
+
+def test_credential_guard_codex_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "codex-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".codex" / "hooks.json").exists()
+
+
+def test_credential_guard_codex_preserves_existing_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    hooks_path = home / ".codex" / "hooks.json"
+    hooks_path.parent.mkdir(parents=True)
+    hooks_path.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PermissionRequest": [
+                        {
+                            "matcher": ".*",
+                            "hooks": [{"type": "command", "command": "scripts/trackfw-attention-signal.sh"}],
+                        }
+                    ]
+                },
+                "userSetting": "keep-me",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = cli(
+        "update", "harness", "--targets", "codex-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+
+    doc = json.loads(hooks_path.read_text(encoding="utf-8"))
+    assert doc["userSetting"] == "keep-me"
+    perm_entries = [entry for entry in doc["hooks"]["PermissionRequest"] if entry.get("matcher") == ".*"]
+    assert len(perm_entries) == 1
+    for event in ("PreToolUse", "PostToolUse"):
+        bash_entries = [entry for entry in doc["hooks"][event] if entry.get("matcher") == "Bash"]
+        assert len(bash_entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# `gemini-credential-guard` — global-scope credential-guard hook wiring for
+# Gemini CLI, ROADMAP-2026-08-06 Wave 2 ML-2C. Mirrors the codex-credential-
+# guard tests above and internal/generators/update_test.go's Gemini tests —
+# only the event names differ (BeforeTool/AfterTool, matcher
+# "run_shell_command" instead of PreToolUse/PostToolUse, matcher "Bash").
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_gemini_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "gemini-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".gemini" / "settings.json").exists()
+
+
+def test_credential_guard_gemini_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "gemini-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.gemini/settings.json"
+
+    settings_path = home / ".gemini" / "settings.json"
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+
+    for event in ("BeforeTool", "AfterTool"):
+        entries = doc["hooks"][event]
+        shell_entries = [entry for entry in entries if entry.get("matcher") == "run_shell_command"]
+        assert len(shell_entries) == 1
+        commands = [h["command"] for h in shell_entries[0]["hooks"]]
+        assert want_script in commands
+
+
+def test_credential_guard_gemini_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "gemini-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    settings_path = home / ".gemini" / "settings.json"
+    first_bytes = settings_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "gemini-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = settings_path.read_bytes()
+    assert first_bytes == second_bytes
+
+    doc = json.loads(second_bytes)
+    shell_entries = [entry for entry in doc["hooks"]["BeforeTool"] if entry.get("matcher") == "run_shell_command"]
+    assert len(shell_entries) == 1
+
+
+def test_credential_guard_gemini_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "gemini-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".gemini" / "settings.json").exists()
+
+
+def test_credential_guard_gemini_preserves_existing_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    settings_path = home / ".gemini" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "Notification": [
+                        {
+                            "matcher": "ToolPermission",
+                            "hooks": [{"type": "command", "command": "scripts/trackfw-attention-signal.sh"}],
+                        }
+                    ]
+                },
+                "userSetting": "keep-me",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = cli(
+        "update", "harness", "--targets", "gemini-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert doc["userSetting"] == "keep-me"
+    notif_entries = [entry for entry in doc["hooks"]["Notification"] if entry.get("matcher") == "ToolPermission"]
+    assert len(notif_entries) == 1
+    for event in ("BeforeTool", "AfterTool"):
+        shell_entries = [entry for entry in doc["hooks"][event] if entry.get("matcher") == "run_shell_command"]
+        assert len(shell_entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# `cursor-credential-guard` — global-scope credential-guard hook wiring for
+# Cursor, ROADMAP-2026-08-06 Wave 2 ML-2D. Mirrors the gemini-credential-
+# guard tests above, but reads hooks[event] as a flat array of
+# {"command": "..."} entries — no "matcher" — since Cursor's hooks.json
+# schema differs structurally from Claude/Codex/Gemini's (see
+# generators/hooks.py:inject_cursor_hooks).
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_cursor_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "cursor-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".cursor" / "hooks.json").exists()
+
+
+def test_credential_guard_cursor_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "cursor-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.cursor/hooks.json"
+
+    hooks_path = home / ".cursor" / "hooks.json"
+    doc = json.loads(hooks_path.read_text(encoding="utf-8"))
+    assert doc["version"] == 1
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+
+    for event in ("beforeShellExecution", "afterShellExecution"):
+        commands = [entry.get("command") for entry in doc["hooks"][event]]
+        assert want_script in commands
+
+
+def test_credential_guard_cursor_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "cursor-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    hooks_path = home / ".cursor" / "hooks.json"
+    first_bytes = hooks_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "cursor-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = hooks_path.read_bytes()
+    assert first_bytes == second_bytes
+
+    doc = json.loads(second_bytes)
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    shell_entries = [entry for entry in doc["hooks"]["beforeShellExecution"] if entry.get("command") == want_script]
+    assert len(shell_entries) == 1
+
+
+def test_credential_guard_cursor_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "cursor-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".cursor" / "hooks.json").exists()
+
+
+def test_credential_guard_cursor_preserves_existing_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    hooks_path = home / ".cursor" / "hooks.json"
+    hooks_path.parent.mkdir(parents=True)
+    hooks_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "hooks": {
+                    "preToolUse": [{"command": "scripts/trackfw-attention-signal.sh"}],
+                },
+                "userSetting": "keep-me",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = cli(
+        "update", "harness", "--targets", "cursor-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+
+    doc = json.loads(hooks_path.read_text(encoding="utf-8"))
+    assert doc["userSetting"] == "keep-me"
+    assert len(doc["hooks"]["preToolUse"]) == 1
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    for event in ("beforeShellExecution", "afterShellExecution"):
+        commands = [entry.get("command") for entry in doc["hooks"][event]]
+        assert want_script in commands
+
+
+# ---------------------------------------------------------------------------
+# `copilot-credential-guard` — global-scope credential-guard hook wiring for
+# GitHub Copilot, ROADMAP-2026-08-06 Wave 2 ML-2E. Mirrors the cursor-
+# credential-guard tests above, but reads hooks[event] as an array of
+# {"type":"command","matcher":"bash","bash":"...",...} entries (matched on
+# "bash", not "command") — GitHub Copilot's ~/.copilot/settings.json entry
+# shape (see generators/hooks.py:_merge_copilot_hook_array) matches the
+# project-scope entries inject_copilot_hooks already emits.
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_copilot_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "copilot-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".copilot" / "settings.json").exists()
+
+
+def test_credential_guard_copilot_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "copilot-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.copilot/settings.json"
+
+    settings_path = home / ".copilot" / "settings.json"
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert "version" not in doc, "~/.copilot/settings.json is a general config file — no unconfirmed top-level \"version\" key"
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+
+    for event in ("preToolUse", "postToolUse"):
+        entries = [entry for entry in doc["hooks"][event] if entry.get("bash") == want_script]
+        assert len(entries) == 1
+        assert entries[0]["type"] == "command"
+        assert entries[0]["matcher"] == "bash"
+
+
+def test_credential_guard_copilot_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "copilot-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    settings_path = home / ".copilot" / "settings.json"
+    first_bytes = settings_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "copilot-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = settings_path.read_bytes()
+    assert first_bytes == second_bytes
+
+    doc = json.loads(second_bytes)
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    shell_entries = [entry for entry in doc["hooks"]["preToolUse"] if entry.get("bash") == want_script]
+    assert len(shell_entries) == 1
+
+
+def test_credential_guard_copilot_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "copilot-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".copilot" / "settings.json").exists()
+
+
+def test_credential_guard_copilot_preserves_existing_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    settings_path = home / ".copilot" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(
+        json.dumps(
+            {
+                "model": "gpt-5",
+                "hooks": {
+                    "preToolUse": [{"type": "command", "matcher": "curl", "bash": "echo hi"}],
+                },
+                "userSetting": "keep-me",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = cli(
+        "update", "harness", "--targets", "copilot-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert doc["userSetting"] == "keep-me"
+    assert doc["model"] == "gpt-5"
+    assert len(doc["hooks"]["preToolUse"]) == 2
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    guard_entries = [entry for entry in doc["hooks"]["preToolUse"] if entry.get("bash") == want_script]
+    assert len(guard_entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# `kiro-credential-guard` — global-scope credential-guard hook wiring for
+# Kiro, ROADMAP-2026-08-06 Wave 2 ML-2F. Unlike claude/codex/gemini/cursor/
+# copilot-credential-guard above, ~/.kiro/hooks/trackfw-credential-guard.json
+# is a DEDICATED file (only trackfw ever writes it) — mirrors claude-skill's
+# wholesale-overwrite contract, not the merge-and-preserve contract of the
+# settings-file targets.
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_kiro_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "kiro-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".kiro" / "hooks" / "trackfw-credential-guard.json").exists()
+
+
+def test_credential_guard_kiro_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "kiro-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.kiro/hooks/trackfw-credential-guard.json"
+
+    hook_path = home / ".kiro" / "hooks" / "trackfw-credential-guard.json"
+    doc = json.loads(hook_path.read_text(encoding="utf-8"))
+    assert doc["version"] == "v1"
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+    assert len(doc["hooks"]) == 2
+    triggers = sorted(entry["trigger"] for entry in doc["hooks"])
+    assert triggers == ["PostToolUse", "PreToolUse"]
+    for entry in doc["hooks"]:
+        assert entry["matcher"] == "shell"
+        assert entry["action"]["type"] == "command"
+        assert entry["action"]["command"] == want_script
+
+
+def test_credential_guard_kiro_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "kiro-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    hook_path = home / ".kiro" / "hooks" / "trackfw-credential-guard.json"
+    first_bytes = hook_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "kiro-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = hook_path.read_bytes()
+    assert first_bytes == second_bytes
+
+
+def test_credential_guard_kiro_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "kiro-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".kiro" / "hooks" / "trackfw-credential-guard.json").exists()
+
+
+def test_credential_guard_kiro_rewrites_stale_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    hook_path = home / ".kiro" / "hooks" / "trackfw-credential-guard.json"
+    hook_path.parent.mkdir(parents=True)
+    hook_path.write_text(json.dumps({"version": "v1", "hooks": [{"name": "stale"}]}), encoding="utf-8")
+
+    result = cli(
+        "update", "harness", "--targets", "kiro-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    rewritten = hook_path.read_text(encoding="utf-8")
+    assert '"stale"' not in rewritten

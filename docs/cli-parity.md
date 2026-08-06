@@ -1635,7 +1635,12 @@ this shape.
 (`PostToolUse`/`matcher: "*"`) entries, in the same `hooks` array. Idempotent: the file is always fully
 regenerated with the same four entries, so re-running the injector never duplicates or drifts.
 
-#### Suporte por CLI — visão consolidada (ML-5A)
+#### Suporte por CLI — visão consolidada, escopo DE PROJETO (ML-5A, `ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`)
+
+> Não confundir com a seção "Suporte por CLI — visão consolidada, escopo GLOBAL (ML-5A)" mais abaixo
+> neste mesmo documento — mesmo rótulo `ML-5A`, mas de um roadmap diferente e posterior
+> (`ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`),
+> que consolida o escopo GLOBAL (`trackfw update harness`), não o escopo de projeto documentado aqui.
 
 Consolida, numa única tabela, o wiring já detalhado CLI a CLI acima (seções "wiring (ML-2x)") e no
 gate estrutural (ML-3A, ver "Agent hooks por CLI ... — paridade estrutural" mais abaixo neste
@@ -1779,10 +1784,185 @@ Wave 6 round.
 
 ### Declared harness targets — pinned list
 
-The harness target list is **not** derived at runtime; it is this fixed sequence of 21 ids, in this
-exact order: `claude-skill`, then `<tool>-agents` and `<tool>-skills` for each of the ten catalog
-tools in `catalog.json` declaration order — `claude`, `codex`, `gemini`, `antigravity`, `cursor`,
-`copilot`, `windsurf`, `amazonq`, `opencode`, `kiro`.
+The harness target list is **not** derived at runtime; it is this fixed sequence of 27 ids, in this
+exact order: `claude-skill`, `claude-credential-guard` (global-scope credential-guard wiring for
+Claude Code — `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
+ML-2A), `claude-agents`, `claude-skills`, `codex-credential-guard` (same wave, ML-2B — global-scope
+credential-guard wiring for Codex CLI, `~/.codex/hooks.json`), `codex-agents`, `codex-skills`,
+`gemini-credential-guard` (same wave, ML-2C — global-scope credential-guard wiring for Gemini CLI,
+`~/.gemini/settings.json`, `BeforeTool`/`AfterTool[matcher:"run_shell_command"]`), `gemini-agents`,
+`gemini-skills`, `antigravity-agents`, `antigravity-skills`, `cursor-credential-guard` (same wave,
+ML-2D — global-scope credential-guard wiring for Cursor, `~/.cursor/hooks.json`,
+`hooks.beforeShellExecution`/`hooks.afterShellExecution`, each entry a flat `{"command":"..."}`
+object — no per-entry matcher, unlike Claude/Codex/Gemini's nested `{matcher,hooks:[{type,command}]}`
+shape), `cursor-agents`, `cursor-skills`, `copilot-credential-guard` (same wave, ML-2E — global-scope
+credential-guard wiring for GitHub Copilot, `~/.copilot/settings.json`,
+`hooks.preToolUse`/`hooks.postToolUse[matcher:"bash"]` — see "GitHub Copilot global-scope wiring
+(ML-2E)" below), `copilot-agents`, `copilot-skills`, `windsurf-agents`, `windsurf-skills`,
+`amazonq-agents`, `amazonq-skills`, `opencode-agents`, `opencode-skills`, `kiro-credential-guard`
+(same wave, ML-2F — global-scope credential-guard wiring for Kiro, a DEDICATED file at
+`~/.kiro/hooks/trackfw-credential-guard.json` — see "Kiro global-scope wiring (ML-2F)" below),
+`kiro-agents`, `kiro-skills`. Each `<tool>-credential-guard` id (where it exists) is always
+positioned immediately BEFORE that tool's own `<tool>-agents`/`<tool>-skills` pair, never after —
+`kiro-credential-guard` is the last credential-guard target of this wave (Windsurf has no native
+hook mechanism and stays out per the ADR).
+
+### GitHub Copilot global-scope wiring (ML-2E) — `~/.copilot/settings.json`, inline `hooks` field
+
+**Investigation, confirmed 2026-08-06** against
+`https://docs.github.com/en/copilot/reference/hooks-reference` (the `hooks-configuration` URL the ADR
+originally cited 301-redirects here — same page used for the project-scope investigation, section
+"Hooks locations"): the user/global scope offers two distinct mechanisms —
+
+1. A **dedicated directory** of standalone hook files: "`*.json` files in the user-level hooks
+   directory. By default this is `~/.copilot/hooks/` on macOS and Linux... If `COPILOT_HOME` is set,
+   it is `$COPILOT_HOME/hooks/`" — structurally the user-scope analog of `.github/hooks/*.json`
+   (dedicated, safe to overwrite wholesale, same as Kiro's own dedicated hook file at project scope).
+2. An **inline `hooks` field in a general config file**: "Inline hooks block in user-level config —
+   the hooks field at the top level of `~/.copilot/settings.json`."
+
+This ML follows the roadmap's explicit instruction and targets option 2, `~/.copilot/settings.json`.
+The doc confirms this file is **not** dedicated to hooks — it is Copilot CLI's general user config
+file (holds other settings such as model choice), unlike `.github/hooks/trackfw-attention.json`
+(project scope). So `copilot-credential-guard` **merges** into `root["hooks"]["preToolUse"/
+"postToolUse"]` only, preserving every other top-level key — the same discipline
+`claude-credential-guard`/`codex-credential-guard`/`gemini-credential-guard` already apply to their
+own general `~/.claude/settings.json`/`~/.codex/hooks.json`/`~/.gemini/settings.json` files (Cursor is
+the outlier: its `~/.cursor/hooks.json` is itself a dedicated hooks file, hence the `"version":1`
+wrapper `cursor-credential-guard` adds).
+
+**Entry shape — same as project scope, no divergence found.** "Hook configuration files use JSON
+format with version 1" is stated without carving out an exception for the inline `hooks` field, and no
+example anywhere in the doc shows a different command-entry shape for `settings.json` than for
+standalone hook files. `copilot-credential-guard` therefore reuses the exact same command-entry shape
+`InjectCopilotHooks` (agentfiles.go, project scope) already emits:
+`{"type":"command","matcher":"bash","bash":"<absolute path>","cwd":".","timeoutSec":10}`, written under
+`hooks.preToolUse`/`hooks.postToolUse`.
+
+**One deliberate non-divergence from the doc's own dedicated-file examples: no top-level `"version"`
+key added.** Every JSON example in the doc that shows `"version":1` at the root is an example of a
+*dedicated* hooks file (`.github/hooks/*.json`, policy files) — none of them is an example of
+`settings.json` itself. Since this code does not own every key of `settings.json` (it is a shared,
+general config file), adding an unconfirmed top-level key would be an assumption beyond what the
+source confirms; this mirrors how `claude-credential-guard`/`codex-credential-guard`/
+`gemini-credential-guard` never add a `"version"` key to their own general settings files either.
+
+**Codex hooks default-enabled, confirmed 2026-08-06 (ML-2B):** ROADMAP-2026-08-06's ADR flagged an
+unresolved contradiction between two sources on whether Codex CLI hooks require
+`[features] codex_hooks = true` as an explicit opt-in. Re-fetched directly from
+`https://developers.openai.com/codex/hooks` on 2026-08-06: "Hooks are enabled by default. To turn
+them off in `config.toml`, set: `[features] hooks = false`. Use `hooks` as the canonical feature key.
+`codex_hooks` still works as a deprecated alias." `https://developers.openai.com/codex/config-
+advanced` (same fetch date) has no conflicting requirement. This resolves the contradiction with high
+confidence: no opt-in flag is needed for either project-scope (`.codex/hooks.json`,
+`InjectCodexHooks`) or global-scope (`~/.codex/hooks.json`, `codex-credential-guard`) hook wiring —
+`codex_hooks`/`hooks` is only ever used to turn hooks OFF.
+
+### Kiro global-scope wiring (ML-2F) — `~/.kiro/hooks/trackfw-credential-guard.json`, dedicated file
+
+**Format, confirmed 2026-08-06** against `https://kiro.dev/changelog/cli/2-13/` (re-fetched via
+`curl -L`, same RSC/HTML retrieval method the project-scope `InjectKiroHooks` investigation used):
+"Hooks placed in `~/.kiro/hooks/` now fire in every workspace automatically ... Workspace-level hooks
+continue to work alongside global ones." This confirms `~/.kiro/hooks/` is a **directory of
+one-file-per-hook**, the global-scope analog of the project-scope `.kiro/hooks/*.json` files — not a
+single general settings file shared with other CLI config, unlike
+`claude-credential-guard`/`codex-credential-guard`/`gemini-credential-guard`/`copilot-credential-guard`
+(each of which merges into that tool's own general settings file). `kiro-credential-guard` therefore
+writes a **dedicated** file, `~/.kiro/hooks/trackfw-credential-guard.json`, wholesale-overwritten on
+every run (never merged) — same discipline as `claude-skill`
+(`~/.claude/skills/trackfw/SKILL.md`), not the merge-and-preserve discipline of the settings-file
+targets. Entry schema mirrors `InjectKiroHooks` (project scope) exactly: top-level
+`{"version":"v1","hooks":[...]}`, each entry
+`{"name","description","trigger","matcher","action":{"type":"command","command":<path>}}` — but
+`command` here is the **absolute** path of `~/.trackfw/scripts/trackfw-credential-guard.sh` (a global
+hook can fire from any project's cwd, unlike the project-scope wiring's relative
+`scripts/trackfw-credential-guard.sh`), and the two hook names are
+`trackfw-credential-guard-global-pre`/`trackfw-credential-guard-global-post` — deliberately distinct
+from the project-scope names (`trackfw-credential-guard-pre`/`-post`), since this writes an entirely
+different file and nothing in the changelog documents whether Kiro deduplicates same-named hooks
+across scopes/files; the future project-scope dedup (Wave 3, ML-3A) matches on the script path, not
+the hook name, same as every other tool's dedup.
+
+**Kiro v3 caveat — no runtime version probe, documented instead.** The same changelog page states
+global hooks are "Available in V3 (`kiro-cli --v3`)". Re-fetching that page and
+`https://kiro.dev/docs/cli/` (2026-08-06) found `--v3` is a **launch-mode flag on the installed
+binary**, not a value any `kiro`/`kiro-cli --version`-style command reports — neither page documents
+any `--version` flag or output format at all. There is therefore no persistent, installed-version fact
+to probe from a separate process: trackfw never invokes Kiro itself, and whether a given Kiro session
+honors this file depends on how the user launches their *next* session (`kiro-cli --v3`), not on
+anything on disk right now. `kiro-credential-guard` intentionally does **not** attempt a `kiro`/
+`kiro-cli` subprocess version probe. It also does **not** put this caveat in the JSON `message` field:
+the pinned contract (`TargetResult.Message`/`message` key, see "message only when present, last"
+above and `TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract`) reserves `message` for `failed`
+targets only — inventing a message on `updated` would violate that contract. The v3 prerequisite is
+documented here and in the Go/Node/Python doc comments above
+`harnessCredentialGuardTargetKiro`/`credentialGuardTargetKiro`/`_credential_guard_kiro_result`
+instead; release notes pointing users at `trackfw update harness` should mention it too.
+
+### Suporte por CLI — visão consolidada, escopo GLOBAL (ML-5A, `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`)
+
+Consolida, numa única tabela, o wiring **global** (`trackfw update harness`) já detalhado CLI a CLI
+nas seções acima ("Declared harness targets — pinned list", "GitHub Copilot global-scope wiring
+(ML-2E)", "Kiro global-scope wiring (ML-2F)") e no gate estrutural dedicado ("Hooks GLOBAIS de
+credential-guard ... — paridade estrutural (ROADMAP-2026-08-06, ML-4A)", mais abaixo neste
+documento). Nenhum dado novo é introduzido aqui — cada célula reaproveita o que já foi confirmado com
+fonte primária nas seções detalhadas por ML. **Não confundir com** a seção homônima "Suporte por CLI
+— visão consolidada (ML-5A)" mais acima neste documento — aquela consolida o wiring **por-projeto**
+de um roadmap anterior e não relacionado
+(`ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`).
+
+| CLI | Arquivo global | Merge ou overwrite total | Path do comando | Pré-requisito de versão |
+|---|---|---|---|---|
+| Claude Code | `~/.claude/settings.json` | Merge (`PreToolUse`/`PostToolUse[matcher:"Bash"]`, `mergeClaudeHookArray`) — ver "Declared harness targets — pinned list" (ML-2A) | Absoluto, `~/.trackfw/scripts/trackfw-credential-guard.sh` | Nenhum |
+| Codex | `~/.codex/hooks.json` | Merge (`PreToolUse`/`PostToolUse[matcher:"Bash"]`) — ver "Declared harness targets — pinned list" (ML-2B) | Absoluto, mesmo script | Nenhum — investigação `codex_hooks` resolvida (hooks habilitados por padrão) |
+| Gemini CLI | `~/.gemini/settings.json` | Merge (`BeforeTool`/`AfterTool[matcher:"run_shell_command"]`) — ver "Declared harness targets — pinned list" (ML-2C) | Absoluto, mesmo script | Nenhum |
+| Cursor | `~/.cursor/hooks.json` | Merge (`hooks.beforeShellExecution`/`hooks.afterShellExecution`, entradas planas `{"command":...}`, sem `matcher`) — ver "Declared harness targets — pinned list" (ML-2D) | Absoluto, mesmo script | Nenhum |
+| GitHub Copilot | `~/.copilot/settings.json` | Merge — inline `hooks.preToolUse`/`hooks.postToolUse[matcher:"bash"]` num arquivo de config geral compartilhado, **não** dedicado (diverge do escopo de projeto, que usa `.github/hooks/*.json` dedicado) — ver "GitHub Copilot global-scope wiring (ML-2E)" | Absoluto, mesmo script | Nenhum |
+| Kiro | `~/.kiro/hooks/trackfw-credential-guard.json` | **Overwrite total** — arquivo dedicado, um-arquivo-por-hook em `~/.kiro/hooks/`, nunca merge — ver "Kiro global-scope wiring (ML-2F)" | Absoluto, mesmo script (hook names `-global-pre`/`-global-post`, distintos dos de projeto) | **v3** (`kiro-cli --v3`) — documentado, sem sonda de subprocesso possível (ver caveat acima) |
+| Windsurf | — | — | — | **Fora de escopo** — sem hook nativo pré-execução, mesma razão da REQ original (PR #141) |
+
+##### Achados transversais (Waves 1-4 deste roadmap)
+
+1. **Modo sempre `warn` em escopo global, sem config adicional.** ML-1A decidiu não introduzir
+   `~/.trackfw/config.yaml` para configurar `credential_guard.mode` no escopo global — complexidade
+   não demandada; revisável se houver demanda real por `block` global. O script global reusa o
+   conteúdo canônico do script de projeto, só muda o destino de escrita.
+2. **Erro de autoria do roadmap no ML-2A (só Go listado), corrigido com follow-up de paridade.** O ML
+   original só listava arquivos Go — violação da regra dura de paridade 3 CLIs do `CLAUDE.md`. O
+   agente Go sinalizou a violação em vez de expandir escopo por conta própria; corrigido com um
+   follow-up dedicado cobrindo Node.js/Python, com `check-update-parity.sh` confirmando os 22 ids
+   idênticos nos 3 stacks. Todos os MLs seguintes (2B-2F) já exigiram os 3 stacks desde o início.
+3. **Investigação do Codex resolvida: hooks habilitados por padrão, não opt-in.** Re-fetch de
+   `developers.openai.com/codex/hooks` (2026-08-06) confirma que `[features] hooks = false`
+   (`codex_hooks` como alias depreciado) só serve para DESLIGAR hooks — nunca é necessário como
+   opt-in, nem para wiring de projeto nem global.
+4. **Formato do Copilot em escopo global diverge do formato de projeto.** Escopo de projeto usa
+   `.github/hooks/*.json`, um arquivo dedicado (overwrite total). Escopo global usa
+   `~/.copilot/settings.json`, o arquivo de config geral do usuário do Copilot CLI (guarda outras
+   chaves, ex. `model`) — logo exige merge preservando as demais chaves de topo, em vez de overwrite.
+5. **Kiro sem sonda de versão v3 possível — pré-requisito documentado, não sondado.** `--v3` é uma
+   flag de modo de lançamento do binário instalado, não um valor que algum comando `--version`
+   reporte; não há fato de versão instalada persistente para sondar de um processo externo (trackfw
+   nunca invoca o Kiro diretamente). Decisão: documentar o pré-requisito nos doc comments dos 3 stacks
+   e em `docs/cli-parity.md`, sem tentar sondagem de subprocesso e sem usar `TargetResult.Message`
+   (reservado a `state: failed`).
+6. **Dedup por leitura (ML-3A) funcionando nos 6 CLIs, fail-open confirmado.** Cada um dos 6
+   `InjectXHooks`/`injectXHooks`/`inject_x_hooks` de projeto lê (nunca escreve) o arquivo de hooks
+   global correspondente antes de adicionar a entrada de credential-guard por-projeto; se a entrada
+   global já existe, a entrada por-projeto é pulada (attention-signal/cleanup continuam normais).
+   Qualquer falha ao resolver `$HOME`, ler ou parsear o arquivo global é tratada como "não instalado
+   globalmente" — fail-open, nunca fail-closed silenciando o credential-guard por-projeto por erro de
+   leitura. Coberto por `internal/generators/credential_guard_dedup_test.go` (Go, 9 testes) e
+   equivalentes Node/Python.
+7. **Gate de paridade estrutural novo (ML-4A) cobrindo os 6 arquivos globais.**
+   `scripts/check-harness-hooks-parity.sh` — gate dedicado (não extensão de
+   `check-agent-hooks-parity.sh`, entry points/fixtures diferentes) — roda `trackfw update harness
+   --targets <6 ids>-credential-guard --install-missing` uma vez por runtime, cada um contra o seu
+   próprio `$HOME` de fixture isolado, e compara estruturalmente os 6 arquivos resultantes (com
+   normalização textual do path absoluto de fixture antes do `json.loads`). 12/12 `OK` (6 CLIs ×
+   go-vs-node/go-vs-py). Prova negativa (P4) registrada em `check-gates-falsify.sh` (Cenário 45,
+   corrompe o `matcher` do Kiro global). Ver "Hooks GLOBAIS de credential-guard ... — paridade
+   estrutural (ROADMAP-2026-08-06, ML-4A)" mais abaixo para o detalhamento completo.
 
 Each `<tool>-<kind>` target is a **roll-up over every catalog item** for that pair, not one row per
 item; per-item granularity already exists via `trackfw agents update` and `trackfw skills update`.
@@ -2262,6 +2442,54 @@ corrompe o `matcher` da entrada `trackfw-credential-guard-post` do wiring do
 Kiro no literal Node.js (`npm/src/generators/hooks.js`, de `'shell'` para
 `'execute_bash'`) numa cópia isolada do repositório e asserta que o gate
 reprova apontando `$.hooks[3].matcher` no diagnóstico.
+
+## Hooks GLOBAIS de credential-guard (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.gemini/settings.json`, `~/.cursor/hooks.json`, `~/.copilot/settings.json`, `~/.kiro/hooks/trackfw-credential-guard.json`) — paridade estrutural (ROADMAP-2026-08-06, ML-4A)
+
+Sibling do gate de hooks por-projeto (seção anterior), para o escopo GLOBAL
+introduzido por
+`docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md`:
+`harnessCredentialGuardTarget<Tool>` (`internal/generators/update.go`),
+`credentialGuardTarget<Tool>` (`npm/src/commands/update-harness.js`) e
+`_credential_guard_<tool>_result` (`pypi/trackfw/commands/update_harness.py`)
+são implementações independentes por stack para os mesmos 6 CLIs da wave
+nativa, escritas via `trackfw update harness --targets <tool>-credential-guard
+--install-missing` em `$HOME` em vez de num projeto. Nenhum dos dois gates
+subsome o outro: o dedup do ML-3A (seção "Agent hooks por CLI" acima) LÊ o
+arquivo global que este gate exercita, mas nunca o escreve.
+
+### Parity gate
+
+`scripts/check-harness-hooks-parity.sh` roda `update harness --targets
+<todos os 6 ids>-credential-guard --install-missing` uma vez por runtime (Go
+compilado, Node.js, Python), cada runtime contra o seu PRÓPRIO fixture de
+`$HOME` isolado (nunca o `$HOME` real de quem roda o gate) — um `$HOME`
+compartilhado entre os 3 runtimes foi descartado porque `--install-missing` é
+merge idempotente: o segundo e o terceiro runtime a escrever no mesmo `$HOME`
+reportariam `state: skipped` em vez de `state: updated`, enfraquecendo
+silenciosamente a garantia central do gate (que cada stack, escrevendo do
+zero, produz a mesma estrutura). Os mesmos dois guards de vacuidade (P2) do
+gate por-projeto rodam antes de qualquer diff (arquivo existe e não está
+vazio nos 3 runtimes; arquivo referencia `trackfw-credential-guard.sh` pelo
+menos uma vez). A comparação estrutural reusa o mesmo comparador `python3`
+inline do gate por-projeto (mesmo motivo: nenhum `jq`) — com uma etapa extra
+de normalização textual ANTES do `json.loads`: cada um dos 6 arquivos embute
+o path ABSOLUTO de `~/.trackfw/scripts/trackfw-credential-guard.sh` (um hook
+global precisa resolver a partir do cwd de qualquer projeto, então um path
+relativo não é opção), e como cada runtime roda contra o seu próprio `$HOME`
+de fixture, esse absoluto diverge textualmente entre os 3 mesmo quando todos
+resolvem corretamente — o gate substitui o path do `$HOME` de fixture de cada
+runtime por um placeholder comum (`<HOME>`) no conteúdo bruto do arquivo
+antes de parsear como JSON, então esse campo nunca é reportado como drift
+falso. Falha nomeando o CLI, o par de stacks e o path JSON divergente (ex.:
+`$.hooks[1].matcher`). Roda como parte de `make quality` (alvo `parity`),
+logo após `check-agent-hooks-parity.sh` e antes de `check-gates-falsify.sh`.
+
+A prova negativa (P4) está em `scripts/check-gates-falsify.sh` (Cenário 45) —
+corrompe o `matcher` da entrada `trackfw-credential-guard-global-post` do
+wiring GLOBAL do Kiro no literal Python
+(`pypi/trackfw/commands/update_harness.py`, de `"shell"` para
+`"execute_bash"`) numa cópia isolada do repositório e asserta que o gate
+reprova apontando `$.hooks[1].matcher` no diagnóstico.
 
 ## Princípios de design de gates (P1–P4)
 

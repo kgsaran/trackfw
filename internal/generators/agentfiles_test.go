@@ -59,6 +59,7 @@ func helperHasClaudeHook(data map[string]interface{}, event, matcher, command st
 
 func TestInjectClaudeHooks_Create(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	if err := InjectClaudeHooks(dir); err != nil {
 		t.Fatalf("InjectClaudeHooks failed: %v", err)
 	}
@@ -81,6 +82,7 @@ func TestInjectClaudeHooks_Create(t *testing.T) {
 
 func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 
 	existing := map[string]interface{}{
 		"permissions": map[string]interface{}{"defaultMode": "default"},
@@ -138,6 +140,7 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 
 func TestInjectCodexHooks(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	if err := InjectCodexHooks(dir); err != nil {
 		t.Fatalf("InjectCodexHooks failed: %v", err)
 	}
@@ -173,6 +176,7 @@ func TestInjectCodexHooks(t *testing.T) {
 
 func TestInjectCodexHooks_PreservesExistingBashEntry(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 
 	existing := map[string]interface{}{
 		"hooks": map[string]interface{}{
@@ -212,6 +216,7 @@ func TestInjectCodexHooks_PreservesExistingBashEntry(t *testing.T) {
 
 func TestInjectGeminiHooks(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	if err := InjectGeminiHooks(dir); err != nil {
 		t.Fatalf("InjectGeminiHooks failed: %v", err)
 	}
@@ -247,6 +252,7 @@ func TestInjectGeminiHooks(t *testing.T) {
 
 func TestInjectGeminiHooks_PreservesExistingBeforeToolEntry(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 
 	existing := map[string]interface{}{
 		"hooks": map[string]interface{}{
@@ -286,6 +292,7 @@ func TestInjectGeminiHooks_PreservesExistingBeforeToolEntry(t *testing.T) {
 
 func TestInjectKiroHooks(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	if err := InjectKiroHooks(dir); err != nil {
 		t.Fatalf("InjectKiroHooks failed: %v", err)
 	}
@@ -358,6 +365,7 @@ func TestInjectKiroHooks(t *testing.T) {
 
 func TestInjectCopilotHooks(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	if err := InjectCopilotHooks(dir); err != nil {
 		t.Fatalf("InjectCopilotHooks failed: %v", err)
 	}
@@ -441,6 +449,7 @@ func TestInjectCopilotHooks(t *testing.T) {
 
 func TestInjectCursorHooks(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	if err := InjectCursorHooks(dir); err != nil {
 		t.Fatalf("InjectCursorHooks failed: %v", err)
 	}
@@ -491,6 +500,7 @@ func TestInjectCursorHooks(t *testing.T) {
 
 func TestInjectCursorHooks_MigratesLegacyTopLevelArrays(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	cursorDir := filepath.Join(dir, ".cursor")
 	if err := os.MkdirAll(cursorDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -537,6 +547,7 @@ func TestInjectCursorHooks_MigratesLegacyTopLevelArrays(t *testing.T) {
 
 func TestInjectCursorHooks_PreservesUserVersion(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	cursorDir := filepath.Join(dir, ".cursor")
 	if err := os.MkdirAll(cursorDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)

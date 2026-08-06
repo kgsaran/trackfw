@@ -7,6 +7,7 @@ import (
 )
 
 func TestInjectHooksDetected_SkipsAbsent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	dir := t.TempDir()
 
 	if err := InjectHooksDetected(dir); err != nil {
@@ -29,6 +30,7 @@ func TestInjectHooksDetected_SkipsAbsent(t *testing.T) {
 }
 
 func TestInjectHooksDetected_Claude(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	dir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("# Project\n"), 0644); err != nil {

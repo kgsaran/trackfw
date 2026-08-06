@@ -412,6 +412,18 @@ class TestAttentionHooksInjectors(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Isolate the global credential-guard dedup check (ML-3A,
+        # trackfw.generators.hooks._global_credential_guard_installed_*) from the
+        # real $HOME -- none of these tests should depend on the developer's
+        # actual home dir.
+        self._orig_home = os.environ.get('HOME')
+        os.environ['HOME'] = tempfile.mkdtemp()
+
+    def tearDown(self):
+        if self._orig_home is None:
+            os.environ.pop('HOME', None)
+        else:
+            os.environ['HOME'] = self._orig_home
 
     def test_inject_claude_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_claude_hooks

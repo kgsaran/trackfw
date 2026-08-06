@@ -46,8 +46,15 @@ function withTmpDir(fn) {
 }
 
 function setupSabotageFixture(tmp, injectHooks, trackfwYAML) {
-  generateCredentialGuardScript(tmp)
-  injectHooks(tmp)
+  // Isolate global credential-guard dedup check (ML-3A) from the real $HOME.
+  const origHome = process.env.HOME
+  process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-sabotage-home-'))
+  try {
+    generateCredentialGuardScript(tmp)
+    injectHooks(tmp)
+  } finally {
+    process.env.HOME = origHome
+  }
   fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), trackfwYAML || 'roadmap_dir: docs/roadmaps\n', 'utf8')
   return path.join(tmp, 'scripts', 'trackfw-credential-guard.sh')
 }

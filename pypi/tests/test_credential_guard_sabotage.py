@@ -45,9 +45,16 @@ class SabotageFixtureMixin:
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
+        # Isolate the global credential-guard dedup check (ML-3A) from the real $HOME.
+        self._orig_home = os.environ.get("HOME")
+        os.environ["HOME"] = tempfile.mkdtemp()
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
+        if self._orig_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self._orig_home
 
     def _setup(self, inject_hooks, yaml_content="roadmap_dir: docs/roadmaps\n"):
         _generate_credential_guard_script(self.tmpdir)

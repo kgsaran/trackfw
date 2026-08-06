@@ -4,6 +4,45 @@
 
 ---
 
+## Sessão 2026-08-06 — Apolo (ML-3A: dedup — `InjectXHooks` de projeto pula credential-guard quando já instalado globalmente) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness`
+(já criada pelo orquestrador — Backend não executa Git; sem commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
+Wave 3/ML-3A (Waves 1 e 2 já concluídas e auditadas nas sessões anteriores).
+ADR: `docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md`,
+Decisão #4.
+
+**Escopo**: os 6 `InjectXHooks`/`injectXHooks`/`inject_x_hooks` (Claude, Codex, Gemini, Cursor,
+Copilot, Kiro) passam a checar, por leitura pura do arquivo de hooks global correspondente, se a
+entrada de credential-guard global (`~/.trackfw/scripts/trackfw-credential-guard.sh`, instalada via
+`trackfw update harness --targets <tool>-credential-guard`, Wave 2) já existe antes de adicionar a
+entrada por-projeto — se sim, pula a entrada por-projeto (evita rodar o guard 2x por comando);
+attention-signal/attention-cleanup continuam sendo adicionados sempre, sem alteração. Fail-open
+obrigatório: qualquer falha em resolver `$HOME`/ler/parsear o arquivo global é tratada como "não
+instalado" e a entrada por-projeto é adicionada normalmente.
+
+**Detalhe completo da implementação e evidência de validação registrados no próprio roadmap** (nota
+de auditoria do ML-3A) — resumo: novo bloco de helpers read-only nos 3 stacks
+(`internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,
+`pypi/trackfw/generators/hooks.py`), novo arquivo de teste dedicado por stack
+(`credential_guard_dedup_test.go`/`.js`/`.py`, 8-9 testes cada: 6 cenários de dedup por CLI + 2-3
+fail-open), e isolação de `$HOME` (`t.Setenv`/`test.beforeEach`/`setUp`+`tearDown`) adicionada aos
+testes pré-existentes que chamam `InjectXHooks` para não ler acidentalmente o `$HOME` real do
+desenvolvedor/CI durante a execução.
+
+**Evidência de validação:**
+- `go build ./... && go vet ./... && go test ./...` — verde.
+- `cd npm && npm test` — 433 testes verdes (425 + 8 novos).
+- `python3 -m pytest pypi/` — 972 testes + 8 subtests verdes (964 + 8 novos).
+- `GO_BIN=bin/trackfw scripts/check-agent-hooks-parity.sh` — 12 cenários OK, sem regressão.
+
+Nenhum commit feito por este agente. Próxima wave é a Wave 4 (`ML-4A` — estender o gate de paridade
+estrutural para os alvos harness), ainda `⬜ Pendente`.
+
+---
+
 ## Sessão 2026-08-04 — Apolo (ML-3A: documentar `trackfw branch new` + gate de paridade) — INICIADO
 
 Branch `feat/comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip`
@@ -9785,6 +9824,291 @@ Roadmap `docs/roadmaps/done/ROADMAP-2026-08-06-corrige-divergencia-de-versao-pyp
 cenários de falsificação) — o bloqueio documentado no ciclo anterior está resolvido. `trackfw
 validate` limpo. REQ com todos os 5 Acceptance Criteria concluídos (diferente do ciclo anterior, que
 fechou com 4/5).
+
+Roadmap movido para `done/`. Branch com todos os commits, aguardando decisão do usuário sobre
+push/PR.
+
+## Sessão 2026-08-06 — Apolo (ML-2A do ROADMAP hooks-de-credential-guard-global) — Go implementado, paridade Node/Python pendente
+
+Branch `feat/hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness`
+(já criada pelo orquestrador antes do handoff). Executando ML-2A do roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`
+(Wave 1/ML-1A já concluído nesta branch).
+
+**ML-2A — alvo `claude-credential-guard` (Go apenas, handoff explicitamente escopado só a
+`internal/`):** adicionado `"claude-credential-guard"` a `HarnessTargetIDs` (logo após
+`claude-skill`), nova função `harnessCredentialGuardTargetClaude` em
+`internal/generators/update.go` que mescla `PreToolUse`/`PostToolUse[matcher:"Bash"]` em
+`~/.claude/settings.json`, apontando para o caminho ABSOLUTO
+`~/.trackfw/scripts/trackfw-credential-guard.sh` (resolvido de `home`), reusando
+`mergeClaudeHookArray` já existente (idempotente, preserva conteúdo pré-existente do usuário).
+Testes novos em `internal/generators/update_test.go` e
+`internal/commands/update_harness_test.go` cobrindo missing/install/idempotência/dry-run/
+preservação de conteúdo. `go build`/`go vet`/testes focados verdes, `trackfw validate` limpo.
+
+**Achado bloqueante, não corrigido por estar fora do escopo do handoff**: `make quality` (gate
+`scripts/check-update-parity.sh`) FALHA — Node (`npm/src/commands/update-harness.js`) e Python
+(`pypi/trackfw/commands/update_harness.py`) ainda não têm o alvo `claude-credential-guard`
+(constroem a lista dinamicamente a partir do catálogo, sem esse novo id fixo). Isso viola a Regra
+Dura de Paridade — 3 CLIs do CLAUDE.md do projeto ("Nenhum PR é aceito sem paridade nos 3 CLIs").
+Órfão até que um ML de paridade Node/Python para este mesmo alvo seja executado antes de mesclar —
+decisão do orquestrador: estender ML-2A ou criar ML dedicado antes da Wave 4 (gate de paridade).
+`docs/cli-parity.md:1782` também ficou desatualizado ("21 ids" — agora Go declara 22); documentação
+é escopo da Wave 5 (ML-5A) por design do roadmap, não corrigido aqui.
+
+Roadmap ML-2A mantido em `🔄 Em andamento` — não promovido a `✅ Concluído` (protocolo de microlote:
+status só muda após auditoria do orquestrador). Nenhum commit feito (regra de git authority —
+`trackfw_architect` audita e commita).
+
+## Sessão 2026-08-06 — Apolo (ML-2B do ROADMAP hooks-de-credential-guard-global) — Go+Node+Python implementados, sem commit
+
+Mesma branch. Executando ML-2B (alvo `codex-credential-guard`) — desta vez com paridade 3 stacks
+desde o início, seguindo a lição registrada no ML-2A acima.
+
+**Investigação da contradição Codex (`codex_hooks`):** re-fetch direto (`curl`) em 2026-08-06 de
+`https://developers.openai.com/codex/hooks` confirma texto literal: "Hooks are enabled by default. To
+turn them off in config.toml, set: `[features] hooks = false`. Use `hooks` as the canonical feature
+key. `codex_hooks` still works as a deprecated alias." `https://developers.openai.com/codex/config-
+advanced` (mesmo fetch) não tem requisito conflitante. Contradição resolvida com alta confiança:
+`codex_hooks`/`hooks` só serve para DESLIGAR hooks, nunca é opt-in necessário — nem para wiring de
+projeto (`InjectCodexHooks`, já comentado assim desde o PR #141) nem global. Nenhuma `Message` extra
+de aviso foi adicionada ao `TargetResult` por essa razão. Evidência registrada em
+`docs/cli-parity.md` ("Declared harness targets — pinned list") e no próprio ML-2B do roadmap.
+
+**Implementação (3 stacks, mesmo padrão do ML-2A):**
+- Go: `internal/generators/update.go` — `"codex-credential-guard"` inserido em `buildHarnessTargetIDs`
+  imediatamente ANTES de `codex-agents`/`codex-skills` (mesma posição relativa de
+  `claude-credential-guard` perante `claude-agents`/`claude-skills`); nova função
+  `harnessCredentialGuardTargetCodex` reusa `mergeCredentialGuardClaudeHooks` (generalizada — mesmo
+  shape JSON `hooks.PreToolUse`/`PostToolUse[matcher:Bash]` que Codex já usa). 23 ids totais.
+- Node: `npm/src/commands/update-harness.js` — `credentialGuardTargetCodex`, inserção condicional
+  `if (target.id === 'codex')` no loop que constrói `HARNESS_TARGET_IDS` e no dispatcher
+  `buildHarnessTargets`.
+- Python: `pypi/trackfw/commands/update_harness.py` — `_credential_guard_codex_result`, mesma
+  inserção condicional em `declared_target_ids()` e despacho em `_run`.
+- Testes espelhados (missing/install-absoluto/idempotência/dry-run/preservação de conteúdo
+  pré-existente) em `internal/generators/update_test.go`, `internal/commands/update_harness_test.go`,
+  `npm/tests/update-harness.test.js`, `pypi/tests/test_update_harness.py` — todos usando `$HOME`/
+  `HOME` de fixture (`t.TempDir()`/`scratchHome()`/`tmp_path`), nunca o `$HOME` real.
+- `docs/cli-parity.md` atualizado ("22 ids" → "23 ids", nova entrada `codex-credential-guard` na
+  lista pinada + seção da investigação Codex).
+
+**Evidência de validação:**
+- `go build ./... && go test ./...` — todos os pacotes verdes.
+- `cd npm && npm test` — 405 testes verdes (incluindo os 63 do validator suite embutido).
+- `python3 -m pytest pypi/` — 944 testes verdes.
+- `GO_BIN=bin/trackfw scripts/check-update-parity.sh` — todos os cenários OK, incluindo
+  `target-list/three-runtimes-identical` confirmando os 23 ids idênticos e na mesma ordem nos 3
+  stacks (lista impressa no output do gate).
+
+Roadmap ML-2B marcado `✅ Concluído` no arquivo (conteúdo, não commit). Nenhum commit feito — regra
+de git authority, `trackfw_architect` audita e commita. Próximo ML da Wave 2 é o ML-2C
+(`gemini-credential-guard`), ainda `⬜ Pendente`.
+
+## Sessão 2026-08-06 — Apolo (ML-2C do ROADMAP hooks-de-credential-guard-global) — Go+Node+Python implementados, sem commit
+
+Mesma branch. Executando ML-2C (alvo `gemini-credential-guard`) — paridade 3 stacks desde o início,
+seguindo o mesmo padrão do ML-2B.
+
+**Confirmação do shape:** `InjectGeminiHooks` (`internal/generators/agentfiles.go`, wiring de
+projeto) já usa `BeforeTool[matcher:"run_shell_command"]`/`AfterTool[matcher:"run_shell_command"]` em
+`.gemini/settings.json` — evento diferente de Claude/Codex (`PreToolUse`/`PostToolUse`), mas o mesmo
+shape de array por-entrada (`[{matcher, hooks:[{type,command}]}]`), então o helper de merge existente
+(`mergeClaudeHookArray` Go/Node, `_merge_claude_hook_array` Python) funcionou **sem adaptação** —
+só precisou de um wrapper novo (`mergeCredentialGuardGeminiHooks` em Go; lógica inline equivalente em
+Node/Python) apontando para as chaves de topo corretas (`BeforeTool`/`AfterTool` em vez de
+`PreToolUse`/`PostToolUse`, matcher `run_shell_command` em vez de `Bash`).
+
+**Implementação (3 stacks, mesmo padrão do ML-2B):**
+- Go: `internal/generators/update.go` — `"gemini-credential-guard"` inserido em
+  `buildHarnessTargetIDs` imediatamente ANTES de `gemini-agents`/`gemini-skills`; nova função
+  `harnessCredentialGuardTargetGemini` + `mergeCredentialGuardGeminiHooks`. 24 ids totais.
+- Node: `npm/src/commands/update-harness.js` — `credentialGuardTargetGemini`, inserção condicional
+  `if (target.id === 'gemini')` no loop que constrói `HARNESS_TARGET_IDS` e no dispatcher
+  `buildHarnessTargets`.
+- Python: `pypi/trackfw/commands/update_harness.py` — `_credential_guard_gemini_result`, mesma
+  inserção condicional em `declared_target_ids()` e despacho em `_run`.
+- Testes espelhados (missing/install-absoluto/idempotência/dry-run/preservação de conteúdo
+  pré-existente) em `internal/generators/update_test.go`, `internal/commands/update_harness_test.go`,
+  `npm/tests/update-harness.test.js`, `pypi/tests/test_update_harness.py` (+ ajuste de
+  `test_harness_declared_target_list_and_order` para 24 ids) — todos usando `$HOME`/`HOME` de
+  fixture, nunca o `$HOME` real.
+- `docs/cli-parity.md` atualizado ("23 ids" → "24 ids", nova entrada `gemini-credential-guard` na
+  lista pinada).
+
+**Evidência de validação:**
+- `go build ./... && go vet ./... && go test ./...` — todos os pacotes verdes.
+- `cd npm && npm test` — 410 testes verdes.
+- `python3 -m pytest pypi/` — 949 testes verdes, 8 subtests.
+- `GO_BIN=bin/trackfw scripts/check-update-parity.sh` — todos os cenários OK, incluindo
+  `target-list/three-runtimes-identical` confirmando os 24 ids idênticos e na mesma ordem nos 3
+  stacks.
+
+Roadmap ML-2C marcado `✅ Concluído` no arquivo (conteúdo, não commit). Nenhum commit feito — regra
+de git authority, `trackfw_architect` audita e commita. Próximo ML da Wave 2 é o ML-2D
+(`cursor-credential-guard`), ainda `⬜ Pendente`. Cursor/Copilot/Kiro (2D-2F) não tocados, conforme
+instrução do handoff.
+
+## Sessão 2026-08-06 — Apolo (ML-2D do ROADMAP hooks-de-credential-guard-global) — Go+Node+Python implementados, sem commit
+
+Mesma branch. Executando ML-2D (alvo `cursor-credential-guard`) — paridade 3 stacks desde o início.
+
+**Confirmação do helper de merge:** lida `InjectCursorHooks` (`internal/generators/agentfiles.go`,
+wiring de projeto) inteira antes de implementar, conforme instruído — o schema real do Cursor é
+DIFERENTE dos MLs anteriores: `{"version":1,"hooks":{"beforeShellExecution":[...],
+"afterShellExecution":[...]}}`, cada entrada um objeto plano `{"command":"..."}`, SEM `matcher` e
+SEM `{type, hooks:[...]}` aninhado como Claude/Codex/Gemini. O helper reutilizado é
+`mergeSimpleCommandArray` (Go, já usado por `InjectCursorHooks`), não `mergeClaudeHookArray`. Node.js
+não tinha um `mergeSimpleCommandArray` equivalente exportado (a lógica vivia inline dentro de
+`injectCursorHooks`) — extraído para `generators/hooks.js` e exportado. Python ganhou
+`_merge_simple_command_array` equivalente em `generators/hooks.py`.
+
+**Implementação (3 stacks, mesmo padrão do ML-2C, adaptado ao schema plano do Cursor):**
+- Go: `internal/generators/update.go` — `"cursor-credential-guard"` inserido em
+  `buildHarnessTargetIDs` imediatamente ANTES de `cursor-agents`/`cursor-skills`; nova função
+  `harnessCredentialGuardTargetCursor` + `mergeCredentialGuardCursorHooks` (usa
+  `mergeSimpleCommandArray`, de `agentfiles.go`). 25 ids totais.
+- Node: `npm/src/generators/hooks.js` — `mergeSimpleCommandArray` novo, exportado.
+  `npm/src/commands/update-harness.js` — `credentialGuardTargetCursor`, inserção condicional
+  `if (target.id === 'cursor')` no loop que constrói `HARNESS_TARGET_IDS` e no dispatcher
+  `buildHarnessTargets`.
+- Python: `pypi/trackfw/generators/hooks.py` — `_merge_simple_command_array` novo.
+  `pypi/trackfw/commands/update_harness.py` — `_credential_guard_cursor_result`, mesma inserção
+  condicional em `declared_target_ids()` e despacho em `_run`.
+- Testes espelhados (missing/install-absoluto/idempotência/dry-run/preservação de conteúdo
+  pré-existente) em `internal/generators/update_test.go`, `internal/commands/update_harness_test.go`,
+  `npm/tests/update-harness.test.js`, `pypi/tests/test_update_harness.py` (+ ajuste de
+  `test_harness_declared_target_list_and_order` para 25 ids) — asserções lêem `hooks[event]` como
+  array plano de `{command}`, sem `matcher`, refletindo o schema real do Cursor. Todos usando
+  `$HOME`/`HOME` de fixture, nunca o `$HOME` real.
+- `docs/cli-parity.md` atualizado ("24 ids" → "25 ids", nova entrada `cursor-credential-guard` na
+  lista pinada).
+
+**Evidência de validação:**
+- `go build ./... && go test ./...` — todos os pacotes verdes.
+- `cd npm && npm test` — 415 testes verdes.
+- `python3 -m pytest pypi/` — 954 testes verdes, 8 subtests.
+- `GO_BIN=bin/trackfw scripts/check-update-parity.sh` — todos os cenários OK, incluindo
+  `target-list/three-runtimes-identical` confirmando os 25 ids idênticos e na mesma ordem nos 3
+  stacks.
+
+Roadmap ML-2D marcado `✅ Concluído` no arquivo (conteúdo, não commit). Nenhum commit feito — regra
+de git authority, `trackfw_architect` audita e commita. Próximo ML da Wave 2 é o ML-2E
+(`copilot-credential-guard`), ainda `⬜ Pendente`. Copilot/Kiro (2E-2F) não tocados, conforme
+instrução do handoff.
+
+## Sessão 2026-08-06 — Apolo (ML-2F do ROADMAP hooks-de-credential-guard-global, último ML da Wave 2) — Go+Node+Python implementados, sem commit
+
+Mesma branch. Executando ML-2F (alvo `kiro-credential-guard`, último `<tool>-credential-guard` da
+Wave 2) — paridade 3 stacks desde o início, ML-2E (`copilot-credential-guard`) já concluído.
+
+**Investigação de versão v3 (bloqueante do ML), confirmada 2026-08-06 via `curl -L` contra
+`kiro.dev/changelog/cli/2-13/` e `kiro.dev/docs/cli/`:** `--v3` é uma flag de MODO DE LANÇAMENTO no
+mesmo binário instalado ("Available in V3 (`kiro-cli --v3`)"), não um valor que um comando
+`--version` reporta — nenhuma página fetchada documenta flag `--version`/formato de saída para o CLI
+Kiro. Não existe, portanto, fato de versão instalada persistente para sondar de um processo externo
+(trackfw nunca invoca o Kiro); se a próxima sessão do Kiro honra o arquivo depende de como o USUÁRIO
+a lança (`kiro-cli --v3`), não de nada em disco agora. **Decisão validada pelo advisor**: sem sonda
+de subprocesso, e sem usar `TargetResult.Message` para o aviso — confirmado lendo o contrato
+(`TargetResult.Message` "only set when State == TargetFailed",
+`TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract` reprova `message` fora de `failed`) que
+isso quebraria o contrato JSON pinado. Aviso documentado só em `docs/cli-parity.md` (nova seção "Kiro
+global-scope wiring (ML-2F)") + doc comments nos 3 stacks — nunca em runtime.
+
+**Formato do arquivo global confirmado (mesma fonte):** "Hooks placed in ~/.kiro/hooks/ now fire in
+every workspace automatically ... Workspace-level hooks continue to work alongside global ones" —
+`~/.kiro/hooks/` é diretório de UM ARQUIVO POR HOOK, não um settings.json geral compartilhado como
+Claude/Codex/Gemini/Copilot. `kiro-credential-guard` escreve arquivo DEDICADO
+`~/.kiro/hooks/trackfw-credential-guard.json`, sobrescrito por inteiro a cada run (nunca merge) —
+mesmo padrão de `claude-skill` (`harnessClaudeSkillTarget`), não o padrão merge-and-preserve dos
+alvos anteriores (Claude/Codex/Gemini/Cursor/Copilot). Schema idêntico ao `InjectKiroHooks` de
+projeto, mas `command` com caminho ABSOLUTO e nomes de hook `trackfw-credential-guard-global-pre`/
+`-global-post` — deliberadamente distintos dos nomes de projeto (`trackfw-credential-guard-pre`/
+`-post`), decisão do advisor: evita apostar em dedup-por-nome do Kiro não documentado entre
+arquivos/escopos diferentes; o dedup futuro (ML-3A, Wave 3) vai casar pelo caminho do script, não
+pelo nome do hook.
+
+**Implementação (3 stacks):**
+- Go: `internal/generators/update.go` — `"kiro-credential-guard"` inserido em
+  `buildHarnessTargetIDs` imediatamente ANTES de `kiro-agents`/`kiro-skills` (último
+  `<tool>-credential-guard` da wave); nova função `harnessCredentialGuardTargetKiro` (padrão
+  wholesale-overwrite, não merge). 27 ids totais.
+- Node: `npm/src/commands/update-harness.js` — `credentialGuardTargetKiro`, inserção condicional
+  `if (target.id === 'kiro')` no loop de `HARNESS_TARGET_IDS` e no dispatcher `buildHarnessTargets`,
+  exportado.
+- Python: `pypi/trackfw/commands/update_harness.py` — `_credential_guard_kiro_result`, mesma
+  inserção condicional em `declared_target_ids()` e despacho em `_run`.
+- Testes espelhados (missing/install-absoluto/idempotência/dry-run/rewrite-de-conteúdo-obsoleto —
+  arquivo dedicado, não "preservação de conteúdo pré-existente" como os alvos de merge) em
+  `internal/generators/update_test.go`, `internal/commands/update_harness_test.go`
+  (`TestUpdateHarnessCmd_CredentialGuardKiroInstallsViaCLI`), `npm/tests/update-harness.test.js`,
+  `pypi/tests/test_update_harness.py` (+ ajuste de `test_harness_declared_target_list_and_order`
+  para 27 ids). Todos usando `$HOME`/`HOME` de fixture, nunca o `$HOME` real.
+- `docs/cli-parity.md` atualizado ("26 ids" → "27 ids", nova entrada `kiro-credential-guard` na
+  lista pinada, nova seção "Kiro global-scope wiring (ML-2F)" com a investigação completa).
+
+**Evidência de validação:**
+- `go build ./... && go test ./...` — todos os pacotes verdes.
+- `cd npm && npm test` — 425 testes verdes.
+- `python3 -m pytest pypi/` — 964 testes verdes, 8 subtests.
+- `GO_BIN=bin/trackfw scripts/check-update-parity.sh` — todos os cenários OK, incluindo
+  `target-list/three-runtimes-identical` confirmando os 27 ids idênticos e na mesma ordem nos 3
+  stacks.
+- `bin/trackfw validate` — nenhuma violação.
+
+Roadmap ML-2F marcado `✅ Concluído` no arquivo (conteúdo, não commit) — **Wave 2 completa** (todos os
+6 alvos `<tool>-credential-guard` implementados: Claude, Codex, Gemini, Cursor, Copilot, Kiro).
+Nenhum commit feito — regra de git authority, `trackfw_architect` audita e commita. Próxima wave é a
+Wave 3 (`ML-3A` — dedup: `InjectXHooks` de projeto detecta wiring global já instalado e pula a
+entrada de credential-guard por-projeto), ainda `⬜ Pendente`.
+
+## Sessão 2026-08-06 — Zeus (credential-guard em escopo global via trackfw update harness) —
+ROADMAP CONCLUÍDO
+
+PR #142 mergeado (fix de versão pypi + schema Cursor). Usuário perguntou se `trackfw update harness`
+implantaria os novos hooks — resposta: não, escopo hoje é só rules/agents/skills, credential-guard é
+inerentemente por-projeto por ter herdado o pipeline de attention-signal. Usuário pediu para abrir
+REQ investigando escopo global cross-project. Branch
+`feat/hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness`, criada
+via `trackfw branch new` desde o início (sem o erro de processo da sessão anterior). REQ
+`docs/req/REQ-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
+ADR `docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md`,
+Roadmap `docs/roadmaps/done/ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`.
+
+Pesquisa inicial confirmou que os 6 CLIs da wave nativa suportam hooks globais mesclados com projeto
+— mais amplo do que a suposição inicial (só Claude/Cursor confirmados informalmente). Duas decisões
+de UX confirmadas com o usuário antes da ADR: instalação opt-in puro (só via `update harness`, sem
+mudar `init`/`update`) e dedup por leitura (projeto detecta global e pula o wiring local).
+
+Todas as 5 Waves concluídas e auditadas (build/testes/gates rodados pelo orquestrador de forma
+independente do relato de cada subagente, incluindo reprodução manual de todas as provas negativas e
+pelo menos um teste end-to-end manual do dedup antes de aprovar cada commit):
+
+- **Wave 1 (ML-1A):** script global `~/.trackfw/scripts/trackfw-credential-guard.sh`, decompondo o
+  script em blocos componíveis para nunca duplicar o núcleo de detecção entre a variante de projeto e
+  a global. Confirmado byte-idêntico ao script de projeto pré-existente (sem regressão).
+- **Wave 2 (ML-2A-2F):** 6 alvos novos em `trackfw update harness`. Achado do próprio processo:
+  ML-2A inicialmente só listou arquivos Go na descrição do roadmap (erro de autoria do orquestrador,
+  não do agente) — implementação Go rodou sozinha e quebrou `check-update-parity.sh`; corrigido com
+  follow-up de paridade Node/Python antes do commit, e todos os MLs seguintes corrigidos no roadmap
+  para exigir os 3 stacks desde o início. Investigação do Codex resolvida (hooks habilitados por
+  padrão). Formato do Copilot em escopo global diverge do formato de projeto (config inline vs.
+  arquivo dedicado). Kiro sem sonda de versão v3 confiável — pré-requisito documentado, não sondado
+  via subprocess.
+- **Wave 3 (ML-3A):** dedup por leitura nos 6 CLIs, fail-open em toda superfície de falha, confirmado
+  end-to-end pelo orquestrador com `$HOME`/projeto de fixture reais.
+- **Wave 4 (ML-4A):** `scripts/check-harness-hooks-parity.sh`, gate estrutural novo cobrindo os 6
+  arquivos de hook globais, prova negativa reproduzida de forma independente. `make quality`
+  confirmado passando de ponta a ponta pela primeira vez nesta família de trabalho (103/103 cenários)
+  — o fix de versão do PR #142 resolveu o bloqueio definitivamente.
+- **Wave 5 (ML-5A):** `docs/cli-parity.md` consolidado (escopo global); colisão de título com a seção
+  consolidada do PR #141 (mesmo rótulo `ML-5A`, roadmaps diferentes) encontrada pelo agente e
+  corrigida pelo orquestrador. REQ com os 7 Acceptance Criteria concluídos (100%), ADR movida para
+  `Accepted`.
+
+**Erro de processo corrigido nesta sessão**: frontmatter `roadmap:` da REQ ficou vazio desde a
+criação (`trackfw roadmap move` não sincronizou desta vez, diferente da REQ anterior no mesmo dia) —
+corrigido manualmente no fechamento.
 
 Roadmap movido para `done/`. Branch com todos os commits, aguardando decisão do usuário sobre
 push/PR.

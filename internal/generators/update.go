@@ -3,6 +3,7 @@ package generators
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -278,18 +279,50 @@ var harnessCatalogTargetOrder = []string{
 }
 
 // HarnessTargetIDs is the fixed, declared order of `trackfw update harness`
-// targets: 21 ids — "claude-skill", then "<tool>-agents" and "<tool>-skills"
-// for each catalog target in harnessCatalogTargetOrder. Order here is
-// authoritative for both JSON output and iteration — it must never be
+// targets: 27 ids — "claude-skill", then "claude-credential-guard" (global
+// credential-guard hook wiring for Claude Code — placed immediately after
+// claude-skill since both are Claude-Code-scoped global artifacts), then for
+// each catalog target in harnessCatalogTargetOrder its "<tool>-agents"/
+// "<tool>-skills" pair, with "codex-credential-guard" inserted immediately
+// BEFORE "codex-agents"/"codex-skills" (ROADMAP-2026-08-06 Wave 2/ML-2B) and
+// "gemini-credential-guard" inserted immediately BEFORE "gemini-agents"/
+// "gemini-skills" (ROADMAP-2026-08-06 Wave 2/ML-2C), and
+// "cursor-credential-guard" inserted immediately BEFORE "cursor-agents"/
+// "cursor-skills" (ROADMAP-2026-08-06 Wave 2/ML-2D), and
+// "copilot-credential-guard" inserted immediately BEFORE "copilot-agents"/
+// "copilot-skills" (ROADMAP-2026-08-06 Wave 2/ML-2E), and
+// "kiro-credential-guard" inserted immediately BEFORE "kiro-agents"/
+// "kiro-skills" (ROADMAP-2026-08-06 Wave 2/ML-2F, the last credential-guard
+// target of this wave — Windsurf has no native hook mechanism and stays out
+// per the ADR) — same relative position as claude-credential-guard/
+// codex-credential-guard/gemini-credential-guard/cursor-credential-guard/
+// copilot-credential-guard (credential-guard target precedes that tool's
+// agents/skills pair, never follows it). Order here
+// is authoritative for both JSON output and iteration — it must never be
 // derived from the filesystem or from what happens to be installed on a
 // given machine (see docs/cli-parity.md, "targets follows the declared
 // target order, not filesystem order").
 var HarnessTargetIDs = buildHarnessTargetIDs()
 
 func buildHarnessTargetIDs() []string {
-	ids := make([]string, 0, 1+2*len(harnessCatalogTargetOrder))
-	ids = append(ids, "claude-skill")
+	ids := make([]string, 0, 4+2*len(harnessCatalogTargetOrder))
+	ids = append(ids, "claude-skill", "claude-credential-guard")
 	for _, tool := range harnessCatalogTargetOrder {
+		if tool == "codex" {
+			ids = append(ids, "codex-credential-guard")
+		}
+		if tool == "gemini" {
+			ids = append(ids, "gemini-credential-guard")
+		}
+		if tool == "cursor" {
+			ids = append(ids, "cursor-credential-guard")
+		}
+		if tool == "copilot" {
+			ids = append(ids, "copilot-credential-guard")
+		}
+		if tool == "kiro" {
+			ids = append(ids, "kiro-credential-guard")
+		}
 		ids = append(ids, tool+"-agents", tool+"-skills")
 	}
 	return ids
@@ -326,6 +359,30 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 	for _, id := range selected {
 		if id == "claude-skill" {
 			results = append(results, harnessClaudeSkillTarget(home, opts))
+			continue
+		}
+		if id == "claude-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetClaude(home, opts))
+			continue
+		}
+		if id == "codex-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetCodex(home, opts))
+			continue
+		}
+		if id == "gemini-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetGemini(home, opts))
+			continue
+		}
+		if id == "cursor-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetCursor(home, opts))
+			continue
+		}
+		if id == "copilot-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetCopilot(home, opts))
+			continue
+		}
+		if id == "kiro-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetKiro(home, opts))
 			continue
 		}
 		tool, kind, ok := splitHarnessCatalogTargetID(id)
@@ -388,6 +445,626 @@ func harnessClaudeSkillTarget(home string, opts UpdateOptions) TargetResult {
 
 	path := GlobalClaudeSkillPath(home)
 	desired := GlobalClaudeSkillContent()
+
+	data, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	if string(data) == string(desired) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessCredentialGuardTargetClaude evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Claude Code:
+// PreToolUse[matcher:"Bash"]/PostToolUse[matcher:"Bash"] entries in
+// ~/.claude/settings.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh. This must be an absolute
+// path (unlike InjectClaudeHooks's project-scope "scripts/trackfw-credential-
+// guard.sh", which is relative because the hook always runs from the project
+// root) since a global hook can fire from any project's cwd. Reuses
+// mergeClaudeHookArray (agentfiles.go) — the same idempotent merge helper
+// InjectClaudeHooks/InjectCodexHooks/InjectGeminiHooks already use — so any
+// pre-existing content in ~/.claude/settings.json (other hooks, user config)
+// is preserved; only the credential-guard entry is added/merged.
+func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetResult {
+	const id = "claude-credential-guard"
+	const displayPath = "~/.claude/settings.json"
+
+	path := filepath.Join(home, ".claude", "settings.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardClaudeHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardClaudeHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// mergeCredentialGuardClaudeHooks merges the credential-guard PreToolUse/
+// PostToolUse[matcher:"Bash"] entries into root["hooks"], preserving any
+// other hook groups/matchers already present (same merge contract as
+// InjectClaudeHooks, minus the attention-signal/cleanup entries which stay
+// project-scope only). Despite the name (kept for git-blame continuity with
+// ML-2A), this helper is shape-agnostic — it only touches
+// root["hooks"]["PreToolUse"/"PostToolUse"] with matcher "Bash", the exact
+// same JSON shape Codex's .codex/hooks.json (InjectCodexHooks,
+// agentfiles.go) already uses for its own PreToolUse/PostToolUse[Bash]
+// entries — so harnessCredentialGuardTargetCodex below reuses it verbatim
+// instead of duplicating the merge logic.
+func mergeCredentialGuardClaudeHooks(root map[string]interface{}, scriptPath string) {
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Bash", scriptPath)
+	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Bash", scriptPath)
+	root["hooks"] = hooks
+}
+
+// harnessCredentialGuardTargetCodex evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Codex CLI:
+// PreToolUse[matcher:"Bash"]/PostToolUse[matcher:"Bash"] entries in
+// ~/.codex/hooks.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — mirrors
+// harnessCredentialGuardTargetClaude exactly (same 4-state contract, same
+// idempotent merge via mergeCredentialGuardClaudeHooks, same reason for an
+// absolute path over InjectCodexHooks's project-relative
+// "scripts/trackfw-credential-guard.sh": a global hook can fire from any
+// project's cwd).
+//
+// Investigation (ROADMAP-2026-08-06 Wave 2/ML-2B, confirmed 2026-08-06
+// against https://developers.openai.com/codex/hooks): "Hooks are enabled by
+// default. To turn them off in config.toml, set: [features] hooks = false.
+// Use hooks as the canonical feature key. codex_hooks still works as a
+// deprecated alias." This resolves the contradiction the ADR flagged with
+// high confidence — no `[features] codex_hooks = true` opt-in is required
+// (the flag exists only to turn hooks OFF, and is a deprecated alias for
+// the canonical `hooks` key); https://developers.openai.com/codex/config-
+// advanced (also fetched 2026-08-06) has no conflicting requirement. No
+// extra warning Message is added to the TargetResult because of this: the
+// investigation resolved with confidence, so per the ML's own instructions
+// (fall back to a warning only "se não conseguir resolver a contradição com
+// confiança total") no hedge is needed.
+func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetResult {
+	const id = "codex-credential-guard"
+	const displayPath = "~/.codex/hooks.json"
+
+	path := filepath.Join(home, ".codex", "hooks.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardClaudeHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardClaudeHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// mergeCredentialGuardGeminiHooks merges the credential-guard BeforeTool/
+// AfterTool[matcher:"run_shell_command"] entries into root["hooks"],
+// preserving any other hook groups/matchers already present. Gemini CLI uses
+// different top-level event names than Claude/Codex (BeforeTool/AfterTool
+// instead of PreToolUse/PostToolUse — see InjectGeminiHooks, agentfiles.go,
+// confirmed against https://geminicli.com/docs/hooks/reference), but the
+// per-entry array shape ({"matcher","hooks":[{"type","command"}]}) is
+// identical, so mergeClaudeHookArray is reused verbatim — only the top-level
+// key names and matcher value differ from mergeCredentialGuardClaudeHooks.
+func mergeCredentialGuardGeminiHooks(root map[string]interface{}, scriptPath string) {
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "run_shell_command", scriptPath)
+	hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "run_shell_command", scriptPath)
+	root["hooks"] = hooks
+}
+
+// harnessCredentialGuardTargetGemini evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Gemini CLI:
+// BeforeTool[matcher:"run_shell_command"]/AfterTool[matcher:"run_shell_command"]
+// entries in ~/.gemini/settings.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — mirrors
+// harnessCredentialGuardTargetClaude/harnessCredentialGuardTargetCodex
+// exactly (same 4-state contract, same idempotent merge, now via
+// mergeCredentialGuardGeminiHooks since the event key names differ from
+// Claude/Codex's PreToolUse/PostToolUse), same reason for an absolute path
+// over InjectGeminiHooks's project-relative
+// "scripts/trackfw-credential-guard.sh": a global hook can fire from any
+// project's cwd.
+func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetResult {
+	const id = "gemini-credential-guard"
+	const displayPath = "~/.gemini/settings.json"
+
+	path := filepath.Join(home, ".gemini", "settings.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardGeminiHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardGeminiHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// mergeCredentialGuardCursorHooks merges the credential-guard
+// beforeShellExecution/afterShellExecution entries into root["hooks"],
+// preserving any other hook event arrays already present. Cursor's
+// hooks.json schema (confirmed by InjectCursorHooks, agentfiles.go) is
+// structurally different from Claude/Codex/Gemini's: each event holds a flat
+// array of simple {"command": "..."} objects — no per-entry "matcher", no
+// nested {"type","hooks":[...]} — so this reuses mergeSimpleCommandArray
+// (agentfiles.go), not mergeClaudeHookArray.
+func mergeCredentialGuardCursorHooks(root map[string]interface{}, scriptPath string) {
+	if _, ok := root["version"]; !ok {
+		root["version"] = 1
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	makeEntry := func(command string) interface{} {
+		return map[string]interface{}{"command": command}
+	}
+	getCmd := func(item interface{}) string {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		cmd, _ := obj["command"].(string)
+		return cmd
+	}
+	hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], scriptPath, makeEntry, getCmd)
+	hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], scriptPath, makeEntry, getCmd)
+	root["hooks"] = hooks
+}
+
+// harnessCredentialGuardTargetCursor evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Cursor:
+// hooks.beforeShellExecution/hooks.afterShellExecution entries in
+// ~/.cursor/hooks.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — same 4-state contract and
+// same reason for an absolute path as
+// harnessCredentialGuardTargetClaude/Codex/Gemini (a global hook can fire
+// from any project's cwd), but via mergeCredentialGuardCursorHooks since
+// Cursor's hooks.json schema (ROADMAP-2026-08-06 ML-2D) differs from the
+// other three CLIs — see that helper's doc comment.
+func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetResult {
+	const id = "cursor-credential-guard"
+	const displayPath = "~/.cursor/hooks.json"
+
+	path := filepath.Join(home, ".cursor", "hooks.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardCursorHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardCursorHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// mergeCredentialGuardCopilotHooks merges the credential-guard
+// preToolUse/postToolUse[matcher:"bash"] entries into root["hooks"],
+// preserving any other hook groups/entries already present.
+//
+// Investigation (ROADMAP-2026-08-06 Wave 2/ML-2E, confirmed 2026-08-06
+// against https://docs.github.com/en/copilot/reference/hooks-reference,
+// section "Hooks locations"): the user-level scope offers TWO distinct
+// mechanisms — (a) a dedicated directory of standalone hook files,
+// "*.json files in the user-level hooks directory... by default
+// ~/.copilot/hooks/", and (b) "Inline hooks block in user-level config — the
+// hooks field at the top level of ~/.copilot/settings.json". This ML follows
+// the roadmap's explicit instruction to target ~/.copilot/settings.json
+// (option b), which the doc confirms is NOT a dedicated hooks file: it is
+// Copilot CLI's general user config file (also holds "model", other CLI
+// settings), unlike .github/hooks/trackfw-attention.json (project scope,
+// InjectCopilotHooks) which is safely overwritten wholesale. So, exactly like
+// harnessCredentialGuardTargetClaude/Codex/Gemini's own general settings
+// files, this merges into root["hooks"] only and never overwrites/replaces
+// any other top-level key.
+//
+// Entry shape: the doc states "Hook configuration files use JSON format with
+// version 1" without carving out an exception for the inline hooks field —
+// i.e. the same command-entry shape documented for standalone hook files
+// ({"type":"command","bash":"...","cwd":"...","timeoutSec":N}, with an
+// optional "matcher") applies here too, identical to what InjectCopilotHooks
+// (agentfiles.go, project scope) already emits. This function does NOT add a
+// top-level "version" key to root, though: that field belongs to dedicated
+// hooks-file format examples in the doc (e.g. the standalone
+// {"version":1,"hooks":{...}} shown for .github/hooks/*.json and policy
+// files) — nothing in the doc shows or requires a "version" key at the root
+// of the general settings.json file itself, so adding one here would be an
+// unconfirmed assumption about a file this code does not own.
+//
+// Merge mechanics: reuses mergeSimpleCommandArray (agentfiles.go) with a
+// custom getCmd/makeEntry pair since the match key is "bash" (unlike
+// Cursor's flat {"command":"..."} shape, matched on "command") and the full
+// entry also carries "type"/"matcher"/"cwd"/"timeoutSec", mirroring the
+// project-scope entries InjectCopilotHooks writes for credential-guard.
+func mergeCredentialGuardCopilotHooks(root map[string]interface{}, scriptPath string) {
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	makeEntry := func(command string) interface{} {
+		return map[string]interface{}{
+			"type":       "command",
+			"matcher":    "bash",
+			"bash":       command,
+			"cwd":        ".",
+			"timeoutSec": 10,
+		}
+	}
+	getCmd := func(item interface{}) string {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		bash, _ := obj["bash"].(string)
+		return bash
+	}
+	hooks["preToolUse"] = mergeSimpleCommandArray(hooks["preToolUse"], scriptPath, makeEntry, getCmd)
+	hooks["postToolUse"] = mergeSimpleCommandArray(hooks["postToolUse"], scriptPath, makeEntry, getCmd)
+	root["hooks"] = hooks
+}
+
+// harnessCredentialGuardTargetCopilot evaluates (and, unless DryRun,
+// applies) the global-scope credential-guard hook wiring for GitHub Copilot:
+// hooks.preToolUse/hooks.postToolUse[matcher:"bash"] entries in
+// ~/.copilot/settings.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — same 4-state contract and
+// same reason for an absolute path as
+// harnessCredentialGuardTargetClaude/Codex/Gemini/Cursor (a global hook can
+// fire from any project's cwd), but via mergeCredentialGuardCopilotHooks
+// since Copilot's command-hook entry shape (ROADMAP-2026-08-06 ML-2E) is
+// its own — see that helper's doc comment for the full format investigation.
+func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) TargetResult {
+	const id = "copilot-credential-guard"
+	const displayPath = "~/.copilot/settings.json"
+
+	path := filepath.Join(home, ".copilot", "settings.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardCopilotHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardCopilotHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessCredentialGuardTargetKiro evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Kiro: a dedicated file
+// at ~/.kiro/hooks/trackfw-credential-guard.json (NOT a merge into a shared
+// settings file — unlike Claude/Codex/Gemini/Copilot's general settings
+// files, ~/.kiro/hooks/ is a directory of one-file-per-hook, confirmed by
+// InjectKiroHooks's own investigation and by kiro.dev/changelog/cli/2-13/:
+// "Hooks placed in ~/.kiro/hooks/ now fire in every workspace automatically
+// ... Workspace-level hooks continue to work alongside global ones"). Same
+// schema as InjectKiroHooks (project scope, agentfiles.go): top-level
+// {"version":"v1","hooks":[...]}, each entry {"name","description",
+// "trigger","matcher","action":{"type":"command","command":<absolute path>}}
+// — but the command here is the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh (a global hook can fire
+// from any project's cwd, unlike the project-scope wiring's relative
+// "scripts/trackfw-credential-guard.sh"), and the two hook names are
+// "trackfw-credential-guard-global-pre"/"-global-post" — deliberately
+// DISTINCT from the project-scope names ("trackfw-credential-guard-pre"/
+// "-post") rather than reused, because this writes an entirely different
+// file (~/.kiro/hooks/ vs <project>/.kiro/hooks/) and nothing in the
+// changelog's "workspace hooks continue to work alongside global ones"
+// documents whether Kiro deduplicates same-named hooks originating from
+// different files/scopes — distinct names avoid betting on unconfirmed
+// merge-by-name behavior; ML-3A's future project-scope dedup will match on
+// the script path, not the hook name, same as every other tool's dedup.
+//
+// Kiro v3 caveat (ROADMAP-2026-08-06 Wave 2/ML-2F investigation, confirmed
+// 2026-08-06 against kiro.dev/changelog/cli/2-13/): global hooks are
+// "Available in V3 (`kiro-cli --v3`)". Re-fetching that page found `--v3` is
+// a LAUNCH-MODE flag on the same installed binary ("kiro-cli --v3"), not a
+// value any `kiro-cli --version`/`kiro --version` style command reports —
+// the doc/marketing pages fetched for this ML (kiro.dev/docs/cli/) document
+// no such flag at all. There is therefore no persistent, installed-version
+// fact to probe from a separate process (trackfw never invokes Kiro
+// itself): whether a given Kiro session honors this file depends on how the
+// USER launches their next session, not on anything on disk right now. This
+// target intentionally does NOT attempt a `kiro`/`kiro-cli` subprocess
+// version probe (per the roadmap's fallback instruction for "not detectable
+// in a confiable way"), and does NOT put the caveat in TargetResult.Message
+// either: the pinned JSON contract (docs/cli-parity.md, "message" only on
+// "failed") and TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract
+// both establish Message is failure-only, so inventing a message on
+// "updated" would break that contract. The v3 prerequisite is documented
+// instead in this comment and in docs/cli-parity.md's own "Kiro global-scope
+// wiring (ML-2F)" section, both of which the release notes/changelog can
+// point users to — the same choice already made for Copilot's own doc-only
+// caveats (see harnessCredentialGuardTargetCopilot above).
+func harnessCredentialGuardTargetKiro(home string, opts UpdateOptions) TargetResult {
+	const id = "kiro-credential-guard"
+	const displayPath = "~/.kiro/hooks/trackfw-credential-guard.json"
+
+	path := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	content := map[string]interface{}{
+		"version": "v1",
+		"hooks": []interface{}{
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-global-pre",
+				"description": "Blocks/warns on possible plaintext credential materialization before a shell command executes (global, all projects)",
+				"trigger":     "PreToolUse",
+				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": scriptPath},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-global-post",
+				"description": "Warns on possible plaintext credential materialization after a shell command executes (global, all projects)",
+				"trigger":     "PostToolUse",
+				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": scriptPath},
+			},
+		},
+	}
+	out, marshalErr := json.MarshalIndent(content, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
 
 	data, err := os.ReadFile(path)
 	switch {

@@ -1,0 +1,283 @@
+#!/usr/bin/env bash
+# check-harness-hooks-parity.sh — proves the six GLOBAL-scope credential-guard
+# hook files written by `trackfw update harness --targets <tool>-credential-
+# guard --install-missing` (~/.claude/settings.json, ~/.codex/hooks.json,
+# ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json,
+# ~/.kiro/hooks/trackfw-credential-guard.json) are STRUCTURALLY identical
+# across Go, Node.js and Python, for each of the 6 native-wave CLIs.
+#
+# Sibling of check-agent-hooks-parity.sh (PR #141), which covers the exact
+# same 6 CLIs but for PROJECT-scope hook files written by `discover --init`.
+# Neither gate subsumes the other: the per-project InjectXHooks and the
+# per-home harnessCredentialGuardTarget<Tool>/credentialGuardTarget<Tool>/
+# _credential_guard_<tool>_result implementations are independent code paths
+# in all 3 stacks (ROADMAP-2026-08-06 Wave 2), and ML-3A's dedup logic reads
+# the global file the harness gate here exercises but never writes it.
+#
+# Method: same structural (parsed-JSON) deep-compare as
+# check-agent-hooks-parity.sh — NOT byte-identical, since JSON indentation/
+# key-insertion-order differs between the Go/Node.js/Python serializers and
+# is never semantically significant here (unlike GitHub Copilot's own
+# project-scope array-order contract, none of these 6 hook shapes has more
+# than one entry per event array in a fresh `--install-missing` run, so array
+# order is moot for THIS gate specifically — still compared for safety, at no
+# extra cost, via the same diff() used by check-agent-hooks-parity.sh).
+#
+# Real invocation, not internal generator/function calls: each stack runs its
+# own real `update harness --targets <tool>-credential-guard --install-
+# missing` entry point (Go binary / `node npm/bin/trackfw` / `python3 -m
+# trackfw`) once per CLI, each against its OWN isolated $HOME fixture
+# directory (HOME env var — never the real $HOME of whoever runs this gate;
+# `trackfw update harness` never touches anything outside $HOME, see
+# internal/commands/update_harness.go's own doc comment).
+#
+# Absolute-path normalization: every one of the 6 hook files embeds the
+# ABSOLUTE path of ~/.trackfw/scripts/trackfw-credential-guard.sh (a global
+# hook must resolve from any project's cwd, so a relative path is not an
+# option — see internal/generators/update.go:harnessCredentialGuardTarget-
+# Claude's own doc comment). Because each stack runs against its OWN $HOME
+# fixture directory (mirroring check-agent-hooks-parity.sh's one-work-dir-
+# per-runtime layout, not a single shared fixture — see below for why), that
+# absolute path is textually different per runtime even when every stack
+# resolves it correctly, and a naive structural diff would report false
+# drift on every single field that embeds it. Fixed by textually replacing
+# each runtime's own $HOME fixture path with a common "<HOME>" placeholder
+# in the raw file content BEFORE parsing as JSON (see normalize_home below) —
+# the same style of pre-parse normalization already used by
+# check-barrier.sh's normalize_barrier_json for a different reason
+# (whitespace). A single shared $HOME fixture across all 3 runtimes was
+# considered and rejected: `trackfw update harness --install-missing` is
+# idempotent-merge, so a second and third runtime writing into a $HOME
+# already populated by an earlier runtime would report `state: skipped`
+# instead of `state: updated` for two of the three stacks, silently
+# weakening this gate's most basic guarantee — that each stack's OWN
+# from-scratch write path produces the same structure, not just that stacks
+# agree once someone else has already written the file.
+set -euo pipefail
+
+export NO_COLOR=1
+export TERM=dumb
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-harness-hooks-parity.XXXXXX")
+trap 'rm -rf "$WORK"' EXIT
+# Squash any double-slash introduced by a trailing slash in $TMPDIR (macOS
+# sets TMPDIR with a trailing "/"): filepath.Join (Go)/path.join (Node)/
+# os.path.join (Python) all normalize it away when building the embedded
+# absolute script path, but the raw $WORK string here would not — which
+# would silently break the textual "$HOME" normalization in compare_json
+# below (the literal never matches, so no drift is ever normalized away).
+WORK=$(cd "$WORK" && pwd)
+
+# ---------------------------------------------------------------------------
+# Resolve the three runtimes — mirrors check-agent-hooks-parity.sh.
+# ---------------------------------------------------------------------------
+if [[ -z "${GO_BIN:-}" ]]; then
+  GO_BIN="$WORK/trackfw-go"
+  (cd "$ROOT_DIR" && GOCACHE="$WORK/go-build-cache" go build -o "$GO_BIN" ./cmd/trackfw)
+elif [[ "$GO_BIN" != /* ]]; then
+  GO_BIN="$ROOT_DIR/$GO_BIN"
+fi
+NODE_CLI="$ROOT_DIR/npm/bin/trackfw"
+PY_ROOT="${PY_ROOT:-$ROOT_DIR/pypi}"
+
+if [[ ! -x "$GO_BIN" ]]; then
+  echo "check-harness-hooks-parity: Go binary not found/executable at $GO_BIN" >&2
+  exit 1
+fi
+if [[ ! -f "$NODE_CLI" ]]; then
+  echo "check-harness-hooks-parity: Node CLI not found at $NODE_CLI" >&2
+  exit 1
+fi
+
+FAIL=0
+ok()   { echo "OK   [$1]"; }
+fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; }
+
+# ---------------------------------------------------------------------------
+# Per-CLI table: target id passed to --targets and the relative (to $HOME)
+# path of the global hook file each harness target writes.
+# ---------------------------------------------------------------------------
+CLIS="claude codex gemini cursor copilot kiro"
+
+target_for() {
+  case "$1" in
+    claude)  echo "claude-credential-guard" ;;
+    codex)   echo "codex-credential-guard" ;;
+    gemini)  echo "gemini-credential-guard" ;;
+    cursor)  echo "cursor-credential-guard" ;;
+    copilot) echo "copilot-credential-guard" ;;
+    kiro)    echo "kiro-credential-guard" ;;
+    *) echo "target_for: unknown cli '$1'" >&2; exit 1 ;;
+  esac
+}
+
+hookfile_for() {
+  case "$1" in
+    claude)  echo ".claude/settings.json" ;;
+    codex)   echo ".codex/hooks.json" ;;
+    gemini)  echo ".gemini/settings.json" ;;
+    cursor)  echo ".cursor/hooks.json" ;;
+    copilot) echo ".copilot/settings.json" ;;
+    kiro)    echo ".kiro/hooks/trackfw-credential-guard.json" ;;
+    *) echo "hookfile_for: unknown cli '$1'" >&2; exit 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Run `update harness --targets <all 6 ids> --install-missing` once per
+# runtime, each against its own fresh $HOME fixture directory (never the real
+# $HOME of whoever runs this gate).
+# ---------------------------------------------------------------------------
+ALL_TARGETS=""
+for cli in $CLIS; do
+  id=$(target_for "$cli")
+  ALL_TARGETS="${ALL_TARGETS:+$ALL_TARGETS,}$id"
+done
+
+run_update_harness() {
+  local runtime=$1 home_dir=$2
+  mkdir -p "$home_dir"
+  case "$runtime" in
+    go)   HOME="$home_dir" "$GO_BIN" update harness --targets "$ALL_TARGETS" --install-missing                              >/dev/null 2>"$WORK/$runtime.err" ;;
+    node) HOME="$home_dir" node "$NODE_CLI" update harness --targets "$ALL_TARGETS" --install-missing                       >/dev/null 2>"$WORK/$runtime.err" ;;
+    py)   HOME="$home_dir" PYTHONPATH="$PY_ROOT" python3 -m trackfw update harness --targets "$ALL_TARGETS" --install-missing >/dev/null 2>"$WORK/$runtime.err" ;;
+    *)    echo "run_update_harness: unknown runtime '$runtime'" >&2; exit 1 ;;
+  esac
+}
+
+set +e
+for runtime in go node py; do
+  home_dir="$WORK/$runtime-home"
+  run_update_harness "$runtime" "$home_dir"
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    fail "harness-hooks-parity/$runtime/update-harness" \
+      "update harness exited $status; stderr: $(cat "$WORK/$runtime.err" 2>/dev/null)"
+  fi
+done
+set -e
+
+if [[ "$FAIL" -ne 0 ]]; then
+  echo
+  echo "check-harness-hooks-parity.sh: one or more scenarios FAILED (setup)." >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# P2 vacuity guards, two of them (mirrors check-agent-hooks-parity.sh):
+#   1. the hook file exists and is non-empty for all three runtimes, per CLI;
+#   2. the hook file actually references trackfw-credential-guard.sh at least
+#      once, per runtime — a regression that dropped the credential-guard
+#      entry from all three stacks identically would otherwise still "pass" a
+#      pure cross-stack equality check.
+# ---------------------------------------------------------------------------
+for cli in $CLIS; do
+  hookfile=$(hookfile_for "$cli")
+  for runtime in go node py; do
+    path="$WORK/$runtime-home/$hookfile"
+    if [[ ! -s "$path" ]]; then
+      fail "harness-hooks-parity/$cli/$runtime/$hookfile" "missing or empty: $path"
+      continue
+    fi
+    if ! grep -q "trackfw-credential-guard.sh" "$path"; then
+      fail "harness-hooks-parity/$cli/$runtime/credential-guard-present" \
+        "trackfw-credential-guard.sh not referenced anywhere in $path"
+    fi
+  done
+done
+
+if [[ "$FAIL" -ne 0 ]]; then
+  echo
+  echo "check-harness-hooks-parity.sh: one or more scenarios FAILED (vacuity guard)." >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Structural (parsed-JSON) diff, go-vs-node and go-vs-py, per CLI. Each
+# runtime's own $HOME fixture absolute path is textually normalized to a
+# common "<HOME>" placeholder before parsing (see file header) so the
+# embedded absolute script path never produces false drift.
+# ---------------------------------------------------------------------------
+normalize_home() {
+  local file=$1 home_dir=$2
+  python3 -c "
+import sys
+path, home = sys.argv[1], sys.argv[2]
+with open(path, encoding='utf-8') as f:
+    content = f.read()
+content = content.replace(home, '<HOME>')
+sys.stdout.write(content)
+" "$file" "$home_dir"
+}
+
+compare_json() {
+  local label=$1 go_file=$2 go_home=$3 other_file=$4 other_home=$5
+  local out
+  if out=$(python3 -c "
+import json
+import sys
+
+a_text, b_text = sys.argv[1], sys.argv[2]
+a = json.loads(a_text)
+b = json.loads(b_text)
+
+
+def diff(path, x, y, out):
+    if type(x) is not type(y) and not (isinstance(x, (int, float)) and isinstance(y, (int, float))):
+        out.append(f'{path}: type {type(x).__name__} (go) vs {type(y).__name__} (other) -- go={x!r} other={y!r}')
+        return
+    if isinstance(x, dict):
+        xk, yk = set(x.keys()), set(y.keys())
+        for k in sorted(xk - yk):
+            out.append(f'{path}.{k}: present in go, missing in other')
+        for k in sorted(yk - xk):
+            out.append(f'{path}.{k}: missing in go, present in other')
+        for k in sorted(xk & yk):
+            diff(f'{path}.{k}', x[k], y[k], out)
+    elif isinstance(x, list):
+        if len(x) != len(y):
+            out.append(f'{path}: array length {len(x)} (go) vs {len(y)} (other)')
+        for i, (xi, yi) in enumerate(zip(x, y)):
+            diff(f'{path}[{i}]', xi, yi, out)
+    else:
+        if x != y:
+            out.append(f'{path}: value {x!r} (go) vs {y!r} (other)')
+
+
+diffs = []
+diff('\$', a, b, diffs)
+if diffs:
+    print('\n'.join(diffs))
+    sys.exit(1)
+" "$(normalize_home "$go_file" "$go_home")" "$(normalize_home "$other_file" "$other_home")" 2>&1); then
+    ok "$label"
+  else
+    fail "$label" "structural drift:
+$out"
+  fi
+}
+
+for cli in $CLIS; do
+  hookfile=$(hookfile_for "$cli")
+  go_home="$WORK/go-home"
+  node_home="$WORK/node-home"
+  py_home="$WORK/py-home"
+  go_file="$go_home/$hookfile"
+  node_file="$node_home/$hookfile"
+  py_file="$py_home/$hookfile"
+
+  compare_json "harness-hooks-parity/$cli/go-vs-node" "$go_file" "$go_home" "$node_file" "$node_home"
+  compare_json "harness-hooks-parity/$cli/go-vs-py" "$go_file" "$go_home" "$py_file" "$py_home"
+done
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+echo
+if [[ "$FAIL" -eq 0 ]]; then
+  echo "All check-harness-hooks-parity.sh scenarios passed."
+else
+  echo "check-harness-hooks-parity.sh: one or more scenarios FAILED." >&2
+fi
+exit "$FAIL"

@@ -26,6 +26,18 @@ const {
 
 const EXPECTED_DIRECTIVE = GLOBAL_ADRS_DIRECTIVE
 
+// Isolate the global credential-guard dedup check (ML-3A, npm/src/generators/hooks.js
+// globalCredentialGuardInstalled*) from the real $HOME for every test in this file --
+// none of them should depend on (or accidentally read) the developer's actual home dir.
+let __origHome
+test.beforeEach(() => {
+  __origHome = process.env.HOME
+  process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-home-iso-'))
+})
+test.afterEach(() => {
+  process.env.HOME = __origHome
+})
+
 test('trackfwRulesBlock includes mandatory global ADRs directive', () => {
   const block = trackfwRulesBlock()
   assert.ok(block.includes(EXPECTED_DIRECTIVE), `trackfwRulesBlock should contain global ADRs directive.\nGot:\n${block}`)
