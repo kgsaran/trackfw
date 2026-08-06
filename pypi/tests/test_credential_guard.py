@@ -16,7 +16,11 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from trackfw import config
-from trackfw.generators.init_gen import _generate_credential_guard_script, _generate_attention_scripts
+from trackfw.generators.init_gen import (
+    _generate_credential_guard_script,
+    _generate_attention_scripts,
+    generate_global_credential_guard_script,
+)
 
 SYNTHETIC_JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.abc123def456ghi789"
 
@@ -204,6 +208,113 @@ class TestCredentialGuardScriptBehavior(unittest.TestCase):
             self._attention_exists(),
             ".trackfw-credential-guard.json não deveria ter sido apagado pelo cleanup",
         )
+
+
+class TestGlobalCredentialGuardGenerator(unittest.TestCase):
+    """Escopo global (~/.trackfw/scripts/), ML-1A do roadmap ROADMAP-2026-08-06-hooks-de-
+    credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md. Usa SEMPRE
+    um HOME de fixture (tempfile.mkdtemp) -- nunca o HOME real de quem roda a suite.
+    """
+
+    def setUp(self):
+        self.fake_home = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.fake_home, ignore_errors=True)
+
+    def test_gera_script_executavel_sem_guarda_de_projeto(self):
+        generate_global_credential_guard_script(self.fake_home)
+        script_path = os.path.join(self.fake_home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+        self.assertTrue(os.path.exists(script_path))
+        mode = os.stat(script_path).st_mode
+        self.assertTrue(mode & stat.S_IXUSR, "script global deveria ser executável")
+        with open(script_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertTrue(content.startswith("#!/usr/bin/env bash"))
+        self.assertNotIn(
+            '[ -f "trackfw.yaml" ] || exit 0',
+            content,
+            "script global não deve conter a guarda de projeto",
+        )
+
+    def test_home_vazio_levanta_erro(self):
+        with self.assertRaises(ValueError):
+            generate_global_credential_guard_script("")
+
+
+class TestGlobalCredentialGuardScriptBehavior(unittest.TestCase):
+    """Invoca o script global real como subprocesso, a partir de um cwd sem trackfw.yaml."""
+
+    def setUp(self):
+        self.fake_home = tempfile.mkdtemp()
+        generate_global_credential_guard_script(self.fake_home)
+        self.script_path = os.path.join(self.fake_home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+        self.cwd = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.fake_home, ignore_errors=True)
+        shutil.rmtree(self.cwd, ignore_errors=True)
+
+    def _run(self, payload):
+        proc = subprocess.run(
+            ["bash", self.script_path],
+            cwd=self.cwd,
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+        )
+        return proc.returncode, proc.stdout, proc.stderr
+
+    def _attention_exists(self):
+        return os.path.exists(os.path.join(self.cwd, "docs", "roadmaps", ".trackfw-credential-guard.json"))
+
+    def test_detecta_jwt_fora_de_qualquer_projeto_trackfw(self):
+        # Ao contrário da variante de projeto, o script global NÃO é no-op sem trackfw.yaml -- esse
+        # é o propósito da mudança (proteção cross-project).
+        code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
+        self.assertEqual(code, 0)
+        self.assertIn("JWT", err)
+
+    def test_sempre_modo_warn_mesmo_com_trackfw_yaml_mode_block_no_cwd(self):
+        with open(os.path.join(self.cwd, "trackfw.yaml"), "w", encoding="utf-8") as f:
+            f.write("credential_guard:\n  mode: block\n")
+        code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
+        self.assertEqual(code, 0, "script global nunca deve bloquear (sempre warn)")
+        self.assertIn("warning", err)
+
+    def test_attention_so_escrita_quando_docs_roadmaps_ja_existe(self):
+        code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
+        self.assertEqual(code, 0)
+        self.assertIn("JWT", err)
+        self.assertFalse(self._attention_exists(), "não deveria criar docs/roadmaps num projeto qualquer")
+
+        os.makedirs(os.path.join(self.cwd, "docs", "roadmaps"), exist_ok=True)
+        code, _out, _err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
+        self.assertEqual(code, 0)
+        self.assertTrue(self._attention_exists())
+
+    def test_deteccao_identica_a_variante_de_projeto_para_aws_key(self):
+        project_dir = tempfile.mkdtemp()
+        try:
+            _generate_credential_guard_script(project_dir)
+            with open(os.path.join(project_dir, "trackfw.yaml"), "w", encoding="utf-8") as f:
+                f.write("roadmap_dir: docs/roadmaps\n")
+            project_proc = subprocess.run(
+                ["bash", os.path.join(project_dir, "scripts", "trackfw-credential-guard.sh")],
+                cwd=project_dir,
+                input=json.dumps({"tool_name": "Bash", "tool_input": {"command": "echo AKIAABCDEFGHIJKLMNOP"}}),
+                capture_output=True,
+                text=True,
+            )
+            global_code, _out, global_err = self._run(
+                {"tool_name": "Bash", "tool_input": {"command": "echo AKIAABCDEFGHIJKLMNOP"}}
+            )
+            self.assertEqual(project_proc.returncode, 0)
+            self.assertEqual(global_code, 0)
+            self.assertIn("AWS", project_proc.stderr)
+            self.assertIn("AWS", global_err)
+        finally:
+            shutil.rmtree(project_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

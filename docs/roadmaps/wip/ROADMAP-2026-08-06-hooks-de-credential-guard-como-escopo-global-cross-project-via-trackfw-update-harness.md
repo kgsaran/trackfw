@@ -46,7 +46,17 @@ decide:
 > Dependências: Independente
 
 ### ML-1A — Gerador do script global + resolução do modo `credential_guard.mode` para escopo harness
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** script decomposto em blocos componíveis (header + guarda-de-projeto +
+núcleo-de-detecção compartilhado + tail-de-projeto/tail-global) nos 3 stacks — núcleo de detecção
+nunca duplicado. Confirmado pelo orquestrador, de forma independente do relato do agente, que o
+script de PROJETO continua **byte-idêntico** ao gerado antes desta refatoração (`git stash` +
+comparação direta dos dois binários). Decisões: modo sempre `warn` em escopo global (sem
+`~/.trackfw/config.yaml` — complexidade não demandada, revisável se houver demanda real);
+`ROADMAP_DIR` fixo em `docs/roadmaps` relativo ao cwd, só grava o attention se o diretório já
+existir (não cria `docs/roadmaps` num projeto aleatório). Testes confirmados usando `$HOME` de
+fixture (`t.TempDir()`/equivalentes) — nunca o `$HOME` real do ambiente.
 **Arquivos afetados:**
 - `internal/generators/scaffold.go` (nova função `GenerateGlobalCredentialGuardScript(home string) error`,
   reusa a const `credentialGuardScript` já existente — só muda `scripts/` → `filepath.Join(home,

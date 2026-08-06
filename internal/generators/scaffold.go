@@ -803,20 +803,57 @@ func GenerateCredentialGuardScript(rootDir string) error {
 	return nil
 }
 
-// credentialGuardScript é o conteúdo canônico do hook — espelhado byte-a-byte em
-// pypi/trackfw/generators/init_gen.py (string raw) e, com backslashes duplicados/`${...}` escapado
-// para o parser de template literal, em npm/src/generators/hooks.js. Ver
-// internal/generators/credential_guard_parity_test.go, que prova a paridade entre os 3 stacks.
-const credentialGuardScript = `#!/usr/bin/env bash
+// GenerateGlobalCredentialGuardScript gera o script shell trackfw-credential-guard.sh em escopo
+// global, em <home>/.trackfw/scripts/trackfw-credential-guard.sh. Destinado a ser referenciado por
+// hooks globais de CLI (~/.claude/settings.json, ~/.codex/hooks.json etc.), instalados via
+// `trackfw update harness` (ver ROADMAP-2026-08-06, Wave 2) — não é chamado por `trackfw
+// init`/`trackfw update` (escopo de projeto), que continuam usando GenerateCredentialGuardScript.
+//
+// Diferente da variante de projeto, este script não tem a guarda "só roda dentro de um projeto
+// trackfw.yaml" — protege qualquer projeto que o usuário abra com o CLI onde o hook global foi
+// instalado. Ver globalCredentialGuardScript/credentialGuardGlobalTail para a decisão de design
+// sobre a fonte do modo (sempre "warn") e do diretório de attention.
+func GenerateGlobalCredentialGuardScript(home string) error {
+	if home == "" {
+		return fmt.Errorf("home directory vazio")
+	}
+	scriptsDir := filepath.Join(home, ".trackfw", "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		return err
+	}
+
+	path := filepath.Join(scriptsDir, "trackfw-credential-guard.sh")
+	if err := os.WriteFile(path, []byte(globalCredentialGuardScript), 0755); err != nil {
+		return fmt.Errorf("writing global credential guard script: %w", err)
+	}
+	fmt.Printf("  ✓ %s\n", filepath.Join(".trackfw", "scripts", "trackfw-credential-guard.sh"))
+
+	return nil
+}
+
+// credentialGuardHeader é o cabeçalho comum aos dois escopos (projeto e global) do hook: shebang,
+// set -e e leitura do payload de stdin.
+const credentialGuardHeader = `#!/usr/bin/env bash
 # trackfw credential guard — PreToolUse/PostToolUse hook
 set -euo pipefail
 
 INPUT=$(cat)
 
-# Script is intentionally a no-op when executed outside the project root
+`
+
+// credentialGuardProjectGuardBlock só existe na variante de projeto: torna o script um no-op fora
+// da raiz de um projeto trackfw. A variante global (GenerateGlobalCredentialGuardScript) não inclui
+// este bloco — o objetivo do escopo global é proteger qualquer projeto, com ou sem trackfw.yaml.
+const credentialGuardProjectGuardBlock = `# Script is intentionally a no-op when executed outside the project root
 [ -f "trackfw.yaml" ] || exit 0
 
-JWT_PATTERN='eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
+`
+
+// credentialGuardDetectionCore é o núcleo de detecção (padrões JWT/AWS key, checagem de destino
+// efêmero de redirecionamento) — idêntico entre a variante de projeto e a global. Nunca duplicar
+// esta lógica em outro lugar; as duas variantes do script compõem o conteúdo final a partir deste
+// mesmo bloco.
+const credentialGuardDetectionCore = `JWT_PATTERN='eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
 AWS_KEY_PATTERN='AKIA[0-9A-Z]{16}'
 
 MATCH=""
@@ -877,7 +914,11 @@ if [ "$HAS_REDIRECT" -eq 1 ] && [ "$EXEMPT" -eq 1 ]; then
   exit 0
 fi
 
-MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\"'" || true)
+`
+
+// credentialGuardProjectTail resolve MODE/ROADMAP_DIR a partir de trackfw.yaml (escopo de projeto)
+// e grava o attention signal em $ROADMAP_DIR/.trackfw-credential-guard.json.
+const credentialGuardProjectTail = `MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\"'" || true)
 case "$MODE" in
   warn|block) ;;
   *) MODE="warn" ;;
@@ -908,6 +949,58 @@ printf '{"tool":"credential-guard","message":"%s","level":"action_required","tim
 
 exit 0
 `
+
+// credentialGuardGlobalTail é a contraparte de credentialGuardProjectTail para o escopo global
+// (~/.trackfw/scripts/trackfw-credential-guard.sh, instalado via `trackfw update harness`).
+//
+// Decisão (ML-1A, ver ADR-2026-08-06 e ROADMAP-2026-08-06, Wave 1): o modo em escopo global é
+// sempre "warn" (opção "b" avaliada na ADR) — não lê nenhum ~/.trackfw/config.yaml. Um hook global
+// roda a partir do cwd de QUALQUER projeto que o usuário tenha aberto, muitos deles sem nenhuma
+// relação com trackfw; adicionar uma segunda fonte de configuração (arquivo de config global) só
+// para permitir "block" globalmente é complexidade não demandada — se um usuário precisar de modo
+// block, ele já tem a variante de projeto (trackfw.yaml) disponível. Pode ser revisitado numa REQ
+// futura se houver demanda real.
+//
+// ROADMAP_DIR em escopo global: como não há trackfw.yaml para ler `roadmap_dir:`, o script usa o
+// caminho padrão fixo "docs/roadmaps" relativo ao cwd de onde o hook foi disparado, e só grava o
+// attention signal se esse diretório já existir. Não cria "docs/roadmaps" em um projeto aleatório
+// só para sinalizar isso — isso pareceria ao usuário que o trackfw foi "instalado" nesse projeto,
+// o que não é verdade. O warning textual em stderr acontece sempre (visível no output do CLI/hook),
+// independente de o diretório de attention existir.
+const credentialGuardGlobalTail = `MODE="warn"
+
+echo "trackfw-credential-guard: warning - possible $MATCH detected in tool payload." >&2
+
+ROADMAP_DIR="docs/roadmaps"
+if [ ! -d "$ROADMAP_DIR" ]; then
+  exit 0
+fi
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+MSG="Possible $MATCH detected in tool payload - review before materializing credentials in plain text."
+MSG_ESC=$(echo "$MSG" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+mkdir -p "$ROADMAP_DIR"
+printf '{"tool":"credential-guard","message":"%s","level":"action_required","timestamp":"%s"}\n' \
+  "$MSG_ESC" \
+  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-credential-guard.json"
+
+exit 0
+`
+
+// credentialGuardScript é o conteúdo canônico do hook de escopo de projeto — espelhado byte-a-byte
+// em pypi/trackfw/generators/init_gen.py (string raw) e, com backslashes duplicados/`${...}`
+// escapado para o parser de template literal, em npm/src/generators/hooks.js. Ver
+// internal/generators/credential_guard_test.go (TestCredentialGuardScript_ParityAcrossStacks), que
+// prova a paridade entre os 3 stacks byte-a-byte.
+const credentialGuardScript = credentialGuardHeader + credentialGuardProjectGuardBlock + credentialGuardDetectionCore + credentialGuardProjectTail
+
+// globalCredentialGuardScript é o conteúdo canônico do hook de escopo global
+// (~/.trackfw/scripts/trackfw-credential-guard.sh, instalado via `trackfw update harness`).
+// Reusa o mesmo cabeçalho e o mesmo núcleo de detecção de credentialGuardScript — só a resolução de
+// MODE/ROADMAP_DIR (credentialGuardGlobalTail) e a ausência da guarda de "dentro de projeto trackfw"
+// diferem. Ver credentialGuardGlobalTail para a decisão de design completa.
+const globalCredentialGuardScript = credentialGuardHeader + credentialGuardDetectionCore + credentialGuardGlobalTail
 
 func buildValidateScript(cfg Config) string {
 	base := `#!/usr/bin/env sh

@@ -92,43 +92,34 @@ func getGoCredentialGuardScript(t *testing.T) string {
 	return string(content)
 }
 
+// getNodeCredentialGuardScript reconstrói o conteúdo da variante de PROJETO a partir dos blocos
+// componíveis (CG_HEADER + CG_PROJECT_GUARD + CG_DETECTION_CORE + CG_PROJECT_TAIL), já que
+// CREDENTIAL_GUARD_SCRIPT deixou de ser um único template literal (agora é a concatenação desses
+// blocos, mesma decomposição de credentialGuardScript em scaffold.go — ver
+// TestGlobalCredentialGuardScript_ParityAcrossStacks para a variante global).
 func getNodeCredentialGuardScript(t *testing.T, repoRoot string) string {
 	t.Helper()
 	hooksPath := filepath.Join(repoRoot, "npm", "src", "generators", "hooks.js")
-	content, err := os.ReadFile(hooksPath)
-	if err != nil {
-		t.Fatalf("erro lendo %s: %v", hooksPath, err)
-	}
 
-	s := string(content)
-	match := regexp.MustCompile(`const CREDENTIAL_GUARD_SCRIPT = \x60([\s\S]*?)\x60`).FindStringSubmatch(s)
-	if len(match) < 2 {
-		t.Fatalf("CREDENTIAL_GUARD_SCRIPT não encontrado em npm/src/generators/hooks.js")
-	}
-
-	// Reverte a duplicação de backslash + o escape de ${...} feitos para o parser de
-	// template literal do JS (mesma técnica de normalização de getNodeScripts em
-	// scaffold_parity_test.go, adaptada aos tokens específicos deste script).
-	res := match[1]
-	res = strings.ReplaceAll(res, `\${`, `${`)
-	res = strings.ReplaceAll(res, `\\`, `\`)
-	return res
+	header := getNodeSourceBlock(t, hooksPath, "CG_HEADER")
+	guard := getNodeSourceBlock(t, hooksPath, "CG_PROJECT_GUARD")
+	core := getNodeSourceBlock(t, hooksPath, "CG_DETECTION_CORE")
+	tail := getNodeSourceBlock(t, hooksPath, "CG_PROJECT_TAIL")
+	return header + guard + core + tail
 }
 
+// getPythonCredentialGuardScript reconstrói o conteúdo da variante de PROJETO a partir dos blocos
+// componíveis (_CG_HEADER + _CG_PROJECT_GUARD + _CG_DETECTION_CORE + _CG_PROJECT_TAIL) — mesmo
+// racional de getNodeCredentialGuardScript.
 func getPythonCredentialGuardScript(t *testing.T, repoRoot string) string {
 	t.Helper()
 	initPath := filepath.Join(repoRoot, "pypi", "trackfw", "generators", "init_gen.py")
-	content, err := os.ReadFile(initPath)
-	if err != nil {
-		t.Fatalf("erro lendo %s: %v", initPath, err)
-	}
 
-	s := string(content)
-	match := regexp.MustCompile(`_CREDENTIAL_GUARD_SH = r?"""([\s\S]*?)"""`).FindStringSubmatch(s)
-	if len(match) < 2 {
-		t.Fatalf("_CREDENTIAL_GUARD_SH não encontrado em pypi/trackfw/generators/init_gen.py")
-	}
-	return match[1]
+	header := getPythonSourceBlock(t, initPath, "_CG_HEADER")
+	guard := getPythonSourceBlock(t, initPath, "_CG_PROJECT_GUARD")
+	core := getPythonSourceBlock(t, initPath, "_CG_DETECTION_CORE")
+	tail := getPythonSourceBlock(t, initPath, "_CG_PROJECT_TAIL")
+	return header + guard + core + tail
 }
 
 func TestCredentialGuardScript_ParityAcrossStacks(t *testing.T) {
@@ -143,6 +134,246 @@ func TestCredentialGuardScript_ParityAcrossStacks(t *testing.T) {
 	}
 	if goScript != nodeScript {
 		t.Errorf("script diverge entre Go e Node (após normalizar escapes de template literal).\n--- Go ---\n%s\n--- Node (normalizado) ---\n%s", goScript, nodeScript)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GenerateGlobalCredentialGuardScript — escopo global (~/.trackfw/scripts/), ML-1A do roadmap
+// ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-
+// update-harness.md. Usa SEMPRE um $HOME de fixture (t.TempDir()) — nunca o HOME real do
+// ambiente de teste.
+// ---------------------------------------------------------------------------
+
+func TestGenerateGlobalCredentialGuardScript_WritesUnderTrackfwHomeScripts(t *testing.T) {
+	fakeHome := t.TempDir()
+
+	if err := GenerateGlobalCredentialGuardScript(fakeHome); err != nil {
+		t.Fatalf("GenerateGlobalCredentialGuardScript erro: %v", err)
+	}
+
+	path := filepath.Join(fakeHome, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("script global não foi criado em %s: %v", path, err)
+	}
+	if info.Mode().Perm()&0100 == 0 {
+		t.Errorf("script global não é executável: mode=%v", info.Mode())
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("erro lendo script global: %v", err)
+	}
+	if !strings.HasPrefix(string(content), "#!/usr/bin/env bash") {
+		t.Errorf("script global não começa com shebang esperado")
+	}
+	if strings.Contains(string(content), `[ -f "trackfw.yaml" ] || exit 0`) {
+		t.Errorf("script global não deve conter a guarda de projeto (mataria o propósito cross-project)")
+	}
+}
+
+func TestGenerateGlobalCredentialGuardScript_EmptyHome_Errors(t *testing.T) {
+	if err := GenerateGlobalCredentialGuardScript(""); err == nil {
+		t.Error("esperava erro com home vazio (nunca deve cair silenciosamente em cwd)")
+	}
+}
+
+func getGoGlobalCredentialGuardScript(t *testing.T) string {
+	t.Helper()
+	fakeHome := t.TempDir()
+
+	if err := GenerateGlobalCredentialGuardScript(fakeHome); err != nil {
+		t.Fatalf("GenerateGlobalCredentialGuardScript erro: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(fakeHome, ".trackfw", "scripts", "trackfw-credential-guard.sh"))
+	if err != nil {
+		t.Fatalf("erro lendo script global Go: %v", err)
+	}
+	return string(content)
+}
+
+// getNodeSourceBlock extrai um bloco `const <name> = \`...\`` literal (template literal simples,
+// sem concatenação) de um arquivo-fonte JS, e reverte a duplicação de backslash + o escape de
+// ${...} feitos para o parser de template literal (mesma normalização de
+// getNodeCredentialGuardScript).
+func getNodeSourceBlock(t *testing.T, path, constName string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("erro lendo %s: %v", path, err)
+	}
+
+	s := string(content)
+	match := regexp.MustCompile(`const `+constName+` = \x60([\s\S]*?)\x60`).FindStringSubmatch(s)
+	if len(match) < 2 {
+		t.Fatalf("%s não encontrado em %s", constName, path)
+	}
+
+	res := match[1]
+	res = strings.ReplaceAll(res, `\${`, `${`)
+	res = strings.ReplaceAll(res, `\\`, `\`)
+	return res
+}
+
+// getPythonSourceBlock extrai um bloco `<name> = r"""..."""` literal de um arquivo-fonte Python.
+func getPythonSourceBlock(t *testing.T, path, varName string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("erro lendo %s: %v", path, err)
+	}
+
+	s := string(content)
+	match := regexp.MustCompile(varName + ` = r?"""([\s\S]*?)"""`).FindStringSubmatch(s)
+	if len(match) < 2 {
+		t.Fatalf("%s não encontrado em %s", varName, path)
+	}
+	return match[1]
+}
+
+func TestGlobalCredentialGuardScript_ParityAcrossStacks(t *testing.T) {
+	repoRoot := findRepoRoot(t)
+
+	goScript := getGoGlobalCredentialGuardScript(t)
+
+	nodeHeader := getNodeSourceBlock(t, filepath.Join(repoRoot, "npm", "src", "generators", "hooks.js"), "CG_HEADER")
+	nodeCore := getNodeSourceBlock(t, filepath.Join(repoRoot, "npm", "src", "generators", "hooks.js"), "CG_DETECTION_CORE")
+	nodeGlobalTail := getNodeSourceBlock(t, filepath.Join(repoRoot, "npm", "src", "generators", "hooks.js"), "CG_GLOBAL_TAIL")
+	nodeScript := nodeHeader + nodeCore + nodeGlobalTail
+
+	pyHeader := getPythonSourceBlock(t, filepath.Join(repoRoot, "pypi", "trackfw", "generators", "init_gen.py"), "_CG_HEADER")
+	pyCore := getPythonSourceBlock(t, filepath.Join(repoRoot, "pypi", "trackfw", "generators", "init_gen.py"), "_CG_DETECTION_CORE")
+	pyGlobalTail := getPythonSourceBlock(t, filepath.Join(repoRoot, "pypi", "trackfw", "generators", "init_gen.py"), "_CG_GLOBAL_TAIL")
+	pyScript := pyHeader + pyCore + pyGlobalTail
+
+	if goScript != pyScript {
+		t.Errorf("script global diverge entre Go e Python (esperado byte-idêntico).\n--- Go ---\n%s\n--- Python ---\n%s", goScript, pyScript)
+	}
+	if goScript != nodeScript {
+		t.Errorf("script global diverge entre Go e Node (após normalizar escapes de template literal).\n--- Go ---\n%s\n--- Node (normalizado) ---\n%s", goScript, nodeScript)
+	}
+}
+
+// TestCredentialGuardScript_DetectionCoreIdenticalBetweenProjectAndGlobal prova que a variante de
+// projeto e a variante global do script Go compartilham EXATAMENTE o mesmo núcleo de detecção
+// (JWT/AWS-key + exceção de destino efêmero) — não há duas cópias divergentes da regex.
+func TestCredentialGuardScript_DetectionCoreIdenticalBetweenProjectAndGlobal(t *testing.T) {
+	if !strings.Contains(credentialGuardScript, credentialGuardDetectionCore) {
+		t.Error("credentialGuardScript (projeto) não contém credentialGuardDetectionCore")
+	}
+	if !strings.Contains(globalCredentialGuardScript, credentialGuardDetectionCore) {
+		t.Error("globalCredentialGuardScript não contém credentialGuardDetectionCore")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Comportamento do script global — invoca como subprocesso, mesmo padrão dos testes de
+// comportamento do script de projeto acima. Prova que a detecção é idêntica (mesmo payload de
+// JWT sintético) e que o modo é sempre "warn" em escopo global (decisão "b" da ADR/roadmap:
+// nenhuma leitura de ~/.trackfw/config.yaml).
+// ---------------------------------------------------------------------------
+
+func setupGlobalCredentialGuardFixture(t *testing.T) (cwd, scriptPath string) {
+	t.Helper()
+	fakeHome := t.TempDir()
+	if err := GenerateGlobalCredentialGuardScript(fakeHome); err != nil {
+		t.Fatalf("GenerateGlobalCredentialGuardScript erro: %v", err)
+	}
+	scriptPath = filepath.Join(fakeHome, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	cwd = t.TempDir()
+	return cwd, scriptPath
+}
+
+func TestGlobalCredentialGuardScript_RunsOutsideAnyTrackfwProject(t *testing.T) {
+	// Ao contrário da variante de projeto (TestCredentialGuardScript_NoOpOutsideProjectRoot), o
+	// script global NÃO deve ser no-op fora de um projeto trackfw — esse é o propósito da mudança.
+	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
+	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
+
+	code, _, stderr := runCredentialGuard(t, cwd, scriptPath, payload)
+	if code != 0 {
+		t.Errorf("modo warn: exit code want 0, got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "JWT") {
+		t.Errorf("esperava aviso mencionando JWT em stderr mesmo sem trackfw.yaml no cwd, got: %s", stderr)
+	}
+}
+
+func TestGlobalCredentialGuardScript_AWSKeyDetectedSameAsProjectVariant(t *testing.T) {
+	// Prova que a detecção (mesmo payload sintético) é idêntica entre projeto e global.
+	projectDir, projectScript := setupCredentialGuardFixture(t, "")
+	globalCwd, globalScript := setupGlobalCredentialGuardFixture(t)
+
+	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticAWSKey + `"}}`
+
+	pCode, _, pStderr := runCredentialGuard(t, projectDir, projectScript, payload)
+	gCode, _, gStderr := runCredentialGuard(t, globalCwd, globalScript, payload)
+
+	if pCode != 0 || gCode != 0 {
+		t.Fatalf("exit codes: projeto=%d global=%d (esperado 0/0)", pCode, gCode)
+	}
+	if !strings.Contains(pStderr, "AWS") || !strings.Contains(gStderr, "AWS") {
+		t.Fatalf("ambas as variantes deveriam mencionar AWS: projeto=%q global=%q", pStderr, gStderr)
+	}
+}
+
+func TestGlobalCredentialGuardScript_NoMatch_SilentPass(t *testing.T) {
+	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
+	payload := `{"tool_name":"Bash","tool_input":{"command":"echo hello world"}}`
+
+	code, _, stderr := runCredentialGuard(t, cwd, scriptPath, payload)
+	if code != 0 {
+		t.Errorf("exit code: want 0, got %d (stderr: %s)", code, stderr)
+	}
+	if attentionFileExists(cwd) {
+		t.Error("não deveria escrever .trackfw-credential-guard.json sem match")
+	}
+}
+
+func TestGlobalCredentialGuardScript_ModeAlwaysWarn_NeverBlocksRegardlessOfProjectConfig(t *testing.T) {
+	// O script global não lê trackfw.yaml — nem o do cwd, mesmo que exista e peça mode: block.
+	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
+	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("credential_guard:\n  mode: block\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
+
+	code, _, stderr := runCredentialGuard(t, cwd, scriptPath, payload)
+	if code != 0 {
+		t.Errorf("script global deve sempre usar modo warn (exit 0), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "warning") {
+		t.Errorf("esperava mensagem de warning, got: %s", stderr)
+	}
+}
+
+func TestGlobalCredentialGuardScript_WritesAttentionOnlyWhenRoadmapsDirExists(t *testing.T) {
+	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
+	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
+
+	// Sem docs/roadmaps no cwd: warning em stderr, mas nenhum arquivo de attention.
+	code, _, stderr := runCredentialGuard(t, cwd, scriptPath, payload)
+	if code != 0 {
+		t.Fatalf("exit code: want 0, got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "JWT") {
+		t.Errorf("esperava warning em stderr mesmo sem docs/roadmaps, got: %s", stderr)
+	}
+	if attentionFileExists(cwd) {
+		t.Error("não deveria criar docs/roadmaps/.trackfw-credential-guard.json quando docs/roadmaps não existe (evita criar estrutura trackfw num projeto qualquer)")
+	}
+
+	// Com docs/roadmaps existente no cwd: escreve o attention signal normalmente.
+	if err := os.MkdirAll(filepath.Join(cwd, "docs", "roadmaps"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr = runCredentialGuard(t, cwd, scriptPath, payload)
+	if code != 0 {
+		t.Fatalf("exit code: want 0, got %d (stderr: %s)", code, stderr)
+	}
+	if !attentionFileExists(cwd) {
+		t.Error(".trackfw-credential-guard.json deveria ter sido escrito quando docs/roadmaps já existe")
 	}
 }
 

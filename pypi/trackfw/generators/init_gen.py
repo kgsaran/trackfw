@@ -828,16 +828,26 @@ exit 0
 """
 
 
-_CREDENTIAL_GUARD_SH = r"""#!/usr/bin/env bash
+# _CG_HEADER/_CG_PROJECT_GUARD/_CG_DETECTION_CORE/_CG_PROJECT_TAIL/_CG_GLOBAL_TAIL compõem
+# _CREDENTIAL_GUARD_SH (escopo de projeto) e _GLOBAL_CREDENTIAL_GUARD_SH (escopo global,
+# ~/.trackfw/scripts/, instalado via `trackfw update harness`) sem duplicar a lógica de
+# detecção JWT/AWS-key em dois lugares — espelha a mesma decomposição em
+# internal/generators/scaffold.go (credentialGuardHeader/credentialGuardDetectionCore/...).
+
+_CG_HEADER = r"""#!/usr/bin/env bash
 # trackfw credential guard — PreToolUse/PostToolUse hook
 set -euo pipefail
 
 INPUT=$(cat)
 
-# Script is intentionally a no-op when executed outside the project root
+"""
+
+_CG_PROJECT_GUARD = r"""# Script is intentionally a no-op when executed outside the project root
 [ -f "trackfw.yaml" ] || exit 0
 
-JWT_PATTERN='eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
+"""
+
+_CG_DETECTION_CORE = r"""JWT_PATTERN='eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
 AWS_KEY_PATTERN='AKIA[0-9A-Z]{16}'
 
 MATCH=""
@@ -898,7 +908,9 @@ if [ "$HAS_REDIRECT" -eq 1 ] && [ "$EXEMPT" -eq 1 ]; then
   exit 0
 fi
 
-MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\"'" || true)
+"""
+
+_CG_PROJECT_TAIL = r"""MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\"'" || true)
 case "$MODE" in
   warn|block) ;;
   *) MODE="warn" ;;
@@ -929,6 +941,34 @@ printf '{"tool":"credential-guard","message":"%s","level":"action_required","tim
 
 exit 0
 """
+
+# Escopo global: modo sempre "warn" (ver ADR-2026-08-06/ROADMAP-2026-08-06 Wave 1 — decisão "b",
+# sem ~/.trackfw/config.yaml) e ROADMAP_DIR fixo em "docs/roadmaps" relativo ao cwd, só grava o
+# attention signal se esse diretório já existir (não cria docs/roadmaps num projeto qualquer).
+_CG_GLOBAL_TAIL = r"""MODE="warn"
+
+echo "trackfw-credential-guard: warning - possible $MATCH detected in tool payload." >&2
+
+ROADMAP_DIR="docs/roadmaps"
+if [ ! -d "$ROADMAP_DIR" ]; then
+  exit 0
+fi
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+MSG="Possible $MATCH detected in tool payload - review before materializing credentials in plain text."
+MSG_ESC=$(echo "$MSG" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+mkdir -p "$ROADMAP_DIR"
+printf '{"tool":"credential-guard","message":"%s","level":"action_required","timestamp":"%s"}\n' \
+  "$MSG_ESC" \
+  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-credential-guard.json"
+
+exit 0
+"""
+
+_CREDENTIAL_GUARD_SH = _CG_HEADER + _CG_PROJECT_GUARD + _CG_DETECTION_CORE + _CG_PROJECT_TAIL
+
+_GLOBAL_CREDENTIAL_GUARD_SH = _CG_HEADER + _CG_DETECTION_CORE + _CG_GLOBAL_TAIL
 
 
 def generate_vault_index(cwd: str) -> None:
@@ -982,6 +1022,27 @@ def _generate_credential_guard_script(cwd: str) -> None:
     script_path = os.path.join(scripts_dir, 'trackfw-credential-guard.sh')
     with open(script_path, 'w', encoding='utf-8') as f:
         f.write(_CREDENTIAL_GUARD_SH.lstrip('\n'))
+    os.chmod(script_path, 0o755)
+
+
+def generate_global_credential_guard_script(home: str) -> None:
+    """Gera o script shell trackfw-credential-guard.sh em escopo global, em
+    <home>/.trackfw/scripts/trackfw-credential-guard.sh.
+
+    Destinado a ser referenciado por hooks globais de CLI, instalados via
+    `trackfw update harness` (ver ROADMAP-2026-08-06, Wave 2) -- nao e chamado por
+    `trackfw init`/`trackfw update` (escopo de projeto), que continuam usando
+    _generate_credential_guard_script.
+    """
+    if not home:
+        raise ValueError('home directory vazio')
+
+    scripts_dir = os.path.join(home, '.trackfw', 'scripts')
+    os.makedirs(scripts_dir, exist_ok=True)
+
+    script_path = os.path.join(scripts_dir, 'trackfw-credential-guard.sh')
+    with open(script_path, 'w', encoding='utf-8') as f:
+        f.write(_GLOBAL_CREDENTIAL_GUARD_SH.lstrip('\n'))
     os.chmod(script_path, 0o755)
 
 
