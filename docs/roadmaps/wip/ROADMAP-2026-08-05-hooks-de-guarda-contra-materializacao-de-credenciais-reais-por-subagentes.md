@@ -518,7 +518,7 @@ negativa (Cenário 44 de `check-gates-falsify.sh`), em `docs/cli-parity.md`
 > Dependências: Wave 2 completa (pelo menos ML-2A/Claude Code)
 
 ### ML-4A — Teste de sabotagem: materializar JWT sintético e confirmar detecção
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - Novo arquivo de teste, ex.: `internal/generators/credential_guard_sabotage_test.go` (Go) +
   equivalentes em `npm/test/` e `pypi/tests/`
