@@ -46,7 +46,7 @@ decide:
 > Dependências: Independente
 
 ### ML-1A — Gerador do script global + resolução do modo `credential_guard.mode` para escopo harness
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/generators/scaffold.go` (nova função `GenerateGlobalCredentialGuardScript(home string) error`,
   reusa a const `credentialGuardScript` já existente — só muda `scripts/` → `filepath.Join(home,
