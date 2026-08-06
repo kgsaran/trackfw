@@ -155,7 +155,7 @@ comportamento que Node já tinha; Python ganhou o helper equivalente.
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2B — Codex
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectCodexHooks`, linha 230-276)
 - `npm/src/generators/hooks.js` (linha ~157)
