@@ -297,7 +297,7 @@ nunca escreveram) foram removidos, para que a saída estruturada fique idêntica
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2D — GitHub Copilot
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectCopilotHooks`, linha 363-388)
 - `npm/src/generators/hooks.js` (linha ~214)
