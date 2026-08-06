@@ -326,11 +326,15 @@ func TestUpdateInjectsAndUpdatesAttentionHooksIdempotently(t *testing.T) {
 	// Validar que os scripts de atenção foram gerados em scripts/
 	signalPath := filepath.Join(root, "scripts", "trackfw-attention-signal.sh")
 	cleanupPath := filepath.Join(root, "scripts", "trackfw-attention-cleanup.sh")
+	guardPath := filepath.Join(root, "scripts", "trackfw-credential-guard.sh")
 	if _, err := os.Stat(signalPath); err != nil {
 		t.Fatalf("attention signal script not created by update: %v", err)
 	}
 	if _, err := os.Stat(cleanupPath); err != nil {
 		t.Fatalf("attention cleanup script not created by update: %v", err)
+	}
+	if _, err := os.Stat(guardPath); err != nil {
+		t.Fatalf("credential guard script not created by update: %v", err)
 	}
 
 	// Validar injeção do Claude preservando hook customizado
@@ -372,5 +376,52 @@ func TestUpdateInjectsAndUpdatesAttentionHooksIdempotently(t *testing.T) {
 	count := strings.Count(string(claudeContentSecond), "AskUserQuestion")
 	if count != 2 {
 		t.Fatalf("claude attention hooks duplicated on re-update. Expected 2 occurrences of AskUserQuestion, got %d:\n%s", count, claudeContentSecond)
+	}
+}
+
+// TestUpdateBackfillsCredentialGuardScriptForPreExistingProject simulates a
+// project that already ran `trackfw init`/`update` BEFORE this REQ:
+// scripts/trackfw-attention-signal.sh exists but scripts/trackfw-credential-guard.sh
+// does not. `trackfw update` must generate the missing script without breaking
+// anything already there — the upgrade scenario from the acceptance criteria.
+func TestUpdateBackfillsCredentialGuardScriptForPreExistingProject(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := os.WriteFile(filepath.Join(root, "trackfw.yaml"), []byte("hooks: none\nci: none\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	scriptsDir := filepath.Join(root, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	signalPath := filepath.Join(scriptsDir, "trackfw-attention-signal.sh")
+	if err := os.WriteFile(signalPath, []byte("#!/usr/bin/env bash\necho \"old signal script\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	guardPath := filepath.Join(scriptsDir, "trackfw-credential-guard.sh")
+	if _, err := os.Stat(guardPath); !os.IsNotExist(err) {
+		t.Fatalf("test precondition failed: credential guard script should not exist yet, stat err=%v", err)
+	}
+
+	if err := Update(root); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	guardInfo, err := os.Stat(guardPath)
+	if err != nil {
+		t.Fatalf("update did not backfill the missing credential guard script: %v", err)
+	}
+	if guardInfo.Mode().Perm()&0o111 == 0 {
+		t.Errorf("credential guard script should be executable, mode=%v", guardInfo.Mode())
+	}
+
+	if _, err := os.Stat(signalPath); err != nil {
+		t.Fatalf("pre-existing attention signal script should not be removed: %v", err)
 	}
 }

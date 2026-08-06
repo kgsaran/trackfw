@@ -52,6 +52,17 @@ type ProjectConfig struct {
 	// populated by the same single parse() below, not a second read of trackfw.yaml.
 	Update UpdateConfig
 	Sync   SyncConfig
+
+	// credential_guard field — see ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-
+	// credenciais-reais-por-subagentes.md.
+	CredentialGuard CredentialGuardConfig
+}
+
+// CredentialGuardConfig holds the credential_guard.* fields read from trackfw.yaml — see
+// ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md.
+// Read via a nested mapping under the flat root, same pattern as SyncConfig.
+type CredentialGuardConfig struct {
+	Mode string // credential_guard.mode: "warn" (default) | "block"
 }
 
 // UpdateConfig holds the fields `trackfw update` reads to decide which git hooks and CI
@@ -157,6 +168,9 @@ func defaults() ProjectConfig {
 			"filename_uniqueness":        "error",
 			"blocked_by_draft_adr":       "error",
 			"adr_accepted_when_req_done": "error",
+		},
+		CredentialGuard: CredentialGuardConfig{
+			Mode: "warn",
 		},
 	}
 }
@@ -315,6 +329,18 @@ func parse(content string, cfg *ProjectConfig) {
 	}
 	if v, ok := stringVal(m, "jira_project"); ok {
 		cfg.Sync.JiraProject = v
+	}
+
+	// credential_guard field — nested mapping, same shape as link_fields above. An unrecognized
+	// mode value (or an absent/malformed credential_guard block) falls back to the safe default
+	// ("warn") silently, matching how every other unrecognized-shape field in this parser behaves
+	// (e.g. roadmap_namespacing, forge) — no fatal path, no stderr message, for one enum key.
+	if v, ok := m["credential_guard"]; ok {
+		if cg, ok := v.(map[string]interface{}); ok {
+			if mode, ok := stringVal(cg, "mode"); ok && (mode == "warn" || mode == "block") {
+				cfg.CredentialGuard.Mode = mode
+			}
+		}
 	}
 }
 

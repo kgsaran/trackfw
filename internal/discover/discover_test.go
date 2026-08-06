@@ -392,6 +392,59 @@ func TestInstallGates_GeraAttentionScripts(t *testing.T) {
 	}
 }
 
+// TestInstallGates_GeraCredentialGuardScript confirma que `discover --init` (via
+// InstallGates) gera scripts/trackfw-credential-guard.sh no rootDir, com o mesmo
+// conteúdo produzido por `trackfw init` (generators.GenerateCredentialGuardScript),
+// executável (0755) — regressão do bug em que o gerador existia mas nunca era
+// chamado por nenhum fluxo real (só por testes que o chamavam diretamente).
+func TestInstallGates_GeraCredentialGuardScript(t *testing.T) {
+	dir := t.TempDir()
+
+	r := DiscoveryResult{}
+	if err := InstallGates(r, dir, io.Discard); err != nil {
+		t.Fatalf("InstallGates error: %v", err)
+	}
+
+	guardPath := filepath.Join(dir, "scripts", "trackfw-credential-guard.sh")
+
+	guardInfo, err := os.Stat(guardPath)
+	if err != nil {
+		t.Fatalf("credential guard script not found: %v", err)
+	}
+	if guardInfo.Mode().Perm() != 0755 {
+		t.Errorf("credential guard script mode = %v, want 0755", guardInfo.Mode().Perm())
+	}
+
+	guardGot, err := os.ReadFile(guardPath)
+	if err != nil {
+		t.Fatalf("reading credential guard script: %v", err)
+	}
+
+	refDir := t.TempDir()
+	if err := generators.GenerateCredentialGuardScript(refDir); err != nil {
+		t.Fatalf("GenerateCredentialGuardScript (reference) error: %v", err)
+	}
+	guardWant, err := os.ReadFile(filepath.Join(refDir, "scripts", "trackfw-credential-guard.sh"))
+	if err != nil {
+		t.Fatalf("reading reference credential guard script: %v", err)
+	}
+	if string(guardGot) != string(guardWant) {
+		t.Error("discover --init credential guard script differs from trackfw init output")
+	}
+
+	// Idempotência.
+	if err := InstallGates(r, dir, io.Discard); err != nil {
+		t.Fatalf("InstallGates (2nd run) error: %v", err)
+	}
+	guardGot2, err := os.ReadFile(guardPath)
+	if err != nil {
+		t.Fatalf("reading credential guard script after 2nd run: %v", err)
+	}
+	if string(guardGot2) != string(guardGot) {
+		t.Error("credential guard script changed after re-running InstallGates (not idempotent)")
+	}
+}
+
 func TestGenerateYAML(t *testing.T) {
 	r := DiscoveryResult{
 		ADRDirs:            []string{"docs/adr/zeus", "docs/adr/apolo"},

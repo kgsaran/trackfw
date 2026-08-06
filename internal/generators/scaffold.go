@@ -61,6 +61,10 @@ func Scaffold(cfg Config) error {
 		return err
 	}
 
+	if err := GenerateCredentialGuardScript(""); err != nil {
+		return err
+	}
+
 	if err := generateCIWorkflow(cfg); err != nil {
 		return err
 	}
@@ -766,6 +770,144 @@ exit 0
 
 	return nil
 }
+
+// GenerateCredentialGuardScript gera o script shell trackfw-credential-guard.sh em
+// <rootDir>/scripts. Se rootDir for "", usa o diretório de trabalho atual. Este ML (1A) só cria
+// o script — não o injeta em nenhum hooks.json/settings.json de CLI (isso é escopo da Wave 2, ver
+// ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md).
+//
+// O script lê o payload bruto de stdin (mesmo mecanismo usado por trackfw-attention-signal.sh, sem
+// jq/python3 — grep/sed simples), procura padrão de JWT ou de AWS access key no payload inteiro
+// (cobre tanto tool_input.command em PreToolUse quanto o campo de saída em PostToolUse, sem
+// diferenciar o evento) e, se encontrar, decide avisar (`credential_guard.mode: warn`, default) ou
+// bloquear (`credential_guard.mode: block`, exit 2) — lido de trackfw.yaml via grep simples, sem
+// parser YAML completo. Uma correspondência sem nenhum redirecionamento (ex.: impressa em stdout)
+// ou redirecionada para um caminho de arquivo comum sempre alerta; só é ignorada quando TODOS os
+// alvos de redirecionamento do payload são efêmeros (/dev/null ou um caminho derivado de mktemp,
+// incluindo uma variável atribuída via `VAR=$(mktemp...)` antes do redirecionamento).
+func GenerateCredentialGuardScript(rootDir string) error {
+	if rootDir == "" {
+		rootDir = "."
+	}
+	scriptsDir := filepath.Join(rootDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		return err
+	}
+
+	path := filepath.Join(scriptsDir, "trackfw-credential-guard.sh")
+	if err := os.WriteFile(path, []byte(credentialGuardScript), 0755); err != nil {
+		return fmt.Errorf("writing credential guard script: %w", err)
+	}
+	fmt.Printf("  ✓ %s\n", filepath.Join("scripts", "trackfw-credential-guard.sh"))
+
+	return nil
+}
+
+// credentialGuardScript é o conteúdo canônico do hook — espelhado byte-a-byte em
+// pypi/trackfw/generators/init_gen.py (string raw) e, com backslashes duplicados/`${...}` escapado
+// para o parser de template literal, em npm/src/generators/hooks.js. Ver
+// internal/generators/credential_guard_parity_test.go, que prova a paridade entre os 3 stacks.
+const credentialGuardScript = `#!/usr/bin/env bash
+# trackfw credential guard — PreToolUse/PostToolUse hook
+set -euo pipefail
+
+INPUT=$(cat)
+
+# Script is intentionally a no-op when executed outside the project root
+[ -f "trackfw.yaml" ] || exit 0
+
+JWT_PATTERN='eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
+AWS_KEY_PATTERN='AKIA[0-9A-Z]{16}'
+
+MATCH=""
+if printf '%s' "$INPUT" | grep -qE "$JWT_PATTERN"; then
+  MATCH="JWT"
+elif printf '%s' "$INPUT" | grep -qE "$AWS_KEY_PATTERN"; then
+  MATCH="AWS access key"
+fi
+
+[ -n "$MATCH" ] || exit 0
+
+# The raw payload is JSON: any double quote inside the underlying tool_input.command is
+# escaped as \" -- unescape those before scanning for redirect targets, or a quoted target
+# like "$TMPFILE" is seen as starting with a literal backslash instead of a variable
+# reference.
+RAW=$(printf '%s' "$INPUT" | sed 's/\\"/"/g')
+
+# Ignore matches that are only ever written to an ephemeral destination
+# (mktemp-derived path or /dev/null). A match with no redirect at all
+# (printed to stdout, e.g.) or redirected to a plain file path still
+# alerts -- that is the incident this hook guards against.
+is_ephemeral_target() {
+  local target
+  target=$(printf '%s' "$1" | tr -d "\"'" | sed -E 's/[},]+$//')
+  case "$target" in
+    /dev/null) return 0 ;;
+    *mktemp*) return 0 ;;
+  esac
+  if printf '%s' "$target" | grep -qE '^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$'; then
+    local varname pattern
+    varname=$(printf '%s' "$target" | sed -E 's/^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/\1/')
+    pattern="*${varname}="'$(mktemp'"*"
+    case "$RAW" in
+      $pattern) return 0 ;;
+    esac
+  fi
+  return 1
+}
+
+REDIRECTS=$(printf '%s' "$RAW" | grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+' || true)
+
+HAS_REDIRECT=0
+EXEMPT=1
+if [ -n "$REDIRECTS" ]; then
+  while IFS= read -r line; do
+    if [ -z "$line" ]; then
+      continue
+    fi
+    HAS_REDIRECT=1
+    target=$(printf '%s' "$line" | sed -E 's/^[0-9]?>>?[[:space:]]*//')
+    if ! is_ephemeral_target "$target"; then
+      EXEMPT=0
+    fi
+  done <<< "$REDIRECTS"
+fi
+
+if [ "$HAS_REDIRECT" -eq 1 ] && [ "$EXEMPT" -eq 1 ]; then
+  exit 0
+fi
+
+MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\"'" || true)
+case "$MODE" in
+  warn|block) ;;
+  *) MODE="warn" ;;
+esac
+
+if [ "$MODE" = "block" ]; then
+  echo "trackfw-credential-guard: blocked - possible $MATCH detected in tool payload." >&2
+  exit 2
+fi
+
+echo "trackfw-credential-guard: warning - possible $MATCH detected in tool payload." >&2
+
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
+ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
+
+case "$ROADMAP_DIR" in
+  /*|../*|*/../*|*/..|..) ROADMAP_DIR="docs/roadmaps" ;;
+esac
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+MSG="Possible $MATCH detected in tool payload - review before materializing credentials in plain text."
+MSG_ESC=$(echo "$MSG" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+mkdir -p "$ROADMAP_DIR"
+printf '{"tool":"credential-guard","message":"%s","level":"action_required","timestamp":"%s"}\n' \
+  "$MSG_ESC" \
+  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-credential-guard.json"
+
+exit 0
+`
 
 func buildValidateScript(cfg Config) string {
 	base := `#!/usr/bin/env sh

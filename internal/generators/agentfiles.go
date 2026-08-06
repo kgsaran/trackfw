@@ -210,11 +210,21 @@ func InjectClaudeHooks(cwd string) error {
 		"AskUserQuestion",
 		"scripts/trackfw-attention-signal.sh",
 	)
+	hooks["PreToolUse"] = mergeClaudeHookArray(
+		hooks["PreToolUse"],
+		"Bash",
+		"scripts/trackfw-credential-guard.sh",
+	)
 
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		"AskUserQuestion",
 		"scripts/trackfw-attention-cleanup.sh",
+	)
+	hooks["PostToolUse"] = mergeClaudeHookArray(
+		hooks["PostToolUse"],
+		"Bash",
+		"scripts/trackfw-credential-guard.sh",
 	)
 
 	root["hooks"] = hooks
@@ -227,6 +237,18 @@ func InjectClaudeHooks(cwd string) error {
 }
 
 // InjectCodexHooks injects Codex CLI attention hooks into .codex/hooks.json.
+//
+// Two independent hook events are wired here:
+//   - PermissionRequest (matcher ".*") — existing attention-signal, only fires when
+//     Codex is about to prompt for approval (shell escalation / managed-network
+//     approval). Does not fire for commands that don't need approval.
+//   - PreToolUse (matcher "Bash") + PostToolUse (matcher "Bash") — credential-guard,
+//     fires for every Bash tool call regardless of approval requirement. Confirmed
+//     against https://developers.openai.com/codex/hooks (2026-08-05): hooks are
+//     enabled by default in Codex CLI (no `[features] hooks = true`/`codex_hooks`
+//     opt-in needed — that flag exists only to turn hooks OFF), and PreToolUse
+//     blocking uses exit code 2 + stderr (matching trackfw-credential-guard.sh's
+//     existing "block" mode).
 func InjectCodexHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".codex")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -260,10 +282,21 @@ func InjectCodexHooks(cwd string) error {
 		"scripts/trackfw-attention-signal.sh",
 	)
 
+	hooks["PreToolUse"] = mergeClaudeHookArray(
+		hooks["PreToolUse"],
+		"Bash",
+		"scripts/trackfw-credential-guard.sh",
+	)
+
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		".*",
 		"scripts/trackfw-attention-cleanup.sh",
+	)
+	hooks["PostToolUse"] = mergeClaudeHookArray(
+		hooks["PostToolUse"],
+		"Bash",
+		"scripts/trackfw-credential-guard.sh",
 	)
 
 	root["hooks"] = hooks
@@ -276,6 +309,34 @@ func InjectCodexHooks(cwd string) error {
 }
 
 // InjectGeminiHooks injects Gemini CLI attention hooks into .gemini/settings.json.
+//
+// Three independent hook events are wired here:
+//   - Notification (matcher "ToolPermission") — existing attention-signal, only fires
+//     when Gemini CLI is about to prompt for permission, not for every tool call.
+//   - BeforeTool (matcher "run_shell_command") + AfterTool (matcher "run_shell_command") —
+//     credential-guard, fires for every shell tool call regardless of whether a
+//     permission prompt is needed. Confirmed against
+//     https://geminicli.com/docs/hooks/reference (retrieved 2026-08-05): BeforeTool
+//     "Fires before a tool is invoked. Used for argument validation, security checks,
+//     and parameter rewriting" and supports "Exit Code 2 (Block Tool): Prevents
+//     execution. Uses stderr as the reason" — matching trackfw-credential-guard.sh's
+//     existing "block" mode. The shell tool's canonical name is "run_shell_command"
+//     (doc: "you can match any built-in tool (for example, read_file,
+//     run_shell_command)"); matcher is a regex evaluated against tool_name.
+//   - AfterTool (matcher "*") — pre-existing attention-cleanup, unrelated to the new
+//     credential-guard wiring above (different matcher, added as a separate array
+//     entry so the two coexist without merging into one hooks group).
+//
+// Concurrency note: the doc's `sequential` field only orders hooks *within* one
+// matcher group ("If true, hooks in this group run one after another"); it says
+// nothing about ordering across two different matching groups for the same event
+// (e.g. AfterTool["*"] vs AfterTool["run_shell_command"] both firing for a shell
+// call). That cross-group model is undocumented, so no ordering is assumed here.
+// It does not matter for this wiring because credential-guard's "warn" mode writes
+// to its own dedicated $ROADMAP_DIR/.trackfw-credential-guard.json (see ML-1A),
+// never touching the .trackfw-attention.json file that trackfw-attention-cleanup.sh
+// deletes — the same fix that neutralized the equivalent race confirmed for Codex
+// in ML-2B applies here regardless of Gemini's actual concurrency model.
 func InjectGeminiHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".gemini")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -308,10 +369,22 @@ func InjectGeminiHooks(cwd string) error {
 		"ToolPermission",
 		"scripts/trackfw-attention-signal.sh",
 	)
+
+	hooks["BeforeTool"] = mergeClaudeHookArray(
+		hooks["BeforeTool"],
+		"run_shell_command",
+		"scripts/trackfw-credential-guard.sh",
+	)
+
 	hooks["AfterTool"] = mergeClaudeHookArray(
 		hooks["AfterTool"],
 		"*",
 		"scripts/trackfw-attention-cleanup.sh",
+	)
+	hooks["AfterTool"] = mergeClaudeHookArray(
+		hooks["AfterTool"],
+		"run_shell_command",
+		"scripts/trackfw-credential-guard.sh",
 	)
 
 	root["hooks"] = hooks
@@ -323,8 +396,52 @@ func InjectGeminiHooks(cwd string) error {
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
-// InjectKiroHooks injects Kiro attention hooks into .kiro/hooks/trackfw-attention.json.
+// InjectKiroHooks injects Kiro attention + credential-guard hooks into .kiro/hooks/trackfw-attention.json.
 // Overwriting this file is intentional as trackfw-attention.json is a dedicated file owned exclusively by trackfw.
+//
+// Format confirmed against https://kiro.dev/docs/hooks/ , https://kiro.dev/docs/hooks/types and
+// https://kiro.dev/docs/hooks/actions/ (retrieved 2026-08-05, via curl -L against the RSC/HTML page
+// since WebFetch/WebSearch were unavailable in this session):
+//
+//   - Top-level schema is {"version": "v1", "hooks": [...]} — "version" is the string "v1", not an
+//     integer. Each entry is {"name", "description"?, "trigger", "matcher"?, "action", "timeout"?,
+//     "enabled"?}. The field is "trigger" (PascalCase event name), NOT "event" as this function and its
+//     Node/Python siblings previously emitted — "event" does not appear anywhere in the documented
+//     schema. This ML also realigns the pre-existing trackfw-attention-signal/cleanup entries to the
+//     correct field name (this file is fully generated/overwritten by trackfw, not merged with
+//     user content, so there is no legacy entry to preserve byte-for-byte — same situation as the
+//     GitHub Copilot fix in ML-2D).
+//   - "matcher" is a plain regex string evaluated against tool name (per the field reference table:
+//     "Regex pattern to filter which events fire this hook. For PreToolUse/PostToolUse, matches tool
+//     name."), NOT an object like {"tool_name": ".*"} as previously emitted. "*" (a literal asterisk,
+//     documented explicitly as "all tools (built-in and MCP)") is used here instead of the invalid
+//     ".*" this function used to emit — ".*" is not a documented matcher value (the vocabulary is:
+//     canonical tool names like "execute_bash"/"fs_read"/"fs_write"/"use_aws", their aliases
+//     "shell"/"read"/"write"/"aws", category wildcards "read"/"write"/"shell"/"web"/"spec", "@"-prefix
+//     regex filters, or the literal "*"/no matcher for "all tools").
+//   - PreToolUse ("Triggers when the agent is about to invoke a tool. Can validate and block tool
+//     usage.") is a real, distinct trigger from PostFileSave/file-save events — confirmed by the
+//     "Available triggers" table (PreToolUse: "Before a tool is about to execute", Can block: Yes) and
+//     by the dedicated "Pre Tool Use" section of hooks/types. This resolves the open question from the
+//     ADR: Kiro's hook system does intercept tool invocations (including shell) before execution, not
+//     only IDE/file events.
+//   - Blocking contract (hooks/actions, "CLI" tab): "If the command returns an exit code of 0
+//     indicating success, the stdout output ... is added to the agent's context. If the command
+//     returns any other exit code, the stderr output ... is sent to the agent ... Additionally, in the
+//     case of the Pre Tool Use hook, the tool invocation is blocked." This is a stricter contract than
+//     Claude Code/Codex/Gemini (which key specifically on exit code 2) — Kiro blocks on ANY non-zero
+//     exit from a PreToolUse command hook. trackfw-credential-guard.sh was audited against this: every
+//     exit path is an explicit `exit 0` or `exit 2` (block mode); the only unguarded failure surface is
+//     an unexpected environment failure under `set -euo pipefail` (e.g. `mkdir -p` failing), which is a
+//     generic script-authoring risk shared by every trigger, not a normal-operation fail-closed hazard
+//     specific to Kiro's exit-code semantics.
+//   - Shell tool name for the matcher: hooks/types documents the canonical name "execute_bash" with
+//     alias "shell" ("all built-in shell command-related tools" — broader than the single-tool
+//     canonical name, and the choice made here for trackfw-credential-guard.sh's own matcher, since the
+//     guard must see every shell invocation, not just one canonical tool identifier).
+//   - PreToolUse/PostToolUse STDIN payload is JSON: {"hook_event_name", "cwd", "session_id",
+//     "tool_name", "tool_input"} — trackfw-credential-guard.sh scans the raw payload for JWT/AWS-key
+//     patterns regardless of field names (ML-1A), so it works under this shape without changes.
 func InjectKiroHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".kiro", "hooks")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -333,20 +450,35 @@ func InjectKiroHooks(cwd string) error {
 	path := filepath.Join(dir, "trackfw-attention.json")
 
 	content := map[string]interface{}{
+		"version": "v1",
 		"hooks": []interface{}{
 			map[string]interface{}{
 				"name":        "trackfw-attention-signal",
 				"description": "Signals trackfw board when agent executes a tool",
-				"event":       "PreToolUse",
-				"matcher":     map[string]interface{}{"tool_name": ".*"},
+				"trigger":     "PreToolUse",
+				"matcher":     "*",
 				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-signal.sh"},
 			},
 			map[string]interface{}{
 				"name":        "trackfw-attention-cleanup",
 				"description": "Clears trackfw board attention after tool completes",
-				"event":       "PostToolUse",
-				"matcher":     map[string]interface{}{"tool_name": ".*"},
+				"trigger":     "PostToolUse",
+				"matcher":     "*",
 				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-cleanup.sh"},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-pre",
+				"description": "Blocks/warns on possible plaintext credential materialization before a shell command executes",
+				"trigger":     "PreToolUse",
+				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-post",
+				"description": "Warns on possible plaintext credential materialization after a shell command executes",
+				"trigger":     "PostToolUse",
+				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
 			},
 		},
 	}
@@ -360,6 +492,38 @@ func InjectKiroHooks(cwd string) error {
 
 // InjectCopilotHooks injects GitHub Copilot attention hooks into .github/hooks/trackfw-attention.json.
 // Overwriting this file is intentional as trackfw-attention.json is a dedicated file owned exclusively by trackfw.
+//
+// Format confirmed against https://docs.github.com/en/copilot/reference/hooks-reference (retrieved
+// 2026-08-05): repository-level hook files live at .github/hooks/*.json (a directory of files that are
+// all loaded and combined), each using the schema {"version": 1, "hooks": {"<event>": [<command entry>,
+// ...]}}, where a command entry is {"type": "command", "bash": "...", "cwd": "...", "timeoutSec": N}.
+// This is the format `inject_copilot_hooks` (Python) already used; the {"hooks": [{"event", "run"}]}
+// shape this Go function and its Node sibling previously emitted does not match any format documented
+// by GitHub -- Go/Node were wrong, Python was right, and this ML aligns Go/Node to it.
+//
+// Matcher: the doc's matcher-filtering table lists `preToolUse -> toolName` and `postToolUse ->
+// toolName` (a regex, anchored `^(?:PATTERN)$`), and shows a worked `"matcher"` field inline on a
+// postToolUse command entry. The Command-hooks field table itself does not list `matcher` explicitly,
+// but per the doc's own malformed-item handling ("only that item is dropped and logged"), a rejected
+// field would silently drop the whole entry rather than error loudly -- so this is used defensively:
+// even if `matcher` were ignored by some Copilot version, trackfw-credential-guard.sh already filters
+// on its own raw-payload scan (ML-1A) and is a safe no-op when the match doesn't hit, so restricting
+// scope here is a hardening layer, not the sole line of defense.
+//
+// Tool name for matching: with camelCase event names (preToolUse/postToolUse, used here and by the
+// pre-existing signal/cleanup entries), the doc specifies the *runtime* tool name is reported in
+// `toolName`, and the shell tool's runtime name is "bash" (lowercase) -- distinct from the PascalCase
+// event/VS Code-compatible payload shape, which would report the Claude-mapped name "Bash". The script
+// itself scans the raw JSON payload for JWT/AWS-key patterns regardless of field names, so it works
+// under either payload shape; the matcher below is only a scope-narrowing optimization, not something
+// the script's own detection logic depends on.
+//
+// Concurrency: "If multiple hooks of the same type are configured, they execute in order" (same
+// section) -- Copilot hooks run serially, in configured order, for the same event. This makes the
+// postToolUse cleanup/guard ordering deterministic here (unlike Codex's confirmed-concurrent or
+// Gemini's undocumented cross-group model); the ML-1A fix (credential-guard's "warn" mode writes to
+// its own dedicated $ROADMAP_DIR/.trackfw-credential-guard.json, never touching the shared
+// .trackfw-attention.json that trackfw-attention-cleanup.sh deletes) makes this moot regardless.
 func InjectCopilotHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".github", "hooks")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -368,14 +532,37 @@ func InjectCopilotHooks(cwd string) error {
 	path := filepath.Join(dir, "trackfw-attention.json")
 
 	content := map[string]interface{}{
-		"hooks": []interface{}{
-			map[string]interface{}{
-				"event": "preToolUse",
-				"run":   "scripts/trackfw-attention-signal.sh",
+		"version": 1,
+		"hooks": map[string]interface{}{
+			"preToolUse": []interface{}{
+				map[string]interface{}{
+					"type":       "command",
+					"bash":       "scripts/trackfw-attention-signal.sh",
+					"cwd":        ".",
+					"timeoutSec": 10,
+				},
+				map[string]interface{}{
+					"type":       "command",
+					"matcher":    "bash",
+					"bash":       "scripts/trackfw-credential-guard.sh",
+					"cwd":        ".",
+					"timeoutSec": 10,
+				},
 			},
-			map[string]interface{}{
-				"event": "postToolUse",
-				"run":   "scripts/trackfw-attention-cleanup.sh",
+			"postToolUse": []interface{}{
+				map[string]interface{}{
+					"type":       "command",
+					"bash":       "scripts/trackfw-attention-cleanup.sh",
+					"cwd":        ".",
+					"timeoutSec": 10,
+				},
+				map[string]interface{}{
+					"type":       "command",
+					"matcher":    "bash",
+					"bash":       "scripts/trackfw-credential-guard.sh",
+					"cwd":        ".",
+					"timeoutSec": 10,
+				},
 			},
 		},
 	}
@@ -388,6 +575,40 @@ func InjectCopilotHooks(cwd string) error {
 }
 
 // InjectCursorHooks injects Cursor attention hooks into .cursor/hooks.json.
+//
+// Two independent things are wired here:
+//   - Top-level preToolUse/postToolUse (existing attention-signal/cleanup) — kept as-is,
+//     NOT migrated by this function. These keys do not match any event documented at
+//     https://cursor.com/docs/agent/hooks (retrieved 2026-08-05): the real Cursor hook
+//     config is `{"version": 1, "hooks": {"<eventName>": [...] }}`, and the documented
+//     event names are sessionStart/sessionEnd/beforeShellExecution/beforeMCPExecution/
+//     afterShellExecution/afterMCPExecution/beforeReadFile/afterFileEdit/
+//     beforeSubmitPrompt/preCompact/stop/beforeTabFileRead/afterTabFileEdit — there is no
+//     generic preToolUse/postToolUse event at all. Re-scoping the legacy attention hooks
+//     to a real event (e.g. stop/beforeSubmitPrompt) is out of scope for this ML; tracked
+//     for a follow-up (see docs/cli-parity.md, "Cursor wiring (ML-2E)").
+//   - hooks.beforeShellExecution + hooks.afterShellExecution (new, this ML) —
+//     credential-guard. beforeShellExecution is the real, Bash-specific, pre-execution
+//     event: input is `{"command","cwd","sandbox"}`, response (stdout JSON, only read on
+//     exit code 0) is `{"permission":"allow"|"deny"|"ask","user_message":"...",
+//     "agent_message":"..."}`. Per the documented "Exit code behavior": exit 0 uses the
+//     JSON output (or defaults to allow if stdout has none — confirmed by the doc's own
+//     minimal example hook, which exits 0 with no stdout at all), exit 2 blocks the
+//     action ("equivalent to returning permission: \"deny\""), any other exit code
+//     fail-opens (hook failed, action proceeds). This is already exactly
+//     trackfw-credential-guard.sh's existing contract (block mode → exit 2 + stderr, warn
+//     mode → exit 0), so no script changes were needed to wire Cursor. afterShellExecution
+//     is a post-execution audit-only event (input adds "output"/"duration", no
+//     allow/deny/ask response defined) — added in parallel for symmetry with the
+//     PostToolUse wiring already used for the other CLIs in this wave, so the guard also
+//     gets a chance to flag credentials that only appear in captured command output.
+//     Per-event `matcher` (regex against the command string itself, not a tool name — the
+//     event is already shell-specific) is optional and intentionally omitted: the guard
+//     must see every shell command, not a filtered subset.
+//     Concurrency between hooks registered on the same event was not documented on the
+//     page retrieved for this investigation (unlike Codex, which explicitly documents
+//     concurrent execution); not assumed either way. Not a blocker here regardless: this
+//     event array only ever contains the single credential-guard entry added by trackfw.
 func InjectCursorHooks(cwd string) error {
 	path := filepath.Join(cwd, ".cursor", "hooks.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -421,8 +642,21 @@ func InjectCursorHooks(cwd string) error {
 		return cmd
 	}
 
+	// Legacy attention-signal/cleanup wiring — preserved as-is, not migrated by this ML.
 	root["preToolUse"] = mergeSimpleCommandArray(root["preToolUse"], "scripts/trackfw-attention-signal.sh", makeEntry, getCmd)
 	root["postToolUse"] = mergeSimpleCommandArray(root["postToolUse"], "scripts/trackfw-attention-cleanup.sh", makeEntry, getCmd)
+
+	// credential-guard wiring — real Cursor hook config, nested under version/hooks.
+	if _, ok := root["version"]; !ok {
+		root["version"] = 1
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
+	hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
+	root["hooks"] = hooks
 
 	out, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
@@ -456,6 +690,15 @@ func mergeClaudeHookArray(existing interface{}, matcher, command string) []inter
 				return arr
 			}
 		}
+		// Matcher already present but this command isn't yet: merge the new
+		// command into the existing entry instead of appending a duplicate
+		// matcher entry (keeps parity with npm/pypi's merge behavior and
+		// avoids two separate {"matcher":"Bash",...} blocks in the output).
+		obj["hooks"] = append(innerHooks, map[string]interface{}{
+			"type":    "command",
+			"command": command,
+		})
+		return arr
 	}
 
 	entry := map[string]interface{}{

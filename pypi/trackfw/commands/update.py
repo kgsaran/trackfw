@@ -72,6 +72,7 @@ AGENT_HOOKS_RELATIVE_PATHS = [
     os.path.join(".cursor", "hooks.json"),
     os.path.join("scripts", "trackfw-attention-signal.sh"),
     os.path.join("scripts", "trackfw-attention-cleanup.sh"),
+    os.path.join("scripts", "trackfw-credential-guard.sh"),
 ]
 
 # AGENT_HOOKS_DISPLAY_PATH — the reported `path` string for the agent-hooks
@@ -79,9 +80,11 @@ AGENT_HOOKS_RELATIVE_PATHS = [
 # per-file attention scripts are collapsed into a single glob
 # ("scripts/trackfw-attention-*.sh"), not spelled out individually —
 # ML-6H fix (this runtime previously listed both full paths, diverging from
-# the other two even when every underlying state agreed).
+# the other two even when every underlying state agreed). The credential
+# guard script is listed separately, after the glob, matching Go/Node.js.
 AGENT_HOOKS_DISPLAY_PATH = ", ".join(
-    AGENT_HOOKS_RELATIVE_PATHS[:-2] + ["scripts/trackfw-attention-*.sh"]
+    AGENT_HOOKS_RELATIVE_PATHS[:-3]
+    + ["scripts/trackfw-attention-*.sh", "scripts/trackfw-credential-guard.sh"]
 )
 
 CODEX_PROJECT_AGENTS_DISPLAY_PATH = ".codex/agents, .agents/skills"

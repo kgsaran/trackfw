@@ -500,6 +500,11 @@ def _cmd_discover(args):
         except Exception as e:
             print(f"  ⚠ attention scripts: {e}")
         try:
+            from trackfw.generators.init_gen import _generate_credential_guard_script
+            _generate_credential_guard_script(cwd)
+        except Exception as e:
+            print(f"  ⚠ credential guard script: {e}")
+        try:
             from trackfw.generators.hooks import inject_hooks_detected
             inject_hooks_detected(cwd)
             print('  ✓ agent hooks atualizados')

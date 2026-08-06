@@ -275,16 +275,23 @@ test('scaffold generates attention scripts with execution permissions and expect
     await scaffold({ projectName: 'test-attention-project', frontend: 'none', backend: 'none' })
     const signalPath = path.join(tmpDir, 'scripts', 'trackfw-attention-signal.sh')
     const cleanupPath = path.join(tmpDir, 'scripts', 'trackfw-attention-cleanup.sh')
+    // trackfw init (via scaffold()) must generate the credential guard script in the
+    // same lifecycle as the attention scripts -- regression: the generator existed
+    // but was never called by any real flow.
+    const guardPath = path.join(tmpDir, 'scripts', 'trackfw-credential-guard.sh')
 
     assert.ok(fs.existsSync(signalPath), 'signal script should exist')
     assert.ok(fs.existsSync(cleanupPath), 'cleanup script should exist')
+    assert.ok(fs.existsSync(guardPath), 'credential guard script should exist')
 
     const signalStat = fs.statSync(signalPath)
     const cleanupStat = fs.statSync(cleanupPath)
+    const guardStat = fs.statSync(guardPath)
 
     if (process.platform !== 'win32') {
       assert.ok((signalStat.mode & 0o111) !== 0, 'signal script should be executable')
       assert.ok((cleanupStat.mode & 0o111) !== 0, 'cleanup script should be executable')
+      assert.ok((guardStat.mode & 0o111) !== 0, 'credential guard script should be executable')
     }
 
     const signalContent = fs.readFileSync(signalPath, 'utf8')
@@ -312,18 +319,25 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   // 2. Primeira injeção
   injectClaudeHooks(tmpDir)
   let data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
-  assert.equal(data.hooks.PreToolUse.length, 2)
+  assert.equal(data.hooks.PreToolUse.length, 3)
   assert.equal(data.hooks.PreToolUse[0].matcher, 'UserTool')
   assert.equal(data.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
   assert.equal(data.hooks.PreToolUse[1].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.PreToolUse[2].matcher, 'Bash')
+  assert.equal(data.hooks.PreToolUse[2].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[0].matcher, 'AskUserQuestion')
   assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
+  assert.equal(data.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
 
   // 3. Segunda injeção (idempotência)
   injectClaudeHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
-  assert.equal(data.hooks.PreToolUse.length, 2)
+  assert.equal(data.hooks.PreToolUse.length, 3)
   assert.equal(data.hooks.PreToolUse[1].hooks.length, 1)
+  assert.equal(data.hooks.PreToolUse[2].hooks.length, 1)
+  assert.equal(data.hooks.PostToolUse.length, 2)
+  assert.equal(data.hooks.PostToolUse[1].hooks.length, 1)
 })
 
 test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () => {
@@ -334,14 +348,44 @@ test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () =>
   let data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
   assert.equal(data.hooks.PermissionRequest[0].matcher, '.*')
   assert.equal(data.hooks.PermissionRequest[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
+  assert.equal(data.hooks.PreToolUse[0].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[0].matcher, '.*')
   assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
+  assert.equal(data.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
 
   // Idempotência
   injectCodexHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
   assert.equal(data.hooks.PermissionRequest.length, 1)
   assert.equal(data.hooks.PermissionRequest[0].hooks.length, 1)
+  assert.equal(data.hooks.PreToolUse.length, 1)
+  assert.equal(data.hooks.PreToolUse[0].hooks.length, 1)
+  assert.equal(data.hooks.PostToolUse.length, 2)
+  assert.equal(data.hooks.PostToolUse[1].hooks.length, 1)
+})
+
+test('injectCodexHooks preserves pre-existing PreToolUse Bash entry (merge, not overwrite)', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-codex-hooks-merge-'))
+  const hooksPath = path.join(tmpDir, '.codex', 'hooks.json')
+
+  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
+  fs.writeFileSync(hooksPath, JSON.stringify({
+    hooks: {
+      PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'scripts/other.sh' }] }]
+    }
+  }, null, 2))
+
+  injectCodexHooks(tmpDir)
+  injectCodexHooks(tmpDir)
+
+  const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  assert.equal(data.hooks.PreToolUse.length, 1)
+  assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
+  const commands = data.hooks.PreToolUse[0].hooks.map(h => h.command)
+  assert.ok(commands.includes('scripts/other.sh'), 'existing Bash hook lost during merge')
+  assert.ok(commands.includes('scripts/trackfw-credential-guard.sh'), 'credential-guard hook missing after merge')
 })
 
 test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', () => {
@@ -354,12 +398,42 @@ test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', 
   assert.equal(data.hooks.Notification[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.AfterTool[0].matcher, '*')
   assert.equal(data.hooks.AfterTool[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.BeforeTool[0].matcher, 'run_shell_command')
+  assert.equal(data.hooks.BeforeTool[0].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  const afterToolGuard = data.hooks.AfterTool.find(e => e.matcher === 'run_shell_command')
+  assert.ok(afterToolGuard, 'AfterTool[run_shell_command] credential-guard entry missing')
+  assert.equal(afterToolGuard.hooks[0].command, 'scripts/trackfw-credential-guard.sh')
 
   // Idempotência
   injectGeminiHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
   assert.equal(data.hooks.Notification.length, 1)
   assert.equal(data.hooks.Notification[0].hooks.length, 1)
+  assert.equal(data.hooks.BeforeTool.length, 1)
+  assert.equal(data.hooks.AfterTool.length, 2)
+})
+
+test('injectGeminiHooks preserves an existing BeforeTool[run_shell_command] entry when merging', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gemini-hooks-merge-'))
+  const settingsPath = path.join(tmpDir, '.gemini', 'settings.json')
+
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    hooks: {
+      BeforeTool: [
+        { matcher: 'run_shell_command', hooks: [{ type: 'command', command: 'scripts/other.sh' }] },
+      ],
+    },
+  }, null, 2))
+
+  injectGeminiHooks(tmpDir)
+  injectGeminiHooks(tmpDir)
+
+  const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  assert.equal(data.hooks.BeforeTool.length, 1)
+  const commands = data.hooks.BeforeTool[0].hooks.map(h => h.command)
+  assert.ok(commands.includes('scripts/other.sh'), 'existing BeforeTool hook lost during merge')
+  assert.ok(commands.includes('scripts/trackfw-credential-guard.sh'), 'credential-guard hook missing after merge')
 })
 
 test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently', () => {
@@ -368,11 +442,29 @@ test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently', 
 
   injectKiroHooks(tmpDir)
   let data1 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
-  assert.equal(data1.hooks.length, 2)
-  assert.equal(data1.hooks[0].event, 'PreToolUse')
+  assert.equal(data1.version, 'v1')
+  assert.equal(data1.hooks.length, 4)
+  assert.equal(data1.hooks[0].trigger, 'PreToolUse')
+  assert.equal(data1.hooks[0].event, undefined, 'legacy "event" field must not be emitted')
   assert.equal(data1.hooks[0].action.command, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(data1.hooks[1].event, 'PostToolUse')
+  assert.equal(data1.hooks[1].trigger, 'PostToolUse')
   assert.equal(data1.hooks[1].action.command, 'scripts/trackfw-attention-cleanup.sh')
+
+  const guardPre = data1.hooks.find(h => h.name === 'trackfw-credential-guard-pre')
+  assert.ok(guardPre, 'missing trackfw-credential-guard-pre hook')
+  assert.equal(guardPre.trigger, 'PreToolUse')
+  assert.equal(guardPre.matcher, 'shell')
+  assert.equal(guardPre.action.command, 'scripts/trackfw-credential-guard.sh')
+
+  const guardPost = data1.hooks.find(h => h.name === 'trackfw-credential-guard-post')
+  assert.ok(guardPost, 'missing trackfw-credential-guard-post hook')
+  assert.equal(guardPost.trigger, 'PostToolUse')
+  assert.equal(guardPost.matcher, 'shell')
+  assert.equal(guardPost.action.command, 'scripts/trackfw-credential-guard.sh')
+
+  for (const h of data1.hooks) {
+    assert.notEqual(typeof h.matcher, 'object', `hook ${h.name} uses object matcher, expected regex string`)
+  }
 
   injectKiroHooks(tmpDir)
   let data2 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
@@ -385,11 +477,26 @@ test('injectCopilotHooks creates .github/hooks/trackfw-attention.json idempotent
 
   injectCopilotHooks(tmpDir)
   let data1 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
-  assert.equal(data1.hooks.length, 2)
-  assert.equal(data1.hooks[0].event, 'preToolUse')
-  assert.equal(data1.hooks[0].run, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(data1.hooks[1].event, 'postToolUse')
-  assert.equal(data1.hooks[1].run, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data1.version, 1)
+  assert.equal(data1.hooks.preToolUse.length, 2)
+  assert.equal(data1.hooks.postToolUse.length, 2)
+
+  const findByBash = (arr, bash) => arr.find(e => e.bash === bash)
+
+  const signal = findByBash(data1.hooks.preToolUse, 'scripts/trackfw-attention-signal.sh')
+  assert.ok(signal, 'preToolUse missing attention-signal entry')
+  assert.equal(signal.matcher, undefined)
+
+  const guardPre = findByBash(data1.hooks.preToolUse, 'scripts/trackfw-credential-guard.sh')
+  assert.ok(guardPre, 'preToolUse missing credential-guard entry')
+  assert.equal(guardPre.matcher, 'bash')
+
+  const cleanup = findByBash(data1.hooks.postToolUse, 'scripts/trackfw-attention-cleanup.sh')
+  assert.ok(cleanup, 'postToolUse missing attention-cleanup entry')
+
+  const guardPost = findByBash(data1.hooks.postToolUse, 'scripts/trackfw-credential-guard.sh')
+  assert.ok(guardPost, 'postToolUse missing credential-guard entry')
+  assert.equal(guardPost.matcher, 'bash')
 
   injectCopilotHooks(tmpDir)
   let data2 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
@@ -413,10 +520,30 @@ test('injectCursorHooks creates and merges .cursor/hooks.json idempotently', () 
   assert.equal(data.preToolUse[1].command, 'scripts/trackfw-attention-signal.sh')
   assert.equal(data.postToolUse[0].command, 'scripts/trackfw-attention-cleanup.sh')
 
+  assert.equal(data.version, 1)
+  assert.equal(data.hooks.beforeShellExecution.length, 1)
+  assert.equal(data.hooks.beforeShellExecution[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.afterShellExecution.length, 1)
+  assert.equal(data.hooks.afterShellExecution[0].command, 'scripts/trackfw-credential-guard.sh')
+
   // Idempotência
   injectCursorHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
   assert.equal(data.preToolUse.length, 2)
+  assert.equal(data.hooks.beforeShellExecution.length, 1)
+  assert.equal(data.hooks.afterShellExecution.length, 1)
+})
+
+test('injectCursorHooks preserves a pre-existing top-level version field', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cursor-hooks-version-'))
+  const hooksPath = path.join(tmpDir, '.cursor', 'hooks.json')
+
+  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
+  fs.writeFileSync(hooksPath, JSON.stringify({ version: 2, hooks: {} }, null, 2))
+
+  injectCursorHooks(tmpDir)
+  const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  assert.equal(data.version, 2)
 })
 
 test('injectWindsurfHooks updates .windsurfrules', () => {
@@ -482,14 +609,20 @@ test('trackfw update command injects attention hooks and scripts idempotently pr
     // Validar criação dos scripts de atenção
     const signalPath = path.join(tmpDir, 'scripts', 'trackfw-attention-signal.sh')
     const cleanupPath = path.join(tmpDir, 'scripts', 'trackfw-attention-cleanup.sh')
+    const guardPath = path.join(tmpDir, 'scripts', 'trackfw-credential-guard.sh')
     assert.ok(fs.existsSync(signalPath), 'signal script should be generated by update')
     assert.ok(fs.existsSync(cleanupPath), 'cleanup script should be generated by update')
+    assert.ok(fs.existsSync(guardPath), 'credential guard script should be generated by update')
 
     // Validar injeção preservando custom tool
     const claudeData = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8'))
     assert.equal(claudeData.hooks.PreToolUse[0].matcher, 'CustomTool')
     assert.equal(claudeData.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
+    assert.equal(claudeData.hooks.PreToolUse[2].matcher, 'Bash')
+    assert.equal(claudeData.hooks.PreToolUse[2].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
     assert.equal(claudeData.hooks.PostToolUse[0].matcher, 'AskUserQuestion')
+    assert.equal(claudeData.hooks.PostToolUse[1].matcher, 'Bash')
+    assert.equal(claudeData.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
 
     // Validar Cursor
     const cursorData = JSON.parse(fs.readFileSync(path.join(cursorDir, 'hooks.json'), 'utf8'))
@@ -503,7 +636,40 @@ test('trackfw update command injects attention hooks and scripts idempotently pr
     await updateCmd.parseAsync(['node', 'update'])
 
     const claudeDataSecond = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8'))
-    assert.equal(claudeDataSecond.hooks.PreToolUse.length, 2)
+    assert.equal(claudeDataSecond.hooks.PreToolUse.length, 3)
+    assert.equal(claudeDataSecond.hooks.PostToolUse.length, 2)
+  } finally {
+    process.chdir(origCwd)
+  }
+})
+
+test('trackfw update backfills the credential guard script for a pre-existing project (upgrade scenario)', async () => {
+  // Simulates a project that already ran `trackfw init`/`update` BEFORE this REQ:
+  // scripts/trackfw-attention-signal.sh exists, scripts/trackfw-credential-guard.sh
+  // does not yet. `trackfw update` must generate the missing script without
+  // breaking anything already there.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-update-upgrade-test-'))
+  const origCwd = process.cwd()
+  try {
+    process.chdir(tmpDir)
+    fs.writeFileSync(path.join(tmpDir, 'trackfw.yaml'), 'hooks: none\nci: none\n', 'utf8')
+
+    const scriptsDir = path.join(tmpDir, 'scripts')
+    fs.mkdirSync(scriptsDir, { recursive: true })
+    const signalPath = path.join(scriptsDir, 'trackfw-attention-signal.sh')
+    fs.writeFileSync(signalPath, '#!/usr/bin/env bash\necho "old signal script"\n', { encoding: 'utf8', mode: 0o755 })
+
+    const guardPath = path.join(scriptsDir, 'trackfw-credential-guard.sh')
+    assert.ok(!fs.existsSync(guardPath), 'test precondition: credential guard should not exist yet')
+
+    const updateCmd = require('../src/commands/update')
+    await updateCmd.parseAsync(['node', 'update'])
+
+    assert.ok(fs.existsSync(guardPath), 'update should have generated the missing credential guard script')
+    if (process.platform !== 'win32') {
+      assert.ok((fs.statSync(guardPath).mode & 0o111) !== 0, 'credential guard script should be executable')
+    }
+    assert.ok(fs.existsSync(signalPath), 'pre-existing attention signal script should not be removed')
   } finally {
     process.chdir(origCwd)
   }

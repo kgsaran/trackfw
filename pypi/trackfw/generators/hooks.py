@@ -36,6 +36,29 @@ def _has_entry(lst: list, field: str, value: str) -> bool:
     return any(isinstance(e, dict) and e.get(field) == value for e in (lst or []))
 
 
+def _merge_claude_hook_array(hook_list: list, matcher: str, command: str) -> None:
+    """Garante (idempotente) que hook_list tenha uma entrada matcher→command.
+
+    Se já existir uma entrada com o matcher dado, apenas garante que o
+    command esteja presente nela (sem duplicar). Caso contrário, cria uma
+    nova entrada — preservando quaisquer outras entradas já presentes
+    (ex.: matcher diferente injetado por uma execução anterior).
+    """
+    for entry in hook_list:
+        if isinstance(entry, dict) and entry.get('matcher') == matcher:
+            inner = entry.setdefault('hooks', [])
+            if not _has_entry(inner, 'command', command):
+                inner.append({'type': 'command', 'command': command})
+            return
+
+    hook_list.append({
+        'matcher': matcher,
+        'hooks': [
+            {'type': 'command', 'command': command}
+        ],
+    })
+
+
 # ---------------------------------------------------------------------------
 # Claude Code — .claude/settings.json
 # ---------------------------------------------------------------------------
@@ -47,132 +70,145 @@ def inject_claude_hooks(cwd: str) -> None:
 
     hooks = data.setdefault('hooks', {})
 
-    # PreToolUse — AskUserQuestion matcher → signal
+    # PreToolUse — AskUserQuestion matcher → signal; Bash matcher → credential guard
     pre_hooks = hooks.setdefault('PreToolUse', [])
-    if not _has_entry(pre_hooks, 'matcher', 'AskUserQuestion'):
-        pre_hooks.append({
-            'matcher': 'AskUserQuestion',
-            'hooks': [
-                {'type': 'command', 'command': 'scripts/trackfw-attention-signal.sh'}
-            ],
-        })
-    else:
-        # garante que o command está presente na entrada existente
-        for entry in pre_hooks:
-            if isinstance(entry, dict) and entry.get('matcher') == 'AskUserQuestion':
-                inner = entry.setdefault('hooks', [])
-                if not _has_entry(inner, 'command', 'scripts/trackfw-attention-signal.sh'):
-                    inner.append({'type': 'command', 'command': 'scripts/trackfw-attention-signal.sh'})
+    _merge_claude_hook_array(pre_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh')
+    _merge_claude_hook_array(pre_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
 
-    # PostToolUse — AskUserQuestion matcher → cleanup
+    # PostToolUse — AskUserQuestion matcher → cleanup; Bash matcher → credential guard
     post_hooks = hooks.setdefault('PostToolUse', [])
-    if not _has_entry(post_hooks, 'matcher', 'AskUserQuestion'):
-        post_hooks.append({
-            'matcher': 'AskUserQuestion',
-            'hooks': [
-                {'type': 'command', 'command': 'scripts/trackfw-attention-cleanup.sh'}
-            ],
-        })
-    else:
-        for entry in post_hooks:
-            if isinstance(entry, dict) and entry.get('matcher') == 'AskUserQuestion':
-                inner = entry.setdefault('hooks', [])
-                if not _has_entry(inner, 'command', 'scripts/trackfw-attention-cleanup.sh'):
-                    inner.append({'type': 'command', 'command': 'scripts/trackfw-attention-cleanup.sh'})
+    _merge_claude_hook_array(post_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh')
+    _merge_claude_hook_array(post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
 
     _write_json(file_path, data)
 
 
 # ---------------------------------------------------------------------------
 # Codex — .codex/hooks.json
+#
+# Two independent hook events: PermissionRequest (matcher ".*") for the existing
+# attention-signal -- only fires when Codex is about to prompt for approval, not
+# for every command -- and PreToolUse/PostToolUse (matcher "Bash") for
+# credential-guard, which fires for every Bash tool call regardless of approval.
+# Confirmed against https://developers.openai.com/codex/hooks (2026-08-05): hooks
+# are enabled by default (no `[features] hooks = true`/`codex_hooks` opt-in
+# needed -- that flag exists only to turn hooks OFF), and PreToolUse blocking
+# uses exit code 2 + stderr (matching trackfw-credential-guard.sh's "block" mode).
 # ---------------------------------------------------------------------------
 
+def _merge_codex_hook_entry(entries: list, matcher: str, command: str) -> None:
+    """Garante (idempotente) que `entries` (um array PreToolUse/PostToolUse/etc.
+    do formato Codex) tenha uma entrada `matcher` contendo `command`.
+
+    Mirrors `_merge_claude_hook_array`: if an entry with the given matcher
+    already exists (e.g. a third-party hook, or a previous trackfw run), the
+    new command is merged into its `hooks` array instead of appending a
+    duplicate `{"matcher": ...}` block.
+
+    No `timeout`/`statusMessage` decoration: this function used to accept
+    `**extra_fields` and always passed `timeout=10` (+ a per-hook
+    `statusMessage`) when creating a new entry -- fields Go's
+    InjectCodexHooks and Node's injectCodexHooks never wrote and that
+    `docs/cli-parity.md`'s "Codex wiring (ML-2B)" section never documents as
+    functional (undocumented on
+    https://developers.openai.com/codex/hooks, no test in
+    pypi/tests/test_generators_init.py or pypi/tests/test_codex.py depends
+    on them). check-agent-hooks-parity.sh (ML-3A) caught the resulting
+    Python-only .codex/hooks.json structural drift; removed here to align
+    Python with Go/Node, mirroring the ML-2C precedent that dropped
+    Python-only `name`/`timeout: 10000` decoration from the Gemini hooks
+    entries for the same reason.
+    """
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get('matcher') != matcher:
+            continue
+        inner = entry.setdefault('hooks', [])
+        if not _has_entry(inner, 'command', command):
+            inner.append({'type': 'command', 'command': command})
+        return
+
+    entries.append({
+        'matcher': matcher,
+        'hooks': [{'type': 'command', 'command': command}],
+    })
+
+
 def inject_codex_hooks(cwd: str) -> None:
-    """Injeta hooks PermissionRequest/PostToolUse no .codex/hooks.json."""
+    """Injeta hooks PermissionRequest/PreToolUse/PostToolUse no .codex/hooks.json."""
     file_path = os.path.join(cwd, '.codex', 'hooks.json')
     data = _read_json(file_path)
 
     hooks = data.setdefault('hooks', {})
 
-    def has_nested_command(entries, command):
-        return any(
-            any(h.get('command') == command for h in entry.get('hooks', []))
-            for entry in entries
-        )
+    pre_permission_hooks = hooks.setdefault('PermissionRequest', [])
+    _merge_codex_hook_entry(
+        pre_permission_hooks, '.*', 'scripts/trackfw-attention-signal.sh',
+    )
 
-    pre_hooks = hooks.setdefault('PermissionRequest', [])
-    if not has_nested_command(pre_hooks, 'scripts/trackfw-attention-signal.sh'):
-        pre_hooks.append({
-            'matcher': '.*',
-            'hooks': [{
-                'type': 'command',
-                'command': 'scripts/trackfw-attention-signal.sh',
-                'timeout': 10,
-                'statusMessage': 'Waiting for approval',
-            }],
-        })
+    pre_tool_hooks = hooks.setdefault('PreToolUse', [])
+    _merge_codex_hook_entry(
+        pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+    )
 
     post_hooks = hooks.setdefault('PostToolUse', [])
-    if not has_nested_command(post_hooks, 'scripts/trackfw-attention-cleanup.sh'):
-        post_hooks.append({
-            'matcher': '.*',
-            'hooks': [{
-                'type': 'command',
-                'command': 'scripts/trackfw-attention-cleanup.sh',
-                'timeout': 10,
-            }],
-        })
+    _merge_codex_hook_entry(
+        post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh',
+    )
+    _merge_codex_hook_entry(
+        post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+    )
 
     _write_json(file_path, data)
 
 
 # ---------------------------------------------------------------------------
 # Gemini — .gemini/settings.json
+#
+# Three independent hook events: Notification (matcher "ToolPermission") for the
+# existing attention-signal -- only fires when Gemini CLI is about to prompt for
+# permission, not for every tool call -- and BeforeTool/AfterTool (matcher
+# "run_shell_command") for credential-guard, which fires for every shell tool call
+# regardless of whether a permission prompt is needed. Confirmed against
+# https://geminicli.com/docs/hooks/reference (retrieved 2026-08-05): BeforeTool
+# "Fires before a tool is invoked. Used for argument validation, security checks,
+# and parameter rewriting" and supports "Exit Code 2 (Block Tool): Prevents
+# execution. Uses stderr as the reason" -- matching trackfw-credential-guard.sh's
+# existing "block" mode. The shell tool's canonical name is "run_shell_command"
+# (doc: "you can match any built-in tool (for example, read_file,
+# run_shell_command)"); matcher is a regex evaluated against tool_name. AfterTool
+# (matcher "*") is the pre-existing attention-cleanup wiring, unrelated to the new
+# credential-guard entry added as a separate array entry (different matcher) in the
+# same event.
+#
+# Design note (ML-2C): rewritten to use the shared `_merge_claude_hook_array`
+# helper -- already used by `inject_claude_hooks` -- instead of the bespoke
+# "does any entry contain this command" checks the previous version of this
+# function used. That inline pattern would append a *second* group with the same
+# matcher when a third-party group already existed for it, the exact divergence
+# ML-2A fixed in Go's `mergeClaudeHookArray` and ML-2B fixed in Python's
+# `_merge_codex_hook_entry`. As a side effect, the `name`/`timeout: 10000` fields
+# this function used to write for Gemini entries (which Go/Node never wrote) are
+# dropped here to match Go/Node/`_merge_claude_hook_array` output shape byte-for-
+# byte -- structural cross-stack parity (ML-3A's gate) takes precedence over
+# preserving those two informational-only fields.
 # ---------------------------------------------------------------------------
 
 def inject_gemini_hooks(cwd: str) -> None:
-    """Injeta hooks Notification/AfterTool no .gemini/settings.json."""
+    """Injeta hooks Notification/BeforeTool/AfterTool no .gemini/settings.json."""
     file_path = os.path.join(cwd, '.gemini', 'settings.json')
     data = _read_json(file_path)
 
     hooks = data.setdefault('hooks', {})
 
     notifications = hooks.setdefault('Notification', [])
-    if not any(
-        entry.get('matcher') == 'ToolPermission'
-        and any(
-            hook.get('command') == 'scripts/trackfw-attention-signal.sh'
-            for hook in entry.get('hooks', [])
-        )
-        for entry in notifications
-    ):
-        notifications.append({
-            'matcher': 'ToolPermission',
-            'hooks': [{
-                'name': 'trackfw-attention-signal',
-                'type': 'command',
-                'command': 'scripts/trackfw-attention-signal.sh',
-                'timeout': 10000,
-            }],
-        })
+    _merge_claude_hook_array(notifications, 'ToolPermission', 'scripts/trackfw-attention-signal.sh')
+
+    before = hooks.setdefault('BeforeTool', [])
+    _merge_claude_hook_array(before, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
 
     after = hooks.setdefault('AfterTool', [])
-    if not any(
-        any(
-            hook.get('command') == 'scripts/trackfw-attention-cleanup.sh'
-            for hook in entry.get('hooks', [])
-        )
-        for entry in after
-    ):
-        after.append({
-            'matcher': '*',
-            'hooks': [{
-                'name': 'trackfw-attention-cleanup',
-                'type': 'command',
-                'command': 'scripts/trackfw-attention-cleanup.sh',
-                'timeout': 10000,
-            }],
-        })
+    _merge_claude_hook_array(after, '*', 'scripts/trackfw-attention-cleanup.sh')
+    _merge_claude_hook_array(after, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
 
     _write_json(file_path, data)
 
@@ -181,22 +217,58 @@ def inject_gemini_hooks(cwd: str) -> None:
 # Kiro — .kiro/hooks/trackfw-attention.json (arquivo dedicado, overwrite seguro)
 # ---------------------------------------------------------------------------
 
+# Kiro — .kiro/hooks/trackfw-attention.json (dedicated file, safe overwrite)
+#
+# Format confirmed against https://kiro.dev/docs/hooks/ , https://kiro.dev/docs/hooks/types and
+# https://kiro.dev/docs/hooks/actions/ (retrieved 2026-08-05). Top level is {"version": "v1", "hooks":
+# [...]} ("version" is the string "v1"), each entry {"name", "description"?, "trigger", "matcher"?,
+# "action", ...}. The field is "trigger" (NOT "event" as previously emitted here and in the Go/Node
+# siblings -- "event" does not exist in the documented schema). "matcher" is a plain regex string
+# matched against tool name for PreToolUse/PostToolUse (NOT an object like {"tool_name": ".*"} as
+# previously emitted) -- "*" is the documented wildcard for "all tools"; ".*" is not a documented
+# matcher value. PreToolUse ("Before a tool is about to execute", Can block: Yes) is confirmed distinct
+# from PostFileSave/file-save events, resolving the ADR's open question about Kiro intercepting shell
+# commands pre-execution. Blocking contract: any non-zero exit from a PreToolUse command hook blocks
+# the tool invocation (stricter than the exit-code-2-specific contract of Claude Code/Codex/Gemini);
+# trackfw-credential-guard.sh only ever exits 0 or 2 on its normal-operation paths (ML-1A), so this is
+# safe. Shell tool matcher uses the documented alias "shell" ("all built-in shell command-related
+# tools"), broader than the single canonical tool id "execute_bash". This file is fully
+# generated/overwritten by trackfw (not merged with user content), so the legacy attention-signal/
+# cleanup entries are realigned to the correct schema here too rather than left in the old, never-valid
+# shape (same situation as the GitHub Copilot fix in ML-2D).
 def inject_kiro_hooks(cwd: str) -> None:
     """Cria/sobrescreve .kiro/hooks/trackfw-attention.json."""
     file_path = os.path.join(cwd, '.kiro', 'hooks', 'trackfw-attention.json')
     data = {
+        'version': 'v1',
         'hooks': [
             {
                 'name': 'trackfw-attention-signal',
-                'event': 'PreToolUse',
-                'matcher': {'tool_name': '.*'},
+                'description': 'Signals trackfw board when agent executes a tool',
+                'trigger': 'PreToolUse',
+                'matcher': '*',
                 'action': {'type': 'command', 'command': 'scripts/trackfw-attention-signal.sh'},
             },
             {
                 'name': 'trackfw-attention-cleanup',
-                'event': 'PostToolUse',
-                'matcher': {'tool_name': '.*'},
+                'description': 'Clears trackfw board attention after tool completes',
+                'trigger': 'PostToolUse',
+                'matcher': '*',
                 'action': {'type': 'command', 'command': 'scripts/trackfw-attention-cleanup.sh'},
+            },
+            {
+                'name': 'trackfw-credential-guard-pre',
+                'description': 'Blocks/warns on possible plaintext credential materialization before a shell command executes',
+                'trigger': 'PreToolUse',
+                'matcher': 'shell',
+                'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
+            },
+            {
+                'name': 'trackfw-credential-guard-post',
+                'description': 'Warns on possible plaintext credential materialization after a shell command executes',
+                'trigger': 'PostToolUse',
+                'matcher': 'shell',
+                'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
             },
         ]
     }
@@ -205,6 +277,28 @@ def inject_kiro_hooks(cwd: str) -> None:
 
 # ---------------------------------------------------------------------------
 # Copilot — .github/hooks/trackfw-attention.json (arquivo dedicado, overwrite seguro)
+#
+# Format confirmed against https://docs.github.com/en/copilot/reference/hooks-reference (retrieved
+# 2026-08-05): repository-level hook files live at .github/hooks/*.json, using the schema
+# {"version": 1, "hooks": {"<event>": [<command entry>, ...]}}, where a command entry is
+# {"type": "command", "bash": "...", "cwd": "...", "timeoutSec": N}. This is the format this function
+# already used before this ML -- Go and Node previously emitted a different, undocumented
+# {"hooks": [{"event", "run"}]} shape and were aligned to this one (Python was correct).
+#
+# Matcher: the doc's matcher-filtering table lists `preToolUse -> toolName` and `postToolUse ->
+# toolName` (a regex, anchored `^(?:PATTERN)$`), and shows a worked `"matcher"` field inline on a
+# postToolUse command entry. With camelCase event names (preToolUse/postToolUse, used here), toolName
+# carries the runtime tool name, and the shell tool's runtime name is "bash" (lowercase) -- distinct
+# from PascalCase events, which report the Claude-mapped name "Bash". trackfw-credential-guard.sh
+# scans the raw JSON payload for JWT/AWS-key patterns regardless of field names (ML-1A), so it works
+# under either payload shape; the matcher below is a scope-narrowing optimization only.
+#
+# Concurrency: "If multiple hooks of the same type are configured, they execute in order" (same
+# section) -- Copilot hooks run serially, in configured order, for the same event, unlike Codex's
+# confirmed-concurrent or Gemini's undocumented cross-group model. The ML-1A fix (credential-guard's
+# "warn" mode writes to its own dedicated $ROADMAP_DIR/.trackfw-credential-guard.json, never touching
+# the shared .trackfw-attention.json that trackfw-attention-cleanup.sh deletes) makes ordering moot
+# regardless.
 # ---------------------------------------------------------------------------
 
 def inject_copilot_hooks(cwd: str) -> None:
@@ -213,18 +307,36 @@ def inject_copilot_hooks(cwd: str) -> None:
     data = {
         'version': 1,
         'hooks': {
-            'preToolUse': [{
-                'type': 'command',
-                'bash': 'scripts/trackfw-attention-signal.sh',
-                'cwd': '.',
-                'timeoutSec': 10,
-            }],
-            'postToolUse': [{
-                'type': 'command',
-                'bash': 'scripts/trackfw-attention-cleanup.sh',
-                'cwd': '.',
-                'timeoutSec': 10,
-            }],
+            'preToolUse': [
+                {
+                    'type': 'command',
+                    'bash': 'scripts/trackfw-attention-signal.sh',
+                    'cwd': '.',
+                    'timeoutSec': 10,
+                },
+                {
+                    'type': 'command',
+                    'matcher': 'bash',
+                    'bash': 'scripts/trackfw-credential-guard.sh',
+                    'cwd': '.',
+                    'timeoutSec': 10,
+                },
+            ],
+            'postToolUse': [
+                {
+                    'type': 'command',
+                    'bash': 'scripts/trackfw-attention-cleanup.sh',
+                    'cwd': '.',
+                    'timeoutSec': 10,
+                },
+                {
+                    'type': 'command',
+                    'matcher': 'bash',
+                    'bash': 'scripts/trackfw-credential-guard.sh',
+                    'cwd': '.',
+                    'timeoutSec': 10,
+                },
+            ],
         },
     }
     _write_json(file_path, data)
@@ -232,10 +344,44 @@ def inject_copilot_hooks(cwd: str) -> None:
 
 # ---------------------------------------------------------------------------
 # Cursor — .cursor/hooks.json
+#
+# Two independent things are wired here:
+#   - Top-level preToolUse/postToolUse (existing attention-signal/cleanup) -- kept as-is,
+#     NOT migrated by this function. These keys do not match any event documented at
+#     https://cursor.com/docs/agent/hooks (retrieved 2026-08-05): the real Cursor hook
+#     config is `{"version": 1, "hooks": {"<eventName>": [...] }}`, and the documented
+#     event names are sessionStart/sessionEnd/beforeShellExecution/beforeMCPExecution/
+#     afterShellExecution/afterMCPExecution/beforeReadFile/afterFileEdit/
+#     beforeSubmitPrompt/preCompact/stop/beforeTabFileRead/afterTabFileEdit -- there is no
+#     generic preToolUse/postToolUse event at all. Re-scoping the legacy attention hooks
+#     to a real event is out of scope for this ML; tracked as a follow-up (see
+#     docs/cli-parity.md, "Cursor wiring (ML-2E)").
+#   - hooks.beforeShellExecution + hooks.afterShellExecution (new, this ML) --
+#     credential-guard. beforeShellExecution is the real, Bash-specific, pre-execution
+#     event: input is `{"command","cwd","sandbox"}`, response (stdout JSON, only read on
+#     exit code 0) is `{"permission":"allow"|"deny"|"ask","user_message":"...",
+#     "agent_message":"..."}`. Per the documented "Exit code behavior": exit 0 uses the
+#     JSON output (or defaults to allow if stdout has none -- confirmed by the doc's own
+#     minimal example hook, which exits 0 with no stdout at all), exit 2 blocks the
+#     action ("equivalent to returning permission: \"deny\""), any other exit code
+#     fail-opens (hook failed, action proceeds). This is already exactly
+#     trackfw-credential-guard.sh's existing contract (block mode -> exit 2 + stderr, warn
+#     mode -> exit 0), so no script changes were needed to wire Cursor. afterShellExecution
+#     is a post-execution audit-only event (input adds "output"/"duration", no
+#     allow/deny/ask response defined) -- added in parallel for symmetry with the
+#     PostToolUse wiring already used for the other CLIs in this wave. Per-event `matcher`
+#     (regex against the command string itself, not a tool name -- the event is already
+#     shell-specific) is optional and intentionally omitted: the guard must see every
+#     shell command, not a filtered subset. Concurrency between hooks registered on the
+#     same event was not documented on the page retrieved for this investigation (unlike
+#     Codex, which explicitly documents concurrent execution); not assumed either way --
+#     not a blocker here since this event array only ever contains the single
+#     credential-guard entry added by trackfw.
 # ---------------------------------------------------------------------------
 
 def inject_cursor_hooks(cwd: str) -> None:
-    """Injeta hooks preToolUse/postToolUse no .cursor/hooks.json."""
+    """Injeta hooks preToolUse/postToolUse e hooks.beforeShellExecution/afterShellExecution
+    (credential-guard) no .cursor/hooks.json."""
     file_path = os.path.join(cwd, '.cursor', 'hooks.json')
     data = _read_json(file_path)
 
@@ -246,6 +392,21 @@ def inject_cursor_hooks(cwd: str) -> None:
     post = data.setdefault('postToolUse', [])
     if not _has_entry(post, 'command', 'scripts/trackfw-attention-cleanup.sh'):
         post.append({'command': 'scripts/trackfw-attention-cleanup.sh'})
+
+    if 'version' not in data:
+        data['version'] = 1
+    hooks = data.get('hooks')
+    if not isinstance(hooks, dict):
+        hooks = {}
+        data['hooks'] = hooks
+
+    before = hooks.setdefault('beforeShellExecution', [])
+    if not _has_entry(before, 'command', 'scripts/trackfw-credential-guard.sh'):
+        before.append({'command': 'scripts/trackfw-credential-guard.sh'})
+
+    after = hooks.setdefault('afterShellExecution', [])
+    if not _has_entry(after, 'command', 'scripts/trackfw-credential-guard.sh'):
+        after.append({'command': 'scripts/trackfw-credential-guard.sh'})
 
     _write_json(file_path, data)
 
@@ -270,6 +431,12 @@ def inject_hooks_detected(cwd: str) -> None:
         _generate_attention_scripts(cwd)
     except Exception as e:
         print(f'  ⚠ attention scripts: {e}')
+
+    try:
+        from trackfw.generators.init_gen import _generate_credential_guard_script
+        _generate_credential_guard_script(cwd)
+    except Exception as e:
+        print(f'  ⚠ credential guard script: {e}')
 
     detections = {
         'claude': (

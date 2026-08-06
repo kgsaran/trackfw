@@ -442,6 +442,12 @@ cmd.action((opts) => {
         console.warn(`⚠ attention scripts: ${e.message}`);
       }
       try {
+        const { generateCredentialGuardScript } = require('../generators/hooks');
+        generateCredentialGuardScript(cwd);
+      } catch (e) {
+        console.warn(`⚠ credential guard script: ${e.message}`);
+      }
+      try {
         const { injectHooksDetected } = require('../generators/hooks');
         injectHooksDetected(cwd);
         console.log('✓ agent hooks injected');

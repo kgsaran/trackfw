@@ -114,6 +114,11 @@ def defaults():
             "jira_token": "",
             "jira_project": "",
         },
+        # credential_guard field — ver ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-
+        # credenciais-reais-por-subagentes.md.
+        "credential_guard": {
+            "mode": "warn",
+        },
         "rules": {
             "wip_has_req":          "error",
             "wip_acceptance":       "error",
@@ -269,5 +274,16 @@ def _parse(content, cfg):
         cfg["sync"]["jira_token"] = m["jira_token"]
     if isinstance(m.get("jira_project"), str):
         cfg["sync"]["jira_project"] = m["jira_project"]
+
+    # credential_guard field — mapeamento aninhado, mesmo formato de link_fields acima. Um valor
+    # de mode não reconhecido (ou um bloco credential_guard ausente/malformado) cai para o default
+    # seguro ("warn") silenciosamente, igual ao comportamento de todo outro campo de formato não
+    # reconhecido neste parser (ex.: roadmap_namespacing, forge) — sem caminho fatal, sem mensagem
+    # em stderr, para uma única chave de enum.
+    if isinstance(m.get("credential_guard"), dict):
+        cg = m["credential_guard"]
+        mode = cg.get("mode")
+        if isinstance(mode, str) and mode in ("warn", "block"):
+            cfg["credential_guard"]["mode"] = mode
 
     return False

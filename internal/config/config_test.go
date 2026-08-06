@@ -6,6 +6,68 @@ import (
 	"testing"
 )
 
+// TestLoad_CredentialGuard_DefaultsToWarn covers ML-1A of ROADMAP-2026-08-05-hooks-de-guarda-
+// contra-materializacao-de-credenciais-reais-por-subagentes.md: absent credential_guard key
+// (and any project that ran `trackfw validate` before this ML existed) must default to "warn".
+func TestLoad_CredentialGuard_DefaultsToWarn(t *testing.T) {
+	Reset()
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	if cfg.CredentialGuard.Mode != "warn" {
+		t.Errorf("CredentialGuard.Mode: want warn (default), got %q", cfg.CredentialGuard.Mode)
+	}
+}
+
+// TestLoad_CredentialGuard_ModeBlock proves a trackfw.yaml with credential_guard: {mode: block}
+// is read correctly.
+func TestLoad_CredentialGuard_ModeBlock(t *testing.T) {
+	Reset()
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	yaml := "credential_guard:\n  mode: block\n"
+	if err := os.WriteFile(filepath.Join(tmp, "trackfw.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	if cfg.CredentialGuard.Mode != "block" {
+		t.Errorf("CredentialGuard.Mode: want block, got %q", cfg.CredentialGuard.Mode)
+	}
+}
+
+// TestLoad_CredentialGuard_InvalidModeFallsBackToWarn proves an unrecognized mode value is
+// treated the same as absent — falls back to the safe default instead of propagating garbage.
+func TestLoad_CredentialGuard_InvalidModeFallsBackToWarn(t *testing.T) {
+	Reset()
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	yaml := "credential_guard:\n  mode: nonsense\n"
+	if err := os.WriteFile(filepath.Join(tmp, "trackfw.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Load()
+	if cfg.CredentialGuard.Mode != "warn" {
+		t.Errorf("CredentialGuard.Mode: want warn (fallback), got %q", cfg.CredentialGuard.Mode)
+	}
+}
+
 func TestLoad_NoFile(t *testing.T) {
 	Reset()
 	tmp := t.TempDir()

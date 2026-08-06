@@ -71,6 +71,12 @@ func TestInjectClaudeHooks_Create(t *testing.T) {
 	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse[AskUserQuestion] → cleanup.sh missing")
 	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Bash] → credential-guard.sh missing")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PostToolUse[Bash] → credential-guard.sh missing")
+	}
 }
 
 func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
@@ -104,11 +110,27 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
 		t.Error("PreToolUse signal hook missing")
 	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse credential-guard hook missing")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
+		t.Error("PostToolUse cleanup hook missing")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PostToolUse credential-guard hook missing")
+	}
 
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pr, _ := hooks["PreToolUse"].([]interface{})
+	// A pre-existing "Bash" matcher entry (third-party hook) must be merged with
+	// (not duplicated by) the new credential-guard "Bash" entry: 2 entries total
+	// -- {Bash: [other.sh, credential-guard.sh]}, {AskUserQuestion: [signal.sh]}.
 	if len(pr) != 2 {
 		t.Errorf("expected 2 PreToolUse entries, got %d", len(pr))
+	}
+	post, _ := hooks["PostToolUse"].([]interface{})
+	if len(post) != 2 {
+		t.Errorf("expected 2 PostToolUse entries, got %d", len(post))
 	}
 }
 
@@ -127,8 +149,62 @@ func TestInjectCodexHooks(t *testing.T) {
 	if !helperHasClaudeHook(data, "PermissionRequest", ".*", "scripts/trackfw-attention-signal.sh") {
 		t.Error("Codex PermissionRequest hook missing")
 	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("Codex PreToolUse[Bash] credential-guard hook missing")
+	}
 	if !helperHasClaudeHook(data, "PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("Codex PostToolUse hook missing")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("Codex PostToolUse[Bash] credential-guard hook missing")
+	}
+
+	hooks, _ := data["hooks"].(map[string]interface{})
+	pre, _ := hooks["PreToolUse"].([]interface{})
+	if len(pre) != 1 {
+		t.Errorf("expected 1 PreToolUse entry (Bash only, no idempotency dup), got %d", len(pre))
+	}
+	post, _ := hooks["PostToolUse"].([]interface{})
+	// 2 entries: {matcher:".*", hooks:[cleanup.sh]}, {matcher:"Bash", hooks:[credential-guard.sh]}
+	if len(post) != 2 {
+		t.Errorf("expected 2 PostToolUse entries, got %d", len(post))
+	}
+}
+
+func TestInjectCodexHooks_PreservesExistingBashEntry(t *testing.T) {
+	dir := t.TempDir()
+
+	existing := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash",
+					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": "scripts/other.sh"}},
+				},
+			},
+		},
+	}
+	helperWriteJSON(t, filepath.Join(dir, ".codex", "hooks.json"), existing)
+
+	if err := InjectCodexHooks(dir); err != nil {
+		t.Fatalf("InjectCodexHooks failed: %v", err)
+	}
+	if err := InjectCodexHooks(dir); err != nil {
+		t.Fatalf("second InjectCodexHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/other.sh") {
+		t.Error("existing Bash hook lost during merge")
+	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Bash] credential-guard hook missing after merge")
+	}
+
+	hooks, _ := data["hooks"].(map[string]interface{})
+	pre, _ := hooks["PreToolUse"].([]interface{})
+	if len(pre) != 1 {
+		t.Errorf("expected 1 PreToolUse entry (merged into existing Bash matcher, not duplicated), got %d", len(pre))
 	}
 }
 
@@ -148,7 +224,61 @@ func TestInjectGeminiHooks(t *testing.T) {
 		t.Error("Gemini Notification hook missing")
 	}
 	if !helperHasClaudeHook(data, "AfterTool", "*", "scripts/trackfw-attention-cleanup.sh") {
-		t.Error("Gemini AfterTool hook missing")
+		t.Error("Gemini AfterTool[*] cleanup hook missing")
+	}
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+		t.Error("Gemini BeforeTool[run_shell_command] credential-guard hook missing")
+	}
+	if !helperHasClaudeHook(data, "AfterTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+		t.Error("Gemini AfterTool[run_shell_command] credential-guard hook missing")
+	}
+
+	hooks, _ := data["hooks"].(map[string]interface{})
+	before, _ := hooks["BeforeTool"].([]interface{})
+	if len(before) != 1 {
+		t.Errorf("expected 1 BeforeTool entry (run_shell_command only, no idempotency dup), got %d", len(before))
+	}
+	after, _ := hooks["AfterTool"].([]interface{})
+	// 2 entries: {matcher:"*", hooks:[cleanup.sh]}, {matcher:"run_shell_command", hooks:[credential-guard.sh]}
+	if len(after) != 2 {
+		t.Errorf("expected 2 AfterTool entries, got %d", len(after))
+	}
+}
+
+func TestInjectGeminiHooks_PreservesExistingBeforeToolEntry(t *testing.T) {
+	dir := t.TempDir()
+
+	existing := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"BeforeTool": []interface{}{
+				map[string]interface{}{
+					"matcher": "run_shell_command",
+					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": "scripts/other.sh"}},
+				},
+			},
+		},
+	}
+	helperWriteJSON(t, filepath.Join(dir, ".gemini", "settings.json"), existing)
+
+	if err := InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("InjectGeminiHooks failed: %v", err)
+	}
+	if err := InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("second InjectGeminiHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/other.sh") {
+		t.Error("existing BeforeTool[run_shell_command] hook lost during merge")
+	}
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+		t.Error("BeforeTool[run_shell_command] credential-guard hook missing after merge")
+	}
+
+	hooks, _ := data["hooks"].(map[string]interface{})
+	before, _ := hooks["BeforeTool"].([]interface{})
+	if len(before) != 1 {
+		t.Errorf("expected 1 BeforeTool entry (merged into existing run_shell_command matcher, not duplicated), got %d", len(before))
 	}
 }
 
@@ -178,9 +308,49 @@ func TestInjectKiroHooks(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, file)
+	if v, _ := data["version"].(string); v != "v1" {
+		t.Fatalf("expected version \"v1\", got %v", data["version"])
+	}
 	hooks, _ := data["hooks"].([]interface{})
-	if len(hooks) != 2 {
-		t.Fatalf("expected 2 hooks in Kiro config, got %d", len(hooks))
+	if len(hooks) != 4 {
+		t.Fatalf("expected 4 hooks in Kiro config (signal, cleanup, credential-guard pre/post), got %d", len(hooks))
+	}
+
+	sawGuardPre, sawGuardPost := false, false
+	for _, h := range hooks {
+		entry, _ := h.(map[string]interface{})
+		if entry == nil {
+			continue
+		}
+		if _, hasEvent := entry["event"]; hasEvent {
+			t.Fatalf("hook entry uses legacy \"event\" field, expected \"trigger\": %v", entry)
+		}
+		trigger, _ := entry["trigger"].(string)
+		if trigger == "" {
+			t.Fatalf("hook entry missing \"trigger\": %v", entry)
+		}
+		if _, isObject := entry["matcher"].(map[string]interface{}); isObject {
+			t.Fatalf("hook entry uses object matcher, expected plain regex string: %v", entry)
+		}
+		name, _ := entry["name"].(string)
+		switch name {
+		case "trackfw-credential-guard-pre":
+			sawGuardPre = true
+			if trigger != "PreToolUse" {
+				t.Fatalf("expected credential-guard-pre trigger PreToolUse, got %q", trigger)
+			}
+			if m, _ := entry["matcher"].(string); m != "shell" {
+				t.Fatalf("expected credential-guard-pre matcher \"shell\", got %q", m)
+			}
+		case "trackfw-credential-guard-post":
+			sawGuardPost = true
+			if trigger != "PostToolUse" {
+				t.Fatalf("expected credential-guard-post trigger PostToolUse, got %q", trigger)
+			}
+		}
+	}
+	if !sawGuardPre || !sawGuardPost {
+		t.Fatalf("expected both credential-guard pre and post hooks, got pre=%v post=%v", sawGuardPre, sawGuardPost)
 	}
 }
 
@@ -210,9 +380,60 @@ func TestInjectCopilotHooks(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, file)
-	hooks, ok := data["hooks"].([]interface{})
-	if !ok || len(hooks) != 2 {
-		t.Fatalf("expected hooks array of size 2, got %v", data["hooks"])
+	if data["version"] != float64(1) {
+		t.Fatalf("expected version 1, got %v", data["version"])
+	}
+	hooks, ok := data["hooks"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected hooks to be an object keyed by event, got %v", data["hooks"])
+	}
+
+	pre, ok := hooks["preToolUse"].([]interface{})
+	if !ok || len(pre) != 2 {
+		t.Fatalf("expected preToolUse array of size 2, got %v", hooks["preToolUse"])
+	}
+	post, ok := hooks["postToolUse"].([]interface{})
+	if !ok || len(post) != 2 {
+		t.Fatalf("expected postToolUse array of size 2, got %v", hooks["postToolUse"])
+	}
+
+	helperFindCopilotEntry := func(arr []interface{}, bash string) map[string]interface{} {
+		for _, item := range arr {
+			obj, ok := item.(map[string]interface{})
+			if ok && obj["bash"] == bash {
+				return obj
+			}
+		}
+		return nil
+	}
+
+	signal := helperFindCopilotEntry(pre, "scripts/trackfw-attention-signal.sh")
+	if signal == nil {
+		t.Fatal("preToolUse missing attention-signal entry")
+	}
+	if signal["matcher"] != nil {
+		t.Errorf("attention-signal entry should not have a matcher, got %v", signal["matcher"])
+	}
+
+	guardPre := helperFindCopilotEntry(pre, "scripts/trackfw-credential-guard.sh")
+	if guardPre == nil {
+		t.Fatal("preToolUse missing credential-guard entry")
+	}
+	if guardPre["matcher"] != "bash" {
+		t.Errorf("credential-guard preToolUse entry should have matcher=bash, got %v", guardPre["matcher"])
+	}
+
+	cleanup := helperFindCopilotEntry(post, "scripts/trackfw-attention-cleanup.sh")
+	if cleanup == nil {
+		t.Fatal("postToolUse missing attention-cleanup entry")
+	}
+
+	guardPost := helperFindCopilotEntry(post, "scripts/trackfw-credential-guard.sh")
+	if guardPost == nil {
+		t.Fatal("postToolUse missing credential-guard entry")
+	}
+	if guardPost["matcher"] != "bash" {
+		t.Errorf("credential-guard postToolUse entry should have matcher=bash, got %v", guardPost["matcher"])
 	}
 }
 
@@ -232,6 +453,51 @@ func TestInjectCursorHooks(t *testing.T) {
 	post, _ := data["postToolUse"].([]interface{})
 	if len(pre) != 1 || len(post) != 1 {
 		t.Fatalf("expected 1 pre and 1 post entry, got %d pre, %d post", len(pre), len(post))
+	}
+	if pre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
+		t.Errorf("preToolUse[0] should be the attention-signal script, got %v", pre[0])
+	}
+	if post[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
+		t.Errorf("postToolUse[0] should be the attention-cleanup script, got %v", post[0])
+	}
+
+	if data["version"] != float64(1) {
+		t.Errorf("expected version=1, got %v", data["version"])
+	}
+	hooks, _ := data["hooks"].(map[string]interface{})
+	if hooks == nil {
+		t.Fatalf("expected top-level hooks object, got none")
+	}
+	before, _ := hooks["beforeShellExecution"].([]interface{})
+	after, _ := hooks["afterShellExecution"].([]interface{})
+	if len(before) != 1 || len(after) != 1 {
+		t.Fatalf("expected 1 beforeShellExecution and 1 afterShellExecution entry, got %d before, %d after", len(before), len(after))
+	}
+	if before[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
+		t.Errorf("beforeShellExecution[0] should be the credential-guard script, got %v", before[0])
+	}
+	if after[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
+		t.Errorf("afterShellExecution[0] should be the credential-guard script, got %v", after[0])
+	}
+}
+
+func TestInjectCursorHooks_PreservesUserVersion(t *testing.T) {
+	dir := t.TempDir()
+	cursorDir := filepath.Join(dir, ".cursor")
+	if err := os.MkdirAll(cursorDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cursorDir, "hooks.json"), []byte(`{"version": 2, "hooks": {}}`), 0644); err != nil {
+		t.Fatalf("seed hooks.json: %v", err)
+	}
+
+	if err := InjectCursorHooks(dir); err != nil {
+		t.Fatalf("InjectCursorHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".cursor", "hooks.json"))
+	if data["version"] != float64(2) {
+		t.Errorf("expected pre-existing version=2 to be preserved, got %v", data["version"])
 	}
 }
 

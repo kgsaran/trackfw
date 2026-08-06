@@ -113,8 +113,128 @@ rm -f "$ROADMAP_DIR/.trackfw-attention.json"
 exit 0
 `
 
+const CREDENTIAL_GUARD_SCRIPT = `#!/usr/bin/env bash
+# trackfw credential guard — PreToolUse/PostToolUse hook
+set -euo pipefail
+
+INPUT=$(cat)
+
+# Script is intentionally a no-op when executed outside the project root
+[ -f "trackfw.yaml" ] || exit 0
+
+JWT_PATTERN='eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+'
+AWS_KEY_PATTERN='AKIA[0-9A-Z]{16}'
+
+MATCH=""
+if printf '%s' "$INPUT" | grep -qE "$JWT_PATTERN"; then
+  MATCH="JWT"
+elif printf '%s' "$INPUT" | grep -qE "$AWS_KEY_PATTERN"; then
+  MATCH="AWS access key"
+fi
+
+[ -n "$MATCH" ] || exit 0
+
+# The raw payload is JSON: any double quote inside the underlying tool_input.command is
+# escaped as \\" -- unescape those before scanning for redirect targets, or a quoted target
+# like "$TMPFILE" is seen as starting with a literal backslash instead of a variable
+# reference.
+RAW=$(printf '%s' "$INPUT" | sed 's/\\\\"/"/g')
+
+# Ignore matches that are only ever written to an ephemeral destination
+# (mktemp-derived path or /dev/null). A match with no redirect at all
+# (printed to stdout, e.g.) or redirected to a plain file path still
+# alerts -- that is the incident this hook guards against.
+is_ephemeral_target() {
+  local target
+  target=$(printf '%s' "$1" | tr -d "\\"'" | sed -E 's/[},]+$//')
+  case "$target" in
+    /dev/null) return 0 ;;
+    *mktemp*) return 0 ;;
+  esac
+  if printf '%s' "$target" | grep -qE '^\\$\\{?[A-Za-z_][A-Za-z0-9_]*\\}?$'; then
+    local varname pattern
+    varname=$(printf '%s' "$target" | sed -E 's/^\\$\\{?([A-Za-z_][A-Za-z0-9_]*)\\}?$/\\1/')
+    pattern="*\${varname}="'$(mktemp'"*"
+    case "$RAW" in
+      $pattern) return 0 ;;
+    esac
+  fi
+  return 1
+}
+
+REDIRECTS=$(printf '%s' "$RAW" | grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+' || true)
+
+HAS_REDIRECT=0
+EXEMPT=1
+if [ -n "$REDIRECTS" ]; then
+  while IFS= read -r line; do
+    if [ -z "$line" ]; then
+      continue
+    fi
+    HAS_REDIRECT=1
+    target=$(printf '%s' "$line" | sed -E 's/^[0-9]?>>?[[:space:]]*//')
+    if ! is_ephemeral_target "$target"; then
+      EXEMPT=0
+    fi
+  done <<< "$REDIRECTS"
+fi
+
+if [ "$HAS_REDIRECT" -eq 1 ] && [ "$EXEMPT" -eq 1 ]; then
+  exit 0
+fi
+
+MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\\"'" || true)
+case "$MODE" in
+  warn|block) ;;
+  *) MODE="warn" ;;
+esac
+
+if [ "$MODE" = "block" ]; then
+  echo "trackfw-credential-guard: blocked - possible $MATCH detected in tool payload." >&2
+  exit 2
+fi
+
+echo "trackfw-credential-guard: warning - possible $MATCH detected in tool payload." >&2
+
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
+ROADMAP_DIR=\${ROADMAP_DIR:-docs/roadmaps}
+
+case "$ROADMAP_DIR" in
+  /*|../*|*/../*|*/..|..) ROADMAP_DIR="docs/roadmaps" ;;
+esac
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+MSG="Possible $MATCH detected in tool payload - review before materializing credentials in plain text."
+MSG_ESC=$(echo "$MSG" | tr -d '\\000-\\037' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
+
+mkdir -p "$ROADMAP_DIR"
+printf '{"tool":"credential-guard","message":"%s","level":"action_required","timestamp":"%s"}\\n' \\
+  "$MSG_ESC" \\
+  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-credential-guard.json"
+
+exit 0
+`
+
+// ---------------------------------------------------------------------------
+// generateCredentialGuardScript — writes scripts/trackfw-credential-guard.sh
+// ---------------------------------------------------------------------------
+// ML-1A only: creates the script. It is NOT wired into any hooks.json/settings.json
+// here -- that is Wave 2's scope (see ROADMAP-2026-08-05-hooks-de-guarda-contra-
+// materializacao-de-credenciais-reais-por-subagentes.md).
+function generateCredentialGuardScript(cwd) {
+  const root = cwd || process.cwd()
+  const scriptsDir = path.join(root, 'scripts')
+  fs.mkdirSync(scriptsDir, { recursive: true })
+
+  const scriptPath = path.join(scriptsDir, 'trackfw-credential-guard.sh')
+  fs.writeFileSync(scriptPath, CREDENTIAL_GUARD_SCRIPT, { encoding: 'utf8', mode: 0o755 })
+
+  console.log('  ✓ scripts/trackfw-credential-guard.sh')
+}
+
 const SIGNAL_CMD = 'scripts/trackfw-attention-signal.sh'
 const CLEANUP_CMD = 'scripts/trackfw-attention-cleanup.sh'
+const GUARD_CMD = 'scripts/trackfw-credential-guard.sh'
 
 // ---------------------------------------------------------------------------
 // generateAttentionScripts — writes the two shell scripts to scripts/
@@ -145,13 +265,24 @@ function injectClaudeHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'AskUserQuestion', SIGNAL_CMD)
+  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'AskUserQuestion', CLEANUP_CMD)
+  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
 
   writeJSON(filePath, data)
 }
 
 // ---------------------------------------------------------------------------
 // Codex — .codex/hooks.json
+//
+// Two independent hook events: PermissionRequest (matcher ".*") for the existing
+// attention-signal -- only fires when Codex is about to prompt for approval, not
+// for every command -- and PreToolUse/PostToolUse (matcher "Bash") for
+// credential-guard, which fires for every Bash tool call regardless of approval.
+// Confirmed against https://developers.openai.com/codex/hooks (2026-08-05): hooks
+// are enabled by default (no `[features] hooks = true`/`codex_hooks` opt-in
+// needed -- that flag exists only to turn hooks OFF), and PreToolUse blocking
+// uses exit code 2 + stderr (matching trackfw-credential-guard.sh's "block" mode).
 // ---------------------------------------------------------------------------
 
 function injectCodexHooks(cwd) {
@@ -160,13 +291,31 @@ function injectCodexHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.PermissionRequest = mergeClaudeHookArray(data.hooks.PermissionRequest, '.*', SIGNAL_CMD)
+  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, '.*', CLEANUP_CMD)
+  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
 
   writeJSON(filePath, data)
 }
 
 // ---------------------------------------------------------------------------
 // Gemini — .gemini/settings.json
+//
+// Three independent hook events: Notification (matcher "ToolPermission") for the
+// existing attention-signal -- only fires when Gemini CLI is about to prompt for
+// permission, not for every tool call -- and BeforeTool/AfterTool (matcher
+// "run_shell_command") for credential-guard, which fires for every shell tool call
+// regardless of whether a permission prompt is needed. Confirmed against
+// https://geminicli.com/docs/hooks/reference (retrieved 2026-08-05): BeforeTool
+// "Fires before a tool is invoked. Used for argument validation, security checks,
+// and parameter rewriting" and supports "Exit Code 2 (Block Tool): Prevents
+// execution. Uses stderr as the reason" -- matching trackfw-credential-guard.sh's
+// existing "block" mode. The shell tool's canonical name is "run_shell_command"
+// (doc: "you can match any built-in tool (for example, read_file,
+// run_shell_command)"); matcher is a regex evaluated against tool_name. AfterTool
+// (matcher "*") is the pre-existing attention-cleanup wiring, unrelated to the new
+// credential-guard entry added as a separate array entry (different matcher) in the
+// same event.
 // ---------------------------------------------------------------------------
 
 function injectGeminiHooks(cwd) {
@@ -175,32 +324,67 @@ function injectGeminiHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.Notification = mergeClaudeHookArray(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD)
+  data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD)
   data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, '*', CLEANUP_CMD)
+  data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD)
 
   writeJSON(filePath, data)
 }
 
 // ---------------------------------------------------------------------------
 // Kiro — .kiro/hooks/trackfw-attention.json (dedicated file, safe overwrite)
+//
+// Format confirmed against https://kiro.dev/docs/hooks/ , https://kiro.dev/docs/hooks/types and
+// https://kiro.dev/docs/hooks/actions/ (retrieved 2026-08-05). Top level is {"version": "v1", "hooks":
+// [...]} ("version" is the string "v1"), each entry {"name", "description"?, "trigger", "matcher"?,
+// "action", ...}. The field is "trigger" (NOT "event" as previously emitted here and in the Go/Python
+// siblings -- "event" does not exist in the documented schema). "matcher" is a plain regex string
+// matched against tool name for PreToolUse/PostToolUse (NOT an object like {tool_name: ".*"} as
+// previously emitted) -- "*" is the documented wildcard for "all tools"; ".*" is not a documented
+// matcher value. PreToolUse ("Before a tool is about to execute", Can block: Yes) is confirmed distinct
+// from PostFileSave/file-save events, resolving the ADR's open question about Kiro intercepting shell
+// commands pre-execution. Blocking contract: any non-zero exit from a PreToolUse command hook blocks
+// the tool invocation (stricter than the exit-code-2-specific contract of Claude Code/Codex/Gemini);
+// trackfw-credential-guard.sh only ever exits 0 or 2 on its normal-operation paths (ML-1A), so this is
+// safe. Shell tool matcher uses the documented alias "shell" ("all built-in shell command-related
+// tools"), broader than the single canonical tool id "execute_bash". This file is fully
+// generated/overwritten by trackfw (not merged with user content), so the legacy attention-signal/
+// cleanup entries are realigned to the correct schema here too rather than left in the old, never-valid
+// shape (same situation as the GitHub Copilot fix in ML-2D).
 // ---------------------------------------------------------------------------
 
 function injectKiroHooks(cwd) {
   const filePath = path.join(cwd, '.kiro', 'hooks', 'trackfw-attention.json')
   const data = {
+    version: 'v1',
     hooks: [
       {
         name: 'trackfw-attention-signal',
         description: 'Signals trackfw board when agent executes a tool',
-        event: 'PreToolUse',
-        matcher: { tool_name: '.*' },
+        trigger: 'PreToolUse',
+        matcher: '*',
         action: { type: 'command', command: SIGNAL_CMD },
       },
       {
         name: 'trackfw-attention-cleanup',
         description: 'Clears trackfw board attention after tool completes',
-        event: 'PostToolUse',
-        matcher: { tool_name: '.*' },
+        trigger: 'PostToolUse',
+        matcher: '*',
         action: { type: 'command', command: CLEANUP_CMD },
+      },
+      {
+        name: 'trackfw-credential-guard-pre',
+        description: 'Blocks/warns on possible plaintext credential materialization before a shell command executes',
+        trigger: 'PreToolUse',
+        matcher: 'shell',
+        action: { type: 'command', command: GUARD_CMD },
+      },
+      {
+        name: 'trackfw-credential-guard-post',
+        description: 'Warns on possible plaintext credential materialization after a shell command executes',
+        trigger: 'PostToolUse',
+        matcher: 'shell',
+        action: { type: 'command', command: GUARD_CMD },
       },
     ],
   }
@@ -209,27 +393,84 @@ function injectKiroHooks(cwd) {
 
 // ---------------------------------------------------------------------------
 // Copilot — .github/hooks/trackfw-attention.json (dedicated file, safe overwrite)
+//
+// Format confirmed against https://docs.github.com/en/copilot/reference/hooks-reference (retrieved
+// 2026-08-05): repository-level hook files live at .github/hooks/*.json, using the schema
+// {"version": 1, "hooks": {"<event>": [<command entry>, ...]}}, where a command entry is
+// {"type": "command", "bash": "...", "cwd": "...", "timeoutSec": N}. This is the format
+// `inject_copilot_hooks` (Python) already used; the {"hooks": [{"event", "run"}]} shape this function
+// previously emitted does not match any format documented by GitHub -- this ML aligns Go/Node to
+// Python (which was correct) rather than the other way around.
+//
+// Matcher: the doc's matcher-filtering table lists `preToolUse -> toolName` and `postToolUse ->
+// toolName` (a regex, anchored `^(?:PATTERN)$`), and shows a worked `"matcher"` field inline on a
+// postToolUse command entry. With camelCase event names (preToolUse/postToolUse, used here), toolName
+// carries the runtime tool name, and the shell tool's runtime name is "bash" (lowercase) -- distinct
+// from PascalCase events, which report the Claude-mapped name "Bash". trackfw-credential-guard.sh
+// scans the raw JSON payload for JWT/AWS-key patterns regardless of field names (ML-1A), so it works
+// under either payload shape; the matcher below is a scope-narrowing optimization only.
+//
+// Concurrency: "If multiple hooks of the same type are configured, they execute in order" (same
+// section) -- Copilot hooks run serially, in configured order, for the same event, unlike Codex's
+// confirmed-concurrent or Gemini's undocumented cross-group model. The ML-1A fix (credential-guard's
+// "warn" mode writes to its own dedicated $ROADMAP_DIR/.trackfw-credential-guard.json, never touching
+// the shared .trackfw-attention.json that trackfw-attention-cleanup.sh deletes) makes ordering moot
+// regardless.
 // ---------------------------------------------------------------------------
 
 function injectCopilotHooks(cwd) {
   const filePath = path.join(cwd, '.github', 'hooks', 'trackfw-attention.json')
   const data = {
-    hooks: [
-      {
-        event: 'preToolUse',
-        run: SIGNAL_CMD,
-      },
-      {
-        event: 'postToolUse',
-        run: CLEANUP_CMD,
-      },
-    ],
+    version: 1,
+    hooks: {
+      preToolUse: [
+        { type: 'command', bash: SIGNAL_CMD, cwd: '.', timeoutSec: 10 },
+        { type: 'command', matcher: 'bash', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 },
+      ],
+      postToolUse: [
+        { type: 'command', bash: CLEANUP_CMD, cwd: '.', timeoutSec: 10 },
+        { type: 'command', matcher: 'bash', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 },
+      ],
+    },
   }
   writeJSON(filePath, data)
 }
 
 // ---------------------------------------------------------------------------
 // Cursor — .cursor/hooks.json
+//
+// Two independent things are wired here:
+//   - Top-level preToolUse/postToolUse (existing attention-signal/cleanup) -- kept as-is,
+//     NOT migrated by this function. These keys do not match any event documented at
+//     https://cursor.com/docs/agent/hooks (retrieved 2026-08-05): the real Cursor hook
+//     config is `{"version": 1, "hooks": {"<eventName>": [...] }}`, and the documented
+//     event names are sessionStart/sessionEnd/beforeShellExecution/beforeMCPExecution/
+//     afterShellExecution/afterMCPExecution/beforeReadFile/afterFileEdit/
+//     beforeSubmitPrompt/preCompact/stop/beforeTabFileRead/afterTabFileEdit -- there is no
+//     generic preToolUse/postToolUse event at all. Re-scoping the legacy attention hooks
+//     to a real event is out of scope for this ML; tracked as a follow-up (see
+//     docs/cli-parity.md, "Cursor wiring (ML-2E)").
+//   - hooks.beforeShellExecution + hooks.afterShellExecution (new, this ML) --
+//     credential-guard. beforeShellExecution is the real, Bash-specific, pre-execution
+//     event: input is `{"command","cwd","sandbox"}`, response (stdout JSON, only read on
+//     exit code 0) is `{"permission":"allow"|"deny"|"ask","user_message":"...",
+//     "agent_message":"..."}`. Per the documented "Exit code behavior": exit 0 uses the
+//     JSON output (or defaults to allow if stdout has none -- confirmed by the doc's own
+//     minimal example hook, which exits 0 with no stdout at all), exit 2 blocks the
+//     action ("equivalent to returning permission: \"deny\""), any other exit code
+//     fail-opens (hook failed, action proceeds). This is already exactly
+//     trackfw-credential-guard.sh's existing contract (block mode -> exit 2 + stderr, warn
+//     mode -> exit 0), so no script changes were needed to wire Cursor. afterShellExecution
+//     is a post-execution audit-only event (input adds "output"/"duration", no
+//     allow/deny/ask response defined) -- added in parallel for symmetry with the
+//     PostToolUse wiring already used for the other CLIs in this wave. Per-event `matcher`
+//     (regex against the command string itself, not a tool name -- the event is already
+//     shell-specific) is optional and intentionally omitted: the guard must see every
+//     shell command, not a filtered subset. Concurrency between hooks registered on the
+//     same event was not documented on the page retrieved for this investigation (unlike
+//     Codex, which explicitly documents concurrent execution); not assumed either way --
+//     not a blocker here since this event array only ever contains the single
+//     credential-guard entry added by trackfw.
 // ---------------------------------------------------------------------------
 
 function injectCursorHooks(cwd) {
@@ -244,6 +485,21 @@ function injectCursorHooks(cwd) {
   if (!Array.isArray(data.postToolUse)) data.postToolUse = []
   if (!hasEntry(data.postToolUse, 'command', CLEANUP_CMD)) {
     data.postToolUse.push({ command: CLEANUP_CMD })
+  }
+
+  if (typeof data.version === 'undefined') data.version = 1
+  if (typeof data.hooks !== 'object' || data.hooks === null || Array.isArray(data.hooks)) {
+    data.hooks = {}
+  }
+
+  if (!Array.isArray(data.hooks.beforeShellExecution)) data.hooks.beforeShellExecution = []
+  if (!hasEntry(data.hooks.beforeShellExecution, 'command', GUARD_CMD)) {
+    data.hooks.beforeShellExecution.push({ command: GUARD_CMD })
+  }
+
+  if (!Array.isArray(data.hooks.afterShellExecution)) data.hooks.afterShellExecution = []
+  if (!hasEntry(data.hooks.afterShellExecution, 'command', GUARD_CMD)) {
+    data.hooks.afterShellExecution.push({ command: GUARD_CMD })
   }
 
   writeJSON(filePath, data)
@@ -316,6 +572,7 @@ function injectHooksDetected(cwd) {
 
 module.exports = {
   generateAttentionScripts,
+  generateCredentialGuardScript,
   injectClaudeHooks,
   injectCodexHooks,
   injectGeminiHooks,

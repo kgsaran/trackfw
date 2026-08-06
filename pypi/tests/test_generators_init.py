@@ -383,14 +383,20 @@ class TestAttentionScripts(unittest.TestCase):
 
         signal_path = os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')
         cleanup_path = os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')
+        guard_path = os.path.join(self.tmp, 'scripts', 'trackfw-credential-guard.sh')
 
         self.assertTrue(os.path.isfile(signal_path), 'trackfw-attention-signal.sh não foi criado')
         self.assertTrue(os.path.isfile(cleanup_path), 'trackfw-attention-cleanup.sh não foi criado')
+        # trackfw init (via scaffold()) deve gerar o script de credential guard no
+        # mesmo ciclo de vida dos scripts de attention — regressão do bug onde o
+        # gerador existia mas nunca era chamado por nenhum fluxo real.
+        self.assertTrue(os.path.isfile(guard_path), 'trackfw-credential-guard.sh não foi criado por scaffold()')
 
         # Permissão de execução no Unix
         if os.name == 'posix':
             self.assertTrue(os.stat(signal_path).st_mode & 0o111 != 0, 'signal script não é executável')
             self.assertTrue(os.stat(cleanup_path).st_mode & 0o111 != 0, 'cleanup script não é executável')
+            self.assertTrue(os.stat(guard_path).st_mode & 0o111 != 0, 'credential guard script não é executável')
 
         with open(signal_path, encoding='utf-8') as f:
             signal_content = f.read()
@@ -417,13 +423,57 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data = json.load(f)
         self.assertIn('PreToolUse', data.get('hooks', {}))
         self.assertIn('PostToolUse', data.get('hooks', {}))
+        pre_matchers = {e.get('matcher') for e in data['hooks']['PreToolUse']}
+        post_matchers = {e.get('matcher') for e in data['hooks']['PostToolUse']}
+        self.assertEqual(pre_matchers, {'AskUserQuestion', 'Bash'})
+        self.assertEqual(post_matchers, {'AskUserQuestion', 'Bash'})
 
         # 2. Idempotência
         inject_claude_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
-        self.assertEqual(len(data2['hooks']['PreToolUse']), 1)
-        self.assertEqual(len(data2['hooks']['PostToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['PreToolUse']), 2)
+        self.assertEqual(len(data2['hooks']['PostToolUse']), 2)
+
+    def test_inject_claude_hooks_preserves_third_party_matcher(self):
+        """PreToolUse/PostToolUse com um matcher de terceiro (ex.: 'CustomTool')
+        deve ser preservado ao lado de AskUserQuestion + Bash, sem duplicar
+        entradas do mesmo matcher em execuções repetidas (ML-2A)."""
+        from trackfw.generators.hooks import inject_claude_hooks
+
+        settings_dir = os.path.join(self.tmp, '.claude')
+        os.makedirs(settings_dir, exist_ok=True)
+        settings_path = os.path.join(settings_dir, 'settings.json')
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'PreToolUse': [
+                        {'matcher': 'CustomTool', 'hooks': [{'type': 'command', 'command': 'custom.sh'}]}
+                    ]
+                }
+            }, f)
+
+        inject_claude_hooks(self.tmp)
+        inject_claude_hooks(self.tmp)  # idempotência
+
+        with open(settings_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        pre = data['hooks']['PreToolUse']
+        self.assertEqual(len(pre), 3)
+        matchers = {e['matcher'] for e in pre}
+        self.assertEqual(matchers, {'CustomTool', 'AskUserQuestion', 'Bash'})
+
+        bash_entry = next(e for e in pre if e['matcher'] == 'Bash')
+        self.assertEqual(
+            [h['command'] for h in bash_entry['hooks']],
+            ['scripts/trackfw-credential-guard.sh'],
+        )
+
+        post = data['hooks']['PostToolUse']
+        self.assertEqual(len(post), 2)
+        post_matchers = {e['matcher'] for e in post}
+        self.assertEqual(post_matchers, {'AskUserQuestion', 'Bash'})
 
     def test_inject_codex_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_codex_hooks
@@ -433,14 +483,54 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         self.assertIn('PermissionRequest', data.get('hooks', {}))
+        self.assertIn('PreToolUse', data.get('hooks', {}))
         self.assertIn('PostToolUse', data.get('hooks', {}))
+
+        pre_matcher = data['hooks']['PreToolUse'][0]['matcher']
+        self.assertEqual(pre_matcher, 'Bash')
+        pre_command = data['hooks']['PreToolUse'][0]['hooks'][0]['command']
+        self.assertEqual(pre_command, 'scripts/trackfw-credential-guard.sh')
+
+        post_matchers = {e['matcher'] for e in data['hooks']['PostToolUse']}
+        self.assertEqual(post_matchers, {'.*', 'Bash'})
 
         # Idempotência
         inject_codex_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
         self.assertEqual(len(data2['hooks']['PermissionRequest']), 1)
-        self.assertEqual(len(data2['hooks']['PostToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['PreToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['PostToolUse']), 2)
+
+    def test_inject_codex_hooks_preserves_existing_bash_entry(self):
+        """Um matcher 'Bash' pré-existente em PreToolUse (hook de terceiro) deve
+        ser mesclado com o novo comando do credential-guard, sem duplicar a
+        entrada do matcher (mesmo padrão do merge do Claude Code, ML-2A)."""
+        from trackfw.generators.hooks import inject_codex_hooks
+
+        hooks_dir = os.path.join(self.tmp, '.codex')
+        os.makedirs(hooks_dir, exist_ok=True)
+        hooks_path = os.path.join(hooks_dir, 'hooks.json')
+        with open(hooks_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'PreToolUse': [
+                        {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'scripts/other.sh'}]}
+                    ]
+                }
+            }, f)
+
+        inject_codex_hooks(self.tmp)
+        inject_codex_hooks(self.tmp)  # idempotência
+
+        with open(hooks_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        pre = data['hooks']['PreToolUse']
+        self.assertEqual(len(pre), 1)
+        self.assertEqual(pre[0]['matcher'], 'Bash')
+        commands = {h['command'] for h in pre[0]['hooks']}
+        self.assertEqual(commands, {'scripts/other.sh', 'scripts/trackfw-credential-guard.sh'})
 
     def test_inject_gemini_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_gemini_hooks
@@ -451,13 +541,47 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data = json.load(f)
         self.assertIn('Notification', data.get('hooks', {}))
         self.assertIn('AfterTool', data.get('hooks', {}))
+        self.assertIn('BeforeTool', data.get('hooks', {}))
+
+        before = data['hooks']['BeforeTool']
+        self.assertEqual(len(before), 1)
+        self.assertEqual(before[0]['matcher'], 'run_shell_command')
+        self.assertEqual(before[0]['hooks'][0]['command'], 'scripts/trackfw-credential-guard.sh')
+
+        after = data['hooks']['AfterTool']
+        after_matchers = {e['matcher'] for e in after}
+        self.assertEqual(after_matchers, {'*', 'run_shell_command'})
 
         # Idempotência
         inject_gemini_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
         self.assertEqual(len(data2['hooks']['Notification']), 1)
-        self.assertEqual(len(data2['hooks']['AfterTool']), 1)
+        self.assertEqual(len(data2['hooks']['AfterTool']), 2)
+        self.assertEqual(len(data2['hooks']['BeforeTool']), 1)
+
+    def test_inject_gemini_hooks_preserves_existing_before_tool_entry(self):
+        from trackfw.generators.hooks import inject_gemini_hooks
+        path = os.path.join(self.tmp, '.gemini', 'settings.json')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'BeforeTool': [
+                        {'matcher': 'run_shell_command', 'hooks': [{'type': 'command', 'command': 'scripts/other.sh'}]},
+                    ],
+                },
+            }, f)
+
+        inject_gemini_hooks(self.tmp)
+        inject_gemini_hooks(self.tmp)
+
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        before = data['hooks']['BeforeTool']
+        self.assertEqual(len(before), 1)
+        commands = {h['command'] for h in before[0]['hooks']}
+        self.assertEqual(commands, {'scripts/other.sh', 'scripts/trackfw-credential-guard.sh'})
 
     def test_inject_kiro_hooks(self):
         from trackfw.generators.hooks import inject_kiro_hooks
@@ -466,7 +590,24 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertTrue(os.path.isfile(path))
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        self.assertEqual(len(data.get('hooks', [])), 2)
+        self.assertEqual(data.get('version'), 'v1')
+        hooks = data.get('hooks', [])
+        self.assertEqual(len(hooks), 4)
+        for entry in hooks:
+            self.assertNotIn('event', entry, 'legacy "event" field must not be emitted')
+            self.assertIn('trigger', entry)
+            self.assertNotIsInstance(entry.get('matcher'), dict, 'matcher must be a plain regex string')
+
+        by_name = {h['name']: h for h in hooks}
+        self.assertEqual(by_name['trackfw-attention-signal']['trigger'], 'PreToolUse')
+        self.assertEqual(by_name['trackfw-attention-cleanup']['trigger'], 'PostToolUse')
+        guard_pre = by_name['trackfw-credential-guard-pre']
+        self.assertEqual(guard_pre['trigger'], 'PreToolUse')
+        self.assertEqual(guard_pre['matcher'], 'shell')
+        self.assertEqual(guard_pre['action']['command'], 'scripts/trackfw-credential-guard.sh')
+        guard_post = by_name['trackfw-credential-guard-post']
+        self.assertEqual(guard_post['trigger'], 'PostToolUse')
+        self.assertEqual(guard_post['matcher'], 'shell')
 
         # Idempotência
         inject_kiro_hooks(self.tmp)
@@ -481,8 +622,29 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertTrue(os.path.isfile(path))
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
+        self.assertEqual(data.get('version'), 1)
         self.assertIn('preToolUse', data.get('hooks', {}))
         self.assertIn('postToolUse', data.get('hooks', {}))
+        self.assertEqual(len(data['hooks']['preToolUse']), 2)
+        self.assertEqual(len(data['hooks']['postToolUse']), 2)
+
+        def find_by_bash(entries, bash):
+            return next((e for e in entries if e.get('bash') == bash), None)
+
+        signal = find_by_bash(data['hooks']['preToolUse'], 'scripts/trackfw-attention-signal.sh')
+        self.assertIsNotNone(signal, 'preToolUse missing attention-signal entry')
+        self.assertNotIn('matcher', signal)
+
+        guard_pre = find_by_bash(data['hooks']['preToolUse'], 'scripts/trackfw-credential-guard.sh')
+        self.assertIsNotNone(guard_pre, 'preToolUse missing credential-guard entry')
+        self.assertEqual(guard_pre.get('matcher'), 'bash')
+
+        cleanup = find_by_bash(data['hooks']['postToolUse'], 'scripts/trackfw-attention-cleanup.sh')
+        self.assertIsNotNone(cleanup, 'postToolUse missing attention-cleanup entry')
+
+        guard_post = find_by_bash(data['hooks']['postToolUse'], 'scripts/trackfw-credential-guard.sh')
+        self.assertIsNotNone(guard_post, 'postToolUse missing credential-guard entry')
+        self.assertEqual(guard_post.get('matcher'), 'bash')
 
         # Idempotência
         inject_copilot_hooks(self.tmp)
@@ -500,12 +662,40 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertIn('preToolUse', data)
         self.assertIn('postToolUse', data)
 
+        self.assertEqual(data.get('version'), 1)
+        self.assertIn('hooks', data)
+        self.assertEqual(len(data['hooks']['beforeShellExecution']), 1)
+        self.assertEqual(
+            data['hooks']['beforeShellExecution'][0]['command'],
+            'scripts/trackfw-credential-guard.sh',
+        )
+        self.assertEqual(len(data['hooks']['afterShellExecution']), 1)
+        self.assertEqual(
+            data['hooks']['afterShellExecution'][0]['command'],
+            'scripts/trackfw-credential-guard.sh',
+        )
+
         # Idempotência
         inject_cursor_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
         self.assertEqual(len(data2['preToolUse']), 1)
         self.assertEqual(len(data2['postToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['beforeShellExecution']), 1)
+        self.assertEqual(len(data2['hooks']['afterShellExecution']), 1)
+
+    def test_inject_cursor_hooks_preserves_existing_version(self):
+        from trackfw.generators.hooks import inject_cursor_hooks
+        cursor_dir = os.path.join(self.tmp, '.cursor')
+        os.makedirs(cursor_dir, exist_ok=True)
+        path = os.path.join(cursor_dir, 'hooks.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'version': 2, 'hooks': {}}, f)
+
+        inject_cursor_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        self.assertEqual(data['version'], 2)
 
     def test_inject_hooks_detected(self):
         from trackfw.generators.hooks import inject_hooks_detected
@@ -555,6 +745,44 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.claude', 'settings.json')))
         self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')))
         self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-credential-guard.sh')))
+
+    def test_update_command_upgrade_scenario_backfills_credential_guard(self):
+        """
+        Cenário de upgrade: projeto que já rodou `trackfw init`/`update` ANTES desta
+        REQ tem scripts/trackfw-attention-signal.sh mas ainda não tem
+        scripts/trackfw-credential-guard.sh. `trackfw update` deve gerar o script
+        que falta, sem quebrar nada existente.
+        """
+        from trackfw.commands.update import _run
+        import argparse
+        import os
+
+        with open(os.path.join(self.tmp, 'trackfw.yaml'), 'w', encoding='utf-8') as f:
+            f.write('backend: python\nroadmap_dir: docs/roadmaps\n')
+        os.makedirs(os.path.join(self.tmp, '.claude'), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, 'scripts'), exist_ok=True)
+
+        signal_path = os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')
+        with open(signal_path, 'w', encoding='utf-8') as f:
+            f.write('#!/usr/bin/env bash\necho "old signal script"\n')
+        os.chmod(signal_path, 0o755)
+
+        guard_path = os.path.join(self.tmp, 'scripts', 'trackfw-credential-guard.sh')
+        self.assertFalse(os.path.isfile(guard_path), 'pré-condição do teste: credential-guard não deve existir ainda')
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(self.tmp)
+            _run(argparse.Namespace())
+        finally:
+            os.chdir(old_cwd)
+
+        self.assertTrue(os.path.isfile(guard_path), 'update não gerou o script de credential guard faltante')
+        if os.name == 'posix':
+            self.assertTrue(os.stat(guard_path).st_mode & 0o111 != 0, 'credential guard script não é executável')
+        # attention-signal.sh preexistente continua presente e não foi removido
+        self.assertTrue(os.path.isfile(signal_path))
 
 
 class TestGenerateClaudeCommands(unittest.TestCase):

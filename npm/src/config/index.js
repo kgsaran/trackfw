@@ -57,6 +57,11 @@ function defaults() {
       jiraToken: '',
       jiraProject: '',
     },
+    // credential_guard field — see ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-
+    // credenciais-reais-por-subagentes.md.
+    credentialGuard: {
+      mode: 'warn',
+    },
     rules: {
       wip_has_req:          'error',
       wip_acceptance:       'error',
@@ -259,6 +264,15 @@ function parse(content, cfg) {
   if (stringVal(m, 'jira_email') !== undefined) cfg.sync.jiraEmail = m.jira_email;
   if (stringVal(m, 'jira_token') !== undefined) cfg.sync.jiraToken = m.jira_token;
   if (stringVal(m, 'jira_project') !== undefined) cfg.sync.jiraProject = m.jira_project;
+
+  // credential_guard field — nested mapping, same shape as link_fields above. An unrecognized
+  // mode value (or an absent/malformed credential_guard block) falls back to the safe default
+  // ("warn") silently, matching how every other unrecognized-shape field in this parser behaves
+  // (e.g. roadmap_namespacing, forge) — no fatal path, no stderr message, for one enum key.
+  if (m.credential_guard !== undefined && typeof m.credential_guard === 'object' && !Array.isArray(m.credential_guard)) {
+    const mode = stringVal(m.credential_guard, 'mode');
+    if (mode === 'warn' || mode === 'block') cfg.credentialGuard.mode = mode;
+  }
 
   return false;
 }

@@ -9545,3 +9545,219 @@ automaticamente; varredura ampla por listas hardcoded de targets com o mesmo def
 Roadmap **não movido para `done/`** — deixado em `wip/` para o orquestrador (Zeus) auditar e mover.
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Tooling não tem autoridade
 Git).
+
+## Sessão 2026-08-05 — Apolo (fix crítico pós-auditoria: geradores de credential-guard nunca eram
+chamados por fluxo real) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/hooks-de-guarda-contra-materializacao-de-credenciais` (já criada — sem
+commit/push feitos por este agente). Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`.
+
+**Bug**: `GenerateCredentialGuardScript`/`generateCredentialGuardScript`/
+`_generate_credential_guard_script` (ML-1A) escreviam `scripts/trackfw-credential-guard.sh`, mas
+nenhum fluxo real (`init`/`update`/`discover --init`) chamava essas funções — só testes diretos. O
+script nunca existia em disco em projetos reais, apesar do wiring de hooks (ML-2A/2B/2C) já apontar
+para ele.
+
+**Fix — chamada adicionada ao lado da chamada irmã de `GenerateAttentionScripts`, mesma condição
+(incondicional), em todos os pontos reais**:
+- Go: `internal/generators/scaffold.go` (`Scaffold`, linha ~60-64), `internal/generators/update.go`
+  (`Update`, ~linha 77-81; e `runProjectTarget("agent-hooks")`, ~linha 598-624, incluindo
+  `scripts/trackfw-credential-guard.sh` nos `relPaths`/display path do target), `internal/discover/discover.go`
+  (`InstallGates`, ~linha 61-64).
+- Node.js: `npm/src/generators/init.js` (nova função local `generateCredentialGuardScript` +
+  chamada em `scaffold()` + export), `npm/src/commands/discover.js` (bloco `opts.init`),
+  `npm/src/commands/update.js` (`buildProjectTargets` target `agent-hooks`, incluindo o path no
+  `relPaths`/display path).
+- Python: centralizado em `pypi/trackfw/generators/hooks.py` `inject_hooks_detected()` (ao lado da
+  chamada existente a `_generate_attention_scripts`) — cobre `update.py` (`_run` e `_run_project`) e
+  `init_gen.py` `scaffold()` (que já chama `inject_hooks_detected` depois de `_generate_attention_scripts`
+  direto); chamada direta também adicionada em `init_gen.py::scaffold()` e em
+  `pypi/trackfw/commands/discover.py` (bloco `opts.init`) para espelhar exatamente cada call site do
+  gerador irmão. `AGENT_HOOKS_RELATIVE_PATHS`/`AGENT_HOOKS_DISPLAY_PATH` em `update.py` atualizados.
+
+**Testes novos/estendidos (fluxo real, não chamada direta do gerador)**:
+- Go: `internal/commands/init_test.go::TestInitGeneratesCredentialGuardScript` (via `newInitCmd()` +
+  `cmd.Execute()`), `internal/discover/discover_test.go::TestInstallGates_GeraCredentialGuardScript`
+  (via `InstallGates`, byte-idêntico à referência + idempotência),
+  `internal/generators/update_test.go::TestUpdateBackfillsCredentialGuardScriptForPreExistingProject`
+  (cenário de upgrade: projeto com `trackfw-attention-signal.sh` mas sem `trackfw-credential-guard.sh`
+  → `Update()` cria o que falta) + assert estendido em
+  `TestUpdateInjectsAndUpdatesAttentionHooksIdempotently`.
+- Node.js: `npm/tests/generators.test.js` (assert estendido no teste de `scaffold` e no teste de
+  `update` real + novo teste de cenário de upgrade), `npm/tests/discover-init-attention.test.js`
+  (novo teste via binário real `bin/trackfw discover --init`, byte-idêntico à referência).
+- Python: `pypi/tests/test_generators_init.py` (assert estendido em
+  `test_scaffold_generates_attention_scripts` + novo
+  `test_update_command_upgrade_scenario_backfills_credential_guard` via `commands.update._run`),
+  `pypi/tests/test_discover.py` (novo `test_discover_init_generates_credential_guard_script` via
+  `discover_cmd._cmd_discover`).
+
+**Validação (evidência)**:
+- `go build ./...` OK; `go test ./...` completo OK (todos os pacotes)
+- `npm test` — 380 passed, 0 failed (era 378 antes)
+- `python3 -m pytest` — 913 passed, 8 subtests passed (era 911 antes)
+- `trackfw validate` — sem violações
+- `make quality` — Go/Node/Python verdes; `check-cli-parity.sh` falha por divergência de versão
+  `6.4.1` (Go) vs `6.3.1` (Python) — **confirmado pré-existente** (reproduzido também com
+  `git stash` no HEAD anterior às minhas mudanças), fora do escopo deste fix.
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
+Git).
+
+## Sessão 2026-08-06 — Apolo (ML-2D: GitHub Copilot wiring + correção de divergência de formato) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/hooks-de-guarda-contra-materializacao-de-credenciais` (já criada — sem commit/push feitos
+por este agente). Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`,
+ML-2D (Wave 2 — GitHub Copilot).
+
+**Investigação (obrigatória antes de codar)**: confirmado via
+`https://docs.github.com/en/copilot/reference/hooks-reference` (2026-08-05, `curl` do JSON
+`renderedPage` embutido pelo Next.js) que o formato real de `.github/hooks/*.json` é
+`{"version": 1, "hooks": {"<event>": [{"type": "command", "bash": "...", "cwd": "...",
+"timeoutSec": N}, ...]}}` — Python já usava esse formato corretamente; Go e Node usavam
+`{"hooks": [{"event", "run"}]}`, que não corresponde a nenhum formato documentado. Alinhados Go/Node
+ao formato do Python. Confirmado também suporte real a `matcher` (regex ancorado contra `toolName`)
+em `preToolUse`/`postToolUse`, ao contrário do pressuposto do ADR de que não existia — usado
+`matcher: "bash"` (nome runtime do tool de shell em minúsculo, válido para eventos camelCase como os
+usados aqui). `trackfw-credential-guard.sh` foi inspecionado e não depende de nomes de campo
+específicos do payload (grep sobre o payload bruto inteiro), então funciona independente do
+camelCase/PascalCase do evento. Concorrência: "If multiple hooks of the same type are configured,
+they execute in order" — resposta mais definitiva entre todos os CLIs cobertos até aqui (serial, em
+ordem de configuração), ao contrário do Codex (concorrente, ML-2B) e do Gemini (indocumentado,
+ML-2C). Detalhe completo em `docs/cli-parity.md` (seção "GitHub Copilot wiring (ML-2D)").
+
+**Arquivos alterados**:
+- `internal/generators/agentfiles.go` (`InjectCopilotHooks` — formato realinhado + novas entradas
+  `matcher:"bash"` de credential-guard, com comentário de fonte/investigação)
+- `internal/generators/agentfiles_test.go` (`TestInjectCopilotHooks` — asserts reescritos para o novo
+  formato)
+- `internal/generators/copilot_hooks_parity_test.go` (novo —
+  `TestInjectCopilotHooks_StructuralParityAcrossStacks`, invoca Go/Node/Python como subprocessos
+  reais via `node`/`python3` e compara a estrutura JSON resultante, não byte-a-byte)
+- `npm/src/generators/hooks.js` (`injectCopilotHooks` — mesmo realinhamento)
+- `npm/tests/generators.test.js` (asserts reescritos)
+- `pypi/trackfw/generators/hooks.py` (`inject_copilot_hooks` — formato pré-existente mantido +
+  novas entradas de credential-guard)
+- `pypi/tests/test_generators_init.py` (asserts estendidos)
+- `docs/cli-parity.md` (nova seção "GitHub Copilot wiring (ML-2D)")
+- `docs/roadmaps/wip/ROADMAP-2026-08-05-...md` (ML-2D marcado ✅ Concluído com nota de auditoria)
+
+**Validação (evidência)**:
+- `go build ./...` OK; `go test ./...` OK (todos os pacotes, incluindo o novo teste de paridade
+  estrutural cross-stack)
+- `npm --prefix npm test` (`node --test tests/*.test.js`) — 380 passed, 0 failed
+- `python3 -m pytest pypi/tests/` — 913 passed, 8 subtests passed
+- `python3 -m pytest pypi/tests/ -k hooks` — 19 passed (subset relevante)
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
+Git). Não toquei em Cursor (ML-2E) nem Kiro (ML-2F), conforme escopo deste ML.
+
+---
+
+## Sessão 2026-08-05 — Apolo (ML-2F: Kiro — wiring credential-guard) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/hooks-de-guarda-contra-materializacao-de-credenciais` (já criada pelo orquestrador —
+Backend não executa Git; sem commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`,
+ML-2F (último ML da Wave 2). REQ/ADR: `docs/req/REQ-2026-08-05-...md` /
+`docs/adr/ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`.
+
+**Investigação (obrigatória por instrução do ML) — confirmada afirmativamente**: via
+`kiro.dev/docs/hooks/`, `.../hooks/types` e `.../hooks/actions/` (2026-08-05, `curl -L` do RSC/HTML,
+sem WebFetch/WebSearch disponível nesta execução), `PreToolUse` é um trigger real, distinto de
+`PostFileSave`/eventos de IDE — "Before a tool is about to execute", Can block: **Yes**. Resolve a
+dúvida em aberto da ADR: o mecanismo de hooks do Kiro de fato intercepta invocações de tool (incluindo
+shell) antes da execução. Decisão: **implementar** (não re-escopar).
+
+**Achado crítico, corrigido no mesmo ML (não deixado só como nota)**: o wiring pré-existente
+(`InjectKiroHooks`/`injectKiroHooks`/`inject_kiro_hooks` nos 3 stacks) usava um schema que não existe
+na documentação real do Kiro — campo `"event"` (deveria ser `"trigger"`), `matcher` como objeto
+`{tool_name: ".*"}` (deveria ser regex string; `.*` nem é um valor de matcher documentado), sem
+`"version"` no topo (deveria ser `"v1"`, string). Como `.kiro/hooks/trackfw-attention.json` é um
+arquivo 100% owned/overwritten pelo trackfw (mesmo padrão do GitHub Copilot no ML-2D, diferente do
+Cursor no ML-2E que é merge-target com conteúdo de usuário), corrigi as entradas legadas
+`trackfw-attention-signal`/`-cleanup` junto com as novas de credential-guard, em vez de deixar
+entradas comprovadamente inválidas ao lado de entradas novas corretas no mesmo array `hooks`.
+
+**Wiring novo**: `PreToolUse`/matcher `"shell"` e `PostToolUse`/matcher `"shell"` (categoria
+documentada "all built-in shell command-related tools") apontando para
+`scripts/trackfw-credential-guard.sh`. Contrato de bloqueio do Kiro é mais estrito que Claude
+Code/Codex/Gemini: **qualquer** exit code não-zero de um hook `PreToolUse` bloqueia a invocação (não
+só exit 2) — reauditei `trackfw-credential-guard.sh` e confirmei que só tem `exit 0`/`exit 2` nos
+caminhos normais de operação, então `warn` nunca bloqueia espuriamente no Kiro. Nenhuma mudança no
+script foi necessária. Detalhe completo, com citações das 3 páginas, em `docs/cli-parity.md` (seção
+"Kiro wiring (ML-2F)"). Adicionei também uma nota de resolução na própria ADR (tabela de suporte por
+CLI), já que a dúvida registrada ali estava explicitamente em aberto.
+
+**Arquivos alterados**:
+- `internal/generators/agentfiles.go` (`InjectKiroHooks` — schema realinhado + 2 hooks novos de
+  credential-guard, comentário extenso de fonte/investigação)
+- `internal/generators/agentfiles_test.go` (`TestInjectKiroHooks` — reescrito: 4 hooks, `version:
+  "v1"`, ausência de `event`, `matcher` string não-objeto, campos específicos do guard-pre/post)
+- `npm/src/generators/hooks.js` (`injectKiroHooks` — mesma extensão)
+- `npm/tests/generators.test.js` (asserts reescritos, mesmo padrão)
+- `pypi/trackfw/generators/hooks.py` (`inject_kiro_hooks` — mesma extensão)
+- `pypi/tests/test_generators_init.py` (`test_inject_kiro_hooks` — asserts reescritos)
+- `docs/cli-parity.md` (nova seção "Kiro wiring (ML-2F)")
+- `docs/adr/ADR-2026-08-05-...md` (nota de resolução na tabela de suporte por CLI, linha Kiro)
+- `docs/roadmaps/wip/ROADMAP-2026-08-05-...md` (ML-2F marcado ✅ Concluído com nota de auditoria)
+
+**Validação (evidência)**:
+- `go build ./...` OK; `go vet ./...` OK; `go test ./...` OK (todos os pacotes)
+- `node --test tests/generators.test.js` (dentro de `npm/`) — 28 passed, 0 failed, incluindo
+  `injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently`
+- `npm --prefix npm test` completo — 381 passed, 0 failed
+- `python3 -m pytest pypi/` completo — 914 passed
+- `python3 -m pytest pypi/tests/ -k hooks` — 20 passed
+- `trackfw validate` (binário compilado desta branch) — "Nenhuma violação encontrada."
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
+Git). Wave 2 completa (ML-2A a ML-2F, todos ✅). Próximo: Wave 3 (ML-3A, gate de paridade
+hooks.json/settings.json).
+
+## Sessão 2026-08-05 — Zeus (orquestração/encerramento do ciclo: hook de guarda contra
+materialização de credenciais) — ROADMAP CONCLUÍDO
+
+Branch `feat/hooks-de-guarda-contra-materializacao-de-credenciais`. REQ
+`docs/req/REQ-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`,
+ADR `docs/adr/ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`,
+Roadmap `docs/roadmaps/wip/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`.
+
+Todas as 5 Waves concluídas e auditadas (build/testes rodados pelo orquestrador de forma independente
+do relato de cada subagente, incluindo reprodução manual de todas as provas negativas antes de
+aprovar commit):
+
+- **Wave 1 (ML-1A):** script `trackfw-credential-guard.sh` + config `credential_guard.mode`
+  (warn|block, default warn), paridade Go/Node/Python.
+- **Wave 2 (ML-2A-2F):** wiring nos 6 CLIs da wave nativa (Claude Code, Codex, Gemini CLI, Copilot,
+  Cursor, Kiro) — nenhum precisou ser re-escopado. Achados corrigidos durante a wave: race de
+  concorrência do Codex (fix: arquivo `.trackfw-credential-guard.json` dedicado), bug crítico do
+  script nunca sendo gerado em fluxo real (fix dedicado pós-ML-2C), 4 divergências de paridade
+  Go/Node/Python (Codex, Gemini, Copilot formato inteiro, Kiro schema legado).
+- **Wave 3 (ML-3A):** `scripts/check-agent-hooks-parity.sh`, gate estrutural novo encadeado em
+  `make quality`/`parity`, prova negativa como Cenário 44 de `check-gates-falsify.sh`.
+- **Wave 4 (ML-4A):** teste de sabotagem end-to-end real (JWT sintético, subprocess real) para 3 de 6
+  CLIs (Claude Code, Cursor, Kiro) — os outros 3 sem teste por falta de confiança no schema de
+  payload de stdin documentado publicamente, status explícito no roadmap/REQ, não omissão.
+- **Wave 5 (ML-5A):** `docs/cli-parity.md` consolidado com tabela única de suporte por CLI + achados
+  transversais; REQ com Acceptance Criteria atualizados (4 de 5 checados; o 5º —
+  `make quality`/`make parity` — bloqueado por bug pré-existente não relacionado a esta REQ,
+  documentado, `trackfw validate` passa limpo).
+
+**Erro de processo do próprio Zeus nesta sessão, corrigido e registrado em memória**: a branch foi
+criada manualmente (`git checkout -b`) em vez de via `trackfw branch new`, o que causou um commit
+indevido direto na `main` (revertido antes de qualquer push) e 2 rounds de rename até o slug bater
+com o filename do roadmap. Ver memória `feedback_usar_trackfw_branch_new`.
+
+**Achado fora de escopo, registrado para REQ futura**: divergência de versão pré-existente
+(`pypi/trackfw/__init__.py` fallback `6.3.1` vs. `6.4.1` em Go/Node) bloqueia `make quality`/`make
+parity` de ponta a ponta — não corrigido nesta REQ. Também fora de escopo: wiring legado
+(`preToolUse`/`postToolUse`) do Cursor usa um schema que não corresponde a nenhum evento real
+documentado do Cursor (achado do ML-2E, preservado por instrução explícita, não migrado).
+
+Roadmap **não movido para `done/`** — deixado em `wip/` para o usuário confirmar o encerramento
+(commits todos feitos por Zeus após auditoria de cada ML; nenhum PR aberto ainda — decisão do
+usuário).

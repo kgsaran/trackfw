@@ -104,6 +104,32 @@ def test_discover_init_by_agent(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# test_discover_init_generates_credential_guard_script
+# ---------------------------------------------------------------------------
+
+def test_discover_init_generates_credential_guard_script(tmp_path, monkeypatch):
+    """
+    `trackfw discover --init` deve gerar scripts/trackfw-credential-guard.sh (mesmo
+    ciclo de vida de scripts/trackfw-attention-signal.sh, que já era gerado por este
+    fluxo antes desta REQ) — regressão do bug onde o gerador existia mas nunca era
+    chamado por nenhum fluxo real.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    args = argparse.Namespace(init=True, bootstrap_log=False)
+    discover_cmd._cmd_discover(args)
+
+    signal_path = tmp_path / "scripts" / "trackfw-attention-signal.sh"
+    guard_path = tmp_path / "scripts" / "trackfw-credential-guard.sh"
+
+    assert signal_path.is_file(), "trackfw-attention-signal.sh deveria ser criado por discover --init"
+    assert guard_path.is_file(), "trackfw-credential-guard.sh não foi criado por discover --init"
+
+    if os.name == "posix":
+        assert os.stat(guard_path).st_mode & 0o111 != 0, "credential guard script não é executável"
+
+
+# ---------------------------------------------------------------------------
 # test_discover_bootstrap_log
 # ---------------------------------------------------------------------------
 
