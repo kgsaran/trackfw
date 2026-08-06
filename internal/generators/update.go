@@ -279,16 +279,18 @@ var harnessCatalogTargetOrder = []string{
 }
 
 // HarnessTargetIDs is the fixed, declared order of `trackfw update harness`
-// targets: 23 ids — "claude-skill", then "claude-credential-guard" (global
+// targets: 24 ids — "claude-skill", then "claude-credential-guard" (global
 // credential-guard hook wiring for Claude Code — placed immediately after
 // claude-skill since both are Claude-Code-scoped global artifacts), then for
 // each catalog target in harnessCatalogTargetOrder its "<tool>-agents"/
 // "<tool>-skills" pair, with "codex-credential-guard" inserted immediately
-// BEFORE "codex-agents"/"codex-skills" (ROADMAP-2026-08-06 Wave 2/ML-2B) —
-// same relative position as claude-credential-guard (credential-guard target
+// BEFORE "codex-agents"/"codex-skills" (ROADMAP-2026-08-06 Wave 2/ML-2B) and
+// "gemini-credential-guard" inserted immediately BEFORE "gemini-agents"/
+// "gemini-skills" (ROADMAP-2026-08-06 Wave 2/ML-2C) — same relative position
+// as claude-credential-guard/codex-credential-guard (credential-guard target
 // precedes that tool's agents/skills pair, never follows it). Remaining
 // "<tool>-credential-guard" siblings are added by subsequent, sequential MLs
-// (2C-2F), each at the same relative position for its own tool. Order here
+// (2D-2F), each at the same relative position for its own tool. Order here
 // is authoritative for both JSON output and iteration — it must never be
 // derived from the filesystem or from what happens to be installed on a
 // given machine (see docs/cli-parity.md, "targets follows the declared
@@ -296,11 +298,14 @@ var harnessCatalogTargetOrder = []string{
 var HarnessTargetIDs = buildHarnessTargetIDs()
 
 func buildHarnessTargetIDs() []string {
-	ids := make([]string, 0, 3+2*len(harnessCatalogTargetOrder))
+	ids := make([]string, 0, 4+2*len(harnessCatalogTargetOrder))
 	ids = append(ids, "claude-skill", "claude-credential-guard")
 	for _, tool := range harnessCatalogTargetOrder {
 		if tool == "codex" {
 			ids = append(ids, "codex-credential-guard")
+		}
+		if tool == "gemini" {
+			ids = append(ids, "gemini-credential-guard")
 		}
 		ids = append(ids, tool+"-agents", tool+"-skills")
 	}
@@ -346,6 +351,10 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		}
 		if id == "codex-credential-guard" {
 			results = append(results, harnessCredentialGuardTargetCodex(home, opts))
+			continue
+		}
+		if id == "gemini-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetGemini(home, opts))
 			continue
 		}
 		tool, kind, ok := splitHarnessCatalogTargetID(id)
@@ -602,6 +611,98 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 		root = make(map[string]interface{})
 	}
 	mergeCredentialGuardClaudeHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// mergeCredentialGuardGeminiHooks merges the credential-guard BeforeTool/
+// AfterTool[matcher:"run_shell_command"] entries into root["hooks"],
+// preserving any other hook groups/matchers already present. Gemini CLI uses
+// different top-level event names than Claude/Codex (BeforeTool/AfterTool
+// instead of PreToolUse/PostToolUse — see InjectGeminiHooks, agentfiles.go,
+// confirmed against https://geminicli.com/docs/hooks/reference), but the
+// per-entry array shape ({"matcher","hooks":[{"type","command"}]}) is
+// identical, so mergeClaudeHookArray is reused verbatim — only the top-level
+// key names and matcher value differ from mergeCredentialGuardClaudeHooks.
+func mergeCredentialGuardGeminiHooks(root map[string]interface{}, scriptPath string) {
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "run_shell_command", scriptPath)
+	hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "run_shell_command", scriptPath)
+	root["hooks"] = hooks
+}
+
+// harnessCredentialGuardTargetGemini evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Gemini CLI:
+// BeforeTool[matcher:"run_shell_command"]/AfterTool[matcher:"run_shell_command"]
+// entries in ~/.gemini/settings.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — mirrors
+// harnessCredentialGuardTargetClaude/harnessCredentialGuardTargetCodex
+// exactly (same 4-state contract, same idempotent merge, now via
+// mergeCredentialGuardGeminiHooks since the event key names differ from
+// Claude/Codex's PreToolUse/PostToolUse), same reason for an absolute path
+// over InjectGeminiHooks's project-relative
+// "scripts/trackfw-credential-guard.sh": a global hook can fire from any
+// project's cwd.
+func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetResult {
+	const id = "gemini-credential-guard"
+	const displayPath = "~/.gemini/settings.json"
+
+	path := filepath.Join(home, ".gemini", "settings.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardGeminiHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardGeminiHooks(root, scriptPath)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {

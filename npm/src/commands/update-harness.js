@@ -209,6 +209,61 @@ function credentialGuardTargetCodex(homeRoot, { dryRun, installMissing }) {
   }
 }
 
+// credentialGuardTargetGemini — evaluates (and, unless --dry-run, applies)
+// the global-scope credential-guard hook wiring for Gemini CLI:
+// BeforeTool[matcher:"run_shell_command"]/AfterTool[matcher:"run_shell_command"]
+// entries in ~/.gemini/settings.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — mirrors
+// credentialGuardTargetClaude/credentialGuardTargetCodex exactly (same
+// 4-state contract, same idempotent merge via mergeClaudeHookArray), only the
+// top-level event key names differ (BeforeTool/AfterTool instead of
+// PreToolUse/PostToolUse, and matcher "run_shell_command" instead of "Bash")
+// since Gemini CLI uses a different hook vocabulary than Claude/Codex (see
+// generators/hooks.js:injectGeminiHooks, confirmed against
+// https://geminicli.com/docs/hooks/reference). Mirrors
+// internal/generators/update.go:harnessCredentialGuardTargetGemini.
+function credentialGuardTargetGemini(homeRoot, { dryRun, installMissing }) {
+  const id = 'gemini-credential-guard'
+  const filePath = path.join(homeRoot, '.gemini', 'settings.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+
+  let root
+  let raw = null
+  try {
+    if (fs.existsSync(filePath)) {
+      raw = fs.readFileSync(filePath, 'utf8')
+      root = raw.length ? JSON.parse(raw) : {}
+    } else {
+      if (!installMissing) return { id, state: 'missing', path: displayPath }
+      if (dryRun) return { id, state: 'updated', path: displayPath }
+      root = {}
+      if (!root.hooks) root.hooks = {}
+      root.hooks.BeforeTool = mergeClaudeHookArray(root.hooks.BeforeTool, 'run_shell_command', scriptPath)
+      root.hooks.AfterTool = mergeClaudeHookArray(root.hooks.AfterTool, 'run_shell_command', scriptPath)
+      const desired = JSON.stringify(root, null, 2) + '\n'
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, desired, 'utf8')
+      return { id, state: 'updated', path: displayPath }
+    }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+
+  try {
+    if (!root.hooks) root.hooks = {}
+    root.hooks.BeforeTool = mergeClaudeHookArray(root.hooks.BeforeTool, 'run_shell_command', scriptPath)
+    root.hooks.AfterTool = mergeClaudeHookArray(root.hooks.AfterTool, 'run_shell_command', scriptPath)
+    const desired = JSON.stringify(root, null, 2) + '\n'
+    if (desired === raw) return { id, state: 'skipped', path: displayPath }
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
 // catalogBundleTarget — one target per (tool, kind) pair at global scope.
 // Uses IntegrationManager.inspect (read-only) to classify every catalog
 // item under that pair, then only calls manager.update() for the subset
@@ -253,13 +308,15 @@ function catalogBundleTarget(toolId, kind, homeRoot, identityConfig, { dryRun, i
 }
 
 // HARNESS_TARGET_IDS — mirrors internal/generators/update.go:HarnessTargetIDs.
-// "codex-credential-guard" is inserted immediately BEFORE "codex-agents"/
-// "codex-skills" (same relative position as claude-credential-guard, which
-// precedes claude-agents/claude-skills) — see buildHarnessTargetIDs's
-// comment in update.go for the full rationale.
+// "codex-credential-guard"/"gemini-credential-guard" are each inserted
+// immediately BEFORE their tool's "-agents"/"-skills" pair (same relative
+// position as claude-credential-guard, which precedes claude-agents/
+// claude-skills) — see buildHarnessTargetIDs's comment in update.go for the
+// full rationale.
 const HARNESS_TARGET_IDS = ['claude-skill', 'claude-credential-guard']
 for (const target of catalog.targets) {
   if (target.id === 'codex') HARNESS_TARGET_IDS.push('codex-credential-guard')
+  if (target.id === 'gemini') HARNESS_TARGET_IDS.push('gemini-credential-guard')
   HARNESS_TARGET_IDS.push(`${target.id}-agents`, `${target.id}-skills`)
 }
 
@@ -276,6 +333,9 @@ function buildHarnessTargets(homeRoot, identityConfig, { dryRun, installMissing 
   for (const target of catalog.targets) {
     if (target.id === 'codex' && include('codex-credential-guard')) {
       targets.push(credentialGuardTargetCodex(homeRoot, { dryRun, installMissing }))
+    }
+    if (target.id === 'gemini' && include('gemini-credential-guard')) {
+      targets.push(credentialGuardTargetGemini(homeRoot, { dryRun, installMissing }))
     }
     const agentsId = `${target.id}-agents`
     const skillsId = `${target.id}-skills`
@@ -338,4 +398,5 @@ module.exports = {
   claudeSkillContent,
   credentialGuardTargetClaude,
   credentialGuardTargetCodex,
+  credentialGuardTargetGemini,
 }

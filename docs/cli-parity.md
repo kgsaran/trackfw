@@ -1779,16 +1779,19 @@ Wave 6 round.
 
 ### Declared harness targets — pinned list
 
-The harness target list is **not** derived at runtime; it is this fixed sequence of 23 ids, in this
+The harness target list is **not** derived at runtime; it is this fixed sequence of 24 ids, in this
 exact order: `claude-skill`, `claude-credential-guard` (global-scope credential-guard wiring for
 Claude Code — `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
 ML-2A), `claude-agents`, `claude-skills`, `codex-credential-guard` (same wave, ML-2B — global-scope
-credential-guard wiring for Codex CLI, `~/.codex/hooks.json`), `codex-agents`, `codex-skills`, then
-`<tool>-agents`/`<tool>-skills` for the remaining eight catalog tools in `catalog.json` declaration
-order — `gemini`, `antigravity`, `cursor`, `copilot`, `windsurf`, `amazonq`, `opencode`, `kiro`. Each
-`<tool>-credential-guard` id (where it exists) is always positioned immediately BEFORE that tool's
-own `<tool>-agents`/`<tool>-skills` pair, never after — more `<tool>-credential-guard` siblings land
-in subsequent, sequential MLs of the same wave, each at that same relative position for its tool.
+credential-guard wiring for Codex CLI, `~/.codex/hooks.json`), `codex-agents`, `codex-skills`,
+`gemini-credential-guard` (same wave, ML-2C — global-scope credential-guard wiring for Gemini CLI,
+`~/.gemini/settings.json`, `BeforeTool`/`AfterTool[matcher:"run_shell_command"]`), `gemini-agents`,
+`gemini-skills`, then `<tool>-agents`/`<tool>-skills` for the remaining seven catalog tools in
+`catalog.json` declaration order — `antigravity`, `cursor`, `copilot`, `windsurf`, `amazonq`,
+`opencode`, `kiro`. Each `<tool>-credential-guard` id (where it exists) is always positioned
+immediately BEFORE that tool's own `<tool>-agents`/`<tool>-skills` pair, never after — more
+`<tool>-credential-guard` siblings land in subsequent, sequential MLs of the same wave, each at that
+same relative position for its tool.
 
 **Codex hooks default-enabled, confirmed 2026-08-06 (ML-2B):** ROADMAP-2026-08-06's ADR flagged an
 unresolved contradiction between two sources on whether Codex CLI hooks require

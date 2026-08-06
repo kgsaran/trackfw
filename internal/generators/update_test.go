@@ -671,6 +671,219 @@ func TestUpdateHarnessCredentialGuardCodexPreservesExistingContent(t *testing.T)
 	}
 }
 
+// The following gemini-credential-guard tests mirror the codex-credential-
+// guard tests above (ROADMAP-2026-08-06 Wave 2/ML-2C), only the top-level
+// hook event names differ (BeforeTool/AfterTool instead of PreToolUse/
+// PostToolUse) since Gemini CLI uses a different event vocabulary than
+// Claude/Codex (see mergeCredentialGuardGeminiHooks, update.go).
+
+func TestUpdateHarnessCredentialGuardGeminiMissingWithoutInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"gemini-credential-guard"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetMissing {
+		t.Fatalf("state = %q, want missing (no --install-missing)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("gemini-credential-guard was installed without --install-missing: %v", err)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardGeminiInstallsAbsolutePathWithInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"gemini-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (--install-missing)", report.Targets[0].State)
+	}
+	if report.Targets[0].Path != "~/.gemini/settings.json" {
+		t.Fatalf("path = %q, want ~/.gemini/settings.json", report.Targets[0].Path)
+	}
+
+	settingsPath := filepath.Join(home, ".gemini", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("~/.gemini/settings.json was not written: %v", err)
+	}
+
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("invalid JSON written: %v", err)
+	}
+
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !filepath.IsAbs(wantScript) {
+		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
+	}
+	for _, event := range []string{"BeforeTool", "AfterTool"} {
+		hooks, _ := doc["hooks"].(map[string]interface{})
+		if hooks == nil {
+			t.Fatalf("no hooks object written: %v", doc)
+		}
+		arr, _ := hooks[event].([]interface{})
+		found := false
+		for _, item := range arr {
+			obj, _ := item.(map[string]interface{})
+			if obj["matcher"] != "run_shell_command" {
+				continue
+			}
+			innerHooks, _ := obj["hooks"].([]interface{})
+			for _, h := range innerHooks {
+				hObj, _ := h.(map[string]interface{})
+				if hObj["command"] == wantScript {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("%s[matcher=run_shell_command] does not point at the absolute global script path %s: %v", event, wantScript, doc)
+		}
+	}
+}
+
+func TestUpdateHarnessCredentialGuardGeminiIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if _, err := UpdateHarness(UpdateOptions{Targets: []string{"gemini-credential-guard"}, InstallMissing: true}); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(home, ".gemini", "settings.json")
+	firstRun, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"gemini-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetSkipped {
+		t.Fatalf("state = %q, want skipped (already installed, idempotent)", report.Targets[0].State)
+	}
+	secondRun, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(firstRun) != string(secondRun) {
+		t.Fatalf("second run mutated ~/.gemini/settings.json:\nfirst:  %s\nsecond: %s", firstRun, secondRun)
+	}
+
+	var doc map[string]interface{}
+	if err := json.Unmarshal(secondRun, &doc); err != nil {
+		t.Fatal(err)
+	}
+	hooks, _ := doc["hooks"].(map[string]interface{})
+	arr, _ := hooks["BeforeTool"].([]interface{})
+	shellEntries := 0
+	for _, item := range arr {
+		obj, _ := item.(map[string]interface{})
+		if obj["matcher"] == "run_shell_command" {
+			shellEntries++
+		}
+	}
+	if shellEntries != 1 {
+		t.Fatalf("expected exactly one BeforeTool[matcher=run_shell_command] entry, got %d: %v", shellEntries, doc)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardGeminiDryRunDoesNotWrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"gemini-credential-guard"}, InstallMissing: true, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.DryRun {
+		t.Fatal("report.DryRun = false, want true")
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (would install)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini", "settings.json")); !os.IsNotExist(err) {
+		t.Fatal("--dry-run wrote ~/.gemini/settings.json")
+	}
+}
+
+func TestUpdateHarnessCredentialGuardGeminiPreservesExistingContent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	settingsPath := filepath.Join(home, ".gemini", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	preexisting := `{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "ToolPermission",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/trackfw-attention-signal.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "userSetting": "keep-me"
+}
+`
+	if err := os.WriteFile(settingsPath, []byte(preexisting), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"gemini-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (merging into existing file)", report.Targets[0].State)
+	}
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc["userSetting"] != "keep-me" {
+		t.Fatalf("pre-existing top-level key was not preserved: %v", doc)
+	}
+	hooks, _ := doc["hooks"].(map[string]interface{})
+	notifArr, _ := hooks["Notification"].([]interface{})
+	if len(notifArr) != 1 {
+		t.Fatalf("pre-existing Notification entry was dropped: %v", hooks)
+	}
+	beforeArr, _ := hooks["BeforeTool"].([]interface{})
+	var matchers []string
+	for _, item := range beforeArr {
+		obj, _ := item.(map[string]interface{})
+		matchers = append(matchers, fmt.Sprintf("%v", obj["matcher"]))
+	}
+	hasShell := false
+	for _, m := range matchers {
+		if m == "run_shell_command" {
+			hasShell = true
+		}
+	}
+	if !hasShell {
+		t.Fatalf("expected BeforeTool[matcher=run_shell_command] entry to be added: %v", matchers)
+	}
+}
+
 func TestUpdateHarnessDoesNotWriteAnythingOutsideHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

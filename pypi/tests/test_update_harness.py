@@ -104,8 +104,11 @@ def test_harness_declared_target_list_and_order(tmp_path):
     # — same relative position as claude-credential-guard before
     # claude-agents/claude-skills (ROADMAP-2026-08-06 Wave 2/ML-2B).
     assert ids[4:7] == ["codex-credential-guard", "codex-agents", "codex-skills"]
+    # gemini-credential-guard sits immediately before gemini-agents/
+    # gemini-skills — same relative position (ROADMAP-2026-08-06 Wave 2/ML-2C).
+    assert ids[7:10] == ["gemini-credential-guard", "gemini-agents", "gemini-skills"]
     assert ids[-2:] == ["kiro-agents", "kiro-skills"]
-    assert len(ids) == 3 + 10 * 2
+    assert len(ids) == 4 + 10 * 2
 
     home = tmp_path / "home"
     home.mkdir()
@@ -614,3 +617,142 @@ def test_credential_guard_codex_preserves_existing_content(tmp_path):
     for event in ("PreToolUse", "PostToolUse"):
         bash_entries = [entry for entry in doc["hooks"][event] if entry.get("matcher") == "Bash"]
         assert len(bash_entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# `gemini-credential-guard` — global-scope credential-guard hook wiring for
+# Gemini CLI, ROADMAP-2026-08-06 Wave 2 ML-2C. Mirrors the codex-credential-
+# guard tests above and internal/generators/update_test.go's Gemini tests —
+# only the event names differ (BeforeTool/AfterTool, matcher
+# "run_shell_command" instead of PreToolUse/PostToolUse, matcher "Bash").
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_gemini_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "gemini-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".gemini" / "settings.json").exists()
+
+
+def test_credential_guard_gemini_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "gemini-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.gemini/settings.json"
+
+    settings_path = home / ".gemini" / "settings.json"
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+
+    for event in ("BeforeTool", "AfterTool"):
+        entries = doc["hooks"][event]
+        shell_entries = [entry for entry in entries if entry.get("matcher") == "run_shell_command"]
+        assert len(shell_entries) == 1
+        commands = [h["command"] for h in shell_entries[0]["hooks"]]
+        assert want_script in commands
+
+
+def test_credential_guard_gemini_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "gemini-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    settings_path = home / ".gemini" / "settings.json"
+    first_bytes = settings_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "gemini-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = settings_path.read_bytes()
+    assert first_bytes == second_bytes
+
+    doc = json.loads(second_bytes)
+    shell_entries = [entry for entry in doc["hooks"]["BeforeTool"] if entry.get("matcher") == "run_shell_command"]
+    assert len(shell_entries) == 1
+
+
+def test_credential_guard_gemini_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "gemini-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".gemini" / "settings.json").exists()
+
+
+def test_credential_guard_gemini_preserves_existing_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    settings_path = home / ".gemini" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "Notification": [
+                        {
+                            "matcher": "ToolPermission",
+                            "hooks": [{"type": "command", "command": "scripts/trackfw-attention-signal.sh"}],
+                        }
+                    ]
+                },
+                "userSetting": "keep-me",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = cli(
+        "update", "harness", "--targets", "gemini-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert doc["userSetting"] == "keep-me"
+    notif_entries = [entry for entry in doc["hooks"]["Notification"] if entry.get("matcher") == "ToolPermission"]
+    assert len(notif_entries) == 1
+    for event in ("BeforeTool", "AfterTool"):
+        shell_entries = [entry for entry in doc["hooks"][event] if entry.get("matcher") == "run_shell_command"]
+        assert len(shell_entries) == 1

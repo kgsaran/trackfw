@@ -9865,3 +9865,47 @@ de aviso foi adicionada ao `TargetResult` por essa razão. Evidência registrada
 Roadmap ML-2B marcado `✅ Concluído` no arquivo (conteúdo, não commit). Nenhum commit feito — regra
 de git authority, `trackfw_architect` audita e commita. Próximo ML da Wave 2 é o ML-2C
 (`gemini-credential-guard`), ainda `⬜ Pendente`.
+
+## Sessão 2026-08-06 — Apolo (ML-2C do ROADMAP hooks-de-credential-guard-global) — Go+Node+Python implementados, sem commit
+
+Mesma branch. Executando ML-2C (alvo `gemini-credential-guard`) — paridade 3 stacks desde o início,
+seguindo o mesmo padrão do ML-2B.
+
+**Confirmação do shape:** `InjectGeminiHooks` (`internal/generators/agentfiles.go`, wiring de
+projeto) já usa `BeforeTool[matcher:"run_shell_command"]`/`AfterTool[matcher:"run_shell_command"]` em
+`.gemini/settings.json` — evento diferente de Claude/Codex (`PreToolUse`/`PostToolUse`), mas o mesmo
+shape de array por-entrada (`[{matcher, hooks:[{type,command}]}]`), então o helper de merge existente
+(`mergeClaudeHookArray` Go/Node, `_merge_claude_hook_array` Python) funcionou **sem adaptação** —
+só precisou de um wrapper novo (`mergeCredentialGuardGeminiHooks` em Go; lógica inline equivalente em
+Node/Python) apontando para as chaves de topo corretas (`BeforeTool`/`AfterTool` em vez de
+`PreToolUse`/`PostToolUse`, matcher `run_shell_command` em vez de `Bash`).
+
+**Implementação (3 stacks, mesmo padrão do ML-2B):**
+- Go: `internal/generators/update.go` — `"gemini-credential-guard"` inserido em
+  `buildHarnessTargetIDs` imediatamente ANTES de `gemini-agents`/`gemini-skills`; nova função
+  `harnessCredentialGuardTargetGemini` + `mergeCredentialGuardGeminiHooks`. 24 ids totais.
+- Node: `npm/src/commands/update-harness.js` — `credentialGuardTargetGemini`, inserção condicional
+  `if (target.id === 'gemini')` no loop que constrói `HARNESS_TARGET_IDS` e no dispatcher
+  `buildHarnessTargets`.
+- Python: `pypi/trackfw/commands/update_harness.py` — `_credential_guard_gemini_result`, mesma
+  inserção condicional em `declared_target_ids()` e despacho em `_run`.
+- Testes espelhados (missing/install-absoluto/idempotência/dry-run/preservação de conteúdo
+  pré-existente) em `internal/generators/update_test.go`, `internal/commands/update_harness_test.go`,
+  `npm/tests/update-harness.test.js`, `pypi/tests/test_update_harness.py` (+ ajuste de
+  `test_harness_declared_target_list_and_order` para 24 ids) — todos usando `$HOME`/`HOME` de
+  fixture, nunca o `$HOME` real.
+- `docs/cli-parity.md` atualizado ("23 ids" → "24 ids", nova entrada `gemini-credential-guard` na
+  lista pinada).
+
+**Evidência de validação:**
+- `go build ./... && go vet ./... && go test ./...` — todos os pacotes verdes.
+- `cd npm && npm test` — 410 testes verdes.
+- `python3 -m pytest pypi/` — 949 testes verdes, 8 subtests.
+- `GO_BIN=bin/trackfw scripts/check-update-parity.sh` — todos os cenários OK, incluindo
+  `target-list/three-runtimes-identical` confirmando os 24 ids idênticos e na mesma ordem nos 3
+  stacks.
+
+Roadmap ML-2C marcado `✅ Concluído` no arquivo (conteúdo, não commit). Nenhum commit feito — regra
+de git authority, `trackfw_architect` audita e commita. Próximo ML da Wave 2 é o ML-2D
+(`cursor-credential-guard`), ainda `⬜ Pendente`. Cursor/Copilot/Kiro (2D-2F) não tocados, conforme
+instrução do handoff.

@@ -162,17 +162,40 @@ Go-only por erro do orquestrador na autoria do roadmap; não repetir)
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2C — Alvo `gemini-credential-guard`
-**Status:** 🔄 Em andamento
-**Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
-`npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
-irmãos), seção Gemini — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
-Go-only por erro do orquestrador na autoria do roadmap; não repetir)
+**Status:** ✅ Concluído
+
+**Posição em `HarnessTargetIDs`/`HARNESS_TARGET_IDS`/`declared_target_ids()`:**
+`gemini-credential-guard` inserido imediatamente ANTES de `gemini-agents`/`gemini-skills` — mesma
+posição relativa de `claude-credential-guard`/`codex-credential-guard`. Lista completa agora com 24
+ids, confirmada idêntica nos 3 stacks por `check-update-parity.sh` (cenário
+`target-list/three-runtimes-identical`). `docs/cli-parity.md` ("23 ids") corrigido para 24.
+**Helper de merge:** `mergeClaudeHookArray` (Go) / `mergeClaudeHookArray` (Node,
+`generators/hooks.js`) / `_merge_claude_hook_array` (Python, `generators/hooks.py`) funcionou sem
+adaptação — mesmo shape de array `[{matcher, hooks:[{type,command}]}]` usado por
+`InjectGeminiHooks`/equivalentes de projeto, só mudam os nomes das chaves de topo (`BeforeTool`/
+`AfterTool` em vez de `PreToolUse`/`PostToolUse`) e o matcher (`run_shell_command` em vez de `Bash`).
+Novo wrapper `mergeCredentialGuardGeminiHooks` (Go) e lógica equivalente inline em Node/Python criados
+só para essas chaves de topo — reaproveitando o helper de array por baixo.
+**Arquivos afetados:**
+- `internal/generators/update.go` (`buildHarnessTargetIDs`, `UpdateHarness` dispatcher,
+  `mergeCredentialGuardGeminiHooks`, `harnessCredentialGuardTargetGemini`)
+- `internal/generators/update_test.go` (5 testes espelhando os de Codex: missing, install absolute
+  path, idempotência, dry-run, preservação de conteúdo pré-existente)
+- `internal/commands/update_harness_test.go` (`TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI`)
+- `npm/src/commands/update-harness.js` (`HARNESS_TARGET_IDS`, `credentialGuardTargetGemini`,
+  dispatcher em `buildHarnessTargets`)
+- `npm/tests/update-harness.test.js` (5 testes espelhando os de Codex)
+- `pypi/trackfw/commands/update_harness.py` (`declared_target_ids`, `_credential_guard_gemini_result`,
+  dispatcher em `_run`)
+- `pypi/tests/test_update_harness.py` (5 testes espelhando os de Codex + ajuste de
+  `test_harness_declared_target_list_and_order` para 24 ids)
+- `docs/cli-parity.md` (seção "Declared harness targets — pinned list" corrigida para 24 ids)
 **Ações:**
 - Escrever/mesclar `BeforeTool[matcher:"run_shell_command"]`/`AfterTool[matcher:"run_shell_command"]`
   em `~/.gemini/settings.json`.
 **Critérios de aceite:**
-- [ ] `trackfw update harness --targets gemini-credential-guard --install-missing` funciona em fixture
-- [ ] Testes verdes nos 3 stacks
+- [x] `trackfw update harness --targets gemini-credential-guard --install-missing` funciona em fixture
+- [x] Testes verdes nos 3 stacks
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2D — Alvo `cursor-credential-guard`

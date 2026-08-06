@@ -353,6 +353,113 @@ test('codex-credential-guard preserves pre-existing content in ~/.codex/hooks.js
   }
 })
 
+// ---------------------------------------------------------------------------
+// `gemini-credential-guard` — global-scope credential-guard hook wiring for
+// Gemini CLI, ROADMAP-2026-08-06 Wave 2 ML-2C. Mirrors the codex-credential-
+// guard tests above and internal/generators/update_test.go's Gemini tests —
+// only the event names differ (BeforeTool/AfterTool, matcher
+// "run_shell_command" instead of PreToolUse/PostToolUse, matcher "Bash").
+// ---------------------------------------------------------------------------
+
+test('gemini-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'gemini-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.gemini', 'settings.json')), false)
+})
+
+test('gemini-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'gemini-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.gemini/settings.json')
+
+  const settingsPath = path.join(homeRoot, '.gemini', 'settings.json')
+  const settingsDoc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+
+  for (const event of ['BeforeTool', 'AfterTool']) {
+    const shellEntries = (settingsDoc.hooks[event] || []).filter((e) => e.matcher === 'run_shell_command')
+    assert.equal(shellEntries.length, 1)
+    const commands = shellEntries[0].hooks.map((h) => h.command)
+    assert.ok(commands.includes(wantScript))
+  }
+})
+
+test('gemini-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'gemini-credential-guard'], homeRoot)
+  const settingsPath = path.join(homeRoot, '.gemini', 'settings.json')
+  const firstRun = fs.readFileSync(settingsPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'gemini-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(settingsPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+
+  const settingsDoc = JSON.parse(secondRun)
+  const shellEntries = settingsDoc.hooks.BeforeTool.filter((e) => e.matcher === 'run_shell_command')
+  assert.equal(shellEntries.length, 1)
+})
+
+test('gemini-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'gemini-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.gemini', 'settings.json')), false)
+})
+
+test('gemini-credential-guard preserves pre-existing content in ~/.gemini/settings.json', () => {
+  const homeRoot = scratchHome()
+  const settingsPath = path.join(homeRoot, '.gemini', 'settings.json')
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(
+    settingsPath,
+    JSON.stringify(
+      {
+        hooks: {
+          Notification: [
+            {
+              matcher: 'ToolPermission',
+              hooks: [{ type: 'command', command: 'scripts/trackfw-attention-signal.sh' }],
+            },
+          ],
+        },
+        userSetting: 'keep-me',
+      },
+      null,
+      2
+    )
+  )
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'gemini-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+
+  const settingsDoc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  assert.equal(settingsDoc.userSetting, 'keep-me')
+  const notifEntries = settingsDoc.hooks.Notification.filter((e) => e.matcher === 'ToolPermission')
+  assert.equal(notifEntries.length, 1)
+  for (const event of ['BeforeTool', 'AfterTool']) {
+    const shellEntries = settingsDoc.hooks[event].filter((e) => e.matcher === 'run_shell_command')
+    assert.equal(shellEntries.length, 1)
+  }
+})
+
 test('a project-scoped catalog install under HOME is not touched by trackfw update (project scope stays project scope)', () => {
   const homeRoot = scratchHome()
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-harness-project-'))
