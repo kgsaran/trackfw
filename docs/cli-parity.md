@@ -1423,19 +1423,47 @@ since each stack's own JSON serializer is free to choose its own formatting.
 `pypi/trackfw/generators/hooks.py:inject_cursor_hooks`) merges into `.cursor/hooks.json`, which is
 read-modify-write (not a dedicated/overwritten file, same pattern as Claude/Codex/Gemini).
 
-**Pre-existing format was not a real Cursor event — left untouched, not migrated.** Before and after
-this ML, the pre-existing attention-signal/cleanup wiring writes to top-level `preToolUse`/`postToolUse`
-arrays of `{"command": "..."}` objects. Confirmed against the official documentation
-(<https://cursor.com/docs/agent/hooks>, retrieved 2026-08-05 via `curl -L` of the page's embedded
-Next.js RSC payload, unescaped and grepped) that this does **not** correspond to any hook event Cursor
-actually exposes: the real config schema is `{"version": 1, "hooks": {"<eventName>": [<entry>, ...]}}`,
-and the full documented event list is `sessionStart`, `sessionEnd`, `beforeShellExecution`,
-`beforeMCPExecution`, `afterShellExecution`, `afterMCPExecution`, `beforeReadFile`, `afterFileEdit`,
-`beforeSubmitPrompt`, `preCompact`, `stop`, `beforeTabFileRead`, `afterTabFileEdit` — there is no
-generic `preToolUse`/`postToolUse` event at all. This ML's brief explicitly scoped fixing this out
-("preserve the existing entries, do not migrate them, only add the new hook in parallel"); it is
-recorded here as a known, unresolved divergence for a future ML (re-scope the legacy attention hooks to
-a real event, e.g. `stop` or `beforeSubmitPrompt`), not a silent gap.
+**UPDATE (2026-08-06, follow-up ML — see `ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md`, ML-1B):
+the "not a real event" finding below was time-bound and has since been superseded — Cursor's own docs
+changed underneath it.** The paragraph immediately below (dated 2026-08-05) is kept for the historical
+record of what was true at investigation time, but **no longer describes the current behavior**. See
+"RESOLUTION" further down for the corrected, current state.
+
+**Pre-existing format was not a real Cursor event, as of 2026-08-05 — historical, superseded below.**
+At the time, the pre-existing attention-signal/cleanup wiring wrote to top-level
+`preToolUse`/`postToolUse` arrays of `{"command": "..."}` objects. Confirmed against the official
+documentation (<https://cursor.com/docs/agent/hooks>, retrieved 2026-08-05 via `curl -L` of the page's
+embedded Next.js RSC payload, unescaped and grepped) that this did **not** correspond to any hook event
+Cursor exposed at that time: the real config schema is `{"version": 1, "hooks": {"<eventName>": [<entry>,
+...]}}`, and the full documented event list at the time was `sessionStart`, `sessionEnd`,
+`beforeShellExecution`, `beforeMCPExecution`, `afterShellExecution`, `afterMCPExecution`,
+`beforeReadFile`, `afterFileEdit`, `beforeSubmitPrompt`, `preCompact`, `stop`, `beforeTabFileRead`,
+`afterTabFileEdit` — no generic `preToolUse`/`postToolUse` event was documented at all. That ML's brief
+explicitly scoped fixing this out ("preserve the existing entries, do not migrate them, only add the new
+hook in parallel"); it was recorded as a known, unresolved divergence for a future ML.
+
+**RESOLUTION (2026-08-06) — `preToolUse`/`postToolUse`/`postToolUseFailure` are now real, documented
+Cursor events; the legacy wiring has been migrated, not removed.** Re-fetching the hooks doc on
+2026-08-06 (`https://cursor.com/docs/agent/hooks` now 308-redirects to `https://cursor.com/docs/hooks`;
+fetched via plain `curl -sL`, no special headers needed this time, and parsed the same embedded Next.js
+RSC JSON payload) shows Cursor added three new generic events since the 2026-08-05 snapshot:
+`preToolUse` / `postToolUse` / `postToolUseFailure`, documented as "Generic tool use hooks (fires for all
+tools)" — "Called before any tool execution. This is a generic hook that fires for all tool types (Shell,
+Read, Write, MCP, Task, etc.). Use matchers to filter by specific tools." `preToolUse`'s documented input
+is `{"tool_name": "Shell", "tool_input": {"command": "...", "working_directory": "..."}, "tool_use_id",
+"cwd", "model", ...}`; `postToolUse`'s is the same shape plus `tool_output`/`duration`. This is
+structurally identical to Claude Code's `PreToolUse`/`PostToolUse` payload (`tool_name`/`tool_input`),
+which is exactly the shape `scripts/trackfw-attention-signal.sh` and `trackfw-attention-cleanup.sh`
+already parse (`.tool_name`, `.tool_input.question // .tool_input.command`) — **no script changes were
+needed**, only re-nesting the existing entries from the top-level array into `hooks.preToolUse` /
+`hooks.postToolUse`. `InjectCursorHooks`/`injectCursorHooks`/`inject_cursor_hooks` now write to the
+nested location and, for backward compatibility, migrate any known trackfw entry still present in a
+pre-migration file's top-level `preToolUse`/`postToolUse` arrays into the new location, deleting the
+top-level key once empty — any *unrelated* entry a user added there themselves (those keys were always
+inert, since Cursor never actually read them) is left untouched, never deleted on a guess. The `matcher`
+field for `preToolUse`/`postToolUse` filters by tool type (e.g. `"Shell|Read|Write"`) and is optional;
+intentionally omitted here — the attention signal must fire for every tool use, not a filtered subset,
+same reasoning as `beforeShellExecution`'s omitted matcher documented below.
 
 **`beforeShellExecution` confirmed as the real, Bash-specific, pre-execution event.** From the doc's
 "Hook Types" reference:
@@ -1497,20 +1525,21 @@ question: no additional tool-type filtering is needed or possible at this level;
 already does that job). `trackfw-credential-guard.sh` must see every shell command to scan for
 JWT/AWS-key patterns, so no `matcher` is set on the entries this ML adds.
 
-**Concurrency — not documented on the retrieved page; not assumed.** Unlike Codex (confirmed
+**Concurrency — not documented on either retrieved page; not assumed.** Unlike Codex (confirmed
 concurrent, ML-2B) or Copilot (confirmed serial-in-order, ML-2D), no statement about the execution
 order/model of multiple hooks registered on the same event was found in the Cursor hooks reference
-page as retrieved on 2026-08-05. Not a blocker for this ML: the `beforeShellExecution`/
-`afterShellExecution` arrays this wiring writes only ever contain the single credential-guard entry
-added by trackfw (the pre-existing `preToolUse`/`postToolUse` arrays are a structurally separate,
-unrelated part of the file, per the "not a real event" note above), so there is no same-event
-multi-hook race to reason about here regardless of Cursor's true concurrency model.
+page as retrieved on 2026-08-05 or re-retrieved on 2026-08-06. Not a blocker: every event array this
+wiring writes (`hooks.preToolUse`, `hooks.postToolUse`, `hooks.beforeShellExecution`,
+`hooks.afterShellExecution`) only ever contains the single trackfw entry for that event, so there is no
+same-event multi-hook race to reason about here regardless of Cursor's true concurrency model.
 
 Idempotency and version handling: `version` is set to `1` only if the field is absent from a
 pre-existing `.cursor/hooks.json` (a user-provided value, e.g. from a future schema bump, is never
-overwritten); `hooks.beforeShellExecution`/`hooks.afterShellExecution` are merged via the same
-flat-array `{command}`-dedup helper (`mergeSimpleCommandArray`/`hasEntry`/`_has_entry`) already used for
-the pre-existing `preToolUse`/`postToolUse` entries — re-running the injector never duplicates entries.
+overwritten); all four `hooks.*` arrays are merged via the same flat-array `{command}`-dedup helper
+(`mergeSimpleCommandArray`/`hasEntry`/`_has_entry`) — re-running the injector never duplicates entries.
+The one-time migration of legacy top-level `preToolUse`/`postToolUse` entries (2026-08-06 ML) is also
+idempotent: once a known entry has been migrated out, re-running the injector finds nothing left to
+migrate and is a no-op on the top-level keys.
 
 #### Kiro wiring (ML-2F) — `.kiro/hooks/trackfw-attention.json` format correction + `PreToolUse`/`PostToolUse` matcher `"shell"`
 
@@ -1671,12 +1700,20 @@ não uma lacuna de cobertura de detecção real.
    - **ML-3A (gate estrutural):** a primeira execução do gate encontrou uma divergência adicional não
      capturada nos MLs acima — `_merge_codex_hook_entry` (Python) decorava as entradas do Codex com
      `timeout`/`statusMessage`, campos que Go/Node nunca escreveram; removido.
-4. **Achado fora de escopo, não corrigido nesta REQ — candidato a REQ futura.** O wiring legado
-   (`preToolUse`/`postToolUse` do attention-signal/cleanup) do Cursor usa um schema
-   (`{"preToolUse": [...], "postToolUse": [...]}` no nível raiz) que não corresponde a nenhum evento
-   documentado do Cursor real (a lista completa de eventos documentados não inclui `preToolUse`/
-   `postToolUse` genérico algum — ver "Cursor wiring (ML-2E)" acima). Deixado intacto por instrução
-   explícita do ML (preservar, não migrar); registrado aqui como conhecido e não corrigido.
+4. **RESOLVIDO em 2026-08-06 (ML-1B do `ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md`).**
+   O item abaixo descreve o estado como estava nesta REQ (2026-08-05) — mantido para o histórico, mas
+   **já corrigido**. Entre a investigação original e o ciclo seguinte, a documentação oficial do Cursor
+   passou a documentar `preToolUse`/`postToolUse`/`postToolUseFailure` como eventos genéricos reais
+   ("fires for all tool types"). O wiring legado foi migrado do nível raiz para
+   `hooks.preToolUse`/`hooks.postToolUse` (schema real), preservando compatibilidade com arquivos
+   pré-migração (entradas conhecidas do trackfw são migradas; entradas de usuário não relacionadas no
+   nível raiz são preservadas intactas). Ver "Cursor wiring (ML-2E)" acima, seção "RESOLUTION
+   (2026-08-06)", para a investigação e evidência completas. Descrição original do achado, para
+   contexto histórico: o wiring do attention-signal/cleanup do Cursor usava um schema
+   (`{"preToolUse": [...], "postToolUse": [...]}` no nível raiz) que não correspondia a nenhum evento
+   documentado do Cursor real na época (a lista completa de eventos documentados em 2026-08-05 não
+   incluía `preToolUse`/`postToolUse` genérico algum). Deixado intacto por instrução explícita do ML
+   original (preservar, não migrar).
 5. **Cobertura de teste de sabotagem end-to-end: 3 de 6 CLIs** (Claude Code, Cursor, Kiro) — ver tabela
    e nota acima; Codex, Gemini CLI e GitHub Copilot ficaram sem teste por falta de confiança suficiente
    no schema do payload de stdin em runtime documentado publicamente para cada um.

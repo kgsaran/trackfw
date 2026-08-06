@@ -9761,3 +9761,30 @@ documentado do Cursor (achado do ML-2E, preservado por instrução explícita, n
 Roadmap **não movido para `done/`** — deixado em `wip/` para o usuário confirmar o encerramento
 (commits todos feitos por Zeus após auditoria de cada ML; nenhum PR aberto ainda — decisão do
 usuário).
+
+## Sessão 2026-08-06 — Zeus (correção dos 2 achados fora de escopo do PR #141) — ROADMAP CONCLUÍDO
+
+PR #141 mergeado (merge confirmado pelo usuário, squash). Nova branch
+`fix/corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor` criada corretamente via
+`trackfw branch new` (desta vez seguindo o protocolo — usuário sinalizou o erro de processo da sessão
+anterior). REQ `docs/req/REQ-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md`,
+Roadmap `docs/roadmaps/done/ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md`.
+
+**Wave 1 (2 MLs em paralelo, arquivos disjuntos — dessa vez paralelismo real e seguro):**
+- **ML-1A**: `pypi/trackfw/__init__.py` fallback `6.3.1` → `6.4.1`. Observação registrada: esse
+  arquivo nunca fez parte da checklist de release (confirmado nos commits de bump anteriores) —
+  candidato a ser adicionado ao protocolo de release.
+- **ML-1B**: achado inesperado — a documentação do Cursor (`cursor.com/docs/hooks`) **mudou entre
+  2026-08-05 e 2026-08-06**, passou a documentar `preToolUse`/`postToolUse`/`postToolUseFailure` como
+  eventos genéricos reais que não existiam na investigação do dia anterior. Confirmado
+  independentemente pelo orquestrador via WebFetch antes de aprovar. Wiring legado migrado do schema
+  inválido (nível raiz) para o schema real (`hooks.preToolUse`/`hooks.postToolUse`), com migração
+  automática de `.cursor/hooks.json` escritos por versões anteriores do trackfw.
+
+**Wave 2 (ML-2A)**: `make quality` passou de ponta a ponta na primeira execução pós-Wave 1 (102/102
+cenários de falsificação) — o bloqueio documentado no ciclo anterior está resolvido. `trackfw
+validate` limpo. REQ com todos os 5 Acceptance Criteria concluídos (diferente do ciclo anterior, que
+fechou com 4/5).
+
+Roadmap movido para `done/`. Branch com todos os commits, aguardando decisão do usuário sobre
+push/PR.

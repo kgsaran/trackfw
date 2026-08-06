@@ -507,20 +507,16 @@ test('injectCursorHooks creates and merges .cursor/hooks.json idempotently', () 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cursor-hooks-'))
   const hooksPath = path.join(tmpDir, '.cursor', 'hooks.json')
 
-  // Pré-existente
-  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
-  fs.writeFileSync(hooksPath, JSON.stringify({
-    preToolUse: [{ command: 'user-pre.sh' }]
-  }, null, 2))
-
   injectCursorHooks(tmpDir)
   let data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
-  assert.equal(data.preToolUse.length, 2)
-  assert.equal(data.preToolUse[0].command, 'user-pre.sh')
-  assert.equal(data.preToolUse[1].command, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(data.postToolUse[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.preToolUse, undefined, 'legacy top-level preToolUse must not be written')
+  assert.equal(data.postToolUse, undefined, 'legacy top-level postToolUse must not be written')
 
   assert.equal(data.version, 1)
+  assert.equal(data.hooks.preToolUse.length, 1)
+  assert.equal(data.hooks.preToolUse[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.postToolUse.length, 1)
+  assert.equal(data.hooks.postToolUse[0].command, 'scripts/trackfw-attention-cleanup.sh')
   assert.equal(data.hooks.beforeShellExecution.length, 1)
   assert.equal(data.hooks.beforeShellExecution[0].command, 'scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.afterShellExecution.length, 1)
@@ -529,9 +525,35 @@ test('injectCursorHooks creates and merges .cursor/hooks.json idempotently', () 
   // Idempotência
   injectCursorHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
-  assert.equal(data.preToolUse.length, 2)
+  assert.equal(data.hooks.preToolUse.length, 1)
+  assert.equal(data.hooks.postToolUse.length, 1)
   assert.equal(data.hooks.beforeShellExecution.length, 1)
   assert.equal(data.hooks.afterShellExecution.length, 1)
+})
+
+test('injectCursorHooks migrates legacy top-level preToolUse/postToolUse, preserving unrelated entries', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cursor-hooks-legacy-'))
+  const hooksPath = path.join(tmpDir, '.cursor', 'hooks.json')
+
+  // Pré-existente: schema legado (top-level), inclui uma entrada não-trackfw
+  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
+  fs.writeFileSync(hooksPath, JSON.stringify({
+    preToolUse: [{ command: 'scripts/trackfw-attention-signal.sh' }, { command: 'user-pre.sh' }],
+    postToolUse: [{ command: 'scripts/trackfw-attention-cleanup.sh' }]
+  }, null, 2))
+
+  injectCursorHooks(tmpDir)
+  const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+
+  // Entrada trackfw removida do nível raiz; entrada não relacionada permanece intacta.
+  assert.equal(data.preToolUse.length, 1)
+  assert.equal(data.preToolUse[0].command, 'user-pre.sh')
+  // postToolUse só tinha a entrada trackfw -> chave inteira removida.
+  assert.equal(data.postToolUse, undefined)
+
+  // Entradas migradas para o local real (aninhado sob hooks).
+  assert.equal(data.hooks.preToolUse[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.postToolUse[0].command, 'scripts/trackfw-attention-cleanup.sh')
 })
 
 test('injectCursorHooks preserves a pre-existing top-level version field', () => {
@@ -626,7 +648,7 @@ test('trackfw update command injects attention hooks and scripts idempotently pr
 
     // Validar Cursor
     const cursorData = JSON.parse(fs.readFileSync(path.join(cursorDir, 'hooks.json'), 'utf8'))
-    assert.equal(cursorData.preToolUse[0].command, 'scripts/trackfw-attention-signal.sh')
+    assert.equal(cursorData.hooks.preToolUse[0].command, 'scripts/trackfw-attention-signal.sh')
 
     // Validar Windsurf
     const windsurfRules = fs.readFileSync(path.join(tmpDir, '.windsurfrules'), 'utf8')
