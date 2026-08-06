@@ -9788,3 +9788,35 @@ fechou com 4/5).
 
 Roadmap movido para `done/`. Branch com todos os commits, aguardando decisão do usuário sobre
 push/PR.
+
+## Sessão 2026-08-06 — Apolo (ML-2A do ROADMAP hooks-de-credential-guard-global) — Go implementado, paridade Node/Python pendente
+
+Branch `feat/hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness`
+(já criada pelo orquestrador antes do handoff). Executando ML-2A do roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`
+(Wave 1/ML-1A já concluído nesta branch).
+
+**ML-2A — alvo `claude-credential-guard` (Go apenas, handoff explicitamente escopado só a
+`internal/`):** adicionado `"claude-credential-guard"` a `HarnessTargetIDs` (logo após
+`claude-skill`), nova função `harnessCredentialGuardTargetClaude` em
+`internal/generators/update.go` que mescla `PreToolUse`/`PostToolUse[matcher:"Bash"]` em
+`~/.claude/settings.json`, apontando para o caminho ABSOLUTO
+`~/.trackfw/scripts/trackfw-credential-guard.sh` (resolvido de `home`), reusando
+`mergeClaudeHookArray` já existente (idempotente, preserva conteúdo pré-existente do usuário).
+Testes novos em `internal/generators/update_test.go` e
+`internal/commands/update_harness_test.go` cobrindo missing/install/idempotência/dry-run/
+preservação de conteúdo. `go build`/`go vet`/testes focados verdes, `trackfw validate` limpo.
+
+**Achado bloqueante, não corrigido por estar fora do escopo do handoff**: `make quality` (gate
+`scripts/check-update-parity.sh`) FALHA — Node (`npm/src/commands/update-harness.js`) e Python
+(`pypi/trackfw/commands/update_harness.py`) ainda não têm o alvo `claude-credential-guard`
+(constroem a lista dinamicamente a partir do catálogo, sem esse novo id fixo). Isso viola a Regra
+Dura de Paridade — 3 CLIs do CLAUDE.md do projeto ("Nenhum PR é aceito sem paridade nos 3 CLIs").
+Órfão até que um ML de paridade Node/Python para este mesmo alvo seja executado antes de mesclar —
+decisão do orquestrador: estender ML-2A ou criar ML dedicado antes da Wave 4 (gate de paridade).
+`docs/cli-parity.md:1782` também ficou desatualizado ("21 ids" — agora Go declara 22); documentação
+é escopo da Wave 5 (ML-5A) por design do roadmap, não corrigido aqui.
+
+Roadmap ML-2A mantido em `🔄 Em andamento` — não promovido a `✅ Concluído` (protocolo de microlote:
+status só muda após auditoria do orquestrador). Nenhum commit feito (regra de git authority —
+`trackfw_architect` audita e commita).

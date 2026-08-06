@@ -1779,10 +1779,13 @@ Wave 6 round.
 
 ### Declared harness targets — pinned list
 
-The harness target list is **not** derived at runtime; it is this fixed sequence of 21 ids, in this
-exact order: `claude-skill`, then `<tool>-agents` and `<tool>-skills` for each of the ten catalog
-tools in `catalog.json` declaration order — `claude`, `codex`, `gemini`, `antigravity`, `cursor`,
-`copilot`, `windsurf`, `amazonq`, `opencode`, `kiro`.
+The harness target list is **not** derived at runtime; it is this fixed sequence of 22 ids, in this
+exact order: `claude-skill`, `claude-credential-guard` (global-scope credential-guard wiring for
+Claude Code — `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
+ML-2A; more `<tool>-credential-guard` siblings land in subsequent, sequential MLs of the same wave),
+then `<tool>-agents` and `<tool>-skills` for each of the ten catalog tools in `catalog.json`
+declaration order — `claude`, `codex`, `gemini`, `antigravity`, `cursor`, `copilot`, `windsurf`,
+`amazonq`, `opencode`, `kiro`.
 
 Each `<tool>-<kind>` target is a **roll-up over every catalog item** for that pair, not one row per
 item; per-item granularity already exists via `trackfw agents update` and `trackfw skills update`.

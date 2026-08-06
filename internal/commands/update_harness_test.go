@@ -7,6 +7,7 @@ package commands
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -150,6 +151,55 @@ func TestUpdateHarnessCmd_FailedTargetIncludesMessageAndExitsNonZero(t *testing.
 	}
 	if !strings.Contains(line, `"message"`) {
 		t.Fatalf("failed target must include a message: %s", line)
+	}
+}
+
+// TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI exercises the
+// claude-credential-guard target through the full `trackfw update harness`
+// CLI surface (not just the generators.UpdateHarness API), confirming the
+// --targets/--install-missing/--json flags all thread through correctly for
+// this new target.
+func TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd := newUpdateHarnessCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--json", "--targets", "claude-credential-guard", "--install-missing"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("trackfw update harness --targets claude-credential-guard --install-missing failed: %v", err)
+	}
+
+	line := strings.TrimSpace(out.String())
+	var doc struct {
+		Targets []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Path  string `json:"path"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(line), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, line)
+	}
+	if len(doc.Targets) != 1 || doc.Targets[0].ID != "claude-credential-guard" {
+		t.Fatalf("unexpected targets: %+v", doc.Targets)
+	}
+	if doc.Targets[0].State != "updated" {
+		t.Fatalf("state = %q, want updated", doc.Targets[0].State)
+	}
+	if doc.Targets[0].Path != "~/.claude/settings.json" {
+		t.Fatalf("path = %q, want ~/.claude/settings.json", doc.Targets[0].Path)
+	}
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("~/.claude/settings.json was not written: %v", err)
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !strings.Contains(string(data), wantScript) {
+		t.Fatalf("settings.json does not reference the absolute global script path %s:\n%s", wantScript, data)
 	}
 }
 

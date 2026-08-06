@@ -98,9 +98,10 @@ def test_harness_declared_target_list_and_order(tmp_path):
 
     ids = declared_target_ids()
     assert ids[0] == "claude-skill"
-    assert ids[1:3] == ["claude-agents", "claude-skills"]
+    assert ids[1] == "claude-credential-guard"
+    assert ids[2:4] == ["claude-agents", "claude-skills"]
     assert ids[-2:] == ["kiro-agents", "kiro-skills"]
-    assert len(ids) == 1 + 10 * 2
+    assert len(ids) == 2 + 10 * 2
 
     home = tmp_path / "home"
     home.mkdir()
@@ -334,3 +335,141 @@ def test_project_update_requires_trackfw_yaml_but_harness_does_not(tmp_path):
 
     harness_update = cli("update", "harness", "--json", cwd=project, home=home)
     assert harness_update.returncode == 0, harness_update.stderr
+
+
+# ---------------------------------------------------------------------------
+# `claude-credential-guard` — global-scope credential-guard hook wiring for
+# Claude Code, ROADMAP-2026-08-06 Wave 2 ML-2A. Mirrors the Go tests in
+# internal/generators/update_test.go/internal/commands/update_harness_test.go.
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_claude_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "claude-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".claude" / "settings.json").exists()
+
+
+def test_credential_guard_claude_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "claude-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.claude/settings.json"
+
+    settings_path = home / ".claude" / "settings.json"
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+
+    for event in ("PreToolUse", "PostToolUse"):
+        entries = doc["hooks"][event]
+        bash_entries = [entry for entry in entries if entry.get("matcher") == "Bash"]
+        assert len(bash_entries) == 1
+        commands = [h["command"] for h in bash_entries[0]["hooks"]]
+        assert want_script in commands
+
+
+def test_credential_guard_claude_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "claude-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    settings_path = home / ".claude" / "settings.json"
+    first_bytes = settings_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "claude-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = settings_path.read_bytes()
+    assert first_bytes == second_bytes
+
+    doc = json.loads(second_bytes)
+    bash_entries = [entry for entry in doc["hooks"]["PreToolUse"] if entry.get("matcher") == "Bash"]
+    assert len(bash_entries) == 1
+
+
+def test_credential_guard_claude_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "claude-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".claude" / "settings.json").exists()
+
+
+def test_credential_guard_claude_preserves_existing_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    settings_path = home / ".claude" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "AskUserQuestion",
+                            "hooks": [{"type": "command", "command": "scripts/trackfw-attention-signal.sh"}],
+                        }
+                    ]
+                },
+                "userSetting": "keep-me",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = cli(
+        "update", "harness", "--targets", "claude-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert doc["userSetting"] == "keep-me"
+    ask_entries = [entry for entry in doc["hooks"]["PreToolUse"] if entry.get("matcher") == "AskUserQuestion"]
+    assert len(ask_entries) == 1
+    assert ask_entries[0]["hooks"][0]["command"] == "scripts/trackfw-attention-signal.sh"
+    for event in ("PreToolUse", "PostToolUse"):
+        bash_entries = [entry for entry in doc["hooks"][event] if entry.get("matcher") == "Bash"]
+        assert len(bash_entries) == 1

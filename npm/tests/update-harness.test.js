@@ -142,6 +142,112 @@ test('paths are tilde-abbreviated relative to HOME, never the absolute filesyste
   for (const t of doc.targets) assert.ok(!t.path.includes(homeRoot), `${t.id} path leaked the absolute HOME: ${t.path}`)
 })
 
+// ---------------------------------------------------------------------------
+// `claude-credential-guard` — global-scope credential-guard hook wiring for
+// Claude Code, ROADMAP-2026-08-06 Wave 2 ML-2A. Mirrors the Go tests in
+// internal/generators/update_test.go/internal/commands/update_harness_test.go.
+// ---------------------------------------------------------------------------
+
+test('claude-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'claude-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.claude', 'settings.json')), false)
+})
+
+test('claude-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'claude-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.claude/settings.json')
+
+  const settingsPath = path.join(homeRoot, '.claude', 'settings.json')
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+
+  for (const event of ['PreToolUse', 'PostToolUse']) {
+    const bashEntries = (settings.hooks[event] || []).filter((e) => e.matcher === 'Bash')
+    assert.equal(bashEntries.length, 1)
+    const commands = bashEntries[0].hooks.map((h) => h.command)
+    assert.ok(commands.includes(wantScript))
+  }
+})
+
+test('claude-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'claude-credential-guard'], homeRoot)
+  const settingsPath = path.join(homeRoot, '.claude', 'settings.json')
+  const firstRun = fs.readFileSync(settingsPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'claude-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(settingsPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+
+  const settings = JSON.parse(secondRun)
+  const bashEntries = settings.hooks.PreToolUse.filter((e) => e.matcher === 'Bash')
+  assert.equal(bashEntries.length, 1)
+})
+
+test('claude-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'claude-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.claude', 'settings.json')), false)
+})
+
+test('claude-credential-guard preserves pre-existing content in ~/.claude/settings.json', () => {
+  const homeRoot = scratchHome()
+  const settingsPath = path.join(homeRoot, '.claude', 'settings.json')
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(
+    settingsPath,
+    JSON.stringify(
+      {
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'AskUserQuestion',
+              hooks: [{ type: 'command', command: 'scripts/trackfw-attention-signal.sh' }],
+            },
+          ],
+        },
+        userSetting: 'keep-me',
+      },
+      null,
+      2
+    )
+  )
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'claude-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  assert.equal(settings.userSetting, 'keep-me')
+  const askEntries = settings.hooks.PreToolUse.filter((e) => e.matcher === 'AskUserQuestion')
+  assert.equal(askEntries.length, 1)
+  assert.equal(askEntries[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  for (const event of ['PreToolUse', 'PostToolUse']) {
+    const bashEntries = settings.hooks[event].filter((e) => e.matcher === 'Bash')
+    assert.equal(bashEntries.length, 1)
+  }
+})
+
 test('a project-scoped catalog install under HOME is not touched by trackfw update (project scope stays project scope)', () => {
   const homeRoot = scratchHome()
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-harness-project-'))

@@ -1,7 +1,9 @@
 package generators
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -253,6 +255,212 @@ func TestUpdateHarnessClaudeSkillUpdatesStaleContentAndSkipsCurrent(t *testing.T
 	}
 	if report.Targets[0].State != TargetSkipped {
 		t.Fatalf("state = %q, want skipped (already current)", report.Targets[0].State)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardClaudeMissingWithoutInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetMissing {
+		t.Fatalf("state = %q, want missing (no --install-missing)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("claude-credential-guard was installed without --install-missing: %v", err)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardClaudeInstallsAbsolutePathWithInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (--install-missing)", report.Targets[0].State)
+	}
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("~/.claude/settings.json was not written: %v", err)
+	}
+
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("invalid JSON written: %v", err)
+	}
+
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !filepath.IsAbs(wantScript) {
+		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
+	}
+	for _, event := range []string{"PreToolUse", "PostToolUse"} {
+		hooks, _ := doc["hooks"].(map[string]interface{})
+		if hooks == nil {
+			t.Fatalf("no hooks object written: %v", doc)
+		}
+		arr, _ := hooks[event].([]interface{})
+		found := false
+		for _, item := range arr {
+			obj, _ := item.(map[string]interface{})
+			if obj["matcher"] != "Bash" {
+				continue
+			}
+			innerHooks, _ := obj["hooks"].([]interface{})
+			for _, h := range innerHooks {
+				hObj, _ := h.(map[string]interface{})
+				if hObj["command"] == wantScript {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("%s[matcher=Bash] does not point at the absolute global script path %s: %v", event, wantScript, doc)
+		}
+	}
+}
+
+func TestUpdateHarnessCredentialGuardClaudeIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if _, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true}); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	firstRun, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetSkipped {
+		t.Fatalf("state = %q, want skipped (already installed, idempotent)", report.Targets[0].State)
+	}
+	secondRun, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(firstRun) != string(secondRun) {
+		t.Fatalf("second run mutated ~/.claude/settings.json:\nfirst:  %s\nsecond: %s", firstRun, secondRun)
+	}
+
+	var doc map[string]interface{}
+	if err := json.Unmarshal(secondRun, &doc); err != nil {
+		t.Fatal(err)
+	}
+	hooks, _ := doc["hooks"].(map[string]interface{})
+	arr, _ := hooks["PreToolUse"].([]interface{})
+	bashEntries := 0
+	for _, item := range arr {
+		obj, _ := item.(map[string]interface{})
+		if obj["matcher"] == "Bash" {
+			bashEntries++
+		}
+	}
+	if bashEntries != 1 {
+		t.Fatalf("expected exactly one PreToolUse[matcher=Bash] entry, got %d: %v", bashEntries, doc)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardClaudeDryRunDoesNotWrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.DryRun {
+		t.Fatal("report.DryRun = false, want true")
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (would install)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatal("--dry-run wrote ~/.claude/settings.json")
+	}
+}
+
+func TestUpdateHarnessCredentialGuardClaudePreservesExistingContent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	preexisting := `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/trackfw-attention-signal.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "userSetting": "keep-me"
+}
+`
+	if err := os.WriteFile(settingsPath, []byte(preexisting), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (merging into existing file)", report.Targets[0].State)
+	}
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc["userSetting"] != "keep-me" {
+		t.Fatalf("pre-existing top-level key was not preserved: %v", doc)
+	}
+	hooks, _ := doc["hooks"].(map[string]interface{})
+	preArr, _ := hooks["PreToolUse"].([]interface{})
+	var matchers []string
+	for _, item := range preArr {
+		obj, _ := item.(map[string]interface{})
+		matchers = append(matchers, fmt.Sprintf("%v", obj["matcher"]))
+	}
+	hasAskUserQuestion, hasBash := false, false
+	for _, m := range matchers {
+		if m == "AskUserQuestion" {
+			hasAskUserQuestion = true
+		}
+		if m == "Bash" {
+			hasBash = true
+		}
+	}
+	if !hasAskUserQuestion {
+		t.Fatalf("pre-existing PreToolUse[matcher=AskUserQuestion] entry was dropped: %v", matchers)
+	}
+	if !hasBash {
+		t.Fatalf("expected PreToolUse[matcher=Bash] entry to be added: %v", matchers)
 	}
 }
 

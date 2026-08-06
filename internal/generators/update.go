@@ -3,6 +3,7 @@ package generators
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -278,17 +279,23 @@ var harnessCatalogTargetOrder = []string{
 }
 
 // HarnessTargetIDs is the fixed, declared order of `trackfw update harness`
-// targets: 21 ids — "claude-skill", then "<tool>-agents" and "<tool>-skills"
-// for each catalog target in harnessCatalogTargetOrder. Order here is
-// authoritative for both JSON output and iteration — it must never be
-// derived from the filesystem or from what happens to be installed on a
-// given machine (see docs/cli-parity.md, "targets follows the declared
-// target order, not filesystem order").
+// targets: 22 ids — "claude-skill", then "claude-credential-guard" (global
+// credential-guard hook wiring for Claude Code — placed immediately after
+// claude-skill since both are Claude-Code-scoped global artifacts;
+// ROADMAP-2026-08-06 Wave 2 adds "<tool>-credential-guard" siblings for the
+// other CLIs in subsequent, sequential MLs, each placed next to its tool's
+// existing "<tool>-agents"/"<tool>-skills" pair once implemented), then
+// "<tool>-agents" and "<tool>-skills" for each catalog target in
+// harnessCatalogTargetOrder. Order here is authoritative for both JSON
+// output and iteration — it must never be derived from the filesystem or
+// from what happens to be installed on a given machine (see
+// docs/cli-parity.md, "targets follows the declared target order, not
+// filesystem order").
 var HarnessTargetIDs = buildHarnessTargetIDs()
 
 func buildHarnessTargetIDs() []string {
-	ids := make([]string, 0, 1+2*len(harnessCatalogTargetOrder))
-	ids = append(ids, "claude-skill")
+	ids := make([]string, 0, 2+2*len(harnessCatalogTargetOrder))
+	ids = append(ids, "claude-skill", "claude-credential-guard")
 	for _, tool := range harnessCatalogTargetOrder {
 		ids = append(ids, tool+"-agents", tool+"-skills")
 	}
@@ -326,6 +333,10 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 	for _, id := range selected {
 		if id == "claude-skill" {
 			results = append(results, harnessClaudeSkillTarget(home, opts))
+			continue
+		}
+		if id == "claude-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetClaude(home, opts))
 			continue
 		}
 		tool, kind, ok := splitHarnessCatalogTargetID(id)
@@ -419,6 +430,94 @@ func harnessClaudeSkillTarget(home string, opts UpdateOptions) TargetResult {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
 	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessCredentialGuardTargetClaude evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Claude Code:
+// PreToolUse[matcher:"Bash"]/PostToolUse[matcher:"Bash"] entries in
+// ~/.claude/settings.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh. This must be an absolute
+// path (unlike InjectClaudeHooks's project-scope "scripts/trackfw-credential-
+// guard.sh", which is relative because the hook always runs from the project
+// root) since a global hook can fire from any project's cwd. Reuses
+// mergeClaudeHookArray (agentfiles.go) — the same idempotent merge helper
+// InjectClaudeHooks/InjectCodexHooks/InjectGeminiHooks already use — so any
+// pre-existing content in ~/.claude/settings.json (other hooks, user config)
+// is preserved; only the credential-guard entry is added/merged.
+func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetResult {
+	const id = "claude-credential-guard"
+	const displayPath = "~/.claude/settings.json"
+
+	path := filepath.Join(home, ".claude", "settings.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardClaudeHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardClaudeHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// mergeCredentialGuardClaudeHooks merges the credential-guard PreToolUse/
+// PostToolUse[matcher:"Bash"] entries into root["hooks"], preserving any
+// other hook groups/matchers already present (same merge contract as
+// InjectClaudeHooks, minus the attention-signal/cleanup entries which stay
+// project-scope only).
+func mergeCredentialGuardClaudeHooks(root map[string]interface{}, scriptPath string) {
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Bash", scriptPath)
+	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Bash", scriptPath)
+	root["hooks"] = hooks
 }
 
 // harnessCatalogTarget evaluates (and, unless DryRun, applies) every

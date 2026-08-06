@@ -45,6 +45,7 @@ from typing import Any
 from trackfw.identity import IdentityError, load as load_identity
 from trackfw.integrations.catalog import global_group_path, load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
+from trackfw.generators.hooks import _merge_claude_hook_array
 
 STATE_UPDATED = "updated"
 STATE_SKIPPED = "skipped"
@@ -98,7 +99,7 @@ def _tildeify(home: str, absolute: str) -> str:
 
 
 def declared_target_ids() -> list[str]:
-    ids = ["claude-skill"]
+    ids = ["claude-skill", "claude-credential-guard"]
     for tool in _CATALOG_TARGET_ORDER:
         for kind in _CATALOG_KIND_ORDER:
             ids.append(f"{tool}-{kind}")
@@ -164,6 +165,70 @@ def _legacy_skill_result(home: str, dry_run: bool, install_missing: bool) -> dic
     except OSError as error:
         return {"id": "claude-skill", "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": "claude-skill", "state": STATE_UPDATED, "path": display_path}
+
+
+def _credential_guard_claude_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Evaluates (and, unless dry_run, applies) the global-scope
+    credential-guard hook wiring for Claude Code: PreToolUse[matcher:"Bash"]/
+    PostToolUse[matcher:"Bash"] entries in ~/.claude/settings.json pointing
+    at the ABSOLUTE path of ~/.trackfw/scripts/trackfw-credential-guard.sh
+    (a global hook can fire from any project's cwd). Mirrors
+    internal/generators/update.go:harnessCredentialGuardTargetClaude —
+    including deliberately NOT generating the script file itself here (out
+    of this target's scope, same as the Go implementation). Reuses
+    `_merge_claude_hook_array` (generators/hooks.py) so any pre-existing
+    content in ~/.claude/settings.json (other hooks, user config) is
+    preserved — only the credential-guard entry is added/merged. Does not
+    reuse `_read_json`/`_write_json`: those swallow parse errors as `{}`,
+    which would silently clobber unreadable/corrupt user config instead of
+    reporting `failed`.
+    """
+    target_id = "claude-credential-guard"
+    path = os.path.join(home, ".claude", "settings.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        root: dict[str, Any] = {}
+        hooks = root.setdefault("hooks", {})
+        _merge_claude_hook_array(hooks.setdefault("PreToolUse", []), "Bash", script_path)
+        _merge_claude_hook_array(hooks.setdefault("PostToolUse", []), "Bash", script_path)
+        desired = json.dumps(root, indent=2) + "\n"
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(desired, encoding="utf-8")
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    try:
+        root = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if not isinstance(root, dict):
+        root = {}
+    hooks = root.setdefault("hooks", {})
+    _merge_claude_hook_array(hooks.setdefault("PreToolUse", []), "Bash", script_path)
+    _merge_claude_hook_array(hooks.setdefault("PostToolUse", []), "Bash", script_path)
+    desired = json.dumps(root, indent=2) + "\n"
+    if desired.encode("utf-8") == raw:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_text(desired, encoding="utf-8")
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
 
 
 def _catalog_group_result(
@@ -254,6 +319,9 @@ def _run(args: argparse.Namespace) -> None:
     for target_id in target_ids:
         if target_id == "claude-skill":
             targets.append(_legacy_skill_result(home, args.dry_run, args.install_missing))
+            continue
+        if target_id == "claude-credential-guard":
+            targets.append(_credential_guard_claude_result(home, args.dry_run, args.install_missing))
             continue
         tool, kind = target_id.rsplit("-", 1)
         targets.append(_catalog_group_result(tool, kind, home, manager, identity_cfg, args.dry_run, args.install_missing))

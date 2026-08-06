@@ -94,12 +94,25 @@ Sequenciais, não paralelos: os alvos novos vivem no mesmo `internal/generators/
 CLI compartilham arquivo, evitar edição concorrente).
 
 ### ML-2A — Alvo `claude-credential-guard`
-**Status:** 🔄 Em andamento
-**Arquivos afetados:**
+**Status:** ✅ Concluído
+
+**Achado corrigido durante a execução:** o ML original só listava arquivos Go — erro do orquestrador
+na autoria do roadmap, violando a regra dura de paridade 3 CLIs do `CLAUDE.md`. O agente Go
+implementou corretamente só o que foi pedido e sinalizou a violação em vez de expandir escopo por
+conta própria (ao rodar `make quality`/`check-update-parity.sh`). Corrigido com um follow-up dedicado
+cobrindo `npm/src/commands/update-harness.js` e `pypi/trackfw/commands/update_harness.py`, espelhando
+fielmente a implementação Go já aprovada. `check-update-parity.sh` confirmado verde com os 22 ids
+idênticos nos 3 stacks. `docs/cli-parity.md` ("21 ids") corrigido para 22. Todos os MLs seguintes
+(2B-2F) já foram corrigidos no roadmap para exigir os 3 stacks explicitamente desde o início — ver
+[[feedback_roadmap_deve_listar_3_stacks]] na memória do orquestrador.
+
+**Arquivos afetados (Go, já implementado + Node/Python, follow-up):**
 - `internal/generators/update.go` (`harnessCatalogTargetOrder`/`HarnessTargetIDs`, nova função
   `harnessCredentialGuardTarget` ou específica por tool — seguir o padrão de
   `harnessClaudeSkillTarget`/`harnessCatalogTarget` já existentes)
-- Testes em `internal/commands/update_harness_test.go`
+- `npm/src/commands/update-harness.js` (`HARNESS_TARGET_IDS`, lógica de instalação equivalente)
+- `pypi/trackfw/commands/update_harness.py` (equivalente)
+- Testes em `internal/commands/update_harness_test.go` + testes irmãos Node/Python
 **Ações:**
 - Escrever/mesclar (idempotente, mesmo padrão de `mergeClaudeHookArray`) a entrada de
   `PreToolUse[matcher:"Bash"]`/`PostToolUse[matcher:"Bash"]` em `~/.claude/settings.json`, apontando
@@ -115,7 +128,10 @@ CLI compartilham arquivo, evitar edição concorrente).
 
 ### ML-2B — Alvo `codex-credential-guard`
 **Status:** ⬜ Pendente
-**Arquivos afetados:** mesmos de ML-2A, seção Codex
+**Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
+`npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
+irmãos), seção Codex — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
+Go-only por erro do orquestrador na autoria do roadmap; não repetir)
 **Ações:**
 - **Investigação obrigatória antes de implementar**: reconciliar a contradição registrada na ADR —
   confirmar via documentação oficial atual do Codex (`developers.openai.com/codex/hooks`,
@@ -133,7 +149,10 @@ CLI compartilham arquivo, evitar edição concorrente).
 
 ### ML-2C — Alvo `gemini-credential-guard`
 **Status:** ⬜ Pendente
-**Arquivos afetados:** mesmos de ML-2A, seção Gemini
+**Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
+`npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
+irmãos), seção Gemini — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
+Go-only por erro do orquestrador na autoria do roadmap; não repetir)
 **Ações:**
 - Escrever/mesclar `BeforeTool[matcher:"run_shell_command"]`/`AfterTool[matcher:"run_shell_command"]`
   em `~/.gemini/settings.json`.
@@ -144,7 +163,10 @@ CLI compartilham arquivo, evitar edição concorrente).
 
 ### ML-2D — Alvo `cursor-credential-guard`
 **Status:** ⬜ Pendente
-**Arquivos afetados:** mesmos de ML-2A, seção Cursor
+**Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
+`npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
+irmãos), seção Cursor — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
+Go-only por erro do orquestrador na autoria do roadmap; não repetir)
 **Ações:**
 - Escrever/mesclar `hooks.beforeShellExecution`/`hooks.afterShellExecution` em `~/.cursor/hooks.json`
   (mesmo schema `{"version":1,"hooks":{...}}` já usado no wiring de projeto, PR #141).
@@ -155,7 +177,10 @@ CLI compartilham arquivo, evitar edição concorrente).
 
 ### ML-2E — Alvo `copilot-credential-guard`
 **Status:** ⬜ Pendente
-**Arquivos afetados:** mesmos de ML-2A, seção Copilot
+**Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
+`npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
+irmãos), seção Copilot — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
+Go-only por erro do orquestrador na autoria do roadmap; não repetir)
 **Ações:**
 - Confirmar formato exato de `~/.copilot/settings.json` (campo `hooks` inline) via
   `docs.github.com/en/copilot/reference/hooks-configuration` — pode divergir do formato de
@@ -171,7 +196,10 @@ CLI compartilham arquivo, evitar edição concorrente).
 
 ### ML-2F — Alvo `kiro-credential-guard`
 **Status:** ⬜ Pendente
-**Arquivos afetados:** mesmos de ML-2A, seção Kiro
+**Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
+`npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
+irmãos), seção Kiro — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
+Go-only por erro do orquestrador na autoria do roadmap; não repetir)
 **Ações:**
 - Implementar verificação de versão do Kiro (v3) antes de instalar — investigar como detectar isso
   em runtime (ex.: `kiro --version`, ou arquivo de config que indique a versão) ou, se não for

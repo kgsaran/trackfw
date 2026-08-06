@@ -6,6 +6,7 @@ const path = require('path')
 const identityStore = require('../identity')
 const { catalog, buildPlans, IntegrationManager, globalGroupPath } = require('../integrations')
 const { tildeify, validateTargets, buildDocument, humanReport, silenceConsole } = require('../lib/update-engine')
+const { mergeClaudeHookArray } = require('../generators/hooks')
 
 // `trackfw update harness` is the global counterpart to `trackfw update` —
 // see docs/cli-parity.md, "`trackfw update` vs `trackfw update harness`".
@@ -93,6 +94,62 @@ function claudeSkillTarget(homeRoot, { dryRun, installMissing }) {
   }
 }
 
+// credentialGuardTargetClaude — evaluates (and, unless --dry-run, applies) the
+// global-scope credential-guard hook wiring for Claude Code:
+// PreToolUse[matcher:"Bash"]/PostToolUse[matcher:"Bash"] entries in
+// ~/.claude/settings.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh (a global hook can fire from
+// any project's cwd, unlike the project-scope wiring's relative
+// "scripts/trackfw-credential-guard.sh"). Mirrors
+// internal/generators/update.go:harnessCredentialGuardTargetClaude —
+// including deliberately NOT calling generateGlobalCredentialGuardScript here
+// (writing the referenced script file itself is out of this target's scope,
+// same as the Go implementation). Reuses mergeClaudeHookArray (generators/
+// hooks.js) so any pre-existing content in ~/.claude/settings.json (other
+// hooks, user config) is preserved — only the credential-guard entry is
+// added/merged.
+function credentialGuardTargetClaude(homeRoot, { dryRun, installMissing }) {
+  const id = 'claude-credential-guard'
+  const filePath = path.join(homeRoot, '.claude', 'settings.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+
+  let root
+  let raw = null
+  try {
+    if (fs.existsSync(filePath)) {
+      raw = fs.readFileSync(filePath, 'utf8')
+      root = raw.length ? JSON.parse(raw) : {}
+    } else {
+      if (!installMissing) return { id, state: 'missing', path: displayPath }
+      if (dryRun) return { id, state: 'updated', path: displayPath }
+      root = {}
+      if (!root.hooks) root.hooks = {}
+      root.hooks.PreToolUse = mergeClaudeHookArray(root.hooks.PreToolUse, 'Bash', scriptPath)
+      root.hooks.PostToolUse = mergeClaudeHookArray(root.hooks.PostToolUse, 'Bash', scriptPath)
+      const desired = JSON.stringify(root, null, 2) + '\n'
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, desired, 'utf8')
+      return { id, state: 'updated', path: displayPath }
+    }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+
+  try {
+    if (!root.hooks) root.hooks = {}
+    root.hooks.PreToolUse = mergeClaudeHookArray(root.hooks.PreToolUse, 'Bash', scriptPath)
+    root.hooks.PostToolUse = mergeClaudeHookArray(root.hooks.PostToolUse, 'Bash', scriptPath)
+    const desired = JSON.stringify(root, null, 2) + '\n'
+    if (desired === raw) return { id, state: 'skipped', path: displayPath }
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
 // catalogBundleTarget — one target per (tool, kind) pair at global scope.
 // Uses IntegrationManager.inspect (read-only) to classify every catalog
 // item under that pair, then only calls manager.update() for the subset
@@ -136,7 +193,7 @@ function catalogBundleTarget(toolId, kind, homeRoot, identityConfig, { dryRun, i
   }
 }
 
-const HARNESS_TARGET_IDS = ['claude-skill']
+const HARNESS_TARGET_IDS = ['claude-skill', 'claude-credential-guard']
 for (const target of catalog.targets) {
   HARNESS_TARGET_IDS.push(`${target.id}-agents`, `${target.id}-skills`)
 }
@@ -150,6 +207,7 @@ function buildHarnessTargets(homeRoot, identityConfig, { dryRun, installMissing 
   const include = (id) => !wanted || wanted.includes(id)
   const targets = []
   if (include('claude-skill')) targets.push(claudeSkillTarget(homeRoot, { dryRun, installMissing }))
+  if (include('claude-credential-guard')) targets.push(credentialGuardTargetClaude(homeRoot, { dryRun, installMissing }))
   for (const target of catalog.targets) {
     const agentsId = `${target.id}-agents`
     const skillsId = `${target.id}-skills`
@@ -205,4 +263,4 @@ function run(options) {
   if (doc.summary.failed > 0) process.exitCode = 1
 }
 
-module.exports = { run, HARNESS_TARGET_IDS, buildHarnessTargets, claudeSkillContent }
+module.exports = { run, HARNESS_TARGET_IDS, buildHarnessTargets, claudeSkillContent, credentialGuardTargetClaude }

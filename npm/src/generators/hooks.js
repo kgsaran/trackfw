@@ -673,4 +673,5 @@ module.exports = {
   injectCursorHooks,
   injectWindsurfHooks,
   injectHooksDetected,
+  mergeClaudeHookArray,
 }
