@@ -117,15 +117,18 @@ Dois achados fora de escopo, documentados durante a auditoria do
 > Dependências: Wave 1 completa
 
 ### ML-2A — `make quality` verde de ponta a ponta + encerramento
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+**Nota:** `make quality` passou de ponta a ponta na primeira execução pós-Wave 1 (exit 0, 102/102
+cenários de `check-gates-falsify.sh`, incluindo o Cenário 44 do ciclo anterior que cobre
+`check-agent-hooks-parity.sh`). `trackfw validate` limpo. Nenhum achado novo — não precisou expandir
+para ML própria.
 **Arquivos afetados:**
-- Nenhum (só validação — a menos que `make quality` revele mais alguma coisa a corrigir, caso em que
-  volta para uma ML própria, não se expande esta)
+- Nenhum (só validação)
 **Ações:**
 - Rodar `make quality` completo e confirmar que passa de ponta a ponta agora que o bloqueio de versão
   foi removido.
 - Atualizar `docs/agents-working-context.md` e a REQ (Acceptance Criteria + Linked Roadmap).
 **Critérios de aceite:**
-- [ ] `make quality` verde
-- [ ] `trackfw validate` sem violações
+- [x] `make quality` verde
+- [x] `trackfw validate` sem violações
 **Comandos de validação:** `make quality && trackfw validate`

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-06
 author: "kg.saran@gmail.com"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md"
 ---
 
 # REQ: corrige divergencia de versao pypi e schema legado de hooks do cursor
 
-> Date: 2026-08-06 | Status: Open
+> Date: 2026-08-06 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -36,16 +36,19 @@ correção:
    para Cursor está, hoje, funcionalmente inerte em uso real — o Cursor real ignora essas chaves.
 
 ## Acceptance Criteria
-- [ ] `pypi/trackfw/__init__.py` alinhado à versão real do projeto (mesma fonte de verdade que
-      Go/Node usam — confirmar qual é antes de hardcodar de novo) e `check-cli-parity.sh` passando
-- [ ] `make quality`/`make parity` verdes de ponta a ponta (não só os gates desta REQ isoladamente)
-- [ ] Investigação registrada no roadmap sobre qual evento real do Cursor é o análogo correto para
-      attention-signal/cleanup (candidatos a avaliar: `beforeSubmitPrompt`/`stop`, ou confirmar que
-      não há analog real e a funcionalidade precisa ser descontinuada/re-desenhada para o Cursor)
-- [ ] `.cursor/hooks.json` migrado para o evento real confirmado, paridade Go/Node/Python mantida,
-      sem quebrar o wiring de `beforeShellExecution`/`afterShellExecution` do credential-guard já
-      existente (PR #141)
-- [ ] `trackfw validate` sem violações novas
+- [x] `pypi/trackfw/__init__.py` alinhado à versão real do projeto (`6.4.1`, mesma fonte de verdade
+      que `pyproject.toml`/Go/Node) e `check-cli-parity.sh` passando
+- [x] `make quality`/`make parity` verdes de ponta a ponta — confirmado (102/102 cenários de
+      falsificação, todos os gates de paridade, `trackfw validate` limpo)
+- [x] Investigação registrada no roadmap sobre qual evento real do Cursor é o análogo correto para
+      attention-signal/cleanup — achado: a documentação do Cursor mudou entre 2026-08-05 e 2026-08-06,
+      passou a documentar `preToolUse`/`postToolUse`/`postToolUseFailure` como eventos genéricos reais
+      (não existiam na investigação do ciclo anterior)
+- [x] `.cursor/hooks.json` migrado para os eventos reais confirmados (`hooks.preToolUse`/
+      `hooks.postToolUse`, nested), paridade Go/Node/Python mantida, sem quebrar o wiring de
+      `beforeShellExecution`/`afterShellExecution` do credential-guard já existente (PR #141);
+      migração automática de arquivos escritos por versões anteriores do trackfw
+- [x] `trackfw validate` sem violações novas
 
 ## Linked ADR
 <!-- nenhuma decisão de design não-trivial nova esperada; ambos os fixes são correção de bug/divergência
