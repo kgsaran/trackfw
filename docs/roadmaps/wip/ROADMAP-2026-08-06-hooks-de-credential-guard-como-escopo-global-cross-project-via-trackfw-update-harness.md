@@ -355,7 +355,7 @@ arquivos/escopos diferentes.
 > Dependências: Wave 2 completa (precisa saber o formato exato de cada alvo global para detectá-lo)
 
 ### ML-3A — `InjectXHooks` (projeto) pula credential-guard quando já instalado globalmente
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectClaudeHooks`, `InjectCodexHooks`, `InjectGeminiHooks`,
   `InjectCopilotHooks`, `InjectCursorHooks`, `InjectKiroHooks` — os 6 `InjectXHooks` já existentes)
