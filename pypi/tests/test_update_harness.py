@@ -114,8 +114,10 @@ def test_harness_declared_target_list_and_order(tmp_path):
     # copilot-credential-guard sits immediately before copilot-agents/
     # copilot-skills — same relative position (ROADMAP-2026-08-06 Wave 2/ML-2E).
     assert ids[15:18] == ["copilot-credential-guard", "copilot-agents", "copilot-skills"]
-    assert ids[-2:] == ["kiro-agents", "kiro-skills"]
-    assert len(ids) == 6 + 10 * 2
+    # kiro-credential-guard sits immediately before kiro-agents/kiro-skills —
+    # same relative position (ROADMAP-2026-08-06 Wave 2/ML-2F).
+    assert ids[-3:] == ["kiro-credential-guard", "kiro-agents", "kiro-skills"]
+    assert len(ids) == 7 + 10 * 2
 
     home = tmp_path / "home"
     home.mkdir()
@@ -1036,3 +1038,118 @@ def test_credential_guard_copilot_preserves_existing_content(tmp_path):
     want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
     guard_entries = [entry for entry in doc["hooks"]["preToolUse"] if entry.get("bash") == want_script]
     assert len(guard_entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# `kiro-credential-guard` — global-scope credential-guard hook wiring for
+# Kiro, ROADMAP-2026-08-06 Wave 2 ML-2F. Unlike claude/codex/gemini/cursor/
+# copilot-credential-guard above, ~/.kiro/hooks/trackfw-credential-guard.json
+# is a DEDICATED file (only trackfw ever writes it) — mirrors claude-skill's
+# wholesale-overwrite contract, not the merge-and-preserve contract of the
+# settings-file targets.
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_kiro_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "kiro-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".kiro" / "hooks" / "trackfw-credential-guard.json").exists()
+
+
+def test_credential_guard_kiro_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "kiro-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.kiro/hooks/trackfw-credential-guard.json"
+
+    hook_path = home / ".kiro" / "hooks" / "trackfw-credential-guard.json"
+    doc = json.loads(hook_path.read_text(encoding="utf-8"))
+    assert doc["version"] == "v1"
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+    assert len(doc["hooks"]) == 2
+    triggers = sorted(entry["trigger"] for entry in doc["hooks"])
+    assert triggers == ["PostToolUse", "PreToolUse"]
+    for entry in doc["hooks"]:
+        assert entry["matcher"] == "shell"
+        assert entry["action"]["type"] == "command"
+        assert entry["action"]["command"] == want_script
+
+
+def test_credential_guard_kiro_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "kiro-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    hook_path = home / ".kiro" / "hooks" / "trackfw-credential-guard.json"
+    first_bytes = hook_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "kiro-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = hook_path.read_bytes()
+    assert first_bytes == second_bytes
+
+
+def test_credential_guard_kiro_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "kiro-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".kiro" / "hooks" / "trackfw-credential-guard.json").exists()
+
+
+def test_credential_guard_kiro_rewrites_stale_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    hook_path = home / ".kiro" / "hooks" / "trackfw-credential-guard.json"
+    hook_path.parent.mkdir(parents=True)
+    hook_path.write_text(json.dumps({"version": "v1", "hooks": [{"name": "stale"}]}), encoding="utf-8")
+
+    result = cli(
+        "update", "harness", "--targets", "kiro-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    rewritten = hook_path.read_text(encoding="utf-8")
+    assert '"stale"' not in rewritten

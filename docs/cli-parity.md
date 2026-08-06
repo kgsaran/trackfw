@@ -1779,7 +1779,7 @@ Wave 6 round.
 
 ### Declared harness targets — pinned list
 
-The harness target list is **not** derived at runtime; it is this fixed sequence of 26 ids, in this
+The harness target list is **not** derived at runtime; it is this fixed sequence of 27 ids, in this
 exact order: `claude-skill`, `claude-credential-guard` (global-scope credential-guard wiring for
 Claude Code — `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
 ML-2A), `claude-agents`, `claude-skills`, `codex-credential-guard` (same wave, ML-2B — global-scope
@@ -1793,12 +1793,14 @@ object — no per-entry matcher, unlike Claude/Codex/Gemini's nested `{matcher,h
 shape), `cursor-agents`, `cursor-skills`, `copilot-credential-guard` (same wave, ML-2E — global-scope
 credential-guard wiring for GitHub Copilot, `~/.copilot/settings.json`,
 `hooks.preToolUse`/`hooks.postToolUse[matcher:"bash"]` — see "GitHub Copilot global-scope wiring
-(ML-2E)" below), `copilot-agents`, `copilot-skills`, then `<tool>-agents`/`<tool>-skills` for the
-remaining three catalog tools in `catalog.json` declaration order — `windsurf`, `amazonq`, `opencode`,
-`kiro`. Each `<tool>-credential-guard` id (where it exists) is always positioned immediately BEFORE
-that tool's own `<tool>-agents`/`<tool>-skills` pair, never after — more `<tool>-credential-guard`
-siblings land in subsequent, sequential MLs of the same wave, each at that same relative position for
-its tool.
+(ML-2E)" below), `copilot-agents`, `copilot-skills`, `windsurf-agents`, `windsurf-skills`,
+`amazonq-agents`, `amazonq-skills`, `opencode-agents`, `opencode-skills`, `kiro-credential-guard`
+(same wave, ML-2F — global-scope credential-guard wiring for Kiro, a DEDICATED file at
+`~/.kiro/hooks/trackfw-credential-guard.json` — see "Kiro global-scope wiring (ML-2F)" below),
+`kiro-agents`, `kiro-skills`. Each `<tool>-credential-guard` id (where it exists) is always
+positioned immediately BEFORE that tool's own `<tool>-agents`/`<tool>-skills` pair, never after —
+`kiro-credential-guard` is the last credential-guard target of this wave (Windsurf has no native
+hook mechanism and stays out per the ADR).
 
 ### GitHub Copilot global-scope wiring (ML-2E) — `~/.copilot/settings.json`, inline `hooks` field
 
@@ -1850,6 +1852,47 @@ advanced` (same fetch date) has no conflicting requirement. This resolves the co
 confidence: no opt-in flag is needed for either project-scope (`.codex/hooks.json`,
 `InjectCodexHooks`) or global-scope (`~/.codex/hooks.json`, `codex-credential-guard`) hook wiring —
 `codex_hooks`/`hooks` is only ever used to turn hooks OFF.
+
+### Kiro global-scope wiring (ML-2F) — `~/.kiro/hooks/trackfw-credential-guard.json`, dedicated file
+
+**Format, confirmed 2026-08-06** against `https://kiro.dev/changelog/cli/2-13/` (re-fetched via
+`curl -L`, same RSC/HTML retrieval method the project-scope `InjectKiroHooks` investigation used):
+"Hooks placed in `~/.kiro/hooks/` now fire in every workspace automatically ... Workspace-level hooks
+continue to work alongside global ones." This confirms `~/.kiro/hooks/` is a **directory of
+one-file-per-hook**, the global-scope analog of the project-scope `.kiro/hooks/*.json` files — not a
+single general settings file shared with other CLI config, unlike
+`claude-credential-guard`/`codex-credential-guard`/`gemini-credential-guard`/`copilot-credential-guard`
+(each of which merges into that tool's own general settings file). `kiro-credential-guard` therefore
+writes a **dedicated** file, `~/.kiro/hooks/trackfw-credential-guard.json`, wholesale-overwritten on
+every run (never merged) — same discipline as `claude-skill`
+(`~/.claude/skills/trackfw/SKILL.md`), not the merge-and-preserve discipline of the settings-file
+targets. Entry schema mirrors `InjectKiroHooks` (project scope) exactly: top-level
+`{"version":"v1","hooks":[...]}`, each entry
+`{"name","description","trigger","matcher","action":{"type":"command","command":<path>}}` — but
+`command` here is the **absolute** path of `~/.trackfw/scripts/trackfw-credential-guard.sh` (a global
+hook can fire from any project's cwd, unlike the project-scope wiring's relative
+`scripts/trackfw-credential-guard.sh`), and the two hook names are
+`trackfw-credential-guard-global-pre`/`trackfw-credential-guard-global-post` — deliberately distinct
+from the project-scope names (`trackfw-credential-guard-pre`/`-post`), since this writes an entirely
+different file and nothing in the changelog documents whether Kiro deduplicates same-named hooks
+across scopes/files; the future project-scope dedup (Wave 3, ML-3A) matches on the script path, not
+the hook name, same as every other tool's dedup.
+
+**Kiro v3 caveat — no runtime version probe, documented instead.** The same changelog page states
+global hooks are "Available in V3 (`kiro-cli --v3`)". Re-fetching that page and
+`https://kiro.dev/docs/cli/` (2026-08-06) found `--v3` is a **launch-mode flag on the installed
+binary**, not a value any `kiro`/`kiro-cli --version`-style command reports — neither page documents
+any `--version` flag or output format at all. There is therefore no persistent, installed-version fact
+to probe from a separate process: trackfw never invokes Kiro itself, and whether a given Kiro session
+honors this file depends on how the user launches their *next* session (`kiro-cli --v3`), not on
+anything on disk right now. `kiro-credential-guard` intentionally does **not** attempt a `kiro`/
+`kiro-cli` subprocess version probe. It also does **not** put this caveat in the JSON `message` field:
+the pinned contract (`TargetResult.Message`/`message` key, see "message only when present, last"
+above and `TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract`) reserves `message` for `failed`
+targets only — inventing a message on `updated` would violate that contract. The v3 prerequisite is
+documented here and in the Go/Node/Python doc comments above
+`harnessCredentialGuardTargetKiro`/`credentialGuardTargetKiro`/`_credential_guard_kiro_result`
+instead; release notes pointing users at `trackfw update harness` should mention it too.
 
 Each `<tool>-<kind>` target is a **roll-up over every catalog item** for that pair, not one row per
 item; per-item granularity already exists via `trackfw agents update` and `trackfw skills update`.

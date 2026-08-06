@@ -100,12 +100,13 @@ def _tildeify(home: str, absolute: str) -> str:
 
 def declared_target_ids() -> list[str]:
     # "codex-credential-guard"/"gemini-credential-guard"/
-    # "cursor-credential-guard"/"copilot-credential-guard" are each inserted
-    # immediately BEFORE their tool's "-agents"/"-skills" pair — same
-    # relative position as claude-credential-guard, which precedes
-    # claude-agents/claude-skills. See
-    # internal/generators/update.go:buildHarnessTargetIDs for the full
-    # rationale (ROADMAP-2026-08-06 Wave 2/ML-2B, ML-2C, ML-2D, ML-2E).
+    # "cursor-credential-guard"/"copilot-credential-guard"/
+    # "kiro-credential-guard" are each inserted immediately BEFORE their
+    # tool's "-agents"/"-skills" pair — same relative position as
+    # claude-credential-guard, which precedes claude-agents/claude-skills.
+    # See internal/generators/update.go:buildHarnessTargetIDs for the full
+    # rationale (ROADMAP-2026-08-06 Wave 2/ML-2B, ML-2C, ML-2D, ML-2E,
+    # ML-2F).
     ids = ["claude-skill", "claude-credential-guard"]
     for tool in _CATALOG_TARGET_ORDER:
         if tool == "codex":
@@ -116,6 +117,8 @@ def declared_target_ids() -> list[str]:
             ids.append("cursor-credential-guard")
         if tool == "copilot":
             ids.append("copilot-credential-guard")
+        if tool == "kiro":
+            ids.append("kiro-credential-guard")
         for kind in _CATALOG_KIND_ORDER:
             ids.append(f"{tool}-{kind}")
     return ids
@@ -522,6 +525,97 @@ def _credential_guard_copilot_result(home: str, dry_run: bool, install_missing: 
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
 
 
+def _credential_guard_kiro_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Evaluates (and, unless dry_run, applies) the global-scope
+    credential-guard hook wiring for Kiro: a DEDICATED file at
+    ~/.kiro/hooks/trackfw-credential-guard.json — unlike
+    `_credential_guard_claude_result`/`..._codex_result`/`..._gemini_result`/
+    `..._cursor_result`/`..._copilot_result` above (which merge into a
+    shared, general settings file), ~/.kiro/hooks/ is a directory of
+    one-file-per-hook, confirmed by
+    generators/hooks.py:inject_kiro_hooks's own investigation and by
+    kiro.dev/changelog/cli/2-13/: "Hooks placed in ~/.kiro/hooks/ now fire
+    in every workspace automatically ... Workspace-level hooks continue to
+    work alongside global ones". Same schema as inject_kiro_hooks (project
+    scope): top-level {"version":"v1","hooks":[...]}, each entry
+    {"name","description","trigger","matcher","action":{"type":"command",
+    "command":<absolute path>}} — but the command here is the ABSOLUTE path
+    of ~/.trackfw/scripts/trackfw-credential-guard.sh (a global hook can
+    fire from any project's cwd), and the two hook names are
+    "trackfw-credential-guard-global-pre"/"-global-post" — deliberately
+    DISTINCT from the project-scope names ("trackfw-credential-guard-pre"/
+    "-post") since this writes an entirely different file and nothing
+    documents whether Kiro deduplicates same-named hooks across
+    scopes/files; ML-3A's future project-scope dedup will match on the
+    script path, not the hook name. Mirrors
+    internal/generators/update.go:harnessCredentialGuardTargetKiro.
+
+    Kiro v3 caveat (ROADMAP-2026-08-06 Wave 2/ML-2F, confirmed 2026-08-06
+    against kiro.dev/changelog/cli/2-13/): global hooks are "Available in
+    V3 (`kiro-cli --v3`)". `--v3` is a LAUNCH-MODE flag on the same
+    installed binary, not a value any `--version`-style command reports —
+    there is no documented `kiro`/`kiro-cli --version` output format
+    anywhere in the fetched sources, and no persistent installed-version
+    fact to probe from a separate process (trackfw never invokes Kiro
+    itself). This target does NOT attempt a subprocess version probe, and
+    does NOT put the caveat in the JSON "message" field either (pinned
+    contract: "message" is failure-only — see docs/cli-parity.md). The v3
+    prerequisite is documented here and in docs/cli-parity.md's own "Kiro
+    global-scope wiring (ML-2F)" section instead.
+    """
+    target_id = "kiro-credential-guard"
+    path = os.path.join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+    desired_doc = {
+        "version": "v1",
+        "hooks": [
+            {
+                "name": "trackfw-credential-guard-global-pre",
+                "description": "Blocks/warns on possible plaintext credential materialization before a shell command executes (global, all projects)",
+                "trigger": "PreToolUse",
+                "matcher": "shell",
+                "action": {"type": "command", "command": script_path},
+            },
+            {
+                "name": "trackfw-credential-guard-global-post",
+                "description": "Warns on possible plaintext credential materialization after a shell command executes (global, all projects)",
+                "trigger": "PostToolUse",
+                "matcher": "shell",
+                "action": {"type": "command", "command": script_path},
+            },
+        ],
+    }
+    desired = (json.dumps(desired_doc, indent=2) + "\n").encode("utf-8")
+
+    try:
+        existing = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_bytes(desired)
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if existing == desired:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_bytes(desired)
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
 def _catalog_group_result(
     tool: str,
     kind: str,
@@ -625,6 +719,9 @@ def _run(args: argparse.Namespace) -> None:
             continue
         if target_id == "copilot-credential-guard":
             targets.append(_credential_guard_copilot_result(home, args.dry_run, args.install_missing))
+            continue
+        if target_id == "kiro-credential-guard":
+            targets.append(_credential_guard_kiro_result(home, args.dry_run, args.install_missing))
             continue
         tool, kind = target_id.rsplit("-", 1)
         targets.append(_catalog_group_result(tool, kind, home, manager, identity_cfg, args.dry_run, args.install_missing))

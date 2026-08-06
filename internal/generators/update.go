@@ -279,7 +279,7 @@ var harnessCatalogTargetOrder = []string{
 }
 
 // HarnessTargetIDs is the fixed, declared order of `trackfw update harness`
-// targets: 24 ids — "claude-skill", then "claude-credential-guard" (global
+// targets: 27 ids — "claude-skill", then "claude-credential-guard" (global
 // credential-guard hook wiring for Claude Code — placed immediately after
 // claude-skill since both are Claude-Code-scoped global artifacts), then for
 // each catalog target in harnessCatalogTargetOrder its "<tool>-agents"/
@@ -290,12 +290,14 @@ var harnessCatalogTargetOrder = []string{
 // "cursor-credential-guard" inserted immediately BEFORE "cursor-agents"/
 // "cursor-skills" (ROADMAP-2026-08-06 Wave 2/ML-2D), and
 // "copilot-credential-guard" inserted immediately BEFORE "copilot-agents"/
-// "copilot-skills" (ROADMAP-2026-08-06 Wave 2/ML-2E) — same relative position
-// as claude-credential-guard/codex-credential-guard/gemini-credential-guard/
-// cursor-credential-guard (credential-guard target precedes that tool's
-// agents/skills pair, never follows it). Remaining "<tool>-credential-guard"
-// siblings are added by subsequent, sequential MLs (2F), each at the same
-// relative position for its own tool. Order here
+// "copilot-skills" (ROADMAP-2026-08-06 Wave 2/ML-2E), and
+// "kiro-credential-guard" inserted immediately BEFORE "kiro-agents"/
+// "kiro-skills" (ROADMAP-2026-08-06 Wave 2/ML-2F, the last credential-guard
+// target of this wave — Windsurf has no native hook mechanism and stays out
+// per the ADR) — same relative position as claude-credential-guard/
+// codex-credential-guard/gemini-credential-guard/cursor-credential-guard/
+// copilot-credential-guard (credential-guard target precedes that tool's
+// agents/skills pair, never follows it). Order here
 // is authoritative for both JSON output and iteration — it must never be
 // derived from the filesystem or from what happens to be installed on a
 // given machine (see docs/cli-parity.md, "targets follows the declared
@@ -317,6 +319,9 @@ func buildHarnessTargetIDs() []string {
 		}
 		if tool == "copilot" {
 			ids = append(ids, "copilot-credential-guard")
+		}
+		if tool == "kiro" {
+			ids = append(ids, "kiro-credential-guard")
 		}
 		ids = append(ids, tool+"-agents", tool+"-skills")
 	}
@@ -374,6 +379,10 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		}
 		if id == "copilot-credential-guard" {
 			results = append(results, harnessCredentialGuardTargetCopilot(home, opts))
+			continue
+		}
+		if id == "kiro-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetKiro(home, opts))
 			continue
 		}
 		tool, kind, ok := splitHarnessCatalogTargetID(id)
@@ -968,6 +977,116 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 	}
 	desired := append(out, '\n')
 	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessCredentialGuardTargetKiro evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Kiro: a dedicated file
+// at ~/.kiro/hooks/trackfw-credential-guard.json (NOT a merge into a shared
+// settings file — unlike Claude/Codex/Gemini/Copilot's general settings
+// files, ~/.kiro/hooks/ is a directory of one-file-per-hook, confirmed by
+// InjectKiroHooks's own investigation and by kiro.dev/changelog/cli/2-13/:
+// "Hooks placed in ~/.kiro/hooks/ now fire in every workspace automatically
+// ... Workspace-level hooks continue to work alongside global ones"). Same
+// schema as InjectKiroHooks (project scope, agentfiles.go): top-level
+// {"version":"v1","hooks":[...]}, each entry {"name","description",
+// "trigger","matcher","action":{"type":"command","command":<absolute path>}}
+// — but the command here is the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh (a global hook can fire
+// from any project's cwd, unlike the project-scope wiring's relative
+// "scripts/trackfw-credential-guard.sh"), and the two hook names are
+// "trackfw-credential-guard-global-pre"/"-global-post" — deliberately
+// DISTINCT from the project-scope names ("trackfw-credential-guard-pre"/
+// "-post") rather than reused, because this writes an entirely different
+// file (~/.kiro/hooks/ vs <project>/.kiro/hooks/) and nothing in the
+// changelog's "workspace hooks continue to work alongside global ones"
+// documents whether Kiro deduplicates same-named hooks originating from
+// different files/scopes — distinct names avoid betting on unconfirmed
+// merge-by-name behavior; ML-3A's future project-scope dedup will match on
+// the script path, not the hook name, same as every other tool's dedup.
+//
+// Kiro v3 caveat (ROADMAP-2026-08-06 Wave 2/ML-2F investigation, confirmed
+// 2026-08-06 against kiro.dev/changelog/cli/2-13/): global hooks are
+// "Available in V3 (`kiro-cli --v3`)". Re-fetching that page found `--v3` is
+// a LAUNCH-MODE flag on the same installed binary ("kiro-cli --v3"), not a
+// value any `kiro-cli --version`/`kiro --version` style command reports —
+// the doc/marketing pages fetched for this ML (kiro.dev/docs/cli/) document
+// no such flag at all. There is therefore no persistent, installed-version
+// fact to probe from a separate process (trackfw never invokes Kiro
+// itself): whether a given Kiro session honors this file depends on how the
+// USER launches their next session, not on anything on disk right now. This
+// target intentionally does NOT attempt a `kiro`/`kiro-cli` subprocess
+// version probe (per the roadmap's fallback instruction for "not detectable
+// in a confiable way"), and does NOT put the caveat in TargetResult.Message
+// either: the pinned JSON contract (docs/cli-parity.md, "message" only on
+// "failed") and TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract
+// both establish Message is failure-only, so inventing a message on
+// "updated" would break that contract. The v3 prerequisite is documented
+// instead in this comment and in docs/cli-parity.md's own "Kiro global-scope
+// wiring (ML-2F)" section, both of which the release notes/changelog can
+// point users to — the same choice already made for Copilot's own doc-only
+// caveats (see harnessCredentialGuardTargetCopilot above).
+func harnessCredentialGuardTargetKiro(home string, opts UpdateOptions) TargetResult {
+	const id = "kiro-credential-guard"
+	const displayPath = "~/.kiro/hooks/trackfw-credential-guard.json"
+
+	path := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	content := map[string]interface{}{
+		"version": "v1",
+		"hooks": []interface{}{
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-global-pre",
+				"description": "Blocks/warns on possible plaintext credential materialization before a shell command executes (global, all projects)",
+				"trigger":     "PreToolUse",
+				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": scriptPath},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-global-post",
+				"description": "Warns on possible plaintext credential materialization after a shell command executes (global, all projects)",
+				"trigger":     "PostToolUse",
+				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": scriptPath},
+			},
+		},
+	}
+	out, marshalErr := json.MarshalIndent(content, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+
+	data, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	if string(data) == string(desired) {
 		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
 	}
 	if opts.DryRun {

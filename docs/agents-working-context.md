@@ -9957,3 +9957,68 @@ Roadmap ML-2D marcado `✅ Concluído` no arquivo (conteúdo, não commit). Nenh
 de git authority, `trackfw_architect` audita e commita. Próximo ML da Wave 2 é o ML-2E
 (`copilot-credential-guard`), ainda `⬜ Pendente`. Copilot/Kiro (2E-2F) não tocados, conforme
 instrução do handoff.
+
+## Sessão 2026-08-06 — Apolo (ML-2F do ROADMAP hooks-de-credential-guard-global, último ML da Wave 2) — Go+Node+Python implementados, sem commit
+
+Mesma branch. Executando ML-2F (alvo `kiro-credential-guard`, último `<tool>-credential-guard` da
+Wave 2) — paridade 3 stacks desde o início, ML-2E (`copilot-credential-guard`) já concluído.
+
+**Investigação de versão v3 (bloqueante do ML), confirmada 2026-08-06 via `curl -L` contra
+`kiro.dev/changelog/cli/2-13/` e `kiro.dev/docs/cli/`:** `--v3` é uma flag de MODO DE LANÇAMENTO no
+mesmo binário instalado ("Available in V3 (`kiro-cli --v3`)"), não um valor que um comando
+`--version` reporta — nenhuma página fetchada documenta flag `--version`/formato de saída para o CLI
+Kiro. Não existe, portanto, fato de versão instalada persistente para sondar de um processo externo
+(trackfw nunca invoca o Kiro); se a próxima sessão do Kiro honra o arquivo depende de como o USUÁRIO
+a lança (`kiro-cli --v3`), não de nada em disco agora. **Decisão validada pelo advisor**: sem sonda
+de subprocesso, e sem usar `TargetResult.Message` para o aviso — confirmado lendo o contrato
+(`TargetResult.Message` "only set when State == TargetFailed",
+`TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract` reprova `message` fora de `failed`) que
+isso quebraria o contrato JSON pinado. Aviso documentado só em `docs/cli-parity.md` (nova seção "Kiro
+global-scope wiring (ML-2F)") + doc comments nos 3 stacks — nunca em runtime.
+
+**Formato do arquivo global confirmado (mesma fonte):** "Hooks placed in ~/.kiro/hooks/ now fire in
+every workspace automatically ... Workspace-level hooks continue to work alongside global ones" —
+`~/.kiro/hooks/` é diretório de UM ARQUIVO POR HOOK, não um settings.json geral compartilhado como
+Claude/Codex/Gemini/Copilot. `kiro-credential-guard` escreve arquivo DEDICADO
+`~/.kiro/hooks/trackfw-credential-guard.json`, sobrescrito por inteiro a cada run (nunca merge) —
+mesmo padrão de `claude-skill` (`harnessClaudeSkillTarget`), não o padrão merge-and-preserve dos
+alvos anteriores (Claude/Codex/Gemini/Cursor/Copilot). Schema idêntico ao `InjectKiroHooks` de
+projeto, mas `command` com caminho ABSOLUTO e nomes de hook `trackfw-credential-guard-global-pre`/
+`-global-post` — deliberadamente distintos dos nomes de projeto (`trackfw-credential-guard-pre`/
+`-post`), decisão do advisor: evita apostar em dedup-por-nome do Kiro não documentado entre
+arquivos/escopos diferentes; o dedup futuro (ML-3A, Wave 3) vai casar pelo caminho do script, não
+pelo nome do hook.
+
+**Implementação (3 stacks):**
+- Go: `internal/generators/update.go` — `"kiro-credential-guard"` inserido em
+  `buildHarnessTargetIDs` imediatamente ANTES de `kiro-agents`/`kiro-skills` (último
+  `<tool>-credential-guard` da wave); nova função `harnessCredentialGuardTargetKiro` (padrão
+  wholesale-overwrite, não merge). 27 ids totais.
+- Node: `npm/src/commands/update-harness.js` — `credentialGuardTargetKiro`, inserção condicional
+  `if (target.id === 'kiro')` no loop de `HARNESS_TARGET_IDS` e no dispatcher `buildHarnessTargets`,
+  exportado.
+- Python: `pypi/trackfw/commands/update_harness.py` — `_credential_guard_kiro_result`, mesma
+  inserção condicional em `declared_target_ids()` e despacho em `_run`.
+- Testes espelhados (missing/install-absoluto/idempotência/dry-run/rewrite-de-conteúdo-obsoleto —
+  arquivo dedicado, não "preservação de conteúdo pré-existente" como os alvos de merge) em
+  `internal/generators/update_test.go`, `internal/commands/update_harness_test.go`
+  (`TestUpdateHarnessCmd_CredentialGuardKiroInstallsViaCLI`), `npm/tests/update-harness.test.js`,
+  `pypi/tests/test_update_harness.py` (+ ajuste de `test_harness_declared_target_list_and_order`
+  para 27 ids). Todos usando `$HOME`/`HOME` de fixture, nunca o `$HOME` real.
+- `docs/cli-parity.md` atualizado ("26 ids" → "27 ids", nova entrada `kiro-credential-guard` na
+  lista pinada, nova seção "Kiro global-scope wiring (ML-2F)" com a investigação completa).
+
+**Evidência de validação:**
+- `go build ./... && go test ./...` — todos os pacotes verdes.
+- `cd npm && npm test` — 425 testes verdes.
+- `python3 -m pytest pypi/` — 964 testes verdes, 8 subtests.
+- `GO_BIN=bin/trackfw scripts/check-update-parity.sh` — todos os cenários OK, incluindo
+  `target-list/three-runtimes-identical` confirmando os 27 ids idênticos e na mesma ordem nos 3
+  stacks.
+- `bin/trackfw validate` — nenhuma violação.
+
+Roadmap ML-2F marcado `✅ Concluído` no arquivo (conteúdo, não commit) — **Wave 2 completa** (todos os
+6 alvos `<tool>-credential-guard` implementados: Claude, Codex, Gemini, Cursor, Copilot, Kiro).
+Nenhum commit feito — regra de git authority, `trackfw_architect` audita e commita. Próxima wave é a
+Wave 3 (`ML-3A` — dedup: `InjectXHooks` de projeto detecta wiring global já instalado e pula a
+entrada de credential-guard por-projeto), ainda `⬜ Pendente`.

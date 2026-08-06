@@ -1293,6 +1293,173 @@ func TestUpdateHarnessCredentialGuardCopilotPreservesExistingContent(t *testing.
 	}
 }
 
+// --- kiro-credential-guard (ROADMAP-2026-08-06 Wave 2/ML-2F) ---
+//
+// Unlike claude/codex/gemini/cursor/copilot-credential-guard (which merge
+// into a shared, general settings file), ~/.kiro/hooks/trackfw-credential-
+// guard.json is a DEDICATED file — only trackfw ever writes it, mirroring
+// harnessClaudeSkillTarget's own wholesale-overwrite contract (missing /
+// install-missing / idempotent-skip / dry-run / stale-content-rewrite),
+// not the merge-and-preserve-foreign-keys contract of the settings-file
+// targets above.
+
+func TestUpdateHarnessCredentialGuardKiroMissingWithoutInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"kiro-credential-guard"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetMissing {
+		t.Fatalf("state = %q, want missing (no --install-missing)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")); !os.IsNotExist(err) {
+		t.Fatalf("kiro-credential-guard was installed without --install-missing: %v", err)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardKiroInstallsAbsolutePathWithInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"kiro-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (--install-missing)", report.Targets[0].State)
+	}
+	if report.Targets[0].Path != "~/.kiro/hooks/trackfw-credential-guard.json" {
+		t.Fatalf("path = %q, want ~/.kiro/hooks/trackfw-credential-guard.json", report.Targets[0].Path)
+	}
+
+	hookPath := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("~/.kiro/hooks/trackfw-credential-guard.json was not written: %v", err)
+	}
+
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("invalid JSON written: %v", err)
+	}
+	if v, _ := doc["version"].(string); v != "v1" {
+		t.Fatalf(`expected "version":"v1", got %v`, doc["version"])
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !filepath.IsAbs(wantScript) {
+		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
+	}
+	hooks, _ := doc["hooks"].([]interface{})
+	if len(hooks) != 2 {
+		t.Fatalf("expected 2 hooks (pre/post), got %d: %v", len(hooks), doc)
+	}
+	sawPre, sawPost := false, false
+	for _, h := range hooks {
+		entry, _ := h.(map[string]interface{})
+		if entry == nil {
+			t.Fatalf("hook entry is not an object: %v", h)
+		}
+		if entry["matcher"] != "shell" {
+			t.Fatalf("hook entry matcher = %v, want \"shell\": %v", entry["matcher"], entry)
+		}
+		action, _ := entry["action"].(map[string]interface{})
+		if action == nil || action["type"] != "command" || action["command"] != wantScript {
+			t.Fatalf("hook entry action does not point at the absolute global script path %s: %v", wantScript, entry)
+		}
+		switch entry["trigger"] {
+		case "PreToolUse":
+			sawPre = true
+		case "PostToolUse":
+			sawPost = true
+		}
+	}
+	if !sawPre || !sawPost {
+		t.Fatalf("expected both PreToolUse and PostToolUse hook entries: %v", hooks)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardKiroIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if _, err := UpdateHarness(UpdateOptions{Targets: []string{"kiro-credential-guard"}, InstallMissing: true}); err != nil {
+		t.Fatal(err)
+	}
+	hookPath := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
+	firstRun, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"kiro-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetSkipped {
+		t.Fatalf("state = %q, want skipped (already installed, idempotent)", report.Targets[0].State)
+	}
+	secondRun, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(firstRun) != string(secondRun) {
+		t.Fatalf("second run mutated ~/.kiro/hooks/trackfw-credential-guard.json:\nfirst:  %s\nsecond: %s", firstRun, secondRun)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardKiroDryRunDoesNotWrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"kiro-credential-guard"}, InstallMissing: true, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.DryRun {
+		t.Fatal("report.DryRun = false, want true")
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (would install)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")); !os.IsNotExist(err) {
+		t.Fatal("--dry-run wrote ~/.kiro/hooks/trackfw-credential-guard.json")
+	}
+}
+
+func TestUpdateHarnessCredentialGuardKiroRewritesStaleContent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	hookPath := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
+	if err := os.MkdirAll(filepath.Dir(hookPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// This is a DEDICATED file (only trackfw ever writes it) — unlike the
+	// settings-file targets above, a pre-existing foreign shape here is
+	// stale/corrupt state from a previous trackfw version, not user content
+	// to merge into. It must be replaced wholesale, never merged.
+	if err := os.WriteFile(hookPath, []byte(`{"version":"v1","hooks":[{"name":"stale"}]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"kiro-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (stale content rewritten)", report.Targets[0].State)
+	}
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"stale"`) {
+		t.Fatalf("stale content was not replaced: %s", data)
+	}
+}
+
 func TestUpdateHarnessDoesNotWriteAnythingOutsideHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

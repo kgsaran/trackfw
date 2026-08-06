@@ -671,6 +671,88 @@ test('copilot-credential-guard preserves pre-existing content in ~/.copilot/sett
   assert.equal(guardEntries.length, 1)
 })
 
+// ---------------------------------------------------------------------------
+// `kiro-credential-guard` — global-scope credential-guard hook wiring for
+// Kiro, ROADMAP-2026-08-06 Wave 2 ML-2F. Unlike claude/codex/gemini/cursor/
+// copilot-credential-guard above, ~/.kiro/hooks/trackfw-credential-guard.json
+// is a DEDICATED file (only trackfw ever writes it) — mirrors
+// claude-skill's wholesale-overwrite contract, not the merge-and-preserve
+// contract of the settings-file targets.
+// ---------------------------------------------------------------------------
+
+test('kiro-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'kiro-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')), false)
+})
+
+test('kiro-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'kiro-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.kiro/hooks/trackfw-credential-guard.json')
+
+  const hookPath = path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')
+  const hooksDoc = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
+  assert.equal(hooksDoc.version, 'v1')
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+  assert.equal(hooksDoc.hooks.length, 2)
+  const triggers = hooksDoc.hooks.map((h) => h.trigger).sort()
+  assert.deepEqual(triggers, ['PostToolUse', 'PreToolUse'])
+  for (const entry of hooksDoc.hooks) {
+    assert.equal(entry.matcher, 'shell')
+    assert.equal(entry.action.type, 'command')
+    assert.equal(entry.action.command, wantScript)
+  }
+})
+
+test('kiro-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'kiro-credential-guard'], homeRoot)
+  const hookPath = path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')
+  const firstRun = fs.readFileSync(hookPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'kiro-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(hookPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+})
+
+test('kiro-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'kiro-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')), false)
+})
+
+test('kiro-credential-guard rewrites stale content (dedicated file, never merged)', () => {
+  const homeRoot = scratchHome()
+  const hookPath = path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')
+  fs.mkdirSync(path.dirname(hookPath), { recursive: true })
+  fs.writeFileSync(hookPath, JSON.stringify({ version: 'v1', hooks: [{ name: 'stale' }] }))
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'kiro-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  const rewritten = fs.readFileSync(hookPath, 'utf8')
+  assert.ok(!rewritten.includes('"stale"'))
+})
+
 test('a project-scoped catalog install under HOME is not touched by trackfw update (project scope stays project scope)', () => {
   const homeRoot = scratchHome()
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-harness-project-'))

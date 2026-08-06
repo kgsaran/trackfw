@@ -303,21 +303,52 @@ stacks por `check-update-parity.sh` (cenário `target-list/three-runtimes-identi
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2F — Alvo `kiro-credential-guard`
-**Status:** 🔄 Em andamento
-**Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
-`npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
-irmãos), seção Kiro — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
-Go-only por erro do orquestrador na autoria do roadmap; não repetir)
-**Ações:**
-- Implementar verificação de versão do Kiro (v3) antes de instalar — investigar como detectar isso
-  em runtime (ex.: `kiro --version`, ou arquivo de config que indique a versão) ou, se não for
-  detectável de forma confiável, documentar como pré-requisito explícito na mensagem do alvo
-  (`TargetResult.Message`) em vez de falhar silenciosamente numa v2.
-- Escrever/mesclar hook em `~/.kiro/hooks/` (arquivo dedicado, mesmo padrão do wiring de projeto).
+**Status:** ✅ Concluído
+
+**Investigação de versão v3 (confirmada 2026-08-06, `curl -L` contra `kiro.dev/changelog/cli/2-13/` e
+`kiro.dev/docs/cli/`):** `--v3` é uma flag de MODO DE LANÇAMENTO do mesmo binário instalado
+("Available in V3 (`kiro-cli --v3`)"), não um valor que algum comando `--version` reporta — nenhuma
+das duas páginas documenta flag `--version`/formato de saída para o CLI. Não há, portanto, um fato de
+versão instalada persistente para sondar de um processo externo (trackfw nunca invoca o Kiro
+diretamente); se uma sessão Kiro respeita o arquivo global depende de como o usuário lança a PRÓXIMA
+sessão (`kiro-cli --v3`), não de nada em disco agora. Decisão: **sem sonda de subprocesso** — e sem
+usar `TargetResult.Message` para o aviso (confirmado que o contrato é failure-only: struct
+`TargetResult.Message` documentado "only set when State == TargetFailed",
+`TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract` reprova qualquer `message` fora de
+`failed`). Pré-requisito documentado em `docs/cli-parity.md` (nova seção "Kiro global-scope wiring
+(ML-2F)") + doc comments nos 3 stacks.
+**Formato do arquivo global confirmado:** `~/.kiro/hooks/trackfw-credential-guard.json` — arquivo
+DEDICADO (um arquivo por hook no diretório `~/.kiro/hooks/`, não um settings.json geral compartilhado
+como Claude/Codex/Gemini/Copilot), confirmado pelo mesmo changelog: "Hooks placed in ~/.kiro/hooks/
+now fire in every workspace automatically". Escrito por sobrescrita total (nunca merge) — mesmo
+padrão de `claude-skill`, não o padrão merge-and-preserve dos alvos de settings.json. Schema idêntico
+ao `InjectKiroHooks` de projeto (`{"version":"v1","hooks":[...]}`), mas `command` com caminho
+ABSOLUTO e nomes de hook distintos (`trackfw-credential-guard-global-pre`/`-global-post`) dos nomes
+de projeto, para não apostar em comportamento de dedup-por-nome do Kiro não documentado entre
+arquivos/escopos diferentes.
+**Posição em `HarnessTargetIDs`:** `kiro-credential-guard` inserido imediatamente ANTES de
+`kiro-agents`/`kiro-skills` — mesma posição relativa dos MLs anteriores, e último
+`<tool>-credential-guard` da wave (26→27 ids, confirmado idêntico nos 3 stacks por
+`check-update-parity.sh`).
+**Arquivos afetados:**
+- `internal/generators/update.go` (`buildHarnessTargetIDs`, `UpdateHarness` dispatcher,
+  `harnessCredentialGuardTargetKiro`)
+- `internal/generators/update_test.go` (5 testes: missing, install absolute path, idempotência,
+  dry-run, rewrite de conteúdo obsoleto — arquivo dedicado, nunca merge)
+- `internal/commands/update_harness_test.go` (`TestUpdateHarnessCmd_CredentialGuardKiroInstallsViaCLI`)
+- `npm/src/commands/update-harness.js` (`HARNESS_TARGET_IDS`, `credentialGuardTargetKiro`,
+  dispatcher em `buildHarnessTargets`)
+- `npm/tests/update-harness.test.js` (5 testes espelhando os do Go)
+- `pypi/trackfw/commands/update_harness.py` (`declared_target_ids`, `_credential_guard_kiro_result`,
+  dispatcher em `_run`)
+- `pypi/tests/test_update_harness.py` (5 testes + ajuste de
+  `test_harness_declared_target_list_and_order` para 27 ids)
+- `docs/cli-parity.md` (lista pinada corrigida para 27 ids + nova seção "Kiro global-scope wiring
+  (ML-2F)")
 **Critérios de aceite:**
-- [ ] Verificação/aviso de versão implementado e testado
-- [ ] `trackfw update harness --targets kiro-credential-guard --install-missing` funciona em fixture
-- [ ] Testes verdes nos 3 stacks
+- [x] Verificação/aviso de versão implementado e testado (documentado, sem sonda de subprocesso)
+- [x] `trackfw update harness --targets kiro-credential-guard --install-missing` funciona em fixture
+- [x] Testes verdes nos 3 stacks
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ## Wave 3 — Dedup: projeto detecta wiring global (1 ML)

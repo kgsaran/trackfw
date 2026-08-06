@@ -379,6 +379,89 @@ function credentialGuardTargetCopilot(homeRoot, { dryRun, installMissing }) {
   }
 }
 
+// credentialGuardTargetKiro — evaluates (and, unless --dry-run, applies) the
+// global-scope credential-guard hook wiring for Kiro: a DEDICATED file at
+// ~/.kiro/hooks/trackfw-credential-guard.json (unlike claude/codex/gemini/
+// cursor/copilot-credential-guard, which merge into a shared, general
+// settings file — ~/.kiro/hooks/ is a directory of one-file-per-hook,
+// confirmed by generators/hooks.js:injectKiroHooks's own investigation and
+// by kiro.dev/changelog/cli/2-13/: "Hooks placed in ~/.kiro/hooks/ now fire
+// in every workspace automatically ... Workspace-level hooks continue to
+// work alongside global ones"). Same schema as injectKiroHooks (project
+// scope): top-level {"version":"v1","hooks":[...]}, each entry
+// {"name","description","trigger","matcher","action":{"type":"command",
+// "command":<absolute path>}} — but the command here is the ABSOLUTE path
+// of ~/.trackfw/scripts/trackfw-credential-guard.sh (a global hook can fire
+// from any project's cwd), and the two hook names are
+// "trackfw-credential-guard-global-pre"/"-global-post" — deliberately
+// DISTINCT from the project-scope names ("trackfw-credential-guard-pre"/
+// "-post") since this writes an entirely different file and nothing
+// documents whether Kiro deduplicates same-named hooks across scopes/files;
+// ML-3A's future project-scope dedup will match on the script path, not the
+// hook name.
+//
+// Kiro v3 caveat (ROADMAP-2026-08-06 Wave 2/ML-2F, confirmed 2026-08-06
+// against kiro.dev/changelog/cli/2-13/): global hooks are "Available in V3
+// (`kiro-cli --v3`)". `--v3` is a LAUNCH-MODE flag on the same installed
+// binary, not a value any `--version`-style command reports — there is no
+// documented `kiro`/`kiro-cli --version` output format anywhere in the
+// fetched sources, and no persistent installed-version fact to probe from a
+// separate process (trackfw never invokes Kiro itself). This target does
+// NOT attempt a subprocess version probe, and does NOT put the caveat in
+// the JSON `message` field either (pinned contract: `message` is
+// failure-only — see docs/cli-parity.md and
+// internal/commands/update_harness_test.go's
+// TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract). The v3
+// prerequisite is documented here and in docs/cli-parity.md's own "Kiro
+// global-scope wiring (ML-2F)" section instead. Mirrors
+// internal/generators/update.go:harnessCredentialGuardTargetKiro.
+function credentialGuardTargetKiro(homeRoot, { dryRun, installMissing }) {
+  const id = 'kiro-credential-guard'
+  const filePath = path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+
+  const desired = JSON.stringify(
+    {
+      version: 'v1',
+      hooks: [
+        {
+          name: 'trackfw-credential-guard-global-pre',
+          description: 'Blocks/warns on possible plaintext credential materialization before a shell command executes (global, all projects)',
+          trigger: 'PreToolUse',
+          matcher: 'shell',
+          action: { type: 'command', command: scriptPath },
+        },
+        {
+          name: 'trackfw-credential-guard-global-post',
+          description: 'Warns on possible plaintext credential materialization after a shell command executes (global, all projects)',
+          trigger: 'PostToolUse',
+          matcher: 'shell',
+          action: { type: 'command', command: scriptPath },
+        },
+      ],
+    },
+    null,
+    2
+  ) + '\n'
+
+  try {
+    const exists = fs.existsSync(filePath)
+    const actual = exists ? fs.readFileSync(filePath, 'utf8') : null
+
+    if (!exists && !installMissing) return { id, state: 'missing', path: displayPath }
+    if (exists && actual === desired) return { id, state: 'skipped', path: displayPath }
+
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
 // catalogBundleTarget — one target per (tool, kind) pair at global scope.
 // Uses IntegrationManager.inspect (read-only) to classify every catalog
 // item under that pair, then only calls manager.update() for the subset
@@ -434,6 +517,7 @@ for (const target of catalog.targets) {
   if (target.id === 'gemini') HARNESS_TARGET_IDS.push('gemini-credential-guard')
   if (target.id === 'cursor') HARNESS_TARGET_IDS.push('cursor-credential-guard')
   if (target.id === 'copilot') HARNESS_TARGET_IDS.push('copilot-credential-guard')
+  if (target.id === 'kiro') HARNESS_TARGET_IDS.push('kiro-credential-guard')
   HARNESS_TARGET_IDS.push(`${target.id}-agents`, `${target.id}-skills`)
 }
 
@@ -459,6 +543,9 @@ function buildHarnessTargets(homeRoot, identityConfig, { dryRun, installMissing 
     }
     if (target.id === 'copilot' && include('copilot-credential-guard')) {
       targets.push(credentialGuardTargetCopilot(homeRoot, { dryRun, installMissing }))
+    }
+    if (target.id === 'kiro' && include('kiro-credential-guard')) {
+      targets.push(credentialGuardTargetKiro(homeRoot, { dryRun, installMissing }))
     }
     const agentsId = `${target.id}-agents`
     const skillsId = `${target.id}-skills`
@@ -524,4 +611,5 @@ module.exports = {
   credentialGuardTargetGemini,
   credentialGuardTargetCursor,
   credentialGuardTargetCopilot,
+  credentialGuardTargetKiro,
 }
