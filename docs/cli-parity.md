@@ -1258,6 +1258,81 @@ matcher-merge parity with Go/Node — previously it only checked "is this exact 
 anywhere in the array", which would have produced sibling `{"matcher": "Bash", ...}` blocks instead
 of merging into an existing one).
 
+#### Gemini CLI wiring (ML-2C) — `BeforeTool`/`AfterTool` matcher `"run_shell_command"`
+
+`InjectGeminiHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
+`npm/src/generators/hooks.js:injectGeminiHooks`; Python:
+`pypi/trackfw/generators/hooks.py:inject_gemini_hooks`) writes four independent hook group entries into
+`.gemini/settings.json`:
+
+| Event | Matcher | Script | Purpose |
+|---|---|---|---|
+| `Notification` | `ToolPermission` | `trackfw-attention-signal.sh` | Pre-existing — fires only when Gemini CLI is about to prompt for permission; does **not** fire for every tool call |
+| `BeforeTool` | `run_shell_command` | `trackfw-credential-guard.sh` | New — fires for **every** shell tool call, regardless of whether a permission prompt is needed |
+| `AfterTool` | `*` | `trackfw-attention-cleanup.sh` | Pre-existing |
+| `AfterTool` | `run_shell_command` | `trackfw-credential-guard.sh` | New |
+
+Confirmed against the official Gemini CLI documentation
+(<https://geminicli.com/docs/hooks/reference>, retrieved 2026-08-05 — fetched via `curl` and stripped
+of markup; no WebFetch/WebSearch tool was available in this execution):
+
+- `BeforeTool` "Fires before a tool is invoked. Used for argument validation, security checks, and
+  parameter rewriting" — a real pre-execution interception point, distinct from `Notification`
+  (`ToolPermission`), which the doc's own matcher-name-vs-lifecycle-event distinction implies only
+  fires around permission prompts, not for every tool call (same limitation pattern already confirmed
+  for Codex's `PermissionRequest` in ML-2B).
+- `BeforeTool` supports `decision: "deny"` (alias `"block"`) and "Exit Code 2 (Block Tool): Prevents
+  execution. Uses stderr as the reason" — already compatible with
+  `trackfw-credential-guard.sh`'s existing `block` mode (exit 2 + stderr), no script change needed.
+- The shell tool's canonical name is **`run_shell_command`**: "For `BeforeTool` and `AfterTool` events,
+  the matcher field in your settings is compared against the name of the tool being executed. Built-in
+  Tools: You can match any built-in tool (for example, `read_file`, `run_shell_command`)." Matcher is a
+  regex evaluated against `tool_name` (doc: "Regex Support: Matchers support regular expressions").
+- `AfterTool` "Fires after a tool executes. Used for result auditing, context injection, or hiding
+  sensitive output from the agent" — confirms the pre-existing `AfterTool["*"]` wiring is indeed the
+  post-execution equivalent already assumed by the code.
+- The `settings.json` schema (`{"hooks": {"<Event>": [{"matcher": "...", "sequential": bool?, "hooks":
+  [{"type": "command", "command": "..."}]}]}}`) matches what `InjectGeminiHooks`/`injectGeminiHooks`/
+  `inject_gemini_hooks` already produced for `Notification`/`AfterTool` before this ML — no format
+  migration was needed, only new group entries. The optional `sequential` field is not set by trackfw
+  (defaults to unspecified/parallel-by-omission per the doc's `hooks` array default).
+- Doc lists the tool-hook events as `Stable` (no preview/experimental marker found in the fetched
+  reference page), unlike some other Gemini CLI hook categories — no minimum-version caveat is
+  documented for `BeforeTool`/`AfterTool` specifically.
+
+**Concurrency across matcher groups (explicitly investigated per this ML's brief):** the doc defines a
+`sequential` field, but scoped **within one matcher group only** — "If `true`, hooks in this group run
+one after another. If `false`, they run in parallel." It does not document ordering **between two
+different matching groups** for the same event and the same `tool_name` (e.g. `AfterTool["*"]` vs.
+`AfterTool["run_shell_command"]`, both matching a shell-tool call). No concurrency model is assumed
+here for that case — it is left undocumented rather than guessed. This does not create the
+Codex-style race found in ML-1A/ML-2B regardless of the real answer: `trackfw-credential-guard.sh`'s
+`warn` mode writes only to its own dedicated `$ROADMAP_DIR/.trackfw-credential-guard.json`, a path no
+other generated script (including `trackfw-attention-cleanup.sh`) reads, writes or deletes — so even if
+Gemini CLI runs `AfterTool["*"]` and `AfterTool["run_shell_command"]` concurrently for the same call,
+there is no shared file for them to race over.
+
+Merge/idempotency follows the same `mergeClaudeHookArray`/`_merge_claude_hook_array` pattern as Claude
+Code and Codex. The Python injector was rewritten in this ML to use the shared
+`_merge_claude_hook_array` helper (already used by `inject_claude_hooks` in the same file) instead of
+a bespoke "does any entry anywhere contain this command" check it previously used — the same class of
+divergence ML-2A fixed in Go and ML-2B fixed in Python for Codex, which would otherwise append a
+second `{"matcher": "run_shell_command", ...}` group instead of merging into an existing third-party
+one. Side effect of that rewrite: the `name`/`timeout: 10000` fields the Python injector previously
+wrote into Gemini hook entries (fields Go/Node never wrote) were dropped, so all three stacks now
+produce the same entry shape (`{"matcher", "hooks": [{"type", "command"}]}`) — informational-only
+fields were traded for exact cross-stack structural parity ahead of ML-3A's structural gate.
+
+**Known gap, reported but out of scope for this ML:** `GenerateCredentialGuardScript` (Go) /
+`generateCredentialGuardScript` (Node.js) / `_generate_credential_guard_script` (Python) — the
+functions that actually write `scripts/trackfw-credential-guard.sh` to disk — are not called from any
+real command flow (`trackfw init`/`discover`/`update`) in any of the three stacks; only tests invoke
+them directly. Every hook wired so far (Claude Code, Codex, Gemini) points at a script that is never
+generated by the CLI itself in normal usage. This pre-dates ML-2C (already true for ML-2A/ML-2B) and
+needs its own fix — most likely calling the script generator alongside
+`InjectHooksDetected`/`injectHooksDetected`/`inject_hooks_detected` — tracked as a follow-up, not fixed
+here to avoid expanding this ML's scope.
+
 ### States
 
 Both commands report one state per target. These four strings are pinned:

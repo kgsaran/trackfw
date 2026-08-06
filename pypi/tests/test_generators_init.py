@@ -535,13 +535,47 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data = json.load(f)
         self.assertIn('Notification', data.get('hooks', {}))
         self.assertIn('AfterTool', data.get('hooks', {}))
+        self.assertIn('BeforeTool', data.get('hooks', {}))
+
+        before = data['hooks']['BeforeTool']
+        self.assertEqual(len(before), 1)
+        self.assertEqual(before[0]['matcher'], 'run_shell_command')
+        self.assertEqual(before[0]['hooks'][0]['command'], 'scripts/trackfw-credential-guard.sh')
+
+        after = data['hooks']['AfterTool']
+        after_matchers = {e['matcher'] for e in after}
+        self.assertEqual(after_matchers, {'*', 'run_shell_command'})
 
         # Idempotência
         inject_gemini_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
         self.assertEqual(len(data2['hooks']['Notification']), 1)
-        self.assertEqual(len(data2['hooks']['AfterTool']), 1)
+        self.assertEqual(len(data2['hooks']['AfterTool']), 2)
+        self.assertEqual(len(data2['hooks']['BeforeTool']), 1)
+
+    def test_inject_gemini_hooks_preserves_existing_before_tool_entry(self):
+        from trackfw.generators.hooks import inject_gemini_hooks
+        path = os.path.join(self.tmp, '.gemini', 'settings.json')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'BeforeTool': [
+                        {'matcher': 'run_shell_command', 'hooks': [{'type': 'command', 'command': 'scripts/other.sh'}]},
+                    ],
+                },
+            }, f)
+
+        inject_gemini_hooks(self.tmp)
+        inject_gemini_hooks(self.tmp)
+
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        before = data['hooks']['BeforeTool']
+        self.assertEqual(len(before), 1)
+        commands = {h['command'] for h in before[0]['hooks']}
+        self.assertEqual(commands, {'scripts/other.sh', 'scripts/trackfw-credential-guard.sh'})
 
     def test_inject_kiro_hooks(self):
         from trackfw.generators.hooks import inject_kiro_hooks

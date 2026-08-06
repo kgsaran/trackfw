@@ -155,51 +155,52 @@ def inject_codex_hooks(cwd: str) -> None:
 
 # ---------------------------------------------------------------------------
 # Gemini — .gemini/settings.json
+#
+# Three independent hook events: Notification (matcher "ToolPermission") for the
+# existing attention-signal -- only fires when Gemini CLI is about to prompt for
+# permission, not for every tool call -- and BeforeTool/AfterTool (matcher
+# "run_shell_command") for credential-guard, which fires for every shell tool call
+# regardless of whether a permission prompt is needed. Confirmed against
+# https://geminicli.com/docs/hooks/reference (retrieved 2026-08-05): BeforeTool
+# "Fires before a tool is invoked. Used for argument validation, security checks,
+# and parameter rewriting" and supports "Exit Code 2 (Block Tool): Prevents
+# execution. Uses stderr as the reason" -- matching trackfw-credential-guard.sh's
+# existing "block" mode. The shell tool's canonical name is "run_shell_command"
+# (doc: "you can match any built-in tool (for example, read_file,
+# run_shell_command)"); matcher is a regex evaluated against tool_name. AfterTool
+# (matcher "*") is the pre-existing attention-cleanup wiring, unrelated to the new
+# credential-guard entry added as a separate array entry (different matcher) in the
+# same event.
+#
+# Design note (ML-2C): rewritten to use the shared `_merge_claude_hook_array`
+# helper -- already used by `inject_claude_hooks` -- instead of the bespoke
+# "does any entry contain this command" checks the previous version of this
+# function used. That inline pattern would append a *second* group with the same
+# matcher when a third-party group already existed for it, the exact divergence
+# ML-2A fixed in Go's `mergeClaudeHookArray` and ML-2B fixed in Python's
+# `_merge_codex_hook_entry`. As a side effect, the `name`/`timeout: 10000` fields
+# this function used to write for Gemini entries (which Go/Node never wrote) are
+# dropped here to match Go/Node/`_merge_claude_hook_array` output shape byte-for-
+# byte -- structural cross-stack parity (ML-3A's gate) takes precedence over
+# preserving those two informational-only fields.
 # ---------------------------------------------------------------------------
 
 def inject_gemini_hooks(cwd: str) -> None:
-    """Injeta hooks Notification/AfterTool no .gemini/settings.json."""
+    """Injeta hooks Notification/BeforeTool/AfterTool no .gemini/settings.json."""
     file_path = os.path.join(cwd, '.gemini', 'settings.json')
     data = _read_json(file_path)
 
     hooks = data.setdefault('hooks', {})
 
     notifications = hooks.setdefault('Notification', [])
-    if not any(
-        entry.get('matcher') == 'ToolPermission'
-        and any(
-            hook.get('command') == 'scripts/trackfw-attention-signal.sh'
-            for hook in entry.get('hooks', [])
-        )
-        for entry in notifications
-    ):
-        notifications.append({
-            'matcher': 'ToolPermission',
-            'hooks': [{
-                'name': 'trackfw-attention-signal',
-                'type': 'command',
-                'command': 'scripts/trackfw-attention-signal.sh',
-                'timeout': 10000,
-            }],
-        })
+    _merge_claude_hook_array(notifications, 'ToolPermission', 'scripts/trackfw-attention-signal.sh')
+
+    before = hooks.setdefault('BeforeTool', [])
+    _merge_claude_hook_array(before, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
 
     after = hooks.setdefault('AfterTool', [])
-    if not any(
-        any(
-            hook.get('command') == 'scripts/trackfw-attention-cleanup.sh'
-            for hook in entry.get('hooks', [])
-        )
-        for entry in after
-    ):
-        after.append({
-            'matcher': '*',
-            'hooks': [{
-                'name': 'trackfw-attention-cleanup',
-                'type': 'command',
-                'command': 'scripts/trackfw-attention-cleanup.sh',
-                'timeout': 10000,
-            }],
-        })
+    _merge_claude_hook_array(after, '*', 'scripts/trackfw-attention-cleanup.sh')
+    _merge_claude_hook_array(after, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
 
     _write_json(file_path, data)
 

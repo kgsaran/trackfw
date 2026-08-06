@@ -309,6 +309,34 @@ func InjectCodexHooks(cwd string) error {
 }
 
 // InjectGeminiHooks injects Gemini CLI attention hooks into .gemini/settings.json.
+//
+// Three independent hook events are wired here:
+//   - Notification (matcher "ToolPermission") — existing attention-signal, only fires
+//     when Gemini CLI is about to prompt for permission, not for every tool call.
+//   - BeforeTool (matcher "run_shell_command") + AfterTool (matcher "run_shell_command") —
+//     credential-guard, fires for every shell tool call regardless of whether a
+//     permission prompt is needed. Confirmed against
+//     https://geminicli.com/docs/hooks/reference (retrieved 2026-08-05): BeforeTool
+//     "Fires before a tool is invoked. Used for argument validation, security checks,
+//     and parameter rewriting" and supports "Exit Code 2 (Block Tool): Prevents
+//     execution. Uses stderr as the reason" — matching trackfw-credential-guard.sh's
+//     existing "block" mode. The shell tool's canonical name is "run_shell_command"
+//     (doc: "you can match any built-in tool (for example, read_file,
+//     run_shell_command)"); matcher is a regex evaluated against tool_name.
+//   - AfterTool (matcher "*") — pre-existing attention-cleanup, unrelated to the new
+//     credential-guard wiring above (different matcher, added as a separate array
+//     entry so the two coexist without merging into one hooks group).
+//
+// Concurrency note: the doc's `sequential` field only orders hooks *within* one
+// matcher group ("If true, hooks in this group run one after another"); it says
+// nothing about ordering across two different matching groups for the same event
+// (e.g. AfterTool["*"] vs AfterTool["run_shell_command"] both firing for a shell
+// call). That cross-group model is undocumented, so no ordering is assumed here.
+// It does not matter for this wiring because credential-guard's "warn" mode writes
+// to its own dedicated $ROADMAP_DIR/.trackfw-credential-guard.json (see ML-1A),
+// never touching the .trackfw-attention.json file that trackfw-attention-cleanup.sh
+// deletes — the same fix that neutralized the equivalent race confirmed for Codex
+// in ML-2B applies here regardless of Gemini's actual concurrency model.
 func InjectGeminiHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".gemini")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -341,10 +369,22 @@ func InjectGeminiHooks(cwd string) error {
 		"ToolPermission",
 		"scripts/trackfw-attention-signal.sh",
 	)
+
+	hooks["BeforeTool"] = mergeClaudeHookArray(
+		hooks["BeforeTool"],
+		"run_shell_command",
+		"scripts/trackfw-credential-guard.sh",
+	)
+
 	hooks["AfterTool"] = mergeClaudeHookArray(
 		hooks["AfterTool"],
 		"*",
 		"scripts/trackfw-attention-cleanup.sh",
+	)
+	hooks["AfterTool"] = mergeClaudeHookArray(
+		hooks["AfterTool"],
+		"run_shell_command",
+		"scripts/trackfw-credential-guard.sh",
 	)
 
 	root["hooks"] = hooks

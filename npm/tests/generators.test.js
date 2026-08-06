@@ -391,12 +391,42 @@ test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', 
   assert.equal(data.hooks.Notification[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.AfterTool[0].matcher, '*')
   assert.equal(data.hooks.AfterTool[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.BeforeTool[0].matcher, 'run_shell_command')
+  assert.equal(data.hooks.BeforeTool[0].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  const afterToolGuard = data.hooks.AfterTool.find(e => e.matcher === 'run_shell_command')
+  assert.ok(afterToolGuard, 'AfterTool[run_shell_command] credential-guard entry missing')
+  assert.equal(afterToolGuard.hooks[0].command, 'scripts/trackfw-credential-guard.sh')
 
   // Idempotência
   injectGeminiHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
   assert.equal(data.hooks.Notification.length, 1)
   assert.equal(data.hooks.Notification[0].hooks.length, 1)
+  assert.equal(data.hooks.BeforeTool.length, 1)
+  assert.equal(data.hooks.AfterTool.length, 2)
+})
+
+test('injectGeminiHooks preserves an existing BeforeTool[run_shell_command] entry when merging', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gemini-hooks-merge-'))
+  const settingsPath = path.join(tmpDir, '.gemini', 'settings.json')
+
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    hooks: {
+      BeforeTool: [
+        { matcher: 'run_shell_command', hooks: [{ type: 'command', command: 'scripts/other.sh' }] },
+      ],
+    },
+  }, null, 2))
+
+  injectGeminiHooks(tmpDir)
+  injectGeminiHooks(tmpDir)
+
+  const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  assert.equal(data.hooks.BeforeTool.length, 1)
+  const commands = data.hooks.BeforeTool[0].hooks.map(h => h.command)
+  assert.ok(commands.includes('scripts/other.sh'), 'existing BeforeTool hook lost during merge')
+  assert.ok(commands.includes('scripts/trackfw-credential-guard.sh'), 'credential-guard hook missing after merge')
 })
 
 test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently', () => {

@@ -219,7 +219,59 @@ do ML-1A acima.
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2C — Gemini CLI
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** confirmado via `https://geminicli.com/docs/hooks/reference` (2026-08-05, texto
+extraído por `curl` — sem acesso a WebFetch/WebSearch nesta execução) que existe um evento `BeforeTool`
+distinto de `Notification[ToolPermission]`: "Fires before a tool is invoked. Used for argument
+validation, security checks, and parameter rewriting" e suporta `Exit Code 2 (Block Tool): Prevents
+execution. Uses stderr as the reason` — compatível com o modo `block` já existente do script. O nome
+canônico do tool de shell é `run_shell_command` (doc: "you can match any built-in tool (for example,
+`read_file`, `run_shell_command`)"); o `matcher` é regex avaliado contra `tool_name`. `AfterTool` já
+usado hoje pelo trackfw é de fato o evento pós-execução equivalente a `PostToolUse` ("Fires after a
+tool executes"). Implementado `BeforeTool[matcher:"run_shell_command"]` +
+`AfterTool[matcher:"run_shell_command"]` apontando para `trackfw-credential-guard.sh`, preservando
+`Notification[ToolPermission]` (signal) e `AfterTool[matcher:"*"]` (cleanup) existentes como entradas
+separadas no mesmo array.
+
+**Concorrência (item explicitamente pedido na investigação):** o schema documentado tem um campo
+`sequential` por grupo de matcher ("If true, hooks in this group run one after another. If false, they
+run in parallel"), mas isso só ordena hooks **dentro do mesmo grupo/matcher** — a doc não especifica o
+modelo de concorrência **entre grupos diferentes** que batem no mesmo evento e no mesmo `tool_name`
+(ex.: `AfterTool["*"]` vs. `AfterTool["run_shell_command"]`, ambos disparando para uma chamada de
+shell). Não assumido nenhum modelo (nem serial nem paralelo) por falta de confirmação documental —
+registrado como tal no código (`agentfiles.go`) e aqui. Isso não é bloqueante porque o fix do ML-1A
+(modo `warn` do credential-guard escreve em `.trackfw-credential-guard.json`, arquivo dedicado que
+nenhum outro script gerado toca) já neutraliza a race de "cleanup apaga o warn" independente do modelo
+de concorrência real do Gemini CLI — a mesma lógica que resolveu a race confirmada para o Codex no
+ML-2B se aplica aqui sem mudança adicional. Nenhum outro efeito colateral de concorrência foi
+identificado (nenhum outro script gerado lê/escreve o arquivo dedicado do credential-guard; não há
+limite documentado de hooks concorrentes por evento no Gemini CLI que descartaria um deles).
+
+**Efeito colateral, Python:** `inject_gemini_hooks` usava checagem inline ("existe uma entrada com esse
+comando em algum lugar do array?") em vez do helper compartilhado `_merge_claude_hook_array` (já usado
+por `inject_claude_hooks` no mesmo arquivo) — o mesmo padrão de divergência que o ML-2A corrigiu no Go
+(`mergeClaudeHookArray`) e o ML-2B corrigiu no Python para o Codex (`_merge_codex_hook_entry`).
+Reescrito para usar `_merge_claude_hook_array` nos 3 grupos (`Notification`, `BeforeTool`, `AfterTool`),
+trazendo paridade real de comportamento de merge com Go/Node. Efeito colateral dessa escolha: os campos
+`name`/`timeout: 10000` que a versão anterior do Python escrevia nas entradas do Gemini (e que Go/Node
+nunca escreveram) foram removidos, para que a saída estruturada fique idêntica entre os 3 stacks
+(nenhum teste dependia desses campos).
+
+**Achados fora de escopo, reportados e não corrigidos neste ML:**
+- `GenerateCredentialGuardScript`/`generateCredentialGuardScript`/`_generate_credential_guard_script`
+  (que escrevem `scripts/trackfw-credential-guard.sh` em disco) não são chamados por nenhum fluxo de
+  comando real (`trackfw init`/`discover`/`update`) nos 3 stacks — apenas por testes. Todo o wiring de
+  hooks feito em ML-2A/2B/2C aponta para um script que hoje só existe se algo o gerar manualmente. Isso
+  pré-existe a este ML (já valia para Claude/Codex) e precisa de correção própria (provavelmente
+  chamando o gerador do script no mesmo ponto em que `InjectHooksDetected`/`injectHooksDetected`/
+  `inject_hooks_detected` é chamado) — não corrigido aqui para não expandir escopo.
+- `AfterTool[matcher:"*"]` (entrada pré-existente de cleanup, não tocada neste ML): a documentação
+  pesquisada não define semântica explícita de "match-all" para o `matcher` (é descrito como regex ou
+  string exata; nenhuma menção a `"*"` como coringa documentado). Não corrigido aqui (fora do escopo
+  pedido — preservar a entrada existente), mas registrado como suspeita a investigar antes do ML-5A:
+  se `"*"` não for tratado como wildcard pelo Gemini CLI real, o cleanup nunca dispara via `AfterTool`.
+
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectGeminiHooks`, linha 279-324)
 - `npm/src/generators/hooks.js` (linha ~172)
@@ -233,9 +285,9 @@ do ML-1A acima.
 - Adicionar `BeforeTool`/`AfterTool` com o matcher confirmado, preservando `Notification[ToolPermission]`
   existente.
 **Critérios de aceite:**
-- [ ] Nome exato do tool de shell do Gemini CLI documentado em `docs/cli-parity.md` com a fonte
-- [ ] `.gemini/settings.json` gerado contém ambos os hooks sem sobrescrever o existente
-- [ ] Testes de geração verdes nos 3 stacks
+- [x] Nome exato do tool de shell do Gemini CLI documentado em `docs/cli-parity.md` com a fonte
+- [x] `.gemini/settings.json` gerado contém ambos os hooks sem sobrescrever o existente
+- [x] Testes de geração verdes nos 3 stacks
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2D — GitHub Copilot

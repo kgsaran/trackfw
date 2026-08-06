@@ -224,7 +224,61 @@ func TestInjectGeminiHooks(t *testing.T) {
 		t.Error("Gemini Notification hook missing")
 	}
 	if !helperHasClaudeHook(data, "AfterTool", "*", "scripts/trackfw-attention-cleanup.sh") {
-		t.Error("Gemini AfterTool hook missing")
+		t.Error("Gemini AfterTool[*] cleanup hook missing")
+	}
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+		t.Error("Gemini BeforeTool[run_shell_command] credential-guard hook missing")
+	}
+	if !helperHasClaudeHook(data, "AfterTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+		t.Error("Gemini AfterTool[run_shell_command] credential-guard hook missing")
+	}
+
+	hooks, _ := data["hooks"].(map[string]interface{})
+	before, _ := hooks["BeforeTool"].([]interface{})
+	if len(before) != 1 {
+		t.Errorf("expected 1 BeforeTool entry (run_shell_command only, no idempotency dup), got %d", len(before))
+	}
+	after, _ := hooks["AfterTool"].([]interface{})
+	// 2 entries: {matcher:"*", hooks:[cleanup.sh]}, {matcher:"run_shell_command", hooks:[credential-guard.sh]}
+	if len(after) != 2 {
+		t.Errorf("expected 2 AfterTool entries, got %d", len(after))
+	}
+}
+
+func TestInjectGeminiHooks_PreservesExistingBeforeToolEntry(t *testing.T) {
+	dir := t.TempDir()
+
+	existing := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"BeforeTool": []interface{}{
+				map[string]interface{}{
+					"matcher": "run_shell_command",
+					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": "scripts/other.sh"}},
+				},
+			},
+		},
+	}
+	helperWriteJSON(t, filepath.Join(dir, ".gemini", "settings.json"), existing)
+
+	if err := InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("InjectGeminiHooks failed: %v", err)
+	}
+	if err := InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("second InjectGeminiHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/other.sh") {
+		t.Error("existing BeforeTool[run_shell_command] hook lost during merge")
+	}
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+		t.Error("BeforeTool[run_shell_command] credential-guard hook missing after merge")
+	}
+
+	hooks, _ := data["hooks"].(map[string]interface{})
+	before, _ := hooks["BeforeTool"].([]interface{})
+	if len(before) != 1 {
+		t.Errorf("expected 1 BeforeTool entry (merged into existing run_shell_command matcher, not duplicated), got %d", len(before))
 	}
 }
 
