@@ -518,10 +518,61 @@ negativa (Cenário 44 de `check-gates-falsify.sh`), em `docs/cli-parity.md`
 > Dependências: Wave 2 completa (pelo menos ML-2A/Claude Code)
 
 ### ML-4A — Teste de sabotagem: materializar JWT sintético e confirmar detecção
-**Status:** 🔄 Em andamento
-**Arquivos afetados:**
-- Novo arquivo de teste, ex.: `internal/generators/credential_guard_sabotage_test.go` (Go) +
-  equivalentes em `npm/test/` e `pypi/tests/`
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** cobertura end-to-end real (wiring gerado via `InjectXHooks` +
+payload JSON exato do CLI + script gerado invocado como subprocesso) confirmada para
+**3 dos 6 CLIs** — Claude Code (obrigatório pelo AC da REQ), Cursor e Kiro — os únicos
+para os quais `docs/cli-parity.md` documenta um exemplo completo e citado do payload
+JSON de **stdin em runtime** (não apenas o formato do arquivo de configuração
+`hooks.json`/`settings.json`, que é um contrato diferente já coberto por
+`agentfiles_test.go`). Codex, Gemini CLI e GitHub Copilot ficaram **sem teste de
+sabotagem end-to-end** — motivo explícito, não omissão silenciosa:
+- **Codex**: `docs/cli-parity.md` (seção "Codex wiring (ML-2B)") confirma que o
+  `matcher` do `hooks.json` é aplicado a `tool_name`, mas o texto recuperado da doc
+  oficial (`developers.openai.com/codex/hooks`) não expõe um exemplo completo do
+  payload JSON que chega via stdin ao hook em runtime.
+- **Gemini CLI**: `docs/cli-parity.md` (seção "Gemini CLI wiring (ML-2C)") confirma o
+  nome do evento/matcher (`BeforeTool`/`AfterTool`, `run_shell_command`), mas não há,
+  no texto recuperado de `geminicli.com/docs/hooks/reference`, um exemplo de payload
+  JSON de stdin para hooks de tool.
+- **GitHub Copilot**: `docs/cli-parity.md` (seção "GitHub Copilot wiring (ML-2D)")
+  confirma apenas o nome de um campo (`toolName`, formato camelCase) e registra
+  explicitamente que o formato de payload depende do casing do nome do evento
+  (camelCase vs. PascalCase "VS Code compatible") sem cravar qual dos dois simular —
+  reproduzir um payload completo aqui seria inventar um contrato não confirmado.
+
+Construir um payload "por analogia" ao de Claude Code para esses 3 CLIs foi avaliado e
+descartado: violaria a instrução explícita do ML de não inventar schema sem confiança
+suficiente. `trackfw-credential-guard.sh` já é comprovadamente agnóstico a nomes de
+campo (varre o payload bruto inteiro via `grep`), então a ausência de teste aqui é uma
+lacuna de **evidência de sabotagem documentada**, não uma lacuna de cobertura de
+detecção real — os 3 CLIs sem teste continuam protegidos pelo mesmo script
+byte-idêntico validado pelos outros 3.
+
+**Prova de falsificação executada (Claude Code, Go), revertida antes de concluir:**
+`internal/generators/scaffold.go`, linhas 819-820 (`JWT_PATTERN`/`AWS_KEY_PATTERN`)
+temporariamente trocadas por `'ZZZNEVERMATCHESZZZ'` (neutralizando a detecção sem
+quebrar a sintaxe do script). Rerun de
+`go test ./internal/generators/... -run TestSabotage_ClaudeCode -v` com a detecção
+neutralizada: `TestSabotage_ClaudeCode_JWTInBashCommand_WarnMode` e
+`TestSabotage_ClaudeCode_JWTInBashCommand_BlockMode` **falharam** como esperado (warn:
+`.trackfw-credential-guard.json` não escrito; block: exit code 0 em vez de 2), enquanto
+`TestSabotage_ClaudeCode_WiringReferencesRealScript` e
+`TestSabotage_ClaudeCode_NoJWT_ProvaNegativa` continuaram passando (não dependem de
+detecção) — confirma que os testes de sabotagem realmente exercitam a lógica de
+detecção do script, não um caminho sempre-verde. Alteração revertida
+(`git diff --stat internal/generators/scaffold.go` vazio após reversão);
+`go test ./internal/generators/... -run TestSabotage -v` volta a passar 100% com o
+script original.
+
+**Arquivos afetados (reais):**
+- `internal/generators/credential_guard_sabotage_test.go` (novo — Claude Code, Cursor,
+  Kiro; 13 testes)
+- `npm/tests/credential_guard_sabotage.test.js` (novo — mesmos 3 CLIs; 13 testes,
+  `node:test`)
+- `pypi/tests/test_credential_guard_sabotage.py` (novo — mesmos 3 CLIs; 13 testes,
+  `unittest`)
 **Ações:**
 - Escrever um teste que, num projeto de fixture com o hook já injetado (Wave 2, Claude Code no
   mínimo), efetivamente invoca o script `trackfw-credential-guard.sh` com um payload contendo um JWT
@@ -535,11 +586,11 @@ negativa (Cenário 44 de `check-gates-falsify.sh`), em `docs/cli-parity.md`
   sem teste de sabotagem por falta de confirmação e por quê (não é falha silenciosa — é status
   explícito).
 **Critérios de aceite:**
-- [ ] Teste de sabotagem para Claude Code passa e falha propositalmente se o script for removido
-      (prova negativa)
-- [ ] Cobertura por CLI documentada (quais têm teste de sabotagem, quais não e o motivo)
-- [ ] `make test` verde
-**Comandos de validação:** `make test`
+- [x] Teste de sabotagem para Claude Code passa e falha propositalmente se a detecção do script for
+      neutralizada (prova de falsificação documentada acima)
+- [x] Cobertura por CLI documentada (quais têm teste de sabotagem, quais não e o motivo)
+- [x] `go test ./...`, `npm test`, `python3 -m pytest pypi/` verdes com os novos testes incluídos
+**Comandos de validação:** `go test ./... && (cd npm && npm test) && python3 -m pytest pypi/`
 
 ## Wave 5 — Documentação e encerramento (1 ML)
 > Dependências: Waves 1-4 completas
