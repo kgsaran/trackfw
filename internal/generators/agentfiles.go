@@ -237,6 +237,18 @@ func InjectClaudeHooks(cwd string) error {
 }
 
 // InjectCodexHooks injects Codex CLI attention hooks into .codex/hooks.json.
+//
+// Two independent hook events are wired here:
+//   - PermissionRequest (matcher ".*") — existing attention-signal, only fires when
+//     Codex is about to prompt for approval (shell escalation / managed-network
+//     approval). Does not fire for commands that don't need approval.
+//   - PreToolUse (matcher "Bash") + PostToolUse (matcher "Bash") — credential-guard,
+//     fires for every Bash tool call regardless of approval requirement. Confirmed
+//     against https://developers.openai.com/codex/hooks (2026-08-05): hooks are
+//     enabled by default in Codex CLI (no `[features] hooks = true`/`codex_hooks`
+//     opt-in needed — that flag exists only to turn hooks OFF), and PreToolUse
+//     blocking uses exit code 2 + stderr (matching trackfw-credential-guard.sh's
+//     existing "block" mode).
 func InjectCodexHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".codex")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -270,10 +282,21 @@ func InjectCodexHooks(cwd string) error {
 		"scripts/trackfw-attention-signal.sh",
 	)
 
+	hooks["PreToolUse"] = mergeClaudeHookArray(
+		hooks["PreToolUse"],
+		"Bash",
+		"scripts/trackfw-credential-guard.sh",
+	)
+
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		".*",
 		"scripts/trackfw-attention-cleanup.sh",
+	)
+	hooks["PostToolUse"] = mergeClaudeHookArray(
+		hooks["PostToolUse"],
+		"Bash",
+		"scripts/trackfw-credential-guard.sh",
 	)
 
 	root["hooks"] = hooks

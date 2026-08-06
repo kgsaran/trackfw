@@ -5,7 +5,7 @@ const os = require('os')
 const path = require('path')
 const { spawnSync } = require('child_process')
 const config = require('../src/config/index.js')
-const { generateCredentialGuardScript } = require('../src/generators/hooks.js')
+const { generateCredentialGuardScript, generateAttentionScripts } = require('../src/generators/hooks.js')
 
 let passed = 0, failed = 0
 
@@ -82,7 +82,7 @@ function runScript(tmp, stdin) {
 }
 
 function attentionFileExists(tmp) {
-  return fs.existsSync(path.join(tmp, 'docs', 'roadmaps', '.trackfw-attention.json'))
+  return fs.existsSync(path.join(tmp, 'docs', 'roadmaps', '.trackfw-credential-guard.json'))
 }
 
 test('sem match, script é no-op silencioso', () => {
@@ -133,6 +133,29 @@ test('modo block sai com exit code 2 e não escreve attention.json', () => {
     const { code } = runScript(tmp, JSON.stringify({ tool_name: 'Bash', tool_input: { command: `echo ${SYNTHETIC_JWT}` } }))
     assert.strictEqual(code, 2)
     assert.ok(!attentionFileExists(tmp))
+  })
+})
+
+// trackfw-attention-cleanup.sh apaga incondicionalmente $ROADMAP_DIR/.trackfw-attention.json — em
+// harnesses que rodam hooks do mesmo evento concorrentemente (ex.: Codex CLI, PostToolUse com
+// matchers ".*" e "Bash" ambos batendo em uma chamada Bash), isso podia apagar o aviso do
+// credential-guard antes de este ser lido. O credential-guard agora usa um arquivo dedicado
+// (.trackfw-credential-guard.json), então o cleanup não deve mais afetá-lo.
+test('trackfw-attention-cleanup.sh não apaga .trackfw-credential-guard.json (arquivo dedicado)', () => {
+  withTmpDir((tmp) => {
+    generateCredentialGuardScript(tmp)
+    generateAttentionScripts(null, tmp)
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n', 'utf8')
+
+    const { code } = runScript(tmp, JSON.stringify({ tool_name: 'Bash', tool_input: { command: `echo ${SYNTHETIC_JWT}` } }))
+    assert.strictEqual(code, 0)
+    assert.ok(attentionFileExists(tmp))
+
+    const cleanupPath = path.join(tmp, 'scripts', 'trackfw-attention-cleanup.sh')
+    const result = spawnSync('bash', [cleanupPath], { cwd: tmp, encoding: 'utf8' })
+    assert.strictEqual(result.status, 0)
+
+    assert.ok(attentionFileExists(tmp), '.trackfw-credential-guard.json não deveria ter sido apagado pelo cleanup')
   })
 })
 

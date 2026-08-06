@@ -210,7 +210,7 @@ MSG_ESC=$(echo "$MSG" | tr -d '\\000-\\037' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/
 mkdir -p "$ROADMAP_DIR"
 printf '{"tool":"credential-guard","message":"%s","level":"action_required","timestamp":"%s"}\\n' \\
   "$MSG_ESC" \\
-  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-attention.json"
+  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-credential-guard.json"
 
 exit 0
 `
@@ -274,6 +274,15 @@ function injectClaudeHooks(cwd) {
 
 // ---------------------------------------------------------------------------
 // Codex — .codex/hooks.json
+//
+// Two independent hook events: PermissionRequest (matcher ".*") for the existing
+// attention-signal -- only fires when Codex is about to prompt for approval, not
+// for every command -- and PreToolUse/PostToolUse (matcher "Bash") for
+// credential-guard, which fires for every Bash tool call regardless of approval.
+// Confirmed against https://developers.openai.com/codex/hooks (2026-08-05): hooks
+// are enabled by default (no `[features] hooks = true`/`codex_hooks` opt-in
+// needed -- that flag exists only to turn hooks OFF), and PreToolUse blocking
+// uses exit code 2 + stderr (matching trackfw-credential-guard.sh's "block" mode).
 // ---------------------------------------------------------------------------
 
 function injectCodexHooks(cwd) {
@@ -282,7 +291,9 @@ function injectCodexHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.PermissionRequest = mergeClaudeHookArray(data.hooks.PermissionRequest, '.*', SIGNAL_CMD)
+  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, '.*', CLEANUP_CMD)
+  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
 
   writeJSON(filePath, data)
 }

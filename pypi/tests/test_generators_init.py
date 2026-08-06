@@ -477,14 +477,54 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         self.assertIn('PermissionRequest', data.get('hooks', {}))
+        self.assertIn('PreToolUse', data.get('hooks', {}))
         self.assertIn('PostToolUse', data.get('hooks', {}))
+
+        pre_matcher = data['hooks']['PreToolUse'][0]['matcher']
+        self.assertEqual(pre_matcher, 'Bash')
+        pre_command = data['hooks']['PreToolUse'][0]['hooks'][0]['command']
+        self.assertEqual(pre_command, 'scripts/trackfw-credential-guard.sh')
+
+        post_matchers = {e['matcher'] for e in data['hooks']['PostToolUse']}
+        self.assertEqual(post_matchers, {'.*', 'Bash'})
 
         # Idempotência
         inject_codex_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
         self.assertEqual(len(data2['hooks']['PermissionRequest']), 1)
-        self.assertEqual(len(data2['hooks']['PostToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['PreToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['PostToolUse']), 2)
+
+    def test_inject_codex_hooks_preserves_existing_bash_entry(self):
+        """Um matcher 'Bash' pré-existente em PreToolUse (hook de terceiro) deve
+        ser mesclado com o novo comando do credential-guard, sem duplicar a
+        entrada do matcher (mesmo padrão do merge do Claude Code, ML-2A)."""
+        from trackfw.generators.hooks import inject_codex_hooks
+
+        hooks_dir = os.path.join(self.tmp, '.codex')
+        os.makedirs(hooks_dir, exist_ok=True)
+        hooks_path = os.path.join(hooks_dir, 'hooks.json')
+        with open(hooks_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'PreToolUse': [
+                        {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'scripts/other.sh'}]}
+                    ]
+                }
+            }, f)
+
+        inject_codex_hooks(self.tmp)
+        inject_codex_hooks(self.tmp)  # idempotência
+
+        with open(hooks_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        pre = data['hooks']['PreToolUse']
+        self.assertEqual(len(pre), 1)
+        self.assertEqual(pre[0]['matcher'], 'Bash')
+        commands = {h['command'] for h in pre[0]['hooks']}
+        self.assertEqual(commands, {'scripts/other.sh', 'scripts/trackfw-credential-guard.sh'})
 
     def test_inject_gemini_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_gemini_hooks

@@ -56,4 +56,10 @@ func TestInstallCodexCreatesNativeArtifacts(t *testing.T) {
 	if !helperHasClaudeHook(hooks, "PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse cleanup hook not found")
 	}
+	if !helperHasClaudeHook(hooks, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Bash] credential-guard hook not found")
+	}
+	if !helperHasClaudeHook(hooks, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PostToolUse[Bash] credential-guard hook not found")
+	}
 }

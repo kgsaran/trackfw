@@ -149,8 +149,62 @@ func TestInjectCodexHooks(t *testing.T) {
 	if !helperHasClaudeHook(data, "PermissionRequest", ".*", "scripts/trackfw-attention-signal.sh") {
 		t.Error("Codex PermissionRequest hook missing")
 	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("Codex PreToolUse[Bash] credential-guard hook missing")
+	}
 	if !helperHasClaudeHook(data, "PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("Codex PostToolUse hook missing")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("Codex PostToolUse[Bash] credential-guard hook missing")
+	}
+
+	hooks, _ := data["hooks"].(map[string]interface{})
+	pre, _ := hooks["PreToolUse"].([]interface{})
+	if len(pre) != 1 {
+		t.Errorf("expected 1 PreToolUse entry (Bash only, no idempotency dup), got %d", len(pre))
+	}
+	post, _ := hooks["PostToolUse"].([]interface{})
+	// 2 entries: {matcher:".*", hooks:[cleanup.sh]}, {matcher:"Bash", hooks:[credential-guard.sh]}
+	if len(post) != 2 {
+		t.Errorf("expected 2 PostToolUse entries, got %d", len(post))
+	}
+}
+
+func TestInjectCodexHooks_PreservesExistingBashEntry(t *testing.T) {
+	dir := t.TempDir()
+
+	existing := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash",
+					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": "scripts/other.sh"}},
+				},
+			},
+		},
+	}
+	helperWriteJSON(t, filepath.Join(dir, ".codex", "hooks.json"), existing)
+
+	if err := InjectCodexHooks(dir); err != nil {
+		t.Fatalf("InjectCodexHooks failed: %v", err)
+	}
+	if err := InjectCodexHooks(dir); err != nil {
+		t.Fatalf("second InjectCodexHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/other.sh") {
+		t.Error("existing Bash hook lost during merge")
+	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Bash] credential-guard hook missing after merge")
+	}
+
+	hooks, _ := data["hooks"].(map[string]interface{})
+	pre, _ := hooks["PreToolUse"].([]interface{})
+	if len(pre) != 1 {
+		t.Errorf("expected 1 PreToolUse entry (merged into existing Bash matcher, not duplicated), got %d", len(pre))
 	}
 }
 

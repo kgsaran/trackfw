@@ -81,11 +81,22 @@ embutidos) — com paridade em `npm/src/generators/hooks.js` e `pypi/trackfw/gen
   `trackfw-attention-signal.sh` realmente escreve (não o schema `{roadmap, ml, ...}` documentado em
   `CLAUDE.md` para sinalização autoral de agente).
 
-**Limitação conhecida para a Wave 2 (não é defeito deste ML, registrar ao conectar Claude Code):**
-`trackfw-attention-cleanup.sh` em `PostToolUse` apaga o mesmo `.trackfw-attention.json` que este hook
-escreve em modo `warn` — ordenação de hooks no mesmo evento pode apagar o aviso do credential-guard.
-Avaliar na Wave 2 (ML-2A) se precisa de arquivo de attention dedicado por hook ou de ordenação
-explícita.
+**Limitação conhecida — Resolvida (fix aplicado após a auditoria do ML-2B):**
+`trackfw-attention-cleanup.sh` em `PostToolUse` apagava o mesmo `.trackfw-attention.json` que este
+hook escrevia em modo `warn`. A auditoria do ML-2A (Claude Code) tinha concluído que não havia race
+real ali, porque os matchers `AskUserQuestion`/`Bash` são mutuamente exclusivos nesse CLI. A
+investigação de concorrência do ML-2B (Codex), porém, confirmou contra a documentação oficial do
+Codex CLI (<https://developers.openai.com/codex/hooks>) que hooks do mesmo evento com matchers
+diferentes batendo no mesmo `tool_name` **rodam concorrentemente** ("Multiple matching command hooks
+for the same event are launched concurrently") — no wiring do Codex, `PostToolUse[".*"]` (cleanup) e
+`PostToolUse["Bash"]` (credential-guard) colidem numa mesma chamada Bash, então o `rm -f` do cleanup
+podia de fato apagar o aviso do credential-guard escrito na mesma invocação. Corrigido decouplando o
+credential-guard do arquivo compartilhado: o modo `warn` agora escreve em
+`$ROADMAP_DIR/.trackfw-credential-guard.json`, um arquivo dedicado que nenhum outro script gerado
+toca — elimina a race por completo, independente do modelo de concorrência de cada CLI. Ver
+`docs/cli-parity.md` (seção `credential_guard.mode`) e
+`internal/generators/credential_guard_test.go:TestCredentialGuardScript_AttentionCleanupDoesNotDeleteIt`
+(+ equivalentes Node/Python).
 
 **Achado paralelo, fora de escopo:** `make parity` falha por divergência pré-existente de versão
 (`pypi/trackfw/__init__.py` com fallback `6.3.1` vs. `6.4.1` em Go/Node) — confirmado não relacionado
@@ -155,11 +166,41 @@ comportamento que Node já tinha; Python ganhou o helper equivalente.
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2B — Codex
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** confirmado via `https://developers.openai.com/codex/hooks` (2026-08-05) que
+`PreToolUse[matcher:"Bash"]` intercepta todo tool-call de Bash, distinto de `PermissionRequest`
+(que só dispara quando Codex vai pedir aprovação — não para todo comando). Divergência da pesquisa
+preliminar da ADR: hooks vêm **habilitados por padrão** no Codex CLI atual — `[features] hooks`
+(alias legado `codex_hooks`) existe para **desabilitar**, não para opt-in; nenhuma injeção de
+`config.toml` foi necessária. Bloqueio via `PreToolUse` usa exit code 2 + stderr, já compatível com
+o modo `block` existente do script. Efeito colateral: o merge do Python (`inject_codex_hooks`) só
+checava presença do comando em qualquer lugar do array — não mesclava num matcher já existente como
+Go/Node já faziam; corrigido com o novo helper `_merge_codex_hook_entry` para trazer paridade real
+de comportamento de merge entre os 3 stacks. Detalhe completo em `docs/cli-parity.md` (seção "Codex
+wiring (ML-2B)"). **Achado adicional desta auditoria, corrigido fora deste ML:** a mesma citação da
+documentação do Codex sobre hooks concorrentes ("Multiple matching command hooks for the same event
+are launched concurrently") revelou que a "Limitação conhecida" registrada no ML-1A não era teórica —
+neste wiring especificamente, `PostToolUse[".*"]` (cleanup) e `PostToolUse["Bash"]`
+(credential-guard) colidem na mesma chamada Bash e rodam em paralelo, permitindo que o `rm -f` do
+cleanup apagasse o aviso do credential-guard escrito na mesma invocação. O wiring do Codex em si
+(matchers, merge, formato do `hooks.json`) está correto e não precisou de nenhuma mudança; o fix foi
+aplicado no conteúdo do script (`.trackfw-credential-guard.json` dedicado) e está registrado na seção
+do ML-1A acima.
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectCodexHooks`, linha 230-276)
+- `internal/generators/agentfiles_test.go` (`TestInjectCodexHooks` estendido +
+  `TestInjectCodexHooks_PreservesExistingBashEntry` novo)
+- `internal/generators/codex_test.go` (`TestInstallCodexCreatesNativeArtifacts` estendido)
 - `npm/src/generators/hooks.js` (linha ~157)
-- `pypi/trackfw/generators/hooks.py` (linha ~90)
+- `npm/tests/generators.test.js` (`injectCodexHooks` — asserts estendidos + teste de merge novo)
+- `npm/tests/codex.test.js` (`installCodex` — asserts atualizados para `PreToolUse`/`PostToolUse[Bash]`)
+- `pypi/trackfw/generators/hooks.py` (`inject_codex_hooks` + novo helper `_merge_codex_hook_entry`)
+- `pypi/tests/test_generators_init.py` (`test_inject_codex_hooks_create_and_merge` estendido +
+  `test_inject_codex_hooks_preserves_existing_bash_entry` novo)
+- `pypi/tests/test_codex.py` (`test_install_codex_creates_idempotent_native_artifacts` — asserts
+  atualizados)
+- `docs/cli-parity.md` (nova seção "Codex wiring (ML-2B)" com fonte da investigação)
 **Ações:**
 - Investigar primeiro (não assumir): o Codex expõe `PreToolUse` real com matcher dedicado a `Bash`
   (conforme docs oficiais pesquisadas: "PreToolUse intercepta o shell (Bash) tool only — by design"),

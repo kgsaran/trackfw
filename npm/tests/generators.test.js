@@ -341,14 +341,44 @@ test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () =>
   let data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
   assert.equal(data.hooks.PermissionRequest[0].matcher, '.*')
   assert.equal(data.hooks.PermissionRequest[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
+  assert.equal(data.hooks.PreToolUse[0].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[0].matcher, '.*')
   assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
+  assert.equal(data.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
 
   // Idempotência
   injectCodexHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
   assert.equal(data.hooks.PermissionRequest.length, 1)
   assert.equal(data.hooks.PermissionRequest[0].hooks.length, 1)
+  assert.equal(data.hooks.PreToolUse.length, 1)
+  assert.equal(data.hooks.PreToolUse[0].hooks.length, 1)
+  assert.equal(data.hooks.PostToolUse.length, 2)
+  assert.equal(data.hooks.PostToolUse[1].hooks.length, 1)
+})
+
+test('injectCodexHooks preserves pre-existing PreToolUse Bash entry (merge, not overwrite)', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-codex-hooks-merge-'))
+  const hooksPath = path.join(tmpDir, '.codex', 'hooks.json')
+
+  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
+  fs.writeFileSync(hooksPath, JSON.stringify({
+    hooks: {
+      PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'scripts/other.sh' }] }]
+    }
+  }, null, 2))
+
+  injectCodexHooks(tmpDir)
+  injectCodexHooks(tmpDir)
+
+  const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  assert.equal(data.hooks.PreToolUse.length, 1)
+  assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
+  const commands = data.hooks.PreToolUse[0].hooks.map(h => h.command)
+  assert.ok(commands.includes('scripts/other.sh'), 'existing Bash hook lost during merge')
+  assert.ok(commands.includes('scripts/trackfw-credential-guard.sh'), 'credential-guard hook missing after merge')
 })
 
 test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', () => {

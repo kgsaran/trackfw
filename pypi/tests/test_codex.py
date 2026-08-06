@@ -32,5 +32,19 @@ def test_install_codex_creates_idempotent_native_artifacts(tmp_path):
         hooks["PermissionRequest"][0]["hooks"][0]["command"]
         == "scripts/trackfw-attention-signal.sh"
     )
-    assert len(hooks["PostToolUse"]) == 1
-    assert "PreToolUse" not in hooks
+    assert len(hooks["PreToolUse"]) == 1
+    assert hooks["PreToolUse"][0]["matcher"] == "Bash"
+    assert (
+        hooks["PreToolUse"][0]["hooks"][0]["command"]
+        == "scripts/trackfw-credential-guard.sh"
+    )
+    assert len(hooks["PostToolUse"]) == 2
+    assert (
+        hooks["PostToolUse"][0]["hooks"][0]["command"]
+        == "scripts/trackfw-attention-cleanup.sh"
+    )
+    assert hooks["PostToolUse"][1]["matcher"] == "Bash"
+    assert (
+        hooks["PostToolUse"][1]["hooks"][0]["command"]
+        == "scripts/trackfw-credential-guard.sh"
+    )

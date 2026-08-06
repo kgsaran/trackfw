@@ -1181,11 +1181,82 @@ Python/`init_gen.py` — byte-identical across the three, proven by
 reason: the script runs as a CLI hook (`PreToolUse`/`PostToolUse`) potentially without the `trackfw`
 binary available in that execution context.
 
-As of this ML (ML-1A of
-`ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`),
-the script exists but is **not yet wired into any CLI's `hooks.json`/`settings.json`** — that wiring
-is Wave 2 of the same roadmap. Today, generating the script has no observable effect on any agent
-CLI's behavior.
+**`warn` mode writes to a dedicated attention file, not the shared one.** When
+`credential_guard.mode` is `warn` (the default) and a match is found, the script writes
+`$ROADMAP_DIR/.trackfw-credential-guard.json` — a file distinct from
+`$ROADMAP_DIR/.trackfw-attention.json`, which is owned exclusively by the pre-existing
+`trackfw-attention-signal.sh`/`trackfw-attention-cleanup.sh` pair. Earlier in this ML the
+credential-guard warning was written to the shared `.trackfw-attention.json` path; that was corrected
+before this ML shipped because `trackfw-attention-cleanup.sh` deletes that path unconditionally
+(`rm -f`), and — confirmed against the official Codex CLI hooks documentation
+(<https://developers.openai.com/codex/hooks>, retrieved 2026-08-05) — a harness that runs multiple
+matching hooks of the same event **concurrently** (Codex CLI does this: "Multiple matching command
+hooks for the same event are launched concurrently") can run the cleanup hook (matcher `".*"`) and the
+credential-guard hook (matcher `"Bash"`) for the same `PostToolUse[Bash]` invocation at the same time,
+letting the cleanup's `rm -f` race the credential-guard's write and delete the warning it just wrote.
+Using a dedicated, unshared path removes the race entirely regardless of a given CLI's concurrency
+model (sequential or parallel) — no other generated script reads, writes or deletes
+`.trackfw-credential-guard.json`. Proven by
+`internal/generators/credential_guard_test.go:TestCredentialGuardScript_AttentionCleanupDoesNotDeleteIt`
+(and the Node.js/Python equivalents in `npm/tests/credential_guard.test.js` and
+`pypi/tests/test_credential_guard.py`), which runs the credential-guard script in `warn` mode followed
+by `trackfw-attention-cleanup.sh` and asserts the dedicated file survives. `block` mode never writes
+either attention file — it aborts the tool call directly via exit code 2.
+
+As of ML-1A of
+`ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`,
+the script existed but was not yet wired into any CLI's `hooks.json`/`settings.json`. Wave 2 of the
+same roadmap wires it CLI by CLI; ML-2A (Claude Code) and ML-2B (Codex) are done as of this writing —
+see below for the Codex wiring specifics. The remaining CLIs (Gemini, Copilot, Cursor, Kiro) are
+wired in their own MLs later in Wave 2; the final consolidated support table across all CLIs is
+Wave 5 (ML-5A) scope.
+
+#### Codex wiring (ML-2B) — `PreToolUse`/`PostToolUse` matcher `"Bash"`
+
+`InjectCodexHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
+`npm/src/generators/hooks.js:injectCodexHooks`; Python:
+`pypi/trackfw/generators/hooks.py:inject_codex_hooks`) writes three independent hook events into
+`.codex/hooks.json`:
+
+| Event | Matcher | Script | Purpose |
+|---|---|---|---|
+| `PermissionRequest` | `.*` | `trackfw-attention-signal.sh` | Pre-existing (ML-2A/earlier) — fires only when Codex is about to prompt for approval (shell escalation / managed-network approval); does **not** fire for every command |
+| `PreToolUse` | `Bash` | `trackfw-credential-guard.sh` | New — fires for **every** Bash tool call, regardless of whether approval is required |
+| `PostToolUse` | `.*` | `trackfw-attention-cleanup.sh` | Pre-existing |
+| `PostToolUse` | `Bash` | `trackfw-credential-guard.sh` | New |
+
+Confirmed against the official Codex CLI documentation
+(<https://developers.openai.com/codex/hooks>, retrieved 2026-08-05):
+
+- `PreToolUse` intercepts Bash, `apply_patch` file edits, MCP tool calls and other local function
+  tools; `matcher` is applied to `tool_name` (canonical value `Bash` for the shell tool). This is
+  distinct from `PermissionRequest`, which "runs when Codex is about to ask for approval... It
+  doesn't run for commands that don't need approval" — confirming the ADR's premise that
+  `PermissionRequest` alone is not a reliable interception point for a guard that must see every
+  Bash invocation.
+- **Divergence from the ADR's preliminary research**: hooks are **enabled by default** in current
+  Codex CLI. The `[features]` key exists to **turn hooks off** (`[features] hooks = false`;
+  `codex_hooks` is accepted as a deprecated alias for the same key) — not to opt them in as the ADR's
+  preliminary research speculated. No config.toml injection was needed or added for this ML; the
+  trackfw-generated `.codex/hooks.json` is picked up automatically by any Codex CLI version with
+  hooks enabled (the default).
+- `PreToolUse` blocking uses **exit code 2** (reason on `stderr`) or a
+  `hookSpecificOutput.permissionDecision: "deny"` JSON response on stdout — the exit-code-2 path
+  already matches `trackfw-credential-guard.sh`'s existing `block` mode behavior with no script
+  changes required.
+- The `hooks.json` top-level schema (`{"hooks": {"<Event>": [{"matcher": "...", "hooks": [{"type":
+  "command", "command": "..."}]}]}}`) matches what `InjectCodexHooks`/`injectCodexHooks`/
+  `inject_codex_hooks` already produced for `PermissionRequest`/`PostToolUse` before this ML — no
+  format migration was needed, only new entries.
+
+Merge/idempotency follows the same pattern established for Claude Code in ML-2A: a pre-existing
+third-party entry for the same matcher (e.g. a hand-written `PreToolUse[matcher:"Bash"]` hook) is
+merged into (not overwritten or duplicated by) the new `trackfw-credential-guard.sh` command — see
+`mergeClaudeHookArray` (Go), the shared `mergeClaudeHookArray` (Node.js), and the new
+`_merge_codex_hook_entry` helper (Python, added in this ML to bring Codex's Python injector to
+matcher-merge parity with Go/Node — previously it only checked "is this exact command present
+anywhere in the array", which would have produced sibling `{"matcher": "Bash", ...}` blocks instead
+of merging into an existing one).
 
 ### States
 

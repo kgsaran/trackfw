@@ -31,7 +31,11 @@ test('installCodex creates idempotent native Codex artifacts', () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(root, '.codex/hooks.json'), 'utf8')).hooks
   assert.equal(hooks.PermissionRequest.length, 1)
   assert.equal(hooks.PermissionRequest[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(hooks.PostToolUse.length, 1)
+  assert.equal(hooks.PreToolUse.length, 1)
+  assert.equal(hooks.PreToolUse[0].matcher, 'Bash')
+  assert.equal(hooks.PreToolUse[0].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(hooks.PostToolUse.length, 2)
   assert.equal(hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
-  assert.equal(hooks.PreToolUse, undefined)
+  assert.equal(hooks.PostToolUse[1].matcher, 'Bash')
+  assert.equal(hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
 })

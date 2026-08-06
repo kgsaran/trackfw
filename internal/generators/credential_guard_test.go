@@ -198,7 +198,7 @@ func runCredentialGuard(t *testing.T, dir, scriptPath, stdin string) (exitCode i
 }
 
 func attentionFileExists(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "docs", "roadmaps", ".trackfw-attention.json"))
+	_, err := os.Stat(filepath.Join(dir, "docs", "roadmaps", ".trackfw-credential-guard.json"))
 	return err == nil
 }
 
@@ -211,7 +211,7 @@ func TestCredentialGuardScript_NoMatch_SilentPass(t *testing.T) {
 		t.Errorf("exit code: want 0, got %d (stderr: %s)", code, stderr)
 	}
 	if attentionFileExists(dir) {
-		t.Error("não deveria escrever .trackfw-attention.json sem match")
+		t.Error("não deveria escrever .trackfw-credential-guard.json sem match")
 	}
 }
 
@@ -227,16 +227,16 @@ func TestCredentialGuardScript_JWTPrintedToStdout_WarnsByDefault(t *testing.T) {
 		t.Errorf("esperava aviso mencionando JWT em stderr, got: %s", stderr)
 	}
 	if !attentionFileExists(dir) {
-		t.Fatal(".trackfw-attention.json deveria ter sido escrito em modo warn")
+		t.Fatal(".trackfw-credential-guard.json deveria ter sido escrito em modo warn")
 	}
 
-	raw, err := os.ReadFile(filepath.Join(dir, "docs", "roadmaps", ".trackfw-attention.json"))
+	raw, err := os.ReadFile(filepath.Join(dir, "docs", "roadmaps", ".trackfw-credential-guard.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var payloadJSON map[string]interface{}
 	if err := json.Unmarshal(raw, &payloadJSON); err != nil {
-		t.Fatalf("attention.json inválido: %v (%s)", err, raw)
+		t.Fatalf("credential-guard.json inválido: %v (%s)", err, raw)
 	}
 	if payloadJSON["level"] != "action_required" {
 		t.Errorf("level: want action_required, got %v", payloadJSON["level"])
@@ -255,7 +255,7 @@ func TestCredentialGuardScript_AWSKeyDetected(t *testing.T) {
 		t.Errorf("esperava aviso mencionando AWS em stderr, got: %s", stderr)
 	}
 	if !attentionFileExists(dir) {
-		t.Error(".trackfw-attention.json deveria ter sido escrito")
+		t.Error(".trackfw-credential-guard.json deveria ter sido escrito")
 	}
 }
 
@@ -333,7 +333,7 @@ func TestCredentialGuardScript_BlockMode_ExitsWithCode2(t *testing.T) {
 		t.Errorf("modo block: exit code want 2, got %d (stderr: %s)", code, stderr)
 	}
 	if attentionFileExists(dir) {
-		t.Error("modo block não deveria escrever .trackfw-attention.json (bloqueio direto, sem sinalização adicional)")
+		t.Error("modo block não deveria escrever .trackfw-credential-guard.json (bloqueio direto, sem sinalização adicional)")
 	}
 }
 
@@ -347,6 +347,41 @@ func TestCredentialGuardScript_InvalidModeValue_FallsBackToWarn(t *testing.T) {
 	}
 	if !attentionFileExists(dir) {
 		t.Error("valor de mode inválido deveria cair para warn (com sinalização)")
+	}
+}
+
+// TestCredentialGuardScript_AttentionCleanupDoesNotDeleteIt prova que o hook de cleanup
+// (trackfw-attention-cleanup.sh), que apaga incondicionalmente $ROADMAP_DIR/.trackfw-attention.json,
+// não apaga o arquivo dedicado do credential-guard (.trackfw-credential-guard.json). Antes do fix, os
+// dois hooks compartilhavam .trackfw-attention.json; em harnesses que rodam hooks do mesmo evento
+// concorrentemente (Codex CLI, PostToolUse com matchers ".*" e "Bash" ambos batendo em uma chamada
+// Bash), o cleanup podia apagar o aviso do credential-guard escrito na mesma invocação — uma race
+// real. Ver "Limitação conhecida" do ML-1A no roadmap.
+func TestCredentialGuardScript_AttentionCleanupDoesNotDeleteIt(t *testing.T) {
+	dir, guardScript := setupCredentialGuardFixture(t, "")
+
+	if err := GenerateAttentionScripts(dir); err != nil {
+		t.Fatalf("GenerateAttentionScripts erro: %v", err)
+	}
+	cleanupPath := filepath.Join(dir, "scripts", "trackfw-attention-cleanup.sh")
+
+	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
+	code, _, stderr := runCredentialGuard(t, dir, guardScript, payload)
+	if code != 0 {
+		t.Fatalf("modo warn: exit code want 0, got %d (stderr: %s)", code, stderr)
+	}
+	if !attentionFileExists(dir) {
+		t.Fatal(".trackfw-credential-guard.json deveria ter sido escrito em modo warn")
+	}
+
+	cmdCleanup := exec.Command("bash", cleanupPath)
+	cmdCleanup.Dir = dir
+	if out, err := cmdCleanup.CombinedOutput(); err != nil {
+		t.Fatalf("Cleanup script falhou: %v, output: %s", err, string(out))
+	}
+
+	if !attentionFileExists(dir) {
+		t.Error(".trackfw-credential-guard.json não deveria ter sido apagado pelo trackfw-attention-cleanup.sh (arquivo dedicado, não compartilhado com o mecanismo de attention-signal)")
 	}
 }
 

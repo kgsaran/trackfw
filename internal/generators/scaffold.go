@@ -900,7 +900,7 @@ MSG_ESC=$(echo "$MSG" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
 mkdir -p "$ROADMAP_DIR"
 printf '{"tool":"credential-guard","message":"%s","level":"action_required","timestamp":"%s"}\n' \
   "$MSG_ESC" \
-  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-attention.json"
+  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-credential-guard.json"
 
 exit 0
 `

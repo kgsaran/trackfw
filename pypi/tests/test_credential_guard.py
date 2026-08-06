@@ -16,7 +16,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from trackfw import config
-from trackfw.generators.init_gen import _generate_credential_guard_script
+from trackfw.generators.init_gen import _generate_credential_guard_script, _generate_attention_scripts
 
 SYNTHETIC_JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.abc123def456ghi789"
 
@@ -109,7 +109,7 @@ class TestCredentialGuardScriptBehavior(unittest.TestCase):
         return proc.returncode, proc.stdout, proc.stderr
 
     def _attention_exists(self):
-        return os.path.exists(os.path.join(self.tmpdir, "docs", "roadmaps", ".trackfw-attention.json"))
+        return os.path.exists(os.path.join(self.tmpdir, "docs", "roadmaps", ".trackfw-credential-guard.json"))
 
     def test_sem_match_e_no_op_silencioso(self):
         self._write_yaml()
@@ -182,6 +182,28 @@ class TestCredentialGuardScriptBehavior(unittest.TestCase):
         code, _out, _err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
         self.assertEqual(code, 0)
         self.assertFalse(self._attention_exists())
+
+    def test_cleanup_de_attention_signal_nao_apaga_arquivo_dedicado(self):
+        # trackfw-attention-cleanup.sh apaga incondicionalmente $ROADMAP_DIR/.trackfw-attention.json --
+        # em harnesses que rodam hooks do mesmo evento concorrentemente (ex.: Codex CLI, PostToolUse
+        # com matchers ".*" e "Bash" ambos batendo em uma chamada Bash), isso podia apagar o aviso do
+        # credential-guard antes de este ser lido. O credential-guard agora usa um arquivo dedicado
+        # (.trackfw-credential-guard.json), então o cleanup não deve mais afetá-lo.
+        self._write_yaml()
+        _generate_attention_scripts(self.tmpdir)
+
+        code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
+        self.assertEqual(code, 0, err)
+        self.assertTrue(self._attention_exists())
+
+        cleanup_path = os.path.join(self.tmpdir, "scripts", "trackfw-attention-cleanup.sh")
+        proc = subprocess.run(["bash", cleanup_path], cwd=self.tmpdir, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+        self.assertTrue(
+            self._attention_exists(),
+            ".trackfw-credential-guard.json não deveria ter sido apagado pelo cleanup",
+        )
 
 
 if __name__ == "__main__":

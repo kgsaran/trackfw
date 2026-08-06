@@ -85,43 +85,70 @@ def inject_claude_hooks(cwd: str) -> None:
 
 # ---------------------------------------------------------------------------
 # Codex — .codex/hooks.json
+#
+# Two independent hook events: PermissionRequest (matcher ".*") for the existing
+# attention-signal -- only fires when Codex is about to prompt for approval, not
+# for every command -- and PreToolUse/PostToolUse (matcher "Bash") for
+# credential-guard, which fires for every Bash tool call regardless of approval.
+# Confirmed against https://developers.openai.com/codex/hooks (2026-08-05): hooks
+# are enabled by default (no `[features] hooks = true`/`codex_hooks` opt-in
+# needed -- that flag exists only to turn hooks OFF), and PreToolUse blocking
+# uses exit code 2 + stderr (matching trackfw-credential-guard.sh's "block" mode).
 # ---------------------------------------------------------------------------
 
+def _merge_codex_hook_entry(entries: list, matcher: str, command: str, **extra_fields) -> None:
+    """Garante (idempotente) que `entries` (um array PreToolUse/PostToolUse/etc.
+    do formato Codex) tenha uma entrada `matcher` contendo `command`.
+
+    Mirrors `_merge_claude_hook_array`: if an entry with the given matcher
+    already exists (e.g. a third-party hook, or a previous trackfw run), the
+    new command is merged into its `hooks` array instead of appending a
+    duplicate `{"matcher": ...}` block. `extra_fields` (timeout,
+    statusMessage, ...) are only applied when creating a brand-new hook
+    entry, matching the fields Codex hooks commonly carry.
+    """
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get('matcher') != matcher:
+            continue
+        inner = entry.setdefault('hooks', [])
+        if not _has_entry(inner, 'command', command):
+            inner.append({'type': 'command', 'command': command, **extra_fields})
+        return
+
+    entries.append({
+        'matcher': matcher,
+        'hooks': [{'type': 'command', 'command': command, **extra_fields}],
+    })
+
+
 def inject_codex_hooks(cwd: str) -> None:
-    """Injeta hooks PermissionRequest/PostToolUse no .codex/hooks.json."""
+    """Injeta hooks PermissionRequest/PreToolUse/PostToolUse no .codex/hooks.json."""
     file_path = os.path.join(cwd, '.codex', 'hooks.json')
     data = _read_json(file_path)
 
     hooks = data.setdefault('hooks', {})
 
-    def has_nested_command(entries, command):
-        return any(
-            any(h.get('command') == command for h in entry.get('hooks', []))
-            for entry in entries
-        )
+    pre_permission_hooks = hooks.setdefault('PermissionRequest', [])
+    _merge_codex_hook_entry(
+        pre_permission_hooks, '.*', 'scripts/trackfw-attention-signal.sh',
+        timeout=10, statusMessage='Waiting for approval',
+    )
 
-    pre_hooks = hooks.setdefault('PermissionRequest', [])
-    if not has_nested_command(pre_hooks, 'scripts/trackfw-attention-signal.sh'):
-        pre_hooks.append({
-            'matcher': '.*',
-            'hooks': [{
-                'type': 'command',
-                'command': 'scripts/trackfw-attention-signal.sh',
-                'timeout': 10,
-                'statusMessage': 'Waiting for approval',
-            }],
-        })
+    pre_tool_hooks = hooks.setdefault('PreToolUse', [])
+    _merge_codex_hook_entry(
+        pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+        timeout=10, statusMessage='Scanning command for credentials',
+    )
 
     post_hooks = hooks.setdefault('PostToolUse', [])
-    if not has_nested_command(post_hooks, 'scripts/trackfw-attention-cleanup.sh'):
-        post_hooks.append({
-            'matcher': '.*',
-            'hooks': [{
-                'type': 'command',
-                'command': 'scripts/trackfw-attention-cleanup.sh',
-                'timeout': 10,
-            }],
-        })
+    _merge_codex_hook_entry(
+        post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh',
+        timeout=10,
+    )
+    _merge_codex_hook_entry(
+        post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+        timeout=10, statusMessage='Scanning command output for credentials',
+    )
 
     _write_json(file_path, data)
 
