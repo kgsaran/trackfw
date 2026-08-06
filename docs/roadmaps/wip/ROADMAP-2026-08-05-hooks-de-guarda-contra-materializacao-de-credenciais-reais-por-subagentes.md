@@ -407,7 +407,7 @@ re-escopar essa parte para um evento real (ex.: `stop`/`beforeSubmitPrompt`) fic
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2F — Kiro
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectKiroHooks`, linha 328-359 — **atenção**: arquivo
   `.kiro/hooks/trackfw-attention.json` é dedicado/overwrite total, comentário explícito no código;
