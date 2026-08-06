@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-06
 author: "kg.saran@gmail.com"
-adr: ""
-roadmap: ""
+adr: "docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md"
 ---
 
 # REQ: hooks de credential-guard como escopo global cross-project via trackfw update harness
 
-> Date: 2026-08-06 | Status: Open
+> Date: 2026-08-06 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -36,24 +36,22 @@ o credential-guard em nível de usuário (`~/.claude/settings.json`, `~/.cursor/
 agindo cross-project sem depender de `trackfw.yaml` em cada repo.
 
 ## Acceptance Criteria
-- [ ] Confirmado, por CLI dos 6 da wave nativa (Claude Code, Codex, Gemini CLI, GitHub Copilot,
-      Cursor, Kiro), se existe um nível de configuração de hooks em escopo de usuário/global que é
-      **mesclado** (não sobrescrito) com o nível de projeto — não assumir a partir da investigação
-      preliminar (só Claude Code e Cursor foram confirmados informalmente nesta sessão, os outros 4
-      não)
-- [ ] Para os CLIs sem suporte a hooks globais: decisão documentada — ficam de fora do escopo global
-      (mantêm só o wiring por-projeto já existente), não é bloqueante para os que suportam
-- [ ] Caminho do script resolvido para um local estável fora do repositório (ex.: `~/.trackfw/scripts/`
-      ou equivalente) — hoje `scripts/trackfw-credential-guard.sh` é relativo à raiz do projeto, não
-      funciona referenciado por um hook global
-- [ ] `trackfw update harness` ganha alvo(s) novo(s) para o credential-guard nos CLIs confirmados,
-      seguindo o mesmo padrão de `--targets`/`--install-missing`/`--dry-run`/relatório já existente
-      (`generators.UpdateReport`)
-- [ ] Decisão registrada sobre convivência entre wiring global (novo) e wiring por-projeto (já
-      existente, PR #141) — evitar duplicidade (hook disparando duas vezes) quando um projeto tem
-      ambos
-- [ ] Paridade Go/Node/Python mantida desde o primeiro commit
-- [ ] `trackfw validate`/`make quality` sem regressão
+- [x] Confirmado, por CLI dos 6 da wave nativa, que existe nível de hooks global mesclado com o de
+      projeto — os 6 (não só Claude Code e Cursor) suportam: Codex (`~/.codex/hooks.json`, prioridade
+      2), Gemini CLI (`~/.gemini/settings.json`, hierarquia System→Workspace→User), GitHub Copilot
+      (bloco `hooks` inline em `~/.copilot/settings.json`), Kiro (`~/.kiro/hooks/`, só na v3)
+- [x] N/A — todos os 6 CLIs confirmados suportam escopo global; nenhum precisou ser excluído
+- [x] Script global em `~/.trackfw/scripts/trackfw-credential-guard.sh` (ML-1A), reusando o núcleo de
+      detecção do script de projeto sem duplicação
+- [x] `trackfw update harness` ganha 6 alvos novos (`<tool>-credential-guard`, ML-2A-2F), mesmo
+      contrato de 4 estados/`--targets`/`--install-missing`/`--dry-run`
+- [x] Dedup por leitura implementado (ML-3A): `InjectXHooks` detecta wiring global e pula a entrada
+      de credential-guard por-projeto, fail-open em qualquer erro de leitura, confirmado end-to-end
+- [x] Paridade Go/Node/Python mantida — com um incidente corrigido no ML-2A (autoria do roadmap só
+      listou Go inicialmente, corrigido com follow-up antes do commit; ver
+      `feedback_roadmap_deve_listar_3_stacks` na memória do orquestrador)
+- [x] `trackfw validate`/`make quality` sem regressão — `make quality` confirmado passando de ponta a
+      ponta (103/103 cenários de falsificação, incluindo o gate estrutural novo do ML-4A)
 
 ## Linked ADR
 ADR: `docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md`

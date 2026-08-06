@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-06
 req: "docs/req/REQ-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: hooks de credential-guard como escopo global cross-project via trackfw update harness
 
-> Created: 2026-08-06 | Status: wip
+> Created: 2026-08-06 | Status: done
 
 ## Context
 REQ: `docs/req/REQ-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`
@@ -501,13 +501,24 @@ Wave 5 (`ML-5A` — consolidar documentação e fechar REQ), ainda `⬜ Pendente
 > Dependências: Waves 1-4 completas
 
 ### ML-5A — Consolidar documentação e fechar REQ
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** `docs/cli-parity.md` ganhou seção consolidada de escopo global (tabela por CLI
++ achados transversais das Waves 1-4). O agente encontrou e reportou uma colisão de título real: já
+existia uma seção "Suporte por CLI — visão consolidada (ML-5A)" do roadmap anterior (PR #141, escopo
+de projeto) com o mesmo rótulo `ML-5A`. Corrigido diretamente pelo orquestrador — título antigo
+renomeado para deixar explícito "escopo DE PROJETO" com nota cruzada apontando para a seção nova
+("escopo GLOBAL"), sem reescrever o conteúdo técnico da seção antiga. REQ atualizada com os 7
+Acceptance Criteria concluídos (100%, diferente dos dois ciclos anteriores que fecharam com
+ressalvas) — `make quality` confirmado passando de ponta a ponta. ADR movida de `Proposed` para
+`Accepted`. Frontmatter `roadmap:` da REQ, que ficou vazio desde a criação (não sincronizou),
+corrigido junto.
 **Arquivos afetados:**
-- `docs/cli-parity.md`, `docs/agents-working-context.md`, REQ
+- `docs/cli-parity.md`, `docs/agents-working-context.md`, REQ, ADR
 **Ações:**
 - Documentar os 6 alvos novos, a decisão de dedup, e as duas investigações resolvidas (Codex,
   Kiro v3) numa seção consolidada.
 - Atualizar REQ (Acceptance Criteria + Linked Roadmap).
 **Critérios de aceite:**
-- [ ] `trackfw validate`/`make quality` sem regressão
+- [x] `trackfw validate`/`make quality` sem regressão
 **Comandos de validação:** `trackfw validate && make quality`

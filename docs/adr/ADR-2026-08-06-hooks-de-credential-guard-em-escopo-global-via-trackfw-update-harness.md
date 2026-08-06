@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-08-06
 author: "kg.saran@gmail.com"
 ---
 
 # ADR: hooks de credential-guard em escopo global via trackfw update harness
 
-> Date: 2026-08-06 | Status: Proposed
+> Date: 2026-08-06 | Status: Accepted
 
 ## Context
 

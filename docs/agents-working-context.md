@@ -10061,3 +10061,54 @@ Roadmap ML-2F marcado `✅ Concluído` no arquivo (conteúdo, não commit) — *
 Nenhum commit feito — regra de git authority, `trackfw_architect` audita e commita. Próxima wave é a
 Wave 3 (`ML-3A` — dedup: `InjectXHooks` de projeto detecta wiring global já instalado e pula a
 entrada de credential-guard por-projeto), ainda `⬜ Pendente`.
+
+## Sessão 2026-08-06 — Zeus (credential-guard em escopo global via trackfw update harness) —
+ROADMAP CONCLUÍDO
+
+PR #142 mergeado (fix de versão pypi + schema Cursor). Usuário perguntou se `trackfw update harness`
+implantaria os novos hooks — resposta: não, escopo hoje é só rules/agents/skills, credential-guard é
+inerentemente por-projeto por ter herdado o pipeline de attention-signal. Usuário pediu para abrir
+REQ investigando escopo global cross-project. Branch
+`feat/hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness`, criada
+via `trackfw branch new` desde o início (sem o erro de processo da sessão anterior). REQ
+`docs/req/REQ-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
+ADR `docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md`,
+Roadmap `docs/roadmaps/done/ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`.
+
+Pesquisa inicial confirmou que os 6 CLIs da wave nativa suportam hooks globais mesclados com projeto
+— mais amplo do que a suposição inicial (só Claude/Cursor confirmados informalmente). Duas decisões
+de UX confirmadas com o usuário antes da ADR: instalação opt-in puro (só via `update harness`, sem
+mudar `init`/`update`) e dedup por leitura (projeto detecta global e pula o wiring local).
+
+Todas as 5 Waves concluídas e auditadas (build/testes/gates rodados pelo orquestrador de forma
+independente do relato de cada subagente, incluindo reprodução manual de todas as provas negativas e
+pelo menos um teste end-to-end manual do dedup antes de aprovar cada commit):
+
+- **Wave 1 (ML-1A):** script global `~/.trackfw/scripts/trackfw-credential-guard.sh`, decompondo o
+  script em blocos componíveis para nunca duplicar o núcleo de detecção entre a variante de projeto e
+  a global. Confirmado byte-idêntico ao script de projeto pré-existente (sem regressão).
+- **Wave 2 (ML-2A-2F):** 6 alvos novos em `trackfw update harness`. Achado do próprio processo:
+  ML-2A inicialmente só listou arquivos Go na descrição do roadmap (erro de autoria do orquestrador,
+  não do agente) — implementação Go rodou sozinha e quebrou `check-update-parity.sh`; corrigido com
+  follow-up de paridade Node/Python antes do commit, e todos os MLs seguintes corrigidos no roadmap
+  para exigir os 3 stacks desde o início. Investigação do Codex resolvida (hooks habilitados por
+  padrão). Formato do Copilot em escopo global diverge do formato de projeto (config inline vs.
+  arquivo dedicado). Kiro sem sonda de versão v3 confiável — pré-requisito documentado, não sondado
+  via subprocess.
+- **Wave 3 (ML-3A):** dedup por leitura nos 6 CLIs, fail-open em toda superfície de falha, confirmado
+  end-to-end pelo orquestrador com `$HOME`/projeto de fixture reais.
+- **Wave 4 (ML-4A):** `scripts/check-harness-hooks-parity.sh`, gate estrutural novo cobrindo os 6
+  arquivos de hook globais, prova negativa reproduzida de forma independente. `make quality`
+  confirmado passando de ponta a ponta pela primeira vez nesta família de trabalho (103/103 cenários)
+  — o fix de versão do PR #142 resolveu o bloqueio definitivamente.
+- **Wave 5 (ML-5A):** `docs/cli-parity.md` consolidado (escopo global); colisão de título com a seção
+  consolidada do PR #141 (mesmo rótulo `ML-5A`, roadmaps diferentes) encontrada pelo agente e
+  corrigida pelo orquestrador. REQ com os 7 Acceptance Criteria concluídos (100%), ADR movida para
+  `Accepted`.
+
+**Erro de processo corrigido nesta sessão**: frontmatter `roadmap:` da REQ ficou vazio desde a
+criação (`trackfw roadmap move` não sincronizou desta vez, diferente da REQ anterior no mesmo dia) —
+corrigido manualmente no fechamento.
+
+Roadmap movido para `done/`. Branch com todos os commits, aguardando decisão do usuário sobre
+push/PR.

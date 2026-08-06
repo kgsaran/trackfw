@@ -1635,7 +1635,12 @@ this shape.
 (`PostToolUse`/`matcher: "*"`) entries, in the same `hooks` array. Idempotent: the file is always fully
 regenerated with the same four entries, so re-running the injector never duplicates or drifts.
 
-#### Suporte por CLI — visão consolidada (ML-5A)
+#### Suporte por CLI — visão consolidada, escopo DE PROJETO (ML-5A, `ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`)
+
+> Não confundir com a seção "Suporte por CLI — visão consolidada, escopo GLOBAL (ML-5A)" mais abaixo
+> neste mesmo documento — mesmo rótulo `ML-5A`, mas de um roadmap diferente e posterior
+> (`ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`),
+> que consolida o escopo GLOBAL (`trackfw update harness`), não o escopo de projeto documentado aqui.
 
 Consolida, numa única tabela, o wiring já detalhado CLI a CLI acima (seções "wiring (ML-2x)") e no
 gate estrutural (ML-3A, ver "Agent hooks por CLI ... — paridade estrutural" mais abaixo neste
@@ -1893,6 +1898,71 @@ targets only — inventing a message on `updated` would violate that contract. T
 documented here and in the Go/Node/Python doc comments above
 `harnessCredentialGuardTargetKiro`/`credentialGuardTargetKiro`/`_credential_guard_kiro_result`
 instead; release notes pointing users at `trackfw update harness` should mention it too.
+
+### Suporte por CLI — visão consolidada, escopo GLOBAL (ML-5A, `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`)
+
+Consolida, numa única tabela, o wiring **global** (`trackfw update harness`) já detalhado CLI a CLI
+nas seções acima ("Declared harness targets — pinned list", "GitHub Copilot global-scope wiring
+(ML-2E)", "Kiro global-scope wiring (ML-2F)") e no gate estrutural dedicado ("Hooks GLOBAIS de
+credential-guard ... — paridade estrutural (ROADMAP-2026-08-06, ML-4A)", mais abaixo neste
+documento). Nenhum dado novo é introduzido aqui — cada célula reaproveita o que já foi confirmado com
+fonte primária nas seções detalhadas por ML. **Não confundir com** a seção homônima "Suporte por CLI
+— visão consolidada (ML-5A)" mais acima neste documento — aquela consolida o wiring **por-projeto**
+de um roadmap anterior e não relacionado
+(`ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`).
+
+| CLI | Arquivo global | Merge ou overwrite total | Path do comando | Pré-requisito de versão |
+|---|---|---|---|---|
+| Claude Code | `~/.claude/settings.json` | Merge (`PreToolUse`/`PostToolUse[matcher:"Bash"]`, `mergeClaudeHookArray`) — ver "Declared harness targets — pinned list" (ML-2A) | Absoluto, `~/.trackfw/scripts/trackfw-credential-guard.sh` | Nenhum |
+| Codex | `~/.codex/hooks.json` | Merge (`PreToolUse`/`PostToolUse[matcher:"Bash"]`) — ver "Declared harness targets — pinned list" (ML-2B) | Absoluto, mesmo script | Nenhum — investigação `codex_hooks` resolvida (hooks habilitados por padrão) |
+| Gemini CLI | `~/.gemini/settings.json` | Merge (`BeforeTool`/`AfterTool[matcher:"run_shell_command"]`) — ver "Declared harness targets — pinned list" (ML-2C) | Absoluto, mesmo script | Nenhum |
+| Cursor | `~/.cursor/hooks.json` | Merge (`hooks.beforeShellExecution`/`hooks.afterShellExecution`, entradas planas `{"command":...}`, sem `matcher`) — ver "Declared harness targets — pinned list" (ML-2D) | Absoluto, mesmo script | Nenhum |
+| GitHub Copilot | `~/.copilot/settings.json` | Merge — inline `hooks.preToolUse`/`hooks.postToolUse[matcher:"bash"]` num arquivo de config geral compartilhado, **não** dedicado (diverge do escopo de projeto, que usa `.github/hooks/*.json` dedicado) — ver "GitHub Copilot global-scope wiring (ML-2E)" | Absoluto, mesmo script | Nenhum |
+| Kiro | `~/.kiro/hooks/trackfw-credential-guard.json` | **Overwrite total** — arquivo dedicado, um-arquivo-por-hook em `~/.kiro/hooks/`, nunca merge — ver "Kiro global-scope wiring (ML-2F)" | Absoluto, mesmo script (hook names `-global-pre`/`-global-post`, distintos dos de projeto) | **v3** (`kiro-cli --v3`) — documentado, sem sonda de subprocesso possível (ver caveat acima) |
+| Windsurf | — | — | — | **Fora de escopo** — sem hook nativo pré-execução, mesma razão da REQ original (PR #141) |
+
+##### Achados transversais (Waves 1-4 deste roadmap)
+
+1. **Modo sempre `warn` em escopo global, sem config adicional.** ML-1A decidiu não introduzir
+   `~/.trackfw/config.yaml` para configurar `credential_guard.mode` no escopo global — complexidade
+   não demandada; revisável se houver demanda real por `block` global. O script global reusa o
+   conteúdo canônico do script de projeto, só muda o destino de escrita.
+2. **Erro de autoria do roadmap no ML-2A (só Go listado), corrigido com follow-up de paridade.** O ML
+   original só listava arquivos Go — violação da regra dura de paridade 3 CLIs do `CLAUDE.md`. O
+   agente Go sinalizou a violação em vez de expandir escopo por conta própria; corrigido com um
+   follow-up dedicado cobrindo Node.js/Python, com `check-update-parity.sh` confirmando os 22 ids
+   idênticos nos 3 stacks. Todos os MLs seguintes (2B-2F) já exigiram os 3 stacks desde o início.
+3. **Investigação do Codex resolvida: hooks habilitados por padrão, não opt-in.** Re-fetch de
+   `developers.openai.com/codex/hooks` (2026-08-06) confirma que `[features] hooks = false`
+   (`codex_hooks` como alias depreciado) só serve para DESLIGAR hooks — nunca é necessário como
+   opt-in, nem para wiring de projeto nem global.
+4. **Formato do Copilot em escopo global diverge do formato de projeto.** Escopo de projeto usa
+   `.github/hooks/*.json`, um arquivo dedicado (overwrite total). Escopo global usa
+   `~/.copilot/settings.json`, o arquivo de config geral do usuário do Copilot CLI (guarda outras
+   chaves, ex. `model`) — logo exige merge preservando as demais chaves de topo, em vez de overwrite.
+5. **Kiro sem sonda de versão v3 possível — pré-requisito documentado, não sondado.** `--v3` é uma
+   flag de modo de lançamento do binário instalado, não um valor que algum comando `--version`
+   reporte; não há fato de versão instalada persistente para sondar de um processo externo (trackfw
+   nunca invoca o Kiro diretamente). Decisão: documentar o pré-requisito nos doc comments dos 3 stacks
+   e em `docs/cli-parity.md`, sem tentar sondagem de subprocesso e sem usar `TargetResult.Message`
+   (reservado a `state: failed`).
+6. **Dedup por leitura (ML-3A) funcionando nos 6 CLIs, fail-open confirmado.** Cada um dos 6
+   `InjectXHooks`/`injectXHooks`/`inject_x_hooks` de projeto lê (nunca escreve) o arquivo de hooks
+   global correspondente antes de adicionar a entrada de credential-guard por-projeto; se a entrada
+   global já existe, a entrada por-projeto é pulada (attention-signal/cleanup continuam normais).
+   Qualquer falha ao resolver `$HOME`, ler ou parsear o arquivo global é tratada como "não instalado
+   globalmente" — fail-open, nunca fail-closed silenciando o credential-guard por-projeto por erro de
+   leitura. Coberto por `internal/generators/credential_guard_dedup_test.go` (Go, 9 testes) e
+   equivalentes Node/Python.
+7. **Gate de paridade estrutural novo (ML-4A) cobrindo os 6 arquivos globais.**
+   `scripts/check-harness-hooks-parity.sh` — gate dedicado (não extensão de
+   `check-agent-hooks-parity.sh`, entry points/fixtures diferentes) — roda `trackfw update harness
+   --targets <6 ids>-credential-guard --install-missing` uma vez por runtime, cada um contra o seu
+   próprio `$HOME` de fixture isolado, e compara estruturalmente os 6 arquivos resultantes (com
+   normalização textual do path absoluto de fixture antes do `json.loads`). 12/12 `OK` (6 CLIs ×
+   go-vs-node/go-vs-py). Prova negativa (P4) registrada em `check-gates-falsify.sh` (Cenário 45,
+   corrompe o `matcher` do Kiro global). Ver "Hooks GLOBAIS de credential-guard ... — paridade
+   estrutural (ROADMAP-2026-08-06, ML-4A)" mais abaixo para o detalhamento completo.
 
 Each `<tool>-<kind>` target is a **roll-up over every catalog item** for that pair, not one row per
 item; per-item granularity already exists via `trackfw agents update` and `trackfw skills update`.
