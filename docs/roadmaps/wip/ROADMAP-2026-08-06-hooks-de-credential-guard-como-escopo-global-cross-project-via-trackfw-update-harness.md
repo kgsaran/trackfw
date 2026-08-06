@@ -94,7 +94,7 @@ Sequenciais, não paralelos: os alvos novos vivem no mesmo `internal/generators/
 CLI compartilham arquivo, evitar edição concorrente).
 
 ### ML-2A — Alvo `claude-credential-guard`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/generators/update.go` (`harnessCatalogTargetOrder`/`HarnessTargetIDs`, nova função
   `harnessCredentialGuardTarget` ou específica por tool — seguir o padrão de
