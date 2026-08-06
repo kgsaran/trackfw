@@ -349,7 +349,7 @@ não-zero, em `docs/cli-parity.md` (seção "GitHub Copilot wiring (ML-2D)").
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2E — Cursor
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectCursorHooks`, linha 391-432)
 - `npm/src/generators/hooks.js` (linha ~235)
