@@ -459,25 +459,59 @@ Detalhe completo, com citações das 3 páginas, em `docs/cli-parity.md` (seçã
 > Dependências: Wave 2 completa (precisa dos formatos finais de hooks.json por CLI)
 
 ### ML-3A — Estender `check-attention-scripts-parity.sh` para cobrir hooks.json por CLI
-**Status:** 🔄 Em andamento
-**Arquivos afetados:**
-- `scripts/check-attention-scripts-parity.sh` (renomear/estender escopo, ou criar
-  `scripts/check-credential-guard-hooks-parity.sh` novo, seguindo o mesmo padrão de cenário
-  Go-vs-Node-vs-Python já usado no script existente)
-- `Makefile` (alvo `parity` — adicionar novo script à cadeia)
-- `docs/cli-parity.md` (documentar o novo gate, seção espelhando a já existente para os scripts
-  shell, linha ~1599-1631)
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** criado gate NOVO e independente,
+`scripts/check-agent-hooks-parity.sh`, em vez de estender
+`check-attention-scripts-parity.sh` in-place (formatos por CLI divergem
+legitimamente entre si — comparação estrutural via JSON parseado, não
+byte-a-byte como o gate de scripts shell — misturar as duas famílias no mesmo
+arquivo teria acoplado dois contratos de comparação diferentes). Roda
+`discover --init` UMA vez por runtime (não uma vez por CLI) num fixture que
+carrega, de uma vez, o marcador de detecção dos 6 CLIs — isolamento por CLI
+foi medido em ~15s a mais em `make quality` sem ganho de detecção real (os
+dois guards de vacuidade por CLI cobrem o caso de um detector regredindo
+silenciosamente para um CLI). Comparação estrutural via `python3` inline (sem
+`jq`: nenhum gate do projeto depende de `jq`, nenhum workflow o instala, e
+`python3` já é dependência obrigatória do gate por rodar o CLI Python). **A
+primeira execução do gate reprovou de verdade** contra o estado pós-Wave 2:
+`_merge_codex_hook_entry` (Python) escrevia campos `timeout`/`statusMessage`
+em `.codex/hooks.json` que Go/Node nunca escreveram — divergência
+pré-existente do ML-2B, nunca detectada por falta de gate, corrigida aqui
+removendo a decoração de Python (mesmo movimento do ML-2C para os campos
+`name`/`timeout: 10000` do Gemini). Detalhe completo, incluindo a prova
+negativa (Cenário 44 de `check-gates-falsify.sh`), em `docs/cli-parity.md`
+(seção "Agent hooks por CLI ... — paridade estrutural (ML-3A)").
+**Arquivos afetados (reais):**
+- `scripts/check-agent-hooks-parity.sh` (novo — gate independente, não extensão
+  de `check-attention-scripts-parity.sh`)
+- `Makefile` (alvo `parity` — novo script encadeado após
+  `check-attention-scripts-parity.sh`, antes de `check-gates-falsify.sh`)
+- `scripts/check-gates-falsify.sh` (Cenário 44 — prova negativa do novo gate;
+  contagem de cenários/gates do `echo` final atualizada: 101→102 cenários,
+  16→17 gates)
+- `pypi/trackfw/generators/hooks.py` (`_merge_codex_hook_entry`/
+  `inject_codex_hooks` — remoção da decoração `timeout`/`statusMessage`,
+  achado do próprio gate, não pré-planejado neste ML)
+- `docs/cli-parity.md` (nova seção "Agent hooks por CLI ... — paridade
+  estrutural (ML-3A)")
 **Ações:**
 - Para cada CLI da Wave 2, gerar o arquivo de hook via Go/Node/Python num diretório temporário e
   comparar **estruturalmente** (chaves presentes, não byte-a-byte, já que os formatos diferem entre
-  CLIs mas devem ser idênticos entre os 3 stacks para o mesmo CLI) — usar `jq` ou parsing equivalente
-  no shell.
-- Falhar com mensagem clara indicando qual stack diverge e em qual campo.
+  CLIs mas devem ser idênticos entre os 3 stacks para o mesmo CLI). ✅ (`python3` inline em vez de
+  `jq` — decisão registrada em `docs/cli-parity.md`, nenhum gate do projeto depende de `jq`)
+- Falhar com mensagem clara indicando qual stack diverge e em qual campo. ✅
 **Critérios de aceite:**
-- [ ] `make quality` (alvo `parity`) roda o novo gate e passa para o estado pós-Wave 2
-- [ ] Gate falsifica de propósito (prova negativa, mesmo padrão de `scripts/check-gates-falsify.sh`
+- [x] `make quality` (alvo `parity`) roda o novo gate e passa para o estado pós-Wave 2 — confirmado
+      individualmente (`scripts/check-agent-hooks-parity.sh` + toda a cadeia de gates até ele, ver
+      nota de auditoria); `make parity`/`make quality` completos seguem bloqueados por
+      `check-cli-parity.sh` por um achado pré-existente e fora de escopo já registrado no ML-1A
+      (`pypi/trackfw/__init__.py` fallback `6.3.1` vs. `6.4.1` em Go/Node) — reconfirmado nesta
+      auditoria via `git stash` que o bloqueio existe idêntico sem as mudanças deste ML
+- [x] Gate falsifica de propósito (prova negativa, mesmo padrão de `scripts/check-gates-falsify.sh`
       citado em `docs/cli-parity.md`): introduzir divergência manual num stack e confirmar que o
-      gate detecta antes de reverter
+      gate detecta antes de reverter — feito manualmente (Kiro/Node.js, matcher `shell`→
+      `execute_bash`) e formalizado como Cenário 44 de `check-gates-falsify.sh`
 **Comandos de validação:** `make quality`
 
 ## Wave 4 — Teste de sabotagem (1 ML, obrigatório por AC da REQ)

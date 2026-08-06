@@ -30,6 +30,7 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-move-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-branch-new-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-attention-scripts-parity.sh
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-hooks-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-gates-falsify.sh
 
 sync-integration-assets:

@@ -96,28 +96,40 @@ def inject_claude_hooks(cwd: str) -> None:
 # uses exit code 2 + stderr (matching trackfw-credential-guard.sh's "block" mode).
 # ---------------------------------------------------------------------------
 
-def _merge_codex_hook_entry(entries: list, matcher: str, command: str, **extra_fields) -> None:
+def _merge_codex_hook_entry(entries: list, matcher: str, command: str) -> None:
     """Garante (idempotente) que `entries` (um array PreToolUse/PostToolUse/etc.
     do formato Codex) tenha uma entrada `matcher` contendo `command`.
 
     Mirrors `_merge_claude_hook_array`: if an entry with the given matcher
     already exists (e.g. a third-party hook, or a previous trackfw run), the
     new command is merged into its `hooks` array instead of appending a
-    duplicate `{"matcher": ...}` block. `extra_fields` (timeout,
-    statusMessage, ...) are only applied when creating a brand-new hook
-    entry, matching the fields Codex hooks commonly carry.
+    duplicate `{"matcher": ...}` block.
+
+    No `timeout`/`statusMessage` decoration: this function used to accept
+    `**extra_fields` and always passed `timeout=10` (+ a per-hook
+    `statusMessage`) when creating a new entry -- fields Go's
+    InjectCodexHooks and Node's injectCodexHooks never wrote and that
+    `docs/cli-parity.md`'s "Codex wiring (ML-2B)" section never documents as
+    functional (undocumented on
+    https://developers.openai.com/codex/hooks, no test in
+    pypi/tests/test_generators_init.py or pypi/tests/test_codex.py depends
+    on them). check-agent-hooks-parity.sh (ML-3A) caught the resulting
+    Python-only .codex/hooks.json structural drift; removed here to align
+    Python with Go/Node, mirroring the ML-2C precedent that dropped
+    Python-only `name`/`timeout: 10000` decoration from the Gemini hooks
+    entries for the same reason.
     """
     for entry in entries:
         if not isinstance(entry, dict) or entry.get('matcher') != matcher:
             continue
         inner = entry.setdefault('hooks', [])
         if not _has_entry(inner, 'command', command):
-            inner.append({'type': 'command', 'command': command, **extra_fields})
+            inner.append({'type': 'command', 'command': command})
         return
 
     entries.append({
         'matcher': matcher,
-        'hooks': [{'type': 'command', 'command': command, **extra_fields}],
+        'hooks': [{'type': 'command', 'command': command}],
     })
 
 
@@ -131,23 +143,19 @@ def inject_codex_hooks(cwd: str) -> None:
     pre_permission_hooks = hooks.setdefault('PermissionRequest', [])
     _merge_codex_hook_entry(
         pre_permission_hooks, '.*', 'scripts/trackfw-attention-signal.sh',
-        timeout=10, statusMessage='Waiting for approval',
     )
 
     pre_tool_hooks = hooks.setdefault('PreToolUse', [])
     _merge_codex_hook_entry(
         pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
-        timeout=10, statusMessage='Scanning command for credentials',
     )
 
     post_hooks = hooks.setdefault('PostToolUse', [])
     _merge_codex_hook_entry(
         post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh',
-        timeout=10,
     )
     _merge_codex_hook_entry(
         post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
-        timeout=10, statusMessage='Scanning command output for credentials',
     )
 
     _write_json(file_path, data)

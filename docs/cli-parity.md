@@ -2080,6 +2080,71 @@ comentário "no-op" do literal Python (`pypi/trackfw/generators/init_gen.py`)
 numa cópia isolada do repositório e asserta que o gate reprova com o diff
 explícito no diagnóstico.
 
+## Agent hooks por CLI (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `.github/hooks/trackfw-attention.json`, `.cursor/hooks.json`, `.kiro/hooks/trackfw-attention.json`) — paridade estrutural (ML-3A)
+
+Cada `InjectXHooks`/`injectXHooks`/`inject_x_hooks` (`internal/generators/agentfiles.go`,
+`npm/src/generators/hooks.js`, `pypi/trackfw/generators/hooks.py`), para os 6
+CLIs da wave nativa cobertos pela
+`docs/req/REQ-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`
+(Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor, Kiro), é uma
+implementação independente por stack — não um arquivo estático compartilhado.
+Ao contrário dos dois scripts shell de attention hooks (seção acima), cada CLI
+tem o seu **próprio schema JSON por design** (documentado CLI a CLI nas seções
+"wiring (ML-2x)" acima) — então este gate não compara byte-a-byte, compara
+**estruturalmente**: mesmas chaves presentes em cada nível, mesmos valores nas
+chaves relevantes (comando/script referenciado, matcher, evento/trigger),
+ordem de array significativa (pelo menos um CLI documenta execução em ordem —
+ver "GitHub Copilot wiring (ML-2D)"), indentação/ordem de inserção de chaves
+do serializador nunca é reportada como drift.
+
+### Divergência pré-existente encontrada e corrigida por este ML
+
+A primeira execução do gate reprovou de verdade contra o estado pós-Wave 2:
+`pypi/trackfw/generators/hooks.py:_merge_codex_hook_entry` aceitava
+`**extra_fields` e sempre escrevia `timeout=10` (+ `statusMessage` por hook) ao
+criar uma entrada nova em `.codex/hooks.json` — campos que
+`InjectCodexHooks` (Go) e `injectCodexHooks` (Node) nunca escreveram, que
+`https://developers.openai.com/codex/hooks` não documenta como funcionais, e
+dos quais nenhum teste (`pypi/tests/test_generators_init.py`,
+`pypi/tests/test_codex.py`) dependia. Essa divergência é anterior a este ML
+(introduzida no ML-2B, nunca detectada por falta de gate) — corrigida aqui
+removendo a decoração `timeout`/`statusMessage` de Python, alinhando-o a
+Go/Node, o mesmo movimento que o ML-2C já tinha feito para os campos
+`name`/`timeout: 10000` que a versão anterior do Python escrevia nas entradas
+do Gemini.
+
+### Parity gate
+
+`scripts/check-agent-hooks-parity.sh` roda `discover --init` uma vez por
+runtime (Go compilado, Node.js, Python) — não uma vez por CLI — num fixture
+que carrega, de uma vez, o marcador de detecção dos 6 CLIs
+(`CLAUDE.md`/`AGENTS.md`/`GEMINI.md`/`.kiro/`/`.github/copilot-instructions.md`/
+`.cursor/`, os mesmos marcadores lidos por
+`InjectHooksDetected`/`injectHooksDetected`/`inject_hooks_detected`), o que
+mantém o gate em ~3 execuções reais de CLI (isolamento por CLI mediria ~15s a
+mais em `make quality` sem ganho de detecção: os guards de vacuidade abaixo já
+cobrem o caso de um detector que passa a pular um CLI silenciosamente). Para
+cada um dos 6 arquivos de hook gerados, dois guards de vacuidade (P2) rodam
+antes de qualquer diff: (1) o arquivo existe e não está vazio nos 3 runtimes;
+(2) o arquivo referencia `scripts/trackfw-credential-guard.sh` pelo menos uma
+vez em cada runtime — sem isso, uma regressão que removesse a entrada de
+credential-guard identicamente nos 3 stacks ainda "passaria" numa comparação
+cruzada pura, o oposto do que este ML existe para prevenir. Só então roda a
+comparação estrutural (Go×Node e Go×Python, por CLI) via um comparador
+`python3` inline (JSON parseado, diff recursivo por chave/índice de array,
+sem `jq` — nenhum `scripts/check-*.sh` do projeto depende de `jq` nem nenhum
+workflow o instala; `python3` já é uma dependência obrigatória do gate por
+rodar o CLI Python). Falha nomeando o CLI, o par de stacks e o path JSON
+divergente (ex.: `$.hooks.PreToolUse[0].matcher`). Roda como parte de
+`make quality` (alvo `parity`), logo após
+`check-attention-scripts-parity.sh` e antes de `check-gates-falsify.sh`.
+
+A prova negativa (P4) está em `scripts/check-gates-falsify.sh` (Cenário 44) —
+corrompe o `matcher` da entrada `trackfw-credential-guard-post` do wiring do
+Kiro no literal Node.js (`npm/src/generators/hooks.js`, de `'shell'` para
+`'execute_bash'`) numa cópia isolada do repositório e asserta que o gate
+reprova apontando `$.hooks[3].matcher` no diagnóstico.
+
 ## Princípios de design de gates (P1–P4)
 
 Todo gate de paridade e toda regra do validator devem seguir os quatro princípios documentados em
