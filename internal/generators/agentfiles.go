@@ -576,21 +576,32 @@ func InjectCopilotHooks(cwd string) error {
 
 // InjectCursorHooks injects Cursor attention hooks into .cursor/hooks.json.
 //
-// Two independent things are wired here:
-//   - Top-level preToolUse/postToolUse (existing attention-signal/cleanup) — kept as-is,
-//     NOT migrated by this function. These keys do not match any event documented at
-//     https://cursor.com/docs/agent/hooks (retrieved 2026-08-05): the real Cursor hook
-//     config is `{"version": 1, "hooks": {"<eventName>": [...] }}`, and the documented
-//     event names are sessionStart/sessionEnd/beforeShellExecution/beforeMCPExecution/
-//     afterShellExecution/afterMCPExecution/beforeReadFile/afterFileEdit/
-//     beforeSubmitPrompt/preCompact/stop/beforeTabFileRead/afterTabFileEdit — there is no
-//     generic preToolUse/postToolUse event at all. Re-scoping the legacy attention hooks
-//     to a real event (e.g. stop/beforeSubmitPrompt) is out of scope for this ML; tracked
-//     for a follow-up (see docs/cli-parity.md, "Cursor wiring (ML-2E)").
-//   - hooks.beforeShellExecution + hooks.afterShellExecution (new, this ML) —
-//     credential-guard. beforeShellExecution is the real, Bash-specific, pre-execution
-//     event: input is `{"command","cwd","sandbox"}`, response (stdout JSON, only read on
-//     exit code 0) is `{"permission":"allow"|"deny"|"ask","user_message":"...",
+// Two independent things are wired here, both nested under the real Cursor
+// hook config `{"version": 1, "hooks": {"<eventName>": [...] }}`:
+//   - hooks.preToolUse + hooks.postToolUse (migrated by this ML) —
+//     attention-signal/cleanup. Prior to this ML these were written to
+//     top-level preToolUse/postToolUse arrays, which did not match any
+//     documented Cursor event (confirmed 2026-08-05, see docs/cli-parity.md
+//     "Cursor wiring (ML-2E)"). Re-fetching https://cursor.com/docs/hooks on
+//     2026-08-06 (the /docs/agent/hooks URL now 308-redirects there) shows
+//     Cursor's docs were updated in the interim to add three new generic
+//     events: preToolUse/postToolUse/postToolUseFailure, "fires for all tool
+//     types (Shell, Read, Write, MCP, Task, etc.)". preToolUse's documented
+//     input is `{"tool_name","tool_input":{...},"tool_use_id","cwd",...}`
+//     and postToolUse's is the same shape plus `tool_output`/`duration` —
+//     structurally identical to Claude Code's PreToolUse/PostToolUse payload
+//     (`tool_name`/`tool_input`), which is exactly the shape
+//     scripts/trackfw-attention-signal.sh and trackfw-attention-cleanup.sh
+//     already parse (`.tool_name`, `.tool_input.question // .tool_input.command`).
+//     No script changes were needed. Per-hook `matcher` filters by tool type
+//     (e.g. "Shell|Read|Write") and is optional; intentionally omitted here,
+//     same reasoning as beforeShellExecution below — the attention signal
+//     must fire for every tool use, not a filtered subset.
+//   - hooks.beforeShellExecution + hooks.afterShellExecution (ML-2E, prior
+//     cycle) — credential-guard. beforeShellExecution is the real,
+//     Bash-specific, pre-execution event: input is `{"command","cwd","sandbox"}`,
+//     response (stdout JSON, only read on exit code 0) is
+//     `{"permission":"allow"|"deny"|"ask","user_message":"...",
 //     "agent_message":"..."}`. Per the documented "Exit code behavior": exit 0 uses the
 //     JSON output (or defaults to allow if stdout has none — confirmed by the doc's own
 //     minimal example hook, which exits 0 with no stdout at all), exit 2 blocks the
@@ -602,13 +613,19 @@ func InjectCopilotHooks(cwd string) error {
 //     allow/deny/ask response defined) — added in parallel for symmetry with the
 //     PostToolUse wiring already used for the other CLIs in this wave, so the guard also
 //     gets a chance to flag credentials that only appear in captured command output.
-//     Per-event `matcher` (regex against the command string itself, not a tool name — the
-//     event is already shell-specific) is optional and intentionally omitted: the guard
-//     must see every shell command, not a filtered subset.
 //     Concurrency between hooks registered on the same event was not documented on the
 //     page retrieved for this investigation (unlike Codex, which explicitly documents
 //     concurrent execution); not assumed either way. Not a blocker here regardless: this
 //     event array only ever contains the single credential-guard entry added by trackfw.
+//
+// Backward compatibility: a `.cursor/hooks.json` written by a pre-migration
+// trackfw still has the legacy top-level preToolUse/postToolUse arrays. This
+// function migrates known trackfw entries out of those top-level arrays into
+// the nested hooks.preToolUse/hooks.postToolUse location, and drops the
+// top-level key entirely once it is empty — but never touches or deletes
+// unrelated entries a user may have added there themselves (those keys are
+// inert either way — Cursor never read the top-level location — so leaving
+// them is harmless and avoids destroying unrelated user data on a guess).
 func InjectCursorHooks(cwd string) error {
 	path := filepath.Join(cwd, ".cursor", "hooks.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -642,11 +659,6 @@ func InjectCursorHooks(cwd string) error {
 		return cmd
 	}
 
-	// Legacy attention-signal/cleanup wiring — preserved as-is, not migrated by this ML.
-	root["preToolUse"] = mergeSimpleCommandArray(root["preToolUse"], "scripts/trackfw-attention-signal.sh", makeEntry, getCmd)
-	root["postToolUse"] = mergeSimpleCommandArray(root["postToolUse"], "scripts/trackfw-attention-cleanup.sh", makeEntry, getCmd)
-
-	// credential-guard wiring — real Cursor hook config, nested under version/hooks.
 	if _, ok := root["version"]; !ok {
 		root["version"] = 1
 	}
@@ -654,6 +666,15 @@ func InjectCursorHooks(cwd string) error {
 	if hooks == nil {
 		hooks = make(map[string]interface{})
 	}
+
+	// Migrate any legacy top-level preToolUse/postToolUse trackfw entries
+	// (written by trackfw before this ML) into the nested, real hooks.
+	hooks["preToolUse"] = mergeSimpleCommandArray(hooks["preToolUse"], "scripts/trackfw-attention-signal.sh", makeEntry, getCmd)
+	hooks["postToolUse"] = mergeSimpleCommandArray(hooks["postToolUse"], "scripts/trackfw-attention-cleanup.sh", makeEntry, getCmd)
+	removeKnownCommandFromLegacyTopLevelArray(root, "preToolUse", "scripts/trackfw-attention-signal.sh", getCmd)
+	removeKnownCommandFromLegacyTopLevelArray(root, "postToolUse", "scripts/trackfw-attention-cleanup.sh", getCmd)
+
+	// credential-guard wiring — unchanged by this ML.
 	hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
 	hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
 	root["hooks"] = hooks
@@ -663,6 +684,29 @@ func InjectCursorHooks(cwd string) error {
 		return err
 	}
 	return os.WriteFile(path, append(out, '\n'), 0644)
+}
+
+// removeKnownCommandFromLegacyTopLevelArray drops a single known trackfw
+// entry (matched by command) from a legacy top-level array in root[key], and
+// removes the key entirely once empty. Any other entries in the array (not
+// matching command) are left untouched — see InjectCursorHooks doc comment.
+func removeKnownCommandFromLegacyTopLevelArray(root map[string]interface{}, key, command string, getCmd func(interface{}) string) {
+	arr, ok := root[key].([]interface{})
+	if !ok {
+		return
+	}
+	kept := arr[:0]
+	for _, item := range arr {
+		if getCmd(item) == command {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	if len(kept) == 0 {
+		delete(root, key)
+		return
+	}
+	root[key] = kept
 }
 
 // InjectWindsurfHooks updates .windsurfrules with the attention instruction.

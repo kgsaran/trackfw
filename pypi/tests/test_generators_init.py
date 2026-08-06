@@ -659,11 +659,22 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertTrue(os.path.isfile(path))
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        self.assertIn('preToolUse', data)
-        self.assertIn('postToolUse', data)
+        # Legacy top-level schema must not be written anymore.
+        self.assertNotIn('preToolUse', data)
+        self.assertNotIn('postToolUse', data)
 
         self.assertEqual(data.get('version'), 1)
         self.assertIn('hooks', data)
+        self.assertEqual(len(data['hooks']['preToolUse']), 1)
+        self.assertEqual(
+            data['hooks']['preToolUse'][0]['command'],
+            'scripts/trackfw-attention-signal.sh',
+        )
+        self.assertEqual(len(data['hooks']['postToolUse']), 1)
+        self.assertEqual(
+            data['hooks']['postToolUse'][0]['command'],
+            'scripts/trackfw-attention-cleanup.sh',
+        )
         self.assertEqual(len(data['hooks']['beforeShellExecution']), 1)
         self.assertEqual(
             data['hooks']['beforeShellExecution'][0]['command'],
@@ -679,8 +690,8 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         inject_cursor_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
-        self.assertEqual(len(data2['preToolUse']), 1)
-        self.assertEqual(len(data2['postToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['preToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['postToolUse']), 1)
         self.assertEqual(len(data2['hooks']['beforeShellExecution']), 1)
         self.assertEqual(len(data2['hooks']['afterShellExecution']), 1)
 
@@ -696,6 +707,37 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         self.assertEqual(data['version'], 2)
+
+    def test_inject_cursor_hooks_migrates_legacy_top_level_arrays(self):
+        from trackfw.generators.hooks import inject_cursor_hooks
+        cursor_dir = os.path.join(self.tmp, '.cursor')
+        os.makedirs(cursor_dir, exist_ok=True)
+        path = os.path.join(cursor_dir, 'hooks.json')
+        legacy = {
+            'preToolUse': [
+                {'command': 'scripts/trackfw-attention-signal.sh'},
+                {'command': 'user-pre.sh'},
+            ],
+            'postToolUse': [
+                {'command': 'scripts/trackfw-attention-cleanup.sh'},
+            ],
+        }
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(legacy, f)
+
+        inject_cursor_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # Known trackfw entry removed from top level; unrelated entry survives.
+        self.assertEqual(len(data['preToolUse']), 1)
+        self.assertEqual(data['preToolUse'][0]['command'], 'user-pre.sh')
+        # postToolUse only had the known trackfw entry -> key removed entirely.
+        self.assertNotIn('postToolUse', data)
+
+        # Entries migrated to the real, nested location.
+        self.assertEqual(data['hooks']['preToolUse'][0]['command'], 'scripts/trackfw-attention-signal.sh')
+        self.assertEqual(data['hooks']['postToolUse'][0]['command'], 'scripts/trackfw-attention-cleanup.sh')
 
     def test_inject_hooks_detected(self):
         from trackfw.generators.hooks import inject_hooks_detected

@@ -46,7 +46,7 @@ Dois achados fora de escopo, documentados durante a auditoria do
 > Dependências: Independente (arquivos completamente distintos)
 
 ### ML-1A — Alinhar versão fallback do pacote Python
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `pypi/trackfw/__init__.py` (linhas 3 e 5, ambos os fallbacks `"6.3.1"`)
 **Ações:**
@@ -62,13 +62,13 @@ Dois achados fora de escopo, documentados durante a auditoria do
   `pypi/trackfw/__init__.py` não estiver na lista, propor adição — mas só documentar/propor, não é
   obrigatório mudar o protocolo neste ML).
 **Critérios de aceite:**
-- [ ] `PYTHONPATH=pypi python3 -m trackfw version` imprime `trackfw 6.4.1`
-- [ ] `scripts/check-cli-parity.sh` passa
-- [ ] `python3 -m pytest pypi/` verde
+- [x] `PYTHONPATH=pypi python3 -m trackfw version` imprime `trackfw 6.4.1`
+- [x] `scripts/check-cli-parity.sh` passa
+- [x] `python3 -m pytest pypi/` verde
 **Comandos de validação:** `GO_BIN=bin/trackfw scripts/check-cli-parity.sh && python3 -m pytest pypi/`
 
 ### ML-1B — Migrar wiring legado de attention-signal/cleanup do Cursor para evento real
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectCursorHooks`)
 - `internal/generators/agentfiles_test.go`

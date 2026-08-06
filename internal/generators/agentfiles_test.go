@@ -449,16 +449,11 @@ func TestInjectCursorHooks(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".cursor", "hooks.json"))
-	pre, _ := data["preToolUse"].([]interface{})
-	post, _ := data["postToolUse"].([]interface{})
-	if len(pre) != 1 || len(post) != 1 {
-		t.Fatalf("expected 1 pre and 1 post entry, got %d pre, %d post", len(pre), len(post))
+	if _, ok := data["preToolUse"]; ok {
+		t.Errorf("expected no top-level preToolUse key (legacy schema), got %v", data["preToolUse"])
 	}
-	if pre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
-		t.Errorf("preToolUse[0] should be the attention-signal script, got %v", pre[0])
-	}
-	if post[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
-		t.Errorf("postToolUse[0] should be the attention-cleanup script, got %v", post[0])
+	if _, ok := data["postToolUse"]; ok {
+		t.Errorf("expected no top-level postToolUse key (legacy schema), got %v", data["postToolUse"])
 	}
 
 	if data["version"] != float64(1) {
@@ -468,6 +463,19 @@ func TestInjectCursorHooks(t *testing.T) {
 	if hooks == nil {
 		t.Fatalf("expected top-level hooks object, got none")
 	}
+
+	pre, _ := hooks["preToolUse"].([]interface{})
+	post, _ := hooks["postToolUse"].([]interface{})
+	if len(pre) != 1 || len(post) != 1 {
+		t.Fatalf("expected 1 hooks.preToolUse and 1 hooks.postToolUse entry, got %d pre, %d post", len(pre), len(post))
+	}
+	if pre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
+		t.Errorf("hooks.preToolUse[0] should be the attention-signal script, got %v", pre[0])
+	}
+	if post[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
+		t.Errorf("hooks.postToolUse[0] should be the attention-cleanup script, got %v", post[0])
+	}
+
 	before, _ := hooks["beforeShellExecution"].([]interface{})
 	after, _ := hooks["afterShellExecution"].([]interface{})
 	if len(before) != 1 || len(after) != 1 {
@@ -478,6 +486,52 @@ func TestInjectCursorHooks(t *testing.T) {
 	}
 	if after[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
 		t.Errorf("afterShellExecution[0] should be the credential-guard script, got %v", after[0])
+	}
+}
+
+func TestInjectCursorHooks_MigratesLegacyTopLevelArrays(t *testing.T) {
+	dir := t.TempDir()
+	cursorDir := filepath.Join(dir, ".cursor")
+	if err := os.MkdirAll(cursorDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	legacy := `{
+  "preToolUse": [{"command": "scripts/trackfw-attention-signal.sh"}, {"command": "./my-custom-hook.sh"}],
+  "postToolUse": [{"command": "scripts/trackfw-attention-cleanup.sh"}]
+}`
+	if err := os.WriteFile(filepath.Join(cursorDir, "hooks.json"), []byte(legacy), 0644); err != nil {
+		t.Fatalf("seed hooks.json: %v", err)
+	}
+
+	if err := InjectCursorHooks(dir); err != nil {
+		t.Fatalf("InjectCursorHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".cursor", "hooks.json"))
+
+	// The known trackfw entry must be migrated out of preToolUse, but the
+	// unrelated user entry must survive untouched at the top level.
+	pre, _ := data["preToolUse"].([]interface{})
+	if len(pre) != 1 {
+		t.Fatalf("expected 1 surviving unrelated entry in top-level preToolUse, got %d: %v", len(pre), pre)
+	}
+	if pre[0].(map[string]interface{})["command"] != "./my-custom-hook.sh" {
+		t.Errorf("expected unrelated user entry to survive, got %v", pre[0])
+	}
+
+	// postToolUse had only the known trackfw entry, so the key must be gone entirely.
+	if _, ok := data["postToolUse"]; ok {
+		t.Errorf("expected top-level postToolUse to be removed once empty, got %v", data["postToolUse"])
+	}
+
+	hooks, _ := data["hooks"].(map[string]interface{})
+	hPre, _ := hooks["preToolUse"].([]interface{})
+	hPost, _ := hooks["postToolUse"].([]interface{})
+	if len(hPre) != 1 || hPre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
+		t.Errorf("expected hooks.preToolUse to contain the migrated attention-signal entry, got %v", hPre)
+	}
+	if len(hPost) != 1 || hPost[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
+		t.Errorf("expected hooks.postToolUse to contain the migrated attention-cleanup entry, got %v", hPost)
 	}
 }
 
