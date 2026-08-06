@@ -1779,7 +1779,7 @@ Wave 6 round.
 
 ### Declared harness targets — pinned list
 
-The harness target list is **not** derived at runtime; it is this fixed sequence of 25 ids, in this
+The harness target list is **not** derived at runtime; it is this fixed sequence of 26 ids, in this
 exact order: `claude-skill`, `claude-credential-guard` (global-scope credential-guard wiring for
 Claude Code — `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
 ML-2A), `claude-agents`, `claude-skills`, `codex-credential-guard` (same wave, ML-2B — global-scope
@@ -1790,12 +1790,55 @@ credential-guard wiring for Codex CLI, `~/.codex/hooks.json`), `codex-agents`, `
 ML-2D — global-scope credential-guard wiring for Cursor, `~/.cursor/hooks.json`,
 `hooks.beforeShellExecution`/`hooks.afterShellExecution`, each entry a flat `{"command":"..."}`
 object — no per-entry matcher, unlike Claude/Codex/Gemini's nested `{matcher,hooks:[{type,command}]}`
-shape), `cursor-agents`, `cursor-skills`, then `<tool>-agents`/`<tool>-skills` for the remaining four
-catalog tools in `catalog.json` declaration order — `copilot`, `windsurf`, `amazonq`, `opencode`,
+shape), `cursor-agents`, `cursor-skills`, `copilot-credential-guard` (same wave, ML-2E — global-scope
+credential-guard wiring for GitHub Copilot, `~/.copilot/settings.json`,
+`hooks.preToolUse`/`hooks.postToolUse[matcher:"bash"]` — see "GitHub Copilot global-scope wiring
+(ML-2E)" below), `copilot-agents`, `copilot-skills`, then `<tool>-agents`/`<tool>-skills` for the
+remaining three catalog tools in `catalog.json` declaration order — `windsurf`, `amazonq`, `opencode`,
 `kiro`. Each `<tool>-credential-guard` id (where it exists) is always positioned immediately BEFORE
 that tool's own `<tool>-agents`/`<tool>-skills` pair, never after — more `<tool>-credential-guard`
 siblings land in subsequent, sequential MLs of the same wave, each at that same relative position for
 its tool.
+
+### GitHub Copilot global-scope wiring (ML-2E) — `~/.copilot/settings.json`, inline `hooks` field
+
+**Investigation, confirmed 2026-08-06** against
+`https://docs.github.com/en/copilot/reference/hooks-reference` (the `hooks-configuration` URL the ADR
+originally cited 301-redirects here — same page used for the project-scope investigation, section
+"Hooks locations"): the user/global scope offers two distinct mechanisms —
+
+1. A **dedicated directory** of standalone hook files: "`*.json` files in the user-level hooks
+   directory. By default this is `~/.copilot/hooks/` on macOS and Linux... If `COPILOT_HOME` is set,
+   it is `$COPILOT_HOME/hooks/`" — structurally the user-scope analog of `.github/hooks/*.json`
+   (dedicated, safe to overwrite wholesale, same as Kiro's own dedicated hook file at project scope).
+2. An **inline `hooks` field in a general config file**: "Inline hooks block in user-level config —
+   the hooks field at the top level of `~/.copilot/settings.json`."
+
+This ML follows the roadmap's explicit instruction and targets option 2, `~/.copilot/settings.json`.
+The doc confirms this file is **not** dedicated to hooks — it is Copilot CLI's general user config
+file (holds other settings such as model choice), unlike `.github/hooks/trackfw-attention.json`
+(project scope). So `copilot-credential-guard` **merges** into `root["hooks"]["preToolUse"/
+"postToolUse"]` only, preserving every other top-level key — the same discipline
+`claude-credential-guard`/`codex-credential-guard`/`gemini-credential-guard` already apply to their
+own general `~/.claude/settings.json`/`~/.codex/hooks.json`/`~/.gemini/settings.json` files (Cursor is
+the outlier: its `~/.cursor/hooks.json` is itself a dedicated hooks file, hence the `"version":1`
+wrapper `cursor-credential-guard` adds).
+
+**Entry shape — same as project scope, no divergence found.** "Hook configuration files use JSON
+format with version 1" is stated without carving out an exception for the inline `hooks` field, and no
+example anywhere in the doc shows a different command-entry shape for `settings.json` than for
+standalone hook files. `copilot-credential-guard` therefore reuses the exact same command-entry shape
+`InjectCopilotHooks` (agentfiles.go, project scope) already emits:
+`{"type":"command","matcher":"bash","bash":"<absolute path>","cwd":".","timeoutSec":10}`, written under
+`hooks.preToolUse`/`hooks.postToolUse`.
+
+**One deliberate non-divergence from the doc's own dedicated-file examples: no top-level `"version"`
+key added.** Every JSON example in the doc that shows `"version":1` at the root is an example of a
+*dedicated* hooks file (`.github/hooks/*.json`, policy files) — none of them is an example of
+`settings.json` itself. Since this code does not own every key of `settings.json` (it is a shared,
+general config file), adding an unconfirmed top-level key would be an assumption beyond what the
+source confirms; this mirrors how `claude-credential-guard`/`codex-credential-guard`/
+`gemini-credential-guard` never add a `"version"` key to their own general settings files either.
 
 **Codex hooks default-enabled, confirmed 2026-08-06 (ML-2B):** ROADMAP-2026-08-06's ADR flagged an
 unresolved contradiction between two sources on whether Codex CLI hooks require

@@ -564,6 +564,113 @@ test('cursor-credential-guard preserves pre-existing content in ~/.cursor/hooks.
   }
 })
 
+// ---------------------------------------------------------------------------
+// `copilot-credential-guard` — global-scope credential-guard hook wiring for
+// GitHub Copilot, ROADMAP-2026-08-06 Wave 2 ML-2E. Mirrors the cursor-
+// credential-guard tests above, but reads hooks[event] as an array of
+// {"type":"command","matcher":"bash","bash":"...",...} entries (matched on
+// "bash", not "command") — Copilot's ~/.copilot/settings.json entry shape
+// (confirmed by generators/hooks.js:mergeCopilotHookArray) matches the
+// project-scope entries injectCopilotHooks already emits.
+// ---------------------------------------------------------------------------
+
+test('copilot-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'copilot-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.copilot', 'settings.json')), false)
+})
+
+test('copilot-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'copilot-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.copilot/settings.json')
+
+  const settingsPath = path.join(homeRoot, '.copilot', 'settings.json')
+  const settingsDoc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  assert.equal(settingsDoc.version, undefined, '~/.copilot/settings.json is a general config file — no unconfirmed top-level "version" key')
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+
+  for (const event of ['preToolUse', 'postToolUse']) {
+    const entries = settingsDoc.hooks[event] || []
+    const entry = entries.find((e) => e.bash === wantScript)
+    assert.ok(entry, `${event} missing entry pointing at ${wantScript}`)
+    assert.equal(entry.type, 'command')
+    assert.equal(entry.matcher, 'bash')
+  }
+})
+
+test('copilot-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'copilot-credential-guard'], homeRoot)
+  const settingsPath = path.join(homeRoot, '.copilot', 'settings.json')
+  const firstRun = fs.readFileSync(settingsPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'copilot-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(settingsPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+
+  const settingsDoc = JSON.parse(secondRun)
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  const shellEntries = settingsDoc.hooks.preToolUse.filter((e) => e.bash === wantScript)
+  assert.equal(shellEntries.length, 1)
+})
+
+test('copilot-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'copilot-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.copilot', 'settings.json')), false)
+})
+
+test('copilot-credential-guard preserves pre-existing content in ~/.copilot/settings.json', () => {
+  const homeRoot = scratchHome()
+  const settingsPath = path.join(homeRoot, '.copilot', 'settings.json')
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(
+    settingsPath,
+    JSON.stringify(
+      {
+        model: 'gpt-5',
+        hooks: {
+          preToolUse: [{ type: 'command', matcher: 'curl', bash: 'echo hi' }],
+        },
+        userSetting: 'keep-me',
+      },
+      null,
+      2
+    )
+  )
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'copilot-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+
+  const settingsDoc = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  assert.equal(settingsDoc.userSetting, 'keep-me')
+  assert.equal(settingsDoc.model, 'gpt-5')
+  assert.equal(settingsDoc.hooks.preToolUse.length, 2)
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  const guardEntries = settingsDoc.hooks.preToolUse.filter((e) => e.bash === wantScript)
+  assert.equal(guardEntries.length, 1)
+})
+
 test('a project-scoped catalog install under HOME is not touched by trackfw update (project scope stays project scope)', () => {
   const homeRoot = scratchHome()
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-harness-project-'))

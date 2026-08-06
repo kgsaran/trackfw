@@ -1087,6 +1087,212 @@ func TestUpdateHarnessCredentialGuardCursorPreservesExistingContent(t *testing.T
 	}
 }
 
+func TestUpdateHarnessCredentialGuardCopilotMissingWithoutInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"copilot-credential-guard"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetMissing {
+		t.Fatalf("state = %q, want missing (no --install-missing)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".copilot", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("copilot-credential-guard was installed without --install-missing: %v", err)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardCopilotInstallsAbsolutePathWithInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"copilot-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (--install-missing)", report.Targets[0].State)
+	}
+	if report.Targets[0].Path != "~/.copilot/settings.json" {
+		t.Fatalf("path = %q, want ~/.copilot/settings.json", report.Targets[0].Path)
+	}
+
+	settingsPath := filepath.Join(home, ".copilot", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("~/.copilot/settings.json was not written: %v", err)
+	}
+
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("invalid JSON written: %v", err)
+	}
+	if _, hasVersion := doc["version"]; hasVersion {
+		t.Fatalf("~/.copilot/settings.json is a general config file, not a dedicated hooks file — must not gain an unconfirmed top-level \"version\" key: %v", doc)
+	}
+
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !filepath.IsAbs(wantScript) {
+		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
+	}
+	for _, event := range []string{"preToolUse", "postToolUse"} {
+		hooks, _ := doc["hooks"].(map[string]interface{})
+		if hooks == nil {
+			t.Fatalf("no hooks object written: %v", doc)
+		}
+		arr, _ := hooks[event].([]interface{})
+		found := false
+		for _, item := range arr {
+			obj, _ := item.(map[string]interface{})
+			if obj["bash"] == wantScript {
+				if obj["type"] != "command" {
+					t.Fatalf("%s entry missing type=command: %v", event, obj)
+				}
+				if obj["matcher"] != "bash" {
+					t.Fatalf("%s entry missing matcher=bash: %v", event, obj)
+				}
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s does not contain a {bash} entry pointing at the absolute global script path %s: %v", event, wantScript, doc)
+		}
+	}
+}
+
+func TestUpdateHarnessCredentialGuardCopilotIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if _, err := UpdateHarness(UpdateOptions{Targets: []string{"copilot-credential-guard"}, InstallMissing: true}); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(home, ".copilot", "settings.json")
+	firstRun, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"copilot-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetSkipped {
+		t.Fatalf("state = %q, want skipped (already installed, idempotent)", report.Targets[0].State)
+	}
+	secondRun, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(firstRun) != string(secondRun) {
+		t.Fatalf("second run mutated ~/.copilot/settings.json:\nfirst:  %s\nsecond: %s", firstRun, secondRun)
+	}
+
+	var doc map[string]interface{}
+	if err := json.Unmarshal(secondRun, &doc); err != nil {
+		t.Fatal(err)
+	}
+	hooks, _ := doc["hooks"].(map[string]interface{})
+	arr, _ := hooks["preToolUse"].([]interface{})
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	shellEntries := 0
+	for _, item := range arr {
+		obj, _ := item.(map[string]interface{})
+		if obj["bash"] == wantScript {
+			shellEntries++
+		}
+	}
+	if shellEntries != 1 {
+		t.Fatalf("expected exactly one preToolUse entry, got %d: %v", shellEntries, doc)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardCopilotDryRunDoesNotWrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"copilot-credential-guard"}, InstallMissing: true, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.DryRun {
+		t.Fatal("report.DryRun = false, want true")
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (would install)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".copilot", "settings.json")); !os.IsNotExist(err) {
+		t.Fatal("--dry-run wrote ~/.copilot/settings.json")
+	}
+}
+
+func TestUpdateHarnessCredentialGuardCopilotPreservesExistingContent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	settingsPath := filepath.Join(home, ".copilot", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	preexisting := `{
+  "model": "gpt-5",
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "matcher": "curl",
+        "bash": "echo hi"
+      }
+    ]
+  },
+  "userSetting": "keep-me"
+}
+`
+	if err := os.WriteFile(settingsPath, []byte(preexisting), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"copilot-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (merging into existing file)", report.Targets[0].State)
+	}
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc["userSetting"] != "keep-me" {
+		t.Fatalf("pre-existing top-level key was not preserved: %v", doc)
+	}
+	if doc["model"] != "gpt-5" {
+		t.Fatalf("pre-existing \"model\" key was not preserved: %v", doc)
+	}
+	hooks, _ := doc["hooks"].(map[string]interface{})
+	preArr, _ := hooks["preToolUse"].([]interface{})
+	if len(preArr) != 2 {
+		t.Fatalf("pre-existing preToolUse entry was dropped or credential-guard entry not appended: %v", hooks)
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	hasGuard := false
+	for _, item := range preArr {
+		obj, _ := item.(map[string]interface{})
+		if obj["bash"] == wantScript {
+			hasGuard = true
+		}
+	}
+	if !hasGuard {
+		t.Fatalf("expected preToolUse entry to be added: %v", preArr)
+	}
+}
+
 func TestUpdateHarnessDoesNotWriteAnythingOutsideHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

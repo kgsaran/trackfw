@@ -288,12 +288,14 @@ var harnessCatalogTargetOrder = []string{
 // "gemini-credential-guard" inserted immediately BEFORE "gemini-agents"/
 // "gemini-skills" (ROADMAP-2026-08-06 Wave 2/ML-2C), and
 // "cursor-credential-guard" inserted immediately BEFORE "cursor-agents"/
-// "cursor-skills" (ROADMAP-2026-08-06 Wave 2/ML-2D) — same relative position
-// as claude-credential-guard/codex-credential-guard/gemini-credential-guard
-// (credential-guard target precedes that tool's agents/skills pair, never
-// follows it). Remaining "<tool>-credential-guard" siblings are added by
-// subsequent, sequential MLs (2E-2F), each at the same relative position for
-// its own tool. Order here
+// "cursor-skills" (ROADMAP-2026-08-06 Wave 2/ML-2D), and
+// "copilot-credential-guard" inserted immediately BEFORE "copilot-agents"/
+// "copilot-skills" (ROADMAP-2026-08-06 Wave 2/ML-2E) — same relative position
+// as claude-credential-guard/codex-credential-guard/gemini-credential-guard/
+// cursor-credential-guard (credential-guard target precedes that tool's
+// agents/skills pair, never follows it). Remaining "<tool>-credential-guard"
+// siblings are added by subsequent, sequential MLs (2F), each at the same
+// relative position for its own tool. Order here
 // is authoritative for both JSON output and iteration — it must never be
 // derived from the filesystem or from what happens to be installed on a
 // given machine (see docs/cli-parity.md, "targets follows the declared
@@ -312,6 +314,9 @@ func buildHarnessTargetIDs() []string {
 		}
 		if tool == "cursor" {
 			ids = append(ids, "cursor-credential-guard")
+		}
+		if tool == "copilot" {
+			ids = append(ids, "copilot-credential-guard")
 		}
 		ids = append(ids, tool+"-agents", tool+"-skills")
 	}
@@ -365,6 +370,10 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		}
 		if id == "cursor-credential-guard" {
 			results = append(results, harnessCredentialGuardTargetCursor(home, opts))
+			continue
+		}
+		if id == "copilot-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetCopilot(home, opts))
 			continue
 		}
 		tool, kind, ok := splitHarnessCatalogTargetID(id)
@@ -816,6 +825,142 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 		root = make(map[string]interface{})
 	}
 	mergeCredentialGuardCursorHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// mergeCredentialGuardCopilotHooks merges the credential-guard
+// preToolUse/postToolUse[matcher:"bash"] entries into root["hooks"],
+// preserving any other hook groups/entries already present.
+//
+// Investigation (ROADMAP-2026-08-06 Wave 2/ML-2E, confirmed 2026-08-06
+// against https://docs.github.com/en/copilot/reference/hooks-reference,
+// section "Hooks locations"): the user-level scope offers TWO distinct
+// mechanisms — (a) a dedicated directory of standalone hook files,
+// "*.json files in the user-level hooks directory... by default
+// ~/.copilot/hooks/", and (b) "Inline hooks block in user-level config — the
+// hooks field at the top level of ~/.copilot/settings.json". This ML follows
+// the roadmap's explicit instruction to target ~/.copilot/settings.json
+// (option b), which the doc confirms is NOT a dedicated hooks file: it is
+// Copilot CLI's general user config file (also holds "model", other CLI
+// settings), unlike .github/hooks/trackfw-attention.json (project scope,
+// InjectCopilotHooks) which is safely overwritten wholesale. So, exactly like
+// harnessCredentialGuardTargetClaude/Codex/Gemini's own general settings
+// files, this merges into root["hooks"] only and never overwrites/replaces
+// any other top-level key.
+//
+// Entry shape: the doc states "Hook configuration files use JSON format with
+// version 1" without carving out an exception for the inline hooks field —
+// i.e. the same command-entry shape documented for standalone hook files
+// ({"type":"command","bash":"...","cwd":"...","timeoutSec":N}, with an
+// optional "matcher") applies here too, identical to what InjectCopilotHooks
+// (agentfiles.go, project scope) already emits. This function does NOT add a
+// top-level "version" key to root, though: that field belongs to dedicated
+// hooks-file format examples in the doc (e.g. the standalone
+// {"version":1,"hooks":{...}} shown for .github/hooks/*.json and policy
+// files) — nothing in the doc shows or requires a "version" key at the root
+// of the general settings.json file itself, so adding one here would be an
+// unconfirmed assumption about a file this code does not own.
+//
+// Merge mechanics: reuses mergeSimpleCommandArray (agentfiles.go) with a
+// custom getCmd/makeEntry pair since the match key is "bash" (unlike
+// Cursor's flat {"command":"..."} shape, matched on "command") and the full
+// entry also carries "type"/"matcher"/"cwd"/"timeoutSec", mirroring the
+// project-scope entries InjectCopilotHooks writes for credential-guard.
+func mergeCredentialGuardCopilotHooks(root map[string]interface{}, scriptPath string) {
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	makeEntry := func(command string) interface{} {
+		return map[string]interface{}{
+			"type":       "command",
+			"matcher":    "bash",
+			"bash":       command,
+			"cwd":        ".",
+			"timeoutSec": 10,
+		}
+	}
+	getCmd := func(item interface{}) string {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		bash, _ := obj["bash"].(string)
+		return bash
+	}
+	hooks["preToolUse"] = mergeSimpleCommandArray(hooks["preToolUse"], scriptPath, makeEntry, getCmd)
+	hooks["postToolUse"] = mergeSimpleCommandArray(hooks["postToolUse"], scriptPath, makeEntry, getCmd)
+	root["hooks"] = hooks
+}
+
+// harnessCredentialGuardTargetCopilot evaluates (and, unless DryRun,
+// applies) the global-scope credential-guard hook wiring for GitHub Copilot:
+// hooks.preToolUse/hooks.postToolUse[matcher:"bash"] entries in
+// ~/.copilot/settings.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — same 4-state contract and
+// same reason for an absolute path as
+// harnessCredentialGuardTargetClaude/Codex/Gemini/Cursor (a global hook can
+// fire from any project's cwd), but via mergeCredentialGuardCopilotHooks
+// since Copilot's command-hook entry shape (ROADMAP-2026-08-06 ML-2E) is
+// its own — see that helper's doc comment for the full format investigation.
+func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) TargetResult {
+	const id = "copilot-credential-guard"
+	const displayPath = "~/.copilot/settings.json"
+
+	path := filepath.Join(home, ".copilot", "settings.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardCopilotHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardCopilotHooks(root, scriptPath)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {

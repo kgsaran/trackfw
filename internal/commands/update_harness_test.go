@@ -344,6 +344,53 @@ func TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI(t *testing.T) {
 	}
 }
 
+// TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI mirrors
+// TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI for the
+// copilot-credential-guard target (ROADMAP-2026-08-06 Wave 2/ML-2E).
+func TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd := newUpdateHarnessCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--json", "--targets", "copilot-credential-guard", "--install-missing"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("trackfw update harness --targets copilot-credential-guard --install-missing failed: %v", err)
+	}
+
+	line := strings.TrimSpace(out.String())
+	var doc struct {
+		Targets []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Path  string `json:"path"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(line), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, line)
+	}
+	if len(doc.Targets) != 1 || doc.Targets[0].ID != "copilot-credential-guard" {
+		t.Fatalf("unexpected targets: %+v", doc.Targets)
+	}
+	if doc.Targets[0].State != "updated" {
+		t.Fatalf("state = %q, want updated", doc.Targets[0].State)
+	}
+	if doc.Targets[0].Path != "~/.copilot/settings.json" {
+		t.Fatalf("path = %q, want ~/.copilot/settings.json", doc.Targets[0].Path)
+	}
+
+	settingsPath := filepath.Join(home, ".copilot", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("~/.copilot/settings.json was not written: %v", err)
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !strings.Contains(string(data), wantScript) {
+		t.Fatalf("settings.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	}
+}
+
 func assertKeyOrder(t *testing.T, doc string, keys []string) {
 	t.Helper()
 	var positions []int

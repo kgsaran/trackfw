@@ -239,22 +239,67 @@ stacks por `check-update-parity.sh` (cenário `target-list/three-runtimes-identi
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2E — Alvo `copilot-credential-guard`
-**Status:** 🔄 Em andamento
-**Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
-`npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
-irmãos), seção Copilot — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
-Go-only por erro do orquestrador na autoria do roadmap; não repetir)
+**Status:** ✅ Concluído
+
+**Investigação do formato (confirmada com fonte, 2026-08-06):** re-fetch direto de
+`https://docs.github.com/en/copilot/reference/hooks-reference` (a URL `hooks-configuration` do ML
+301-redireciona para esta — mesma página já usada na investigação de escopo de projeto), seção
+"Hooks locations". O escopo de usuário/global tem DOIS mecanismos distintos: (1) um diretório
+dedicado de arquivos de hook (`~/.copilot/hooks/*.json`, análogo user-scope de
+`.github/hooks/*.json`), e (2) "Inline hooks block in user-level config — the hooks field at the top
+level of `~/.copilot/settings.json`". Seguido o mecanismo (2), conforme instruído pelo roadmap.
+Confirmado que `~/.copilot/settings.json` NÃO é um arquivo dedicado a hooks — é o arquivo de config
+geral do usuário do Copilot CLI (guarda outras chaves, ex. `model`) — logo a wiring faz **merge**
+em `root["hooks"]["preToolUse"/"postToolUse"]`, preservando qualquer outra chave de topo, igual ao
+tratamento que `claude-credential-guard`/`codex-credential-guard`/`gemini-credential-guard` já dão
+aos seus próprios arquivos de settings gerais (diferente de Cursor, cujo `~/.cursor/hooks.json` é
+ele mesmo um arquivo dedicado). Shape da entrada confirmado idêntico ao de escopo de projeto
+(`InjectCopilotHooks`): "Hook configuration files use JSON format with version 1" é declarado sem
+ressalva para o campo `hooks` inline, e nenhum exemplo do doc mostra shape diferente para
+`settings.json` — reutilizado `{"type":"command","matcher":"bash","bash":"<caminho absoluto>",
+"cwd":".","timeoutSec":10}` em `hooks.preToolUse`/`hooks.postToolUse`. Decisão deliberada: **nenhuma
+chave `"version"` de topo é adicionada** — todo exemplo do doc com `"version":1` é de um arquivo
+DEDICADO a hooks (`.github/hooks/*.json`, arquivos de policy); nenhum exemplo mostra `"version"` no
+próprio `settings.json`, então adicioná-la seria uma suposição não confirmada sobre um arquivo que
+este código não possui integralmente (mesma lógica já aplicada a Claude/Codex/Gemini). Evidência
+completa registrada em `docs/cli-parity.md`, seção "GitHub Copilot global-scope wiring (ML-2E)".
+**Posição em `HarnessTargetIDs`/`HARNESS_TARGET_IDS`/`declared_target_ids()`:**
+`copilot-credential-guard` inserido imediatamente ANTES de `copilot-agents`/`copilot-skills` — mesma
+posição relativa dos MLs anteriores. Lista completa agora com 26 ids, confirmada idêntica nos 3
+stacks por `check-update-parity.sh` (cenário `target-list/three-runtimes-identical`).
+`docs/cli-parity.md` ("25 ids") corrigido para 26.
+**Helper de merge:** shape distinto de Cursor (`{"command":...}` plano) e de Claude/Codex/Gemini
+(`{"matcher","hooks":[...]}` aninhado): Copilot usa `{"type","matcher":"bash","bash","cwd",
+"timeoutSec"}` plano, casado pelo campo `"bash"`. Go reaproveita `mergeSimpleCommandArray` com
+`getCmd`/`makeEntry` customizados; Node ganhou `mergeCopilotHookArray` dedicado (exportado de
+`generators/hooks.js`); Python ganhou `_merge_copilot_hook_array` dedicado
+(`generators/hooks.py`).
+**Arquivos afetados:**
+- `internal/generators/update.go` (`buildHarnessTargetIDs`, `UpdateHarness` dispatcher,
+  `mergeCredentialGuardCopilotHooks`, `harnessCredentialGuardTargetCopilot`)
+- `internal/generators/update_test.go` (5 testes espelhando os de Cursor: missing, install absolute
+  path, idempotência, dry-run, preservação de conteúdo pré-existente — sem chave `"version"`)
+- `internal/commands/update_harness_test.go` (`TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI`)
+- `npm/src/generators/hooks.js` (`mergeCopilotHookArray`, exportado)
+- `npm/src/commands/update-harness.js` (`HARNESS_TARGET_IDS`, `credentialGuardTargetCopilot`,
+  dispatcher em `buildHarnessTargets`)
+- `npm/tests/update-harness.test.js` (5 testes espelhando os de Cursor)
+- `pypi/trackfw/generators/hooks.py` (`_merge_copilot_hook_array`)
+- `pypi/trackfw/commands/update_harness.py` (`declared_target_ids`,
+  `_credential_guard_copilot_result`, dispatcher em `_run`)
+- `pypi/tests/test_update_harness.py` (5 testes espelhando os de Cursor + ajuste de
+  `test_harness_declared_target_list_and_order` para 26 ids)
+- `docs/cli-parity.md` (seção "Declared harness targets — pinned list" corrigida para 26 ids +
+  nova seção "GitHub Copilot global-scope wiring (ML-2E)" com a investigação completa)
 **Ações:**
-- Confirmar formato exato de `~/.copilot/settings.json` (campo `hooks` inline) via
-  `docs.github.com/en/copilot/reference/hooks-configuration` — pode divergir do formato de
-  `.github/hooks/*.json` usado no wiring de projeto (arquivo diferente, não necessariamente mesmo
-  schema — não assumir, confirmar).
-- Escrever/mesclar a entrada apontando para o script global.
+- Escrever/mesclar `hooks.preToolUse`/`hooks.postToolUse[matcher:"bash"]` em
+  `~/.copilot/settings.json` (mesmo shape de entrada do wiring de projeto, ML-2D de
+  agentfiles.go), sem adicionar chave `"version"` de topo.
 **Critérios de aceite:**
-- [ ] Formato de `~/.copilot/settings.json` confirmado com fonte, documentado se divergir do formato
-      de projeto
-- [ ] `trackfw update harness --targets copilot-credential-guard --install-missing` funciona em fixture
-- [ ] Testes verdes nos 3 stacks
+- [x] Formato de `~/.copilot/settings.json` confirmado com fonte, documentado (converge com o
+      shape de projeto; diverge em NÃO ser um arquivo dedicado — precisa merge/preservação)
+- [x] `trackfw update harness --targets copilot-credential-guard --install-missing` funciona em fixture
+- [x] Testes verdes nos 3 stacks
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2F — Alvo `kiro-credential-guard`

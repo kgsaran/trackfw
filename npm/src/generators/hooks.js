@@ -42,6 +42,23 @@ function mergeSimpleCommandArray(existing, command) {
   return arr
 }
 
+/**
+ * Merge helper para arrays de hooks tipo GitHub Copilot
+ * (hooks.preToolUse/postToolUse): cada entry é
+ * {"type":"command","matcher":"bash","bash":"...","cwd":".","timeoutSec":10}
+ * — o campo de match é "bash" (não "command", como no shape "simples" do
+ * Cursor), então mergeSimpleCommandArray não serve aqui.
+ * Mirrors internal/generators/update.go:mergeCredentialGuardCopilotHooks
+ * (ROADMAP-2026-08-06 Wave 2/ML-2E — see that Go function's doc comment for
+ * the full ~/.copilot/settings.json format investigation).
+ */
+function mergeCopilotHookArray(existing, scriptPath) {
+  const arr = Array.isArray(existing) ? existing.slice() : []
+  if (hasEntry(arr, 'bash', scriptPath)) return arr
+  arr.push({ type: 'command', matcher: 'bash', bash: scriptPath, cwd: '.', timeoutSec: 10 })
+  return arr
+}
+
 /** Merge helper para arrays de hooks tipo Claude / Codex / Gemini */
 function mergeClaudeHookArray(existing, matcher, command) {
   const arr = Array.isArray(existing) ? existing : []
@@ -689,4 +706,5 @@ module.exports = {
   injectHooksDetected,
   mergeClaudeHookArray,
   mergeSimpleCommandArray,
+  mergeCopilotHookArray,
 }

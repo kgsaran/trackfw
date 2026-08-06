@@ -6,7 +6,7 @@ const path = require('path')
 const identityStore = require('../identity')
 const { catalog, buildPlans, IntegrationManager, globalGroupPath } = require('../integrations')
 const { tildeify, validateTargets, buildDocument, humanReport, silenceConsole } = require('../lib/update-engine')
-const { mergeClaudeHookArray, mergeSimpleCommandArray } = require('../generators/hooks')
+const { mergeClaudeHookArray, mergeSimpleCommandArray, mergeCopilotHookArray } = require('../generators/hooks')
 
 // `trackfw update harness` is the global counterpart to `trackfw update` —
 // see docs/cli-parity.md, "`trackfw update` vs `trackfw update harness`".
@@ -322,6 +322,63 @@ function credentialGuardTargetCursor(homeRoot, { dryRun, installMissing }) {
   }
 }
 
+// credentialGuardTargetCopilot — evaluates (and, unless --dry-run, applies)
+// the global-scope credential-guard hook wiring for GitHub Copilot:
+// hooks.preToolUse/hooks.postToolUse[matcher:"bash"] entries in
+// ~/.copilot/settings.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — same 4-state contract and
+// same reason for an absolute path as credentialGuardTargetClaude/Codex/
+// Gemini/Cursor (a global hook can fire from any project's cwd), but via
+// mergeCopilotHookArray (generators/hooks.js) since Copilot's command-hook
+// entry shape differs from every other tool's (ROADMAP-2026-08-06 ML-2E —
+// see that helper's doc comment and
+// internal/generators/update.go:mergeCredentialGuardCopilotHooks for the
+// full ~/.copilot/settings.json format investigation, including why no
+// top-level "version" key is added: settings.json is Copilot CLI's general
+// user config file, not a dedicated hooks file). Mirrors
+// internal/generators/update.go:harnessCredentialGuardTargetCopilot.
+function credentialGuardTargetCopilot(homeRoot, { dryRun, installMissing }) {
+  const id = 'copilot-credential-guard'
+  const filePath = path.join(homeRoot, '.copilot', 'settings.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+
+  let root
+  let raw = null
+  try {
+    if (fs.existsSync(filePath)) {
+      raw = fs.readFileSync(filePath, 'utf8')
+      root = raw.length ? JSON.parse(raw) : {}
+    } else {
+      if (!installMissing) return { id, state: 'missing', path: displayPath }
+      if (dryRun) return { id, state: 'updated', path: displayPath }
+      root = {}
+      if (!root.hooks) root.hooks = {}
+      root.hooks.preToolUse = mergeCopilotHookArray(root.hooks.preToolUse, scriptPath)
+      root.hooks.postToolUse = mergeCopilotHookArray(root.hooks.postToolUse, scriptPath)
+      const desired = JSON.stringify(root, null, 2) + '\n'
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, desired, 'utf8')
+      return { id, state: 'updated', path: displayPath }
+    }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+
+  try {
+    if (!root.hooks) root.hooks = {}
+    root.hooks.preToolUse = mergeCopilotHookArray(root.hooks.preToolUse, scriptPath)
+    root.hooks.postToolUse = mergeCopilotHookArray(root.hooks.postToolUse, scriptPath)
+    const desired = JSON.stringify(root, null, 2) + '\n'
+    if (desired === raw) return { id, state: 'skipped', path: displayPath }
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
 // catalogBundleTarget — one target per (tool, kind) pair at global scope.
 // Uses IntegrationManager.inspect (read-only) to classify every catalog
 // item under that pair, then only calls manager.update() for the subset
@@ -376,6 +433,7 @@ for (const target of catalog.targets) {
   if (target.id === 'codex') HARNESS_TARGET_IDS.push('codex-credential-guard')
   if (target.id === 'gemini') HARNESS_TARGET_IDS.push('gemini-credential-guard')
   if (target.id === 'cursor') HARNESS_TARGET_IDS.push('cursor-credential-guard')
+  if (target.id === 'copilot') HARNESS_TARGET_IDS.push('copilot-credential-guard')
   HARNESS_TARGET_IDS.push(`${target.id}-agents`, `${target.id}-skills`)
 }
 
@@ -398,6 +456,9 @@ function buildHarnessTargets(homeRoot, identityConfig, { dryRun, installMissing 
     }
     if (target.id === 'cursor' && include('cursor-credential-guard')) {
       targets.push(credentialGuardTargetCursor(homeRoot, { dryRun, installMissing }))
+    }
+    if (target.id === 'copilot' && include('copilot-credential-guard')) {
+      targets.push(credentialGuardTargetCopilot(homeRoot, { dryRun, installMissing }))
     }
     const agentsId = `${target.id}-agents`
     const skillsId = `${target.id}-skills`
@@ -462,4 +523,5 @@ module.exports = {
   credentialGuardTargetCodex,
   credentialGuardTargetGemini,
   credentialGuardTargetCursor,
+  credentialGuardTargetCopilot,
 }

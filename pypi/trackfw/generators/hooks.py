@@ -48,6 +48,28 @@ def _merge_simple_command_array(hook_list: list, command: str) -> None:
         hook_list.append({'command': command})
 
 
+def _merge_copilot_hook_array(hook_list: list, script_path: str) -> None:
+    """Garante (idempotente) que hook_list tenha uma entrada
+    {"type":"command","matcher":"bash","bash":script_path,"cwd":".","timeoutSec":10}.
+
+    Mirrors internal/generators/update.go:mergeCredentialGuardCopilotHooks —
+    for GitHub Copilot's command-hook entry shape (hooks.preToolUse/
+    postToolUse), matched on the "bash" field (not "command", Cursor's flat
+    shape, nor a nested {"matcher","hooks":[...]}, Claude/Codex/Gemini's
+    shape). See that Go function's doc comment for the full
+    ~/.copilot/settings.json format investigation (ROADMAP-2026-08-06 Wave 2
+    /ML-2E).
+    """
+    if not _has_entry(hook_list, 'bash', script_path):
+        hook_list.append({
+            'type': 'command',
+            'matcher': 'bash',
+            'bash': script_path,
+            'cwd': '.',
+            'timeoutSec': 10,
+        })
+
+
 def _merge_claude_hook_array(hook_list: list, matcher: str, command: str) -> None:
     """Garante (idempotente) que hook_list tenha uma entrada matcher→command.
 

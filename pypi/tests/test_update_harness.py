@@ -111,8 +111,11 @@ def test_harness_declared_target_list_and_order(tmp_path):
     # cursor-credential-guard sits immediately before cursor-agents/
     # cursor-skills — same relative position (ROADMAP-2026-08-06 Wave 2/ML-2D).
     assert ids[12:15] == ["cursor-credential-guard", "cursor-agents", "cursor-skills"]
+    # copilot-credential-guard sits immediately before copilot-agents/
+    # copilot-skills — same relative position (ROADMAP-2026-08-06 Wave 2/ML-2E).
+    assert ids[15:18] == ["copilot-credential-guard", "copilot-agents", "copilot-skills"]
     assert ids[-2:] == ["kiro-agents", "kiro-skills"]
-    assert len(ids) == 5 + 10 * 2
+    assert len(ids) == 6 + 10 * 2
 
     home = tmp_path / "home"
     home.mkdir()
@@ -895,3 +898,141 @@ def test_credential_guard_cursor_preserves_existing_content(tmp_path):
     for event in ("beforeShellExecution", "afterShellExecution"):
         commands = [entry.get("command") for entry in doc["hooks"][event]]
         assert want_script in commands
+
+
+# ---------------------------------------------------------------------------
+# `copilot-credential-guard` — global-scope credential-guard hook wiring for
+# GitHub Copilot, ROADMAP-2026-08-06 Wave 2 ML-2E. Mirrors the cursor-
+# credential-guard tests above, but reads hooks[event] as an array of
+# {"type":"command","matcher":"bash","bash":"...",...} entries (matched on
+# "bash", not "command") — GitHub Copilot's ~/.copilot/settings.json entry
+# shape (see generators/hooks.py:_merge_copilot_hook_array) matches the
+# project-scope entries inject_copilot_hooks already emits.
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_copilot_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "copilot-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".copilot" / "settings.json").exists()
+
+
+def test_credential_guard_copilot_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "copilot-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.copilot/settings.json"
+
+    settings_path = home / ".copilot" / "settings.json"
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert "version" not in doc, "~/.copilot/settings.json is a general config file — no unconfirmed top-level \"version\" key"
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+
+    for event in ("preToolUse", "postToolUse"):
+        entries = [entry for entry in doc["hooks"][event] if entry.get("bash") == want_script]
+        assert len(entries) == 1
+        assert entries[0]["type"] == "command"
+        assert entries[0]["matcher"] == "bash"
+
+
+def test_credential_guard_copilot_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "copilot-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    settings_path = home / ".copilot" / "settings.json"
+    first_bytes = settings_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "copilot-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = settings_path.read_bytes()
+    assert first_bytes == second_bytes
+
+    doc = json.loads(second_bytes)
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    shell_entries = [entry for entry in doc["hooks"]["preToolUse"] if entry.get("bash") == want_script]
+    assert len(shell_entries) == 1
+
+
+def test_credential_guard_copilot_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "copilot-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".copilot" / "settings.json").exists()
+
+
+def test_credential_guard_copilot_preserves_existing_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    settings_path = home / ".copilot" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(
+        json.dumps(
+            {
+                "model": "gpt-5",
+                "hooks": {
+                    "preToolUse": [{"type": "command", "matcher": "curl", "bash": "echo hi"}],
+                },
+                "userSetting": "keep-me",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = cli(
+        "update", "harness", "--targets", "copilot-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+
+    doc = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert doc["userSetting"] == "keep-me"
+    assert doc["model"] == "gpt-5"
+    assert len(doc["hooks"]["preToolUse"]) == 2
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    guard_entries = [entry for entry in doc["hooks"]["preToolUse"] if entry.get("bash") == want_script]
+    assert len(guard_entries) == 1

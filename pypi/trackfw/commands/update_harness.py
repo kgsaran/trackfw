@@ -45,7 +45,7 @@ from typing import Any
 from trackfw.identity import IdentityError, load as load_identity
 from trackfw.integrations.catalog import global_group_path, load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
-from trackfw.generators.hooks import _merge_claude_hook_array, _merge_simple_command_array
+from trackfw.generators.hooks import _merge_claude_hook_array, _merge_simple_command_array, _merge_copilot_hook_array
 
 STATE_UPDATED = "updated"
 STATE_SKIPPED = "skipped"
@@ -100,11 +100,12 @@ def _tildeify(home: str, absolute: str) -> str:
 
 def declared_target_ids() -> list[str]:
     # "codex-credential-guard"/"gemini-credential-guard"/
-    # "cursor-credential-guard" are each inserted immediately BEFORE their
-    # tool's "-agents"/"-skills" pair — same relative position as
-    # claude-credential-guard, which precedes claude-agents/claude-skills.
-    # See internal/generators/update.go:buildHarnessTargetIDs for the full
-    # rationale (ROADMAP-2026-08-06 Wave 2/ML-2B, ML-2C, ML-2D).
+    # "cursor-credential-guard"/"copilot-credential-guard" are each inserted
+    # immediately BEFORE their tool's "-agents"/"-skills" pair — same
+    # relative position as claude-credential-guard, which precedes
+    # claude-agents/claude-skills. See
+    # internal/generators/update.go:buildHarnessTargetIDs for the full
+    # rationale (ROADMAP-2026-08-06 Wave 2/ML-2B, ML-2C, ML-2D, ML-2E).
     ids = ["claude-skill", "claude-credential-guard"]
     for tool in _CATALOG_TARGET_ORDER:
         if tool == "codex":
@@ -113,6 +114,8 @@ def declared_target_ids() -> list[str]:
             ids.append("gemini-credential-guard")
         if tool == "cursor":
             ids.append("cursor-credential-guard")
+        if tool == "copilot":
+            ids.append("copilot-credential-guard")
         for kind in _CATALOG_KIND_ORDER:
             ids.append(f"{tool}-{kind}")
     return ids
@@ -442,6 +445,83 @@ def _credential_guard_cursor_result(home: str, dry_run: bool, install_missing: b
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
 
 
+def _credential_guard_copilot_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Evaluates (and, unless dry_run, applies) the global-scope
+    credential-guard hook wiring for GitHub Copilot:
+    hooks.preToolUse/hooks.postToolUse[matcher:"bash"] entries in
+    ~/.copilot/settings.json pointing at the ABSOLUTE path of
+    ~/.trackfw/scripts/trackfw-credential-guard.sh (a global hook can fire
+    from any project's cwd). Mirrors `_credential_guard_claude_result`/
+    `_credential_guard_codex_result`/`_credential_guard_gemini_result`/
+    `_credential_guard_cursor_result`'s 4-state contract and
+    internal/generators/update.go:harnessCredentialGuardTargetCopilot, but
+    via `_merge_copilot_hook_array` (generators/hooks.py) since Copilot's
+    command-hook entry shape is its own.
+
+    Investigation (ROADMAP-2026-08-06 Wave 2/ML-2E, confirmed 2026-08-06
+    against https://docs.github.com/en/copilot/reference/hooks-reference,
+    section "Hooks locations"): the user/global scope offers two mechanisms —
+    a dedicated directory of standalone hook files (`~/.copilot/hooks/`, by
+    default) and an "Inline hooks block in user-level config — the hooks
+    field at the top level of ~/.copilot/settings.json". This follows the
+    roadmap's explicit instruction and targets the latter. The doc confirms
+    settings.json is NOT a dedicated hooks file (it is Copilot CLI's general
+    user config file), so this merges into root["hooks"] only, preserving
+    every other top-level key — same discipline as the Claude/Codex/Gemini
+    targets' own general settings files. Entry shape ("Hook configuration
+    files use JSON format with version 1", no exception carved out for the
+    inline hooks field) is identical to `inject_copilot_hooks`'s project-scope
+    entries; no top-level "version" key is added here since no example in the
+    doc shows one on settings.json itself (only on dedicated hook files).
+    """
+    target_id = "copilot-credential-guard"
+    path = os.path.join(home, ".copilot", "settings.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        root: dict[str, Any] = {}
+        hooks = root.setdefault("hooks", {})
+        _merge_copilot_hook_array(hooks.setdefault("preToolUse", []), script_path)
+        _merge_copilot_hook_array(hooks.setdefault("postToolUse", []), script_path)
+        desired = json.dumps(root, indent=2) + "\n"
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(desired, encoding="utf-8")
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    try:
+        root = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if not isinstance(root, dict):
+        root = {}
+    hooks = root.setdefault("hooks", {})
+    _merge_copilot_hook_array(hooks.setdefault("preToolUse", []), script_path)
+    _merge_copilot_hook_array(hooks.setdefault("postToolUse", []), script_path)
+    desired = json.dumps(root, indent=2) + "\n"
+    if desired.encode("utf-8") == raw:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_text(desired, encoding="utf-8")
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
 def _catalog_group_result(
     tool: str,
     kind: str,
@@ -542,6 +622,9 @@ def _run(args: argparse.Namespace) -> None:
             continue
         if target_id == "cursor-credential-guard":
             targets.append(_credential_guard_cursor_result(home, args.dry_run, args.install_missing))
+            continue
+        if target_id == "copilot-credential-guard":
+            targets.append(_credential_guard_copilot_result(home, args.dry_run, args.install_missing))
             continue
         tool, kind = target_id.rsplit("-", 1)
         targets.append(_catalog_group_result(tool, kind, home, manager, identity_cfg, args.dry_run, args.install_missing))
