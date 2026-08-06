@@ -333,25 +333,58 @@ function injectGeminiHooks(cwd) {
 
 // ---------------------------------------------------------------------------
 // Kiro — .kiro/hooks/trackfw-attention.json (dedicated file, safe overwrite)
+//
+// Format confirmed against https://kiro.dev/docs/hooks/ , https://kiro.dev/docs/hooks/types and
+// https://kiro.dev/docs/hooks/actions/ (retrieved 2026-08-05). Top level is {"version": "v1", "hooks":
+// [...]} ("version" is the string "v1"), each entry {"name", "description"?, "trigger", "matcher"?,
+// "action", ...}. The field is "trigger" (NOT "event" as previously emitted here and in the Go/Python
+// siblings -- "event" does not exist in the documented schema). "matcher" is a plain regex string
+// matched against tool name for PreToolUse/PostToolUse (NOT an object like {tool_name: ".*"} as
+// previously emitted) -- "*" is the documented wildcard for "all tools"; ".*" is not a documented
+// matcher value. PreToolUse ("Before a tool is about to execute", Can block: Yes) is confirmed distinct
+// from PostFileSave/file-save events, resolving the ADR's open question about Kiro intercepting shell
+// commands pre-execution. Blocking contract: any non-zero exit from a PreToolUse command hook blocks
+// the tool invocation (stricter than the exit-code-2-specific contract of Claude Code/Codex/Gemini);
+// trackfw-credential-guard.sh only ever exits 0 or 2 on its normal-operation paths (ML-1A), so this is
+// safe. Shell tool matcher uses the documented alias "shell" ("all built-in shell command-related
+// tools"), broader than the single canonical tool id "execute_bash". This file is fully
+// generated/overwritten by trackfw (not merged with user content), so the legacy attention-signal/
+// cleanup entries are realigned to the correct schema here too rather than left in the old, never-valid
+// shape (same situation as the GitHub Copilot fix in ML-2D).
 // ---------------------------------------------------------------------------
 
 function injectKiroHooks(cwd) {
   const filePath = path.join(cwd, '.kiro', 'hooks', 'trackfw-attention.json')
   const data = {
+    version: 'v1',
     hooks: [
       {
         name: 'trackfw-attention-signal',
         description: 'Signals trackfw board when agent executes a tool',
-        event: 'PreToolUse',
-        matcher: { tool_name: '.*' },
+        trigger: 'PreToolUse',
+        matcher: '*',
         action: { type: 'command', command: SIGNAL_CMD },
       },
       {
         name: 'trackfw-attention-cleanup',
         description: 'Clears trackfw board attention after tool completes',
-        event: 'PostToolUse',
-        matcher: { tool_name: '.*' },
+        trigger: 'PostToolUse',
+        matcher: '*',
         action: { type: 'command', command: CLEANUP_CMD },
+      },
+      {
+        name: 'trackfw-credential-guard-pre',
+        description: 'Blocks/warns on possible plaintext credential materialization before a shell command executes',
+        trigger: 'PreToolUse',
+        matcher: 'shell',
+        action: { type: 'command', command: GUARD_CMD },
+      },
+      {
+        name: 'trackfw-credential-guard-post',
+        description: 'Warns on possible plaintext credential materialization after a shell command executes',
+        trigger: 'PostToolUse',
+        matcher: 'shell',
+        action: { type: 'command', command: GUARD_CMD },
       },
     ],
   }

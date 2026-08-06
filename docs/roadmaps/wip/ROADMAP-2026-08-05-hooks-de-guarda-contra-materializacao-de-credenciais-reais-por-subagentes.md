@@ -407,30 +407,52 @@ re-escopar essa parte para um evento real (ex.: `stop`/`beforeSubmitPrompt`) fic
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2F — Kiro
-**Status:** 🔄 Em andamento
-**Arquivos afetados:**
-- `internal/generators/agentfiles.go` (`InjectKiroHooks`, linha 328-359 — **atenção**: arquivo
-  `.kiro/hooks/trackfw-attention.json` é dedicado/overwrite total, comentário explícito no código;
-  o novo hook precisa ser adicionado ao mesmo array reescrito, não em arquivo separado, a menos que
-  se decida criar `.kiro/hooks/trackfw-credential-guard.json` como segundo arquivo dedicado — avaliar
-  qual opção é mais segura e documentar a escolha no commit)
-- `npm/src/generators/hooks.js` (linha ~187)
-- `pypi/trackfw/generators/hooks.py` (linha ~184)
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** confirmado via `https://kiro.dev/docs/hooks/`, `https://kiro.dev/docs/hooks/types`
+e `https://kiro.dev/docs/hooks/actions/` (2026-08-05, RSC/HTML extraído por `curl -L`, sem acesso a
+WebFetch/WebSearch nesta execução) que `PreToolUse` ("Before a tool is about to execute", Can block:
+**Yes**) é um trigger real e distinto de `PostFileSave`/eventos de IDE — resolve afirmativamente a dúvida
+registrada na ADR: o mecanismo de hooks do Kiro de fato intercepta invocações de tool (incluindo shell)
+antes da execução, não só eventos de arquivo. Achado crítico da investigação: o wiring pré-existente
+(`event`/matcher como objeto `{tool_name:...}`/sem `version`) não corresponde a nenhum campo do schema
+documentado — o real é `{"version":"v1","hooks":[{name, trigger, matcher (string regex), action}]}`.
+Diferente do precedente do Cursor (ML-2E, arquivo merge com conteúdo de usuário — legado preservado sem
+migração), `.kiro/hooks/trackfw-attention.json` é totalmente sobrescrito pelo trackfw (mesmo padrão do
+GitHub Copilot, ML-2D) — por isso as entradas legadas `trackfw-attention-signal`/`-cleanup` foram
+realinhadas ao schema correto nesta ML (não deixadas quebradas ao lado de entradas novas corretas), em
+vez de apenas documentadas. `matcher` para as entradas novas usa `"shell"` (categoria documentada, "all
+built-in shell command-related tools"; alternativa ao nome canônico `"execute_bash"`); `.*` (usado antes
+para as entradas legadas) não é um valor de matcher documentado — `"*"` (asterisco literal, "all tools")
+é o correto e agora usado no lugar. Contrato de bloqueio confirmado mais estrito que Claude
+Code/Codex/Gemini: **qualquer** exit code não-zero de um hook `PreToolUse` bloqueia a invocação (não só
+exit 2) — `trackfw-credential-guard.sh` foi reauditado e só tem `exit 0`/`exit 2` nos caminhos normais de
+operação, então `warn` nunca bloqueia espuriamente no Kiro. Nenhuma mudança no script foi necessária.
+Detalhe completo, com citações das 3 páginas, em `docs/cli-parity.md` (seção "Kiro wiring (ML-2F)").
+**Arquivos afetados (reais):**
+- `internal/generators/agentfiles.go` (`InjectKiroHooks` — schema realinhado + 2 hooks novos de
+  credential-guard no mesmo array/arquivo dedicado)
+- `internal/generators/agentfiles_test.go` (`TestInjectKiroHooks` — reescrito para o novo schema, 4
+  hooks, validação de `trigger`/`matcher` string/ausência de `event`)
+- `npm/src/generators/hooks.js` (`injectKiroHooks`, mesma extensão)
+- `npm/tests/generators.test.js` (`injectKiroHooks` — asserts reescritos)
+- `pypi/trackfw/generators/hooks.py` (`inject_kiro_hooks`, mesma extensão)
+- `pypi/tests/test_generators_init.py` (`test_inject_kiro_hooks` — asserts reescritos)
+- `docs/cli-parity.md` (nova seção "Kiro wiring (ML-2F)")
 **Ações:**
 - Investigar se o `PreToolUse`/`tool_name` matcher do Kiro de fato intercepta antes da execução de
-  um comando Bash (a doc pública pesquisada descreve hooks orientados a `PostFileSave`/eventos de
-  IDE — confirmar se `PreToolUse` é um evento realmente disparado por tool-call de shell, não só por
-  save de arquivo, antes de prosseguir).
-- Se confirmado: adicionar `{event:"PreToolUse", matcher:{tool_name:"Bash|bash|shell"}}` (regex a
-  confirmar pelo nome real do tool no Kiro) apontando para o script.
-- Se não confirmado: documentar a limitação e mover Kiro para uma wave separada/fora de escopo nesta
-  REQ — **não implementar um hook que não intercepta de fato antes da execução**.
+  um comando Bash. ✅ Confirmado — evento real, distinto de `PostFileSave`, "Can block: Yes".
+- Adicionar `PreToolUse`/`matcher:"shell"` e `PostToolUse`/`matcher:"shell"` apontando para o script,
+  no mesmo array `hooks` já reescrito para `trackfw-attention-signal`/`-cleanup` (arquivo dedicado,
+  sem entradas de terceiros a preservar). ✅
+- Corrigir o schema legado (`event`→`trigger`, matcher objeto→string, `version` ausente→`"v1"`) das
+  entradas pré-existentes, já que o arquivo é 100% owned/overwritten pelo trackfw (mesmo padrão do
+  GitHub Copilot, ML-2D) — não deixar entradas comprovadamente inválidas ao lado de entradas novas
+  corretas no mesmo array. ✅
 **Critérios de aceite:**
-- [ ] Resultado da investigação documentado em `docs/cli-parity.md` (confirmado ou limitação
-      registrada)
-- [ ] Se confirmado: `.kiro/hooks/*.json` gerado com o novo hook, sem quebrar o existente
-- [ ] Se não confirmado: ML re-escopado para "documentar limitação", sem código novo, e REQ/roadmap
-      atualizados para remover Kiro da wave nativa
+- [x] Resultado da investigação documentado em `docs/cli-parity.md` (confirmado, com fonte)
+- [x] `.kiro/hooks/trackfw-attention.json` gerado com os 4 hooks (signal/cleanup/guard-pre/guard-post),
+      idempotente
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ## Wave 3 — Extensão do gate de paridade (1 ML)

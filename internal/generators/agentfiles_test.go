@@ -308,9 +308,49 @@ func TestInjectKiroHooks(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, file)
+	if v, _ := data["version"].(string); v != "v1" {
+		t.Fatalf("expected version \"v1\", got %v", data["version"])
+	}
 	hooks, _ := data["hooks"].([]interface{})
-	if len(hooks) != 2 {
-		t.Fatalf("expected 2 hooks in Kiro config, got %d", len(hooks))
+	if len(hooks) != 4 {
+		t.Fatalf("expected 4 hooks in Kiro config (signal, cleanup, credential-guard pre/post), got %d", len(hooks))
+	}
+
+	sawGuardPre, sawGuardPost := false, false
+	for _, h := range hooks {
+		entry, _ := h.(map[string]interface{})
+		if entry == nil {
+			continue
+		}
+		if _, hasEvent := entry["event"]; hasEvent {
+			t.Fatalf("hook entry uses legacy \"event\" field, expected \"trigger\": %v", entry)
+		}
+		trigger, _ := entry["trigger"].(string)
+		if trigger == "" {
+			t.Fatalf("hook entry missing \"trigger\": %v", entry)
+		}
+		if _, isObject := entry["matcher"].(map[string]interface{}); isObject {
+			t.Fatalf("hook entry uses object matcher, expected plain regex string: %v", entry)
+		}
+		name, _ := entry["name"].(string)
+		switch name {
+		case "trackfw-credential-guard-pre":
+			sawGuardPre = true
+			if trigger != "PreToolUse" {
+				t.Fatalf("expected credential-guard-pre trigger PreToolUse, got %q", trigger)
+			}
+			if m, _ := entry["matcher"].(string); m != "shell" {
+				t.Fatalf("expected credential-guard-pre matcher \"shell\", got %q", m)
+			}
+		case "trackfw-credential-guard-post":
+			sawGuardPost = true
+			if trigger != "PostToolUse" {
+				t.Fatalf("expected credential-guard-post trigger PostToolUse, got %q", trigger)
+			}
+		}
+	}
+	if !sawGuardPre || !sawGuardPost {
+		t.Fatalf("expected both credential-guard pre and post hooks, got pre=%v post=%v", sawGuardPre, sawGuardPost)
 	}
 }
 

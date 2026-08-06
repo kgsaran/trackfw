@@ -590,7 +590,24 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertTrue(os.path.isfile(path))
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        self.assertEqual(len(data.get('hooks', [])), 2)
+        self.assertEqual(data.get('version'), 'v1')
+        hooks = data.get('hooks', [])
+        self.assertEqual(len(hooks), 4)
+        for entry in hooks:
+            self.assertNotIn('event', entry, 'legacy "event" field must not be emitted')
+            self.assertIn('trigger', entry)
+            self.assertNotIsInstance(entry.get('matcher'), dict, 'matcher must be a plain regex string')
+
+        by_name = {h['name']: h for h in hooks}
+        self.assertEqual(by_name['trackfw-attention-signal']['trigger'], 'PreToolUse')
+        self.assertEqual(by_name['trackfw-attention-cleanup']['trigger'], 'PostToolUse')
+        guard_pre = by_name['trackfw-credential-guard-pre']
+        self.assertEqual(guard_pre['trigger'], 'PreToolUse')
+        self.assertEqual(guard_pre['matcher'], 'shell')
+        self.assertEqual(guard_pre['action']['command'], 'scripts/trackfw-credential-guard.sh')
+        guard_post = by_name['trackfw-credential-guard-post']
+        self.assertEqual(guard_post['trigger'], 'PostToolUse')
+        self.assertEqual(guard_post['matcher'], 'shell')
 
         # Idempotência
         inject_kiro_hooks(self.tmp)

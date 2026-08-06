@@ -396,8 +396,52 @@ func InjectGeminiHooks(cwd string) error {
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
-// InjectKiroHooks injects Kiro attention hooks into .kiro/hooks/trackfw-attention.json.
+// InjectKiroHooks injects Kiro attention + credential-guard hooks into .kiro/hooks/trackfw-attention.json.
 // Overwriting this file is intentional as trackfw-attention.json is a dedicated file owned exclusively by trackfw.
+//
+// Format confirmed against https://kiro.dev/docs/hooks/ , https://kiro.dev/docs/hooks/types and
+// https://kiro.dev/docs/hooks/actions/ (retrieved 2026-08-05, via curl -L against the RSC/HTML page
+// since WebFetch/WebSearch were unavailable in this session):
+//
+//   - Top-level schema is {"version": "v1", "hooks": [...]} — "version" is the string "v1", not an
+//     integer. Each entry is {"name", "description"?, "trigger", "matcher"?, "action", "timeout"?,
+//     "enabled"?}. The field is "trigger" (PascalCase event name), NOT "event" as this function and its
+//     Node/Python siblings previously emitted — "event" does not appear anywhere in the documented
+//     schema. This ML also realigns the pre-existing trackfw-attention-signal/cleanup entries to the
+//     correct field name (this file is fully generated/overwritten by trackfw, not merged with
+//     user content, so there is no legacy entry to preserve byte-for-byte — same situation as the
+//     GitHub Copilot fix in ML-2D).
+//   - "matcher" is a plain regex string evaluated against tool name (per the field reference table:
+//     "Regex pattern to filter which events fire this hook. For PreToolUse/PostToolUse, matches tool
+//     name."), NOT an object like {"tool_name": ".*"} as previously emitted. "*" (a literal asterisk,
+//     documented explicitly as "all tools (built-in and MCP)") is used here instead of the invalid
+//     ".*" this function used to emit — ".*" is not a documented matcher value (the vocabulary is:
+//     canonical tool names like "execute_bash"/"fs_read"/"fs_write"/"use_aws", their aliases
+//     "shell"/"read"/"write"/"aws", category wildcards "read"/"write"/"shell"/"web"/"spec", "@"-prefix
+//     regex filters, or the literal "*"/no matcher for "all tools").
+//   - PreToolUse ("Triggers when the agent is about to invoke a tool. Can validate and block tool
+//     usage.") is a real, distinct trigger from PostFileSave/file-save events — confirmed by the
+//     "Available triggers" table (PreToolUse: "Before a tool is about to execute", Can block: Yes) and
+//     by the dedicated "Pre Tool Use" section of hooks/types. This resolves the open question from the
+//     ADR: Kiro's hook system does intercept tool invocations (including shell) before execution, not
+//     only IDE/file events.
+//   - Blocking contract (hooks/actions, "CLI" tab): "If the command returns an exit code of 0
+//     indicating success, the stdout output ... is added to the agent's context. If the command
+//     returns any other exit code, the stderr output ... is sent to the agent ... Additionally, in the
+//     case of the Pre Tool Use hook, the tool invocation is blocked." This is a stricter contract than
+//     Claude Code/Codex/Gemini (which key specifically on exit code 2) — Kiro blocks on ANY non-zero
+//     exit from a PreToolUse command hook. trackfw-credential-guard.sh was audited against this: every
+//     exit path is an explicit `exit 0` or `exit 2` (block mode); the only unguarded failure surface is
+//     an unexpected environment failure under `set -euo pipefail` (e.g. `mkdir -p` failing), which is a
+//     generic script-authoring risk shared by every trigger, not a normal-operation fail-closed hazard
+//     specific to Kiro's exit-code semantics.
+//   - Shell tool name for the matcher: hooks/types documents the canonical name "execute_bash" with
+//     alias "shell" ("all built-in shell command-related tools" — broader than the single-tool
+//     canonical name, and the choice made here for trackfw-credential-guard.sh's own matcher, since the
+//     guard must see every shell invocation, not just one canonical tool identifier).
+//   - PreToolUse/PostToolUse STDIN payload is JSON: {"hook_event_name", "cwd", "session_id",
+//     "tool_name", "tool_input"} — trackfw-credential-guard.sh scans the raw payload for JWT/AWS-key
+//     patterns regardless of field names (ML-1A), so it works under this shape without changes.
 func InjectKiroHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".kiro", "hooks")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -406,20 +450,35 @@ func InjectKiroHooks(cwd string) error {
 	path := filepath.Join(dir, "trackfw-attention.json")
 
 	content := map[string]interface{}{
+		"version": "v1",
 		"hooks": []interface{}{
 			map[string]interface{}{
 				"name":        "trackfw-attention-signal",
 				"description": "Signals trackfw board when agent executes a tool",
-				"event":       "PreToolUse",
-				"matcher":     map[string]interface{}{"tool_name": ".*"},
+				"trigger":     "PreToolUse",
+				"matcher":     "*",
 				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-signal.sh"},
 			},
 			map[string]interface{}{
 				"name":        "trackfw-attention-cleanup",
 				"description": "Clears trackfw board attention after tool completes",
-				"event":       "PostToolUse",
-				"matcher":     map[string]interface{}{"tool_name": ".*"},
+				"trigger":     "PostToolUse",
+				"matcher":     "*",
 				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-cleanup.sh"},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-pre",
+				"description": "Blocks/warns on possible plaintext credential materialization before a shell command executes",
+				"trigger":     "PreToolUse",
+				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-post",
+				"description": "Warns on possible plaintext credential materialization after a shell command executes",
+				"trigger":     "PostToolUse",
+				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
 			},
 		},
 	}

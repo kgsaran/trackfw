@@ -1506,6 +1506,100 @@ overwritten); `hooks.beforeShellExecution`/`hooks.afterShellExecution` are merge
 flat-array `{command}`-dedup helper (`mergeSimpleCommandArray`/`hasEntry`/`_has_entry`) already used for
 the pre-existing `preToolUse`/`postToolUse` entries — re-running the injector never duplicates entries.
 
+#### Kiro wiring (ML-2F) — `.kiro/hooks/trackfw-attention.json` format correction + `PreToolUse`/`PostToolUse` matcher `"shell"`
+
+`InjectKiroHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
+`npm/src/generators/hooks.js:injectKiroHooks`; Python:
+`pypi/trackfw/generators/hooks.py:inject_kiro_hooks`) fully overwrites
+`.kiro/hooks/trackfw-attention.json` — a dedicated file, owned exclusively by trackfw, with no user
+content to preserve (same overwrite pattern documented for Kiro in the Copilot section above as a point
+of comparison, and confirmed there as GitHub Copilot's own pattern too).
+
+**Investigation resolved the ADR's open question affirmatively.** Confirmed against the official
+documentation — <https://kiro.dev/docs/hooks/>, <https://kiro.dev/docs/hooks/types> and
+<https://kiro.dev/docs/hooks/actions/> (all retrieved 2026-08-05, via `curl -L` of each page's embedded
+Next.js RSC/HTML payload, since WebFetch/WebSearch were unavailable in this session) — that `PreToolUse`
+is a real, distinct trigger, not limited to file/IDE events like `PostFileSave`. The "Available triggers"
+table on the hooks overview page lists `PreToolUse`: "Before a tool is about to execute", Can block:
+**Yes** — alongside `PostFileSave`/`PostFileCreate`/`PostFileDelete` (Can block: No) and
+`PostToolUse`/`SessionStart`/`Stop`/`PostTaskExec` (Can block: No). The dedicated "Pre Tool Use" section
+of `hooks/types` confirms: "Triggers when the agent is about to invoke a tool. Can validate and block
+tool usage." This is unambiguous: `PreToolUse` intercepts tool invocations — including shell commands —
+before execution, resolving the ADR's doubt in favor of implementing the wiring (not re-scoping).
+
+**Pre-existing format was wrong on all three field names — corrected here, same file.** Before this ML,
+all three stacks emitted `{"hooks": [{"name", "description", "event": "PreToolUse", "matcher":
+{"tool_name": ".*"}, "action": {...}}]}`. None of `"event"` (as a top-level hook field), `matcher` as an
+object, or the top-level payload missing `"version"` match the documented schema. The real schema, per
+the "Hook file schema" example and the "Field reference" table on the hooks overview page:
+
+```json
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "example-hook",
+      "trigger": "PostFileSave",
+      "matcher": "\\.(ts|tsx)$",
+      "action": { "type": "command", "command": "npx eslint --fix" }
+    }
+  ]
+}
+```
+
+Field reference confirms: `version` (required, currently the string `"v1"`), `hooks[].trigger`
+(required, "Event that fires the hook (PascalCase)"), `hooks[].matcher` (optional, "Regex pattern to
+filter which events fire this hook. For `PreToolUse`/`PostToolUse`, matches tool name. For file events,
+matches file path. Defaults to always-match."). There is no `"event"` field anywhere in this schema, and
+`matcher` is always a scalar regex string, never an object. Because this file is fully owned/overwritten
+by trackfw (unlike the Claude/Codex/Gemini/Cursor merge targets), this ML corrects **all** entries in the
+file — including the pre-existing `trackfw-attention-signal`/`trackfw-attention-cleanup` hooks, which had
+never used a valid field shape and (per the schema) would very likely never have fired in a real Kiro
+installation — to `trigger`/scalar-`matcher`/`version: "v1"`, rather than leaving a known-invalid legacy
+shape sitting next to newly-added, schema-correct entries in the same array. This mirrors the ML-2D
+precedent for GitHub Copilot (also a fully-owned file, also realigned wholesale once the real schema was
+confirmed), and differs from the ML-2E precedent for Cursor (a merge target with real user content,
+where the legacy-but-wrong entries were deliberately left untouched and only documented).
+
+**Matcher vocabulary and the shell tool's identifier.** The "Pre Tool Use" section of `hooks/types`
+documents the `matcher` vocabulary for tool hooks precisely: built-in categories `read`/`write`/`shell`/
+`web`/`spec` (`shell` = "all built-in shell command-related tools"), `*` for "all tools (built-in and
+MCP)", `@mcp`/`@powers`/`@builtin` source prefixes (regex-matched), and canonical tool names with
+aliases — explicitly worked example: `"execute_bash"` or `"shell"` — "Match shell command execution".
+`.*` (a regex wildcard, previously emitted by all three stacks for the pre-existing signal/cleanup hooks)
+does **not** appear anywhere in this vocabulary; `*` (a literal asterisk, "all tools") is the documented
+match-everything value and is what this ML uses for the realigned signal/cleanup entries.
+`trackfw-credential-guard-pre`/`-post` use `matcher: "shell"` (the broader category alias, matching every
+built-in shell tool) rather than the single canonical id `"execute_bash"`, since the guard's purpose is
+to see every shell invocation, not one specific tool identifier.
+
+**Blocking contract — stricter than Claude Code/Codex/Gemini, already satisfied without a script
+change.** Per `hooks/actions` (CLI tab): "If the command returns an exit code of `0` indicating success,
+the stdout output of the command is added to the agent's context. If the command returns any other exit
+code, the stderr output of the command is sent to the agent, and the agent is notified that the hook
+returned an error. Additionally, in the case of the Pre Tool Use hook, the tool invocation is blocked."
+Unlike Claude Code/Codex/Gemini (which key specifically on exit code `2`), Kiro blocks a `PreToolUse`
+command hook on **any** non-zero exit code. `trackfw-credential-guard.sh` (ML-1A) was re-audited against
+this stricter contract: every normal-operation exit path in the script is an explicit `exit 0`
+(no-op/non-match/ephemeral-redirect/`warn` mode after logging) or `exit 2` (`block` mode) — there is no
+code path that intentionally returns `exit 1` or any other non-zero value, so `warn` mode never
+spuriously blocks a Kiro tool call. The only residual risk is an unguarded environment failure under the
+script's `set -euo pipefail` (e.g. `mkdir -p` failing on a read-only filesystem) aborting with a
+non-explicit exit code — this is a generic script-authoring risk shared by every trigger/CLI this hook is
+wired into, not a hazard specific to Kiro's stricter any-non-zero-blocks semantics.
+
+**STDIN payload.** `PreToolUse`/`PostToolUse` command actions receive JSON on stdin:
+`{"hook_event_name", "cwd", "session_id", "tool_name", "tool_input"}` (confirmed by worked examples on
+both `hooks/types` and the hooks overview page). `trackfw-credential-guard.sh` scans the raw payload text
+for JWT/AWS-key patterns regardless of field names (ML-1A design decision), so it works unmodified under
+this shape.
+
+**Wired entries.** `PreToolUse`/`matcher: "shell"` and `PostToolUse`/`matcher: "shell"`, both pointing at
+`scripts/trackfw-credential-guard.sh`, added alongside the schema-corrected
+`trackfw-attention-signal` (`PreToolUse`/`matcher: "*"`) and `trackfw-attention-cleanup`
+(`PostToolUse`/`matcher: "*"`) entries, in the same `hooks` array. Idempotent: the file is always fully
+regenerated with the same four entries, so re-running the injector never duplicates or drifts.
+
 ### States
 
 Both commands report one state per target. These four strings are pinned:

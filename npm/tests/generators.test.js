@@ -442,11 +442,29 @@ test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently', 
 
   injectKiroHooks(tmpDir)
   let data1 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
-  assert.equal(data1.hooks.length, 2)
-  assert.equal(data1.hooks[0].event, 'PreToolUse')
+  assert.equal(data1.version, 'v1')
+  assert.equal(data1.hooks.length, 4)
+  assert.equal(data1.hooks[0].trigger, 'PreToolUse')
+  assert.equal(data1.hooks[0].event, undefined, 'legacy "event" field must not be emitted')
   assert.equal(data1.hooks[0].action.command, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(data1.hooks[1].event, 'PostToolUse')
+  assert.equal(data1.hooks[1].trigger, 'PostToolUse')
   assert.equal(data1.hooks[1].action.command, 'scripts/trackfw-attention-cleanup.sh')
+
+  const guardPre = data1.hooks.find(h => h.name === 'trackfw-credential-guard-pre')
+  assert.ok(guardPre, 'missing trackfw-credential-guard-pre hook')
+  assert.equal(guardPre.trigger, 'PreToolUse')
+  assert.equal(guardPre.matcher, 'shell')
+  assert.equal(guardPre.action.command, 'scripts/trackfw-credential-guard.sh')
+
+  const guardPost = data1.hooks.find(h => h.name === 'trackfw-credential-guard-post')
+  assert.ok(guardPost, 'missing trackfw-credential-guard-post hook')
+  assert.equal(guardPost.trigger, 'PostToolUse')
+  assert.equal(guardPost.matcher, 'shell')
+  assert.equal(guardPost.action.command, 'scripts/trackfw-credential-guard.sh')
+
+  for (const h of data1.hooks) {
+    assert.notEqual(typeof h.matcher, 'object', `hook ${h.name} uses object matcher, expected regex string`)
+  }
 
   injectKiroHooks(tmpDir)
   let data2 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))

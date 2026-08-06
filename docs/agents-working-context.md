@@ -9653,3 +9653,67 @@ ML-2C). Detalhe completo em `docs/cli-parity.md` (seção "GitHub Copilot wiring
 
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
 Git). Não toquei em Cursor (ML-2E) nem Kiro (ML-2F), conforme escopo deste ML.
+
+---
+
+## Sessão 2026-08-05 — Apolo (ML-2F: Kiro — wiring credential-guard) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/hooks-de-guarda-contra-materializacao-de-credenciais` (já criada pelo orquestrador —
+Backend não executa Git; sem commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`,
+ML-2F (último ML da Wave 2). REQ/ADR: `docs/req/REQ-2026-08-05-...md` /
+`docs/adr/ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`.
+
+**Investigação (obrigatória por instrução do ML) — confirmada afirmativamente**: via
+`kiro.dev/docs/hooks/`, `.../hooks/types` e `.../hooks/actions/` (2026-08-05, `curl -L` do RSC/HTML,
+sem WebFetch/WebSearch disponível nesta execução), `PreToolUse` é um trigger real, distinto de
+`PostFileSave`/eventos de IDE — "Before a tool is about to execute", Can block: **Yes**. Resolve a
+dúvida em aberto da ADR: o mecanismo de hooks do Kiro de fato intercepta invocações de tool (incluindo
+shell) antes da execução. Decisão: **implementar** (não re-escopar).
+
+**Achado crítico, corrigido no mesmo ML (não deixado só como nota)**: o wiring pré-existente
+(`InjectKiroHooks`/`injectKiroHooks`/`inject_kiro_hooks` nos 3 stacks) usava um schema que não existe
+na documentação real do Kiro — campo `"event"` (deveria ser `"trigger"`), `matcher` como objeto
+`{tool_name: ".*"}` (deveria ser regex string; `.*` nem é um valor de matcher documentado), sem
+`"version"` no topo (deveria ser `"v1"`, string). Como `.kiro/hooks/trackfw-attention.json` é um
+arquivo 100% owned/overwritten pelo trackfw (mesmo padrão do GitHub Copilot no ML-2D, diferente do
+Cursor no ML-2E que é merge-target com conteúdo de usuário), corrigi as entradas legadas
+`trackfw-attention-signal`/`-cleanup` junto com as novas de credential-guard, em vez de deixar
+entradas comprovadamente inválidas ao lado de entradas novas corretas no mesmo array `hooks`.
+
+**Wiring novo**: `PreToolUse`/matcher `"shell"` e `PostToolUse`/matcher `"shell"` (categoria
+documentada "all built-in shell command-related tools") apontando para
+`scripts/trackfw-credential-guard.sh`. Contrato de bloqueio do Kiro é mais estrito que Claude
+Code/Codex/Gemini: **qualquer** exit code não-zero de um hook `PreToolUse` bloqueia a invocação (não
+só exit 2) — reauditei `trackfw-credential-guard.sh` e confirmei que só tem `exit 0`/`exit 2` nos
+caminhos normais de operação, então `warn` nunca bloqueia espuriamente no Kiro. Nenhuma mudança no
+script foi necessária. Detalhe completo, com citações das 3 páginas, em `docs/cli-parity.md` (seção
+"Kiro wiring (ML-2F)"). Adicionei também uma nota de resolução na própria ADR (tabela de suporte por
+CLI), já que a dúvida registrada ali estava explicitamente em aberto.
+
+**Arquivos alterados**:
+- `internal/generators/agentfiles.go` (`InjectKiroHooks` — schema realinhado + 2 hooks novos de
+  credential-guard, comentário extenso de fonte/investigação)
+- `internal/generators/agentfiles_test.go` (`TestInjectKiroHooks` — reescrito: 4 hooks, `version:
+  "v1"`, ausência de `event`, `matcher` string não-objeto, campos específicos do guard-pre/post)
+- `npm/src/generators/hooks.js` (`injectKiroHooks` — mesma extensão)
+- `npm/tests/generators.test.js` (asserts reescritos, mesmo padrão)
+- `pypi/trackfw/generators/hooks.py` (`inject_kiro_hooks` — mesma extensão)
+- `pypi/tests/test_generators_init.py` (`test_inject_kiro_hooks` — asserts reescritos)
+- `docs/cli-parity.md` (nova seção "Kiro wiring (ML-2F)")
+- `docs/adr/ADR-2026-08-05-...md` (nota de resolução na tabela de suporte por CLI, linha Kiro)
+- `docs/roadmaps/wip/ROADMAP-2026-08-05-...md` (ML-2F marcado ✅ Concluído com nota de auditoria)
+
+**Validação (evidência)**:
+- `go build ./...` OK; `go vet ./...` OK; `go test ./...` OK (todos os pacotes)
+- `node --test tests/generators.test.js` (dentro de `npm/`) — 28 passed, 0 failed, incluindo
+  `injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently`
+- `npm --prefix npm test` completo — 381 passed, 0 failed
+- `python3 -m pytest pypi/` completo — 914 passed
+- `python3 -m pytest pypi/tests/ -k hooks` — 20 passed
+- `trackfw validate` (binário compilado desta branch) — "Nenhuma violação encontrada."
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
+Git). Wave 2 completa (ML-2A a ML-2F, todos ✅). Próximo: Wave 3 (ML-3A, gate de paridade
+hooks.json/settings.json).
