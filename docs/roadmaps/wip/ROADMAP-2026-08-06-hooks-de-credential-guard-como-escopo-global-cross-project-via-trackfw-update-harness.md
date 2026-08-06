@@ -162,7 +162,7 @@ Go-only por erro do orquestrador na autoria do roadmap; não repetir)
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2C — Alvo `gemini-credential-guard`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
 `npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
 irmãos), seção Gemini — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
