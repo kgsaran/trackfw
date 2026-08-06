@@ -99,8 +99,15 @@ def _tildeify(home: str, absolute: str) -> str:
 
 
 def declared_target_ids() -> list[str]:
+    # "codex-credential-guard" is inserted immediately BEFORE "codex-agents"/
+    # "codex-skills" — same relative position as claude-credential-guard,
+    # which precedes claude-agents/claude-skills. See
+    # internal/generators/update.go:buildHarnessTargetIDs for the full
+    # rationale (ROADMAP-2026-08-06 Wave 2/ML-2B).
     ids = ["claude-skill", "claude-credential-guard"]
     for tool in _CATALOG_TARGET_ORDER:
+        if tool == "codex":
+            ids.append("codex-credential-guard")
         for kind in _CATALOG_KIND_ORDER:
             ids.append(f"{tool}-{kind}")
     return ids
@@ -185,6 +192,74 @@ def _credential_guard_claude_result(home: str, dry_run: bool, install_missing: b
     """
     target_id = "claude-credential-guard"
     path = os.path.join(home, ".claude", "settings.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        root: dict[str, Any] = {}
+        hooks = root.setdefault("hooks", {})
+        _merge_claude_hook_array(hooks.setdefault("PreToolUse", []), "Bash", script_path)
+        _merge_claude_hook_array(hooks.setdefault("PostToolUse", []), "Bash", script_path)
+        desired = json.dumps(root, indent=2) + "\n"
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(desired, encoding="utf-8")
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    try:
+        root = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if not isinstance(root, dict):
+        root = {}
+    hooks = root.setdefault("hooks", {})
+    _merge_claude_hook_array(hooks.setdefault("PreToolUse", []), "Bash", script_path)
+    _merge_claude_hook_array(hooks.setdefault("PostToolUse", []), "Bash", script_path)
+    desired = json.dumps(root, indent=2) + "\n"
+    if desired.encode("utf-8") == raw:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_text(desired, encoding="utf-8")
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
+def _credential_guard_codex_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Evaluates (and, unless dry_run, applies) the global-scope
+    credential-guard hook wiring for Codex CLI: PreToolUse[matcher:"Bash"]/
+    PostToolUse[matcher:"Bash"] entries in ~/.codex/hooks.json pointing at
+    the ABSOLUTE path of ~/.trackfw/scripts/trackfw-credential-guard.sh (a
+    global hook can fire from any project's cwd). Mirrors
+    `_credential_guard_claude_result` exactly (same 4-state contract, same
+    idempotent merge via `_merge_claude_hook_array`) and
+    internal/generators/update.go:harnessCredentialGuardTargetCodex.
+
+    Investigation (ROADMAP-2026-08-06 Wave 2/ML-2B, confirmed 2026-08-06
+    against https://developers.openai.com/codex/hooks): "Hooks are enabled
+    by default. To turn them off in config.toml, set: [features] hooks =
+    false. Use hooks as the canonical feature key. codex_hooks still works
+    as a deprecated alias." No `[features] codex_hooks = true` opt-in is
+    required — the flag exists only to turn hooks OFF and is a deprecated
+    alias for the canonical `hooks` key. https://developers.openai.com/codex
+    /config-advanced (also fetched 2026-08-06) has no conflicting
+    requirement.
+    """
+    target_id = "codex-credential-guard"
+    path = os.path.join(home, ".codex", "hooks.json")
     display_path = _tildeify(home, path)
     script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
@@ -322,6 +397,9 @@ def _run(args: argparse.Namespace) -> None:
             continue
         if target_id == "claude-credential-guard":
             targets.append(_credential_guard_claude_result(home, args.dry_run, args.install_missing))
+            continue
+        if target_id == "codex-credential-guard":
+            targets.append(_credential_guard_codex_result(home, args.dry_run, args.install_missing))
             continue
         tool, kind = target_id.rsplit("-", 1)
         targets.append(_catalog_group_result(tool, kind, home, manager, identity_cfg, args.dry_run, args.install_missing))

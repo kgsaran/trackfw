@@ -279,24 +279,29 @@ var harnessCatalogTargetOrder = []string{
 }
 
 // HarnessTargetIDs is the fixed, declared order of `trackfw update harness`
-// targets: 22 ids — "claude-skill", then "claude-credential-guard" (global
+// targets: 23 ids — "claude-skill", then "claude-credential-guard" (global
 // credential-guard hook wiring for Claude Code — placed immediately after
-// claude-skill since both are Claude-Code-scoped global artifacts;
-// ROADMAP-2026-08-06 Wave 2 adds "<tool>-credential-guard" siblings for the
-// other CLIs in subsequent, sequential MLs, each placed next to its tool's
-// existing "<tool>-agents"/"<tool>-skills" pair once implemented), then
-// "<tool>-agents" and "<tool>-skills" for each catalog target in
-// harnessCatalogTargetOrder. Order here is authoritative for both JSON
-// output and iteration — it must never be derived from the filesystem or
-// from what happens to be installed on a given machine (see
-// docs/cli-parity.md, "targets follows the declared target order, not
-// filesystem order").
+// claude-skill since both are Claude-Code-scoped global artifacts), then for
+// each catalog target in harnessCatalogTargetOrder its "<tool>-agents"/
+// "<tool>-skills" pair, with "codex-credential-guard" inserted immediately
+// BEFORE "codex-agents"/"codex-skills" (ROADMAP-2026-08-06 Wave 2/ML-2B) —
+// same relative position as claude-credential-guard (credential-guard target
+// precedes that tool's agents/skills pair, never follows it). Remaining
+// "<tool>-credential-guard" siblings are added by subsequent, sequential MLs
+// (2C-2F), each at the same relative position for its own tool. Order here
+// is authoritative for both JSON output and iteration — it must never be
+// derived from the filesystem or from what happens to be installed on a
+// given machine (see docs/cli-parity.md, "targets follows the declared
+// target order, not filesystem order").
 var HarnessTargetIDs = buildHarnessTargetIDs()
 
 func buildHarnessTargetIDs() []string {
-	ids := make([]string, 0, 2+2*len(harnessCatalogTargetOrder))
+	ids := make([]string, 0, 3+2*len(harnessCatalogTargetOrder))
 	ids = append(ids, "claude-skill", "claude-credential-guard")
 	for _, tool := range harnessCatalogTargetOrder {
+		if tool == "codex" {
+			ids = append(ids, "codex-credential-guard")
+		}
 		ids = append(ids, tool+"-agents", tool+"-skills")
 	}
 	return ids
@@ -337,6 +342,10 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		}
 		if id == "claude-credential-guard" {
 			results = append(results, harnessCredentialGuardTargetClaude(home, opts))
+			continue
+		}
+		if id == "codex-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetCodex(home, opts))
 			continue
 		}
 		tool, kind, ok := splitHarnessCatalogTargetID(id)
@@ -509,7 +518,13 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 // PostToolUse[matcher:"Bash"] entries into root["hooks"], preserving any
 // other hook groups/matchers already present (same merge contract as
 // InjectClaudeHooks, minus the attention-signal/cleanup entries which stay
-// project-scope only).
+// project-scope only). Despite the name (kept for git-blame continuity with
+// ML-2A), this helper is shape-agnostic — it only touches
+// root["hooks"]["PreToolUse"/"PostToolUse"] with matcher "Bash", the exact
+// same JSON shape Codex's .codex/hooks.json (InjectCodexHooks,
+// agentfiles.go) already uses for its own PreToolUse/PostToolUse[Bash]
+// entries — so harnessCredentialGuardTargetCodex below reuses it verbatim
+// instead of duplicating the merge logic.
 func mergeCredentialGuardClaudeHooks(root map[string]interface{}, scriptPath string) {
 	hooks, _ := root["hooks"].(map[string]interface{})
 	if hooks == nil {
@@ -518,6 +533,91 @@ func mergeCredentialGuardClaudeHooks(root map[string]interface{}, scriptPath str
 	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Bash", scriptPath)
 	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Bash", scriptPath)
 	root["hooks"] = hooks
+}
+
+// harnessCredentialGuardTargetCodex evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Codex CLI:
+// PreToolUse[matcher:"Bash"]/PostToolUse[matcher:"Bash"] entries in
+// ~/.codex/hooks.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — mirrors
+// harnessCredentialGuardTargetClaude exactly (same 4-state contract, same
+// idempotent merge via mergeCredentialGuardClaudeHooks, same reason for an
+// absolute path over InjectCodexHooks's project-relative
+// "scripts/trackfw-credential-guard.sh": a global hook can fire from any
+// project's cwd).
+//
+// Investigation (ROADMAP-2026-08-06 Wave 2/ML-2B, confirmed 2026-08-06
+// against https://developers.openai.com/codex/hooks): "Hooks are enabled by
+// default. To turn them off in config.toml, set: [features] hooks = false.
+// Use hooks as the canonical feature key. codex_hooks still works as a
+// deprecated alias." This resolves the contradiction the ADR flagged with
+// high confidence — no `[features] codex_hooks = true` opt-in is required
+// (the flag exists only to turn hooks OFF, and is a deprecated alias for
+// the canonical `hooks` key); https://developers.openai.com/codex/config-
+// advanced (also fetched 2026-08-06) has no conflicting requirement. No
+// extra warning Message is added to the TargetResult because of this: the
+// investigation resolved with confidence, so per the ML's own instructions
+// (fall back to a warning only "se não conseguir resolver a contradição com
+// confiança total") no hedge is needed.
+func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetResult {
+	const id = "codex-credential-guard"
+	const displayPath = "~/.codex/hooks.json"
+
+	path := filepath.Join(home, ".codex", "hooks.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardClaudeHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardClaudeHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 }
 
 // harnessCatalogTarget evaluates (and, unless DryRun, applies) every

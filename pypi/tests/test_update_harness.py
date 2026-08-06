@@ -100,8 +100,12 @@ def test_harness_declared_target_list_and_order(tmp_path):
     assert ids[0] == "claude-skill"
     assert ids[1] == "claude-credential-guard"
     assert ids[2:4] == ["claude-agents", "claude-skills"]
+    # codex-credential-guard sits immediately before codex-agents/codex-skills
+    # — same relative position as claude-credential-guard before
+    # claude-agents/claude-skills (ROADMAP-2026-08-06 Wave 2/ML-2B).
+    assert ids[4:7] == ["codex-credential-guard", "codex-agents", "codex-skills"]
     assert ids[-2:] == ["kiro-agents", "kiro-skills"]
-    assert len(ids) == 2 + 10 * 2
+    assert len(ids) == 3 + 10 * 2
 
     home = tmp_path / "home"
     home.mkdir()
@@ -470,6 +474,143 @@ def test_credential_guard_claude_preserves_existing_content(tmp_path):
     ask_entries = [entry for entry in doc["hooks"]["PreToolUse"] if entry.get("matcher") == "AskUserQuestion"]
     assert len(ask_entries) == 1
     assert ask_entries[0]["hooks"][0]["command"] == "scripts/trackfw-attention-signal.sh"
+    for event in ("PreToolUse", "PostToolUse"):
+        bash_entries = [entry for entry in doc["hooks"][event] if entry.get("matcher") == "Bash"]
+        assert len(bash_entries) == 1
+
+
+# ---------------------------------------------------------------------------
+# `codex-credential-guard` — global-scope credential-guard hook wiring for
+# Codex CLI, ROADMAP-2026-08-06 Wave 2 ML-2B. Mirrors the claude-credential-
+# guard tests above and internal/generators/update_test.go's Codex tests.
+# ---------------------------------------------------------------------------
+
+
+def test_credential_guard_codex_missing_without_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "codex-credential-guard", "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not (home / ".codex" / "hooks.json").exists()
+
+
+def test_credential_guard_codex_installs_absolute_path_with_install_missing(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "codex-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == "~/.codex/hooks.json"
+
+    hooks_path = home / ".codex" / "hooks.json"
+    doc = json.loads(hooks_path.read_text(encoding="utf-8"))
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    assert os.path.isabs(want_script)
+
+    for event in ("PreToolUse", "PostToolUse"):
+        entries = doc["hooks"][event]
+        bash_entries = [entry for entry in entries if entry.get("matcher") == "Bash"]
+        assert len(bash_entries) == 1
+        commands = [h["command"] for h in bash_entries[0]["hooks"]]
+        assert want_script in commands
+
+
+def test_credential_guard_codex_is_idempotent(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    first = cli(
+        "update", "harness", "--targets", "codex-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    hooks_path = home / ".codex" / "hooks.json"
+    first_bytes = hooks_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", "codex-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    second_bytes = hooks_path.read_bytes()
+    assert first_bytes == second_bytes
+
+    doc = json.loads(second_bytes)
+    bash_entries = [entry for entry in doc["hooks"]["PreToolUse"] if entry.get("matcher") == "Bash"]
+    assert len(bash_entries) == 1
+
+
+def test_credential_guard_codex_dry_run_does_not_write(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli(
+        "update", "harness", "--targets", "codex-credential-guard", "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not (home / ".codex" / "hooks.json").exists()
+
+
+def test_credential_guard_codex_preserves_existing_content(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    hooks_path = home / ".codex" / "hooks.json"
+    hooks_path.parent.mkdir(parents=True)
+    hooks_path.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PermissionRequest": [
+                        {
+                            "matcher": ".*",
+                            "hooks": [{"type": "command", "command": "scripts/trackfw-attention-signal.sh"}],
+                        }
+                    ]
+                },
+                "userSetting": "keep-me",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    result = cli(
+        "update", "harness", "--targets", "codex-credential-guard", "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+
+    doc = json.loads(hooks_path.read_text(encoding="utf-8"))
+    assert doc["userSetting"] == "keep-me"
+    perm_entries = [entry for entry in doc["hooks"]["PermissionRequest"] if entry.get("matcher") == ".*"]
+    assert len(perm_entries) == 1
     for event in ("PreToolUse", "PostToolUse"):
         bash_entries = [entry for entry in doc["hooks"][event] if entry.get("matcher") == "Bash"]
         assert len(bash_entries) == 1

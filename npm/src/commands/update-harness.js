@@ -150,6 +150,65 @@ function credentialGuardTargetClaude(homeRoot, { dryRun, installMissing }) {
   }
 }
 
+// credentialGuardTargetCodex — evaluates (and, unless --dry-run, applies) the
+// global-scope credential-guard hook wiring for Codex CLI:
+// PreToolUse[matcher:"Bash"]/PostToolUse[matcher:"Bash"] entries in
+// ~/.codex/hooks.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — mirrors
+// credentialGuardTargetClaude exactly (same 4-state contract, same idempotent
+// merge via mergeClaudeHookArray, same reason for an absolute path). Mirrors
+// internal/generators/update.go:harnessCredentialGuardTargetCodex.
+//
+// Investigation (ROADMAP-2026-08-06 Wave 2/ML-2B, confirmed 2026-08-06
+// against https://developers.openai.com/codex/hooks): "Hooks are enabled by
+// default. To turn them off in config.toml, set: [features] hooks = false.
+// Use hooks as the canonical feature key. codex_hooks still works as a
+// deprecated alias." No `[features] codex_hooks = true` opt-in is required
+// — the flag exists only to turn hooks OFF and is a deprecated alias for the
+// canonical `hooks` key. https://developers.openai.com/codex/config-advanced
+// (also fetched 2026-08-06) has no conflicting requirement.
+function credentialGuardTargetCodex(homeRoot, { dryRun, installMissing }) {
+  const id = 'codex-credential-guard'
+  const filePath = path.join(homeRoot, '.codex', 'hooks.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+
+  let root
+  let raw = null
+  try {
+    if (fs.existsSync(filePath)) {
+      raw = fs.readFileSync(filePath, 'utf8')
+      root = raw.length ? JSON.parse(raw) : {}
+    } else {
+      if (!installMissing) return { id, state: 'missing', path: displayPath }
+      if (dryRun) return { id, state: 'updated', path: displayPath }
+      root = {}
+      if (!root.hooks) root.hooks = {}
+      root.hooks.PreToolUse = mergeClaudeHookArray(root.hooks.PreToolUse, 'Bash', scriptPath)
+      root.hooks.PostToolUse = mergeClaudeHookArray(root.hooks.PostToolUse, 'Bash', scriptPath)
+      const desired = JSON.stringify(root, null, 2) + '\n'
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, desired, 'utf8')
+      return { id, state: 'updated', path: displayPath }
+    }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+
+  try {
+    if (!root.hooks) root.hooks = {}
+    root.hooks.PreToolUse = mergeClaudeHookArray(root.hooks.PreToolUse, 'Bash', scriptPath)
+    root.hooks.PostToolUse = mergeClaudeHookArray(root.hooks.PostToolUse, 'Bash', scriptPath)
+    const desired = JSON.stringify(root, null, 2) + '\n'
+    if (desired === raw) return { id, state: 'skipped', path: displayPath }
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
 // catalogBundleTarget — one target per (tool, kind) pair at global scope.
 // Uses IntegrationManager.inspect (read-only) to classify every catalog
 // item under that pair, then only calls manager.update() for the subset
@@ -193,8 +252,14 @@ function catalogBundleTarget(toolId, kind, homeRoot, identityConfig, { dryRun, i
   }
 }
 
+// HARNESS_TARGET_IDS — mirrors internal/generators/update.go:HarnessTargetIDs.
+// "codex-credential-guard" is inserted immediately BEFORE "codex-agents"/
+// "codex-skills" (same relative position as claude-credential-guard, which
+// precedes claude-agents/claude-skills) — see buildHarnessTargetIDs's
+// comment in update.go for the full rationale.
 const HARNESS_TARGET_IDS = ['claude-skill', 'claude-credential-guard']
 for (const target of catalog.targets) {
+  if (target.id === 'codex') HARNESS_TARGET_IDS.push('codex-credential-guard')
   HARNESS_TARGET_IDS.push(`${target.id}-agents`, `${target.id}-skills`)
 }
 
@@ -209,6 +274,9 @@ function buildHarnessTargets(homeRoot, identityConfig, { dryRun, installMissing 
   if (include('claude-skill')) targets.push(claudeSkillTarget(homeRoot, { dryRun, installMissing }))
   if (include('claude-credential-guard')) targets.push(credentialGuardTargetClaude(homeRoot, { dryRun, installMissing }))
   for (const target of catalog.targets) {
+    if (target.id === 'codex' && include('codex-credential-guard')) {
+      targets.push(credentialGuardTargetCodex(homeRoot, { dryRun, installMissing }))
+    }
     const agentsId = `${target.id}-agents`
     const skillsId = `${target.id}-skills`
     if (include(agentsId)) targets.push(catalogBundleTarget(target.id, 'agents', homeRoot, identityConfig, { dryRun, installMissing }))
@@ -263,4 +331,11 @@ function run(options) {
   if (doc.summary.failed > 0) process.exitCode = 1
 }
 
-module.exports = { run, HARNESS_TARGET_IDS, buildHarnessTargets, claudeSkillContent, credentialGuardTargetClaude }
+module.exports = {
+  run,
+  HARNESS_TARGET_IDS,
+  buildHarnessTargets,
+  claudeSkillContent,
+  credentialGuardTargetClaude,
+  credentialGuardTargetCodex,
+}

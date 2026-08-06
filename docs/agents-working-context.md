@@ -9820,3 +9820,48 @@ decisão do orquestrador: estender ML-2A ou criar ML dedicado antes da Wave 4 (g
 Roadmap ML-2A mantido em `🔄 Em andamento` — não promovido a `✅ Concluído` (protocolo de microlote:
 status só muda após auditoria do orquestrador). Nenhum commit feito (regra de git authority —
 `trackfw_architect` audita e commita).
+
+## Sessão 2026-08-06 — Apolo (ML-2B do ROADMAP hooks-de-credential-guard-global) — Go+Node+Python implementados, sem commit
+
+Mesma branch. Executando ML-2B (alvo `codex-credential-guard`) — desta vez com paridade 3 stacks
+desde o início, seguindo a lição registrada no ML-2A acima.
+
+**Investigação da contradição Codex (`codex_hooks`):** re-fetch direto (`curl`) em 2026-08-06 de
+`https://developers.openai.com/codex/hooks` confirma texto literal: "Hooks are enabled by default. To
+turn them off in config.toml, set: `[features] hooks = false`. Use `hooks` as the canonical feature
+key. `codex_hooks` still works as a deprecated alias." `https://developers.openai.com/codex/config-
+advanced` (mesmo fetch) não tem requisito conflitante. Contradição resolvida com alta confiança:
+`codex_hooks`/`hooks` só serve para DESLIGAR hooks, nunca é opt-in necessário — nem para wiring de
+projeto (`InjectCodexHooks`, já comentado assim desde o PR #141) nem global. Nenhuma `Message` extra
+de aviso foi adicionada ao `TargetResult` por essa razão. Evidência registrada em
+`docs/cli-parity.md` ("Declared harness targets — pinned list") e no próprio ML-2B do roadmap.
+
+**Implementação (3 stacks, mesmo padrão do ML-2A):**
+- Go: `internal/generators/update.go` — `"codex-credential-guard"` inserido em `buildHarnessTargetIDs`
+  imediatamente ANTES de `codex-agents`/`codex-skills` (mesma posição relativa de
+  `claude-credential-guard` perante `claude-agents`/`claude-skills`); nova função
+  `harnessCredentialGuardTargetCodex` reusa `mergeCredentialGuardClaudeHooks` (generalizada — mesmo
+  shape JSON `hooks.PreToolUse`/`PostToolUse[matcher:Bash]` que Codex já usa). 23 ids totais.
+- Node: `npm/src/commands/update-harness.js` — `credentialGuardTargetCodex`, inserção condicional
+  `if (target.id === 'codex')` no loop que constrói `HARNESS_TARGET_IDS` e no dispatcher
+  `buildHarnessTargets`.
+- Python: `pypi/trackfw/commands/update_harness.py` — `_credential_guard_codex_result`, mesma
+  inserção condicional em `declared_target_ids()` e despacho em `_run`.
+- Testes espelhados (missing/install-absoluto/idempotência/dry-run/preservação de conteúdo
+  pré-existente) em `internal/generators/update_test.go`, `internal/commands/update_harness_test.go`,
+  `npm/tests/update-harness.test.js`, `pypi/tests/test_update_harness.py` — todos usando `$HOME`/
+  `HOME` de fixture (`t.TempDir()`/`scratchHome()`/`tmp_path`), nunca o `$HOME` real.
+- `docs/cli-parity.md` atualizado ("22 ids" → "23 ids", nova entrada `codex-credential-guard` na
+  lista pinada + seção da investigação Codex).
+
+**Evidência de validação:**
+- `go build ./... && go test ./...` — todos os pacotes verdes.
+- `cd npm && npm test` — 405 testes verdes (incluindo os 63 do validator suite embutido).
+- `python3 -m pytest pypi/` — 944 testes verdes.
+- `GO_BIN=bin/trackfw scripts/check-update-parity.sh` — todos os cenários OK, incluindo
+  `target-list/three-runtimes-identical` confirmando os 23 ids idênticos e na mesma ordem nos 3
+  stacks (lista impressa no output do gate).
+
+Roadmap ML-2B marcado `✅ Concluído` no arquivo (conteúdo, não commit). Nenhum commit feito — regra
+de git authority, `trackfw_architect` audita e commita. Próximo ML da Wave 2 é o ML-2C
+(`gemini-credential-guard`), ainda `⬜ Pendente`.

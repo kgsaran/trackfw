@@ -248,6 +248,111 @@ test('claude-credential-guard preserves pre-existing content in ~/.claude/settin
   }
 })
 
+// ---------------------------------------------------------------------------
+// `codex-credential-guard` — global-scope credential-guard hook wiring for
+// Codex CLI, ROADMAP-2026-08-06 Wave 2 ML-2B. Mirrors the claude-credential-
+// guard tests above and internal/generators/update_test.go's Codex tests.
+// ---------------------------------------------------------------------------
+
+test('codex-credential-guard is missing without --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--targets', 'codex-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'missing')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.codex', 'hooks.json')), false)
+})
+
+test('codex-credential-guard installs the absolute global script path with --install-missing', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'codex-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(doc.targets[0].path, '~/.codex/hooks.json')
+
+  const hooksPath = path.join(homeRoot, '.codex', 'hooks.json')
+  const hooksDoc = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.ok(path.isAbsolute(wantScript))
+
+  for (const event of ['PreToolUse', 'PostToolUse']) {
+    const bashEntries = (hooksDoc.hooks[event] || []).filter((e) => e.matcher === 'Bash')
+    assert.equal(bashEntries.length, 1)
+    const commands = bashEntries[0].hooks.map((h) => h.command)
+    assert.ok(commands.includes(wantScript))
+  }
+})
+
+test('codex-credential-guard is idempotent', () => {
+  const homeRoot = scratchHome()
+  run(['update', 'harness', '--json', '--install-missing', '--targets', 'codex-credential-guard'], homeRoot)
+  const hooksPath = path.join(homeRoot, '.codex', 'hooks.json')
+  const firstRun = fs.readFileSync(hooksPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'codex-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'skipped')
+  const secondRun = fs.readFileSync(hooksPath, 'utf8')
+  assert.equal(firstRun, secondRun)
+
+  const hooksDoc = JSON.parse(secondRun)
+  const bashEntries = hooksDoc.hooks.PreToolUse.filter((e) => e.matcher === 'Bash')
+  assert.equal(bashEntries.length, 1)
+})
+
+test('codex-credential-guard --dry-run does not write', () => {
+  const homeRoot = scratchHome()
+  const doc = JSON.parse(
+    run(
+      ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', 'codex-credential-guard'],
+      homeRoot
+    ).stdout
+  )
+  assert.equal(doc.dry_run, true)
+  assert.equal(doc.targets[0].state, 'updated')
+  assert.equal(fs.existsSync(path.join(homeRoot, '.codex', 'hooks.json')), false)
+})
+
+test('codex-credential-guard preserves pre-existing content in ~/.codex/hooks.json', () => {
+  const homeRoot = scratchHome()
+  const hooksPath = path.join(homeRoot, '.codex', 'hooks.json')
+  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
+  fs.writeFileSync(
+    hooksPath,
+    JSON.stringify(
+      {
+        hooks: {
+          PermissionRequest: [
+            {
+              matcher: '.*',
+              hooks: [{ type: 'command', command: 'scripts/trackfw-attention-signal.sh' }],
+            },
+          ],
+        },
+        userSetting: 'keep-me',
+      },
+      null,
+      2
+    )
+  )
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', 'codex-credential-guard'], homeRoot).stdout
+  )
+  assert.equal(doc.targets[0].state, 'updated')
+
+  const hooksDoc = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  assert.equal(hooksDoc.userSetting, 'keep-me')
+  const permEntries = hooksDoc.hooks.PermissionRequest.filter((e) => e.matcher === '.*')
+  assert.equal(permEntries.length, 1)
+  for (const event of ['PreToolUse', 'PostToolUse']) {
+    const bashEntries = hooksDoc.hooks[event].filter((e) => e.matcher === 'Bash')
+    assert.equal(bashEntries.length, 1)
+  }
+})
+
 test('a project-scoped catalog install under HOME is not touched by trackfw update (project scope stays project scope)', () => {
   const homeRoot = scratchHome()
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-harness-project-'))

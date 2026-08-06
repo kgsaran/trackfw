@@ -127,7 +127,21 @@ idênticos nos 3 stacks. `docs/cli-parity.md` ("21 ids") corrigido para 22. Todo
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2B — Alvo `codex-credential-guard`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Investigação da contradição (resolvida com alta confiança):** re-fetch direto em 2026-08-06 de
+`https://developers.openai.com/codex/hooks` confirma: "Hooks are enabled by default. To turn them off
+in config.toml, set: `[features] hooks = false`. Use `hooks` as the canonical feature key.
+`codex_hooks` still works as a deprecated alias." `https://developers.openai.com/codex/config-
+advanced` (mesma data) não tem requisito conflitante. Ou seja: `codex_hooks`/`hooks` só serve para
+DESLIGAR hooks — nunca é necessário como opt-in, nem para wiring de projeto nem global. Nenhuma
+`Message` de aviso extra foi adicionada ao `TargetResult` (a investigação resolveu com confiança
+total, então a hedge condicional do próprio ML não se aplica). Evidência completa registrada em
+`docs/cli-parity.md`, seção "Declared harness targets — pinned list".
+**Posição em `HarnessTargetIDs`:** `codex-credential-guard` inserido imediatamente ANTES de
+`codex-agents`/`codex-skills` — mesma posição relativa de `claude-credential-guard` (que precede
+`claude-agents`/`claude-skills`). Lista completa agora com 23 ids, confirmada idêntica nos 3 stacks
+por `check-update-parity.sh` (cenário `target-list/three-runtimes-identical`).
 **Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
 `npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
 irmãos), seção Codex — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
