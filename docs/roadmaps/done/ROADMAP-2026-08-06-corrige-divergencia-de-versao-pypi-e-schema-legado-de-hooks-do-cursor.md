@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-06
 req: "docs/req/REQ-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: corrige divergência de versão pypi e schema legado de hooks do Cursor
 
-> Created: 2026-08-06 | Status: wip
+> Created: 2026-08-06 | Status: done
 
 ## Context
 REQ: `docs/req/REQ-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md`
