@@ -219,7 +219,7 @@ do ML-1A acima.
 **Comandos de validação:** `go test ./internal/generators/... && npm run test --workspace=npm -- hooks && python -m pytest pypi/tests/ -k hooks`
 
 ### ML-2C — Gemini CLI
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectGeminiHooks`, linha 279-324)
 - `npm/src/generators/hooks.js` (linha ~172)
