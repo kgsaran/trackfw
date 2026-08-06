@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-05
 req: "docs/req/REQ-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: hook de guarda contra materialização de credenciais reais por subagentes
 
-> Created: 2026-08-05 | Status: wip
+> Created: 2026-08-05 | Status: done
 
 ## Context
 REQ: `docs/req/REQ-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`

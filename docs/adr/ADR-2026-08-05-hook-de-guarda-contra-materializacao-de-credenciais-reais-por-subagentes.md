@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-08-05
 author: "kg.saran@gmail.com"
 ---
 
 # ADR: hook de guarda contra materializacao de credenciais reais por subagentes
 
-> Date: 2026-08-05 | Status: Proposed
+> Date: 2026-08-05 | Status: Accepted
 
 ## Context
 

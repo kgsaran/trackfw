@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-05
 author: "kg.saran@gmail.com"
 adr: "docs/adr/ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md"
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md"
 ---
 
 # REQ: hooks de guarda contra materialização de credenciais reais por subagentes
 
-> Date: 2026-08-05 | Status: Open
+> Date: 2026-08-05 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -103,4 +103,4 @@ fora de escopo nativo, e extensão obrigatória do gate de paridade para cobrir 
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`
