@@ -459,7 +459,7 @@ Detalhe completo, com citações das 3 páginas, em `docs/cli-parity.md` (seçã
 > Dependências: Wave 2 completa (precisa dos formatos finais de hooks.json por CLI)
 
 ### ML-3A — Estender `check-attention-scripts-parity.sh` para cobrir hooks.json por CLI
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `scripts/check-attention-scripts-parity.sh` (renomear/estender escopo, ou criar
   `scripts/check-credential-guard-hooks-parity.sh` novo, seguindo o mesmo padrão de cenário
