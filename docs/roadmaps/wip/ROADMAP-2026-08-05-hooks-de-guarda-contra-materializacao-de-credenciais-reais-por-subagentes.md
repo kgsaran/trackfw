@@ -596,7 +596,7 @@ script original.
 > Dependências: Waves 1-4 completas
 
 ### ML-5A — Atualizar documentação e contexto de trabalho
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `docs/cli-parity.md`
 - `docs/agents-working-context.md`
