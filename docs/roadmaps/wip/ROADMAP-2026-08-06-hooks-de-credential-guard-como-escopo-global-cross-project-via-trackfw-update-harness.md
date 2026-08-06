@@ -501,7 +501,7 @@ Wave 5 (`ML-5A` — consolidar documentação e fechar REQ), ainda `⬜ Pendente
 > Dependências: Waves 1-4 completas
 
 ### ML-5A — Consolidar documentação e fechar REQ
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `docs/cli-parity.md`, `docs/agents-working-context.md`, REQ
 **Ações:**
