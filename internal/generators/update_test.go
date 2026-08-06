@@ -884,6 +884,209 @@ func TestUpdateHarnessCredentialGuardGeminiPreservesExistingContent(t *testing.T
 	}
 }
 
+// The following cursor-credential-guard tests mirror the gemini-credential-
+// guard tests above (ROADMAP-2026-08-06 Wave 2/ML-2D). Cursor's hooks.json
+// schema differs structurally from Claude/Codex/Gemini's — each event array
+// holds flat {"command":"..."} entries with no per-entry "matcher" — see
+// mergeCredentialGuardCursorHooks (update.go), so assertions below read
+// hooks[event] directly instead of hooks[event][].hooks[].command.
+
+func TestUpdateHarnessCredentialGuardCursorMissingWithoutInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"cursor-credential-guard"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetMissing {
+		t.Fatalf("state = %q, want missing (no --install-missing)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".cursor", "hooks.json")); !os.IsNotExist(err) {
+		t.Fatalf("cursor-credential-guard was installed without --install-missing: %v", err)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardCursorInstallsAbsolutePathWithInstallMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"cursor-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (--install-missing)", report.Targets[0].State)
+	}
+	if report.Targets[0].Path != "~/.cursor/hooks.json" {
+		t.Fatalf("path = %q, want ~/.cursor/hooks.json", report.Targets[0].Path)
+	}
+
+	hooksPath := filepath.Join(home, ".cursor", "hooks.json")
+	data, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatalf("~/.cursor/hooks.json was not written: %v", err)
+	}
+
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("invalid JSON written: %v", err)
+	}
+	if doc["version"] != float64(1) {
+		t.Fatalf("version = %v, want 1", doc["version"])
+	}
+
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !filepath.IsAbs(wantScript) {
+		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
+	}
+	for _, event := range []string{"beforeShellExecution", "afterShellExecution"} {
+		hooks, _ := doc["hooks"].(map[string]interface{})
+		if hooks == nil {
+			t.Fatalf("no hooks object written: %v", doc)
+		}
+		arr, _ := hooks[event].([]interface{})
+		found := false
+		for _, item := range arr {
+			obj, _ := item.(map[string]interface{})
+			if obj["command"] == wantScript {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s does not contain a {command} entry pointing at the absolute global script path %s: %v", event, wantScript, doc)
+		}
+	}
+}
+
+func TestUpdateHarnessCredentialGuardCursorIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if _, err := UpdateHarness(UpdateOptions{Targets: []string{"cursor-credential-guard"}, InstallMissing: true}); err != nil {
+		t.Fatal(err)
+	}
+	hooksPath := filepath.Join(home, ".cursor", "hooks.json")
+	firstRun, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"cursor-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetSkipped {
+		t.Fatalf("state = %q, want skipped (already installed, idempotent)", report.Targets[0].State)
+	}
+	secondRun, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(firstRun) != string(secondRun) {
+		t.Fatalf("second run mutated ~/.cursor/hooks.json:\nfirst:  %s\nsecond: %s", firstRun, secondRun)
+	}
+
+	var doc map[string]interface{}
+	if err := json.Unmarshal(secondRun, &doc); err != nil {
+		t.Fatal(err)
+	}
+	hooks, _ := doc["hooks"].(map[string]interface{})
+	arr, _ := hooks["beforeShellExecution"].([]interface{})
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	shellEntries := 0
+	for _, item := range arr {
+		obj, _ := item.(map[string]interface{})
+		if obj["command"] == wantScript {
+			shellEntries++
+		}
+	}
+	if shellEntries != 1 {
+		t.Fatalf("expected exactly one beforeShellExecution entry, got %d: %v", shellEntries, doc)
+	}
+}
+
+func TestUpdateHarnessCredentialGuardCursorDryRunDoesNotWrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"cursor-credential-guard"}, InstallMissing: true, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.DryRun {
+		t.Fatal("report.DryRun = false, want true")
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (would install)", report.Targets[0].State)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".cursor", "hooks.json")); !os.IsNotExist(err) {
+		t.Fatal("--dry-run wrote ~/.cursor/hooks.json")
+	}
+}
+
+func TestUpdateHarnessCredentialGuardCursorPreservesExistingContent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	hooksPath := filepath.Join(home, ".cursor", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(hooksPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	preexisting := `{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "scripts/trackfw-attention-signal.sh"
+      }
+    ]
+  },
+  "userSetting": "keep-me"
+}
+`
+	if err := os.WriteFile(hooksPath, []byte(preexisting), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"cursor-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (merging into existing file)", report.Targets[0].State)
+	}
+
+	data, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc["userSetting"] != "keep-me" {
+		t.Fatalf("pre-existing top-level key was not preserved: %v", doc)
+	}
+	hooks, _ := doc["hooks"].(map[string]interface{})
+	preArr, _ := hooks["preToolUse"].([]interface{})
+	if len(preArr) != 1 {
+		t.Fatalf("pre-existing preToolUse entry was dropped: %v", hooks)
+	}
+	beforeArr, _ := hooks["beforeShellExecution"].([]interface{})
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	hasShell := false
+	for _, item := range beforeArr {
+		obj, _ := item.(map[string]interface{})
+		if obj["command"] == wantScript {
+			hasShell = true
+		}
+	}
+	if !hasShell {
+		t.Fatalf("expected beforeShellExecution entry to be added: %v", beforeArr)
+	}
+}
+
 func TestUpdateHarnessDoesNotWriteAnythingOutsideHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

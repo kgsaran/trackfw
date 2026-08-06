@@ -28,6 +28,20 @@ function hasEntry(arr, field, value) {
   return Array.isArray(arr) && arr.some(e => e && e[field] === value)
 }
 
+/**
+ * Merge helper para arrays de hooks "simples" tipo Cursor
+ * (hooks.beforeShellExecution/afterShellExecution): cada entry é um objeto
+ * plano {"command": "..."} — sem matcher, sem {type, hooks:[...]} aninhado
+ * como Claude/Codex/Gemini. Mirrors internal/generators/agentfiles.go:
+ * mergeSimpleCommandArray.
+ */
+function mergeSimpleCommandArray(existing, command) {
+  const arr = Array.isArray(existing) ? existing.slice() : []
+  if (hasEntry(arr, 'command', command)) return arr
+  arr.push({ command })
+  return arr
+}
+
 /** Merge helper para arrays de hooks tipo Claude / Codex / Gemini */
 function mergeClaudeHookArray(existing, matcher, command) {
   const arr = Array.isArray(existing) ? existing : []
@@ -674,4 +688,5 @@ module.exports = {
   injectWindsurfHooks,
   injectHooksDetected,
   mergeClaudeHookArray,
+  mergeSimpleCommandArray,
 }

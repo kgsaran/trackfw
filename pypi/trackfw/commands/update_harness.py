@@ -45,7 +45,7 @@ from typing import Any
 from trackfw.identity import IdentityError, load as load_identity
 from trackfw.integrations.catalog import global_group_path, load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
-from trackfw.generators.hooks import _merge_claude_hook_array
+from trackfw.generators.hooks import _merge_claude_hook_array, _merge_simple_command_array
 
 STATE_UPDATED = "updated"
 STATE_SKIPPED = "skipped"
@@ -99,18 +99,20 @@ def _tildeify(home: str, absolute: str) -> str:
 
 
 def declared_target_ids() -> list[str]:
-    # "codex-credential-guard"/"gemini-credential-guard" are each inserted
-    # immediately BEFORE their tool's "-agents"/"-skills" pair — same
-    # relative position as claude-credential-guard, which precedes
-    # claude-agents/claude-skills. See
-    # internal/generators/update.go:buildHarnessTargetIDs for the full
-    # rationale (ROADMAP-2026-08-06 Wave 2/ML-2B, ML-2C).
+    # "codex-credential-guard"/"gemini-credential-guard"/
+    # "cursor-credential-guard" are each inserted immediately BEFORE their
+    # tool's "-agents"/"-skills" pair — same relative position as
+    # claude-credential-guard, which precedes claude-agents/claude-skills.
+    # See internal/generators/update.go:buildHarnessTargetIDs for the full
+    # rationale (ROADMAP-2026-08-06 Wave 2/ML-2B, ML-2C, ML-2D).
     ids = ["claude-skill", "claude-credential-guard"]
     for tool in _CATALOG_TARGET_ORDER:
         if tool == "codex":
             ids.append("codex-credential-guard")
         if tool == "gemini":
             ids.append("gemini-credential-guard")
+        if tool == "cursor":
+            ids.append("cursor-credential-guard")
         for kind in _CATALOG_KIND_ORDER:
             ids.append(f"{tool}-{kind}")
     return ids
@@ -373,6 +375,73 @@ def _credential_guard_gemini_result(home: str, dry_run: bool, install_missing: b
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
 
 
+def _credential_guard_cursor_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Evaluates (and, unless dry_run, applies) the global-scope
+    credential-guard hook wiring for Cursor:
+    hooks.beforeShellExecution/hooks.afterShellExecution entries in
+    ~/.cursor/hooks.json pointing at the ABSOLUTE path of
+    ~/.trackfw/scripts/trackfw-credential-guard.sh (a global hook can fire
+    from any project's cwd). Mirrors `_credential_guard_claude_result`/
+    `_credential_guard_codex_result`/`_credential_guard_gemini_result`'s
+    4-state contract and internal/generators/update.go:
+    harnessCredentialGuardTargetCursor, but via `_merge_simple_command_array`
+    (generators/hooks.py) instead of `_merge_claude_hook_array`: Cursor's
+    hooks.json schema (`{"version":1,"hooks":{"<event>":[{"command":"..."}]}}`,
+    confirmed by generators/hooks.py:inject_cursor_hooks) is structurally
+    different from Claude/Codex/Gemini's — each event array holds flat
+    {"command":"..."} entries, no per-entry "matcher", no nested
+    {"type","hooks":[...]}.
+    """
+    target_id = "cursor-credential-guard"
+    path = os.path.join(home, ".cursor", "hooks.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        root: dict[str, Any] = {}
+        root.setdefault("version", 1)
+        hooks = root.setdefault("hooks", {})
+        _merge_simple_command_array(hooks.setdefault("beforeShellExecution", []), script_path)
+        _merge_simple_command_array(hooks.setdefault("afterShellExecution", []), script_path)
+        desired = json.dumps(root, indent=2) + "\n"
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(desired, encoding="utf-8")
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    try:
+        root = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if not isinstance(root, dict):
+        root = {}
+    root.setdefault("version", 1)
+    hooks = root.setdefault("hooks", {})
+    _merge_simple_command_array(hooks.setdefault("beforeShellExecution", []), script_path)
+    _merge_simple_command_array(hooks.setdefault("afterShellExecution", []), script_path)
+    desired = json.dumps(root, indent=2) + "\n"
+    if desired.encode("utf-8") == raw:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_text(desired, encoding="utf-8")
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
 def _catalog_group_result(
     tool: str,
     kind: str,
@@ -470,6 +539,9 @@ def _run(args: argparse.Namespace) -> None:
             continue
         if target_id == "gemini-credential-guard":
             targets.append(_credential_guard_gemini_result(home, args.dry_run, args.install_missing))
+            continue
+        if target_id == "cursor-credential-guard":
+            targets.append(_credential_guard_cursor_result(home, args.dry_run, args.install_missing))
             continue
         tool, kind = target_id.rsplit("-", 1)
         targets.append(_catalog_group_result(tool, kind, home, manager, identity_cfg, args.dry_run, args.install_missing))

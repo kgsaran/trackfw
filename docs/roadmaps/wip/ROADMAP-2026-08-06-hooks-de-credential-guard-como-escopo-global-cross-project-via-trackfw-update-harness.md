@@ -199,17 +199,43 @@ só para essas chaves de topo — reaproveitando o helper de array por baixo.
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2D — Alvo `cursor-credential-guard`
-**Status:** 🔄 Em andamento
-**Arquivos afetados:** mesmos 3 stacks de ML-2A (`internal/generators/update.go` +
-`npm/src/commands/update-harness.js` + `pypi/trackfw/commands/update_harness.py`, e os testes
-irmãos), seção Cursor — **regra dura de paridade 3 CLIs é obrigatória neste ML** (o ML-2A ficou
-Go-only por erro do orquestrador na autoria do roadmap; não repetir)
+**Status:** ✅ Concluído
+
+**Helper de merge:** `mergeSimpleCommandArray` (Go, `agentfiles.go`) — não `mergeClaudeHookArray`.
+Confirmado lendo `InjectCursorHooks` (projeto) inteira antes de implementar: Cursor's hooks.json
+usa `{"version":1,"hooks":{"<event>":[{"command":"..."}]}}` — cada entrada de evento é um objeto
+plano `{"command": "..."}`, SEM `matcher`, sem `{type, hooks:[...]}` aninhado como
+Claude/Codex/Gemini. Node.js ganhou um `mergeSimpleCommandArray` equivalente exportado de
+`generators/hooks.js` (não existia; extraído da lógica já inline em `injectCursorHooks`). Python
+ganhou `_merge_simple_command_array` equivalente em `generators/hooks.py`.
+**Posição em `HarnessTargetIDs`/`HARNESS_TARGET_IDS`/`declared_target_ids()`:**
+`cursor-credential-guard` inserido imediatamente ANTES de `cursor-agents`/`cursor-skills` — mesma
+posição relativa dos MLs anteriores. Lista completa agora com 25 ids, confirmada idêntica nos 3
+stacks por `check-update-parity.sh` (cenário `target-list/three-runtimes-identical`).
+`docs/cli-parity.md` ("24 ids") corrigido para 25.
+**Arquivos afetados:**
+- `internal/generators/update.go` (`buildHarnessTargetIDs`, `UpdateHarness` dispatcher,
+  `mergeCredentialGuardCursorHooks`, `harnessCredentialGuardTargetCursor`)
+- `internal/generators/update_test.go` (5 testes espelhando os de Gemini: missing, install absolute
+  path, idempotência, dry-run, preservação de conteúdo pré-existente — asserções lêem
+  `hooks[event]` como array plano de `{command}`, sem `matcher`)
+- `internal/commands/update_harness_test.go` (`TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI`)
+- `npm/src/generators/hooks.js` (`mergeSimpleCommandArray`, exportado)
+- `npm/src/commands/update-harness.js` (`HARNESS_TARGET_IDS`, `credentialGuardTargetCursor`,
+  dispatcher em `buildHarnessTargets`)
+- `npm/tests/update-harness.test.js` (5 testes espelhando os de Gemini)
+- `pypi/trackfw/generators/hooks.py` (`_merge_simple_command_array`)
+- `pypi/trackfw/commands/update_harness.py` (`declared_target_ids`,
+  `_credential_guard_cursor_result`, dispatcher em `_run`)
+- `pypi/tests/test_update_harness.py` (5 testes espelhando os de Gemini + ajuste de
+  `test_harness_declared_target_list_and_order` para 25 ids)
+- `docs/cli-parity.md` (seção "Declared harness targets — pinned list" corrigida para 25 ids)
 **Ações:**
 - Escrever/mesclar `hooks.beforeShellExecution`/`hooks.afterShellExecution` em `~/.cursor/hooks.json`
   (mesmo schema `{"version":1,"hooks":{...}}` já usado no wiring de projeto, PR #141).
 **Critérios de aceite:**
-- [ ] `trackfw update harness --targets cursor-credential-guard --install-missing` funciona em fixture
-- [ ] Testes verdes nos 3 stacks
+- [x] `trackfw update harness --targets cursor-credential-guard --install-missing` funciona em fixture
+- [x] Testes verdes nos 3 stacks
 **Comandos de validação:** `go test ./internal/commands/... ./internal/generators/... -run Harness`
 
 ### ML-2E — Alvo `copilot-credential-guard`

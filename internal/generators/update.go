@@ -286,11 +286,14 @@ var harnessCatalogTargetOrder = []string{
 // "<tool>-skills" pair, with "codex-credential-guard" inserted immediately
 // BEFORE "codex-agents"/"codex-skills" (ROADMAP-2026-08-06 Wave 2/ML-2B) and
 // "gemini-credential-guard" inserted immediately BEFORE "gemini-agents"/
-// "gemini-skills" (ROADMAP-2026-08-06 Wave 2/ML-2C) — same relative position
-// as claude-credential-guard/codex-credential-guard (credential-guard target
-// precedes that tool's agents/skills pair, never follows it). Remaining
-// "<tool>-credential-guard" siblings are added by subsequent, sequential MLs
-// (2D-2F), each at the same relative position for its own tool. Order here
+// "gemini-skills" (ROADMAP-2026-08-06 Wave 2/ML-2C), and
+// "cursor-credential-guard" inserted immediately BEFORE "cursor-agents"/
+// "cursor-skills" (ROADMAP-2026-08-06 Wave 2/ML-2D) — same relative position
+// as claude-credential-guard/codex-credential-guard/gemini-credential-guard
+// (credential-guard target precedes that tool's agents/skills pair, never
+// follows it). Remaining "<tool>-credential-guard" siblings are added by
+// subsequent, sequential MLs (2E-2F), each at the same relative position for
+// its own tool. Order here
 // is authoritative for both JSON output and iteration — it must never be
 // derived from the filesystem or from what happens to be installed on a
 // given machine (see docs/cli-parity.md, "targets follows the declared
@@ -306,6 +309,9 @@ func buildHarnessTargetIDs() []string {
 		}
 		if tool == "gemini" {
 			ids = append(ids, "gemini-credential-guard")
+		}
+		if tool == "cursor" {
+			ids = append(ids, "cursor-credential-guard")
 		}
 		ids = append(ids, tool+"-agents", tool+"-skills")
 	}
@@ -355,6 +361,10 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		}
 		if id == "gemini-credential-guard" {
 			results = append(results, harnessCredentialGuardTargetGemini(home, opts))
+			continue
+		}
+		if id == "cursor-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetCursor(home, opts))
 			continue
 		}
 		tool, kind, ok := splitHarnessCatalogTargetID(id)
@@ -703,6 +713,109 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 		root = make(map[string]interface{})
 	}
 	mergeCredentialGuardGeminiHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// mergeCredentialGuardCursorHooks merges the credential-guard
+// beforeShellExecution/afterShellExecution entries into root["hooks"],
+// preserving any other hook event arrays already present. Cursor's
+// hooks.json schema (confirmed by InjectCursorHooks, agentfiles.go) is
+// structurally different from Claude/Codex/Gemini's: each event holds a flat
+// array of simple {"command": "..."} objects — no per-entry "matcher", no
+// nested {"type","hooks":[...]} — so this reuses mergeSimpleCommandArray
+// (agentfiles.go), not mergeClaudeHookArray.
+func mergeCredentialGuardCursorHooks(root map[string]interface{}, scriptPath string) {
+	if _, ok := root["version"]; !ok {
+		root["version"] = 1
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	makeEntry := func(command string) interface{} {
+		return map[string]interface{}{"command": command}
+	}
+	getCmd := func(item interface{}) string {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		cmd, _ := obj["command"].(string)
+		return cmd
+	}
+	hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], scriptPath, makeEntry, getCmd)
+	hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], scriptPath, makeEntry, getCmd)
+	root["hooks"] = hooks
+}
+
+// harnessCredentialGuardTargetCursor evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Cursor:
+// hooks.beforeShellExecution/hooks.afterShellExecution entries in
+// ~/.cursor/hooks.json pointing at the ABSOLUTE path of
+// ~/.trackfw/scripts/trackfw-credential-guard.sh — same 4-state contract and
+// same reason for an absolute path as
+// harnessCredentialGuardTargetClaude/Codex/Gemini (a global hook can fire
+// from any project's cwd), but via mergeCredentialGuardCursorHooks since
+// Cursor's hooks.json schema (ROADMAP-2026-08-06 ML-2D) differs from the
+// other three CLIs — see that helper's doc comment.
+func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetResult {
+	const id = "cursor-credential-guard"
+	const displayPath = "~/.cursor/hooks.json"
+
+	path := filepath.Join(home, ".cursor", "hooks.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardCursorHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardCursorHooks(root, scriptPath)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {

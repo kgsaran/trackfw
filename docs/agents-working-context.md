@@ -9909,3 +9909,51 @@ Roadmap ML-2C marcado `✅ Concluído` no arquivo (conteúdo, não commit). Nenh
 de git authority, `trackfw_architect` audita e commita. Próximo ML da Wave 2 é o ML-2D
 (`cursor-credential-guard`), ainda `⬜ Pendente`. Cursor/Copilot/Kiro (2D-2F) não tocados, conforme
 instrução do handoff.
+
+## Sessão 2026-08-06 — Apolo (ML-2D do ROADMAP hooks-de-credential-guard-global) — Go+Node+Python implementados, sem commit
+
+Mesma branch. Executando ML-2D (alvo `cursor-credential-guard`) — paridade 3 stacks desde o início.
+
+**Confirmação do helper de merge:** lida `InjectCursorHooks` (`internal/generators/agentfiles.go`,
+wiring de projeto) inteira antes de implementar, conforme instruído — o schema real do Cursor é
+DIFERENTE dos MLs anteriores: `{"version":1,"hooks":{"beforeShellExecution":[...],
+"afterShellExecution":[...]}}`, cada entrada um objeto plano `{"command":"..."}`, SEM `matcher` e
+SEM `{type, hooks:[...]}` aninhado como Claude/Codex/Gemini. O helper reutilizado é
+`mergeSimpleCommandArray` (Go, já usado por `InjectCursorHooks`), não `mergeClaudeHookArray`. Node.js
+não tinha um `mergeSimpleCommandArray` equivalente exportado (a lógica vivia inline dentro de
+`injectCursorHooks`) — extraído para `generators/hooks.js` e exportado. Python ganhou
+`_merge_simple_command_array` equivalente em `generators/hooks.py`.
+
+**Implementação (3 stacks, mesmo padrão do ML-2C, adaptado ao schema plano do Cursor):**
+- Go: `internal/generators/update.go` — `"cursor-credential-guard"` inserido em
+  `buildHarnessTargetIDs` imediatamente ANTES de `cursor-agents`/`cursor-skills`; nova função
+  `harnessCredentialGuardTargetCursor` + `mergeCredentialGuardCursorHooks` (usa
+  `mergeSimpleCommandArray`, de `agentfiles.go`). 25 ids totais.
+- Node: `npm/src/generators/hooks.js` — `mergeSimpleCommandArray` novo, exportado.
+  `npm/src/commands/update-harness.js` — `credentialGuardTargetCursor`, inserção condicional
+  `if (target.id === 'cursor')` no loop que constrói `HARNESS_TARGET_IDS` e no dispatcher
+  `buildHarnessTargets`.
+- Python: `pypi/trackfw/generators/hooks.py` — `_merge_simple_command_array` novo.
+  `pypi/trackfw/commands/update_harness.py` — `_credential_guard_cursor_result`, mesma inserção
+  condicional em `declared_target_ids()` e despacho em `_run`.
+- Testes espelhados (missing/install-absoluto/idempotência/dry-run/preservação de conteúdo
+  pré-existente) em `internal/generators/update_test.go`, `internal/commands/update_harness_test.go`,
+  `npm/tests/update-harness.test.js`, `pypi/tests/test_update_harness.py` (+ ajuste de
+  `test_harness_declared_target_list_and_order` para 25 ids) — asserções lêem `hooks[event]` como
+  array plano de `{command}`, sem `matcher`, refletindo o schema real do Cursor. Todos usando
+  `$HOME`/`HOME` de fixture, nunca o `$HOME` real.
+- `docs/cli-parity.md` atualizado ("24 ids" → "25 ids", nova entrada `cursor-credential-guard` na
+  lista pinada).
+
+**Evidência de validação:**
+- `go build ./... && go test ./...` — todos os pacotes verdes.
+- `cd npm && npm test` — 415 testes verdes.
+- `python3 -m pytest pypi/` — 954 testes verdes, 8 subtests.
+- `GO_BIN=bin/trackfw scripts/check-update-parity.sh` — todos os cenários OK, incluindo
+  `target-list/three-runtimes-identical` confirmando os 25 ids idênticos e na mesma ordem nos 3
+  stacks.
+
+Roadmap ML-2D marcado `✅ Concluído` no arquivo (conteúdo, não commit). Nenhum commit feito — regra
+de git authority, `trackfw_architect` audita e commita. Próximo ML da Wave 2 é o ML-2E
+(`copilot-credential-guard`), ainda `⬜ Pendente`. Copilot/Kiro (2E-2F) não tocados, conforme
+instrução do handoff.

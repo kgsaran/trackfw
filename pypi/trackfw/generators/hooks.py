@@ -36,6 +36,18 @@ def _has_entry(lst: list, field: str, value: str) -> bool:
     return any(isinstance(e, dict) and e.get(field) == value for e in (lst or []))
 
 
+def _merge_simple_command_array(hook_list: list, command: str) -> None:
+    """Garante (idempotente) que hook_list tenha uma entrada {"command": ...}.
+
+    Mirrors internal/generators/agentfiles.go:mergeSimpleCommandArray — para
+    arrays de hooks "simples" tipo Cursor (hooks.beforeShellExecution/
+    afterShellExecution): cada entry é um objeto plano {"command": "..."},
+    sem matcher, sem {type, hooks:[...]} aninhado como Claude/Codex/Gemini.
+    """
+    if not _has_entry(hook_list, 'command', command):
+        hook_list.append({'command': command})
+
+
 def _merge_claude_hook_array(hook_list: list, matcher: str, command: str) -> None:
     """Garante (idempotente) que hook_list tenha uma entrada matcher→command.
 

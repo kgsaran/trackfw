@@ -297,6 +297,53 @@ func TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI(t *testing.T) {
 	}
 }
 
+// TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI mirrors
+// TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI for the
+// cursor-credential-guard target (ROADMAP-2026-08-06 Wave 2/ML-2D).
+func TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cmd := newUpdateHarnessCmd()
+	var out strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--json", "--targets", "cursor-credential-guard", "--install-missing"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("trackfw update harness --targets cursor-credential-guard --install-missing failed: %v", err)
+	}
+
+	line := strings.TrimSpace(out.String())
+	var doc struct {
+		Targets []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+			Path  string `json:"path"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(line), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, line)
+	}
+	if len(doc.Targets) != 1 || doc.Targets[0].ID != "cursor-credential-guard" {
+		t.Fatalf("unexpected targets: %+v", doc.Targets)
+	}
+	if doc.Targets[0].State != "updated" {
+		t.Fatalf("state = %q, want updated", doc.Targets[0].State)
+	}
+	if doc.Targets[0].Path != "~/.cursor/hooks.json" {
+		t.Fatalf("path = %q, want ~/.cursor/hooks.json", doc.Targets[0].Path)
+	}
+
+	hooksPath := filepath.Join(home, ".cursor", "hooks.json")
+	data, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatalf("~/.cursor/hooks.json was not written: %v", err)
+	}
+	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if !strings.Contains(string(data), wantScript) {
+		t.Fatalf("hooks.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	}
+}
+
 func assertKeyOrder(t *testing.T, doc string, keys []string) {
 	t.Helper()
 	var positions []int
