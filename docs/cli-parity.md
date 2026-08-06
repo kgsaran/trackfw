@@ -2373,6 +2373,54 @@ Kiro no literal Node.js (`npm/src/generators/hooks.js`, de `'shell'` para
 `'execute_bash'`) numa cópia isolada do repositório e asserta que o gate
 reprova apontando `$.hooks[3].matcher` no diagnóstico.
 
+## Hooks GLOBAIS de credential-guard (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.gemini/settings.json`, `~/.cursor/hooks.json`, `~/.copilot/settings.json`, `~/.kiro/hooks/trackfw-credential-guard.json`) — paridade estrutural (ROADMAP-2026-08-06, ML-4A)
+
+Sibling do gate de hooks por-projeto (seção anterior), para o escopo GLOBAL
+introduzido por
+`docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md`:
+`harnessCredentialGuardTarget<Tool>` (`internal/generators/update.go`),
+`credentialGuardTarget<Tool>` (`npm/src/commands/update-harness.js`) e
+`_credential_guard_<tool>_result` (`pypi/trackfw/commands/update_harness.py`)
+são implementações independentes por stack para os mesmos 6 CLIs da wave
+nativa, escritas via `trackfw update harness --targets <tool>-credential-guard
+--install-missing` em `$HOME` em vez de num projeto. Nenhum dos dois gates
+subsome o outro: o dedup do ML-3A (seção "Agent hooks por CLI" acima) LÊ o
+arquivo global que este gate exercita, mas nunca o escreve.
+
+### Parity gate
+
+`scripts/check-harness-hooks-parity.sh` roda `update harness --targets
+<todos os 6 ids>-credential-guard --install-missing` uma vez por runtime (Go
+compilado, Node.js, Python), cada runtime contra o seu PRÓPRIO fixture de
+`$HOME` isolado (nunca o `$HOME` real de quem roda o gate) — um `$HOME`
+compartilhado entre os 3 runtimes foi descartado porque `--install-missing` é
+merge idempotente: o segundo e o terceiro runtime a escrever no mesmo `$HOME`
+reportariam `state: skipped` em vez de `state: updated`, enfraquecendo
+silenciosamente a garantia central do gate (que cada stack, escrevendo do
+zero, produz a mesma estrutura). Os mesmos dois guards de vacuidade (P2) do
+gate por-projeto rodam antes de qualquer diff (arquivo existe e não está
+vazio nos 3 runtimes; arquivo referencia `trackfw-credential-guard.sh` pelo
+menos uma vez). A comparação estrutural reusa o mesmo comparador `python3`
+inline do gate por-projeto (mesmo motivo: nenhum `jq`) — com uma etapa extra
+de normalização textual ANTES do `json.loads`: cada um dos 6 arquivos embute
+o path ABSOLUTO de `~/.trackfw/scripts/trackfw-credential-guard.sh` (um hook
+global precisa resolver a partir do cwd de qualquer projeto, então um path
+relativo não é opção), e como cada runtime roda contra o seu próprio `$HOME`
+de fixture, esse absoluto diverge textualmente entre os 3 mesmo quando todos
+resolvem corretamente — o gate substitui o path do `$HOME` de fixture de cada
+runtime por um placeholder comum (`<HOME>`) no conteúdo bruto do arquivo
+antes de parsear como JSON, então esse campo nunca é reportado como drift
+falso. Falha nomeando o CLI, o par de stacks e o path JSON divergente (ex.:
+`$.hooks[1].matcher`). Roda como parte de `make quality` (alvo `parity`),
+logo após `check-agent-hooks-parity.sh` e antes de `check-gates-falsify.sh`.
+
+A prova negativa (P4) está em `scripts/check-gates-falsify.sh` (Cenário 45) —
+corrompe o `matcher` da entrada `trackfw-credential-guard-global-post` do
+wiring GLOBAL do Kiro no literal Python
+(`pypi/trackfw/commands/update_harness.py`, de `"shell"` para
+`"execute_bash"`) numa cópia isolada do repositório e asserta que o gate
+reprova apontando `$.hooks[1].matcher` no diagnóstico.
+
 ## Princípios de design de gates (P1–P4)
 
 Todo gate de paridade e toda regra do validator devem seguir os quatro princípios documentados em

@@ -448,18 +448,54 @@ Wave 4 (`ML-4A` — estender o gate de paridade estrutural para os alvos harness
 > Dependências: Wave 2 completa
 
 ### ML-4A — Estender gate de paridade estrutural para os alvos harness
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Gate novo (não extensão):** `scripts/check-harness-hooks-parity.sh` — script dedicado seguindo
+exatamente o padrão de `check-agent-hooks-parity.sh` (mesma estrutura: resolução de runtimes,
+guards de vacuidade P2, comparador `python3` inline sem `jq`), mas para os 6 alvos globais
+(`<tool>-credential-guard` via `trackfw update harness --targets ... --install-missing`) em vez do
+`discover --init` por-projeto. Não estendeu o script existente porque os dois exercitam entry points
+e fixtures (`$HOME` isolado vs. projeto) completamente diferentes — misturá-los violaria a separação
+de responsabilidade já estabelecida pelo gate original.
+**Normalização do path absoluto:** cada um dos 6 arquivos embute o path ABSOLUTO de
+`~/.trackfw/scripts/trackfw-credential-guard.sh` (correto — um hook global precisa resolver a partir
+de qualquer projeto). Como cada runtime roda contra seu PRÓPRIO `$HOME` de fixture isolado (rejeitada
+a opção de `$HOME` compartilhado entre os 3 runtimes na mesma rodada — `--install-missing` é merge
+idempotente, então o 2º/3º runtime a escrever no mesmo `$HOME` reportaria `state: skipped` em vez de
+`state: updated`, mascarando o comportamento real de escrita-do-zero de cada stack), o gate substitui
+textualmente o path do `$HOME` de fixture de cada runtime por um placeholder comum (`<HOME>`) no
+conteúdo bruto do arquivo antes de fazer `json.loads` — normalização puramente textual, não
+regex/glob, então nunca falso-nega um path absoluto realmente divergente por outro motivo.
+**Achado durante implementação:** `mktemp -d "${TMPDIR:-/tmp}/..."` no macOS produzia um `$WORK` com
+barra dupla (`TMPDIR` já termina em `/`), que os 3 runtimes normalizam ao montar o path absoluto
+embutido (`filepath.Join`/`path.join`/`os.path.join`) mas que o `$HOME` literal usado pela
+normalização textual do gate NÃO normalizava — causando falso-positivo de drift em todo campo com o
+path embutido. Corrigido canonicalizando `$WORK` uma vez (`WORK=$(cd "$WORK" && pwd)`) logo após o
+`mktemp -d`.
+**Resultado do gate no estado atual:** 12/12 `OK` (6 CLIs × go-vs-node/go-vs-py) —
+`GO_BIN=bin/trackfw scripts/check-harness-hooks-parity.sh` verde.
 **Arquivos afetados:**
-- `scripts/check-agent-hooks-parity.sh` (estender) ou novo script dedicado seguindo o mesmo padrão
-- `Makefile`, `scripts/check-gates-falsify.sh` (prova negativa, mesmo padrão do Cenário 44)
-- `docs/cli-parity.md`
+- `scripts/check-harness-hooks-parity.sh` (novo)
+- `Makefile` (linha `check-harness-hooks-parity.sh` inserida no alvo `parity`, logo após
+  `check-agent-hooks-parity.sh` e antes de `check-gates-falsify.sh`)
+- `scripts/check-gates-falsify.sh` (Cenário 45 — corrompe o `matcher` da entrada
+  `trackfw-credential-guard-global-post` do wiring global do Kiro no literal Python
+  (`pypi/trackfw/commands/update_harness.py`, `"shell"` → `"execute_bash"`) numa cópia isolada do
+  repositório; `GO_BIN` real, `NODE_CLI` real via `setup_npm_tree`, `PY_ROOT` corrompido; asserta
+  reprovação com `$.hooks[1].matcher` no diagnóstico; contagem final atualizada de 102→103 cenários,
+  17→18 gates)
+- `docs/cli-parity.md` (nova seção "Hooks GLOBAIS de credential-guard ... — paridade estrutural
+  (ROADMAP-2026-08-06, ML-4A)")
 **Ações:**
 - Mesmo padrão do `check-agent-hooks-parity.sh` (PR #141), mas com fixture de `$HOME` isolado em vez
   de projeto — gerar os 6 alvos globais via Go/Node/Python reais e comparar estruturalmente.
 **Critérios de aceite:**
-- [ ] Gate novo/estendido verde para os 6 alvos
-- [ ] Prova negativa registrada em `check-gates-falsify.sh`
+- [x] Gate novo/estendido verde para os 6 alvos
+- [x] Prova negativa registrada em `check-gates-falsify.sh`
 **Comandos de validação:** `make quality`
+
+Nenhum commit feito por este agente (git authority é do `trackfw_architect`). Próxima wave é a
+Wave 5 (`ML-5A` — consolidar documentação e fechar REQ), ainda `⬜ Pendente`.
 
 ## Wave 5 — Documentação e encerramento (1 ML)
 > Dependências: Waves 1-4 completas
