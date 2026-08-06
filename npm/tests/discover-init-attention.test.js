@@ -17,17 +17,19 @@ const { spawnSync } = require('node:child_process')
 
 const bin = path.resolve(__dirname, '../bin/trackfw')
 
-const { SIGNAL_SCRIPT, CLEANUP_SCRIPT } = (() => {
+const { SIGNAL_SCRIPT, CLEANUP_SCRIPT, GUARD_SCRIPT } = (() => {
   const hooks = require('../src/generators/hooks')
   // The scripts module does not export the raw constants, so derive the
   // expected content the same way `trackfw init` does: by generating into a
   // throwaway directory and reading the result back.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-attn-ref-'))
   hooks.generateAttentionScripts({}, tmp)
+  hooks.generateCredentialGuardScript(tmp)
   const SIGNAL_SCRIPT = fs.readFileSync(path.join(tmp, 'scripts', 'trackfw-attention-signal.sh'), 'utf8')
   const CLEANUP_SCRIPT = fs.readFileSync(path.join(tmp, 'scripts', 'trackfw-attention-cleanup.sh'), 'utf8')
+  const GUARD_SCRIPT = fs.readFileSync(path.join(tmp, 'scripts', 'trackfw-credential-guard.sh'), 'utf8')
   fs.rmSync(tmp, { recursive: true, force: true })
-  return { SIGNAL_SCRIPT, CLEANUP_SCRIPT }
+  return { SIGNAL_SCRIPT, CLEANUP_SCRIPT, GUARD_SCRIPT }
 })()
 
 function scratch() {
@@ -55,6 +57,10 @@ function cleanupPath(projectRoot) {
   return path.join(projectRoot, 'scripts', 'trackfw-attention-cleanup.sh')
 }
 
+function guardPath(projectRoot) {
+  return path.join(projectRoot, 'scripts', 'trackfw-credential-guard.sh')
+}
+
 test('discover --init generates trackfw-attention-signal.sh and trackfw-attention-cleanup.sh', () => {
   const { projectRoot, homeRoot } = scratch()
   const result = run(['discover', '--init'], projectRoot, homeRoot)
@@ -62,6 +68,20 @@ test('discover --init generates trackfw-attention-signal.sh and trackfw-attentio
 
   assert.ok(fs.existsSync(signalPath(projectRoot)), 'scripts/trackfw-attention-signal.sh should exist')
   assert.ok(fs.existsSync(cleanupPath(projectRoot)), 'scripts/trackfw-attention-cleanup.sh should exist')
+})
+
+test('discover --init generates trackfw-credential-guard.sh (same lifecycle as the attention scripts)', () => {
+  const { projectRoot, homeRoot } = scratch()
+  const result = run(['discover', '--init'], projectRoot, homeRoot)
+  assert.equal(result.status, 0, result.stderr)
+
+  assert.ok(fs.existsSync(guardPath(projectRoot)), 'scripts/trackfw-credential-guard.sh should exist')
+
+  const guardContent = fs.readFileSync(guardPath(projectRoot), 'utf8')
+  assert.equal(guardContent, GUARD_SCRIPT)
+
+  const guardMode = fs.statSync(guardPath(projectRoot)).mode & 0o777
+  assert.equal(guardMode & 0o100, 0o100, 'credential guard script should be executable (owner +x)')
 })
 
 test('discover --init attention scripts are executable and byte-identical to trackfw init output', () => {

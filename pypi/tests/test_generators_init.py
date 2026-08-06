@@ -383,14 +383,20 @@ class TestAttentionScripts(unittest.TestCase):
 
         signal_path = os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')
         cleanup_path = os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')
+        guard_path = os.path.join(self.tmp, 'scripts', 'trackfw-credential-guard.sh')
 
         self.assertTrue(os.path.isfile(signal_path), 'trackfw-attention-signal.sh não foi criado')
         self.assertTrue(os.path.isfile(cleanup_path), 'trackfw-attention-cleanup.sh não foi criado')
+        # trackfw init (via scaffold()) deve gerar o script de credential guard no
+        # mesmo ciclo de vida dos scripts de attention — regressão do bug onde o
+        # gerador existia mas nunca era chamado por nenhum fluxo real.
+        self.assertTrue(os.path.isfile(guard_path), 'trackfw-credential-guard.sh não foi criado por scaffold()')
 
         # Permissão de execução no Unix
         if os.name == 'posix':
             self.assertTrue(os.stat(signal_path).st_mode & 0o111 != 0, 'signal script não é executável')
             self.assertTrue(os.stat(cleanup_path).st_mode & 0o111 != 0, 'cleanup script não é executável')
+            self.assertTrue(os.stat(guard_path).st_mode & 0o111 != 0, 'credential guard script não é executável')
 
         with open(signal_path, encoding='utf-8') as f:
             signal_content = f.read()
@@ -673,6 +679,44 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.claude', 'settings.json')))
         self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')))
         self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'scripts', 'trackfw-credential-guard.sh')))
+
+    def test_update_command_upgrade_scenario_backfills_credential_guard(self):
+        """
+        Cenário de upgrade: projeto que já rodou `trackfw init`/`update` ANTES desta
+        REQ tem scripts/trackfw-attention-signal.sh mas ainda não tem
+        scripts/trackfw-credential-guard.sh. `trackfw update` deve gerar o script
+        que falta, sem quebrar nada existente.
+        """
+        from trackfw.commands.update import _run
+        import argparse
+        import os
+
+        with open(os.path.join(self.tmp, 'trackfw.yaml'), 'w', encoding='utf-8') as f:
+            f.write('backend: python\nroadmap_dir: docs/roadmaps\n')
+        os.makedirs(os.path.join(self.tmp, '.claude'), exist_ok=True)
+        os.makedirs(os.path.join(self.tmp, 'scripts'), exist_ok=True)
+
+        signal_path = os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')
+        with open(signal_path, 'w', encoding='utf-8') as f:
+            f.write('#!/usr/bin/env bash\necho "old signal script"\n')
+        os.chmod(signal_path, 0o755)
+
+        guard_path = os.path.join(self.tmp, 'scripts', 'trackfw-credential-guard.sh')
+        self.assertFalse(os.path.isfile(guard_path), 'pré-condição do teste: credential-guard não deve existir ainda')
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(self.tmp)
+            _run(argparse.Namespace())
+        finally:
+            os.chdir(old_cwd)
+
+        self.assertTrue(os.path.isfile(guard_path), 'update não gerou o script de credential guard faltante')
+        if os.name == 'posix':
+            self.assertTrue(os.stat(guard_path).st_mode & 0o111 != 0, 'credential guard script não é executável')
+        # attention-signal.sh preexistente continua presente e não foi removido
+        self.assertTrue(os.path.isfile(signal_path))
 
 
 class TestGenerateClaudeCommands(unittest.TestCase):

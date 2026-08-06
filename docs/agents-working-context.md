@@ -9545,3 +9545,62 @@ automaticamente; varredura ampla por listas hardcoded de targets com o mesmo def
 Roadmap **não movido para `done/`** — deixado em `wip/` para o orquestrador (Zeus) auditar e mover.
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Tooling não tem autoridade
 Git).
+
+## Sessão 2026-08-05 — Apolo (fix crítico pós-auditoria: geradores de credential-guard nunca eram
+chamados por fluxo real) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/hooks-de-guarda-contra-materializacao-de-credenciais` (já criada — sem
+commit/push feitos por este agente). Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`.
+
+**Bug**: `GenerateCredentialGuardScript`/`generateCredentialGuardScript`/
+`_generate_credential_guard_script` (ML-1A) escreviam `scripts/trackfw-credential-guard.sh`, mas
+nenhum fluxo real (`init`/`update`/`discover --init`) chamava essas funções — só testes diretos. O
+script nunca existia em disco em projetos reais, apesar do wiring de hooks (ML-2A/2B/2C) já apontar
+para ele.
+
+**Fix — chamada adicionada ao lado da chamada irmã de `GenerateAttentionScripts`, mesma condição
+(incondicional), em todos os pontos reais**:
+- Go: `internal/generators/scaffold.go` (`Scaffold`, linha ~60-64), `internal/generators/update.go`
+  (`Update`, ~linha 77-81; e `runProjectTarget("agent-hooks")`, ~linha 598-624, incluindo
+  `scripts/trackfw-credential-guard.sh` nos `relPaths`/display path do target), `internal/discover/discover.go`
+  (`InstallGates`, ~linha 61-64).
+- Node.js: `npm/src/generators/init.js` (nova função local `generateCredentialGuardScript` +
+  chamada em `scaffold()` + export), `npm/src/commands/discover.js` (bloco `opts.init`),
+  `npm/src/commands/update.js` (`buildProjectTargets` target `agent-hooks`, incluindo o path no
+  `relPaths`/display path).
+- Python: centralizado em `pypi/trackfw/generators/hooks.py` `inject_hooks_detected()` (ao lado da
+  chamada existente a `_generate_attention_scripts`) — cobre `update.py` (`_run` e `_run_project`) e
+  `init_gen.py` `scaffold()` (que já chama `inject_hooks_detected` depois de `_generate_attention_scripts`
+  direto); chamada direta também adicionada em `init_gen.py::scaffold()` e em
+  `pypi/trackfw/commands/discover.py` (bloco `opts.init`) para espelhar exatamente cada call site do
+  gerador irmão. `AGENT_HOOKS_RELATIVE_PATHS`/`AGENT_HOOKS_DISPLAY_PATH` em `update.py` atualizados.
+
+**Testes novos/estendidos (fluxo real, não chamada direta do gerador)**:
+- Go: `internal/commands/init_test.go::TestInitGeneratesCredentialGuardScript` (via `newInitCmd()` +
+  `cmd.Execute()`), `internal/discover/discover_test.go::TestInstallGates_GeraCredentialGuardScript`
+  (via `InstallGates`, byte-idêntico à referência + idempotência),
+  `internal/generators/update_test.go::TestUpdateBackfillsCredentialGuardScriptForPreExistingProject`
+  (cenário de upgrade: projeto com `trackfw-attention-signal.sh` mas sem `trackfw-credential-guard.sh`
+  → `Update()` cria o que falta) + assert estendido em
+  `TestUpdateInjectsAndUpdatesAttentionHooksIdempotently`.
+- Node.js: `npm/tests/generators.test.js` (assert estendido no teste de `scaffold` e no teste de
+  `update` real + novo teste de cenário de upgrade), `npm/tests/discover-init-attention.test.js`
+  (novo teste via binário real `bin/trackfw discover --init`, byte-idêntico à referência).
+- Python: `pypi/tests/test_generators_init.py` (assert estendido em
+  `test_scaffold_generates_attention_scripts` + novo
+  `test_update_command_upgrade_scenario_backfills_credential_guard` via `commands.update._run`),
+  `pypi/tests/test_discover.py` (novo `test_discover_init_generates_credential_guard_script` via
+  `discover_cmd._cmd_discover`).
+
+**Validação (evidência)**:
+- `go build ./...` OK; `go test ./...` completo OK (todos os pacotes)
+- `npm test` — 380 passed, 0 failed (era 378 antes)
+- `python3 -m pytest` — 913 passed, 8 subtests passed (era 911 antes)
+- `trackfw validate` — sem violações
+- `make quality` — Go/Node/Python verdes; `check-cli-parity.sh` falha por divergência de versão
+  `6.4.1` (Go) vs `6.3.1` (Python) — **confirmado pré-existente** (reproduzido também com
+  `git stash` no HEAD anterior às minhas mudanças), fora do escopo deste fix.
+
+Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
+Git).

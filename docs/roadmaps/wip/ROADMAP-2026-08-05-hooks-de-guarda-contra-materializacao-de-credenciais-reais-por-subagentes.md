@@ -260,12 +260,18 @@ nunca escreveram) foram removidos, para que a saída estruturada fique idêntica
 
 **Achados fora de escopo, reportados e não corrigidos neste ML:**
 - `GenerateCredentialGuardScript`/`generateCredentialGuardScript`/`_generate_credential_guard_script`
-  (que escrevem `scripts/trackfw-credential-guard.sh` em disco) não são chamados por nenhum fluxo de
+  (que escrevem `scripts/trackfw-credential-guard.sh` em disco) não eram chamados por nenhum fluxo de
   comando real (`trackfw init`/`discover`/`update`) nos 3 stacks — apenas por testes. Todo o wiring de
-  hooks feito em ML-2A/2B/2C aponta para um script que hoje só existe se algo o gerar manualmente. Isso
-  pré-existe a este ML (já valia para Claude/Codex) e precisa de correção própria (provavelmente
-  chamando o gerador do script no mesmo ponto em que `InjectHooksDetected`/`injectHooksDetected`/
-  `inject_hooks_detected` é chamado) — não corrigido aqui para não expandir escopo.
+  hooks feito em ML-2A/2B/2C apontava para um script que só existia se algo o gerasse manualmente.
+  **Resolvido em commit dedicado logo após este ML** (bug crítico, corrigido antes de prosseguir para
+  ML-2D): chamada adicionada ao lado de `GenerateAttentionScripts`/equivalentes em todos os pontos
+  reais (Go: `scaffold.go:Scaffold`, `update.go:Update` + `runProjectTarget("agent-hooks")`,
+  `discover.go:InstallGates`; Node: `init.js:scaffold`, `discover.js`, `update.js`; Python:
+  `hooks.py:inject_hooks_detected` + `init_gen.py:scaffold` + `discover.py`), incondicional (mesma
+  condição do gerador irmão), com testes de fluxo real (não só chamada direta do gerador) e cenário de
+  upgrade (`update` num projeto pré-existente sem o script) cobertos nos 3 stacks. Confirmado
+  end-to-end pelo orquestrador: `trackfw init` num diretório novo gera o script executável e o wiring
+  com matcher `Bash` no `.claude/settings.json` gerado.
 - `AfterTool[matcher:"*"]` (entrada pré-existente de cleanup, não tocada neste ML): a documentação
   pesquisada não define semântica explícita de "match-all" para o `matcher` (é descrito como regex ou
   string exata; nenhuma menção a `"*"` como coringa documentado). Não corrigido aqui (fora do escopo

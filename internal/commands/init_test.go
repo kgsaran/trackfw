@@ -272,6 +272,35 @@ func TestInitForgeFlag_Valid(t *testing.T) {
 	}
 }
 
+// TestInitGeneratesCredentialGuardScript verifies that `trackfw init` (the real
+// command flow, not a direct call to the generator) writes
+// scripts/trackfw-credential-guard.sh and that it is executable — regression test
+// for the bug where GenerateCredentialGuardScript existed but was never called by
+// any real init/update/discover flow, only by tests calling it directly.
+func TestInitGeneratesCredentialGuardScript(t *testing.T) {
+	project, _ := initFixture(t)
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--forge", "github"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	guardPath := filepath.Join(project, "scripts", "trackfw-credential-guard.sh")
+	info, err := os.Stat(guardPath)
+	if err != nil {
+		t.Fatalf("scripts/trackfw-credential-guard.sh not created by trackfw init: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Errorf("scripts/trackfw-credential-guard.sh should be executable, mode=%v", info.Mode())
+	}
+
+	signalPath := filepath.Join(project, "scripts", "trackfw-attention-signal.sh")
+	if _, err := os.Stat(signalPath); err != nil {
+		t.Fatalf("scripts/trackfw-attention-signal.sh not created by trackfw init: %v", err)
+	}
+}
+
 // TestInitForgeFlag_Invalid verifies that --forge with an unknown value returns
 // an error that lists all accepted forge values.
 func TestInitForgeFlag_Invalid(t *testing.T) {

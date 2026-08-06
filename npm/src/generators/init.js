@@ -33,6 +33,7 @@ async function scaffold(cfg, cwd) {
   writeTrackfwConfig(cfg, root)
   generateValidateScript(cfg, root)
   generateAttentionScripts(cfg, root)
+  generateCredentialGuardScript(root)
   generateCIWorkflow(cfg, root)
   generateGitHooks(cfg, root)
   generateCommitMsgHook(cfg, root)
@@ -166,6 +167,11 @@ trackfw validate
 function generateAttentionScripts(cfg, cwd) {
   const { generateAttentionScripts: gen } = require('./hooks')
   gen(cfg, cwd || process.cwd())
+}
+
+function generateCredentialGuardScript(cwd) {
+  const { generateCredentialGuardScript: gen } = require('./hooks')
+  gen(cwd || process.cwd())
 }
 
 function injectHooksDetected(cwd) {
@@ -1322,6 +1328,7 @@ module.exports = {
   writeTrackfwConfig,
   generateValidateScript,
   generateAttentionScripts,
+  generateCredentialGuardScript,
   generateCIWorkflow,
   generateGitHooks,
   generateCommitMsgHook,

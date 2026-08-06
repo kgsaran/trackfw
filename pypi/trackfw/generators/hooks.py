@@ -299,6 +299,12 @@ def inject_hooks_detected(cwd: str) -> None:
     except Exception as e:
         print(f'  ⚠ attention scripts: {e}')
 
+    try:
+        from trackfw.generators.init_gen import _generate_credential_guard_script
+        _generate_credential_guard_script(cwd)
+    except Exception as e:
+        print(f'  ⚠ credential guard script: {e}')
+
     detections = {
         'claude': (
             lambda: os.path.isdir(os.path.join(cwd, '.claude')) or os.path.isfile(os.path.join(cwd, 'CLAUDE.md')),

@@ -78,6 +78,10 @@ func Update(cwd string) error {
 		fmt.Printf("  ⚠ attention scripts: %v\n", err)
 	}
 
+	if err := GenerateCredentialGuardScript(""); err != nil {
+		fmt.Printf("  ⚠ credential guard script: %v\n", err)
+	}
+
 	// 3. CI workflow (categoria 2 — trackfw-owned, overwrite seguro)
 	if err := generateCIWorkflow(cfg); err != nil {
 		fmt.Printf("  ⚠ CI workflow: %v\n", err)
@@ -597,7 +601,7 @@ func runProjectTarget(id, root string, cfg Config, opts UpdateOptions) TargetRes
 			opts)
 	case "agent-hooks":
 		return runFileTarget(id,
-			".claude/settings.json, .codex/hooks.json, .gemini/settings.json, .kiro/hooks/trackfw-attention.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, scripts/trackfw-attention-*.sh",
+			".claude/settings.json, .codex/hooks.json, .gemini/settings.json, .kiro/hooks/trackfw-attention.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, scripts/trackfw-attention-*.sh, scripts/trackfw-credential-guard.sh",
 			root,
 			[]string{
 				".claude/settings.json",
@@ -608,13 +612,17 @@ func runProjectTarget(id, root string, cfg Config, opts UpdateOptions) TargetRes
 				".cursor/hooks.json",
 				"scripts/trackfw-attention-signal.sh",
 				"scripts/trackfw-attention-cleanup.sh",
+				"scripts/trackfw-credential-guard.sh",
 			},
 			func(r string) error {
 				return withChdir(r, func() error {
 					if err := InjectHooksDetected(r); err != nil {
 						return err
 					}
-					return GenerateAttentionScripts("")
+					if err := GenerateAttentionScripts(""); err != nil {
+						return err
+					}
+					return GenerateCredentialGuardScript("")
 				})
 			},
 			opts)

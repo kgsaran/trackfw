@@ -88,6 +88,7 @@ def scaffold(cwd: str, opts: dict) -> None:
     generate_claude_commands(cwd)
     generate_validate_script(cwd)
     _generate_attention_scripts(cwd)
+    _generate_credential_guard_script(cwd)
     try:
         from trackfw.generators.hooks import inject_hooks_detected
         inject_hooks_detected(cwd)

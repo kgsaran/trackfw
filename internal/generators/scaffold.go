@@ -61,6 +61,10 @@ func Scaffold(cfg Config) error {
 		return err
 	}
 
+	if err := GenerateCredentialGuardScript(""); err != nil {
+		return err
+	}
+
 	if err := generateCIWorkflow(cfg); err != nil {
 		return err
 	}
