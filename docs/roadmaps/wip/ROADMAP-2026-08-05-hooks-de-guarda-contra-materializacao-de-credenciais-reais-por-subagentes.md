@@ -596,7 +596,17 @@ script original.
 > Dependências: Waves 1-4 completas
 
 ### ML-5A — Atualizar documentação e contexto de trabalho
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** `docs/cli-parity.md` ganhou uma seção consolidada única (tabela por CLI +
+achados transversais das Waves 2-4). Durante a consolidação, o agente encontrou e reportou uma
+inconsistência real: a seção "Gemini CLI wiring (ML-2C)" ainda descrevia o bug do script nunca gerado
+como "não corrigido" — o fix já tinha sido aplicado em commit dedicado logo após aquele ML. Corrigido
+diretamente pelo orquestrador (correção factual pontual, não expansão de escopo). REQ atualizada com
+4 de 5 Acceptance Criteria concluídos; o 5º (`make quality`/`make parity` totalmente verdes) fica
+formalmente aberto, bloqueado por um bug de versão pré-existente e não relacionado a esta REQ
+(`pypi/trackfw/__init__.py`), já documentado desde o ML-1A — `trackfw validate` passa limpo e todos
+os gates específicos desta REQ foram confirmados verdes isoladamente.
 **Arquivos afetados:**
 - `docs/cli-parity.md`
 - `docs/agents-working-context.md`

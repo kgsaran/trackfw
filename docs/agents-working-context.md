@@ -9717,3 +9717,47 @@ CLI), já que a dúvida registrada ali estava explicitamente em aberto.
 Sem commit/push — devolvido para `trackfw_architect` auditar e commitar (Backend não tem autoridade
 Git). Wave 2 completa (ML-2A a ML-2F, todos ✅). Próximo: Wave 3 (ML-3A, gate de paridade
 hooks.json/settings.json).
+
+## Sessão 2026-08-05 — Zeus (orquestração/encerramento do ciclo: hook de guarda contra
+materialização de credenciais) — ROADMAP CONCLUÍDO
+
+Branch `feat/hooks-de-guarda-contra-materializacao-de-credenciais`. REQ
+`docs/req/REQ-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`,
+ADR `docs/adr/ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`,
+Roadmap `docs/roadmaps/wip/ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`.
+
+Todas as 5 Waves concluídas e auditadas (build/testes rodados pelo orquestrador de forma independente
+do relato de cada subagente, incluindo reprodução manual de todas as provas negativas antes de
+aprovar commit):
+
+- **Wave 1 (ML-1A):** script `trackfw-credential-guard.sh` + config `credential_guard.mode`
+  (warn|block, default warn), paridade Go/Node/Python.
+- **Wave 2 (ML-2A-2F):** wiring nos 6 CLIs da wave nativa (Claude Code, Codex, Gemini CLI, Copilot,
+  Cursor, Kiro) — nenhum precisou ser re-escopado. Achados corrigidos durante a wave: race de
+  concorrência do Codex (fix: arquivo `.trackfw-credential-guard.json` dedicado), bug crítico do
+  script nunca sendo gerado em fluxo real (fix dedicado pós-ML-2C), 4 divergências de paridade
+  Go/Node/Python (Codex, Gemini, Copilot formato inteiro, Kiro schema legado).
+- **Wave 3 (ML-3A):** `scripts/check-agent-hooks-parity.sh`, gate estrutural novo encadeado em
+  `make quality`/`parity`, prova negativa como Cenário 44 de `check-gates-falsify.sh`.
+- **Wave 4 (ML-4A):** teste de sabotagem end-to-end real (JWT sintético, subprocess real) para 3 de 6
+  CLIs (Claude Code, Cursor, Kiro) — os outros 3 sem teste por falta de confiança no schema de
+  payload de stdin documentado publicamente, status explícito no roadmap/REQ, não omissão.
+- **Wave 5 (ML-5A):** `docs/cli-parity.md` consolidado com tabela única de suporte por CLI + achados
+  transversais; REQ com Acceptance Criteria atualizados (4 de 5 checados; o 5º —
+  `make quality`/`make parity` — bloqueado por bug pré-existente não relacionado a esta REQ,
+  documentado, `trackfw validate` passa limpo).
+
+**Erro de processo do próprio Zeus nesta sessão, corrigido e registrado em memória**: a branch foi
+criada manualmente (`git checkout -b`) em vez de via `trackfw branch new`, o que causou um commit
+indevido direto na `main` (revertido antes de qualquer push) e 2 rounds de rename até o slug bater
+com o filename do roadmap. Ver memória `feedback_usar_trackfw_branch_new`.
+
+**Achado fora de escopo, registrado para REQ futura**: divergência de versão pré-existente
+(`pypi/trackfw/__init__.py` fallback `6.3.1` vs. `6.4.1` em Go/Node) bloqueia `make quality`/`make
+parity` de ponta a ponta — não corrigido nesta REQ. Também fora de escopo: wiring legado
+(`preToolUse`/`postToolUse`) do Cursor usa um schema que não corresponde a nenhum evento real
+documentado do Cursor (achado do ML-2E, preservado por instrução explícita, não migrado).
+
+Roadmap **não movido para `done/`** — deixado em `wip/` para o usuário confirmar o encerramento
+(commits todos feitos por Zeus após auditoria de cada ML; nenhum PR aberto ainda — decisão do
+usuário).

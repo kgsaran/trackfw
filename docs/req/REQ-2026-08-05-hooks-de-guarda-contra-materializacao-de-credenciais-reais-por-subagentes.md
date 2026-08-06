@@ -68,16 +68,30 @@ executar e/ou no output depois de executar — protegendo qualquer projeto que r
   opção de modo estrito (bloqueante) configurável em `trackfw.yaml`.
 
 ## Acceptance Criteria
-- [ ] Roadmap detalhado criado a partir desta REQ, com decisão explícita sobre bloqueante vs.
-      avisador (e se é configurável)
-- [ ] Script de guarda com paridade Go/Node/Python confirmada desde o primeiro commit (gate de
-      paridade já existe no projeto, reusar — não recriar)
-- [ ] Pelo menos Claude Code (`PreToolUse`/`PostToolUse` em `Bash`) coberto na primeira wave; demais
-      CLIs podem ser waves subsequentes, desde que documentado no roadmap qual ficou de fora e por quê
-- [ ] Teste de sabotagem (mesmo padrão de `qualidade-selftest-paralelo-falso-verde` — lição de um
-      projeto consumidor): um teste que efetivamente tenta materializar um JWT sintético e confirma que
-      o hook detecta, não um self-test que reimplementa a checagem em paralelo
-- [ ] `make quality`/`make parity` verdes, `trackfw validate` sem violações novas
+- [x] Roadmap detalhado criado a partir desta REQ, com decisão explícita sobre bloqueante vs.
+      avisador (e se é configurável) — ver ADR: avisador por padrão, bloqueio opt-in via
+      `credential_guard.mode` em `trackfw.yaml`
+- [x] Script de guarda com paridade Go/Node/Python confirmada desde o primeiro commit (ML-1A;
+      gate de paridade estrutural dedicado criado no ML-3A —
+      `scripts/check-agent-hooks-parity.sh`, encadeado em `make quality`/`parity`, com prova negativa
+      registrada como Cenário 44 de `scripts/check-gates-falsify.sh`)
+- [x] Claude Code (`PreToolUse`/`PostToolUse` em `Bash`) coberto na primeira wave (ML-2A); demais 5
+      CLIs da wave nativa também cobertos nas MLs 2B-2F (Codex, Gemini CLI, Copilot, Cursor, Kiro) —
+      nenhum precisou ser re-escopado. Windsurf permanece fora, conforme decidido na ADR.
+- [x] Teste de sabotagem real (ML-4A): script real invocado como subprocesso com JWT sintético gerado
+      no teste, não self-test que reimplementa a checagem em paralelo. Cobertura honesta: 3 de 6 CLIs
+      (Claude Code, Cursor, Kiro) — Codex, Gemini CLI e Copilot ficaram sem teste de sabotagem
+      end-to-end por falta de confiança suficiente no schema de payload de stdin em runtime
+      documentado publicamente (status explícito, não omissão — ver `docs/cli-parity.md`).
+- [ ] `make quality`/`make parity` verdes, `trackfw validate` sem violações novas — **`trackfw
+      validate` passa limpo**; `make quality`/`make parity` como um todo continuam bloqueados por um
+      bug pré-existente e não relacionado a esta REQ (`pypi/trackfw/__init__.py` com fallback de
+      versão desalinhado — `6.3.1` vs. `6.4.1` em Go/Node — já documentado desde o ML-1A). Todos os
+      gates específicos desta REQ (`check-agent-hooks-parity.sh`, os cenários de
+      `check-gates-falsify.sh`, os testes dos 3 stacks) foram confirmados verdes isoladamente e também
+      dentro da suíte completa de falsificação após alinhamento temporário da versão só para
+      verificação (revertido antes do commit). Corrigir o bug de versão fica fora do escopo desta REQ
+      — recomendado abrir REQ própria antes do próximo release.
 
 ## Linked ADR
 ADR: `docs/adr/ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`
