@@ -4,6 +4,45 @@
 
 ---
 
+## Sessão 2026-08-06 — Apolo (ML-3A: dedup — `InjectXHooks` de projeto pula credential-guard quando já instalado globalmente) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness`
+(já criada pelo orquestrador — Backend não executa Git; sem commit/push feitos por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
+Wave 3/ML-3A (Waves 1 e 2 já concluídas e auditadas nas sessões anteriores).
+ADR: `docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md`,
+Decisão #4.
+
+**Escopo**: os 6 `InjectXHooks`/`injectXHooks`/`inject_x_hooks` (Claude, Codex, Gemini, Cursor,
+Copilot, Kiro) passam a checar, por leitura pura do arquivo de hooks global correspondente, se a
+entrada de credential-guard global (`~/.trackfw/scripts/trackfw-credential-guard.sh`, instalada via
+`trackfw update harness --targets <tool>-credential-guard`, Wave 2) já existe antes de adicionar a
+entrada por-projeto — se sim, pula a entrada por-projeto (evita rodar o guard 2x por comando);
+attention-signal/attention-cleanup continuam sendo adicionados sempre, sem alteração. Fail-open
+obrigatório: qualquer falha em resolver `$HOME`/ler/parsear o arquivo global é tratada como "não
+instalado" e a entrada por-projeto é adicionada normalmente.
+
+**Detalhe completo da implementação e evidência de validação registrados no próprio roadmap** (nota
+de auditoria do ML-3A) — resumo: novo bloco de helpers read-only nos 3 stacks
+(`internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,
+`pypi/trackfw/generators/hooks.py`), novo arquivo de teste dedicado por stack
+(`credential_guard_dedup_test.go`/`.js`/`.py`, 8-9 testes cada: 6 cenários de dedup por CLI + 2-3
+fail-open), e isolação de `$HOME` (`t.Setenv`/`test.beforeEach`/`setUp`+`tearDown`) adicionada aos
+testes pré-existentes que chamam `InjectXHooks` para não ler acidentalmente o `$HOME` real do
+desenvolvedor/CI durante a execução.
+
+**Evidência de validação:**
+- `go build ./... && go vet ./... && go test ./...` — verde.
+- `cd npm && npm test` — 433 testes verdes (425 + 8 novos).
+- `python3 -m pytest pypi/` — 972 testes + 8 subtests verdes (964 + 8 novos).
+- `GO_BIN=bin/trackfw scripts/check-agent-hooks-parity.sh` — 12 cenários OK, sem regressão.
+
+Nenhum commit feito por este agente. Próxima wave é a Wave 4 (`ML-4A` — estender o gate de paridade
+estrutural para os alvos harness), ainda `⬜ Pendente`.
+
+---
+
 ## Sessão 2026-08-04 — Apolo (ML-3A: documentar `trackfw branch new` + gate de paridade) — INICIADO
 
 Branch `feat/comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip`

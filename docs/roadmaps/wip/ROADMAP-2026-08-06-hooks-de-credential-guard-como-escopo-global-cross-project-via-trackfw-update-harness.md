@@ -35,7 +35,7 @@ decide:
 - [ ] Script global gerado nos 3 stacks, paridade mantida
 - [ ] `trackfw update harness` ganha 6 alvos novos (`<tool>-credential-guard`), seguindo o contrato
       já existente (`--targets`/`--install-missing`/`--dry-run`/estados `updated|skipped|missing|failed`)
-- [ ] Dedup funcionando: projeto com credential-guard global instalado para um CLI não duplica o
+- [x] Dedup funcionando: projeto com credential-guard global instalado para um CLI não duplica o
       wiring local desse CLI ao rodar `trackfw init`/`update`, mas mantém attention-signal/cleanup
 - [ ] Kiro com verificação de versão v3 antes de instalar (não falha silenciosamente numa v2)
 - [ ] Contradição do Codex (flag `codex_hooks`) investigada e resolvida com evidência antes do wiring
@@ -355,7 +355,73 @@ arquivos/escopos diferentes.
 > Dependências: Wave 2 completa (precisa saber o formato exato de cada alvo global para detectá-lo)
 
 ### ML-3A — `InjectXHooks` (projeto) pula credential-guard quando já instalado globalmente
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Implementação (3 stacks):** para cada um dos 6 `InjectXHooks`/`injectXHooks`/`inject_x_hooks`,
+antes de adicionar a entrada de credential-guard por-projeto, uma checagem read-only lê (nunca
+escreve) o arquivo de hooks global correspondente e verifica se já existe a entrada apontando para
+`~/.trackfw/scripts/trackfw-credential-guard.sh` (path absoluto, `$HOME` resolvido via
+`os.UserHomeDir()`/`os.homedir()`/`os.path.expanduser('~')`, nunca uma string literal com `~`):
+- **Claude/Codex** (`.claude/settings.json`/`.codex/hooks.json`): `hooks.PreToolUse[matcher:"Bash"]`.
+- **Gemini** (`.gemini/settings.json`): `hooks.BeforeTool[matcher:"run_shell_command"]`.
+- **Cursor** (`.cursor/hooks.json`): `hooks.beforeShellExecution[].command` (array plano, sem
+  matcher).
+- **Copilot** (`.copilot/settings.json`): `hooks.preToolUse[].bash` (array plano, matched pelo campo
+  `"bash"`).
+- **Kiro** (`.kiro/hooks/trackfw-credential-guard.json`): arquivo 100% dedicado (nunca merge) — basta
+  checar existência + conteúdo não-vazio (`os.Stat`/`fs.statSync`/`os.path.getsize`).
+
+Se a entrada global já existe: a entrada de credential-guard por-projeto é pulada (Bash/BeforeTool/
+beforeShellExecution+afterShellExecution/preToolUse+postToolUse conforme o CLI) — attention-signal/
+attention-cleanup continuam sendo adicionados normalmente, sem alteração, em todos os 6 CLIs.
+
+**Fail-open confirmado**: qualquer falha ao resolver `$HOME`, ler o arquivo global (inexistente,
+sem permissão) ou parsear o JSON (corrompido) é tratada como "não instalado globalmente" — a entrada
+de credential-guard por-projeto continua sendo adicionada exatamente como antes deste ML. Nenhum
+caminho de leitura do estado global pode silenciar o credential-guard por-projeto por erro.
+
+**Arquivos alterados:**
+- `internal/generators/agentfiles.go` (bloco novo "Global credential-guard dedup" — helpers
+  `globalCredentialGuardScriptPath`, `readGlobalHookJSON`, `hookArrayHasCommand`,
+  `simpleArrayHasValue`, e uma `globalCredentialGuardInstalled<Tool>` por CLI — e os 6 `InjectXHooks`
+  passam a checar antes de mesclar/anexar a entrada de credential-guard).
+- `internal/generators/agentfiles_test.go` (10 testes existentes que chamam `InjectXHooks` ganharam
+  `t.Setenv("HOME", t.TempDir())` para isolar a nova checagem do `$HOME` real da máquina —
+  hermeticidade, não regressão funcional).
+- `internal/generators/hooks_test.go`, `internal/generators/copilot_hooks_parity_test.go`,
+  `internal/generators/credential_guard_sabotage_test.go` (mesma isolação de `$HOME`; o gate de
+  paridade spawna subprocessos Node/Python que herdam a env var).
+- `internal/generators/credential_guard_dedup_test.go` (novo — 9 testes: 6 cenários "global instalado
+  → entrada por-projeto pulada, attention-signal/cleanup preservados" um por CLI, + 3 fail-open:
+  sem arquivo global, JSON corrompido, arquivo sem permissão de leitura).
+- `npm/src/generators/hooks.js` (mesmo bloco de dedup — `globalCredentialGuardScriptPath`,
+  `readGlobalHookJSON`, `hookArrayHasCommand`, `globalCredentialGuardInstalled<Tool>` — e os 6
+  `injectXHooks`).
+- `npm/tests/generators.test.js` (hook `test.beforeEach`/`test.afterEach` a nível de arquivo isolando
+  `$HOME` para todos os testes do arquivo).
+- `npm/tests/credential_guard_sabotage.test.js` (isolação de `$HOME` em `setupSabotageFixture`).
+- `npm/tests/credential_guard_dedup.test.js` (novo — 8 testes espelhando os do Go).
+- `pypi/trackfw/generators/hooks.py` (mesmo bloco de dedup —
+  `_global_credential_guard_script_path`, `_read_global_hook_json`, `_hook_array_has_command`,
+  `_simple_array_has_value`, `_global_credential_guard_installed_<tool>` — e as 6
+  `inject_x_hooks`).
+- `pypi/tests/test_generators_init.py` (`TestAttentionHooksInjectors.setUp`/`tearDown` isolando
+  `$HOME`).
+- `pypi/tests/test_credential_guard_sabotage.py` (`SabotageFixtureMixin.setUp`/`tearDown` isolando
+  `$HOME`).
+- `pypi/tests/test_credential_guard_dedup.py` (novo — 8 testes espelhando os do Go/Node).
+
+**Evidência de validação:**
+- `go build ./... && go vet ./... && go test ./...` — todos os pacotes verdes.
+- `cd npm && npm test` — 433 testes verdes (425 pré-existentes + 8 novos de dedup).
+- `python3 -m pytest pypi/` — 972 testes verdes + 8 subtests (964 pré-existentes + 8 novos).
+- `GO_BIN=bin/trackfw scripts/check-agent-hooks-parity.sh` — todos os 12 cenários (6 CLIs × Go-vs-
+  Node/Go-vs-Python) OK, sem regressão (cenário padrão sem global instalado — o mesmo que o gate já
+  cobria antes deste ML).
+
+Nenhum commit feito por este agente (git authority é do `trackfw_architect`). Próxima wave é a
+Wave 4 (`ML-4A` — estender o gate de paridade estrutural para os alvos harness), ainda
+`⬜ Pendente`.
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (`InjectClaudeHooks`, `InjectCodexHooks`, `InjectGeminiHooks`,
   `InjectCopilotHooks`, `InjectCursorHooks`, `InjectKiroHooks` — os 6 `InjectXHooks` já existentes)

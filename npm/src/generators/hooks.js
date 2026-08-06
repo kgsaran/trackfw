@@ -2,6 +2,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const os = require('os')
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -327,6 +328,109 @@ const CLEANUP_CMD = 'scripts/trackfw-attention-cleanup.sh'
 const GUARD_CMD = 'scripts/trackfw-credential-guard.sh'
 
 // ---------------------------------------------------------------------------
+// Global credential-guard dedup (ROADMAP-2026-08-06 Wave 3/ML-3A)
+// ---------------------------------------------------------------------------
+// injectClaudeHooks/injectCodexHooks/injectGeminiHooks/injectCursorHooks/
+// injectCopilotHooks/injectKiroHooks each check, read-only, whether the user
+// already has the global-scope credential-guard wiring installed for that
+// CLI (via `trackfw update harness --targets <tool>-credential-guard`,
+// npm/src/commands/update-harness.js) before adding the project-scope
+// credential-guard entry. If the global entry is already present, the
+// project-scope entry is skipped entirely — attention-signal/cleanup are
+// unaffected (inherently project-scoped, ADR-2026-08-06 Decision #4).
+//
+// Fail-open is mandatory: any failure to resolve $HOME, read the global
+// file, or parse its JSON is treated as "not installed globally" -- this
+// section never writes to the global file (read-only by construction).
+
+/** Mirrors Go's globalCredentialGuardScriptPath. */
+function globalCredentialGuardScriptPath() {
+  const home = os.homedir()
+  if (!home) return null
+  return path.join(home, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+}
+
+/** Reads+parses JSON at $HOME/<...relParts>; returns null on any failure (fail-open). */
+function readGlobalHookJSON(...relParts) {
+  const home = os.homedir()
+  if (!home) return null
+  try {
+    const raw = fs.readFileSync(path.join(home, ...relParts), 'utf8')
+    return JSON.parse(raw)
+  } catch (_) {
+    return null
+  }
+}
+
+/** Read-only counterpart of mergeClaudeHookArray. */
+function hookArrayHasCommand(existing, matcher, command) {
+  const arr = Array.isArray(existing) ? existing : []
+  for (const item of arr) {
+    if (!item || item.matcher !== matcher) continue
+    const inner = Array.isArray(item.hooks) ? item.hooks : []
+    if (inner.some(h => h && h.command === command)) return true
+  }
+  return false
+}
+
+function globalCredentialGuardInstalledClaude() {
+  const scriptPath = globalCredentialGuardScriptPath()
+  if (!scriptPath) return false
+  const root = readGlobalHookJSON('.claude', 'settings.json')
+  if (!root || !root.hooks) return false
+  return hookArrayHasCommand(root.hooks.PreToolUse, 'Bash', scriptPath)
+}
+
+function globalCredentialGuardInstalledCodex() {
+  const scriptPath = globalCredentialGuardScriptPath()
+  if (!scriptPath) return false
+  const root = readGlobalHookJSON('.codex', 'hooks.json')
+  if (!root || !root.hooks) return false
+  return hookArrayHasCommand(root.hooks.PreToolUse, 'Bash', scriptPath)
+}
+
+function globalCredentialGuardInstalledGemini() {
+  const scriptPath = globalCredentialGuardScriptPath()
+  if (!scriptPath) return false
+  const root = readGlobalHookJSON('.gemini', 'settings.json')
+  if (!root || !root.hooks) return false
+  return hookArrayHasCommand(root.hooks.BeforeTool, 'run_shell_command', scriptPath)
+}
+
+function globalCredentialGuardInstalledCursor() {
+  const scriptPath = globalCredentialGuardScriptPath()
+  if (!scriptPath) return false
+  const root = readGlobalHookJSON('.cursor', 'hooks.json')
+  if (!root || !root.hooks) return false
+  return hasEntry(root.hooks.beforeShellExecution, 'command', scriptPath)
+}
+
+function globalCredentialGuardInstalledCopilot() {
+  const scriptPath = globalCredentialGuardScriptPath()
+  if (!scriptPath) return false
+  const root = readGlobalHookJSON('.copilot', 'settings.json')
+  if (!root || !root.hooks) return false
+  return hasEntry(root.hooks.preToolUse, 'bash', scriptPath)
+}
+
+/**
+ * ~/.kiro/hooks/trackfw-credential-guard.json is 100% dedicated to the
+ * global credential-guard wiring (overwritten wholesale, never merged), so
+ * presence + non-empty content is sufficient — matches the roadmap's
+ * explicit instruction for Kiro.
+ */
+function globalCredentialGuardInstalledKiro() {
+  const home = os.homedir()
+  if (!home) return false
+  try {
+    const stat = fs.statSync(path.join(home, '.kiro', 'hooks', 'trackfw-credential-guard.json'))
+    return stat.size > 0
+  } catch (_) {
+    return false
+  }
+}
+
+// ---------------------------------------------------------------------------
 // generateAttentionScripts — writes the two shell scripts to scripts/
 // ---------------------------------------------------------------------------
 
@@ -355,9 +459,15 @@ function injectClaudeHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'AskUserQuestion', SIGNAL_CMD)
-  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+  // credential-guard when the global one is already installed.
+  if (!globalCredentialGuardInstalledClaude()) {
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
+  }
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'AskUserQuestion', CLEANUP_CMD)
-  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
+  if (!globalCredentialGuardInstalledClaude()) {
+    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
+  }
 
   writeJSON(filePath, data)
 }
@@ -381,9 +491,16 @@ function injectCodexHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.PermissionRequest = mergeClaudeHookArray(data.hooks.PermissionRequest, '.*', SIGNAL_CMD)
-  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+  // credential-guard when the global one is already installed.
+  const skipCodexCG = globalCredentialGuardInstalledCodex()
+  if (!skipCodexCG) {
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
+  }
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, '.*', CLEANUP_CMD)
-  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
+  if (!skipCodexCG) {
+    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
+  }
 
   writeJSON(filePath, data)
 }
@@ -414,9 +531,16 @@ function injectGeminiHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.Notification = mergeClaudeHookArray(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD)
-  data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD)
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+  // credential-guard when the global one is already installed.
+  const skipGeminiCG = globalCredentialGuardInstalledGemini()
+  if (!skipGeminiCG) {
+    data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD)
+  }
   data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, '*', CLEANUP_CMD)
-  data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD)
+  if (!skipGeminiCG) {
+    data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD)
+  }
 
   writeJSON(filePath, data)
 }
@@ -445,23 +569,27 @@ function injectGeminiHooks(cwd) {
 
 function injectKiroHooks(cwd) {
   const filePath = path.join(cwd, '.kiro', 'hooks', 'trackfw-attention.json')
-  const data = {
-    version: 'v1',
-    hooks: [
-      {
-        name: 'trackfw-attention-signal',
-        description: 'Signals trackfw board when agent executes a tool',
-        trigger: 'PreToolUse',
-        matcher: '*',
-        action: { type: 'command', command: SIGNAL_CMD },
-      },
-      {
-        name: 'trackfw-attention-cleanup',
-        description: 'Clears trackfw board attention after tool completes',
-        trigger: 'PostToolUse',
-        matcher: '*',
-        action: { type: 'command', command: CLEANUP_CMD },
-      },
+  const hooks = [
+    {
+      name: 'trackfw-attention-signal',
+      description: 'Signals trackfw board when agent executes a tool',
+      trigger: 'PreToolUse',
+      matcher: '*',
+      action: { type: 'command', command: SIGNAL_CMD },
+    },
+    {
+      name: 'trackfw-attention-cleanup',
+      description: 'Clears trackfw board attention after tool completes',
+      trigger: 'PostToolUse',
+      matcher: '*',
+      action: { type: 'command', command: CLEANUP_CMD },
+    },
+  ]
+
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+  // credential-guard entries when the global one is already installed.
+  if (!globalCredentialGuardInstalledKiro()) {
+    hooks.push(
       {
         name: 'trackfw-credential-guard-pre',
         description: 'Blocks/warns on possible plaintext credential materialization before a shell command executes',
@@ -476,8 +604,10 @@ function injectKiroHooks(cwd) {
         matcher: 'shell',
         action: { type: 'command', command: GUARD_CMD },
       },
-    ],
+    )
   }
+
+  const data = { version: 'v1', hooks }
   writeJSON(filePath, data)
 }
 
@@ -510,18 +640,20 @@ function injectKiroHooks(cwd) {
 
 function injectCopilotHooks(cwd) {
   const filePath = path.join(cwd, '.github', 'hooks', 'trackfw-attention.json')
+
+  const preToolUse = [{ type: 'command', bash: SIGNAL_CMD, cwd: '.', timeoutSec: 10 }]
+  const postToolUse = [{ type: 'command', bash: CLEANUP_CMD, cwd: '.', timeoutSec: 10 }]
+
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+  // credential-guard entries when the global one is already installed.
+  if (!globalCredentialGuardInstalledCopilot()) {
+    preToolUse.push({ type: 'command', matcher: 'bash', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
+    postToolUse.push({ type: 'command', matcher: 'bash', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
+  }
+
   const data = {
     version: 1,
-    hooks: {
-      preToolUse: [
-        { type: 'command', bash: SIGNAL_CMD, cwd: '.', timeoutSec: 10 },
-        { type: 'command', matcher: 'bash', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 },
-      ],
-      postToolUse: [
-        { type: 'command', bash: CLEANUP_CMD, cwd: '.', timeoutSec: 10 },
-        { type: 'command', matcher: 'bash', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 },
-      ],
-    },
+    hooks: { preToolUse, postToolUse },
   }
   writeJSON(filePath, data)
 }
@@ -613,15 +745,18 @@ function injectCursorHooks(cwd) {
   }
   removeKnownCommandFromLegacyTopLevelArray(data, 'postToolUse', CLEANUP_CMD)
 
-  // credential-guard wiring -- unchanged by this ML.
-  if (!Array.isArray(data.hooks.beforeShellExecution)) data.hooks.beforeShellExecution = []
-  if (!hasEntry(data.hooks.beforeShellExecution, 'command', GUARD_CMD)) {
-    data.hooks.beforeShellExecution.push({ command: GUARD_CMD })
-  }
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+  // credential-guard entries when the global one is already installed.
+  if (!globalCredentialGuardInstalledCursor()) {
+    if (!Array.isArray(data.hooks.beforeShellExecution)) data.hooks.beforeShellExecution = []
+    if (!hasEntry(data.hooks.beforeShellExecution, 'command', GUARD_CMD)) {
+      data.hooks.beforeShellExecution.push({ command: GUARD_CMD })
+    }
 
-  if (!Array.isArray(data.hooks.afterShellExecution)) data.hooks.afterShellExecution = []
-  if (!hasEntry(data.hooks.afterShellExecution, 'command', GUARD_CMD)) {
-    data.hooks.afterShellExecution.push({ command: GUARD_CMD })
+    if (!Array.isArray(data.hooks.afterShellExecution)) data.hooks.afterShellExecution = []
+    if (!hasEntry(data.hooks.afterShellExecution, 'command', GUARD_CMD)) {
+      data.hooks.afterShellExecution.push({ command: GUARD_CMD })
+    }
   }
 
   writeJSON(filePath, data)

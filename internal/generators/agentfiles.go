@@ -210,22 +210,31 @@ func InjectClaudeHooks(cwd string) error {
 		"AskUserQuestion",
 		"scripts/trackfw-attention-signal.sh",
 	)
-	hooks["PreToolUse"] = mergeClaudeHookArray(
-		hooks["PreToolUse"],
-		"Bash",
-		"scripts/trackfw-credential-guard.sh",
-	)
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
+	// credential-guard entry when the global one is already installed
+	// (`trackfw update harness --targets claude-credential-guard`), so the
+	// guard doesn't run twice per Bash call. attention-signal/cleanup above
+	// and below are unaffected — they are inherently project-scope.
+	if !globalCredentialGuardInstalledClaude() {
+		hooks["PreToolUse"] = mergeClaudeHookArray(
+			hooks["PreToolUse"],
+			"Bash",
+			"scripts/trackfw-credential-guard.sh",
+		)
+	}
 
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		"AskUserQuestion",
 		"scripts/trackfw-attention-cleanup.sh",
 	)
-	hooks["PostToolUse"] = mergeClaudeHookArray(
-		hooks["PostToolUse"],
-		"Bash",
-		"scripts/trackfw-credential-guard.sh",
-	)
+	if !globalCredentialGuardInstalledClaude() {
+		hooks["PostToolUse"] = mergeClaudeHookArray(
+			hooks["PostToolUse"],
+			"Bash",
+			"scripts/trackfw-credential-guard.sh",
+		)
+	}
 
 	root["hooks"] = hooks
 
@@ -282,22 +291,30 @@ func InjectCodexHooks(cwd string) error {
 		"scripts/trackfw-attention-signal.sh",
 	)
 
-	hooks["PreToolUse"] = mergeClaudeHookArray(
-		hooks["PreToolUse"],
-		"Bash",
-		"scripts/trackfw-credential-guard.sh",
-	)
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
+	// credential-guard entry when the global one is already installed
+	// (`trackfw update harness --targets codex-credential-guard`).
+	skipCodexCG := globalCredentialGuardInstalledCodex()
+	if !skipCodexCG {
+		hooks["PreToolUse"] = mergeClaudeHookArray(
+			hooks["PreToolUse"],
+			"Bash",
+			"scripts/trackfw-credential-guard.sh",
+		)
+	}
 
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		".*",
 		"scripts/trackfw-attention-cleanup.sh",
 	)
-	hooks["PostToolUse"] = mergeClaudeHookArray(
-		hooks["PostToolUse"],
-		"Bash",
-		"scripts/trackfw-credential-guard.sh",
-	)
+	if !skipCodexCG {
+		hooks["PostToolUse"] = mergeClaudeHookArray(
+			hooks["PostToolUse"],
+			"Bash",
+			"scripts/trackfw-credential-guard.sh",
+		)
+	}
 
 	root["hooks"] = hooks
 
@@ -370,22 +387,30 @@ func InjectGeminiHooks(cwd string) error {
 		"scripts/trackfw-attention-signal.sh",
 	)
 
-	hooks["BeforeTool"] = mergeClaudeHookArray(
-		hooks["BeforeTool"],
-		"run_shell_command",
-		"scripts/trackfw-credential-guard.sh",
-	)
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
+	// credential-guard entry when the global one is already installed
+	// (`trackfw update harness --targets gemini-credential-guard`).
+	skipGeminiCG := globalCredentialGuardInstalledGemini()
+	if !skipGeminiCG {
+		hooks["BeforeTool"] = mergeClaudeHookArray(
+			hooks["BeforeTool"],
+			"run_shell_command",
+			"scripts/trackfw-credential-guard.sh",
+		)
+	}
 
 	hooks["AfterTool"] = mergeClaudeHookArray(
 		hooks["AfterTool"],
 		"*",
 		"scripts/trackfw-attention-cleanup.sh",
 	)
-	hooks["AfterTool"] = mergeClaudeHookArray(
-		hooks["AfterTool"],
-		"run_shell_command",
-		"scripts/trackfw-credential-guard.sh",
-	)
+	if !skipGeminiCG {
+		hooks["AfterTool"] = mergeClaudeHookArray(
+			hooks["AfterTool"],
+			"run_shell_command",
+			"scripts/trackfw-credential-guard.sh",
+		)
+	}
 
 	root["hooks"] = hooks
 
@@ -449,23 +474,29 @@ func InjectKiroHooks(cwd string) error {
 	}
 	path := filepath.Join(dir, "trackfw-attention.json")
 
-	content := map[string]interface{}{
-		"version": "v1",
-		"hooks": []interface{}{
-			map[string]interface{}{
-				"name":        "trackfw-attention-signal",
-				"description": "Signals trackfw board when agent executes a tool",
-				"trigger":     "PreToolUse",
-				"matcher":     "*",
-				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-signal.sh"},
-			},
-			map[string]interface{}{
-				"name":        "trackfw-attention-cleanup",
-				"description": "Clears trackfw board attention after tool completes",
-				"trigger":     "PostToolUse",
-				"matcher":     "*",
-				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-cleanup.sh"},
-			},
+	hooks := []interface{}{
+		map[string]interface{}{
+			"name":        "trackfw-attention-signal",
+			"description": "Signals trackfw board when agent executes a tool",
+			"trigger":     "PreToolUse",
+			"matcher":     "*",
+			"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-signal.sh"},
+		},
+		map[string]interface{}{
+			"name":        "trackfw-attention-cleanup",
+			"description": "Clears trackfw board attention after tool completes",
+			"trigger":     "PostToolUse",
+			"matcher":     "*",
+			"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-cleanup.sh"},
+		},
+	}
+
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
+	// credential-guard entries when the global one is already installed
+	// (`trackfw update harness --targets kiro-credential-guard`,
+	// ~/.kiro/hooks/trackfw-credential-guard.json).
+	if !globalCredentialGuardInstalledKiro() {
+		hooks = append(hooks,
 			map[string]interface{}{
 				"name":        "trackfw-credential-guard-pre",
 				"description": "Blocks/warns on possible plaintext credential materialization before a shell command executes",
@@ -480,7 +511,12 @@ func InjectKiroHooks(cwd string) error {
 				"matcher":     "shell",
 				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
 			},
-		},
+		)
+	}
+
+	content := map[string]interface{}{
+		"version": "v1",
+		"hooks":   hooks,
 	}
 
 	out, err := json.MarshalIndent(content, "", "  ")
@@ -531,39 +567,48 @@ func InjectCopilotHooks(cwd string) error {
 	}
 	path := filepath.Join(dir, "trackfw-attention.json")
 
+	preToolUse := []interface{}{
+		map[string]interface{}{
+			"type":       "command",
+			"bash":       "scripts/trackfw-attention-signal.sh",
+			"cwd":        ".",
+			"timeoutSec": 10,
+		},
+	}
+	postToolUse := []interface{}{
+		map[string]interface{}{
+			"type":       "command",
+			"bash":       "scripts/trackfw-attention-cleanup.sh",
+			"cwd":        ".",
+			"timeoutSec": 10,
+		},
+	}
+
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
+	// credential-guard entries when the global one is already installed
+	// (`trackfw update harness --targets copilot-credential-guard`).
+	if !globalCredentialGuardInstalledCopilot() {
+		preToolUse = append(preToolUse, map[string]interface{}{
+			"type":       "command",
+			"matcher":    "bash",
+			"bash":       "scripts/trackfw-credential-guard.sh",
+			"cwd":        ".",
+			"timeoutSec": 10,
+		})
+		postToolUse = append(postToolUse, map[string]interface{}{
+			"type":       "command",
+			"matcher":    "bash",
+			"bash":       "scripts/trackfw-credential-guard.sh",
+			"cwd":        ".",
+			"timeoutSec": 10,
+		})
+	}
+
 	content := map[string]interface{}{
 		"version": 1,
 		"hooks": map[string]interface{}{
-			"preToolUse": []interface{}{
-				map[string]interface{}{
-					"type":       "command",
-					"bash":       "scripts/trackfw-attention-signal.sh",
-					"cwd":        ".",
-					"timeoutSec": 10,
-				},
-				map[string]interface{}{
-					"type":       "command",
-					"matcher":    "bash",
-					"bash":       "scripts/trackfw-credential-guard.sh",
-					"cwd":        ".",
-					"timeoutSec": 10,
-				},
-			},
-			"postToolUse": []interface{}{
-				map[string]interface{}{
-					"type":       "command",
-					"bash":       "scripts/trackfw-attention-cleanup.sh",
-					"cwd":        ".",
-					"timeoutSec": 10,
-				},
-				map[string]interface{}{
-					"type":       "command",
-					"matcher":    "bash",
-					"bash":       "scripts/trackfw-credential-guard.sh",
-					"cwd":        ".",
-					"timeoutSec": 10,
-				},
-			},
+			"preToolUse":  preToolUse,
+			"postToolUse": postToolUse,
 		},
 	}
 
@@ -674,9 +719,13 @@ func InjectCursorHooks(cwd string) error {
 	removeKnownCommandFromLegacyTopLevelArray(root, "preToolUse", "scripts/trackfw-attention-signal.sh", getCmd)
 	removeKnownCommandFromLegacyTopLevelArray(root, "postToolUse", "scripts/trackfw-attention-cleanup.sh", getCmd)
 
-	// credential-guard wiring — unchanged by this ML.
-	hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
-	hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
+	// credential-guard entries when the global one is already installed
+	// (`trackfw update harness --targets cursor-credential-guard`).
+	if !globalCredentialGuardInstalledCursor() {
+		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
+		hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
+	}
 	root["hooks"] = hooks
 
 	out, err := json.MarshalIndent(root, "", "  ")
@@ -770,4 +819,190 @@ func mergeSimpleCommandArray(
 		}
 	}
 	return append(arr, makeEntry(command))
+}
+
+// --- Global credential-guard dedup (ROADMAP-2026-08-06 Wave 3/ML-3A) ---
+//
+// InjectClaudeHooks/InjectCodexHooks/InjectGeminiHooks/InjectCursorHooks/
+// InjectCopilotHooks/InjectKiroHooks each check, read-only, whether the
+// user already has the global-scope credential-guard wiring installed for
+// that CLI (via `trackfw update harness --targets <tool>-credential-guard`,
+// internal/generators/update.go) before adding the project-scope
+// credential-guard entry. If the global entry is already present, the
+// project-scope entry is skipped entirely (never running the guard twice
+// per command) — attention-signal/cleanup entries are unaffected, since
+// those are inherently project-scoped (ADR-2026-08-06, Decision #4).
+//
+// Fail-open is mandatory: any failure to resolve $HOME, read the global
+// file, or parse its JSON is treated as "not installed globally" and the
+// project-scope entry is added exactly as before this ML. This function
+// never writes to the global file — read-only by construction (no
+// os.WriteFile call anywhere in this section).
+
+// globalCredentialGuardScriptPath resolves the absolute path the global
+// credential-guard wiring would point at (~/.trackfw/scripts/trackfw-
+// credential-guard.sh), matching harnessCredentialGuardTargetClaude/Codex/
+// Gemini/Cursor/Copilot/Kiro (internal/generators/update.go) exactly. Returns
+// ok=false if $HOME cannot be resolved (fail-open: caller treats this as
+// "not installed globally").
+func globalCredentialGuardScriptPath() (path string, ok bool) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", false
+	}
+	return filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh"), true
+}
+
+// readGlobalHookJSON reads and parses a JSON object at $HOME/<relParts...>.
+// Returns ok=false on any failure (file missing, unreadable, not valid JSON,
+// or $HOME unresolvable) — the fail-open contract for every caller in this
+// section.
+func readGlobalHookJSON(relParts ...string) (root map[string]interface{}, ok bool) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil, false
+	}
+	parts := append([]string{home}, relParts...)
+	raw, err := os.ReadFile(filepath.Join(parts...))
+	if err != nil {
+		return nil, false
+	}
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, false
+	}
+	return root, true
+}
+
+// hookArrayHasCommand reports whether a Claude/Codex/Gemini-shaped hook
+// array (matcher → {"hooks":[{"command"}]}) already contains command under
+// matcher. Read-only counterpart of mergeClaudeHookArray.
+func hookArrayHasCommand(existing interface{}, matcher, command string) bool {
+	arr, _ := existing.([]interface{})
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok || obj["matcher"] != matcher {
+			continue
+		}
+		inner, _ := obj["hooks"].([]interface{})
+		for _, h := range inner {
+			hObj, ok := h.(map[string]interface{})
+			if ok && hObj["command"] == command {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// simpleArrayHasValue reports whether a flat hook array (Cursor's
+// {"command":...} or Copilot's {"bash":...} shape) already has an entry
+// with field == value. Read-only counterpart of mergeSimpleCommandArray.
+func simpleArrayHasValue(existing interface{}, field, value string) bool {
+	arr, _ := existing.([]interface{})
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if ok && obj[field] == value {
+			return true
+		}
+	}
+	return false
+}
+
+// globalCredentialGuardInstalledClaude checks ~/.claude/settings.json for
+// the PreToolUse[matcher:"Bash"] entry harnessCredentialGuardTargetClaude
+// writes. Fail-open: any read/parse error → false.
+func globalCredentialGuardInstalledClaude() bool {
+	scriptPath, ok := globalCredentialGuardScriptPath()
+	if !ok {
+		return false
+	}
+	root, ok := readGlobalHookJSON(".claude", "settings.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath)
+}
+
+// globalCredentialGuardInstalledCodex checks ~/.codex/hooks.json for the
+// PreToolUse[matcher:"Bash"] entry harnessCredentialGuardTargetCodex writes.
+// Fail-open: any read/parse error → false.
+func globalCredentialGuardInstalledCodex() bool {
+	scriptPath, ok := globalCredentialGuardScriptPath()
+	if !ok {
+		return false
+	}
+	root, ok := readGlobalHookJSON(".codex", "hooks.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath)
+}
+
+// globalCredentialGuardInstalledGemini checks ~/.gemini/settings.json for
+// the BeforeTool[matcher:"run_shell_command"] entry
+// harnessCredentialGuardTargetGemini writes. Fail-open: any read/parse
+// error → false.
+func globalCredentialGuardInstalledGemini() bool {
+	scriptPath, ok := globalCredentialGuardScriptPath()
+	if !ok {
+		return false
+	}
+	root, ok := readGlobalHookJSON(".gemini", "settings.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath)
+}
+
+// globalCredentialGuardInstalledCursor checks ~/.cursor/hooks.json for the
+// hooks.beforeShellExecution entry harnessCredentialGuardTargetCursor
+// writes. Fail-open: any read/parse error → false.
+func globalCredentialGuardInstalledCursor() bool {
+	scriptPath, ok := globalCredentialGuardScriptPath()
+	if !ok {
+		return false
+	}
+	root, ok := readGlobalHookJSON(".cursor", "hooks.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath)
+}
+
+// globalCredentialGuardInstalledCopilot checks ~/.copilot/settings.json for
+// the hooks.preToolUse[bash] entry harnessCredentialGuardTargetCopilot
+// writes. Fail-open: any read/parse error → false.
+func globalCredentialGuardInstalledCopilot() bool {
+	scriptPath, ok := globalCredentialGuardScriptPath()
+	if !ok {
+		return false
+	}
+	root, ok := readGlobalHookJSON(".copilot", "settings.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath)
+}
+
+// globalCredentialGuardInstalledKiro checks whether
+// ~/.kiro/hooks/trackfw-credential-guard.json exists and is non-empty — this
+// file is 100% dedicated to the global credential-guard wiring
+// (harnessCredentialGuardTargetKiro overwrites it wholesale, never merges),
+// so presence + non-empty content is sufficient, matching the roadmap's
+// explicit instruction for Kiro. Fail-open: any stat error → false.
+func globalCredentialGuardInstalledKiro() bool {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json"))
+	if err != nil {
+		return false
+	}
+	return info.Size() > 0
 }

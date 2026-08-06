@@ -70,6 +70,7 @@ import (
 
 func setupSabotageFixture(t *testing.T, injectHooks func(cwd string) error, trackfwYAML string) (dir, scriptPath string) {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
 	dir = t.TempDir()
 
 	if err := GenerateCredentialGuardScript(dir); err != nil {
