@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-07
 author: "kg.saran@gmail.com"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-07-atualiza-actions-do-github-para-versoes-com-node24-nativo.md"
 ---
 
 # REQ: atualiza actions do github para versoes com node24 nativo
 
-> Date: 2026-08-07 | Status: Open
+> Date: 2026-08-07 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -29,20 +29,21 @@ podem parar de rodar sem aviso prévio adicional. Todos os 5 workflows do reposi
 pelo menos uma dessas actions.
 
 ## Acceptance Criteria
-- [ ] `actions/checkout@v4` → `@v7` (ou major mais recente confirmado com runtime `node24` nativo) em
-      todos os workflows
-- [ ] `actions/setup-go@v5` → `@v7` em todos os workflows
-- [ ] `actions/setup-node@v4` → `@v7` em todos os workflows
-- [ ] `actions/setup-python@v5` → `@v7` em todos os workflows
-- [ ] `goreleaser/goreleaser-action@v6` → `@v7` em `release.yml`
-- [ ] `actions/upload-pages-artifact@v3`/`actions/deploy-pages@v4` (usadas só em `deploy-docs.yml`,
-      não apareceram no aviso de depreciação, mas avaliar se também merece bump preventivo para
-      `@v5` durante o mesmo ML, já que estão no mesmo arquivo)
-- [ ] Nenhum comportamento funcional dos workflows muda (só a versão pinada da action) — sem
-      breaking changes conhecidas nas notas de release das novas majors consultadas
-- [ ] Confirmado via execução real de CI (push/PR de teste) que os workflows atualizados rodam sem o
-      aviso de depreciação e sem falhar
-- [ ] `trackfw validate` sem violações novas
+- [x] `actions/checkout@v4` → `@v7` em todos os workflows
+- [x] `actions/setup-go@v5` → `@v7` em todos os workflows
+- [x] `actions/setup-node@v4` → `@v7` em todos os workflows
+- [x] `actions/setup-python@v5` → `@v7` em todos os workflows
+- [x] `goreleaser/goreleaser-action@v6` → `@v7` em `release.yml`
+- [x] `actions/upload-pages-artifact@v3`/`actions/deploy-pages@v4` → `@v5`, incluídas no mesmo ML
+- [x] Nenhum comportamento funcional dos workflows muda (só a versão pinada da action) — sem
+      breaking changes conhecidas nas notas de release das novas majors consultadas. Exceção real
+      encontrada e corrigida: `setup-go@v7` muda `GOTOOLCHAIN` de `auto` para `local` quando
+      `go-version` é pinado explicitamente — expôs um pin desatualizado pré-existente em
+      `trackfw-validate.yml` (`go-version: "1.22"` vs. `go.mod` exigindo `1.25.2`), corrigido para
+      `go-version-file: go.mod` (mesmo padrão já usado nos outros 5 usos de `setup-go` no repo)
+- [x] Confirmado via execução real de CI (PR #145) que os workflows atualizados rodam sem o aviso de
+      depreciação e sem falhar — 10/10 checks verdes na execução final
+- [x] `trackfw validate` sem violações novas
 
 ## Linked ADR
 <!-- mudança mecânica de versão pinada, sem decisão de arquitetura — ADR não necessária -->
