@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-07
 req: "docs/req/REQ-2026-08-07-atualiza-actions-do-github-para-versoes-com-node24-nativo.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: atualiza actions do GitHub para versões com node24 nativo
 
-> Created: 2026-08-07 | Status: wip
+> Created: 2026-08-07 | Status: done
 
 ## Context
 REQ: `docs/req/REQ-2026-08-07-atualiza-actions-do-github-para-versoes-com-node24-nativo.md`
@@ -32,9 +32,11 @@ Arquivos afetados: `.github/workflows/quality.yml`, `trackfw-validate.yml`, `tra
 `release.yml`, `deploy-docs.yml`.
 
 ## Acceptance Criteria
-- [ ] Todas as 7 actions listadas atualizadas para a versão nova, em todos os workflows onde aparecem
-- [ ] `trackfw validate` sem violações novas
-- [ ] Confirmado via execução real de CI que os workflows rodam sem o aviso de depreciação
+- [x] Todas as 7 actions listadas atualizadas para a versão nova, em todos os workflows onde aparecem
+- [x] `trackfw validate` sem violações novas
+- [x] Confirmado via execução real de CI que os workflows rodam sem o aviso de depreciação — PR #145,
+      10/10 checks verdes (`go`, `governance` ×3, `node`, `package-smoke`, `parity`, `python 3.10`,
+      `python 3.12`, `windows-integrations-resolve`)
 
 ## Wave 1 — Bump de versões pinadas (1 ML)
 > Dependências: Independente
@@ -48,6 +50,17 @@ projeto (checado `action.yml`/changelogs das versões novas contra os inputs/tri
 usado, nenhum `with:` custom em upload-pages-artifact/deploy-pages). Diff confirmado pelo
 orquestrador: 35 inserções/35 deleções, 100% linhas `uses:`, nenhum outro parâmetro tocado. YAML de
 todos os 5 workflows validado com `yaml.safe_load`.
+
+**Achado real na primeira execução de CI do PR #145**: `trackfw validate` falhou —
+`go: go.mod requires go >= 1.25.2 (running go 1.22.12; GOTOOLCHAIN=local)`. Causa raiz: o bump de
+`setup-go@v5` → `@v7` muda o comportamento de `GOTOOLCHAIN` de `auto` para `local` quando
+`go-version` é pinado explicitamente (confirmado comparando o log da execução anterior bem-sucedida,
+que mostrava `GOTOOLCHAIN='auto'`, com o log da falha). `trackfw-validate.yml` era o único dos 6 usos
+de `setup-go` no repo com `go-version: "1.22"` hardcoded e desatualizado (`go.mod` já exige 1.25.2) —
+funcionava por acidente via troca automática de toolchain do Go antes do bump. Corrigido alinhando ao
+padrão já usado nos outros 5 usos (`go-version-file: go.mod`), que resolve a versão certa
+automaticamente e fica imune a essa classe de bug em bumps futuros de `go.mod`. Reconfirmado com
+10/10 checks verdes na execução seguinte.
 **Arquivos afetados:**
 - `.github/workflows/quality.yml`
 - `.github/workflows/trackfw-validate.yml`
