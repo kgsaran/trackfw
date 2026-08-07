@@ -10,6 +10,37 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.5.0] - 2026-08-07
+
+### Added
+
+- **Hook de guarda contra materialização de credenciais reais por subagentes** (#141) —
+  `trackfw-credential-guard.sh`, novo hook gerado nos 3 stacks, detecta padrão de JWT
+  (`eyJ...`) e AWS access key (`AKIA...`) em comandos Bash e os conecta aos 6 CLIs da wave
+  nativa (Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor, Kiro). Modo avisador por
+  padrão (`credential_guard.mode: warn`, default), bloqueio opt-in via `trackfw.yaml`
+  (`mode: block`, exit 2). Novo gate de paridade estrutural
+  (`scripts/check-agent-hooks-parity.sh`) protegendo os `hooks.json`/`settings.json`
+  gerados por CLI contra divergência entre Go/Node.js/Python.
+- **Credential-guard em escopo global via `trackfw update harness`** (#143) — 6 alvos novos
+  (`<tool>-credential-guard`), opt-in puro (não muda o comportamento de `trackfw init`/`update`),
+  instala o hook em `~/.claude/settings.json`/`~/.codex/hooks.json`/`~/.gemini/settings.json`/
+  `~/.cursor/hooks.json`/`~/.copilot/settings.json`/`~/.kiro/hooks/`, protegendo qualquer
+  projeto do usuário, com ou sem `trackfw.yaml`. Dedup por leitura: o wiring por-projeto
+  detecta instalação global já existente e evita duplicar a proteção no mesmo comando.
+  Novo gate `scripts/check-harness-hooks-parity.sh` cobrindo os 6 arquivos de hook globais.
+
+### Fixed
+
+- **Divergência de versão no fallback do pacote Python e schema legado de hooks do Cursor**
+  (#142) — `pypi/trackfw/__init__.py` estava com fallback desatualizado (`6.3.1`), bloqueando
+  `make quality`/`make parity` de ponta a ponta; alinhado a `6.4.1`. Wiring legado de
+  attention-signal/cleanup do Cursor migrado do schema inválido (nível raiz) para o schema real
+  confirmado pela documentação oficial (`hooks.preToolUse`/`hooks.postToolUse`, aninhado), com
+  migração automática para projetos que já tinham o trackfw instalado.
+
+Breaking Changes: nenhuma.
+
 ## [6.4.1] - 2026-08-05
 
 ### Fixed
