@@ -40,7 +40,14 @@ Arquivos afetados: `.github/workflows/quality.yml`, `trackfw-validate.yml`, `tra
 > Dependências: Independente
 
 ### ML-1A — Atualizar as 7 actions nos 5 workflows
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Nota de auditoria:** confirmado que as 7 actions não têm breaking change relevante ao uso atual do
+projeto (checado `action.yml`/changelogs das versões novas contra os inputs/triggers realmente usados
+— `go.mod` sem diretiva `toolchain`, `package.json` sem campo `packageManager`, nenhum `pip-install`
+usado, nenhum `with:` custom em upload-pages-artifact/deploy-pages). Diff confirmado pelo
+orquestrador: 35 inserções/35 deleções, 100% linhas `uses:`, nenhum outro parâmetro tocado. YAML de
+todos os 5 workflows validado com `yaml.safe_load`.
 **Arquivos afetados:**
 - `.github/workflows/quality.yml`
 - `.github/workflows/trackfw-validate.yml`
