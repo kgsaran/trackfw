@@ -46,6 +46,7 @@ from trackfw.identity import IdentityError, load as load_identity
 from trackfw.integrations.catalog import global_group_path, load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
 from trackfw.generators.hooks import _merge_claude_hook_array, _merge_simple_command_array, _merge_copilot_hook_array
+from trackfw.generators.init_gen import generate_global_credential_guard_script
 
 STATE_UPDATED = "updated"
 STATE_SKIPPED = "skipped"
@@ -696,6 +697,14 @@ def _run(args: argparse.Namespace) -> None:
     except IdentityError as error:
         print(f"update harness: identidade invalida: {error}")
         raise SystemExit(2) from error
+
+    # The per-CLI *-credential-guard targets below only wire hook entries
+    # that point at ~/.trackfw/scripts/trackfw-credential-guard.sh — none of
+    # them write the script itself (ADR-2026-08-06, decision #2/#3). Without
+    # this call the wiring is installed but every hook invocation fails with
+    # "No such file or directory" because the script never exists.
+    if not args.dry_run:
+        generate_global_credential_guard_script(home)
 
     target_ids = _resolve_targets(args.targets)
     manager = IntegrationManager(project_root=os.getcwd(), home_dir=home)
