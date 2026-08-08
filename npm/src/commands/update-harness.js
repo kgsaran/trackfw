@@ -6,7 +6,7 @@ const path = require('path')
 const identityStore = require('../identity')
 const { catalog, buildPlans, IntegrationManager, globalGroupPath } = require('../integrations')
 const { tildeify, validateTargets, buildDocument, humanReport, silenceConsole } = require('../lib/update-engine')
-const { mergeClaudeHookArray, mergeSimpleCommandArray, mergeCopilotHookArray } = require('../generators/hooks')
+const { mergeClaudeHookArray, mergeSimpleCommandArray, mergeCopilotHookArray, generateGlobalCredentialGuardScript } = require('../generators/hooks')
 
 // `trackfw update harness` is the global counterpart to `trackfw update` —
 // see docs/cli-parity.md, "`trackfw update` vs `trackfw update harness`".
@@ -580,6 +580,19 @@ function run(options) {
   const homeRoot = os.homedir()
   const dryRun = Boolean(options.dryRun)
   const installMissing = Boolean(options.installMissing)
+
+  // The per-CLI *-credential-guard targets below only wire hook entries that
+  // point at ~/.trackfw/scripts/trackfw-credential-guard.sh — none of them
+  // write the script itself (ADR-2026-08-06, decision #2/#3). Without this
+  // call the wiring is installed but every hook invocation fails with
+  // "No such file or directory" because the script never exists.
+  if (!dryRun) {
+    if (options.json) {
+      silenceConsole(() => generateGlobalCredentialGuardScript(homeRoot))
+    } else {
+      generateGlobalCredentialGuardScript(homeRoot)
+    }
+  }
 
   // Identidade resolvida do disco antes de buildPlans — pular esta etapa
   // reverteria silenciosamente os nomes customizados para os defaults

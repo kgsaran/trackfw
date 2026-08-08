@@ -350,6 +350,17 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		return UpdateReport{}, fmt.Errorf("resolving home directory: %w", homeErr)
 	}
 
+	// The per-CLI *-credential-guard targets below only wire hook entries that
+	// point at ~/.trackfw/scripts/trackfw-credential-guard.sh — none of them
+	// write the script itself (ADR-2026-08-06, decision #2/#3). Without this
+	// call the wiring is installed but every hook invocation fails with
+	// "No such file or directory" because the script never exists.
+	if !opts.DryRun {
+		if err := GenerateGlobalCredentialGuardScript(home); err != nil {
+			return UpdateReport{}, fmt.Errorf("generating global credential guard script: %w", err)
+		}
+	}
+
 	catalog, catalogErr := integrations.LoadCatalog()
 	if catalogErr != nil {
 		return UpdateReport{}, fmt.Errorf("loading integration catalog: %w", catalogErr)
