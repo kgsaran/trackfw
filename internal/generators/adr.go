@@ -23,11 +23,12 @@ type ADRContent struct {
 	Alternatives string
 }
 
-// NewADR gera um arquivo ADR em docs/adr/ com base no conteúdo fornecido.
+// NewADR gera um arquivo ADR em adrDir com base no conteúdo fornecido.
 // Campos preenchidos são inseridos diretamente; campos vazios mantêm o placeholder HTML.
-func NewADR(content ADRContent) error {
-	cfg := config.Load()
-	adrDir := cfg.ADRDirs[0]
+// O chamador resolve adrDir (via config.Load().ADRDirs[0] para escopo "project" ou via
+// GlobalADRDir(home) para escopo "global") — esta função não lê trackfw.yaml, permitindo
+// uso em --scope global sem exigir projeto/trackfw.yaml no cwd.
+func NewADR(content ADRContent, adrDir string) error {
 	if err := os.MkdirAll(adrDir, 0755); err != nil {
 		return err
 	}

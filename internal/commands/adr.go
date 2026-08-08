@@ -22,11 +22,20 @@ func newADRCmd() *cobra.Command {
 }
 
 func newADRNewCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a new ADR",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			scope, err := cmd.Flags().GetString("scope")
+			if err != nil {
+				return err
+			}
+			adrDir, err := resolveADRDir(scope)
+			if err != nil {
+				return err
+			}
+
 			content := generators.ADRContent{Title: args[0]}
 
 			// Detectar se stdin é TTY — wizard interativo somente em TTY
@@ -62,17 +71,48 @@ func newADRNewCmd() *cobra.Command {
 				}
 			}
 
-			return generators.NewADR(content)
+			return generators.NewADR(content, adrDir)
 		},
 	}
+	cmd.Flags().String("scope", "project", "ADR scope: project (docs/adr, default) or global (~/.trackfw/adr, cross-project)")
+	return cmd
 }
 
 func newADRListCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all ADRs in docs/adr/",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return generators.ListADRs(config.Load().ADRDirs[0])
+			scope, err := cmd.Flags().GetString("scope")
+			if err != nil {
+				return err
+			}
+			adrDir, err := resolveADRDir(scope)
+			if err != nil {
+				return err
+			}
+			return generators.ListADRs(adrDir)
 		},
+	}
+	cmd.Flags().String("scope", "project", "ADR scope: project (docs/adr, default) or global (~/.trackfw/adr, cross-project)")
+	return cmd
+}
+
+// resolveADRDir resolves the ADR directory to use based on --scope. "project" (default)
+// reads adr_dirs[0] from trackfw.yaml, same as before this flag existed. "global" resolves
+// to ~/.trackfw/adr without requiring trackfw.yaml/a project root in the cwd — same pattern
+// as UpdateHarness, which never requires a project.
+func resolveADRDir(scope string) (string, error) {
+	switch scope {
+	case "project", "":
+		return config.Load().ADRDirs[0], nil
+	case "global":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("localizando home dir: %w", err)
+		}
+		return generators.GlobalADRDir(home), nil
+	default:
+		return "", fmt.Errorf("--scope inválido: %q (use \"project\" ou \"global\")", scope)
 	}
 }

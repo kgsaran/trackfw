@@ -1,15 +1,28 @@
 """
-Testes unitários para pypi/trackfw/generators/adr.py
+Testes unitários para pypi/trackfw/generators/adr.py e pypi/trackfw/commands/adr.py
 Formato canônico Go/Node — REQ-2026-07-27-convergencia-templates-python.
+Casos de --scope global/project — REQ-2026-08-08-adr-new-com-escopo-global-scope-global-
+escrevendo-em-trackfw-adr.
 """
 
+import argparse
+import io
 import os
 import re
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import date
 
-from trackfw.generators.adr import slugify, generate_adr
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_PYPI = os.path.dirname(_HERE)
+if _PYPI not in sys.path:
+    sys.path.insert(0, _PYPI)
+
+from trackfw.generators.adr import slugify, generate_adr, global_adr_dir, list_adrs
+from trackfw import config as trackfw_config
+from trackfw.commands import adr as adr_cmd
 
 
 class TestSlugify(unittest.TestCase):
@@ -125,6 +138,165 @@ class TestGenerateAdr(unittest.TestCase):
                 cwd=tmpdir,
             )
             self.assertTrue(os.path.isfile(filepath))
+
+
+class TestGlobalAdrDir(unittest.TestCase):
+
+    def test_global_adr_dir_junta_home_trackfw_adr(self):
+        """global_adr_dir deve retornar <home>/.trackfw/adr, mesmo padrão de
+        GlobalADRDir (Go) e do path literal usado em npm/src/commands/adr.js."""
+        result = global_adr_dir('/fake/home')
+        self.assertEqual(result, os.path.join('/fake/home', '.trackfw', 'adr'))
+
+
+class TestListAdrs(unittest.TestCase):
+
+    def test_list_adrs_dir_inexistente(self):
+        """Diretório ausente deve imprimir 'No ADRs found in <dir>', sem erro."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_dir = os.path.join(tmpdir, 'nao-existe')
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                list_adrs(missing_dir)
+            self.assertIn(f'No ADRs found in {missing_dir}', buf.getvalue())
+
+    def test_list_adrs_dir_vazio(self):
+        """Diretório existente sem .md deve imprimir a mesma mensagem de 'não encontrado'."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                list_adrs(tmpdir)
+            self.assertIn(f'No ADRs found in {tmpdir}', buf.getvalue())
+
+    def test_list_adrs_formato_filename_status(self):
+        """Cada linha deve ser '<filename padded a 60> <status>', em ordem alfabética —
+        formato byte-a-byte comparável a ListADRs (Go) / listADRs (Node)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_adr(title='Zeta Decision', status='Accepted', adr_dirs=[tmpdir], cwd=tmpdir)
+            generate_adr(title='Alpha Decision', status='Draft', adr_dirs=[tmpdir], cwd=tmpdir)
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                list_adrs(tmpdir)
+            lines = [line for line in buf.getvalue().splitlines() if line]
+
+            self.assertEqual(len(lines), 2)
+            # Ordem alfabética de filename (mesma data no nome -> ordena por slug)
+            self.assertTrue(lines[0].startswith('ADR-') and 'alpha-decision' in lines[0])
+            self.assertTrue(lines[1].startswith('ADR-') and 'zeta-decision' in lines[1])
+            self.assertTrue(lines[0].endswith('Draft'))
+            self.assertTrue(lines[1].endswith('Accepted'))
+            # Filename ocupa exatamente 60 colunas antes do status (padEnd/%-60s)
+            filename0 = lines[0].rsplit(' ', 1)[0].rstrip()
+            self.assertEqual(lines[0][:60], f'{filename0:<60}')
+
+
+class TestAdrCommandScope(unittest.TestCase):
+    """Testa `trackfw adr new`/`adr list` com --scope, via trackfw.commands.adr diretamente
+    (sem subprocess). $HOME é sempre isolado em tmp_dir — nunca o $HOME real da máquina."""
+
+    def setUp(self):
+        trackfw_config.reset()
+        self._orig_home = os.environ.get('HOME')
+        self._orig_cwd = os.getcwd()
+
+    def tearDown(self):
+        trackfw_config.reset()
+        if self._orig_home is not None:
+            os.environ['HOME'] = self._orig_home
+        os.chdir(self._orig_cwd)
+
+    def test_scope_global_cria_arquivo_em_home_trackfw_adr(self):
+        """--scope global deve criar o ADR em $HOME/.trackfw/adr/, sem exigir trackfw.yaml no cwd."""
+        with tempfile.TemporaryDirectory() as fake_home, tempfile.TemporaryDirectory() as no_project_cwd:
+            os.environ['HOME'] = fake_home
+            os.chdir(no_project_cwd)  # cwd SEM trackfw.yaml
+
+            args = argparse.Namespace(
+                title='Decisao Global de Teste',
+                status='Proposed',
+                dir=None,
+                scope='global',
+            )
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                adr_cmd._cmd_new(args)
+
+            expected_dir = os.path.join(fake_home, '.trackfw', 'adr')
+            created = [f for f in os.listdir(expected_dir) if f.endswith('.md')]
+            self.assertEqual(len(created), 1)
+            self.assertIn('decisao-global-de-teste', created[0])
+            self.assertIn(os.path.join(expected_dir, created[0]), buf.getvalue())
+
+    def test_scope_project_default_comportamento_atual_preservado(self):
+        """--scope project (default) deve continuar idêntico: usa adr_dirs do trackfw.yaml
+        (ou docs/adr por padrão), comportamento inalterado por esta feature."""
+        with tempfile.TemporaryDirectory() as project_dir:
+            os.chdir(project_dir)
+
+            args = argparse.Namespace(
+                title='Decisao De Projeto',
+                status='Proposed',
+                dir=None,
+                scope='project',
+            )
+            adr_cmd._cmd_new(args)
+
+            expected_dir = os.path.join(project_dir, 'docs', 'adr')
+            created = [f for f in os.listdir(expected_dir) if f.endswith('.md')]
+            self.assertEqual(len(created), 1)
+            self.assertIn('decisao-de-projeto', created[0])
+
+    def test_scope_global_com_dir_da_erro_claro(self):
+        """--scope global + --dir juntos devem falhar com mensagem clara, não silenciar um dos dois."""
+        with tempfile.TemporaryDirectory() as fake_home:
+            os.environ['HOME'] = fake_home
+            args = argparse.Namespace(
+                title='Nao Deve Criar',
+                status='Proposed',
+                dir='/algum/dir/explicito',
+                scope='global',
+            )
+            with self.assertRaises(SystemExit) as ctx:
+                adr_cmd._cmd_new(args)
+            self.assertNotEqual(ctx.exception.code, 0)
+
+    def test_adr_list_scope_global(self):
+        """`adr list --scope global` lista os ADRs criados em $HOME/.trackfw/adr/."""
+        with tempfile.TemporaryDirectory() as fake_home, tempfile.TemporaryDirectory() as no_project_cwd:
+            os.environ['HOME'] = fake_home
+            os.chdir(no_project_cwd)
+
+            new_args = argparse.Namespace(
+                title='ADR Listado Global', status='Proposed', dir=None, scope='global',
+            )
+            adr_cmd._cmd_new(new_args)
+
+            list_args = argparse.Namespace(scope='global')
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                adr_cmd._cmd_list(list_args)
+
+            self.assertIn('adr-listado-global', buf.getvalue())
+            self.assertIn('Proposed', buf.getvalue())
+
+    def test_adr_list_scope_project(self):
+        """`adr list --scope project` (default) lista os ADRs de docs/adr no cwd atual."""
+        with tempfile.TemporaryDirectory() as project_dir:
+            os.chdir(project_dir)
+
+            new_args = argparse.Namespace(
+                title='ADR Listado Projeto', status='Proposed', dir=None, scope='project',
+            )
+            adr_cmd._cmd_new(new_args)
+
+            list_args = argparse.Namespace(scope='project')
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                adr_cmd._cmd_list(list_args)
+
+            self.assertIn('adr-listado-projeto', buf.getvalue())
+            self.assertIn('Proposed', buf.getvalue())
 
 
 if __name__ == '__main__':
