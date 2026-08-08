@@ -128,10 +128,6 @@ func installSkillsInner(force bool) error {
 	return installGlobalSkillInner(force)
 }
 
-func installGlobalSkill() error {
-	return installGlobalSkillInner(false)
-}
-
 func installGlobalSkillInner(force bool) error {
 	home, err := os.UserHomeDir()
 	if err != nil {

@@ -1,12 +1,5 @@
 """Repo-scoped OpenAI Codex integration."""
 
-import os
-import re
-
-from trackfw.generators.hooks import inject_codex_hooks
-from trackfw.generators.init_gen import inject_rules_for_tool
-
-
 SKILLS = {
     "trackfw-governance": """---
 name: trackfw-governance
@@ -70,31 +63,3 @@ sandbox_mode = "read-only"
 developer_instructions = \"\"\"Return findings first, ordered by severity, with file references and governance evidence.\"\"\"
 """,
 }
-
-
-def _write(path, content):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as stream:
-        stream.write(content.strip() + "\n")
-
-
-def install_codex(cwd):
-    inject_rules_for_tool("codex", cwd)
-    config_path = os.path.join(cwd, ".codex", "config.toml")
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
-    try:
-        with open(config_path, encoding="utf-8") as stream:
-            config = stream.read()
-    except OSError:
-        config = ""
-    if not re.search(r"^\[agents\]\s*$", config, re.MULTILINE):
-        config = config.rstrip() + "\n\n[agents]\nmax_threads = 6\nmax_depth = 1\n"
-        with open(config_path, "w", encoding="utf-8") as stream:
-            stream.write(config)
-
-    for name, content in SKILLS.items():
-        _write(os.path.join(cwd, ".agents", "skills", name, "SKILL.md"), content)
-    for name, content in AGENTS.items():
-        _write(os.path.join(cwd, ".codex", "agents", name), content)
-    inject_codex_hooks(cwd)
-    print("  ✓ Codex: AGENTS.md, skills, custom agents and hooks")
