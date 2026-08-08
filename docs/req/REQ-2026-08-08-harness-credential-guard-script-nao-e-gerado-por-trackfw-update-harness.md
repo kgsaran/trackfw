@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-08-08
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: harness credential-guard script não é gerado por trackfw update harness
 
-> Date: 2026-08-08 | Status: Open
+> Date: 2026-08-08 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -47,4 +47,4 @@ ADR: docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trac
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-08-harness-credential-guard-script-nao-e-gerado-por-trackfw-update-harness.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-08-harness-credential-guard-script-nao-e-gerado-por-trackfw-update-harness.md

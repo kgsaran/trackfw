@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-08
 req: ""
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: harness credential-guard script não é gerado por trackfw update harness
 
-> Created: 2026-08-08 | Status: wip
+> Created: 2026-08-08 | Status: done
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
