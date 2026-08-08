@@ -10,6 +10,28 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.6.0] - 2026-08-08
+
+### Added
+
+- **`trackfw adr new/list --scope project|global`** (#149) — novo flag nos 3 CLIs (default
+  `project`, comportamento atual 100% preservado). `--scope global` escreve/lista em
+  `~/.trackfw/adr/ADR-YYYY-MM-DD-<slug>.md` — mesmo diretório-base de `~/.trackfw/scripts/`
+  (credential-guard) — sem exigir `trackfw.yaml`/raiz de projeto no cwd. Python ganhou
+  `adr list`, que não existia antes desta feature. `--dir`/`--status` pré-existentes do
+  Python (drift antigo) ficam intactos, passam a ser mutuamente exclusivos com
+  `--scope global`.
+- **Auto-registro de `~/.trackfw/adr` em `adr_dirs` via `trackfw update`** (#150) — o
+  comando (escopo projeto, 3 CLIs) passa a registrar `~/.trackfw/adr` em `adr_dirs` do
+  `trackfw.yaml` do projeto, mas somente se esse diretório existir e contiver ao menos um
+  `ADR-*.md`. Escrita cirúrgica e idempotente, preserva comentários/demais chaves do arquivo
+  byte a byte; nunca escreve "no escuro" contra um diretório vazio/inexistente.
+- **Escolha de escopo (local/global) ao gerar ADR draft em `req new`** (#150) — no fluxo
+  interativo (Go+Node.js) que detecta domínios e gera ADR drafts via probes, um único prompt
+  por sessão de REQ pergunta se os ADRs são locais (default) ou globais. Sem TTY,
+  comportamento inalterado. Python não tem esse fluxo de probes/ADR-draft — gap de paridade
+  pré-existente, agora documentado em `docs/cli-parity.md`.
+
 ## [6.5.1] - 2026-08-08
 
 ### Fixed
