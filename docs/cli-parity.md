@@ -2193,6 +2193,32 @@ Roadmap:
 
 Arquivo: `docs/adr/ADR-YYYY-MM-DD-<slug>.md`
 
+**`--scope project|global`** (default `project`, os 3 CLIs): `project` preserva o
+comportamento acima, byte a byte. `global` escreve em
+`~/.trackfw/adr/ADR-YYYY-MM-DD-<slug>.md` — mesmo diretório-base de
+`~/.trackfw/scripts/` (credential-guard) e `~/.trackfw/identity.json` — sem exigir
+`trackfw.yaml`/raiz de projeto no cwd (mesmo padrão de `trackfw update harness`).
+Conteúdo idêntico entre os dois escopos; só o diretório de destino muda.
+`trackfw adr list` aceita o mesmo flag (`project` lista `adr_dirs[0]`, `global` lista
+`~/.trackfw/adr/*.md`).
+
+**Escopo desta feature, deliberadamente limitado:** `trackfw validate`/`status`/
+`context` NÃO passam a varrer `~/.trackfw/adr` implicitamente — cada projeto
+continua enxergando só os `adr_dirs` do seu próprio `trackfw.yaml`. Para um projeto
+específico ver os ADRs globais em `validate`/`status`, adicione `~/.trackfw/adr` ao
+`adr_dirs` desse projeto (expansão de `~` já suportada). O fluxo `req`→ADR draft
+vinculado (`NewADRDraft`/`newADRDraft`/`new_adr_draft`, usado por `--from-req`)
+também não ganha escopo global — um ADR nascido de uma REQ é inerentemente do
+projeto onde a REQ vive.
+
+**Exceção Python-only pré-existente, sem relação com `--scope`:** `pypi` já tinha
+`--status <status>` e `--dir <path>` em `adr new` antes desta feature — Go/Node.js
+não têm equivalente. `--dir` e `--scope global` são mutuamente exclusivos em Python
+(erro claro se ambos forem passados); nos demais casos os dois flags continuam
+funcionando como antes. `adr list` não existia em Python antes desta feature — foi
+criado do zero, espelhando a saída de Go/Node.js (`nome-do-arquivo` alinhado a 60
+colunas + status, ordem alfabética, `No ADRs found in <dir>` quando vazio).
+
 ```
 ---
 status: Proposed

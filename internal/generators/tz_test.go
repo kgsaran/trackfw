@@ -119,7 +119,7 @@ func TestGenerators_LocalDateNotUTC(t *testing.T) {
 		dir := t.TempDir()
 		chdirADR(t, dir)
 
-		if err := NewADR(ADRContent{Title: "TZ Parity ADR"}); err != nil {
+		if err := NewADR(ADRContent{Title: "TZ Parity ADR"}, "docs/adr"); err != nil {
 			t.Fatalf("NewADR: %v", err)
 		}
 

@@ -152,6 +152,15 @@ func installGlobalSkillInner(force bool) error {
 	return nil
 }
 
+// GlobalADRDir resolves the path of the global-scope ADR directory given a
+// home directory. Used by `trackfw adr new/list --scope global` to write/read
+// cross-project ADRs outside any single project's `trackfw.yaml`/`adr_dirs`.
+// Mirrors GlobalClaudeSkillPath below — same style, same rationale for taking
+// home as a parameter (testability with a fixture $HOME).
+func GlobalADRDir(home string) string {
+	return filepath.Join(home, ".trackfw", "adr")
+}
+
 // GlobalClaudeSkillPath resolves the path of the historical, global-scope
 // Claude compatibility skill given a home directory. It is not part of the
 // catalog-managed integrations manifest — a legacy artifact predating that

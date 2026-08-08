@@ -43,13 +43,13 @@ function today() {
 }
 
 /**
- * Cria um novo ADR em docs/adr/ADR-YYYY-MM-DD-<slug>.md.
+ * Cria um novo ADR em <adrDir>/ADR-YYYY-MM-DD-<slug>.md.
  * Campos vazios recebem placeholder HTML.
  * @param {{ title: string, context?: string, decision?: string, consequences?: string, alternatives?: string }} content
+ * @param {string} adrDir Diretório de destino (resolvido pelo chamador conforme --scope)
  * @returns {Promise<void>}
  */
-async function newADR(content) {
-  const adrDir = require('../config').load().adrDirs[0]
+async function newADR(content, adrDir) {
   fs.mkdirSync(adrDir, { recursive: true })
 
   const slug = toSlug(content.title)

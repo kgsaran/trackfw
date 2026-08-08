@@ -100,3 +100,59 @@ author: ""
         f.write(body)
 
     return filepath
+
+
+def global_adr_dir(home: str) -> str:
+    """
+    Retorna o diretório global de ADRs cross-project: <home>/.trackfw/adr.
+    Espelha GlobalADRDir (Go, internal/generators/scaffold.go) e o path
+    literal usado por npm/src/commands/adr.js (resolveAdrDir).
+    """
+    return os.path.join(home, '.trackfw', 'adr')
+
+
+def _parse_adr_status(filepath: str) -> str:
+    """
+    Extrai o status de um ADR a partir da linha "> Date: ... | Status: ...".
+    Espelha parseADRMeta (Go) / parseADRStatus (Node): retorna o primeiro
+    match de "| Status: " na primeira linha em que ocorrer, aparado de
+    espaços e dos caracteres '>' e '|' à direita. 'unknown' se não encontrar
+    ou se o arquivo não puder ser lido.
+    """
+    try:
+        with open(filepath, encoding='utf-8') as f:
+            for line in f:
+                idx = line.find('| Status: ')
+                if idx >= 0:
+                    rest = line[idx + len('| Status: '):]
+                    rest = rest.rstrip(' >|\n\r')
+                    return rest.strip()
+    except OSError:
+        pass
+    return 'unknown'
+
+
+def list_adrs(dir: str) -> None:
+    """
+    Lista todos os ADRs (*.md) encontrados em dir, imprimindo
+    "<filename padded a 60 chars> <status>" por linha, em ordem alfabética.
+    Espelha ListADRs (Go, internal/generators/adr.go) e listADRs
+    (Node, npm/src/generators/adr.js) byte a byte.
+
+    Se dir não existir ou não tiver arquivos .md, imprime
+    "No ADRs found in <dir>".
+    """
+    if not os.path.isdir(dir):
+        print(f'No ADRs found in {dir}')
+        return
+
+    files = sorted(f for f in os.listdir(dir) if f.endswith('.md'))
+
+    if not files:
+        print(f'No ADRs found in {dir}')
+        return
+
+    for filename in files:
+        filepath = os.path.join(dir, filename)
+        status = _parse_adr_status(filepath)
+        print(f'{filename:<60} {status}')

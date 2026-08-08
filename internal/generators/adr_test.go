@@ -48,7 +48,7 @@ func TestNewADR_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	chdirADR(t, dir)
 
-	if err := NewADR(ADRContent{Title: "Escolha de Banco"}); err != nil {
+	if err := NewADR(ADRContent{Title: "Escolha de Banco"}, "docs/adr"); err != nil {
 		t.Fatalf("NewADR() erro: %v", err)
 	}
 
@@ -79,7 +79,7 @@ func TestNewADR_SlugInFilename(t *testing.T) {
 	dir := t.TempDir()
 	chdirADR(t, dir)
 
-	if err := NewADR(ADRContent{Title: "Uso de Redis Cache"}); err != nil {
+	if err := NewADR(ADRContent{Title: "Uso de Redis Cache"}, "docs/adr"); err != nil {
 		t.Fatalf("NewADR() erro: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestNewADR_WithContent(t *testing.T) {
 		Consequences: "Custo de operação maior; maior confiabilidade.",
 		Alternatives: "MySQL foi rejeitado por licença.",
 	}
-	if err := NewADR(content); err != nil {
+	if err := NewADR(content, "docs/adr"); err != nil {
 		t.Fatalf("NewADR() erro: %v", err)
 	}
 
@@ -138,7 +138,7 @@ func TestNewADR_EmptyFields(t *testing.T) {
 	dir := t.TempDir()
 	chdirADR(t, dir)
 
-	if err := NewADR(ADRContent{Title: "Sem Detalhes"}); err != nil {
+	if err := NewADR(ADRContent{Title: "Sem Detalhes"}, "docs/adr"); err != nil {
 		t.Fatalf("NewADR() erro: %v", err)
 	}
 
@@ -170,10 +170,10 @@ func TestListADRs_WithFiles(t *testing.T) {
 	dir := t.TempDir()
 	chdirADR(t, dir)
 
-	if err := NewADR(ADRContent{Title: "Decisao Alpha", Context: "contexto A", Decision: "decidido A"}); err != nil {
+	if err := NewADR(ADRContent{Title: "Decisao Alpha", Context: "contexto A", Decision: "decidido A"}, "docs/adr"); err != nil {
 		t.Fatalf("NewADR alpha: %v", err)
 	}
-	if err := NewADR(ADRContent{Title: "Decisao Beta", Context: "contexto B", Decision: "decidido B"}); err != nil {
+	if err := NewADR(ADRContent{Title: "Decisao Beta", Context: "contexto B", Decision: "decidido B"}, "docs/adr"); err != nil {
 		t.Fatalf("NewADR beta: %v", err)
 	}
 
@@ -261,12 +261,50 @@ func TestNewADRDraft_TituloDerivado(t *testing.T) {
 	}
 }
 
+// TestGlobalADRDir_ResolvesUnderHomeTrackfwAdr — GlobalADRDir(home) segue o mesmo padrão de
+// GlobalClaudeSkillPath: <home>/.trackfw/adr.
+func TestGlobalADRDir_ResolvesUnderHomeTrackfwAdr(t *testing.T) {
+	home := t.TempDir()
+	got := GlobalADRDir(home)
+	want := filepath.Join(home, ".trackfw", "adr")
+	if got != want {
+		t.Errorf("GlobalADRDir(%q) = %q, queria %q", home, got, want)
+	}
+}
+
+// TestNewADR_ScopeGlobal_CreatesUnderFixtureHome — NewADR(content, GlobalADRDir(home)) escreve
+// em $HOME/.trackfw/adr mesmo sem cwd em raiz de projeto (nenhum docs/adr criado), provando que
+// o generator não chama mais config.Load() internamente.
+func TestNewADR_ScopeGlobal_CreatesUnderFixtureHome(t *testing.T) {
+	cwd := t.TempDir()
+	home := t.TempDir()
+	chdirADR(t, cwd)
+
+	globalDir := GlobalADRDir(home)
+	if err := NewADR(ADRContent{Title: "Decisao Global"}, globalDir); err != nil {
+		t.Fatalf("NewADR() erro: %v", err)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(globalDir, "*.md"))
+	if err != nil {
+		t.Fatalf("Glob erro: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("esperado 1 arquivo em %s, obteve %d: %v", globalDir, len(matches), matches)
+	}
+
+	// docs/adr não deve ter sido criado no cwd — escopo global não toca o projeto.
+	if _, err := os.Stat(filepath.Join(cwd, "docs", "adr")); err == nil {
+		t.Errorf("docs/adr não deveria existir no cwd quando adrDir aponta para escopo global")
+	}
+}
+
 // TestListADRs_ParsesMeta — verifica que parseADRMeta extrai título e status corretamente
 func TestListADRs_ParsesMeta(t *testing.T) {
 	dir := t.TempDir()
 	chdirADR(t, dir)
 
-	if err := NewADR(ADRContent{Title: "Uso de Kafka"}); err != nil {
+	if err := NewADR(ADRContent{Title: "Uso de Kafka"}, "docs/adr"); err != nil {
 		t.Fatalf("NewADR: %v", err)
 	}
 
