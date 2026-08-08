@@ -809,6 +809,12 @@ func GenerateCredentialGuardScript(rootDir string) error {
 // trackfw.yaml" — protege qualquer projeto que o usuário abra com o CLI onde o hook global foi
 // instalado. Ver globalCredentialGuardScript/credentialGuardGlobalTail para a decisão de design
 // sobre a fonte do modo (sempre "warn") e do diretório de attention.
+//
+// Escreve silenciosamente (sem fmt.Printf) — seu único chamador de produção é UpdateHarness, que
+// roda antes de qualquer target por-CLI ser avaliado, inclusive com `--json`; um print aqui vazaria
+// texto solto para o stdout antes do JSON e quebraria o parse (mesmo motivo pelo qual
+// harnessClaudeSkillTarget escreve via os.WriteFile direto em vez de reusar installGlobalSkillInner,
+// que também imprime).
 func GenerateGlobalCredentialGuardScript(home string) error {
 	if home == "" {
 		return fmt.Errorf("home directory vazio")
@@ -822,7 +828,6 @@ func GenerateGlobalCredentialGuardScript(home string) error {
 	if err := os.WriteFile(path, []byte(globalCredentialGuardScript), 0755); err != nil {
 		return fmt.Errorf("writing global credential guard script: %w", err)
 	}
-	fmt.Printf("  ✓ %s\n", filepath.Join(".trackfw", "scripts", "trackfw-credential-guard.sh"))
 
 	return nil
 }
