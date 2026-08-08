@@ -142,10 +142,14 @@ function parseADRStatus(filepath) {
  * Cria um ADR com Status: Draft a partir de um slug.
  * Idempotente: se já existe ADR-*-<slug>.md, pula e imprime mensagem.
  * @param {string} slug
+ * @param {string} [adrDir] Diretório de destino (resolvido pelo chamador conforme escopo).
+ *   Se omitido, preserva o comportamento anterior (adrDirs[0] do trackfw.yaml).
  * @returns {Promise<string>} basename do arquivo criado
  */
-async function newADRDraft(slug) {
-  const adrDir = require('../config').load().adrDirs[0]
+async function newADRDraft(slug, adrDir) {
+  if (!adrDir) {
+    adrDir = require('../config').load().adrDirs[0]
+  }
   fs.mkdirSync(adrDir, { recursive: true })
 
   // Verificar idempotência: buscar arquivo existente com o mesmo slug

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import glob
 import hashlib
 import json
 import os
@@ -52,6 +53,7 @@ from trackfw.commands.update_harness import (
     STATE_SKIPPED,
     STATE_UPDATED,
 )
+from trackfw.generators.adr import global_adr_dir
 
 AGENT_RULES_RELATIVE_PATHS = [
     "CLAUDE.md",
@@ -166,6 +168,102 @@ def _update_hooks_surgical(hooks: str, root_dir: str) -> None:
         print("  ✓ lefthook.yml — trackfw-validate injetado")
 
 
+def _adr_dirs_entry_present(content: str, abs_global_dir: str) -> bool:
+    """Reports whether content's adr_dirs block (if any) already has an item
+    resolving to the global ADR dir — matching both the literal
+    "~/.trackfw/adr" form and the expanded absolute-path form so the two
+    textual spellings of the same entry are never treated as distinct.
+    Mirrors Go's adrDirsEntryPresent and Node's resolvesToGlobal loop."""
+    lines = content.split("\n")
+    in_adr_dirs = False
+    for line in lines:
+        trimmed = line.rstrip(" \t")
+        if trimmed.lstrip(" ").startswith("adr_dirs:"):
+            in_adr_dirs = True
+            continue
+        if in_adr_dirs:
+            item_line = trimmed.lstrip(" ")
+            if not item_line.startswith("-"):
+                break  # list ended
+            value = item_line[1:].strip()
+            if value == "~/.trackfw/adr" or value == abs_global_dir:
+                return True
+    return False
+
+
+def _insert_global_adr_dir_entry(content: str) -> str:
+    """Returns content with "  - ~/.trackfw/adr" inserted as the last item of
+    the existing adr_dirs list, or — if content has no adr_dirs key at all
+    (implying the loader's implicit "docs/adr" default) — with a new
+    adr_dirs block appended at the end preserving that default explicitly
+    alongside the new global entry. Mirrors Go's insertGlobalADRDirEntry and
+    Node's equivalent splice."""
+    lines = content.split("\n")
+    adr_dirs_idx = -1
+    for i, line in enumerate(lines):
+        if line.rstrip(" \t").lstrip(" ").startswith("adr_dirs:"):
+            adr_dirs_idx = i
+            break
+
+    if adr_dirs_idx == -1:
+        if not content.endswith("\n"):
+            content += "\n"
+        if not content.endswith("\n\n") and content != "\n":
+            content += "\n"
+        content += "adr_dirs:\n  - docs/adr\n  - ~/.trackfw/adr\n"
+        return content
+
+    item_indent = "  "
+    last_item_idx = adr_dirs_idx
+    for i in range(adr_dirs_idx + 1, len(lines)):
+        trimmed = lines[i].rstrip(" \t")
+        left_trimmed = trimmed.lstrip(" ")
+        if not left_trimmed.startswith("-"):
+            break
+        item_indent = trimmed[: len(trimmed) - len(left_trimmed)]
+        last_item_idx = i
+
+    new_line = item_indent + "- ~/.trackfw/adr"
+    out = lines[: last_item_idx + 1] + [new_line] + lines[last_item_idx + 1 :]
+    return "\n".join(out)
+
+
+def _ensure_global_adr_dir_registered(cwd: str) -> None:
+    """Registers ~/.trackfw/adr in the project's trackfw.yaml `adr_dirs`
+    list, but ONLY when that directory exists AND contains at least one
+    `ADR-*.md` file — an empty or absent global ADR dir is a no-op, never
+    written. The edit is surgical (text-level splice, never
+    config.load()+re-serialize, which would lose the user's
+    comments/formatting) and idempotent. Mirrors Go's
+    ensureGlobalADRDirRegistered (internal/generators/update.go) and Node's
+    ensureGlobalAdrDirRegistered (npm/src/commands/update.js) message-for-
+    message."""
+    home = os.path.expanduser("~")
+    global_dir = global_adr_dir(home)
+    if not os.path.isdir(global_dir):
+        return  # global ADR dir doesn't exist — no-op
+
+    matches = glob.glob(os.path.join(global_dir, "ADR-*.md"))
+    if not matches:
+        return  # global ADR dir has no ADRs yet — no-op
+
+    yaml_path = os.path.join(cwd, "trackfw.yaml")
+    try:
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except OSError:
+        return
+
+    abs_global_dir = os.path.join(home, ".trackfw", "adr")
+    if _adr_dirs_entry_present(content, abs_global_dir):
+        return  # already registered (literal "~/.trackfw/adr" or the expanded absolute path)
+
+    updated = _insert_global_adr_dir_entry(content)
+    with open(yaml_path, "w", encoding="utf-8") as f:
+        f.write(updated)
+    print("  ✓ adr_dirs: ~/.trackfw/adr registrado")
+
+
 def register(subparsers: argparse.ArgumentParser) -> None:
     parser = subparsers.add_parser(
         "update",
@@ -202,6 +300,8 @@ def _run(args: argparse.Namespace) -> None:
     if not os.path.exists(yaml_path):
         print("Erro: trackfw.yaml não encontrado — execute trackfw init primeiro")
         raise SystemExit(1)
+
+    _ensure_global_adr_dir_registered(cwd)
 
     print("trackfw update — atualizando regras de agente...\n")
 
@@ -430,6 +530,11 @@ def _run_project(args: argparse.Namespace) -> None:
         tmp_dir = tempfile.mkdtemp(prefix="trackfw-update-")
         _copy_project_tree(cwd, tmp_dir)
         apply_root = tmp_dir
+
+    # Writes against apply_root (the tmp sandbox during --dry-run, cwd
+    # otherwise) so this never mutates the real trackfw.yaml when dry_run is
+    # set — same sandboxing contract as every other target below.
+    _ensure_global_adr_dir_registered(apply_root)
 
     try:
         from trackfw.generators.init_gen import inject_rules_detected

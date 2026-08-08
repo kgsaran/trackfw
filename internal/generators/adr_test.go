@@ -194,7 +194,7 @@ func TestNewADRDraft_CriaArquivo(t *testing.T) {
 	_ = os.Chdir(dir)
 	t.Cleanup(func() { _ = os.Chdir(orig) })
 
-	basename, err := NewADRDraft("authentication-strategy")
+	basename, err := NewADRDraft("authentication-strategy", filepath.Join("docs", "adr"))
 	if err != nil {
 		t.Fatalf("NewADRDraft erro: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestNewADRDraft_StatusDraft(t *testing.T) {
 	_ = os.Chdir(dir)
 	t.Cleanup(func() { _ = os.Chdir(orig) })
 
-	basename, _ := NewADRDraft("ui-framework")
+	basename, _ := NewADRDraft("ui-framework", filepath.Join("docs", "adr"))
 	content, err := os.ReadFile(filepath.Join("docs", "adr", basename))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
@@ -233,8 +233,8 @@ func TestNewADRDraft_Idempotente(t *testing.T) {
 	_ = os.Chdir(dir)
 	t.Cleanup(func() { _ = os.Chdir(orig) })
 
-	b1, err1 := NewADRDraft("session-management")
-	b2, err2 := NewADRDraft("session-management")
+	b1, err1 := NewADRDraft("session-management", filepath.Join("docs", "adr"))
+	b2, err2 := NewADRDraft("session-management", filepath.Join("docs", "adr"))
 	if err1 != nil || err2 != nil {
 		t.Fatalf("erros: %v, %v", err1, err2)
 	}
@@ -254,7 +254,7 @@ func TestNewADRDraft_TituloDerivado(t *testing.T) {
 	_ = os.Chdir(dir)
 	t.Cleanup(func() { _ = os.Chdir(orig) })
 
-	basename, _ := NewADRDraft("api-protocol")
+	basename, _ := NewADRDraft("api-protocol", filepath.Join("docs", "adr"))
 	content, _ := os.ReadFile(filepath.Join("docs", "adr", basename))
 	if !strings.Contains(string(content), "# ADR: Api Protocol") {
 		t.Errorf("título esperado 'Api Protocol' não encontrado em:\n%s", string(content))
@@ -291,6 +291,33 @@ func TestNewADR_ScopeGlobal_CreatesUnderFixtureHome(t *testing.T) {
 	}
 	if len(matches) != 1 {
 		t.Fatalf("esperado 1 arquivo em %s, obteve %d: %v", globalDir, len(matches), matches)
+	}
+
+	// docs/adr não deve ter sido criado no cwd — escopo global não toca o projeto.
+	if _, err := os.Stat(filepath.Join(cwd, "docs", "adr")); err == nil {
+		t.Errorf("docs/adr não deveria existir no cwd quando adrDir aponta para escopo global")
+	}
+}
+
+// TestNewADRDraft_ScopeGlobal_CreatesUnderFixtureHome — NewADRDraft(slug, GlobalADRDir(home))
+// escreve em $HOME/.trackfw/adr mesmo sem cwd em raiz de projeto, provando que o generator não
+// chama mais config.Load() internamente. ROADMAP-2026-08-08 ML-2A.
+func TestNewADRDraft_ScopeGlobal_CreatesUnderFixtureHome(t *testing.T) {
+	cwd := t.TempDir()
+	home := t.TempDir()
+	chdirADR(t, cwd)
+
+	globalDir := GlobalADRDir(home)
+	basename, err := NewADRDraft("estrategia-global", globalDir)
+	if err != nil {
+		t.Fatalf("NewADRDraft() erro: %v", err)
+	}
+	if basename == "" {
+		t.Fatal("basename vazio")
+	}
+
+	if _, err := os.Stat(filepath.Join(globalDir, basename)); err != nil {
+		t.Fatalf("arquivo não criado em %s: %v", globalDir, err)
 	}
 
 	// docs/adr não deve ter sido criado no cwd — escopo global não toca o projeto.

@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/kgsaran/trackfw/internal/config"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -187,9 +186,10 @@ func slugToTitle(slug string) string {
 // Usado pelo wizard req new para registrar decisões pendentes.
 // Retorna o basename do arquivo criado.
 // Se o arquivo já existir, não sobrescreve (idempotente) e retorna o basename sem erro.
-func NewADRDraft(slug string) (string, error) {
-	cfg := config.Load()
-	adrDir := cfg.ADRDirs[0]
+// O chamador resolve adrDir (via config.Load().ADRDirs[0] para escopo "local" ou via
+// GlobalADRDir(home) para escopo "global") — esta função não lê trackfw.yaml, mesmo
+// padrão de NewADR.
+func NewADRDraft(slug string, adrDir string) (string, error) {
 	if err := os.MkdirAll(adrDir, 0755); err != nil {
 		return "", fmt.Errorf("creating %s: %w", adrDir, err)
 	}

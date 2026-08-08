@@ -95,10 +95,34 @@ func runReqNew(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	// Escopo dos ADR drafts desta sessão de REQ — uma única pergunta para todas as probes,
+	// não repetida por probe. Default "local", mesmo comportamento de antes desta escolha existir.
+	adrScope := "local"
+	scopeForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Escopo dos ADRs desta REQ").
+				Options(
+					huh.NewOption("Local (padrão)", "local"),
+					huh.NewOption("Global (~/.trackfw/adr, cross-project)", "global"),
+				).
+				Value(&adrScope),
+		),
+	)
+	if err := scopeForm.Run(); err != nil {
+		return fmt.Errorf("wizard: %w", err)
+	}
+
 	// Form 2 — critérios, links e probes
 	form2 := huh.NewForm(groups...)
 	if err := form2.Run(); err != nil {
 		return fmt.Errorf("wizard: %w", err)
+	}
+
+	// Resolve o diretório de ADR uma única vez para toda a sessão, com base na escolha acima.
+	adrDir, err := resolveADRDir(map[string]string{"local": "project", "global": "global"}[adrScope])
+	if err != nil {
+		return err
 	}
 
 	// Processar respostas das probes → gerar ADR Drafts
@@ -106,7 +130,7 @@ func runReqNew(_ *cobra.Command, args []string) error {
 	for i, answer := range answers {
 		_ = questionRefs[i] // referência mantida para rastreabilidade futura
 		if answer != "" {   // ADRSlug não-vazio = decisão pendente
-			basename, err := generators.NewADRDraft(answer)
+			basename, err := generators.NewADRDraft(answer, adrDir)
 			if err != nil {
 				fmt.Printf("warning: could not create ADR draft for %s: %v\n", answer, err)
 				continue

@@ -29,6 +29,83 @@ function loadUpdateConfig(rootDir) {
   };
 }
 
+// ensureGlobalAdrDirRegistered — mirrors internal/generators/update.go's
+// ensureGlobalADRDirRegistered (Go implementation, same REQ, ML-1A). Registers
+// ~/.trackfw/adr in the project's trackfw.yaml `adr_dirs` list, but ONLY when
+// that directory exists AND contains at least one `ADR-*.md` file — an empty
+// or absent global ADR dir is a no-op, never written. The edit is surgical
+// (line-based text splice, not a YAML parse+reserialize) to preserve 100% of
+// the user's existing trackfw.yaml content (comments, key order, formatting).
+function ensureGlobalAdrDirRegistered(cwd) {
+  const home = os.homedir();
+  const globalDir = path.join(home, '.trackfw', 'adr');
+  if (!fs.existsSync(globalDir)) return;
+
+  let hasAdr = false;
+  try {
+    hasAdr = fs.readdirSync(globalDir).some((f) => /^ADR-.*\.md$/.test(f));
+  } catch (_) {
+    return;
+  }
+  if (!hasAdr) return;
+
+  const yamlPath = path.join(cwd, 'trackfw.yaml');
+  let content;
+  try {
+    content = fs.readFileSync(yamlPath, 'utf8');
+  } catch (_) {
+    return;
+  }
+
+  const resolvesToGlobal = (entry) => {
+    const trimmed = entry.trim();
+    if (trimmed === '~/.trackfw/adr') return true;
+    const expanded = trimmed.startsWith('~') ? path.join(home, trimmed.slice(1)) : trimmed;
+    return path.resolve(expanded) === path.resolve(globalDir);
+  };
+
+  const lines = content.split('\n');
+  let adrDirsIndex = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^adr_dirs:\s*$/.test(lines[i])) {
+      adrDirsIndex = i;
+      break;
+    }
+  }
+
+  if (adrDirsIndex === -1) {
+    // No adr_dirs key at all — the implicit default is `docs/adr`; append a
+    // new block preserving that default explicitly, plus the global entry.
+    let newContent = content;
+    if (newContent.length && !newContent.endsWith('\n')) newContent += '\n';
+    newContent += 'adr_dirs:\n  - docs/adr\n  - ~/.trackfw/adr\n';
+    fs.writeFileSync(yamlPath, newContent, 'utf8');
+    console.log('  ✓ adr_dirs: ~/.trackfw/adr registrado');
+    return;
+  }
+
+  const itemRe = /^(\s*)-\s*(.+?)\s*$/;
+  let end = adrDirsIndex + 1;
+  let lastItemIndex = -1;
+  let indent = '  ';
+  while (end < lines.length) {
+    const m = lines[end].match(itemRe);
+    if (!m) break;
+    indent = m[1] || indent;
+    if (resolvesToGlobal(m[2])) {
+      // Already registered under this or an equivalent path form — no-op.
+      return;
+    }
+    lastItemIndex = end;
+    end++;
+  }
+
+  const insertAt = lastItemIndex === -1 ? adrDirsIndex + 1 : lastItemIndex + 1;
+  lines.splice(insertAt, 0, `${indent}- ~/.trackfw/adr`);
+  fs.writeFileSync(yamlPath, lines.join('\n'), 'utf8');
+  console.log('  ✓ adr_dirs: ~/.trackfw/adr registrado');
+}
+
 function updateHooksSurgical(cfg, rootDir) {
   const hooks = cfg.hooks || '';
   if (hooks === 'husky') {
@@ -242,6 +319,8 @@ cmd.action((mode, options) => {
     console.error('✗ trackfw.yaml não encontrado — execute trackfw init primeiro');
     process.exit(1);
   }
+
+  ensureGlobalAdrDirRegistered(cwd);
 
   let wanted;
   try {
