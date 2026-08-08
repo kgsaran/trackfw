@@ -144,6 +144,186 @@ func TestUpdateHarnessEmptyHomeReportsAllMissingAndDoesNotFail(t *testing.T) {
 	}
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// ensureGlobalADRDirRegistered (via Update) — ROADMAP-2026-08-08 ML-1A.
+// ────────────────────────────────────────────────────────────────────────────
+
+func writeGlobalADR(t *testing.T, home string) {
+	t.Helper()
+	dir := GlobalADRDir(home)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ADR-2026-08-08-example.md"), []byte("# Example ADR\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpdateRegistersGlobalADRDirWhenAbsentFromYAML(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root, home := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	writeGlobalADR(t, home)
+
+	yamlPath := filepath.Join(root, "trackfw.yaml")
+	if err := os.WriteFile(yamlPath, []byte("hooks: none\nci: none\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Update(root); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "adr_dirs:\n  - docs/adr\n  - ~/.trackfw/adr\n") {
+		t.Fatalf("trackfw.yaml did not gain the expected adr_dirs block:\n%s", content)
+	}
+	if !strings.Contains(content, "hooks: none\nci: none\n") {
+		t.Fatalf("original trackfw.yaml content was not preserved:\n%s", content)
+	}
+}
+
+func TestUpdateDoesNotTouchYAMLWhenGlobalADRDirMissing(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root, home := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	// Deliberately do NOT create ~/.trackfw/adr.
+
+	yamlPath := filepath.Join(root, "trackfw.yaml")
+	original := []byte("hooks: none\nci: none\n")
+	if err := os.WriteFile(yamlPath, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Update(root); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(original) {
+		t.Fatalf("trackfw.yaml was modified even though ~/.trackfw/adr does not exist:\ngot:  %q\nwant: %q", data, original)
+	}
+}
+
+func TestUpdateDoesNotTouchYAMLWhenGlobalADRDirEmpty(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root, home := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(GlobalADRDir(home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Directory exists but has no ADR-*.md files.
+
+	yamlPath := filepath.Join(root, "trackfw.yaml")
+	original := []byte("hooks: none\nci: none\n")
+	if err := os.WriteFile(yamlPath, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Update(root); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(original) {
+		t.Fatalf("trackfw.yaml was modified even though ~/.trackfw/adr has no ADR-*.md files:\ngot:  %q\nwant: %q", data, original)
+	}
+}
+
+func TestUpdateIsIdempotentWhenGlobalADRDirAlreadyRegistered(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root, home := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	writeGlobalADR(t, home)
+
+	yamlPath := filepath.Join(root, "trackfw.yaml")
+	original := []byte("hooks: none\nci: none\nadr_dirs:\n  - docs/adr\n  - ~/.trackfw/adr\n")
+	if err := os.WriteFile(yamlPath, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Update(root); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(original) {
+		t.Fatalf("trackfw.yaml was modified even though ~/.trackfw/adr was already registered:\ngot:  %q\nwant: %q", data, original)
+	}
+}
+
+func TestUpdateIsIdempotentWhenGlobalADRDirAlreadyRegisteredAsAbsolutePath(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root, home := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	writeGlobalADR(t, home)
+
+	absGlobalDir := GlobalADRDir(home)
+	yamlPath := filepath.Join(root, "trackfw.yaml")
+	original := []byte(fmt.Sprintf("hooks: none\nci: none\nadr_dirs:\n  - docs/adr\n  - %s\n", absGlobalDir))
+	if err := os.WriteFile(yamlPath, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Update(root); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(original) {
+		t.Fatalf("trackfw.yaml was modified even though ~/.trackfw/adr was already registered as an absolute path:\ngot:  %q\nwant: %q", data, original)
+	}
+}
+
+func TestUpdateRegistersGlobalADRDirPreservingCommentsAndOtherKeys(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root, home := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	writeGlobalADR(t, home)
+
+	yamlPath := filepath.Join(root, "trackfw.yaml")
+	original := "# user comment at the top\nhooks: none\nci: none\n# another comment\nadr_dirs:\n  - docs/adr\n  - docs/adr/zeus\n"
+	if err := os.WriteFile(yamlPath, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Update(root); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	want := "# user comment at the top\nhooks: none\nci: none\n# another comment\nadr_dirs:\n  - docs/adr\n  - docs/adr/zeus\n  - ~/.trackfw/adr\n"
+	if content != want {
+		t.Fatalf("trackfw.yaml surgical insert did not preserve comments/other keys as expected:\ngot:  %q\nwant: %q", content, want)
+	}
+}
+
 func TestUpdateHarnessUnknownTargetIsUsageError(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

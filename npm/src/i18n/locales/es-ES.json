@@ -63,7 +63,10 @@
         "domainQuestion_persistence": "¿Qué motor de base de datos se usará?",
         "domainQuestion_api": "¿Qué protocolo de API se usará?",
         "domainQuestion_deploy": "¿Cuál es el destino de despliegue?",
-        "domainQuestion_events": "¿Qué message broker se usará?"
+        "domainQuestion_events": "¿Qué message broker se usará?",
+        "adrScope": "Alcance de los ADRs de este REQ",
+        "adrScopeLocal": "Local (predeterminado)",
+        "adrScopeGlobal": "Global (~/.trackfw/adr, entre proyectos)"
       },
       "detectedDomains": "Dominios detectados: {{domains}}",
       "created": "✓ REQ creado: {{path}}",

@@ -1,4 +1,6 @@
 'use strict'
+const path = require('path')
+const os = require('os')
 const { Command } = require('commander')
 const { listREQs, moveREQ } = require('../generators/req')
 const { t } = require('../i18n')
@@ -26,6 +28,19 @@ cmd.command('new <title>')
       // Form 2 — critérios de aceite
       content.criteria = await input({ message: t('req.new.prompt.criteria'), default: '- [ ]\n- [ ]' })
 
+      // Escopo dos ADR drafts desta sessão (uma única pergunta, vale para todos)
+      const adrScope = await select({
+        message: t('req.new.prompt.adrScope'),
+        choices: [
+          { name: t('req.new.prompt.adrScopeLocal'), value: 'local' },
+          { name: t('req.new.prompt.adrScopeGlobal'), value: 'global' },
+        ],
+        default: 'local',
+      })
+      const adrDir = adrScope === 'global'
+        ? path.join(os.homedir(), '.trackfw', 'adr')
+        : require('../config').load().adrDirs[0]
+
       // Perguntas dinâmicas por probe
       const generatedADRs = []
       for (const probe of probes) {
@@ -40,7 +55,7 @@ cmd.command('new <title>')
           })
           if (answer) {
             try {
-              const basename = await adrGenerators.newADRDraft(answer)
+              const basename = await adrGenerators.newADRDraft(answer, adrDir)
               if (basename) generatedADRs.push(basename)
             } catch (e) {
               console.warn(t('req.new.adrWarning', { slug: answer, message: e.message }))

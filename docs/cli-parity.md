@@ -1103,6 +1103,14 @@ command silently reaches outside the repository.
 the CI workflow, project-level slash commands, and Git hooks. Any global mutation is removed from
 its contract.
 
+**One read-only exception, added for global-ADR discovery:** `trackfw update` inspects (never
+writes) `~/.trackfw/adr` — if that directory exists and contains at least one `ADR-*.md`, `update`
+surgically appends `~/.trackfw/adr` to the project's own `adr_dirs` in `trackfw.yaml`, idempotently,
+preserving every other line/comment in the file byte-for-byte. If the global ADR dir doesn't exist,
+is empty, or the entry is already present, `trackfw.yaml` is left untouched — this never fires "in
+the dark" against an empty/missing global directory, and it never touches anything outside the
+current project's own `trackfw.yaml`.
+
 `trackfw update harness` covers: rules, agents and skills **already installed** in the user's home
 directory.
 
@@ -2188,6 +2196,20 @@ ADR:
 <!-- Reference the roadmap that implements this requirement -->
 Roadmap: 
 ```
+
+**Escopo local/global dos ADR drafts gerados por probe (Go+Node.js apenas):** no fluxo
+interativo (TTY) que detecta domínios e gera ADR drafts a partir de probes, um único prompt
+("Escopo dos ADRs desta REQ": Local, padrão, ou Global) é exibido antes do loop de probes —
+a escolha vale para todos os ADR drafts gerados naquela sessão de `req new`, não é perguntada
+por probe. `global` escreve os drafts em `~/.trackfw/adr/`; `local` (default) preserva o
+comportamento anterior a esta feature. Sem TTY, nenhum prompt é exibido e o comportamento é
+idêntico ao anterior (sempre `local`).
+
+**Exceção Python-only, pré-existente e sem relação com o prompt acima:** `pypi` não implementa
+o fluxo de detecção de domínios/probes/ADR-draft de `req new` — `req new` em Python só pede o
+título (prompt simples se omitido) e nunca gera ADR drafts. Gap de paridade documentado, não
+introduzido por esta feature; corrigi-lo exigiria portar o sistema de probes inteiro para
+Python, fora do escopo desta REQ.
 
 #### `adr new <title>`
 

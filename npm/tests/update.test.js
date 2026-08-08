@@ -126,3 +126,83 @@ test('update --json output is pure JSON with no human progress noise mixed in', 
   assert.equal(result.status, 0, result.stderr)
   assert.doesNotThrow(() => JSON.parse(result.stdout))
 })
+
+// ML-1B (ROADMAP-2026-08-08-conectar-adrs-globais...) — ensureGlobalAdrDirRegistered
+// registers ~/.trackfw/adr in trackfw.yaml's adr_dirs, surgically and only
+// when the global ADR dir exists and has >=1 ADR-*.md file.
+
+function writeGlobalAdr(homeRoot, filename = 'ADR-2026-08-08-example.md') {
+  const globalAdrDir = path.join(homeRoot, '.trackfw', 'adr')
+  fs.mkdirSync(globalAdrDir, { recursive: true })
+  fs.writeFileSync(path.join(globalAdrDir, filename), '# Example ADR\n')
+  return globalAdrDir
+}
+
+test('adr_dirs auto-register: no adr_dirs key + global ADR dir with 1 ADR -> gains block with both paths', () => {
+  const { projectRoot, homeRoot } = scratch()
+  writeGlobalAdr(homeRoot)
+  const yamlPath = path.join(projectRoot, 'trackfw.yaml')
+  const before = fs.readFileSync(yamlPath, 'utf8')
+
+  const result = run(['update', '--json', '--dry-run'], projectRoot, homeRoot)
+  assert.equal(result.status, 0, result.stderr)
+
+  const after = fs.readFileSync(yamlPath, 'utf8')
+  assert.notEqual(after, before)
+  assert.match(after, /adr_dirs:\n  - docs\/adr\n  - ~\/\.trackfw\/adr\n/)
+  // Original content preserved verbatim, just appended to.
+  assert.ok(after.startsWith(before))
+})
+
+test('adr_dirs auto-register: global ADR dir does not exist -> trackfw.yaml unchanged byte-for-byte', () => {
+  const { projectRoot, homeRoot } = scratch()
+  const yamlPath = path.join(projectRoot, 'trackfw.yaml')
+  const before = fs.readFileSync(yamlPath, 'utf8')
+
+  const result = run(['update', '--json', '--dry-run'], projectRoot, homeRoot)
+  assert.equal(result.status, 0, result.stderr)
+
+  assert.equal(fs.readFileSync(yamlPath, 'utf8'), before)
+})
+
+test('adr_dirs auto-register: global ADR dir exists but is empty -> trackfw.yaml unchanged byte-for-byte', () => {
+  const { projectRoot, homeRoot } = scratch()
+  fs.mkdirSync(path.join(homeRoot, '.trackfw', 'adr'), { recursive: true })
+  const yamlPath = path.join(projectRoot, 'trackfw.yaml')
+  const before = fs.readFileSync(yamlPath, 'utf8')
+
+  const result = run(['update', '--json', '--dry-run'], projectRoot, homeRoot)
+  assert.equal(result.status, 0, result.stderr)
+
+  assert.equal(fs.readFileSync(yamlPath, 'utf8'), before)
+})
+
+test('adr_dirs auto-register: entry already present -> idempotent, no further writes', () => {
+  const { projectRoot, homeRoot } = scratch()
+  writeGlobalAdr(homeRoot)
+  const yamlPath = path.join(projectRoot, 'trackfw.yaml')
+  fs.writeFileSync(yamlPath, 'hooks: none\nci: none\nadr_dirs:\n  - docs/adr\n  - ~/.trackfw/adr\n')
+  const before = fs.readFileSync(yamlPath, 'utf8')
+
+  const result = run(['update', '--json', '--dry-run'], projectRoot, homeRoot)
+  assert.equal(result.status, 0, result.stderr)
+
+  assert.equal(fs.readFileSync(yamlPath, 'utf8'), before)
+})
+
+test('adr_dirs auto-register: preserves comments and other keys, only appends the new entry', () => {
+  const { projectRoot, homeRoot } = scratch()
+  writeGlobalAdr(homeRoot)
+  const yamlPath = path.join(projectRoot, 'trackfw.yaml')
+  const original = '# trackfw config\nhooks: none\nci: none\n# custom adr dirs\nadr_dirs:\n  - docs/adr\n  - docs/custom-adr\n\nbackend: none\n'
+  fs.writeFileSync(yamlPath, original)
+
+  const result = run(['update', '--json', '--dry-run'], projectRoot, homeRoot)
+  assert.equal(result.status, 0, result.stderr)
+
+  const after = fs.readFileSync(yamlPath, 'utf8')
+  assert.equal(
+    after,
+    '# trackfw config\nhooks: none\nci: none\n# custom adr dirs\nadr_dirs:\n  - docs/adr\n  - docs/custom-adr\n  - ~/.trackfw/adr\n\nbackend: none\n'
+  )
+})

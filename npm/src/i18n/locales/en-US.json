@@ -63,7 +63,10 @@
         "domainQuestion_persistence": "Which database engine will be used?",
         "domainQuestion_api": "Which API protocol will be used?",
         "domainQuestion_deploy": "What is the deployment target?",
-        "domainQuestion_events": "Which event broker will be used?"
+        "domainQuestion_events": "Which event broker will be used?",
+        "adrScope": "Scope of ADRs for this REQ",
+        "adrScopeLocal": "Local (default)",
+        "adrScopeGlobal": "Global (~/.trackfw/adr, cross-project)"
       },
       "detectedDomains": "Detected domains: {{domains}}",
       "created": "✓ REQ created: {{path}}",

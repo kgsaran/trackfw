@@ -39,6 +39,10 @@ func Update(cwd string) error {
 		return fmt.Errorf("trackfw.yaml não encontrado — execute trackfw init primeiro")
 	}
 
+	if err := ensureGlobalADRDirRegistered(cwd); err != nil {
+		fmt.Printf("  ⚠ adr_dirs: %v\n", err)
+	}
+
 	orig, _ := os.Getwd()
 	if err := os.Chdir(cwd); err != nil {
 		return fmt.Errorf("não foi possível mudar para %s: %w", cwd, err)
@@ -202,6 +206,129 @@ func updateHooksSurgical(cfg Config) {
 		fmt.Fprintln(f, "\npre-commit:\n  commands:\n    trackfw-validate:\n      run: trackfw validate")
 		fmt.Println("  ✓ lefthook.yml — trackfw-validate injetado")
 	}
+}
+
+// ensureGlobalADRDirRegistered registers ~/.trackfw/adr in trackfw.yaml's
+// adr_dirs list, surgically (text-level edit, never config.Load()+re-
+// serialize, which would lose the user's comments/formatting) and
+// idempotently, but only when there is something to gain from it: the global
+// ADR directory must exist AND contain at least one ADR-*.md file. This keeps
+// `trackfw update` from cluttering every project's trackfw.yaml with a
+// pointer to a directory that is empty or doesn't exist on this machine.
+func ensureGlobalADRDirRegistered(cwd string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolving home directory: %w", err)
+	}
+	globalDir := GlobalADRDir(home)
+	if _, statErr := os.Stat(globalDir); statErr != nil {
+		return nil // global ADR dir doesn't exist — no-op
+	}
+	matches, globErr := filepath.Glob(filepath.Join(globalDir, "ADR-*.md"))
+	if globErr != nil {
+		return fmt.Errorf("checking for ADR files in %s: %w", globalDir, globErr)
+	}
+	if len(matches) == 0 {
+		return nil // global ADR dir has no ADRs yet — no-op
+	}
+
+	yamlPath := filepath.Join(cwd, "trackfw.yaml")
+	data, readErr := os.ReadFile(yamlPath)
+	if readErr != nil {
+		return fmt.Errorf("reading %s: %w", yamlPath, readErr)
+	}
+	content := string(data)
+
+	absGlobalDir := filepath.Join(home, ".trackfw", "adr")
+	if adrDirsEntryPresent(content, absGlobalDir) {
+		return nil // already registered (literal "~/.trackfw/adr" or the expanded absolute path)
+	}
+
+	updated, insertErr := insertGlobalADRDirEntry(content)
+	if insertErr != nil {
+		return insertErr
+	}
+	if writeErr := os.WriteFile(yamlPath, []byte(updated), 0o644); writeErr != nil {
+		return fmt.Errorf("writing %s: %w", yamlPath, writeErr)
+	}
+	fmt.Println("  ✓ adr_dirs: ~/.trackfw/adr registrado")
+	return nil
+}
+
+// adrDirsEntryPresent reports whether content's adr_dirs block (if any)
+// already has an item resolving to the global ADR dir — matching both the
+// literal "~/.trackfw/adr" form and the expanded absolute-path form so the
+// two textual spellings of the same entry are never treated as distinct.
+func adrDirsEntryPresent(content, absGlobalDir string) bool {
+	lines := strings.Split(content, "\n")
+	inADRDirs := false
+	for _, line := range lines {
+		trimmed := strings.TrimRight(line, " \t")
+		if strings.HasPrefix(strings.TrimLeft(trimmed, " "), "adr_dirs:") {
+			inADRDirs = true
+			continue
+		}
+		if inADRDirs {
+			itemLine := strings.TrimLeft(trimmed, " ")
+			if !strings.HasPrefix(itemLine, "-") {
+				break // list ended
+			}
+			value := strings.TrimSpace(strings.TrimPrefix(itemLine, "-"))
+			if value == "~/.trackfw/adr" || value == absGlobalDir {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// insertGlobalADRDirEntry returns content with "  - ~/.trackfw/adr" inserted
+// as the last item of the existing adr_dirs list, or — if content has no
+// adr_dirs key at all (implying the loader's implicit "docs/adr" default) —
+// with a new adr_dirs block appended at the end preserving that default
+// explicitly alongside the new global entry.
+func insertGlobalADRDirEntry(content string) (string, error) {
+	lines := strings.Split(content, "\n")
+	adrDirsIdx := -1
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimLeft(strings.TrimRight(line, " \t"), " "), "adr_dirs:") {
+			adrDirsIdx = i
+			break
+		}
+	}
+	if adrDirsIdx == -1 {
+		// No adr_dirs key present — append a new explicit block.
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		if !strings.HasSuffix(content, "\n\n") && content != "\n" {
+			content += "\n"
+		}
+		content += "adr_dirs:\n  - docs/adr\n  - ~/.trackfw/adr\n"
+		return content, nil
+	}
+
+	// Find the indentation used by existing list items and the index of the
+	// last item line so the new entry can be inserted right after it, with
+	// matching indentation.
+	itemIndent := "  "
+	lastItemIdx := adrDirsIdx
+	for i := adrDirsIdx + 1; i < len(lines); i++ {
+		trimmed := strings.TrimRight(lines[i], " \t")
+		leftTrimmed := strings.TrimLeft(trimmed, " ")
+		if !strings.HasPrefix(leftTrimmed, "-") {
+			break
+		}
+		itemIndent = trimmed[:len(trimmed)-len(leftTrimmed)]
+		lastItemIdx = i
+	}
+
+	newLine := itemIndent + "- ~/.trackfw/adr"
+	out := make([]string, 0, len(lines)+1)
+	out = append(out, lines[:lastItemIdx+1]...)
+	out = append(out, newLine)
+	out = append(out, lines[lastItemIdx+1:]...)
+	return strings.Join(out, "\n"), nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
