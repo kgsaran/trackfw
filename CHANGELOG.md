@@ -10,6 +10,32 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.5.1] - 2026-08-08
+
+### Fixed
+
+- **`trackfw update harness` não gerava o script global de credential-guard** (#147) —
+  o wiring de hooks `*-credential-guard` (Claude/Codex/Gemini/Cursor/Copilot/Kiro)
+  apontava para `~/.trackfw/scripts/trackfw-credential-guard.sh`, mas nenhum dos 3 CLIs
+  (Go/Node.js/Python) chamava a função que gera esse arquivo — hooks instalados
+  apontando para um script inexistente, falhando com "No such file or directory".
+  `update harness` passa a gerar o script uma vez no início do fluxo (pulado em
+  `--dry-run`).
+- **JSON de `trackfw update harness --json` corrompido pelo fix acima (Go)** (#147) —
+  `GenerateGlobalCredentialGuardScript` imprimia um checkmark de sucesso via
+  `fmt.Printf` incondicionalmente, vazando texto solto para o stdout antes do JSON.
+  Corrigido para escrever silenciosamente, alinhado ao padrão já usado por
+  `harnessClaudeSkillTarget`.
+
+### Changed
+
+- **Remoção de geradores legados órfãos** (#147) — `InstallCodex`/`InstallCopilot`/
+  `InstallCursor`/`InstallGemini`/`InstallWindsurf`/`InstallAmazonQ` (Go) e o wrapper
+  `installGlobalSkill()`, código pré-catálogo sem chamadores em produção, superados
+  pelo sistema `internal/integrations`. Em Node.js/Python só as funções
+  `installCodex`/`install_codex` foram removidas — os dicts de fixture usados pelos
+  testes de reconhecimento de conteúdo legado foram preservados.
+
 ## [6.5.0] - 2026-08-07
 
 ### Added
