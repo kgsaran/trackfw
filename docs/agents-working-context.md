@@ -10377,3 +10377,121 @@ rodada de testes.
 
 Não tocado: `npm/`, `pypi/`, `internal/generators/scaffold.go`. Roadmap: ML-2A marcado
 `✅ Concluído`. Sem commit/push (protocolo desta sessão — orquestrador audita e commita).
+
+---
+
+## 2026-08-08 — Ártemis (QA) — ML-3A do ROADMAP-2026-08-08 (Go: testes dos 3 cenários)
+
+**Início/Fim (sessão única):** branch
+`feat/credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado`
+(já existente), roadmap em `docs/roadmaps/wip/ROADMAP-2026-08-08-credential-guard-...md`. Waves 1-2
+(Go) já commitadas (`c21ead9`, `4429e5a`). Tarefa: adicionar testes novos cobrindo os 3 cenários da
+REQ que hoje escapavam.
+
+**Adicionado em `internal/generators/credential_guard_test.go`:**
+- `TestGlobalCredentialGuardScript_YAMLPresentWithoutModeKey_FallsBackToBlock` — cenário (a),
+  variante não coberta pelos testes de ML-1A: `trackfw.yaml` EXISTE mas sem `credential_guard.mode`
+  (o teste já existente só cobria ausência total do arquivo).
+- `TestCredentialGuardScript_SecondLayer_CatArgument_Captured`,
+  `TestCredentialGuardScript_SecondLayer_HeadDashCArgument_Captured` (caso literal do incidente da
+  REQ) e `TestCredentialGuardScript_SecondLayer_AWSKeyViaGrepArgument_Captured` — cenário (c),
+  segunda camada de detecção via conteúdo de arquivo referenciado (implementada no ML-1A mas sem
+  nenhum teste Go até agora — gap real confirmado por grep antes de escrever).
+
+**Adicionado em `internal/generators/agentfiles_test.go`:**
+- `TestInjectClaudeHooks_ReadWriteEditMatchersRegisteredForCredentialGuard` e
+  `TestInjectGeminiHooks_ReadWriteMatchersRegisteredForCredentialGuard` — cenário (b), teste
+  estrutural (assert direto de matcher via `helperHasClaudeHook`) confirmando que o hook é
+  REGISTRADO para Read/Write|Edit; os testes de ML-2A já existentes só verificavam contagens de
+  array, não o nome do matcher por si. Não executa o script para este cenário — a execução do
+  payload cru já está coberta pelos cenários (a)/(c).
+
+**Resultado:** `go build ./...` limpo. `go test ./internal/generators/... -count=1` → `ok` (suíte
+inteira, incluindo os testes novos). Roadmap: ML-3A marcado `✅ Concluído`. Sem commit/push (regra
+do papel QA — `trackfw_architect` audita e commita).
+
+---
+
+## 2026-08-08 — Ártemis (QA) — ML-3C do ROADMAP-2026-08-08 (Python: testes dos 3 cenários)
+
+**Início/Fim (sessão única):** branch
+`feat/credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado`
+(já existente). Waves 1-2 (Python) já commitadas (`980eab8` — core em `init_gen.py`, `2ccb6b5` —
+wiring em `hooks.py`), cada uma com seus próprios testes. Antes de escrever, mapeei quais dos 3
+cenários da REQ já tinham cobertura e quais não, para não duplicar teste (mesmo achado do agente Go
+em ML-3A): (a) e (b) já tinham teste desde ML-1C/ML-2C; (c) — segunda camada de detecção via
+argumento de comando (`cat`/`head`/`tail`/`jq`/`grep` referenciando arquivo) — não tinha nenhum
+teste em Python (confirmado via `grep` em `test_credential_guard.py`).
+
+**Adicionado em `pypi/tests/test_credential_guard.py`:**
+- `test_trackfw_yaml_presente_sem_credential_guard_mode_bloqueia_tambem` (cenário a, variante
+  complementar ao teste já existente `test_detecta_jwt_fora_de_qualquer_projeto_trackfw`, que só
+  cobria a AUSÊNCIA total do `trackfw.yaml` — faltava o caso `trackfw.yaml` presente mas sem a
+  chave `credential_guard.mode`, ambos devem cair no fallback `block`).
+- `test_payload_write_com_jwt_no_content_e_capturado` e
+  `test_payload_read_post_com_aws_key_no_tool_response_e_capturado` (cenário b, nível de
+  comportamento do script — não só de wiring): provam que, além do matcher estar registrado
+  (já coberto por `test_generators_init.py` desde ML-2C), o script de fato captura o segredo
+  quando embutido em `tool_input.content` (Write) ou `tool_response.content` (Read pós-leitura).
+- `test_segunda_camada_detecta_jwt_via_cat_de_arquivo_referenciado`,
+  `test_segunda_camada_detecta_aws_key_via_head_de_arquivo_referenciado` (caso literal do
+  incidente da REQ, `head -c 50 arquivo`) e `test_segunda_camada_nao_dispara_para_comando_fora_da_
+  allowlist` (controle negativo — `ls` não é `cat|head|tail|jq|grep`) — cenário (c), o gap real
+  confirmado antes de escrever.
+
+Decisão não óbvia: não dupliquei os testes de wiring por-CLI de `test_generators_init.py` (já
+cobrem Claude + 5 CLIs desde ML-2C) nem o teste puro de "sem trackfw.yaml → block" (já existia
+desde ML-1C) — escrever testes novos idênticos aos já existentes violaria DRY sem agregar
+cobertura; em vez disso, complementei com as variantes reais que faltavam.
+
+**Resultado:** `python3 -m pytest tests/test_credential_guard.py -q` → 29 passed. Suíte completa
+`cd pypi && python3 -m pytest -q` → 992 passed, 8 subtests passed. Roadmap: ML-3C marcado
+`✅ Concluído`. Não tocado: `internal/`, `npm/`. Sem commit/push (regra do papel QA —
+`trackfw_architect` audita e commita).
+
+---
+
+## Sessão 2026-08-08 — Ártemis (QA, ML-3B: Node — testes dos 3 cenários) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado`
+(já criada pelo orquestrador). Roadmap Wave 3/ML-3B; REQ:
+`docs/req/REQ-2026-08-08-credential-guard-modo-block-cobertura-read-write-e-resolucao-de-arquivo-referenciado.md`.
+
+**Escopo:** `npm/tests/credential_guard.test.js` — 6 testes novos cobrindo os 3 cenários da REQ que
+escapavam antes desta REQ (core+wiring Node já tinham sido commitados em cb0d94f/ML-1B, junto com
+cobertura estrutural parcial em `npm/tests/generators.test.js`, que **não** foi tocada — apenas
+complementada):
+- `(a) sem trackfw.yaml no cwd, script global bloqueia (exit 2) payload com AWS key` — cenário (a),
+  explícito com `assert.ok(!fs.existsSync(...trackfw.yaml))`; comportamento já existia
+  implicitamente em testes de `ML-1B`, deixado nomeado por cenário da REQ.
+- `(b) matcher Read/Write|Edit do injectClaudeHooks aponta para o script que detecta JWT em payload
+  de tool call Read` e `(b) matcher Read/Write do injectCursorHooks aponta para o script que detecta
+  AWS key em payload de tool call Write` — prova ponta-a-ponta (não só estrutural): o comando
+  registrado no matcher gerado é o mesmo script que, invocado com um payload real de tool call
+  Read/Write contendo JWT/AWS key, efetivamente bloqueia/alerta. Cobertura estrutural por-CLI (todos
+  os 6 alvos) já existe desde cb0d94f em `generators.test.js`.
+- `(c) "cat arquivo.txt" ...`, `(c) "head -c 50 arquivo.txt" ...` e `(c) comando "cat" que NÃO
+  referencia arquivo com segredo continua no-op` — cenário (c), o gap real: comando Bash que
+  referencia segredo por caminho sem o literal no comando, capturado pela segunda camada de
+  detecção (`scan_file_for_pattern` em `CG_DETECTION_CORE`); controle negativo prova ausência de
+  falso positivo.
+
+**Decisão não óbvia (root cause não trivial, nota no vault):** os 2 testes de cenário (b) chamam
+`injectClaudeHooks`/`injectCursorHooks` diretamente (fora de `generators.test.js`, que isola
+`$HOME` via `test.beforeEach`/`afterEach` global do arquivo). `injectXHooks` faz dedup contra o
+credential-guard **global** já instalado no `$HOME` real da máquina — que está instalado neste
+repo/máquina de desenvolvimento (é o propósito do produto) — e pulava silenciosamente o wiring de
+projeto, fazendo o teste falhar por causa ambiental, não de implementação. Corrigido isolando
+`$HOME` com `mkdtempSync`/`try`-`finally` por teste (runner customizado deste arquivo não tem hook
+global). Nota: `vault/notes/node-global-credential-guard-dedup-breaks-inject-tests-on-real-home-2026-08-08.md`
+(linkada no índice) — mesmo risco se aplica a qualquer teste Node futuro que chame `injectXHooks`
+fora de `generators.test.js`, e potencialmente ao Python (`ML-3C`) se algum teste novo não estiver
+sob a fixture de isolamento de `HOME` já existente lá.
+
+**Resultado:** `node npm/tests/credential_guard.test.js` → 24 passed, 0 failed. Suíte Node completa
+`cd npm && npm test` → 446/446. `trackfw validate` → exit 0, 1 aviso pré-existente e fora do escopo
+deste ML (`REQ ... has no linked Roadmap` — frontmatter `roadmap:` vazio na REQ; não é
+responsabilidade de ML-3B/testes, reportado para o orquestrador/ML-4A avaliar). Roadmap: ML-3B
+marcado `✅ Concluído` (ML-3A e ML-3C já estavam `✅ Concluído` por outros agentes ao concluir esta
+sessão). Não tocado: `internal/`, `pypi/`. Sem commit/push (regra do papel QA — `trackfw_architect`
+audita e commita).

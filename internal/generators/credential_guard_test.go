@@ -649,6 +649,93 @@ func TestCredentialGuardScript_AttentionCleanupDoesNotDeleteIt(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// ML-3A (ROADMAP-2026-08-08, REQ-2026-08-08 Acceptance Criteria — testes novos, 3 cenários).
+// ---------------------------------------------------------------------------
+
+// TestGlobalCredentialGuardScript_YAMLPresentWithoutModeKey_FallsBackToBlock cobre o cenário (a)
+// da REQ na variante onde trackfw.yaml EXISTE no cwd mas não define `credential_guard.mode` (nem o
+// bloco `credential_guard:` em si) — distinto de TestGlobalCredentialGuardScript_
+// RunsOutsideAnyTrackfwProject, que cobre a ausência total do arquivo. Em ambos os casos o
+// fallback do script global deve ser "block" (exit 2), não "warn" (ADR-2026-08-06 emenda 6).
+func TestGlobalCredentialGuardScript_YAMLPresentWithoutModeKey_FallsBackToBlock(t *testing.T) {
+	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
+	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("roadmap_dir: docs/roadmaps\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
+
+	code, _, stderr := runCredentialGuard(t, cwd, scriptPath, payload)
+	if code != 2 {
+		t.Errorf("trackfw.yaml presente sem credential_guard.mode: exit code want 2 (fallback block), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "blocked") {
+		t.Errorf("esperava mensagem de bloqueio, got: %s", stderr)
+	}
+}
+
+// TestCredentialGuardScript_SecondLayer_CatArgument_Captured cobre o cenário (c) da REQ: um
+// comando Bash que referencia um arquivo contendo o segredo por CAMINHO — sem o JWT/AWS key
+// literal no texto do comando — deve ser capturado pela segunda camada de detecção
+// (credentialGuardDetectionCore, ADR-2026-08-06 emenda 8), via argumento direto de `cat`.
+func TestCredentialGuardScript_SecondLayer_CatArgument_Captured(t *testing.T) {
+	dir, script := setupCredentialGuardFixture(t, "credential_guard:\n  mode: block\n")
+	fixture := filepath.Join(dir, "token-fixture.txt")
+	if err := os.WriteFile(fixture, []byte(syntheticJWT+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat token-fixture.txt"}}`
+
+	code, _, stderr := runCredentialGuard(t, dir, script, payload)
+	if code != 2 {
+		t.Errorf("modo block: exit code want 2 (segunda camada deveria capturar via 'cat <arquivo>'), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "JWT") {
+		t.Errorf("esperava aviso mencionando JWT em stderr, got: %s", stderr)
+	}
+}
+
+// TestCredentialGuardScript_SecondLayer_HeadDashCArgument_Captured é o caso concreto do
+// incidente relatado na REQ: `head -c 50 <arquivo>`, sem o segredo literal no comando.
+func TestCredentialGuardScript_SecondLayer_HeadDashCArgument_Captured(t *testing.T) {
+	dir, script := setupCredentialGuardFixture(t, "")
+	fixture := filepath.Join(dir, "token-fixture.txt")
+	if err := os.WriteFile(fixture, []byte(syntheticJWT+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_name":"Bash","tool_input":{"command":"head -c 50 token-fixture.txt"}}`
+
+	code, _, stderr := runCredentialGuard(t, dir, script, payload)
+	if code != 0 {
+		t.Errorf("modo warn: exit code want 0, got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "JWT") {
+		t.Errorf("esperava aviso mencionando JWT em stderr (segunda camada via 'head -c'), got: %s", stderr)
+	}
+	if !attentionFileExists(dir) {
+		t.Error(".trackfw-credential-guard.json deveria ter sido escrito (segunda camada de detecção)")
+	}
+}
+
+// TestCredentialGuardScript_SecondLayer_AWSKeyViaGrepArgument_Captured cobre a mesma segunda
+// camada para o padrão AWS key e para outro dos inspetores documentados (grep), não só cat/head.
+func TestCredentialGuardScript_SecondLayer_AWSKeyViaGrepArgument_Captured(t *testing.T) {
+	dir, script := setupCredentialGuardFixture(t, "credential_guard:\n  mode: block\n")
+	fixture := filepath.Join(dir, "aws-fixture.txt")
+	if err := os.WriteFile(fixture, []byte("AWS_ACCESS_KEY_ID="+syntheticAWSKey+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_name":"Bash","tool_input":{"command":"grep AWS_ACCESS_KEY_ID aws-fixture.txt"}}`
+
+	code, _, stderr := runCredentialGuard(t, dir, script, payload)
+	if code != 2 {
+		t.Errorf("modo block: exit code want 2 (segunda camada deveria capturar via 'grep <padrão> <arquivo>'), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "AWS") {
+		t.Errorf("esperava aviso mencionando AWS em stderr, got: %s", stderr)
+	}
+}
+
 func TestCredentialGuardScript_NoOpOutsideProjectRoot(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()

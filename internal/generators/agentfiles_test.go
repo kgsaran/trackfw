@@ -138,6 +138,61 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	}
 }
 
+// TestInjectClaudeHooks_ReadWriteEditMatchersRegisteredForCredentialGuard cobre o cenário (b) da
+// REQ-2026-08-08 (ML-3A): um payload de tool call Read/Write/Edit (não Bash) contendo JWT/AWS key
+// no tool_input só é interceptado pelo credential-guard se o hook estiver REGISTRADO para esses
+// matchers -- este teste confirma o wiring (structural), não a execução do script (já coberta
+// pelos cenários (a)/(c) em credential_guard_test.go, já que o script escaneia o payload cru
+// independente do tool_name).
+func TestInjectClaudeHooks_ReadWriteEditMatchersRegisteredForCredentialGuard(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	if err := InjectClaudeHooks(dir); err != nil {
+		t.Fatalf("InjectClaudeHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+
+	if !helperHasClaudeHook(data, "PreToolUse", "Read", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Read] → credential-guard.sh missing (Read tool calls never reach the guard without this entry)")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Read", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PostToolUse[Read] → credential-guard.sh missing")
+	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Write|Edit", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Write|Edit] → credential-guard.sh missing (Write/Edit tool calls never reach the guard without this entry)")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Write|Edit", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PostToolUse[Write|Edit] → credential-guard.sh missing")
+	}
+}
+
+// TestInjectGeminiHooks_ReadWriteMatchersRegisteredForCredentialGuard é a contraparte Gemini do
+// cenário (b) -- matchers read_file|read_many_files / write_file|replace, tabela da ADR-2026-08-06
+// emenda 7.
+func TestInjectGeminiHooks_ReadWriteMatchersRegisteredForCredentialGuard(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	if err := InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("InjectGeminiHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
+
+	if !helperHasClaudeHook(data, "BeforeTool", "read_file|read_many_files", "scripts/trackfw-credential-guard.sh") {
+		t.Error("BeforeTool[read_file|read_many_files] → credential-guard.sh missing")
+	}
+	if !helperHasClaudeHook(data, "AfterTool", "read_file|read_many_files", "scripts/trackfw-credential-guard.sh") {
+		t.Error("AfterTool[read_file|read_many_files] → credential-guard.sh missing")
+	}
+	if !helperHasClaudeHook(data, "BeforeTool", "write_file|replace", "scripts/trackfw-credential-guard.sh") {
+		t.Error("BeforeTool[write_file|replace] → credential-guard.sh missing")
+	}
+	if !helperHasClaudeHook(data, "AfterTool", "write_file|replace", "scripts/trackfw-credential-guard.sh") {
+		t.Error("AfterTool[write_file|replace] → credential-guard.sh missing")
+	}
+}
+
 // --- Codex ---
 
 func TestInjectCodexHooks(t *testing.T) {

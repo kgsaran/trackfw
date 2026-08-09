@@ -137,7 +137,7 @@ entrada — não duplicar quando o wiring global já cobre o CLI.
 > ML-3C depende de ML-1C+ML-2C.
 
 ### ML-3A — Go: testes dos 3 cenários
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/generators/credential_guard_test.go`, `internal/generators/agentfiles_test.go`
 **Ações:** Adicionar casos: (a) `trackfw.yaml` ausente/sem `credential_guard.mode` → script global
 bloqueia (exit 2) num payload com JWT; (b) fixture de payload `Read`/`Write`/`Edit` com JWT/AWS key no
@@ -148,14 +148,14 @@ nova segunda camada de detecção.
 - [ ] `go test ./internal/generators/... -run CredentialGuard` verde, cobrindo os 3 cenários
 
 ### ML-3B — Node: testes dos 3 cenários
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `npm/tests/credential_guard.test.js`, `npm/tests/generators.test.js`
 **Ações:** Mesmos 3 cenários de ML-3A.
 **Critérios de aceite:**
 - [ ] `npm test` verde, cobrindo os 3 cenários
 
 ### ML-3C — Python: testes dos 3 cenários
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `pypi/tests/test_credential_guard.py`, `pypi/tests/test_generators_init.py`
 **Ações:** Mesmos 3 cenários de ML-3A.
 **Critérios de aceite:**
