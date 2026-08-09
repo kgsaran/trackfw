@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-08
 req: "docs/req/REQ-2026-08-08-credential-guard-modo-block-cobertura-read-write-e-resolucao-de-arquivo-referenciado.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: credential-guard — modo block por padrão, cobertura de Read/Write e resolução de arquivo referenciado
 
-> Created: 2026-08-08 | Status: wip
+> Created: 2026-08-08 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-08-08-credential-guard-modo-block-cobertura-read-write-e-resolucao-de-arquivo-referenciado.md

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-08
 author: "kg.saran@gmail.com"
 adr: "docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md"
 ---
 
 # REQ: credential-guard — modo block por padrão, cobertura de Read/Write e resolução de arquivo referenciado
 
-> Date: 2026-08-08 | Status: Open
+> Date: 2026-08-08 | Status: Done
 
 ## Motivation
 
@@ -54,28 +54,28 @@ então a correção deve valer para os 3 stacks e os CLIs que suportam os tools/
 a `Read`/`Write`/`Edit`.
 
 ## Acceptance Criteria
-- [ ] Decisão de design registrada (ADR novo ou emenda ao ADR-2026-08-06) sobre o novo default de
+- [x] Decisão de design registrada (ADR novo ou emenda ao ADR-2026-08-06) sobre o novo default de
       `mode` — recomendação: `block` por padrão para o script global (o usuário optou
       explicitamente por instalar esse hook via `trackfw update harness`; um guard de segurança
       opt-in que não bloqueia por padrão é uma armadilha de falsa sensação de proteção). Se
       `block` quebrar fluxos legítimos de algum CLI/wave, documentar o trade-off e a mitigação
       (ex.: allowlist de padrões conhecidos-seguros, não just "warn").
-- [ ] Wiring gerado por `update harness` (Go/Node/Python, todos os alvos `<cli>-credential-guard`)
+- [x] Wiring gerado por `update harness` (Go/Node/Python, todos os alvos `<cli>-credential-guard`)
       passa a registrar o hook também para os tools de leitura/escrita de arquivo equivalentes a
       `Read`/`Write`/`Edit` em cada CLI suportado — ou, onde o CLI não expuser hook por-tool para
       esses casos, documentar a limitação explicitamente (não silenciosamente).
-- [ ] Script central ganha uma segunda camada de detecção: quando o comando contém um redirect ou
+- [x] Script central ganha uma segunda camada de detecção: quando o comando contém um redirect ou
       substituição referenciando um caminho de arquivo (não `mktemp`, não `/dev/null`), resolver o
       caminho e escanear o **conteúdo do arquvo referenciado** (quando acessível de forma síncrona
       e barata) pelo mesmo `JWT_PATTERN`/`AWS_KEY_PATTERN`, além do payload do comando em si — cobre
       o padrão `head`/`tail`/`cat`/`jq ... > arquivo` sem precisar de um resolvedor de dataflow
       completo.
-- [ ] Testes novos (Go/Node/Python) cobrindo os 3 cenários que hoje escapam: (a) `mode` ausente no
+- [x] Testes novos (Go/Node/Python) cobrindo os 3 cenários que hoje escapam: (a) `mode` ausente no
       `trackfw.yaml` deve bloquear, não só avisar; (b) chamada de tool `Read`/`Write`/`Edit` com
       payload contendo JWT/AWS key é capturada; (c) comando Bash que referencia um arquivo com
       segredo por caminho (sem o literal no comando) é capturado.
-- [ ] `make quality`/paridade Go-Node-Python sem regressão.
-- [ ] Nenhuma mudança de comportamento para quem já definiu `credential_guard: mode: warn`
+- [x] `make quality`/paridade Go-Node-Python sem regressão.
+- [x] Nenhuma mudança de comportamento para quem já definiu `credential_guard: mode: warn`
       explicitamente no próprio `trackfw.yaml` — a mudança de default só afeta ausência de config.
 
 ## Linked ADR
@@ -86,4 +86,4 @@ ADR: `docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-tra
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md`
