@@ -30,7 +30,7 @@ ADR emendada (Wave 0 já concluída pelo orquestrador antes deste roadmap): docs
 > Dependências: nenhuma (ADR já emendada). Arquivos independentes entre MLs desta wave — paralelismo real.
 
 ### ML-1A — Go: fallback block + detecção por conteúdo de arquivo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/generators/scaffold.go`
 **Ações:**
 1. Em `credentialGuardGlobalTail` (linha ~980): substituir `MODE="warn"` fixo por lógica que reusa a

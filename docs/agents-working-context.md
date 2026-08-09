@@ -4,6 +4,74 @@
 
 ---
 
+## Sessão 2026-08-08 — Apolo (ML-1A: Go — fallback block + segunda camada de detecção por conteúdo de arquivo) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado`
+(já criada pelo orquestrador — sem branch nova criada por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md`,
+Wave 1/ML-1A (único ML deste ciclo — ML-1B/ML-1C rodam em paralelo em Node/Python, fora do escopo
+deste agente).
+ADR: `docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md`,
+emenda de 2026-08-08, itens 6 e 8.
+
+**Escopo**: `internal/generators/scaffold.go` — (1) `credentialGuardGlobalTail` reusa a mesma
+leitura de `credential_guard.mode` de `trackfw.yaml` que `credentialGuardProjectTail` já faz (sem o
+guard `[ -f trackfw.yaml ] || exit 0`, exclusivo da variante de projeto); fallback global passa de
+`warn` fixo para `block` quando não há `trackfw.yaml`/chave `mode`; valor explícito (warn ou block)
+continua respeitado nas duas variantes; (2) lógica de resolução extraída para
+`credentialGuardModeResolution`, parametrizada por `$DEFAULT_MODE` ("warn" no projeto, "block" no
+global) — evita duplicar a linha de `grep`; (3) `credentialGuardDetectionCore` ganha segunda camada
+de detecção (só roda se `MATCH` vazio após o payload cru): escaneia conteúdo de alvos de
+`REDIRECTS` não-efêmeros e de argumentos de arquivo existente quando o comando é
+`cat`/`head`/`tail`/`jq`/`grep`, com teto de 1MB; (4) comentários de
+`credentialGuardGlobalTail`/`GenerateGlobalCredentialGuardScript` atualizados (não descrevem mais
+"sempre warn" como decisão vigente).
+
+**Desvio da literalidade do roadmap** (documentado em vault, ver abaixo): o nome do comando na
+segunda camada é extraído do campo JSON `"command"` do payload (`sed`), não do "primeiro token de
+`$RAW`" como o texto do roadmap descreve — `$RAW` é o payload JSON inteiro, não a string de
+comando isolada; extrair o primeiro token literal do JSON inteiro nunca resultaria em `cat`/`head`/etc.
+Registrado em nota de vault para ML-1B/ML-1C portarem a mesma técnica (senão a paridade
+byte-a-byte Go/Node/Python fica impossível de fechar).
+
+**Testes ajustados** (só os que asserravam literalmente o fallback global antigo, `MODE="warn"`
+fixo): `TestGlobalCredentialGuardScript_RunsOutsideAnyTrackfwProject`,
+`TestGlobalCredentialGuardScript_AWSKeyDetectedSameAsProjectVariant`,
+`TestGlobalCredentialGuardScript_ModeAlwaysWarn_NeverBlocksRegardlessOfProjectConfig` (renomeada/
+dividida em `TestGlobalCredentialGuardScript_RespectsExplicitProjectMode` +
+`...RespectsExplicitProjectModeWarn`), `TestGlobalCredentialGuardScript_WritesAttentionOnlyWhenRoadmapsDirExists`
+(passa a fixar `mode: warn` explícito no `trackfw.yaml` do cwd, já que o default mudou para block).
+
+**Evidência de validação:**
+- `go build ./...` — limpo.
+- `go test ./internal/generators/... -run CredentialGuard` — todos verdes, exceto
+  `TestCredentialGuardScript_ParityAcrossStacks` e `TestGlobalCredentialGuardScript_ParityAcrossStacks`
+  — **vermelhos esperados** até ML-1B (Node) e ML-1C (Python) portarem a mesma mudança; inerente ao
+  paralelismo da Wave 1 (3 MLs por stack, arquivos distintos) — não é regressão deste ML.
+- `go test ./...` — só `internal/generators` falha, pelos 2 testes de paridade acima; todos os
+  demais pacotes (`commands`, `config`, `discover`, `forge`, `i18n`, `identity`, `integrations`,
+  `metrics`, `plugins`, `serve`, `sync`, `validator`) verdes.
+- `trackfw validate` — 0 violações, 1 aviso pré-existente e fora de escopo
+  (`req_has_roadmap` na REQ desta feature, `roadmap:` vazio no frontmatter — artefato criado pelo
+  orquestrador antes deste ML, não tocado por mim).
+
+**Risco remanescente registrado em vault, não corrigido** (fora de escopo do ML-1A): default block +
+segunda camada de leitura de arquivo faz `cat`/`grep`/`head` sobre qualquer arquivo que contenha um
+JWT sintético de teste bloquear (exit 2) quando o hook global está instalado — inclusive o próprio
+`internal/generators/credential_guard_test.go` deste repo, que define `syntheticJWT`. O ADR só
+previu teto de tamanho como guarda de custo, não exceção para fixtures — candidato a REQ futura se
+gerar fricção real.
+
+Nota de vault: `vault/notes/credential-guard-second-layer-cmd-extraction-json-not-raw-token-2026-08-08.md`
+(linkada em `vault/notes/index.md`).
+
+Nenhum commit criado ainda nesta entrada — commit feito na sequência, na branch já existente (sem
+criação de branch nova), conforme handoff. Não toquei em `npm/`, `pypi/` nem
+`internal/generators/agentfiles.go` (fora do escopo deste ML).
+
+---
+
 ## Sessão 2026-08-06 — Apolo (ML-3A: dedup — `InjectXHooks` de projeto pula credential-guard quando já instalado globalmente) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
 
 Branch `feat/hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness`

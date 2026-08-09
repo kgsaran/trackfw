@@ -817,7 +817,8 @@ func GenerateCredentialGuardScript(rootDir string) error {
 // Diferente da variante de projeto, este script não tem a guarda "só roda dentro de um projeto
 // trackfw.yaml" — protege qualquer projeto que o usuário abra com o CLI onde o hook global foi
 // instalado. Ver globalCredentialGuardScript/credentialGuardGlobalTail para a decisão de design
-// sobre a fonte do modo (sempre "warn") e do diretório de attention.
+// sobre a fonte do modo (fallback "block" por padrão, ADR-2026-08-06 emenda 6; respeita
+// credential_guard.mode explícito de trackfw.yaml quando presente) e do diretório de attention.
 //
 // Escreve silenciosamente (sem fmt.Printf) — seu único chamador de produção é UpdateHarness, que
 // roda antes de qualquer target por-CLI ser avaliado, inclusive com `--json`; um print aqui vazaria
@@ -860,9 +861,24 @@ const credentialGuardProjectGuardBlock = `# Script is intentionally a no-op when
 `
 
 // credentialGuardDetectionCore é o núcleo de detecção (padrões JWT/AWS key, checagem de destino
-// efêmero de redirecionamento) — idêntico entre a variante de projeto e a global. Nunca duplicar
-// esta lógica em outro lugar; as duas variantes do script compõem o conteúdo final a partir deste
-// mesmo bloco.
+// efêmero de redirecionamento, segunda camada de detecção via conteúdo de arquivo referenciado) —
+// idêntico entre a variante de projeto e a global. Nunca duplicar esta lógica em outro lugar; as
+// duas variantes do script compõem o conteúdo final a partir deste mesmo bloco.
+//
+// Segunda camada de detecção (ADR-2026-08-06, emenda 8 de 2026-08-08): quando o payload cru não
+// contém o padrão (ex.: `head -c 50 /tmp/token.txt`, sem o JWT literal no comando), o script passa
+// a inspecionar o CONTEÚDO de arquivos referenciados — (a) alvos de redirecionamento já capturados
+// por REDIRECTS que não sejam efêmeros, e (b) argumentos de arquivo existente quando o comando é um
+// dos inspetores comuns (cat/head/tail/jq/grep) — com teto de 1MB para não ler arquivos grandes a
+// cada tool call. O nome do comando é extraído do campo JSON "command" do payload (não do primeiro
+// token de $RAW: $RAW é o payload JSON inteiro, ex.:
+// `{"tool_name":"Bash","tool_input":{"command":"head -c 50 /tmp/x"}}` — o primeiro token
+// word-splitted seria o prefixo JSON, não "head"). A extração via
+// `sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'` captura o valor do campo até
+// a primeira aspa não escapada; suficiente para o payload plano típico de hook (sem parser JSON
+// completo, mesmo espírito do resto do script) — um argumento com aspas internas ("$TMPFILE", por
+// exemplo) trunca a captura, mas esse caso já é coberto pela camada 1 (payload cru) na prática. Ver
+// nota de vault credential-guard-second-layer-cmd-extraction-json-not-raw-token-2026-08-08.
 const credentialGuardDetectionCore = `JWT_PATTERN='eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
 AWS_KEY_PATTERN='AKIA[0-9A-Z]{16}'
 
@@ -872,8 +888,6 @@ if printf '%s' "$INPUT" | grep -qE "$JWT_PATTERN"; then
 elif printf '%s' "$INPUT" | grep -qE "$AWS_KEY_PATTERN"; then
   MATCH="AWS access key"
 fi
-
-[ -n "$MATCH" ] || exit 0
 
 # The raw payload is JSON: any double quote inside the underlying tool_input.command is
 # escaped as \" -- unescape those before scanning for redirect targets, or a quoted target
@@ -905,6 +919,57 @@ is_ephemeral_target() {
 
 REDIRECTS=$(printf '%s' "$RAW" | grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+' || true)
 
+# Second detection layer: only runs when the payload scan above found nothing -- keeps the common
+# case (match already found) cheap and avoids reading files unnecessarily. Files above the size cap
+# are skipped silently.
+scan_file_for_pattern() {
+  local path size
+  path=$(printf '%s' "$1" | tr -d "\"'" | sed -E 's/[},]+$//')
+  [ -n "$path" ] && [ -f "$path" ] || return 1
+  size=$(wc -c < "$path" 2>/dev/null | tr -d '[:space:]')
+  size=${size:-0}
+  [ "$size" -lt 1048576 ] || return 1
+  if grep -qE "$JWT_PATTERN" "$path" 2>/dev/null; then
+    MATCH="JWT"
+    return 0
+  fi
+  if grep -qE "$AWS_KEY_PATTERN" "$path" 2>/dev/null; then
+    MATCH="AWS access key"
+    return 0
+  fi
+  return 1
+}
+
+if [ -z "$MATCH" ] && [ -n "$REDIRECTS" ]; then
+  while IFS= read -r line; do
+    if [ -z "$line" ]; then
+      continue
+    fi
+    target=$(printf '%s' "$line" | sed -E 's/^[0-9]?>>?[[:space:]]*//')
+    if ! is_ephemeral_target "$target"; then
+      scan_file_for_pattern "$target" && break
+    fi
+  done <<< "$REDIRECTS"
+fi
+
+if [ -z "$MATCH" ]; then
+  CMD_LINE=$(printf '%s' "$RAW" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  if [ -n "$CMD_LINE" ]; then
+    set -- $CMD_LINE
+    cmd_name="${1:-}"
+    case "$cmd_name" in
+      cat|head|tail|jq|grep)
+        shift
+        for token in "$@"; do
+          scan_file_for_pattern "$token" && break
+        done
+        ;;
+    esac
+  fi
+fi
+
+[ -n "$MATCH" ] || exit 0
+
 HAS_REDIRECT=0
 EXEMPT=1
 if [ -n "$REDIRECTS" ]; then
@@ -926,15 +991,30 @@ fi
 
 `
 
-// credentialGuardProjectTail resolve MODE/ROADMAP_DIR a partir de trackfw.yaml (escopo de projeto)
-// e grava o attention signal em $ROADMAP_DIR/.trackfw-credential-guard.json.
-const credentialGuardProjectTail = `MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\"'" || true)
+// credentialGuardModeResolution lê `credential_guard.mode` de trackfw.yaml (grep simples, sem
+// parser YAML completo) e resolve a variável MODE para "warn" ou "block". Compartilhada entre
+// credentialGuardProjectTail e credentialGuardGlobalTail — não duplicar a linha de grep em dois
+// lugares (ML-1A, ADR-2026-08-06 emenda 6). $DEFAULT_MODE deve estar definida antes deste bloco:
+// a variante de projeto define "warn" (comportamento inalterado — já protegida pelo guard
+// `[ -f trackfw.yaml ] || exit 0` de credentialGuardProjectGuardBlock, que garante trackfw.yaml
+// existir sempre que este bloco roda); a variante global define "block" (o fallback deixa de ser
+// "warn" quando não há trackfw.yaml no cwd, ou trackfw.yaml sem a chave credential_guard.mode — um
+// guard opt-in que nunca bloqueia por padrão é uma falsa sensação de proteção). Quando
+// trackfw.yaml existe com credential_guard.mode explícito (warn ou block), esse valor é respeitado
+// em ambas as variantes.
+const credentialGuardModeResolution = `MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\"'" || true)
 case "$MODE" in
   warn|block) ;;
-  *) MODE="warn" ;;
+  *) MODE="$DEFAULT_MODE" ;;
 esac
 
-if [ "$MODE" = "block" ]; then
+`
+
+// credentialGuardProjectTail resolve MODE/ROADMAP_DIR a partir de trackfw.yaml (escopo de projeto)
+// e grava o attention signal em $ROADMAP_DIR/.trackfw-credential-guard.json. Fallback de MODE:
+// "warn" (ver credentialGuardModeResolution).
+const credentialGuardProjectTail = `DEFAULT_MODE="warn"
+` + credentialGuardModeResolution + `if [ "$MODE" = "block" ]; then
   echo "trackfw-credential-guard: blocked - possible $MATCH detected in tool payload." >&2
   exit 2
 fi
@@ -963,21 +1043,32 @@ exit 0
 // credentialGuardGlobalTail é a contraparte de credentialGuardProjectTail para o escopo global
 // (~/.trackfw/scripts/trackfw-credential-guard.sh, instalado via `trackfw update harness`).
 //
-// Decisão (ML-1A, ver ADR-2026-08-06 e ROADMAP-2026-08-06, Wave 1): o modo em escopo global é
-// sempre "warn" (opção "b" avaliada na ADR) — não lê nenhum ~/.trackfw/config.yaml. Um hook global
-// roda a partir do cwd de QUALQUER projeto que o usuário tenha aberto, muitos deles sem nenhuma
-// relação com trackfw; adicionar uma segunda fonte de configuração (arquivo de config global) só
-// para permitir "block" globalmente é complexidade não demandada — se um usuário precisar de modo
-// block, ele já tem a variante de projeto (trackfw.yaml) disponível. Pode ser revisitado numa REQ
-// futura se houver demanda real.
+// Decisão (ML-1A, ver ADR-2026-08-06 emenda 6 de 2026-08-08 e ROADMAP-2026-08-08, Wave 1): o modo
+// em escopo global reusa a MESMA leitura de `credential_guard.mode` de trackfw.yaml que
+// credentialGuardProjectTail já faz (credentialGuardModeResolution) — sem exigir trackfw.yaml
+// existir (não há o guard `[ -f trackfw.yaml ] || exit 0` da variante de projeto: o objetivo do
+// escopo global é proteger qualquer projeto, com ou sem trackfw.yaml). Quando o hook global roda a
+// partir do cwd de um projeto com trackfw.yaml e credential_guard.mode explícito, esse valor é
+// respeitado (warn ou block) — nenhuma mudança de comportamento para quem já definiu mode: warn
+// explicitamente. Em qualquer outro caso (sem trackfw.yaml, ou trackfw.yaml sem essa chave), o
+// fallback deixa de ser "warn" e passa a ser "block": um guard opt-in que nunca bloqueia por padrão
+// é uma falsa sensação de proteção — o usuário que rodou `trackfw update harness` já demonstrou
+// intenção explícita de ter o mecanismo ativo. Superseded a decisão original ("modo global sempre
+// warn", opção "b" avaliada na ADR original) — não cria `~/.trackfw/config.yaml` nem nenhuma outra
+// segunda fonte de configuração só para isto.
 //
-// ROADMAP_DIR em escopo global: como não há trackfw.yaml para ler `roadmap_dir:`, o script usa o
-// caminho padrão fixo "docs/roadmaps" relativo ao cwd de onde o hook foi disparado, e só grava o
-// attention signal se esse diretório já existir. Não cria "docs/roadmaps" em um projeto aleatório
-// só para sinalizar isso — isso pareceria ao usuário que o trackfw foi "instalado" nesse projeto,
-// o que não é verdade. O warning textual em stderr acontece sempre (visível no output do CLI/hook),
-// independente de o diretório de attention existir.
-const credentialGuardGlobalTail = `MODE="warn"
+// ROADMAP_DIR em escopo global: como não há garantia de trackfw.yaml para ler `roadmap_dir:`, o
+// script usa o caminho padrão fixo "docs/roadmaps" relativo ao cwd de onde o hook foi disparado, e
+// só grava o attention signal se esse diretório já existir (e só em modo warn — modo block nunca
+// grava o attention signal, mesma decisão da variante de projeto). Não cria "docs/roadmaps" em um
+// projeto aleatório só para sinalizar isso — isso pareceria ao usuário que o trackfw foi
+// "instalado" nesse projeto, o que não é verdade. O texto de warning/block em stderr acontece
+// sempre (visível no output do CLI/hook), independente de o diretório de attention existir.
+const credentialGuardGlobalTail = `DEFAULT_MODE="block"
+` + credentialGuardModeResolution + `if [ "$MODE" = "block" ]; then
+  echo "trackfw-credential-guard: blocked - possible $MATCH detected in tool payload." >&2
+  exit 2
+fi
 
 echo "trackfw-credential-guard: warning - possible $MATCH detected in tool payload." >&2
 

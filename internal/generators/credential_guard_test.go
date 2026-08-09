@@ -270,8 +270,9 @@ func TestCredentialGuardScript_DetectionCoreIdenticalBetweenProjectAndGlobal(t *
 // ---------------------------------------------------------------------------
 // Comportamento do script global — invoca como subprocesso, mesmo padrão dos testes de
 // comportamento do script de projeto acima. Prova que a detecção é idêntica (mesmo payload de
-// JWT sintético) e que o modo é sempre "warn" em escopo global (decisão "b" da ADR/roadmap:
-// nenhuma leitura de ~/.trackfw/config.yaml).
+// JWT sintético) e que o modo global agora reusa a mesma leitura de credential_guard.mode de
+// trackfw.yaml que a variante de projeto (ADR-2026-08-06 emenda 6, 2026-08-08) — com fallback
+// "block" (em vez de "warn") quando não há trackfw.yaml no cwd, ou trackfw.yaml sem essa chave.
 // ---------------------------------------------------------------------------
 
 func setupGlobalCredentialGuardFixture(t *testing.T) (cwd, scriptPath string) {
@@ -288,12 +289,13 @@ func setupGlobalCredentialGuardFixture(t *testing.T) (cwd, scriptPath string) {
 func TestGlobalCredentialGuardScript_RunsOutsideAnyTrackfwProject(t *testing.T) {
 	// Ao contrário da variante de projeto (TestCredentialGuardScript_NoOpOutsideProjectRoot), o
 	// script global NÃO deve ser no-op fora de um projeto trackfw — esse é o propósito da mudança.
+	// Sem trackfw.yaml no cwd, o fallback de modo é "block" (ADR-2026-08-06 emenda 6).
 	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
 	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
 
 	code, _, stderr := runCredentialGuard(t, cwd, scriptPath, payload)
-	if code != 0 {
-		t.Errorf("modo warn: exit code want 0, got %d (stderr: %s)", code, stderr)
+	if code != 2 {
+		t.Errorf("modo block (fallback sem trackfw.yaml): exit code want 2, got %d (stderr: %s)", code, stderr)
 	}
 	if !strings.Contains(stderr, "JWT") {
 		t.Errorf("esperava aviso mencionando JWT em stderr mesmo sem trackfw.yaml no cwd, got: %s", stderr)
@@ -301,7 +303,9 @@ func TestGlobalCredentialGuardScript_RunsOutsideAnyTrackfwProject(t *testing.T) 
 }
 
 func TestGlobalCredentialGuardScript_AWSKeyDetectedSameAsProjectVariant(t *testing.T) {
-	// Prova que a detecção (mesmo payload sintético) é idêntica entre projeto e global.
+	// Prova que a detecção (mesmo payload sintético) é idêntica entre projeto e global — os modos
+	// default divergem por design (projeto: warn; global sem trackfw.yaml: block), então os exit
+	// codes divergem, mas ambos devem mencionar AWS.
 	projectDir, projectScript := setupCredentialGuardFixture(t, "")
 	globalCwd, globalScript := setupGlobalCredentialGuardFixture(t)
 
@@ -310,8 +314,11 @@ func TestGlobalCredentialGuardScript_AWSKeyDetectedSameAsProjectVariant(t *testi
 	pCode, _, pStderr := runCredentialGuard(t, projectDir, projectScript, payload)
 	gCode, _, gStderr := runCredentialGuard(t, globalCwd, globalScript, payload)
 
-	if pCode != 0 || gCode != 0 {
-		t.Fatalf("exit codes: projeto=%d global=%d (esperado 0/0)", pCode, gCode)
+	if pCode != 0 {
+		t.Errorf("projeto (fallback warn): exit code want 0, got %d (stderr: %s)", pCode, pStderr)
+	}
+	if gCode != 2 {
+		t.Errorf("global sem trackfw.yaml (fallback block): exit code want 2, got %d (stderr: %s)", gCode, gStderr)
 	}
 	if !strings.Contains(pStderr, "AWS") || !strings.Contains(gStderr, "AWS") {
 		t.Fatalf("ambas as variantes deveriam mencionar AWS: projeto=%q global=%q", pStderr, gStderr)
@@ -331,8 +338,10 @@ func TestGlobalCredentialGuardScript_NoMatch_SilentPass(t *testing.T) {
 	}
 }
 
-func TestGlobalCredentialGuardScript_ModeAlwaysWarn_NeverBlocksRegardlessOfProjectConfig(t *testing.T) {
-	// O script global não lê trackfw.yaml — nem o do cwd, mesmo que exista e peça mode: block.
+func TestGlobalCredentialGuardScript_RespectsExplicitProjectMode(t *testing.T) {
+	// O script global agora reusa a mesma leitura de credential_guard.mode de trackfw.yaml que a
+	// variante de projeto já faz (ADR-2026-08-06 emenda 6, 2026-08-08): quando o cwd tem
+	// trackfw.yaml com mode explícito, esse valor é respeitado — tanto block quanto warn.
 	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
 	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("credential_guard:\n  mode: block\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -340,8 +349,26 @@ func TestGlobalCredentialGuardScript_ModeAlwaysWarn_NeverBlocksRegardlessOfProje
 	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
 
 	code, _, stderr := runCredentialGuard(t, cwd, scriptPath, payload)
+	if code != 2 {
+		t.Errorf("trackfw.yaml com mode: block explícito: exit code want 2, got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "blocked") {
+		t.Errorf("esperava mensagem de bloqueio, got: %s", stderr)
+	}
+}
+
+func TestGlobalCredentialGuardScript_RespectsExplicitProjectModeWarn(t *testing.T) {
+	// Mesma decisão, sentido contrário: mode: warn explícito continua produzindo warn (exit 0),
+	// não block — não é o fallback que muda de warn para block, é só o default sem chave/arquivo.
+	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
+	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("credential_guard:\n  mode: warn\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
+
+	code, _, stderr := runCredentialGuard(t, cwd, scriptPath, payload)
 	if code != 0 {
-		t.Errorf("script global deve sempre usar modo warn (exit 0), got %d (stderr: %s)", code, stderr)
+		t.Errorf("trackfw.yaml com mode: warn explícito: exit code want 0, got %d (stderr: %s)", code, stderr)
 	}
 	if !strings.Contains(stderr, "warning") {
 		t.Errorf("esperava mensagem de warning, got: %s", stderr)
@@ -349,7 +376,13 @@ func TestGlobalCredentialGuardScript_ModeAlwaysWarn_NeverBlocksRegardlessOfProje
 }
 
 func TestGlobalCredentialGuardScript_WritesAttentionOnlyWhenRoadmapsDirExists(t *testing.T) {
+	// O attention signal só é gravado em modo warn (modo block nunca grava, mesma decisão da
+	// variante de projeto) -- usa mode: warn explícito no cwd para exercitar essa checagem
+	// independente do fallback default de modo global (block, ADR-2026-08-06 emenda 6).
 	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
+	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("credential_guard:\n  mode: warn\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
 
 	// Sem docs/roadmaps no cwd: warning em stderr, mas nenhum arquivo de attention.
