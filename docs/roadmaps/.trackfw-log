@@ -114,3 +114,4 @@
 2026-08-08 11:16  ROADMAP-2026-08-08-adr-new-com-escopo-global-scope-global-escrevendo-em-trackfw-adr.md  wip → done
 2026-08-08 11:45  ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md  backlog → wip
 2026-08-08 11:52  ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md  wip → done
+2026-08-08 21:48  ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md  backlog → wip

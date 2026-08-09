@@ -63,6 +63,50 @@ pelo nível de projeto:
    explícito no output do comando) — não instalar silenciosamente algo que só funciona numa versão
    específica sem avisar o usuário.
 
+6. **Modo global passa de `warn` fixo para `block` por padrão, sem novo arquivo de config**
+   (emenda de 2026-08-08, `REQ-2026-08-08-credential-guard-modo-block-cobertura-read-write-e-resolucao-de-arquivo-referenciado.md`).
+   Resolve a lacuna deixada aberta na decisão 2/Consequences original ("avaliar na Wave 1 ... ou
+   aceitar que o modo global sempre usa o default `warn`"). Em vez de criar `~/.trackfw/config.yaml`
+   (rejeitado — adiciona uma segunda fonte de config só para isto), o script global reutiliza a MESMA
+   leitura de `credential_guard.mode` que `credentialGuardProjectTail` já faz a partir do
+   `trackfw.yaml` do projeto — quando o hook global é disparado a partir do cwd de um projeto que tem
+   `trackfw.yaml` com `credential_guard.mode` explícito (`warn` ou `block`), esse valor é respeitado
+   (preserva a decisão 5 original das Consequences — "nenhuma mudança de comportamento para quem já
+   definiu mode: warn explicitamente"). Em qualquer outro caso — sem `trackfw.yaml`, ou com
+   `trackfw.yaml` sem a chave `credential_guard.mode` — o fallback deixa de ser `warn` e passa a ser
+   `block`. Um guard de segurança opt-in (decisão 1) que nunca bloqueia por padrão é uma armadilha de
+   falsa sensação de proteção; o usuário que rodou `trackfw update harness` já demonstrou intenção
+   explícita de ter o mecanismo ativo.
+7. **Cobertura de Read/Write/Edit por CLI, matcher por matcher** (emenda de 2026-08-08, mesma REQ).
+   O wiring de credential-guard (decisão 3) cobria só o tool de shell (`Bash`/`shell`/`bash`/
+   `run_shell_command`) — extração via leitura direta do arquivo (`Read`) ou materialização via
+   escrita (`Write`/`Edit`) nunca passava pelo hook. Confirmado por CLI (pesquisa 2026-08-08 contra a
+   documentação oficial de cada um):
+
+   | CLI | Matcher leitura | Matcher escrita/edição | Fonte / observação |
+   |---|---|---|---|
+   | Claude Code | `Read` | `Write\|Edit` | nomes nativos de tool, mesmo mecanismo já usado para `Bash` |
+   | Codex | **não suportado** | `apply_patch` (aliases documentados: `Edit`, `Write`) | `learn.chatgpt.com/docs/hooks`: não há tool dedicado de leitura de arquivo interceptável por hook — limitação documentada, não implementada por workaround |
+   | Gemini CLI | `read_file\|read_many_files` | `write_file\|replace` | `geminicli.com/docs/reference/tools` |
+   | Kiro | `read` (alias de `fs_read`) | `write` (alias de `fs_write`) | `kiro.dev/docs/hooks/types` — wildcards de categoria já documentados na decisão 3 original |
+   | GitHub Copilot | `view` (`preToolUse`/`postToolUse` minúsculo) ou `Read` (variante PascalCase) | `create\|edit` (minúsculo) ou `Write\|Edit` (PascalCase) | `docs.github.com/en/copilot/reference/hooks-reference` — doc confirma mapeamento `view→Read`, `create→Write`, `edit→Edit` |
+   | Cursor | `Read` | `Write` | via os eventos genéricos `preToolUse`/`postToolUse` (não `beforeShellExecution`/`afterShellExecution`, que são Bash-only) — matcher já documentado no comentário de `InjectCursorHooks` |
+   | Windsurf | fora de escopo | fora de escopo | credential-guard já não cobre Bash para Windsurf hoje (`InjectWindsurfHooks` não injeta a entrada) — consistente manter fora de escopo nesta emenda, não expandir escopo não solicitado |
+
+   Onde o CLI não expuser um matcher de leitura dedicado (Codex), a limitação é documentada
+   explicitamente em `docs/cli-parity.md` e no comentário da função de wiring correspondente — não
+   silenciada.
+8. **Segunda camada de detecção: conteúdo de arquivo referenciado, não só o payload do comando**
+   (emenda de 2026-08-08, mesma REQ). `credentialGuardDetectionCore` passa a, além de escanear
+   `$INPUT` (payload cru), também escanear o conteúdo de arquivos referenciados por um redirecionamento
+   já capturado por `REDIRECTS` (extensão do que já existia para `is_ephemeral_target`) **e** por
+   argumentos de comando que resolvem para um caminho de arquivo regular existente, quando o comando
+   é um dos inspetores comuns (`cat`, `head`, `tail`, `jq`, `grep`) — cobre o padrão do incidente
+   analisado (`head -c 50 /tmp/token.txt`) sem exigir um resolvedor de dataflow completo. Guarda de
+   custo: só lê arquivos até um teto de tamanho (evita ler binários grandes/logs enormes a cada tool
+   call); arquivos maiores são ignorados silenciosamente por essa camada (o payload do comando em si
+   continua escaneado normalmente).
+
 ## Consequences
 
 **Positivas:**
@@ -79,9 +123,10 @@ pelo nível de projeto:
   desprotegidos fora dos projetos onde já rodaram `trackfw init` — a lacuna original só é fechada para
   quem descobrir e rodar o comando. Mitigação parcial: `docs/cli-parity.md`/changelog do release devem
   destacar a feature.
-- Modo `credential_guard.mode` (warn/block) não tem uma fonte de config clara em escopo global até a
+- ~~Modo `credential_guard.mode` (warn/block) não tem uma fonte de config clara em escopo global até a
   Wave 1 do roadmap resolver isso — risco de o modo global sempre cair no default `warn` sem uma forma
-  simples do usuário configurar `block` globalmente.
+  simples do usuário configurar `block` globalmente.~~ **Resolvido pela emenda 6** (2026-08-08):
+  fallback global passa a `block`, sem nova fonte de config.
 - Kiro com gate de versão (v3) é uma superfície de manutenção a mais — se a Kiro promover v3 para
   padrão ou descontinuar v2, o alvo precisa de revisão.
 - Codex tem uma contradição de documentação não resolvida nesta ADR (flag `codex_hooks` habilitada por
