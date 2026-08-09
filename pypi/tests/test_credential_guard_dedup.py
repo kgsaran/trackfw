@@ -79,8 +79,8 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         inject_claude_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.claude', 'settings.json'))
-        self.assertFalse(_has_claude_hook(data, 'PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'))
-        self.assertFalse(_has_claude_hook(data, 'PostToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'))
+        self.assertFalse(_has_claude_hook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
+        self.assertFalse(_has_claude_hook(data, 'PostToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
         self.assertTrue(_has_claude_hook(data, 'PreToolUse', 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh'))
         self.assertTrue(_has_claude_hook(data, 'PostToolUse', 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh'))
 
@@ -177,7 +177,7 @@ class TestDedupFailOpen(DedupTestCase):
         inject_claude_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.claude', 'settings.json'))
-        self.assertTrue(_has_claude_hook(data, 'PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'))
+        self.assertTrue(_has_claude_hook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
 
     def test_corrupted_global_file(self):
         home = self._isolated_home()
@@ -190,7 +190,7 @@ class TestDedupFailOpen(DedupTestCase):
         inject_claude_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.claude', 'settings.json'))
-        self.assertTrue(_has_claude_hook(data, 'PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'))
+        self.assertTrue(_has_claude_hook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
 
 
 if __name__ == '__main__':

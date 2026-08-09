@@ -88,7 +88,7 @@ test('Sabotage/ClaudeCode: wiring referencia o script real', () => {
     const pre = data.hooks.PreToolUse.find((e) => e.matcher === 'Bash')
     assert.ok(pre, 'PreToolUse[Bash] ausente')
     assert.ok(
-      pre.hooks.some((h) => h.command === 'scripts/trackfw-credential-guard.sh'),
+      pre.hooks.some((h) => h.command === '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'),
       'PreToolUse[Bash] não referencia trackfw-credential-guard.sh'
     )
   })

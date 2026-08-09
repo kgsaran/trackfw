@@ -210,6 +210,28 @@ func InjectClaudeHooks(cwd string) error {
 		"AskUserQuestion",
 		"scripts/trackfw-attention-signal.sh",
 	)
+
+	// Fix (2026-08-09, reported in production against the CMDB project):
+	// the credential-guard command was a bare relative path
+	// ("scripts/trackfw-credential-guard.sh"), which Claude Code resolves
+	// against the hook's *current* cwd, not the project root — cwd tracks
+	// `cd`s the agent runs during the session (confirmed against
+	// https://code.claude.com/docs/en/hooks: "Handlers run in the current
+	// directory... cwd is dynamic"), so any Bash/Read/Write/Edit call after
+	// the agent `cd`s into a subdirectory (e.g. a monorepo package) made the
+	// hook fail with "No such file or directory". $CLAUDE_PROJECT_DIR is the
+	// env var Claude Code guarantees stays pinned to the project root
+	// regardless of cwd drift (same doc) — used here instead, matching the
+	// pattern this project's own custom hooks (posttooluse-frontend-gate.sh,
+	// pretooluse-rewriter.sh) already relied on successfully. Rewrite any
+	// stale relative-path entry from an older trackfw run before merging the
+	// fixed command, so upgrading doesn't just append a second, still-broken
+	// entry alongside the new one.
+	for _, matcher := range []string{"Bash", "Read", "Write|Edit"} {
+		migrateClaudeHookCommand(hooks["PreToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
+		migrateClaudeHookCommand(hooks["PostToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
+	}
+
 	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
 	// 7/ROADMAP-2026-08-08 Wave 2 to Read/Write|Edit): skip the project-scope
 	// credential-guard entry when the global one is already installed
@@ -220,7 +242,7 @@ func InjectClaudeHooks(cwd string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Bash",
-			"scripts/trackfw-credential-guard.sh",
+			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
 		)
 		// Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, 2026-08-08):
 		// extraction via a direct file read, or materialization via write/edit,
@@ -228,12 +250,12 @@ func InjectClaudeHooks(cwd string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Read",
-			"scripts/trackfw-credential-guard.sh",
+			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
 		)
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Write|Edit",
-			"scripts/trackfw-credential-guard.sh",
+			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
 		)
 	}
 
@@ -246,17 +268,17 @@ func InjectClaudeHooks(cwd string) error {
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Bash",
-			"scripts/trackfw-credential-guard.sh",
+			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
 		)
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Read",
-			"scripts/trackfw-credential-guard.sh",
+			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
 		)
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Write|Edit",
-			"scripts/trackfw-credential-guard.sh",
+			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
 		)
 	}
 
@@ -910,6 +932,32 @@ func removeKnownCommandFromLegacyTopLevelArray(root map[string]interface{}, key,
 		return
 	}
 	root[key] = kept
+}
+
+// migrateClaudeHookCommand rewrites a legacy hook command to a new one, in
+// place, for every entry matching the given matcher inside a Claude
+// PreToolUse/PostToolUse array. Used to fix
+// .claude/settings.json files already written by an older trackfw before a
+// command string changes — without this, re-running `trackfw init`/`update`
+// only ever appends the new (fixed) command alongside the stale one (merge
+// dedup in mergeClaudeHookArray keys on the exact command string, so it
+// can't tell "same guard, new path" from "a different hook"), leaving the
+// broken entry in place to keep firing and failing forever.
+func migrateClaudeHookCommand(existing interface{}, matcher, oldCommand, newCommand string) {
+	arr, _ := existing.([]interface{})
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok || obj["matcher"] != matcher {
+			continue
+		}
+		innerHooks, _ := obj["hooks"].([]interface{})
+		for _, h := range innerHooks {
+			hObj, ok := h.(map[string]interface{})
+			if ok && hObj["command"] == oldCommand {
+				hObj["command"] = newCommand
+			}
+		}
+	}
 }
 
 // InjectWindsurfHooks updates .windsurfrules with the attention instruction.

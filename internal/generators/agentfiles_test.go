@@ -72,10 +72,10 @@ func TestInjectClaudeHooks_Create(t *testing.T) {
 	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse[AskUserQuestion] → cleanup.sh missing")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
 		t.Error("PreToolUse[Bash] → credential-guard.sh missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
 		t.Error("PostToolUse[Bash] → credential-guard.sh missing")
 	}
 }
@@ -112,13 +112,13 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
 		t.Error("PreToolUse signal hook missing")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
 		t.Error("PreToolUse credential-guard hook missing")
 	}
 	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse cleanup hook missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
 		t.Error("PostToolUse credential-guard hook missing")
 	}
 
@@ -138,6 +138,82 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	}
 }
 
+// TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand cobre o bug reportado em
+// produção (2026-08-09, projeto CMDB): o comando do credential-guard era um caminho relativo puro
+// ("scripts/trackfw-credential-guard.sh"), que o Claude Code resolve contra o cwd *dinâmico* do
+// hook (rastreia `cd`s feitos pelo agente durante a sessão), não a raiz do projeto -- qualquer
+// chamada Bash/Read/Write/Edit depois de um `cd` para um subdiretório falhava com "No such file or
+// directory". Este teste confirma que re-rodar InjectClaudeHooks sobre um settings.json já escrito
+// por uma versão antiga REESCREVE o comando legado para a forma fixa
+// ($CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh) em vez de só acrescentar um segundo
+// hook ao lado do quebrado.
+func TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+
+	legacy := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash",
+					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"}},
+				},
+				map[string]interface{}{
+					"matcher": "Read",
+					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"}},
+				},
+			},
+			"PostToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Write|Edit",
+					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"}},
+				},
+			},
+		},
+	}
+	helperWriteJSON(t, filepath.Join(dir, ".claude", "settings.json"), legacy)
+
+	if err := InjectClaudeHooks(dir); err != nil {
+		t.Fatalf("InjectClaudeHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+	hooks, _ := data["hooks"].(map[string]interface{})
+
+	if helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+		t.Error("stale relative-path PreToolUse[Bash] entry survived the upgrade -- should have been rewritten, not left in place")
+	}
+	if helperHasClaudeHook(data, "PreToolUse", "Read", "scripts/trackfw-credential-guard.sh") {
+		t.Error("stale relative-path PreToolUse[Read] entry survived the upgrade")
+	}
+	if helperHasClaudeHook(data, "PostToolUse", "Write|Edit", "scripts/trackfw-credential-guard.sh") {
+		t.Error("stale relative-path PostToolUse[Write|Edit] entry survived the upgrade")
+	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Bash] was not upgraded to the $CLAUDE_PROJECT_DIR-prefixed command")
+	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Read", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Read] was not upgraded to the $CLAUDE_PROJECT_DIR-prefixed command")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Write|Edit", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
+		t.Error("PostToolUse[Write|Edit] was not upgraded to the $CLAUDE_PROJECT_DIR-prefixed command")
+	}
+
+	// No duplicate hooks left behind inside the migrated matcher entries: exactly
+	// one command per matcher after the rewrite, not two (old + new side by side).
+	pre, _ := hooks["PreToolUse"].([]interface{})
+	for _, item := range pre {
+		obj, _ := item.(map[string]interface{})
+		if obj["matcher"] != "Bash" {
+			continue
+		}
+		innerHooks, _ := obj["hooks"].([]interface{})
+		if len(innerHooks) != 1 {
+			t.Errorf("PreToolUse[Bash] expected exactly 1 hook after migration, got %d", len(innerHooks))
+		}
+	}
+}
+
 // TestInjectClaudeHooks_ReadWriteEditMatchersRegisteredForCredentialGuard cobre o cenário (b) da
 // REQ-2026-08-08 (ML-3A): um payload de tool call Read/Write/Edit (não Bash) contendo JWT/AWS key
 // no tool_input só é interceptado pelo credential-guard se o hook estiver REGISTRADO para esses
@@ -153,16 +229,16 @@ func TestInjectClaudeHooks_ReadWriteEditMatchersRegisteredForCredentialGuard(t *
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
 
-	if !helperHasClaudeHook(data, "PreToolUse", "Read", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Read", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
 		t.Error("PreToolUse[Read] → credential-guard.sh missing (Read tool calls never reach the guard without this entry)")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Read", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "Read", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
 		t.Error("PostToolUse[Read] → credential-guard.sh missing")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Write|Edit", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Write|Edit", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
 		t.Error("PreToolUse[Write|Edit] → credential-guard.sh missing (Write/Edit tool calls never reach the guard without this entry)")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Write|Edit", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "Write|Edit", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
 		t.Error("PostToolUse[Write|Edit] → credential-guard.sh missing")
 	}
 }

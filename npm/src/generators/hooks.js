@@ -85,6 +85,24 @@ function mergeClaudeHookArray(existing, matcher, command) {
   return arr
 }
 
+// migrateClaudeHookCommand rewrites a legacy hook command to a new one, in place, for every entry
+// matching the given matcher inside a Claude PreToolUse/PostToolUse array. Used to fix
+// .claude/settings.json files already written by an older trackfw before a command string changes
+// -- without this, re-running `trackfw init`/`update` only ever appends the new (fixed) command
+// alongside the stale one (merge dedup in mergeClaudeHookArray keys on the exact command string, so
+// it can't tell "same guard, new path" from "a different hook"), leaving the broken entry in place
+// to keep firing and failing forever.
+function migrateClaudeHookCommand(existing, matcher, oldCommand, newCommand) {
+  const arr = Array.isArray(existing) ? existing : []
+  for (const item of arr) {
+    if (!item || item.matcher !== matcher) continue
+    const innerHooks = Array.isArray(item.hooks) ? item.hooks : []
+    for (const h of innerHooks) {
+      if (h && h.command === oldCommand) h.command = newCommand
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Scripts content
 // ---------------------------------------------------------------------------
@@ -419,6 +437,16 @@ function generateGlobalCredentialGuardScript(home) {
 const SIGNAL_CMD = 'scripts/trackfw-attention-signal.sh'
 const CLEANUP_CMD = 'scripts/trackfw-attention-cleanup.sh'
 const GUARD_CMD = 'scripts/trackfw-credential-guard.sh'
+// Claude Code only (2026-08-09 fix, reported in production against the CMDB project): Claude Code
+// resolves a bare relative hook command against the hook's *dynamic* cwd (tracks `cd`s the agent
+// runs during the session), not the project root -- confirmed against
+// https://code.claude.com/docs/en/hooks: "Handlers run in the current directory... cwd is dynamic".
+// Any Bash/Read/Write/Edit call after the agent `cd`s into a subdirectory (e.g. a monorepo package)
+// made the hook fail with "No such file or directory". $CLAUDE_PROJECT_DIR is the env var Claude
+// Code guarantees stays pinned to the project root regardless of cwd drift (same doc) -- used here
+// instead of GUARD_CMD, matching the pattern this project's own custom hooks already relied on
+// successfully in practice.
+const GUARD_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
 
 // ---------------------------------------------------------------------------
 // Global credential-guard dedup (ROADMAP-2026-08-06 Wave 3/ML-3A)
@@ -552,21 +580,30 @@ function injectClaudeHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'AskUserQuestion', SIGNAL_CMD)
+
+  // Rewrite any stale relative-path credential-guard command from an older trackfw run before
+  // merging the fixed one below, so upgrading doesn't just append a second, still-broken entry
+  // alongside the new one (see GUARD_CMD_CLAUDE comment for the "No such file or directory" bug).
+  for (const matcher of ['Bash', 'Read', 'Write|Edit']) {
+    migrateClaudeHookCommand(data.hooks.PreToolUse, matcher, GUARD_CMD, GUARD_CMD_CLAUDE)
+    migrateClaudeHookCommand(data.hooks.PostToolUse, matcher, GUARD_CMD, GUARD_CMD_CLAUDE)
+  }
+
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
   // Wave 2 to Read/Write|Edit): skip project-scope credential-guard when the global one is
   // already installed for this CLI.
   if (!globalCredentialGuardInstalledClaude()) {
-    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD_CLAUDE)
     // ADR-2026-08-06 emenda 7 (2026-08-08): Read/Write/Edit coverage — extraction via direct
     // file read, or materialization via write/edit, never went through the hook before.
-    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Read', GUARD_CMD)
-    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Write|Edit', GUARD_CMD)
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Read', GUARD_CMD_CLAUDE)
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Write|Edit', GUARD_CMD_CLAUDE)
   }
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'AskUserQuestion', CLEANUP_CMD)
   if (!globalCredentialGuardInstalledClaude()) {
-    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
-    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Read', GUARD_CMD)
-    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Write|Edit', GUARD_CMD)
+    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD_CLAUDE)
+    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Read', GUARD_CMD_CLAUDE)
+    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Write|Edit', GUARD_CMD_CLAUDE)
   }
 
   writeJSON(filePath, data)

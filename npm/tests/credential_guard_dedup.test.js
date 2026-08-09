@@ -168,7 +168,7 @@ test('injectClaudeHooks fail-open: no global file -> project entry still added',
   injectClaudeHooks(dir)
 
   const data = readJSON(path.join(dir, '.claude', 'settings.json'))
-  assert.equal(hasClaudeHook(data, 'PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'), true)
+  assert.equal(hasClaudeHook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'), true)
 })
 
 test('injectClaudeHooks fail-open: corrupted global file -> project entry still added', () => {
@@ -181,5 +181,5 @@ test('injectClaudeHooks fail-open: corrupted global file -> project entry still 
   injectClaudeHooks(dir)
 
   const data = readJSON(path.join(dir, '.claude', 'settings.json'))
-  assert.equal(hasClaudeHook(data, 'PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'), true)
+  assert.equal(hasClaudeHook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'), true)
 })

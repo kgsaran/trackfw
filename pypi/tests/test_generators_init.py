@@ -481,13 +481,53 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         bash_entry = next(e for e in pre if e['matcher'] == 'Bash')
         self.assertEqual(
             [h['command'] for h in bash_entry['hooks']],
-            ['scripts/trackfw-credential-guard.sh'],
+            ['$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'],
         )
 
         post = data['hooks']['PostToolUse']
         self.assertEqual(len(post), 4)
         post_matchers = {e['matcher'] for e in post}
         self.assertEqual(post_matchers, {'AskUserQuestion', 'Bash', 'Read', 'Write|Edit'})
+
+    def test_inject_claude_hooks_migrates_legacy_relative_path_command(self):
+        """Regressão do bug reportado em produção (2026-08-09, projeto CMDB): o comando do
+        credential-guard era um caminho relativo puro, que o Claude Code resolve contra o cwd
+        *dinâmico* do hook (rastreia cd's do agente), não a raiz do projeto -- qualquer chamada
+        depois de um cd para um subdiretório falhava com "No such file or directory". Confirma
+        que re-injetar sobre um settings.json já escrito por uma versão antiga REESCREVE o
+        comando legado em vez de só acrescentar um segundo hook ao lado do quebrado."""
+        from trackfw.generators.hooks import inject_claude_hooks
+
+        settings_dir = os.path.join(self.tmp, '.claude')
+        os.makedirs(settings_dir, exist_ok=True)
+        settings_path = os.path.join(settings_dir, 'settings.json')
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'PreToolUse': [
+                        {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'}]},
+                        {'matcher': 'Read', 'hooks': [{'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'}]},
+                    ],
+                    'PostToolUse': [
+                        {'matcher': 'Write|Edit', 'hooks': [{'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'}]},
+                    ],
+                }
+            }, f)
+
+        inject_claude_hooks(self.tmp)
+
+        with open(settings_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        bash_entry = next(e for e in data['hooks']['PreToolUse'] if e['matcher'] == 'Bash')
+        read_entry = next(e for e in data['hooks']['PreToolUse'] if e['matcher'] == 'Read')
+        write_edit_entry = next(e for e in data['hooks']['PostToolUse'] if e['matcher'] == 'Write|Edit')
+
+        for entry in (bash_entry, read_entry, write_edit_entry):
+            self.assertEqual(
+                [h['command'] for h in entry['hooks']],
+                ['$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'],
+            )
 
     def test_inject_codex_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_codex_hooks
