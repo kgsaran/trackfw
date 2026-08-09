@@ -233,9 +233,39 @@ def _merge_claude_hook_array(hook_list: list, matcher: str, command: str) -> Non
     })
 
 
+def _migrate_claude_hook_command(hook_list: list, matcher: str, old_command: str, new_command: str) -> None:
+    """Rewrites a legacy hook command to a new one, in place, for every entry matching the
+    given matcher inside a Claude PreToolUse/PostToolUse array.
+
+    Used to fix .claude/settings.json files already written by an older trackfw before a
+    command string changes -- without this, re-running `trackfw init`/`update` only ever
+    appends the new (fixed) command alongside the stale one (merge dedup in
+    _merge_claude_hook_array keys on the exact command string, so it can't tell "same guard,
+    new path" from "a different hook"), leaving the broken entry in place to keep firing and
+    failing forever.
+    """
+    for entry in hook_list:
+        if not isinstance(entry, dict) or entry.get('matcher') != matcher:
+            continue
+        for inner in entry.get('hooks', []):
+            if isinstance(inner, dict) and inner.get('command') == old_command:
+                inner['command'] = new_command
+
+
 # ---------------------------------------------------------------------------
 # Claude Code — .claude/settings.json
 # ---------------------------------------------------------------------------
+
+# Claude Code only (2026-08-09 fix, reported in production against the CMDB project): Claude Code
+# resolves a bare relative hook command against the hook's *dynamic* cwd (tracks `cd`s the agent
+# runs during the session), not the project root -- confirmed against
+# https://code.claude.com/docs/en/hooks: "Handlers run in the current directory... cwd is
+# dynamic". Any Bash/Read/Write/Edit call after the agent `cd`s into a subdirectory (e.g. a
+# monorepo package) made the hook fail with "No such file or directory". $CLAUDE_PROJECT_DIR is
+# the env var Claude Code guarantees stays pinned to the project root regardless of cwd drift
+# (same doc) -- used here instead of the bare relative path, matching the pattern this project's
+# own custom hooks already relied on successfully in practice.
+_GUARD_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
 
 def inject_claude_hooks(cwd: str) -> None:
     """Injeta hooks PreToolUse/PostToolUse no .claude/settings.json."""
@@ -247,25 +277,34 @@ def inject_claude_hooks(cwd: str) -> None:
     # PreToolUse — AskUserQuestion matcher → signal; Bash matcher → credential guard
     pre_hooks = hooks.setdefault('PreToolUse', [])
     _merge_claude_hook_array(pre_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh')
+
+    # Rewrite any stale relative-path credential-guard command from an older trackfw run
+    # before merging the fixed one below, so upgrading doesn't just append a second,
+    # still-broken entry alongside the new one (see _GUARD_CMD_CLAUDE comment above for the
+    # "No such file or directory" bug).
+    post_hooks = hooks.setdefault('PostToolUse', [])
+    for matcher in ('Bash', 'Read', 'Write|Edit'):
+        _migrate_claude_hook_command(pre_hooks, matcher, 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CLAUDE)
+        _migrate_claude_hook_command(post_hooks, matcher, 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CLAUDE)
+
     # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
     # ROADMAP-2026-08-08 Wave 2 to Read/Write|Edit): skip project-scope
     # credential-guard when the global one is already installed for this CLI.
     skip_cg = _global_credential_guard_installed_claude()
     if not skip_cg:
-        _merge_claude_hook_array(pre_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(pre_hooks, 'Bash', _GUARD_CMD_CLAUDE)
         # ADR-2026-08-06 emenda 7 (2026-08-08): Read/Write/Edit coverage — extraction via
         # direct file read, or materialization via write/edit, never went through the hook
         # before.
-        _merge_claude_hook_array(pre_hooks, 'Read', 'scripts/trackfw-credential-guard.sh')
-        _merge_claude_hook_array(pre_hooks, 'Write|Edit', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(pre_hooks, 'Read', _GUARD_CMD_CLAUDE)
+        _merge_claude_hook_array(pre_hooks, 'Write|Edit', _GUARD_CMD_CLAUDE)
 
     # PostToolUse — AskUserQuestion matcher → cleanup; Bash matcher → credential guard
-    post_hooks = hooks.setdefault('PostToolUse', [])
     _merge_claude_hook_array(post_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh')
     if not skip_cg:
-        _merge_claude_hook_array(post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
-        _merge_claude_hook_array(post_hooks, 'Read', 'scripts/trackfw-credential-guard.sh')
-        _merge_claude_hook_array(post_hooks, 'Write|Edit', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(post_hooks, 'Bash', _GUARD_CMD_CLAUDE)
+        _merge_claude_hook_array(post_hooks, 'Read', _GUARD_CMD_CLAUDE)
+        _merge_claude_hook_array(post_hooks, 'Write|Edit', _GUARD_CMD_CLAUDE)
 
     _write_json(file_path, data)
 

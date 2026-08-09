@@ -338,15 +338,15 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   assert.equal(data.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
   assert.equal(data.hooks.PreToolUse[1].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.PreToolUse[2].matcher, 'Bash')
-  assert.equal(data.hooks.PreToolUse[2].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PreToolUse[2].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PreToolUse[3].matcher, 'Read')
-  assert.equal(data.hooks.PreToolUse[3].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PreToolUse[3].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PreToolUse[4].matcher, 'Write|Edit')
-  assert.equal(data.hooks.PreToolUse[4].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PreToolUse[4].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[0].matcher, 'AskUserQuestion')
   assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
   assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
-  assert.equal(data.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PostToolUse[1].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[2].matcher, 'Read')
   assert.equal(data.hooks.PostToolUse[3].matcher, 'Write|Edit')
 
@@ -360,6 +360,44 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   assert.equal(data.hooks.PreToolUse[4].hooks.length, 1)
   assert.equal(data.hooks.PostToolUse.length, 4)
   assert.equal(data.hooks.PostToolUse[1].hooks.length, 1)
+})
+
+// Regression test for the bug reported in production (2026-08-09, CMDB project): the
+// credential-guard command was a bare relative path, which Claude Code resolves against the
+// hook's *dynamic* cwd (tracks `cd`s the agent runs), not the project root -- any Bash/Read/
+// Write/Edit call after a `cd` into a subdirectory made the hook fail with "No such file or
+// directory". Confirms re-injecting over a settings.json written by an older trackfw rewrites the
+// legacy command in place instead of appending a second, still-broken entry alongside the fixed one.
+test('injectClaudeHooks migrates a legacy relative-path credential-guard command in place', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-claude-hooks-migrate-'))
+  const settingsPath = path.join(tmpDir, '.claude', 'settings.json')
+
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    hooks: {
+      PreToolUse: [
+        { matcher: 'Bash', hooks: [{ type: 'command', command: 'scripts/trackfw-credential-guard.sh' }] },
+        { matcher: 'Read', hooks: [{ type: 'command', command: 'scripts/trackfw-credential-guard.sh' }] }
+      ],
+      PostToolUse: [
+        { matcher: 'Write|Edit', hooks: [{ type: 'command', command: 'scripts/trackfw-credential-guard.sh' }] }
+      ]
+    }
+  }, null, 2))
+
+  injectClaudeHooks(tmpDir)
+  const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+
+  const bashEntry = data.hooks.PreToolUse.find(e => e.matcher === 'Bash')
+  const readEntry = data.hooks.PreToolUse.find(e => e.matcher === 'Read')
+  const writeEditEntry = data.hooks.PostToolUse.find(e => e.matcher === 'Write|Edit')
+
+  assert.equal(bashEntry.hooks.length, 1, 'expected exactly 1 hook after migration, not old+new side by side')
+  assert.equal(bashEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
+  assert.equal(readEntry.hooks.length, 1)
+  assert.equal(readEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
+  assert.equal(writeEditEntry.hooks.length, 1)
+  assert.equal(writeEditEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
 })
 
 test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () => {
@@ -725,13 +763,13 @@ test('trackfw update command injects attention hooks and scripts idempotently pr
     assert.equal(claudeData.hooks.PreToolUse[0].matcher, 'CustomTool')
     assert.equal(claudeData.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
     assert.equal(claudeData.hooks.PreToolUse[2].matcher, 'Bash')
-    assert.equal(claudeData.hooks.PreToolUse[2].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+    assert.equal(claudeData.hooks.PreToolUse[2].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
     // ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): Read/Write|Edit credential-guard entries.
     assert.equal(claudeData.hooks.PreToolUse[3].matcher, 'Read')
     assert.equal(claudeData.hooks.PreToolUse[4].matcher, 'Write|Edit')
     assert.equal(claudeData.hooks.PostToolUse[0].matcher, 'AskUserQuestion')
     assert.equal(claudeData.hooks.PostToolUse[1].matcher, 'Bash')
-    assert.equal(claudeData.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+    assert.equal(claudeData.hooks.PostToolUse[1].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
     assert.equal(claudeData.hooks.PostToolUse[2].matcher, 'Read')
     assert.equal(claudeData.hooks.PostToolUse[3].matcher, 'Write|Edit')
 

@@ -95,7 +95,7 @@ class TestSabotageClaudeCode(SabotageFixtureMixin, unittest.TestCase):
         bash_entry = next((e for e in pre_entries if e.get("matcher") == "Bash"), None)
         self.assertIsNotNone(bash_entry, "PreToolUse[Bash] ausente")
         commands = [h["command"] for h in bash_entry["hooks"]]
-        self.assertIn("scripts/trackfw-credential-guard.sh", commands)
+        self.assertIn("$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh", commands)
 
     def test_jwt_no_comando_bash_modo_warn(self):
         script_path = self._setup(inject_claude_hooks)
