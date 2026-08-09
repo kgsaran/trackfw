@@ -10,6 +10,21 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.7.1] - 2026-08-09
+
+### Fixed
+
+- **`credential-guard` no Claude Code falhava com "No such file or directory" após `cd` para
+  subdiretório** (#154) — o comando registrado em `.claude/settings.json` era um caminho relativo
+  puro, resolvido contra o cwd *dinâmico* do hook (que rastreia `cd`s do agente durante a sessão),
+  não a raiz do projeto. Passa a usar `$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh`
+  (Go/Node/Python), env var que o Claude Code garante fixa na raiz do projeto. `settings.json` já
+  gerados por versões antigas são migrados in-place ao rodar `trackfw update`/`init` de novo, em
+  vez de acumular uma segunda entrada quebrada ao lado da corrigida. Escopo: só o wiring do Claude
+  Code, CLI onde o bug foi reportado e reproduzido.
+- **`pypi/trackfw/__init__.py` com fallback de versão desatualizado** (#154) — literal `6.6.0`
+  esquecido no bump de release para `6.7.0`, quebrando `scripts/check-cli-parity.sh`.
+
 ## [6.7.0] - 2026-08-09
 
 ### Added
