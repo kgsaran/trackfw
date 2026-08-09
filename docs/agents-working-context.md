@@ -4,6 +4,71 @@
 
 ---
 
+## Sessão 2026-08-08 — Apolo (ML-1B: Node — fallback block + segunda camada de detecção + wiring Read/Write/Edit, adendo Wave 2 dobrado no mesmo ML) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `feat/credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado`
+(já criada pelo orquestrador — sem branch nova criada por este agente).
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md`,
+Wave 1/ML-1B + adendo de wiring da Wave 2 (Node faz core+wiring no mesmo arquivo/ML, ver nota do
+roadmap logo após o cabeçalho da Wave 2 — evita dois agentes editando `hooks.js` em paralelo).
+ADR: `docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md`,
+emenda de 2026-08-08, itens 6, 7 e 8.
+
+**Escopo — parte 1 (core, porte do ML-1A/Go):** `npm/src/generators/hooks.js` — `CG_DETECTION_CORE`
+ganha a segunda camada de detecção (escaneia conteúdo de alvos de `REDIRECTS` não-efêmeros e de
+argumentos de arquivo existente quando o comando é `cat`/`head`/`tail`/`jq`/`grep`, teto de 1MB);
+extração do nome do comando via campo JSON `"command"` (sed), **não** "primeiro token de `$RAW`"
+como a literalidade do roadmap sugere — mesma técnica documentada em nota de vault pelo agente do
+ML-1A, aplicada aqui sem desvio. `CG_PROJECT_TAIL`/`CG_GLOBAL_TAIL`: fallback do modo global passa
+de `warn` fixo para `block`; valor explícito de `credential_guard.mode` em `trackfw.yaml` (warn ou
+block) continua respeitado em ambas as variantes. **Desvio proposital do padrão Go**: NÃO extraí a
+resolução de MODE para uma constante JS compartilhada concatenada (como
+`credentialGuardModeResolution`/`$DEFAULT_MODE` fazem em Go) — o gate de paridade
+(`internal/generators/credential_guard_test.go:getNodeSourceBlock`) extrai cada constante via regex
+de um único bloco `` `const NAME = \`...\`` `` sem suportar concatenação de string; concatenar
+quebraria a extração estática. A lógica (grep + case + fallback `$DEFAULT_MODE`, com
+`DEFAULT_MODE="warn"`/`"block"` local a cada bloco) é replicada como texto literal idêntico em
+`CG_PROJECT_TAIL` e `CG_GLOBAL_TAIL` — funcionalmente idêntica ao Go, sintaticamente distinta só por
+essa restrição do parser de paridade.
+
+**Escopo — parte 2 (wiring, adendo Wave 2):** mesmo arquivo, funções `injectClaudeHooks` (`Read`,
+`Write|Edit`), `injectGeminiHooks` (`read_file|read_many_files`, `write_file|replace`),
+`injectKiroHooks` (4 novas entradas `read`/`write` pre/post), `injectCopilotHooks` (`view`,
+`create|edit`), `injectCursorHooks` (via eventos genéricos `hooks.preToolUse`/`hooks.postToolUse`,
+distintos de `beforeShellExecution`/`afterShellExecution` que são Bash-only, com `matcher: 'Read'`/
+`'Write'` — dedup próprio via `command+matcher` porque o mesmo array já tem a entrada não-filtrada
+do attention-signal). `injectCodexHooks`: **sem** matcher de leitura (limitação documentada em
+comentário, conforme ADR item 7 — Codex não tem tool de leitura interceptável); adicionado matcher
+`apply_patch` para escrita/edição (não existia wiring de escrita para Codex antes). Dedup: todas as
+novas entradas reusam o mesmo `globalCredentialGuardInstalledX()` já usado para o matcher de shell —
+se o wiring global já cobre o CLI, as novas entradas de Read/Write também são puladas.
+
+**Testes ajustados** (contagens de array/matcher ficaram desatualizadas pela adição das novas
+entradas de wiring, e os 2 testes que asserravam literalmente `MODE` global sempre "warn"):
+`npm/tests/credential_guard.test.js` (`script global detecta JWT.../AWS key...` agora esperam
+exit 2 em vez de 0 sem `trackfw.yaml`; `script global sempre usa modo warn...` reescrito em 3 testes
+— respeita `mode: block`/`mode: warn` explícitos, e fallback sem `trackfw.yaml` é `block`) e
+`npm/tests/generators.test.js` (`injectClaudeHooks`/`injectCodexHooks`/`injectGeminiHooks`/
+`injectKiroHooks`/`injectCopilotHooks`/`injectCursorHooks` — contagens de entradas e novos
+`assert.ok`/`find` para as entradas Read/Write, incluindo o teste de `trackfw update`).
+
+**Evidência de validação:**
+- `npm test` (446 testes) — todos verdes.
+- `go build ./...` — limpo; `go test ./internal/generators/...` — só os 3 testes de paridade
+  cross-stack falham, **esperado**: `TestCredentialGuardScript_ParityAcrossStacks`/
+  `TestGlobalCredentialGuardScript_ParityAcrossStacks` (Go↔Node bate — confirmado via debug local
+  antes de rodar o teste oficial —, só Go↔Python diverge, pendente ML-1C) e
+  `TestInjectCopilotHooks_StructuralParityAcrossStacks` (hardcoda 2 entradas/array; Node agora tem 4
+  — Go/Python ainda não portaram o wiring da Wave 2, pendente ML-2A/ML-2C). Nenhum outro teste Go
+  regrediu.
+- Não toquei em `internal/` nem `pypi/`.
+
+Nenhum commit criado ainda nesta entrada — commit feito na sequência, na branch já existente (sem
+criação de branch nova), conforme handoff.
+
+---
+
 ## Sessão 2026-08-08 — Apolo (ML-1A: Go — fallback block + segunda camada de detecção por conteúdo de arquivo) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
 
 Branch `feat/credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado`

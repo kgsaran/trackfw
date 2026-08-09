@@ -189,17 +189,23 @@ test('generateGlobalCredentialGuardScript com home vazio lança erro', () => {
 })
 
 test('script global detecta JWT mesmo fora de um projeto trackfw (sem trackfw.yaml)', () => {
+  // Ao contrário da variante de projeto, o script global NÃO é no-op fora de um projeto trackfw --
+  // esse é o propósito da mudança. Sem trackfw.yaml no cwd, o fallback de modo é "block"
+  // (ADR-2026-08-06 emenda 6).
   withTmpDir((fakeHome) => {
     generateGlobalCredentialGuardScript(fakeHome)
     withTmpDir((cwd) => {
       const { code, stderr } = runGlobalScript(fakeHome, cwd, JSON.stringify({ tool_name: 'Bash', tool_input: { command: `echo ${SYNTHETIC_JWT}` } }))
-      assert.strictEqual(code, 0)
+      assert.strictEqual(code, 2, 'modo block (fallback sem trackfw.yaml)')
       assert.ok(stderr.includes('JWT'))
     })
   })
 })
 
 test('script global detecta AWS key igual à variante de projeto (mesmo payload sintético)', () => {
+  // Prova que a detecção (mesmo payload sintético) é idêntica entre projeto e global -- os modos
+  // default divergem por design (projeto: warn; global sem trackfw.yaml: block), então os exit
+  // codes divergem, mas ambos devem mencionar AWS.
   const SYNTHETIC_AWS_KEY = 'AKIAABCDEFGHIJKLMNOP'
   withTmpDir((projectDir) => {
     generateCredentialGuardScript(projectDir)
@@ -210,8 +216,8 @@ test('script global detecta AWS key igual à variante de projeto (mesmo payload 
       generateGlobalCredentialGuardScript(fakeHome)
       withTmpDir((cwd) => {
         const globalResult = runGlobalScript(fakeHome, cwd, JSON.stringify({ tool_name: 'Bash', tool_input: { command: `echo ${SYNTHETIC_AWS_KEY}` } }))
-        assert.strictEqual(projectResult.code, 0)
-        assert.strictEqual(globalResult.code, 0)
+        assert.strictEqual(projectResult.code, 0, 'projeto (fallback warn)')
+        assert.strictEqual(globalResult.code, 2, 'global sem trackfw.yaml (fallback block)')
         assert.ok(projectResult.stderr.includes('AWS'))
         assert.ok(globalResult.stderr.includes('AWS'))
       })
@@ -219,22 +225,52 @@ test('script global detecta AWS key igual à variante de projeto (mesmo payload 
   })
 })
 
-test('script global sempre usa modo warn, ignorando trackfw.yaml com mode: block no cwd', () => {
+// ADR-2026-08-06 emenda 6 (2026-08-08): o script global agora reusa a mesma leitura de
+// credential_guard.mode de trackfw.yaml que a variante de projeto já faz -- quando o cwd tem
+// trackfw.yaml com mode explícito, esse valor é respeitado (warn ou block); sem trackfw.yaml ou
+// sem a chave, o fallback deixa de ser "warn" e passa a ser "block" (ver testes abaixo).
+test('script global respeita trackfw.yaml com mode: block explícito no cwd (bloqueia)', () => {
   withTmpDir((fakeHome) => {
     generateGlobalCredentialGuardScript(fakeHome)
     withTmpDir((cwd) => {
       fs.writeFileSync(path.join(cwd, 'trackfw.yaml'), 'credential_guard:\n  mode: block\n', 'utf8')
       const { code, stderr } = runGlobalScript(fakeHome, cwd, JSON.stringify({ tool_name: 'Bash', tool_input: { command: `echo ${SYNTHETIC_JWT}` } }))
-      assert.strictEqual(code, 0, 'script global nunca deve bloquear (sempre warn)')
+      assert.strictEqual(code, 2, 'trackfw.yaml com mode: block explícito deve bloquear')
+      assert.ok(stderr.includes('blocked'))
+    })
+  })
+})
+
+test('script global respeita trackfw.yaml com mode: warn explícito no cwd (não bloqueia)', () => {
+  withTmpDir((fakeHome) => {
+    generateGlobalCredentialGuardScript(fakeHome)
+    withTmpDir((cwd) => {
+      fs.writeFileSync(path.join(cwd, 'trackfw.yaml'), 'credential_guard:\n  mode: warn\n', 'utf8')
+      const { code, stderr } = runGlobalScript(fakeHome, cwd, JSON.stringify({ tool_name: 'Bash', tool_input: { command: `echo ${SYNTHETIC_JWT}` } }))
+      assert.strictEqual(code, 0, 'trackfw.yaml com mode: warn explícito não deve bloquear')
       assert.ok(stderr.includes('warning'))
     })
   })
 })
 
-test('script global só escreve .trackfw-credential-guard.json se docs/roadmaps já existir no cwd', () => {
+test('script global sem trackfw.yaml no cwd usa fallback block (default seguro)', () => {
   withTmpDir((fakeHome) => {
     generateGlobalCredentialGuardScript(fakeHome)
     withTmpDir((cwd) => {
+      const { code, stderr } = runGlobalScript(fakeHome, cwd, JSON.stringify({ tool_name: 'Bash', tool_input: { command: `echo ${SYNTHETIC_JWT}` } }))
+      assert.strictEqual(code, 2, 'fallback sem trackfw.yaml deve bloquear (ADR-2026-08-06 emenda 6)')
+      assert.ok(stderr.includes('blocked'))
+    })
+  })
+})
+
+test('script global só escreve .trackfw-credential-guard.json se docs/roadmaps já existir no cwd (modo warn)', () => {
+  withTmpDir((fakeHome) => {
+    generateGlobalCredentialGuardScript(fakeHome)
+    withTmpDir((cwd) => {
+      // mode: warn explícito para exercitar a checagem de ROADMAP_DIR independente do fallback
+      // default de modo global (block, ADR-2026-08-06 emenda 6).
+      fs.writeFileSync(path.join(cwd, 'trackfw.yaml'), 'credential_guard:\n  mode: warn\n', 'utf8')
       const noRoadmapsResult = runGlobalScript(fakeHome, cwd, JSON.stringify({ tool_name: 'Bash', tool_input: { command: `echo ${SYNTHETIC_JWT}` } }))
       assert.strictEqual(noRoadmapsResult.code, 0)
       assert.ok(noRoadmapsResult.stderr.includes('JWT'))

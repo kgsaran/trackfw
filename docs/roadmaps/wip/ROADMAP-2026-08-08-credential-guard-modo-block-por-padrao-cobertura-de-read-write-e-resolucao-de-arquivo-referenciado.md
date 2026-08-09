@@ -67,7 +67,7 @@ ADR emendada (Wave 0 já concluída pelo orquestrador antes deste roadmap): docs
 - [ ] comportamento de `credentialGuardProjectTail` inalterado para quem já define `mode: warn` explícito
 
 ### ML-1B — Node: fallback block + detecção por conteúdo de arquivo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `npm/src/generators/hooks.js`
 **Ações:** Mesma lógica de ML-1A, portada para as constantes `CG_GLOBAL_TAIL` (linha ~265),
 `CG_PROJECT_TAIL` (linha ~230) e `CG_DETECTION_CORE` (linha ~167). Atenção ao escaping de `\` em
