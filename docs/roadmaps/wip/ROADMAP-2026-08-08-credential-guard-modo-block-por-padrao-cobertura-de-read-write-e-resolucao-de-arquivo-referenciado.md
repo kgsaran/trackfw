@@ -79,7 +79,7 @@ de manutenção na pesquisa desta REQ).
   string usado hoje, se existir em `credential_guard_dedup_test.go`/equivalente)
 
 ### ML-1C — Python: fallback block + detecção por conteúdo de arquivo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `pypi/trackfw/generators/init_gen.py`
 **Ações:** Mesma lógica de ML-1A, portada para `_CG_GLOBAL_TAIL` (linha ~948), `_CG_PROJECT_TAIL`
 (linha ~913) e `_CG_DETECTION_CORE` (linha ~850). Usar raw string (`r"""..."""`) como já é o padrão do
@@ -100,7 +100,7 @@ de wiring da tabela abaixo (mesma tabela usada em ML-2A/ML-2C). Codex (`injectCo
 ganha comentário documentando a limitação — nenhum matcher de leitura novo.
 
 ### ML-2A — Go: wiring de matchers Read/Write/Edit
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/generators/agentfiles.go`
 **Ações:** Para cada `InjectXHooks`, adicionar entradas de `PreToolUse`/`PostToolUse` (ou evento
 equivalente do CLI) apontando para `scripts/trackfw-credential-guard.sh`, usando os matchers:
@@ -123,7 +123,7 @@ entrada — não duplicar quando o wiring global já cobre o CLI.
 - [ ] Codex: nenhuma entrada de matcher de leitura é gerada; comentário explica a limitação
 
 ### ML-2C — Python: wiring de matchers Read/Write/Edit
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `pypi/trackfw/generators/hooks.py`
 **Ações:** Mesma tabela e mesma lógica de ML-2A, portada para `inject_claude_hooks` (~240),
 `inject_codex_hooks` (~315, só comentário), `inject_gemini_hooks` (~381), `inject_kiro_hooks` (~430),

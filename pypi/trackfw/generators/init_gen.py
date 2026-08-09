@@ -857,8 +857,6 @@ elif printf '%s' "$INPUT" | grep -qE "$AWS_KEY_PATTERN"; then
   MATCH="AWS access key"
 fi
 
-[ -n "$MATCH" ] || exit 0
-
 # The raw payload is JSON: any double quote inside the underlying tool_input.command is
 # escaped as \" -- unescape those before scanning for redirect targets, or a quoted target
 # like "$TMPFILE" is seen as starting with a literal backslash instead of a variable
@@ -889,6 +887,57 @@ is_ephemeral_target() {
 
 REDIRECTS=$(printf '%s' "$RAW" | grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+' || true)
 
+# Second detection layer: only runs when the payload scan above found nothing -- keeps the common
+# case (match already found) cheap and avoids reading files unnecessarily. Files above the size cap
+# are skipped silently.
+scan_file_for_pattern() {
+  local path size
+  path=$(printf '%s' "$1" | tr -d "\"'" | sed -E 's/[},]+$//')
+  [ -n "$path" ] && [ -f "$path" ] || return 1
+  size=$(wc -c < "$path" 2>/dev/null | tr -d '[:space:]')
+  size=${size:-0}
+  [ "$size" -lt 1048576 ] || return 1
+  if grep -qE "$JWT_PATTERN" "$path" 2>/dev/null; then
+    MATCH="JWT"
+    return 0
+  fi
+  if grep -qE "$AWS_KEY_PATTERN" "$path" 2>/dev/null; then
+    MATCH="AWS access key"
+    return 0
+  fi
+  return 1
+}
+
+if [ -z "$MATCH" ] && [ -n "$REDIRECTS" ]; then
+  while IFS= read -r line; do
+    if [ -z "$line" ]; then
+      continue
+    fi
+    target=$(printf '%s' "$line" | sed -E 's/^[0-9]?>>?[[:space:]]*//')
+    if ! is_ephemeral_target "$target"; then
+      scan_file_for_pattern "$target" && break
+    fi
+  done <<< "$REDIRECTS"
+fi
+
+if [ -z "$MATCH" ]; then
+  CMD_LINE=$(printf '%s' "$RAW" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  if [ -n "$CMD_LINE" ]; then
+    set -- $CMD_LINE
+    cmd_name="${1:-}"
+    case "$cmd_name" in
+      cat|head|tail|jq|grep)
+        shift
+        for token in "$@"; do
+          scan_file_for_pattern "$token" && break
+        done
+        ;;
+    esac
+  fi
+fi
+
+[ -n "$MATCH" ] || exit 0
+
 HAS_REDIRECT=0
 EXEMPT=1
 if [ -n "$REDIRECTS" ]; then
@@ -910,10 +959,20 @@ fi
 
 """
 
-_CG_PROJECT_TAIL = r"""MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\"'" || true)
+# Resolução de MODE (grep de `credential_guard.mode` em trackfw.yaml + fallback) é replicada como
+# texto literal idêntico em _CG_PROJECT_TAIL (fallback "warn") e _CG_GLOBAL_TAIL (fallback
+# "block") -- não extraída para uma constante Python compartilhada e concatenada, ao contrário do
+# Go (credentialGuardModeResolution): o gate de paridade Go/Node/Python
+# (internal/generators/credential_guard_test.go, getPythonSourceBlock) extrai cada constante via
+# regex de um único literal `NAME = r"""..."""` sem suportar concatenação de string -- concatenar
+# quebraria a extração estática (mesma restrição documentada para Node, ver vault
+# credential-guard-parity-test-extractor-rejects-string-concatenation-2026-08-08). Nunca editar a
+# lógica de resolução em só um dos dois blocos sem replicar no outro.
+_CG_PROJECT_TAIL = r"""DEFAULT_MODE="warn"
+MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\"'" || true)
 case "$MODE" in
   warn|block) ;;
-  *) MODE="warn" ;;
+  *) MODE="$DEFAULT_MODE" ;;
 esac
 
 if [ "$MODE" = "block" ]; then
@@ -942,10 +1001,43 @@ printf '{"tool":"credential-guard","message":"%s","level":"action_required","tim
 exit 0
 """
 
-# Escopo global: modo sempre "warn" (ver ADR-2026-08-06/ROADMAP-2026-08-06 Wave 1 — decisão "b",
-# sem ~/.trackfw/config.yaml) e ROADMAP_DIR fixo em "docs/roadmaps" relativo ao cwd, só grava o
-# attention signal se esse diretório já existir (não cria docs/roadmaps num projeto qualquer).
-_CG_GLOBAL_TAIL = r"""MODE="warn"
+# _CG_GLOBAL_TAIL é a contraparte de _CG_PROJECT_TAIL para o escopo global
+# (~/.trackfw/scripts/trackfw-credential-guard.sh, instalado via `trackfw update harness`).
+#
+# Decisão (ML-1C, ver ADR-2026-08-06 emenda 6 de 2026-08-08 e ROADMAP-2026-08-08, Wave 1): o modo
+# em escopo global reusa a MESMA leitura de `credential_guard.mode` de trackfw.yaml que
+# _CG_PROJECT_TAIL já faz (mesma resolução, replicada aqui -- ver o comentário de
+# _CG_PROJECT_TAIL sobre por que não é extraída para uma constante compartilhada em Python) -- sem
+# exigir trackfw.yaml existir (não há o guard `[ -f trackfw.yaml ] || exit 0` da variante de
+# projeto: o objetivo do escopo global é proteger qualquer projeto, com ou sem trackfw.yaml).
+# Quando o hook global roda a partir do cwd de um projeto com trackfw.yaml e
+# credential_guard.mode explícito, esse valor é respeitado (warn ou block) -- nenhuma mudança de
+# comportamento para quem já definiu mode: warn explicitamente. Em qualquer outro caso (sem
+# trackfw.yaml, ou trackfw.yaml sem essa chave), o fallback deixa de ser "warn" e passa a ser
+# "block": um guard opt-in que nunca bloqueia por padrão é uma falsa sensação de proteção -- o
+# usuário que rodou `trackfw update harness` já demonstrou intenção explícita de ter o mecanismo
+# ativo. Supersede a decisão original ("modo global sempre warn", opção "b" avaliada na ADR
+# original) -- não cria ~/.trackfw/config.yaml nem nenhuma outra segunda fonte de configuração só
+# para isto.
+#
+# ROADMAP_DIR em escopo global: como não há garantia de trackfw.yaml para ler `roadmap_dir:`, o
+# script usa o caminho padrão fixo "docs/roadmaps" relativo ao cwd de onde o hook foi disparado, e
+# só grava o attention signal se esse diretório já existir (e só em modo warn -- modo block nunca
+# grava o attention signal, mesma decisão da variante de projeto). Não cria "docs/roadmaps" em um
+# projeto aleatório só para sinalizar isso -- isso pareceria ao usuário que o trackfw foi
+# "instalado" nesse projeto, o que não é verdade. O texto de warning/block em stderr acontece
+# sempre (visível no output do CLI/hook), independente de o diretório de attention existir.
+_CG_GLOBAL_TAIL = r"""DEFAULT_MODE="block"
+MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\"'" || true)
+case "$MODE" in
+  warn|block) ;;
+  *) MODE="$DEFAULT_MODE" ;;
+esac
+
+if [ "$MODE" = "block" ]; then
+  echo "trackfw-credential-guard: blocked - possible $MATCH detected in tool payload." >&2
+  exit 2
+fi
 
 echo "trackfw-credential-guard: warning - possible $MATCH detected in tool payload." >&2
 

@@ -270,19 +270,36 @@ class TestGlobalCredentialGuardScriptBehavior(unittest.TestCase):
 
     def test_detecta_jwt_fora_de_qualquer_projeto_trackfw(self):
         # Ao contrário da variante de projeto, o script global NÃO é no-op sem trackfw.yaml -- esse
-        # é o propósito da mudança (proteção cross-project).
+        # é o propósito da mudança (proteção cross-project). Sem trackfw.yaml no cwd, o fallback de
+        # modo é "block" (ADR-2026-08-06 emenda 6, ROADMAP-2026-08-08 ML-1C).
         code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 2, "modo block (fallback sem trackfw.yaml)")
         self.assertIn("JWT", err)
 
-    def test_sempre_modo_warn_mesmo_com_trackfw_yaml_mode_block_no_cwd(self):
+    def test_respeita_mode_block_explicito_no_trackfw_yaml_do_cwd(self):
+        # O script global reusa a mesma leitura de credential_guard.mode de trackfw.yaml que a
+        # variante de projeto já faz -- quando o cwd tem trackfw.yaml com mode explícito, esse
+        # valor é respeitado.
         with open(os.path.join(self.cwd, "trackfw.yaml"), "w", encoding="utf-8") as f:
             f.write("credential_guard:\n  mode: block\n")
         code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
-        self.assertEqual(code, 0, "script global nunca deve bloquear (sempre warn)")
+        self.assertEqual(code, 2, "trackfw.yaml com mode: block explícito")
+        self.assertIn("blocked", err)
+
+    def test_respeita_mode_warn_explicito_no_trackfw_yaml_do_cwd(self):
+        # Sentido contrário: mode: warn explícito continua produzindo warn (exit 0) -- não é o
+        # fallback que muda de warn para block, é só o default sem chave/arquivo.
+        with open(os.path.join(self.cwd, "trackfw.yaml"), "w", encoding="utf-8") as f:
+            f.write("credential_guard:\n  mode: warn\n")
+        code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
+        self.assertEqual(code, 0, "trackfw.yaml com mode: warn explícito")
         self.assertIn("warning", err)
 
     def test_attention_so_escrita_quando_docs_roadmaps_ja_existe(self):
+        # attention signal só é gravado em modo warn -- usa mode: warn explícito no cwd para
+        # exercitar essa checagem independente do fallback default de modo global (block).
+        with open(os.path.join(self.cwd, "trackfw.yaml"), "w", encoding="utf-8") as f:
+            f.write("credential_guard:\n  mode: warn\n")
         code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
         self.assertEqual(code, 0)
         self.assertIn("JWT", err)
@@ -294,6 +311,9 @@ class TestGlobalCredentialGuardScriptBehavior(unittest.TestCase):
         self.assertTrue(self._attention_exists())
 
     def test_deteccao_identica_a_variante_de_projeto_para_aws_key(self):
+        # Prova que a detecção (mesmo payload sintético) é idêntica entre projeto e global -- os
+        # modos default divergem por design (projeto: warn; global sem trackfw.yaml: block), então
+        # os exit codes divergem, mas ambos devem mencionar AWS.
         project_dir = tempfile.mkdtemp()
         try:
             _generate_credential_guard_script(project_dir)
@@ -309,8 +329,8 @@ class TestGlobalCredentialGuardScriptBehavior(unittest.TestCase):
             global_code, _out, global_err = self._run(
                 {"tool_name": "Bash", "tool_input": {"command": "echo AKIAABCDEFGHIJKLMNOP"}}
             )
-            self.assertEqual(project_proc.returncode, 0)
-            self.assertEqual(global_code, 0)
+            self.assertEqual(project_proc.returncode, 0, "projeto (fallback warn)")
+            self.assertEqual(global_code, 2, "global sem trackfw.yaml (fallback block)")
             self.assertIn("AWS", project_proc.stderr)
             self.assertIn("AWS", global_err)
         finally:
