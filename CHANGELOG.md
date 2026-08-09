@@ -10,6 +10,32 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.7.0] - 2026-08-09
+
+### Added
+
+- **Cobertura de `Read`/`Write`/`Edit` no `credential-guard`** (#152) — o wiring gerado por
+  `update harness`/`init`/`update` (Go/Node.js/Python, 6 CLIs nativos) passa a registrar o hook
+  também para os tools de leitura/escrita de arquivo equivalentes a `Read`/`Write`/`Edit`, além do
+  `Bash`/shell já coberto: Claude (`Read`/`Write|Edit`), Gemini
+  (`read_file|read_many_files`/`write_file|replace`), Kiro (`read`/`write`), GitHub Copilot
+  (`view`/`create|edit`), Cursor (`Read`/`Write` via eventos genéricos `preToolUse`/`postToolUse`).
+  Codex documentado como limitação explícita — não expõe tool de leitura interceptável por hook;
+  escrita/edição coberta via `apply_patch`.
+- **Segunda camada de detecção do `credential-guard` — conteúdo de arquivo referenciado** (#152) —
+  além de escanear o payload cru do tool call, o script agora resolve e escaneia (teto de 1MB) o
+  conteúdo de alvos de redirect não-efêmeros e de argumentos de arquivo existente quando o comando
+  é `cat`/`head`/`tail`/`jq`/`grep` — cobre o padrão `head -c 50 arquivo-com-segredo` sem exigir um
+  resolvedor de dataflow completo.
+
+### Changed
+
+- **`credential-guard` em escopo global: modo default `warn` → `block`** (#152) — sem exigir novo
+  arquivo de config: reusa a leitura de `credential_guard.mode` de `trackfw.yaml` já existente no
+  escopo de projeto quando presente no cwd; sem essa config explícita, o fallback passa a bloquear
+  em vez de só avisar. Quem já define `credential_guard: mode: warn` explicitamente no próprio
+  `trackfw.yaml` não tem nenhuma mudança de comportamento.
+
 ## [6.6.0] - 2026-08-08
 
 ### Added
