@@ -4,6 +4,10 @@
 
 ## Índice
 
+- [check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08](check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08.md)
+- [node-global-credential-guard-dedup-breaks-inject-tests-on-real-home-2026-08-08](node-global-credential-guard-dedup-breaks-inject-tests-on-real-home-2026-08-08.md)
+- [credential-guard-parity-test-extractor-rejects-string-concatenation-2026-08-08](credential-guard-parity-test-extractor-rejects-string-concatenation-2026-08-08.md)
+- [credential-guard-second-layer-cmd-extraction-json-not-raw-token-2026-08-08](credential-guard-second-layer-cmd-extraction-json-not-raw-token-2026-08-08.md)
 - [opencode-tools-key-hard-fail-carregamento-inteiro-2026-08-05](opencode-tools-key-hard-fail-carregamento-inteiro-2026-08-05.md)
 - [listas-de-targets-hardcoded-divergem-do-catalog-json-2026-08-05](listas-de-targets-hardcoded-divergem-do-catalog-json-2026-08-05.md)
 - [branch-new-exit-code-leak-vs-propagation-2026-08-04](branch-new-exit-code-leak-vs-propagation-2026-08-04.md)

@@ -121,14 +121,32 @@ place_marker() {
 # production entry point used by check-attention-scripts-parity.sh, so this
 # gate also catches a runtime that stops wiring a CLI's injector into
 # InjectHooksDetected/injectHooksDetected/inject_hooks_detected.
+#
+# HOME must be isolated per runtime (empty dir under $WORK), matching the
+# convention every other real-CLI-invocation gate uses (see
+# check-update-parity.sh run_update/run_init/install_agent_*). Since
+# ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 1), each InjectXHooks
+# dedups the project-scope credential-guard entry against the global one
+# already installed at $HOME/.trackfw/scripts/trackfw-credential-guard.sh
+# (globalCredentialGuardInstalledClaude/Codex/Gemini/Cursor/Copilot/Kiro —
+# read-only, fail-open). Without an isolated HOME this gate reads the REAL
+# machine's $HOME: on any dev machine that already ran `trackfw update
+# harness` (the product's own onboarding step), the global entry is present,
+# so discover --init silently skips the project-scope entry it's supposed to
+# add — an environmental false failure identical in nature (and same root
+# cause) to the one documented in
+# vault/notes/node-global-credential-guard-dedup-breaks-inject-tests-on-real-home-2026-08-08.md
+# for npm/tests/credential_guard.test.js, just hitting a shell gate instead
+# of a JS test file.
 # ---------------------------------------------------------------------------
 run_discover_init() {
   local runtime=$1 dir=$2
-  mkdir -p "$dir"
+  local home_dir="$dir.home"
+  mkdir -p "$dir" "$home_dir"
   case "$runtime" in
-    go)   (cd "$dir" && "$GO_BIN" discover --init)                              >/dev/null 2>"$WORK/$runtime.err" ;;
-    node) (cd "$dir" && node "$NODE_CLI" discover --init)                       >/dev/null 2>"$WORK/$runtime.err" ;;
-    py)   (cd "$dir" && PYTHONPATH="$PY_ROOT" python3 -m trackfw discover --init) >/dev/null 2>"$WORK/$runtime.err" ;;
+    go)   (cd "$dir" && HOME="$home_dir" "$GO_BIN" discover --init)                              >/dev/null 2>"$WORK/$runtime.err" ;;
+    node) (cd "$dir" && HOME="$home_dir" node "$NODE_CLI" discover --init)                       >/dev/null 2>"$WORK/$runtime.err" ;;
+    py)   (cd "$dir" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" python3 -m trackfw discover --init) >/dev/null 2>"$WORK/$runtime.err" ;;
     *)    echo "run_discover_init: unknown runtime '$runtime'" >&2; exit 1 ;;
   esac
 }

@@ -247,17 +247,25 @@ def inject_claude_hooks(cwd: str) -> None:
     # PreToolUse — AskUserQuestion matcher → signal; Bash matcher → credential guard
     pre_hooks = hooks.setdefault('PreToolUse', [])
     _merge_claude_hook_array(pre_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh')
-    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
-    # credential-guard when the global one is already installed.
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
+    # ROADMAP-2026-08-08 Wave 2 to Read/Write|Edit): skip project-scope
+    # credential-guard when the global one is already installed for this CLI.
     skip_cg = _global_credential_guard_installed_claude()
     if not skip_cg:
         _merge_claude_hook_array(pre_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
+        # ADR-2026-08-06 emenda 7 (2026-08-08): Read/Write/Edit coverage — extraction via
+        # direct file read, or materialization via write/edit, never went through the hook
+        # before.
+        _merge_claude_hook_array(pre_hooks, 'Read', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(pre_hooks, 'Write|Edit', 'scripts/trackfw-credential-guard.sh')
 
     # PostToolUse — AskUserQuestion matcher → cleanup; Bash matcher → credential guard
     post_hooks = hooks.setdefault('PostToolUse', [])
     _merge_claude_hook_array(post_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh')
     if not skip_cg:
         _merge_claude_hook_array(post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(post_hooks, 'Read', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(post_hooks, 'Write|Edit', 'scripts/trackfw-credential-guard.sh')
 
     _write_json(file_path, data)
 
@@ -273,6 +281,13 @@ def inject_claude_hooks(cwd: str) -> None:
 # are enabled by default (no `[features] hooks = true`/`codex_hooks` opt-in
 # needed -- that flag exists only to turn hooks OFF), and PreToolUse blocking
 # uses exit code 2 + stderr (matching trackfw-credential-guard.sh's "block" mode).
+#
+# Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2, 2026-08-08):
+# Codex has NO dedicated, interceptable read-tool matcher -- confirmed against
+# https://learn.chatgpt.com/docs/hooks -- so no read matcher is added here; this is a
+# documented limitation (also called out in docs/cli-parity.md), not a workaround.
+# Write/edit materialization IS covered via the `apply_patch` matcher (documented aliases
+# `Edit`/`Write`).
 # ---------------------------------------------------------------------------
 
 def _merge_codex_hook_entry(entries: list, matcher: str, command: str) -> None:
@@ -324,14 +339,18 @@ def inject_codex_hooks(cwd: str) -> None:
         pre_permission_hooks, '.*', 'scripts/trackfw-attention-signal.sh',
     )
 
-    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
-    # credential-guard when the global one is already installed.
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
+    # ROADMAP-2026-08-08 Wave 2 to apply_patch): skip project-scope credential-guard when
+    # the global one is already installed for this CLI.
     skip_cg = _global_credential_guard_installed_codex()
 
     pre_tool_hooks = hooks.setdefault('PreToolUse', [])
     if not skip_cg:
         _merge_codex_hook_entry(
             pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+        )
+        _merge_codex_hook_entry(
+            pre_tool_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh',
         )
 
     post_hooks = hooks.setdefault('PostToolUse', [])
@@ -341,6 +360,9 @@ def inject_codex_hooks(cwd: str) -> None:
     if not skip_cg:
         _merge_codex_hook_entry(
             post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+        )
+        _merge_codex_hook_entry(
+            post_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh',
         )
 
     _write_json(file_path, data)
@@ -388,18 +410,29 @@ def inject_gemini_hooks(cwd: str) -> None:
     notifications = hooks.setdefault('Notification', [])
     _merge_claude_hook_array(notifications, 'ToolPermission', 'scripts/trackfw-attention-signal.sh')
 
-    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
-    # credential-guard when the global one is already installed.
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
+    # ROADMAP-2026-08-08 Wave 2 to read_file|read_many_files / write_file|replace): skip
+    # project-scope credential-guard when the global one is already installed.
     skip_cg = _global_credential_guard_installed_gemini()
 
     before = hooks.setdefault('BeforeTool', [])
     if not skip_cg:
         _merge_claude_hook_array(before, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
+        # Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2,
+        # 2026-08-08): the Gemini CLI tools table
+        # (https://geminicli.com/docs/reference/tools) documents `read_file`/
+        # `read_many_files` as the file-read tools and `write_file`/`replace` as the
+        # file-write/edit tools -- matcher below follows the same regex-over-tool_name
+        # convention already used for `run_shell_command`.
+        _merge_claude_hook_array(before, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(before, 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
 
     after = hooks.setdefault('AfterTool', [])
     _merge_claude_hook_array(after, '*', 'scripts/trackfw-attention-cleanup.sh')
     if not skip_cg:
         _merge_claude_hook_array(after, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(after, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(after, 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
 
     _write_json(file_path, data)
 
@@ -447,8 +480,9 @@ def inject_kiro_hooks(cwd: str) -> None:
         },
     ]
 
-    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
-    # credential-guard entries when the global one is already installed.
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
+    # ROADMAP-2026-08-08 Wave 2 to read/write): skip project-scope credential-guard
+    # entries when the global one is already installed.
     if not _global_credential_guard_installed_kiro():
         hooks.append({
             'name': 'trackfw-credential-guard-pre',
@@ -462,6 +496,37 @@ def inject_kiro_hooks(cwd: str) -> None:
             'description': 'Warns on possible plaintext credential materialization after a shell command executes',
             'trigger': 'PostToolUse',
             'matcher': 'shell',
+            'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
+        })
+        # Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): "read" and "write" are
+        # the documented Kiro tool-category aliases (fs_read/fs_write), same pattern as
+        # "shell" above.
+        hooks.append({
+            'name': 'trackfw-credential-guard-read-pre',
+            'description': 'Blocks/warns on possible plaintext credential materialization before a file read',
+            'trigger': 'PreToolUse',
+            'matcher': 'read',
+            'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
+        })
+        hooks.append({
+            'name': 'trackfw-credential-guard-read-post',
+            'description': 'Warns on possible plaintext credential materialization after a file read',
+            'trigger': 'PostToolUse',
+            'matcher': 'read',
+            'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
+        })
+        hooks.append({
+            'name': 'trackfw-credential-guard-write-pre',
+            'description': 'Blocks/warns on possible plaintext credential materialization before a file write',
+            'trigger': 'PreToolUse',
+            'matcher': 'write',
+            'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
+        })
+        hooks.append({
+            'name': 'trackfw-credential-guard-write-post',
+            'description': 'Warns on possible plaintext credential materialization after a file write',
+            'trigger': 'PostToolUse',
+            'matcher': 'write',
             'action': {'type': 'command', 'command': 'scripts/trackfw-credential-guard.sh'},
         })
 
@@ -516,7 +581,8 @@ def inject_copilot_hooks(cwd: str) -> None:
         },
     ]
 
-    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
+    # ROADMAP-2026-08-08 Wave 2 to view / create|edit): skip project-scope
     # credential-guard entries when the global one is already installed.
     if not _global_credential_guard_installed_copilot():
         guard_entry = {
@@ -528,6 +594,19 @@ def inject_copilot_hooks(cwd: str) -> None:
         }
         pre_tool_use.append(dict(guard_entry))
         post_tool_use.append(dict(guard_entry))
+
+        # Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2,
+        # 2026-08-08): https://docs.github.com/en/copilot/reference/hooks-reference confirms
+        # the camelCase preToolUse/postToolUse toolName mapping `view -> Read`,
+        # `create -> Write`, `edit -> Edit` -- "view" is the read matcher, "create|edit" the
+        # write/edit matcher, same lowercase-runtime-name convention already used for "bash"
+        # above.
+        view_entry = dict(guard_entry, matcher='view')
+        write_entry = dict(guard_entry, matcher='create|edit')
+        pre_tool_use.append(dict(view_entry))
+        pre_tool_use.append(dict(write_entry))
+        post_tool_use.append(dict(view_entry))
+        post_tool_use.append(dict(write_entry))
 
     data = {
         'version': 1,
@@ -629,8 +708,10 @@ def inject_cursor_hooks(cwd: str) -> None:
         post.append({'command': 'scripts/trackfw-attention-cleanup.sh'})
     _remove_known_command_from_legacy_top_level_array(data, 'postToolUse', 'scripts/trackfw-attention-cleanup.sh')
 
-    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
-    # credential-guard entries when the global one is already installed.
+    # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
+    # ROADMAP-2026-08-08 Wave 2 to Read/Write via the generic preToolUse/postToolUse
+    # events): skip project-scope credential-guard entries when the global one is already
+    # installed.
     if not _global_credential_guard_installed_cursor():
         before = hooks.setdefault('beforeShellExecution', [])
         if not _has_entry(before, 'command', 'scripts/trackfw-credential-guard.sh'):
@@ -639,6 +720,31 @@ def inject_cursor_hooks(cwd: str) -> None:
         after = hooks.setdefault('afterShellExecution', [])
         if not _has_entry(after, 'command', 'scripts/trackfw-credential-guard.sh'):
             after.append({'command': 'scripts/trackfw-credential-guard.sh'})
+
+        # Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): wired via the generic
+        # preToolUse/postToolUse events (distinct from beforeShellExecution/
+        # afterShellExecution, which only ever fire for Shell) with an explicit `matcher`,
+        # so these entries never fire for the same tool call the unfiltered
+        # attention-signal/cleanup entries already handle above in this same array.
+        # _has_entry (command-only) is not enough here -- both the unfiltered signal entry
+        # and these matcher-scoped guard entries share the same array, so dedup must also
+        # check `matcher`.
+        def _has_guard_matcher_entry(arr: list, matcher: str) -> bool:
+            return any(
+                isinstance(e, dict)
+                and e.get('command') == 'scripts/trackfw-credential-guard.sh'
+                and e.get('matcher') == matcher
+                for e in (arr or [])
+            )
+
+        if not _has_guard_matcher_entry(pre, 'Read'):
+            pre.append({'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Read'})
+        if not _has_guard_matcher_entry(pre, 'Write'):
+            pre.append({'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Write'})
+        if not _has_guard_matcher_entry(post, 'Read'):
+            post.append({'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Read'})
+        if not _has_guard_matcher_entry(post, 'Write'):
+            post.append({'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Write'})
 
     _write_json(file_path, data)
 

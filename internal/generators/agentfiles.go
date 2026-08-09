@@ -210,7 +210,8 @@ func InjectClaudeHooks(cwd string) error {
 		"AskUserQuestion",
 		"scripts/trackfw-attention-signal.sh",
 	)
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
+	// 7/ROADMAP-2026-08-08 Wave 2 to Read/Write|Edit): skip the project-scope
 	// credential-guard entry when the global one is already installed
 	// (`trackfw update harness --targets claude-credential-guard`), so the
 	// guard doesn't run twice per Bash call. attention-signal/cleanup above
@@ -219,6 +220,19 @@ func InjectClaudeHooks(cwd string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Bash",
+			"scripts/trackfw-credential-guard.sh",
+		)
+		// Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, 2026-08-08):
+		// extraction via a direct file read, or materialization via write/edit,
+		// never went through the hook before.
+		hooks["PreToolUse"] = mergeClaudeHookArray(
+			hooks["PreToolUse"],
+			"Read",
+			"scripts/trackfw-credential-guard.sh",
+		)
+		hooks["PreToolUse"] = mergeClaudeHookArray(
+			hooks["PreToolUse"],
+			"Write|Edit",
 			"scripts/trackfw-credential-guard.sh",
 		)
 	}
@@ -232,6 +246,16 @@ func InjectClaudeHooks(cwd string) error {
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Bash",
+			"scripts/trackfw-credential-guard.sh",
+		)
+		hooks["PostToolUse"] = mergeClaudeHookArray(
+			hooks["PostToolUse"],
+			"Read",
+			"scripts/trackfw-credential-guard.sh",
+		)
+		hooks["PostToolUse"] = mergeClaudeHookArray(
+			hooks["PostToolUse"],
+			"Write|Edit",
 			"scripts/trackfw-credential-guard.sh",
 		)
 	}
@@ -258,6 +282,13 @@ func InjectClaudeHooks(cwd string) error {
 //     opt-in needed — that flag exists only to turn hooks OFF), and PreToolUse
 //     blocking uses exit code 2 + stderr (matching trackfw-credential-guard.sh's
 //     existing "block" mode).
+//
+// Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2,
+// 2026-08-08): Codex has NO dedicated, interceptable read-tool matcher —
+// confirmed against https://learn.chatgpt.com/docs/hooks — so no read matcher
+// is added here; this is a documented limitation (also called out in
+// docs/cli-parity.md), not a workaround. Write/edit materialization IS
+// covered via the "apply_patch" matcher (documented aliases Edit/Write).
 func InjectCodexHooks(cwd string) error {
 	dir := filepath.Join(cwd, ".codex")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -291,7 +322,8 @@ func InjectCodexHooks(cwd string) error {
 		"scripts/trackfw-attention-signal.sh",
 	)
 
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
+	// 7/ROADMAP-2026-08-08 Wave 2 to apply_patch): skip the project-scope
 	// credential-guard entry when the global one is already installed
 	// (`trackfw update harness --targets codex-credential-guard`).
 	skipCodexCG := globalCredentialGuardInstalledCodex()
@@ -299,6 +331,11 @@ func InjectCodexHooks(cwd string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Bash",
+			"scripts/trackfw-credential-guard.sh",
+		)
+		hooks["PreToolUse"] = mergeClaudeHookArray(
+			hooks["PreToolUse"],
+			"apply_patch",
 			"scripts/trackfw-credential-guard.sh",
 		)
 	}
@@ -312,6 +349,11 @@ func InjectCodexHooks(cwd string) error {
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Bash",
+			"scripts/trackfw-credential-guard.sh",
+		)
+		hooks["PostToolUse"] = mergeClaudeHookArray(
+			hooks["PostToolUse"],
+			"apply_patch",
 			"scripts/trackfw-credential-guard.sh",
 		)
 	}
@@ -343,6 +385,12 @@ func InjectCodexHooks(cwd string) error {
 //   - AfterTool (matcher "*") — pre-existing attention-cleanup, unrelated to the new
 //     credential-guard wiring above (different matcher, added as a separate array
 //     entry so the two coexist without merging into one hooks group).
+//
+// Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2,
+// 2026-08-08): the Gemini CLI tools table (https://geminicli.com/docs/reference/tools)
+// documents read_file/read_many_files as the file-read tools and write_file/replace
+// as the file-write/edit tools — matcher below follows the same regex-over-tool_name
+// convention already used for run_shell_command.
 //
 // Concurrency note: the doc's `sequential` field only orders hooks *within* one
 // matcher group ("If true, hooks in this group run one after another"); it says
@@ -387,14 +435,26 @@ func InjectGeminiHooks(cwd string) error {
 		"scripts/trackfw-attention-signal.sh",
 	)
 
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
-	// credential-guard entry when the global one is already installed
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
+	// 7/ROADMAP-2026-08-08 Wave 2 to read_file|read_many_files /
+	// write_file|replace): skip the project-scope credential-guard entry when
+	// the global one is already installed
 	// (`trackfw update harness --targets gemini-credential-guard`).
 	skipGeminiCG := globalCredentialGuardInstalledGemini()
 	if !skipGeminiCG {
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"run_shell_command",
+			"scripts/trackfw-credential-guard.sh",
+		)
+		hooks["BeforeTool"] = mergeClaudeHookArray(
+			hooks["BeforeTool"],
+			"read_file|read_many_files",
+			"scripts/trackfw-credential-guard.sh",
+		)
+		hooks["BeforeTool"] = mergeClaudeHookArray(
+			hooks["BeforeTool"],
+			"write_file|replace",
 			"scripts/trackfw-credential-guard.sh",
 		)
 	}
@@ -408,6 +468,16 @@ func InjectGeminiHooks(cwd string) error {
 		hooks["AfterTool"] = mergeClaudeHookArray(
 			hooks["AfterTool"],
 			"run_shell_command",
+			"scripts/trackfw-credential-guard.sh",
+		)
+		hooks["AfterTool"] = mergeClaudeHookArray(
+			hooks["AfterTool"],
+			"read_file|read_many_files",
+			"scripts/trackfw-credential-guard.sh",
+		)
+		hooks["AfterTool"] = mergeClaudeHookArray(
+			hooks["AfterTool"],
+			"write_file|replace",
 			"scripts/trackfw-credential-guard.sh",
 		)
 	}
@@ -491,7 +561,8 @@ func InjectKiroHooks(cwd string) error {
 		},
 	}
 
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
+	// 7/ROADMAP-2026-08-08 Wave 2 to read/write): skip the project-scope
 	// credential-guard entries when the global one is already installed
 	// (`trackfw update harness --targets kiro-credential-guard`,
 	// ~/.kiro/hooks/trackfw-credential-guard.json).
@@ -509,6 +580,37 @@ func InjectKiroHooks(cwd string) error {
 				"description": "Warns on possible plaintext credential materialization after a shell command executes",
 				"trigger":     "PostToolUse",
 				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+			},
+			// Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): "read"
+			// and "write" are the documented Kiro tool-category aliases
+			// (fs_read/fs_write), same pattern as "shell" above.
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-read-pre",
+				"description": "Blocks/warns on possible plaintext credential materialization before a file read",
+				"trigger":     "PreToolUse",
+				"matcher":     "read",
+				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-read-post",
+				"description": "Warns on possible plaintext credential materialization after a file read",
+				"trigger":     "PostToolUse",
+				"matcher":     "read",
+				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-write-pre",
+				"description": "Blocks/warns on possible plaintext credential materialization before a file write",
+				"trigger":     "PreToolUse",
+				"matcher":     "write",
+				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-credential-guard-write-post",
+				"description": "Warns on possible plaintext credential materialization after a file write",
+				"trigger":     "PostToolUse",
+				"matcher":     "write",
 				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
 			},
 		)
@@ -584,9 +686,17 @@ func InjectCopilotHooks(cwd string) error {
 		},
 	}
 
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
-	// credential-guard entries when the global one is already installed
-	// (`trackfw update harness --targets copilot-credential-guard`).
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
+	// 7/ROADMAP-2026-08-08 Wave 2 to view / create|edit): skip the
+	// project-scope credential-guard entries when the global one is already
+	// installed (`trackfw update harness --targets copilot-credential-guard`).
+	//
+	// Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, 2026-08-08):
+	// https://docs.github.com/en/copilot/reference/hooks-reference confirms
+	// the camelCase preToolUse/postToolUse toolName mapping `view -> Read`,
+	// `create -> Write`, `edit -> Edit` — "view" is the read matcher,
+	// "create|edit" the write/edit matcher, same lowercase-runtime-name
+	// convention already used for "bash" above.
 	if !globalCredentialGuardInstalledCopilot() {
 		preToolUse = append(preToolUse, map[string]interface{}{
 			"type":       "command",
@@ -595,9 +705,37 @@ func InjectCopilotHooks(cwd string) error {
 			"cwd":        ".",
 			"timeoutSec": 10,
 		})
+		preToolUse = append(preToolUse, map[string]interface{}{
+			"type":       "command",
+			"matcher":    "view",
+			"bash":       "scripts/trackfw-credential-guard.sh",
+			"cwd":        ".",
+			"timeoutSec": 10,
+		})
+		preToolUse = append(preToolUse, map[string]interface{}{
+			"type":       "command",
+			"matcher":    "create|edit",
+			"bash":       "scripts/trackfw-credential-guard.sh",
+			"cwd":        ".",
+			"timeoutSec": 10,
+		})
 		postToolUse = append(postToolUse, map[string]interface{}{
 			"type":       "command",
 			"matcher":    "bash",
+			"bash":       "scripts/trackfw-credential-guard.sh",
+			"cwd":        ".",
+			"timeoutSec": 10,
+		})
+		postToolUse = append(postToolUse, map[string]interface{}{
+			"type":       "command",
+			"matcher":    "view",
+			"bash":       "scripts/trackfw-credential-guard.sh",
+			"cwd":        ".",
+			"timeoutSec": 10,
+		})
+		postToolUse = append(postToolUse, map[string]interface{}{
+			"type":       "command",
+			"matcher":    "create|edit",
 			"bash":       "scripts/trackfw-credential-guard.sh",
 			"cwd":        ".",
 			"timeoutSec": 10,
@@ -719,12 +857,28 @@ func InjectCursorHooks(cwd string) error {
 	removeKnownCommandFromLegacyTopLevelArray(root, "preToolUse", "scripts/trackfw-attention-signal.sh", getCmd)
 	removeKnownCommandFromLegacyTopLevelArray(root, "postToolUse", "scripts/trackfw-attention-cleanup.sh", getCmd)
 
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip the project-scope
-	// credential-guard entries when the global one is already installed
+	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
+	// 7/ROADMAP-2026-08-08 Wave 2 to Read/Write via the generic
+	// preToolUse/postToolUse events): skip the project-scope credential-guard
+	// entries when the global one is already installed
 	// (`trackfw update harness --targets cursor-credential-guard`).
 	if !globalCredentialGuardInstalledCursor() {
 		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
 		hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
+
+		// Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): wired via
+		// the generic preToolUse/postToolUse events (distinct from
+		// beforeShellExecution/afterShellExecution, which only ever fire for
+		// Shell) with an explicit "matcher", so these entries never fire for
+		// the same tool call the unfiltered attention-signal/cleanup entries
+		// already handle above in this same array. mergeSimpleCommandArray
+		// (command-only dedup) is not enough here — both the unfiltered
+		// signal entry and these matcher-scoped guard entries share the same
+		// array, so dedup must also check "matcher".
+		hooks["preToolUse"] = mergeCursorGuardMatcherEntry(hooks["preToolUse"], "Read", "scripts/trackfw-credential-guard.sh")
+		hooks["preToolUse"] = mergeCursorGuardMatcherEntry(hooks["preToolUse"], "Write", "scripts/trackfw-credential-guard.sh")
+		hooks["postToolUse"] = mergeCursorGuardMatcherEntry(hooks["postToolUse"], "Read", "scripts/trackfw-credential-guard.sh")
+		hooks["postToolUse"] = mergeCursorGuardMatcherEntry(hooks["postToolUse"], "Write", "scripts/trackfw-credential-guard.sh")
 	}
 	root["hooks"] = hooks
 
@@ -819,6 +973,26 @@ func mergeSimpleCommandArray(
 		}
 	}
 	return append(arr, makeEntry(command))
+}
+
+// mergeCursorGuardMatcherEntry appends {"command": command, "matcher": matcher}
+// to a Cursor preToolUse/postToolUse array unless an entry with that exact
+// (command, matcher) pair already exists. Distinct from mergeSimpleCommandArray
+// (which dedups on command alone) because these arrays also hold the
+// unfiltered attention-signal/cleanup entries — see InjectCursorHooks'
+// Read/Write wiring comment (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2).
+func mergeCursorGuardMatcherEntry(existing interface{}, matcher, command string) []interface{} {
+	arr, _ := existing.([]interface{})
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if obj["command"] == command && obj["matcher"] == matcher {
+			return arr
+		}
+	}
+	return append(arr, map[string]interface{}{"command": command, "matcher": matcher})
 }
 
 // --- Global credential-guard dedup (ROADMAP-2026-08-06 Wave 3/ML-3A) ---

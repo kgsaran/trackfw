@@ -156,11 +156,14 @@ func TestInjectCopilotHooks_StructuralParityAcrossStacks(t *testing.T) {
 
 		pre := copilotHookEntrySet(t, hooks["preToolUse"])
 		post := copilotHookEntrySet(t, hooks["postToolUse"])
-		if len(pre) != 2 {
-			t.Errorf("%s: preToolUse deveria ter 2 entradas, obteve %d", name, len(pre))
+		// 4 entries each: signal/cleanup (no matcher) + credential-guard scoped to
+		// "bash", "view", and "create|edit" (ADR-2026-08-06 emenda 7,
+		// ROADMAP-2026-08-08 Wave 2 — Read/Write/Edit coverage).
+		if len(pre) != 4 {
+			t.Errorf("%s: preToolUse deveria ter 4 entradas, obteve %d", name, len(pre))
 		}
-		if len(post) != 2 {
-			t.Errorf("%s: postToolUse deveria ter 2 entradas, obteve %d", name, len(post))
+		if len(post) != 4 {
+			t.Errorf("%s: postToolUse deveria ter 4 entradas, obteve %d", name, len(post))
 		}
 
 		assertCopilotHookEntry(t, name, pre, "scripts/trackfw-attention-signal.sh", nil)

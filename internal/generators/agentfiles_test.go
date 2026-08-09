@@ -125,14 +125,71 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pr, _ := hooks["PreToolUse"].([]interface{})
 	// A pre-existing "Bash" matcher entry (third-party hook) must be merged with
-	// (not duplicated by) the new credential-guard "Bash" entry: 2 entries total
-	// -- {Bash: [other.sh, credential-guard.sh]}, {AskUserQuestion: [signal.sh]}.
-	if len(pr) != 2 {
-		t.Errorf("expected 2 PreToolUse entries, got %d", len(pr))
+	// (not duplicated by) the new credential-guard "Bash" entry: 4 entries total
+	// -- {Bash: [other.sh, credential-guard.sh]}, {AskUserQuestion: [signal.sh]},
+	// {Read: [credential-guard.sh]}, {Write|Edit: [credential-guard.sh]}
+	// (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2).
+	if len(pr) != 4 {
+		t.Errorf("expected 4 PreToolUse entries, got %d", len(pr))
 	}
 	post, _ := hooks["PostToolUse"].([]interface{})
-	if len(post) != 2 {
-		t.Errorf("expected 2 PostToolUse entries, got %d", len(post))
+	if len(post) != 4 {
+		t.Errorf("expected 4 PostToolUse entries, got %d", len(post))
+	}
+}
+
+// TestInjectClaudeHooks_ReadWriteEditMatchersRegisteredForCredentialGuard cobre o cenário (b) da
+// REQ-2026-08-08 (ML-3A): um payload de tool call Read/Write/Edit (não Bash) contendo JWT/AWS key
+// no tool_input só é interceptado pelo credential-guard se o hook estiver REGISTRADO para esses
+// matchers -- este teste confirma o wiring (structural), não a execução do script (já coberta
+// pelos cenários (a)/(c) em credential_guard_test.go, já que o script escaneia o payload cru
+// independente do tool_name).
+func TestInjectClaudeHooks_ReadWriteEditMatchersRegisteredForCredentialGuard(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	if err := InjectClaudeHooks(dir); err != nil {
+		t.Fatalf("InjectClaudeHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+
+	if !helperHasClaudeHook(data, "PreToolUse", "Read", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Read] → credential-guard.sh missing (Read tool calls never reach the guard without this entry)")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Read", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PostToolUse[Read] → credential-guard.sh missing")
+	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Write|Edit", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PreToolUse[Write|Edit] → credential-guard.sh missing (Write/Edit tool calls never reach the guard without this entry)")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "Write|Edit", "scripts/trackfw-credential-guard.sh") {
+		t.Error("PostToolUse[Write|Edit] → credential-guard.sh missing")
+	}
+}
+
+// TestInjectGeminiHooks_ReadWriteMatchersRegisteredForCredentialGuard é a contraparte Gemini do
+// cenário (b) -- matchers read_file|read_many_files / write_file|replace, tabela da ADR-2026-08-06
+// emenda 7.
+func TestInjectGeminiHooks_ReadWriteMatchersRegisteredForCredentialGuard(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	if err := InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("InjectGeminiHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
+
+	if !helperHasClaudeHook(data, "BeforeTool", "read_file|read_many_files", "scripts/trackfw-credential-guard.sh") {
+		t.Error("BeforeTool[read_file|read_many_files] → credential-guard.sh missing")
+	}
+	if !helperHasClaudeHook(data, "AfterTool", "read_file|read_many_files", "scripts/trackfw-credential-guard.sh") {
+		t.Error("AfterTool[read_file|read_many_files] → credential-guard.sh missing")
+	}
+	if !helperHasClaudeHook(data, "BeforeTool", "write_file|replace", "scripts/trackfw-credential-guard.sh") {
+		t.Error("BeforeTool[write_file|replace] → credential-guard.sh missing")
+	}
+	if !helperHasClaudeHook(data, "AfterTool", "write_file|replace", "scripts/trackfw-credential-guard.sh") {
+		t.Error("AfterTool[write_file|replace] → credential-guard.sh missing")
 	}
 }
 
@@ -164,13 +221,17 @@ func TestInjectCodexHooks(t *testing.T) {
 
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pre, _ := hooks["PreToolUse"].([]interface{})
-	if len(pre) != 1 {
-		t.Errorf("expected 1 PreToolUse entry (Bash only, no idempotency dup), got %d", len(pre))
+	// 2 entries: {matcher:"Bash", hooks:[credential-guard.sh]}, {matcher:"apply_patch",
+	// hooks:[credential-guard.sh]} (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2;
+	// Codex has no read-tool matcher — see InjectCodexHooks doc comment).
+	if len(pre) != 2 {
+		t.Errorf("expected 2 PreToolUse entries (Bash + apply_patch, no idempotency dup), got %d", len(pre))
 	}
 	post, _ := hooks["PostToolUse"].([]interface{})
-	// 2 entries: {matcher:".*", hooks:[cleanup.sh]}, {matcher:"Bash", hooks:[credential-guard.sh]}
-	if len(post) != 2 {
-		t.Errorf("expected 2 PostToolUse entries, got %d", len(post))
+	// 3 entries: {matcher:".*", hooks:[cleanup.sh]}, {matcher:"Bash", hooks:[credential-guard.sh]},
+	// {matcher:"apply_patch", hooks:[credential-guard.sh]}
+	if len(post) != 3 {
+		t.Errorf("expected 3 PostToolUse entries, got %d", len(post))
 	}
 }
 
@@ -207,8 +268,10 @@ func TestInjectCodexHooks_PreservesExistingBashEntry(t *testing.T) {
 
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pre, _ := hooks["PreToolUse"].([]interface{})
-	if len(pre) != 1 {
-		t.Errorf("expected 1 PreToolUse entry (merged into existing Bash matcher, not duplicated), got %d", len(pre))
+	// 2 entries: {matcher:"Bash", hooks:[other.sh, credential-guard.sh]} (merged),
+	// {matcher:"apply_patch", hooks:[credential-guard.sh]}.
+	if len(pre) != 2 {
+		t.Errorf("expected 2 PreToolUse entries (Bash merged + apply_patch), got %d", len(pre))
 	}
 }
 
@@ -240,13 +303,16 @@ func TestInjectGeminiHooks(t *testing.T) {
 
 	hooks, _ := data["hooks"].(map[string]interface{})
 	before, _ := hooks["BeforeTool"].([]interface{})
-	if len(before) != 1 {
-		t.Errorf("expected 1 BeforeTool entry (run_shell_command only, no idempotency dup), got %d", len(before))
+	// 3 entries: {matcher:"run_shell_command", ...}, {matcher:"read_file|read_many_files", ...},
+	// {matcher:"write_file|replace", ...} (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2).
+	if len(before) != 3 {
+		t.Errorf("expected 3 BeforeTool entries (run_shell_command + read + write, no idempotency dup), got %d", len(before))
 	}
 	after, _ := hooks["AfterTool"].([]interface{})
-	// 2 entries: {matcher:"*", hooks:[cleanup.sh]}, {matcher:"run_shell_command", hooks:[credential-guard.sh]}
-	if len(after) != 2 {
-		t.Errorf("expected 2 AfterTool entries, got %d", len(after))
+	// 4 entries: {matcher:"*", hooks:[cleanup.sh]}, {matcher:"run_shell_command", ...},
+	// {matcher:"read_file|read_many_files", ...}, {matcher:"write_file|replace", ...}
+	if len(after) != 4 {
+		t.Errorf("expected 4 AfterTool entries, got %d", len(after))
 	}
 }
 
@@ -283,8 +349,10 @@ func TestInjectGeminiHooks_PreservesExistingBeforeToolEntry(t *testing.T) {
 
 	hooks, _ := data["hooks"].(map[string]interface{})
 	before, _ := hooks["BeforeTool"].([]interface{})
-	if len(before) != 1 {
-		t.Errorf("expected 1 BeforeTool entry (merged into existing run_shell_command matcher, not duplicated), got %d", len(before))
+	// 3 entries: {matcher:"run_shell_command", hooks:[other.sh, credential-guard.sh]} (merged),
+	// {matcher:"read_file|read_many_files", ...}, {matcher:"write_file|replace", ...}.
+	if len(before) != 3 {
+		t.Errorf("expected 3 BeforeTool entries (run_shell_command merged + read + write), got %d", len(before))
 	}
 }
 
@@ -319,8 +387,10 @@ func TestInjectKiroHooks(t *testing.T) {
 		t.Fatalf("expected version \"v1\", got %v", data["version"])
 	}
 	hooks, _ := data["hooks"].([]interface{})
-	if len(hooks) != 4 {
-		t.Fatalf("expected 4 hooks in Kiro config (signal, cleanup, credential-guard pre/post), got %d", len(hooks))
+	// 8 entries: signal, cleanup, credential-guard shell pre/post, read pre/post,
+	// write pre/post (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2).
+	if len(hooks) != 8 {
+		t.Fatalf("expected 8 hooks in Kiro config (signal, cleanup, credential-guard shell/read/write pre/post), got %d", len(hooks))
 	}
 
 	sawGuardPre, sawGuardPost := false, false
@@ -396,13 +466,15 @@ func TestInjectCopilotHooks(t *testing.T) {
 		t.Fatalf("expected hooks to be an object keyed by event, got %v", data["hooks"])
 	}
 
+	// 4 entries each: signal/cleanup + credential-guard "bash"/"view"/"create|edit"
+	// (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2).
 	pre, ok := hooks["preToolUse"].([]interface{})
-	if !ok || len(pre) != 2 {
-		t.Fatalf("expected preToolUse array of size 2, got %v", hooks["preToolUse"])
+	if !ok || len(pre) != 4 {
+		t.Fatalf("expected preToolUse array of size 4, got %v", hooks["preToolUse"])
 	}
 	post, ok := hooks["postToolUse"].([]interface{})
-	if !ok || len(post) != 2 {
-		t.Fatalf("expected postToolUse array of size 2, got %v", hooks["postToolUse"])
+	if !ok || len(post) != 4 {
+		t.Fatalf("expected postToolUse array of size 4, got %v", hooks["postToolUse"])
 	}
 
 	helperFindCopilotEntry := func(arr []interface{}, bash string) map[string]interface{} {
@@ -475,8 +547,11 @@ func TestInjectCursorHooks(t *testing.T) {
 
 	pre, _ := hooks["preToolUse"].([]interface{})
 	post, _ := hooks["postToolUse"].([]interface{})
-	if len(pre) != 1 || len(post) != 1 {
-		t.Fatalf("expected 1 hooks.preToolUse and 1 hooks.postToolUse entry, got %d pre, %d post", len(pre), len(post))
+	// 3 entries each: attention-signal/cleanup (unfiltered) + credential-guard
+	// scoped to matcher "Read" + credential-guard scoped to matcher "Write"
+	// (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2).
+	if len(pre) != 3 || len(post) != 3 {
+		t.Fatalf("expected 3 hooks.preToolUse and 3 hooks.postToolUse entries, got %d pre, %d post", len(pre), len(post))
 	}
 	if pre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
 		t.Errorf("hooks.preToolUse[0] should be the attention-signal script, got %v", pre[0])
@@ -537,10 +612,13 @@ func TestInjectCursorHooks_MigratesLegacyTopLevelArrays(t *testing.T) {
 	hooks, _ := data["hooks"].(map[string]interface{})
 	hPre, _ := hooks["preToolUse"].([]interface{})
 	hPost, _ := hooks["postToolUse"].([]interface{})
-	if len(hPre) != 1 || hPre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
+	// 3 entries each after migration: the migrated attention-signal/cleanup entry
+	// plus the two matcher-scoped credential-guard entries (Read/Write) added by
+	// this ML — see TestInjectCursorHooks.
+	if len(hPre) != 3 || hPre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
 		t.Errorf("expected hooks.preToolUse to contain the migrated attention-signal entry, got %v", hPre)
 	}
-	if len(hPost) != 1 || hPost[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
+	if len(hPost) != 3 || hPost[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
 		t.Errorf("expected hooks.postToolUse to contain the migrated attention-cleanup entry, got %v", hPost)
 	}
 }

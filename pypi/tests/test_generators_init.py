@@ -437,15 +437,17 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertIn('PostToolUse', data.get('hooks', {}))
         pre_matchers = {e.get('matcher') for e in data['hooks']['PreToolUse']}
         post_matchers = {e.get('matcher') for e in data['hooks']['PostToolUse']}
-        self.assertEqual(pre_matchers, {'AskUserQuestion', 'Bash'})
-        self.assertEqual(post_matchers, {'AskUserQuestion', 'Bash'})
+        # ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): PreToolUse/PostToolUse each gain
+        # two new credential-guard entries (Read, Write|Edit) alongside the pre-existing Bash one.
+        self.assertEqual(pre_matchers, {'AskUserQuestion', 'Bash', 'Read', 'Write|Edit'})
+        self.assertEqual(post_matchers, {'AskUserQuestion', 'Bash', 'Read', 'Write|Edit'})
 
         # 2. Idempotência
         inject_claude_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
-        self.assertEqual(len(data2['hooks']['PreToolUse']), 2)
-        self.assertEqual(len(data2['hooks']['PostToolUse']), 2)
+        self.assertEqual(len(data2['hooks']['PreToolUse']), 4)
+        self.assertEqual(len(data2['hooks']['PostToolUse']), 4)
 
     def test_inject_claude_hooks_preserves_third_party_matcher(self):
         """PreToolUse/PostToolUse com um matcher de terceiro (ex.: 'CustomTool')
@@ -472,9 +474,9 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data = json.load(f)
 
         pre = data['hooks']['PreToolUse']
-        self.assertEqual(len(pre), 3)
+        self.assertEqual(len(pre), 5)
         matchers = {e['matcher'] for e in pre}
-        self.assertEqual(matchers, {'CustomTool', 'AskUserQuestion', 'Bash'})
+        self.assertEqual(matchers, {'CustomTool', 'AskUserQuestion', 'Bash', 'Read', 'Write|Edit'})
 
         bash_entry = next(e for e in pre if e['matcher'] == 'Bash')
         self.assertEqual(
@@ -483,9 +485,9 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         )
 
         post = data['hooks']['PostToolUse']
-        self.assertEqual(len(post), 2)
+        self.assertEqual(len(post), 4)
         post_matchers = {e['matcher'] for e in post}
-        self.assertEqual(post_matchers, {'AskUserQuestion', 'Bash'})
+        self.assertEqual(post_matchers, {'AskUserQuestion', 'Bash', 'Read', 'Write|Edit'})
 
     def test_inject_codex_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_codex_hooks
@@ -502,17 +504,24 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertEqual(pre_matcher, 'Bash')
         pre_command = data['hooks']['PreToolUse'][0]['hooks'][0]['command']
         self.assertEqual(pre_command, 'scripts/trackfw-credential-guard.sh')
+        # ADR-2026-08-06 emenda 7: Codex has no dedicated read matcher (documented
+        # limitation) -- only apply_patch (write/edit) is added alongside Bash.
+        self.assertEqual(data['hooks']['PreToolUse'][1]['matcher'], 'apply_patch')
+        self.assertEqual(
+            data['hooks']['PreToolUse'][1]['hooks'][0]['command'],
+            'scripts/trackfw-credential-guard.sh',
+        )
 
         post_matchers = {e['matcher'] for e in data['hooks']['PostToolUse']}
-        self.assertEqual(post_matchers, {'.*', 'Bash'})
+        self.assertEqual(post_matchers, {'.*', 'Bash', 'apply_patch'})
 
         # Idempotência
         inject_codex_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
         self.assertEqual(len(data2['hooks']['PermissionRequest']), 1)
-        self.assertEqual(len(data2['hooks']['PreToolUse']), 1)
-        self.assertEqual(len(data2['hooks']['PostToolUse']), 2)
+        self.assertEqual(len(data2['hooks']['PreToolUse']), 2)
+        self.assertEqual(len(data2['hooks']['PostToolUse']), 3)
 
     def test_inject_codex_hooks_preserves_existing_bash_entry(self):
         """Um matcher 'Bash' pré-existente em PreToolUse (hook de terceiro) deve
@@ -539,10 +548,12 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data = json.load(f)
 
         pre = data['hooks']['PreToolUse']
-        self.assertEqual(len(pre), 1)
+        # ADR-2026-08-06 emenda 7: apply_patch is now added alongside Bash.
+        self.assertEqual(len(pre), 2)
         self.assertEqual(pre[0]['matcher'], 'Bash')
         commands = {h['command'] for h in pre[0]['hooks']}
         self.assertEqual(commands, {'scripts/other.sh', 'scripts/trackfw-credential-guard.sh'})
+        self.assertEqual(pre[1]['matcher'], 'apply_patch')
 
     def test_inject_gemini_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_gemini_hooks
@@ -556,21 +567,25 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertIn('BeforeTool', data.get('hooks', {}))
 
         before = data['hooks']['BeforeTool']
-        self.assertEqual(len(before), 1)
+        # ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): read_file|read_many_files and
+        # write_file|replace credential-guard entries alongside run_shell_command.
+        self.assertEqual(len(before), 3)
         self.assertEqual(before[0]['matcher'], 'run_shell_command')
         self.assertEqual(before[0]['hooks'][0]['command'], 'scripts/trackfw-credential-guard.sh')
+        before_matchers = {e['matcher'] for e in before}
+        self.assertEqual(before_matchers, {'run_shell_command', 'read_file|read_many_files', 'write_file|replace'})
 
         after = data['hooks']['AfterTool']
         after_matchers = {e['matcher'] for e in after}
-        self.assertEqual(after_matchers, {'*', 'run_shell_command'})
+        self.assertEqual(after_matchers, {'*', 'run_shell_command', 'read_file|read_many_files', 'write_file|replace'})
 
         # Idempotência
         inject_gemini_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
         self.assertEqual(len(data2['hooks']['Notification']), 1)
-        self.assertEqual(len(data2['hooks']['AfterTool']), 2)
-        self.assertEqual(len(data2['hooks']['BeforeTool']), 1)
+        self.assertEqual(len(data2['hooks']['AfterTool']), 4)
+        self.assertEqual(len(data2['hooks']['BeforeTool']), 3)
 
     def test_inject_gemini_hooks_preserves_existing_before_tool_entry(self):
         from trackfw.generators.hooks import inject_gemini_hooks
@@ -591,7 +606,9 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         before = data['hooks']['BeforeTool']
-        self.assertEqual(len(before), 1)
+        # ADR-2026-08-06 emenda 7: read_file|read_many_files and write_file|replace entries
+        # are added alongside run_shell_command.
+        self.assertEqual(len(before), 3)
         commands = {h['command'] for h in before[0]['hooks']}
         self.assertEqual(commands, {'scripts/other.sh', 'scripts/trackfw-credential-guard.sh'})
 
@@ -604,7 +621,9 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data = json.load(f)
         self.assertEqual(data.get('version'), 'v1')
         hooks = data.get('hooks', [])
-        self.assertEqual(len(hooks), 4)
+        # ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): +4 credential-guard entries
+        # (read-pre/read-post/write-pre/write-post) alongside the pre-existing shell pre/post.
+        self.assertEqual(len(hooks), 8)
         for entry in hooks:
             self.assertNotIn('event', entry, 'legacy "event" field must not be emitted')
             self.assertIn('trigger', entry)
@@ -620,6 +639,19 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         guard_post = by_name['trackfw-credential-guard-post']
         self.assertEqual(guard_post['trigger'], 'PostToolUse')
         self.assertEqual(guard_post['matcher'], 'shell')
+
+        guard_read_pre = by_name['trackfw-credential-guard-read-pre']
+        self.assertEqual(guard_read_pre['trigger'], 'PreToolUse')
+        self.assertEqual(guard_read_pre['matcher'], 'read')
+        guard_read_post = by_name['trackfw-credential-guard-read-post']
+        self.assertEqual(guard_read_post['trigger'], 'PostToolUse')
+        self.assertEqual(guard_read_post['matcher'], 'read')
+        guard_write_pre = by_name['trackfw-credential-guard-write-pre']
+        self.assertEqual(guard_write_pre['trigger'], 'PreToolUse')
+        self.assertEqual(guard_write_pre['matcher'], 'write')
+        guard_write_post = by_name['trackfw-credential-guard-write-post']
+        self.assertEqual(guard_write_post['trigger'], 'PostToolUse')
+        self.assertEqual(guard_write_post['matcher'], 'write')
 
         # Idempotência
         inject_kiro_hooks(self.tmp)
@@ -637,26 +669,42 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertEqual(data.get('version'), 1)
         self.assertIn('preToolUse', data.get('hooks', {}))
         self.assertIn('postToolUse', data.get('hooks', {}))
-        self.assertEqual(len(data['hooks']['preToolUse']), 2)
-        self.assertEqual(len(data['hooks']['postToolUse']), 2)
+        # ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): +2 credential-guard entries
+        # (view, create|edit) alongside the pre-existing bash one, in each of
+        # preToolUse/postToolUse.
+        self.assertEqual(len(data['hooks']['preToolUse']), 4)
+        self.assertEqual(len(data['hooks']['postToolUse']), 4)
 
         def find_by_bash(entries, bash):
             return next((e for e in entries if e.get('bash') == bash), None)
+
+        def find_by_matcher(entries, bash, matcher):
+            return next((e for e in entries if e.get('bash') == bash and e.get('matcher') == matcher), None)
 
         signal = find_by_bash(data['hooks']['preToolUse'], 'scripts/trackfw-attention-signal.sh')
         self.assertIsNotNone(signal, 'preToolUse missing attention-signal entry')
         self.assertNotIn('matcher', signal)
 
-        guard_pre = find_by_bash(data['hooks']['preToolUse'], 'scripts/trackfw-credential-guard.sh')
-        self.assertIsNotNone(guard_pre, 'preToolUse missing credential-guard entry')
-        self.assertEqual(guard_pre.get('matcher'), 'bash')
+        guard_pre = find_by_matcher(data['hooks']['preToolUse'], 'scripts/trackfw-credential-guard.sh', 'bash')
+        self.assertIsNotNone(guard_pre, 'preToolUse missing credential-guard bash entry')
+
+        guard_pre_view = find_by_matcher(data['hooks']['preToolUse'], 'scripts/trackfw-credential-guard.sh', 'view')
+        self.assertIsNotNone(guard_pre_view, 'preToolUse missing credential-guard view entry')
+
+        guard_pre_edit = find_by_matcher(data['hooks']['preToolUse'], 'scripts/trackfw-credential-guard.sh', 'create|edit')
+        self.assertIsNotNone(guard_pre_edit, 'preToolUse missing credential-guard create|edit entry')
 
         cleanup = find_by_bash(data['hooks']['postToolUse'], 'scripts/trackfw-attention-cleanup.sh')
         self.assertIsNotNone(cleanup, 'postToolUse missing attention-cleanup entry')
 
-        guard_post = find_by_bash(data['hooks']['postToolUse'], 'scripts/trackfw-credential-guard.sh')
-        self.assertIsNotNone(guard_post, 'postToolUse missing credential-guard entry')
-        self.assertEqual(guard_post.get('matcher'), 'bash')
+        guard_post = find_by_matcher(data['hooks']['postToolUse'], 'scripts/trackfw-credential-guard.sh', 'bash')
+        self.assertIsNotNone(guard_post, 'postToolUse missing credential-guard bash entry')
+
+        guard_post_view = find_by_matcher(data['hooks']['postToolUse'], 'scripts/trackfw-credential-guard.sh', 'view')
+        self.assertIsNotNone(guard_post_view, 'postToolUse missing credential-guard view entry')
+
+        guard_post_edit = find_by_matcher(data['hooks']['postToolUse'], 'scripts/trackfw-credential-guard.sh', 'create|edit')
+        self.assertIsNotNone(guard_post_edit, 'postToolUse missing credential-guard create|edit entry')
 
         # Idempotência
         inject_copilot_hooks(self.tmp)
@@ -677,12 +725,15 @@ class TestAttentionHooksInjectors(unittest.TestCase):
 
         self.assertEqual(data.get('version'), 1)
         self.assertIn('hooks', data)
-        self.assertEqual(len(data['hooks']['preToolUse']), 1)
+        # ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): +2 credential-guard entries
+        # (matcher Read, matcher Write) added to the generic preToolUse/postToolUse events
+        # alongside the unfiltered attention-signal/cleanup entry already there.
+        self.assertEqual(len(data['hooks']['preToolUse']), 3)
         self.assertEqual(
             data['hooks']['preToolUse'][0]['command'],
             'scripts/trackfw-attention-signal.sh',
         )
-        self.assertEqual(len(data['hooks']['postToolUse']), 1)
+        self.assertEqual(len(data['hooks']['postToolUse']), 3)
         self.assertEqual(
             data['hooks']['postToolUse'][0]['command'],
             'scripts/trackfw-attention-cleanup.sh',
@@ -698,12 +749,23 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             'scripts/trackfw-credential-guard.sh',
         )
 
+        def find_guard(entries, matcher):
+            return next(
+                (e for e in entries if e.get('command') == 'scripts/trackfw-credential-guard.sh' and e.get('matcher') == matcher),
+                None,
+            )
+
+        self.assertIsNotNone(find_guard(data['hooks']['preToolUse'], 'Read'), 'preToolUse missing credential-guard Read entry')
+        self.assertIsNotNone(find_guard(data['hooks']['preToolUse'], 'Write'), 'preToolUse missing credential-guard Write entry')
+        self.assertIsNotNone(find_guard(data['hooks']['postToolUse'], 'Read'), 'postToolUse missing credential-guard Read entry')
+        self.assertIsNotNone(find_guard(data['hooks']['postToolUse'], 'Write'), 'postToolUse missing credential-guard Write entry')
+
         # Idempotência
         inject_cursor_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
-        self.assertEqual(len(data2['hooks']['preToolUse']), 1)
-        self.assertEqual(len(data2['hooks']['postToolUse']), 1)
+        self.assertEqual(len(data2['hooks']['preToolUse']), 3)
+        self.assertEqual(len(data2['hooks']['postToolUse']), 3)
         self.assertEqual(len(data2['hooks']['beforeShellExecution']), 1)
         self.assertEqual(len(data2['hooks']['afterShellExecution']), 1)
 

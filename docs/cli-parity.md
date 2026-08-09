@@ -2469,8 +2469,23 @@ que carrega, de uma vez, o marcador de detecção dos 6 CLIs
 `InjectHooksDetected`/`injectHooksDetected`/`inject_hooks_detected`), o que
 mantém o gate em ~3 execuções reais de CLI (isolamento por CLI mediria ~15s a
 mais em `make quality` sem ganho de detecção: os guards de vacuidade abaixo já
-cobrem o caso de um detector que passa a pular um CLI silenciosamente). Para
-cada um dos 6 arquivos de hook gerados, dois guards de vacuidade (P2) rodam
+cobrem o caso de um detector que passa a pular um CLI silenciosamente).
+
+**`HOME` isolado por runtime (ROADMAP-2026-08-08 ML-4A, P3).** `run_discover_init` cria um
+diretório vazio dedicado sob `$WORK` (`<fixture-dir>.home`) e passa `HOME="$home_dir"` para as 3
+invocações — mesmo padrão de `check-update-parity.sh` (`run_update`/`run_init`/
+`install_agent_*`). Antes desta correção o gate lia o `$HOME` **real** de quem o executava: numa
+máquina onde o credential-guard já foi instalado globalmente (via `trackfw update harness`), o
+dedup de projeto (ver "Agent hooks por CLI" e achado #6 acima) pulava silenciosamente a entrada de
+credential-guard de projeto, e o guard de vacuidade `credential-guard-present` abaixo reprovava
+os 6 CLIs × 3 runtimes de forma idêntica — um falso negativo ambiental, não uma regressão de
+código. Ver `vault/notes/check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08.md`.
+Efeito colateral aceito: este gate agora só exercita o caminho "sem guard global instalado"; o
+caminho de dedup (entrada de projeto pulada) é coberto separadamente por
+`internal/generators/credential_guard_dedup_test.go` (Go, 9 testes) e equivalentes Node/Python
+(achado #6 acima), não por um gate shell.
+
+Para cada um dos 6 arquivos de hook gerados, dois guards de vacuidade (P2) rodam
 antes de qualquer diff: (1) o arquivo existe e não está vazio nos 3 runtimes;
 (2) o arquivo referencia `scripts/trackfw-credential-guard.sh` pelo menos uma
 vez em cada runtime — sem isso, uma regressão que removesse a entrada de
@@ -2489,7 +2504,14 @@ A prova negativa (P4) está em `scripts/check-gates-falsify.sh` (Cenário 44) �
 corrompe o `matcher` da entrada `trackfw-credential-guard-post` do wiring do
 Kiro no literal Node.js (`npm/src/generators/hooks.js`, de `'shell'` para
 `'execute_bash'`) numa cópia isolada do repositório e asserta que o gate
-reprova apontando `$.hooks[3].matcher` no diagnóstico.
+reprova apontando `$.hooks[3].matcher` no diagnóstico. **Gap conhecido, não
+fechado por este ML:** o Cenário 44 falsifica apenas o comparador estrutural
+(`compare_json`); o segundo guard de vacuidade (P2) —
+`credential-guard-present`, o mesmo que capturou o falso negativo ambiental
+corrigido acima — não tem prova negativa própria em `check-gates-falsify.sh`.
+Reportado a `trackfw_architect`/Zeus como item em aberto; não corrigido aqui
+por estar fora do escopo declarado deste ML (gate final + docs, não
+hardening de P4).
 
 ## Hooks GLOBAIS de credential-guard (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.gemini/settings.json`, `~/.cursor/hooks.json`, `~/.copilot/settings.json`, `~/.kiro/hooks/trackfw-credential-guard.json`) — paridade estrutural (ROADMAP-2026-08-06, ML-4A)
 
@@ -2538,6 +2560,80 @@ wiring GLOBAL do Kiro no literal Python
 (`pypi/trackfw/commands/update_harness.py`, de `"shell"` para
 `"execute_bash"`) numa cópia isolada do repositório e asserta que o gate
 reprova apontando `$.hooks[1].matcher` no diagnóstico.
+
+## Modo default do credential-guard GLOBAL — `warn` → `block` (ADR-2026-08-06 emenda 6, ROADMAP-2026-08-08 Wave 1)
+
+**Supersede o achado transversal #1 da seção "Suporte por CLI — visão consolidada, escopo GLOBAL"
+acima** ("Modo sempre `warn` em escopo global, sem config adicional"), que descrevia a decisão
+original da ADR-2026-08-06. `ADR-2026-08-06` emenda 6 (2026-08-08) reverteu essa decisão: um guard
+opt-in que nunca bloqueia por padrão é uma falsa sensação de proteção — o usuário que já rodou
+`trackfw update harness --targets <tool>-credential-guard` demonstrou intenção explícita de ter o
+mecanismo ativo.
+
+`scripts/trackfw-credential-guard.sh` tem duas variantes de texto — **escopo de projeto** (gerado
+por `trackfw init`/`discover`/`update` dentro do repositório) e **escopo global**
+(`~/.trackfw/scripts/trackfw-credential-guard.sh`, gerado por `trackfw update harness`) — que
+compartilham a mesma leitura de `credential_guard.mode` (`credentialGuardModeResolution` em Go,
+equivalentes em Node/Python) mas divergem no **fallback** quando essa chave não está presente:
+
+| Escopo | Constante (Go) | Fallback (`DEFAULT_MODE`) sem `trackfw.yaml`/sem a chave | `trackfw.yaml` com `credential_guard.mode` explícito no cwd |
+|---|---|---|---|
+| Projeto | `credentialGuardProjectTail` | `warn` — **inalterado** | Respeitado (`warn` ou `block`) — inalterado |
+| Global | `credentialGuardGlobalTail` | `block` — **mudança de comportamento** (era `warn`) | Respeitado (`warn` ou `block`) — mesma leitura da variante de projeto |
+
+Pontos pinados:
+
+- **A leitura de `credential_guard.mode` é a mesma nos dois escopos** — o script global lê
+  `trackfw.yaml` **do cwd de onde o hook disparou** (o projeto atual), não de um arquivo de config
+  global (`~/.trackfw/config.yaml` continua não existindo — decisão mantida do ML-1A original: não
+  vale a complexidade de uma segunda fonte de configuração só para isto). Um usuário que já
+  configurou `credential_guard.mode: warn` explicitamente em `trackfw.yaml` **não vê nenhuma
+  mudança de comportamento** com esta REQ.
+- **Só o fallback (ausência de `trackfw.yaml`, ou `trackfw.yaml` sem a chave) muda**, e só no
+  escopo global: passa de `warn` para `block` — abortar a tool call (exit 2) em vez de apenas
+  logar um attention signal.
+- **`ROADMAP_DIR` em escopo global permanece o caminho fixo `docs/roadmaps`** (sem ler
+  `roadmap_dir:` de `trackfw.yaml`, já que não há garantia de o arquivo existir) e o attention
+  signal só é gravado se esse diretório já existir — inalterado por esta REQ, documentado aqui só
+  para não confundir com a resolução de `MODE`, que é independente.
+- Implementado byte-idêntico nos 3 stacks: `credentialGuardProjectTail`/`credentialGuardGlobalTail`
+  (Go, `internal/generators/scaffold.go`), as constantes homônimas em
+  `npm/src/generators/hooks.js`, e `_CG_PROJECT_TAIL`/`_CG_GLOBAL_TAIL` (Python,
+  `pypi/trackfw/generators/init_gen.py`) — cada bloco de resolução de `MODE` replicado como texto
+  literal idêntico em vez de extraído para uma constante compartilhada concatenada, por causa da
+  restrição do gate de paridade documentada em
+  `vault/notes/credential-guard-parity-test-extractor-rejects-string-concatenation-2026-08-08.md`.
+
+## Cobertura de matchers Read/Write/Edit do credential-guard por CLI (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2)
+
+Antes desta REQ, o wiring por-projeto e global do credential-guard só interceptava o **shell tool**
+de cada CLI (`Bash`/`apply_patch`/`run_shell_command`/etc. — ver seções "Codex wiring (ML-2B)",
+"Gemini CLI wiring (ML-2C)" etc. acima). Um agente podia contornar o guard sem passar por um shell:
+lendo um segredo com a ferramenta de leitura nativa (`Read`, `read_file`, `view`, ...) ou
+materializando-o com a ferramenta de escrita/edição nativa (`Write`/`Edit`, `write_file`,
+`create`/`edit`, `apply_patch`, ...). A ADR-2026-08-06 emenda 7 fecha essa lacuna: cada
+`InjectXHooks`/`injectXHooks`/`inject_x_hooks` agora também registra o matcher nativo de
+leitura e de escrita/edição de cada CLI apontando para o mesmo
+`scripts/trackfw-credential-guard.sh`, sujeito ao mesmo dedup contra o wiring global
+(`globalCredentialGuardInstalled<CLI>()`, seção "Agent hooks por CLI" acima) que já existia para o
+shell tool.
+
+| CLI | Matcher de leitura | Matcher de escrita/edição | Observação |
+|---|---|---|---|
+| Claude Code | `Read` | `Write\|Edit` | `PreToolUse`/`PostToolUse`, mesmo `mergeClaudeHookArray` já usado para `Bash` — `internal/generators/agentfiles.go:InjectClaudeHooks` |
+| Codex | — (sem matcher de leitura) | `apply_patch` | **Limitação documentada, não workaround**: Codex não expõe um matcher de ferramenta de leitura interceptável — confirmado contra `https://learn.chatgpt.com/docs/hooks` (2026-08-08). Escrita/edição é coberta via `apply_patch` (aliases documentados Edit/Write) — `InjectCodexHooks` |
+| Gemini CLI | `read_file\|read_many_files` | `write_file\|replace` | `BeforeTool`/`AfterTool`, mesmo padrão de matcher `\|` já usado para `run_shell_command` — `InjectGeminiHooks` |
+| Kiro | `read` | `write` | Aliases de categoria de ferramenta documentados pelo Kiro; hooks dedicados `trackfw-credential-guard-read-pre`/`-read-post`/`-write-pre`/`-write-post`, mesmo `matcher: "shell"` da entrada de Bash generalizado para `"read"`/`"write"` — `InjectKiroHooks` |
+| GitHub Copilot | `view` | `create\|edit` | Mapeamento `toolName` confirmado contra `https://docs.github.com/en/copilot/reference/hooks-reference`: `view -> Read`, `create -> Write`, `edit -> Edit` — mesma convenção de nome de ferramenta em minúsculo já usada para `bash` — `InjectCopilotHooks` |
+| Cursor | `Read` (evento `preToolUse`/`postToolUse`) | `Write` (evento `preToolUse`/`postToolUse`) | Cursor não tem um evento shell-específico para leitura/escrita — usa os eventos genéricos `preToolUse`/`postToolUse` (distintos de `beforeShellExecution`/`afterShellExecution`, que só disparam para o shell tool), com `mergeCursorGuardMatcherEntry` filtrando por `toolName` — `InjectCursorHooks` |
+
+Implementado identicamente nos 3 stacks (`internal/generators/agentfiles.go`,
+`npm/src/generators/hooks.js`, `pypi/trackfw/generators/hooks.py`), verificado por
+`scripts/check-agent-hooks-parity.sh` (escopo de projeto) e `scripts/check-harness-hooks-parity.sh`
+(escopo global) — ver as duas seções "... paridade estrutural" acima para o detalhamento dos gates.
+Cobertura ponta-a-ponta (matcher gerado → script efetivamente bloqueando/alertando um payload real
+de tool call Read/Write) é testada em `npm/tests/credential_guard.test.js` e
+`pypi/tests/test_credential_guard.py` (cenário (b) da REQ).
 
 ## Princípios de design de gates (P1–P4)
 

@@ -174,8 +174,6 @@ elif printf '%s' "$INPUT" | grep -qE "$AWS_KEY_PATTERN"; then
   MATCH="AWS access key"
 fi
 
-[ -n "$MATCH" ] || exit 0
-
 # The raw payload is JSON: any double quote inside the underlying tool_input.command is
 # escaped as \\" -- unescape those before scanning for redirect targets, or a quoted target
 # like "$TMPFILE" is seen as starting with a literal backslash instead of a variable
@@ -206,6 +204,57 @@ is_ephemeral_target() {
 
 REDIRECTS=$(printf '%s' "$RAW" | grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+' || true)
 
+# Second detection layer: only runs when the payload scan above found nothing -- keeps the common
+# case (match already found) cheap and avoids reading files unnecessarily. Files above the size cap
+# are skipped silently.
+scan_file_for_pattern() {
+  local path size
+  path=$(printf '%s' "$1" | tr -d "\\"'" | sed -E 's/[},]+$//')
+  [ -n "$path" ] && [ -f "$path" ] || return 1
+  size=$(wc -c < "$path" 2>/dev/null | tr -d '[:space:]')
+  size=\${size:-0}
+  [ "$size" -lt 1048576 ] || return 1
+  if grep -qE "$JWT_PATTERN" "$path" 2>/dev/null; then
+    MATCH="JWT"
+    return 0
+  fi
+  if grep -qE "$AWS_KEY_PATTERN" "$path" 2>/dev/null; then
+    MATCH="AWS access key"
+    return 0
+  fi
+  return 1
+}
+
+if [ -z "$MATCH" ] && [ -n "$REDIRECTS" ]; then
+  while IFS= read -r line; do
+    if [ -z "$line" ]; then
+      continue
+    fi
+    target=$(printf '%s' "$line" | sed -E 's/^[0-9]?>>?[[:space:]]*//')
+    if ! is_ephemeral_target "$target"; then
+      scan_file_for_pattern "$target" && break
+    fi
+  done <<< "$REDIRECTS"
+fi
+
+if [ -z "$MATCH" ]; then
+  CMD_LINE=$(printf '%s' "$RAW" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
+  if [ -n "$CMD_LINE" ]; then
+    set -- $CMD_LINE
+    cmd_name="\${1:-}"
+    case "$cmd_name" in
+      cat|head|tail|jq|grep)
+        shift
+        for token in "$@"; do
+          scan_file_for_pattern "$token" && break
+        done
+        ;;
+    esac
+  fi
+fi
+
+[ -n "$MATCH" ] || exit 0
+
 HAS_REDIRECT=0
 EXEMPT=1
 if [ -n "$REDIRECTS" ]; then
@@ -227,10 +276,22 @@ fi
 
 `
 
-const CG_PROJECT_TAIL = `MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\\"'" || true)
+// Resolução de MODE (grep de `credential_guard.mode` em trackfw.yaml + fallback) é inlined,
+// idêntica em CG_PROJECT_TAIL (fallback "warn") e CG_GLOBAL_TAIL (fallback "block") — ao invés de
+// extrair para uma constante JS compartilhada e concatenar (como o Go faz via
+// credentialGuardModeResolution/DEFAULT_MODE), aqui o texto é replicado como literal em cada
+// template literal: o gate de paridade Go/Node/Python
+// (internal/generators/credential_guard_test.go, getNodeSourceBlock) extrai cada constante via
+// regex de um único bloco `` `const NAME = \`...\`` `` sem suportar concatenação de string —
+// concatenar quebraria a extração estática. Nunca editar a lógica de resolução em só um dos dois
+// blocos sem replicar no outro (ML-1B, ADR-2026-08-06 emenda 6). Mirrors Go's
+// credentialGuardModeResolution (semântica idêntica, forma sintática diferente por essa restrição
+// do parser de paridade).
+const CG_PROJECT_TAIL = `DEFAULT_MODE="warn"
+MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\\"'" || true)
 case "$MODE" in
   warn|block) ;;
-  *) MODE="warn" ;;
+  *) MODE="$DEFAULT_MODE" ;;
 esac
 
 if [ "$MODE" = "block" ]; then
@@ -259,10 +320,42 @@ printf '{"tool":"credential-guard","message":"%s","level":"action_required","tim
 exit 0
 `
 
-// Escopo global: modo sempre "warn" (ver ADR-2026-08-06/ROADMAP-2026-08-06 Wave 1 — decisão "b",
-// sem ~/.trackfw/config.yaml) e ROADMAP_DIR fixo em "docs/roadmaps" relativo ao cwd, só grava o
-// attention signal se esse diretório já existir (não cria docs/roadmaps num projeto qualquer).
-const CG_GLOBAL_TAIL = `MODE="warn"
+// CG_GLOBAL_TAIL é a contraparte de CG_PROJECT_TAIL para o escopo global
+// (~/.trackfw/scripts/trackfw-credential-guard.sh, instalado via `trackfw update harness`).
+//
+// Decisão (ML-1B, ver ADR-2026-08-06 emenda 6 de 2026-08-08 e ROADMAP-2026-08-08, Wave 1): o modo
+// em escopo global reusa a MESMA leitura de `credential_guard.mode` de trackfw.yaml que
+// CG_PROJECT_TAIL já faz (mesma resolução, replicada aqui — ver o comentário de CG_PROJECT_TAIL
+// sobre por que não é extraída para uma constante compartilhada em Node) — sem exigir trackfw.yaml
+// existir (não há o guard `[ -f trackfw.yaml ] || exit 0` da variante de projeto: o objetivo do
+// escopo global é proteger qualquer projeto, com ou sem trackfw.yaml). Quando o hook global roda a
+// partir do cwd de um projeto com trackfw.yaml e credential_guard.mode explícito, esse valor é
+// respeitado (warn ou block) — nenhuma mudança de comportamento para quem já definiu mode: warn
+// explicitamente. Em qualquer outro caso (sem trackfw.yaml, ou trackfw.yaml sem essa chave), o
+// fallback deixa de ser "warn" e passa a ser "block": um guard opt-in que nunca bloqueia por
+// padrão é uma falsa sensação de proteção — o usuário que rodou `trackfw update harness` já
+// demonstrou intenção explícita de ter o mecanismo ativo. Supersede a decisão original ("modo
+// global sempre warn", opção "b" avaliada na ADR original) — não cria ~/.trackfw/config.yaml nem
+// nenhuma outra segunda fonte de configuração só para isto.
+//
+// ROADMAP_DIR em escopo global: como não há garantia de trackfw.yaml para ler `roadmap_dir:`, o
+// script usa o caminho padrão fixo "docs/roadmaps" relativo ao cwd de onde o hook foi disparado, e
+// só grava o attention signal se esse diretório já existir (e só em modo warn — modo block nunca
+// grava o attention signal, mesma decisão da variante de projeto). Não cria "docs/roadmaps" em um
+// projeto aleatório só para sinalizar isso — isso pareceria ao usuário que o trackfw foi
+// "instalado" nesse projeto, o que não é verdade. O texto de warning/block em stderr acontece
+// sempre (visível no output do CLI/hook), independente de o diretório de attention existir.
+const CG_GLOBAL_TAIL = `DEFAULT_MODE="block"
+MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\\"'" || true)
+case "$MODE" in
+  warn|block) ;;
+  *) MODE="$DEFAULT_MODE" ;;
+esac
+
+if [ "$MODE" = "block" ]; then
+  echo "trackfw-credential-guard: blocked - possible $MATCH detected in tool payload." >&2
+  exit 2
+fi
 
 echo "trackfw-credential-guard: warning - possible $MATCH detected in tool payload." >&2
 
@@ -459,14 +552,21 @@ function injectClaudeHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'AskUserQuestion', SIGNAL_CMD)
-  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
-  // credential-guard when the global one is already installed.
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
+  // Wave 2 to Read/Write|Edit): skip project-scope credential-guard when the global one is
+  // already installed for this CLI.
   if (!globalCredentialGuardInstalledClaude()) {
     data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
+    // ADR-2026-08-06 emenda 7 (2026-08-08): Read/Write/Edit coverage — extraction via direct
+    // file read, or materialization via write/edit, never went through the hook before.
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Read', GUARD_CMD)
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Write|Edit', GUARD_CMD)
   }
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'AskUserQuestion', CLEANUP_CMD)
   if (!globalCredentialGuardInstalledClaude()) {
     data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
+    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Read', GUARD_CMD)
+    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Write|Edit', GUARD_CMD)
   }
 
   writeJSON(filePath, data)
@@ -483,6 +583,12 @@ function injectClaudeHooks(cwd) {
 // are enabled by default (no `[features] hooks = true`/`codex_hooks` opt-in
 // needed -- that flag exists only to turn hooks OFF), and PreToolUse blocking
 // uses exit code 2 + stderr (matching trackfw-credential-guard.sh's "block" mode).
+//
+// Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2, 2026-08-08):
+// Codex has NO dedicated, interceptable read-tool matcher -- confirmed against
+// https://learn.chatgpt.com/docs/hooks -- so no read matcher is added here; this is a documented
+// limitation (also called out in docs/cli-parity.md), not a workaround. Write/edit materialization
+// IS covered via the `apply_patch` matcher (documented aliases `Edit`/`Write`).
 // ---------------------------------------------------------------------------
 
 function injectCodexHooks(cwd) {
@@ -491,15 +597,18 @@ function injectCodexHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.PermissionRequest = mergeClaudeHookArray(data.hooks.PermissionRequest, '.*', SIGNAL_CMD)
-  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
-  // credential-guard when the global one is already installed.
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
+  // Wave 2 to apply_patch): skip project-scope credential-guard when the global one is already
+  // installed for this CLI.
   const skipCodexCG = globalCredentialGuardInstalledCodex()
   if (!skipCodexCG) {
     data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'apply_patch', GUARD_CMD)
   }
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, '.*', CLEANUP_CMD)
   if (!skipCodexCG) {
     data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
+    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'apply_patch', GUARD_CMD)
   }
 
   writeJSON(filePath, data)
@@ -523,6 +632,12 @@ function injectCodexHooks(cwd) {
 // (matcher "*") is the pre-existing attention-cleanup wiring, unrelated to the new
 // credential-guard entry added as a separate array entry (different matcher) in the
 // same event.
+//
+// Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2, 2026-08-08): the
+// Gemini CLI tools table (https://geminicli.com/docs/reference/tools) documents `read_file`/
+// `read_many_files` as the file-read tools and `write_file`/`replace` as the file-write/edit
+// tools -- matcher below follows the same regex-over-tool_name convention already used for
+// `run_shell_command`.
 // ---------------------------------------------------------------------------
 
 function injectGeminiHooks(cwd) {
@@ -531,15 +646,20 @@ function injectGeminiHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
   data.hooks.Notification = mergeClaudeHookArray(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD)
-  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
+  // Wave 2 to read_file|read_many_files / write_file|replace): skip project-scope
   // credential-guard when the global one is already installed.
   const skipGeminiCG = globalCredentialGuardInstalledGemini()
   if (!skipGeminiCG) {
     data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD)
+    data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'read_file|read_many_files', GUARD_CMD)
+    data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'write_file|replace', GUARD_CMD)
   }
   data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, '*', CLEANUP_CMD)
   if (!skipGeminiCG) {
     data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD)
+    data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD)
+    data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'write_file|replace', GUARD_CMD)
   }
 
   writeJSON(filePath, data)
@@ -586,8 +706,9 @@ function injectKiroHooks(cwd) {
     },
   ]
 
-  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
-  // credential-guard entries when the global one is already installed.
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
+  // Wave 2 to read/write): skip project-scope credential-guard entries when the global one is
+  // already installed.
   if (!globalCredentialGuardInstalledKiro()) {
     hooks.push(
       {
@@ -602,6 +723,36 @@ function injectKiroHooks(cwd) {
         description: 'Warns on possible plaintext credential materialization after a shell command executes',
         trigger: 'PostToolUse',
         matcher: 'shell',
+        action: { type: 'command', command: GUARD_CMD },
+      },
+      // Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): "read" and "write" are the
+      // documented Kiro tool-category aliases (fs_read/fs_write), same pattern as "shell" above.
+      {
+        name: 'trackfw-credential-guard-read-pre',
+        description: 'Blocks/warns on possible plaintext credential materialization before a file read',
+        trigger: 'PreToolUse',
+        matcher: 'read',
+        action: { type: 'command', command: GUARD_CMD },
+      },
+      {
+        name: 'trackfw-credential-guard-read-post',
+        description: 'Warns on possible plaintext credential materialization after a file read',
+        trigger: 'PostToolUse',
+        matcher: 'read',
+        action: { type: 'command', command: GUARD_CMD },
+      },
+      {
+        name: 'trackfw-credential-guard-write-pre',
+        description: 'Blocks/warns on possible plaintext credential materialization before a file write',
+        trigger: 'PreToolUse',
+        matcher: 'write',
+        action: { type: 'command', command: GUARD_CMD },
+      },
+      {
+        name: 'trackfw-credential-guard-write-post',
+        description: 'Warns on possible plaintext credential materialization after a file write',
+        trigger: 'PostToolUse',
+        matcher: 'write',
         action: { type: 'command', command: GUARD_CMD },
       },
     )
@@ -638,17 +789,27 @@ function injectKiroHooks(cwd) {
 // regardless.
 // ---------------------------------------------------------------------------
 
+// Read/Write coverage (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2, 2026-08-08):
+// https://docs.github.com/en/copilot/reference/hooks-reference confirms the camelCase
+// preToolUse/postToolUse toolName mapping `view -> Read`, `create -> Write`, `edit -> Edit` --
+// "view" is the read matcher, "create|edit" the write/edit matcher, same lowercase-runtime-name
+// convention already used for "bash" above.
 function injectCopilotHooks(cwd) {
   const filePath = path.join(cwd, '.github', 'hooks', 'trackfw-attention.json')
 
   const preToolUse = [{ type: 'command', bash: SIGNAL_CMD, cwd: '.', timeoutSec: 10 }]
   const postToolUse = [{ type: 'command', bash: CLEANUP_CMD, cwd: '.', timeoutSec: 10 }]
 
-  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
-  // credential-guard entries when the global one is already installed.
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
+  // Wave 2 to view / create|edit): skip project-scope credential-guard entries when the global
+  // one is already installed.
   if (!globalCredentialGuardInstalledCopilot()) {
     preToolUse.push({ type: 'command', matcher: 'bash', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
+    preToolUse.push({ type: 'command', matcher: 'view', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
+    preToolUse.push({ type: 'command', matcher: 'create|edit', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
     postToolUse.push({ type: 'command', matcher: 'bash', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
+    postToolUse.push({ type: 'command', matcher: 'view', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
+    postToolUse.push({ type: 'command', matcher: 'create|edit', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
   }
 
   const data = {
@@ -745,7 +906,8 @@ function injectCursorHooks(cwd) {
   }
   removeKnownCommandFromLegacyTopLevelArray(data, 'postToolUse', CLEANUP_CMD)
 
-  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A): skip project-scope
+  // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
+  // Wave 2 to Read/Write via the generic preToolUse/postToolUse events): skip project-scope
   // credential-guard entries when the global one is already installed.
   if (!globalCredentialGuardInstalledCursor()) {
     if (!Array.isArray(data.hooks.beforeShellExecution)) data.hooks.beforeShellExecution = []
@@ -756,6 +918,29 @@ function injectCursorHooks(cwd) {
     if (!Array.isArray(data.hooks.afterShellExecution)) data.hooks.afterShellExecution = []
     if (!hasEntry(data.hooks.afterShellExecution, 'command', GUARD_CMD)) {
       data.hooks.afterShellExecution.push({ command: GUARD_CMD })
+    }
+
+    // Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): wired via the generic
+    // preToolUse/postToolUse events (distinct from beforeShellExecution/afterShellExecution,
+    // which only ever fire for Shell) with an explicit `matcher`, so these entries never fire
+    // for the same tool call the unfiltered attention-signal/cleanup entries already handle
+    // above in this same array. hasEntry (command-only) is not enough here -- both the
+    // unfiltered signal entry and these matcher-scoped guard entries share the same array, so
+    // dedup must also check `matcher`.
+    const hasGuardMatcherEntry = (arr, matcher) =>
+      Array.isArray(arr) && arr.some(e => e && e.command === GUARD_CMD && e.matcher === matcher)
+
+    if (!hasGuardMatcherEntry(data.hooks.preToolUse, 'Read')) {
+      data.hooks.preToolUse.push({ command: GUARD_CMD, matcher: 'Read' })
+    }
+    if (!hasGuardMatcherEntry(data.hooks.preToolUse, 'Write')) {
+      data.hooks.preToolUse.push({ command: GUARD_CMD, matcher: 'Write' })
+    }
+    if (!hasGuardMatcherEntry(data.hooks.postToolUse, 'Read')) {
+      data.hooks.postToolUse.push({ command: GUARD_CMD, matcher: 'Read' })
+    }
+    if (!hasGuardMatcherEntry(data.hooks.postToolUse, 'Write')) {
+      data.hooks.postToolUse.push({ command: GUARD_CMD, matcher: 'Write' })
     }
   }
 

@@ -187,6 +187,77 @@ class TestCredentialGuardScriptBehavior(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertFalse(self._attention_exists())
 
+    def test_payload_write_com_jwt_no_content_e_capturado(self):
+        # ML-3C cenário (b): payload de tool call Write/Edit com JWT no campo de conteúdo
+        # (materialização em disco), não numa string "command" -- o script escaneia o INPUT
+        # bruto inteiro antes de procurar por "command", então já captura aqui; este teste prova
+        # isso a nível de comportamento do script, complementando os testes de wiring de matcher
+        # em test_generators_init.py (inject_claude_hooks etc.), que só verificam que a entrada
+        # foi registrada no hooks.json, sem invocar o script.
+        self._write_yaml()
+        payload = {
+            "tool_name": "Write",
+            "tool_input": {"file_path": "/tmp/out.txt", "content": f"token={SYNTHETIC_JWT}"},
+        }
+        code, _out, err = self._run(payload)
+        self.assertEqual(code, 0)
+        self.assertIn("JWT", err)
+        self.assertTrue(self._attention_exists())
+
+    def test_payload_read_post_com_aws_key_no_tool_response_e_capturado(self):
+        # Mesmo cenário (b), variante Read/PostToolUse: o segredo aparece no tool_response (saída
+        # da leitura), não no tool_input -- também capturado pelo scan do INPUT bruto.
+        self._write_yaml()
+        payload = {
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/tmp/secret.txt"},
+            "tool_response": {"content": "AKIAABCDEFGHIJKLMNOP"},
+        }
+        code, _out, err = self._run(payload)
+        self.assertEqual(code, 0)
+        self.assertIn("AWS", err)
+        self.assertTrue(self._attention_exists())
+
+    def test_segunda_camada_detecta_jwt_via_cat_de_arquivo_referenciado(self):
+        # ML-3C cenário (c): comando Bash que referencia um arquivo com segredo por caminho, sem
+        # o segredo literal no comando -- padrão do incidente real da REQ (`cat arquivo`).
+        self._write_yaml()
+        fixture_path = os.path.join(self.tmpdir, "fixture-com-jwt.txt")
+        with open(fixture_path, "w", encoding="utf-8") as f:
+            f.write(f"Authorization: Bearer {SYNTHETIC_JWT}\n")
+        code, _out, err = self._run(
+            {"tool_name": "Bash", "tool_input": {"command": f"cat {fixture_path}"}}
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("JWT", err)
+        self.assertTrue(self._attention_exists())
+
+    def test_segunda_camada_detecta_aws_key_via_head_de_arquivo_referenciado(self):
+        # Mesmo cenário (c), variante `head -c 50 arquivo` (com flag antes do caminho) e AWS key.
+        self._write_yaml()
+        fixture_path = os.path.join(self.tmpdir, "arquivo-com-aws-key.txt")
+        with open(fixture_path, "w", encoding="utf-8") as f:
+            f.write("AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP\n")
+        code, _out, err = self._run(
+            {"tool_name": "Bash", "tool_input": {"command": f"head -c 50 {fixture_path}"}}
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("AWS", err)
+        self.assertTrue(self._attention_exists())
+
+    def test_segunda_camada_nao_dispara_para_comando_fora_da_allowlist(self):
+        # Controle negativo: `ls` não está na allowlist (cat/head/tail/jq/grep) da segunda
+        # camada -- referenciar o mesmo arquivo com segredo não deveria disparar o scan.
+        self._write_yaml()
+        fixture_path = os.path.join(self.tmpdir, "fixture-nao-escaneada.txt")
+        with open(fixture_path, "w", encoding="utf-8") as f:
+            f.write(f"{SYNTHETIC_JWT}\n")
+        code, _out, _err = self._run(
+            {"tool_name": "Bash", "tool_input": {"command": f"ls {fixture_path}"}}
+        )
+        self.assertEqual(code, 0)
+        self.assertFalse(self._attention_exists())
+
     def test_cleanup_de_attention_signal_nao_apaga_arquivo_dedicado(self):
         # trackfw-attention-cleanup.sh apaga incondicionalmente $ROADMAP_DIR/.trackfw-attention.json --
         # em harnesses que rodam hooks do mesmo evento concorrentemente (ex.: Codex CLI, PostToolUse
@@ -270,19 +341,47 @@ class TestGlobalCredentialGuardScriptBehavior(unittest.TestCase):
 
     def test_detecta_jwt_fora_de_qualquer_projeto_trackfw(self):
         # Ao contrário da variante de projeto, o script global NÃO é no-op sem trackfw.yaml -- esse
-        # é o propósito da mudança (proteção cross-project).
+        # é o propósito da mudança (proteção cross-project). Sem trackfw.yaml no cwd, o fallback de
+        # modo é "block" (ADR-2026-08-06 emenda 6, ROADMAP-2026-08-08 ML-1C).
         code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 2, "modo block (fallback sem trackfw.yaml)")
         self.assertIn("JWT", err)
 
-    def test_sempre_modo_warn_mesmo_com_trackfw_yaml_mode_block_no_cwd(self):
+    def test_trackfw_yaml_presente_sem_credential_guard_mode_bloqueia_tambem(self):
+        # ML-3C cenário (a), variante complementar a test_detecta_jwt_fora_de_qualquer_projeto_
+        # trackfw: não é só a AUSÊNCIA do arquivo trackfw.yaml que cai no fallback block -- um
+        # trackfw.yaml presente mas sem a chave credential_guard.mode também deve cair no mesmo
+        # fallback "block" (não em "warn").
+        with open(os.path.join(self.cwd, "trackfw.yaml"), "w", encoding="utf-8") as f:
+            f.write("roadmap_dir: docs/roadmaps\n")
+        code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
+        self.assertEqual(code, 2, "trackfw.yaml presente mas sem credential_guard.mode -> fallback block")
+        self.assertIn("blocked", err)
+
+    def test_respeita_mode_block_explicito_no_trackfw_yaml_do_cwd(self):
+        # O script global reusa a mesma leitura de credential_guard.mode de trackfw.yaml que a
+        # variante de projeto já faz -- quando o cwd tem trackfw.yaml com mode explícito, esse
+        # valor é respeitado.
         with open(os.path.join(self.cwd, "trackfw.yaml"), "w", encoding="utf-8") as f:
             f.write("credential_guard:\n  mode: block\n")
         code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
-        self.assertEqual(code, 0, "script global nunca deve bloquear (sempre warn)")
+        self.assertEqual(code, 2, "trackfw.yaml com mode: block explícito")
+        self.assertIn("blocked", err)
+
+    def test_respeita_mode_warn_explicito_no_trackfw_yaml_do_cwd(self):
+        # Sentido contrário: mode: warn explícito continua produzindo warn (exit 0) -- não é o
+        # fallback que muda de warn para block, é só o default sem chave/arquivo.
+        with open(os.path.join(self.cwd, "trackfw.yaml"), "w", encoding="utf-8") as f:
+            f.write("credential_guard:\n  mode: warn\n")
+        code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
+        self.assertEqual(code, 0, "trackfw.yaml com mode: warn explícito")
         self.assertIn("warning", err)
 
     def test_attention_so_escrita_quando_docs_roadmaps_ja_existe(self):
+        # attention signal só é gravado em modo warn -- usa mode: warn explícito no cwd para
+        # exercitar essa checagem independente do fallback default de modo global (block).
+        with open(os.path.join(self.cwd, "trackfw.yaml"), "w", encoding="utf-8") as f:
+            f.write("credential_guard:\n  mode: warn\n")
         code, _out, err = self._run({"tool_name": "Bash", "tool_input": {"command": f"echo {SYNTHETIC_JWT}"}})
         self.assertEqual(code, 0)
         self.assertIn("JWT", err)
@@ -294,6 +393,9 @@ class TestGlobalCredentialGuardScriptBehavior(unittest.TestCase):
         self.assertTrue(self._attention_exists())
 
     def test_deteccao_identica_a_variante_de_projeto_para_aws_key(self):
+        # Prova que a detecção (mesmo payload sintético) é idêntica entre projeto e global -- os
+        # modos default divergem por design (projeto: warn; global sem trackfw.yaml: block), então
+        # os exit codes divergem, mas ambos devem mencionar AWS.
         project_dir = tempfile.mkdtemp()
         try:
             _generate_credential_guard_script(project_dir)
@@ -309,8 +411,8 @@ class TestGlobalCredentialGuardScriptBehavior(unittest.TestCase):
             global_code, _out, global_err = self._run(
                 {"tool_name": "Bash", "tool_input": {"command": "echo AKIAABCDEFGHIJKLMNOP"}}
             )
-            self.assertEqual(project_proc.returncode, 0)
-            self.assertEqual(global_code, 0)
+            self.assertEqual(project_proc.returncode, 0, "projeto (fallback warn)")
+            self.assertEqual(global_code, 2, "global sem trackfw.yaml (fallback block)")
             self.assertIn("AWS", project_proc.stderr)
             self.assertIn("AWS", global_err)
         finally:

@@ -331,24 +331,34 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   // 2. Primeira injeção
   injectClaudeHooks(tmpDir)
   let data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
-  assert.equal(data.hooks.PreToolUse.length, 3)
+  // ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): PreToolUse/PostToolUse each gain two
+  // new credential-guard entries (Read, Write|Edit) alongside the pre-existing Bash one.
+  assert.equal(data.hooks.PreToolUse.length, 5)
   assert.equal(data.hooks.PreToolUse[0].matcher, 'UserTool')
   assert.equal(data.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
   assert.equal(data.hooks.PreToolUse[1].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.PreToolUse[2].matcher, 'Bash')
   assert.equal(data.hooks.PreToolUse[2].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PreToolUse[3].matcher, 'Read')
+  assert.equal(data.hooks.PreToolUse[3].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PreToolUse[4].matcher, 'Write|Edit')
+  assert.equal(data.hooks.PreToolUse[4].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[0].matcher, 'AskUserQuestion')
   assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
   assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
   assert.equal(data.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PostToolUse[2].matcher, 'Read')
+  assert.equal(data.hooks.PostToolUse[3].matcher, 'Write|Edit')
 
   // 3. Segunda injeção (idempotência)
   injectClaudeHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
-  assert.equal(data.hooks.PreToolUse.length, 3)
+  assert.equal(data.hooks.PreToolUse.length, 5)
   assert.equal(data.hooks.PreToolUse[1].hooks.length, 1)
   assert.equal(data.hooks.PreToolUse[2].hooks.length, 1)
-  assert.equal(data.hooks.PostToolUse.length, 2)
+  assert.equal(data.hooks.PreToolUse[3].hooks.length, 1)
+  assert.equal(data.hooks.PreToolUse[4].hooks.length, 1)
+  assert.equal(data.hooks.PostToolUse.length, 4)
   assert.equal(data.hooks.PostToolUse[1].hooks.length, 1)
 })
 
@@ -362,19 +372,25 @@ test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () =>
   assert.equal(data.hooks.PermissionRequest[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
   assert.equal(data.hooks.PreToolUse[0].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  // ADR-2026-08-06 emenda 7: Codex has no dedicated read matcher (documented limitation) --
+  // only apply_patch (write/edit) is added alongside Bash.
+  assert.equal(data.hooks.PreToolUse[1].matcher, 'apply_patch')
+  assert.equal(data.hooks.PreToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[0].matcher, '.*')
   assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
   assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
   assert.equal(data.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PostToolUse[2].matcher, 'apply_patch')
 
   // Idempotência
   injectCodexHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
   assert.equal(data.hooks.PermissionRequest.length, 1)
   assert.equal(data.hooks.PermissionRequest[0].hooks.length, 1)
-  assert.equal(data.hooks.PreToolUse.length, 1)
+  assert.equal(data.hooks.PreToolUse.length, 2)
   assert.equal(data.hooks.PreToolUse[0].hooks.length, 1)
-  assert.equal(data.hooks.PostToolUse.length, 2)
+  assert.equal(data.hooks.PreToolUse[1].hooks.length, 1)
+  assert.equal(data.hooks.PostToolUse.length, 3)
   assert.equal(data.hooks.PostToolUse[1].hooks.length, 1)
 })
 
@@ -393,11 +409,13 @@ test('injectCodexHooks preserves pre-existing PreToolUse Bash entry (merge, not 
   injectCodexHooks(tmpDir)
 
   const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
-  assert.equal(data.hooks.PreToolUse.length, 1)
+  // ADR-2026-08-06 emenda 7: apply_patch is now added alongside Bash.
+  assert.equal(data.hooks.PreToolUse.length, 2)
   assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
   const commands = data.hooks.PreToolUse[0].hooks.map(h => h.command)
   assert.ok(commands.includes('scripts/other.sh'), 'existing Bash hook lost during merge')
   assert.ok(commands.includes('scripts/trackfw-credential-guard.sh'), 'credential-guard hook missing after merge')
+  assert.equal(data.hooks.PreToolUse[1].matcher, 'apply_patch')
 })
 
 test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', () => {
@@ -416,13 +434,25 @@ test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', 
   assert.ok(afterToolGuard, 'AfterTool[run_shell_command] credential-guard entry missing')
   assert.equal(afterToolGuard.hooks[0].command, 'scripts/trackfw-credential-guard.sh')
 
+  // ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): read_file|read_many_files and
+  // write_file|replace credential-guard entries alongside run_shell_command.
+  const beforeToolRead = data.hooks.BeforeTool.find(e => e.matcher === 'read_file|read_many_files')
+  assert.ok(beforeToolRead, 'BeforeTool[read_file|read_many_files] credential-guard entry missing')
+  assert.equal(beforeToolRead.hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  const beforeToolWrite = data.hooks.BeforeTool.find(e => e.matcher === 'write_file|replace')
+  assert.ok(beforeToolWrite, 'BeforeTool[write_file|replace] credential-guard entry missing')
+  const afterToolRead = data.hooks.AfterTool.find(e => e.matcher === 'read_file|read_many_files')
+  assert.ok(afterToolRead, 'AfterTool[read_file|read_many_files] credential-guard entry missing')
+  const afterToolWrite = data.hooks.AfterTool.find(e => e.matcher === 'write_file|replace')
+  assert.ok(afterToolWrite, 'AfterTool[write_file|replace] credential-guard entry missing')
+
   // Idempotência
   injectGeminiHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
   assert.equal(data.hooks.Notification.length, 1)
   assert.equal(data.hooks.Notification[0].hooks.length, 1)
-  assert.equal(data.hooks.BeforeTool.length, 1)
-  assert.equal(data.hooks.AfterTool.length, 2)
+  assert.equal(data.hooks.BeforeTool.length, 3)
+  assert.equal(data.hooks.AfterTool.length, 4)
 })
 
 test('injectGeminiHooks preserves an existing BeforeTool[run_shell_command] entry when merging', () => {
@@ -442,7 +472,9 @@ test('injectGeminiHooks preserves an existing BeforeTool[run_shell_command] entr
   injectGeminiHooks(tmpDir)
 
   const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
-  assert.equal(data.hooks.BeforeTool.length, 1)
+  // ADR-2026-08-06 emenda 7: read_file|read_many_files and write_file|replace entries are added
+  // alongside run_shell_command.
+  assert.equal(data.hooks.BeforeTool.length, 3)
   const commands = data.hooks.BeforeTool[0].hooks.map(h => h.command)
   assert.ok(commands.includes('scripts/other.sh'), 'existing BeforeTool hook lost during merge')
   assert.ok(commands.includes('scripts/trackfw-credential-guard.sh'), 'credential-guard hook missing after merge')
@@ -455,7 +487,9 @@ test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently', 
   injectKiroHooks(tmpDir)
   let data1 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
   assert.equal(data1.version, 'v1')
-  assert.equal(data1.hooks.length, 4)
+  // ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): +4 credential-guard entries
+  // (read-pre/read-post/write-pre/write-post) alongside the pre-existing shell pre/post.
+  assert.equal(data1.hooks.length, 8)
   assert.equal(data1.hooks[0].trigger, 'PreToolUse')
   assert.equal(data1.hooks[0].event, undefined, 'legacy "event" field must not be emitted')
   assert.equal(data1.hooks[0].action.command, 'scripts/trackfw-attention-signal.sh')
@@ -474,6 +508,19 @@ test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently', 
   assert.equal(guardPost.matcher, 'shell')
   assert.equal(guardPost.action.command, 'scripts/trackfw-credential-guard.sh')
 
+  const guardReadPre = data1.hooks.find(h => h.name === 'trackfw-credential-guard-read-pre')
+  assert.ok(guardReadPre, 'missing trackfw-credential-guard-read-pre hook')
+  assert.equal(guardReadPre.matcher, 'read')
+  const guardReadPost = data1.hooks.find(h => h.name === 'trackfw-credential-guard-read-post')
+  assert.ok(guardReadPost, 'missing trackfw-credential-guard-read-post hook')
+  assert.equal(guardReadPost.matcher, 'read')
+  const guardWritePre = data1.hooks.find(h => h.name === 'trackfw-credential-guard-write-pre')
+  assert.ok(guardWritePre, 'missing trackfw-credential-guard-write-pre hook')
+  assert.equal(guardWritePre.matcher, 'write')
+  const guardWritePost = data1.hooks.find(h => h.name === 'trackfw-credential-guard-write-post')
+  assert.ok(guardWritePost, 'missing trackfw-credential-guard-write-post hook')
+  assert.equal(guardWritePost.matcher, 'write')
+
   for (const h of data1.hooks) {
     assert.notEqual(typeof h.matcher, 'object', `hook ${h.name} uses object matcher, expected regex string`)
   }
@@ -490,25 +537,38 @@ test('injectCopilotHooks creates .github/hooks/trackfw-attention.json idempotent
   injectCopilotHooks(tmpDir)
   let data1 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
   assert.equal(data1.version, 1)
-  assert.equal(data1.hooks.preToolUse.length, 2)
-  assert.equal(data1.hooks.postToolUse.length, 2)
+  // ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): +2 credential-guard entries (view,
+  // create|edit) alongside the pre-existing bash one, in each of preToolUse/postToolUse.
+  assert.equal(data1.hooks.preToolUse.length, 4)
+  assert.equal(data1.hooks.postToolUse.length, 4)
 
   const findByBash = (arr, bash) => arr.find(e => e.bash === bash)
+  const findByMatcher = (arr, bash, matcher) => arr.find(e => e.bash === bash && e.matcher === matcher)
 
   const signal = findByBash(data1.hooks.preToolUse, 'scripts/trackfw-attention-signal.sh')
   assert.ok(signal, 'preToolUse missing attention-signal entry')
   assert.equal(signal.matcher, undefined)
 
-  const guardPre = findByBash(data1.hooks.preToolUse, 'scripts/trackfw-credential-guard.sh')
-  assert.ok(guardPre, 'preToolUse missing credential-guard entry')
-  assert.equal(guardPre.matcher, 'bash')
+  const guardPre = findByMatcher(data1.hooks.preToolUse, 'scripts/trackfw-credential-guard.sh', 'bash')
+  assert.ok(guardPre, 'preToolUse missing credential-guard bash entry')
+
+  const guardPreView = findByMatcher(data1.hooks.preToolUse, 'scripts/trackfw-credential-guard.sh', 'view')
+  assert.ok(guardPreView, 'preToolUse missing credential-guard view entry')
+
+  const guardPreEdit = findByMatcher(data1.hooks.preToolUse, 'scripts/trackfw-credential-guard.sh', 'create|edit')
+  assert.ok(guardPreEdit, 'preToolUse missing credential-guard create|edit entry')
 
   const cleanup = findByBash(data1.hooks.postToolUse, 'scripts/trackfw-attention-cleanup.sh')
   assert.ok(cleanup, 'postToolUse missing attention-cleanup entry')
 
-  const guardPost = findByBash(data1.hooks.postToolUse, 'scripts/trackfw-credential-guard.sh')
-  assert.ok(guardPost, 'postToolUse missing credential-guard entry')
-  assert.equal(guardPost.matcher, 'bash')
+  const guardPost = findByMatcher(data1.hooks.postToolUse, 'scripts/trackfw-credential-guard.sh', 'bash')
+  assert.ok(guardPost, 'postToolUse missing credential-guard bash entry')
+
+  const guardPostView = findByMatcher(data1.hooks.postToolUse, 'scripts/trackfw-credential-guard.sh', 'view')
+  assert.ok(guardPostView, 'postToolUse missing credential-guard view entry')
+
+  const guardPostEdit = findByMatcher(data1.hooks.postToolUse, 'scripts/trackfw-credential-guard.sh', 'create|edit')
+  assert.ok(guardPostEdit, 'postToolUse missing credential-guard create|edit entry')
 
   injectCopilotHooks(tmpDir)
   let data2 = JSON.parse(fs.readFileSync(hookPath, 'utf8'))
@@ -525,20 +585,32 @@ test('injectCursorHooks creates and merges .cursor/hooks.json idempotently', () 
   assert.equal(data.postToolUse, undefined, 'legacy top-level postToolUse must not be written')
 
   assert.equal(data.version, 1)
-  assert.equal(data.hooks.preToolUse.length, 1)
+  // ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): +2 credential-guard entries (matcher
+  // Read, matcher Write) added to the generic preToolUse/postToolUse events alongside the
+  // unfiltered attention-signal/cleanup entry already there.
+  assert.equal(data.hooks.preToolUse.length, 3)
   assert.equal(data.hooks.preToolUse[0].command, 'scripts/trackfw-attention-signal.sh')
-  assert.equal(data.hooks.postToolUse.length, 1)
+  assert.equal(data.hooks.postToolUse.length, 3)
   assert.equal(data.hooks.postToolUse[0].command, 'scripts/trackfw-attention-cleanup.sh')
   assert.equal(data.hooks.beforeShellExecution.length, 1)
   assert.equal(data.hooks.beforeShellExecution[0].command, 'scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.afterShellExecution.length, 1)
   assert.equal(data.hooks.afterShellExecution[0].command, 'scripts/trackfw-credential-guard.sh')
 
+  const preGuardRead = data.hooks.preToolUse.find(e => e.command === 'scripts/trackfw-credential-guard.sh' && e.matcher === 'Read')
+  assert.ok(preGuardRead, 'preToolUse missing credential-guard Read entry')
+  const preGuardWrite = data.hooks.preToolUse.find(e => e.command === 'scripts/trackfw-credential-guard.sh' && e.matcher === 'Write')
+  assert.ok(preGuardWrite, 'preToolUse missing credential-guard Write entry')
+  const postGuardRead = data.hooks.postToolUse.find(e => e.command === 'scripts/trackfw-credential-guard.sh' && e.matcher === 'Read')
+  assert.ok(postGuardRead, 'postToolUse missing credential-guard Read entry')
+  const postGuardWrite = data.hooks.postToolUse.find(e => e.command === 'scripts/trackfw-credential-guard.sh' && e.matcher === 'Write')
+  assert.ok(postGuardWrite, 'postToolUse missing credential-guard Write entry')
+
   // Idempotência
   injectCursorHooks(tmpDir)
   data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
-  assert.equal(data.hooks.preToolUse.length, 1)
-  assert.equal(data.hooks.postToolUse.length, 1)
+  assert.equal(data.hooks.preToolUse.length, 3)
+  assert.equal(data.hooks.postToolUse.length, 3)
   assert.equal(data.hooks.beforeShellExecution.length, 1)
   assert.equal(data.hooks.afterShellExecution.length, 1)
 })
@@ -654,9 +726,14 @@ test('trackfw update command injects attention hooks and scripts idempotently pr
     assert.equal(claudeData.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
     assert.equal(claudeData.hooks.PreToolUse[2].matcher, 'Bash')
     assert.equal(claudeData.hooks.PreToolUse[2].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+    // ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): Read/Write|Edit credential-guard entries.
+    assert.equal(claudeData.hooks.PreToolUse[3].matcher, 'Read')
+    assert.equal(claudeData.hooks.PreToolUse[4].matcher, 'Write|Edit')
     assert.equal(claudeData.hooks.PostToolUse[0].matcher, 'AskUserQuestion')
     assert.equal(claudeData.hooks.PostToolUse[1].matcher, 'Bash')
     assert.equal(claudeData.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+    assert.equal(claudeData.hooks.PostToolUse[2].matcher, 'Read')
+    assert.equal(claudeData.hooks.PostToolUse[3].matcher, 'Write|Edit')
 
     // Validar Cursor
     const cursorData = JSON.parse(fs.readFileSync(path.join(cursorDir, 'hooks.json'), 'utf8'))
@@ -670,8 +747,8 @@ test('trackfw update command injects attention hooks and scripts idempotently pr
     await updateCmd.parseAsync(['node', 'update'])
 
     const claudeDataSecond = JSON.parse(fs.readFileSync(path.join(claudeDir, 'settings.json'), 'utf8'))
-    assert.equal(claudeDataSecond.hooks.PreToolUse.length, 3)
-    assert.equal(claudeDataSecond.hooks.PostToolUse.length, 2)
+    assert.equal(claudeDataSecond.hooks.PreToolUse.length, 5)
+    assert.equal(claudeDataSecond.hooks.PostToolUse.length, 4)
   } finally {
     process.chdir(origCwd)
   }
