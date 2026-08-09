@@ -10495,3 +10495,60 @@ responsabilidade de ML-3B/testes, reportado para o orquestrador/ML-4A avaliar). 
 marcado `✅ Concluído` (ML-3A e ML-3C já estavam `✅ Concluído` por outros agentes ao concluir esta
 sessão). Não tocado: `internal/`, `pypi/`. Sem commit/push (regra do papel QA — `trackfw_architect`
 audita e commita).
+
+---
+
+## Sessão 2026-08-08 — Hefesto (Code Quality, ML-4A: gate final + docs de paridade + fix de frontmatter) — INICIADO
+
+Branch `feat/credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado`
+(já criada pelo orquestrador). Roadmap Wave 4/ML-4A (último ML); REQ:
+`docs/req/REQ-2026-08-08-credential-guard-modo-block-cobertura-read-write-e-resolucao-de-arquivo-referenciado.md`.
+
+**Escopo:** `make quality` (gate final Go+Node+Python+paridade); atualizar `docs/cli-parity.md` com
+as duas seções sobre modo default block e cobertura de matchers Read/Write/Edit; corrigir campo
+`roadmap:` vazio no frontmatter da REQ (gap sinalizado pelo ML-3B); marcar ML-4A e checklist de
+Acceptance Criteria no roadmap. Sem commit/push (regra de Git authority — `trackfw_architect` audita
+e commita).
+
+**Resultado — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`:**
+
+`make quality` falhou na primeira execução em `scripts/check-agent-hooks-parity.sh` (18 `FAIL`
+idênticos nos 3 stacks, `credential-guard-present`) — causa raiz ambiental (gate roda `discover
+--init` sem isolar `$HOME`; nesta máquina o credential-guard global já está instalado, então o
+dedup do ML-3A pula silenciosamente a entrada de projeto), não regressão de código. Corrigido em
+`scripts/check-agent-hooks-parity.sh` (`run_discover_init` agora isola `HOME` por runtime, mesmo
+padrão já usado em `check-update-parity.sh`) — este é um gate de qualidade, não código de
+produto (`internal/`, `npm/src/`, `pypi/trackfw/` intocados). Nota nova no vault:
+`vault/notes/check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08.md` (linkada no
+índice). Após o fix, `make quality` → exit 0, 0 `FAIL`, 103/103 cenários de falsificação OK.
+
+`docs/cli-parity.md`: duas seções novas adicionadas (após "Hooks GLOBAIS de credential-guard ...
+paridade estrutural", antes de "Princípios de design de gates") — "Modo default do credential-guard
+GLOBAL — `warn` → `block`" (supersede o achado transversal #1 desatualizado, que ainda dizia "modo
+sempre warn em escopo global") e "Cobertura de matchers Read/Write/Edit do credential-guard por
+CLI" (tabela dos 6 CLIs — Claude `Read`/`Write|Edit`, Codex sem matcher de leitura + `apply_patch`,
+Gemini `read_file|read_many_files`/`write_file|replace`, Kiro `read`/`write`, Copilot
+`view`/`create|edit`, Cursor `Read`/`Write` via eventos genéricos `preToolUse`/`postToolUse`) — cada
+matcher confirmado lendo `internal/generators/agentfiles.go` diretamente, não só a ADR.
+
+Gap do ML-3B corrigido: `roadmap:` do frontmatter da REQ estava vazio E não havia linha `Roadmap:`
+no corpo (seção "## Linked Roadmap") — a regra `req_has_roadmap` do validador procura o marcador
+`Roadmap:` (capital R) em qualquer lugar do arquivo, não o frontmatter lowercase `roadmap:`; os
+dois foram corrigidos apontando para
+`docs/roadmaps/wip/ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md`.
+`trackfw validate` → `✓ Nenhuma violação encontrada.`, exit 0.
+
+Roadmap: ML-4A marcado `✅ Concluído`, checklist consolidado de Acceptance Criteria (6 itens) todo
+marcado `[x]` — cada item verificado contra o código antes de marcar (fallback block em
+`internal/generators/scaffold.go`, matchers Read/Write/Edit em `agentfiles.go`, segunda camada de
+detecção com teto de 1MB, testes Go/Node/Python verdes, `make quality` limpo, `docs/cli-parity.md`
+atualizado). Sem commit/push (regra de Git authority — `trackfw_architect` audita e commita; este é
+o último ML do roadmap).
+
+**Achado reportado, não corrigido (fora do escopo declarado deste ML):** o guard de vacuidade P2
+`credential-guard-present` de `check-agent-hooks-parity.sh` — o mesmo que capturou o falso negativo
+ambiental corrigido acima — não tem prova negativa própria em `check-gates-falsify.sh`. O Cenário
+44 (única prova P4 hoje associada a este gate) falsifica só o comparador estrutural
+(`compare_json`), nunca o guard de vacuidade. Documentado em `docs/cli-parity.md` (seção "Parity
+gate" de `check-agent-hooks-parity.sh`) e aqui para que Zeus decida se abre um ML/REQ dedicado de
+hardening P4.

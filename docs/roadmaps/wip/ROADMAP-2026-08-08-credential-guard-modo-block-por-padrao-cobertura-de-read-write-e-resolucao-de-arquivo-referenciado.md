@@ -19,12 +19,12 @@ ADR emendada (Wave 0 já concluída pelo orquestrador antes deste roadmap): docs
 3. Segunda camada de detecção via conteúdo de arquivo referenciado (ADR emenda 8).
 
 ## Acceptance Criteria
-- [ ] Fallback do MODE global (sem `trackfw.yaml`, ou `trackfw.yaml` sem `credential_guard.mode`) passa a `block` nos 3 stacks; `trackfw.yaml` com `credential_guard.mode` explícito continua respeitado (warn ou block), inclusive quando o hook global é disparado a partir do cwd desse projeto.
-- [ ] Wiring Read/Write/Edit adicionado para Claude, Gemini, Kiro, Copilot, Cursor (matchers da tabela da ADR emenda 7); Codex documentado como limitação (sem matcher de leitura dedicado), com `apply_patch`/`Edit`/`Write` cobrindo escrita.
-- [ ] Segunda camada de detecção lê conteúdo de arquivo referenciado (via redirect capturado por `REDIRECTS`, e via argumento de arquivo existente quando o comando é `cat`/`head`/`tail`/`jq`/`grep`), com teto de tamanho para não ler arquivos grandes.
-- [ ] Testes novos nos 3 stacks cobrindo os 3 cenários do REQ.
-- [ ] `make quality` sem regressão, paridade Go-Node-Python mantida.
-- [ ] `docs/cli-parity.md` atualizado com a limitação do Codex (item de wiring) e a mudança de default de modo.
+- [x] Fallback do MODE global (sem `trackfw.yaml`, ou `trackfw.yaml` sem `credential_guard.mode`) passa a `block` nos 3 stacks; `trackfw.yaml` com `credential_guard.mode` explícito continua respeitado (warn ou block), inclusive quando o hook global é disparado a partir do cwd desse projeto.
+- [x] Wiring Read/Write/Edit adicionado para Claude, Gemini, Kiro, Copilot, Cursor (matchers da tabela da ADR emenda 7); Codex documentado como limitação (sem matcher de leitura dedicado), com `apply_patch`/`Edit`/`Write` cobrindo escrita.
+- [x] Segunda camada de detecção lê conteúdo de arquivo referenciado (via redirect capturado por `REDIRECTS`, e via argumento de arquivo existente quando o comando é `cat`/`head`/`tail`/`jq`/`grep`), com teto de tamanho para não ler arquivos grandes.
+- [x] Testes novos nos 3 stacks cobrindo os 3 cenários do REQ.
+- [x] `make quality` sem regressão, paridade Go-Node-Python mantida.
+- [x] `docs/cli-parity.md` atualizado com a limitação do Codex (item de wiring) e a mudança de default de modo.
 
 ## Wave 1 — Script core: default block + segunda camada de detecção (3 MLs em paralelo, 1 por stack)
 > Dependências: nenhuma (ADR já emendada). Arquivos independentes entre MLs desta wave — paralelismo real.
@@ -165,13 +165,35 @@ nova segunda camada de detecção.
 > Dependências: Wave 1 + Wave 2 + Wave 3 completas.
 
 ### ML-4A — make quality + docs/cli-parity.md
-**Status:** ⬜ Pendente
-**Arquivos afetados:** `docs/cli-parity.md`
+**Status:** ✅ Concluído
+**Arquivos afetados:** `docs/cli-parity.md`, `scripts/check-agent-hooks-parity.sh`,
+`docs/req/REQ-2026-08-08-credential-guard-modo-block-cobertura-read-write-e-resolucao-de-arquivo-referenciado.md`,
+`vault/notes/check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08.md`,
+`vault/notes/index.md`
 **Ações:**
 1. Rodar `make quality` (Go + Node.js + Python + contratos de paridade) na raiz do repo.
 2. Atualizar `docs/cli-parity.md` com: (a) mudança de default do modo global (`warn`→`block`); (b)
    cobertura de matchers Read/Write/Edit por CLI, incluindo a limitação documentada do Codex.
 3. Corrigir qualquer divergência de paridade apontada pelo gate antes de considerar o roadmap concluído.
 **Critérios de aceite:**
-- [ ] `make quality` sem erros/regressão
-- [ ] `docs/cli-parity.md` reflete o estado final dos 3 stacks
+- [x] `make quality` sem erros/regressão
+- [x] `docs/cli-parity.md` reflete o estado final dos 3 stacks
+
+**Resultado:** `make quality` falhou inicialmente em `scripts/check-agent-hooks-parity.sh` (18 FAIL,
+`credential-guard-present`, idênticos nos 3 stacks) — causa raiz ambiental, não regressão de
+código: o gate roda `discover --init` sem isolar `$HOME`, e nesta máquina o credential-guard global
+já está instalado, então o dedup do ML-3A pula silenciosamente a entrada de projeto (mesma causa
+raiz documentada em
+`vault/notes/node-global-credential-guard-dedup-breaks-inject-tests-on-real-home-2026-08-08.md` para
+um teste Node, agora encontrada num gate shell). Corrigido isolando `HOME` por runtime em
+`run_discover_init` (mesmo padrão já usado em `check-update-parity.sh`), sem alterar nenhum
+comportamento de produto. Nota nova:
+`vault/notes/check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08.md`. Após o fix,
+`make quality` → 0 `FAIL`, exit 0 (103/103 cenários de falsificação, todos os gates de paridade
+OK). `docs/cli-parity.md`: duas seções novas — "Modo default do credential-guard GLOBAL — `warn` →
+`block`" (supersede o achado transversal #1 desatualizado da seção "Suporte por CLI — visão
+consolidada, escopo GLOBAL") e "Cobertura de matchers Read/Write/Edit do credential-guard por CLI"
+(tabela dos 6 CLIs, cada matcher confirmado lendo `internal/generators/agentfiles.go`). Gap do
+ML-3B (`roadmap:` vazio no frontmatter da REQ e sem linha `Roadmap:` no corpo) corrigido nos dois
+lugares — `trackfw validate` confirmado limpo (`✓ Nenhuma violação encontrada.`, exit 0) antes de
+concluir este ML.

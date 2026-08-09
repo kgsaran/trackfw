@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-08
 author: "kg.saran@gmail.com"
 adr: "docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md"
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md"
 ---
 
 # REQ: credential-guard — modo block por padrão, cobertura de Read/Write e resolução de arquivo referenciado
@@ -86,4 +86,4 @@ ADR: `docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-tra
 <!-- none -->
 
 ## Linked Roadmap
-<!-- a criar quando esta REQ for movida para wip -->
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md`
