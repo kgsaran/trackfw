@@ -207,7 +207,7 @@ inferência a partir de outro CLI.
 > string em Codex/Gemini/Cursor duplica entradas em vez de corrigir.
 
 ### ML-1A — Generalizar o helper de migração para Codex e Gemini
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 > **Escopo reduzido pela Barreira B0:** o Cursor saiu — veredito `OK`, não muda de string, logo não
 > precisa de migração. Restam os dois injectors merge-based que vão mudar: **Codex e Gemini**.
 **Agente:** Apolo (`apolo-tf`)
