@@ -268,8 +268,8 @@ bash scripts/check-agent-hooks-parity.sh
 > Dependências: Wave 1. Único CLI já **provado** quebrado (mesmo mecanismo do `0c66ecb`; difere só
 > na frequência, pois os hooks de attention casam apenas o matcher `AskUserQuestion`).
 
-### ML-2A — Emitir `<CMD_CLAUDE>` para attention-signal/cleanup + migração
-**Status:** ⬜ Pendente
+### ML-2A — Emitir `$CLAUDE_PROJECT_DIR/...` para attention-signal/cleanup + migração
+**Status:** 🔄 Em andamento
 **Agente:** Apolo (`apolo-tf`)
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` — linhas **211** (signal) e **265** (cleanup)
@@ -298,6 +298,10 @@ bash scripts/check-agent-hooks-parity.sh
 - [ ] Os 3 stacks emitem `<CMD_CLAUDE>` para signal e cleanup; `git grep` não encontra mais
       `"scripts/trackfw-attention-signal.sh"` como comando emitido no wiring do Claude.
 - [ ] Migração reescreve entrada antiga; `trackfw update` duas vezes → nenhuma duplicata.
+- [ ] 🔴 **Prova negativa da migração (aqui já é possível, pois `old != new`).** Não basta o teste
+      passar: **remover a chamada de migração dos scripts de attention tem de fazer um teste
+      falhar.** Comente a chamada, rode a suíte, confirme a falha, restaure, e reporte o resultado.
+      Suíte verde sem a migração = teste que não prova nada.
 - [ ] `go test ./...`, `npm test`, `pytest` verdes.
 - [ ] `bash scripts/check-agent-hooks-parity.sh` sem `FAIL` (prova que os 3 stacks mudaram juntos).
 - [ ] Nenhum entry de credential-guard do Claude foi alterado.
