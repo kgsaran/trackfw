@@ -595,6 +595,57 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertEqual(commands, {'scripts/other.sh', 'scripts/trackfw-credential-guard.sh'})
         self.assertEqual(pre[1]['matcher'], 'apply_patch')
 
+    def test_inject_codex_hooks_migration_wiring_rewrites_in_place_not_duplicate(self):
+        """ML-1A: _migrate_hook_command is called before the merge for every trackfw-owned
+        matcher in inject_codex_hooks, wired with old_command == new_command (a functional
+        no-op today -- no Codex command string changes until ML-3A). This fixture pre-populates
+        every trackfw-owned matcher with the currently-emitted command, exactly as an older
+        trackfw run would have left it, and asserts the injector converges to exactly one
+        deduped entry per matcher instead of leaving a second one behind. When ML-3A flips
+        _migrate_hook_command's old_command argument to the legacy string, this same fixture
+        becomes a genuine migration test with no structural changes needed."""
+        from trackfw.generators.hooks import inject_codex_hooks
+
+        def mk(matcher, command):
+            return {'matcher': matcher, 'hooks': [{'type': 'command', 'command': command}]}
+
+        hooks_dir = os.path.join(self.tmp, '.codex')
+        os.makedirs(hooks_dir, exist_ok=True)
+        hooks_path = os.path.join(hooks_dir, 'hooks.json')
+        with open(hooks_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'PermissionRequest': [mk('.*', 'scripts/trackfw-attention-signal.sh')],
+                    'PreToolUse': [
+                        mk('Bash', 'scripts/trackfw-credential-guard.sh'),
+                        mk('apply_patch', 'scripts/trackfw-credential-guard.sh'),
+                    ],
+                    'PostToolUse': [
+                        mk('.*', 'scripts/trackfw-attention-cleanup.sh'),
+                        mk('Bash', 'scripts/trackfw-credential-guard.sh'),
+                        mk('apply_patch', 'scripts/trackfw-credential-guard.sh'),
+                    ],
+                }
+            }, f)
+
+        inject_codex_hooks(self.tmp)
+
+        with open(hooks_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        def check_one(event, matcher, command):
+            entries = [e for e in data['hooks'][event] if e['matcher'] == matcher]
+            self.assertEqual(len(entries), 1, f'{event}[{matcher}]: expected exactly 1 matcher entry (no duplicate)')
+            self.assertEqual(len(entries[0]['hooks']), 1, f'{event}[{matcher}]: expected exactly 1 hook')
+            self.assertEqual(entries[0]['hooks'][0]['command'], command, f'{event}[{matcher}]: unexpected command')
+
+        check_one('PermissionRequest', '.*', 'scripts/trackfw-attention-signal.sh')
+        check_one('PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh')
+        check_one('PreToolUse', 'apply_patch', 'scripts/trackfw-credential-guard.sh')
+        check_one('PostToolUse', '.*', 'scripts/trackfw-attention-cleanup.sh')
+        check_one('PostToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh')
+        check_one('PostToolUse', 'apply_patch', 'scripts/trackfw-credential-guard.sh')
+
     def test_inject_gemini_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_gemini_hooks
         inject_gemini_hooks(self.tmp)
@@ -651,6 +702,56 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertEqual(len(before), 3)
         commands = {h['command'] for h in before[0]['hooks']}
         self.assertEqual(commands, {'scripts/other.sh', 'scripts/trackfw-credential-guard.sh'})
+
+    def test_inject_gemini_hooks_migration_wiring_rewrites_in_place_not_duplicate(self):
+        """ML-1A: Gemini counterpart of test_inject_codex_hooks_migration_wiring_rewrites_in_place_not_duplicate
+        -- see that test's docstring for the ML-1A/ML-4A rationale (old_command == new_command
+        wiring today; this fixture becomes a genuine migration test once ML-4A flips
+        _migrate_hook_command's old_command argument)."""
+        from trackfw.generators.hooks import inject_gemini_hooks
+
+        def mk(matcher, command):
+            return {'matcher': matcher, 'hooks': [{'type': 'command', 'command': command}]}
+
+        path = os.path.join(self.tmp, '.gemini', 'settings.json')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'Notification': [mk('ToolPermission', 'scripts/trackfw-attention-signal.sh')],
+                    'BeforeTool': [
+                        mk('run_shell_command', 'scripts/trackfw-credential-guard.sh'),
+                        mk('read_file|read_many_files', 'scripts/trackfw-credential-guard.sh'),
+                        mk('write_file|replace', 'scripts/trackfw-credential-guard.sh'),
+                    ],
+                    'AfterTool': [
+                        mk('*', 'scripts/trackfw-attention-cleanup.sh'),
+                        mk('run_shell_command', 'scripts/trackfw-credential-guard.sh'),
+                        mk('read_file|read_many_files', 'scripts/trackfw-credential-guard.sh'),
+                        mk('write_file|replace', 'scripts/trackfw-credential-guard.sh'),
+                    ],
+                },
+            }, f)
+
+        inject_gemini_hooks(self.tmp)
+
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        def check_one(event, matcher, command):
+            entries = [e for e in data['hooks'][event] if e['matcher'] == matcher]
+            self.assertEqual(len(entries), 1, f'{event}[{matcher}]: expected exactly 1 matcher entry (no duplicate)')
+            self.assertEqual(len(entries[0]['hooks']), 1, f'{event}[{matcher}]: expected exactly 1 hook')
+            self.assertEqual(entries[0]['hooks'][0]['command'], command, f'{event}[{matcher}]: unexpected command')
+
+        check_one('Notification', 'ToolPermission', 'scripts/trackfw-attention-signal.sh')
+        check_one('BeforeTool', 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
+        check_one('BeforeTool', 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
+        check_one('BeforeTool', 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
+        check_one('AfterTool', '*', 'scripts/trackfw-attention-cleanup.sh')
+        check_one('AfterTool', 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
+        check_one('AfterTool', 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
+        check_one('AfterTool', 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
 
     def test_inject_kiro_hooks(self):
         from trackfw.generators.hooks import inject_kiro_hooks

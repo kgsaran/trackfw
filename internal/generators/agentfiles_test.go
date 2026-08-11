@@ -351,6 +351,77 @@ func TestInjectCodexHooks_PreservesExistingBashEntry(t *testing.T) {
 	}
 }
 
+// TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate covers the ML-1A migration
+// wiring added to InjectCodexHooks (migrateHookCommand, called before mergeClaudeHookArray for
+// every trackfw-owned matcher). ROADMAP-2026-08-11 ML-1A wires the call with old == new (a
+// functional no-op today, since no Codex command string changes in this ML — that only happens in
+// ML-3A) — so this fixture pre-populates every trackfw-owned matcher with the currently-emitted
+// command, exactly as an older trackfw run would have left it, and asserts the injector converges
+// to exactly one deduped entry per matcher instead of leaving a second one behind. When ML-3A
+// flips migrateHookCommand's oldCommand argument to the legacy string, this same fixture becomes a
+// genuine migration test with no structural changes needed.
+func TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+
+	mk := func(matcher, command string) map[string]interface{} {
+		return map[string]interface{}{
+			"matcher": matcher,
+			"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": command}},
+		}
+	}
+	existing := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PermissionRequest": []interface{}{mk(".*", "scripts/trackfw-attention-signal.sh")},
+			"PreToolUse": []interface{}{
+				mk("Bash", "scripts/trackfw-credential-guard.sh"),
+				mk("apply_patch", "scripts/trackfw-credential-guard.sh"),
+			},
+			"PostToolUse": []interface{}{
+				mk(".*", "scripts/trackfw-attention-cleanup.sh"),
+				mk("Bash", "scripts/trackfw-credential-guard.sh"),
+				mk("apply_patch", "scripts/trackfw-credential-guard.sh"),
+			},
+		},
+	}
+	helperWriteJSON(t, filepath.Join(dir, ".codex", "hooks.json"), existing)
+
+	if err := InjectCodexHooks(dir); err != nil {
+		t.Fatalf("InjectCodexHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
+	hooks, _ := data["hooks"].(map[string]interface{})
+
+	checkOne := func(event, matcher, command string) {
+		arr, _ := hooks[event].([]interface{})
+		count := 0
+		for _, item := range arr {
+			obj, _ := item.(map[string]interface{})
+			if obj["matcher"] != matcher {
+				continue
+			}
+			count++
+			innerHooks, _ := obj["hooks"].([]interface{})
+			if len(innerHooks) != 1 {
+				t.Errorf("%s[%s]: expected exactly 1 hook, got %d", event, matcher, len(innerHooks))
+			}
+		}
+		if count != 1 {
+			t.Errorf("%s[%s]: expected exactly 1 matcher entry (no duplicate), got %d", event, matcher, count)
+		}
+		if !helperHasClaudeHook(data, event, matcher, command) {
+			t.Errorf("%s[%s]: expected command %q missing", event, matcher, command)
+		}
+	}
+	checkOne("PermissionRequest", ".*", "scripts/trackfw-attention-signal.sh")
+	checkOne("PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh")
+	checkOne("PreToolUse", "apply_patch", "scripts/trackfw-credential-guard.sh")
+	checkOne("PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh")
+	checkOne("PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh")
+	checkOne("PostToolUse", "apply_patch", "scripts/trackfw-credential-guard.sh")
+}
+
 // --- Gemini ---
 
 func TestInjectGeminiHooks(t *testing.T) {
@@ -430,6 +501,76 @@ func TestInjectGeminiHooks_PreservesExistingBeforeToolEntry(t *testing.T) {
 	if len(before) != 3 {
 		t.Errorf("expected 3 BeforeTool entries (run_shell_command merged + read + write), got %d", len(before))
 	}
+}
+
+// TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate is the Gemini counterpart of
+// TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate — see that test's doc comment for
+// the ML-1A/ML-4A rationale (old == new wiring today; this fixture becomes a genuine migration
+// test once ML-4A flips migrateHookCommand's oldCommand argument).
+func TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+
+	mk := func(matcher, command string) map[string]interface{} {
+		return map[string]interface{}{
+			"matcher": matcher,
+			"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": command}},
+		}
+	}
+	existing := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"Notification": []interface{}{mk("ToolPermission", "scripts/trackfw-attention-signal.sh")},
+			"BeforeTool": []interface{}{
+				mk("run_shell_command", "scripts/trackfw-credential-guard.sh"),
+				mk("read_file|read_many_files", "scripts/trackfw-credential-guard.sh"),
+				mk("write_file|replace", "scripts/trackfw-credential-guard.sh"),
+			},
+			"AfterTool": []interface{}{
+				mk("*", "scripts/trackfw-attention-cleanup.sh"),
+				mk("run_shell_command", "scripts/trackfw-credential-guard.sh"),
+				mk("read_file|read_many_files", "scripts/trackfw-credential-guard.sh"),
+				mk("write_file|replace", "scripts/trackfw-credential-guard.sh"),
+			},
+		},
+	}
+	helperWriteJSON(t, filepath.Join(dir, ".gemini", "settings.json"), existing)
+
+	if err := InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("InjectGeminiHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
+	hooks, _ := data["hooks"].(map[string]interface{})
+
+	checkOne := func(event, matcher, command string) {
+		arr, _ := hooks[event].([]interface{})
+		count := 0
+		for _, item := range arr {
+			obj, _ := item.(map[string]interface{})
+			if obj["matcher"] != matcher {
+				continue
+			}
+			count++
+			innerHooks, _ := obj["hooks"].([]interface{})
+			if len(innerHooks) != 1 {
+				t.Errorf("%s[%s]: expected exactly 1 hook, got %d", event, matcher, len(innerHooks))
+			}
+		}
+		if count != 1 {
+			t.Errorf("%s[%s]: expected exactly 1 matcher entry (no duplicate), got %d", event, matcher, count)
+		}
+		if !helperHasClaudeHook(data, event, matcher, command) {
+			t.Errorf("%s[%s]: expected command %q missing", event, matcher, command)
+		}
+	}
+	checkOne("Notification", "ToolPermission", "scripts/trackfw-attention-signal.sh")
+	checkOne("BeforeTool", "run_shell_command", "scripts/trackfw-credential-guard.sh")
+	checkOne("BeforeTool", "read_file|read_many_files", "scripts/trackfw-credential-guard.sh")
+	checkOne("BeforeTool", "write_file|replace", "scripts/trackfw-credential-guard.sh")
+	checkOne("AfterTool", "*", "scripts/trackfw-attention-cleanup.sh")
+	checkOne("AfterTool", "run_shell_command", "scripts/trackfw-credential-guard.sh")
+	checkOne("AfterTool", "read_file|read_many_files", "scripts/trackfw-credential-guard.sh")
+	checkOne("AfterTool", "write_file|replace", "scripts/trackfw-credential-guard.sh")
 }
 
 // --- Kiro ---

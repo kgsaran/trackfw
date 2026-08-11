@@ -10718,3 +10718,96 @@ ML-1A teve o escopo reduzido para **Codex e Gemini** (Cursor saiu da generaliza�
 Restam vivos: ML-1A → ML-2A → ML-3A → ML-4A → ML-8A/8B. `trackfw validate` sem violações.
 
 **Próximo:** despachar ML-1A (Apolo).
+
+## Sessão 2026-08-11 — Apolo (Backend) — ML-1A: generalizar migração para Codex/Gemini — INICIADA
+
+Executando ML-1A do roadmap `docs/roadmaps/wip/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md`
+na branch `fix/resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd` (criada por Zeus). Objetivo:
+generalizar `migrateClaudeHookCommand`/`_migrate_claude_hook_command` para os formatos merge-based de
+Codex e Gemini (Cursor saiu do escopo pela Barreira B0), ligar o helper aos injectors de Codex/Gemini
+com `old == new`, sem alterar nenhuma string de comando emitida.
+
+## Sessão 2026-08-11 — Apolo (Backend) — ML-1A: generalizar migração para Codex/Gemini — CONCLUÍDA
+
+**Feito, nos 3 stacks:**
+- Renomeado `migrateClaudeHookCommand`/`_migrate_claude_hook_command` para `migrateHookCommand`
+  (Go/Node) / `_migrate_hook_command` (Python), com doc comment generalizado (formato
+  `matcher` + `hooks[].command`, compartilhado por Claude/Codex/Gemini). Chamada do Claude
+  atualizada só de nome — comportamento idêntico.
+- Ligado o helper generalizado em `InjectCodexHooks`/`InjectGeminiHooks` (Go), `injectCodexHooks`/
+  `injectGeminiHooks` (Node), `inject_codex_hooks`/`inject_gemini_hooks` (Python), **antes** de
+  cada chamada de merge correspondente, um call por matcher trackfw-owned — 6 chamadas em Codex
+  (`.*`, `Bash`, `apply_patch` × Pre/Post conforme aplicável), 8 em Gemini (`ToolPermission`,
+  `run_shell_command`, `read_file|read_many_files`, `write_file|replace` × Before/After conforme
+  aplicável). Todas com `old == new` (a string hoje emitida) — sem mudança em nenhuma string.
+- Testes novos por formato × stack (6 testes): fixture com todo matcher trackfw-owned já contendo
+  o comando atual, roda o injector real uma vez, confirma exatamente 1 entrada por matcher e
+  exatamente 1 hook dentro — trava a ausência de duplicação.
+
+**Gap de critério de aceite, reportado a Zeus para decisão (não bloqueou a entrega):** o critério
+"teste invoca o injector real e assevera reescrita in-place de uma string ANTIGA" é
+estruturalmente impossível de cumprir nesta ML: a Ação 4 do próprio ML manda ligar o helper com
+`old == new`, o que torna a chamada de migração comportamentalmente inobservável (`mergeClaudeHookArray`
+já dedupa por string exata, então o teste passaria igual com a chamada de migração removida). Não
+inventei uma string "legada" fictícia — Codex/Gemini nunca emitiram nada além de
+`scripts/trackfw-*.sh` (única migração histórica deles foi estrutural: campos `timeout`/
+`statusMessage`/`name`, ML-2B/2C — nunca um literal de comando). Os testes escritos travam o
+contrato de não-op (nenhuma duplicata quando o fixture já reflete o estado atual) e viram testes de
+migração genuínos, sem nenhuma mudança estrutural, assim que ML-3A/4A trocarem o argumento
+`oldCommand`/`old_command` de cada chamada para a string legada real. Recomendo mover o critério
+"prova comportamental de reescrita" para ML-3A/4A.
+
+**Validação (evidência completa):**
+```
+go build ./... && go test ./...     → PASS (todos os pacotes)
+npm --prefix npm test                → 449 passed, 0 failed
+python -m pytest pypi/tests -q       → 995 passed, 8 subtests passed
+bash scripts/check-agent-hooks-parity.sh → 12/12 OK (claude/codex/gemini/copilot/cursor/kiro × go-vs-node/go-vs-py)
+trackfw validate                     → No violations found
+```
+`git diff` confirma que nenhuma string de comando emitida mudou — os únicos `-`/`+` em literais são
+o rename `migrateClaudeHookCommand`→`migrateHookCommand` nas chamadas do Claude (mesmos argumentos).
+`git status --porcelain` só lista arquivos da lista permitida (agentfiles.go + teste, hooks.js +
+teste, hooks.py + teste, working-context).
+
+**Nomes antigos do helper (`migrateClaudeHookCommand`/`_migrate_claude_hook_command`) ainda
+aparecem em `docs/agents-working-context.md` (entradas de sessão anteriores), no roadmap e na REQ**
+— fora da lista de arquivos permitida para este ML; não editados, sinalizado a Zeus.
+
+**Próximo:** Zeus audita e libera ML-2A (Claude: emitir `<CMD_CLAUDE>` para attention-signal/cleanup
++ migração real, incluindo a divisão obrigatória de `SIGNAL_CMD`/`CLEANUP_CMD` por CLI no Node).
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria do ML-1A — APROVADO com deferimento registrado
+
+**Gates re-executados por Zeus** (não aceitos do relatório): `go build ./... && go test ./...` verde ·
+`npm test` 0 fail · `pytest` 995 passed + 8 subtests · `check-agent-hooks-parity.sh` todos OK ·
+exit 0. Escopo respeitado: só os 6 arquivos permitidos + working context. `git diff` confirma que
+**nenhum literal de comando emitido mudou** — as únicas remoções são o rename do call-site do Claude
+(`migrateClaudeHookCommand` → `migrateHookCommand`) com argumentos idênticos.
+
+**Achado do agente que eu aceitei, e por quê.** Apolo reportou que o critério "teste invoca o
+injector real e prova reescrita in-place" é **estruturalmente impossível** neste ML: com `old == new`
+(que é o próprio mandato da Ação 2) a chamada é no-op funcional, então nenhum teste consegue
+distinguir "migração ligada" de "migração ausente". Ele provou empiricamente — desabilitou as 6
+chamadas em `InjectCodexHooks`, rodou a suíte, **tudo continuou verde inclusive o teste novo**, e
+restaurou. Ele **não** fabricou uma string legada falsa para forçar o teste a passar, o que teria
+sido a saída fácil e errada (Codex/Gemini nunca emitiram outra coisa senão `scripts/trackfw-*.sh`;
+a única deriva histórica deles foi estrutural — campos `timeout`/`statusMessage`/`name` —, nunca de
+literal de comando).
+
+**Consequência para a auditoria:** como nenhum teste pode provar o ponto de chamada hoje, eu
+verifiquei **por leitura de código**, nos 3 stacks, que a migração roda **antes** do merge — que é a
+ordem que importa (depois do merge, o dedup por string exata já teria acrescentado a duplicata).
+Confirmado: Go `agentfiles.go:346–351` (Codex) e `:466–473` (Gemini); Node `hooks.js:648–653` e
+`:710–717`; Python `hooks.py:388–412` e `:472–499` — em Python as chamadas usam a lista retornada
+pelo `setdefault` imediatamente anterior, sem `setdefault` novo (que seria deriva estrutural pega
+pelo gate de paridade).
+
+**Deferimento registrado no roadmap, não esquecido.** A prova comportamental virou critério
+**bloqueante** do ML-3A/ML-4A, e endurecido: não basta o teste passar — **remover a chamada de
+migração tem de fazer um teste falhar**. O agente deve comentar as chamadas, confirmar a falha,
+restaurar e reportar. Sem isso o teste não prova nada e o ML não conclui. Este é o padrão de prova
+negativa que o projeto já usa em `check-gates-falsify.sh`.
+
+**Próximo:** ML-2A (Apolo) — dividir as constantes compartilhadas do Node e trocar attention-signal/
+cleanup do Claude para `$CLAUDE_PROJECT_DIR/...`.

@@ -207,7 +207,7 @@ inferência a partir de outro CLI.
 > string em Codex/Gemini/Cursor duplica entradas em vez de corrigir.
 
 ### ML-1A — Generalizar o helper de migração para Codex e Gemini
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (auditado por Zeus em 2026-08-11)
 > **Escopo reduzido pela Barreira B0:** o Cursor saiu — veredito `OK`, não muda de string, logo não
 > precisa de migração. Restam os dois injectors merge-based que vão mudar: **Codex e Gemini**.
 **Agente:** Apolo (`apolo-tf`)
@@ -235,8 +235,18 @@ inferência a partir de outro CLI.
    **reescrita** (não duplicada), para Codex e Gemini.
 
 **Critérios de aceite:**
-- [ ] Nenhuma string de comando emitida mudou (`git diff` não mostra alteração de literal de comando).
-- [ ] Helper cobre os formatos de Codex e Gemini além do já suportado Claude, nos 3 stacks.
+- [x] Nenhuma string de comando emitida mudou (`git diff` não mostra alteração de literal de comando).
+- [x] Helper cobre os formatos de Codex e Gemini além do já suportado Claude, nos 3 stacks.
+- [x] ~~Cada formato tem teste que invoca o **injector real** provando reescrita in-place~~ —
+      **DEFERIDO para ML-3A/ML-4A por impossibilidade estrutural, aceito por Zeus.** Com `old == new`
+      (mandato deste ML) a chamada é um no-op funcional e **nenhum teste consegue distinguir
+      "migração ligada" de "migração ausente"**. Apolo provou empiricamente: desabilitou as 6
+      chamadas em `InjectCodexHooks` e a suíte inteira continuou verde, inclusive o teste novo.
+      Zeus auditou o ponto de chamada **por leitura de código** (única prova possível hoje) e
+      confirmou nos 3 stacks que a migração roda **antes** do merge: Go `agentfiles.go:346–351`
+      (Codex) e `:466–473` (Gemini); Node `hooks.js:648–653` e `:710–717`; Python `hooks.py:388–412`
+      e `:472–499`. A prova comportamental vira critério **bloqueante** do ML-3A/ML-4A (abaixo), onde
+      `oldCommand != newCommand` torna a migração observável.
 - [ ] Cada formato tem teste que invoca o **injector real** (`InjectCodexHooks` / `InjectGeminiHooks`
       e equivalentes Node/Python) contra um fixture com a string antiga e
       assevera reescrita in-place — **não** teste unitário do helper isolado. Este critério é o que
@@ -388,6 +398,11 @@ uma entrada nova a cada execução. Critério de aceite dedicado abaixo.
       (são CLIs verificados corretos — alterá-los é regressão, não melhoria).
 - [ ] `git grep` não encontra mais o caminho relativo puro no wiring daquele CLI, em nenhum stack.
 - [ ] Migração reescreve a entrada antiga in-place (ambos são merge-based).
+- [ ] 🔴 **Prova comportamental da migração (deferida do ML-1A, agora bloqueante).** Não basta o
+      teste passar: **remover a chamada de migração tem de fazer um teste falhar.** Verifique
+      explicitamente — comente as chamadas `migrateHookCommand`/`_migrate_hook_command` deste CLI,
+      rode a suíte, confirme que **falha**, e restaure. Se a suíte continuar verde sem a migração, o
+      teste não prova nada e o ML **não** está concluído. Reporte o resultado dessa checagem a Zeus.
 - [ ] **Idempotência**: rodar o injector duas vezes sobre o mesmo arquivo produz JSON idêntico
       (prova que o dedup continua funcionando — critério que captura a armadilha Python/Cursor).
 - [ ] Testes dos 3 stacks atualizados e verdes.

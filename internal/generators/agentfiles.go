@@ -228,8 +228,8 @@ func InjectClaudeHooks(cwd string) error {
 	// fixed command, so upgrading doesn't just append a second, still-broken
 	// entry alongside the new one.
 	for _, matcher := range []string{"Bash", "Read", "Write|Edit"} {
-		migrateClaudeHookCommand(hooks["PreToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
-		migrateClaudeHookCommand(hooks["PostToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
+		migrateHookCommand(hooks["PreToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
+		migrateHookCommand(hooks["PostToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
 	}
 
 	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
@@ -337,6 +337,18 @@ func InjectCodexHooks(cwd string) error {
 	if hooks == nil {
 		hooks = make(map[string]interface{})
 	}
+
+	// Migration wiring (ROADMAP-2026-08-11 ML-1A): old==new is a functional no-op
+	// today, but proves the call point exists and runs before the merge below.
+	// The waves that change the Codex command strings (ML-3A) update oldCommand
+	// here instead of adding this call from scratch — without it, the merge's
+	// exact-string dedup would append a duplicate alongside the stale entry.
+	migrateHookCommand(hooks["PermissionRequest"], ".*", "scripts/trackfw-attention-signal.sh", "scripts/trackfw-attention-signal.sh")
+	migrateHookCommand(hooks["PreToolUse"], "Bash", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
+	migrateHookCommand(hooks["PreToolUse"], "apply_patch", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
+	migrateHookCommand(hooks["PostToolUse"], ".*", "scripts/trackfw-attention-cleanup.sh", "scripts/trackfw-attention-cleanup.sh")
+	migrateHookCommand(hooks["PostToolUse"], "Bash", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
+	migrateHookCommand(hooks["PostToolUse"], "apply_patch", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
 
 	hooks["PermissionRequest"] = mergeClaudeHookArray(
 		hooks["PermissionRequest"],
@@ -450,6 +462,20 @@ func InjectGeminiHooks(cwd string) error {
 	if hooks == nil {
 		hooks = make(map[string]interface{})
 	}
+
+	// Migration wiring (ROADMAP-2026-08-11 ML-1A): old==new is a functional no-op
+	// today, but proves the call point exists and runs before the merge below.
+	// The wave that changes the Gemini command strings (ML-4A) updates oldCommand
+	// here instead of adding this call from scratch — without it, the merge's
+	// exact-string dedup would append a duplicate alongside the stale entry.
+	migrateHookCommand(hooks["Notification"], "ToolPermission", "scripts/trackfw-attention-signal.sh", "scripts/trackfw-attention-signal.sh")
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
+	migrateHookCommand(hooks["BeforeTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
+	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
+	migrateHookCommand(hooks["AfterTool"], "*", "scripts/trackfw-attention-cleanup.sh", "scripts/trackfw-attention-cleanup.sh")
+	migrateHookCommand(hooks["AfterTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
+	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
+	migrateHookCommand(hooks["AfterTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
 
 	hooks["Notification"] = mergeClaudeHookArray(
 		hooks["Notification"],
@@ -934,16 +960,23 @@ func removeKnownCommandFromLegacyTopLevelArray(root map[string]interface{}, key,
 	root[key] = kept
 }
 
-// migrateClaudeHookCommand rewrites a legacy hook command to a new one, in
-// place, for every entry matching the given matcher inside a Claude
-// PreToolUse/PostToolUse array. Used to fix
-// .claude/settings.json files already written by an older trackfw before a
-// command string changes — without this, re-running `trackfw init`/`update`
-// only ever appends the new (fixed) command alongside the stale one (merge
-// dedup in mergeClaudeHookArray keys on the exact command string, so it
-// can't tell "same guard, new path" from "a different hook"), leaving the
-// broken entry in place to keep firing and failing forever.
-func migrateClaudeHookCommand(existing interface{}, matcher, oldCommand, newCommand string) {
+// migrateHookCommand rewrites a legacy hook command to a new one, in place,
+// for every entry matching the given matcher inside a "matcher + hooks[].command"
+// shaped array — the format shared by Claude, Codex and Gemini's merge-based
+// settings files (PreToolUse/PostToolUse/PermissionRequest/Notification/
+// BeforeTool/AfterTool). Used to fix settings files already written by an
+// older trackfw before a command string changes — without this, re-running
+// `trackfw init`/`update` only ever appends the new (fixed) command alongside
+// the stale one (merge dedup in mergeClaudeHookArray keys on the exact
+// command string, so it can't tell "same guard, new path" from "a different
+// hook"), leaving the broken entry in place to keep firing and failing
+// forever. Originally written for Claude only (hence the doc comment history
+// below); generalized (ROADMAP-2026-08-11 ML-1A) so Codex/Gemini injectors
+// can call it too, ahead of the mechanism-specific string changes those CLIs'
+// waves make. Must always be called before the corresponding
+// mergeClaudeHookArray call for the same matcher, or the merge's exact-string
+// dedup will append a duplicate instead of rewriting in place.
+func migrateHookCommand(existing interface{}, matcher, oldCommand, newCommand string) {
 	arr, _ := existing.([]interface{})
 	for _, item := range arr {
 		obj, ok := item.(map[string]interface{})

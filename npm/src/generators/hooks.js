@@ -85,14 +85,20 @@ function mergeClaudeHookArray(existing, matcher, command) {
   return arr
 }
 
-// migrateClaudeHookCommand rewrites a legacy hook command to a new one, in place, for every entry
-// matching the given matcher inside a Claude PreToolUse/PostToolUse array. Used to fix
-// .claude/settings.json files already written by an older trackfw before a command string changes
-// -- without this, re-running `trackfw init`/`update` only ever appends the new (fixed) command
-// alongside the stale one (merge dedup in mergeClaudeHookArray keys on the exact command string, so
-// it can't tell "same guard, new path" from "a different hook"), leaving the broken entry in place
-// to keep firing and failing forever.
-function migrateClaudeHookCommand(existing, matcher, oldCommand, newCommand) {
+// migrateHookCommand rewrites a legacy hook command to a new one, in place, for every entry
+// matching the given matcher inside a "matcher + hooks[].command" shaped array -- the format
+// shared by Claude, Codex and Gemini's merge-based settings files (PreToolUse/PostToolUse/
+// PermissionRequest/Notification/BeforeTool/AfterTool). Used to fix settings files already written
+// by an older trackfw before a command string changes -- without this, re-running
+// `trackfw init`/`update` only ever appends the new (fixed) command alongside the stale one (merge
+// dedup in mergeClaudeHookArray keys on the exact command string, so it can't tell "same guard, new
+// path" from "a different hook"), leaving the broken entry in place to keep firing and failing
+// forever. Originally written for Claude only (hence the doc comment history); generalized
+// (ROADMAP-2026-08-11 ML-1A) so Codex/Gemini injectors can call it too, ahead of the
+// mechanism-specific string changes those CLIs' waves make. Must always be called before the
+// corresponding mergeClaudeHookArray call for the same matcher, or the merge's exact-string dedup
+// will append a duplicate instead of rewriting in place.
+function migrateHookCommand(existing, matcher, oldCommand, newCommand) {
   const arr = Array.isArray(existing) ? existing : []
   for (const item of arr) {
     if (!item || item.matcher !== matcher) continue
@@ -585,8 +591,8 @@ function injectClaudeHooks(cwd) {
   // merging the fixed one below, so upgrading doesn't just append a second, still-broken entry
   // alongside the new one (see GUARD_CMD_CLAUDE comment for the "No such file or directory" bug).
   for (const matcher of ['Bash', 'Read', 'Write|Edit']) {
-    migrateClaudeHookCommand(data.hooks.PreToolUse, matcher, GUARD_CMD, GUARD_CMD_CLAUDE)
-    migrateClaudeHookCommand(data.hooks.PostToolUse, matcher, GUARD_CMD, GUARD_CMD_CLAUDE)
+    migrateHookCommand(data.hooks.PreToolUse, matcher, GUARD_CMD, GUARD_CMD_CLAUDE)
+    migrateHookCommand(data.hooks.PostToolUse, matcher, GUARD_CMD, GUARD_CMD_CLAUDE)
   }
 
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
@@ -633,6 +639,19 @@ function injectCodexHooks(cwd) {
   const data = readJSON(filePath)
 
   if (!data.hooks) data.hooks = {}
+
+  // Migration wiring (ROADMAP-2026-08-11 ML-1A): old === new is a functional no-op today, but
+  // proves the call point exists and runs before the merge below. The wave that changes the Codex
+  // command strings (ML-3A) updates the oldCommand argument here instead of adding this call from
+  // scratch -- without it, the merge's exact-string dedup would append a duplicate alongside the
+  // stale entry.
+  migrateHookCommand(data.hooks.PermissionRequest, '.*', SIGNAL_CMD, SIGNAL_CMD)
+  migrateHookCommand(data.hooks.PreToolUse, 'Bash', GUARD_CMD, GUARD_CMD)
+  migrateHookCommand(data.hooks.PreToolUse, 'apply_patch', GUARD_CMD, GUARD_CMD)
+  migrateHookCommand(data.hooks.PostToolUse, '.*', CLEANUP_CMD, CLEANUP_CMD)
+  migrateHookCommand(data.hooks.PostToolUse, 'Bash', GUARD_CMD, GUARD_CMD)
+  migrateHookCommand(data.hooks.PostToolUse, 'apply_patch', GUARD_CMD, GUARD_CMD)
+
   data.hooks.PermissionRequest = mergeClaudeHookArray(data.hooks.PermissionRequest, '.*', SIGNAL_CMD)
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
   // Wave 2 to apply_patch): skip project-scope credential-guard when the global one is already
@@ -682,6 +701,21 @@ function injectGeminiHooks(cwd) {
   const data = readJSON(filePath)
 
   if (!data.hooks) data.hooks = {}
+
+  // Migration wiring (ROADMAP-2026-08-11 ML-1A): old === new is a functional no-op today, but
+  // proves the call point exists and runs before the merge below. The wave that changes the
+  // Gemini command strings (ML-4A) updates the oldCommand argument here instead of adding this
+  // call from scratch -- without it, the merge's exact-string dedup would append a duplicate
+  // alongside the stale entry.
+  migrateHookCommand(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD, SIGNAL_CMD)
+  migrateHookCommand(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD, GUARD_CMD)
+  migrateHookCommand(data.hooks.BeforeTool, 'read_file|read_many_files', GUARD_CMD, GUARD_CMD)
+  migrateHookCommand(data.hooks.BeforeTool, 'write_file|replace', GUARD_CMD, GUARD_CMD)
+  migrateHookCommand(data.hooks.AfterTool, '*', CLEANUP_CMD, CLEANUP_CMD)
+  migrateHookCommand(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD, GUARD_CMD)
+  migrateHookCommand(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD, GUARD_CMD)
+  migrateHookCommand(data.hooks.AfterTool, 'write_file|replace', GUARD_CMD, GUARD_CMD)
+
   data.hooks.Notification = mergeClaudeHookArray(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD)
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
   // Wave 2 to read_file|read_many_files / write_file|replace): skip project-scope

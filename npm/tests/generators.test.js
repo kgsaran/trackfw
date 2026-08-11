@@ -456,6 +456,51 @@ test('injectCodexHooks preserves pre-existing PreToolUse Bash entry (merge, not 
   assert.equal(data.hooks.PreToolUse[1].matcher, 'apply_patch')
 })
 
+// ML-1A migration wiring: migrateHookCommand is called before mergeClaudeHookArray for every
+// trackfw-owned matcher in injectCodexHooks, wired with old === new (a functional no-op today --
+// no Codex command string changes until ML-3A). This fixture pre-populates every trackfw-owned
+// matcher with the currently-emitted command, exactly as an older trackfw run would have left it,
+// and asserts the injector converges to exactly one deduped entry per matcher instead of leaving a
+// second one behind. When ML-3A flips migrateHookCommand's oldCommand argument to the legacy
+// string, this same fixture becomes a genuine migration test with no structural changes needed.
+test('injectCodexHooks migration wiring rewrites in place, does not duplicate', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-codex-hooks-migrate-'))
+  const hooksPath = path.join(tmpDir, '.codex', 'hooks.json')
+
+  const mk = (matcher, command) => ({ matcher, hooks: [{ type: 'command', command }] })
+  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
+  fs.writeFileSync(hooksPath, JSON.stringify({
+    hooks: {
+      PermissionRequest: [mk('.*', 'scripts/trackfw-attention-signal.sh')],
+      PreToolUse: [
+        mk('Bash', 'scripts/trackfw-credential-guard.sh'),
+        mk('apply_patch', 'scripts/trackfw-credential-guard.sh'),
+      ],
+      PostToolUse: [
+        mk('.*', 'scripts/trackfw-attention-cleanup.sh'),
+        mk('Bash', 'scripts/trackfw-credential-guard.sh'),
+        mk('apply_patch', 'scripts/trackfw-credential-guard.sh'),
+      ],
+    },
+  }, null, 2))
+
+  injectCodexHooks(tmpDir)
+
+  const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  const checkOne = (event, matcher, command) => {
+    const entries = data.hooks[event].filter(e => e.matcher === matcher)
+    assert.equal(entries.length, 1, `${event}[${matcher}]: expected exactly 1 matcher entry (no duplicate)`)
+    assert.equal(entries[0].hooks.length, 1, `${event}[${matcher}]: expected exactly 1 hook`)
+    assert.equal(entries[0].hooks[0].command, command, `${event}[${matcher}]: unexpected command`)
+  }
+  checkOne('PermissionRequest', '.*', 'scripts/trackfw-attention-signal.sh')
+  checkOne('PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh')
+  checkOne('PreToolUse', 'apply_patch', 'scripts/trackfw-credential-guard.sh')
+  checkOne('PostToolUse', '.*', 'scripts/trackfw-attention-cleanup.sh')
+  checkOne('PostToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh')
+  checkOne('PostToolUse', 'apply_patch', 'scripts/trackfw-credential-guard.sh')
+})
+
 test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gemini-hooks-'))
   const settingsPath = path.join(tmpDir, '.gemini', 'settings.json')
@@ -516,6 +561,51 @@ test('injectGeminiHooks preserves an existing BeforeTool[run_shell_command] entr
   const commands = data.hooks.BeforeTool[0].hooks.map(h => h.command)
   assert.ok(commands.includes('scripts/other.sh'), 'existing BeforeTool hook lost during merge')
   assert.ok(commands.includes('scripts/trackfw-credential-guard.sh'), 'credential-guard hook missing after merge')
+})
+
+// ML-1A migration wiring: Gemini counterpart of the injectCodexHooks migration-wiring test above --
+// see that test's comment for the ML-1A/ML-4A rationale (old === new wiring today; this fixture
+// becomes a genuine migration test once ML-4A flips migrateHookCommand's oldCommand argument).
+test('injectGeminiHooks migration wiring rewrites in place, does not duplicate', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gemini-hooks-migrate-'))
+  const settingsPath = path.join(tmpDir, '.gemini', 'settings.json')
+
+  const mk = (matcher, command) => ({ matcher, hooks: [{ type: 'command', command }] })
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    hooks: {
+      Notification: [mk('ToolPermission', 'scripts/trackfw-attention-signal.sh')],
+      BeforeTool: [
+        mk('run_shell_command', 'scripts/trackfw-credential-guard.sh'),
+        mk('read_file|read_many_files', 'scripts/trackfw-credential-guard.sh'),
+        mk('write_file|replace', 'scripts/trackfw-credential-guard.sh'),
+      ],
+      AfterTool: [
+        mk('*', 'scripts/trackfw-attention-cleanup.sh'),
+        mk('run_shell_command', 'scripts/trackfw-credential-guard.sh'),
+        mk('read_file|read_many_files', 'scripts/trackfw-credential-guard.sh'),
+        mk('write_file|replace', 'scripts/trackfw-credential-guard.sh'),
+      ],
+    },
+  }, null, 2))
+
+  injectGeminiHooks(tmpDir)
+
+  const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  const checkOne = (event, matcher, command) => {
+    const entries = data.hooks[event].filter(e => e.matcher === matcher)
+    assert.equal(entries.length, 1, `${event}[${matcher}]: expected exactly 1 matcher entry (no duplicate)`)
+    assert.equal(entries[0].hooks.length, 1, `${event}[${matcher}]: expected exactly 1 hook`)
+    assert.equal(entries[0].hooks[0].command, command, `${event}[${matcher}]: unexpected command`)
+  }
+  checkOne('Notification', 'ToolPermission', 'scripts/trackfw-attention-signal.sh')
+  checkOne('BeforeTool', 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
+  checkOne('BeforeTool', 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
+  checkOne('BeforeTool', 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
+  checkOne('AfterTool', '*', 'scripts/trackfw-attention-cleanup.sh')
+  checkOne('AfterTool', 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
+  checkOne('AfterTool', 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
+  checkOne('AfterTool', 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
 })
 
 test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently', () => {
