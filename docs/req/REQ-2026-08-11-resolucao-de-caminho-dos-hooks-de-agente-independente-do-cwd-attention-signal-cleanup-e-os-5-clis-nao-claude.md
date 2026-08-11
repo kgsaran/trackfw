@@ -2,7 +2,7 @@
 status: Open
 date: 2026-08-11
 author: "Zeus (Arquiteto)"
-adr: ""
+adr: "docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md"
 ---
 
@@ -88,8 +88,7 @@ verificação — o ADR documenta o que foi provado, não a hipótese.
   usuário rodando `trackfw update`.
 
 ## Linked ADR
-<!-- ADR criado na Wave 1 (barreira), após a verificação da Wave 0 -->
-ADR:
+ADR: docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md
 
 ## Blocked by ADRs
 <!-- none -->

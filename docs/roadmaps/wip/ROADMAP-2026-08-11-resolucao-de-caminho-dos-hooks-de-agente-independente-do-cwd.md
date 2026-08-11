@@ -86,7 +86,7 @@ directory"). O próprio commit registrou o restante como fora de escopo.
       explicitamente os CLIs em que **nenhuma mudança é necessária**.
 - [ ] Todo CLI provado quebrado emite comandos que resolvem para a raiz do projeto independentemente
       do cwd, nos 3 stacks (Go, Node.js, Python).
-- [ ] Todo injector *merge-based* alterado (Claude, Codex, Gemini, Cursor) tem migração in-place; um
+- [ ] Todo injector *merge-based* alterado (Claude, Codex, Gemini) tem migração in-place; um
       `trackfw update` sobre settings de versão antiga **reescreve** a entrada, não duplica.
 - [ ] Testes nos 3 stacks cobrem, por CLI alterado: comando novo emitido, migração de entrada
       antiga, e idempotência (`update` duas vezes → nenhuma entrada duplicada).
@@ -107,7 +107,13 @@ projetos consumidores.
 > Dependências: nenhuma. **Bloqueia todas as waves seguintes.**
 
 ### ML-0A — Semântica de cwd e placeholders de caminho nos 6 CLIs
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (auditado por Zeus em 2026-08-11)
+**Resultado:** `docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md`. Vereditos:
+Claude `QUEBRADO` · Codex `QUEBRADO` · Gemini `QUEBRADO` · **Cursor `OK`** · **Copilot `OK` (já
+correto no código atual)** · **Kiro `INDETERMINADO`**. Achado auditado por Zeus contra o código nos
+3 stacks: `InjectCopilotHooks` já emite `"cwd": "."` em todas as entradas
+(`agentfiles.go:698–762`, `hooks.js:837–849`, `hooks.py:610/618/631`) — Copilot nunca esteve
+quebrado. **Escopo do roadmap caiu de 6 CLIs para 3.**
 **Agente:** Prometeu (`prometeu-tf`)
 **Arquivos afetados:** cria `docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md` (novo).
 **Nenhum arquivo de código é tocado neste ML.**
@@ -150,8 +156,34 @@ git status --porcelain   # só o arquivo novo em docs/pesquisa/
 
 ---
 
-## Barreira B0 — ADR do mecanismo (Zeus)
+## Barreira B0 — ADR do mecanismo (Zeus) — ✅ CONCLUÍDA
 > Dependências: ML-0A concluído e auditado.
+
+**ADR aceito:**
+`docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md`
+
+**Strings decididas** (substituem os placeholders `<CMD_*>` dos MLs abaixo):
+
+| CLI | Decisão | String emitida |
+|---|---|---|
+| Claude | alterar attention-signal/cleanup | `$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-{signal,cleanup}.sh` |
+| Codex | alterar todos os comandos | `"$(git rev-parse --show-toplevel)/scripts/trackfw-<script>.sh"` |
+| Gemini | alterar todos os comandos | `$GEMINI_PROJECT_DIR/scripts/trackfw-<script>.sh` |
+| Cursor | **não alterar** (veredito `OK`) | — |
+| Copilot | **não alterar** (já correto via campo nativo `"cwd": "."`) | — |
+| Kiro | **não alterar** (`INDETERMINADO`) | — |
+
+**Waves canceladas por esta barreira: ML-5A (Kiro), ML-6A (Copilot), ML-7A (Cursor).** Mantidas no
+documento com a razão registrada — não apagar, o registro de *por que* Copilot já estava certo tem
+valor.
+
+**Consequência para o ML-1A:** a generalização da migração passa a cobrir **apenas Codex e Gemini**.
+Cursor sai do escopo (não muda de string, logo não precisa migrar).
+
+**Consequência que aumenta a importância da regra dura das constantes do Node:** Cursor e Copilot
+continuam usando `SIGNAL_CMD`/`CLEANUP_CMD`/`GUARD_CMD`. Como agora são CLIs **verificados
+corretos**, mutar a constante compartilhada deixa de ser "vazamento de escopo" e passa a ser
+**regressão em wiring comprovadamente bom**. Dividir as constantes é requisito de não-regressão.
 
 Zeus escreve o ADR decidindo o mecanismo de resolução **por CLI**, com base na tabela do ML-0A. O ADR
 deve: (i) admitir mecanismos diferentes por CLI quando a verificação mostrar que não há um único;
@@ -159,8 +191,6 @@ deve: (i) admitir mecanismos diferentes por CLI quando a verificação mostrar q
 versionado"; (iv) definir a **string exata** a ser emitida por CLI, referenciada abaixo como
 `<CMD_<CLI>>`. **As waves 1–7 não são liberadas antes disso** — os MLs abaixo estão com a string
 propositalmente parametrizada e um agente leve não deve adivinhá-la.
-
-Zeus também decide aqui, à luz do ML-0A, quais das waves 3–7 são **canceladas** por veredito `OK`.
 
 **Default para `INDETERMINADO` (definido agora, para a barreira não travar).** Kiro e Copilot
 provavelmente não têm doc de hooks comparável à do Claude, então `INDETERMINADO` é o resultado
@@ -176,8 +206,10 @@ inferência a partir de outro CLI.
 > Dependências: Barreira B0. **Pré-requisito de todas as waves de emissão** — sem ele, trocar a
 > string em Codex/Gemini/Cursor duplica entradas em vez de corrigir.
 
-### ML-1A — Generalizar o helper de migração para Codex, Gemini e Cursor
+### ML-1A — Generalizar o helper de migração para Codex e Gemini
 **Status:** ⬜ Pendente
+> **Escopo reduzido pela Barreira B0:** o Cursor saiu — veredito `OK`, não muda de string, logo não
+> precisa de migração. Restam os dois injectors merge-based que vão mudar: **Codex e Gemini**.
 **Agente:** Apolo (`apolo-tf`)
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` (helper em `:946`)
@@ -188,25 +220,25 @@ inferência a partir de outro CLI.
 
 **Ações:**
 1. Generalizar `migrateClaudeHookCommand` / `_migrate_claude_hook_command` para uma forma reusável
-   pelos formatos de Codex, Gemini e Cursor — **sem alterar o comportamento atual para o Claude**.
-   Os formatos JSON alvo estão documentados no inventário: Codex e Gemini usam a forma
-   `matcher` + `hooks[].command`; Cursor usa `hooks.<evento>[].command` (com `matcher` opcional) e
-   `beforeShellExecution`/`afterShellExecution`.
+   pelos formatos de Codex e Gemini — **sem alterar o comportamento atual para o Claude**.
+   Ambos usam a forma `matcher` + `hooks[].command`, igual à do Claude — o formato do Cursor
+   (`hooks.<evento>[].command`, `beforeShellExecution`/`afterShellExecution`) **não** precisa ser
+   suportado, pois o Cursor não muda de string.
 2. Manter a ordem de chamada: migração **antes** do merge, para que o dedup por string exata do
    merge não acrescente duplicata.
 3. **Não** alterar nenhuma string de comando emitida neste ML — este ML só adiciona capacidade.
 4. **Wiring obrigatório:** o helper generalizado tem de ser **efetivamente chamado** pelos injectors
-   de Codex, Gemini e Cursor — inicialmente com `old == new` (a string atual), o que é um no-op
+   de Codex e Gemini — inicialmente com `old == new` (a string atual), o que é um no-op
    funcional mas prova que o ponto de chamada existe e está na ordem certa (antes do merge). Um
    helper generalizado e nunca ligado passaria em todos os gates e reabriria o buraco lá na frente.
 5. Testes novos: dado um settings file com a string antiga, após a migração a entrada é
-   **reescrita** (não duplicada), para cada um dos 3 formatos.
+   **reescrita** (não duplicada), para Codex e Gemini.
 
 **Critérios de aceite:**
 - [ ] Nenhuma string de comando emitida mudou (`git diff` não mostra alteração de literal de comando).
-- [ ] Helper cobre os 3 formatos (Codex/Gemini/Cursor) além do já suportado Claude, nos 3 stacks.
+- [ ] Helper cobre os formatos de Codex e Gemini além do já suportado Claude, nos 3 stacks.
 - [ ] Cada formato tem teste que invoca o **injector real** (`InjectCodexHooks` / `InjectGeminiHooks`
-      / `InjectCursorHooks` e equivalentes Node/Python) contra um fixture com a string antiga e
+      e equivalentes Node/Python) contra um fixture com a string antiga e
       assevera reescrita in-place — **não** teste unitário do helper isolado. Este critério é o que
       distingue "helper existe" de "migração funciona".
 - [ ] `go test ./...`, `npm test`, `pytest` verdes.
@@ -244,7 +276,8 @@ bash scripts/check-agent-hooks-parity.sh
 **Ações:**
 0. **Primeiro**, dividir as constantes compartilhadas do Node (§Context, REGRA DURA) preservando o
    valor atual para os 6 CLIs. Confirmar com `git diff` que nenhuma emissão mudou ainda.
-1. Trocar a string emitida para `<CMD_CLAUDE>` (definida na Barreira B0) nas linhas acima.
+1. Trocar a string emitida para `$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh` e
+   `$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh` (Barreira B0) nas linhas acima.
 2. Estender a chamada de migração (`agentfiles.go:231–232`, `hooks.js:588–589`, `hooks.py:287–288`)
    para reescrever também `scripts/trackfw-attention-signal.sh` e
    `scripts/trackfw-attention-cleanup.sh` no matcher `AskUserQuestion`.
@@ -269,6 +302,8 @@ bash scripts/check-agent-hooks-parity.sh
 ---
 
 ## Waves 3–7 — Um CLI por wave, **sequenciais** (1 ML cada)
+> ⚠️ **Após a Barreira B0 restam apenas ML-3A (Codex) e ML-4A (Gemini).** ML-5A, ML-6A e ML-7A foram
+> canceladas — motivos registrados em cada uma.
 > Dependências: Wave 2 (encadeadas: 3 → 4 → 5 → 6 → 7).
 > **Cada wave só é executada se o ML-0A tiver dado veredito `QUEBRADO` para aquele CLI.** Vereditos
 > `OK` cancelam a wave; `INDETERMINADO` bloqueia e volta para Zeus.
@@ -281,6 +316,15 @@ listados, respeitando as armadilhas de edição do §Context.
 
 ### ML-3A — Codex (`.codex/hooks.json`) — merge-based, **precisa de migração**
 **Status:** ⬜ Pendente · **Agente:** Apolo (`apolo-tf`)
+**String a emitir:** `"$(git rev-parse --show-toplevel)/scripts/trackfw-<script>.sh"` — **com as
+aspas internas**, como nos exemplos oficiais do fornecedor.
+🔴 **Critério de aceite EXTRA e bloqueante (só deste ML):** o Codex é o único caso em que a correção
+pode piorar a situação — se o `command` não for executado via shell, o `$(...)` não expande e o hook
+passa a falhar **sempre**, não só sob cwd derivado. Antes de dar o ML por concluído, **verificar
+empiricamente**: pegar a string exatamente como emitida no `.codex/hooks.json` gerado, executá-la em
+um shell a partir de um **subdiretório** do repo, e confirmar que o script roda. Se essa verificação
+não for possível, **não altere o Codex** — reporte a Zeus e o ML vira "não alterado, registrado como
+não verificável", mesmo default do Kiro (ver ADR §Consequences).
 **Linhas:** Go `344, 356, 361, 368, 374, 379` · Node `636, 642, 643, 645, 647, 648` (via constantes
 437/438/439) · Python `378, 389, 392, 397, 401, 404`
 **Testes:** Go `agentfiles_test.go` 285/288/291/294/341 · Node `generators.test.js` 410–420, 455 ·
@@ -288,13 +332,19 @@ Python `test_generators_init.py` 546, 552
 
 ### ML-4A — Gemini (`.gemini/settings.json`) — merge-based, **precisa de migração**
 **Status:** ⬜ Pendente · **Agente:** Apolo (`apolo-tf`)
+**String a emitir:** `$GEMINI_PROJECT_DIR/scripts/trackfw-<script>.sh`
 **Linhas:** Go `457, 470, 475, 480, 487, 493, 498, 503` · Node `685, 691, 692, 693, 695, 697, 698,
 699` · Python `450, 459, 466, 467, 470, 472, 473, 474`
 **Testes:** Go `agentfiles_test.go` 258–267, 367–376, 422 · Node `generators.test.js` 466–479, 518 ·
 Python `test_generators_init.py` 595, 614, 653
 
-### ML-5A — Kiro (`.kiro/hooks/trackfw-attention.json`) — **arquivo regravado, sem migração**
-**Status:** ⬜ Pendente · **Agente:** Apolo (`apolo-tf`)
+### ML-5A — Kiro — ❌ **CANCELADO pela Barreira B0**
+**Status:** ❌ Cancelado
+**Motivo:** veredito `INDETERMINADO` no ML-0A — as 4 páginas oficiais de hooks do Kiro nunca
+mencionam o cwd de execução da "Shell Command action" nem expõem env var de raiz de projeto.
+Aplica-se o default do roadmap: **não alterar**, registrar em `docs/cli-parity.md` como não
+verificável (feito no ML-8A). Linhas mantidas abaixo apenas como registro do que *seria* editado se
+surgir doc primária no futuro.
 **Linhas:** Go `575, 582, 598, 605, 615, 622, 629, 636` · Node `735, 742, 756, 763, 772, 779, 786,
 793` · Python `511, 518, 531, 538, 548, 555, 562, 569`
 **Testes:** Node `generators.test.js` 533–547 · Python `test_generators_init.py` 678
@@ -302,16 +352,27 @@ Python `test_generators_init.py` 595, 614, 653
 (`hooks.js` ~761–765).** Alterar apenas o valor do campo `command`; **não** reformatar, reordenar
 nem reindentar esse bloco. Se a sabotagem quebrar, é regressão do ML, não do gate.
 
-### ML-6A — Copilot (`.github/hooks/trackfw-attention.json`) — **arquivo regravado, sem migração**
-**Status:** ⬜ Pendente · **Agente:** Apolo (`apolo-tf`)
+### ML-6A — Copilot — ❌ **CANCELADO pela Barreira B0: já estava correto**
+**Status:** ❌ Cancelado
+**Motivo:** veredito `OK`. `InjectCopilotHooks` **já** emite o campo nativo `"cwd": "."` em todas as
+entradas nos 3 stacks (`agentfiles.go:698–762`, `hooks.js:837–849`, `hooks.py:610/618/631`) —
+verificado por Zeus lendo o código, não só pela doc. A doc do GitHub define o campo como *"Working
+directory for the command (relative to repository root or absolute)"*, então o caminho relativo
+dentro de `bash` resolve certo **por causa** desse campo. Copilot nunca esteve quebrado, e é o
+precedente que o ADR registra: campo estruturado de cwd > placeholder em string.
 **Linhas:** Go `697, 705, 726, 733, 740, 747, 754, 761` · Node `837, 838, 844–849` · Python `609,
 617` + **`630` (`guard_entry`, espalhado em 6 entries via `dict(guard_entry, ...)` em 638–639 e
 646–651 — uma edição só)**
 **Testes:** Go `agentfiles_test.go` 566–587, `copilot_hooks_parity_test.go` 169–172 · Node
 `generators.test.js` 586–608 · Python `test_generators_init.py` 724–746
 
-### ML-7A — Cursor (`.cursor/hooks.json`) — merge-based, **precisa de migração**
-**Status:** ⬜ Pendente · **Agente:** Apolo (`apolo-tf`)
+### ML-7A — Cursor — ❌ **CANCELADO pela Barreira B0**
+**Status:** ❌ Cancelado
+**Motivo:** veredito `OK`. Doc primária: *"Project hooks (`.cursor/hooks.json` in a repository): Run
+from the project root"*, e o exemplo canônico ensina exatamente a usar caminho relativo à raiz
+(`.cursor/hooks/script.sh`, não `./hooks/script.sh`). Emitir `$CURSOR_PROJECT_DIR/...` seria mudança
+sem defeito correspondente. **Consequência:** a armadilha do dedup duplo no Python/Cursor e a
+necessidade de migração para o Cursor deixam de ser restrições ativas deste roadmap.
 **Linhas:** Go `877, 878, 888, 889, 900, 901, 902, 903` (+ purga de legado `879, 880`) · Node
 `935/936/938, 941/942/944, 951/952, 956/957, 968, 971, 974, 977, 980` · Python **`741+742, 746+747,
 756+757, 760+761`** e **predicado `774` × appends `780, 782, 784, 786`**
@@ -321,10 +382,12 @@ nem reindentar esse bloco. Se a sabotagem quebrar, é regressão do ML, não do 
 `append`. Editar **os dois**. Editar só o `append` desliga o dedup e o injector passa a acrescentar
 uma entrada nova a cada execução. Critério de aceite dedicado abaixo.
 
-**Critérios de aceite (idênticos para ML-3A … ML-7A):**
-- [ ] Os 3 stacks emitem `<CMD_<CLI>>` em **todas** as linhas inventariadas para aquele CLI.
+**Critérios de aceite (idênticos para ML-3A e ML-4A — únicos MLs vivos desta faixa):**
+- [ ] Os 3 stacks emitem a string decidida na Barreira B0 em **todas** as linhas inventariadas.
+- [ ] **Não-regressão:** as emissões de Cursor, Copilot e Kiro são **byte-idênticas** antes e depois
+      (são CLIs verificados corretos — alterá-los é regressão, não melhoria).
 - [ ] `git grep` não encontra mais o caminho relativo puro no wiring daquele CLI, em nenhum stack.
-- [ ] (merge-based: Codex, Gemini, Cursor) migração reescreve a entrada antiga in-place.
+- [ ] Migração reescreve a entrada antiga in-place (ambos são merge-based).
 - [ ] **Idempotência**: rodar o injector duas vezes sobre o mesmo arquivo produz JSON idêntico
       (prova que o dedup continua funcionando — critério que captura a armadilha Python/Cursor).
 - [ ] Testes dos 3 stacks atualizados e verdes.
@@ -333,7 +396,7 @@ uma entrada nova a cada execução. Critério de aceite dedicado abaixo.
 - [ ] Nenhum arquivo em `internal/generators/update.go`, `npm/src/commands/update-harness.js` ou
       `pypi/trackfw/commands/update_harness.py` foi tocado (escopo global é fora de escopo).
 
-**Comandos de validação (todas as waves 3–7):**
+**Comandos de validação (ML-3A e ML-4A):**
 ```bash
 go build ./... && go test ./...
 npm --prefix npm test

@@ -10638,3 +10638,83 @@ documentar hipótese, não decisão provada.
 
 **Pendente de KG:** autorizar a execução (mover roadmap para `wip`, criar branch, despachar ML-0A
 para Prometeu).
+
+## Sessão 2026-08-11 — Prometeu (Tooling) — ML-0A: pesquisa de cwd/placeholders nos 6 CLIs — SEM COMMIT (Zeus audita)
+
+**Entregue.** `docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md` — tabela 6×4 (Claude
+Code, Codex CLI, Gemini CLI, Cursor, Kiro, GitHub Copilot CLI), cada célula preenchida com URL +
+citação literal, vereditos por CLI, seção de fontes consultadas. `git status --porcelain` confirma
+que só esse arquivo novo foi tocado.
+
+**Vereditos:** Claude Code `QUEBRADO` (mecanismo: `${CLAUDE_PROJECT_DIR}`) · Codex CLI `QUEBRADO`
+(sem env var de project-dir para hooks comuns; mecanismo recomendado pela própria doc é
+`$(git rev-parse --show-toplevel)` embutido no `command`) · Gemini CLI `QUEBRADO` (evidência primária
+indireta: `GEMINI_CWD` e `GEMINI_PROJECT_DIR` são duas env vars distintas documentadas, e 100% dos
+exemplos de hook script da doc usam `$GEMINI_PROJECT_DIR`, mas não há uma frase explícita única
+confirmando dinamismo do cwd — Zeus decide se isso basta para tratar como QUEBRADO ou se prefere
+INDETERMINADO cautelar) · Cursor `OK` (hooks de projeto rodam fixos na raiz do projeto, doc
+explicita que relativo já resolve contra a raiz) · Kiro `INDETERMINADO` (as 4 páginas oficiais de
+hooks nunca mencionam cwd de execução do comando nem placeholder de raiz de projeto) · GitHub
+Copilot CLI `OK` **e já corrigido no código atual** — achado que contraria a hipótese do roadmap.
+
+**Achado fora da hipótese inicial:** `InjectCopilotHooks` (`internal/generators/agentfiles.go:687`)
+já emite `"cwd": "."` em toda entrada de hook do Copilot, e a doc oficial confirma que esse campo é
+"relative to repository root" — ou seja, Copilot **não precisa de nenhuma Wave de correção**; ele já
+estava certo antes deste ML, por já usar o campo `cwd` nativo do fornecedor em vez de depender de
+caminho relativo puro no campo `command`/`bash`.
+
+**Pendente de Zeus:** ler a pesquisa, decidir o veredito final de Gemini (QUEBRADO vs INDETERMINADO
+cautelar), escrever o ADR da Barreira B0 com a string exata `<CMD_<CLI>>` por CLI, cancelar a(s)
+wave(s) de Copilot (já OK) e liberar as waves de emissão restantes.
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria do ML-0A + Barreira B0 (ADR) — CONCLUÍDA
+
+**Auditoria do ML-0A (Prometeu).** Todos os critérios de aceite verificados um a um. Escopo
+respeitado (`git status`: só `docs/pesquisa/` + working context). Não aceitei o relatório de palavra:
+verifiquei o achado central contra o código nos 3 stacks — `InjectCopilotHooks` **já** emite
+`"cwd": "."` em todas as entradas (`agentfiles.go:698–762`, `hooks.js:837–849`,
+`hooks.py:610/618/631`). Confirmado. Também confirmei contra a doc do Codex (que redireciona para
+`learn.chatgpt.com/docs/hooks`) que **todos** os exemplos oficiais de hook repo-local usam
+`$(git rev-parse --show-toplevel)` dentro do `command` — evidência de execução via shell, que era a
+pré-condição em risco.
+
+**Resultado que redimensiona o roadmap: de 6 CLIs para 3.**
+`QUEBRADO` → Claude, Codex, Gemini. `OK` → **Cursor** (doc: "Project hooks … Run from the project
+root") e **Copilot** (já correto, via campo nativo `cwd`). `INDETERMINADO` → **Kiro** (doc de hooks
+nunca menciona cwd de execução nem env var de raiz).
+
+**ADR aceito (Barreira B0):**
+`docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md`.
+Decide **mecanismo por CLI**, não uniformidade: Claude `$CLAUDE_PROJECT_DIR/…`, Gemini
+`$GEMINI_PROJECT_DIR/…`, Codex `"$(git rev-parse --show-toplevel)/…"`, e **nenhuma mudança** para
+Cursor/Copilot/Kiro. Regra geral derivada, em ordem de preferência: campo estruturado de cwd do
+fornecedor > placeholder/env var expandido em runtime > substituição de shell > não mexer.
+
+**Duas decisões que merecem registro por não serem óbvias:**
+
+1. **Gemini entra por argumento de assimetria, não por prova de dinamismo.** A doc do Gemini não tem
+   a frase explícita equivalente à do Claude. Mas `$GEMINI_PROJECT_DIR` resolve para a raiz **tanto
+   se o cwd derivar quanto se não derivar** — a mudança não pode piorar, e corrige se o bug existir.
+   Não é preciso provar que está quebrado; basta o mecanismo estar confirmado (e está: documentado,
+   com exemplos oficiais). O ADR registra essa justificativa explicitamente para que ninguém leia
+   depois como "a doc provou".
+2. **Codex é o único caso em que a assimetria NÃO vale** — e por isso é o único com critério de
+   aceite empírico bloqueante. Se o `command` não for executado via shell, o `$(...)` não expande e
+   o hook passa a falhar **sempre**, não só sob cwd derivado: regressão pior que o defeito atual. O
+   ML-3A exige executar a string emitida num shell, a partir de um subdiretório, antes de concluir.
+   Falhando isso, Codex reverte para "não alterado, registrado como não verificável" (default do
+   Kiro). Limitações aceitas e registradas no ADR: depende de git, e em submódulo/worktree o
+   `--show-toplevel` retorna a raiz errada.
+
+**Efeito colateral que aumenta o risco das constantes do Node.** Cursor e Copilot continuam usando
+`SIGNAL_CMD`/`CLEANUP_CMD`/`GUARD_CMD` (`npm/src/generators/hooks.js:437–439`). Como agora são CLIs
+**verificados corretos**, mutar a constante compartilhada deixou de ser "vazamento de escopo" e
+passou a ser **regressão em wiring comprovadamente bom**. A divisão em constantes por CLI virou
+requisito de não-regressão, com critério de aceite de diff byte-idêntico para Cursor/Copilot/Kiro.
+
+**Roadmap atualizado:** ML-0A ✅; Barreira B0 ✅ com a tabela de strings decididas; **ML-5A (Kiro),
+ML-6A (Copilot) e ML-7A (Cursor) ❌ cancelados** — mantidos no documento com o motivo, não apagados;
+ML-1A teve o escopo reduzido para **Codex e Gemini** (Cursor saiu da generalização da migração).
+Restam vivos: ML-1A → ML-2A → ML-3A → ML-4A → ML-8A/8B. `trackfw validate` sem violações.
+
+**Próximo:** despachar ML-1A (Apolo).
