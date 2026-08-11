@@ -36,9 +36,11 @@ directory"). O próprio commit registrou o restante como fora de escopo.
 2. **Caminho absoluto está proibido no escopo de projeto.** Os arquivos de settings são versionados
    no repo do usuário; gravar o path da máquina que rodou `trackfw init/update` quebra o hook para
    qualquer outro checkout.
-3. **Gap crítico de migração.** O helper de reescrita in-place (`migrateClaudeHookCommand` /
-   `_migrate_claude_hook_command`) existe **só para o Claude**. Codex, Gemini e Cursor também são
-   injectors *merge-based* (leem e mesclam o arquivo existente do usuário) e **não têm migração** —
+3. **Gap crítico de migração.** ✅ **RESOLVIDO no ML-1A.** O helper de reescrita in-place existia
+   **só para o Claude**; foi generalizado (`migrateHookCommand` / `_migrate_hook_command`) e ligado
+   aos injectors de **Codex e Gemini**. ⚠️ **Correção pós-Barreira B0:** o **Cursor saiu** desta
+   lista — veredito `OK`, não muda de string, logo não precisa de migração. Codex e Gemini são
+   *merge-based* (leem e mesclam o arquivo existente do usuário) e sem migração —
    trocar a string deles sem migração faria o `trackfw update` **acrescentar** a entrada nova ao lado
    da antiga quebrada, exatamente o bug que a migração do Claude foi escrita para evitar.
    **Kiro e Copilot são isentos**: seus arquivos são regravados por inteiro a cada execução.
@@ -79,10 +81,10 @@ directory"). O próprio commit registrou o restante como fora de escopo.
 
 ## Acceptance Criteria
 
-- [ ] Tabela de verificação dos 6 CLIs com **uma citação de doc primária por célula** (cwd do hook;
+- [x] Tabela de verificação dos 6 CLIs com **uma citação de doc primária por célula** (cwd do hook;
       estável × dinâmico; placeholders/env vars de raiz; relativo resolve contra cwd ou contra o
       arquivo de settings) — entregue como arquivo versionado.
-- [ ] ADR aceito decidindo o mecanismo **por CLI**, admitindo mecanismos distintos, e nomeando
+- [x] ADR aceito decidindo o mecanismo **por CLI**, admitindo mecanismos distintos, e nomeando
       explicitamente os CLIs em que **nenhuma mudança é necessária**.
 - [ ] Todo CLI provado quebrado emite comandos que resolvem para a raiz do projeto independentemente
       do cwd, nos 3 stacks (Go, Node.js, Python).
@@ -330,15 +332,43 @@ listados, respeitando as armadilhas de edição do §Context.
 
 ### ML-3A — Codex (`.codex/hooks.json`) — merge-based, **precisa de migração**
 **Status:** 🔄 Em andamento · **Agente:** Apolo (`apolo-tf`)
-**String a emitir:** `"$(git rev-parse --show-toplevel)/scripts/trackfw-<script>.sh"` — **com as
-aspas internas**, como nos exemplos oficiais do fornecedor.
-🔴 **Critério de aceite EXTRA e bloqueante (só deste ML):** o Codex é o único caso em que a correção
-pode piorar a situação — se o `command` não for executado via shell, o `$(...)` não expande e o hook
-passa a falhar **sempre**, não só sob cwd derivado. Antes de dar o ML por concluído, **verificar
-empiricamente**: pegar a string exatamente como emitida no `.codex/hooks.json` gerado, executá-la em
-um shell a partir de um **subdiretório** do repo, e confirmar que o script roda. Se essa verificação
-não for possível, **não altere o Codex** — reporte a Zeus e o ML vira "não alterado, registrado como
-não verificável", mesmo default do Kiro (ver ADR §Consequences).
+**String a emitir:** o valor JSON do campo `command` deve conter as **aspas literais** em torno da
+substituição, exatamente como nos exemplos oficiais do fornecedor — no arquivo gerado isso aparece
+JSON-escapado:
+```
+"command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh\""
+```
+⚠️ Errar isso **não é pego pelo gate de paridade**: os 3 stacks errariam de forma idêntica e o diff
+estrutural passaria.
+
+🔴 **PASSO 0 obrigatório, mesma disciplina do ML-2A:** `GUARD_CMD` (`npm/src/generators/hooks.js`)
+**ainda é constante compartilhada pelos 6 CLIs** — o ML-2A dividiu só `SIGNAL_CMD`/`CLEANUP_CMD`.
+Divida `GUARD_CMD` em constantes por CLI, **todas com o valor atual**, religue os injectors, confirme
+por `git diff` que nenhuma emissão mudou, e **só então** altere a variante do Codex. Sem isso, este
+ML altera silenciosamente os entries de credential-guard de Gemini, Kiro, Copilot e Cursor — e
+Copilot/Cursor são CLIs **verificados corretos**.
+🔴 **Critério de aceite EXTRA e bloqueante (só deste ML) — PROVA DO MODELO DE EXECUÇÃO DO CODEX.**
+O Codex é o único caso em que a correção pode **piorar** a situação: se o `command` não for executado
+via shell, o `$(...)` não expande, e o hook passa a falhar **sempre** — não só sob cwd derivado.
+
+⛔ **NÃO conta como prova** rodar a string em `bash` a partir de um subdiretório. Isso só demonstra
+que o `bash` expande `$(...)`, coisa que nunca esteve em dúvida. A pergunta é sobre **o executor do
+Codex**, não sobre o shell.
+
+O Codex CLI **está instalado nesta máquina** (`/opt/homebrew/bin/codex`, `codex-cli 0.147.0`) —
+confirmado por Zeus. Portanto a prova É executável e é obrigatória:
+
+1. Criar um repositório git de fixture com `scripts/trackfw-attention-signal.sh` (que apenas escreve
+   uma marca em arquivo, ex.: `echo fired > /tmp/trackfw-codex-proof`) e o `.codex/hooks.json`
+   gerado pelo injector deste ML.
+2. Rodar o `codex` **a partir de um subdiretório** desse repo, disparando o evento que ativa o hook.
+3. Confirmar que a marca foi escrita — ou seja, que o Codex expandiu o `$(...)` e executou o script.
+4. Reportar a Zeus o comando exato, a saída e o resultado.
+
+Se, após tentativa real, a verificação se mostrar impraticável (ex.: o Codex exigir autenticação
+interativa indisponível), **não altere o Codex**: reverta as mudanças deste CLI, reporte a Zeus, e o
+ML vira "não alterado, registrado como não verificável" — mesmo default do Kiro (ADR §Consequences).
+Essa é uma saída legítima e prevista; forçar a mudança sem a prova, não.
 **Linhas:** Go `344, 356, 361, 368, 374, 379` · Node `636, 642, 643, 645, 647, 648` (via constantes
 437/438/439) · Python `378, 389, 392, 397, 401, 404`
 **Testes:** Go `agentfiles_test.go` 285/288/291/294/341 · Node `generators.test.js` 410–420, 455 ·
