@@ -440,8 +440,35 @@ function generateGlobalCredentialGuardScript(home) {
   console.log('  ✓ .trackfw/scripts/trackfw-credential-guard.sh')
 }
 
-const SIGNAL_CMD = 'scripts/trackfw-attention-signal.sh'
-const CLEANUP_CMD = 'scripts/trackfw-attention-cleanup.sh'
+// SIGNAL_CMD_*/CLEANUP_CMD_* — split per-CLI (ROADMAP-2026-08-11 ML-2A) from what used to be two
+// constants (SIGNAL_CMD/CLEANUP_CMD) shared by all 6 CLI injectors. Mutating a shared constant to
+// fix one CLI's path-resolution mechanism silently changed the emission of the other 5 -- Wave 0 of
+// that roadmap proved Cursor and Copilot are *already correct* (Cursor hooks run from the project
+// root; Copilot emits the native "cwd": "." field), so an accidental shared-constant edit there
+// would be a regression in verified-good wiring, not just scope creep. Each constant starts equal
+// to the pre-split literal; only the Claude ones (ML-2A, this change) move to the
+// $CLAUDE_PROJECT_DIR-pinned form below. GUARD_CMD is intentionally left shared -- Claude never used
+// it (see GUARD_CMD_CLAUDE) and no other CLI's guard command changes in this ML.
+const SIGNAL_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
+const SIGNAL_CMD_CODEX = 'scripts/trackfw-attention-signal.sh'
+const SIGNAL_CMD_GEMINI = 'scripts/trackfw-attention-signal.sh'
+const SIGNAL_CMD_KIRO = 'scripts/trackfw-attention-signal.sh'
+const SIGNAL_CMD_COPILOT = 'scripts/trackfw-attention-signal.sh'
+const SIGNAL_CMD_CURSOR = 'scripts/trackfw-attention-signal.sh'
+
+const CLEANUP_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
+const CLEANUP_CMD_CODEX = 'scripts/trackfw-attention-cleanup.sh'
+const CLEANUP_CMD_GEMINI = 'scripts/trackfw-attention-cleanup.sh'
+const CLEANUP_CMD_KIRO = 'scripts/trackfw-attention-cleanup.sh'
+const CLEANUP_CMD_COPILOT = 'scripts/trackfw-attention-cleanup.sh'
+const CLEANUP_CMD_CURSOR = 'scripts/trackfw-attention-cleanup.sh'
+
+// Pre-ML-2A literal value of SIGNAL_CMD_CLAUDE/CLEANUP_CMD_CLAUDE, kept only as the `oldCommand`
+// argument to the migration calls in injectClaudeHooks below (rewrites settings.json entries
+// written by a pre-ML-2A trackfw in place, mirroring the GUARD_CMD_CLAUDE migration pattern).
+const SIGNAL_CMD_CLAUDE_LEGACY = 'scripts/trackfw-attention-signal.sh'
+const CLEANUP_CMD_CLAUDE_LEGACY = 'scripts/trackfw-attention-cleanup.sh'
+
 const GUARD_CMD = 'scripts/trackfw-credential-guard.sh'
 // Claude Code only (2026-08-09 fix, reported in production against the CMDB project): Claude Code
 // resolves a bare relative hook command against the hook's *dynamic* cwd (tracks `cd`s the agent
@@ -585,7 +612,17 @@ function injectClaudeHooks(cwd) {
   const data = readJSON(filePath)
 
   if (!data.hooks) data.hooks = {}
-  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'AskUserQuestion', SIGNAL_CMD)
+
+  // Migration (ROADMAP-2026-08-11 ML-2A): rewrite any stale relative-path attention-signal/cleanup
+  // command from an older trackfw run before merging the $CLAUDE_PROJECT_DIR-pinned one below, so
+  // upgrading doesn't just append a second, still-cwd-fragile entry alongside the fixed one (same
+  // "No such file or directory" bug class as the credential-guard fix below, and the same
+  // migrate-before-merge ordering requirement -- mergeClaudeHookArray's dedup keys on the exact
+  // command string, so it can't tell "same hook, new path" from "a different hook").
+  migrateHookCommand(data.hooks.PreToolUse, 'AskUserQuestion', SIGNAL_CMD_CLAUDE_LEGACY, SIGNAL_CMD_CLAUDE)
+  migrateHookCommand(data.hooks.PostToolUse, 'AskUserQuestion', CLEANUP_CMD_CLAUDE_LEGACY, CLEANUP_CMD_CLAUDE)
+
+  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'AskUserQuestion', SIGNAL_CMD_CLAUDE)
 
   // Rewrite any stale relative-path credential-guard command from an older trackfw run before
   // merging the fixed one below, so upgrading doesn't just append a second, still-broken entry
@@ -605,7 +642,7 @@ function injectClaudeHooks(cwd) {
     data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Read', GUARD_CMD_CLAUDE)
     data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Write|Edit', GUARD_CMD_CLAUDE)
   }
-  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'AskUserQuestion', CLEANUP_CMD)
+  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'AskUserQuestion', CLEANUP_CMD_CLAUDE)
   if (!globalCredentialGuardInstalledClaude()) {
     data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD_CLAUDE)
     data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Read', GUARD_CMD_CLAUDE)
@@ -645,14 +682,14 @@ function injectCodexHooks(cwd) {
   // command strings (ML-3A) updates the oldCommand argument here instead of adding this call from
   // scratch -- without it, the merge's exact-string dedup would append a duplicate alongside the
   // stale entry.
-  migrateHookCommand(data.hooks.PermissionRequest, '.*', SIGNAL_CMD, SIGNAL_CMD)
+  migrateHookCommand(data.hooks.PermissionRequest, '.*', SIGNAL_CMD_CODEX, SIGNAL_CMD_CODEX)
   migrateHookCommand(data.hooks.PreToolUse, 'Bash', GUARD_CMD, GUARD_CMD)
   migrateHookCommand(data.hooks.PreToolUse, 'apply_patch', GUARD_CMD, GUARD_CMD)
-  migrateHookCommand(data.hooks.PostToolUse, '.*', CLEANUP_CMD, CLEANUP_CMD)
+  migrateHookCommand(data.hooks.PostToolUse, '.*', CLEANUP_CMD_CODEX, CLEANUP_CMD_CODEX)
   migrateHookCommand(data.hooks.PostToolUse, 'Bash', GUARD_CMD, GUARD_CMD)
   migrateHookCommand(data.hooks.PostToolUse, 'apply_patch', GUARD_CMD, GUARD_CMD)
 
-  data.hooks.PermissionRequest = mergeClaudeHookArray(data.hooks.PermissionRequest, '.*', SIGNAL_CMD)
+  data.hooks.PermissionRequest = mergeClaudeHookArray(data.hooks.PermissionRequest, '.*', SIGNAL_CMD_CODEX)
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
   // Wave 2 to apply_patch): skip project-scope credential-guard when the global one is already
   // installed for this CLI.
@@ -661,7 +698,7 @@ function injectCodexHooks(cwd) {
     data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
     data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'apply_patch', GUARD_CMD)
   }
-  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, '.*', CLEANUP_CMD)
+  data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, '.*', CLEANUP_CMD_CODEX)
   if (!skipCodexCG) {
     data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
     data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'apply_patch', GUARD_CMD)
@@ -707,16 +744,16 @@ function injectGeminiHooks(cwd) {
   // Gemini command strings (ML-4A) updates the oldCommand argument here instead of adding this
   // call from scratch -- without it, the merge's exact-string dedup would append a duplicate
   // alongside the stale entry.
-  migrateHookCommand(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD, SIGNAL_CMD)
+  migrateHookCommand(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD_GEMINI, SIGNAL_CMD_GEMINI)
   migrateHookCommand(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD, GUARD_CMD)
   migrateHookCommand(data.hooks.BeforeTool, 'read_file|read_many_files', GUARD_CMD, GUARD_CMD)
   migrateHookCommand(data.hooks.BeforeTool, 'write_file|replace', GUARD_CMD, GUARD_CMD)
-  migrateHookCommand(data.hooks.AfterTool, '*', CLEANUP_CMD, CLEANUP_CMD)
+  migrateHookCommand(data.hooks.AfterTool, '*', CLEANUP_CMD_GEMINI, CLEANUP_CMD_GEMINI)
   migrateHookCommand(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD, GUARD_CMD)
   migrateHookCommand(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD, GUARD_CMD)
   migrateHookCommand(data.hooks.AfterTool, 'write_file|replace', GUARD_CMD, GUARD_CMD)
 
-  data.hooks.Notification = mergeClaudeHookArray(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD)
+  data.hooks.Notification = mergeClaudeHookArray(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD_GEMINI)
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
   // Wave 2 to read_file|read_many_files / write_file|replace): skip project-scope
   // credential-guard when the global one is already installed.
@@ -726,7 +763,7 @@ function injectGeminiHooks(cwd) {
     data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'read_file|read_many_files', GUARD_CMD)
     data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'write_file|replace', GUARD_CMD)
   }
-  data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, '*', CLEANUP_CMD)
+  data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, '*', CLEANUP_CMD_GEMINI)
   if (!skipGeminiCG) {
     data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD)
     data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD)
@@ -766,14 +803,14 @@ function injectKiroHooks(cwd) {
       description: 'Signals trackfw board when agent executes a tool',
       trigger: 'PreToolUse',
       matcher: '*',
-      action: { type: 'command', command: SIGNAL_CMD },
+      action: { type: 'command', command: SIGNAL_CMD_KIRO },
     },
     {
       name: 'trackfw-attention-cleanup',
       description: 'Clears trackfw board attention after tool completes',
       trigger: 'PostToolUse',
       matcher: '*',
-      action: { type: 'command', command: CLEANUP_CMD },
+      action: { type: 'command', command: CLEANUP_CMD_KIRO },
     },
   ]
 
@@ -868,8 +905,8 @@ function injectKiroHooks(cwd) {
 function injectCopilotHooks(cwd) {
   const filePath = path.join(cwd, '.github', 'hooks', 'trackfw-attention.json')
 
-  const preToolUse = [{ type: 'command', bash: SIGNAL_CMD, cwd: '.', timeoutSec: 10 }]
-  const postToolUse = [{ type: 'command', bash: CLEANUP_CMD, cwd: '.', timeoutSec: 10 }]
+  const preToolUse = [{ type: 'command', bash: SIGNAL_CMD_COPILOT, cwd: '.', timeoutSec: 10 }]
+  const postToolUse = [{ type: 'command', bash: CLEANUP_CMD_COPILOT, cwd: '.', timeoutSec: 10 }]
 
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
   // Wave 2 to view / create|edit): skip project-scope credential-guard entries when the global
@@ -966,16 +1003,16 @@ function injectCursorHooks(cwd) {
   // Migrate any legacy top-level preToolUse/postToolUse trackfw entries
   // (written by trackfw before this ML) into the nested, real hooks.
   if (!Array.isArray(data.hooks.preToolUse)) data.hooks.preToolUse = []
-  if (!hasEntry(data.hooks.preToolUse, 'command', SIGNAL_CMD)) {
-    data.hooks.preToolUse.push({ command: SIGNAL_CMD })
+  if (!hasEntry(data.hooks.preToolUse, 'command', SIGNAL_CMD_CURSOR)) {
+    data.hooks.preToolUse.push({ command: SIGNAL_CMD_CURSOR })
   }
-  removeKnownCommandFromLegacyTopLevelArray(data, 'preToolUse', SIGNAL_CMD)
+  removeKnownCommandFromLegacyTopLevelArray(data, 'preToolUse', SIGNAL_CMD_CURSOR)
 
   if (!Array.isArray(data.hooks.postToolUse)) data.hooks.postToolUse = []
-  if (!hasEntry(data.hooks.postToolUse, 'command', CLEANUP_CMD)) {
-    data.hooks.postToolUse.push({ command: CLEANUP_CMD })
+  if (!hasEntry(data.hooks.postToolUse, 'command', CLEANUP_CMD_CURSOR)) {
+    data.hooks.postToolUse.push({ command: CLEANUP_CMD_CURSOR })
   }
-  removeKnownCommandFromLegacyTopLevelArray(data, 'postToolUse', CLEANUP_CMD)
+  removeKnownCommandFromLegacyTopLevelArray(data, 'postToolUse', CLEANUP_CMD_CURSOR)
 
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
   // Wave 2 to Read/Write via the generic preToolUse/postToolUse events): skip project-scope

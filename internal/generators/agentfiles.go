@@ -205,10 +205,17 @@ func InjectClaudeHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
+	// Migration (ROADMAP-2026-08-11 ML-2A): rewrite any stale relative-path attention-signal
+	// command from an older trackfw run before merging the $CLAUDE_PROJECT_DIR-pinned one below,
+	// so upgrading doesn't just append a second, still-cwd-fragile entry alongside the fixed one
+	// -- same "No such file or directory" bug class, and same migrate-before-merge ordering
+	// requirement, as the credential-guard fix a few lines below.
+	migrateHookCommand(hooks["PreToolUse"], "AskUserQuestion", "scripts/trackfw-attention-signal.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh")
+
 	hooks["PreToolUse"] = mergeClaudeHookArray(
 		hooks["PreToolUse"],
 		"AskUserQuestion",
-		"scripts/trackfw-attention-signal.sh",
+		"$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh",
 	)
 
 	// Fix (2026-08-09, reported in production against the CMDB project):
@@ -259,10 +266,12 @@ func InjectClaudeHooks(cwd string) error {
 		)
 	}
 
+	migrateHookCommand(hooks["PostToolUse"], "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh")
+
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		"AskUserQuestion",
-		"scripts/trackfw-attention-cleanup.sh",
+		"$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh",
 	)
 	if !globalCredentialGuardInstalledClaude() {
 		hooks["PostToolUse"] = mergeClaudeHookArray(

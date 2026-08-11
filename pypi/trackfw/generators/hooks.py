@@ -273,6 +273,13 @@ def _migrate_hook_command(hook_list: list, matcher: str, old_command: str, new_c
 # own custom hooks already relied on successfully in practice.
 _GUARD_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
 
+# ROADMAP-2026-08-11 ML-2A: same $CLAUDE_PROJECT_DIR fix as _GUARD_CMD_CLAUDE above, applied to the
+# attention-signal/cleanup commands -- Claude Code resolves a bare relative hook command against the
+# hook's dynamic cwd, not the project root, so any Bash/Read/Write/Edit call after the agent `cd`s
+# into a subdirectory made the hook fail with "No such file or directory".
+_SIGNAL_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
+_CLEANUP_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
+
 def inject_claude_hooks(cwd: str) -> None:
     """Injeta hooks PreToolUse/PostToolUse no .claude/settings.json."""
     file_path = os.path.join(cwd, '.claude', 'settings.json')
@@ -282,13 +289,21 @@ def inject_claude_hooks(cwd: str) -> None:
 
     # PreToolUse — AskUserQuestion matcher → signal; Bash matcher → credential guard
     pre_hooks = hooks.setdefault('PreToolUse', [])
-    _merge_claude_hook_array(pre_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh')
+    post_hooks = hooks.setdefault('PostToolUse', [])
+
+    # Migration (ROADMAP-2026-08-11 ML-2A): rewrite any stale relative-path attention-signal/
+    # cleanup command from an older trackfw run before merging the $CLAUDE_PROJECT_DIR-pinned one
+    # below, so upgrading doesn't just append a second, still-cwd-fragile entry alongside the
+    # fixed one (same pattern as the credential-guard migration below).
+    _migrate_hook_command(pre_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh', _SIGNAL_CMD_CLAUDE)
+    _migrate_hook_command(post_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh', _CLEANUP_CMD_CLAUDE)
+
+    _merge_claude_hook_array(pre_hooks, 'AskUserQuestion', _SIGNAL_CMD_CLAUDE)
 
     # Rewrite any stale relative-path credential-guard command from an older trackfw run
     # before merging the fixed one below, so upgrading doesn't just append a second,
     # still-broken entry alongside the new one (see _GUARD_CMD_CLAUDE comment above for the
     # "No such file or directory" bug).
-    post_hooks = hooks.setdefault('PostToolUse', [])
     for matcher in ('Bash', 'Read', 'Write|Edit'):
         _migrate_hook_command(pre_hooks, matcher, 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CLAUDE)
         _migrate_hook_command(post_hooks, matcher, 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CLAUDE)
@@ -306,7 +321,7 @@ def inject_claude_hooks(cwd: str) -> None:
         _merge_claude_hook_array(pre_hooks, 'Write|Edit', _GUARD_CMD_CLAUDE)
 
     # PostToolUse — AskUserQuestion matcher → cleanup; Bash matcher → credential guard
-    _merge_claude_hook_array(post_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh')
+    _merge_claude_hook_array(post_hooks, 'AskUserQuestion', _CLEANUP_CMD_CLAUDE)
     if not skip_cg:
         _merge_claude_hook_array(post_hooks, 'Bash', _GUARD_CMD_CLAUDE)
         _merge_claude_hook_array(post_hooks, 'Read', _GUARD_CMD_CLAUDE)

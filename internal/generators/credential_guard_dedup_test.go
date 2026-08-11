@@ -54,10 +54,10 @@ func TestDedup_Claude_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	if helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
 		t.Error("project-scope PostToolUse credential-guard entry should have been skipped")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
 		t.Error("attention-signal entry must still be added regardless of global credential-guard state")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
 		t.Error("attention-cleanup entry must still be added regardless of global credential-guard state")
 	}
 }

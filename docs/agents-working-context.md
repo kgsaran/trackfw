@@ -10811,3 +10811,117 @@ negativa que o projeto já usa em `check-gates-falsify.sh`.
 
 **Próximo:** ML-2A (Apolo) — dividir as constantes compartilhadas do Node e trocar attention-signal/
 cleanup do Claude para `$CLAUDE_PROJECT_DIR/...`.
+
+## Sessão 2026-08-11 — Apolo (ML-2A: Claude Code — `$CLAUDE_PROJECT_DIR/...` para attention-signal/cleanup + migração) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd` (já criada pelo
+orquestrador — sem branch nova criada por este agente). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md`,
+Wave 2/ML-2A. ADR:
+`docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md`.
+
+**Passo 0 (obrigatório, incondicional) executado primeiro.** `npm/src/generators/hooks.js` tinha
+`SIGNAL_CMD`/`CLEANUP_CMD` compartilhadas por todos os 6 CLI injectors. Dividi em
+`SIGNAL_CMD_{CLAUDE,CODEX,GEMINI,KIRO,COPILOT,CURSOR}` e `CLEANUP_CMD_{...}` — todas inicialmente
+com o valor legado — e religuei cada injector (`injectClaudeHooks`, `injectCodexHooks`,
+`injectGeminiHooks`, `injectKiroHooks`, `injectCopilotHooks`, `injectCursorHooks`) à sua constante,
+antes de tocar em qualquer valor. `GUARD_CMD` foi deixada compartilhada de propósito — o Claude já a
+não usa (usa `GUARD_CMD_CLAUDE` desde o fix anterior) e nenhum outro CLI muda o guard neste ML.
+
+**Mudança por stack:**
+- **Go** (`internal/generators/agentfiles.go`): já eram literais inline por CLI (sem constante
+  compartilhada), então só a troca das 2 strings em `InjectClaudeHooks` (linhas do signal/cleanup) +
+  nova chamada `migrateHookCommand` para cada uma, antes do merge correspondente.
+- **Node** (`npm/src/generators/hooks.js`): Passo 0 acima, depois `SIGNAL_CMD_CLAUDE`/
+  `CLEANUP_CMD_CLAUDE` passaram a `$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-{signal,cleanup}.sh`;
+  adicionei `SIGNAL_CMD_CLAUDE_LEGACY`/`CLEANUP_CMD_CLAUDE_LEGACY` só como argumento `oldCommand` da
+  migração (mesmo padrão do `GUARD_CMD_CLAUDE`).
+- **Python** (`pypi/trackfw/generators/hooks.py`): já era literal inline (só `_GUARD_CMD_CLAUDE` era
+  constante); adicionei `_SIGNAL_CMD_CLAUDE`/`_CLEANUP_CMD_CLAUDE` com o novo valor + 2 chamadas
+  `_migrate_hook_command` antes dos merges correspondentes.
+
+**Migração:** as 2 novas chamadas de migração (uma por stack, 3 no total) reescrevem in-place
+qualquer entrada `AskUserQuestion` com o comando relativo legado, sempre **antes** do merge
+correspondente — mesma ordem e mesmo padrão já usado para o credential-guard.
+
+**Prova negativa (bloqueante, executada e reportada, não só assumida).** Nos 3 stacks: comentei as
+2 chamadas de migração novas (signal + cleanup), rodei a suíte, **os testes novos falharam**
+(Go: `TestInjectClaudeHooks_MigratesLegacyRelativeAttentionSignalCleanupCommand` — 4 assertions
+falhando, entrada antiga sobrevivendo + 2 hooks por matcher em vez de 1; Node: teste homônimo —
+`2 !== 1`; Python: teste homônimo — lista com o comando antigo E o novo lado a lado), depois restaurei
+e confirmei suíte verde de novo. Isso já era possível neste ML (diferente do ML-1A) porque aqui
+`oldCommand != newCommand` de verdade.
+
+**Não-regressão dos outros 5 CLIs — provada empiricamente, não só por leitura de código.** Compilei
+o binário Go do commit anterior (antes deste ML) e o binário com as mudanças deste ML, rodei
+`trackfw update` em dois projetos-fixture idênticos (mesmo `trackfw.yaml`, mesmos arquivos de
+detecção incl. `.github/copilot-instructions.md`) e comparei byte a byte: `.codex/hooks.json`,
+`.gemini/settings.json`, `.kiro/hooks/trackfw-attention.json`, `.github/hooks/trackfw-attention.json`
+e `.cursor/hooks.json` **idênticos** entre antes/depois. `.claude/settings.json` teve exatamente as 2
+linhas esperadas alteradas (`command` de signal e de cleanup); os 6 entries de credential-guard do
+Claude ficaram byte-idênticos (`diff` das linhas `credential-guard` vazio).
+
+**Testes atualizados/adicionados** (além dos arquivos listados no ML, precisei também tocar
+`internal/generators/credential_guard_dedup_test.go` e `internal/generators/hooks_test.go` no Go, e
+`npm/tests/credential_guard_dedup.test.js` no Node, e `pypi/tests/test_credential_guard_dedup.py` no
+Python — não estavam na lista explícita do prompt, mas quebravam com a troca do literal e testam a
+mesma função `InjectClaudeHooks`/`injectClaudeHooks`/`inject_claude_hooks`; sinalizando a Zeus para
+ciência, não decidi unilateralmente ampliar escopo além do necessário para manter a suíte verde):
+- Go: `agentfiles_test.go` (4 asserções de literal atualizadas + teste novo de migração),
+  `credential_guard_dedup_test.go` (2 asserções), `hooks_test.go` (1 asserção)
+- Node: `generators.test.js` (2 asserções por índice + teste novo de migração),
+  `credential_guard_dedup.test.js` (2 asserções)
+- Python: `test_generators_init.py` (teste novo de migração), `test_credential_guard_dedup.py`
+  (2 asserções)
+
+**Validação (evidência completa):**
+```
+go build ./... && go test ./...           → PASS (todos os pacotes)
+npm --prefix npm test                      → 450 passed, 0 failed
+python -m pytest pypi/tests -q             → 996 passed, 8 subtests passed
+bash scripts/check-agent-hooks-parity.sh   → 12/12 OK
+bash scripts/check-gates-falsify.sh        → 103/103 OK, 0 FAIL
+```
+`git grep` confirma que nenhum wiring do Claude ainda emite o caminho relativo puro para
+attention-signal/cleanup. `git status --porcelain` só lista os 10 arquivos de código/teste tocados
+(nenhum arquivo fora do escopo de `internal/generators/`, `npm/src/generators/`,
+`npm/tests/`, `pypi/trackfw/generators/`, `pypi/tests/`).
+
+**Nada contraria as premissas do prompt.** GUARD_CMD não foi dividida neste ML (não era necessário —
+o Claude não a usa e nenhum outro CLI mudou o guard); fica para ML-3A/4A decidirem se precisam
+dividi-la ao mexer no Codex/Gemini.
+
+**Próximo:** Zeus audita e libera ML-2A. Depois: ML-3A (Codex) — string com `$(...)` shell expansion,
+tem verificação empírica extra e bloqueante própria (rodar a string emitida a partir de um
+subdiretório e confirmar que o script roda).
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria do ML-2A — APROVADO
+
+**Prova negativa reproduzida por Zeus, não aceita do relatório.** Comentei as duas chamadas
+`migrateHookCommand(... "AskUserQuestion" ...)` em `internal/generators/agentfiles.go`, rodei
+`go test ./internal/generators/` → **FAIL**. Restaurei e confirmei o diff intacto. A migração dos
+scripts de attention está genuinamente coberta — não é teste decorativo. Este é o critério que o
+ML-1A não pôde satisfazer (lá `old == new` tornava a chamada invisível) e que passou a ser
+bloqueante justamente por isso.
+
+**Passo 0 (divisão das constantes do Node) executado corretamente e na ordem certa.** O diff mostra
+`SIGNAL_CMD_{CLAUDE,CODEX,GEMINI,KIRO,COPILOT,CURSOR}` e `CLEANUP_CMD_*` criadas **todas com o valor
+antigo**, e só as variantes `_CLAUDE` alteradas para `$CLAUDE_PROJECT_DIR/...`. `GUARD_CMD` ficou
+compartilhada de propósito (não é usada pelo Claude e não muda neste ML). Consequência auditada: os
+5 CLIs que a pesquisa provou corretos (Codex, Gemini, Kiro, Copilot, Cursor) **não** tiveram emissão
+alterada — o que era o risco de regressão real, já que Cursor e Copilot estão comprovadamente certos.
+
+**Arquivos fora da allowlist — reportados pelo agente, não escondidos.** 4 arquivos de teste extras
+(`internal/generators/credential_guard_dedup_test.go`, `internal/generators/hooks_test.go`,
+`npm/tests/credential_guard_dedup.test.js`, `pypi/tests/test_credential_guard_dedup.py`) asseveravam
+o literal antigo dos hooks de attention do Claude contra o **mesmo** `InjectClaudeHooks` e quebrariam
+inevitavelmente. Auditei o diff: são **exclusivamente** atualizações de literal em asserção, 7
+inserções / 7 remoções, nenhuma mudança de lógica de teste. Colateral legítimo — aprovado. O
+comportamento correto aqui foi reportar em vez de decidir sozinho.
+
+**Gates re-executados por Zeus:** `go test ./...` ok · `npm test` 450 pass / 0 fail · `pytest` 996
+passed + 8 subtests · `check-agent-hooks-parity.sh` todos OK · `check-gates-falsify.sh` **103/103**.
+
+**Próximo:** ML-3A (Codex) — o único ML com critério de aceite **empírico** bloqueante, porque é o
+único caso em que a correção pode piorar a situação (se o `command` não for executado via shell, o
+`$(git rev-parse --show-toplevel)` não expande e o hook passa a falhar sempre).

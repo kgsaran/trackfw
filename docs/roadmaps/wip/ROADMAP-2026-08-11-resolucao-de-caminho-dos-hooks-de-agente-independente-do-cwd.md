@@ -269,7 +269,7 @@ bash scripts/check-agent-hooks-parity.sh
 > na frequência, pois os hooks de attention casam apenas o matcher `AskUserQuestion`).
 
 ### ML-2A — Emitir `$CLAUDE_PROJECT_DIR/...` para attention-signal/cleanup + migração
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-11)
 **Agente:** Apolo (`apolo-tf`)
 **Arquivos afetados:**
 - `internal/generators/agentfiles.go` — linhas **211** (signal) e **265** (cleanup)
@@ -329,7 +329,7 @@ inventariadas abaixo, adicionar/ajustar a migração (quando merge-based), atual
 listados, respeitando as armadilhas de edição do §Context.
 
 ### ML-3A — Codex (`.codex/hooks.json`) — merge-based, **precisa de migração**
-**Status:** ⬜ Pendente · **Agente:** Apolo (`apolo-tf`)
+**Status:** 🔄 Em andamento · **Agente:** Apolo (`apolo-tf`)
 **String a emitir:** `"$(git rev-parse --show-toplevel)/scripts/trackfw-<script>.sh"` — **com as
 aspas internas**, como nos exemplos oficiais do fornecedor.
 🔴 **Critério de aceite EXTRA e bloqueante (só deste ML):** o Codex é o único caso em que a correção

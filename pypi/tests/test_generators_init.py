@@ -529,6 +529,45 @@ class TestAttentionHooksInjectors(unittest.TestCase):
                 ['$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'],
             )
 
+    def test_inject_claude_hooks_migrates_legacy_relative_path_attention_signal_cleanup(self):
+        """ROADMAP-2026-08-11 ML-2A: mesma classe de bug de resolução de cwd do teste do
+        credential-guard acima, aplicada ao attention-signal/cleanup -- confirma que re-injetar
+        sobre um settings.json já escrito por uma versão antiga REESCREVE o comando legado em vez
+        de só acrescentar um segundo hook ao lado do quebrado."""
+        from trackfw.generators.hooks import inject_claude_hooks
+
+        settings_dir = os.path.join(self.tmp, '.claude')
+        os.makedirs(settings_dir, exist_ok=True)
+        settings_path = os.path.join(settings_dir, 'settings.json')
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'PreToolUse': [
+                        {'matcher': 'AskUserQuestion', 'hooks': [{'type': 'command', 'command': 'scripts/trackfw-attention-signal.sh'}]},
+                    ],
+                    'PostToolUse': [
+                        {'matcher': 'AskUserQuestion', 'hooks': [{'type': 'command', 'command': 'scripts/trackfw-attention-cleanup.sh'}]},
+                    ],
+                }
+            }, f)
+
+        inject_claude_hooks(self.tmp)
+
+        with open(settings_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        signal_entry = next(e for e in data['hooks']['PreToolUse'] if e['matcher'] == 'AskUserQuestion')
+        cleanup_entry = next(e for e in data['hooks']['PostToolUse'] if e['matcher'] == 'AskUserQuestion')
+
+        self.assertEqual(
+            [h['command'] for h in signal_entry['hooks']],
+            ['$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh'],
+        )
+        self.assertEqual(
+            [h['command'] for h in cleanup_entry['hooks']],
+            ['$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'],
+        )
+
     def test_inject_codex_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_codex_hooks
         inject_codex_hooks(self.tmp)

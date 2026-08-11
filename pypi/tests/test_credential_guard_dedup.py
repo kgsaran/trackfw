@@ -81,8 +81,8 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         data = _read_json(os.path.join(project_dir, '.claude', 'settings.json'))
         self.assertFalse(_has_claude_hook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
         self.assertFalse(_has_claude_hook(data, 'PostToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
-        self.assertTrue(_has_claude_hook(data, 'PreToolUse', 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh'))
-        self.assertTrue(_has_claude_hook(data, 'PostToolUse', 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh'))
+        self.assertTrue(_has_claude_hook(data, 'PreToolUse', 'AskUserQuestion', '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh'))
+        self.assertTrue(_has_claude_hook(data, 'PostToolUse', 'AskUserQuestion', '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'))
 
     def test_codex(self):
         home = self._isolated_home()

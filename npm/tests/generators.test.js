@@ -336,7 +336,7 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   assert.equal(data.hooks.PreToolUse.length, 5)
   assert.equal(data.hooks.PreToolUse[0].matcher, 'UserTool')
   assert.equal(data.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
-  assert.equal(data.hooks.PreToolUse[1].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.PreToolUse[1].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.PreToolUse[2].matcher, 'Bash')
   assert.equal(data.hooks.PreToolUse[2].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PreToolUse[3].matcher, 'Read')
@@ -344,7 +344,7 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   assert.equal(data.hooks.PreToolUse[4].matcher, 'Write|Edit')
   assert.equal(data.hooks.PreToolUse[4].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[0].matcher, 'AskUserQuestion')
-  assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.PostToolUse[0].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh')
   assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
   assert.equal(data.hooks.PostToolUse[1].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[2].matcher, 'Read')
@@ -398,6 +398,38 @@ test('injectClaudeHooks migrates a legacy relative-path credential-guard command
   assert.equal(readEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(writeEditEntry.hooks.length, 1)
   assert.equal(writeEditEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
+})
+
+// ROADMAP-2026-08-11 ML-2A: same cwd-resolution bug class as the credential-guard fix above,
+// applied to attention-signal/cleanup -- confirms re-injecting over a settings.json written by an
+// older trackfw rewrites the legacy relative-path command in place instead of appending a second,
+// still-cwd-fragile entry alongside the fixed one.
+test('injectClaudeHooks migrates legacy relative-path attention-signal/cleanup commands in place', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-claude-hooks-migrate-attention-'))
+  const settingsPath = path.join(tmpDir, '.claude', 'settings.json')
+
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    hooks: {
+      PreToolUse: [
+        { matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: 'scripts/trackfw-attention-signal.sh' }] }
+      ],
+      PostToolUse: [
+        { matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: 'scripts/trackfw-attention-cleanup.sh' }] }
+      ]
+    }
+  }, null, 2))
+
+  injectClaudeHooks(tmpDir)
+  const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+
+  const signalEntry = data.hooks.PreToolUse.find(e => e.matcher === 'AskUserQuestion')
+  const cleanupEntry = data.hooks.PostToolUse.find(e => e.matcher === 'AskUserQuestion')
+
+  assert.equal(signalEntry.hooks.length, 1, 'expected exactly 1 hook after migration, not old+new side by side')
+  assert.equal(signalEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh')
+  assert.equal(cleanupEntry.hooks.length, 1)
+  assert.equal(cleanupEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh')
 })
 
 test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () => {

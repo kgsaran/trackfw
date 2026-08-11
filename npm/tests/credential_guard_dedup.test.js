@@ -68,8 +68,8 @@ test('injectClaudeHooks skips project-scope credential-guard when global install
   const data = readJSON(path.join(dir, '.claude', 'settings.json'))
   assert.equal(hasClaudeHook(data, 'PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'), false)
   assert.equal(hasClaudeHook(data, 'PostToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'), false)
-  assert.equal(hasClaudeHook(data, 'PreToolUse', 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh'), true)
-  assert.equal(hasClaudeHook(data, 'PostToolUse', 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh'), true)
+  assert.equal(hasClaudeHook(data, 'PreToolUse', 'AskUserQuestion', '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh'), true)
+  assert.equal(hasClaudeHook(data, 'PostToolUse', 'AskUserQuestion', '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'), true)
 })
 
 test('injectCodexHooks skips project-scope credential-guard when global installed', () => {

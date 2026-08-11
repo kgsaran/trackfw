@@ -66,10 +66,10 @@ func TestInjectClaudeHooks_Create(t *testing.T) {
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
 
-	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
 		t.Error("PreToolUse[AskUserQuestion] → signal.sh missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse[AskUserQuestion] → cleanup.sh missing")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
@@ -109,13 +109,13 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/other.sh") {
 		t.Error("existing Bash hook lost during merge")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
 		t.Error("PreToolUse signal hook missing")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
 		t.Error("PreToolUse credential-guard hook missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse cleanup hook missing")
 	}
 	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
@@ -210,6 +210,78 @@ func TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand(t *testi
 		innerHooks, _ := obj["hooks"].([]interface{})
 		if len(innerHooks) != 1 {
 			t.Errorf("PreToolUse[Bash] expected exactly 1 hook after migration, got %d", len(innerHooks))
+		}
+	}
+}
+
+// TestInjectClaudeHooks_MigratesLegacyRelativeAttentionSignalCleanupCommand cobre o ROADMAP-2026-08-11
+// ML-2A: assim como o credential-guard (ML anterior, teste acima), a checagem invoca o injector real
+// contra um fixture com a string relativa antiga e assevera que a entrada é reescrita in-place --
+// não duplicada -- para $CLAUDE_PROJECT_DIR/scripts/trackfw-attention-{signal,cleanup}.sh.
+func TestInjectClaudeHooks_MigratesLegacyRelativeAttentionSignalCleanupCommand(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+
+	legacy := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "AskUserQuestion",
+					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-signal.sh"}},
+				},
+			},
+			"PostToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "AskUserQuestion",
+					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-cleanup.sh"}},
+				},
+			},
+		},
+	}
+	helperWriteJSON(t, filepath.Join(dir, ".claude", "settings.json"), legacy)
+
+	if err := InjectClaudeHooks(dir); err != nil {
+		t.Fatalf("InjectClaudeHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+	hooks, _ := data["hooks"].(map[string]interface{})
+
+	if helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "scripts/trackfw-attention-signal.sh") {
+		t.Error("stale relative-path PreToolUse[AskUserQuestion] signal entry survived the upgrade -- should have been rewritten, not left in place")
+	}
+	if helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
+		t.Error("stale relative-path PostToolUse[AskUserQuestion] cleanup entry survived the upgrade")
+	}
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
+		t.Error("PreToolUse[AskUserQuestion] was not upgraded to the $CLAUDE_PROJECT_DIR-prefixed signal command")
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
+		t.Error("PostToolUse[AskUserQuestion] was not upgraded to the $CLAUDE_PROJECT_DIR-prefixed cleanup command")
+	}
+
+	// No duplicate hooks left behind inside the migrated matcher entries: exactly one command per
+	// matcher after the rewrite, not two (old + new side by side).
+	pre, _ := hooks["PreToolUse"].([]interface{})
+	for _, item := range pre {
+		obj, _ := item.(map[string]interface{})
+		if obj["matcher"] != "AskUserQuestion" {
+			continue
+		}
+		innerHooks, _ := obj["hooks"].([]interface{})
+		if len(innerHooks) != 1 {
+			t.Errorf("PreToolUse[AskUserQuestion] expected exactly 1 hook after migration, got %d", len(innerHooks))
+		}
+	}
+	post, _ := hooks["PostToolUse"].([]interface{})
+	for _, item := range post {
+		obj, _ := item.(map[string]interface{})
+		if obj["matcher"] != "AskUserQuestion" {
+			continue
+		}
+		innerHooks, _ := obj["hooks"].([]interface{})
+		if len(innerHooks) != 1 {
+			t.Errorf("PostToolUse[AskUserQuestion] expected exactly 1 hook after migration, got %d", len(innerHooks))
 		}
 	}
 }
