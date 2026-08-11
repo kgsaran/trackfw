@@ -10552,3 +10552,89 @@ ambiental corrigido acima — não tem prova negativa própria em `check-gates-f
 (`compare_json`), nunca o guard de vacuidade. Documentado em `docs/cli-parity.md` (seção "Parity
 gate" de `check-agent-hooks-parity.sh`) e aqui para que Zeus decida se abre um ML/REQ dedicado de
 hardening P4.
+
+---
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — resolução de caminho dos hooks: attention-signal/cleanup + os 5 CLIs não-Claude — INICIADO
+
+**Gatilho.** KG reportou erro em produção no projeto CMDB (`PreToolUse/PostToolUse:Bash hook error —
+/bin/sh: scripts/trackfw-credential-guard.sh: No such file or directory`). Diagnóstico concluído
+nesta sessão: **não é regressão**. O binário instalado é v6.7.1 (já contém o fix `0c66ecb`), mas
+`cmdb/.claude/settings.json` nunca foi reescrito porque `trackfw update` não rodou lá depois do
+upgrade. Verificação empírica decisiva: cópia do `settings.json` real do CMDB em tmpdir +
+`trackfw update` v6.7.1 → as 2 entradas de credential-guard migraram para
+`$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh`. Ação para KG: rodar `trackfw update` no
+CMDB. Sem mudança de código no trackfw para este sintoma.
+
+**Escopo desta sessão (o que KG pediu em seguida).** Abrir a governança para o bug **latente**
+deixado explicitamente fora de escopo por `0c66ecb`: `trackfw-attention-signal.sh` e
+`trackfw-attention-cleanup.sh` ainda são emitidos como caminho relativo puro
+(`internal/generators/agentfiles.go:211` e `:265`), e o wiring dos outros 5 CLIs
+(Codex/Gemini/Kiro/Copilot/Cursor) usa o mesmo padrão.
+
+**Achado que redimensiona a hipótese inicial.** Os hooks de attention casam **apenas** o matcher
+`AskUserQuestion` (agentfiles.go:210 e :264), não `Bash|Read|Write|Edit` como o credential-guard —
+por isso não aparecem no erro do screenshot do CMDB, apesar de estarem relativos lá também
+(linhas 17 e 51 do `settings.json`). O **mecanismo** de falha é idêntico (cwd do hook é dinâmico,
+confirmado em https://code.claude.com/docs/en/hooks: "Handlers run in the current directory"), mas a
+**frequência** é muito menor. Continua sendo bug real, não urgência.
+
+**Achado que muda a forma da solução.** A pesquisa preliminar indica que **não existe mecanismo
+uniforme**: o Codex CLI aparentemente não expõe env var de project-dir (contexto vai por stdin JSON,
+campo `cwd`), e as fontes sobre Cursor se contradizem (cwd = project root × caminho relativo ao
+`hooks.json`). Portanto **não é um port mecânico do `0c66ecb` para 6 CLIs**. Restrição adicional que
+elimina a saída fácil: `.claude/settings.json` é versionado no repo, então caminho absoluto
+resolvido na injeção não serve (quebra portabilidade entre máquinas/checkouts).
+
+**Consequência para o plano.** O roadmap nasce com uma wave de pesquisa bloqueante (verificação em
+doc primária, uma citação por célula) antes do ADR — o ADR documenta o mecanismo provado, não a
+hipótese. As waves de implementação são **sequenciais**, não paralelas: todo ML toca os mesmos 3
+arquivos (`internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,
+`pypi/trackfw/generators/hooks.py`).
+
+**Estado ao iniciar:** branch `main` limpa, nenhuma branch remota aberta
+(`git branch -r --no-merged origin/main` vazio). REQ + Roadmap ainda não criados.
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — governança aberta (REQ + Roadmap em backlog) — SEM BRANCH, SEM COMMIT
+
+**Entregue.**
+- `docs/req/REQ-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd-attention-signal-cleanup-e-os-5-clis-nao-claude.md`
+- `docs/roadmaps/backlog/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md`
+- `trackfw validate` → `✓ No violations found.`, exit 0.
+
+**Inventário que embasa o roadmap** (auditoria linha a linha dos 3 stacks, feita nesta sessão):
+`$CLAUDE_PROJECT_DIR/...` existe **só** nos 6 entries de credential-guard do Claude; **todo o resto**
+é caminho relativo puro — attention-signal/cleanup dos 6 CLIs (inclusive Claude) e todos os entries
+de credential-guard de Codex/Gemini/Kiro/Copilot/Cursor. Os hooks de escopo global
+(`trackfw update harness`) já são absolutos e estão corretos por design.
+
+**Gap crítico descoberto na auditoria (não estava na hipótese inicial).** O helper de migração
+in-place (`migrateClaudeHookCommand` Go:946 / Node:95 / Python:236) existe **apenas para o Claude**.
+Codex, Gemini e Cursor também são injectors *merge-based* e **não têm migração** — trocar a string
+deles sem migração faria o `trackfw update` acrescentar a entrada nova ao lado da antiga quebrada,
+que é exatamente o bug que a migração do Claude foi escrita para evitar. Por isso o roadmap tem uma
+Wave 1 dedicada a generalizar o helper, **antes** de qualquer troca de string. Kiro e Copilot são
+isentos: seus arquivos são regravados por inteiro.
+
+**Sequencialidade obrigatória (documentada no roadmap).** Nenhum ML é paralelizável: todos editam
+`internal/generators/agentfiles.go` + `npm/src/generators/hooks.js` +
+`pypi/trackfw/generators/hooks.py`, e `scripts/check-agent-hooks-parity.sh` faz diff **estrutural**
+do JSON parseado entre os 3 stacks — os 3 precisam mudar no mesmo commit ou o gate falha.
+
+**Armadilhas de edição mapeadas e escritas no roadmap** (para agente leve não errar): Go tem ~40
+literais inline; Node tem 4 constantes de módulo compartilhadas entre CLIs (437/438/439/449) —
+trocar a constante afeta todos os CLIs de uma vez; Python é misto; **Python/Cursor repete o literal
+no predicado de dedup E no append** (editar só o append desliga o dedup → duplicação a cada
+execução); Python/Copilot concentra em `guard_entry:630` espalhado por `dict(...)`;
+`npm/tests/generators.test.js:339–349` assevera por **índice de array**;
+`scripts/check-gates-falsify.sh:3530–3531` fixa **byte-a-byte** o bloco Kiro do Node.
+
+**Deliberadamente NÃO feito.** Roadmap permanece em `backlog/`; **nenhuma branch criada, nenhum
+commit** — KG pediu para abrir o roadmap, não para executá-lo. O ADR **não** foi escrito: ele é
+saída da Barreira B0, depois da Wave 0 de pesquisa, porque não há mecanismo uniforme entre os 6 CLIs
+(indício de que o Codex não expõe env var de project-dir; fontes sobre Cursor se contradizem) e
+caminho absoluto está vetado (arquivos de settings são versionados). Escrever o ADR agora seria
+documentar hipótese, não decisão provada.
+
+**Pendente de KG:** autorizar a execução (mover roadmap para `wip`, criar branch, despachar ML-0A
+para Prometeu).
