@@ -107,7 +107,7 @@ projetos consumidores.
 > Dependências: nenhuma. **Bloqueia todas as waves seguintes.**
 
 ### ML-0A — Semântica de cwd e placeholders de caminho nos 6 CLIs
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Prometeu (`prometeu-tf`)
 **Arquivos afetados:** cria `docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md` (novo).
 **Nenhum arquivo de código é tocado neste ML.**
