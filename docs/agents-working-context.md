@@ -11834,3 +11834,56 @@ empírica prévia.
 
 **Próximo passo (fora do escopo deste ML):** Zeus decide se abre a REQ de mitigação com o escopo
 acima; ML-3A (Hefesto) consolida o parecer e a tabela por CLI em `docs/cli-parity.md`.
+
+---
+
+## Sessão 2026-08-12 — Ártemis (QA) — ML-1C: o cwd do hook do Codex acompanha o `cd` do agente? — CONCLUÍDO
+
+Branch `fix/semantica-de-falha-de-hook-fail-open-vs-fail-closed`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md`.
+Fecha a premissa não provada do parecer do ML-2A (Hades), que elevara o Codex a 🔴 assumindo que
+`git rev-parse --show-toplevel` dentro do comando do hook resolveria dinamicamente conforme o agente
+faz `cd` durante a sessão.
+
+**Entregável:** seção nova "ML-1C" acrescentada a
+`docs/pesquisa/2026-08-12-semantica-de-falha-de-hook-codex.md` (mesmo arquivo do ML-1A).
+
+**Método:** mesmo fixture/isolamento do ML-1A (`CODEX_HOME` isolado, `--dangerously-bypass-hook-trust`),
+hook `PreToolUse` que faz *append* de `pwd` + `git rev-parse --show-toplevel` a um log e sai `exit 0`
+(observação, não bloqueio). Dois experimentos, não um: (1) `cd` de shell explícito
+(`mkdir sub && cd sub && git init`, depois `pwd` em chamada separada) — mas a revisão do advisor
+apontou que, como cada `command_execution` do Codex já é um `/bin/zsh -lc` novo por chamada, esse
+resultado sozinho não distingue "cwd fixo por design" de "nada herdável por mecânica de processo";
+(2) parâmetro de working directory da própria chamada de ferramenta (não `cd` de shell) — mais forte,
+porque a chamada 2 comprovadamente executou dentro de `sub` (a própria saída do `pwd` real imprimiu
+`.../fixture/sub`), fechando essa objeção.
+
+**Veredito: FIXO NA SESSÃO**, nos dois experimentos. Em nenhum dos dois disparos o hook viu
+`pwd`/`toplevel` diferente da raiz do fixture (`-C` da invocação), mesmo no Experimento 2 em que a
+chamada de ferramenta que o hook estava autorizando de fato executou dentro de `sub`.
+
+**Consequência para o parecer do ML-2A, escopo estrito ao que foi medido:** o **mecanismo** "agente
+roda `mkdir x && cd x && git init` e o cwd do hook acompanha o `cd`, relocando a resolução para a raiz
+aninhada" **não se reproduz** — o hook resolve (script e a própria expressão `$(git rev-parse
+--show-toplevel)` do `command`) a partir do cwd de início da sessão, não do cwd corrente do agente nem
+do cwd de uma chamada individual (confirmado com dois mecanismos: `cd` de shell e o parâmetro de
+working directory da própria chamada de ferramenta). **Isto NÃO fecha a classe de ameaça inteira**:
+não foi medido se um agente sem privilégio alcança o Caso A por outras vias dentro da própria raiz da
+sessão — ex.: apagar `scripts/trackfw-credential-guard.sh` (escrita comum de arquivo) ou substituir
+`.git` por um gitfile redirecionando a resolução (o caminho de submódulo/worktree de
+`docs/cli-parity.md`, também alcançável sem `cd`). Essas vias **permanecem em aberto**, fora do escopo
+deste ML. **Cabe a Zeus/Hades decidir a severidade final** avaliando essas vias residuais junto com
+este veredito — não tratar este resultado como fechamento do vetor 🔴 por completo, só do mecanismo
+específico citado no parecer.
+
+**Critério "Se ACOMPANHA, confirmar ponta a ponta com o guard real" — N/A**, porque o veredito foi
+`FIXO NA SESSÃO`, não `ACOMPANHA`; declarado explicitamente no documento, não omitido.
+
+**Isolamento confirmado:** `CODEX_HOME` isolado nas duas rodadas; `~/.codex/auth.json` real checksum
+MD5 idêntico antes/depois (`a9d4e855b3674a0307c09be63de6ec7a`); `~/.codex/config.toml` mtime
+inalterado (`Aug 11 21:12:54 2026`, anterior a esta sessão); `git status --porcelain` do repo trackfw
+limpo durante e após o ML.
+
+**Próximo passo (fora do escopo deste ML):** Zeus/Barreira reavalia a severidade do Codex no parecer
+do ML-2A à luz deste veredito; Wave 3 (ML-3A, Hefesto) segue liberada para consolidar
+`docs/cli-parity.md`.

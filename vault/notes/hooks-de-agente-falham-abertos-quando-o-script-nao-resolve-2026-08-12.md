@@ -68,6 +68,28 @@ A página de hooks do **Kiro** tem **duas abas (IDE e CLI)** com semânticas de 
 **diferentes** para a mesma seção. Ler só a aba visível produz um veredito errado com aparência de
 citação sólida. Qual superfície o trackfw mira no Kiro é **pergunta em aberto**.
 
+## O cwd do hook do Codex NÃO acompanha o agente (medido, 2026-08-12)
+
+Verificado no ML-1C, com dois experimentos:
+
+1. **`cd` de shell** (`mkdir sub && cd sub && git init`, depois chamada separada): o hook viu sempre
+   a raiz do fixture. Sozinho isso **não prova nada** — cada `command_execution` do Codex é um
+   `/bin/zsh -lc` novo, então não haveria cwd a herdar de qualquer forma.
+2. **Parâmetro de working directory da própria chamada de ferramenta**: a chamada executou
+   comprovadamente dentro de `sub` (o `pwd` real imprimiu `.../fixture/sub`), e **mesmo assim** o
+   hook que a precedeu viu a raiz. Prova de ponta a ponta: o próprio `command` do hook é
+   `$(git rev-parse --show-toplevel)/...`, expandido pelo Codex antes de invocar — se tivesse
+   resolvido a partir de `sub`, o caminho não existiria e o disparo teria sido `Failed`. O append no
+   log aconteceu.
+
+**Conclusão:** o cwd do hook está desacoplado **tanto** do `cd` de shell **quanto** do parâmetro de
+working directory da chamada. Um agente induzido **não** contorna o guard só mudando de diretório.
+
+⚠️ **Isto não fecha a classe de ameaça.** Continuam **não medidas** outras vias alcançáveis sem `cd`
+dentro da própria raiz da sessão — por exemplo apagar `scripts/trackfw-credential-guard.sh`, ou
+redirecionar `.git` via gitfile (o caminho de submódulo/worktree já documentado). Não confunda
+"aquele vetor específico foi refutado" com "o guard é inalcançável".
+
 ## Hipótese de mitigação (não implementada, não validada)
 
 Converter "não consegui rodar" em "bloqueio" no próprio comando emitido — algo como

@@ -217,7 +217,7 @@ vão para Zeus, **não são implementados aqui**.
 > Dependências: ML-2A. **Bloqueia a Wave 3.**
 
 ### ML-1C — O cwd do hook do Codex acompanha o `cd` do agente?
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Ártemis; auditado por Zeus em 2026-08-12) — veredito **FIXO NA SESSÃO**: o vetor 🔴 do ML-2A **não se reproduz**
 **Agente:** Ártemis (`artemis-tf`)
 
 **Por que este ML existe.** O parecer do ML-2A elevou o Codex a 🔴 com base num vetor concreto: o
@@ -256,6 +256,20 @@ que o cwd **derive durante** a sessão. A premissa foi esticada.
 - [ ] Se `ACOMPANHA`, confirmar de ponta a ponta que o guard **não** roda na segunda chamada.
 - [ ] `CODEX_HOME` isolado; `~/.codex/` do usuário **não** tocado — confirme explicitamente.
 - [ ] Nenhum arquivo fora de `docs/pesquisa/` e `docs/agents-working-context.md`.
+
+---
+
+## Wave 2-ter — Reavaliação de severidade (1 ML)
+> Dependências: ML-1C. **Bloqueia a Wave 3.**
+
+### ML-2B — Reavaliar a severidade do Codex à luz do ML-1C
+**Status:** 🔄 Em andamento
+**Agente:** Hades (`hades-tf`)
+
+O ML-1C **derrubou** o vetor que sustentava o 🔴 (`cd` do agente). Mas o próprio ML-1C delimitou o
+que **não** mediu: outras vias alcançáveis **sem `cd`**, dentro da raiz da sessão — apagar
+`scripts/trackfw-credential-guard.sh`, ou redirecionar `.git` via gitfile. Zeus **não** decide
+severidade sozinho: devolve ao autor do parecer para revisão escopada.
 
 ---
 
