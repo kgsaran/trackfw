@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-11
 req: "docs/req/REQ-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd-attention-signal-cleanup-e-os-5-clis-nao-claude.md"
 squad: "Prometeu, Apolo, Ártemis, Hefesto, Hades"
@@ -7,7 +7,7 @@ squad: "Prometeu, Apolo, Ártemis, Hefesto, Hades"
 
 # Roadmap: Resolucao de caminho dos hooks de agente independente do cwd
 
-> Created: 2026-08-11 | Status: wip
+> Created: 2026-08-11 | Status: done
 
 ## Context
 

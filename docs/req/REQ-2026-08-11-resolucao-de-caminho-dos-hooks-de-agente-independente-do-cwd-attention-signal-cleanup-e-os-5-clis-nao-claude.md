@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-11
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md"
 ---
 
 # REQ: Resolucao de caminho dos hooks de agente independente do cwd — attention-signal/cleanup e os 5 CLIs nao-Claude
 
-> Date: 2026-08-11 | Status: Open
+> Date: 2026-08-11 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -94,4 +94,4 @@ ADR: docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-m
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md
