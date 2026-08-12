@@ -181,7 +181,7 @@ divergência que **nenhum gate pega**, porque o Cenário 29 fixa só a mensagem 
 > autodiscriminante no `ROADMAP-2026-08-12-prova-negativa-...` (ML-1A → ML-1B).
 
 ### ML-2A — Cenário de falsificação
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Ártemis; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Ártemis (`artemis-tf`)
 **Arquivos:** `scripts/check-gates-falsify.sh`.
 
@@ -199,12 +199,12 @@ divergência que **nenhum gate pega**, porque o Cenário 29 fixa só a mensagem 
 > Dependências: Wave 2. Arquivos disjuntos.
 
 ### ML-3A — Documentação
-**Status:** ⬜ Pendente · **Agente:** Hefesto (`hefesto-tf`) · **Arquivos:** `docs/cli-parity.md` **e**
+**Status:** 🔄 Em andamento · **Agente:** Hefesto (`hefesto-tf`) · **Arquivos:** `docs/cli-parity.md` **e**
 documentação de usuário final (README / `--help`). O item de usuário final é **requisito da REQ**, não
 opcional: `cli-parity.md` é interno e não é lido por quem instala o trackfw.
 
 ### ML-3B — Revisão de segurança
-**Status:** ⬜ Pendente · **Agente:** Hades (`hades-tf`) · **Entregável:** `docs/seguranca/` (novo).
+**Status:** 🔄 Em andamento · **Agente:** Hades (`hades-tf`) · **Entregável:** `docs/seguranca/` (novo).
 Avaliar se a regra entregue cobre as três vias de fato, e se cria falso senso de segurança.
 
 ---

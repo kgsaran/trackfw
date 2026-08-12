@@ -13320,3 +13320,170 @@ passed + 8 subtests · `make quality` **exit 0**.
 `credential_guard_mode_downgrade` não consegue disparar sem encanamento novo; e o `warning` do script
 **não muda o exit code** do `validate`, diferente do precedente do Cenário 47 — a Ártemis precisa
 fixar `rules: credential_guard_script_integrity: error` no fixture.
+
+---
+
+## Sessão 2026-08-12 — Ártemis (ML-2A: cenário de falsificação para as duas regras) — CONCLUÍDO,
+aguardando auditoria de Zeus
+
+Branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md`,
+Wave 2/ML-2A — status atualizado para ✅ Concluído. **Único arquivo tocado:**
+`scripts/check-gates-falsify.sh` (+ este handoff e o campo `**Status:**` do roadmap, conforme
+permitido). `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados — confirmado por
+`git status --porcelain` mostrando só `scripts/check-gates-falsify.sh` modificado.
+
+**Dois cenários novos, Cenário 49 e Cenário 50, total sobe de 106 para 108.**
+
+**Cenário 49 — `credential_guard_script_integrity`.** Âncora: gerei o template REAL rodando
+`bin/trackfw discover --init` numa árvore isolada dentro de `$WORK` (não um literal reconstruído à
+mão que poderia divergir do binário sob teste) e copiei só `scripts/trackfw-credential-guard.sh` para
+dentro de um `scaffold_adr_req_project` (o mesmo fixture que o Cenário 29 prova zero violações —
+garante que nenhuma outra regra tem material para disparar). `s49_write_fixture(dest, severity)` é o
+MESMO gerador para os três braços; baseline não toca o script copiado, detecção apensa uma linha
+`# tampered`, non-vacuity usa a MESMA linha apensada mas com `rules:
+credential_guard_script_integrity: off` em vez de `error` — dois deltas isolados (conteúdo entre
+baseline/detecção; severidade entre detecção/non-vacuity), nenhum dos dois satisfazível por causa
+incidental.
+
+**Por que `rules: ...: error` no fixture:** o default é `warning` (ADR Emenda 3 — script sem marcador
+de versão, não discrimina drift de adulteração) e `warning` não derruba o exit code do `validate`
+(`internal/commands/validate.go`: só violations viram `Errorf`). `assert_fails_with` exige exit != 0,
+então sem o override o braço de detecção não teria como usar esse helper — decisão repassada por
+Apolo/Zeus no despacho, documentada no comentário do cenário para não parecer inconsistente com o
+default real.
+
+**Cenário 50 — `credential_guard_mode_downgrade`.** Achado bloqueante de Apolo confirmado: nenhum
+fixture em `check-gates-falsify.sh` fazia `git init`/commit antes deste — `s50_commit_fixture` é o
+primeiro. Commita `credential_guard.mode: block` no HEAD via `s50_yaml_content(mode)` (mesma função
+gera o conteúdo pro commit E pra reescrita pós-commit, garantindo que baseline/detecção divergem só
+no `mode`). Baseline não toca o disco depois do commit (disco == HEAD); detecção reescreve só o disco
+para `mode: warn` **sem novo commit** — a divergência disco-vs-HEAD não commitada é exatamente o
+"relaxamento legítimo não commitado" que o ADR Emenda 3 trata como único falso positivo aceitável, e
+que a mensagem da regra converte em rastro auditável ("if this was intentional, commit the change").
+Non-vacuity: mesma divergência disco-vs-HEAD, mas com `rules: credential_guard_mode_downgrade: off`
+extra no disco — único delta é a severidade, não a divergência em si. Severidade default já é `error`
+(ausente de `ruleDefaults`), então não precisei de override nos braços baseline/detecção.
+
+**Prova de não-vacuidade — decisão de desenho que diverge da instrução literal do roadmap, e por
+quê:** o texto do ML pedia "reconstrua `bin/trackfw` ao sabotar" (herdado do Cenário 47/ML-1A, onde a
+sabotagem editava `internal/validator/*.go`). Aqui os "Arquivos permitidos" do meu despacho **excluem
+`internal/`** — não posso editar a fonte da regra. Como as duas regras já são configuráveis via
+`rules:` (é critério de aceite da REQ), a prova de não-vacuidade correta é desabilitar via `rules:
+<nome>: off` no `trackfw.yaml` do fixture — sabotagem inteiramente por config, sem tocar
+`internal/validator/*.go`, sem precisar reconstruir o binário (que não mudou).
+
+**Correção pós-advisor, antes do handoff — a primeira versão deste braço estava errada:** minha
+primeira implementação só checava que a MENSAGEM sumia com `rules: off` (exit 0, "✓ No violations
+found."). O advisor apontou o furo: isso prova que o knob `rules:` funciona, mas **não prova que o
+braço de DETECÇÃO depende da regra** — se `validateCredentialGuardScriptIntegrity`/
+`validateCredentialGuardModeDowngrade` estivessem mortas (sempre retornando `nil`), esse mesmo braço
+"non-vacuity" passaria do mesmo jeito, porque nunca reproduzia o critério real de
+`assert_fails_with` (exit != 0 E mensagem presente) contra o cenário desligado. Critério da REQ é
+"desabilitar a regra faz o cenário **falhar**" — precisa ser um FAIL de verdade, não silêncio.
+
+**Correção aplicada:** criei `assert_would_now_fail` (novo helper, ao lado de `assert_fails_with`) —
+roda o MESMO comando/critério do braço de detecção contra o fixture com `rules: off`, mas EXIGE que o
+critério de `assert_fails_with` **não** seja satisfeito (senão reprova o cenário ali mesmo). A saída
+de sucesso agora imprime explicitamente a linha de FAIL que `assert_fails_with` teria ecoado no braço
+de detecção real, provando por construção que desligar a regra derruba a asserção de detecção.
+
+**Saída real da prova corrigida (colada, não resumida):**
+```
+OK   [falsify/credential-guard-script-integrity/detected]
+PROOF [falsify/credential-guard-script-integrity/non-vacuity]: com a regra desligada, o braço de
+detecção FALHARIA — assert_fails_with ecoaria "FAIL [falsify/credential-guard-script-integrity/
+detected]: saiu com 0, esperava != 0" (mensagem 'content diverges from the template this version of
+trackfw generates' ausente, exit=0). Saída real da árvore desligada:
+✓ No violations found.
+OK   [falsify/credential-guard-mode-downgrade/detected]
+PROOF [falsify/credential-guard-mode-downgrade/non-vacuity]: com a regra desligada, o braço de
+detecção FALHARIA — assert_fails_with ecoaria "FAIL [falsify/credential-guard-mode-downgrade/
+detected]: saiu com 0, esperava != 0" (mensagem 'current file does not resolve to block' ausente,
+exit=0). Saída real da árvore desligada:
+✓ No violations found.
+```
+
+**Outras correções do mesmo ciclo advisor:** (1) `s50_commit_fixture` agora fixa
+`git config commit.gpgsign false` e `git config core.hooksPath /dev/null` além de `user.email`/
+`user.name` — sem isso, um `commit.gpgsign=true`/`core.hooksPath` global do executor vazaria pro
+fixture (mesma classe de falha do
+`vault/notes/check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08.md`, mas para `git
+commit` em vez de `$HOME`); esta é a primeira sabotagem/fixture deste arquivo a chamar `git commit`,
+então o risco não tinha precedente aqui. (2) adicionei ao comentário dos dois cenários a mesma nota
+de "limite de cobertura conhecido" que o Cenário 47 já registra: cobrem só `applyRule`
+(`Validate()`/texto), não `applyRuleTagged` (`ValidateTagged()`/`validate --json`).
+
+**Convenção do contador "N scenarios" verificada, não assumida:** o advisor sugeriu conferir via
+`grep -c '^OK'`, mas isso não bate historicamente neste arquivo — cenários como o 27 ("baseline +
+baseline-negative + detection, 2 rules x 3 CLIs") ou o 39/40/41 (3 cenários com CLIs próprios listados
+separadamente) já mostram que o número NÃO é 1:1 com linhas `OK`. Confirmei a convenção real contando
+blocos `# Cenário N —` distintos: o mais alto antes da minha mudança era 48; adicionei exatamente dois
+blocos novos (49, 50) → 106 → 108 está correto por essa convenção (1 bump por bloco `# Cenário N —`
+novo, não por linha `OK`).
+
+**Prototipagem antes de editar o script real:** validei a lógica original (6 braços) num script solto
+em `/private/tmp/.../scratchpad/proto49_50.sh` antes de portar para `scripts/check-gates-falsify.sh`;
+a correção do braço de não-vacuidade (acima) foi feita direto no arquivo real, depois reexecutada
+integralmente.
+
+**Gates executados (após a correção pós-advisor, não antes):** `bash -n scripts/check-gates-falsify.sh`
+(sintaxe) ok · `bash scripts/check-gates-falsify.sh` sozinho — **108/108 OK**, nenhum FAIL · `make
+quality` completo — **exit 0**, zero linhas `FAIL`/`--- FAIL` no log completo (`grep -c`, não só o
+tail) · `git status --porcelain` — só `scripts/check-gates-falsify.sh` (+ este handoff + o campo
+`Status` do roadmap) modificados · `./bin/trackfw validate` neste repo — `✓ No violations found.`
+(continua limpo).
+
+**Não toquei:** `internal/`, `npm/src/`, `pypi/trackfw/`, `docs/cli-parity.md`, `docs/adr/`,
+`docs/req/` — confirmado via `git status --porcelain`.
+
+**Nota de vault proposta, não escrita (fora dos arquivos permitidos deste ML):** dois achados são
+armadilhas de >10min para o próximo agente que mexer em `check-gates-falsify.sh` — (1) qualquer
+fixture que rode `git commit` precisa isolar `commit.gpgsign`/`core.hooksPath`, não só
+`user.email`/`user.name` (a config global do executor vaza por padrão); (2) uma regra com severidade
+default `warning` não pode ser testada com `assert_fails_with` sem um override `rules: <nome>: error`
+no fixture, porque `warning` não muda o exit code de `validate`. Sugiro a Zeus abrir
+`vault/notes/falsify-git-commit-fixture-isolation-2026-08-12.md` (ou pasta similar) com esses dois
+pontos — não escrevi porque `vault/notes/` não está nos "Arquivos permitidos" deste despacho.
+
+**Handoff para Zeus:** auditar os dois cenários novos (49, 50), com atenção especial ao braço de
+não-vacuidade corrigido (`assert_would_now_fail`) — é a peça que mudou depois da primeira revisão.
+Depois, liberar Wave 3 (ML-3A Hefesto documentação · ML-3B Hades revisão de segurança).
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-2A — APROVADO
+
+**Prova de não-vacuidade reproduzida por Zeus** (Cenário 50): desabilitando
+`credential_guard_mode_downgrade` e reconstruindo `bin/trackfw`, o braço de detecção falha com
+*"saiu com 0, esperava != 0"*; restaurado, volta verde. **Precisei de duas tentativas** — comentar a
+chamada **não compila** em Go (`declared and not used`), o compilador protege esse call site; foi
+preciso consumir a variável com `_ =`.
+
+**A auto-correção dela é o achado do ML, e é a terceira camada do mesmo problema.** A primeira prova
+que ela escreveu verificava só que **a mensagem some quando a regra é posta em `off`** — isso prova
+que o **botão de configuração** funciona, **não** que a asserção de detecção **dependa** da regra.
+Uma regra **morta** passaria igual. Corrigido com o helper novo `assert_would_now_fail`, que roda o
+critério exato do `assert_fails_with` (exit != 0 **E** mensagem presente) contra o fixture
+desabilitado e exige que **falhe**.
+
+Sequência do mesmo erro, cada vez mais sutil e pego mais cedo: (1) teste que não provava a migração
+(ML-1A, roadmap de resolução de caminho); (2) cenário de prova negativa que ele próprio não provava
+(ML-1A→ML-1B, roadmap da prova negativa); (3) prova de não-vacuidade que provava a coisa errada
+(aqui). Da primeira vez custou um ML corretivo; desta vez foi pego dentro do próprio ML.
+
+**Encanamento novo, corretamente isolado:** Cenário 50 é o **primeiro fixture deste arquivo a usar
+`git commit`**, e ela isolou `commit.gpgsign` e `core.hooksPath`. Sem isso, config global do usuário
+(chave GPG ausente, hook path próprio) quebraria o cenário em outra máquina — mesma família do falso
+negativo de `$HOME` não isolado de 2026-08-08.
+
+**Contagem de cenários:** ela contou blocos `# Cenário N —` em vez de linhas `OK`, notando que a
+relação não é 1:1 neste arquivo (Cenários 27 e 39-41 já quebram essa suposição). 106 → **108**.
+
+**Gates re-executados por Zeus:** `check-gates-falsify.sh` **114 linhas OK, 0 FAIL** · `make quality`
+**exit 0**.
+
+**Nota de vault escrita por Zeus** a partir do que ela propôs mas não podia escrever (fora do escopo
+de arquivos dela): `vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md`
+— as três armadilhas de escrita (prova que não prova; `warning` não pode usar `assert_fails_with`;
+isolamento de git em fixture) mais a de auditoria (**reconstruir `bin/trackfw`**), que foi erro meu.
+
+**Wave 3 despachada em paralelo:** ML-3A (Hefesto, docs) e ML-3B (Hades, revisão).
