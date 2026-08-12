@@ -12957,3 +12957,46 @@ observável não é política.
 os outros dois eixos ficaram obsoletos **como formulados**. Registrado na própria REQ.
 
 **Próximo:** REQ nova de detecção ancorada no `HEAD`.
+
+---
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — roadmap de detecção de adulteração — INICIADO
+
+PR #161 mergeado (`f86732e`). Alvo do trabalho decidido por KG: **`trackfw validate`**.
+
+**A contribuição de arquitetura deste roadmap é uma Wave 0 que questiona o próprio ADR.**
+
+O ADR superseded rejeitou "verificação de integridade de conteúdo" com o argumento de que *"exige um
+valor de referência guardado fora do arquivo gerado — ou seja, exige exatamente o escopo global"*.
+
+**Esse raciocínio pode estar errado.** O **próprio binário do trackfw** contém o template do script
+(`internal/generators/scaffold.go`) — ele **é** referência fora do arquivo gerado, e **não depende de
+escopo global nenhum**. O `validate` pode regenerar o script em memória e comparar com o disco,
+detectando **sobrescrita** sem qualquer dependência de `HEAD` ou de `$HOME`.
+
+Registrei a hipótese com os trade-offs das duas âncoras: **template do binário** cobre sobrescrita
+sempre, mas tem falso positivo por *drift de versão* (usuário em binário antigo com script gerado por
+versão nova) e **não** cobre o `trackfw.yaml`, que não é gerado por template; **`HEAD`** cobre os dois
+alvos mas **não existe** antes do primeiro commit nem para arquivo não versionado.
+
+Hipótese de Zeus, **não decisão**: provavelmente as duas, para alvos diferentes — template para o
+**script** (é gerado, tem forma canônica) e `HEAD` para o **`credential_guard.mode`** (é autoral, não
+tem forma canônica). O ML-0A avalia; o ADR é **emendado** com o resultado antes de qualquer
+implementação.
+
+**Por que isso não é reabrir decisão fechada:** o ADR rejeitou por um motivo **específico**. Se o
+motivo não se sustenta, a rejeição merece reavaliação — o mesmo padrão que já se aplicou duas vezes
+nesta sequência, quando premissas não medidas foram testadas e caíram (o vetor do `cd`, e a premissa
+de sandbox).
+
+**Wave 2 separada da Wave 1 de propósito:** foi exatamente essa separação que expôs o braço de
+detecção não-autodiscriminante no roadmap da prova negativa (ML-1A → ML-1B). Juntar as duas remove o
+ponto de auditoria que pegou o defeito.
+
+**Duas armadilhas já pagas, escritas no roadmap para não se repetirem:** `os.Getwd()` do Go devolve
+caminho symlinkado enquanto Node/Python devolvem o físico (nenhum gate pega, porque o Cenário 29 fixa
+só a mensagem de sucesso); e **reconstruir `bin/trackfw`** ao sabotar, porque `go build ./...` não
+regenera esse binário e o cenário de falsificação o usa — erro que **eu** cometi na auditoria do
+Cenário 47.
+
+Branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`.
