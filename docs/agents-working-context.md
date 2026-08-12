@@ -12335,3 +12335,210 @@ literal exato do diagnóstico, não saída não-zero genérica.
 
 **Gates re-executados por Zeus:** `check-gates-falsify.sh` **109 linhas OK, 0 FAIL** (105 cenários) ·
 `make quality` **exit 0**.
+
+## Sessão 2026-08-12 — Apolo — ML-3A (`failClosed: true` no Cursor) — implementado, aguardando auditoria de Zeus
+
+**Escopo:** ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, Wave 3/ML-3A. Emitir
+`failClosed: true` apenas nas entradas de credential-guard do `.cursor/hooks.json`
+(`beforeShellExecution`/`afterShellExecution` + matchers `Read`/`Write` de
+`preToolUse`/`postToolUse`), nos 3 CLIs, nunca nas entradas de attention-signal/cleanup.
+
+**Forma do campo confirmada em doc primária** (não inferida de outro CLI): buscada diretamente em
+`https://cursor.com/docs/hooks` (fetch ao vivo nesta sessão, não por memória). Duas citações: (1) "By
+default, hook failures (crash, timeout, invalid JSON) allow the action through (fail-open). Set
+`failClosed: true` on the hook definition to block the action on failure instead."; (2) a tabela
+"Per-Script Configuration Options" lista `failClosed` (`boolean`, default `false`) como campo do
+objeto do próprio hook-script — junto de `command`, `type`, `timeout`, `loop_limit`, `matcher` — ou
+seja, **sibling de `command`**, não um campo por evento ou de topo. Citação e URL replicadas no
+comentário de `InjectCursorHooks`/`injectCursorHooks`/`inject_cursor_hooks` nos 3 stacks.
+
+**Implementação:** substituídas as chamadas de `mergeSimpleCommandArray`/`hasEntry`/`_has_entry`
+específicas do guard do Cursor por helpers dedicados que **também fazem upgrade in-place** de uma
+entrada pré-existente sem `failClosed` (não só evitam duplicar): Go
+`mergeGuardCommandArray`/`mergeCursorGuardMatcherEntry` (`internal/generators/agentfiles.go`), Node
+`mergeGuardCommandArray`/`mergeGuardMatcherEntry` inline (`npm/src/generators/hooks.js`), Python
+`_merge_guard_command_entry`/`_merge_guard_matcher_entry` (`pypi/trackfw/generators/hooks.py`). Isso
+foi decisão deliberada além do mínimo pedido (que só exigia não duplicar): sem o upgrade in-place, um
+projeto que já rodou uma versão anterior do trackfw nunca ganharia o `failClosed`, o que anularia o
+propósito de segurança do ML para quem mais precisa (projeto já existente). O helper
+`mergeSimpleCommandArray`/`_merge_simple_command_array` compartilhado com a wiring de
+attention-signal/cleanup **e** com o escopo global (`update.go`/`update-harness.js`/
+`update_harness.py`) foi deixado intocado — confirmado por grep antes de mexer, para respeitar o
+escopo negativo do roadmap ("não mexe nos hooks de escopo global").
+
+**Armadilha do dedup duplo em Python** (avisada no prompt): evitada por design — a nova
+`inject_cursor_hooks` define o literal `'scripts/trackfw-credential-guard.sh'` **uma única vez**
+(`guard_cmd`) e passa a variável para os helpers, que possuem internamente tanto o predicado de dedup
+quanto o append/upgrade. Não há mais dois pontos de código com o mesmo literal para desincronizar.
+
+**Testes novos (3 stacks):** além de asserções de `failClosed=true` nas entradas de guard e ausência
+do campo nas de attention, cada stack ganhou um teste dedicado
+(`TestInjectCursorHooks_FailClosedUpgradesStaleEntry` / `injectCursorHooks upgrades a stale...` /
+`test_inject_cursor_hooks_failclosed_upgrades_stale_entry`) que semeia um `.cursor/hooks.json`
+no formato pré-ML-3A (sem `failClosed`) e prova que rodar o injector atual upgrada as entradas in
+place **sem duplicar**. **Correção pós-revisão (mesma sessão):** o critério de aceite pede
+explicitamente JSON **byte-idêntico** ao rodar o injector duas vezes — as primeiras versões desses
+testes só checavam contagem/valor de campos, checagem mais fraca. Corrigido nos 3 stacks: os testes
+agora leem o conteúdo bruto do arquivo antes/depois da 2ª chamada e comparam
+(`bytes.Equal`/comparação de string bruta/`self.assertEqual(raw1, raw2)`), tanto no teste "cria do
+zero" quanto no teste de upgrade de entrada stale (2ª chamada adicionada a esse teste também — é
+onde uma assimetria dedup/append apareceria).
+
+**Evidência:**
+- `go build ./... && go test ./...` — verde, todos os pacotes.
+- `npm --prefix npm test` — 451 passed, 0 failed.
+- `python3 -m pytest pypi/tests -q` — 1005 passed, 8 subtests passed.
+- `bash scripts/check-agent-hooks-parity.sh` — 12/12 `OK`, sem `FAIL` (Cursor go-vs-node/go-vs-py
+  inclusos). **Nota de leitura para a auditoria:** esse gate compara a **saída dos 3 stacks entre si**
+  — se os 3 tivessem omitido `failClosed` de forma idêntica e silenciosa, ele continuaria passando.
+  Quem prova que o campo é de fato emitido são os **testes unitários por stack** (novos e ajustados
+  nesta sessão), não o gate. Um `make quality` verde não deve ser lido como verificação de
+  `failClosed` — releia os testes.
+- `make quality` — exit 0 (rodado 2x, antes e depois da correção dos testes de idempotência);
+  `check-gates-falsify.sh` 105/105 cenários OK (nenhum cenário novo — os já existentes de
+  parity/hooks continuam cobrindo consistência estrutural entre stacks, não a presença do campo).
+- `git status --porcelain` — só os 8 arquivos permitidos:
+  `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`,
+  `npm/src/generators/hooks.js`, `npm/tests/generators.test.js`,
+  `pypi/trackfw/generators/hooks.py`, `pypi/tests/test_generators_init.py`,
+  `docs/roadmaps/wip/ROADMAP-...credential-guard...md` (só o campo `**Status:**` do ML-3A),
+  este arquivo.
+
+**Ressalva sobre "outros 5 CLIs / entradas de attention byte-idênticas antes e depois":** nem
+`check-agent-hooks-parity.sh` (compara Go↔Node↔Python entre si, não antes↔depois) nem os testes
+provam literalmente essa invariante. A evidência real é o diff: toda linha alterada está dentro do
+branch de guard do Cursor ou em funções novas só chamadas por ele, e
+`mergeSimpleCommandArray`/`_merge_simple_command_array` — compartilhado com a wiring de attention
+**e** com o escopo global (`update.go`/`update-harness.js`/`update_harness.py`) — ficou intocado
+(confirmado por grep antes de editar). Os testes de attention verificam **ausência do campo**
+`failClosed`, não byte-identidade duas vezes (não havia hooks de outros 5 CLIs alterados nesta ML
+para comparar).
+
+**Gaps a reportar para Zeus/Hades (ML-4A) e Hefesto (ML-4B), não corrigidos aqui por estarem fora do
+escopo do ML-3A:**
+1. **Escopo global sem cobertura:** `if (!globalCredentialGuardInstalledCursor())` pula as entradas
+   de projeto quando o guard global (`~/.cursor/hooks.json`, escrito por
+   `mergeCredentialGuardCursorHooks` em `update.go`) já está instalado — e esse arquivo global **não
+   ganhou `failClosed`** (fora do escopo negativo do roadmap). É exatamente a classe de usuário que a
+   Barreira B1 aponta como direção preferida (opção 3) — hoje sem a mitigação deste ML.
+2. **`afterShellExecution`/`postToolUse` são documentados como audit-only** (sem resposta
+   allow/deny/ask definida) — `failClosed` ali é *belt-and-braces*, sem efeito documentado
+   confirmado. Só `beforeShellExecution`/`preToolUse` (que bloqueiam de fato) têm efeito comprovado
+   pela doc.
+3. **`beforeShellExecution` + `failClosed: true` cria um modo "bloqueia tudo" se o script estiver
+   ausente** — ex.: clone fresco com `.cursor/hooks.json` já commitado, antes do `init` gerar
+   `scripts/trackfw-credential-guard.sh`. O roadmap já sanciona isso na tabela da Wave 3 ("Script
+   apagado → ✅ bloqueia (só Cursor)"), mas é a mesma classe de *bricking* que motivou adiar o item 3
+   (wrapper) para a Barreira B1 — registrar para quem for decidir lá.
+4. **Upgrade in-place também reverte silenciosamente um `failClosed: false` explícito do usuário**
+   para `true` a cada `init`/`update` (decisão deliberada, ver acima) — defensável para um controle
+   de segurança, mas vai além do mínimo "não deve duplicar entradas" do critério de aceite; Zeus deve
+   aprovar isso conscientemente na auditoria.
+
+**Status do roadmap:** ML-3A marcado ✅ Concluído (Apolo), aguardando auditoria/commit de Zeus. Não
+fiz commit nem push — autoridade de Git é do Zeus.
+
+---
+
+## Sessão 2026-08-12 — Apolo (ML-3B: correção do ML-3A — never-overwrite + remoção de `failClosed` audit-only) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Microlote corretivo, aberto pela barreira, sobre o próprio ML-3A ainda não commitado (trabalhei em
+cima da árvore de trabalho, não de um commit). Duas correções pedidas por Zeus a partir dos gaps 2 e
+4 que eu mesmo reportei na sessão anterior:
+
+**Correção 1 — nunca sobrescrever escolha explícita do usuário.** O trackfw nunca emitiu
+`failClosed` antes deste ML — logo qualquer `failClosed: false` já presente no `.cursor/hooks.json`
+de um usuário é necessariamente autoria dele, não uma saída antiga do trackfw a migrar (diferente de
+`migrateHookCommand`, que reescreve a própria saída obsoleta do trackfw). `mergeGuardCommandArray`
+(Go) / `mergeGuardCommandArray` (Node) / `_merge_guard_command_entry` (Python) e
+`mergeCursorGuardMatcherEntry` (Go) / `mergeGuardMatcherEntry` (Node) / `_merge_guard_matcher_entry`
+(Python) agora só **setam** `failClosed: true` quando o campo está **ausente**; nunca invertem um
+valor já presente (nenhuma direção). Comentário explicando a distinção para `migrateHookCommand`
+adicionado em cada stack.
+
+**Correção 2 — decisão de Zeus: remover `failClosed` de `afterShellExecution`/`postToolUse`.** Esses
+dois eventos são audit-only (sem resposta allow/deny/ask documentada) — emitir um campo com nome de
+segurança e efeito de bloqueio não documentado é a mesma classe de "emitir sem verificar" que este
+projeto já pagou caro antes. Removido nos 3 stacks:
+- `afterShellExecution` agora usa `mergeSimpleCommandArray`/`_merge_simple_command_array` (o mesmo
+  helper das entradas de attention) em vez de `mergeGuardCommandArray` — nunca ganha `failClosed`.
+- `postToolUse` (matchers Read/Write do guard) agora usa uma função nova sem `failClosed`:
+  `mergeCursorMatcherEntry` (Go), `mergeMatcherEntry` (Node, função local em `injectCursorHooks`),
+  `_merge_matcher_entry` (Python) — mesmo dedup por `(command, matcher)` de
+  `mergeCursorGuardMatcherEntry`, mas nunca seta o campo.
+- Resultado: `failClosed: true` só existe em `beforeShellExecution` e nos dois matchers `Read`/`Write`
+  de `preToolUse` (as entradas de guard que efetivamente bloqueiam a ação pendente).
+
+**Testes atualizados/adicionados (3 stacks):**
+- `TestInjectCursorHooks`/`test('injectCursorHooks creates and merges...')`/`test_inject_cursor_hooks`:
+  agora assertam `failClosed` ausente (não mais `true`) em `afterShellExecution[0]` e nos matchers
+  `postToolUse` Read/Write.
+- `TestInjectCursorHooks_FailClosedUpgradesStaleEntry`/equivalentes Node/Python: idem — entradas stale
+  de `afterShellExecution`/`postToolUse` **não** devem ganhar o campo ao rodar o injector; só
+  `beforeShellExecution`/`preToolUse` são upgradadas in place.
+- **Novo teste em cada stack** provando a Correção 1: `TestInjectCursorHooks_PreservesExplicitUserFailClosedFalse`
+  (Go), `'injectCursorHooks preserves an explicit user failClosed=false (ML-3B)'` (Node),
+  `test_inject_cursor_hooks_preserves_explicit_failclosed_false` (Python) — seed com
+  `failClosed: false` explícito em `beforeShellExecution` e nos dois matchers `preToolUse`
+  Read/Write, roda o injector, confirma que continua `false` (não vira `true`), e confirma
+  byte-identidade numa 2ª rodada.
+
+**Evidência:**
+- `go build ./... && go test ./...` — verde, todos os pacotes.
+- `npm --prefix npm test` — 452 passed, 0 failed (1 teste novo).
+- `python3 -m pytest pypi/tests -q` — 1006 passed, 8 subtests passed (1 teste novo).
+- `bash scripts/check-agent-hooks-parity.sh` — 12/12 `OK`, sem `FAIL`.
+- `go run ./cmd/trackfw validate` — `✓ No violations found.`
+- `make quality` — exit 0 (105/105 cenários de falsificação, sem cenário novo — mesma ressalva de
+  leitura da sessão do ML-3A: esse gate compara os 3 stacks entre si, não prova presença/ausência do
+  campo; quem prova são os testes unitários por stack, ajustados nesta sessão).
+- `git status --porcelain` — só os arquivos já tocados pelo ML-3A:
+  `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`,
+  `npm/src/generators/hooks.js`, `npm/tests/generators.test.js`,
+  `pypi/trackfw/generators/hooks.py`, `pypi/tests/test_generators_init.py`,
+  `docs/roadmaps/wip/ROADMAP-...credential-guard...md` (bloco ML-3B adicionado — não existia ainda;
+  Zeus pediu para criá-lo, então escrevi o bloco completo em vez de só o campo `**Status:**`), este
+  arquivo.
+
+**Nota:** o bloco `### ML-3B` no roadmap não existia antes desta sessão (o prompt indicava "Zeus já
+vai criá-lo"), então eu o criei por completo, seguindo o formato dos demais MLs do roadmap, com
+`**Status:** ✅ Concluído` e os 8 critérios de aceite marcados — sinalizar isso na auditoria caso Zeus
+prefira reformular a prosa.
+
+**Status do roadmap:** ML-3B marcado ✅ Concluído (Apolo), aguardando auditoria/commit de Zeus. Não
+fiz commit nem push — autoridade de Git é do Zeus.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-3A + ML-3B (`failClosed` do Cursor) — APROVADO, envio condicionado
+
+**Verificação empírica do artefato, não do relatório.** Gerei `.cursor/hooks.json` e confiri a tabela:
+`failClosed: true` **apenas** em `beforeShellExecution` e nos dois `preToolUse` de guard; **ausente**
+em `after*`/`post*` e em **todas** as entradas de attention. Bate exatamente com a decisão.
+
+**O defeito mais insidioso dos dois, corrigido e verificado:** montei um `.cursor/hooks.json` com
+`failClosed: false` **autoral** e rodei `trackfw update` → **continuou `false`**. Duas execuções →
+JSON byte-idêntico. Sem essa correção, um `update` de rotina reverteria silenciosamente uma decisão
+consciente de segurança do usuário.
+
+A desambiguação que tornou a correção trivial — *"o trackfw nunca emitiu esse campo antes, logo
+qualquer valor presente é autoria do usuário"* — **só existe agora**. Daqui a um release ela some, e
+o mesmo helper viraria um migrador que sobrescreve dados do usuário. Por isso exigi comentário no
+código explicando por que isso é **diferente** de `migrateHookCommand`, que reescreve a saída
+obsoleta do **próprio trackfw**.
+
+**Decisão de Zeus sobre `after*`/`post*`:** removido. A doc do Cursor não dá efeito de bloqueio a
+esses eventos; emitir campo sem efeito documentado é a classe de problema que esta sequência inteira
+vem pagando. Exigido comentário marcando a ausência como **deliberada**, senão alguém "corrige a
+assimetria" e reintroduz emissão não verificada.
+
+**Incoerência do MEU plano, exposta pelo ML-3A e registrada:** adiei o wrapper por risco de
+*bricking*, mas `failClosed` em `beforeShellExecution` **brica igual**. E há razão mais forte que a
+simetria: o guard **global** do Cursor não foi tocado, e é a superfície que a **opção 3** da barreira
+favorece — se o ADR concluir "preferir escopo global", o `failClosed` de projeto vira desnecessário.
+**Envio condicionado à Barreira B1**, que passa a decidir os três mecanismos juntos.
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` **452**/0 · `pytest` **1006**
+passed + 8 subtests · `check-agent-hooks-parity.sh` todos OK · `make quality` **exit 0**.
+
+**Nota de processo:** o bloco `### ML-3B` não existia no roadmap (eu disse que criaria e não criei
+antes do despacho); o agente escreveu o bloco inteiro seguindo o formato dos demais e **sinalizou**
+que havia extrapolado o "apenas o campo Status". Comportamento correto — a falha foi minha.

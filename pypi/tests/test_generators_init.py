@@ -949,19 +949,153 @@ class TestAttentionHooksInjectors(unittest.TestCase):
                 None,
             )
 
-        self.assertIsNotNone(find_guard(data['hooks']['preToolUse'], 'Read'), 'preToolUse missing credential-guard Read entry')
-        self.assertIsNotNone(find_guard(data['hooks']['preToolUse'], 'Write'), 'preToolUse missing credential-guard Write entry')
-        self.assertIsNotNone(find_guard(data['hooks']['postToolUse'], 'Read'), 'postToolUse missing credential-guard Read entry')
-        self.assertIsNotNone(find_guard(data['hooks']['postToolUse'], 'Write'), 'postToolUse missing credential-guard Write entry')
+        guard_pre_read = find_guard(data['hooks']['preToolUse'], 'Read')
+        guard_pre_write = find_guard(data['hooks']['preToolUse'], 'Write')
+        guard_post_read = find_guard(data['hooks']['postToolUse'], 'Read')
+        guard_post_write = find_guard(data['hooks']['postToolUse'], 'Write')
+        self.assertIsNotNone(guard_pre_read, 'preToolUse missing credential-guard Read entry')
+        self.assertIsNotNone(guard_pre_write, 'preToolUse missing credential-guard Write entry')
+        self.assertIsNotNone(guard_post_read, 'postToolUse missing credential-guard Read entry')
+        self.assertIsNotNone(guard_post_write, 'postToolUse missing credential-guard Write entry')
 
-        # Idempotência
+        # ROADMAP-2026-08-12 ML-3A/ML-3B: failClosed=true only on the gating
+        # credential-guard entries (beforeShellExecution, preToolUse Read/Write); never
+        # on the audit-only ones (afterShellExecution, postToolUse Read/Write) nor on
+        # the attention-signal/cleanup ones.
+        self.assertIs(data['hooks']['beforeShellExecution'][0]['failClosed'], True)
+        self.assertNotIn('failClosed', data['hooks']['afterShellExecution'][0])
+        self.assertIs(guard_pre_read['failClosed'], True)
+        self.assertIs(guard_pre_write['failClosed'], True)
+        self.assertNotIn('failClosed', guard_post_read)
+        self.assertNotIn('failClosed', guard_post_write)
+        self.assertNotIn('failClosed', data['hooks']['preToolUse'][0])
+        self.assertNotIn('failClosed', data['hooks']['postToolUse'][0])
+
+        # Idempotência (ROADMAP-2026-08-12 ML-3A critério de aceite): rodar o injector duas
+        # vezes deve produzir JSON byte-idêntico, não só "sem duplicar entradas" -- compara o
+        # texto bruto do arquivo, não só o objeto reparseado.
+        with open(path, 'r', encoding='utf-8') as f:
+            raw1 = f.read()
         inject_cursor_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
-            data2 = json.load(f)
+            raw2 = f.read()
+        self.assertEqual(raw1, raw2, 'expected hooks.json content to be byte-identical after 2nd injection')
+
+        data2 = json.loads(raw2)
         self.assertEqual(len(data2['hooks']['preToolUse']), 3)
         self.assertEqual(len(data2['hooks']['postToolUse']), 3)
         self.assertEqual(len(data2['hooks']['beforeShellExecution']), 1)
         self.assertEqual(len(data2['hooks']['afterShellExecution']), 1)
+        self.assertIs(data2['hooks']['beforeShellExecution'][0]['failClosed'], True)
+        self.assertNotIn('failClosed', data2['hooks']['afterShellExecution'][0])
+
+    def test_inject_cursor_hooks_failclosed_upgrades_stale_entry(self):
+        """ROADMAP-2026-08-12 ML-3A, escopo corrigido no ML-3B: a .cursor/hooks.json
+        written by a pre-ML-3A trackfw has credential-guard entries with no failClosed
+        field at all. Re-running the current injector must upgrade the gating entries
+        (beforeShellExecution, preToolUse Read/Write) to failClosed: true in place,
+        without duplicating them -- and must NOT add failClosed to the audit-only
+        entries (afterShellExecution, postToolUse Read/Write)."""
+        from trackfw.generators.hooks import inject_cursor_hooks
+        cursor_dir = os.path.join(self.tmp, '.cursor')
+        os.makedirs(cursor_dir, exist_ok=True)
+        path = os.path.join(cursor_dir, 'hooks.json')
+        stale = {
+            'version': 1,
+            'hooks': {
+                'preToolUse': [
+                    {'command': 'scripts/trackfw-attention-signal.sh'},
+                    {'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Read'},
+                    {'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Write'},
+                ],
+                'postToolUse': [
+                    {'command': 'scripts/trackfw-attention-cleanup.sh'},
+                    {'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Read'},
+                    {'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Write'},
+                ],
+                'beforeShellExecution': [{'command': 'scripts/trackfw-credential-guard.sh'}],
+                'afterShellExecution': [{'command': 'scripts/trackfw-credential-guard.sh'}],
+            },
+        }
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(stale, f)
+
+        inject_cursor_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # No duplication.
+        self.assertEqual(len(data['hooks']['preToolUse']), 3)
+        self.assertEqual(len(data['hooks']['postToolUse']), 3)
+        self.assertEqual(len(data['hooks']['beforeShellExecution']), 1)
+        self.assertEqual(len(data['hooks']['afterShellExecution']), 1)
+
+        # Upgraded in place -- only the gating entries (beforeShellExecution, preToolUse
+        # Read/Write). The audit-only entries (afterShellExecution, postToolUse
+        # Read/Write) must never gain the field.
+        self.assertIs(data['hooks']['beforeShellExecution'][0]['failClosed'], True)
+        self.assertNotIn('failClosed', data['hooks']['afterShellExecution'][0])
+        for matcher in ('Read', 'Write'):
+            pre_entry = next(e for e in data['hooks']['preToolUse'] if e.get('matcher') == matcher)
+            post_entry = next(e for e in data['hooks']['postToolUse'] if e.get('matcher') == matcher)
+            self.assertIs(pre_entry['failClosed'], True)
+            self.assertNotIn('failClosed', post_entry)
+        self.assertNotIn('failClosed', data['hooks']['preToolUse'][0])
+        self.assertNotIn('failClosed', data['hooks']['postToolUse'][0])
+
+        # Idempotência sobre um arquivo já upgradado: rodar de novo não deve reintroduzir a
+        # assimetria dedup/append (a armadilha do literal duplicado avisada no prompt deste
+        # ML) nem alterar o conteúdo byte a byte.
+        with open(path, 'r', encoding='utf-8') as f:
+            raw1 = f.read()
+        inject_cursor_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            raw2 = f.read()
+        self.assertEqual(raw1, raw2, 'expected hooks.json to be byte-identical after re-running the injector over an already-upgraded file')
+
+    def test_inject_cursor_hooks_preserves_explicit_failclosed_false(self):
+        """ROADMAP-2026-08-12 ML-3B: trackfw never emitted `failClosed` before ML-3A,
+        so a `failClosed: False` already present in the user's file is necessarily
+        their own authorship. The injector must not flip it back to True -- on either
+        beforeShellExecution or the preToolUse Read/Write matcher entries."""
+        from trackfw.generators.hooks import inject_cursor_hooks
+        cursor_dir = os.path.join(self.tmp, '.cursor')
+        os.makedirs(cursor_dir, exist_ok=True)
+        path = os.path.join(cursor_dir, 'hooks.json')
+        seed = {
+            'version': 1,
+            'hooks': {
+                'preToolUse': [
+                    {'command': 'scripts/trackfw-attention-signal.sh'},
+                    {'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Read', 'failClosed': False},
+                    {'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Write', 'failClosed': False},
+                ],
+                'postToolUse': [
+                    {'command': 'scripts/trackfw-attention-cleanup.sh'},
+                ],
+                'beforeShellExecution': [
+                    {'command': 'scripts/trackfw-credential-guard.sh', 'failClosed': False},
+                ],
+            },
+        }
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(seed, f)
+
+        inject_cursor_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        self.assertIs(data['hooks']['beforeShellExecution'][0]['failClosed'], False)
+        for matcher in ('Read', 'Write'):
+            pre_entry = next(e for e in data['hooks']['preToolUse'] if e.get('matcher') == matcher)
+            self.assertIs(pre_entry['failClosed'], False)
+
+        with open(path, 'r', encoding='utf-8') as f:
+            raw1 = f.read()
+        inject_cursor_hooks(self.tmp)
+        with open(path, 'r', encoding='utf-8') as f:
+            raw2 = f.read()
+        self.assertEqual(raw1, raw2, 'expected hooks.json to be byte-identical after re-running the injector over a user-authored failClosed=false')
 
     def test_inject_cursor_hooks_preserves_existing_version(self):
         from trackfw.generators.hooks import inject_cursor_hooks

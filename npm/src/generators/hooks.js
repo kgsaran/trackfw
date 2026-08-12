@@ -44,6 +44,41 @@ function mergeSimpleCommandArray(existing, command) {
 }
 
 /**
+ * Merge helper para o array de hook do credential-guard do Cursor
+ * (hooks.beforeShellExecution -- o evento que efetivamente bloqueia a ação
+ * pendente) -- {"command": "...", "failClosed": true}. Distinto de
+ * mergeSimpleCommandArray: quando já existe uma entry com esse command
+ * (inclusive uma escrita por uma versão anterior do trackfw, sem
+ * failClosed), essa entry é atualizada in place em vez de ficar como está --
+ * ver injectCursorHooks, comentário "failClosed" (ROADMAP-2026-08-12 ML-3A,
+ * escopo corrigido no ML-3B) para a citação da doc primária e o motivo de
+ * failClosed nunca ir nas entries de attention-signal/cleanup nem nas de
+ * afterShellExecution (audit-only -- usa mergeSimpleCommandArray, sem
+ * failClosed).
+ *
+ * Nunca sobrescreve um valor já presente (ML-3B): o trackfw nunca emitiu
+ * este campo antes do ROADMAP-2026-08-12, então qualquer `failClosed` já
+ * presente no arquivo do usuário -- inclusive um `false` explícito -- é
+ * necessariamente autoria dele, não uma saída antiga do trackfw a migrar
+ * (diferente de migrateHookCommand em agentfiles.go, que reescreve a
+ * própria saída obsoleta do trackfw). Só SETA o campo quando ausente; nunca
+ * inverte um valor já existente em nenhuma direção.
+ * Mirrors internal/generators/agentfiles.go:mergeGuardCommandArray.
+ */
+function mergeGuardCommandArray(existing, command) {
+  const arr = Array.isArray(existing) ? existing.slice() : []
+  const found = arr.find(e => e && e.command === command)
+  if (found) {
+    if (!Object.prototype.hasOwnProperty.call(found, 'failClosed')) {
+      found.failClosed = true
+    }
+    return arr
+  }
+  arr.push({ command, failClosed: true })
+  return arr
+}
+
+/**
  * Merge helper para arrays de hooks tipo GitHub Copilot
  * (hooks.preToolUse/postToolUse): cada entry é
  * {"type":"command","matcher":"bash","bash":"...","cwd":".","timeoutSec":10}
@@ -1009,6 +1044,33 @@ function injectCopilotHooks(cwd) {
 //     assumed either way -- not a blocker here since this event array only ever contains
 //     the single credential-guard entry added by trackfw.
 //
+// failClosed (ROADMAP-2026-08-12 ML-3A, escopo corrigido no ML-3B): Cursor is fail-open
+// by default when a hook fails to run at all (crash, timeout, invalid JSON) -- confirmed
+// https://cursor.com/docs/hooks, "By default, hook failures (crash, timeout, invalid
+// JSON) allow the action through (fail-open). Set `failClosed: true` on the hook
+// definition to block the action on failure instead." -- and the same page's
+// "Per-Script Configuration Options" table lists `failClosed` (`boolean`, default
+// `false`) as a field of the individual hook-script object, the same object that holds
+// `command` -- i.e. a sibling of `command`, not a per-event or top-level setting.
+//
+// Emitted as `"failClosed": true` ONLY on the two events that actually gate the pending
+// action -- beforeShellExecution and the preToolUse Read/Write matcher entries.
+// Deliberately NEVER emitted on:
+//   - afterShellExecution / postToolUse (both Read and Write matchers): audit-only events
+//     with no documented allow/deny/ask response -- `failClosed` has no documented
+//     blocking effect there. Emitting a security-sounding field with no documented effect
+//     is exactly the "emit without verifying" failure this project already paid for once;
+//     add it back only if Cursor's docs ever define blocking semantics for these events.
+//   - attention-signal/attention-cleanup entries -- those are a UI signal, not a security
+//     control, and failing closed on them would turn a cosmetic hook failure into a full
+//     agent lockout, which is worse than the fail-open gap this ML closes.
+//
+// Never overwrite an existing value (ML-3B): trackfw never emitted `failClosed` before
+// this ML, so any value already present in a user's .cursor/hooks.json -- including an
+// explicit `false` -- is necessarily the user's own choice, not a stale trackfw output.
+// mergeGuardCommandArray/mergeGuardMatcherEntry below only ever SET the field when it is
+// absent; they never flip an existing value either direction.
+//
 // Backward compatibility: a .cursor/hooks.json written by a pre-migration
 // trackfw still has the legacy top-level preToolUse/postToolUse arrays. This
 // function migrates known trackfw entries out of those top-level arrays into
@@ -1056,15 +1118,12 @@ function injectCursorHooks(cwd) {
   // Wave 2 to Read/Write via the generic preToolUse/postToolUse events): skip project-scope
   // credential-guard entries when the global one is already installed.
   if (!globalCredentialGuardInstalledCursor()) {
-    if (!Array.isArray(data.hooks.beforeShellExecution)) data.hooks.beforeShellExecution = []
-    if (!hasEntry(data.hooks.beforeShellExecution, 'command', GUARD_CMD_CURSOR)) {
-      data.hooks.beforeShellExecution.push({ command: GUARD_CMD_CURSOR })
-    }
-
-    if (!Array.isArray(data.hooks.afterShellExecution)) data.hooks.afterShellExecution = []
-    if (!hasEntry(data.hooks.afterShellExecution, 'command', GUARD_CMD_CURSOR)) {
-      data.hooks.afterShellExecution.push({ command: GUARD_CMD_CURSOR })
-    }
+    data.hooks.beforeShellExecution = mergeGuardCommandArray(data.hooks.beforeShellExecution, GUARD_CMD_CURSOR)
+    // afterShellExecution is audit-only (no documented allow/deny/ask response) --
+    // failClosed is deliberately never emitted here; see the "failClosed" doc comment
+    // above (ML-3B). Plain mergeSimpleCommandArray, same as the attention entries, keeps
+    // this array free of the field entirely.
+    data.hooks.afterShellExecution = mergeSimpleCommandArray(data.hooks.afterShellExecution, GUARD_CMD_CURSOR)
 
     // Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): wired via the generic
     // preToolUse/postToolUse events (distinct from beforeShellExecution/afterShellExecution,
@@ -1073,21 +1132,41 @@ function injectCursorHooks(cwd) {
     // above in this same array. hasEntry (command-only) is not enough here -- both the
     // unfiltered signal entry and these matcher-scoped guard entries share the same array, so
     // dedup must also check `matcher`.
-    const hasGuardMatcherEntry = (arr, matcher) =>
-      Array.isArray(arr) && arr.some(e => e && e.command === GUARD_CMD_CURSOR && e.matcher === matcher)
+    //
+    // failClosed: true (ROADMAP-2026-08-12 ML-3A, scope corrected ML-3B, see
+    // injectCursorHooks doc comment): only used on preToolUse (the gating event). An
+    // existing matching entry (e.g. written by a pre-ML-3A trackfw) is upgraded in place
+    // instead of left as-is, and never duplicated -- mirrors the beforeShellExecution
+    // upgrade-in-place behavior of mergeGuardCommandArray above. Never overwrites an
+    // already-present value (including an explicit `false`) -- same never-overwrite
+    // reasoning as mergeGuardCommandArray.
+    const mergeGuardMatcherEntry = (arr0, matcher) => {
+      const arr = Array.isArray(arr0) ? arr0 : []
+      const found = arr.find(e => e && e.command === GUARD_CMD_CURSOR && e.matcher === matcher)
+      if (found) {
+        if (!Object.prototype.hasOwnProperty.call(found, 'failClosed')) {
+          found.failClosed = true
+        }
+        return arr
+      }
+      arr.push({ command: GUARD_CMD_CURSOR, matcher, failClosed: true })
+      return arr
+    }
 
-    if (!hasGuardMatcherEntry(data.hooks.preToolUse, 'Read')) {
-      data.hooks.preToolUse.push({ command: GUARD_CMD_CURSOR, matcher: 'Read' })
+    // postToolUse is audit-only for the same reason as afterShellExecution above --
+    // mergeMatcherEntry never adds failClosed.
+    const mergeMatcherEntry = (arr0, matcher) => {
+      const arr = Array.isArray(arr0) ? arr0 : []
+      const found = arr.find(e => e && e.command === GUARD_CMD_CURSOR && e.matcher === matcher)
+      if (found) return arr
+      arr.push({ command: GUARD_CMD_CURSOR, matcher })
+      return arr
     }
-    if (!hasGuardMatcherEntry(data.hooks.preToolUse, 'Write')) {
-      data.hooks.preToolUse.push({ command: GUARD_CMD_CURSOR, matcher: 'Write' })
-    }
-    if (!hasGuardMatcherEntry(data.hooks.postToolUse, 'Read')) {
-      data.hooks.postToolUse.push({ command: GUARD_CMD_CURSOR, matcher: 'Read' })
-    }
-    if (!hasGuardMatcherEntry(data.hooks.postToolUse, 'Write')) {
-      data.hooks.postToolUse.push({ command: GUARD_CMD_CURSOR, matcher: 'Write' })
-    }
+
+    data.hooks.preToolUse = mergeGuardMatcherEntry(data.hooks.preToolUse, 'Read')
+    data.hooks.preToolUse = mergeGuardMatcherEntry(data.hooks.preToolUse, 'Write')
+    data.hooks.postToolUse = mergeMatcherEntry(data.hooks.postToolUse, 'Read')
+    data.hooks.postToolUse = mergeMatcherEntry(data.hooks.postToolUse, 'Write')
   }
 
   writeJSON(filePath, data)

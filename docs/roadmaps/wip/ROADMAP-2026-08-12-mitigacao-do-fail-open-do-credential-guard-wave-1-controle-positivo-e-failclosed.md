@@ -162,7 +162,7 @@ um hook de guard cujo script não existe, e que **removê-la** faz o cenário fa
 > Dependências: Wave 2.
 
 ### ML-3A — Opt-in nativo do Cursor nas entradas do guard
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-12) — **envio condicionado à Barreira B1**
 **Agente:** Apolo (`apolo-tf`)
 
 **Arquivos afetados:** `internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,
@@ -185,9 +185,57 @@ de emitir — não inferir a partir de outro CLI.
 - [ ] Forma do campo confirmada em doc primária (cite URL no comentário do código).
 - [ ] `check-agent-hooks-parity.sh` sem `FAIL`; `make quality` exit 0.
 
+### ML-3B — Correção: nunca sobrescrever escolha do usuário + remover `failClosed` de eventos audit-only
+**Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-12) — **envio condicionado à Barreira B1**
+**Agente:** Apolo (`apolo-tf`)
+
+Microlote corretivo do próprio ML-3A, aberto pela barreira, a partir de dois defeitos reportados
+pelo próprio Apolo: (1) upgrade-in-place sobrescrevia silenciosamente um `failClosed: false` já
+presente no arquivo do usuário — defeito, não política, já que o trackfw nunca emitiu esse campo
+antes deste ML; (2) `afterShellExecution`/`postToolUse` são eventos audit-only (sem resposta
+allow/deny/ask documentada), então `failClosed` ali não tem efeito de bloqueio documentado —
+decisão de Zeus: remover.
+
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,
+`pypi/trackfw/generators/hooks.py` + testes dos 3 stacks.
+
+**Critérios de aceite:**
+- [x] Campo adicionado apenas quando ausente; `failClosed: false` explícito do usuário preservado
+      (teste dedicado nos 3 stacks).
+- [x] `failClosed: true` presente apenas em `beforeShellExecution` e nos dois `preToolUse` de
+      guard; ausente em `after*`/`post*` e em todas as entradas de attention.
+- [x] Comentários explicando (a) diferença para `migrateHookCommand`, (b) por que `after*`/`post*`
+      não recebem o campo, com citação da doc.
+- [x] Idempotência: rodar o injector duas vezes → JSON byte-idêntico.
+- [x] Entradas de attention do Cursor e emissões dos outros 5 CLIs byte-idênticas ao estado
+      anterior ao ML-3A.
+- [x] `go build ./... && go test ./...`, `npm --prefix npm test`, `python3 -m pytest pypi/tests -q`
+      verdes.
+- [x] `bash scripts/check-agent-hooks-parity.sh` sem `FAIL`; `make quality` exit 0.
+- [x] `git status --porcelain` só com os arquivos já tocados pelo ML-3A.
+
 ---
 
-## Barreira B1 — ADR dos itens 3 e 4 (Zeus)
+## Barreira B1 — ADR: como tratar "o guard não consegue rodar" (Zeus)
+> ⚠️ **Escopo ampliado durante a execução.** A barreira nasceu para decidir os itens 3 e 4. Passa a
+> decidir **também se o `failClosed` do ML-3A/3B é enviado**, por duas razões descobertas no ML-3A:
+>
+> 1. **Incoerência do plano original.** O item 3 (wrapper) foi adiado por risco de *bricking* — clone
+>    fresco com hooks commitados, antes do `init`, trava toda chamada de ferramenta. Mas
+>    `failClosed: true` em `beforeShellExecution` **brica exatamente do mesmo jeito**. Enviar um e
+>    adiar o outro pelo mesmo argumento é incoerente.
+> 2. **Razão mais forte que a simetria:** o guard de escopo **global** do Cursor
+>    (`~/.cursor/hooks.json`) **não foi tocado** — e é justamente a superfície que a **opção 3**
+>    favorece. Se o ADR concluir "preferir escopo global", o `failClosed` de escopo de **projeto**
+>    vira desnecessário. Enviá-lo agora arrisca construir o que a barreira está prestes a tornar
+>    dispensável — precisamente o erro que este roadmap escreveu como motivo para avaliar a opção 3
+>    **primeiro**.
+>
+> A barreira passa a responder **uma** pergunta: *como tratar "o guard não consegue rodar", dado o
+> constraint de bricking?* — através dos **três** mecanismos (`failClosed`, wrapper, escopo global).
+
+### Itens originais
+
 > Dependências: Wave 3.
 
 Zeus escreve ADR decidindo — ou adiando com justificativa — os dois itens que sobraram, à luz de

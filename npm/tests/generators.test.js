@@ -783,13 +783,128 @@ test('injectCursorHooks creates and merges .cursor/hooks.json idempotently', () 
   const postGuardWrite = data.hooks.postToolUse.find(e => e.command === 'scripts/trackfw-credential-guard.sh' && e.matcher === 'Write')
   assert.ok(postGuardWrite, 'postToolUse missing credential-guard Write entry')
 
-  // Idempotência
+  // ROADMAP-2026-08-12 ML-3A/ML-3B: failClosed=true only on the gating credential-guard
+  // entries (beforeShellExecution, preToolUse Read/Write); never on the audit-only ones
+  // (afterShellExecution, postToolUse Read/Write) nor on the attention-signal/cleanup ones.
+  assert.equal(data.hooks.beforeShellExecution[0].failClosed, true)
+  assert.equal(data.hooks.afterShellExecution[0].failClosed, undefined, 'afterShellExecution (audit-only) must never have failClosed')
+  assert.equal(preGuardRead.failClosed, true)
+  assert.equal(preGuardWrite.failClosed, true)
+  assert.equal(postGuardRead.failClosed, undefined, 'postToolUse (audit-only) must never have failClosed')
+  assert.equal(postGuardWrite.failClosed, undefined, 'postToolUse (audit-only) must never have failClosed')
+  assert.equal(data.hooks.preToolUse[0].failClosed, undefined, 'attention-signal must never have failClosed')
+  assert.equal(data.hooks.postToolUse[0].failClosed, undefined, 'attention-cleanup must never have failClosed')
+
+  // Idempotência (ROADMAP-2026-08-12 ML-3A critério de aceite): rodar o injector duas vezes
+  // deve produzir JSON byte-idêntico, não só "sem duplicar entradas" -- mesmo padrão de
+  // injectCopilotHooks/injectKiroHooks acima, mas comparando o texto bruto do arquivo (mais
+  // forte que deepStrictEqual sobre o objeto reparseado).
+  const raw1 = fs.readFileSync(hooksPath, 'utf8')
   injectCursorHooks(tmpDir)
-  data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  const raw2 = fs.readFileSync(hooksPath, 'utf8')
+  assert.equal(raw1, raw2, 'expected Cursor hooks.json content to be byte-identical after 2nd injection')
+
+  data = JSON.parse(raw2)
   assert.equal(data.hooks.preToolUse.length, 3)
   assert.equal(data.hooks.postToolUse.length, 3)
   assert.equal(data.hooks.beforeShellExecution.length, 1)
   assert.equal(data.hooks.afterShellExecution.length, 1)
+  assert.equal(data.hooks.beforeShellExecution[0].failClosed, true)
+  assert.equal(data.hooks.afterShellExecution[0].failClosed, undefined, 'afterShellExecution (audit-only) must never have failClosed')
+})
+
+test('injectCursorHooks upgrades a stale (pre-ML-3A) credential-guard entry to failClosed=true without duplicating it', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cursor-hooks-failclosed-upgrade-'))
+  const cursorDir = path.join(tmpDir, '.cursor')
+  fs.mkdirSync(cursorDir, { recursive: true })
+  const hooksPath = path.join(cursorDir, 'hooks.json')
+
+  const stale = {
+    version: 1,
+    hooks: {
+      preToolUse: [
+        { command: 'scripts/trackfw-attention-signal.sh' },
+        { command: 'scripts/trackfw-credential-guard.sh', matcher: 'Read' },
+        { command: 'scripts/trackfw-credential-guard.sh', matcher: 'Write' },
+      ],
+      postToolUse: [
+        { command: 'scripts/trackfw-attention-cleanup.sh' },
+        { command: 'scripts/trackfw-credential-guard.sh', matcher: 'Read' },
+        { command: 'scripts/trackfw-credential-guard.sh', matcher: 'Write' },
+      ],
+      beforeShellExecution: [{ command: 'scripts/trackfw-credential-guard.sh' }],
+      afterShellExecution: [{ command: 'scripts/trackfw-credential-guard.sh' }],
+    },
+  }
+  fs.writeFileSync(hooksPath, JSON.stringify(stale, null, 2))
+
+  injectCursorHooks(tmpDir)
+  const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+
+  // No duplication.
+  assert.equal(data.hooks.preToolUse.length, 3)
+  assert.equal(data.hooks.postToolUse.length, 3)
+  assert.equal(data.hooks.beforeShellExecution.length, 1)
+  assert.equal(data.hooks.afterShellExecution.length, 1)
+
+  // Upgraded in place -- only the gating entries (beforeShellExecution, preToolUse
+  // Read/Write). The audit-only entries (afterShellExecution, postToolUse Read/Write)
+  // must never gain the field.
+  assert.equal(data.hooks.beforeShellExecution[0].failClosed, true)
+  assert.equal(data.hooks.afterShellExecution[0].failClosed, undefined, 'afterShellExecution (audit-only) must never have failClosed')
+  for (const matcher of ['Read', 'Write']) {
+    const pre = data.hooks.preToolUse.find(e => e.command === 'scripts/trackfw-credential-guard.sh' && e.matcher === matcher)
+    assert.equal(pre.failClosed, true)
+    const post = data.hooks.postToolUse.find(e => e.command === 'scripts/trackfw-credential-guard.sh' && e.matcher === matcher)
+    assert.equal(post.failClosed, undefined, 'postToolUse (audit-only) must never have failClosed')
+  }
+  assert.equal(data.hooks.preToolUse[0].failClosed, undefined)
+  assert.equal(data.hooks.postToolUse[0].failClosed, undefined)
+
+  // Idempotência sobre um arquivo já upgradado: rodar de novo não deve reintroduzir a
+  // assimetria dedup/append (a armadilha do literal duplicado avisada no prompt do ML-3A
+  // para o Python, testada aqui também para Node) nem alterar o conteúdo byte a byte.
+  const raw1 = fs.readFileSync(hooksPath, 'utf8')
+  injectCursorHooks(tmpDir)
+  const raw2 = fs.readFileSync(hooksPath, 'utf8')
+  assert.equal(raw1, raw2, 'expected hooks.json to be byte-identical after re-running the injector over an already-upgraded file')
+})
+
+test('injectCursorHooks preserves an explicit user failClosed=false (ML-3B)', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cursor-hooks-failclosed-false-'))
+  const cursorDir = path.join(tmpDir, '.cursor')
+  fs.mkdirSync(cursorDir, { recursive: true })
+  const hooksPath = path.join(cursorDir, 'hooks.json')
+
+  const seed = {
+    version: 1,
+    hooks: {
+      preToolUse: [
+        { command: 'scripts/trackfw-attention-signal.sh' },
+        { command: 'scripts/trackfw-credential-guard.sh', matcher: 'Read', failClosed: false },
+        { command: 'scripts/trackfw-credential-guard.sh', matcher: 'Write', failClosed: false },
+      ],
+      postToolUse: [
+        { command: 'scripts/trackfw-attention-cleanup.sh' },
+      ],
+      beforeShellExecution: [{ command: 'scripts/trackfw-credential-guard.sh', failClosed: false }],
+    },
+  }
+  fs.writeFileSync(hooksPath, JSON.stringify(seed, null, 2))
+
+  injectCursorHooks(tmpDir)
+  const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+
+  assert.equal(data.hooks.beforeShellExecution[0].failClosed, false, 'explicit user failClosed=false must be preserved')
+  for (const matcher of ['Read', 'Write']) {
+    const pre = data.hooks.preToolUse.find(e => e.command === 'scripts/trackfw-credential-guard.sh' && e.matcher === matcher)
+    assert.equal(pre.failClosed, false, `explicit user failClosed=false must be preserved on preToolUse[${matcher}]`)
+  }
+
+  const raw1 = fs.readFileSync(hooksPath, 'utf8')
+  injectCursorHooks(tmpDir)
+  const raw2 = fs.readFileSync(hooksPath, 'utf8')
+  assert.equal(raw1, raw2, 'expected hooks.json to be byte-identical after re-running the injector over a user-authored failClosed=false')
 })
 
 test('injectCursorHooks migrates legacy top-level preToolUse/postToolUse, preserving unrelated entries', () => {

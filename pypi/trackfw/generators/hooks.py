@@ -48,6 +48,82 @@ def _merge_simple_command_array(hook_list: list, command: str) -> None:
         hook_list.append({'command': command})
 
 
+def _merge_guard_command_entry(hook_list: list, command: str) -> None:
+    """Garante (idempotente) que hook_list tenha uma entrada
+    {"command": command, "failClosed": True} -- para o array "simples" do
+    credential-guard do Cursor beforeShellExecution (o evento que efetivamente
+    bloqueia a ação pendente). afterShellExecution é audit-only e usa
+    _merge_simple_command_array em vez desta função -- nunca ganha failClosed
+    (ver inject_cursor_hooks, comentário "failClosed", ML-3B).
+
+    Diferente de _merge_simple_command_array: se já existe uma entrada com
+    esse command (inclusive uma escrita por uma versão anterior do trackfw,
+    sem failClosed), essa entrada é atualizada in place em vez de ficar como
+    está -- ver inject_cursor_hooks, comentário "failClosed"
+    (ROADMAP-2026-08-12 ML-3A, escopo corrigido no ML-3B) para a citação da
+    doc primária e o motivo de failClosed nunca ir nas entradas de
+    attention-signal/cleanup.
+
+    Nunca sobrescreve um valor já presente (ML-3B): o trackfw nunca emitiu
+    este campo antes do ROADMAP-2026-08-12, então qualquer `failClosed` já
+    presente no arquivo do usuário -- inclusive um `False` explícito -- é
+    necessariamente autoria dele, não uma saída antiga do trackfw a migrar
+    (diferente de migrateHookCommand em agentfiles.go, que reescreve a
+    própria saída obsoleta do trackfw). Só SETA o campo quando ausente; nunca
+    inverte um valor já existente em nenhuma direção.
+    Mirrors internal/generators/agentfiles.go:mergeGuardCommandArray.
+    """
+    for entry in (hook_list or []):
+        if isinstance(entry, dict) and entry.get('command') == command:
+            if 'failClosed' not in entry:
+                entry['failClosed'] = True
+            return
+    hook_list.append({'command': command, 'failClosed': True})
+
+
+def _merge_guard_matcher_entry(hook_list: list, command: str, matcher: str) -> None:
+    """Garante (idempotente) que hook_list tenha uma entrada
+    {"command": command, "matcher": matcher, "failClosed": True} -- para o
+    array hooks.preToolUse do Cursor (o evento gating), que também hospeda a
+    entrada não filtrada de attention-signal, exigindo dedup por (command,
+    matcher) em vez de command sozinho. hooks.postToolUse é audit-only e usa
+    _merge_matcher_entry em vez desta função -- nunca ganha failClosed (ver
+    inject_cursor_hooks, comentário "failClosed", ML-3B).
+
+    Mesma semântica de upgrade-in-place (e mesmo never-overwrite de um valor
+    já presente, ML-3B) de _merge_guard_command_entry acima.
+    Mirrors internal/generators/agentfiles.go:mergeCursorGuardMatcherEntry.
+    """
+    for entry in (hook_list or []):
+        if (
+            isinstance(entry, dict)
+            and entry.get('command') == command
+            and entry.get('matcher') == matcher
+        ):
+            if 'failClosed' not in entry:
+                entry['failClosed'] = True
+            return
+    hook_list.append({'command': command, 'matcher': matcher, 'failClosed': True})
+
+
+def _merge_matcher_entry(hook_list: list, command: str, matcher: str) -> None:
+    """Garante (idempotente) que hook_list tenha uma entrada
+    {"command": command, "matcher": matcher} -- para o array
+    hooks.postToolUse do Cursor (audit-only). Mesmo dedup de
+    _merge_guard_matcher_entry, mas nunca adiciona failClosed -- ver
+    inject_cursor_hooks, comentário "failClosed" (ML-3B).
+    Mirrors internal/generators/agentfiles.go:mergeCursorMatcherEntry.
+    """
+    for entry in (hook_list or []):
+        if (
+            isinstance(entry, dict)
+            and entry.get('command') == command
+            and entry.get('matcher') == matcher
+        ):
+            return
+    hook_list.append({'command': command, 'matcher': matcher})
+
+
 def _merge_copilot_hook_array(hook_list: list, script_path: str) -> None:
     """Garante (idempotente) que hook_list tenha uma entrada
     {"type":"command","matcher":"bash","bash":script_path,"cwd":".","timeoutSec":10}.
@@ -766,6 +842,33 @@ def inject_copilot_hooks(cwd: str) -> None:
 #     assumed either way -- not a blocker here since this event array only ever contains
 #     the single credential-guard entry added by trackfw.
 #
+# failClosed (ROADMAP-2026-08-12 ML-3A, escopo corrigido no ML-3B): Cursor is fail-open
+# by default when a hook fails to run at all (crash, timeout, invalid JSON) -- confirmed
+# https://cursor.com/docs/hooks, "By default, hook failures (crash, timeout, invalid
+# JSON) allow the action through (fail-open). Set `failClosed: true` on the hook
+# definition to block the action on failure instead." -- and the same page's
+# "Per-Script Configuration Options" table lists `failClosed` (`boolean`, default
+# `false`) as a field of the individual hook-script object, the same object that holds
+# `command` -- i.e. a sibling of `command`, not a per-event or top-level setting.
+#
+# Emitted as `"failClosed": true` ONLY on the two events that actually gate the pending
+# action -- beforeShellExecution and the preToolUse Read/Write matcher entries.
+# Deliberately NEVER emitted on:
+#   - afterShellExecution / postToolUse (both Read and Write matchers): audit-only events
+#     with no documented allow/deny/ask response -- `failClosed` has no documented
+#     blocking effect there. Emitting a security-sounding field with no documented effect
+#     is exactly the "emit without verifying" failure this project already paid for once;
+#     add it back only if Cursor's docs ever define blocking semantics for these events.
+#   - attention-signal/attention-cleanup entries -- those are a UI signal, not a security
+#     control, and failing closed on them would turn a cosmetic hook failure into a full
+#     agent lockout, which is worse than the fail-open gap this ML closes.
+#
+# Never overwrite an existing value (ML-3B): trackfw never emitted `failClosed` before
+# this ML, so any value already present in a user's .cursor/hooks.json -- including an
+# explicit `False` -- is necessarily the user's own choice, not a stale trackfw output.
+# _merge_guard_command_entry/_merge_guard_matcher_entry above only ever SET the field
+# when it is absent; they never flip an existing value either direction.
+#
 # Backward compatibility: a .cursor/hooks.json written by a pre-migration
 # trackfw still has the legacy top-level preToolUse/postToolUse arrays. This
 # function migrates known trackfw entries out of those top-level arrays into
@@ -817,38 +920,41 @@ def inject_cursor_hooks(cwd: str) -> None:
     # events): skip project-scope credential-guard entries when the global one is already
     # installed.
     if not _global_credential_guard_installed_cursor():
-        before = hooks.setdefault('beforeShellExecution', [])
-        if not _has_entry(before, 'command', 'scripts/trackfw-credential-guard.sh'):
-            before.append({'command': 'scripts/trackfw-credential-guard.sh'})
+        # Single literal for the guard script path, referenced by every call below --
+        # deliberately not repeated per call site (unlike the pre-ML-3A version of this
+        # function): a duplicated literal across a dedup predicate and its matching append
+        # is the exact trap that broke idempotency here before (see ROADMAP-2026-08-12
+        # ML-3A prompt, "armadilhas conhecidas"). _merge_guard_command_entry/
+        # _merge_guard_matcher_entry each take the literal once and own both the dedup
+        # check and the append/upgrade internally.
+        guard_cmd = 'scripts/trackfw-credential-guard.sh'
 
+        before = hooks.setdefault('beforeShellExecution', [])
+        _merge_guard_command_entry(before, guard_cmd)
+
+        # afterShellExecution is audit-only (no documented allow/deny/ask response) --
+        # failClosed is deliberately never emitted here; see this function's "failClosed"
+        # doc comment (ML-3B). _merge_simple_command_array, same helper used for the
+        # attention entries, keeps this array free of the field entirely.
         after = hooks.setdefault('afterShellExecution', [])
-        if not _has_entry(after, 'command', 'scripts/trackfw-credential-guard.sh'):
-            after.append({'command': 'scripts/trackfw-credential-guard.sh'})
+        _merge_simple_command_array(after, guard_cmd)
 
         # Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): wired via the generic
         # preToolUse/postToolUse events (distinct from beforeShellExecution/
         # afterShellExecution, which only ever fire for Shell) with an explicit `matcher`,
         # so these entries never fire for the same tool call the unfiltered
         # attention-signal/cleanup entries already handle above in this same array.
-        # _has_entry (command-only) is not enough here -- both the unfiltered signal entry
-        # and these matcher-scoped guard entries share the same array, so dedup must also
-        # check `matcher`.
-        def _has_guard_matcher_entry(arr: list, matcher: str) -> bool:
-            return any(
-                isinstance(e, dict)
-                and e.get('command') == 'scripts/trackfw-credential-guard.sh'
-                and e.get('matcher') == matcher
-                for e in (arr or [])
-            )
-
-        if not _has_guard_matcher_entry(pre, 'Read'):
-            pre.append({'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Read'})
-        if not _has_guard_matcher_entry(pre, 'Write'):
-            pre.append({'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Write'})
-        if not _has_guard_matcher_entry(post, 'Read'):
-            post.append({'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Read'})
-        if not _has_guard_matcher_entry(post, 'Write'):
-            post.append({'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Write'})
+        # _merge_guard_matcher_entry/_merge_matcher_entry dedup on (command, matcher), not
+        # command alone -- both the unfiltered signal entry and these matcher-scoped guard
+        # entries share the same array.
+        #
+        # preToolUse (gating event) gets failClosed=true (only when absent, ML-3B);
+        # postToolUse is audit-only, same reasoning as afterShellExecution above -- uses
+        # _merge_matcher_entry instead, which never adds failClosed.
+        _merge_guard_matcher_entry(pre, guard_cmd, 'Read')
+        _merge_guard_matcher_entry(pre, guard_cmd, 'Write')
+        _merge_matcher_entry(post, guard_cmd, 'Read')
+        _merge_matcher_entry(post, guard_cmd, 'Write')
 
     _write_json(file_path, data)
 

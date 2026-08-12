@@ -886,6 +886,44 @@ func InjectCopilotHooks(cwd string) error {
 //     concurrent execution); not assumed either way. Not a blocker here regardless: this
 //     event array only ever contains the single credential-guard entry added by trackfw.
 //
+// failClosed (ROADMAP-2026-08-12 ML-3A, scope corrected in ML-3B): Cursor is
+// fail-open by default when a hook fails to run at all (crash, timeout, invalid
+// JSON) — confirmed https://cursor.com/docs/hooks, "By default, hook failures
+// (crash, timeout, invalid JSON) allow the action through (fail-open). Set
+// `failClosed: true` on the hook definition to block the action on failure
+// instead." — and the same page's "Per-Script Configuration Options" table lists
+// `failClosed` (`boolean`, default `false`) as a field of the individual
+// hook-script object, the same object that holds `command` — i.e. a sibling of
+// `command`, not a per-event or top-level setting.
+//
+// Emitted as `"failClosed": true` ONLY on the two events that actually gate the
+// pending action — beforeShellExecution and the preToolUse Read/Write matcher
+// entries. It is deliberately NEVER emitted on:
+//   - afterShellExecution / postToolUse (both Read and Write matchers): these are
+//     audit-only events (afterShellExecution's documented input adds
+//     "output"/"duration" but defines no allow/deny/ask response at all; postToolUse
+//     fires after the tool already ran). `failClosed` has no documented blocking
+//     effect there — nothing in https://cursor.com/docs/hooks ties it to anything
+//     but the pre-execution gating events. Emitting a security-sounding field with
+//     no documented effect is exactly the "emit without verifying" failure mode
+//     this project has already paid for once (belt-and-braces is not a
+//     justification); if Cursor's docs ever define blocking semantics for these
+//     events, add it back citing that doc update.
+//   - attention-signal/attention-cleanup entries — those are a UI signal, not a
+//     security control, and failing closed on them would turn a cosmetic hook
+//     failure into a full agent lockout, which is worse than the fail-open gap
+//     this ML closes.
+//
+// Never-overwrite (ML-3B): trackfw never emitted `failClosed` before this ML, so
+// any `failClosed` value already present in a user's .cursor/hooks.json —
+// including an explicit `false` — is necessarily the user's own choice, not a
+// stale trackfw output. mergeGuardCommandArray/mergeCursorGuardMatcherEntry below
+// therefore only ever SET the field when it is absent; they never flip an
+// existing value either direction. This is a different situation from
+// migrateHookCommand above, which rewrites trackfw's own previously-emitted,
+// now-obsolete command strings — there is no "old trackfw output" for
+// `failClosed` to migrate, only possible user authorship to respect.
+//
 // Backward compatibility: a `.cursor/hooks.json` written by a pre-migration
 // trackfw still has the legacy top-level preToolUse/postToolUse arrays. This
 // function migrates known trackfw entries out of those top-level arrays into
@@ -948,7 +986,11 @@ func InjectCursorHooks(cwd string) error {
 	// entries when the global one is already installed
 	// (`trackfw update harness --targets cursor-credential-guard`).
 	if !globalCredentialGuardInstalledCursor() {
-		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
+		hooks["beforeShellExecution"] = mergeGuardCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-credential-guard.sh")
+		// afterShellExecution is audit-only (no documented allow/deny/ask response) —
+		// failClosed is deliberately never emitted here; see the "failClosed" doc
+		// comment above (ML-3B). Plain mergeSimpleCommandArray, same as the
+		// attention entries, keeps this array free of the field entirely.
 		hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
 
 		// Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): wired via
@@ -962,8 +1004,10 @@ func InjectCursorHooks(cwd string) error {
 		// array, so dedup must also check "matcher".
 		hooks["preToolUse"] = mergeCursorGuardMatcherEntry(hooks["preToolUse"], "Read", "scripts/trackfw-credential-guard.sh")
 		hooks["preToolUse"] = mergeCursorGuardMatcherEntry(hooks["preToolUse"], "Write", "scripts/trackfw-credential-guard.sh")
-		hooks["postToolUse"] = mergeCursorGuardMatcherEntry(hooks["postToolUse"], "Read", "scripts/trackfw-credential-guard.sh")
-		hooks["postToolUse"] = mergeCursorGuardMatcherEntry(hooks["postToolUse"], "Write", "scripts/trackfw-credential-guard.sh")
+		// postToolUse is audit-only for the same reason as afterShellExecution above —
+		// mergeCursorMatcherEntry never adds failClosed.
+		hooks["postToolUse"] = mergeCursorMatcherEntry(hooks["postToolUse"], "Read", "scripts/trackfw-credential-guard.sh")
+		hooks["postToolUse"] = mergeCursorMatcherEntry(hooks["postToolUse"], "Write", "scripts/trackfw-credential-guard.sh")
 	}
 	root["hooks"] = hooks
 
@@ -1093,13 +1137,53 @@ func mergeSimpleCommandArray(
 	return append(arr, makeEntry(command))
 }
 
-// mergeCursorGuardMatcherEntry appends {"command": command, "matcher": matcher}
-// to a Cursor preToolUse/postToolUse array unless an entry with that exact
-// (command, matcher) pair already exists. Distinct from mergeSimpleCommandArray
-// (which dedups on command alone) because these arrays also hold the
-// unfiltered attention-signal/cleanup entries — see InjectCursorHooks'
-// Read/Write wiring comment (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2).
+// mergeCursorGuardMatcherEntry appends
+// {"command": command, "matcher": matcher, "failClosed": true} to a Cursor
+// preToolUse array unless an entry with that exact (command, matcher) pair
+// already exists. Distinct from mergeSimpleCommandArray (which dedups on
+// command alone) because this array also holds the unfiltered
+// attention-signal entry — see InjectCursorHooks' Read/Write wiring comment
+// (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2). Only used for
+// preToolUse — the gating event; postToolUse uses mergeCursorMatcherEntry
+// below instead, which never adds failClosed (see the "failClosed" doc
+// comment on InjectCursorHooks, ML-3B).
+//
+// If a matching entry already exists (e.g. written by a pre-ROADMAP-2026-08-12
+// trackfw, before failClosed existed), it is upgraded in place instead of
+// left as-is — the point of this ML is that stale guard entries stop
+// fail-opening, not just that newly-added ones do. Mutating in place also
+// keeps this idempotent: running the injector twice sets the same value
+// twice rather than appending a duplicate entry.
+//
+// Never overwrite an existing failClosed value (ML-3B): trackfw never emitted
+// this field before ROADMAP-2026-08-12, so any value already present —
+// including an explicit `false` — is necessarily the user's own authorship,
+// not a stale trackfw output to migrate (contrast with migrateHookCommand,
+// which does rewrite trackfw's own obsolete command strings). Only SET the
+// field when absent; never flip an existing value in either direction.
 func mergeCursorGuardMatcherEntry(existing interface{}, matcher, command string) []interface{} {
+	arr, _ := existing.([]interface{})
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if obj["command"] == command && obj["matcher"] == matcher {
+			if _, exists := obj["failClosed"]; !exists {
+				obj["failClosed"] = true
+			}
+			return arr
+		}
+	}
+	return append(arr, map[string]interface{}{"command": command, "matcher": matcher, "failClosed": true})
+}
+
+// mergeCursorMatcherEntry appends {"command": command, "matcher": matcher} to
+// a Cursor postToolUse array unless an entry with that exact (command,
+// matcher) pair already exists. Same dedup shape as
+// mergeCursorGuardMatcherEntry but never adds failClosed — postToolUse is
+// audit-only (see InjectCursorHooks' "failClosed" doc comment, ML-3B).
+func mergeCursorMatcherEntry(existing interface{}, matcher, command string) []interface{} {
 	arr, _ := existing.([]interface{})
 	for _, item := range arr {
 		obj, ok := item.(map[string]interface{})
@@ -1111,6 +1195,35 @@ func mergeCursorGuardMatcherEntry(existing interface{}, matcher, command string)
 		}
 	}
 	return append(arr, map[string]interface{}{"command": command, "matcher": matcher})
+}
+
+// mergeGuardCommandArray appends {"command": command, "failClosed": true} to a
+// Cursor beforeShellExecution array unless an entry with that exact command
+// already exists — in which case the existing entry is upgraded in place to
+// failClosed: true only if the field is absent (same never-overwrite
+// reasoning as mergeCursorGuardMatcherEntry above, ML-3B). Only used for
+// beforeShellExecution — the gating event; afterShellExecution uses the
+// shared mergeSimpleCommandArray instead, which never adds failClosed at all
+// (see InjectCursorHooks' "failClosed" doc comment, ML-3B). Also deliberately
+// not shared with the attention-signal/attention-cleanup entries in this same
+// file, which must never gain failClosed, nor with the global-scope harness
+// wiring (update.go:mergeCredentialGuardCursorHooks), which is out of scope
+// for ROADMAP-2026-08-12.
+func mergeGuardCommandArray(existing interface{}, command string) []interface{} {
+	arr, _ := existing.([]interface{})
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if obj["command"] == command {
+			if _, exists := obj["failClosed"]; !exists {
+				obj["failClosed"] = true
+			}
+			return arr
+		}
+	}
+	return append(arr, map[string]interface{}{"command": command, "failClosed": true})
 }
 
 // --- Global credential-guard dedup (ROADMAP-2026-08-06 Wave 3/ML-3A) ---
