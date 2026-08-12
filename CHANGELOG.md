@@ -10,6 +10,58 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.8.0] - 2026-08-12
+
+### Added
+
+- **Migração in-place dos comandos de hook estendida a Codex e Gemini** (#156) — o helper que
+  reescreve entradas antigas de `settings.json`/`hooks.json` existia apenas para o Claude Code
+  (`migrateClaudeHookCommand`). Generalizado para `migrateHookCommand`/`_migrate_hook_command`
+  (Go/Node/Python) e ligado aos injectors de Codex e Gemini, que também são *merge-based*. Sem isso,
+  qualquer mudança futura nas strings desses CLIs faria `trackfw update` **acrescentar** a entrada
+  nova ao lado da antiga quebrada, em vez de corrigi-la.
+- **Documentação do mecanismo de resolução de caminho por CLI** (#156) — nova seção em
+  `docs/cli-parity.md` registrando os 4 mecanismos distintos, por que a heterogeneidade é
+  intencional, e as pré-condições do fix do Codex que **não constam da documentação do fornecedor**.
+
+### Fixed
+
+- **Hooks de attention do Claude Code falhavam com "No such file or directory" após `cd`** (#156) —
+  mesma classe de bug corrigida em 6.7.1 para o `credential-guard`, que aquele release deixou
+  explicitamente fora de escopo. `trackfw-attention-signal.sh` e `trackfw-attention-cleanup.sh`
+  passam a usar `$CLAUDE_PROJECT_DIR/scripts/...` (Go/Node/Python). Frequência de disparo é menor
+  que a do credential-guard porque os hooks de attention casam apenas o matcher `AskUserQuestion`.
+- **Hooks do Codex CLI não resolviam a partir de subdiretório** (#156) — o Codex não expõe env var
+  de raiz de projeto para hooks de repositório e executa os comandos com o `cwd` **da sessão**, que
+  não é necessariamente a raiz. Os 6 comandos passam a ser emitidos como
+  `"$(git rev-parse --show-toplevel)/scripts/..."`, forma recomendada pela própria documentação do
+  fornecedor. Verificado empiricamente com `codex-cli` real, incluindo controle negativo (o caminho
+  relativo antigo falha a partir de subdiretório; o novo funciona).
+- **Hooks do Gemini CLI passam a resolver contra a raiz do projeto** (#156) — os 8 comandos passam a
+  usar `$GEMINI_PROJECT_DIR/scripts/...`, forma usada em 100% dos exemplos oficiais. Mudança segura
+  por construção: a variável resolve para a raiz independentemente de o `cwd` derivar ou não.
+
+### Changed
+
+- **Nada muda para Cursor, GitHub Copilot CLI e Kiro** (#156) — verificação em documentação primária
+  mostrou que Cursor executa hooks de projeto a partir da raiz por design, e que o wiring do Copilot
+  **já estava correto** por usar o campo nativo `"cwd": "."`. Kiro ficou como `INDETERMINADO`: a
+  documentação oficial não descreve o diretório de trabalho da *Shell Command action*, e o padrão
+  adotado é não alterar o que não se pode verificar. Registrado em `docs/cli-parity.md`.
+
+### Notas de atualização
+
+- Projetos com `settings.json`/`hooks.json` gerados por versões anteriores precisam rodar
+  `trackfw update` para que a migração in-place reescreva as entradas antigas.
+- O fix do Codex só produz efeito em projeto marcado como `trusted` em `~/.codex/config.toml` —
+  fora disso o Codex ignora hooks de projeto silenciosamente. Comportamento do fornecedor, não do
+  trackfw.
+
+### Breaking Changes
+
+Nenhum. As entradas antigas são migradas in-place; nenhuma ação manual é necessária além de rodar
+`trackfw update`.
+
 ## [6.7.1] - 2026-08-09
 
 ### Fixed
