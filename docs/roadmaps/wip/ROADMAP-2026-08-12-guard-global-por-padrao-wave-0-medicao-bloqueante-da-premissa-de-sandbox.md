@@ -75,7 +75,7 @@ impedir: sandbox do próprio CLI, política de aprovação, confirmação humana
 > Dependências: nenhuma. **Bloqueia todo o resto da REQ.**
 
 ### ML-0A — O agente alcança `$HOME` durante uma sessão normal?
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Ártemis; auditado por Zeus em 2026-08-12)
 **Agente:** Ártemis (`artemis-tf`)
 **Entregável:** `docs/pesquisa/2026-08-12-alcance-do-agente-ao-home.md` (novo)
 
@@ -111,8 +111,39 @@ impedir: sandbox do próprio CLI, política de aprovação, confirmação humana
 
 ---
 
-## Barreira B0 — Interpretação do resultado (Zeus)
+## Barreira B0 — Interpretação do resultado (Zeus) — ✅ CONCLUÍDA
 > Dependências: ML-0A.
+
+**Veredito: premissa PARCIALMENTE REFUTADA. Não se sustenta uniformemente.**
+
+| CLI | Alcança `$HOME`? | Por quê |
+|---|---|---|
+| **Codex** | **NÃO** | `-s workspace-write` bloqueia com `Operation not permitted` fora de `workdir`/`/tmp`/`$TMPDIR` |
+| **Cursor** | **SIM** | 3 braços escrevem/apagam sem aprovação nenhuma |
+| **Claude Code** | **SIM, tecnicamente** | nenhum sandbox restringe o caminho (`permission_denials: []`); a recusa vem de **heurística de alinhamento do modelo**, não de sandbox |
+| Gemini · Copilot | `INDETERMINADO` | bloqueados por conta/política antes de qualquer tool call |
+| Kiro | `INDETERMINADO` | não instalado |
+
+**Decisão de Zeus:**
+
+1. **O `ADR-2026-08-12` será reaberto.** O critério que eu mesmo escrevi era: *"se a medição
+   confirmar que o agente alcança `$HOME`, o ADR precisa ser reaberto — não emendado de novo"*.
+   O Cursor alcança. O critério dispara.
+2. **Política pelo pior caso medido, não pela média.** O ADR tratava "fora do alcance" como
+   propriedade uniforme. Não é. Qualquer política nova precisa assumir o **Cursor** como base, ou
+   ser explicitamente **por CLI** — e "por CLI" significa 6 comportamentos a manter, custo que
+   precisa ser pesado.
+3. **O caso do Claude é o mais delicado e não pode ser lido como proteção.** O que impede a escrita
+   ali é **alinhamento do modelo**, não sandbox — camada estruturalmente mais frágil, e justamente
+   contra o adversário que o guard existe para conter (agente **induzido**). Registrar como
+   "não protegido", não como "protegido por outro meio".
+4. **A Wave 1 (Hades) segue**, para interpretar o que resta de vantagem no escopo global mesmo
+   alcançável — custo, visibilidade, sinal.
+
+**Nota de vault criada:** `vault/notes/vies-do-tmp-ao-medir-sandbox-de-agente-2026-08-12.md` — a
+primeira rodada da medição deu `ALCANÇA` para o Codex porque o fixture estava sob `/private/tmp`,
+que o próprio `workspace-write` declara gravável. Um erro de método de uma linha quase reverteu um
+ADR pelo motivo errado.
 
 Zeus decide, com base no veredito:
 - **premissa verdadeira** → ADR confirmado; roadmap seguinte planeja consentimento + `mode`;
@@ -127,7 +158,7 @@ Zeus decide, com base no veredito:
 > Dependências: Barreira B0.
 
 ### ML-1A — Interpretação de segurança do resultado
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Hades (`hades-tf`)
 **Entregável:** `docs/seguranca/2026-08-12-alcance-do-agente-ao-home.md` (novo). **Não modifica
 código.**
