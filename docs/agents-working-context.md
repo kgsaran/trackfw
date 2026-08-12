@@ -11335,3 +11335,101 @@ divergência estrutural, o cenário está testando o Cenário 44 de novo.
 **Artefatos:** `docs/roadmaps/wip/ROADMAP-2026-08-12-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present.md`,
 REQ-2 linkada. Branch `fix/prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present`.
 Roadmap da REQ-1 fica para **depois do merge da REQ-2**, para `cli-parity.md` ter um escritor por vez.
+
+---
+
+## Sessão 2026-08-12 — Ártemis (QA) — ML-1A: Cenário 46 (prova negativa do guard de vacuidade `credential-guard-present`) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present` (já criada
+pelo orquestrador — sem branch nova criada por este agente).
+
+**Sabotagem escolhida e por quê:** forçar as 3 funções de dedup do Claude —
+`globalCredentialGuardInstalledClaude()` (Go, `internal/generators/agentfiles.go:1206`),
+`globalCredentialGuardInstalledClaude()` (Node, `npm/src/generators/hooks.js:570`) e
+`_global_credential_guard_installed_claude()` (Python, `pypi/trackfw/generators/hooks.py:133`) — a
+sempre retornar `true`/`True`, em 3 cópias isoladas do source (não no arquivo gerado, conforme a
+armadilha do roadmap). Confirmei por leitura de `InjectClaudeHooks`/`injectClaudeHooks`/
+`inject_claude_hooks` que toda a emissão da entrada de credential-guard do Claude está contida
+dentro dos `if !globalCredentialGuardInstalledClaude()` (linhas ~248/276 Go, ~678/686 Node, ~314
+Python) — não há caminho alternativo de emissão fora deles — então a sabotagem suprime a entrada por
+completo nos 3 stacks igualmente, sem tocar em nenhuma outra entrada/CLI, o que mantém o comparador
+estrutural satisfeito. Claude foi o alvo por ser o primeiro item de `$CLIS` no gate. Mecânica:
+`setup_npm_tree` + cópia do próprio `check-agent-hooks-parity.sh` (NODE_CLI não é sobrepunível por
+env, como o Cenário 44 já lida), `build_go_or_fail` numa cópia isolada de `cmd/`+`internal/` (padrão
+dos Cenários 34/35), e cópia isolada de `pypi/` (padrão do Cenário 45). Braço baseline (árvore
+íntegra, gate deve sair 0) + braço detecção (árvore sabotada, gate deve sair !=0 com os 3 FAILs
+`credential-guard-present` e nenhuma referência a `go-vs-node`/`go-vs-py`).
+
+**Prova de não-vacuidade (bloqueante, `git diff --exit-code` confirmou restauração limpa depois):**
+comentei o bloco inteiro `if ! grep -q "trackfw-credential-guard.sh" ... fi` (linhas 197-200 de
+`scripts/check-agent-hooks-parity.sh`), não só a linha do `grep` — comentar só a linha quebraria a
+sintaxe bash e produziria um "FAIL" que não prova nada. Com o guard desabilitado:
+`bash scripts/check-agent-hooks-parity.sh` no fixture sabotado → **`All check-agent-hooks-parity.sh
+scenarios passed.` (exit 0)** — confirma que a árvore sabotada só é pega pelo guard de vacuidade, não
+pelo comparador. Rodando `check-gates-falsify.sh` nesse estado: o braço `detected` do Cenário 46
+falhou exatamente como esperado —
+```
+FAIL [falsify/agent-hooks-parity/credential-guard-present-vacuity/detected]: saiu com 0, esperava != 0
+  output: OK   [agent-hooks-parity/claude/go-vs-node]
+...
+All check-agent-hooks-parity.sh scenarios passed.
+```
+Restaurei o arquivo original (`git diff --exit-code scripts/check-agent-hooks-parity.sh` → limpo) e
+confirmei verde de novo (`bash scripts/check-gates-falsify.sh` completo, todos os 104 cenários OK).
+
+**Prova de que não testa o comparador estrutural:** na árvore sabotada (guard real, sem neutralizar),
+a saída de `check-agent-hooks-parity.sh` contém `FAIL [agent-hooks-parity/claude/go/credential-guard-present]`,
+`FAIL [agent-hooks-parity/claude/node/credential-guard-present]` e
+`FAIL [agent-hooks-parity/claude/py/credential-guard-present]`, e o gate sai (exit 1) na barreira do
+guard de vacuidade (linha ~204-208), **antes** de o comparador estrutural rodar — a saída não contém
+nenhuma ocorrência de `go-vs-node`/`go-vs-py` (nem OK nem FAIL), porque essa fase nunca chega a
+executar. O cenário assert isso explicitamente (`grep -qE "go-vs-node|go-vs-py"` deve falhar).
+
+**Resultado de `make quality`:** exit 0, 0 `FAIL` — `104 scenarios` (incrementado de 103), Cenário 46
+listado na string de resumo final.
+
+**Arquivos alterados** (confirmado por `git status --porcelain`, só estes 3):
+`scripts/check-gates-falsify.sh` (Cenário 46 + resumo final), `docs/cli-parity.md` (removida a
+ressalva de "gap conhecido"), `docs/roadmaps/wip/ROADMAP-2026-08-12-...md` (Status do ML-1A →
+✅ Concluído). `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados.
+
+**Nada contraria as premissas do prompt.** Handoff para Zeus: auditar e commitar; ML-2A (Hefesto)
+segue com a revisão de qualidade do cenário.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-1A (Cenário 46) — APROVADO
+
+**Prova de não-vacuidade reproduzida por Zeus** — era o ponto do ML inteiro. Desabilitei o bloco
+`grep -q "trackfw-credential-guard.sh"` de `scripts/check-agent-hooks-parity.sh` e rodei o falsify:
+
+```
+OK   [falsify/agent-hooks-parity/credential-guard-present-vacuity/baseline]
+FAIL [falsify/agent-hooks-parity/credential-guard-present-vacuity/detected]: saiu com 0, esperava != 0
+```
+
+O cenário novo **falha quando o guard é desabilitado**. Restaurei; `git diff --exit-code` limpo.
+
+**O desenho da sabotagem ficou melhor do que o que eu especifiquei.** Eu havia dito "remover a
+emissão nos geradores". Ártemis achou um seam mais estável: forçar as 3 funções de dedup
+(`globalCredentialGuardInstalledClaude` Go/Node, `_global_credential_guard_installed_claude` Python)
+a sempre retornar `true`/`True`, em cópias isoladas do source. Como **toda** a emissão do
+credential-guard do Claude está contida dentro desses `if`, a entrada some por completo nos 3 stacks
+igualmente, sem tocar em attention-signal/cleanup nem em nenhum outro CLI — logo o comparador
+estrutural continua satisfeito e só o guard de vacuidade acusa, que é o discriminante correto.
+
+Mérito adicional: isso **simula exatamente a classe de bug de 2026-08-08** (dedup lendo "global
+instalado" quando não deveria), só que como regressão de **código** em vez de ambiente. O cenário não
+é sabotagem arbitrária — reproduz o incidente real que motivou a existência do guard.
+
+**Manutenibilidade tratada na origem:** o comentário do cenário documenta a âncora (as 3 assinaturas
+de função) e traz uma instrução **RETARGET** explícita para o caso de o dedup virar table-driven. Os
+Cenários 34 e 35 já precisaram desse tipo de reaponte quando o alvo original sumiu num refactor, e
+ali a instrução não existia previamente.
+
+**Gates re-executados por Zeus:** `check-gates-falsify.sh` **0 FAIL** (106 linhas `OK`, era 103
+cenários → agora 104) · `make quality` **exit 0**.
+
+**Escopo:** `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados. `docs/cli-parity.md` teve a
+ressalva "gap conhecido, não fechado" substituída pela descrição correta das duas camadas cobertas.
+
+**Próximo:** ML-2A (Hefesto) — auditoria de qualidade do cenário, com foco em sensibilidade
+ambiental, que é o modo de falha histórico deste gate.

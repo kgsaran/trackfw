@@ -100,7 +100,7 @@ falhar por divergência estrutural, ele está testando o Cenário 44 de novo, n�
 > Dependências: nenhuma.
 
 ### ML-1A — Cenário 46: falsificar o guard de vacuidade `credential-guard-present`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Ártemis; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Ártemis (`artemis-tf`)
 
 **Arquivos afetados:**
@@ -145,7 +145,7 @@ make quality
 > Dependências: Wave 1.
 
 ### ML-2A — Auditoria de qualidade do cenário
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Hefesto (`hefesto-tf`)
 **Arquivos afetados:** nenhum por padrão (revisão). Correções só se Zeus autorizar.
 

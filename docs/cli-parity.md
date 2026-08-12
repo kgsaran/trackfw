@@ -2500,18 +2500,21 @@ divergente (ex.: `$.hooks.PreToolUse[0].matcher`). Roda como parte de
 `make quality` (alvo `parity`), logo após
 `check-attention-scripts-parity.sh` e antes de `check-gates-falsify.sh`.
 
-A prova negativa (P4) está em `scripts/check-gates-falsify.sh` (Cenário 44) —
-corrompe o `matcher` da entrada `trackfw-credential-guard-post` do wiring do
-Kiro no literal Node.js (`npm/src/generators/hooks.js`, de `'shell'` para
+A prova negativa (P4) está em `scripts/check-gates-falsify.sh`, em dois
+cenários que cobrem as duas camadas do gate: o Cenário 44 corrompe o
+`matcher` da entrada `trackfw-credential-guard-post` do wiring do Kiro no
+literal Node.js (`npm/src/generators/hooks.js`, de `'shell'` para
 `'execute_bash'`) numa cópia isolada do repositório e asserta que o gate
-reprova apontando `$.hooks[3].matcher` no diagnóstico. **Gap conhecido, não
-fechado por este ML:** o Cenário 44 falsifica apenas o comparador estrutural
-(`compare_json`); o segundo guard de vacuidade (P2) —
-`credential-guard-present`, o mesmo que capturou o falso negativo ambiental
-corrigido acima — não tem prova negativa própria em `check-gates-falsify.sh`.
-Reportado a `trackfw_architect`/Zeus como item em aberto; não corrigido aqui
-por estar fora do escopo declarado deste ML (gate final + docs, não
-hardening de P4).
+reprova apontando `$.hooks[3].matcher` no diagnóstico — falsificando o
+comparador estrutural (`compare_json`). O Cenário 46 cobre o segundo guard,
+o de vacuidade (P2) `credential-guard-present` — o mesmo que capturou o
+falso negativo ambiental corrigido acima: força as 3 funções de dedup
+(`globalCredentialGuardInstalledClaude`/`_global_credential_guard_installed_claude`)
+a sempre reportar "instalado", nas 3 cópias isoladas do source, o que
+suprime a entrada de credential-guard do Claude de forma idêntica nos 3
+stacks — o comparador estrutural continua satisfeito (nunca chega a rodar,
+o gate sai antes, no guard de vacuidade) e só o guard `credential-guard-present`
+reprova.
 
 ## Mecanismo de resolução de caminho dos hooks de projeto, por CLI
 
