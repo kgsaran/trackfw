@@ -3,7 +3,7 @@ status: Done
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md"
 ---
 
 # REQ: Credential-guard de escopo global como caminho padrao — consentimento explicito, verificacao da premissa de sandbox e a via do credential_guard.mode
@@ -139,4 +139,4 @@ ADR: docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md

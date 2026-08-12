@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-12
 req: "docs/req/REQ-2026-08-12-credential-guard-de-escopo-global-como-caminho-padrao-consentimento-explicito-verificacao-da-premissa-de-sandbox-e-a-via-do-credential-guard-mode.md"
 squad: "Ártemis, Hades"
@@ -7,7 +7,7 @@ squad: "Ártemis, Hades"
 
 # Roadmap: Guard global por padrao — wave 0 medicao bloqueante da premissa de sandbox
 
-> Created: 2026-08-12 | Status: wip
+> Created: 2026-08-12 | Status: done
 
 ## Context
 
