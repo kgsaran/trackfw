@@ -159,7 +159,7 @@ caminho diferente do de attention — **verificar antes**, não presumir).
 > Dependências: Barreira B0.
 
 ### ML-1A — Regra de detecção nos 3 CLIs
-**Status:** ⬜ Pendente — **liberado** (pré-requisito do ML-0B satisfeito)
+**Status:** 🔄 Em andamento
 **Agente:** Apolo (`apolo-tf`)
 **Arquivos:** `internal/validator/` + equivalentes em `npm/src/` e `pypi/trackfw/` + testes dos 3.
 
