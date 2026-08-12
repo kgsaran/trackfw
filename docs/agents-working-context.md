@@ -11641,3 +11641,35 @@ construção do `$HOME` sintético, laço de exclusividade); a evidência empír
 **Estado:** roadmap em `done`, REQ fechada. **Bloqueio declarado para a próxima REQ:** o roadmap de
 fail-open × fail-closed só vai para `wip` **depois do merge deste PR** — as duas escrevem em
 `docs/cli-parity.md`, e um escritor por vez foi a razão de sequenciar assim desde o início.
+
+---
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — roadmap da semântica de falha de hook — INICIADO
+
+**Housekeeping antes de começar:** `git branch -r --no-merged origin/main` vazio; 16 branches locais
+obsoletas (todas integradas via squash) apagadas. Sobrou uma worktree em `/private/var/folders/.../
+tmp.rvDEgMLd41/base` em HEAD destacado (`a19eadd`, commit já em `main`) — **não removida**, é
+artefato de fixture de agente em `/tmp`, sem branch presa, e o SO limpa.
+
+**Roadmap criado a partir da REQ já emendada.** Escopo: núcleo empírico no Codex + varredura
+documental nos demais (decisão de KG registrada na sessão anterior).
+
+**A distinção que estruturou o roadmap inteiro, e que era o risco de perder:** são **dois casos**
+com semânticas potencialmente diferentes — **(A)** script ausente / caminho inválido, em que o
+processo nem chega a rodar, e **(B)** script presente que sai com código != 0. O contrato de bloqueio
+conhecido (`exit 2` + stderr) cobre **apenas o B**. E é o **caso A** que os três caminhos
+documentados de "guard não roda" produzem. Medir só o B e concluir "fail-closed" responderia a
+pergunta errada — deixei isso como tabela no `## Context`.
+
+**Discriminante do experimento, especificado no ML para o agente não ter que inventar:** o comando
+da ferramenta escreve uma **marca** em arquivo. Marca presente depois de o hook falhar → a ferramenta
+prosseguiu → **fail-open**. Marca ausente → **fail-closed**. E exigi **controle positivo** (hook que
+sai 0 → a marca *tem* que existir): sem ele, um "fail-closed" pode ser apenas o experimento não estar
+disparando a ferramenta — falso negativo silencioso, a mesma família de erro do ML-1A do roadmap
+anterior.
+
+**Paralelismo:** Wave 1 tem 2 MLs **em paralelo** (ML-1A empírico/Ártemis × ML-1B documental/
+Prometeu) — entregáveis disjuntos em `docs/pesquisa/`. Waves 2 e 3 são sequenciais e dependem do
+veredito. **Só o ML-3A escreve em `docs/cli-parity.md`**, e só no fim — um escritor por vez.
+
+Branch `fix/semantica-de-falha-de-hook-fail-open-vs-fail-closed`.

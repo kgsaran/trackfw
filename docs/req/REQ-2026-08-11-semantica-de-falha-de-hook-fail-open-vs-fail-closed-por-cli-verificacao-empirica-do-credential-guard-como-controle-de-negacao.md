@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-11
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md"
 ---
 
 # REQ: Semantica de falha de hook (fail-open vs fail-closed) por CLI — verificacao empirica do credential-guard como controle de negacao
@@ -99,4 +99,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md
