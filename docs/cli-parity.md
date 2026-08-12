@@ -3098,6 +3098,18 @@ não feito.
 - **Nada disso é prevenção.** Foi **medido** que não há prevenção técnica possível, no escopo do
   trackfw, contra um agente induzido com escrita irrestrita ao workspace.
 
+### 🔴 Dois limites descobertos na revisão final (ML-3B), ainda abertos
+
+1. **A regra do `mode` pode se auto-silenciar.** `ruleSeverity()` lê `rules:` **sempre do
+   `trackfw.yaml` em disco**, nunca do `HEAD`. Logo, uma **única edição não commitada** que rebaixe
+   `credential_guard.mode` **e** defina `credential_guard_mode_downgrade: off` derrota a detecção —
+   sem commit nenhum. É mais forte que os limites já aceitos pelo ADR (que pressupunham o adversário
+   **commitando**). **REQ de follow-up:** ancorar `rules:` no `HEAD` para estas regras.
+2. **A cobertura de deleção é condicional ao wiring.** Se o script **e** a entrada de hook
+   correspondente forem removidos **juntos**, as três regras ficam em silêncio
+   (`internal/validator/validator_credential_guard.go:106-108`) — não há entrada registrada apontando
+   para script ausente, então não há o que acusar.
+
 ### Cópia local do template no validador — dívida conhecida, coberta
 
 `internal/validator` **não pode importar** `internal/generators` (ciclo de import), então o template

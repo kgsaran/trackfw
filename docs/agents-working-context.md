@@ -13527,3 +13527,75 @@ Fecha com o que de fato protege, e que não é mecanismo nosso: **o script e o `
 arquivos versionados — revise os diffs como você revisa qualquer código.**
 
 `make quality` **exit 0**.
+
+## Sessão 2026-08-12 — Hades (Segurança) — ML-3B: revisão de segurança do estado final — NADA BLOQUEIA O PR
+
+**Entregável:** `docs/seguranca/2026-08-12-estado-final-deteccao-credential-guard.md`. Não modifiquei
+código; só a linha `**Status:**` do ML-3B no roadmap e esta entrada.
+
+**Veredito por pergunta (ver arquivo para evidência completa):**
+1. As três vias estão cobertas — mas a cobertura de **deleção** é condicional: se o script **e** a
+   entrada de hook (`.claude/settings.json` etc.) forem removidos juntos, as três regras silenciam
+   (`credential_guard_hook_resolvable` só itera entradas que existem — ausência de entrada é estado
+   legítimo por desenho, guard global não deixa entrada de projeto).
+2. A cópia local do template (6 cópias: gerador × validador, ×3 stacks) é aceitável — verifiquei que
+   os três testes de paridade **executam o gerador real** (não regex-scraping) e que existe também
+   teste comportamental que executa o script gerado com payload JWT/AWS real. Risco residual
+   irredutível: mesmo bug introduzido igualmente nos dois lados (gerador e cópia) no mesmo PR passa
+   pelo teste de igualdade — aceitável, é o mesmo risco de qualquer par gerador/consumidor com PR
+   humano como última linha.
+3. `warning` no braço do script não falha CI por default — decisão já tomada e justificada por
+   escrito na Emenda 3 do ADR (script sem marcador de versão, não discrimina drift de adulteração).
+   Não recomendo mudar o default; recomendo que a doc de usuário final diga isso sem eufemismo.
+4. **Achado novo, não levantado no despacho:** `credential_guard_mode_downgrade` pode se
+   auto-silenciar — `ruleSeverity()` lê `rules:` do `trackfw.yaml` **em disco**, nunca do `HEAD`; um
+   adversário que rebaixa `mode` e, na mesma edição não commitada, acrescenta `rules:
+   credential_guard_mode_downgrade: off` desativa a regra usando o mesmo arquivo que ela inspeciona
+   (`npm/tests/credential_guard_integrity.test.js:223-239` prova o caminho funcionando). Não bloqueia
+   este PR — é a mesma classe de limite que o ADR já aceita ("quem escreve o repositório derrota
+   detecção com escopo no repositório"). Recomendo REQ novo, fora deste roadmap, para avaliar ancorar
+   `rules:` também no `HEAD` de forma direcional.
+5. Falso senso de segurança é real se só os nomes das 3 regras forem lidos. Listei o que a doc de
+   usuário final (ML-3A, já entregue por Zeus em `README.md`/`docs/cli-parity.md`) precisa dizer.
+
+**Conclusão: nada bloqueia o PR.** Ressalvas são para a doc de usuário final documentar, não para
+corrigir neste roadmap — cheque se `README.md`/`docs/cli-parity.md` (Zeus, ML-3A) já cobrem: cobertura
+de deleção condicional a wiring, `warning` não falha CI, e a via de auto-silenciamento via `rules:`
+(achado 4, posterior ao ML-3A — pode não estar coberto ainda, vale conferir).
+
+Verificado: `go build ./...` limpo; `./bin/trackfw validate` → `✓ No violations found.` neste repo.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-3B + fechamento do roadmap
+
+**Achado 4 do parecer, não pedido no despacho, e é o mais grave do ML:** a regra
+`credential_guard_mode_downgrade` pode **se auto-silenciar**. `ruleSeverity()`
+(`internal/validator/validator.go:107`) resolve a severidade lendo `rules:` do `trackfw.yaml` **em
+disco**, nunca do `HEAD` — confirmei, é o mesmo caminho que eu já havia lido na auditoria do ML-1A do
+roadmap anterior. Uma **única edição não commitada** que rebaixe `credential_guard.mode` **e** defina
+`credential_guard_mode_downgrade: off` derrota a detecção.
+
+**Por que é pior que os limites já aceitos:** o ADR aceita que o adversário que **commita** não seja
+detectado — ali sobra o **rastro auditável**, o diff aparece no PR. Neste caso **não há commit**,
+logo **não há rastro**, e a própria regra que produziria o sinal é desligada pelo arquivo que ela
+deveria vigiar.
+
+**Decisão: não bloqueia o PR, mas não fica só documentado.** Acrescentei o limite ao `README.md` e ao
+`docs/cli-parity.md` **e** abri REQ de follow-up
+(`REQ-2026-08-12-ancorar-a-configuracao-rules-no-head-...`). Documentar não é resolver — e o parecer
+tinha razão em recomendar REQ própria, porque ancorar `rules:` no `HEAD` mexe em maquinaria
+compartilhada por todas as regras e merece decisão isolada.
+
+**Achado 1, menor, também documentado:** a cobertura de **deleção** é **condicional ao wiring** — se
+o script **e** a entrada de hook forem removidos **juntos**, as três regras silenciam
+(`validator_credential_guard.go:106-108`). Não há entrada registrada apontando para script ausente,
+então não há o que acusar. Entrou na REQ de follow-up como item secundário.
+
+**Posições dele que aceito, com o raciocínio:** a **cópia local do template** é aceitável — os testes
+de paridade executam o **gerador real** (não regex-scraping) e há teste comportamental rodando o
+script gerado contra JWT/AWS reais; o risco residual (bug idêntico introduzido nos dois lados no mesmo
+PR) é o mesmo de qualquer par gerador/consumidor sob revisão humana. E **não mudar o default
+`warning`** — a justificativa do drift (ADR Emenda 3) continua válida.
+
+**Gates finais:** `make quality` **exit 0** · `trackfw validate` sem violações.
+
+**Roadmap fechado.** REQ de detecção → `Done`.

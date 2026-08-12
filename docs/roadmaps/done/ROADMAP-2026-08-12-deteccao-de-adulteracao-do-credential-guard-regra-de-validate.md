@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-12
 req: "docs/req/REQ-2026-08-12-deteccao-de-adulteracao-do-credential-guard-ancorada-no-head-do-git-regra-de-validate-para-script-e-config.md"
 squad: "Apolo, Ártemis, Hades, Hefesto"
@@ -7,7 +7,7 @@ squad: "Apolo, Ártemis, Hades, Hefesto"
 
 # Roadmap: Deteccao de adulteracao do credential-guard — regra de validate
 
-> Created: 2026-08-12 | Status: wip
+> Created: 2026-08-12 | Status: done
 
 ## Context
 
@@ -55,17 +55,17 @@ medidas foram testadas e caíram.
 
 ## Acceptance Criteria
 
-- [ ] Decisão de âncora tomada com base em análise escrita, e o ADR **emendado** com o resultado.
-- [ ] Regra nova de `validate` nos **3 CLIs** cobrindo as **três** vias.
-- [ ] **Não dispara** sem âncora disponível (repo sem commits, arquivo não versionado, binário sem
+- [x] Decisão de âncora tomada com base em análise escrita, e o ADR **emendado** com o resultado.
+- [x] Regra nova de `validate` nos **3 CLIs** cobrindo as **três** vias.
+- [x] **Não dispara** sem âncora disponível (repo sem commits, arquivo não versionado, binário sem
       template correspondente) — explícito e testado.
-- [ ] **Não dispara** por *drift* de versão legítimo, ou o comportamento nesse caso está **escrito e
+- [x] **Não dispara** por *drift* de versão legítimo, ou o comportamento nesse caso está **escrito e
       justificado**.
-- [ ] **Não dispara neste repositório** — `trackfw validate` continua sem violações.
-- [ ] Configurável por `rules:`; severidade default decidida e justificada.
-- [ ] Cenário de falsificação com **prova negativa** e braço **autodiscriminante**.
-- [ ] Documentação para o **usuário final**, fora do `cli-parity.md`, com "detecção ≠ prevenção".
-- [ ] `make quality` verde.
+- [x] **Não dispara neste repositório** — `trackfw validate` continua sem violações.
+- [x] Configurável por `rules:`; severidade default decidida e justificada.
+- [x] Cenário de falsificação com **prova negativa** e braço **autodiscriminante**.
+- [x] Documentação para o **usuário final**, fora do `cli-parity.md`, com "detecção ≠ prevenção".
+- [x] `make quality` verde.
 
 ### Escopo negativo
 
@@ -96,9 +96,9 @@ medidas foram testadas e caíram.
    derrota a detecção? Isso muda a escolha?
 
 **Critérios de aceite:**
-- [ ] As 5 perguntas respondidas, com **medido/verificado × avaliação** separados.
-- [ ] Recomendação explícita de âncora por alvo, com justificativa.
-- [ ] Nenhum arquivo de código modificado.
+- [x] As 5 perguntas respondidas, com **medido/verificado × avaliação** separados.
+- [x] Recomendação explícita de âncora por alvo, com justificativa.
+- [x] Nenhum arquivo de código modificado.
 
 ---
 
@@ -145,11 +145,11 @@ já faz exatamente isso para os dois scripts de attention — a extensão natura
 caminho diferente do de attention — **verificar antes**, não presumir).
 
 **Critérios de aceite:**
-- [ ] Os 3 templates do script do credential-guard comparados **byte-a-byte** entre Go, Node e Python.
-- [ ] Cenário de falsificação com **prova negativa**: corromper um dos três faz o gate reprovar; sem
+- [x] Os 3 templates do script do credential-guard comparados **byte-a-byte** entre Go, Node e Python.
+- [x] Cenário de falsificação com **prova negativa**: corromper um dos três faz o gate reprovar; sem
       a sabotagem, passa.
-- [ ] `make quality` exit 0 com total de cenários incrementado.
-- [ ] Nenhum código de produto alterado (`internal/`, `npm/src/`, `pypi/trackfw/` intocados) — **a
+- [x] `make quality` exit 0 com total de cenários incrementado.
+- [x] Nenhum código de produto alterado (`internal/`, `npm/src/`, `pypi/trackfw/` intocados) — **a
       menos que** os 3 templates **já estejam divergentes hoje**. Se estiverem: **PARE e reporte a
       Zeus** — divergência pré-existente é achado, não conserto silencioso.
 
@@ -186,12 +186,12 @@ divergência que **nenhum gate pega**, porque o Cenário 29 fixa só a mensagem 
 **Arquivos:** `scripts/check-gates-falsify.sh`.
 
 **Critérios de aceite:**
-- [ ] Baseline + detecção, casando a chave desta regra especificamente.
-- [ ] 🔴 **Prova de não-vacuidade:** desabilitar a regra faz o cenário **falhar**. Reportar a saída.
+- [x] Baseline + detecção, casando a chave desta regra especificamente.
+- [x] 🔴 **Prova de não-vacuidade:** desabilitar a regra faz o cenário **falhar**. Reportar a saída.
       ⚠️ **Reconstrua `bin/trackfw`** ao sabotar — `go build ./...` não regenera esse binário, e o
       cenário o usa. *(Erro que Zeus cometeu na auditoria do Cenário 47.)*
-- [ ] Braço de detecção **autodiscriminante** — não satisfazível por outra causa.
-- [ ] Âncora de manutenção documentada + instrução `RETARGET`.
+- [x] Braço de detecção **autodiscriminante** — não satisfazível por outra causa.
+- [x] Âncora de manutenção documentada + instrução `RETARGET`.
 
 ---
 
@@ -204,7 +204,7 @@ documentação de usuário final (README / `--help`). O item de usuário final �
 opcional: `cli-parity.md` é interno e não é lido por quem instala o trackfw.
 
 ### ML-3B — Revisão de segurança
-**Status:** 🔄 Em andamento · **Agente:** Hades (`hades-tf`) · **Entregável:** `docs/seguranca/` (novo).
+**Status:** ✅ Concluído (Hades; auditado e aprovado por Zeus em 2026-08-12)
 Avaliar se a regra entregue cobre as três vias de fato, e se cria falso senso de segurança.
 
 ---

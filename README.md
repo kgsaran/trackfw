@@ -757,8 +757,14 @@ rules:
   credential_guard_script_integrity: error
 ```
 
+- **the check can be switched off by the same edit it is meant to catch.** Rule severity is read
+  from `rules:` in the `trackfw.yaml` **on disk** — so an edit that both downgrades
+  `credential_guard.mode` *and* sets `credential_guard_mode_downgrade: off` silences the report,
+  with nothing committed. Anchoring `rules:` to your last commit is a known open item.
+
 The strongest protection remains the ordinary one: the guard script and `trackfw.yaml` are
-**versioned files**. Review their diffs like you review any other code.
+**versioned files**. Review their diffs like you review any other code. Every limitation above has
+the same escape hatch: the change is *visible* in `git diff`.
 
 ## What trackfw is not
 
