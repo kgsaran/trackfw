@@ -2587,6 +2587,15 @@ e `vault/notes/codex-hooks-de-projeto-so-rodam-em-projeto-trusted-2026-08-11.md`
    `docs/seguranca/2026-08-11-revisao-hooks-cwd.md` (Q3), que classificou o risco como aceitável e
    sem regressão contra a `main`, recomendando apenas o registro aqui.
 
+   **[RECLASSIFICADO — ver §"Semântica de falha de hook por CLI — o que acontece quando o guard não
+   roda (ROADMAP-2026-08-12, ML-3A)", item 6, abaixo neste mesmo arquivo]** O enquadramento acima
+   ("limitação conhecida e aceita", "risco aceitável e sem regressão") descreve os três caminhos como
+   degradação de **disponibilidade**. Com o veredito FAIL-OPEN do Codex confirmado empiricamente
+   (`docs/pesquisa/2026-08-12-semantica-de-falha-de-hook-codex.md`) e a Revisão ML-2B do parecer de
+   segurança (`docs/seguranca/2026-08-12-semantica-de-falha-de-hook.md`), os três caminhos passam a
+   ser **bypass silencioso de controle de segurança** — o texto histórico acima permanece por valor de
+   registro, mas a classificação vigente é a da seção referenciada, não esta.
+
 ### Kiro — mecanismo de resolução não verificável em doc primária, mantido relativo
 
 Veredito `INDETERMINADO` em 2026-08-11 (`docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md`,
@@ -2623,6 +2632,161 @@ para outro checkout. Sem esta nota, a leitura do código isoladamente (4 strings
 rejeita explicitamente em §"Alternatives Considered" ("Um único mecanismo para os 6 CLIs"), porque
 forçaria `$(git rev-parse …)` em CLIs que já resolvem corretamente por meios próprios, adicionando
 pré-condições sem defeito correspondente.
+
+## Semântica de falha de hook por CLI — o que acontece quando o guard não roda (ROADMAP-2026-08-12, ML-3A)
+
+> Fontes: `docs/pesquisa/2026-08-12-semantica-de-falha-de-hook-codex.md` (empírico, Codex CLI
+> 0.147.0, inclusive a seção "ML-1C"), `docs/pesquisa/2026-08-12-semantica-de-falha-de-hook-varredura-documental.md`
+> (documental, doc primária, 5 CLIs), `docs/seguranca/2026-08-12-semantica-de-falha-de-hook.md`
+> (parecer de Hades — **consolidado a partir da seção "Revisão ML-2B", não da tabela original do
+> parecer, que está marcada `[SUPERSEDIDA]` no próprio documento**).
+
+### 1. Tabela por CLI — Caso A × Caso B × como se soube × severidade atual
+
+- **Caso A** — o `command`/script do hook **não resolve** (ausente, caminho inválido, ou apagado em
+  runtime): o processo nem chega a rodar.
+- **Caso B** — o hook **roda** e sai com código != 0, distinguindo `exit 1` de `exit 2` quando a
+  fonte permitir.
+
+| CLI | Caso A | Caso B (`exit 1` vs `exit 2`) | Como se soube | Severidade atual |
+|---|---|---|---|---|
+| **Claude Code** | **FAIL-OPEN** — doc cita literalmente `No such file or directory` como exemplo do bucket não-bloqueante; a própria doc descreve o cenário de "policy hook" com caminho digitado errado ficando "silently disabled" | `exit 1` fail-open (citado nominalmente, sem JSON válido) · `exit 2` fail-closed em `PreToolUse`, blindado contra JSON contraditório | Documental — <https://code.claude.com/docs/en/hooks> | 🟡 — ver §5 (deixa de ser 🟢 na Revisão ML-2B) |
+| **Codex CLI** | **FAIL-OPEN** — medido, `hook: PreToolUse Failed`, ferramenta prossegue | `exit 1` fail-open (medido, mesmo rótulo `Failed` do Caso A, confundidor de stderr fechado) · `exit 2` fail-closed (`hook: PreToolUse Blocked`, erro do router, ferramenta não executa) | **Empírico** — `docs/pesquisa/2026-08-12-semantica-de-falha-de-hook-codex.md`, braços Caso A/B1/B2, `codex-cli 0.147.0`, com e sem `--dangerously-bypass-approvals-and-sandbox` | 🔴 — ver §5 |
+| **Cursor** | **FAIL-OPEN por padrão** — doc agrupa "crash" com "timeout, invalid JSON" no mesmo enunciado de fail-open; não usa literalmente "script not found" (ressalva de interpretação registrada na fonte). Opt-in `failClosed: true` inverte por hook, não usado hoje pelo gerador do trackfw | Fail-open por padrão para qualquer não-2 (bucket único "Other exit codes", sem distinguir `exit 1` nominalmente) · `exit 2` fail-closed | Documental — <https://cursor.com/docs/hooks> | 🟡 — ver §5 |
+| **Gemini CLI** | **INDETERMINADO** — buscado por "not found"/"ENOENT"/"no such file"/"spawn"/"invalid path" em 4 páginas de doc; nenhuma ocorrência que junte "exit codes" com "comando não iniciou". Tratado como pior caso (fail-open) neste documento | Não distingue `exit 1` de outros não-2 — qualquer código fora de `{0,2}` cai no bucket único `Other` = fail-open · `exit 2` = "System Block", fail-closed | Documental — <https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/reference.md> e `docs/hooks/index.md` | 🟡 — ver §5 |
+| **GitHub Copilot CLI** | **Fail-closed para `preToolUse`** — doc agrupa "crash" com "non-zero exit" no mesmo enunciado de fail-closed (mesma ressalva de interpretação sobre "crash" vs "script not found" literal); exceção: timeout é sempre fail-open | Fail-closed para `preToolUse`, tanto `exit 2` quanto qualquer outro não-zero (exceto timeout); doc não distingue resultado entre `exit 1` e `exit 2` dentro de `preToolUse` (os dois negam) | Documental — <https://docs.github.com/en/copilot/reference/hooks-reference> | 🟢 qualificado — ver §5 (cobre ausência/crash, não cobre substituição de conteúdo) |
+| **Kiro** | **INDETERMINADO** — nem a aba IDE nem a aba CLI de `hooks/actions/` discutem comando que não consegue rodar; buscado por "not found"/"ENOENT"/"127" nas 3 páginas de doc sem ocorrência | **Depende da superfície** — aba IDE: fail-closed para qualquer não-zero, sem distinguir `exit 1`/`exit 2`. Aba CLI: distingue como Claude — só `exit 2` bloqueia, `exit 1`/outros fail-open. Qual superfície o trackfw mira é pergunta em aberto, não resolvida por este ciclo | Documental — <https://kiro.dev/docs/hooks/actions/> (duas abas, textos diferentes na mesma seção) | Indeterminado — tratado como pior caso |
+
+### 2. A distinção Caso A × Caso B
+
+O contrato de bloqueio conhecido do trackfw (`exit 2` + stderr — emitido pelo gerador em modo
+`block`, `internal/generators/scaffold.go`, comentário "bloquear (`credential_guard.mode: block`,
+exit 2)") cobre **apenas** o Caso B: o hook precisa **rodar** e **decidir** sair com 2. O Caso A —
+comando ausente, caminho que não resolve, script apagado — é exatamente o que as três condições já
+documentadas em "Pré-condições do fix do Codex" (acima, §"Mecanismo de resolução de caminho dos
+hooks de projeto, por CLI") produzem: nenhuma delas passa pelo hook decidindo nada, porque o
+processo do hook **nem chega a existir**. Medir só o Caso B e concluir "o CLI é fail-closed" responde
+à pergunta errada — o contrato documentado é robusto onde se aplica, mas não cobre o caminho em que o
+hook simplesmente não roda.
+
+### 3. Discriminadores observáveis (economizam tempo de quem investigar)
+
+- **Codex** — nos logs de `codex exec`: `hook: PreToolUse Failed` (hook não rodou ou saiu fora do
+  contrato de bloqueio — ferramenta **prossegue**) × `hook: PreToolUse Blocked` (`exit 2` exato —
+  ferramenta **não** executa, com erro explícito `codex_core::tools::router: error=Command blocked by
+  PreToolUse hook: ...`). **Só `exit 2` exato bloqueia** — testado com um confundidor fechado: script
+  saindo `exit 1` com o **mesmo stderr** literal do braço `exit 2` (`"blocked by policy"`) continua
+  fail-open (`hook: PreToolUse Failed`, marca do teste presente). O discriminador é especificamente o
+  código de saída, não a presença de mensagem em stderr.
+- **Claude Code** — `Failed with non-blocking status code: <mensagem do interpretador>` na primeira
+  execução de um hook mal configurado é o sinal a observar; a doc do próprio fornecedor recomenda
+  vigiar esse aviso especificamente em "policy hooks".
+- **Kiro** — o discriminador relevante não está no comportamento do hook em si, mas em **qual
+  superfície** (`hooks/actions/` aba IDE vs aba CLI) o trackfw de fato consome — a doc bifurca o
+  comportamento nesse eixo, não em texto de log.
+
+### 4. Hipótese refutada — registrada como tal, não apagada
+
+O parecer original de segurança (`docs/seguranca/2026-08-12-semantica-de-falha-de-hook.md`, Pergunta
+1/3, marcado `[REFUTADO]` inline) elevou o Codex a 🔴 com base no vetor: "o agente roda `mkdir x && cd
+x && git init` e todas as chamadas subsequentes resolvem `git rev-parse --show-toplevel` para a raiz
+aninhada, sem `scripts/` ali, reproduzindo o Caso A". Isso **não se reproduz** — medido diretamente
+pelo ML-1C (`docs/pesquisa/2026-08-12-semantica-de-falha-de-hook-codex.md`, seção "ML-1C"), não
+inferido da doc:
+
+- **Experimento 1** (`cd` de shell explícito dentro do comando) e **Experimento 2** (parâmetro de
+  working directory da própria chamada de ferramenta, que sobrevive à objeção "nada herdável" do
+  Experimento 1 porque cada chamada do Codex já é um processo de shell novo) mediram, os dois, que o
+  **cwd do hook é fixo na raiz da sessão** (`-C <fixture>`) — desacoplado tanto do `cd` de shell
+  quanto do parâmetro de working directory da chamada de ferramenta que ele autoriza.
+- Evidência de ponta a ponta: a própria expansão do `command` do hook (`$(git rev-parse
+  --show-toplevel)/.codex/hooks/hook.sh`) continuou resolvendo o caminho a partir da raiz da sessão
+  mesmo com a chamada de ferramenta mirando um subdiretório — se tivesse resolvido a partir do
+  subdiretório, o hook teria sido rotulado `Failed` (caminho inexistente) e não haveria o segundo
+  append no log; o segundo append ocorreu, provando a resolução pela raiz da sessão.
+
+**Quem for reinventar essa hipótese deve consultar a medição do ML-1C antes** — o mecanismo de `cd`
+não é o que sustenta a severidade do Codex hoje (ver §5).
+
+### 5. O que sustenta a severidade hoje (medido × hipótese não medida)
+
+Com o mecanismo de `cd` refutado, a Revisão ML-2B (`docs/seguranca/2026-08-12-semantica-de-falha-de-hook.md`,
+seção final) reavaliou alcançabilidade a partir de vetores que **não dependem do cwd se mover** —
+escrita direta de arquivo, alcançável em qualquer CLI cujo agente tenha acesso a `Bash`/shell, não só
+no Codex.
+
+**Medido / código-verificado (confiança alta):**
+
+- **`scripts/trackfw-credential-guard.sh` não tem proteção de escrita/deleção.** Gerado por
+  `os.WriteFile(path, ..., 0755)` (`internal/generators/scaffold.go:797`,
+  `GenerateCredentialGuardScript`) — sem imutabilidade, sem checksum registrado em nenhum lugar do
+  repositório, sem verificação de integridade em `trackfw validate`/`doctor` hoje (confirmado por
+  ausência de referência a `credential_guard` em `internal/validator/*.go`).
+- **Via 1 — apagar o script (`rm`).** Composição de dois fatos, cada um já estabelecido
+  separadamente: a ausência de proteção acima (código-verificado) + o Caso A medido no ML-1A
+  (script ausente → `hook: PreToolUse Failed` → ferramenta prossegue → FAIL-OPEN). A cadeia completa
+  `rm` → hook → tool-call não foi rodada como experimento único contínuo, mas isso mediria o mesmo
+  estado ("arquivo ausente") por um caminho diferente — não é hipótese nova sobre o comportamento do
+  Codex.
+- **Achado 2.1 — sobrescrever o conteúdo do script (mais forte que `rm`).** Trocar o script por um
+  que sai `exit 0` (`echo '#!/bin/bash' > scripts/trackfw-credential-guard.sh && echo 'exit 0' >>
+  scripts/trackfw-credential-guard.sh`) é estritamente pior que apagar: produz `hook: PreToolUse
+  Completed` — o **mesmo rótulo de sucesso normal** medido no controle positivo do ML-1A — zero sinal
+  distinguível de execução legítima. E o próprio comando de escrita não contém JWT nem chave AWS, não
+  casando com o padrão de detecção do credential-guard.
+- **Downgrade de `credential_guard.mode` via `trackfw.yaml`.** O modo (`warn`/`block`) é lido em
+  **runtime**, por `grep` simples do `trackfw.yaml` no cwd (`internal/generators/scaffold.go:1005`,
+  `credentialGuardModeResolution`) — não embutido no script. Uma edição de uma linha derruba o
+  controle para não-bloqueante sem tocar no script em absoluto (bit-idêntico), derrotando até uma
+  eventual verificação de integridade que cubra só o script. Mesmo mecanismo no escopo global
+  (`~/.trackfw/scripts/trackfw-credential-guard.sh`, `internal/generators/scaffold.go:1047-1051`).
+
+**Hipótese não medida, rotulada como tal (não usada para sustentar severidade sozinha):**
+
+- **Via 2 — gitfile redirecionando `.git`.** Mecanicamente plausível (mesmo princípio dos caminhos de
+  submódulo/worktree já documentados abaixo), mas depende de também controlar `core.worktree` do
+  `gitdir` alvo — via de dois passos, não medida.
+
+**Consequência para o ranking por CLI:** as vias de escrita direta (Via 1, achado 2.1) não dependem de
+nenhum mecanismo específico do Codex — são escrita comum de arquivo, alcançável em qualquer CLI com
+`Bash`/shell. Claude e Gemini, antes tratados como 🟢 "efetivo por inalcançabilidade" (Caso A só via
+`$CLAUDE_PROJECT_DIR`/`$GEMINI_PROJECT_DIR` vazio, degradando para `/scripts/...` não plantável),
+**sobem para 🟡** — essas vias não dependem da env var estar vazia, atuam diretamente no caminho real
+do script. Cursor permanece 🟡 (`failClosed: true`, se adotado, cobre `rm` mas não a sobrescrita —
+script presente, roda, sai `exit 0` não é crash/timeout/JSON inválido). Copilot é o único CLI que
+muda de forma qualificada: fail-closed nativo captura ausência/crash (Via 1), mas **não** o achado
+2.1 (script presente, executa, sai 0 — não há "falha" para o Copilot detectar) — fica 🟢 apenas para
+esse subconjunto, não para "substituição". **Codex permanece 🔴** — não por ser estruturalmente pior
+nesta classe de vetor, mas por ser o único CLI onde o vetor original, a Via 1 e o achado 2.1 foram
+todos, em algum grau, verificados ou código-verificados neste ciclo.
+
+### 6. Reclassificação retroativa — referência cruzada com "Pré-condições do fix do Codex"
+
+Os três caminhos já documentados acima (§"Pré-condições do fix do Codex, descobertas
+empiricamente") — fora de repositório git, dentro de submódulo/worktree, e `GIT_DIR`/`GIT_WORK_TREE`
+redirecionando a resolução — estavam registrados como **degradação de disponibilidade**: "o guard às
+vezes não roda, o agente perde uma verificação, mas o pior caso é ruído". Com o veredito FAIL-OPEN do
+Codex confirmado (§1) e o Caso A definido como o que esses três caminhos produzem (§2), esse
+enquadramento está errado — **o guard deixar de rodar não é neutro; é o controle de negação sendo
+desligado sem nenhum sinal que o usuário normalmente observa.** Os três caminhos passam de "limitação
+conhecida / disponibilidade" para **bypass silencioso de controle de segurança**, na mesma classe de
+risco da Via 1/achado 2.1 acima (§5). Achado adicional de detectabilidade: o gate de *trust* do Codex
+(hooks de projeto só carregam em projeto `trusted`, ver a mesma seção acima) é **pior** que o Caso A
+nesse eixo — o Caso A ao menos produz `hook: PreToolUse Failed` nos logs; um projeto não confiável não
+produz nenhum evento de hook, zero sinal.
+
+### 7. Escopo do que foi medido — não avaliado
+
+Confirmado apenas para `codex exec` (modo não-interativo), tanto com
+`--dangerously-bypass-approvals-and-sandbox` quanto com sandbox restrito real (`-s
+workspace-write`) — não é artefato do bypass. **Não avaliado:** sessão interativa do Codex com
+aprovação humana no loop; e prova empírica dedicada não foi feita para Claude, Cursor, Copilot ou
+Kiro (só documental) nem para o Gemini (`INDETERMINADO` tratado como pior caso, sem verificação
+empírica considerada necessária no momento deste ciclo — decisão reavaliável se surgir mitigação que
+dependa da semântica real). Nenhuma mudança de código foi feita neste ML — mitigação (wrapper
+`test -x`, controle positivo em `validate`/`doctor`, `failClosed: true` no Cursor, verificação de
+integridade de script/config) permanece **avaliada, não implementada**, cabendo a Zeus decidir se abre
+REQ nova a partir do parecer de Hades.
 
 ## Hooks GLOBAIS de credential-guard (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.gemini/settings.json`, `~/.cursor/hooks.json`, `~/.copilot/settings.json`, `~/.kiro/hooks/trackfw-credential-guard.json`) — paridade estrutural (ROADMAP-2026-08-06, ML-4A)
 
