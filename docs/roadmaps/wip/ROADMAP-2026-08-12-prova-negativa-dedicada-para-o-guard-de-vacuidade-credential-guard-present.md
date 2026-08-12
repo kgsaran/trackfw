@@ -72,16 +72,16 @@ falhar por divergência estrutural, ele está testando o Cenário 44 de novo, n�
 
 ## Acceptance Criteria
 
-- [ ] Existe cenário em `scripts/check-gates-falsify.sh` que falsifica **especificamente** o guard de
+- [x] Existe cenário em `scripts/check-gates-falsify.sh` que falsifica **especificamente** o guard de
       vacuidade `credential-guard-present`.
-- [ ] O cenário segue o padrão do arquivo: **baseline** (gate passa na árvore íntegra) + **detecção**
+- [x] O cenário segue o padrão do arquivo: **baseline** (gate passa na árvore íntegra) + **detecção**
       (gate falha na árvore sabotada). Não basta o gate passar.
-- [ ] A sabotagem remove a **emissão** do credential-guard nos **3 stacks identicamente**, de modo
+- [x] A sabotagem remove a **emissão** do credential-guard nos **3 stacks identicamente**, de modo
       que o comparador estrutural continue satisfeito e apenas o guard de vacuidade acuse.
 - [ ] O cenário **prova** que a falha veio do guard de vacuidade, não do comparador: a asserção casa
       a chave `agent-hooks-parity/<cli>/<runtime>/credential-guard-present`.
-- [ ] `$HOME` permanece isolado no cenário.
-- [ ] `docs/cli-parity.md` atualizado: remover a ressalva de que o guard não tem prova negativa.
+- [x] `$HOME` permanece isolado no cenário.
+- [x] `docs/cli-parity.md` atualizado: remover a ressalva de que o guard não tem prova negativa.
 - [ ] `make quality` verde, com o total de cenários incrementado (hoje 103) e a string de resumo
       final do `check-gates-falsify.sh` atualizada.
 
@@ -145,7 +145,7 @@ make quality
 > Dependências: Wave 1.
 
 ### ML-2A — Auditoria de qualidade do cenário
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Hefesto; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Hefesto (`hefesto-tf`)
 **Arquivos afetados:** nenhum por padrão (revisão). Correções só se Zeus autorizar.
 
@@ -158,6 +158,50 @@ introduz sensibilidade ambiental — foi exatamente esse o modo de falha de 2026
 - [ ] Parecer escrito cobrindo os 4 pontos acima.
 - [ ] Confirmação de que o cenário não é ambientalmente sensível.
 - [ ] Achados reportados a Zeus, não corrigidos unilateralmente.
+
+---
+
+## Wave 3 — Microlote corretivo da barreira (1 ML)
+> Dependências: ML-2A. Aberto **pelo achado do ML-2A**, não previsto no plano original.
+
+### ML-1B — Tornar o braço de detecção do Cenário 46 autodiscriminante
+**Status:** 🔄 Em andamento
+**Agente:** Ártemis (`artemis-tf`)
+
+**Achado que origina este ML (ML-2A, severidade baixa segundo o parecer — elevado por Zeus):** o
+braço de detecção do Cenário 46 assevera apenas que os 3 labels
+`agent-hooks-parity/claude/{go,node,py}/credential-guard-present` **aparecem** na saída. Isso é
+satisfazível pelo **próprio modo de falha ambiental de 2026-08-08**: um `$HOME` vazado, sem
+isolamento, suprimiria a entrada do Claude nos 3 runtimes exatamente como a sabotagem faz, e o gate
+sairia antes do comparador do mesmo jeito. Hoje o que impede esse falso-verde é apenas o **braço
+baseline falhar primeiro** — proteção indireta, dependente de ordem.
+
+**Por que Zeus não aceitou como "hardening opcional":** este roadmap existe para provar que um gate
+não é vácuo. Entregar um cenário cujo braço de detecção pode ser satisfeito por um vazamento
+ambiental é reproduzir, dentro da própria correção, a classe de problema que ela corrige. O custo de
+fechar é baixo; o custo de descobrir depois é o de 2026-08-08 outra vez.
+
+**Arquivos afetados:** `scripts/check-gates-falsify.sh` (apenas o braço de detecção do Cenário 46).
+
+**Ações:** tornar o braço de detecção **autodiscriminante** — não basta ver o FAIL do Claude; é
+preciso provar que a causa foi a **sabotagem**, e não um vazamento de ambiente.
+
+⚠️ **Cuidado com o discriminante escolhido.** A sugestão do parecer (assertar que um CLI
+não-sabotado, ex. `codex`, **não** aparece com `credential-guard-present`) só discrimina se o guard
+global estiver instalado para aquele CLI na máquina. Numa máquina com guard global apenas para o
+Claude, um vazamento suprimiria só o Claude e a asserção negativa passaria mesmo assim. Escolha um
+discriminante que **não** dependa do que está instalado no `$HOME` real.
+
+**Critérios de aceite:**
+- [ ] O braço de detecção falha se a causa do FAIL não for a sabotagem.
+- [ ] O discriminante **não** depende de quais guards globais existem no `$HOME` real da máquina.
+- [ ] 🔴 **Prova:** demonstre que o novo discriminante reprova num cenário de vazamento simulado
+      (ex.: remover o isolamento de `$HOME` na cópia do gate dentro do fixture) — e restaure.
+      Reporte a saída.
+- [ ] Prova de não-vacuidade do Cenário 46 continua valendo: desabilitar o guard de vacuidade em
+      `check-agent-hooks-parity.sh` ainda faz o braço de detecção falhar.
+- [ ] `bash scripts/check-gates-falsify.sh` sem `FAIL`; `make quality` exit 0.
+- [ ] `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados.
 
 ---
 
