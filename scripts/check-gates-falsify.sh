@@ -3658,6 +3658,23 @@ assert_fails_with "harness-hooks-parity/kiro/go-vs-py-matcher-drift-not-detected
 # vacuidade reprovar (linha ~204-208 do gate), antes mesmo do comparador
 # estrutural rodar, então nenhuma referência a go-vs-node/go-vs-py aparece na
 # saída: prova de que a falha não veio do comparador.
+#
+# ML-1B (ROADMAP-2026-08-12): o braço de detecção também prova que a causa do
+# FAIL foi a SABOTAGEM, não um `$HOME` vazado/não-isolado lendo o guard
+# global real da máquina (o modo de falha ambiental de 2026-08-08 — ver
+# vault/notes/check-agent-hooks-parity-unisolated-home-false-failure-
+# 2026-08-08.md). A sabotagem é um `return true` LITERAL que não lê `$HOME`
+# em nenhuma das 3 linguagens; as outras 5 funções de dedup continuam lendo
+# `$HOME` de verdade e não foram tocadas. O braço planta um `$HOME`
+# SINTÉTICO (controlado por este script, não pelo ambiente real do
+# executor) com o guard global do Codex — só do Codex, nenhum Claude — e o
+# passa como `HOME` externo na invocação do gate. Em operação correta (com o
+# isolamento por runtime de run_discover_init intacto) esse `HOME` externo é
+# ignorado e os 5 CLIs não-sabotados passam; se o isolamento regredisse, o
+# Codex passaria a ler o `$HOME` sintético e falharia também, mudando a
+# assinatura de "só claude" para "claude + codex" — o que a asserção de
+# exclusividade abaixo (nenhum dos 5 CLIs não-sabotados em FAIL) captura,
+# sem depender do que está instalado no `$HOME` real de quem roda o gate.
 # ---------------------------------------------------------------------------
 
 # --- braço baseline: árvore íntegra, gate deve passar --------------------
@@ -3713,8 +3730,47 @@ corrupt_literal \
   $'def _global_credential_guard_installed_claude() -> bool:\n    return True' \
   "s46-python-claude-dedup-always-true"
 
+# ML-1B (ROADMAP-2026-08-12): torna este braço autodiscriminante — não basta
+# ver o FAIL do Claude, é preciso provar que a causa foi a SABOTAGEM (a
+# função de dedup do Claude hardcoded para `return true`) e não um `$HOME`
+# vazado/não-isolado lendo o guard global real da máquina (o modo de falha
+# ambiental de 2026-08-08 — ver vault/notes/
+# check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08.md).
+#
+# Discriminante escolhido: a sabotagem acima é um `return true` LITERAL — não
+# lê `$HOME` em nenhuma das 3 linguagens. As outras 5 funções de dedup
+# (codex/gemini/cursor/copilot/kiro) continuam lendo `$HOME` de verdade e não
+# foram tocadas por esta sabotagem. Isso dá uma assimetria observável: sob
+# sabotagem real (com `$HOME` isolado, como o gate copiado já faz via
+# run_discover_init), SÓ o Claude fica sem a entrada de project-scope; sob um
+# vazamento de `$HOME` (isolamento removido/quebrado), QUALQUER CLI cujo
+# guard global esteja presente no `$HOME` que vazou perde a entrada também —
+# não só o Claude.
+#
+# Para que essa segunda condição seja verificável sem depender do que está
+# instalado no `$HOME` REAL desta máquina (o problema do discriminante
+# descartado no roadmap: "assertar que codex não falha" só funciona se o
+# guard global do codex estiver instalado na máquina que roda o gate), este
+# braço planta um `$HOME` SINTÉTICO — controlado por este script, não pelo
+# ambiente — com o guard global do Codex instalado (e nenhum outro CLI,
+# principalmente não o Claude) e o passa como `HOME` externo na invocação do
+# gate copiado. Como o gate copiado isola `$HOME` por runtime dentro de
+# run_discover_init (mecanismo intocado por esta sabotagem), esse `HOME`
+# externo é ignorado em operação correta — os 5 CLIs não-sabotados continuam
+# vendo um `$HOME` isolado vazio e, portanto, PASSAM. Se o isolamento
+# regredisse (achado hipotético coberto pela prova exigida no roadmap), o
+# Codex passaria a ler este `$HOME` sintético, "veria" seu guard global
+# plantado e falharia também — mudando a assinatura de FAIL de "só claude"
+# para "claude + codex", o que a asserção de exclusividade abaixo capturaria
+# independente de qualquer coisa instalada no `$HOME` real do executor.
+T46_FAKE_HOME="$WORK/s46-fake-global-home"
+mkdir -p "$T46_FAKE_HOME/.codex"
+cat >"$T46_FAKE_HOME/.codex/hooks.json" <<EOF
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"command":"$T46_FAKE_HOME/.trackfw/scripts/trackfw-credential-guard.sh"}]}]}}
+EOF
+
 set +e
-s46_out=$(env GO_BIN="$T46_GO_BIN" PY_ROOT="$T46_PY/pypi" bash "$T46/scripts/check-agent-hooks-parity.sh" 2>&1)
+s46_out=$(env HOME="$T46_FAKE_HOME" GO_BIN="$T46_GO_BIN" PY_ROOT="$T46_PY/pypi" bash "$T46/scripts/check-agent-hooks-parity.sh" 2>&1)
 s46_status=$?
 set -e
 
@@ -3737,6 +3793,22 @@ do
 done
 echo "OK   [falsify/agent-hooks-parity/credential-guard-present-vacuity/detected]"
 
+# Discriminante autodiscriminante: nenhum dos 5 CLIs não-sabotados pode
+# aparecer como credential-guard-present FAIL — nem o Codex, cujo guard
+# global sintético foi plantado acima exatamente para tornar esta asserção
+# sensível a um vazamento de isolamento de `$HOME`, e não só à sabotagem.
+for s46_clean_cli in codex gemini copilot cursor kiro; do
+  for s46_clean_runtime in go node py; do
+    s46_clean_label="agent-hooks-parity/$s46_clean_cli/$s46_clean_runtime/credential-guard-present"
+    if grep -qF "$s46_clean_label" <<<"$s46_out"; then
+      echo "FAIL [falsify/agent-hooks-parity/credential-guard-present-vacuity/discriminant]: saída contém '$s46_clean_label' — a falha não está isolada ao Claude sabotado, sinal de vazamento de \$HOME (ou de outra causa) em vez de sabotagem de código" >&2
+      echo "  output: $s46_out" >&2
+      exit 1
+    fi
+  done
+done
+echo "OK   [falsify/agent-hooks-parity/credential-guard-present-vacuity/discriminant]"
+
 if grep -qE "go-vs-node|go-vs-py" <<<"$s46_out"; then
   echo "FAIL [falsify/agent-hooks-parity/credential-guard-present-vacuity/structural-comparator-not-reached]: saída contém referência ao comparador estrutural (go-vs-node/go-vs-py) — o cenário está testando o Cenário 44, não o guard de vacuidade" >&2
   echo "  output: $s46_out" >&2
@@ -3744,4 +3816,4 @@ if grep -qE "go-vs-node|go-vs-py" <<<"$s46_out"; then
 fi
 echo "OK   [falsify/agent-hooks-parity/credential-guard-present-vacuity/structural-comparator-not-reached]"
 
-echo "Falsification checks passed (all 104 scenarios, 18 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py (46))"
+echo "Falsification checks passed (all 104 scenarios, 18 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py; detection arm made self-discriminating (ML-1B, ROADMAP-2026-08-12) against the 2026-08-08 environmental-leak failure mode via a test-controlled synthetic \$HOME (Codex-only global guard, no Claude) plus an exclusivity assertion that none of the 5 non-sabotaged CLIs may appear in the FAIL set — proved against a leak-only (no sabotage) adversarial variant that the pre-ML-1B assertion set was satisfiable by pure environmental leak and the new exclusivity check rejects it (46))"

@@ -11510,3 +11510,134 @@ meu escopo marcar, sinalizando para quem fechar o roadmap.
 segue o padrão do arquivo, e a âncora de manutenção tem instrução de RETARGET adequada. Um achado não-
 bloqueante sobre robustez do braço de detecção (acima) — recomendo o ajuste sugerido antes ou depois do
 PR, a critério de Zeus. **Pode seguir para PR.**
+
+## Sessão 2026-08-12 — Ártemis (QA) — ML-1B: braço de detecção autodiscriminante do Cenário 46 — INICIADO
+
+Retomando o Cenário 46 (escrito por mim no ML-1A). Achado elevado por Zeus a partir do parecer do
+ML-2A (Hefesto): o braço de detecção só assevera que os 3 labels
+`agent-hooks-parity/claude/{go,node,py}/credential-guard-present` aparecem — satisfazível tanto pela
+sabotagem (dedup hardcoded `return true`) quanto por um `$HOME` vazado sem isolamento lendo o guard
+global real da máquina. Vou tornar o braço autodiscriminante sem depender do que está instalado no
+`$HOME` real: como a sabotagem é um `return true` hardcoded (não lê `$HOME`) enquanto as outras 5
+funções de dedup (codex/gemini/cursor/copilot/kiro) leem `$HOME` de verdade, vou plantar um `$HOME`
+sintético controlado pelo teste (só com o guard global do Codex, nenhum Claude) na invocação do braço
+de detecção, e assertar que a assinatura de FAIL é *exatamente* `claude/{go,node,py}` — nenhum dos
+outros 5 CLIs. Um vazamento de isolamento acenderia o Codex (ou qualquer CLI presente no `$HOME`
+sintético) também, o que a asserção vai capturar, independente do que está instalado na máquina real.
+Escopo: só `scripts/check-gates-falsify.sh` (braço de detecção do Cenário 46) + esta entrada +
+`**Status:**` do ML-1B no roadmap.
+
+## Sessão 2026-08-12 — Ártemis (QA) — ML-1B: braço de detecção autodiscriminante do Cenário 46 — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+**Discriminante implementado:** a sabotagem dos 3 stacks (`globalCredentialGuardInstalledClaude`/
+`_global_credential_guard_installed_claude`) é um `return true`/`return True` LITERAL — não lê `$HOME`
+em nenhuma linguagem. As outras 5 funções de dedup (codex/gemini/cursor/copilot/kiro) não foram
+tocadas e continuam lendo `$HOME` de verdade. Plantei um `$HOME` SINTÉTICO controlado pelo próprio
+script (`$WORK/s46-fake-global-home/.codex/hooks.json`, guard global só do Codex, nenhum Claude) e
+passei como `HOME` externo só na invocação do braço de detecção (`env HOME="$T46_FAKE_HOME" ...`). Em
+operação correta, o isolamento por runtime de `run_discover_init` (mecanismo intocado por esta
+sabotagem) ignora esse `HOME` externo — os 5 CLIs não-sabotados leem um `$HOME` isolado vazio e
+passam. Adicionei uma nova asserção de exclusividade: nenhum dos 5 CLIs não-sabotados pode aparecer
+como `credential-guard-present` FAIL na saída. **Por que não depende do `$HOME` real da máquina:** o
+`$HOME` sintético é construído pelo próprio script de teste, não lido do ambiente do executor — o
+mesmo resultado se reproduz em qualquer máquina, com ou sem guards globais instalados de verdade.
+
+**🔴 Prova bloqueante — discriminante reprova um vazamento simulado (sem sabotagem nenhuma):**
+copiei `check-agent-hooks-parity.sh` para um fixture descartável fora do repo, removi as 3 ocorrências
+de `HOME="$home_dir" ` de `run_discover_init` (simulando a regressão de isolamento de 2026-08-08) —
+SEM tocar nos geradores (nenhuma sabotage de código). Rodei duas variantes:
+1. Contra o mesmo `$HOME` sintético só-Codex plantado no cenário real: saída FAIL só em
+   `agent-hooks-parity/codex/{go,node,py}/credential-guard-present` — Claude passa (não sabotado),
+   Codex falha (vazamento leu o guard sintético). A nova asserção de exclusividade do Cenário 46
+   teria rejeitado esse resultado (Codex está na lista dos "não deve falhar").
+2. Contra o `$HOME` REAL desta máquina (sem override algum, replicando o vazamento de 2026-08-08 tal
+   qual aconteceu): saída com FAIL em `agent-hooks-parity/{claude,codex,gemini,copilot}/{go,node,py}/
+   credential-guard-present` — os 3 labels do Claude aparecem (satisfariam a asserção ANTIGA, que só
+   checava presença dos 3 labels do Claude) mas Codex/Gemini/Copilot também aparecem, o que a NOVA
+   asserção de exclusividade rejeita. Prova concreta de que a asserção antiga era satisfazível por
+   vazamento ambiental puro, sem sabotagem — exatamente o achado do roadmap. `git status --porcelain`
+   ficou limpo depois de restaurar (fixture era fora do repo, em `/tmp`, removido ao final).
+
+**Prova de não-vacuidade original ainda vale:** desabilitei temporariamente o bloco
+`grep -q "trackfw-credential-guard.sh"` em `scripts/check-agent-hooks-parity.sh` (troquei por
+`if false && ! grep -q ...`), rodei `bash scripts/check-gates-falsify.sh` completo: `FAIL
+[falsify/agent-hooks-parity/credential-guard-present-vacuity/detected]: saiu com 0, esperava != 0` —
+confirma que o guard de vacuidade continua sendo o que sustenta a detecção. Restaurei o arquivo
+(`git status --porcelain` confirma sem diff em `check-agent-hooks-parity.sh`), rodei
+`bash scripts/check-agent-hooks-parity.sh` isolado → `All check-agent-hooks-parity.sh scenarios
+passed.` (exit 0).
+
+**`bash scripts/check-gates-falsify.sh` completo:** 104 cenários, sem `FAIL`, incluindo os 2 novos
+labels do Cenário 46 (`.../detected` e `.../discriminant`, ambos OK).
+
+**`make quality`:** exit 0, mesma saída de 104 cenários OK no falsify, sem FAIL em nenhum gate.
+
+**Nota sobre a contagem "104" no echo final:** confirmei que ela conta CENÁRIOS, não labels/asserções
+(o Cenário 46 é 1 cenário desde o ML-1A, com 4 asserções na saída agora, e "104" já não batia 1:1 com
+a contagem de linhas `OK` mesmo antes do meu ML — 106 antes, 107 depois). Não precisou mudar. Estendi
+a descrição do Cenário 46 nesse mesmo echo (a "ficha de registro" do arquivo) para mencionar o novo
+braço autodiscriminante — é uma linha fora do escopo literal "braço de detecção + comentário do
+cenário", sinalizando aqui deliberadamente para Zeus decidir se cabe.
+
+**Braço baseline ficou intocado, de propósito:** só a invocação de detecção ganhou o `HOME=`
+sintético externo. Sob isolamento intacto (estado atual, correto) esse `HOME` externo é inobservável
+— e é exatamente isso que o baseline verde + a saída de detecção inalterada demonstram. Os dois braços
+agora diferem em 2 eixos (sabotagem E `HOME` externo) em vez de 1, mas o segundo eixo só é observável
+se o isolamento regredir — o que a Prova bloqueante acima cobre isolando as duas variáveis.
+
+**Lacuna consciente na prova adversarial:** as 2 variantes que rodei provam vazamento SEM sabotagem.
+O caso que a asserção do cenário realmente guarda é vazamento COM sabotagem simultânea — mas a função
+de dedup do Codex é independente da sabotagem do Claude (o `return true` hardcoded só está em
+`globalCredentialGuardInstalledClaude`, nunca tocado para os outros 5 CLIs), então a variante 1 já
+estabelece que Codex falha sob vazamento independentemente de a sabotagem do Claude estar ativa — não
+haveria diferença observável em rodar uma 3ª variante combinando os dois.
+
+**Checkboxes do ML-1B no roadmap:** deixei todos `- [ ]` — meu escopo era só o campo `**Status:**`.
+Nota deliberada, não esquecimento.
+
+**Escopo:** só `scripts/check-gates-falsify.sh` (braço + comentário do Cenário 46 + a linha de resumo
+final estendida, sinalizada acima), `docs/agents-working-context.md` (esta entrada) e `**Status:**` do
+ML-1B no roadmap. `git status --porcelain` confirma: nada em `internal/`, `npm/src/`, `pypi/trackfw/`,
+`docs/cli-parity.md` ou testes. Passo para Zeus auditar e commitar.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-1B + fechamento do roadmap do Cenário 46
+
+**ML-2A (Hefesto) aprovado, mas com um achado que elevei de "severidade baixa" para bloqueante.** O
+braço de detecção do Cenário 46 asseverava apenas que os 3 labels de FAIL do Claude **apareciam** na
+saída — satisfazível pelo **próprio modo de falha ambiental de 2026-08-08**: um `$HOME` vazado
+suprimiria a entrada do Claude nos 3 runtimes exatamente como a sabotagem. O único impedimento era o
+braço baseline falhar primeiro: proteção **indireta e dependente de ordem**, não propriedade do braço.
+Confirmei lendo o código antes de decidir. Não aceitei como hardening opcional: este roadmap existe
+para provar que um gate não é vácuo; entregar um braço de detecção satisfazível por vazamento
+ambiental reproduz, dentro da correção, a classe de problema que ela corrige.
+
+**Também rejeitei a solução sugerida no parecer.** Hefesto propôs assertar que um CLI não-sabotado
+(ex.: `codex`) não aparece. Esse discriminante **só funciona se o guard global estiver instalado para
+aquele CLI** — numa máquina com guard global apenas do Claude, um vazamento suprimiria só o Claude e
+a asserção passaria assim mesmo. Exigi no ML-1B um discriminante que **não dependa do `$HOME` real**.
+
+**A solução da Ártemis é um tripwire, não uma asserção passiva.** O cenário **constrói** um `$HOME`
+sintético com o guard global do **Codex** plantado (e nenhum do Claude) e o passa como `HOME` externo.
+Com o isolamento intacto, o `run_discover_init` ignora esse `HOME` (dir vazio por runtime) e os 5
+CLIs não-sabotados passam. Se o isolamento regredisse, o Codex passaria a enxergar o guard plantado e
+falharia também — mudando a assinatura de FAIL de "só claude" para "claude + codex", que o laço de
+exclusividade rejeita. Independe do que existe no `$HOME` real porque o conteúdo é construído pelo
+próprio script.
+
+Ela **reproduziu o vazamento de 2026-08-08 literalmente**: removeu as 3 ocorrências de
+`HOME="$home_dir"` numa cópia e rodou contra o `$HOME` real → FAIL em `claude`, `codex`, `gemini` e
+`copilot`. Os 3 labels do Claude apareciam (satisfariam a asserção antiga) mas os outros também, o
+que a nova rejeita. Prova concreta de que a versão anterior era satisfazível por vazamento puro.
+
+**Limite de auditoria declarado, não maquiado:** tentei reproduzir essa simulação e **falhei por erro
+do meu próprio harness** — a cópia do gate resolve caminhos relativos à própria localização,
+quebrando `NODE_CLI`/`PY_ROOT`. Não apresento isso como verificação independente. Verifiquei
+diretamente o **código dos dois lados** (isolamento em `check-agent-hooks-parity.sh:147–149`,
+construção do `$HOME` sintético, laço de exclusividade); a evidência empírica é de Ártemis.
+
+**Gates finais por Zeus:** `check-gates-falsify.sh` **104 cenários, 0 FAIL**, 4 braços do Cenário 46
+`OK` · `make quality` **exit 0** · `trackfw validate` sem violações.
+
+**Estado:** roadmap em `done`, REQ fechada. **Bloqueio declarado para a próxima REQ:** o roadmap de
+fail-open × fail-closed só vai para `wip` **depois do merge deste PR** — as duas escrevem em
+`docs/cli-parity.md`, e um escritor por vez foi a razão de sequenciar assim desde o início.

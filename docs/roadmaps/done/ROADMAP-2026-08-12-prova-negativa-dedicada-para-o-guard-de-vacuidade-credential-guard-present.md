@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-12
 req: "docs/req/REQ-2026-08-11-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present-do-check-agent-hooks-parity.md"
 squad: "Ártemis, Hefesto"
@@ -7,7 +7,7 @@ squad: "Ártemis, Hefesto"
 
 # Roadmap: Prova negativa dedicada para o guard de vacuidade credential-guard-present
 
-> Created: 2026-08-12 | Status: wip
+> Created: 2026-08-12 | Status: done
 
 ## Context
 
@@ -78,11 +78,11 @@ falhar por divergência estrutural, ele está testando o Cenário 44 de novo, n�
       (gate falha na árvore sabotada). Não basta o gate passar.
 - [x] A sabotagem remove a **emissão** do credential-guard nos **3 stacks identicamente**, de modo
       que o comparador estrutural continue satisfeito e apenas o guard de vacuidade acuse.
-- [ ] O cenário **prova** que a falha veio do guard de vacuidade, não do comparador: a asserção casa
+- [x] O cenário **prova** que a falha veio do guard de vacuidade, não do comparador: a asserção casa
       a chave `agent-hooks-parity/<cli>/<runtime>/credential-guard-present`.
 - [x] `$HOME` permanece isolado no cenário.
 - [x] `docs/cli-parity.md` atualizado: remover a ressalva de que o guard não tem prova negativa.
-- [ ] `make quality` verde, com o total de cenários incrementado (hoje 103) e a string de resumo
+- [x] `make quality` verde, com o total de cenários incrementado (hoje 103) e a string de resumo
       final do `check-gates-falsify.sh` atualizada.
 
 ### Escopo negativo
@@ -121,16 +121,16 @@ falhar por divergência estrutural, ele está testando o Cenário 44 de novo, n�
 5. Atualizar `docs/cli-parity.md` removendo a ressalva.
 
 **Critérios de aceite:**
-- [ ] `bash scripts/check-gates-falsify.sh` passa, com total incrementado.
-- [ ] 🔴 **Prova de que o cenário não é vácuo:** desabilite o guard de vacuidade em
+- [x] `bash scripts/check-gates-falsify.sh` passa, com total incrementado.
+- [x] 🔴 **Prova de que o cenário não é vácuo:** desabilite o guard de vacuidade em
       `scripts/check-agent-hooks-parity.sh` (comente o bloco `grep -q "trackfw-credential-guard.sh"`),
       rode `check-gates-falsify.sh` e confirme que o **novo cenário falha**. Restaure. **Reporte o
       resultado.** Sem essa checagem, o cenário novo tem o mesmo defeito que ele existe para corrigir.
-- [ ] 🔴 **Prova de que o cenário não está testando o comparador:** na árvore sabotada, o comparador
+- [x] 🔴 **Prova de que o cenário não está testando o comparador:** na árvore sabotada, o comparador
       estrutural continua passando. Demonstre (ex.: a saída mostra o `FAIL` da chave
       `credential-guard-present` e **não** de `go-vs-node`/`go-vs-py`).
-- [ ] `internal/`, `npm/src/`, `pypi/trackfw/` e arquivos de teste **intocados**.
-- [ ] `make quality` → exit 0, 0 `FAIL`.
+- [x] `internal/`, `npm/src/`, `pypi/trackfw/` e arquivos de teste **intocados**.
+- [x] `make quality` → exit 0, 0 `FAIL`.
 
 **Comandos de validação:**
 ```bash
@@ -155,9 +155,9 @@ dos demais cenários. Rodar `make quality` em `$HOME` **não** isolado para chec
 introduz sensibilidade ambiental — foi exatamente esse o modo de falha de 2026-08-08.
 
 **Critérios de aceite:**
-- [ ] Parecer escrito cobrindo os 4 pontos acima.
-- [ ] Confirmação de que o cenário não é ambientalmente sensível.
-- [ ] Achados reportados a Zeus, não corrigidos unilateralmente.
+- [x] Parecer escrito cobrindo os 4 pontos acima.
+- [x] Confirmação de que o cenário não é ambientalmente sensível.
+- [x] Achados reportados a Zeus, não corrigidos unilateralmente.
 
 ---
 
@@ -165,7 +165,7 @@ introduz sensibilidade ambiental — foi exatamente esse o modo de falha de 2026
 > Dependências: ML-2A. Aberto **pelo achado do ML-2A**, não previsto no plano original.
 
 ### ML-1B — Tornar o braço de detecção do Cenário 46 autodiscriminante
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Ártemis; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Ártemis (`artemis-tf`)
 
 **Achado que origina este ML (ML-2A, severidade baixa segundo o parecer — elevado por Zeus):** o
@@ -193,17 +193,33 @@ Claude, um vazamento suprimiria só o Claude e a asserção negativa passaria me
 discriminante que **não** dependa do que está instalado no `$HOME` real.
 
 **Critérios de aceite:**
-- [ ] O braço de detecção falha se a causa do FAIL não for a sabotagem.
-- [ ] O discriminante **não** depende de quais guards globais existem no `$HOME` real da máquina.
-- [ ] 🔴 **Prova:** demonstre que o novo discriminante reprova num cenário de vazamento simulado
+- [x] O braço de detecção falha se a causa do FAIL não for a sabotagem.
+- [x] O discriminante **não** depende de quais guards globais existem no `$HOME` real da máquina.
+- [x] 🔴 **Prova:** demonstre que o novo discriminante reprova num cenário de vazamento simulado
       (ex.: remover o isolamento de `$HOME` na cópia do gate dentro do fixture) — e restaure.
       Reporte a saída.
-- [ ] Prova de não-vacuidade do Cenário 46 continua valendo: desabilitar o guard de vacuidade em
+- [x] Prova de não-vacuidade do Cenário 46 continua valendo: desabilitar o guard de vacuidade em
       `check-agent-hooks-parity.sh` ainda faz o braço de detecção falhar.
-- [ ] `bash scripts/check-gates-falsify.sh` sem `FAIL`; `make quality` exit 0.
-- [ ] `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados.
+- [x] `bash scripts/check-gates-falsify.sh` sem `FAIL`; `make quality` exit 0.
+- [x] `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados.
 
 ---
+
+## Verificações finais de Zeus (2026-08-12)
+
+- `check-gates-falsify.sh`: **104 cenários**, 0 `FAIL`. Os 4 braços do Cenário 46 (`baseline`,
+  `detected`, `discriminant`, `structural-comparator-not-reached`) todos `OK`.
+- `make quality`: **exit 0**.
+- **Prova de não-vacuidade reproduzida por Zeus** (ML-1A): desabilitando o bloco
+  `grep -q "trackfw-credential-guard.sh"` em `check-agent-hooks-parity.sh`, o braço `detected`
+  falha com *"saiu com 0, esperava != 0"*. Restaurado, `git diff --exit-code` limpo.
+- **Limite de auditoria declarado:** a simulação de vazamento de `$HOME` do ML-1B **não** foi
+  reproduzida por Zeus — a tentativa falhou por erro do próprio harness de auditoria (a cópia do
+  gate resolve caminhos relativos à própria localização, quebrando `NODE_CLI`/`PY_ROOT`). O que Zeus
+  verificou diretamente foi o **código dos dois lados**: o isolamento de `$HOME` por runtime
+  (`check-agent-hooks-parity.sh:147–149`), a construção do `$HOME` sintético e o laço de
+  exclusividade. A evidência empírica é de Ártemis, com labels concretos (`claude`+`codex`+`gemini`+
+  `copilot` sob vazamento contra o `$HOME` real).
 
 ## Notas de execução
 
