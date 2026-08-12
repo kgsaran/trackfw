@@ -3816,4 +3816,130 @@ if grep -qE "go-vs-node|go-vs-py" <<<"$s46_out"; then
 fi
 echo "OK   [falsify/agent-hooks-parity/credential-guard-present-vacuity/structural-comparator-not-reached]"
 
-echo "Falsification checks passed (all 104 scenarios, 18 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py; detection arm made self-discriminating (ML-1B, ROADMAP-2026-08-12) against the 2026-08-08 environmental-leak failure mode via a test-controlled synthetic \$HOME (Codex-only global guard, no Claude) plus an exclusivity assertion that none of the 5 non-sabotaged CLIs may appear in the FAIL set — proved against a leak-only (no sabotage) adversarial variant that the pre-ML-1B assertion set was satisfiable by pure environmental leak and the new exclusivity check rejects it (46))"
+# ---------------------------------------------------------------------------
+# Cenário 47 — internal/validator: prova de não-vacuidade da regra
+#              "credential_guard_hook_resolvable" (ROADMAP-2026-08-12-
+#              mitigacao-do-fail-open-do-credential-guard-..., ML-1A, Apolo;
+#              este cenário é o ML-2A, Ártemis) — a regra ACUSA quando existe
+#              hook de credential-guard de PROJETO registrado (aqui,
+#              .claude/settings.json) e o script referenciado não existe, e
+#              NÃO acusa quando o script está presente e executável.
+#
+# ÂNCORA DE MANUTENÇÃO / RETARGET: $S47_MSG_MISSING abaixo é um TRECHO do
+# literal exato emitido por validateCredentialGuardHookResolvable em
+# internal/validator/validator_credential_guard.go:163-166 ("... but the
+# script does not exist — run `trackfw update` to regenerate it"). Se essa
+# mensagem mudar de forma (wording, ordem dos campos, ou deixar de citar
+# "trackfw update"), reaponte $S47_MSG_MISSING para o novo literal — os
+# equivalentes Node (npm/src/validator/index.js, função
+# validateCredentialGuardHookResolvable, ~linha 1231) e Python
+# (pypi/trackfw/validator.py:1447, validate_credential_guard_hook_resolvable)
+# precisam mudar a mensagem junto, por regra de paridade (ADR-2026-08-05) —
+# mas este cenário, por desenho, exercita só o CLI Go (ver abaixo).
+#
+# Por que só o CLI Go: o roadmap (ML-2A) permite testar um subconjunto dos 3
+# stacks quando o cenário não precisa exercitar os outros para provar
+# não-vacuidade. Os testes unitários dos 3 stacks já cobrem paridade de
+# comportamento (internal/validator/validator_credential_guard_test.go;
+# pypi/tests/test_validator.py:1001-1122; equivalente em npm/src/validator
+# via npm test) — este cenário é a prova P4 (black-box, via `trackfw
+# validate` de verdade) de que a regra Go não é vácua, o que já é suficiente
+# para satisfazer o critério de aceite do ML.
+#
+# Por que não precisa isolar $HOME (ao contrário do Cenário 46): esta regra
+# só lê arquivos de hook de PROJETO sob a raiz do projeto corrente
+# (os.Getwd(), ver validateCredentialGuardHookResolvable) — nunca consulta
+# $HOME ou o guard GLOBAL. Não existe vetor de vazamento ambiental a
+# discriminar aqui, diferente do dedup globalCredentialGuardInstalled*() que
+# o Cenário 46 testa.
+#
+# Braço autodiscriminante: a asserção de detecção usa assert_fails_with com
+# o literal EXATO da mensagem desta regra, não um "saiu != 0" genérico.
+# `grep -rn` em internal/validator/*.go confirma que nenhuma outra regra
+# emite essa frase — então este braço só pode ser satisfeito pela regra sob
+# teste disparando, nunca por uma violação incidental de outra regra. Reforço
+# adicional: o fixture (scaffold_adr_req_project) é um projeto vazio sem
+# docs/adr, docs/req ou docs/roadmaps/* — o mesmo fixture que o Cenário 29
+# prova imprimir "✓ No violations found." byte-a-byte quando íntegro — então
+# nenhuma OUTRA regra tem material para disparar neste projeto além da
+# sabotagem deliberada (script ausente) que este cenário introduz.
+#
+# O que prova que a SABOTAGEM (não um acidente de fixture) é a causa: os dois
+# braços usam s47_write_claude_guard_hook — o MESMO gerador de fixture — com
+# um único delta entre eles (scripts/trackfw-credential-guard.sh criado e
+# marcado +x no baseline, omitido na detecção). Isso encadeia os dois braços
+# um no outro: o braço de detecção passando prova que a cadeia inteira está
+# viva até o ponto de falha (JSON parseado → marcador
+# "trackfw-credential-guard.sh" encontrado → prefixo $CLAUDE_PROJECT_DIR/
+# resolvido → os.Stat alcançado e retornando "não existe") — se qualquer elo
+# dessa cadeia estivesse quebrado (ex: typo no prefixo, marcador não
+# reconhecido), a regra pularia o arquivo em silêncio e a DETECÇÃO teria
+# falhado, não o contrário. O braço baseline então prova que o mesmo caminho
+# de código, com o único delta "script presente e executável", fica em
+# silêncio — atribuindo a diferença de resultado ao os.Stat, não a alguma
+# outra causa incidental no fixture.
+#
+# Limite de cobertura conhecido (fora do escopo deste ML): a regra tem 2
+# pontos de wiring em internal/validator/validator.go — applyRule (:418,
+# usado por Validate(), o caminho de texto exercitado aqui) e
+# applyRuleTagged (:604, usado por ValidateTagged()/`validate --json`). Este
+# cenário e a prova de não-vacuidade abaixo cobrem só :418; uma regressão que
+# remova a chamada em :604 sem tocar em :418 passaria por este gate em
+# silêncio. Reportado a Zeus para decisão (ML novo ou aceitar o gap).
+# ---------------------------------------------------------------------------
+
+s47_write_claude_guard_hook() {
+  local dest=$1
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<'EOF'
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"command":"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"}]}]}}
+EOF
+}
+
+S47_MSG_MISSING='but the script does not exist — run `trackfw update` to regenerate it'
+
+# --- braço baseline: script presente e executável -> validate passa --------
+T47_OK="$WORK/s47-script-present"
+scaffold_adr_req_project "$T47_OK"
+s47_write_claude_guard_hook "$T47_OK/.claude/settings.json"
+mkdir -p "$T47_OK/scripts"
+cat > "$T47_OK/scripts/trackfw-credential-guard.sh" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$T47_OK/scripts/trackfw-credential-guard.sh"
+
+set +e
+s47ok_out=$(cd "$T47_OK" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
+s47ok_status=$?
+set -e
+if [[ $s47ok_status -ne 0 ]]; then
+  echo "FAIL [falsify/credential-guard-hook-resolvable/baseline]: árvore íntegra (script presente e executável) deveria passar, saiu com $s47ok_status" >&2
+  echo "  output: $s47ok_out" >&2
+  exit 1
+fi
+# Nota: o modo texto do `validate` (exercitado aqui) nunca imprime o nome
+# interno da regra ("credential_guard_hook_resolvable") — só a mensagem. Só
+# `validate --json` exporia o rule key (ver RuleItem.Rule em
+# internal/validator/result.go), caminho não coberto por este cenário (ver
+# comentário "Limite de cobertura conhecido" acima). A asserção aqui checa
+# apenas a AUSÊNCIA da mensagem desta regra, que é o que o modo texto pode
+# provar.
+if grep -qF "$S47_MSG_MISSING" <<<"$s47ok_out"; then
+  echo "FAIL [falsify/credential-guard-hook-resolvable/baseline]: script presente e executável mas a regra disparou mesmo assim" >&2
+  echo "  output: $s47ok_out" >&2
+  exit 1
+fi
+echo "OK   [falsify/credential-guard-hook-resolvable/baseline]"
+
+# --- braço detecção: script ausente -> validate acusa esta regra -----------
+T47_MISSING="$WORK/s47-script-missing"
+scaffold_adr_req_project "$T47_MISSING"
+s47_write_claude_guard_hook "$T47_MISSING/.claude/settings.json"
+# scripts/trackfw-credential-guard.sh deliberadamente OMITIDO — é a sabotagem.
+
+assert_fails_with "credential-guard-hook-resolvable/detected" \
+  "$S47_MSG_MISSING" \
+  bash -c "cd '$T47_MISSING' && exec '$ROOT_DIR/bin/trackfw' validate"
+
+echo "Falsification checks passed (all 105 scenarios, 18 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py; detection arm made self-discriminating (ML-1B, ROADMAP-2026-08-12) against the 2026-08-08 environmental-leak failure mode via a test-controlled synthetic \$HOME (Codex-only global guard, no Claude) plus an exclusivity assertion that none of the 5 non-sabotaged CLIs may appear in the FAIL set — proved against a leak-only (no sabotage) adversarial variant that the pre-ML-1B assertion set was satisfiable by pure environmental leak and the new exclusivity check rejects it (46), \`trackfw validate\`'s credential_guard_hook_resolvable rule (ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A/ML-2A) — a registered project-scope Claude credential-guard hook (.claude/settings.json) whose referenced script is missing must be flagged, and must stay silent when the script is present and executable, exercised end-to-end via the real Go binary against an otherwise-empty scaffold_adr_req_project fixture (the same fixture Scenario 29 pins to zero violations, so no other rule has material to fire) — detection arm asserts the exact validator diagnostic literal (unique across internal/validator/*.go per grep) rather than a generic non-zero exit, proved non-vacuous, no \$HOME dependency by design since the rule never reads outside the project root (47))"

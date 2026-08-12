@@ -139,7 +139,7 @@ make quality
 > Dependências: Wave 1.
 
 ### ML-2A — Cenário de falsificação da regra nova
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Ártemis; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Ártemis (`artemis-tf`)
 
 **Arquivos afetados:** `scripts/check-gates-falsify.sh` (cenário novo + string de resumo final).
@@ -162,7 +162,7 @@ um hook de guard cujo script não existe, e que **removê-la** faz o cenário fa
 > Dependências: Wave 2.
 
 ### ML-3A — Opt-in nativo do Cursor nas entradas do guard
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Apolo (`apolo-tf`)
 
 **Arquivos afetados:** `internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,

@@ -12218,3 +12218,120 @@ acoplar a regra a 6 schemas seria dívida imediata.
 
 **Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` 450/0 · `pytest` **1004
 passed** + 8 subtests · `make quality` **exit 0**.
+
+---
+
+## Sessão 2026-08-12 — Ártemis (ML-2A: cenário de falsificação da regra `credential_guard_hook_resolvable`) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md`,
+Wave 2/ML-2A — status atualizado para ✅ Concluído.
+
+**Objetivo:** provar que a regra `credential_guard_hook_resolvable` do ML-1A (Apolo) não é vácua, via
+`scripts/check-gates-falsify.sh`. Único arquivo tocado: `scripts/check-gates-falsify.sh`
+(+ campo `Status:` do ML-2A no roadmap, + esta entrada).
+
+**Desenho do cenário (47, "credential-guard-hook-resolvable"):**
+- Baseline: fixture `scaffold_adr_req_project` (o mesmo projeto vazio que o Cenário 29 pina em
+  `✓ No violations found.`) + `.claude/settings.json` com uma entrada de credential-guard
+  (`$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh`) + o script presente e `chmod +x` →
+  `trackfw validate` (binário real, `$ROOT_DIR/bin/trackfw`) sai 0 e não contém nem o nome da regra
+  nem a mensagem de "script ausente".
+- Detecção: mesmo fixture, mesmo hook registrado, **script deliberadamente omitido** →
+  `assert_fails_with` cobra o literal exato de
+  `internal/validator/validator_credential_guard.go:163-166` ("but the script does not exist — run
+  \`trackfw update\` to regenerate it").
+
+**Por que o braço de detecção é autodiscriminante:** a asserção não é "saiu != 0" — é o literal exato
+da mensagem desta regra, que `grep -rn` em `internal/validator/*.go` confirma ser único no validador
+(nenhuma outra regra usa essa frase). Como o fixture é o mesmo projeto vazio que o Cenário 29 já prova
+zerado em outras regras, não há outra violação candidata que pudesse satisfazer essa asserção por
+acidente — só a sabotagem (script ausente) produz esse texto. Reforço pós-revisão (consultoria antes
+do handoff): os dois braços chamam o MESMO gerador de fixture (`s47_write_claude_guard_hook`) com um
+único delta (script presente+executável vs. omitido) — o braço de detecção passando prova que a
+cadeia inteira está viva até o ponto de falha (JSON parseado → marcador reconhecido → prefixo
+`$CLAUDE_PROJECT_DIR/` resolvido → `os.Stat` alcançado), porque qualquer elo quebrado faria a regra
+pular o arquivo em silêncio e a DETECÇÃO falharia, não o baseline. Documentado no comentário do
+cenário no script.
+
+**Por que não isolei `$HOME`:** ao contrário do Cenário 46 (dedup do guard GLOBAL, lido de `$HOME`),
+`validateCredentialGuardHookResolvable` só lê arquivos de hook de PROJETO sob `os.Getwd()` — nunca
+toca em `$HOME`. Não existe vetor de vazamento ambiental a discriminar aqui; documentado no
+comentário do cenário.
+
+**Escopo:** só o CLI Go — o roadmap permite testar um subconjunto quando o cenário já prova
+não-vacuidade sem precisar dos outros 2; paridade de comportamento Node/Python já está coberta pelos
+testes unitários do ML-1A (`validator_credential_guard_test.go`, `pypi/tests/test_validator.py`
+linhas 1001-1122, `npm test`).
+
+**🔴 Prova de não-vacuidade executada:** comentei a linha
+`applyRule("credential_guard_hook_resolvable", ...)` em `internal/validator/validator.go:418`
+(a chamada que o `Validate()` não-JSON usa), recompilei, e rodei o gate — resultado:
+```
+OK   [falsify/credential-guard-hook-resolvable/baseline]
+FAIL [falsify/credential-guard-hook-resolvable/detected]: saiu com 0, esperava != 0
+  output: ✓ No violations found.
+```
+Restaurei a linha, recompilei, e confirmei `git diff --exit-code internal/validator/validator.go`
+limpo antes de seguir. Repeti a prova depois de aplicar as correções da revisão abaixo — mesmo
+resultado, restauração confirmada limpa de novo.
+
+**Correções feitas após consulta de revisão, antes do handoff:**
+1. Argumento de autodiscriminação fortalecido no comentário do cenário (ver acima) — a defesa
+   original só cobria "sem outra violação incidental no fixture"; faltava explicar por que a
+   detecção passando prova a cadeia de código, não só a ausência de ruído.
+2. **Limite de cobertura documentado, não corrigido:** a regra tem 2 pontos de wiring em
+   `internal/validator/validator.go` — `applyRule` (:418, usado por `Validate()`, o caminho de texto
+   que este cenário exercita) e `applyRuleTagged` (:604, usado por `ValidateTagged()`/`validate
+   --json`). Este cenário e a prova de não-vacuidade cobrem só :418; uma regressão que remova a
+   chamada em :604 sem tocar em :418 passaria em silêncio por este gate. Documentado no comentário do
+   cenário e aqui — decisão de abrir ML novo para cobrir `--json` cabe a Zeus.
+3. Removida asserção morta no braço baseline: `grep -qF "credential_guard_hook_resolvable"` nunca
+   pode casar, porque o modo texto do `validate` (o único exercitado aqui) nunca imprime o nome
+   interno da regra, só a mensagem — só `--json` exporia o rule key
+   (`RuleItem.Rule`, `internal/validator/result.go`). Mantida só a checagem da mensagem, com
+   comentário explicando a limitação.
+
+**Resultado final:** `bash scripts/check-gates-falsify.sh` → 105/105 cenários OK (era 104; total e
+descrição do resumo final atualizados). `make quality` → exit 0, sem `FAIL` no log. `git status
+--porcelain` → só `scripts/check-gates-falsify.sh` modificado (roadmap e este arquivo também tocados,
+dentro do escopo permitido); `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-2A (Cenário 47) — APROVADO
+
+**Prova de não-vacuidade reproduzida por Zeus — na terceira tentativa, e as duas primeiras foram erro
+meu.** Desabilitei a regra e o cenário **passou**, o que sugeriria cenário vácuo. Antes de acusar,
+investiguei: o cenário usa `bin/trackfw`, e eu só rodara `go build ./...`, que **não regenera esse
+binário** — eu estava testando contra o build antigo. Refeito com `go build -o bin/trackfw`:
+
+```
+OK   [falsify/credential-guard-hook-resolvable/baseline]
+FAIL [falsify/credential-guard-hook-resolvable/detected]: saiu com 0, esperava != 0
+```
+
+**Terceiro erro do meu harness nesta sessão** (os outros: caminho errado do CLI do Node; confundir
+LENIENT MODE com severidade). Todos os três teriam produzido acusação falsa contra o trabalho do
+agente se eu não tivesse investigado antes de reportar. **Lição operacional: antes de acusar um
+cenário de vácuo, confirmar que a sabotagem realmente chegou ao binário que o cenário executa.**
+
+**Gap reportado pelo agente — real na forma, defusado na prática.** Ele avisou que a regra tem dois
+pontos de wiring no Go (`applyRule` :418 no caminho de texto, `applyRuleTagged` :604 no `--json`) e
+que o Cenário 47 só prova o primeiro. Verifiquei:
+
+- **Go:** remover só o :604 **não compila** (`declared and not used: credentialGuardHookMsgsT`) — o
+  compilador é o guarda.
+- **Node e Python:** têm **um único** ponto de wiring cada; não existe caminho separado para JSON.
+
+Logo, a regressão temida **não passa silenciosamente em nenhum dos 3 stacks**. **Decisão: não abrir
+ML de follow-up**, e registrar a análise aqui, porque quem ler o comentário do cenário vai ter a
+mesma dúvida. O agente agiu certo ao reportar em vez de esconder — verificar é minha função.
+
+**Desenho do cenário, e por que é autodiscriminante:** os dois braços usam o **mesmo gerador de
+fixture**, sobre a mesma base vazia que o Cenário 29 fixa em zero violações. O **único delta** entre
+eles é a existência do script. Detecção passar prova que o caminho inteiro está vivo (JSON parseado →
+marcador achado → `$CLAUDE_PROJECT_DIR/` resolvido → `os.Stat` alcançado e falhou); qualquer elo
+quebrado faria a regra pular em silêncio e a **detecção** falhar, não o baseline. A asserção casa o
+literal exato do diagnóstico, não saída não-zero genérica.
+
+**Gates re-executados por Zeus:** `check-gates-falsify.sh` **109 linhas OK, 0 FAIL** (105 cenários) ·
+`make quality` **exit 0**.
