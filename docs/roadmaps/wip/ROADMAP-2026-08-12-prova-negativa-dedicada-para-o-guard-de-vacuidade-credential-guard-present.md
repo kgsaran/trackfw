@@ -100,7 +100,7 @@ falhar por divergência estrutural, ele está testando o Cenário 44 de novo, n�
 > Dependências: nenhuma.
 
 ### ML-1A — Cenário 46: falsificar o guard de vacuidade `credential-guard-present`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Ártemis (`artemis-tf`)
 
 **Arquivos afetados:**
