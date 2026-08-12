@@ -13487,3 +13487,43 @@ de arquivos dela): `vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-fa
 isolamento de git em fixture) mais a de auditoria (**reconstruir `bin/trackfw`**), que foi erro meu.
 
 **Wave 3 despachada em paralelo:** ML-3A (Hefesto, docs) e ML-3B (Hades, revisão).
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — ML-3A executado por Zeus após recusa de escopo, e um achado de governança
+
+**Hefesto recusou o ML-3A**, citando a própria definição de papel: *"You do not modify code… hand off
+the fix to the role that owns the code"*, com missão limitada a avaliar duplicação, complexidade,
+arquitetura e cobertura. **A recusa é legítima pelo arquivo de definição dele.**
+
+**Executei eu mesmo.** Documentação **não é código de produto** — minha restrição é sobre implementar
+produto, e `docs/cli-parity.md` é artefato de paridade/governança. Não valia queimar outro despacho.
+
+### 🔴 Achado de governança para KG — inconsistência real, não ambiguidade de prompt
+
+**Hefesto editou `docs/cli-parity.md` em quatro PRs desta mesma sessão** — #156 (ML-8A), #158, #159
+(ML-3A), #160 (ML-4B) — sempre como ML dele, sempre auditado e aprovado. Agora recusou a mesma
+natureza de tarefa.
+
+**Ou a definição de papel está errada, ou os quatro MLs anteriores estavam fora de escopo.** Isso
+precisa ser resolvido em `~/.claude/agents/`, senão vira aleatoriedade: o mesmo agente aceita ou
+recusa a mesma tarefa dependendo de como o ML é redigido.
+
+Ele também sugeriu redirecionar para `trackfw-tooling`, agente que **não existe** no roster deste
+projeto — e admitiu não ter aberto os arquivos de agente para confirmar. Sugestão descartada.
+
+### O que foi entregue
+
+**`docs/cli-parity.md`** — seção nova: as três vias e quem cobre cada uma; por que a âncora é **por
+alvo** (template para o script, `HEAD` para o `mode`); por que `warning` e o que destravaria `error`
+(embutir versão/hash no template); "o que estas regras NÃO veem" com o mesmo destaque; e a dívida da
+cópia local do template com a mitigação que a cobre.
+
+**`README.md`** — seção de **usuário final** antes de "What trackfw is not", com o núcleo escrito em
+linguagem de usuário: *detection, not prevention*, e que **foi medido** não haver prevenção técnica
+possível no escopo do trackfw contra agente induzido com escrita irrestrita. Lista o que não é visto
+(mudança commitada pelo adversário; ausência de `HEAD`; drift × adulteração), explica que `warning`
+**não muda o exit code** e mostra como forçar `error` no `trackfw.yaml`.
+
+Fecha com o que de fato protege, e que não é mecanismo nosso: **o script e o `trackfw.yaml` são
+arquivos versionados — revise os diffs como você revisa qualquer código.**
+
+`make quality` **exit 0**.

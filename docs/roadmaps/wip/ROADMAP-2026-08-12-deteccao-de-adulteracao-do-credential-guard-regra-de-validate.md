@@ -199,7 +199,7 @@ divergência que **nenhum gate pega**, porque o Cenário 29 fixa só a mensagem 
 > Dependências: Wave 2. Arquivos disjuntos.
 
 ### ML-3A — Documentação
-**Status:** 🔄 Em andamento · **Agente:** Hefesto (`hefesto-tf`) · **Arquivos:** `docs/cli-parity.md` **e**
+**Status:** ✅ Concluído — **executado por Zeus** após recusa de escopo de Hefesto (ver working context)
 documentação de usuário final (README / `--help`). O item de usuário final é **requisito da REQ**, não
 opcional: `cli-parity.md` é interno e não é lido por quem instala o trackfw.
 

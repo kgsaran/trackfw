@@ -3047,3 +3047,65 @@ by npm and PyPI must remain byte-identical and are checked in CI.
 Plugin downloads use timeouts, size limits, and atomic replacement. Registry
 entries do not currently publish checksums; adding signed SHA-256 metadata is a
 required compatibility change before checksum verification can become mandatory.
+
+
+## Detecção de adulteração do credential-guard: as duas regras novas, e o que elas não veem (ROADMAP-2026-08-12-deteccao-de-adulteracao)
+
+> Decisão: `docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md`
+> (ler as **3 emendas**). Implementação: `internal/validator/validator_credential_guard_integrity.go`
+> + equivalentes em `npm/src/validator/index.js` e `pypi/trackfw/validator.py`. Continuação de
+> §"Semântica de falha de hook por CLI" e §"Controle positivo do credential-guard".
+
+### As três vias, e quem cobre cada uma
+
+| Via | Regra | Âncora | Severidade |
+|---|---|---|---|
+| **Deleção** do script | `credential_guard_hook_resolvable` (ciclo anterior) | existência + bit de execução | `error` |
+| **Sobrescrita** do script | `credential_guard_script_integrity` | **template do binário** | **`warning`** |
+| **Downgrade** de `credential_guard.mode` | `credential_guard_mode_downgrade` | **git `HEAD`**, direcional | `error` |
+
+### Por que a âncora é POR ALVO
+
+- **Script → template do binário.** O script é **concatenação pura de constantes, sem interpolação
+  por projeto** — o binário **é** a referência canônica, e não depende de `HEAD`, de commit nem de
+  `$HOME`. Isto **derruba** o argumento do ADR superseded (*"integridade exige o escopo global"*)
+  para este alvo.
+- **`mode` → `HEAD`, comparação semântica e direcional** (`block` no `HEAD` → não-`block` no disco).
+  É valor **autoral**, sem forma canônica: o binário não tem o que comparar. **Não** é byte-diff do
+  `trackfw.yaml` — o arquivo muda o tempo todo por motivo legítimo, e regra ruidosa acaba desligada.
+
+### Por que `warning` no script — e o que destravaria `error`
+
+O script **não carrega marcador de versão**. A regra, portanto, **não consegue distinguir** *drift*
+legítimo (usuário não rodou `trackfw update` depois de um bump) de adulteração real. Afirmar
+adulteração seria errado em metade dos casos, então a mensagem é **causalmente neutra** e a severidade
+é `warning`.
+
+**Embutir versão/hash no template** é o que permitiria elevar para `error` — trabalho futuro, ainda
+não feito.
+
+### 🔴 O que estas regras NÃO veem — mesmo destaque
+
+- **Verificam quando o `validate` roda**, não no momento da invocação do hook. Entre um `validate`
+  verde e a próxima chamada de ferramenta, tudo pode mudar.
+- **Adversário que commita a alteração** não é detectado por `mode_downgrade` — o `HEAD` passa a
+  conter a mudança. O que resta é o **rastro auditável** (o diff existe, aparece no PR).
+- **Sem `HEAD` não há comparação:** repositório sem commits, arquivo não versionado. A regra fica em
+  **silêncio** — decisão deliberada, e a convenção deste projeto (não violar por ausência).
+- **`warning` não muda o exit code** do `validate`. Em CI, o `validate` **passa** com a divergência do
+  script; o sinal está no output, não no código de saída. Quem quiser que falhe precisa configurar
+  `rules: credential_guard_script_integrity: error`.
+- **Nada disso é prevenção.** Foi **medido** que não há prevenção técnica possível, no escopo do
+  trackfw, contra um agente induzido com escrita irrestrita ao workspace.
+
+### Cópia local do template no validador — dívida conhecida, coberta
+
+`internal/validator` **não pode importar** `internal/generators` (ciclo de import), então o template
+existe **também** numa cópia local do validador, em cada stack. A alternativa de injeção de provider
+foi rejeitada: as funções do gerador **imprimem linha de sucesso** a cada chamada, o que corromperia a
+mensagem de sucesso do `validate` fixada pelo Cenário 29.
+
+**Mitigação:** teste de paridade que executa o **gerador real** e falha se as cópias derivarem —
+verificado injetando deriva no literal, com mensagem acionável e contagem de bytes. É mais forte que
+o `TestCredentialGuardScript_ParityAcrossStacks` pré-existente, que **nunca executa** Node nem Python
+(ver ADR Emenda 2).

@@ -722,6 +722,44 @@ The Codex integration is repository-scoped: `AGENTS.md` carries persistent instr
 
 ---
 
+## Credential guard: detection, not prevention
+
+trackfw can generate a **credential guard** hook that blocks agents from materializing real
+credentials. `trackfw validate` also reports when that guard looks compromised:
+
+- the hook is registered but the script is **missing** or not executable;
+- the script's **contents diverge** from the template this version of trackfw generates;
+- `credential_guard.mode` was **downgraded** from `block` on disk relative to your last commit.
+
+**Read this before relying on it.**
+
+These checks are **detection, not prevention.** trackfw *tells you* something diverged — it does
+**not** stop it from happening. This is not an implementation gap: it was measured that no technical
+prevention is possible, within trackfw's scope, against an agent that has unrestricted write access
+to your workspace. An agent that can edit your files can delete the guard script, overwrite it with
+a no-op, or relax the mode — and on most agent CLIs, a hook that fails to run simply lets the tool
+call proceed.
+
+What these checks are **not** able to see:
+
+- **changes the adversary also commits** — once it is in your `HEAD`, there is nothing to diverge
+  from. What remains is the audit trail: the change shows up in your diff and in review.
+- **anything with no commit to compare against** — a repository with no commits, or a file that was
+  never versioned. The check stays silent rather than guessing.
+- **the difference between tampering and you being out of date.** The script carries no version
+  marker, so a divergence may simply mean you have not run `trackfw update` since upgrading. That is
+  why the message is worded neutrally and the rule defaults to a **warning**, which does **not**
+  change `validate`'s exit code. If you want CI to fail on it:
+
+```yaml
+# trackfw.yaml
+rules:
+  credential_guard_script_integrity: error
+```
+
+The strongest protection remains the ordinary one: the guard script and `trackfw.yaml` are
+**versioned files**. Review their diffs like you review any other code.
+
 ## What trackfw is not
 
 - Not a project management SaaS — no accounts, no cloud sync, no data leaving your repository. A local dashboard is available via `trackfw serve`.
