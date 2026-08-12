@@ -387,6 +387,19 @@ def _merge_codex_hook_entry(entries: list, matcher: str, command: str) -> None:
     })
 
 
+# ROADMAP-2026-08-11 ML-3A: Codex CLI does not expose a project-root env var for repo-local hooks
+# (unlike Claude's $CLAUDE_PROJECT_DIR or Gemini's $GEMINI_PROJECT_DIR) -- the only documented
+# mechanism is shell substitution. Per ADR-2026-08-11 ("Codex — alterar, com dependência explícita
+# de shell e git"), the command is wrapped in literal double quotes around `$(git rev-parse
+# --show-toplevel)`, matching every repo-local hook example in the official Codex docs
+# (https://developers.openai.com/codex/config-advanced): "For repo-local hooks, prefer resolving
+# from the git root instead of using a relative path such as `.codex/hooks/...`."
+_CODEX_ROOT = '"$(git rev-parse --show-toplevel)'
+_GUARD_CMD_CODEX = _CODEX_ROOT + '/scripts/trackfw-credential-guard.sh"'
+_SIGNAL_CMD_CODEX = _CODEX_ROOT + '/scripts/trackfw-attention-signal.sh"'
+_CLEANUP_CMD_CODEX = _CODEX_ROOT + '/scripts/trackfw-attention-cleanup.sh"'
+
+
 def inject_codex_hooks(cwd: str) -> None:
     """Injeta hooks PermissionRequest/PreToolUse/PostToolUse no .codex/hooks.json."""
     file_path = os.path.join(cwd, '.codex', 'hooks.json')
@@ -395,14 +408,12 @@ def inject_codex_hooks(cwd: str) -> None:
     hooks = data.setdefault('hooks', {})
 
     pre_permission_hooks = hooks.setdefault('PermissionRequest', [])
-    # Migration wiring (ROADMAP-2026-08-11 ML-1A): old == new is a functional no-op today, but
-    # proves the call point exists and runs before the merge below. The wave that changes the
-    # Codex command strings (ML-3A) updates old_command here instead of adding this call from
-    # scratch -- without it, the merge's exact-string dedup would append a duplicate alongside
-    # the stale entry.
-    _migrate_hook_command(pre_permission_hooks, '.*', 'scripts/trackfw-attention-signal.sh', 'scripts/trackfw-attention-signal.sh')
+    # Migration wiring (ROADMAP-2026-08-11 ML-1A, string updated in ML-3A): rewrites any stale
+    # relative-path entry from before this fix in place, so `trackfw update` doesn't just append
+    # the new $(git rev-parse ...) entry alongside the still-cwd-fragile old one.
+    _migrate_hook_command(pre_permission_hooks, '.*', 'scripts/trackfw-attention-signal.sh', _SIGNAL_CMD_CODEX)
     _merge_codex_hook_entry(
-        pre_permission_hooks, '.*', 'scripts/trackfw-attention-signal.sh',
+        pre_permission_hooks, '.*', _SIGNAL_CMD_CODEX,
     )
 
     # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
@@ -411,29 +422,29 @@ def inject_codex_hooks(cwd: str) -> None:
     skip_cg = _global_credential_guard_installed_codex()
 
     pre_tool_hooks = hooks.setdefault('PreToolUse', [])
-    _migrate_hook_command(pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh', 'scripts/trackfw-credential-guard.sh')
-    _migrate_hook_command(pre_tool_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh', 'scripts/trackfw-credential-guard.sh')
+    _migrate_hook_command(pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CODEX)
+    _migrate_hook_command(pre_tool_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CODEX)
     if not skip_cg:
         _merge_codex_hook_entry(
-            pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+            pre_tool_hooks, 'Bash', _GUARD_CMD_CODEX,
         )
         _merge_codex_hook_entry(
-            pre_tool_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh',
+            pre_tool_hooks, 'apply_patch', _GUARD_CMD_CODEX,
         )
 
     post_hooks = hooks.setdefault('PostToolUse', [])
-    _migrate_hook_command(post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh', 'scripts/trackfw-attention-cleanup.sh')
-    _migrate_hook_command(post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh', 'scripts/trackfw-credential-guard.sh')
-    _migrate_hook_command(post_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh', 'scripts/trackfw-credential-guard.sh')
+    _migrate_hook_command(post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh', _CLEANUP_CMD_CODEX)
+    _migrate_hook_command(post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CODEX)
+    _migrate_hook_command(post_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CODEX)
     _merge_codex_hook_entry(
-        post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh',
+        post_hooks, '.*', _CLEANUP_CMD_CODEX,
     )
     if not skip_cg:
         _merge_codex_hook_entry(
-            post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+            post_hooks, 'Bash', _GUARD_CMD_CODEX,
         )
         _merge_codex_hook_entry(
-            post_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh',
+            post_hooks, 'apply_patch', _GUARD_CMD_CODEX,
         )
 
     _write_json(file_path, data)

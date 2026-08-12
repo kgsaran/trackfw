@@ -96,10 +96,15 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         inject_codex_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.codex', 'hooks.json'))
-        self.assertFalse(_has_claude_hook(data, 'PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'))
-        self.assertFalse(_has_claude_hook(data, 'PostToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'))
-        self.assertTrue(_has_claude_hook(data, 'PermissionRequest', '.*', 'scripts/trackfw-attention-signal.sh'))
-        self.assertTrue(_has_claude_hook(data, 'PostToolUse', '.*', 'scripts/trackfw-attention-cleanup.sh'))
+        # ROADMAP-2026-08-11 ML-3A: Codex commands now wrap $(git rev-parse --show-toplevel) in
+        # literal quotes (ADR-2026-08-11).
+        codex_guard_cmd = '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"'
+        codex_signal_cmd = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh"'
+        codex_cleanup_cmd = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-cleanup.sh"'
+        self.assertFalse(_has_claude_hook(data, 'PreToolUse', 'Bash', codex_guard_cmd))
+        self.assertFalse(_has_claude_hook(data, 'PostToolUse', 'Bash', codex_guard_cmd))
+        self.assertTrue(_has_claude_hook(data, 'PermissionRequest', '.*', codex_signal_cmd))
+        self.assertTrue(_has_claude_hook(data, 'PostToolUse', '.*', codex_cleanup_cmd))
 
     def test_gemini(self):
         home = self._isolated_home()

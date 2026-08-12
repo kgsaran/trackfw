@@ -82,16 +82,16 @@ func TestDedup_Codex_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if helperHasClaudeHook(data, "PreToolUse", "Bash", codexGuardCmd) {
 		t.Error("project-scope credential-guard entry should have been skipped (global already installed)")
 	}
-	if helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if helperHasClaudeHook(data, "PostToolUse", "Bash", codexGuardCmd) {
 		t.Error("project-scope PostToolUse credential-guard entry should have been skipped")
 	}
-	if !helperHasClaudeHook(data, "PermissionRequest", ".*", "scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PermissionRequest", ".*", codexSignalCmd) {
 		t.Error("attention-signal entry must still be added regardless of global credential-guard state")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", ".*", codexCleanupCmd) {
 		t.Error("attention-cleanup entry must still be added regardless of global credential-guard state")
 	}
 }

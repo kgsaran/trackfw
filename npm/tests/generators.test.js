@@ -432,6 +432,14 @@ test('injectClaudeHooks migrates legacy relative-path attention-signal/cleanup c
   assert.equal(cleanupEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh')
 })
 
+// ROADMAP-2026-08-11 ML-3A: Codex has no project-root env var, so the command is wrapped in
+// literal double quotes around `$(git rev-parse --show-toplevel)` per ADR-2026-08-11 -- matches
+// CODEX_ROOT/codexSignalCmd/codexGuardCmd/codexCleanupCmd in src/generators/hooks.js and
+// internal/generators/agentfiles.go.
+const CODEX_SIGNAL_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh"'
+const CODEX_CLEANUP_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-cleanup.sh"'
+const CODEX_GUARD_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"'
+
 test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-codex-hooks-'))
   const hooksPath = path.join(tmpDir, '.codex', 'hooks.json')
@@ -439,17 +447,17 @@ test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () =>
   injectCodexHooks(tmpDir)
   let data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
   assert.equal(data.hooks.PermissionRequest[0].matcher, '.*')
-  assert.equal(data.hooks.PermissionRequest[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.PermissionRequest[0].hooks[0].command, CODEX_SIGNAL_CMD)
   assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
-  assert.equal(data.hooks.PreToolUse[0].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PreToolUse[0].hooks[0].command, CODEX_GUARD_CMD)
   // ADR-2026-08-06 emenda 7: Codex has no dedicated read matcher (documented limitation) --
   // only apply_patch (write/edit) is added alongside Bash.
   assert.equal(data.hooks.PreToolUse[1].matcher, 'apply_patch')
-  assert.equal(data.hooks.PreToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PreToolUse[1].hooks[0].command, CODEX_GUARD_CMD)
   assert.equal(data.hooks.PostToolUse[0].matcher, '.*')
-  assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.PostToolUse[0].hooks[0].command, CODEX_CLEANUP_CMD)
   assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
-  assert.equal(data.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PostToolUse[1].hooks[0].command, CODEX_GUARD_CMD)
   assert.equal(data.hooks.PostToolUse[2].matcher, 'apply_patch')
 
   // Idempotência
@@ -484,17 +492,16 @@ test('injectCodexHooks preserves pre-existing PreToolUse Bash entry (merge, not 
   assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
   const commands = data.hooks.PreToolUse[0].hooks.map(h => h.command)
   assert.ok(commands.includes('scripts/other.sh'), 'existing Bash hook lost during merge')
-  assert.ok(commands.includes('scripts/trackfw-credential-guard.sh'), 'credential-guard hook missing after merge')
+  assert.ok(commands.includes(CODEX_GUARD_CMD), 'credential-guard hook missing after merge')
   assert.equal(data.hooks.PreToolUse[1].matcher, 'apply_patch')
 })
 
-// ML-1A migration wiring: migrateHookCommand is called before mergeClaudeHookArray for every
-// trackfw-owned matcher in injectCodexHooks, wired with old === new (a functional no-op today --
-// no Codex command string changes until ML-3A). This fixture pre-populates every trackfw-owned
-// matcher with the currently-emitted command, exactly as an older trackfw run would have left it,
-// and asserts the injector converges to exactly one deduped entry per matcher instead of leaving a
-// second one behind. When ML-3A flips migrateHookCommand's oldCommand argument to the legacy
-// string, this same fixture becomes a genuine migration test with no structural changes needed.
+// ML-1A migration wiring, now exercised as a genuine migration (ROADMAP-2026-08-11 ML-3A):
+// migrateHookCommand is called before mergeClaudeHookArray for every trackfw-owned matcher in
+// injectCodexHooks. This fixture pre-populates every trackfw-owned matcher with the pre-ML-3A
+// relative-path command, exactly as an older trackfw run would have left it, and asserts the
+// injector rewrites each entry to the new $(git rev-parse --show-toplevel)-pinned command in place
+// instead of appending a second, still-cwd-fragile entry alongside it.
 test('injectCodexHooks migration wiring rewrites in place, does not duplicate', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-codex-hooks-migrate-'))
   const hooksPath = path.join(tmpDir, '.codex', 'hooks.json')
@@ -525,12 +532,12 @@ test('injectCodexHooks migration wiring rewrites in place, does not duplicate', 
     assert.equal(entries[0].hooks.length, 1, `${event}[${matcher}]: expected exactly 1 hook`)
     assert.equal(entries[0].hooks[0].command, command, `${event}[${matcher}]: unexpected command`)
   }
-  checkOne('PermissionRequest', '.*', 'scripts/trackfw-attention-signal.sh')
-  checkOne('PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh')
-  checkOne('PreToolUse', 'apply_patch', 'scripts/trackfw-credential-guard.sh')
-  checkOne('PostToolUse', '.*', 'scripts/trackfw-attention-cleanup.sh')
-  checkOne('PostToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh')
-  checkOne('PostToolUse', 'apply_patch', 'scripts/trackfw-credential-guard.sh')
+  checkOne('PermissionRequest', '.*', CODEX_SIGNAL_CMD)
+  checkOne('PreToolUse', 'Bash', CODEX_GUARD_CMD)
+  checkOne('PreToolUse', 'apply_patch', CODEX_GUARD_CMD)
+  checkOne('PostToolUse', '.*', CODEX_CLEANUP_CMD)
+  checkOne('PostToolUse', 'Bash', CODEX_GUARD_CMD)
+  checkOne('PostToolUse', 'apply_patch', CODEX_GUARD_CMD)
 })
 
 test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', () => {

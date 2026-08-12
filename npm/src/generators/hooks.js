@@ -447,17 +447,26 @@ function generateGlobalCredentialGuardScript(home) {
 // root; Copilot emits the native "cwd": "." field), so an accidental shared-constant edit there
 // would be a regression in verified-good wiring, not just scope creep. Each constant starts equal
 // to the pre-split literal; only the Claude ones (ML-2A, this change) move to the
-// $CLAUDE_PROJECT_DIR-pinned form below. GUARD_CMD is intentionally left shared -- Claude never used
-// it (see GUARD_CMD_CLAUDE) and no other CLI's guard command changes in this ML.
+// $CLAUDE_PROJECT_DIR-pinned form below. GUARD_CMD was later split too (ML-3A) once Codex's guard
+// command needed to change -- see the GUARD_CMD_* block below.
+// ROADMAP-2026-08-11 ML-3A: Codex CLI does not expose a project-root env var for repo-local hooks
+// (unlike Claude's $CLAUDE_PROJECT_DIR or Gemini's $GEMINI_PROJECT_DIR) -- the only documented
+// mechanism is shell substitution. Per ADR-2026-08-11 ("Codex — alterar, com dependência explícita
+// de shell e git"), the command is wrapped in literal double quotes around
+// `$(git rev-parse --show-toplevel)`, matching every repo-local hook example in the official Codex
+// docs (https://developers.openai.com/codex/config-advanced): "For repo-local hooks, prefer
+// resolving from the git root instead of using a relative path such as `.codex/hooks/...`."
+const CODEX_ROOT = '"$(git rev-parse --show-toplevel)'
+
 const SIGNAL_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
-const SIGNAL_CMD_CODEX = 'scripts/trackfw-attention-signal.sh'
+const SIGNAL_CMD_CODEX = CODEX_ROOT + '/scripts/trackfw-attention-signal.sh"'
 const SIGNAL_CMD_GEMINI = 'scripts/trackfw-attention-signal.sh'
 const SIGNAL_CMD_KIRO = 'scripts/trackfw-attention-signal.sh'
 const SIGNAL_CMD_COPILOT = 'scripts/trackfw-attention-signal.sh'
 const SIGNAL_CMD_CURSOR = 'scripts/trackfw-attention-signal.sh'
 
 const CLEANUP_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
-const CLEANUP_CMD_CODEX = 'scripts/trackfw-attention-cleanup.sh'
+const CLEANUP_CMD_CODEX = CODEX_ROOT + '/scripts/trackfw-attention-cleanup.sh"'
 const CLEANUP_CMD_GEMINI = 'scripts/trackfw-attention-cleanup.sh'
 const CLEANUP_CMD_KIRO = 'scripts/trackfw-attention-cleanup.sh'
 const CLEANUP_CMD_COPILOT = 'scripts/trackfw-attention-cleanup.sh'
@@ -469,7 +478,28 @@ const CLEANUP_CMD_CURSOR = 'scripts/trackfw-attention-cleanup.sh'
 const SIGNAL_CMD_CLAUDE_LEGACY = 'scripts/trackfw-attention-signal.sh'
 const CLEANUP_CMD_CLAUDE_LEGACY = 'scripts/trackfw-attention-cleanup.sh'
 
-const GUARD_CMD = 'scripts/trackfw-credential-guard.sh'
+// Pre-ML-3A literal value of SIGNAL_CMD_CODEX/CLEANUP_CMD_CODEX, kept only as the `oldCommand`
+// argument to the migration calls in injectCodexHooks below.
+const SIGNAL_CMD_CODEX_LEGACY = 'scripts/trackfw-attention-signal.sh'
+const CLEANUP_CMD_CODEX_LEGACY = 'scripts/trackfw-attention-cleanup.sh'
+
+// GUARD_CMD_* -- split per-CLI (ROADMAP-2026-08-11 ML-3A) from what used to be one constant
+// (GUARD_CMD) shared by Codex/Gemini/Kiro/Copilot/Cursor (Claude already had its own,
+// GUARD_CMD_CLAUDE, since ML-2A). Same rationale as the SIGNAL_CMD_*/CLEANUP_CMD_* split above:
+// Cursor and Copilot are verified-correct wiring (ML-0A), so a shared-constant edit made for Codex
+// would have silently regressed them. Each constant starts equal to the pre-split literal; only
+// GUARD_CMD_CODEX (this ML) moves to the new form below.
+// Legacy relative-path literal, pre-dating both the ML-2A Claude fix and the ML-3A Codex fix --
+// kept only as the `oldCommand` argument to migration calls (Claude's migration below, and Codex's
+// until this ML rewrites it), mirroring the SIGNAL_CMD_CLAUDE_LEGACY/CLEANUP_CMD_CLAUDE_LEGACY
+// pattern above.
+const GUARD_CMD_LEGACY = 'scripts/trackfw-credential-guard.sh'
+const GUARD_CMD_CODEX = CODEX_ROOT + '/scripts/trackfw-credential-guard.sh"'
+const GUARD_CMD_GEMINI = 'scripts/trackfw-credential-guard.sh'
+const GUARD_CMD_KIRO = 'scripts/trackfw-credential-guard.sh'
+const GUARD_CMD_COPILOT = 'scripts/trackfw-credential-guard.sh'
+const GUARD_CMD_CURSOR = 'scripts/trackfw-credential-guard.sh'
+
 // Claude Code only (2026-08-09 fix, reported in production against the CMDB project): Claude Code
 // resolves a bare relative hook command against the hook's *dynamic* cwd (tracks `cd`s the agent
 // runs during the session), not the project root -- confirmed against
@@ -628,8 +658,8 @@ function injectClaudeHooks(cwd) {
   // merging the fixed one below, so upgrading doesn't just append a second, still-broken entry
   // alongside the new one (see GUARD_CMD_CLAUDE comment for the "No such file or directory" bug).
   for (const matcher of ['Bash', 'Read', 'Write|Edit']) {
-    migrateHookCommand(data.hooks.PreToolUse, matcher, GUARD_CMD, GUARD_CMD_CLAUDE)
-    migrateHookCommand(data.hooks.PostToolUse, matcher, GUARD_CMD, GUARD_CMD_CLAUDE)
+    migrateHookCommand(data.hooks.PreToolUse, matcher, GUARD_CMD_LEGACY, GUARD_CMD_CLAUDE)
+    migrateHookCommand(data.hooks.PostToolUse, matcher, GUARD_CMD_LEGACY, GUARD_CMD_CLAUDE)
   }
 
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
@@ -677,17 +707,15 @@ function injectCodexHooks(cwd) {
 
   if (!data.hooks) data.hooks = {}
 
-  // Migration wiring (ROADMAP-2026-08-11 ML-1A): old === new is a functional no-op today, but
-  // proves the call point exists and runs before the merge below. The wave that changes the Codex
-  // command strings (ML-3A) updates the oldCommand argument here instead of adding this call from
-  // scratch -- without it, the merge's exact-string dedup would append a duplicate alongside the
-  // stale entry.
-  migrateHookCommand(data.hooks.PermissionRequest, '.*', SIGNAL_CMD_CODEX, SIGNAL_CMD_CODEX)
-  migrateHookCommand(data.hooks.PreToolUse, 'Bash', GUARD_CMD, GUARD_CMD)
-  migrateHookCommand(data.hooks.PreToolUse, 'apply_patch', GUARD_CMD, GUARD_CMD)
-  migrateHookCommand(data.hooks.PostToolUse, '.*', CLEANUP_CMD_CODEX, CLEANUP_CMD_CODEX)
-  migrateHookCommand(data.hooks.PostToolUse, 'Bash', GUARD_CMD, GUARD_CMD)
-  migrateHookCommand(data.hooks.PostToolUse, 'apply_patch', GUARD_CMD, GUARD_CMD)
+  // Migration wiring (ROADMAP-2026-08-11 ML-1A, strings updated in ML-3A): rewrites any stale
+  // relative-path entry from before this fix in place, so `trackfw update` doesn't just append the
+  // new $(git rev-parse ...) entry alongside the still-cwd-fragile old one.
+  migrateHookCommand(data.hooks.PermissionRequest, '.*', SIGNAL_CMD_CODEX_LEGACY, SIGNAL_CMD_CODEX)
+  migrateHookCommand(data.hooks.PreToolUse, 'Bash', GUARD_CMD_LEGACY, GUARD_CMD_CODEX)
+  migrateHookCommand(data.hooks.PreToolUse, 'apply_patch', GUARD_CMD_LEGACY, GUARD_CMD_CODEX)
+  migrateHookCommand(data.hooks.PostToolUse, '.*', CLEANUP_CMD_CODEX_LEGACY, CLEANUP_CMD_CODEX)
+  migrateHookCommand(data.hooks.PostToolUse, 'Bash', GUARD_CMD_LEGACY, GUARD_CMD_CODEX)
+  migrateHookCommand(data.hooks.PostToolUse, 'apply_patch', GUARD_CMD_LEGACY, GUARD_CMD_CODEX)
 
   data.hooks.PermissionRequest = mergeClaudeHookArray(data.hooks.PermissionRequest, '.*', SIGNAL_CMD_CODEX)
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
@@ -695,13 +723,13 @@ function injectCodexHooks(cwd) {
   // installed for this CLI.
   const skipCodexCG = globalCredentialGuardInstalledCodex()
   if (!skipCodexCG) {
-    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD)
-    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'apply_patch', GUARD_CMD)
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GUARD_CMD_CODEX)
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'apply_patch', GUARD_CMD_CODEX)
   }
   data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, '.*', CLEANUP_CMD_CODEX)
   if (!skipCodexCG) {
-    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD)
-    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'apply_patch', GUARD_CMD)
+    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD_CODEX)
+    data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'apply_patch', GUARD_CMD_CODEX)
   }
 
   writeJSON(filePath, data)
@@ -745,13 +773,13 @@ function injectGeminiHooks(cwd) {
   // call from scratch -- without it, the merge's exact-string dedup would append a duplicate
   // alongside the stale entry.
   migrateHookCommand(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD_GEMINI, SIGNAL_CMD_GEMINI)
-  migrateHookCommand(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD, GUARD_CMD)
-  migrateHookCommand(data.hooks.BeforeTool, 'read_file|read_many_files', GUARD_CMD, GUARD_CMD)
-  migrateHookCommand(data.hooks.BeforeTool, 'write_file|replace', GUARD_CMD, GUARD_CMD)
+  migrateHookCommand(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
+  migrateHookCommand(data.hooks.BeforeTool, 'read_file|read_many_files', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
+  migrateHookCommand(data.hooks.BeforeTool, 'write_file|replace', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
   migrateHookCommand(data.hooks.AfterTool, '*', CLEANUP_CMD_GEMINI, CLEANUP_CMD_GEMINI)
-  migrateHookCommand(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD, GUARD_CMD)
-  migrateHookCommand(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD, GUARD_CMD)
-  migrateHookCommand(data.hooks.AfterTool, 'write_file|replace', GUARD_CMD, GUARD_CMD)
+  migrateHookCommand(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
+  migrateHookCommand(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
+  migrateHookCommand(data.hooks.AfterTool, 'write_file|replace', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
 
   data.hooks.Notification = mergeClaudeHookArray(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD_GEMINI)
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08
@@ -759,15 +787,15 @@ function injectGeminiHooks(cwd) {
   // credential-guard when the global one is already installed.
   const skipGeminiCG = globalCredentialGuardInstalledGemini()
   if (!skipGeminiCG) {
-    data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD)
-    data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'read_file|read_many_files', GUARD_CMD)
-    data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'write_file|replace', GUARD_CMD)
+    data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD_GEMINI)
+    data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'read_file|read_many_files', GUARD_CMD_GEMINI)
+    data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'write_file|replace', GUARD_CMD_GEMINI)
   }
   data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, '*', CLEANUP_CMD_GEMINI)
   if (!skipGeminiCG) {
-    data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD)
-    data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD)
-    data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'write_file|replace', GUARD_CMD)
+    data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD_GEMINI)
+    data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD_GEMINI)
+    data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'write_file|replace', GUARD_CMD_GEMINI)
   }
 
   writeJSON(filePath, data)
@@ -824,14 +852,14 @@ function injectKiroHooks(cwd) {
         description: 'Blocks/warns on possible plaintext credential materialization before a shell command executes',
         trigger: 'PreToolUse',
         matcher: 'shell',
-        action: { type: 'command', command: GUARD_CMD },
+        action: { type: 'command', command: GUARD_CMD_KIRO },
       },
       {
         name: 'trackfw-credential-guard-post',
         description: 'Warns on possible plaintext credential materialization after a shell command executes',
         trigger: 'PostToolUse',
         matcher: 'shell',
-        action: { type: 'command', command: GUARD_CMD },
+        action: { type: 'command', command: GUARD_CMD_KIRO },
       },
       // Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): "read" and "write" are the
       // documented Kiro tool-category aliases (fs_read/fs_write), same pattern as "shell" above.
@@ -840,28 +868,28 @@ function injectKiroHooks(cwd) {
         description: 'Blocks/warns on possible plaintext credential materialization before a file read',
         trigger: 'PreToolUse',
         matcher: 'read',
-        action: { type: 'command', command: GUARD_CMD },
+        action: { type: 'command', command: GUARD_CMD_KIRO },
       },
       {
         name: 'trackfw-credential-guard-read-post',
         description: 'Warns on possible plaintext credential materialization after a file read',
         trigger: 'PostToolUse',
         matcher: 'read',
-        action: { type: 'command', command: GUARD_CMD },
+        action: { type: 'command', command: GUARD_CMD_KIRO },
       },
       {
         name: 'trackfw-credential-guard-write-pre',
         description: 'Blocks/warns on possible plaintext credential materialization before a file write',
         trigger: 'PreToolUse',
         matcher: 'write',
-        action: { type: 'command', command: GUARD_CMD },
+        action: { type: 'command', command: GUARD_CMD_KIRO },
       },
       {
         name: 'trackfw-credential-guard-write-post',
         description: 'Warns on possible plaintext credential materialization after a file write',
         trigger: 'PostToolUse',
         matcher: 'write',
-        action: { type: 'command', command: GUARD_CMD },
+        action: { type: 'command', command: GUARD_CMD_KIRO },
       },
     )
   }
@@ -912,12 +940,12 @@ function injectCopilotHooks(cwd) {
   // Wave 2 to view / create|edit): skip project-scope credential-guard entries when the global
   // one is already installed.
   if (!globalCredentialGuardInstalledCopilot()) {
-    preToolUse.push({ type: 'command', matcher: 'bash', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
-    preToolUse.push({ type: 'command', matcher: 'view', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
-    preToolUse.push({ type: 'command', matcher: 'create|edit', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
-    postToolUse.push({ type: 'command', matcher: 'bash', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
-    postToolUse.push({ type: 'command', matcher: 'view', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
-    postToolUse.push({ type: 'command', matcher: 'create|edit', bash: GUARD_CMD, cwd: '.', timeoutSec: 10 })
+    preToolUse.push({ type: 'command', matcher: 'bash', bash: GUARD_CMD_COPILOT, cwd: '.', timeoutSec: 10 })
+    preToolUse.push({ type: 'command', matcher: 'view', bash: GUARD_CMD_COPILOT, cwd: '.', timeoutSec: 10 })
+    preToolUse.push({ type: 'command', matcher: 'create|edit', bash: GUARD_CMD_COPILOT, cwd: '.', timeoutSec: 10 })
+    postToolUse.push({ type: 'command', matcher: 'bash', bash: GUARD_CMD_COPILOT, cwd: '.', timeoutSec: 10 })
+    postToolUse.push({ type: 'command', matcher: 'view', bash: GUARD_CMD_COPILOT, cwd: '.', timeoutSec: 10 })
+    postToolUse.push({ type: 'command', matcher: 'create|edit', bash: GUARD_CMD_COPILOT, cwd: '.', timeoutSec: 10 })
   }
 
   const data = {
@@ -1019,13 +1047,13 @@ function injectCursorHooks(cwd) {
   // credential-guard entries when the global one is already installed.
   if (!globalCredentialGuardInstalledCursor()) {
     if (!Array.isArray(data.hooks.beforeShellExecution)) data.hooks.beforeShellExecution = []
-    if (!hasEntry(data.hooks.beforeShellExecution, 'command', GUARD_CMD)) {
-      data.hooks.beforeShellExecution.push({ command: GUARD_CMD })
+    if (!hasEntry(data.hooks.beforeShellExecution, 'command', GUARD_CMD_CURSOR)) {
+      data.hooks.beforeShellExecution.push({ command: GUARD_CMD_CURSOR })
     }
 
     if (!Array.isArray(data.hooks.afterShellExecution)) data.hooks.afterShellExecution = []
-    if (!hasEntry(data.hooks.afterShellExecution, 'command', GUARD_CMD)) {
-      data.hooks.afterShellExecution.push({ command: GUARD_CMD })
+    if (!hasEntry(data.hooks.afterShellExecution, 'command', GUARD_CMD_CURSOR)) {
+      data.hooks.afterShellExecution.push({ command: GUARD_CMD_CURSOR })
     }
 
     // Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): wired via the generic
@@ -1036,19 +1064,19 @@ function injectCursorHooks(cwd) {
     // unfiltered signal entry and these matcher-scoped guard entries share the same array, so
     // dedup must also check `matcher`.
     const hasGuardMatcherEntry = (arr, matcher) =>
-      Array.isArray(arr) && arr.some(e => e && e.command === GUARD_CMD && e.matcher === matcher)
+      Array.isArray(arr) && arr.some(e => e && e.command === GUARD_CMD_CURSOR && e.matcher === matcher)
 
     if (!hasGuardMatcherEntry(data.hooks.preToolUse, 'Read')) {
-      data.hooks.preToolUse.push({ command: GUARD_CMD, matcher: 'Read' })
+      data.hooks.preToolUse.push({ command: GUARD_CMD_CURSOR, matcher: 'Read' })
     }
     if (!hasGuardMatcherEntry(data.hooks.preToolUse, 'Write')) {
-      data.hooks.preToolUse.push({ command: GUARD_CMD, matcher: 'Write' })
+      data.hooks.preToolUse.push({ command: GUARD_CMD_CURSOR, matcher: 'Write' })
     }
     if (!hasGuardMatcherEntry(data.hooks.postToolUse, 'Read')) {
-      data.hooks.postToolUse.push({ command: GUARD_CMD, matcher: 'Read' })
+      data.hooks.postToolUse.push({ command: GUARD_CMD_CURSOR, matcher: 'Read' })
     }
     if (!hasGuardMatcherEntry(data.hooks.postToolUse, 'Write')) {
-      data.hooks.postToolUse.push({ command: GUARD_CMD, matcher: 'Write' })
+      data.hooks.postToolUse.push({ command: GUARD_CMD_CURSOR, matcher: 'Write' })
     }
   }
 

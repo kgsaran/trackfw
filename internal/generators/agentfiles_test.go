@@ -354,16 +354,16 @@ func TestInjectCodexHooks(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
-	if !helperHasClaudeHook(data, "PermissionRequest", ".*", "scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PermissionRequest", ".*", codexSignalCmd) {
 		t.Error("Codex PermissionRequest hook missing")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", codexGuardCmd) {
 		t.Error("Codex PreToolUse[Bash] credential-guard hook missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", ".*", codexCleanupCmd) {
 		t.Error("Codex PostToolUse hook missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", codexGuardCmd) {
 		t.Error("Codex PostToolUse[Bash] credential-guard hook missing")
 	}
 
@@ -410,7 +410,7 @@ func TestInjectCodexHooks_PreservesExistingBashEntry(t *testing.T) {
 	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/other.sh") {
 		t.Error("existing Bash hook lost during merge")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", codexGuardCmd) {
 		t.Error("PreToolUse[Bash] credential-guard hook missing after merge")
 	}
 
@@ -425,13 +425,11 @@ func TestInjectCodexHooks_PreservesExistingBashEntry(t *testing.T) {
 
 // TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate covers the ML-1A migration
 // wiring added to InjectCodexHooks (migrateHookCommand, called before mergeClaudeHookArray for
-// every trackfw-owned matcher). ROADMAP-2026-08-11 ML-1A wires the call with old == new (a
-// functional no-op today, since no Codex command string changes in this ML — that only happens in
-// ML-3A) — so this fixture pre-populates every trackfw-owned matcher with the currently-emitted
-// command, exactly as an older trackfw run would have left it, and asserts the injector converges
-// to exactly one deduped entry per matcher instead of leaving a second one behind. When ML-3A
-// flips migrateHookCommand's oldCommand argument to the legacy string, this same fixture becomes a
-// genuine migration test with no structural changes needed.
+// every trackfw-owned matcher), now exercised as a genuine migration (ROADMAP-2026-08-11 ML-3A):
+// this fixture pre-populates every trackfw-owned matcher with the pre-ML-3A relative-path command,
+// exactly as an older trackfw run would have left it, and asserts the injector rewrites each entry
+// to the new $(git rev-parse --show-toplevel)-pinned command in place instead of appending a
+// second, still-cwd-fragile entry alongside it.
 func TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
@@ -486,12 +484,12 @@ func TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing.
 			t.Errorf("%s[%s]: expected command %q missing", event, matcher, command)
 		}
 	}
-	checkOne("PermissionRequest", ".*", "scripts/trackfw-attention-signal.sh")
-	checkOne("PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh")
-	checkOne("PreToolUse", "apply_patch", "scripts/trackfw-credential-guard.sh")
-	checkOne("PostToolUse", ".*", "scripts/trackfw-attention-cleanup.sh")
-	checkOne("PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh")
-	checkOne("PostToolUse", "apply_patch", "scripts/trackfw-credential-guard.sh")
+	checkOne("PermissionRequest", ".*", codexSignalCmd)
+	checkOne("PreToolUse", "Bash", codexGuardCmd)
+	checkOne("PreToolUse", "apply_patch", codexGuardCmd)
+	checkOne("PostToolUse", ".*", codexCleanupCmd)
+	checkOne("PostToolUse", "Bash", codexGuardCmd)
+	checkOne("PostToolUse", "apply_patch", codexGuardCmd)
 }
 
 // --- Gemini ---

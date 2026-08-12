@@ -331,7 +331,7 @@ inventariadas abaixo, adicionar/ajustar a migração (quando merge-based), atual
 listados, respeitando as armadilhas de edição do §Context.
 
 ### ML-3A — Codex (`.codex/hooks.json`) — merge-based, **precisa de migração**
-**Status:** 🔄 Em andamento · **Agente:** Apolo (`apolo-tf`)
+**Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-11)
 **String a emitir:** o valor JSON do campo `command` deve conter as **aspas literais** em torno da
 substituição, exatamente como nos exemplos oficiais do fornecedor — no arquivo gerado isso aparece
 JSON-escapado:
@@ -375,7 +375,7 @@ Essa é uma saída legítima e prevista; forçar a mudança sem a prova, não.
 Python `test_generators_init.py` 546, 552
 
 ### ML-4A — Gemini (`.gemini/settings.json`) — merge-based, **precisa de migração**
-**Status:** ⬜ Pendente · **Agente:** Apolo (`apolo-tf`)
+**Status:** 🔄 Em andamento · **Agente:** Apolo (`apolo-tf`)
 **String a emitir:** `$GEMINI_PROJECT_DIR/scripts/trackfw-<script>.sh`
 **Linhas:** Go `457, 470, 475, 480, 487, 493, 498, 503` · Node `685, 691, 692, 693, 695, 697, 698,
 699` · Python `450, 459, 466, 467, 470, 472, 473, 474`
@@ -468,6 +468,13 @@ tabela do ADR (CLI → mecanismo → string emitida → tem migração? sim/não
 Rodar `make quality` e reportar.
 **Critérios de aceite:**
 - [ ] `docs/cli-parity.md` tem a tabela dos 6 CLIs, coerente com o ADR e com o código.
+- [ ] `docs/cli-parity.md` registra as duas **pré-condições do fix do Codex**, descobertas
+      empiricamente no ML-3A e ausentes da doc do fornecedor: (i) o hook só roda em projeto marcado
+      como *trusted* em `~/.codex/config.toml`; (ii) `git rev-parse --show-toplevel` exige
+      repositório git e retorna a raiz do submódulo/worktree quando aplicável. Ver ADR Emenda 1 e
+      `vault/notes/codex-hooks-de-projeto-so-rodam-em-projeto-trusted-2026-08-11.md`.
+- [ ] `docs/cli-parity.md` registra Kiro como *"mecanismo de resolução não verificável em doc
+      primária — mantido relativo"*, com data 2026-08-11 e as URLs consultadas (ADR, seção Kiro).
 - [ ] `make quality` exit 0, 0 `FAIL`.
 - [ ] `internal/`, `npm/src/`, `pypi/trackfw/` intocados neste ML.
 

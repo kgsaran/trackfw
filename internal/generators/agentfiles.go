@@ -300,6 +300,23 @@ func InjectClaudeHooks(cwd string) error {
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
+// ROADMAP-2026-08-11 ML-3A: Codex CLI does not expose a project-root env var for
+// repo-local hooks (unlike Claude's $CLAUDE_PROJECT_DIR or Gemini's
+// $GEMINI_PROJECT_DIR) — the only documented mechanism is shell substitution.
+// Per ADR-2026-08-11 ("Codex — alterar, com dependência explícita de shell e
+// git"), the command is wrapped in literal double quotes around
+// `$(git rev-parse --show-toplevel)`, matching every repo-local hook example in
+// the official Codex docs (https://developers.openai.com/codex/config-advanced):
+// "For repo-local hooks, prefer resolving from the git root instead of using a
+// relative path such as `.codex/hooks/...`."
+const codexRoot = `"$(git rev-parse --show-toplevel)`
+
+var (
+	codexSignalCmd  = codexRoot + `/scripts/trackfw-attention-signal.sh"`
+	codexCleanupCmd = codexRoot + `/scripts/trackfw-attention-cleanup.sh"`
+	codexGuardCmd   = codexRoot + `/scripts/trackfw-credential-guard.sh"`
+)
+
 // InjectCodexHooks injects Codex CLI attention hooks into .codex/hooks.json.
 //
 // Two independent hook events are wired here:
@@ -347,22 +364,21 @@ func InjectCodexHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
-	// Migration wiring (ROADMAP-2026-08-11 ML-1A): old==new is a functional no-op
-	// today, but proves the call point exists and runs before the merge below.
-	// The waves that change the Codex command strings (ML-3A) update oldCommand
-	// here instead of adding this call from scratch — without it, the merge's
-	// exact-string dedup would append a duplicate alongside the stale entry.
-	migrateHookCommand(hooks["PermissionRequest"], ".*", "scripts/trackfw-attention-signal.sh", "scripts/trackfw-attention-signal.sh")
-	migrateHookCommand(hooks["PreToolUse"], "Bash", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
-	migrateHookCommand(hooks["PreToolUse"], "apply_patch", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
-	migrateHookCommand(hooks["PostToolUse"], ".*", "scripts/trackfw-attention-cleanup.sh", "scripts/trackfw-attention-cleanup.sh")
-	migrateHookCommand(hooks["PostToolUse"], "Bash", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
-	migrateHookCommand(hooks["PostToolUse"], "apply_patch", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
+	// Migration wiring (ROADMAP-2026-08-11 ML-1A, strings updated in ML-3A):
+	// rewrites any stale relative-path entry from before this fix in place, so
+	// `trackfw update` doesn't just append the new $(git rev-parse ...) entry
+	// alongside the still-cwd-fragile old one.
+	migrateHookCommand(hooks["PermissionRequest"], ".*", "scripts/trackfw-attention-signal.sh", codexSignalCmd)
+	migrateHookCommand(hooks["PreToolUse"], "Bash", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
+	migrateHookCommand(hooks["PreToolUse"], "apply_patch", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
+	migrateHookCommand(hooks["PostToolUse"], ".*", "scripts/trackfw-attention-cleanup.sh", codexCleanupCmd)
+	migrateHookCommand(hooks["PostToolUse"], "Bash", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
+	migrateHookCommand(hooks["PostToolUse"], "apply_patch", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
 
 	hooks["PermissionRequest"] = mergeClaudeHookArray(
 		hooks["PermissionRequest"],
 		".*",
-		"scripts/trackfw-attention-signal.sh",
+		codexSignalCmd,
 	)
 
 	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
@@ -374,30 +390,30 @@ func InjectCodexHooks(cwd string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Bash",
-			"scripts/trackfw-credential-guard.sh",
+			codexGuardCmd,
 		)
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"apply_patch",
-			"scripts/trackfw-credential-guard.sh",
+			codexGuardCmd,
 		)
 	}
 
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		".*",
-		"scripts/trackfw-attention-cleanup.sh",
+		codexCleanupCmd,
 	)
 	if !skipCodexCG {
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Bash",
-			"scripts/trackfw-credential-guard.sh",
+			codexGuardCmd,
 		)
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"apply_patch",
-			"scripts/trackfw-credential-guard.sh",
+			codexGuardCmd,
 		)
 	}
 

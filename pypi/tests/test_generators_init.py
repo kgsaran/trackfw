@@ -407,6 +407,14 @@ class TestAttentionScripts(unittest.TestCase):
         self.assertIn('# trackfw attention cleanup — PostToolUse/AfterTool hook', cleanup_content)
 
 
+# ROADMAP-2026-08-11 ML-3A: Codex has no project-root env var, so the command is wrapped in
+# literal double quotes around `$(git rev-parse --show-toplevel)` per ADR-2026-08-11 -- matches
+# _SIGNAL_CMD_CODEX/_GUARD_CMD_CODEX/_CLEANUP_CMD_CODEX in trackfw/generators/hooks.py.
+_CODEX_SIGNAL_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh"'
+_CODEX_CLEANUP_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-cleanup.sh"'
+_CODEX_GUARD_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"'
+
+
 class TestAttentionHooksInjectors(unittest.TestCase):
     """Testes unitários para injeção idempotente de hooks de atenção nos 7 CLIs."""
 
@@ -582,13 +590,13 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         pre_matcher = data['hooks']['PreToolUse'][0]['matcher']
         self.assertEqual(pre_matcher, 'Bash')
         pre_command = data['hooks']['PreToolUse'][0]['hooks'][0]['command']
-        self.assertEqual(pre_command, 'scripts/trackfw-credential-guard.sh')
+        self.assertEqual(pre_command, _CODEX_GUARD_CMD)
         # ADR-2026-08-06 emenda 7: Codex has no dedicated read matcher (documented
         # limitation) -- only apply_patch (write/edit) is added alongside Bash.
         self.assertEqual(data['hooks']['PreToolUse'][1]['matcher'], 'apply_patch')
         self.assertEqual(
             data['hooks']['PreToolUse'][1]['hooks'][0]['command'],
-            'scripts/trackfw-credential-guard.sh',
+            _CODEX_GUARD_CMD,
         )
 
         post_matchers = {e['matcher'] for e in data['hooks']['PostToolUse']}
@@ -631,18 +639,17 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertEqual(len(pre), 2)
         self.assertEqual(pre[0]['matcher'], 'Bash')
         commands = {h['command'] for h in pre[0]['hooks']}
-        self.assertEqual(commands, {'scripts/other.sh', 'scripts/trackfw-credential-guard.sh'})
+        self.assertEqual(commands, {'scripts/other.sh', _CODEX_GUARD_CMD})
         self.assertEqual(pre[1]['matcher'], 'apply_patch')
 
     def test_inject_codex_hooks_migration_wiring_rewrites_in_place_not_duplicate(self):
-        """ML-1A: _migrate_hook_command is called before the merge for every trackfw-owned
-        matcher in inject_codex_hooks, wired with old_command == new_command (a functional
-        no-op today -- no Codex command string changes until ML-3A). This fixture pre-populates
-        every trackfw-owned matcher with the currently-emitted command, exactly as an older
-        trackfw run would have left it, and asserts the injector converges to exactly one
-        deduped entry per matcher instead of leaving a second one behind. When ML-3A flips
-        _migrate_hook_command's old_command argument to the legacy string, this same fixture
-        becomes a genuine migration test with no structural changes needed."""
+        """ML-1A migration wiring, now exercised as a genuine migration (ROADMAP-2026-08-11
+        ML-3A): _migrate_hook_command is called before the merge for every trackfw-owned matcher
+        in inject_codex_hooks. This fixture pre-populates every trackfw-owned matcher with the
+        pre-ML-3A relative-path command, exactly as an older trackfw run would have left it, and
+        asserts the injector rewrites each entry to the new
+        $(git rev-parse --show-toplevel)-pinned command in place instead of appending a second,
+        still-cwd-fragile entry alongside it."""
         from trackfw.generators.hooks import inject_codex_hooks
 
         def mk(matcher, command):
@@ -678,12 +685,12 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             self.assertEqual(len(entries[0]['hooks']), 1, f'{event}[{matcher}]: expected exactly 1 hook')
             self.assertEqual(entries[0]['hooks'][0]['command'], command, f'{event}[{matcher}]: unexpected command')
 
-        check_one('PermissionRequest', '.*', 'scripts/trackfw-attention-signal.sh')
-        check_one('PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh')
-        check_one('PreToolUse', 'apply_patch', 'scripts/trackfw-credential-guard.sh')
-        check_one('PostToolUse', '.*', 'scripts/trackfw-attention-cleanup.sh')
-        check_one('PostToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh')
-        check_one('PostToolUse', 'apply_patch', 'scripts/trackfw-credential-guard.sh')
+        check_one('PermissionRequest', '.*', _CODEX_SIGNAL_CMD)
+        check_one('PreToolUse', 'Bash', _CODEX_GUARD_CMD)
+        check_one('PreToolUse', 'apply_patch', _CODEX_GUARD_CMD)
+        check_one('PostToolUse', '.*', _CODEX_CLEANUP_CMD)
+        check_one('PostToolUse', 'Bash', _CODEX_GUARD_CMD)
+        check_one('PostToolUse', 'apply_patch', _CODEX_GUARD_CMD)
 
     def test_inject_gemini_hooks_create_and_merge(self):
         from trackfw.generators.hooks import inject_gemini_hooks

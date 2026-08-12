@@ -90,6 +90,25 @@ de assimetria **não** se aplica, porque o mecanismo tem pré-condições que po
   falha é iniciar o Codex a partir de um subdiretório — mais raro que o do Claude, e reconhecido
   pelo próprio fornecedor.
 
+### Emenda 1 (2026-08-11, descoberta empírica no ML-3A): Codex exige projeto *trusted*
+
+A verificação empírica do modelo de execução do Codex (feita com `codex-cli 0.147.0` real, não em
+shell) revelou uma pré-condição **não documentada na página de hooks do fornecedor**: o Codex só
+carrega hooks de projeto se aquele projeto estiver marcado como confiável em `~/.codex/config.toml`
+(`[projects."<path>"] trust_level`). Sem isso os hooks do repositório são ignorados **em silêncio**.
+
+Isto **não altera a decisão** — sem trust nenhum hook roda, nem o antigo nem o novo, então a mudança
+não piora nada. Mas altera o que o usuário precisa saber: o fix de caminho do Codex só produz efeito
+em projeto trusted. Registrar em `docs/cli-parity.md` (ML-8A). Detalhe operacional e armadilha de
+teste (usar `$HOME` isolado + `--dangerously-bypass-hook-trust`, nunca escrever no config real do
+usuário) em `vault/notes/codex-hooks-de-projeto-so-rodam-em-projeto-trusted-2026-08-11.md`.
+
+**Prova obtida:** com a string nova, rodando o `codex` a partir de um **subdiretório**, o script
+disparou — provando execução via shell, expansão do `$(...)` e resolução correta da raiz. **Controle
+negativo:** com o caminho relativo antigo, do mesmo subdiretório, falhou (`hook: PreToolUse Failed`,
+sem marca) — reproduzindo exatamente a classe de bug corrigida. A pré-condição de shell, que era o
+único risco real desta decisão, está confirmada empiricamente e não mais por inferência.
+
 **Cursor — não alterar.** A doc é explícita: *"Project hooks (`.cursor/hooks.json` in a repository):
 Run from the project root"*, e o exemplo canônico ensina justamente a usar caminho relativo à raiz
 (`.cursor/hooks/script.sh`, não `./hooks/script.sh`). Emitir `$CURSOR_PROJECT_DIR/...` seria mudança

@@ -10925,3 +10925,149 @@ passed + 8 subtests · `check-agent-hooks-parity.sh` todos OK · `check-gates-fa
 **Próximo:** ML-3A (Codex) — o único ML com critério de aceite **empírico** bloqueante, porque é o
 único caso em que a correção pode piorar a situação (se o `command` não for executado via shell, o
 `$(git rev-parse --show-toplevel)` não expande e o hook passa a falhar sempre).
+
+## Sessão 2026-08-11 — Apolo (Backend) — ML-3A (Codex) concluído, aguardando auditoria de Zeus
+
+**Escopo:** wiring do Codex CLI (`.codex/hooks.json`) para emitir comandos resolvidos contra a raiz
+do repositório via `"$(git rev-parse --show-toplevel)/scripts/trackfw-<script>.sh"` (aspas literais
+em volta do `$(...)`, forma exigida pela Barreira B0/ADR), nos 6 comandos do Codex (attention-signal,
+attention-cleanup, credential-guard PreToolUse/PostToolUse × Bash/apply_patch), e migração in-place
+dos entries antigos, nos 3 stacks.
+
+**Passo 0 executado e confirmado antes de qualquer troca de string.** `GUARD_CMD`
+(`npm/src/generators/hooks.js`) era constante compartilhada por Codex/Gemini/Kiro/Copilot/Cursor
+(Claude já tinha `GUARD_CMD_CLAUDE` desde ML-2A). Dividi em `GUARD_CMD_{CODEX,GEMINI,KIRO,COPILOT,
+CURSOR}`, todas iniciadas com o valor antigo, religuei cada injector à sua constante, rodei
+`npm --prefix npm test` → **450/450 pass** antes de tocar em qualquer valor — prova de que nenhuma
+emissão mudou nesse passo. Só então movi `GUARD_CMD_CODEX` (e `SIGNAL_CMD_CODEX`/`CLEANUP_CMD_CODEX`)
+para a nova forma. Também precisei introduzir `GUARD_CMD_LEGACY` (Node) porque o `migrateHookCommand`
+do Claude usava o antigo `GUARD_CMD` compartilhado como literal do `oldCommand` — sem essa constante
+de compatibilidade a divisão quebrava os testes do Claude (13 falhas na primeira rodada; corrigido
+antes de prosseguir). Go e Python não tinham `GUARD_CMD` compartilhado entre CLIs (confirmado por
+`grep` — só `_GUARD_CMD_CLAUDE`/nenhuma constante é constante, resto inline) — Passo 0 não se aplicava
+a eles.
+
+**String emitida, conferida byte a byte no arquivo gerado real** (não só a asserção do teste):
+```
+"command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh\""
+```
+Confirmado gerando `.codex/hooks.json` de verdade via um `main.go` temporário chamando
+`generators.InjectCodexHooks` (removido antes de terminar, nunca commitado) — bate exatamente com a
+forma exigida no prompt.
+
+**Migração:** `oldCommand` dos 6 `migrateHookCommand`/`_migrate_hook_command` do Codex, nos 3 stacks,
+passou do valor `old == new` do ML-1A para o caminho relativo legado
+(`scripts/trackfw-<script>.sh`); `newCommand` para a string nova. Ordem preservada (migração antes do
+merge), sem chamadas novas.
+
+**🔴 Prova negativa da migração, reproduzida nos 3 stacks (não só um).** Comentei as 6 chamadas de
+migração do Codex em `agentfiles.go`, rodei `go test ./internal/generators/... -run
+TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate` → **FAIL** (6 assertions "expected
+exactly 1 hook, got 2"). Restaurei, verde de novo. Repeti o mesmo teste em Node (comentando as 6
+`migrateHookCommand` em `hooks.js`) → **FAIL** (`2 !== 1`). Repeti em Python (comentando as chamadas
+`_migrate_hook_command` em `hooks.py`) → **FAIL** (`2 != 1`). Os 3 stacks restaurados e verdes depois.
+
+**🔴 Prova do modelo de execução do Codex — a parte mais importante deste ML, executada de verdade,
+não simulada em bash.** Criei um repositório git fixture em `/tmp/codex-proof` (fora do repo,
+descartado ao final) com `scripts/trackfw-attention-signal.sh` (escreve marca em
+`/tmp/trackfw-codex-proof`) e `.codex/hooks.json` gerado por este ML (matcher `Bash`/PreToolUse, para
+disparo determinístico a cada chamada de shell, em vez de `PermissionRequest` que só dispara sob
+prompt de aprovação). Rodei `codex exec --sandbox danger-full-access
+--dangerously-bypass-hook-trust "Run the shell command: echo hello"` **a partir de um subdiretório**
+(`/tmp/codex-proof/sub`).
+
+- **Achado não previsto pelo ADR:** o Codex CLI **não carrega hooks de projeto para diretórios não
+  confiáveis** (`~/.codex/config.toml` tem uma tabela `[projects."<path>"] trust_level = "trusted"` —
+  `/tmp/codex-proof` não estava nela). Sem `--dangerously-bypass-hook-trust`, o hook de projeto
+  simplesmente não disparava (só os 3 hooks globais do usuário disparavam — confirmado contando
+  `hook: PreToolUse` no output: 2 antes, correspondendo a 2 dos 3 hooks globais + falha silenciosa;
+  não escrevi no `~/.codex/config.toml` do usuário real — a sandbox de permissão bloqueou a escrita,
+  corretamente, e eu não tentei contornar). Usei a flag de bypass (documentada,
+  `codex exec --help`) só para a prova.
+- **Resultado positivo:** com a string nova e a flag de bypass, `/tmp/trackfw-codex-proof` foi
+  escrito (`hook: PreToolUse` × 4 = 3 globais + 1 do projeto, todos `Completed`) — confirma que o
+  Codex executa o `command` via shell (o `$(git rev-parse --show-toplevel)` expandiu) e que a
+  resolução funciona **mesmo a partir de um subdiretório**.
+- **Controle negativo (não pedido explicitamente pelo prompt, mas necessário para a prova ter
+  força):** troquei o `.codex/hooks.json` de volta para o caminho relativo puro
+  (`scripts/trackfw-attention-signal.sh`, forma pré-ML-3A) e rodei de novo a partir do mesmo
+  subdiretório → `hook: PreToolUse Failed` (1 dos 4) e a marca **não** foi escrita — reproduz
+  exatamente a classe de bug que este ML corrige. Restaurei a string nova e confirmei sucesso mais
+  uma vez antes de descartar o fixture.
+- Fixture, log e marca (`/tmp/codex-proof`, `/tmp/codex-exec-out*.log`, `/tmp/trackfw-codex-proof`)
+  removidos ao final; nada commitado, nada persistido em `~/.codex/config.toml`.
+
+**Não-regressão dos 5 CLIs não tocados (Claude, Gemini, Kiro, Copilot, Cursor), nos 3 stacks.** Usei
+`git worktree` para gerar os 5 arquivos a partir do HEAD anterior (antes deste ML) e comparei com a
+mesma geração depois da mudança — `diff -rq` vazio em `.claude/`, `.gemini/`, `.kiro/`, `.github/`,
+`.cursor/`, nos 3 stacks (Go, Node, Python).
+
+**Arquivos tocados** (todos na allowlist do prompt): `internal/generators/agentfiles.go`,
+`internal/generators/agentfiles_test.go`, `internal/generators/credential_guard_dedup_test.go`,
+`npm/src/generators/hooks.js`, `npm/tests/generators.test.js`,
+`npm/tests/credential_guard_dedup.test.js`, `pypi/trackfw/generators/hooks.py`,
+`pypi/tests/test_generators_init.py`, `pypi/tests/test_credential_guard_dedup.py`. Nenhum arquivo de
+`update.go`/`update-harness.js`/`update_harness.py` tocado.
+
+**Validação (evidência completa):**
+```
+go build ./... && go test ./...           → PASS (todos os pacotes)
+npm --prefix npm test                      → 450 passed, 0 failed
+python -m pytest pypi/tests -q             → 996 passed, 8 subtests passed
+bash scripts/check-agent-hooks-parity.sh   → 12/12 OK
+bash scripts/check-gates-falsify.sh        → 103/103 OK, 0 FAIL
+```
+`git status --porcelain` só lista os 9 arquivos de código/teste listados acima (mais a mudança de
+Status do ML-3A no roadmap, feita por mim conforme protocolo de ML lifecycle).
+
+**Nada contraria as premissas do prompt**, exceto o achado da trust table do Codex acima — que não
+muda a decisão do ADR (o mecanismo de resolução continua correto), mas é uma pré-condição de uso real
+que vale documentar em `docs/cli-parity.md` no ML-8A: hooks de projeto do Codex só disparam se o
+diretório estiver marcado `trusted` em `~/.codex/config.toml` (mesma classe de restrição de
+"workspace trust" que outros CLIs têm).
+
+**Próximo:** Zeus audita ML-3A. Depois: ML-4A (Gemini) — sem verificação empírica bloqueante (a
+mudança é seguridade por construção, ver ADR).
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria do ML-3A — APROVADO
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` 450/0 · `pytest` 996 passed
++ 8 subtests · `check-agent-hooks-parity.sh` todos OK · `check-gates-falsify.sh` **103 OK / 0 FAIL**.
+
+**Sabotagem independente:** comentei as 6 chamadas `migrateHookCommand(... codex*)` em
+`agentfiles.go` → `go test ./internal/generators/` **FAIL**; restaurei → build OK. A migração do
+Codex está genuinamente coberta.
+
+**Forma da string verificada no artefato real, não no código.** Gerei um fixture com `$HOME` isolado
+e li o `.codex/hooks.json` produzido:
+`"command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh\""` — aspas
+literais presentes. Este era o erro que o gate de paridade **não** pegaria (os 3 stacks errariam
+idêntico e o diff estrutural passaria).
+
+**Passo 0 auditado:** `GUARD_CMD` dividida em `GUARD_CMD_{CODEX,GEMINI,KIRO,COPILOT,CURSOR}` e só a
+do Codex alterada. Conferido diretamente: `SIGNAL_CMD_*`, `CLEANUP_CMD_*` e `GUARD_CMD_*` de Gemini,
+Kiro, Copilot e Cursor continuam com o valor relativo antigo. Nenhuma regressão nos CLIs que o ML-0A
+provou corretos.
+
+**A prova que era o ponto do ML foi feita de verdade, com controle negativo.** O agente rodou o
+`codex-cli 0.147.0` real a partir de um subdiretório de um repo de fixture: com a string nova o
+script disparou (prova de execução via shell + expansão do `$(...)` + resolução correta da raiz);
+com o caminho relativo antigo, do mesmo subdiretório, falhou (`hook: PreToolUse Failed`, sem marca).
+O controle negativo **reproduz a classe de bug** que este roadmap corrige. A pré-condição de shell,
+único risco real desta decisão, deixou de ser inferência.
+
+**Achado não previsto pelo ADR — registrado em 3 lugares.** O Codex só carrega hooks de projeto se o
+projeto estiver marcado como *trusted* em `~/.codex/config.toml`; sem isso os hooks são ignorados
+**em silêncio**, e isso **não está** na página de hooks do fornecedor. Não altera a decisão (sem
+trust nenhum hook roda, nem antigo nem novo), mas altera o que o usuário precisa saber. Gravado
+como **Emenda 1 do ADR**, nota nova no vault
+(`vault/notes/codex-hooks-de-projeto-so-rodam-em-projeto-trusted-2026-08-11.md`, linkada no índice)
+e **critério novo do ML-8A** para entrar em `docs/cli-parity.md`, junto com a limitação de
+submódulo/worktree do `git rev-parse --show-toplevel`.
+
+**Comportamento correto do agente sob pressão, digno de registro:** o sandbox bloqueou a escrita no
+`~/.codex/config.toml` real e ele **não contornou** — usou a flag documentada
+`--dangerously-bypass-hook-trust` com `$HOME` isolado. Era exatamente o ponto onde "fazer o teste
+passar" teria contaminado a config real da máquina do usuário.
+
+**Próximo:** ML-4A (Gemini) — sem os riscos do Codex; vale o argumento de assimetria do ADR.

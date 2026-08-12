@@ -83,10 +83,15 @@ test('injectCodexHooks skips project-scope credential-guard when global installe
   injectCodexHooks(dir)
 
   const data = readJSON(path.join(dir, '.codex', 'hooks.json'))
-  assert.equal(hasClaudeHook(data, 'PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'), false)
-  assert.equal(hasClaudeHook(data, 'PostToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'), false)
-  assert.equal(hasClaudeHook(data, 'PermissionRequest', '.*', 'scripts/trackfw-attention-signal.sh'), true)
-  assert.equal(hasClaudeHook(data, 'PostToolUse', '.*', 'scripts/trackfw-attention-cleanup.sh'), true)
+  // ROADMAP-2026-08-11 ML-3A: Codex commands now wrap $(git rev-parse --show-toplevel) in literal
+  // quotes (ADR-2026-08-11) -- see CODEX_*_CMD in generators.test.js for the shared literal.
+  const codexGuardCmd = '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"'
+  const codexSignalCmd = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh"'
+  const codexCleanupCmd = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-cleanup.sh"'
+  assert.equal(hasClaudeHook(data, 'PreToolUse', 'Bash', codexGuardCmd), false)
+  assert.equal(hasClaudeHook(data, 'PostToolUse', 'Bash', codexGuardCmd), false)
+  assert.equal(hasClaudeHook(data, 'PermissionRequest', '.*', codexSignalCmd), true)
+  assert.equal(hasClaudeHook(data, 'PostToolUse', '.*', codexCleanupCmd), true)
 })
 
 test('injectGeminiHooks skips project-scope credential-guard when global installed', () => {
