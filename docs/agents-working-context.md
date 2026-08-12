@@ -13599,3 +13599,34 @@ PR) é o mesmo de qualquer par gerador/consumidor sob revisão humana. E **não 
 **Gates finais:** `make quality` **exit 0** · `trackfw validate` sem violações.
 
 **Roadmap fechado.** REQ de detecção → `Done`.
+
+---
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — roadmap do auto-silenciamento — INICIADO
+
+PR #162 mergeado (`19777a4`). `main` limpa, nenhuma branch aberta. Esta era a **única REQ aberta**, e
+é a que fecha um buraco de segurança que **sabemos existir**.
+
+**A armadilha de desenho está escrita no `## Context`, porque a solução ingênua tem o mesmo furo:**
+criar "uma regra que avisa quando o `rules:` em disco é mais fraco que no `HEAD`" **não resolve** —
+essa meta-regra também seria configurável por `rules:`, e o adversário a desliga na mesma edição.
+Empurra o problema um nível.
+
+**Pergunta que travei como critério:** *"e o que impede o adversário de desligar isto também?"* Se a
+resposta for "outra regra configurável", o mecanismo está errado. Sem isso, o ML entregaria uma
+solução que parece resolver e não resolve — e passaria em todos os gates.
+
+**Restrição de escopo explícita:** `ruleSeverity()` é maquinaria compartilhada por **todas** as
+regras. Mexer nela afeta usuários que configuraram `rules:` por motivos que nada têm a ver com
+segurança. Se o mecanismo exigir tocar no caminho compartilhado, precisa ser **justificado**, não
+presumido.
+
+**Deixei explícito que "não vale o custo, documentar o limite" é conclusão aceitável** e deve ser dita
+se for o caso — o roadmap pode terminar na Barreira B0. Sem isso, o viés natural de um ML é produzir
+mecanismo.
+
+**ML-3A atribuído a Zeus**, não a Hefesto: ele recusou tarefa equivalente por escopo hoje, apesar de
+tê-la executado em 4 PRs anteriores. Enquanto `~/.claude/agents/hefesto-tf` não for reconciliado,
+este tipo de ML não vai para ele — registrado no próprio roadmap para a decisão não se perder.
+
+Branch `fix/ancorar-rules-no-head-para-as-regras-de-credential-guard`.

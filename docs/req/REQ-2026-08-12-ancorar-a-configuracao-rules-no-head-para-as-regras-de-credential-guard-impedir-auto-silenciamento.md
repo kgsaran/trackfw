@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md"
 ---
 
 # REQ: Ancorar a configuracao rules no HEAD para as regras de credential-guard — impedir auto-silenciamento
@@ -84,4 +84,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md
