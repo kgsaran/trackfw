@@ -11159,3 +11159,141 @@ na Barreira B0. Resta a **Wave 8**: ML-8A (Hefesto — `docs/cli-parity.md` + `m
 (Hades — revisão de segurança). Os dois **rodam em paralelo**: tocam arquivos disjuntos (ML-8A só
 `docs/cli-parity.md`; ML-8B não modifica arquivo nenhum). É o único paralelismo possível neste
 roadmap.
+
+## Sessão 2026-08-11/12 — Hades (Segurança) — ML-8B — revisão de segurança do wiring de hooks alterado
+
+**Início.** Escopo: revisar `internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,
+`pypi/trackfw/generators/hooks.py` (commits `ac766d1`, `c6991b4`, `311a19c`, `cbe402a`) contra as 5
+perguntas do prompt de Zeus — injeção via shell no Codex, expansão de env var em Claude/Gemini,
+falha silenciosa do credential-guard nos 6 CLIs, migração in-place, supply chain. Li o roadmap, o
+ADR (inclusive Emenda 1), a pesquisa do ML-0A, a nota do vault sobre Codex *trusted*, e o `git diff
+main...HEAD` dos 3 stacks + testes de dedup. Nenhum arquivo de código será modificado por mim.
+
+## Sessão 2026-08-11/12 — Hefesto (Qualidade) — ML-8A — documentação de paridade + gate final
+
+**Início.** Escopo: só `docs/cli-parity.md` (mais este arquivo e o campo `**Status:**` do ML-8A do
+roadmap). Sem tocar `internal/`, `npm/src/`, `pypi/trackfw/` ou testes. Li o roadmap, o ADR
+(inclusive Emenda 1), `docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md`, a nota do vault
+sobre Codex *trusted*, e conferi as strings reais em `internal/generators/agentfiles.go`
+(`$CLAUDE_PROJECT_DIR`, `codexRoot`/`codexSignalCmd`/etc., `geminiSignalCmd`/etc.) contra o que o ADR
+declara — bateram exatamente.
+
+**Fim.** Adicionada a `docs/cli-parity.md` a seção "Mecanismo de resolução de caminho dos hooks de
+projeto, por CLI", entre "Agent hooks por CLI (…) — paridade estrutural (ML-3A)" e "Hooks GLOBAIS de
+credential-guard (…)". Conteúdo: (1) tabela dos 6 CLIs (Claude, Codex, Gemini, Cursor, Copilot, Kiro)
+— mecanismo, string emitida, migração in-place sim/não e por quê, referência ao ADR; (2) as duas
+pré-condições do fix do Codex descobertas empiricamente no ML-3A (projeto `trusted` em
+`~/.codex/config.toml`, e `git rev-parse --show-toplevel` retornando a raiz de submódulo/worktree);
+(3) Kiro registrado como "mecanismo de resolução não verificável em doc primária — mantido relativo",
+data 2026-08-11, as 4 URLs de `kiro.dev/docs/hooks/*` consultadas; (4) nota explícita de que a
+heterogeneidade de 4 mecanismos diferentes é intencional (ordem de preferência: campo estruturado de
+cwd > placeholder/env var > substituição de shell > não mexer), para não ser "corrigida" por engano
+no futuro. Nenhuma divergência encontrada entre o ADR e o código real — as strings, os pontos de
+migração (`agentfiles.go:346–351`/`466–473`) e os CLIs não tocados (Cursor/Copilot/Kiro, confirmado
+por `grep` que só `InjectKiroHooks`/`InjectCopilotHooks`/`InjectCursorHooks` existem sem chamada de
+migração nova) conferem exatamente com o ADR.
+
+`make quality` → exit 0, 0 `FAIL` (log completo: 1894 linhas, `scripts/check-agent-hooks-parity.sh`
+e os 103 cenários de `check-gates-falsify.sh`, inclusive os 44/45 específicos deste wiring, todos
+`OK`). `git status --porcelain` confirma `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados
+por este ML — só `docs/cli-parity.md` (conteúdo) e `docs/agents-working-context.md` (este registro)
+mudaram.
+
+**Correções pós-autorrevisão (mesma sessão, antes do handoff):** (1) a linha do Claude na tabela dos
+6 CLIs virou **duas linhas** — credential-guard (`0c66ecb`, migração pelo matcher da ferramenta,
+`agentfiles.go:238–239`) e attention-signal/cleanup (ML-2A deste roadmap, migração pelo matcher
+`AskUserQuestion`, `:213`/`:269`) — são duas chamadas de migração distintas, não uma; (2) reescrito o
+parágrafo introdutório da seção para não generalizar a semântica de cwd do Codex (cwd **da sessão**)
+para o Claude (cwd que **acompanha os `cd`** do agente) e para não afirmar "3 CLIs provados quebrados"
+— só Claude (produção) e Codex (empírico, ML-3A) foram provados; Gemini foi alterado pelo argumento
+de "mudança segura por construção" do ADR, sem prova de defeito. Ambos os pontos vieram de conferir a
+prosa contra o ADR literalmente, não só contra o código.
+
+`trackfw validate` rodado na árvore final (com as 3 edições deste ML já aplicadas) → `✓ No violations
+found.`, exit 0. `make quality` re-rodado após a correção de conteúdo (só prosa em `cli-parity.md`,
+nenhum arquivo que os gates parseiam) — exit 0, 0 `FAIL` confirmado antes também.
+
+ML-8A reportado como concluído a Zeus para auditoria; commit e push ficam com Zeus
+(`trackfw_architect`).
+
+**Fim (2026-08-12).** Parecer entregue em `docs/seguranca/2026-08-11-revisao-hooks-cwd.md`. Vereditos:
+Q1 (injeção shell Codex) `OK` — resultado de `$(...)` é dado, nunca re-escaneado por limites de
+aspas/metacaracteres; ancorado na prova empírica real do ML-3A. Q2 (expansão de var Claude/Gemini)
+`OK` — variável é do processo do CLI, nunca do repo; degradação sob indefinida é sempre
+fail-to-run (`/scripts/...`), nunca fail-to-wrong-script. Q3 (falha silenciosa do guard, 6 CLIs)
+`RISCO ACEITÁVEL` — Claude/Cursor/Copilot sem mudança de risco; Codex tem 2 casos de falha novos e
+estreitos (não-git, já documentado em cli-parity.md; `GIT_DIR`/`GIT_WORK_TREE`, novo registro
+sugerido); Gemini é sideways move seguro por construção; Kiro mantém dívida pré-existente já aceita
+no ADR. Semântica fail-aberto/fail-fechado de hook por CLI **não é alterada por este roadmap e
+permanece não verificada** — registrada como follow-up, não como bloqueio (nenhuma fonte consultada
+responde a isso; não inferido). Q4 (migração in-place) `RISCO ACEITÁVEL` — mesmo modelo de match
+por igualdade exata já usado desde antes deste roadmap; assimetria `skip_cg` no Codex é benigna
+(redundância, não enfraquecimento). Q5 (supply chain) `OK`. **Nenhum achado bloqueia o PR — nenhum
+controle foi enfraquecido em relação à `main`.** `docs/cli-parity.md` aparece sujo por ser o
+artefato paralelo do ML-8A (Hefesto), não deste ML. Nenhum arquivo de código tocado por mim.
+
+---
+
+## Sessão 2026-08-12 — Hefesto (ML-8C: documentar `GIT_DIR`/`GIT_WORK_TREE` no caso 2 de
+`docs/cli-parity.md`) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd` (já criada, sem branch nova).
+
+Escopo: só `docs/cli-parity.md`, item 2 da subseção "Pré-condições do fix do Codex, descobertas
+empiricamente" (linha ~2569). O item 2 (`git rev-parse --show-toplevel`) agora cobre os três casos que
+produzem o mesmo efeito prático — hook resolve para raiz errada e `trackfw-credential-guard.sh` pode
+não executar em silêncio: (a) fora de repositório git, (b) dentro de submódulo/worktree, (c)
+`GIT_DIR`/`GIT_WORK_TREE` definidas no ambiente do processo (caso novo, identificado pela revisão de
+segurança de Hades em `docs/seguranca/2026-08-11-revisao-hooks-cwd.md`, Q3 — risco aceitável, sem
+regressão contra a `main`, recomendação de apenas registrar o caso junto dos outros dois). Nenhum dos
+três casos é corrigido por este roadmap.
+
+`git status --porcelain` confere com a baseline capturada antes do edit: só `docs/cli-parity.md` e
+este arquivo mudaram por mim; `docs/roadmaps/wip/ROADMAP-2026-08-11-...md` e `docs/seguranca/` já
+estavam sujos por MLs anteriores e não foram tocados. `internal/`, `npm/src/`, `pypi/trackfw/` e
+testes intocados.
+
+`make quality` → exit 0, 0 `FAIL` (103 cenários de falsificação, todos `OK`).
+
+ML-8C reportado como concluído a Zeus para auditoria; commit e push ficam com Zeus
+(`trackfw_architect`).
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria da Wave 8 + fechamento do roadmap
+
+**ML-8A (Hefesto) — aprovado.** Li a seção nova de `docs/cli-parity.md`. Ela está **mais correta do
+que o pedido** num ponto que importa: não achatou os 3 CLIs alterados numa narrativa única. Registra
+que apenas **dois** foram provados quebrados (Claude, Codex) e que o **Gemini foi alterado por
+"mudança segura por construção"**, não por prova de defeito. Se isso virasse "os 3 estavam
+quebrados", a justificativa real do Gemini se perderia e ninguém saberia reavaliar a decisão depois.
+Ele também dividiu o Claude em **duas linhas** (credential-guard × attention) porque são call sites
+de migração distintos, com matchers distintos — detalhe que eu não havia especificado. Reportou
+"nenhuma divergência ADR × código", verificada lendo `agentfiles.go`, não só citando o ADR.
+
+**ML-8B (Hades) — aprovado, nada bloqueia o PR.** Vereditos: Q1 (injeção via `$(...)` no Codex) `OK`
+— a saída do `git rev-parse` entra como dado opaco, o shell fixa as fronteiras de aspas a partir do
+texto estático **antes** da expansão, então nunca é re-escaneada; Q2 (env vars) `OK` — definidas pelo
+processo do CLI, nunca por conteúdo do repo, e a degradação com variável indefinida é
+**fail-to-run**, não fail-to-wrong-script; Q3 risco aceitável **sem regressão contra a `main`**; Q4/Q5
+`OK`. Escopo respeitado: nenhum arquivo de código tocado.
+
+**ML-8C (Hefesto) — microlote corretivo despachado pela barreira.** Achado Q3: `GIT_DIR`/
+`GIT_WORK_TREE` redirecionam a resolução de `git rev-parse --show-toplevel`, terceiro caso da mesma
+família dos dois já documentados. Documentado com a consequência explícita ("o credential-guard pode
+deixar de executar em silêncio") e a origem citada. Despachei ao Hefesto em vez de editar eu mesmo —
+o arquivo é entregável dele neste roadmap e edição concorrente daria conflito.
+
+**Verificações finais na árvore fechada** (ver seção dedicada no roadmap): idempotência com 3
+execuções de `trackfw update` (4 arquivos byte-idênticos) e integridade dos 6 entries de
+credential-guard do Claude. A idempotência era o critério consolidado que **nenhuma sabotagem
+por-ML conseguiria revelar** — as sabotagens provam antigo→novo, idempotência é novo→novo.
+
+**Gates finais, executados por Zeus:** `make quality` → **exit 0, 103/103 cenários**;
+`trackfw validate` → sem violações.
+
+**Follow-ups abertos como REQ em `backlog/`**, para não evaporarem no fechamento: semântica
+fail-open × fail-closed por CLI (achado Q3 — o credential-guard é controle de negação e há 3
+caminhos documentados terminando em "guard não roda em silêncio"), e prova negativa dedicada para o
+guard de vacuidade `credential-guard-present` (carregado por Hefesto em duas sessões sem
+endereçamento).
+
+**Estado:** roadmap pronto para `done`. **PR não aberto** — KG não pediu.

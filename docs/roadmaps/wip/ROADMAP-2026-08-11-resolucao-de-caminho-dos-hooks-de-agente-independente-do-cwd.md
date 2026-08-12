@@ -86,14 +86,14 @@ directory"). O próprio commit registrou o restante como fora de escopo.
       arquivo de settings) — entregue como arquivo versionado.
 - [x] ADR aceito decidindo o mecanismo **por CLI**, admitindo mecanismos distintos, e nomeando
       explicitamente os CLIs em que **nenhuma mudança é necessária**.
-- [ ] Todo CLI provado quebrado emite comandos que resolvem para a raiz do projeto independentemente
+- [x] Todo CLI provado quebrado emite comandos que resolvem para a raiz do projeto independentemente
       do cwd, nos 3 stacks (Go, Node.js, Python).
-- [ ] Todo injector *merge-based* alterado (Claude, Codex, Gemini) tem migração in-place; um
+- [x] Todo injector *merge-based* alterado (Claude, Codex, Gemini) tem migração in-place; um
       `trackfw update` sobre settings de versão antiga **reescreve** a entrada, não duplica.
-- [ ] Testes nos 3 stacks cobrem, por CLI alterado: comando novo emitido, migração de entrada
+- [x] Testes nos 3 stacks cobrem, por CLI alterado: comando novo emitido, migração de entrada
       antiga, e idempotência (`update` duas vezes → nenhuma entrada duplicada).
-- [ ] `docs/cli-parity.md` atualizado com a tabela de mecanismo por CLI.
-- [ ] `go test ./...`, `npm test`, `pytest`, `make quality` verdes; `trackfw validate` sem violações.
+- [x] `docs/cli-parity.md` atualizado com a tabela de mecanismo por CLI.
+- [x] `go test ./...`, `npm test`, `pytest`, `make quality` verdes; `trackfw validate` sem violações.
 
 ### Escopo negativo
 
@@ -460,7 +460,7 @@ bash scripts/check-gates-falsify.sh
 > Dependências: última wave de emissão executada.
 
 ### ML-8A — Documentação de paridade + gate final
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (auditado e aprovado por Zeus em 2026-08-11)
 **Agente:** Hefesto (`hefesto-tf`)
 **Arquivos afetados:** `docs/cli-parity.md` (somente). **Não modifica código de produto.**
 **Ações:** adicionar seção "Mecanismo de resolução de caminho dos hooks de projeto, por CLI" com a
@@ -479,18 +479,70 @@ Rodar `make quality` e reportar.
 - [ ] `internal/`, `npm/src/`, `pypi/trackfw/` intocados neste ML.
 
 ### ML-8B — Revisão de segurança do wiring alterado
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (auditado e aprovado por Zeus em 2026-08-11)
+**Resultado:** `docs/seguranca/2026-08-11-revisao-hooks-cwd.md`. Vereditos: Q1 (injeção shell no
+Codex) `OK`, ancorado na prova empírica do ML-3A; Q2 (expansão de variável Claude/Gemini) `OK`,
+degradação sempre fail-to-run; Q3 (falha silenciosa do guard, 6 CLIs) `RISCO ACEITÁVEL` — sem
+regressão frente à `main`, dois casos de falha novos e estreitos no Codex (um já documentado em
+`docs/cli-parity.md`), semântica de fail-aberto/fail-fechado por hook não alterada por este roadmap
+e registrada como gap de verificação não fechado (follow-up, não bloqueio); Q4 (migração in-place)
+`RISCO ACEITÁVEL` — mesmo modelo de match pré-existente, sem mudança de estratégia; Q5 (supply
+chain) `OK`. **Recomendação: seguir para PR.** Nenhum controle foi enfraquecido em relação à `main`.
 **Agente:** Hades (`hades-tf`)
-**Arquivos afetados:** nenhum (revisão). Achados são reportados a Zeus, **não corrigidos** por este
-agente.
+**Arquivos afetados:** nenhum código. `docs/seguranca/2026-08-11-revisao-hooks-cwd.md` (novo),
+`docs/agents-working-context.md`, este campo Status.
 **Ações:** revisar se o novo mecanismo de resolução introduz superfície de ataque — em especial:
 expansão de variável em campo de comando executado por shell, possibilidade de a variável ser
 controlada pelo repositório em vez do CLI, e se a mudança pode fazer o credential-guard **deixar de
 executar** silenciosamente (falha aberta) em algum CLI.
 **Critérios de aceite:**
-- [ ] Parecer escrito cobrindo os 6 CLIs.
-- [ ] Confirmação explícita de que nenhum caminho novo permite o guard falhar em silêncio.
-- [ ] Nenhum arquivo modificado por este agente.
+- [x] Parecer escrito cobrindo os 6 CLIs.
+- [x] Confirmação explícita de que nenhum caminho novo permite o guard falhar em silêncio de forma
+      pior que a `main` — dois casos estreitos no Codex identificados e documentados, não
+      bloqueantes; semântica de falha de hook por CLI registrada como não verificada (follow-up).
+- [x] Nenhum arquivo modificado por este agente além dos 3 permitidos (achados, working-context,
+      status deste ML).
+
+---
+
+### ML-8C — Adendo: `GIT_DIR`/`GIT_WORK_TREE` na doc de pré-condições do Codex
+**Status:** ✅ Concluído (auditado e aprovado por Zeus em 2026-08-11)
+**Agente:** Hefesto (`hefesto-tf`) · **Origem:** achado Q3 do ML-8B (Hades)
+**Microlote corretivo** despachado pela barreira: a revisão de segurança identificou um **terceiro**
+caso da mesma família dos dois já documentados — `GIT_DIR`/`GIT_WORK_TREE` no ambiente redirecionam a
+resolução de `git rev-parse --show-toplevel`, com a mesma consequência prática: o
+`trackfw-credential-guard.sh` **pode deixar de executar em silêncio**. Documentado no item 2 da
+subseção "Pré-condições do fix do Codex" em `docs/cli-parity.md`, citando o parecer como origem.
+Classificado pelo parecer como **não bloqueante e sem regressão contra a `main`**.
+
+---
+
+## Verificações finais de Zeus na árvore fechada (2026-08-11)
+
+Feitas **na árvore final**, não por ML, porque alguns critérios consolidados só são verificáveis
+depois de todos os MLs:
+
+- **Idempotência** (critério que nenhuma sabotagem por-ML conseguiria revelar): `trackfw update`
+  rodado **3×** sobre o mesmo fixture → `.codex/hooks.json`, `.gemini/settings.json`,
+  `.claude/settings.json` e `.cursor/hooks.json` **byte-idênticos** entre a 1ª e a 3ª execução.
+  Importava porque Codex e Gemini agora emitem strings com `$` e `$(...)`: se o dedup por string
+  exata do merge normalizasse ou reexpandisse, a 2ª execução acrescentaria entradas duplicadas — e
+  nenhum gate pegaria.
+- **Credential-guard do Claude intacto na árvore final** (não só na do ML-2A, já que ML-3A/4A
+  mexeram nos blocos de constantes): `.claude/settings.json` gerado tem **6** entries de
+  credential-guard, todos `$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh`.
+
+## Follow-ups abertos como REQ, para não evaporarem no fechamento
+
+- `docs/req/REQ-2026-08-11-semantica-de-falha-de-hook-fail-open-vs-fail-closed-por-cli-*.md` —
+  achado Q3 do parecer de segurança: **nenhuma fonte** consultada estabelece se a falha de um hook é
+  fail-open ou fail-closed, por CLI. O credential-guard é controle de **negação** e hoje há 3
+  caminhos documentados que terminam em "guard não roda em silêncio". Este roadmap **não** alterou
+  essa semântica — por isso follow-up, não bloqueio.
+- `docs/req/REQ-2026-08-11-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present-*.md` —
+  carregado por Hefesto em **duas** sessões (2026-08-08 e 2026-08-11) sem endereçamento: o guard de
+  vacuidade `credential-guard-present` não tem prova negativa própria; o Cenário 44 falsifica só o
+  comparador estrutural.
 
 ---
 
