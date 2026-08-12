@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12](armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md)
 - [vies-do-tmp-ao-medir-sandbox-de-agente-2026-08-12](vies-do-tmp-ao-medir-sandbox-de-agente-2026-08-12.md)
 - [hooks-de-agente-falham-abertos-quando-o-script-nao-resolve-2026-08-12](hooks-de-agente-falham-abertos-quando-o-script-nao-resolve-2026-08-12.md)
 - [codex-hooks-de-projeto-so-rodam-em-projeto-trusted-2026-08-11](codex-hooks-de-projeto-so-rodam-em-projeto-trusted-2026-08-11.md)

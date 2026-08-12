@@ -4,6 +4,47 @@
 
 ---
 
+## Sessão 2026-08-12 — Hades (ML-0A: âncora de detecção — HEAD × template do binário) — CONCLUÍDO, aguardando emenda de ADR por Zeus
+
+Branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md`,
+Wave 0/ML-0A — status atualizado para ✅ Concluído. Não modifiquei código.
+
+**Entregável:** `docs/seguranca/2026-08-12-ancora-de-deteccao-de-adulteracao.md`.
+
+**Recomendação por alvo:** template compilado no binário para o script
+(`scripts/trackfw-credential-guard.sh`); `HEAD` do git, semântico e direcional (`block`→não-`block`),
+para `credential_guard.mode` em `trackfw.yaml`. Sem redundância — não usar `HEAD` também no script.
+
+**Posição sobre o raciocínio do ADR superseded ("integridade exige escopo global"):** cai, mas só
+parcialmente. É falso para o script — verificado que Go/Node/Python geram o script como concatenação
+pura de `const`/string sem interpolação por-projeto, então o próprio binário é a referência fora do
+arquivo, sem depender de `$HOME`. É verdadeiro para `credential_guard.mode` — valor autoral, sem forma
+canônica, a única referência fora do arquivo sem depender de escopo global é o `HEAD`. **O ADR
+Accepted que já supersede o primeiro repete o mesmo erro** (não separa script de config na Decision
+item 3) e também precisa de emenda — não só o superseded.
+
+**Achado não mapeado por Zeus, crítico para o ML-1A:** os três templates do script (Go
+`credentialGuardScript`, Node `CREDENTIAL_GUARD_SCRIPT`, Python `_CREDENTIAL_GUARD_SH`) são mantidos
+independentemente e **nenhum gate compara byte-a-byte** os três entre si. A âncora de template só é
+segura se essa paridade for garantida — sem isso, o mesmo repositório dispara violação num CLI e fica
+silencioso nos outros. Precisa entrar no escopo do ML-1A como pré-requisito, não como nota de rodapé.
+
+**Outro achado:** nenhum marcador de versão está embutido no script gerado — o template já mudou
+2x recentemente (ADR-2026-08-06 emendas 6 e 8). Sem marcador, a regra de template nunca discrimina
+*drift* de versão legítimo de tampering real; mitigação recomendada é severidade `warn` + mensagem
+causal-neutra (nunca "adulterado"), com o remédio (`trackfw update`) sendo o mesmo nos dois casos.
+
+**Evidência local relevante:** este próprio repositório não tem `scripts/trackfw-credential-guard.sh`
+(nunca commitado) nem bloco `credential_guard:` em `trackfw.yaml` — é exemplo real, não hipotético, do
+caso "sem âncora", e confirma que "ausente → silêncio" satisfaz estruturalmente o critério de aceite
+"não dispara neste repositório".
+
+**Próximo passo:** Zeus emenda o ADR Accepted com esta decisão de âncora por alvo (Barreira B0) antes
+de liberar o ML-1A (Apolo).
+
+---
+
 ## Sessão 2026-08-12 — Apolo (ML-1A: regra `credential_guard_hook_resolvable` — controle positivo) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
 
 Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Roadmap:
@@ -12957,3 +12998,604 @@ observável não é política.
 os outros dois eixos ficaram obsoletos **como formulados**. Registrado na própria REQ.
 
 **Próximo:** REQ nova de detecção ancorada no `HEAD`.
+
+---
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — roadmap de detecção de adulteração — INICIADO
+
+PR #161 mergeado (`f86732e`). Alvo do trabalho decidido por KG: **`trackfw validate`**.
+
+**A contribuição de arquitetura deste roadmap é uma Wave 0 que questiona o próprio ADR.**
+
+O ADR superseded rejeitou "verificação de integridade de conteúdo" com o argumento de que *"exige um
+valor de referência guardado fora do arquivo gerado — ou seja, exige exatamente o escopo global"*.
+
+**Esse raciocínio pode estar errado.** O **próprio binário do trackfw** contém o template do script
+(`internal/generators/scaffold.go`) — ele **é** referência fora do arquivo gerado, e **não depende de
+escopo global nenhum**. O `validate` pode regenerar o script em memória e comparar com o disco,
+detectando **sobrescrita** sem qualquer dependência de `HEAD` ou de `$HOME`.
+
+Registrei a hipótese com os trade-offs das duas âncoras: **template do binário** cobre sobrescrita
+sempre, mas tem falso positivo por *drift de versão* (usuário em binário antigo com script gerado por
+versão nova) e **não** cobre o `trackfw.yaml`, que não é gerado por template; **`HEAD`** cobre os dois
+alvos mas **não existe** antes do primeiro commit nem para arquivo não versionado.
+
+Hipótese de Zeus, **não decisão**: provavelmente as duas, para alvos diferentes — template para o
+**script** (é gerado, tem forma canônica) e `HEAD` para o **`credential_guard.mode`** (é autoral, não
+tem forma canônica). O ML-0A avalia; o ADR é **emendado** com o resultado antes de qualquer
+implementação.
+
+**Por que isso não é reabrir decisão fechada:** o ADR rejeitou por um motivo **específico**. Se o
+motivo não se sustenta, a rejeição merece reavaliação — o mesmo padrão que já se aplicou duas vezes
+nesta sequência, quando premissas não medidas foram testadas e caíram (o vetor do `cd`, e a premissa
+de sandbox).
+
+**Wave 2 separada da Wave 1 de propósito:** foi exatamente essa separação que expôs o braço de
+detecção não-autodiscriminante no roadmap da prova negativa (ML-1A → ML-1B). Juntar as duas remove o
+ponto de auditoria que pegou o defeito.
+
+**Duas armadilhas já pagas, escritas no roadmap para não se repetirem:** `os.Getwd()` do Go devolve
+caminho symlinkado enquanto Node/Python devolvem o físico (nenhum gate pega, porque o Cenário 29 fixa
+só a mensagem de sucesso); e **reconstruir `bin/trackfw`** ao sabotar, porque `go build ./...` não
+regenera esse binário e o cenário de falsificação o usa — erro que **eu** cometi na auditoria do
+Cenário 47.
+
+Branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-0A + Barreira B0 (3 emendas ao ADR)
+
+**A hipótese que levantei estava certa, mas incompleta — e o parecer melhorou a resposta.** Eu havia
+proposto "as duas âncoras, para alvos diferentes". Hades confirmou **e** qualificou: o raciocínio do
+ADR superseded cai **parcialmente**, e a forma importa. É **falso** para o script — que é
+concatenação pura de constantes, **sem interpolação por projeto**, logo o binário **sempre foi** a
+referência externa. É **verdadeiro** para o `credential_guard.mode` — valor autoral, sem forma
+canônica.
+
+Ele também apontou algo que eu não vi: **o ADR Accepted repetia o mesmo erro** ao tratar "âncora no
+`HEAD`" como coisa única. Emendei os dois, não só o superseded.
+
+**🔴 Achado crítico que verifiquei por conta própria e é maior do que ele descreveu.** Hades alertou
+que os 3 templates do script não têm gate de paridade. Fui checar: `check-attention-scripts-parity.sh`
+cobre **apenas** `trackfw-attention-signal.sh` e `trackfw-attention-cleanup.sh`; o
+`check-agent-hooks-parity.sh` só faz `grep` da string no **JSON do hook**, nunca no conteúdo do `.sh`.
+**Confirmado: o script do credential-guard não tem paridade byte-a-byte em lugar nenhum.**
+
+Sem esse gate, a âncora de template faria o mesmo repositório **disparar num CLI e ficar silencioso
+nos outros** — falso positivo e falso negativo simultâneos, dependendo de qual binário o usuário roda.
+Virou **ML-0B**, bloqueando a implementação.
+
+**Segunda decisão da barreira, sobre severidade:** o script **não carrega marcador de versão**, então
+a regra **não consegue** discriminar *drift* legítimo (usuário não rodou `update` após bump) de
+adulteração. Decidi **`warn`** para o braço do script, com mensagem **causalmente neutra** — não
+afirmar adulteração quando a causa pode ser drift. Embutir versão/hash no template fica como trabalho
+futuro, e é o que permitiria elevar para `error`.
+
+**Instrução deliberada no ML-0B:** se os 3 templates **já estiverem divergentes hoje**, o agente deve
+**parar e reportar** — divergência pré-existente é **achado**, não conserto silencioso dentro de um ML
+de gate.
+
+---
+
+## Sessão 2026-08-12 — Ártemis (ML-0B: gate de paridade byte-a-byte do script do credential-guard) — CONCLUÍDO
+
+Branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md`,
+ML-0B — status atualizado para ✅ Concluído. Não faço commit/push (autoridade de Zeus).
+
+**Correção a uma premissa da Barreira B0:** Zeus afirmou "o script do credential-guard não tem
+paridade byte-a-byte em lugar nenhum" — **isso estava errado**. Existe
+`TestCredentialGuardScript_ParityAcrossStacks` e `TestGlobalCredentialGuardScript_ParityAcrossStacks`
+em `internal/generators/credential_guard_test.go`, já rodando dentro de `make quality` (via `make
+test` → `go test ./...`), cobrindo as duas variantes (projeto e global) byte-a-byte entre Go/Node/Python
+— confirmei que passam hoje. O stop-condition do ML ("PARE se os 3 templates já divergem") **não**
+disparou: os templates estão idênticos.
+
+**Mas o gate existente tem um furo real, que descobri e provei concretamente**: esse teste Go
+reconstrói o script Node/Python fazendo *regex-scraping* dos literais `CG_*`/`_CG_*` direto do
+texto-fonte (`getNodeSourceBlock`/`getPythonSourceBlock`) e concatenando-os numa ordem **hardcoded no
+próprio teste Go** (`header + guard + core + tail`) — nunca executa Node ou Python de verdade. Reordenei
+só a linha de composição do Node (`CREDENTIAL_GUARD_SCRIPT = CG_HEADER + CG_PROJECT_GUARD +
+CG_DETECTION_CORE + CG_PROJECT_TAIL` → guard e core trocados de posição, nenhum bloco `CG_*` alterado)
+e confirmei: `go test -run ParityAcrossStacks` continua verde, mas o script **realmente emitido** por
+`discover --init` no Node muda de forma (o guard "no-op fora do projeto" passa a rodar **depois** do
+núcleo de detecção, quebrando a garantia de no-op) — divergência real de `diff` byte-a-byte contra o
+Go, invisível ao teste unitário.
+
+**Decisão de implementação:** estendi `scripts/check-attention-scripts-parity.sh` (não criei gate
+novo) para incluir `trackfw-credential-guard.sh` no mesmo loop de
+`trackfw-attention-signal.sh`/`trackfw-attention-cleanup.sh` — mesma mecânica (`discover --init` nos 3
+runtimes, diff byte-a-byte real), verificada como aplicável sem ajuste antes de estender (mesmo
+diretório `scripts/`, mesmo comando de emissão nos 3 stacks). Cobre **só a variante de projeto** — a
+global (`~/.trackfw/scripts/...`, via `update harness`) fica com a cobertura Go-only pré-existente
+(mais fraca, mas fora do escopo da âncora nova, que mira só o script de projeto); justificativa escrita
+no comentário do gate, com instrução de estender se a global também virar âncora.
+
+**Prova negativa:** Cenário 48 em `scripts/check-gates-falsify.sh` — mesma sabotagem de reordenação da
+linha de composição do Node, via `corrupt_literal`, provando que o gate estendido reprova exatamente
+onde o teste Go antigo não pegava. Saída completa (`GO_BIN=bin/trackfw scripts/check-gates-falsify.sh`):
+`OK [falsify/attention-scripts-parity/trackfw-credential-guard.sh/go-vs-node-composition-reordered-not-detected]`,
+seguido de `Falsification checks passed (all 106 scenarios, ...)`. Reconstruí `bin/trackfw` antes de
+cada rodada de sabotagem/prova (`go build -o bin/trackfw ./cmd/trackfw`).
+
+**`make quality`:** saída completa, exit 0 — `go test ./...`, `npm test`, `pytest`, `go vet`, e todos os
+gates de `parity` incluindo `check-attention-scripts-parity.sh` (6 OKs: signal/cleanup/credential-guard
+× go-vs-node/go-vs-py) e `check-gates-falsify.sh` (106 cenários). `trackfw validate` neste repo:
+`✓ No violations found.`. `git status --short` só mostra `scripts/check-attention-scripts-parity.sh` e
+`scripts/check-gates-falsify.sh` modificados — nenhum arquivo em `internal/`, `npm/src/`,
+`pypi/trackfw/` tocado.
+
+**Handoff para Wave 1 (ML-1A, Apolo):** a âncora de template para o script agora tem cobertura
+end-to-end de paridade nos 3 stacks (variante de projeto). Vale registrar no ADR/roadmap que a
+cobertura da variante **global** continua estruturalmente mais fraca (Go-only, sem execução real de
+Node/Python) — se a Wave 1 decidir ancorar também no script global, este mesmo padrão de extensão
+precisa ser repetido para ele.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-0B — APROVADO, e correção de um erro MEU
+
+**A agente corrigiu minha premissa, e está certa.** Eu afirmei na Barreira B0 que "não existe gate
+comparando os três templates". **Minha verificação foi incompleta:** procurei apenas em
+`scripts/*parity*.sh` e **não olhei os testes Go**. `TestCredentialGuardScript_ParityAcrossStacks` e
+`TestGlobalCredentialGuardScript_ParityAcrossStacks`
+(`internal/generators/credential_guard_test.go:125` e `:235`) já existiam, rodavam no `make quality`,
+cobriam projeto e global, e passavam. Confirmei lendo o arquivo.
+
+**Mas o achado dela é melhor que o meu erro, e ela PROVOU em vez de apontar.** O teste Go reconstrói
+Node e Python por *regex-scraping* dos literais no texto-fonte (`:208`, `:228`) e concatena numa
+ordem **hardcoded no próprio teste Go** (`:104-118`) — **nunca executa Node nem Python**. Ela
+reordenou **só** a linha de composição do Node, **sem tocar em nenhum literal**: o teste Go continuou
+**verde**, e o script realmente emitido divergiu (o guard "no-op fora do projeto" passou a rodar
+depois do núcleo de detecção).
+
+Minha conclusão estava **errada na letra** (o teste existia) e **certa na substância** (era incapaz de
+detectar deriva de composição, que é exatamente o risco da âncora de template). A Emenda 2 do ADR foi
+**reescrita** com a correção explícita — não silenciosamente ajustada.
+
+**Decisão de implementação dela, e é a certa:** estendeu `check-attention-scripts-parity.sh`, que roda
+`discover --init` **de verdade** nos 3 runtimes e compara o arquivo **emitido**, em vez de criar gate
+novo. O furo do teste antigo era justamente **não executar os runtimes** — criar outro gate
+regex-based repetiria o defeito.
+
+**Limitação documentada, não escondida:** o gate estendido cobre a variante de **projeto** (a que a
+âncora nova mira); a **global** segue com cobertura Go-only pré-existente, registrado no comentário
+do gate para a Wave 1 decidir se precisa do mesmo tratamento.
+
+**Gates re-executados por Zeus:** `check-attention-scripts-parity.sh` todos OK (incluindo
+`trackfw-credential-guard.sh` go-vs-node e go-vs-py) · `check-gates-falsify.sh` **110 OK / 0 FAIL**
+(106 cenários) · `make quality` **exit 0**.
+
+**Wave 1 liberada.**
+
+## Sessão 2026-08-12 — Apolo (Backend) — ML-1A concluído: regra de detecção nos 3 CLIs
+
+**Início:** ML-1A do `ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md`,
+branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`. Duas regras novas de
+`trackfw validate`, âncora por alvo (ADR-2026-08-12 Emenda 1), nos 3 CLIs.
+
+**Regras entregues** (nomes finais, idênticos nos 3 stacks):
+- `credential_guard_script_integrity` — âncora: template do binário/pacote. Severidade default
+  **`warning`** (registrada em `ruleDefaults`/`RULE_DEFAULTS`/`_RULE_DEFAULTS`) — o script não carrega
+  marcador de versão, então a regra não distingue drift legítimo de adulteração (ADR Emenda 3);
+  mensagem causalmente neutra ("content diverges from the template... run `trackfw update`"), nunca
+  afirma adulteração. Silêncio quando o script não existe (ausência é escopo de
+  `credential_guard_hook_resolvable`, não duplicado aqui).
+- `credential_guard_mode_downgrade` — âncora: `HEAD` do git, comparação **semântica e direcional**
+  (`block` no HEAD → não-`block` em disco). Severidade default **`error`** (decisão minha, justificada
+  abaixo). Silêncio sempre que HEAD não é `block` (sem repo git, sem commits, `trackfw.yaml` não
+  versionado no HEAD, ou HEAD sem a chave `credential_guard.mode` / com valor `warn`) — isso é "sem
+  âncora para detectar downgrade", não "nada errado".
+
+**Problema de import cycle (Go) e a solução adotada, uniforme nos 3 stacks:** `internal/validator`
+não pode importar `internal/generators` (`generators/context.go` já importa `validator`, para
+`trackfw context`) — e o ML-1A está fora de escopo em `internal/generators/`. Consultei o advisor
+antes de implementar: a alternativa óbvia (injetar um provider function-var, wired em
+`internal/commands`, chamando `generators.GenerateCredentialGuardScript` num tmpdir) **quebra** porque
+essa função `fmt.Printf`/`console.log`/imprimiria uma linha de sucesso em todo `trackfw validate`,
+corrompendo a mensagem de sucesso que o Cenário 29 fixa byte-a-byte — e um provider nil-por-padrão
+deixaria a regra muda em qualquer caminho que não passe por `internal/commands` (testes unitários,
+`serve`, `barrier.go`). Decisão final: **cópia literal validator-local do template** (byte-a-byte
+idêntica ao gerador real, confirmada por regeneração real nos 3 stacks antes de escrever o literal) +
+**teste de paridade dedicado** que regenera via o gerador de produção real (`generators.GenerateCredentialGuardScript`
+em Go via *external test package* `validator_test` — evita o ciclo porque testes externos podem
+importar ambos os pacotes sem reintroduzir o ciclo em produção; `generateCredentialGuardScript`/
+`_generate_credential_guard_script` diretamente em Node/Python, chamados a partir do próprio arquivo
+de teste) e assere igualdade byte-a-byte. Essa cópia é **materialmente mais forte** que
+`TestCredentialGuardScript_ParityAcrossStacks` (que nunca executa os runtimes — achado do ML-0B): ela
+executa o gerador de produção de fato. Verifiquei que os 3 stacks emitem **byte-idêntico** antes de
+transcrever (`diff` entre as 3 saídas reais).
+
+**Interpretação que fiz e que Zeus deve auditar:** "trackfw.yaml sem a chave `credential_guard.mode`
+→ silêncio" (texto do ML-1A) refere-se ao lado **HEAD** (a âncora), não ao disco — se o disco perder a
+chave inteira enquanto o HEAD tinha `mode: block`, isso **dispara** (é exatamente a via que a regra
+existe para cobrir; silenciar aí tornaria a regra inútil contra o ataque mais óbvio: apagar o bloco
+`credential_guard:` inteiro). Testado explicitamente (`ChaveRemovidaNoDisco_Dispara` /
+`ArquivoDeletadoNoDisco_Dispara`, replicado nos 3 stacks).
+
+**Severidade `error` para `credential_guard_mode_downgrade` — justificativa:** ao contrário do script,
+o valor `mode` não tem forma gerada sujeita a drift de versão; o único falso-positivo considerado foi
+um relax legítimo `block`→`warn` ainda não commitado — aceitei o risco porque o fix nesse caso é
+`git commit`, que é exatamente o rastro auditável que esta via de detecção existe para forçar (a via
+`mode` é "a mais diffável" das três, ADR Decision ponto 5).
+
+**Armadilha do symlink evitada por design:** nenhuma mensagem embute caminho absoluto — só caminhos
+relativos (`scripts/trackfw-credential-guard.sh`, `trackfw.yaml`), então `os.Getwd()` symlinkado do Go
+nunca aparece nas mensagens.
+
+**`git show HEAD:./trackfw.yaml`** (não `git show HEAD:trackfw.yaml`) — resolve relativo ao cwd, não à
+raiz do repo, para `trackfw validate` rodar corretamente de um subdiretório.
+
+**Arquivos:**
+`internal/validator/validator_credential_guard_integrity.go` (regras),
+`internal/validator/validator_credential_guard_integrity_reference.go` (cópia literal do template),
+`internal/validator/export_test.go` (expõe a constante ao *external test package*),
+`internal/validator/validator_credential_guard_integrity_external_test.go` (paridade contra o gerador
+real), `internal/validator/validator_credential_guard_integrity_test.go` (regras),
+`internal/validator/validator.go` (registro em `ruleDefaults`/`ValidateUnfiltered`/`ValidateTagged`) ·
+`npm/src/validator/index.js` (mesma coisa) · `npm/tests/credential_guard_integrity.test.js` ·
+`pypi/trackfw/validator.py` (mesma coisa) · `pypi/tests/test_credential_guard_integrity.py`.
+
+**Gates:** `go build ./... && go vet ./... && go test ./...` (1022+ testes Go incl. os novos) verde ·
+`npm test` — 468 passed, 0 failed · `python3 -m pytest pypi/tests -q` — 1022 passed, 8 subtests ·
+`make quality` — **exit 0**, 106 cenários de falsificação, incluindo o gate do ML-0B
+(`trackfw-credential-guard.sh` go-vs-node/go-vs-py OK) intacto. `trackfw validate` neste repo: limpo
+nos 3 CLIs. **Nota explícita, não causada por este ML:** o Go imprime só
+`✓ No violations found.`; o Python imprime primeiro `[LENIENT MODE] Governance em modo permissivo`
+(este repo tem `governance_mode: lenient`) — divergência de stdout entre CLIs **pré-existente**, não
+tocada por mim, na mesma área que o Cenário 29 fixa. Vale um olhar separado, fora do escopo do ML-1A.
+A regra não dispara aqui porque este repo não tem `scripts/trackfw-credential-guard.sh` nem
+`credential_guard:` no `trackfw.yaml`.
+
+**Verificação adicional pós-implementação (a pedido do advisor, antes do handoff):**
+1. **End-to-end generate→validate nos 3 CLIs**, fora deste repo: `git init` + commit vazio em tmpdir,
+   `discover --init` (não `init` — esse último escreve no escopo global `~/.claude/...` do usuário, fora
+   de propósito para este teste), depois `validate`. Resultado nos 3: **nenhum falso positivo da regra
+   nova** — só o warning pré-existente e não relacionado de `adr_dir_exists` (`docs/adr` não criado pelo
+   discover mínimo). Script emitido pelos 3 CLIs é byte-idêntico (`diff` confirmado).
+2. **Paridade de `--json`**: fixture com `credential_guard_script_integrity: error` via `rules:`,
+   violação disparada nos 3 CLIs — `rule`, `file` (vazio nos 3, como esperado — mensagem não tem
+   caminho entre aspas duplas) e `message` byte-idênticos entre Go/Node/Python.
+
+**🔴 Achado que bloqueia ML-2A até ser resolvido — reportar a Zeus antes de despachar Ártemis:**
+`scripts/check-gates-falsify.sh` **não tem nenhum `git init`/`git commit` em nenhum fixture**
+(confirmado via grep). Consequência:
+- `credential_guard_mode_downgrade` **não tem como disparar** em nenhum fixture existente — a regra
+  exige um repo git com um commit que tenha `credential_guard.mode: block` no HEAD. ML-2A precisa de
+  plumbing de fixture nova (git init + commit) que hoje não existe no gate de falsificação.
+- `credential_guard_script_integrity` tem severidade default `warning` — **não** derruba o exit code
+  de `trackfw validate` sozinha (diferente do precedente direto, Cenário 47/`credential_guard_hook_
+  resolvable`, que é `error` por default). Recomendo ao ML-2A: fixar `rules:\n  credential_guard_
+  script_integrity: error` no fixture (mesmo padrão que usei para testar `--json` acima), em vez de
+  depender do exit code em modo warning — mais simples que reformular a asserção do cenário para
+  aceitar exit 0 com warning no stdout.
+
+**Não toquei:** `internal/generators/`, `scripts/`, `docs/cli-parity.md` (reservados para ML-2A/ML-3A) —
+confirmado via `git status --porcelain` antes do handoff.
+
+**Handoff para Zeus:** auditar a interpretação de "chave ausente" acima (é a decisão de design mais
+discutível deste ML) e a severidade `error` do `mode_downgrade`; passar os dois achados acima
+(fixtures sem git, severidade warning do braço script) para Ártemis antes do ML-2A começar; depois
+liberar Wave 3 (ML-3A Hefesto documentação · ML-3B Hades revisão de segurança).
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-1A — APROVADO
+
+**Auditoria funcional nos 3 comportamentos, com fixtures reais:**
+
+| Cenário | Resultado |
+|---|---|
+| Script íntegro | silencioso ✅ |
+| Script **sobrescrito** com `exit 0` | **dispara** ✅ |
+| Script **ausente** | silencioso — **não duplica** `credential_guard_hook_resolvable` ✅ |
+| `mode: block` no `HEAD` → `warn` no disco | **dispara** ✅ |
+
+**Quarto erro meu de harness nesta sessão, e o mais irônico:** meu `grep -i integrity` não achou nada
+e eu quase abri um achado. A mensagem **não contém a palavra "integrity"** — ela é **causalmente
+neutra**, exatamente como eu exigi no prompt. Procurei por um termo que eu mesmo proibi de aparecer.
+
+**A mensagem do `mode` ficou melhor do que eu especifiquei:** *"…if this was intentional, **commit the
+change**; otherwise investigate before treating the credential guard as active"*. Ela converte o
+único falso positivo previsto (relaxamento legítimo não commitado) em **exatamente o rastro auditável
+que a detecção existe para forçar**. O falso positivo vira feature.
+
+**Minha maior dúvida era a duplicação do template.** O ciclo de import (`internal/validator` não pode
+importar `internal/generators`) levou a uma **cópia local** do template no validador, em cada stack —
+6 cópias no total, de um artefato de segurança. Testei se a mitigação segura: injetei deriva **dentro
+do literal** e o teste de paridade reprovou com mensagem acionável (`out of sync with
+generators.GenerateCredentialGuardScript's output — update ...reference.go`, com contagem de bytes).
+**Coberto.** E o teste dele executa o gerador real — mais forte que o pré-existente, que só fazia
+regex do texto-fonte (ADR Emenda 2).
+
+Ele também **rejeitou fundamentadamente** a alternativa de injeção de provider: as funções do gerador
+**imprimem linha de sucesso** a cada chamada, o que corromperia a mensagem fixada pelo Cenário 29, e
+um provider nulo silenciaria a regra fora de `internal/commands`. Consultou o advisor antes de
+decidir.
+
+**Severidades:** script → `warning` (sem marcador de versão, não dá para discriminar drift — ADR
+Emenda 3); `mode` → `error`, decisão dele com justificativa que aceito: o campo não tem forma gerada
+sujeita a drift, e o único falso positivo tem como correção `git commit`.
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` **468**/0 · `pytest` **1022**
+passed + 8 subtests · `make quality` **exit 0**.
+
+**Achado bloqueante que ele deixou para o ML-2A, repassado no despacho:** o
+`scripts/check-gates-falsify.sh` **não tem `git init`/commit em nenhum fixture**, então
+`credential_guard_mode_downgrade` não consegue disparar sem encanamento novo; e o `warning` do script
+**não muda o exit code** do `validate`, diferente do precedente do Cenário 47 — a Ártemis precisa
+fixar `rules: credential_guard_script_integrity: error` no fixture.
+
+---
+
+## Sessão 2026-08-12 — Ártemis (ML-2A: cenário de falsificação para as duas regras) — CONCLUÍDO,
+aguardando auditoria de Zeus
+
+Branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md`,
+Wave 2/ML-2A — status atualizado para ✅ Concluído. **Único arquivo tocado:**
+`scripts/check-gates-falsify.sh` (+ este handoff e o campo `**Status:**` do roadmap, conforme
+permitido). `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados — confirmado por
+`git status --porcelain` mostrando só `scripts/check-gates-falsify.sh` modificado.
+
+**Dois cenários novos, Cenário 49 e Cenário 50, total sobe de 106 para 108.**
+
+**Cenário 49 — `credential_guard_script_integrity`.** Âncora: gerei o template REAL rodando
+`bin/trackfw discover --init` numa árvore isolada dentro de `$WORK` (não um literal reconstruído à
+mão que poderia divergir do binário sob teste) e copiei só `scripts/trackfw-credential-guard.sh` para
+dentro de um `scaffold_adr_req_project` (o mesmo fixture que o Cenário 29 prova zero violações —
+garante que nenhuma outra regra tem material para disparar). `s49_write_fixture(dest, severity)` é o
+MESMO gerador para os três braços; baseline não toca o script copiado, detecção apensa uma linha
+`# tampered`, non-vacuity usa a MESMA linha apensada mas com `rules:
+credential_guard_script_integrity: off` em vez de `error` — dois deltas isolados (conteúdo entre
+baseline/detecção; severidade entre detecção/non-vacuity), nenhum dos dois satisfazível por causa
+incidental.
+
+**Por que `rules: ...: error` no fixture:** o default é `warning` (ADR Emenda 3 — script sem marcador
+de versão, não discrimina drift de adulteração) e `warning` não derruba o exit code do `validate`
+(`internal/commands/validate.go`: só violations viram `Errorf`). `assert_fails_with` exige exit != 0,
+então sem o override o braço de detecção não teria como usar esse helper — decisão repassada por
+Apolo/Zeus no despacho, documentada no comentário do cenário para não parecer inconsistente com o
+default real.
+
+**Cenário 50 — `credential_guard_mode_downgrade`.** Achado bloqueante de Apolo confirmado: nenhum
+fixture em `check-gates-falsify.sh` fazia `git init`/commit antes deste — `s50_commit_fixture` é o
+primeiro. Commita `credential_guard.mode: block` no HEAD via `s50_yaml_content(mode)` (mesma função
+gera o conteúdo pro commit E pra reescrita pós-commit, garantindo que baseline/detecção divergem só
+no `mode`). Baseline não toca o disco depois do commit (disco == HEAD); detecção reescreve só o disco
+para `mode: warn` **sem novo commit** — a divergência disco-vs-HEAD não commitada é exatamente o
+"relaxamento legítimo não commitado" que o ADR Emenda 3 trata como único falso positivo aceitável, e
+que a mensagem da regra converte em rastro auditável ("if this was intentional, commit the change").
+Non-vacuity: mesma divergência disco-vs-HEAD, mas com `rules: credential_guard_mode_downgrade: off`
+extra no disco — único delta é a severidade, não a divergência em si. Severidade default já é `error`
+(ausente de `ruleDefaults`), então não precisei de override nos braços baseline/detecção.
+
+**Prova de não-vacuidade — decisão de desenho que diverge da instrução literal do roadmap, e por
+quê:** o texto do ML pedia "reconstrua `bin/trackfw` ao sabotar" (herdado do Cenário 47/ML-1A, onde a
+sabotagem editava `internal/validator/*.go`). Aqui os "Arquivos permitidos" do meu despacho **excluem
+`internal/`** — não posso editar a fonte da regra. Como as duas regras já são configuráveis via
+`rules:` (é critério de aceite da REQ), a prova de não-vacuidade correta é desabilitar via `rules:
+<nome>: off` no `trackfw.yaml` do fixture — sabotagem inteiramente por config, sem tocar
+`internal/validator/*.go`, sem precisar reconstruir o binário (que não mudou).
+
+**Correção pós-advisor, antes do handoff — a primeira versão deste braço estava errada:** minha
+primeira implementação só checava que a MENSAGEM sumia com `rules: off` (exit 0, "✓ No violations
+found."). O advisor apontou o furo: isso prova que o knob `rules:` funciona, mas **não prova que o
+braço de DETECÇÃO depende da regra** — se `validateCredentialGuardScriptIntegrity`/
+`validateCredentialGuardModeDowngrade` estivessem mortas (sempre retornando `nil`), esse mesmo braço
+"non-vacuity" passaria do mesmo jeito, porque nunca reproduzia o critério real de
+`assert_fails_with` (exit != 0 E mensagem presente) contra o cenário desligado. Critério da REQ é
+"desabilitar a regra faz o cenário **falhar**" — precisa ser um FAIL de verdade, não silêncio.
+
+**Correção aplicada:** criei `assert_would_now_fail` (novo helper, ao lado de `assert_fails_with`) —
+roda o MESMO comando/critério do braço de detecção contra o fixture com `rules: off`, mas EXIGE que o
+critério de `assert_fails_with` **não** seja satisfeito (senão reprova o cenário ali mesmo). A saída
+de sucesso agora imprime explicitamente a linha de FAIL que `assert_fails_with` teria ecoado no braço
+de detecção real, provando por construção que desligar a regra derruba a asserção de detecção.
+
+**Saída real da prova corrigida (colada, não resumida):**
+```
+OK   [falsify/credential-guard-script-integrity/detected]
+PROOF [falsify/credential-guard-script-integrity/non-vacuity]: com a regra desligada, o braço de
+detecção FALHARIA — assert_fails_with ecoaria "FAIL [falsify/credential-guard-script-integrity/
+detected]: saiu com 0, esperava != 0" (mensagem 'content diverges from the template this version of
+trackfw generates' ausente, exit=0). Saída real da árvore desligada:
+✓ No violations found.
+OK   [falsify/credential-guard-mode-downgrade/detected]
+PROOF [falsify/credential-guard-mode-downgrade/non-vacuity]: com a regra desligada, o braço de
+detecção FALHARIA — assert_fails_with ecoaria "FAIL [falsify/credential-guard-mode-downgrade/
+detected]: saiu com 0, esperava != 0" (mensagem 'current file does not resolve to block' ausente,
+exit=0). Saída real da árvore desligada:
+✓ No violations found.
+```
+
+**Outras correções do mesmo ciclo advisor:** (1) `s50_commit_fixture` agora fixa
+`git config commit.gpgsign false` e `git config core.hooksPath /dev/null` além de `user.email`/
+`user.name` — sem isso, um `commit.gpgsign=true`/`core.hooksPath` global do executor vazaria pro
+fixture (mesma classe de falha do
+`vault/notes/check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08.md`, mas para `git
+commit` em vez de `$HOME`); esta é a primeira sabotagem/fixture deste arquivo a chamar `git commit`,
+então o risco não tinha precedente aqui. (2) adicionei ao comentário dos dois cenários a mesma nota
+de "limite de cobertura conhecido" que o Cenário 47 já registra: cobrem só `applyRule`
+(`Validate()`/texto), não `applyRuleTagged` (`ValidateTagged()`/`validate --json`).
+
+**Convenção do contador "N scenarios" verificada, não assumida:** o advisor sugeriu conferir via
+`grep -c '^OK'`, mas isso não bate historicamente neste arquivo — cenários como o 27 ("baseline +
+baseline-negative + detection, 2 rules x 3 CLIs") ou o 39/40/41 (3 cenários com CLIs próprios listados
+separadamente) já mostram que o número NÃO é 1:1 com linhas `OK`. Confirmei a convenção real contando
+blocos `# Cenário N —` distintos: o mais alto antes da minha mudança era 48; adicionei exatamente dois
+blocos novos (49, 50) → 106 → 108 está correto por essa convenção (1 bump por bloco `# Cenário N —`
+novo, não por linha `OK`).
+
+**Prototipagem antes de editar o script real:** validei a lógica original (6 braços) num script solto
+em `/private/tmp/.../scratchpad/proto49_50.sh` antes de portar para `scripts/check-gates-falsify.sh`;
+a correção do braço de não-vacuidade (acima) foi feita direto no arquivo real, depois reexecutada
+integralmente.
+
+**Gates executados (após a correção pós-advisor, não antes):** `bash -n scripts/check-gates-falsify.sh`
+(sintaxe) ok · `bash scripts/check-gates-falsify.sh` sozinho — **108/108 OK**, nenhum FAIL · `make
+quality` completo — **exit 0**, zero linhas `FAIL`/`--- FAIL` no log completo (`grep -c`, não só o
+tail) · `git status --porcelain` — só `scripts/check-gates-falsify.sh` (+ este handoff + o campo
+`Status` do roadmap) modificados · `./bin/trackfw validate` neste repo — `✓ No violations found.`
+(continua limpo).
+
+**Não toquei:** `internal/`, `npm/src/`, `pypi/trackfw/`, `docs/cli-parity.md`, `docs/adr/`,
+`docs/req/` — confirmado via `git status --porcelain`.
+
+**Nota de vault proposta, não escrita (fora dos arquivos permitidos deste ML):** dois achados são
+armadilhas de >10min para o próximo agente que mexer em `check-gates-falsify.sh` — (1) qualquer
+fixture que rode `git commit` precisa isolar `commit.gpgsign`/`core.hooksPath`, não só
+`user.email`/`user.name` (a config global do executor vaza por padrão); (2) uma regra com severidade
+default `warning` não pode ser testada com `assert_fails_with` sem um override `rules: <nome>: error`
+no fixture, porque `warning` não muda o exit code de `validate`. Sugiro a Zeus abrir
+`vault/notes/falsify-git-commit-fixture-isolation-2026-08-12.md` (ou pasta similar) com esses dois
+pontos — não escrevi porque `vault/notes/` não está nos "Arquivos permitidos" deste despacho.
+
+**Handoff para Zeus:** auditar os dois cenários novos (49, 50), com atenção especial ao braço de
+não-vacuidade corrigido (`assert_would_now_fail`) — é a peça que mudou depois da primeira revisão.
+Depois, liberar Wave 3 (ML-3A Hefesto documentação · ML-3B Hades revisão de segurança).
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-2A — APROVADO
+
+**Prova de não-vacuidade reproduzida por Zeus** (Cenário 50): desabilitando
+`credential_guard_mode_downgrade` e reconstruindo `bin/trackfw`, o braço de detecção falha com
+*"saiu com 0, esperava != 0"*; restaurado, volta verde. **Precisei de duas tentativas** — comentar a
+chamada **não compila** em Go (`declared and not used`), o compilador protege esse call site; foi
+preciso consumir a variável com `_ =`.
+
+**A auto-correção dela é o achado do ML, e é a terceira camada do mesmo problema.** A primeira prova
+que ela escreveu verificava só que **a mensagem some quando a regra é posta em `off`** — isso prova
+que o **botão de configuração** funciona, **não** que a asserção de detecção **dependa** da regra.
+Uma regra **morta** passaria igual. Corrigido com o helper novo `assert_would_now_fail`, que roda o
+critério exato do `assert_fails_with` (exit != 0 **E** mensagem presente) contra o fixture
+desabilitado e exige que **falhe**.
+
+Sequência do mesmo erro, cada vez mais sutil e pego mais cedo: (1) teste que não provava a migração
+(ML-1A, roadmap de resolução de caminho); (2) cenário de prova negativa que ele próprio não provava
+(ML-1A→ML-1B, roadmap da prova negativa); (3) prova de não-vacuidade que provava a coisa errada
+(aqui). Da primeira vez custou um ML corretivo; desta vez foi pego dentro do próprio ML.
+
+**Encanamento novo, corretamente isolado:** Cenário 50 é o **primeiro fixture deste arquivo a usar
+`git commit`**, e ela isolou `commit.gpgsign` e `core.hooksPath`. Sem isso, config global do usuário
+(chave GPG ausente, hook path próprio) quebraria o cenário em outra máquina — mesma família do falso
+negativo de `$HOME` não isolado de 2026-08-08.
+
+**Contagem de cenários:** ela contou blocos `# Cenário N —` em vez de linhas `OK`, notando que a
+relação não é 1:1 neste arquivo (Cenários 27 e 39-41 já quebram essa suposição). 106 → **108**.
+
+**Gates re-executados por Zeus:** `check-gates-falsify.sh` **114 linhas OK, 0 FAIL** · `make quality`
+**exit 0**.
+
+**Nota de vault escrita por Zeus** a partir do que ela propôs mas não podia escrever (fora do escopo
+de arquivos dela): `vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md`
+— as três armadilhas de escrita (prova que não prova; `warning` não pode usar `assert_fails_with`;
+isolamento de git em fixture) mais a de auditoria (**reconstruir `bin/trackfw`**), que foi erro meu.
+
+**Wave 3 despachada em paralelo:** ML-3A (Hefesto, docs) e ML-3B (Hades, revisão).
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — ML-3A executado por Zeus após recusa de escopo, e um achado de governança
+
+**Hefesto recusou o ML-3A**, citando a própria definição de papel: *"You do not modify code… hand off
+the fix to the role that owns the code"*, com missão limitada a avaliar duplicação, complexidade,
+arquitetura e cobertura. **A recusa é legítima pelo arquivo de definição dele.**
+
+**Executei eu mesmo.** Documentação **não é código de produto** — minha restrição é sobre implementar
+produto, e `docs/cli-parity.md` é artefato de paridade/governança. Não valia queimar outro despacho.
+
+### 🔴 Achado de governança para KG — inconsistência real, não ambiguidade de prompt
+
+**Hefesto editou `docs/cli-parity.md` em quatro PRs desta mesma sessão** — #156 (ML-8A), #158, #159
+(ML-3A), #160 (ML-4B) — sempre como ML dele, sempre auditado e aprovado. Agora recusou a mesma
+natureza de tarefa.
+
+**Ou a definição de papel está errada, ou os quatro MLs anteriores estavam fora de escopo.** Isso
+precisa ser resolvido em `~/.claude/agents/`, senão vira aleatoriedade: o mesmo agente aceita ou
+recusa a mesma tarefa dependendo de como o ML é redigido.
+
+Ele também sugeriu redirecionar para `trackfw-tooling`, agente que **não existe** no roster deste
+projeto — e admitiu não ter aberto os arquivos de agente para confirmar. Sugestão descartada.
+
+### O que foi entregue
+
+**`docs/cli-parity.md`** — seção nova: as três vias e quem cobre cada uma; por que a âncora é **por
+alvo** (template para o script, `HEAD` para o `mode`); por que `warning` e o que destravaria `error`
+(embutir versão/hash no template); "o que estas regras NÃO veem" com o mesmo destaque; e a dívida da
+cópia local do template com a mitigação que a cobre.
+
+**`README.md`** — seção de **usuário final** antes de "What trackfw is not", com o núcleo escrito em
+linguagem de usuário: *detection, not prevention*, e que **foi medido** não haver prevenção técnica
+possível no escopo do trackfw contra agente induzido com escrita irrestrita. Lista o que não é visto
+(mudança commitada pelo adversário; ausência de `HEAD`; drift × adulteração), explica que `warning`
+**não muda o exit code** e mostra como forçar `error` no `trackfw.yaml`.
+
+Fecha com o que de fato protege, e que não é mecanismo nosso: **o script e o `trackfw.yaml` são
+arquivos versionados — revise os diffs como você revisa qualquer código.**
+
+`make quality` **exit 0**.
+
+## Sessão 2026-08-12 — Hades (Segurança) — ML-3B: revisão de segurança do estado final — NADA BLOQUEIA O PR
+
+**Entregável:** `docs/seguranca/2026-08-12-estado-final-deteccao-credential-guard.md`. Não modifiquei
+código; só a linha `**Status:**` do ML-3B no roadmap e esta entrada.
+
+**Veredito por pergunta (ver arquivo para evidência completa):**
+1. As três vias estão cobertas — mas a cobertura de **deleção** é condicional: se o script **e** a
+   entrada de hook (`.claude/settings.json` etc.) forem removidos juntos, as três regras silenciam
+   (`credential_guard_hook_resolvable` só itera entradas que existem — ausência de entrada é estado
+   legítimo por desenho, guard global não deixa entrada de projeto).
+2. A cópia local do template (6 cópias: gerador × validador, ×3 stacks) é aceitável — verifiquei que
+   os três testes de paridade **executam o gerador real** (não regex-scraping) e que existe também
+   teste comportamental que executa o script gerado com payload JWT/AWS real. Risco residual
+   irredutível: mesmo bug introduzido igualmente nos dois lados (gerador e cópia) no mesmo PR passa
+   pelo teste de igualdade — aceitável, é o mesmo risco de qualquer par gerador/consumidor com PR
+   humano como última linha.
+3. `warning` no braço do script não falha CI por default — decisão já tomada e justificada por
+   escrito na Emenda 3 do ADR (script sem marcador de versão, não discrimina drift de adulteração).
+   Não recomendo mudar o default; recomendo que a doc de usuário final diga isso sem eufemismo.
+4. **Achado novo, não levantado no despacho:** `credential_guard_mode_downgrade` pode se
+   auto-silenciar — `ruleSeverity()` lê `rules:` do `trackfw.yaml` **em disco**, nunca do `HEAD`; um
+   adversário que rebaixa `mode` e, na mesma edição não commitada, acrescenta `rules:
+   credential_guard_mode_downgrade: off` desativa a regra usando o mesmo arquivo que ela inspeciona
+   (`npm/tests/credential_guard_integrity.test.js:223-239` prova o caminho funcionando). Não bloqueia
+   este PR — é a mesma classe de limite que o ADR já aceita ("quem escreve o repositório derrota
+   detecção com escopo no repositório"). Recomendo REQ novo, fora deste roadmap, para avaliar ancorar
+   `rules:` também no `HEAD` de forma direcional.
+5. Falso senso de segurança é real se só os nomes das 3 regras forem lidos. Listei o que a doc de
+   usuário final (ML-3A, já entregue por Zeus em `README.md`/`docs/cli-parity.md`) precisa dizer.
+
+**Conclusão: nada bloqueia o PR.** Ressalvas são para a doc de usuário final documentar, não para
+corrigir neste roadmap — cheque se `README.md`/`docs/cli-parity.md` (Zeus, ML-3A) já cobrem: cobertura
+de deleção condicional a wiring, `warning` não falha CI, e a via de auto-silenciamento via `rules:`
+(achado 4, posterior ao ML-3A — pode não estar coberto ainda, vale conferir).
+
+Verificado: `go build ./...` limpo; `./bin/trackfw validate` → `✓ No violations found.` neste repo.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-3B + fechamento do roadmap
+
+**Achado 4 do parecer, não pedido no despacho, e é o mais grave do ML:** a regra
+`credential_guard_mode_downgrade` pode **se auto-silenciar**. `ruleSeverity()`
+(`internal/validator/validator.go:107`) resolve a severidade lendo `rules:` do `trackfw.yaml` **em
+disco**, nunca do `HEAD` — confirmei, é o mesmo caminho que eu já havia lido na auditoria do ML-1A do
+roadmap anterior. Uma **única edição não commitada** que rebaixe `credential_guard.mode` **e** defina
+`credential_guard_mode_downgrade: off` derrota a detecção.
+
+**Por que é pior que os limites já aceitos:** o ADR aceita que o adversário que **commita** não seja
+detectado — ali sobra o **rastro auditável**, o diff aparece no PR. Neste caso **não há commit**,
+logo **não há rastro**, e a própria regra que produziria o sinal é desligada pelo arquivo que ela
+deveria vigiar.
+
+**Decisão: não bloqueia o PR, mas não fica só documentado.** Acrescentei o limite ao `README.md` e ao
+`docs/cli-parity.md` **e** abri REQ de follow-up
+(`REQ-2026-08-12-ancorar-a-configuracao-rules-no-head-...`). Documentar não é resolver — e o parecer
+tinha razão em recomendar REQ própria, porque ancorar `rules:` no `HEAD` mexe em maquinaria
+compartilhada por todas as regras e merece decisão isolada.
+
+**Achado 1, menor, também documentado:** a cobertura de **deleção** é **condicional ao wiring** — se
+o script **e** a entrada de hook forem removidos **juntos**, as três regras silenciam
+(`validator_credential_guard.go:106-108`). Não há entrada registrada apontando para script ausente,
+então não há o que acusar. Entrou na REQ de follow-up como item secundário.
+
+**Posições dele que aceito, com o raciocínio:** a **cópia local do template** é aceitável — os testes
+de paridade executam o **gerador real** (não regex-scraping) e há teste comportamental rodando o
+script gerado contra JWT/AWS reais; o risco residual (bug idêntico introduzido nos dois lados no mesmo
+PR) é o mesmo de qualquer par gerador/consumidor sob revisão humana. E **não mudar o default
+`warning`** — a justificativa do drift (ADR Emenda 3) continua válida.
+
+**Gates finais:** `make quality` **exit 0** · `trackfw validate` sem violações.
+
+**Roadmap fechado.** REQ de detecção → `Done`.

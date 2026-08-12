@@ -89,6 +89,59 @@ irrestrita ao workspace. Isso é afirmado, não contornado. O esforço vai para 
    (Emenda 6 do `ADR-2026-08-06`). Logo, a via que sobrevive à detecção exige uma edição
    **positiva** no `trackfw.yaml` — e é, das três, **a mais diffável**.
 
+### Emenda 1 (2026-08-12, ML-0A) — a âncora é POR ALVO, e este ADR repetia o erro do superseded
+
+Este ADR disse "detecção ancorada no `HEAD`" como se fosse uma âncora só. **É por alvo**, e o
+raciocínio do ADR superseded (*"integridade de conteúdo exige o escopo global"*) **cai — mas
+parcialmente**, e a forma importa:
+
+| Alvo | Âncora | Por quê |
+|---|---|---|
+| `scripts/trackfw-credential-guard.sh` | **template do binário** | o script é concatenação pura de constantes, **sem interpolação por projeto** — o binário **sempre foi** a referência externa. O argumento do superseded é **falso** aqui. |
+| `credential_guard.mode` | **`HEAD` do git**, comparação **semântica e direcional** (`block` no `HEAD` → não-`block` no disco), não byte-diff | valor **autoral**, sem forma canônica. O argumento do superseded é **verdadeiro** aqui. |
+
+Sem redundância: o `HEAD` **não** deve cobrir também o script — não agrega cobertura e importa falso
+positivo desnecessário.
+
+### Emenda 2 (2026-08-12, ML-0A/ML-0B) — o gate existia, e era estruturalmente cego
+
+> ⚠️ **Correção da redação original desta emenda (2026-08-12, após o ML-0B).** A versão anterior
+> afirmava *"nenhum gate compara os três"*. **Errado na letra.** Zeus verificou apenas
+> `scripts/*parity*.sh` e **não olhou os testes Go**: `TestCredentialGuardScript_ParityAcrossStacks`
+> e `TestGlobalCredentialGuardScript_ParityAcrossStacks`
+> (`internal/generators/credential_guard_test.go:125` e `:235`) já existiam, rodavam dentro do
+> `make quality`, cobriam projeto **e** global, e passavam. Os 3 templates **não** estavam
+> divergentes.
+
+**A lacuna era real, mas de outra natureza — e mais grave que a descrita.** O teste Go **reconstrói**
+Node e Python por *regex-scraping* dos literais no texto-fonte (`:208`, `:228`) e os concatena numa
+ordem **hardcoded no próprio teste Go** (`:104-118`). Ele **nunca executa Node nem Python**.
+
+Logo, é **estruturalmente incapaz** de detectar **deriva de ordem de composição** — exatamente o
+risco que a âncora de template introduz. Provado concretamente no ML-0B: reordenar **só** a linha de
+composição do Node, **sem alterar nenhum literal**, manteve `go test -run ParityAcrossStacks`
+**verde**, enquanto o script realmente emitido divergia (o guard "no-op fora do projeto" passou a
+rodar **depois** do núcleo de detecção).
+
+**Fechado no ML-0B** estendendo `check-attention-scripts-parity.sh` — que roda `discover --init`
+**de verdade** nos 3 runtimes e compara o arquivo **emitido** byte-a-byte — em vez de criar gate
+novo. A escolha é o ponto: o furo do teste antigo era justamente **não executar os runtimes**.
+Cobre a variante de **projeto** (a que a âncora nova mira); a **global** segue com a cobertura
+Go-only pré-existente, limitação documentada no comentário do gate para a Wave 1 decidir.
+
+**Consequência:** sem esse gate, o mesmo repositório **dispararia a regra num CLI e ficaria silencioso
+nos outros** — falso positivo e falso negativo simultâneos, dependendo de qual binário o usuário roda.
+O gate de paridade do script do credential-guard vira **pré-requisito da implementação**.
+
+### Emenda 3 (2026-08-12, ML-0A) — o script não carrega marcador de versão
+
+Nada no script gerado identifica a versão que o produziu. Logo, a âncora de template **não consegue
+discriminar** *drift* legítimo (usuário não rodou `trackfw update` após um bump) de adulteração real.
+
+**Decisão:** severidade **`warn`** para o braço do script, com mensagem **causalmente neutra** — não
+afirmar adulteração quando a causa pode ser drift. Embutir versão/hash no template é trabalho futuro,
+fora deste roadmap, e é o que permitiria elevar para `error`.
+
 ## Consequences
 
 **Positivas**

@@ -1297,6 +1297,283 @@ function isGitWorktree(dir) {
   }
 }
 
+// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A.
+// ADR: docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-
+// resposta-e-deteccao-ancorada-no-git.md (Emenda 1: âncora POR ALVO, decidida na Barreira B0).
+// Ver internal/validator/validator_credential_guard_integrity.go para o raciocínio completo
+// (âncoras, severidades, e por que "trackfw.yaml sem a chave" é lido como HEAD sem a chave, não
+// disco sem a chave) — replicado aqui byte-a-byte na semântica, não na forma.
+
+// CREDENTIAL_GUARD_SCRIPT_REFERENCE is a validator-local copy of the same template composed in
+// generators/hooks.js (CREDENTIAL_GUARD_SCRIPT = CG_HEADER + CG_PROJECT_GUARD + CG_DETECTION_CORE
+// + CG_PROJECT_TAIL). Not required directly from generators/hooks.js because
+// generateCredentialGuardScript() writes to disk AND console.log()s a success line on every call
+// -- calling it from inside `trackfw validate` would leak a stray "  \u2713
+// scripts/trackfw-credential-guard.sh" line into validate's output on every run, corrupting the
+// exact success message Cenario 29 fixes byte-for-byte. Kept as a literal copy (same choice made
+// in internal/validator/validator_credential_guard_integrity_reference.go for Go, for the same
+// reason) instead -- drift is caught by test/validator-credential-guard-script-reference.test.js,
+// which regenerates the real script via generateCredentialGuardScript() into a temp dir and
+// asserts byte-equality against this constant.
+const CREDENTIAL_GUARD_SCRIPT_REFERENCE = `#!/usr/bin/env bash
+# trackfw credential guard — PreToolUse/PostToolUse hook
+set -euo pipefail
+
+INPUT=$(cat)
+
+# Script is intentionally a no-op when executed outside the project root
+[ -f "trackfw.yaml" ] || exit 0
+
+JWT_PATTERN='eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+'
+AWS_KEY_PATTERN='AKIA[0-9A-Z]{16}'
+
+MATCH=""
+if printf '%s' "$INPUT" | grep -qE "$JWT_PATTERN"; then
+  MATCH="JWT"
+elif printf '%s' "$INPUT" | grep -qE "$AWS_KEY_PATTERN"; then
+  MATCH="AWS access key"
+fi
+
+# The raw payload is JSON: any double quote inside the underlying tool_input.command is
+# escaped as \\" -- unescape those before scanning for redirect targets, or a quoted target
+# like "$TMPFILE" is seen as starting with a literal backslash instead of a variable
+# reference.
+RAW=$(printf '%s' "$INPUT" | sed 's/\\\\"/"/g')
+
+# Ignore matches that are only ever written to an ephemeral destination
+# (mktemp-derived path or /dev/null). A match with no redirect at all
+# (printed to stdout, e.g.) or redirected to a plain file path still
+# alerts -- that is the incident this hook guards against.
+is_ephemeral_target() {
+  local target
+  target=$(printf '%s' "$1" | tr -d "\\"'" | sed -E 's/[},]+$//')
+  case "$target" in
+    /dev/null) return 0 ;;
+    *mktemp*) return 0 ;;
+  esac
+  if printf '%s' "$target" | grep -qE '^\\$\\{?[A-Za-z_][A-Za-z0-9_]*\\}?$'; then
+    local varname pattern
+    varname=$(printf '%s' "$target" | sed -E 's/^\\$\\{?([A-Za-z_][A-Za-z0-9_]*)\\}?$/\\1/')
+    pattern="*\${varname}="'$(mktemp'"*"
+    case "$RAW" in
+      $pattern) return 0 ;;
+    esac
+  fi
+  return 1
+}
+
+REDIRECTS=$(printf '%s' "$RAW" | grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+' || true)
+
+# Second detection layer: only runs when the payload scan above found nothing -- keeps the common
+# case (match already found) cheap and avoids reading files unnecessarily. Files above the size cap
+# are skipped silently.
+scan_file_for_pattern() {
+  local path size
+  path=$(printf '%s' "$1" | tr -d "\\"'" | sed -E 's/[},]+$//')
+  [ -n "$path" ] && [ -f "$path" ] || return 1
+  size=$(wc -c < "$path" 2>/dev/null | tr -d '[:space:]')
+  size=\${size:-0}
+  [ "$size" -lt 1048576 ] || return 1
+  if grep -qE "$JWT_PATTERN" "$path" 2>/dev/null; then
+    MATCH="JWT"
+    return 0
+  fi
+  if grep -qE "$AWS_KEY_PATTERN" "$path" 2>/dev/null; then
+    MATCH="AWS access key"
+    return 0
+  fi
+  return 1
+}
+
+if [ -z "$MATCH" ] && [ -n "$REDIRECTS" ]; then
+  while IFS= read -r line; do
+    if [ -z "$line" ]; then
+      continue
+    fi
+    target=$(printf '%s' "$line" | sed -E 's/^[0-9]?>>?[[:space:]]*//')
+    if ! is_ephemeral_target "$target"; then
+      scan_file_for_pattern "$target" && break
+    fi
+  done <<< "$REDIRECTS"
+fi
+
+if [ -z "$MATCH" ]; then
+  CMD_LINE=$(printf '%s' "$RAW" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
+  if [ -n "$CMD_LINE" ]; then
+    set -- $CMD_LINE
+    cmd_name="\${1:-}"
+    case "$cmd_name" in
+      cat|head|tail|jq|grep)
+        shift
+        for token in "$@"; do
+          scan_file_for_pattern "$token" && break
+        done
+        ;;
+    esac
+  fi
+fi
+
+[ -n "$MATCH" ] || exit 0
+
+HAS_REDIRECT=0
+EXEMPT=1
+if [ -n "$REDIRECTS" ]; then
+  while IFS= read -r line; do
+    if [ -z "$line" ]; then
+      continue
+    fi
+    HAS_REDIRECT=1
+    target=$(printf '%s' "$line" | sed -E 's/^[0-9]?>>?[[:space:]]*//')
+    if ! is_ephemeral_target "$target"; then
+      EXEMPT=0
+    fi
+  done <<< "$REDIRECTS"
+fi
+
+if [ "$HAS_REDIRECT" -eq 1 ] && [ "$EXEMPT" -eq 1 ]; then
+  exit 0
+fi
+
+DEFAULT_MODE="warn"
+MODE=$(grep -A 5 '^credential_guard:' trackfw.yaml 2>/dev/null | grep 'mode:' | head -1 | sed -E 's/^[[:space:]]*mode:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d "\\"'" || true)
+case "$MODE" in
+  warn|block) ;;
+  *) MODE="$DEFAULT_MODE" ;;
+esac
+
+if [ "$MODE" = "block" ]; then
+  echo "trackfw-credential-guard: blocked - possible $MATCH detected in tool payload." >&2
+  exit 2
+fi
+
+echo "trackfw-credential-guard: warning - possible $MATCH detected in tool payload." >&2
+
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
+ROADMAP_DIR=\${ROADMAP_DIR:-docs/roadmaps}
+
+case "$ROADMAP_DIR" in
+  /*|../*|*/../*|*/..|..) ROADMAP_DIR="docs/roadmaps" ;;
+esac
+
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+MSG="Possible $MATCH detected in tool payload - review before materializing credentials in plain text."
+MSG_ESC=$(echo "$MSG" | tr -d '\\000-\\037' | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g')
+
+mkdir -p "$ROADMAP_DIR"
+printf '{"tool":"credential-guard","message":"%s","level":"action_required","timestamp":"%s"}\\n' \\
+  "$MSG_ESC" \\
+  "$TIMESTAMP" > "$ROADMAP_DIR/.trackfw-credential-guard.json"
+
+exit 0
+`
+
+// validateCredentialGuardScriptIntegrity é a regra "credential_guard_script_integrity": compara
+// scripts/trackfw-credential-guard.sh em disco contra o template que esta versão do trackfw
+// geraria. Silenciosa quando o script não existe — ausência é escopo de
+// credential_guard_hook_resolvable, não desta regra.
+function validateCredentialGuardScriptIntegrity(cwd) {
+  const root = cwd || process.cwd()
+  const relPath = 'scripts/trackfw-credential-guard.sh'
+  let content
+  try {
+    content = fs.readFileSync(path.join(root, relPath), 'utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') return []
+    return [inspectionDiagnostic('credential_guard_script_integrity', relPath, e)]
+  }
+
+  if (content === CREDENTIAL_GUARD_SCRIPT_REFERENCE) return []
+
+  return [
+    `${relPath} content diverges from the template this version of trackfw generates — ` +
+    'if you did not edit this file by hand, run `trackfw update` to regenerate it',
+  ]
+}
+
+// CREDENTIAL_GUARD_MODE_LOOKBEHIND_LINES mirrors the shell script's own resolution of
+// credential_guard.mode (`grep -A 5 '^credential_guard:'`): the mode key is found on the matched
+// line or within the 5 lines following it.
+const CREDENTIAL_GUARD_MODE_LOOKBEHIND_LINES = 5
+
+// extractCredentialGuardMode replica a leitura leve (grep/sed) que o próprio script faz —
+// deliberadamente não um parser YAML completo, para que a noção desta regra de "para o que
+// credential_guard.mode resolve" bata com o que roda de fato no hook.
+function extractCredentialGuardMode(content) {
+  const lines = content.split('\n')
+  const start = lines.findIndex(l => l.startsWith('credential_guard:'))
+  if (start === -1) return { mode: '', ok: false }
+
+  const end = Math.min(start + 1 + CREDENTIAL_GUARD_MODE_LOOKBEHIND_LINES, lines.length)
+  for (const line of lines.slice(start, end)) {
+    const trimmed = line.trim()
+    if (!trimmed.includes('mode:')) continue
+    let rest = trimmed.startsWith('mode:') ? trimmed.slice('mode:'.length) : trimmed
+    rest = rest.trim()
+    const hashIdx = rest.indexOf('#')
+    if (hashIdx >= 0) rest = rest.slice(0, hashIdx).trim()
+    rest = rest.replace(/^["']+|["']+$/g, '')
+    return { mode: rest, ok: true }
+  }
+  return { mode: '', ok: false }
+}
+
+// headTrackfwYAML retorna o conteúdo de trackfw.yaml no HEAD do git, resolvido relativo a cwd
+// (não necessariamente a raiz do repo — `trackfw validate` pode rodar de um subdiretório). ok é
+// false sempre que não há âncora usável: não é worktree git, sem commits, ou trackfw.yaml não
+// versionado no HEAD — todos "sem âncora, silêncio", nunca erro.
+function headTrackfwYAML(cwd) {
+  const root = cwd || process.cwd()
+  if (!isGitWorktree(root)) return { content: '', ok: false }
+  try {
+    execSync('git rev-parse --verify HEAD', { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] })
+  } catch {
+    return { content: '', ok: false }
+  }
+  try {
+    const out = execSync('git show HEAD:./trackfw.yaml', { cwd: root, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] })
+    return { content: out, ok: true }
+  } catch {
+    return { content: '', ok: false }
+  }
+}
+
+// validateCredentialGuardModeDowngrade é a regra "credential_guard_mode_downgrade": dispara apenas
+// quando credential_guard.mode era explicitamente "block" no HEAD e o trackfw.yaml atual em disco
+// não resolve mais para "block" (warn explícito, valor não reconhecido, ou chave/arquivo
+// ausente — todos os quais o próprio script resolveria como "warn", o DEFAULT_MODE da variante de
+// projeto).
+//
+// Silenciosa sempre que HEAD não é "block": isso é "sem âncora para detectar downgrade", não
+// "nada errado". A ausência da chave em DISCO nunca é tratada como silêncio — é exatamente a via
+// que esta regra existe para cobrir.
+function validateCredentialGuardModeDowngrade(cwd) {
+  const root = cwd || process.cwd()
+  const head = headTrackfwYAML(root)
+  if (!head.ok) return []
+
+  const headMode = extractCredentialGuardMode(head.content)
+  if (headMode.mode !== 'block') return []
+
+  let diskContent
+  try {
+    diskContent = fs.readFileSync(path.join(root, 'trackfw.yaml'), 'utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') return [credentialGuardModeDowngradeMessage()]
+    return [inspectionDiagnostic('credential_guard_mode_downgrade', 'trackfw.yaml', e)]
+  }
+
+  const diskMode = extractCredentialGuardMode(diskContent)
+  if (diskMode.mode === 'block') return []
+
+  return [credentialGuardModeDowngradeMessage()]
+}
+
+function credentialGuardModeDowngradeMessage() {
+  return 'trackfw.yaml sets credential_guard.mode: block at the git HEAD commit, but the ' +
+    'current file does not resolve to block — if this was intentional, commit the change; ' +
+    'otherwise investigate before treating the credential guard as active'
+}
+
 // _itemMeta: mapa de message → { rule, file } para enriquecer saída JSON.
 // Populado em applyRule e nos pushs diretos do validateUnfiltered.
 // Permanece em memória apenas durante a execução de uma chamada validate*.
@@ -1321,6 +1598,12 @@ function resetMeta() {
 // RULE_DEFAULTS mapeia regras cujo default NÃO é 'error'.
 const RULE_DEFAULTS = {
   note_orphan: 'warning',
+  // ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A,
+  // ADR-2026-08-12 Emenda 3: the script carries no version marker, so this rule cannot tell
+  // legitimate drift (trackfw not updated yet) from tampering — kept a warning, never an error.
+  // credential_guard_mode_downgrade is deliberately absent: it falls through to ruleSeverity's
+  // 'error' default.
+  credential_guard_script_integrity: 'warning',
 }
 
 // ruleSeverity retorna a severidade configurada para uma regra ('error'|'warning'|'off').
@@ -1392,6 +1675,8 @@ async function validateUnfiltered() {
   applyRule('adr_accepted_when_req_done', validateADRAcceptedWhenREQDone(), violations, warnings)
   applyRule('note_orphan',           validateNoteOrphan(),                 violations, warnings)
   applyRule('credential_guard_hook_resolvable', validateCredentialGuardHookResolvable(), violations, warnings)
+  applyRule('credential_guard_script_integrity', validateCredentialGuardScriptIntegrity(), violations, warnings)
+  applyRule('credential_guard_mode_downgrade', validateCredentialGuardModeDowngrade(), violations, warnings)
 
   // Regras configuráveis via applyRule (popula _itemMeta automaticamente)
   applyRule('req_has_adr',          validateREQsHaveADR(),          violations, warnings)
@@ -1646,4 +1931,9 @@ module.exports = {
   resolveCredentialGuardHookPath,
   collectCredentialGuardCommands,
   validateCredentialGuardHookResolvable,
+  // ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A
+  validateCredentialGuardScriptIntegrity,
+  validateCredentialGuardModeDowngrade,
+  extractCredentialGuardMode,
+  CREDENTIAL_GUARD_SCRIPT_REFERENCE,
 }

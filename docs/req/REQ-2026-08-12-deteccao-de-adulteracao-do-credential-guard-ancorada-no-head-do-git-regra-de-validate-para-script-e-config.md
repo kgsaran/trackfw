@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md"
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md"
 ---
 
 # REQ: Deteccao de adulteracao do credential-guard ancorada no HEAD do git — regra de validate para script e config
 
-> Date: 2026-08-12 | Status: Open
+> Date: 2026-08-12 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -93,4 +93,4 @@ ADR: docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md

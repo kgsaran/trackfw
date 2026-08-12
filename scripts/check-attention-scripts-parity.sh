@@ -1,13 +1,46 @@
 #!/usr/bin/env bash
-# check-attention-scripts-parity.sh — proves the two attention-hook scripts
-# (scripts/trackfw-attention-signal.sh and scripts/trackfw-attention-cleanup.sh),
-# emitted by `trackfw discover --init`, are byte-identical across Go, Node.js
-# and Python. The three runtimes each embed the script content as a source
+# check-attention-scripts-parity.sh — proves the PROJECT-scope hook scripts
+# emitted by `trackfw discover --init` (trackfw-attention-signal.sh,
+# trackfw-attention-cleanup.sh and, since ML-0B of
+# ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate,
+# trackfw-credential-guard.sh) are byte-identical across Go, Node.js and
+# Python. The three runtimes each embed the script content as a source
 # literal (internal/generators/scaffold.go, npm/src/generators/hooks.js,
 # pypi/trackfw/generators/init_gen.py) — nothing enforced this stayed in sync
-# until now, and the three literals drifted (comment language, a blank line,
-# `sed` invocation style) without any gate noticing
+# until now, and the two attention literals drifted (comment language, a
+# blank line, `sed` invocation style) without any gate noticing
 # (see docs/req/REQ-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md).
+#
+# trackfw-credential-guard.sh (ML-0B, 2026-08-12): a Go-only unit test already
+# existed — TestCredentialGuardScript_ParityAcrossStacks
+# (internal/generators/credential_guard_test.go) — but it regex-scrapes the
+# CG_* / _CG_* block literals out of hooks.js/init_gen.py SOURCE TEXT and
+# reconstructs the script by concatenating them in a Go-hardcoded order; it
+# never executes Node or Python, so it cannot see a bug in the runtime's OWN
+# composition line (`CREDENTIAL_GUARD_SCRIPT = CG_HEADER + ...`). Verified
+# concretely: swapping the order of that one Node.js concatenation line makes
+# `discover --init` emit a script where the project-root no-op guard moves
+# past the detection core (a real behavioral break — the guard would run
+# unconditionally instead of gating everything after it), while
+# `go test -run ParityAcrossStacks` stays green throughout, because it never
+# reads the CREDENTIAL_GUARD_SCRIPT constant, only the four block literals in
+# isolation. This gate closes that gap by running `discover --init` for real
+# in all three runtimes (same entry point already used for the two attention
+# scripts) and diffing the actual emitted file — the same end-to-end guarantee
+# `check-attention-scripts-parity.sh` already gave the other two scripts.
+#
+# Scope decision — PROJECT variant only, not global: the new `validate` rule
+# this gate is a prerequisite for (Wave 1 of the roadmap above) anchors on the
+# project-scope script (scripts/trackfw-credential-guard.sh), generated here
+# via `discover --init` exactly like the two attention scripts. The global
+# variant (~/.trackfw/scripts/trackfw-credential-guard.sh, written by
+# `trackfw update harness`) is NOT covered end-to-end here — extending this
+# gate to it would require driving `update harness` with a fixture $HOME in
+# all three runtimes, which is unverified/out of scope for what the anchor
+# actually needs. The existing Go-only TestGlobalCredentialGuardScript_
+# ParityAcrossStacks keeps its (weaker, non-executing) coverage for that
+# variant; if the global script becomes a validate anchor too, extend this
+# gate the same way then — do not presume it is covered now.
 #
 # Follows the conventions of scripts/check-branch-new-parity.sh: set -euo pipefail,
 # mktemp -d fixture with a cleanup trap, BASH_SOURCE-relative ROOT_DIR, GO_BIN
@@ -97,7 +130,7 @@ done
 for runtime_dir in "go:$GO_DIR" "node:$NODE_DIR" "py:$PY_DIR"; do
   runtime=${runtime_dir%%:*}
   dir=${runtime_dir##*:}
-  for script in trackfw-attention-signal.sh trackfw-attention-cleanup.sh; do
+  for script in trackfw-attention-signal.sh trackfw-attention-cleanup.sh trackfw-credential-guard.sh; do
     path="$dir/scripts/$script"
     if [[ ! -s "$path" ]]; then
       fail "attention-scripts-parity/$runtime/$script" "missing or empty: $path"
@@ -114,7 +147,7 @@ fi
 # ---------------------------------------------------------------------------
 # Byte-for-byte diff of both scripts, go-vs-node and go-vs-py.
 # ---------------------------------------------------------------------------
-for script in trackfw-attention-signal.sh trackfw-attention-cleanup.sh; do
+for script in trackfw-attention-signal.sh trackfw-attention-cleanup.sh trackfw-credential-guard.sh; do
   go_file="$GO_DIR/scripts/$script"
   node_file="$NODE_DIR/scripts/$script"
   py_file="$PY_DIR/scripts/$script"
