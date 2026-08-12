@@ -90,7 +90,7 @@ importa para o risco real.
 > arquivo além do working context (append-only).
 
 ### ML-1A — Prova empírica: Codex, casos A e B
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Ártemis (`artemis-tf`)
 **Entregável:** `docs/pesquisa/2026-08-12-semantica-de-falha-de-hook-codex.md` (novo)
 
@@ -124,7 +124,7 @@ importa para o risco real.
 - [ ] Nenhum arquivo fora de `docs/pesquisa/` e `docs/agents-working-context.md`.
 
 ### ML-1B — Varredura documental: Claude, Gemini, Cursor, Copilot, Kiro
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Prometeu (`prometeu-tf`)
 **Entregável:** `docs/pesquisa/2026-08-12-semantica-de-falha-de-hook-varredura-documental.md` (novo)
 
@@ -151,8 +151,36 @@ importa para o risco real.
 
 ---
 
-## Barreira B1 — Avaliação do resultado (Zeus)
+## Barreira B1 — Avaliação do resultado (Zeus) — ✅ CONCLUÍDA
 > Dependências: ML-1A e ML-1B concluídos e auditados.
+
+**Veredito: FAIL-OPEN no caso A — o credential-guard é contornável.**
+
+| CLI | Caso A | Caso B | Fonte |
+|---|---|---|---|
+| Claude Code | **FAIL-OPEN** | `exit 1` open · `exit 2` closed | doc primária (verificada por Zeus) |
+| Codex CLI | **FAIL-OPEN** | `exit 1` open · `exit 2` closed | **empírico** (ML-1A) |
+| Cursor | **FAIL-OPEN** (padrão) | open salvo `exit 2`; opt-in `failClosed` | doc primária |
+| Gemini | INDETERMINADO | fora de `{0,2}` é open | doc primária |
+| Copilot | fail-closed | fail-closed | doc primária |
+| Kiro | INDETERMINADO | **depende da superfície** (IDE × CLI) | doc primária |
+
+**Decisão de Zeus:**
+
+1. **Escopo negativo respeitado — a mitigação NÃO entra neste roadmap.** Ele foi criado para
+   *determinar* a semântica, e a proibição de corrigir os caminhos está escrita no próprio escopo
+   negativo. Misturar diagnóstico e correção aqui é o que este projeto já provou dar errado.
+2. **Abre REQ nova de mitigação**, informada pelo parecer do ML-2A (Hades). Hipótese a ser avaliada
+   por ele, **não decidida aqui**: converter "não consegui rodar" em bloqueio no próprio comando
+   emitido (`sh -c 'test -x <script> && exec <script> || exit 2'`), transformando 127 em `exit 2`.
+   Portabilidade entre os 6 CLIs, custo por chamada e efeito em projeto legitimamente sem o script
+   são desconhecidos.
+3. **Reclassificação retroativa registrada:** o incidente do `ROADMAP-2026-08-11` não era degradação
+   de disponibilidade — era **bypass silencioso de controle de segurança**. A palavra `non-blocking`
+   estava no screenshot original e passou despercebida.
+4. Nota de vault criada:
+   `vault/notes/hooks-de-agente-falham-abertos-quando-o-script-nao-resolve-2026-08-12.md`
+   (3 achados de Ártemis + a armadilha das abas do Kiro + as armadilhas de teste em macOS).
 
 Zeus avalia o veredito do Codex e decide:
 
@@ -168,7 +196,7 @@ Zeus avalia o veredito do Codex e decide:
 > Dependências: Barreira B1.
 
 ### ML-2A — Implicação de segurança do resultado
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Hades (`hades-tf`)
 **Entregável:** `docs/seguranca/2026-08-12-semantica-de-falha-de-hook.md` (novo). **Não modifica
 código.**
