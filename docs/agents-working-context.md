@@ -12882,3 +12882,78 @@ CLI antes de rodar.
 de alinhamento do Claude por decomposição; se o `--sandbox enabled` do Cursor não tem precedência
 sobre a config salva, ou se o sandbox dele simplesmente não cobre filesystem fora do workspace; e se
 o `approvalMode: unrestricted` medido no Cursor é o default de fábrica.
+
+## Sessão 2026-08-12 — Hades (Security) — ML-1A: parecer de segurança sobre o resultado do ML-0A
+
+**Entregável:** `docs/seguranca/2026-08-12-alcance-do-agente-ao-home.md` (novo). Nenhum arquivo de
+código modificado — só leitura de `internal/generators/scaffold.go` para verificação de fato.
+
+**Vereditos:** (1) vantagem do escopo global existe só no eixo **custo**, e só para CLIs com sandbox
+técnico real (Codex); nos eixos **visibilidade** e **sinal** o escopo global é **pior**, não neutro,
+porque um arquivo fora do repositório não aparece em `git status`/diff/PR. (2) Claude Code: **NÃO
+PROTEGIDO** — `permission_denials: []` mais a demonstração de que o mesmo caminho é gravável sob nome
+neutro provam que a recusa é heurística de conteúdo/nome, contornável em tese por um adversário que
+controla o conteúdo do pedido; não é fronteira técnica. (3) Política pelo **pior caso (Cursor)**, não
+por CLI — "por CLI" multiplicaria pela regra de paridade de 3 implementações (Go/Node/Python) e não é
+verificável pelo trackfw em produção (não há como saber se o sandbox do Cursor de um usuário real está
+ligado). (4) Recomendação: nem "global por padrão" isolado, nem "documentar e parar" isolado —
+**investir o esforço restante em detecção ancorada no versionamento do repo** (não no escopo global),
+manter a instalação global só como mitigação de custo para CLIs com sandbox real, e adotar sem ressalva
+a frase da Emenda 1 do ADR sobre prevenção não existir contra agente induzido com escrita irrestrita.
+(5) `INDETERMINADO` (Gemini/Copilot) não mudam a política — pior caso já estabelecido pelo Cursor; não
+vale abrir REQ de medição adicional só por isso.
+
+**🔴 Achado não previsto, fora das 5 perguntas do ML:** o script do guard **global**
+(`credentialGuardGlobalTail`, `internal/generators/scaffold.go:994-1011`) lê `credential_guard.mode`
+do `trackfw.yaml` do **cwd** — mesmo mecanismo da variante de projeto. Instalar o guard em
+`~/.trackfw/` **não fecha a via de downgrade de `mode`**: o script global, ao rodar, ainda confia numa
+config editável dentro do workspace, inclusive para o Codex (o único CLI cujo sandbox bloqueou os
+alvos fora do workspace neste ML). A pergunta "o agente alcança `$HOME`" era a pergunta certa para as
+vias de deleção/sobrescrita, mas irrelevante para a via de `mode`, que nunca precisou sair do
+workspace. Recomendo a Zeus registrar isso no ADR reescrito e avaliar nota de vault (fora do escopo de
+escrita deste ML).
+
+**Nenhum arquivo fora do escopo permitido foi criado** — só o entregável em `docs/seguranca/`, este
+registro e o campo `**Status:**` do ML-1A no roadmap.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — ADR reescrito, roadmap fechado
+
+**Auditoria do ML-1A (Hades) — aprovado, com um achado que verifiquei no código e que inverte parte
+do raciocínio.**
+
+Ele reportou que o guard **global** lê `credential_guard.mode` do `trackfw.yaml` do **cwd**. Fui ler
+`internal/generators/scaffold.go:994-1011`: `credentialGuardModeResolution` faz `grep` no
+`trackfw.yaml` do cwd e é **compartilhada** entre as variantes de projeto e global (documentado na
+Emenda 6 do `ADR-2026-08-06`). **Confirmado.**
+
+**Isso significa que o escopo global NUNCA fechou a via do `mode`** — um agente induzido não precisa
+alcançar `$HOME`, basta editar `trackfw.yaml` dentro do workspace. Inclusive no **Codex**, o único
+CLI cujo sandbox bloqueou os alvos externos. A pergunta "o agente alcança `$HOME`?" era a certa para
+deleção e sobrescrita, e **irrelevante** para `mode`. O ADR anterior otimizou para 2 de 3 vias sem
+perceber que a terceira ignorava a defesa escolhida.
+
+**Segundo achado que também inverte:** o escopo global é **pior** em visibilidade, não neutro.
+Artefato dentro do repo aparece em `git status`, diff e PR; em `~/.trackfw/` não aparece em lugar
+nenhum. O ADR anterior tratou o trade-off como ganho puro.
+
+**Posição dele sobre o Claude, sem hedge, e eu concordo:** **NÃO PROTEGIDO**.
+`permission_denials: []` prova ausência de camada técnica, e o mesmo caminho foi escrito sem
+hesitação com nome de arquivo neutro — a recusa é endereçada por **conteúdo/nome**, exatamente o que
+o adversário induzido controla. Contar alinhamento de modelo como defesa **contra indução** é
+circular.
+
+**ADR anterior → `Superseded`.** Sucessor:
+`ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md`.
+Decisão: **não há prevenção técnica** contra agente induzido com escrita irrestrita — afirmado, não
+contornado. Esforço vai para **detecção ancorada no `HEAD` do git**, que cobre as **três** vias, não
+depende do escopo global, e usa âncora de confiança que **já existe** (diferente da integridade de
+conteúdo rejeitada, que precisava do escopo global como pré-requisito).
+
+**Política pelo pior caso, não por CLI** — argumento decisivo do parecer: o trackfw **não observa**,
+em produção, se o sandbox do Cursor de um usuário real está ligado. Política que depende de fato não
+observável não é política.
+
+**REQ de "guard global por padrão" fechada:** o eixo bloqueante foi respondido e derrubou a premissa;
+os outros dois eixos ficaram obsoletos **como formulados**. Registrado na própria REQ.
+
+**Próximo:** REQ nova de detecção ancorada no `HEAD`.

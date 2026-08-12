@@ -1,16 +1,32 @@
 ---
-status: Open
+status: Done
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
-adr: "docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md"
+adr: "docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md"
 ---
 
 # REQ: Credential-guard de escopo global como caminho padrao — consentimento explicito, verificacao da premissa de sandbox e a via do credential_guard.mode
 
-> Date: 2026-08-12 | Status: Open
+> Date: 2026-08-12 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
+
+## ⚠️ Status: eixo bloqueante RESPONDIDO; os outros dois ficaram OBSOLETOS na premissa
+
+O **eixo 2 (medição da premissa de sandbox)** era bloqueante e foi executado
+(`ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-...`). **A premissa caiu.**
+
+Consequência: os eixos **1 (consentimento para instalar por padrão)** e **3 (via do
+`credential_guard.mode`)** ficaram **obsoletos como estavam formulados** — ambos pressupunham que
+"instalar o guard global por padrão" seria a resposta, e o novo ADR decidiu que **não é**. Em
+particular, a medição revelou que o guard **global** lê `credential_guard.mode` do `trackfw.yaml` do
+**cwd** (`scaffold.go:1005`): o escopo global **nunca fechou** essa via.
+
+**ADR sucessor:** `docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md` — não há prevenção técnica contra agente induzido com escrita irrestrita; o
+esforço vai para **detecção ancorada no `HEAD` do git**, em REQ nova.
+
+Esta REQ fica **fechada** como registro do que motivou a medição e do que ela derrubou.
 
 ## Motivation
 
@@ -117,7 +133,7 @@ registrado no ADR como não fechado, e precisa de resposta aqui.
   `trackfw update` em algo que toca `$HOME` sem consentimento.
 
 ## Linked ADR
-ADR: docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md
+ADR: docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md
 
 ## Blocked by ADRs
 <!-- none -->

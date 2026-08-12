@@ -1,12 +1,22 @@
 ---
-status: Accepted
+status: Superseded
 date: 2026-08-12
 author: "Zeus (Arquiteto), decisão de KG"
 ---
 
 # ADR: Defesa do credential-guard vive no escopo global — controle que mora onde o agente escreve nao e controle
 
-> Date: 2026-08-12 | Status: Accepted
+> Date: 2026-08-12 | Status: **Superseded**
+>
+> ⚠️ **SUPERSEDED em 2026-08-12 por** `docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md`.
+> A premissa central (*"o guard global está fora do alcance de um agente restrito ao workspace"*)
+> foi **medida** e **não se sustenta**: o Cursor alcança; o Claude alcança tecnicamente (a recusa
+> vem de alinhamento do modelo, não de sandbox); e — decisivo — o guard **global** lê
+> `credential_guard.mode` do `trackfw.yaml` do **cwd** (`scaffold.go:1005`, compartilhado com a
+> variante de projeto), então **o escopo global nunca fechou a via de downgrade de modo**, que é
+> alcançável de dentro do workspace em **todos** os CLIs, Codex incluído.
+> **Mantido como registro** — quem propuser "instalar o guard global por padrão" de novo precisa
+> encontrar aqui o motivo da queda.
 
 REQ: `docs/req/REQ-2026-08-12-mitigacao-do-fail-open-do-credential-guard-integridade-do-script-e-da-config-controle-positivo-e-fail-closed-nativo.md`
 Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md`
