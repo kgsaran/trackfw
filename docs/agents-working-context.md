@@ -4,6 +4,47 @@
 
 ---
 
+## Sessão 2026-08-12 — Hades (ML-0A: âncora de detecção — HEAD × template do binário) — CONCLUÍDO, aguardando emenda de ADR por Zeus
+
+Branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md`,
+Wave 0/ML-0A — status atualizado para ✅ Concluído. Não modifiquei código.
+
+**Entregável:** `docs/seguranca/2026-08-12-ancora-de-deteccao-de-adulteracao.md`.
+
+**Recomendação por alvo:** template compilado no binário para o script
+(`scripts/trackfw-credential-guard.sh`); `HEAD` do git, semântico e direcional (`block`→não-`block`),
+para `credential_guard.mode` em `trackfw.yaml`. Sem redundância — não usar `HEAD` também no script.
+
+**Posição sobre o raciocínio do ADR superseded ("integridade exige escopo global"):** cai, mas só
+parcialmente. É falso para o script — verificado que Go/Node/Python geram o script como concatenação
+pura de `const`/string sem interpolação por-projeto, então o próprio binário é a referência fora do
+arquivo, sem depender de `$HOME`. É verdadeiro para `credential_guard.mode` — valor autoral, sem forma
+canônica, a única referência fora do arquivo sem depender de escopo global é o `HEAD`. **O ADR
+Accepted que já supersede o primeiro repete o mesmo erro** (não separa script de config na Decision
+item 3) e também precisa de emenda — não só o superseded.
+
+**Achado não mapeado por Zeus, crítico para o ML-1A:** os três templates do script (Go
+`credentialGuardScript`, Node `CREDENTIAL_GUARD_SCRIPT`, Python `_CREDENTIAL_GUARD_SH`) são mantidos
+independentemente e **nenhum gate compara byte-a-byte** os três entre si. A âncora de template só é
+segura se essa paridade for garantida — sem isso, o mesmo repositório dispara violação num CLI e fica
+silencioso nos outros. Precisa entrar no escopo do ML-1A como pré-requisito, não como nota de rodapé.
+
+**Outro achado:** nenhum marcador de versão está embutido no script gerado — o template já mudou
+2x recentemente (ADR-2026-08-06 emendas 6 e 8). Sem marcador, a regra de template nunca discrimina
+*drift* de versão legítimo de tampering real; mitigação recomendada é severidade `warn` + mensagem
+causal-neutra (nunca "adulterado"), com o remédio (`trackfw update`) sendo o mesmo nos dois casos.
+
+**Evidência local relevante:** este próprio repositório não tem `scripts/trackfw-credential-guard.sh`
+(nunca commitado) nem bloco `credential_guard:` em `trackfw.yaml` — é exemplo real, não hipotético, do
+caso "sem âncora", e confirma que "ausente → silêncio" satisfaz estruturalmente o critério de aceite
+"não dispara neste repositório".
+
+**Próximo passo:** Zeus emenda o ADR Accepted com esta decisão de âncora por alvo (Barreira B0) antes
+de liberar o ML-1A (Apolo).
+
+---
+
 ## Sessão 2026-08-12 — Apolo (ML-1A: regra `credential_guard_hook_resolvable` — controle positivo) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
 
 Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Roadmap:
@@ -13000,3 +13041,35 @@ regenera esse binário e o cenário de falsificação o usa — erro que **eu** 
 Cenário 47.
 
 Branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-0A + Barreira B0 (3 emendas ao ADR)
+
+**A hipótese que levantei estava certa, mas incompleta — e o parecer melhorou a resposta.** Eu havia
+proposto "as duas âncoras, para alvos diferentes". Hades confirmou **e** qualificou: o raciocínio do
+ADR superseded cai **parcialmente**, e a forma importa. É **falso** para o script — que é
+concatenação pura de constantes, **sem interpolação por projeto**, logo o binário **sempre foi** a
+referência externa. É **verdadeiro** para o `credential_guard.mode` — valor autoral, sem forma
+canônica.
+
+Ele também apontou algo que eu não vi: **o ADR Accepted repetia o mesmo erro** ao tratar "âncora no
+`HEAD`" como coisa única. Emendei os dois, não só o superseded.
+
+**🔴 Achado crítico que verifiquei por conta própria e é maior do que ele descreveu.** Hades alertou
+que os 3 templates do script não têm gate de paridade. Fui checar: `check-attention-scripts-parity.sh`
+cobre **apenas** `trackfw-attention-signal.sh` e `trackfw-attention-cleanup.sh`; o
+`check-agent-hooks-parity.sh` só faz `grep` da string no **JSON do hook**, nunca no conteúdo do `.sh`.
+**Confirmado: o script do credential-guard não tem paridade byte-a-byte em lugar nenhum.**
+
+Sem esse gate, a âncora de template faria o mesmo repositório **disparar num CLI e ficar silencioso
+nos outros** — falso positivo e falso negativo simultâneos, dependendo de qual binário o usuário roda.
+Virou **ML-0B**, bloqueando a implementação.
+
+**Segunda decisão da barreira, sobre severidade:** o script **não carrega marcador de versão**, então
+a regra **não consegue** discriminar *drift* legítimo (usuário não rodou `update` após bump) de
+adulteração. Decidi **`warn`** para o braço do script, com mensagem **causalmente neutra** — não
+afirmar adulteração quando a causa pode ser drift. Embutir versão/hash no template fica como trabalho
+futuro, e é o que permitiria elevar para `error`.
+
+**Instrução deliberada no ML-0B:** se os 3 templates **já estiverem divergentes hoje**, o agente deve
+**parar e reportar** — divergência pré-existente é **achado**, não conserto silencioso dentro de um ML
+de gate.

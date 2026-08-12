@@ -80,7 +80,7 @@ medidas foram testadas e caíram.
 > Dependências: nenhuma. **Bloqueia a implementação.**
 
 ### ML-0A — `HEAD` × template do binário: qual âncora, para qual alvo
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Hades; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Hades (`hades-tf`)
 **Entregável:** `docs/seguranca/2026-08-12-ancora-de-deteccao-de-adulteracao.md` (novo).
 **Não modifica código.**
@@ -102,8 +102,56 @@ medidas foram testadas e caíram.
 
 ---
 
-## Barreira B0 — Emenda ao ADR (Zeus)
-> Dependências: ML-0A. Zeus emenda o ADR com a decisão de âncora antes de liberar a implementação.
+## Barreira B0 — Emenda ao ADR (Zeus) — ✅ CONCLUÍDA
+> Dependências: ML-0A.
+
+**ADR emendado (3 emendas).** Decisão: **âncora por alvo**.
+
+| Alvo | Âncora | Severidade |
+|---|---|---|
+| `scripts/trackfw-credential-guard.sh` | **template do binário** | **`warn`** (ver abaixo) |
+| `credential_guard.mode` | **`HEAD`**, comparação **semântica e direcional** | a decidir no ML-1A |
+
+**O raciocínio do ADR superseded cai — parcialmente.** É **falso** para o script (concatenação pura
+de constantes, sem interpolação por projeto: o binário sempre foi a referência externa) e
+**verdadeiro** para o `mode` (valor autoral, sem forma canônica). O ADR **Accepted** repetia o mesmo
+erro ao tratar "âncora no `HEAD`" como uma coisa só — emendado também, não apenas o superseded.
+
+🔴 **Pré-requisito descoberto e verificado por Zeus:** **não existe gate de paridade byte-a-byte do
+script do credential-guard entre os 3 stacks.** `check-attention-scripts-parity.sh` cobre apenas os
+dois scripts de *attention*; `check-agent-hooks-parity.sh` só faz `grep` da string no **JSON do
+hook**. Sem esse gate, o mesmo repo **dispara num CLI e fica silencioso nos outros**. Virou **ML-0B**,
+antes da implementação.
+
+**Severidade `warn` para o braço do script, decidida agora:** o script **não carrega marcador de
+versão**, então a regra **não consegue** discriminar *drift* legítimo de adulteração. Mensagem
+causalmente neutra. Embutir versão/hash no template é trabalho futuro — e é o que permitiria elevar
+para `error`.
+
+---
+
+## Wave 0-bis — Pré-requisito: paridade do script (1 ML)
+> Dependências: Barreira B0. **Bloqueia a Wave 1.**
+
+### ML-0B — Gate de paridade byte-a-byte do script do credential-guard
+**Status:** 🔄 Em andamento
+**Agente:** Ártemis (`artemis-tf`)
+**Arquivos:** `scripts/` (gate novo ou extensão de `check-attention-scripts-parity.sh`) + `Makefile`
+se necessário + cenário de falsificação correspondente.
+
+Sem este gate, a âncora de template é insegura. Modelo pronto: `check-attention-scripts-parity.sh`
+já faz exatamente isso para os dois scripts de attention — a extensão natural é incluir
+`trackfw-credential-guard.sh`, **se** a mecânica do gate comportar (o script do guard é gerado por
+caminho diferente do de attention — **verificar antes**, não presumir).
+
+**Critérios de aceite:**
+- [ ] Os 3 templates do script do credential-guard comparados **byte-a-byte** entre Go, Node e Python.
+- [ ] Cenário de falsificação com **prova negativa**: corromper um dos três faz o gate reprovar; sem
+      a sabotagem, passa.
+- [ ] `make quality` exit 0 com total de cenários incrementado.
+- [ ] Nenhum código de produto alterado (`internal/`, `npm/src/`, `pypi/trackfw/` intocados) — **a
+      menos que** os 3 templates **já estejam divergentes hoje**. Se estiverem: **PARE e reporte a
+      Zeus** — divergência pré-existente é achado, não conserto silencioso.
 
 ---
 

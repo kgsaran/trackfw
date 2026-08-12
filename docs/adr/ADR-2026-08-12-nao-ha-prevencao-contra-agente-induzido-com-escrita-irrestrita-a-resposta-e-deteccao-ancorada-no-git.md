@@ -89,6 +89,41 @@ irrestrita ao workspace. Isso é afirmado, não contornado. O esforço vai para 
    (Emenda 6 do `ADR-2026-08-06`). Logo, a via que sobrevive à detecção exige uma edição
    **positiva** no `trackfw.yaml` — e é, das três, **a mais diffável**.
 
+### Emenda 1 (2026-08-12, ML-0A) — a âncora é POR ALVO, e este ADR repetia o erro do superseded
+
+Este ADR disse "detecção ancorada no `HEAD`" como se fosse uma âncora só. **É por alvo**, e o
+raciocínio do ADR superseded (*"integridade de conteúdo exige o escopo global"*) **cai — mas
+parcialmente**, e a forma importa:
+
+| Alvo | Âncora | Por quê |
+|---|---|---|
+| `scripts/trackfw-credential-guard.sh` | **template do binário** | o script é concatenação pura de constantes, **sem interpolação por projeto** — o binário **sempre foi** a referência externa. O argumento do superseded é **falso** aqui. |
+| `credential_guard.mode` | **`HEAD` do git**, comparação **semântica e direcional** (`block` no `HEAD` → não-`block` no disco), não byte-diff | valor **autoral**, sem forma canônica. O argumento do superseded é **verdadeiro** aqui. |
+
+Sem redundância: o `HEAD` **não** deve cobrir também o script — não agrega cobertura e importa falso
+positivo desnecessário.
+
+### Emenda 2 (2026-08-12, ML-0A) — pré-requisito verificado por Zeus: falta gate de paridade do script
+
+A âncora de template só é segura se os **três** templates (Go `credentialGuardScript`, Node
+`CREDENTIAL_GUARD_SCRIPT`, Python `_CREDENTIAL_GUARD_SH`) forem byte-idênticos. **Verificado por
+Zeus: nenhum gate compara os três.** `check-attention-scripts-parity.sh` cobre **apenas** os dois
+scripts de *attention*; `check-agent-hooks-parity.sh` só faz `grep` da string no **JSON do hook**,
+nunca no conteúdo do `.sh`.
+
+**Consequência:** sem esse gate, o mesmo repositório **dispararia a regra num CLI e ficaria silencioso
+nos outros** — falso positivo e falso negativo simultâneos, dependendo de qual binário o usuário roda.
+O gate de paridade do script do credential-guard vira **pré-requisito da implementação**.
+
+### Emenda 3 (2026-08-12, ML-0A) — o script não carrega marcador de versão
+
+Nada no script gerado identifica a versão que o produziu. Logo, a âncora de template **não consegue
+discriminar** *drift* legítimo (usuário não rodou `trackfw update` após um bump) de adulteração real.
+
+**Decisão:** severidade **`warn`** para o braço do script, com mensagem **causalmente neutra** — não
+afirmar adulteração quando a causa pode ser drift. Embutir versão/hash no template é trabalho futuro,
+fora deste roadmap, e é o que permitiria elevar para `error`.
+
 ## Consequences
 
 **Positivas**
