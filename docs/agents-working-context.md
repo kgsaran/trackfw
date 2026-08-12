@@ -13164,3 +13164,159 @@ do gate para a Wave 1 decidir se precisa do mesmo tratamento.
 (106 cenários) · `make quality` **exit 0**.
 
 **Wave 1 liberada.**
+
+## Sessão 2026-08-12 — Apolo (Backend) — ML-1A concluído: regra de detecção nos 3 CLIs
+
+**Início:** ML-1A do `ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md`,
+branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`. Duas regras novas de
+`trackfw validate`, âncora por alvo (ADR-2026-08-12 Emenda 1), nos 3 CLIs.
+
+**Regras entregues** (nomes finais, idênticos nos 3 stacks):
+- `credential_guard_script_integrity` — âncora: template do binário/pacote. Severidade default
+  **`warning`** (registrada em `ruleDefaults`/`RULE_DEFAULTS`/`_RULE_DEFAULTS`) — o script não carrega
+  marcador de versão, então a regra não distingue drift legítimo de adulteração (ADR Emenda 3);
+  mensagem causalmente neutra ("content diverges from the template... run `trackfw update`"), nunca
+  afirma adulteração. Silêncio quando o script não existe (ausência é escopo de
+  `credential_guard_hook_resolvable`, não duplicado aqui).
+- `credential_guard_mode_downgrade` — âncora: `HEAD` do git, comparação **semântica e direcional**
+  (`block` no HEAD → não-`block` em disco). Severidade default **`error`** (decisão minha, justificada
+  abaixo). Silêncio sempre que HEAD não é `block` (sem repo git, sem commits, `trackfw.yaml` não
+  versionado no HEAD, ou HEAD sem a chave `credential_guard.mode` / com valor `warn`) — isso é "sem
+  âncora para detectar downgrade", não "nada errado".
+
+**Problema de import cycle (Go) e a solução adotada, uniforme nos 3 stacks:** `internal/validator`
+não pode importar `internal/generators` (`generators/context.go` já importa `validator`, para
+`trackfw context`) — e o ML-1A está fora de escopo em `internal/generators/`. Consultei o advisor
+antes de implementar: a alternativa óbvia (injetar um provider function-var, wired em
+`internal/commands`, chamando `generators.GenerateCredentialGuardScript` num tmpdir) **quebra** porque
+essa função `fmt.Printf`/`console.log`/imprimiria uma linha de sucesso em todo `trackfw validate`,
+corrompendo a mensagem de sucesso que o Cenário 29 fixa byte-a-byte — e um provider nil-por-padrão
+deixaria a regra muda em qualquer caminho que não passe por `internal/commands` (testes unitários,
+`serve`, `barrier.go`). Decisão final: **cópia literal validator-local do template** (byte-a-byte
+idêntica ao gerador real, confirmada por regeneração real nos 3 stacks antes de escrever o literal) +
+**teste de paridade dedicado** que regenera via o gerador de produção real (`generators.GenerateCredentialGuardScript`
+em Go via *external test package* `validator_test` — evita o ciclo porque testes externos podem
+importar ambos os pacotes sem reintroduzir o ciclo em produção; `generateCredentialGuardScript`/
+`_generate_credential_guard_script` diretamente em Node/Python, chamados a partir do próprio arquivo
+de teste) e assere igualdade byte-a-byte. Essa cópia é **materialmente mais forte** que
+`TestCredentialGuardScript_ParityAcrossStacks` (que nunca executa os runtimes — achado do ML-0B): ela
+executa o gerador de produção de fato. Verifiquei que os 3 stacks emitem **byte-idêntico** antes de
+transcrever (`diff` entre as 3 saídas reais).
+
+**Interpretação que fiz e que Zeus deve auditar:** "trackfw.yaml sem a chave `credential_guard.mode`
+→ silêncio" (texto do ML-1A) refere-se ao lado **HEAD** (a âncora), não ao disco — se o disco perder a
+chave inteira enquanto o HEAD tinha `mode: block`, isso **dispara** (é exatamente a via que a regra
+existe para cobrir; silenciar aí tornaria a regra inútil contra o ataque mais óbvio: apagar o bloco
+`credential_guard:` inteiro). Testado explicitamente (`ChaveRemovidaNoDisco_Dispara` /
+`ArquivoDeletadoNoDisco_Dispara`, replicado nos 3 stacks).
+
+**Severidade `error` para `credential_guard_mode_downgrade` — justificativa:** ao contrário do script,
+o valor `mode` não tem forma gerada sujeita a drift de versão; o único falso-positivo considerado foi
+um relax legítimo `block`→`warn` ainda não commitado — aceitei o risco porque o fix nesse caso é
+`git commit`, que é exatamente o rastro auditável que esta via de detecção existe para forçar (a via
+`mode` é "a mais diffável" das três, ADR Decision ponto 5).
+
+**Armadilha do symlink evitada por design:** nenhuma mensagem embute caminho absoluto — só caminhos
+relativos (`scripts/trackfw-credential-guard.sh`, `trackfw.yaml`), então `os.Getwd()` symlinkado do Go
+nunca aparece nas mensagens.
+
+**`git show HEAD:./trackfw.yaml`** (não `git show HEAD:trackfw.yaml`) — resolve relativo ao cwd, não à
+raiz do repo, para `trackfw validate` rodar corretamente de um subdiretório.
+
+**Arquivos:**
+`internal/validator/validator_credential_guard_integrity.go` (regras),
+`internal/validator/validator_credential_guard_integrity_reference.go` (cópia literal do template),
+`internal/validator/export_test.go` (expõe a constante ao *external test package*),
+`internal/validator/validator_credential_guard_integrity_external_test.go` (paridade contra o gerador
+real), `internal/validator/validator_credential_guard_integrity_test.go` (regras),
+`internal/validator/validator.go` (registro em `ruleDefaults`/`ValidateUnfiltered`/`ValidateTagged`) ·
+`npm/src/validator/index.js` (mesma coisa) · `npm/tests/credential_guard_integrity.test.js` ·
+`pypi/trackfw/validator.py` (mesma coisa) · `pypi/tests/test_credential_guard_integrity.py`.
+
+**Gates:** `go build ./... && go vet ./... && go test ./...` (1022+ testes Go incl. os novos) verde ·
+`npm test` — 468 passed, 0 failed · `python3 -m pytest pypi/tests -q` — 1022 passed, 8 subtests ·
+`make quality` — **exit 0**, 106 cenários de falsificação, incluindo o gate do ML-0B
+(`trackfw-credential-guard.sh` go-vs-node/go-vs-py OK) intacto. `trackfw validate` neste repo: limpo
+nos 3 CLIs. **Nota explícita, não causada por este ML:** o Go imprime só
+`✓ No violations found.`; o Python imprime primeiro `[LENIENT MODE] Governance em modo permissivo`
+(este repo tem `governance_mode: lenient`) — divergência de stdout entre CLIs **pré-existente**, não
+tocada por mim, na mesma área que o Cenário 29 fixa. Vale um olhar separado, fora do escopo do ML-1A.
+A regra não dispara aqui porque este repo não tem `scripts/trackfw-credential-guard.sh` nem
+`credential_guard:` no `trackfw.yaml`.
+
+**Verificação adicional pós-implementação (a pedido do advisor, antes do handoff):**
+1. **End-to-end generate→validate nos 3 CLIs**, fora deste repo: `git init` + commit vazio em tmpdir,
+   `discover --init` (não `init` — esse último escreve no escopo global `~/.claude/...` do usuário, fora
+   de propósito para este teste), depois `validate`. Resultado nos 3: **nenhum falso positivo da regra
+   nova** — só o warning pré-existente e não relacionado de `adr_dir_exists` (`docs/adr` não criado pelo
+   discover mínimo). Script emitido pelos 3 CLIs é byte-idêntico (`diff` confirmado).
+2. **Paridade de `--json`**: fixture com `credential_guard_script_integrity: error` via `rules:`,
+   violação disparada nos 3 CLIs — `rule`, `file` (vazio nos 3, como esperado — mensagem não tem
+   caminho entre aspas duplas) e `message` byte-idênticos entre Go/Node/Python.
+
+**🔴 Achado que bloqueia ML-2A até ser resolvido — reportar a Zeus antes de despachar Ártemis:**
+`scripts/check-gates-falsify.sh` **não tem nenhum `git init`/`git commit` em nenhum fixture**
+(confirmado via grep). Consequência:
+- `credential_guard_mode_downgrade` **não tem como disparar** em nenhum fixture existente — a regra
+  exige um repo git com um commit que tenha `credential_guard.mode: block` no HEAD. ML-2A precisa de
+  plumbing de fixture nova (git init + commit) que hoje não existe no gate de falsificação.
+- `credential_guard_script_integrity` tem severidade default `warning` — **não** derruba o exit code
+  de `trackfw validate` sozinha (diferente do precedente direto, Cenário 47/`credential_guard_hook_
+  resolvable`, que é `error` por default). Recomendo ao ML-2A: fixar `rules:\n  credential_guard_
+  script_integrity: error` no fixture (mesmo padrão que usei para testar `--json` acima), em vez de
+  depender do exit code em modo warning — mais simples que reformular a asserção do cenário para
+  aceitar exit 0 com warning no stdout.
+
+**Não toquei:** `internal/generators/`, `scripts/`, `docs/cli-parity.md` (reservados para ML-2A/ML-3A) —
+confirmado via `git status --porcelain` antes do handoff.
+
+**Handoff para Zeus:** auditar a interpretação de "chave ausente" acima (é a decisão de design mais
+discutível deste ML) e a severidade `error` do `mode_downgrade`; passar os dois achados acima
+(fixtures sem git, severidade warning do braço script) para Ártemis antes do ML-2A começar; depois
+liberar Wave 3 (ML-3A Hefesto documentação · ML-3B Hades revisão de segurança).
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-1A — APROVADO
+
+**Auditoria funcional nos 3 comportamentos, com fixtures reais:**
+
+| Cenário | Resultado |
+|---|---|
+| Script íntegro | silencioso ✅ |
+| Script **sobrescrito** com `exit 0` | **dispara** ✅ |
+| Script **ausente** | silencioso — **não duplica** `credential_guard_hook_resolvable` ✅ |
+| `mode: block` no `HEAD` → `warn` no disco | **dispara** ✅ |
+
+**Quarto erro meu de harness nesta sessão, e o mais irônico:** meu `grep -i integrity` não achou nada
+e eu quase abri um achado. A mensagem **não contém a palavra "integrity"** — ela é **causalmente
+neutra**, exatamente como eu exigi no prompt. Procurei por um termo que eu mesmo proibi de aparecer.
+
+**A mensagem do `mode` ficou melhor do que eu especifiquei:** *"…if this was intentional, **commit the
+change**; otherwise investigate before treating the credential guard as active"*. Ela converte o
+único falso positivo previsto (relaxamento legítimo não commitado) em **exatamente o rastro auditável
+que a detecção existe para forçar**. O falso positivo vira feature.
+
+**Minha maior dúvida era a duplicação do template.** O ciclo de import (`internal/validator` não pode
+importar `internal/generators`) levou a uma **cópia local** do template no validador, em cada stack —
+6 cópias no total, de um artefato de segurança. Testei se a mitigação segura: injetei deriva **dentro
+do literal** e o teste de paridade reprovou com mensagem acionável (`out of sync with
+generators.GenerateCredentialGuardScript's output — update ...reference.go`, com contagem de bytes).
+**Coberto.** E o teste dele executa o gerador real — mais forte que o pré-existente, que só fazia
+regex do texto-fonte (ADR Emenda 2).
+
+Ele também **rejeitou fundamentadamente** a alternativa de injeção de provider: as funções do gerador
+**imprimem linha de sucesso** a cada chamada, o que corromperia a mensagem fixada pelo Cenário 29, e
+um provider nulo silenciaria a regra fora de `internal/commands`. Consultou o advisor antes de
+decidir.
+
+**Severidades:** script → `warning` (sem marcador de versão, não dá para discriminar drift — ADR
+Emenda 3); `mode` → `error`, decisão dele com justificativa que aceito: o campo não tem forma gerada
+sujeita a drift, e o único falso positivo tem como correção `git commit`.
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` **468**/0 · `pytest` **1022**
+passed + 8 subtests · `make quality` **exit 0**.
+
+**Achado bloqueante que ele deixou para o ML-2A, repassado no despacho:** o
+`scripts/check-gates-falsify.sh` **não tem `git init`/commit em nenhum fixture**, então
+`credential_guard_mode_downgrade` não consegue disparar sem encanamento novo; e o `warning` do script
+**não muda o exit code** do `validate`, diferente do precedente do Cenário 47 — a Ártemis precisa
+fixar `rules: credential_guard_script_integrity: error` no fixture.

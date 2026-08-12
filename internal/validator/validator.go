@@ -100,6 +100,12 @@ func contentHasMarker(content string, markers []string) bool {
 // Regras ausentes deste mapa usam "error" como default.
 var ruleDefaults = map[string]string{
 	"note_orphan": "warning",
+	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A,
+	// ADR-2026-08-12 Emenda 3: the script carries no version marker, so this rule cannot tell
+	// legitimate drift (trackfw not updated yet) from tampering — kept a warning, never an error.
+	// credential_guard_mode_downgrade is deliberately absent from this map: it falls through to
+	// ruleSeverity's "error" default (see validator_credential_guard_integrity.go for why).
+	"credential_guard_script_integrity": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -417,6 +423,20 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("credential_guard_hook_resolvable", credentialGuardHookMsgs, &violations, &warnings)
 
+	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
+	// detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).
+	credentialGuardScriptMsgs, e := validateCredentialGuardScriptIntegrity()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("credential_guard_script_integrity", credentialGuardScriptMsgs, &violations, &warnings)
+
+	credentialGuardModeMsgs, e := validateCredentialGuardModeDowngrade()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("credential_guard_mode_downgrade", credentialGuardModeMsgs, &violations, &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -602,6 +622,20 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("credential_guard_hook_resolvable", credentialGuardHookMsgsT, &violations, &warnings)
+
+	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
+	// detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).
+	credentialGuardScriptMsgsT, e := validateCredentialGuardScriptIntegrity()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("credential_guard_script_integrity", credentialGuardScriptMsgsT, &violations, &warnings)
+
+	credentialGuardModeMsgsT, e := validateCredentialGuardModeDowngrade()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("credential_guard_mode_downgrade", credentialGuardModeMsgsT, &violations, &warnings)
 
 	return violations, warnings, nil
 }

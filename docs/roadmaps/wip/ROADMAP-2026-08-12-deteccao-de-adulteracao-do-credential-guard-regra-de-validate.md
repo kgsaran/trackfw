@@ -159,7 +159,7 @@ caminho diferente do de attention — **verificar antes**, não presumir).
 > Dependências: Barreira B0.
 
 ### ML-1A — Regra de detecção nos 3 CLIs
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Apolo (`apolo-tf`)
 **Arquivos:** `internal/validator/` + equivalentes em `npm/src/` e `pypi/trackfw/` + testes dos 3.
 
@@ -181,7 +181,7 @@ divergência que **nenhum gate pega**, porque o Cenário 29 fixa só a mensagem 
 > autodiscriminante no `ROADMAP-2026-08-12-prova-negativa-...` (ML-1A → ML-1B).
 
 ### ML-2A — Cenário de falsificação
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Ártemis (`artemis-tf`)
 **Arquivos:** `scripts/check-gates-falsify.sh`.
 
