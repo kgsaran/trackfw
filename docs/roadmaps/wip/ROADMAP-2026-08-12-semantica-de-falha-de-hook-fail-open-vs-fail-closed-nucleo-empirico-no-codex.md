@@ -196,7 +196,7 @@ Zeus avalia o veredito do Codex e decide:
 > Dependências: Barreira B1.
 
 ### ML-2A — Implicação de segurança do resultado
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Hades; auditado por Zeus em 2026-08-12 — com 1 achado devolvido, ver ML-1C)
 **Agente:** Hades (`hades-tf`)
 **Entregável:** `docs/seguranca/2026-08-12-semantica-de-falha-de-hook.md` (novo). **Não modifica
 código.**
@@ -213,8 +213,54 @@ vão para Zeus, **não são implementados aqui**.
 
 ---
 
+## Wave 2-bis — Verificação da premissa do achado 🔴 (1 ML)
+> Dependências: ML-2A. **Bloqueia a Wave 3.**
+
+### ML-1C — O cwd do hook do Codex acompanha o `cd` do agente?
+**Status:** 🔄 Em andamento
+**Agente:** Ártemis (`artemis-tf`)
+
+**Por que este ML existe.** O parecer do ML-2A elevou o Codex a 🔴 com base num vetor concreto: o
+próprio agente, sob indução, rodaria `mkdir x && cd x && git init` e todas as chamadas seguintes
+resolveriam `git rev-parse --show-toplevel` para a raiz aninhada, sem `scripts/` — reproduzindo o
+Caso A (fail-open) sem privilégio nenhum.
+
+**O problema:** esse vetor exige que o cwd do hook **acompanhe os `cd` do agente durante a sessão**.
+O parecer afirma que a doc "confirma que o cwd de execução do hook é o cwd da sessão, **dinâmico**".
+Mas a pesquisa citada como fonte (`docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md`,
+seção 2, célula (b)) diz o **oposto** quanto a este ponto específico:
+
+> *"(A doc **não** afirma explicitamente que um `cd` do agente durante a sessão altera o cwd do hook;
+> a evidência direta é sobre variação por **diretório de início**.)"*
+
+A citação do fornecedor sustenta apenas que o Codex **pode ser iniciado** de um subdiretório — não
+que o cwd **derive durante** a sessão. A premissa foi esticada.
+
+**Isto muda a conclusão do ciclo:**
+- Se o cwd **acompanha** o `cd` → vetor real, auto-explorável pelo agente → 🔴, mitigação urgente.
+- Se o cwd é **fixo na sessão** → exige má configuração ou início em subdiretório → 🟡, mitigação é
+  higiene, não urgência.
+
+**Experimento (barato e determinístico — não precisa reproduzir o ataque inteiro):**
+
+1. Fixture git com `$HOME`/`CODEX_HOME` isolado e `--dangerously-bypass-hook-trust`, como no ML-1A.
+2. Hook `PreToolUse`/`Bash` cujo script **registra o próprio `pwd`** (e o resultado de
+   `git rev-parse --show-toplevel`) num arquivo de log, **append**, e sai `exit 0`.
+3. Fazer o agente executar **duas** chamadas de ferramenta em sequência: a primeira faz
+   `mkdir sub && cd sub && git init`; a segunda faz qualquer coisa trivial (`pwd`).
+4. Ler o log: o `pwd` que o **hook** viu na segunda chamada é a raiz do fixture ou o subdiretório?
+
+**Critérios de aceite:**
+- [ ] Log do hook mostrando o `pwd` observado em **cada** disparo, com o comando de cada chamada.
+- [ ] Veredito explícito: `ACOMPANHA O CD` / `FIXO NA SESSÃO` / `INDETERMINADO`.
+- [ ] Se `ACOMPANHA`, confirmar de ponta a ponta que o guard **não** roda na segunda chamada.
+- [ ] `CODEX_HOME` isolado; `~/.codex/` do usuário **não** tocado — confirme explicitamente.
+- [ ] Nenhum arquivo fora de `docs/pesquisa/` e `docs/agents-working-context.md`.
+
+---
+
 ## Wave 3 — Consolidação documental (1 ML)
-> Dependências: Wave 2.
+> Dependências: Wave 2 **e Wave 2-bis** (a severidade final depende do veredito do ML-1C).
 
 ### ML-3A — `docs/cli-parity.md`
 **Status:** ⬜ Pendente

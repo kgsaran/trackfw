@@ -11790,3 +11790,47 @@ trackfw não mostra nada do fixture.
 
 **Próximo passo (fora do escopo deste ML):** Barreira B1 (Zeus) avalia o veredito junto com o ML-1B
 (Prometeu, em paralelo) e decide se abre REQ nova de mitigação para o Codex.
+
+---
+
+## Sessão 2026-08-12 — Hades (Segurança) — ML-2A: parecer de segurança sobre a semântica de falha de hook — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/semantica-de-falha-de-hook-fail-open-vs-fail-closed`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md`.
+Revisão puramente de leitura — nenhum arquivo de código tocado.
+
+**Entregável:** `docs/seguranca/2026-08-12-semantica-de-falha-de-hook.md` (novo).
+
+**Achado central, além do que a Barreira B1 já sabia:** o Caso A do Codex não é só "fail-open
+documentado" — é **alcançável pelo próprio agente com dois comandos de shell sem privilégio**
+(`mkdir x && cd x && git init`), porque o cwd de execução do hook do Codex é dinâmico (confirmado em
+`docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md`) e o comando emitido resolve a raiz via
+`git rev-parse --show-toplevel` a cada disparo. Isso muda o Codex de "risco aceito por caminhos raros"
+para "vetor ativo de bypass, disparável pelo agente induzido" — exatamente o atacante que o guard
+existe para conter. Claude/Gemini permanecem protegidos por inalcançabilidade (degradam para
+`/scripts/...`, não plantável); Copilot é o único fail-closed nativo; Cursor é fail-open por padrão
+mas com Caso A pouco alcançável por cwd fixo; Kiro segue indeterminado nos dois eixos.
+
+**Avaliação da hipótese de wrapper (`sh -c 'test -x <script> && exec <script> || exit 2'`):**
+resolve o Caso A "ausência" nos CLIs com campo de comando em string, mas (a) não cobre "raiz errada
+com script presente" (submódulo/worktree apontando para outro repo git legítimo), (b) não cobre
+crash/timeout/JSON inválido (o `failClosed: true` nativo do Cursor cobre os três, config-only, custo
+zero — superior ao wrapper para esse CLI), (c) tem risco de bricking **confirmado, não hipotético**:
+o script é gerado por `trackfw init`/`update harness`
+(`internal/generators/scaffold.go:779-837`), não faz parte do binário — um clone fresco com
+`hooks.json` já commitado mas antes do `init` teria toda chamada de ferramenta bloqueada pelo
+wrapper, em vez de apenas degradar.
+
+**Recomendação: REQ nova de mitigação, escopo composto por prioridade de custo/benefício — (1)
+controle positivo em `trackfw validate`/`doctor` verificando que o comando resolvido do guard aponta
+para um executável existente (custo zero, sem bricking, cobre a classe de erro do incidente
+original); (2) `failClosed: true` nas entradas do guard do Cursor (config-only, escopado só ao
+guard, nunca a attention-signal/cleanup); (3) o wrapper, condicional — só se (1)+(2) forem
+insuficientes para o vetor do próprio agente no Codex, e só depois de resolver o bricking.** Critérios
+de aceite esboçados no parecer, incluindo paridade obrigatória nos 3 CLIs de código se a mitigação
+tocar geradores. Gemini/Kiro `INDETERMINADO` no Caso A não muda a recomendação — o wrapper, se
+adotado, padroniza os dois no único primitivo de bloqueio universal (`exit 2`) sem precisar de prova
+empírica prévia.
+
+**Próximo passo (fora do escopo deste ML):** Zeus decide se abre a REQ de mitigação com o escopo
+acima; ML-3A (Hefesto) consolida o parecer e a tabela por CLI em `docs/cli-parity.md`.
