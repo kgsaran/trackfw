@@ -134,7 +134,7 @@ para `error`.
 > Dependências: Barreira B0. **Bloqueia a Wave 1.**
 
 ### ML-0B — Gate de paridade byte-a-byte do script do credential-guard
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Ártemis; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Ártemis (`artemis-tf`)
 **Arquivos:** `scripts/` (gate novo ou extensão de `check-attention-scripts-parity.sh`) + `Makefile`
 se necessário + cenário de falsificação correspondente.
@@ -159,7 +159,7 @@ caminho diferente do de attention — **verificar antes**, não presumir).
 > Dependências: Barreira B0.
 
 ### ML-1A — Regra de detecção nos 3 CLIs
-**Status:** ⬜ Pendente
+**Status:** ⬜ Pendente — **liberado** (pré-requisito do ML-0B satisfeito)
 **Agente:** Apolo (`apolo-tf`)
 **Arquivos:** `internal/validator/` + equivalentes em `npm/src/` e `pypi/trackfw/` + testes dos 3.
 

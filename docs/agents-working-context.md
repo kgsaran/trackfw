@@ -13073,3 +13073,94 @@ futuro, e é o que permitiria elevar para `error`.
 **Instrução deliberada no ML-0B:** se os 3 templates **já estiverem divergentes hoje**, o agente deve
 **parar e reportar** — divergência pré-existente é **achado**, não conserto silencioso dentro de um ML
 de gate.
+
+---
+
+## Sessão 2026-08-12 — Ártemis (ML-0B: gate de paridade byte-a-byte do script do credential-guard) — CONCLUÍDO
+
+Branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md`,
+ML-0B — status atualizado para ✅ Concluído. Não faço commit/push (autoridade de Zeus).
+
+**Correção a uma premissa da Barreira B0:** Zeus afirmou "o script do credential-guard não tem
+paridade byte-a-byte em lugar nenhum" — **isso estava errado**. Existe
+`TestCredentialGuardScript_ParityAcrossStacks` e `TestGlobalCredentialGuardScript_ParityAcrossStacks`
+em `internal/generators/credential_guard_test.go`, já rodando dentro de `make quality` (via `make
+test` → `go test ./...`), cobrindo as duas variantes (projeto e global) byte-a-byte entre Go/Node/Python
+— confirmei que passam hoje. O stop-condition do ML ("PARE se os 3 templates já divergem") **não**
+disparou: os templates estão idênticos.
+
+**Mas o gate existente tem um furo real, que descobri e provei concretamente**: esse teste Go
+reconstrói o script Node/Python fazendo *regex-scraping* dos literais `CG_*`/`_CG_*` direto do
+texto-fonte (`getNodeSourceBlock`/`getPythonSourceBlock`) e concatenando-os numa ordem **hardcoded no
+próprio teste Go** (`header + guard + core + tail`) — nunca executa Node ou Python de verdade. Reordenei
+só a linha de composição do Node (`CREDENTIAL_GUARD_SCRIPT = CG_HEADER + CG_PROJECT_GUARD +
+CG_DETECTION_CORE + CG_PROJECT_TAIL` → guard e core trocados de posição, nenhum bloco `CG_*` alterado)
+e confirmei: `go test -run ParityAcrossStacks` continua verde, mas o script **realmente emitido** por
+`discover --init` no Node muda de forma (o guard "no-op fora do projeto" passa a rodar **depois** do
+núcleo de detecção, quebrando a garantia de no-op) — divergência real de `diff` byte-a-byte contra o
+Go, invisível ao teste unitário.
+
+**Decisão de implementação:** estendi `scripts/check-attention-scripts-parity.sh` (não criei gate
+novo) para incluir `trackfw-credential-guard.sh` no mesmo loop de
+`trackfw-attention-signal.sh`/`trackfw-attention-cleanup.sh` — mesma mecânica (`discover --init` nos 3
+runtimes, diff byte-a-byte real), verificada como aplicável sem ajuste antes de estender (mesmo
+diretório `scripts/`, mesmo comando de emissão nos 3 stacks). Cobre **só a variante de projeto** — a
+global (`~/.trackfw/scripts/...`, via `update harness`) fica com a cobertura Go-only pré-existente
+(mais fraca, mas fora do escopo da âncora nova, que mira só o script de projeto); justificativa escrita
+no comentário do gate, com instrução de estender se a global também virar âncora.
+
+**Prova negativa:** Cenário 48 em `scripts/check-gates-falsify.sh` — mesma sabotagem de reordenação da
+linha de composição do Node, via `corrupt_literal`, provando que o gate estendido reprova exatamente
+onde o teste Go antigo não pegava. Saída completa (`GO_BIN=bin/trackfw scripts/check-gates-falsify.sh`):
+`OK [falsify/attention-scripts-parity/trackfw-credential-guard.sh/go-vs-node-composition-reordered-not-detected]`,
+seguido de `Falsification checks passed (all 106 scenarios, ...)`. Reconstruí `bin/trackfw` antes de
+cada rodada de sabotagem/prova (`go build -o bin/trackfw ./cmd/trackfw`).
+
+**`make quality`:** saída completa, exit 0 — `go test ./...`, `npm test`, `pytest`, `go vet`, e todos os
+gates de `parity` incluindo `check-attention-scripts-parity.sh` (6 OKs: signal/cleanup/credential-guard
+× go-vs-node/go-vs-py) e `check-gates-falsify.sh` (106 cenários). `trackfw validate` neste repo:
+`✓ No violations found.`. `git status --short` só mostra `scripts/check-attention-scripts-parity.sh` e
+`scripts/check-gates-falsify.sh` modificados — nenhum arquivo em `internal/`, `npm/src/`,
+`pypi/trackfw/` tocado.
+
+**Handoff para Wave 1 (ML-1A, Apolo):** a âncora de template para o script agora tem cobertura
+end-to-end de paridade nos 3 stacks (variante de projeto). Vale registrar no ADR/roadmap que a
+cobertura da variante **global** continua estruturalmente mais fraca (Go-only, sem execução real de
+Node/Python) — se a Wave 1 decidir ancorar também no script global, este mesmo padrão de extensão
+precisa ser repetido para ele.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-0B — APROVADO, e correção de um erro MEU
+
+**A agente corrigiu minha premissa, e está certa.** Eu afirmei na Barreira B0 que "não existe gate
+comparando os três templates". **Minha verificação foi incompleta:** procurei apenas em
+`scripts/*parity*.sh` e **não olhei os testes Go**. `TestCredentialGuardScript_ParityAcrossStacks` e
+`TestGlobalCredentialGuardScript_ParityAcrossStacks`
+(`internal/generators/credential_guard_test.go:125` e `:235`) já existiam, rodavam no `make quality`,
+cobriam projeto e global, e passavam. Confirmei lendo o arquivo.
+
+**Mas o achado dela é melhor que o meu erro, e ela PROVOU em vez de apontar.** O teste Go reconstrói
+Node e Python por *regex-scraping* dos literais no texto-fonte (`:208`, `:228`) e concatena numa
+ordem **hardcoded no próprio teste Go** (`:104-118`) — **nunca executa Node nem Python**. Ela
+reordenou **só** a linha de composição do Node, **sem tocar em nenhum literal**: o teste Go continuou
+**verde**, e o script realmente emitido divergiu (o guard "no-op fora do projeto" passou a rodar
+depois do núcleo de detecção).
+
+Minha conclusão estava **errada na letra** (o teste existia) e **certa na substância** (era incapaz de
+detectar deriva de composição, que é exatamente o risco da âncora de template). A Emenda 2 do ADR foi
+**reescrita** com a correção explícita — não silenciosamente ajustada.
+
+**Decisão de implementação dela, e é a certa:** estendeu `check-attention-scripts-parity.sh`, que roda
+`discover --init` **de verdade** nos 3 runtimes e compara o arquivo **emitido**, em vez de criar gate
+novo. O furo do teste antigo era justamente **não executar os runtimes** — criar outro gate
+regex-based repetiria o defeito.
+
+**Limitação documentada, não escondida:** o gate estendido cobre a variante de **projeto** (a que a
+âncora nova mira); a **global** segue com cobertura Go-only pré-existente, registrado no comentário
+do gate para a Wave 1 decidir se precisa do mesmo tratamento.
+
+**Gates re-executados por Zeus:** `check-attention-scripts-parity.sh` todos OK (incluindo
+`trackfw-credential-guard.sh` go-vs-node e go-vs-py) · `check-gates-falsify.sh` **110 OK / 0 FAIL**
+(106 cenários) · `make quality` **exit 0**.
+
+**Wave 1 liberada.**

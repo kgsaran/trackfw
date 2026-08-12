@@ -103,13 +103,31 @@ parcialmente**, e a forma importa:
 Sem redundância: o `HEAD` **não** deve cobrir também o script — não agrega cobertura e importa falso
 positivo desnecessário.
 
-### Emenda 2 (2026-08-12, ML-0A) — pré-requisito verificado por Zeus: falta gate de paridade do script
+### Emenda 2 (2026-08-12, ML-0A/ML-0B) — o gate existia, e era estruturalmente cego
 
-A âncora de template só é segura se os **três** templates (Go `credentialGuardScript`, Node
-`CREDENTIAL_GUARD_SCRIPT`, Python `_CREDENTIAL_GUARD_SH`) forem byte-idênticos. **Verificado por
-Zeus: nenhum gate compara os três.** `check-attention-scripts-parity.sh` cobre **apenas** os dois
-scripts de *attention*; `check-agent-hooks-parity.sh` só faz `grep` da string no **JSON do hook**,
-nunca no conteúdo do `.sh`.
+> ⚠️ **Correção da redação original desta emenda (2026-08-12, após o ML-0B).** A versão anterior
+> afirmava *"nenhum gate compara os três"*. **Errado na letra.** Zeus verificou apenas
+> `scripts/*parity*.sh` e **não olhou os testes Go**: `TestCredentialGuardScript_ParityAcrossStacks`
+> e `TestGlobalCredentialGuardScript_ParityAcrossStacks`
+> (`internal/generators/credential_guard_test.go:125` e `:235`) já existiam, rodavam dentro do
+> `make quality`, cobriam projeto **e** global, e passavam. Os 3 templates **não** estavam
+> divergentes.
+
+**A lacuna era real, mas de outra natureza — e mais grave que a descrita.** O teste Go **reconstrói**
+Node e Python por *regex-scraping* dos literais no texto-fonte (`:208`, `:228`) e os concatena numa
+ordem **hardcoded no próprio teste Go** (`:104-118`). Ele **nunca executa Node nem Python**.
+
+Logo, é **estruturalmente incapaz** de detectar **deriva de ordem de composição** — exatamente o
+risco que a âncora de template introduz. Provado concretamente no ML-0B: reordenar **só** a linha de
+composição do Node, **sem alterar nenhum literal**, manteve `go test -run ParityAcrossStacks`
+**verde**, enquanto o script realmente emitido divergia (o guard "no-op fora do projeto" passou a
+rodar **depois** do núcleo de detecção).
+
+**Fechado no ML-0B** estendendo `check-attention-scripts-parity.sh` — que roda `discover --init`
+**de verdade** nos 3 runtimes e compara o arquivo **emitido** byte-a-byte — em vez de criar gate
+novo. A escolha é o ponto: o furo do teste antigo era justamente **não executar os runtimes**.
+Cobre a variante de **projeto** (a que a âncora nova mira); a **global** segue com a cobertura
+Go-only pré-existente, limitação documentada no comentário do gate para a Wave 1 decidir.
 
 **Consequência:** sem esse gate, o mesmo repositório **dispararia a regra num CLI e ficaria silencioso
 nos outros** — falso positivo e falso negativo simultâneos, dependendo de qual binário o usuário roda.
