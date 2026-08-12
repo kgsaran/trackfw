@@ -90,7 +90,7 @@ cobrem a classe do **incidente real já observado** com custo baixo e zero risco
 > Dependências: nenhuma.
 
 ### ML-1A — Regra `credential_guard_hook_resolvable`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Apolo (`apolo-tf`)
 
 **Arquivos afetados:** `internal/validator/` (Go), equivalente Node em `npm/src/`, equivalente Python
@@ -139,7 +139,7 @@ make quality
 > Dependências: Wave 1.
 
 ### ML-2A — Cenário de falsificação da regra nova
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Ártemis (`artemis-tf`)
 
 **Arquivos afetados:** `scripts/check-gates-falsify.sh` (cenário novo + string de resumo final).

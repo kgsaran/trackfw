@@ -340,6 +340,206 @@ test('adr_dirs com ~/ no validador resolve diretório no home do usuário', () =
   }
 })
 
+// ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A —
+// regra credential_guard_hook_resolvable
+function guardEntryClaudeSettings(scriptCmd) {
+  return JSON.stringify({
+    hooks: {
+      PreToolUse: [
+        { matcher: 'Bash', hooks: [{ command: scriptCmd, type: 'command' }] },
+      ],
+    },
+  })
+}
+
+test('credential_guard_hook_resolvable: dispara quando o script referenciado não existe', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'),
+    guardEntryClaudeSettings('$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert(msgs.some(m => m.includes('does not exist') && m.includes('.claude/settings.json')),
+      'esperava violation de script ausente: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: dispara quando o script não é executável', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'),
+    guardEntryClaudeSettings('$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
+  fs.mkdirSync(path.join(tmp, 'scripts'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'scripts', 'trackfw-credential-guard.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o644 })
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert(msgs.some(m => m.includes('not executable')),
+      'esperava violation de script não executável: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: não dispara sem entrada de guard (estado legítimo)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'), JSON.stringify({
+    hooks: {
+      PostToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ command: 'scripts/trackfw-attention-cleanup.sh', type: 'command' }] }],
+      PreToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ command: 'scripts/trackfw-attention-signal.sh', type: 'command' }] }],
+    },
+  }))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert.strictEqual(msgs.length, 0, 'sem entrada de guard não deve haver violations: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: não dispara para formato de prefixo desconhecido', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'),
+    guardEntryClaudeSettings('$SOME_OTHER_VAR/scripts/trackfw-credential-guard.sh'))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert.strictEqual(msgs.length, 0, 'formato desconhecido não deve violar: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: resolve a forma do Codex (aspas literais)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.codex'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.codex', 'hooks.json'), JSON.stringify({
+    hooks: {
+      PreToolUse: [{ matcher: '.*', hooks: [{ command: '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"', type: 'command' }] }],
+    },
+  }))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    let msgs = validator.validateCredentialGuardHookResolvable()
+    assert(msgs.some(m => m.includes('does not exist') && m.includes('.codex/hooks.json')),
+      'esperava violation resolvendo a forma do Codex: ' + JSON.stringify(msgs))
+
+    fs.mkdirSync(path.join(tmp, 'scripts'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'scripts', 'trackfw-credential-guard.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    msgs = validator.validateCredentialGuardHookResolvable()
+    assert.strictEqual(msgs.length, 0, 'com script existente e executável não deve haver violations: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: resolve caminho relativo puro (Cursor)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.cursor'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.cursor', 'hooks.json'), JSON.stringify({
+    version: 1,
+    hooks: { beforeShellExecution: [{ command: 'scripts/trackfw-credential-guard.sh' }] },
+  }))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert(msgs.some(m => m.includes('does not exist') && m.includes('.cursor/hooks.json')),
+      'esperava violation resolvendo caminho relativo puro: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: configurável via rules (warning/off), default error', () => {
+  const build = () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-'))
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'),
+      guardEntryClaudeSettings('$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
+    return tmp
+  }
+  const origDir = process.cwd()
+
+  // default error
+  let tmp = build()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const violations = []
+    const warnings = []
+    validator.applyRule('credential_guard_hook_resolvable', validator.validateCredentialGuardHookResolvable(), violations, warnings)
+    assert(violations.some(v => v.includes('trackfw-credential-guard.sh')), 'default deve ser error: ' + JSON.stringify(violations))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+
+  // warning
+  tmp = build()
+  fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'rules:\n  credential_guard_hook_resolvable: warning\n')
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const violations = []
+    const warnings = []
+    validator.applyRule('credential_guard_hook_resolvable', validator.validateCredentialGuardHookResolvable(), violations, warnings)
+    assert(!violations.some(v => v.includes('trackfw-credential-guard.sh')), 'rules:warning não deve gerar violation: ' + JSON.stringify(violations))
+    assert(warnings.some(w => w.includes('trackfw-credential-guard.sh')), 'rules:warning deve gerar warning: ' + JSON.stringify(warnings))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+
+  // off
+  tmp = build()
+  fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'rules:\n  credential_guard_hook_resolvable: off\n')
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const violations = []
+    const warnings = []
+    validator.applyRule('credential_guard_hook_resolvable', validator.validateCredentialGuardHookResolvable(), violations, warnings)
+    assert.strictEqual(violations.length, 0, 'rules:off não deve gerar violation: ' + JSON.stringify(violations))
+    assert.strictEqual(warnings.length, 0, 'rules:off não deve gerar warning: ' + JSON.stringify(warnings))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
 // ML-2B — Resiliência CI/CD para adr_dirs inexistentes e isenção de adr_orphan em ADRs externos
 ;(async () => {
   await testAsync('adr_dirs inexistente com strict_ci_paths false (default) gera warning', async () => {

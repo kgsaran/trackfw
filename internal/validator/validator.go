@@ -409,6 +409,14 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	violations = append(violations, adrDirViolations...)
 	warnings = append(warnings, adrDirWarnings...)
 
+	// ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A: controle positivo —
+	// detecta hook de credential-guard registrado cujo script não existe ou não é executável.
+	credentialGuardHookMsgs, e := validateCredentialGuardHookResolvable()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("credential_guard_hook_resolvable", credentialGuardHookMsgs, &violations, &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -586,6 +594,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	for _, m := range adrDirWarnings {
 		warnings = append(warnings, TaggedMsg{Rule: "adr_dir_exists", Msg: m})
 	}
+
+	// ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A: controle positivo —
+	// detecta hook de credential-guard registrado cujo script não existe ou não é executável.
+	credentialGuardHookMsgsT, e := validateCredentialGuardHookResolvable()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("credential_guard_hook_resolvable", credentialGuardHookMsgsT, &violations, &warnings)
 
 	return violations, warnings, nil
 }

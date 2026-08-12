@@ -4,6 +4,113 @@
 
 ---
 
+## Sessão 2026-08-12 — Apolo (ML-1A: regra `credential_guard_hook_resolvable` — controle positivo) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md`,
+Wave 1/ML-1A — status atualizado para ✅ Concluído.
+
+**Objetivo:** controle positivo para o fail-open do credential-guard (medido em
+`docs/pesquisa/2026-08-12-semantica-de-falha-de-hook-codex.md`) — `trackfw validate` passa a detectar
+hook de credential-guard registrado cujo script não existe ou não é executável.
+
+**Nome final da regra:** `credential_guard_hook_resolvable` (default `error`, configurável via
+`rules:` como as demais).
+
+**Arquivos por stack:**
+- Go: `internal/validator/validator_credential_guard.go` (novo — regra +
+  `resolveCredentialGuardHookPath` + `collectCredentialGuardCommands`) e
+  `internal/validator/validator_credential_guard_test.go` (novo, 11 funções de teste, 1 delas com 3
+  subtestes de `rules:`). Wiring em
+  `internal/validator/validator.go`: `ValidateUnfiltered` e `validateUnfilteredTagged`.
+- Node: `npm/src/validator/index.js` (funções equivalentes + export) e
+  `npm/tests/validator.test.js` (7 testes novos, inseridos antes do bloco async ML-2B).
+- Python: `pypi/trackfw/validator.py` (`validate_credential_guard_hook_resolvable` +
+  `_resolve_credential_guard_hook_path` + `_collect_credential_guard_commands`, itens no formato
+  `{"type","message"}` como as demais regras Python) e `pypi/tests/test_validator.py`
+  (`TestCredentialGuardHookResolvable`, 8 testes).
+
+**Decisões de design tomadas sozinho (documentar para Zeus/auditoria):**
+1. **Varredura por VALOR, não por chave/schema.** Os 6 arquivos de hook de projeto usam campos
+   diferentes para o comando: `"command"` (Claude/Codex/Gemini/Cursor), `"bash"` (GitHub Copilot
+   CLI), `action.command` (Kiro). Em vez de replicar o parsing schema-aware que
+   `internal/generators/agentfiles.go` faz para ESCREVER os hooks, a regra percorre recursivamente
+   qualquer `map`/`array`/`string` do JSON decodificado e coleta todo valor-string que contém o
+   substring `trackfw-credential-guard.sh`, independente do campo. Evita acoplar a regra a 6 schemas
+   diferentes; risco aceito é teoricamente capturar uma string não-comando que por acaso contenha o
+   nome do script (não observado em nenhum dos 6 formatos reais).
+2. **As 3 formas de prefixo são a única fonte da verdade** (`docs/cli-parity.md`, "Mecanismo de
+   resolução de caminho dos hooks de projeto, por CLI"): `$CLAUDE_PROJECT_DIR/…`,
+   `$GEMINI_PROJECT_DIR/…`, `"$(git rev-parse --show-toplevel)/…"` (aspas literais no valor, ver
+   `internal/generators/agentfiles.go` const `codexRoot`) e caminho relativo puro (Cursor/Copilot/
+   Kiro). Qualquer outra coisa retorna "não resolvido" e a regra não viola — implementado
+   identicamente nos 3 stacks.
+3. **"Executável" verificado via bit de execução do modo do arquivo** — `info.Mode()&0111` (Go),
+   `stat.mode & 0o111` (Node), `os.access(path, os.X_OK)` (Python) — mesmo padrão já usado em
+   `internal/generators/commitmsghook_test.go`.
+4. **JSON inválido ou arquivo ausente são pulados em silêncio** — não é escopo desta regra validar a
+   forma do arquivo de hook, só resolver o script quando uma entrada de guard existe.
+5. **Dedup por comando bruto dentro de cada arquivo** (`seen`/`Set`) — evita mensagem duplicada
+   quando o mesmo comando aparece em múltiplas entradas do mesmo arquivo (ex.: Read/Write do Cursor).
+
+**Verificações adicionais feitas após revisão (não estavam nos testes automatizados iniciais):**
+1. **Registro em `config.defaults()` Rules map (Go/Node/Python) — verificado, NÃO necessário.**
+   `cfg.Rules[k] = s` é atribuído para QUALQUER chave presente em `rules:` no `trackfw.yaml`
+   (`internal/config/config.go:289-297`), não restrito às chaves pré-populadas em `defaults()`.
+   Confirmado por precedente: `req_has_adr`, `blocked_has_req`, `req_has_roadmap`,
+   `branch_has_wip_roadmap`, `note_orphan` também não estão nesse map e já são configuráveis via
+   `rules:` com testes cobrindo isso. `credential_guard_hook_resolvable` segue o mesmo padrão —
+   nada a registrar.
+2. **Paridade byte-a-byte da mensagem de violação entre os 3 CLIs — testada via diff direto dos 3
+   binários** (não só via testes unitários isolados por stack): fixture com entrada de guard
+   `$CLAUDE_PROJECT_DIR/...` e script ausente, rodando `bin/trackfw validate` / `node npm/bin/trackfw
+   validate` / `python3 -m trackfw validate` no mesmo diretório temporário. **Achado corrigido:**
+   `os.Getwd()` do Go confia em `$PWD` quando aponta para o mesmo diretório por inode, retornando o
+   caminho SYMLINKED (ex.: `/tmp` no macOS, que é `/private/tmp` fisicamente) — Node
+   (`process.cwd()`) e Python (`os.getcwd()`) sempre retornam o caminho físico via syscall direta.
+   Como esta é a primeira regra do projeto a embutir um caminho ABSOLUTO na mensagem (todas as
+   demais só emitem caminhos relativos à raiz), essa divergência era latente e não detectável pelo
+   Cenário 29 do falsify (que só fixa a mensagem de SUCESSO, sem caminho absoluto). Corrigido em
+   `internal/validator/validator_credential_guard.go` com `filepath.EvalSymlinks(root)` logo após
+   `os.Getwd()`. Confirmado com diff manual dos 3 binários: mensagem byte-idêntica após o fix. Novo
+   teste `TestCredentialGuardHookResolvable_CaminhoResolvidoEhFisicoNaoSimlink` trava essa
+   propriedade no Go (equivalente não necessário em Node/Python — eles já emitiam o caminho físico
+   nativamente).
+3. **Falso positivo do Kiro a partir de campos vizinhos (`name`/`description`) — verificado, NÃO
+   ocorre.** O walker por valor coleta qualquer string que CONTENHA
+   `trackfw-credential-guard.sh`; os campos `"name": "trackfw-credential-guard-pre"` do Kiro citam
+   o nome do script mas SEM o sufixo `.sh` — não casam o substring completo. Confirmado
+   empiricamente (Go `strings.Contains` isolado) e travado por 2 testes novos com o fixture real do
+   Kiro (`internal/generators/agentfiles.go:632-701`, incluindo os campos `name`/`description`
+   vizinhos ao `action.command` real):
+   `TestCredentialGuardHookResolvable_KiroNaoGeraFalsoPositivoComCamposVizinhos` (script presente e
+   executável → zero violations) e `TestCredentialGuardHookResolvable_KiroDisparaScriptAusente`
+   (mesmo fixture, script ausente → violation — prova que o primeiro teste não é vácuo).
+
+**Saída dos gates (evidência, após as correções acima):**
+```
+go build ./... && go test ./...           → PASS (todos os pacotes)
+npm --prefix npm test                     → 450 passed, 0 failed
+python3 -m pytest pypi/tests -q           → 1004 passed, 8 subtests passed
+make quality                              → exit 0, "Falsification checks passed (all 104 scenarios...)"
+./bin/trackfw validate                    → "✓ No violations found." (mensagem de sucesso inalterada,
+                                              Cenário 29 do falsify continua passando)
+git status --porcelain                    → só os arquivos listados acima (novos + modificados)
+```
+
+**Critérios de aceite do ML-1A:** todos verificados (dispara em script ausente/não-executável; não
+dispara sem entrada de guard nem para formato de prefixo desconhecido; não dispara neste repositório;
+configurável `rules:` default `error`; paridade de mensagem/comportamento nos 3 stacks; mensagem de
+sucesso do `validate` inalterada).
+
+**Não tocado:** `internal/generators/`, `scripts/`, `docs/cli-parity.md` (reservados para MLs
+posteriores do mesmo roadmap — Wave 2/Wave 3).
+
+**Próximo:** Wave 2 (Ártemis, `ML-2A` — cenário de falsificação da regra em
+`scripts/check-gates-falsify.sh`), dependente da auditoria/commit deste ML por `trackfw_architect`.
+
+---
+
 ## Sessão 2026-08-12 — Hefesto (ML-3A: consolidação em `docs/cli-parity.md` — semântica de falha de hook por CLI) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
 
 Branch `fix/semantica-de-falha-de-hook-fail-open-vs-fail-closed`. Roadmap:
@@ -12074,3 +12181,40 @@ este projeto produziu um cenário de prova negativa que ele próprio não provav
 
 Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Primeiro roadmap desta sequência que
 **altera código de produto** — os três anteriores foram doc/gates.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-1A (regra `credential_guard_hook_resolvable`) — APROVADO
+
+**Auditoria funcional, não só leitura de diff.** Montei fixtures e rodei os **3 CLIs**:
+
+| Cenário | Resultado |
+|---|---|
+| Guard registrado, script ausente | **dispara**, com caminho resolvido e ação corretiva |
+| Sem entrada de guard (estado legítimo com guard global) | **não dispara** |
+| Formato de caminho desconhecido (`${MEU_VAR_CUSTOM}/...`) | **não dispara** |
+| Neste repositório | `✓ No violations found.` |
+
+Os dois casos negativos eram exatamente os falsos positivos que eu havia travado no prompt do ML.
+
+**Dois erros MEUS no caminho da auditoria, registrados para não se repetirem:**
+1. Chamei o CLI do Node por caminho inexistente (`npm/src/cli.js`); o correto é `npm/bin/trackfw`.
+   Interpretei a saída vazia como "a regra não disparou no Node" — quase abri um achado falso.
+2. Interpretei o `⚠` como severidade `warning`. Era **LENIENT MODE** do fixture rebaixando tudo. A
+   regra é `error` por padrão — confirmado no código (não está em `ruleDefaults`).
+
+A divergência de prefixo entre os stacks (`⚠  ` / `• ` / `⚠ `) é **renderização genérica
+pré-existente** — a regra `adr_dir`, que já existia, aparece exatamente igual. **O corpo da mensagem
+é byte-idêntico nos 3.**
+
+**O achado do agente que vale mais que a própria feature:** `os.Getwd()` do Go confia em `$PWD` e
+devolve o caminho **symlinkado** (macOS: `/tmp` → `/private/tmp`), enquanto Node e Python devolvem o
+físico. Como esta é a **primeira regra do projeto a embutir caminho absoluto na mensagem**, a
+divergência era **latente** e nenhum gate existente pegaria — o Cenário 29 fixa apenas a mensagem de
+**sucesso**. Corrigido com `filepath.EvalSymlinks`, verificado rodando os 3 binários no mesmo
+diretório.
+
+**Decisão de design dele, boa e não trivial:** a extração varre o JSON **por valor**, não por caminho
+de chave — os 6 formatos de hook usam campos diferentes (`command`, `bash`, `action.command`), e
+acoplar a regra a 6 schemas seria dívida imediata.
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` 450/0 · `pytest` **1004
+passed** + 8 subtests · `make quality` **exit 0**.
