@@ -2,7 +2,7 @@
 status: Open
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
-adr: ""
+adr: "docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md"
 ---
 
@@ -96,8 +96,7 @@ pode virar wave própria.
   aceitar o risco" continua sendo resposta válida para itens individuais, desde que **escrita**.
 
 ## Linked ADR
-<!-- provável: a escolha entre integridade no escopo de projeto × preferir escopo global é decisão de arquitetura -->
-ADR:
+ADR: docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md
 
 ## Blocked by ADRs
 <!-- none -->

@@ -234,7 +234,34 @@ decisão de Zeus: remover.
 > A barreira passa a responder **uma** pergunta: *como tratar "o guard não consegue rodar", dado o
 > constraint de bricking?* — através dos **três** mecanismos (`failClosed`, wrapper, escopo global).
 
-### Itens originais
+**✅ CONCLUÍDA — ADR aceito:** `docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`
+
+**Decisão (KG, 2026-08-12): a defesa real é o escopo global.** O guard instalado por
+`trackfw update harness` vive em `~/.trackfw/`, **fora do repositório**. O escopo de projeto passa a
+ser tratado como **conveniência de configuração, não controle de segurança**.
+
+| Item | Decisão |
+|---|---|
+| `failClosed` (ML-3A/3B) | ❌ **não enviar** — código **revertido** (ML-3C) |
+| Wrapper (item 3) | ❌ não implementar |
+| Integridade de conteúdo (item 4) | ❌ não implementar |
+| Regra `credential_guard_hook_resolvable` (ML-1A) | ✅ **mantida** |
+| Cenário 47 (ML-2A) | ✅ **mantido** |
+| Guard global por padrão | ➡️ **REQ nova** |
+
+**O argumento que decide:** um controle que mora no mesmo diretório em que o agente escreve **não é
+um controle**. As três mitigações de escopo de projeto tentam proteger um arquivo que o adversário
+pode apagar, sobrescrever ou desligar por config — elevam o custo, não impedem.
+
+**Riscos aceitos, registrados no ADR:** quem não instala o guard global fica sem defesa contra
+deleção/sobrescrita; `credential_guard.mode` continua rebaixável por uma linha de YAML,
+**independentemente do escopo do script**; e **não foi medido** se o agente alcança `~/.trackfw/`
+nos ambientes reais — a premissa "agente restrito ao workspace" vale para sandboxes, não
+universalmente.
+
+---
+
+### Itens originais (registro do que a barreira avaliou)
 
 > Dependências: Wave 3.
 
@@ -249,6 +276,19 @@ três opções que **não** são mutuamente exclusivas:
    ao workspace) em vez de endurecer o escopo de projeto.
 
 A opção 3 pode tornar 1 e 2 desnecessários — **avaliá-la primeiro**.
+
+---
+
+## Wave 3-bis — Reverter o `failClosed` (1 ML)
+> Dependências: Barreira B1. Consequência direta da decisão.
+
+### ML-3C — Reverter a emissão de `failClosed` do Cursor
+**Status:** 🔄 Em andamento
+**Agente:** Apolo (`apolo-tf`)
+
+Reverter a emissão de `failClosed` introduzida nos ML-3A/3B, nos 3 stacks, **mantendo** tudo o que
+não é `failClosed`. O ADR decidiu não enviar: cobre 1 de 6 CLIs, brica clone fresco, e não impede o
+adversário que apaga o script.
 
 ---
 
