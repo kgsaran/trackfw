@@ -317,6 +317,18 @@ var (
 	codexGuardCmd   = codexRoot + `/scripts/trackfw-credential-guard.sh"`
 )
 
+// ROADMAP-2026-08-11 ML-4A: Gemini CLI documents $GEMINI_PROJECT_DIR (distinct
+// from the session-following $GEMINI_CWD) and uses it in 100% of its official
+// hook command examples (ADR-2026-08-11, "Gemini CLI — alterar, por argumento
+// de assimetria"). Unlike Codex's $(git rev-parse …), this is an env var
+// expanded by the Gemini CLI runtime itself — no shell substitution needed, no
+// literal quotes required.
+const (
+	geminiSignalCmd  = `$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh`
+	geminiCleanupCmd = `$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh`
+	geminiGuardCmd   = `$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh`
+)
+
 // InjectCodexHooks injects Codex CLI attention hooks into .codex/hooks.json.
 //
 // Two independent hook events are wired here:
@@ -493,19 +505,19 @@ func InjectGeminiHooks(cwd string) error {
 	// The wave that changes the Gemini command strings (ML-4A) updates oldCommand
 	// here instead of adding this call from scratch — without it, the merge's
 	// exact-string dedup would append a duplicate alongside the stale entry.
-	migrateHookCommand(hooks["Notification"], "ToolPermission", "scripts/trackfw-attention-signal.sh", "scripts/trackfw-attention-signal.sh")
-	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
-	migrateHookCommand(hooks["BeforeTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
-	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
-	migrateHookCommand(hooks["AfterTool"], "*", "scripts/trackfw-attention-cleanup.sh", "scripts/trackfw-attention-cleanup.sh")
-	migrateHookCommand(hooks["AfterTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
-	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
-	migrateHookCommand(hooks["AfterTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", "scripts/trackfw-credential-guard.sh")
+	migrateHookCommand(hooks["Notification"], "ToolPermission", "scripts/trackfw-attention-signal.sh", geminiSignalCmd)
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["BeforeTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["AfterTool"], "*", "scripts/trackfw-attention-cleanup.sh", geminiCleanupCmd)
+	migrateHookCommand(hooks["AfterTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["AfterTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
 
 	hooks["Notification"] = mergeClaudeHookArray(
 		hooks["Notification"],
 		"ToolPermission",
-		"scripts/trackfw-attention-signal.sh",
+		geminiSignalCmd,
 	)
 
 	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
@@ -518,40 +530,40 @@ func InjectGeminiHooks(cwd string) error {
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"run_shell_command",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"read_file|read_many_files",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"write_file|replace",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 	}
 
 	hooks["AfterTool"] = mergeClaudeHookArray(
 		hooks["AfterTool"],
 		"*",
-		"scripts/trackfw-attention-cleanup.sh",
+		geminiCleanupCmd,
 	)
 	if !skipGeminiCG {
 		hooks["AfterTool"] = mergeClaudeHookArray(
 			hooks["AfterTool"],
 			"run_shell_command",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 		hooks["AfterTool"] = mergeClaudeHookArray(
 			hooks["AfterTool"],
 			"read_file|read_many_files",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 		hooks["AfterTool"] = mergeClaudeHookArray(
 			hooks["AfterTool"],
 			"write_file|replace",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 	}
 

@@ -11071,3 +11071,91 @@ submódulo/worktree do `git rev-parse --show-toplevel`.
 passar" teria contaminado a config real da máquina do usuário.
 
 **Próximo:** ML-4A (Gemini) — sem os riscos do Codex; vale o argumento de assimetria do ADR.
+
+---
+
+## Sessão 2026-08-11 — Apolo (ML-4A: Gemini CLI — `$GEMINI_PROJECT_DIR/...` + migração) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd` (já criada pelo
+orquestrador). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md`,
+Waves 3–7/ML-4A (último ML de código). ADR:
+`docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md`.
+
+**Escopo:** os 8 comandos do Gemini nos 3 stacks (`InjectGeminiHooks`/`injectGeminiHooks`/
+`inject_gemini_hooks`, `.gemini/settings.json`) passaram de `scripts/trackfw-<script>.sh` para
+`$GEMINI_PROJECT_DIR/scripts/trackfw-<script>.sh` — sem aspas literais (diferente do Codex; Gemini
+usa env var expandida pelo próprio runtime, não substituição de shell).
+
+**Padrão seguido:** mesma disciplina do ML-3A (Codex) — constantes locais dedicadas por CLI em vez
+de mutar as compartilhadas `SIGNAL_CMD`/`CLEANUP_CMD`/`GUARD_CMD`. Go: `geminiSignalCmd`/
+`geminiCleanupCmd`/`geminiGuardCmd` (`internal/generators/agentfiles.go`, perto de `codexSignalCmd`
+et al.). Node: `SIGNAL_CMD_GEMINI`/`CLEANUP_CMD_GEMINI`/`GUARD_CMD_GEMINI` já existiam divididos
+desde ML-2A/ML-3A — só o **valor** mudou; acrescentei `SIGNAL_CMD_GEMINI_LEGACY`/
+`CLEANUP_CMD_GEMINI_LEGACY`/`GUARD_CMD_GEMINI_LEGACY` (literal relativo antigo) como argumento
+`oldCommand` das chamadas de migração. Python: `_SIGNAL_CMD_GEMINI`/`_CLEANUP_CMD_GEMINI`/
+`_GUARD_CMD_GEMINI` novas, perto de `_CODEX_ROOT`.
+
+**Migração:** as 8 chamadas `migrateHookCommand`/`_migrate_hook_command` já existiam com `old == new`
+(ML-1A) — só troquei `oldCommand` para o literal relativo antigo e `newCommand` para a string nova.
+Nenhuma chamada nova criada, ordem preservada (migração antes do merge).
+
+**🔴 Prova negativa da migração (bloqueante, feita e reportada):** comentei as 8 chamadas de
+migração do Gemini em `agentfiles.go`, rodei `go test ./internal/generators/... -run Gemini` →
+`TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate` **FAIL** (8 assertions "expected
+exactly 1 hook, got 2" — old e new coexistindo). Restaurei via cópia de backup → suite volta a
+verde. O teste prova genuinamente a migração, não é vácuo.
+
+**Não-regressão empírica (não só por leitura de código):** buildei dois binários (`git stash` das
+mudanças → binário "before"; `git stash pop` → binário "after"), rodei `trackfw discover --init`
+com ambos sobre fixtures git limpas idênticas com todos os 6 marcadores de CLI presentes, e
+diffei os 6 arquivos gerados. `.claude/settings.json`, `.codex/hooks.json`,
+`.kiro/hooks/trackfw-attention.json`, `.github/hooks/trackfw-attention.json`, `.cursor/hooks.json`
+→ **byte-idênticos**. Só `.gemini/settings.json` difere, e exatamente nos 8 pontos esperados
+(`scripts/trackfw-*.sh` → `$GEMINI_PROJECT_DIR/scripts/trackfw-*.sh`).
+
+**Gates:** `go build ./... && go test ./...` verde (todos os pacotes) · `npm --prefix npm test`
+450/450 · `python3 -m pytest pypi/tests -q` 996 passed + 8 subtests · `bash
+scripts/check-agent-hooks-parity.sh` — 12/12 OK, sem FAIL · `bash scripts/check-gates-falsify.sh` —
+103 OK / 0 FAIL (sem regressão frente à baseline pré-ML).
+
+**Testes atualizados** (só os que quebraram, conforme instruído): Go `agentfiles_test.go` (5 testes
+Gemini) + `credential_guard_dedup_test.go` (1 teste); Node `generators.test.js` (3 testes +
+constantes `GEMINI_*_CMD`) + `credential_guard_dedup.test.js` (1 teste); Python
+`test_generators_init.py` (3 testes + constantes `_GEMINI_*_CMD`) + `test_credential_guard_dedup.py`
+(1 teste).
+
+**Arquivos tocados:** `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`,
+`internal/generators/credential_guard_dedup_test.go`, `npm/src/generators/hooks.js`,
+`npm/tests/generators.test.js`, `npm/tests/credential_guard_dedup.test.js`,
+`pypi/trackfw/generators/hooks.py`, `pypi/tests/test_generators_init.py`,
+`pypi/tests/test_credential_guard_dedup.py`, `docs/agents-working-context.md`, e o campo Status do
+ML-4A no roadmap. Nenhum outro CLI, nenhum arquivo de escopo global tocado.
+
+**Próximo:** este era o último ML de código (Waves 1–7 concluídas). Segue Wave 8 —
+ML-8A (Hefesto, `docs/cli-parity.md`) e ML-8B (Hades, revisão de segurança).
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria do ML-4A — APROVADO · último ML de código
+
+**Artefato real conferido, não o código-fonte.** Gerei `.gemini/settings.json` com `$HOME` isolado e
+enumerei os comandos: **8/8** em `$GEMINI_PROJECT_DIR/scripts/trackfw-*.sh`, nos matchers corretos
+(`Notification/ToolPermission`, `AfterTool/*`, e os 6 de credential-guard em `BeforeTool`/`AfterTool`
+com `run_shell_command`, `read_file|read_many_files`, `write_file|replace`).
+
+**Sabotagem independente:** comentei as 8 chamadas `migrateHookCommand(... gemini*)` em
+`agentfiles.go` → `go test ./internal/generators/` **FAIL**; restaurado → build OK.
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` 450/0 · `pytest` 996 passed
++ 8 subtests · `check-agent-hooks-parity.sh` todos OK · `check-gates-falsify.sh` **103 OK / 0 FAIL**.
+
+**Nota de projeto:** não houve critério de prova empírica com o Gemini CLI real, e isso foi
+deliberado — vale o argumento de assimetria do ADR (`$GEMINI_PROJECT_DIR` resolve para a raiz com ou
+sem deriva de cwd, logo a mudança não pode piorar). Diferente do Codex, onde uma pré-condição errada
+tornaria o hook pior que antes. Deixei isso explícito no prompt do ML para o agente não inventar um
+teste com o Gemini CLI só para "igualar o rigor do ML-3A".
+
+**Estado do roadmap:** todos os MLs de código concluídos (ML-1A, 2A, 3A, 4A); ML-5A/6A/7A cancelados
+na Barreira B0. Resta a **Wave 8**: ML-8A (Hefesto — `docs/cli-parity.md` + `make quality`) e ML-8B
+(Hades — revisão de segurança). Os dois **rodam em paralelo**: tocam arquivos disjuntos (ML-8A só
+`docs/cli-parity.md`; ML-8B não modifica arquivo nenhum). É o único paralelismo possível neste
+roadmap.

@@ -116,16 +116,16 @@ func TestDedup_Gemini_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
-	if helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+	if helperHasClaudeHook(data, "BeforeTool", "run_shell_command", geminiGuardCmd) {
 		t.Error("project-scope credential-guard entry should have been skipped (global already installed)")
 	}
-	if helperHasClaudeHook(data, "AfterTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+	if helperHasClaudeHook(data, "AfterTool", "run_shell_command", geminiGuardCmd) {
 		t.Error("project-scope AfterTool credential-guard entry should have been skipped")
 	}
-	if !helperHasClaudeHook(data, "Notification", "ToolPermission", "scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "Notification", "ToolPermission", geminiSignalCmd) {
 		t.Error("attention-signal entry must still be added regardless of global credential-guard state")
 	}
-	if !helperHasClaudeHook(data, "AfterTool", "*", "scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "AfterTool", "*", geminiCleanupCmd) {
 		t.Error("attention-cleanup entry must still be added regardless of global credential-guard state")
 	}
 }

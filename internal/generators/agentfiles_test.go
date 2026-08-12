@@ -327,16 +327,16 @@ func TestInjectGeminiHooks_ReadWriteMatchersRegisteredForCredentialGuard(t *test
 
 	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
 
-	if !helperHasClaudeHook(data, "BeforeTool", "read_file|read_many_files", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "BeforeTool", "read_file|read_many_files", geminiGuardCmd) {
 		t.Error("BeforeTool[read_file|read_many_files] → credential-guard.sh missing")
 	}
-	if !helperHasClaudeHook(data, "AfterTool", "read_file|read_many_files", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "AfterTool", "read_file|read_many_files", geminiGuardCmd) {
 		t.Error("AfterTool[read_file|read_many_files] → credential-guard.sh missing")
 	}
-	if !helperHasClaudeHook(data, "BeforeTool", "write_file|replace", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "BeforeTool", "write_file|replace", geminiGuardCmd) {
 		t.Error("BeforeTool[write_file|replace] → credential-guard.sh missing")
 	}
-	if !helperHasClaudeHook(data, "AfterTool", "write_file|replace", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "AfterTool", "write_file|replace", geminiGuardCmd) {
 		t.Error("AfterTool[write_file|replace] → credential-guard.sh missing")
 	}
 }
@@ -505,16 +505,16 @@ func TestInjectGeminiHooks(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
-	if !helperHasClaudeHook(data, "Notification", "ToolPermission", "scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "Notification", "ToolPermission", geminiSignalCmd) {
 		t.Error("Gemini Notification hook missing")
 	}
-	if !helperHasClaudeHook(data, "AfterTool", "*", "scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "AfterTool", "*", geminiCleanupCmd) {
 		t.Error("Gemini AfterTool[*] cleanup hook missing")
 	}
-	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", geminiGuardCmd) {
 		t.Error("Gemini BeforeTool[run_shell_command] credential-guard hook missing")
 	}
-	if !helperHasClaudeHook(data, "AfterTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "AfterTool", "run_shell_command", geminiGuardCmd) {
 		t.Error("Gemini AfterTool[run_shell_command] credential-guard hook missing")
 	}
 
@@ -560,7 +560,7 @@ func TestInjectGeminiHooks_PreservesExistingBeforeToolEntry(t *testing.T) {
 	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/other.sh") {
 		t.Error("existing BeforeTool[run_shell_command] hook lost during merge")
 	}
-	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", geminiGuardCmd) {
 		t.Error("BeforeTool[run_shell_command] credential-guard hook missing after merge")
 	}
 
@@ -574,9 +574,10 @@ func TestInjectGeminiHooks_PreservesExistingBeforeToolEntry(t *testing.T) {
 }
 
 // TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate is the Gemini counterpart of
-// TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate — see that test's doc comment for
-// the ML-1A/ML-4A rationale (old == new wiring today; this fixture becomes a genuine migration
-// test once ML-4A flips migrateHookCommand's oldCommand argument).
+// TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate. ML-4A flipped
+// migrateHookCommand's oldCommand argument to the pre-ML-4A relative literal, so this fixture (an
+// old settings.json written by a pre-ML-4A trackfw) now exercises a genuine migration: the old
+// relative-path entries must be rewritten in place to $GEMINI_PROJECT_DIR/... form, not duplicated.
 func TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
@@ -633,14 +634,14 @@ func TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing
 			t.Errorf("%s[%s]: expected command %q missing", event, matcher, command)
 		}
 	}
-	checkOne("Notification", "ToolPermission", "scripts/trackfw-attention-signal.sh")
-	checkOne("BeforeTool", "run_shell_command", "scripts/trackfw-credential-guard.sh")
-	checkOne("BeforeTool", "read_file|read_many_files", "scripts/trackfw-credential-guard.sh")
-	checkOne("BeforeTool", "write_file|replace", "scripts/trackfw-credential-guard.sh")
-	checkOne("AfterTool", "*", "scripts/trackfw-attention-cleanup.sh")
-	checkOne("AfterTool", "run_shell_command", "scripts/trackfw-credential-guard.sh")
-	checkOne("AfterTool", "read_file|read_many_files", "scripts/trackfw-credential-guard.sh")
-	checkOne("AfterTool", "write_file|replace", "scripts/trackfw-credential-guard.sh")
+	checkOne("Notification", "ToolPermission", geminiSignalCmd)
+	checkOne("BeforeTool", "run_shell_command", geminiGuardCmd)
+	checkOne("BeforeTool", "read_file|read_many_files", geminiGuardCmd)
+	checkOne("BeforeTool", "write_file|replace", geminiGuardCmd)
+	checkOne("AfterTool", "*", geminiCleanupCmd)
+	checkOne("AfterTool", "run_shell_command", geminiGuardCmd)
+	checkOne("AfterTool", "read_file|read_many_files", geminiGuardCmd)
+	checkOne("AfterTool", "write_file|replace", geminiGuardCmd)
 }
 
 // --- Kiro ---

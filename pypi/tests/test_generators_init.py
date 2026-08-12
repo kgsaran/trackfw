@@ -414,6 +414,13 @@ _CODEX_SIGNAL_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention
 _CODEX_CLEANUP_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-cleanup.sh"'
 _CODEX_GUARD_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"'
 
+# ROADMAP-2026-08-11 ML-4A: Gemini documents and uses $GEMINI_PROJECT_DIR in 100% of its official
+# hook command examples (ADR-2026-08-11, "Gemini CLI — alterar, por argumento de assimetria") --
+# matches _SIGNAL_CMD_GEMINI/_CLEANUP_CMD_GEMINI/_GUARD_CMD_GEMINI in trackfw/generators/hooks.py.
+_GEMINI_SIGNAL_CMD = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
+_GEMINI_CLEANUP_CMD = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
+_GEMINI_GUARD_CMD = '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
+
 
 class TestAttentionHooksInjectors(unittest.TestCase):
     """Testes unitários para injeção idempotente de hooks de atenção nos 7 CLIs."""
@@ -708,7 +715,7 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         # write_file|replace credential-guard entries alongside run_shell_command.
         self.assertEqual(len(before), 3)
         self.assertEqual(before[0]['matcher'], 'run_shell_command')
-        self.assertEqual(before[0]['hooks'][0]['command'], 'scripts/trackfw-credential-guard.sh')
+        self.assertEqual(before[0]['hooks'][0]['command'], _GEMINI_GUARD_CMD)
         before_matchers = {e['matcher'] for e in before}
         self.assertEqual(before_matchers, {'run_shell_command', 'read_file|read_many_files', 'write_file|replace'})
 
@@ -747,13 +754,13 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         # are added alongside run_shell_command.
         self.assertEqual(len(before), 3)
         commands = {h['command'] for h in before[0]['hooks']}
-        self.assertEqual(commands, {'scripts/other.sh', 'scripts/trackfw-credential-guard.sh'})
+        self.assertEqual(commands, {'scripts/other.sh', _GEMINI_GUARD_CMD})
 
     def test_inject_gemini_hooks_migration_wiring_rewrites_in_place_not_duplicate(self):
-        """ML-1A: Gemini counterpart of test_inject_codex_hooks_migration_wiring_rewrites_in_place_not_duplicate
-        -- see that test's docstring for the ML-1A/ML-4A rationale (old_command == new_command
-        wiring today; this fixture becomes a genuine migration test once ML-4A flips
-        _migrate_hook_command's old_command argument)."""
+        """ML-4A: Gemini counterpart of test_inject_codex_hooks_migration_wiring_rewrites_in_place_not_duplicate.
+        The fixture below is an old settings.json written by a pre-ML-4A trackfw (relative-path
+        commands); inject_gemini_hooks must rewrite each entry in place to $GEMINI_PROJECT_DIR/...
+        form rather than duplicating it."""
         from trackfw.generators.hooks import inject_gemini_hooks
 
         def mk(matcher, command):
@@ -790,14 +797,14 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             self.assertEqual(len(entries[0]['hooks']), 1, f'{event}[{matcher}]: expected exactly 1 hook')
             self.assertEqual(entries[0]['hooks'][0]['command'], command, f'{event}[{matcher}]: unexpected command')
 
-        check_one('Notification', 'ToolPermission', 'scripts/trackfw-attention-signal.sh')
-        check_one('BeforeTool', 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
-        check_one('BeforeTool', 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
-        check_one('BeforeTool', 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
-        check_one('AfterTool', '*', 'scripts/trackfw-attention-cleanup.sh')
-        check_one('AfterTool', 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
-        check_one('AfterTool', 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
-        check_one('AfterTool', 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
+        check_one('Notification', 'ToolPermission', _GEMINI_SIGNAL_CMD)
+        check_one('BeforeTool', 'run_shell_command', _GEMINI_GUARD_CMD)
+        check_one('BeforeTool', 'read_file|read_many_files', _GEMINI_GUARD_CMD)
+        check_one('BeforeTool', 'write_file|replace', _GEMINI_GUARD_CMD)
+        check_one('AfterTool', '*', _GEMINI_CLEANUP_CMD)
+        check_one('AfterTool', 'run_shell_command', _GEMINI_GUARD_CMD)
+        check_one('AfterTool', 'read_file|read_many_files', _GEMINI_GUARD_CMD)
+        check_one('AfterTool', 'write_file|replace', _GEMINI_GUARD_CMD)
 
     def test_inject_kiro_hooks(self):
         from trackfw.generators.hooks import inject_kiro_hooks

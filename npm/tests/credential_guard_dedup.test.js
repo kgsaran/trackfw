@@ -105,10 +105,15 @@ test('injectGeminiHooks skips project-scope credential-guard when global install
   injectGeminiHooks(dir)
 
   const data = readJSON(path.join(dir, '.gemini', 'settings.json'))
-  assert.equal(hasClaudeHook(data, 'BeforeTool', 'run_shell_command', 'scripts/trackfw-credential-guard.sh'), false)
-  assert.equal(hasClaudeHook(data, 'AfterTool', 'run_shell_command', 'scripts/trackfw-credential-guard.sh'), false)
-  assert.equal(hasClaudeHook(data, 'Notification', 'ToolPermission', 'scripts/trackfw-attention-signal.sh'), true)
-  assert.equal(hasClaudeHook(data, 'AfterTool', '*', 'scripts/trackfw-attention-cleanup.sh'), true)
+  // ROADMAP-2026-08-11 ML-4A: Gemini commands now use $GEMINI_PROJECT_DIR (ADR-2026-08-11) --
+  // see GEMINI_*_CMD in generators.test.js for the shared literal.
+  const geminiGuardCmd = '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
+  const geminiSignalCmd = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
+  const geminiCleanupCmd = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
+  assert.equal(hasClaudeHook(data, 'BeforeTool', 'run_shell_command', geminiGuardCmd), false)
+  assert.equal(hasClaudeHook(data, 'AfterTool', 'run_shell_command', geminiGuardCmd), false)
+  assert.equal(hasClaudeHook(data, 'Notification', 'ToolPermission', geminiSignalCmd), true)
+  assert.equal(hasClaudeHook(data, 'AfterTool', '*', geminiCleanupCmd), true)
 })
 
 test('injectCursorHooks skips project-scope credential-guard when global installed', () => {

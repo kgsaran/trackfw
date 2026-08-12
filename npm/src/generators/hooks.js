@@ -460,14 +460,18 @@ const CODEX_ROOT = '"$(git rev-parse --show-toplevel)'
 
 const SIGNAL_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
 const SIGNAL_CMD_CODEX = CODEX_ROOT + '/scripts/trackfw-attention-signal.sh"'
-const SIGNAL_CMD_GEMINI = 'scripts/trackfw-attention-signal.sh'
+// $GEMINI_PROJECT_DIR (ROADMAP-2026-08-11 ML-4A): distinct from the session-following
+// $GEMINI_CWD, documented and used in 100% of the Gemini CLI's official hook command
+// examples (ADR-2026-08-11, "Gemini CLI — alterar, por argumento de assimetria"). Expanded
+// by the Gemini CLI runtime itself -- no shell substitution needed, no literal quotes.
+const SIGNAL_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
 const SIGNAL_CMD_KIRO = 'scripts/trackfw-attention-signal.sh'
 const SIGNAL_CMD_COPILOT = 'scripts/trackfw-attention-signal.sh'
 const SIGNAL_CMD_CURSOR = 'scripts/trackfw-attention-signal.sh'
 
 const CLEANUP_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
 const CLEANUP_CMD_CODEX = CODEX_ROOT + '/scripts/trackfw-attention-cleanup.sh"'
-const CLEANUP_CMD_GEMINI = 'scripts/trackfw-attention-cleanup.sh'
+const CLEANUP_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
 const CLEANUP_CMD_KIRO = 'scripts/trackfw-attention-cleanup.sh'
 const CLEANUP_CMD_COPILOT = 'scripts/trackfw-attention-cleanup.sh'
 const CLEANUP_CMD_CURSOR = 'scripts/trackfw-attention-cleanup.sh'
@@ -483,6 +487,12 @@ const CLEANUP_CMD_CLAUDE_LEGACY = 'scripts/trackfw-attention-cleanup.sh'
 const SIGNAL_CMD_CODEX_LEGACY = 'scripts/trackfw-attention-signal.sh'
 const CLEANUP_CMD_CODEX_LEGACY = 'scripts/trackfw-attention-cleanup.sh'
 
+// Pre-ML-4A literal value of SIGNAL_CMD_GEMINI/CLEANUP_CMD_GEMINI/GUARD_CMD_GEMINI, kept only as
+// the `oldCommand` argument to the migration calls in injectGeminiHooks below.
+const SIGNAL_CMD_GEMINI_LEGACY = 'scripts/trackfw-attention-signal.sh'
+const CLEANUP_CMD_GEMINI_LEGACY = 'scripts/trackfw-attention-cleanup.sh'
+const GUARD_CMD_GEMINI_LEGACY = 'scripts/trackfw-credential-guard.sh'
+
 // GUARD_CMD_* -- split per-CLI (ROADMAP-2026-08-11 ML-3A) from what used to be one constant
 // (GUARD_CMD) shared by Codex/Gemini/Kiro/Copilot/Cursor (Claude already had its own,
 // GUARD_CMD_CLAUDE, since ML-2A). Same rationale as the SIGNAL_CMD_*/CLEANUP_CMD_* split above:
@@ -495,7 +505,7 @@ const CLEANUP_CMD_CODEX_LEGACY = 'scripts/trackfw-attention-cleanup.sh'
 // pattern above.
 const GUARD_CMD_LEGACY = 'scripts/trackfw-credential-guard.sh'
 const GUARD_CMD_CODEX = CODEX_ROOT + '/scripts/trackfw-credential-guard.sh"'
-const GUARD_CMD_GEMINI = 'scripts/trackfw-credential-guard.sh'
+const GUARD_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
 const GUARD_CMD_KIRO = 'scripts/trackfw-credential-guard.sh'
 const GUARD_CMD_COPILOT = 'scripts/trackfw-credential-guard.sh'
 const GUARD_CMD_CURSOR = 'scripts/trackfw-credential-guard.sh'
@@ -772,14 +782,14 @@ function injectGeminiHooks(cwd) {
   // Gemini command strings (ML-4A) updates the oldCommand argument here instead of adding this
   // call from scratch -- without it, the merge's exact-string dedup would append a duplicate
   // alongside the stale entry.
-  migrateHookCommand(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD_GEMINI, SIGNAL_CMD_GEMINI)
-  migrateHookCommand(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
-  migrateHookCommand(data.hooks.BeforeTool, 'read_file|read_many_files', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
-  migrateHookCommand(data.hooks.BeforeTool, 'write_file|replace', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
-  migrateHookCommand(data.hooks.AfterTool, '*', CLEANUP_CMD_GEMINI, CLEANUP_CMD_GEMINI)
-  migrateHookCommand(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
-  migrateHookCommand(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
-  migrateHookCommand(data.hooks.AfterTool, 'write_file|replace', GUARD_CMD_GEMINI, GUARD_CMD_GEMINI)
+  migrateHookCommand(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD_GEMINI_LEGACY, SIGNAL_CMD_GEMINI)
+  migrateHookCommand(data.hooks.BeforeTool, 'run_shell_command', GUARD_CMD_GEMINI_LEGACY, GUARD_CMD_GEMINI)
+  migrateHookCommand(data.hooks.BeforeTool, 'read_file|read_many_files', GUARD_CMD_GEMINI_LEGACY, GUARD_CMD_GEMINI)
+  migrateHookCommand(data.hooks.BeforeTool, 'write_file|replace', GUARD_CMD_GEMINI_LEGACY, GUARD_CMD_GEMINI)
+  migrateHookCommand(data.hooks.AfterTool, '*', CLEANUP_CMD_GEMINI_LEGACY, CLEANUP_CMD_GEMINI)
+  migrateHookCommand(data.hooks.AfterTool, 'run_shell_command', GUARD_CMD_GEMINI_LEGACY, GUARD_CMD_GEMINI)
+  migrateHookCommand(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD_GEMINI_LEGACY, GUARD_CMD_GEMINI)
+  migrateHookCommand(data.hooks.AfterTool, 'write_file|replace', GUARD_CMD_GEMINI_LEGACY, GUARD_CMD_GEMINI)
 
   data.hooks.Notification = mergeClaudeHookArray(data.hooks.Notification, 'ToolPermission', SIGNAL_CMD_GEMINI)
   // Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08

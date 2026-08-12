@@ -399,6 +399,15 @@ _GUARD_CMD_CODEX = _CODEX_ROOT + '/scripts/trackfw-credential-guard.sh"'
 _SIGNAL_CMD_CODEX = _CODEX_ROOT + '/scripts/trackfw-attention-signal.sh"'
 _CLEANUP_CMD_CODEX = _CODEX_ROOT + '/scripts/trackfw-attention-cleanup.sh"'
 
+# ROADMAP-2026-08-11 ML-4A: Gemini CLI documents $GEMINI_PROJECT_DIR (distinct from the
+# session-following $GEMINI_CWD) and uses it in 100% of its official hook command examples
+# (ADR-2026-08-11, "Gemini CLI — alterar, por argumento de assimetria"). Unlike Codex's
+# $(git rev-parse ...), this is an env var expanded by the Gemini CLI runtime itself -- no
+# shell substitution needed, no literal quotes required.
+_SIGNAL_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
+_CLEANUP_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
+_GUARD_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
+
 
 def inject_codex_hooks(cwd: str) -> None:
     """Injeta hooks PermissionRequest/PreToolUse/PostToolUse no .codex/hooks.json."""
@@ -495,8 +504,8 @@ def inject_gemini_hooks(cwd: str) -> None:
     # Gemini command strings (ML-4A) updates old_command here instead of adding this call from
     # scratch -- without it, the merge's exact-string dedup would append a duplicate alongside
     # the stale entry.
-    _migrate_hook_command(notifications, 'ToolPermission', 'scripts/trackfw-attention-signal.sh', 'scripts/trackfw-attention-signal.sh')
-    _merge_claude_hook_array(notifications, 'ToolPermission', 'scripts/trackfw-attention-signal.sh')
+    _migrate_hook_command(notifications, 'ToolPermission', 'scripts/trackfw-attention-signal.sh', _SIGNAL_CMD_GEMINI)
+    _merge_claude_hook_array(notifications, 'ToolPermission', _SIGNAL_CMD_GEMINI)
 
     # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
     # ROADMAP-2026-08-08 Wave 2 to read_file|read_many_files / write_file|replace): skip
@@ -504,30 +513,30 @@ def inject_gemini_hooks(cwd: str) -> None:
     skip_cg = _global_credential_guard_installed_gemini()
 
     before = hooks.setdefault('BeforeTool', [])
-    _migrate_hook_command(before, 'run_shell_command', 'scripts/trackfw-credential-guard.sh', 'scripts/trackfw-credential-guard.sh')
-    _migrate_hook_command(before, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh', 'scripts/trackfw-credential-guard.sh')
-    _migrate_hook_command(before, 'write_file|replace', 'scripts/trackfw-credential-guard.sh', 'scripts/trackfw-credential-guard.sh')
+    _migrate_hook_command(before, 'run_shell_command', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
+    _migrate_hook_command(before, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
+    _migrate_hook_command(before, 'write_file|replace', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
     if not skip_cg:
-        _merge_claude_hook_array(before, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(before, 'run_shell_command', _GUARD_CMD_GEMINI)
         # Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2,
         # 2026-08-08): the Gemini CLI tools table
         # (https://geminicli.com/docs/reference/tools) documents `read_file`/
         # `read_many_files` as the file-read tools and `write_file`/`replace` as the
         # file-write/edit tools -- matcher below follows the same regex-over-tool_name
         # convention already used for `run_shell_command`.
-        _merge_claude_hook_array(before, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
-        _merge_claude_hook_array(before, 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(before, 'read_file|read_many_files', _GUARD_CMD_GEMINI)
+        _merge_claude_hook_array(before, 'write_file|replace', _GUARD_CMD_GEMINI)
 
     after = hooks.setdefault('AfterTool', [])
-    _migrate_hook_command(after, '*', 'scripts/trackfw-attention-cleanup.sh', 'scripts/trackfw-attention-cleanup.sh')
-    _migrate_hook_command(after, 'run_shell_command', 'scripts/trackfw-credential-guard.sh', 'scripts/trackfw-credential-guard.sh')
-    _migrate_hook_command(after, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh', 'scripts/trackfw-credential-guard.sh')
-    _migrate_hook_command(after, 'write_file|replace', 'scripts/trackfw-credential-guard.sh', 'scripts/trackfw-credential-guard.sh')
-    _merge_claude_hook_array(after, '*', 'scripts/trackfw-attention-cleanup.sh')
+    _migrate_hook_command(after, '*', 'scripts/trackfw-attention-cleanup.sh', _CLEANUP_CMD_GEMINI)
+    _migrate_hook_command(after, 'run_shell_command', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
+    _migrate_hook_command(after, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
+    _migrate_hook_command(after, 'write_file|replace', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
+    _merge_claude_hook_array(after, '*', _CLEANUP_CMD_GEMINI)
     if not skip_cg:
-        _merge_claude_hook_array(after, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
-        _merge_claude_hook_array(after, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
-        _merge_claude_hook_array(after, 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(after, 'run_shell_command', _GUARD_CMD_GEMINI)
+        _merge_claude_hook_array(after, 'read_file|read_many_files', _GUARD_CMD_GEMINI)
+        _merge_claude_hook_array(after, 'write_file|replace', _GUARD_CMD_GEMINI)
 
     _write_json(file_path, data)
 

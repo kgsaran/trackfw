@@ -375,7 +375,7 @@ Essa é uma saída legítima e prevista; forçar a mudança sem a prova, não.
 Python `test_generators_init.py` 546, 552
 
 ### ML-4A — Gemini (`.gemini/settings.json`) — merge-based, **precisa de migração**
-**Status:** 🔄 Em andamento · **Agente:** Apolo (`apolo-tf`)
+**Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-11)
 **String a emitir:** `$GEMINI_PROJECT_DIR/scripts/trackfw-<script>.sh`
 **Linhas:** Go `457, 470, 475, 480, 487, 493, 498, 503` · Node `685, 691, 692, 693, 695, 697, 698,
 699` · Python `450, 459, 466, 467, 470, 472, 473, 474`
@@ -460,7 +460,7 @@ bash scripts/check-gates-falsify.sh
 > Dependências: última wave de emissão executada.
 
 ### ML-8A — Documentação de paridade + gate final
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Hefesto (`hefesto-tf`)
 **Arquivos afetados:** `docs/cli-parity.md` (somente). **Não modifica código de produto.**
 **Ações:** adicionar seção "Mecanismo de resolução de caminho dos hooks de projeto, por CLI" com a
@@ -479,7 +479,7 @@ Rodar `make quality` e reportar.
 - [ ] `internal/`, `npm/src/`, `pypi/trackfw/` intocados neste ML.
 
 ### ML-8B — Revisão de segurança do wiring alterado
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Hades (`hades-tf`)
 **Arquivos afetados:** nenhum (revisão). Achados são reportados a Zeus, **não corrigidos** por este
 agente.
