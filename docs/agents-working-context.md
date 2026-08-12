@@ -12741,3 +12741,39 @@ zero sinal nos dois lugares). Nenhuma divergência ADR × código encontrada, ve
 `make quality` exit 0 (105 cenários) · `trackfw validate` sem violações. Roadmap → `done`.
 **Honestidade do que este ciclo entregou:** detecção da classe do incidente real, **não** prevenção
 contra adversário ativo. Está escrito no ADR, no `cli-parity.md` e no parecer.
+
+---
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — roadmap da medição da premissa de sandbox — INICIADO
+
+PR #160 mergeado (`e374fbc`). `main` sincronizada, branch anterior apagada, nenhuma branch remota
+aberta.
+
+**Decisão de desenho: este roadmap tem uma wave de medição e NADA mais.** Ele não implementa
+consentimento, nem instalação por padrão, nem a via do `credential_guard.mode` — tudo isso fica
+**condicionado ao resultado**.
+
+Motivo: a premissa que sustenta o `ADR-2026-08-12` (*"o guard global está fora do alcance de um
+agente restrito ao workspace"*) **nunca foi medida**, e a Emenda 1 avalia como **alta** a chance de
+ser falsa — nenhum dos 6 CLIs roda sandboxed por padrão. Planejar os outros dois eixos agora
+significaria refazê-los se a premissa cair.
+
+Este projeto já pagou exatamente por isso no ciclo anterior: o vetor 🔴 do parecer foi construído
+sobre uma premissa não medida (`cd` do agente movendo o cwd do hook), e custou ML-2A → ML-1C → ML-2B
+até ser refutado e a conclusão reconstruída sobre outra base.
+
+**A tabela de consequências está escrita no roadmap**, incluindo a mais desconfortável: se a premissa
+for falsa, "instalar o guard global por padrão" deixa de ser a resposta, e a pergunta vira *existe
+alguma defesa contra agente induzido com escrita irrestrita?* — possivelmente **não**, e a resposta
+honesta seria **documentar isso** em vez de construir mais mecanismo.
+
+**Precisão do que medir**, registrada para o ML não derrapar: não é "o agente tem permissão de
+escrita em `$HOME`" (trivialmente verdadeiro), é **se durante uma sessão normal do CLI o agente
+consegue efetivamente escrever/apagar** em `~/.trackfw/` e nos settings globais — o que pode impedir
+é sandbox do CLI, política de aprovação, confirmação humana, ou nada.
+
+**Controle positivo exigido** (escrever num arquivo dentro do workspace tem de funcionar): sem ele,
+um "não alcança" pode ser apenas o experimento não estar pedindo a escrita direito — mesma lição do
+ML-1A do roadmap de semântica de falha.
+
+Branch `fix/guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox`.

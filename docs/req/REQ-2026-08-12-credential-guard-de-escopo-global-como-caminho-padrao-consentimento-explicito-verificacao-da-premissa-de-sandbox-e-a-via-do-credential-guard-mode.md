@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md"
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md"
 ---
 
 # REQ: Credential-guard de escopo global como caminho padrao — consentimento explicito, verificacao da premissa de sandbox e a via do credential_guard.mode
@@ -123,4 +123,4 @@ ADR: docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-co
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md
