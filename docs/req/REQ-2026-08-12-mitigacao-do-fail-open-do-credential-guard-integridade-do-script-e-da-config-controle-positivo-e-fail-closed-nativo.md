@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md"
 ---
 
 # REQ: Mitigacao do fail-open do credential-guard — integridade do script e da config, controle positivo e fail-closed nativo
@@ -103,4 +103,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md

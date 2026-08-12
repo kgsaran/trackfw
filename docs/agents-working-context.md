@@ -12041,3 +12041,36 @@ restrito ao workspace não o alcança. Talvez parte da resposta seja **preferir 
 vez de construir integridade no escopo de projeto. Marcado como provável ADR.
 
 **Estado:** roadmap → `done`, REQ → `Done`. Nenhum código de produto alterado em todo o roadmap.
+
+---
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — roadmap de mitigação do fail-open — INICIADO
+
+**Decisão de escopo: só os itens 1 e 2 da REQ viram implementação.** Os itens 3 (wrapper) e 4
+(integridade de conteúdo) viram **barreira de ADR no fim**, porque ambos dependem de decisão de
+arquitetura ainda não tomada — e porque existe uma **terceira via que ninguém explorou**: o
+credential-guard de escopo global vive em `~/.trackfw/`, **fora do repositório**, inalcançável por
+agente restrito ao workspace. Se essa via resolver, os itens 3 e 4 podem ser desnecessários.
+Registrei na barreira que ela deve ser avaliada **primeiro** — construir a solução errada custa mais
+que adiar.
+
+**Escrevi no roadmap o que os itens 1 e 2 NÃO cobrem**, em tabela: sobrescrita do script com
+`exit 0` e downgrade de `credential_guard.mode` via YAML ficam **descobertos**. Sem isso, alguém lê
+"mitigação implementada" e assume que a classe de ameaça está fechada.
+
+**Risco de regressão verificado antes de despachar:** a regra nova **não pode disparar neste
+repositório**. Conferido: `.claude/settings.json` do trackfw tem **0** referências ao
+credential-guard, porque o guard global está instalado e `globalCredentialGuardInstalled*()` pula as
+entradas de projeto de propósito. Se disparar aqui, quebra `make quality` **e** o Cenário 29 do
+falsify, que fixa a mensagem de sucesso do `validate` byte-a-byte nos 3 CLIs.
+
+**Restrição travada no ML-3A:** `failClosed: true` vai **apenas** nas entradas de credential-guard do
+Cursor, **nunca** nas de attention-signal/cleanup — travar o agente porque um hook de sinalização de
+UI falhou seria pior que o problema que estamos corrigindo.
+
+**Wave 2 exige prova de não-vacuidade da regra nova**, com referência explícita ao episódio em que
+este projeto produziu um cenário de prova negativa que ele próprio não provava
+(`ROADMAP-2026-08-12-prova-negativa-...`, ML-1A → ML-1B).
+
+Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Primeiro roadmap desta sequência que
+**altera código de produto** — os três anteriores foram doc/gates.
