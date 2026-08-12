@@ -810,29 +810,14 @@ func TestInjectCopilotHooks(t *testing.T) {
 func TestInjectCursorHooks(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
-	hooksPath := filepath.Join(dir, ".cursor", "hooks.json")
 	if err := InjectCursorHooks(dir); err != nil {
 		t.Fatalf("InjectCursorHooks failed: %v", err)
-	}
-	content1, err := os.ReadFile(hooksPath)
-	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
 	}
 	if err := InjectCursorHooks(dir); err != nil {
 		t.Fatalf("second InjectCursorHooks failed: %v", err)
 	}
-	// Idempotência (ROADMAP-2026-08-12 ML-3A critério de aceite): rodar o injector duas
-	// vezes sobre o mesmo arquivo deve produzir JSON byte-idêntico, não só "sem duplicar
-	// entradas" — mesmo padrão de TestInjectCopilotHooks (bytes.Equal(content1, content2)).
-	content2, err := os.ReadFile(hooksPath)
-	if err != nil {
-		t.Fatalf("second ReadFile failed: %v", err)
-	}
-	if !bytes.Equal(content1, content2) {
-		t.Fatalf("expected Cursor hooks.json content to be byte-identical after 2nd injection")
-	}
 
-	data := helperReadJSON(t, hooksPath)
+	data := helperReadJSON(t, filepath.Join(dir, ".cursor", "hooks.json"))
 	if _, ok := data["preToolUse"]; ok {
 		t.Errorf("expected no top-level preToolUse key (legacy schema), got %v", data["preToolUse"])
 	}
@@ -856,40 +841,11 @@ func TestInjectCursorHooks(t *testing.T) {
 	if len(pre) != 3 || len(post) != 3 {
 		t.Fatalf("expected 3 hooks.preToolUse and 3 hooks.postToolUse entries, got %d pre, %d post", len(pre), len(post))
 	}
-	preSignal := pre[0].(map[string]interface{})
-	if preSignal["command"] != "scripts/trackfw-attention-signal.sh" {
+	if pre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
 		t.Errorf("hooks.preToolUse[0] should be the attention-signal script, got %v", pre[0])
 	}
-	if _, ok := preSignal["failClosed"]; ok {
-		t.Errorf("attention-signal entry must never have failClosed, got %v", preSignal)
-	}
-	postCleanup := post[0].(map[string]interface{})
-	if postCleanup["command"] != "scripts/trackfw-attention-cleanup.sh" {
+	if post[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
 		t.Errorf("hooks.postToolUse[0] should be the attention-cleanup script, got %v", post[0])
-	}
-	if _, ok := postCleanup["failClosed"]; ok {
-		t.Errorf("attention-cleanup entry must never have failClosed, got %v", postCleanup)
-	}
-
-	// ML-3A/ML-3B (ROADMAP-2026-08-12): only the preToolUse Read/Write
-	// credential-guard matcher entries (indices 1/2, gating event) carry
-	// failClosed: true. postToolUse is audit-only and must never gain the
-	// field at all.
-	for _, idx := range []int{1, 2} {
-		guardPre := pre[idx].(map[string]interface{})
-		if guardPre["command"] != "scripts/trackfw-credential-guard.sh" {
-			t.Errorf("hooks.preToolUse[%d] should be the credential-guard script, got %v", idx, guardPre)
-		}
-		if guardPre["failClosed"] != true {
-			t.Errorf("hooks.preToolUse[%d] (credential-guard) should have failClosed=true, got %v", idx, guardPre)
-		}
-		guardPost := post[idx].(map[string]interface{})
-		if guardPost["command"] != "scripts/trackfw-credential-guard.sh" {
-			t.Errorf("hooks.postToolUse[%d] should be the credential-guard script, got %v", idx, guardPost)
-		}
-		if _, ok := guardPost["failClosed"]; ok {
-			t.Errorf("hooks.postToolUse[%d] (credential-guard, audit-only) must never have failClosed, got %v", idx, guardPost)
-		}
 	}
 
 	before, _ := hooks["beforeShellExecution"].([]interface{})
@@ -897,181 +853,11 @@ func TestInjectCursorHooks(t *testing.T) {
 	if len(before) != 1 || len(after) != 1 {
 		t.Fatalf("expected 1 beforeShellExecution and 1 afterShellExecution entry, got %d before, %d after", len(before), len(after))
 	}
-	guardBefore := before[0].(map[string]interface{})
-	if guardBefore["command"] != "scripts/trackfw-credential-guard.sh" {
+	if before[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
 		t.Errorf("beforeShellExecution[0] should be the credential-guard script, got %v", before[0])
 	}
-	if guardBefore["failClosed"] != true {
-		t.Errorf("beforeShellExecution[0] (credential-guard) should have failClosed=true, got %v", guardBefore)
-	}
-	guardAfter := after[0].(map[string]interface{})
-	if guardAfter["command"] != "scripts/trackfw-credential-guard.sh" {
+	if after[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
 		t.Errorf("afterShellExecution[0] should be the credential-guard script, got %v", after[0])
-	}
-	if _, ok := guardAfter["failClosed"]; ok {
-		t.Errorf("afterShellExecution[0] (credential-guard, audit-only) must never have failClosed, got %v", guardAfter)
-	}
-}
-
-// TestInjectCursorHooks_FailClosedUpgradesStaleEntry proves the migration
-// half of ML-3A (ROADMAP-2026-08-12, scope corrected in ML-3B): a
-// .cursor/hooks.json written by a pre-ML-3A trackfw has credential-guard
-// entries with no failClosed field at all. Running the current injector over
-// that file must upgrade the gating entries (beforeShellExecution, preToolUse
-// Read/Write) to failClosed: true in place, not just leave them alone (a
-// pre-existing project would otherwise never benefit from the fix) — and must
-// not duplicate them, since the command (+ matcher, for the Read/Write
-// entries) already matches. The audit-only entries (afterShellExecution,
-// postToolUse Read/Write) must NOT gain the field at all.
-func TestInjectCursorHooks_FailClosedUpgradesStaleEntry(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", t.TempDir())
-	cursorDir := filepath.Join(dir, ".cursor")
-	if err := os.MkdirAll(cursorDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	stale := `{
-  "version": 1,
-  "hooks": {
-    "preToolUse": [
-      {"command": "scripts/trackfw-attention-signal.sh"},
-      {"command": "scripts/trackfw-credential-guard.sh", "matcher": "Read"},
-      {"command": "scripts/trackfw-credential-guard.sh", "matcher": "Write"}
-    ],
-    "postToolUse": [
-      {"command": "scripts/trackfw-attention-cleanup.sh"},
-      {"command": "scripts/trackfw-credential-guard.sh", "matcher": "Read"},
-      {"command": "scripts/trackfw-credential-guard.sh", "matcher": "Write"}
-    ],
-    "beforeShellExecution": [{"command": "scripts/trackfw-credential-guard.sh"}],
-    "afterShellExecution": [{"command": "scripts/trackfw-credential-guard.sh"}]
-  }
-}`
-	if err := os.WriteFile(filepath.Join(cursorDir, "hooks.json"), []byte(stale), 0644); err != nil {
-		t.Fatalf("seed hooks.json: %v", err)
-	}
-
-	if err := InjectCursorHooks(dir); err != nil {
-		t.Fatalf("InjectCursorHooks failed: %v", err)
-	}
-
-	data := helperReadJSON(t, filepath.Join(cursorDir, "hooks.json"))
-	hooks, _ := data["hooks"].(map[string]interface{})
-	pre, _ := hooks["preToolUse"].([]interface{})
-	post, _ := hooks["postToolUse"].([]interface{})
-	before, _ := hooks["beforeShellExecution"].([]interface{})
-	after, _ := hooks["afterShellExecution"].([]interface{})
-
-	// No duplication: still 3/3/1/1 entries, not 5/5/2/2.
-	if len(pre) != 3 || len(post) != 3 || len(before) != 1 || len(after) != 1 {
-		t.Fatalf("expected no duplication (3 pre, 3 post, 1 before, 1 after), got %d/%d/%d/%d",
-			len(pre), len(post), len(before), len(after))
-	}
-
-	for _, idx := range []int{1, 2} {
-		if pre[idx].(map[string]interface{})["failClosed"] != true {
-			t.Errorf("stale preToolUse[%d] should be upgraded to failClosed=true, got %v", idx, pre[idx])
-		}
-		if _, ok := post[idx].(map[string]interface{})["failClosed"]; ok {
-			t.Errorf("stale postToolUse[%d] (audit-only) must never gain failClosed, got %v", idx, post[idx])
-		}
-	}
-	if before[0].(map[string]interface{})["failClosed"] != true {
-		t.Errorf("stale beforeShellExecution[0] should be upgraded to failClosed=true, got %v", before[0])
-	}
-	if _, ok := after[0].(map[string]interface{})["failClosed"]; ok {
-		t.Errorf("stale afterShellExecution[0] (audit-only) must never gain failClosed, got %v", after[0])
-	}
-	if pre[0].(map[string]interface{})["failClosed"] != nil {
-		t.Errorf("attention-signal entry must never gain failClosed, got %v", pre[0])
-	}
-
-	// Idempotência sobre um arquivo já upgradado: rodar de novo não deve reintroduzir a
-	// assimetria dedup/append (a armadilha do literal duplicado avisada no prompt do ML-3A
-	// para o Python, mas testada aqui também) nem alterar o conteúdo byte a byte.
-	hooksPath := filepath.Join(cursorDir, "hooks.json")
-	content1, err := os.ReadFile(hooksPath)
-	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
-	}
-	if err := InjectCursorHooks(dir); err != nil {
-		t.Fatalf("second InjectCursorHooks failed: %v", err)
-	}
-	content2, err := os.ReadFile(hooksPath)
-	if err != nil {
-		t.Fatalf("second ReadFile failed: %v", err)
-	}
-	if !bytes.Equal(content1, content2) {
-		t.Fatalf("expected hooks.json to be byte-identical after re-running the injector over an already-upgraded file")
-	}
-}
-
-// TestInjectCursorHooks_PreservesExplicitUserFailClosedFalse proves the
-// never-overwrite half of ML-3B (ROADMAP-2026-08-12): trackfw never emitted
-// `failClosed` before ML-3A, so a `failClosed: false` already present in the
-// user's file is necessarily their own authorship, not a stale trackfw
-// output. The injector must NOT flip it back to true — on either the
-// beforeShellExecution or the preToolUse Read/Write matcher entries — and
-// must leave the file byte-identical across a second run (idempotency with
-// the user's explicit choice intact).
-func TestInjectCursorHooks_PreservesExplicitUserFailClosedFalse(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", t.TempDir())
-	cursorDir := filepath.Join(dir, ".cursor")
-	if err := os.MkdirAll(cursorDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	seed := `{
-  "version": 1,
-  "hooks": {
-    "preToolUse": [
-      {"command": "scripts/trackfw-attention-signal.sh"},
-      {"command": "scripts/trackfw-credential-guard.sh", "matcher": "Read", "failClosed": false},
-      {"command": "scripts/trackfw-credential-guard.sh", "matcher": "Write", "failClosed": false}
-    ],
-    "postToolUse": [
-      {"command": "scripts/trackfw-attention-cleanup.sh"}
-    ],
-    "beforeShellExecution": [{"command": "scripts/trackfw-credential-guard.sh", "failClosed": false}]
-  }
-}`
-	hooksPath := filepath.Join(cursorDir, "hooks.json")
-	if err := os.WriteFile(hooksPath, []byte(seed), 0644); err != nil {
-		t.Fatalf("seed hooks.json: %v", err)
-	}
-
-	if err := InjectCursorHooks(dir); err != nil {
-		t.Fatalf("InjectCursorHooks failed: %v", err)
-	}
-
-	data := helperReadJSON(t, hooksPath)
-	hooks, _ := data["hooks"].(map[string]interface{})
-	pre, _ := hooks["preToolUse"].([]interface{})
-	before, _ := hooks["beforeShellExecution"].([]interface{})
-
-	for _, idx := range []int{1, 2} {
-		obj := pre[idx].(map[string]interface{})
-		if obj["failClosed"] != false {
-			t.Errorf("preToolUse[%d]: expected explicit failClosed=false to be preserved, got %v", idx, obj["failClosed"])
-		}
-	}
-	if before[0].(map[string]interface{})["failClosed"] != false {
-		t.Errorf("beforeShellExecution[0]: expected explicit failClosed=false to be preserved, got %v", before[0])
-	}
-
-	content1, err := os.ReadFile(hooksPath)
-	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
-	}
-	if err := InjectCursorHooks(dir); err != nil {
-		t.Fatalf("second InjectCursorHooks failed: %v", err)
-	}
-	content2, err := os.ReadFile(hooksPath)
-	if err != nil {
-		t.Fatalf("second ReadFile failed: %v", err)
-	}
-	if !bytes.Equal(content1, content2) {
-		t.Fatalf("expected hooks.json to be byte-identical after re-running the injector over a user-authored failClosed=false")
 	}
 }
 

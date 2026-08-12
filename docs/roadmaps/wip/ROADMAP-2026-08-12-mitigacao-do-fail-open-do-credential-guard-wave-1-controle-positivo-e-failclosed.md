@@ -283,7 +283,7 @@ A opção 3 pode tornar 1 e 2 desnecessários — **avaliá-la primeiro**.
 > Dependências: Barreira B1. Consequência direta da decisão.
 
 ### ML-3C — Reverter a emissão de `failClosed` do Cursor
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Apolo (`apolo-tf`)
 
 Reverter a emissão de `failClosed` introduzida nos ML-3A/3B, nos 3 stacks, **mantendo** tudo o que
@@ -296,12 +296,12 @@ adversário que apaga o script.
 > Dependências: Barreira B1. Arquivos disjuntos.
 
 ### ML-4A — Revisão de segurança
-**Status:** ⬜ Pendente · **Agente:** Hades (`hades-tf`) · **Entregável:** `docs/seguranca/` (novo).
+**Status:** 🔄 Em andamento · **Agente:** Hades (`hades-tf`) · **Entregável:** `docs/seguranca/` (novo).
 Avaliar se os itens 1 e 2 entregam a redução de risco pretendida, e se a regra nova cria falso senso
 de segurança (ela verifica no momento do `validate`, não no da invocação). **Não modifica código.**
 
 ### ML-4B — Documentação
-**Status:** ⬜ Pendente · **Agente:** Hefesto (`hefesto-tf`) · **Arquivos:** `docs/cli-parity.md`.
+**Status:** 🔄 Em andamento · **Agente:** Hefesto (`hefesto-tf`) · **Arquivos:** `docs/cli-parity.md`.
 Registrar a regra nova, o `failClosed` do Cursor, e **explicitamente o que continua descoberto**
 (sobrescrita e downgrade por config). **Não modifica código de produto.**
 

@@ -12542,3 +12542,73 @@ passed + 8 subtests · `check-agent-hooks-parity.sh` todos OK · `make quality` 
 **Nota de processo:** o bloco `### ML-3B` não existia no roadmap (eu disse que criaria e não criei
 antes do despacho); o agente escreveu o bloco inteiro seguindo o formato dos demais e **sinalizou**
 que havia extrapolado o "apenas o campo Status". Comportamento correto — a falha foi minha.
+
+## Sessão 2026-08-12 — Apolo (ML-3C: reversão do `failClosed` do Cursor após Barreira B1) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+**ADR lido antes de começar:** `docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`.
+Decisão de KG: a defesa real é o guard de escopo global (`~/.trackfw/`); o `failClosed` de escopo de
+projeto do ML-3A/3B **não é enviado** — código revertido neste ML.
+
+**O que foi feito:** confirmei que nenhum commit tocou os 6 arquivos entre `09e4c01` (ML-3A+3B) e
+`HEAD` (`4bd7514`, docs-only), então restaurar os arquivos ao estado do commit **anterior**
+(`fbbeaf9`, ML-2A) é equivalente a reverter cirurgicamente só a emissão de `failClosed` — sem
+mexer em nada do ML-1A/ML-2A (que não estão nesses arquivos) nem no wiring de caminho (fora de
+escopo).
+
+```
+git checkout fbbeaf9 -- internal/generators/agentfiles.go internal/generators/agentfiles_test.go \
+  npm/src/generators/hooks.js npm/tests/generators.test.js \
+  pypi/trackfw/generators/hooks.py pypi/tests/test_generators_init.py
+```
+
+**Prova de byte-identidade (critério de aceite mais forte do ML):** criei um `git worktree` no
+commit `fbbeaf9` (pré-ML-3A), compilei o binário lá, escrevi um `cmd/fixgen` temporário (chamando
+`generators.InjectCursorHooks(dir)` diretamente, com `$HOME` isolado em ambos os lados) tanto no
+worktree antigo quanto na árvore atual, gerei `.cursor/hooks.json` dos dois lados e rodei `diff` —
+**vazio**. `cmd/fixgen` e o worktree foram removidos depois; não sobraram no `git status`.
+
+**Helpers órfãos:** nenhum. `mergeCursorGuardMatcherEntry` (Go) continua em uso — não é órfão do
+ML-3A/3B, é o código genérico de matcher `Read`/`Write` que já existia (ADR-2026-08-06/ROADMAP
+Wave 2), não tem relação com `failClosed`. `git grep failClosed` em `internal/generators`,
+`npm/src`, `pypi/trackfw` — zero ocorrências (só sobra em docs/ADR/roadmap, que é esperado e
+explicitamente fora de escopo de reversão).
+
+**Evidência:**
+- `go build ./... && go test ./...` — verde, todos os pacotes.
+- `npm --prefix npm test` — 450 passed, 0 failed.
+- `python3 -m pytest pypi/tests -q` — 1004 passed, 8 subtests passed.
+- `bash scripts/check-agent-hooks-parity.sh` — 12/12 `OK`, sem `FAIL`.
+- `go run ./cmd/trackfw validate` — `✓ No violations found.`
+- `make quality` — exit 0, **105/105 cenários** (Cenário 47/ML-2A, credential_guard_hook_resolvable,
+  continua verde — não foi tocado).
+- `git status --porcelain` — só os 6 arquivos de geradores/testes permitidos:
+  `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`,
+  `npm/src/generators/hooks.js`, `npm/tests/generators.test.js`,
+  `pypi/trackfw/generators/hooks.py`, `pypi/tests/test_generators_init.py`, mais este arquivo e o
+  campo `**Status:**` do ML-3C no roadmap.
+
+**Status do roadmap:** ML-3C marcado ✅ Concluído (Apolo), aguardando auditoria/commit de Zeus. Não
+fiz commit nem push — autoridade de Git é do Zeus. Restam pendentes Wave 4 (ML-4A Hades, ML-4B
+Hefesto), ambos paralelos e fora do meu escopo.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-3C (reversão do `failClosed`) — APROVADO
+
+**Critério mais forte satisfeito:** `git diff fbbeaf9` (commit imediatamente anterior ao ML-3A) nos 6
+arquivos → **vazio**. Reversão byte-idêntica, sem arrastar nada dos commits intermediários.
+`git grep failClosed` em `internal/generators`, `npm/src`, `pypi/trackfw` → **0 ocorrências**.
+
+**O método dele foi melhor que o que especifiquei.** Eu pedi "gere o arquivo dos dois lados e
+compare". Ele fez isso **e** confirmou antes que nenhum commit tocara os 6 arquivos entre `fbbeaf9` e
+`HEAD` — o que torna o `git checkout <sha> -- <arquivos>` cirúrgico e verificável por **diff direto
+do código**, prova mais forte que comparar a saída num fixture. Sem lixo: `cmd/fixgen` temporário e
+worktree removidos.
+
+**Nenhum helper órfão:** `mergeCursorGuardMatcherEntry` **pré-existia** ao ML-3A (matchers
+`Read`/`Write` do ADR-2026-08-06) — verificado, não é específico do `failClosed`.
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` 450/0 · `pytest` 1004 passed
++ 8 subtests · `make quality` **exit 0** (105 cenários). A regra do ML-1A e o Cenário 47 continuam
+verdes — o que o ADR mandou manter, permanece.
+
+**Wave 4 despachada em paralelo** (arquivos disjuntos): ML-4A (Hades, `docs/seguranca/`) e ML-4B
+(Hefesto, `docs/cli-parity.md`).
