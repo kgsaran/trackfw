@@ -1152,6 +1152,142 @@ function validateNoteOrphan(cwd) {
   return msgs
 }
 
+// CREDENTIAL_GUARD_SCRIPT_MARKER é o nome do script que a regra credential_guard_hook_resolvable
+// procura dentro dos comandos de hook de projeto.
+const CREDENTIAL_GUARD_SCRIPT_MARKER = 'trackfw-credential-guard.sh'
+
+// CREDENTIAL_GUARD_HOOK_FILES é a lista fechada dos arquivos de hook de PROJETO que o trackfw
+// gera hoje e que podem conter uma entrada de credential-guard (ROADMAP-2026-08-12-mitigacao-do
+// -fail-open-do-credential-guard, ML-1A). Hooks de escopo GLOBAL (~/.trackfw/..., trackfw update
+// harness) ficam fora — caso distinto, fora do repositório do usuário, e a checagem de dedup
+// globalCredentialGuardInstalled*() já os pula de propósito nas entradas de projeto.
+const CREDENTIAL_GUARD_HOOK_FILES = [
+  { relPath: '.claude/settings.json', cli: 'Claude Code' },
+  { relPath: '.codex/hooks.json', cli: 'Codex CLI' },
+  { relPath: '.gemini/settings.json', cli: 'Gemini CLI' },
+  { relPath: '.cursor/hooks.json', cli: 'Cursor' },
+  { relPath: '.github/hooks/trackfw-attention.json', cli: 'GitHub Copilot CLI' },
+  { relPath: '.kiro/hooks/trackfw-attention.json', cli: 'Kiro' },
+]
+
+// resolveCredentialGuardHookPath resolve o valor bruto de um comando de hook (string extraída do
+// JSON) para um caminho de arquivo absoluto, usando exatamente as 3 formas de prefixo que o
+// trackfw emite hoje (docs/cli-parity.md, "Mecanismo de resolução de caminho dos hooks de
+// projeto, por CLI"):
+//   1. "$CLAUDE_PROJECT_DIR/…" / "$GEMINI_PROJECT_DIR/…" — placeholder de env var expandido em
+//      runtime pelo próprio CLI, substituído aqui pela raiz do projeto.
+//   2. '"$(git rev-parse --show-toplevel)/…"' — substituição de shell entre aspas literais
+//      (Codex). As aspas fazem parte do valor emitido e são removidas antes de resolver contra a
+//      raiz do projeto.
+//   3. Caminho relativo puro, sem prefixo nenhum (Cursor/Copilot/Kiro) — resolvido diretamente
+//      contra a raiz do projeto.
+// Qualquer valor que não bata em nenhuma das 3 formas retorna null — o chamador NÃO deve tratar
+// isso como violação. Não é função desta regra adivinhar wiring próprio do usuário fora dos
+// formatos que o trackfw gera.
+function resolveCredentialGuardHookPath(raw, root) {
+  const claudePrefix = '$CLAUDE_PROJECT_DIR/'
+  const geminiPrefix = '$GEMINI_PROJECT_DIR/'
+  const codexPrefix = '"$(git rev-parse --show-toplevel)/'
+
+  if (raw.startsWith(claudePrefix)) {
+    return path.join(root, raw.slice(claudePrefix.length))
+  }
+  if (raw.startsWith(geminiPrefix)) {
+    return path.join(root, raw.slice(geminiPrefix.length))
+  }
+  if (raw.startsWith(codexPrefix) && raw.endsWith('"')) {
+    const inner = raw.slice(codexPrefix.length, raw.length - 1)
+    return path.join(root, inner)
+  }
+  if (!raw.startsWith('$') && !raw.startsWith('"') && !path.isAbsolute(raw)) {
+    // Caminho relativo puro — Cursor (beforeShellExecution/preToolUse), GitHub Copilot CLI
+    // (campo "bash"), Kiro (action.command).
+    return path.join(root, raw)
+  }
+  return null
+}
+
+// collectCredentialGuardCommands percorre recursivamente um valor JSON já decodificado e coleta
+// todo valor-string que referencia trackfw-credential-guard.sh, independentemente do nome do
+// campo que o contém.
+//
+// Os 6 formatos de hook usam campos diferentes para o comando: "command" (Claude/Codex/
+// Gemini/Cursor), "bash" (GitHub Copilot CLI), "action.command" (Kiro). Varrer por VALOR em vez
+// de por caminho de chave evita acoplar esta regra à forma exata de cada schema.
+function collectCredentialGuardCommands(value, out) {
+  if (typeof value === 'string') {
+    if (value.includes(CREDENTIAL_GUARD_SCRIPT_MARKER)) out.push(value)
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectCredentialGuardCommands(item, out)
+    return
+  }
+  if (value && typeof value === 'object') {
+    for (const key of Object.keys(value)) collectCredentialGuardCommands(value[key], out)
+  }
+}
+
+// validateCredentialGuardHookResolvable é a regra "credential_guard_hook_resolvable": para cada
+// arquivo de hook de PROJETO que existir, extrai os comandos que referenciam
+// trackfw-credential-guard.sh, resolve o caminho e verifica que o script existe e é executável.
+//
+// Riscos de regressão mapeados no roadmap:
+//   - A regra só avalia entradas que EXISTEM. Ausência de entrada de guard é estado legítimo
+//     (guard global instalado via `trackfw update harness`) — nunca é violação por si só.
+//   - Arquivo de hook ausente é pulado em silêncio.
+//   - Arquivo de hook presente mas com JSON inválido é pulado em silêncio — validar a forma do
+//     JSON não é escopo desta regra.
+function validateCredentialGuardHookResolvable(cwd) {
+  const root = cwd || process.cwd()
+  const msgs = []
+
+  for (const hf of CREDENTIAL_GUARD_HOOK_FILES) {
+    const fullPath = path.join(root, hf.relPath)
+    let content
+    try {
+      content = fs.readFileSync(fullPath, 'utf8')
+    } catch (e) {
+      if (e.code === 'ENOENT') continue
+      continue
+    }
+
+    let parsed
+    try {
+      parsed = JSON.parse(content)
+    } catch (_) {
+      continue
+    }
+
+    const commands = []
+    collectCredentialGuardCommands(parsed, commands)
+
+    const seen = new Set()
+    for (const raw of commands) {
+      if (seen.has(raw)) continue
+      seen.add(raw)
+
+      const resolved = resolveCredentialGuardHookPath(raw, root)
+      if (resolved === null) continue
+
+      let stat = null
+      try {
+        stat = fs.statSync(resolved)
+      } catch (_) {
+        stat = null
+      }
+
+      if (!stat) {
+        msgs.push(`${hf.relPath} (${hf.cli}) references trackfw-credential-guard.sh resolved to "${resolved}", but the script does not exist — run \`trackfw update\` to regenerate it`)
+      } else if ((stat.mode & 0o111) === 0) {
+        msgs.push(`${hf.relPath} (${hf.cli}) references trackfw-credential-guard.sh resolved to "${resolved}", but the script is not executable — run \`trackfw update\` to regenerate it`)
+      }
+    }
+  }
+
+  return msgs
+}
+
 function isGitWorktree(dir) {
   try {
     const out = execSync('git rev-parse --is-inside-work-tree', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd: dir })
@@ -1255,6 +1391,7 @@ async function validateUnfiltered() {
   applyRule('blocked_by_draft_adr', validateREQsNotBlockedByDraftADRs(),  violations, warnings)
   applyRule('adr_accepted_when_req_done', validateADRAcceptedWhenREQDone(), violations, warnings)
   applyRule('note_orphan',           validateNoteOrphan(),                 violations, warnings)
+  applyRule('credential_guard_hook_resolvable', validateCredentialGuardHookResolvable(), violations, warnings)
 
   // Regras configuráveis via applyRule (popula _itemMeta automaticamente)
   applyRule('req_has_adr',          validateREQsHaveADR(),          violations, warnings)
@@ -1505,4 +1642,8 @@ module.exports = {
   // ML-1D (2026-08-01 — reconciliação de paridade: frontmatter-first)
   extractFrontmatterField,
   resolveAdrStatus,
+  // ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A
+  resolveCredentialGuardHookPath,
+  collectCredentialGuardCommands,
+  validateCredentialGuardHookResolvable,
 }

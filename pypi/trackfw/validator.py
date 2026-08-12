@@ -1371,6 +1371,142 @@ def validate_note_orphan(cfg: dict, cwd: str = None) -> list:
     return msgs
 
 
+# CREDENTIAL_GUARD_SCRIPT_MARKER é o nome do script que a regra
+# credential_guard_hook_resolvable procura dentro dos comandos de hook de projeto.
+_CREDENTIAL_GUARD_SCRIPT_MARKER = "trackfw-credential-guard.sh"
+
+# _CREDENTIAL_GUARD_HOOK_FILES é a lista fechada dos arquivos de hook de PROJETO que o trackfw
+# gera hoje e que podem conter uma entrada de credential-guard
+# (ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A). Hooks de escopo GLOBAL
+# (~/.trackfw/..., trackfw update harness) ficam fora — caso distinto, fora do repositório do
+# usuário, e a checagem de dedup global_credential_guard_installed_*() já os pula de propósito nas
+# entradas de projeto.
+_CREDENTIAL_GUARD_HOOK_FILES = [
+    (".claude/settings.json", "Claude Code"),
+    (".codex/hooks.json", "Codex CLI"),
+    (".gemini/settings.json", "Gemini CLI"),
+    (".cursor/hooks.json", "Cursor"),
+    (".github/hooks/trackfw-attention.json", "GitHub Copilot CLI"),
+    (".kiro/hooks/trackfw-attention.json", "Kiro"),
+]
+
+
+def _resolve_credential_guard_hook_path(raw: str, root: str):
+    """Resolve o valor bruto de um comando de hook (string extraída do JSON) para um caminho de
+    arquivo absoluto, usando exatamente as 3 formas de prefixo que o trackfw emite hoje
+    (docs/cli-parity.md, "Mecanismo de resolução de caminho dos hooks de projeto, por CLI"):
+
+    1. "$CLAUDE_PROJECT_DIR/…" / "$GEMINI_PROJECT_DIR/…" — placeholder de env var expandido em
+       runtime pelo próprio CLI, substituído aqui pela raiz do projeto.
+    2. '"$(git rev-parse --show-toplevel)/…"' — substituição de shell entre aspas literais
+       (Codex). As aspas fazem parte do valor emitido e são removidas antes de resolver contra a
+       raiz do projeto.
+    3. Caminho relativo puro, sem prefixo nenhum (Cursor/Copilot/Kiro) — resolvido diretamente
+       contra a raiz do projeto.
+
+    Retorna None quando o valor não bate em nenhuma das 3 formas — o chamador NÃO deve tratar
+    isso como violação.
+    """
+    claude_prefix = "$CLAUDE_PROJECT_DIR/"
+    gemini_prefix = "$GEMINI_PROJECT_DIR/"
+    codex_prefix = '"$(git rev-parse --show-toplevel)/'
+
+    if raw.startswith(claude_prefix):
+        return os.path.join(root, raw[len(claude_prefix):])
+    if raw.startswith(gemini_prefix):
+        return os.path.join(root, raw[len(gemini_prefix):])
+    if raw.startswith(codex_prefix) and raw.endswith('"'):
+        inner = raw[len(codex_prefix):-1]
+        return os.path.join(root, inner)
+    if not raw.startswith("$") and not raw.startswith('"') and not os.path.isabs(raw):
+        # Caminho relativo puro — Cursor (beforeShellExecution/preToolUse), GitHub Copilot CLI
+        # (campo "bash"), Kiro (action.command).
+        return os.path.join(root, raw)
+    return None
+
+
+def _collect_credential_guard_commands(value, out: list):
+    """Percorre recursivamente um valor JSON já decodificado e coleta todo valor-string que
+    referencia trackfw-credential-guard.sh, independentemente do nome do campo que o contém.
+
+    Os 6 formatos de hook usam campos diferentes para o comando: "command" (Claude/Codex/
+    Gemini/Cursor), "bash" (GitHub Copilot CLI), "action.command" (Kiro). Varrer por VALOR em vez
+    de por caminho de chave evita acoplar esta regra à forma exata de cada schema.
+    """
+    if isinstance(value, str):
+        if _CREDENTIAL_GUARD_SCRIPT_MARKER in value:
+            out.append(value)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_credential_guard_commands(item, out)
+    elif isinstance(value, dict):
+        for val in value.values():
+            _collect_credential_guard_commands(val, out)
+
+
+def validate_credential_guard_hook_resolvable(cfg: dict, cwd: str = None) -> list:
+    """Regra "credential_guard_hook_resolvable": para cada arquivo de hook de PROJETO que
+    existir, extrai os comandos que referenciam trackfw-credential-guard.sh, resolve o caminho e
+    verifica que o script existe e é executável.
+
+    Riscos de regressão mapeados no roadmap:
+    - A regra só avalia entradas que EXISTEM. Ausência de entrada de guard é estado legítimo
+      (guard global instalado via `trackfw update harness`) — nunca é violação por si só.
+    - Arquivo de hook ausente é pulado em silêncio.
+    - Arquivo de hook presente mas com JSON inválido é pulado em silêncio — validar a forma do
+      JSON não é escopo desta regra.
+    """
+    root = cwd or os.getcwd()
+    msgs = []
+
+    for rel_path, cli in _CREDENTIAL_GUARD_HOOK_FILES:
+        full_path = os.path.join(root, rel_path)
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError:
+            continue
+
+        try:
+            parsed = json.loads(content)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+        commands = []
+        _collect_credential_guard_commands(parsed, commands)
+
+        seen = set()
+        for raw in commands:
+            if raw in seen:
+                continue
+            seen.add(raw)
+
+            resolved = _resolve_credential_guard_hook_path(raw, root)
+            if resolved is None:
+                continue
+
+            if not os.path.exists(resolved):
+                msgs.append({
+                    "type": "violation",
+                    "message": (
+                        f'{rel_path} ({cli}) references trackfw-credential-guard.sh resolved to '
+                        f'"{resolved}", but the script does not exist — run `trackfw update` to '
+                        f'regenerate it'
+                    ),
+                })
+            elif not os.access(resolved, os.X_OK):
+                msgs.append({
+                    "type": "violation",
+                    "message": (
+                        f'{rel_path} ({cli}) references trackfw-credential-guard.sh resolved to '
+                        f'"{resolved}", but the script is not executable — run `trackfw update` to '
+                        f'regenerate it'
+                    ),
+                })
+
+    return msgs
+
+
 def validate_adr_dirs_exist(cfg: dict) -> dict:
     """
     Verifica se todos os diretórios configurados em adr_dirs existem.
@@ -1431,6 +1567,7 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule("folder_status",        validate_folder_status_coherence(cfg),        violations, warnings, cfg)
     _apply_rule("stale_wip",            validate_stale_wip(cfg),                      violations, warnings, cfg)
     _apply_rule("note_orphan",          validate_note_orphan(cfg, cwd),               violations, warnings, cfg)
+    _apply_rule("credential_guard_hook_resolvable", validate_credential_guard_hook_resolvable(cfg, cwd), violations, warnings, cfg)
 
     # Regras com severidade configurável (req_has_adr, blocked_has_req, req_has_roadmap)
     _apply_rule("req_has_adr",     validate_reqs_have_adr(cfg),     violations, warnings, cfg)

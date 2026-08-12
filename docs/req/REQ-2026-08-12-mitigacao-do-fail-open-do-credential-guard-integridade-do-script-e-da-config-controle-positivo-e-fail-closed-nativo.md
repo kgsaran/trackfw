@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
-adr: ""
-roadmap: ""
+adr: "docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md"
 ---
 
 # REQ: Mitigacao do fail-open do credential-guard — integridade do script e da config, controle positivo e fail-closed nativo
 
-> Date: 2026-08-12 | Status: Open
+> Date: 2026-08-12 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -96,11 +96,10 @@ pode virar wave própria.
   aceitar o risco" continua sendo resposta válida para itens individuais, desde que **escrita**.
 
 ## Linked ADR
-<!-- provável: a escolha entre integridade no escopo de projeto × preferir escopo global é decisão de arquitetura -->
-ADR:
+ADR: docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md

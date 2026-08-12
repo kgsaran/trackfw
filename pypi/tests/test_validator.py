@@ -4,6 +4,7 @@ Espelha a cobertura de npm/src/validator/index.test.js.
 Usa tempfile.mkdtemp() para isolamento — sem fixtures compartilhadas.
 """
 
+import json
 import os
 import time
 import unittest
@@ -968,6 +969,160 @@ class TestStrictCIPathsAndInexistentAdrDirs(unittest.TestCase):
         self.assertEqual(len(res["violations"]), 1)
         self.assertIn("does not exist", res["violations"][0]["message"])
         self.assertEqual(res["violations"][0]["type"], "violation")
+
+
+def _guard_entry_claude_settings(script_cmd: str) -> str:
+    return json.dumps({
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"command": script_cmd, "type": "command"}]}
+            ]
+        }
+    })
+
+
+class TestCredentialGuardHookResolvable(unittest.TestCase):
+    """ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_dispara_quando_script_ausente(self):
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            _guard_entry_claude_settings("$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"),
+        )
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertTrue(
+            any("does not exist" in m["message"] and ".claude/settings.json" in m["message"] for m in msgs),
+            f"esperado violation de script ausente, obteve: {msgs}",
+        )
+
+    def test_dispara_quando_script_nao_executavel(self):
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            _guard_entry_claude_settings("$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"),
+        )
+        script_path = os.path.join(self.tmp, "scripts", "trackfw-credential-guard.sh")
+        _write(script_path, "#!/bin/sh\nexit 0\n")
+        os.chmod(script_path, 0o644)  # sem bit +x
+
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertTrue(
+            any("not executable" in m["message"] for m in msgs),
+            f"esperado violation de script não executável, obteve: {msgs}",
+        )
+
+    def test_nao_dispara_sem_entrada_de_guard(self):
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            json.dumps({
+                "hooks": {
+                    "PostToolUse": [{"matcher": "AskUserQuestion", "hooks": [
+                        {"command": "scripts/trackfw-attention-cleanup.sh", "type": "command"}]}],
+                    "PreToolUse": [{"matcher": "AskUserQuestion", "hooks": [
+                        {"command": "scripts/trackfw-attention-signal.sh", "type": "command"}]}],
+                }
+            }),
+        )
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertEqual(msgs, [], f"sem entrada de guard não deve haver violations, obteve: {msgs}")
+
+    def test_nao_dispara_formato_desconhecido(self):
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            _guard_entry_claude_settings("$SOME_OTHER_VAR/scripts/trackfw-credential-guard.sh"),
+        )
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertEqual(msgs, [], f"formato desconhecido não deve violar, obteve: {msgs}")
+
+    def test_resolve_forma_codex_aspas_literais(self):
+        _write(
+            os.path.join(self.tmp, ".codex/hooks.json"),
+            json.dumps({
+                "hooks": {
+                    "PreToolUse": [{"matcher": ".*", "hooks": [
+                        {"command": '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"',
+                         "type": "command"}]}],
+                }
+            }),
+        )
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertTrue(
+            any("does not exist" in m["message"] and ".codex/hooks.json" in m["message"] for m in msgs),
+            f"esperado violation resolvendo a forma do Codex, obteve: {msgs}",
+        )
+
+        script_path = os.path.join(self.tmp, "scripts", "trackfw-credential-guard.sh")
+        _write(script_path, "#!/bin/sh\nexit 0\n")
+        os.chmod(script_path, 0o755)
+
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertEqual(msgs, [], f"com script existente e executável não deve haver violations, obteve: {msgs}")
+
+    def test_resolve_caminho_relativo_puro(self):
+        _write(
+            os.path.join(self.tmp, ".cursor/hooks.json"),
+            json.dumps({
+                "version": 1,
+                "hooks": {"beforeShellExecution": [{"command": "scripts/trackfw-credential-guard.sh"}]},
+            }),
+        )
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertTrue(
+            any("does not exist" in m["message"] and ".cursor/hooks.json" in m["message"] for m in msgs),
+            f"esperado violation resolvendo caminho relativo puro, obteve: {msgs}",
+        )
+
+    def test_arquivo_ausente_e_pulado(self):
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertEqual(msgs, [])
+
+    def test_configuravel_via_rules(self):
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            _guard_entry_claude_settings("$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"),
+        )
+
+        # default error
+        cfg = _config.defaults()
+        violations, warnings = [], []
+        v._apply_rule("credential_guard_hook_resolvable",
+                       v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp),
+                       violations, warnings, cfg)
+        self.assertTrue(any("trackfw-credential-guard.sh" in m["message"] for m in violations))
+
+        # warning
+        cfg = _config.defaults()
+        cfg["rules"] = {"credential_guard_hook_resolvable": "warning"}
+        violations, warnings = [], []
+        v._apply_rule("credential_guard_hook_resolvable",
+                       v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp),
+                       violations, warnings, cfg)
+        self.assertEqual(violations, [])
+        self.assertTrue(any("trackfw-credential-guard.sh" in m["message"] for m in warnings))
+
+        # off
+        cfg = _config.defaults()
+        cfg["rules"] = {"credential_guard_hook_resolvable": "off"}
+        violations, warnings = [], []
+        v._apply_rule("credential_guard_hook_resolvable",
+                       v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp),
+                       violations, warnings, cfg)
+        self.assertEqual(violations, [])
+        self.assertEqual(warnings, [])
 
 
 class TestAdrOrphanExemptOutsideCwd(unittest.TestCase):

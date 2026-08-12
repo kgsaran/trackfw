@@ -4,6 +4,113 @@
 
 ---
 
+## Sessão 2026-08-12 — Apolo (ML-1A: regra `credential_guard_hook_resolvable` — controle positivo) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md`,
+Wave 1/ML-1A — status atualizado para ✅ Concluído.
+
+**Objetivo:** controle positivo para o fail-open do credential-guard (medido em
+`docs/pesquisa/2026-08-12-semantica-de-falha-de-hook-codex.md`) — `trackfw validate` passa a detectar
+hook de credential-guard registrado cujo script não existe ou não é executável.
+
+**Nome final da regra:** `credential_guard_hook_resolvable` (default `error`, configurável via
+`rules:` como as demais).
+
+**Arquivos por stack:**
+- Go: `internal/validator/validator_credential_guard.go` (novo — regra +
+  `resolveCredentialGuardHookPath` + `collectCredentialGuardCommands`) e
+  `internal/validator/validator_credential_guard_test.go` (novo, 11 funções de teste, 1 delas com 3
+  subtestes de `rules:`). Wiring em
+  `internal/validator/validator.go`: `ValidateUnfiltered` e `validateUnfilteredTagged`.
+- Node: `npm/src/validator/index.js` (funções equivalentes + export) e
+  `npm/tests/validator.test.js` (7 testes novos, inseridos antes do bloco async ML-2B).
+- Python: `pypi/trackfw/validator.py` (`validate_credential_guard_hook_resolvable` +
+  `_resolve_credential_guard_hook_path` + `_collect_credential_guard_commands`, itens no formato
+  `{"type","message"}` como as demais regras Python) e `pypi/tests/test_validator.py`
+  (`TestCredentialGuardHookResolvable`, 8 testes).
+
+**Decisões de design tomadas sozinho (documentar para Zeus/auditoria):**
+1. **Varredura por VALOR, não por chave/schema.** Os 6 arquivos de hook de projeto usam campos
+   diferentes para o comando: `"command"` (Claude/Codex/Gemini/Cursor), `"bash"` (GitHub Copilot
+   CLI), `action.command` (Kiro). Em vez de replicar o parsing schema-aware que
+   `internal/generators/agentfiles.go` faz para ESCREVER os hooks, a regra percorre recursivamente
+   qualquer `map`/`array`/`string` do JSON decodificado e coleta todo valor-string que contém o
+   substring `trackfw-credential-guard.sh`, independente do campo. Evita acoplar a regra a 6 schemas
+   diferentes; risco aceito é teoricamente capturar uma string não-comando que por acaso contenha o
+   nome do script (não observado em nenhum dos 6 formatos reais).
+2. **As 3 formas de prefixo são a única fonte da verdade** (`docs/cli-parity.md`, "Mecanismo de
+   resolução de caminho dos hooks de projeto, por CLI"): `$CLAUDE_PROJECT_DIR/…`,
+   `$GEMINI_PROJECT_DIR/…`, `"$(git rev-parse --show-toplevel)/…"` (aspas literais no valor, ver
+   `internal/generators/agentfiles.go` const `codexRoot`) e caminho relativo puro (Cursor/Copilot/
+   Kiro). Qualquer outra coisa retorna "não resolvido" e a regra não viola — implementado
+   identicamente nos 3 stacks.
+3. **"Executável" verificado via bit de execução do modo do arquivo** — `info.Mode()&0111` (Go),
+   `stat.mode & 0o111` (Node), `os.access(path, os.X_OK)` (Python) — mesmo padrão já usado em
+   `internal/generators/commitmsghook_test.go`.
+4. **JSON inválido ou arquivo ausente são pulados em silêncio** — não é escopo desta regra validar a
+   forma do arquivo de hook, só resolver o script quando uma entrada de guard existe.
+5. **Dedup por comando bruto dentro de cada arquivo** (`seen`/`Set`) — evita mensagem duplicada
+   quando o mesmo comando aparece em múltiplas entradas do mesmo arquivo (ex.: Read/Write do Cursor).
+
+**Verificações adicionais feitas após revisão (não estavam nos testes automatizados iniciais):**
+1. **Registro em `config.defaults()` Rules map (Go/Node/Python) — verificado, NÃO necessário.**
+   `cfg.Rules[k] = s` é atribuído para QUALQUER chave presente em `rules:` no `trackfw.yaml`
+   (`internal/config/config.go:289-297`), não restrito às chaves pré-populadas em `defaults()`.
+   Confirmado por precedente: `req_has_adr`, `blocked_has_req`, `req_has_roadmap`,
+   `branch_has_wip_roadmap`, `note_orphan` também não estão nesse map e já são configuráveis via
+   `rules:` com testes cobrindo isso. `credential_guard_hook_resolvable` segue o mesmo padrão —
+   nada a registrar.
+2. **Paridade byte-a-byte da mensagem de violação entre os 3 CLIs — testada via diff direto dos 3
+   binários** (não só via testes unitários isolados por stack): fixture com entrada de guard
+   `$CLAUDE_PROJECT_DIR/...` e script ausente, rodando `bin/trackfw validate` / `node npm/bin/trackfw
+   validate` / `python3 -m trackfw validate` no mesmo diretório temporário. **Achado corrigido:**
+   `os.Getwd()` do Go confia em `$PWD` quando aponta para o mesmo diretório por inode, retornando o
+   caminho SYMLINKED (ex.: `/tmp` no macOS, que é `/private/tmp` fisicamente) — Node
+   (`process.cwd()`) e Python (`os.getcwd()`) sempre retornam o caminho físico via syscall direta.
+   Como esta é a primeira regra do projeto a embutir um caminho ABSOLUTO na mensagem (todas as
+   demais só emitem caminhos relativos à raiz), essa divergência era latente e não detectável pelo
+   Cenário 29 do falsify (que só fixa a mensagem de SUCESSO, sem caminho absoluto). Corrigido em
+   `internal/validator/validator_credential_guard.go` com `filepath.EvalSymlinks(root)` logo após
+   `os.Getwd()`. Confirmado com diff manual dos 3 binários: mensagem byte-idêntica após o fix. Novo
+   teste `TestCredentialGuardHookResolvable_CaminhoResolvidoEhFisicoNaoSimlink` trava essa
+   propriedade no Go (equivalente não necessário em Node/Python — eles já emitiam o caminho físico
+   nativamente).
+3. **Falso positivo do Kiro a partir de campos vizinhos (`name`/`description`) — verificado, NÃO
+   ocorre.** O walker por valor coleta qualquer string que CONTENHA
+   `trackfw-credential-guard.sh`; os campos `"name": "trackfw-credential-guard-pre"` do Kiro citam
+   o nome do script mas SEM o sufixo `.sh` — não casam o substring completo. Confirmado
+   empiricamente (Go `strings.Contains` isolado) e travado por 2 testes novos com o fixture real do
+   Kiro (`internal/generators/agentfiles.go:632-701`, incluindo os campos `name`/`description`
+   vizinhos ao `action.command` real):
+   `TestCredentialGuardHookResolvable_KiroNaoGeraFalsoPositivoComCamposVizinhos` (script presente e
+   executável → zero violations) e `TestCredentialGuardHookResolvable_KiroDisparaScriptAusente`
+   (mesmo fixture, script ausente → violation — prova que o primeiro teste não é vácuo).
+
+**Saída dos gates (evidência, após as correções acima):**
+```
+go build ./... && go test ./...           → PASS (todos os pacotes)
+npm --prefix npm test                     → 450 passed, 0 failed
+python3 -m pytest pypi/tests -q           → 1004 passed, 8 subtests passed
+make quality                              → exit 0, "Falsification checks passed (all 104 scenarios...)"
+./bin/trackfw validate                    → "✓ No violations found." (mensagem de sucesso inalterada,
+                                              Cenário 29 do falsify continua passando)
+git status --porcelain                    → só os arquivos listados acima (novos + modificados)
+```
+
+**Critérios de aceite do ML-1A:** todos verificados (dispara em script ausente/não-executável; não
+dispara sem entrada de guard nem para formato de prefixo desconhecido; não dispara neste repositório;
+configurável `rules:` default `error`; paridade de mensagem/comportamento nos 3 stacks; mensagem de
+sucesso do `validate` inalterada).
+
+**Não tocado:** `internal/generators/`, `scripts/`, `docs/cli-parity.md` (reservados para MLs
+posteriores do mesmo roadmap — Wave 2/Wave 3).
+
+**Próximo:** Wave 2 (Ártemis, `ML-2A` — cenário de falsificação da regra em
+`scripts/check-gates-falsify.sh`), dependente da auditoria/commit deste ML por `trackfw_architect`.
+
+---
+
 ## Sessão 2026-08-12 — Hefesto (ML-3A: consolidação em `docs/cli-parity.md` — semântica de falha de hook por CLI) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
 
 Branch `fix/semantica-de-falha-de-hook-fail-open-vs-fail-closed`. Roadmap:
@@ -12041,3 +12148,596 @@ restrito ao workspace não o alcança. Talvez parte da resposta seja **preferir 
 vez de construir integridade no escopo de projeto. Marcado como provável ADR.
 
 **Estado:** roadmap → `done`, REQ → `Done`. Nenhum código de produto alterado em todo o roadmap.
+
+---
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — roadmap de mitigação do fail-open — INICIADO
+
+**Decisão de escopo: só os itens 1 e 2 da REQ viram implementação.** Os itens 3 (wrapper) e 4
+(integridade de conteúdo) viram **barreira de ADR no fim**, porque ambos dependem de decisão de
+arquitetura ainda não tomada — e porque existe uma **terceira via que ninguém explorou**: o
+credential-guard de escopo global vive em `~/.trackfw/`, **fora do repositório**, inalcançável por
+agente restrito ao workspace. Se essa via resolver, os itens 3 e 4 podem ser desnecessários.
+Registrei na barreira que ela deve ser avaliada **primeiro** — construir a solução errada custa mais
+que adiar.
+
+**Escrevi no roadmap o que os itens 1 e 2 NÃO cobrem**, em tabela: sobrescrita do script com
+`exit 0` e downgrade de `credential_guard.mode` via YAML ficam **descobertos**. Sem isso, alguém lê
+"mitigação implementada" e assume que a classe de ameaça está fechada.
+
+**Risco de regressão verificado antes de despachar:** a regra nova **não pode disparar neste
+repositório**. Conferido: `.claude/settings.json` do trackfw tem **0** referências ao
+credential-guard, porque o guard global está instalado e `globalCredentialGuardInstalled*()` pula as
+entradas de projeto de propósito. Se disparar aqui, quebra `make quality` **e** o Cenário 29 do
+falsify, que fixa a mensagem de sucesso do `validate` byte-a-byte nos 3 CLIs.
+
+**Restrição travada no ML-3A:** `failClosed: true` vai **apenas** nas entradas de credential-guard do
+Cursor, **nunca** nas de attention-signal/cleanup — travar o agente porque um hook de sinalização de
+UI falhou seria pior que o problema que estamos corrigindo.
+
+**Wave 2 exige prova de não-vacuidade da regra nova**, com referência explícita ao episódio em que
+este projeto produziu um cenário de prova negativa que ele próprio não provava
+(`ROADMAP-2026-08-12-prova-negativa-...`, ML-1A → ML-1B).
+
+Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Primeiro roadmap desta sequência que
+**altera código de produto** — os três anteriores foram doc/gates.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-1A (regra `credential_guard_hook_resolvable`) — APROVADO
+
+**Auditoria funcional, não só leitura de diff.** Montei fixtures e rodei os **3 CLIs**:
+
+| Cenário | Resultado |
+|---|---|
+| Guard registrado, script ausente | **dispara**, com caminho resolvido e ação corretiva |
+| Sem entrada de guard (estado legítimo com guard global) | **não dispara** |
+| Formato de caminho desconhecido (`${MEU_VAR_CUSTOM}/...`) | **não dispara** |
+| Neste repositório | `✓ No violations found.` |
+
+Os dois casos negativos eram exatamente os falsos positivos que eu havia travado no prompt do ML.
+
+**Dois erros MEUS no caminho da auditoria, registrados para não se repetirem:**
+1. Chamei o CLI do Node por caminho inexistente (`npm/src/cli.js`); o correto é `npm/bin/trackfw`.
+   Interpretei a saída vazia como "a regra não disparou no Node" — quase abri um achado falso.
+2. Interpretei o `⚠` como severidade `warning`. Era **LENIENT MODE** do fixture rebaixando tudo. A
+   regra é `error` por padrão — confirmado no código (não está em `ruleDefaults`).
+
+A divergência de prefixo entre os stacks (`⚠  ` / `• ` / `⚠ `) é **renderização genérica
+pré-existente** — a regra `adr_dir`, que já existia, aparece exatamente igual. **O corpo da mensagem
+é byte-idêntico nos 3.**
+
+**O achado do agente que vale mais que a própria feature:** `os.Getwd()` do Go confia em `$PWD` e
+devolve o caminho **symlinkado** (macOS: `/tmp` → `/private/tmp`), enquanto Node e Python devolvem o
+físico. Como esta é a **primeira regra do projeto a embutir caminho absoluto na mensagem**, a
+divergência era **latente** e nenhum gate existente pegaria — o Cenário 29 fixa apenas a mensagem de
+**sucesso**. Corrigido com `filepath.EvalSymlinks`, verificado rodando os 3 binários no mesmo
+diretório.
+
+**Decisão de design dele, boa e não trivial:** a extração varre o JSON **por valor**, não por caminho
+de chave — os 6 formatos de hook usam campos diferentes (`command`, `bash`, `action.command`), e
+acoplar a regra a 6 schemas seria dívida imediata.
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` 450/0 · `pytest` **1004
+passed** + 8 subtests · `make quality` **exit 0**.
+
+---
+
+## Sessão 2026-08-12 — Ártemis (ML-2A: cenário de falsificação da regra `credential_guard_hook_resolvable`) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md`,
+Wave 2/ML-2A — status atualizado para ✅ Concluído.
+
+**Objetivo:** provar que a regra `credential_guard_hook_resolvable` do ML-1A (Apolo) não é vácua, via
+`scripts/check-gates-falsify.sh`. Único arquivo tocado: `scripts/check-gates-falsify.sh`
+(+ campo `Status:` do ML-2A no roadmap, + esta entrada).
+
+**Desenho do cenário (47, "credential-guard-hook-resolvable"):**
+- Baseline: fixture `scaffold_adr_req_project` (o mesmo projeto vazio que o Cenário 29 pina em
+  `✓ No violations found.`) + `.claude/settings.json` com uma entrada de credential-guard
+  (`$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh`) + o script presente e `chmod +x` →
+  `trackfw validate` (binário real, `$ROOT_DIR/bin/trackfw`) sai 0 e não contém nem o nome da regra
+  nem a mensagem de "script ausente".
+- Detecção: mesmo fixture, mesmo hook registrado, **script deliberadamente omitido** →
+  `assert_fails_with` cobra o literal exato de
+  `internal/validator/validator_credential_guard.go:163-166` ("but the script does not exist — run
+  \`trackfw update\` to regenerate it").
+
+**Por que o braço de detecção é autodiscriminante:** a asserção não é "saiu != 0" — é o literal exato
+da mensagem desta regra, que `grep -rn` em `internal/validator/*.go` confirma ser único no validador
+(nenhuma outra regra usa essa frase). Como o fixture é o mesmo projeto vazio que o Cenário 29 já prova
+zerado em outras regras, não há outra violação candidata que pudesse satisfazer essa asserção por
+acidente — só a sabotagem (script ausente) produz esse texto. Reforço pós-revisão (consultoria antes
+do handoff): os dois braços chamam o MESMO gerador de fixture (`s47_write_claude_guard_hook`) com um
+único delta (script presente+executável vs. omitido) — o braço de detecção passando prova que a
+cadeia inteira está viva até o ponto de falha (JSON parseado → marcador reconhecido → prefixo
+`$CLAUDE_PROJECT_DIR/` resolvido → `os.Stat` alcançado), porque qualquer elo quebrado faria a regra
+pular o arquivo em silêncio e a DETECÇÃO falharia, não o baseline. Documentado no comentário do
+cenário no script.
+
+**Por que não isolei `$HOME`:** ao contrário do Cenário 46 (dedup do guard GLOBAL, lido de `$HOME`),
+`validateCredentialGuardHookResolvable` só lê arquivos de hook de PROJETO sob `os.Getwd()` — nunca
+toca em `$HOME`. Não existe vetor de vazamento ambiental a discriminar aqui; documentado no
+comentário do cenário.
+
+**Escopo:** só o CLI Go — o roadmap permite testar um subconjunto quando o cenário já prova
+não-vacuidade sem precisar dos outros 2; paridade de comportamento Node/Python já está coberta pelos
+testes unitários do ML-1A (`validator_credential_guard_test.go`, `pypi/tests/test_validator.py`
+linhas 1001-1122, `npm test`).
+
+**🔴 Prova de não-vacuidade executada:** comentei a linha
+`applyRule("credential_guard_hook_resolvable", ...)` em `internal/validator/validator.go:418`
+(a chamada que o `Validate()` não-JSON usa), recompilei, e rodei o gate — resultado:
+```
+OK   [falsify/credential-guard-hook-resolvable/baseline]
+FAIL [falsify/credential-guard-hook-resolvable/detected]: saiu com 0, esperava != 0
+  output: ✓ No violations found.
+```
+Restaurei a linha, recompilei, e confirmei `git diff --exit-code internal/validator/validator.go`
+limpo antes de seguir. Repeti a prova depois de aplicar as correções da revisão abaixo — mesmo
+resultado, restauração confirmada limpa de novo.
+
+**Correções feitas após consulta de revisão, antes do handoff:**
+1. Argumento de autodiscriminação fortalecido no comentário do cenário (ver acima) — a defesa
+   original só cobria "sem outra violação incidental no fixture"; faltava explicar por que a
+   detecção passando prova a cadeia de código, não só a ausência de ruído.
+2. **Limite de cobertura documentado, não corrigido:** a regra tem 2 pontos de wiring em
+   `internal/validator/validator.go` — `applyRule` (:418, usado por `Validate()`, o caminho de texto
+   que este cenário exercita) e `applyRuleTagged` (:604, usado por `ValidateTagged()`/`validate
+   --json`). Este cenário e a prova de não-vacuidade cobrem só :418; uma regressão que remova a
+   chamada em :604 sem tocar em :418 passaria em silêncio por este gate. Documentado no comentário do
+   cenário e aqui — decisão de abrir ML novo para cobrir `--json` cabe a Zeus.
+3. Removida asserção morta no braço baseline: `grep -qF "credential_guard_hook_resolvable"` nunca
+   pode casar, porque o modo texto do `validate` (o único exercitado aqui) nunca imprime o nome
+   interno da regra, só a mensagem — só `--json` exporia o rule key
+   (`RuleItem.Rule`, `internal/validator/result.go`). Mantida só a checagem da mensagem, com
+   comentário explicando a limitação.
+
+**Resultado final:** `bash scripts/check-gates-falsify.sh` → 105/105 cenários OK (era 104; total e
+descrição do resumo final atualizados). `make quality` → exit 0, sem `FAIL` no log. `git status
+--porcelain` → só `scripts/check-gates-falsify.sh` modificado (roadmap e este arquivo também tocados,
+dentro do escopo permitido); `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-2A (Cenário 47) — APROVADO
+
+**Prova de não-vacuidade reproduzida por Zeus — na terceira tentativa, e as duas primeiras foram erro
+meu.** Desabilitei a regra e o cenário **passou**, o que sugeriria cenário vácuo. Antes de acusar,
+investiguei: o cenário usa `bin/trackfw`, e eu só rodara `go build ./...`, que **não regenera esse
+binário** — eu estava testando contra o build antigo. Refeito com `go build -o bin/trackfw`:
+
+```
+OK   [falsify/credential-guard-hook-resolvable/baseline]
+FAIL [falsify/credential-guard-hook-resolvable/detected]: saiu com 0, esperava != 0
+```
+
+**Terceiro erro do meu harness nesta sessão** (os outros: caminho errado do CLI do Node; confundir
+LENIENT MODE com severidade). Todos os três teriam produzido acusação falsa contra o trabalho do
+agente se eu não tivesse investigado antes de reportar. **Lição operacional: antes de acusar um
+cenário de vácuo, confirmar que a sabotagem realmente chegou ao binário que o cenário executa.**
+
+**Gap reportado pelo agente — real na forma, defusado na prática.** Ele avisou que a regra tem dois
+pontos de wiring no Go (`applyRule` :418 no caminho de texto, `applyRuleTagged` :604 no `--json`) e
+que o Cenário 47 só prova o primeiro. Verifiquei:
+
+- **Go:** remover só o :604 **não compila** (`declared and not used: credentialGuardHookMsgsT`) — o
+  compilador é o guarda.
+- **Node e Python:** têm **um único** ponto de wiring cada; não existe caminho separado para JSON.
+
+Logo, a regressão temida **não passa silenciosamente em nenhum dos 3 stacks**. **Decisão: não abrir
+ML de follow-up**, e registrar a análise aqui, porque quem ler o comentário do cenário vai ter a
+mesma dúvida. O agente agiu certo ao reportar em vez de esconder — verificar é minha função.
+
+**Desenho do cenário, e por que é autodiscriminante:** os dois braços usam o **mesmo gerador de
+fixture**, sobre a mesma base vazia que o Cenário 29 fixa em zero violações. O **único delta** entre
+eles é a existência do script. Detecção passar prova que o caminho inteiro está vivo (JSON parseado →
+marcador achado → `$CLAUDE_PROJECT_DIR/` resolvido → `os.Stat` alcançado e falhou); qualquer elo
+quebrado faria a regra pular em silêncio e a **detecção** falhar, não o baseline. A asserção casa o
+literal exato do diagnóstico, não saída não-zero genérica.
+
+**Gates re-executados por Zeus:** `check-gates-falsify.sh` **109 linhas OK, 0 FAIL** (105 cenários) ·
+`make quality` **exit 0**.
+
+## Sessão 2026-08-12 — Apolo — ML-3A (`failClosed: true` no Cursor) — implementado, aguardando auditoria de Zeus
+
+**Escopo:** ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, Wave 3/ML-3A. Emitir
+`failClosed: true` apenas nas entradas de credential-guard do `.cursor/hooks.json`
+(`beforeShellExecution`/`afterShellExecution` + matchers `Read`/`Write` de
+`preToolUse`/`postToolUse`), nos 3 CLIs, nunca nas entradas de attention-signal/cleanup.
+
+**Forma do campo confirmada em doc primária** (não inferida de outro CLI): buscada diretamente em
+`https://cursor.com/docs/hooks` (fetch ao vivo nesta sessão, não por memória). Duas citações: (1) "By
+default, hook failures (crash, timeout, invalid JSON) allow the action through (fail-open). Set
+`failClosed: true` on the hook definition to block the action on failure instead."; (2) a tabela
+"Per-Script Configuration Options" lista `failClosed` (`boolean`, default `false`) como campo do
+objeto do próprio hook-script — junto de `command`, `type`, `timeout`, `loop_limit`, `matcher` — ou
+seja, **sibling de `command`**, não um campo por evento ou de topo. Citação e URL replicadas no
+comentário de `InjectCursorHooks`/`injectCursorHooks`/`inject_cursor_hooks` nos 3 stacks.
+
+**Implementação:** substituídas as chamadas de `mergeSimpleCommandArray`/`hasEntry`/`_has_entry`
+específicas do guard do Cursor por helpers dedicados que **também fazem upgrade in-place** de uma
+entrada pré-existente sem `failClosed` (não só evitam duplicar): Go
+`mergeGuardCommandArray`/`mergeCursorGuardMatcherEntry` (`internal/generators/agentfiles.go`), Node
+`mergeGuardCommandArray`/`mergeGuardMatcherEntry` inline (`npm/src/generators/hooks.js`), Python
+`_merge_guard_command_entry`/`_merge_guard_matcher_entry` (`pypi/trackfw/generators/hooks.py`). Isso
+foi decisão deliberada além do mínimo pedido (que só exigia não duplicar): sem o upgrade in-place, um
+projeto que já rodou uma versão anterior do trackfw nunca ganharia o `failClosed`, o que anularia o
+propósito de segurança do ML para quem mais precisa (projeto já existente). O helper
+`mergeSimpleCommandArray`/`_merge_simple_command_array` compartilhado com a wiring de
+attention-signal/cleanup **e** com o escopo global (`update.go`/`update-harness.js`/
+`update_harness.py`) foi deixado intocado — confirmado por grep antes de mexer, para respeitar o
+escopo negativo do roadmap ("não mexe nos hooks de escopo global").
+
+**Armadilha do dedup duplo em Python** (avisada no prompt): evitada por design — a nova
+`inject_cursor_hooks` define o literal `'scripts/trackfw-credential-guard.sh'` **uma única vez**
+(`guard_cmd`) e passa a variável para os helpers, que possuem internamente tanto o predicado de dedup
+quanto o append/upgrade. Não há mais dois pontos de código com o mesmo literal para desincronizar.
+
+**Testes novos (3 stacks):** além de asserções de `failClosed=true` nas entradas de guard e ausência
+do campo nas de attention, cada stack ganhou um teste dedicado
+(`TestInjectCursorHooks_FailClosedUpgradesStaleEntry` / `injectCursorHooks upgrades a stale...` /
+`test_inject_cursor_hooks_failclosed_upgrades_stale_entry`) que semeia um `.cursor/hooks.json`
+no formato pré-ML-3A (sem `failClosed`) e prova que rodar o injector atual upgrada as entradas in
+place **sem duplicar**. **Correção pós-revisão (mesma sessão):** o critério de aceite pede
+explicitamente JSON **byte-idêntico** ao rodar o injector duas vezes — as primeiras versões desses
+testes só checavam contagem/valor de campos, checagem mais fraca. Corrigido nos 3 stacks: os testes
+agora leem o conteúdo bruto do arquivo antes/depois da 2ª chamada e comparam
+(`bytes.Equal`/comparação de string bruta/`self.assertEqual(raw1, raw2)`), tanto no teste "cria do
+zero" quanto no teste de upgrade de entrada stale (2ª chamada adicionada a esse teste também — é
+onde uma assimetria dedup/append apareceria).
+
+**Evidência:**
+- `go build ./... && go test ./...` — verde, todos os pacotes.
+- `npm --prefix npm test` — 451 passed, 0 failed.
+- `python3 -m pytest pypi/tests -q` — 1005 passed, 8 subtests passed.
+- `bash scripts/check-agent-hooks-parity.sh` — 12/12 `OK`, sem `FAIL` (Cursor go-vs-node/go-vs-py
+  inclusos). **Nota de leitura para a auditoria:** esse gate compara a **saída dos 3 stacks entre si**
+  — se os 3 tivessem omitido `failClosed` de forma idêntica e silenciosa, ele continuaria passando.
+  Quem prova que o campo é de fato emitido são os **testes unitários por stack** (novos e ajustados
+  nesta sessão), não o gate. Um `make quality` verde não deve ser lido como verificação de
+  `failClosed` — releia os testes.
+- `make quality` — exit 0 (rodado 2x, antes e depois da correção dos testes de idempotência);
+  `check-gates-falsify.sh` 105/105 cenários OK (nenhum cenário novo — os já existentes de
+  parity/hooks continuam cobrindo consistência estrutural entre stacks, não a presença do campo).
+- `git status --porcelain` — só os 8 arquivos permitidos:
+  `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`,
+  `npm/src/generators/hooks.js`, `npm/tests/generators.test.js`,
+  `pypi/trackfw/generators/hooks.py`, `pypi/tests/test_generators_init.py`,
+  `docs/roadmaps/wip/ROADMAP-...credential-guard...md` (só o campo `**Status:**` do ML-3A),
+  este arquivo.
+
+**Ressalva sobre "outros 5 CLIs / entradas de attention byte-idênticas antes e depois":** nem
+`check-agent-hooks-parity.sh` (compara Go↔Node↔Python entre si, não antes↔depois) nem os testes
+provam literalmente essa invariante. A evidência real é o diff: toda linha alterada está dentro do
+branch de guard do Cursor ou em funções novas só chamadas por ele, e
+`mergeSimpleCommandArray`/`_merge_simple_command_array` — compartilhado com a wiring de attention
+**e** com o escopo global (`update.go`/`update-harness.js`/`update_harness.py`) — ficou intocado
+(confirmado por grep antes de editar). Os testes de attention verificam **ausência do campo**
+`failClosed`, não byte-identidade duas vezes (não havia hooks de outros 5 CLIs alterados nesta ML
+para comparar).
+
+**Gaps a reportar para Zeus/Hades (ML-4A) e Hefesto (ML-4B), não corrigidos aqui por estarem fora do
+escopo do ML-3A:**
+1. **Escopo global sem cobertura:** `if (!globalCredentialGuardInstalledCursor())` pula as entradas
+   de projeto quando o guard global (`~/.cursor/hooks.json`, escrito por
+   `mergeCredentialGuardCursorHooks` em `update.go`) já está instalado — e esse arquivo global **não
+   ganhou `failClosed`** (fora do escopo negativo do roadmap). É exatamente a classe de usuário que a
+   Barreira B1 aponta como direção preferida (opção 3) — hoje sem a mitigação deste ML.
+2. **`afterShellExecution`/`postToolUse` são documentados como audit-only** (sem resposta
+   allow/deny/ask definida) — `failClosed` ali é *belt-and-braces*, sem efeito documentado
+   confirmado. Só `beforeShellExecution`/`preToolUse` (que bloqueiam de fato) têm efeito comprovado
+   pela doc.
+3. **`beforeShellExecution` + `failClosed: true` cria um modo "bloqueia tudo" se o script estiver
+   ausente** — ex.: clone fresco com `.cursor/hooks.json` já commitado, antes do `init` gerar
+   `scripts/trackfw-credential-guard.sh`. O roadmap já sanciona isso na tabela da Wave 3 ("Script
+   apagado → ✅ bloqueia (só Cursor)"), mas é a mesma classe de *bricking* que motivou adiar o item 3
+   (wrapper) para a Barreira B1 — registrar para quem for decidir lá.
+4. **Upgrade in-place também reverte silenciosamente um `failClosed: false` explícito do usuário**
+   para `true` a cada `init`/`update` (decisão deliberada, ver acima) — defensável para um controle
+   de segurança, mas vai além do mínimo "não deve duplicar entradas" do critério de aceite; Zeus deve
+   aprovar isso conscientemente na auditoria.
+
+**Status do roadmap:** ML-3A marcado ✅ Concluído (Apolo), aguardando auditoria/commit de Zeus. Não
+fiz commit nem push — autoridade de Git é do Zeus.
+
+---
+
+## Sessão 2026-08-12 — Apolo (ML-3B: correção do ML-3A — never-overwrite + remoção de `failClosed` audit-only) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Microlote corretivo, aberto pela barreira, sobre o próprio ML-3A ainda não commitado (trabalhei em
+cima da árvore de trabalho, não de um commit). Duas correções pedidas por Zeus a partir dos gaps 2 e
+4 que eu mesmo reportei na sessão anterior:
+
+**Correção 1 — nunca sobrescrever escolha explícita do usuário.** O trackfw nunca emitiu
+`failClosed` antes deste ML — logo qualquer `failClosed: false` já presente no `.cursor/hooks.json`
+de um usuário é necessariamente autoria dele, não uma saída antiga do trackfw a migrar (diferente de
+`migrateHookCommand`, que reescreve a própria saída obsoleta do trackfw). `mergeGuardCommandArray`
+(Go) / `mergeGuardCommandArray` (Node) / `_merge_guard_command_entry` (Python) e
+`mergeCursorGuardMatcherEntry` (Go) / `mergeGuardMatcherEntry` (Node) / `_merge_guard_matcher_entry`
+(Python) agora só **setam** `failClosed: true` quando o campo está **ausente**; nunca invertem um
+valor já presente (nenhuma direção). Comentário explicando a distinção para `migrateHookCommand`
+adicionado em cada stack.
+
+**Correção 2 — decisão de Zeus: remover `failClosed` de `afterShellExecution`/`postToolUse`.** Esses
+dois eventos são audit-only (sem resposta allow/deny/ask documentada) — emitir um campo com nome de
+segurança e efeito de bloqueio não documentado é a mesma classe de "emitir sem verificar" que este
+projeto já pagou caro antes. Removido nos 3 stacks:
+- `afterShellExecution` agora usa `mergeSimpleCommandArray`/`_merge_simple_command_array` (o mesmo
+  helper das entradas de attention) em vez de `mergeGuardCommandArray` — nunca ganha `failClosed`.
+- `postToolUse` (matchers Read/Write do guard) agora usa uma função nova sem `failClosed`:
+  `mergeCursorMatcherEntry` (Go), `mergeMatcherEntry` (Node, função local em `injectCursorHooks`),
+  `_merge_matcher_entry` (Python) — mesmo dedup por `(command, matcher)` de
+  `mergeCursorGuardMatcherEntry`, mas nunca seta o campo.
+- Resultado: `failClosed: true` só existe em `beforeShellExecution` e nos dois matchers `Read`/`Write`
+  de `preToolUse` (as entradas de guard que efetivamente bloqueiam a ação pendente).
+
+**Testes atualizados/adicionados (3 stacks):**
+- `TestInjectCursorHooks`/`test('injectCursorHooks creates and merges...')`/`test_inject_cursor_hooks`:
+  agora assertam `failClosed` ausente (não mais `true`) em `afterShellExecution[0]` e nos matchers
+  `postToolUse` Read/Write.
+- `TestInjectCursorHooks_FailClosedUpgradesStaleEntry`/equivalentes Node/Python: idem — entradas stale
+  de `afterShellExecution`/`postToolUse` **não** devem ganhar o campo ao rodar o injector; só
+  `beforeShellExecution`/`preToolUse` são upgradadas in place.
+- **Novo teste em cada stack** provando a Correção 1: `TestInjectCursorHooks_PreservesExplicitUserFailClosedFalse`
+  (Go), `'injectCursorHooks preserves an explicit user failClosed=false (ML-3B)'` (Node),
+  `test_inject_cursor_hooks_preserves_explicit_failclosed_false` (Python) — seed com
+  `failClosed: false` explícito em `beforeShellExecution` e nos dois matchers `preToolUse`
+  Read/Write, roda o injector, confirma que continua `false` (não vira `true`), e confirma
+  byte-identidade numa 2ª rodada.
+
+**Evidência:**
+- `go build ./... && go test ./...` — verde, todos os pacotes.
+- `npm --prefix npm test` — 452 passed, 0 failed (1 teste novo).
+- `python3 -m pytest pypi/tests -q` — 1006 passed, 8 subtests passed (1 teste novo).
+- `bash scripts/check-agent-hooks-parity.sh` — 12/12 `OK`, sem `FAIL`.
+- `go run ./cmd/trackfw validate` — `✓ No violations found.`
+- `make quality` — exit 0 (105/105 cenários de falsificação, sem cenário novo — mesma ressalva de
+  leitura da sessão do ML-3A: esse gate compara os 3 stacks entre si, não prova presença/ausência do
+  campo; quem prova são os testes unitários por stack, ajustados nesta sessão).
+- `git status --porcelain` — só os arquivos já tocados pelo ML-3A:
+  `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`,
+  `npm/src/generators/hooks.js`, `npm/tests/generators.test.js`,
+  `pypi/trackfw/generators/hooks.py`, `pypi/tests/test_generators_init.py`,
+  `docs/roadmaps/wip/ROADMAP-...credential-guard...md` (bloco ML-3B adicionado — não existia ainda;
+  Zeus pediu para criá-lo, então escrevi o bloco completo em vez de só o campo `**Status:**`), este
+  arquivo.
+
+**Nota:** o bloco `### ML-3B` no roadmap não existia antes desta sessão (o prompt indicava "Zeus já
+vai criá-lo"), então eu o criei por completo, seguindo o formato dos demais MLs do roadmap, com
+`**Status:** ✅ Concluído` e os 8 critérios de aceite marcados — sinalizar isso na auditoria caso Zeus
+prefira reformular a prosa.
+
+**Status do roadmap:** ML-3B marcado ✅ Concluído (Apolo), aguardando auditoria/commit de Zeus. Não
+fiz commit nem push — autoridade de Git é do Zeus.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-3A + ML-3B (`failClosed` do Cursor) — APROVADO, envio condicionado
+
+**Verificação empírica do artefato, não do relatório.** Gerei `.cursor/hooks.json` e confiri a tabela:
+`failClosed: true` **apenas** em `beforeShellExecution` e nos dois `preToolUse` de guard; **ausente**
+em `after*`/`post*` e em **todas** as entradas de attention. Bate exatamente com a decisão.
+
+**O defeito mais insidioso dos dois, corrigido e verificado:** montei um `.cursor/hooks.json` com
+`failClosed: false` **autoral** e rodei `trackfw update` → **continuou `false`**. Duas execuções →
+JSON byte-idêntico. Sem essa correção, um `update` de rotina reverteria silenciosamente uma decisão
+consciente de segurança do usuário.
+
+A desambiguação que tornou a correção trivial — *"o trackfw nunca emitiu esse campo antes, logo
+qualquer valor presente é autoria do usuário"* — **só existe agora**. Daqui a um release ela some, e
+o mesmo helper viraria um migrador que sobrescreve dados do usuário. Por isso exigi comentário no
+código explicando por que isso é **diferente** de `migrateHookCommand`, que reescreve a saída
+obsoleta do **próprio trackfw**.
+
+**Decisão de Zeus sobre `after*`/`post*`:** removido. A doc do Cursor não dá efeito de bloqueio a
+esses eventos; emitir campo sem efeito documentado é a classe de problema que esta sequência inteira
+vem pagando. Exigido comentário marcando a ausência como **deliberada**, senão alguém "corrige a
+assimetria" e reintroduz emissão não verificada.
+
+**Incoerência do MEU plano, exposta pelo ML-3A e registrada:** adiei o wrapper por risco de
+*bricking*, mas `failClosed` em `beforeShellExecution` **brica igual**. E há razão mais forte que a
+simetria: o guard **global** do Cursor não foi tocado, e é a superfície que a **opção 3** da barreira
+favorece — se o ADR concluir "preferir escopo global", o `failClosed` de projeto vira desnecessário.
+**Envio condicionado à Barreira B1**, que passa a decidir os três mecanismos juntos.
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` **452**/0 · `pytest` **1006**
+passed + 8 subtests · `check-agent-hooks-parity.sh` todos OK · `make quality` **exit 0**.
+
+**Nota de processo:** o bloco `### ML-3B` não existia no roadmap (eu disse que criaria e não criei
+antes do despacho); o agente escreveu o bloco inteiro seguindo o formato dos demais e **sinalizou**
+que havia extrapolado o "apenas o campo Status". Comportamento correto — a falha foi minha.
+
+## Sessão 2026-08-12 — Apolo (ML-3C: reversão do `failClosed` do Cursor após Barreira B1) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+**ADR lido antes de começar:** `docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`.
+Decisão de KG: a defesa real é o guard de escopo global (`~/.trackfw/`); o `failClosed` de escopo de
+projeto do ML-3A/3B **não é enviado** — código revertido neste ML.
+
+**O que foi feito:** confirmei que nenhum commit tocou os 6 arquivos entre `09e4c01` (ML-3A+3B) e
+`HEAD` (`4bd7514`, docs-only), então restaurar os arquivos ao estado do commit **anterior**
+(`fbbeaf9`, ML-2A) é equivalente a reverter cirurgicamente só a emissão de `failClosed` — sem
+mexer em nada do ML-1A/ML-2A (que não estão nesses arquivos) nem no wiring de caminho (fora de
+escopo).
+
+```
+git checkout fbbeaf9 -- internal/generators/agentfiles.go internal/generators/agentfiles_test.go \
+  npm/src/generators/hooks.js npm/tests/generators.test.js \
+  pypi/trackfw/generators/hooks.py pypi/tests/test_generators_init.py
+```
+
+**Prova de byte-identidade (critério de aceite mais forte do ML):** criei um `git worktree` no
+commit `fbbeaf9` (pré-ML-3A), compilei o binário lá, escrevi um `cmd/fixgen` temporário (chamando
+`generators.InjectCursorHooks(dir)` diretamente, com `$HOME` isolado em ambos os lados) tanto no
+worktree antigo quanto na árvore atual, gerei `.cursor/hooks.json` dos dois lados e rodei `diff` —
+**vazio**. `cmd/fixgen` e o worktree foram removidos depois; não sobraram no `git status`.
+
+**Helpers órfãos:** nenhum. `mergeCursorGuardMatcherEntry` (Go) continua em uso — não é órfão do
+ML-3A/3B, é o código genérico de matcher `Read`/`Write` que já existia (ADR-2026-08-06/ROADMAP
+Wave 2), não tem relação com `failClosed`. `git grep failClosed` em `internal/generators`,
+`npm/src`, `pypi/trackfw` — zero ocorrências (só sobra em docs/ADR/roadmap, que é esperado e
+explicitamente fora de escopo de reversão).
+
+**Evidência:**
+- `go build ./... && go test ./...` — verde, todos os pacotes.
+- `npm --prefix npm test` — 450 passed, 0 failed.
+- `python3 -m pytest pypi/tests -q` — 1004 passed, 8 subtests passed.
+- `bash scripts/check-agent-hooks-parity.sh` — 12/12 `OK`, sem `FAIL`.
+- `go run ./cmd/trackfw validate` — `✓ No violations found.`
+- `make quality` — exit 0, **105/105 cenários** (Cenário 47/ML-2A, credential_guard_hook_resolvable,
+  continua verde — não foi tocado).
+- `git status --porcelain` — só os 6 arquivos de geradores/testes permitidos:
+  `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`,
+  `npm/src/generators/hooks.js`, `npm/tests/generators.test.js`,
+  `pypi/trackfw/generators/hooks.py`, `pypi/tests/test_generators_init.py`, mais este arquivo e o
+  campo `**Status:**` do ML-3C no roadmap.
+
+**Status do roadmap:** ML-3C marcado ✅ Concluído (Apolo), aguardando auditoria/commit de Zeus. Não
+fiz commit nem push — autoridade de Git é do Zeus. Restam pendentes Wave 4 (ML-4A Hades, ML-4B
+Hefesto), ambos paralelos e fora do meu escopo.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-3C (reversão do `failClosed`) — APROVADO
+
+**Critério mais forte satisfeito:** `git diff fbbeaf9` (commit imediatamente anterior ao ML-3A) nos 6
+arquivos → **vazio**. Reversão byte-idêntica, sem arrastar nada dos commits intermediários.
+`git grep failClosed` em `internal/generators`, `npm/src`, `pypi/trackfw` → **0 ocorrências**.
+
+**O método dele foi melhor que o que especifiquei.** Eu pedi "gere o arquivo dos dois lados e
+compare". Ele fez isso **e** confirmou antes que nenhum commit tocara os 6 arquivos entre `fbbeaf9` e
+`HEAD` — o que torna o `git checkout <sha> -- <arquivos>` cirúrgico e verificável por **diff direto
+do código**, prova mais forte que comparar a saída num fixture. Sem lixo: `cmd/fixgen` temporário e
+worktree removidos.
+
+**Nenhum helper órfão:** `mergeCursorGuardMatcherEntry` **pré-existia** ao ML-3A (matchers
+`Read`/`Write` do ADR-2026-08-06) — verificado, não é específico do `failClosed`.
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` 450/0 · `pytest` 1004 passed
++ 8 subtests · `make quality` **exit 0** (105 cenários). A regra do ML-1A e o Cenário 47 continuam
+verdes — o que o ADR mandou manter, permanece.
+
+**Wave 4 despachada em paralelo** (arquivos disjuntos): ML-4A (Hades, `docs/seguranca/`) e ML-4B
+(Hefesto, `docs/cli-parity.md`).
+
+## Sessão 2026-08-12 — Hades (Segurança) — ML-4A (revisão de segurança pós-Barreira B1) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+**Entregável:** `docs/seguranca/2026-08-12-pos-barreira-estado-do-credential-guard.md` (novo).
+Parecer puramente de leitura, nenhum arquivo de código tocado.
+
+**Veredito consolidado, por pergunta:**
+1. **Delta de risco:** real, mas restrito — a regra `credential_guard_hook_resolvable`
+   (`internal/validator/validator_credential_guard.go:113`, Cenário 47 do falsify, não-vacuidade
+   provada) fecha a classe "hook aponta para script ausente/não executável", que é exatamente o
+   incidente já observado em produção. **Não** fecha nada contra adversário ativo — checa no
+   momento do `validate`, não no da invocação.
+2. **🔴 Falso senso de segurança: risco real, confirmado por leitura do código.** `os.Stat` + bit
+   `0111` (linhas 160–172) não leem conteúdo — um script substituído por `exit 0` preservando
+   `chmod +x` passa silencioso. Depois da reversão das outras 3 mitigações, esta regra é a única
+   coisa que sobra no escopo de projeto. Recomendo que `docs/cli-parity.md` (ML-4B, já no escopo)
+   registre isso, e sugiro a Zeus um item de documentação **de usuário final** adicional (README/
+   `--help`), fora do escopo deste ML — não bloqueante.
+3. **Estado atual vs. antes do roadmap: estritamente melhor ou igual em cada eixo, nunca pior.** O
+   `failClosed` do Cursor foi construído, avaliado e revertido por análise custo-benefício
+   documentada no ADR (não removido sem substituição) — confirmado byte-idêntico ao estado
+   pré-ML-3A por dois métodos independentes já registrados nas sessões do ML-3C.
+4. **REQ nova cobre os 3 eixos do ADR corretamente**, incluindo tratar a medição da premissa de
+   sandbox como bloqueante. **Achado não coberto:** falta critério condicional sobre rotação/
+   sobrescrita do guard **global** se a medição do eixo 2 revelar que ele também é alcançável por
+   agente sem sandbox — reportado a Zeus como sugestão de emenda, não bloqueante (a REQ ainda não
+   tem roadmap).
+5. **Premissa de sandbox não medida por este ML** (correto — é bloqueante da REQ, não deste ML).
+   Avaliação qualitativa a partir de evidência indireta já produzida por este projeto: **a
+   probabilidade de a premissa ser falsa no ambiente default é alta**, não baixa — nenhum dos 6 CLIs
+   roda sandboxed por padrão. Recomendação de sequência: tratar a medição do eixo 2 como o primeiro
+   trabalho da REQ, sem paralelizar com os eixos 1/3.
+
+**Conclusão: nada neste parecer bloqueia o PR desta branch.** Uma condição não bloqueante (item de
+documentação de usuário final) e um achado para a REQ nova (rotação do guard global), ambos
+reportados a Zeus para decisão.
+
+**Escopo respeitado:** só toquei `docs/seguranca/2026-08-12-pos-barreira-estado-do-credential-guard.md`
+(novo), o campo `**Status:**` do ML-4A no roadmap, e esta entrada. Não toquei `docs/cli-parity.md`
+(Hefesto, ML-4B, rodando em paralelo), nem `internal/`, `npm/src/`, `pypi/trackfw/`, `scripts/`,
+`docs/adr/`, `docs/req/`. Nenhum commit, nenhum push — autoridade de Git é do Zeus.
+
+## Sessão 2026-08-12 — Hefesto (ML-4B: documentação do controle positivo do credential-guard) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md`,
+Wave 4/ML-4B — status atualizado para ✅ Concluído.
+
+**Objetivo:** registrar em `docs/cli-parity.md` o que a regra `credential_guard_hook_resolvable`
+cobre e o que não cobre, com igual destaque, a decisão de arquitetura do ADR (escopo global) e os
+riscos aceitos, sem suavizar.
+
+**Seção nova** (inserida após "Semântica de falha de hook por CLI" e antes de "Hooks GLOBAIS de
+credential-guard"): **"Controle positivo do credential-guard: o que a regra
+`credential_guard_hook_resolvable` cobre, e o que não cobre"**, com 5 subseções — (1) o que a regra
+faz, lido direto de `internal/validator/validator_credential_guard.go`, não só do ADR; (2) o que ela
+não cobre, com o mesmo peso visual (momento de checagem vs invocação, ausência vs sobrescrita,
+downgrade de `credential_guard.mode`, formato de caminho desconhecido); (3) a decisão de arquitetura
+resumida, com tabela das 3 mitigações rejeitadas e o motivo específico de cada uma; (4) os riscos
+aceitos copiados do ADR sem suavizar, incluindo a premissa de sandbox não medida; (5) referências
+cruzadas com "Semântica de falha de hook por CLI" e com a REQ de follow-up.
+
+**Divergência ADR × código que encontrei:** nenhuma. O código (`validator_credential_guard.go`)
+confere exatamente com o que o ADR e o roadmap descrevem — lista fechada de 6 arquivos de hook,
+resolução das 3 formas de prefixo, `os.Stat` + bit `0111`, ausência de entrada não é violação,
+formato desconhecido é ignorado de propósito.
+
+**Achado fora do meu escopo, mas relevante para o Zeus auditar:** o `git status --porcelain` mostrou
+`docs/adr/ADR-2026-08-12-defesa-...md` e `docs/req/REQ-2026-08-12-credential-guard-de-escopo-global-...md`
+modificados — não fui eu quem tocou. O `git diff` mostra "Emenda 1 (2026-08-12, ML-4A)" no ADR e itens
+condicionais novos no REQ, claramente do Hades (ML-4A: a premissa "agente restrito ao workspace" é
+avaliada como **provavelmente falsa** — nenhum dos 6 CLIs roda sandboxed por padrão). Isso contradiz a
+frase de escopo da própria entrada do Hades acima ("Não toquei... `docs/adr/`, `docs/req/`"). Não
+modifiquei nem revertive esses arquivos — só sinalizo a divergência para o Zeus auditar antes do
+commit.
+
+**`make quality`:** exit 0, **105/105 cenários** — inclui o Cenário 47 (`credential_guard_hook_resolvable`,
+baseline + detected), não tocado por este ML.
+
+**`git status --porcelain`:** `docs/cli-parity.md` (conteúdo, único arquivo de escopo), campo
+`**Status:**` do ML-4B no roadmap, esta entrada — mais os dois arquivos do Hades citados acima, que
+não são meus. Nenhum commit, nenhum push — autoridade de Git é do Zeus.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — CORREÇÃO DE ATRIBUIÇÃO + auditoria da Wave 4 + fechamento
+
+### 🔴 Correção de registro — as edições no ADR e na REQ foram de ZEUS, não de Hades
+
+Hefesto (ML-4B) reportou, corretamente vigilante, que `docs/adr/ADR-2026-08-12-...` e
+`docs/req/REQ-2026-08-12-credential-guard-de-escopo-global-...` apareciam modificados, e que isso
+**contradizia** a entrada de Hades afirmando não ter tocado em `docs/adr/` e `docs/req/`.
+
+**A suspeita estava certa em detectar a inconsistência e errada na atribuição: fui eu.** Depois de
+ler o relatório do ML-4A, **Zeus** escreveu a "Emenda 1" no ADR e acrescentou os critérios
+condicionais na REQ — ambos são artefatos de governança, escopo de Zeus, não de Hades. A entrada de
+Hades está **correta**: ele não tocou nesses arquivos.
+
+Fica registrado para que ninguém leia o histórico como violação de escopo de um especialista. E o
+comportamento do Hefesto foi exatamente o desejado: **reportou a inconsistência em vez de reverter ou
+silenciar**.
+
+### Auditoria do ML-4A (Hades)
+
+Parecer em `docs/seguranca/2026-08-12-pos-barreira-estado-do-credential-guard.md`. Vereditos
+ancorados em código lido (`validator_credential_guard.go:113`, `:160-172`), não em hipótese. O achado
+que mudou o ciclo: **a probabilidade de a premissa central do ADR ser falsa é ALTA** — nenhum dos 6
+CLIs roda sandboxed por padrão, logo um agente sem sandbox alcança `$HOME` e portanto `~/.trackfw/`.
+Registrado como **Emenda 1 do ADR** por Zeus, com a consequência: o escopo global vira "mais caro de
+alcançar", não "fora de alcance" — **diferença de grau, não de natureza**. A rejeição das 3 mitigações
+**se sustenta** pelos motivos próprios de cada uma; nenhuma dependia exclusivamente dessa premissa.
+
+Duas recomendações não bloqueantes, ambas incorporadas à REQ: critério condicional sobre
+rotação/sobrescrita do **guard global** caso a medição confirme alcance; e documentação para o
+**usuário final** fora do `cli-parity.md` (que é interno de paridade — quem instala o trackfw não o
+lê, e o risco é concluir que o guard está protegido porque existe uma regra com esse nome).
+
+### Auditoria do ML-4B (Hefesto)
+
+Seção nova em `docs/cli-parity.md:2791`, lida por Zeus. Cumpre o que mais importava: **"o que não
+cobre" tem o mesmo peso visual que "o que cobre"**, e abre com o aviso de que o risco real é alguém
+ler a seção como "o incidente está mitigado". Documenta o exemplo concreto da sobrescrita
+(`exit 0` passa em `os.Stat` **e** no teste de bit `0111`, e produz `hook: PreToolUse Completed` —
+zero sinal nos dois lugares). Nenhuma divergência ADR × código encontrada, verificada lendo o
+`validator_credential_guard.go`, não só o ADR.
+
+### Estado final
+
+`make quality` exit 0 (105 cenários) · `trackfw validate` sem violações. Roadmap → `done`.
+**Honestidade do que este ciclo entregou:** detecção da classe do incidente real, **não** prevenção
+contra adversário ativo. Está escrito no ADR, no `cli-parity.md` e no parecer.
