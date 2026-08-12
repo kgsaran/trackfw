@@ -81,8 +81,8 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         data = _read_json(os.path.join(project_dir, '.claude', 'settings.json'))
         self.assertFalse(_has_claude_hook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
         self.assertFalse(_has_claude_hook(data, 'PostToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
-        self.assertTrue(_has_claude_hook(data, 'PreToolUse', 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh'))
-        self.assertTrue(_has_claude_hook(data, 'PostToolUse', 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh'))
+        self.assertTrue(_has_claude_hook(data, 'PreToolUse', 'AskUserQuestion', '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh'))
+        self.assertTrue(_has_claude_hook(data, 'PostToolUse', 'AskUserQuestion', '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'))
 
     def test_codex(self):
         home = self._isolated_home()
@@ -96,10 +96,15 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         inject_codex_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.codex', 'hooks.json'))
-        self.assertFalse(_has_claude_hook(data, 'PreToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'))
-        self.assertFalse(_has_claude_hook(data, 'PostToolUse', 'Bash', 'scripts/trackfw-credential-guard.sh'))
-        self.assertTrue(_has_claude_hook(data, 'PermissionRequest', '.*', 'scripts/trackfw-attention-signal.sh'))
-        self.assertTrue(_has_claude_hook(data, 'PostToolUse', '.*', 'scripts/trackfw-attention-cleanup.sh'))
+        # ROADMAP-2026-08-11 ML-3A: Codex commands now wrap $(git rev-parse --show-toplevel) in
+        # literal quotes (ADR-2026-08-11).
+        codex_guard_cmd = '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"'
+        codex_signal_cmd = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh"'
+        codex_cleanup_cmd = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-cleanup.sh"'
+        self.assertFalse(_has_claude_hook(data, 'PreToolUse', 'Bash', codex_guard_cmd))
+        self.assertFalse(_has_claude_hook(data, 'PostToolUse', 'Bash', codex_guard_cmd))
+        self.assertTrue(_has_claude_hook(data, 'PermissionRequest', '.*', codex_signal_cmd))
+        self.assertTrue(_has_claude_hook(data, 'PostToolUse', '.*', codex_cleanup_cmd))
 
     def test_gemini(self):
         home = self._isolated_home()
@@ -113,10 +118,14 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         inject_gemini_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.gemini', 'settings.json'))
-        self.assertFalse(_has_claude_hook(data, 'BeforeTool', 'run_shell_command', 'scripts/trackfw-credential-guard.sh'))
-        self.assertFalse(_has_claude_hook(data, 'AfterTool', 'run_shell_command', 'scripts/trackfw-credential-guard.sh'))
-        self.assertTrue(_has_claude_hook(data, 'Notification', 'ToolPermission', 'scripts/trackfw-attention-signal.sh'))
-        self.assertTrue(_has_claude_hook(data, 'AfterTool', '*', 'scripts/trackfw-attention-cleanup.sh'))
+        # ROADMAP-2026-08-11 ML-4A: Gemini commands now use $GEMINI_PROJECT_DIR (ADR-2026-08-11).
+        gemini_guard_cmd = '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
+        gemini_signal_cmd = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
+        gemini_cleanup_cmd = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
+        self.assertFalse(_has_claude_hook(data, 'BeforeTool', 'run_shell_command', gemini_guard_cmd))
+        self.assertFalse(_has_claude_hook(data, 'AfterTool', 'run_shell_command', gemini_guard_cmd))
+        self.assertTrue(_has_claude_hook(data, 'Notification', 'ToolPermission', gemini_signal_cmd))
+        self.assertTrue(_has_claude_hook(data, 'AfterTool', '*', gemini_cleanup_cmd))
 
     def test_cursor(self):
         home = self._isolated_home()

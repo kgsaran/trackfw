@@ -233,16 +233,22 @@ def _merge_claude_hook_array(hook_list: list, matcher: str, command: str) -> Non
     })
 
 
-def _migrate_claude_hook_command(hook_list: list, matcher: str, old_command: str, new_command: str) -> None:
+def _migrate_hook_command(hook_list: list, matcher: str, old_command: str, new_command: str) -> None:
     """Rewrites a legacy hook command to a new one, in place, for every entry matching the
-    given matcher inside a Claude PreToolUse/PostToolUse array.
+    given matcher inside a "matcher + hooks[].command" shaped array -- the format shared by
+    Claude, Codex and Gemini's merge-based settings files (PreToolUse/PostToolUse/
+    PermissionRequest/Notification/BeforeTool/AfterTool).
 
-    Used to fix .claude/settings.json files already written by an older trackfw before a
-    command string changes -- without this, re-running `trackfw init`/`update` only ever
-    appends the new (fixed) command alongside the stale one (merge dedup in
-    _merge_claude_hook_array keys on the exact command string, so it can't tell "same guard,
+    Used to fix settings files already written by an older trackfw before a command string
+    changes -- without this, re-running `trackfw init`/`update` only ever appends the new
+    (fixed) command alongside the stale one (merge dedup in _merge_claude_hook_array /
+    _merge_codex_hook_entry keys on the exact command string, so it can't tell "same guard,
     new path" from "a different hook"), leaving the broken entry in place to keep firing and
-    failing forever.
+    failing forever. Originally written for Claude only (hence the old name); generalized
+    (ROADMAP-2026-08-11 ML-1A) so Codex/Gemini injectors can call it too, ahead of the
+    mechanism-specific string changes those CLIs' waves make. Must always be called before the
+    corresponding merge call for the same matcher, or the merge's exact-string dedup will
+    append a duplicate instead of rewriting in place.
     """
     for entry in hook_list:
         if not isinstance(entry, dict) or entry.get('matcher') != matcher:
@@ -267,6 +273,13 @@ def _migrate_claude_hook_command(hook_list: list, matcher: str, old_command: str
 # own custom hooks already relied on successfully in practice.
 _GUARD_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
 
+# ROADMAP-2026-08-11 ML-2A: same $CLAUDE_PROJECT_DIR fix as _GUARD_CMD_CLAUDE above, applied to the
+# attention-signal/cleanup commands -- Claude Code resolves a bare relative hook command against the
+# hook's dynamic cwd, not the project root, so any Bash/Read/Write/Edit call after the agent `cd`s
+# into a subdirectory made the hook fail with "No such file or directory".
+_SIGNAL_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
+_CLEANUP_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
+
 def inject_claude_hooks(cwd: str) -> None:
     """Injeta hooks PreToolUse/PostToolUse no .claude/settings.json."""
     file_path = os.path.join(cwd, '.claude', 'settings.json')
@@ -276,16 +289,24 @@ def inject_claude_hooks(cwd: str) -> None:
 
     # PreToolUse — AskUserQuestion matcher → signal; Bash matcher → credential guard
     pre_hooks = hooks.setdefault('PreToolUse', [])
-    _merge_claude_hook_array(pre_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh')
+    post_hooks = hooks.setdefault('PostToolUse', [])
+
+    # Migration (ROADMAP-2026-08-11 ML-2A): rewrite any stale relative-path attention-signal/
+    # cleanup command from an older trackfw run before merging the $CLAUDE_PROJECT_DIR-pinned one
+    # below, so upgrading doesn't just append a second, still-cwd-fragile entry alongside the
+    # fixed one (same pattern as the credential-guard migration below).
+    _migrate_hook_command(pre_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-signal.sh', _SIGNAL_CMD_CLAUDE)
+    _migrate_hook_command(post_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh', _CLEANUP_CMD_CLAUDE)
+
+    _merge_claude_hook_array(pre_hooks, 'AskUserQuestion', _SIGNAL_CMD_CLAUDE)
 
     # Rewrite any stale relative-path credential-guard command from an older trackfw run
     # before merging the fixed one below, so upgrading doesn't just append a second,
     # still-broken entry alongside the new one (see _GUARD_CMD_CLAUDE comment above for the
     # "No such file or directory" bug).
-    post_hooks = hooks.setdefault('PostToolUse', [])
     for matcher in ('Bash', 'Read', 'Write|Edit'):
-        _migrate_claude_hook_command(pre_hooks, matcher, 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CLAUDE)
-        _migrate_claude_hook_command(post_hooks, matcher, 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CLAUDE)
+        _migrate_hook_command(pre_hooks, matcher, 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CLAUDE)
+        _migrate_hook_command(post_hooks, matcher, 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CLAUDE)
 
     # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
     # ROADMAP-2026-08-08 Wave 2 to Read/Write|Edit): skip project-scope
@@ -300,7 +321,7 @@ def inject_claude_hooks(cwd: str) -> None:
         _merge_claude_hook_array(pre_hooks, 'Write|Edit', _GUARD_CMD_CLAUDE)
 
     # PostToolUse — AskUserQuestion matcher → cleanup; Bash matcher → credential guard
-    _merge_claude_hook_array(post_hooks, 'AskUserQuestion', 'scripts/trackfw-attention-cleanup.sh')
+    _merge_claude_hook_array(post_hooks, 'AskUserQuestion', _CLEANUP_CMD_CLAUDE)
     if not skip_cg:
         _merge_claude_hook_array(post_hooks, 'Bash', _GUARD_CMD_CLAUDE)
         _merge_claude_hook_array(post_hooks, 'Read', _GUARD_CMD_CLAUDE)
@@ -366,6 +387,28 @@ def _merge_codex_hook_entry(entries: list, matcher: str, command: str) -> None:
     })
 
 
+# ROADMAP-2026-08-11 ML-3A: Codex CLI does not expose a project-root env var for repo-local hooks
+# (unlike Claude's $CLAUDE_PROJECT_DIR or Gemini's $GEMINI_PROJECT_DIR) -- the only documented
+# mechanism is shell substitution. Per ADR-2026-08-11 ("Codex — alterar, com dependência explícita
+# de shell e git"), the command is wrapped in literal double quotes around `$(git rev-parse
+# --show-toplevel)`, matching every repo-local hook example in the official Codex docs
+# (https://developers.openai.com/codex/config-advanced): "For repo-local hooks, prefer resolving
+# from the git root instead of using a relative path such as `.codex/hooks/...`."
+_CODEX_ROOT = '"$(git rev-parse --show-toplevel)'
+_GUARD_CMD_CODEX = _CODEX_ROOT + '/scripts/trackfw-credential-guard.sh"'
+_SIGNAL_CMD_CODEX = _CODEX_ROOT + '/scripts/trackfw-attention-signal.sh"'
+_CLEANUP_CMD_CODEX = _CODEX_ROOT + '/scripts/trackfw-attention-cleanup.sh"'
+
+# ROADMAP-2026-08-11 ML-4A: Gemini CLI documents $GEMINI_PROJECT_DIR (distinct from the
+# session-following $GEMINI_CWD) and uses it in 100% of its official hook command examples
+# (ADR-2026-08-11, "Gemini CLI — alterar, por argumento de assimetria"). Unlike Codex's
+# $(git rev-parse ...), this is an env var expanded by the Gemini CLI runtime itself -- no
+# shell substitution needed, no literal quotes required.
+_SIGNAL_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
+_CLEANUP_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
+_GUARD_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
+
+
 def inject_codex_hooks(cwd: str) -> None:
     """Injeta hooks PermissionRequest/PreToolUse/PostToolUse no .codex/hooks.json."""
     file_path = os.path.join(cwd, '.codex', 'hooks.json')
@@ -374,8 +417,12 @@ def inject_codex_hooks(cwd: str) -> None:
     hooks = data.setdefault('hooks', {})
 
     pre_permission_hooks = hooks.setdefault('PermissionRequest', [])
+    # Migration wiring (ROADMAP-2026-08-11 ML-1A, string updated in ML-3A): rewrites any stale
+    # relative-path entry from before this fix in place, so `trackfw update` doesn't just append
+    # the new $(git rev-parse ...) entry alongside the still-cwd-fragile old one.
+    _migrate_hook_command(pre_permission_hooks, '.*', 'scripts/trackfw-attention-signal.sh', _SIGNAL_CMD_CODEX)
     _merge_codex_hook_entry(
-        pre_permission_hooks, '.*', 'scripts/trackfw-attention-signal.sh',
+        pre_permission_hooks, '.*', _SIGNAL_CMD_CODEX,
     )
 
     # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
@@ -384,24 +431,29 @@ def inject_codex_hooks(cwd: str) -> None:
     skip_cg = _global_credential_guard_installed_codex()
 
     pre_tool_hooks = hooks.setdefault('PreToolUse', [])
+    _migrate_hook_command(pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CODEX)
+    _migrate_hook_command(pre_tool_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CODEX)
     if not skip_cg:
         _merge_codex_hook_entry(
-            pre_tool_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+            pre_tool_hooks, 'Bash', _GUARD_CMD_CODEX,
         )
         _merge_codex_hook_entry(
-            pre_tool_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh',
+            pre_tool_hooks, 'apply_patch', _GUARD_CMD_CODEX,
         )
 
     post_hooks = hooks.setdefault('PostToolUse', [])
+    _migrate_hook_command(post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh', _CLEANUP_CMD_CODEX)
+    _migrate_hook_command(post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CODEX)
+    _migrate_hook_command(post_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_CODEX)
     _merge_codex_hook_entry(
-        post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh',
+        post_hooks, '.*', _CLEANUP_CMD_CODEX,
     )
     if not skip_cg:
         _merge_codex_hook_entry(
-            post_hooks, 'Bash', 'scripts/trackfw-credential-guard.sh',
+            post_hooks, 'Bash', _GUARD_CMD_CODEX,
         )
         _merge_codex_hook_entry(
-            post_hooks, 'apply_patch', 'scripts/trackfw-credential-guard.sh',
+            post_hooks, 'apply_patch', _GUARD_CMD_CODEX,
         )
 
     _write_json(file_path, data)
@@ -447,7 +499,13 @@ def inject_gemini_hooks(cwd: str) -> None:
     hooks = data.setdefault('hooks', {})
 
     notifications = hooks.setdefault('Notification', [])
-    _merge_claude_hook_array(notifications, 'ToolPermission', 'scripts/trackfw-attention-signal.sh')
+    # Migration wiring (ROADMAP-2026-08-11 ML-1A): old == new is a functional no-op today, but
+    # proves the call point exists and runs before the merge below. The wave that changes the
+    # Gemini command strings (ML-4A) updates old_command here instead of adding this call from
+    # scratch -- without it, the merge's exact-string dedup would append a duplicate alongside
+    # the stale entry.
+    _migrate_hook_command(notifications, 'ToolPermission', 'scripts/trackfw-attention-signal.sh', _SIGNAL_CMD_GEMINI)
+    _merge_claude_hook_array(notifications, 'ToolPermission', _SIGNAL_CMD_GEMINI)
 
     # Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda 7/
     # ROADMAP-2026-08-08 Wave 2 to read_file|read_many_files / write_file|replace): skip
@@ -455,23 +513,30 @@ def inject_gemini_hooks(cwd: str) -> None:
     skip_cg = _global_credential_guard_installed_gemini()
 
     before = hooks.setdefault('BeforeTool', [])
+    _migrate_hook_command(before, 'run_shell_command', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
+    _migrate_hook_command(before, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
+    _migrate_hook_command(before, 'write_file|replace', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
     if not skip_cg:
-        _merge_claude_hook_array(before, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(before, 'run_shell_command', _GUARD_CMD_GEMINI)
         # Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2,
         # 2026-08-08): the Gemini CLI tools table
         # (https://geminicli.com/docs/reference/tools) documents `read_file`/
         # `read_many_files` as the file-read tools and `write_file`/`replace` as the
         # file-write/edit tools -- matcher below follows the same regex-over-tool_name
         # convention already used for `run_shell_command`.
-        _merge_claude_hook_array(before, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
-        _merge_claude_hook_array(before, 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(before, 'read_file|read_many_files', _GUARD_CMD_GEMINI)
+        _merge_claude_hook_array(before, 'write_file|replace', _GUARD_CMD_GEMINI)
 
     after = hooks.setdefault('AfterTool', [])
-    _merge_claude_hook_array(after, '*', 'scripts/trackfw-attention-cleanup.sh')
+    _migrate_hook_command(after, '*', 'scripts/trackfw-attention-cleanup.sh', _CLEANUP_CMD_GEMINI)
+    _migrate_hook_command(after, 'run_shell_command', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
+    _migrate_hook_command(after, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
+    _migrate_hook_command(after, 'write_file|replace', 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_GEMINI)
+    _merge_claude_hook_array(after, '*', _CLEANUP_CMD_GEMINI)
     if not skip_cg:
-        _merge_claude_hook_array(after, 'run_shell_command', 'scripts/trackfw-credential-guard.sh')
-        _merge_claude_hook_array(after, 'read_file|read_many_files', 'scripts/trackfw-credential-guard.sh')
-        _merge_claude_hook_array(after, 'write_file|replace', 'scripts/trackfw-credential-guard.sh')
+        _merge_claude_hook_array(after, 'run_shell_command', _GUARD_CMD_GEMINI)
+        _merge_claude_hook_array(after, 'read_file|read_many_files', _GUARD_CMD_GEMINI)
+        _merge_claude_hook_array(after, 'write_file|replace', _GUARD_CMD_GEMINI)
 
     _write_json(file_path, data)
 

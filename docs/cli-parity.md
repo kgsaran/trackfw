@@ -2513,6 +2513,114 @@ Reportado a `trackfw_architect`/Zeus como item em aberto; não corrigido aqui
 por estar fora do escopo declarado deste ML (gate final + docs, não
 hardening de P4).
 
+## Mecanismo de resolução de caminho dos hooks de projeto, por CLI
+
+Decidido em
+`docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md`
+(pesquisa que sustenta a decisão:
+`docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md`). Escopo: apenas hooks de **projeto**
+(`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`,
+`.github/hooks/trackfw-attention.json`, `.kiro/hooks/*.json`) — os hooks de **escopo global**
+(`trackfw update harness`, escritos em `~/.trackfw/...`) usam caminho absoluto por design e não
+foram tocados por este mecanismo (caso distinto, fora do repo do usuário).
+
+A falha de fundo é a mesma nos três CLIs alterados, mas o cwd contra o qual o `command` de hook
+resolve **não** é idêntico entre eles — nem sempre a raiz do projeto, e por motivos diferentes: no
+Claude Code o cwd do handler **acompanha os `cd` do agente durante a sessão** ("Handlers run in the
+current directory"); no Codex CLI o cwd é fixo, mas é o cwd **da sessão** ("Commands run with the
+session `cwd` as their working directory"), não necessariamente a raiz — o modo de falha é iniciar o
+Codex a partir de um subdiretório, mais raro que o caso do Claude, mas real. Um caminho relativo puro
+(`scripts/trackfw-*.sh`) só resolve corretamente se esse cwd coincidir com a raiz do projeto.
+
+Dos três CLIs alterados, apenas **dois** foram provados quebrados por esse mecanismo: Claude Code
+(bug em produção, corrigido em `0c66ecb`) e Codex CLI (verificação empírica no ML-3A, ver abaixo).
+**Gemini CLI não foi provado quebrado** — a doc não afirma explicitamente que o cwd do hook deriva do
+agente. Foi alterado mesmo assim por um argumento diferente, "mudança segura por construção": como
+`$GEMINI_PROJECT_DIR` é documentado e usado em 100% dos exemplos oficiais de hook, resolve para a
+raiz do projeto **independentemente** de o cwd derivar ou não — a mudança não pode piorar o
+comportamento existente, então não era preciso provar o defeito para justificá-la (ADR §"Gemini CLI —
+alterar, por argumento de assimetria"). Os outros três CLIs (Cursor, Copilot, Kiro) não foram
+alterados — dois por já resolverem corretamente, um por mecanismo não verificável (ver a tabela e as
+seções abaixo).
+
+| CLI | Mecanismo | String emitida | Migração in-place? | Referência |
+|---|---|---|---|---|
+| Claude Code — credential-guard | placeholder de env var expandido em runtime | `$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh` | **Sim** — corrigido antes deste roadmap, em `0c66ecb` (v6.7.1); merge-based, matcher por ferramenta (`agentfiles.go:238–239`) | ADR §Decision, linha Claude Code |
+| Claude Code — attention-signal/cleanup | placeholder de env var expandido em runtime | `$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-{signal,cleanup}.sh` | **Sim** — estendido neste roadmap (ML-2A); merge-based, matcher `AskUserQuestion` (`agentfiles.go:213`, `:269`) — chamada de migração separada da do credential-guard, não a mesma | ADR §Decision, linha Claude Code |
+| Codex CLI | substituição de shell (`$(...)`), aspas literais em torno da substituição | `"$(git rev-parse --show-toplevel)/scripts/trackfw-<script>.sh"` (JSON-escapado no arquivo gerado) | **Sim** — merge-based, mesmo motivo do Claude | ADR §Decision + §"Codex CLI — alterar, com dependência explícita de shell e git" |
+| Gemini CLI | placeholder de env var expandido em runtime | `$GEMINI_PROJECT_DIR/scripts/trackfw-<script>.sh` | **Sim** — merge-based, mesmo motivo do Claude | ADR §Decision + §"Gemini CLI — alterar, por argumento de assimetria" |
+| Cursor | nenhuma mudança — cwd de hooks de projeto já é fixo na raiz por design do fornecedor | caminho relativo puro, inalterado | Não precisa — não muda de string | ADR §"Cursor — não alterar" |
+| GitHub Copilot CLI | nenhuma mudança — já usa o campo nativo `"cwd": "."` em todas as entradas | caminho relativo puro + `"cwd": "."`, inalterado | Não precisa — arquivo é regravado por inteiro a cada execução, não há entrada "antiga" a migrar | ADR §"GitHub Copilot CLI — não alterar; já estava correto" |
+| Kiro | nenhuma mudança — mecanismo de resolução não verificável em doc primária (ver abaixo) | caminho relativo puro, inalterado | Não precisa — arquivo é regravado por inteiro a cada execução | ADR §"Kiro — não alterar (default de INDETERMINADO)" |
+
+### Pré-condições do fix do Codex, descobertas empiricamente (não estão na doc do fornecedor)
+
+Confirmadas no ML-3A rodando o `codex-cli` real (0.147.0), não em um shell isolado. Ver ADR Emenda 1
+e `vault/notes/codex-hooks-de-projeto-so-rodam-em-projeto-trusted-2026-08-11.md`.
+
+1. **O hook só roda se o projeto estiver marcado como `trusted`.** O Codex CLI só carrega hooks de
+   **projeto** se aquele projeto estiver marcado como confiável em `~/.codex/config.toml`
+   (`[projects."<path>"] trust_level = "trusted"`). Sem isso, os hooks do repositório são ignorados
+   **em silêncio** — nenhum erro, nenhum log óbvio. Isso não muda a decisão (sem trust, nenhum hook
+   roda, nem o antigo nem o novo), mas significa que o fix de caminho só produz efeito visível para
+   o usuário final em projeto trusted. Para testes automatizados, o Codex expõe
+   `--dangerously-bypass-hook-trust`; nunca escrever no `~/.codex/config.toml` real do usuário para
+   "fazer um teste passar".
+2. **`git rev-parse --show-toplevel` exige repositório git e depende de onde ele resolve a raiz do
+   projeto — três casos, todos com a mesma consequência prática (guard não roda).**
+   - **Fora de um repositório git**: o comando falha, a substituição vira vazia, o comando degrada
+     para `/scripts/trackfw-credential-guard.sh` → o `trackfw-credential-guard.sh` **não executa**.
+     Aceitável, pois o trackfw governa repositórios por definição.
+   - **Dentro de um submódulo ou worktree**: o comando retorna a raiz *daquele* submódulo/worktree,
+     que pode não ser onde o `scripts/` do trackfw vive.
+   - **`GIT_DIR`/`GIT_WORK_TREE` definidas no ambiente do processo**: essas variáveis de ambiente,
+     quando presentes, redirecionam para onde `git rev-parse --show-toplevel` resolve, produzindo o
+     mesmo efeito prático dos dois casos acima — o hook resolve para uma raiz diferente da esperada
+     e o `trackfw-credential-guard.sh` (controle de segurança) **pode deixar de executar em
+     silêncio**, sem erro nem log óbvio.
+
+   Em todos os três casos, a limitação é **conhecida e aceita, não corrigida por este roadmap**.
+   O terceiro caso (`GIT_DIR`/`GIT_WORK_TREE`) foi identificado pela revisão de segurança em
+   `docs/seguranca/2026-08-11-revisao-hooks-cwd.md` (Q3), que classificou o risco como aceitável e
+   sem regressão contra a `main`, recomendando apenas o registro aqui.
+
+### Kiro — mecanismo de resolução não verificável em doc primária, mantido relativo
+
+Veredito `INDETERMINADO` em 2026-08-11 (`docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md`,
+seção 5). As 4 páginas oficiais de hooks do Kiro consultadas nunca mencionam o diretório de trabalho
+de execução da "Shell Command action" nem expõem uma env var de raiz de projeto:
+
+- <https://kiro.dev/docs/hooks/>
+- <https://kiro.dev/docs/hooks/types/>
+- <https://kiro.dev/docs/hooks/actions/>
+- <https://kiro.dev/docs/hooks/troubleshooting/>
+
+Aplica-se o default do roadmap para `INDETERMINADO`: **não alterar** o mecanismo do Kiro. Sobrepor
+este default exige evidência empírica direta (teste reproduzível no CLI real), nunca inferência a
+partir de outro CLI.
+
+### A heterogeneidade entre os 4 mecanismos é intencional, não divergência acidental
+
+Depois desta mudança existem **4 formas diferentes** de comando de hook entre os 6 CLIs
+(`$CLAUDE_PROJECT_DIR/…`, `$GEMINI_PROJECT_DIR/…`, `"$(git rev-parse --show-toplevel)/…"`, e caminho
+relativo puro para Cursor/Copilot/Kiro). Isso é deliberado: a regra geral, derivada no ADR
+(§"Regra geral derivada"), é **preferir sempre o mecanismo nativo do fornecedor**, nesta ordem de
+preferência:
+
+1. Campo estruturado de working directory, quando existir (Copilot — `"cwd": "."`).
+2. Placeholder/env var de raiz de projeto, expandido em runtime pelo próprio CLI (Claude, Gemini).
+3. Substituição de shell (Codex) — último recurso, por introduzir pré-condições (shell, git).
+4. Nenhuma mudança, quando o CLI já resolve contra a raiz por design (Cursor) ou quando o mecanismo
+   não pode ser verificado (Kiro).
+
+Caminho absoluto materializado no arquivo é proibido em todos os casos — os arquivos de settings são
+versionados no repositório do usuário, e o path da máquina que rodou `trackfw init`/`update` não vale
+para outro checkout. Sem esta nota, a leitura do código isoladamente (4 strings diferentes para
+"o mesmo problema") convida a "corrigir" a heterogeneidade impondo um mecanismo único — o que o ADR
+rejeita explicitamente em §"Alternatives Considered" ("Um único mecanismo para os 6 CLIs"), porque
+forçaria `$(git rev-parse …)` em CLIs que já resolvem corretamente por meios próprios, adicionando
+pré-condições sem defeito correspondente.
+
 ## Hooks GLOBAIS de credential-guard (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.gemini/settings.json`, `~/.cursor/hooks.json`, `~/.copilot/settings.json`, `~/.kiro/hooks/trackfw-credential-guard.json`) — paridade estrutural (ROADMAP-2026-08-06, ML-4A)
 
 Sibling do gate de hooks por-projeto (seção anterior), para o escopo GLOBAL

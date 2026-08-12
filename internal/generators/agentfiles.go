@@ -205,10 +205,17 @@ func InjectClaudeHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
+	// Migration (ROADMAP-2026-08-11 ML-2A): rewrite any stale relative-path attention-signal
+	// command from an older trackfw run before merging the $CLAUDE_PROJECT_DIR-pinned one below,
+	// so upgrading doesn't just append a second, still-cwd-fragile entry alongside the fixed one
+	// -- same "No such file or directory" bug class, and same migrate-before-merge ordering
+	// requirement, as the credential-guard fix a few lines below.
+	migrateHookCommand(hooks["PreToolUse"], "AskUserQuestion", "scripts/trackfw-attention-signal.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh")
+
 	hooks["PreToolUse"] = mergeClaudeHookArray(
 		hooks["PreToolUse"],
 		"AskUserQuestion",
-		"scripts/trackfw-attention-signal.sh",
+		"$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh",
 	)
 
 	// Fix (2026-08-09, reported in production against the CMDB project):
@@ -228,8 +235,8 @@ func InjectClaudeHooks(cwd string) error {
 	// fixed command, so upgrading doesn't just append a second, still-broken
 	// entry alongside the new one.
 	for _, matcher := range []string{"Bash", "Read", "Write|Edit"} {
-		migrateClaudeHookCommand(hooks["PreToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
-		migrateClaudeHookCommand(hooks["PostToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
+		migrateHookCommand(hooks["PreToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
+		migrateHookCommand(hooks["PostToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
 	}
 
 	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
@@ -259,10 +266,12 @@ func InjectClaudeHooks(cwd string) error {
 		)
 	}
 
+	migrateHookCommand(hooks["PostToolUse"], "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh")
+
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		"AskUserQuestion",
-		"scripts/trackfw-attention-cleanup.sh",
+		"$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh",
 	)
 	if !globalCredentialGuardInstalledClaude() {
 		hooks["PostToolUse"] = mergeClaudeHookArray(
@@ -290,6 +299,35 @@ func InjectClaudeHooks(cwd string) error {
 	}
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
+
+// ROADMAP-2026-08-11 ML-3A: Codex CLI does not expose a project-root env var for
+// repo-local hooks (unlike Claude's $CLAUDE_PROJECT_DIR or Gemini's
+// $GEMINI_PROJECT_DIR) — the only documented mechanism is shell substitution.
+// Per ADR-2026-08-11 ("Codex — alterar, com dependência explícita de shell e
+// git"), the command is wrapped in literal double quotes around
+// `$(git rev-parse --show-toplevel)`, matching every repo-local hook example in
+// the official Codex docs (https://developers.openai.com/codex/config-advanced):
+// "For repo-local hooks, prefer resolving from the git root instead of using a
+// relative path such as `.codex/hooks/...`."
+const codexRoot = `"$(git rev-parse --show-toplevel)`
+
+var (
+	codexSignalCmd  = codexRoot + `/scripts/trackfw-attention-signal.sh"`
+	codexCleanupCmd = codexRoot + `/scripts/trackfw-attention-cleanup.sh"`
+	codexGuardCmd   = codexRoot + `/scripts/trackfw-credential-guard.sh"`
+)
+
+// ROADMAP-2026-08-11 ML-4A: Gemini CLI documents $GEMINI_PROJECT_DIR (distinct
+// from the session-following $GEMINI_CWD) and uses it in 100% of its official
+// hook command examples (ADR-2026-08-11, "Gemini CLI — alterar, por argumento
+// de assimetria"). Unlike Codex's $(git rev-parse …), this is an env var
+// expanded by the Gemini CLI runtime itself — no shell substitution needed, no
+// literal quotes required.
+const (
+	geminiSignalCmd  = `$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh`
+	geminiCleanupCmd = `$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh`
+	geminiGuardCmd   = `$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh`
+)
 
 // InjectCodexHooks injects Codex CLI attention hooks into .codex/hooks.json.
 //
@@ -338,10 +376,21 @@ func InjectCodexHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
+	// Migration wiring (ROADMAP-2026-08-11 ML-1A, strings updated in ML-3A):
+	// rewrites any stale relative-path entry from before this fix in place, so
+	// `trackfw update` doesn't just append the new $(git rev-parse ...) entry
+	// alongside the still-cwd-fragile old one.
+	migrateHookCommand(hooks["PermissionRequest"], ".*", "scripts/trackfw-attention-signal.sh", codexSignalCmd)
+	migrateHookCommand(hooks["PreToolUse"], "Bash", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
+	migrateHookCommand(hooks["PreToolUse"], "apply_patch", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
+	migrateHookCommand(hooks["PostToolUse"], ".*", "scripts/trackfw-attention-cleanup.sh", codexCleanupCmd)
+	migrateHookCommand(hooks["PostToolUse"], "Bash", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
+	migrateHookCommand(hooks["PostToolUse"], "apply_patch", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
+
 	hooks["PermissionRequest"] = mergeClaudeHookArray(
 		hooks["PermissionRequest"],
 		".*",
-		"scripts/trackfw-attention-signal.sh",
+		codexSignalCmd,
 	)
 
 	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
@@ -353,30 +402,30 @@ func InjectCodexHooks(cwd string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Bash",
-			"scripts/trackfw-credential-guard.sh",
+			codexGuardCmd,
 		)
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"apply_patch",
-			"scripts/trackfw-credential-guard.sh",
+			codexGuardCmd,
 		)
 	}
 
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		".*",
-		"scripts/trackfw-attention-cleanup.sh",
+		codexCleanupCmd,
 	)
 	if !skipCodexCG {
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Bash",
-			"scripts/trackfw-credential-guard.sh",
+			codexGuardCmd,
 		)
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"apply_patch",
-			"scripts/trackfw-credential-guard.sh",
+			codexGuardCmd,
 		)
 	}
 
@@ -451,10 +500,24 @@ func InjectGeminiHooks(cwd string) error {
 		hooks = make(map[string]interface{})
 	}
 
+	// Migration wiring (ROADMAP-2026-08-11 ML-1A): old==new is a functional no-op
+	// today, but proves the call point exists and runs before the merge below.
+	// The wave that changes the Gemini command strings (ML-4A) updates oldCommand
+	// here instead of adding this call from scratch — without it, the merge's
+	// exact-string dedup would append a duplicate alongside the stale entry.
+	migrateHookCommand(hooks["Notification"], "ToolPermission", "scripts/trackfw-attention-signal.sh", geminiSignalCmd)
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["BeforeTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["AfterTool"], "*", "scripts/trackfw-attention-cleanup.sh", geminiCleanupCmd)
+	migrateHookCommand(hooks["AfterTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["AfterTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+
 	hooks["Notification"] = mergeClaudeHookArray(
 		hooks["Notification"],
 		"ToolPermission",
-		"scripts/trackfw-attention-signal.sh",
+		geminiSignalCmd,
 	)
 
 	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
@@ -467,40 +530,40 @@ func InjectGeminiHooks(cwd string) error {
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"run_shell_command",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"read_file|read_many_files",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"write_file|replace",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 	}
 
 	hooks["AfterTool"] = mergeClaudeHookArray(
 		hooks["AfterTool"],
 		"*",
-		"scripts/trackfw-attention-cleanup.sh",
+		geminiCleanupCmd,
 	)
 	if !skipGeminiCG {
 		hooks["AfterTool"] = mergeClaudeHookArray(
 			hooks["AfterTool"],
 			"run_shell_command",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 		hooks["AfterTool"] = mergeClaudeHookArray(
 			hooks["AfterTool"],
 			"read_file|read_many_files",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 		hooks["AfterTool"] = mergeClaudeHookArray(
 			hooks["AfterTool"],
 			"write_file|replace",
-			"scripts/trackfw-credential-guard.sh",
+			geminiGuardCmd,
 		)
 	}
 
@@ -934,16 +997,23 @@ func removeKnownCommandFromLegacyTopLevelArray(root map[string]interface{}, key,
 	root[key] = kept
 }
 
-// migrateClaudeHookCommand rewrites a legacy hook command to a new one, in
-// place, for every entry matching the given matcher inside a Claude
-// PreToolUse/PostToolUse array. Used to fix
-// .claude/settings.json files already written by an older trackfw before a
-// command string changes — without this, re-running `trackfw init`/`update`
-// only ever appends the new (fixed) command alongside the stale one (merge
-// dedup in mergeClaudeHookArray keys on the exact command string, so it
-// can't tell "same guard, new path" from "a different hook"), leaving the
-// broken entry in place to keep firing and failing forever.
-func migrateClaudeHookCommand(existing interface{}, matcher, oldCommand, newCommand string) {
+// migrateHookCommand rewrites a legacy hook command to a new one, in place,
+// for every entry matching the given matcher inside a "matcher + hooks[].command"
+// shaped array — the format shared by Claude, Codex and Gemini's merge-based
+// settings files (PreToolUse/PostToolUse/PermissionRequest/Notification/
+// BeforeTool/AfterTool). Used to fix settings files already written by an
+// older trackfw before a command string changes — without this, re-running
+// `trackfw init`/`update` only ever appends the new (fixed) command alongside
+// the stale one (merge dedup in mergeClaudeHookArray keys on the exact
+// command string, so it can't tell "same guard, new path" from "a different
+// hook"), leaving the broken entry in place to keep firing and failing
+// forever. Originally written for Claude only (hence the doc comment history
+// below); generalized (ROADMAP-2026-08-11 ML-1A) so Codex/Gemini injectors
+// can call it too, ahead of the mechanism-specific string changes those CLIs'
+// waves make. Must always be called before the corresponding
+// mergeClaudeHookArray call for the same matcher, or the merge's exact-string
+// dedup will append a duplicate instead of rewriting in place.
+func migrateHookCommand(existing interface{}, matcher, oldCommand, newCommand string) {
 	arr, _ := existing.([]interface{})
 	for _, item := range arr {
 		obj, ok := item.(map[string]interface{})

@@ -10552,3 +10552,748 @@ ambiental corrigido acima — não tem prova negativa própria em `check-gates-f
 (`compare_json`), nunca o guard de vacuidade. Documentado em `docs/cli-parity.md` (seção "Parity
 gate" de `check-agent-hooks-parity.sh`) e aqui para que Zeus decida se abre um ML/REQ dedicado de
 hardening P4.
+
+---
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — resolução de caminho dos hooks: attention-signal/cleanup + os 5 CLIs não-Claude — INICIADO
+
+**Gatilho.** KG reportou erro em produção no projeto CMDB (`PreToolUse/PostToolUse:Bash hook error —
+/bin/sh: scripts/trackfw-credential-guard.sh: No such file or directory`). Diagnóstico concluído
+nesta sessão: **não é regressão**. O binário instalado é v6.7.1 (já contém o fix `0c66ecb`), mas
+`cmdb/.claude/settings.json` nunca foi reescrito porque `trackfw update` não rodou lá depois do
+upgrade. Verificação empírica decisiva: cópia do `settings.json` real do CMDB em tmpdir +
+`trackfw update` v6.7.1 → as 2 entradas de credential-guard migraram para
+`$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh`. Ação para KG: rodar `trackfw update` no
+CMDB. Sem mudança de código no trackfw para este sintoma.
+
+**Escopo desta sessão (o que KG pediu em seguida).** Abrir a governança para o bug **latente**
+deixado explicitamente fora de escopo por `0c66ecb`: `trackfw-attention-signal.sh` e
+`trackfw-attention-cleanup.sh` ainda são emitidos como caminho relativo puro
+(`internal/generators/agentfiles.go:211` e `:265`), e o wiring dos outros 5 CLIs
+(Codex/Gemini/Kiro/Copilot/Cursor) usa o mesmo padrão.
+
+**Achado que redimensiona a hipótese inicial.** Os hooks de attention casam **apenas** o matcher
+`AskUserQuestion` (agentfiles.go:210 e :264), não `Bash|Read|Write|Edit` como o credential-guard —
+por isso não aparecem no erro do screenshot do CMDB, apesar de estarem relativos lá também
+(linhas 17 e 51 do `settings.json`). O **mecanismo** de falha é idêntico (cwd do hook é dinâmico,
+confirmado em https://code.claude.com/docs/en/hooks: "Handlers run in the current directory"), mas a
+**frequência** é muito menor. Continua sendo bug real, não urgência.
+
+**Achado que muda a forma da solução.** A pesquisa preliminar indica que **não existe mecanismo
+uniforme**: o Codex CLI aparentemente não expõe env var de project-dir (contexto vai por stdin JSON,
+campo `cwd`), e as fontes sobre Cursor se contradizem (cwd = project root × caminho relativo ao
+`hooks.json`). Portanto **não é um port mecânico do `0c66ecb` para 6 CLIs**. Restrição adicional que
+elimina a saída fácil: `.claude/settings.json` é versionado no repo, então caminho absoluto
+resolvido na injeção não serve (quebra portabilidade entre máquinas/checkouts).
+
+**Consequência para o plano.** O roadmap nasce com uma wave de pesquisa bloqueante (verificação em
+doc primária, uma citação por célula) antes do ADR — o ADR documenta o mecanismo provado, não a
+hipótese. As waves de implementação são **sequenciais**, não paralelas: todo ML toca os mesmos 3
+arquivos (`internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,
+`pypi/trackfw/generators/hooks.py`).
+
+**Estado ao iniciar:** branch `main` limpa, nenhuma branch remota aberta
+(`git branch -r --no-merged origin/main` vazio). REQ + Roadmap ainda não criados.
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — governança aberta (REQ + Roadmap em backlog) — SEM BRANCH, SEM COMMIT
+
+**Entregue.**
+- `docs/req/REQ-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd-attention-signal-cleanup-e-os-5-clis-nao-claude.md`
+- `docs/roadmaps/backlog/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md`
+- `trackfw validate` → `✓ No violations found.`, exit 0.
+
+**Inventário que embasa o roadmap** (auditoria linha a linha dos 3 stacks, feita nesta sessão):
+`$CLAUDE_PROJECT_DIR/...` existe **só** nos 6 entries de credential-guard do Claude; **todo o resto**
+é caminho relativo puro — attention-signal/cleanup dos 6 CLIs (inclusive Claude) e todos os entries
+de credential-guard de Codex/Gemini/Kiro/Copilot/Cursor. Os hooks de escopo global
+(`trackfw update harness`) já são absolutos e estão corretos por design.
+
+**Gap crítico descoberto na auditoria (não estava na hipótese inicial).** O helper de migração
+in-place (`migrateClaudeHookCommand` Go:946 / Node:95 / Python:236) existe **apenas para o Claude**.
+Codex, Gemini e Cursor também são injectors *merge-based* e **não têm migração** — trocar a string
+deles sem migração faria o `trackfw update` acrescentar a entrada nova ao lado da antiga quebrada,
+que é exatamente o bug que a migração do Claude foi escrita para evitar. Por isso o roadmap tem uma
+Wave 1 dedicada a generalizar o helper, **antes** de qualquer troca de string. Kiro e Copilot são
+isentos: seus arquivos são regravados por inteiro.
+
+**Sequencialidade obrigatória (documentada no roadmap).** Nenhum ML é paralelizável: todos editam
+`internal/generators/agentfiles.go` + `npm/src/generators/hooks.js` +
+`pypi/trackfw/generators/hooks.py`, e `scripts/check-agent-hooks-parity.sh` faz diff **estrutural**
+do JSON parseado entre os 3 stacks — os 3 precisam mudar no mesmo commit ou o gate falha.
+
+**Armadilhas de edição mapeadas e escritas no roadmap** (para agente leve não errar): Go tem ~40
+literais inline; Node tem 4 constantes de módulo compartilhadas entre CLIs (437/438/439/449) —
+trocar a constante afeta todos os CLIs de uma vez; Python é misto; **Python/Cursor repete o literal
+no predicado de dedup E no append** (editar só o append desliga o dedup → duplicação a cada
+execução); Python/Copilot concentra em `guard_entry:630` espalhado por `dict(...)`;
+`npm/tests/generators.test.js:339–349` assevera por **índice de array**;
+`scripts/check-gates-falsify.sh:3530–3531` fixa **byte-a-byte** o bloco Kiro do Node.
+
+**Deliberadamente NÃO feito.** Roadmap permanece em `backlog/`; **nenhuma branch criada, nenhum
+commit** — KG pediu para abrir o roadmap, não para executá-lo. O ADR **não** foi escrito: ele é
+saída da Barreira B0, depois da Wave 0 de pesquisa, porque não há mecanismo uniforme entre os 6 CLIs
+(indício de que o Codex não expõe env var de project-dir; fontes sobre Cursor se contradizem) e
+caminho absoluto está vetado (arquivos de settings são versionados). Escrever o ADR agora seria
+documentar hipótese, não decisão provada.
+
+**Pendente de KG:** autorizar a execução (mover roadmap para `wip`, criar branch, despachar ML-0A
+para Prometeu).
+
+## Sessão 2026-08-11 — Prometeu (Tooling) — ML-0A: pesquisa de cwd/placeholders nos 6 CLIs — SEM COMMIT (Zeus audita)
+
+**Entregue.** `docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md` — tabela 6×4 (Claude
+Code, Codex CLI, Gemini CLI, Cursor, Kiro, GitHub Copilot CLI), cada célula preenchida com URL +
+citação literal, vereditos por CLI, seção de fontes consultadas. `git status --porcelain` confirma
+que só esse arquivo novo foi tocado.
+
+**Vereditos:** Claude Code `QUEBRADO` (mecanismo: `${CLAUDE_PROJECT_DIR}`) · Codex CLI `QUEBRADO`
+(sem env var de project-dir para hooks comuns; mecanismo recomendado pela própria doc é
+`$(git rev-parse --show-toplevel)` embutido no `command`) · Gemini CLI `QUEBRADO` (evidência primária
+indireta: `GEMINI_CWD` e `GEMINI_PROJECT_DIR` são duas env vars distintas documentadas, e 100% dos
+exemplos de hook script da doc usam `$GEMINI_PROJECT_DIR`, mas não há uma frase explícita única
+confirmando dinamismo do cwd — Zeus decide se isso basta para tratar como QUEBRADO ou se prefere
+INDETERMINADO cautelar) · Cursor `OK` (hooks de projeto rodam fixos na raiz do projeto, doc
+explicita que relativo já resolve contra a raiz) · Kiro `INDETERMINADO` (as 4 páginas oficiais de
+hooks nunca mencionam cwd de execução do comando nem placeholder de raiz de projeto) · GitHub
+Copilot CLI `OK` **e já corrigido no código atual** — achado que contraria a hipótese do roadmap.
+
+**Achado fora da hipótese inicial:** `InjectCopilotHooks` (`internal/generators/agentfiles.go:687`)
+já emite `"cwd": "."` em toda entrada de hook do Copilot, e a doc oficial confirma que esse campo é
+"relative to repository root" — ou seja, Copilot **não precisa de nenhuma Wave de correção**; ele já
+estava certo antes deste ML, por já usar o campo `cwd` nativo do fornecedor em vez de depender de
+caminho relativo puro no campo `command`/`bash`.
+
+**Pendente de Zeus:** ler a pesquisa, decidir o veredito final de Gemini (QUEBRADO vs INDETERMINADO
+cautelar), escrever o ADR da Barreira B0 com a string exata `<CMD_<CLI>>` por CLI, cancelar a(s)
+wave(s) de Copilot (já OK) e liberar as waves de emissão restantes.
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria do ML-0A + Barreira B0 (ADR) — CONCLUÍDA
+
+**Auditoria do ML-0A (Prometeu).** Todos os critérios de aceite verificados um a um. Escopo
+respeitado (`git status`: só `docs/pesquisa/` + working context). Não aceitei o relatório de palavra:
+verifiquei o achado central contra o código nos 3 stacks — `InjectCopilotHooks` **já** emite
+`"cwd": "."` em todas as entradas (`agentfiles.go:698–762`, `hooks.js:837–849`,
+`hooks.py:610/618/631`). Confirmado. Também confirmei contra a doc do Codex (que redireciona para
+`learn.chatgpt.com/docs/hooks`) que **todos** os exemplos oficiais de hook repo-local usam
+`$(git rev-parse --show-toplevel)` dentro do `command` — evidência de execução via shell, que era a
+pré-condição em risco.
+
+**Resultado que redimensiona o roadmap: de 6 CLIs para 3.**
+`QUEBRADO` → Claude, Codex, Gemini. `OK` → **Cursor** (doc: "Project hooks … Run from the project
+root") e **Copilot** (já correto, via campo nativo `cwd`). `INDETERMINADO` → **Kiro** (doc de hooks
+nunca menciona cwd de execução nem env var de raiz).
+
+**ADR aceito (Barreira B0):**
+`docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md`.
+Decide **mecanismo por CLI**, não uniformidade: Claude `$CLAUDE_PROJECT_DIR/…`, Gemini
+`$GEMINI_PROJECT_DIR/…`, Codex `"$(git rev-parse --show-toplevel)/…"`, e **nenhuma mudança** para
+Cursor/Copilot/Kiro. Regra geral derivada, em ordem de preferência: campo estruturado de cwd do
+fornecedor > placeholder/env var expandido em runtime > substituição de shell > não mexer.
+
+**Duas decisões que merecem registro por não serem óbvias:**
+
+1. **Gemini entra por argumento de assimetria, não por prova de dinamismo.** A doc do Gemini não tem
+   a frase explícita equivalente à do Claude. Mas `$GEMINI_PROJECT_DIR` resolve para a raiz **tanto
+   se o cwd derivar quanto se não derivar** — a mudança não pode piorar, e corrige se o bug existir.
+   Não é preciso provar que está quebrado; basta o mecanismo estar confirmado (e está: documentado,
+   com exemplos oficiais). O ADR registra essa justificativa explicitamente para que ninguém leia
+   depois como "a doc provou".
+2. **Codex é o único caso em que a assimetria NÃO vale** — e por isso é o único com critério de
+   aceite empírico bloqueante. Se o `command` não for executado via shell, o `$(...)` não expande e
+   o hook passa a falhar **sempre**, não só sob cwd derivado: regressão pior que o defeito atual. O
+   ML-3A exige executar a string emitida num shell, a partir de um subdiretório, antes de concluir.
+   Falhando isso, Codex reverte para "não alterado, registrado como não verificável" (default do
+   Kiro). Limitações aceitas e registradas no ADR: depende de git, e em submódulo/worktree o
+   `--show-toplevel` retorna a raiz errada.
+
+**Efeito colateral que aumenta o risco das constantes do Node.** Cursor e Copilot continuam usando
+`SIGNAL_CMD`/`CLEANUP_CMD`/`GUARD_CMD` (`npm/src/generators/hooks.js:437–439`). Como agora são CLIs
+**verificados corretos**, mutar a constante compartilhada deixou de ser "vazamento de escopo" e
+passou a ser **regressão em wiring comprovadamente bom**. A divisão em constantes por CLI virou
+requisito de não-regressão, com critério de aceite de diff byte-idêntico para Cursor/Copilot/Kiro.
+
+**Roadmap atualizado:** ML-0A ✅; Barreira B0 ✅ com a tabela de strings decididas; **ML-5A (Kiro),
+ML-6A (Copilot) e ML-7A (Cursor) ❌ cancelados** — mantidos no documento com o motivo, não apagados;
+ML-1A teve o escopo reduzido para **Codex e Gemini** (Cursor saiu da generalização da migração).
+Restam vivos: ML-1A → ML-2A → ML-3A → ML-4A → ML-8A/8B. `trackfw validate` sem violações.
+
+**Próximo:** despachar ML-1A (Apolo).
+
+## Sessão 2026-08-11 — Apolo (Backend) — ML-1A: generalizar migração para Codex/Gemini — INICIADA
+
+Executando ML-1A do roadmap `docs/roadmaps/wip/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md`
+na branch `fix/resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd` (criada por Zeus). Objetivo:
+generalizar `migrateClaudeHookCommand`/`_migrate_claude_hook_command` para os formatos merge-based de
+Codex e Gemini (Cursor saiu do escopo pela Barreira B0), ligar o helper aos injectors de Codex/Gemini
+com `old == new`, sem alterar nenhuma string de comando emitida.
+
+## Sessão 2026-08-11 — Apolo (Backend) — ML-1A: generalizar migração para Codex/Gemini — CONCLUÍDA
+
+**Feito, nos 3 stacks:**
+- Renomeado `migrateClaudeHookCommand`/`_migrate_claude_hook_command` para `migrateHookCommand`
+  (Go/Node) / `_migrate_hook_command` (Python), com doc comment generalizado (formato
+  `matcher` + `hooks[].command`, compartilhado por Claude/Codex/Gemini). Chamada do Claude
+  atualizada só de nome — comportamento idêntico.
+- Ligado o helper generalizado em `InjectCodexHooks`/`InjectGeminiHooks` (Go), `injectCodexHooks`/
+  `injectGeminiHooks` (Node), `inject_codex_hooks`/`inject_gemini_hooks` (Python), **antes** de
+  cada chamada de merge correspondente, um call por matcher trackfw-owned — 6 chamadas em Codex
+  (`.*`, `Bash`, `apply_patch` × Pre/Post conforme aplicável), 8 em Gemini (`ToolPermission`,
+  `run_shell_command`, `read_file|read_many_files`, `write_file|replace` × Before/After conforme
+  aplicável). Todas com `old == new` (a string hoje emitida) — sem mudança em nenhuma string.
+- Testes novos por formato × stack (6 testes): fixture com todo matcher trackfw-owned já contendo
+  o comando atual, roda o injector real uma vez, confirma exatamente 1 entrada por matcher e
+  exatamente 1 hook dentro — trava a ausência de duplicação.
+
+**Gap de critério de aceite, reportado a Zeus para decisão (não bloqueou a entrega):** o critério
+"teste invoca o injector real e assevera reescrita in-place de uma string ANTIGA" é
+estruturalmente impossível de cumprir nesta ML: a Ação 4 do próprio ML manda ligar o helper com
+`old == new`, o que torna a chamada de migração comportamentalmente inobservável (`mergeClaudeHookArray`
+já dedupa por string exata, então o teste passaria igual com a chamada de migração removida). Não
+inventei uma string "legada" fictícia — Codex/Gemini nunca emitiram nada além de
+`scripts/trackfw-*.sh` (única migração histórica deles foi estrutural: campos `timeout`/
+`statusMessage`/`name`, ML-2B/2C — nunca um literal de comando). Os testes escritos travam o
+contrato de não-op (nenhuma duplicata quando o fixture já reflete o estado atual) e viram testes de
+migração genuínos, sem nenhuma mudança estrutural, assim que ML-3A/4A trocarem o argumento
+`oldCommand`/`old_command` de cada chamada para a string legada real. Recomendo mover o critério
+"prova comportamental de reescrita" para ML-3A/4A.
+
+**Validação (evidência completa):**
+```
+go build ./... && go test ./...     → PASS (todos os pacotes)
+npm --prefix npm test                → 449 passed, 0 failed
+python -m pytest pypi/tests -q       → 995 passed, 8 subtests passed
+bash scripts/check-agent-hooks-parity.sh → 12/12 OK (claude/codex/gemini/copilot/cursor/kiro × go-vs-node/go-vs-py)
+trackfw validate                     → No violations found
+```
+`git diff` confirma que nenhuma string de comando emitida mudou — os únicos `-`/`+` em literais são
+o rename `migrateClaudeHookCommand`→`migrateHookCommand` nas chamadas do Claude (mesmos argumentos).
+`git status --porcelain` só lista arquivos da lista permitida (agentfiles.go + teste, hooks.js +
+teste, hooks.py + teste, working-context).
+
+**Nomes antigos do helper (`migrateClaudeHookCommand`/`_migrate_claude_hook_command`) ainda
+aparecem em `docs/agents-working-context.md` (entradas de sessão anteriores), no roadmap e na REQ**
+— fora da lista de arquivos permitida para este ML; não editados, sinalizado a Zeus.
+
+**Próximo:** Zeus audita e libera ML-2A (Claude: emitir `<CMD_CLAUDE>` para attention-signal/cleanup
++ migração real, incluindo a divisão obrigatória de `SIGNAL_CMD`/`CLEANUP_CMD` por CLI no Node).
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria do ML-1A — APROVADO com deferimento registrado
+
+**Gates re-executados por Zeus** (não aceitos do relatório): `go build ./... && go test ./...` verde ·
+`npm test` 0 fail · `pytest` 995 passed + 8 subtests · `check-agent-hooks-parity.sh` todos OK ·
+exit 0. Escopo respeitado: só os 6 arquivos permitidos + working context. `git diff` confirma que
+**nenhum literal de comando emitido mudou** — as únicas remoções são o rename do call-site do Claude
+(`migrateClaudeHookCommand` → `migrateHookCommand`) com argumentos idênticos.
+
+**Achado do agente que eu aceitei, e por quê.** Apolo reportou que o critério "teste invoca o
+injector real e prova reescrita in-place" é **estruturalmente impossível** neste ML: com `old == new`
+(que é o próprio mandato da Ação 2) a chamada é no-op funcional, então nenhum teste consegue
+distinguir "migração ligada" de "migração ausente". Ele provou empiricamente — desabilitou as 6
+chamadas em `InjectCodexHooks`, rodou a suíte, **tudo continuou verde inclusive o teste novo**, e
+restaurou. Ele **não** fabricou uma string legada falsa para forçar o teste a passar, o que teria
+sido a saída fácil e errada (Codex/Gemini nunca emitiram outra coisa senão `scripts/trackfw-*.sh`;
+a única deriva histórica deles foi estrutural — campos `timeout`/`statusMessage`/`name` —, nunca de
+literal de comando).
+
+**Consequência para a auditoria:** como nenhum teste pode provar o ponto de chamada hoje, eu
+verifiquei **por leitura de código**, nos 3 stacks, que a migração roda **antes** do merge — que é a
+ordem que importa (depois do merge, o dedup por string exata já teria acrescentado a duplicata).
+Confirmado: Go `agentfiles.go:346–351` (Codex) e `:466–473` (Gemini); Node `hooks.js:648–653` e
+`:710–717`; Python `hooks.py:388–412` e `:472–499` — em Python as chamadas usam a lista retornada
+pelo `setdefault` imediatamente anterior, sem `setdefault` novo (que seria deriva estrutural pega
+pelo gate de paridade).
+
+**Deferimento registrado no roadmap, não esquecido.** A prova comportamental virou critério
+**bloqueante** do ML-3A/ML-4A, e endurecido: não basta o teste passar — **remover a chamada de
+migração tem de fazer um teste falhar**. O agente deve comentar as chamadas, confirmar a falha,
+restaurar e reportar. Sem isso o teste não prova nada e o ML não conclui. Este é o padrão de prova
+negativa que o projeto já usa em `check-gates-falsify.sh`.
+
+**Próximo:** ML-2A (Apolo) — dividir as constantes compartilhadas do Node e trocar attention-signal/
+cleanup do Claude para `$CLAUDE_PROJECT_DIR/...`.
+
+## Sessão 2026-08-11 — Apolo (ML-2A: Claude Code — `$CLAUDE_PROJECT_DIR/...` para attention-signal/cleanup + migração) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd` (já criada pelo
+orquestrador — sem branch nova criada por este agente). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md`,
+Wave 2/ML-2A. ADR:
+`docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md`.
+
+**Passo 0 (obrigatório, incondicional) executado primeiro.** `npm/src/generators/hooks.js` tinha
+`SIGNAL_CMD`/`CLEANUP_CMD` compartilhadas por todos os 6 CLI injectors. Dividi em
+`SIGNAL_CMD_{CLAUDE,CODEX,GEMINI,KIRO,COPILOT,CURSOR}` e `CLEANUP_CMD_{...}` — todas inicialmente
+com o valor legado — e religuei cada injector (`injectClaudeHooks`, `injectCodexHooks`,
+`injectGeminiHooks`, `injectKiroHooks`, `injectCopilotHooks`, `injectCursorHooks`) à sua constante,
+antes de tocar em qualquer valor. `GUARD_CMD` foi deixada compartilhada de propósito — o Claude já a
+não usa (usa `GUARD_CMD_CLAUDE` desde o fix anterior) e nenhum outro CLI muda o guard neste ML.
+
+**Mudança por stack:**
+- **Go** (`internal/generators/agentfiles.go`): já eram literais inline por CLI (sem constante
+  compartilhada), então só a troca das 2 strings em `InjectClaudeHooks` (linhas do signal/cleanup) +
+  nova chamada `migrateHookCommand` para cada uma, antes do merge correspondente.
+- **Node** (`npm/src/generators/hooks.js`): Passo 0 acima, depois `SIGNAL_CMD_CLAUDE`/
+  `CLEANUP_CMD_CLAUDE` passaram a `$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-{signal,cleanup}.sh`;
+  adicionei `SIGNAL_CMD_CLAUDE_LEGACY`/`CLEANUP_CMD_CLAUDE_LEGACY` só como argumento `oldCommand` da
+  migração (mesmo padrão do `GUARD_CMD_CLAUDE`).
+- **Python** (`pypi/trackfw/generators/hooks.py`): já era literal inline (só `_GUARD_CMD_CLAUDE` era
+  constante); adicionei `_SIGNAL_CMD_CLAUDE`/`_CLEANUP_CMD_CLAUDE` com o novo valor + 2 chamadas
+  `_migrate_hook_command` antes dos merges correspondentes.
+
+**Migração:** as 2 novas chamadas de migração (uma por stack, 3 no total) reescrevem in-place
+qualquer entrada `AskUserQuestion` com o comando relativo legado, sempre **antes** do merge
+correspondente — mesma ordem e mesmo padrão já usado para o credential-guard.
+
+**Prova negativa (bloqueante, executada e reportada, não só assumida).** Nos 3 stacks: comentei as
+2 chamadas de migração novas (signal + cleanup), rodei a suíte, **os testes novos falharam**
+(Go: `TestInjectClaudeHooks_MigratesLegacyRelativeAttentionSignalCleanupCommand` — 4 assertions
+falhando, entrada antiga sobrevivendo + 2 hooks por matcher em vez de 1; Node: teste homônimo —
+`2 !== 1`; Python: teste homônimo — lista com o comando antigo E o novo lado a lado), depois restaurei
+e confirmei suíte verde de novo. Isso já era possível neste ML (diferente do ML-1A) porque aqui
+`oldCommand != newCommand` de verdade.
+
+**Não-regressão dos outros 5 CLIs — provada empiricamente, não só por leitura de código.** Compilei
+o binário Go do commit anterior (antes deste ML) e o binário com as mudanças deste ML, rodei
+`trackfw update` em dois projetos-fixture idênticos (mesmo `trackfw.yaml`, mesmos arquivos de
+detecção incl. `.github/copilot-instructions.md`) e comparei byte a byte: `.codex/hooks.json`,
+`.gemini/settings.json`, `.kiro/hooks/trackfw-attention.json`, `.github/hooks/trackfw-attention.json`
+e `.cursor/hooks.json` **idênticos** entre antes/depois. `.claude/settings.json` teve exatamente as 2
+linhas esperadas alteradas (`command` de signal e de cleanup); os 6 entries de credential-guard do
+Claude ficaram byte-idênticos (`diff` das linhas `credential-guard` vazio).
+
+**Testes atualizados/adicionados** (além dos arquivos listados no ML, precisei também tocar
+`internal/generators/credential_guard_dedup_test.go` e `internal/generators/hooks_test.go` no Go, e
+`npm/tests/credential_guard_dedup.test.js` no Node, e `pypi/tests/test_credential_guard_dedup.py` no
+Python — não estavam na lista explícita do prompt, mas quebravam com a troca do literal e testam a
+mesma função `InjectClaudeHooks`/`injectClaudeHooks`/`inject_claude_hooks`; sinalizando a Zeus para
+ciência, não decidi unilateralmente ampliar escopo além do necessário para manter a suíte verde):
+- Go: `agentfiles_test.go` (4 asserções de literal atualizadas + teste novo de migração),
+  `credential_guard_dedup_test.go` (2 asserções), `hooks_test.go` (1 asserção)
+- Node: `generators.test.js` (2 asserções por índice + teste novo de migração),
+  `credential_guard_dedup.test.js` (2 asserções)
+- Python: `test_generators_init.py` (teste novo de migração), `test_credential_guard_dedup.py`
+  (2 asserções)
+
+**Validação (evidência completa):**
+```
+go build ./... && go test ./...           → PASS (todos os pacotes)
+npm --prefix npm test                      → 450 passed, 0 failed
+python -m pytest pypi/tests -q             → 996 passed, 8 subtests passed
+bash scripts/check-agent-hooks-parity.sh   → 12/12 OK
+bash scripts/check-gates-falsify.sh        → 103/103 OK, 0 FAIL
+```
+`git grep` confirma que nenhum wiring do Claude ainda emite o caminho relativo puro para
+attention-signal/cleanup. `git status --porcelain` só lista os 10 arquivos de código/teste tocados
+(nenhum arquivo fora do escopo de `internal/generators/`, `npm/src/generators/`,
+`npm/tests/`, `pypi/trackfw/generators/`, `pypi/tests/`).
+
+**Nada contraria as premissas do prompt.** GUARD_CMD não foi dividida neste ML (não era necessário —
+o Claude não a usa e nenhum outro CLI mudou o guard); fica para ML-3A/4A decidirem se precisam
+dividi-la ao mexer no Codex/Gemini.
+
+**Próximo:** Zeus audita e libera ML-2A. Depois: ML-3A (Codex) — string com `$(...)` shell expansion,
+tem verificação empírica extra e bloqueante própria (rodar a string emitida a partir de um
+subdiretório e confirmar que o script roda).
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria do ML-2A — APROVADO
+
+**Prova negativa reproduzida por Zeus, não aceita do relatório.** Comentei as duas chamadas
+`migrateHookCommand(... "AskUserQuestion" ...)` em `internal/generators/agentfiles.go`, rodei
+`go test ./internal/generators/` → **FAIL**. Restaurei e confirmei o diff intacto. A migração dos
+scripts de attention está genuinamente coberta — não é teste decorativo. Este é o critério que o
+ML-1A não pôde satisfazer (lá `old == new` tornava a chamada invisível) e que passou a ser
+bloqueante justamente por isso.
+
+**Passo 0 (divisão das constantes do Node) executado corretamente e na ordem certa.** O diff mostra
+`SIGNAL_CMD_{CLAUDE,CODEX,GEMINI,KIRO,COPILOT,CURSOR}` e `CLEANUP_CMD_*` criadas **todas com o valor
+antigo**, e só as variantes `_CLAUDE` alteradas para `$CLAUDE_PROJECT_DIR/...`. `GUARD_CMD` ficou
+compartilhada de propósito (não é usada pelo Claude e não muda neste ML). Consequência auditada: os
+5 CLIs que a pesquisa provou corretos (Codex, Gemini, Kiro, Copilot, Cursor) **não** tiveram emissão
+alterada — o que era o risco de regressão real, já que Cursor e Copilot estão comprovadamente certos.
+
+**Arquivos fora da allowlist — reportados pelo agente, não escondidos.** 4 arquivos de teste extras
+(`internal/generators/credential_guard_dedup_test.go`, `internal/generators/hooks_test.go`,
+`npm/tests/credential_guard_dedup.test.js`, `pypi/tests/test_credential_guard_dedup.py`) asseveravam
+o literal antigo dos hooks de attention do Claude contra o **mesmo** `InjectClaudeHooks` e quebrariam
+inevitavelmente. Auditei o diff: são **exclusivamente** atualizações de literal em asserção, 7
+inserções / 7 remoções, nenhuma mudança de lógica de teste. Colateral legítimo — aprovado. O
+comportamento correto aqui foi reportar em vez de decidir sozinho.
+
+**Gates re-executados por Zeus:** `go test ./...` ok · `npm test` 450 pass / 0 fail · `pytest` 996
+passed + 8 subtests · `check-agent-hooks-parity.sh` todos OK · `check-gates-falsify.sh` **103/103**.
+
+**Próximo:** ML-3A (Codex) — o único ML com critério de aceite **empírico** bloqueante, porque é o
+único caso em que a correção pode piorar a situação (se o `command` não for executado via shell, o
+`$(git rev-parse --show-toplevel)` não expande e o hook passa a falhar sempre).
+
+## Sessão 2026-08-11 — Apolo (Backend) — ML-3A (Codex) concluído, aguardando auditoria de Zeus
+
+**Escopo:** wiring do Codex CLI (`.codex/hooks.json`) para emitir comandos resolvidos contra a raiz
+do repositório via `"$(git rev-parse --show-toplevel)/scripts/trackfw-<script>.sh"` (aspas literais
+em volta do `$(...)`, forma exigida pela Barreira B0/ADR), nos 6 comandos do Codex (attention-signal,
+attention-cleanup, credential-guard PreToolUse/PostToolUse × Bash/apply_patch), e migração in-place
+dos entries antigos, nos 3 stacks.
+
+**Passo 0 executado e confirmado antes de qualquer troca de string.** `GUARD_CMD`
+(`npm/src/generators/hooks.js`) era constante compartilhada por Codex/Gemini/Kiro/Copilot/Cursor
+(Claude já tinha `GUARD_CMD_CLAUDE` desde ML-2A). Dividi em `GUARD_CMD_{CODEX,GEMINI,KIRO,COPILOT,
+CURSOR}`, todas iniciadas com o valor antigo, religuei cada injector à sua constante, rodei
+`npm --prefix npm test` → **450/450 pass** antes de tocar em qualquer valor — prova de que nenhuma
+emissão mudou nesse passo. Só então movi `GUARD_CMD_CODEX` (e `SIGNAL_CMD_CODEX`/`CLEANUP_CMD_CODEX`)
+para a nova forma. Também precisei introduzir `GUARD_CMD_LEGACY` (Node) porque o `migrateHookCommand`
+do Claude usava o antigo `GUARD_CMD` compartilhado como literal do `oldCommand` — sem essa constante
+de compatibilidade a divisão quebrava os testes do Claude (13 falhas na primeira rodada; corrigido
+antes de prosseguir). Go e Python não tinham `GUARD_CMD` compartilhado entre CLIs (confirmado por
+`grep` — só `_GUARD_CMD_CLAUDE`/nenhuma constante é constante, resto inline) — Passo 0 não se aplicava
+a eles.
+
+**String emitida, conferida byte a byte no arquivo gerado real** (não só a asserção do teste):
+```
+"command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh\""
+```
+Confirmado gerando `.codex/hooks.json` de verdade via um `main.go` temporário chamando
+`generators.InjectCodexHooks` (removido antes de terminar, nunca commitado) — bate exatamente com a
+forma exigida no prompt.
+
+**Migração:** `oldCommand` dos 6 `migrateHookCommand`/`_migrate_hook_command` do Codex, nos 3 stacks,
+passou do valor `old == new` do ML-1A para o caminho relativo legado
+(`scripts/trackfw-<script>.sh`); `newCommand` para a string nova. Ordem preservada (migração antes do
+merge), sem chamadas novas.
+
+**🔴 Prova negativa da migração, reproduzida nos 3 stacks (não só um).** Comentei as 6 chamadas de
+migração do Codex em `agentfiles.go`, rodei `go test ./internal/generators/... -run
+TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate` → **FAIL** (6 assertions "expected
+exactly 1 hook, got 2"). Restaurei, verde de novo. Repeti o mesmo teste em Node (comentando as 6
+`migrateHookCommand` em `hooks.js`) → **FAIL** (`2 !== 1`). Repeti em Python (comentando as chamadas
+`_migrate_hook_command` em `hooks.py`) → **FAIL** (`2 != 1`). Os 3 stacks restaurados e verdes depois.
+
+**🔴 Prova do modelo de execução do Codex — a parte mais importante deste ML, executada de verdade,
+não simulada em bash.** Criei um repositório git fixture em `/tmp/codex-proof` (fora do repo,
+descartado ao final) com `scripts/trackfw-attention-signal.sh` (escreve marca em
+`/tmp/trackfw-codex-proof`) e `.codex/hooks.json` gerado por este ML (matcher `Bash`/PreToolUse, para
+disparo determinístico a cada chamada de shell, em vez de `PermissionRequest` que só dispara sob
+prompt de aprovação). Rodei `codex exec --sandbox danger-full-access
+--dangerously-bypass-hook-trust "Run the shell command: echo hello"` **a partir de um subdiretório**
+(`/tmp/codex-proof/sub`).
+
+- **Achado não previsto pelo ADR:** o Codex CLI **não carrega hooks de projeto para diretórios não
+  confiáveis** (`~/.codex/config.toml` tem uma tabela `[projects."<path>"] trust_level = "trusted"` —
+  `/tmp/codex-proof` não estava nela). Sem `--dangerously-bypass-hook-trust`, o hook de projeto
+  simplesmente não disparava (só os 3 hooks globais do usuário disparavam — confirmado contando
+  `hook: PreToolUse` no output: 2 antes, correspondendo a 2 dos 3 hooks globais + falha silenciosa;
+  não escrevi no `~/.codex/config.toml` do usuário real — a sandbox de permissão bloqueou a escrita,
+  corretamente, e eu não tentei contornar). Usei a flag de bypass (documentada,
+  `codex exec --help`) só para a prova.
+- **Resultado positivo:** com a string nova e a flag de bypass, `/tmp/trackfw-codex-proof` foi
+  escrito (`hook: PreToolUse` × 4 = 3 globais + 1 do projeto, todos `Completed`) — confirma que o
+  Codex executa o `command` via shell (o `$(git rev-parse --show-toplevel)` expandiu) e que a
+  resolução funciona **mesmo a partir de um subdiretório**.
+- **Controle negativo (não pedido explicitamente pelo prompt, mas necessário para a prova ter
+  força):** troquei o `.codex/hooks.json` de volta para o caminho relativo puro
+  (`scripts/trackfw-attention-signal.sh`, forma pré-ML-3A) e rodei de novo a partir do mesmo
+  subdiretório → `hook: PreToolUse Failed` (1 dos 4) e a marca **não** foi escrita — reproduz
+  exatamente a classe de bug que este ML corrige. Restaurei a string nova e confirmei sucesso mais
+  uma vez antes de descartar o fixture.
+- Fixture, log e marca (`/tmp/codex-proof`, `/tmp/codex-exec-out*.log`, `/tmp/trackfw-codex-proof`)
+  removidos ao final; nada commitado, nada persistido em `~/.codex/config.toml`.
+
+**Não-regressão dos 5 CLIs não tocados (Claude, Gemini, Kiro, Copilot, Cursor), nos 3 stacks.** Usei
+`git worktree` para gerar os 5 arquivos a partir do HEAD anterior (antes deste ML) e comparei com a
+mesma geração depois da mudança — `diff -rq` vazio em `.claude/`, `.gemini/`, `.kiro/`, `.github/`,
+`.cursor/`, nos 3 stacks (Go, Node, Python).
+
+**Arquivos tocados** (todos na allowlist do prompt): `internal/generators/agentfiles.go`,
+`internal/generators/agentfiles_test.go`, `internal/generators/credential_guard_dedup_test.go`,
+`npm/src/generators/hooks.js`, `npm/tests/generators.test.js`,
+`npm/tests/credential_guard_dedup.test.js`, `pypi/trackfw/generators/hooks.py`,
+`pypi/tests/test_generators_init.py`, `pypi/tests/test_credential_guard_dedup.py`. Nenhum arquivo de
+`update.go`/`update-harness.js`/`update_harness.py` tocado.
+
+**Validação (evidência completa):**
+```
+go build ./... && go test ./...           → PASS (todos os pacotes)
+npm --prefix npm test                      → 450 passed, 0 failed
+python -m pytest pypi/tests -q             → 996 passed, 8 subtests passed
+bash scripts/check-agent-hooks-parity.sh   → 12/12 OK
+bash scripts/check-gates-falsify.sh        → 103/103 OK, 0 FAIL
+```
+`git status --porcelain` só lista os 9 arquivos de código/teste listados acima (mais a mudança de
+Status do ML-3A no roadmap, feita por mim conforme protocolo de ML lifecycle).
+
+**Nada contraria as premissas do prompt**, exceto o achado da trust table do Codex acima — que não
+muda a decisão do ADR (o mecanismo de resolução continua correto), mas é uma pré-condição de uso real
+que vale documentar em `docs/cli-parity.md` no ML-8A: hooks de projeto do Codex só disparam se o
+diretório estiver marcado `trusted` em `~/.codex/config.toml` (mesma classe de restrição de
+"workspace trust" que outros CLIs têm).
+
+**Próximo:** Zeus audita ML-3A. Depois: ML-4A (Gemini) — sem verificação empírica bloqueante (a
+mudança é seguridade por construção, ver ADR).
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria do ML-3A — APROVADO
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` 450/0 · `pytest` 996 passed
++ 8 subtests · `check-agent-hooks-parity.sh` todos OK · `check-gates-falsify.sh` **103 OK / 0 FAIL**.
+
+**Sabotagem independente:** comentei as 6 chamadas `migrateHookCommand(... codex*)` em
+`agentfiles.go` → `go test ./internal/generators/` **FAIL**; restaurei → build OK. A migração do
+Codex está genuinamente coberta.
+
+**Forma da string verificada no artefato real, não no código.** Gerei um fixture com `$HOME` isolado
+e li o `.codex/hooks.json` produzido:
+`"command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh\""` — aspas
+literais presentes. Este era o erro que o gate de paridade **não** pegaria (os 3 stacks errariam
+idêntico e o diff estrutural passaria).
+
+**Passo 0 auditado:** `GUARD_CMD` dividida em `GUARD_CMD_{CODEX,GEMINI,KIRO,COPILOT,CURSOR}` e só a
+do Codex alterada. Conferido diretamente: `SIGNAL_CMD_*`, `CLEANUP_CMD_*` e `GUARD_CMD_*` de Gemini,
+Kiro, Copilot e Cursor continuam com o valor relativo antigo. Nenhuma regressão nos CLIs que o ML-0A
+provou corretos.
+
+**A prova que era o ponto do ML foi feita de verdade, com controle negativo.** O agente rodou o
+`codex-cli 0.147.0` real a partir de um subdiretório de um repo de fixture: com a string nova o
+script disparou (prova de execução via shell + expansão do `$(...)` + resolução correta da raiz);
+com o caminho relativo antigo, do mesmo subdiretório, falhou (`hook: PreToolUse Failed`, sem marca).
+O controle negativo **reproduz a classe de bug** que este roadmap corrige. A pré-condição de shell,
+único risco real desta decisão, deixou de ser inferência.
+
+**Achado não previsto pelo ADR — registrado em 3 lugares.** O Codex só carrega hooks de projeto se o
+projeto estiver marcado como *trusted* em `~/.codex/config.toml`; sem isso os hooks são ignorados
+**em silêncio**, e isso **não está** na página de hooks do fornecedor. Não altera a decisão (sem
+trust nenhum hook roda, nem antigo nem novo), mas altera o que o usuário precisa saber. Gravado
+como **Emenda 1 do ADR**, nota nova no vault
+(`vault/notes/codex-hooks-de-projeto-so-rodam-em-projeto-trusted-2026-08-11.md`, linkada no índice)
+e **critério novo do ML-8A** para entrar em `docs/cli-parity.md`, junto com a limitação de
+submódulo/worktree do `git rev-parse --show-toplevel`.
+
+**Comportamento correto do agente sob pressão, digno de registro:** o sandbox bloqueou a escrita no
+`~/.codex/config.toml` real e ele **não contornou** — usou a flag documentada
+`--dangerously-bypass-hook-trust` com `$HOME` isolado. Era exatamente o ponto onde "fazer o teste
+passar" teria contaminado a config real da máquina do usuário.
+
+**Próximo:** ML-4A (Gemini) — sem os riscos do Codex; vale o argumento de assimetria do ADR.
+
+---
+
+## Sessão 2026-08-11 — Apolo (ML-4A: Gemini CLI — `$GEMINI_PROJECT_DIR/...` + migração) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd` (já criada pelo
+orquestrador). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md`,
+Waves 3–7/ML-4A (último ML de código). ADR:
+`docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-mecanismo-especifico-do-fornecedor-sem-caminho-absoluto.md`.
+
+**Escopo:** os 8 comandos do Gemini nos 3 stacks (`InjectGeminiHooks`/`injectGeminiHooks`/
+`inject_gemini_hooks`, `.gemini/settings.json`) passaram de `scripts/trackfw-<script>.sh` para
+`$GEMINI_PROJECT_DIR/scripts/trackfw-<script>.sh` — sem aspas literais (diferente do Codex; Gemini
+usa env var expandida pelo próprio runtime, não substituição de shell).
+
+**Padrão seguido:** mesma disciplina do ML-3A (Codex) — constantes locais dedicadas por CLI em vez
+de mutar as compartilhadas `SIGNAL_CMD`/`CLEANUP_CMD`/`GUARD_CMD`. Go: `geminiSignalCmd`/
+`geminiCleanupCmd`/`geminiGuardCmd` (`internal/generators/agentfiles.go`, perto de `codexSignalCmd`
+et al.). Node: `SIGNAL_CMD_GEMINI`/`CLEANUP_CMD_GEMINI`/`GUARD_CMD_GEMINI` já existiam divididos
+desde ML-2A/ML-3A — só o **valor** mudou; acrescentei `SIGNAL_CMD_GEMINI_LEGACY`/
+`CLEANUP_CMD_GEMINI_LEGACY`/`GUARD_CMD_GEMINI_LEGACY` (literal relativo antigo) como argumento
+`oldCommand` das chamadas de migração. Python: `_SIGNAL_CMD_GEMINI`/`_CLEANUP_CMD_GEMINI`/
+`_GUARD_CMD_GEMINI` novas, perto de `_CODEX_ROOT`.
+
+**Migração:** as 8 chamadas `migrateHookCommand`/`_migrate_hook_command` já existiam com `old == new`
+(ML-1A) — só troquei `oldCommand` para o literal relativo antigo e `newCommand` para a string nova.
+Nenhuma chamada nova criada, ordem preservada (migração antes do merge).
+
+**🔴 Prova negativa da migração (bloqueante, feita e reportada):** comentei as 8 chamadas de
+migração do Gemini em `agentfiles.go`, rodei `go test ./internal/generators/... -run Gemini` →
+`TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate` **FAIL** (8 assertions "expected
+exactly 1 hook, got 2" — old e new coexistindo). Restaurei via cópia de backup → suite volta a
+verde. O teste prova genuinamente a migração, não é vácuo.
+
+**Não-regressão empírica (não só por leitura de código):** buildei dois binários (`git stash` das
+mudanças → binário "before"; `git stash pop` → binário "after"), rodei `trackfw discover --init`
+com ambos sobre fixtures git limpas idênticas com todos os 6 marcadores de CLI presentes, e
+diffei os 6 arquivos gerados. `.claude/settings.json`, `.codex/hooks.json`,
+`.kiro/hooks/trackfw-attention.json`, `.github/hooks/trackfw-attention.json`, `.cursor/hooks.json`
+→ **byte-idênticos**. Só `.gemini/settings.json` difere, e exatamente nos 8 pontos esperados
+(`scripts/trackfw-*.sh` → `$GEMINI_PROJECT_DIR/scripts/trackfw-*.sh`).
+
+**Gates:** `go build ./... && go test ./...` verde (todos os pacotes) · `npm --prefix npm test`
+450/450 · `python3 -m pytest pypi/tests -q` 996 passed + 8 subtests · `bash
+scripts/check-agent-hooks-parity.sh` — 12/12 OK, sem FAIL · `bash scripts/check-gates-falsify.sh` —
+103 OK / 0 FAIL (sem regressão frente à baseline pré-ML).
+
+**Testes atualizados** (só os que quebraram, conforme instruído): Go `agentfiles_test.go` (5 testes
+Gemini) + `credential_guard_dedup_test.go` (1 teste); Node `generators.test.js` (3 testes +
+constantes `GEMINI_*_CMD`) + `credential_guard_dedup.test.js` (1 teste); Python
+`test_generators_init.py` (3 testes + constantes `_GEMINI_*_CMD`) + `test_credential_guard_dedup.py`
+(1 teste).
+
+**Arquivos tocados:** `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`,
+`internal/generators/credential_guard_dedup_test.go`, `npm/src/generators/hooks.js`,
+`npm/tests/generators.test.js`, `npm/tests/credential_guard_dedup.test.js`,
+`pypi/trackfw/generators/hooks.py`, `pypi/tests/test_generators_init.py`,
+`pypi/tests/test_credential_guard_dedup.py`, `docs/agents-working-context.md`, e o campo Status do
+ML-4A no roadmap. Nenhum outro CLI, nenhum arquivo de escopo global tocado.
+
+**Próximo:** este era o último ML de código (Waves 1–7 concluídas). Segue Wave 8 —
+ML-8A (Hefesto, `docs/cli-parity.md`) e ML-8B (Hades, revisão de segurança).
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria do ML-4A — APROVADO · último ML de código
+
+**Artefato real conferido, não o código-fonte.** Gerei `.gemini/settings.json` com `$HOME` isolado e
+enumerei os comandos: **8/8** em `$GEMINI_PROJECT_DIR/scripts/trackfw-*.sh`, nos matchers corretos
+(`Notification/ToolPermission`, `AfterTool/*`, e os 6 de credential-guard em `BeforeTool`/`AfterTool`
+com `run_shell_command`, `read_file|read_many_files`, `write_file|replace`).
+
+**Sabotagem independente:** comentei as 8 chamadas `migrateHookCommand(... gemini*)` em
+`agentfiles.go` → `go test ./internal/generators/` **FAIL**; restaurado → build OK.
+
+**Gates re-executados por Zeus:** `go test ./...` sem FAIL · `npm test` 450/0 · `pytest` 996 passed
++ 8 subtests · `check-agent-hooks-parity.sh` todos OK · `check-gates-falsify.sh` **103 OK / 0 FAIL**.
+
+**Nota de projeto:** não houve critério de prova empírica com o Gemini CLI real, e isso foi
+deliberado — vale o argumento de assimetria do ADR (`$GEMINI_PROJECT_DIR` resolve para a raiz com ou
+sem deriva de cwd, logo a mudança não pode piorar). Diferente do Codex, onde uma pré-condição errada
+tornaria o hook pior que antes. Deixei isso explícito no prompt do ML para o agente não inventar um
+teste com o Gemini CLI só para "igualar o rigor do ML-3A".
+
+**Estado do roadmap:** todos os MLs de código concluídos (ML-1A, 2A, 3A, 4A); ML-5A/6A/7A cancelados
+na Barreira B0. Resta a **Wave 8**: ML-8A (Hefesto — `docs/cli-parity.md` + `make quality`) e ML-8B
+(Hades — revisão de segurança). Os dois **rodam em paralelo**: tocam arquivos disjuntos (ML-8A só
+`docs/cli-parity.md`; ML-8B não modifica arquivo nenhum). É o único paralelismo possível neste
+roadmap.
+
+## Sessão 2026-08-11/12 — Hades (Segurança) — ML-8B — revisão de segurança do wiring de hooks alterado
+
+**Início.** Escopo: revisar `internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,
+`pypi/trackfw/generators/hooks.py` (commits `ac766d1`, `c6991b4`, `311a19c`, `cbe402a`) contra as 5
+perguntas do prompt de Zeus — injeção via shell no Codex, expansão de env var em Claude/Gemini,
+falha silenciosa do credential-guard nos 6 CLIs, migração in-place, supply chain. Li o roadmap, o
+ADR (inclusive Emenda 1), a pesquisa do ML-0A, a nota do vault sobre Codex *trusted*, e o `git diff
+main...HEAD` dos 3 stacks + testes de dedup. Nenhum arquivo de código será modificado por mim.
+
+## Sessão 2026-08-11/12 — Hefesto (Qualidade) — ML-8A — documentação de paridade + gate final
+
+**Início.** Escopo: só `docs/cli-parity.md` (mais este arquivo e o campo `**Status:**` do ML-8A do
+roadmap). Sem tocar `internal/`, `npm/src/`, `pypi/trackfw/` ou testes. Li o roadmap, o ADR
+(inclusive Emenda 1), `docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md`, a nota do vault
+sobre Codex *trusted*, e conferi as strings reais em `internal/generators/agentfiles.go`
+(`$CLAUDE_PROJECT_DIR`, `codexRoot`/`codexSignalCmd`/etc., `geminiSignalCmd`/etc.) contra o que o ADR
+declara — bateram exatamente.
+
+**Fim.** Adicionada a `docs/cli-parity.md` a seção "Mecanismo de resolução de caminho dos hooks de
+projeto, por CLI", entre "Agent hooks por CLI (…) — paridade estrutural (ML-3A)" e "Hooks GLOBAIS de
+credential-guard (…)". Conteúdo: (1) tabela dos 6 CLIs (Claude, Codex, Gemini, Cursor, Copilot, Kiro)
+— mecanismo, string emitida, migração in-place sim/não e por quê, referência ao ADR; (2) as duas
+pré-condições do fix do Codex descobertas empiricamente no ML-3A (projeto `trusted` em
+`~/.codex/config.toml`, e `git rev-parse --show-toplevel` retornando a raiz de submódulo/worktree);
+(3) Kiro registrado como "mecanismo de resolução não verificável em doc primária — mantido relativo",
+data 2026-08-11, as 4 URLs de `kiro.dev/docs/hooks/*` consultadas; (4) nota explícita de que a
+heterogeneidade de 4 mecanismos diferentes é intencional (ordem de preferência: campo estruturado de
+cwd > placeholder/env var > substituição de shell > não mexer), para não ser "corrigida" por engano
+no futuro. Nenhuma divergência encontrada entre o ADR e o código real — as strings, os pontos de
+migração (`agentfiles.go:346–351`/`466–473`) e os CLIs não tocados (Cursor/Copilot/Kiro, confirmado
+por `grep` que só `InjectKiroHooks`/`InjectCopilotHooks`/`InjectCursorHooks` existem sem chamada de
+migração nova) conferem exatamente com o ADR.
+
+`make quality` → exit 0, 0 `FAIL` (log completo: 1894 linhas, `scripts/check-agent-hooks-parity.sh`
+e os 103 cenários de `check-gates-falsify.sh`, inclusive os 44/45 específicos deste wiring, todos
+`OK`). `git status --porcelain` confirma `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados
+por este ML — só `docs/cli-parity.md` (conteúdo) e `docs/agents-working-context.md` (este registro)
+mudaram.
+
+**Correções pós-autorrevisão (mesma sessão, antes do handoff):** (1) a linha do Claude na tabela dos
+6 CLIs virou **duas linhas** — credential-guard (`0c66ecb`, migração pelo matcher da ferramenta,
+`agentfiles.go:238–239`) e attention-signal/cleanup (ML-2A deste roadmap, migração pelo matcher
+`AskUserQuestion`, `:213`/`:269`) — são duas chamadas de migração distintas, não uma; (2) reescrito o
+parágrafo introdutório da seção para não generalizar a semântica de cwd do Codex (cwd **da sessão**)
+para o Claude (cwd que **acompanha os `cd`** do agente) e para não afirmar "3 CLIs provados quebrados"
+— só Claude (produção) e Codex (empírico, ML-3A) foram provados; Gemini foi alterado pelo argumento
+de "mudança segura por construção" do ADR, sem prova de defeito. Ambos os pontos vieram de conferir a
+prosa contra o ADR literalmente, não só contra o código.
+
+`trackfw validate` rodado na árvore final (com as 3 edições deste ML já aplicadas) → `✓ No violations
+found.`, exit 0. `make quality` re-rodado após a correção de conteúdo (só prosa em `cli-parity.md`,
+nenhum arquivo que os gates parseiam) — exit 0, 0 `FAIL` confirmado antes também.
+
+ML-8A reportado como concluído a Zeus para auditoria; commit e push ficam com Zeus
+(`trackfw_architect`).
+
+**Fim (2026-08-12).** Parecer entregue em `docs/seguranca/2026-08-11-revisao-hooks-cwd.md`. Vereditos:
+Q1 (injeção shell Codex) `OK` — resultado de `$(...)` é dado, nunca re-escaneado por limites de
+aspas/metacaracteres; ancorado na prova empírica real do ML-3A. Q2 (expansão de var Claude/Gemini)
+`OK` — variável é do processo do CLI, nunca do repo; degradação sob indefinida é sempre
+fail-to-run (`/scripts/...`), nunca fail-to-wrong-script. Q3 (falha silenciosa do guard, 6 CLIs)
+`RISCO ACEITÁVEL` — Claude/Cursor/Copilot sem mudança de risco; Codex tem 2 casos de falha novos e
+estreitos (não-git, já documentado em cli-parity.md; `GIT_DIR`/`GIT_WORK_TREE`, novo registro
+sugerido); Gemini é sideways move seguro por construção; Kiro mantém dívida pré-existente já aceita
+no ADR. Semântica fail-aberto/fail-fechado de hook por CLI **não é alterada por este roadmap e
+permanece não verificada** — registrada como follow-up, não como bloqueio (nenhuma fonte consultada
+responde a isso; não inferido). Q4 (migração in-place) `RISCO ACEITÁVEL` — mesmo modelo de match
+por igualdade exata já usado desde antes deste roadmap; assimetria `skip_cg` no Codex é benigna
+(redundância, não enfraquecimento). Q5 (supply chain) `OK`. **Nenhum achado bloqueia o PR — nenhum
+controle foi enfraquecido em relação à `main`.** `docs/cli-parity.md` aparece sujo por ser o
+artefato paralelo do ML-8A (Hefesto), não deste ML. Nenhum arquivo de código tocado por mim.
+
+---
+
+## Sessão 2026-08-12 — Hefesto (ML-8C: documentar `GIT_DIR`/`GIT_WORK_TREE` no caso 2 de
+`docs/cli-parity.md`) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd` (já criada, sem branch nova).
+
+Escopo: só `docs/cli-parity.md`, item 2 da subseção "Pré-condições do fix do Codex, descobertas
+empiricamente" (linha ~2569). O item 2 (`git rev-parse --show-toplevel`) agora cobre os três casos que
+produzem o mesmo efeito prático — hook resolve para raiz errada e `trackfw-credential-guard.sh` pode
+não executar em silêncio: (a) fora de repositório git, (b) dentro de submódulo/worktree, (c)
+`GIT_DIR`/`GIT_WORK_TREE` definidas no ambiente do processo (caso novo, identificado pela revisão de
+segurança de Hades em `docs/seguranca/2026-08-11-revisao-hooks-cwd.md`, Q3 — risco aceitável, sem
+regressão contra a `main`, recomendação de apenas registrar o caso junto dos outros dois). Nenhum dos
+três casos é corrigido por este roadmap.
+
+`git status --porcelain` confere com a baseline capturada antes do edit: só `docs/cli-parity.md` e
+este arquivo mudaram por mim; `docs/roadmaps/wip/ROADMAP-2026-08-11-...md` e `docs/seguranca/` já
+estavam sujos por MLs anteriores e não foram tocados. `internal/`, `npm/src/`, `pypi/trackfw/` e
+testes intocados.
+
+`make quality` → exit 0, 0 `FAIL` (103 cenários de falsificação, todos `OK`).
+
+ML-8C reportado como concluído a Zeus para auditoria; commit e push ficam com Zeus
+(`trackfw_architect`).
+
+## Sessão 2026-08-11 — Zeus (Arquiteto) — auditoria da Wave 8 + fechamento do roadmap
+
+**ML-8A (Hefesto) — aprovado.** Li a seção nova de `docs/cli-parity.md`. Ela está **mais correta do
+que o pedido** num ponto que importa: não achatou os 3 CLIs alterados numa narrativa única. Registra
+que apenas **dois** foram provados quebrados (Claude, Codex) e que o **Gemini foi alterado por
+"mudança segura por construção"**, não por prova de defeito. Se isso virasse "os 3 estavam
+quebrados", a justificativa real do Gemini se perderia e ninguém saberia reavaliar a decisão depois.
+Ele também dividiu o Claude em **duas linhas** (credential-guard × attention) porque são call sites
+de migração distintos, com matchers distintos — detalhe que eu não havia especificado. Reportou
+"nenhuma divergência ADR × código", verificada lendo `agentfiles.go`, não só citando o ADR.
+
+**ML-8B (Hades) — aprovado, nada bloqueia o PR.** Vereditos: Q1 (injeção via `$(...)` no Codex) `OK`
+— a saída do `git rev-parse` entra como dado opaco, o shell fixa as fronteiras de aspas a partir do
+texto estático **antes** da expansão, então nunca é re-escaneada; Q2 (env vars) `OK` — definidas pelo
+processo do CLI, nunca por conteúdo do repo, e a degradação com variável indefinida é
+**fail-to-run**, não fail-to-wrong-script; Q3 risco aceitável **sem regressão contra a `main`**; Q4/Q5
+`OK`. Escopo respeitado: nenhum arquivo de código tocado.
+
+**ML-8C (Hefesto) — microlote corretivo despachado pela barreira.** Achado Q3: `GIT_DIR`/
+`GIT_WORK_TREE` redirecionam a resolução de `git rev-parse --show-toplevel`, terceiro caso da mesma
+família dos dois já documentados. Documentado com a consequência explícita ("o credential-guard pode
+deixar de executar em silêncio") e a origem citada. Despachei ao Hefesto em vez de editar eu mesmo —
+o arquivo é entregável dele neste roadmap e edição concorrente daria conflito.
+
+**Verificações finais na árvore fechada** (ver seção dedicada no roadmap): idempotência com 3
+execuções de `trackfw update` (4 arquivos byte-idênticos) e integridade dos 6 entries de
+credential-guard do Claude. A idempotência era o critério consolidado que **nenhuma sabotagem
+por-ML conseguiria revelar** — as sabotagens provam antigo→novo, idempotência é novo→novo.
+
+**Gates finais, executados por Zeus:** `make quality` → **exit 0, 103/103 cenários**;
+`trackfw validate` → sem violações.
+
+**Follow-ups abertos como REQ em `backlog/`**, para não evaporarem no fechamento: semântica
+fail-open × fail-closed por CLI (achado Q3 — o credential-guard é controle de negação e há 3
+caminhos documentados terminando em "guard não roda em silêncio"), e prova negativa dedicada para o
+guard de vacuidade `credential-guard-present` (carregado por Hefesto em duas sessões sem
+endereçamento).
+
+**Estado:** roadmap pronto para `done`. **PR não aberto** — KG não pediu.

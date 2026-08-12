@@ -116,3 +116,5 @@
 2026-08-08 11:52  ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md  wip → done
 2026-08-08 21:48  ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md  backlog → wip
 2026-08-08 23:02  ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md  wip → done
+2026-08-11 20:04  ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md  backlog → wip
+2026-08-11 22:09  ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md  wip → done

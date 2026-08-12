@@ -336,7 +336,7 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   assert.equal(data.hooks.PreToolUse.length, 5)
   assert.equal(data.hooks.PreToolUse[0].matcher, 'UserTool')
   assert.equal(data.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
-  assert.equal(data.hooks.PreToolUse[1].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.PreToolUse[1].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.PreToolUse[2].matcher, 'Bash')
   assert.equal(data.hooks.PreToolUse[2].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PreToolUse[3].matcher, 'Read')
@@ -344,7 +344,7 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   assert.equal(data.hooks.PreToolUse[4].matcher, 'Write|Edit')
   assert.equal(data.hooks.PreToolUse[4].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[0].matcher, 'AskUserQuestion')
-  assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.PostToolUse[0].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh')
   assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
   assert.equal(data.hooks.PostToolUse[1].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PostToolUse[2].matcher, 'Read')
@@ -400,6 +400,55 @@ test('injectClaudeHooks migrates a legacy relative-path credential-guard command
   assert.equal(writeEditEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
 })
 
+// ROADMAP-2026-08-11 ML-2A: same cwd-resolution bug class as the credential-guard fix above,
+// applied to attention-signal/cleanup -- confirms re-injecting over a settings.json written by an
+// older trackfw rewrites the legacy relative-path command in place instead of appending a second,
+// still-cwd-fragile entry alongside the fixed one.
+test('injectClaudeHooks migrates legacy relative-path attention-signal/cleanup commands in place', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-claude-hooks-migrate-attention-'))
+  const settingsPath = path.join(tmpDir, '.claude', 'settings.json')
+
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    hooks: {
+      PreToolUse: [
+        { matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: 'scripts/trackfw-attention-signal.sh' }] }
+      ],
+      PostToolUse: [
+        { matcher: 'AskUserQuestion', hooks: [{ type: 'command', command: 'scripts/trackfw-attention-cleanup.sh' }] }
+      ]
+    }
+  }, null, 2))
+
+  injectClaudeHooks(tmpDir)
+  const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+
+  const signalEntry = data.hooks.PreToolUse.find(e => e.matcher === 'AskUserQuestion')
+  const cleanupEntry = data.hooks.PostToolUse.find(e => e.matcher === 'AskUserQuestion')
+
+  assert.equal(signalEntry.hooks.length, 1, 'expected exactly 1 hook after migration, not old+new side by side')
+  assert.equal(signalEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh')
+  assert.equal(cleanupEntry.hooks.length, 1)
+  assert.equal(cleanupEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh')
+})
+
+// ROADMAP-2026-08-11 ML-3A: Codex has no project-root env var, so the command is wrapped in
+// literal double quotes around `$(git rev-parse --show-toplevel)` per ADR-2026-08-11 -- matches
+// CODEX_ROOT/codexSignalCmd/codexGuardCmd/codexCleanupCmd in src/generators/hooks.js and
+// internal/generators/agentfiles.go.
+const CODEX_SIGNAL_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh"'
+const CODEX_CLEANUP_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-cleanup.sh"'
+const CODEX_GUARD_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"'
+
+// ROADMAP-2026-08-11 ML-4A: Gemini documents and uses $GEMINI_PROJECT_DIR in 100% of its
+// official hook command examples (ADR-2026-08-11, "Gemini CLI — alterar, por argumento de
+// assimetria") -- matches SIGNAL_CMD_GEMINI/CLEANUP_CMD_GEMINI/GUARD_CMD_GEMINI in
+// src/generators/hooks.js and geminiSignalCmd/geminiCleanupCmd/geminiGuardCmd in
+// internal/generators/agentfiles.go.
+const GEMINI_SIGNAL_CMD = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
+const GEMINI_CLEANUP_CMD = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
+const GEMINI_GUARD_CMD = '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
+
 test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-codex-hooks-'))
   const hooksPath = path.join(tmpDir, '.codex', 'hooks.json')
@@ -407,17 +456,17 @@ test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () =>
   injectCodexHooks(tmpDir)
   let data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
   assert.equal(data.hooks.PermissionRequest[0].matcher, '.*')
-  assert.equal(data.hooks.PermissionRequest[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.PermissionRequest[0].hooks[0].command, CODEX_SIGNAL_CMD)
   assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
-  assert.equal(data.hooks.PreToolUse[0].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PreToolUse[0].hooks[0].command, CODEX_GUARD_CMD)
   // ADR-2026-08-06 emenda 7: Codex has no dedicated read matcher (documented limitation) --
   // only apply_patch (write/edit) is added alongside Bash.
   assert.equal(data.hooks.PreToolUse[1].matcher, 'apply_patch')
-  assert.equal(data.hooks.PreToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PreToolUse[1].hooks[0].command, CODEX_GUARD_CMD)
   assert.equal(data.hooks.PostToolUse[0].matcher, '.*')
-  assert.equal(data.hooks.PostToolUse[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.PostToolUse[0].hooks[0].command, CODEX_CLEANUP_CMD)
   assert.equal(data.hooks.PostToolUse[1].matcher, 'Bash')
-  assert.equal(data.hooks.PostToolUse[1].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PostToolUse[1].hooks[0].command, CODEX_GUARD_CMD)
   assert.equal(data.hooks.PostToolUse[2].matcher, 'apply_patch')
 
   // Idempotência
@@ -452,8 +501,52 @@ test('injectCodexHooks preserves pre-existing PreToolUse Bash entry (merge, not 
   assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
   const commands = data.hooks.PreToolUse[0].hooks.map(h => h.command)
   assert.ok(commands.includes('scripts/other.sh'), 'existing Bash hook lost during merge')
-  assert.ok(commands.includes('scripts/trackfw-credential-guard.sh'), 'credential-guard hook missing after merge')
+  assert.ok(commands.includes(CODEX_GUARD_CMD), 'credential-guard hook missing after merge')
   assert.equal(data.hooks.PreToolUse[1].matcher, 'apply_patch')
+})
+
+// ML-1A migration wiring, now exercised as a genuine migration (ROADMAP-2026-08-11 ML-3A):
+// migrateHookCommand is called before mergeClaudeHookArray for every trackfw-owned matcher in
+// injectCodexHooks. This fixture pre-populates every trackfw-owned matcher with the pre-ML-3A
+// relative-path command, exactly as an older trackfw run would have left it, and asserts the
+// injector rewrites each entry to the new $(git rev-parse --show-toplevel)-pinned command in place
+// instead of appending a second, still-cwd-fragile entry alongside it.
+test('injectCodexHooks migration wiring rewrites in place, does not duplicate', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-codex-hooks-migrate-'))
+  const hooksPath = path.join(tmpDir, '.codex', 'hooks.json')
+
+  const mk = (matcher, command) => ({ matcher, hooks: [{ type: 'command', command }] })
+  fs.mkdirSync(path.dirname(hooksPath), { recursive: true })
+  fs.writeFileSync(hooksPath, JSON.stringify({
+    hooks: {
+      PermissionRequest: [mk('.*', 'scripts/trackfw-attention-signal.sh')],
+      PreToolUse: [
+        mk('Bash', 'scripts/trackfw-credential-guard.sh'),
+        mk('apply_patch', 'scripts/trackfw-credential-guard.sh'),
+      ],
+      PostToolUse: [
+        mk('.*', 'scripts/trackfw-attention-cleanup.sh'),
+        mk('Bash', 'scripts/trackfw-credential-guard.sh'),
+        mk('apply_patch', 'scripts/trackfw-credential-guard.sh'),
+      ],
+    },
+  }, null, 2))
+
+  injectCodexHooks(tmpDir)
+
+  const data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
+  const checkOne = (event, matcher, command) => {
+    const entries = data.hooks[event].filter(e => e.matcher === matcher)
+    assert.equal(entries.length, 1, `${event}[${matcher}]: expected exactly 1 matcher entry (no duplicate)`)
+    assert.equal(entries[0].hooks.length, 1, `${event}[${matcher}]: expected exactly 1 hook`)
+    assert.equal(entries[0].hooks[0].command, command, `${event}[${matcher}]: unexpected command`)
+  }
+  checkOne('PermissionRequest', '.*', CODEX_SIGNAL_CMD)
+  checkOne('PreToolUse', 'Bash', CODEX_GUARD_CMD)
+  checkOne('PreToolUse', 'apply_patch', CODEX_GUARD_CMD)
+  checkOne('PostToolUse', '.*', CODEX_CLEANUP_CMD)
+  checkOne('PostToolUse', 'Bash', CODEX_GUARD_CMD)
+  checkOne('PostToolUse', 'apply_patch', CODEX_GUARD_CMD)
 })
 
 test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', () => {
@@ -463,20 +556,20 @@ test('injectGeminiHooks creates and merges .gemini/settings.json idempotently', 
   injectGeminiHooks(tmpDir)
   let data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
   assert.equal(data.hooks.Notification[0].matcher, 'ToolPermission')
-  assert.equal(data.hooks.Notification[0].hooks[0].command, 'scripts/trackfw-attention-signal.sh')
+  assert.equal(data.hooks.Notification[0].hooks[0].command, GEMINI_SIGNAL_CMD)
   assert.equal(data.hooks.AfterTool[0].matcher, '*')
-  assert.equal(data.hooks.AfterTool[0].hooks[0].command, 'scripts/trackfw-attention-cleanup.sh')
+  assert.equal(data.hooks.AfterTool[0].hooks[0].command, GEMINI_CLEANUP_CMD)
   assert.equal(data.hooks.BeforeTool[0].matcher, 'run_shell_command')
-  assert.equal(data.hooks.BeforeTool[0].hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.BeforeTool[0].hooks[0].command, GEMINI_GUARD_CMD)
   const afterToolGuard = data.hooks.AfterTool.find(e => e.matcher === 'run_shell_command')
   assert.ok(afterToolGuard, 'AfterTool[run_shell_command] credential-guard entry missing')
-  assert.equal(afterToolGuard.hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(afterToolGuard.hooks[0].command, GEMINI_GUARD_CMD)
 
   // ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): read_file|read_many_files and
   // write_file|replace credential-guard entries alongside run_shell_command.
   const beforeToolRead = data.hooks.BeforeTool.find(e => e.matcher === 'read_file|read_many_files')
   assert.ok(beforeToolRead, 'BeforeTool[read_file|read_many_files] credential-guard entry missing')
-  assert.equal(beforeToolRead.hooks[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(beforeToolRead.hooks[0].command, GEMINI_GUARD_CMD)
   const beforeToolWrite = data.hooks.BeforeTool.find(e => e.matcher === 'write_file|replace')
   assert.ok(beforeToolWrite, 'BeforeTool[write_file|replace] credential-guard entry missing')
   const afterToolRead = data.hooks.AfterTool.find(e => e.matcher === 'read_file|read_many_files')
@@ -515,7 +608,53 @@ test('injectGeminiHooks preserves an existing BeforeTool[run_shell_command] entr
   assert.equal(data.hooks.BeforeTool.length, 3)
   const commands = data.hooks.BeforeTool[0].hooks.map(h => h.command)
   assert.ok(commands.includes('scripts/other.sh'), 'existing BeforeTool hook lost during merge')
-  assert.ok(commands.includes('scripts/trackfw-credential-guard.sh'), 'credential-guard hook missing after merge')
+  assert.ok(commands.includes(GEMINI_GUARD_CMD), 'credential-guard hook missing after merge')
+})
+
+// ML-1A migration wiring, now exercised as a genuine migration (ROADMAP-2026-08-11 ML-4A):
+// this fixture is an old settings.json written by a pre-ML-4A trackfw (relative-path commands),
+// and injectGeminiHooks must rewrite each entry in place to $GEMINI_PROJECT_DIR/... form rather
+// than duplicating it.
+test('injectGeminiHooks migration wiring rewrites in place, does not duplicate', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gemini-hooks-migrate-'))
+  const settingsPath = path.join(tmpDir, '.gemini', 'settings.json')
+
+  const mk = (matcher, command) => ({ matcher, hooks: [{ type: 'command', command }] })
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(settingsPath, JSON.stringify({
+    hooks: {
+      Notification: [mk('ToolPermission', 'scripts/trackfw-attention-signal.sh')],
+      BeforeTool: [
+        mk('run_shell_command', 'scripts/trackfw-credential-guard.sh'),
+        mk('read_file|read_many_files', 'scripts/trackfw-credential-guard.sh'),
+        mk('write_file|replace', 'scripts/trackfw-credential-guard.sh'),
+      ],
+      AfterTool: [
+        mk('*', 'scripts/trackfw-attention-cleanup.sh'),
+        mk('run_shell_command', 'scripts/trackfw-credential-guard.sh'),
+        mk('read_file|read_many_files', 'scripts/trackfw-credential-guard.sh'),
+        mk('write_file|replace', 'scripts/trackfw-credential-guard.sh'),
+      ],
+    },
+  }, null, 2))
+
+  injectGeminiHooks(tmpDir)
+
+  const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+  const checkOne = (event, matcher, command) => {
+    const entries = data.hooks[event].filter(e => e.matcher === matcher)
+    assert.equal(entries.length, 1, `${event}[${matcher}]: expected exactly 1 matcher entry (no duplicate)`)
+    assert.equal(entries[0].hooks.length, 1, `${event}[${matcher}]: expected exactly 1 hook`)
+    assert.equal(entries[0].hooks[0].command, command, `${event}[${matcher}]: unexpected command`)
+  }
+  checkOne('Notification', 'ToolPermission', GEMINI_SIGNAL_CMD)
+  checkOne('BeforeTool', 'run_shell_command', GEMINI_GUARD_CMD)
+  checkOne('BeforeTool', 'read_file|read_many_files', GEMINI_GUARD_CMD)
+  checkOne('BeforeTool', 'write_file|replace', GEMINI_GUARD_CMD)
+  checkOne('AfterTool', '*', GEMINI_CLEANUP_CMD)
+  checkOne('AfterTool', 'run_shell_command', GEMINI_GUARD_CMD)
+  checkOne('AfterTool', 'read_file|read_many_files', GEMINI_GUARD_CMD)
+  checkOne('AfterTool', 'write_file|replace', GEMINI_GUARD_CMD)
 })
 
 test('injectKiroHooks creates .kiro/hooks/trackfw-attention.json idempotently', () => {
