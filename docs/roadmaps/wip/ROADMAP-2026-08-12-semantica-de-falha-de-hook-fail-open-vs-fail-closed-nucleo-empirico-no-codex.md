@@ -263,7 +263,7 @@ que o cwd **derive durante** a sessão. A premissa foi esticada.
 > Dependências: ML-1C. **Bloqueia a Wave 3.**
 
 ### ML-2B — Reavaliar a severidade do Codex à luz do ML-1C
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Agente:** Hades (`hades-tf`)
 
 O ML-1C **derrubou** o vetor que sustentava o 🔴 (`cd` do agente). Mas o próprio ML-1C delimitou o
@@ -277,7 +277,7 @@ severidade sozinho: devolve ao autor do parecer para revisão escopada.
 > Dependências: Wave 2 **e Wave 2-bis** (a severidade final depende do veredito do ML-1C).
 
 ### ML-3A — `docs/cli-parity.md`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Hefesto (`hefesto-tf`)
 **Arquivos afetados:** `docs/cli-parity.md` **somente**. Não modifica código de produto.
 

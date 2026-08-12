@@ -11887,3 +11887,63 @@ limpo durante e após o ML.
 **Próximo passo (fora do escopo deste ML):** Zeus/Barreira reavalia a severidade do Codex no parecer
 do ML-2A à luz deste veredito; Wave 3 (ML-3A, Hefesto) segue liberada para consolidar
 `docs/cli-parity.md`.
+
+---
+
+## Sessão 2026-08-12 — Hades (Segurança) — ML-2B: revisão escopada de alcançabilidade/severidade à luz do ML-1C — CONCLUÍDO, apenas leitura de código, sem commit (autoridade de Git é do `trackfw_architect`)
+
+Branch `fix/semantica-de-falha-de-hook-fail-open-vs-fail-closed`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md`,
+ML-2B (status atualizado para ✅ Concluído). Entrada: Zeus devolveu o parecer original (ML-2A) porque
+o vetor de `cd` do agente não estava provado; o ML-1C (Ártemis) mediu e refutou esse mecanismo
+especificamente (veredito `FIXO NA SESSÃO`).
+
+**Entregável:** seção nova "Revisão ML-2B — alcançabilidade e severidade após o veredito do ML-1C" em
+`docs/seguranca/2026-08-12-semantica-de-falha-de-hook.md` (mesmo arquivo do parecer ML-2A) +
+marcações `[REFUTADO]` inline nos trechos originais que afirmavam o mecanismo de `cd` como fato
+(incluindo a linha do Codex na tabela de reuso do ML-3A, para não propagar a alegação falsificada para
+`docs/cli-parity.md`) — nenhum trecho foi apagado.
+
+**Severidade final: Codex permanece 🔴, mas não mais por ser o único caminho — a classe de vetor
+"escrita direta no script/config do guard" (sem `cd`, sem depender do mecanismo refutado) não é
+específica do Codex.** Composição de dois fatos independentes: (1) código-verificado —
+`scripts/trackfw-credential-guard.sh` é gerado sem proteção de escrita (`os.WriteFile(..., 0755)`,
+`internal/generators/scaffold.go:797`), sem checksum, sem verificação de integridade em
+`validate`/`doctor` (não implementada hoje); (2) já **medido** — o braço "Caso A" do ML-1A (script
+ausente no caminho resolvido) já confirmou FAIL-OPEN empiricamente. `rm
+scripts/trackfw-credential-guard.sh` reproduz essa condição diretamente, sem cwd trickery, portanto
+**sobrevive intacto à refutação do ML-1C**.
+
+**Achado novo, não listado antes (mais forte que as duas vias que o ML-1C tinha delimitado como não
+medidas — apagar o script / gitfile):** sobrescrever o conteúdo do script com um no-op (`exit 0`) é
+estritamente pior que apagar — produz `hook: PreToolUse Completed` (mesmo rótulo de sucesso normal,
+zero sinal distinguível) em vez de `Failed`, e o próprio ML-1A já mediu esse comportamento no seu
+braço de controle positivo. Achado irmão, também código-verificado: `credential_guard.mode`
+(`warn`/`block`) é lido em runtime por `grep` de `trackfw.yaml`
+(`internal/generators/scaffold.go:1005`) — um agente pode derrubar o controle para `warn` editando uma
+linha de YAML, **sem tocar no script**, derrotando até uma futura verificação de integridade por
+checksum que cubra só o script.
+
+**Consequência para o ranking por CLI:** Claude/Gemini sobem de 🟢 para 🟡 — o argumento de
+inalcançabilidade que os protegia (env var vazia degradando para `/scripts/...` não plantável) não se
+aplica a `rm`/sobrescrita direta no caminho real do script. Cursor permanece 🟡 (`failClosed` cobriria
+`rm`, não a sobrescrita). Copilot é o único com discriminador real, mas parcial (fail-closed nativo
+cobre ausência/crash, não sobrescrita que sai `exit 0`).
+
+**Recomendação:** o item 3 (wrapper `test -x ... || exit 2`) deixa de ser condicional — confirmado
+como necessário para a via de deleção, porque o controle positivo (item 1) só verifica no momento da
+invocação, não continuamente. Mas nenhum dos três itens originais (controle positivo, `failClosed` do
+Cursor, wrapper) cobre o achado novo de sobrescrita/downgrade de config — isso é um **quarto item**
+(verificação de integridade de conteúdo do script e da config `credential_guard.mode`, com valor de
+referência fora do arquivo gerado) a levar para a REQ de mitigação que Zeus decidir abrir.
+
+**Hipóteses rotuladas como não medidas, em aberto para verificação futura:** (a) gitfile redirecionando
+`.git` — mecanicamente plausível mas dependente de também controlar `core.worktree` do alvo, mais
+fraca que a via de `rm`, não usada para sustentar a severidade; (b) a cadeia `rm`/sobrescrita ponta a
+ponta no Codex real, em um único experimento contínuo (hoje: composição de código-verificação +
+medição independente do ML-1A, não uma medição direta nova); (c) sessão interativa com aprovação
+humana no loop (ressalva já herdada do ML-1A/ML-1C).
+
+**Próximo passo (fora do escopo deste ML):** Zeus decide o escopo final da REQ de mitigação
+(incluindo o quarto item de integridade); Wave 3 (ML-3A, Hefesto) consolida `docs/cli-parity.md` a
+partir da tabela revisada na seção "Revisão ML-2B" (§3.2), não da tabela original supersedida.
