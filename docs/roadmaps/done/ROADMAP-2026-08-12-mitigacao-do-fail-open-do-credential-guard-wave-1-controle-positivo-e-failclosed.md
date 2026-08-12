@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-12
 req: "docs/req/REQ-2026-08-12-mitigacao-do-fail-open-do-credential-guard-integridade-do-script-e-da-config-controle-positivo-e-fail-closed-nativo.md"
 squad: "Apolo, Ártemis, Hades, Hefesto"
@@ -7,7 +7,7 @@ squad: "Apolo, Ártemis, Hades, Hefesto"
 
 # Roadmap: Mitigacao do fail-open do credential-guard — wave 1 controle positivo e failClosed
 
-> Created: 2026-08-12 | Status: wip
+> Created: 2026-08-12 | Status: done
 
 ## Context
 
@@ -64,16 +64,16 @@ cobrem a classe do **incidente real já observado** com custo baixo e zero risco
 
 ## Acceptance Criteria
 
-- [ ] Regra nova de validação detecta hook de credential-guard registrado cujo script **não existe**
+- [x] Regra nova de validação detecta hook de credential-guard registrado cujo script **não existe**
       ou **não é executável**, nos 3 CLIs do trackfw (Go, Node.js, Python).
-- [ ] A regra **não dispara** quando não há entrada de credential-guard registrada (estado legítimo
+- [x] A regra **não dispara** quando não há entrada de credential-guard registrada (estado legítimo
       com guard global instalado).
-- [ ] A regra é configurável por `rules:` no `trackfw.yaml`, como as demais.
-- [ ] Cenário de falsificação provando que a regra **não é vácua**.
-- [ ] `failClosed: true` emitido **apenas** nas entradas de credential-guard do Cursor — nunca nas de
+- [x] A regra é configurável por `rules:` no `trackfw.yaml`, como as demais.
+- [x] Cenário de falsificação provando que a regra **não é vácua**.
+- [x] `failClosed: true` emitido **apenas** nas entradas de credential-guard do Cursor — nunca nas de
       attention — nos 3 stacks.
-- [ ] `make quality` exit 0; `trackfw validate` sem violações **neste repositório**.
-- [ ] ADR decidindo os itens 3 e 4, ou registrando explicitamente que ficam adiados e por quê.
+- [x] `make quality` exit 0; `trackfw validate` sem violações **neste repositório**.
+- [x] ADR decidindo os itens 3 e 4, ou registrando explicitamente que ficam adiados e por quê.
 
 ### Escopo negativo
 
@@ -117,13 +117,13 @@ em `pypi/trackfw/` — **os 3 stacks**, mais os testes de cada um.
    ação (`trackfw update` regenera o script).
 
 **Critérios de aceite:**
-- [ ] A regra dispara quando existe entrada de guard e o script está ausente/não executável.
-- [ ] A regra **não** dispara quando não há entrada de guard (estado legítimo — guard global).
-- [ ] A regra **não** dispara neste repositório: `trackfw validate` continua sem violações.
-- [ ] Configurável por `rules:` (`off`/`warning`/`error`), default `error`.
-- [ ] Paridade nos 3 CLIs — mensagem e comportamento idênticos.
-- [ ] A **mensagem de sucesso** do `validate` não mudou (Cenário 29 do falsify continua passando).
-- [ ] `go test ./...`, `npm test`, `pytest` verdes; `make quality` exit 0.
+- [x] A regra dispara quando existe entrada de guard e o script está ausente/não executável.
+- [x] A regra **não** dispara quando não há entrada de guard (estado legítimo — guard global).
+- [x] A regra **não** dispara neste repositório: `trackfw validate` continua sem violações.
+- [x] Configurável por `rules:` (`off`/`warning`/`error`), default `error`.
+- [x] Paridade nos 3 CLIs — mensagem e comportamento idênticos.
+- [x] A **mensagem de sucesso** do `validate` não mudou (Cenário 29 do falsify continua passando).
+- [x] `go test ./...`, `npm test`, `pytest` verdes; `make quality` exit 0.
 
 **Comandos de validação:**
 ```bash
@@ -148,13 +148,13 @@ make quality
 um hook de guard cujo script não existe, e que **removê-la** faz o cenário falhar.
 
 **Critérios de aceite:**
-- [ ] Baseline (árvore íntegra passa) + detecção (árvore sabotada reprova).
-- [ ] 🔴 **Prova de não-vacuidade:** desabilitar a regra no validador faz o cenário **falhar**.
+- [x] Baseline (árvore íntegra passa) + detecção (árvore sabotada reprova).
+- [x] 🔴 **Prova de não-vacuidade:** desabilitar a regra no validador faz o cenário **falhar**.
       Restaurar. Reportar a saída. *(Este projeto já produziu um cenário de prova negativa que ele
       próprio não provava — ver ML-1A/ML-1B do `ROADMAP-2026-08-12-prova-negativa-...`.)*
-- [ ] `$HOME` isolado, se o cenário depender de estado global.
-- [ ] Comentário do cenário documenta a **âncora de manutenção** e traz instrução `RETARGET`.
-- [ ] `make quality` exit 0 com total de cenários incrementado.
+- [x] `$HOME` isolado, se o cenário depender de estado global.
+- [x] Comentário do cenário documenta a **âncora de manutenção** e traz instrução `RETARGET`.
+- [x] `make quality` exit 0 com total de cenários incrementado.
 
 ---
 
@@ -179,11 +179,11 @@ de UI falhou seria pior que o problema. O escopo é **só o controle de seguran�
 de emitir — não inferir a partir de outro CLI.
 
 **Critérios de aceite:**
-- [ ] `failClosed: true` presente **apenas** nas entradas de guard do Cursor, nos 3 stacks.
-- [ ] Entradas de attention do Cursor **byte-idênticas** antes e depois.
-- [ ] Emissões dos outros 5 CLIs **byte-idênticas** antes e depois.
-- [ ] Forma do campo confirmada em doc primária (cite URL no comentário do código).
-- [ ] `check-agent-hooks-parity.sh` sem `FAIL`; `make quality` exit 0.
+- [x] `failClosed: true` presente **apenas** nas entradas de guard do Cursor, nos 3 stacks.
+- [x] Entradas de attention do Cursor **byte-idênticas** antes e depois.
+- [x] Emissões dos outros 5 CLIs **byte-idênticas** antes e depois.
+- [x] Forma do campo confirmada em doc primária (cite URL no comentário do código).
+- [x] `check-agent-hooks-parity.sh` sem `FAIL`; `make quality` exit 0.
 
 ### ML-3B — Correção: nunca sobrescrever escolha do usuário + remover `failClosed` de eventos audit-only
 **Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-12) — **envio condicionado à Barreira B1**
@@ -296,12 +296,12 @@ adversário que apaga o script.
 > Dependências: Barreira B1. Arquivos disjuntos.
 
 ### ML-4A — Revisão de segurança
-**Status:** 🔄 Em andamento · **Agente:** Hades (`hades-tf`) · **Entregável:** `docs/seguranca/` (novo).
+**Status:** ✅ Concluído (auditado e aprovado por Zeus em 2026-08-12)
 Avaliar se os itens 1 e 2 entregam a redução de risco pretendida, e se a regra nova cria falso senso
 de segurança (ela verifica no momento do `validate`, não no da invocação). **Não modifica código.**
 
 ### ML-4B — Documentação
-**Status:** 🔄 Em andamento · **Agente:** Hefesto (`hefesto-tf`) · **Arquivos:** `docs/cli-parity.md`.
+**Status:** ✅ Concluído (auditado e aprovado por Zeus em 2026-08-12)
 Registrar a regra nova, o `failClosed` do Cursor, e **explicitamente o que continua descoberto**
 (sobrescrita e downgrade por config). **Não modifica código de produto.**
 

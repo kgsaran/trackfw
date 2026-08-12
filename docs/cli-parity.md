@@ -2788,6 +2788,121 @@ dependa da semântica real). Nenhuma mudança de código foi feita neste ML — 
 integridade de script/config) permanece **avaliada, não implementada**, cabendo a Zeus decidir se abre
 REQ nova a partir do parecer de Hades.
 
+## Controle positivo do credential-guard: o que a regra `credential_guard_hook_resolvable` cobre, e o que não cobre (ROADMAP-2026-08-12-mitigacao-do-fail-open, Wave 1/2/3/3-bis + Barreira B1)
+
+> Fontes: `internal/validator/validator_credential_guard.go` (implementação, os 3 CLIs têm
+> equivalente em `npm/src/` e `pypi/trackfw/`), `docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`
+> (decisão de arquitetura), `docs/req/REQ-2026-08-12-credential-guard-de-escopo-global-como-caminho-padrao-consentimento-explicito-verificacao-da-premissa-de-sandbox-e-a-via-do-credential-guard-mode.md`
+> (follow-up ainda não implementado). Continuação direta de §"Semântica de falha de hook por CLI"
+> (acima) — aquela seção **mediu** o problema (fail-open em 4 de 6 CLIs); esta seção documenta **o
+> que foi entregue em resposta**, e o que não foi.
+
+Depois de reverter as outras três mitigações avaliadas (ML-3C, ver abaixo), esta regra é a **única
+coisa que sobrou no escopo de projeto**. O risco real de documentação é alguém ler esta seção como
+"o incidente está mitigado" — não está; leia a subseção 2 com o mesmo peso que a 1.
+
+### 1. O que a regra faz
+
+`credential_guard_hook_resolvable` (default `error`, configurável por `rules:` no `trackfw.yaml`,
+como as demais regras do validador — `applyRule`/`applyRuleTagged`, `internal/validator/validator.go:120,136`):
+
+- Para cada arquivo de hook de **projeto** que **existir** — a lista fechada `credentialGuardHookFiles`
+  em `validator_credential_guard.go:28-35`: `.claude/settings.json`, `.codex/hooks.json`,
+  `.gemini/settings.json`, `.cursor/hooks.json`, `.github/hooks/trackfw-attention.json`,
+  `.kiro/hooks/trackfw-attention.json` — varre recursivamente o JSON já decodificado
+  (`collectCredentialGuardCommands`) e coleta todo valor-string que referencia
+  `trackfw-credential-guard.sh`, independentemente do nome do campo (`command`, `bash`,
+  `action.command` — varredura por valor, não por schema, decisão de design registrada no
+  comentário de `collectCredentialGuardCommands`).
+- **Resolve o caminho** usando exatamente as 3 formas que o trackfw emite hoje (ver acima,
+  §"Mecanismo de resolução de caminho dos hooks de projeto, por CLI"): `$CLAUDE_PROJECT_DIR/…` /
+  `$GEMINI_PROJECT_DIR/…` substituído pela raiz do projeto; `"$(git rev-parse --show-toplevel)/…"`
+  substituído pela raiz do projeto com as aspas literais removidas; caminho relativo puro
+  (Cursor/Copilot/Kiro) resolvido contra a raiz do projeto.
+- Verifica que o script resolvido **existe** (`os.Stat`) e é **executável** (`info.Mode()&0111 != 0`).
+- Mensagem de violação acionável: arquivo de hook, CLI, caminho resolvido, e a ação (`trackfw update`
+  regenera o script).
+- Hook ausente ou JSON inválido é **pulado em silêncio** — não é responsabilidade desta regra garantir
+  a existência ou a forma do arquivo de hook.
+- Comando que não casa nenhuma das 3 formas de prefixo é **ignorado de propósito** —
+  `resolveCredentialGuardHookPath` retorna `ok=false` e o chamador não trata isso como violação.
+  Não é função desta regra adivinhar wiring próprio do usuário fora dos formatos que o trackfw gera.
+- **Ausência de entrada de guard não é violação** — é o estado legítimo de quem usa só o guard
+  **global** (`~/.trackfw/`, fora do escopo desta regra; o dedup `globalCredentialGuardInstalled*()`
+  pula as entradas de projeto de propósito).
+- Provada não-vácua pelo Cenário 47 de `scripts/check-gates-falsify.sh` (ML-2A): desabilitar a regra
+  faz o cenário falhar.
+
+### 2. O que ela NÃO cobre — com o mesmo destaque
+
+- **Verifica no momento em que `validate` roda, não no momento da invocação do hook.** Entre um
+  `validate` verde e a próxima chamada de ferramenta, o script pode ser apagado ou sobrescrito sem
+  que nada dispare uma nova checagem. O controle é **pontual**, não contínuo.
+- **Detecta ausência, não sobrescrita.** Um script substituído por `exit 0`
+  (`echo '#!/bin/bash' > scripts/trackfw-credential-guard.sh; echo 'exit 0' >> scripts/trackfw-credential-guard.sh`)
+  continua existindo e continua executável — `os.Stat` e o teste de bit `0111` passam os dois. A
+  regra fica **muda**. Pior: no Codex isso produz `hook: PreToolUse Completed`, o **mesmo rótulo de
+  sucesso normal** de uma execução legítima — zero sinal observável em qualquer um dos dois lugares
+  (validador e log de hook). Ver §"Semântica de falha de hook por CLI", §5, "Achado 2.1".
+- **Não cobre downgrade de `credential_guard.mode` no `trackfw.yaml`.** O modo (`warn`/`block`) é lido
+  em **runtime**, por leitura direta do `trackfw.yaml` no cwd (`internal/generators/scaffold.go:1005`,
+  `credentialGuardModeResolution`) — não embutido no script nem verificado por esta regra. Uma edição
+  de uma linha de YAML derruba o controle para não-bloqueante sem tocar no script em absoluto
+  (bit-idêntico ao script legítimo).
+- **Comando com formato de caminho desconhecido é ignorado de propósito.** Evita falso positivo em
+  wiring próprio do usuário fora dos 3 formatos que o trackfw gera hoje — mas, como consequência
+  direta, a regra **não cobre wiring que o trackfw não gerou**, mesmo que aponte para um script
+  ausente.
+
+### 3. A decisão de arquitetura — escopo global é a defesa real
+
+Depois de avaliar três mitigações adicionais de escopo de **projeto**, a decisão registrada em
+`docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`
+foi: **a defesa real vive no escopo global** (`~/.trackfw/`, fora do repositório em que o agente
+trabalha, `trackfw update harness`). O escopo de projeto — incluindo a regra desta seção — passa a
+ser tratado como **conveniência de configuração, não controle de segurança**.
+
+As três mitigações avaliadas e **rejeitadas**, cada uma com seu motivo (não reabrir sem ler o ADR
+primeiro):
+
+| Mitigação | Rejeitada porque |
+|---|---|
+| **`failClosed: true`** (opt-in nativo do Cursor) — chegou a ser **implementada** nos ML-3A/3B e depois **revertida** no ML-3C desta mesma branch | Cobre só 1 de 6 CLIs (só o Cursor tem opt-in nativo); e **brica clone fresco** — repositório com `.cursor/hooks.json` já commitado, antes do `init` gerar o script, trava toda chamada de shell dentro do Cursor. Mesma classe de *bricking* que o item wrapper foi adiado por evitar — enviar um e adiar o outro pelo mesmo argumento era a incoerência que a Barreira B1 corrigiu. |
+| **Wrapper** (`sh -c 'test -x <script> && exec <script> || exit 2'`) | Mesma classe de *bricking*, confirmada no código: o script é **gerado** por `trackfw init`/`update harness` (`internal/generators/scaffold.go:779-837`), não faz parte do binário — um clone fresco, antes do `init`, travaria toda chamada de ferramenta. E cobre só a via de **deleção**; um script substituído por `exit 0` passa no `test -x` e sai `0` (não cobre sobrescrita). |
+| **Verificação de integridade** de conteúdo do script e de `credential_guard.mode` | É a única que cobriria sobrescrita **e** downgrade de config — mas exige um valor de referência guardado **fora** do arquivo gerado, ou seja, exige exatamente o escopo global como pré-requisito para ter onde guardar a referência de forma confiável. Se o escopo global é pré-requisito da solução, é mais simples e mais forte usá-lo diretamente como a solução, em vez de construir integridade em cima dele. |
+
+O guard global por padrão fica como **REQ própria** (`REQ-2026-08-12-credential-guard-de-escopo-global-...`),
+ainda **não implementada** neste ciclo.
+
+### 4. Riscos aceitos — sem suavizar
+
+Copiados do ADR, na íntegra, sem atenuação:
+
+- **Quem não instala o guard global fica sem defesa** contra as vias de deleção e sobrescrita do
+  script. O guard global tem pré-condição de instalação e **não é o default hoje** — até virar
+  default, a decisão é uma **intenção**, não uma proteção. Esta é a lacuna mais importante do ADR.
+- **`credential_guard.mode` no `trackfw.yaml` continua rebaixável por uma linha de YAML**,
+  independentemente do escopo do script — no escopo de projeto ou no global
+  (`~/.trackfw/scripts/trackfw-credential-guard.sh`, `internal/generators/scaffold.go:1047-1051`, mesmo
+  mecanismo de leitura em runtime). Esta via **não é fechada** pela decisão de preferir o escopo
+  global, e precisa entrar na REQ de "global por padrão".
+- **A premissa "agente restrito ao workspace" NÃO foi medida.** Não foi verificado se o agente
+  alcança `~/.trackfw/` nos ambientes reais em que o trackfw roda. A premissa vale para sandboxes que
+  restringem escrita fora do projeto — **não universalmente**. Um agente sem sandbox alcança `$HOME`.
+  Tratar como hipótese a verificar antes de considerar o escopo global uma defesa forte, não como
+  fato estabelecido.
+
+### 5. Referências cruzadas
+
+- §"Semântica de falha de hook por CLI — o que acontece quando o guard não roda" (acima, mesmo
+  documento) — mede o problema que esta seção responde; §5 e §6 daquela seção documentam as vias de
+  sobrescrita e o achado 2.1 citados na subseção 2 acima.
+- §"Mecanismo de resolução de caminho dos hooks de projeto, por CLI" (acima) — as 3 formas de
+  prefixo que `resolveCredentialGuardHookPath` resolve.
+- `docs/req/REQ-2026-08-12-credential-guard-de-escopo-global-como-caminho-padrao-consentimento-explicito-verificacao-da-premissa-de-sandbox-e-a-via-do-credential-guard-mode.md`
+  — follow-up que precisa fechar: guard global como default, verificação da premissa de sandbox, e a
+  via de `credential_guard.mode`.
+
 ## Hooks GLOBAIS de credential-guard (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.gemini/settings.json`, `~/.cursor/hooks.json`, `~/.copilot/settings.json`, `~/.kiro/hooks/trackfw-credential-guard.json`) — paridade estrutural (ROADMAP-2026-08-06, ML-4A)
 
 Sibling do gate de hooks por-projeto (seção anterior), para o escopo GLOBAL

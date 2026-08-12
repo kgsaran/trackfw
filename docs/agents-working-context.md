@@ -12612,3 +12612,132 @@ verdes — o que o ADR mandou manter, permanece.
 
 **Wave 4 despachada em paralelo** (arquivos disjuntos): ML-4A (Hades, `docs/seguranca/`) e ML-4B
 (Hefesto, `docs/cli-parity.md`).
+
+## Sessão 2026-08-12 — Hades (Segurança) — ML-4A (revisão de segurança pós-Barreira B1) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+**Entregável:** `docs/seguranca/2026-08-12-pos-barreira-estado-do-credential-guard.md` (novo).
+Parecer puramente de leitura, nenhum arquivo de código tocado.
+
+**Veredito consolidado, por pergunta:**
+1. **Delta de risco:** real, mas restrito — a regra `credential_guard_hook_resolvable`
+   (`internal/validator/validator_credential_guard.go:113`, Cenário 47 do falsify, não-vacuidade
+   provada) fecha a classe "hook aponta para script ausente/não executável", que é exatamente o
+   incidente já observado em produção. **Não** fecha nada contra adversário ativo — checa no
+   momento do `validate`, não no da invocação.
+2. **🔴 Falso senso de segurança: risco real, confirmado por leitura do código.** `os.Stat` + bit
+   `0111` (linhas 160–172) não leem conteúdo — um script substituído por `exit 0` preservando
+   `chmod +x` passa silencioso. Depois da reversão das outras 3 mitigações, esta regra é a única
+   coisa que sobra no escopo de projeto. Recomendo que `docs/cli-parity.md` (ML-4B, já no escopo)
+   registre isso, e sugiro a Zeus um item de documentação **de usuário final** adicional (README/
+   `--help`), fora do escopo deste ML — não bloqueante.
+3. **Estado atual vs. antes do roadmap: estritamente melhor ou igual em cada eixo, nunca pior.** O
+   `failClosed` do Cursor foi construído, avaliado e revertido por análise custo-benefício
+   documentada no ADR (não removido sem substituição) — confirmado byte-idêntico ao estado
+   pré-ML-3A por dois métodos independentes já registrados nas sessões do ML-3C.
+4. **REQ nova cobre os 3 eixos do ADR corretamente**, incluindo tratar a medição da premissa de
+   sandbox como bloqueante. **Achado não coberto:** falta critério condicional sobre rotação/
+   sobrescrita do guard **global** se a medição do eixo 2 revelar que ele também é alcançável por
+   agente sem sandbox — reportado a Zeus como sugestão de emenda, não bloqueante (a REQ ainda não
+   tem roadmap).
+5. **Premissa de sandbox não medida por este ML** (correto — é bloqueante da REQ, não deste ML).
+   Avaliação qualitativa a partir de evidência indireta já produzida por este projeto: **a
+   probabilidade de a premissa ser falsa no ambiente default é alta**, não baixa — nenhum dos 6 CLIs
+   roda sandboxed por padrão. Recomendação de sequência: tratar a medição do eixo 2 como o primeiro
+   trabalho da REQ, sem paralelizar com os eixos 1/3.
+
+**Conclusão: nada neste parecer bloqueia o PR desta branch.** Uma condição não bloqueante (item de
+documentação de usuário final) e um achado para a REQ nova (rotação do guard global), ambos
+reportados a Zeus para decisão.
+
+**Escopo respeitado:** só toquei `docs/seguranca/2026-08-12-pos-barreira-estado-do-credential-guard.md`
+(novo), o campo `**Status:**` do ML-4A no roadmap, e esta entrada. Não toquei `docs/cli-parity.md`
+(Hefesto, ML-4B, rodando em paralelo), nem `internal/`, `npm/src/`, `pypi/trackfw/`, `scripts/`,
+`docs/adr/`, `docs/req/`. Nenhum commit, nenhum push — autoridade de Git é do Zeus.
+
+## Sessão 2026-08-12 — Hefesto (ML-4B: documentação do controle positivo do credential-guard) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/mitigacao-do-fail-open-do-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md`,
+Wave 4/ML-4B — status atualizado para ✅ Concluído.
+
+**Objetivo:** registrar em `docs/cli-parity.md` o que a regra `credential_guard_hook_resolvable`
+cobre e o que não cobre, com igual destaque, a decisão de arquitetura do ADR (escopo global) e os
+riscos aceitos, sem suavizar.
+
+**Seção nova** (inserida após "Semântica de falha de hook por CLI" e antes de "Hooks GLOBAIS de
+credential-guard"): **"Controle positivo do credential-guard: o que a regra
+`credential_guard_hook_resolvable` cobre, e o que não cobre"**, com 5 subseções — (1) o que a regra
+faz, lido direto de `internal/validator/validator_credential_guard.go`, não só do ADR; (2) o que ela
+não cobre, com o mesmo peso visual (momento de checagem vs invocação, ausência vs sobrescrita,
+downgrade de `credential_guard.mode`, formato de caminho desconhecido); (3) a decisão de arquitetura
+resumida, com tabela das 3 mitigações rejeitadas e o motivo específico de cada uma; (4) os riscos
+aceitos copiados do ADR sem suavizar, incluindo a premissa de sandbox não medida; (5) referências
+cruzadas com "Semântica de falha de hook por CLI" e com a REQ de follow-up.
+
+**Divergência ADR × código que encontrei:** nenhuma. O código (`validator_credential_guard.go`)
+confere exatamente com o que o ADR e o roadmap descrevem — lista fechada de 6 arquivos de hook,
+resolução das 3 formas de prefixo, `os.Stat` + bit `0111`, ausência de entrada não é violação,
+formato desconhecido é ignorado de propósito.
+
+**Achado fora do meu escopo, mas relevante para o Zeus auditar:** o `git status --porcelain` mostrou
+`docs/adr/ADR-2026-08-12-defesa-...md` e `docs/req/REQ-2026-08-12-credential-guard-de-escopo-global-...md`
+modificados — não fui eu quem tocou. O `git diff` mostra "Emenda 1 (2026-08-12, ML-4A)" no ADR e itens
+condicionais novos no REQ, claramente do Hades (ML-4A: a premissa "agente restrito ao workspace" é
+avaliada como **provavelmente falsa** — nenhum dos 6 CLIs roda sandboxed por padrão). Isso contradiz a
+frase de escopo da própria entrada do Hades acima ("Não toquei... `docs/adr/`, `docs/req/`"). Não
+modifiquei nem revertive esses arquivos — só sinalizo a divergência para o Zeus auditar antes do
+commit.
+
+**`make quality`:** exit 0, **105/105 cenários** — inclui o Cenário 47 (`credential_guard_hook_resolvable`,
+baseline + detected), não tocado por este ML.
+
+**`git status --porcelain`:** `docs/cli-parity.md` (conteúdo, único arquivo de escopo), campo
+`**Status:**` do ML-4B no roadmap, esta entrada — mais os dois arquivos do Hades citados acima, que
+não são meus. Nenhum commit, nenhum push — autoridade de Git é do Zeus.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — CORREÇÃO DE ATRIBUIÇÃO + auditoria da Wave 4 + fechamento
+
+### 🔴 Correção de registro — as edições no ADR e na REQ foram de ZEUS, não de Hades
+
+Hefesto (ML-4B) reportou, corretamente vigilante, que `docs/adr/ADR-2026-08-12-...` e
+`docs/req/REQ-2026-08-12-credential-guard-de-escopo-global-...` apareciam modificados, e que isso
+**contradizia** a entrada de Hades afirmando não ter tocado em `docs/adr/` e `docs/req/`.
+
+**A suspeita estava certa em detectar a inconsistência e errada na atribuição: fui eu.** Depois de
+ler o relatório do ML-4A, **Zeus** escreveu a "Emenda 1" no ADR e acrescentou os critérios
+condicionais na REQ — ambos são artefatos de governança, escopo de Zeus, não de Hades. A entrada de
+Hades está **correta**: ele não tocou nesses arquivos.
+
+Fica registrado para que ninguém leia o histórico como violação de escopo de um especialista. E o
+comportamento do Hefesto foi exatamente o desejado: **reportou a inconsistência em vez de reverter ou
+silenciar**.
+
+### Auditoria do ML-4A (Hades)
+
+Parecer em `docs/seguranca/2026-08-12-pos-barreira-estado-do-credential-guard.md`. Vereditos
+ancorados em código lido (`validator_credential_guard.go:113`, `:160-172`), não em hipótese. O achado
+que mudou o ciclo: **a probabilidade de a premissa central do ADR ser falsa é ALTA** — nenhum dos 6
+CLIs roda sandboxed por padrão, logo um agente sem sandbox alcança `$HOME` e portanto `~/.trackfw/`.
+Registrado como **Emenda 1 do ADR** por Zeus, com a consequência: o escopo global vira "mais caro de
+alcançar", não "fora de alcance" — **diferença de grau, não de natureza**. A rejeição das 3 mitigações
+**se sustenta** pelos motivos próprios de cada uma; nenhuma dependia exclusivamente dessa premissa.
+
+Duas recomendações não bloqueantes, ambas incorporadas à REQ: critério condicional sobre
+rotação/sobrescrita do **guard global** caso a medição confirme alcance; e documentação para o
+**usuário final** fora do `cli-parity.md` (que é interno de paridade — quem instala o trackfw não o
+lê, e o risco é concluir que o guard está protegido porque existe uma regra com esse nome).
+
+### Auditoria do ML-4B (Hefesto)
+
+Seção nova em `docs/cli-parity.md:2791`, lida por Zeus. Cumpre o que mais importava: **"o que não
+cobre" tem o mesmo peso visual que "o que cobre"**, e abre com o aviso de que o risco real é alguém
+ler a seção como "o incidente está mitigado". Documenta o exemplo concreto da sobrescrita
+(`exit 0` passa em `os.Stat` **e** no teste de bit `0111`, e produz `hook: PreToolUse Completed` —
+zero sinal nos dois lugares). Nenhuma divergência ADR × código encontrada, verificada lendo o
+`validator_credential_guard.go`, não só o ADR.
+
+### Estado final
+
+`make quality` exit 0 (105 cenários) · `trackfw validate` sem violações. Roadmap → `done`.
+**Honestidade do que este ciclo entregou:** detecção da classe do incidente real, **não** prevenção
+contra adversário ativo. Está escrito no ADR, no `cli-parity.md` e no parecer.

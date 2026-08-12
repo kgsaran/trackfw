@@ -107,6 +107,36 @@ ficam de fora, pelo mesmo motivo.
   repositório, independentemente do escopo do script. **Esta via não é fechada por esta decisão** e
   deve entrar na REQ de "global por padrão".
 
+### Emenda 1 (2026-08-12, ML-4A) — a premissa central é provavelmente FALSA no ambiente padrão
+
+Este ADR decidiu com base em: *"o guard global está **fora do alcance** de um agente restrito ao
+workspace"*, e registrou como risco aceito que isso **não foi medido**.
+
+O parecer do ML-4A (`docs/seguranca/2026-08-12-pos-barreira-estado-do-credential-guard.md`) avalia
+essa probabilidade e conclui: **a premissa é provavelmente falsa no ambiente padrão — nenhum dos 6
+CLIs roda sandboxed por default.** Um agente sem sandbox alcança `$HOME`, e portanto alcança
+`~/.trackfw/` e os arquivos de settings globais.
+
+**O que isso muda:**
+
+- O escopo global deixa de ser "fora do alcance" e passa a ser, no melhor caso, **mais caro de
+  alcançar** — o agente precisaria sair do diretório do projeto, o que é um sinal mais visível.
+  Continua sendo melhor que o escopo de projeto, mas **por diferença de grau, não de natureza**.
+- A rejeição das três mitigações de escopo de projeto continua válida pelos **motivos próprios de
+  cada uma** (cobertura de 1 de 6 CLIs e *bricking* no `failClosed`; *bricking* e não cobrir
+  sobrescrita no wrapper; dependência do próprio escopo global na integridade). **Nenhuma delas
+  dependia exclusivamente da premissa agora abalada.** A decisão se sustenta; a **justificativa
+  precisa ser lida com esta emenda junto.**
+- **A medição vira a primeira coisa a fazer.** O eixo 2 da
+  `REQ-2026-08-12-credential-guard-de-escopo-global-como-caminho-padrao-...` deixa de ser um
+  pré-requisito entre outros e passa a ser o **primeiro trabalho, sem paralelizar** com consentimento
+  ou com a via do `credential_guard.mode`. Se a medição confirmar que o agente alcança `$HOME`, este
+  ADR **precisa ser reaberto** — não emendado de novo.
+
+**Honestidade sobre o que temos hoje:** nenhum escopo protege contra um agente induzido com acesso de
+escrita irrestrito. O que este ciclo entregou é **detecção** da classe do incidente real
+(`credential_guard_hook_resolvable`), não **prevenção** contra adversário ativo.
+
 ## Alternatives Considered
 
 **Endurecer o escopo de projeto** (enviar `failClosed`, implementar wrapper e integridade).

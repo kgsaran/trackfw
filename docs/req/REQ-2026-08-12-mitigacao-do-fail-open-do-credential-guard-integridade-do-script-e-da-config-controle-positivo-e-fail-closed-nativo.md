@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md"
 ---
 
 # REQ: Mitigacao do fail-open do credential-guard — integridade do script e da config, controle positivo e fail-closed nativo
 
-> Date: 2026-08-12 | Status: Open
+> Date: 2026-08-12 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -102,4 +102,4 @@ ADR: docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-co
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md

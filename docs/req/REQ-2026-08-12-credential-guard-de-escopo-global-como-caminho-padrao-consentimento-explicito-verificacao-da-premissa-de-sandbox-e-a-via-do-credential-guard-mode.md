@@ -54,7 +54,10 @@ registrado no ADR como não fechado, e precisa de resposta aqui.
 
 ### Bloqueante — antes de qualquer implementação
 
-- [ ] **Medir a premissa de sandbox.** Determinar empiricamente, para os CLIs instalados nesta
+- [ ] **Medir a premissa de sandbox — PRIMEIRO trabalho da REQ, sem paralelizar com os demais eixos**
+      (ML-4A avalia a probabilidade de a premissa ser falsa como **alta**: nenhum dos 6 CLIs roda
+      sandboxed por padrão).
+- [ ] Detalhe do método: Determinar empiricamente, para os CLIs instalados nesta
       máquina, se um agente consegue **escrever** em `~/.trackfw/` e nos arquivos de settings globais
       durante uma sessão normal. Distinguir configuração **com** e **sem** sandbox restritivo.
       Método: mesmo padrão dos ML-1A/1C do `ROADMAP-2026-08-12-semantica-de-falha-de-hook` —
@@ -62,6 +65,23 @@ registrado no ADR como não fechado, e precisa de resposta aqui.
 - [ ] Se a premissa se mostrar **falsa** no ambiente padrão: **parar**, registrar, e reabrir o
       `ADR-2026-08-12` — sem premissa, a decisão de reverter as defesas de escopo de projeto perde a
       base. **Resultado legítimo**, não falha.
+
+### Condicional ao resultado da medição (achado do ML-4A)
+
+- [ ] **Se a medição mostrar que o agente alcança `$HOME`:** decidir e registrar o que fazer com a
+      **rotação/sobrescrita do guard global** — ele passa a ser tão alcançável quanto o de projeto, e
+      as mesmas vias (apagar, sobrescrever com `exit 0`) se aplicam. Não basta mover o arquivo de
+      lugar.
+- [ ] **Se a medição confirmar a premissa falsa:** o `ADR-2026-08-12` precisa ser **reaberto**, não
+      emendado de novo — sua decisão de rejeitar as três mitigações de escopo de projeto foi tomada
+      sob outra leitura de risco.
+
+### Documentação voltada ao usuário final (achado do ML-4A)
+
+- [ ] Registrar **fora** do `docs/cli-parity.md` — README e/ou saída de `--help` — o que a regra
+      `credential_guard_hook_resolvable` **não** cobre. `cli-parity.md` é documento interno de
+      paridade; o usuário que instala o trackfw não o lê, e o risco real é ele concluir que o guard
+      está protegido porque existe uma regra com esse nome.
 
 ### Caminho padrão com consentimento
 
