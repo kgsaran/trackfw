@@ -4,6 +4,57 @@
 
 ---
 
+## Sessão 2026-08-12 — Hefesto (ML-3A: consolidação em `docs/cli-parity.md` — semântica de falha de hook por CLI) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Branch `fix/semantica-de-falha-de-hook-fail-open-vs-fail-closed`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md`,
+último ML da Wave 3 — status do ML atualizado para ✅ Concluído.
+
+**Escopo:** único arquivo de conteúdo tocado: `docs/cli-parity.md`. Não modificou `internal/`,
+`npm/src/`, `pypi/trackfw/`, testes, `scripts/`, nem os arquivos de `docs/pesquisa/`/`docs/seguranca/`
+— confirmado por `git status --porcelain` (só `docs/cli-parity.md` modificado).
+
+**Entregável:** nova seção "Semântica de falha de hook por CLI — o que acontece quando o guard não
+roda (ROADMAP-2026-08-12, ML-3A)" em `docs/cli-parity.md`, inserida entre "A heterogeneidade entre os
+4 mecanismos..." e "Hooks GLOBAIS de credential-guard...". Consolidou:
+
+1. Tabela por CLI (Caso A × Caso B `exit 1`/`exit 2` × como se soube × severidade atual).
+2. A distinção Caso A × Caso B, com referência ao `internal/generators/scaffold.go` (contrato `exit 2`
+   do trackfw cobre só o Caso B).
+3. Discriminadores observáveis (`hook: PreToolUse Failed/Blocked` no Codex; `Failed with non-blocking
+   status code` no Claude; bifurcação IDE/CLI no Kiro).
+4. A hipótese refutada do vetor `cd` (ML-1C), registrada como tal, não apagada, com os dois
+   experimentos que a derrubaram.
+5. O que sustenta a severidade hoje (Via 1 `rm`, achado 2.1 sobrescrita de conteúdo/downgrade de
+   `credential_guard.mode`) separado explicitamente da hipótese não medida (Via 2 gitfile).
+6. Reclassificação retroativa dos três caminhos já documentados em "Pré-condições do fix do Codex" —
+   de "degradação de disponibilidade" para "bypass silencioso de controle de segurança", com
+   referência cruzada nos dois sentidos.
+7. Escopo do que foi medido × não avaliado, incluindo que a mitigação (wrapper, controle positivo,
+   `failClosed`, verificação de integridade) permanece **avaliada, não implementada** — decisão de
+   abrir REQ nova cabe a Zeus.
+
+**Consolidação feita a partir da seção "Revisão ML-2B" do parecer de Hades** (a versão vigente), não
+da tabela original do parecer (marcada `[SUPERSEDIDA]` no próprio documento) — a armadilha apontada no
+prompt do ML-3A foi seguida à risca.
+
+**`make quality`:** rodado com log completo (não truncado) e captura explícita do exit code do
+próprio `make` — ver saída colada no relato a Zeus. Falsificação: `Falsification checks passed (all
+104 scenarios, 18 gates + 11 generator/validator contracts)`, 0 `FAIL`.
+
+**Divergência encontrada, reportada, não corrigida por mim (fora do escopo permitido nesta ML):** o
+Diagnóstico do próprio roadmap (`ROADMAP-2026-08-12-...md`, linhas 46-48) afirma que "os três caminhos
+de 'guard não roda' são todos **específicos do Codex**" e trata Claude/Gemini como seguros porque
+`/scripts/…` não é plantável sem root. A Revisão ML-2B do parecer (§3.1) **supera essa premissa**:
+`rm`/sobrescrita do script não dependem da env var de projeto vir vazia, então Claude e Gemini também
+sobem para 🟡 — a premissa do Diagnóstico ficou desatualizada pelo próprio ciclo que este roadmap
+encomendou. `docs/cli-parity.md` já reflete a versão corrigida (§5 da nova seção); a premissa do
+roadmap em si não foi editada (só `**Status:**` estava no escopo permitido) — reportando para Zeus
+avaliar se o Diagnóstico do roadmap precisa de nota equivalente antes de mover para `done/`.
+
+**Não modifiquei código de produto** (fora do escopo deste papel) — se a REQ de mitigação for aberta,
+ela cabe a Zeus decidir e delegar aos especialistas de implementação.
+
 ## Sessão 2026-08-12 — Prometeu (ML-1B: varredura documental de semântica de falha de hook, 5 CLIs) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
 
 Branch `fix/semantica-de-falha-de-hook-fail-open-vs-fail-closed` (já com checkout, criada pelo
@@ -11947,3 +11998,46 @@ humana no loop (ressalva já herdada do ML-1A/ML-1C).
 **Próximo passo (fora do escopo deste ML):** Zeus decide o escopo final da REQ de mitigação
 (incluindo o quarto item de integridade); Wave 3 (ML-3A, Hefesto) consolida `docs/cli-parity.md` a
 partir da tabela revisada na seção "Revisão ML-2B" (§3.2), não da tabela original supersedida.
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — fechamento do ROADMAP-2026-08-12 (semântica de falha de hook)
+
+**Gates finais executados por Zeus:** `make quality` **exit 0** · `trackfw validate` sem violações.
+
+**Auditoria do ML-3A (Hefesto) — aprovado, com uma divergência que ele achou e eu não.** O
+`## Context` deste próprio roadmap afirmava que os três caminhos de "guard não roda" eram "todos
+específicos do Codex", tratando Claude/Gemini como seguros. A Revisão ML-2B superou isso: `rm` e
+sobrescrita não dependem de a variável de projeto vir vazia. Ele **reportou em vez de editar** (o
+roadmap estava fora do escopo dele) e eu corrigi como Zeus — **anotando `[SUPERSEDIDO]` em vez de
+reescrever**. O Diagnóstico é o registro do que se sabia **quando o roadmap foi escrito**; apagá-lo
+esconderia que a premissa mudou durante a execução, que é justamente o que este ciclo documenta.
+
+Ele também conferiu o `EXIT` capturado do próprio `make` (não do `tail`) e identificou que o único
+`FAIL` no log é **substring dentro da linha de resumo de sucesso** — o tipo de falso positivo que
+faz alguém "consertar" o que não está quebrado.
+
+**Sequência de correções deste roadmap, que é o registro mais útil que ele deixa:**
+
+1. ML-2A (Hades) elevou o Codex a 🔴 por um vetor de `cd`, citando a pesquisa como se ela
+   "confirmasse" que o cwd do hook é dinâmico.
+2. Zeus foi ler a fonte citada: ela dizia o **oposto** neste ponto — a doc só sustenta variação por
+   **diretório de início**, não deriva durante a sessão. Premissa esticada. **Devolvido** (ML-1C).
+3. ML-1C mediu: **`FIXO NA SESSÃO`**. Vetor refutado. E a metodologia foi melhor que a que eu
+   especifiquei — o experimento que pedi (`cd` de shell) **não discrimina sozinho**, porque cada
+   `command_execution` do Codex é um shell novo; ela acrescentou um segundo experimento usando o
+   parâmetro de working directory da chamada, que fecha a lacuna.
+4. ML-2B revisou: severidade **permanece 🔴**, por outra via (`rm` do script), que **não depende** de
+   nenhuma premissa refutada. E achou dois vetores piores que ninguém listara: **sobrescrever com
+   `exit 0` não gera sinal nenhum** (mesmo rótulo de sucesso), e **`credential_guard.mode` lido em
+   runtime** derruba o controle por uma linha de YAML, derrotando checksum que cubra só o script.
+
+A conclusão final mudou de **fundamento**, não de valor — que é exatamente o motivo de devolver em
+vez de aceitar ou rejeitar em bloco.
+
+**REQ de mitigação aberta** (`docs/req/REQ-2026-08-12-mitigacao-do-fail-open-...`), com os 4 itens em
+ordem de custo/benefício, separando **medido × hipótese**, e listando o vetor refutado como "não
+reabrir sem nova medição". Acrescentei uma observação de arquitetura que ninguém levantou: o
+credential-guard de **escopo global** vive em `~/.trackfw/`, **fora** do repositório — um agente
+restrito ao workspace não o alcança. Talvez parte da resposta seja **preferir o escopo global** em
+vez de construir integridade no escopo de projeto. Marcado como provável ADR.
+
+**Estado:** roadmap → `done`, REQ → `Done`. Nenhum código de produto alterado em todo o roadmap.

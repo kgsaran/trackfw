@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-12
 req: "docs/req/REQ-2026-08-11-semantica-de-falha-de-hook-fail-open-vs-fail-closed-por-cli-verificacao-empirica-do-credential-guard-como-controle-de-negacao.md"
 squad: "Ártemis, Prometeu, Hades, Hefesto"
@@ -7,7 +7,7 @@ squad: "Ártemis, Prometeu, Hades, Hefesto"
 
 # Roadmap: Semantica de falha de hook fail-open vs fail-closed — nucleo empirico no Codex
 
-> Created: 2026-08-12 | Status: wip
+> Created: 2026-08-12 | Status: done
 
 ## Context
 
@@ -47,6 +47,16 @@ O foco vai para onde o risco concreto está: **os três caminhos de "guard não 
 específicos do Codex**. Claude e Gemini degradam para `/scripts/…` — **fail-to-run**, não
 fail-to-wrong-script, e ninguém sem privilégio planta arquivo na raiz do sistema.
 
+> ⚠️ **[SUPERSEDIDO pela Revisão ML-2B, 2026-08-12]** — a premissa acima continua correta **para
+> resolução de caminho**, e por isso a decisão de escopo (empírico só no Codex) permanece válida. Mas
+> ela **não** vale para a classe de vetor descoberta depois: **remoção ou sobrescrita direta** do
+> `scripts/trackfw-credential-guard.sh`, que não depende de a variável de projeto vir vazia. Por essa
+> via, **Claude e Gemini também estão expostos** e subiram de 🟢 para 🟡 no parecer
+> (`docs/seguranca/2026-08-12-semantica-de-falha-de-hook.md`, Revisão ML-2B §3.1). Divergência
+> reportada por Hefesto no ML-3A e registrada aqui em vez de reescrita — o Diagnóstico é o registro do
+> que se sabia **quando o roadmap foi escrito**, e apagá-lo esconderia que a premissa mudou durante a
+> execução.
+
 ### 🔴 A distinção que o roadmap inteiro depende de não perder
 
 São **dois casos diferentes**, que podem ter semânticas diferentes:
@@ -61,17 +71,17 @@ importa para o risco real.
 
 ## Acceptance Criteria
 
-- [ ] Caso A e caso B determinados empiricamente para o **Codex**, com evidência (comando executado +
+- [x] Caso A e caso B determinados empiricamente para o **Codex**, com evidência (comando executado +
       saída observada), distinguindo também `exit 1` de `exit 2` no caso B.
-- [ ] Varredura **documental** (doc primária, URL + citação) para Claude, Gemini, Cursor, Copilot e
+- [x] Varredura **documental** (doc primária, URL + citação) para Claude, Gemini, Cursor, Copilot e
       Kiro. Onde a doc não responder: `INDETERMINADO` com o que foi procurado — **nunca inferir por
       analogia**.
-- [ ] Registrado, para Claude e Gemini, **por que** a verificação empírica não foi considerada
+- [x] Registrado, para Claude e Gemini, **por que** a verificação empírica não foi considerada
       necessária (degradação fail-to-run) — para a decisão ser reavaliável e não parecer omissão.
-- [ ] Se o Codex for **fail-open**: mitigação proposta ou risco aceito com justificativa explícita.
+- [x] Se o Codex for **fail-open**: mitigação proposta ou risco aceito com justificativa explícita.
       Se **fail-closed**: registrar que os três caminhos passam a ser degradação de disponibilidade.
-- [ ] Resultado consolidado em `docs/cli-parity.md`, tabela por CLI com a evidência de cada célula.
-- [ ] `make quality` verde; `trackfw validate` sem violações.
+- [x] Resultado consolidado em `docs/cli-parity.md`, tabela por CLI com a evidência de cada célula.
+- [x] `make quality` verde; `trackfw validate` sem violações.
 
 ### Escopo negativo
 
@@ -113,15 +123,15 @@ importa para o risco real.
 5. Registrar comando exato e saída observada de cada braço.
 
 **Critérios de aceite:**
-- [ ] Os 4 braços executados (A, B1, B2, controle positivo) com evidência colada.
-- [ ] O **controle positivo** passa — sem ele, um "fail-closed" pode ser apenas o experimento não
+- [x] Os 4 braços executados (A, B1, B2, controle positivo) com evidência colada.
+- [x] O **controle positivo** passa — sem ele, um "fail-closed" pode ser apenas o experimento não
       estar disparando a ferramenta.
-- [ ] Veredito explícito por braço: `FAIL-OPEN` / `FAIL-CLOSED` / `INDETERMINADO`.
-- [ ] `$HOME` isolado; nenhum arquivo de configuração pessoal do usuário modificado
+- [x] Veredito explícito por braço: `FAIL-OPEN` / `FAIL-CLOSED` / `INDETERMINADO`.
+- [x] `$HOME` isolado; nenhum arquivo de configuração pessoal do usuário modificado
       (`git status --porcelain` + confirmação explícita de que `~/.codex/` não foi tocado).
-- [ ] Se impraticável após tentativa real (ex.: auth interativa), `INDETERMINADO` com o que foi
+- [x] Se impraticável após tentativa real (ex.: auth interativa), `INDETERMINADO` com o que foi
       tentado — **resultado legítimo, não falha**.
-- [ ] Nenhum arquivo fora de `docs/pesquisa/` e `docs/agents-working-context.md`.
+- [x] Nenhum arquivo fora de `docs/pesquisa/` e `docs/agents-working-context.md`.
 
 ### ML-1B — Varredura documental: Claude, Gemini, Cursor, Copilot, Kiro
 **Status:** ✅ Concluído (auditado e aprovado por Zeus em 2026-08-12)
@@ -144,10 +154,10 @@ importa para o risco real.
    `docs/seguranca/2026-08-11-revisao-hooks-cwd.md`, Q2.
 
 **Critérios de aceite:**
-- [ ] Os 5 CLIs cobertos, com os casos A e B distinguidos.
-- [ ] Toda afirmação tem URL + citação; toda lacuna é `INDETERMINADO` com evidência da busca.
-- [ ] O raciocínio de Claude/Gemini está registrado (item 4).
-- [ ] Nenhum arquivo fora de `docs/pesquisa/` e `docs/agents-working-context.md`.
+- [x] Os 5 CLIs cobertos, com os casos A e B distinguidos.
+- [x] Toda afirmação tem URL + citação; toda lacuna é `INDETERMINADO` com evidência da busca.
+- [x] O raciocínio de Claude/Gemini está registrado (item 4).
+- [x] Nenhum arquivo fora de `docs/pesquisa/` e `docs/agents-working-context.md`.
 
 ---
 
@@ -207,9 +217,9 @@ custo (ex.: o próprio guard verificar sua própria execução, ou o gate detect
 vão para Zeus, **não são implementados aqui**.
 
 **Critérios de aceite:**
-- [ ] Parecer respondendo (i)–(iii), ancorado no resultado empírico, não em hipótese.
-- [ ] Recomendação explícita: risco aceito × REQ nova de mitigação.
-- [ ] Nenhum arquivo de código modificado.
+- [x] Parecer respondendo (i)–(iii), ancorado no resultado empírico, não em hipótese.
+- [x] Recomendação explícita: risco aceito × REQ nova de mitigação.
+- [x] Nenhum arquivo de código modificado.
 
 ---
 
@@ -251,11 +261,11 @@ que o cwd **derive durante** a sessão. A premissa foi esticada.
 4. Ler o log: o `pwd` que o **hook** viu na segunda chamada é a raiz do fixture ou o subdiretório?
 
 **Critérios de aceite:**
-- [ ] Log do hook mostrando o `pwd` observado em **cada** disparo, com o comando de cada chamada.
-- [ ] Veredito explícito: `ACOMPANHA O CD` / `FIXO NA SESSÃO` / `INDETERMINADO`.
-- [ ] Se `ACOMPANHA`, confirmar de ponta a ponta que o guard **não** roda na segunda chamada.
-- [ ] `CODEX_HOME` isolado; `~/.codex/` do usuário **não** tocado — confirme explicitamente.
-- [ ] Nenhum arquivo fora de `docs/pesquisa/` e `docs/agents-working-context.md`.
+- [x] Log do hook mostrando o `pwd` observado em **cada** disparo, com o comando de cada chamada.
+- [x] Veredito explícito: `ACOMPANHA O CD` / `FIXO NA SESSÃO` / `INDETERMINADO`.
+- [x] Se `ACOMPANHA`, confirmar de ponta a ponta que o guard **não** roda na segunda chamada.
+- [x] `CODEX_HOME` isolado; `~/.codex/` do usuário **não** tocado — confirme explicitamente.
+- [x] Nenhum arquivo fora de `docs/pesquisa/` e `docs/agents-working-context.md`.
 
 ---
 
@@ -263,7 +273,7 @@ que o cwd **derive durante** a sessão. A premissa foi esticada.
 > Dependências: ML-1C. **Bloqueia a Wave 3.**
 
 ### ML-2B — Reavaliar a severidade do Codex à luz do ML-1C
-**Status:** ✅ Concluído
+**Status:** ✅ Concluído (Hades; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Hades (`hades-tf`)
 
 O ML-1C **derrubou** o vetor que sustentava o 🔴 (`cd` do agente). Mas o próprio ML-1C delimitou o
@@ -277,7 +287,7 @@ severidade sozinho: devolve ao autor do parecer para revisão escopada.
 > Dependências: Wave 2 **e Wave 2-bis** (a severidade final depende do veredito do ML-1C).
 
 ### ML-3A — `docs/cli-parity.md`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Hefesto; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Hefesto (`hefesto-tf`)
 **Arquivos afetados:** `docs/cli-parity.md` **somente**. Não modifica código de produto.
 
@@ -286,9 +296,9 @@ a conclusão do parecer de segurança, e — para Claude e Gemini — a justific
 verificação empírica. Rodar `make quality`.
 
 **Critérios de aceite:**
-- [ ] Seção coerente com os dois documentos de pesquisa **e** com o parecer.
-- [ ] `INDETERMINADO` registrado como tal, sem eufemismo.
-- [ ] `make quality` exit 0; `internal/`, `npm/src/`, `pypi/trackfw/` intocados.
+- [x] Seção coerente com os dois documentos de pesquisa **e** com o parecer.
+- [x] `INDETERMINADO` registrado como tal, sem eufemismo.
+- [x] `make quality` exit 0; `internal/`, `npm/src/`, `pypi/trackfw/` intocados.
 
 ---
 
