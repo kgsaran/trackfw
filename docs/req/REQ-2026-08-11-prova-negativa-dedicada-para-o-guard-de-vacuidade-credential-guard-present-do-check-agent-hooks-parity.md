@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-11
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-12-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present.md"
 ---
 
 # REQ: Prova negativa dedicada para o guard de vacuidade credential-guard-present do check-agent-hooks-parity
@@ -60,4 +60,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-12-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present.md

@@ -11297,3 +11297,41 @@ guard de vacuidade `credential-guard-present` (carregado por Hefesto em duas ses
 endereçamento).
 
 **Estado:** roadmap pronto para `done`. **PR não aberto** — KG não pediu.
+
+---
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — governança das 2 REQs de backlog — INICIADO
+
+**Decisão de sequenciamento: dois roadmaps separados, REQ-2 primeiro.** As duas REQs compartilham
+apenas `docs/cli-parity.md` e o working context — domínios, agentes e risco diferentes. REQ-2 (prova
+negativa do guard de vacuidade) é pequena, autocontida, e seu resultado não depende de nada que a
+REQ-1 descubra. Rodá-la primeiro também tira a edição de `cli-parity.md` do caminho **antes** de a
+REQ-1 precisar escrever no mesmo arquivo — evitando o problema de edição concorrente que já
+contornei no ML-8C.
+
+**REQ-1 teve os critérios de aceite emendados antes de virar roadmap** (decisão de KG em
+2026-08-12). A redação original pedia verificação empírica dos **6** CLIs; o roadmap nasceria
+falhando o próprio critério. Levantamento: **5 dos 6 CLIs instalados** nesta máquina (Kiro não), mas
+provar fail-open/fail-closed exige dirigir cada CLI por um evento de tool-use real — 5 modelos de
+auth, 5 mecânicas de sessão. Só a prova do Codex no ML-3A custou 141 tool calls e esbarrou num gate
+de trust não documentado.
+
+Escopo escolhido: **núcleo empírico no Codex + varredura documental nos demais**. Justificativa que
+ficou escrita na REQ: os **três** caminhos documentados de "guard não roda em silêncio" são **todos
+específicos do Codex** (contextos de resolução do `git rev-parse`); Claude e Gemini degradam para
+`/scripts/…`, que é **fail-to-run**, não fail-to-wrong-script. A REQ também exige registrar *por que*
+a verificação empírica não foi considerada necessária em Claude/Gemini — para a decisão ser
+reavaliável e não parecer omissão.
+
+**Armadilha central da REQ-2, identificada antes do despacho e escrita no roadmap.** "Arquivo de
+hook sem entrada de credential-guard" é um estado **legítimo** em máquina com o guard **global**
+instalado — `globalCredentialGuardInstalled*()` pula as entradas de projeto de propósito. Foi
+exatamente essa interação que produziu o falso negativo ambiental de 2026-08-08. Portanto: sabotar
+apagando a entrada do **arquivo gerado** não funciona (o injector regenera); é preciso sabotar a
+**emissão nos geradores**, nos 3 stacks identicamente, com `$HOME` isolado. E o discriminante correto
+é o comparador estrutural **continuar passando** enquanto o guard de vacuidade acusa — se falhar por
+divergência estrutural, o cenário está testando o Cenário 44 de novo.
+
+**Artefatos:** `docs/roadmaps/wip/ROADMAP-2026-08-12-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present.md`,
+REQ-2 linkada. Branch `fix/prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present`.
+Roadmap da REQ-1 fica para **depois do merge da REQ-2**, para `cli-parity.md` ter um escritor por vez.

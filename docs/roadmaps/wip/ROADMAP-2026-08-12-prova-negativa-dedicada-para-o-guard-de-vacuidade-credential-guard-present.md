@@ -1,0 +1,169 @@
+---
+status: wip
+date: 2026-08-12
+req: "docs/req/REQ-2026-08-11-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present-do-check-agent-hooks-parity.md"
+squad: "Ártemis, Hefesto"
+---
+
+# Roadmap: Prova negativa dedicada para o guard de vacuidade credential-guard-present
+
+> Created: 2026-08-12 | Status: wip
+
+## Context
+
+REQ: `docs/req/REQ-2026-08-11-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present-do-check-agent-hooks-parity.md`
+
+`scripts/check-agent-hooks-parity.sh` tem **duas** camadas:
+
+1. um **guard de vacuidade** (linhas ~190–202): para cada CLI × runtime, o arquivo de hook gerado
+   não pode estar vazio **e** precisa referenciar `trackfw-credential-guard.sh`
+   (`grep -q "trackfw-credential-guard.sh"`);
+2. um **comparador estrutural** do JSON parseado, Go×Node e Go×Python.
+
+O guard existe porque o comparador, sozinho, é vulnerável a falso verde: se os **três** stacks
+removessem a entrada de credential-guard de forma **idêntica**, o diff cross-stack continuaria
+passando e o gate diria "OK" sobre arquivos que perderam o controle de segurança.
+
+**O problema:** o guard de vacuidade **não tem prova negativa própria** em
+`scripts/check-gates-falsify.sh`. O Cenário 44 — única prova P4 hoje associada a esse gate —
+falsifica apenas o **comparador estrutural** (corrompe o `matcher` do Kiro no Node e verifica que o
+diff `go-vs-node` acusa). Se o guard de vacuidade parasse de funcionar, **nenhum cenário acusaria**.
+
+Ou seja: o gate que existe para impedir falso verde é, ele próprio, não provado.
+
+### Por que isto é prioridade, e não perfeccionismo
+
+Este projeto já foi mordido duas vezes por exatamente esta classe de problema:
+
+- **2026-08-08** — o guard de vacuidade capturou um falso negativo **ambiental**: o gate rodava
+  `discover --init` sem isolar `$HOME`, e o credential-guard **global** instalado na máquina fazia o
+  dedup pular a entrada de escopo de projeto. Corrigido isolando `$HOME` por runtime. Nota:
+  `vault/notes/check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08.md`.
+- **2026-08-11** (ML-1A do `ROADMAP-2026-08-11`) — um teste aparentemente correto era **incapaz de
+  distinguir** "migração ligada" de "migração ausente". Só a sabotagem revelou. A partir dali, prova
+  negativa virou critério de aceite bloqueante.
+
+O achado foi reportado por Hefesto em **duas sessões distintas** (2026-08-08 e 2026-08-11/ML-8A) sem
+ser endereçado.
+
+### 🔴 A armadilha que define o desenho do cenário
+
+Esta é a parte que faz o ML dar errado se for ignorada.
+
+**"Arquivo de hook sem entrada de credential-guard" é um estado LEGÍTIMO** em máquina com o
+credential-guard **global** instalado: `globalCredentialGuardInstalled*()` (Go/Node/Python)
+deliberadamente pula as entradas de escopo de projeto para o guard não rodar duas vezes por chamada.
+Foi exatamente essa interação que produziu o falso negativo de 2026-08-08.
+
+Consequências para o desenho:
+
+- ❌ **Não funciona** sabotar apagando a entrada do **arquivo gerado**: o injector regenera o arquivo
+  a cada execução do gate, e a sabotagem some. O cenário testaria nada.
+- ✅ **Funciona** sabotar a **emissão nos geradores** — remover a emissão da entrada de
+  credential-guard, **nos três stacks de forma idêntica** (é o cenário que o guard existe para
+  pegar), em cópias do source, como o Cenário 44 já faz com `npm/`.
+- ⚠️ O `$HOME` **tem de continuar isolado** durante o cenário. Sem isso, a máquina do desenvolvedor
+  com guard global instalado faz o gate falhar pelo motivo **errado**, e o cenário vira um falso
+  positivo que "passa" sem provar nada.
+
+**O discriminante correto:** na árvore sabotada, o comparador estrutural **continua passando**
+(os 3 stacks estão idênticos entre si) e é o **guard de vacuidade** que precisa falhar. Se o cenário
+falhar por divergência estrutural, ele está testando o Cenário 44 de novo, não o guard.
+
+## Acceptance Criteria
+
+- [ ] Existe cenário em `scripts/check-gates-falsify.sh` que falsifica **especificamente** o guard de
+      vacuidade `credential-guard-present`.
+- [ ] O cenário segue o padrão do arquivo: **baseline** (gate passa na árvore íntegra) + **detecção**
+      (gate falha na árvore sabotada). Não basta o gate passar.
+- [ ] A sabotagem remove a **emissão** do credential-guard nos **3 stacks identicamente**, de modo
+      que o comparador estrutural continue satisfeito e apenas o guard de vacuidade acuse.
+- [ ] O cenário **prova** que a falha veio do guard de vacuidade, não do comparador: a asserção casa
+      a chave `agent-hooks-parity/<cli>/<runtime>/credential-guard-present`.
+- [ ] `$HOME` permanece isolado no cenário.
+- [ ] `docs/cli-parity.md` atualizado: remover a ressalva de que o guard não tem prova negativa.
+- [ ] `make quality` verde, com o total de cenários incrementado (hoje 103) e a string de resumo
+      final do `check-gates-falsify.sh` atualizada.
+
+### Escopo negativo
+
+- **Não** altera o comportamento de `scripts/check-agent-hooks-parity.sh` — só acrescenta a prova de
+  que ele não é vácuo.
+- **Não** altera código de produto: `internal/`, `npm/src/`, `pypi/trackfw/` e os testes ficam
+  intocados (a sabotagem opera sobre **cópias** em diretório temporário).
+- **Não** endurece nenhum outro gate, nem mexe no Cenário 44.
+- **Não** trata a semântica fail-open × fail-closed — é a outra REQ.
+
+---
+
+## Wave 1 — Cenário de falsificação (1 ML)
+> Dependências: nenhuma.
+
+### ML-1A — Cenário 46: falsificar o guard de vacuidade `credential-guard-present`
+**Status:** ⬜ Pendente
+**Agente:** Ártemis (`artemis-tf`)
+
+**Arquivos afetados:**
+- `scripts/check-gates-falsify.sh` — novo cenário + string de resumo final (linha ~3587)
+- `docs/cli-parity.md` — remover a ressalva sobre ausência de prova negativa
+
+**Ações:**
+1. Ler o **Cenário 44** (`scripts/check-gates-falsify.sh`, linhas ~3493–3536) e reusar a mecânica:
+   cópia do source em `$T`, sabotagem, `assert_fails_with`.
+2. Escrever o **Cenário 46** com baseline + detecção, conforme o §Context (ler a subseção
+   "A armadilha que define o desenho do cenário" **antes** de desenhar a sabotagem).
+3. Escolher o alvo de sabotagem mais estável possível e **documentar no comentário do cenário qual
+   literal está sendo fixado e por quê** — esse literal vira âncora de manutenção, como já
+   aconteceu com os cenários 34 e 35 (`RETARGETED 2026-08-02`) quando o alvo original sumiu num
+   refactor.
+4. Atualizar a string de resumo final do `check-gates-falsify.sh` com o novo total e a descrição do
+   cenário, no mesmo formato dos existentes.
+5. Atualizar `docs/cli-parity.md` removendo a ressalva.
+
+**Critérios de aceite:**
+- [ ] `bash scripts/check-gates-falsify.sh` passa, com total incrementado.
+- [ ] 🔴 **Prova de que o cenário não é vácuo:** desabilite o guard de vacuidade em
+      `scripts/check-agent-hooks-parity.sh` (comente o bloco `grep -q "trackfw-credential-guard.sh"`),
+      rode `check-gates-falsify.sh` e confirme que o **novo cenário falha**. Restaure. **Reporte o
+      resultado.** Sem essa checagem, o cenário novo tem o mesmo defeito que ele existe para corrigir.
+- [ ] 🔴 **Prova de que o cenário não está testando o comparador:** na árvore sabotada, o comparador
+      estrutural continua passando. Demonstre (ex.: a saída mostra o `FAIL` da chave
+      `credential-guard-present` e **não** de `go-vs-node`/`go-vs-py`).
+- [ ] `internal/`, `npm/src/`, `pypi/trackfw/` e arquivos de teste **intocados**.
+- [ ] `make quality` → exit 0, 0 `FAIL`.
+
+**Comandos de validação:**
+```bash
+bash scripts/check-gates-falsify.sh
+bash scripts/check-agent-hooks-parity.sh
+make quality
+```
+
+---
+
+## Wave 2 — Barreira de qualidade (1 ML)
+> Dependências: Wave 1.
+
+### ML-2A — Auditoria de qualidade do cenário
+**Status:** ⬜ Pendente
+**Agente:** Hefesto (`hefesto-tf`)
+**Arquivos afetados:** nenhum por padrão (revisão). Correções só se Zeus autorizar.
+
+**Ações:** revisar o Cenário 46 quanto a: fragilidade da âncora escolhida, isolamento de `$HOME`,
+risco de falso positivo em máquina com credential-guard global instalado, e coerência com o padrão
+dos demais cenários. Rodar `make quality` em `$HOME` **não** isolado para checar se o cenário novo
+introduz sensibilidade ambiental — foi exatamente esse o modo de falha de 2026-08-08.
+
+**Critérios de aceite:**
+- [ ] Parecer escrito cobrindo os 4 pontos acima.
+- [ ] Confirmação de que o cenário não é ambientalmente sensível.
+- [ ] Achados reportados a Zeus, não corrigidos unilateralmente.
+
+---
+
+## Notas de execução
+
+- **Autoridade de Git:** apenas Zeus cria branch, commita e faz push.
+- **Sem paralelismo:** são 2 MLs sequenciais, o segundo audita o primeiro.
+- **Regra de paridade dos 3 CLIs não se aplica** a este roadmap: ele não altera código de produto,
+  apenas gates e documentação.
