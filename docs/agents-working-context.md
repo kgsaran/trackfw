@@ -13599,3 +13599,631 @@ PR) é o mesmo de qualquer par gerador/consumidor sob revisão humana. E **não 
 **Gates finais:** `make quality` **exit 0** · `trackfw validate` sem violações.
 
 **Roadmap fechado.** REQ de detecção → `Done`.
+
+---
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — roadmap do auto-silenciamento — INICIADO
+
+PR #162 mergeado (`19777a4`). `main` limpa, nenhuma branch aberta. Esta era a **única REQ aberta**, e
+é a que fecha um buraco de segurança que **sabemos existir**.
+
+**A armadilha de desenho está escrita no `## Context`, porque a solução ingênua tem o mesmo furo:**
+criar "uma regra que avisa quando o `rules:` em disco é mais fraco que no `HEAD`" **não resolve** —
+essa meta-regra também seria configurável por `rules:`, e o adversário a desliga na mesma edição.
+Empurra o problema um nível.
+
+**Pergunta que travei como critério:** *"e o que impede o adversário de desligar isto também?"* Se a
+resposta for "outra regra configurável", o mecanismo está errado. Sem isso, o ML entregaria uma
+solução que parece resolver e não resolve — e passaria em todos os gates.
+
+**Restrição de escopo explícita:** `ruleSeverity()` é maquinaria compartilhada por **todas** as
+regras. Mexer nela afeta usuários que configuraram `rules:` por motivos que nada têm a ver com
+segurança. Se o mecanismo exigir tocar no caminho compartilhado, precisa ser **justificado**, não
+presumido.
+
+**Deixei explícito que "não vale o custo, documentar o limite" é conclusão aceitável** e deve ser dita
+se for o caso — o roadmap pode terminar na Barreira B0. Sem isso, o viés natural de um ML é produzir
+mecanismo.
+
+**ML-3A atribuído a Zeus**, não a Hefesto: ele recusou tarefa equivalente por escopo hoje, apesar de
+tê-la executado em 4 PRs anteriores. Enquanto `~/.claude/agents/hefesto-tf` não for reconciliado,
+este tipo de ML não vai para ele — registrado no próprio roadmap para a decisão não se perder.
+
+Branch `fix/ancorar-rules-no-head-para-as-regras-de-credential-guard`.
+
+---
+
+## Sessão 2026-08-12 — Hades (Segurança) — ML-0A — CONCLUÍDO
+
+Parecer: `docs/seguranca/2026-08-12-mecanismo-rules-ancorada-no-head.md`. **Não modificou código.**
+
+**Recomendação:** M4 — dentro de `ruleSeverity()` (`validator.go:117`), um branch **guardado por nome
+de regra** (`credential_guard_mode_downgrade`, `credential_guard_script_integrity`) que resolve
+severidade pela **mais estrita** entre `HEAD` e disco, reaproveitando `headTrackfwYAML()`
+(já existe e já testado para `mode`). Zero delta comportamental para as outras ~38 regras — a
+recursão não reabre porque, para essas 2 regras, o disco **deixa de ser consultado**, não há mais
+chave a flipar.
+
+**Achado que amplia o escopo do roadmap:** `rules:` não é o único canal disco-e-não-commitado que
+silencia essas regras. `.trackfw-baseline.json` (ratchet) é **propositalmente não versionado**
+(`.gitignore:14-15`) — ancorar no `HEAD` não se aplica a ele; a única forma de fechar é excluir as 2
+regras de credential-guard da elegibilidade de baseline, por nome, nos dois caminhos
+(`Validate()`/`ValidateTagged()`). **Sem isso, a alegação "auto-silenciamento fechado" seria falsa**
+mesmo depois do M4. Terceiro canal, `governance_mode: lenient`, tem blast radius amplo (converte
+**toda** a saída do validate) — recomendei **não decidir isso neste roadmap**, documentar como limite
+conhecido e deixar para REQ/ADR próprio se Zeus decidir que vale.
+
+**Posição sobre "sem `HEAD`":** cair no disco, aceitar o limite — já registrado no
+`ADR-2026-08-12` ("não cobre o que nunca foi commitado"), e o adversário não controla esse estado sem
+sabotar o próprio `.git` (ruidoso por natureza).
+
+**Desligamento legítimo commitado:** continua funcionando — demonstrado com fluxo concreto no
+parecer (§4).
+
+**Conclusão:** não é "documentar e parar" — M4 + carve-out de baseline são baratos e fecham os canais
+realmente exploráveis. Recomendo Barreira B0 liberar Wave 1 com esse escopo ampliado (rules: + baseline),
+não apenas o `rules:` original do roadmap.
+
+ML-0A marcado `✅ Concluído` no roadmap (só o campo Status). Próximo: Barreira B0 (Zeus).
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-0A + Barreira B0 (ADR do M4)
+
+**O parecer ampliou o problema, e verifiquei os três canais no código:**
+
+| Canal | Verificação de Zeus |
+|---|---|
+| `rules:` | `ruleSeverity()` lê disco — confirmado |
+| `.trackfw-baseline.json` | **`.gitignore:14-15`** — não versionado **deliberadamente** |
+| `governance_mode: lenient` | existe, com `lenient_until`, mas a data é escolhida por quem edita |
+
+Blocos do M4 confirmados: `headTrackfwYAML()` em `validator_credential_guard_integrity.go:117`;
+equivalente Node via `git show HEAD:./trackfw.yaml`.
+
+**Decisão da barreira: M4** — branch guardado por nome de regra dentro de `ruleSeverity()`,
+resolvendo pela severidade **mais estrita entre `HEAD` e disco**. É a única das quatro que fecha o
+canal **sem recursão** (M1) e **sem blast radius** (M3, que alteraria ~40 regras).
+
+**Ampliei o escopo do roadmap para incluir o carve-out do baseline**, contra a formulação original.
+Motivo: fechar `rules:` e deixar o baseline aberto entregaria a **sensação** de correção sem a
+correção — o adversário troca de canal. E o mecanismo é **diferente**: o arquivo é `.gitignore`d de
+propósito, então "exigir commit" não se aplica; a regra é que essas violações **não são toleráveis
+via baseline**.
+
+**Deixei `governance_mode: lenient` de fora, com o motivo escrito:** *blast radius* é o validador
+inteiro e há caso de uso legítimo (onboarding). Decidir isso no fim de um roadmap sobre outra coisa
+seria decisão apressada sobre feature que não estudamos. Mas registrei no ADR que, enquanto existir,
+**o problema está reduzido, não resolvido** — e que isso precisa ir para o `README.md`, não só para o
+`cli-parity.md`.
+
+**Também registrei no ADR uma consequência que ninguém pediu:** duas regras passam a resolver
+severidade de forma **diferente** das outras ~38. Isso **precisa estar comentado no código**, senão
+parece bug para quem ler depois.
+
+**Nota sobre a conclusão do parecer:** o roadmap dizia explicitamente que *"não vale o custo,
+documentar e parar"* era aceitável. O parecer **rejeitou** essa saída, com razão — M4 tem custo
+baixo, escopo contido e infraestrutura pronta. Registro porque o critério existia para evitar viés
+de produzir mecanismo, e desta vez a conclusão de produzir foi **argumentada**, não default.
+
+---
+
+## Sessão 2026-08-12 — Apolo (ML-1A: mecanismo M4 nos 3 CLIs + carve-out do baseline) — IMPLEMENTAÇÃO PRONTA, `make quality` VERMELHO (dependência conhecida do ML-2A), AGUARDANDO AUDITORIA
+
+**Abrindo pelo gate vermelho, não pelo final:** `make quality` é critério de aceite explícito do
+roadmap e **está vermelho** — `scripts/check-gates-falsify.sh` Scenario 50 (não-vacuidade de
+`credential_guard_mode_downgrade`) falha porque prova, deliberadamente, o comportamento **pré-ADR**
+(`rules: ...: off` só em disco desliga a regra) — que este ML torna **falso por desenho**. Fora do
+meu escopo (`scripts/` é do ML-2A/Ártemis, explicitamente). **Decisão que preciso de Zeus:** ML-1A
+pode ser auditado com esse gate vermelho conhecido (documentado, com nota do vault), ou ML-2A precisa
+entrar no mesmo commit antes de qualquer merge? Não decidi isso sozinho — só implementei o código e
+os testes de unidade dos 3 CLIs (todos verdes), e sinalizo aqui.
+
+Branch `fix/ancorar-rules-no-head-para-as-regras-de-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md`,
+ML-1A — status atualizado para `🔄 Aguardando auditoria de Zeus`, não `✅ Concluído` (meu próprio
+protocolo de microlote: status só vira Concluído após a auditoria do orquestrador aprovar, e não
+faz sentido marcar Concluído com um critério de aceite explícito ainda vermelho). Não commito/pusho
+(Zeus tem autoridade de git).
+
+**Delta de escopo em relação ao ADR aceito — sinalizando para Zeus, não decidindo:** o ADR e o
+parecer de Hades (M4, `docs/seguranca/2026-08-12-mecanismo-rules-ancorada-no-head.md`) nomeiam
+explicitamente **2** regras (`credential_guard_mode_downgrade`, `credential_guard_script_integrity`).
+O prompt desta ML me deu **3**, acrescentando `credential_guard_hook_resolvable`. Segui o prompt
+(instrução explícita e mais recente), mas isso é uma mudança de comportamento real e não coberta
+pelo texto do ADR: um projeto que hoje tolera via baseline uma violação de
+`credential_guard_hook_resolvable` (ex.: hook referenciado com script ainda não versionado) passa a
+ter essa violação **não-suprimível**. Preciso que Zeus confirme se isso foi intencional ou se o ADR
+precisa de emenda cobrindo a 3ª regra.
+
+**Escopo executado:** M4 (severidade das 3 regras de credential-guard — `credential_guard_hook_resolvable`,
+`credential_guard_script_integrity`, `credential_guard_mode_downgrade` — resolvida pela mais estrita
+entre `HEAD` e disco) + carve-out do `.trackfw-baseline.json` (essas 3 regras não são toleráveis via
+baseline), nos 3 CLIs.
+
+**Mecanismo (idêntico nos 3 stacks):**
+- `ruleSeverity()`/`ruleSeverity()`/`_rule_severity()` ganha um branch guardado por nome de regra:
+  para as 3 regras de credential-guard, delega a `credentialGuardRuleSeverity`/`credentialGuardRuleSeverity`/
+  `_credential_guard_rule_severity`; toda outra regra segue para `diskRuleSeverity`/`diskRuleSeverity`/
+  `_disk_rule_severity` — o corpo antigo da função, renomeado, byte-idêntico.
+- A resolução é **direcional**: severidade efetiva = a mais estrita entre a severidade resolvida no
+  HEAD (via `rules:` parseado do HEAD, ou o default se ausente) e a resolvida em disco. Ausência de
+  `rules:` no HEAD (o caso comum hoje) resolve para o default — já o mais estrito — então o disco só
+  pode igualar ou perder, nunca vencer sozinho.
+- Nova função aditiva em cada `config`: `ParseRulesFromContent`/`parseRulesFromContent`/
+  `parse_rules_from_content` — parseia só o mapeamento `rules:` de um conteúdo arbitrário (o blob do
+  HEAD via `git show HEAD:./trackfw.yaml`, obtido por `headTrackfwYAML`/`headTrackfwYAML`/
+  `_head_trackfw_yaml`, já existente), reaproveitando `parse()`/`parse()`/`_parse()` sobre um cfg
+  efêmero. **Armadilha paga no Node e no Python:** `parse()`/`_parse()` assumem que `cfg` já tem a
+  forma aninhada de `defaults()` (`credentialGuard`/`update`/`sync`/`linkFields` como objetos, não
+  ausentes) — um `{ rules: {} }` cru quebra com `TypeError`/crash na primeira chave nested que o
+  conteúdo declarar. O Go não tem esse problema (structs Go são valor, não ponteiro, zero-value já
+  serve). Corrigido inicializando os 4 objetos aninhados vazios no cfg efêmero.
+
+**Carve-out do baseline:** em Go, refatorei `Validate()` para rotear por `validateUnfilteredTagged()`
+(a mesma pipeline tagged que `ValidateTagged()` já usava) em vez de `ValidateUnfiltered()` puro —
+sem isso não havia como saber, no filtro de baseline, a qual regra cada mensagem pertencia. Extraí
+`filterBaselineTagged()` compartilhado pelos dois entry points, com a exceção: mensagem tolerada pelo
+baseline mas cuja `Rule` está em `credentialGuardAnchoredRules` **não é filtrada**. Em Node, o mesmo
+via `getItemMeta(msg).rule` (já populado por `_setMeta` em `applyRule`). Em Python, via
+`item.get("rule")` (populado por `_enrich_items` em `_apply_rule`).
+
+**Zero delta para as outras ~38 regras:** provado por teste direto (`TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard`
+no Go, espelhado em Node/Python) que seta `rules: wip_limit: warning` e `rules: adr_orphan: off` só
+em disco (sem commit) num repo cujo HEAD não tem `rules:` nenhuma, e confirma que `ruleSeverity()`
+continua resolvendo exatamente pelo disco para essas regras — se o HEAD estivesse (erroneamente)
+sendo consultado, o default do HEAD ausente teria que vencer, e não vence.
+
+**Bug pego nos meus próprios testes iniciais (nos 3 stacks):** os testes pré-existentes de
+"`credential_guard_mode_downgrade` configurável via `rules:`" commitavam `mode: block` isoladamente e
+escreviam `rules: <nome>: warning|off` **só em disco** — exatamente o auto-silenciamento sem rastro
+que este ADR fecha. Corrigi para commitar `mode: block` **junto** com `rules: ...: warning|off` no
+mesmo commit (fluxo legítimo do ADR §4), preservando `mode: block` como âncora do HEAD; adicionei
+subtests irmãs `*_nao_commitado_ainda_dispara` provando que a mesma edição sem commit não tem efeito.
+Primeira tentativa desses testes ainda commitava `mode: warn` (já rebaixado) junto com `rules:` — isso
+faz a regra silenciar por **falta de âncora** (HEAD não é mais `block`), não pela severidade, dando
+falso positivo vácuo. A âncora (`mode: block` no HEAD) precisa sobreviver ao commit que rebaixa só a
+severidade.
+
+**Consequência esperada e fora do meu escopo — `scripts/check-gates-falsify.sh` Scenario 50 quebra:**
+o braço de não-vacuidade desse cenário (linhas ~4262-4296) prova, deliberadamente, o comportamento
+**pré-ADR** (rules: off em disco, sem commit, desliga a regra) — que agora é falso por desenho. Não
+toquei em `scripts/` (fora do meu escopo, ML-2A/Ártemis). Nota detalhada:
+`vault/notes/scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12.md`.
+
+**Evidência:**
+- `go build ./... && go test ./...` — verde (inclui `TestBaselineCarveOut_CredentialGuardRulesNaoToleradas`,
+  `TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard`, `TestCredentialGuardRuleSeverity_SemHead_CaiNoDisco`
+  e as 5 subtests de `TestCredentialGuardModeDowngrade_ConfiguravelViaRules`).
+- `npm test` (npm/) — 472 testes, 0 falhas.
+- `python3 -m pytest pypi/tests -q` — 1027 passed, 8 subtests passed.
+- `./bin/trackfw validate` neste repositório — `✓ No violations found.`; a própria
+  `check-gates-falsify.sh` confirma isso não é só "olho nu" —
+  `OK [falsify/validate-ok-message/baseline-byte-identical-and-pinned]` passou dentro da run de
+  `make quality`, provando a mensagem de sucesso byte-idêntica ao Cenário 29 nos 3 CLIs.
+- `make quality` — `test`, `test-node`, `test-python`, `lint` e todos os scripts de `parity` **exceto**
+  `check-gates-falsify.sh` passam; `check-gates-falsify.sh` falha só no Scenario 50 non-vacuity
+  (esperado, ver nota do vault acima — é o motivo do ML-2A existir). **Ver abertura desta entrada
+  para a decisão que isso força.**
+- Confirmei que não existe um segundo caminho de filtro de baseline que escaparia do carve-out: nos
+  3 stacks, o único consumidor de "carregar baseline + filtrar" é o comando `validate`
+  (`internal/commands/validate.go` via `Validate()`/`ValidateTagged()`; `internal/commands/barrier.go`
+  via `ValidateTagged()`; `npm/src/commands/validate.js` via `validate()`;
+  `pypi/trackfw/commands/validate.py` via `validate()`) — todos passam pela pipeline com o carve-out.
+  O único outro consumidor de baseline é o comando `baseline` (`internal/commands/baseline.go`,
+  `npm/src/commands/baseline.js`, `pypi/trackfw/commands/baseline.py`), que usa a versão
+  **não-filtrada** (`ValidateUnfiltered`/`validateUnfiltered`/`validate_unfiltered`) só para criar o
+  snapshot — correto, não é um canal de filtragem.
+- Custo por execução (ADR "Consequences", risco aceito): `applyRule`/`applyRule`/`_apply_rule`
+  retorna cedo quando `msgs` está vazia, então o `git show HEAD:./trackfw.yaml` extra de
+  `credentialGuardRuleSeverity` só roda quando a regra de credential-guard **já disparou** por outro
+  motivo — custo zero no caso comum (repositório limpo).
+
+**Arquivos modificados:** `internal/validator/validator.go`,
+`internal/validator/validator_credential_guard_integrity.go`,
+`internal/validator/validator_credential_guard_integrity_test.go`,
+`internal/validator/validator_baseline_test.go`, `internal/config/config.go`,
+`npm/src/validator/index.js`, `npm/src/config/index.js`,
+`npm/tests/credential_guard_integrity.test.js`, `npm/tests/baseline.test.js`,
+`pypi/trackfw/validator.py`, `pypi/trackfw/config.py`,
+`pypi/tests/test_credential_guard_integrity.py`, `pypi/tests/test_baseline.py`,
+`vault/notes/scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12.md`,
+`vault/notes/index.md`, este arquivo, e o campo `**Status:**` do ML-1A no roadmap.
+
+**Próximo:** Zeus audita; se aprovado, ML-2A (Ártemis) reescreve o Scenario 50 de
+`scripts/check-gates-falsify.sh` para o cenário decisivo (ataque combinado não commitado continua
+detectado).
+
+---
+
+## Sessão 2026-08-12 — Ártemis (ML-2A: cenário de falsificação do M4) — CONCLUÍDO, aguardando auditoria de Zeus
+
+Branch `fix/ancorar-rules-no-head-para-as-regras-de-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md`,
+Wave 2/ML-2A — status atualizado para 🔄 Aguardando auditoria de Zeus (não marco ✅ antes da
+auditoria de Zeus passar — Definition of Done do meu papel). Único arquivo de código tocado:
+`scripts/check-gates-falsify.sh` (108 → 111 falsify scenarios; string de resumo final atualizada).
+`internal/`, `npm/src/`, `pypi/trackfw/` e todos os testes ficaram intocados — confirmado por
+`git status --short` limpo neles ao final.
+
+**1. Cenário 50 consertado.** O braço de não-vacuidade original sabotava a regra escrevendo `rules:
+credential_guard_mode_downgrade: off` em disco **sem** commit — exatamente o comportamento pré-ADR
+que o M4 fecha; ficaria vermelho para sempre. Substituído por `rules: ...: off` **commitado junto**
+com `mode: block` no mesmo commit de HEAD (T50_OFF) — mesmo padrão de
+`TestCredentialGuardModeDowngrade_ConfiguravelViaRules/off_commitado`
+(`validator_credential_guard_integrity_test.go:356-371`): HEAD e disco concordam em "off", "mais
+estrita entre HEAD e disco" resolve para "off", a regra silencia de verdade. `_ =
+credentialGuardModeMsgs` (sabotage por código) não era opção — este ML não tem permissão de tocar
+`internal/`.
+
+**2. Cenário 51 (novo) — o cenário decisivo do M4.** Edição combinada NÃO commitada (`mode: warn` +
+`rules: credential_guard_mode_downgrade: off`, ambos só em disco, HEAD só com `mode: block`)
+**continua sendo reportada** (T51_BAD). Braço autodiscriminante: T51_OFF_COMMITTED aplica o MESMO
+ataque de disco, mas com o `off` **commitado** junto ao `mode: block` — silencia. A única variável
+entre os dois é o status de commit do `off`.
+
+**3. Cenário 52 (novo) — carve-out do baseline.** Antes de escrever, verifiquei o formato real de
+`.trackfw-baseline.json` em vez de assumir da prosa do ADR (armadilha "prova que não prova"):
+`BaselineFile{Violations, Warnings []string}` (`validator.go:18-23`), e `filterBaselineTagged`
+compara o texto **inteiro** da mensagem (`v.Msg`, `validator.go:527`), não uma tag/hash — por isso
+o baseline do fixture usa `$S50_FULL_MSG` (literal completo), não `$S50_MSG` (só o trecho usado nos
+outros cenários). Braço de controle embutido no MESMO fixture/MESMA execução de `validate`: uma
+violação de `filename_uniqueness` (não-guard) listada no MESMO baseline **é** suprimida — prova que
+o carve-out é específico das 3 regras de guarda, não que o baseline está simplesmente quebrado (o
+que faria a violação de guarda "sobreviver" não provar nada).
+
+**4. Cenário 53 (novo) — não-regressão, o mais importante para a confiança no M4.** Uma regra
+não-guard (`filename_uniqueness`, default `error`) com `rules: filename_uniqueness: off` em disco
+**não commitado** continua silenciando totalmente — zero delta confirmado para o caminho
+`diskRuleSeverity` usado pelas ~38 regras fora do escopo do M4. O fixture precisa de um HEAD real
+mesmo esta regra nunca consultando HEAD hoje: sem HEAD, `credentialGuardRuleSeverity` cairia em
+disco mesmo que a regra fosse (por engano) adicionada ao mapa âncorado — mascarando o próprio
+vazamento que este cenário existe para pegar.
+
+**Armadilha paga durante a escrita:** os primeiros fixtures dos Cenários 52/53 colocavam os
+`dup.md` duplicados em `wip/` + `backlog/` — isso disparou `roadmap "X" is in wip but has no linked
+REQ` e `...has no acceptance criteria block` (regras específicas de `wip`/`blocked`), poluindo o
+exit code sem relação com `filename_uniqueness`. Movido para `backlog/` + `done/`, que não têm essas
+checagens extras.
+
+**🔴 Prova de não-vacuidade de cada cenário NOVO (51/52/53) — sabotagem TEMPORÁRIA de
+`internal/validator/*.go`, `go build -o bin/trackfw ./cmd/trackfw`, confirmação da falha, restauração
++ rebuild, `git status --short internal/` limpo depois de cada uma:**
+- **51:** `credentialGuardRuleSeverity` revertida para `return diskSeverity` (disco sempre vence, pré-ADR)
+  → T51_BAD passou a imprimir `✓ No violations found.` (exit 0) — a asserção de detecção depende
+  genuinamente do M4. Restaurado, `go build` confirmado limpo.
+- **52:** `filterBaselineTagged` com a condição `&& !credentialGuardAnchoredRules[v.Rule]` removida
+  → T52 passou a imprimir `✓ No violations found.` (exit 0, as DUAS violações suprimidas) — a
+  asserção depende genuinamente do carve-out. Restaurado, `go build` confirmado limpo.
+- **53:** `filename_uniqueness: true` adicionado a `credentialGuardAnchoredRules` (simulando
+  vazamento de escopo do M4) → T53_OFF passou a imprimir a violação de `filename_uniqueness` de
+  volta (exit 1) — a asserção de silêncio depende genuinamente do zero-delta. Restaurado, `go build`
+  confirmado limpo.
+
+**Evidência final:**
+```
+$ ./bin/trackfw validate
+✓ No violations found.
+$ git status --short
+ M scripts/check-gates-falsify.sh
+$ make quality
+...
+Falsification checks passed (all 111 scenarios, ...)
+$ echo $?
+0
+```
+
+**Arquivos modificados:** `scripts/check-gates-falsify.sh`, este arquivo, e o campo `**Status:**` do
+ML-2A no roadmap.
+
+**🔴 Duas notas de vault ficam devendo — fora do meu "Arquivos permitidos" (só
+`scripts/check-gates-falsify.sh` · `docs/agents-working-context.md` · o campo `**Status:**` do
+roadmap), decisão de Zeus se cabem neste PR ou num ML próprio:**
+1. `vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md`, armadilha #1,
+   prescreve `assert_would_now_fail` + `rules: <nome>: off` (não commitado) como o idioma padrão de
+   não-vacuidade. Para as 3 regras de credential-guard esse idioma está **morto** desde o M4 — um
+   `off` não commitado não desliga mais nada nelas. O próximo agente escrevendo um cenário para
+   `credential_guard_hook_resolvable` ou `credential_guard_script_integrity` vai puxar essa armadilha
+   e recair no mesmo furo que motivou este ML inteiro. Precisa de um adendo de escopo: "não se aplica
+   às 3 regras em credentialGuardAnchoredRules — usar `rules: off` COMMITADO junto com o valor que a
+   regra vigia (ver Cenário 50/51 em check-gates-falsify.sh)."
+2. A armadilha nova que paguei: um `dup.md` duplicado colocado em `wip/` (ou `blocked/`) dispara
+   `roadmap "X" is in wip but has no linked REQ` + `...has no acceptance criteria block` — regras
+   extras específicas desses dois estados que poluem o exit code de qualquer cenário que só queira
+   testar `filename_uniqueness` isoladamente. Usar `backlog/` + `done/` para fixtures de duplicidade
+   de nome que não devem ter "material" de outras regras. Vale como quinta armadilha na mesma nota.
+
+**Próximo:** Zeus audita. Se aprovado: ML-3A (Zeus, documentação — `docs/cli-parity.md` +
+`README.md`) e ML-3B (Hades, revisão de segurança final).
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-2A — APROVADO, e o 5º erro de harness meu
+
+**Gates re-executados por Zeus na árvore limpa:** falsify **120 OK / 0 FAIL** (111 cenários) ·
+`make quality` **exit 0**. O vermelho declarado no commit do ML-1A está resolvido.
+
+**Erro meu, e vale registrar porque é novo:** rodei a sabotagem de auditoria **concorrentemente** com
+uma rodada de gates em background. O `FAIL` que a rodada capturou era **meu próprio vazamento**
+injetado, não defeito do trabalho. Contaminei a medição. **Quinto erro de harness da sessão.**
+**Lição: sabotagem de auditoria e rodada de gates não podem se sobrepor no tempo.**
+
+**Reprodução da não-vacuidade, pelo caminho que eu não esperava:** injetei `filename_uniqueness` no
+conjunto de regras ancoradas, simulando o M4 **vazar** para uma regra não-guard. O gate reprovou —
+mas pelo **Cenário 52** (carve-out do baseline), não pelo 53. O vazamento **é** pego; a rota é outra.
+E a mensagem do cenário é melhor que a média: explica **por que a asserção anterior seria vácua
+sozinha** — o braço de contraste existe para provar que o baseline funciona no fixture, senão
+"guard não foi suprimido" passaria com baseline mal-formado.
+
+**Conserto do Cenário 50, e a escolha é a certa:** ela trocou o mecanismo de não-vacuidade de
+`rules: off` **não commitado** (morto por design desde o M4) para `off` **commitado junto** com
+`mode: block` no mesmo `HEAD` — que é o **caminho legítimo e auditável** que o ADR preserva. E trocou
+`assert_would_now_fail` por `assert_lacks_pattern`, estritamente mais forte: o fixture agora
+representa **comportamento correto de produção**, não árvore sabotada.
+
+**Cenário 53 é o mais load-bearing e ela sabia:** carrega um `HEAD` real **de propósito**, mesmo a
+regra não lendo `HEAD` hoje, só para que a sabotagem de não-vacuidade (adicionar a regra ao conjunto
+ancorado) seja **significativa**. Sem isso, o cenário passaria por acidente.
+
+**Vault atualizado por Zeus** com as duas coisas que ela devia mas não podia escrever: ressalva de
+escopo na armadilha #1 (o idioma `assert_would_now_fail` + `rules: off` não commitado está **morto**
+para as 3 regras de guard) e a armadilha #5 nova (regras extras de `wip`/`blocked` disparando em
+fixture de roadmap).
+
+## Sessão 2026-08-12 — Hades (Segurança) — ML-3B: revisão final — 🔴 brecha nova, BLOQUEIA PR
+
+**Entregável:** `docs/seguranca/2026-08-12-estado-final-ancoragem-no-head.md`.
+
+**M4 e o carve-out do baseline: corretos, verificados no código** (`ruleSeverity`/
+`credentialGuardRuleSeverity`/`filterBaselineTagged`, `internal/validator/`), com paridade
+confirmada nos 3 CLIs (`npm/src/validator/index.js`, `pypi/trackfw/validator.py`). Reproduzi o
+cenário decisivo (edição combinada não commitada) num fixture isolado e a violação continua
+aparecendo, como o ADR promete.
+
+**🔴 Achado bloqueante, provado empiricamente com 2 PoCs (não hipótese):**
+`headTrackfwYAML()`/`isGitWorktree()` chamam `exec.Command("git", ...)` sem limpar o ambiente —
+herdam `GIT_DIR`/`GIT_WORK_TREE` do processo. Setando essas duas variáveis para apontar a um
+repositório git alheio (sem `trackfw.yaml` versionado), a resolução de `HEAD` falha
+silenciosamente (`ok=false`) e `credentialGuardRuleSeverity` cai só no disco — **derrota o
+mecanismo inteiro sem nenhum commit e, para `credential_guard_script_integrity`/
+`credential_guard_hook_resolvable`, sem sequer precisar de HEAD real** (essas 2 regras nunca
+dependiam de git antes do M4 — M4 introduziu essa dependência **nelas**, não é pré-existente).
+Confirmado: falha aberta e silenciosa (`✓ No violations found.`, exit 0). O mesmo padrão de
+invocação existe em Node/Python — risco de paridade, não isolado do Go.
+
+Isso contradiz a premissa escrita no ADR (Decision point 4) e no comentário de
+`validator_credential_guard_integrity.go:248-251` ("none of those 3 conditions can be reached by
+an uncommitted edit to trackfw.yaml alone") — **literalmente verdade** (não é uma edição de
+`trackfw.yaml`) mas **falsa na prática**: é alcançável sem editar `trackfw.yaml` e sem commitar
+nada, só com duas variáveis de ambiente. `GIT_DIR`/`GIT_WORK_TREE` já haviam mordido esta linha
+de trabalho antes (`docs/cli-parity.md:2579-2588`, para o script do hook) — este é o mesmo padrão
+reaparecendo num lugar novo (resolução de severidade do validador).
+
+**Q4 (lenient):** não esconde a violação — ela some do `exit code`/bloqueio de CI, mas o texto
+continua aparecendo como warning (`validator.go` aplica a conversão lenient **depois** de M4/
+carve-out já terem decidido que a mensagem existe). Prioridade da REQ de `lenient` sobe, mas fica
+atrás do achado do `GIT_DIR`.
+
+**Q5 (migração do baseline):** saída (`rules: off` commitado) é suficiente tecnicamente, mas
+falta aviso de release — documentação estática não notifica quem só descobre no `validate`
+vermelho pós-`trackfw update`.
+
+**Não toquei em `internal/`, `npm/src/`, `pypi/trackfw/`, `scripts/`, `docs/adr/`, `docs/req/`,
+`docs/cli-parity.md`, `README.md`** — só o entregável de segurança, este registro, e o campo
+`Status:` do ML-3B no roadmap.
+
+**Próximo: Zeus decide.** Recomendo: (1) bloqueante — corrigir a redação do ADR/comentário sobre
+"não alcançável sem commit" antes de fechar, mesmo que a decisão final seja aceitar o limite; (2)
+não bloqueante — considerar limpar `GIT_DIR`/`GIT_WORK_TREE` do ambiente antes de invocar `git`
+nos 3 CLIs (código, fora do meu escopo); (3) ML-3A deve refletir as respostas corretas às
+Perguntas 4 e 5 acima.
+
+## Sessão 2026-08-12 — Apolo (Backend) — início do ML-1B
+
+Iniciando ML-1B: limpar o ambiente nas invocações de `git` do validador (Wave 1-bis, roadmap
+`ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md`). Branch
+`fix/ancorar-rules-no-head-para-as-regras-de-credential-guard` já existe (criada por Zeus).
+Levantamento inicial: 5 invocações de `exec.Command("git", ...)` em `internal/validator/` (Go),
+4 em `npm/src/validator/index.js` (Node), 5 em `pypi/trackfw/validator.py` (Python) — todas sem
+limpeza de ambiente. Plano: helper único por stack (`gitCommand`/`gitOutput`/`_git_run`) que
+ancora explicitamente via `-C` e limpa o ambiente, substituindo toda invocação direta.
+
+## Sessão 2026-08-12 — Apolo (Backend) — ML-1B concluído
+
+**Achado além do PoC original — a lista fechada de variáveis era insuficiente.** A primeira
+implementação usava uma denylist de 8 nomes (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`,
+`GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
+`GIT_CEILING_DIRECTORIES`, `GIT_NAMESPACE`), justificada por "variáveis que redirecionam ONDE o
+repositório é lido". O advisor apontou que a justificativa estava errada: o vetor real é fazer o
+`git` sair com status != 0 por QUALQUER motivo (toda chamada trata falha como "sem âncora,
+silêncio" ou "cai no disco"). Provado com `GIT_CONFIG_COUNT=abc` (fora da lista fechada — injeta
+config arbitrária via `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`; um valor
+malformado faz `git rev-parse` sair com "fatal: unable to parse command-line config", exit 128) —
+a lista fechada não cobria isso, e `credential_guard_mode_downgrade` silenciava POR INTEIRO (não
+só a severidade das outras duas regras), reproduzido nos 3 CLIs antes da correção. **Correção
+final: substituída a enumeração positiva por um filtro NEGATIVO de prefixo — toda variável cujo
+nome comece com `GIT_` é removida do ambiente do subprocesso.** Nota de vault NÃO escrita — fora
+do "Arquivos permitidos" deste ML (só `internal/validator/`, equivalentes Node/Python, testes dos
+3 stacks, este arquivo, e o campo `Status:` do ML-1B) — reportada abaixo para Zeus decidir se cabe
+neste PR ou em ML próprio.
+
+**Entregável:**
+- `internal/validator/validator_git_exec.go` (novo) — `gitCommand(dir, args...)` ancora via `-C`
+  e limpa `GIT_*`; substituídos os 5 call sites diretos em `validator.go` (`gitLastModifiedTime`,
+  `validateBranchHasWIPRoadmap`, `isGitWorktree`) e `validator_credential_guard_integrity.go`
+  (`headTrackfwYAML`, 2 chamadas).
+- `npm/src/validator/git-exec.js` (novo) — `gitOutput(dir, args)` via `execFileSync` (trocou
+  `execSync` com interpolação de string por array de argumentos — mudança de mecanismo não
+  mencionada no ADR original, mas estritamente mais segura e comportamentalmente equivalente para
+  os caminhos exercitados). Substituídos os 4 call sites em `npm/src/validator/index.js`.
+- `pypi/trackfw/validator.py` — `_git_run(cwd, args)` (novo, seção dedicada após os imports).
+  Substituídos os 5 call sites diretos.
+- Testes novos: `internal/validator/validator_git_exec_test.go` (5 testes),
+  `npm/tests/credential_guard_integrity.test.js` (+5 testes, seção "ML-1B"),
+  `pypi/tests/test_credential_guard_integrity.py::TestGitExecEnvIsolation` (5 testes) — cobrindo
+  `cleanGitEnv`/filtro de prefixo, `GIT_DIR`/`GIT_WORK_TREE` redirecionados, `GIT_CONFIG_COUNT`
+  malformado, prova de não-vacuidade (chamada direta ao git sem limpeza falha de verdade), e
+  worktree vinculada legítima (`git worktree add` real) continua funcionando dentro e fora do
+  cenário de downgrade.
+- **Não-vacuidade também provada por sabotagem temporária do próprio fix** nos 3 stacks (remover
+  `cmd.Env`/`env:`, rodar os testes, confirmar vermelho, restaurar, reconstruir) — evidência colada
+  abaixo.
+
+**Levantamento de outras invocações de `git` fora do escopo (reportado, não tocado):**
+`internal/forge/resolve.go:192`, `internal/commands/branch.go:105`,
+`internal/commands/ship.go:111` seguem o mesmo padrão desprotegido (`exec.Command("git", ...)` sem
+limpeza de ambiente), mas estão fora de `internal/validator/` — fora do escopo autorizado deste
+ML. Sinalizado para Zeus decidir se vira roadmap próprio.
+
+**PoC neutralizado nos 3 CLIs — dois vetores (HEAD-anchor direto e canal de severidade):**
+
+```
+# Vetor 1 — credential_guard_mode_downgrade (HEAD=block, disco=warn):
+$ GIT_DIR=<outro-repo>/.git GIT_WORK_TREE=<outro-repo> ./bin/trackfw validate
+✗ ...credential_guard.mode: block... / exit=1   (Go, Node, Python — todos consistentes)
+
+$ GIT_CONFIG_COUNT=abc ./bin/trackfw validate
+✗ ...credential_guard.mode: block... / exit=1   (Go, Node, Python)
+
+# Vetor 2 — credential_guard_script_integrity (HEAD: rules:...error committed; disco: script
+# tamperado + rules:...off NÃO commitado):
+$ GIT_CONFIG_COUNT=abc ./bin/trackfw validate
+✗ ...diverges from the template... / exit=1     (Go, Node, Python)
+```
+
+**Worktree/submódulo legítimo continua funcionando** — testado com `git worktree add` real
+(sem manipulação de ambiente): branch corretamente resolvida via `symbolic-ref`, `isGitWorktree`
+retorna true, `credential_guard_mode_downgrade` funciona normalmente dentro da worktree vinculada
+(silencioso quando disco==HEAD, dispara quando disco diverge). Coberto por teste automatizado nos
+3 stacks.
+
+**Gates:** `go build ./... && go test ./...` verde · `go vet ./...` limpo · `npm --prefix npm
+test` 477/477 · `python3 -m pytest pypi/tests -q` 1032 passed/8 subtests · `./bin/trackfw
+validate` neste repo → `✓ No violations found.` (exit 0) · `make quality` exit 0, 111/111
+cenários OK (falsificação existente inalterada — o cenário de falsificação para este vetor
+específico é escopo de Ártemis, não coberto aqui).
+
+**Reportado a Zeus, não implementado (fora do "Arquivos permitidos" ou fora de escopo):**
+1. Cenário de falsificação em `scripts/check-gates-falsify.sh` para o bypass por `GIT_*`
+   (env-redirect e `GIT_CONFIG_COUNT`) — escopo de Ártemis.
+2. As 3 invocações de `git` fora de `internal/validator/` listadas acima — decisão de Zeus se
+   vira roadmap próprio.
+3. Nota de vault proposta, não escrita (fora dos "Arquivos permitidos" deste ML):
+   `vault/notes/validador-git-env-bypass-severidade-2026-08-12.md`, linkada em
+   `vault/notes/index.md` — registrando a lição "filtro de env deve ser negativo por prefixo, não
+   enumeração positiva por mecanismo suposto" (a denylist inicial de 8 nomes, justificada por
+   "redirecionamento", não cobria `GIT_CONFIG_COUNT` malformado — vetor por FALHA, não
+   redirecionamento) para a próxima vez que alguém tocar invocação de `git` no validador.
+
+**Próximo: Zeus audita.** Se aprovado, roadmap pode fechar (Wave 1-bis era o último item
+bloqueante do PR).
+
+---
+
+## Sessão 2026-08-13 — Ártemis (ML-2B: falsificação do bypass por `GIT_*`) — CONCLUÍDO, aguardando auditoria de Zeus
+
+Branch `fix/ancorar-rules-no-head-para-as-regras-de-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md`,
+Wave 2-bis/ML-2B — status atualizado para ✅ Concluído. Único arquivo modificado:
+`scripts/check-gates-falsify.sh` (Cenário 54, +166 linhas).
+
+**Desenho do Cenário 54.** Reusa o fixture combinado do Cenário 51 (T51_BAD: HEAD commita SÓ
+`credential_guard.mode: block`; disco, sem novo commit, sobrescreve para `mode: warn` + `rules:
+credential_guard_mode_downgrade: off`) e injeta as variáveis de ambiente do adversário na
+invocação de `trackfw validate`, cobrindo os DOIS vetores da nota do vault
+(`validador-git-env-bypass-filtre-por-prefixo-2026-08-12.md`), não só o do PoC original:
+1. **Redirecionamento** — `GIT_DIR`/`GIT_WORK_TREE` apontando para um repositório-isca (git real,
+   sem `trackfw.yaml` commitado).
+2. **Falha induzida** — `GIT_CONFIG_COUNT=abc` (não redireciona nada, só faz o `git` sair 128 por
+   config malformada em linha de comando — o vetor que quebrou a denylist original de 8 nomes).
+
+**Braço autodiscriminante.** Antes de testar o binário do trackfw, o cenário roda os DOIS vetores
+contra um `git -C` cru (sem passar pelo trackfw) e exige que cada um realmente derrube/desvie o
+comando — provando que o ataque é genuíno, não teatro, e que um braço de detecção "verde" depois
+não seria vácuo por o vetor nunca ter funcionado contra nada.
+
+**Braço "worktree legítimo continua funcionando".** `git worktree add` real, sem manipulação de
+ambiente — confirma baseline silenciosa (disco==HEAD) e detecção (disco diverge) dentro da
+worktree vinculada. Ártemis conferiu que Apolo (ML-1B) já cobriu isso com teste automatizado nos
+3 stacks (unidade); este braço é a confirmação black-box complementar via o binário real.
+
+**Prova de não-vacuidade (executada, não só documentada, e ISOLADA por braço).** Sabotagem
+temporária de `cleanGitEnv()` (`internal/validator/validator_git_exec.go`) para `return
+os.Environ()` (sem filtro), rebuild de `bin/trackfw`, execução completa de
+`check-gates-falsify.sh`:
+
+```
+OK   [falsify/credential-guard-git-env-bypass/redirect-attack-is-real]: ...
+OK   [falsify/credential-guard-git-env-bypass/config-attack-is-real]: ...
+FAIL [falsify/credential-guard-git-env-bypass/redirect-detected]: saiu com 0, esperava != 0
+  output: ✓ No violations found.
+```
+
+`set -e` aborta o script no primeiro `FAIL`, então o braço `config-count-detected` nunca chega a
+rodar nessa primeira passada — refeito ISOLADO: comentei temporariamente a chamada
+`assert_fails_with .../redirect-detected` no script (mantendo a sabotagem do `cleanGitEnv()` e o
+binário sabotado), rerodei:
+
+```
+OK   [falsify/credential-guard-git-env-bypass/redirect-attack-is-real]: ...
+OK   [falsify/credential-guard-git-env-bypass/config-attack-is-real]: ...
+FAIL [falsify/credential-guard-git-env-bypass/config-count-detected]: saiu com 0, esperava != 0
+  output: ✓ No violations found.
+```
+
+Confirma dependência genuína dos DOIS braços, cada um isolado: com o filtro desligado, o
+redirecionamento silencia por completo (`GIT_DIR`/`GIT_WORK_TREE` desviam `headTrackfwYAML()` para
+o repositório-isca, sem `trackfw.yaml` em HEAD, `ok=false`) e a falha induzida também silencia
+(`GIT_CONFIG_COUNT=abc` faz `git show HEAD:./trackfw.yaml` sair 128, `ok=false` pelo mesmo motivo)
+— os dois caem no fallback disco-only, onde `rules: ...: off` (só em disco) silencia a regra.
+`scripts/check-gates-falsify.sh` e `internal/validator/validator_git_exec.go` restaurados e
+`bin/trackfw` reconstruído em seguida — `git diff --exit-code` confirmou restauração byte-a-byte
+dos dois antes de prosseguir.
+
+**`GIT_CEILING_DIRECTORIES` investigado e deliberadamente NÃO virou um terceiro braço.** A tabela
+de reprodução manual de Zeus no despacho ("sem manipulação / GIT_DIR+WORK_TREE / GIT_CONFIG_COUNT
+/ GIT_CEILING_DIRECTORIES, todas → violação reportada") é verificação POST-fix de que a defesa vale
+nas 4 condições, não uma lista de vetores pré-fix. Testado cru contra `git -C <dir>` com `<dir>` já
+sendo a raiz do repo (a forma que `gitCommand(".", ...)` sempre usa neste código-base — cwd já é a
+raiz do projeto, nunca um subdiretório): `GIT_CEILING_DIRECTORIES=<dir>` e
+`GIT_CEILING_DIRECTORIES=<pai de dir>` — as duas vezes `git show HEAD:./f.yaml` teve sucesso normal
+(exit 0), porque o ceiling só bloqueia caminhada PARA CIMA na descoberta, e uma descoberta que já
+começa num diretório com `.git` não caminha para lugar nenhum. Incluir um `assert_fails_with` para
+essa variável seria vácuo contra este fixture — documentado em comentário no Cenário 54 em vez de
+forçado como código.
+
+**Gates:** `bash -n scripts/check-gates-falsify.sh` limpo · `go build -o bin/trackfw
+./cmd/trackfw` verde · `make quality` exit 0, **112/112 cenários OK** (Cenário 54 novo, string de
+resumo final atualizada de 111→112) · `./bin/trackfw validate` neste repo →
+`✓ No violations found.` · `git status --porcelain` mostra só `scripts/check-gates-falsify.sh`
+modificado — `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados no diff final.
+
+**Próximo: Zeus audita.** Se aprovado, resta ML-3A (documentação, em andamento com Zeus) antes do
+PR.
+
+## Sessão 2026-08-13 — Zeus (Arquiteto) — ML-2B auditado, ML-3A executado, roadmap fechado
+
+**ML-2B aprovado.** Não-vacuidade reproduzida por Zeus: sabotei `cleanGitEnv()` para
+`return os.Environ()`, reconstruí `bin/trackfw` → `FAIL [.../redirect-detected]`. Restaurado,
+árvore de código limpa, e na árvore limpa: falsify **126 OK / 0 FAIL** (112 cenários),
+`make quality` **exit 0**.
+
+**Ela cobriu os dois tipos de vetor**, como exigido — redirecionamento (`GIT_DIR`/`GIT_WORK_TREE`) e
+**falha induzida** (`GIT_CONFIG_COUNT=abc`). Sem o segundo, uma regressão que voltasse à denylist
+enumerada passaria despercebida.
+
+**E fez algo melhor do que cumprir a especificação: rejeitou parte dela.** Eu passei uma tabela de 4
+linhas com `GIT_CEILING_DIRECTORIES`; ela verificou empiricamente que, com `git -C <root>`, o ceiling
+**nunca bloqueia** a descoberta (não há caminhada para cima a fazer), então um braço
+`assert_fails_with` seria **vácuo**. Documentou em comentário em vez de forçar código. Leu
+corretamente que minha tabela era teste de *"a defesa aguenta"*, não lista de bypasses.
+
+**Braços autodiscriminantes com uma camada a mais:** antes de testar o binário do trackfw, cada vetor
+é rodado contra um `git -C` **cru** e asseverado que **de fato** redireciona/falha — provando que o
+ataque é genuíno e não inerte. Sem isso, um braço verde poderia significar "o ataque não funcionou"
+em vez de "a defesa segurou".
+
+**ML-3A executado por Zeus** (Hefesto segue recusando esta classe por escopo):
+`docs/cli-parity.md` ganha a seção da ancoragem — o que mudou, a **consequência de migração**, por que
+o filtro é por **prefixo** e não lista, e o que **continua aberto**. `README.md` ganha a seção
+*"If `trackfw update` suddenly reports something it used to ignore"*, em linguagem de usuário, com as
+**duas saídas legítimas** (desligar com `rules:` commitado, ou corrigir a causa) e a ressalva do
+`governance_mode: lenient`.
+
+`make quality` **exit 0** · `trackfw validate` sem violações. Roadmap → `done`, REQ → `Done`.

@@ -4172,7 +4172,10 @@ assert_would_now_fail "credential-guard-script-integrity" \
 # mudar junto, por regra de paridade, mas este cenário testa só o CLI Go
 # (mesma justificativa do Cenário 47/49: prova P4 black-box de
 # não-vacuidade; paridade de comportamento já coberta pelos testes unitários
-# dos 3 stacks).
+# dos 3 stacks). $S50_FULL_MSG é o literal COMPLETO (não só o trecho),
+# usado pelo Cenário 52 abaixo como entrada de .trackfw-baseline.json — o
+# filtro de baseline compara a mensagem inteira (validator.go:527), não uma
+# substring.
 #
 # Severidade: o default já é "error" (credential_guard_mode_downgrade está
 # deliberadamente AUSENTE de ruleDefaults em internal/validator/validator.go
@@ -4184,7 +4187,10 @@ assert_would_now_fail "credential-guard-script-integrity" \
 # fazia `git init`/commit antes deste — s50_commit_fixture é o primeiro a
 # criar um repo git de verdade dentro de $WORK por cenário, necessário
 # porque esta regra só lê `git show HEAD:./trackfw.yaml` (sem HEAD, fica em
-# silêncio por desenho — não há como disparar sem essa âncora).
+# silêncio por desenho — não há como disparar sem essa âncora). Generalizado
+# aqui (ML-2A) para aceitar o conteúdo do trackfw.yaml commitado como
+# parâmetro — os Cenários 51/52/53 abaixo reusam o mesmo helper com HEADs
+# diferentes.
 #
 # Braço autodiscriminante: s50_commit_fixture é o MESMO gerador para os dois
 # fixtures principais (T50_OK/T50_BAD) — ambos commitam
@@ -4203,23 +4209,47 @@ assert_would_now_fail "credential-guard-script-integrity" \
 # garantia do Cenário 47/49: fixture base é o que o Cenário 29 prova "✓ No
 # violations found." byte-a-byte).
 #
-# Prova de não-vacuidade: T50_OFF reaplica a MESMA divergência disco-vs-HEAD
-# de T50_BAD, mas com `rules: credential_guard_mode_downgrade: off` extra no
-# disco — o único delta é a severidade configurada, não a divergência em si.
-# assert_would_now_fail (mesma justificativa do Cenário 49) roda o critério
-# de assert_fails_with e exige que ele NÃO seja atendido, provando que o
-# braço de detecção acima FALHARIA com a regra desligada — não apenas que a
-# mensagem some. Sabotagem inteiramente por config de fixture, sem tocar
-# internal/validator/*.go nem reconstruir bin/trackfw.
+# 🔴 ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard,
+# ML-2A (Ártemis) — MECANISMO DE NÃO-VACUIDADE SUBSTITUÍDO (ADR Emenda 2):
+# a prova original sabotava a regra escrevendo `rules:
+# credential_guard_mode_downgrade: off` em disco SEM commit — exatamente o
+# comportamento PRÉ-ADR (auto-silenciamento sem rastro) que o M4 (ML-1A)
+# fecha. Com M4 em produção esse sabotage NÃO tem mais efeito nenhum: o
+# HEAD (sem `rules:`) resolve para o default "error", que vence a
+# comparação direcional "mais estrita entre HEAD e disco"
+# (credentialGuardRuleSeverity, validator_credential_guard_integrity.go:252)
+# mesmo com "off" em disco — então o braço de detecção continuaria
+# disparando, e o braço antigo ficaria PERMANENTEMENTE vermelho. Isso não é
+# regressão: é o gate provando o próprio bug que este ADR corrige (ver
+# vault/notes/scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12.md).
+#
+# Substituído por um sabotage que CONTINUA funcionando por desenho: `rules:
+# credential_guard_mode_downgrade: off` COMMITADO junto com mode: block no
+# MESMO commit de HEAD — o "desligamento legítimo" do ADR §Decision point 5
+# (mesmo padrão de
+# TestCredentialGuardModeDowngrade_ConfiguravelViaRules/off_commitado em
+# validator_credential_guard_integrity_test.go:356-371: HEAD e disco
+# concordam em "off", então "mais estrita entre HEAD e disco" resolve para
+# "off" e a regra silencia de verdade). T50_OFF commita mode: block +
+# rules: ...: off juntos e depois baixa SÓ o mode para "warn" em disco (sem
+# novo commit, rules: off permanece em disco também — nenhuma outra
+# variável muda). Este ML não tem permissão de editar
+# internal/validator/*.go (ver "Arquivos permitidos" no despacho), então
+# `_ = credentialGuardModeMsgs` (o outro sabotage sugerido, usado por Zeus
+# em auditoria) não é uma opção AQUI — só o "rules: off commitado" fica
+# disponível dentro do escopo deste ML.
 #
 # Limite de cobertura conhecido (mesmo do Cenário 47/49): cobre só o wiring
 # applyRule (Validate()/texto), não applyRuleTagged (ValidateTagged()/
 # `validate --json`) em internal/validator/validator.go.
 # ---------------------------------------------------------------------------
 S50_MSG='current file does not resolve to block'
+S50_FULL_MSG='trackfw.yaml sets credential_guard.mode: block at the git HEAD commit, but the current file does not resolve to block — if this was intentional, commit the change; otherwise investigate before treating the credential guard as active'
 
+# rules_severity vazio (padrão) omite o bloco `rules:` inteiro — usado pelos
+# braços que não commitam/escrevem nenhum override de severidade.
 s50_yaml_content() {
-  local mode=$1
+  local mode=$1 rules_severity=${2:-}
   cat <<EOF
 governance_mode: strict
 adr_dirs:
@@ -4229,12 +4259,19 @@ roadmap_dir: docs/roadmaps
 credential_guard:
   mode: $mode
 EOF
+  if [[ -n "$rules_severity" ]]; then
+    printf 'rules:\n  credential_guard_mode_downgrade: %s\n' "$rules_severity"
+  fi
 }
 
+# Generalizado (ML-2A) para aceitar o conteúdo do trackfw.yaml commitado —
+# antes só commitava s50_yaml_content block; os Cenários 51/52/53 precisam
+# commitar HEADs diferentes (com/sem rules: off junto, com/sem
+# credential_guard nenhum).
 s50_commit_fixture() {
-  local dest=$1
+  local dest=$1 yaml_content=$2 commit_msg=$3
   scaffold_adr_req_project "$dest"
-  s50_yaml_content block > "$dest/trackfw.yaml"
+  printf '%s' "$yaml_content" > "$dest/trackfw.yaml"
   (
     cd "$dest"
     git init -q
@@ -4248,13 +4285,14 @@ s50_commit_fixture() {
     git config commit.gpgsign false
     git config core.hooksPath /dev/null
     git add -A
-    git commit -q -m "trackfw.yaml with credential_guard.mode: block"
+    git commit -q -m "$commit_msg"
   )
 }
 
 # --- braço baseline: disco concorda com HEAD (mode: block) -> validate passa
 T50_OK="$WORK/s50-mode-matches-head"
-s50_commit_fixture "$T50_OK"
+s50_commit_fixture "$T50_OK" "$(s50_yaml_content block)" \
+  "trackfw.yaml with credential_guard.mode: block"
 
 set +e
 s50ok_out=$(cd "$T50_OK" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
@@ -4274,24 +4312,492 @@ echo "OK   [falsify/credential-guard-mode-downgrade/baseline]"
 
 # --- braço detecção: disco diverge do HEAD (mode: warn, não commitado) -----
 T50_BAD="$WORK/s50-mode-downgraded"
-s50_commit_fixture "$T50_BAD"
+s50_commit_fixture "$T50_BAD" "$(s50_yaml_content block)" \
+  "trackfw.yaml with credential_guard.mode: block"
 s50_yaml_content warn > "$T50_BAD/trackfw.yaml"
 
 assert_fails_with "credential-guard-mode-downgrade/detected" \
   "$S50_MSG" \
   bash -c "cd '$T50_BAD' && exec '$ROOT_DIR/bin/trackfw' validate"
 
-# --- prova de não-vacuidade: mesma divergência, regra desligada -> o braço
-# de detecção FALHARIA -------------------------------------------------------
-T50_OFF="$WORK/s50-mode-downgraded-rule-off"
-s50_commit_fixture "$T50_OFF"
-{
-  s50_yaml_content warn
-  printf 'rules:\n  credential_guard_mode_downgrade: off\n'
-} > "$T50_OFF/trackfw.yaml"
+# --- prova de não-vacuidade (mecanismo NOVO, ML-2A): mesma divergência de
+# mode, mas HEAD commita `rules: credential_guard_mode_downgrade: off`
+# JUNTO com mode: block — "mais estrita entre HEAD e disco" resolve para
+# "off" (ambos concordam) e a regra silencia de verdade. Isso prova que o
+# braço de detecção acima (T50_BAD, HEAD SEM rules: off) depende
+# genuinamente da regra estar ativa — não apenas que o knob `rules:`
+# funciona (esse era o furo do mecanismo antigo). Helper trocado de
+# assert_would_now_fail (usado pelo mecanismo antigo, e ainda usado pelo
+# Cenário 49) para assert_lacks_pattern: aqui o fixture representa
+# comportamento CORRETO de produção (desligamento legítimo commitado
+# silenciando de verdade), não uma árvore sabotada por config — não faz
+# sentido pedir que o critério de assert_fails_with "não seja atendido"
+# (disjunção: exit==0 OU mensagem ausente) quando o esperado é exit==0 E
+# mensagem ausente ao mesmo tempo. assert_lacks_pattern exige as DUAS
+# (conjunção) — critério estritamente mais forte, não uma divergência de
+# padrão sem motivo. NÃO reverter para assert_would_now_fail aqui: o
+# `rules: ...: off` deste braço está COMMITADO (ver acima), diferente do
+# uso de assert_would_now_fail no Cenário 49, onde o `off` é só em disco. -
+T50_OFF="$WORK/s50-mode-downgraded-rule-off-commitado"
+s50_commit_fixture "$T50_OFF" "$(s50_yaml_content block off)" \
+  "trackfw.yaml with credential_guard.mode: block and rules: credential_guard_mode_downgrade: off"
+s50_yaml_content warn off > "$T50_OFF/trackfw.yaml"
 
-assert_would_now_fail "credential-guard-mode-downgrade" \
+assert_lacks_pattern "credential-guard-mode-downgrade/non-vacuity" \
   "$S50_MSG" \
   bash -c "cd '$T50_OFF' && exec '$ROOT_DIR/bin/trackfw' validate"
 
-echo "Falsification checks passed (all 108 scenarios, 18 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py; detection arm made self-discriminating (ML-1B, ROADMAP-2026-08-12) against the 2026-08-08 environmental-leak failure mode via a test-controlled synthetic \$HOME (Codex-only global guard, no Claude) plus an exclusivity assertion that none of the 5 non-sabotaged CLIs may appear in the FAIL set — proved against a leak-only (no sabotage) adversarial variant that the pre-ML-1B assertion set was satisfiable by pure environmental leak and the new exclusivity check rejects it (46), \`trackfw validate\`'s credential_guard_hook_resolvable rule (ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A/ML-2A) — a registered project-scope Claude credential-guard hook (.claude/settings.json) whose referenced script is missing must be flagged, and must stay silent when the script is present and executable, exercised end-to-end via the real Go binary against an otherwise-empty scaffold_adr_req_project fixture (the same fixture Scenario 29 pins to zero violations, so no other rule has material to fire) — detection arm asserts the exact validator diagnostic literal (unique across internal/validator/*.go per grep) rather than a generic non-zero exit, proved non-vacuous, no \$HOME dependency by design since the rule never reads outside the project root (47), check-attention-scripts-parity.sh extended (ML-0B, ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate) to cover scripts/trackfw-credential-guard.sh (project scope) alongside the two attention scripts — Node.js's CREDENTIAL_GUARD_SCRIPT composition line reordered (CG_PROJECT_GUARD and CG_DETECTION_CORE swapped, no CG_* block content touched) so the script actually emitted by \`discover --init\` diverges from Go/Python while the pre-existing Go-only TestCredentialGuardScript_ParityAcrossStacks (which reconstructs the script by regex-scraping and Go-hardcoded-order-concatenating the CG_*/_CG_* literals, never executing Node/Python) stays green — proves the shell gate closes a real coverage gap the structural unit test cannot see (48), \`trackfw validate\`'s credential_guard_script_integrity rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — scripts/trackfw-credential-guard.sh diverging from the template this trackfw binary would generate (via a real, isolated \`discover --init\` run, then a single tampered line appended) must be flagged with \`rules: credential_guard_script_integrity: error\` fixed in the fixture (default severity is warning, which does not flip validate's exit code), and must stay silent when the script is byte-identical to that binary's own template — detection arm asserts the exact validator diagnostic literal, proved non-vacuous via assert_would_now_fail (same exit!=0-and-message-present criterion as assert_fails_with, required to NOT hold against a config-only \`rules: ...: off\` neutering of the same corrupted fixture) rather than a message-absence-only check, single-delta design isolates the corruption (baseline vs. detection) and the severity override (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (49), \`trackfw validate\`'s credential_guard_mode_downgrade rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — credential_guard.mode: block committed at git HEAD followed by an uncommitted on-disk downgrade to mode: warn must be flagged (first check-gates-falsify.sh scenario to git-init/commit a real fixture repo, closing the gap Apolo found — no prior fixture had a HEAD for this rule to anchor against), and must stay silent when disk matches HEAD — detection arm asserts the exact validator diagnostic literal, proved non-vacuous via assert_would_now_fail against a config-only \`rules: ...: off\` neutering of the same disk-vs-HEAD divergence, single-delta design isolates the uncommitted downgrade (baseline vs. detection) and the severity override (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (50))"
+# ---------------------------------------------------------------------------
+# Cenário 51 — internal/validator: o CENÁRIO DECISIVO do M4
+#              (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-
+#              credential-guard, ML-1A/ML-2A) — a edição COMBINADA e NÃO
+#              commitada (`credential_guard.mode: warn` + `rules:
+#              credential_guard_mode_downgrade: off`, ambos só em disco)
+#              CONTINUA sendo reportada. É exatamente o furo que o
+#              ML-0A/Barreira B0 descreveram: antes do M4, essa única edição
+#              rebaixava o controle E desligava quem avisaria, sem deixar
+#              rastro (ver Context do roadmap).
+#
+# Braço de detecção: T51_BAD commita SÓ mode: block no HEAD (sem rules: —
+# o caso comum, "nenhuma decisão tomada sobre a severidade desta regra").
+# Em disco, SEM novo commit, o ataque combinado sobrescreve tanto mode
+# quanto rules: na MESMA edição — s50_yaml_content warn off produz as duas
+# chaves de uma vez, então não há como a edição ser parcial. A mensagem
+# TEM que aparecer: se HEAD-informed severity não vencesse aqui, o disco
+# "off" desligaria a regra que deveria denunciar a própria mudança de
+# disco — o auto-silenciamento que o ADR fecha.
+S51_BAD_HEAD="$(s50_yaml_content block)"
+
+T51_BAD="$WORK/s51-combined-uncommitted"
+s50_commit_fixture "$T51_BAD" "$S51_BAD_HEAD" \
+  "trackfw.yaml with credential_guard.mode: block"
+s50_yaml_content warn off > "$T51_BAD/trackfw.yaml"
+
+assert_fails_with "credential-guard-anchoring-combined-edit/detected" \
+  "$S50_MSG" \
+  bash -c "cd '$T51_BAD' && exec '$ROOT_DIR/bin/trackfw' validate"
+
+# Braço autodiscriminante/contraste: T51_OFF_COMMITTED aplica o MESMO
+# ataque de disco (mode: warn + rules: off) — mas desta vez `rules:
+# credential_guard_mode_downgrade: off` também está COMMITADO no HEAD
+# (junto com mode: block, no mesmo commit — desligamento legítimo, ADR
+# §Decision point 5, mesmíssima construção do braço de não-vacuidade do
+# Cenário 50 acima). A ÚNICA variável entre T51_BAD e T51_OFF_COMMITTED é
+# se o "off" estava commitado — o resultado muda de "reportado" para
+# "silenciado" SÓ por causa dessa variável, isolando exatamente o que o M4
+# promete: desligar continua possível, mas só via commit (rastro
+# auditável), nunca por edição de disco sozinha. -------------------------
+T51_OFF_COMMITTED="$WORK/s51-combined-off-committed"
+s50_commit_fixture "$T51_OFF_COMMITTED" "$(s50_yaml_content block off)" \
+  "trackfw.yaml with credential_guard.mode: block and rules: credential_guard_mode_downgrade: off"
+s50_yaml_content warn off > "$T51_OFF_COMMITTED/trackfw.yaml"
+
+assert_lacks_pattern "credential-guard-anchoring-combined-edit/legitimate-committed-off-silences" \
+  "$S50_MSG" \
+  bash -c "cd '$T51_OFF_COMMITTED' && exec '$ROOT_DIR/bin/trackfw' validate"
+
+# 🔴 Prova de não-vacuidade do M4 em si (não apenas do knob `rules:`, já
+# provado acima): sabotagem TEMPORÁRIA e NÃO commitada de
+# internal/validator/validator_credential_guard_integrity.go — dentro de
+# credentialGuardRuleSeverity, trocar `return
+# credentialGuardStricterSeverity(headSeverity, diskSeverity)` por `return
+# diskSeverity` (i.e., voltar ao comportamento pré-ADR, disco vence
+# sempre), reconstruir bin/trackfw
+# (vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md
+# — go build ./... sozinho NÃO regenera o binário) e rodar T51_BAD de novo:
+# o braço de detecção acima DEVE falhar (mensagem ausente, exit 0), porque
+# o disco "off" venceria. Restaurar o arquivo e reconstruir antes de
+# prosseguir — este ML não tem permissão de deixar internal/ tocado no
+# diff final; a sabotagem é só para a prova de auditoria, nunca commitada.
+# Saída colada no relatório final desta execução.
+#
+# Limite de cobertura conhecido (mesmo do Cenário 50): cobre só applyRule
+# (Validate()/texto), não applyRuleTagged (ValidateTagged()/`validate
+# --json`).
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Cenário 52 — internal/validator: o CARVE-OUT do .trackfw-baseline.json
+#              (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-
+#              credential-guard, Barreira B0/ML-1A/ML-2A) — uma violação de
+#              regra de credential-guard listada em .trackfw-baseline.json
+#              CONTINUA sendo reportada (filterBaselineTagged,
+#              validator.go:500-511: as 3 regras em
+#              credentialGuardAnchoredRules nunca são toleradas por
+#              baseline, "regardless of what .trackfw-baseline.json contains
+#              for it"). O canal do baseline é diferente do canal `rules:`
+#              fechado pelos Cenários 50/51 — o arquivo é .gitignore'd
+#              DELIBERADAMENTE (.gitignore:14-15), então "exigir commit" não
+#              se aplica; o fechamento é excluir as 3 regras da elegibilidade
+#              do ratchet, não comparar HEAD-vs-disco.
+#
+# Formato do .trackfw-baseline.json verificado contra a implementação (não
+# escrito de improviso a partir da prosa do ADR — armadilha "prova que não
+# prova" de outra forma): BaselineFile{Created, Violations []string,
+# Warnings []string} (validator.go:18-23), e filterBaselineTagged compara
+# CADA violação pelo texto INTEIRO da mensagem (v.Msg, validator.go:527) —
+# não uma tag de regra, não um hash. $S50_FULL_MSG é esse literal completo
+# para a regra de guarda; a chave para o carve-out entrar em jogo é o NOME
+# da regra (credentialGuardAnchoredRules[v.Rule]), não o conteúdo da
+# mensagem — mas o filtro só reconhece a mensagem se o texto bater
+# EXATAMENTE, por isso a mensagem completa (não $S50_MSG, que é só um
+# trecho) é o que entra no JSON.
+#
+# Braço autodiscriminante (mesmo fixture, uma única execução de `validate`,
+# controle embutido em vez de scenario separado): T52 tem DUAS violações
+# reais simultâneas — a de credential-guard (mode: warn não commitado,
+# igual ao T50_BAD/T51_BAD) e uma de filename_uniqueness (regra NÃO-guard,
+# "docs/roadmaps/backlog/dup.md" e "docs/roadmaps/done/dup.md" — mesmo nome
+# (backlog+done, não wip/blocked: essas duas têm regras extras — "roadmap X is
+# in wip but has no linked REQ/acceptance criteria block" — que poluiriam o exit
+# code deste cenário sem relação com filename_uniqueness)
+# em dois estados, validator.go:1938-2012) — e .trackfw-baseline.json lista
+# as DUAS pelo texto completo. Se o carve-out funcionar: a de
+# credential-guard continua aparecendo (não tolerada), a de
+# filename_uniqueness some (tolerada normalmente). Isso prova as DUAS
+# metades na mesma prova: (a) o formato do baseline realmente suprime
+# quando a regra NÃO é de credential-guard — sem isso, a violação de guarda
+# "aparecer" não provaria nada, porque o baseline poderia estar
+# simplesmente mal-formado e não suprimir NADA; (b) o carve-out é
+# ESPECÍFICO da regra de guarda, não uma falha geral do mecanismo de
+# baseline. Sem o braço de filename_uniqueness, este cenário seria a
+# "prova que não prova" documentada em
+# vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md.
+#
+# 🔴 Prova de não-vacuidade: sabotagem TEMPORÁRIA e NÃO commitada de
+# filterBaselineTagged (validator.go) — remover a condição
+# `&& !credentialGuardAnchoredRules[v.Rule]` (deixando só `if tolerated {
+# continue }`, i.e., o carve-out nunca existiu), reconstruir bin/trackfw e
+# rodar T52 de novo: a violação de credential-guard deve DESAPARECER
+# também (as duas ficariam suprimidas, exit 0) — provando que este cenário
+# depende genuinamente do carve-out, não de alguma outra causa. Restaurar
+# o arquivo e reconstruir antes de prosseguir. Saída colada no relatório.
+# ---------------------------------------------------------------------------
+S52_FILENAME_MSG='roadmap "dup.md" appears in multiple states: [backlog done]'
+
+T52="$WORK/s52-baseline-carveout"
+s50_commit_fixture "$T52" "$(s50_yaml_content block)" \
+  "trackfw.yaml with credential_guard.mode: block"
+s50_yaml_content warn > "$T52/trackfw.yaml"
+printf '# dup\n' > "$T52/docs/roadmaps/backlog/dup.md"
+printf '# dup\n' > "$T52/docs/roadmaps/done/dup.md"
+cat > "$T52/.trackfw-baseline.json" <<EOF
+{
+  "created": "2026-08-12T00:00:00Z",
+  "violations": [
+    "$S50_FULL_MSG",
+    "roadmap \"dup.md\" appears in multiple states: [backlog done]"
+  ],
+  "warnings": []
+}
+EOF
+
+set +e
+s52_out=$(cd "$T52" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
+s52_status=$?
+set -e
+if [[ $s52_status -eq 0 ]]; then
+  echo "FAIL [falsify/credential-guard-baseline-carveout]: baseline listando a violação de credential-guard deveria continuar reprovando (carve-out), saiu com 0" >&2
+  echo "  output: $s52_out" >&2
+  exit 1
+fi
+if ! grep -qF "$S50_MSG" <<<"$s52_out"; then
+  echo "FAIL [falsify/credential-guard-baseline-carveout]: violação de credential-guard listada no baseline foi suprimida — carve-out não está funcionando" >&2
+  echo "  output: $s52_out" >&2
+  exit 1
+fi
+if grep -qF "$S52_FILENAME_MSG" <<<"$s52_out"; then
+  echo "FAIL [falsify/credential-guard-baseline-carveout]: violação NÃO-guard (filename_uniqueness) listada no MESMO baseline não foi suprimida — o formato do baseline não está funcionando neste fixture (prova vácua: a linha acima passaria mesmo com um baseline mal-formado)" >&2
+  echo "  output: $s52_out" >&2
+  exit 1
+fi
+echo "OK   [falsify/credential-guard-baseline-carveout]: guarda reportada apesar do baseline, não-guarda suprimida pelo MESMO baseline"
+
+# ---------------------------------------------------------------------------
+# Cenário 53 — internal/validator: NÃO-REGRESSÃO — a regra "zero delta" do
+#              ADR-2026-08-12 (Decision point, "zero delta para as outras
+#              ~38 regras") não vazou para regras que NÃO são de
+#              credential-guard. Uma regra comum (filename_uniqueness, não
+#              listada em credentialGuardAnchoredRules) continua sendo
+#              desligável por `rules: <nome>: off` NÃO commitado — o mesmo
+#              comportamento de SEMPRE, disco-only (diskRuleSeverity), sem
+#              nenhuma consulta a HEAD. Este é o cenário mais importante
+#              para a confiança no M4: sem ele, uma regressão que ampliasse
+#              o âncoramento por engano (ex.: alguém adiciona
+#              filename_uniqueness a credentialGuardAnchoredRules "só por
+#              via das dúvidas") passaria por TODOS os outros cenários deste
+#              arquivo em silêncio.
+#
+# HEAD real é obrigatório aqui, mesmo esta regra nunca consultando HEAD
+# hoje: sem HEAD, credentialGuardRuleSeverity cairia direto em
+# diskSeverity mesmo que a regra FOSSE (por engano) adicionada ao mapa
+# âncorado — mascarando exatamente o vazamento que este cenário existe
+# para pegar (headTrackfwYAML retornando ok=false é um dos "sem âncora,
+# cai no disco" do ADR §Decision point 4 — ver credentialGuardRuleSeverity,
+# validator_credential_guard_integrity.go:252-270). Por isso T53 commita um
+# trackfw.yaml (sem `rules:`, sem credential_guard — irrelevante para esta
+# regra) via o MESMO s50_commit_fixture usado acima.
+#
+# Braço baseline (violação DEVE aparecer, sem override): T53_BASE só
+# commita o scaffold padrão e cria os mesmos dois "dup.md" do Cenário 52 —
+# filename_uniqueness não tem entrada em ruleDefaults (validator.go:101-109
+# — só note_orphan e credential_guard_script_integrity estão lá), então o
+# default é "error" e a violação derruba o exit code sem precisar de
+# `rules:` no fixture (diferente do Cenário 49 — ver aviso da armadilha #2
+# no despacho).
+S53_BASE_HEAD="$(cat <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+EOF
+)"
+
+T53_BASE="$WORK/s53-non-guard-baseline"
+s50_commit_fixture "$T53_BASE" "$S53_BASE_HEAD" \
+  "trackfw.yaml without any rules: override"
+printf '# dup\n' > "$T53_BASE/docs/roadmaps/backlog/dup.md"
+printf '# dup\n' > "$T53_BASE/docs/roadmaps/done/dup.md"
+
+assert_fails_with "credential-guard-anchoring-non-regression/filename-uniqueness-baseline" \
+  "$S52_FILENAME_MSG" \
+  bash -c "cd '$T53_BASE' && exec '$ROOT_DIR/bin/trackfw' validate"
+
+# Braço de detecção (silêncio esperado): MESMO HEAD (sem rules: commitado),
+# MESMA divergência de dup.md — mas agora o disco acrescenta, SEM commit,
+# `rules: filename_uniqueness: off`. Como esta regra NÃO está em
+# credentialGuardAnchoredRules, ruleSeverity() (validator.go:111-128) usa
+# diskRuleSeverity() puro — o mesmo caminho de SEMPRE, alheio a HEAD — e a
+# violação deve sumir por completo (exit 0), provando que o M4 não alterou
+# este caminho. -----------------------------------------------------------
+T53_OFF="$WORK/s53-non-guard-off-uncommitted"
+s50_commit_fixture "$T53_OFF" "$S53_BASE_HEAD" \
+  "trackfw.yaml without any rules: override"
+printf '# dup\n' > "$T53_OFF/docs/roadmaps/backlog/dup.md"
+printf '# dup\n' > "$T53_OFF/docs/roadmaps/done/dup.md"
+{
+  printf '%s\n' "$S53_BASE_HEAD"
+  printf 'rules:\n  filename_uniqueness: off\n'
+} > "$T53_OFF/trackfw.yaml"
+
+assert_lacks_pattern "credential-guard-anchoring-non-regression/filename-uniqueness-off-uncommitted-still-silences" \
+  "$S52_FILENAME_MSG" \
+  bash -c "cd '$T53_OFF' && exec '$ROOT_DIR/bin/trackfw' validate"
+
+# 🔴 Prova de não-vacuidade: sabotagem TEMPORÁRIA e NÃO commitada de
+# internal/validator/validator_credential_guard_integrity.go — acrescentar
+# "filename_uniqueness": true ao mapa credentialGuardAnchoredRules
+# (simulando um vazamento de escopo do M4 para uma regra comum),
+# reconstruir bin/trackfw e rodar T53_OFF de novo: o braço acima DEVE
+# passar a FALHAR (a mensagem volta a aparecer, exit != 0), porque
+# credentialGuardRuleSeverity entraria em jogo — HEAD (sem `rules:` para
+# filename_uniqueness) resolveria para o default "error", que venceria o
+# "off" do disco pela comparação "mais estrita", exatamente o vazamento que
+# este cenário existe para detectar. Restaurar o arquivo e reconstruir
+# antes de prosseguir. Saída colada no relatório final desta execução.
+#
+# Escolha da regra: filename_uniqueness é a mesma usada como controle no
+# Cenário 52 (reaproveita $S52_FILENAME_MSG e o fixture "dup.md"), tem
+# default "error" (assert_fails_with exige exit != 0 — armadilha #2 do
+# despacho, evitada de propósito: um default "warning" não derrubaria o
+# exit code e a prova de baseline seria vácua).
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Cenário 54 — internal/validator: o bypass por variáveis de ambiente GIT_*
+#              (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-
+#              credential-guard, ML-1B/ML-2B) CONTINUA fechado — nenhum dos
+#              dois vetores achados pelo ML-3B (Hades) e reproduzidos por
+#              Zeus consegue derrotar o M4 herdando GIT_* do processo pai.
+#
+# Os dois vetores (vault/notes/validador-git-env-bypass-filtre-por-prefixo-
+# 2026-08-12.md): (1) REDIRECIONAMENTO — GIT_DIR/GIT_WORK_TREE apontando
+# para outro repositório git, fazendo headTrackfwYAML() ler o HEAD ERRADO;
+# (2) FALHA INDUZIDA — GIT_CONFIG_COUNT=abc, que não redireciona nada, só
+# faz o subprocesso git sair 128 por config malformada em linha de comando
+# — e headTrackfwYAML() trata QUALQUER falha do git como "sem âncora,
+# silêncio", então basta fazer o git falhar por QUALQUER motivo. Cobrir só
+# o vetor (1) deixaria uma regressão de volta para uma denylist enumerada
+# (o erro de enquadramento original que não fechava o problema) passar
+# despercebida — ver a nota acima, "O erro de enquadramento".
+#
+# RETARGET: se gitCommand()/cleanGitEnv() (internal/validator/
+# validator_git_exec.go) mudarem de arquivo, assinatura ou deixarem de ser
+# o único ponto de invocação de git deste pacote, reaponte este cenário — o
+# invariante que importa é "nenhuma chamada de git deste pacote herda
+# GIT_* do processo pai", não a função específica.
+#
+# Fixture: MESMO ataque combinado do Cenário 51 (T51_BAD) — HEAD commita
+# SÓ credential_guard.mode: block (sem rules:), disco (sem novo commit)
+# sobrescreve para mode: warn + rules: credential_guard_mode_downgrade: off
+# — mas agora rodado com as variáveis de ambiente GIT_* do adversário
+# injetadas no processo. Se cleanGitEnv() regredisse (parasse de filtrar,
+# ou voltasse a ser denylist enumerada), qualquer um dos dois braços
+# abaixo silenciaria a regra por completo — reabrindo o furo que este
+# roadmap inteiro combate.
+#
+# Cobertura da tabela de reprodução manual de Zeus (despacho deste ML — 4
+# linhas: "sem manipulação", "GIT_DIR + GIT_WORK_TREE", "GIT_CONFIG_COUNT=abc",
+# "GIT_CEILING_DIRECTORIES", todas reportando violação POST-fix, ou seja: a
+# tabela de Zeus é verificação de que a defesa segura vale nas 4 condições,
+# não uma lista de vetores pré-fix): "sem manipulação" já é o braço de
+# detecção do Cenário 51 (T51_BAD, fixture idêntico, sem env injetado) — não
+# duplicado aqui de propósito. GIT_DIR/GIT_WORK_TREE e GIT_CONFIG_COUNT são
+# os dois braços abaixo. GIT_CEILING_DIRECTORIES foi investigado e
+# DELIBERADAMENTE NÃO virou um terceiro braço de detecção: testado cru
+# contra `git -C <dir>` com <dir> já sendo a raiz do repo (a MESMA forma que
+# gitCommand(".", ...) sempre usa neste código-base — cwd já é a raiz do
+# projeto/repo, nunca um subdiretório) — o ceiling só bloqueia caminhada
+# PARA CIMA na descoberta, e uma descoberta que já começa num diretório com
+# `.git` não caminha para lugar nenhum. Confirmado empiricamente com/sem
+# `cleanGitEnv()` sabotado, ceiling = o próprio <dir> e ceiling = o pai de
+# <dir>: as duas vezes `git show HEAD:./f.yaml` teve sucesso normal, exit 0.
+# Incluir um assert_fails_with para essa variável seria vácuo — o próprio
+# controle autodiscriminante embutido (braço "-is-real" abaixo, aplicado ao
+# mesmo padrão) rejeitaria a inclusão. Reportado a Zeus; se a tabela dele
+# reproduziu um bypass real via GIT_CEILING_DIRECTORIES, foi contra uma
+# forma de invocação diferente desta (ex.: cwd num subdiretório do repo),
+# que não é como este código-base invoca git hoje.
+#
+# Limite de escopo: este cenário exercita só a limpeza de ambiente
+# (cleanGitEnv() removendo GIT_*), NÃO o ancoramento `-C dir` em si — contra
+# ESTE fixture (cwd == $T54 == raiz do repo), remover `-C` deixaria o
+# cenário verde do mesmo jeito, porque o processo já está no diretório
+# certo por padrão. O ancoramento `-C` é validado por leitura de código
+# (gitCommand() sempre passa `-C dir` explícito, nunca confia só em cwd),
+# não por um braço de falsificação dedicado neste arquivo.
+S54_HEAD="$(s50_yaml_content block)"
+
+T54="$WORK/s54-git-env-bypass"
+s50_commit_fixture "$T54" "$S54_HEAD" \
+  "trackfw.yaml with credential_guard.mode: block"
+s50_yaml_content warn off > "$T54/trackfw.yaml"
+
+# Repositório-isca para o vetor de redirecionamento: um segundo repo git,
+# em outro diretório, SEM trackfw.yaml commitado — se GIT_DIR/GIT_WORK_TREE
+# vencessem o `-C $T54` explícito de gitCommand(), `git show
+# HEAD:./trackfw.yaml` passaria a mirar este repo, onde o path não existe
+# em HEAD, e headTrackfwYAML() retornaria ok=false — caindo no MESMO
+# fallback disco-only que o Cenário 51 usa para provar o desligamento
+# legítimo (mode: warn + rules: off, ambos só em disco aqui): a severidade
+# silenciaria por inteiro.
+T54_DECOY="$WORK/s54-decoy-repo"
+mkdir -p "$T54_DECOY"
+(
+  cd "$T54_DECOY"
+  git init -q
+  git config user.email "falsify@trackfw.test"
+  git config user.name "trackfw falsify"
+  git config commit.gpgsign false
+  git config core.hooksPath /dev/null
+  printf 'decoy: true\n' > not-trackfw.yaml
+  git add -A
+  git commit -q -m "decoy repo without trackfw.yaml"
+)
+
+# Braço autodiscriminante embutido: prova, ANTES de testar o binário do
+# trackfw, que o repositório-isca é um vetor de ataque genuíno contra um
+# `git -C` cru — sem isto, um braço de detecção "verde" abaixo não
+# provaria que cleanGitEnv()/`-C` é quem defende; provaria só que o
+# ataque nunca funcionou contra nada.
+set +e
+s54_raw_out=$(GIT_DIR="$T54_DECOY/.git" GIT_WORK_TREE="$T54_DECOY" git -C "$T54" show HEAD:./trackfw.yaml 2>&1)
+s54_raw_status=$?
+set -e
+if [[ $s54_raw_status -eq 0 ]] && grep -qF "mode: block" <<<"$s54_raw_out"; then
+  echo "FAIL [falsify/credential-guard-git-env-bypass/attack-inert]: GIT_DIR/GIT_WORK_TREE NÃO desviaram um \`git -C\` cru para o repositório-isca — o vetor de ataque em si está inerte neste ambiente, a prova abaixo não provaria nada" >&2
+  echo "  output: $s54_raw_out" >&2
+  exit 1
+fi
+echo "OK   [falsify/credential-guard-git-env-bypass/redirect-attack-is-real]: GIT_DIR/GIT_WORK_TREE realmente desviam um \`git -C\` cru (saiu $s54_raw_status, sem 'mode: block' do HEAD real) — confirma que o vetor é genuíno, não teatro"
+
+set +e
+s54_rawcfg_out=$(GIT_CONFIG_COUNT=abc git -C "$T54" rev-parse --is-inside-work-tree 2>&1)
+s54_rawcfg_status=$?
+set -e
+if [[ $s54_rawcfg_status -eq 0 ]]; then
+  echo "FAIL [falsify/credential-guard-git-env-bypass/config-attack-inert]: GIT_CONFIG_COUNT=abc NÃO derrubou um \`git -C\` cru — o vetor de falha induzida está inerte neste ambiente, a prova abaixo não provaria nada" >&2
+  echo "  output: $s54_rawcfg_out" >&2
+  exit 1
+fi
+echo "OK   [falsify/credential-guard-git-env-bypass/config-attack-is-real]: GIT_CONFIG_COUNT=abc realmente derruba um \`git -C\` cru (saiu $s54_rawcfg_status) — confirma que o vetor é genuíno"
+
+# Braço de detecção 1/2 — REDIRECIONAMENTO: mesmo GIT_DIR/GIT_WORK_TREE do
+# repositório-isca acima, agora contra o binário trackfw. gitCommand()
+# ancora com `-C $T54` e limpa GIT_* do ambiente do processo filho — se
+# isso continuar funcionando, `git show HEAD:./trackfw.yaml` de
+# headTrackfwYAML() lê o HEAD de $T54 (mode: block), "mais estrita entre
+# HEAD e disco" vence sobre o disco (warn + off), e $S50_MSG aparece.
+assert_fails_with "credential-guard-git-env-bypass/redirect-detected" \
+  "$S50_MSG" \
+  bash -c "cd '$T54' && GIT_DIR='$T54_DECOY/.git' GIT_WORK_TREE='$T54_DECOY' exec '$ROOT_DIR/bin/trackfw' validate"
+
+# Braço de detecção 2/2 — FALHA INDUZIDA: GIT_CONFIG_COUNT=abc não
+# redireciona nada, só faz o subprocesso git sair 128 por config malformada
+# em linha de comando — o vetor que quebrou a denylist original de 8 nomes.
+# cleanGitEnv() precisa removê-la do ambiente do processo filho pelo MESMO
+# mecanismo (prefixo GIT_), sem tratamento especial por nome de variável.
+assert_fails_with "credential-guard-git-env-bypass/config-count-detected" \
+  "$S50_MSG" \
+  bash -c "cd '$T54' && GIT_CONFIG_COUNT=abc exec '$ROOT_DIR/bin/trackfw' validate"
+
+# Braço "worktree legítimo continua funcionando" — git worktree add cria
+# uma segunda working tree cujo .git é um ARQUIVO (não diretório) apontando
+# de volta para o gitdir principal; o comentário de validator_git_exec.go
+# promete que isso continua resolvendo o MESMO repositório porque a
+# descoberta normal a partir de `-C dir` já chega lá sem depender de nada
+# herdado. Prova aqui SEM injetar GIT_* manualmente (o cenário decisivo de
+# bypass já está provado acima) — só confirma que `-C` para dentro de uma
+# worktree vinculada funciona no caminho feliz, nos dois sentidos (baseline
+# silenciosa e detecção).
+T54_WT_MAIN="$WORK/s54-worktree-main"
+s50_commit_fixture "$T54_WT_MAIN" "$S54_HEAD" \
+  "trackfw.yaml with credential_guard.mode: block"
+T54_WT_LINKED="$WORK/s54-worktree-linked"
+(cd "$T54_WT_MAIN" && git worktree add -q -b s54-wt-branch "$T54_WT_LINKED")
+
+set +e
+s54wt_ok_out=$(cd "$T54_WT_LINKED" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
+s54wt_ok_status=$?
+set -e
+if [[ $s54wt_ok_status -ne 0 ]]; then
+  echo "FAIL [falsify/credential-guard-git-env-bypass/worktree-baseline]: worktree vinculada com disco == HEAD (mode: block) deveria passar, saiu com $s54wt_ok_status" >&2
+  echo "  output: $s54wt_ok_out" >&2
+  exit 1
+fi
+if grep -qF "$S50_MSG" <<<"$s54wt_ok_out"; then
+  echo "FAIL [falsify/credential-guard-git-env-bypass/worktree-baseline]: worktree vinculada com disco == HEAD, mas a regra disparou mesmo assim" >&2
+  echo "  output: $s54wt_ok_out" >&2
+  exit 1
+fi
+echo "OK   [falsify/credential-guard-git-env-bypass/worktree-legitimate-baseline]"
+
+s50_yaml_content warn > "$T54_WT_LINKED/trackfw.yaml"
+assert_fails_with "credential-guard-git-env-bypass/worktree-legitimate-detection" \
+  "$S50_MSG" \
+  bash -c "cd '$T54_WT_LINKED' && exec '$ROOT_DIR/bin/trackfw' validate"
+
+# 🔴 Prova de não-vacuidade: sabotagem TEMPORÁRIA e NÃO commitada de
+# internal/validator/validator_git_exec.go — dentro de cleanGitEnv(),
+# trocar o corpo por `return os.Environ()` (i.e., voltar a herdar GIT_* do
+# processo pai sem filtro nenhum, o comportamento PRÉ-ML-1B), reconstruir
+# bin/trackfw (vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-
+# falsify-2026-08-12.md — go build ./... sozinho NÃO regenera esse
+# binário) e rodar os dois braços de detecção acima de novo: AMBOS devem
+# passar a FALHAR (mensagem ausente, exit 0) — o redirecionamento faz
+# headTrackfwYAML() ler o repositório-isca (sem trackfw.yaml em HEAD,
+# ok=false) e a falha induzida faz `git show HEAD:./trackfw.yaml` sair 128
+# (ok=false também) — os dois caem no fallback disco-only, onde `rules:
+# credential_guard_mode_downgrade: off` (só em disco, não commitado)
+# silencia a regra por inteiro. Restaurar o arquivo e reconstruir antes de
+# prosseguir — este ML não tem permissão de deixar internal/ tocado no
+# diff final; a sabotagem é só para a prova de auditoria, nunca commitada.
+# Saída colada no relatório final desta execução.
+#
+# Limite de cobertura conhecido (mesmo do Cenário 50/51): cobre só o wiring
+# applyRule (Validate()/texto), não applyRuleTagged (ValidateTagged()/
+# `validate --json`) em internal/validator/validator.go.
+# ---------------------------------------------------------------------------
+
+echo "Falsification checks passed (all 112 scenarios, 18 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py; detection arm made self-discriminating (ML-1B, ROADMAP-2026-08-12) against the 2026-08-08 environmental-leak failure mode via a test-controlled synthetic \$HOME (Codex-only global guard, no Claude) plus an exclusivity assertion that none of the 5 non-sabotaged CLIs may appear in the FAIL set — proved against a leak-only (no sabotage) adversarial variant that the pre-ML-1B assertion set was satisfiable by pure environmental leak and the new exclusivity check rejects it (46), \`trackfw validate\`'s credential_guard_hook_resolvable rule (ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A/ML-2A) — a registered project-scope Claude credential-guard hook (.claude/settings.json) whose referenced script is missing must be flagged, and must stay silent when the script is present and executable, exercised end-to-end via the real Go binary against an otherwise-empty scaffold_adr_req_project fixture (the same fixture Scenario 29 pins to zero violations, so no other rule has material to fire) — detection arm asserts the exact validator diagnostic literal (unique across internal/validator/*.go per grep) rather than a generic non-zero exit, proved non-vacuous, no \$HOME dependency by design since the rule never reads outside the project root (47), check-attention-scripts-parity.sh extended (ML-0B, ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate) to cover scripts/trackfw-credential-guard.sh (project scope) alongside the two attention scripts — Node.js's CREDENTIAL_GUARD_SCRIPT composition line reordered (CG_PROJECT_GUARD and CG_DETECTION_CORE swapped, no CG_* block content touched) so the script actually emitted by \`discover --init\` diverges from Go/Python while the pre-existing Go-only TestCredentialGuardScript_ParityAcrossStacks (which reconstructs the script by regex-scraping and Go-hardcoded-order-concatenating the CG_*/_CG_* literals, never executing Node/Python) stays green — proves the shell gate closes a real coverage gap the structural unit test cannot see (48), \`trackfw validate\`'s credential_guard_script_integrity rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — scripts/trackfw-credential-guard.sh diverging from the template this trackfw binary would generate (via a real, isolated \`discover --init\` run, then a single tampered line appended) must be flagged with \`rules: credential_guard_script_integrity: error\` fixed in the fixture (default severity is warning, which does not flip validate's exit code), and must stay silent when the script is byte-identical to that binary's own template — detection arm asserts the exact validator diagnostic literal, proved non-vacuous via assert_would_now_fail (same exit!=0-and-message-present criterion as assert_fails_with, required to NOT hold against a config-only \`rules: ...: off\` neutering of the same corrupted fixture) rather than a message-absence-only check, single-delta design isolates the corruption (baseline vs. detection) and the severity override (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (49), \`trackfw validate\`'s credential_guard_mode_downgrade rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — credential_guard.mode: block committed at git HEAD followed by an uncommitted on-disk downgrade to mode: warn must be flagged (first check-gates-falsify.sh scenario to git-init/commit a real fixture repo, closing the gap Apolo found — no prior fixture had a HEAD for this rule to anchor against), and must stay silent when disk matches HEAD — non-vacuity mechanism REPLACED by ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard/ML-2A (ADR Emenda 2): the old \`rules: ...: off\` uncommitted neutering stopped proving anything once M4 anchored severity at HEAD, so it now commits \`rules: credential_guard_mode_downgrade: off\` TOGETHER with mode: block at HEAD (the ADR's legitimate-committed-disable path) instead, single-delta design isolates the uncommitted downgrade (baseline vs. detection) and the committed-off HEAD (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (50), the M4 mechanism itself (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A/ML-2A) — the decisive scenario: the COMBINED uncommitted edit (\`credential_guard.mode: warn\` + \`rules: credential_guard_mode_downgrade: off\`, both disk-only, HEAD only ever committing mode: block) must still be reported, self-discriminating against a contrast fixture where the SAME disk-side attack is applied but \`rules: ...: off\` is committed at HEAD alongside mode: block (legitimate, auditable) and is silenced — isolating commit-status of the off as the only variable; non-vacuity proved by temporarily reverting credentialGuardRuleSeverity to disk-only resolution (pre-ADR behavior), rebuilding bin/trackfw, confirming the detection arm goes red, then restoring and rebuilding (51), the .trackfw-baseline.json carve-out (Barreira B0/ML-1A/ML-2A) — a credential-guard violation listed in .trackfw-baseline.json by its full literal message continues to be reported, verified against the real BaselineFile{Violations,Warnings} shape and exact-message-match semantics in filterBaselineTagged (validator.go) rather than assumed from ADR prose, self-discriminating within a single fixture/single \`validate\` run: a filename_uniqueness (non-guard) violation listed in the SAME baseline by the same mechanism IS suppressed, proving the carve-out is specific to the 3 guard rules rather than the baseline format being broken outright (which would make the guard violation \"surviving\" prove nothing) — non-vacuity proved by temporarily dropping the \`&& !credentialGuardAnchoredRules[v.Rule]\` guard in filterBaselineTagged, rebuilding, confirming both violations get suppressed, then restoring and rebuilding (52), non-regression for non-guard rules (the most important scenario for confidence in M4, closing the \"blast radius\" question) — filename_uniqueness (not in credentialGuardAnchoredRules, default severity error) with \`rules: filename_uniqueness: off\` set disk-only and never committed continues to fully silence the rule exactly as before this ADR, proving diskRuleSeverity's disk-only path for the other ~38 rules received zero delta from M4; fixture carries a real git HEAD (committing a trackfw.yaml with no rules: block) specifically so the non-vacuity proof is meaningful — without a HEAD, credentialGuardRuleSeverity would fall back to disk-only regardless of anchoring, masking exactly the scope-leak this scenario exists to catch; non-vacuity proved by temporarily adding filename_uniqueness to credentialGuardAnchoredRules (simulating an M4 scope leak), rebuilding, confirming the silenced arm goes red (HEAD's absent rules: entry now resolves to the stricter default and wins over disk's off), then restoring and rebuilding (53), the GIT_* environment-variable bypass of the M4 anchoring (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1B/ML-2B) stays closed against both vectors found by ML-3B — GIT_DIR/GIT_WORK_TREE redirection to a decoy repository without a committed trackfw.yaml, and GIT_CONFIG_COUNT=abc failure-induction (unrelated to redirection, just makes the git subprocess exit 128) — each embedded with a raw \`git -C\` control proving the vector is a genuine attack (not inert) before testing the trackfw binary, plus a legitimate git-worktree control (worktree add/-C anchoring) proving normal worktree usage is unaffected; non-vacuity proved by temporarily reverting cleanGitEnv() (validator_git_exec.go) to return unfiltered os.Environ(), rebuilding bin/trackfw, confirming both detection arms go silent, then restoring and rebuilding (54))"

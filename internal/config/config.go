@@ -145,6 +145,20 @@ func Reset() {
 	instance = ProjectConfig{}
 }
 
+// ParseRulesFromContent parses only the `rules:` mapping out of arbitrary trackfw.yaml content
+// (e.g. a git-HEAD blob obtained via `git show HEAD:./trackfw.yaml`, not the CWD file Load()
+// reads) and returns it as name->severity. Used by the validator's HEAD-anchored credential-guard
+// rules — see ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-
+// entre-head-e-disco.md — which need `rules:` as it existed at a specific git ref, not the CWD, so
+// they cannot go through the Load() singleton (always reads the CWD file and caches it once per
+// process). Reuses parse() over an ephemeral ProjectConfig so this and Load() can never diverge on
+// how `rules:` is read — purely additive, does not touch Load() or parse() themselves.
+func ParseRulesFromContent(content string) map[string]string {
+	cfg := ProjectConfig{Rules: make(map[string]string)}
+	parse(content, &cfg)
+	return cfg.Rules
+}
+
 func defaults() ProjectConfig {
 	return ProjectConfig{
 		ADRDirs:            []string{"docs/adr"},

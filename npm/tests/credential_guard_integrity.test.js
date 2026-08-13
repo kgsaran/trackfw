@@ -202,10 +202,17 @@ test('credential_guard_mode_downgrade é configurável via rules: (default error
   }
 })
 
-test('credential_guard_mode_downgrade: rules: warning rebaixa para warning', async () => {
+// ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard,
+// ADR-2026-08-12-severidade-das-regras-de-credential-guard-...: as duas subtests abaixo COMMITAM
+// a mudança de rules: junto com mode: block (a âncora do HEAD, que não pode ser removida, senão a
+// regra silencia por falta de âncora — outro teste). Antes deste ADR, este teste escrevia
+// "rules: <nome>: warning|off" só em disco, SEM commit — exatamente o auto-silenciamento sem
+// rastro que o ADR fecha; ver "*_nao_commitado_ainda_dispara" abaixo para o canal fechado.
+
+test('credential_guard_mode_downgrade: rules: warning commitado rebaixa para warning', async () => {
   const dir = tmpDir()
   initGitRepo(dir)
-  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\nrules:\n  credential_guard_mode_downgrade: warning\n')
   writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: warning\n')
   const origCwd = process.cwd()
   process.chdir(dir)
@@ -220,10 +227,10 @@ test('credential_guard_mode_downgrade: rules: warning rebaixa para warning', asy
   }
 })
 
-test('credential_guard_mode_downgrade: rules: off silencia totalmente', async () => {
+test('credential_guard_mode_downgrade: rules: off commitado silencia totalmente', async () => {
   const dir = tmpDir()
   initGitRepo(dir)
-  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\nrules:\n  credential_guard_mode_downgrade: off\n')
   writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: off\n')
   const origCwd = process.cwd()
   process.chdir(dir)
@@ -236,6 +243,179 @@ test('credential_guard_mode_downgrade: rules: off silencia totalmente', async ()
     process.chdir(origCwd)
     config.reset()
   }
+})
+
+test('credential_guard_mode_downgrade: rules: warning NÃO commitado ainda dispara (violation)', async () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  // HEAD só tem mode: block — SEM rules:. Disco rebaixa mode E desliga a regra na MESMA edição,
+  // nunca commitada. Ataque combinado que o ADR fecha.
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: warning\n')
+  const origCwd = process.cwd()
+  process.chdir(dir)
+  config.reset()
+  try {
+    const { violations } = await validator.validateUnfiltered()
+    assert.equal(violations.some(v => v.includes('credential_guard.mode: block')), true)
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+  }
+})
+
+test('credential_guard_mode_downgrade: rules: off NÃO commitado ainda dispara (violation)', async () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: off\n')
+  const origCwd = process.cwd()
+  process.chdir(dir)
+  config.reset()
+  try {
+    const { violations } = await validator.validateUnfiltered()
+    assert.equal(violations.some(v => v.includes('credential_guard.mode: block')), true)
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+  }
+})
+
+// TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard (Go) — mesma prova em Node: ruleSeverity() para
+// qualquer regra fora de CREDENTIAL_GUARD_ANCHORED_RULES continua resolvendo só pelo disco.
+test('ruleSeverity: zero delta para regras não-guard (continuam só-disco)', async () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, '')
+  writeFile(dir, 'trackfw.yaml', 'rules:\n  wip_limit: warning\n  adr_orphan: off\n')
+  const origCwd = process.cwd()
+  process.chdir(dir)
+  config.reset()
+  try {
+    assert.equal(validator.ruleSeverity('wip_limit'), 'warning')
+    assert.equal(validator.ruleSeverity('adr_orphan'), 'off')
+    assert.equal(validator.ruleSeverity('filename_uniqueness'), 'error')
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+  }
+})
+
+// TestCredentialGuardRuleSeverity_SemHead_CaiNoDisco (Go) — mesma prova em Node.
+test('ruleSeverity: sem HEAD utilizável, credential-guard cai no disco puro', async () => {
+  const dir = tmpDir() // nem sequer é git worktree
+  writeFile(dir, 'trackfw.yaml', 'rules:\n  credential_guard_mode_downgrade: warning\n')
+  const origCwd = process.cwd()
+  process.chdir(dir)
+  config.reset()
+  try {
+    assert.equal(validator.ruleSeverity('credential_guard_mode_downgrade'), 'warning')
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+  }
+})
+
+// ---- ML-1B: invocações de git isoladas de redirecionamento por ambiente ----
+// ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1B.
+// Mirrors internal/validator/validator_git_exec_test.go (Go).
+
+const { cleanGitEnv } = require('../src/validator/git-exec')
+
+function withEnv(overrides, fn) {
+  const saved = {}
+  for (const key of Object.keys(overrides)) {
+    saved[key] = process.env[key]
+    if (overrides[key] === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = overrides[key]
+    }
+  }
+  try {
+    return fn()
+  } finally {
+    for (const key of Object.keys(saved)) {
+      if (saved[key] === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = saved[key]
+      }
+    }
+  }
+}
+
+test('cleanGitEnv: remove apenas variáveis com prefixo GIT_', () => {
+  withEnv({ GIT_DIR: '/tmp/whatever', GIT_CONFIG_COUNT: 'abc', MY_GIT_DIR_LOOKALIKE: 'kept' }, () => {
+    const cleaned = cleanGitEnv()
+    for (const key of Object.keys(cleaned)) {
+      assert.equal(key.startsWith('GIT_'), false, `cleanGitEnv() não deveria manter ${key}`)
+    }
+    assert.equal(cleaned.MY_GIT_DIR_LOOKALIKE, 'kept')
+  })
+})
+
+test('credential_guard_mode_downgrade: GIT_DIR/GIT_WORK_TREE redirecionados continuam detectando', () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\n')
+
+  const other = tmpDir()
+  git(other, 'init')
+  git(other, 'config', 'user.email', 'test@test.com')
+  git(other, 'config', 'user.name', 'test')
+  git(other, 'commit', '--allow-empty', '-m', 'init')
+
+  withEnv({ GIT_DIR: path.join(other, '.git'), GIT_WORK_TREE: other }, () => {
+    const msgs = validateCredentialGuardModeDowngrade(dir)
+    assert.equal(msgs.length, 1, `GIT_DIR/GIT_WORK_TREE redirecionados NÃO deveriam silenciar a detecção, obteve: ${JSON.stringify(msgs)}`)
+    assert.match(msgs[0], /credential_guard\.mode: block/)
+  })
+})
+
+test('credential_guard_mode_downgrade: GIT_CONFIG_COUNT malformado continua detectando', () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\n')
+
+  withEnv({ GIT_CONFIG_COUNT: 'abc' }, () => {
+    const msgs = validateCredentialGuardModeDowngrade(dir)
+    assert.equal(msgs.length, 1, `GIT_CONFIG_COUNT malformado NÃO deveria silenciar a detecção, obteve: ${JSON.stringify(msgs)}`)
+    assert.match(msgs[0], /credential_guard\.mode: block/)
+  })
+})
+
+test('credential_guard_mode_downgrade: GIT_CONFIG_COUNT malformado prova não-vacuidade (sem limpeza, git falha de verdade)', () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+
+  assert.throws(() => {
+    execFileSync('git', ['-C', dir, 'rev-parse', '--verify', 'HEAD'], {
+      env: Object.assign({}, process.env, { GIT_CONFIG_COUNT: 'abc' }),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  }, /./, 'esperava que git falhasse com GIT_CONFIG_COUNT=abc herdado sem limpeza — não falhou, o fixture não prova nada')
+})
+
+test('isGitWorktree: linked worktree legítima continua funcionando (git worktree add real)', () => {
+  const mainDir = tmpDir()
+  initGitRepo(mainDir)
+  commitTrackfwYAML(mainDir, 'credential_guard:\n  mode: block\n')
+
+  const linkedDir = path.join(tmpDir(), 'linked')
+  git(mainDir, 'worktree', 'add', '-b', 'feat/linked-worktree-test-node', linkedDir)
+
+  // Sem downgrade — disco na worktree ainda resolve para block, idêntico ao HEAD.
+  assert.deepEqual(validateCredentialGuardModeDowngrade(linkedDir), [])
+
+  // Downgrade introduzido dentro da worktree — deve disparar normalmente.
+  writeFile(linkedDir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\n')
+  const msgs = validateCredentialGuardModeDowngrade(linkedDir)
+  assert.equal(msgs.length, 1)
+  assert.match(msgs[0], /credential_guard\.mode: block/)
 })
 
 // ---- Paridade: CREDENTIAL_GUARD_SCRIPT_REFERENCE deve bater com o gerador real ----

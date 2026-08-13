@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 import sys
@@ -17,6 +18,22 @@ def _write(path: str, content: str = ""):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+def _git(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+def _init_git_repo(cwd):
+    _git(cwd, "init")
+    _git(cwd, "config", "user.email", "test@test.com")
+    _git(cwd, "config", "user.name", "test")
+
+
+def _commit_trackfw_yaml(cwd, content):
+    _write(os.path.join(cwd, "trackfw.yaml"), content)
+    _git(cwd, "add", "trackfw.yaml")
+    _git(cwd, "commit", "-m", "trackfw.yaml")
 
 
 class TestBaseline(unittest.TestCase):
@@ -143,6 +160,37 @@ class TestBaseline(unittest.TestCase):
         ]
         self.assertFalse(any("ADR-001" in m for m in warn_result),
             f"warning baselined nao deve reaparecer em lenient. msgs: {warn_result}")
+
+
+    def test_baseline_nao_tolera_credential_guard_mode_downgrade(self):
+        """ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard,
+        ADR-2026-08-12-severidade-das-regras-de-credential-guard-...: carve-out do baseline —
+        violation de credential_guard_mode_downgrade continua sendo reportada por validate() mesmo
+        depois de "baselined" — .trackfw-baseline.json não é canal válido para tolerá-la, ao
+        contrário de qualquer outra regra (provado por test_validate_filtra_violations_do_baseline
+        acima).
+        """
+        _init_git_repo(self.tmp)
+        # HEAD: mode: block. Disco: trackfw.yaml deletado → dispara credential_guard_mode_downgrade.
+        _commit_trackfw_yaml(self.tmp, "credential_guard:\n  mode: block\n")
+        os.remove(os.path.join(self.tmp, "trackfw.yaml"))
+        self._chdir()
+
+        raw = v.validate_unfiltered()
+        raw_msgs = [item["message"] for item in raw["violations"]]
+        self.assertTrue(any("credential_guard.mode: block" in m for m in raw_msgs),
+            f"esperado violation de credential_guard_mode_downgrade antes do baseline: {raw_msgs}")
+
+        # Tentar tolerar via baseline — como qualquer outra violation seria.
+        v.save_baseline(raw["violations"], raw["warnings"])
+
+        result = v.validate()
+        result_msgs = [
+            item["message"] if isinstance(item, dict) else str(item)
+            for item in result.get("violations", [])
+        ]
+        self.assertTrue(any("credential_guard.mode: block" in m for m in result_msgs),
+            f"violation de credential_guard_mode_downgrade NÃO deveria ser tolerável via baseline: {result_msgs}")
 
 
 if __name__ == "__main__":

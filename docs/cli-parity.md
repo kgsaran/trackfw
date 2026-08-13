@@ -3121,3 +3121,59 @@ mensagem de sucesso do `validate` fixada pelo Cenário 29.
 verificado injetando deriva no literal, com mensagem acionável e contagem de bytes. É mais forte que
 o `TestCredentialGuardScript_ParityAcrossStacks` pré-existente, que **nunca executa** Node nem Python
 (ver ADR Emenda 2).
+
+
+## Ancoragem no `HEAD` da severidade das regras de credential-guard (ROADMAP-2026-08-12-ancorar-rules-no-head)
+
+> ADR (4 emendas): `docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-e-disco.md`
+
+### O problema que isto fecha
+
+As regras de credential-guard podiam ser **desligadas pela mesma edição não commitada que deveriam
+denunciar** — `ruleSeverity()` lia `rules:` só do disco. Sem commit, **sem rastro**. Era pior que os
+limites que o ADR de detecção aceita, onde o adversário commita e sobra o diff revisável.
+
+### O que mudou
+
+| Aspecto | Comportamento |
+|---|---|
+| **Severidade** das 3 regras de guard | resolvida pela **mais estrita entre `HEAD` e disco** |
+| Severidade das outras ~38 regras | **inalterada** — só disco, byte-idêntico ao anterior |
+| **Baseline** (`.trackfw-baseline.json`) | **não suprime** violações das 3 regras de guard |
+| Invocações de `git` do validador | ambiente do processo filho **sem nenhuma variável `GIT_*`**, ancoradas com `git -C <root>` |
+
+As três regras: `credential_guard_hook_resolvable`, `credential_guard_script_integrity`,
+`credential_guard_mode_downgrade`.
+
+### 🔴 Consequência de migração — quebra silenciosa se não for lida
+
+Um projeto que hoje **tolera** uma violação dessas regras via `.trackfw-baseline.json` passa a ter
+uma violação **não suprimível**. É **intencional** — é o carve-out funcionando — mas aparece como
+*"quebrou do nada"* num `trackfw update`.
+
+**Saída legítima e auditável:** desligar a regra com `rules:` **commitado**, ou corrigir a causa.
+
+### Por que o filtro de ambiente é por PREFIXO, não por lista
+
+A primeira correção usou uma **denylist de 8 nomes** ("variáveis que redirecionam o repositório") e
+**não fechava o problema**. O vetor real é **fazer o `git` falhar por qualquer motivo** — todo call
+site trata falha como *"sem âncora, silêncio"*, ou seja, **falha aberta**.
+
+Contraexemplo que quebrou a denylist: **`GIT_CONFIG_COUNT=abc`** — não redireciona nada, apenas faz o
+`git` sair 128 por config malformada.
+
+Qualquer lista fechada envelhece: o git ganha variáveis novas a cada versão, e **basta uma** que faça
+o processo falhar. Detalhe em
+`vault/notes/validador-git-env-bypass-filtre-por-prefixo-2026-08-12.md`.
+
+### O que continua aberto
+
+- **`governance_mode: lenient`** converte **toda** a saída do `validate` em warning, inclusive a
+  destas regras. **Não** foi fechado — *blast radius* é o validador inteiro e há caso de uso legítimo
+  (onboarding, com `lenient_until`). **REQ própria.** Enquanto existir, o problema está **reduzido,
+  não resolvido**.
+- **Sem `HEAD` não há âncora** — repositório sem commits, `trackfw.yaml` não versionado: a resolução
+  cai no disco e o buraco existe.
+- **Fora do validador**, o mesmo padrão de `exec.Command("git", ...)` sem ambiente limpo existe em
+  `internal/forge/resolve.go`, `internal/commands/branch.go`, `internal/commands/ship.go`. **Não são
+  controles de segurança**, e não foram alterados.

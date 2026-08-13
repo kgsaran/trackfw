@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -110,7 +109,27 @@ var ruleDefaults = map[string]string{
 
 // ruleSeverity retorna a severidade configurada para a regra.
 // Prioridade: trackfw.yaml rules: > ruleDefaults > "error".
+//
+// ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-
+// e-disco: the 3 credential-guard rules in credentialGuardAnchoredRules resolve severity
+// DIFFERENTLY from every other rule handled here — they compare HEAD against disk and take the
+// mais estrita (stricter) of the two, instead of reading disk alone. This is deliberate, not a
+// bug: those 3 rules can otherwise be silenced by the very same uncommitted edit they exist to
+// catch (`rules: credential_guard_mode_downgrade: off` in trackfw.yaml, never committed). See
+// credentialGuardRuleSeverity in validator_credential_guard_integrity.go for the mechanism. Every
+// other rule name falls straight through to diskRuleSeverity, byte-identical to before this ADR.
 func ruleSeverity(name string) string {
+	if credentialGuardAnchoredRules[name] {
+		return credentialGuardRuleSeverity(name)
+	}
+	return diskRuleSeverity(name)
+}
+
+// diskRuleSeverity is the ordinary, disk-only resolution used by every rule except the 3
+// credential-guard rules in credentialGuardAnchoredRules: trackfw.yaml rules: (CWD) > ruleDefaults
+// > "error". This is the entire body ruleSeverity had before ADR-2026-08-12 introduced the
+// HEAD-anchored branch above — unchanged behavior, only renamed so both callers can share it.
+func diskRuleSeverity(name string) string {
 	cfg := config.Load()
 	if s, ok := cfg.Rules[name]; ok {
 		return s
@@ -440,42 +459,33 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	return violations, warnings, nil
 }
 
+// Validate executes ValidateUnfiltered's tagged twin (validateUnfilteredTagged), applies the
+// baseline filter WITH the credential-guard carve-out (see filterBaselineTagged), then strips the
+// Rule tags to preserve this function's plain-[]string signature.
+//
+// ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-
+// e-disco: before this ADR, Validate() filtered the plain []string returned by ValidateUnfiltered
+// directly — no rule name attached to each message, so a per-rule baseline carve-out was not
+// expressible here at all. Routing through validateUnfilteredTagged (already used by
+// ValidateTagged) is what lets both entry points share one baseline-filtering implementation
+// instead of the two independently-maintained copies that predated this change — see
+// filterBaselineTagged's doc comment for the carve-out itself. validateUnfilteredTagged emits the
+// exact same rule checks, in the exact same order, as ValidateUnfiltered (see that function's own
+// doc comment) — this refactor does not change Validate()'s output for any message the
+// credential-guard carve-out does not apply to.
 func Validate() (violations []string, warnings []string, err error) {
-	violations, warnings, err = ValidateUnfiltered()
+	taggedViolations, taggedWarnings, err := validateUnfilteredTagged()
 	if err != nil {
-		return
+		return nil, nil, err
 	}
 
-	// Aplicar filtro de baseline (ratchet): falha somente em violations novas
-	baseline, bErr := LoadBaseline()
-	if bErr != nil {
-		return nil, nil, fmt.Errorf("erro ao carregar baseline: %w", bErr)
+	taggedViolations, taggedWarnings, err = filterBaselineTagged(taggedViolations, taggedWarnings)
+	if err != nil {
+		return nil, nil, err
 	}
-	if baseline != nil {
-		baselineSet := make(map[string]struct{}, len(baseline.Violations))
-		for _, v := range baseline.Violations {
-			baselineSet[v] = struct{}{}
-		}
-		var netNew []string
-		for _, v := range violations {
-			if _, exists := baselineSet[v]; !exists {
-				netNew = append(netNew, v)
-			}
-		}
-		violations = netNew
 
-		warnSet := make(map[string]struct{}, len(baseline.Warnings))
-		for _, w := range baseline.Warnings {
-			warnSet[w] = struct{}{}
-		}
-		var netNewWarn []string
-		for _, w := range warnings {
-			if _, exists := warnSet[w]; !exists {
-				netNewWarn = append(netNewWarn, w)
-			}
-		}
-		warnings = netNewWarn
-	}
+	violations = untagMsgs(taggedViolations)
+	warnings = untagMsgs(taggedWarnings)
 
 	// Modo lenient: mover violations para warnings, exit code 0
 	if IsLenient() {
@@ -484,6 +494,69 @@ func Validate() (violations []string, warnings []string, err error) {
 	}
 
 	return
+}
+
+// filterBaselineTagged applies the baseline (ratchet) filter shared by Validate() and
+// ValidateTagged(), with a carve-out: a violation/warning tagged with one of the 3 rule names in
+// credentialGuardAnchoredRules is NEVER tolerated by baseline, regardless of what
+// .trackfw-baseline.json contains for it.
+//
+// ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-
+// e-disco: this is a DIFFERENT mechanism from the HEAD-vs-disk comparison in
+// credentialGuardRuleSeverity, deliberately — .trackfw-baseline.json is .gitignore'd on purpose
+// (see .gitignore, "baseline local de violations toleradas (nao versionado)"), so there is no HEAD
+// copy of it to compare against; "require a commit" simply does not apply to a file the project
+// decided never to version. The only closure for this channel is to exclude these 3 rule names
+// from ratchet eligibility outright, independent of message content.
+func filterBaselineTagged(violations, warnings []TaggedMsg) ([]TaggedMsg, []TaggedMsg, error) {
+	baseline, bErr := LoadBaseline()
+	if bErr != nil {
+		return nil, nil, fmt.Errorf("erro ao carregar baseline: %w", bErr)
+	}
+	if baseline == nil {
+		return violations, warnings, nil
+	}
+
+	baselineSet := make(map[string]struct{}, len(baseline.Violations))
+	for _, v := range baseline.Violations {
+		baselineSet[v] = struct{}{}
+	}
+	var netNew []TaggedMsg
+	for _, v := range violations {
+		_, tolerated := baselineSet[v.Msg]
+		if tolerated && !credentialGuardAnchoredRules[v.Rule] {
+			continue
+		}
+		netNew = append(netNew, v)
+	}
+
+	warnSet := make(map[string]struct{}, len(baseline.Warnings))
+	for _, w := range baseline.Warnings {
+		warnSet[w] = struct{}{}
+	}
+	var netNewWarn []TaggedMsg
+	for _, w := range warnings {
+		_, tolerated := warnSet[w.Msg]
+		if tolerated && !credentialGuardAnchoredRules[w.Rule] {
+			continue
+		}
+		netNewWarn = append(netNewWarn, w)
+	}
+
+	return netNew, netNewWarn, nil
+}
+
+// untagMsgs strips the Rule tag off each TaggedMsg, preserving order. Used by Validate() to
+// recover its plain []string signature after routing through the tagged pipeline.
+func untagMsgs(tagged []TaggedMsg) []string {
+	if len(tagged) == 0 {
+		return nil
+	}
+	out := make([]string, len(tagged))
+	for i, t := range tagged {
+		out[i] = t.Msg
+	}
+	return out
 }
 
 // validateUnfilteredTagged é a versão interna de ValidateUnfiltered que retorna TaggedMsg.
@@ -669,35 +742,10 @@ func ValidateTagged() (violations []TaggedMsg, warnings []TaggedMsg, err error) 
 		return
 	}
 
-	// Filtro de baseline: excluir violations/warnings já conhecidos (por mensagem).
-	baseline, bErr := LoadBaseline()
-	if bErr != nil {
-		return nil, nil, fmt.Errorf("erro ao carregar baseline: %w", bErr)
-	}
-	if baseline != nil {
-		baselineSet := make(map[string]struct{}, len(baseline.Violations))
-		for _, v := range baseline.Violations {
-			baselineSet[v] = struct{}{}
-		}
-		var netNew []TaggedMsg
-		for _, v := range violations {
-			if _, exists := baselineSet[v.Msg]; !exists {
-				netNew = append(netNew, v)
-			}
-		}
-		violations = netNew
-
-		warnSet := make(map[string]struct{}, len(baseline.Warnings))
-		for _, w := range baseline.Warnings {
-			warnSet[w] = struct{}{}
-		}
-		var netNewWarn []TaggedMsg
-		for _, w := range warnings {
-			if _, exists := warnSet[w.Msg]; !exists {
-				netNewWarn = append(netNewWarn, w)
-			}
-		}
-		warnings = netNewWarn
+	// Filtro de baseline (com carve-out de credential-guard) — ver filterBaselineTagged.
+	violations, warnings, err = filterBaselineTagged(violations, warnings)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Modo lenient: mover violations para warnings, exit code 0.
@@ -1574,7 +1622,7 @@ func findADRFile(adrBasename string, adrDirs []string) string {
 // gitLastModifiedTime retorna o timestamp do último commit que tocou o path via git log.
 // Retorna (zero, false) se git não estiver disponível ou o arquivo não tiver histórico.
 func gitLastModifiedTime(path string) (time.Time, bool) {
-	cmd := exec.Command("git", "log", "-1", "--format=%ct", "--", path)
+	cmd := gitCommand(".", "log", "-1", "--format=%ct", "--", path)
 	out, err := cmd.Output()
 	if err != nil || strings.TrimSpace(string(out)) == "" {
 		return time.Time{}, false
@@ -1990,7 +2038,7 @@ func BranchSlugMatchesRoadmap(branchSlug string, wipDirs, doneDirs []string) (ma
 func validateBranchHasWIPRoadmap() ([]string, error) {
 	branch := firstNonEmpty(os.Getenv("TRACKFW_BRANCH"))
 	if branch == "" && isGitWorktree(".") {
-		cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
+		cmd := gitCommand(".", "symbolic-ref", "--short", "HEAD")
 		out, err := cmd.Output()
 		if err == nil {
 			branch = strings.TrimSpace(string(out))
@@ -2063,11 +2111,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func isGitWorktree(dir string) bool {
-	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	out, err := cmd.Output()
+	out, err := gitCommand(dir, "rev-parse", "--is-inside-work-tree").Output()
 	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 

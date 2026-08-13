@@ -164,6 +164,31 @@ def reset():
     _instance = None
 
 
+def parse_rules_from_content(content):
+    """Parseia só o mapeamento `rules:` de um conteúdo arbitrário de trackfw.yaml (ex.: um blob do
+    git HEAD obtido via `git show HEAD:./trackfw.yaml`, não o arquivo do CWD que load() lê) e
+    devolve como dict nome->severidade. Usado pelas regras de credential-guard ancoradas no HEAD do
+    validator — ver ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-
+    estrita-entre-head-e-disco.md — que precisam de `rules:` como existia numa ref específica do
+    git, não no CWD, então não podem passar pelo singleton load() (sempre lê o arquivo do CWD e o
+    cacheia por processo). Reaproveita _parse() sobre um cfg efêmero — espelha o
+    ParseRulesFromContent do Go e o parseRulesFromContent do Node, para que este e load() nunca
+    divirjam em como `rules:` em si é lido — puramente aditivo, não toca em load()/_parse().
+    Conteúdo malformado (_parse() retornando True) é tratado como "sem rules:" — dict vazio —, já
+    que o chamador só quer uma leitura best-effort de um blob histórico do git, não a saída fatal
+    que load() tem para o arquivo do CWD ao vivo.
+    """
+    cfg = {
+        "rules": {},
+        "credential_guard": {},
+        "update": {},
+        "sync": {},
+        "link_fields": {},
+    }
+    _parse(content, cfg)
+    return cfg["rules"]
+
+
 def _parse(content, cfg):
     """Parseia content com yaml.compose (árvore de nós brutos, pré-coerção) e aplica as ~20
     chaves conhecidas em cfg. Chaves desconhecidas são ignoradas.

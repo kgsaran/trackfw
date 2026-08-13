@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [validador-git-env-bypass-filtre-por-prefixo-2026-08-12](validador-git-env-bypass-filtre-por-prefixo-2026-08-12.md)
+- [scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12](scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12.md)
 - [armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12](armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md)
 - [vies-do-tmp-ao-medir-sandbox-de-agente-2026-08-12](vies-do-tmp-ao-medir-sandbox-de-agente-2026-08-12.md)
 - [hooks-de-agente-falham-abertos-quando-o-script-nao-resolve-2026-08-12](hooks-de-agente-falham-abertos-quando-o-script-nao-resolve-2026-08-12.md)

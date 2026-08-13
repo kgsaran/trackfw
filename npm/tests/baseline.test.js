@@ -165,6 +165,43 @@ test('lenient + baseline: warning baselined não reaparece', async () => {
   }
 })
 
+// ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard,
+// ADR-2026-08-12-severidade-das-regras-de-credential-guard-...: carve-out do baseline — violations
+// das 3 regras de credential-guard continuam sendo reportadas por validate() mesmo depois de
+// "baselined" — .trackfw-baseline.json não é um canal válido para tolerá-las (ao contrário de
+// qualquer outra regra, provado acima por "validate filtra violations do baseline").
+test('baseline NÃO tolera violation de credential_guard_mode_downgrade', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-bl-cg-'))
+  const { execFileSync } = require('child_process')
+  const git = (...args) => execFileSync('git', args, { cwd: tmp, stdio: ['ignore', 'pipe', 'pipe'] })
+  git('init')
+  git('config', 'user.email', 'test@test.com')
+  git('config', 'user.name', 'test')
+  writeFile(tmp, 'trackfw.yaml', 'credential_guard:\n  mode: block\n')
+  git('add', 'trackfw.yaml')
+  git('commit', '-m', 'trackfw.yaml')
+  fs.rmSync(path.join(tmp, 'trackfw.yaml')) // HEAD: block; disco: deletado → dispara a regra
+  const origDir = process.cwd()
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const raw = await validator.validateUnfiltered()
+    assert(raw.violations.some(v => v.includes('credential_guard.mode: block')),
+      'esperado violation de credential_guard_mode_downgrade antes do baseline: ' + JSON.stringify(raw.violations))
+
+    // Tentar tolerar via baseline — como qualquer outra violation seria.
+    validator.saveBaseline(raw.violations, raw.warnings)
+
+    const result = await validator.validate()
+    assert(result.violations.some(v => v.includes('credential_guard.mode: block')),
+      'violation de credential_guard_mode_downgrade NÃO deveria ser tolerável via baseline: ' + JSON.stringify(result.violations))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
 ;(async () => {
   for (const { name, fn } of tests) {
     try {

@@ -277,6 +277,28 @@ function parse(content, cfg) {
   return false;
 }
 
+// parseRulesFromContent parses only the `rules:` mapping out of arbitrary trackfw.yaml content
+// (e.g. a git-HEAD blob obtained via `git show HEAD:./trackfw.yaml`, not the CWD file load()
+// reads) and returns it as name->severity. Used by the validator's HEAD-anchored credential-guard
+// rules — see ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-
+// entre-head-e-disco.md — which need `rules:` as it existed at a specific git ref, not the CWD, so
+// they cannot go through the load() singleton (always reads the CWD file and caches it once per
+// process). Reuses parse() over an ephemeral cfg object, mirroring Go's ParseRulesFromContent, so
+// this and load() can never diverge on how `rules:` itself is read — purely additive, does not
+// touch load()/parse() otherwise. Malformed content (parse() returning true) is treated the same
+// as "no rules:" — an empty map — since the caller only wants a best-effort read of a historical
+// git blob, not a fatal exit like load() has for the live CWD file.
+function parseRulesFromContent(content) {
+  // parse() assumes cfg already has the nested-object shape defaults() provides for
+  // credentialGuard/update/sync/linkFields (it assigns into them, e.g. cfg.update.hooks = ...,
+  // never creates them) — so this cannot be a bare { rules: {} } literal or parse() throws on any
+  // content that sets one of those nested keys. rules starts empty (not seeded from defaults()),
+  // deliberately: the caller wants exactly what `rules:` in content declares, nothing else.
+  const cfg = { rules: {}, credentialGuard: {}, update: {}, sync: {}, linkFields: {} };
+  parse(content, cfg);
+  return cfg.rules;
+}
+
 const NAMESPACING_FLAT = 'flat';
 const NAMESPACING_BY_AGENT = 'by_agent';
 
@@ -285,6 +307,7 @@ module.exports = {
   reset,
   defaults,
   expandPath,
+  parseRulesFromContent,
   NAMESPACING_FLAT,
   NAMESPACING_BY_AGENT,
   MALFORMED_CONFIG_MESSAGE,

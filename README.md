@@ -762,6 +762,27 @@ rules:
   `credential_guard.mode` *and* sets `credential_guard_mode_downgrade: off` silences the report,
   with nothing committed. Anchoring `rules:` to your last commit is a known open item.
 
+### If `trackfw update` suddenly reports something it used to ignore
+
+Since the version that introduced anchoring, the credential-guard checks are resolved against **your
+last commit**, not only against the file on disk — and they can **no longer be suppressed** via
+`.trackfw-baseline.json`. This is deliberate: a check that can be switched off by the same
+uncommitted edit it is meant to catch is not a check.
+
+If one of them starts reporting after an upgrade, you have two legitimate ways out, and both leave a
+trail:
+
+```yaml
+# trackfw.yaml — commit this change
+rules:
+  credential_guard_hook_resolvable: off
+```
+
+...or fix the underlying cause (usually `trackfw update`, to regenerate the guard script and wiring).
+
+One caveat worth knowing: `governance_mode: lenient` still turns **every** finding into a warning,
+including these. Closing that is tracked separately.
+
 The strongest protection remains the ordinary one: the guard script and `trackfw.yaml` are
 **versioned files**. Review their diffs like you review any other code. Every limitation above has
 the same escape hatch: the change is *visible* in `git diff`.

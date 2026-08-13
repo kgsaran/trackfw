@@ -155,6 +155,46 @@ func TestBaselineLenientNoRecreate(t *testing.T) {
 	}
 }
 
+// TestBaselineCarveOut_CredentialGuardRulesNaoToleradas prova o carve-out do
+// ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard /
+// ADR-2026-08-12-severidade-das-regras-de-credential-guard-...: violations das 3 regras de
+// credential-guard continuam sendo reportadas por Validate() mesmo depois de terem sido
+// "baselined" — .trackfw-baseline.json não é um canal válido para tolerá-las, ao contrário de
+// qualquer outra regra (que TestBaselineFiltersOldViolations acima prova que É filtrada).
+func TestBaselineCarveOut_CredentialGuardRulesNaoToleradas(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+	// HEAD: mode: block. Disco: trackfw.yaml deletado — dispara credential_guard_mode_downgrade.
+	commitTrackfwYAML(t, dir, "credential_guard:\n  mode: block\n")
+	if err := os.Remove(dir + "/trackfw.yaml"); err != nil {
+		t.Fatalf("remover trackfw.yaml: %v", err)
+	}
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	rawViolations, rawWarnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered: %v", err)
+	}
+	if !hasViolation(rawViolations, "credential_guard.mode: block") {
+		t.Fatalf("esperado violation de credential_guard_mode_downgrade antes do baseline; violations=%v", rawViolations)
+	}
+
+	// Tentar tolerar via baseline — como qualquer outra violation seria.
+	if err := SaveBaseline(rawViolations, rawWarnings); err != nil {
+		t.Fatalf("SaveBaseline: %v", err)
+	}
+
+	violations, _, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if !hasViolation(violations, "credential_guard.mode: block") {
+		t.Errorf("violation de credential_guard_mode_downgrade NÃO deveria ser tolerável via baseline; violations=%v", violations)
+	}
+}
+
 func TestBaselineNetNewViolation(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)

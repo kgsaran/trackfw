@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
-adr: ""
-roadmap: ""
+adr: "docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-e-disco.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md"
 ---
 
 # REQ: Ancorar a configuracao rules no HEAD para as regras de credential-guard — impedir auto-silenciamento
 
-> Date: 2026-08-12 | Status: Open
+> Date: 2026-08-12 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -77,11 +77,10 @@ resolver**.
       aceitar e documentar.
 
 ## Linked ADR
-<!-- provável: o mecanismo de resolução de rules ancorada no HEAD é decisão de arquitetura -->
-ADR:
+ADR: docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-e-disco.md
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md
