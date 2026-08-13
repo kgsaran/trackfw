@@ -10,6 +10,74 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.9.0] - 2026-08-13
+
+Ciclo de trabalho sobre o **credential guard**, iniciado a partir de um bug de produção e conduzido
+por medição: o que se descobriu foi que o guard **falhava aberto** — quando o hook não conseguia
+rodar, a ferramenta prosseguia.
+
+### Added
+
+- **`credential_guard_hook_resolvable`** (#160) — o `validate` passa a detectar hook de
+  credential-guard registrado cujo script **não existe** ou **não é executável**. Cobre a classe do
+  incidente que abriu este ciclo.
+- **`credential_guard_script_integrity`** (#162) — detecta **sobrescrita** do script, comparando o
+  conteúdo em disco com o template desta versão do binário. Severidade **`warning`**: o script não
+  carrega marcador de versão, então a regra **não consegue** distinguir *drift* legítimo (não rodou
+  `trackfw update` após um bump) de adulteração — a mensagem é causalmente neutra por isso.
+- **`credential_guard_mode_downgrade`** (#162) — detecta rebaixamento de `credential_guard.mode`
+  comparando com o **último commit**, de forma direcional (`block` no `HEAD` → não-`block` no disco).
+- **Gate de paridade byte-a-byte** do script do credential-guard entre os 3 CLIs (#162) — não existia;
+  o teste anterior reconstruía Node/Python por regex do texto-fonte, **sem executar os runtimes**, e
+  era cego a deriva de ordem de composição.
+- Documentação de **usuário final** no `README.md` (#162, #163) sobre o que estas verificações
+  **não** cobrem.
+
+### Changed
+
+- **Hooks de attention e wiring de caminho** (#156, na v6.8.0) — contexto do ciclo.
+- **Severidade das 3 regras de credential-guard é resolvida pela mais estrita entre o `HEAD` e o
+  disco** (#163). As outras ~38 regras seguem **inalteradas**, com teste de zero-delta.
+- **Invocações de `git` do validador** passam a rodar com o ambiente **sem nenhuma variável `GIT_*`**
+  e ancoradas em `git -C <root>` (#163).
+
+### Fixed
+
+- **Auto-silenciamento das regras de credential-guard** (#163) — elas podiam ser desligadas pela
+  **mesma edição não commitada** que deveriam denunciar, via `rules:` no `trackfw.yaml`. Sem commit,
+  **sem rastro**.
+- **Bypass por variáveis de ambiente** (#163) — `GIT_DIR`/`GIT_WORK_TREE`, e qualquer `GIT_*` capaz de
+  fazer o `git` falhar (ex.: `GIT_CONFIG_COUNT` malformado), derrotavam a ancoragem **em silêncio**.
+- **Guard de vacuidade `credential-guard-present`** ganha prova negativa dedicada (#158) — o gate que
+  existia para impedir falso verde era, ele próprio, não provado.
+
+### ⚠️ Breaking Changes — leia antes de atualizar
+
+**Violações das 3 regras de credential-guard não são mais suprimíveis via `.trackfw-baseline.json`.**
+
+Se o seu projeto **tolera** hoje uma dessas violações pelo baseline, ela passa a ser **reportada**.
+É intencional: um controle que pode ser silenciado por um arquivo não versionado não é controle.
+
+Duas saídas legítimas, ambas deixando rastro:
+
+```yaml
+# trackfw.yaml — commite esta mudança
+rules:
+  credential_guard_hook_resolvable: off
+```
+
+ou corrija a causa (normalmente `trackfw update`, que regenera o script e o wiring).
+
+### Notas
+
+- **Isto é detecção, não prevenção.** Foi **medido** que não há prevenção técnica possível, no escopo
+  do trackfw, contra um agente com escrita irrestrita ao workspace: em 4 dos 6 CLIs de agente, um
+  hook que falha simplesmente deixa a chamada prosseguir.
+- **`governance_mode: lenient` continua convertendo tudo em warning**, inclusive estas regras. O
+  problema está **reduzido, não resolvido** — tratado separadamente.
+- Sem `HEAD` (repositório sem commits, `trackfw.yaml` não versionado) não há âncora, e a resolução
+  cai no disco.
+
 ## [6.8.0] - 2026-08-12
 
 ### Added
