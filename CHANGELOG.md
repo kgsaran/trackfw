@@ -10,6 +10,38 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.9.1] - 2026-08-13
+
+### Fixed
+
+- **Definições dos agentes auditores eram internamente contraditórias** (#165) — `code-quality`
+  (Hefesto), `security` (Hades) e `ux` (Atena) declaravam *"You do not modify code"* enquanto o mesmo
+  arquivo **ordenava** que eles acrescentassem entrada em `docs/agents-working-context.md`, e o
+  `tools:` **não concedia** `Write`/`Edit`. Outras duas frases (*"Do not **edit code** without a
+  requirement…"* e *"refuse to **implement** anything without…"*) pressupunham que o papel edita e
+  implementa. **O arquivo exigia escritas que não concedia.**
+
+  Efeito prático observado: sob a mesma redação, um auditor escrevia seus pareceres normalmente
+  enquanto outro **recusava** microlotes de documentação equivalentes — roteamento imprevisível,
+  dependente de como o pedido era redigido.
+
+  Agora: `tools:` concede `Write, Edit`; a proibição é explicitamente de **código de produto**
+  (`internal/`, `npm/src/`, `pypi/trackfw/` e testes); e o que o papel **pode** escrever está
+  **afirmado** — relatório, working context e documentação designada pelo orquestrador — com a
+  ressalva de que recusar isso é erro de escopo na direção oposta.
+
+### Notas de atualização
+
+- **A correção só chega aos seus agentes depois de `trackfw agents update`.** Sem `--force` é
+  suficiente, desde que você não tenha editado os arquivos em `~/.claude/agents/` à mão.
+- Agentes que **implementam** código (`backend`, `qa`, `dba`, `frontend`, `infra`, `iac`, `data`,
+  `tooling`, `architect`) **não** foram alterados.
+
+### Breaking Changes
+
+Nenhum. Não há mudança de comportamento do CLI: apenas o conteúdo dos arquivos de definição de
+agente gerados por `trackfw agents install`/`update`.
+
 ## [6.9.0] - 2026-08-13
 
 Ciclo de trabalho sobre o **credential guard**, iniciado a partir de um bug de produção e conduzido

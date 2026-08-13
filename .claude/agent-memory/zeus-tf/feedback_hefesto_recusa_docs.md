@@ -1,26 +1,37 @@
 ---
-name: hefesto-recusa-mls-de-documentacao
-description: Hefesto recusa MLs que pedem edição de docs (cli-parity.md, README) citando escopo, apesar de tê-los executado antes — não despachar até reconciliar o arquivo de papel
+name: fronteira-de-escrita-dos-auditores-corrigida-no-gerador
+description: Auditores (Hefesto/Hades/Atena) agora podem escrever docs designadas — contradição corrigida no gerador, não no ~/.claude; exige `trackfw agents update` para valer
 metadata:
   type: feedback
 ---
 
-Não despachar para `hefesto-tf` MLs que pedem **edição direta de documentação** (`docs/cli-parity.md`,
-`README.md`). Ele recusa citando a própria definição de papel: *"You do not modify code… hand off the
-fix to the role that owns the code"*, com missão limitada a **avaliar** duplicação, complexidade,
-arquitetura e cobertura.
+Os três agentes **auditores** — `code-quality` (Hefesto), `security` (Hades), `ux` (Atena) — **podem
+e devem** escrever os próprios artefatos: relatório/parecer, entrada em
+`docs/agents-working-context.md`, e **documentação designada pelo orquestrador** (`docs/cli-parity.md`,
+README). Recusar isso é **erro de escopo na direção oposta**, e o texto do agente agora diz isso
+explicitamente. Eles continuam proibidos de modificar **código de produto** (`internal/`, `npm/src/`,
+`pypi/trackfw/` e testes).
 
-**Why:** em 2026-08-12 ele executou e teve aprovados MLs de edição de `docs/cli-parity.md` em
-**quatro** PRs (#156, #158, #159, #160) e depois **recusou** a mesma natureza de tarefa. Não é
-ambiguidade de prompt — é divergência entre `~/.claude/agents/hefesto-tf` e a prática estabelecida.
-Enquanto não for reconciliado, o roteamento é imprevisível: o mesmo agente aceita ou recusa conforme
-a redação do ML. Ele também sugeriu redirecionar para `trackfw-tooling`, agente que **não existe** no
-roster — e admitiu não ter conferido.
+**Why:** em 2026-08-12 Hefesto recusou um ML de documentação após tê-lo executado em 4 PRs na mesma
+sessão. A causa não era indisciplina: o asset se contradizia em 3 pontos — `tools:` não concedia
+`Write`/`Edit` mas o arquivo ordenava append no working context; *"You do not modify code"* colidia
+com *"Do not edit code without a requirement…"* e com *"refuse to implement…"*. Prova de que a
+ambiguidade gerava roteamento imprevisível: sob a mesma redação, Hades escrevia pareceres sem
+reclamar enquanto Hefesto recusava. Corrigido no **PR #165**.
 
-**How to apply:** até KG reconciliar o arquivo de definição, **Zeus escreve** esse tipo de
-documentação (não é código de produto, e `cli-parity.md` é artefato de paridade/governança). Registrar
-a atribuição no próprio roadmap para a decisão não se perder entre sessões. Hefesto continua adequado
-para **auditoria** de qualidade, gates e pareceres — foi o que ele fez bem em todos os ciclos.
+**How to apply:** despachar normalmente MLs de documentação para os auditores. **Dois cuidados que
+permanecem:**
+
+1. **Corrigir sempre no gerador**, `{internal,npm/src,pypi/trackfw}/integrations/assets/agents/` —
+   `~/.claude/agents/` é **artefato gerado** e é sobrescrito a cada `trackfw update`. Foi KG quem
+   apontou isso.
+2. **A correção só vale depois de `trackfw agents update`** (sem `--force`, se o arquivo nunca foi
+   editado à mão). Se um auditor recusar de novo, **verifique primeiro se o agente instalado foi
+   atualizado** antes de suspeitar do prompt.
+
+**Nota de rede fina:** o `check-integration-assets.sh` verifica **paridade entre stacks**, não
+**conteúdo** — dá para alterar o texto de um agente sem gate nenhum acusar, desde que os 3 stacks
+mudem juntos.
 
 Relacionado: [[feedback-zeus-subagent-type]] — mesma família, roteamento de especialista que falha em
 silêncio.
