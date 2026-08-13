@@ -14227,3 +14227,41 @@ o filtro é por **prefixo** e não lista, e o que **continua aberto**. `README.m
 `governance_mode: lenient`.
 
 `make quality` **exit 0** · `trackfw validate` sem violações. Roadmap → `done`, REQ → `Done`.
+
+---
+
+## Sessão 2026-08-13 — Zeus (Arquiteto) — fronteira de escrita dos agentes auditores — INICIADO
+
+Release `v6.9.0` tagueada. KG corrigiu meu enquadramento: `hefesto-tf` é **gerado pelo trackfw**, e
+editar `~/.claude/agents/` seria desfeito no próximo `update`. **A correção é no gerador.**
+
+**Investiguei antes de propor, e o problema é maior que "docs × código": o arquivo se contradiz.**
+
+| # | Contradição | `assets/agents/code-quality.md` |
+|---|---|---|
+| 1 | `tools:` **não concede** `Write`/`Edit` — mas o arquivo **ordena** append em `docs/agents-working-context.md` | 6 × 21 |
+| 2 | *"You do not modify code"* × *"**Do not edit code** without a requirement and a roadmap in `wip`"* | 30 × 27 |
+| 3 | *"You do not modify code"* × *"**refuse to implement** anything without [a handoff]"* | 30 × 33 |
+
+**O arquivo exige escritas que não concede.** A recusa do Hefesto foi ele aplicando **uma** das
+leituras possíveis — não indisciplina.
+
+**Alcance: são três agentes.** `security.md` e `ux.md` têm a mesma linha e o mesmo `tools:`. E a
+evidência de que a ambiguidade produz roteamento imprevisível está nesta própria sessão: **Hades
+escreveu pareceres em `docs/seguranca/` sem reclamar** enquanto **Hefesto recusou** — comportamentos
+opostos sob a mesma redação.
+
+**Decisão de KG: opção A** — auditor que escreve os próprios artefatos. A opção B (auditor puro) foi
+rejeitada por contrariar o próprio desenho do trackfw, que **exige** de todo agente a entrada no
+working context.
+
+**Escrevi o texto exato das 4 mudanças no roadmap**, em vez de descrever a intenção — o objetivo é
+justamente eliminar ambiguidade, e um ML que reformula com palavras próprias reintroduziria o
+problema. Também exigi que o parágrafo novo seja **genérico** ("any documentation the orchestrator
+assigns you"), sem especializar por agente: a generalidade é o que evita a próxima ambiguidade.
+
+**Despachado para Prometeu**, não Apolo: o alvo é **definição de agente e contrato de tool-calling**,
+domínio dele. Apolo segue dono de `internal/`/`npm/src/`/`pypi/trackfw/` quando o que muda é
+comportamento do CLI.
+
+Branch `fix/fronteira-de-escrita-dos-agentes-auditores`.
