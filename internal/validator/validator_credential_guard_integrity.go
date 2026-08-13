@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 // ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A.
@@ -174,4 +176,95 @@ func credentialGuardModeDowngradeMessage() string {
 	return "trackfw.yaml sets credential_guard.mode: block at the git HEAD commit, but the " +
 		"current file does not resolve to block — if this was intentional, commit the change; " +
 		"otherwise investigate before treating the credential guard as active"
+}
+
+// ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A.
+// ADR: docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-
+// estrita-entre-head-e-disco.md.
+//
+// Achado do ML-3B anterior: a severidade destas 3 regras (rules: <nome>: off|warning em
+// trackfw.yaml) é lida do disco por ruleSeverity(), igual a todas as ~38 outras regras do
+// validador — o que significa que uma edição NÃO COMMITADA de trackfw.yaml pode desligar a regra
+// que denunciaria essa mesma edição, sem deixar rastro. credentialGuardAnchoredRules e
+// credentialGuardRuleSeverity abaixo existem só para fechar esse canal para estas 3 regras — as
+// demais ~38 continuam passando por diskRuleSeverity, inalteradas.
+
+// credentialGuardAnchoredRules lists the rule names whose severity ruleSeverity() (validator.go)
+// resolves via credentialGuardRuleSeverity instead of the ordinary disk-only diskRuleSeverity path
+// every other rule uses. Also consulted by filterBaselineTagged (validator.go) for the
+// .trackfw-baseline.json carve-out — a SEPARATE, independent closure for a separate channel: see
+// that function's doc comment for why the baseline channel cannot be closed by anchoring in HEAD.
+var credentialGuardAnchoredRules = map[string]bool{
+	"credential_guard_hook_resolvable":  true,
+	"credential_guard_script_integrity": true,
+	"credential_guard_mode_downgrade":   true,
+}
+
+// credentialGuardSeverityRank orders severities from least to most strict, for the "mais estrita
+// vence" comparison in credentialGuardRuleSeverity. Any string other than "off"/"warning" — this
+// only ever means "error" in practice, but applyRule/applyRuleTagged already treat every
+// unrecognized value as their `default:` (error) branch, so this mirrors that same fallback rather
+// than introducing a stricter contract than the rest of the file has.
+func credentialGuardSeverityRank(s string) int {
+	switch s {
+	case "off":
+		return 0
+	case "warning":
+		return 1
+	default:
+		return 2
+	}
+}
+
+// credentialGuardStricterSeverity returns whichever of a, b ranks higher per
+// credentialGuardSeverityRank ("error" > "warning" > "off"). Ties resolve to a (arbitrary but
+// deterministic — callers here never rely on tie-breaking, both sides are only ever compared once).
+func credentialGuardStricterSeverity(a, b string) string {
+	if credentialGuardSeverityRank(a) >= credentialGuardSeverityRank(b) {
+		return a
+	}
+	return b
+}
+
+// credentialGuardDefaultSeverity is the same "ruleDefaults > error" fallback diskRuleSeverity uses
+// once trackfw.yaml's rules: key for name is known to be absent — factored out so
+// credentialGuardRuleSeverity can apply it identically to both the disk side (via
+// diskRuleSeverity, which already does this) and the HEAD side (which has no equivalent helper of
+// its own, since config.ParseRulesFromContent only returns what rules: itself contains).
+func credentialGuardDefaultSeverity(name string) string {
+	if d, ok := ruleDefaults[name]; ok {
+		return d
+	}
+	return "error"
+}
+
+// credentialGuardRuleSeverity resolves the severity of one of the 3 credentialGuardAnchoredRules
+// as the MAIS ESTRITA (stricter) of two independently-resolved severities — HEAD and disk — never
+// disk alone. This is the mechanism M4 chosen by the ADR: direcional, not "ignore disk and use
+// HEAD only" (see ADR §Decision point 1 and the parecer's §2 for why direcional matters — the
+// common case, HEAD not mentioning the rule at all, must resolve to the default, i.e. the
+// strictest possible value, or disk would silently win back every time).
+//
+// Sem HEAD (not a git worktree, no commits yet, or trackfw.yaml not tracked at HEAD —
+// headTrackfwYAML's 3 "no anchor" cases): falls back to disk alone, same as every other rule. ADR
+// Decision point 4: an accepted limit, not an adversary-triggerable bypass — none of those 3
+// conditions can be reached by an uncommitted edit to trackfw.yaml alone.
+func credentialGuardRuleSeverity(name string) string {
+	diskSeverity := diskRuleSeverity(name)
+
+	headContent, ok := headTrackfwYAML()
+	if !ok {
+		return diskSeverity
+	}
+
+	headRules := config.ParseRulesFromContent(headContent)
+	headSeverity, ok := headRules[name]
+	if !ok {
+		// No rules: <name> at HEAD — the common case for virtually every repository today.
+		// Resolves to the default (already the strictest value diskRuleSeverity itself would
+		// fall back to), so disk can only ever equal or lose this comparison, never win it.
+		headSeverity = credentialGuardDefaultSeverity(name)
+	}
+
+	return credentialGuardStricterSeverity(headSeverity, diskSeverity)
 }

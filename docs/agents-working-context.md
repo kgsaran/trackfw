@@ -13703,3 +13703,131 @@ parece bug para quem ler depois.
 documentar e parar"* era aceitável. O parecer **rejeitou** essa saída, com razão — M4 tem custo
 baixo, escopo contido e infraestrutura pronta. Registro porque o critério existia para evitar viés
 de produzir mecanismo, e desta vez a conclusão de produzir foi **argumentada**, não default.
+
+---
+
+## Sessão 2026-08-12 — Apolo (ML-1A: mecanismo M4 nos 3 CLIs + carve-out do baseline) — IMPLEMENTAÇÃO PRONTA, `make quality` VERMELHO (dependência conhecida do ML-2A), AGUARDANDO AUDITORIA
+
+**Abrindo pelo gate vermelho, não pelo final:** `make quality` é critério de aceite explícito do
+roadmap e **está vermelho** — `scripts/check-gates-falsify.sh` Scenario 50 (não-vacuidade de
+`credential_guard_mode_downgrade`) falha porque prova, deliberadamente, o comportamento **pré-ADR**
+(`rules: ...: off` só em disco desliga a regra) — que este ML torna **falso por desenho**. Fora do
+meu escopo (`scripts/` é do ML-2A/Ártemis, explicitamente). **Decisão que preciso de Zeus:** ML-1A
+pode ser auditado com esse gate vermelho conhecido (documentado, com nota do vault), ou ML-2A precisa
+entrar no mesmo commit antes de qualquer merge? Não decidi isso sozinho — só implementei o código e
+os testes de unidade dos 3 CLIs (todos verdes), e sinalizo aqui.
+
+Branch `fix/ancorar-rules-no-head-para-as-regras-de-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md`,
+ML-1A — status atualizado para `🔄 Aguardando auditoria de Zeus`, não `✅ Concluído` (meu próprio
+protocolo de microlote: status só vira Concluído após a auditoria do orquestrador aprovar, e não
+faz sentido marcar Concluído com um critério de aceite explícito ainda vermelho). Não commito/pusho
+(Zeus tem autoridade de git).
+
+**Delta de escopo em relação ao ADR aceito — sinalizando para Zeus, não decidindo:** o ADR e o
+parecer de Hades (M4, `docs/seguranca/2026-08-12-mecanismo-rules-ancorada-no-head.md`) nomeiam
+explicitamente **2** regras (`credential_guard_mode_downgrade`, `credential_guard_script_integrity`).
+O prompt desta ML me deu **3**, acrescentando `credential_guard_hook_resolvable`. Segui o prompt
+(instrução explícita e mais recente), mas isso é uma mudança de comportamento real e não coberta
+pelo texto do ADR: um projeto que hoje tolera via baseline uma violação de
+`credential_guard_hook_resolvable` (ex.: hook referenciado com script ainda não versionado) passa a
+ter essa violação **não-suprimível**. Preciso que Zeus confirme se isso foi intencional ou se o ADR
+precisa de emenda cobrindo a 3ª regra.
+
+**Escopo executado:** M4 (severidade das 3 regras de credential-guard — `credential_guard_hook_resolvable`,
+`credential_guard_script_integrity`, `credential_guard_mode_downgrade` — resolvida pela mais estrita
+entre `HEAD` e disco) + carve-out do `.trackfw-baseline.json` (essas 3 regras não são toleráveis via
+baseline), nos 3 CLIs.
+
+**Mecanismo (idêntico nos 3 stacks):**
+- `ruleSeverity()`/`ruleSeverity()`/`_rule_severity()` ganha um branch guardado por nome de regra:
+  para as 3 regras de credential-guard, delega a `credentialGuardRuleSeverity`/`credentialGuardRuleSeverity`/
+  `_credential_guard_rule_severity`; toda outra regra segue para `diskRuleSeverity`/`diskRuleSeverity`/
+  `_disk_rule_severity` — o corpo antigo da função, renomeado, byte-idêntico.
+- A resolução é **direcional**: severidade efetiva = a mais estrita entre a severidade resolvida no
+  HEAD (via `rules:` parseado do HEAD, ou o default se ausente) e a resolvida em disco. Ausência de
+  `rules:` no HEAD (o caso comum hoje) resolve para o default — já o mais estrito — então o disco só
+  pode igualar ou perder, nunca vencer sozinho.
+- Nova função aditiva em cada `config`: `ParseRulesFromContent`/`parseRulesFromContent`/
+  `parse_rules_from_content` — parseia só o mapeamento `rules:` de um conteúdo arbitrário (o blob do
+  HEAD via `git show HEAD:./trackfw.yaml`, obtido por `headTrackfwYAML`/`headTrackfwYAML`/
+  `_head_trackfw_yaml`, já existente), reaproveitando `parse()`/`parse()`/`_parse()` sobre um cfg
+  efêmero. **Armadilha paga no Node e no Python:** `parse()`/`_parse()` assumem que `cfg` já tem a
+  forma aninhada de `defaults()` (`credentialGuard`/`update`/`sync`/`linkFields` como objetos, não
+  ausentes) — um `{ rules: {} }` cru quebra com `TypeError`/crash na primeira chave nested que o
+  conteúdo declarar. O Go não tem esse problema (structs Go são valor, não ponteiro, zero-value já
+  serve). Corrigido inicializando os 4 objetos aninhados vazios no cfg efêmero.
+
+**Carve-out do baseline:** em Go, refatorei `Validate()` para rotear por `validateUnfilteredTagged()`
+(a mesma pipeline tagged que `ValidateTagged()` já usava) em vez de `ValidateUnfiltered()` puro —
+sem isso não havia como saber, no filtro de baseline, a qual regra cada mensagem pertencia. Extraí
+`filterBaselineTagged()` compartilhado pelos dois entry points, com a exceção: mensagem tolerada pelo
+baseline mas cuja `Rule` está em `credentialGuardAnchoredRules` **não é filtrada**. Em Node, o mesmo
+via `getItemMeta(msg).rule` (já populado por `_setMeta` em `applyRule`). Em Python, via
+`item.get("rule")` (populado por `_enrich_items` em `_apply_rule`).
+
+**Zero delta para as outras ~38 regras:** provado por teste direto (`TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard`
+no Go, espelhado em Node/Python) que seta `rules: wip_limit: warning` e `rules: adr_orphan: off` só
+em disco (sem commit) num repo cujo HEAD não tem `rules:` nenhuma, e confirma que `ruleSeverity()`
+continua resolvendo exatamente pelo disco para essas regras — se o HEAD estivesse (erroneamente)
+sendo consultado, o default do HEAD ausente teria que vencer, e não vence.
+
+**Bug pego nos meus próprios testes iniciais (nos 3 stacks):** os testes pré-existentes de
+"`credential_guard_mode_downgrade` configurável via `rules:`" commitavam `mode: block` isoladamente e
+escreviam `rules: <nome>: warning|off` **só em disco** — exatamente o auto-silenciamento sem rastro
+que este ADR fecha. Corrigi para commitar `mode: block` **junto** com `rules: ...: warning|off` no
+mesmo commit (fluxo legítimo do ADR §4), preservando `mode: block` como âncora do HEAD; adicionei
+subtests irmãs `*_nao_commitado_ainda_dispara` provando que a mesma edição sem commit não tem efeito.
+Primeira tentativa desses testes ainda commitava `mode: warn` (já rebaixado) junto com `rules:` — isso
+faz a regra silenciar por **falta de âncora** (HEAD não é mais `block`), não pela severidade, dando
+falso positivo vácuo. A âncora (`mode: block` no HEAD) precisa sobreviver ao commit que rebaixa só a
+severidade.
+
+**Consequência esperada e fora do meu escopo — `scripts/check-gates-falsify.sh` Scenario 50 quebra:**
+o braço de não-vacuidade desse cenário (linhas ~4262-4296) prova, deliberadamente, o comportamento
+**pré-ADR** (rules: off em disco, sem commit, desliga a regra) — que agora é falso por desenho. Não
+toquei em `scripts/` (fora do meu escopo, ML-2A/Ártemis). Nota detalhada:
+`vault/notes/scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12.md`.
+
+**Evidência:**
+- `go build ./... && go test ./...` — verde (inclui `TestBaselineCarveOut_CredentialGuardRulesNaoToleradas`,
+  `TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard`, `TestCredentialGuardRuleSeverity_SemHead_CaiNoDisco`
+  e as 5 subtests de `TestCredentialGuardModeDowngrade_ConfiguravelViaRules`).
+- `npm test` (npm/) — 472 testes, 0 falhas.
+- `python3 -m pytest pypi/tests -q` — 1027 passed, 8 subtests passed.
+- `./bin/trackfw validate` neste repositório — `✓ No violations found.`; a própria
+  `check-gates-falsify.sh` confirma isso não é só "olho nu" —
+  `OK [falsify/validate-ok-message/baseline-byte-identical-and-pinned]` passou dentro da run de
+  `make quality`, provando a mensagem de sucesso byte-idêntica ao Cenário 29 nos 3 CLIs.
+- `make quality` — `test`, `test-node`, `test-python`, `lint` e todos os scripts de `parity` **exceto**
+  `check-gates-falsify.sh` passam; `check-gates-falsify.sh` falha só no Scenario 50 non-vacuity
+  (esperado, ver nota do vault acima — é o motivo do ML-2A existir). **Ver abertura desta entrada
+  para a decisão que isso força.**
+- Confirmei que não existe um segundo caminho de filtro de baseline que escaparia do carve-out: nos
+  3 stacks, o único consumidor de "carregar baseline + filtrar" é o comando `validate`
+  (`internal/commands/validate.go` via `Validate()`/`ValidateTagged()`; `internal/commands/barrier.go`
+  via `ValidateTagged()`; `npm/src/commands/validate.js` via `validate()`;
+  `pypi/trackfw/commands/validate.py` via `validate()`) — todos passam pela pipeline com o carve-out.
+  O único outro consumidor de baseline é o comando `baseline` (`internal/commands/baseline.go`,
+  `npm/src/commands/baseline.js`, `pypi/trackfw/commands/baseline.py`), que usa a versão
+  **não-filtrada** (`ValidateUnfiltered`/`validateUnfiltered`/`validate_unfiltered`) só para criar o
+  snapshot — correto, não é um canal de filtragem.
+- Custo por execução (ADR "Consequences", risco aceito): `applyRule`/`applyRule`/`_apply_rule`
+  retorna cedo quando `msgs` está vazia, então o `git show HEAD:./trackfw.yaml` extra de
+  `credentialGuardRuleSeverity` só roda quando a regra de credential-guard **já disparou** por outro
+  motivo — custo zero no caso comum (repositório limpo).
+
+**Arquivos modificados:** `internal/validator/validator.go`,
+`internal/validator/validator_credential_guard_integrity.go`,
+`internal/validator/validator_credential_guard_integrity_test.go`,
+`internal/validator/validator_baseline_test.go`, `internal/config/config.go`,
+`npm/src/validator/index.js`, `npm/src/config/index.js`,
+`npm/tests/credential_guard_integrity.test.js`, `npm/tests/baseline.test.js`,
+`pypi/trackfw/validator.py`, `pypi/trackfw/config.py`,
+`pypi/tests/test_credential_guard_integrity.py`, `pypi/tests/test_baseline.py`,
+`vault/notes/scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12.md`,
+`vault/notes/index.md`, este arquivo, e o campo `**Status:**` do ML-1A no roadmap.
+
+**Próximo:** Zeus audita; se aprovado, ML-2A (Ártemis) reescreve o Scenario 50 de
+`scripts/check-gates-falsify.sh` para o cenário decisivo (ataque combinado não commitado continua
+detectado).

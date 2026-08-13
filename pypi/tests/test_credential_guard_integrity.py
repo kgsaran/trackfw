@@ -179,21 +179,92 @@ class TestCredentialGuardIntegrityConfiguravel(unittest.TestCase):
         result = validator.validate_unfiltered(self.tmpdir)
         self.assertTrue(any("credential_guard.mode: block" in m for m in _messages(result["violations"])))
 
-    def test_mode_downgrade_rules_warning(self):
+    # ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard,
+    # ADR-2026-08-12-severidade-das-regras-de-credential-guard-...: as duas subtests abaixo COMMITAM
+    # a mudança de rules: junto com mode: block (a âncora do HEAD, que não pode ser removida, senão
+    # a regra silencia por falta de âncora — outro teste). Antes deste ADR, este teste escrevia
+    # "rules: <nome>: warning|off" só em disco, SEM commit — exatamente o auto-silenciamento sem
+    # rastro que o ADR fecha; ver "*_nao_commitado_ainda_dispara" abaixo para o canal fechado.
+
+    def test_mode_downgrade_rules_warning_commitado(self):
         _init_git_repo(self.tmpdir)
-        _commit_trackfw_yaml(self.tmpdir, "credential_guard:\n  mode: block\n")
+        _commit_trackfw_yaml(self.tmpdir, "credential_guard:\n  mode: block\nrules:\n  credential_guard_mode_downgrade: warning\n")
         _write(self.tmpdir, "trackfw.yaml", "credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: warning\n")
         result = validator.validate_unfiltered(self.tmpdir)
         self.assertFalse(any("credential_guard.mode: block" in m for m in _messages(result["violations"])))
         self.assertTrue(any("credential_guard.mode: block" in m for m in _messages(result["warnings"])))
 
-    def test_mode_downgrade_rules_off(self):
+    def test_mode_downgrade_rules_off_commitado(self):
         _init_git_repo(self.tmpdir)
-        _commit_trackfw_yaml(self.tmpdir, "credential_guard:\n  mode: block\n")
+        _commit_trackfw_yaml(self.tmpdir, "credential_guard:\n  mode: block\nrules:\n  credential_guard_mode_downgrade: off\n")
         _write(self.tmpdir, "trackfw.yaml", "credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: off\n")
         result = validator.validate_unfiltered(self.tmpdir)
         self.assertFalse(any("credential_guard.mode: block" in m for m in _messages(result["violations"])))
         self.assertFalse(any("credential_guard.mode: block" in m for m in _messages(result["warnings"])))
+
+    def test_mode_downgrade_rules_warning_nao_commitado_ainda_dispara(self):
+        _init_git_repo(self.tmpdir)
+        # HEAD só tem mode: block — SEM rules:. Disco rebaixa mode E desliga a regra na MESMA
+        # edição, nunca commitada. Ataque combinado que o ADR fecha.
+        _commit_trackfw_yaml(self.tmpdir, "credential_guard:\n  mode: block\n")
+        _write(self.tmpdir, "trackfw.yaml", "credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: warning\n")
+        result = validator.validate_unfiltered(self.tmpdir)
+        self.assertTrue(any("credential_guard.mode: block" in m for m in _messages(result["violations"])))
+
+    def test_mode_downgrade_rules_off_nao_commitado_ainda_dispara(self):
+        _init_git_repo(self.tmpdir)
+        _commit_trackfw_yaml(self.tmpdir, "credential_guard:\n  mode: block\n")
+        _write(self.tmpdir, "trackfw.yaml", "credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: off\n")
+        result = validator.validate_unfiltered(self.tmpdir)
+        self.assertTrue(any("credential_guard.mode: block" in m for m in _messages(result["violations"])))
+
+
+class TestRuleSeverityZeroDeltaParaRegrasNaoGuard(unittest.TestCase):
+    """Espelha TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard (Go): ruleSeverity()/_rule_severity()
+    para qualquer regra fora de _CREDENTIAL_GUARD_ANCHORED_RULES continua resolvendo só pelo
+    disco — o critério de aceite "zero delta para as outras ~38 regras" do
+    ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        config.reset()
+
+    def test_zero_delta(self):
+        _init_git_repo(self.tmpdir)
+        _commit_trackfw_yaml(self.tmpdir, "")
+        _write(self.tmpdir, "trackfw.yaml", "rules:\n  wip_limit: warning\n  adr_orphan: off\n")
+        cfg = config.load(self.tmpdir)
+        self.assertEqual(validator._rule_severity("wip_limit", cfg, self.tmpdir), "warning")
+        self.assertEqual(validator._rule_severity("adr_orphan", cfg, self.tmpdir), "off")
+        self.assertEqual(validator._rule_severity("filename_uniqueness", cfg, self.tmpdir), "error")
+
+
+class TestCredentialGuardRuleSeveritySemHead(unittest.TestCase):
+    """Espelha TestCredentialGuardRuleSeverity_SemHead_CaiNoDisco (Go): sem HEAD utilizável, a
+    resolução das regras de credential-guard cai no disco puro.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        config.reset()
+
+    def test_sem_head_cai_no_disco(self):
+        # nem sequer é git worktree
+        _write(self.tmpdir, "trackfw.yaml", "rules:\n  credential_guard_mode_downgrade: warning\n")
+        cfg = config.load(self.tmpdir)
+        self.assertEqual(
+            validator._rule_severity("credential_guard_mode_downgrade", cfg, self.tmpdir),
+            "warning",
+        )
 
 
 if __name__ == "__main__":

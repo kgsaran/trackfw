@@ -144,7 +144,11 @@ o problema está **reduzido, não resolvido**.
 > Dependências: Barreira B0.
 
 ### ML-1A — Mecanismo nos 3 CLIs (M4 + carve-out do baseline)
-**Status:** 🔄 Em andamento · **Agente:** Apolo (`apolo-tf`)
+**Status:** 🔄 Aguardando auditoria de Zeus — `make quality` vermelho por dependência do ML-2A
+(ver seção "Consequência esperada" no handoff em `docs/agents-working-context.md`; todo o resto —
+`go build`, `go test`, `npm test`, `pytest`, `go vet`, `trackfw validate` neste repo, e todos os
+scripts de `parity` exceto `check-gates-falsify.sh` Scenario 50 — está verde) · **Agente:** Apolo
+(`apolo-tf`)
 **Escopo ampliado na Barreira B0:** além do M4 para `rules:`, implementar o carve-out do
 `.trackfw-baseline.json` — as regras de credential-guard **não** podem ser toleradas via baseline.
 **Arquivos:** `internal/validator/` + equivalentes em `npm/src/` e `pypi/trackfw/` + testes dos 3.

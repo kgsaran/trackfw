@@ -46,9 +46,89 @@ _RULE_DEFAULTS = {
 }
 
 
-def _rule_severity(name: str, cfg: dict) -> str:
+# ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A.
+# ADR: docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-
+# estrita-entre-head-e-disco.md.
+#
+# As 3 regras abaixo resolvem severidade de forma DIFERENTE de todas as outras ~38: comparam HEAD
+# contra disco e adotam a MAIS ESTRITA das duas, em vez de ler só o disco. Deliberado, não bug —
+# sem isso, estas 3 regras podem ser desligadas pela mesma edição NÃO COMMITADA que elas deveriam
+# denunciar (`rules: credential_guard_mode_downgrade: off` em trackfw.yaml, nunca commitado). Toda
+# outra regra continua passando por _disk_rule_severity, byte-idêntico a antes deste ADR.
+_CREDENTIAL_GUARD_ANCHORED_RULES = {
+    "credential_guard_hook_resolvable",
+    "credential_guard_script_integrity",
+    "credential_guard_mode_downgrade",
+}
+
+
+def _credential_guard_severity_rank(s: str) -> int:
+    """Ordena severidades da menos para a mais estrita, para a comparação "mais estrita vence" de
+    _credential_guard_rule_severity. Qualquer valor fora de 'off'/'warning' só significa 'error' na
+    prática — _apply_rule já trata qualquer valor não reconhecido como violation, então este
+    ranking espelha esse mesmo fallback em vez de introduzir um contrato mais rígido.
+    """
+    if s == "off":
+        return 0
+    if s == "warning":
+        return 1
+    return 2
+
+
+def _credential_guard_stricter_severity(a: str, b: str) -> str:
+    """Retorna a mais estrita entre a e b ('error' > 'warning' > 'off')."""
+    return a if _credential_guard_severity_rank(a) >= _credential_guard_severity_rank(b) else b
+
+
+def _credential_guard_default_severity(name: str) -> str:
+    """Mesmo fallback "_RULE_DEFAULTS > error" que _disk_rule_severity usa quando trackfw.yaml não
+    tem rules: <name> — extraído para _credential_guard_rule_severity poder aplicá-lo igualmente ao
+    lado HEAD (que não tem equivalente de _RULE_DEFAULTS próprio, já que
+    config.parse_rules_from_content só devolve o que rules: em si contém).
+    """
+    return _RULE_DEFAULTS.get(name, "error")
+
+
+def _credential_guard_rule_severity(name: str, cfg: dict, cwd: str = None) -> str:
+    """Resolve a severidade de uma das 3 _CREDENTIAL_GUARD_ANCHORED_RULES como a MAIS ESTRITA entre
+    HEAD e disco — direcional, não "ignora disco e usa só HEAD" (ver o parecer §2 e o ADR — o caso
+    comum, HEAD sem menção à regra, precisa resolver para o default, ou seja o valor mais estrito
+    possível, senão o disco venceria de volta silenciosamente sempre).
+
+    Sem HEAD (não é git worktree, sem commits, ou trackfw.yaml não versionado no HEAD —
+    _head_trackfw_yaml's 3 casos de "sem âncora"): cai no disco puro, igual a qualquer outra regra.
+    ADR ponto de decisão 4: limite aceito, não um bypass acionável por adversário — nenhum desses 3
+    casos é alcançável por uma edição não commitada de trackfw.yaml sozinha.
+    """
+    disk_severity = _disk_rule_severity(name, cfg)
+
+    root = cwd or os.getcwd()
+    head_content, ok = _head_trackfw_yaml(root)
+    if not ok:
+        return disk_severity
+
+    head_rules = _config.parse_rules_from_content(head_content)
+    head_severity = head_rules.get(name) or _credential_guard_default_severity(name)
+
+    return _credential_guard_stricter_severity(head_severity, disk_severity)
+
+
+def _rule_severity(name: str, cfg: dict, cwd: str = None) -> str:
     """Retorna severidade da regra: 'off' | 'warning' | 'error'.
     Prioridade: trackfw.yaml rules: > _RULE_DEFAULTS > 'error'.
+
+    Para as 3 _CREDENTIAL_GUARD_ANCHORED_RULES, delega a _credential_guard_rule_severity acima —
+    ver o comentário logo antes dessa constante para o porquê. Toda outra regra segue para
+    _disk_rule_severity, textualmente idêntico ao corpo desta função antes do ADR-2026-08-12.
+    """
+    if name in _CREDENTIAL_GUARD_ANCHORED_RULES:
+        return _credential_guard_rule_severity(name, cfg, cwd)
+    return _disk_rule_severity(name, cfg)
+
+
+def _disk_rule_severity(name: str, cfg: dict) -> str:
+    """Resolução ordinária, só-disco, usada por toda regra exceto as 3
+    _CREDENTIAL_GUARD_ANCHORED_RULES: trackfw.yaml rules: (CWD) > _RULE_DEFAULTS > 'error'.
     """
     rules = cfg.get("rules", {})
     if name in rules:
@@ -83,17 +163,20 @@ def _enrich_items(items: list, rule_name: str) -> list:
     return result
 
 
-def _apply_rule(rule_name: str, msgs: list, violations: list, warnings: list, cfg: dict):
+def _apply_rule(rule_name: str, msgs: list, violations: list, warnings: list, cfg: dict, cwd: str = None):
     """
     Distribui msgs (lista de dicts) conforme a severidade configurada da regra.
     - 'off'     → descarta
     - 'warning' → adiciona a warnings
     - 'error'   → adiciona a violations (default)
     Enriquece cada item com 'rule' e 'file' antes de distribuir.
+
+    cwd é repassado a _rule_severity só é consultado pelas 3 regras de credential-guard
+    ancoradas no HEAD (ver _credential_guard_rule_severity) — toda outra regra o ignora.
     """
     if not msgs:
         return
-    severity = _rule_severity(rule_name, cfg)
+    severity = _rule_severity(rule_name, cfg, cwd)
     if severity == "off":
         return
     enriched = _enrich_items(msgs, rule_name)
@@ -1884,12 +1967,12 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule("folder_status",        validate_folder_status_coherence(cfg),        violations, warnings, cfg)
     _apply_rule("stale_wip",            validate_stale_wip(cfg),                      violations, warnings, cfg)
     _apply_rule("note_orphan",          validate_note_orphan(cfg, cwd),               violations, warnings, cfg)
-    _apply_rule("credential_guard_hook_resolvable", validate_credential_guard_hook_resolvable(cfg, cwd), violations, warnings, cfg)
+    _apply_rule("credential_guard_hook_resolvable", validate_credential_guard_hook_resolvable(cfg, cwd), violations, warnings, cfg, cwd)
 
     # ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
     # detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).
-    _apply_rule("credential_guard_script_integrity", validate_credential_guard_script_integrity(cwd), violations, warnings, cfg)
-    _apply_rule("credential_guard_mode_downgrade", validate_credential_guard_mode_downgrade(cwd), violations, warnings, cfg)
+    _apply_rule("credential_guard_script_integrity", validate_credential_guard_script_integrity(cwd), violations, warnings, cfg, cwd)
+    _apply_rule("credential_guard_mode_downgrade", validate_credential_guard_mode_downgrade(cwd), violations, warnings, cfg, cwd)
 
     # Regras com severidade configurável (req_has_adr, blocked_has_req, req_has_roadmap)
     _apply_rule("req_has_adr",     validate_reqs_have_adr(cfg),     violations, warnings, cfg)
@@ -1909,7 +1992,19 @@ def validate_unfiltered(cwd: str = None) -> dict:
 
 
 def validate(cwd: str = None) -> dict:
-    """Executa validações, filtra pelo baseline (ratchet) e aplica modo lenient."""
+    """Executa validações, filtra pelo baseline (ratchet) e aplica modo lenient.
+
+    ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-
+    head-e-disco: carve-out do baseline — violations/warnings de uma das 3
+    _CREDENTIAL_GUARD_ANCHORED_RULES NUNCA são toleradas via .trackfw-baseline.json, não importa o
+    que o arquivo contenha para elas. Mecanismo DIFERENTE do HEAD-vs-disco em
+    _credential_guard_rule_severity: .trackfw-baseline.json é .gitignore'd DE PROPÓSITO ("baseline
+    local de violations toleradas (nao versionado)"), então não há HEAD desse arquivo para
+    comparar — "exigir commit" simplesmente não se aplica a um arquivo que o projeto decidiu nunca
+    versionar. A única forma de fechar esse canal é excluir estas 3 regras da elegibilidade de
+    ratchet, por nome, independente do conteúdo da mensagem — daí a checagem por item.get("rule")
+    abaixo (populada por _enrich_items em _apply_rule).
+    """
     result = validate_unfiltered(cwd)
     violations = result.get("violations", [])
     warnings = result.get("warnings", [])
@@ -1918,12 +2013,18 @@ def validate(cwd: str = None) -> dict:
     baseline = load_baseline()
     if baseline is not None:
         baseline_set = set(baseline.get("violations", []))
-        net_new = [v for v in violations
-                   if _extract_messages([v])[0] not in baseline_set]
+        net_new = [
+            v for v in violations
+            if _extract_messages([v])[0] not in baseline_set
+            or (isinstance(v, dict) and v.get("rule") in _CREDENTIAL_GUARD_ANCHORED_RULES)
+        ]
         violations = net_new
         baseline_warn_set = set(baseline.get("warnings", []))
-        warnings = [w for w in warnings
-                    if _extract_messages([w])[0] not in baseline_warn_set]
+        warnings = [
+            w for w in warnings
+            if _extract_messages([w])[0] not in baseline_warn_set
+            or (isinstance(w, dict) and w.get("rule") in _CREDENTIAL_GUARD_ANCHORED_RULES)
+        ]
 
     # Modo lenient: mover violations para warnings
     if _is_lenient(cwd):

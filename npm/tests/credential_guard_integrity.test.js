@@ -202,10 +202,17 @@ test('credential_guard_mode_downgrade é configurável via rules: (default error
   }
 })
 
-test('credential_guard_mode_downgrade: rules: warning rebaixa para warning', async () => {
+// ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard,
+// ADR-2026-08-12-severidade-das-regras-de-credential-guard-...: as duas subtests abaixo COMMITAM
+// a mudança de rules: junto com mode: block (a âncora do HEAD, que não pode ser removida, senão a
+// regra silencia por falta de âncora — outro teste). Antes deste ADR, este teste escrevia
+// "rules: <nome>: warning|off" só em disco, SEM commit — exatamente o auto-silenciamento sem
+// rastro que o ADR fecha; ver "*_nao_commitado_ainda_dispara" abaixo para o canal fechado.
+
+test('credential_guard_mode_downgrade: rules: warning commitado rebaixa para warning', async () => {
   const dir = tmpDir()
   initGitRepo(dir)
-  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\nrules:\n  credential_guard_mode_downgrade: warning\n')
   writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: warning\n')
   const origCwd = process.cwd()
   process.chdir(dir)
@@ -220,10 +227,10 @@ test('credential_guard_mode_downgrade: rules: warning rebaixa para warning', asy
   }
 })
 
-test('credential_guard_mode_downgrade: rules: off silencia totalmente', async () => {
+test('credential_guard_mode_downgrade: rules: off commitado silencia totalmente', async () => {
   const dir = tmpDir()
   initGitRepo(dir)
-  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\nrules:\n  credential_guard_mode_downgrade: off\n')
   writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: off\n')
   const origCwd = process.cwd()
   process.chdir(dir)
@@ -232,6 +239,77 @@ test('credential_guard_mode_downgrade: rules: off silencia totalmente', async ()
     const { violations, warnings } = await validator.validateUnfiltered()
     assert.equal(violations.some(v => v.includes('credential_guard.mode: block')), false)
     assert.equal(warnings.some(w => w.includes('credential_guard.mode: block')), false)
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+  }
+})
+
+test('credential_guard_mode_downgrade: rules: warning NÃO commitado ainda dispara (violation)', async () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  // HEAD só tem mode: block — SEM rules:. Disco rebaixa mode E desliga a regra na MESMA edição,
+  // nunca commitada. Ataque combinado que o ADR fecha.
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: warning\n')
+  const origCwd = process.cwd()
+  process.chdir(dir)
+  config.reset()
+  try {
+    const { violations } = await validator.validateUnfiltered()
+    assert.equal(violations.some(v => v.includes('credential_guard.mode: block')), true)
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+  }
+})
+
+test('credential_guard_mode_downgrade: rules: off NÃO commitado ainda dispara (violation)', async () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: off\n')
+  const origCwd = process.cwd()
+  process.chdir(dir)
+  config.reset()
+  try {
+    const { violations } = await validator.validateUnfiltered()
+    assert.equal(violations.some(v => v.includes('credential_guard.mode: block')), true)
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+  }
+})
+
+// TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard (Go) — mesma prova em Node: ruleSeverity() para
+// qualquer regra fora de CREDENTIAL_GUARD_ANCHORED_RULES continua resolvendo só pelo disco.
+test('ruleSeverity: zero delta para regras não-guard (continuam só-disco)', async () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, '')
+  writeFile(dir, 'trackfw.yaml', 'rules:\n  wip_limit: warning\n  adr_orphan: off\n')
+  const origCwd = process.cwd()
+  process.chdir(dir)
+  config.reset()
+  try {
+    assert.equal(validator.ruleSeverity('wip_limit'), 'warning')
+    assert.equal(validator.ruleSeverity('adr_orphan'), 'off')
+    assert.equal(validator.ruleSeverity('filename_uniqueness'), 'error')
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+  }
+})
+
+// TestCredentialGuardRuleSeverity_SemHead_CaiNoDisco (Go) — mesma prova em Node.
+test('ruleSeverity: sem HEAD utilizável, credential-guard cai no disco puro', async () => {
+  const dir = tmpDir() // nem sequer é git worktree
+  writeFile(dir, 'trackfw.yaml', 'rules:\n  credential_guard_mode_downgrade: warning\n')
+  const origCwd = process.cwd()
+  process.chdir(dir)
+  config.reset()
+  try {
+    assert.equal(validator.ruleSeverity('credential_guard_mode_downgrade'), 'warning')
   } finally {
     process.chdir(origCwd)
     config.reset()

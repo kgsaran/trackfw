@@ -76,6 +76,35 @@ remover configurabilidade, é impedir o rebaixamento **silencioso**. Quem quiser
 commita a mudança — e aí ela vira diff revisável, que é exatamente o rastro que este ADR existe para
 preservar.
 
+### Emenda 1 (2026-08-12, ML-1A) — são TRÊS regras, não duas, e isso tem custo de migração
+
+O texto original citava `credential_guard_mode_downgrade` e `credential_guard_script_integrity`. O
+prompt do ML-1A nomeou **três**, incluindo `credential_guard_hook_resolvable` — o agente **seguiu o
+prompt e sinalizou a divergência** em vez de escolher em silêncio. **Confirmado: são as três.**
+
+**Justificativa:** o auto-silenciamento não é específico de uma regra — **qualquer** regra de
+credential-guard desligável por edição não commitada tem o mesmo furo. Fechar duas e deixar a
+terceira aberta seria a mesma troca-de-canal que motivou incluir o carve-out do baseline.
+
+🔴 **Consequência de migração, que o agente levantou e é real:** um projeto que hoje **tolera** uma
+violação de `credential_guard_hook_resolvable` via `.trackfw-baseline.json` passa a ter uma violação
+**não suprimível**. Isso é **intencional** — é o carve-out funcionando — mas é mudança de
+comportamento para quem já usa. A saída legítima existe e é auditável: **desligar a regra com
+`rules:` commitado**, ou corrigir o wiring.
+
+**Precisa estar no `README.md`**, não só no `cli-parity.md` — é o tipo de mudança que aparece como
+"quebrou do nada" num `trackfw update`.
+
+### Emenda 2 (2026-08-12, ML-1A) — o Cenário 50 fica obsoleto POR DESIGN
+
+O braço de não-vacuidade do Cenário 50 (`scripts/check-gates-falsify.sh`) prova o comportamento
+**pré-ADR**: que um `rules: credential_guard_mode_downgrade: off` **não commitado** desliga a regra.
+Este ADR torna isso **falso por design**, então o cenário **fica vermelho** — corretamente.
+
+Não é regressão: é o gate fazendo o trabalho dele, detectando que uma premissa encodificada mudou.
+A atualização do cenário é escopo do **ML-2A**; até lá, o `make quality` está **conhecidamente
+vermelho**, declarado no commit do ML-1A. **O PR não pode ser aberto com o gate vermelho.**
+
 ## Consequences
 
 **Positivas**

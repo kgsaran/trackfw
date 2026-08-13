@@ -1606,9 +1606,79 @@ const RULE_DEFAULTS = {
   credential_guard_script_integrity: 'warning',
 }
 
+// ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A.
+// ADR: docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-
+// estrita-entre-head-e-disco.md.
+//
+// As 3 regras abaixo resolvem severidade de forma DIFERENTE de todas as outras ~38: comparam HEAD
+// contra disco e adotam a MAIS ESTRITA das duas, em vez de ler só o disco. Deliberado, não bug —
+// sem isso, estas 3 regras podem ser desligadas pela mesma edição NÃO COMMITADA que elas deveriam
+// denunciar (`rules: credential_guard_mode_downgrade: off` em trackfw.yaml, nunca commitado). Toda
+// outra regra continua passando por diskRuleSeverity, byte-idêntico a antes deste ADR.
+const CREDENTIAL_GUARD_ANCHORED_RULES = new Set([
+  'credential_guard_hook_resolvable',
+  'credential_guard_script_integrity',
+  'credential_guard_mode_downgrade',
+])
+
+// credentialGuardSeverityRank ordena severidades da menos para a mais estrita, para a comparação
+// "mais estrita vence" de credentialGuardRuleSeverity. Qualquer valor fora de 'off'/'warning' só
+// significa 'error' na prática — applyRule já trata qualquer valor não reconhecido como violation,
+// então este ranking espelha esse mesmo fallback em vez de introduzir um contrato mais rígido.
+function credentialGuardSeverityRank(s) {
+  if (s === 'off') return 0
+  if (s === 'warning') return 1
+  return 2
+}
+
+// credentialGuardStricterSeverity retorna a mais estrita entre a e b ('error' > 'warning' > 'off').
+function credentialGuardStricterSeverity(a, b) {
+  return credentialGuardSeverityRank(a) >= credentialGuardSeverityRank(b) ? a : b
+}
+
+// credentialGuardDefaultSeverity é o mesmo fallback "RULE_DEFAULTS > error" que diskRuleSeverity
+// usa quando trackfw.yaml não tem rules: <name> — extraído para credentialGuardRuleSeverity poder
+// aplicá-lo igualmente ao lado HEAD (que não tem equivalente de RULE_DEFAULTS próprio, já que
+// config.parseRulesFromContent só devolve o que rules: em si contém).
+function credentialGuardDefaultSeverity(name) {
+  return RULE_DEFAULTS[name] || 'error'
+}
+
+// credentialGuardRuleSeverity resolve a severidade de uma das 3 CREDENTIAL_GUARD_ANCHORED_RULES
+// como a MAIS ESTRITA entre HEAD e disco — direcional, não "ignora disco e usa só HEAD" (ver o
+// parecer §2 e o ADR — o caso comum, HEAD sem menção à regra, precisa resolver para o default, ou
+// seja o valor mais estrito possível, senão o disco venceria de volta silenciosamente sempre).
+//
+// Sem HEAD (não é git worktree, sem commits, ou trackfw.yaml não versionado no HEAD —
+// headTrackfwYAML's 3 casos de "sem âncora"): cai no disco puro, igual a qualquer outra regra.
+// ADR ponto de decisão 4: limite aceito, não um bypass acionável por adversário — nenhum desses 3
+// casos é alcançável por uma edição não commitada de trackfw.yaml sozinha.
+function credentialGuardRuleSeverity(name) {
+  const diskSeverity = diskRuleSeverity(name)
+
+  const head = headTrackfwYAML()
+  if (!head.ok) return diskSeverity
+
+  const headRules = config.parseRulesFromContent(head.content)
+  const headSeverity = headRules[name] || credentialGuardDefaultSeverity(name)
+
+  return credentialGuardStricterSeverity(headSeverity, diskSeverity)
+}
+
 // ruleSeverity retorna a severidade configurada para uma regra ('error'|'warning'|'off').
 // Prioridade: trackfw.yaml rules: > RULE_DEFAULTS > 'error'.
+//
+// Para as 3 CREDENTIAL_GUARD_ANCHORED_RULES, delega a credentialGuardRuleSeverity acima — ver o
+// comentário logo antes dessa constante para o porquê. Toda outra regra segue para
+// diskRuleSeverity, textualmente idêntico ao corpo desta função antes do ADR-2026-08-12.
 function ruleSeverity(name) {
+  if (CREDENTIAL_GUARD_ANCHORED_RULES.has(name)) return credentialGuardRuleSeverity(name)
+  return diskRuleSeverity(name)
+}
+
+// diskRuleSeverity é a resolução ordinária, só-disco, usada por toda regra exceto as 3
+// CREDENTIAL_GUARD_ANCHORED_RULES: trackfw.yaml rules: (CWD) > RULE_DEFAULTS > 'error'.
+function diskRuleSeverity(name) {
   const cfg = config.load()
   if (cfg.rules[name]) return cfg.rules[name]
   if (RULE_DEFAULTS[name]) return RULE_DEFAULTS[name]
@@ -1710,6 +1780,16 @@ async function validateUnfiltered() {
 
 // validate executa todas as validações, aplica ratchet (baseline) e modo lenient.
 // Retorna { violations, warnings }.
+//
+// ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-
+// e-disco: carve-out do baseline — violations/warnings de uma das 3
+// CREDENTIAL_GUARD_ANCHORED_RULES NUNCA são toleradas via .trackfw-baseline.json, não importa o
+// que o arquivo contenha para elas. Mecanismo DIFERENTE do HEAD-vs-disco em
+// credentialGuardRuleSeverity: .trackfw-baseline.json é .gitignore'd DE PROPÓSITO ("baseline local
+// de violations toleradas (nao versionado)"), então não há HEAD desse arquivo para comparar —
+// "exigir commit" simplesmente não se aplica a um arquivo que o projeto decidiu nunca versionar. A
+// única forma de fechar esse canal é excluir estas 3 regras da elegibilidade de ratchet, por nome,
+// independente do conteúdo da mensagem — daí a checagem via getItemMeta(msg).rule abaixo.
 async function validate() {
   const result = await validateUnfiltered()
   let { violations, warnings } = result
@@ -1718,9 +1798,9 @@ async function validate() {
   const baseline = loadBaseline()
   if (baseline) {
     const baselineSet = new Set(baseline.violations || [])
-    violations = violations.filter(v => !baselineSet.has(v))
+    violations = violations.filter(v => !baselineSet.has(v) || CREDENTIAL_GUARD_ANCHORED_RULES.has(getItemMeta(v).rule))
     const baselineWarnSet = new Set(baseline.warnings || [])
-    warnings = warnings.filter(w => !baselineWarnSet.has(w))
+    warnings = warnings.filter(w => !baselineWarnSet.has(w) || CREDENTIAL_GUARD_ANCHORED_RULES.has(getItemMeta(w).rule))
   }
 
   // Modo lenient: mover violations para warnings, exit code 0

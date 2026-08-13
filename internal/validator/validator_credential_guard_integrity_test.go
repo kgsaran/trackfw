@@ -300,19 +300,21 @@ func TestCredentialGuardScriptIntegrity_ConfiguravelViaRules(t *testing.T) {
 
 // TestCredentialGuardModeDowngrade_ConfiguravelViaRules prova que credential_guard_mode_downgrade
 // respeita rules: no trackfw.yaml (default error, sem entrada em ruleDefaults; pode virar warning
-// ou off).
+// ou off) — MAS só quando a mudança de rules: está COMMITADA no HEAD.
+//
+// ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ADR-2026-08-12-
+// severidade-das-regras-de-credential-guard-...: antes deste ADR, este teste commitava só
+// "mode: block" e escrevia "rules: <nome>: warning|off" em disco SEM commitar — exatamente o
+// auto-silenciamento sem rastro que o ADR fecha. As subtests "warning"/"off" abaixo agora commitam
+// a mudança de rules: junto (fluxo legítimo, ADR §4); as novas subtests
+// "*_nao_commitado_ainda_dispara" provam que a mesma edição, SEM commit, não tem efeito algum —
+// o canal que o ADR fecha.
 func TestCredentialGuardModeDowngrade_ConfiguravelViaRules(t *testing.T) {
-	build := func(t *testing.T, extraYAML string) string {
-		t.Helper()
+	t.Run("default_error", func(t *testing.T) {
 		dir := t.TempDir()
 		initGitRepo(t, dir, "main")
 		commitTrackfwYAML(t, dir, "credential_guard:\n  mode: block\n")
-		writeFile(t, dir, "trackfw.yaml", "credential_guard:\n  mode: warn\n"+extraYAML)
-		return dir
-	}
-
-	t.Run("default_error", func(t *testing.T) {
-		dir := build(t, "")
+		writeFile(t, dir, "trackfw.yaml", "credential_guard:\n  mode: warn\n")
 		chdir(t, dir)
 		t.Cleanup(config.Reset)
 
@@ -325,8 +327,17 @@ func TestCredentialGuardModeDowngrade_ConfiguravelViaRules(t *testing.T) {
 		}
 	})
 
-	t.Run("warning", func(t *testing.T) {
-		dir := build(t, "rules:\n  credential_guard_mode_downgrade: warning\n")
+	t.Run("warning_commitado", func(t *testing.T) {
+		dir := t.TempDir()
+		initGitRepo(t, dir, "main")
+		// O mantenedor commita a decisão de rebaixar a SEVERIDADE da regra (mas mode: block
+		// permanece o valor commitado — a âncora do HEAD, se sido removida, faria a regra
+		// silenciar por falta de âncora, um teste diferente). Depois, localmente, mode: warn em
+		// disco (não commitado) é o que efetivamente dispara a comparação disco×HEAD; rules:
+		// warning continua presente em disco (não foi removido pela mesma edição) — reflete o
+		// fluxo legítimo do ADR §4: severidade rebaixada por commit, não por edição silenciosa.
+		commitTrackfwYAML(t, dir, "credential_guard:\n  mode: block\nrules:\n  credential_guard_mode_downgrade: warning\n")
+		writeFile(t, dir, "trackfw.yaml", "credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: warning\n")
 		chdir(t, dir)
 		t.Cleanup(config.Reset)
 
@@ -335,15 +346,18 @@ func TestCredentialGuardModeDowngrade_ConfiguravelViaRules(t *testing.T) {
 			t.Fatalf("ValidateUnfiltered() erro: %v", err)
 		}
 		if hasViolation(violations, "credential_guard.mode: block") {
-			t.Errorf("rules: warning não deveria gerar violation, obteve: %v", violations)
+			t.Errorf("rules: warning commitado não deveria gerar violation, obteve: %v", violations)
 		}
 		if !hasWarning(warnings, "credential_guard.mode: block") {
 			t.Errorf("esperado warning, obteve: %v", warnings)
 		}
 	})
 
-	t.Run("off", func(t *testing.T) {
-		dir := build(t, "rules:\n  credential_guard_mode_downgrade: off\n")
+	t.Run("off_commitado", func(t *testing.T) {
+		dir := t.TempDir()
+		initGitRepo(t, dir, "main")
+		commitTrackfwYAML(t, dir, "credential_guard:\n  mode: block\nrules:\n  credential_guard_mode_downgrade: off\n")
+		writeFile(t, dir, "trackfw.yaml", "credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: off\n")
 		chdir(t, dir)
 		t.Cleanup(config.Reset)
 
@@ -352,9 +366,87 @@ func TestCredentialGuardModeDowngrade_ConfiguravelViaRules(t *testing.T) {
 			t.Fatalf("ValidateUnfiltered() erro: %v", err)
 		}
 		if hasViolation(violations, "credential_guard.mode: block") || hasWarning(warnings, "credential_guard.mode: block") {
-			t.Errorf("rules: off deveria silenciar totalmente, violations=%v warnings=%v", violations, warnings)
+			t.Errorf("rules: off commitado deveria silenciar totalmente, violations=%v warnings=%v", violations, warnings)
 		}
 	})
+
+	t.Run("warning_nao_commitado_ainda_dispara", func(t *testing.T) {
+		dir := t.TempDir()
+		initGitRepo(t, dir, "main")
+		// HEAD só tem mode: block — SEM rules:. Disco rebaixa mode E desliga a regra na MESMA
+		// edição, nunca commitada. Isto é o ataque combinado que o ADR existe para fechar.
+		commitTrackfwYAML(t, dir, "credential_guard:\n  mode: block\n")
+		writeFile(t, dir, "trackfw.yaml", "credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: warning\n")
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		if !hasViolation(violations, "credential_guard.mode: block") {
+			t.Errorf("rules: warning NÃO commitado não deveria rebaixar a severidade — esperado violation (error), violations=%v warnings=%v", violations, warnings)
+		}
+	})
+
+	t.Run("off_nao_commitado_ainda_dispara", func(t *testing.T) {
+		dir := t.TempDir()
+		initGitRepo(t, dir, "main")
+		commitTrackfwYAML(t, dir, "credential_guard:\n  mode: block\n")
+		writeFile(t, dir, "trackfw.yaml", "credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: off\n")
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		if !hasViolation(violations, "credential_guard.mode: block") {
+			t.Errorf("rules: off NÃO commitado não deveria silenciar a regra — esperado violation (error), violations=%v warnings=%v", violations, warnings)
+		}
+	})
+}
+
+// TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard prova que ruleSeverity() para qualquer regra fora
+// de credentialGuardAnchoredRules continua resolvendo só pelo disco (diskRuleSeverity),
+// independente de HEAD — o critério de aceite "zero delta para as outras ~38 regras" do
+// ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.
+func TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+	// HEAD não tem rules: nenhuma — se o HEAD estivesse (erroneamente) sendo consultado para
+	// wip_limit, o valor "warning" do disco abaixo teria que ceder para o default "error" do
+	// HEAD ausente, exatamente como credential_guard_mode_downgrade faria. Provamos que NÃO cede.
+	commitTrackfwYAML(t, dir, "")
+	writeFile(t, dir, "trackfw.yaml", "rules:\n  wip_limit: warning\n  adr_orphan: off\n")
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	if got := ruleSeverity("wip_limit"); got != "warning" {
+		t.Errorf("wip_limit deveria resolver puramente pelo disco (warning), obteve: %q", got)
+	}
+	if got := ruleSeverity("adr_orphan"); got != "off" {
+		t.Errorf("adr_orphan deveria resolver puramente pelo disco (off), obteve: %q", got)
+	}
+	// Regra sem entrada em rules: nem em ruleDefaults — default "error", igual a antes do ADR.
+	if got := ruleSeverity("filename_uniqueness"); got != "error" {
+		t.Errorf("filename_uniqueness deveria manter o default error, obteve: %q", got)
+	}
+}
+
+// TestCredentialGuardRuleSeverity_SemHead_CaiNoDisco prova a posição assumida no ADR
+// (Decision point 4): sem HEAD utilizável (aqui, repositório sem nenhum commit), a resolução das
+// regras de credential-guard cai no disco puro — mesmo comportamento de antes do ADR.
+func TestCredentialGuardRuleSeverity_SemHead_CaiNoDisco(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir) // nem sequer é git worktree
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, "trackfw.yaml", "rules:\n  credential_guard_mode_downgrade: warning\n")
+
+	if got := ruleSeverity("credential_guard_mode_downgrade"); got != "warning" {
+		t.Errorf("sem HEAD, deveria cair no disco puro (warning), obteve: %q", got)
+	}
 }
 
 // TestCredentialGuardModeDowngrade_ArquivoDeletadoNoDisco_Dispara cobre a DELEÇÃO total de
