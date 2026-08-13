@@ -77,7 +77,7 @@ segurança. Se o mecanismo escolhido exigir tocar no caminho compartilhado, isso
 > Dependências: nenhuma. **Bloqueia a implementação.**
 
 ### ML-0A — Qual mecanismo, e por que ele não é recursivamente desligável
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Hades; auditado e aprovado por Zeus em 2026-08-12)
 **Agente:** Hades (`hades-tf`)
 **Entregável:** `docs/seguranca/2026-08-12-mecanismo-rules-ancorada-no-head.md` (novo).
 **Não modifica código.**
@@ -104,7 +104,37 @@ segurança. Se o mecanismo escolhido exigir tocar no caminho compartilhado, isso
 
 ---
 
-## Barreira B0 — ADR do mecanismo (Zeus)
+## Barreira B0 — ADR do mecanismo (Zeus) — ✅ CONCLUÍDA
+
+**ADR aceito:** `docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-e-disco.md`
+
+**Mecanismo: M4** — dentro de `ruleSeverity()`, branch guardado **por nome de regra**, resolvendo a
+severidade pela **mais estrita entre `HEAD` e disco**. Reaproveita `headTrackfwYAML()`, que já existe.
+**Zero delta** para as outras ~38 regras.
+
+Os outros três foram rejeitados pela pergunta da recursão: **M1** (meta-regra) é recursivo; **M2**
+(hash externo) reabriria o escopo global já fechado por medição; **M3** (âncora global) altera ~40
+regras e viola a restrição de escopo.
+
+**🔴 Escopo AMPLIADO — o parecer encontrou mais dois canais, e um entra:**
+
+| Canal | Decisão |
+|---|---|
+| `rules:` no `trackfw.yaml` | **fechar** com M4 |
+| `.trackfw-baseline.json` | **fechar** — carve-out: regras de credential-guard **não** são toleráveis via baseline |
+| `governance_mode: lenient` | **FORA** — REQ própria; limite documentado |
+
+**Por que o baseline entra:** fechar `rules:` e deixar o baseline aberto entregaria a **sensação** de
+correção sem a correção — o adversário troca de canal. E o mecanismo é **diferente**: o arquivo é
+`.gitignore`d **deliberadamente** (`.gitignore:14-15`, verificado por Zeus), então "exigir commit"
+**não se aplica** — a regra é que essas violações não podem ser toleradas via baseline.
+
+**Por que `lenient` fica fora:** *blast radius* é o validador inteiro e há caso de uso legítimo
+(onboarding, com `lenient_until`). Decidir no fim de um roadmap sobre outra coisa seria decisão
+apressada. **Mas fica documentado no `README.md`, não só no `cli-parity.md`** — enquanto ele existir,
+o problema está **reduzido, não resolvido**.
+
+## Barreira B0 — registro original
 > Dependências: ML-0A. Zeus decide e registra em ADR antes de liberar a implementação. Inclui decidir
 > se o item secundário da REQ (cobertura de deleção) entra em roadmap próprio.
 
@@ -113,8 +143,10 @@ segurança. Se o mecanismo escolhido exigir tocar no caminho compartilhado, isso
 ## Wave 1 — Implementação (1 ML)
 > Dependências: Barreira B0.
 
-### ML-1A — Mecanismo nos 3 CLIs
-**Status:** ⬜ Pendente · **Agente:** Apolo (`apolo-tf`)
+### ML-1A — Mecanismo nos 3 CLIs (M4 + carve-out do baseline)
+**Status:** 🔄 Em andamento · **Agente:** Apolo (`apolo-tf`)
+**Escopo ampliado na Barreira B0:** além do M4 para `rules:`, implementar o carve-out do
+`.trackfw-baseline.json` — as regras de credential-guard **não** podem ser toleradas via baseline.
 **Arquivos:** `internal/validator/` + equivalentes em `npm/src/` e `pypi/trackfw/` + testes dos 3.
 
 ⚠️ **Armadilhas já pagas nesta linha de trabalho:** `os.Getwd()` do Go devolve caminho **symlinkado**

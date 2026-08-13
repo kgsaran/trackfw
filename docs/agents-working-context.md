@@ -13630,3 +13630,76 @@ tê-la executado em 4 PRs anteriores. Enquanto `~/.claude/agents/hefesto-tf` nã
 este tipo de ML não vai para ele — registrado no próprio roadmap para a decisão não se perder.
 
 Branch `fix/ancorar-rules-no-head-para-as-regras-de-credential-guard`.
+
+---
+
+## Sessão 2026-08-12 — Hades (Segurança) — ML-0A — CONCLUÍDO
+
+Parecer: `docs/seguranca/2026-08-12-mecanismo-rules-ancorada-no-head.md`. **Não modificou código.**
+
+**Recomendação:** M4 — dentro de `ruleSeverity()` (`validator.go:117`), um branch **guardado por nome
+de regra** (`credential_guard_mode_downgrade`, `credential_guard_script_integrity`) que resolve
+severidade pela **mais estrita** entre `HEAD` e disco, reaproveitando `headTrackfwYAML()`
+(já existe e já testado para `mode`). Zero delta comportamental para as outras ~38 regras — a
+recursão não reabre porque, para essas 2 regras, o disco **deixa de ser consultado**, não há mais
+chave a flipar.
+
+**Achado que amplia o escopo do roadmap:** `rules:` não é o único canal disco-e-não-commitado que
+silencia essas regras. `.trackfw-baseline.json` (ratchet) é **propositalmente não versionado**
+(`.gitignore:14-15`) — ancorar no `HEAD` não se aplica a ele; a única forma de fechar é excluir as 2
+regras de credential-guard da elegibilidade de baseline, por nome, nos dois caminhos
+(`Validate()`/`ValidateTagged()`). **Sem isso, a alegação "auto-silenciamento fechado" seria falsa**
+mesmo depois do M4. Terceiro canal, `governance_mode: lenient`, tem blast radius amplo (converte
+**toda** a saída do validate) — recomendei **não decidir isso neste roadmap**, documentar como limite
+conhecido e deixar para REQ/ADR próprio se Zeus decidir que vale.
+
+**Posição sobre "sem `HEAD`":** cair no disco, aceitar o limite — já registrado no
+`ADR-2026-08-12` ("não cobre o que nunca foi commitado"), e o adversário não controla esse estado sem
+sabotar o próprio `.git` (ruidoso por natureza).
+
+**Desligamento legítimo commitado:** continua funcionando — demonstrado com fluxo concreto no
+parecer (§4).
+
+**Conclusão:** não é "documentar e parar" — M4 + carve-out de baseline são baratos e fecham os canais
+realmente exploráveis. Recomendo Barreira B0 liberar Wave 1 com esse escopo ampliado (rules: + baseline),
+não apenas o `rules:` original do roadmap.
+
+ML-0A marcado `✅ Concluído` no roadmap (só o campo Status). Próximo: Barreira B0 (Zeus).
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-0A + Barreira B0 (ADR do M4)
+
+**O parecer ampliou o problema, e verifiquei os três canais no código:**
+
+| Canal | Verificação de Zeus |
+|---|---|
+| `rules:` | `ruleSeverity()` lê disco — confirmado |
+| `.trackfw-baseline.json` | **`.gitignore:14-15`** — não versionado **deliberadamente** |
+| `governance_mode: lenient` | existe, com `lenient_until`, mas a data é escolhida por quem edita |
+
+Blocos do M4 confirmados: `headTrackfwYAML()` em `validator_credential_guard_integrity.go:117`;
+equivalente Node via `git show HEAD:./trackfw.yaml`.
+
+**Decisão da barreira: M4** — branch guardado por nome de regra dentro de `ruleSeverity()`,
+resolvendo pela severidade **mais estrita entre `HEAD` e disco**. É a única das quatro que fecha o
+canal **sem recursão** (M1) e **sem blast radius** (M3, que alteraria ~40 regras).
+
+**Ampliei o escopo do roadmap para incluir o carve-out do baseline**, contra a formulação original.
+Motivo: fechar `rules:` e deixar o baseline aberto entregaria a **sensação** de correção sem a
+correção — o adversário troca de canal. E o mecanismo é **diferente**: o arquivo é `.gitignore`d de
+propósito, então "exigir commit" não se aplica; a regra é que essas violações **não são toleráveis
+via baseline**.
+
+**Deixei `governance_mode: lenient` de fora, com o motivo escrito:** *blast radius* é o validador
+inteiro e há caso de uso legítimo (onboarding). Decidir isso no fim de um roadmap sobre outra coisa
+seria decisão apressada sobre feature que não estudamos. Mas registrei no ADR que, enquanto existir,
+**o problema está reduzido, não resolvido** — e que isso precisa ir para o `README.md`, não só para o
+`cli-parity.md`.
+
+**Também registrei no ADR uma consequência que ninguém pediu:** duas regras passam a resolver
+severidade de forma **diferente** das outras ~38. Isso **precisa estar comentado no código**, senão
+parece bug para quem ler depois.
+
+**Nota sobre a conclusão do parecer:** o roadmap dizia explicitamente que *"não vale o custo,
+documentar e parar"* era aceitável. O parecer **rejeitou** essa saída, com razão — M4 tem custo
+baixo, escopo contido e infraestrutura pronta. Registro porque o critério existia para evitar viés
+de produzir mecanismo, e desta vez a conclusão de produzir foi **argumentada**, não default.

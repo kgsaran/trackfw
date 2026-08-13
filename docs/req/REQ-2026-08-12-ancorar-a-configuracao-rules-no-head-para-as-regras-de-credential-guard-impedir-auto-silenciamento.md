@@ -2,7 +2,7 @@
 status: Open
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
-adr: ""
+adr: "docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-e-disco.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md"
 ---
 
@@ -77,8 +77,7 @@ resolver**.
       aceitar e documentar.
 
 ## Linked ADR
-<!-- provável: o mecanismo de resolução de rules ancorada no HEAD é decisão de arquitetura -->
-ADR:
+ADR: docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-e-disco.md
 
 ## Blocked by ADRs
 <!-- none -->
