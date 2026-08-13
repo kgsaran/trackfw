@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-12
 req: "docs/req/REQ-2026-08-12-ancorar-a-configuracao-rules-no-head-para-as-regras-de-credential-guard-impedir-auto-silenciamento.md"
 squad: "Hades, Apolo, Ártemis"
@@ -7,7 +7,7 @@ squad: "Hades, Apolo, Ártemis"
 
 # Roadmap: Ancorar rules no HEAD para as regras de credential-guard
 
-> Created: 2026-08-12 | Status: wip
+> Created: 2026-08-12 | Status: done
 
 ## Context
 
@@ -49,19 +49,19 @@ segurança. Se o mecanismo escolhido exigir tocar no caminho compartilhado, isso
 
 ## Acceptance Criteria
 
-- [ ] A severidade das regras de credential-guard **não** é rebaixável por edição **não commitada**
+- [x] A severidade das regras de credential-guard **não** é rebaixável por edição **não commitada**
       do `rules:`.
-- [ ] O mecanismo **não é recursivamente desligável** — responde à pergunta da armadilha acima.
-- [ ] **Desligar de forma legítima e commitada continua funcionando** — o objetivo é impedir o
+- [x] O mecanismo **não é recursivamente desligável** — responde à pergunta da armadilha acima.
+- [x] **Desligar de forma legítima e commitada continua funcionando** — o objetivo é impedir o
       rebaixamento **silencioso**, não remover a configurabilidade.
-- [ ] Comportamento **sem `HEAD`** (repo sem commits, `trackfw.yaml` não versionado) decidido
+- [x] Comportamento **sem `HEAD`** (repo sem commits, `trackfw.yaml` não versionado) decidido
       **conscientemente** e escrito: sem `HEAD` a resolução cairia no disco e o buraco volta.
-- [ ] Resolução de `rules:` das **demais** regras **inalterada** — ou alteração justificada.
-- [ ] **Paridade nos 3 CLIs** (Go, Node.js, Python).
-- [ ] Cenário de falsificação: a edição combinada (`mode: warn` + regra `off`, **não commitada**)
+- [x] Resolução de `rules:` das **demais** regras **inalterada** — ou alteração justificada.
+- [x] **Paridade nos 3 CLIs** (Go, Node.js, Python).
+- [x] Cenário de falsificação: a edição combinada (`mode: warn` + regra `off`, **não commitada**)
       **continua sendo reportada**. Com prova de não-vacuidade e braço autodiscriminante.
-- [ ] `docs/cli-parity.md` e `README.md` atualizados **removendo** o limite, se resolvido.
-- [ ] `make quality` verde; `trackfw validate` sem violações **neste repositório**.
+- [x] `docs/cli-parity.md` e `README.md` atualizados **removendo** o limite, se resolvido.
+- [x] `make quality` verde; `trackfw validate` sem violações **neste repositório**.
 
 ### Escopo negativo
 
@@ -97,10 +97,10 @@ segurança. Se o mecanismo escolhido exigir tocar no caminho compartilhado, isso
    limite"** é conclusão aceitável e deve ser dita se for o caso.
 
 **Critérios de aceite:**
-- [ ] Mecanismos enumerados, cada um com a resposta à pergunta da recursão.
-- [ ] Recomendação explícita e acionável, com o custo declarado.
-- [ ] Posição sobre "sem `HEAD`" e sobre desligamento legítimo.
-- [ ] Nenhum arquivo de código modificado.
+- [x] Mecanismos enumerados, cada um com a resposta à pergunta da recursão.
+- [x] Recomendação explícita e acionável, com o custo declarado.
+- [x] Posição sobre "sem `HEAD`" e sobre desligamento legítimo.
+- [x] Nenhum arquivo de código modificado.
 
 ---
 
@@ -179,7 +179,7 @@ fixture; reconstruir `bin/trackfw` ao sabotar) foram todas pagas nesta linha de 
 > Dependências: Wave 2.
 
 ### ML-3A — Documentação
-**Status:** 🔄 Em andamento (Zeus) · **Agente:** **Zeus**
+**Status:** ✅ Concluído (Zeus)
 `docs/cli-parity.md` + `README.md` — **removendo** o limite documentado, se resolvido.
 > Atribuído a Zeus porque Hefesto recusou tarefa equivalente por escopo em 2026-08-12, apesar de tê-la
 > executado em 4 PRs anteriores. Enquanto `~/.claude/agents/hefesto-tf` não for reconciliado, este
@@ -213,7 +213,7 @@ ambiente não é controle. Ver **Emenda 3** do ADR.
 > Dependências: ML-1B. **Bloqueia o PR.**
 
 ### ML-2B — Falsificação do bypass por `GIT_*`
-**Status:** 🔄 Em andamento · **Agente:** Ártemis (`artemis-tf`)
+**Status:** ✅ Concluído (Ártemis; auditado e aprovado por Zeus em 2026-08-13)
 
 O ML-1B fechou o bypass, mas **nenhum cenário prova que ele continua fechado**. Sem isso, uma
 regressão futura reabre o buraco em silêncio — exatamente o que este roadmap inteiro combate.

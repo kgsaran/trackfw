@@ -14113,3 +14113,117 @@ específico é escopo de Ártemis, não coberto aqui).
 
 **Próximo: Zeus audita.** Se aprovado, roadmap pode fechar (Wave 1-bis era o último item
 bloqueante do PR).
+
+---
+
+## Sessão 2026-08-13 — Ártemis (ML-2B: falsificação do bypass por `GIT_*`) — CONCLUÍDO, aguardando auditoria de Zeus
+
+Branch `fix/ancorar-rules-no-head-para-as-regras-de-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md`,
+Wave 2-bis/ML-2B — status atualizado para ✅ Concluído. Único arquivo modificado:
+`scripts/check-gates-falsify.sh` (Cenário 54, +166 linhas).
+
+**Desenho do Cenário 54.** Reusa o fixture combinado do Cenário 51 (T51_BAD: HEAD commita SÓ
+`credential_guard.mode: block`; disco, sem novo commit, sobrescreve para `mode: warn` + `rules:
+credential_guard_mode_downgrade: off`) e injeta as variáveis de ambiente do adversário na
+invocação de `trackfw validate`, cobrindo os DOIS vetores da nota do vault
+(`validador-git-env-bypass-filtre-por-prefixo-2026-08-12.md`), não só o do PoC original:
+1. **Redirecionamento** — `GIT_DIR`/`GIT_WORK_TREE` apontando para um repositório-isca (git real,
+   sem `trackfw.yaml` commitado).
+2. **Falha induzida** — `GIT_CONFIG_COUNT=abc` (não redireciona nada, só faz o `git` sair 128 por
+   config malformada em linha de comando — o vetor que quebrou a denylist original de 8 nomes).
+
+**Braço autodiscriminante.** Antes de testar o binário do trackfw, o cenário roda os DOIS vetores
+contra um `git -C` cru (sem passar pelo trackfw) e exige que cada um realmente derrube/desvie o
+comando — provando que o ataque é genuíno, não teatro, e que um braço de detecção "verde" depois
+não seria vácuo por o vetor nunca ter funcionado contra nada.
+
+**Braço "worktree legítimo continua funcionando".** `git worktree add` real, sem manipulação de
+ambiente — confirma baseline silenciosa (disco==HEAD) e detecção (disco diverge) dentro da
+worktree vinculada. Ártemis conferiu que Apolo (ML-1B) já cobriu isso com teste automatizado nos
+3 stacks (unidade); este braço é a confirmação black-box complementar via o binário real.
+
+**Prova de não-vacuidade (executada, não só documentada, e ISOLADA por braço).** Sabotagem
+temporária de `cleanGitEnv()` (`internal/validator/validator_git_exec.go`) para `return
+os.Environ()` (sem filtro), rebuild de `bin/trackfw`, execução completa de
+`check-gates-falsify.sh`:
+
+```
+OK   [falsify/credential-guard-git-env-bypass/redirect-attack-is-real]: ...
+OK   [falsify/credential-guard-git-env-bypass/config-attack-is-real]: ...
+FAIL [falsify/credential-guard-git-env-bypass/redirect-detected]: saiu com 0, esperava != 0
+  output: ✓ No violations found.
+```
+
+`set -e` aborta o script no primeiro `FAIL`, então o braço `config-count-detected` nunca chega a
+rodar nessa primeira passada — refeito ISOLADO: comentei temporariamente a chamada
+`assert_fails_with .../redirect-detected` no script (mantendo a sabotagem do `cleanGitEnv()` e o
+binário sabotado), rerodei:
+
+```
+OK   [falsify/credential-guard-git-env-bypass/redirect-attack-is-real]: ...
+OK   [falsify/credential-guard-git-env-bypass/config-attack-is-real]: ...
+FAIL [falsify/credential-guard-git-env-bypass/config-count-detected]: saiu com 0, esperava != 0
+  output: ✓ No violations found.
+```
+
+Confirma dependência genuína dos DOIS braços, cada um isolado: com o filtro desligado, o
+redirecionamento silencia por completo (`GIT_DIR`/`GIT_WORK_TREE` desviam `headTrackfwYAML()` para
+o repositório-isca, sem `trackfw.yaml` em HEAD, `ok=false`) e a falha induzida também silencia
+(`GIT_CONFIG_COUNT=abc` faz `git show HEAD:./trackfw.yaml` sair 128, `ok=false` pelo mesmo motivo)
+— os dois caem no fallback disco-only, onde `rules: ...: off` (só em disco) silencia a regra.
+`scripts/check-gates-falsify.sh` e `internal/validator/validator_git_exec.go` restaurados e
+`bin/trackfw` reconstruído em seguida — `git diff --exit-code` confirmou restauração byte-a-byte
+dos dois antes de prosseguir.
+
+**`GIT_CEILING_DIRECTORIES` investigado e deliberadamente NÃO virou um terceiro braço.** A tabela
+de reprodução manual de Zeus no despacho ("sem manipulação / GIT_DIR+WORK_TREE / GIT_CONFIG_COUNT
+/ GIT_CEILING_DIRECTORIES, todas → violação reportada") é verificação POST-fix de que a defesa vale
+nas 4 condições, não uma lista de vetores pré-fix. Testado cru contra `git -C <dir>` com `<dir>` já
+sendo a raiz do repo (a forma que `gitCommand(".", ...)` sempre usa neste código-base — cwd já é a
+raiz do projeto, nunca um subdiretório): `GIT_CEILING_DIRECTORIES=<dir>` e
+`GIT_CEILING_DIRECTORIES=<pai de dir>` — as duas vezes `git show HEAD:./f.yaml` teve sucesso normal
+(exit 0), porque o ceiling só bloqueia caminhada PARA CIMA na descoberta, e uma descoberta que já
+começa num diretório com `.git` não caminha para lugar nenhum. Incluir um `assert_fails_with` para
+essa variável seria vácuo contra este fixture — documentado em comentário no Cenário 54 em vez de
+forçado como código.
+
+**Gates:** `bash -n scripts/check-gates-falsify.sh` limpo · `go build -o bin/trackfw
+./cmd/trackfw` verde · `make quality` exit 0, **112/112 cenários OK** (Cenário 54 novo, string de
+resumo final atualizada de 111→112) · `./bin/trackfw validate` neste repo →
+`✓ No violations found.` · `git status --porcelain` mostra só `scripts/check-gates-falsify.sh`
+modificado — `internal/`, `npm/src/`, `pypi/trackfw/` e testes intocados no diff final.
+
+**Próximo: Zeus audita.** Se aprovado, resta ML-3A (documentação, em andamento com Zeus) antes do
+PR.
+
+## Sessão 2026-08-13 — Zeus (Arquiteto) — ML-2B auditado, ML-3A executado, roadmap fechado
+
+**ML-2B aprovado.** Não-vacuidade reproduzida por Zeus: sabotei `cleanGitEnv()` para
+`return os.Environ()`, reconstruí `bin/trackfw` → `FAIL [.../redirect-detected]`. Restaurado,
+árvore de código limpa, e na árvore limpa: falsify **126 OK / 0 FAIL** (112 cenários),
+`make quality` **exit 0**.
+
+**Ela cobriu os dois tipos de vetor**, como exigido — redirecionamento (`GIT_DIR`/`GIT_WORK_TREE`) e
+**falha induzida** (`GIT_CONFIG_COUNT=abc`). Sem o segundo, uma regressão que voltasse à denylist
+enumerada passaria despercebida.
+
+**E fez algo melhor do que cumprir a especificação: rejeitou parte dela.** Eu passei uma tabela de 4
+linhas com `GIT_CEILING_DIRECTORIES`; ela verificou empiricamente que, com `git -C <root>`, o ceiling
+**nunca bloqueia** a descoberta (não há caminhada para cima a fazer), então um braço
+`assert_fails_with` seria **vácuo**. Documentou em comentário em vez de forçar código. Leu
+corretamente que minha tabela era teste de *"a defesa aguenta"*, não lista de bypasses.
+
+**Braços autodiscriminantes com uma camada a mais:** antes de testar o binário do trackfw, cada vetor
+é rodado contra um `git -C` **cru** e asseverado que **de fato** redireciona/falha — provando que o
+ataque é genuíno e não inerte. Sem isso, um braço verde poderia significar "o ataque não funcionou"
+em vez de "a defesa segurou".
+
+**ML-3A executado por Zeus** (Hefesto segue recusando esta classe por escopo):
+`docs/cli-parity.md` ganha a seção da ancoragem — o que mudou, a **consequência de migração**, por que
+o filtro é por **prefixo** e não lista, e o que **continua aberto**. `README.md` ganha a seção
+*"If `trackfw update` suddenly reports something it used to ignore"*, em linguagem de usuário, com as
+**duas saídas legítimas** (desligar com `rules:` commitado, ou corrigir a causa) e a ressalva do
+`governance_mode: lenient`.
+
+`make quality` **exit 0** · `trackfw validate` sem violações. Roadmap → `done`, REQ → `Done`.
