@@ -44,7 +44,7 @@ identidade, nem em `model:`/`memory:`.
 > Dependências: nenhuma.
 
 ### ML-1A — Reconciliar a fronteira de escrita
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Prometeu; auditado e aprovado por Zeus em 2026-08-13)
 **Agente:** Prometeu (`prometeu-tf`) — é o especialista em **configuração de assistente e contratos de
 tool-calling**; o alvo é definição de agente, não código de produto.
 
@@ -114,7 +114,7 @@ make quality
 > Dependências: Wave 1.
 
 ### ML-2A — O agente instalado reflete a mudança?
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** Prometeu (`prometeu-tf`)
 
 Gerar os agentes num `$HOME` **isolado** e confirmar que o arquivo produzido carrega `Write, Edit` e

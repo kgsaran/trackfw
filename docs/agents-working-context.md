@@ -4,6 +4,38 @@
 
 ---
 
+## Sessão 2026-08-13 — Prometeu (ML-1A: fronteira de escrita dos agentes auditores) — CONCLUÍDO, aguardando auditoria e commit por Zeus
+
+Branch `fix/fronteira-de-escrita-dos-agentes-auditores`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md`, ML-1A — status
+atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do Zeus).
+
+**Verificação de partida:** o texto de partida das seções tocadas (`tools:`, `## Governance
+prerequisite`, `## Reporting boundary`, `## Git authority`) era idêntico byte-a-byte nos 3 agentes
+(`code-quality`, `security`, `ux`) e nos 3 stacks — confirmado por leitura direta antes de editar.
+
+**Aplicadas as 4 mudanças literais do ML** em `{internal,npm/src,pypi/trackfw}/integrations/assets/agents/{code-quality,security,ux}.md`
+(9 arquivos): `tools:` ganhou `Write, Edit`; `## Reporting boundary` substituída pela versão que
+delimita a proibição a **código de produto** e afirma que artefatos próprios do papel (parecer,
+`agents-working-context.md`, docs designadas pelo orquestrador) não são "modificar código";
+`## Governance prerequisite` trocou "edit code" por "produce deliverables"; `## Git authority` trocou
+"refuse to implement anything" por "refuse to act".
+
+**Hashes MD5 por agente (3 stacks idênticos):**
+- code-quality: `90458b0b36947f43634ceba7f7f45afc`
+- security: `587dde23bd675cc1160521929fc37058`
+- ux: `7ddcf2ef8d98903e7c474c62a023f1f7`
+
+**Gates:** `bash scripts/check-integration-assets.sh` → sincronizado. `go build ./... && go test ./...`
+verde (nenhum teste quebrou, nenhum precisou de atualização). `npm --prefix npm test` → 477/477 +
+70/70 (validator.test.js). `python3 -m pytest pypi/tests -q` → 1032 passed, 8 subtests. `make quality`
+→ exit 0, todos os 112 cenários de falsificação OK.
+
+**`git status --porcelain` final:** só os 9 assets + este arquivo + o campo `**Status:**` do ML-1A no
+roadmap — nenhum outro asset de agente, `model:`/`memory:` inalterados.
+
+---
+
 ## Sessão 2026-08-12 — Hades (ML-0A: âncora de detecção — HEAD × template do binário) — CONCLUÍDO, aguardando emenda de ADR por Zeus
 
 Branch `fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate`. Roadmap:
@@ -14265,3 +14297,27 @@ domínio dele. Apolo segue dono de `internal/`/`npm/src/`/`pypi/trackfw/` quando
 comportamento do CLI.
 
 Branch `fix/fronteira-de-escrita-dos-agentes-auditores`.
+
+## Sessão 2026-08-13 — Zeus (Arquiteto) — auditoria do ML-1A — APROVADO
+
+**Verificado por Zeus, não aceito do relatório:**
+
+- **Paridade:** `md5` dos 3 stacks **idêntico** para cada um dos 3 agentes (`sort -u | wc -l` = 1).
+- **Escopo:** `git diff --name-only` sobre `assets/agents/` retorna **apenas** `code-quality.md`,
+  `security.md`, `ux.md` — nenhum agente implementador tocado.
+- **`model:`/`memory:`** intactos — diff filtrado por esses campos vem **vazio**.
+- **Diff literal conferido:** as 4 mudanças aplicadas **exatamente** como especificadas, sem
+  reformulação. Era o ponto do ML — reformular reintroduziria a ambiguidade.
+
+**Gates:** `check-integration-assets.sh` *"synchronized (file lists and bytes match)"* ·
+`go test ./...` sem FAIL · `npm test` 477/0 · `pytest` 1032 passed · `make quality` **exit 0**.
+
+**Nenhum teste precisou de atualização** — o que confirma que o conteúdo dos assets não estava
+fixado byte-a-byte por teste algum, apenas a **sincronia entre stacks** (`check-integration-assets.sh`).
+Vale registrar: **é possível alterar o texto de um agente sem nenhum gate acusar**, desde que os 3
+stacks mudem juntos. Não é defeito — é o contrato atual — mas quem editar esses arquivos precisa
+saber que a rede de segurança verifica **paridade**, não **conteúdo**.
+
+**Próximo:** ML-2A — confirmar, em `$HOME` isolado, que o artefato **gerado** reflete a mudança,
+inclusive pelo caminho de renomeação por identidade (`trackfw-code-quality.md` com `name: hefesto-tf`),
+que é como o instalado real existe nesta máquina.
