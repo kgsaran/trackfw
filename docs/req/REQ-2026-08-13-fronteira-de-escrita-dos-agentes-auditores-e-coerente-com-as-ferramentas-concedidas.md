@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-13
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md"
 ---
 
 # REQ: Fronteira de escrita dos agentes auditores e coerente com as ferramentas concedidas
 
-> Date: 2026-08-13 | Status: Open
+> Date: 2026-08-13 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -73,4 +73,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md

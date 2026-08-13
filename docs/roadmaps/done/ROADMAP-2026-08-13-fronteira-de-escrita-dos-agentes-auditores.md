@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-13
 req: "docs/req/REQ-2026-08-13-fronteira-de-escrita-dos-agentes-auditores-e-coerente-com-as-ferramentas-concedidas.md"
 squad: "Prometeu"
@@ -7,7 +7,7 @@ squad: "Prometeu"
 
 # Roadmap: Fronteira de escrita dos agentes auditores
 
-> Created: 2026-08-13 | Status: wip
+> Created: 2026-08-13 | Status: done
 
 ## Context
 
