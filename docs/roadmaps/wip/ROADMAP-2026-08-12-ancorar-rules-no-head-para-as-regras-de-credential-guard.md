@@ -209,6 +209,17 @@ ambiente não é controle. Ver **Emenda 3** do ADR.
 
 ---
 
+## Wave 2-bis — Cenário do bypass por ambiente (1 ML)
+> Dependências: ML-1B. **Bloqueia o PR.**
+
+### ML-2B — Falsificação do bypass por `GIT_*`
+**Status:** 🔄 Em andamento · **Agente:** Ártemis (`artemis-tf`)
+
+O ML-1B fechou o bypass, mas **nenhum cenário prova que ele continua fechado**. Sem isso, uma
+regressão futura reabre o buraco em silêncio — exatamente o que este roadmap inteiro combate.
+
+---
+
 ## Notas de execução
 
 - **Autoridade de Git:** apenas Zeus cria branch, commita e faz push.
