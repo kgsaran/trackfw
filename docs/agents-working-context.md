@@ -13831,3 +13831,137 @@ toquei em `scripts/` (fora do meu escopo, ML-2A/Ártemis). Nota detalhada:
 **Próximo:** Zeus audita; se aprovado, ML-2A (Ártemis) reescreve o Scenario 50 de
 `scripts/check-gates-falsify.sh` para o cenário decisivo (ataque combinado não commitado continua
 detectado).
+
+---
+
+## Sessão 2026-08-12 — Ártemis (ML-2A: cenário de falsificação do M4) — CONCLUÍDO, aguardando auditoria de Zeus
+
+Branch `fix/ancorar-rules-no-head-para-as-regras-de-credential-guard`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md`,
+Wave 2/ML-2A — status atualizado para 🔄 Aguardando auditoria de Zeus (não marco ✅ antes da
+auditoria de Zeus passar — Definition of Done do meu papel). Único arquivo de código tocado:
+`scripts/check-gates-falsify.sh` (108 → 111 falsify scenarios; string de resumo final atualizada).
+`internal/`, `npm/src/`, `pypi/trackfw/` e todos os testes ficaram intocados — confirmado por
+`git status --short` limpo neles ao final.
+
+**1. Cenário 50 consertado.** O braço de não-vacuidade original sabotava a regra escrevendo `rules:
+credential_guard_mode_downgrade: off` em disco **sem** commit — exatamente o comportamento pré-ADR
+que o M4 fecha; ficaria vermelho para sempre. Substituído por `rules: ...: off` **commitado junto**
+com `mode: block` no mesmo commit de HEAD (T50_OFF) — mesmo padrão de
+`TestCredentialGuardModeDowngrade_ConfiguravelViaRules/off_commitado`
+(`validator_credential_guard_integrity_test.go:356-371`): HEAD e disco concordam em "off", "mais
+estrita entre HEAD e disco" resolve para "off", a regra silencia de verdade. `_ =
+credentialGuardModeMsgs` (sabotage por código) não era opção — este ML não tem permissão de tocar
+`internal/`.
+
+**2. Cenário 51 (novo) — o cenário decisivo do M4.** Edição combinada NÃO commitada (`mode: warn` +
+`rules: credential_guard_mode_downgrade: off`, ambos só em disco, HEAD só com `mode: block`)
+**continua sendo reportada** (T51_BAD). Braço autodiscriminante: T51_OFF_COMMITTED aplica o MESMO
+ataque de disco, mas com o `off` **commitado** junto ao `mode: block` — silencia. A única variável
+entre os dois é o status de commit do `off`.
+
+**3. Cenário 52 (novo) — carve-out do baseline.** Antes de escrever, verifiquei o formato real de
+`.trackfw-baseline.json` em vez de assumir da prosa do ADR (armadilha "prova que não prova"):
+`BaselineFile{Violations, Warnings []string}` (`validator.go:18-23`), e `filterBaselineTagged`
+compara o texto **inteiro** da mensagem (`v.Msg`, `validator.go:527`), não uma tag/hash — por isso
+o baseline do fixture usa `$S50_FULL_MSG` (literal completo), não `$S50_MSG` (só o trecho usado nos
+outros cenários). Braço de controle embutido no MESMO fixture/MESMA execução de `validate`: uma
+violação de `filename_uniqueness` (não-guard) listada no MESMO baseline **é** suprimida — prova que
+o carve-out é específico das 3 regras de guarda, não que o baseline está simplesmente quebrado (o
+que faria a violação de guarda "sobreviver" não provar nada).
+
+**4. Cenário 53 (novo) — não-regressão, o mais importante para a confiança no M4.** Uma regra
+não-guard (`filename_uniqueness`, default `error`) com `rules: filename_uniqueness: off` em disco
+**não commitado** continua silenciando totalmente — zero delta confirmado para o caminho
+`diskRuleSeverity` usado pelas ~38 regras fora do escopo do M4. O fixture precisa de um HEAD real
+mesmo esta regra nunca consultando HEAD hoje: sem HEAD, `credentialGuardRuleSeverity` cairia em
+disco mesmo que a regra fosse (por engano) adicionada ao mapa âncorado — mascarando o próprio
+vazamento que este cenário existe para pegar.
+
+**Armadilha paga durante a escrita:** os primeiros fixtures dos Cenários 52/53 colocavam os
+`dup.md` duplicados em `wip/` + `backlog/` — isso disparou `roadmap "X" is in wip but has no linked
+REQ` e `...has no acceptance criteria block` (regras específicas de `wip`/`blocked`), poluindo o
+exit code sem relação com `filename_uniqueness`. Movido para `backlog/` + `done/`, que não têm essas
+checagens extras.
+
+**🔴 Prova de não-vacuidade de cada cenário NOVO (51/52/53) — sabotagem TEMPORÁRIA de
+`internal/validator/*.go`, `go build -o bin/trackfw ./cmd/trackfw`, confirmação da falha, restauração
++ rebuild, `git status --short internal/` limpo depois de cada uma:**
+- **51:** `credentialGuardRuleSeverity` revertida para `return diskSeverity` (disco sempre vence, pré-ADR)
+  → T51_BAD passou a imprimir `✓ No violations found.` (exit 0) — a asserção de detecção depende
+  genuinamente do M4. Restaurado, `go build` confirmado limpo.
+- **52:** `filterBaselineTagged` com a condição `&& !credentialGuardAnchoredRules[v.Rule]` removida
+  → T52 passou a imprimir `✓ No violations found.` (exit 0, as DUAS violações suprimidas) — a
+  asserção depende genuinamente do carve-out. Restaurado, `go build` confirmado limpo.
+- **53:** `filename_uniqueness: true` adicionado a `credentialGuardAnchoredRules` (simulando
+  vazamento de escopo do M4) → T53_OFF passou a imprimir a violação de `filename_uniqueness` de
+  volta (exit 1) — a asserção de silêncio depende genuinamente do zero-delta. Restaurado, `go build`
+  confirmado limpo.
+
+**Evidência final:**
+```
+$ ./bin/trackfw validate
+✓ No violations found.
+$ git status --short
+ M scripts/check-gates-falsify.sh
+$ make quality
+...
+Falsification checks passed (all 111 scenarios, ...)
+$ echo $?
+0
+```
+
+**Arquivos modificados:** `scripts/check-gates-falsify.sh`, este arquivo, e o campo `**Status:**` do
+ML-2A no roadmap.
+
+**🔴 Duas notas de vault ficam devendo — fora do meu "Arquivos permitidos" (só
+`scripts/check-gates-falsify.sh` · `docs/agents-working-context.md` · o campo `**Status:**` do
+roadmap), decisão de Zeus se cabem neste PR ou num ML próprio:**
+1. `vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md`, armadilha #1,
+   prescreve `assert_would_now_fail` + `rules: <nome>: off` (não commitado) como o idioma padrão de
+   não-vacuidade. Para as 3 regras de credential-guard esse idioma está **morto** desde o M4 — um
+   `off` não commitado não desliga mais nada nelas. O próximo agente escrevendo um cenário para
+   `credential_guard_hook_resolvable` ou `credential_guard_script_integrity` vai puxar essa armadilha
+   e recair no mesmo furo que motivou este ML inteiro. Precisa de um adendo de escopo: "não se aplica
+   às 3 regras em credentialGuardAnchoredRules — usar `rules: off` COMMITADO junto com o valor que a
+   regra vigia (ver Cenário 50/51 em check-gates-falsify.sh)."
+2. A armadilha nova que paguei: um `dup.md` duplicado colocado em `wip/` (ou `blocked/`) dispara
+   `roadmap "X" is in wip but has no linked REQ` + `...has no acceptance criteria block` — regras
+   extras específicas desses dois estados que poluem o exit code de qualquer cenário que só queira
+   testar `filename_uniqueness` isoladamente. Usar `backlog/` + `done/` para fixtures de duplicidade
+   de nome que não devem ter "material" de outras regras. Vale como quinta armadilha na mesma nota.
+
+**Próximo:** Zeus audita. Se aprovado: ML-3A (Zeus, documentação — `docs/cli-parity.md` +
+`README.md`) e ML-3B (Hades, revisão de segurança final).
+
+## Sessão 2026-08-12 — Zeus (Arquiteto) — auditoria do ML-2A — APROVADO, e o 5º erro de harness meu
+
+**Gates re-executados por Zeus na árvore limpa:** falsify **120 OK / 0 FAIL** (111 cenários) ·
+`make quality` **exit 0**. O vermelho declarado no commit do ML-1A está resolvido.
+
+**Erro meu, e vale registrar porque é novo:** rodei a sabotagem de auditoria **concorrentemente** com
+uma rodada de gates em background. O `FAIL` que a rodada capturou era **meu próprio vazamento**
+injetado, não defeito do trabalho. Contaminei a medição. **Quinto erro de harness da sessão.**
+**Lição: sabotagem de auditoria e rodada de gates não podem se sobrepor no tempo.**
+
+**Reprodução da não-vacuidade, pelo caminho que eu não esperava:** injetei `filename_uniqueness` no
+conjunto de regras ancoradas, simulando o M4 **vazar** para uma regra não-guard. O gate reprovou —
+mas pelo **Cenário 52** (carve-out do baseline), não pelo 53. O vazamento **é** pego; a rota é outra.
+E a mensagem do cenário é melhor que a média: explica **por que a asserção anterior seria vácua
+sozinha** — o braço de contraste existe para provar que o baseline funciona no fixture, senão
+"guard não foi suprimido" passaria com baseline mal-formado.
+
+**Conserto do Cenário 50, e a escolha é a certa:** ela trocou o mecanismo de não-vacuidade de
+`rules: off` **não commitado** (morto por design desde o M4) para `off` **commitado junto** com
+`mode: block` no mesmo `HEAD` — que é o **caminho legítimo e auditável** que o ADR preserva. E trocou
+`assert_would_now_fail` por `assert_lacks_pattern`, estritamente mais forte: o fixture agora
+representa **comportamento correto de produção**, não árvore sabotada.
+
+**Cenário 53 é o mais load-bearing e ela sabia:** carrega um `HEAD` real **de propósito**, mesmo a
+regra não lendo `HEAD` hoje, só para que a sabotagem de não-vacuidade (adicionar a regra ao conjunto
+ancorado) seja **significativa**. Sem isso, o cenário passaria por acidente.
+
+**Vault atualizado por Zeus** com as duas coisas que ela devia mas não podia escrever: ressalva de
+escopo na armadilha #1 (o idioma `assert_would_now_fail` + `rules: off` não commitado está **morto**
+para as 3 regras de guard) e a armadilha #5 nova (regras extras de `wip`/`blocked` disparando em
+fixture de roadmap).

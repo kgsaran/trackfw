@@ -22,6 +22,21 @@ Go (`declared and not used`). Consuma a variável:
 _ = credentialGuardModeMsgs // sabotagem temporária
 ```
 
+> ⚠️ **RESSALVA DE ESCOPO (2026-08-12, ML-2A do roadmap de ancoragem).** O idioma prescrito acima —
+> desabilitar a regra via `rules: <nome>: off` **não commitado** — está **morto para as três regras de
+> credential-guard** (`credential_guard_hook_resolvable`, `credential_guard_script_integrity`,
+> `credential_guard_mode_downgrade`). Desde o `ADR-2026-08-12-severidade-das-regras-...`, elas
+> resolvem severidade pela **mais estrita entre `HEAD` e disco**, então um `off` em disco **não
+> desliga nada**. Para essas três, use `off` **commitado** (o caminho legítimo e auditável) ou sabote
+> o call site no código. Para as outras ~38 regras, o idioma original continua válido.
+
+## 5. Regras extras de `wip`/`blocked` disparam em fixture de roadmap
+
+Ao montar fixture com roadmap em `wip/` ou `blocked/`, o validador aplica regras adicionais que não
+existem nos outros estados. Um fixture escrito para exercitar **uma** regra pode reprovar por
+**outra**, e o diagnóstico aponta para o lugar errado. Monte o fixture no estado mais neutro possível,
+ou fixe as regras extras em `off` **e comente por quê**.
+
 ## 2. Regra de severidade `warning` **não pode** usar `assert_fails_with`
 
 `assert_fails_with` exige **exit != 0**. Uma regra cujo default é `warning` **não muda o exit code**

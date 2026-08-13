@@ -144,7 +144,7 @@ o problema está **reduzido, não resolvido**.
 > Dependências: Barreira B0.
 
 ### ML-1A — Mecanismo nos 3 CLIs (M4 + carve-out do baseline)
-**Status:** 🔄 Aguardando auditoria de Zeus — `make quality` vermelho por dependência do ML-2A
+**Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-12)
 (ver seção "Consequência esperada" no handoff em `docs/agents-working-context.md`; todo o resto —
 `go build`, `go test`, `npm test`, `pytest`, `go vet`, `trackfw validate` neste repo, e todos os
 scripts de `parity` exceto `check-gates-falsify.sh` Scenario 50 — está verde) · **Agente:** Apolo
@@ -163,7 +163,7 @@ repositório**; **não alterar** a mensagem de sucesso do `validate` (Cenário 2
 > Dependências: Wave 1. **Separada de propósito.**
 
 ### ML-2A — Cenário de falsificação
-**Status:** ⬜ Pendente · **Agente:** Ártemis (`artemis-tf`)
+**Status:** ✅ Concluído (Ártemis; auditado e aprovado por Zeus em 2026-08-12)
 **Arquivos:** `scripts/check-gates-falsify.sh`.
 
 O cenário decisivo: **edição combinada não commitada** (`mode: warn` + regra `off`) **continua sendo
@@ -179,14 +179,14 @@ fixture; reconstruir `bin/trackfw` ao sabotar) foram todas pagas nesta linha de 
 > Dependências: Wave 2.
 
 ### ML-3A — Documentação
-**Status:** ⬜ Pendente · **Agente:** **Zeus**
+**Status:** 🔄 Em andamento (Zeus) · **Agente:** **Zeus**
 `docs/cli-parity.md` + `README.md` — **removendo** o limite documentado, se resolvido.
 > Atribuído a Zeus porque Hefesto recusou tarefa equivalente por escopo em 2026-08-12, apesar de tê-la
 > executado em 4 PRs anteriores. Enquanto `~/.claude/agents/hefesto-tf` não for reconciliado, este
 > tipo de ML não é despachado para ele.
 
 ### ML-3B — Revisão de segurança
-**Status:** ⬜ Pendente · **Agente:** Hades (`hades-tf`)
+**Status:** 🔄 Em andamento · **Agente:** Hades (`hades-tf`)
 Avaliar se o mecanismo entregue **de fato** impede o auto-silenciamento, e se não criou brecha nova.
 
 ---
