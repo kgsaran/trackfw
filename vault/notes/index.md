@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [asset-parity-gate-nao-cobre-o-caminho-de-geracao-mas-o-caminho-e-fiel-2026-08-13](asset-parity-gate-nao-cobre-o-caminho-de-geracao-mas-o-caminho-e-fiel-2026-08-13.md)
 - [validador-git-env-bypass-filtre-por-prefixo-2026-08-12](validador-git-env-bypass-filtre-por-prefixo-2026-08-12.md)
 - [scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12](scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12.md)
 - [armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12](armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md)
