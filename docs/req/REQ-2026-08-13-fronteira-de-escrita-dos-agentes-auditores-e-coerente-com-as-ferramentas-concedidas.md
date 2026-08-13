@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-13
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md"
 ---
 
 # REQ: Fronteira de escrita dos agentes auditores e coerente com as ferramentas concedidas
@@ -73,4 +73,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md

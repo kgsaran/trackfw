@@ -26,12 +26,12 @@ imprevisível.
 
 ## Acceptance Criteria
 
-- [ ] Os 3 assets concedem `Write` e `Edit`.
-- [ ] Proibição delimitada a **código de produto**; o que o papel **pode** escrever está **afirmado**.
-- [ ] Contradições #2 e #3 reconciliadas.
-- [ ] **Paridade byte-a-byte** nos 3 stacks (9 arquivos).
-- [ ] Nenhum outro agente alterado.
-- [ ] `make quality` verde.
+- [x] Os 3 assets concedem `Write` e `Edit`.
+- [x] Proibição delimitada a **código de produto**; o que o papel **pode** escrever está **afirmado**.
+- [x] Contradições #2 e #3 reconciliadas.
+- [x] **Paridade byte-a-byte** nos 3 stacks (9 arquivos).
+- [x] Nenhum outro agente alterado.
+- [x] `make quality` verde.
 
 ### Escopo negativo
 
@@ -87,15 +87,15 @@ agente; a generalidade é o que evita a próxima ambiguidade.
 antes de aplicar — se **não** for, **pare e reporte**: divergência pré-existente é achado.
 
 **Critérios de aceite:**
-- [ ] As 4 mudanças aplicadas nos 3 agentes × 3 stacks = **9 arquivos**.
-- [ ] **Byte-identidade entre os stacks** para cada agente (`md5` igual nos 3).
-- [ ] `git diff` **não** mostra alteração em nenhum outro asset de agente.
-- [ ] `model:` e `memory:` inalterados.
-- [ ] `bash scripts/check-integration-assets.sh` sem falha.
-- [ ] `go build ./... && go test ./...`, `npm --prefix npm test`,
+- [x] As 4 mudanças aplicadas nos 3 agentes × 3 stacks = **9 arquivos**.
+- [x] **Byte-identidade entre os stacks** para cada agente (`md5` igual nos 3).
+- [x] `git diff` **não** mostra alteração em nenhum outro asset de agente.
+- [x] `model:` e `memory:` inalterados.
+- [x] `bash scripts/check-integration-assets.sh` sem falha.
+- [x] `go build ./... && go test ./...`, `npm --prefix npm test`,
       `python3 -m pytest pypi/tests -q` verdes — **há testes que asseveram conteúdo de asset**
       (`internal/integrations/*_test.go`); se algum quebrar, **atualize-o**, não contorne.
-- [ ] `make quality` exit 0.
+- [x] `make quality` exit 0.
 
 **Comandos de validação:**
 ```bash
@@ -114,7 +114,7 @@ make quality
 > Dependências: Wave 1.
 
 ### ML-2A — O agente instalado reflete a mudança?
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (Prometeu; auditado e aprovado por Zeus em 2026-08-13)
 **Agente:** Prometeu (`prometeu-tf`)
 
 Gerar os agentes num `$HOME` **isolado** e confirmar que o arquivo produzido carrega `Write, Edit` e
@@ -124,9 +124,9 @@ o texto novo — **incluindo** o caminho de renomeação por identidade (`trackf
 ⛔ **Nunca** escrever no `~/.claude/` real do usuário. Sempre `HOME` isolado.
 
 **Critérios de aceite:**
-- [ ] Arquivo gerado em `$HOME` isolado contém `Write, Edit` e a nova `Reporting boundary`.
-- [ ] Caminho com identidade aplicada produz o mesmo corpo, só com `name`/`description` renomeados.
-- [ ] Confirmação explícita de que `~/.claude/` do usuário **não** foi tocado.
+- [x] Arquivo gerado em `$HOME` isolado contém `Write, Edit` e a nova `Reporting boundary`.
+- [x] Caminho com identidade aplicada produz o mesmo corpo, só com `name`/`description` renomeados.
+- [x] Confirmação explícita de que `~/.claude/` do usuário **não** foi tocado.
 
 ---
 

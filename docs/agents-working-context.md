@@ -14321,3 +14321,125 @@ saber que a rede de segurança verifica **paridade**, não **conteúdo**.
 **Próximo:** ML-2A — confirmar, em `$HOME` isolado, que o artefato **gerado** reflete a mudança,
 inclusive pelo caminho de renomeação por identidade (`trackfw-code-quality.md` com `name: hefesto-tf`),
 que é como o instalado real existe nesta máquina.
+
+## Sessão 2026-08-13 — Prometeu — ML-2A concluído
+
+**Arquivos além dos dois previstos no critério de aceite** (`docs/agents-working-context.md` e o
+campo `**Status:**` do ML-2A): criei
+`vault/notes/asset-parity-gate-nao-cobre-o-caminho-de-geracao-mas-o-caminho-e-fiel-2026-08-13.md` e
+adicionei a linha correspondente em `vault/notes/index.md`. Motivado pela regra §8 do CLAUDE.md
+global (nota de vault obrigatória após achado não óbvio, commitada junto com o ML) — não é desvio de
+escopo do ML-2A, é um artefato de governança que a própria regra global exige. Nenhum arquivo de
+`internal/`, `npm/src/`, `pypi/trackfw/` foi tocado.
+
+**Comando usado:** `trackfw agents install --scope global --targets claude --items code-quality,security,ux,backend --json`,
+com `HOME` isolado para dois cenários — `--identity-preset none` (caminho padrão) e
+`--identity-preset greek` (caminho de identidade, é como o instalado real desta máquina existe). Não
+usei `agents update` porque `install` já cobre a geração fresca num `$HOME` vazio, que é o caso de teste
+inicial — mas usei `agents update` depois, num cenário separado (ver "Arquivo instalado está
+desatualizado" abaixo), para confirmar o caminho de refresh sem `--force`.
+
+**Caminho padrão (`$HOME` isolado, sem identidade)** — `trackfw-code-quality.md` gerado contém:
+- `tools: Read, Grep, Glob, Bash, WebSearch, AskUserQuestion, Write, Edit`
+- `## Reporting boundary` com o parágrafo novo *"You **do** write your own artifacts"*
+- `## Governance prerequisite`: *"Do not produce deliverables without a requirement..."*
+- `## Git authority`: *"...refuse to act without one"*
+
+**Caminho com identidade aplicada (`--identity-preset greek`)** — arquivo continua nomeado
+`trackfw-code-quality.md`, mas com `name: hefesto-tf`, `description: Hefesto — Code quality
+specialist...` e a linha `You are Hefesto.` no corpo. `diff` entre o arquivo com e sem identidade
+mostra **apenas** as 3 linhas de identidade (`name`, `description`, linha de saudação, assinatura
+final) — as 4 mudanças do ML-1A permanecem byte-idênticas nos dois caminhos.
+
+**Verificação mais forte — identidade real da máquina, não preset simulado:** copiei
+`~/.trackfw/identity.json` (real, nunca lido de fora de `$HOME` isolado) para um terceiro `$HOME`
+isolado e instalei `code-quality` sem preset. `diff` entre o arquivo recém-gerado (com a identidade
+real) e o `~/.claude/agents/trackfw-code-quality.md` **já instalado antes desta mudança** mostrou
+**exatamente** as 4 alterações do ML-1A (`tools:`, `Reporting boundary`, `Governance prerequisite`,
+`Git authority`) e nada mais — `name: hefesto-tf`, `description`, `model: sonnet`, `memory: project`
+idênticos nos dois arquivos. Essa é a comparação mais direta possível entre "asset-fonte modificado"
+e "o que o usuário desta máquina de fato tem instalado".
+
+**`security` e `ux`:** confirmado no caminho sem identidade — `tools:` com `Write, Edit`, e as 3
+frases-chave (*"You do write your own artifacts"*, *"Do not produce deliverables"*,
+*"refuse to act without one"*) presentes em ambos.
+
+**Controle negativo (`backend`, implementador):** `tools:` permanece `Read, Edit, Write, Bash, Grep,
+Glob, AskUserQuestion` — idêntico entre `$HOME` isolado e o `~/.claude/agents/trackfw-backend.md`
+real; `diff` só mostra as linhas de identidade (`apolo-tf`), confirmando que o ML-1A não vazou para
+agentes implementadores.
+
+**`~/.claude/` real intacto:** capturei `md5` dos 4 agentes reais (`code-quality`, `security`, `ux`,
+`backend`) antes de qualquer geração isolada e comparei depois — `md5` e `mtime` (`Jul 29 19:32:23
+2026`) idênticos em todas as execuções. Nenhuma escrita ocorreu fora do `$HOME` isolado.
+
+**Nenhuma surpresa no caminho de geração** — o nome do arquivo (`trackfw-code-quality.md`) não muda
+com a identidade, só o front-matter e uma linha de saudação no corpo, exatamente como o roadmap
+previa.
+
+**⚠️ O arquivo hoje instalado nesta máquina (`~/.claude/agents/trackfw-code-quality.md`, mtime `Jul
+29 19:32:23 2026`) ainda NÃO tem a correção** — meu próprio `diff` contra ele prova isso, e o meu
+próprio system prompt nesta sessão carrega o texto antigo ("You do not modify code.", "refuse to
+implement anything without one"). O caminho de geração propaga fielmente, mas só quando **executado**
+— o usuário precisa rodar o instalador de novo para os 3 auditores refletirem a mudança. **Confirmei
+que isso não exige `--force`:** simulei em `$HOME` isolado o arquivo antigo (não modificado pelo
+usuário, hash batendo com `integrations-manifest.json`) e rodei `trackfw agents update` (sem
+`--force`) — o arquivo foi substituído normalmente pelo texto novo. `--force` só entraria em cena se o
+usuário tivesse editado manualmente o arquivo instalado. Ou seja: um `trackfw agents update` (ou
+`install`) simples, sem flags extras, já resolve — vale mencionar isso ao usuário quando o PR for
+mergeado.
+
+**Gates:** `go build ./...` exit 0 · `trackfw validate` exit 0 (1 warning pré-existente, ver abaixo).
+
+**⚠️ Aviso para Zeus (não corrigido por mim — fora da minha alçada):** `trackfw validate` emite,
+desde o início desta sessão e sem relação com o ML-2A, o warning:
+```
+req "REQ-2026-08-13-fronteira-de-escrita-dos-agentes-auditores-e-coerente-com-as-ferramentas-concedidas.md"
+links to Roadmap "docs/roadmaps/backlog/ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md"
+which does not exist
+```
+O campo `roadmap:` da REQ aponta para `backlog/`, mas o roadmap está em `wip/` (correto, pois já
+avançou de estado). É um artefato de Zeus (REQ), não de asset/geração — mas vai aparecer no gate
+pré-PR (`trackfw validate`, passo 4 do protocolo) se não for corrigido antes do commit.
+
+**Nota de vault criada:** `vault/notes/asset-parity-gate-nao-cobre-o-caminho-de-geracao-mas-o-caminho-e-fiel-2026-08-13.md`
+(linkada em `vault/notes/index.md`) — combina o achado de Zeus no ML-1A (`check-integration-assets.sh`
+verifica paridade, não conteúdo) com o achado deste ML-2A (o caminho de geração, incl. identidade,
+propaga o asset fielmente, sem drift).
+
+**Arquivos modificados nesta sessão:** `docs/agents-working-context.md` (esta entrada), o campo
+`**Status:**` do ML-2A no roadmap, e a nova nota de vault + seu link no índice. Nenhum arquivo de
+`internal/`, `npm/src/`, `pypi/trackfw/` foi tocado.
+
+Entregando a Zeus para auditoria e commit.
+
+## Sessão 2026-08-13 — Zeus (Arquiteto) — auditoria do ML-2A + fechamento
+
+**A verificação dele foi mais forte que o pedido.** Eu pedi para gerar em `$HOME` isolado e conferir o
+conteúdo. Ele **copiou o `~/.trackfw/identity.json` real** para o `$HOME` isolado, rodou o `install`, e
+**diffou o arquivo recém-gerado contra o que está instalado nesta máquina** (pré-fix). O diff mostrou
+**exatamente** as 4 mudanças do ML-1A, com o front-matter (`name: hefesto-tf`, `description`, `model`,
+`memory`) **byte-idêntico**. Isso prova o caminho de renomeação por identidade **de ponta a ponta**,
+não por aproximação.
+
+**Controle negativo passou:** `backend` com `tools:` inalterado — o ML-1A não vazou para agentes
+implementadores.
+
+**Achado operacional útil:** o arquivo instalado nesta máquina **ainda não foi atualizado**
+(mtime `Jul 29`). Ele confirmou que um `trackfw agents update` **sem `--force`** já pega o conteúdo
+novo, porque o arquivo nunca foi modificado à mão. Ou seja: **KG não precisa de `--force`** para
+receber a correção.
+
+**Warning do `trackfw validate` era erro MEU, e ele reportou em vez de contornar:** escrevi o caminho
+`backlog/` **fixo no corpo** da REQ e deixei o frontmatter `roadmap:` **vazio** — então o
+`trackfw roadmap move` não tinha o que sincronizar. Nos roadmaps anteriores eu preenchia o frontmatter
+e a sincronização funcionava. **Lição: preencher os dois, ou só o frontmatter.** Corrigido; `validate`
+limpo.
+
+**Nota de vault escrita por ele** sobre o gate de paridade não cobrir o caminho de geração — conclusão
+oposta à minha da sessão anterior, e mais precisa: o gate verifica paridade, **mas o caminho de
+geração é fiel**, o que ele provou com o diff contra o instalado.
+
+**Ele não re-rodou `make quality`**, e justificou: o ML-2A tocou **zero** código de produto/teste, e a
+auditoria do ML-1A já registrou `make quality` exit 0 com essas mudanças de asset no lugar.
+Justificativa aceita — re-rodar seria ritual, não verificação.
