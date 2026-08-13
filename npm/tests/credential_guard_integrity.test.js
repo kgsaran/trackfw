@@ -316,6 +316,108 @@ test('ruleSeverity: sem HEAD utilizável, credential-guard cai no disco puro', a
   }
 })
 
+// ---- ML-1B: invocações de git isoladas de redirecionamento por ambiente ----
+// ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1B.
+// Mirrors internal/validator/validator_git_exec_test.go (Go).
+
+const { cleanGitEnv } = require('../src/validator/git-exec')
+
+function withEnv(overrides, fn) {
+  const saved = {}
+  for (const key of Object.keys(overrides)) {
+    saved[key] = process.env[key]
+    if (overrides[key] === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = overrides[key]
+    }
+  }
+  try {
+    return fn()
+  } finally {
+    for (const key of Object.keys(saved)) {
+      if (saved[key] === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = saved[key]
+      }
+    }
+  }
+}
+
+test('cleanGitEnv: remove apenas variáveis com prefixo GIT_', () => {
+  withEnv({ GIT_DIR: '/tmp/whatever', GIT_CONFIG_COUNT: 'abc', MY_GIT_DIR_LOOKALIKE: 'kept' }, () => {
+    const cleaned = cleanGitEnv()
+    for (const key of Object.keys(cleaned)) {
+      assert.equal(key.startsWith('GIT_'), false, `cleanGitEnv() não deveria manter ${key}`)
+    }
+    assert.equal(cleaned.MY_GIT_DIR_LOOKALIKE, 'kept')
+  })
+})
+
+test('credential_guard_mode_downgrade: GIT_DIR/GIT_WORK_TREE redirecionados continuam detectando', () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\n')
+
+  const other = tmpDir()
+  git(other, 'init')
+  git(other, 'config', 'user.email', 'test@test.com')
+  git(other, 'config', 'user.name', 'test')
+  git(other, 'commit', '--allow-empty', '-m', 'init')
+
+  withEnv({ GIT_DIR: path.join(other, '.git'), GIT_WORK_TREE: other }, () => {
+    const msgs = validateCredentialGuardModeDowngrade(dir)
+    assert.equal(msgs.length, 1, `GIT_DIR/GIT_WORK_TREE redirecionados NÃO deveriam silenciar a detecção, obteve: ${JSON.stringify(msgs)}`)
+    assert.match(msgs[0], /credential_guard\.mode: block/)
+  })
+})
+
+test('credential_guard_mode_downgrade: GIT_CONFIG_COUNT malformado continua detectando', () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  writeFile(dir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\n')
+
+  withEnv({ GIT_CONFIG_COUNT: 'abc' }, () => {
+    const msgs = validateCredentialGuardModeDowngrade(dir)
+    assert.equal(msgs.length, 1, `GIT_CONFIG_COUNT malformado NÃO deveria silenciar a detecção, obteve: ${JSON.stringify(msgs)}`)
+    assert.match(msgs[0], /credential_guard\.mode: block/)
+  })
+})
+
+test('credential_guard_mode_downgrade: GIT_CONFIG_COUNT malformado prova não-vacuidade (sem limpeza, git falha de verdade)', () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+
+  assert.throws(() => {
+    execFileSync('git', ['-C', dir, 'rev-parse', '--verify', 'HEAD'], {
+      env: Object.assign({}, process.env, { GIT_CONFIG_COUNT: 'abc' }),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  }, /./, 'esperava que git falhasse com GIT_CONFIG_COUNT=abc herdado sem limpeza — não falhou, o fixture não prova nada')
+})
+
+test('isGitWorktree: linked worktree legítima continua funcionando (git worktree add real)', () => {
+  const mainDir = tmpDir()
+  initGitRepo(mainDir)
+  commitTrackfwYAML(mainDir, 'credential_guard:\n  mode: block\n')
+
+  const linkedDir = path.join(tmpDir(), 'linked')
+  git(mainDir, 'worktree', 'add', '-b', 'feat/linked-worktree-test-node', linkedDir)
+
+  // Sem downgrade — disco na worktree ainda resolve para block, idêntico ao HEAD.
+  assert.deepEqual(validateCredentialGuardModeDowngrade(linkedDir), [])
+
+  // Downgrade introduzido dentro da worktree — deve disparar normalmente.
+  writeFile(linkedDir, 'trackfw.yaml', 'credential_guard:\n  mode: warn\n')
+  const msgs = validateCredentialGuardModeDowngrade(linkedDir)
+  assert.equal(msgs.length, 1)
+  assert.match(msgs[0], /credential_guard\.mode: block/)
+})
+
 // ---- Paridade: CREDENTIAL_GUARD_SCRIPT_REFERENCE deve bater com o gerador real ----
 
 test('CREDENTIAL_GUARD_SCRIPT_REFERENCE é byte-idêntico ao que generateCredentialGuardScript emite', () => {

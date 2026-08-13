@@ -267,5 +267,116 @@ class TestCredentialGuardRuleSeveritySemHead(unittest.TestCase):
         )
 
 
+class TestGitExecEnvIsolation(unittest.TestCase):
+    """ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1B.
+    Mirrors internal/validator/validator_git_exec_test.go (Go) and the ML-1B section of
+    npm/tests/credential_guard_integrity.test.js (Node).
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        config.reset()
+
+    def _set_env(self, overrides):
+        saved = {}
+        for key, value in overrides.items():
+            saved[key] = os.environ.get(key)
+            os.environ[key] = value
+        self.addCleanup(lambda: self._restore_env(saved))
+
+    def _restore_env(self, saved):
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    def test_clean_git_env_remove_apenas_prefixo_git(self):
+        self._set_env({
+            "GIT_DIR": "/tmp/whatever",
+            "GIT_CONFIG_COUNT": "abc",
+            "MY_GIT_DIR_LOOKALIKE": "kept",
+        })
+        cleaned = validator._clean_git_env()
+        for key in cleaned:
+            self.assertFalse(key.startswith("GIT_"), f"_clean_git_env() não deveria manter {key}")
+        self.assertEqual(cleaned.get("MY_GIT_DIR_LOOKALIKE"), "kept")
+
+    def test_mode_downgrade_git_dir_work_tree_redirecionados_continua_detectando(self):
+        _init_git_repo(self.tmpdir)
+        _commit_trackfw_yaml(self.tmpdir, "credential_guard:\n  mode: block\n")
+        _write(self.tmpdir, "trackfw.yaml", "credential_guard:\n  mode: warn\n")
+
+        other = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(other, ignore_errors=True))
+        _init_git_repo(other)
+
+        self._set_env({
+            "GIT_DIR": os.path.join(other, ".git"),
+            "GIT_WORK_TREE": other,
+        })
+
+        msgs = validator.validate_credential_guard_mode_downgrade(self.tmpdir)
+        self.assertEqual(
+            len(msgs), 1,
+            f"GIT_DIR/GIT_WORK_TREE redirecionados NÃO deveriam silenciar a detecção, obteve: {msgs}",
+        )
+        self.assertIn("credential_guard.mode: block", msgs[0]["message"])
+
+    def test_mode_downgrade_git_config_count_malformado_continua_detectando(self):
+        _init_git_repo(self.tmpdir)
+        _commit_trackfw_yaml(self.tmpdir, "credential_guard:\n  mode: block\n")
+        _write(self.tmpdir, "trackfw.yaml", "credential_guard:\n  mode: warn\n")
+
+        self._set_env({"GIT_CONFIG_COUNT": "abc"})
+
+        msgs = validator.validate_credential_guard_mode_downgrade(self.tmpdir)
+        self.assertEqual(
+            len(msgs), 1,
+            f"GIT_CONFIG_COUNT malformado NÃO deveria silenciar a detecção, obteve: {msgs}",
+        )
+        self.assertIn("credential_guard.mode: block", msgs[0]["message"])
+
+    def test_mode_downgrade_git_config_count_malformado_prova_nao_vacuidade(self):
+        _init_git_repo(self.tmpdir)
+        _commit_trackfw_yaml(self.tmpdir, "credential_guard:\n  mode: block\n")
+
+        env = dict(os.environ)
+        env["GIT_CONFIG_COUNT"] = "abc"
+        result = subprocess.run(
+            ["git", "-C", self.tmpdir, "rev-parse", "--verify", "HEAD"],
+            env=env, capture_output=True, text=True,
+        )
+        self.assertNotEqual(
+            result.returncode, 0,
+            "esperava que git falhasse com GIT_CONFIG_COUNT=abc herdado sem limpeza — "
+            "não falhou, o fixture não prova nada",
+        )
+
+    def test_is_git_worktree_linked_worktree_legitimo_continua_funcionando(self):
+        main_dir = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(main_dir, ignore_errors=True))
+        _init_git_repo(main_dir)
+        _commit_trackfw_yaml(main_dir, "credential_guard:\n  mode: block\n")
+
+        linked_parent = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(linked_parent, ignore_errors=True))
+        linked_dir = os.path.join(linked_parent, "linked")
+        _git(main_dir, "worktree", "add", "-b", "feat/linked-worktree-test-python", linked_dir)
+
+        # Sem downgrade — disco na worktree ainda resolve para block, idêntico ao HEAD.
+        self.assertEqual(validator.validate_credential_guard_mode_downgrade(linked_dir), [])
+
+        # Downgrade introduzido dentro da worktree — deve disparar normalmente.
+        _write(linked_dir, "trackfw.yaml", "credential_guard:\n  mode: warn\n")
+        msgs = validator.validate_credential_guard_mode_downgrade(linked_dir)
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("credential_guard.mode: block", msgs[0]["message"])
+
+
 if __name__ == "__main__":
     unittest.main()

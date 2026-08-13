@@ -186,8 +186,26 @@ fixture; reconstruir `bin/trackfw` ao sabotar) foram todas pagas nesta linha de 
 > tipo de ML não é despachado para ele.
 
 ### ML-3B — Revisão de segurança
-**Status:** 🔄 Em andamento · **Agente:** Hades (`hades-tf`)
+**Status:** ✅ Concluído (Hades; auditado por Zeus em 2026-08-12) — **achado bloqueante**, ver ML-1B
+decisão de Zeus. Entregável: `docs/seguranca/2026-08-12-estado-final-ancoragem-no-head.md`.
+**Agente:** Hades (`hades-tf`)
 Avaliar se o mecanismo entregue **de fato** impede o auto-silenciamento, e se não criou brecha nova.
+
+---
+
+## Wave 1-bis — Correção do bypass por `GIT_DIR`/`GIT_WORK_TREE` (1 ML)
+> Dependências: ML-3B. **Bloqueia o PR.**
+
+### ML-1B — Limpar o ambiente nas invocações de `git` do validador
+**Status:** ✅ Concluído (Apolo; auditado e aprovado por Zeus em 2026-08-12)
+**Agente:** Apolo (`apolo-tf`)
+
+Brecha provada por PoC no ML-3B e **reproduzida por Zeus**: `GIT_DIR`/`GIT_WORK_TREE` herdadas do
+ambiente redirecionam a resolução do `HEAD`, fazendo a severidade cair no disco **em silêncio** —
+derrota o M4 inteiro sem commit e sem editar o `trackfw.yaml`.
+
+**Não é limite aceitável.** A correção é pequena e um controle derrotado por duas variáveis de
+ambiente não é controle. Ver **Emenda 3** do ADR.
 
 ---
 

@@ -2,7 +2,7 @@
 
 const fs = require('fs')
 const path = require('path')
-const { execSync } = require('child_process')
+const { gitOutput } = require('./git-exec')
 const config = require('../config')
 const { checkTraceIds } = require('./traceid')
 
@@ -138,10 +138,7 @@ function findAdrFile(basename) {
 // Retorna null em caso de erro ou se não houver commits.
 function gitLastModifiedTime(filePath) {
   try {
-    const out = execSync(`git log -1 --format=%ct -- "${filePath}"`, {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe']
-    }).trim()
+    const out = gitOutput('.', ['log', '-1', '--format=%ct', '--', filePath]).trim()
     if (out) return parseInt(out, 10) * 1000  // converter para ms
   } catch (_) {}
   return null
@@ -1085,11 +1082,10 @@ function branchNoMatchingRoadmapMessage(branch, candidates) {
 // wip/ ou done/ cujo slug case com a branch. Aceita done/ para permitir encerramento do roadmap na
 // própria branch, conforme a Definition of Done, sem reprovar o gate.
 function validateBranchHasWIPRoadmap() {
-  const { execSync } = require('child_process')
   let branch = process.env.TRACKFW_BRANCH || ''
   if (!branch && isGitWorktree(process.cwd())) {
     try {
-      branch = execSync('git symbolic-ref --short HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+      branch = gitOutput(process.cwd(), ['symbolic-ref', '--short', 'HEAD']).trim()
     } catch {
       branch = ''
     }
@@ -1290,7 +1286,7 @@ function validateCredentialGuardHookResolvable(cwd) {
 
 function isGitWorktree(dir) {
   try {
-    const out = execSync('git rev-parse --is-inside-work-tree', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], cwd: dir })
+    const out = gitOutput(dir, ['rev-parse', '--is-inside-work-tree'])
     return String(out).trim() === 'true'
   } catch {
     return false
@@ -1525,12 +1521,12 @@ function headTrackfwYAML(cwd) {
   const root = cwd || process.cwd()
   if (!isGitWorktree(root)) return { content: '', ok: false }
   try {
-    execSync('git rev-parse --verify HEAD', { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] })
+    gitOutput(root, ['rev-parse', '--verify', 'HEAD'])
   } catch {
     return { content: '', ok: false }
   }
   try {
-    const out = execSync('git show HEAD:./trackfw.yaml', { cwd: root, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] })
+    const out = gitOutput(root, ['show', 'HEAD:./trackfw.yaml'])
     return { content: out, ok: true }
   } catch {
     return { content: '', ok: false }

@@ -3,7 +3,6 @@ package validator
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/config"
@@ -120,12 +119,12 @@ func headTrackfwYAML() (content string, ok bool) {
 	if !isGitWorktree(".") {
 		return "", false
 	}
-	if err := exec.Command("git", "rev-parse", "--verify", "HEAD").Run(); err != nil {
+	if err := gitCommand(".", "rev-parse", "--verify", "HEAD").Run(); err != nil {
 		// No commits yet.
 		return "", false
 	}
 
-	out, err := exec.Command("git", "show", "HEAD:./trackfw.yaml").Output()
+	out, err := gitCommand(".", "show", "HEAD:./trackfw.yaml").Output()
 	if err != nil {
 		// Not tracked at HEAD (new/untracked file, or trackfw.yaml doesn't exist at HEAD).
 		return "", false

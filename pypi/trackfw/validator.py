@@ -18,6 +18,74 @@ STALE_WIP_DAYS = 7
 
 
 # ---------------------------------------------------------------------------
+# Invocação de git isolada de redirecionamento por ambiente
+# ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1B.
+# ADR: docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-
+# estrita-entre-head-e-disco.md (Emenda 3).
+#
+# Achado do ML-3B, reproduzido por Zeus: _head_trackfw_yaml()/_is_git_worktree() invocavam
+# subprocess.run(["git", ...], cwd=...) sem limpar o ambiente herdado do processo —
+# GIT_DIR/GIT_WORK_TREE redirecionados para outro repositório git (sem trackfw.yaml versionado)
+# faziam a resolução do HEAD falhar EM SILÊNCIO, e credentialGuardRuleSeverity caía só no disco:
+# derrota o mecanismo M4 inteiro sem nenhum commit e sem sequer editar trackfw.yaml. Exposição
+# NOVA para credential_guard_script_integrity e credential_guard_hook_resolvable — elas não
+# dependiam de git antes do M4.
+#
+# TODA invocação de git deste módulo passa a ir por _git_run() abaixo — nunca chamar
+# subprocess.run(["git", ...]) diretamente fora desta seção.
+# ---------------------------------------------------------------------------
+
+# GIT_ENV_PREFIX é o prefixo de TODA variável de ambiente que o git(1) reconhece como
+# configuração (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_*, GIT_CEILING_DIRECTORIES, etc.).
+#
+# A tentativa inicial deste ML era uma lista fechada (GIT_DIR, GIT_WORK_TREE, GIT_COMMON_DIR,
+# GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY, GIT_ALTERNATE_OBJECT_DIRECTORIES,
+# GIT_CEILING_DIRECTORIES, GIT_NAMESPACE) justificada por "variáveis que redirecionam ONDE o
+# repositório é lido". Essa justificativa estava ERRADA: o vetor real não é redirecionamento, é
+# fazer o `git` sair com status != 0 por QUALQUER motivo — toda chamada deste módulo trata falha
+# do subprocesso como "sem âncora, silêncio" (_head_trackfw_yaml) ou "fallback para disco"
+# (_credential_guard_rule_severity), então qualquer variável capaz de tornar o git fatal já é um
+# bypass, redirecionando ou não. Provado com GIT_CONFIG_COUNT=abc (fora da lista fechada — injeta
+# config arbitrária via GIT_CONFIG_COUNT/GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n, e um valor
+# malformado faz `git rev-parse --is-inside-work-tree` sair com "fatal: unable to parse
+# command-line config", exit 128): a lista fechada não a cobria, e
+# `credential_guard_mode_downgrade` silenciava por inteiro (_head_trackfw_yaml retornava
+# ok=False), não só a severidade das outras duas regras.
+#
+# Por isso a abordagem correta é NEGATIVA por prefixo, não uma enumeração positiva: nenhuma
+# invocação deste módulo (`rev-parse`, `show`, `log`, `symbolic-ref`) depende de qualquer GIT_*
+# herdada do ambiente para funcionar corretamente — `-C cwd` já ancora explicitamente o
+# repositório, então git redescobre a partir de cwd como se tivesse sido iniciado lá. Contextos
+# legítimos que setam GIT_* (hooks do próprio git, `git submodule foreach`, worktrees vinculadas)
+# continuam funcionando sem essas variáveis porque a descoberta normal a partir de `-C cwd` já
+# resolve o mesmo repositório. Mesma abordagem e mesma justificativa dos irmãos Go/Node
+# (internal/validator/validator_git_exec.go, npm/src/validator/git-exec.js) — manter em paridade.
+GIT_ENV_PREFIX = "GIT_"
+
+
+def _clean_git_env() -> dict:
+    """Retorna uma cópia de os.environ sem nenhuma variável cujo nome comece com GIT_ENV_PREFIX —
+    usado como env de toda invocação de git deste módulo."""
+    return {k: v for k, v in os.environ.items() if not k.startswith(GIT_ENV_PREFIX)}
+
+
+def _git_run(cwd: str, args: list, timeout: int = 5):
+    """Executa `git -C cwd ...args` ancorado explicitamente em cwd via `-C` — nunca dependendo só
+    do kwarg cwd do subprocess/descoberta implícita de repositório — e com toda variável GIT_*
+    removida do ambiente herdado. Retorna subprocess.CompletedProcess; propaga exceções (timeout,
+    git ausente) para o chamador, igual ao subprocess.run() cru que substituiu. cwd vazio/None cai
+    para os.getcwd(), o mesmo comportamento que todo call site já assumia implicitamente antes
+    deste ML.
+    """
+    root = cwd or os.getcwd()
+    return subprocess.run(
+        ["git", "-C", root] + list(args),
+        capture_output=True, text=True, timeout=timeout,
+        env=_clean_git_env(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Helpers de field mapping e severidade (F2 + F3 — v2.4)
 # ---------------------------------------------------------------------------
 
@@ -301,10 +369,7 @@ def _git_last_modified_time(file_path: str):
     Retorna None se não for um repo git ou git não estiver disponível.
     """
     try:
-        result = subprocess.run(
-            ["git", "log", "-1", "--format=%ct", "--", file_path],
-            capture_output=True, text=True, timeout=5
-        )
+        result = _git_run(".", ["log", "-1", "--format=%ct", "--", file_path])
         out = result.stdout.strip()
         if out:
             return float(out)
@@ -1363,7 +1428,6 @@ def branch_no_matching_roadmap_message(branch: str, candidates: list) -> str:
 
 def validate_branch_has_wip_roadmap(cfg: dict) -> list:
     """Verifica que branch feat/fix/refactor tem ao menos um roadmap em wip/ antes de trabalhar."""
-    import subprocess
     # Derive the working directory from roadmap_dir so tests using tmp dirs get
     # an isolated git context (a tmp dir outside the repo returns non-zero).
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
@@ -1371,11 +1435,7 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
     branch = os.environ.get("TRACKFW_BRANCH") or ""
     if not branch and git_cwd and _is_git_worktree(git_cwd):
         try:
-            result = subprocess.run(
-                ['git', 'symbolic-ref', '--short', 'HEAD'],
-                capture_output=True, text=True, timeout=5,
-                cwd=git_cwd
-            )
+            result = _git_run(git_cwd, ['symbolic-ref', '--short', 'HEAD'])
             branch = result.stdout.strip() if result.returncode == 0 else ""
         except Exception:
             branch = ""
@@ -1408,11 +1468,7 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
 def _is_git_worktree(cwd: str) -> bool:
     """Retorna True se cwd pertence a um worktree git."""
     try:
-        result = subprocess.run(
-            ['git', 'rev-parse', '--is-inside-work-tree'],
-            capture_output=True, text=True, timeout=5,
-            cwd=cwd,
-        )
+        result = _git_run(cwd, ['rev-parse', '--is-inside-work-tree'])
         return result.returncode == 0 and result.stdout.strip() == "true"
     except Exception:
         return False
@@ -1809,20 +1865,14 @@ def _head_trackfw_yaml(cwd: str):
     if not _is_git_worktree(cwd):
         return "", False
     try:
-        verify = subprocess.run(
-            ["git", "rev-parse", "--verify", "HEAD"],
-            capture_output=True, text=True, timeout=5, cwd=cwd,
-        )
+        verify = _git_run(cwd, ["rev-parse", "--verify", "HEAD"])
         if verify.returncode != 0:
             return "", False
     except Exception:
         return "", False
 
     try:
-        show = subprocess.run(
-            ["git", "show", "HEAD:./trackfw.yaml"],
-            capture_output=True, text=True, timeout=5, cwd=cwd,
-        )
+        show = _git_run(cwd, ["show", "HEAD:./trackfw.yaml"])
         if show.returncode != 0:
             return "", False
         return show.stdout, True

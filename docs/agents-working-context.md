@@ -13965,3 +13965,151 @@ ancorado) seja **significativa**. Sem isso, o cenário passaria por acidente.
 escopo na armadilha #1 (o idioma `assert_would_now_fail` + `rules: off` não commitado está **morto**
 para as 3 regras de guard) e a armadilha #5 nova (regras extras de `wip`/`blocked` disparando em
 fixture de roadmap).
+
+## Sessão 2026-08-12 — Hades (Segurança) — ML-3B: revisão final — 🔴 brecha nova, BLOQUEIA PR
+
+**Entregável:** `docs/seguranca/2026-08-12-estado-final-ancoragem-no-head.md`.
+
+**M4 e o carve-out do baseline: corretos, verificados no código** (`ruleSeverity`/
+`credentialGuardRuleSeverity`/`filterBaselineTagged`, `internal/validator/`), com paridade
+confirmada nos 3 CLIs (`npm/src/validator/index.js`, `pypi/trackfw/validator.py`). Reproduzi o
+cenário decisivo (edição combinada não commitada) num fixture isolado e a violação continua
+aparecendo, como o ADR promete.
+
+**🔴 Achado bloqueante, provado empiricamente com 2 PoCs (não hipótese):**
+`headTrackfwYAML()`/`isGitWorktree()` chamam `exec.Command("git", ...)` sem limpar o ambiente —
+herdam `GIT_DIR`/`GIT_WORK_TREE` do processo. Setando essas duas variáveis para apontar a um
+repositório git alheio (sem `trackfw.yaml` versionado), a resolução de `HEAD` falha
+silenciosamente (`ok=false`) e `credentialGuardRuleSeverity` cai só no disco — **derrota o
+mecanismo inteiro sem nenhum commit e, para `credential_guard_script_integrity`/
+`credential_guard_hook_resolvable`, sem sequer precisar de HEAD real** (essas 2 regras nunca
+dependiam de git antes do M4 — M4 introduziu essa dependência **nelas**, não é pré-existente).
+Confirmado: falha aberta e silenciosa (`✓ No violations found.`, exit 0). O mesmo padrão de
+invocação existe em Node/Python — risco de paridade, não isolado do Go.
+
+Isso contradiz a premissa escrita no ADR (Decision point 4) e no comentário de
+`validator_credential_guard_integrity.go:248-251` ("none of those 3 conditions can be reached by
+an uncommitted edit to trackfw.yaml alone") — **literalmente verdade** (não é uma edição de
+`trackfw.yaml`) mas **falsa na prática**: é alcançável sem editar `trackfw.yaml` e sem commitar
+nada, só com duas variáveis de ambiente. `GIT_DIR`/`GIT_WORK_TREE` já haviam mordido esta linha
+de trabalho antes (`docs/cli-parity.md:2579-2588`, para o script do hook) — este é o mesmo padrão
+reaparecendo num lugar novo (resolução de severidade do validador).
+
+**Q4 (lenient):** não esconde a violação — ela some do `exit code`/bloqueio de CI, mas o texto
+continua aparecendo como warning (`validator.go` aplica a conversão lenient **depois** de M4/
+carve-out já terem decidido que a mensagem existe). Prioridade da REQ de `lenient` sobe, mas fica
+atrás do achado do `GIT_DIR`.
+
+**Q5 (migração do baseline):** saída (`rules: off` commitado) é suficiente tecnicamente, mas
+falta aviso de release — documentação estática não notifica quem só descobre no `validate`
+vermelho pós-`trackfw update`.
+
+**Não toquei em `internal/`, `npm/src/`, `pypi/trackfw/`, `scripts/`, `docs/adr/`, `docs/req/`,
+`docs/cli-parity.md`, `README.md`** — só o entregável de segurança, este registro, e o campo
+`Status:` do ML-3B no roadmap.
+
+**Próximo: Zeus decide.** Recomendo: (1) bloqueante — corrigir a redação do ADR/comentário sobre
+"não alcançável sem commit" antes de fechar, mesmo que a decisão final seja aceitar o limite; (2)
+não bloqueante — considerar limpar `GIT_DIR`/`GIT_WORK_TREE` do ambiente antes de invocar `git`
+nos 3 CLIs (código, fora do meu escopo); (3) ML-3A deve refletir as respostas corretas às
+Perguntas 4 e 5 acima.
+
+## Sessão 2026-08-12 — Apolo (Backend) — início do ML-1B
+
+Iniciando ML-1B: limpar o ambiente nas invocações de `git` do validador (Wave 1-bis, roadmap
+`ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md`). Branch
+`fix/ancorar-rules-no-head-para-as-regras-de-credential-guard` já existe (criada por Zeus).
+Levantamento inicial: 5 invocações de `exec.Command("git", ...)` em `internal/validator/` (Go),
+4 em `npm/src/validator/index.js` (Node), 5 em `pypi/trackfw/validator.py` (Python) — todas sem
+limpeza de ambiente. Plano: helper único por stack (`gitCommand`/`gitOutput`/`_git_run`) que
+ancora explicitamente via `-C` e limpa o ambiente, substituindo toda invocação direta.
+
+## Sessão 2026-08-12 — Apolo (Backend) — ML-1B concluído
+
+**Achado além do PoC original — a lista fechada de variáveis era insuficiente.** A primeira
+implementação usava uma denylist de 8 nomes (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`,
+`GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
+`GIT_CEILING_DIRECTORIES`, `GIT_NAMESPACE`), justificada por "variáveis que redirecionam ONDE o
+repositório é lido". O advisor apontou que a justificativa estava errada: o vetor real é fazer o
+`git` sair com status != 0 por QUALQUER motivo (toda chamada trata falha como "sem âncora,
+silêncio" ou "cai no disco"). Provado com `GIT_CONFIG_COUNT=abc` (fora da lista fechada — injeta
+config arbitrária via `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`; um valor
+malformado faz `git rev-parse` sair com "fatal: unable to parse command-line config", exit 128) —
+a lista fechada não cobria isso, e `credential_guard_mode_downgrade` silenciava POR INTEIRO (não
+só a severidade das outras duas regras), reproduzido nos 3 CLIs antes da correção. **Correção
+final: substituída a enumeração positiva por um filtro NEGATIVO de prefixo — toda variável cujo
+nome comece com `GIT_` é removida do ambiente do subprocesso.** Nota de vault NÃO escrita — fora
+do "Arquivos permitidos" deste ML (só `internal/validator/`, equivalentes Node/Python, testes dos
+3 stacks, este arquivo, e o campo `Status:` do ML-1B) — reportada abaixo para Zeus decidir se cabe
+neste PR ou em ML próprio.
+
+**Entregável:**
+- `internal/validator/validator_git_exec.go` (novo) — `gitCommand(dir, args...)` ancora via `-C`
+  e limpa `GIT_*`; substituídos os 5 call sites diretos em `validator.go` (`gitLastModifiedTime`,
+  `validateBranchHasWIPRoadmap`, `isGitWorktree`) e `validator_credential_guard_integrity.go`
+  (`headTrackfwYAML`, 2 chamadas).
+- `npm/src/validator/git-exec.js` (novo) — `gitOutput(dir, args)` via `execFileSync` (trocou
+  `execSync` com interpolação de string por array de argumentos — mudança de mecanismo não
+  mencionada no ADR original, mas estritamente mais segura e comportamentalmente equivalente para
+  os caminhos exercitados). Substituídos os 4 call sites em `npm/src/validator/index.js`.
+- `pypi/trackfw/validator.py` — `_git_run(cwd, args)` (novo, seção dedicada após os imports).
+  Substituídos os 5 call sites diretos.
+- Testes novos: `internal/validator/validator_git_exec_test.go` (5 testes),
+  `npm/tests/credential_guard_integrity.test.js` (+5 testes, seção "ML-1B"),
+  `pypi/tests/test_credential_guard_integrity.py::TestGitExecEnvIsolation` (5 testes) — cobrindo
+  `cleanGitEnv`/filtro de prefixo, `GIT_DIR`/`GIT_WORK_TREE` redirecionados, `GIT_CONFIG_COUNT`
+  malformado, prova de não-vacuidade (chamada direta ao git sem limpeza falha de verdade), e
+  worktree vinculada legítima (`git worktree add` real) continua funcionando dentro e fora do
+  cenário de downgrade.
+- **Não-vacuidade também provada por sabotagem temporária do próprio fix** nos 3 stacks (remover
+  `cmd.Env`/`env:`, rodar os testes, confirmar vermelho, restaurar, reconstruir) — evidência colada
+  abaixo.
+
+**Levantamento de outras invocações de `git` fora do escopo (reportado, não tocado):**
+`internal/forge/resolve.go:192`, `internal/commands/branch.go:105`,
+`internal/commands/ship.go:111` seguem o mesmo padrão desprotegido (`exec.Command("git", ...)` sem
+limpeza de ambiente), mas estão fora de `internal/validator/` — fora do escopo autorizado deste
+ML. Sinalizado para Zeus decidir se vira roadmap próprio.
+
+**PoC neutralizado nos 3 CLIs — dois vetores (HEAD-anchor direto e canal de severidade):**
+
+```
+# Vetor 1 — credential_guard_mode_downgrade (HEAD=block, disco=warn):
+$ GIT_DIR=<outro-repo>/.git GIT_WORK_TREE=<outro-repo> ./bin/trackfw validate
+✗ ...credential_guard.mode: block... / exit=1   (Go, Node, Python — todos consistentes)
+
+$ GIT_CONFIG_COUNT=abc ./bin/trackfw validate
+✗ ...credential_guard.mode: block... / exit=1   (Go, Node, Python)
+
+# Vetor 2 — credential_guard_script_integrity (HEAD: rules:...error committed; disco: script
+# tamperado + rules:...off NÃO commitado):
+$ GIT_CONFIG_COUNT=abc ./bin/trackfw validate
+✗ ...diverges from the template... / exit=1     (Go, Node, Python)
+```
+
+**Worktree/submódulo legítimo continua funcionando** — testado com `git worktree add` real
+(sem manipulação de ambiente): branch corretamente resolvida via `symbolic-ref`, `isGitWorktree`
+retorna true, `credential_guard_mode_downgrade` funciona normalmente dentro da worktree vinculada
+(silencioso quando disco==HEAD, dispara quando disco diverge). Coberto por teste automatizado nos
+3 stacks.
+
+**Gates:** `go build ./... && go test ./...` verde · `go vet ./...` limpo · `npm --prefix npm
+test` 477/477 · `python3 -m pytest pypi/tests -q` 1032 passed/8 subtests · `./bin/trackfw
+validate` neste repo → `✓ No violations found.` (exit 0) · `make quality` exit 0, 111/111
+cenários OK (falsificação existente inalterada — o cenário de falsificação para este vetor
+específico é escopo de Ártemis, não coberto aqui).
+
+**Reportado a Zeus, não implementado (fora do "Arquivos permitidos" ou fora de escopo):**
+1. Cenário de falsificação em `scripts/check-gates-falsify.sh` para o bypass por `GIT_*`
+   (env-redirect e `GIT_CONFIG_COUNT`) — escopo de Ártemis.
+2. As 3 invocações de `git` fora de `internal/validator/` listadas acima — decisão de Zeus se
+   vira roadmap próprio.
+3. Nota de vault proposta, não escrita (fora dos "Arquivos permitidos" deste ML):
+   `vault/notes/validador-git-env-bypass-severidade-2026-08-12.md`, linkada em
+   `vault/notes/index.md` — registrando a lição "filtro de env deve ser negativo por prefixo, não
+   enumeração positiva por mecanismo suposto" (a denylist inicial de 8 nomes, justificada por
+   "redirecionamento", não cobria `GIT_CONFIG_COUNT` malformado — vetor por FALHA, não
+   redirecionamento) para a próxima vez que alguém tocar invocação de `git` no validador.
+
+**Próximo: Zeus audita.** Se aprovado, roadmap pode fechar (Wave 1-bis era o último item
+bloqueante do PR).

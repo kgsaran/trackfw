@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -1623,7 +1622,7 @@ func findADRFile(adrBasename string, adrDirs []string) string {
 // gitLastModifiedTime retorna o timestamp do último commit que tocou o path via git log.
 // Retorna (zero, false) se git não estiver disponível ou o arquivo não tiver histórico.
 func gitLastModifiedTime(path string) (time.Time, bool) {
-	cmd := exec.Command("git", "log", "-1", "--format=%ct", "--", path)
+	cmd := gitCommand(".", "log", "-1", "--format=%ct", "--", path)
 	out, err := cmd.Output()
 	if err != nil || strings.TrimSpace(string(out)) == "" {
 		return time.Time{}, false
@@ -2039,7 +2038,7 @@ func BranchSlugMatchesRoadmap(branchSlug string, wipDirs, doneDirs []string) (ma
 func validateBranchHasWIPRoadmap() ([]string, error) {
 	branch := firstNonEmpty(os.Getenv("TRACKFW_BRANCH"))
 	if branch == "" && isGitWorktree(".") {
-		cmd := exec.Command("git", "symbolic-ref", "--short", "HEAD")
+		cmd := gitCommand(".", "symbolic-ref", "--short", "HEAD")
 		out, err := cmd.Output()
 		if err == nil {
 			branch = strings.TrimSpace(string(out))
@@ -2112,11 +2111,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func isGitWorktree(dir string) bool {
-	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	out, err := cmd.Output()
+	out, err := gitCommand(dir, "rev-parse", "--is-inside-work-tree").Output()
 	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 

@@ -105,6 +105,47 @@ Não é regressão: é o gate fazendo o trabalho dele, detectando que uma premis
 A atualização do cenário é escopo do **ML-2A**; até lá, o `make quality` está **conhecidamente
 vermelho**, declarado no commit do ML-1A. **O PR não pode ser aberto com o gate vermelho.**
 
+### Emenda 3 (2026-08-12, ML-3B) — 🔴 o texto do ponto 4 estava ERRADO, e a brecha foi provada
+
+O ponto 4 desta Decision afirmava que, sem `HEAD`, "cai no disco" era o **único** buraco. **Falso na
+prática**, e provado com PoC pelo ML-3B **e reproduzido por Zeus**:
+
+`headTrackfwYAML()` e `isGitWorktree()` invocam `exec.Command("git", ...)` **sem limpar o ambiente**,
+herdando **`GIT_DIR`/`GIT_WORK_TREE`**. Apontando essas duas variáveis para outro repositório, a
+resolução do `HEAD` falha **em silêncio** e a severidade cai só no disco — **derrotando o mecanismo
+inteiro, sem commit e sem sequer editar o `trackfw.yaml`**.
+
+Reprodução de Zeus: mesma árvore, `mode: block` no `HEAD` e `warn` em disco. Sem manipulação, a
+violação aparece. Com `GIT_DIR`/`GIT_WORK_TREE` redirecionados: `✓ No violations found.`, exit 0.
+
+**É exposição NOVA** para `credential_guard_script_integrity` e `credential_guard_hook_resolvable` —
+elas **não dependiam de git** antes do M4. O mecanismo introduziu o vetor que ele deveria fechar.
+
+**Ironia registrada:** `GIT_DIR`/`GIT_WORK_TREE` **já haviam mordido esta linha de trabalho**
+(`docs/cli-parity.md`, "Pré-condições do fix do Codex", item 2) e mesmo assim reapareceram.
+
+**Decisão: corrigir, não documentar.** As invocações de `git` do validador passam a **limpar** as
+variáveis de ambiente que redirecionam a resolução do repositório. Não é limite aceitável: a correção
+é pequena, e um controle de segurança derrotado por duas variáveis de ambiente não é controle.
+Escopo do **ML-1B**.
+
+### Emenda 4 (2026-08-12, ML-1B) — o enquadramento da Emenda 3 estava estreito
+
+A Emenda 3 mandou "limpar as variáveis que **redirecionam** a resolução do repositório". **Frame
+errado**, e a implementação provou: o vetor real é **fazer o `git` falhar por qualquer motivo**,
+porque todo call site trata falha do subprocesso como "sem âncora, silêncio" — **falha aberta**.
+
+Contraexemplo que quebrou a denylist de 8 nomes: **`GIT_CONFIG_COUNT=abc`**, que **não redireciona
+nada** — faz o `git` sair 128 por config malformada, e silencia o controle **inteiro**.
+
+**Mecanismo final: filtro por prefixo negativo** — remove do ambiente do filho **tudo** que começa
+com `GIT_`, mais ancoragem explícita via `git -C <root>` e argumentos em array. Qualquer lista
+fechada envelhece: o git ganha variáveis novas a cada versão, e basta **uma** que faça o processo
+falhar.
+
+Verificado por Zeus nos três vetores (`GIT_DIR`+`GIT_WORK_TREE`, `GIT_CONFIG_COUNT`,
+`GIT_CEILING_DIRECTORIES`): a violação **continua sendo reportada** em todos.
+
 ## Consequences
 
 **Positivas**
