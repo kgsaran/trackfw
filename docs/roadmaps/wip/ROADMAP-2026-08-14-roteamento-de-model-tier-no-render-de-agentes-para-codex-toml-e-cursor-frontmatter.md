@@ -77,7 +77,7 @@ confirmada.
 **Comandos de validação:** `go build ./... && go test ./internal/integrations/...`
 
 ### ML-1B — Node.js: `render()` consome o `target` já enviado pelo call site
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `npm/src/integrations/render.js`
 **Ações:**
@@ -97,7 +97,7 @@ confirmada.
 conforme `npm/package.json`)
 
 ### ML-1C — Python: confirmar que `target` já chega ao render (sem mudança de assinatura)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `pypi/tests/test_integrations_identity.py` (novo teste, sem alterar `renderers.py`
   nem `catalog.py` nesta ML)

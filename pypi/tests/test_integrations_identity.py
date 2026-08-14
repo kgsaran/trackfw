@@ -214,6 +214,37 @@ class TestRewriteSignatureLine:
         assert got == source
 
 
+class TestTargetParameterBaseline:
+    """ML-1C (roteamento de model tier): baseline de regressão.
+
+    Python já recebe `target` posicional em `render()` (ver assinatura em
+    renderers.py e o call site em catalog.py, linha ~108) — diferente de Go
+    e Node.js, que precisaram de ML-1A/1B para adicionar o parâmetro. Este
+    teste documenta o comportamento atual (target aceito, mas sem efeito na
+    saída) para servir de ponto de comparação antes das Waves 2/3 passarem a
+    usar `target` para mapear `model` no output.
+    """
+
+    def test_render_accepts_target_positional_for_cursor(self):
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got = render("agents", "cursor", "ide", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
+        assert "name: zeus-tf" in got
+        assert "You are Zeus." in got
+
+    def test_render_accepts_target_positional_for_gemini(self):
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got = render("agents", "gemini", "cli", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
+        assert "name: zeus-tf" in got
+        assert "You are Zeus." in got
+
+    def test_different_target_values_do_not_change_output_yet(self):
+        # Baseline: `target` ainda não influencia a saída (Waves 2/3 mudarão isso).
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got_cursor = render("agents", "cursor", "ide", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
+        got_gemini = render("agents", "gemini", "cli", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
+        assert got_cursor == got_gemini
+
+
 class TestRotaBRewritesSignature:
     """Teste de integração: Rota B reescreve assinatura quando há identidade."""
 
