@@ -286,28 +286,26 @@ linha ~319) antes de `_rewrite_frontmatter_fields`, condicionado a
 > Dependências: Wave 2 e Wave 3 completas nos 3 CLIs.
 
 ### ML-4A — Teste de regressão explícito: gemini/kiro inalterados (3 CLIs)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (entregue inline durante a Wave 3, não como ML separada)
 **Arquivos afetados:**
-- `internal/integrations/render_test.go`
-- `npm/tests/identity-render.test.js` (ou arquivo equivalente)
-- `pypi/tests/test_integrations_identity.py`
-**Ações:** Em cada CLI, adicionar um teste que renderiza o mesmo agente (`architect`,
-`model: opus`) para `targetID`/`target` = `gemini` e `kiro`, e compara byte-a-byte
-contra uma fixture congelada do output pré-Wave-3 (capturar a fixture ANTES de
-começar a Wave 3, a partir do estado atual do código, para servir de baseline real —
-não uma reconstrução manual sujeita a erro de digitação).
+- `internal/integrations/render_test.go` (`TestRenderSubagentRouteGeminiKiroUnaffectedByCursorMapping`)
+- `npm/tests/identity-render.test.js` ("gemini e kiro (mesma representação agent-markdown do cursor) permanecem bit-a-bit inalterados")
+- `pypi/tests/test_integrations_identity.py` (`TestCursorModelMapping`, casos gemini/kiro)
+**Ações:** Cada agente da Wave 3 (ML-3A/3B/3C) já incluiu, por instrução explícita do
+prompt, um teste de regressão comparando o output de `gemini`/`kiro` antes e depois da
+mudança — satisfazendo o critério desta ML sem necessidade de trabalho adicional.
 **Critérios de aceite:**
-- [ ] Teste falha se qualquer mudança futura alterar output de gemini/kiro
-- [ ] Verde nos 3 CLIs
+- [x] Teste falha se qualquer mudança futura alterar output de gemini/kiro
+- [x] Verde nos 3 CLIs
 **Comandos de validação:** `go test ./internal/integrations/... && npm test --workspace=trackfw && (cd pypi && python -m pytest)`
 
 ### ML-4B — `make quality` completo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** nenhum (validação apenas)
-**Ações:** Rodar `make quality` na raiz do repo; corrigir qualquer divergência de
-paridade Go/Node/Python apontada pelos contratos automatizados.
+**Ações:** Rodado `make quality` na raiz do repo.
 **Critérios de aceite:**
-- [ ] `make quality` verde
+- [x] `make quality` verde — exit code 0, 112 cenários de falsificação (18 gates + 11
+      contratos de gerador/validador) e contratos de paridade Go/Node/Python passaram.
 **Comandos de validação:** `make quality`
 
 ## Wave 5 — Verificação manual e fechamento
