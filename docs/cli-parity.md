@@ -3177,3 +3177,54 @@ o processo falhar. Detalhe em
 - **Fora do validador**, o mesmo padrão de `exec.Command("git", ...)` sem ambiente limpo existe em
   `internal/forge/resolve.go`, `internal/commands/branch.go`, `internal/commands/ship.go`. **Não são
   controles de segurança**, e não foram alterados.
+
+## Git branch guard por runtime (ML-1A, ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md)
+
+> REQ: `docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`
+
+Bloqueia tecnicamente `git commit`/`git push`/`git checkout -b` brutos (não via `trackfw
+commit`/`trackfw ship`/`trackfw branch new`) por subagente. Mesmo padrão do credential-guard: um
+script canônico Go (`internal/generators/scaffold.go`, const `gitBranchGuardScript` +
+`GenerateGitBranchGuardScript`/`GenerateGlobalGitBranchGuardScript`) escreve
+`scripts/trackfw-git-branch-guard.sh` (projeto) / `~/.trackfw/scripts/trackfw-git-branch-guard.sh`
+(global). **Este ML só cria o script** — o wiring em cada `hooks.json`/`settings.json`/Rules de CLI é
+escopo da Wave 3 do roadmap acima; a tabela abaixo documenta o mecanismo **planejado** por runtime,
+levantado na REQ.
+
+| Runtime | Mecanismo | Isolamento do arquiteto |
+|---|---|---|
+| Claude Code | hook `PreToolUse` | via hook (`subagent_name`) |
+| Codex CLI | Rules (`prefix_rule` forbidden) | não suportado (deny global) |
+| Gemini CLI | hook `PreToolUse`/`BeforeTool` (exit 2) | nativo (subagentes com toolset próprio) |
+| GitHub Copilot | `--deny-tool` granular | não suportado (deny global) |
+| Cursor | hook `beforeShellExecution` + deny estático | não suportado (deny global) |
+| Windsurf | hook `pre_run_command` + deny list | não suportado (deny global) |
+| Amazon Q Developer | hook `preToolUse` + `deniedCommands` regex | nativo (custom agents com `tools`/`allowedTools`) |
+
+### Contrato de payload do script (`gitBranchGuardScript`)
+
+O script suporta 3 formatos de entrada, nesta ordem de precedência — cobre os contratos divergentes
+dos 7 runtimes sem precisar de uma variante de script por runtime:
+
+1. **Argumentos de linha de comando** (`$1..$N`) — o comando git cru passado como argv.
+2. **Payload JSON via stdin** — tenta `.tool_input.command`, `.command` e `.hook_input.command`,
+   nessa ordem; usa `jq` quando disponível, com fallback grep/sed (sem exigir `jq` no PATH, mesmo
+   espírito de `credentialGuardDetectionCore`).
+3. **Texto cru via stdin**, ou `$TRACKFW_GIT_COMMAND` como último fallback.
+
+Padrão casado: `^git (commit|push|checkout -b)\b`, aceitando flags globais antes do subcomando
+(`git -C . commit`, `git --no-pager push`). Sem match: allow silencioso (`exit 0`, sem output).
+
+Com match, o script emite **os dois formatos de decisão simultaneamente** — `{"decision":"block",
+"reason":"..."}` no stdout (consumido por Claude/Gemini) **e** `exit 2` (consumido por
+Codex/Windsurf/Cursor por exit-code) — em vez de uma variante por runtime dentro do script. Essa é
+uma simplificação deliberada do ML-1A: o formato `permission: "deny"` específico do Cursor, se
+necessário, fica a cargo do wiring da Wave 3 em cima da mesma saída, não deste script.
+
+Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
+
+| Subcomando bloqueado | Orientação |
+|---|---|
+| `checkout -b` | `trackfw branch new <type>/<slug>` |
+| `commit` | `trackfw commit -m '<mensagem>'` (comando novo, Wave 2 deste roadmap) |
+| `push` | `trackfw ship` |

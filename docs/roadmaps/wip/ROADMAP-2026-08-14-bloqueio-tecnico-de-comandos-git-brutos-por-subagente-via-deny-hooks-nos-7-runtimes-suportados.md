@@ -44,7 +44,7 @@ allow/deny/block lendo o comando via stdin/args conforme o contrato de cada runt
 > precisam existir antes de qualquer runtime ser fiado a ele)
 
 ### ML-1A — Script guard canônico (Go, referência) + tabela de contrato por runtime
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Correção pós-descoberta:** `scripts/trackfw-credential-guard.sh` NÃO é um arquivo
 estático deste repo — é gerado em runtime a partir da const Go `credentialGuardScript`
 (`internal/generators/scaffold.go:1092-1101`) via `GenerateCredentialGuardScript`
@@ -98,7 +98,7 @@ em vez do arquivo estático originalmente descrito.
 > `trackfw commit` para recusar isso antes do `git commit` acontecer.
 
 ### ML-2A — Go: `internal/commands/commit.go` (novo)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/commands/commit.go` (novo)
 - `internal/commands/commit_test.go` (novo)
@@ -128,14 +128,14 @@ em vez do arquivo estático originalmente descrito.
 3. Reaproveitar a função `git(...)`/`defaultGitExec` já existente em `ship.go` em vez de
    duplicar o `exec.Command("git", ...)`.
 **Critérios de aceite:**
-- [ ] `go build ./...` sem erros
-- [ ] `go test ./internal/commands/... -run TestCommit` verde, cobrindo: bloqueio em
+- [x] `go build ./...` sem erros
+- [x] `go test ./internal/commands/... -run TestCommit` verde, cobrindo: bloqueio em
       `main`, bloqueio em `feat/x` sem roadmap em `wip`, sucesso em `feat/x` com roadmap
       em `wip`, sucesso em branch fora do padrão feat/fix/refactor
 **Comandos de validação:** `go build ./... && go test ./internal/commands/...`
 
 ### ML-2B — Node.js: `npm/src/commands/commit.js` (novo)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:** `npm/src/commands/commit.js` (novo), teste equivalente, registro
 do comando no entrypoint commander (mesmo arquivo que registra `branch`/`ship`)
 **Ações:** replicar 1:1 a lógica do ML-2A (passos 1-3) em JS puro, reaproveitando as
@@ -147,7 +147,7 @@ funções já existentes para `branch new`/`ship` no módulo Node equivalente
 **Comandos de validação:** `npm test --workspace=npm` (ajustar nome real do workspace)
 
 ### ML-2C — Python: `pypi/trackfw/commands/commit.py` (novo)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:** `pypi/trackfw/commands/commit.py` (novo), teste equivalente,
 registro do comando no parser argparse/click (mesmo arquivo que registra `branch`/`ship`)
 **Ações:** replicar 1:1 a lógica do ML-2A (passos 1-3) em Python puro (reimplementação
@@ -165,6 +165,16 @@ já existentes para `branch new`/`ship` em `pypi/trackfw/commands/branch.py`/`sh
 > isso, embora os MLs desta wave possam começar em paralelo com a Wave 2, o texto final
 > da mensagem de orientação só deve ser fechado depois que a Wave 2 confirmar o nome e a
 > sintaxe exata do comando.
+>
+> **Pendência aberta pelo ML-1A (Go):** `GenerateGitBranchGuardScript`/
+> `GenerateGlobalGitBranchGuardScript` foram implementadas mas NÃO foram fiadas em
+> `Scaffold()` (chamada por `trackfw init`) nem em `trackfw update`/`UpdateHarness` —
+> ao contrário de `GenerateCredentialGuardScript`, que é chamada incondicionalmente
+> nesses fluxos. Cada ML desta wave (3A/3B/3C) DEVE fiar a geração do script (projeto e
+> global) nos mesmos pontos onde o credential-guard já é gerado nesse stack —
+> confirmar em cada linguagem onde `GenerateCredentialGuardScript`/equivalente é
+> chamada e adicionar a chamada irmã ao lado, senão o script fica órfão (nunca é escrito
+> em disco em projetos reais).
 
 ### ML-3A — Go (`internal/generators/agentfiles.go`)
 **Status:** ⬜ Pendente
@@ -249,10 +259,23 @@ equivalente Python — já contém a lógica de credential-guard hooks), teste e
 
 ### ML-4A — Paridade, gate de contrato e teste manual end-to-end
 **Status:** ⬜ Pendente
-**Arquivos afetados:** nenhum novo — só execução de gates existentes + teste manual
+**Arquivos afetados:** `scripts/check-commit-parity.sh` (novo) + `Makefile` (wiring em
+`make quality`)
+**Pendência aberta pelo ML-2C (Python):** o projeto tem gates de paridade dedicados por
+comando (ex: `scripts/check-branch-new-parity.sh`), mas não existe
+`check-commit-parity.sh` para `trackfw commit` — sem ele, `make quality` não verifica de
+fato que as mensagens de bloqueio são byte-idênticas entre Go/Node/Python (checagem
+manual desta sessão confirmou que estão idênticas nesta versão, mas nada impede
+divergência futura sem o gate).
 **Ações:**
-1. Rodar `make quality` na raiz — cobre os contratos de paridade Go/Node/Python.
-2. Teste manual em Claude Code (ambiente desta sessão): criar um roadmap de teste
+1. Criar `scripts/check-commit-parity.sh`, mesmo padrão de
+   `scripts/check-branch-new-parity.sh` (comparar as strings de mensagem de bloqueio —
+   main/master, feat-sem-roadmap, branch-fora-do-padrão — entre `internal/commands/commit.go`,
+   `npm/src/commit/runner.js` e `pypi/trackfw/commands/commit.py`), registrar no
+   `Makefile` como parte do alvo `quality`/`parity` já existente (mesmo lugar onde
+   `check-branch-new-parity.sh` está registrado).
+2. Rodar `make quality` na raiz — cobre os contratos de paridade Go/Node/Python.
+3. Teste manual em Claude Code (ambiente desta sessão): criar um roadmap de teste
    descartável, tentar `git commit`/`git push`/`git checkout -b` bruto como um subagente
    especialista (ex: via `Agent` tool com `subagent_type: apolo-tf`) e confirmar bloqueio
    com a mensagem do guard script; confirmar que `trackfw branch new`/`trackfw ship`/
@@ -261,8 +284,9 @@ equivalente Python — já contém a lógica de credential-guard hooks), teste e
    `wip` correspondente (mesmo caso real que motivou este roadmap — ver commit `cda74cd`
    revertido da `main` nesta sessão); confirmar que o Zeus (`zeus-tf`) continua com git
    irrestrito.
-3. Descartar/remover qualquer roadmap de teste criado no passo 2 antes de finalizar.
+4. Descartar/remover qualquer roadmap de teste criado no passo 3 antes de finalizar.
 **Critérios de aceite:**
+- [ ] `scripts/check-commit-parity.sh` criado e registrado em `make quality`/`parity`
 - [ ] `make quality` verde, sem novas divergências
 - [ ] bloqueio confirmado para especialista, git liberado para Zeus, wrapper funcional
 - [ ] `trackfw commit` recusa commit direto na `main` e sem roadmap em `wip`

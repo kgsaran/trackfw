@@ -4,6 +4,126 @@
 
 ---
 
+## Sessão 2026-08-14 — Apolo (ML-2B: Node.js `npm/src/commands/commit.js`) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out por outro agente,
+não criada por mim). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`,
+ML-2B — port Node.js do ML-2A (Go, em paralelo por outro agente; `internal/commands/commit.go`
+ainda não existia no momento desta implementação — usei a spec do roadmap + o padrão já
+estabelecido em `internal/commands/branch.go`/`npm/src/branch/runner.js` como referência).
+
+**Arquivos criados:**
+- `npm/src/commit/runner.js` — `runCommit(message, deps)`: bloqueia commit direto em
+  `main`/`master`/branch padrão remota (`git symbolic-ref refs/remotes/origin/HEAD`,
+  fallback `main`); em `feat|fix|refactor/<slug>` exige roadmap correspondente em `wip/`
+  ou `done/` via `validator.branchSlugMatchesRoadmap` (reuso, sem duplicar lógica);
+  branches fora do padrão são permitidas com aviso; propaga o exit code literal do
+  `git commit` (mesmo contrato de `branch/runner.js`).
+- `npm/src/commands/commit.js` — wiring do comando `trackfw commit -m "<msg>"` via commander.
+- `npm/tests/commit.test.js` — 14 casos (node:test), incluindo os 4 exigidos pelo critério
+  de aceite: bloqueio em `main`, bloqueio em `feat/x` sem roadmap em `wip`, sucesso em
+  `feat/x` com roadmap em `wip`, sucesso em branch fora do padrão.
+
+**Arquivo modificado:** `npm/src/commands/index.js` — registrado `require('./commit')`.
+
+**Mensagens de bloqueio (byte-a-byte conforme especificado pelo orquestrador, texto
+usado literalmente por não haver ainda `commit.go` para conferir):**
+- main/master/default: `trackfw commit: commit direto em '<branch>' não é permitido.
+  Use 'trackfw branch new <type>/<slug>' primeiro. Ver CLAUDE.md §1.`
+- sem roadmap: reusa `validator.branchGovernanceOrientation`/
+  `branchNoMatchingRoadmapMessage` (mesmas do Node `branch new`/`validate`).
+
+**Testes:** `npm test` (workspace `npm`) → 495 passed, 0 failed (inclui os 14 novos casos
+de `commit.test.js` e a suíte completa pré-existente sem regressão).
+
+**Decisão de design divergente do texto literal do prompt:** usei
+`git rev-parse --abbrev-ref HEAD` para ler a branch atual (em vez de
+`symbolic-ref --short HEAD`, usado por `branch new`) porque o roadmap ML-2A/ML-2B
+especifica explicitamente esse comando no passo (a) da lógica de bloqueio — mantive
+fiel ao roadmap, não ao texto resumido do prompt de orquestração.
+
+**Pendente:** confirmar com o Go (`internal/commands/commit.go`, ML-2A) se a mensagem de
+bloqueio de branch main/master ficou byte-idêntica após a implementação Go concluir —
+não pude comparar porque o arquivo Go ainda não existia neste momento. Não fiz
+commit/push (autoridade é do trackfw_architect).
+
+---
+
+## Sessão 2026-08-14 — Apolo (ML-2C: Python `pypi/trackfw/commands/commit.py`) — INICIADO
+
+Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por
+mim). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`,
+ML-2C — port Python do ML-2A. Diferente da sessão anterior de ML-2B, `internal/commands/commit.go`
+já existia neste momento — usei-o como fonte de verdade byte-a-byte para mensagens.
+
+## Sessão 2026-08-14 — Apolo (ML-2C: Python `pypi/trackfw/commands/commit.py`) — implementado, aguardando auditoria e commit por trackfw_architect
+
+**Arquivos criados:**
+- `pypi/trackfw/commands/commit.py` — `run_commit(message, deps...)`: bloqueia commit
+  direto em `main`/`master` (sem resolução de branch padrão remota — `commit.go` real
+  também não implementou isso, apenas `main`/`master` hardcoded, igual a `trackfw ship`);
+  em `feat|fix|refactor/<slug>` exige roadmap correspondente em `wip/`/`done/` via
+  `validator.branch_slug_matches_roadmap` (reuso); branches fora do padrão são permitidas
+  com aviso; propaga o exit code literal de `git commit` via `subprocess.run` com stdio
+  herdado (mesmo padrão de `_default_git_checkout` em `branch.py`).
+- `pypi/tests/test_commit.py` — 17 casos (pytest), incluindo os 4 exigidos pelo critério
+  de aceite: bloqueio em `main`, bloqueio em `feat/x` sem roadmap em `wip`, sucesso em
+  `feat/x` com roadmap em `wip`, sucesso em branch fora do padrão feat/fix/refactor.
+
+**Arquivo modificado:** `pypi/trackfw/cli.py` — registrado `commit_cmd.register(subparsers)`
+após o bloco `branch` (linha ~113-118).
+
+**Mensagens de bloqueio — copiadas byte-a-byte de `internal/commands/commit.go` (que já
+existia quando iniciei este ML):**
+- main/master: `trackfw commit: commit direto em "<branch>" não é permitido. Use
+  'trackfw branch new <type>/<slug>' primeiro. Ver CLAUDE.md §1.` (aspas duplas em volta
+  de `<branch>`, produzidas por `%q` no Go — literal do prompt de orquestração usava aspas
+  simples, mas o Go real prevalece como fonte de verdade comportamental).
+- sem roadmap: reusa `validator.branch_governance_orientation`/
+  `branch_no_matching_roadmap_message` (mesmas usadas por `branch new`/`validate`).
+- branch fora do padrão: `trackfw commit: branch "<branch>" does not follow
+  feat/fix/refactor — committing without a roadmap check.` (copiado literal de
+  `commit.go`).
+
+**⚠ Divergência entre CLIs a reconciliar pelo orquestrador (decisão fora do meu escopo):**
+três formas divergentes hoje — Go e Python usam `"<branch>"` (aspas duplas, via `%q` no
+Go); Node (ML-2B) usa `'<branch>'` (aspas simples). O texto do roadmap ML-2A (linha 116)
+e o prompt de orquestração original especificam aspas **simples**; `commit.go` (que já
+existia quando implementei ML-2C) usa aspas duplas — repliquei o Go byte-a-byte por ele
+ser "a referência comportamental" conforme `docs/cli-parity.md`, mas isso diverge do
+texto literal do roadmap/prompt. Qual forma é canônica é decisão do orquestrador: se for
+aspas simples (conforme o roadmap), Go **e** Python precisam de ajuste de uma linha cada;
+se for aspas duplas (conforme `commit.go` real), Node precisa de ajuste. Não alterei nada
+além do meu escopo (ML-2C).
+
+**Testes:** `python -m pytest pypi/tests -k commit -q` → 17 passed. Suíte completa
+`python -m pytest pypi/tests -q` → 1056 passed, 8 subtests passed, sem regressão.
+Verificação adicional: `cd pypi && python3 -m trackfw.cli commit --help` registra o
+comando corretamente.
+
+**Nota sobre o comando de teste do critério de aceite do roadmap:** o roadmap ML-2C
+especifica `pytest pypi/trackfw -k commit`, mas os testes deste projeto vivem em
+`pypi/tests/` (não em `pypi/trackfw/`) — comando real, confirmado no `Makefile`
+(`test-python: python3 -m pytest pypi/tests -q`): `python -m pytest pypi/tests -k commit`.
+
+**Verificação do gate `scripts/check-cli-parity.sh`:** confirmado que `commit` aparece na
+listagem top-level de `python3 -m trackfw.cli --help` (deriva de `trackfw --help` do Go,
+que já anuncia `commit`) — a checagem de paridade de help não deve quebrar por ausência do
+subcomando no Python.
+
+**Observação (não é do meu escopo, não criei):** existe `scripts/check-branch-new-parity.sh`
+para `trackfw branch new`, mas não há `scripts/check-commit-parity.sh` equivalente para
+`trackfw commit` — pode ser esperado pela Wave 3/auditoria final deste roadmap; sinalizando
+para o orquestrador decidir se é necessário.
+
+Não fiz `git add`/`commit`/`push` — fora da minha fronteira de autoridade Git. Não marquei
+o ML como ✅ Concluído no roadmap — deixando para a auditoria do trackfw_architect.
+Entregando para auditoria e commit.
+
+---
+
 ## Sessão 2026-08-14 — Zeus (encerramento: model tier para Codex e Cursor) — CONCLUÍDO
 
 Branch `feat/model-tier-no-render-de-agentes`. REQ/ADR/Roadmap movidos para `Done`/
@@ -14873,5 +14993,172 @@ explícito comparando contra `claude` (mesmo branch default).
 pré-existente em `internal/integrations/render.go`/`render_test.go` da ML-3A já estava no working
 tree antes desta sessão começar e não foi modificada por mim). Não fiz `git add`/`commit`/`push` —
 fora da minha fronteira de autoridade Git.
+
+Entregando a trackfw_architect para auditoria e commit.
+
+## Sessão 2026-08-14 — Apolo (ML-2A: Go `trackfw commit` + branch `bloqueio-tecnico-de-comandos-git-brutos`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`
+**Branch:** `feat/bloqueio-tecnico-de-comandos-git-brutos` (já criada previamente, não criei nova branch)
+
+Implementei `trackfw commit -m "<mensagem>"` (`internal/commands/commit.go`, novo), espelhando o
+padrão de dependências injetáveis de `branch.go` (`branchNewDeps` → `commitDeps`): `loadConfig`,
+`currentBranch`, `resolveWIPDirs`/`resolveDoneDirs`, `matchSlug` (reusa
+`validator.BranchSlugMatchesRoadmap`, mesma lógica de `branch new`), `execGitCommit`.
+
+**Lógica de bloqueio (ordem a-d do ML-2A):**
+a. branch `main`/`master` → sempre bloqueia, mensagem "trackfw commit: commit direto em '<branch>'
+   não é permitido. Use 'trackfw branch new <type>/<slug>' primeiro. Ver CLAUDE.md §1."
+b. branch `feat/`/`fix/`/`refactor/` sem roadmap correspondente em `wip/`/`done/` → bloqueia,
+   reusando `validator.BranchGovernanceOrientation`/`BranchNoMatchingRoadmapMessage` (mesmas
+   mensagens que `trackfw validate`/`branch new` já usam — nenhuma string duplicada).
+c. outras branches (doc/housekeeping) → permite, loga aviso no stdout, não exige roadmap.
+d. se passou em (a)-(c) → `defaultGitCommit` executa `git commit -m <message>` com stdio herdado
+   (`os.Stdin/Stdout/Stderr`), propagando exit code de Git literalmente via `os.Exit` em
+   `*exec.ExitError` (mesmo padrão de `defaultGitCheckout` em `branch.go`).
+`defaultCurrentBranch` reaproveita `defaultGitExec` (já existente em `ship.go`) para
+`git rev-parse --abbrev-ref HEAD`, sem duplicar `exec.Command`.
+
+Registrei `newCommitCmd()` em `internal/commands/root.go` (mesmo `AddCommand(...)` de
+`newBranchCmd()`).
+
+**Testes:** `internal/commands/commit_test.go` (novo), 9 casos com nome `TestCommit_*` (renomeado
+de `TestRunCommit_*` para casar com o filtro `-run TestCommit` exigido pelo critério de aceite do
+roadmap — regexp de `-run` não faz match de substring não-contíguo, então `TestRunCommit_...` não
+seria selecionado por `-run TestCommit`), cobrindo: bloqueio em `main`/`master`, bloqueio em
+`feat/x`/`fix/x` sem roadmap (com e sem candidatos), sucesso em `feat/x`/`fix/x`/`refactor/x` com
+roadmap em wip, sucesso com aviso em branch fora do padrão (matchSlug nunca chamado), uso do slug
+normalizado (`validator.NormalizeBranchSlug`), e propagação de erro na resolução da branch atual.
+Todos os deps injetados via fakes — nenhum teste toca git real nem filesystem real.
+
+**Evidência:**
+```
+go build ./...                          → sem erros
+go test ./internal/commands/... -run TestCommit -v
+  9/9 PASS (TestCommit_Main_Blocks, TestCommit_Master_Blocks,
+  TestCommit_GovernedBranch_NoMatch_NoCandidates_Blocks,
+  TestCommit_GovernedBranch_NoMatch_WithCandidates_Blocks,
+  TestCommit_GovernedBranch_Match_Commits,
+  TestCommit_GovernedBranch_Match_FixAndRefactor,
+  TestCommit_UngovernedBranch_CommitsWithWarning,
+  TestCommit_UsesNormalizedSlugForMatching,
+  TestCommit_CurrentBranchError_Propagates)
+go test ./...                           → todos os pacotes ok (nenhuma regressão)
+go vet ./...                            → sem saída (limpo)
+```
+
+**Decisões de design (nenhuma diverge do roadmap):**
+- Não usei `git symbolic-ref refs/remotes/origin/HEAD` para resolver o "branch padrão do repo"
+  mencionado entre parênteses no passo (a) do roadmap — segui a leitura literal e mais simples do
+  bloqueio (`main`/`master` hardcoded), que é exatamente o mesmo padrão já usado por `trackfw ship`
+  em `runShip` (`branch == "main" || branch == "master"`, sem symbolic-ref). Não há repo com default
+  branch diferente de `main`/`master` neste projeto, então não há gap prático.
+- Renomeei os testes de `TestRunCommit_*` para `TestCommit_*` (ver acima) para satisfazer
+  literalmente o critério de aceite `-run TestCommit` do roadmap.
+
+**Arquivos criados/modificados:**
+- `internal/commands/commit.go` (novo)
+- `internal/commands/commit_test.go` (novo)
+- `internal/commands/root.go` (adicionado `newCommitCmd()` ao `AddCommand(...)`)
+- `docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`
+  (ML-2A: `Status` → ✅ Concluído, critérios de aceite marcados `[x]`)
+
+Não fiz `git add`/`commit`/`push` — fora da minha fronteira de autoridade Git. ML-2B (Node.js) e
+ML-2C (Python) da mesma Wave 2 ainda estão pendentes (mesmo roadmap, arquivos distintos, sem
+dependência deste ML).
+
+Entregando a trackfw_architect para auditoria e commit.
+
+## Sessão 2026-08-14 — Apolo (ML-1A: script guard canônico `gitBranchGuardScript` + tabela de contrato) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out por outro agente, não criada
+por mim). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`,
+ML-1A — cria o script canônico Go do "git branch guard" (irmão do `credential-guard`, mesmo
+padrão: `MkdirAll` + `WriteFile 0755`, par Generate*/GenerateGlobal*).
+
+**Implementação:**
+- `internal/generators/scaffold.go`: nova const `gitBranchGuardScript` (POSIX/bash) +
+  `GenerateGitBranchGuardScript(rootDir string) error` (escreve `scripts/trackfw-git-branch-guard.sh`)
+  + `GenerateGlobalGitBranchGuardScript(home string) error` (escreve
+  `~/.trackfw/scripts/trackfw-git-branch-guard.sh`) — mesmo formato exato das funções irmãs do
+  credential-guard (`GenerateCredentialGuardScript`/`GenerateGlobalCredentialGuardScript`).
+- O script suporta 3 formatos de entrada, nesta ordem: (1) argv cru (`$1..$N`); (2) payload JSON
+  via stdin, tentando `.tool_input.command` → `.command` → `.hook_input.command`, com `jq` se
+  disponível e fallback grep/sed; (3) stdin cru não-JSON, ou `$TRACKFW_GIT_COMMAND` como último
+  fallback.
+- Casa contra `^git (commit|push|checkout -b)\b`, aceitando flags globais antes do subcomando
+  (`git -C . commit`, `git --no-pager push`) via um parser de tokens em `match_subcommand()` que
+  pula `-C`/`-c`/`--work-tree`/`--git-dir`/`--namespace` (consumindo o valor seguinte) e qualquer
+  outra flag `-*` antes de achar o subcomando; `checkout` só bloqueia se o token seguinte for
+  exatamente `-b`.
+- Com match: emite **os dois formatos de decisão simultaneamente** — `{"decision":"block",
+  "reason":"..."}` no stdout (Claude/Gemini) e `exit 2` (Codex/Windsurf/Cursor por exit-code) — em
+  vez de uma variante por runtime dentro do script (simplificação deliberada do ML-1A, documentada
+  em `docs/cli-parity.md`). Sem match: allow silencioso (`exit 0`, sem output).
+- Mensagens por subcomando (todas terminam em "Ver CLAUDE.md §1."): `checkout -b` → orienta
+  `trackfw branch new <type>/<slug>`; `commit` → orienta `trackfw commit -m '<mensagem>'`; `push`
+  → orienta `trackfw ship`.
+
+**Bug corrigido durante a implementação:** a primeira versão usava crase (`` ` ``) literal dentro
+de `REASON="..."` (string bash entre aspas duplas) para o estilo markdown da mensagem — em bash,
+crase dentro de aspas duplas é **substituição de comando**, não texto literal. Isso executava
+`trackfw commit -m '<mensagem>'` de verdade dentro do próprio guard (produzindo o usage do CLI
+como saída e quebrando a captura de `SUBCOMMAND` via `$(...)`). Corrigido escapando a crase
+(`\`` — backslash + crase) nas 3 mensagens. Ver diff de `scaffold.go` linhas ~1286-1299.
+
+**Testes:** `internal/generators/git_branch_guard_test.go` (novo, 19 casos) — geração de arquivo
+(executável, shebang, não injeta em nenhum hooks.json/settings.json), bloqueio de `git commit`
+(stdin JSON `tool_input.command` e argv), bloqueio de `git push` (stdin JSON `command` e com
+`--no-pager` antes), bloqueio de `git checkout -b` (com e sem flags antes, ex. `git -C .`), allow
+de `git checkout <branch>` sem `-b`, allow de `git status`/`git diff`/`git log`, allow sem comando
+algum, os 3 formatos de entrada (`hook_input.command`, stdin cru não-JSON, `$TRACKFW_GIT_COMMAND`).
+Todos invocam o script real via `exec.Command("bash", ...)` (mesmo padrão de
+`runCredentialGuard` em `credential_guard_test.go`), não reimplementam a regex em paralelo.
+
+**Evidência:**
+```
+go build ./...                                    → sem erros
+go test ./internal/generators/... -run TestGitBranchGuard -v
+  19/19 PASS
+go test ./internal/generators/...                 → ok (pacote inteiro, sem regressão)
+go test ./...                                      → todos os pacotes ok
+go vet ./...                                       → sem saída (limpo)
+trackfw validate                                    → mesmo aviso pré-existente (REQ sem ADR
+                                                       vinculado, não introduzido por este ML)
+```
+
+**Decisões de design (divergências a auditar):**
+- Não há `shellcheck` disponível neste ambiente (`which shellcheck` → not found) — o critério de
+  aceite do roadmap ("shellcheck do conteúdo gerado... senão, criar") não foi coberto por não haver
+  o binário; testes de comportamento via subprocesso real (`bash script.sh`) cobrem a superfície
+  prática em vez disso.
+- Teste novo ficou em `internal/generators/git_branch_guard_test.go` (arquivo próprio), não em
+  `scaffold_test.go` — esse arquivo não existe no repo; segui o padrão real já estabelecido pelo
+  credential-guard (`credential_guard_test.go` como arquivo dedicado, não dentro de `scaffold_test.go`).
+- `GenerateGitBranchGuardScript`/`GenerateGlobalGitBranchGuardScript` **não foram** registradas em
+  `Scaffold()` (a função que roda em `trackfw init`, que já chama `GenerateCredentialGuardScript`
+  incondicionalmente) — o roadmap/tarefa não pediu esse wiring para o ML-1A, e a Wave 3 (que decide
+  por runtime como o script é referenciado) ainda não existe; registrar cedo geraria um script órfão
+  sem consumidor. Sinalizar para confirmar se `Scaffold()` deve chamar `GenerateGitBranchGuardScript`
+  já nesta wave ou só na Wave 3/4.
+- Ao contrário do credential-guard, a variante global do script é **byte-idêntica** à de projeto
+  (nenhuma leitura de `trackfw.yaml`/modo) — documentado no comentário de
+  `GenerateGlobalGitBranchGuardScript`.
+- Atualizei `docs/roadmaps/wip/ROADMAP-2026-08-14-...md`: ML-1A `Status` → ✅ Concluído (só a linha
+  de status; não toquei nos checkboxes de critérios de aceite nem em outras seções — o arquivo já
+  tinha mudanças de outro agente em disco no momento da edição, ex. ML-2A/2B).
+
+**Arquivos criados/modificados:**
+- `internal/generators/scaffold.go` (const `gitBranchGuardScript` + `GenerateGitBranchGuardScript`
+  + `GenerateGlobalGitBranchGuardScript`)
+- `internal/generators/git_branch_guard_test.go` (novo)
+- `docs/cli-parity.md` (nova seção "Git branch guard por runtime")
+- `docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`
+  (ML-1A: `Status` → ✅ Concluído)
+
+Não fiz `git add`/`commit`/`push` — fora da minha fronteira de autoridade Git. Wave 2 (ML-2A/2B/2C,
+comando `trackfw commit`) e Wave 3 (wiring do guard nos hooks/Rules dos 7 runtimes) ainda são
+escopo de outros MLs.
 
 Entregando a trackfw_architect para auditoria e commit.

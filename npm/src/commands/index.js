@@ -33,6 +33,7 @@ function createProgram() {
   program.addCommand(require('./ship'))
   program.addCommand(require('./barrier'))
   program.addCommand(require('./branch'))
+  program.addCommand(require('./commit'))
 
   const { createServeCommand } = require('./serve')
   program.addCommand(createServeCommand())
