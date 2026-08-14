@@ -1095,10 +1095,13 @@ else
     \{*)
       CMD_RAW=""
       if command -v jq >/dev/null 2>&1; then
-        CMD_RAW=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // .hook_input.command // empty' 2>/dev/null || true)
+        CMD_RAW=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // .tool_info.command_line // .hook_input.command // empty' 2>/dev/null || true)
       fi
       if [ -z "$CMD_RAW" ] || [ "$CMD_RAW" = "null" ]; then
         CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_info"[[:space:]]*:[[:space:]]*{[^}]*"command_line"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
       fi
       if [ -z "$CMD_RAW" ]; then
         CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"hook_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)

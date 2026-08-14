@@ -68,8 +68,9 @@ func InjectHooksDetected(cwd string) error {
 				return err == nil
 			},
 		},
-		// amazonq (ROADMAP-2026-08-14 ML-3A): dispatches InjectAmazonQHooks
-		// (git branch guard, .amazonq/settings.json) whenever the existing
+		// amazonq (ROADMAP-2026-08-14 ML-3A, path fixed 2026-08-14 by apolo-tf):
+		// dispatches InjectAmazonQHooks (git branch guard,
+		// .amazonq/cli-agents/q_cli_default.json) whenever the existing
 		// textual rules file is present. This entry was missing before this
 		// ML — InjectAmazonQHooks did not exist, so there was nothing to
 		// dispatch to. Note: the roadmap's ML-3A instructions literally named

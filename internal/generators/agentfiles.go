@@ -1144,81 +1144,168 @@ func migrateHookCommand(existing interface{}, matcher, oldCommand, newCommand st
 	}
 }
 
+// windsurfGitGuardCmd is the command entry trackfw registers under
+// `hooks.pre_run_command` in `.windsurf/hooks.json`. Windsurf invokes the
+// hook via a shell (see InjectWindsurfHooks doc), so the guard script is
+// wrapped in `bash <path>` rather than invoked directly.
+const windsurfGitGuardCmd = "bash scripts/trackfw-git-branch-guard.sh"
+
+// legacyWindsurfHooksFile is the path this same function wrote to before the
+// path/schema fix documented below (ROADMAP-2026-08-14 ML-3A originally
+// invented this path without confirming it against official docs).
+const legacyWindsurfHooksFile = "trackfw-git-branch-guard.json"
+
 // InjectWindsurfHooks updates .windsurfrules with the attention instruction,
-// and (ROADMAP-2026-08-14 ML-3A) writes a dedicated
-// .windsurf/hooks/trackfw-git-branch-guard.json registering the
-// `pre_run_command` guard (REQ-2026-08-14: "hook `pre_run_command` (exit code
-// 2) bloqueia condicionalmente").
+// and registers the `pre_run_command` git-branch-guard hook in Windsurf's
+// real hooks file.
 //
-// Design note / invented path, documented per the roadmap's own instruction:
-// unlike every other runtime in this file, Windsurf had NO existing hooks
-// wiring anywhere in this codebase before this ML — InjectWindsurfHooks was
-// previously a one-line call into the shared textual rules injector, with no
-// credential-guard precedent to mirror (confirmed via grep across
-// internal/generators/ before writing this). The roadmap asks for two
-// distinct artifacts: a `pre_run_command` hook and an entry in the IDE
-// setting `windsurf.cascadeCommandsAllowList`. Only the former is
-// implemented here:
-//   - The hook is written to its own dedicated, wholly-overwritten file
-//     (`.windsurf/hooks/trackfw-git-branch-guard.json`), following the same
-//     "trackfw-owned, no merge" pattern already established for Kiro
-//     (InjectKiroHooks) and Copilot's trackfw-attention.json — a plausible,
-//     but UNCONFIRMED against official Windsurf documentation, project-local
-//     hooks path/schema (no equivalent to Claude's $CLAUDE_PROJECT_DIR was
-//     found documented for Windsurf, so the command is a plain relative path,
-//     same as the pre-fix Claude/Codex commands this same file already
-//     documents the failure mode of — a real risk if Windsurf hooks resolve
-//     relative paths against a dynamic cwd; flagged here rather than silently
-//     assumed correct).
-//   - `windsurf.cascadeCommandsAllowList` is a user *IDE settings* key (akin
-//     to VS Code's settings.json), not a project-local file trackfw has any
-//     established mechanism or confirmed path for rewriting safely — adding
-//     it risks clobbering unrelated user IDE preferences on a guess. Left
-//     undone; documented as an open gap in docs/cli-parity.md instead of
-//     invented from scratch, matching the roadmap's own guidance not to
-//     invent unconfirmed generators (item 4/8 of this ML's instructions).
+// Path/schema correction (apolo-tf, 2026-08-14, post-ML-3A audit): the
+// original ML-3A implementation wrote a dedicated, wholly-owned file at
+// `.windsurf/hooks/trackfw-git-branch-guard.json` with an invented payload
+// shape (`{"version":1,"hooks":[{"name":...,"trigger":"pre_run_command",
+// "action":{...}}]}`) that was flagged in its own doc comment as UNCONFIRMED
+// against official documentation. A verification pass against
+// https://docs.devin.ai/desktop/cascade/hooks confirmed both the path and
+// the shape were wrong:
+//   - Windsurf reads hooks from a single fixed-name file, `.windsurf/hooks.json`
+//     — NOT a directory of per-hook files under `.windsurf/hooks/`.
+//   - The schema is `{"hooks": {"<event>": [{"command": "...", "show_output":
+//     bool}]}}` — an object keyed by event name (e.g. "pre_run_command",
+//     "post_run_command"), each mapping to an ARRAY of hook defs. There is no
+//     "name"/"trigger"/"action" envelope.
+//   - The hook script receives its context via stdin as JSON, including
+//     `tool_info.command_line` — gitBranchGuardScript (scaffold.go) now tries
+//     this field explicitly (in addition to the generic `.command`/
+//     `.tool_input.command`/`.hook_input.command` fields it already handled).
+//
+// Merge is idempotent and shaped like every other multi-tool settings file in
+// this package: existing `pre_run_command` entries from other tools (or a
+// prior trackfw run) are preserved; only an entry with our exact command
+// string is deduped via mergeSimpleCommandArray. Other events already present
+// (e.g. a user- or third-party-authored `post_run_command`) are left
+// untouched.
+//
+// Migration: if the stale `.windsurf/hooks/trackfw-git-branch-guard.json`
+// file from the incorrect ML-3A version exists on disk, it is removed here
+// (never left orphaned) — same "migrate before merge" discipline as
+// migrateHookCommand elsewhere in this file, just at the file level since the
+// whole file (not just one entry) moved.
+//
+// `windsurf.cascadeCommandsAllowList` (an IDE *user settings* key, not a
+// project-local file) remains out of scope — same reasoning as before this
+// fix: trackfw has no established, confirmed mechanism for rewriting IDE user
+// settings safely, and inventing one on a guess repeats the exact mistake
+// this fix corrects. Documented as an open gap in docs/cli-parity.md.
 func InjectWindsurfHooks(cwd string) error {
 	if err := InjectRulesForTool("windsurf", cwd); err != nil {
 		return err
 	}
 
-	dir := filepath.Join(cwd, ".windsurf", "hooks")
+	// Migration: remove the incorrect, previously-written dedicated hook file
+	// from an older (buggy) trackfw run, so it doesn't linger as a dead,
+	// never-consumed artifact once the correct .windsurf/hooks.json exists.
+	legacyPath := filepath.Join(cwd, ".windsurf", "hooks", legacyWindsurfHooksFile)
+	if err := os.Remove(legacyPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	// Best-effort cleanup of the now-possibly-empty legacy directory; ignore
+	// failure (non-empty dir, e.g. holding unrelated user files, or already
+	// gone) — never fatal.
+	_ = os.Remove(filepath.Join(cwd, ".windsurf", "hooks"))
+
+	dir := filepath.Join(cwd, ".windsurf")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	path := filepath.Join(dir, "trackfw-git-branch-guard.json")
+	path := filepath.Join(dir, "hooks.json")
 
-	content := map[string]interface{}{
-		"version": 1,
-		"hooks": []interface{}{
-			map[string]interface{}{
-				"name":        "trackfw-git-branch-guard",
-				"description": "Blocks raw git commit/push/checkout -b before a shell command executes",
-				"trigger":     "pre_run_command",
-				"action": map[string]interface{}{
-					"type":    "command",
-					"command": "scripts/trackfw-git-branch-guard.sh",
-				},
-			},
-		},
+	raw, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
 
-	out, err := json.MarshalIndent(content, "", "  ")
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &root); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+
+	hooks["pre_run_command"] = mergeSimpleCommandArray(
+		hooks["pre_run_command"],
+		windsurfGitGuardCmd,
+		func(cmd string) interface{} {
+			return map[string]interface{}{
+				"command":     cmd,
+				"show_output": true,
+			}
+		},
+		func(item interface{}) string {
+			obj, ok := item.(map[string]interface{})
+			if !ok {
+				return ""
+			}
+			s, _ := obj["command"].(string)
+			return s
+		},
+	)
+	root["hooks"] = hooks
+
+	out, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
+// amazonQCliAgentsDir / amazonQDefaultAgentFile identify the Amazon Q
+// Developer CLI custom-agent file trackfw manages
+// (.amazonq/cli-agents/q_cli_default.json).
+const amazonQCliAgentsDir = "cli-agents"
+const amazonQDefaultAgentFile = "q_cli_default.json"
+
 // InjectAmazonQHooks injects Amazon Q Developer CLI git branch guard wiring
-// into .amazonq/settings.json (ROADMAP-2026-08-14 ML-3A).
+// into a custom agent file, .amazonq/cli-agents/q_cli_default.json.
 //
-// Prior to this ML, Amazon Q had no hook/deny generator at all in this
-// codebase — only the textual rules file (.amazonq/developer/guidelines.md,
-// via InjectRulesForTool/agentFiles["amazonq"]) existed. Two mechanisms are
-// wired here, per REQ-2026-08-14's confirmed Amazon Q contract ("hook
-// `preToolUse` confirmado", "`deniedCommands` com regex, avaliado antes do
-// allow"):
+// Path correction (apolo-tf, 2026-08-14, post-ML-3A audit): the original
+// ML-3A implementation wrote `hooks`/`toolsSettings` to `.amazonq/settings.json`
+// (flagged in its own doc comment as unconfirmed against official docs). A
+// verification pass against
+// https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-custom-agents-configuration.html
+// and
+// https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-agents-default-behavior.html
+// confirmed there is no `.amazonq/settings.json` for this purpose: `hooks`
+// and `toolsSettings` are top-level fields of a named **custom agent**
+// file under `.amazonq/cli-agents/<name>.json`, not of a shared settings
+// file. This is a BREAKING CHANGE of a development-only path from an
+// unreleased roadmap (this REQ has not shipped yet, so there are no real
+// users on the old `.amazonq/settings.json` path to migrate) — the stale
+// file, if present from a prior run of the buggy version, is intentionally
+// left untouched rather than auto-migrated (it is a genuinely different file
+// now, not a rename).
+//
+// File name (`q_cli_default.json`, not an arbitrary name like
+// `trackfw-guard.json`): a custom agent only takes effect if it is the
+// *active* agent (`q chat --agent <name>`, the `chat.defaultAgent` setting,
+// or — the closest thing to "activates automatically without a manual flag"
+// — being named `q_cli_default.json`). Known limitation, documented rather
+// than worked around: AWS has an open bug where this default-name override is
+// not always honored (github.com/aws/amazon-q-developer-cli#2922) — a custom
+// agent named `q_cli_default.json` is not guaranteed to always be picked up
+// automatically depending on CLI version/config.
+//
+// Two guard mechanisms are wired, per REQ-2026-08-14's confirmed Amazon Q
+// contract ("hook `preToolUse` confirmado", "`deniedCommands` com regex,
+// avaliado antes do allow") — internal shape unchanged from the original
+// ML-3A implementation, only the target file moved:
 //   - hooks.preToolUse[matcher:"execute_bash"] → the guard script, same
 //     matcher+hooks[].command shape already used by Claude/Codex/Gemini in
 //     this file (reuses mergeClaudeHookArray for idempotent merge).
@@ -1226,21 +1313,16 @@ func InjectWindsurfHooks(cwd string) error {
 //     before allow, independent of and in addition to the hook (defense in
 //     depth, same reasoning as Cursor's static Shell(git:commit) layer).
 //
-// Path (.amazonq/settings.json) is chosen for consistency with this
-// project's other per-tool project-scope settings files (.claude/settings.json,
-// .gemini/settings.json) — NOT independently confirmed against official
-// Amazon Q documentation in this ML; flagged in docs/cli-parity.md as the
-// same category of unconfirmed-path risk as the Windsurf hook file above.
-//
 // Native custom-agent toolset restriction (REQ acceptance criterion — Amazon
 // Q supports `tools`/`allowedTools` on custom agents, keeping the architect
-// unrestricted): NOT implemented here, same reasoning as Gemini above — no
-// generator for Amazon Q custom agent definitions exists anywhere in this
-// codebase (confirmed via grep before writing this function), and building
-// one from scratch is out of scope for this ML. This hook/deny therefore
-// applies uniformly to every Amazon Q agent, architect included.
+// unrestricted): still NOT implemented here — this ML only wires the
+// guard/deny fields on the one default agent file; per-specialist-agent
+// toolset restriction is out of scope, same limitation already accepted for
+// Gemini above. `tools: ["*"]` is written on first creation so the default
+// agent keeps today's unrestricted tool access (this fix does not narrow
+// what any agent can do, only where the deny wiring lives).
 func InjectAmazonQHooks(cwd string) error {
-	path := filepath.Join(cwd, ".amazonq", "settings.json")
+	path := filepath.Join(cwd, ".amazonq", amazonQCliAgentsDir, amazonQDefaultAgentFile)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -1258,6 +1340,39 @@ func InjectAmazonQHooks(cwd string) error {
 	}
 	if root == nil {
 		root = make(map[string]interface{})
+	}
+
+	// Root-level fields written on first creation, kept deliberately minimal:
+	// this ML confirmed the *file path* (.amazonq/cli-agents/<name>.json) and
+	// the *shape of hooks/toolsSettings* against
+	// command-line-custom-agents-configuration.html, but did NOT have network
+	// access to fetch and cross-check the doc's complete custom-agent JSON
+	// schema in this session — so only the fields load-bearing for this ML's
+	// purpose are written: `name` (required for the file to identify itself
+	// as an agent and for the "activates by filename" behavior documented
+	// above) and `tools: ["*"]` (preserves today's unrestricted tool access —
+	// dropping it would silently narrow what the default agent can do).
+	// `description` is included as a harmless free-text field. Optional
+	// fields seen in other custom-agent examples elsewhere (`prompt`,
+	// `mcpServers`, `toolAliases`, `allowedTools`, `resources`,
+	// `useLegacyMcpJson`, a `$schema` pointer) are deliberately NOT written
+	// here: an extra field the real schema doesn't expect risks failing
+	// validation, whereas an absent optional field usually doesn't. Flagged
+	// for the auditing agent: verify this defaults set against the live doc
+	// (or a real `q chat --agent` run) before treating it as final — only
+	// set for fields not already present, so re-running against a
+	// hand-edited or previously-generated file never clobbers user
+	// customization, same "preserve existing settings" contract as every
+	// other merge-based injector in this file.
+	defaults := map[string]interface{}{
+		"name":        "q_cli_default",
+		"description": "trackfw-managed default agent — wires the git branch guard hook/denylist. See docs/cli-parity.md.",
+		"tools":       []interface{}{"*"},
+	}
+	for k, v := range defaults {
+		if _, exists := root[k]; !exists {
+			root[k] = v
+		}
 	}
 
 	hooks, _ := root["hooks"].(map[string]interface{})

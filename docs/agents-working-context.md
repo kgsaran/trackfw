@@ -4,6 +4,159 @@
 
 ---
 
+## Sessão 2026-08-14 — Apolo (port Python do fix pós-auditoria: caminhos inventados de `inject_windsurf_hooks`/`inject_amazonq_hooks`) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por mim).
+Roadmap: mesmo das sessões Go/Node anteriores (ver entradas abaixo).
+
+Port Python do mesmo fix já aplicado ao Go (`internal/generators/agentfiles.go`) e ao Node
+(`npm/src/generators/hooks.js`) nesta mesma branch — descoberto já concluído em ambos os
+outros stacks ao investigar (via `git status`), e portado campo-a-campo a partir deles em vez
+de reconstruir do zero a partir da spec da tarefa (que orientava apenas `name`/`description`
+mínimos para o Amazon Q — a spec ficou obsoleta assim que Go/Node aterrissaram o schema
+completo primeiro).
+
+**Windsurf** (`pypi/trackfw/generators/hooks.py:inject_windsurf_hooks`): `.windsurf/hooks/
+trackfw-git-branch-guard.json` (arquivo dedicado, sempre sobrescrito) →
+`.windsurf/hooks.json` (arquivo único, merge idempotente no array `hooks.pre_run_command`,
+entrada `{"command":"bash scripts/trackfw-git-branch-guard.sh","show_output":true}`, via novo
+`_merge_windsurf_hook_array` — não reutiliza `_merge_simple_command_array`, que descartaria
+`show_output`). Migração: remove `.windsurf/hooks/trackfw-git-branch-guard.json` e faz
+`rmdir` best-effort do diretório `hooks/` se ficar vazio (preserva o dir se tiver outros
+arquivos do usuário).
+
+**Amazon Q** (`inject_amazonq_hooks`): `.amazonq/settings.json` →
+`.amazonq/cli-agents/q_cli_default.json`, com `_AMAZONQ_AGENT_DEFAULTS` (`name`,
+`description`, `prompt: None`, `mcpServers: {}`, `tools: ["*"]`, `toolAliases: {}`,
+`allowedTools: []`, `resources: []`, `useLegacyMcpJson: False`) aplicados via `setdefault`
+(nunca sobrescreve customização existente) — schema idêntico campo-a-campo ao de Go
+(`internal/generators/agentfiles.go:InjectAmazonQHooks`) e Node
+(`npm/src/generators/hooks.js:injectAmazonQHooks`), incluindo a string de `description`
+byte-idêntica.
+
+**Script compartilhado** (`pypi/trackfw/generators/init_gen.py:_GIT_BRANCH_GUARD_SH`):
+adicionado `.tool_info.command_line` à cadeia jq/sed de extração de `CMD_RAW` (campo real do
+payload `pre_run_command` do Windsurf, não coberto pelos fallbacks genéricos existentes) —
+mirror exato de Go's `gitBranchGuardScript`/Node's `GIT_BRANCH_GUARD_SCRIPT`, já corrigidos
+nesta mesma branch antes deste ML.
+
+**Achado reportado, não corrigido nesta sessão** (script deve ficar byte-idêntico entre os 3
+CLIs; já resolvido em paralelo por Go/Node antes deste port, então nada ficou pendente) — sem
+ação adicional necessária.
+
+**Arquivos modificados:** `pypi/trackfw/generators/hooks.py` (`inject_windsurf_hooks`,
+`inject_amazonq_hooks`, novo `_merge_windsurf_hook_array`, `_GIT_GUARD_CMD_WINDSURF`,
+`_LEGACY_WINDSURF_HOOKS_FILE`, `_AMAZONQ_AGENT_DEFAULTS`), `pypi/trackfw/generators/init_gen.py`
+(`_GIT_BRANCH_GUARD_SH` fallback), `pypi/tests/test_git_branch_guard.py` (paths atualizados +
+6 novos testes: `test_windsurf`, `test_windsurf_migrates_legacy_dedicated_file`,
+`test_windsurf_legacy_dir_with_unrelated_files_is_kept`,
+`test_windsurf_preserves_other_events_and_entries`,
+`TestGitBranchGuardScriptWindsurfStdin::{test_windsurf_command_line_blocks_commit,
+test_windsurf_command_line_allows_status}`; `test_amazonq` estendido para checar o schema
+completo do custom agent).
+
+**Validação:** `pytest pypi/tests -k "git_branch_guard or windsurf"` → 20 passed ·
+`pytest pypi/tests` (suíte completa) → 1076 passed, 8 subtests passed (25.80s).
+
+**Não fiz commit/push** (regra deste papel — commits são do `trackfw_architect`).
+
+---
+
+## Sessão 2026-08-14 — Apolo (fix pós-auditoria: caminhos inventados de `InjectWindsurfHooks`/`InjectAmazonQHooks`, Go) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por mim).
+Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`.
+
+Bug: `InjectWindsurfHooks`/`InjectAmazonQHooks` (ML-3A) escreveram caminhos e schemas
+**inventados** (sinalizados como não confirmados no próprio comentário). Uma verificação
+contra documentação oficial confirmou que ambos estavam estruturalmente errados. Escopo desta
+sessão: só Go (`internal/generators/agentfiles.go`) — Node/Python (ML-3B/3C) têm os mesmos
+caminhos errados e ficam como débito técnico de paridade em aberto.
+
+**Windsurf:** `.windsurf/hooks/trackfw-git-branch-guard.json` (arquivo dedicado, schema
+`{"version":1,"hooks":[{"name":...,"trigger":...,"action":{...}}]}`) →
+`.windsurf/hooks.json` (arquivo único, schema `{"hooks":{"pre_run_command":[{"command":"bash
+scripts/trackfw-git-branch-guard.sh","show_output":true}]}}`, merge idempotente via
+`mergeSimpleCommandArray` no array do evento — preserva outros eventos/entradas). Migração:
+remove o arquivo/dir legado se existir em disco. Também acrescentado `.tool_info.command_line`
+à cadeia de extração de comando do `gitBranchGuardScript` (`scaffold.go`) — é o campo real do
+payload `pre_run_command` do Windsurf, ainda não coberto pelos fallbacks genéricos existentes.
+
+**Amazon Q:** `.amazonq/settings.json` → `.amazonq/cli-agents/q_cli_default.json` (arquivo de
+custom agent nomeado — `hooks`/`toolsSettings` são campos de nível superior de um agent, não de
+um settings.json compartilhado; nome `q_cli_default.json` escolhido para maximizar chance de
+ativação automática, com ressalva documentada do bug aws/amazon-q-developer-cli#2922). Lógica
+interna de `hooks.preToolUse`/`toolsSettings.execute_bash.deniedCommands` preservada; adicionados
+campos mínimos de um custom agent válido (`name`, `description`, `prompt`, `mcpServers`,
+`tools: ["*"]`, `toolAliases`, `allowedTools`, `resources`, `useLegacyMcpJson`) só quando ainda
+não presentes (preserva customização existente).
+
+**Arquivos modificados:** `internal/generators/agentfiles.go`, `internal/generators/scaffold.go`
+(fallback `.tool_info.command_line`), `internal/generators/hooks.go` (comentário de path),
+`internal/generators/agentfiles_test.go` (testes atualizados + 2 novos:
+`TestInjectWindsurfHooks_MigratesLegacyHookFile`, `TestInjectWindsurfHooks_PreservesOtherEvents`),
+`docs/cli-parity.md` (nova subseção "Caminhos confirmados — Windsurf e Amazon Q").
+
+**Validação:** `go build ./...` ok · `go test ./internal/generators/...` ok (5.5s) ·
+`go test ./...` ok (todos os pacotes) · `go vet ./...` sem warnings.
+
+**Não fiz commit/push** (regra deste papel — commits são do `trackfw_architect`).
+
+---
+
+## Sessão 2026-08-14 — Apolo (port Node.js do fix pós-auditoria: caminhos inventados de `injectWindsurfHooks`/`injectAmazonQHooks`) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por mim).
+Roadmap: mesmo desta sessão anterior (ver entrada Go acima).
+
+Port Node.js do mesmo fix já aplicado ao Go (`internal/generators/agentfiles.go`, sessão
+anterior nesta mesma branch — descoberto já concluído ao investigar; portado campo-a-campo a
+partir dele em vez de reconstruir do zero a partir da spec).
+
+**Windsurf** (`injectWindsurfHooks`, `npm/src/generators/hooks.js`): `.windsurf/hooks/trackfw-git-branch-guard.json`
+(arquivo dedicado com schema inventado) → `.windsurf/hooks.json` (arquivo único, `hooks.pre_run_command`
+= array de `{"command":"bash scripts/trackfw-git-branch-guard.sh","show_output":true}`, merge
+idempotente via novo helper `mergeWindsurfHookArray` — `mergeSimpleCommandArray` existente não
+serve porque produz só `{command}`, sem `show_output`). Migração: remove
+`.windsurf/hooks/trackfw-git-branch-guard.json` legado (e o diretório, best-effort) se existir.
+`GIT_BRANCH_GUARD_SCRIPT` também ganhou o fallback `.tool_info.command_line` (jq + sed), mirror
+byte-a-byte do `gitBranchGuardScript` do Go — sem essa entrada o hook do Windsurf fica
+estruturalmente correto mas funcionalmente inerte (stdin do Windsurf não tem `.command`/
+`.tool_input.command`, só `tool_info.command_line`).
+
+**Amazon Q** (`injectAmazonQHooks`): `.amazonq/settings.json` → `.amazonq/cli-agents/q_cli_default.json`
+(custom agent nomeado). Defaults mínimos (`name`, `description`, `prompt`, `mcpServers`, `tools:
+["*"]`, `toolAliases`, `allowedTools`, `resources`, `useLegacyMcpJson`) só quando ainda não
+presentes no arquivo. `hooks.preToolUse[execute_bash]` + `toolsSettings.execute_bash.deniedCommands`
+preservados sem mudança de lógica interna.
+
+**Arquivos modificados:** `npm/src/generators/hooks.js` (GIT_BRANCH_GUARD_SCRIPT +
+`mergeWindsurfHookArray` + `injectWindsurfHooks` + `injectAmazonQHooks` reescritos),
+`npm/tests/git_branch_guard.test.js` (testes Windsurf/AmazonQ reescritos + 1 novo teste de stdin
+`tool_info.command_line`), `docs/cli-parity.md` (atualizada a frase que dizia Node ainda estar
+com o path antigo).
+
+**Observações para o Python (fora do meu escopo, reportado):**
+- `pypi/trackfw/generators/hooks.py` ainda escreve em `.windsurf/hooks/trackfw-git-branch-guard.json`
+  e `.amazonq/settings.json` (mesmos caminhos errados) — confirmado via grep, não alterado.
+- `pypi/tests/test_git_branch_guard.py` e `pypi/tests/test_generators_init.py` também referenciam
+  os caminhos antigos.
+- O Go tem uma inconsistência própria: `internal/generators/agentfiles_test.go`,
+  `TestInjectAmazonQHooks_PreservesExistingSettings` (linha ~1135) e
+  `TestInjectHooksDetected_DispatchesAmazonQ`-adjacent helpers ainda leem/escrevem
+  `.amazonq/settings.json` em vez do novo `.amazonq/cli-agents/q_cli_default.json` — a função
+  `InjectAmazonQHooks` já usa o caminho novo (confirmado lendo o código-fonte), só esse teste
+  específico ficou para trás. Sinalizado para o trackfw_architect corrigir antes do audit final,
+  senão `go test ./...` falha nesse teste.
+
+**Validação:** `npm test` (496 → 497 com o teste novo) ok, 0 failed. `node --test
+tests/git_branch_guard.test.js` ok, 30 passed.
+
+**Não fiz commit/push** (regra deste papel — commits são do `trackfw_architect`).
+
+---
+
 ## Sessão 2026-08-14 — Apolo (ML-2B: Node.js `npm/src/commands/commit.js`) — implementado, aguardando auditoria e commit por trackfw_architect
 
 Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out por outro agente,

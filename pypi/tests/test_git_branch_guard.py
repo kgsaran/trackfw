@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -89,12 +90,45 @@ class TestGitBranchGuardGenerator(unittest.TestCase):
             '.github/hooks/trackfw-attention.json',
             '.cursor/hooks.json',
             '.kiro/hooks/trackfw-attention.json',
-            '.amazonq/settings.json',
+            '.amazonq/cli-agents/q_cli_default.json',
         ]:
             self.assertFalse(
                 os.path.exists(os.path.join(self.tmpdir, p)),
                 f'_generate_git_branch_guard_script não deveria criar {p}',
             )
+
+
+class TestGitBranchGuardScriptWindsurfStdin(unittest.TestCase):
+    """Invoca o script real como subprocesso com o payload `pre_run_command` real do
+    Windsurf (`{"tool_info": {"command_line": "..."}}`) -- confirma que a extração via
+    `.tool_info.command_line` (adicionada nesta correção, mirror de Go's
+    gitBranchGuardScript) bloqueia corretamente, em vez de reimplementar a extração em
+    paralelo (mesmo padrão de test_credential_guard.py)."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        _generate_git_branch_guard_script(self.tmpdir)
+        self.script_path = os.path.join(self.tmpdir, 'scripts', 'trackfw-git-branch-guard.sh')
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self, payload: dict):
+        return subprocess.run(
+            ['bash', self.script_path],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+        )
+
+    def test_windsurf_command_line_blocks_commit(self):
+        proc = self._run({'agent_action_name': 'run_command', 'tool_info': {'command_line': 'git commit -m "x"'}})
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn('git commit bruto bloqueado', proc.stderr)
+
+    def test_windsurf_command_line_allows_status(self):
+        proc = self._run({'agent_action_name': 'run_command', 'tool_info': {'command_line': 'git status'}})
+        self.assertEqual(proc.returncode, 0)
 
 
 class TestGitBranchGuardHookWiringIdempotent(unittest.TestCase):
@@ -186,15 +220,108 @@ class TestGitBranchGuardHookWiringIdempotent(unittest.TestCase):
     def test_amazonq(self):
         inject_amazonq_hooks(self.tmp)
         inject_amazonq_hooks(self.tmp)
-        path = os.path.join(self.tmp, '.amazonq', 'settings.json')
+        path = os.path.join(self.tmp, '.amazonq', 'cli-agents', 'q_cli_default.json')
         self.assertTrue(os.path.isfile(path))
         data = _read_json(path)
+        self.assertEqual(data['name'], 'q_cli_default')
+        self.assertIn('git branch guard', data['description'])
+        self.assertIsNone(data['prompt'])
+        self.assertEqual(data['mcpServers'], {})
+        self.assertEqual(data['tools'], ['*'])
+        self.assertEqual(data['toolAliases'], {})
+        self.assertEqual(data['allowedTools'], [])
+        self.assertEqual(data['resources'], [])
+        self.assertFalse(data['useLegacyMcpJson'])
         pre_entries = [e for e in data['hooks']['preToolUse'] if e['matcher'] == 'execute_bash']
         self.assertEqual(len(pre_entries), 1)
         commands = [h['command'] for h in pre_entries[0]['hooks']]
         self.assertEqual(commands, ['scripts/trackfw-git-branch-guard.sh'])
         denied = data['toolsSettings']['execute_bash']['deniedCommands']
         self.assertEqual(denied, ['^git (commit|push|checkout -b)'])
+
+        # Old (wrong, ML-3C) path must never be written.
+        self.assertFalse(os.path.isfile(os.path.join(self.tmp, '.amazonq', 'settings.json')))
+
+    def test_windsurf(self):
+        from trackfw.generators.hooks import inject_windsurf_hooks
+
+        windsurfrules = os.path.join(self.tmp, '.windsurfrules')
+        with open(windsurfrules, 'w', encoding='utf-8') as f:
+            f.write("# Existing rules\n")
+
+        inject_windsurf_hooks(self.tmp)
+        inject_windsurf_hooks(self.tmp)
+
+        path = os.path.join(self.tmp, '.windsurf', 'hooks.json')
+        self.assertTrue(os.path.isfile(path))
+        data = _read_json(path)
+        pre_run = [
+            e for e in data['hooks']['pre_run_command']
+            if e.get('command') == 'bash scripts/trackfw-git-branch-guard.sh'
+        ]
+        self.assertEqual(len(pre_run), 1)
+        self.assertTrue(pre_run[0]['show_output'])
+
+        # Old (wrong, ML-3C) dedicated-file path must never be written.
+        self.assertFalse(
+            os.path.isfile(os.path.join(self.tmp, '.windsurf', 'hooks', 'trackfw-git-branch-guard.json'))
+        )
+
+    def test_windsurf_migrates_legacy_dedicated_file(self):
+        from trackfw.generators.hooks import inject_windsurf_hooks
+
+        legacy_dir = os.path.join(self.tmp, '.windsurf', 'hooks')
+        os.makedirs(legacy_dir, exist_ok=True)
+        legacy_path = os.path.join(legacy_dir, 'trackfw-git-branch-guard.json')
+        with open(legacy_path, 'w', encoding='utf-8') as f:
+            json.dump({'version': 1, 'hooks': [{'name': 'trackfw-git-branch-guard'}]}, f)
+
+        inject_windsurf_hooks(self.tmp)
+
+        self.assertFalse(os.path.isfile(legacy_path))
+        self.assertFalse(os.path.isdir(legacy_dir))
+        data = _read_json(os.path.join(self.tmp, '.windsurf', 'hooks.json'))
+        commands = [e['command'] for e in data['hooks']['pre_run_command']]
+        self.assertIn('bash scripts/trackfw-git-branch-guard.sh', commands)
+
+    def test_windsurf_legacy_dir_with_unrelated_files_is_kept(self):
+        from trackfw.generators.hooks import inject_windsurf_hooks
+
+        legacy_dir = os.path.join(self.tmp, '.windsurf', 'hooks')
+        os.makedirs(legacy_dir, exist_ok=True)
+        with open(os.path.join(legacy_dir, 'trackfw-git-branch-guard.json'), 'w', encoding='utf-8') as f:
+            json.dump({}, f)
+        with open(os.path.join(legacy_dir, 'unrelated.json'), 'w', encoding='utf-8') as f:
+            json.dump({'user': 'data'}, f)
+
+        inject_windsurf_hooks(self.tmp)
+
+        self.assertTrue(os.path.isdir(legacy_dir))
+        self.assertTrue(os.path.isfile(os.path.join(legacy_dir, 'unrelated.json')))
+
+    def test_windsurf_preserves_other_events_and_entries(self):
+        from trackfw.generators.hooks import inject_windsurf_hooks
+
+        windsurf_dir = os.path.join(self.tmp, '.windsurf')
+        os.makedirs(windsurf_dir, exist_ok=True)
+        with open(os.path.join(windsurf_dir, 'hooks.json'), 'w', encoding='utf-8') as f:
+            json.dump({
+                'hooks': {
+                    'pre_run_command': [{'command': 'echo third-party', 'show_output': False}],
+                    'post_run_command': [{'command': 'echo other-event'}],
+                },
+            }, f)
+
+        inject_windsurf_hooks(self.tmp)
+
+        data = _read_json(os.path.join(self.tmp, '.windsurf', 'hooks.json'))
+        pre_commands = [e['command'] for e in data['hooks']['pre_run_command']]
+        self.assertIn('echo third-party', pre_commands)
+        self.assertIn('bash scripts/trackfw-git-branch-guard.sh', pre_commands)
+        self.assertEqual(
+            [e['command'] for e in data['hooks']['post_run_command']],
+            ['echo other-event'],
+        )
 
 
 class TestAmazonQDetection(unittest.TestCase):
@@ -216,12 +343,12 @@ class TestAmazonQDetection(unittest.TestCase):
         from trackfw.generators.hooks import inject_hooks_detected
         os.makedirs(os.path.join(self.tmp, '.amazonq'), exist_ok=True)
         inject_hooks_detected(self.tmp)
-        self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.amazonq', 'settings.json')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, '.amazonq', 'cli-agents', 'q_cli_default.json')))
 
     def test_skips_when_no_amazonq_dir(self):
         from trackfw.generators.hooks import inject_hooks_detected
         inject_hooks_detected(self.tmp)
-        self.assertFalse(os.path.isfile(os.path.join(self.tmp, '.amazonq', 'settings.json')))
+        self.assertFalse(os.path.isfile(os.path.join(self.tmp, '.amazonq', 'cli-agents', 'q_cli_default.json')))
 
 
 if __name__ == '__main__':

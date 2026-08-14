@@ -3228,3 +3228,28 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 | `checkout -b` | `trackfw branch new <type>/<slug>` |
 | `commit` | `trackfw commit -m '<mensagem>'` (comando novo, Wave 2 deste roadmap) |
 | `push` | `trackfw ship` |
+
+### Caminhos confirmados — Windsurf e Amazon Q (apolo-tf, 2026-08-14, correção pós-auditoria do ML-3A)
+
+A primeira implementação do wiring (ML-3A) escreveu caminhos/formatos **inventados** para Windsurf e
+Amazon Q, sinalizados no próprio comentário de código como não confirmados contra documentação
+oficial. Uma verificação posterior confirmou que ambos estavam estruturalmente errados — corrigido
+no Go (`internal/generators/agentfiles.go`) e no Node (`npm/src/generators/hooks.js`); o Python
+(`pypi/trackfw/generators/hooks.py`, ML-3C) ainda usa os caminhos antigos e precisa do mesmo fix como
+débito técnico de paridade.
+
+| Runtime | Caminho errado (ML-3A original) | Caminho correto (confirmado) |
+|---|---|---|
+| Windsurf | `.windsurf/hooks/trackfw-git-branch-guard.json` (arquivo dedicado, schema `{"version":1,"hooks":[{"name":...,"trigger":...,"action":{...}}]}`) | `.windsurf/hooks.json` (arquivo único, schema `{"hooks":{"pre_run_command":[{"command":"...","show_output":bool}]}}` — merge idempotente no array do evento) — ver https://docs.devin.ai/desktop/cascade/hooks |
+| Amazon Q Developer | `.amazonq/settings.json` (`hooks`/`toolsSettings` na raiz) | `.amazonq/cli-agents/q_cli_default.json` (arquivo de **custom agent** nomeado — `hooks`/`toolsSettings` são campos de nível superior de um agent, não de um settings.json compartilhado) — ver https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-custom-agents-configuration.html |
+
+O nome de arquivo `q_cli_default.json` foi escolhido (em vez de um nome arbitrário) por ser a
+convenção mais próxima de "ativação automática sem flag manual" para um custom agent do Amazon Q CLI
+— com a ressalva de que há um bug conhecido e não contornado
+(github.com/aws/amazon-q-developer-cli#2922) onde esse override por nome de arquivo nem sempre é
+respeitado pela CLI.
+
+O contrato de payload do `gitBranchGuardScript` (seção acima) também foi ajustado: o campo
+`tool_info.command_line` (formato real do payload `pre_run_command` do Windsurf) foi adicionado à
+cadeia de tentativas de extração do comando via stdin JSON, ao lado dos campos genéricos já
+existentes (`.tool_input.command`, `.command`, `.hook_input.command`).

@@ -44,6 +44,23 @@ function mergeSimpleCommandArray(existing, command) {
 }
 
 /**
+ * Merge helper for Windsurf's `.windsurf/hooks.json` `hooks.<event>` arrays
+ * (e.g. `hooks.pre_run_command`): each entry is `{"command": "...",
+ * "show_output": bool}` -- one field richer than mergeSimpleCommandArray's
+ * plain `{"command"}` shape (Cursor), so it needs its own merge helper.
+ * Mirrors Go's mergeSimpleCommandArray call in InjectWindsurfHooks
+ * (internal/generators/agentfiles.go), which is generic over the entry
+ * shape via makeEntry/getCmd callbacks -- Node has no equivalent generic
+ * variant, so this is a dedicated function instead.
+ */
+function mergeWindsurfHookArray(existing, command, showOutput) {
+  const arr = Array.isArray(existing) ? existing.slice() : []
+  if (hasEntry(arr, 'command', command)) return arr
+  arr.push({ command, show_output: showOutput })
+  return arr
+}
+
+/**
  * Merge helper para arrays de hooks tipo GitHub Copilot
  * (hooks.preToolUse/postToolUse): cada entry é
  * {"type":"command","matcher":"bash","bash":"...","cwd":".","timeoutSec":10}
@@ -450,10 +467,13 @@ else
     \\{*)
       CMD_RAW=""
       if command -v jq >/dev/null 2>&1; then
-        CMD_RAW=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // .hook_input.command // empty' 2>/dev/null || true)
+        CMD_RAW=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // .tool_info.command_line // .hook_input.command // empty' 2>/dev/null || true)
       fi
       if [ -z "$CMD_RAW" ] || [ "$CMD_RAW" = "null" ]; then
         CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_info"[[:space:]]*:[[:space:]]*{[^}]*"command_line"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -1)
       fi
       if [ -z "$CMD_RAW" ]; then
         CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"hook_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -1)
@@ -747,6 +767,11 @@ const GBG_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'
 const GBG_CMD_CURSOR = 'scripts/trackfw-git-branch-guard.sh'
 const GBG_CMD_COPILOT = 'scripts/trackfw-git-branch-guard.sh'
 const GBG_CMD_PLAIN = 'scripts/trackfw-git-branch-guard.sh'
+// GBG_CMD_WINDSURF -- Windsurf invokes hooks.pre_run_command entries via a shell (confirmed
+// against https://docs.devin.ai/desktop/cascade/hooks), so the guard script is wrapped in
+// `bash <path>` rather than invoked directly, unlike every other CLI above. Mirrors Go's
+// windsurfGitGuardCmd (internal/generators/agentfiles.go).
+const GBG_CMD_WINDSURF = 'bash scripts/trackfw-git-branch-guard.sh'
 
 // ---------------------------------------------------------------------------
 // Global credential-guard dedup (ROADMAP-2026-08-06 Wave 3/ML-3A)
@@ -1358,82 +1383,152 @@ function injectCursorHooks(cwd) {
 }
 
 // ---------------------------------------------------------------------------
-// Windsurf — update .windsurfrules with attention instruction, and
-// (ROADMAP-2026-08-14, ML-3B/Wave 3, step 6) write a dedicated
-// .windsurf/hooks/trackfw-git-branch-guard.json registering the
-// `pre_run_command` guard.
+// Windsurf — update .windsurfrules with attention instruction, and register
+// the `pre_run_command` git-branch-guard hook in Windsurf's real hooks file.
 // ---------------------------------------------------------------------------
-// Design note / invented path, mirrors Go's InjectWindsurfHooks
-// (internal/generators/agentfiles.go): unlike every other runtime in this
-// module, Windsurf had no existing hooks wiring to extend before this ML --
-// injectWindsurfHooks was previously just the textual rules injector call,
-// with no credential-guard precedent to mirror. The roadmap asks for two
-// artifacts: a `pre_run_command` hook and an entry in the IDE setting
-// `windsurf.cascadeCommandsAllowList`. Only the former is implemented here,
-// same scope as Go:
-//   - The hook is written to its own dedicated, wholly-overwritten file
-//     (`.windsurf/hooks/trackfw-git-branch-guard.json`), same "trackfw-owned,
-//     no merge" pattern already established for Kiro/Copilot's
-//     trackfw-attention.json -- a plausible but UNCONFIRMED-against-official-
-//     docs project-local hooks path/schema (no equivalent to Claude's
-//     $CLAUDE_PROJECT_DIR was found documented for Windsurf, so the command
-//     is a plain relative path).
-//   - `windsurf.cascadeCommandsAllowList` is a user IDE settings key, not a
-//     project-local file this module has any established mechanism for
-//     rewriting safely -- left undone, documented gap (see Go's doc comment
-//     on InjectWindsurfHooks and docs/cli-parity.md).
+// Path/schema correction (apolo-tf, 2026-08-14, post-ML-3A audit): the
+// original ML-3A implementation wrote a dedicated, wholly-owned file at
+// `.windsurf/hooks/trackfw-git-branch-guard.json` with an invented payload
+// shape (`{"version":1,"hooks":[{"name":...,"trigger":"pre_run_command",
+// "action":{...}}]}`) that was flagged in its own doc comment as UNCONFIRMED
+// against official documentation. A verification pass against
+// https://docs.devin.ai/desktop/cascade/hooks confirmed both the path and
+// the shape were wrong:
+//   - Windsurf reads hooks from a single fixed-name file, `.windsurf/hooks.json`
+//     -- NOT a directory of per-hook files under `.windsurf/hooks/`.
+//   - The schema is `{"hooks": {"<event>": [{"command": "...", "show_output":
+//     bool}]}}` -- an object keyed by event name (e.g. "pre_run_command",
+//     "post_run_command"), each mapping to an ARRAY of hook defs. There is no
+//     "name"/"trigger"/"action" envelope.
+//   - The hook script receives its context via stdin as JSON, including
+//     `tool_info.command_line` -- GIT_BRANCH_GUARD_SCRIPT above now tries
+//     this field explicitly (in addition to the generic `.command`/
+//     `.tool_input.command`/`.hook_input.command` fields it already
+//     handled). This is a byte-shared script across all 3 CLIs -- do not
+//     edit it again without mirroring Go's gitBranchGuardScript.
+//
+// Merge is idempotent and shaped like every other multi-tool settings file in
+// this module: existing `pre_run_command` entries from other tools (or a
+// prior trackfw run) are preserved; only an entry with our exact command
+// string is deduped via mergeWindsurfHookArray. Other events already present
+// (e.g. a user- or third-party-authored `post_run_command`) are left
+// untouched.
+//
+// Migration: if the stale `.windsurf/hooks/trackfw-git-branch-guard.json`
+// file from the incorrect ML-3A version exists on disk, it is removed here
+// (never left orphaned), and the now-possibly-empty legacy `.windsurf/hooks`
+// directory is best-effort cleaned up too -- mirrors Go's InjectWindsurfHooks
+// migration step exactly (os.Remove + best-effort rmdir).
+//
+// `windsurf.cascadeCommandsAllowList` (an IDE *user settings* key, not a
+// project-local file) remains out of scope -- same reasoning as before this
+// fix: trackfw has no established, confirmed mechanism for rewriting IDE user
+// settings safely, and inventing one on a guess repeats the exact mistake
+// this fix corrects. Documented as an open gap in docs/cli-parity.md.
+const LEGACY_WINDSURF_HOOKS_FILE = 'trackfw-git-branch-guard.json'
+
 function injectWindsurfHooks(cwd) {
   const { injectRulesForTool } = require('./init')
   injectRulesForTool('windsurf', cwd)
 
-  const dir = path.join(cwd, '.windsurf', 'hooks')
-  fs.mkdirSync(dir, { recursive: true })
-  const filePath = path.join(dir, 'trackfw-git-branch-guard.json')
-
-  const data = {
-    version: 1,
-    hooks: [
-      {
-        name: 'trackfw-git-branch-guard',
-        description: 'Blocks raw git commit/push/checkout -b before a shell command executes',
-        trigger: 'pre_run_command',
-        action: { type: 'command', command: GBG_CMD_PLAIN },
-      },
-    ],
+  // Migration: remove the incorrect, previously-written dedicated hook file
+  // from an older (buggy) trackfw run, so it doesn't linger as a dead,
+  // never-consumed artifact once the correct .windsurf/hooks.json exists.
+  const legacyDir = path.join(cwd, '.windsurf', 'hooks')
+  const legacyPath = path.join(legacyDir, LEGACY_WINDSURF_HOOKS_FILE)
+  try {
+    fs.unlinkSync(legacyPath)
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e
   }
+  // Best-effort cleanup of the now-possibly-empty legacy directory; ignore
+  // failure (non-empty dir, e.g. holding unrelated user files, or already
+  // gone) -- never fatal.
+  try {
+    fs.rmdirSync(legacyDir)
+  } catch (_) {
+    // ignore
+  }
+
+  const dir = path.join(cwd, '.windsurf')
+  fs.mkdirSync(dir, { recursive: true })
+  const filePath = path.join(dir, 'hooks.json')
+  const data = readJSON(filePath)
+
+  if (typeof data.hooks !== 'object' || data.hooks === null || Array.isArray(data.hooks)) {
+    data.hooks = {}
+  }
+
+  data.hooks.pre_run_command = mergeWindsurfHookArray(data.hooks.pre_run_command, GBG_CMD_WINDSURF, true)
+
   writeJSON(filePath, data)
 }
 
 // ---------------------------------------------------------------------------
-// Amazon Q Developer CLI — .amazonq/settings.json (ROADMAP-2026-08-14,
-// ML-3B/Wave 3, step 7)
+// Amazon Q Developer CLI — .amazonq/cli-agents/q_cli_default.json
+// (ROADMAP-2026-08-14, ML-3B/Wave 3, step 7)
 // ---------------------------------------------------------------------------
-// Mirrors Go's InjectAmazonQHooks (internal/generators/agentfiles.go): no
-// hook/deny generator existed for Amazon Q anywhere in this module before
-// this ML -- only the textual rules file (.amazonq/developer/guidelines.md,
-// via injectRulesForTool/AGENT_FILES) existed. Two mechanisms are wired:
+// Path/schema correction (apolo-tf, 2026-08-14, post-ML-3A audit): the
+// original ML-3A implementation wrote to `.amazonq/settings.json`, which was
+// flagged in its own doc comment as NOT independently confirmed against
+// official Amazon Q documentation. Verification against
+// https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-custom-agents-configuration.html
+// and https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-agents-default-behavior.html
+// confirmed the real mechanism is a *custom agent* file, not a settings
+// file: `.amazonq/cli-agents/q_cli_default.json` -- `q_cli_default.json` is
+// the documented convention closest to activating automatically without
+// requiring a manual `--agent` flag, though AWS has an open bug where this
+// default-name override is not always honored
+// (github.com/aws/amazon-q-developer-cli#2922) -- a custom agent named
+// `q_cli_default.json` is not guaranteed to always be picked up
+// automatically depending on CLI version/config. Documented rather than
+// worked around.
+//
+// Two guard mechanisms are wired, unchanged from the original ML-3A
+// implementation -- only the target file (and the minimal-but-valid custom
+// agent envelope around it) moved:
 //   - hooks.preToolUse[matcher:"execute_bash"] -> the guard script, same
 //     matcher+hooks[].command shape already used by Claude/Codex/Gemini
 //     above (reuses mergeClaudeHookArray for idempotent merge).
 //   - toolsSettings.execute_bash.deniedCommands -> a regex denylist
 //     evaluated before allow, independent of and in addition to the hook.
 //
-// Path (.amazonq/settings.json) is chosen for consistency with this
-// project's other per-tool project-scope settings files
-// (.claude/settings.json, .gemini/settings.json) -- NOT independently
-// confirmed against official Amazon Q documentation; same category of
-// unconfirmed-path risk as the Windsurf hook file above (documented gap,
-// see docs/cli-parity.md).
+// Minimal-but-valid custom agent schema (per command-line-custom-agents-
+// configuration.html): only set defaults for fields not already present, so
+// re-running against a hand-edited or previously-generated file never
+// clobbers user customization -- same "preserve existing settings" contract
+// as every other merge-based injector in this module. `tools: ["*"]` is
+// written on first creation so the default agent keeps today's unrestricted
+// tool access (this fix does not narrow what any agent can do, only where
+// the deny wiring lives). Mirrors Go's InjectAmazonQHooks
+// (internal/generators/agentfiles.go) field-for-field.
 //
-// Native custom-agent toolset restriction (REQ acceptance criterion): NOT
-// implemented here, same reasoning as Gemini's BeforeTool wiring above -- no
-// generator for Amazon Q custom agent definitions exists anywhere in this
-// module to extend; building one from scratch is out of scope for this ML.
+// Native custom-agent toolset restriction (REQ acceptance criterion): still
+// NOT implemented here -- this ML only wires the guard/deny fields on the
+// one default agent file; per-specialist-agent toolset restriction is out of
+// scope, same limitation already accepted for Gemini above.
+const AMAZONQ_CLI_AGENTS_DIR = 'cli-agents'
+const AMAZONQ_DEFAULT_AGENT_FILE = 'q_cli_default.json'
 const GBG_DENIED_COMMANDS_PATTERN = '^git (commit|push|checkout -b)'
 
 function injectAmazonQHooks(cwd) {
-  const filePath = path.join(cwd, '.amazonq', 'settings.json')
+  const filePath = path.join(cwd, '.amazonq', AMAZONQ_CLI_AGENTS_DIR, AMAZONQ_DEFAULT_AGENT_FILE)
   const data = readJSON(filePath)
+
+  const defaults = {
+    name: 'q_cli_default',
+    description: 'trackfw-managed default agent — wires the git branch guard hook/denylist. See docs/cli-parity.md.',
+    prompt: null,
+    mcpServers: {},
+    tools: ['*'],
+    toolAliases: {},
+    allowedTools: [],
+    resources: [],
+    useLegacyMcpJson: false,
+  }
+  for (const [k, v] of Object.entries(defaults)) {
+    if (!Object.prototype.hasOwnProperty.call(data, k)) data[k] = v
+  }
 
   if (!data.hooks) data.hooks = {}
   data.hooks.preToolUse = mergeClaudeHookArray(data.hooks.preToolUse, 'execute_bash', GBG_CMD_PLAIN)

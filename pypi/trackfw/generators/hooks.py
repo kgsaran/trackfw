@@ -961,54 +961,122 @@ def inject_cursor_hooks(cwd: str) -> None:
     # deny-tool gap noted in `inject_copilot_hooks` above -- not implemented in this ML.
 
 
-def inject_windsurf_hooks(cwd: str) -> None:
-    """Atualiza .windsurfrules com a diretiva de regras do trackfw e escreve o hook de
-    git-branch-guard dedicado do Windsurf (ML-3C, ROADMAP-2026-08-14 -- port de Go's
-    InjectWindsurfHooks, internal/generators/agentfiles.go).
+# ROADMAP-2026-08-14 bugfix (post-ML-3C audit): the path/shape ML-3C originally shipped here
+# (`.windsurf/hooks/trackfw-git-branch-guard.json`, a `{"name","trigger","action"}`-shaped
+# custom-file schema) was INVENTED, never verified against Windsurf's own docs, and is
+# structurally wrong -- not just a wrong filename. Confirmed against
+# https://docs.devin.ai/desktop/cascade/hooks: Windsurf reads hooks from a single, fixed-name
+# file, `.windsurf/hooks.json` (NOT a `.windsurf/hooks/<name>.json` directory), whose schema is
+# `{"hooks": {"<event>": [<hook-def>, ...]}}` -- an object keyed by event name, mapping to an
+# ARRAY of hook-defs (mirrors the "matcher + hooks:[...]" family already used above for Claude/
+# Codex/Gemini, except here the array elements are the flat `{"command","show_output"}` shape,
+# no matcher/type wrapper). `pre_run_command` is the pre-execution event; a hook-def exiting 2
+# blocks the command (same exit-code-2 contract as Codex/Claude Code). The command string is
+# `bash scripts/trackfw-git-branch-guard.sh` (not the bare `scripts/trackfw-git-branch-guard.sh`
+# used by Kiro/Copilot/Cursor) -- Windsurf's hook runner does not implicitly interpret the file
+# as a shell script the way those three do, per every worked example on the docs page.
+#
+# Migration: the stale `.windsurf/hooks/trackfw-git-branch-guard.json` file written by the
+# incorrect ML-3A/3C version, if present, is removed (never left as a dead, never-consumed
+# artifact once the correct `.windsurf/hooks.json` exists), and the now-possibly-empty legacy
+# `.windsurf/hooks` directory is best-effort cleaned up too -- mirrors Go's InjectWindsurfHooks
+# and Node's injectWindsurfHooks migration step exactly (both confirmed on this branch to
+# already carry this fix ahead of this Python port).
+_GIT_GUARD_CMD_WINDSURF = 'bash ' + _GIT_GUARD_CMD_PLAIN
+_LEGACY_WINDSURF_HOOKS_FILE = 'trackfw-git-branch-guard.json'
 
-    Windsurf has no merge-based settings.json this project already writes to (unlike
-    Claude/Codex/Gemini) -- the git-branch-guard entry lives in its own dedicated,
-    fully-overwritten file, `.windsurf/hooks/trackfw-git-branch-guard.json`, mirroring
-    Go's design exactly (path/shape confirmed against Go's implementation on this same
-    branch, not independently verified against official Windsurf docs in this ML --
-    same caveat Go's own doc comment carries).
+
+def _merge_windsurf_hook_array(hook_list: list, command: str) -> None:
+    """Garante (idempotente) que hook_list (um array `hooks.<evento>` do Windsurf) tenha uma
+    entrada `{"command": command, "show_output": True}`.
+
+    Deliberately NOT `_merge_simple_command_array`: that helper appends a `{"command": ...}`-
+    only dict, which would silently drop `show_output` and diverge from Go's equivalent
+    injector -- this guard's dedup key is the `command` field only (matching every other
+    per-runtime merge helper in this module), but the appended entry always carries both
+    fields.
+    """
+    if not _has_entry(hook_list, 'command', command):
+        hook_list.append({'command': command, 'show_output': True})
+
+
+def inject_windsurf_hooks(cwd: str) -> None:
+    """Atualiza .windsurfrules com a diretiva de regras do trackfw e mescla o hook de
+    git-branch-guard no arquivo único `.windsurf/hooks.json` (ML-3C, ROADMAP-2026-08-14 --
+    corrigido em auditoria pós-ML-3C, ver doc comment de _GIT_GUARD_CMD_WINDSURF acima; port de
+    Go's InjectWindsurfHooks, internal/generators/agentfiles.go).
+
+    Merge idempotente no array `hooks.pre_run_command`, preservando quaisquer outras
+    entradas/eventos já presentes no arquivo (mesmo padrão de merge dos demais injetores deste
+    módulo, ex. `inject_claude_hooks`) -- ao contrário da versão anterior (arquivo dedicado,
+    sempre sobrescrito), `.windsurf/hooks.json` é um arquivo real do usuário que pode já conter
+    hooks de terceiros para outros eventos.
     """
     from trackfw.generators.init_gen import inject_rules_for_tool
     inject_rules_for_tool('windsurf', cwd)
 
-    hooks_dir = os.path.join(cwd, '.windsurf', 'hooks')
-    os.makedirs(hooks_dir, exist_ok=True)
-    file_path = os.path.join(hooks_dir, 'trackfw-git-branch-guard.json')
+    legacy_dir = os.path.join(cwd, '.windsurf', 'hooks')
+    legacy_path = os.path.join(legacy_dir, _LEGACY_WINDSURF_HOOKS_FILE)
+    try:
+        os.remove(legacy_path)
+    except FileNotFoundError:
+        pass
+    try:
+        os.rmdir(legacy_dir)
+    except OSError:
+        pass
 
-    data = {
-        'version': 1,
-        'hooks': [
-            {
-                'name': 'trackfw-git-branch-guard',
-                'description': 'Blocks raw git commit/push/checkout -b before a shell command executes',
-                'trigger': 'pre_run_command',
-                'action': {'type': 'command', 'command': _GIT_GUARD_CMD_PLAIN},
-            },
-        ],
-    }
+    file_path = os.path.join(cwd, '.windsurf', 'hooks.json')
+    data = _read_json(file_path)
+
+    hooks = data.setdefault('hooks', {})
+    pre_run_command = hooks.setdefault('pre_run_command', [])
+    _merge_windsurf_hook_array(pre_run_command, _GIT_GUARD_CMD_WINDSURF)
+
     _write_json(file_path, data)
 
 
 # ---------------------------------------------------------------------------
-# Amazon Q Developer CLI — .amazonq/settings.json (novo, ML-3C, ROADMAP-2026-08-14
-# step 7 -- no InjectAmazonQHooks equivalent existed in any of the 3 stacks before this
-# wave; only textual .amazonq/developer/guidelines.md generation existed, see
-# init_gen.py:AGENT_FILES/AGENT_HEADERS).
+# Amazon Q Developer CLI — .amazonq/cli-agents/q_cli_default.json (novo, ML-3C,
+# ROADMAP-2026-08-14 step 7 -- no InjectAmazonQHooks equivalent existed in any of the
+# 3 stacks before this wave; only textual .amazonq/developer/guidelines.md generation
+# existed, see init_gen.py:AGENT_FILES/AGENT_HEADERS).
 #
-# Shape assumption (best-effort, no prior Go/Node reference to mirror -- flagged for
-# ML-4A cross-stack reconciliation): reuses the same "matcher + hooks:[{type,command}]"
-# merge shape already established for Claude/Codex/Gemini in this module
-# (_merge_claude_hook_array) for the hooks.preToolUse array, plus a
-# `toolsSettings.execute_bash.deniedCommands` regex list per the roadmap's explicit
-# step 7 spec. "execute_bash" is the Amazon Q CLI's documented canonical shell-tool id
-# (unlike Claude's "Bash"/Gemini's "run_shell_command" aliases, this one maps directly
-# to a tool id rather than a display name) -- used both as the hooks matcher and the
-# toolsSettings key, per the roadmap text.
+# ROADMAP-2026-08-14 bugfix (post-ML-3C audit): the path ML-3C originally shipped here
+# (`.amazonq/settings.json`) was invented, never verified against Amazon Q's own docs,
+# and is wrong. Confirmed against
+# https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-custom-agents-configuration.html
+# and
+# https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-agents-default-behavior.html:
+# custom agents are configured per-file under `.amazonq/cli-agents/<name>.json`, and
+# `q_cli_default.json` is the documented convention closest to activating automatically
+# without requiring the user to pass `--agent` explicitly on every invocation. Caveat
+# (documented here, not worked around): a bug reported against the Amazon Q Developer
+# CLI (github.com/aws/amazon-q-developer-cli#2922) means this default-activation
+# override is not always honored by the CLI in practice -- the file is still the
+# documented mechanism, wired here as spec'd, but the guard cannot be assumed to fire
+# on every session until that upstream bug is resolved.
+#
+# Shape: the internal preToolUse/toolsSettings wiring is unchanged from ML-3C (only the
+# file path moved) -- reuses the same "matcher + hooks:[{type,command}]" merge shape
+# already established for Claude/Codex/Gemini in this module (_merge_claude_hook_array)
+# for the hooks.preToolUse array, plus a `toolsSettings.execute_bash.deniedCommands`
+# regex list per the roadmap's explicit step 7 spec. "execute_bash" is the Amazon Q
+# CLI's documented canonical shell-tool id (unlike Claude's "Bash"/Gemini's
+# "run_shell_command" aliases, this one maps directly to a tool id rather than a
+# display name) -- used both as the hooks matcher and the toolsSettings key.
+#
+# Minimal-but-valid custom agent schema (per command-line-custom-agents-
+# configuration.html), field-for-field mirror of Go's InjectAmazonQHooks
+# (internal/generators/agentfiles.go) and Node's injectAmazonQHooks
+# (npm/src/generators/hooks.js), confirmed on this branch after both landed their
+# fix ahead of this Python port -- do not diverge from these defaults without
+# updating all three. Only set for fields not already present (`setdefault`), so
+# re-running against a hand-edited or previously-generated file never clobbers user
+# customization -- same "preserve existing settings" contract as every other
+# merge-based injector in this module. `tools: ["*"]` is written on first creation
+# so the default agent keeps today's unrestricted tool access (this fix does not
+# narrow what any agent can do, only where the deny wiring lives).
 #
 # Documented gap (roadmap step 7, second half): Amazon Q Developer CLI supports native
 # custom agents with a restrictable `tools`/`allowedTools` list (referenced by the
@@ -1022,13 +1090,29 @@ def inject_windsurf_hooks(cwd: str) -> None:
 
 _GIT_GUARD_DENIED_COMMANDS_PATTERN = '^git (commit|push|checkout -b)'
 
+_AMAZONQ_AGENT_DEFAULTS = {
+    'name': 'q_cli_default',
+    'description': 'trackfw-managed default agent — wires the git branch guard hook/denylist. See docs/cli-parity.md.',
+    'prompt': None,
+    'mcpServers': {},
+    'tools': ['*'],
+    'toolAliases': {},
+    'allowedTools': [],
+    'resources': [],
+    'useLegacyMcpJson': False,
+}
+
 
 def inject_amazonq_hooks(cwd: str) -> None:
     """Injeta hooks.preToolUse + toolsSettings.execute_bash.deniedCommands no
-    .amazonq/settings.json (git branch guard only -- Amazon Q has no pre-existing
-    attention-signal/credential-guard wiring in this codebase to extend)."""
-    file_path = os.path.join(cwd, '.amazonq', 'settings.json')
+    custom agent .amazonq/cli-agents/q_cli_default.json (git branch guard only --
+    Amazon Q has no pre-existing attention-signal/credential-guard wiring in this
+    codebase to extend)."""
+    file_path = os.path.join(cwd, '.amazonq', 'cli-agents', 'q_cli_default.json')
     data = _read_json(file_path)
+
+    for key, value in _AMAZONQ_AGENT_DEFAULTS.items():
+        data.setdefault(key, value)
 
     hooks = data.setdefault('hooks', {})
     pre_hooks = hooks.setdefault('preToolUse', [])

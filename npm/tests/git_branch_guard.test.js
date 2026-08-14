@@ -246,6 +246,17 @@ test('campo hook_input.command bloqueia', () => {
   }
 })
 
+test('campo tool_info.command_line (payload real do Windsurf pre_run_command) bloqueia', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const payload = JSON.stringify({ tool_info: { command_line: 'git commit -m "x"' } })
+    const { code, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 2, `stderr: ${stderr}`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('stdin cru não-JSON bloqueia', () => {
   const { dir, scriptPath } = setupFixture()
   try {
@@ -342,24 +353,64 @@ test('injectCursorHooks wires beforeShellExecution with the git branch guard com
   })
 })
 
-test('injectWindsurfHooks writes .windsurf/hooks/trackfw-git-branch-guard.json, idempotently', () => {
+test('injectWindsurfHooks writes .windsurf/hooks.json with hooks.pre_run_command, idempotently', () => {
   withTmpDir((tmp) => {
     injectWindsurfHooks(tmp)
     injectWindsurfHooks(tmp)
-    const filePath = path.join(tmp, '.windsurf', 'hooks', 'trackfw-git-branch-guard.json')
+    const filePath = path.join(tmp, '.windsurf', 'hooks.json')
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'))
-    assert.equal(data.version, 1)
-    assert.equal(data.hooks.length, 1, 'expected exactly 1 hook entry (idempotent across 2 runs)')
-    assert.equal(data.hooks[0].trigger, 'pre_run_command')
-    assert.equal(data.hooks[0].action.command, 'scripts/trackfw-git-branch-guard.sh')
+    const pre = data.hooks.pre_run_command
+    assert.equal(pre.length, 1, 'expected exactly 1 pre_run_command entry (idempotent across 2 runs)')
+    assert.equal(pre[0].command, 'bash scripts/trackfw-git-branch-guard.sh')
+    assert.equal(pre[0].show_output, true)
   })
 })
 
-test('injectAmazonQHooks creates .amazonq/settings.json with hook + deniedCommands, idempotently', () => {
+test('injectWindsurfHooks migrates the legacy .windsurf/hooks/trackfw-git-branch-guard.json file', () => {
+  withTmpDir((tmp) => {
+    const legacyDir = path.join(tmp, '.windsurf', 'hooks')
+    fs.mkdirSync(legacyDir, { recursive: true })
+    fs.writeFileSync(path.join(legacyDir, 'trackfw-git-branch-guard.json'), JSON.stringify({ version: 1, hooks: [] }), 'utf8')
+
+    injectWindsurfHooks(tmp)
+
+    assert.ok(!fs.existsSync(path.join(legacyDir, 'trackfw-git-branch-guard.json')), 'expected legacy hook file to be removed')
+    assert.ok(fs.existsSync(path.join(tmp, '.windsurf', 'hooks.json')), 'expected .windsurf/hooks.json to be written')
+  })
+})
+
+test('injectWindsurfHooks preserves other pre-existing hooks.json events/entries', () => {
+  withTmpDir((tmp) => {
+    const dir = path.join(tmp, '.windsurf')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'hooks.json'), JSON.stringify({
+      hooks: {
+        post_run_command: [{ command: 'echo done', show_output: false }],
+        pre_run_command: [{ command: 'some-other-tool-hook', show_output: true }],
+      },
+    }), 'utf8')
+
+    injectWindsurfHooks(tmp)
+
+    const data = JSON.parse(fs.readFileSync(path.join(dir, 'hooks.json'), 'utf8'))
+    assert.equal(data.hooks.post_run_command.length, 1, 'expected pre-existing post_run_command entry to survive')
+    const pre = data.hooks.pre_run_command
+    assert.equal(pre.length, 2, 'expected 2 pre_run_command entries (pre-existing + git-guard)')
+    assert.ok(pre.some(e => e.command === 'some-other-tool-hook'), 'pre-existing pre_run_command entry was lost')
+    assert.ok(pre.some(e => e.command === 'bash scripts/trackfw-git-branch-guard.sh'), 'git-branch-guard entry was not added')
+  })
+})
+
+test('injectAmazonQHooks creates .amazonq/cli-agents/q_cli_default.json with a valid custom agent + hook + deniedCommands, idempotently', () => {
   withTmpDir((tmp) => {
     injectAmazonQHooks(tmp)
     injectAmazonQHooks(tmp)
-    const data = JSON.parse(fs.readFileSync(path.join(tmp, '.amazonq', 'settings.json'), 'utf8'))
+    const filePath = path.join(tmp, '.amazonq', 'cli-agents', 'q_cli_default.json')
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+
+    assert.equal(data.name, 'q_cli_default')
+    assert.ok(typeof data.description === 'string' && data.description.length > 0)
+    assert.deepEqual(data.tools, ['*'])
 
     const pre = data.hooks.preToolUse
     assert.equal(pre.length, 1, 'expected exactly 1 preToolUse matcher entry (idempotent across 2 runs)')
@@ -373,17 +424,18 @@ test('injectAmazonQHooks creates .amazonq/settings.json with hook + deniedComman
   })
 })
 
-test('injectAmazonQHooks preserves pre-existing settings', () => {
+test('injectAmazonQHooks preserves pre-existing custom agent settings', () => {
   withTmpDir((tmp) => {
-    fs.mkdirSync(path.join(tmp, '.amazonq'), { recursive: true })
-    fs.writeFileSync(path.join(tmp, '.amazonq', 'settings.json'), JSON.stringify({
+    const dir = path.join(tmp, '.amazonq', 'cli-agents')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'q_cli_default.json'), JSON.stringify({
       someOtherSetting: 'keep-me',
       toolsSettings: { execute_bash: { deniedCommands: ['^rm -rf /'] } },
     }), 'utf8')
 
     injectAmazonQHooks(tmp)
 
-    const data = JSON.parse(fs.readFileSync(path.join(tmp, '.amazonq', 'settings.json'), 'utf8'))
+    const data = JSON.parse(fs.readFileSync(path.join(dir, 'q_cli_default.json'), 'utf8'))
     assert.equal(data.someOtherSetting, 'keep-me')
     const denied = data.toolsSettings.execute_bash.deniedCommands
     assert.equal(denied.length, 2)
@@ -396,7 +448,7 @@ test('injectHooksDetected dispatches Amazon Q when .amazonq dir exists', () => {
   withTmpDir((tmp) => {
     fs.mkdirSync(path.join(tmp, '.amazonq'), { recursive: true })
     injectHooksDetected(tmp)
-    assert.ok(fs.existsSync(path.join(tmp, '.amazonq', 'settings.json')), 'expected .amazonq/settings.json to be written by injectHooksDetected')
+    assert.ok(fs.existsSync(path.join(tmp, '.amazonq', 'cli-agents', 'q_cli_default.json')), 'expected .amazonq/cli-agents/q_cli_default.json to be written by injectHooksDetected')
   })
 })
 

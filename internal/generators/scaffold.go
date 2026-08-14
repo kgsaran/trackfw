@@ -1173,8 +1173,10 @@ func GenerateGlobalGitBranchGuardScript(home string) error {
 //  1. Argumentos de linha de comando ($1..$N) — runtimes que invocam o guard passando o comando
 //     git cru como argv (ex.: `trackfw-git-branch-guard.sh git commit -m "x"`).
 //  2. Payload JSON via stdin — runtimes que passam um payload de hook estruturado (Claude/Gemini/
-//     Windsurf/Amazon Q). Tenta `.tool_input.command`, `.command` e `.hook_input.command`, nessa
-//     ordem — via `jq` quando disponível, com fallback para grep/sed simples (mesmo espírito de
+//     Windsurf/Amazon Q). Tenta `.tool_input.command`, `.command`, `.tool_info.command_line`
+//     (formato confirmado do payload `pre_run_command` do Windsurf, ver
+//     https://docs.devin.ai/desktop/cascade/hooks) e `.hook_input.command`, nessa ordem — via `jq`
+//     quando disponível, com fallback para grep/sed simples (mesmo espírito de
 //     credentialGuardDetectionCore: sem exigir jq/parser YAML completo).
 //  3. Texto cru via stdin, ou `$TRACKFW_GIT_COMMAND` como último fallback — cobre runtimes que só
 //     conseguem repassar uma variável de ambiente.
@@ -1205,10 +1207,13 @@ else
     \{*)
       CMD_RAW=""
       if command -v jq >/dev/null 2>&1; then
-        CMD_RAW=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // .hook_input.command // empty' 2>/dev/null || true)
+        CMD_RAW=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // .tool_info.command_line // .hook_input.command // empty' 2>/dev/null || true)
       fi
       if [ -z "$CMD_RAW" ] || [ "$CMD_RAW" = "null" ]; then
         CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_info"[[:space:]]*:[[:space:]]*{[^}]*"command_line"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
       fi
       if [ -z "$CMD_RAW" ]; then
         CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"hook_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)

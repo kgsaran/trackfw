@@ -1003,22 +1003,89 @@ func TestInjectWindsurfHooks_WritesGitBranchGuardHook(t *testing.T) {
 		t.Fatalf("second InjectWindsurfHooks failed: %v", err)
 	}
 
-	path := filepath.Join(dir, ".windsurf", "hooks", "trackfw-git-branch-guard.json")
+	path := filepath.Join(dir, ".windsurf", "hooks.json")
 	data := helperReadJSON(t, path)
-	if data["version"] != float64(1) {
-		t.Errorf("expected version 1, got %v", data["version"])
+	hooksMap, ok := data["hooks"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected top-level \"hooks\" object, got %v", data["hooks"])
 	}
-	hooks, ok := data["hooks"].([]interface{})
-	if !ok || len(hooks) != 1 {
-		t.Fatalf("expected exactly 1 hook entry (idempotent across 2 runs), got %v", data["hooks"])
+	pre, ok := hooksMap["pre_run_command"].([]interface{})
+	if !ok || len(pre) != 1 {
+		t.Fatalf("expected exactly 1 pre_run_command entry (idempotent across 2 runs), got %v", hooksMap["pre_run_command"])
 	}
-	entry, _ := hooks[0].(map[string]interface{})
-	if entry["trigger"] != "pre_run_command" {
-		t.Errorf("expected trigger=pre_run_command, got %v", entry["trigger"])
+	entry, _ := pre[0].(map[string]interface{})
+	if entry["command"] != "bash scripts/trackfw-git-branch-guard.sh" {
+		t.Errorf("expected command to be the git-branch-guard script, got %v", entry["command"])
 	}
-	action, _ := entry["action"].(map[string]interface{})
-	if action["command"] != "scripts/trackfw-git-branch-guard.sh" {
-		t.Errorf("expected action.command to be the git-branch-guard script, got %v", action["command"])
+	if entry["show_output"] != true {
+		t.Errorf("expected show_output=true, got %v", entry["show_output"])
+	}
+}
+
+func TestInjectWindsurfHooks_MigratesLegacyHookFile(t *testing.T) {
+	dir := t.TempDir()
+	legacyPath := filepath.Join(dir, ".windsurf", "hooks", "trackfw-git-branch-guard.json")
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0755); err != nil {
+		t.Fatalf("mkdir legacy dir: %v", err)
+	}
+	if err := os.WriteFile(legacyPath, []byte(`{"version":1,"hooks":[]}`), 0644); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+
+	if err := InjectWindsurfHooks(dir); err != nil {
+		t.Fatalf("InjectWindsurfHooks failed: %v", err)
+	}
+
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Errorf("expected legacy hook file to be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".windsurf", "hooks.json")); err != nil {
+		t.Errorf("expected .windsurf/hooks.json to be written, got: %v", err)
+	}
+}
+
+func TestInjectWindsurfHooks_PreservesOtherEvents(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteJSON(t, filepath.Join(dir, ".windsurf", "hooks.json"), map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"post_run_command": []interface{}{
+				map[string]interface{}{"command": "echo done", "show_output": false},
+			},
+			"pre_run_command": []interface{}{
+				map[string]interface{}{"command": "some-other-tool-hook", "show_output": true},
+			},
+		},
+	})
+
+	if err := InjectWindsurfHooks(dir); err != nil {
+		t.Fatalf("InjectWindsurfHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".windsurf", "hooks.json"))
+	hooksMap, _ := data["hooks"].(map[string]interface{})
+	post, _ := hooksMap["post_run_command"].([]interface{})
+	if len(post) != 1 {
+		t.Errorf("expected pre-existing post_run_command entry to survive, got %v", post)
+	}
+	pre, _ := hooksMap["pre_run_command"].([]interface{})
+	if len(pre) != 2 {
+		t.Fatalf("expected 2 pre_run_command entries (pre-existing + git-guard), got %v", pre)
+	}
+	foundExisting, foundNew := false, false
+	for _, item := range pre {
+		obj, _ := item.(map[string]interface{})
+		switch obj["command"] {
+		case "some-other-tool-hook":
+			foundExisting = true
+		case "bash scripts/trackfw-git-branch-guard.sh":
+			foundNew = true
+		}
+	}
+	if !foundExisting {
+		t.Error("pre-existing pre_run_command entry was lost")
+	}
+	if !foundNew {
+		t.Error("git-branch-guard pre_run_command entry was not added")
 	}
 }
 
@@ -1031,7 +1098,15 @@ func TestInjectAmazonQHooks_CreateAndIdempotent(t *testing.T) {
 		t.Fatalf("second InjectAmazonQHooks failed: %v", err)
 	}
 
-	data := helperReadJSON(t, filepath.Join(dir, ".amazonq", "settings.json"))
+	data := helperReadJSON(t, filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json"))
+
+	if data["name"] != "q_cli_default" {
+		t.Errorf("expected name=q_cli_default, got %v", data["name"])
+	}
+	tools, _ := data["tools"].([]interface{})
+	if len(tools) != 1 || tools[0] != "*" {
+		t.Errorf("expected tools=[\"*\"], got %v", data["tools"])
+	}
 
 	if !helperHasClaudeHook(data, "preToolUse", "execute_bash", "scripts/trackfw-git-branch-guard.sh") {
 		t.Error("hooks.preToolUse[execute_bash] missing the git-branch-guard command")
@@ -1057,8 +1132,9 @@ func TestInjectAmazonQHooks_CreateAndIdempotent(t *testing.T) {
 
 func TestInjectAmazonQHooks_PreservesExistingSettings(t *testing.T) {
 	dir := t.TempDir()
-	helperWriteJSON(t, filepath.Join(dir, ".amazonq", "settings.json"), map[string]interface{}{
+	helperWriteJSON(t, filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json"), map[string]interface{}{
 		"someOtherSetting": "keep-me",
+		"name":             "q_cli_default",
 		"toolsSettings": map[string]interface{}{
 			"execute_bash": map[string]interface{}{
 				"deniedCommands": []interface{}{"^rm -rf /"},
@@ -1070,7 +1146,7 @@ func TestInjectAmazonQHooks_PreservesExistingSettings(t *testing.T) {
 		t.Fatalf("InjectAmazonQHooks failed: %v", err)
 	}
 
-	data := helperReadJSON(t, filepath.Join(dir, ".amazonq", "settings.json"))
+	data := helperReadJSON(t, filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json"))
 	if data["someOtherSetting"] != "keep-me" {
 		t.Errorf("expected unrelated setting to survive, got %v", data["someOtherSetting"])
 	}
@@ -1105,7 +1181,7 @@ func TestInjectHooksDetected_DispatchesAmazonQWhenDirExists(t *testing.T) {
 	if err := InjectHooksDetected(dir); err != nil {
 		t.Fatalf("InjectHooksDetected failed: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".amazonq", "settings.json")); err != nil {
-		t.Errorf("expected .amazonq/settings.json to be written by InjectHooksDetected, got: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json")); err != nil {
+		t.Errorf("expected .amazonq/cli-agents/q_cli_default.json to be written by InjectHooksDetected, got: %v", err)
 	}
 }
