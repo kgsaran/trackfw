@@ -72,6 +72,14 @@ técnico configurado", não prometer impossibilidade de bypass.
 - [ ] Documentação em `docs/cli-parity.md` ou equivalente registra o comportamento
       esperado por runtime (tabela de suporte), para que divergências futuras sejam
       reconhecidas como decisão consciente, não regressão.
+- [ ] Novo comando `trackfw commit` (Go/Node/Python, paridade completa) recusa commit
+      direto em `main`/branch protegida e recusa commit em branch `feat/fix/refactor`
+      sem roadmap correspondente em `wip/`. Motivação direta: nesta sessão, um commit de
+      artefatos de governança (REQ+roadmap) foi feito acidentalmente direto na `main`
+      via `git commit` bruto (commit `cda74cd`, revertido antes do push) — nada no
+      trackfw impediu isso no momento do commit, só depois manualmente. O deny/hook por
+      runtime (critério acima) deve incluir `git commit` bruto, não só `checkout -b`/
+      `push`, e orientar para `trackfw commit`.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->

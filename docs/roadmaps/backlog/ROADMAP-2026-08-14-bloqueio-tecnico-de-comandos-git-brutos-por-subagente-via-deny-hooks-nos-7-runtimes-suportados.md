@@ -20,6 +20,12 @@ REQ: docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagen
       brutos, gerada nos 3 CLIs (Go/Node/Python) com paridade de contrato.
 - [ ] Claude Code, Gemini CLI e Amazon Q Developer preservam o arquiteto (Zeus/equivalente)
       com git irrestrito; os demais 4 runtimes aplicam deny global documentado.
+- [ ] Existe um comando `trackfw commit` (Go/Node/Python) que recusa commit direto em
+      `main`/branch protegida e recusa commit em `feat/fix/refactor` sem roadmap
+      correspondente em `wip/`, replicando o gate de `branch_has_wip_roadmap` no
+      momento do commit — não só no momento da criação da branch.
+- [ ] O guard script/deny de cada runtime cobre `git commit` bruto (não só
+      `checkout -b`/`push`) e orienta para `trackfw commit`.
 - [ ] `make quality` passa sem novas divergências de paridade.
 
 ## Diagnóstico / Contexto
@@ -55,7 +61,12 @@ allow/deny/block lendo o comando via stdin/args conforme o contrato de cada runt
    formato esperado por aquele runtime (`{"decision":"block","reason":"..."}` para
    Claude/Gemini estilo JSON-stdout; exit code 2 para Codex/Windsurf estilo exit-code;
    `permission: "deny"` JSON para Cursor). Mensagem de bloqueio deve orientar
-   explicitamente: "use `trackfw branch new`/`trackfw ship` — ver CLAUDE.md §1".
+   explicitamente conforme o subcomando bloqueado: `checkout -b` → "use
+   `trackfw branch new <type>/<slug>`"; `commit` → "use `trackfw commit -m '<msg>'`"
+   (novo comando, ver Wave 2 deste roadmap); `push` → "use `trackfw ship`" — sempre
+   referenciando CLAUDE.md §1. Esta mensagem final só deve ser fechada depois que a
+   Wave 2 confirmar a sintaxe exata de `trackfw commit` (dependência textual, não de
+   arquivo — ver nota na Wave 3).
 2. Escrever em `docs/cli-parity.md` uma tabela "Git branch guard por runtime" com 3
    colunas: runtime | mecanismo usado (deny estático vs hook) | isolamento do
    arquiteto (nativo / via hook / não suportado — deny global) — transcrita da tabela já
@@ -67,10 +78,85 @@ allow/deny/block lendo o comando via stdin/args conforme o contrato de cada runt
       mesmo padrão de `*_test.sh` já usado para credential-guard, se existir; senão criar)
 **Comandos de validação:** `shellcheck scripts/trackfw-git-branch-guard.sh`
 
-## Wave 2 — Implementação por CLI (3 MLs em paralelo — arquivos distintos por stack)
-> Dependências: Wave 1 completa
+## Wave 2 — Comando `trackfw commit` (3 MLs em paralelo — arquivos distintos por stack)
+> Dependências: nenhuma — independente da Wave 1, pode rodar em paralelo com ela.
+> Motivação: fecha a lacuna que a Wave 1/3 sozinhas não cobrem — o guard script bloqueia
+> o `git commit` bruto, mas o agente ainda precisa de um comando trackfw que faça o
+> commit de fato (hoje só `trackfw ship` commita, e ele empacota commit+push+PR num
+> combo só; falta um passo intermediário leve). Reproduz o incidente real desta sessão:
+> um commit de artefatos de governança foi feito direto na `main` porque não existia
+> `trackfw commit` para recusar isso antes do `git commit` acontecer.
 
-### ML-2A — Go (`internal/generators/agentfiles.go`)
+### ML-2A — Go: `internal/commands/commit.go` (novo)
+**Status:** ⬜ Pendente
+**Arquivos afetados:**
+- `internal/commands/commit.go` (novo)
+- `internal/commands/commit_test.go` (novo)
+- `internal/commands/root.go` (ou onde os subcomandos são registrados — adicionar `newCommitCmd()`)
+**Ações:**
+1. Criar `trackfw commit -m "<mensagem>"`, espelhando a estrutura de dependências
+   injetáveis de `internal/commands/branch.go` (`branchNewDeps`) — criar `commitDeps` com
+   `loadConfig`, `currentBranch func() (string, error)`, `resolveWIPDirs`/`resolveDoneDirs`,
+   `matchSlug` (reusar `validator.BranchSlugMatchesRoadmap`, mesma lógica de
+   `branch new`), `execGitCommit func(message string) error`.
+2. Lógica de bloqueio, nesta ordem:
+   a. Ler a branch atual (`git rev-parse --abbrev-ref HEAD`). Se for `main`/`master`
+      (ou o nome configurado como branch padrão do repo, resolver via
+      `git symbolic-ref refs/remotes/origin/HEAD` com fallback para `main`): bloquear
+      sempre, mensagem: "trackfw commit: commit direto em '<branch>' não é permitido.
+      Use 'trackfw branch new <type>/<slug>' primeiro."
+   b. Se a branch for `feat/`, `fix/` ou `refactor/`: exigir roadmap correspondente em
+      `wip/` ou `done/` (mesmo matching de `branch new`); sem match, bloquear com a
+      mesma mensagem de orientação já usada por `trackfw validate`
+      (`branch_has_wip_roadmap`).
+   c. Branches fora desse padrão (ex: branches de doc/housekeeping do próprio Zeus):
+      permitir sem exigir roadmap, mas logar aviso — não é o caso coberto por este ML,
+      não bloquear artefatos de orquestração.
+   d. Se passou em (a)-(c): executar `git commit -m <message>` com stdio herdado,
+      propagando saída e status do Git literalmente (mesmo padrão de
+      `execGitCheckout`/`git("commit", ...)` já usado em `branch.go`/`ship.go`).
+3. Reaproveitar a função `git(...)`/`defaultGitExec` já existente em `ship.go` em vez de
+   duplicar o `exec.Command("git", ...)`.
+**Critérios de aceite:**
+- [ ] `go build ./...` sem erros
+- [ ] `go test ./internal/commands/... -run TestCommit` verde, cobrindo: bloqueio em
+      `main`, bloqueio em `feat/x` sem roadmap em `wip`, sucesso em `feat/x` com roadmap
+      em `wip`, sucesso em branch fora do padrão feat/fix/refactor
+**Comandos de validação:** `go build ./... && go test ./internal/commands/...`
+
+### ML-2B — Node.js: `npm/src/commands/commit.js` (novo)
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `npm/src/commands/commit.js` (novo), teste equivalente, registro
+do comando no entrypoint commander (mesmo arquivo que registra `branch`/`ship`)
+**Ações:** replicar 1:1 a lógica do ML-2A (passos 1-3) em JS puro, reaproveitando as
+funções já existentes para `branch new`/`ship` no módulo Node equivalente
+(`npm/src/commands/branch.js`/`ship.js` — localizar nomes exatos).
+**Critérios de aceite:**
+- [ ] testes do workspace Node verdes, mesmos 4 casos do ML-2A
+- [ ] mensagens de erro/orientação idênticas (byte-a-byte) às do Go
+**Comandos de validação:** `npm test --workspace=npm` (ajustar nome real do workspace)
+
+### ML-2C — Python: `pypi/trackfw/commands/commit.py` (novo)
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `pypi/trackfw/commands/commit.py` (novo), teste equivalente,
+registro do comando no parser argparse/click (mesmo arquivo que registra `branch`/`ship`)
+**Ações:** replicar 1:1 a lógica do ML-2A (passos 1-3) em Python puro (reimplementação
+nativa, não wrapper do Go — regra de paridade do projeto), reaproveitando as funções
+já existentes para `branch new`/`ship` em `pypi/trackfw/commands/branch.py`/`ship.py`.
+**Critérios de aceite:**
+- [ ] `pytest pypi/trackfw -k commit` verde, mesmos 4 casos do ML-2A
+- [ ] mensagens de erro/orientação idênticas (byte-a-byte) às do Go
+**Comandos de validação:** `python -m pytest pypi/trackfw -k commit`
+
+## Wave 3 — Implementação dos guards de agente por CLI (3 MLs em paralelo — arquivos distintos por stack)
+> Dependências: Wave 1 completa. Independente da Wave 2 em termos de arquivos, mas a
+> mensagem de bloqueio do guard script (Wave 1) deve orientar tanto para
+> `trackfw branch new`/`trackfw ship` quanto para o novo `trackfw commit` (Wave 2) — por
+> isso, embora os MLs desta wave possam começar em paralelo com a Wave 2, o texto final
+> da mensagem de orientação só deve ser fechado depois que a Wave 2 confirmar o nome e a
+> sintaxe exata do comando.
+
+### ML-3A — Go (`internal/generators/agentfiles.go`)
 **Status:** ⬜ Pendente
 **Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`
 **Ações:**
@@ -111,7 +197,7 @@ allow/deny/block lendo o comando via stdin/args conforme o contrato de cada runt
 - [ ] `go vet ./...` sem warnings
 **Comandos de validação:** `go build ./... && go test ./internal/generators/... && go vet ./...`
 
-### ML-2B — Node.js (`npm/src/integrations/`)
+### ML-3B — Node.js (`npm/src/integrations/`)
 **Status:** ⬜ Pendente
 **Arquivos afetados:** `npm/src/integrations/assets/agents/` + equivalente de
 `agentfiles.go` no Node (localizar módulo irmão de hooks/credential-guard em `npm/src/`,
@@ -126,7 +212,7 @@ reaproveitando as funções `merge*`/`migrate*` já existentes no módulo Node e
 **Comandos de validação:** `npm test --workspace=npm` (ajustar para o nome real do
 workspace conforme `package.json`)
 
-### ML-2C — Python (`pypi/trackfw/integrations/`)
+### ML-3C — Python (`pypi/trackfw/integrations/`)
 **Status:** ⬜ Pendente
 **Arquivos afetados:** `pypi/trackfw/integrations/assets/agents/` + módulo equivalente de
 hooks em `pypi/trackfw/`
@@ -138,10 +224,10 @@ Python de hooks (regra de paridade: Python é reimplementação nativa, não wra
 - [ ] contrato de saída idêntico ao Go/Node, mesma ressalva do ML-2B
 **Comandos de validação:** `python -m pytest pypi/trackfw`
 
-## Wave 3 — Validação cruzada e auditoria de conformidade (1 ML)
-> Dependências: Wave 2 completa (os 3 MLs)
+## Wave 4 — Validação cruzada e auditoria de conformidade (1 ML)
+> Dependências: Wave 2 e Wave 3 completas
 
-### ML-3A — Paridade, gate de contrato e teste manual end-to-end
+### ML-4A — Paridade, gate de contrato e teste manual end-to-end
 **Status:** ⬜ Pendente
 **Arquivos afetados:** nenhum novo — só execução de gates existentes + teste manual
 **Ações:**
@@ -149,20 +235,24 @@ Python de hooks (regra de paridade: Python é reimplementação nativa, não wra
 2. Teste manual em Claude Code (ambiente desta sessão): criar um roadmap de teste
    descartável, tentar `git commit`/`git push`/`git checkout -b` bruto como um subagente
    especialista (ex: via `Agent` tool com `subagent_type: apolo-tf`) e confirmar bloqueio
-   com a mensagem do guard script; confirmar que `trackfw branch new`/`trackfw ship`
-   continuam funcionando normalmente para o mesmo agente; confirmar que o Zeus
-   (`zeus-tf`) continua com git irrestrito.
+   com a mensagem do guard script; confirmar que `trackfw branch new`/`trackfw ship`/
+   `trackfw commit` continuam funcionando normalmente para o mesmo agente; confirmar que
+   `trackfw commit` recusa quando a branch atual é `main`/protegida ou sem roadmap em
+   `wip` correspondente (mesmo caso real que motivou este roadmap — ver commit `cda74cd`
+   revertido da `main` nesta sessão); confirmar que o Zeus (`zeus-tf`) continua com git
+   irrestrito.
 3. Descartar/remover qualquer roadmap de teste criado no passo 2 antes de finalizar.
 **Critérios de aceite:**
 - [ ] `make quality` verde, sem novas divergências
 - [ ] bloqueio confirmado para especialista, git liberado para Zeus, wrapper funcional
+- [ ] `trackfw commit` recusa commit direto na `main` e sem roadmap em `wip`
 - [ ] nenhum artefato de teste residual commitado
 **Comandos de validação:** `make quality`
 
-## Wave 4 — Documentação final (1 ML)
-> Dependências: Wave 3 completa
+## Wave 5 — Documentação final (1 ML)
+> Dependências: Wave 4 completa
 
-### ML-4A — Fechar `docs/cli-parity.md` com o estado real implementado
+### ML-5A — Fechar `docs/cli-parity.md` com o estado real implementado
 **Status:** ⬜ Pendente
 **Arquivos afetados:** `docs/cli-parity.md`
 **Ações:** atualizar a tabela criada no ML-1A com o estado final confirmado (não o
