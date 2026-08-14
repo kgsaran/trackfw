@@ -67,6 +67,22 @@ function resolveModel(model) {
   return MODEL_MAP[model] || ''
 }
 
+// Mapa de model: nomes canônicos do catálogo → ID de modelo aceito pelo Codex
+// CLI. Fonte: documentação Codex CLI pesquisada em 2026-08-14 (ver ADR
+// ADR-2026-08-14-roteamento-de-model-tier-por-alvo-no-render-de-agentes-para-
+// codex-e-cursor). IDs de modelo Codex são versionados e mudam com o ciclo de
+// release da OpenAI.
+const CODEX_MODEL_MAP = { opus: 'gpt-5.4', sonnet: 'gpt-5.4-mini' }
+
+// resolveModelCodex converte o modelo canônico para o ID de modelo aceito
+// pelo Codex CLI. Retorna o valor mapeado, ou string vazia se a linha model
+// deve ser omitida (valor desconhecido ou ausente). Espelha
+// internal/integrations/render.go:mapModelCodex.
+function resolveModelCodex(model) {
+  if (!model) return ''
+  return CODEX_MODEL_MAP[model] || ''
+}
+
 // toolsFor retorna SET_ARCH para o agente canônico "architect" (item.id do
 // catálogo, não o nome renderizado — que pode ser customizado pela
 // identidade), SET_IMPL para os demais. IDs proibidos (edit_file, read_file,
@@ -250,7 +266,14 @@ function render({ kind, content, capability, item, identity: cfg, target }) {
   }
 
   if (capability.representation === 'custom-agent-toml') {
-    return `name = ${JSON.stringify(name.replaceAll('-', '_'))}\ndescription = ${JSON.stringify(description)}\ndeveloper_instructions = ${JSON.stringify(body)}\n`
+    const lines = [
+      `name = ${JSON.stringify(name.replaceAll('-', '_'))}`,
+      `description = ${JSON.stringify(description)}`,
+    ]
+    const mappedModel = resolveModelCodex(parts.model)
+    if (mappedModel) lines.push(`model = ${JSON.stringify(mappedModel)}`)
+    lines.push(`developer_instructions = ${JSON.stringify(body)}`)
+    return `${lines.join('\n')}\n`
   }
   if (capability.representation === 'cli-agent-json' || capability.representation === 'agent-json') {
     // Ordem alfabética das chaves (description, name, prompt) é obrigatória:

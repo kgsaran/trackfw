@@ -55,6 +55,31 @@ test('model: do frontmatter é preservado intacto na Rota B', () => {
   assert.match(backend.content, /\nmodel: sonnet\n/)
 })
 
+// custom-agent-toml (target codex) emite "model = ..." mapeado a partir do
+// tier canônico declarado no frontmatter do asset ("model: opus"/
+// "model: sonnet"), posicionado entre "description" e
+// "developer_instructions" — paridade com
+// internal/integrations/render_test.go:TestRenderCustomAgentTomlEmitsCodexModel
+// (ADR ADR-2026-08-14-roteamento-de-model-tier-por-alvo-no-render-de-agentes-
+// para-codex-e-cursor).
+test('custom-agent-toml (codex) emite model mapeado entre description e developer_instructions', () => {
+  const cases = [
+    { itemId: 'architect', wantModel: 'model = "gpt-5.4"' },
+    { itemId: 'backend', wantModel: 'model = "gpt-5.4-mini"' },
+  ]
+  for (const { itemId, wantModel } of cases) {
+    const plan = buildPlans('agents', { targets: ['codex'], items: [itemId], scope: 'project' })[0]
+    const toml = plan.content
+    const descIdx = toml.indexOf('description =')
+    const modelIdx = toml.indexOf(wantModel)
+    const instrIdx = toml.indexOf('developer_instructions =')
+    assert.notEqual(descIdx, -1, `description ausente para ${itemId}`)
+    assert.notEqual(modelIdx, -1, `${wantModel} ausente para ${itemId}:\n${toml}`)
+    assert.notEqual(instrIdx, -1, `developer_instructions ausente para ${itemId}`)
+    assert.ok(descIdx < modelIdx && modelIdx < instrIdx, `linha ${wantModel} fora da posição esperada para ${itemId}:\n${toml}`)
+  }
+})
+
 test('table-driven — name deriva do slug em todas as representações nativas', () => {
   const targets = [
     ['codex', 'custom-agent-toml'],
