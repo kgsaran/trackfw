@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "scripts/trackfw-attention-cleanup.sh",
+            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh",
             "type": "command"
           }
         ],
@@ -15,11 +15,20 @@
       {
         "hooks": [
           {
-            "command": "scripts/trackfw-attention-signal.sh",
+            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh",
             "type": "command"
           }
         ],
         "matcher": "AskUserQuestion"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
       }
     ]
   }
