@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-14
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md"
 ---
 
 # REQ: bloqueio tecnico de comandos git brutos por subagente via deny/hooks nos 7 runtimes suportados
@@ -90,4 +90,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md

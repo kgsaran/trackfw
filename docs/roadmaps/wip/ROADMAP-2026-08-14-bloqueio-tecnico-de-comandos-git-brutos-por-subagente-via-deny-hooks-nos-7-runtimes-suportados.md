@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-08-14
 req: "docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: bloqueio tecnico de comandos git brutos por subagente via deny/hooks nos 7 runtimes suportados
 
-> Created: 2026-08-14 | Status: backlog
+> Created: 2026-08-14 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md -->
