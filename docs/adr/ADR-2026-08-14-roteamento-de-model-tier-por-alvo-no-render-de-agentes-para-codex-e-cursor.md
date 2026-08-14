@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-08-14
 author: "Zeus"
 ---
 
 # ADR: roteamento de model tier por alvo no render de agentes para codex e cursor
 
-> Date: 2026-08-14 | Status: Proposed
+> Date: 2026-08-14 | Status: Accepted
 
 ## Context
 <!-- What is the situation that motivates this decision? -->

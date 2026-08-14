@@ -4,6 +4,35 @@
 
 ---
 
+## Sessão 2026-08-14 — Zeus (encerramento: model tier para Codex e Cursor) — CONCLUÍDO
+
+Branch `feat/model-tier-no-render-de-agentes`. REQ/ADR/Roadmap movidos para `Done`/
+`Accepted`/`done`: `docs/req/REQ-2026-08-14-...md`,
+`docs/adr/ADR-2026-08-14-...md`, `docs/roadmaps/done/ROADMAP-2026-08-14-...md`.
+
+5 waves, 12 MLs, todas auditadas e commitadas individualmente pelo orquestrador
+(Apolo nunca commitou — respeitou a fronteira de autoridade Git em todas as
+execuções). Resultado: `Render()`/`render()` nos 3 CLIs (Go, Node.js, Python) agora
+recebem `target`/`targetID` e mapeiam o tier canônico (`model: opus`/`sonnet`) para:
+
+- **Codex** (`custom-agent-toml`): `opus→gpt-5.4`, `sonnet→gpt-5.4-mini`.
+- **Cursor** (`agent-markdown`, apenas quando `target == "cursor"`):
+  `opus→claude-opus-5[effort=high]`, `sonnet→composer-2.5[fast=true]`.
+- `gemini`/`kiro` (mesma representação `agent-markdown`) confirmados byte-a-byte
+  inalterados por teste de regressão dedicado nos 3 CLIs.
+
+`make quality` verde (exit 0, 112 cenários de falsificação + contratos de paridade).
+`go test ./...` completo verde. Wave 5 (verificação manual) fechada por decisão
+explícita do usuário via `AskUserQuestion`: sem Cursor/Codex CLI instalados neste
+ambiente, o usuário optou por aceitar confirmação documental (output real inspecionado
+contra a documentação oficial já citada no ADR) em vez de testar localmente ou deixar
+a REQ aberta — risco residual registrado na REQ.
+
+**Pendente para a próxima sessão**: nenhum código pendente. Branch não foi enviada
+(`git push`) nem PR aberta — aguardando solicitação explícita do usuário.
+
+---
+
 ## Sessão 2026-08-14 — Apolo (ML-1A: Go `Render()` recebe `targetID string`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
 
 Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
