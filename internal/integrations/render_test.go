@@ -88,6 +88,176 @@ func TestRenderCustomAgentTomlEmitsCodexModel(t *testing.T) {
 	}
 }
 
+// TestRenderSubagentRouteEmitsCursorModel prova que a Rota B (branch default,
+// representation "subagent", mesma representation usada por claude/gemini/
+// cursor/kiro) reescreve a linha "model:" do frontmatter para o valor mapeado
+// da Cursor quando — e só quando — targetID == "cursor". ADR
+// ADR-2026-08-14-roteamento-de-model-tier-por-alvo-no-render-de-agentes-
+// para-codex-e-cursor.
+func TestRenderSubagentRouteEmitsCursorModel(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name      string
+		itemID    string
+		wantModel string
+	}{
+		{"architect (opus)", "architect", "claude-opus-5[effort=high]"},
+		{"backend (sonnet)", "backend", "composer-2.5[fast=true]"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item, ok := catalog.Item(KindAgents, tc.itemID)
+			if !ok {
+				t.Fatalf("item %q não encontrado no catalog", tc.itemID)
+			}
+			source, err := catalog.ReadAsset(item)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, identity.Config{}, "cursor")
+			if err != nil {
+				t.Fatal(err)
+			}
+			output := string(out)
+			want := "model: " + tc.wantModel
+			if !strings.Contains(output, want) {
+				t.Fatalf("frontmatter não contém %q:\n%s", want, output)
+			}
+			if strings.Contains(output, "model: opus") || strings.Contains(output, "model: sonnet") {
+				t.Fatalf("valor original de model: vazou para o Cursor:\n%s", output)
+			}
+		})
+	}
+}
+
+// TestRenderSubagentRouteGeminiKiroUnaffectedByCursorMapping prova que
+// gemini e kiro — mesma representation "subagent" do Cursor, mesmo branch
+// default de Render — permanecem byte a byte idênticos ao que produziam
+// antes desta mudança: normalizeMarkdown(source) sem qualquer reescrita de
+// "model:". Regressão explícita exigida pelo ADR/roadmap.
+func TestRenderSubagentRouteGeminiKiroUnaffectedByCursorMapping(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("agente 'architect' não encontrado no catalog")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := normalizeMarkdown(source)
+
+	for _, targetID := range []string{"gemini", "kiro"} {
+		t.Run(targetID, func(t *testing.T) {
+			out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, identity.Config{}, targetID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(out) != string(want) {
+				t.Fatalf("targetID=%s diverge do output pré-Wave-3:\n--- got ---\n%s\n--- want ---\n%s", targetID, out, want)
+			}
+			if !strings.Contains(string(out), "model: opus") {
+				t.Fatalf("targetID=%s: linha model: original deveria ser preservada:\n%s", targetID, out)
+			}
+		})
+	}
+}
+
+// TestRenderSubagentRouteCursorWithIdentityRewritesModelAndName prova que,
+// quando uma identidade customizada está configurada E targetID == "cursor",
+// as duas transformações da Rota B compõem corretamente: "model:" é
+// reescrito para o valor mapeado da Cursor E "name:"/"description:" são
+// reescritos com a identidade — sem que uma pise na outra.
+func TestRenderSubagentRouteCursorWithIdentityRewritesModelAndName(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("agente 'architect' não encontrado no catalog")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, zeusIdentity(), "cursor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := string(out)
+
+	if !strings.Contains(output, "model: claude-opus-5[effort=high]") {
+		t.Fatalf("model: não reescrito para o valor mapeado da Cursor:\n%s", output)
+	}
+	if strings.Contains(output, "model: opus") {
+		t.Fatalf("valor original de model: vazou para o Cursor:\n%s", output)
+	}
+	if !strings.Contains(output, "name: zeus-tf") {
+		t.Fatalf("name: não reescrito com o slug da identidade:\n%s", output)
+	}
+	if strings.Contains(output, "name: trackfw-architect") {
+		t.Fatalf("name original vazou no frontmatter:\n%s", output)
+	}
+	if !strings.Contains(output, "description: Zeus — ") {
+		t.Fatalf("description: não reescrita com o prefixo do display name:\n%s", output)
+	}
+}
+
+// TestRewriteFrontmatterModelLineAppendsWhenAbsent prova que
+// rewriteFrontmatterModelLine insere "model:" quando o frontmatter não a
+// declara, sem alterar as demais linhas.
+func TestRewriteFrontmatterModelLineAppendsWhenAbsent(t *testing.T) {
+	source := []byte("---\n" +
+		"name: trackfw-agent\n" +
+		"description: Agent without model.\n" +
+		"---\n\n" +
+		"# Body\n")
+
+	out := rewriteFrontmatterModelLine(source, "composer-2.5[fast=true]")
+	output := string(out)
+	if !strings.Contains(output, "model: composer-2.5[fast=true]") {
+		t.Fatalf("model: não inserido quando ausente:\n%s", output)
+	}
+	if !strings.Contains(output, "name: trackfw-agent") || !strings.Contains(output, "description: Agent without model.") {
+		t.Fatalf("demais linhas do frontmatter não preservadas:\n%s", output)
+	}
+}
+
+// TestRemoveFrontmatterModelLineOmitsWhenUnmappable prova que
+// removeFrontmatterModelLine remove a linha "model:" quando o mapeamento
+// falha (mapModelCursor retorna ok=false), sem alterar o restante do
+// frontmatter nem o corpo.
+func TestRemoveFrontmatterModelLineOmitsWhenUnmappable(t *testing.T) {
+	source := []byte("---\n" +
+		"name: trackfw-agent\n" +
+		"description: Agent with unmapped model.\n" +
+		"model: haiku\n" +
+		"---\n\n" +
+		"# Body\n")
+
+	out := removeFrontmatterModelLine(source)
+	output := string(out)
+	if strings.Contains(output, "model:") {
+		t.Fatalf("linha model: não removida:\n%s", output)
+	}
+	if !strings.Contains(output, "name: trackfw-agent") || !strings.Contains(output, "description: Agent with unmapped model.") {
+		t.Fatalf("demais linhas do frontmatter não preservadas:\n%s", output)
+	}
+	if !strings.Contains(output, "# Body") {
+		t.Fatalf("corpo não preservado:\n%s", output)
+	}
+}
+
 // TestRenderJSONRepresentationsDoNotHTMLEscape prova que "cli-agent-json" e
 // "agent-json" não aplicam o HTML-escaping padrão de encoding/json (<, >, &
 // virando <, >, &) — comportamento que diverge de Node.js
