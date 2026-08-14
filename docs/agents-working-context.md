@@ -4,6 +4,32 @@
 
 ---
 
+## Sessão 2026-08-14 — Apolo (ML-1B: Node.js `render()` consome `target`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-1B — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** em `npm/src/integrations/render.js:238`, a assinatura de `render()` passou a
+desestruturar `target` (`function render({ kind, content, capability, item, identity: cfg, target })`).
+`npm/src/integrations/index.js:58` já enviava `target: targetEntry.id` — nenhuma mudança ali,
+confirmado por leitura direta. Nenhum branch de `render()` lê `target` ainda (Wave 2/3, futuras),
+então a mudança é plumbing puro sem efeito em output.
+
+**Call sites de `render(` verificados** (`npm/src/`, `npm/tests/`, sem `npm/bin/` adicional):
+apenas `npm/tests/render_opencode.test.js:26` e `npm/tests/identity-render.test.js:139` chamam sem
+`target` — aceitável conforme o ML (`target` fica `undefined`, nenhum branch o consulta ainda).
+
+**Gates:** `cd npm && npm test` → 477 passed, 0 failed. `trackfw validate` →
+"✓ Nenhuma violação encontrada." `make quality`/lint Node não rodados (Makefile `lint` só cobre
+`go vet`; Go e Python estão em ML paralelas na mesma branch — `make quality` fica para o ML-4B do
+roadmap).
+
+**`git status` final:** `npm/src/integrations/render.js` e o campo `**Status:**` do ML-1B no
+roadmap modificados, não staged, não commitados.
+
+---
+
 ## Sessão 2026-08-13 — Prometeu (ML-1A: fronteira de escrita dos agentes auditores) — CONCLUÍDO, aguardando auditoria e commit por Zeus
 
 Branch `fix/fronteira-de-escrita-dos-agentes-auditores`. Roadmap:

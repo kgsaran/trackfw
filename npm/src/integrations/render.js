@@ -235,7 +235,7 @@ function frontmatterName(content) {
 // normalize(content) — a mesma expressão usada antes de existir suporte a
 // identidade — então a saída sem identidade é garantida byte a byte
 // inalterada por construção, não por coincidência.
-function render({ kind, content, capability, item, identity: cfg }) {
+function render({ kind, content, capability, item, identity: cfg, target }) {
   if (kind === 'skills') return normalize(content)
 
   const id = item && cfg ? lookupIdentity(cfg, item.id) : undefined
