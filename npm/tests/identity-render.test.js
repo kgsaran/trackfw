@@ -80,6 +80,41 @@ test('custom-agent-toml (codex) emite model mapeado entre description e develope
   }
 })
 
+// Rota B / default (agent-markdown) com target === 'cursor' reescreve a linha
+// "model:" do frontmatter mapeando o tier canônico para a sintaxe aceita pela
+// Cursor (fonte: cursor.com/docs/subagents, ver ADR ADR-2026-08-14-
+// roteamento-de-model-tier-por-alvo-no-render-de-agentes-para-codex-e-cursor)
+// — paridade com internal/integrations/render_test.go (ML-3A).
+test('cursor reescreve model: opus -> claude-opus-5[effort=high] (architect)', () => {
+  const plan = buildPlans('agents', { targets: ['cursor'], items: ['architect'], scope: 'project' })[0]
+  assert.match(plan.content, /\nmodel: claude-opus-5\[effort=high\]\n/)
+  assert.doesNotMatch(plan.content, /model: opus/)
+})
+
+test('cursor reescreve model: sonnet -> composer-2.5[fast=true] (backend)', () => {
+  const plan = buildPlans('agents', { targets: ['cursor'], items: ['backend'], scope: 'project' })[0]
+  assert.match(plan.content, /\nmodel: composer-2\.5\[fast=true\]\n/)
+  assert.doesNotMatch(plan.content, /model: sonnet/)
+})
+
+test('gemini e kiro (mesma representação agent-markdown do cursor) permanecem bit-a-bit inalterados', () => {
+  const claudePlan = buildPlans('agents', { targets: ['claude'], items: ['architect'], scope: 'project' })[0]
+  const geminiPlan = buildPlans('agents', { targets: ['gemini'], items: ['architect'], scope: 'project' })[0]
+  const kiroPlan = buildPlans('agents', { targets: ['kiro'], items: ['architect'], scope: 'project' })[0]
+  assert.match(geminiPlan.content, /\nmodel: opus\n/)
+  assert.match(kiroPlan.content, /\nmodel: opus\n/)
+  assert.equal(geminiPlan.content, claudePlan.content)
+  assert.equal(kiroPlan.content, claudePlan.content)
+})
+
+test('cursor com identidade customizada — model reescrito compõe com name/description', () => {
+  const plan = buildPlans('agents', { targets: ['cursor'], items: ['architect'], scope: 'project', identity: zeusConfig })[0]
+  assert.match(plan.content, /^---\nname: zeus-tf\n/)
+  assert.match(plan.content, /^description: Zeus — /m)
+  assert.match(plan.content, /\nmodel: claude-opus-5\[effort=high\]\n/)
+  assert.doesNotMatch(plan.content, /model: opus/)
+})
+
 test('table-driven — name deriva do slug em todas as representações nativas', () => {
   const targets = [
     ['codex', 'custom-agent-toml'],
