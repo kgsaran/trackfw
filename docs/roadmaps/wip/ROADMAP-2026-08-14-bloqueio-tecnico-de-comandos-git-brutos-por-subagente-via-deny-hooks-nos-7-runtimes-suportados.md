@@ -44,7 +44,7 @@ allow/deny/block lendo o comando via stdin/args conforme o contrato de cada runt
 > precisam existir antes de qualquer runtime ser fiado a ele)
 
 ### ML-1A — Script guard compartilhado + tabela de contrato por runtime
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `scripts/trackfw-git-branch-guard.sh` (novo)
 - `docs/cli-parity.md` (nova seção "Git branch guard por runtime")
@@ -88,7 +88,7 @@ allow/deny/block lendo o comando via stdin/args conforme o contrato de cada runt
 > `trackfw commit` para recusar isso antes do `git commit` acontecer.
 
 ### ML-2A — Go: `internal/commands/commit.go` (novo)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/commands/commit.go` (novo)
 - `internal/commands/commit_test.go` (novo)
@@ -125,7 +125,7 @@ allow/deny/block lendo o comando via stdin/args conforme o contrato de cada runt
 **Comandos de validação:** `go build ./... && go test ./internal/commands/...`
 
 ### ML-2B — Node.js: `npm/src/commands/commit.js` (novo)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** `npm/src/commands/commit.js` (novo), teste equivalente, registro
 do comando no entrypoint commander (mesmo arquivo que registra `branch`/`ship`)
 **Ações:** replicar 1:1 a lógica do ML-2A (passos 1-3) em JS puro, reaproveitando as
@@ -137,7 +137,7 @@ funções já existentes para `branch new`/`ship` no módulo Node equivalente
 **Comandos de validação:** `npm test --workspace=npm` (ajustar nome real do workspace)
 
 ### ML-2C — Python: `pypi/trackfw/commands/commit.py` (novo)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** `pypi/trackfw/commands/commit.py` (novo), teste equivalente,
 registro do comando no parser argparse/click (mesmo arquivo que registra `branch`/`ship`)
 **Ações:** replicar 1:1 a lógica do ML-2A (passos 1-3) em Python puro (reimplementação
