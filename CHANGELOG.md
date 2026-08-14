@@ -10,6 +10,36 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [6.10.0] - 2026-08-14
+
+### Added
+
+- **Roteamento de model tier para Codex CLI e Cursor** (#167) — o catálogo canônico de
+  agentes já declarava um tier de custo por agente (`model: opus` para `architect`,
+  `model: sonnet` para os demais 9 especialistas), mas esse tiering só era efetivo para
+  Claude Code e Antigravity CLI. Agora:
+  - **Codex CLI**: `.codex/agents/trackfw-*.toml` passa a emitir `model = "gpt-5.4"`
+    (tier `opus`) ou `model = "gpt-5.4-mini"` (tier `sonnet`) — antes o campo nunca era
+    emitido, e o agente customizado sempre rodava no modelo default da sessão.
+  - **Cursor**: `.cursor/agents/trackfw-*.md` passa a emitir `model: claude-opus-5[effort=high]`
+    (tier `opus`) ou `model: composer-2.5[fast=true]` (tier `sonnet`) — antes emitia
+    `opus`/`sonnet` verbatim, sintaxe não documentada como aceita pela Cursor.
+  - `gemini` e `kiro` (mesma representação de agente compartilhada com o Cursor)
+    permanecem byte-a-byte inalterados — comportamento coberto por teste de regressão
+    dedicado nos 3 CLIs.
+
+### Notas de atualização
+
+- **A mudança só chega aos seus agentes depois de `trackfw agents update --targets codex,cursor`.**
+- Sem Cursor CLI/Codex CLI instalados no ambiente de desenvolvimento, o fechamento desta
+  REQ (ver `docs/req/REQ-2026-08-14-...md`) se apoiou em confirmação documental contra a
+  documentação oficial de cada ferramenta, não em teste end-to-end ao vivo — risco
+  residual caso a sintaxe aceita mude após 2026-08-14.
+
+### Breaking Changes
+
+Nenhum. Mudança aditiva: agentes já instalados só são afetados após `trackfw agents update`.
+
 ## [6.9.1] - 2026-08-13
 
 ### Fixed
