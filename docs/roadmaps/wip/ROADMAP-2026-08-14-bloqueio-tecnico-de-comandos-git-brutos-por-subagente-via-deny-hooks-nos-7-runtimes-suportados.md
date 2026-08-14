@@ -43,40 +43,50 @@ allow/deny/block lendo o comando via stdin/args conforme o contrato de cada runt
 > Dependências: nenhuma — bloqueia a Wave 2 inteira (o script e o contrato de payload
 > precisam existir antes de qualquer runtime ser fiado a ele)
 
-### ML-1A — Script guard compartilhado + tabela de contrato por runtime
+### ML-1A — Script guard canônico (Go, referência) + tabela de contrato por runtime
 **Status:** 🔄 Em andamento
+**Correção pós-descoberta:** `scripts/trackfw-credential-guard.sh` NÃO é um arquivo
+estático deste repo — é gerado em runtime a partir da const Go `credentialGuardScript`
+(`internal/generators/scaffold.go:1092-1101`) via `GenerateCredentialGuardScript`
+(`scaffold.go:793`, escopo de projeto) e `GenerateGlobalCredentialGuardScript`
+(`scaffold.go:828`, escopo global `~/.trackfw/scripts/`). Este ML segue o mesmo padrão,
+em vez do arquivo estático originalmente descrito.
 **Arquivos afetados:**
-- `scripts/trackfw-git-branch-guard.sh` (novo)
+- `internal/generators/scaffold.go` (nova const `gitBranchGuardScript` + funções
+  `GenerateGitBranchGuardScript(rootDir string) error` e
+  `GenerateGlobalGitBranchGuardScript(home string) error`, mesmo formato das funções
+  irmãs do credential-guard citadas acima)
 - `docs/cli-parity.md` (nova seção "Git branch guard por runtime")
 **Ações:**
-1. Criar `scripts/trackfw-git-branch-guard.sh`, POSIX sh, mesmo estilo defensivo de
-   `scripts/trackfw-credential-guard.sh` (fail-closed configurável, sem dependências
-   externas além de `git`/`grep`). Lógica: recebe o comando shell completo (via stdin JSON
-   nos runtimes que passam JSON — Claude/Gemini/Windsurf/Amazon Q — ou via argv nos que
-   passam string crua); casa contra os padrões `^git (commit|push|checkout -b)\b`
-   (cobrindo variantes com flags antes, ex: `git -C . commit`); se casar E o comando
-   `trackfw` não estiver na mesma linha (heurística: o wrapper nunca invoca git raw
-   diretamente pelo agente, ele mesmo faz `exec.Command("git", ...)` internamente, então
-   um `git commit` vindo do agente é sempre um bypass), devolve decisão de bloqueio no
+1. Escrever `gitBranchGuardScript` como POSIX sh, mesmo estilo defensivo do
+   `credentialGuardScript` (fail-closed configurável, sem dependências externas além de
+   `git`/`grep`). Lógica: recebe o comando shell completo (via stdin JSON nos runtimes
+   que passam JSON — Claude/Gemini/Windsurf/Amazon Q — ou via argv nos que passam string
+   crua); casa contra os padrões `^git (commit|push|checkout -b)\b` (cobrindo variantes
+   com flags antes, ex: `git -C . commit`); se casar, devolve decisão de bloqueio no
    formato esperado por aquele runtime (`{"decision":"block","reason":"..."}` para
    Claude/Gemini estilo JSON-stdout; exit code 2 para Codex/Windsurf estilo exit-code;
    `permission: "deny"` JSON para Cursor). Mensagem de bloqueio deve orientar
    explicitamente conforme o subcomando bloqueado: `checkout -b` → "use
    `trackfw branch new <type>/<slug>`"; `commit` → "use `trackfw commit -m '<msg>'`"
    (novo comando, ver Wave 2 deste roadmap); `push` → "use `trackfw ship`" — sempre
-   referenciando CLAUDE.md §1. Esta mensagem final só deve ser fechada depois que a
-   Wave 2 confirmar a sintaxe exata de `trackfw commit` (dependência textual, não de
-   arquivo — ver nota na Wave 3).
-2. Escrever em `docs/cli-parity.md` uma tabela "Git branch guard por runtime" com 3
+   referenciando CLAUDE.md §1.
+2. `GenerateGitBranchGuardScript`/`GenerateGlobalGitBranchGuardScript` escrevem
+   `scripts/trackfw-git-branch-guard.sh` (projeto) / `~/.trackfw/scripts/trackfw-git-branch-guard.sh`
+   (global), espelhando exatamente a estrutura das duas funções irmãs do credential-guard
+   (`os.MkdirAll` + `os.WriteFile` com `0755`).
+3. Escrever em `docs/cli-parity.md` uma tabela "Git branch guard por runtime" com 3
    colunas: runtime | mecanismo usado (deny estático vs hook) | isolamento do
    arquiteto (nativo / via hook / não suportado — deny global) — transcrita da tabela já
    levantada na REQ.
 **Critérios de aceite:**
-- [ ] `shellcheck scripts/trackfw-git-branch-guard.sh` sem erros
-- [ ] script testado manualmente com os 3 formatos de payload (stdin JSON, argv, exit-code)
-      simulados via casos de teste em `scripts/trackfw-git-branch-guard_test.sh` (novo,
-      mesmo padrão de `*_test.sh` já usado para credential-guard, se existir; senão criar)
-**Comandos de validação:** `shellcheck scripts/trackfw-git-branch-guard.sh`
+- [ ] `go build ./...` sem erros
+- [ ] `go test ./internal/generators/... -run TestGitBranchGuard` verde, cobrindo os 3
+      formatos de payload (stdin JSON, argv, exit-code) e os 3 subcomandos bloqueados
+- [ ] `shellcheck` do conteúdo gerado (escrever para um arquivo temporário no teste e
+      rodar shellcheck nele, mesmo padrão já usado para validar `credentialGuardScript`
+      se existir; senão, criar)
+**Comandos de validação:** `go build ./... && go test ./internal/generators/...`
 
 ## Wave 2 — Comando `trackfw commit` (3 MLs em paralelo — arquivos distintos por stack)
 > Dependências: nenhuma — independente da Wave 1, pode rodar em paralelo com ela.
@@ -197,32 +207,42 @@ já existentes para `branch new`/`ship` em `pypi/trackfw/commands/branch.py`/`sh
 - [ ] `go vet ./...` sem warnings
 **Comandos de validação:** `go build ./... && go test ./internal/generators/... && go vet ./...`
 
-### ML-3B — Node.js (`npm/src/integrations/`)
+### ML-3B — Node.js (`npm/src/generators/hooks.js`)
 **Status:** ⬜ Pendente
-**Arquivos afetados:** `npm/src/integrations/assets/agents/` + equivalente de
-`agentfiles.go` no Node (localizar módulo irmão de hooks/credential-guard em `npm/src/`,
-mesmo diretório que gera `.claude/settings.json`/`.cursor/rules`/etc. hoje)
-**Ações:** replicar 1:1 a lógica descrita nos passos 1-8 do ML-2A, reescrita em JS puro,
-reaproveitando as funções `merge*`/`migrate*` já existentes no módulo Node equivalente a
-`agentfiles.go` (buscar por nome de função espelhado, ex. `injectClaudeHooks`).
+**Arquivos afetados:** `npm/src/generators/hooks.js` (módulo confirmado como o
+equivalente Node de `internal/generators/agentfiles.go`+`scaffold.go` — já contém a
+lógica de credential-guard hooks), teste equivalente
+**Ações:**
+1. Portar `gitBranchGuardScript` (conteúdo produzido no ML-1A) como constante JS +
+   função `generateGitBranchGuardScript`/`generateGlobalGitBranchGuardScript`,
+   espelhando a função irmã de credential-guard já existente neste arquivo.
+2. Replicar 1:1 a lógica dos passos 1-8 do ML-3A (wiring de hook/deny por runtime),
+   reescrita em JS puro, reaproveitando as funções `merge*`/`migrate*` já existentes
+   neste módulo para o credential-guard (mesmo padrão de nomes espelhados, ex.
+   `injectClaudeHooks`).
 **Critérios de aceite:**
-- [ ] `npm test --workspace=trackfw` (ou script de teste do workspace Node) verde
-- [ ] contrato de saída (JSON/config gerados) idêntico byte-a-byte ao produzido pelo Go
-      para o mesmo input, exceto onde a REQ documentar divergência intencional
+- [ ] testes do workspace Node verdes (localizar comando exato em `npm/package.json`)
+- [ ] contrato de saída (script gerado + JSON/config de hooks) idêntico byte-a-byte ao
+      produzido pelo Go para o mesmo input, exceto onde a REQ documentar divergência
+      intencional
 **Comandos de validação:** `npm test --workspace=npm` (ajustar para o nome real do
 workspace conforme `package.json`)
 
-### ML-3C — Python (`pypi/trackfw/integrations/`)
+### ML-3C — Python (`pypi/trackfw/generators/hooks.py`)
 **Status:** ⬜ Pendente
-**Arquivos afetados:** `pypi/trackfw/integrations/assets/agents/` + módulo equivalente de
-hooks em `pypi/trackfw/`
-**Ações:** replicar 1:1 a lógica descrita nos passos 1-8 do ML-2A, reescrita em Python
-puro, reaproveitando as funções equivalentes de merge/migração já existentes no módulo
-Python de hooks (regra de paridade: Python é reimplementação nativa, não wrapper do Go).
+**Arquivos afetados:** `pypi/trackfw/generators/hooks.py` (módulo confirmado como o
+equivalente Python — já contém a lógica de credential-guard hooks), teste equivalente
+**Ações:**
+1. Portar `gitBranchGuardScript` como constante Python + função
+   `generate_git_branch_guard_script`/`generate_global_git_branch_guard_script`,
+   espelhando a função irmã de credential-guard já existente neste arquivo.
+2. Replicar 1:1 a lógica dos passos 1-8 do ML-3A, reescrita em Python puro,
+   reaproveitando as funções equivalentes de merge/migração já existentes neste módulo
+   (regra de paridade: Python é reimplementação nativa, não wrapper do Go).
 **Critérios de aceite:**
-- [ ] `pytest pypi/trackfw` verde
-- [ ] contrato de saída idêntico ao Go/Node, mesma ressalva do ML-2B
-**Comandos de validação:** `python -m pytest pypi/trackfw`
+- [ ] `pytest pypi/trackfw -k hooks` verde
+- [ ] contrato de saída idêntico ao Go/Node, mesma ressalva do ML-3B
+**Comandos de validação:** `python -m pytest pypi/trackfw -k hooks`
 
 ## Wave 4 — Validação cruzada e auditoria de conformidade (1 ML)
 > Dependências: Wave 2 e Wave 3 completas
