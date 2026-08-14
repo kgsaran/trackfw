@@ -288,7 +288,7 @@ equivalente Python — já contém a lógica de credential-guard hooks), teste e
 > Dependências: Wave 2 e Wave 3 completas
 
 ### ML-4A — Paridade, gate de contrato e teste manual end-to-end
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** `scripts/check-commit-parity.sh` (novo) + `Makefile` (wiring em
 `make quality`)
 **Pendência aberta pelo ML-2C (Python):** o projeto tem gates de paridade dedicados por
