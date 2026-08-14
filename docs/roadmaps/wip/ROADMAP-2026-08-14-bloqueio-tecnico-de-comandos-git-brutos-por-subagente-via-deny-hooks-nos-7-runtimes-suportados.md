@@ -177,8 +177,23 @@ já existentes para `branch new`/`ship` em `pypi/trackfw/commands/branch.py`/`sh
 > em disco em projetos reais).
 
 ### ML-3A — Go (`internal/generators/agentfiles.go`)
-**Status:** 🔄 Em andamento
-**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`
+**Status:** ✅ Concluído
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`,
+`internal/generators/hooks.go` (dispatcher fix), `internal/generators/scaffold.go` +
+`internal/generators/update.go` (pendência do ML-1A: fiação da geração do script nos
+call sites de produção), `internal/generators/copilot_hooks_parity_test.go` +
+`internal/generators/credential_guard_dedup_test.go` (contagens ajustadas para as novas
+entradas de git-branch-guard).
+**Divergências documentadas em comentários no código (ver apolo-tf, sessão 2026-08-14):**
+Codex resolvido via hook `PreToolUse`/Bash (não Rules); Copilot/Cursor/Windsurf sem
+diferenciação nativa por agente (deny global, conforme REQ); Windsurf usa um arquivo de
+hook dedicado inventado (`.windsurf/hooks/trackfw-git-branch-guard.json`, caminho não
+confirmado contra documentação oficial) — `cascadeCommandsAllowList` (IDE settings) não
+foi tocado; Amazon Q usa `.amazonq/settings.json` (caminho também não confirmado);
+Gemini/Amazon Q sem geradores de subagente nativo no repo — restrição do arquiteto não
+implementada, aplicado deny uniforme; Claude/Codex/Gemini também aplicam o guard
+uniformemente a todo agente (sem diferenciação real do arquiteto), mesma limitação já
+aceita pelo credential-guard pré-existente.
 **Ações:**
 1. Em `InjectClaudeHooks`: adicionar entrada `PreToolUse`/matcher `Bash` apontando para
    `$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh`, seguindo exatamente o padrão
@@ -218,7 +233,7 @@ já existentes para `branch new`/`ship` em `pypi/trackfw/commands/branch.py`/`sh
 **Comandos de validação:** `go build ./... && go test ./internal/generators/... && go vet ./...`
 
 ### ML-3B — Node.js (`npm/src/generators/hooks.js`)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:** `npm/src/generators/hooks.js` (módulo confirmado como o
 equivalente Node de `internal/generators/agentfiles.go`+`scaffold.go` — já contém a
 lógica de credential-guard hooks), teste equivalente
@@ -239,7 +254,21 @@ lógica de credential-guard hooks), teste equivalente
 workspace conforme `package.json`)
 
 ### ML-3C — Python (`pypi/trackfw/generators/hooks.py`)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Nota de execução (2026-08-14):** implementado após o Go (ML-3A) já ter aterrissado nesta mesma
+branch, o que permitiu validar paridade estrutural real
+(`GO_BIN=bin/trackfw scripts/check-agent-hooks-parity.sh` e
+`scripts/check-harness-hooks-parity.sh`, 12/12 e 12/12 OK) em vez de só uma cópia "melhor esforço"
+da spec do roadmap. Kiro foi deliberadamente deixado de fora (não é um dos "7 runtimes" do título
+do roadmap) — um rascunho inicial tinha adicionado wiring para Kiro por engano; removido depois que
+o gate apontou divergência `go-vs-py` em `$.hooks` porque o Go também não tem Kiro. Divergências
+documentadas em comentário (idênticas às do Go): Copilot `--deny-tool` estático (flag de CLI, sem
+arquivo de config persistível), Cursor `.cursor/rules` deny estático, restrição nativa de toolset
+por subagente (Gemini/Amazon Q) — nenhuma implementada, mesmo racional do Go (sem gerador de
+subagente em nenhum dos 3 CLIs ainda). Ver `docs/agents-working-context.md`, sessão
+"Apolo (ML-3C: Python ...)" para o detalhamento completo.
+
 **Arquivos afetados:** `pypi/trackfw/generators/hooks.py` (módulo confirmado como o
 equivalente Python — já contém a lógica de credential-guard hooks), teste equivalente
 **Ações:**

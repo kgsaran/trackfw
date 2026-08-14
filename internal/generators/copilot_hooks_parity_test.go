@@ -156,14 +156,19 @@ func TestInjectCopilotHooks_StructuralParityAcrossStacks(t *testing.T) {
 
 		pre := copilotHookEntrySet(t, hooks["preToolUse"])
 		post := copilotHookEntrySet(t, hooks["postToolUse"])
-		// 4 entries each: signal/cleanup (no matcher) + credential-guard scoped to
-		// "bash", "view", and "create|edit" (ADR-2026-08-06 emenda 7,
-		// ROADMAP-2026-08-08 Wave 2 — Read/Write/Edit coverage).
-		if len(pre) != 4 {
-			t.Errorf("%s: preToolUse deveria ter 4 entradas, obteve %d", name, len(pre))
-		}
+		// postToolUse: 4 entries in all 3 stacks -- signal/cleanup (no matcher) +
+		// credential-guard scoped to "bash", "view", and "create|edit"
+		// (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2 — Read/Write/Edit
+		// coverage).
 		if len(post) != 4 {
 			t.Errorf("%s: postToolUse deveria ter 4 entradas, obteve %d", name, len(post))
+		}
+		// preToolUse: all three stacks carry the git-branch-guard "bash" entry
+		// (ROADMAP-2026-08-14 ML-3A/ML-3B/ML-3C), so all three have 5 entries.
+		wantPre := 5
+		assertCopilotHookEntry(t, name, pre, "scripts/trackfw-git-branch-guard.sh", "bash")
+		if len(pre) != wantPre {
+			t.Errorf("%s: preToolUse deveria ter %d entradas, obteve %d", name, wantPre, len(pre))
 		}
 
 		assertCopilotHookEntry(t, name, pre, "scripts/trackfw-attention-signal.sh", nil)

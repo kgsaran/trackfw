@@ -413,6 +413,9 @@ class TestAttentionScripts(unittest.TestCase):
 _CODEX_SIGNAL_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh"'
 _CODEX_CLEANUP_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-cleanup.sh"'
 _CODEX_GUARD_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"'
+# ML-3C (ROADMAP-2026-08-14): same $(git rev-parse --show-toplevel) wrapper, git-branch-guard
+# script -- matches _GIT_GUARD_CMD_CODEX in trackfw/generators/hooks.py.
+_CODEX_GIT_GUARD_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh"'
 
 # ROADMAP-2026-08-11 ML-4A: Gemini documents and uses $GEMINI_PROJECT_DIR in 100% of its official
 # hook command examples (ADR-2026-08-11, "Gemini CLI — alterar, por argumento de assimetria") --
@@ -420,6 +423,8 @@ _CODEX_GUARD_CMD = '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential
 _GEMINI_SIGNAL_CMD = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh'
 _GEMINI_CLEANUP_CMD = '$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh'
 _GEMINI_GUARD_CMD = '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
+# ML-3C (ROADMAP-2026-08-14): matches _GIT_GUARD_CMD_GEMINI in trackfw/generators/hooks.py.
+_GEMINI_GIT_GUARD_CMD = '$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'
 
 
 class TestAttentionHooksInjectors(unittest.TestCase):
@@ -494,9 +499,16 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertEqual(matchers, {'CustomTool', 'AskUserQuestion', 'Bash', 'Read', 'Write|Edit'})
 
         bash_entry = next(e for e in pre if e['matcher'] == 'Bash')
+        # ML-3C (ROADMAP-2026-08-14): Bash matcher also carries the unconditional
+        # git-branch-guard entry now, alongside credential-guard -- no new matcher is
+        # added (git-branch-guard reuses the existing "Bash" matcher), so `matchers`
+        # above is unchanged.
         self.assertEqual(
             [h['command'] for h in bash_entry['hooks']],
-            ['$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'],
+            [
+                '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh',
+                '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh',
+            ],
         )
 
         post = data['hooks']['PostToolUse']
@@ -538,7 +550,18 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         read_entry = next(e for e in data['hooks']['PreToolUse'] if e['matcher'] == 'Read')
         write_edit_entry = next(e for e in data['hooks']['PostToolUse'] if e['matcher'] == 'Write|Edit')
 
-        for entry in (bash_entry, read_entry, write_edit_entry):
+        # ML-3C (ROADMAP-2026-08-14): PreToolUse[Bash] now also carries the unconditional
+        # git-branch-guard entry alongside credential-guard (Bash is the only matcher this
+        # new guard touches -- Read/Write|Edit are untouched, since git commands never
+        # reach a subagent through those tools).
+        self.assertEqual(
+            [h['command'] for h in bash_entry['hooks']],
+            [
+                '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh',
+                '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh',
+            ],
+        )
+        for entry in (read_entry, write_edit_entry):
             self.assertEqual(
                 [h['command'] for h in entry['hooks']],
                 ['$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'],
@@ -642,11 +665,13 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data = json.load(f)
 
         pre = data['hooks']['PreToolUse']
-        # ADR-2026-08-06 emenda 7: apply_patch is now added alongside Bash.
+        # ADR-2026-08-06 emenda 7: apply_patch is now added alongside Bash. ML-3C
+        # (ROADMAP-2026-08-14): git-branch-guard also targets the Bash matcher (no new
+        # matcher entry -- same reuse pattern as Claude Code above).
         self.assertEqual(len(pre), 2)
         self.assertEqual(pre[0]['matcher'], 'Bash')
         commands = {h['command'] for h in pre[0]['hooks']}
-        self.assertEqual(commands, {'scripts/other.sh', _CODEX_GUARD_CMD})
+        self.assertEqual(commands, {'scripts/other.sh', _CODEX_GUARD_CMD, _CODEX_GIT_GUARD_CMD})
         self.assertEqual(pre[1]['matcher'], 'apply_patch')
 
     def test_inject_codex_hooks_migration_wiring_rewrites_in_place_not_duplicate(self):
@@ -692,8 +717,19 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             self.assertEqual(len(entries[0]['hooks']), 1, f'{event}[{matcher}]: expected exactly 1 hook')
             self.assertEqual(entries[0]['hooks'][0]['command'], command, f'{event}[{matcher}]: unexpected command')
 
+        def check_commands(event, matcher, commands):
+            entries = [e for e in data['hooks'][event] if e['matcher'] == matcher]
+            self.assertEqual(len(entries), 1, f'{event}[{matcher}]: expected exactly 1 matcher entry (no duplicate)')
+            self.assertEqual(
+                [h['command'] for h in entries[0]['hooks']], commands, f'{event}[{matcher}]: unexpected commands'
+            )
+
         check_one('PermissionRequest', '.*', _CODEX_SIGNAL_CMD)
-        check_one('PreToolUse', 'Bash', _CODEX_GUARD_CMD)
+        # ML-3C (ROADMAP-2026-08-14): PreToolUse[Bash] also carries the unconditional
+        # git-branch-guard entry now (Bash-only -- no PostToolUse/apply_patch
+        # counterpart, see the design-note block above _GIT_GUARD_CMD_CLAUDE in
+        # trackfw/generators/hooks.py).
+        check_commands('PreToolUse', 'Bash', [_CODEX_GUARD_CMD, _CODEX_GIT_GUARD_CMD])
         check_one('PreToolUse', 'apply_patch', _CODEX_GUARD_CMD)
         check_one('PostToolUse', '.*', _CODEX_CLEANUP_CMD)
         check_one('PostToolUse', 'Bash', _CODEX_GUARD_CMD)
@@ -751,10 +787,11 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data = json.load(f)
         before = data['hooks']['BeforeTool']
         # ADR-2026-08-06 emenda 7: read_file|read_many_files and write_file|replace entries
-        # are added alongside run_shell_command.
+        # are added alongside run_shell_command. ML-3C (ROADMAP-2026-08-14): git-branch-guard
+        # also targets the run_shell_command matcher (Bash-only equivalent, no new matcher).
         self.assertEqual(len(before), 3)
         commands = {h['command'] for h in before[0]['hooks']}
-        self.assertEqual(commands, {'scripts/other.sh', _GEMINI_GUARD_CMD})
+        self.assertEqual(commands, {'scripts/other.sh', _GEMINI_GUARD_CMD, _GEMINI_GIT_GUARD_CMD})
 
     def test_inject_gemini_hooks_migration_wiring_rewrites_in_place_not_duplicate(self):
         """ML-4A: Gemini counterpart of test_inject_codex_hooks_migration_wiring_rewrites_in_place_not_duplicate.
@@ -797,8 +834,19 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             self.assertEqual(len(entries[0]['hooks']), 1, f'{event}[{matcher}]: expected exactly 1 hook')
             self.assertEqual(entries[0]['hooks'][0]['command'], command, f'{event}[{matcher}]: unexpected command')
 
+        def check_commands(event, matcher, commands):
+            entries = [e for e in data['hooks'][event] if e['matcher'] == matcher]
+            self.assertEqual(len(entries), 1, f'{event}[{matcher}]: expected exactly 1 matcher entry (no duplicate)')
+            self.assertEqual(
+                [h['command'] for h in entries[0]['hooks']], commands, f'{event}[{matcher}]: unexpected commands'
+            )
+
         check_one('Notification', 'ToolPermission', _GEMINI_SIGNAL_CMD)
-        check_one('BeforeTool', 'run_shell_command', _GEMINI_GUARD_CMD)
+        # ML-3C (ROADMAP-2026-08-14): BeforeTool[run_shell_command] also carries the
+        # unconditional git-branch-guard entry now (run_shell_command-only -- no
+        # read_file|read_many_files/write_file|replace/AfterTool counterpart, see the
+        # design-note block above _GIT_GUARD_CMD_CLAUDE in trackfw/generators/hooks.py).
+        check_commands('BeforeTool', 'run_shell_command', [_GEMINI_GUARD_CMD, _GEMINI_GIT_GUARD_CMD])
         check_one('BeforeTool', 'read_file|read_many_files', _GEMINI_GUARD_CMD)
         check_one('BeforeTool', 'write_file|replace', _GEMINI_GUARD_CMD)
         check_one('AfterTool', '*', _GEMINI_CLEANUP_CMD)
@@ -817,6 +865,8 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         hooks = data.get('hooks', [])
         # ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): +4 credential-guard entries
         # (read-pre/read-post/write-pre/write-post) alongside the pre-existing shell pre/post.
+        # ML-3C (ROADMAP-2026-08-14): Kiro is NOT one of the roadmap's "7 runtimes" -- no
+        # git-branch-guard entry is added here, matching Go's InjectKiroHooks.
         self.assertEqual(len(hooks), 8)
         for entry in hooks:
             self.assertNotIn('event', entry, 'legacy "event" field must not be emitted')
@@ -847,6 +897,10 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertEqual(guard_write_post['trigger'], 'PostToolUse')
         self.assertEqual(guard_write_post['matcher'], 'write')
 
+        # ML-3C (ROADMAP-2026-08-14): Kiro is not one of the roadmap's "7 runtimes" --
+        # no git-branch-guard entry expected.
+        self.assertNotIn('trackfw-git-branch-guard-pre', by_name)
+
         # Idempotência
         inject_kiro_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
@@ -865,8 +919,9 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         self.assertIn('postToolUse', data.get('hooks', {}))
         # ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): +2 credential-guard entries
         # (view, create|edit) alongside the pre-existing bash one, in each of
-        # preToolUse/postToolUse.
-        self.assertEqual(len(data['hooks']['preToolUse']), 4)
+        # preToolUse/postToolUse. ML-3C (ROADMAP-2026-08-14): +1 unconditional
+        # git-branch-guard entry (preToolUse only, matcher "bash").
+        self.assertEqual(len(data['hooks']['preToolUse']), 5)
         self.assertEqual(len(data['hooks']['postToolUse']), 4)
 
         def find_by_bash(entries, bash):
@@ -900,6 +955,12 @@ class TestAttentionHooksInjectors(unittest.TestCase):
         guard_post_edit = find_by_matcher(data['hooks']['postToolUse'], 'scripts/trackfw-credential-guard.sh', 'create|edit')
         self.assertIsNotNone(guard_post_edit, 'postToolUse missing credential-guard create|edit entry')
 
+        # ML-3C (ROADMAP-2026-08-14): git-branch-guard, preToolUse only.
+        git_guard_pre = find_by_matcher(data['hooks']['preToolUse'], 'scripts/trackfw-git-branch-guard.sh', 'bash')
+        self.assertIsNotNone(git_guard_pre, 'preToolUse missing git-branch-guard bash entry')
+        git_guard_post = find_by_matcher(data['hooks']['postToolUse'], 'scripts/trackfw-git-branch-guard.sh', 'bash')
+        self.assertIsNone(git_guard_post, 'postToolUse must not carry a git-branch-guard entry')
+
         # Idempotência
         inject_copilot_hooks(self.tmp)
         with open(path, 'r', encoding='utf-8') as f:
@@ -932,10 +993,18 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data['hooks']['postToolUse'][0]['command'],
             'scripts/trackfw-attention-cleanup.sh',
         )
-        self.assertEqual(len(data['hooks']['beforeShellExecution']), 1)
+        # ML-3C (ROADMAP-2026-08-14): beforeShellExecution also carries the unconditional
+        # git-branch-guard entry now (beforeShellExecution-only -- no afterShellExecution
+        # counterpart, see the design-note block above _GIT_GUARD_CMD_CLAUDE in
+        # trackfw/generators/hooks.py).
+        self.assertEqual(len(data['hooks']['beforeShellExecution']), 2)
         self.assertEqual(
             data['hooks']['beforeShellExecution'][0]['command'],
             'scripts/trackfw-credential-guard.sh',
+        )
+        self.assertEqual(
+            data['hooks']['beforeShellExecution'][1]['command'],
+            'scripts/trackfw-git-branch-guard.sh',
         )
         self.assertEqual(len(data['hooks']['afterShellExecution']), 1)
         self.assertEqual(
@@ -960,7 +1029,7 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             data2 = json.load(f)
         self.assertEqual(len(data2['hooks']['preToolUse']), 3)
         self.assertEqual(len(data2['hooks']['postToolUse']), 3)
-        self.assertEqual(len(data2['hooks']['beforeShellExecution']), 1)
+        self.assertEqual(len(data2['hooks']['beforeShellExecution']), 2)
         self.assertEqual(len(data2['hooks']['afterShellExecution']), 1)
 
     def test_inject_cursor_hooks_preserves_existing_version(self):

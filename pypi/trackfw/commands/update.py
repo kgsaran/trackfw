@@ -86,7 +86,11 @@ AGENT_HOOKS_RELATIVE_PATHS = [
 # guard script is listed separately, after the glob, matching Go/Node.js.
 AGENT_HOOKS_DISPLAY_PATH = ", ".join(
     AGENT_HOOKS_RELATIVE_PATHS[:-3]
-    + ["scripts/trackfw-attention-*.sh", "scripts/trackfw-credential-guard.sh"]
+    + [
+        "scripts/trackfw-attention-*.sh",
+        "scripts/trackfw-credential-guard.sh",
+        "scripts/trackfw-git-branch-guard.sh",
+    ]
 )
 
 CODEX_PROJECT_AGENTS_DISPLAY_PATH = ".codex/agents, .agents/skills"

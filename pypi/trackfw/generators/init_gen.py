@@ -89,6 +89,7 @@ def scaffold(cwd: str, opts: dict) -> None:
     generate_validate_script(cwd)
     _generate_attention_scripts(cwd)
     _generate_credential_guard_script(cwd)
+    _generate_git_branch_guard_script(cwd)
     try:
         from trackfw.generators.hooks import inject_hooks_detected
         inject_hooks_detected(cwd)
@@ -1063,6 +1064,140 @@ _CREDENTIAL_GUARD_SH = _CG_HEADER + _CG_PROJECT_GUARD + _CG_DETECTION_CORE + _CG
 _GLOBAL_CREDENTIAL_GUARD_SH = _CG_HEADER + _CG_DETECTION_CORE + _CG_GLOBAL_TAIL
 
 
+# _GIT_BRANCH_GUARD_SH — bloqueia `git commit`/`git push`/`git checkout -b` brutos por
+# subagente (ML-3C, ROADMAP-2026-08-14, port de internal/generators/scaffold.go:gitBranchGuardScript).
+#
+# Ao contrário do credential-guard, o conteúdo é idêntico entre escopo de projeto e escopo
+# global — não depende de trackfw.yaml (nenhuma leitura de credential_guard.mode/roadmap_dir):
+# a detecção de `git commit`/`git push`/`git checkout -b` bruto e a mensagem de bloqueio são
+# as mesmas em qualquer diretório. Por isso, ao contrário de _CREDENTIAL_GUARD_SH/
+# _GLOBAL_CREDENTIAL_GUARD_SH (montados de blocos Header/ProjectGuard/DetectionCore/Tail
+# distintos por escopo), aqui um único literal serve os dois pontos de geração — mesma
+# decisão de design do Go (ver doc comment de GenerateGlobalGitBranchGuardScript em
+# internal/generators/scaffold.go: "as duas funções existem separadamente só para espelhar
+# o par Generate*/GenerateGlobal* já estabelecido pelo credential-guard").
+#
+# Raw string (r"""...""") é obrigatório aqui: o corpo contém `\`` (backtick escapado dentro
+# de string bash entre aspas duplas, usado nas três mensagens REASON) que uma string Python
+# não-raw interpretaria como sequência de escape inválida.
+_GIT_BRANCH_GUARD_SH = r"""#!/usr/bin/env bash
+# trackfw git branch guard — bloqueia git commit/push/checkout -b brutos por subagente
+set -euo pipefail
+set -f
+
+# --- 1. Obter o comando git bruto ------------------------------------------------------------
+if [ "$#" -gt 0 ]; then
+  CMD_RAW="$*"
+else
+  INPUT=$(cat 2>/dev/null || true)
+  TRIMMED=$(printf '%s' "$INPUT" | sed -e 's/^[[:space:]]*//')
+  case "$TRIMMED" in
+    \{*)
+      CMD_RAW=""
+      if command -v jq >/dev/null 2>&1; then
+        CMD_RAW=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // .hook_input.command // empty' 2>/dev/null || true)
+      fi
+      if [ -z "$CMD_RAW" ] || [ "$CMD_RAW" = "null" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"hook_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      fi
+      ;;
+    *)
+      CMD_RAW="$INPUT"
+      ;;
+  esac
+fi
+
+if [ -z "$CMD_RAW" ]; then
+  CMD_RAW="${TRACKFW_GIT_COMMAND:-}"
+fi
+
+[ -n "$CMD_RAW" ] || exit 0
+
+# --- 2. Casar contra "git (commit|push|checkout -b)", aceitando flags antes ------------------
+match_subcommand() {
+  set -- $1
+  found=0
+  args=""
+  for tok in "$@"; do
+    if [ "$found" -eq 0 ]; then
+      if [ "$tok" = "git" ]; then
+        found=1
+      fi
+      continue
+    fi
+    args="$args $tok"
+  done
+  [ "$found" -eq 1 ] || return 1
+
+  set -- $args
+  sub=""
+  while [ "$#" -gt 0 ]; do
+    tok="$1"
+    case "$tok" in
+      -C|-c|--work-tree|--git-dir|--namespace)
+        if [ "$#" -ge 2 ]; then shift 2; else shift; fi
+        continue
+        ;;
+      -*)
+        shift
+        continue
+        ;;
+      *)
+        sub="$tok"
+        shift
+        break
+        ;;
+    esac
+  done
+
+  case "$sub" in
+    commit)
+      echo "commit"
+      return 0
+      ;;
+    push)
+      echo "push"
+      return 0
+      ;;
+    checkout)
+      if [ "${1:-}" = "-b" ]; then
+        echo "checkout-b"
+        return 0
+      fi
+      ;;
+  esac
+  return 1
+}
+
+SUBCOMMAND=$(match_subcommand "$CMD_RAW") || exit 0
+
+case "$SUBCOMMAND" in
+  checkout-b)
+    REASON="trackfw: git checkout -b bruto bloqueado. Use \`trackfw branch new <type>/<slug>\`. Ver CLAUDE.md §1."
+    ;;
+  commit)
+    REASON="trackfw: git commit bruto bloqueado. Use \`trackfw commit -m '<mensagem>'\`. Ver CLAUDE.md §1."
+    ;;
+  push)
+    REASON="trackfw: git push bruto bloqueado. Use \`trackfw ship\`. Ver CLAUDE.md §1."
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+
+printf '{"decision":"block","reason":"%s"}\n' "$REASON"
+echo "$REASON" >&2
+exit 2
+"""
+
+
 def generate_vault_index(cwd: str) -> None:
     """Cria vault/notes/ e vault/notes/index.md se ainda não existirem."""
     vault_dir = os.path.join(cwd, 'vault', 'notes')
@@ -1114,6 +1249,45 @@ def _generate_credential_guard_script(cwd: str) -> None:
     script_path = os.path.join(scripts_dir, 'trackfw-credential-guard.sh')
     with open(script_path, 'w', encoding='utf-8') as f:
         f.write(_CREDENTIAL_GUARD_SH.lstrip('\n'))
+    os.chmod(script_path, 0o755)
+
+
+def _generate_git_branch_guard_script(cwd: str) -> None:
+    """Gera o script shell trackfw-git-branch-guard.sh em scripts/.
+
+    Mesmo padrão de _generate_credential_guard_script: este ML (3C) só cria o script --
+    não o injeta em nenhum hooks.json/settings.json de CLI sozinho (isso é feito por
+    generators/hooks.py:inject_hooks_detected, que chama esta função e depois os
+    injetores por runtime).
+    """
+    scripts_dir = os.path.join(cwd, 'scripts')
+    os.makedirs(scripts_dir, exist_ok=True)
+
+    script_path = os.path.join(scripts_dir, 'trackfw-git-branch-guard.sh')
+    with open(script_path, 'w', encoding='utf-8') as f:
+        f.write(_GIT_BRANCH_GUARD_SH.lstrip('\n'))
+    os.chmod(script_path, 0o755)
+
+
+def generate_global_git_branch_guard_script(home: str) -> None:
+    """Gera o script shell trackfw-git-branch-guard.sh em escopo global, em
+    <home>/.trackfw/scripts/trackfw-git-branch-guard.sh.
+
+    Destinado a ser referenciado por hooks globais de CLI (~/.claude/settings.json,
+    ~/.gemini/settings.json etc.), instalados via `trackfw update harness` -- não é
+    chamado por `trackfw init`/`trackfw update` (escopo de projeto), que continuam
+    usando _generate_git_branch_guard_script. Mesmo conteúdo do escopo de projeto (ver
+    doc comment de _GIT_BRANCH_GUARD_SH acima).
+    """
+    if not home:
+        raise ValueError('home directory vazio')
+
+    scripts_dir = os.path.join(home, '.trackfw', 'scripts')
+    os.makedirs(scripts_dir, exist_ok=True)
+
+    script_path = os.path.join(scripts_dir, 'trackfw-git-branch-guard.sh')
+    with open(script_path, 'w', encoding='utf-8') as f:
+        f.write(_GIT_BRANCH_GUARD_SH.lstrip('\n'))
     os.chmod(script_path, 0o755)
 
 

@@ -46,7 +46,10 @@ from trackfw.identity import IdentityError, load as load_identity
 from trackfw.integrations.catalog import global_group_path, load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
 from trackfw.generators.hooks import _merge_claude_hook_array, _merge_simple_command_array, _merge_copilot_hook_array
-from trackfw.generators.init_gen import generate_global_credential_guard_script
+from trackfw.generators.init_gen import (
+    generate_global_credential_guard_script,
+    generate_global_git_branch_guard_script,
+)
 
 STATE_UPDATED = "updated"
 STATE_SKIPPED = "skipped"
@@ -705,6 +708,13 @@ def _run(args: argparse.Namespace) -> None:
     # "No such file or directory" because the script never exists.
     if not args.dry_run:
         generate_global_credential_guard_script(home)
+        # ML-3C (ROADMAP-2026-08-14): mirrors Go's UpdateHarness
+        # (internal/generators/update.go, GenerateGlobalGitBranchGuardScript call next to
+        # GenerateGlobalCredentialGuardScript). Only writes the script itself -- no
+        # per-CLI *-git-branch-guard target/hook wiring exists yet in any of the 3 stacks
+        # (tracked separately; project-scope wiring is done in generators/hooks.py via
+        # inject_hooks_detected).
+        generate_global_git_branch_guard_script(home)
 
     target_ids = _resolve_targets(args.targets)
     manager = IntegrationManager(project_root=os.getcwd(), home_dir=home)

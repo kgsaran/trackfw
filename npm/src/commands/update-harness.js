@@ -6,7 +6,7 @@ const path = require('path')
 const identityStore = require('../identity')
 const { catalog, buildPlans, IntegrationManager, globalGroupPath } = require('../integrations')
 const { tildeify, validateTargets, buildDocument, humanReport, silenceConsole } = require('../lib/update-engine')
-const { mergeClaudeHookArray, mergeSimpleCommandArray, mergeCopilotHookArray, generateGlobalCredentialGuardScript } = require('../generators/hooks')
+const { mergeClaudeHookArray, mergeSimpleCommandArray, mergeCopilotHookArray, generateGlobalCredentialGuardScript, generateGlobalGitBranchGuardScript } = require('../generators/hooks')
 
 // `trackfw update harness` is the global counterpart to `trackfw update` —
 // see docs/cli-parity.md, "`trackfw update` vs `trackfw update harness`".
@@ -589,8 +589,10 @@ function run(options) {
   if (!dryRun) {
     if (options.json) {
       silenceConsole(() => generateGlobalCredentialGuardScript(homeRoot))
+      silenceConsole(() => generateGlobalGitBranchGuardScript(homeRoot))
     } else {
       generateGlobalCredentialGuardScript(homeRoot)
+      generateGlobalGitBranchGuardScript(homeRoot)
     }
   }
 

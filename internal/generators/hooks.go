@@ -68,6 +68,25 @@ func InjectHooksDetected(cwd string) error {
 				return err == nil
 			},
 		},
+		// amazonq (ROADMAP-2026-08-14 ML-3A): dispatches InjectAmazonQHooks
+		// (git branch guard, .amazonq/settings.json) whenever the existing
+		// textual rules file is present. This entry was missing before this
+		// ML — InjectAmazonQHooks did not exist, so there was nothing to
+		// dispatch to. Note: the roadmap's ML-3A instructions literally named
+		// InjectRulesForTool/InjectRulesDetected (agentfiles.go ~138-181) as
+		// the dispatch point to update, but those two functions only ever
+		// handle the textual rules block and already support "amazonq" via
+		// the agentFiles map — no change was needed there. This function
+		// (InjectHooksDetected) is the actual hooks dispatcher missing an
+		// amazonq entry, so it is updated here instead; see the ML-3A report
+		// for this divergence.
+		"amazonq": {
+			fn: InjectAmazonQHooks,
+			detect: func(cwd string) bool {
+				_, err := os.Stat(filepath.Join(cwd, ".amazonq"))
+				return err == nil
+			},
+		},
 	}
 
 	var errs []string

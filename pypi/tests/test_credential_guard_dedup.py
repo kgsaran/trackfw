@@ -139,7 +139,13 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         inject_cursor_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.cursor', 'hooks.json'))
-        self.assertEqual(len(data['hooks'].get('beforeShellExecution', [])), 0)
+        # ML-3C (ROADMAP-2026-08-14): beforeShellExecution still carries the unconditional
+        # git-branch-guard entry even when the global credential-guard dedup skips the
+        # project-scope credential-guard entry -- no `_global_git_branch_guard_installed_*`
+        # gating exists for this guard (see design-note above _GIT_GUARD_CMD_CLAUDE in
+        # trackfw/generators/hooks.py).
+        self.assertEqual(len(data['hooks'].get('beforeShellExecution', [])), 1)
+        self.assertEqual(data['hooks']['beforeShellExecution'][0]['command'], 'scripts/trackfw-git-branch-guard.sh')
         self.assertEqual(len(data['hooks'].get('afterShellExecution', [])), 0)
         self.assertEqual(len(data['hooks']['preToolUse']), 1)
         self.assertEqual(data['hooks']['preToolUse'][0]['command'], 'scripts/trackfw-attention-signal.sh')
@@ -158,8 +164,13 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         inject_copilot_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.github', 'hooks', 'trackfw-attention.json'))
-        self.assertEqual(len(data['hooks']['preToolUse']), 1)
+        # ML-3C (ROADMAP-2026-08-14): preToolUse still carries the unconditional
+        # git-branch-guard entry even when the global credential-guard dedup skips the
+        # project-scope credential-guard entries -- see the cursor test above for the
+        # same design note.
+        self.assertEqual(len(data['hooks']['preToolUse']), 2)
         self.assertEqual(data['hooks']['preToolUse'][0]['bash'], 'scripts/trackfw-attention-signal.sh')
+        self.assertEqual(data['hooks']['preToolUse'][1]['bash'], 'scripts/trackfw-git-branch-guard.sh')
         self.assertEqual(len(data['hooks']['postToolUse']), 1)
         self.assertEqual(data['hooks']['postToolUse'][0]['bash'], 'scripts/trackfw-attention-cleanup.sh')
 
@@ -172,10 +183,13 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         inject_kiro_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.kiro', 'hooks', 'trackfw-attention.json'))
+        # ML-3C (ROADMAP-2026-08-14): Kiro is not one of the roadmap's "7 runtimes" -- no
+        # git-branch-guard wiring for Kiro, matching Go's InjectKiroHooks.
         self.assertEqual(len(data['hooks']), 2)
         names = {h.get('name') for h in data['hooks']}
         self.assertNotIn('trackfw-credential-guard-pre', names)
         self.assertNotIn('trackfw-credential-guard-post', names)
+        self.assertNotIn('trackfw-git-branch-guard-pre', names)
 
 
 class TestDedupFailOpen(DedupTestCase):
