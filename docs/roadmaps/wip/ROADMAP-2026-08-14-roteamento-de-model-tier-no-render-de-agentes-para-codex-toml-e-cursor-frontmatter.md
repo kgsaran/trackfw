@@ -130,7 +130,7 @@ documentação Codex CLI pesquisada em 2026-08-14 — `majesticlabs.dev/blog/202
 > fechar esta wave como Done (ver ADR, seção Consequences).
 
 ### ML-2A — Go: `mapModelCodex()` + branch `custom-agent-toml`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/integrations/render.go`
 - `internal/integrations/render_test.go`
@@ -165,7 +165,7 @@ documentação Codex CLI pesquisada em 2026-08-14 — `majesticlabs.dev/blog/202
 **Comandos de validação:** `go build ./... && go test ./internal/integrations/...`
 
 ### ML-2B — Node.js: `_mapModelCodex()` + branch `custom-agent-toml`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `npm/src/integrations/render.js`
 **Ações:**
@@ -187,7 +187,7 @@ documentação Codex CLI pesquisada em 2026-08-14 — `majesticlabs.dev/blog/202
 **Comandos de validação:** `npm test --workspace=trackfw`
 
 ### ML-2C — Python: `_map_model_codex()` + branch `custom-agent-toml`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `pypi/trackfw/integrations/renderers.py`
 **Ações:**
