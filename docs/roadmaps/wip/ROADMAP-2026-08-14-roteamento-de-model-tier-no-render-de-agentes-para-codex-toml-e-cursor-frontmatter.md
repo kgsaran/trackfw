@@ -219,7 +219,7 @@ documentação Codex CLI pesquisada em 2026-08-14 — `majesticlabs.dev/blog/202
 > exige confirmação manual do usuário antes do REQ ir para `Done`.
 
 ### ML-3A — Go: reescrita de `model:` no branch `default`/`agent-markdown` quando `targetID == "cursor"`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/integrations/render.go`
 - `internal/integrations/render_test.go`
@@ -259,7 +259,7 @@ documentação Codex CLI pesquisada em 2026-08-14 — `majesticlabs.dev/blog/202
 **Comandos de validação:** `go build ./... && go test ./internal/integrations/...`
 
 ### ML-3B — Node.js: mesma lógica em `render.js`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `npm/src/integrations/render.js`
 **Ações:** Espelhar ML-3A: `mapModelCursor()`, reescrita/remoção da linha `model:`
@@ -271,7 +271,7 @@ aplicada antes da lógica de identidade existente. Atualizar/criar teste equival
 **Comandos de validação:** `npm test --workspace=trackfw`
 
 ### ML-3C — Python: mesma lógica em `renderers.py`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `pypi/trackfw/integrations/renderers.py`
 **Ações:** Espelhar ML-3A: `_map_model_cursor()`, aplicado no branch final (Rota B,
