@@ -196,6 +196,11 @@ def run_commit(
             f'trackfw commit: branch "{branch}" does not follow feat/fix/refactor — '
             "committing without a roadmap check.\n"
         )
+        # Flush before exec_git_commit below, which inherits stdio for a real `git commit`
+        # subprocess: without this, Python's buffered sys.stdout can interleave after git's own
+        # unbuffered output when stdout is redirected to a file/pipe (not a TTY), reordering the
+        # warning after git's diagnostic — a divergence from Go/Node, which write unbuffered.
+        out.flush()
 
     # (d) passou em todas as checagens: comita.
     return exec_git_commit(message)

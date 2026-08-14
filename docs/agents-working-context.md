@@ -4,7 +4,57 @@
 
 ---
 
-## Sessão 2026-08-14 — Apolo (port Python do fix pós-auditoria: caminhos inventados de `inject_windsurf_hooks`/`inject_amazonq_hooks`) — implementado, aguardando auditoria e commit por trackfw_architect
+## Sessão 2026-08-14 — Apolo (ML-4A: gate de paridade `check-commit-parity.sh`) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`, ML-4A.
+
+Criado `scripts/check-commit-parity.sh` (novo, mesmo padrão de
+`scripts/check-branch-new-parity.sh`) cobrindo `trackfw commit` nos 3 cenários de bloqueio
+(main/master, feat/<slug> sem roadmap em wip/done, branch não-governada com warning +
+passthrough real do `git commit`) contra os 3 CLIs (Go `bin/trackfw`, Node
+`npm/bin/trackfw`, Python `python3 -m trackfw`). Registrado em `Makefile` no alvo `parity`
+logo após `check-branch-new-parity.sh`.
+
+**Divergência real encontrada e corrigida:** no cenário (c) (branch não-governada, nada
+staged), `pypi/trackfw/commands/commit.py` escrevia o warning via `sys.stdout.write` sem dar
+`flush()` antes de chamar `exec_git_commit` (que herda stdio real via `subprocess.run`). Como
+o `sys.stdout` do Python é bufferizado quando a saída não é um TTY (caso do script de
+paridade redirecionando para arquivo), a saída do `git commit` (unbuffered, escreve direto no
+fd) chegava ANTES do warning do trackfw no arquivo capturado — ordem invertida em relação a
+Go/Node (que escrevem sem buffer). Fix: `out.flush()` logo após o `out.write()` do warning em
+`run_commit` (case c), antes do commit real. Divergência de buffering, não de conteúdo da
+mensagem — Go permanece a referência comportamental, comportamento do Python alinhado a ele.
+
+**Correção de robustez no próprio gate (achado por auditoria/advisor):** os guards
+`log_count` dos cenários (a)/(b) eram inertes — a fixture original (`make_repo`) não deixava
+nada staged, então mesmo um bloqueio regredido (ex: `return`/`exit` esquecido, cai no
+`execGitCommit`) morreria em "nothing to commit" do próprio git e o `log_count` continuaria
+`1`, mascarando a regressão. Adicionado `make_repo_with_staged_change` (stage de
+`staged.txt` sem commitar) para (a)/(b), preservando a fixture original limpa só em (c)
+(que depende da árvore limpa para o passthrough real de "nothing to commit"). Não-vacuidade
+provada manualmente: sabotei `internal/commands/commit.go` (troquei o `return
+fmt.Errorf(...)` do bloqueio main/master por `_ = fmt.Errorf(...)`, deixando cair no commit
+real), rebuild, rodei o gate — `main-master-blocked` foi para `FAIL` nos 3 diffs + exit-code
+(go=0 vs node=1/py=1), confirmando que o guard agora é vivo; revertido e rebuild em seguida
+(`diff` contra backup confirmou restauração limpa).
+
+Nota de vault criada: `vault/notes/python-stdout-buffering-reorders-before-inherited-stdio-subprocess-2026-08-14.md`
+(linkada no index) — causa raiz do buffering do Python, por que só aparece end-to-end (não em
+testes unitários com fakes injetados) e onde procurar de novo em `pypi/trackfw/**`.
+Referenciada também no cabeçalho do próprio `check-commit-parity.sh`, seguindo o padrão de
+`check-branch-new-parity.sh` → `branch-new-exit-code-leak-vs-propagation-2026-08-04.md`.
+
+`make quality` completo passou (`EXIT=0`) após todas as correções acima, incluindo os 3
+cenários do novo gate (`OK` em todos, guards não-vacuos) e os 112 cenários de falsificação
+pré-existentes. Script registrado em modo 755 (`Makefile` invoca direto, sem `bash`). Gate é
+o próprio teste de regressão do fix de flush no Python — não há teste unitário possível para
+esse tipo de divergência de buffering (só se manifesta end-to-end, sem TTY, com subprocess
+real). Não fiz commit/push — aguardando trackfw_architect auditar e commitar (não sou
+autoridade Git). Observação para o arquiteto decidir (fora do escopo do ML-4A): diferente dos
+outros gates de `parity`, `check-commit-parity.sh` ainda não tem um cenário correspondente em
+`check-gates-falsify.sh` provando que ele mesmo detectaria uma regressão futura — pode entrar
+no ML-5A ou em follow-up.
 
 Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por mim).
 Roadmap: mesmo das sessões Go/Node anteriores (ver entradas abaixo).
