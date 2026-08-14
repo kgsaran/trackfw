@@ -177,7 +177,7 @@ já existentes para `branch new`/`ship` em `pypi/trackfw/commands/branch.py`/`sh
 > em disco em projetos reais).
 
 ### ML-3A — Go (`internal/generators/agentfiles.go`)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`
 **Ações:**
 1. Em `InjectClaudeHooks`: adicionar entrada `PreToolUse`/matcher `Bash` apontando para
@@ -218,7 +218,7 @@ já existentes para `branch new`/`ship` em `pypi/trackfw/commands/branch.py`/`sh
 **Comandos de validação:** `go build ./... && go test ./internal/generators/... && go vet ./...`
 
 ### ML-3B — Node.js (`npm/src/generators/hooks.js`)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** `npm/src/generators/hooks.js` (módulo confirmado como o
 equivalente Node de `internal/generators/agentfiles.go`+`scaffold.go` — já contém a
 lógica de credential-guard hooks), teste equivalente
@@ -239,7 +239,7 @@ lógica de credential-guard hooks), teste equivalente
 workspace conforme `package.json`)
 
 ### ML-3C — Python (`pypi/trackfw/generators/hooks.py`)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** `pypi/trackfw/generators/hooks.py` (módulo confirmado como o
 equivalente Python — já contém a lógica de credential-guard hooks), teste equivalente
 **Ações:**
