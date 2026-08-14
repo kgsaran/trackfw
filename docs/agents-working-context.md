@@ -4,6 +4,139 @@
 
 ---
 
+## Sessão 2026-08-14 — Zeus (encerramento: model tier para Codex e Cursor) — CONCLUÍDO
+
+Branch `feat/model-tier-no-render-de-agentes`. REQ/ADR/Roadmap movidos para `Done`/
+`Accepted`/`done`: `docs/req/REQ-2026-08-14-...md`,
+`docs/adr/ADR-2026-08-14-...md`, `docs/roadmaps/done/ROADMAP-2026-08-14-...md`.
+
+5 waves, 12 MLs, todas auditadas e commitadas individualmente pelo orquestrador
+(Apolo nunca commitou — respeitou a fronteira de autoridade Git em todas as
+execuções). Resultado: `Render()`/`render()` nos 3 CLIs (Go, Node.js, Python) agora
+recebem `target`/`targetID` e mapeiam o tier canônico (`model: opus`/`sonnet`) para:
+
+- **Codex** (`custom-agent-toml`): `opus→gpt-5.4`, `sonnet→gpt-5.4-mini`.
+- **Cursor** (`agent-markdown`, apenas quando `target == "cursor"`):
+  `opus→claude-opus-5[effort=high]`, `sonnet→composer-2.5[fast=true]`.
+- `gemini`/`kiro` (mesma representação `agent-markdown`) confirmados byte-a-byte
+  inalterados por teste de regressão dedicado nos 3 CLIs.
+
+`make quality` verde (exit 0, 112 cenários de falsificação + contratos de paridade).
+`go test ./...` completo verde. Wave 5 (verificação manual) fechada por decisão
+explícita do usuário via `AskUserQuestion`: sem Cursor/Codex CLI instalados neste
+ambiente, o usuário optou por aceitar confirmação documental (output real inspecionado
+contra a documentação oficial já citada no ADR) em vez de testar localmente ou deixar
+a REQ aberta — risco residual registrado na REQ.
+
+**Pendente para a próxima sessão**: nenhum código pendente. Branch não foi enviada
+(`git push`) nem PR aberta — aguardando solicitação explícita do usuário.
+
+---
+
+## Sessão 2026-08-14 — Apolo (ML-1A: Go `Render()` recebe `targetID string`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-1A — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** `Render()` em `internal/integrations/render.go` ganhou o parâmetro final
+`targetID string` (comentário-doc atualizado explicando que existe para as Waves 2/3
+diferenciarem `cursor` de `gemini`/`kiro` dentro de `agent-markdown`, sem implementar a
+diferenciação ainda). `internal/integrations/plan.go:55` (`BuildPlans`) passa `target.ID` no novo
+argumento — `target` já estava em escopo no loop. Nenhum branch de `Render()` lê `targetID` ainda,
+então a mudança é plumbing puro, sem efeito em output.
+
+**`render_test.go`:** as 15 chamadas diretas a `Render(...)` foram atualizadas com o `targetID`
+real do catálogo (`internal/integrations/assets/catalog.json`) correspondente à `Representation`
+de cada subteste — nunca uma string arbitrária. Mapeamento usado (representação → target):
+`subagent→claude`, `custom-agent-toml→codex`, `agent-directory→antigravity`,
+`agent-json→antigravity` (surface `legacy-cli`, única com essa representation no catálogo),
+`cli-agent-json→amazonq`, `opencode-agent→opencode`. Em subtestes já parametrizados por
+representação (loops/tabelas), adicionei um campo `targetID`/mapa local em vez de hardcode
+solto, para manter o padrão de tabela existente no arquivo.
+
+**Call sites de `Render(` verificados** (grep em todo o repo Go): apenas
+`internal/integrations/plan.go:55` fora dos testes — já atualizado. Nenhum call site não previsto
+no roadmap.
+
+**Gates:** `go build ./...` limpo. `go test ./internal/integrations/...` → ok. `go vet ./...` e
+`go test ./...` (suite completa) também verdes. `trackfw validate` → "✓ Nenhuma violação
+encontrada."
+
+**`git status` final:** `internal/integrations/render.go`, `internal/integrations/plan.go`,
+`internal/integrations/render_test.go` e o campo `**Status:**` do ML-1A no roadmap modificados,
+não staged, não commitados (outros agentes — Node.js/Python — commitam em paralelo na mesma
+branch; sincronização/push é do trackfw_architect).
+
+---
+
+## Sessão 2026-08-14 — Apolo (ML-1B: Node.js `render()` consome `target`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-1B — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** em `npm/src/integrations/render.js:238`, a assinatura de `render()` passou a
+desestruturar `target` (`function render({ kind, content, capability, item, identity: cfg, target })`).
+`npm/src/integrations/index.js:58` já enviava `target: targetEntry.id` — nenhuma mudança ali,
+confirmado por leitura direta. Nenhum branch de `render()` lê `target` ainda (Wave 2/3, futuras),
+então a mudança é plumbing puro sem efeito em output.
+
+**Call sites de `render(` verificados** (`npm/src/`, `npm/tests/`, sem `npm/bin/` adicional):
+apenas `npm/tests/render_opencode.test.js:26` e `npm/tests/identity-render.test.js:139` chamam sem
+`target` — aceitável conforme o ML (`target` fica `undefined`, nenhum branch o consulta ainda).
+
+**Gates:** `cd npm && npm test` → 477 passed, 0 failed. `trackfw validate` →
+"✓ Nenhuma violação encontrada." `make quality`/lint Node não rodados (Makefile `lint` só cobre
+`go vet`; Go e Python estão em ML paralelas na mesma branch — `make quality` fica para o ML-4B do
+roadmap).
+
+**`git status` final:** `npm/src/integrations/render.js` e o campo `**Status:**` do ML-1B no
+roadmap modificados, não staged, não commitados.
+
+---
+
+## Sessão 2026-08-14 — Apolo (ML-2A: Go `mapModelCodex()` + branch `custom-agent-toml`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-2A — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** adicionada `mapModelCodex(model string) (string, bool)` em
+`internal/integrations/render.go`, logo após `mapModel()`, mesmo formato de retorno
+(`opus→gpt-5.4`, `sonnet→gpt-5.4-mini`, qualquer outro valor/vazio → `("", false)`, omite a
+linha). O branch `case "custom-agent-toml":` de `Render()` passou a construir o TOML via slice
+`lines` (em vez do `fmt.Sprintf` monolítico anterior), inserindo `model = "..."` entre
+`description` e `developer_instructions` só quando `mapModelCodex(model)` retorna `ok == true`.
+Nenhum outro branch/representação tocado.
+
+**Golden congelado atualizado:** `internal/integrations/testdata/backend.codex-toml.golden.toml`
+ganhou a linha `model = "gpt-5.4-mini"` (o asset `backend` declara `model: sonnet`) — consequência
+esperada da mudança de output em `TestRenderWithoutIdentityMatchesFrozenGoldens`, não um ajuste
+solto; sem isso o teste quebraria.
+
+**Teste novo:** `TestRenderCustomAgentTomlEmitsCodexModel` em `render_test.go`, cobrindo
+`architect` (`model: opus` → `model = "gpt-5.4"`) e `backend` (`model: sonnet` →
+`model = "gpt-5.4-mini"`) com `targetID: "codex"`, verificando também a posição da linha
+(`description` < `model` < `developer_instructions`) via índice de string.
+
+**Verificação manual do output real** (teste descartável, removido após a checagem): TOML gerado
+para `architect` contém `model = "gpt-5.4"` e para `backend` contém `model = "gpt-5.4-mini"`,
+ambos entre `description` e `developer_instructions` — ver output completo na seção de report
+desta sessão.
+
+**Gates:** `go build ./...` limpo. `go test ./internal/integrations/...` → ok (inclui os 2 novos
+subtestes). `go vet ./...` limpo.
+
+**`git status` final:** `internal/integrations/render.go`,
+`internal/integrations/render_test.go`, `internal/integrations/testdata/backend.codex-toml.golden.toml`
+e o campo `**Status:**` do ML-2A no roadmap modificados, não staged, não commitados. Outros
+arquivos já modificados na branch por agentes em paralelo (`npm/src/integrations/render.js`,
+`pypi/trackfw/integrations/renderers.py`, `pypi/tests/test_integrations_identity.py` — ML-2B/2C)
+não foram tocados por mim.
+
+---
+
 ## Sessão 2026-08-13 — Prometeu (ML-1A: fronteira de escrita dos agentes auditores) — CONCLUÍDO, aguardando auditoria e commit por Zeus
 
 Branch `fix/fronteira-de-escrita-dos-agentes-auditores`. Roadmap:
@@ -14443,3 +14576,302 @@ geração é fiel**, o que ele provou com o diff contra o instalado.
 **Ele não re-rodou `make quality`**, e justificou: o ML-2A tocou **zero** código de produto/teste, e a
 auditoria do ML-1A já registrou `make quality` exit 0 com essas mudanças de asset no lugar.
 Justificativa aceita — re-rodar seria ritual, não verificação.
+
+---
+
+## Sessão 2026-08-14 — Apolo (ML-2C: Python `_map_model_codex()` + branch `custom-agent-toml`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-2C — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** em `pypi/trackfw/integrations/renderers.py`, adicionada `_map_model_codex(model: str) -> str | None`
+logo após `_map_model()`, com `_MODEL_MAP_CODEX = {"opus": "gpt-5.4", "sonnet": "gpt-5.4-mini"}`
+(mesmo formato de retorno da função irmã do Antigravity — `None` = omitir a linha). No bloco
+`if representation == "custom-agent-toml":`, a lista de linhas do TOML agora insere
+`model = "..."` entre `description` e `developer_instructions`, condicionada a
+`_map_model_codex(metadata.get("model", ""))` não ser `None` — espelha exatamente o
+`if mapped, ok := mapModelCodex(model); ok { ... }` do Go (ML-2A) e a lógica equivalente da
+ML-2B em Node.js. `metadata` já continha o `model:` cru do frontmatter (parseado por `_parts()`
+antes do branch de representação), nenhuma mudança de parsing foi necessária.
+
+**Testes:** adicionada a classe `TestTomlModelMapping` em `pypi/tests/test_integrations_identity.py`,
+reaproveitando o padrão de fixtures já existente no arquivo (`ITEM`/`CLAUDE_SOURCE` com
+`model: sonnet`, apenas variando model/id inline por caso): `architect`+`model: opus` →
+`model = "gpt-5.4"`; `backend`+`model: sonnet` → `model = "gpt-5.4-mini"`; ausência de `model:`
+no frontmatter → linha `model =` omitida por completo; e um teste de posicionamento confirmando
+que `model =` aparece estritamente entre `description =` e `developer_instructions =`.
+
+**Output verificado byte-a-byte contra o formato do Go** (`fmt.Sprintf("model = %s", strconv.Quote(mapped))`
+inserido entre `description` e `developer_instructions`, join por `\n` + `\n` final):
+```
+name = "trackfw_architect"
+description = "Principal software architect for system design."
+model = "gpt-5.4"
+developer_instructions = "# Architect\n\nBody text."
+```
+```
+name = "trackfw_backend"
+description = "Backend specialist."
+model = "gpt-5.4-mini"
+developer_instructions = "# Backend\n\nBody text."
+```
+Estrutura de linhas, ordem de chaves e uso de `json.dumps(..., ensure_ascii=False)` (equivalente
+Python de `strconv.Quote` para strings ASCII simples) idênticos ao Go.
+
+**Restrições respeitadas:** nenhum branch além de `custom-agent-toml` foi tocado; a Rota B
+(`default`, usada por `agent-markdown`/`subagent` — Wave 3/Cursor) permanece intocada.
+
+**Gates:** `cd pypi && python3 -m pytest -q` → 1039 passed, 8 subtests passed, 0 failed.
+
+**Arquivos modificados nesta sessão:** `pypi/trackfw/integrations/renderers.py`,
+`pypi/tests/test_integrations_identity.py`, o campo `**Status:**` do ML-2C no roadmap, e esta
+entrada em `docs/agents-working-context.md`. Nenhum arquivo de `internal/` ou `npm/` tocado. Não
+fiz `git add`/`commit`/`push` — fora da minha fronteira de autoridade Git.
+
+Entregando a trackfw_architect para auditoria e commit.
+
+## Sessão 2026-08-14 — Apolo (ML-2B: Node.js `resolveModelCodex()` + branch `custom-agent-toml`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-2B — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** em `npm/src/integrations/render.js`, adicionada `resolveModelCodex(model)` logo após
+`resolveModel()` (função irmã do Antigravity), com `CODEX_MODEL_MAP = { opus: 'gpt-5.4', sonnet:
+'gpt-5.4-mini' }` — mesmo formato de retorno (`''` = omitir a linha `model =`). No branch
+`capability.representation === 'custom-agent-toml'`, o TOML agora é montado como array de linhas
+(`name`, `description`, opcionalmente `model`, `developer_instructions`) e só insere `model = "..."`
+quando `resolveModelCodex(parts.model)` retorna valor não vazio — espelha exatamente o
+`if mapped, ok := mapModelCodex(model); ok { ... }` do Go (ML-2A, que terminou concorrentemente
+enquanto eu lia `render.go` — encontrei `mapModelCodex` já presente numa segunda leitura). Segui a
+convenção de nomenclatura já usada no arquivo (`resolveModel`/`resolveModelCodex`, não
+`mapModelCodex`, pois o Node já tinha esse padrão de nome para a função irmã do Antigravity).
+Nenhum outro branch (`default`/`agent-markdown`, usado por Cursor/gemini/kiro — Wave 3) foi tocado.
+
+**Testes:** adicionado o teste `'custom-agent-toml (codex) emite model mapeado entre description e
+developer_instructions'` em `npm/tests/identity-render.test.js` (arquivo já usado para testes de
+render por representação/target via `buildPlans`), cobrindo `architect` (`model: opus` →
+`model = "gpt-5.4"`) e `backend` (`model: sonnet` → `model = "gpt-5.4-mini"`), com asserção de
+posição relativa (`description` < `model` < `developer_instructions`) — mesmo padrão de
+`TestRenderCustomAgentTomlEmitsCodexModel` em `render_test.go`.
+
+**Fixture golden pré-existente quebrou e foi atualizada corretamente:** `npm/tests/agents-skills.test.js`
+tinha um teste `'Codex TOML renderer is byte-equivalent to the Go golden contract'` com uma string
+`expected` congelada do TOML do `backend` **sem** a linha `model =` (congelada em 2026-07-26, antes
+desta ML). Comparei contra `internal/integrations/testdata/backend.codex-toml.golden.toml` (fixture
+Go real, já atualizada pela ML-2A) e confirmei que `model = "gpt-5.4-mini"` pertence exatamente entre
+`description` e `developer_instructions` — atualizei a string `expected` para incluir essa linha,
+documentando o re-congelamento em comentário (mesmo padrão do comentário de 2026-07-26 já presente).
+
+**Output verificado byte-a-byte** via `node -e` chamando `buildPlans('agents', { targets: ['codex'],
+items: [...] })` para `architect` e `backend` — idêntico ao golden Go (`name`, `description`,
+`model = "gpt-5.4"`/`"gpt-5.4-mini"`, `developer_instructions`, nessa ordem, aspas duplas via
+`JSON.stringify` equivalente a `strconv.Quote` para ASCII simples).
+
+**Gates:** `cd npm && npm test` → 478 passed, 0 failed (inclui os 2 testes novos e a fixture golden
+corrigida).
+
+**Arquivos modificados nesta sessão:** `npm/src/integrations/render.js`,
+`npm/tests/identity-render.test.js`, `npm/tests/agents-skills.test.js` (fixture golden re-congelada),
+o campo `**Status:**` do ML-2B no roadmap, e esta entrada em `docs/agents-working-context.md`. Nenhum
+arquivo de `internal/` ou `pypi/` tocado. Não fiz `git add`/`commit`/`push` — fora da minha fronteira
+de autoridade Git.
+
+Entregando a trackfw_architect para auditoria e commit.
+
+## Sessão 2026-08-14 — Apolo (ML-3C: Python `_map_model_cursor()` + branch `agent-markdown`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-3C — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança em `pypi/trackfw/integrations/renderers.py`:** espelhado o que a ML-3A fez em
+`internal/integrations/render.go`:
+- `_MODEL_MAP_CURSOR` + `_map_model_cursor(model)` logo após `_map_model_codex()` (mesmo formato
+  de retorno: `None` = omitir/remover a linha `model:`).
+- Duas funções auxiliares novas, logo após `_rewrite_frontmatter_fields()`:
+  `_rewrite_frontmatter_model_line(source, value)` e `_remove_frontmatter_model_line(source)` —
+  mesma técnica de detecção de fronteira de frontmatter (`trimmed.startswith("---\n")`,
+  `trimmed.find("\n---", 4)`), escopada só à chave `model` (preserva `rest` — corpo + `---` de
+  fechamento — byte a byte).
+- No branch final de `render()` (Rota B, antes de `if agent is None:`), inserida a transformação
+  condicionada a `target == "cursor"`: mapeia `metadata.get("model", "")` via `_map_model_cursor`
+  e reescreve/remove a linha `model:` de `source` ANTES da injeção de identidade
+  (`_insert_body_prefix`/`_rewrite_frontmatter_fields`/`_rewrite_signature_line`), para que as duas
+  transformações componham sem se pisar — mesma ordem do Go.
+- Nenhuma condição além de `target == "cursor"` — `gemini`/`kiro` (mesmo branch `default`, mesma
+  representação `agent-markdown`) não entram no `if` e ficam byte-a-byte inalterados (confirmado por
+  teste e por chamada manual — ver abaixo).
+
+**Testes em `pypi/tests/test_integrations_identity.py`:** nova classe `TestCursorModelMapping`
+(mapeamento `opus`→`claude-opus-5[effort=high]`, `sonnet`→`composer-2.5[fast=true]`, valor não
+mapeado → linha `model:` removida, `gemini`/`kiro` byte-idênticos ao source original, composição com
+identidade customizada). Também corrigi `TestTargetParameterBaseline.test_different_target_values_do_not_change_output_yet`
+(renomeado para `test_different_target_values_no_longer_match_after_wave_3`) — esse teste da ML-1C
+documentava que `cursor`/`gemini` produziam output idêntico; isso deixou de ser verdade a partir desta
+ML por design (é exatamente o objetivo do ML-3C), então o teste agora afirma o oposto e verifica os
+dois valores mapeados explicitamente.
+
+**Output verificado manualmente** via `python3 -c` chamando `render(...)` para `architect`/`model: opus`:
+cursor → `model: claude-opus-5[effort=high]` (linha reescrita, resto do frontmatter/corpo intocado);
+gemini e kiro → string idêntica ao source de entrada (`.strip() + "\n"`), sem `claude-opus-5` em lugar
+nenhum.
+
+**Gates:** `cd pypi && python3 -m pytest -q` → 1045 passed, 8 subtests passed, 0 failed.
+
+**Arquivos modificados nesta sessão:** `pypi/trackfw/integrations/renderers.py`,
+`pypi/tests/test_integrations_identity.py`, o campo `**Status:**` do ML-3C no roadmap, e esta entrada
+em `docs/agents-working-context.md`. Nenhum arquivo de `internal/` ou `npm/` tocado. Não fiz
+`git add`/`commit`/`push` — fora da minha fronteira de autoridade Git.
+
+Entregando a trackfw_architect para auditoria e commit.
+
+## Sessão 2026-08-14 — Apolo (ML-3A: Go `mapModelCursor()` + reescrita de `model:` no branch `default`/`agent-markdown` quando `targetID == "cursor"`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-3A — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** em `internal/integrations/render.go`, adicionadas:
+- `mapModelCursor(model string) (string, bool)` logo após `mapModelCodex()` (Wave 2), com
+  `opus → claude-opus-5[effort=high]`, `sonnet → composer-2.5[fast=true]`, qualquer outro valor
+  (ou vazio) → `("", false)`.
+- `rewriteFrontmatterModelLine(source []byte, value string) []byte` — mesma técnica de detecção de
+  fronteira do frontmatter que `rewriteFrontmatterFields`, escopada só à chave `model:`. Reescreve a
+  linha se existir; se não existir, insere `model: <value>` como última linha do bloco de
+  frontmatter (não invade o corpo).
+- `removeFrontmatterModelLine(source []byte) []byte` — remove a linha `model:` do frontmatter, se
+  existir; se não existir nenhuma, retorna `source` trimado sem reformatar.
+
+No `case default:` de `Render()` (Rota B, representation `agent-markdown`/`subagent`, compartilhada
+por `claude`/`gemini`/`cursor`/`copilot`/`kiro`/`windsurf`), **antes** do `if !hasIdentity`, inserido:
+```go
+if targetID == "cursor" {
+    if mapped, ok := mapModelCursor(model); ok {
+        source = rewriteFrontmatterModelLine(source, mapped)
+    } else {
+        source = removeFrontmatterModelLine(source)
+    }
+}
+```
+Única condição do `if` é `targetID == "cursor"` — nenhum outro targetID (`gemini`, `kiro`, `claude`,
+etc.) entra nesse branch. A transformação de `model:` roda antes de `rewriteFrontmatterFields`
+(que só toca `name:`/`description:`), então as duas compõem sem se pisar quando há identidade
+customizada + `targetID == "cursor"` simultaneamente (testado explicitamente).
+
+**Testes adicionados em `render_test.go`:**
+- `TestRenderSubagentRouteEmitsCursorModel` — `architect` (`model: opus`) → `model:
+  claude-opus-5[effort=high]`; `backend` (`model: sonnet`) → `model: composer-2.5[fast=true]`,
+  `targetID: "cursor"`.
+- `TestRenderSubagentRouteGeminiKiroUnaffectedByCursorMapping` — regressão explícita: `architect`
+  renderizado com `targetID: "gemini"` e `targetID: "kiro"` é byte-a-byte idêntico a
+  `normalizeMarkdown(source)` (o mesmo caminho que `Render()` já seguia antes desta ML), e ainda
+  contém `model: opus` original intacto.
+- `TestRenderSubagentRouteCursorWithIdentityRewritesModelAndName` — identidade customizada (Zeus) +
+  `targetID: "cursor"`: `model:` reescrito para `claude-opus-5[effort=high]` E `name:`/`description:`
+  reescritos com o slug/display name da identidade, sem interferência mútua.
+- `TestRewriteFrontmatterModelLineAppendsWhenAbsent` / `TestRemoveFrontmatterModelLineOmitsWhenUnmappable`
+  — cobertura direta das funções auxiliares (inserção quando `model:` ausente; remoção sem afetar o
+  resto do frontmatter/corpo).
+
+**Verificação manual do output real** via `trackfw init --ai-tools cursor` num `$HOME` isolado
+(scratchpad, git init local) — `~/.cursor/agents/trackfw-architect.md` contém
+`model: claude-opus-5[effort=high]`; `~/.cursor/agents/trackfw-backend.md` contém
+`model: composer-2.5[fast=true]`. Confirmado também que os arquivos reais do usuário em
+`~/.gemini/agents/trackfw-architect.md` e `~/.kiro/agents/trackfw-architect.md` permanecem
+inalterados (`model: opus`, timestamp de 2026-08-07, não tocados por esta sessão).
+
+**Gates:** `go build ./...` sem erros; `go vet ./...` limpo; `go test ./internal/integrations/...` →
+todos os testes passam (novos + pré-existentes); `trackfw validate` → "Nenhuma violação encontrada."
+
+**Restrições respeitadas:** branch `custom-agent-toml` (Codex, ML-2A) não tocado; nenhuma condição
+além de `targetID == "cursor"` entra no novo bloco; `gemini`/`kiro` cobertos por teste de regressão
+explícito.
+
+**Arquivos modificados nesta sessão:** `internal/integrations/render.go`,
+`internal/integrations/render_test.go`, o campo `**Status:**` do ML-3A no roadmap, e esta entrada em
+`docs/agents-working-context.md`. Nenhum arquivo de `npm/` ou `pypi/` tocado. Não fiz `git
+add`/`commit`/`push` — fora da minha fronteira de autoridade Git.
+
+Entregando a trackfw_architect para auditoria e commit.
+
+## Sessão 2026-08-14 — Apolo (ML-3B: Node.js `mapModelCursor()` + reescrita de `model:` no branch default de `render()` quando `target === 'cursor'`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Espelhado em `npm/src/integrations/render.js` o que a ML-3A já fez em Go
+(`internal/integrations/render.go`, lido no estado atual — inclui a alteração não commitada da
+ML-3A sobre `default:`). Único arquivo de produto tocado nesta ML.
+
+**Funções adicionadas (mesma posição relativa das equivalentes em Go, logo após `resolveModelCodex`):**
+- `mapModelCursor(model)` — mapa `CURSOR_MODEL_MAP = { opus: 'claude-opus-5[effort=high]', sonnet:
+  'composer-2.5[fast=true]' }`; retorna string vazia (`''`) para qualquer outro valor/ausente —
+  mesma convenção de retorno falsy-para-omitir já usada por `resolveModel`/`resolveModelCodex`.
+- `rewriteFrontmatterModelLine(source, value)` — mesma técnica de detecção de fronteira de
+  frontmatter que `rewriteFrontmatterFields`, escopada só à chave `model:`; reescreve a linha se
+  existir, senão anexa `model: <value>` como última linha do bloco de frontmatter.
+- `removeFrontmatterModelLine(source)` — remove a linha `model:` do frontmatter se presente; sem
+  `model:`, retorna `source` trimado sem reformatar.
+
+No branch `default` (fim de `render()`, Rota B, representação `agent-markdown`/`subagent`,
+compartilhada por `claude`/`gemini`/`cursor`/`copilot`/`kiro`/`windsurf`), **antes** do
+`if (!id) return normalize(source)`, inserido:
+```js
+if (target === 'cursor') {
+  const mappedModel = mapModelCursor(parts.model)
+  source = mappedModel ? rewriteFrontmatterModelLine(source, mappedModel) : removeFrontmatterModelLine(source)
+}
+```
+Introduzida variável local `let source = content` no topo de `render()` (mesmo papel do parâmetro
+mutável `source` em Go) — os usos subsequentes de `content` no branch default (`insertBodyPrefix`,
+`normalize`) passaram a usar `source` para que a reescrita de `model:` componha com a lógica de
+identidade já existente, exatamente como no Go. Única condição do `if` é `target === 'cursor'` —
+`gemini`/`kiro` não entram nesse branch.
+
+**Testes adicionados em `npm/tests/identity-render.test.js`** (mesmo arquivo onde a ML-2B/Wave 2
+adicionou o teste de Codex, seguindo a convenção já usada — um arquivo por domínio de render, não
+por representation):
+- `'cursor reescreve model: opus -> claude-opus-5[effort=high] (architect)'`
+- `'cursor reescreve model: sonnet -> composer-2.5[fast=true] (backend)'`
+- `'gemini e kiro (mesma representação agent-markdown do cursor) permanecem bit-a-bit inalterados'`
+  — compara `geminiPlan.content`/`kiroPlan.content` contra `claudePlan.content` (mesmo asset, mesmo
+  branch default, sem identidade) e confirma `model: opus` original intacto nos três.
+- `'cursor com identidade customizada — model reescrito compõe com name/description'` — identidade
+  Zeus + `target: 'cursor'`: `name:`/`description:` reescritos pela identidade E `model:` reescrito
+  para `claude-opus-5[effort=high]`, sem interferência mútua.
+
+**Verificação de paridade byte-a-byte contra o Go:** gerei o output de `architect`/cursor sem
+identidade nos dois CLIs (Go via teste ad-hoc temporário em `internal/integrations/zzz_compare_test.go`,
+removido antes de terminar — nunca commitado; Node via `buildPlans` direto) e rodei `diff` — saída
+idêntica (`IDENTICAL`, sem divergência). Frontmatter resultante para `architect`/cursor:
+```
+---
+name: trackfw-architect
+description: Principal software architect for system design, ADRs and governed multi-agent coordination.
+model: claude-opus-5[effort=high]
+memory: project
+tools: Agent, Read, Edit, Write, Bash, Grep, Glob, WebSearch, WebFetch, AskUserQuestion, EnterPlanMode, ExitPlanMode, TaskCreate, TaskGet, TaskList, TaskUpdate, TaskStop, TaskOutput
+---
+```
+(restante do corpo idêntico ao asset original, `model: opus` → `model: claude-opus-5[effort=high]`
+é a única linha alterada em relação ao passthrough pré-Wave-3).
+
+**gemini/kiro confirmados inalterados:** `geminiPlan.content` e `kiroPlan.content` para `architect`
+são **iguais** (`assert.equal`) ao `claudePlan.content` correspondente — mesmo asset, mesma
+representação `agent-markdown`/`subagent`, `model: opus` original preservado nos três, nenhuma
+condição além de `target === 'cursor'` entra no bloco novo.
+
+**Gates:** `npm test` (workspace `npm/`) → 482 passed, 0 failed (478 pré-existentes + 4 novos);
+`trackfw validate` → "Nenhuma violação encontrada."
+
+**Restrições respeitadas:** branch `custom-agent-toml` (Codex, ML-2B) não tocado; nenhuma condição
+além de `target === 'cursor'` entra no novo bloco; `gemini`/`kiro` cobertos por teste de regressão
+explícito comparando contra `claude` (mesmo branch default).
+
+**Arquivos modificados nesta sessão:** `npm/src/integrations/render.js`,
+`npm/tests/identity-render.test.js`, o campo `**Status:**` do ML-3B no roadmap, e esta entrada em
+`docs/agents-working-context.md`. Nenhum arquivo de `internal/` ou `pypi/` tocado (a alteração
+pré-existente em `internal/integrations/render.go`/`render_test.go` da ML-3A já estava no working
+tree antes desta sessão começar e não foi modificada por mim). Não fiz `git add`/`commit`/`push` —
+fora da minha fronteira de autoridade Git.
+
+Entregando a trackfw_architect para auditoria e commit.

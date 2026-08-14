@@ -34,7 +34,13 @@ import (
 // normalizeMarkdown(source) verbatim — the same expression used before
 // identity support existed — so the no-identity output is guaranteed
 // byte-for-byte unchanged by construction, not by coincidence.
-func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg identity.Config) ([]byte, error) {
+//
+// targetID is the canonical ID of the render target (e.g. "cursor",
+// "gemini", "kiro", "codex") as declared in the target catalog. It exists to
+// let future waves differentiate "cursor" from "gemini"/"kiro" within the
+// shared "agent-markdown" representation (Rota B, the default branch) — this
+// function does not yet apply any such differentiation.
+func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg identity.Config, targetID string) ([]byte, error) {
 	if kind == KindSkills {
 		return normalizeMarkdown(source), nil
 	}
@@ -52,8 +58,15 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 
 	switch capability.Representation {
 	case "custom-agent-toml":
-		return []byte(fmt.Sprintf("name = %s\ndescription = %s\ndeveloper_instructions = %s\n",
-			strconv.Quote(strings.ReplaceAll(name, "-", "_")), strconv.Quote(description), strconv.Quote(body))), nil
+		lines := []string{
+			fmt.Sprintf("name = %s", strconv.Quote(strings.ReplaceAll(name, "-", "_"))),
+			fmt.Sprintf("description = %s", strconv.Quote(description)),
+		}
+		if mapped, ok := mapModelCodex(model); ok {
+			lines = append(lines, fmt.Sprintf("model = %s", strconv.Quote(mapped)))
+		}
+		lines = append(lines, fmt.Sprintf("developer_instructions = %s", strconv.Quote(body)))
+		return []byte(strings.Join(lines, "\n") + "\n"), nil
 	case "cli-agent-json", "agent-json":
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
@@ -130,6 +143,13 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 		}
 		return []byte(sb.String()), nil
 	default:
+		if targetID == "cursor" {
+			if mapped, ok := mapModelCursor(model); ok {
+				source = rewriteFrontmatterModelLine(source, mapped)
+			} else {
+				source = removeFrontmatterModelLine(source)
+			}
+		}
 		if !hasIdentity {
 			return normalizeMarkdown(source), nil
 		}
@@ -372,6 +392,109 @@ func mapModel(model string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// mapModelCodex converte o modelo canônico para o valor aceito pelo Codex CLI.
+// Retorna (valor mapeado, true) se mapeável; ("", false) se a linha model deve ser omitida.
+func mapModelCodex(model string) (string, bool) {
+	switch model {
+	case "opus":
+		return "gpt-5.4", true
+	case "sonnet":
+		return "gpt-5.4-mini", true
+	default:
+		return "", false
+	}
+}
+
+// mapModelCursor converte o modelo canônico para o valor aceito pela Cursor
+// (fonte: cursor.com/docs/subagents, ver ADR ADR-2026-08-14). Retorna (valor
+// mapeado, true) se mapeável; ("", false) se a linha "model:" deve ser
+// removida do frontmatter (Cursor cai no default "inherit"/Auto).
+func mapModelCursor(model string) (string, bool) {
+	switch model {
+	case "opus":
+		return "claude-opus-5[effort=high]", true
+	case "sonnet":
+		return "composer-2.5[fast=true]", true
+	default:
+		return "", false
+	}
+}
+
+// rewriteFrontmatterModelLine replaces the "model:" line of a raw markdown
+// source's frontmatter with value, preserving every other frontmatter line
+// and the body byte-for-byte. If the frontmatter has no "model:" line, one is
+// appended as the last line of the frontmatter block. If source has no
+// recognizable frontmatter, source is returned unchanged (trimmed) — mirrors
+// the boundary detection used by rewriteFrontmatterFields, scoped to the
+// single "model" key.
+func rewriteFrontmatterModelLine(source []byte, value string) []byte {
+	trimmed := strings.TrimSpace(string(source))
+	if !strings.HasPrefix(trimmed, "---\n") {
+		return []byte(trimmed)
+	}
+	end := strings.Index(trimmed[4:], "\n---")
+	if end < 0 {
+		return []byte(trimmed)
+	}
+	frontmatter := trimmed[4 : 4+end]
+	rest := trimmed[4+end:] // starts with "\n---", followed by the body
+
+	lines := strings.Split(frontmatter, "\n")
+	found := false
+	for i, line := range lines {
+		key, value2, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(key) != "model" {
+			continue
+		}
+		trimmedValue := strings.TrimSpace(value2)
+		quoted := len(trimmedValue) >= 2 && strings.HasPrefix(trimmedValue, `"`) && strings.HasSuffix(trimmedValue, `"`)
+		if quoted {
+			lines[i] = "model: \"" + value + "\""
+		} else {
+			lines[i] = "model: " + value
+		}
+		found = true
+		break
+	}
+	if !found {
+		lines = append(lines, "model: "+value)
+	}
+
+	return []byte("---\n" + strings.Join(lines, "\n") + rest)
+}
+
+// removeFrontmatterModelLine removes the "model:" line from a raw markdown
+// source's frontmatter, if present, preserving every other frontmatter line
+// and the body byte-for-byte. If source has no "model:" line or no
+// recognizable frontmatter, source is returned unchanged (trimmed).
+func removeFrontmatterModelLine(source []byte) []byte {
+	trimmed := strings.TrimSpace(string(source))
+	if !strings.HasPrefix(trimmed, "---\n") {
+		return []byte(trimmed)
+	}
+	end := strings.Index(trimmed[4:], "\n---")
+	if end < 0 {
+		return []byte(trimmed)
+	}
+	frontmatter := trimmed[4 : 4+end]
+	rest := trimmed[4+end:] // starts with "\n---", followed by the body
+
+	lines := strings.Split(frontmatter, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		key, _, ok := strings.Cut(line, ":")
+		if ok && strings.TrimSpace(key) == "model" {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if len(kept) == len(lines) {
+		return []byte(trimmed)
+	}
+
+	return []byte("---\n" + strings.Join(kept, "\n") + rest)
 }
 
 // agentTools retorna o conjunto de ferramentas para o agente.

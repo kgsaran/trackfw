@@ -43,6 +43,61 @@ class TestNoIdentityIsByteIdentical:
         assert "Zeus" not in got
 
 
+class TestTomlModelMapping:
+    """ML-2C: model tier no branch custom-agent-toml (Codex), espelhando Go/Node.js."""
+
+    ARCHITECT_OPUS_SOURCE = (
+        "---\n"
+        "name: trackfw-architect\n"
+        "description: Principal software architect for system design.\n"
+        "model: opus\n"
+        "---\n"
+        "# Architect\n\nBody text.\n"
+    )
+
+    BACKEND_ITEM = {"id": "backend", "description": "Backend specialist."}
+    BACKEND_SONNET_SOURCE = (
+        "---\n"
+        "name: trackfw-backend\n"
+        "description: Backend specialist.\n"
+        "model: sonnet\n"
+        "---\n"
+        "# Backend\n\nBody text.\n"
+    )
+
+    def test_architect_opus_maps_to_gpt_5_4(self):
+        capability = {"representation": "custom-agent-toml", "support_level": "native"}
+        got = render("agents", "codex", "cli", ITEM, self.ARCHITECT_OPUS_SOURCE, capability, None)
+        assert 'model = "gpt-5.4"' in got
+
+    def test_backend_sonnet_maps_to_gpt_5_4_mini(self):
+        capability = {"representation": "custom-agent-toml", "support_level": "native"}
+        got = render("agents", "codex", "cli", self.BACKEND_ITEM, self.BACKEND_SONNET_SOURCE, capability, None)
+        assert 'model = "gpt-5.4-mini"' in got
+
+    def test_model_line_omitted_for_unmapped_value(self):
+        capability = {"representation": "custom-agent-toml", "support_level": "native"}
+        item = {"id": "architect", "description": "Principal software architect."}
+        source = (
+            "---\n"
+            "name: trackfw-architect\n"
+            "description: Principal software architect.\n"
+            "---\n"
+            "# Architect\n\nBody text.\n"
+        )
+        got = render("agents", "codex", "cli", item, source, capability, None)
+        assert "model =" not in got
+
+    def test_model_line_positioned_between_description_and_developer_instructions(self):
+        capability = {"representation": "custom-agent-toml", "support_level": "native"}
+        got = render("agents", "codex", "cli", ITEM, self.ARCHITECT_OPUS_SOURCE, capability, None)
+        lines = got.splitlines()
+        description_idx = next(i for i, line in enumerate(lines) if line.startswith("description ="))
+        model_idx = next(i for i, line in enumerate(lines) if line.startswith("model ="))
+        instructions_idx = next(i for i, line in enumerate(lines) if line.startswith("developer_instructions ="))
+        assert description_idx < model_idx < instructions_idx
+
+
 class TestRotaBWithIdentity:
     def test_subagent_representation_rewrites_frontmatter_and_body(self):
         capability = {"representation": "subagent", "support_level": "native"}
@@ -212,6 +267,119 @@ class TestRewriteSignatureLine:
         source = "---\nname: trackfw-architect\n---\n\n# Corpo\n\n— Architect, Principal Software Architect\n"
         got = _rewrite_signature_line(source, "")
         assert got == source
+
+
+class TestTargetParameterBaseline:
+    """ML-1C (roteamento de model tier): baseline de regressão.
+
+    Python já recebe `target` posicional em `render()` (ver assinatura em
+    renderers.py e o call site em catalog.py, linha ~108) — diferente de Go
+    e Node.js, que precisaram de ML-1A/1B para adicionar o parâmetro. Este
+    teste documenta o comportamento atual (target aceito, mas sem efeito na
+    saída) para servir de ponto de comparação antes das Waves 2/3 passarem a
+    usar `target` para mapear `model` no output.
+    """
+
+    def test_render_accepts_target_positional_for_cursor(self):
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got = render("agents", "cursor", "ide", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
+        assert "name: zeus-tf" in got
+        assert "You are Zeus." in got
+
+    def test_render_accepts_target_positional_for_gemini(self):
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got = render("agents", "gemini", "cli", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
+        assert "name: zeus-tf" in got
+        assert "You are Zeus." in got
+
+    def test_different_target_values_no_longer_match_after_wave_3(self):
+        # Wave 3 (ML-3C) faz `cursor` divergir de `gemini`/`kiro` dentro da
+        # mesma representação "agent-markdown": só `cursor` reescreve a linha
+        # "model:". CLAUDE_SOURCE declara "model: sonnet" -> mapeado para
+        # "composer-2.5[fast=true]" apenas no branch cursor.
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got_cursor = render("agents", "cursor", "ide", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
+        got_gemini = render("agents", "gemini", "cli", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
+        assert got_cursor != got_gemini
+        assert "model: composer-2.5[fast=true]" in got_cursor
+        assert "model: sonnet" in got_gemini
+
+
+class TestCursorModelMapping:
+    """ML-3C: model tier no branch agent-markdown (Cursor), espelhando Go/Node.js.
+
+    Espelha internal/integrations/render_test.go (ML-3A) e o cenário Go
+    equivalente para o mapeamento opus/sonnet e a regressão gemini/kiro.
+    """
+
+    ARCHITECT_OPUS_SOURCE = (
+        "---\n"
+        "name: trackfw-architect\n"
+        "description: Principal software architect for system design.\n"
+        "model: opus\n"
+        "---\n"
+        "# Architect\n\nBody text.\n"
+    )
+
+    BACKEND_ITEM = {"id": "backend", "description": "Backend specialist."}
+    BACKEND_SONNET_SOURCE = (
+        "---\n"
+        "name: trackfw-backend\n"
+        "description: Backend specialist.\n"
+        "model: sonnet\n"
+        "---\n"
+        "# Backend\n\nBody text.\n"
+    )
+
+    def test_architect_opus_maps_to_claude_opus_5(self):
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got = render("agents", "cursor", "ide", ITEM, self.ARCHITECT_OPUS_SOURCE, capability, None)
+        assert "model: claude-opus-5[effort=high]" in got
+
+    def test_backend_sonnet_maps_to_composer_2_5(self):
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got = render(
+            "agents", "cursor", "ide", self.BACKEND_ITEM, self.BACKEND_SONNET_SOURCE, capability, None
+        )
+        assert "model: composer-2.5[fast=true]" in got
+
+    def test_model_line_removed_for_unmapped_value(self):
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        item = {"id": "architect", "description": "Principal software architect."}
+        source = (
+            "---\n"
+            "name: trackfw-architect\n"
+            "description: Principal software architect.\n"
+            "---\n"
+            "# Architect\n\nBody text.\n"
+        )
+        got = render("agents", "cursor", "ide", item, source, capability, None)
+        assert "model:" not in got
+
+    def test_gemini_output_byte_identical_to_pre_wave_3(self):
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got = render("agents", "gemini", "cli", ITEM, self.ARCHITECT_OPUS_SOURCE, capability, None)
+        assert got == self.ARCHITECT_OPUS_SOURCE.strip() + "\n"
+        assert "model: opus" in got
+        assert "claude-opus-5" not in got
+
+    def test_kiro_output_byte_identical_to_pre_wave_3(self):
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got = render("agents", "kiro", "ide", ITEM, self.ARCHITECT_OPUS_SOURCE, capability, None)
+        assert got == self.ARCHITECT_OPUS_SOURCE.strip() + "\n"
+        assert "model: opus" in got
+        assert "claude-opus-5" not in got
+
+    def test_composes_with_custom_identity(self):
+        # target == "cursor" reescreve "model:" ANTES da injeção de identidade
+        # (name:/description:/greeting/assinatura) — as duas transformações
+        # devem compor sem se pisar.
+        capability = {"representation": "agent-markdown", "support_level": "native"}
+        got = render("agents", "cursor", "ide", ITEM, self.ARCHITECT_OPUS_SOURCE, capability, GREEK_CFG)
+        assert "name: zeus-tf" in got
+        assert "description: Zeus — Principal software architect for system design." in got
+        assert "model: claude-opus-5[effort=high]" in got
+        assert "You are Zeus. Address the user as Kleber." in got
 
 
 class TestRotaBRewritesSignature:
