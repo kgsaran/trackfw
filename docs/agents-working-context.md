@@ -67,6 +67,47 @@ roadmap modificados, não staged, não commitados.
 
 ---
 
+## Sessão 2026-08-14 — Apolo (ML-2A: Go `mapModelCodex()` + branch `custom-agent-toml`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-2A — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** adicionada `mapModelCodex(model string) (string, bool)` em
+`internal/integrations/render.go`, logo após `mapModel()`, mesmo formato de retorno
+(`opus→gpt-5.4`, `sonnet→gpt-5.4-mini`, qualquer outro valor/vazio → `("", false)`, omite a
+linha). O branch `case "custom-agent-toml":` de `Render()` passou a construir o TOML via slice
+`lines` (em vez do `fmt.Sprintf` monolítico anterior), inserindo `model = "..."` entre
+`description` e `developer_instructions` só quando `mapModelCodex(model)` retorna `ok == true`.
+Nenhum outro branch/representação tocado.
+
+**Golden congelado atualizado:** `internal/integrations/testdata/backend.codex-toml.golden.toml`
+ganhou a linha `model = "gpt-5.4-mini"` (o asset `backend` declara `model: sonnet`) — consequência
+esperada da mudança de output em `TestRenderWithoutIdentityMatchesFrozenGoldens`, não um ajuste
+solto; sem isso o teste quebraria.
+
+**Teste novo:** `TestRenderCustomAgentTomlEmitsCodexModel` em `render_test.go`, cobrindo
+`architect` (`model: opus` → `model = "gpt-5.4"`) e `backend` (`model: sonnet` →
+`model = "gpt-5.4-mini"`) com `targetID: "codex"`, verificando também a posição da linha
+(`description` < `model` < `developer_instructions`) via índice de string.
+
+**Verificação manual do output real** (teste descartável, removido após a checagem): TOML gerado
+para `architect` contém `model = "gpt-5.4"` e para `backend` contém `model = "gpt-5.4-mini"`,
+ambos entre `description` e `developer_instructions` — ver output completo na seção de report
+desta sessão.
+
+**Gates:** `go build ./...` limpo. `go test ./internal/integrations/...` → ok (inclui os 2 novos
+subtestes). `go vet ./...` limpo.
+
+**`git status` final:** `internal/integrations/render.go`,
+`internal/integrations/render_test.go`, `internal/integrations/testdata/backend.codex-toml.golden.toml`
+e o campo `**Status:**` do ML-2A no roadmap modificados, não staged, não commitados. Outros
+arquivos já modificados na branch por agentes em paralelo (`npm/src/integrations/render.js`,
+`pypi/trackfw/integrations/renderers.py`, `pypi/tests/test_integrations_identity.py` — ML-2B/2C)
+não foram tocados por mim.
+
+---
+
 ## Sessão 2026-08-13 — Prometeu (ML-1A: fronteira de escrita dos agentes auditores) — CONCLUÍDO, aguardando auditoria e commit por Zeus
 
 Branch `fix/fronteira-de-escrita-dos-agentes-auditores`. Roadmap:
@@ -14506,3 +14547,106 @@ geração é fiel**, o que ele provou com o diff contra o instalado.
 **Ele não re-rodou `make quality`**, e justificou: o ML-2A tocou **zero** código de produto/teste, e a
 auditoria do ML-1A já registrou `make quality` exit 0 com essas mudanças de asset no lugar.
 Justificativa aceita — re-rodar seria ritual, não verificação.
+
+---
+
+## Sessão 2026-08-14 — Apolo (ML-2C: Python `_map_model_codex()` + branch `custom-agent-toml`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-2C — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** em `pypi/trackfw/integrations/renderers.py`, adicionada `_map_model_codex(model: str) -> str | None`
+logo após `_map_model()`, com `_MODEL_MAP_CODEX = {"opus": "gpt-5.4", "sonnet": "gpt-5.4-mini"}`
+(mesmo formato de retorno da função irmã do Antigravity — `None` = omitir a linha). No bloco
+`if representation == "custom-agent-toml":`, a lista de linhas do TOML agora insere
+`model = "..."` entre `description` e `developer_instructions`, condicionada a
+`_map_model_codex(metadata.get("model", ""))` não ser `None` — espelha exatamente o
+`if mapped, ok := mapModelCodex(model); ok { ... }` do Go (ML-2A) e a lógica equivalente da
+ML-2B em Node.js. `metadata` já continha o `model:` cru do frontmatter (parseado por `_parts()`
+antes do branch de representação), nenhuma mudança de parsing foi necessária.
+
+**Testes:** adicionada a classe `TestTomlModelMapping` em `pypi/tests/test_integrations_identity.py`,
+reaproveitando o padrão de fixtures já existente no arquivo (`ITEM`/`CLAUDE_SOURCE` com
+`model: sonnet`, apenas variando model/id inline por caso): `architect`+`model: opus` →
+`model = "gpt-5.4"`; `backend`+`model: sonnet` → `model = "gpt-5.4-mini"`; ausência de `model:`
+no frontmatter → linha `model =` omitida por completo; e um teste de posicionamento confirmando
+que `model =` aparece estritamente entre `description =` e `developer_instructions =`.
+
+**Output verificado byte-a-byte contra o formato do Go** (`fmt.Sprintf("model = %s", strconv.Quote(mapped))`
+inserido entre `description` e `developer_instructions`, join por `\n` + `\n` final):
+```
+name = "trackfw_architect"
+description = "Principal software architect for system design."
+model = "gpt-5.4"
+developer_instructions = "# Architect\n\nBody text."
+```
+```
+name = "trackfw_backend"
+description = "Backend specialist."
+model = "gpt-5.4-mini"
+developer_instructions = "# Backend\n\nBody text."
+```
+Estrutura de linhas, ordem de chaves e uso de `json.dumps(..., ensure_ascii=False)` (equivalente
+Python de `strconv.Quote` para strings ASCII simples) idênticos ao Go.
+
+**Restrições respeitadas:** nenhum branch além de `custom-agent-toml` foi tocado; a Rota B
+(`default`, usada por `agent-markdown`/`subagent` — Wave 3/Cursor) permanece intocada.
+
+**Gates:** `cd pypi && python3 -m pytest -q` → 1039 passed, 8 subtests passed, 0 failed.
+
+**Arquivos modificados nesta sessão:** `pypi/trackfw/integrations/renderers.py`,
+`pypi/tests/test_integrations_identity.py`, o campo `**Status:**` do ML-2C no roadmap, e esta
+entrada em `docs/agents-working-context.md`. Nenhum arquivo de `internal/` ou `npm/` tocado. Não
+fiz `git add`/`commit`/`push` — fora da minha fronteira de autoridade Git.
+
+Entregando a trackfw_architect para auditoria e commit.
+
+## Sessão 2026-08-14 — Apolo (ML-2B: Node.js `resolveModelCodex()` + branch `custom-agent-toml`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-2B — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** em `npm/src/integrations/render.js`, adicionada `resolveModelCodex(model)` logo após
+`resolveModel()` (função irmã do Antigravity), com `CODEX_MODEL_MAP = { opus: 'gpt-5.4', sonnet:
+'gpt-5.4-mini' }` — mesmo formato de retorno (`''` = omitir a linha `model =`). No branch
+`capability.representation === 'custom-agent-toml'`, o TOML agora é montado como array de linhas
+(`name`, `description`, opcionalmente `model`, `developer_instructions`) e só insere `model = "..."`
+quando `resolveModelCodex(parts.model)` retorna valor não vazio — espelha exatamente o
+`if mapped, ok := mapModelCodex(model); ok { ... }` do Go (ML-2A, que terminou concorrentemente
+enquanto eu lia `render.go` — encontrei `mapModelCodex` já presente numa segunda leitura). Segui a
+convenção de nomenclatura já usada no arquivo (`resolveModel`/`resolveModelCodex`, não
+`mapModelCodex`, pois o Node já tinha esse padrão de nome para a função irmã do Antigravity).
+Nenhum outro branch (`default`/`agent-markdown`, usado por Cursor/gemini/kiro — Wave 3) foi tocado.
+
+**Testes:** adicionado o teste `'custom-agent-toml (codex) emite model mapeado entre description e
+developer_instructions'` em `npm/tests/identity-render.test.js` (arquivo já usado para testes de
+render por representação/target via `buildPlans`), cobrindo `architect` (`model: opus` →
+`model = "gpt-5.4"`) e `backend` (`model: sonnet` → `model = "gpt-5.4-mini"`), com asserção de
+posição relativa (`description` < `model` < `developer_instructions`) — mesmo padrão de
+`TestRenderCustomAgentTomlEmitsCodexModel` em `render_test.go`.
+
+**Fixture golden pré-existente quebrou e foi atualizada corretamente:** `npm/tests/agents-skills.test.js`
+tinha um teste `'Codex TOML renderer is byte-equivalent to the Go golden contract'` com uma string
+`expected` congelada do TOML do `backend` **sem** a linha `model =` (congelada em 2026-07-26, antes
+desta ML). Comparei contra `internal/integrations/testdata/backend.codex-toml.golden.toml` (fixture
+Go real, já atualizada pela ML-2A) e confirmei que `model = "gpt-5.4-mini"` pertence exatamente entre
+`description` e `developer_instructions` — atualizei a string `expected` para incluir essa linha,
+documentando o re-congelamento em comentário (mesmo padrão do comentário de 2026-07-26 já presente).
+
+**Output verificado byte-a-byte** via `node -e` chamando `buildPlans('agents', { targets: ['codex'],
+items: [...] })` para `architect` e `backend` — idêntico ao golden Go (`name`, `description`,
+`model = "gpt-5.4"`/`"gpt-5.4-mini"`, `developer_instructions`, nessa ordem, aspas duplas via
+`JSON.stringify` equivalente a `strconv.Quote` para ASCII simples).
+
+**Gates:** `cd npm && npm test` → 478 passed, 0 failed (inclui os 2 testes novos e a fixture golden
+corrigida).
+
+**Arquivos modificados nesta sessão:** `npm/src/integrations/render.js`,
+`npm/tests/identity-render.test.js`, `npm/tests/agents-skills.test.js` (fixture golden re-congelada),
+o campo `**Status:**` do ML-2B no roadmap, e esta entrada em `docs/agents-working-context.md`. Nenhum
+arquivo de `internal/` ou `pypi/` tocado. Não fiz `git add`/`commit`/`push` — fora da minha fronteira
+de autoridade Git.
+
+Entregando a trackfw_architect para auditoria e commit.
