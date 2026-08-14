@@ -34,7 +34,13 @@ import (
 // normalizeMarkdown(source) verbatim — the same expression used before
 // identity support existed — so the no-identity output is guaranteed
 // byte-for-byte unchanged by construction, not by coincidence.
-func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg identity.Config) ([]byte, error) {
+//
+// targetID is the canonical ID of the render target (e.g. "cursor",
+// "gemini", "kiro", "codex") as declared in the target catalog. It exists to
+// let future waves differentiate "cursor" from "gemini"/"kiro" within the
+// shared "agent-markdown" representation (Rota B, the default branch) — this
+// function does not yet apply any such differentiation.
+func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg identity.Config, targetID string) ([]byte, error) {
 	if kind == KindSkills {
 		return normalizeMarkdown(source), nil
 	}

@@ -51,7 +51,7 @@ confirmada.
 > Dependências: nenhuma. As 3 MLs tocam arquivos/linguagens distintas — executar em paralelo.
 
 ### ML-1A — Go: `Render()` recebe `targetID string`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/integrations/render.go`
 - `internal/integrations/plan.go`

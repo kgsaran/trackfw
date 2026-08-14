@@ -18,7 +18,7 @@ func TestRenderNativeAgentFormats(t *testing.T) {
 	item, _ := catalog.Item(KindAgents, "backend")
 	source, _ := catalog.ReadAsset(item)
 
-	toml, err := Render(item, KindAgents, Capability{Representation: "custom-agent-toml"}, source, identity.Config{})
+	toml, err := Render(item, KindAgents, Capability{Representation: "custom-agent-toml"}, source, identity.Config{}, "codex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestRenderNativeAgentFormats(t *testing.T) {
 		t.Fatalf("unexpected Codex TOML:\n%s", toml)
 	}
 
-	jsonAgent, err := Render(item, KindAgents, Capability{Representation: "agent-json"}, source, identity.Config{})
+	jsonAgent, err := Render(item, KindAgents, Capability{Representation: "agent-json"}, source, identity.Config{}, "antigravity")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,9 +56,16 @@ func TestRenderJSONRepresentationsDoNotHTMLEscape(t *testing.T) {
 
 	item := Item{ID: "architect"}
 
+	// targetID por representação — cli-agent-json é usado pela superfície
+	// "cli" do amazonq no catálogo; agent-json pela superfície "legacy-cli" do
+	// antigravity.
+	targetByRepresentation := map[string]string{
+		"cli-agent-json": "amazonq",
+		"agent-json":     "antigravity",
+	}
 	for _, representation := range []string{"cli-agent-json", "agent-json"} {
 		t.Run(representation, func(t *testing.T) {
-			out, err := Render(item, KindAgents, Capability{Representation: representation}, source, identity.Config{})
+			out, err := Render(item, KindAgents, Capability{Representation: representation}, source, identity.Config{}, targetByRepresentation[representation])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -110,7 +117,7 @@ func TestRenderAgentDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		out, err := Render(item, KindAgents, cap, source, identity.Config{})
+		out, err := Render(item, KindAgents, cap, source, identity.Config{}, "antigravity")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -156,7 +163,7 @@ func TestRenderAgentDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		out, err := Render(item, KindAgents, cap, source, identity.Config{})
+		out, err := Render(item, KindAgents, cap, source, identity.Config{}, "antigravity")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -221,7 +228,7 @@ func TestRenderOpenCodeAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := Render(item, KindAgents, Capability{Representation: "opencode-agent"}, source, identity.Config{})
+	out, err := Render(item, KindAgents, Capability{Representation: "opencode-agent"}, source, identity.Config{}, "opencode")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,12 +340,13 @@ func TestRenderWithoutIdentityMatchesFrozenGoldens(t *testing.T) {
 		name       string
 		itemID     string
 		capability Capability
+		targetID   string
 		golden     string
 	}{
-		{"subagent/architect", "architect", Capability{Representation: "subagent"}, "architect.subagent.golden.md"},
-		{"custom-agent-toml/backend", "backend", Capability{Representation: "custom-agent-toml"}, "backend.codex-toml.golden.toml"},
-		{"agent-directory/architect", "architect", Capability{Representation: "agent-directory"}, "architect.agent-directory.golden.md"},
-		{"agent-directory/backend", "backend", Capability{Representation: "agent-directory"}, "backend.agent-directory.golden.md"},
+		{"subagent/architect", "architect", Capability{Representation: "subagent"}, "claude", "architect.subagent.golden.md"},
+		{"custom-agent-toml/backend", "backend", Capability{Representation: "custom-agent-toml"}, "codex", "backend.codex-toml.golden.toml"},
+		{"agent-directory/architect", "architect", Capability{Representation: "agent-directory"}, "antigravity", "architect.agent-directory.golden.md"},
+		{"agent-directory/backend", "backend", Capability{Representation: "agent-directory"}, "antigravity", "backend.agent-directory.golden.md"},
 	}
 
 	for _, tc := range cases {
@@ -351,7 +359,7 @@ func TestRenderWithoutIdentityMatchesFrozenGoldens(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, err := Render(item, KindAgents, tc.capability, source, identity.Config{})
+			out, err := Render(item, KindAgents, tc.capability, source, identity.Config{}, tc.targetID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -381,7 +389,7 @@ func TestRenderSubagentRouteInjectsIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, zeusIdentity())
+	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, zeusIdentity(), "claude")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +440,7 @@ func TestRenderSubagentRouteFrontmatterRewriteIsScoped(t *testing.T) {
 		"Fim.\n")
 
 	item := Item{ID: "architect"}
-	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, zeusIdentity())
+	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, zeusIdentity(), "claude")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,11 +486,13 @@ func TestRenderAllRepresentationsRenderIdentityName(t *testing.T) {
 
 	cases := []struct {
 		representation string
+		targetID       string
 		wantName       string
 		extract        func(t *testing.T, out []byte) string
 	}{
 		{
 			representation: "subagent",
+			targetID:       "claude",
 			wantName:       "zeus-tf",
 			extract: func(t *testing.T, out []byte) string {
 				for _, line := range strings.Split(string(out), "\n") {
@@ -495,6 +505,7 @@ func TestRenderAllRepresentationsRenderIdentityName(t *testing.T) {
 		},
 		{
 			representation: "agent-directory",
+			targetID:       "antigravity",
 			wantName:       "zeus-tf",
 			extract: func(t *testing.T, out []byte) string {
 				for _, line := range strings.Split(string(out), "\n") {
@@ -507,7 +518,10 @@ func TestRenderAllRepresentationsRenderIdentityName(t *testing.T) {
 		},
 		{
 			representation: "agent-json",
-			wantName:       "zeus-tf",
+			// legacy-cli surface do antigravity — a única com representation
+			// "agent-json" no catálogo.
+			targetID: "antigravity",
+			wantName: "zeus-tf",
 			extract: func(t *testing.T, out []byte) string {
 				var decoded map[string]string
 				if err := json.Unmarshal(out, &decoded); err != nil {
@@ -518,6 +532,7 @@ func TestRenderAllRepresentationsRenderIdentityName(t *testing.T) {
 		},
 		{
 			representation: "cli-agent-json",
+			targetID:       "amazonq",
 			wantName:       "zeus-tf",
 			extract: func(t *testing.T, out []byte) string {
 				var decoded map[string]string
@@ -529,6 +544,7 @@ func TestRenderAllRepresentationsRenderIdentityName(t *testing.T) {
 		},
 		{
 			representation: "custom-agent-toml",
+			targetID:       "codex",
 			// comportamento preexistente e intencional: "-" → "_" no TOML.
 			wantName: "zeus_tf",
 			extract: func(t *testing.T, out []byte) string {
@@ -548,7 +564,7 @@ func TestRenderAllRepresentationsRenderIdentityName(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.representation, func(t *testing.T) {
-			out, err := Render(item, KindAgents, Capability{Representation: tc.representation}, source, zeusIdentity())
+			out, err := Render(item, KindAgents, Capability{Representation: tc.representation}, source, zeusIdentity(), tc.targetID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -577,14 +593,15 @@ func TestRenderInjectsCustomNameAndDescription(t *testing.T) {
 	cases := []struct {
 		name       string
 		capability Capability
+		targetID   string
 	}{
-		{"custom-agent-toml", Capability{Representation: "custom-agent-toml"}},
-		{"cli-agent-json", Capability{Representation: "cli-agent-json"}},
-		{"agent-directory", Capability{Representation: "agent-directory"}},
+		{"custom-agent-toml", Capability{Representation: "custom-agent-toml"}, "codex"},
+		{"cli-agent-json", Capability{Representation: "cli-agent-json"}, "amazonq"},
+		{"agent-directory", Capability{Representation: "agent-directory"}, "antigravity"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := Render(item, KindAgents, tc.capability, source, zeusIdentity())
+			out, err := Render(item, KindAgents, tc.capability, source, zeusIdentity(), tc.targetID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -622,7 +639,7 @@ func TestRenderCustomNameDoesNotAffectArchitectToolset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := Render(item, KindAgents, Capability{Representation: "agent-directory"}, source, zeusIdentity())
+	out, err := Render(item, KindAgents, Capability{Representation: "agent-directory"}, source, zeusIdentity(), "antigravity")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -659,9 +676,16 @@ func TestRenderNoLeakedPlaceholders(t *testing.T) {
 	}
 
 	representations := []string{"custom-agent-toml", "cli-agent-json", "agent-json", "agent-directory", "subagent"}
+	targetByRepresentation := map[string]string{
+		"custom-agent-toml": "codex",
+		"cli-agent-json":    "amazonq",
+		"agent-json":        "antigravity",
+		"agent-directory":   "antigravity",
+		"subagent":          "claude",
+	}
 	for _, representation := range representations {
 		for _, cfg := range []identity.Config{{}, zeusIdentityFor("backend")} {
-			out, err := Render(item, KindAgents, Capability{Representation: representation}, source, cfg)
+			out, err := Render(item, KindAgents, Capability{Representation: representation}, source, cfg, targetByRepresentation[representation])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -768,7 +792,7 @@ func TestRenderSubagentRouteRewritesSignatureLine(t *testing.T) {
 		"— Architect, Principal Software Architect\n")
 
 	item := Item{ID: "architect"}
-	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, zeusIdentity())
+	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, zeusIdentity(), "claude")
 	if err != nil {
 		t.Fatal(err)
 	}

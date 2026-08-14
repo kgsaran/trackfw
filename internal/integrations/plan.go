@@ -52,7 +52,7 @@ func BuildPlans(catalog *Catalog, request PlanRequest) ([]PlannedArtifact, error
 				if err != nil {
 					return nil, err
 				}
-				content, err := Render(item, request.Kind, capability, source, request.Identity)
+				content, err := Render(item, request.Kind, capability, source, request.Identity, target.ID)
 				if err != nil {
 					return nil, err
 				}

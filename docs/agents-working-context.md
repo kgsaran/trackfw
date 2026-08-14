@@ -4,6 +4,43 @@
 
 ---
 
+## Sessão 2026-08-14 — Apolo (ML-1A: Go `Render()` recebe `targetID string`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md`,
+ML-1A — status atualizado para ✅ Concluído. Não fiz commit/push (autoridade é do trackfw_architect).
+
+**Mudança:** `Render()` em `internal/integrations/render.go` ganhou o parâmetro final
+`targetID string` (comentário-doc atualizado explicando que existe para as Waves 2/3
+diferenciarem `cursor` de `gemini`/`kiro` dentro de `agent-markdown`, sem implementar a
+diferenciação ainda). `internal/integrations/plan.go:55` (`BuildPlans`) passa `target.ID` no novo
+argumento — `target` já estava em escopo no loop. Nenhum branch de `Render()` lê `targetID` ainda,
+então a mudança é plumbing puro, sem efeito em output.
+
+**`render_test.go`:** as 15 chamadas diretas a `Render(...)` foram atualizadas com o `targetID`
+real do catálogo (`internal/integrations/assets/catalog.json`) correspondente à `Representation`
+de cada subteste — nunca uma string arbitrária. Mapeamento usado (representação → target):
+`subagent→claude`, `custom-agent-toml→codex`, `agent-directory→antigravity`,
+`agent-json→antigravity` (surface `legacy-cli`, única com essa representation no catálogo),
+`cli-agent-json→amazonq`, `opencode-agent→opencode`. Em subtestes já parametrizados por
+representação (loops/tabelas), adicionei um campo `targetID`/mapa local em vez de hardcode
+solto, para manter o padrão de tabela existente no arquivo.
+
+**Call sites de `Render(` verificados** (grep em todo o repo Go): apenas
+`internal/integrations/plan.go:55` fora dos testes — já atualizado. Nenhum call site não previsto
+no roadmap.
+
+**Gates:** `go build ./...` limpo. `go test ./internal/integrations/...` → ok. `go vet ./...` e
+`go test ./...` (suite completa) também verdes. `trackfw validate` → "✓ Nenhuma violação
+encontrada."
+
+**`git status` final:** `internal/integrations/render.go`, `internal/integrations/plan.go`,
+`internal/integrations/render_test.go` e o campo `**Status:**` do ML-1A no roadmap modificados,
+não staged, não commitados (outros agentes — Node.js/Python — commitam em paralelo na mesma
+branch; sincronização/push é do trackfw_architect).
+
+---
+
 ## Sessão 2026-08-14 — Apolo (ML-1B: Node.js `render()` consome `target`) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
 
 Branch `feat/model-tier-no-render-de-agentes` (já checked out por outro agente, não criada por mim).
