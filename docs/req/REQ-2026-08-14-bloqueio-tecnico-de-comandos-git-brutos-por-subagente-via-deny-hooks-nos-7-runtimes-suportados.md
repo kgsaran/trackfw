@@ -55,14 +55,19 @@ técnico configurado", não prometer impossibilidade de bypass.
       3 CLIs) passa a emitir, além do bloco de instrução textual já existente, a
       configuração técnica de deny/hook nativa daquele runtime para os comandos
       `git commit`, `git push` e `git checkout -b` brutos.
-- [ ] Para Claude Code, Gemini CLI e Amazon Q Developer — os 3 runtimes com suporte
-      nativo a diferenciação por subagente — o agente arquiteto (Zeus/equivalente)
-      preserva acesso irrestrito a `git`, enquanto os agentes especialistas ficam
-      restritos a `trackfw branch new`/`trackfw ship` para essas operações.
-- [ ] Para os runtimes sem diferenciação nativa por agente (Codex CLI, GitHub Copilot,
-      Cursor, Windsurf), o deny é aplicado de forma global e documentado como tal —
-      sem prometer exceção para o arquiteto nesses runtimes, a menos que o ML de
-      implementação confirme um mecanismo adicional.
+- [x] **Decisão registrada em 2026-08-14 (usuário, via AskUserQuestion pós-Wave 3):**
+      isolamento arquiteto-livre/especialista-bloqueado fica como débito técnico
+      documentado, não implementado nesta REQ. Nenhum dos 7 runtimes recebeu a
+      diferenciação por `subagent_name`/subagente nativo nesta implementação — o deny é
+      **global para todos os agentes, inclusive o arquiteto (Zeus/equivalente)**, em
+      todos os 7 runtimes, sem exceção. Justificativa aceita: coerente com a regra já
+      existente no CLAUDE.md de que o arquiteto não deveria commitar código de
+      implementação mesmo (§3) — o arquiteto passa a usar `trackfw commit`/
+      `trackfw branch new`/`trackfw ship` como qualquer outro agente. Se o isolamento
+      por subagente vier a ser necessário no futuro, é uma REQ nova (hook
+      `PreToolUse`/`pre_run_command` condicional por `subagent_name` em
+      Claude/Codex/Windsurf + geradores de subagente nativo, hoje inexistentes no
+      trackfw, para Gemini/Amazon Q).
 - [ ] `make quality` (contratos de paridade Go/Node/Python) passa sem novas
       divergências entre os 3 CLIs.
 - [ ] Testado manualmente em pelo menos Claude Code (ambiente disponível nesta sessão)

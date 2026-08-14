@@ -18,8 +18,9 @@ REQ: docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagen
 - [ ] Os 7 runtimes (claude, codex, gemini, copilot, windsurf, amazonq, cursor) recebem
       configuração técnica de deny/hook para `git commit`, `git push`, `git checkout -b`
       brutos, gerada nos 3 CLIs (Go/Node/Python) com paridade de contrato.
-- [ ] Claude Code, Gemini CLI e Amazon Q Developer preservam o arquiteto (Zeus/equivalente)
-      com git irrestrito; os demais 4 runtimes aplicam deny global documentado.
+- [x] **Decisão 2026-08-14 (usuário):** deny é global em todos os 7 runtimes,
+      inclusive para o arquiteto (Zeus/equivalente) — isolamento por subagente fica
+      como débito técnico documentado, não implementado nesta REQ (ver REQ vinculada).
 - [ ] Existe um comando `trackfw commit` (Go/Node/Python) que recusa commit direto em
       `main`/branch protegida e recusa commit em `feat/fix/refactor` sem roadmap
       correspondente em `wip/`, replicando o gate de `branch_has_wip_roadmap` no
