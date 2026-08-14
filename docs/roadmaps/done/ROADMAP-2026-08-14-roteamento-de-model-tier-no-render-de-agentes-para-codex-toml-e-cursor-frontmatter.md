@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-14
 req: "docs/req/REQ-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: roteamento de model tier no render de agentes para codex (toml) e cursor (frontmatter)
 
-> Created: 2026-08-14 | Status: wip
+> Created: 2026-08-14 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md -->
@@ -36,16 +36,16 @@ confirmada.
   necessária aqui, só usar o parâmetro que já existe.
 
 ## Acceptance Criteria
-- [ ] `target.ID`/`target` chega ao render em Go, Node.js e Python (Go via novo
+- [x] `target.ID`/`target` chega ao render em Go, Node.js e Python (Go via novo
       parâmetro; Node.js consumindo o campo já enviado; Python via parâmetro já
       existente).
-- [ ] Branch `custom-agent-toml` (Codex) emite `model = "..."` mapeado a partir do
+- [x] Branch `custom-agent-toml` (Codex) emite `model = "..."` mapeado a partir do
       tier canônico, nos 3 CLIs.
-- [ ] Branch `agent-markdown` (Cursor) emite `model: ...` mapeado a partir do tier
+- [x] Branch `agent-markdown` (Cursor) emite `model: ...` mapeado a partir do tier
       canônico **apenas quando o alvo é `cursor`**, nos 3 CLIs.
-- [ ] `gemini` e `kiro` continuam bit-a-bit idênticos ao comportamento atual —
+- [x] `gemini` e `kiro` continuam bit-a-bit idênticos ao comportamento atual —
       coberto por teste de regressão explícito.
-- [ ] `make quality` (Go + Node.js + Python + contratos de paridade) verde.
+- [x] `make quality` (Go + Node.js + Python + contratos de paridade) verde.
 
 ## Wave 1 — Threading do target ID até o Render (Go + Node.js; Python sem mudança de assinatura)
 > Dependências: nenhuma. As 3 MLs tocam arquivos/linguagens distintas — executar em paralelo.
@@ -312,19 +312,24 @@ mudança — satisfazendo o critério desta ML sem necessidade de trabalho adici
 > Dependências: Wave 4 completa.
 
 ### ML-5A — Confirmação manual da sintaxe Cursor e Codex antes de mover REQ para Done
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** nenhum (verificação, não código)
 **Ações:**
-1. Rodar `trackfw init --ai-tools codex` e `trackfw init --ai-tools cursor` em um
-   diretório de scratch.
-2. Se o usuário tiver o Codex CLI e/ou o Cursor instalados localmente: confirmar que
-   os agentes gerados carregam e resolvem o modelo esperado (`codex` / listagem de
-   custom agents da Cursor).
-3. Se não houver instância local disponível: registrar essa limitação explicitamente
-   na REQ (seção de evidência) e obter confirmação do usuário lendo o output gerado
-   contra a documentação citada no ADR, antes de mover a REQ para `Done`.
-4. Atualizar `docs/agents-working-context.md` com o resultado.
+1. Rodado `trackfw init` (via `trackfw agents install --targets codex|cursor`) em um
+   diretório de scratch isolado (`$HOME` sintético, não o do usuário).
+2. Sem Cursor/Codex CLI instalados neste ambiente para teste end-to-end — limitação
+   registrada desde o ADR original.
+3. Output real inspecionado e conferido contra a documentação oficial já citada no
+   ADR (`cursor.com/docs/subagents`, guia de `config.toml` do Codex CLI):
+   - `.codex/agents/trackfw-architect.toml` → `model = "gpt-5.4"`
+   - `.codex/agents/trackfw-backend.toml` → `model = "gpt-5.4-mini"`
+   - `.cursor/agents/trackfw-architect.md` → `model: claude-opus-5[effort=high]`
+   - `.cursor/agents/trackfw-backend.md` → `model: composer-2.5[fast=true]`
+4. Usuário optou explicitamente por **aceitar confirmação documental** (em vez de
+   testar localmente ou deixar aberto) via `AskUserQuestion` — decisão registrada
+   aqui como evidência de fechamento. Risco residual aceito: a sintaxe pode divergir
+   se o Cursor/Codex mudarem o formato aceito após 2026-08-14.
 **Critérios de aceite:**
-- [ ] REQ e ADR movidos para `Done`/`Accepted` só após esta confirmação (automatizada
-      ou manual-documentada)
+- [x] REQ e ADR movidos para `Done`/`Accepted` após esta confirmação
+      (documental, não testada ao vivo — risco residual aceito pelo usuário)
 **Comandos de validação:** inspeção manual, sem comando automatizado único
