@@ -39,6 +39,55 @@ func TestRenderNativeAgentFormats(t *testing.T) {
 	}
 }
 
+// TestRenderCustomAgentTomlEmitsCodexModel prova que o branch
+// "custom-agent-toml" (usado exclusivamente pelo target Codex) emite a linha
+// "model = ..." mapeada a partir do tier canônico declarado no frontmatter do
+// asset ("model: opus"/"model: sonnet"), posicionada entre "description" e
+// "developer_instructions" — ADR ADR-2026-08-14-roteamento-de-model-tier-por-
+// alvo-no-render-de-agentes-para-codex-e-cursor.
+func TestRenderCustomAgentTomlEmitsCodexModel(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name      string
+		itemID    string
+		wantModel string
+	}{
+		{"architect (opus)", "architect", `model = "gpt-5.4"`},
+		{"backend (sonnet)", "backend", `model = "gpt-5.4-mini"`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item, ok := catalog.Item(KindAgents, tc.itemID)
+			if !ok {
+				t.Fatalf("item %q não encontrado no catalog", tc.itemID)
+			}
+			source, err := catalog.ReadAsset(item)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := Render(item, KindAgents, Capability{Representation: "custom-agent-toml"}, source, identity.Config{}, "codex")
+			if err != nil {
+				t.Fatal(err)
+			}
+			toml := string(out)
+			descIdx := strings.Index(toml, "description =")
+			modelIdx := strings.Index(toml, tc.wantModel)
+			instrIdx := strings.Index(toml, "developer_instructions =")
+			if descIdx < 0 || modelIdx < 0 || instrIdx < 0 {
+				t.Fatalf("TOML não contém description/%s/developer_instructions:\n%s", tc.wantModel, toml)
+			}
+			if !(descIdx < modelIdx && modelIdx < instrIdx) {
+				t.Fatalf("linha %q fora da posição esperada (entre description e developer_instructions):\n%s", tc.wantModel, toml)
+			}
+		})
+	}
+}
+
 // TestRenderJSONRepresentationsDoNotHTMLEscape prova que "cli-agent-json" e
 // "agent-json" não aplicam o HTML-escaping padrão de encoding/json (<, >, &
 // virando <, >, &) — comportamento que diverge de Node.js

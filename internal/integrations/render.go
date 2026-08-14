@@ -58,8 +58,15 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 
 	switch capability.Representation {
 	case "custom-agent-toml":
-		return []byte(fmt.Sprintf("name = %s\ndescription = %s\ndeveloper_instructions = %s\n",
-			strconv.Quote(strings.ReplaceAll(name, "-", "_")), strconv.Quote(description), strconv.Quote(body))), nil
+		lines := []string{
+			fmt.Sprintf("name = %s", strconv.Quote(strings.ReplaceAll(name, "-", "_"))),
+			fmt.Sprintf("description = %s", strconv.Quote(description)),
+		}
+		if mapped, ok := mapModelCodex(model); ok {
+			lines = append(lines, fmt.Sprintf("model = %s", strconv.Quote(mapped)))
+		}
+		lines = append(lines, fmt.Sprintf("developer_instructions = %s", strconv.Quote(body)))
+		return []byte(strings.Join(lines, "\n") + "\n"), nil
 	case "cli-agent-json", "agent-json":
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
@@ -375,6 +382,19 @@ func mapModel(model string) (string, bool) {
 		return "flash", true
 	case "flash_lite", "flash", "pro":
 		return model, true
+	default:
+		return "", false
+	}
+}
+
+// mapModelCodex converte o modelo canônico para o valor aceito pelo Codex CLI.
+// Retorna (valor mapeado, true) se mapeável; ("", false) se a linha model deve ser omitida.
+func mapModelCodex(model string) (string, bool) {
+	switch model {
+	case "opus":
+		return "gpt-5.4", true
+	case "sonnet":
+		return "gpt-5.4-mini", true
 	default:
 		return "", false
 	}
