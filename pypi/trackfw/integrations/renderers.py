@@ -68,6 +68,28 @@ def _map_model_codex(model: str) -> str | None:
     return _MODEL_MAP_CODEX.get(model)
 
 
+# Mapa de modelos canônicos para os valores aceitos pela Cursor (fonte:
+# cursor.com/docs/subagents, ver ADR ADR-2026-08-14-roteamento-de-model-tier-
+# por-alvo-no-render-de-agentes-para-codex-e-cursor). opus→claude-opus-5[...],
+# sonnet→composer-2.5[...]; demais valores (ou ausente) são omitidos — a
+# Cursor cai no default "inherit"/Auto.
+_MODEL_MAP_CURSOR: dict[str, str] = {
+    "opus": "claude-opus-5[effort=high]",
+    "sonnet": "composer-2.5[fast=true]",
+}
+
+
+def _map_model_cursor(model: str) -> str | None:
+    """Converte modelo canônico para o valor aceito pela Cursor.
+
+    Retorna o modelo mapeado ou None se a linha "model:" deve ser removida
+    do frontmatter (Cursor cai no default "inherit"/Auto).
+
+    Espelha internal/integrations/render.go:mapModelCursor.
+    """
+    return _MODEL_MAP_CURSOR.get(model)
+
+
 def _agent_tools(item_id: str) -> list[str]:
     """Retorna SET_ARCH se item_id == "architect", caso contrário SET_IMPL.
 
@@ -229,6 +251,76 @@ def _rewrite_frontmatter_fields(source: str, name: str, description: str) -> str
     return "---\n" + "\n".join(lines) + rest
 
 
+def _rewrite_frontmatter_model_line(source: str, value: str) -> str:
+    """Substitui a linha "model:" do frontmatter de um markdown cru por
+    value, preservando as demais linhas do frontmatter e o corpo byte a
+    byte. Se o frontmatter não tiver "model:", uma linha é anexada ao final
+    do bloco de frontmatter. Se source não tem frontmatter reconhecível, é
+    retornado sem alteração (trimmed) — espelha a detecção de fronteira de
+    _rewrite_frontmatter_fields, escopada à chave "model".
+
+    Espelha internal/integrations/render.go:rewriteFrontmatterModelLine.
+    """
+    trimmed = source.strip()
+    if not trimmed.startswith("---\n"):
+        return trimmed
+    end = trimmed.find("\n---", 4)
+    if end < 0:
+        return trimmed
+    frontmatter = trimmed[4:end]
+    rest = trimmed[end:]  # começa com "\n---", seguido do corpo
+
+    lines = frontmatter.split("\n")
+    found = False
+    for index, line in enumerate(lines):
+        if ":" not in line:
+            continue
+        key, value2 = line.split(":", 1)
+        if key.strip() != "model":
+            continue
+        trimmed_value = value2.strip()
+        quoted = len(trimmed_value) >= 2 and trimmed_value.startswith('"') and trimmed_value.endswith('"')
+        if quoted:
+            lines[index] = f'model: "{value}"'
+        else:
+            lines[index] = f"model: {value}"
+        found = True
+        break
+    if not found:
+        lines.append(f"model: {value}")
+
+    return "---\n" + "\n".join(lines) + rest
+
+
+def _remove_frontmatter_model_line(source: str) -> str:
+    """Remove a linha "model:" do frontmatter de um markdown cru, se
+    presente, preservando as demais linhas e o corpo byte a byte. Se source
+    não tem linha "model:" ou frontmatter reconhecível, é retornado sem
+    alteração (trimmed).
+
+    Espelha internal/integrations/render.go:removeFrontmatterModelLine.
+    """
+    trimmed = source.strip()
+    if not trimmed.startswith("---\n"):
+        return trimmed
+    end = trimmed.find("\n---", 4)
+    if end < 0:
+        return trimmed
+    frontmatter = trimmed[4:end]
+    rest = trimmed[end:]  # começa com "\n---", seguido do corpo
+
+    lines = frontmatter.split("\n")
+    kept = [
+        line
+        for line in lines
+        if not (":" in line and line.split(":", 1)[0].strip() == "model")
+    ]
+    if len(kept) == len(lines):
+        return trimmed
+
+    return "---\n" + "\n".join(kept) + rest
+
+
 def _normalize_markdown(source: str) -> str:
     return source.strip() + "\n"
 
@@ -343,6 +435,13 @@ def render(
     # identidade, além de reescrever name:/description: no frontmatter, também
     # reescreve a última linha de assinatura do corpo (ver
     # _rewrite_signature_line).
+    if target == "cursor":
+        mapped_cursor = _map_model_cursor(metadata.get("model", ""))
+        if mapped_cursor is not None:
+            source = _rewrite_frontmatter_model_line(source, mapped_cursor)
+        else:
+            source = _remove_frontmatter_model_line(source)
+
     if agent is None:
         return _normalize_markdown(source)
     with_body = _insert_body_prefix(source, greeting)
