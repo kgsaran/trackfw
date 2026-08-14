@@ -52,6 +52,22 @@ def _map_model(model: str) -> str | None:
     return _MODEL_MAP.get(model)
 
 
+# Mapa de modelos canônicos para os IDs aceitos pelo Codex CLI.
+# opus→gpt-5.4, sonnet→gpt-5.4-mini; demais valores (ou ausente) são omitidos.
+_MODEL_MAP_CODEX: dict[str, str] = {
+    "opus": "gpt-5.4",
+    "sonnet": "gpt-5.4-mini",
+}
+
+
+def _map_model_codex(model: str) -> str | None:
+    """Converte modelo canônico para o valor aceito pelo Codex CLI.
+
+    Retorna o modelo mapeado ou None se a linha model deve ser omitida.
+    """
+    return _MODEL_MAP_CODEX.get(model)
+
+
 def _agent_tools(item_id: str) -> list[str]:
     """Retorna SET_ARCH se item_id == "architect", caso contrário SET_IMPL.
 
@@ -252,14 +268,16 @@ def render(
     representation = capability.get("representation")
 
     if representation == "custom-agent-toml":
-        return "\n".join(
-            [
-                f"name = {json.dumps(name.replace('-', '_'), ensure_ascii=False)}",
-                f"description = {json.dumps(description, ensure_ascii=False)}",
-                f"developer_instructions = {json.dumps(body, ensure_ascii=False)}",
-                "",
-            ]
-        )
+        lines = [
+            f"name = {json.dumps(name.replace('-', '_'), ensure_ascii=False)}",
+            f"description = {json.dumps(description, ensure_ascii=False)}",
+        ]
+        mapped_codex = _map_model_codex(metadata.get("model", ""))
+        if mapped_codex is not None:
+            lines.append(f"model = {json.dumps(mapped_codex, ensure_ascii=False)}")
+        lines.append(f"developer_instructions = {json.dumps(body, ensure_ascii=False)}")
+        lines.append("")
+        return "\n".join(lines)
     if representation in ("cli-agent-json", "agent-json"):
         # Go's encoding/json sorts map keys; keep byte-stable parity with the
         # canonical renderer as well as semantic JSON compatibility.

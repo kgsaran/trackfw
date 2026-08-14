@@ -43,6 +43,61 @@ class TestNoIdentityIsByteIdentical:
         assert "Zeus" not in got
 
 
+class TestTomlModelMapping:
+    """ML-2C: model tier no branch custom-agent-toml (Codex), espelhando Go/Node.js."""
+
+    ARCHITECT_OPUS_SOURCE = (
+        "---\n"
+        "name: trackfw-architect\n"
+        "description: Principal software architect for system design.\n"
+        "model: opus\n"
+        "---\n"
+        "# Architect\n\nBody text.\n"
+    )
+
+    BACKEND_ITEM = {"id": "backend", "description": "Backend specialist."}
+    BACKEND_SONNET_SOURCE = (
+        "---\n"
+        "name: trackfw-backend\n"
+        "description: Backend specialist.\n"
+        "model: sonnet\n"
+        "---\n"
+        "# Backend\n\nBody text.\n"
+    )
+
+    def test_architect_opus_maps_to_gpt_5_4(self):
+        capability = {"representation": "custom-agent-toml", "support_level": "native"}
+        got = render("agents", "codex", "cli", ITEM, self.ARCHITECT_OPUS_SOURCE, capability, None)
+        assert 'model = "gpt-5.4"' in got
+
+    def test_backend_sonnet_maps_to_gpt_5_4_mini(self):
+        capability = {"representation": "custom-agent-toml", "support_level": "native"}
+        got = render("agents", "codex", "cli", self.BACKEND_ITEM, self.BACKEND_SONNET_SOURCE, capability, None)
+        assert 'model = "gpt-5.4-mini"' in got
+
+    def test_model_line_omitted_for_unmapped_value(self):
+        capability = {"representation": "custom-agent-toml", "support_level": "native"}
+        item = {"id": "architect", "description": "Principal software architect."}
+        source = (
+            "---\n"
+            "name: trackfw-architect\n"
+            "description: Principal software architect.\n"
+            "---\n"
+            "# Architect\n\nBody text.\n"
+        )
+        got = render("agents", "codex", "cli", item, source, capability, None)
+        assert "model =" not in got
+
+    def test_model_line_positioned_between_description_and_developer_instructions(self):
+        capability = {"representation": "custom-agent-toml", "support_level": "native"}
+        got = render("agents", "codex", "cli", ITEM, self.ARCHITECT_OPUS_SOURCE, capability, None)
+        lines = got.splitlines()
+        description_idx = next(i for i, line in enumerate(lines) if line.startswith("description ="))
+        model_idx = next(i for i, line in enumerate(lines) if line.startswith("model ="))
+        instructions_idx = next(i for i, line in enumerate(lines) if line.startswith("developer_instructions ="))
+        assert description_idx < model_idx < instructions_idx
+
+
 class TestRotaBWithIdentity:
     def test_subagent_representation_rewrites_frontmatter_and_body(self):
         capability = {"representation": "subagent", "support_level": "native"}
