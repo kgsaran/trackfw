@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-14
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md"
 ---
 
 # REQ: comando trackfw changelog para consultar o CHANGELOG.md pelo proprio CLI
@@ -47,4 +47,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md

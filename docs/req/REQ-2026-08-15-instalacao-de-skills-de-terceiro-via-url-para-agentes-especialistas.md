@@ -37,6 +37,22 @@ escopo, não um adendo — **`hades-tf` (Security) deve revisar o design antes d
 ML de implementação começar**, dado o histórico deste projeto de tratar esse tipo de
 vetor como P0.
 
+**Restrição adicional, definida explicitamente pelo usuário (2026-08-15):** o comando de
+instalação de skill **não é um comando CLI de uso geral** — ele só pode ser executado
+dentro do contexto de uma sessão com LLM (agente), e **exclusivamente pelo orquestrador/
+arquiteto** (`trackfw_architect`/Zeus), nunca diretamente pelo usuário via shell nem por
+um agente especialista. O fluxo obrigatório é: usuário aponta a URL → Zeus invoca
+`hades-tf` para analisar a skill quanto a segurança (prompt injection, "agent
+kidnapping" — tentativa da skill de sequestrar o comportamento/autoridade de um agente,
+categoria mais ampla que só "redefinir Git authority/mode lock" citada acima) → só após
+parecer favorável do `hades-tf` o Zeus prossegue com a instalação. Isso implica: o
+comando técnico (`trackfw skill add <url>` ou equivalente) deve, por natureza, recusar
+execução fora de um contexto de sessão de agente (ex.: exigir uma env var/flag que só o
+harness do orquestrador injeta, nunca disponível em invocação humana direta de terminal)
+— decisão de design exata de como impor essa restrição tecnicamente cabe ao ML, mas o
+requisito em si (só o arquiteto invoca, só após revisão do `hades-tf`, nunca uso
+direto/manual) é inegociável, no mesmo espírito do resto desta REQ.
+
 ## Acceptance Criteria
 - [ ] Novo comando (ex.: `trackfw skill add <url>`) baixa o conteúdo, mas **nunca o
       carrega automaticamente** sem confirmação — mostra o conteúdo completo ao usuário
@@ -68,6 +84,11 @@ vetor como P0.
 - [ ] Revisão de `hades-tf` documentada (ADR ou seção de segurança dedicada no roadmap)
       antes do primeiro ML de implementação — não é opcional, é pré-requisito de
       sequenciamento deste roadmap.
+- [ ] Comando de instalação só executa dentro de contexto de sessão de agente e apenas
+      quando invocado pelo orquestrador/arquiteto (`trackfw_architect`) — recusa
+      execução em invocação humana direta de terminal. Fluxo obrigatório: usuário aponta
+      URL → Zeus invoca `hades-tf` para análise de segurança (prompt injection, agent
+      kidnapping) → só com parecer favorável do `hades-tf` a instalação prossegue.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
