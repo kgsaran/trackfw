@@ -101,7 +101,7 @@ separado que nunca chega em `runCommit`/`git commit` real.
 > Dependências: Wave 1 completa
 
 ### ML-2A — Node.js
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** `npm/src/commit/runner.js`, `npm/src/commands/commit.js`, teste
 equivalente
 **Ações:** replicar 1:1 a lógica do ML-1A em JS puro, lendo o Go real (já implementado
@@ -113,7 +113,7 @@ nesta branch) como fonte de verdade — mesma heurística de tipo, mesmo templat
 **Comandos de validação:** `npm test --workspace=npm` (ajustar nome real do workspace)
 
 ### ML-2B — Python
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** `pypi/trackfw/commands/commit.py`, teste equivalente
 **Ações:** replicar 1:1 a lógica do ML-1A em Python puro, lendo o Go real como fonte de
 verdade.
