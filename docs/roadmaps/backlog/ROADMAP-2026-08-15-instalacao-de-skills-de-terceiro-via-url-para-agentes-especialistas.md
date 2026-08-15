@@ -13,6 +13,17 @@ squad: ""
 <!-- Derived from REQ: REQ-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md -->
 REQ: docs/req/REQ-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md
 
+**Nota (2026-08-15, restrição do usuário):** o comando de instalação de skill só pode
+ser executado dentro de uma sessão de agente e apenas pelo orquestrador/arquiteto
+(`trackfw_architect`/Zeus) — nunca por invocação humana direta de terminal, nunca por
+um agente especialista. Fluxo obrigatório: usuário aponta URL → Zeus invoca `hades-tf`
+para análise de segurança (prompt injection, agent kidnapping) → só com parecer
+favorável a instalação prossegue. Ver REQ vinculada para o detalhe completo — este
+roadmap ainda está com MLs em formato stub (gerados automaticamente a partir da REQ) e
+DEVE ser reescrito com Waves/MLs detalhados (arquivos exatos, ações exatas) antes do
+início da implementação, incluindo uma Wave 0 dedicada à revisão de segurança do
+`hades-tf`, que bloqueia toda e qualquer Wave de implementação subsequente.
+
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
 - [ ]

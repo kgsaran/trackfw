@@ -4,6 +4,19 @@
 
 ---
 
+## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap trackfw changelog concluídos) — pronto para PR
+
+Branch `feat/comando-trackfw-changelog`. REQ
+`REQ-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md`
+e roadmap correspondente movidos para `done/`. Wave 1 (Go, comando `trackfw changelog` +
+pacote `internal/changelog`, commit `cdc9ef3`), Wave 2 (Node.js + Python, commit `0bdc598`)
+e Wave 3 (ML-3A, commit `cd90cb0`) concluídas. `make quality` verde. Os 4 cenários (sem
+flags, `--version` existente, `--all`, `--version` inexistente) confirmados byte-idênticos
+nos 3 CLIs. `docs/cli-parity.md` ganhou linha para `changelog` (gap pré-existente
+encontrado pelo Apolo durante o ML-2B). Próximo passo: abrir PR via `bin/trackfw ship`, e
+após merge, seguir para o item 2 do backlog priorizado — agentes especialistas aceitam
+contexto de convenções específico do projeto.
+
 ## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap validate-hooks concluídos) — pronto para PR
 
 Branch `feat/trackfw-validate-deve-detectar-scripts-de-hook`. REQ
@@ -16312,3 +16325,58 @@ Não fiz `git commit`/`push` — autoridade de Git é do `trackfw-architect`. ML
 concluído por outro agente em paralelo (mesmo roadmap, Wave 2) quando terminei; não toquei em
 `pypi/`. Falta só Wave 3 (ML-3A — paridade cruzada `make quality` + teste manual E2E nos 3
 binários).
+
+## Sessão 2026-08-15 — Apolo (ML-2B: Python `trackfw changelog`, branch `feat/comando-trackfw-changelog`) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Port 1:1 de `internal/changelog/changelog.go` + `internal/commands/changelog.go` (fonte de
+verdade, já commitados nesta branch) para Python puro. Outro agente implementou ML-2A (Node.js)
+em paralelo na mesma branch sob `npm/`; não toquei em nada sob `npm/`.
+
+**Arquivos criados:**
+- `pypi/trackfw/changelog.py` — `Section` (version/date/body), `parse_sections(content)`,
+  `first_section(sections)`, `find_version(sections, version)`, `format_section(section)`,
+  `read(root)`. Mensagens de erro byte-idênticas ao Go: `"CHANGELOG.md has no version sections"`,
+  `f'version "{version}" not found in CHANGELOG.md'`, `"CHANGELOG.md not found — nothing to show"`.
+  Porta explicitamente o `body.lstrip("\n")` antes de montar `format_section` — o detalhe corrigido
+  no Go após a 1ª entrega (evita linha em branco duplicada quando `Body` já começa com `\n`, caso
+  real do `CHANGELOG.md` deste projeto).
+- `pypi/trackfw/commands/changelog.py` — comando argparse fino, mesma estrutura de
+  `pypi/trackfw/commands/status.py` (`register(subparsers)` + `run(args)`), raiz via
+  `os.getcwd()`, flags `--version` e `--all`. Erros capturados como `(OSError, ValueError)` (não
+  só `FileNotFoundError`) e impressos como `Error: {exc}` em stderr + `sys.exit(1)`, mesmo padrão
+  já usado em `pypi/trackfw/commands/req.py`.
+- `pypi/tests/test_changelog.py` — 13 testes: parse com 3 seções (Unreleased + 2 versionadas),
+  `first_section` ok/vazio, `find_version` com/sem prefixo `v`, `find_version` não encontrado,
+  não-duplicação de linha em branco em `format_section`, `read` com arquivo ausente, e 5 testes de
+  CLI via subprocess (`changelog`, `--version`, `--version` inexistente, `--all`, CHANGELOG.md
+  ausente).
+
+**Arquivo modificado:**
+- `pypi/trackfw/cli.py` — registrado `from trackfw.commands import changelog as changelog_cmd` /
+  `changelog_cmd.register(subparsers)`, mesmo padrão dos demais subcomandos. `trackfw help` lista
+  o comando automaticamente (`list_commands()` em `help_cmd.py` deriva do registro de
+  subparsers — não precisou editar tabela nenhuma).
+
+**Validação:**
+- `python -m pytest pypi/tests -k changelog` — 13 passed.
+- `python -m pytest pypi/tests` (suíte completa) — 1142 passed, 8 subtests passed, 0 failed.
+- `trackfw validate` — exit 0 (só avisos pré-existentes de REQ sem ADR vinculado, não relacionados
+  a este ML).
+- `make quality` — exit 0, incluindo os 112 cenários de `check-gates-falsify.sh` e todos os
+  scripts `check-*-parity.sh`.
+- Paridade byte-a-byte confirmada via `diff` entre `bin/trackfw` (Go) e
+  `python3 -m trackfw.cli` (mesmo `PYTHONPATH=pypi`) para os 3 cenários pedidos —
+  `changelog`, `changelog --version 6.10.0`, `changelog --all`: os 3 `diff`s vieram vazios
+  (`IDENTICAL`). Para `changelog --version 999.0.0` (versão inexistente), a primeira linha de
+  stderr é idêntica (`Error: version "999.0.0" not found in CHANGELOG.md`); o Go acrescenta depois
+  o bloco de usage do cobra (framework, não faz parte do contrato de mensagem) — divergência
+  esperada e fora do escopo dos 3 cenários pedidos no ML.
+
+Não fiz `git commit`/`push` — autoridade de Git é do `trackfw_architect`. Não editei
+`docs/cli-parity.md` (tabela de inventário de comandos) nem `pypi/trackfw/commands/help_cmd.py`
+(não precisou) — o roadmap ML-2B não lista `docs/cli-parity.md` em "Arquivos afetados" e esse
+arquivo é ponto de colisão em potencial com o agente Node.js na mesma branch; sinalizando como
+observação para o `trackfw_architect` avaliar se `changelog` deve ganhar uma linha na tabela
+(comandos recentes como `commit`/`barrier` também não aparecem nela — pode já ser uma lacuna
+pré-existente, não introduzida por este ML). Falta Wave 3 (ML-3A — paridade cruzada e teste manual
+E2E nos 3 binários, que já corri como parte da validação deste ML e veio verde).
