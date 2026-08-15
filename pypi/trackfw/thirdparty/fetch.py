@@ -4,9 +4,9 @@ hops (each revalidated for https), a 2 MiB size cap, and a Content-Type
 allowlist. Native port of internal/thirdparty/fetch.go.
 
 Deliberately uses its own urllib opener rather than any shared HTTP
-client elsewhere in this codebase (e.g. trackfw.plugins), mirroring the Go
-package's fetchClient doc comment: changes here must never alter plugin
-download behavior.
+client elsewhere in this codebase, mirroring the Go package's fetchClient
+doc comment: changes here must never alter third-party artifact download
+behavior.
 
 Redirect counting is intentionally NOT urllib's own max_redirections
 mechanism (which counts "redirects visited", i.e. len(via)+1 relative to

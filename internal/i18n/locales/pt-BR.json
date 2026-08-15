@@ -53,12 +53,6 @@
   },
   "status": { "description": "Exibir o estado atual de governança do projeto" },
   "log": { "description": "Exibir histórico de transições de estado dos roadmaps", "empty": "Nenhuma transição registrada ainda.", "tail": "Exibir as últimas N transições" },
-  "plugins": {
-    "description": "Gerenciar plugins do trackfw",
-    "list": { "description": "Listar plugins instalados", "empty": "Nenhum plugin instalado. Use `trackfw plugins add <user/repo>` para instalar um." },
-    "add": { "description": "Instalar um plugin do GitHub Releases", "installing": "Instalando plugin de {{repo}}...", "success": "Plugin \"{{name}}\" instalado com sucesso." },
-    "remove": { "description": "Remover um plugin instalado", "success": "Plugin \"{{name}}\" removido." }
-  },
   "serve": {
     "description": "Inicia servidor local de visualização de governança"
   },

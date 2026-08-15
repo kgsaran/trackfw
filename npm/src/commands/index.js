@@ -23,7 +23,6 @@ function createProgram() {
   program.addCommand(require('./status'))
   program.addCommand(require('./changelog'))
   program.addCommand(require('./log'))
-  program.addCommand(require('./plugins'))
   program.addCommand(require('./discover'))
   program.addCommand(require('./update'))
   program.addCommand(require('./metrics'))
@@ -43,9 +42,6 @@ function createProgram() {
 
   const { createServeCommand } = require('./serve')
   program.addCommand(createServeCommand())
-
-  // plugin dispatch — comandos desconhecidos tentam executar plugin
-  program.hook('preSubcommand', () => {})
 
   return program
 }

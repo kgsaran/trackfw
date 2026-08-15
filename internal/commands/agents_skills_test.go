@@ -234,20 +234,26 @@ func TestRemovedIntegrationAliasesAreUnknownCommands(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			// First: the name must not be a registered subcommand in the real,
 			// fully-built command tree — this fails if the alias is ever
-			// re-registered in root.go, unlike a bare RunPlugin call.
+			// re-registered in root.go.
 			root := newRootCmd()
 			if child, _, err := root.Find([]string{name}); err == nil && child != root {
 				t.Fatalf("%q is still a registered command: %s", name, child.CommandPath())
 			}
 
-			// Second: end-to-end, `trackfw <name>` falls through to the plugin
-			// resolver and is reported as unknown with the exact message.
+			// Second: end-to-end, `trackfw <name>` is rejected by cobra as an
+			// unknown command — there is no plugin fallback anymore.
 			integrationCommandFixture(t)
-			err := RunPlugin(name, nil)
+			root = newRootCmd()
+			root.SetArgs([]string{name})
+			var stderr bytes.Buffer
+			root.SetErr(&stderr)
+			var stdout bytes.Buffer
+			root.SetOut(&stdout)
+			err := root.Execute()
 			if err == nil {
 				t.Fatalf("expected %q to be reported as unknown, got success", name)
 			}
-			want := `unknown command or plugin: "` + name + `"`
+			want := `unknown command "` + name + `" for "trackfw"`
 			if err.Error() != want {
 				t.Fatalf("unexpected error message for %q: got %q, want %q", name, err.Error(), want)
 			}

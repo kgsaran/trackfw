@@ -3,7 +3,7 @@ status: Closed
 date: 2026-08-15
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-15-gate-de-plugins-binario-deteccao-de-adulteracao-sem-deteccao-de-instalacao-e-chmod-apos-aprovacao.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md"
+roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md"
 ---
 
 # REQ: Gate de segurança para `trackfw plugins install` — download de binário de terceiro sem parecer prévio
@@ -116,7 +116,7 @@ O ADR **próprio** desta REQ será escrito na Wave 0 do seu roadmap, após o par
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md`
+Roadmap: `docs/roadmaps/abandoned/ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md`
 
 ## Referências
 

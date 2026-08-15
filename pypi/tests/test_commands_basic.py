@@ -178,6 +178,18 @@ class TestLog(unittest.TestCase):
             self.assertIn("No transition log found", result.stdout)
 
 
+class TestUnknownCommand(unittest.TestCase):
+    """ADR-2026-08-15 (remocao do subsistema de plugins): comando desconhecido
+    nunca deve tentar executar um binario trackfw-* do PATH — deve falhar com
+    erro de comando desconhecido e exit code != 0."""
+
+    def test_comando_inexistente_retorna_erro_sem_executar_binario(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_trackfw("comando-inexistente", cwd=tmpdir)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid choice: 'comando-inexistente'", result.stderr)
+
+
 class TestRealCommands(unittest.TestCase):
     def test_validate_uses_real_handler(self):
         with tempfile.TemporaryDirectory() as tmpdir:

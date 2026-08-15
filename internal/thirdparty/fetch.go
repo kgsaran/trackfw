@@ -15,8 +15,9 @@ import (
 )
 
 // maxContentSize is the network fetch cap for third-party text artifacts
-// (D7): 2 MiB — deliberately smaller than internal/plugins.maxPluginSize
-// (50 MiB), because this is text, not a binary release asset.
+// (D7): 2 MiB — deliberately small, since this is text, not a binary
+// release asset (the plugin subsystem that downloaded binary assets was
+// removed; see docs/adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md).
 const maxContentSize = 2 << 20
 
 // maxRedirects is the maximum number of redirect hops followed before
@@ -25,9 +26,7 @@ const maxContentSize = 2 << 20
 // hop and caps at 3.
 const maxRedirects = 3
 
-// fetchClient is a client dedicated to this package (D7) — it must NOT be
-// shared with internal/plugins.httpClient, so that changes here never
-// alter plugin download behavior.
+// fetchClient is a client dedicated to this package (D7).
 var fetchClient = &http.Client{
 	Timeout: 30 * time.Second,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {

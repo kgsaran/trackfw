@@ -48,7 +48,7 @@ Referências em doc/gates a atualizar: `README.md:160-162`, `CLAUDE.md`, `docs/c
 > sequencial, para não colidir.
 
 ### ML-1A — Go
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído (2026-08-15) — 3 arquivos apagados; fallback do root.go removido; falsificado com binário real no PATH · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** apagar `internal/plugins/` inteiro e `internal/commands/plugins.go`; editar
 `internal/commands/root.go` (remover registro do comando **e** o fallback de `RunE`, linhas 71-74).
 **Ações:**
@@ -64,14 +64,14 @@ Referências em doc/gates a atualizar: `README.md:160-162`, `CLAUDE.md`, `docs/c
 - [ ] Teste cobrindo o item acima (é o coração do AC2/AC3).
 
 ### ML-1B — Node
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído (2026-08-15) — comando apagado; 4 testes novos; 590 testes verdes · **Agente:** `apolo-tf`
 **Arquivos:** apagar `npm/src/commands/plugins.js`; editar o registro do comando em
 `npm/src/commands/index.js`.
 **Aceite:** `cd npm && npm test` verde; argumento desconhecido → erro, nunca execução; zero
 referências a `plugins` em `npm/src/`.
 
 ### ML-1C — Python
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído (2026-08-15) — comando e TestPlugins removidos; 1230 testes verdes · **Agente:** `apolo-tf`
 **Arquivos:** apagar `pypi/trackfw/commands/plugins.py`; remover o registro do subparser; **remover
 a classe `TestPlugins`** de `pypi/tests/test_commands_extras.py:249` (teste órfão — o código que ele
 cobre deixa de existir).
@@ -88,12 +88,31 @@ referências a `plugins`.
 **Arquivos:** `README.md`, `CLAUDE.md`, `docs/cli-parity.md`, `scripts/check-cli-parity.sh`
 **Ações:**
 1. Remover `plugins` de `floor_commands` (`check-cli-parity.sh:22`).
+   > ⚠️ **Precisão apurada na auditoria da Wave 1:** `floor_commands` é usado **apenas como guarda
+   > de contagem** (`${#all_go_commands[@]} -lt ${#floor_commands[@]}`, linha 50), **não** como
+   > checagem de pertencimento. Por isso `make quality` passou verde mesmo com `plugins` ainda
+   > listado e já ausente do help. Remover a entrada mantém a guarda **calibrada** — não é conserto
+   > de check quebrado.
 2. Remover as três linhas de plugins da tabela de comandos do `README.md` (:160-162).
 3. `docs/cli-parity.md`: registrar a remoção e **apagar** qualquer menção a plugins como exceção de
    paridade — a exceção deixa de existir (D4).
 4. **Adicionar ao contrato de paridade** a checagem de que argumento desconhecido produz a **mesma
    mensagem de erro** nos 3 CLIs. É o comportamento novo que substitui a execução de plugin, e sem
    isso ele fica sem cobertura.
+   > 🔴 **Divergência real medida na Wave 1 — este é o trabalho do ML-2A, não uma formalidade:**
+   > ```
+   > GO    exit 1  Error: unknown command "x" for "trackfw"
+   > NODE  exit 1  error: unknown command 'x'   (+ "(Did you mean validate?)")
+   > PY    exit 2  trackfw: error: argument COMMAND: invalid choice: 'x' (choose from ...)
+   > ```
+   > Divergem em **texto, aspas, exit code (1 vs 2) e sugestão**. Reconciliar exige customizar a
+   > saída de erro do cobra, do commander e do argparse.
+   > **Preservar a sugestão do tipo "Did you mean"** nos três: o typo que antes executava um binário
+   > passar a sugerir o comando certo é ganho de UX, não ruído a remover.
+5. **Divergência pré-existente, FORA de escopo, apenas documentar em `docs/cli-parity.md`:**
+   `trackfw` **sem argumento** → Go sai `exit 0` com stdout; Node sai `exit 1` com o help em
+   **stderr**. É default do commander (comando raiz sem `.action()`), não tem relação com plugins e
+   **não deve ser "consertado" aqui**. Abrir REQ própria.
 **Aceite:**
 - [ ] `make quality` verde.
 - [ ] `grep -rn "plugins" README.md CLAUDE.md scripts/` sem ocorrência que descreva o comando removido.

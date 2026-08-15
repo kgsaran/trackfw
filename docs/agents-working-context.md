@@ -17322,3 +17322,35 @@ squash nem rebase.
 Estado entregue: 5 Waves, 10 MLs, `make quality` exit 0 (229 checagens), `trackfw validate` sem
 erros. Roadmap e REQ em `done`. Débito rastreado em REQ própria no backlog
 (`trackfw plugins install` sem gate).
+
+## Sessão 2026-08-15 — Apolo (backend Go) — ML-1A remoção do subsistema de plugins (Go)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw` (roadmap `ML-1A`, ADR
+`ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md`).
+Escopo exclusivo `internal/` (Go), em paralelo a ML-1B (npm) e ML-1C (pypi).
+
+**Apagado:** `internal/plugins/` (`plugins.go`, `plugins_test.go`) e `internal/commands/plugins.go`.
+
+**`internal/commands/root.go`:** removido `newPluginsCmd()` do `root.AddCommand`, removido
+`root.Args = cobra.ArbitraryArgs` e o `root.RunE` que fazia fallback para `RunPlugin(args[0], ...)`.
+Sem `RunE`/`Args` customizado, o cobra volta ao comportamento padrão: `trackfw` sem argumento
+imprime help (exit 0, inalterado); `trackfw <comando-inexistente>` é recusado pelo próprio cobra
+com `Error: unknown command "X" for "trackfw"` + `Run 'trackfw --help' for usage.` (exit 1),
+sem nunca tentar executar binário externo.
+
+**`internal/commands/agents_skills_test.go`:** `TestRemovedIntegrationAliasesAreUnknownCommands`
+trocou a chamada direta a `RunPlugin` (removida) por `root.Execute()` fim-a-fim, validando a
+mensagem exata do cobra `unknown command "X" for "trackfw"` — é o teste que cobre AC2/AC3.
+
+**`internal/i18n/locales/{en-US,pt-BR,es-ES}.json`:** removida a chave `plugins.*` (descrições do
+comando removido, órfãs).
+
+**`internal/thirdparty/fetch.go`:** comentários que referenciavam `internal/plugins.maxPluginSize`
+/ `internal/plugins.httpClient` atualizados — o pacote não existe mais.
+
+**Validação:** `go build ./...` e `go vet ./...` limpos; `grep -rn "plugins\|RunPlugin" internal/`
+sem ocorrências de código de produto do subsistema de plugins (os 3 achados restantes são
+não-relacionados: `<plugins>` de Maven em `generators/java.go`, `plugins:` de Chart.js em
+`serve/static/app.js`, e o nome do arquivo do ADR em um comentário);
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./...` verde em todos os pacotes. Devolvido **não
+commitado**, conforme fronteira do ML.

@@ -84,10 +84,6 @@ def main():
     from trackfw.commands import sync as sync_cmd
     sync_cmd.register(subparsers)
 
-    # --- plugins ---
-    from trackfw.commands import plugins as plugins_cmd
-    plugins_cmd.register(subparsers)
-
     # --- serve ---
     from trackfw.commands import serve as serve_cmd
     serve_cmd.register(subparsers)
