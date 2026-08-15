@@ -44,7 +44,7 @@ equivalentes) só faz parse de flags + chama o módulo + imprime.
 > Dependências: nenhuma
 
 ### ML-1A — Módulo `internal/changelog` + comando `trackfw changelog`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/changelog/changelog.go` (novo) — parsing e extração de seções
 - `internal/changelog/changelog_test.go` (novo)
