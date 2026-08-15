@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: instalacao de skills de terceiro via URL para agentes especialistas
 
-> Created: 2026-08-15 | Reescrito: 2026-08-15 (Zeus) | Status: wip
+> Created: 2026-08-15 | Reescrito: 2026-08-15 (Zeus) | Wave 0 ✅ | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md -->
@@ -120,21 +120,27 @@ Fatos que condicionam o desenho e que **não podem ser reinventados**:
 - [ ] AC3 — A skill **nunca substitui** o arquivo de um agente do catálogo: é sempre seção
       suplementar apensada/referenciada. O usuário confirma explicitamente a quais agentes se
       aplica; o `trackfw` sugere mas não decide sozinho.
-- [ ] AC4 — Escopo de instalação: `<<TBD-D4 escopo default nomeado>>` (resolve o conflito com
-      ADR-2026-07-25 D1); escopo global nunca sem confirmação extra.
+- [ ] AC4 — Escopo de instalação de artefato de terceiro é **`project` por padrão** (D4 —
+      exceção escopada ao `ADR-2026-07-25` D1, que segue valendo `global` para o catálogo);
+      escopo `global` exige confirmação explícita adicional. Verificação: `resolveScope` retorna
+      `project` para third-party sem `--scope` e `global` para `skills install` do catálogo.
 - [ ] AC5 — Proveniência auditável registrada (URL, hash/checksum, data) em artefato
       versionado do projeto.
 - [ ] AC6 — Comportamento idêntico nos 3 CLIs (Go · Node · Python).
 - [ ] AC7 — `make quality` passa sem novas divergências de paridade.
 - [ ] AC8 — Revisão do `hades-tf` documentada em parecer + ADR **antes** do primeiro ML de
       implementação.
-- [ ] AC9 — Restrição de invocação (só orquestrador, dentro de sessão de agente) implementada
-      via `<<TBD-D2 mecanismo nomeado>>` + detecção `<<TBD-D2 detecção nomeada>>`, com a
-      limitação de "guardrail, não controle" declarada explicitamente na doc e no ADR.
+- [ ] AC9 — Restrição de invocação implementada via env var `TRACKFW_ORCHESTRATOR_SESSION`
+      (**guardrail declarado**) + detecção real pela regra `thirdparty_artifact_has_provenance`
+      em `trackfw validate` (D2). Verificação: a mensagem de recusa contém a palavra "guardrail"
+      e o nome da regra; nenhum texto de doc/erro apresenta a env var como prevenção.
 - [ ] AC10 — Gate de runtime recorrente: **nenhum caminho de código instala artefato de
       terceiro (skill, agent ou plugin) sem parecer prévio do `hades-tf`**. O comando baixa
-      para quarentena, para, e só consuma mediante referência ao parecer favorável
-      (`<<TBD-D8 handshake nomeado>>`). Vale para os dois caminhos de entrada: comando
+      para quarentena, para, e só consuma mediante referência ao parecer favorável — handshake
+      `third-party fetch` → `.trackfw/thirdparty-quarantine/<checksum>.json` → aprovação em
+      `.trackfw/thirdparty-provenance.json` vinculada por SHA-256 → `third-party install
+      --checksum <sha256>` (D8). **`trackfw plugins install` fica fora desta REQ** (D8e), em REQ
+      separada. Vale para os dois caminhos de entrada: comando
       explícito do `trackfw` e pedido em linguagem natural na sessão. Verificação: teste que
       tenta consumar a instalação sem referência de parecer **falha**, nos 3 CLIs.
 
@@ -228,7 +234,7 @@ Fatos que condicionam o desenho e que **não podem ser reinventados**:
 ---
 
 ### ML-0B — ADR consolidando as decisões + reescrita das Waves 1+ com valores fixados
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-08-15) — ADR: `docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quarentena-parecer-vinculado-por-checksum-e-deteccao-por-proveniencia-versionada.md`
 **Agente:** Zeus (`trackfw_architect`) — não delegável: é decisão arquitetural e resolve conflito
 entre ADRs aceitos.
 **Dependência:** ML-0A ✅.
@@ -259,87 +265,164 @@ entre ADRs aceitos.
 - [ ] ADR criado com status `Accepted` e decisões D1–D8 cobrindo Q1–Q8 (D8 = handshake de duas fases).
 - [ ] Relação com `ADR-2026-07-25` declarada explicitamente (emenda, exceção ou reafirmação).
 - [ ] Campo `adr:` da REQ preenchido.
-- [ ] Nenhum `<<TBD-Dn>>` restante neste arquivo (inclusive no bloco de AC consolidado).
-- [ ] Nenhum AC contém a expressão "conforme … Wave 0".
+- [ ] Nenhum placeholder de decisão restante **fora da própria seção ML-0B** (inclusive no bloco
+      de AC consolidado) — a seção ML-0B cita os tokens literalmente ao descrever a tarefa, o que
+      é esperado e não conta.
+- [ ] Nenhum AC delega verificação ao ADR ("conforme a Wave 0") — todo AC verificável por si.
 - [ ] `trackfw validate` passa.
 
 **Comandos de validação:**
 ```bash
 trackfw validate
 R=docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md
-grep -c "TBD-D" "$R"          # deve ser 0
-grep -ci "conforme .* Wave 0" "$R"   # deve ser 0
+# exclui a seção ML-0B (que cita os tokens ao descrever a própria tarefa)
+sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -c "TBD-D"            # deve ser 0
+sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -ci "conforme .* Wave 0"   # deve ser 0
 ```
 
 ---
 
-## Wave 1 — Núcleo Go: fetch, validação e proveniência (contingente à Wave 0)
-> Dependências: Wave 0 completa (ML-0A + ML-0B ✅).
-> ⚠️ MLs sequenciais entre si: ML-1A e ML-1B compartilham o mesmo pacote novo.
+## Wave 1 — Núcleo Go: fetch, quarentena, proveniência e comandos de duas fases
+> Dependências: Wave 0 completa (ML-0A ✅ + ML-0B ✅).
+> Decisões fixadas em `docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quarentena-parecer-vinculado-por-checksum-e-deteccao-por-proveniencia-versionada.md` (D1–D8).
+> ⚠️ **MLs sequenciais entre si** — os três compartilham o pacote novo `internal/thirdparty`.
 
-### ML-1A — Fetch seguro + validação de conteúdo (pacote Go novo)
+### ML-1A — Pacote `internal/thirdparty`: fetch (D7), validação de marcadores (D3) e checksum (D6)
 **Status:** ⬜ Pendente
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos afetados:**
-- `internal/skillsrc/fetch.go` (novo — nome de pacote confirmado em `<<TBD-D5>>`)
-- `internal/skillsrc/validate.go` (novo)
-- `internal/skillsrc/fetch_test.go`, `internal/skillsrc/validate_test.go` (novos)
+- `internal/thirdparty/fetch.go` (novo)
+- `internal/thirdparty/markers.go` (novo)
+- `internal/thirdparty/fetch_test.go`, `internal/thirdparty/markers_test.go` (novos)
 
 **Ações:**
-1. Implementar fetch HTTPS-only espelhando os limites de `internal/plugins/plugins.go`:
-   `http.Client{Timeout: <<TBD-D7>>}`, `io.LimitReader` com `<<TBD-D7 tamanho máx>>`, política de
-   redirect `<<TBD-D7>>`, recusa de esquema não-`https`.
-2. Implementar `Validate(content []byte) error` aplicando os marcadores de recusa de
-   `<<TBD-D3>>` após a normalização de `<<TBD-D3>>`. Erro deve nomear o marcador encontrado.
-3. Calcular checksum `<<TBD-D6 algoritmo>>` do conteúdo bruto baixado.
-4. **Não** escrever em disco neste ML — só fetch, validate, hash.
+1. `Fetch(rawURL string) ([]byte, error)` — política de rede D7, exata:
+   - recusar antes do primeiro `Get` se `url.Scheme != "https"`;
+   - `http.Client{Timeout: 30 * time.Second}` **próprio deste pacote** — não reusar o `httpClient`
+     compartilhado de `internal/plugins/plugins.go`, para não alterar o comportamento de plugins;
+   - `CheckRedirect` customizado: **máximo 3 hops**, revalidando `Scheme == "https"` a cada hop;
+   - `io.LimitReader(resp.Body, maxSize+1)` com `maxSize = 2 << 20` (2 MiB), erro se `len > maxSize`;
+   - recusar (não avisar) se `Content-Type` não for `text/plain`, `text/markdown` ou
+     `text/x-markdown` (com ou sem `; charset=`).
+2. `CheckMarkers(content []byte) (matched []string)` — critério D3, na ordem exata:
+   (1) remover comentários HTML `<!-- ... -->`; (2) **remover blocos cercados** (``` e ~~~) —
+   emenda de D3, linhas dentro de fence não são headings; (3) NFKC; (4) casefold;
+   (5) colapsar espaços internos + strip; (6) casar só linhas `^#{1,6}\s+` contra a lista:
+   `Git authority`, `Mode lock`, `Governance prerequisite`, `Reporting boundary`,
+   `Scope boundary`, `Dispatch contract`. Retorna os marcadores encontrados (nomeados no erro).
+3. `Checksum(raw []byte) string` — SHA-256 hex dos **bytes brutos**, antes de qualquer
+   normalização. Reusar `contentHash` de `internal/integrations/manager.go` se a assinatura
+   permitir; se não, replicar o algoritmo e citar a origem em comentário.
+4. **Não escrever em disco neste ML** — só fetch, check, hash.
 
 **Critérios de aceite:**
 - [ ] `go build ./...` sem erros; `go vet ./...` limpo.
-- [ ] Testes cobrem: URL `http://` recusada; conteúdo acima do limite truncado/recusado;
-      cada marcador de `<<TBD-D3>>` recusado; conteúdo benigno aceito; hash estável.
-- [ ] Nenhuma chamada de rede real nos testes (`httptest.Server`), respeitando
+- [ ] Testes cobrem: `http://` recusado; esquema não-http(s) recusado; downgrade para `http` em
+      redirect recusado; 4º redirect recusado; conteúdo > 2 MiB recusado; `Content-Type: text/html`
+      recusado; **cada um dos 6 marcadores** recusado como heading em `#` e em `######`;
+      marcador dentro de bloco cercado **aceito** (emenda de D3); marcador com homoglifo NFKC
+      recusado; conteúdo benigno aceito; checksum estável e igual ao `sha256sum` do arquivo.
+- [ ] Nenhuma chamada de rede real (`httptest.Server`), compatível com
       `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1`.
 
-**Comandos de validação:** `go build ./... && go vet ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./internal/skillsrc/...`
+**Comandos de validação:**
+`go build ./... && go vet ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./internal/thirdparty/...`
 
-### ML-1B — Comando Go + composição + proveniência + gate de invocação
+---
+
+### ML-1B — Quarentena (D8a/b) e proveniência (D6) — persistência fatal-on-failure
 **Status:** ⬜ Pendente
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-1A ✅ (mesmo pacote).
 **Arquivos afetados:**
-- `internal/commands/skills.go` (novo subcomando `<<TBD-D1 nome>>`)
-- `internal/commands/skills_thirdparty_test.go` (novo)
-- `internal/integrations/render.go` (ponto de extensão de composição — **apensar, nunca
-  sobrescrever**)
-- `internal/integrations/manifest.go` (se `<<TBD-D5>>` exigir nova claim)
-- `internal/skillsrc/provenance.go` (novo — writer append-only estilo
-  `appendTransitionLog`, `internal/generators/roadmap.go:456`)
+- `internal/thirdparty/quarantine.go` (novo)
+- `internal/thirdparty/provenance.go` (novo)
+- `internal/thirdparty/quarantine_test.go`, `internal/thirdparty/provenance_test.go` (novos)
 
 **Ações:**
-1. Subcomando `<<TBD-D1>>` com flags `<<TBD-D1 flags de confirmação>>`; sem TTY e sem a flag
-   explícita → recusa (AC1).
-2. Gate de invocação `<<TBD-D2>>`; mensagem de erro deve declarar que é guardrail e apontar a
-   detecção correspondente.
-3. Exibir conteúdo/diff antes de gravar (AC1) e exigir confirmação de a quais agentes aplicar
-   (AC3) — sugestão permitida, decisão silenciosa proibida.
-4. Gravar via `Manager` (nunca `os.WriteFile` cru), respeitando o manifest.
-5. Registrar proveniência em `<<TBD-D6 caminho>>`: URL, checksum, data. Falha de escrita da
-   proveniência **é fatal** (diferente do `.trackfw-log`, que é best-effort) — sem registro não
-   há instalação.
-6. Escopo default conforme `<<TBD-D4>>`, via `resolveScope` (`integrations_flags.go:436`), sem
-   quebrar o comportamento existente de `skills install`/`agents install`.
+1. **Quarentena (D8a/b):** escrever `.trackfw/thirdparty-quarantine/<checksum>.json` com os campos
+   exatos: `schema_version: 1`, `url`, `checksum_sha256`, `fetched_at` (RFC3339 UTC),
+   `content_base64` (conteúdo **integral embutido** — nunca caminho para outro arquivo),
+   `marker_check: {result: "pass"|"fail", matched_markers: [...]}`, `kind` (`skill`|`agent`),
+   `requested_targets: [...]`. Escrita atômica (`os.CreateTemp` + `os.Rename`, padrão de
+   `internal/integrations/manager.go`).
+2. **Proveniência (D6):** ler/escrever `.trackfw/thirdparty-provenance.json` com
+   `schema_version: 1` e `entries` **chaveado por destino**, cada entrada com `url`,
+   `checksum_sha256`, `installed_at`, `approved_by`, `review_reference`, `scope`,
+   `marker_override`.
+3. **Falha de escrita da proveniência é FATAL** — retorna erro que aborta a instalação. Isto é o
+   oposto de `appendTransitionLog` (`internal/generators/roadmap.go:456`), que é best-effort;
+   registrar essa divergência em comentário no código para quem for espelhar o padrão errado.
+4. **Fail-closed na leitura (D8f):** arquivo ausente, JSON inválido, ou `schema_version`
+   incompatível → erro, **nunca** degradar para "proveniência vazia" silenciosamente. Espelhar o
+   rigor de `loadManifest` em `internal/integrations/manifest.go`.
+5. `VerifyApproval(checksum string, dest string) error` — a prova de D8c: só passa se existir
+   entrada com **aquele checksum exato** e `approved_by` não-vazio. Booleano "aprovado" solto não
+   é aceito por construção.
 
 **Critérios de aceite:**
-- [ ] Instalação sem confirmação em modo não-interativo é recusada.
-- [ ] Conteúdo com marcador proibido é recusado antes de qualquer escrita em disco.
-- [ ] Arquivo de agente pré-existente permanece íntegro (teste compara o conteúdo anterior byte
-      a byte, exceto o bloco apensado).
-- [ ] Registro de proveniência presente após instalação bem-sucedida e ausente após recusa.
-- [ ] `trackfw skills install`/`agents install` mantêm comportamento atual
-      (`internal/commands/agents_skills_test.go` verde, sem edição dos casos existentes).
+- [ ] Round-trip de quarentena e de proveniência preserva todos os campos do schema.
+- [ ] `content_base64` decodificado é byte-idêntico ao original.
+- [ ] Erro de escrita de proveniência (diretório read-only no teste) **aborta** e retorna erro.
+- [ ] `schema_version: 2` na leitura → erro, não fallback.
+- [ ] `VerifyApproval` recusa: checksum ausente, checksum diferente, `approved_by` vazio.
+- [ ] `go vet ./...` limpo.
 
-**Comandos de validação:** `go build ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./... && go vet ./...`
+**Comandos de validação:**
+`go build ./... && go vet ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./internal/thirdparty/...`
+
+---
+
+### ML-1C — Subcomandos `third-party fetch` / `third-party install` (D1) + composição (D5) + guardrail (D2)
+**Status:** ⬜ Pendente
+**Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Dependência:** ML-1B ✅.
+**Arquivos afetados:**
+- `internal/commands/integrations_flags.go` (registrar o subcomando `third-party` no
+  `newIntegrationsLifecycleCmd`, valendo para `skills` **e** `agents` — D1)
+- `internal/commands/integrations_thirdparty.go` (novo — implementação das duas fases)
+- `internal/commands/integrations_thirdparty_test.go` (novo)
+- `internal/integrations/render.go` (ponto de extensão D5: linha de referência entre os marcadores
+  `<!-- trackfw:thirdparty-skills:start -->` / `<!-- trackfw:thirdparty-skills:end -->`, padrão
+  idempotente de `injectOrUpdateRules` em `internal/generators/agentfiles.go`)
+- `internal/integrations/manifest.go` (nova claim para o destino de terceiro — hash isolado)
+
+**Ações:**
+1. **Fase 1 — `trackfw <skills|agents> third-party fetch <url>`:** `Fetch` → `CheckMarkers` →
+   `Checksum` → grava quarentena. **Nunca instala.** Imprime o caminho do artefato de revisão.
+   Recusa por marcador é o **default**; `--force-thirdparty-markers` sobrescreve e grava
+   `marker_override: true` na proveniência.
+2. **Fase 2 — `trackfw <skills|agents> third-party install --checksum <sha256>`:** lê a quarentena,
+   recalcula o SHA-256, chama `VerifyApproval` (D8c) e só então grava. Exibe conteúdo e destino
+   resolvido antes de gravar (AC1); sem TTY, recusa salvo `--yes-i-trust-this-source`.
+3. **Alvos (AC3):** o comando pode **sugerir** agentes por palavra-chave, mas exige confirmação
+   explícita da lista. Decisão silenciosa é proibida.
+4. **Destino (D5):** `<target>/skills/thirdparty/<slug>.md`, resolvido pelo `Manager` por target —
+   **nunca** hardcodar `.claude/`. O arquivo do agente do catálogo recebe **só** a linha de
+   referência entre os marcadores novos; jamais o conteúdo apensado.
+5. **Escopo (D4):** default `project` para third-party, via `resolveScope`
+   (`integrations_flags.go:436`), usando *flag-set* (`cmd.Flags().Changed("scope")`) e **sem
+   alterar** o default `global` de `skills install`/`agents install` do catálogo.
+6. **Guardrail (D2):** checar `TRACKFW_ORCHESTRATOR_SESSION`; a mensagem de recusa **deve dizer que
+   é guardrail, não controle**, e apontar a regra `thirdparty_artifact_has_provenance` como a
+   detecção real. Proibido qualquer texto que a apresente como prevenção.
+7. Toda gravação passa pelo `Manager` — nunca `os.WriteFile` cru.
+
+**Critérios de aceite:**
+- [ ] `third-party fetch` **nunca** cria arquivo em `.claude/`/`<target>/` — só em
+      `.trackfw/thirdparty-quarantine/`.
+- [ ] `third-party install` sem entrada de proveniência aprovada **falha** (AC10).
+- [ ] Conteúdo trocado após aprovação (checksum diferente) **falha** — teste explícito de TOCTOU.
+- [ ] Arquivo do agente do catálogo permanece **byte-idêntico** exceto pelas linhas entre os
+      marcadores `trackfw:thirdparty-skills` — comparação byte a byte no teste.
+- [ ] `trackfw agents update` executado após a instalação **não** reporta `StateModified` no
+      artefato do catálogo (regressão que D5 existe para evitar).
+- [ ] Escopo default de third-party é `project`; `skills install`/`agents install` seguem `global`
+      (`internal/commands/agents_skills_test.go` verde, **sem editar** os casos existentes).
+- [ ] Mensagem do guardrail contém a palavra "guardrail" e o nome da regra de detecção.
+
+**Comandos de validação:**
+`go build ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./... && go vet ./...`
 
 ---
 
@@ -351,12 +434,14 @@ grep -ci "conforme .* Wave 0" "$R"   # deve ser 0
 ### ML-2A — Porte Node.js 1:1
 **Status:** ⬜ Pendente
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
-**Arquivos afetados:** `npm/src/commands/skills.js`, `npm/src/integrations/render.js`,
-`npm/src/integrations/manager.js`, `npm/src/skillsrc/` (novo, espelho de `internal/skillsrc/`),
-`npm/tests/skills-thirdparty.test.js` (novo)
+**Arquivos afetados:** `npm/src/integrations/index.js`, `npm/src/integrations/render.js`,
+`npm/src/integrations/manager.js`, `npm/src/thirdparty/` (novo — espelho de
+`internal/thirdparty/`: `fetch.js`, `markers.js`, `quarantine.js`, `provenance.js`),
+`npm/src/commands/thirdparty.js` (novo), `npm/tests/thirdparty.test.js` (novo)
 **Ações:** porte literal do Go da Wave 1 — mesmas mensagens, mesmos códigos de saída, mesmos
-limites numéricos, mesmo formato de proveniência. Rede via `fetch` seguindo o padrão de
-`npm/src/commands/plugins.js`.
+limites numéricos (30s, 2 MiB, 3 redirects), mesmo schema JSON de quarentena e de proveniência,
+mesma ordem de normalização de D3 (inclusive a remoção de blocos cercados). Rede via `fetch`
+seguindo o padrão de `npm/src/commands/plugins.js`.
 **Critérios de aceite:**
 - [ ] `cd npm && npm test` verde, sem regressão nos testes pré-existentes.
 - [ ] Saída byte-idêntica ao Go nos cenários: recusa por marcador, recusa não-interativa,
@@ -366,10 +451,13 @@ limites numéricos, mesmo formato de proveniência. Rede via `fetch` seguindo o 
 ### ML-2B — Porte Python 1:1
 **Status:** ⬜ Pendente
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
-**Arquivos afetados:** `pypi/trackfw/commands/skills.py`, `pypi/trackfw/integrations/renderers.py`,
-`pypi/trackfw/integrations/manager.py`, `pypi/trackfw/skillsrc/` (novo),
-`pypi/tests/test_skills_thirdparty.py` (novo)
-**Ações:** idem ML-2A, em Python puro; rede seguindo o padrão de `pypi/trackfw/commands/plugins.py`.
+**Arquivos afetados:** `pypi/trackfw/integrations/command.py`,
+`pypi/trackfw/integrations/renderers.py`, `pypi/trackfw/integrations/manager.py`,
+`pypi/trackfw/thirdparty/` (novo — espelho: `fetch.py`, `markers.py`, `quarantine.py`,
+`provenance.py`), `pypi/tests/test_thirdparty.py` (novo)
+**Ações:** idem ML-2A, em Python puro; rede seguindo o padrão de
+`pypi/trackfw/commands/plugins.py`. Atenção à normalização NFKC (`unicodedata.normalize`) para
+bater byte a byte com o Go.
 **Critérios de aceite:**
 - [ ] `python3 -m pytest pypi/tests -q` verde, sem regressão.
 - [ ] Mesma paridade byte-a-byte de saída exigida em ML-2A.
@@ -384,18 +472,27 @@ limites numéricos, mesmo formato de proveniência. Rede via `fetch` seguindo o 
 **Status:** ⬜ Pendente
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos afetados:** `scripts/check-cli-parity.sh`, `scripts/check-artifact-parity.sh`,
-`docs/cli-parity.md`, `internal/validator/` (+ espelhos Node/Python) se `<<TBD-D2>>` exigir
-regra nova de detecção, `CLAUDE.md` (seção do comando, se aplicável)
+`docs/cli-parity.md`, `internal/validator/validator_thirdparty_provenance.go` (novo) + espelhos
+Node/Python, `scripts/check-thirdparty-parity.sh` (novo, adicionado ao alvo `parity` do
+`Makefile`), `CLAUDE.md` (seção do comando)
 **Ações:**
 1. Estender o contrato de paridade para cobrir o novo subcomando nos 3 CLIs.
-2. Implementar em `trackfw validate` a detecção de `<<TBD-D2>>` (skill instalada sem registro
-   de proveniência correspondente → violação), nos 3 CLIs.
-3. Documentar o comando e suas exceções em `docs/cli-parity.md`.
+2. Implementar em `trackfw validate` a regra **`thirdparty_artifact_has_provenance`** (D2), nos 3
+   CLIs, **bidirecional**: (i) destino gerenciado com origem de terceiro sem entrada de
+   proveniência → violação `error`; (ii) entrada de proveniência cujo `checksum_sha256` não bate
+   com o SHA-256 do conteúdo instalado → violação `error`. A regra **nunca faz fetch de rede**
+   (D6) — compara só contra o conteúdo local.
+3. Documentar em `docs/cli-parity.md`: o comando, o schema dos dois JSONs, e **a exceção de
+   escopo de D4** (third-party é `project`; catálogo segue `global` por `ADR-2026-07-25` D1).
+   A doc do comando **deve** conter a seção "o que o critério de marcadores NÃO cobre" (D3) —
+   qualquer texto que sugira que o critério filtra adversário competente é bug.
 4. Rodar `scripts/sync-integration-assets.sh` se algum asset canônico mudou.
 **Critérios de aceite:**
 - [ ] `make quality` passa integralmente.
 - [ ] `scripts/check-integration-assets.sh` verde (árvores de assets idênticas).
-- [ ] `trackfw validate` sinaliza skill instalada sem proveniência, nos 3 CLIs.
+- [ ] `trackfw validate` sinaliza artefato instalado sem proveniência **e** proveniência com
+      checksum divergente, nos 3 CLIs, com saída byte-idêntica.
+- [ ] `docs/cli-parity.md` documenta a exceção de escopo de D4 e a limitação de D3.
 **Comandos de validação:** `make quality`
 
 ---
@@ -409,8 +506,8 @@ regra nova de detecção, `CLAUDE.md` (seção do comando, se aplicável)
 **Arquivos afetados (escrita):** `docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md`
 (seção "Verificação pós-implementação" apensada)
 **Ações:** verificar o código entregue contra cada decisão D1–D8 do ADR; tentar falsificar o
-critério de recusa com payloads de evasão (unicode, HTML comment, paráfrase); confirmar que a
-proveniência é fatal-on-failure e versionada.
+critério de recusa com payloads de evasão (unicode, HTML comment, paráfrase, fence); confirmar que a
+proveniência é fatal-on-failure e versionada, e que o TOCTOU está fechado por checksum (D8c).
 **Critérios de aceite:**
 - [ ] Cada decisão D1–D8 marcada como implementada ou desviada (com o desvio nomeado).
 - [ ] Payloads de evasão testados e resultado registrado.

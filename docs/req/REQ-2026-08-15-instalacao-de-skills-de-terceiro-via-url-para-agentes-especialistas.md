@@ -2,7 +2,7 @@
 status: Open
 date: 2026-08-15
 author: ""
-adr: ""
+adr: "docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quarentena-parecer-vinculado-por-checksum-e-deteccao-por-proveniencia-versionada.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md"
 ---
 
@@ -122,7 +122,7 @@ instale artefato de terceiro sem parecer prévio" é o requisito, não uma suges
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
-ADR: 
+ADR: docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quarentena-parecer-vinculado-por-checksum-e-deteccao-por-proveniencia-versionada.md
 
 ## Blocked by ADRs
 <!-- none -->

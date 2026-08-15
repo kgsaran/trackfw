@@ -16619,3 +16619,27 @@ esta REQ — o campo `adr:` é preenchido no ML-0B). Roadmap em `analyzing/`.
 
 **Não commitado:** nenhuma branch criada (`trackfw branch new` exige roadmap em `wip/`/`done/`;
 `analyzing/` não satisfaz o gate) e commit direto na `main` é proibido. A branch nasce no ML-0B.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — ML-0B concluído: ADR D1–D8 + Waves 1–3 decision-complete
+
+**Entregue:**
+- ADR novo: `docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quarentena-parecer-vinculado-por-checksum-e-deteccao-por-proveniencia-versionada.md`
+  (Accepted), com D1–D8 mapeando Q1–Q8 do parecer do `hades-tf`.
+- REQ com campo `adr:` preenchido (warnings do validate caíram de 7 → 6).
+- Waves 1–3 reescritas com valores exatos; Wave 1 virou 3 MLs sequenciais (ML-1A pacote
+  `internal/thirdparty` fetch/markers/checksum; ML-1B quarentena + proveniência; ML-1C
+  subcomandos de duas fases + composição D5 + guardrail D2). AC4, AC9 e AC10 reescritos com
+  valores nomeados — nenhum AC delega verificação ao ADR.
+
+**Decisões que divergem ou emendam o parecer:**
+- **D3 ganhou emenda do arquiteto:** a normalização do parecer não removia blocos cercados, e o
+  próprio arquivo do parecer (que lista os 6 marcadores dentro de um fence) seria recusado pelo
+  critério que define. Decidido: passo de extração de headings opera sobre o conteúdo **sem**
+  blocos cercados. Contrapartida registrada no ADR.
+- **D4 confirmado por KG:** escopo `project` para third-party, como exceção escopada ao
+  `ADR-2026-07-25` D1, que segue valendo `global` para o catálogo.
+- **D8(e):** `trackfw plugins install` fica fora desta REQ, em REQ separada — registrado no ADR
+  como débito de segurança consciente e datado, não esquecimento.
+
+**Estado:** Wave 0 ✅ completa (ML-0A + ML-0B). Wave 1 liberada para dispatch ao `apolo-tf`.
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, nada pushado.
