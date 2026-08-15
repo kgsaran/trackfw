@@ -4,6 +4,23 @@
 
 ---
 
+## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap agentes-especialistas-convencoes concluídos) — pronto para PR
+
+Branch `feat/agentes-especialistas-aceitam-contexto-de-convencoes`. REQ
+`REQ-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md`
+e roadmap correspondente movidos para `done/`. Wave 1 (Go — campo `agent_conventions` +
+injeção no rules block, commit `1478983`; heurística de sugestão em `discover`, commit
+`3bbb7db`), Wave 2 (Node.js + Python, commit `88d367c`) e Wave 3 (ML-3A, commit `5f95f12`)
+concluídas. `make quality` verde. Os 3 cenários (com/sem `agent_conventions`, sugestão de
+framework de teste em `discover`) confirmados byte-idênticos nos 3 CLIs. `docs/cli-parity.md`
+ganhou a chave `agent_conventions` na tabela de campos do config loader único (agora 12
+campos). Achado incidental fora de escopo, não investigado: `roadmap_namespacing` diverge
+entre Go/Node num fixture de `--init` sem `docs/roadmaps/`. Próximo passo: abrir PR via
+`bin/trackfw ship`, e após merge, seguir para o item 3 do backlog priorizado — instalação de
+skills de terceiro via URL (requer revisão de segurança do `hades-tf` antes de qualquer ML,
+e restrição explícita do usuário: comando só invocável pelo orquestrador dentro de sessão de
+agente, nunca por invocação humana direta de terminal).
+
 ## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap trackfw changelog concluídos) — pronto para PR
 
 Branch `feat/comando-trackfw-changelog`. REQ
