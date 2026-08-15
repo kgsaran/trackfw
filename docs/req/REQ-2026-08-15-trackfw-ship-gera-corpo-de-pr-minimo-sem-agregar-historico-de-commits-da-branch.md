@@ -39,6 +39,27 @@ TODOS os commits desde a divergência da branch base — não só o commit mais 
 `trackfw ship` deveria produzir algo equivalente automaticamente, sem exigir correção
 manual pós-hoc.
 
+**Achado adicional (2026-08-15, pós-merge do PR #169):** com o `git-branch-guard` (REQ
+irmã `REQ-2026-08-14-bloqueio-tecnico-...`) agora bloqueando `git push` bruto em todos os
+runtimes, `trackfw ship` passou a ser o **único** caminho de push — inclusive para
+commits puramente doc-only (ex.: criar um novo REQ+roadmap em `backlog/`). Reproduzido ao
+vivo nesta sessão tentando commitar `REQ-2026-08-15-trackfw-commit-sugere-mensagem-...`;
+dois gates concretos bloqueiam, confirmados por teste direto do binário:
+
+1. **`isShipBranch`** (`internal/commands/ship.go`) — exige `feat|fix|refactor/<slug>`
+   sem exceção. Uma branch nomeada `docs/<slug>` (convenção já usada nesta sessão antes
+   do guard existir, para trabalho puramente de governança) é rejeitada de cara, antes
+   de qualquer checagem de conteúdo.
+2. **`CheckShipGovernance`/`validateBranchHasWIPRoadmap`** (`internal/validator/validator.go`)
+   — mesmo numa branch `feat/<slug>` corretamente nomeada, exige roadmap correspondente
+   em `wip/`; confirmado por teste direto (`trackfw ship --dry-run`) que falha com
+   "no matching roadmap in wip/ nor done/" quando nada está em `wip/`.
+
+Nenhum dos dois tem exceção para mudanças doc-only — mesmo que o próprio CLAUDE.md (§7)
+já isente explicitamente "Alteração doc-only (markdown, comentários)" da exigência de
+REQ+roadmap. Resultado prático: ficou impossível empurrar um REQ+roadmap novo para
+`backlog/` sem antes mover ALGUM roadmap para `wip/`.
+
 ## Acceptance Criteria
 - [ ] `buildPRBody` (Go) e equivalentes (Node/Python) passam a agregar
       `git log <base>..HEAD --no-merges` (mensagens completas, não só a primeira linha)
@@ -64,6 +85,22 @@ manual pós-hoc.
 - [ ] Teste de regressão cobrindo o caso real que motivou esta REQ: branch com múltiplos
       commits não-merge, `ship` chamado no commit final — corpo do PR deve conter
       referência a todos os commits, não só o último.
+- [ ] `trackfw ship` ganha exceção para commits doc-only, cobrindo os 2 gates
+      identificados — coerente com a isenção já existente no CLAUDE.md §7 ("Alteração
+      doc-only (markdown, comentários)" dispensa REQ+roadmap). Critério objetivo de
+      detecção: se **todos** os arquivos staged (`git diff --cached --name-only`)
+      estiverem sob `docs/`/`vault/` ou tiverem extensão `.md`, então:
+      (a) `isShipBranch` deixa de exigir prefixo `feat/fix/refactor` — aceita qualquer
+      nome de branch nesse caso (ex.: `docs/<slug>`);
+      (b) `CheckShipGovernance`/`validateBranchHasWIPRoadmap` é dispensado — não exige
+      roadmap correspondente em `wip/`.
+      Mudança em qualquer arquivo de código (mesmo 1 arquivo fora desse critério) mantém
+      os dois gates atuais, sem exceção — a detecção é "tudo staged é doc" ou nada.
+- [ ] Teste de regressão cobrindo o caso real, os 2 gates: (1) branch `docs/<slug>` com
+      só arquivos `docs/`/`.md`/`vault/` staged — `ship` deve permitir; (2) branch
+      `feat/<slug>` sem roadmap em `wip/`, com só arquivos doc-only staged — `ship` deve
+      permitir; (3) qualquer uma das duas branches acima com pelo menos 1 arquivo de
+      código staged junto — `ship` deve continuar bloqueando exatamente como hoje.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
