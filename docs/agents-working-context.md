@@ -15878,3 +15878,35 @@ mesma sessão antes de eu checar; não precisei regenerá-lo.
 
 Não fiz `git add`/`commit`/`push` — fora da minha fronteira de autoridade Git. Entregando a
 trackfw_architect para auditoria e commit.
+
+## Sessão 2026-08-14/15 — Zeus (arquiteto) — auditoria final, fechamento do roadmap e PR
+
+Auditei e commitei o trabalho dos 6 subagentes que implementaram
+`ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`.
+
+**Resumo do que foi entregue:**
+- Comando `trackfw commit` (Go/Node/Python) — recusa commit direto em `main`/`master` e em
+  `feat/fix/refactor` sem roadmap em `wip/`.
+- Guard script técnico (`scripts/trackfw-git-branch-guard.sh`) ligado nos 7 runtimes
+  (Claude, Codex, Gemini, Copilot, Cursor, Windsurf, Amazon Q), gerado por
+  `trackfw init`/`update`/`update harness`.
+- Decisão do usuário: deny global em todos os runtimes, sem exceção para o arquiteto —
+  confirmado ao vivo nesta sessão (fui bloqueado tentando `git commit`/`git push` bruto
+  neste mesmo repo, e usei `trackfw commit`/`trackfw ship` corretamente a partir daí).
+- 3 bugs de robustez do `match_subcommand` encontrados por teste manual E2E via subagente
+  (comando encadeado, path absoluto, falso-positivo de prosa) — corrigidos nos 3 CLIs.
+- `scripts/check-commit-parity.sh` novo, registrado em `make quality` — encontrou e corrigiu
+  bug de buffering no Python (`commit.py`).
+- `docs/cli-parity.md` e `CHANGELOG.md` atualizados com o estado final real.
+- REQ separada criada em `backlog/` para `trackfw changelog` (pedido do usuário, fora do
+  escopo deste roadmap).
+
+**Validação final:** `go build/vet/test`, `npm test` (496), `pytest` (1079+8), todos os
+parity gates (`check-agent-hooks-parity.sh`, `check-harness-hooks-parity.sh`,
+`check-attention-scripts-parity.sh`, `check-commit-parity.sh`) e `make quality` completo
+(112+ cenários de falsificação) — todos verdes.
+
+**Roadmap movido para `done/`, REQ com `status: Done`.** Branch `feat/bloqueio-tecnico-de-comandos-git-brutos`,
+18 commits (todos via `bin/trackfw commit`, nenhum `git commit` bruto na main).
+
+Próximo passo: `trackfw ship` para push + abertura de PR.
