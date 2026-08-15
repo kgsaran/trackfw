@@ -8,7 +8,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { runCommit, isCommitGatedBranch, commitGovernedBranchPrefix } = require('../src/commit/runner')
+const { runCommit, buildSuggestedMessage, isCommitGatedBranch, commitGovernedBranchPrefix } = require('../src/commit/runner')
 const validator = require('../src/validator')
 
 // makeCommitDeps builds runCommit deps wired to injectable fakes, so tests never touch a real
@@ -179,4 +179,66 @@ test('runCommit: current branch resolution failure blocks with a clear message',
   assert.notEqual(code, 0)
   assert.equal(commitCalls.length, 0)
   assert.ok(err.join('\n').includes('could not determine current branch'))
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// buildSuggestedMessage — mirrors internal/commands/commit_test.go's TestBuildSuggestedMessage
+// scenario-for-scenario.
+// ────────────────────────────────────────────────────────────────────────────
+
+test('buildSuggestedMessage: nothing staged raises a clear error', () => {
+  assert.throws(
+    () => buildSuggestedMessage({ stagedNameStatus: () => '' }),
+    /nothing staged — `git add` files first/
+  )
+})
+
+test('buildSuggestedMessage: only test files staged -> type test', () => {
+  const raw = 'M\tnpm/src/commit/runner.test.js\nA\tinternal/commands/commit_test.go\n'
+  const out = buildSuggestedMessage({ stagedNameStatus: () => raw })
+  assert.match(out, /# Tipo sugerido: test/)
+  assert.match(out, /^test\(<escopo>\): <descrição>$/m)
+})
+
+test('buildSuggestedMessage: only docs/.md staged -> type docs', () => {
+  const raw = 'M\tdocs/adr/ADR-001-example.md\nA\tvault/notes/example.md\nM\treadme.md\n'
+  const out = buildSuggestedMessage({ stagedNameStatus: () => raw })
+  assert.match(out, /# Tipo sugerido: docs/)
+  assert.match(out, /^docs\(<escopo>\): <descrição>$/m)
+})
+
+test('buildSuggestedMessage: new file under a commands dir -> type feat', () => {
+  const raw = 'A\tnpm/src/commands/newthing.js\nM\tnpm/src/commit/runner.js\n'
+  const out = buildSuggestedMessage({ stagedNameStatus: () => raw })
+  assert.match(out, /# Tipo sugerido: feat/)
+  assert.match(out, /^feat\(<escopo>\): <descrição>$/m)
+})
+
+test('buildSuggestedMessage: generic staged set -> type fix', () => {
+  const raw = 'M\tnpm/src/commit/runner.js\nM\tnpm/src/validator/index.js\n'
+  const out = buildSuggestedMessage({ stagedNameStatus: () => raw })
+  assert.match(out, /# Tipo sugerido: fix/)
+  assert.match(out, /^fix\(<escopo>\): <descrição>$/m)
+})
+
+test('buildSuggestedMessage: lists staged files by status under the expected heading', () => {
+  const raw = 'A\tnpm/src/commands/newthing.js\nM\tnpm/src/commit/runner.js\nD\tnpm/src/old.js\n'
+  const out = buildSuggestedMessage({ stagedNameStatus: () => raw })
+  assert.match(out, /## Arquivos staged/)
+  assert.match(out, /^A {2}npm\/src\/commands\/newthing\.js$/m)
+  assert.match(out, /^M {2}npm\/src\/commit\/runner\.js$/m)
+  assert.match(out, /^D {2}npm\/src\/old\.js$/m)
+})
+
+test('buildSuggestedMessage: starts with the heuristic disclaimer header', () => {
+  const raw = 'M\tnpm/src/commit/runner.js\n'
+  const out = buildSuggestedMessage({ stagedNameStatus: () => raw })
+  assert.ok(out.startsWith('# Sugestão heurística — NÃO é uma mensagem pronta, revise antes de usar.\n'))
+})
+
+test('buildSuggestedMessage: propagates a read failure as a clear error', () => {
+  assert.throws(
+    () => buildSuggestedMessage({ stagedNameStatus: () => { throw new Error('not a git repository') } }),
+    /could not read staged changes \(are you in a git repo\?\)/
+  )
 })

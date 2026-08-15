@@ -12,11 +12,20 @@ nenhum teste toca um repositório git real.
 
 from __future__ import annotations
 
+import argparse
 import io
 
+import pytest
+
+from trackfw.commands import commit as _commit
 from trackfw.commands.commit import (
+    build_suggested_message,
     commit_governed_branch_prefix,
+    is_docs_file,
+    is_test_file,
+    parse_staged_name_status,
     run_commit,
+    suggested_commit_type,
 )
 from trackfw import validator as _validator
 
@@ -193,3 +202,148 @@ def test_commit_governed_branch_prefix_no_match():
     prefix, matched = commit_governed_branch_prefix("docs/housekeeping")
     assert matched is False
     assert prefix == ""
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# build_suggested_message — --suggest nunca comita, classifica por heurística
+# ────────────────────────────────────────────────────────────────────────────
+
+def _make_staged(raw: str, err: str | None = None):
+    """Builds a fake staged_name_status callable, mirroring makeSuggestDeps in
+    commit_test.go (Go)."""
+    def fake():
+        return raw, err
+    return fake
+
+
+def test_build_suggested_message_nothing_staged_errors():
+    message, err = build_suggested_message(staged_name_status=_make_staged(""))
+    assert err is not None
+    assert "nothing staged" in err
+    assert message == ""
+
+
+def test_build_suggested_message_staged_read_error_propagates():
+    message, err = build_suggested_message(
+        staged_name_status=_make_staged("", "not a git repository")
+    )
+    assert err is not None
+    assert message == ""
+
+
+def test_build_suggested_message_only_test_files_suggests_test():
+    raw = "M\tinternal/commands/commit_test.go\nA\tnpm/src/commit/runner.test.js\n"
+    message, err = build_suggested_message(staged_name_status=_make_staged(raw))
+    assert err is None
+    assert "# Tipo sugerido: test" in message
+    assert "test(<escopo>): <descrição>" in message
+    assert "M  internal/commands/commit_test.go" in message
+
+
+def test_build_suggested_message_only_docs_files_suggests_docs():
+    raw = "M\tdocs/roadmaps/wip/ROADMAP-x.md\nA\tvault/notes/example.md\nM\tREADME.md\n"
+    message, err = build_suggested_message(staged_name_status=_make_staged(raw))
+    assert err is None
+    assert "# Tipo sugerido: docs" in message
+
+
+def test_build_suggested_message_new_command_file_suggests_feat():
+    raw = "A\tpypi/trackfw/commands/newthing.py\nM\tpypi/trackfw/commands/commit.py\n"
+    message, err = build_suggested_message(staged_name_status=_make_staged(raw))
+    assert err is None
+    assert "# Tipo sugerido: feat" in message
+
+
+def test_build_suggested_message_generic_change_suggests_fix():
+    raw = "M\tpypi/trackfw/commands/commit.py\nM\tpypi/trackfw/config.py\n"
+    message, err = build_suggested_message(staged_name_status=_make_staged(raw))
+    assert err is None
+    assert "# Tipo sugerido: fix" in message
+
+
+def test_build_suggested_message_exact_template():
+    raw = "A\tpypi/trackfw/commands/newthing.py\n"
+    message, err = build_suggested_message(staged_name_status=_make_staged(raw))
+    assert err is None
+    expected = (
+        "# Sugestão heurística — NÃO é uma mensagem pronta, revise antes de usar.\n"
+        "# Tipo sugerido: feat\n"
+        "\n"
+        "feat(<escopo>): <descrição>\n"
+        "\n"
+        "## Arquivos staged\n"
+        "A  pypi/trackfw/commands/newthing.py"
+    )
+    assert message == expected
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# suggested_commit_type / parse_staged_name_status / is_test_file / is_docs_file
+# — cobertura direta das funções auxiliares
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_parse_staged_name_status_skips_blank_lines():
+    raw = "A\tfoo.py\n\nM\tbar.py\n"
+    files = parse_staged_name_status(raw)
+    assert files == [("A", "foo.py"), ("M", "bar.py")]
+
+
+def test_is_test_file_recognizes_all_patterns():
+    assert is_test_file("internal/commands/commit_test.go") is True
+    assert is_test_file("npm/src/commit/runner.test.js") is True
+    assert is_test_file("pypi/tests/test_commit.py") is True
+    assert is_test_file("pypi/trackfw/commands/commit_test.py") is True
+    assert is_test_file("pypi/trackfw/commands/commit.py") is False
+
+
+def test_is_docs_file_recognizes_docs_vault_and_md():
+    assert is_docs_file("docs/roadmaps/wip/x.md") is True
+    assert is_docs_file("vault/notes/example.md") is True
+    assert is_docs_file("README.md") is True
+    assert is_docs_file("pypi/trackfw/commands/commit.py") is False
+
+
+def test_suggested_commit_type_priority_test_over_others():
+    files = [("A", "pypi/tests/test_commit.py")]
+    assert suggested_commit_type(files) == "test"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# --suggest via _dispatch: vence sobre -m, nunca chama run_commit
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_dispatch_suggest_never_calls_run_commit_even_with_message(monkeypatch, capsys):
+    raw = "A\tpypi/trackfw/commands/newthing.py\n"
+    monkeypatch.setattr(_commit, "_default_staged_name_status", _make_staged(raw))
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("run_commit must never be called by --suggest")
+
+    monkeypatch.setattr(_commit, "run_commit", fail_if_called)
+
+    args = argparse.Namespace(message="should be ignored", suggest=True)
+    with pytest.raises(SystemExit) as excinfo:
+        _commit._dispatch(args)
+    assert excinfo.value.code == 0
+
+    captured = capsys.readouterr()
+    assert "# Tipo sugerido: feat" in captured.out
+
+
+def test_dispatch_suggest_nothing_staged_exits_nonzero(monkeypatch, capsys):
+    monkeypatch.setattr(_commit, "_default_staged_name_status", _make_staged(""))
+
+    args = argparse.Namespace(message="", suggest=True)
+    with pytest.raises(SystemExit) as excinfo:
+        _commit._dispatch(args)
+    assert excinfo.value.code != 0
+
+    captured = capsys.readouterr()
+    assert "nothing staged" in captured.err
+
+
+def test_dispatch_without_suggest_still_requires_message(monkeypatch):
+    args = argparse.Namespace(message="", suggest=False)
+    with pytest.raises(SystemExit) as excinfo:
+        _commit._dispatch(args)
+    assert excinfo.value.code != 0

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-15
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md"
 ---
 
 # REQ: trackfw commit sugere mensagem de commit a partir do diff staged
 
-> Date: 2026-08-15 | Status: Open
+> Date: 2026-08-15 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -35,20 +35,20 @@ arquivos alterados + lista de arquivos + resumo mecânico do diff), não geraç�
 natural — a prosa continua sendo escrita por quem chama o comando (humano ou agente).
 
 ## Acceptance Criteria
-- [ ] Nova flag `trackfw commit --suggest` (sem `-m`) imprime um esqueleto de mensagem no
+- [x] Nova flag `trackfw commit --suggest` (sem `-m`) imprime um esqueleto de mensagem no
       stdout e sai sem commitar — não executa `git commit`.
-- [ ] O esqueleto inclui: (a) tipo Conventional Commits sugerido por heurística simples
+- [x] O esqueleto inclui: (a) tipo Conventional Commits sugerido por heurística simples
       sobre os arquivos staged (ex.: só arquivos em `*_test.go`/`*.test.js`/`test_*.py` →
       `test`; só `docs/`/`*.md` → `docs`; presença de arquivo novo em `internal/commands/`
       ou equivalente → `feat`; caso contrário → `fix`/`chore`, decisão de fallback a
       documentar no ML); (b) lista dos arquivos staged agrupados por status
       (`git diff --cached --name-status`); (c) um placeholder de corpo para preencher.
-- [ ] Documentar explicitamente na saída do `--suggest` que é uma heurística de
+- [x] Documentar explicitamente na saída do `--suggest` que é uma heurística de
       apoio, não uma mensagem pronta — não fingir certeza sobre o tipo/escopo detectado.
-- [ ] Comportamento idêntico nos 3 CLIs (mesma heurística, mesmo formato de saída).
-- [ ] `trackfw commit -m "..."` (uso normal, sem `--suggest`) continua funcionando
+- [x] Comportamento idêntico nos 3 CLIs (mesma heurística, mesmo formato de saída).
+- [x] `trackfw commit -m "..."` (uso normal, sem `--suggest`) continua funcionando
       exatamente como hoje — este ML não muda o caminho padrão, só adiciona o novo modo.
-- [ ] `make quality` passa sem novas divergências de paridade.
+- [x] `make quality` passa sem novas divergências de paridade.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -59,4 +59,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md

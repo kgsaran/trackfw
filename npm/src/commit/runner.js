@@ -51,6 +51,20 @@ function defaultExecGit(args) {
 }
 
 /**
+ * defaultStagedNameStatus runs `git diff --cached --name-status` and returns its raw output.
+ * Mirrors Go's defaultStagedNameStatus (internal/commands/commit.go), which reuses the same git
+ * subcommand. Used only by buildSuggestedMessage — never touched by the normal `-m` commit flow.
+ * @param {function(string[]): {stdout: string, error: Error|null}} execGit
+ * @returns {string}
+ * @throws {Error} when git fails (e.g. not a git repo)
+ */
+function defaultStagedNameStatus(execGit) {
+  const result = execGit(['diff', '--cached', '--name-status'])
+  if (result.error) throw result.error
+  return result.stdout
+}
+
+/**
  * defaultCurrentBranch reads the current branch via `git rev-parse --abbrev-ref HEAD` — mirrors
  * Go's defaultCurrentBranch (internal/commands/commit.go), which reuses the same git subcommand.
  * @param {function(string[]): {stdout: string, error: Error|null}} execGit
@@ -187,11 +201,152 @@ function runCommit(message, deps = {}) {
   return execGitCommit(message)
 }
 
+// commitCommandDirs lists the directories (across the 3 supported CLIs) where a new (status "A")
+// file signals a new CLI command was added — used by the "feat" heuristic rule below. Mirrors
+// Go's commitCommandDirs.
+const COMMIT_COMMAND_DIRS = ['internal/commands/', 'npm/src/commands/', 'pypi/trackfw/commands/']
+
+/**
+ * parseStagedNameStatus parses raw `git diff --cached --name-status` output (tab-separated
+ * "<status>\t<path>" lines) into { status, path } entries, skipping blank lines. Mirrors Go's
+ * parseStagedNameStatus.
+ * @param {string} raw
+ * @returns {{status: string, path: string}[]}
+ */
+function parseStagedNameStatus(raw) {
+  const files = []
+  for (const rawLine of String(raw || '').split('\n')) {
+    const line = rawLine.replace(/\r+$/, '')
+    if (line.trim() === '') continue
+    const tabIdx = line.indexOf('\t')
+    if (tabIdx === -1) continue
+    const status = line.slice(0, tabIdx).trim()
+    const path = line.slice(tabIdx + 1)
+    files.push({ status, path })
+  }
+  return files
+}
+
+/**
+ * isTestFile reports whether path matches one of the recognized test-file naming conventions
+ * across the 3 supported stacks: *_test.go, *.test.js, test_*.py, *_test.py. Mirrors Go's
+ * isTestFile.
+ * @param {string} path
+ * @returns {boolean}
+ */
+function isTestFile(path) {
+  const idx = path.lastIndexOf('/')
+  const base = idx === -1 ? path : path.slice(idx + 1)
+  if (base.endsWith('_test.go')) return true
+  if (base.endsWith('.test.js')) return true
+  if (base.startsWith('test_') && base.endsWith('.py')) return true
+  if (base.endsWith('_test.py')) return true
+  return false
+}
+
+/**
+ * isDocsFile reports whether path lives under docs/ or vault/, or has a .md extension. Mirrors
+ * Go's isDocsFile.
+ * @param {string} path
+ * @returns {boolean}
+ */
+function isDocsFile(path) {
+  if (path.startsWith('docs/') || path.startsWith('vault/')) return true
+  return path.endsWith('.md')
+}
+
+/**
+ * isUnderAnyDir reports whether path starts with any of the given directory prefixes. Mirrors
+ * Go's isUnderAnyDir.
+ * @param {string} path
+ * @param {string[]} dirs
+ * @returns {boolean}
+ */
+function isUnderAnyDir(path, dirs) {
+  return dirs.some((d) => path.startsWith(d))
+}
+
+/**
+ * suggestedCommitType returns the Conventional Commits type suggested for a set of staged files,
+ * following the fixed-priority heuristic documented in ML-1A/ML-2A of
+ * docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md
+ * (first matching rule wins — this is a deliberately simple heuristic, not an attempt at perfect
+ * classification). Mirrors Go's suggestedCommitType.
+ *  1. every staged file matches a test-file pattern -> "test"
+ *  2. every staged file is under docs/ or vault/, or has a .md extension -> "docs"
+ *  3. at least one new ("A") file lives under one of COMMIT_COMMAND_DIRS -> "feat"
+ *  4. otherwise -> "fix"
+ * @param {{status: string, path: string}[]} files
+ * @returns {string}
+ */
+function suggestedCommitType(files) {
+  let allTests = true
+  let allDocs = true
+  let hasNewCommandFile = false
+
+  for (const f of files) {
+    if (!isTestFile(f.path)) allTests = false
+    if (!isDocsFile(f.path)) allDocs = false
+    if (f.status === 'A' && isUnderAnyDir(f.path, COMMIT_COMMAND_DIRS)) hasNewCommandFile = true
+  }
+
+  if (allTests) return 'test'
+  if (allDocs) return 'docs'
+  if (hasNewCommandFile) return 'feat'
+  return 'fix'
+}
+
+/**
+ * buildSuggestedMessage implements `trackfw commit --suggest`: it reads the staged diff via
+ * deps.stagedNameStatus, classifies it with suggestedCommitType, and renders the heuristic
+ * Conventional Commits skeleton described in ML-1A/ML-2A. It never calls deps.execGitCommit — no
+ * commit ever happens as a side effect of this function. Mirrors Go's buildSuggestedMessage
+ * byte-for-byte in output template.
+ * @param {{ stagedNameStatus?: function(): string }} deps
+ * @returns {string}
+ * @throws {Error} when staged files cannot be read, or nothing is staged
+ */
+function buildSuggestedMessage(deps = {}) {
+  const stagedNameStatus = deps.stagedNameStatus || (() => defaultStagedNameStatus(deps.execGit || defaultExecGit))
+
+  let raw
+  try {
+    raw = stagedNameStatus()
+  } catch (err) {
+    throw new Error(`could not read staged changes (are you in a git repo?): ${err.message}`)
+  }
+
+  const files = parseStagedNameStatus(raw)
+  if (files.length === 0) {
+    throw new Error('nothing staged — `git add` files first')
+  }
+
+  const commitType = suggestedCommitType(files)
+
+  const lines = []
+  lines.push('# Sugestão heurística — NÃO é uma mensagem pronta, revise antes de usar.')
+  lines.push(`# Tipo sugerido: ${commitType}`)
+  lines.push('')
+  lines.push(`${commitType}(<escopo>): <descrição>`)
+  lines.push('')
+  lines.push('## Arquivos staged')
+  for (const f of files) {
+    lines.push(`${f.status}  ${f.path}`)
+  }
+
+  return lines.join('\n')
+}
+
 module.exports = {
   runCommit,
+  buildSuggestedMessage,
   defaultExecGit,
   defaultCurrentBranch,
   defaultGitCommit,
+  defaultStagedNameStatus,
   isCommitGatedBranch,
   commitGovernedBranchPrefix,
+  suggestedCommitType,
+  isTestFile,
+  isDocsFile,
 }
