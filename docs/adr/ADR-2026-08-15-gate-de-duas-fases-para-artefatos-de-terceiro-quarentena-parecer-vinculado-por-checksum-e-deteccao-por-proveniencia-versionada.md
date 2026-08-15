@@ -208,6 +208,59 @@ checksum divergente → recusa, sem bypass silencioso. Em **CI**: não há sess�
 `thirdparty_artifact_has_provenance`. Uma aprovação commitada é suficiente em CI porque está
 vinculada por checksum e é ela própria o objeto da auditoria.
 
+### D9 — Emenda pós-implementação (ML-1C): registro de referências é um TERCEIRO artefato
+
+Descoberto ao implementar D5 e **não previsto neste ADR quando foi escrito**. Formalizado aqui
+porque um porte feito estritamente de D1–D8 **divergiria** no comportamento de `agents update`
+pós-anexação.
+
+**O problema:** D5 diz que o arquivo do agente do catálogo recebe uma linha de referência entre
+marcadores. Mas esse arquivo é **regenerado** por `Render`/`BuildPlans` a cada `trackfw agents
+update`. Sem persistir a referência em algum lugar, a regeneração produz o arquivo sem o bloco, e a
+anexação passa a ser lida como **drift** (`StateModified`) — exatamente o que D5 existe para evitar.
+
+**A decisão:**
+
+1. Terceiro schema versionado: **`.trackfw/thirdparty-references.json`**, `schema_version: 1`,
+   `entries` chaveado por `<targetID>/<agentItemID>`, cada valor uma lista de referências
+   (`slug`, caminho do arquivo de terceiro, etc.).
+2. `BuildPlans` **deve** reaplicar as referências persistidas **depois** de `Render`, via
+   `ApplyThirdPartyReferences`. Não pode viver dentro de `Render` porque `Render` não conhece o
+   root do projeto.
+3. O acoplamento é **opt-in por `PlanRequest.ProjectRoot`**: caller que não seta o campo recebe
+   saída byte-idêntica à anterior. Isso preserva todo o comportamento existente do catálogo.
+
+**Por que é um arquivo separado da proveniência (D6), e não um campo dentro dela** — a pergunta foi
+levantada na auditoria e a resposta é o discriminante do desenho:
+
+- proveniência é chaveada pelo **destino do arquivo de terceiro** e é **o objeto cuja integridade a
+  regra `thirdparty_artifact_has_provenance` confere**;
+- referências são chaveadas por **target + item de agente** e são lidas no **caminho de render**.
+
+Fundir os dois obrigaria o render a **inverter o índice** (varrer toda a proveniência procurando
+entradas aplicadas ao target X) a cada renderização de agente, e — mais grave — faria anexar ou
+desanexar uma referência **mutar o registro de auditoria por um motivo que não é de auditoria**.
+Não se escreve na coisa cuja integridade se está conferindo. Dois arquivos, duas chaves, dois
+leitores.
+
+### D10 — Imprecisões deste ADR encontradas na implementação (registradas, não contornadas)
+
+1. **Escopo do `--apply-to`.** D5/D8 nunca disseram em que escopo o artefato do agente do catálogo
+   precisa estar, e D4 dá ao terceiro um default (`project`) **diferente** do default do catálogo
+   (`global`, `ADR-2026-07-25` D1). Decisão: exigir que o agente esteja instalado, **owned** e não
+   modificado à mão **no MESMO escopo** da skill, falhando com a remediação exata. Justificativa: um
+   caminho de skill relativo ao projeto injetado num arquivo de agente de escopo global estaria
+   quebrado para todos os outros projetos que compartilham aquele arquivo do home.
+   ⚠️ **Consequência de UX a decidir com o usuário:** no caminho 100% default (catálogo em `global`,
+   terceiro em `project`), `--apply-to` **recusa** com mensagem de remediação. Ver Wave 3.
+2. **Quem escreve a entrada de proveniência.** `VerifyApproval` exige entrada preexistente, mas
+   **nenhum comando a escreve** — o aprovador (`hades-tf`) grava direto no JSON versionado,
+   **chaveado pelo destino RESOLVIDO**. Esse acoplamento era implícito e agora é normativo: sem ele,
+   a Wave 2 não tem como portar o lado da escrita do handshake.
+3. **`requested_targets` de D8b é ambíguo** — não distingue target de CLI (onde o arquivo cai) de
+   item de agente do catálogo (quem recebe a referência). Por isso o CLI separa `--targets` de
+   `--apply-to`.
+
 ## Consequences
 
 **Positivas**

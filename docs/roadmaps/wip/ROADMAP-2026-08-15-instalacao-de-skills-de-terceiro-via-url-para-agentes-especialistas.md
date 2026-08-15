@@ -461,6 +461,7 @@ sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -ci "conforme .* Wave 0"   # deve s
 **Arquivos afetados:** `npm/src/integrations/index.js`, `npm/src/integrations/render.js`,
 `npm/src/integrations/manager.js`, `npm/src/thirdparty/` (novo — espelho de
 `internal/thirdparty/`: `fetch.js`, `markers.js`, `quarantine.js`, `provenance.js`),
+`npm/src/integrations/plan.js` (campo `projectRoot` + reaplicação de referências, D9),
 `npm/src/commands/thirdparty.js` (novo), `npm/tests/thirdparty.test.js` (novo)
 **Ações:** porte literal do Go da Wave 1 — mesmas mensagens, mesmos códigos de saída, mesmos
 limites numéricos (30s, 2 MiB, 3 redirects), mesmo schema JSON de quarentena e de proveniência,
@@ -472,7 +473,16 @@ mesma ordem de normalização de D3 (inclusive a remoção de blocos cercados).
 > backreference — e é exatamente por isso que a tentação de usar um regex de uma linha aqui é uma
 > armadilha: o comportamento divergiria do Go em casos de borda (fence não fechado, fechamento mais
 > curto que a abertura, fence indentado). **Porte o algoritmo line-scanner, não um regex.**
-> Detalhe em `vault/notes/go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15.md`. Rede via `fetch`
+> Detalhe em `vault/notes/go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15.md`.
+>
+> 🔴 **São TRÊS schemas a portar, não dois (D9).** Além de `thirdparty-quarantine/<checksum>.json`
+> e `thirdparty-provenance.json`, existe **`.trackfw/thirdparty-references.json`** — registro de
+> quais agentes referenciam qual skill, lido no caminho de render. Sem ele, o bloco de referência
+> some no próximo `agents update` e a anexação vira drift (`StateModified`). O porte precisa
+> replicar também: campo `ProjectRoot`/`projectRoot`/`project_root` em `PlanRequest`, e a
+> reaplicação **depois** do `Render`, opt-in (root vazio → saída byte-idêntica à anterior).
+> Ver **D9** e **D10** no ADR — D10 lista as imprecisões já resolvidas (regra de mesmo escopo do
+> `--apply-to`; quem escreve a entrada de proveniência; ambiguidade de `requested_targets`). Rede via `fetch`
 seguindo o padrão de `npm/src/commands/plugins.js`.
 **Critérios de aceite:**
 - [ ] `cd npm && npm test` verde, sem regressão nos testes pré-existentes.
@@ -486,7 +496,8 @@ seguindo o padrão de `npm/src/commands/plugins.js`.
 **Arquivos afetados:** `pypi/trackfw/integrations/command.py`,
 `pypi/trackfw/integrations/renderers.py`, `pypi/trackfw/integrations/manager.py`,
 `pypi/trackfw/thirdparty/` (novo — espelho: `fetch.py`, `markers.py`, `quarantine.py`,
-`provenance.py`), `pypi/tests/test_thirdparty.py` (novo)
+`provenance.py`), `pypi/trackfw/integrations/plan.py` (campo `project_root` + reaplicação de
+referências, D9), `pypi/tests/test_thirdparty.py` (novo)
 **Ações:** idem ML-2A, em Python puro; rede seguindo o padrão de
 `pypi/trackfw/commands/plugins.py`. Atenção à normalização NFKC (`unicodedata.normalize`) para
 bater byte a byte com o Go.
@@ -506,16 +517,21 @@ bater byte a byte com o Go.
 **Arquivos afetados:** `scripts/check-cli-parity.sh`, `scripts/check-artifact-parity.sh`,
 `docs/cli-parity.md`, `internal/validator/validator_thirdparty_provenance.go` (novo) + espelhos
 Node/Python, `scripts/check-thirdparty-parity.sh` (novo, adicionado ao alvo `parity` do
-`Makefile`), `CLAUDE.md` (seção do comando)
+`Makefile`, cobrindo os **três** schemas de D9), `CLAUDE.md` (seção do comando)
 **Ações:**
+0. **Decisão de design pendente, resolver ANTES de codar:** como a regra
+   `thirdparty_artifact_has_provenance` identifica que um destino é "de origem de terceiro"?
+   `manifest.go` **não** ganhou campo novo na `Claim` no ML-1C. As opções são: (a) sniffing do
+   caminho (`/thirdparty/`), (b) usar a própria proveniência como índice, ou (c) adicionar o campo
+   na `Claim` agora. Escolher, justificar em uma linha no commit, e aplicar igual nos 3 CLIs.
 1. Estender o contrato de paridade para cobrir o novo subcomando nos 3 CLIs.
 2. Implementar em `trackfw validate` a regra **`thirdparty_artifact_has_provenance`** (D2), nos 3
    CLIs, **bidirecional**: (i) destino gerenciado com origem de terceiro sem entrada de
    proveniência → violação `error`; (ii) entrada de proveniência cujo `checksum_sha256` não bate
    com o SHA-256 do conteúdo instalado → violação `error`. A regra **nunca faz fetch de rede**
    (D6) — compara só contra o conteúdo local.
-3. Documentar em `docs/cli-parity.md`: o comando, o schema dos dois JSONs, e **a exceção de
-   escopo de D4** (third-party é `project`; catálogo segue `global` por `ADR-2026-07-25` D1).
+3. Documentar em `docs/cli-parity.md`: o comando, o schema dos **três** JSONs (quarentena,
+   proveniência e referências — D9), e **a exceção de escopo de D4** (third-party é `project`; catálogo segue `global` por `ADR-2026-07-25` D1).
    A doc do comando **deve** conter a seção "o que o critério de marcadores NÃO cobre" (D3) —
    qualquer texto que sugira que o critério filtra adversário competente é bug.
 4. Rodar `scripts/sync-integration-assets.sh` se algum asset canônico mudou.
@@ -524,7 +540,11 @@ Node/Python, `scripts/check-thirdparty-parity.sh` (novo, adicionado ao alvo `par
 - [ ] `scripts/check-integration-assets.sh` verde (árvores de assets idênticas).
 - [ ] `trackfw validate` sinaliza artefato instalado sem proveniência **e** proveniência com
       checksum divergente, nos 3 CLIs, com saída byte-idêntica.
-- [ ] `docs/cli-parity.md` documenta a exceção de escopo de D4 e a limitação de D3.
+- [ ] `docs/cli-parity.md` documenta a exceção de escopo de D4, a limitação de D3 e os três
+      schemas de D9.
+- [ ] **UX de D10.1 resolvida:** no caminho 100% default (catálogo `global` + terceiro `project`),
+      `--apply-to` hoje **recusa** com mensagem de remediação. Confirmar com KG se fica assim ou se
+      a mensagem deve sugerir o comando completo; se mudar, atualizar D10.1 no ADR.
 **Comandos de validação:** `make quality`
 
 ---
