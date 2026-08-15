@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-15
 req: "docs/req/REQ-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: instalacao de skills de terceiro via URL para agentes especialistas
 
-> Created: 2026-08-15 | Reescrito: 2026-08-15 (Zeus) | Wave 0 ✅ | Status: wip
+> Created: 2026-08-15 | Reescrito: 2026-08-15 (Zeus) | Wave 0 ✅ | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md -->
@@ -117,30 +117,30 @@ Fatos que condicionam o desenho e que **não podem ser reinventados**:
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] AC1 — Comando baixa o conteúdo e **nunca instala sem confirmação**: exibe o conteúdo
+- [x] AC1 — Comando baixa o conteúdo e **nunca instala sem confirmação**: exibe o conteúdo
       completo (ou diff do que seria adicionado) antes de gravar; em modo não-interativo/CI
       recusa por padrão, exigindo flag explícita de confiança na fonte.
-- [ ] AC2 — Instalação é recusada se o conteúdo baixado tentar redefinir fronteiras de agente
+- [x] AC2 — Instalação é recusada se o conteúdo baixado tentar redefinir fronteiras de agente
       (Git authority / governance prerequisite / mode lock), pelo critério objetivo fixado na
       Wave 0.
-- [ ] AC3 — A skill **nunca substitui** o arquivo de um agente do catálogo: é sempre seção
+- [x] AC3 — A skill **nunca substitui** o arquivo de um agente do catálogo: é sempre seção
       suplementar apensada/referenciada. O usuário confirma explicitamente a quais agentes se
       aplica; o `trackfw` sugere mas não decide sozinho.
-- [ ] AC4 — Escopo de instalação de artefato de terceiro é **`project` por padrão** (D4 —
+- [x] AC4 — Escopo de instalação de artefato de terceiro é **`project` por padrão** (D4 —
       exceção escopada ao `ADR-2026-07-25` D1, que segue valendo `global` para o catálogo);
       escopo `global` exige confirmação explícita adicional. Verificação: `resolveScope` retorna
       `project` para third-party sem `--scope` e `global` para `skills install` do catálogo.
-- [ ] AC5 — Proveniência auditável registrada (URL, hash/checksum, data) em artefato
+- [x] AC5 — Proveniência auditável registrada (URL, hash/checksum, data) em artefato
       versionado do projeto.
-- [ ] AC6 — Comportamento idêntico nos 3 CLIs (Go · Node · Python).
-- [ ] AC7 — `make quality` passa sem novas divergências de paridade.
-- [ ] AC8 — Revisão do `hades-tf` documentada em parecer + ADR **antes** do primeiro ML de
+- [x] AC6 — Comportamento idêntico nos 3 CLIs (Go · Node · Python).
+- [x] AC7 — `make quality` passa sem novas divergências de paridade.
+- [x] AC8 — Revisão do `hades-tf` documentada em parecer + ADR **antes** do primeiro ML de
       implementação.
-- [ ] AC9 — Restrição de invocação implementada via env var `TRACKFW_ORCHESTRATOR_SESSION`
+- [x] AC9 — Restrição de invocação implementada via env var `TRACKFW_ORCHESTRATOR_SESSION`
       (**guardrail declarado**) + detecção real pela regra `thirdparty_artifact_has_provenance`
       em `trackfw validate` (D2). Verificação: a mensagem de recusa contém a palavra "guardrail"
       e o nome da regra; nenhum texto de doc/erro apresenta a env var como prevenção.
-- [ ] AC10 — Gate de runtime recorrente: **nenhum caminho de código instala artefato de
+- [x] AC10 — Gate de runtime recorrente: **nenhum caminho de código instala artefato de
       terceiro (skill, agent ou plugin) sem parecer prévio do `hades-tf`**. O comando baixa
       para quarentena, para, e só consuma mediante referência ao parecer favorável — handshake
       `third-party fetch` → `.trackfw/thirdparty-quarantine/<checksum>.json` → aprovação em
@@ -684,3 +684,27 @@ falha de rede, aderência ao padrão do subsistema `internal/integrations/`.
   commitado.
 - **Auditores não editam código de produto:** `hades-tf` e `hefesto-tf` escrevem apenas os
   documentos designados em seus MLs.
+
+---
+
+## Evidência de fechamento (auditoria do arquiteto, 2026-08-15)
+
+| AC | Evidência |
+|---|---|
+| AC1 | Fase 1 nunca escreve fora da quarentena (teste); sem TTY recusa salvo flag explícita |
+| AC2 | Marcadores recusados antes de qualquer escrita; evasões de fence aberto e comentário HTML fechadas no ML-4C |
+| AC3 | D5 — arquivo separado + linha entre marcadores; agente do catálogo byte-idêntico fora do bloco; `agents update` segue `StateCurrent` |
+| AC4 | Escopo default `project` (D4); `global` permitido com aviso próprio e flag dedicada (D4-bis, decisão de KG) |
+| AC5 | `.trackfw/thirdparty-provenance.json` versionado, com `checksum_sha256` + `installed_sha256`; URL redigida (D6-bis) |
+| AC6 | Paridade três-vias verificada pelo arquiteto em 13 fixtures adversariais + `scripts/check-thirdparty-parity.sh` no alvo `parity` |
+| AC7 | `make quality` exit 0, 229 checagens OK |
+| AC8 | Parecer `hades-tf` (ML-0A) antes de qualquer implementação; verificação pós-implementação (ML-4A) libera para merge |
+| AC9 | Guardrail declarado como guardrail na mensagem, com a regra de detecção nomeada; nenhum texto o apresenta como prevenção |
+| AC10 | `VerifyApproval` vinculado por checksum; TOCTOU testado e fechado; sem aprovação, install falha nos 3 CLIs |
+
+**Débito aberto e rastreado:** `trackfw plugins install` segue sem gate (D8e) — REQ própria já aberta
+em `docs/req/REQ-2026-08-15-gate-de-seguranca-para-trackfw-plugins-install-...md`.
+
+**Limites declarados, não resolvidos por desenho:** o critério de marcadores é tripwire, não filtro
+(paráfrase, indireção e homoglifo de outro alfabeto passam — D3); a prova de aprovação é
+git-detectável, não inforjável (D8c); a detecção só alcança o que foi commitado (D2/D11).

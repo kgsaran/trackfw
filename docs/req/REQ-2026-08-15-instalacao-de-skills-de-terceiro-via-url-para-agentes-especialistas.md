@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-15
 author: ""
 adr: "docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quarentena-parecer-vinculado-por-checksum-e-deteccao-por-proveniencia-versionada.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md"
 ---
 
 # REQ: instalacao de skills de terceiro via URL para agentes especialistas
 
-> Date: 2026-08-15 | Status: Open
+> Date: 2026-08-15 | Status: done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -129,4 +129,4 @@ ADR: docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quare
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md

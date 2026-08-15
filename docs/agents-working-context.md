@@ -17294,3 +17294,21 @@ casefold e o novo caso de não-regressão, e novas seções D3-ter/D4-bis/D6-bis
 **`make quality` (raiz):** exit 0, todos os 112 cenários de falsificação + `check-thirdparty-parity.sh`
 OK. `trackfw validate`: 0 erros, 7 avisos pré-existentes (REQs sem ADR vinculado, não relacionados a
 este ML). Roadmap `ML-4C` marcado `✅ Concluído`. Devolvido não commitado, conforme fronteira.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — FECHAMENTO do roadmap de artefatos de terceiro
+
+Roadmap movido para `done/`, REQ para `done`. 5 Waves, 10 MLs, 19 commits na branch
+`feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`. Nada pushado.
+
+**O que a barreira da Wave 4 pegou depois de `make quality` verde** (registro para futuras
+discussões sobre o custo da barreira): evasão de 3 caracteres no critério de marcadores (fence
+aberto, achada pelos dois auditores independentemente), marcador em comentário HTML passando limpo
+por contradição interna do D3, `--scope global` fora do perímetro de detecção, e URL com token
+indo verbatim para arquivo versionado. Nenhum detectável por gate automatizado.
+
+**Correções do ADR feitas durante a execução, todas por evidência e não por opinião:** D2-bis
+(ramo (ii) comparava domínios de hash incompatíveis), D7-bis (limite de redirect era 2, não 3),
+D3-ter (fence aberto + comentário HTML + casefold divergente), D9 (terceiro artefato que o desenho
+não previa), D11 (como identificar origem de terceiro), D4-bis e D6-bis (decisões de KG).
+
+**Débito rastreado:** `trackfw plugins install` sem gate — REQ aberta em backlog.
