@@ -3187,19 +3187,32 @@ commit`/`trackfw ship`/`trackfw branch new`) por subagente. Mesmo padrão do cre
 script canônico Go (`internal/generators/scaffold.go`, const `gitBranchGuardScript` +
 `GenerateGitBranchGuardScript`/`GenerateGlobalGitBranchGuardScript`) escreve
 `scripts/trackfw-git-branch-guard.sh` (projeto) / `~/.trackfw/scripts/trackfw-git-branch-guard.sh`
-(global). **Este ML só cria o script** — o wiring em cada `hooks.json`/`settings.json`/Rules de CLI é
-escopo da Wave 3 do roadmap acima; a tabela abaixo documenta o mecanismo **planejado** por runtime,
-levantado na REQ.
+(global). **Estado final (Wave 1-4 concluídas):** o script existe, é gerado por `trackfw init`/
+`trackfw update`/`trackfw update harness` nos 3 CLIs, e está ligado (wiring de hook/deny real) nos 7
+runtimes.
 
 | Runtime | Mecanismo | Isolamento do arquiteto |
 |---|---|---|
-| Claude Code | hook `PreToolUse` | via hook (`subagent_name`) |
-| Codex CLI | Rules (`prefix_rule` forbidden) | não suportado (deny global) |
-| Gemini CLI | hook `PreToolUse`/`BeforeTool` (exit 2) | nativo (subagentes com toolset próprio) |
-| GitHub Copilot | `--deny-tool` granular | não suportado (deny global) |
-| Cursor | hook `beforeShellExecution` + deny estático | não suportado (deny global) |
-| Windsurf | hook `pre_run_command` + deny list | não suportado (deny global) |
-| Amazon Q Developer | hook `preToolUse` + `deniedCommands` regex | nativo (custom agents com `tools`/`allowedTools`) |
+| Claude Code | hook `PreToolUse` | **deny global** (decisão 2026-08-14, ver abaixo) |
+| Codex CLI | hook `PreToolUse`/`Bash` (mecanismo estável usado, não Rules) | deny global |
+| Gemini CLI | hook `PreToolUse`/`BeforeTool` (exit 2) | deny global |
+| GitHub Copilot | `--deny-tool` granular | deny global |
+| Cursor | hook `beforeShellExecution` (via exit code 2, sem camada de deny estático adicional) | deny global |
+| Windsurf | hook `pre_run_command` em `.windsurf/hooks.json` | deny global |
+| Amazon Q Developer | hook `preToolUse` + `deniedCommands` regex em `.amazonq/cli-agents/q_cli_default.json` | deny global |
+
+**Decisão sobre isolamento do arquiteto (2026-08-14, usuário, via AskUserQuestion pós-Wave 3):** a
+diferenciação "arquiteto livre, especialista bloqueado" **não foi implementada em nenhum runtime**
+nesta REQ — o deny é global para todos os agentes, inclusive o arquiteto/orquestrador (Zeus ou
+equivalente), em todos os 7 runtimes. Motivo: (a) nenhum runtime tinha essa diferenciação de fato
+implementada quando checado — mesmo os 3 runtimes com suporte nativo a subagentes (Claude via hook
+`subagent_name`, Gemini via subagentes nativos, Amazon Q via custom agents) exigiriam trabalho
+adicional fora do escopo desta REQ; (b) coerente com a regra já existente no CLAUDE.md de que o
+arquiteto não deveria commitar código de implementação mesmo — ele passa a usar `trackfw commit`/
+`trackfw branch new`/`trackfw ship` como qualquer outro agente. Confirmado ao vivo nesta sessão: o
+próprio arquiteto (Zeus) foi bloqueado tentando `git commit` bruto neste mesmo repositório após
+`trackfw update` regenerar os hooks locais. Se o isolamento por subagente vier a ser necessário, é
+uma REQ nova.
 
 ### Contrato de payload do script (`gitBranchGuardScript`)
 
@@ -3234,9 +3247,9 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 A primeira implementação do wiring (ML-3A) escreveu caminhos/formatos **inventados** para Windsurf e
 Amazon Q, sinalizados no próprio comentário de código como não confirmados contra documentação
 oficial. Uma verificação posterior confirmou que ambos estavam estruturalmente errados — corrigido
-no Go (`internal/generators/agentfiles.go`) e no Node (`npm/src/generators/hooks.js`); o Python
-(`pypi/trackfw/generators/hooks.py`, ML-3C) ainda usa os caminhos antigos e precisa do mesmo fix como
-débito técnico de paridade.
+nos 3 CLIs (Go `internal/generators/agentfiles.go`, Node `npm/src/generators/hooks.js`, Python
+`pypi/trackfw/generators/hooks.py`), com byte-identidade confirmada via `check-agent-hooks-parity.sh`
+e `check-harness-hooks-parity.sh`.
 
 | Runtime | Caminho errado (ML-3A original) | Caminho correto (confirmado) |
 |---|---|---|
@@ -3253,3 +3266,42 @@ O contrato de payload do `gitBranchGuardScript` (seção acima) também foi ajus
 `tool_info.command_line` (formato real do payload `pre_run_command` do Windsurf) foi adicionado à
 cadeia de tentativas de extração do comando via stdin JSON, ao lado dos campos genéricos já
 existentes (`.tool_input.command`, `.command`, `.hook_input.command`).
+
+### Fix de robustez do `match_subcommand` (2026-08-14, ML-4A, achado por teste manual E2E)
+
+O teste manual end-to-end (via subagente `apolo-tf`) revelou 3 bugs reais na lógica de detecção,
+todos com a mesma causa raiz — o script fazia busca de padrão livre na string inteira do comando,
+sem respeitar limites reais de segmento (`;`, `&&`, `||`, `|`, quebra de linha) nem exigir que `git`
+fosse o primeiro token de um segmento:
+
+1. **Falso negativo, comando encadeado**: `git status; git push origin HEAD` não bloqueava o `push`.
+2. **Falso negativo, path absoluto**: `/usr/bin/git commit` não bloqueava (comparação de igualdade
+   exata, sem normalizar por basename).
+3. **Falso positivo crítico**: `trackfw commit -m "..."` era bloqueado sempre que a mensagem
+   mencionasse "git commit"/"git push" em qualquer lugar da string — reproduzido ao vivo nesta
+   sessão contra o próprio arquiteto.
+
+Fix (byte-idêntico nos 3 CLIs): `match_subcommand` divide o comando em segmentos reais e exige que o
+**basename** do primeiro token de cada segmento seja `git` antes de inspecionar o subcomando. Um bug
+adicional foi descoberto durante o port para Node/Python: usar `| while read` (pipe, cria subshell)
+faz `return`/`exit` dentro do loop não propagar para a função chamadora — corrigido trocando para o
+padrão heredoc (`done <<EOF...EOF`) que o Go já usava, evitando o subshell. Ver vault notes
+`git-branch-guard-pipe-into-while-loses-return-status-2026-08-14.md` e
+`git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14.md`.
+
+**Limitação residual conhecida, não resolvida (documentada, não é regressão):** o parser não é um
+shell completo — um segmento cuja primeira palavra após um separador real for literalmente `git`
+ainda pode gerar falso positivo se esse texto estiver dentro de uma string entre aspas que contenha
+um desses separadores (ex.: `;` dentro de uma mensagem de commit citando um exemplo com múltiplos
+comandos git). Nenhum runtime tem garantia hermética documentada (mesma ressalva já registrada na
+REQ vinculada).
+
+### Gate de paridade do `trackfw commit` (`scripts/check-commit-parity.sh`, ML-4A)
+
+Criado para fechar a lacuna que só `check-branch-new-parity.sh` cobria antes — verifica que as
+mensagens de bloqueio/aviso do novo comando `trackfw commit` são byte-idênticas entre os 3 CLIs em 3
+cenários (commit em `main`/`master`, commit em `feat/` sem roadmap em `wip/`, commit em branch
+não-governada). Registrado em `make quality`/`parity`. Encontrou um bug real de ordenação de output
+no Python (`pypi/trackfw/commands/commit.py`): `sys.stdout.write()` sem `flush()` antes de um
+`subprocess.run` com stdio herdado inverte a ordem da saída quando stdout não é um TTY — corrigido
+com `out.flush()`.

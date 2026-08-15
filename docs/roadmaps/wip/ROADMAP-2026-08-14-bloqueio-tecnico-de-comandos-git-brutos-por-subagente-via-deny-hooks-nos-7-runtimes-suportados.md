@@ -15,19 +15,19 @@ REQ: docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagen
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] Os 7 runtimes (claude, codex, gemini, copilot, windsurf, amazonq, cursor) recebem
+- [x] Os 7 runtimes (claude, codex, gemini, copilot, windsurf, amazonq, cursor) recebem
       configuração técnica de deny/hook para `git commit`, `git push`, `git checkout -b`
       brutos, gerada nos 3 CLIs (Go/Node/Python) com paridade de contrato.
 - [x] **Decisão 2026-08-14 (usuário):** deny é global em todos os 7 runtimes,
       inclusive para o arquiteto (Zeus/equivalente) — isolamento por subagente fica
       como débito técnico documentado, não implementado nesta REQ (ver REQ vinculada).
-- [ ] Existe um comando `trackfw commit` (Go/Node/Python) que recusa commit direto em
+- [x] Existe um comando `trackfw commit` (Go/Node/Python) que recusa commit direto em
       `main`/branch protegida e recusa commit em `feat/fix/refactor` sem roadmap
       correspondente em `wip/`, replicando o gate de `branch_has_wip_roadmap` no
       momento do commit — não só no momento da criação da branch.
-- [ ] O guard script/deny de cada runtime cobre `git commit` bruto (não só
+- [x] O guard script/deny de cada runtime cobre `git commit` bruto (não só
       `checkout -b`/`push`) e orienta para `trackfw commit`.
-- [ ] `make quality` passa sem novas divergências de paridade.
+- [x] `make quality` passa sem novas divergências de paridade.
 
 ## Diagnóstico / Contexto
 Ver REQ vinculada para o levantamento completo por runtime. Resumo do mecanismo escolhido:
@@ -288,7 +288,20 @@ equivalente Python — já contém a lógica de credential-guard hooks), teste e
 > Dependências: Wave 2 e Wave 3 completas
 
 ### ML-4A — Paridade, gate de contrato e teste manual end-to-end
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Execução real (divergiu do plano em escopo, não em critério):** o teste manual E2E via
+subagente (`apolo-tf`) revelou 3 bugs reais de robustez no guard script (não previstos no
+desenho original): (1) falso negativo em comando encadeado `git a; git push`, (2) falso
+negativo em path absoluto `/usr/bin/git commit`, (3) falso positivo crítico — o guard
+bloqueava `trackfw commit`/`trackfw ship` legítimos sempre que a mensagem de commit
+mencionasse "git commit"/"git push" em qualquer lugar da string (reproduzido ao vivo
+nesta sessão, bloqueou o próprio arquiteto tentando commitar). Corrigidos nos 3 CLIs
+(commit `d882f0a`) antes de fechar este ML — não fazia sentido declarar "teste manual
+passou" com bugs de robustez conhecidos e não corrigidos. `scripts/check-commit-parity.sh`
+criado e registrado em `make quality` (commit `c686f33`), que por sua vez encontrou um
+bug real de buffering no Python (`out.flush()` ausente antes de subprocess com stdio
+herdado).
 **Arquivos afetados:** `scripts/check-commit-parity.sh` (novo) + `Makefile` (wiring em
 `make quality`)
 **Pendência aberta pelo ML-2C (Python):** o projeto tem gates de paridade dedicados por
@@ -327,7 +340,7 @@ divergência futura sem o gate).
 > Dependências: Wave 4 completa
 
 ### ML-5A — Fechar `docs/cli-parity.md` com o estado real implementado
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `docs/cli-parity.md`
 **Ações:** atualizar a tabela criada no ML-1A com o estado final confirmado (não o
 planejado) após a Wave 2/3 — incluindo qualquer divergência descoberta durante a
