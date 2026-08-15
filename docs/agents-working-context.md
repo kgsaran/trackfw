@@ -4,6 +4,127 @@
 
 ---
 
+## Sessão 2026-08-15 — Apolo (ML-1A: `trackfw ship` gera corpo de PR rico + exceção doc-only nos gates) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/trackfw-ship-gera-corpo-de-pr-minimo` (já checked out, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md`.
+ML-1A marcado ✅ Concluído no roadmap (Go, implementação de referência — Wave 1). Waves 2 (Node/Python) e 3 (paridade cruzada) seguem `⬜ Pendente`, não implementadas nesta sessão.
+
+**1. Corpo de PR rico:** `buildPRBody(branch string) string` (corpo fixo "Branch: %s\n\nCreated by
+trackfw ship.") virou `buildPRBody(branch string, commits []string) string`. Com 0/1 commit
+não-merge (caso trivial — só o commit que o próprio `ship` acabou de fazer), mantém o corpo
+mínimo original, sem regressão. Com 2+ commits, agrega `## Commits` (lista de subjects) + `##
+Detalhes` (corpo completo de cada commit que tiver mais que a primeira linha) + rodapé `---\nBranch:
+<branch>`. Commits vêm de `gitCommitsSince(base, execGit)`, que roda `git log <base>..HEAD
+--no-merges --format=%B<sep>` — separador `\x1e` (control char, não aparece em mensagens reais e
+sobrevive ao `strings.TrimSpace` que `defaultGitExec` já aplica). `base` vem de
+`defaultBaseBranch(execGit)`: tenta `git symbolic-ref refs/remotes/origin/HEAD` (extrai o nome após
+a última barra), fallback `"main"` em erro ou saída vazia. Título do PR continua
+`firstLine(opts.message)` sempre — decisão de design documentada em comentário no código: a `-m`
+passada na chamada de `ship` é considerada o resumo do PR inteiro, mesmo com N commits anteriores
+já na branch (evita heurística ambígua de derivar título de N subjects distintos).
+
+**2. Exceção doc-only nos 2 gates de `ship`:** a leitura de `git diff --cached --name-only` subiu
+para o início de `runShip` (Step 0, antes do antigo Step 1), guardada em `stagedFiles []string` e
+reaproveitada no Step 4 (não duplica a chamada). `docOnly := allDocOnly(stagedFiles)` — `true`
+somente se houver ≥1 arquivo staged E todos sob `docs/`/`vault/` (prefixo) ou `.md`. Se
+`docOnly == true`: Step 1 pula `isShipBranch` (qualquer nome de branch aceito — `main`/`master`
+continuam bloqueados incondicionalmente, isso não mudou) e Step 2 pula `deps.checkGovernance()`
+inteiramente, imprimindo `Governance: skipped (doc-only change)`. Se `docOnly == false`,
+comportamento idêntico ao anterior. **Nenhuma mudança em `internal/validator/validator.go`** —
+`CheckShipGovernance`/`validateBranchHasWIPRoadmap` não precisaram de exceção própria porque o skip
+acontece inteiramente do lado de `ship.go` (a chamada nem acontece).
+
+**--dry-run:** título/corpo agregados agora aparecem no output do dry-run
+(`[dry-run] Title: ...` / `[dry-run] Body:\n...`), calculados antes do branch de dry-run em Step 7 —
+`git log`/`symbolic-ref refs/remotes/origin/HEAD`/`diff --cached --name-only` são leitura, não
+passam pelo wrapper `git()` que intercepta comandos de escrita em dry-run, então sempre rodam.
+
+**Testes novos** em `internal/commands/ship_test.go`: doc-only em branch fora do padrão
+(`TestShip_DocOnlyBranch_NonConformingName_Allowed`), doc-only pulando governança de verdade
+(`TestShip_DocOnlyBranch_MissingRoadmap_GovernanceSkipped`, com asserção de que `checkGovernance`
+nunca é chamado), mistura doc+código continua bloqueando em ambos os casos
+(`TestShip_MixedDocAndCode_StillBlockedByGovernance`,
+`TestShip_MixedDocAndCode_NonConformingBranch_StillBlocked`), `allDocOnly` unitário,
+`defaultBaseBranch` (sucesso/erro/saída vazia), `buildPRBody` (0-1 commit = corpo mínimo, N commits
+= agregado), `gitCommitsSince` (parse do separador, range vazio), e um teste E2E de dry-run
+confirmando que o corpo do PR reflete o histórico real de commits.
+
+**Validação:** `go build ./...` OK · `go test ./internal/commands/... ./internal/validator/...`
+verde · `go vet ./...` sem warnings · `go test ./...` completo (todos os pacotes) verde.
+
+Não fiz commit/push — aguardando trackfw_architect auditar e commitar (não sou autoridade Git).
+Waves 2 (`npm/src/commands/ship.js` — confirmar nome exato) e 3 (Python + `make quality`) ficam para
+uma próxima sessão/agente, seguindo a mesma lógica implementada aqui como fonte de verdade.
+
+---
+
+## Sessão 2026-08-15 — Apolo (ML-2B: port Python de `trackfw ship` — corpo de PR rico + exceção doc-only) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/trackfw-ship-gera-corpo-de-pr-minimo` (já checked out, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md`.
+ML-2B marcado ✅ Concluído no roadmap (port Python, Wave 2). Fonte de verdade comportamental:
+`internal/commands/ship.go` (commit `7af8bdf`), lido inteiro antes de implementar. ML-2A (Node.js)
+segue paralelo/independente — não tocado nesta sessão.
+
+**Arquivos modificados:**
+- `pypi/trackfw/ship/runner.py` — `run_ship`
+- `pypi/tests/test_ship.py` — testes novos
+
+**Mudanças em `runner.py`, 1:1 com o Go:**
+1. Leitura de `git diff --cached --name-only` subiu para o início de `run_ship` (Step 0, antes do
+   Step 1 antigo), guardada em `staged_files` (via `_split_nonempty_lines`) e reaproveitada no
+   Step 4 (não duplica a chamada). `doc_only = _all_doc_only(staged_files)` — `True` somente se
+   houver ≥1 arquivo staged E todos sob `docs/`/`vault/` (prefixo) ou `.md`.
+2. Step 1: se `doc_only`, pula `is_ship_branch` (qualquer nome de branch aceito); `main`/`master`
+   continuam bloqueados incondicionalmente (checagem fora do `if not doc_only`, sem exceção).
+3. Step 2: se `doc_only`, pula `check_governance()` inteiramente e imprime
+   `Governance: skipped (doc-only change)`; senão, comportamento idêntico ao anterior.
+4. `build_pr_body(branch, commits)` — nova função (era corpo fixo inline
+   `f'Branch: {branch}\n\nCreated by trackfw ship.'`). Com ≤1 commit não-merge mantém o corpo
+   mínimo original (não regressão); com 2+ agrega `## Commits` (subjects) + `## Detalhes` (corpo
+   completo de cada commit com mais que a primeira linha) + rodapé `---\nBranch: <branch>`.
+   Commits vêm de `_git_commits_since(base, exec_git)` — `git log <base>..HEAD --no-merges
+   --format=%B<sep>`, separador `COMMIT_MESSAGE_SEP = '\x1e'` (idêntico ao Go, mesmo motivo: control
+   char que não aparece em commit messages reais e sobrevive a `.strip()`).
+5. `_default_base_branch(exec_git)` — tenta `git symbolic-ref refs/remotes/origin/HEAD`, extrai
+   nome após a última barra, fallback `"main"` em erro/saída vazia.
+6. Título do PR: `_first_line(message)` sempre — mesma decisão de design do Go, comentada no
+   código (a `-m` da própria chamada de `ship` é o resumo do PR, mesmo com N commits anteriores já
+   na branch).
+7. `--dry-run`: título/corpo agora aparecem no output (`[dry-run] Title: ...` /
+   `[dry-run] Body:\n...`), computados uma única vez logo após a checagem `--no-pr` em Step 7, antes
+   do branch de `dry_run` — `git log`/`symbolic-ref refs/remotes/origin/HEAD`/`diff --cached
+   --name-only` são leitura e não passam pelo wrapper `git()` que intercepta comandos de escrita em
+   dry-run, então sempre rodam (mesmo padrão do Go). Isso corrige uma lacuna que já existia no
+   Python antes desta sessão: o dry-run não imprimia `Title`/`Body` (o Go só ganhou isso agora no
+   ML-1A) — paridade alcançada, não regressão.
+
+**Testes novos** em `pypi/tests/test_ship.py`, espelhando 1:1 os do Go (`ship_test.go`):
+doc-only em branch fora do padrão (`test_ship_doc_only_branch_non_conforming_name_allowed`),
+doc-only pulando governança de verdade com asserção de que `check_governance` nunca é chamado
+(`test_ship_doc_only_branch_missing_roadmap_governance_skipped`), mistura doc+código continua
+bloqueando em ambos os casos (`test_ship_mixed_doc_and_code_still_blocked_by_governance`,
+`test_ship_mixed_doc_and_code_non_conforming_branch_still_blocked`), `_all_doc_only` unitário,
+`_default_base_branch` (sucesso/erro/saída vazia), `build_pr_body` (0-1 commit = corpo mínimo, N
+commits = agregado), `_git_commits_since` (parse do separador, range vazio), e um teste E2E de
+dry-run confirmando que o corpo do PR reflete o histórico real de commits
+(`test_ship_dry_run_pr_body_aggregates_commit_history`). `MockGit` ganhou suporte a `base_ref` e
+`commit_log` para simular `symbolic-ref refs/remotes/origin/HEAD` e `git log`.
+
+**Decisão de design:** nenhuma divergência do Go — port literal. Único ponto de atenção: o Python
+já tinha `run_ship` com assinatura de dependências injetáveis (`exec_git`, `check_governance`,
+`writeln`, etc.) diferente da struct `shipDeps` do Go, mas equivalente — mantive o padrão já
+estabelecido no arquivo em vez de introduzir um dict/struct novo.
+
+**Validação:** `python3 -m pytest pypi/tests -k ship -q` → 92 passed. `python3 -m pytest
+pypi/tests -q` (suite completa) → 1101 passed, 8 subtests passed.
+
+Não fiz commit/push — aguardando trackfw_architect auditar e commitar (não sou autoridade Git).
+ML-2A (Node.js) e Wave 3 (paridade cruzada + `make quality`) ficam para outra sessão/agente.
+
+---
+
 ## Sessão 2026-08-14 — Apolo (fix: 3 bugs reais no parser do `gitBranchGuardScript`, achados por teste manual E2E ML-4A) — implementado, aguardando auditoria e commit por trackfw_architect
 
 Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por mim).
@@ -15922,3 +16043,33 @@ trabalho. Criei REQ+roadmap em `backlog/`
 (`REQ-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-...md`) para implementar isso de
 verdade no `trackfw ship` (agregar `git log <base>..HEAD` nos 3 CLIs), a ser feito
 depois que o usuário decidir a prioridade.
+
+## Sessão 2026-08-15 — Apolo (backend) — ML-2A (Node.js) do roadmap corpo-de-PR
+
+**Início:** ML-2A do `ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-...md`,
+branch `feat/trackfw-ship-gera-corpo-de-pr-minimo` (já criada, não criada por mim). Port
+Node.js do ML-1A (Go, já commitado em `7af8bdf` nesta branch), lendo
+`internal/commands/ship.go` como fonte de verdade comportamental.
+
+**Entregue:** `npm/src/ship/runner.js` — `buildPRBody(branch, commits)` agora agrega
+`git log <base>..HEAD --no-merges --format=%B<sep>` (separador `\x1e`, idêntico ao Go)
+em `## Commits` + `## Detalhes` + rodapé `Branch:`; mantém corpo mínimo com 0/1 commit
+(não-regressão). Novas funções `defaultBaseBranch`, `gitCommitsSince`, `allDocOnly`,
+`splitNonEmptyLines`. Leitura de `git diff --cached --name-only` movida para o início de
+`runShip` (Step 0), computando `docOnly` antes dos Steps 1/2: branch doc-only pula
+`isShipBranch` (main/master continua bloqueado incondicionalmente) e pula
+`checkGovernance()` inteiramente, imprimindo `Governance: skipped (doc-only change)`.
+Título do PR continua sempre `firstLine(opts.message)`.
+
+`npm/tests/ship.test.js` — `makeMockGit`/`makeDeps` estendidos com `baseRef`/`commitLog`;
+casos novos espelhando `ship_test.go`: doc-only em branch não-conforme (permite), doc-only
+com governança ausente (permite, `checkGovernance` nunca chamado), doc+código misto em
+branch `feat/` (bloqueia por governança) e em branch não-conforme (bloqueia por padrão de
+nome), `allDocOnly`, `defaultBaseBranch` (sucesso/falha/vazio), `buildPRBody` (0-1 commit
+vs N commits), `gitCommitsSince` (parse com separador / range vazio), dry-run agregando
+histórico real.
+
+**Validação:** `npm test` (workspace `npm/`, comando `node --test tests/*.test.js`) —
+510 passed, 0 failed (64 em `ship.test.js`, todos novos casos inclusos). Não fiz
+`git commit`/`push` — autoridade de Git é do `trackfw-architect`; roadmap ML-2A marcado
+`✅ Concluído` no arquivo (frontmatter/pasta inalterados, roadmap segue em `wip/`).

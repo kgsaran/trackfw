@@ -144,6 +144,13 @@ func runShip(opts shipOpts, deps shipDeps) error {
 		return deps.execGit(args...)
 	}
 
+	// ─── Step 0: staged files ─────────────────────────────────────────────────
+	// Read once, up front, so Steps 1 and 2 can grant a doc-only exception before
+	// they run — and so Step 4 below reuses the same read instead of querying git twice.
+	stagedOut, _ := deps.execGit("diff", "--cached", "--name-only")
+	stagedFiles := splitNonEmptyLines(stagedOut)
+	docOnly := allDocOnly(stagedFiles)
+
 	// ─── Step 1: Branch validation ───────────────────────────────────────────
 	branch, err := deps.execGit("symbolic-ref", "--short", "HEAD")
 	if err != nil {
@@ -151,6 +158,7 @@ func runShip(opts shipOpts, deps shipDeps) error {
 	}
 	branch = strings.TrimSpace(branch)
 
+	// main/master is blocked unconditionally — the doc-only exception never applies here.
 	if branch == "main" || branch == "master" {
 		return fmt.Errorf(
 			"trackfw ship cannot run on %q — use a feature branch:\n  git checkout -b feat/<slug>",
@@ -158,7 +166,7 @@ func runShip(opts shipOpts, deps shipDeps) error {
 		)
 	}
 
-	if !isShipBranch(branch) {
+	if !docOnly && !isShipBranch(branch) {
 		return fmt.Errorf(
 			"branch %q does not match the required pattern feat|fix|refactor/<slug>\n"+
 				"Rename your branch or create a new one:\n  git checkout -b feat/<slug>",
@@ -169,24 +177,30 @@ func runShip(opts shipOpts, deps shipDeps) error {
 	fmt.Fprintf(deps.out, "Branch: %s\n", branch)
 
 	// ─── Step 2: Governance ──────────────────────────────────────────────────
-	violations := deps.checkGovernance()
-	if len(violations) > 0 {
-		fmt.Fprintf(deps.out, "\nGovernance check failed:\n")
-		for _, v := range violations {
-			fmt.Fprintf(deps.out, "  %s\n", v)
+	// Doc-only changes (all staged files under docs/, vault/, or *.md) are exempt from
+	// REQ+roadmap governance — mirrors the CLAUDE.md §7 exception for doc-only changes.
+	if docOnly {
+		fmt.Fprintf(deps.out, "Governance: skipped (doc-only change)\n")
+	} else {
+		violations := deps.checkGovernance()
+		if len(violations) > 0 {
+			fmt.Fprintf(deps.out, "\nGovernance check failed:\n")
+			for _, v := range violations {
+				fmt.Fprintf(deps.out, "  %s\n", v)
+			}
+			fmt.Fprintf(deps.out, "\nCreate the required artifacts before running ship:\n")
+			fmt.Fprintf(deps.out, "  trackfw req new \"<title>\"\n")
+			fmt.Fprintf(deps.out, "  trackfw roadmap new \"<title>\"\n")
+			fmt.Fprintf(deps.out, "  trackfw roadmap move <name> wip\n")
+			fmt.Fprintf(deps.out, "\nNote: this governance check is a hard gate — it is not affected by lenient\n")
+			fmt.Fprintf(deps.out, "mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'\n")
+			fmt.Fprintf(deps.out, "passes but 'trackfw ship' aborts here, you likely have lenient mode\n")
+			fmt.Fprintf(deps.out, "configured — ship always requires REQ + roadmap in wip/.\n")
+			return fmt.Errorf("governance check failed: %d violation(s)", len(violations))
 		}
-		fmt.Fprintf(deps.out, "\nCreate the required artifacts before running ship:\n")
-		fmt.Fprintf(deps.out, "  trackfw req new \"<title>\"\n")
-		fmt.Fprintf(deps.out, "  trackfw roadmap new \"<title>\"\n")
-		fmt.Fprintf(deps.out, "  trackfw roadmap move <name> wip\n")
-		fmt.Fprintf(deps.out, "\nNote: this governance check is a hard gate — it is not affected by lenient\n")
-		fmt.Fprintf(deps.out, "mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'\n")
-		fmt.Fprintf(deps.out, "passes but 'trackfw ship' aborts here, you likely have lenient mode\n")
-		fmt.Fprintf(deps.out, "configured — ship always requires REQ + roadmap in wip/.\n")
-		return fmt.Errorf("governance check failed: %d violation(s)", len(violations))
-	}
 
-	fmt.Fprintf(deps.out, "Governance: OK\n")
+		fmt.Fprintf(deps.out, "Governance: OK\n")
+	}
 
 	// ─── Step 3: Squash-merge detection ──────────────────────────────────────
 	// fetch origin --prune; any failure (offline, no remote) is non-blocking.
@@ -213,8 +227,8 @@ func runShip(opts shipOpts, deps shipDeps) error {
 	}
 	fmt.Fprintf(deps.out, "────────────────────────────────────────────────────────\n\n")
 
-	cachedFiles, _ := deps.execGit("diff", "--cached", "--name-only")
-	if strings.TrimSpace(cachedFiles) == "" {
+	// Reuses stagedFiles read at the top of the function (Step 0) — never re-query git here.
+	if len(stagedFiles) == 0 {
 		return fmt.Errorf(
 			"nothing is staged — stage your files explicitly before running ship:\n" +
 				"  git add <file1> <file2> ...\n" +
@@ -274,7 +288,23 @@ func runShip(opts shipOpts, deps shipDeps) error {
 		return nil
 	}
 
+	// Title/body computed once for every remaining branch below (dry-run and real CLI
+	// invocation alike). git log/diff are read-only — they run in --dry-run mode too,
+	// same as the staged-files read in Step 0.
+	//
+	// Design decision (documented per roadmap ML-1A): the title is always
+	// firstLine(opts.message), the -m message passed to this very `ship` call, even
+	// when the branch carries multiple prior commits. Deriving a distinct "PR title"
+	// from N unrelated commit subjects would need a heuristic with no unambiguous
+	// answer — the simplest, least surprising rule is that -m is the PR's summary.
+	base := defaultBaseBranch(deps.execGit)
+	commits := gitCommitsSince(base, deps.execGit)
+	title := firstLine(opts.message)
+	body := buildPRBody(branch, commits)
+
 	if opts.dryRun {
+		fmt.Fprintf(deps.out, "[dry-run] Title: %s\n", title)
+		fmt.Fprintf(deps.out, "[dry-run] Body:\n%s\n", body)
 		if !adapter.Available && resolution.Forge != "manual" {
 			url := adapter.FallbackURL(remoteURL, branch)
 			if url != "" {
@@ -306,8 +336,6 @@ func runShip(opts shipOpts, deps shipDeps) error {
 	}
 
 	// CLI is available — invoke it to create the PR/MR.
-	title := firstLine(opts.message)
-	body := buildPRBody(branch)
 	cliArgs := buildForgeCreateArgs(adapter, title, body)
 
 	execForgeCLI := deps.execForgeCLI
@@ -337,9 +365,135 @@ func firstLine(s string) string {
 	return s
 }
 
-// buildPRBody constructs a minimal PR/MR body referencing the branch.
-func buildPRBody(branch string) string {
-	return fmt.Sprintf("Branch: %s\n\nCreated by trackfw ship.", branch)
+// commitMessageSep delimits full commit messages (%B) in the output of gitCommitsSince's
+// `git log --format=%B<sep>`. Chosen because it is a non-printable control character that
+// cannot appear in a real commit message and is unaffected by strings.TrimSpace, which
+// defaultGitExec applies only to the start/end of the whole output.
+const commitMessageSep = "\x1e"
+
+// gitCommitsSince returns the full message (subject + body) of every non-merge commit in
+// base..HEAD, most-recent-first (git log's natural order). Returns nil on any git error or
+// when the range is empty.
+func gitCommitsSince(base string, execGit func(args ...string) (string, error)) []string {
+	out, err := execGit("log", base+"..HEAD", "--no-merges", "--format=%B"+commitMessageSep)
+	if err != nil {
+		return nil
+	}
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return nil
+	}
+	parts := strings.Split(out, commitMessageSep)
+	commits := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.Trim(p, "\n")
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		commits = append(commits, p)
+	}
+	return commits
+}
+
+// defaultBaseBranch resolves the repository's default branch for `git log <base>..HEAD`.
+// It tries `git symbolic-ref refs/remotes/origin/HEAD` (format "refs/remotes/origin/main" —
+// only the name after the last slash is kept) and falls back to "main" when that fails or
+// yields nothing (e.g. shallow clone without a remote-tracking HEAD). Same resolution
+// pattern already used for branch/governance checks in internal/validator/validator.go.
+func defaultBaseBranch(execGit func(args ...string) (string, error)) string {
+	out, err := execGit("symbolic-ref", "refs/remotes/origin/HEAD")
+	if err != nil {
+		return "main"
+	}
+	out = strings.TrimSpace(out)
+	idx := strings.LastIndexByte(out, '/')
+	if idx < 0 || idx+1 >= len(out) {
+		return "main"
+	}
+	return out[idx+1:]
+}
+
+// buildPRBody constructs the PR/MR body. With 0 or 1 non-merge commit on the branch (the
+// trivial case — just the commit `ship` itself made), it keeps the original minimal body,
+// not a regression. With 2+ commits, it aggregates the branch's commit history:
+//
+//	## Commits
+//	- <subject of commit 1>
+//	- <subject of commit 2>
+//
+//	## Detalhes
+//	<full body of each commit that has one, in blocks>
+//
+//	---
+//	Branch: <branch>
+func buildPRBody(branch string, commits []string) string {
+	if len(commits) <= 1 {
+		return fmt.Sprintf("Branch: %s\n\nCreated by trackfw ship.", branch)
+	}
+
+	var subjects []string
+	var details []string
+	for _, c := range commits {
+		lines := strings.SplitN(c, "\n", 2)
+		subject := strings.TrimSpace(lines[0])
+		if subject == "" {
+			continue
+		}
+		subjects = append(subjects, subject)
+		if len(lines) > 1 {
+			if bodyText := strings.TrimSpace(lines[1]); bodyText != "" {
+				details = append(details, fmt.Sprintf("**%s**\n\n%s", subject, bodyText))
+			}
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("## Commits\n\n")
+	for _, s := range subjects {
+		fmt.Fprintf(&b, "- %s\n", s)
+	}
+	if len(details) > 0 {
+		b.WriteString("\n## Detalhes\n\n")
+		b.WriteString(strings.Join(details, "\n\n"))
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "\n---\nBranch: %s\n", branch)
+	return b.String()
+}
+
+// splitNonEmptyLines splits git output (e.g. `diff --cached --name-only`) into a slice of
+// trimmed, non-empty lines. Returns nil for empty input.
+func splitNonEmptyLines(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	raw := strings.Split(s, "\n")
+	out := make([]string, 0, len(raw))
+	for _, line := range raw {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// allDocOnly returns true when there is at least one staged file and every staged file is
+// doc-only: under docs/ or vault/ (path prefix), or has a .md extension. A single file
+// outside that criterion makes it return false. Mirrors the doc-only exception documented
+// in CLAUDE.md §7 ("Alteração doc-only (markdown, comentários)").
+func allDocOnly(files []string) bool {
+	if len(files) == 0 {
+		return false
+	}
+	for _, f := range files {
+		if strings.HasPrefix(f, "docs/") || strings.HasPrefix(f, "vault/") || strings.HasSuffix(f, ".md") {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // buildForgeCreateArgs appends --title and --body (or --description for azure)

@@ -20,9 +20,11 @@ import (
 
 // mockGit captures every call to execGit and returns configured responses.
 type mockGit struct {
-	branch      string   // returned for symbolic-ref --short HEAD
-	stagedFiles string   // returned for diff --cached --name-only (empty = nothing staged)
-	remoteURL   string   // returned for "remote get-url origin"
+	branch      string // returned for symbolic-ref --short HEAD
+	stagedFiles string // returned for diff --cached --name-only (empty = nothing staged)
+	remoteURL   string // returned for "remote get-url origin"
+	baseRef     string // returned for symbolic-ref refs/remotes/origin/HEAD (empty = error → fallback "main")
+	commitLog   string // returned for `log <base>..HEAD --no-merges --format=%B<sep>`
 	calls       [][]string
 }
 
@@ -40,8 +42,17 @@ func (m *mockGit) exec(args ...string) (string, error) {
 		}
 		return m.branch, nil
 
+	case strings.HasPrefix(joined, "symbolic-ref refs/remotes/origin/HEAD"):
+		if m.baseRef == "" {
+			return "", errors.New("no remote-tracking HEAD")
+		}
+		return m.baseRef, nil
+
 	case strings.HasPrefix(joined, "diff --cached --name-only"):
 		return m.stagedFiles, nil
+
+	case strings.HasPrefix(joined, "log "):
+		return m.commitLog, nil
 
 	case strings.HasPrefix(joined, "rev-parse --abbrev-ref --symbolic-full-name @{u}"):
 		// Simulate no upstream → push -u
@@ -150,6 +161,253 @@ func TestShip_NoWIPRoadmap_Aborts(t *testing.T) {
 	}
 	if !strings.Contains(outStr, "lenient") {
 		t.Fatalf("output must mention lenient mode so users understand why validate passes but ship aborts")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Doc-only exception — Steps 1 & 2 skip branch-pattern and governance checks
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestShip_DocOnlyBranch_NonConformingName_Allowed(t *testing.T) {
+	// "docs/foo" does not match feat|fix|refactor/<slug> — normally rejected by isShipBranch,
+	// but every staged file is doc-only, so Step 1's branch-pattern check must be skipped.
+	violations := []string{`should never be called`}
+	d, _ := makeDeps("docs/foo", "docs/some-note.md", violations)
+	err := runShip(shipOpts{message: "docs: update note", dryRun: true}, d)
+	if err != nil {
+		t.Fatalf("doc-only change on non-conforming branch name should not be blocked: %v", err)
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if strings.Contains(out, "does not match the required pattern") {
+		t.Fatalf("doc-only change must not trigger the branch-pattern error, got:\n%s", out)
+	}
+}
+
+func TestShip_DocOnlyBranch_MissingRoadmap_GovernanceSkipped(t *testing.T) {
+	// feat/<slug> is a correctly named branch, but governance (checkGovernance) would fail —
+	// doc-only staged content must skip governance entirely, never calling checkGovernance.
+	called := false
+	m := &mockGit{branch: "feat/doc-fix", stagedFiles: "docs/req/REQ-x.md\nvault/notes/note.md"}
+	d := shipDeps{
+		execGit: m.exec,
+		checkGovernance: func() []string {
+			called = true
+			return []string{"no matching roadmap in wip/ nor done/"}
+		},
+		out:          &bytes.Buffer{},
+		availFn:      func(string) bool { return false },
+		execForgeCLI: func(string, []string) error { return nil },
+	}
+	err := runShip(shipOpts{message: "docs: fix req", dryRun: true}, d)
+	if err != nil {
+		t.Fatalf("doc-only change must not be blocked by governance: %v", err)
+	}
+	if called {
+		t.Fatal("checkGovernance must not be called at all for a doc-only change")
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "Governance: skipped (doc-only change)") {
+		t.Fatalf("expected doc-only governance skip message in output, got:\n%s", out)
+	}
+}
+
+func TestShip_MixedDocAndCode_StillBlockedByGovernance(t *testing.T) {
+	// One non-doc file staged alongside doc files must NOT trigger the doc-only exception —
+	// governance runs exactly as it does today, and the configured violation still blocks.
+	violations := []string{`branch "feat/mixed" is a feat/fix/refactor branch but no roadmap is in wip/`}
+	d, _ := makeDeps("feat/mixed", "docs/note.md\ninternal/commands/ship.go", violations)
+	err := runShip(shipOpts{message: "feat: mixed change"}, d)
+	if err == nil {
+		t.Fatal("expected governance error for a mixed doc+code change")
+	}
+	if !strings.Contains(err.Error(), "governance check failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if strings.Contains(out, "skipped (doc-only change)") {
+		t.Fatalf("mixed doc+code change must not be treated as doc-only, got:\n%s", out)
+	}
+}
+
+func TestShip_MixedDocAndCode_NonConformingBranch_StillBlocked(t *testing.T) {
+	// Same mixed-content guarantee, but on a branch name that would fail isShipBranch too.
+	d, _ := makeDeps("docs/mixed", "docs/note.md\ninternal/commands/ship.go", nil)
+	err := runShip(shipOpts{message: "docs: mixed change"}, d)
+	if err == nil {
+		t.Fatal("expected branch-pattern error for a mixed doc+code change on a non-conforming branch")
+	}
+	if !strings.Contains(err.Error(), "does not match the required pattern") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// allDocOnly unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestAllDocOnly(t *testing.T) {
+	docOnlyCases := [][]string{
+		{"docs/req/REQ-x.md"},
+		{"vault/notes/note.md"},
+		{"README.md"},
+		{"docs/req/REQ-x.md", "vault/notes/note.md", "CHANGELOG.md"},
+	}
+	for _, files := range docOnlyCases {
+		if !allDocOnly(files) {
+			t.Errorf("allDocOnly(%v) should be true", files)
+		}
+	}
+
+	notDocOnlyCases := [][]string{
+		nil,
+		{},
+		{"internal/commands/ship.go"},
+		{"docs/req/REQ-x.md", "internal/commands/ship.go"},
+		{"go.mod"},
+	}
+	for _, files := range notDocOnlyCases {
+		if allDocOnly(files) {
+			t.Errorf("allDocOnly(%v) should be false", files)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// defaultBaseBranch unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestDefaultBaseBranch_SymbolicRefSucceeds(t *testing.T) {
+	exec := func(args ...string) (string, error) {
+		return "refs/remotes/origin/develop", nil
+	}
+	if got := defaultBaseBranch(exec); got != "develop" {
+		t.Fatalf("expected %q, got %q", "develop", got)
+	}
+}
+
+func TestDefaultBaseBranch_SymbolicRefFails_FallsBackToMain(t *testing.T) {
+	exec := func(args ...string) (string, error) {
+		return "", errors.New("no remote-tracking HEAD")
+	}
+	if got := defaultBaseBranch(exec); got != "main" {
+		t.Fatalf("expected fallback %q, got %q", "main", got)
+	}
+}
+
+func TestDefaultBaseBranch_EmptyOutput_FallsBackToMain(t *testing.T) {
+	exec := func(args ...string) (string, error) {
+		return "", nil
+	}
+	if got := defaultBaseBranch(exec); got != "main" {
+		t.Fatalf("expected fallback %q, got %q", "main", got)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// buildPRBody unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestBuildPRBody_ZeroOrOneCommit_MinimalBody(t *testing.T) {
+	// Not a regression: 0 or 1 non-merge commit keeps today's minimal body.
+	for _, commits := range [][]string{nil, {"feat: single commit"}} {
+		body := buildPRBody("feat/my-feature", commits)
+		want := "Branch: feat/my-feature\n\nCreated by trackfw ship."
+		if body != want {
+			t.Fatalf("commits=%v: got %q, want %q", commits, body, want)
+		}
+	}
+}
+
+func TestBuildPRBody_MultipleCommits_AggregatesHistory(t *testing.T) {
+	commits := []string{
+		"feat(ship): add doc-only exception\n\nSkips governance for docs/vault/md-only staged files.",
+		"fix(ship): correct base branch fallback",
+		"docs: update roadmap status",
+	}
+	body := buildPRBody("feat/my-feature", commits)
+
+	if !strings.Contains(body, "## Commits") {
+		t.Fatalf("expected '## Commits' heading, got:\n%s", body)
+	}
+	for _, subject := range []string{
+		"- feat(ship): add doc-only exception",
+		"- fix(ship): correct base branch fallback",
+		"- docs: update roadmap status",
+	} {
+		if !strings.Contains(body, subject) {
+			t.Fatalf("expected subject line %q in body, got:\n%s", subject, body)
+		}
+	}
+	if !strings.Contains(body, "## Detalhes") {
+		t.Fatalf("expected '## Detalhes' heading for the commit with a body, got:\n%s", body)
+	}
+	if !strings.Contains(body, "Skips governance for docs/vault/md-only staged files.") {
+		t.Fatalf("expected full commit body under '## Detalhes', got:\n%s", body)
+	}
+	if !strings.Contains(body, "---\nBranch: feat/my-feature") {
+		t.Fatalf("expected trailing 'Branch: feat/my-feature' footer, got:\n%s", body)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// gitCommitsSince unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestGitCommitsSince_ParsesSeparatedCommits(t *testing.T) {
+	m := &mockGit{
+		branch:    "feat/my-feature",
+		commitLog: "feat: first" + commitMessageSep + "fix: second\n\nwith a body" + commitMessageSep,
+	}
+	commits := gitCommitsSince("main", m.exec)
+	if len(commits) != 2 {
+		t.Fatalf("expected 2 commits, got %d: %v", len(commits), commits)
+	}
+	if commits[0] != "feat: first" {
+		t.Fatalf("unexpected first commit: %q", commits[0])
+	}
+	if commits[1] != "fix: second\n\nwith a body" {
+		t.Fatalf("unexpected second commit: %q", commits[1])
+	}
+}
+
+func TestGitCommitsSince_EmptyRange_ReturnsNil(t *testing.T) {
+	m := &mockGit{branch: "feat/my-feature", commitLog: ""}
+	commits := gitCommitsSince("main", m.exec)
+	if commits != nil {
+		t.Fatalf("expected nil for empty range, got %v", commits)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// End-to-end: --dry-run PR body reflects real branch commit history
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestShip_DryRun_PRBodyAggregatesCommitHistory(t *testing.T) {
+	m := &mockGit{
+		branch:      "feat/my-feature",
+		stagedFiles: "file.go",
+		remoteURL:   "https://github.com/org/repo.git",
+		baseRef:     "refs/remotes/origin/main",
+		commitLog:   "feat(x): third commit" + commitMessageSep + "feat(x): second commit" + commitMessageSep,
+	}
+	d := shipDeps{
+		execGit:         m.exec,
+		checkGovernance: func() []string { return nil },
+		out:             &bytes.Buffer{},
+		configForge:     "github",
+		availFn:         func(string) bool { return false },
+		execForgeCLI:    func(string, []string) error { return nil },
+	}
+	err := runShip(shipOpts{message: "feat(x): first commit (this ship call)", dryRun: true}, d)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "[dry-run] Title: feat(x): first commit (this ship call)") {
+		t.Fatalf("expected dry-run title line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "## Commits") || !strings.Contains(out, "feat(x): third commit") {
+		t.Fatalf("expected aggregated commit history in dry-run body, got:\n%s", out)
 	}
 }
 

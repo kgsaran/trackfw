@@ -13,3 +13,4 @@ npm/node_modules/
 
 # trackfw: baseline local de violations toleradas (nao versionado)
 .trackfw-baseline.json
+

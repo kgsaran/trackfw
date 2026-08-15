@@ -218,6 +218,137 @@ function firstLine(s) {
 }
 
 /**
+ * splitNonEmptyLines splits git output (e.g. `diff --cached --name-only`) into an array
+ * of trimmed, non-empty lines.
+ * @param {string} s
+ * @returns {string[]}
+ */
+function splitNonEmptyLines(s) {
+  const trimmed = (s || '').trim()
+  if (!trimmed) return []
+  return trimmed
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+}
+
+/**
+ * allDocOnly returns true when there is at least one staged file and every staged file is
+ * doc-only: under docs/ or vault/ (path prefix), or has a .md extension. A single file
+ * outside that criterion makes it return false. Mirrors the doc-only exception documented
+ * in CLAUDE.md §7 ("Alteração doc-only (markdown, comentários)").
+ * @param {string[]} files
+ * @returns {boolean}
+ */
+function allDocOnly(files) {
+  if (!files || files.length === 0) return false
+  for (const f of files) {
+    if (f.startsWith('docs/') || f.startsWith('vault/') || f.endsWith('.md')) continue
+    return false
+  }
+  return true
+}
+
+/**
+ * commitMessageSep delimits full commit messages (%B) in the output of gitCommitsSince's
+ * `git log --format=%B<sep>`. Same non-printable separator used by the Go implementation
+ * (internal/commands/ship.go) — cannot appear in a real commit message.
+ */
+const COMMIT_MESSAGE_SEP = '\x1e'
+
+/**
+ * defaultBaseBranch resolves the repository's default branch for `git log <base>..HEAD`.
+ * Tries `git symbolic-ref refs/remotes/origin/HEAD` (format "refs/remotes/origin/main" —
+ * only the name after the last slash is kept) and falls back to "main" when that fails or
+ * yields nothing.
+ * @param {function} execGit
+ * @returns {string}
+ */
+function defaultBaseBranch(execGit) {
+  const { stdout, error } = execGit(['symbolic-ref', 'refs/remotes/origin/HEAD'])
+  if (error) return 'main'
+  const out = (stdout || '').trim()
+  const idx = out.lastIndexOf('/')
+  if (idx < 0 || idx + 1 >= out.length) return 'main'
+  return out.slice(idx + 1)
+}
+
+/**
+ * gitCommitsSince returns the full message (subject + body) of every non-merge commit in
+ * base..HEAD, most-recent-first (git log's natural order). Returns [] on any git error or
+ * when the range is empty.
+ * @param {string} base
+ * @param {function} execGit
+ * @returns {string[]}
+ */
+function gitCommitsSince(base, execGit) {
+  const { stdout, error } = execGit(['log', `${base}..HEAD`, '--no-merges', `--format=%B${COMMIT_MESSAGE_SEP}`])
+  if (error) return []
+  const out = (stdout || '').trim()
+  if (!out) return []
+  const parts = out.split(COMMIT_MESSAGE_SEP)
+  const commits = []
+  for (let p of parts) {
+    p = p.replace(/^\n+|\n+$/g, '')
+    if (p.trim() === '') continue
+    commits.push(p)
+  }
+  return commits
+}
+
+/**
+ * buildPRBody constructs the PR/MR body. With 0 or 1 non-merge commit on the branch (the
+ * trivial case — just the commit `ship` itself made), it keeps the original minimal body,
+ * not a regression. With 2+ commits, it aggregates the branch's commit history:
+ *
+ *   ## Commits
+ *   - <subject of commit 1>
+ *   - <subject of commit 2>
+ *
+ *   ## Detalhes
+ *   <full body of each commit that has one, in blocks>
+ *
+ *   ---
+ *   Branch: <branch>
+ *
+ * @param {string} branch
+ * @param {string[]} commits
+ * @returns {string}
+ */
+function buildPRBody(branch, commits) {
+  if (!commits || commits.length <= 1) {
+    return `Branch: ${branch}\n\nCreated by trackfw ship.`
+  }
+
+  const subjects = []
+  const details = []
+  for (const c of commits) {
+    const nlIdx = c.indexOf('\n')
+    const subject = (nlIdx >= 0 ? c.slice(0, nlIdx) : c).trim()
+    if (subject === '') continue
+    subjects.push(subject)
+    if (nlIdx >= 0) {
+      const bodyText = c.slice(nlIdx + 1).trim()
+      if (bodyText !== '') {
+        details.push(`**${subject}**\n\n${bodyText}`)
+      }
+    }
+  }
+
+  let b = '## Commits\n\n'
+  for (const s of subjects) {
+    b += `- ${s}\n`
+  }
+  if (details.length > 0) {
+    b += '\n## Detalhes\n\n'
+    b += details.join('\n\n')
+    b += '\n'
+  }
+  b += `\n---\nBranch: ${branch}\n`
+  return b
+}
+
+/**
  * buildForgeCreateArgs appends --title and --body (or --description for azure)
  * to a copy of adapter.cliArgs. Never mutates the original array.
  * @param {object} adapter
@@ -258,6 +389,13 @@ function runShip(opts, deps = {}) {
     return execGit(args)
   }
 
+  // ─── Step 0: staged files ───────────────────────────────────────────────────
+  // Read once, up front, so Steps 1 and 2 can grant a doc-only exception before they run —
+  // and so Step 4 below reuses the same read instead of querying git twice.
+  const { stdout: stagedOut } = execGit(['diff', '--cached', '--name-only'])
+  const stagedFiles = splitNonEmptyLines(stagedOut)
+  const docOnly = allDocOnly(stagedFiles)
+
   // ─── Step 1: Branch validation ─────────────────────────────────────────────
   const branchResult = execGit(['symbolic-ref', '--short', 'HEAD'])
   if (branchResult.error) {
@@ -266,12 +404,13 @@ function runShip(opts, deps = {}) {
   }
   const branch = branchResult.stdout.trim()
 
+  // main/master is blocked unconditionally — the doc-only exception never applies here.
   if (branch === 'main' || branch === 'master') {
     writeln(`error: trackfw ship cannot run on "${branch}" — use a feature branch:\n  git checkout -b feat/<slug>`)
     return 1
   }
 
-  if (!isShipBranch(branch)) {
+  if (!docOnly && !isShipBranch(branch)) {
     writeln(
       `error: branch "${branch}" does not match the required pattern feat|fix|refactor/<slug>\n` +
       'Rename your branch or create a new one:\n  git checkout -b feat/<slug>'
@@ -282,25 +421,31 @@ function runShip(opts, deps = {}) {
   writeln(`Branch: ${branch}`)
 
   // ─── Step 2: Governance ────────────────────────────────────────────────────
-  const violations = checkGovernanceFn()
-  if (violations.length > 0) {
-    writeln('\nGovernance check failed:')
-    for (const v of violations) {
-      writeln(`  ${v}`)
+  // Doc-only changes (all staged files under docs/, vault/, or *.md) are exempt from
+  // REQ+roadmap governance — mirrors the CLAUDE.md §7 exception for doc-only changes.
+  if (docOnly) {
+    writeln('Governance: skipped (doc-only change)')
+  } else {
+    const violations = checkGovernanceFn()
+    if (violations.length > 0) {
+      writeln('\nGovernance check failed:')
+      for (const v of violations) {
+        writeln(`  ${v}`)
+      }
+      writeln('\nCreate the required artifacts before running ship:')
+      writeln('  trackfw req new "<title>"')
+      writeln('  trackfw roadmap new "<title>"')
+      writeln('  trackfw roadmap move <name> wip')
+      writeln("\nNote: this governance check is a hard gate — it is not affected by lenient")
+      writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")
+      writeln("passes but 'trackfw ship' aborts here, you likely have lenient mode")
+      writeln("configured — ship always requires REQ + roadmap in wip/.")
+      writeln(`\nerror: governance check failed: ${violations.length} violation(s)`)
+      return 1
     }
-    writeln('\nCreate the required artifacts before running ship:')
-    writeln('  trackfw req new "<title>"')
-    writeln('  trackfw roadmap new "<title>"')
-    writeln('  trackfw roadmap move <name> wip')
-    writeln("\nNote: this governance check is a hard gate — it is not affected by lenient")
-    writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")
-    writeln("passes but 'trackfw ship' aborts here, you likely have lenient mode")
-    writeln("configured — ship always requires REQ + roadmap in wip/.")
-    writeln(`\nerror: governance check failed: ${violations.length} violation(s)`)
-    return 1
-  }
 
-  writeln('Governance: OK')
+    writeln('Governance: OK')
+  }
 
   // ─── Step 3: Squash-merge detection ────────────────────────────────────────
   if (opts.dryRun) {
@@ -323,8 +468,8 @@ function runShip(opts, deps = {}) {
   if (diffStatOut) writeln(diffStatOut)
   writeln('────────────────────────────────────────────────────────\n')
 
-  const { stdout: cachedFiles } = execGit(['diff', '--cached', '--name-only'])
-  if (!cachedFiles.trim()) {
+  // Reuses stagedFiles read at the top of the function (Step 0) — never re-query git here.
+  if (stagedFiles.length === 0) {
     writeln(
       'error: nothing is staged — stage your files explicitly before running ship:\n' +
       '  git add <file1> <file2> ...\n' +
@@ -391,7 +536,23 @@ function runShip(opts, deps = {}) {
     return 0
   }
 
+  // Title/body computed once for every remaining branch below (dry-run and real CLI
+  // invocation alike). git log/diff are read-only — they run in --dry-run mode too, same
+  // as the staged-files read in Step 0.
+  //
+  // Design decision (documented per roadmap ML-1A, mirrored from the Go implementation):
+  // the title is always firstLine(opts.message), the -m message passed to this very `ship`
+  // call, even when the branch carries multiple prior commits. Deriving a distinct "PR
+  // title" from N unrelated commit subjects would need a heuristic with no unambiguous
+  // answer — the simplest, least surprising rule is that -m is the PR's summary.
+  const base = defaultBaseBranch(execGit)
+  const commits = gitCommitsSince(base, execGit)
+  const title = firstLine(opts.message || '')
+  const body = buildPRBody(branch, commits)
+
   if (opts.dryRun) {
+    writeln(`[dry-run] Title: ${title}`)
+    writeln(`[dry-run] Body:\n${body}`)
     if (!adapter.available && resolution.forge !== 'manual') {
       const url = adapter.fallbackURL(remoteURL, branch)
       if (url) {
@@ -423,8 +584,6 @@ function runShip(opts, deps = {}) {
   }
 
   // CLI is available — invoke it.
-  const title = firstLine(opts.message || '')
-  const body = `Branch: ${branch}\n\nCreated by trackfw ship.`
   const cliArgs = buildForgeCreateArgs(adapter, title, body)
   const execForgeCLI = deps.execForgeCLI || defaultExecForgeCLI
   const cliErr = execForgeCLI(adapter.cliName, cliArgs)
@@ -451,4 +610,10 @@ module.exports = {
   GIT_WRITE_COMMANDS,
   buildForgeCreateArgs,
   firstLine,
+  allDocOnly,
+  splitNonEmptyLines,
+  defaultBaseBranch,
+  gitCommitsSince,
+  buildPRBody,
+  COMMIT_MESSAGE_SEP,
 }
