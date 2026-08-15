@@ -145,7 +145,7 @@ manual confirmado: `bin/trackfw changelog`, `--version 6.10.0`, `--version 999.0
 > Dependências: Wave 1 completa
 
 ### ML-2A — Node.js
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `npm/src/changelog/index.js` (novo) — port 1:1 de `internal/changelog/changelog.go`:
   `parseSections(content)`, `firstSection(sections)`, `findVersion(sections, version)`,
@@ -165,7 +165,7 @@ de `FormatSection`.
 **Comandos de validação:** `cd npm && npm test`
 
 ### ML-2B — Python
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `pypi/trackfw/changelog.py` (novo) — port 1:1 de `internal/changelog/changelog.go`:
   `parse_sections(content)`, `first_section(sections)`, `find_version(sections, version)`,
