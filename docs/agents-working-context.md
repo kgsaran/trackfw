@@ -17145,3 +17145,104 @@ end-to-end, all 3 CLIs`. `trackfw validate` sem violations (só os 7 warnings pr
 REQs sem ADR, não relacionados a este ML).
 
 **Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.
+
+---
+
+## 2026-08-15 — hefesto-tf — ML-4B (barreira de qualidade, gate de artefatos de terceiro)
+
+**Início:** auditoria de qualidade da branch
+`feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas` (Waves 0–3 concluídas,
+`make quality` verde no `HEAD`). Escopo: apenas leitura + relatório — nenhum código de produto
+tocado, conforme fronteira do ML.
+
+**Fim:** relatório escrito em
+`docs/qualidade/2026-08-15-skills-de-terceiro-via-url.md` — 3 Alto, 4 Médio, 2 Baixo, 3
+Observação, **0 bloqueante**. Os 3 achados mais relevantes:
+
+1. `--scope global` em `third-party install` é permanentemente invisível para
+   `thirdparty_artifact_has_provenance` (a Claim vai para o manifest de `HomeDir`, a regra só lê
+   o manifest do projeto) — o próprio ADR explica por que o default é `project`, mas o código
+   permite `global` com só uma confirmação genérica, sem declarar essa consequência específica no
+   runtime nem no D2/D11 do ADR.
+2. Fence de markdown sem fechamento (ou closer mais curto que o abridor) em
+   `internal/thirdparty/markers.go:removeFencedBlocks` (e réplicas Node/Python) descarta o
+   documento inteiro até EOF da checagem de marcadores D3 — comportamento testado e intencional,
+   mas não listado entre os limites conhecidos do D3 no ADR/cli-parity.md; é um bypass mais barato
+   que os já documentados (paráfrase, indireção, homoglifo).
+3. Divergência de normalização entre CLIs no passo 4 (casefold) do D3: Go/Node usam lowercase
+   simples (deliberado, para bater com Go), Python usa `str.casefold()` completo (seguiu o texto
+   literal do ADR) — sem exploit prático hoje contra os 6 marcadores ASCII atuais, mas é uma
+   inconsistência silenciosa não coberta pelo corpus de paridade da Parte A do script.
+
+Outros achados: função `executeThirdPartyInstall` monolítica (~285 linhas) replicada nos 3 CLIs
+sem sub-funções testáveis isoladamente; `UpsertProvenanceEntry` com load-then-write não atômico
+entre processos concorrentes; cobertura de teste assimétrica para status HTTP não-200 no `Fetch`
+(só Python tem teste, Go e Node não); `ApplyThirdPartyReferences` não valida `end > start` ao
+localizar o marcador de fechamento. Débitos já conhecidos em `docs/cli-parity.md` (mensagem
+`StateModified` do D10.1 não comparada entre CLIs pela Parte D; divergência de wrapper de erro
+top-level cobra vs Node/Python) foram confirmados ainda abertos, não reabertos como achados novos.
+
+**Não commitado, sem push** — devolvido ao `trackfw_architect` para auditoria e decisão de quais
+achados viram ML de acompanhamento.
+
+---
+
+## 2026-08-15 — hades-tf — ML-4A (barreira de revisão final de segurança, pós-implementação)
+
+**Início:** verificação pós-implementação do gate de duas fases para artefatos de terceiro
+(branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, Waves 0-3
+concluídas, `make quality` verde no `HEAD`). Escopo: apenas leitura + falsificação real +
+apensar seção ao próprio parecer (`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md`) e
+esta entrada. Nenhum código de produto tocado no diff final.
+
+**Fim:** seção "Verificação pós-implementação (ML-4A, 2026-08-15)" apensada. Metodologia: leitura
+de código + execução real (não só grep/inspeção) — corpus de 14+ payloads de falsificação de
+marcadores rodado contra os 3 CLIs (`CheckMarkers`/`checkMarkers`/`check_markers`), e testes de
+integração temporários (escritos, executados, apagados antes de devolver — `git status
+--porcelain` limpo) exercitando `executeThirdPartyInstall`/`validator.Validate()` reais para TOCTOU
+(D8c), fail-closed em 3 variantes (D8f) e D2-bis (apagar `.trackfw/thirdparty-quarantine/` após
+install legítimo não quebra `validate`).
+
+**Veredito: libera para merge.** D1-D11 implementados como decidido, com três achados de precisão
+de documentação (não de implementação):
+
+1. **Fence de markdown não-fechado descarta o documento inteiro até EOF** da checagem D3 (não só o
+   "dentro" do fence) — confirmado idêntico nos 3 CLIs; mais barato de explorar que as evasões já
+   documentadas (paráfrase, indireção, homoglifo) porque não exige coordenação nem conhecimento de
+   Unicode, só uma linha ` ``` ` esquecida. Não listado no "NÃO cobre" do ADR. **Achado
+   independente do `hefesto-tf` (ML-4B) confirma a mesma causa raiz.**
+2. **Marcador dentro de comentário HTML passa limpo, e mais barato ainda que o fence** — o passo 1
+   (`htmlCommentPattern.ReplaceAllString`) **apaga** o comentário e seu conteúdo inteiro, em vez de
+   neutralizá-lo como texto não-heading, o que é o oposto da justificativa declarada do próprio
+   passo ("evitar esconder o marcador num comentário para escapar do match e reaparecer depois"):
+   um agente LLM lê o comentário no fluxo de tokens, ao contrário de um navegador. Confirmado
+   idêntico nos 3 CLIs; sintaxe Markdown perfeitamente válida e comum, sem distorcer nenhum
+   renderizador — mais discreto que o fence não-fechado. Achado exclusivo desta verificação.
+3. **`--scope global` tira o artefato inteiramente do perímetro de `thirdparty_artifact_has_provenance`**
+   (a regra só lê o manifest do projeto, nunca `HomeDir`) — o ADR já argumenta a favor do default
+   `project` por essa razão, mas nunca declara a consequência inversa por escrito. Ligado a um
+   segundo achado: a "confirmação explícita adicional" de D4 para `--scope global` colapsa na
+   mesma flag (`--yes-i-trust-this-source`) que já é obrigatória em modo não-interativo — no único
+   caminho sancionado (sessão de agente), não existe segunda camada de fato. **Também confirmado
+   de forma independente pelo `hefesto-tf`.**
+
+Achado novo de severidade Média, não coberto pelo ADR: a **URL de origem é gravada verbatim** em
+dois arquivos versionados (`thirdparty-quarantine/`, `thirdparty-provenance.json`) — uma URL
+pré-assinada com token na query string vira segredo permanente no histórico do git. `content_base64`
+em si é inerte hoje (só `fetch` escreve, só `install` lê, `validator` não lê mais desde D2-bis) —
+sem risco praticado. Crescimento indefinido do diretório de quarentena é débito aceito, não
+mitigado, sem subcomando de prune.
+
+**D8e (`trackfw plugins install` sem gate):** REQ ainda `Open`, código inalterado
+(`os.Chmod(0755)` continua sem gate). Severidade não mudou; urgência relativa aumentou — o padrão
+de duas fases está provado funcional de ponta a ponta, então a REQ não espera mais um desenho
+inédito, só a reaplicação de um padrão já demonstrado ao vetor de maior severidade.
+
+**Validação:** `git status --porcelain` lista exclusivamente
+`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` e esta entrada. Nenhum arquivo de
+`internal/`, `npm/src/`, `pypi/trackfw/`, `scripts/` ou teste permanece modificado (testes
+temporários de falsificação/TOCTOU/fail-closed foram escritos, executados e apagados durante a
+sessão). Nenhum commit/push feito — devolvo para o `trackfw_architect` decidir quais dos 5 achados
+(fence-swallow, comentário-HTML-apagado, URL-como-segredo, confirmação-D4-colapsada,
+perímetro-`--scope-global`) viram ML de acompanhamento, em conjunto com os achados do `hefesto-tf`
+(ML-4B) que se sobrepõem em 2 dos 5 pontos.
