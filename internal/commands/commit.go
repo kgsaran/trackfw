@@ -43,11 +43,16 @@ type commitDeps struct {
 	// execGitCommit runs `git commit -m <message>` with inherited stdio, propagating Git's own
 	// output and exit code literally (production: defaultGitCommit).
 	execGitCommit func(message string) error
-	out           io.Writer
+	// stagedNameStatus returns the raw output of `git diff --cached --name-status`
+	// (production: defaultStagedNameStatus). Used only by buildSuggestedMessage — never touched
+	// by the normal `-m` commit flow.
+	stagedNameStatus func() (string, error)
+	out              io.Writer
 }
 
 func newCommitCmd() *cobra.Command {
 	var message string
+	var suggest bool
 
 	cmd := &cobra.Command{
 		Use:   "commit",
@@ -66,6 +71,12 @@ when governance is missing, instead of letting it land and only catching it late
   4. When allowed: runs 'git commit -m <message>', propagating Git's own output and exit
      status literally.
 
+'--suggest' takes a completely separate path: it prints a heuristic Conventional Commits
+skeleton built from 'git diff --cached --name-status' (type + staged file list) and exits
+without ever committing — no LLM call, just a structural heuristic. It is not a ready-to-use
+message; review and edit before using it with -m. When '--suggest' is set, '-m' (if also
+passed) is ignored and no commit ever happens.
+
 Create the governance artifacts first if this blocks you:
   trackfw req new "title"
   trackfw roadmap new "title"
@@ -76,24 +87,36 @@ Create the governance artifacts first if this blocks you:
 			cmd.SilenceUsage = true
 			cmd.SilenceErrors = true
 
+			deps := commitDeps{
+				loadConfig:       config.Load,
+				currentBranch:    defaultCurrentBranch,
+				resolveWIPDirs:   validator.ResolveWIPDirs,
+				resolveDoneDirs:  validator.ResolveDoneDirs,
+				matchSlug:        validator.BranchSlugMatchesRoadmap,
+				execGitCommit:    defaultGitCommit,
+				stagedNameStatus: defaultStagedNameStatus,
+				out:              cmd.OutOrStdout(),
+			}
+
+			if suggest {
+				suggestion, err := buildSuggestedMessage(deps)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(deps.out, suggestion)
+				return nil
+			}
+
 			if strings.TrimSpace(message) == "" {
 				return fmt.Errorf("commit message is required — use -m:\n  trackfw commit -m \"feat(<scope>): <description>\"")
 			}
 
-			deps := commitDeps{
-				loadConfig:      config.Load,
-				currentBranch:   defaultCurrentBranch,
-				resolveWIPDirs:  validator.ResolveWIPDirs,
-				resolveDoneDirs: validator.ResolveDoneDirs,
-				matchSlug:       validator.BranchSlugMatchesRoadmap,
-				execGitCommit:   defaultGitCommit,
-				out:             cmd.OutOrStdout(),
-			}
 			return runCommit(message, deps)
 		},
 	}
 
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Commit message (required)")
+	cmd.Flags().BoolVar(&suggest, "suggest", false, "Print a heuristic Conventional Commits message skeleton from staged files and exit without committing (ignores -m)")
 
 	return cmd
 }
@@ -118,6 +141,154 @@ func defaultGitCommit(message string) error {
 		os.Exit(exitErr.ExitCode())
 	}
 	return err
+}
+
+// defaultStagedNameStatus runs `git diff --cached --name-status` and returns its raw output.
+// Reuses defaultGitExec (ship.go) instead of duplicating exec.Command wiring.
+func defaultStagedNameStatus() (string, error) {
+	return defaultGitExec("diff", "--cached", "--name-status")
+}
+
+// stagedFile is one line of `git diff --cached --name-status` output: a status letter
+// (A/M/D/...) and the file path it refers to.
+type stagedFile struct {
+	status string
+	path   string
+}
+
+// parseStagedNameStatus parses raw `git diff --cached --name-status` output (tab-separated
+// "<status>\t<path>" lines) into stagedFile entries, skipping blank lines.
+func parseStagedNameStatus(raw string) []stagedFile {
+	var files []stagedFile
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		files = append(files, stagedFile{status: strings.TrimSpace(parts[0]), path: parts[1]})
+	}
+	return files
+}
+
+// commitCommandDirs lists the directories (across the 3 supported CLIs) where a new (status
+// "A") file signals a new CLI command was added — used by the "feat" heuristic rule below.
+var commitCommandDirs = []string{
+	"internal/commands/",
+	"npm/src/commands/",
+	"pypi/trackfw/commands/",
+}
+
+// suggestedCommitType returns the Conventional Commits type suggested for a set of staged
+// files, following the fixed-priority heuristic documented in ML-1A of
+// docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md
+// (first matching rule wins — this is a deliberately simple heuristic, not an attempt at
+// perfect classification):
+//  1. every staged file matches a test-file pattern (*_test.go, *.test.js, test_*.py,
+//     *_test.py) -> "test"
+//  2. every staged file is under docs/ or vault/, or has a .md extension -> "docs"
+//  3. at least one new ("A") file lives under one of commitCommandDirs -> "feat"
+//  4. otherwise -> "fix"
+func suggestedCommitType(files []stagedFile) string {
+	allTests := true
+	allDocs := true
+	hasNewCommandFile := false
+
+	for _, f := range files {
+		if !isTestFile(f.path) {
+			allTests = false
+		}
+		if !isDocsFile(f.path) {
+			allDocs = false
+		}
+		if f.status == "A" && isUnderAnyDir(f.path, commitCommandDirs) {
+			hasNewCommandFile = true
+		}
+	}
+
+	switch {
+	case allTests:
+		return "test"
+	case allDocs:
+		return "docs"
+	case hasNewCommandFile:
+		return "feat"
+	default:
+		return "fix"
+	}
+}
+
+// isTestFile reports whether path matches one of the recognized test-file naming conventions
+// across the 3 supported stacks: *_test.go, *.test.js, test_*.py, *_test.py.
+func isTestFile(path string) bool {
+	base := path
+	if idx := strings.LastIndex(path, "/"); idx != -1 {
+		base = path[idx+1:]
+	}
+	switch {
+	case strings.HasSuffix(base, "_test.go"):
+		return true
+	case strings.HasSuffix(base, ".test.js"):
+		return true
+	case strings.HasPrefix(base, "test_") && strings.HasSuffix(base, ".py"):
+		return true
+	case strings.HasSuffix(base, "_test.py"):
+		return true
+	default:
+		return false
+	}
+}
+
+// isDocsFile reports whether path lives under docs/ or vault/, or has a .md extension.
+func isDocsFile(path string) bool {
+	if strings.HasPrefix(path, "docs/") || strings.HasPrefix(path, "vault/") {
+		return true
+	}
+	return strings.HasSuffix(path, ".md")
+}
+
+// isUnderAnyDir reports whether path starts with any of the given directory prefixes.
+func isUnderAnyDir(path string, dirs []string) bool {
+	for _, d := range dirs {
+		if strings.HasPrefix(path, d) {
+			return true
+		}
+	}
+	return false
+}
+
+// buildSuggestedMessage implements `trackfw commit --suggest`: it reads the staged diff via
+// deps.stagedNameStatus, classifies it with suggestedCommitType, and renders the heuristic
+// Conventional Commits skeleton described in ML-1A. It never calls deps.execGitCommit — no
+// commit ever happens as a side effect of this function.
+func buildSuggestedMessage(deps commitDeps) (string, error) {
+	raw, err := deps.stagedNameStatus()
+	if err != nil {
+		return "", fmt.Errorf("could not read staged changes (are you in a git repo?): %w", err)
+	}
+
+	files := parseStagedNameStatus(raw)
+	if len(files) == 0 {
+		return "", fmt.Errorf("nothing staged — `git add` files first")
+	}
+
+	commitType := suggestedCommitType(files)
+
+	var b strings.Builder
+	fmt.Fprintln(&b, "# Sugestão heurística — NÃO é uma mensagem pronta, revise antes de usar.")
+	fmt.Fprintf(&b, "# Tipo sugerido: %s\n", commitType)
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "%s(<escopo>): <descrição>\n", commitType)
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "## Arquivos staged")
+	for _, f := range files {
+		fmt.Fprintf(&b, "%s  %s\n", f.status, f.path)
+	}
+
+	return strings.TrimRight(b.String(), "\n"), nil
 }
 
 // runCommit implements the `trackfw commit -m "<message>"` flow described in ML-2A of
