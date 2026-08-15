@@ -4,7 +4,11 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { runShip, isShipBranch, isGitWriteCmd, normalizeBranchSlug, resolveRoadmapDir, resetConfig, GIT_WRITE_COMMANDS, buildForgeCreateArgs, firstLine } = require('../src/ship/runner')
+const {
+  runShip, isShipBranch, isGitWriteCmd, normalizeBranchSlug, resolveRoadmapDir, resetConfig,
+  GIT_WRITE_COMMANDS, buildForgeCreateArgs, firstLine, allDocOnly, defaultBaseBranch,
+  gitCommitsSince, buildPRBody, COMMIT_MESSAGE_SEP,
+} = require('../src/ship/runner')
 
 // ────────────────────────────────────────────────────────────────────────────
 // helpers
@@ -14,7 +18,7 @@ const { runShip, isShipBranch, isGitWriteCmd, normalizeBranchSlug, resolveRoadma
  * mockExecGit builds an execGit mock that captures calls and responds
  * based on the configured branch, staged state, and optional remote URL.
  */
-function makeMockGit({ branch = '', stagedFiles = '', remoteURL = '' } = {}) {
+function makeMockGit({ branch = '', stagedFiles = '', remoteURL = '', baseRef = '', commitLog = '' } = {}) {
   const calls = []
   function execGit(args) {
     calls.push(args.slice())
@@ -24,8 +28,15 @@ function makeMockGit({ branch = '', stagedFiles = '', remoteURL = '' } = {}) {
       if (!branch) return { stdout: '', error: new Error('not a git repo') }
       return { stdout: branch, error: null }
     }
+    if (joined.startsWith('symbolic-ref refs/remotes/origin/HEAD')) {
+      if (!baseRef) return { stdout: '', error: new Error('no remote-tracking HEAD') }
+      return { stdout: baseRef, error: null }
+    }
     if (joined.startsWith('diff --cached --name-only')) {
       return { stdout: stagedFiles, error: null }
+    }
+    if (joined.startsWith('log ')) {
+      return { stdout: commitLog, error: null }
     }
     if (joined.startsWith('remote get-url')) {
       return { stdout: remoteURL, error: remoteURL ? null : new Error('no remote') }
@@ -55,8 +66,8 @@ function captureOutput() {
   }
 }
 
-function makeDeps({ branch, staged, violations = [], configForge = '', repoDir = '', availFn = null, execForgeCLI = null, remoteURL = '' } = {}) {
-  const git = makeMockGit({ branch, stagedFiles: staged, remoteURL })
+function makeDeps({ branch, staged, violations = [], configForge = '', repoDir = '', availFn = null, execForgeCLI = null, remoteURL = '', baseRef = '', commitLog = '' } = {}) {
+  const git = makeMockGit({ branch, stagedFiles: staged, remoteURL, baseRef, commitLog })
   const cap = captureOutput()
   const deps = {
     execGit: git,
@@ -123,6 +134,175 @@ test('ship: no wip roadmap aborts with remediation commands', () => {
   assert.ok(out.includes('trackfw roadmap new'), 'must mention trackfw roadmap new')
   assert.ok(out.includes('trackfw roadmap move'), 'must mention trackfw roadmap move')
   assert.ok(out.includes('lenient'), 'must mention lenient mode so users understand why validate passes but ship aborts')
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// Doc-only exception — Steps 1 & 2 skip branch-pattern and governance checks
+// ────────────────────────────────────────────────────────────────────────────
+
+test('ship: doc-only change on non-conforming branch name is allowed', () => {
+  // "docs/foo" does not match feat|fix|refactor/<slug> — normally rejected by isShipBranch,
+  // but every staged file is doc-only, so Step 1's branch-pattern check must be skipped.
+  const violations = ['should never be called']
+  const { deps } = makeDeps({ branch: 'docs/foo', staged: 'docs/some-note.md', violations })
+  const code = runShip(makeOpts({ message: 'docs: update note', dryRun: true }), deps)
+  assert.equal(code, 0, 'doc-only change on non-conforming branch name should not be blocked')
+})
+
+test('ship: doc-only change with missing wip roadmap skips governance entirely', () => {
+  // feat/<slug> is a correctly named branch, but checkGovernance would fail — doc-only
+  // staged content must skip governance entirely, never calling checkGovernance.
+  let called = false
+  const git = makeMockGit({ branch: 'feat/doc-fix', stagedFiles: 'docs/req/REQ-x.md\nvault/notes/note.md' })
+  const cap = captureOutput()
+  const deps = {
+    execGit: git,
+    checkGovernance: () => { called = true; return ['no matching roadmap in wip/ nor done/'] },
+    writeln: cap.writeln,
+    availFn: () => false,
+    execForgeCLI: () => null,
+  }
+  const code = runShip(makeOpts({ message: 'docs: fix req', dryRun: true }), deps)
+  assert.equal(code, 0, 'doc-only change must not be blocked by governance')
+  assert.equal(called, false, 'checkGovernance must not be called at all for a doc-only change')
+  assert.ok(cap.output().includes('Governance: skipped (doc-only change)'), `expected doc-only skip message, got:\n${cap.output()}`)
+})
+
+test('ship: mixed doc+code on feat branch is still blocked by governance', () => {
+  const violations = ['branch "feat/mixed" is a feat/fix/refactor branch but no roadmap is in wip/']
+  const { deps, cap } = makeDeps({ branch: 'feat/mixed', staged: 'docs/note.md\ninternal/commands/ship.go', violations })
+  const code = runShip(makeOpts({ message: 'feat: mixed change' }), deps)
+  assert.equal(code, 1, 'expected governance error for a mixed doc+code change')
+  const out = cap.output()
+  assert.ok(out.includes('governance check failed'), 'must mention governance check failed')
+  assert.ok(!out.includes('skipped (doc-only change)'), 'mixed doc+code change must not be treated as doc-only')
+})
+
+test('ship: mixed doc+code on non-conforming branch name is still blocked', () => {
+  const { deps, cap } = makeDeps({ branch: 'docs/mixed', staged: 'docs/note.md\ninternal/commands/ship.go' })
+  const code = runShip(makeOpts({ message: 'docs: mixed change' }), deps)
+  assert.equal(code, 1, 'expected branch-pattern error for a mixed doc+code change on a non-conforming branch')
+  assert.ok(cap.output().includes('does not match the required pattern'))
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// allDocOnly unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+test('allDocOnly: doc-only file sets return true', () => {
+  const docOnlyCases = [
+    ['docs/req/REQ-x.md'],
+    ['vault/notes/note.md'],
+    ['README.md'],
+    ['docs/req/REQ-x.md', 'vault/notes/note.md', 'CHANGELOG.md'],
+  ]
+  for (const files of docOnlyCases) {
+    assert.ok(allDocOnly(files), `allDocOnly(${JSON.stringify(files)}) should be true`)
+  }
+})
+
+test('allDocOnly: mixed or empty file sets return false', () => {
+  const notDocOnlyCases = [
+    undefined,
+    [],
+    ['internal/commands/ship.go'],
+    ['docs/req/REQ-x.md', 'internal/commands/ship.go'],
+    ['go.mod'],
+  ]
+  for (const files of notDocOnlyCases) {
+    assert.ok(!allDocOnly(files), `allDocOnly(${JSON.stringify(files)}) should be false`)
+  }
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// defaultBaseBranch unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+test('defaultBaseBranch: symbolic-ref succeeds', () => {
+  const execGit = () => ({ stdout: 'refs/remotes/origin/develop', error: null })
+  assert.equal(defaultBaseBranch(execGit), 'develop')
+})
+
+test('defaultBaseBranch: symbolic-ref fails falls back to main', () => {
+  const execGit = () => ({ stdout: '', error: new Error('no remote-tracking HEAD') })
+  assert.equal(defaultBaseBranch(execGit), 'main')
+})
+
+test('defaultBaseBranch: empty output falls back to main', () => {
+  const execGit = () => ({ stdout: '', error: null })
+  assert.equal(defaultBaseBranch(execGit), 'main')
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// buildPRBody unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+test('buildPRBody: zero or one commit keeps minimal body', () => {
+  for (const commits of [[], ['feat: single commit']]) {
+    const body = buildPRBody('feat/my-feature', commits)
+    assert.equal(body, 'Branch: feat/my-feature\n\nCreated by trackfw ship.')
+  }
+})
+
+test('buildPRBody: multiple commits aggregates history', () => {
+  const commits = [
+    'feat(ship): add doc-only exception\n\nSkips governance for docs/vault/md-only staged files.',
+    'fix(ship): correct base branch fallback',
+    'docs: update roadmap status',
+  ]
+  const body = buildPRBody('feat/my-feature', commits)
+
+  assert.ok(body.includes('## Commits'), `expected '## Commits' heading, got:\n${body}`)
+  for (const subject of [
+    '- feat(ship): add doc-only exception',
+    '- fix(ship): correct base branch fallback',
+    '- docs: update roadmap status',
+  ]) {
+    assert.ok(body.includes(subject), `expected subject line ${subject}, got:\n${body}`)
+  }
+  assert.ok(body.includes('## Detalhes'), `expected '## Detalhes' heading, got:\n${body}`)
+  assert.ok(body.includes('Skips governance for docs/vault/md-only staged files.'), `expected full commit body, got:\n${body}`)
+  assert.ok(body.includes('---\nBranch: feat/my-feature'), `expected trailing footer, got:\n${body}`)
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// gitCommitsSince unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+test('gitCommitsSince: parses separated commits', () => {
+  const commitLog = 'feat: first' + COMMIT_MESSAGE_SEP + 'fix: second\n\nwith a body' + COMMIT_MESSAGE_SEP
+  const execGit = () => ({ stdout: commitLog, error: null })
+  const commits = gitCommitsSince('main', execGit)
+  assert.equal(commits.length, 2)
+  assert.equal(commits[0], 'feat: first')
+  assert.equal(commits[1], 'fix: second\n\nwith a body')
+})
+
+test('gitCommitsSince: empty range returns empty array', () => {
+  const execGit = () => ({ stdout: '', error: null })
+  const commits = gitCommitsSince('main', execGit)
+  assert.deepEqual(commits, [])
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// End-to-end: --dry-run PR body reflects real branch commit history
+// ────────────────────────────────────────────────────────────────────────────
+
+test('ship: dry-run PR body aggregates commit history', () => {
+  const commitLog = 'feat(x): third commit' + COMMIT_MESSAGE_SEP + 'feat(x): second commit' + COMMIT_MESSAGE_SEP
+  const { deps, cap } = makeDeps({
+    branch: 'feat/my-feature',
+    staged: 'file.go',
+    remoteURL: 'https://github.com/org/repo.git',
+    baseRef: 'refs/remotes/origin/main',
+    commitLog,
+    configForge: 'github',
+  })
+  const code = runShip(makeOpts({ message: 'feat(x): first commit (this ship call)', dryRun: true }), deps)
+  assert.equal(code, 0)
+  const out = cap.output()
+  assert.ok(out.includes('[dry-run] Title: feat(x): first commit (this ship call)'), `expected dry-run title line, got:\n${out}`)
+  assert.ok(out.includes('## Commits') && out.includes('feat(x): third commit'), `expected aggregated commit history in dry-run body, got:\n${out}`)
 })
 
 // ────────────────────────────────────────────────────────────────────────────

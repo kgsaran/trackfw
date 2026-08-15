@@ -25,6 +25,11 @@ from trackfw.ship.runner import (
     GIT_WRITE_COMMANDS,
     _first_line,
     _build_forge_create_args,
+    _all_doc_only,
+    _default_base_branch,
+    _git_commits_since,
+    build_pr_body,
+    COMMIT_MESSAGE_SEP,
 )
 from trackfw import config as _trackfw_config
 from trackfw.forge.adapter import forge_adapter
@@ -37,10 +42,13 @@ from trackfw.forge.adapter import forge_adapter
 class MockGit:
     """Captures calls and returns configured responses."""
 
-    def __init__(self, branch='feat/default', staged='file.py', remote_url=''):
+    def __init__(self, branch='feat/default', staged='file.py', remote_url='',
+                 base_ref='', commit_log=''):
         self.branch = branch
         self.staged = staged
         self.remote_url = remote_url
+        self.base_ref = base_ref
+        self.commit_log = commit_log
         self.calls = []
 
     def exec(self, args):
@@ -52,8 +60,16 @@ class MockGit:
                 return ('', 'not a git repo')
             return (self.branch, None)
 
+        if joined.startswith('symbolic-ref refs/remotes/origin/HEAD'):
+            if not self.base_ref:
+                return ('', None)
+            return (self.base_ref, None)
+
         if joined.startswith('diff --cached --name-only'):
             return (self.staged, None)
+
+        if joined.startswith('log '):
+            return (self.commit_log, None)
 
         if joined.startswith('remote get-url'):
             if self.remote_url:
@@ -155,6 +171,211 @@ def test_ship_no_wip_roadmap_aborts_with_remediation():
     assert 'trackfw roadmap new' in out
     assert 'trackfw roadmap move' in out
     assert 'lenient' in out, "output must mention lenient mode so users understand why validate passes but ship aborts"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Doc-only exception — Steps 1 & 2 skip branch-pattern and governance checks
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_ship_doc_only_branch_non_conforming_name_allowed():
+    # "docs/foo" does not match feat|fix|refactor/<slug> — normally rejected by
+    # is_ship_branch, but every staged file is doc-only, so Step 1's branch-pattern
+    # check must be skipped.
+    def _should_never_be_called():
+        raise AssertionError('check_governance must not be called for a doc-only change')
+
+    git = MockGit(branch='docs/foo', staged='docs/some-note.md')
+    lines = []
+    code = run_ship(
+        message='docs: update note',
+        dry_run=True,
+        exec_git=git.exec,
+        check_governance=_should_never_be_called,
+        writeln=lambda s: lines.append(s),
+    )
+    out = '\n'.join(lines)
+    assert code == 0, f"doc-only change on non-conforming branch name should not be blocked: {out}"
+    assert 'does not match the required pattern' not in out
+
+
+def test_ship_doc_only_branch_missing_roadmap_governance_skipped():
+    # feat/<slug> is a correctly named branch, but governance would fail — doc-only
+    # staged content must skip governance entirely, never calling check_governance.
+    called = {'value': False}
+
+    def _tracking_governance():
+        called['value'] = True
+        return ['no matching roadmap in wip/ nor done/']
+
+    git = MockGit(branch='feat/doc-fix', staged='docs/req/REQ-x.md\nvault/notes/note.md')
+    lines = []
+    code = run_ship(
+        message='docs: fix req',
+        dry_run=True,
+        exec_git=git.exec,
+        check_governance=_tracking_governance,
+        writeln=lambda s: lines.append(s),
+    )
+    out = '\n'.join(lines)
+    assert code == 0, f"doc-only change must not be blocked by governance: {out}"
+    assert not called['value'], 'check_governance must not be called at all for a doc-only change'
+    assert 'Governance: skipped (doc-only change)' in out
+
+
+def test_ship_mixed_doc_and_code_still_blocked_by_governance():
+    # One non-doc file staged alongside doc files must NOT trigger the doc-only
+    # exception — governance runs exactly as it does today, and the configured
+    # violation still blocks.
+    v = ['branch "feat/mixed" is a feat/fix/refactor branch but no roadmap is in wip/']
+    code, out, _ = run(branch='feat/mixed', staged='docs/note.md\ntrackfw/ship/runner.py', violations=v)
+    assert code == 1
+    assert 'governance check failed' in out
+    assert 'skipped (doc-only change)' not in out
+
+
+def test_ship_mixed_doc_and_code_non_conforming_branch_still_blocked():
+    # Same mixed-content guarantee, but on a branch name that would fail
+    # is_ship_branch too.
+    code, out, _ = run(branch='docs/mixed', staged='docs/note.md\ntrackfw/ship/runner.py')
+    assert code == 1
+    assert 'does not match the required pattern' in out
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# _all_doc_only unit tests
+# ────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize('files', [
+    ['docs/req/REQ-x.md'],
+    ['vault/notes/note.md'],
+    ['README.md'],
+    ['docs/req/REQ-x.md', 'vault/notes/note.md', 'CHANGELOG.md'],
+])
+def test_all_doc_only_true(files):
+    assert _all_doc_only(files), f"_all_doc_only({files}) should be True"
+
+
+@pytest.mark.parametrize('files', [
+    None,
+    [],
+    ['trackfw/ship/runner.py'],
+    ['docs/req/REQ-x.md', 'trackfw/ship/runner.py'],
+    ['setup.py'],
+])
+def test_all_doc_only_false(files):
+    assert not _all_doc_only(files), f"_all_doc_only({files}) should be False"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# _default_base_branch unit tests
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_default_base_branch_symbolic_ref_succeeds():
+    exec_git = lambda args: ('refs/remotes/origin/develop', None)  # noqa: E731
+    assert _default_base_branch(exec_git) == 'develop'
+
+
+def test_default_base_branch_symbolic_ref_fails_falls_back_to_main():
+    exec_git = lambda args: ('', 'no remote-tracking HEAD')  # noqa: E731
+    assert _default_base_branch(exec_git) == 'main'
+
+
+def test_default_base_branch_empty_output_falls_back_to_main():
+    exec_git = lambda args: ('', None)  # noqa: E731
+    assert _default_base_branch(exec_git) == 'main'
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# build_pr_body unit tests
+# ────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize('commits', [[], ['feat: single commit']])
+def test_build_pr_body_zero_or_one_commit_minimal_body(commits):
+    body = build_pr_body('feat/my-feature', commits)
+    assert body == 'Branch: feat/my-feature\n\nCreated by trackfw ship.'
+
+
+def test_build_pr_body_multiple_commits_aggregates_history():
+    commits = [
+        'feat(ship): add doc-only exception\n\nSkips governance for docs/vault/md-only staged files.',
+        'fix(ship): correct base branch fallback',
+        'docs: update roadmap status',
+    ]
+    body = build_pr_body('feat/my-feature', commits)
+
+    assert '## Commits' in body
+    for subject in [
+        '- feat(ship): add doc-only exception',
+        '- fix(ship): correct base branch fallback',
+        '- docs: update roadmap status',
+    ]:
+        assert subject in body
+    assert '## Detalhes' in body
+    assert 'Skips governance for docs/vault/md-only staged files.' in body
+    assert '---\nBranch: feat/my-feature' in body
+
+    # Exact-equality pin: this is what internal/commands/ship.go's buildPRBody
+    # produces byte-for-byte for the same input — substring checks alone would not
+    # catch a whitespace divergence that the cross-CLI parity audit would flag.
+    assert body == (
+        '## Commits\n\n'
+        '- feat(ship): add doc-only exception\n'
+        '- fix(ship): correct base branch fallback\n'
+        '- docs: update roadmap status\n'
+        '\n## Detalhes\n\n'
+        '**feat(ship): add doc-only exception**\n\n'
+        'Skips governance for docs/vault/md-only staged files.\n'
+        '\n---\nBranch: feat/my-feature\n'
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# _git_commits_since unit tests
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_git_commits_since_parses_separated_commits():
+    log = 'feat: first' + COMMIT_MESSAGE_SEP + 'fix: second\n\nwith a body' + COMMIT_MESSAGE_SEP
+    git = MockGit(branch='feat/my-feature', commit_log=log)
+    commits = _git_commits_since('main', git.exec)
+    assert len(commits) == 2
+    assert commits[0] == 'feat: first'
+    assert commits[1] == 'fix: second\n\nwith a body'
+
+
+def test_git_commits_since_empty_range_returns_empty():
+    git = MockGit(branch='feat/my-feature', commit_log='')
+    commits = _git_commits_since('main', git.exec)
+    assert commits == []
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# End-to-end: --dry-run PR body reflects real branch commit history
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_ship_dry_run_pr_body_aggregates_commit_history():
+    git = MockGit(
+        branch='feat/my-feature',
+        staged='file.py',
+        remote_url='https://github.com/org/repo.git',
+        base_ref='refs/remotes/origin/main',
+        commit_log='feat(x): third commit' + COMMIT_MESSAGE_SEP + 'feat(x): second commit' + COMMIT_MESSAGE_SEP,
+    )
+    lines = []
+    code = run_ship(
+        message='feat(x): first commit (this ship call)',
+        dry_run=True,
+        config_forge='github',
+        exec_git=git.exec,
+        check_governance=lambda: [],
+        writeln=lambda s: lines.append(s),
+        avail_fn=lambda name: False,
+        exec_forge_cli=lambda name, args: None,
+    )
+    out = '\n'.join(lines)
+    assert code == 0
+    assert '[dry-run] Title: feat(x): first commit (this ship call)' in out
+    assert '## Commits' in out
+    assert 'feat(x): third commit' in out
 
 
 # ────────────────────────────────────────────────────────────────────────────

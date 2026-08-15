@@ -167,6 +167,119 @@ def _first_line(s):
     return s[:idx] if idx >= 0 else s
 
 
+# commit_message_sep delimits full commit messages (%B) in the output of
+# _git_commits_since's `git log --format=%B<sep>`. Same non-printable control
+# character used by the Go and Node.js implementations for byte-for-byte parity —
+# it cannot appear in a real commit message and survives str.strip().
+COMMIT_MESSAGE_SEP = '\x1e'
+
+
+def _split_nonempty_lines(s):
+    """Splits git output into a list of trimmed, non-empty lines. Returns [] for empty input."""
+    s = (s or '').strip()
+    if not s:
+        return []
+    return [line.strip() for line in s.split('\n') if line.strip()]
+
+
+def _all_doc_only(files):
+    """
+    Returns True when there is at least one staged file and every staged file is
+    doc-only: under docs/ or vault/ (path prefix), or has a .md extension. A single
+    file outside that criterion makes it return False. Mirrors the doc-only exception
+    documented in CLAUDE.md §7 ("Alteração doc-only (markdown, comentários)").
+    """
+    if not files:
+        return False
+    for f in files:
+        if f.startswith('docs/') or f.startswith('vault/') or f.endswith('.md'):
+            continue
+        return False
+    return True
+
+
+def _default_base_branch(exec_git):
+    """
+    Resolves the repository's default branch for `git log <base>..HEAD`.
+    Tries `git symbolic-ref refs/remotes/origin/HEAD` (format
+    "refs/remotes/origin/main" — only the name after the last slash is kept) and
+    falls back to "main" when that fails or yields nothing (e.g. shallow clone
+    without a remote-tracking HEAD).
+    """
+    stdout, err = exec_git(['symbolic-ref', 'refs/remotes/origin/HEAD'])
+    if err:
+        return 'main'
+    stdout = stdout.strip()
+    idx = stdout.rfind('/')
+    if idx < 0 or idx + 1 >= len(stdout):
+        return 'main'
+    return stdout[idx + 1:]
+
+
+def _git_commits_since(base, exec_git):
+    """
+    Returns the full message (subject + body) of every non-merge commit in
+    base..HEAD, most-recent-first (git log's natural order). Returns [] on any git
+    error or when the range is empty.
+    """
+    stdout, err = exec_git(['log', f'{base}..HEAD', '--no-merges', f'--format=%B{COMMIT_MESSAGE_SEP}'])
+    if err:
+        return []
+    stdout = stdout.strip()
+    if not stdout:
+        return []
+    commits = []
+    for part in stdout.split(COMMIT_MESSAGE_SEP):
+        part = part.strip('\n')
+        if part.strip():
+            commits.append(part)
+    return commits
+
+
+def build_pr_body(branch, commits):
+    """
+    Constructs the PR/MR body. With 0 or 1 non-merge commit on the branch (the
+    trivial case — just the commit `ship` itself made), it keeps the original minimal
+    body, not a regression. With 2+ commits, it aggregates the branch's commit
+    history:
+
+        ## Commits
+        - <subject of commit 1>
+        - <subject of commit 2>
+
+        ## Detalhes
+        <full body of each commit that has one, in blocks>
+
+        ---
+        Branch: <branch>
+    """
+    if len(commits) <= 1:
+        return f'Branch: {branch}\n\nCreated by trackfw ship.'
+
+    subjects = []
+    details = []
+    for c in commits:
+        lines = c.split('\n', 1)
+        subject = lines[0].strip()
+        if not subject:
+            continue
+        subjects.append(subject)
+        if len(lines) > 1:
+            body_text = lines[1].strip()
+            if body_text:
+                details.append(f'**{subject}**\n\n{body_text}')
+
+    out = ['## Commits\n\n']
+    for s in subjects:
+        out.append(f'- {s}\n')
+    if details:
+        out.append('\n## Detalhes\n\n')
+        out.append('\n\n'.join(details))
+        out.append('\n')
+    out.append(f'\n---\nBranch: {branch}\n')
+    return ''.join(out)
+
+
 def _build_forge_create_args(adapter, title, body):
     """Builds CLI args for PR/MR creation. Never mutates adapter.cli_args."""
     args = list(adapter.cli_args) + ['--title', title]
@@ -252,6 +365,14 @@ def run_ship(
             return ('', None)
         return exec_git(args)
 
+    # ─── Step 0: staged files ───────────────────────────────────────────────
+    # Read once, up front, so Steps 1 and 2 can grant a doc-only exception before
+    # they run — and so Step 4 below reuses the same read instead of querying git
+    # twice.
+    staged_out, _ = exec_git(['diff', '--cached', '--name-only'])
+    staged_files = _split_nonempty_lines(staged_out)
+    doc_only = _all_doc_only(staged_files)
+
     # ─── Step 1: Branch validation ─────────────────────────────────────────
     stdout, err = exec_git(['symbolic-ref', '--short', 'HEAD'])
     if err:
@@ -259,6 +380,7 @@ def run_ship(
         return 1
     branch = stdout.strip()
 
+    # main/master is blocked unconditionally — the doc-only exception never applies here.
     if branch in ('main', 'master'):
         writeln(
             f'error: trackfw ship cannot run on "{branch}" — use a feature branch:\n'
@@ -266,7 +388,7 @@ def run_ship(
         )
         return 1
 
-    if not is_ship_branch(branch):
+    if not doc_only and not is_ship_branch(branch):
         writeln(
             f'error: branch "{branch}" does not match the required pattern feat|fix|refactor/<slug>\n'
             'Rename your branch or create a new one:\n  git checkout -b feat/<slug>'
@@ -276,23 +398,29 @@ def run_ship(
     writeln(f'Branch: {branch}')
 
     # ─── Step 2: Governance ────────────────────────────────────────────────
-    violations = check_governance()
-    if violations:
-        writeln('\nGovernance check failed:')
-        for v in violations:
-            writeln(f'  {v}')
-        writeln('\nCreate the required artifacts before running ship:')
-        writeln('  trackfw req new "<title>"')
-        writeln('  trackfw roadmap new "<title>"')
-        writeln('  trackfw roadmap move <name> wip')
-        writeln("\nNote: this governance check is a hard gate — it is not affected by lenient")
-        writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")
-        writeln("passes but 'trackfw ship' aborts here, you likely have lenient mode")
-        writeln("configured — ship always requires REQ + roadmap in wip/.")
-        writeln(f'\nerror: governance check failed: {len(violations)} violation(s)')
-        return 1
+    # Doc-only changes (all staged files under docs/, vault/, or *.md) are exempt
+    # from REQ+roadmap governance — mirrors the CLAUDE.md §7 exception for doc-only
+    # changes.
+    if doc_only:
+        writeln('Governance: skipped (doc-only change)')
+    else:
+        violations = check_governance()
+        if violations:
+            writeln('\nGovernance check failed:')
+            for v in violations:
+                writeln(f'  {v}')
+            writeln('\nCreate the required artifacts before running ship:')
+            writeln('  trackfw req new "<title>"')
+            writeln('  trackfw roadmap new "<title>"')
+            writeln('  trackfw roadmap move <name> wip')
+            writeln("\nNote: this governance check is a hard gate — it is not affected by lenient")
+            writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")
+            writeln("passes but 'trackfw ship' aborts here, you likely have lenient mode")
+            writeln("configured — ship always requires REQ + roadmap in wip/.")
+            writeln(f'\nerror: governance check failed: {len(violations)} violation(s)')
+            return 1
 
-    writeln('Governance: OK')
+        writeln('Governance: OK')
 
     # ─── Step 3: Squash-merge detection ────────────────────────────────────
     if dry_run:
@@ -315,8 +443,9 @@ def run_ship(
         writeln(diff_stat_out)
     writeln('────────────────────────────────────────────────────────\n')
 
-    cached_files, _ = exec_git(['diff', '--cached', '--name-only'])
-    if not cached_files.strip():
+    # Reuses staged_files read at the top of the function (Step 0) — never re-query
+    # git here.
+    if not staged_files:
         writeln(
             'error: nothing is staged — stage your files explicitly before running ship:\n'
             '  git add <file1> <file2> ...\n'
@@ -375,7 +504,24 @@ def run_ship(
         writeln('\nship complete.')
         return 0
 
+    # Title/body computed once for every remaining branch below (dry-run and real CLI
+    # invocation alike). git log/diff are read-only — they run in --dry-run mode too,
+    # same as the staged-files read in Step 0.
+    #
+    # Design decision (documented per roadmap ML-1A, ported from Go): the title is
+    # always _first_line(message), the -m message passed to this very `ship` call,
+    # even when the branch carries multiple prior commits. Deriving a distinct "PR
+    # title" from N unrelated commit subjects would need a heuristic with no
+    # unambiguous answer — the simplest, least surprising rule is that -m is the PR's
+    # summary.
+    base = _default_base_branch(exec_git)
+    commits = _git_commits_since(base, exec_git)
+    title = _first_line(message)
+    body = build_pr_body(branch, commits)
+
     if dry_run:
+        writeln(f'[dry-run] Title: {title}')
+        writeln(f'[dry-run] Body:\n{body}')
         if not adapter.available and resolution.forge != 'manual':
             url = adapter.fallback_url(remote_url, branch)
             if url:
@@ -401,8 +547,6 @@ def run_ship(
         return 0
 
     # CLI available — invoke it.
-    title = _first_line(message)
-    body = f'Branch: {branch}\n\nCreated by trackfw ship.'
     cli_args = _build_forge_create_args(adapter, title, body)
     cli_err = exec_forge_cli(adapter.cli_name, cli_args)
     if cli_err:
