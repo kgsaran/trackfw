@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-15
 req: "docs/req/REQ-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: trackfw validate deve detectar scripts de hook ausentes ou desatualizados
 
-> Created: 2026-08-15 | Status: wip
+> Created: 2026-08-15 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md -->

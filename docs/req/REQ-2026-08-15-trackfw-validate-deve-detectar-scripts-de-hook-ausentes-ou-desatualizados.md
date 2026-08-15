@@ -3,7 +3,7 @@ status: Done
 date: 2026-08-15
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md"
 ---
 
 # REQ: trackfw validate deve detectar scripts de hook ausentes ou desatualizados
@@ -111,4 +111,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md
