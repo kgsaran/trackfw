@@ -38,7 +38,7 @@ separado que nunca chega em `runCommit`/`git commit` real.
 > Dependências: nenhuma
 
 ### ML-1A — `internal/commands/commit.go`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/commands/commit.go` (`newCommitCmd`, nova função `buildSuggestedMessage`)
 - `internal/commands/commit_test.go`
