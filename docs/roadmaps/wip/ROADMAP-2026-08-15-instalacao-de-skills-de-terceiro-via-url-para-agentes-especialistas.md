@@ -398,7 +398,7 @@ sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -ci "conforme .* Wave 0"   # deve s
 ---
 
 ### ML-1C — Subcomandos `third-party fetch` / `third-party install` (D1) + composição (D5) + guardrail (D2)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-08-15) — 10 testes verdes; ver relatório de entrega para desvio de escopo (plan.go) e imprecisões de ADR encontradas
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-1B ✅.
 **Arquivos afetados:**

@@ -15,6 +15,13 @@ type PlanRequest struct {
 	Surfaces    map[string]string
 	AllSurfaces bool
 	Identity    identity.Config
+	// ProjectRoot, when non-empty, lets BuildPlans apply the D5 third-party
+	// reference extension point (ApplyThirdPartyReferences, render.go) to
+	// every rendered KindAgents artifact. Optional and source-compatible:
+	// every existing caller that does not set it gets byte-identical output
+	// to before this field existed (ApplyThirdPartyReferences no-ops on an
+	// empty root).
+	ProjectRoot string
 }
 
 // BuildPlans resolves catalog selections into deterministic lifecycle plans.
@@ -55,6 +62,18 @@ func BuildPlans(catalog *Catalog, request PlanRequest) ([]PlannedArtifact, error
 				content, err := Render(item, request.Kind, capability, source, request.Identity, target.ID)
 				if err != nil {
 					return nil, err
+				}
+				// D5 extension point: reproduce any persisted third-party
+				// reference block so regenerating this exact artifact (e.g.
+				// a later `trackfw agents update`) settles at StateCurrent
+				// instead of treating the attachment as drift. See the
+				// ThirdPartyReference doc comment in render.go for why this
+				// cannot live inside Render itself.
+				if request.Kind == KindAgents && request.ProjectRoot != "" {
+					content, err = ApplyThirdPartyReferences(request.ProjectRoot, content, target.ID, item.ID)
+					if err != nil {
+						return nil, err
+					}
 				}
 				claim := Claim{Target: target.ID, Surface: surface.ID, Scope: request.Scope, Kind: request.Kind, Item: item.ID}
 				plans = append(plans, PlannedArtifact{

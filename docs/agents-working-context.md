@@ -16732,3 +16732,93 @@ rigor contra JSON malformado e `schema_version` incompatível.
 **Não commitado.** Escrito apenas `internal/thirdparty/quarantine.go`, `provenance.go`,
 `quarantine_test.go`, `provenance_test.go` + esta entrada de contexto. `fetch.go`/`markers.go`
 não foram tocados. Devolvido ao `trackfw_architect` para auditoria e commit.
+
+## Sessão 2026-08-15 — Apolo (INÍCIO: ML-1C — subcomandos `third-party fetch`/`install`, composição D5, guardrail D2)
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap em
+`wip/`. ML-1A e ML-1B já concluídos e auditados. Executando ML-1C: dois novos subcomandos em
+`trackfw skills`/`trackfw agents` (`newIntegrationsLifecycleCmd`), extensão de composição
+idempotente em `internal/integrations/render.go`, escopo `project` default via
+`resolveThirdPartyScope` dedicado (sem tocar `resolveScope`/`agents_skills_test.go`).
+
+## Sessão 2026-08-15 — Apolo (FIM: ML-1C concluído — 10 testes verdes, não commitado)
+
+Entregue o subcomando `third-party fetch`/`third-party install`, disponível em `trackfw skills`
+e `trackfw agents` (D1), com quarentena → aprovação vinculada por checksum (D8c/TOCTOU fechado)
+→ instalação via `Manager` (nunca `os.WriteFile` cru), guardrail `TRACKFW_ORCHESTRATOR_SESSION`
+(D2, mensagem cita "guardrail" e a regra `thirdparty_artifact_has_provenance`), e composição por
+marcadores dedicados `<!-- trackfw:thirdparty-skills:start/end -->` (D5).
+
+**Arquivos tocados:**
+- `internal/commands/integrations_thirdparty.go` (novo) — comandos `fetch`/`install`.
+- `internal/commands/integrations_thirdparty_test.go` (novo) — 10 testes.
+- `internal/commands/integrations_flags.go` (editado) — registra `third-party` em
+  `newIntegrationsLifecycleCmd`; passa `manager.ProjectRoot` para `BuildPlans` nos dois call
+  sites (`executeIntegrationMutation`, `executeIntegrationList`).
+- `internal/integrations/render.go` (editado) — extensão D5: `ThirdPartyReference`,
+  registro `.trackfw/thirdparty-references.json`, `UpsertThirdPartyReference`,
+  `ApplyThirdPartyReferences` (injeção idempotente por marcadores),
+  `NormalizeThirdPartyContent`, `ResolveThirdPartySkillDestination` (nunca hardcoda `.claude/`).
+- **`internal/integrations/plan.go` (editado) — FORA da lista de arquivos do ML, decisão
+  reportada, não silenciosa.** Adicionado campo `PlanRequest.ProjectRoot` (opcional,
+  source-compatible) e uma chamada a `ApplyThirdPartyReferences` logo após `Render()` para
+  `KindAgents`. **Motivo:** sem isso, o AC5 do ML ("`agents update` não reporta `StateModified`
+  após anexar um artefato de terceiro") só valeria superficialmente — o `Render()` normal não
+  sabe nada sobre o bloco de referência injetado, então o próximo `agents update` recalcularia
+  conteúdo sem o bloco, e o `Manager` ou sobrescreveria silenciosamente (apagando a referência)
+  ou pularia com aviso de "outdated", dependendo do estado de posse. Persistir a referência em
+  `.trackfw/thirdparty-references.json` e fazer o `BuildPlans` reaplicá-la a cada render é o que
+  faz o estado convergir em `StateCurrent` de forma estável. Testado explicitamente em
+  `TestThirdPartyInstall_AgentsUpdateStaysCurrentAfterAttach` (compara bytes antes/depois de um
+  `agents update` subsequente).
+
+**Imprecisões do ADR encontradas e resolvidas (reportadas, não contornadas em silêncio):**
+1. **Escopo do agente-alvo de `--apply-to` não especificado.** D5/D8 nunca dizem em qual escopo
+   o artefato do agente que recebe a referência precisa estar. Como D4 dá ao third-party um
+   default (`project`) diferente do catálogo (`global`, `ADR-2026-07-25` D1), o caso comum é não
+   existir `.claude/agents/trackfw-<id>.md` (só `~/.claude/agents/...`), e injetar um caminho
+   relativo ao projeto num arquivo global quebraria para qualquer outro projeto que compartilhe
+   esse arquivo home-scoped. **Resolução:** exigir que o agente já esteja instalado, possuído
+   pelo trackfw e **não modificado à mão**, no MESMO escopo do artefato de terceiro; falhar
+   ruidosamente com o comando de remediação exato, nunca pular em silêncio (AC3 proíbe decisão
+   silenciosa). Testado em
+   `TestThirdPartyInstall_ApplyToRejectsHandModifiedAgentBeforeAnyWrite` — a checagem roda
+   **antes** de qualquer escrita (nem o skill file nem o registro de referências são gravados se
+   a precondição falhar).
+2. **Quem escreve a entrada de proveniência aprovada nunca é especificado.** `VerifyApproval`
+   exige uma entrada pré-existente keyed por destino resolvido — este ML não expõe nenhum
+   comando "approve"; a entrada precisa ser escrita fora da CLI (pelo `hades-tf`/arquiteto,
+   diretamente no JSON versionado) antes de `third-party install` rodar. Isso implica que quem
+   aprova precisa calcular o mesmo destino resolvido que `ResolveThirdPartySkillDestination`
+   produziria — acoplamento implícito que o ADR não nomeia.
+3. **`requested_targets` do schema de quarentena (D8b) não distingue "CLI targets" de "IDs de
+   agente do catálogo".** Por isso a CLI separa `--targets` (onde o arquivo de skill é instalado)
+   de `--apply-to` (quais agentes do catálogo recebem a linha de referência) — sem essa
+   distinção AC3 ("o usuário confirma explicitamente a quais agentes se aplica") não teria como
+   ser implementado de forma não ambígua.
+
+**Decisões autônomas de baixo risco:**
+- `--scope global` (D4, "confirmação explícita adicional") reaproveita
+  `--yes-i-trust-this-source` em vez de uma segunda flag — ambas gateiam a mesma ação de "revisei
+  e aceito a consequência".
+- Slug do artefato derivado da URL por padrão (`--slug` opcional para sobrescrever), validado
+  contra `^[a-z0-9][a-z0-9._-]{0,63}$` antes de tocar `Manager.resolve`.
+- `--checksum` validado contra `^[a-f0-9]{64}$` antes de qualquer uso (evita panic de slice em
+  `CatalogVersion` e mismatch confuso de arquivo de quarentena).
+- Falha de marker check (`marker_check.result == "fail"`) em `fetch --force-thirdparty-markers`
+  exige `marker_override: true` na entrada de proveniência de CADA destino antes de `install`
+  prosseguir — camada extra de auditabilidade não pedida literalmente pelo ADR, mas coerente com
+  "fica auditável, não silencioso" (D3).
+
+**Pendência explícita para a Wave 2 (Node/Python):** o novo artefato persistido
+`.trackfw/thirdparty-references.json` **não está mencionado no ADR** — é resultado da resolução
+acima. Quem portar para Node/Python só a partir de D1–D8 vai perder esse arquivo e divergir no
+comportamento de `agents update` pós-anexação. Precisa ser portado byte-a-byte junto com
+`thirdparty-quarantine`/`thirdparty-provenance`.
+
+**Validação:** `go build ./... && go vet ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test
+./...` → PASS (todos os pacotes, incluindo os 10 testes novos de
+`internal/commands/integrations_thirdparty_test.go`). `gofmt -l` limpo nos arquivos tocados.
+`internal/commands/agents_skills_test.go` não foi editado (diff vazio).
+
+**Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.
