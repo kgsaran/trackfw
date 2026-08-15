@@ -30,15 +30,15 @@ equivalentes) só faz parse de flags + chama o módulo + imprime.
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] `trackfw changelog` (sem flags) imprime a primeira seção `## [...]` do
+- [x] `trackfw changelog` (sem flags) imprime a primeira seção `## [...]` do
       `CHANGELOG.md` da raiz do projeto (seja `[Unreleased]` ou a versão mais recente),
       formatada no terminal.
-- [ ] `trackfw changelog --version <x.y.z>` imprime a seção daquela versão específica;
+- [x] `trackfw changelog --version <x.y.z>` imprime a seção daquela versão específica;
       erro claro se não existir.
-- [ ] `trackfw changelog --all` imprime o arquivo inteiro.
-- [ ] Parsing tolerante ao formato real do `CHANGELOG.md` deste projeto.
-- [ ] Comportamento idêntico nos 3 CLIs, mensagens de erro byte-idênticas.
-- [ ] `make quality` passa sem novas divergências de paridade.
+- [x] `trackfw changelog --all` imprime o arquivo inteiro.
+- [x] Parsing tolerante ao formato real do `CHANGELOG.md` deste projeto.
+- [x] Comportamento idêntico nos 3 CLIs, mensagens de erro byte-idênticas.
+- [x] `make quality` passa sem novas divergências de paridade.
 
 ## Wave 1 — Go (implementação de referência, 1 ML)
 > Dependências: nenhuma
@@ -198,16 +198,21 @@ confirmada pelo orquestrador contra o binário Go nos 4 cenários. `find_version
 > Dependências: Wave 2 completa
 
 ### ML-3A — Paridade e teste manual end-to-end
-**Status:** 🔄 Em andamento
-**Arquivos afetados:** nenhum novo (pode incluir `scripts/check-changelog-parity.sh`
-se o ML julgar necessário um gate de paridade dedicado, seguindo o padrão de
-`scripts/check-commit-parity.sh` já existente — decisão do ML)
+**Status:** ✅ Concluído
+**Arquivos afetados:** `docs/cli-parity.md` (linha `changelog` adicionada ao inventário
+de comandos — gap encontrado pelo Apolo durante o ML-2B, corrigido nesta ML)
 **Ações:**
 1. Rodar `make quality` na raiz.
 2. Rodar os 3 binários (Go/Node/Python) com `changelog`, `changelog --version 6.10.0`,
    `changelog --all` e `changelog --version 999.0.0` (versão inexistente) contra o
    `CHANGELOG.md` real deste repo — confirmar saída byte-idêntica nos 3.
 **Critérios de aceite:**
-- [ ] `make quality` verde
-- [ ] os 4 cenários confirmados idênticos nos 3 CLIs
+- [x] `make quality` verde
+- [x] os 4 cenários confirmados idênticos nos 3 CLIs
 **Comandos de validação:** `make quality`
+
+**Execução real (2026-08-15):** `make quality` verde (build+vet+test Go, `npm test` 549
+passed, `pytest` 1142 passed, 112 cenários de falsificação todos OK). Os 4 cenários
+(sem flags, `--version` existente, `--all`, `--version` inexistente) confirmados
+byte-idênticos entre os 3 binários via `diff` direto pelo orquestrador. Adicionada
+linha `changelog` em `docs/cli-parity.md` (ausente do inventário, achado do Apolo).

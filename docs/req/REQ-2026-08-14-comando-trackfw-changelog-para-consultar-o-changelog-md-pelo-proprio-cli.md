@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-08-14
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-14-comando-trackfw-changelog-para-co
 
 # REQ: comando trackfw changelog para consultar o CHANGELOG.md pelo proprio CLI
 
-> Date: 2026-08-14 | Status: Open
+> Date: 2026-08-14 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -25,18 +25,18 @@ terminal), e seria especialmente útil logo após `trackfw update`, quando o usu
 saber rapidamente "o que mudou" sem procurar o arquivo manualmente.
 
 ## Acceptance Criteria
-- [ ] Novo comando `trackfw changelog` (Go/Node/Python, paridade completa) lê
+- [x] Novo comando `trackfw changelog` (Go/Node/Python, paridade completa) lê
       `CHANGELOG.md` da raiz do projeto e imprime a seção mais recente (`## [x.y.z]` ou
       `## [Unreleased]`, o que vier primeiro no arquivo) formatada no terminal.
-- [ ] Flag `--version <x.y.z>` (ou posicional) imprime uma versão específica, se
+- [x] Flag `--version <x.y.z>` (ou posicional) imprime uma versão específica, se
       existir no arquivo; erro claro se a versão não for encontrada.
-- [ ] Flag `--all`/`--full` imprime o arquivo inteiro.
-- [ ] Parsing deve ser tolerante ao formato real do `CHANGELOG.md` deste projeto (Keep a
+- [x] Flag `--all`/`--full` imprime o arquivo inteiro.
+- [x] Parsing deve ser tolerante ao formato real do `CHANGELOG.md` deste projeto (Keep a
       Changelog: `## [x.y.z] - YYYY-MM-DD`, seções `### Added`/`### Fixed`/etc.) — não
       assumir um schema mais rígido do que o que já existe no arquivo.
-- [ ] Comportamento idêntico nos 3 CLIs (mesma seção extraída, mesma formatação de
+- [x] Comportamento idêntico nos 3 CLIs (mesma seção extraída, mesma formatação de
       saída) — mensagens de erro (arquivo ausente, versão não encontrada) byte-idênticas.
-- [ ] `make quality` passa sem novas divergências de paridade.
+- [x] `make quality` passa sem novas divergências de paridade.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
