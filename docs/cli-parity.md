@@ -31,6 +31,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `branch` | yes | yes | yes | `new <type>/<slug>` — gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after (see below) |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
+| `changelog` | yes | yes | yes | Reads `CHANGELOG.md` at project root; no flags prints the first `## [...]` section (`Unreleased` or latest version); `--version <x.y.z>` prints a specific section (accepts an optional leading `v`); `--all` prints the entire file. Error messages byte-identical: `CHANGELOG.md not found — nothing to show`, `version "<x>" not found in CHANGELOG.md` |
 
 ## Version output
 
