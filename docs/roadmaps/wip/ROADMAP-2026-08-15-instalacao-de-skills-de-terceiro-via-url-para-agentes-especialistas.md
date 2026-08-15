@@ -461,7 +461,7 @@ sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -ci "conforme .* Wave 0"   # deve s
 **Arquivos afetados:** `npm/src/integrations/index.js`, `npm/src/integrations/render.js`,
 `npm/src/integrations/manager.js`, `npm/src/thirdparty/` (novo — espelho de
 `internal/thirdparty/`: `fetch.js`, `markers.js`, `quarantine.js`, `provenance.js`),
-`npm/src/integrations/plan.js` (campo `projectRoot` + reaplicação de referências, D9),
+`npm/src/integrations/index.js` — `buildPlans` (:45), campo `projectRoot` + reaplicação de referências (D9),
 `npm/src/commands/thirdparty.js` (novo), `npm/tests/thirdparty.test.js` (novo)
 **Ações:** porte literal do Go da Wave 1 — mesmas mensagens, mesmos códigos de saída, mesmos
 limites numéricos (30s, 2 MiB, 3 redirects), mesmo schema JSON de quarentena e de proveniência,
@@ -496,8 +496,8 @@ seguindo o padrão de `npm/src/commands/plugins.js`.
 **Arquivos afetados:** `pypi/trackfw/integrations/command.py`,
 `pypi/trackfw/integrations/renderers.py`, `pypi/trackfw/integrations/manager.py`,
 `pypi/trackfw/thirdparty/` (novo — espelho: `fetch.py`, `markers.py`, `quarantine.py`,
-`provenance.py`), `pypi/trackfw/integrations/plan.py` (campo `project_root` + reaplicação de
-referências, D9), `pypi/tests/test_thirdparty.py` (novo)
+`provenance.py`), `pypi/trackfw/integrations/catalog.py` — `plan_deployments` (:55), parâmetro
+`project_root` + reaplicação de referências (D9), `pypi/tests/test_thirdparty.py` (novo)
 **Ações:** idem ML-2A, em Python puro; rede seguindo o padrão de
 `pypi/trackfw/commands/plugins.py`. Atenção à normalização NFKC (`unicodedata.normalize`) para
 bater byte a byte com o Go.

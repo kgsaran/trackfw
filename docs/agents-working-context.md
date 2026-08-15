@@ -16822,3 +16822,65 @@ comportamento de `agents update` pós-anexação. Precisa ser portado byte-a-byt
 `internal/commands/agents_skills_test.go` não foi editado (diff vazio).
 
 **Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.
+
+---
+
+## Sessão 2026-08-15 — Apolo (ML-2A — porte Node.js 1:1 do gate de artefato de terceiro)
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap em
+`wip/`. Executando o porte Node.js da Wave 2, byte-a-byte a partir da referência Go
+(`internal/thirdparty/*`, `internal/commands/integrations_thirdparty.go`,
+`internal/integrations/render.go` D9, `internal/integrations/plan.go`). Escopo exclusivo
+`npm/` — não tocado `pypi/` (ML-2B, agente irmão em paralelo) nem `internal/` (leitura).
+
+**Arquivos criados:**
+- `npm/src/thirdparty/fetch.js` — HTTPS-only, 30s timeout, 2 MiB cap, allowlist de
+  Content-Type, redirect hops com a MESMA contagem "off-by-one" do `net/http.CheckRedirect`
+  do Go (ver nota do vault abaixo).
+- `npm/src/thirdparty/markers.js` — `checkMarkers`/`checksum`; `removeFencedBlocks` portado
+  como line-scanner (não regex de uma linha), replicando `strings.Trim` do Go via `trimChar`
+  local (trim só nas pontas, não `replaceAll` global) para não divergir em fence com conteúdo
+  interno contendo o próprio caractere delimitador.
+- `npm/src/thirdparty/quarantine.js`, `npm/src/thirdparty/provenance.js` — schemas JSON e
+  assinaturas `(root, ...)` idênticas ao Go; assimetria fail-closed preservada
+  (`readQuarantine` sempre erro se ausente; `loadProvenance` ausente = vazio, só
+  `verifyApproval` recusa).
+- `npm/src/thirdparty/references.js` — D9: `.trackfw/thirdparty-references.json`,
+  `upsertThirdPartyReference`, `applyThirdPartyReferences`, `normalizeThirdPartyContent`,
+  `resolveThirdPartySkillDestination` (reusa `target`/`surfaceFor` de `catalog.js`;
+  `truncateBeforeIdSegment` duplicado localmente porque `catalog.js` não o exporta e não
+  estava na lista de arquivos deste ML).
+- `npm/src/commands/thirdparty.js` — subcommand `third-party fetch|install`, guardrail D2,
+  precondições de `--apply-to` validadas antes de qualquer escrita, indirection
+  `api.thirdPartyFetch` (propriedade mutável no objeto exportado) para substituição em teste,
+  mesmo padrão de `identityWizard.runIdentityWizard` já usado no repo.
+- `npm/tests/thirdparty.test.js` — 16 testes cobrindo os 11 cenários do Go
+  (`integrations_thirdparty_test.go`) mais 5 unitários de `checkMarkers`/`checksum`
+  (fence aceito, fence com tilde, largura total recusada, cirílico passa, SHA-256 estável).
+
+**Arquivos editados:**
+- `npm/src/integrations/index.js` — `buildPlans` (D5/D9): novo `options.projectRoot`
+  opcional; quando setado e `kind === 'agents'`, reaplica `applyThirdPartyReferences` após o
+  `render()`. `execute()` agora sempre passa `projectRoot: manager.roots.project` para
+  `buildPlans` (mirror dos dois call-sites de `manager.ProjectRoot` em
+  `integrations_flags.go` no Go) — necessário para que um `agents update` comum, não só o
+  `third-party install`, resolva o registro de referências e assente em `state: "current"`.
+- `npm/src/commands/integrations.js` — `createLifecycleCommand` registra
+  `createThirdPartyCommand(kind)` como subcomando, alcançável por `agents` e `skills`.
+
+**Decisão de arquivo divergente do roadmap (reportada, não silenciosa):** o roadmap original
+listava `npm/src/integrations/plan.js` como arquivo a criar/editar para o campo `projectRoot`
+— esse arquivo não existe no Node (a Wave 1 do Node nunca teve um `plan.js` separado; a lógica
+equivalente ao `plan.go` do Go já vive em `buildPlans`/`execute` dentro de
+`npm/src/integrations/index.js`). A extensão D9 foi implementada lá. O roadmap já foi
+corrigido em paralelo pelo agente irmão (ML-2B) para refletir isso.
+
+**Validação:** `cd npm && npm test` → `566 passed, 0 failed` (16 novos, 0 regressão nos 550
+pré-existentes). Nenhum teste pré-existente foi editado.
+
+**Nota de vault criada:** `vault/notes/node-https-redirect-checkredirect-off-by-one-2026-08-15.md`
+— o `net/http.CheckRedirect` do Go conta requisições já completadas (não redirects já
+seguidos), então `maxRedirects=3` na prática só segue 2 hops antes de recusar o 3º. Portado
+com a mesma contagem em `fetch.js` para não divergir do Go no cenário `RefusesFourthRedirect`.
+
+**Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.
