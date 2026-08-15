@@ -140,3 +140,4 @@
 2026-08-15 09:25  ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md  wip → done
 2026-08-15 09:42  ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md  backlog → wip
 2026-08-15 09:54  ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md  wip → done
+2026-08-15 10:31  ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md  backlog → wip
