@@ -177,7 +177,7 @@ confirmou a linha de sugestão presente/ausente conforme o fixture, e que
 > Dependências: Wave 1 completa
 
 ### ML-2A — Node.js
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `npm/src/config/index.js` — `parse()` (linha 194): ler `agent_conventions` do YAML root
   para `cfg.update.agent_conventions` (ou equivalente camelCase se for o padrão já usado
@@ -200,7 +200,7 @@ implementado nesta branch) como fonte de verdade — mensagens/textos byte-idên
 **Comandos de validação:** `cd npm && npm test`
 
 ### ML-2B — Python
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `pypi/trackfw/config.py` — `defaults()` (linha 74): adicionar `"agent_conventions": ""`
   dentro do sub-dict `"update"`; `_parse()` (linha 192, leitura ~284-289): adicionar leitura
