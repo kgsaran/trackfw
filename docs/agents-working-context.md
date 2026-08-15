@@ -16450,3 +16450,69 @@ nunca escrita automaticamente em `trackfw.yaml`.
 Não fiz `git commit`/`push` — autoridade de Git é do `trackfw_architect`. Não toquei em
 `internal/generators/agentfiles.go`/`config.go` (ML-1A, já commitado). Wave 2 (Node.js/Python) e
 Wave 3 (paridade cruzada + `docs/cli-parity.md`) seguem pendentes, fora do escopo deste ML.
+
+## Sessão 2026-08-15 — Apolo (ML-2A: Node.js `agent_conventions` — port 1:1 do Go da Wave 1, branch `feat/agentes-especialistas-aceitam-contexto-de-convencoes`) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Escopo: port 1:1 para Node.js puro (`npm/`) do Wave 1 Go já commitado nesta branch — campo
+`agent_conventions`, injeção da seção "### Project Conventions" no rules block, e heurística de
+sugestão de framework de teste em `trackfw discover`. Escopo estritamente `npm/` — não toquei em
+nenhum arquivo sob `pypi/` (outro agente trabalhava em paralelo no ML-2B/Python na mesma branch).
+
+**Arquivos modificados:**
+- `npm/src/config/index.js` — `defaults().update` ganhou `agentConventions: ''` (convenção de
+  nomeação confirmada no próprio arquivo: `update.hooks`/`update.backend`/`update.pkgManager` já
+  usam camelCase namespaced, mesmo padrão do `config_update_sync.test.js` existente); `parse()`
+  ganhou `if (stringVal(m, 'agent_conventions') !== undefined) cfg.update.agentConventions = m.agent_conventions;`
+  logo após a leitura de `pkg_manager`; nova função exportada `readAgentConventions(cwd)`
+  espelhando `internal/config/config.go`'s `ReadAgentConventions` — lê `<cwd>/trackfw.yaml`
+  diretamente (não usa o singleton `load()`), qualquer falha (arquivo ausente, YAML malformado,
+  chave ausente) retorna `''` silenciosamente, nunca lança.
+- `npm/src/generators/init.js` — `trackfwRulesBlock()` ganhou parâmetro `agentConventions`; texto
+  da seção "### Project Conventions" e posição (antes de `### Key Commands`) byte-idênticos ao Go
+  (`internal/generators/agentfiles.go`). `injectOrUpdateRules(filePath, headerIfNew, cwd)` ganhou
+  o parâmetro `cwd` e passa a chamar `trackfwRulesBlock(readAgentConventions(cwd))`.
+  `injectRulesForTool(tool, cwd)` agora repassa `cwd` para `injectOrUpdateRules`. A chamada
+  legada `injectOrUpdateRules('CLAUDE.md', content)` dentro de `generateClaudeMD` (usada só no
+  `scaffold`/`init`, texto diferente do rules block) passou a receber `'.'` como terceiro
+  argumento, espelhando exatamente `injectOrUpdateRules("CLAUDE.md", sb.String(), ".")` em
+  `internal/generators/claudemd.go` — mesmo padrão de cwd relativo do Go, não uma invenção nova.
+- `npm/src/commands/discover.js` — novo campo `suggestedTestFramework: ''` no objeto `scan()`;
+  `detectTestFramework(rootDir)` port 1:1 de `detectTestFramework` (Go): mesma precedência
+  jest → vitest → pytest (`pytest.ini`/`pyproject.toml` com `[tool.pytest`/`setup.cfg` com
+  `[tool:pytest]`) → go test (`go.mod` + qualquer `*_test.go` via varredura recursiva), `''` se
+  nada bate; helpers `hasFileWithSubstring`/`hasGoTestFile` também portados. Linha impressa
+  idêntica ao Go: `Suggested test framework: <valor> (add to trackfw.yaml as agent_conventions: if correct)`,
+  logo antes de `Governance Score:`, só quando `r.suggestedTestFramework` não é vazio.
+  `generateYAML()` NÃO foi tocado — confirmado por teste que `--init` nunca escreve
+  `agent_conventions` automaticamente.
+- `npm/tests/agent-conventions.test.js` (novo) — 27 testes cobrindo: `parse()`/`readAgentConventions`
+  com chave ausente/single-line/multi-linha/arquivo ausente/YAML malformado; `trackfwRulesBlock`
+  vazio (byte-idêntico ao comportamento pré-ML) vs com conteúdo vs só espaços (TrimSpace
+  equivalente); `injectRulesForTool` end-to-end escrevendo `CLAUDE.md` com/sem a seção; cada
+  arquivo-gatilho de `detectTestFramework` (jest `.js`/`.ts`, vitest `.js`/`.ts`, `pytest.ini`,
+  `pyproject.toml` com/sem seção pytest, `setup.cfg`, `go.mod`+`*_test.go` presente/ausente,
+  ordem de precedência); `scan()` expõe `suggestedTestFramework`; `generateYAML` nunca inclui
+  `agent_conventions`.
+
+**Validação:**
+- `cd npm && npm test` (suíte completa do workspace, `node --test tests/*.test.js`) — **550
+  passed, 0 failed** (27 novos + 523 pré-existentes, sem regressão).
+- Paridade byte-a-byte confirmada rodando `bin/trackfw` (Go) e `node npm/bin/trackfw` (Node) nos
+  mesmos fixtures temporários via `trackfw update --targets agent-rules`:
+  - Com `agent_conventions: |\n  Use pytest, not unittest.\n  API REST, no GraphQL.\n` no
+    `trackfw.yaml` → `diff CLAUDE.md CLAUDE.md` → **idêntico** (seção "### Project Conventions"
+    presente, texto do time preservado).
+  - Sem `agent_conventions` (`trackfw.yaml` vazio) → `diff CLAUDE.md CLAUDE.md` → **idêntico**
+    (sem a seção — não-regressão confirmada nos dois CLIs).
+  - `trackfw discover` com `jest.config.js` presente → linha
+    `Suggested test framework: jest (add to trackfw.yaml as agent_conventions: if correct)`
+    **idêntica** nos dois CLIs.
+  - `trackfw discover --init` nos dois CLIs → `grep -c agent_conventions trackfw.yaml` → `0` em
+    ambos, confirmando que a sugestão nunca é persistida automaticamente. (Nota lateral, fora de
+    escopo: `roadmap_namespacing:` ficou vazio no Go e `flat` no Node nesse `--init` de fixture
+    sem `docs/roadmaps/` — divergência pré-existente não relacionada a `agent_conventions`, não
+    investigada nem corrigida aqui.)
+
+Não fiz `git commit`/`push` — autoridade de Git é do `trackfw_architect`. Não toquei em nenhum
+arquivo sob `pypi/` (ML-2B, agente paralelo) nem em `internal/`/Go (Wave 1, já commitada). Wave 3
+(paridade cruzada final + `docs/cli-parity.md`) segue pendente, fora do escopo deste ML.
