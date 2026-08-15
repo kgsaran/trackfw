@@ -4,6 +4,19 @@
 
 ---
 
+## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap trackfw changelog concluídos) — pronto para PR
+
+Branch `feat/comando-trackfw-changelog`. REQ
+`REQ-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md`
+e roadmap correspondente movidos para `done/`. Wave 1 (Go, comando `trackfw changelog` +
+pacote `internal/changelog`, commit `cdc9ef3`), Wave 2 (Node.js + Python, commit `0bdc598`)
+e Wave 3 (ML-3A, commit `cd90cb0`) concluídas. `make quality` verde. Os 4 cenários (sem
+flags, `--version` existente, `--all`, `--version` inexistente) confirmados byte-idênticos
+nos 3 CLIs. `docs/cli-parity.md` ganhou linha para `changelog` (gap pré-existente
+encontrado pelo Apolo durante o ML-2B). Próximo passo: abrir PR via `bin/trackfw ship`, e
+após merge, seguir para o item 2 do backlog priorizado — agentes especialistas aceitam
+contexto de convenções específico do projeto.
+
 ## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap validate-hooks concluídos) — pronto para PR
 
 Branch `feat/trackfw-validate-deve-detectar-scripts-de-hook`. REQ
