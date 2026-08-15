@@ -74,7 +74,7 @@ o padrão de `backend`/`frontend`/`pkg_manager` (chave plana, campo string em
 > Dependências: nenhuma
 
 ### ML-1A — Campo `agent_conventions` (config + scaffold) + injeção no rules block
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/config/config.go` — `UpdateConfig` struct (~linha 68-76): adicionar
   `AgentConventions string // agent_conventions: free-text, multi-line (default: "")`;
