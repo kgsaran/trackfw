@@ -3,7 +3,7 @@ status: Done
 date: 2026-08-15
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md"
 ---
 
 # REQ: trackfw commit sugere mensagem de commit a partir do diff staged
@@ -59,4 +59,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md
