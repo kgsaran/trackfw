@@ -16682,3 +16682,53 @@ lá não há essa restrição, então não repliquem o scanner ali por engano.
 `internal/thirdparty/` (untracked, 4 arquivos, nenhum outro caminho tocado).
 
 **Não commitado.** Devolvido ao `trackfw_architect` para auditoria e commit.
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — INÍCIO: ML-1B quarentena (D8a/b) e proveniência (D6)
+
+Recebido dispatch da Wave 1 (ML-1B). Escopo: `internal/thirdparty/quarantine.go` e
+`provenance.go` (+ testes), persistência pura, sem comando e sem rede — consome `Fetch`,
+`CheckMarkers`, `Checksum` já entregues no ML-1A. Branch
+`feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas` já existe; nenhum
+commit será feito por este agente (autoridade de Git é exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — FIM: ML-1B concluído (não commitado)
+
+**Entregue:**
+- `internal/thirdparty/quarantine.go` — `QuarantineEntry` (schema exato do roadmap),
+  `NewQuarantineEntry`, `QuarantinePath(root, checksum)`, `WriteQuarantine`/`ReadQuarantine`
+  (fail-closed: arquivo ausente, JSON inválido ou `schema_version` != 1 → erro), método
+  `DecodeContent()`. Inclui `atomicWrite` (réplica comentada do padrão de
+  `internal/integrations/manager.go`, único ponto de escrita atômica do pacote).
+- `internal/thirdparty/provenance.go` — `Provenance`/`ProvenanceEntry` (chaveado por destino),
+  `LoadProvenance` (espelha `loadManifest`: arquivo ausente → vazio válido, JSON inválido/schema
+  != 1 → erro fatal), `WriteProvenance`/`UpsertProvenanceEntry` (comentário explícito no código
+  contrastando com o padrão best-effort de `appendTransitionLog`), `VerifyApproval(root,
+  checksum, dest)` (D8c: só passa com entrada exata do destino, checksum idêntico e
+  `approved_by` não vazio).
+- `internal/thirdparty/quarantine_test.go`, `provenance_test.go` — round-trip com UTF-8
+  multibyte, filename == checksum, 3 casos fail-closed em cada arquivo, escrita read-only
+  forçada (diretório `.trackfw` com `0500`) provando que a falha de proveniência aborta e
+  retorna erro, e os 4 casos de `VerifyApproval` (sucesso, destino ausente, checksum divergente,
+  `approved_by` vazio).
+
+**Decisão de baixo risco:** o roadmap especifica `VerifyApproval(checksum, dest string) error`
+sem `root`; segui a convenção já estabelecida em `internal/integrations/manager.go`
+(`manifestPath(root)`, `Manager.ProjectRoot`/`HomeDir`) e adicionei `root` como primeiro
+parâmetro em todas as funções deste pacote — sem isso não há como localizar
+`.trackfw/thirdparty-provenance.json` de forma testável (evita cwd implícito). Mesma escolha
+aplicada a `QuarantinePath`/`ReadQuarantine`/`WriteQuarantine`.
+
+**Nota sobre "fail-closed" (D8f) nos dois arquivos:** para quarentena, arquivo ausente é sempre
+erro (`ReadQuarantine` é chamado com um checksum que já deveria existir). Para proveniência,
+`LoadProvenance` trata ausência de arquivo como "nada instalado ainda" (mesmo comportamento de
+`loadManifest`) — o fail-closed real acontece em `VerifyApproval`, que falha se não houver
+entrada para o destino, não na função de leitura em si. As duas leituras continuam idênticas em
+rigor contra JSON malformado e `schema_version` incompatível.
+
+**Validação:** `go build ./... && go vet ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test
+./internal/thirdparty/...` → PASS (34 testes, incluindo os 20 do ML-1A + 14 novos). `go build
+./...` e `go vet ./...` na raiz do repo também limpos.
+
+**Não commitado.** Escrito apenas `internal/thirdparty/quarantine.go`, `provenance.go`,
+`quarantine_test.go`, `provenance_test.go` + esta entrada de contexto. `fetch.go`/`markers.go`
+não foram tocados. Devolvido ao `trackfw_architect` para auditoria e commit.

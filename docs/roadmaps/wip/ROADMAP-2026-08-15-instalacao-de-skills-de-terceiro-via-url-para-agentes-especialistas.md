@@ -342,7 +342,7 @@ sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -ci "conforme .* Wave 0"   # deve s
 ---
 
 ### ML-1B — Quarentena (D8a/b) e proveniência (D6) — persistência fatal-on-failure
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-08-15) — 34 testes verdes; auditado por falsificação do arquiteto
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-1A ✅ (mesmo pacote).
 **Arquivos afetados:**
@@ -367,9 +367,22 @@ sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -ci "conforme .* Wave 0"   # deve s
 4. **Fail-closed na leitura (D8f):** arquivo ausente, JSON inválido, ou `schema_version`
    incompatível → erro, **nunca** degradar para "proveniência vazia" silenciosamente. Espelhar o
    rigor de `loadManifest` em `internal/integrations/manifest.go`.
-5. `VerifyApproval(checksum string, dest string) error` — a prova de D8c: só passa se existir
+5. `VerifyApproval(root, checksum, dest string) error` — a prova de D8c: só passa se existir
    entrada com **aquele checksum exato** e `approved_by` não-vazio. Booleano "aprovado" solto não
    é aceito por construção.
+   > 📌 **Assinatura final entregue (portar assim na Wave 2):** todas as funções do pacote levam
+   > `root` como **primeiro parâmetro** — `QuarantinePath`, `WriteQuarantine`, `ReadQuarantine`,
+   > `ProvenancePath`, `LoadProvenance`, `WriteProvenance`, `UpsertProvenanceEntry`,
+   > `VerifyApproval`. O roadmap original omitia `root`; sem ele não há como localizar
+   > `.trackfw/thirdparty-*` sem depender de cwd implícito. Segue a convenção de
+   > `internal/integrations/manager.go` (`manifestPath(root)`).
+   > Conveniências adicionais entregues e usadas pelo ML-1C: `NewQuarantineEntry(...)` e
+   > `QuarantineEntry.DecodeContent()`.
+   > **Divisão do fail-closed (D8f), verificada por auditoria:** `LoadProvenance` com arquivo
+   > ausente retorna vazio (espelha `loadManifest`); quem impõe a recusa é `VerifyApproval`, que
+   > falha sem entrada para o destino. `ReadQuarantine` trata ausência **sempre** como erro. Ambas
+   > são rígidas contra JSON malformado e `schema_version` incompatível. Não é inconsistência —
+   > portar exatamente assim.
 
 **Critérios de aceite:**
 - [ ] Round-trip de quarentena e de proveniência preserva todos os campos do schema.
