@@ -4,6 +4,61 @@
 
 ---
 
+## Sessão 2026-08-15 — Apolo (ML-1A: `trackfw ship` gera corpo de PR rico + exceção doc-only nos gates) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/trackfw-ship-gera-corpo-de-pr-minimo` (já checked out, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md`.
+ML-1A marcado ✅ Concluído no roadmap (Go, implementação de referência — Wave 1). Waves 2 (Node/Python) e 3 (paridade cruzada) seguem `⬜ Pendente`, não implementadas nesta sessão.
+
+**1. Corpo de PR rico:** `buildPRBody(branch string) string` (corpo fixo "Branch: %s\n\nCreated by
+trackfw ship.") virou `buildPRBody(branch string, commits []string) string`. Com 0/1 commit
+não-merge (caso trivial — só o commit que o próprio `ship` acabou de fazer), mantém o corpo
+mínimo original, sem regressão. Com 2+ commits, agrega `## Commits` (lista de subjects) + `##
+Detalhes` (corpo completo de cada commit que tiver mais que a primeira linha) + rodapé `---\nBranch:
+<branch>`. Commits vêm de `gitCommitsSince(base, execGit)`, que roda `git log <base>..HEAD
+--no-merges --format=%B<sep>` — separador `\x1e` (control char, não aparece em mensagens reais e
+sobrevive ao `strings.TrimSpace` que `defaultGitExec` já aplica). `base` vem de
+`defaultBaseBranch(execGit)`: tenta `git symbolic-ref refs/remotes/origin/HEAD` (extrai o nome após
+a última barra), fallback `"main"` em erro ou saída vazia. Título do PR continua
+`firstLine(opts.message)` sempre — decisão de design documentada em comentário no código: a `-m`
+passada na chamada de `ship` é considerada o resumo do PR inteiro, mesmo com N commits anteriores
+já na branch (evita heurística ambígua de derivar título de N subjects distintos).
+
+**2. Exceção doc-only nos 2 gates de `ship`:** a leitura de `git diff --cached --name-only` subiu
+para o início de `runShip` (Step 0, antes do antigo Step 1), guardada em `stagedFiles []string` e
+reaproveitada no Step 4 (não duplica a chamada). `docOnly := allDocOnly(stagedFiles)` — `true`
+somente se houver ≥1 arquivo staged E todos sob `docs/`/`vault/` (prefixo) ou `.md`. Se
+`docOnly == true`: Step 1 pula `isShipBranch` (qualquer nome de branch aceito — `main`/`master`
+continuam bloqueados incondicionalmente, isso não mudou) e Step 2 pula `deps.checkGovernance()`
+inteiramente, imprimindo `Governance: skipped (doc-only change)`. Se `docOnly == false`,
+comportamento idêntico ao anterior. **Nenhuma mudança em `internal/validator/validator.go`** —
+`CheckShipGovernance`/`validateBranchHasWIPRoadmap` não precisaram de exceção própria porque o skip
+acontece inteiramente do lado de `ship.go` (a chamada nem acontece).
+
+**--dry-run:** título/corpo agregados agora aparecem no output do dry-run
+(`[dry-run] Title: ...` / `[dry-run] Body:\n...`), calculados antes do branch de dry-run em Step 7 —
+`git log`/`symbolic-ref refs/remotes/origin/HEAD`/`diff --cached --name-only` são leitura, não
+passam pelo wrapper `git()` que intercepta comandos de escrita em dry-run, então sempre rodam.
+
+**Testes novos** em `internal/commands/ship_test.go`: doc-only em branch fora do padrão
+(`TestShip_DocOnlyBranch_NonConformingName_Allowed`), doc-only pulando governança de verdade
+(`TestShip_DocOnlyBranch_MissingRoadmap_GovernanceSkipped`, com asserção de que `checkGovernance`
+nunca é chamado), mistura doc+código continua bloqueando em ambos os casos
+(`TestShip_MixedDocAndCode_StillBlockedByGovernance`,
+`TestShip_MixedDocAndCode_NonConformingBranch_StillBlocked`), `allDocOnly` unitário,
+`defaultBaseBranch` (sucesso/erro/saída vazia), `buildPRBody` (0-1 commit = corpo mínimo, N commits
+= agregado), `gitCommitsSince` (parse do separador, range vazio), e um teste E2E de dry-run
+confirmando que o corpo do PR reflete o histórico real de commits.
+
+**Validação:** `go build ./...` OK · `go test ./internal/commands/... ./internal/validator/...`
+verde · `go vet ./...` sem warnings · `go test ./...` completo (todos os pacotes) verde.
+
+Não fiz commit/push — aguardando trackfw_architect auditar e commitar (não sou autoridade Git).
+Waves 2 (`npm/src/commands/ship.js` — confirmar nome exato) e 3 (Python + `make quality`) ficam para
+uma próxima sessão/agente, seguindo a mesma lógica implementada aqui como fonte de verdade.
+
+---
+
 ## Sessão 2026-08-14 — Apolo (fix: 3 bugs reais no parser do `gitBranchGuardScript`, achados por teste manual E2E ML-4A) — implementado, aguardando auditoria e commit por trackfw_architect
 
 Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por mim).
