@@ -30,6 +30,32 @@ REQ: script ausente → `git_branch_guard_hook_resolvable`; script com 1 byte al
 Próximo passo: abrir PR via `bin/trackfw ship` e, após merge, sincronizar `main` e limpar
 a branch local.
 
+## Sessão 2026-08-15 — Apolo (ML-1A: campo `agent_conventions` — config + scaffold + injeção no rules block, Go) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto` (já
+checked out, não criada por mim). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md`,
+ML-1A. Implementado exatamente como desenhado no roadmap:
+- `internal/config/config.go`: `UpdateConfig.AgentConventions string`; `parse()` lê a chave
+  flat `agent_conventions`; nova `ReadAgentConventions(cwd string) string` isolada do
+  singleton `Load()` (mesmo padrão de `ParseRulesFromContent`), nunca erro.
+- `internal/generators/scaffold.go`: `Config.AgentConventions string`; `writeTrackfwConfig()`
+  escreve `agent_conventions: |` (block scalar, indentado) só quando não-vazio, mesmo padrão
+  condicional do `forge:`.
+- `internal/generators/agentfiles.go`: `trackfwRulesBlock(agentConventions string)` ganha
+  seção `### Project Conventions` (deixa explícito no texto que é convenção declarada pelo
+  time, não inferência); `injectOrUpdateRules` ganhou parâmetro `cwd` e chama
+  `config.ReadAgentConventions(cwd)`; `InjectRulesForTool`/`InjectRulesDetected` propagam
+  `cwd`; `claudemd.go` (único outro call-site de `injectOrUpdateRules`) passa `"."`.
+- Testes novos: `internal/config/config_agent_conventions_test.go`,
+  `internal/generators/agent_conventions_test.go` (cobre caso vazio byte-idêntico ao
+  comportamento pré-ML e caso com convenções, via `InjectRulesForTool` real, não mock).
+Evidência: `go build ./...`, `go test ./...` (repo inteiro) e `go vet ./...` todos verdes.
+Teste manual real via `bin/trackfw update` (não `discover --init`, que gera seu próprio
+`trackfw.yaml` sem o campo) em dois fixtures temporários — com `agent_conventions` gera a
+seção no `CLAUDE.md` com o texto exato; sem a chave, seção ausente. ML-1B (heurística de
+sugestão em `trackfw discover`, Wave 1) segue `⬜ Pendente`.
+
 ## Sessão 2026-08-15 — Apolo (ML-2B: port Python de `trackfw validate` detectando scripts de hook ausentes/desatualizados — git-branch-guard) — implementado, aguardando auditoria e commit por trackfw_architect
 
 Branch `feat/trackfw-validate-deve-detectar-scripts-de-hook` (já checked out, não criada por mim).
