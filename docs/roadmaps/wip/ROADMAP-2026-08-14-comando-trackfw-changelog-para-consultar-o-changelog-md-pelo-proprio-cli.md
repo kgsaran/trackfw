@@ -44,7 +44,7 @@ equivalentes) só faz parse de flags + chama o módulo + imprime.
 > Dependências: nenhuma
 
 ### ML-1A — Módulo `internal/changelog` + comando `trackfw changelog`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/changelog/changelog.go` (novo) — parsing e extração de seções
 - `internal/changelog/changelog_test.go` (novo)
@@ -130,6 +130,16 @@ equivalentes) só faz parse de flags + chama o módulo + imprime.
       `[Unreleased]` atual; `bin/trackfw changelog --version 6.10.0` imprime a seção da
       release 6.10.0; `bin/trackfw changelog --all` imprime o arquivo inteiro
 **Comandos de validação:** `go build ./... && go test ./internal/changelog/... ./internal/commands/... && go vet ./...`
+
+**Execução real (2026-08-15):** implementado por Apolo, auditado pelo orquestrador.
+`go build`/`go vet`/`go test ./internal/changelog/... ./internal/commands/...` verdes.
+Ajuste de qualidade aplicado após a 1ª entrega: `FormatSection` produzia linha em
+branco duplicada quando o `Body` já começava com `\n` (caso real do `CHANGELOG.md`
+deste projeto, cujo cabeçalho é seguido de linha em branco) — corrigido com
+`strings.TrimLeft(s.Body, "\n")` antes de montar a string final; teste de regressão
+`TestFormatSectionDoesNotDuplicateBlankLineWhenBodyStartsWithNewline` adicionado. Teste
+manual confirmado: `bin/trackfw changelog`, `--version 6.10.0`, `--version 999.0.0`
+(erro claro, exit 1) e `--all` produzem saída correta contra o `CHANGELOG.md` real.
 
 ## Wave 2 — Node.js e Python (2 MLs em paralelo — arquivos distintos por stack)
 > Dependências: Wave 1 completa

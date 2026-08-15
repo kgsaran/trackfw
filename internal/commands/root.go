@@ -59,6 +59,7 @@ Run 'trackfw init' to set up governance in your project.`,
 		newBarrierCmd(),
 		newBranchCmd(),
 		newCommitCmd(),
+		newChangelogCmd(),
 	)
 
 	// trackfw expõe uma única superfície explícita de ajuda ("help").
