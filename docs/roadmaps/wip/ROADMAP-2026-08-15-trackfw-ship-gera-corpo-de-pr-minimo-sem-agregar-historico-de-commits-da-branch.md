@@ -122,7 +122,7 @@ precisa subir para ANTES do Step 1.
 > paridade já usado nos MLs do roadmap `git-branch-guard`)
 
 ### ML-2A — Node.js
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** módulo Node equivalente a `internal/commands/ship.go` (localizar
 via `npm/src/commands/ship.js` ou `npm/src/ship/runner.js` — confirmar nome exato,
 seguindo o padrão já estabelecido por `npm/src/commit/runner.js` no roadmap anterior),
@@ -137,7 +137,7 @@ roadmaps.
 **Comandos de validação:** `npm test --workspace=npm` (ajustar nome real do workspace)
 
 ### ML-2B — Python
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** módulo Python equivalente a `internal/commands/ship.go`
 (`pypi/trackfw/commands/ship.py` — confirmar), teste equivalente
 **Ações:** replicar 1:1 a lógica dos passos 1-7 do ML-1A em Python puro, lendo o Go real
