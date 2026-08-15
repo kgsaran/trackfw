@@ -15,13 +15,13 @@ REQ: docs/req/REQ-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ause
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] `trackfw validate` detecta `trackfw-git-branch-guard.sh` ausente/não-executável
+- [x] `trackfw validate` detecta `trackfw-git-branch-guard.sh` ausente/não-executável
       (mesma cobertura que `trackfw-credential-guard.sh` já tem via
       `credential_guard_hook_resolvable`).
-- [ ] `trackfw validate` detecta `trackfw-git-branch-guard.sh` desatualizado (conteúdo
+- [x] `trackfw validate` detecta `trackfw-git-branch-guard.sh` desatualizado (conteúdo
       diverge do que a versão atual do binário geraria), mesma cobertura que
       `credential_guard_script_integrity` já tem para credential-guard.
-- [ ] `make quality` passa sem novas divergências de paridade.
+- [x] `make quality` passa sem novas divergências de paridade.
 
 ## Diagnóstico / Contexto
 Confirmado por teste direto do binário nesta sessão (2 experimentos, ver REQ vinculada
@@ -168,7 +168,7 @@ verdade.
 > Dependências: Wave 2 completa
 
 ### ML-3A — Paridade e teste manual end-to-end
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** nenhum novo
 **Ações:**
 1. Rodar `make quality` na raiz.
@@ -177,6 +177,19 @@ verdade.
    violação/aviso nos 3; restaurar, alterar 1 byte → deve aparecer violação de
    integridade nos 3; restaurar ao original → silêncio nos 3.
 **Critérios de aceite:**
-- [ ] `make quality` verde
-- [ ] os 2 experimentos confirmados nos 3 CLIs
+- [x] `make quality` verde
+- [x] os 2 experimentos confirmados nos 3 CLIs
 **Comandos de validação:** `make quality`
+
+**Execução real (2026-08-15):**
+- `make quality` verde: build+vet+test Go, Node (`npm test`), Python (`pytest`), e os
+  112 cenários de falsificação (`check-gates-falsify.sh`), todos `OK`/`PROOF`.
+- Experimento 1 — `scripts/trackfw-git-branch-guard.sh` removido: `git_branch_guard_hook_resolvable`
+  disparado nos 3 CLIs (Go/Node/Python), mensagem byte-idêntica para as 3 entradas de
+  hook de projeto (Claude Code, Codex CLI, Gemini CLI), severidade `warning`.
+- Experimento 2 — script restaurado + 1 linha (`# tampered`) apendada:
+  `git_branch_guard_script_integrity` disparado nos 3 CLIs, mensagem byte-idêntica
+  (`scripts/trackfw-git-branch-guard.sh content diverges from the template this version
+  of trackfw generates...`).
+- Restauração ao conteúdo original (`diff` confirmado idêntico byte-a-byte): 0 itens
+  `git_branch_guard_*` reportados nos 3 CLIs — silêncio confirmado, sem falso positivo.
