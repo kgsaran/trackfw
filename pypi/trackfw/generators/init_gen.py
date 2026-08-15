@@ -231,7 +231,17 @@ GLOBAL_ADR_DIRECTIVE = (
 )
 
 
-def _trackfw_rules_block() -> str:
+def _trackfw_rules_block(agent_conventions: str = "") -> str:
+    conventions_section = ""
+    if agent_conventions.strip():
+        conventions_section = (
+            '\n\n### Project Conventions\n'
+            '> Declared by the team in `trackfw.yaml`\'s `agent_conventions` field — NOT\n'
+            '> inferred automatically. trackfw does not impose an architectural standard; it only\n'
+            '> propagates what the project has already decided.\n\n'
+            f'{agent_conventions.strip()}\n'
+        )
+
     return (
         RULES_START + '\n'
         '## trackfw — Governance Rules\n\n'
@@ -270,6 +280,7 @@ def _trackfw_rules_block() -> str:
         '- **Security wave:** include a red-team review wave in every feature roadmap\n'
         '- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)\n'
         '- Use `/trackfw:architect` to define stack before the first REQ\n'
+        + conventions_section +
         '\n### Key Commands\n'
         '- `trackfw context` — current governance state (always run first)\n'
         '- `trackfw status` — all artifacts and states\n'
@@ -280,10 +291,11 @@ def _trackfw_rules_block() -> str:
     )
 
 
-def _inject_or_update_rules(file_path: str, header_if_new: str) -> None:
+def _inject_or_update_rules(file_path: str, header_if_new: str, cwd: str = None) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
 
-    block = _trackfw_rules_block()
+    from trackfw.config import read_agent_conventions
+    block = _trackfw_rules_block(read_agent_conventions(cwd))
 
     if not os.path.exists(file_path):
         content = header_if_new or ''
@@ -323,7 +335,7 @@ def inject_rules_for_tool(tool: str, cwd: str) -> None:
     if not rel_path:
         return
     header = AGENT_HEADERS.get(tool, '')
-    _inject_or_update_rules(os.path.join(cwd, rel_path), header)
+    _inject_or_update_rules(os.path.join(cwd, rel_path), header, cwd)
 
 
 def inject_rules_detected(cwd: str) -> None:
@@ -458,7 +470,7 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     lines.append('and record autonomous decisions in the commit message.\n')
 
     header = ''.join(lines)
-    _inject_or_update_rules(os.path.join(cwd, 'CLAUDE.md'), header)
+    _inject_or_update_rules(os.path.join(cwd, 'CLAUDE.md'), header, cwd)
     print('  checkmark CLAUDE.md')
 
 

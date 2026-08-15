@@ -48,6 +48,9 @@ function defaults() {
       backend: '',
       frontend: '',
       pkgManager: '',
+      // ML-2A (agentes especialistas aceitam contexto de convenções) field — mirrors Go's
+      // UpdateConfig.AgentConventions: agent_conventions, free-text, multi-line (default: '').
+      agentConventions: '',
     },
     sync: {
       linearApiKey: '',
@@ -258,6 +261,7 @@ function parse(content, cfg) {
   if (stringVal(m, 'backend') !== undefined) cfg.update.backend = m.backend;
   if (stringVal(m, 'frontend') !== undefined) cfg.update.frontend = m.frontend;
   if (stringVal(m, 'pkg_manager') !== undefined) cfg.update.pkgManager = m.pkg_manager;
+  if (stringVal(m, 'agent_conventions') !== undefined) cfg.update.agentConventions = m.agent_conventions;
   if (stringVal(m, 'linear_api_key') !== undefined) cfg.sync.linearApiKey = m.linear_api_key;
   if (stringVal(m, 'linear_team_id') !== undefined) cfg.sync.linearTeamId = m.linear_team_id;
   if (stringVal(m, 'jira_base_url') !== undefined) cfg.sync.jiraBaseUrl = m.jira_base_url;
@@ -299,6 +303,28 @@ function parseRulesFromContent(content) {
   return cfg.rules;
 }
 
+// readAgentConventions reads the `agent_conventions` key directly out of <cwd>/trackfw.yaml,
+// bypassing the load() singleton — mirrors Go's config.ReadAgentConventions, needed here because
+// generators (init.js's injectOrUpdateRules) inject rules into agent files for a given cwd that is
+// not necessarily the process's own working directory the singleton is cached against. The file
+// being absent, unreadable, malformed or simply missing the key are all treated the same: return
+// '' silently, never an error — this is a best-effort read of an optional, free-text field.
+function readAgentConventions(cwd) {
+  let content;
+  try {
+    content = fs.readFileSync(path.join(cwd || process.cwd(), 'trackfw.yaml'), 'utf8');
+  } catch (_) {
+    return '';
+  }
+  const cfg = { rules: {}, credentialGuard: {}, update: { agentConventions: '' }, sync: {}, linkFields: {} };
+  try {
+    parse(content, cfg);
+  } catch (_) {
+    return '';
+  }
+  return cfg.update.agentConventions || '';
+}
+
 const NAMESPACING_FLAT = 'flat';
 const NAMESPACING_BY_AGENT = 'by_agent';
 
@@ -308,6 +334,7 @@ module.exports = {
   defaults,
   expandPath,
   parseRulesFromContent,
+  readAgentConventions,
   NAMESPACING_FLAT,
   NAMESPACING_BY_AGENT,
   MALFORMED_CONFIG_MESSAGE,

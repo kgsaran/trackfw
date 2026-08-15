@@ -105,6 +105,8 @@ def defaults():
             "backend": "",
             "frontend": "",
             "pkg_manager": "",
+            # ML-2B (agentes especialistas aceitam contexto de convenções) field
+            "agent_conventions": "",
         },
         "sync": {
             "linear_api_key": "",
@@ -187,6 +189,35 @@ def parse_rules_from_content(content):
     }
     _parse(content, cfg)
     return cfg["rules"]
+
+
+def read_agent_conventions(cwd=None):
+    """Lê a chave `agent_conventions` diretamente de <cwd>/trackfw.yaml, contornando o
+    singleton load() — mesmo padrão de isolamento de parse_rules_from_content, necessário
+    porque os geradores (init_gen.py) injetam regras em arquivos de agente para um cwd que
+    não é necessariamente o cwd do processo (contra o qual o singleton estaria cacheado).
+    Arquivo ausente, ilegível, malformado ou simplesmente sem a chave são tratados da mesma
+    forma: retorna "" silenciosamente, nunca uma exceção — é uma leitura best-effort de um
+    campo opcional de texto livre. Espelha ReadAgentConventions (Go) e readAgentConventions
+    (Node).
+    """
+    try:
+        yaml_path = os.path.join(cwd or os.getcwd(), "trackfw.yaml")
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        cfg = {
+            "rules": {},
+            "credential_guard": {},
+            "update": {},
+            "sync": {},
+            "link_fields": {},
+        }
+        malformed = _parse(content, cfg)
+        if malformed:
+            return ""
+        return cfg["update"].get("agent_conventions", "")
+    except Exception:
+        return ""
 
 
 def _parse(content, cfg):
@@ -287,6 +318,8 @@ def _parse(content, cfg):
         cfg["update"]["frontend"] = m["frontend"]
     if isinstance(m.get("pkg_manager"), str):
         cfg["update"]["pkg_manager"] = m["pkg_manager"]
+    if isinstance(m.get("agent_conventions"), str):
+        cfg["update"]["agent_conventions"] = m["agent_conventions"]
     if isinstance(m.get("linear_api_key"), str):
         cfg["sync"]["linear_api_key"] = m["linear_api_key"]
     if isinstance(m.get("linear_team_id"), str):

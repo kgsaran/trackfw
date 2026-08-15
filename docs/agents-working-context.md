@@ -4,6 +4,23 @@
 
 ---
 
+## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap agentes-especialistas-convencoes concluídos) — pronto para PR
+
+Branch `feat/agentes-especialistas-aceitam-contexto-de-convencoes`. REQ
+`REQ-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md`
+e roadmap correspondente movidos para `done/`. Wave 1 (Go — campo `agent_conventions` +
+injeção no rules block, commit `1478983`; heurística de sugestão em `discover`, commit
+`3bbb7db`), Wave 2 (Node.js + Python, commit `88d367c`) e Wave 3 (ML-3A, commit `5f95f12`)
+concluídas. `make quality` verde. Os 3 cenários (com/sem `agent_conventions`, sugestão de
+framework de teste em `discover`) confirmados byte-idênticos nos 3 CLIs. `docs/cli-parity.md`
+ganhou a chave `agent_conventions` na tabela de campos do config loader único (agora 12
+campos). Achado incidental fora de escopo, não investigado: `roadmap_namespacing` diverge
+entre Go/Node num fixture de `--init` sem `docs/roadmaps/`. Próximo passo: abrir PR via
+`bin/trackfw ship`, e após merge, seguir para o item 3 do backlog priorizado — instalação de
+skills de terceiro via URL (requer revisão de segurança do `hades-tf` antes de qualquer ML,
+e restrição explícita do usuário: comando só invocável pelo orquestrador dentro de sessão de
+agente, nunca por invocação humana direta de terminal).
+
 ## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap trackfw changelog concluídos) — pronto para PR
 
 Branch `feat/comando-trackfw-changelog`. REQ
@@ -29,6 +46,32 @@ REQ: script ausente → `git_branch_guard_hook_resolvable`; script com 1 byte al
 `git_branch_guard_script_integrity`; script restaurado → silêncio, sem falso positivo.
 Próximo passo: abrir PR via `bin/trackfw ship` e, após merge, sincronizar `main` e limpar
 a branch local.
+
+## Sessão 2026-08-15 — Apolo (ML-1A: campo `agent_conventions` — config + scaffold + injeção no rules block, Go) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto` (já
+checked out, não criada por mim). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md`,
+ML-1A. Implementado exatamente como desenhado no roadmap:
+- `internal/config/config.go`: `UpdateConfig.AgentConventions string`; `parse()` lê a chave
+  flat `agent_conventions`; nova `ReadAgentConventions(cwd string) string` isolada do
+  singleton `Load()` (mesmo padrão de `ParseRulesFromContent`), nunca erro.
+- `internal/generators/scaffold.go`: `Config.AgentConventions string`; `writeTrackfwConfig()`
+  escreve `agent_conventions: |` (block scalar, indentado) só quando não-vazio, mesmo padrão
+  condicional do `forge:`.
+- `internal/generators/agentfiles.go`: `trackfwRulesBlock(agentConventions string)` ganha
+  seção `### Project Conventions` (deixa explícito no texto que é convenção declarada pelo
+  time, não inferência); `injectOrUpdateRules` ganhou parâmetro `cwd` e chama
+  `config.ReadAgentConventions(cwd)`; `InjectRulesForTool`/`InjectRulesDetected` propagam
+  `cwd`; `claudemd.go` (único outro call-site de `injectOrUpdateRules`) passa `"."`.
+- Testes novos: `internal/config/config_agent_conventions_test.go`,
+  `internal/generators/agent_conventions_test.go` (cobre caso vazio byte-idêntico ao
+  comportamento pré-ML e caso com convenções, via `InjectRulesForTool` real, não mock).
+Evidência: `go build ./...`, `go test ./...` (repo inteiro) e `go vet ./...` todos verdes.
+Teste manual real via `bin/trackfw update` (não `discover --init`, que gera seu próprio
+`trackfw.yaml` sem o campo) em dois fixtures temporários — com `agent_conventions` gera a
+seção no `CLAUDE.md` com o texto exato; sem a chave, seção ausente. ML-1B (heurística de
+sugestão em `trackfw discover`, Wave 1) segue `⬜ Pendente`.
 
 ## Sessão 2026-08-15 — Apolo (ML-2B: port Python de `trackfw validate` detectando scripts de hook ausentes/desatualizados — git-branch-guard) — implementado, aguardando auditoria e commit por trackfw_architect
 
@@ -16380,3 +16423,113 @@ observação para o `trackfw_architect` avaliar se `changelog` deve ganhar uma l
 (comandos recentes como `commit`/`barrier` também não aparecem nela — pode já ser uma lacuna
 pré-existente, não introduzida por este ML). Falta Wave 3 (ML-3A — paridade cruzada e teste manual
 E2E nos 3 binários, que já corri como parte da validação deste ML e veio verde).
+
+## Sessão 2026-08-15 — Apolo (ML-1B: Go `SuggestedTestFramework` heurístico em `trackfw discover`, branch `feat/agentes-especialistas-aceitam-contexto-de-convencoes`) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Implementado o ML-1B do roadmap `ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md`
+(ML-1A já estava commitado nesta branch — não toquei nele). Escopo: heurística best-effort de
+sugestão de framework de teste em `trackfw discover`, impressa apenas no relatório de texto,
+nunca escrita automaticamente em `trackfw.yaml`.
+
+**Arquivos modificados:**
+- `internal/discover/discover.go` — novo campo `DiscoveryResult.SuggestedTestFramework string`;
+  `Scan()` chama nova função `detectTestFramework(rootDir)` (best-effort, nunca erro) logo após a
+  detecção de CI system. Precedência: `jest.config.js`/`.ts` → `"jest"`; `vitest.config.js`/`.ts`
+  → `"vitest"`; `pytest.ini` OU `pyproject.toml` contendo `[tool.pytest` OU `setup.cfg` contendo
+  `[tool:pytest]` → `"pytest"`; `go.mod` presente E pelo menos um `*_test.go` em qualquer lugar
+  do repo (via `filepath.WalkDir`, helper `hasGoTestFile`) → `"go test"`; nenhum match → `""`.
+  Helper `hasFileWithSubstring(path, sub)` faz leitura best-effort (arquivo ausente/erro de
+  leitura → `false`, nunca propaga erro).
+- `internal/commands/discover.go` — no relatório de texto (não há flag `--json` neste comando),
+  logo antes da linha `Governance Score:`, imprime
+  `Suggested test framework: <valor> (add to trackfw.yaml as agent_conventions: if correct)`
+  somente quando `r.SuggestedTestFramework != ""`. `GenerateYAML`/fluxo `--init` NÃO foi tocado —
+  a sugestão nunca é escrita automaticamente em `trackfw.yaml` (confirmado por teste e manualmente).
+- `internal/discover/discover_test.go` — 13 novos testes cobrindo cada arquivo-gatilho
+  (jest `.js`/`.ts`, vitest `.js`/`.ts`, `pytest.ini`, `pyproject.toml` com/sem seção
+  `[tool.pytest...]`, `setup.cfg` com `[tool:pytest]`, `go.mod`+`*_test.go` presente/ausente) e o
+  caso sem nenhum gatilho.
+- `internal/commands/discover_test.go` — 3 novos testes: linha de sugestão presente/ausente no
+  relatório, e confirmação de que `discover --init` nunca escreve `agent_conventions` em
+  `trackfw.yaml` mesmo quando uma sugestão é impressa.
+
+**Validação:**
+- `go build ./...` — sem erros.
+- `go vet ./...` — sem warnings.
+- `go test ./internal/discover/... ./internal/commands/...` — verde.
+- `go test ./...` (suíte completa) — sem regressões.
+- Teste manual real com `bin/trackfw` reconstruído: fixture com `jest.config.js` → linha
+  `Suggested test framework: jest (add to trackfw.yaml as agent_conventions: if correct)`
+  presente; fixture vazia → linha ausente. `trackfw discover --init` na fixture com
+  `jest.config.js` gerou `trackfw.yaml` sem a chave `agent_conventions` (confirmado via `grep -c`
+  → `0`), provando que a sugestão nunca é persistida automaticamente.
+
+Não fiz `git commit`/`push` — autoridade de Git é do `trackfw_architect`. Não toquei em
+`internal/generators/agentfiles.go`/`config.go` (ML-1A, já commitado). Wave 2 (Node.js/Python) e
+Wave 3 (paridade cruzada + `docs/cli-parity.md`) seguem pendentes, fora do escopo deste ML.
+
+## Sessão 2026-08-15 — Apolo (ML-2A: Node.js `agent_conventions` — port 1:1 do Go da Wave 1, branch `feat/agentes-especialistas-aceitam-contexto-de-convencoes`) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Escopo: port 1:1 para Node.js puro (`npm/`) do Wave 1 Go já commitado nesta branch — campo
+`agent_conventions`, injeção da seção "### Project Conventions" no rules block, e heurística de
+sugestão de framework de teste em `trackfw discover`. Escopo estritamente `npm/` — não toquei em
+nenhum arquivo sob `pypi/` (outro agente trabalhava em paralelo no ML-2B/Python na mesma branch).
+
+**Arquivos modificados:**
+- `npm/src/config/index.js` — `defaults().update` ganhou `agentConventions: ''` (convenção de
+  nomeação confirmada no próprio arquivo: `update.hooks`/`update.backend`/`update.pkgManager` já
+  usam camelCase namespaced, mesmo padrão do `config_update_sync.test.js` existente); `parse()`
+  ganhou `if (stringVal(m, 'agent_conventions') !== undefined) cfg.update.agentConventions = m.agent_conventions;`
+  logo após a leitura de `pkg_manager`; nova função exportada `readAgentConventions(cwd)`
+  espelhando `internal/config/config.go`'s `ReadAgentConventions` — lê `<cwd>/trackfw.yaml`
+  diretamente (não usa o singleton `load()`), qualquer falha (arquivo ausente, YAML malformado,
+  chave ausente) retorna `''` silenciosamente, nunca lança.
+- `npm/src/generators/init.js` — `trackfwRulesBlock()` ganhou parâmetro `agentConventions`; texto
+  da seção "### Project Conventions" e posição (antes de `### Key Commands`) byte-idênticos ao Go
+  (`internal/generators/agentfiles.go`). `injectOrUpdateRules(filePath, headerIfNew, cwd)` ganhou
+  o parâmetro `cwd` e passa a chamar `trackfwRulesBlock(readAgentConventions(cwd))`.
+  `injectRulesForTool(tool, cwd)` agora repassa `cwd` para `injectOrUpdateRules`. A chamada
+  legada `injectOrUpdateRules('CLAUDE.md', content)` dentro de `generateClaudeMD` (usada só no
+  `scaffold`/`init`, texto diferente do rules block) passou a receber `'.'` como terceiro
+  argumento, espelhando exatamente `injectOrUpdateRules("CLAUDE.md", sb.String(), ".")` em
+  `internal/generators/claudemd.go` — mesmo padrão de cwd relativo do Go, não uma invenção nova.
+- `npm/src/commands/discover.js` — novo campo `suggestedTestFramework: ''` no objeto `scan()`;
+  `detectTestFramework(rootDir)` port 1:1 de `detectTestFramework` (Go): mesma precedência
+  jest → vitest → pytest (`pytest.ini`/`pyproject.toml` com `[tool.pytest`/`setup.cfg` com
+  `[tool:pytest]`) → go test (`go.mod` + qualquer `*_test.go` via varredura recursiva), `''` se
+  nada bate; helpers `hasFileWithSubstring`/`hasGoTestFile` também portados. Linha impressa
+  idêntica ao Go: `Suggested test framework: <valor> (add to trackfw.yaml as agent_conventions: if correct)`,
+  logo antes de `Governance Score:`, só quando `r.suggestedTestFramework` não é vazio.
+  `generateYAML()` NÃO foi tocado — confirmado por teste que `--init` nunca escreve
+  `agent_conventions` automaticamente.
+- `npm/tests/agent-conventions.test.js` (novo) — 27 testes cobrindo: `parse()`/`readAgentConventions`
+  com chave ausente/single-line/multi-linha/arquivo ausente/YAML malformado; `trackfwRulesBlock`
+  vazio (byte-idêntico ao comportamento pré-ML) vs com conteúdo vs só espaços (TrimSpace
+  equivalente); `injectRulesForTool` end-to-end escrevendo `CLAUDE.md` com/sem a seção; cada
+  arquivo-gatilho de `detectTestFramework` (jest `.js`/`.ts`, vitest `.js`/`.ts`, `pytest.ini`,
+  `pyproject.toml` com/sem seção pytest, `setup.cfg`, `go.mod`+`*_test.go` presente/ausente,
+  ordem de precedência); `scan()` expõe `suggestedTestFramework`; `generateYAML` nunca inclui
+  `agent_conventions`.
+
+**Validação:**
+- `cd npm && npm test` (suíte completa do workspace, `node --test tests/*.test.js`) — **550
+  passed, 0 failed** (27 novos + 523 pré-existentes, sem regressão).
+- Paridade byte-a-byte confirmada rodando `bin/trackfw` (Go) e `node npm/bin/trackfw` (Node) nos
+  mesmos fixtures temporários via `trackfw update --targets agent-rules`:
+  - Com `agent_conventions: |\n  Use pytest, not unittest.\n  API REST, no GraphQL.\n` no
+    `trackfw.yaml` → `diff CLAUDE.md CLAUDE.md` → **idêntico** (seção "### Project Conventions"
+    presente, texto do time preservado).
+  - Sem `agent_conventions` (`trackfw.yaml` vazio) → `diff CLAUDE.md CLAUDE.md` → **idêntico**
+    (sem a seção — não-regressão confirmada nos dois CLIs).
+  - `trackfw discover` com `jest.config.js` presente → linha
+    `Suggested test framework: jest (add to trackfw.yaml as agent_conventions: if correct)`
+    **idêntica** nos dois CLIs.
+  - `trackfw discover --init` nos dois CLIs → `grep -c agent_conventions trackfw.yaml` → `0` em
+    ambos, confirmando que a sugestão nunca é persistida automaticamente. (Nota lateral, fora de
+    escopo: `roadmap_namespacing:` ficou vazio no Go e `flat` no Node nesse `--init` de fixture
+    sem `docs/roadmaps/` — divergência pré-existente não relacionada a `agent_conventions`, não
+    investigada nem corrigida aqui.)
+
+Não fiz `git commit`/`push` — autoridade de Git é do `trackfw_architect`. Não toquei em nenhum
+arquivo sob `pypi/` (ML-2B, agente paralelo) nem em `internal/`/Go (Wave 1, já commitada). Wave 3
+(paridade cruzada final + `docs/cli-parity.md`) segue pendente, fora do escopo deste ML.

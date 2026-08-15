@@ -33,7 +33,7 @@ func TestGenerateClaudeMD_GlobalADRsDirective(t *testing.T) {
 }
 
 func TestTrackfwRulesBlock_GlobalADRsDirective(t *testing.T) {
-	block := trackfwRulesBlock()
+	block := trackfwRulesBlock("")
 	expectedDirective := "Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura."
 	if !strings.Contains(block, expectedDirective) {
 		t.Errorf("trackfwRulesBlock() não contém a diretiva obrigatória de ADRs globais.\nEsperado conter: %q\nConteúdo obtido:\n%s", expectedDirective, block)
@@ -76,7 +76,7 @@ func TestGenerateClaudeMD_ArchitectCommandAndDirectives(t *testing.T) {
 }
 
 func TestTrackfwRulesBlock_ArchitectureDirectives(t *testing.T) {
-	block := trackfwRulesBlock()
+	block := trackfwRulesBlock("")
 	checks := []string{
 		"### Architecture Directives (mandatory)",
 		"- **3-layer separation:** frontend / backend / database — never mix concerns",

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-15
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md"
 ---
 
 # REQ: agentes especialistas aceitam contexto de convencoes especifico do projeto
 
-> Date: 2026-08-15 | Status: Open
+> Date: 2026-08-15 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -36,25 +36,25 @@ convenção vive só na cabeça do time, não no código.
 detecção de stack do zero.
 
 ## Acceptance Criteria
-- [ ] Novo campo em `trackfw.yaml` (ex.: `agent_conventions:` ou reaproveitar/estender
+- [x] Novo campo em `trackfw.yaml` (ex.: `agent_conventions:` ou reaproveitar/estender
       `backend:`/`frontend:` existentes) onde o projeto declara convenções específicas —
       framework de teste, padrão de arquitetura, estilo de API, linter — como texto livre
       ou lista curta de bullets (decisão de design do ML: manter simples, não um schema
       rígido).
-- [ ] `trackfw discover`/`trackfw init` propõe um preenchimento inicial desses campos por
+- [x] `trackfw discover`/`trackfw init` propõe um preenchimento inicial desses campos por
       heurística (ex.: presença de `jest.config.js` → sugere framework de teste; mas não
       travar a REQ nisso — detecção automática é nice-to-have, o campo manual é o
       essencial).
-- [ ] O bloco de regras que o trackfw já injeta em `CLAUDE.md`/`AGENTS.md`/etc.
+- [x] O bloco de regras que o trackfw já injeta em `CLAUDE.md`/`AGENTS.md`/etc.
       (`internal/generators/agentfiles.go`, `trackfwRulesBlock()`) passa a incluir essas
       convenções, para que QUALQUER agente (não só os do catálogo trackfw) as veja — ou,
       alternativamente, os agentes do catálogo canônico ganham uma seção nova
       ("Project conventions") que lê esse campo do `trackfw.yaml` — decisão de design a
       resolver no ML, mas preferir o caminho que já existe (`trackfwRulesBlock`) em vez
       de criar um segundo mecanismo de injeção de contexto.
-- [ ] Comportamento idêntico nos 3 CLIs (mesmo campo, mesmo texto injetado).
-- [ ] `make quality` passa sem novas divergências de paridade.
-- [ ] Documentar explicitamente que isso é convenção **declarada pelo time**, não
+- [x] Comportamento idêntico nos 3 CLIs (mesmo campo, mesmo texto injetado).
+- [x] `make quality` passa sem novas divergências de paridade.
+- [x] Documentar explicitamente que isso é convenção **declarada pelo time**, não
       detecção automática de "boas práticas" — o trackfw não deve tentar impor um
       padrão arquitetural, só propagar o que o projeto já decidiu.
 
@@ -67,4 +67,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md

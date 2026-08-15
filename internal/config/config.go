@@ -73,6 +73,9 @@ type UpdateConfig struct {
 	Backend    string // backend: ... (default: "")
 	Frontend   string // frontend: ... (default: "")
 	PkgManager string // pkg_manager: npm|yarn|pnpm|... (default: "")
+
+	// ML-1A (agentes especialistas aceitam contexto de convenções) field
+	AgentConventions string // agent_conventions: free-text, multi-line (default: "")
 }
 
 // SyncConfig holds the fields `trackfw sync` reads for Linear/Jira integration. linear_api_key
@@ -157,6 +160,22 @@ func ParseRulesFromContent(content string) map[string]string {
 	cfg := ProjectConfig{Rules: make(map[string]string)}
 	parse(content, &cfg)
 	return cfg.Rules
+}
+
+// ReadAgentConventions reads the `agent_conventions` key directly out of <cwd>/trackfw.yaml,
+// bypassing the Load() singleton — same isolation pattern as ParseRulesFromContent, needed here
+// because generators (agentfiles.go) inject rules into agent files for a given cwd that is not
+// necessarily the process's own working directory the singleton is cached against. The file
+// being absent, unreadable, malformed or simply missing the key are all treated the same: return
+// "" silently, never an error — this is a best-effort read of an optional, free-text field.
+func ReadAgentConventions(cwd string) string {
+	data, err := os.ReadFile(filepath.Join(cwd, "trackfw.yaml"))
+	if err != nil {
+		return ""
+	}
+	cfg := ProjectConfig{Rules: make(map[string]string)}
+	parse(string(data), &cfg)
+	return cfg.Update.AgentConventions
 }
 
 func defaults() ProjectConfig {
@@ -325,6 +344,9 @@ func parse(content string, cfg *ProjectConfig) {
 	}
 	if v, ok := stringVal(m, "pkg_manager"); ok {
 		cfg.Update.PkgManager = v
+	}
+	if v, ok := stringVal(m, "agent_conventions"); ok {
+		cfg.Update.AgentConventions = v
 	}
 	if v, ok := stringVal(m, "linear_api_key"); ok {
 		cfg.Sync.LinearAPIKey = v

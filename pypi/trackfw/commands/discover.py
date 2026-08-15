@@ -56,6 +56,50 @@ def _list_subdirs(directory: str) -> list[str]:
         return []
 
 
+def _has_file_with_substring(path: str, sub: str) -> bool:
+    """Lê path e retorna True se seu conteúdo contém sub. Retorna False silenciosamente se o
+    arquivo não existir ou não puder ser lido (best-effort)."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except OSError:
+        return False
+    return sub in content
+
+
+def _has_go_test_file(root_dir: str) -> bool:
+    """Percorre root_dir recursivamente procurando qualquer arquivo *_test.go."""
+    try:
+        for _, _, files in os.walk(root_dir):
+            for f in files:
+                if f.endswith("_test.go"):
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def detect_test_framework(root_dir: str) -> str:
+    """Heurística best-effort para sugerir um framework de teste com base em arquivos de
+    configuração presentes na raiz do projeto. Nunca retorna erro — retorna "" quando nenhum
+    arquivo-gatilho é encontrado. Ordem de precedência: jest, vitest, pytest, go test. Espelha
+    detectTestFramework (Go) e detectTestFramework (Node).
+    """
+    if _is_file(os.path.join(root_dir, "jest.config.js")) or _is_file(os.path.join(root_dir, "jest.config.ts")):
+        return "jest"
+    if _is_file(os.path.join(root_dir, "vitest.config.js")) or _is_file(os.path.join(root_dir, "vitest.config.ts")):
+        return "vitest"
+    if _is_file(os.path.join(root_dir, "pytest.ini")):
+        return "pytest"
+    if _has_file_with_substring(os.path.join(root_dir, "pyproject.toml"), "[tool.pytest"):
+        return "pytest"
+    if _has_file_with_substring(os.path.join(root_dir, "setup.cfg"), "[tool:pytest]"):
+        return "pytest"
+    if _is_file(os.path.join(root_dir, "go.mod")) and _has_go_test_file(root_dir):
+        return "go test"
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # scan
 # ---------------------------------------------------------------------------
@@ -80,6 +124,12 @@ def scan(root_dir: str) -> dict:
         "hook_framework": "none",
         "ci_system": "none",
         "forge": "",
+        # suggested_test_framework é uma sugestão best-effort (nunca erro, "" quando nada
+        # bate) baseada em arquivos de configuração presentes na raiz do projeto. É apenas
+        # impressa como sugestão pelo comando `discover` — nunca escrita automaticamente em
+        # trackfw.yaml (a convenção de agent_conventions deve ser sempre declarada pelo
+        # time, não inferida).
+        "suggested_test_framework": "",
     }
 
     # 1. trackfw.yaml
@@ -155,6 +205,9 @@ def scan(root_dir: str) -> dict:
         r["ci_system"] = "gitlab"
     else:
         r["ci_system"] = "none"
+
+    # 6b. Suggested test framework — best-effort heuristic, never an error.
+    r["suggested_test_framework"] = detect_test_framework(root_dir)
 
     # 7. Forge detection — reuse forge/resolve.py (no duplicate parse).
     # _git_remote_url returns "" when repo dir is not a git repo or on any error.
@@ -471,6 +524,11 @@ def _cmd_discover(args):
         print(f"CI: {r['ci_system']}")
     else:
         print("Aviso: nenhum sistema de CI detectado")
+
+    # suggested test framework — printed only, never written to trackfw.yaml
+    # automatically (agent_conventions must always be declared by the team).
+    if r["suggested_test_framework"]:
+        print(f"Suggested test framework: {r['suggested_test_framework']} (add to trackfw.yaml as agent_conventions: if correct)")
 
     print(f"\nGovernance Score: {r['governance_score']}/100")
 

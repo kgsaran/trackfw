@@ -107,6 +107,12 @@ func NewDiscoverCmd() *cobra.Command {
 				fmt.Fprintln(out, "⚠ No CI system detected")
 			}
 
+			// suggested test framework — printed only, never written to trackfw.yaml
+			// automatically (agent_conventions must always be declared by the team).
+			if r.SuggestedTestFramework != "" {
+				fmt.Fprintf(out, "Suggested test framework: %s (add to trackfw.yaml as agent_conventions: if correct)\n", r.SuggestedTestFramework)
+			}
+
 			fmt.Fprintf(out, "\nGovernance Score: %d/100\n", r.GovernanceScore)
 
 			// --init
