@@ -1,0 +1,123 @@
+---
+status: wip
+date: 2026-08-15
+req: "docs/req/REQ-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md"
+squad: "apolo-tf, hades-tf, hefesto-tf"
+---
+
+# Roadmap: Remoção do subsistema de plugins do trackfw
+
+> Created: 2026-08-15 | Status: wip
+
+## Context
+
+REQ: `docs/req/REQ-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`
+ADR: `docs/adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md` (D1–D6)
+Parecer que sustenta a decisão: `docs/seguranca/2026-08-15-gate-de-plugins-binario.md`
+
+Remover por completo o subsistema de plugins — download, gestão e **execução**. Substitui o
+roadmap de *gate*, abandonado em `docs/roadmaps/abandoned/`.
+
+### Inventário exato do que sai (verificado no código, 2026-08-15)
+
+| Item | Go | Node | Python |
+|---|---|---|---|
+| Pacote de download | `internal/plugins/` (`plugins.go`, `plugins_test.go`) | dentro de `npm/src/commands/plugins.js` | — (não existe) |
+| Comando | `internal/commands/plugins.go` | `npm/src/commands/plugins.js` | `pypi/trackfw/commands/plugins.py` |
+| Execução | `RunPlugin` (`plugins.go:111`) + fallback `root.go:71-74` | equivalente em `plugins.js` | `_cmd_run` (`plugins.py:91`) |
+| Registro do comando | `internal/commands/root.go` | `npm/src/commands/index.js` | `pypi/trackfw/commands/__init__.py` (ou equivalente) |
+| Testes | `internal/plugins/plugins_test.go` | **nenhum** | `pypi/tests/test_commands_extras.py` classe `TestPlugins` (:249) |
+
+Referências em doc/gates a atualizar: `README.md:160-162`, `CLAUDE.md`, `docs/cli-parity.md`,
+`scripts/check-cli-parity.sh:22` (lista `floor_commands` contém `plugins`).
+
+## Acceptance Criteria
+- [ ] AC1 — Comandos e código de download/registry removidos nos 3 CLIs.
+- [ ] AC2 — Execução de plugin removida, incluindo o fallback de argumento desconhecido.
+- [ ] AC3 — Argumento desconhecido produz **erro de comando desconhecido**, mensagem idêntica nos 3 CLIs.
+- [ ] AC4 — Zero referências a `~/.trackfw/plugins` e ao `RegistryURL` em código de produto.
+- [ ] AC5 — `README.md`, `CLAUDE.md`, `docs/cli-parity.md` e `check-cli-parity.sh` atualizados.
+- [ ] AC6 — `make quality` verde, sem teste órfão.
+- [ ] AC7 — Breaking change no `CHANGELOG.md` + bump `7.0.0` — **PR próprio, fora deste roadmap**.
+
+---
+
+## Wave 1 — Remoção (paralelizável por stack)
+> Dependências: nenhuma. ML-1A, ML-1B e ML-1C tocam árvores **disjuntas** → executam em paralelo.
+> ⛔ Nenhum deles toca `scripts/`, `README.md`, `CLAUDE.md` ou `docs/cli-parity.md` — são do ML-2A,
+> sequencial, para não colidir.
+
+### ML-1A — Go
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** apagar `internal/plugins/` inteiro e `internal/commands/plugins.go`; editar
+`internal/commands/root.go` (remover registro do comando **e** o fallback de `RunE`, linhas 71-74).
+**Ações:**
+1. Apagar o pacote e o comando.
+2. Em `root.go`, `RunE` deixa de chamar `RunPlugin`. Argumento desconhecido deve produzir o erro
+   padrão do cobra para comando desconhecido — **avaliar remover `root.Args = cobra.ArbitraryArgs`**,
+   que é o que hoje permite argumento livre chegar ao `RunE`.
+3. Sem argumento, o comportamento atual (imprimir help) **é preservado**.
+**Aceite:**
+- [ ] `go build ./...` e `go vet ./...` limpos; nenhuma referência residual a `plugins` em `internal/`.
+- [ ] `trackfw` sem argumento → help (inalterado).
+- [ ] `trackfw comando-inexistente` → **erro de comando desconhecido**, exit ≠ 0, e **não** tenta executar binário.
+- [ ] Teste cobrindo o item acima (é o coração do AC2/AC3).
+
+### ML-1B — Node
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Arquivos:** apagar `npm/src/commands/plugins.js`; editar o registro do comando em
+`npm/src/commands/index.js`.
+**Aceite:** `cd npm && npm test` verde; argumento desconhecido → erro, nunca execução; zero
+referências a `plugins` em `npm/src/`.
+
+### ML-1C — Python
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Arquivos:** apagar `pypi/trackfw/commands/plugins.py`; remover o registro do subparser; **remover
+a classe `TestPlugins`** de `pypi/tests/test_commands_extras.py:249` (teste órfão — o código que ele
+cobre deixa de existir).
+**Aceite:** `python3 -m pytest pypi/tests -q` verde; argumento desconhecido → erro; zero
+referências a `plugins`.
+
+---
+
+## Wave 2 — Docs, gates e paridade
+> Dependências: Wave 1 completa. **Sequencial** — arquivos compartilhados.
+
+### ML-2A — Docs + `check-cli-parity.sh` + paridade da mensagem de erro
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Arquivos:** `README.md`, `CLAUDE.md`, `docs/cli-parity.md`, `scripts/check-cli-parity.sh`
+**Ações:**
+1. Remover `plugins` de `floor_commands` (`check-cli-parity.sh:22`).
+2. Remover as três linhas de plugins da tabela de comandos do `README.md` (:160-162).
+3. `docs/cli-parity.md`: registrar a remoção e **apagar** qualquer menção a plugins como exceção de
+   paridade — a exceção deixa de existir (D4).
+4. **Adicionar ao contrato de paridade** a checagem de que argumento desconhecido produz a **mesma
+   mensagem de erro** nos 3 CLIs. É o comportamento novo que substitui a execução de plugin, e sem
+   isso ele fica sem cobertura.
+**Aceite:**
+- [ ] `make quality` verde.
+- [ ] `grep -rn "plugins" README.md CLAUDE.md scripts/` sem ocorrência que descreva o comando removido.
+- [ ] Mensagem de comando desconhecido byte-idêntica nos 3 CLIs, coberta por script de paridade.
+
+---
+
+## Wave 3 — Barreira final
+### ML-3A — `hades-tf`: confirmar que a superfície sumiu
+**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Escreve:** seção apensada a `docs/seguranca/2026-08-15-gate-de-plugins-binario.md`
+**Ações:** verificar que não sobrou caminho de download, de `chmod` de terceiro, nem de execução —
+incluindo indiretos (`exec.Command`, `subprocess`, `child_process`) que possam invocar `trackfw-*`.
+Confirmar que o débito D9 do ADR superseded está fechado. **Veredito explícito.**
+
+### ML-3B — `hefesto-tf`: código órfão
+**Status:** ⬜ Pendente · **Agente:** `hefesto-tf` (`subagent_type: hefesto-tf`)
+**Escreve:** `docs/qualidade/2026-08-15-remocao-de-plugins.md`
+**Ações:** procurar helpers, imports, constantes, fixtures e docs que ficaram sem uso após a
+remoção — o risco típico de deleção é deixar meio caminho.
+
+---
+
+## Notas
+- Remoção é **breaking change**: bump `7.0.0` + `CHANGELOG.md` em **PR próprio**, após este.
+- Roadmap anterior (gate) em `docs/roadmaps/abandoned/`, com o motivo registrado.
+- Commits e branch são exclusivos do `trackfw_architect`.
