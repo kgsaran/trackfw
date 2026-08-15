@@ -15,13 +15,13 @@ REQ: docs/req/REQ-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-d
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] `trackfw commit --suggest` (sem `-m`) imprime um esqueleto de mensagem e sai sem
+- [x] `trackfw commit --suggest` (sem `-m`) imprime um esqueleto de mensagem e sai sem
       commitar.
-- [ ] Esqueleto inclui tipo Conventional Commits sugerido por heurística simples + lista
+- [x] Esqueleto inclui tipo Conventional Commits sugerido por heurística simples + lista
       de arquivos staged por status + placeholder de corpo.
-- [ ] `trackfw commit -m "..."` (uso normal) continua funcionando exatamente como hoje.
-- [ ] Comportamento idêntico nos 3 CLIs.
-- [ ] `make quality` passa sem novas divergências de paridade.
+- [x] `trackfw commit -m "..."` (uso normal) continua funcionando exatamente como hoje.
+- [x] Comportamento idêntico nos 3 CLIs.
+- [x] `make quality` passa sem novas divergências de paridade.
 
 ## Diagnóstico / Contexto
 `trackfw commit` hoje (`internal/commands/commit.go`) exige `-m` obrigatório
@@ -126,7 +126,12 @@ verdade.
 > Dependências: Wave 2 completa
 
 ### ML-3A — Paridade e teste manual
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
+
+**Execução real:** testado manualmente `trackfw commit --suggest` com arquivo `.md`
+staged (tipo `docs` detectado corretamente) e arquivo `*_test.go` staged (tipo `test`
+detectado corretamente), confirmando em ambos os casos que `git status` fica inalterado
+antes/depois — nenhum commit real é gerado. `make quality` completo, zero falha.
 **Arquivos afetados:** nenhum novo
 **Ações:**
 1. Rodar `make quality` na raiz.
