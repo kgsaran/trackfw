@@ -144,13 +144,22 @@ func executeThirdPartyFetch(cmd *cobra.Command, kind integrations.ItemKind, rawU
 
 // --- Fase 2: install ---
 
+// thirdPartyGlobalScopeWarning and thirdPartyGlobalScopeRefusal are the
+// D4-bis literal strings for --scope global: printed/returned verbatim by
+// all 3 CLIs (the roadmap's AC requires identical wording), so they are
+// named constants here rather than inlined, mirroring
+// thirdPartyProvenanceRule's rationale above.
+const thirdPartyGlobalScopeWarning = "warning: --scope global installs outside the project tree; this artifact will NEVER be verified by `trackfw validate` (the \"" + thirdPartyProvenanceRule + "\" rule only scans the project's own manifest — an artifact under a home directory is invisible to it, per ADR-2026-08-12)."
+const thirdPartyGlobalScopeRefusal = "install to --scope global requires --yes-global-scope-unverified as its own explicit confirmation (D4-bis), distinct from --yes-i-trust-this-source: it confirms you understand `trackfw validate` will never verify this installation"
+
 type thirdPartyInstallOptions struct {
-	checksum  string
-	slug      string
-	targets   []string
-	applyTo   []string
-	scope     string
-	yesITrust bool
+	checksum         string
+	slug             string
+	targets          []string
+	applyTo          []string
+	scope            string
+	yesITrust        bool
+	yesGlobalScopeOK bool
 }
 
 func newThirdPartyInstallCmd(kind integrations.ItemKind) *cobra.Command {
@@ -168,7 +177,8 @@ func newThirdPartyInstallCmd(kind integrations.ItemKind) *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.targets, "targets", nil, "target CLIs to install the skill file into (required)")
 	cmd.Flags().StringSliceVar(&opts.applyTo, "apply-to", nil, "catalog agent item IDs whose rendered file gets a reference to this artifact (optional; never inferred silently — AC3)")
 	cmd.Flags().StringVar(&opts.scope, "scope", "", "installation scope: project or global (default: project — D4)")
-	cmd.Flags().BoolVar(&opts.yesITrust, "yes-i-trust-this-source", false, "required in non-interactive mode, and as the additional explicit confirmation for --scope global (D4)")
+	cmd.Flags().BoolVar(&opts.yesITrust, "yes-i-trust-this-source", false, "required in non-interactive mode (AC1)")
+	cmd.Flags().BoolVar(&opts.yesGlobalScopeOK, "yes-global-scope-unverified", false, "required, in addition to --yes-i-trust-this-source, for --scope global: confirms this installation will never be verified by `trackfw validate` (D4-bis)")
 	return cmd
 }
 
@@ -240,6 +250,11 @@ func executeThirdPartyInstall(cmd *cobra.Command, kind integrations.ItemKind, op
 	}
 	if err := resolveThirdPartyScope(cmd, opts); err != nil {
 		return err
+	}
+	// D4-bis — print the warning as early as possible, before any other
+	// output, so it is visible even if a later step aborts the command.
+	if opts.scope == "global" {
+		fmt.Fprintln(cmd.OutOrStdout(), thirdPartyGlobalScopeWarning)
 	}
 
 	manager, err := integrationsManager()
@@ -379,13 +394,15 @@ func executeThirdPartyInstall(cmd *cobra.Command, kind integrations.ItemKind, op
 		}
 	}
 
-	// D4 — global scope requires an additional explicit confirmation beyond
-	// the project default. Autonomous decision: reuse
-	// --yes-i-trust-this-source as that confirmation rather than adding a
-	// second flag, since both gate the same "I have reviewed this and
-	// accept the consequence" action.
-	if opts.scope == "global" && !opts.yesITrust {
-		return fmt.Errorf("install to --scope global requires --yes-i-trust-this-source as the additional explicit confirmation (D4)")
+	// D4-bis — global scope requires ITS OWN explicit confirmation, beyond
+	// --yes-i-trust-this-source: that flag only confirms trust in the
+	// content's source, while --yes-global-scope-unverified confirms the
+	// user understands `trackfw validate` will never verify this specific
+	// installation (the two are orthogonal — decision by KG, 2026-08-15,
+	// superseding the ML-3A choice to collapse both into
+	// --yes-i-trust-this-source).
+	if opts.scope == "global" && !opts.yesGlobalScopeOK {
+		return fmt.Errorf(thirdPartyGlobalScopeRefusal)
 	}
 
 	// D8c — the TOCTOU-closing approval check, verified per resolved

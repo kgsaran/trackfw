@@ -433,6 +433,100 @@ func TestThirdPartyInstall_DefaultScopeIsProject(t *testing.T) {
 	}
 }
 
+// TestThirdPartyInstall_GlobalScopeRequiresItsOwnConfirmation is the D4-bis
+// falsification test: --scope global remains permitted, but
+// --yes-i-trust-this-source ALONE must no longer suffice — a separate
+// --yes-global-scope-unverified confirmation is required, and the warning
+// naming `trackfw validate` must be printed regardless of outcome.
+func TestThirdPartyInstall_GlobalScopeRequiresItsOwnConfirmation(t *testing.T) {
+	project, home := integrationCommandFixture(t)
+	withOrchestratorSession(t)
+	stubThirdPartyFetch(t, []byte(benignThirdPartyContent))
+
+	url := "https://example.com/skills/my-skill.md"
+	checksum := runFetch(t, url)
+	// Global scope resolves to a "~/"-prefixed destination string (distinct
+	// from project scope's project-relative one) — see ResolveThirdPartySkillDestination.
+	dest := "~/.claude/skills/thirdparty/my-skill.md"
+	if err := thirdparty.UpsertProvenanceEntry(project, dest, thirdparty.ProvenanceEntry{
+		URL: url, ChecksumSHA256: checksum, InstalledAt: "2026-08-15T00:00:00Z",
+		ApprovedBy: "hades-tf", ReviewReference: "docs/seguranca/test.md", Scope: "global",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	install := newSkillsCmd()
+	install.SetArgs([]string{
+		"third-party", "install",
+		"--checksum", checksum,
+		"--targets", "claude",
+		"--scope", "global",
+		"--yes-i-trust-this-source",
+	})
+	var out bytes.Buffer
+	install.SetOut(&out)
+	install.SetErr(&out)
+	err := install.Execute()
+	if err == nil {
+		t.Fatal("expected install to fail with --yes-i-trust-this-source alone for --scope global")
+	}
+	if !strings.Contains(err.Error(), "yes-global-scope-unverified") {
+		t.Fatalf("expected error to name --yes-global-scope-unverified, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "trackfw validate") {
+		t.Fatalf("expected the D4-bis warning naming `trackfw validate` to have been printed, got:\n%s", out.String())
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".claude", "skills", "thirdparty", "my-skill.md")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected no skill file written when the global-scope confirmation is missing, stat err: %v", statErr)
+	}
+
+	// Now with BOTH confirmations: must succeed.
+	install2 := newSkillsCmd()
+	install2.SetArgs([]string{
+		"third-party", "install",
+		"--checksum", checksum,
+		"--targets", "claude",
+		"--scope", "global",
+		"--yes-i-trust-this-source",
+		"--yes-global-scope-unverified",
+	})
+	var out2 bytes.Buffer
+	install2.SetOut(&out2)
+	install2.SetErr(&out2)
+	if err := install2.Execute(); err != nil {
+		t.Fatalf("third-party install failed with both confirmations: %v\noutput:\n%s", err, out2.String())
+	}
+	if !strings.Contains(out2.String(), "trackfw validate") {
+		t.Fatalf("expected the D4-bis warning to still be printed on success, got:\n%s", out2.String())
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".claude", "skills", "thirdparty", "my-skill.md")); statErr != nil {
+		t.Fatalf("expected the skill file to be written under home once both confirmations are given: %v", statErr)
+	}
+}
+
+// TestThirdPartyFetch_RedactsQueryStringInQuarantine is the D6-bis
+// falsification test at the command layer: fetching a URL with a
+// query-string token must never leak that token into the quarantine file
+// written to disk. Grep the raw bytes of the file, not the in-memory value.
+func TestThirdPartyFetch_RedactsQueryStringInQuarantine(t *testing.T) {
+	project, _ := integrationCommandFixture(t)
+	withOrchestratorSession(t)
+	stubThirdPartyFetch(t, []byte(benignThirdPartyContent))
+
+	checksum := runFetch(t, "https://example.com/skills/my-skill.md?token=super-secret-value")
+
+	raw, err := os.ReadFile(filepath.Join(project, ".trackfw", "thirdparty-quarantine", checksum+".json"))
+	if err != nil {
+		t.Fatalf("failed to read quarantine record: %v", err)
+	}
+	if strings.Contains(string(raw), "super-secret-value") {
+		t.Fatalf("quarantine record on disk leaked the query-string token:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), "[redacted]") {
+		t.Fatalf("expected the redacted marker in the quarantine record on disk:\n%s", raw)
+	}
+}
+
 // TestThirdPartyInstall_ApplyToRejectsHandModifiedAgentBeforeAnyWrite proves
 // the --apply-to precondition check runs BEFORE the skill file write: if the
 // target agent artifact was hand-modified, install must fail with no

@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .markers import redact_url
 from .quarantine import _atomic_write
 
 # Bump only alongside a migration path — see load_provenance, which
@@ -50,6 +51,14 @@ def _canonicalize_entry(entry: dict[str, Any]) -> dict[str, Any]:
     ordered = {key: entry[key] for key in _ENTRY_FIELD_ORDER if key in entry}
     extra = {key: value for key, value in entry.items() if key not in _ENTRY_FIELD_ORDER}
     ordered.update(extra)
+    # D6-bis, defense-in-depth: redact the query string before it is ever
+    # written to disk, mirroring internal/thirdparty/provenance.go's
+    # WriteProvenance. No command in this codebase writes a provenance
+    # entry's url today (D10.2 — the external approver writes it
+    # directly), but this call site guarantees it never leaks here
+    # regardless. Idempotent: redacting an already-redacted url is a no-op.
+    if "url" in ordered:
+        ordered["url"] = redact_url(ordered["url"])
     return ordered
 
 

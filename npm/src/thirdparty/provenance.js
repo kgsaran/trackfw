@@ -9,6 +9,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const { atomicWrite } = require('./quarantine')
+const { redactURL } = require('./markers')
 
 // PROVENANCE_SCHEMA_VERSION mirrors internal/thirdparty/provenance.go:provenanceSchemaVersion.
 //
@@ -64,10 +65,21 @@ function loadProvenance(root) {
 // (D6) — the deliberate opposite of a best-effort/log-and-continue write.
 // Provenance is the only record of who approved a third-party artifact, so
 // losing a write silently would leave an unapproved artifact on disk
-// indistinguishable from an approved one. Mirrors
-// internal/thirdparty/provenance.go:WriteProvenance.
+// indistinguishable from an approved one.
+//
+// Every entry's url is passed through redactURL before serialization
+// (D6-bis) — defense-in-depth, mirroring
+// internal/thirdparty/provenance.go:WriteProvenance's doc comment: no
+// command in this codebase writes a provenance entry's url today (D10.2),
+// but this call site guarantees the query string is never persisted here
+// regardless. Idempotent: redacting an already-redacted url is a no-op.
 function writeProvenance(root, prov) {
-  const toWrite = { schema_version: PROVENANCE_SCHEMA_VERSION, entries: prov.entries || {} }
+  const entries = prov.entries || {}
+  const redactedEntries = {}
+  for (const [dest, entry] of Object.entries(entries)) {
+    redactedEntries[dest] = { ...entry, url: redactURL(entry.url) }
+  }
+  const toWrite = { schema_version: PROVENANCE_SCHEMA_VERSION, entries: redactedEntries }
   const data = `${JSON.stringify(toWrite, null, 2)}\n`
   atomicWrite(provenancePath(root), data, 0o600)
 }

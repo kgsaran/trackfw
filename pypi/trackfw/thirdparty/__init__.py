@@ -10,7 +10,7 @@ extension points added to internal/integrations/render.go and plan.go.
 from __future__ import annotations
 
 from .fetch import ThirdPartyFetchError, fetch
-from .markers import LITERAL_MARKERS, check_markers, checksum
+from .markers import LITERAL_MARKERS, check_markers, checksum, redact_url
 from .provenance import (
     PROVENANCE_SCHEMA_VERSION,
     load_provenance,
@@ -44,6 +44,7 @@ __all__ = [
     "LITERAL_MARKERS",
     "check_markers",
     "checksum",
+    "redact_url",
     "PROVENANCE_SCHEMA_VERSION",
     "load_provenance",
     "provenance_path",

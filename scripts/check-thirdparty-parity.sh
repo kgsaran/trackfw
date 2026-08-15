@@ -76,18 +76,28 @@ bad() { echo "FAIL: $1" >&2; fail=1; }
 # followed by a real heading) as the set where a naive regex would diverge
 # from the CommonMark-style line-scanner (D3 amendment). A missing case in
 # any one stack is a real parity gap, not a style nit.
+# Renamed/inverted by ML-4C (D3-ter): fence_unclosed and fence_short_close
+# used to assert the OPPOSITE (no match — an unclosed/never-properly-closed
+# fence swallowed the rest of the document); D3-ter(a) made both cases now
+# CATCH the marker instead. html_comment likewise flipped (D3-ter(b):
+# neutralize, not remove) and is now covered by a case-per-name in all 3
+# stacks, not just Go. casefold and security_doc are new cases added by
+# ML-4C (D3-ter(c) unification, and the non-regression falsification test
+# named by the ML-4C AC, respectively).
 declare -A corpus_grep=(
   [heading_h1]='EachMarkerRefusedAsH1|matches_literal_heading|matches a literal H1'
   [heading_h6]='EachMarkerRefusedAsH6|matches_h6_heading|heading level H6'
   [fence_backtick]='MarkerInsideFencedBlockAccepted|ignores_marker_inside_fenced_block|quoted inside a fenced code block'
   [fence_tilde]='MarkerInsideTildeFencedBlockAccepted|tilde_fence_also_removed|tilde-fenced code block'
-  [fence_unclosed]='UnclosedFenceDropsRestOfDocument|unclosed_fence_still_drops_content|unclosed fence drops'
-  [fence_short_close]='CloserShorterThanOpenerDoesNotClose|closer_shorter_than_opener_does_not_close|closer shorter than opener'
+  [fence_unclosed]='UnclosedFenceNoLongerGrantsImmunity|unclosed_fence_no_longer_grants_immunity|unclosed fence no longer grants immunity'
+  [fence_short_close]='CloserShorterThanOpenerDoesNotCloseButStillCaught|closer_shorter_than_opener_does_not_close_but_still_caught|closer shorter than opener'
   [fence_indented]='IndentedFenceStillRecognized|indented_fence_still_recognized|indented fence is still recognized'
   [fence_then_heading]='HeadingAfterClosedFenceStillMatches|heading_after_closed_fence_still_matches|heading after a closed fence'
   [fullwidth]='FullwidthCompatibilityCharsRefused|full_width_heading_is_refused|refuses fullwidth'
   [cyrillic_pass]='CyrillicHomoglyphPasses|cyrillic_homoglyph_passes|cyrillic homoglyph'
-  [html_comment]='HTMLCommentStrippedBeforeMatch'
+  [html_comment]='HTMLCommentNeutralizedContentStillMatches|html_comment_neutralized_content_still_matches|neutralized HTML comment'
+  [casefold]='CasefoldIsSimpleLowercaseNotFullCasefold|casefold_is_simple_lowercase_not_full_casefold|casefold is simple lowercase'
+  [security_doc_nonregression]='SecurityOpinionDocumentDoesNotRefuseItself|security_opinion_document_does_not_refuse_itself|security opinion document does not refuse itself'
   [benign]='BenignContentAccepted'
 )
 declare -A corpus_files=(
@@ -99,11 +109,11 @@ for case_name in "${!corpus_grep[@]}"; do
   pattern=${corpus_grep[$case_name]}
   for runtime in go node python; do
     file=${corpus_files[$runtime]}
-    if [[ "$case_name" == "html_comment" || "$case_name" == "benign" ]] && [[ "$runtime" != "go" ]]; then
-      # HTML-comment stripping and "benign content accepted" are exercised
-      # indirectly by every other case in Node/Python (checkMarkers is pure
-      # and step 1/benign-pass-through is shared code with no per-language
-      # branch) — only Go has a case-per-name for these two; not a gap.
+    if [[ "$case_name" == "benign" ]] && [[ "$runtime" != "go" ]]; then
+      # "benign content accepted" is exercised indirectly by every other
+      # case in Node/Python (checkMarkers is pure and the benign-pass-through
+      # path has no per-language branch) — only Go has a case-per-name for
+      # it; not a gap.
       continue
     fi
     if ! grep -Eq "$pattern" "$file"; then

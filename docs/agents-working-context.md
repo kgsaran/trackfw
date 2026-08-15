@@ -17246,3 +17246,51 @@ sessão). Nenhum commit/push feito — devolvo para o `trackfw_architect` decidi
 (fence-swallow, comentário-HTML-apagado, URL-como-segredo, confirmação-D4-colapsada,
 perímetro-`--scope-global`) viram ML de acompanhamento, em conjunto com os achados do `hefesto-tf`
 (ML-4B) que se sobrepõem em 2 dos 5 pontos.
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — INÍCIO: ML-4C, microlote corretivo da barreira (D3-ter, D4-bis, D6-bis)
+
+Governança já satisfeita (roadmap em `wip/`, ML-4A/ML-4B concluídos e liberados para merge).
+Escopo: implementar as 3 emendas normativas do ADR (D3-ter, D4-bis, D6-bis) + 2 achados menores do
+`hefesto-tf`, nos 3 CLIs (Go canônico, depois Node e Python 1:1).
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — FIM: ML-4C concluído — `make quality` verde, não commitado
+
+**Arquivos tocados (Go):** `internal/thirdparty/markers.go` (neutralização de comentário HTML em vez
+de remoção; fence sem fechamento deixa de conceder imunidade; `RedactURL`), `markers_test.go`,
+`fetch_test.go` (teste de HTTP não-200), `quarantine.go`/`quarantine_test.go` (redação da URL na
+quarentena), `provenance.go`/`provenance_test.go` (redação da URL na proveniência, defesa em
+profundidade), `internal/integrations/render.go` (guarda `end < start` em
+`ApplyThirdPartyReferences`) + novo `internal/integrations/thirdparty_references_test.go`,
+`internal/commands/integrations_thirdparty.go` (`--yes-global-scope-unverified` distinto de
+`--yes-i-trust-this-source`, aviso D4-bis) + `integrations_thirdparty_test.go`.
+
+**Node:** `npm/src/thirdparty/{markers,fetch,quarantine,provenance,references}.js`,
+`npm/src/commands/thirdparty.js`, `npm/tests/thirdparty.test.js` (36 testes, todos verdes).
+
+**Python:** `pypi/trackfw/thirdparty/{markers,quarantine,provenance,references}.py`,
+`pypi/trackfw/thirdparty/__init__.py` (exporta `redact_url`), `pypi/trackfw/commands/thirdparty.py`,
+`pypi/tests/test_thirdparty.py` (53 testes no arquivo, todos verdes; suíte completa 1234 verdes).
+
+**Decisão autônoma registrada:** casefold unificado como lowercase simples (Go/Node já usavam;
+Python trocou de `str.casefold()` para `str.lower()`) — sem exploit conhecido contra os 6 marcadores
+ASCII em nenhum dos dois regimes; decisão de consistência, não de segurança.
+
+**Testes substituídos (semântica antiga saiu, não foi afrouxada):**
+`markers_test.go:85 TestCheckMarkers_UnclosedFenceDropsRestOfDocument` →
+`TestCheckMarkers_UnclosedFenceNoLongerGrantsImmunity` (mesmo em `TestCheckMarkers_CloserShorterThanOpenerDoesNotClose`
+→ `...ButStillCaught`, consequência da mesma emenda D3-ter(a), não citada nominalmente no ADR mas
+decorrente dele) e `TestCheckMarkers_HTMLCommentStrippedBeforeMatch` →
+`TestCheckMarkers_HTMLCommentNeutralizedContentStillMatches`; espelhos idênticos em
+`npm/tests/thirdparty.test.js:144` e `pypi/tests/test_thirdparty.py:132`/`:140`.
+
+**Não-regressão:** novo teste em cada stack lê o próprio
+`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` e exige zero marcadores — os 6 continuam
+dentro de um fence fechado, a emenda original de D3 não foi quebrada.
+
+**`scripts/check-thirdparty-parity.sh` e `docs/cli-parity.md` atualizados** com os novos nomes de
+caso do corpus (fence/HTML-comment agora invertidos: RECUSAM em vez de passar), o novo caso de
+casefold e o novo caso de não-regressão, e novas seções D3-ter/D4-bis/D6-bis.
+
+**`make quality` (raiz):** exit 0, todos os 112 cenários de falsificação + `check-thirdparty-parity.sh`
+OK. `trackfw validate`: 0 erros, 7 avisos pré-existentes (REQs sem ADR vinculado, não relacionados a
+este ML). Roadmap `ML-4C` marcado `✅ Concluído`. Devolvido não commitado, conforme fronteira.

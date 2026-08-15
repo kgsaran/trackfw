@@ -139,12 +139,18 @@ def apply_third_party_references(root, content: bytes, target_id: str, agent_ite
             text += "\n"
         text += "\n" + block + "\n"
         return text.encode("utf-8")
-    end = text.find(THIRDPARTY_REF_END)
-    if end == -1:
+    # Search for the end marker starting at start, not from the beginning
+    # of text (hefesto-tf finding, ML-4C): searching the whole text could
+    # find an END marker that appears BEFORE start, producing end < start
+    # and silently corrupting the composed output. Anchoring the search at
+    # start makes that impossible: end is either -1 or >= start.
+    rel_end = text[start:].find(THIRDPARTY_REF_END)
+    if rel_end == -1:
         # Malformed (start without end): append a fresh block rather than
         # guess at repair.
         text += "\n" + block + "\n"
         return text.encode("utf-8")
+    end = start + rel_end
     new_text = text[:start] + block + text[end + len(THIRDPARTY_REF_END):]
     return (new_text.rstrip("\n") + "\n").encode("utf-8")
 

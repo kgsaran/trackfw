@@ -81,10 +81,12 @@ def _install_args(
     apply_to: str | None = None,
     scope: str | None = None,
     yes: bool = True,
+    yes_global_scope_unverified: bool = False,
 ) -> argparse.Namespace:
     return argparse.Namespace(
         checksum=checksum, slug=slug, targets=targets, apply_to=apply_to,
         scope=scope, yes_i_trust_this_source=yes,
+        yes_global_scope_unverified=yes_global_scope_unverified,
     )
 
 
@@ -129,19 +131,25 @@ def test_check_markers_ignores_marker_inside_fenced_block():
     assert thirdparty_pkg.check_markers(content) == []
 
 
-def test_check_markers_unclosed_fence_still_drops_content():
-    # An unclosed fence swallows the rest of the document as fenced content
-    # (matches the Go scanner: no closer found means everything after the
-    # opener stays "inside the fence").
+def test_check_markers_unclosed_fence_no_longer_grants_immunity():
+    # D3-ter(a), ML-4C: supersedes
+    # test_check_markers_unclosed_fence_still_drops_content, which
+    # asserted the opposite (no match) — a real evasion found by the Wave
+    # 4 barrier (both hades-tf and hefesto-tf, independently) and
+    # reproduced against all 3 CLIs. An unclosed fence is no longer a
+    # fence for this check: content after the opener is rescanned and a
+    # marker inside it is now caught.
     content = b"```\n# Git authority\nstill inside\n"
-    assert thirdparty_pkg.check_markers(content) == []
+    assert thirdparty_pkg.check_markers(content) == ["git authority"]
 
 
-def test_check_markers_closer_shorter_than_opener_does_not_close():
-    # CommonMark rule: the closer needs AT LEAST as many repeats as the
-    # opener. A 3-backtick opener closed by a 2-backtick line never closes.
+def test_check_markers_closer_shorter_than_opener_does_not_close_but_still_caught():
+    # D3-ter(a), ML-4C: CommonMark rule — the closer needs AT LEAST as
+    # many repeats as the opener. A 3-backtick opener closed by a
+    # 2-backtick line never closes, so per D3-ter(a) it is not a fence at
+    # all and its content is rescanned.
     content = b"````\n# Git authority\n```\nstill fenced\n"
-    assert thirdparty_pkg.check_markers(content) == []
+    assert thirdparty_pkg.check_markers(content) == ["git authority"]
 
 
 def test_check_markers_indented_fence_still_recognized():
@@ -186,11 +194,117 @@ def test_check_markers_multiple_distinct_markers_all_reported_once():
     assert thirdparty_pkg.check_markers(content) == ["git authority", "mode lock"]
 
 
+def test_check_markers_html_comment_neutralized_content_still_matches():
+    # D3-ter(b), ML-4C: supersedes the previous (Go-only) assertion that a
+    # marker inside an HTML comment passes clean — that contradicted D3's
+    # own written justification for step 1 ("an LLM reads HTML comments in
+    # the token stream") and was reproduced by hades-tf and the architect
+    # as a real evasion against this exact module (returned []).
+    content = b"<!-- ## Git authority -->\n# Benign heading\n"
+    assert thirdparty_pkg.check_markers(content) == ["git authority"]
+
+
+def test_check_markers_multiline_html_comment_content_still_matches():
+    content = b"<!--\n## Git authority\nsome other commented-out text\n-->\n# Benign heading\n"
+    assert thirdparty_pkg.check_markers(content) == ["git authority"]
+
+
+def test_check_markers_benign_html_comment_text_stays_benign():
+    content = b"<!-- just an ordinary editorial note, nothing boundary-related -->\n# Benign heading\n"
+    assert thirdparty_pkg.check_markers(content) == []
+
+
+def test_check_markers_casefold_is_simple_lowercase_not_full_casefold():
+    # D3-ter(c), ML-4C: pins step 4's chosen semantics — this module was
+    # changed FROM str.casefold() TO str.lower(), to match Go/Node's
+    # simple lowercase and stop silently diverging on a normalization step
+    # feeding a security check. No known exploit against the 6 ASCII
+    # markers either way; German sharp S (ß) is the textbook divergence
+    # case (ß.lower() stays "ß"; ß.casefold() == "ss") and is used here
+    # only to pin which semantics is in effect.
+    content = "# Straße\n\nAn unrelated heading using a German sharp S.\n".encode("utf-8")
+    assert thirdparty_pkg.check_markers(content) == []
+
+
+def test_check_markers_security_opinion_document_does_not_refuse_itself():
+    # Non-regression falsification test named by the ML-4C AC: the
+    # D3-ter(a)/(b) fixes above must NOT reintroduce the exact self-refusal
+    # the original D3 amendment (fenced-block removal) exists to prevent.
+    # The opinion document lists all 6 literal markers as headings, but
+    # inside a properly CLOSED fence — the checker must still return zero
+    # matches against the real file on disk.
+    doc_path = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "seguranca"
+        / "2026-08-15-skills-de-terceiro-via-url.md"
+    )
+    content = doc_path.read_bytes()
+    assert thirdparty_pkg.check_markers(content) == []
+
+
 def test_checksum_is_sha256_hex_of_raw_bytes():
     import hashlib
 
     raw = b"hello world"
     assert thirdparty_pkg.checksum(raw) == hashlib.sha256(raw).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# redact_url (D6-bis)
+# ---------------------------------------------------------------------------
+
+
+def test_redact_url_strips_query_string():
+    got = thirdparty_pkg.redact_url("https://example.com/skills/my-skill.md?token=abc123")
+    assert got == "https://example.com/skills/my-skill.md?[redacted]"
+    assert "abc123" not in got
+
+
+def test_redact_url_strips_userinfo():
+    got = thirdparty_pkg.redact_url("https://user:supersecret@example.com/skills/my-skill.md")
+    assert got == "https://example.com/skills/my-skill.md"
+    assert "supersecret" not in got
+
+
+def test_redact_url_no_query_or_userinfo_unchanged():
+    got = thirdparty_pkg.redact_url("https://example.com/skills/my-skill.md")
+    assert got == "https://example.com/skills/my-skill.md"
+
+
+def test_redact_url_is_idempotent():
+    once = thirdparty_pkg.redact_url("https://example.com/skills/my-skill.md?token=abc123")
+    twice = thirdparty_pkg.redact_url(once)
+    assert once == twice
+
+
+# ---------------------------------------------------------------------------
+# references.py — end < start guard (hefesto-tf finding, ML-4C)
+# ---------------------------------------------------------------------------
+
+
+def test_apply_third_party_references_end_marker_before_start_is_malformed(tmp_path):
+    root = str(tmp_path)
+    thirdparty_pkg.upsert_third_party_reference(
+        root, "claude", "backend",
+        {"slug": "my-skill", "destination": ".claude/skills/thirdparty/my-skill.md", "url": "https://example.com/my-skill.md"},
+    )
+
+    # A stray end marker appears BEFORE the genuine start marker, with no
+    # end marker after it — the exact shape that used to produce end <
+    # start when apply_third_party_references searched the whole text
+    # instead of anchoring the search at start.
+    content = (
+        thirdparty_pkg.THIRDPARTY_REF_END
+        + "\n\nUnrelated leftover text.\n\n"
+        + thirdparty_pkg.THIRDPARTY_REF_START
+        + "\nstale content, no closing marker\n"
+    ).encode("utf-8")
+
+    got = thirdparty_pkg.apply_third_party_references(root, content, "claude", "backend").decode("utf-8")
+    assert "my-skill" in got
+    assert "https://example.com/my-skill.md" in got
+    assert "Unrelated leftover text." in got
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +325,28 @@ def test_load_provenance_missing_file_returns_empty(tmp_path):
 def test_verify_approval_missing_entry_fails_closed(tmp_path):
     with pytest.raises(RuntimeError, match="not approved"):
         thirdparty_pkg.verify_approval(str(tmp_path), "a" * 64, "dest")
+
+
+def test_new_quarantine_entry_redacts_query_string_on_disk(tmp_path):
+    entry = thirdparty_pkg.new_quarantine_entry(
+        "https://example.com/skills/my-skill.md?token=super-secret-value", BENIGN_CONTENT, [], "skill", None
+    )
+    thirdparty_pkg.write_quarantine(str(tmp_path), entry)
+    raw = thirdparty_pkg.quarantine_path(str(tmp_path), entry["checksum_sha256"]).read_text()
+    assert "super-secret-value" not in raw
+    assert "[redacted]" in raw
+
+
+def test_upsert_provenance_entry_redacts_query_string_on_disk(tmp_path):
+    entry = {
+        "url": "https://example.com/skills/my-skill.md?token=super-secret-value",
+        "checksum_sha256": "abc123",
+        "approved_by": "hades-tf",
+    }
+    thirdparty_pkg.upsert_provenance_entry(str(tmp_path), "dest/my-skill.md", entry)
+    raw = thirdparty_pkg.provenance_path(str(tmp_path)).read_text()
+    assert "super-secret-value" not in raw
+    assert "[redacted]" in raw
 
 
 def test_write_then_read_quarantine_roundtrip(tmp_path):
@@ -247,6 +383,23 @@ def test_fetch_never_writes_outside_quarantine(tmp_path, monkeypatch):
         if not str(rel).startswith(str(Path(".trackfw") / "thirdparty-quarantine")):
             unexpected.append(str(rel))
     assert unexpected == []
+
+
+def test_fetch_redacts_query_string_in_quarantine(tmp_path, monkeypatch):
+    # D6-bis falsification test: a URL with a query-string token must
+    # never reach the file written to disk — grep the raw bytes of the
+    # quarantine record, not just the returned entry dict.
+    project, _ = _fixture(tmp_path, monkeypatch)
+    _stub_fetch(monkeypatch)
+
+    tp.execute_fetch("skills", _fetch_args("https://example.com/skills/my-skill.md?token=super-secret-value"))
+
+    quarantine_dir = project / ".trackfw" / "thirdparty-quarantine"
+    files = list(quarantine_dir.glob("*.json"))
+    assert len(files) == 1
+    raw = files[0].read_text()
+    assert "super-secret-value" not in raw
+    assert "[redacted]" in raw
 
 
 def test_fetch_refuses_marker_by_default(tmp_path, monkeypatch):
@@ -331,6 +484,29 @@ def test_install_default_scope_is_project(tmp_path, monkeypatch):
 
     assert (project / ".claude" / "skills" / "thirdparty" / "my-skill.md").is_file()
     assert not (home / ".claude" / "skills" / "thirdparty" / "my-skill.md").exists()
+
+
+def test_install_global_scope_requires_its_own_confirmation(tmp_path, monkeypatch, capsys):
+    # D4-bis falsification test: --scope global remains permitted, but
+    # --yes-i-trust-this-source ALONE must no longer suffice — a separate
+    # --yes-global-scope-unverified confirmation is required, and the
+    # warning naming `trackfw validate` must be printed regardless of
+    # outcome.
+    project, home = _fixture(tmp_path, monkeypatch)
+    checksum = _run_fetch(project, monkeypatch, "https://example.com/skills/my-skill.md")
+    # Global scope resolves to a "~/"-prefixed destination string, distinct
+    # from project scope's project-relative one.
+    dest = "~/.claude/skills/thirdparty/my-skill.md"
+    _upsert_provenance(project, dest, checksum)
+
+    with pytest.raises(IntegrationError, match="yes-global-scope-unverified"):
+        tp.execute_install("skills", _install_args(checksum, scope="global"))
+    assert "trackfw validate" in capsys.readouterr().out
+    assert not (home / ".claude" / "skills" / "thirdparty" / "my-skill.md").exists()
+
+    tp.execute_install("skills", _install_args(checksum, scope="global", yes_global_scope_unverified=True))
+    assert "trackfw validate" in capsys.readouterr().out
+    assert (home / ".claude" / "skills" / "thirdparty" / "my-skill.md").is_file()
 
 
 def test_install_via_agents_cmd_records_agent_kind_and_skill_destination(tmp_path, monkeypatch):

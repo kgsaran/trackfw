@@ -3368,6 +3368,24 @@ artefato de terceiro instalado por engano em escopo `global` vazaria para todos 
 compartilham o home do usuário, ampliando o raio de um erro de revisão. `--scope` continua
 aceitando `global` explicitamente quando desejado.
 
+### D4-bis — `--scope global` continua permitido, mas com aviso e confirmação próprios (ML-4C)
+
+Achado do `hades-tf`, decisão de KG (2026-08-15): `--scope global` tira o artefato do perímetro de
+`thirdparty_artifact_has_provenance` — a regra só lê o manifest do **projeto**
+(`validator_thirdparty_provenance.go:99`), e um artefato em `~/` não está no git, então não há o que
+detectar (coerente com ADR-2026-08-12). Isso **não** deixa de ser permitido, mas deixa de ser
+silencioso:
+
+- `install` imprime, sempre que `--scope global` for resolvido (antes de qualquer outra saída), um
+  aviso citando explicitamente que a instalação **nunca será verificada por `trackfw validate`**.
+- A confirmação para `--scope global` deixa de colapsar em `--yes-i-trust-this-source` (que já é
+  obrigatória em modo não-interativo, ver AC1) — nova flag própria,
+  **`--yes-global-scope-unverified`**, é exigida adicionalmente. As duas flags têm propósitos
+  distintos: uma confirma confiança na origem do conteúdo, a outra confirma que o usuário entende que
+  esta instalação específica nunca passará por `trackfw validate`.
+- Aviso e mensagem de recusa são **texto idêntico** nos 3 CLIs (constantes dedicadas em cada porte,
+  nunca inline, para não divergirem silenciosamente em uma edição futura).
+
 ### `trackfw validate` — regra `thirdparty_artifact_has_provenance` (D2)
 
 Bidirecional, e **nunca faz fetch de rede** (D6 — a regra só lê `.trackfw/` e os artefatos já
@@ -3467,14 +3485,62 @@ A defesa real contra um adversário competente é a barreira humana entre `fetch
 provenance (D10.2) — o checker de markers só existe para pegar o caso óbvio e barato, reduzindo o
 volume que chega à revisão humana.
 
+### D3-ter — fence não fechado e comentário HTML deixaram de conceder imunidade (ML-4C)
+
+Dois achados da barreira da Wave 4 (o do fence pelos **dois** auditores independentemente; o do
+comentário HTML só pelo `hades-tf`), ambos reproduzidos pelo arquiteto nos 3 CLIs antes da correção,
+e um terceiro achado do `hefesto-tf` (casefold divergente). Nenhum dos três estava listado acima como
+lacuna declarada de D3 — eram bugs no passo de normalização, não evasões aceitas:
+
+- **(a) Fence sem fechamento.** Antes: um arquivo iniciado por ``` sem fechamento até EOF fazia o
+  line-scanner descartar **o documento inteiro** como "dentro do fence", escondendo qualquer marcador
+  depois do abridor — `["\`\`\`", "## Git authority", ...]` retornava `[]`. Correção: fence **sem**
+  fechamento não é fence para este critério — as linhas voltam a ser escaneadas normalmente. Fence
+  **fechado** continua concedendo imunidade (a emenda original de D3, que impede o próprio parecer de
+  segurança de se recusar, é preservada).
+- **(b) Comentário HTML.** Antes: o passo 1 **apagava** o comentário inteiro antes de escanear, o que
+  contradizia a própria justificativa escrita do passo ("um agente LLM lê comentário HTML no fluxo de
+  tokens") — `<!-- ## Git authority -->` passava limpo. Correção: o passo 1 passa a **neutralizar**
+  (remover só os delimitadores `<!--`/`-->`), mantendo o conteúdo interno no fluxo escaneado.
+- **(c) Casefold divergente.** Go/Node usavam lowercase simples (`strings.ToLower`/
+  `toLowerCase()`); Python usava `str.casefold()` (casefold Unicode completo). Sem exploit conhecido
+  contra os 6 marcadores ASCII, mas era uma divergência silenciosa e não testada num passo de
+  normalização de segurança. Unificado: os 3 CLIs usam lowercase simples agora (Python trocou de
+  `casefold()` para `lower()`).
+
+**Não-regressão testada explicitamente:** rodar o checker contra o próprio
+`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` (que lista os 6 marcadores dentro de um
+fence **fechado**) continua retornando zero marcadores nos 3 CLIs — as correções (a)/(b) não afetam
+conteúdo dentro de um fence fechado.
+
+### D6-bis — a query string da URL de origem é redigida antes de persistir (ML-4C)
+
+Achado do `hades-tf`: a URL completa (com query string) era gravada **verbatim** em
+`.trackfw/thirdparty-quarantine/<checksum>.json` e, potencialmente, em
+`.trackfw/thirdparty-provenance.json` — ambos versionados. Uma URL pré-assinada carrega token na
+query, que viraria segredo permanente no histórico do git.
+
+Correção: `RedactURL`/`redactURL`/`redact_url` (implementado uma vez por CLI, em
+`internal/thirdparty/markers.go`, `npm/src/thirdparty/markers.js`, `pypi/trackfw/thirdparty/markers.py`)
+grava `esquema://host/caminho` com a query (e o userinfo, se houver) substituídos pelo literal
+`[redacted]`. Aplicado no ponto de construção do registro de quarentena (`NewQuarantineEntry`) e,
+como defesa em profundidade, no ponto de escrita da proveniência (`WriteProvenance`) — mesmo sem
+nenhum comando neste código escrevendo `ProvenanceEntry.URL` hoje (D10.2: o aprovador externo grava a
+entrada diretamente). A URL completa continua sendo usada **só em memória**, para o `fetch` em si; a
+redigida é a que vai para os dois arquivos. Verificação de integridade usa checksum, nunca a URL —
+nada quebra.
+
 ### Gate de paridade (`scripts/check-thirdparty-parity.sh`, ML-3A)
 
 Registrado em `make quality`/`parity`. Cobre, nos 3 CLIs:
 
 - Parte A — presença do corpus de casos de markers (heading H1/H6, fence com crase/til,
-  **fence não fechada**, **fechador mais curto que o abridor**, **fence indentada**, fullwidth
-  NFKC, homoglifo cirílico [deve passar], comentário HTML, prosa comum, espaços múltiplos, fence
-  seguida de heading real) nos 3 conjuntos de testes — os 3 casos em negrito são onde uma
+  **fence não fechada** [ML-4C: agora RECUSA, não passa — D3-ter(a)], **fechador mais curto que o
+  abridor** [idem], **fence indentada**, fullwidth NFKC, homoglifo cirílico [deve passar],
+  comentário HTML [ML-4C: agora RECUSA — D3-ter(b), neutralizado em vez de apagado], casefold
+  simples vs. casefold Unicode completo [ML-4C: novo caso, D3-ter(c)], não-regressão contra o
+  próprio parecer de segurança [ML-4C: novo caso], prosa comum, espaços múltiplos, fence seguida de
+  heading real) nos 3 conjuntos de testes — os 2 primeiros casos em negrito são onde uma
   implementação via regex divergiria de um line-scanner explícito; Go usa line-scanner porque RE2
   não suporta backreferences, e Node/Python replicam o mesmo algoritmo (não usam backreferences)
   para não divergir nesses casos.

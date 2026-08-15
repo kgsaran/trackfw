@@ -37,6 +37,15 @@ function contentTypeAllowed(contentType) {
   return ALLOWED_CONTENT_TYPES.has(base)
 }
 
+// api is the module.exports object itself, referenced internally via
+// `api.requestOnce(...)` so tests can substitute the single HTTP round
+// trip without a real TLS socket — mirrors the thirdPartyFetch
+// package-var substitution pattern already used at the command layer
+// (npm/src/commands/thirdparty.js). Added in ML-4C to close a coverage
+// gap hefesto-tf found: the resp.statusCode !== 200 branch below existed
+// but was never exercised by any test.
+const api = {}
+
 function requestOnce(rawURL) {
   return new Promise((resolve, reject) => {
     const req = https.get(rawURL, { timeout: TIMEOUT_MS }, res => {
@@ -77,7 +86,7 @@ async function fetchOnce(rawURL, requestsCompleted) {
     throw new Error(`refused: URL scheme must be https, got "${parsed.protocol.replace(/:$/, '')}"`)
   }
 
-  const res = await requestOnce(rawURL)
+  const res = await api.requestOnce(rawURL)
   requestsCompleted += 1
 
   if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -122,4 +131,10 @@ async function fetch(rawURL) {
   return fetchOnce(rawURL, 0)
 }
 
-module.exports = { fetch, contentTypeAllowed, MAX_CONTENT_SIZE, MAX_REDIRECTS }
+api.fetch = fetch
+api.contentTypeAllowed = contentTypeAllowed
+api.requestOnce = requestOnce
+api.MAX_CONTENT_SIZE = MAX_CONTENT_SIZE
+api.MAX_REDIRECTS = MAX_REDIRECTS
+
+module.exports = api

@@ -4,8 +4,37 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
+
+// TestUpsertProvenanceEntry_RedactsQueryStringOnDisk is the D6-bis
+// falsification test named by the ML-4C AC, provenance side: even though
+// no command in this codebase writes ProvenanceEntry.URL today (D10.2 —
+// written externally by the approver), WriteProvenance/UpsertProvenanceEntry
+// must redact it as a defense-in-depth boundary. Grep the raw bytes on
+// disk, not just the in-memory struct.
+func TestUpsertProvenanceEntry_RedactsQueryStringOnDisk(t *testing.T) {
+	root := t.TempDir()
+	entry := ProvenanceEntry{
+		URL:            "https://example.com/skills/my-skill.md?token=super-secret-value",
+		ChecksumSHA256: "abc123",
+		ApprovedBy:     "hades-tf",
+	}
+	if err := UpsertProvenanceEntry(root, "dest/my-skill.md", entry); err != nil {
+		t.Fatalf("UpsertProvenanceEntry: %v", err)
+	}
+	raw, err := os.ReadFile(ProvenancePath(root))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(raw), "super-secret-value") {
+		t.Fatalf("provenance file on disk leaked the query-string token:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), "[redacted]") {
+		t.Fatalf("expected the redacted marker in the provenance file on disk:\n%s", raw)
+	}
+}
 
 func TestProvenanceRoundTripPreservesAllFields(t *testing.T) {
 	root := t.TempDir()

@@ -654,14 +654,24 @@ func ApplyThirdPartyReferences(root string, content []byte, targetID, agentItemI
 		text += "\n" + block.String() + "\n"
 		return []byte(text), nil
 	}
-	end := strings.Index(text, thirdPartyRefEnd)
-	if end == -1 {
+	// Search for the end marker starting at start, not from the beginning
+	// of text (hefesto-tf finding, ML-4C): searching the whole text could
+	// find an END marker that appears BEFORE start — e.g. leftover,
+	// unrelated content containing the literal end-marker string ahead of
+	// a genuine start marker — producing end < start. Slicing
+	// text[end+len(thirdPartyRefEnd):] in that case does not panic (both
+	// indices are valid), but silently corrupts the composed output by
+	// overlapping the wrong regions. Anchoring the search at start makes
+	// end < start impossible: end is either -1 or >= start by construction.
+	relEnd := strings.Index(text[start:], thirdPartyRefEnd)
+	if relEnd == -1 {
 		// Malformed (start without end): append a fresh block rather than
 		// guess at repair — mirrors injectOrUpdateRules' handling of the
 		// same malformed case.
 		text += "\n" + block.String() + "\n"
 		return []byte(text), nil
 	}
+	end := start + relEnd
 	newText := text[:start] + block.String() + text[end+len(thirdPartyRefEnd):]
 	return []byte(strings.TrimRight(newText, "\n") + "\n"), nil
 }

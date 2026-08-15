@@ -133,13 +133,19 @@ function applyThirdPartyReferences(root, content, targetID, agentItemID) {
     text += `\n${block}\n`
     return text
   }
-  const end = text.indexOf(THIRD_PARTY_REF_END)
-  if (end === -1) {
+  // Search for the end marker starting at start, not from the beginning of
+  // text (hefesto-tf finding, ML-4C): searching the whole text could find
+  // an END marker that appears BEFORE start, producing end < start and
+  // silently corrupting the composed output. Anchoring the search at start
+  // makes that impossible: end is either -1 or >= start.
+  const relEnd = text.slice(start).indexOf(THIRD_PARTY_REF_END)
+  if (relEnd === -1) {
     // Malformed (start without end): append a fresh block rather than
     // guess at repair.
     text += `\n${block}\n`
     return text
   }
+  const end = start + relEnd
   const newText = text.slice(0, start) + block + text.slice(end + THIRD_PARTY_REF_END.length)
   return `${newText.replace(/\n+$/, '')}\n`
 }

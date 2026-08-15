@@ -3,8 +3,31 @@ package thirdparty
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// TestNewQuarantineEntry_RedactsQueryStringOnDisk is the D6-bis
+// falsification test named by the ML-4C AC: a URL with a query-string
+// token must never reach the file written to disk — grep the raw bytes of
+// the written quarantine record, not just the in-memory struct.
+func TestNewQuarantineEntry_RedactsQueryStringOnDisk(t *testing.T) {
+	root := t.TempDir()
+	entry := NewQuarantineEntry("https://example.com/skills/my-skill.md?token=super-secret-value", []byte("content"), nil, "skill", nil)
+	if err := WriteQuarantine(root, entry); err != nil {
+		t.Fatalf("WriteQuarantine: %v", err)
+	}
+	raw, err := os.ReadFile(QuarantinePath(root, entry.ChecksumSHA256))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(raw), "super-secret-value") {
+		t.Fatalf("quarantine record on disk leaked the query-string token:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), "[redacted]") {
+		t.Fatalf("expected the redacted marker in the quarantine record on disk:\n%s", raw)
+	}
+}
 
 func TestQuarantineRoundTripPreservesAllFields(t *testing.T) {
 	root := t.TempDir()

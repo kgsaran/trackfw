@@ -9,7 +9,7 @@ const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 
-const { checksum: sha256hex } = require('./markers')
+const { checksum: sha256hex, redactURL } = require('./markers')
 
 // QUARANTINE_SCHEMA_VERSION mirrors internal/thirdparty/quarantine.go:quarantineSchemaVersion.
 const QUARANTINE_SCHEMA_VERSION = 1
@@ -45,13 +45,15 @@ function quarantinePath(root, checksum) {
 // yields marker_check.result === "pass". The content is embedded whole,
 // base64-encoded, in content_base64 — never a path to another file (D8b):
 // an indirection through a second file would reopen the TOCTOU window the
-// quarantine record exists to close. Mirrors
-// internal/thirdparty/quarantine.go:NewQuarantineEntry.
+// quarantine record exists to close.
+//
+// rawURL is stored via redactURL, not verbatim (D6-bis) — see
+// internal/thirdparty/quarantine.go:NewQuarantineEntry's doc comment.
 function newQuarantineEntry(rawURL, raw, matchedMarkers, kind, requestedTargets) {
   const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw), 'utf8')
   return {
     schema_version: QUARANTINE_SCHEMA_VERSION,
-    url: rawURL,
+    url: redactURL(rawURL),
     checksum_sha256: sha256hex(buf),
     fetched_at: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
     content_base64: buf.toString('base64'),

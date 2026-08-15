@@ -117,10 +117,23 @@ func LoadProvenance(root string) (Provenance, error) {
 // losing a write silently would leave an unapproved artifact on disk
 // indistinguishable from an approved one. Do not copy the
 // appendTransitionLog pattern for this file.
+//
+// Every entry's URL is passed through RedactURL before serialization
+// (D6-bis) — a defense-in-depth boundary, not the only one: no command in
+// this codebase writes ProvenanceEntry.URL today (D10.2 — the external
+// approver writes the entry directly to the versioned JSON), but this call
+// site guarantees the query string is never persisted here even if a
+// caller passes an unredacted URL (e.g. copied verbatim from a quarantine
+// record written before this fix). Idempotent: redacting an
+// already-redacted URL is a no-op.
 func WriteProvenance(root string, prov Provenance) error {
 	prov.SchemaVersion = provenanceSchemaVersion
 	if prov.Entries == nil {
 		prov.Entries = make(map[string]ProvenanceEntry)
+	}
+	for dest, entry := range prov.Entries {
+		entry.URL = RedactURL(entry.URL)
+		prov.Entries[dest] = entry
 	}
 	data, err := json.MarshalIndent(prov, "", "  ")
 	if err != nil {

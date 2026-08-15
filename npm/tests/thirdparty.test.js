@@ -11,6 +11,7 @@ const { createLifecycleCommand } = require('../src/commands/integrations')
 const { checkMarkers, checksum } = require('../src/thirdparty/markers')
 const provenance = require('../src/thirdparty/provenance')
 const validator = require('../src/validator')
+const fetchMod = require('../src/thirdparty/fetch')
 
 const BENIGN_CONTENT = '# Example Third-Party Skill\n\nSome helpful, benign content for the agent to consume.\n'
 
@@ -141,20 +142,24 @@ test('checkMarkers accepts a marker quoted inside a tilde-fenced code block', ()
   assert.deepEqual(checkMarkers(content), [])
 })
 
-test('checkMarkers: unclosed fence drops the rest of the document', () => {
-  // The ML-1A/ML-3A roadmap explicitly called this out as where a naive
-  // single-line regex would diverge from the line-scanner: a fence opener
-  // with no matching closer swallows everything through EOF as fenced
-  // content — the scanner never resumes emitting lines.
+test('checkMarkers: unclosed fence no longer grants immunity (D3-ter(a), ML-4C)', () => {
+  // Supersedes the previous test 'checkMarkers: unclosed fence drops the
+  // rest of the document', which asserted the opposite (no match) — that
+  // was a real evasion found by the Wave 4 barrier (both hades-tf and
+  // hefesto-tf, independently) and reproduced against all 3 CLIs. An
+  // unclosed fence is no longer a fence for this check: content after the
+  // opener is rescanned and a marker inside it is now caught.
   const content = '```\n# Git authority\nstill inside, never closed\n'
-  assert.deepEqual(checkMarkers(content), [])
+  assert.deepEqual(checkMarkers(content), ['git authority'])
 })
 
-test('checkMarkers: closer shorter than opener does not close the fence', () => {
+test('checkMarkers: closer shorter than opener does not close the fence, but marker is still caught (D3-ter(a), ML-4C)', () => {
   // CommonMark rule: the closer needs AT LEAST as many repeats as the
-  // opener. A 4-backtick opener is not closed by a 3-backtick line.
+  // opener. A 4-backtick opener is not closed by a 3-backtick line — the
+  // fence never closes, so per D3-ter(a) it is not a fence at all and its
+  // content is rescanned.
   const content = '````\n# Git authority\n```\nstill fenced (closer too short)\n'
-  assert.deepEqual(checkMarkers(content), [])
+  assert.deepEqual(checkMarkers(content), ['git authority'])
 })
 
 test('checkMarkers: indented fence is still recognized as a fence delimiter', () => {
@@ -183,12 +188,136 @@ test('checkMarkers PASSES a cyrillic homoglyph heading — documented D3 gap, no
   assert.deepEqual(checkMarkers(content), [])
 })
 
+test('checkMarkers: marker inside a neutralized HTML comment still matches (D3-ter(b), ML-4C)', () => {
+  // Supersedes the Go-only 'HTMLCommentStrippedBeforeMatch' assertion —
+  // that assertion contradicted D3's own written justification for step 1
+  // ("an LLM reads HTML comments in the token stream") and was reproduced
+  // as a real evasion: `<!-- ## Git authority -->` passed clean. Step 1
+  // now strips only the comment delimiters, keeping the inner text in
+  // place to be scanned.
+  const content = '<!-- ## Git authority -->\n# Benign heading\n'
+  assert.deepEqual(checkMarkers(content), ['git authority'])
+})
+
+test('checkMarkers: marker inside a multi-line HTML comment still matches (D3-ter(b), ML-4C)', () => {
+  const content = '<!--\n## Git authority\nsome other commented-out text\n-->\n# Benign heading\n'
+  assert.deepEqual(checkMarkers(content), ['git authority'])
+})
+
+test('checkMarkers: benign HTML comment text stays benign (D3-ter(b), ML-4C)', () => {
+  const content = '<!-- just an ordinary editorial note, nothing boundary-related -->\n# Benign heading\n'
+  assert.deepEqual(checkMarkers(content), [])
+})
+
+test('checkMarkers: casefold is simple lowercase, not full Unicode casefold (D3-ter(c), ML-4C)', () => {
+  // Pins step 4's chosen semantics — unified across the 3 CLIs so none of
+  // them silently diverges on a normalization step feeding a security
+  // check. No known exploit against the 6 ASCII markers either way; German
+  // sharp S (ß) is the textbook divergence case (ß.toLowerCase() stays
+  // "ß"; a full Unicode casefold would turn it into "ss") and is used here
+  // only to pin which semantics is in effect.
+  const content = '# Straße\n\nAn unrelated heading using a German sharp S.\n'
+  assert.deepEqual(checkMarkers(content), [])
+})
+
+test('checkMarkers: the security opinion document does not refuse itself (non-regression, ML-4C)', () => {
+  // Falsification test named by the ML-4C AC: the D3-ter(a)/(b) fixes above
+  // must NOT reintroduce the exact self-refusal the original D3 amendment
+  // (fenced-block removal) exists to prevent. The opinion document itself
+  // lists all 6 literal markers as headings, but inside a properly CLOSED
+  // fence — running the checker against the real file must still return
+  // zero matches.
+  const docPath = path.join(__dirname, '..', '..', 'docs', 'seguranca', '2026-08-15-skills-de-terceiro-via-url.md')
+  const content = fs.readFileSync(docPath, 'utf8')
+  assert.deepEqual(checkMarkers(content), [])
+})
+
 test('checksum is the SHA-256 hex digest of the raw bytes', () => {
   const crypto = require('node:crypto')
   const content = '# Hello\n\nSome deterministic content.\n'
   const want = crypto.createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex')
   assert.equal(checksum(content), want)
   assert.equal(checksum(content), checksum(content))
+})
+
+// -----------------------------------------------------------------------
+// references.js — end < start guard (hefesto-tf finding, ML-4C)
+// -----------------------------------------------------------------------
+
+test('applyThirdPartyReferences treats an end marker occurring before start as malformed, not corruption', () => {
+  const { applyThirdPartyReferences, upsertThirdPartyReference, THIRD_PARTY_REF_START, THIRD_PARTY_REF_END } = require('../src/thirdparty/references')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-thirdparty-refs-'))
+  upsertThirdPartyReference(root, 'claude', 'backend', {
+    slug: 'my-skill', destination: '.claude/skills/thirdparty/my-skill.md', url: 'https://example.com/my-skill.md',
+  })
+
+  // A stray end marker appears BEFORE the genuine start marker, with no end
+  // marker after it — the exact shape that used to produce end < start
+  // when applyThirdPartyReferences searched the whole text instead of
+  // anchoring the search at start.
+  const content = `${THIRD_PARTY_REF_END}\n\nUnrelated leftover text.\n\n${THIRD_PARTY_REF_START}\nstale content, no closing marker\n`
+
+  const got = applyThirdPartyReferences(root, content, 'claude', 'backend')
+  assert.match(got, /my-skill/)
+  assert.match(got, /https:\/\/example\.com\/my-skill\.md/)
+  assert.match(got, /Unrelated leftover text\./)
+})
+
+// -----------------------------------------------------------------------
+// fetch.js — D7 network policy (requestOnce substituted, no real socket)
+// -----------------------------------------------------------------------
+
+test('fetch refuses a non-200, non-redirect HTTP status (hefesto-tf finding, ML-4C)', async () => {
+  // The resp.statusCode !== 200 branch in fetchOnce existed since ML-2A but
+  // was never exercised by any test in this stack (present in Python's
+  // suite already). requestOnce is substituted at the same module-level
+  // indirection point ADR-2026-08-15's Go reference uses for fetchClient.
+  const old = fetchMod.requestOnce
+  fetchMod.requestOnce = async () => ({
+    statusCode: 404,
+    headers: { 'content-type': 'text/plain' },
+    body: Buffer.from('not found'),
+    tooLarge: false,
+  })
+  try {
+    await assert.rejects(
+      fetchMod.fetch('https://example.com/skills/missing.md'),
+      /404/,
+    )
+  } finally {
+    fetchMod.requestOnce = old
+  }
+})
+
+// -----------------------------------------------------------------------
+// redactURL (D6-bis)
+// -----------------------------------------------------------------------
+
+test('redactURL strips the query string', () => {
+  const { redactURL } = require('../src/thirdparty/markers')
+  const got = redactURL('https://example.com/skills/my-skill.md?token=abc123')
+  assert.equal(got, 'https://example.com/skills/my-skill.md?[redacted]')
+  assert.equal(got.includes('abc123'), false)
+})
+
+test('redactURL strips userinfo', () => {
+  const { redactURL } = require('../src/thirdparty/markers')
+  const got = redactURL('https://user:supersecret@example.com/skills/my-skill.md')
+  assert.equal(got, 'https://example.com/skills/my-skill.md')
+  assert.equal(got.includes('supersecret'), false)
+})
+
+test('redactURL leaves a URL with no query or userinfo unchanged', () => {
+  const { redactURL } = require('../src/thirdparty/markers')
+  const got = redactURL('https://example.com/skills/my-skill.md')
+  assert.equal(got, 'https://example.com/skills/my-skill.md')
+})
+
+test('redactURL is idempotent', () => {
+  const { redactURL } = require('../src/thirdparty/markers')
+  const once = redactURL('https://example.com/skills/my-skill.md?token=abc123')
+  const twice = redactURL(once)
+  assert.equal(once, twice)
 })
 
 // -----------------------------------------------------------------------
@@ -208,6 +337,25 @@ test('third-party fetch never writes outside the quarantine directory', async ()
 
       const unexpected = walkFiles(project).filter(rel => !rel.startsWith(path.join('.trackfw', 'thirdparty-quarantine')))
       assert.deepEqual(unexpected, [])
+    } finally {
+      restoreFetch()
+      restoreEnv()
+    }
+  })
+})
+
+test('third-party fetch redacts the query string in the quarantine record (D6-bis)', async () => {
+  const home = tmpHome()
+  const project = tmpProject()
+  await runInProject(home, project, async () => {
+    const restoreEnv = withOrchestratorSession()
+    const restoreFetch = stubThirdPartyFetch(BENIGN_CONTENT)
+    try {
+      const checksumValue = await runFetch('skills', 'https://example.com/skills/my-skill.md?token=super-secret-value')
+      const quarantinePath = path.join(project, '.trackfw', 'thirdparty-quarantine', `${checksumValue}.json`)
+      const raw = fs.readFileSync(quarantinePath, 'utf8')
+      assert.equal(raw.includes('super-secret-value'), false)
+      assert.equal(raw.includes('[redacted]'), true)
     } finally {
       restoreFetch()
       restoreEnv()
@@ -459,6 +607,54 @@ test('third-party install defaults to project scope, never global, when --scope 
 
       assert.equal(fs.existsSync(path.join(project, '.claude', 'skills', 'thirdparty', 'my-skill.md')), true)
       assert.equal(fs.existsSync(path.join(home, '.claude', 'skills', 'thirdparty', 'my-skill.md')), false)
+    } finally {
+      restoreFetch()
+      restoreEnv()
+    }
+  })
+})
+
+test('third-party install --scope global requires its own confirmation, distinct from --yes-i-trust-this-source (D4-bis)', async () => {
+  const home = tmpHome()
+  const project = tmpProject()
+  await runInProject(home, project, async () => {
+    const restoreEnv = withOrchestratorSession()
+    const restoreFetch = stubThirdPartyFetch(BENIGN_CONTENT)
+    try {
+      const url = 'https://example.com/skills/my-skill.md'
+      const checksumValue = await runFetch('skills', url)
+      // Global scope resolves to a "~/"-prefixed destination string,
+      // distinct from project scope's project-relative one.
+      const dest = '~/.claude/skills/thirdparty/my-skill.md'
+      provenance.upsertProvenanceEntry(project, dest, {
+        url, checksum_sha256: checksumValue, installed_at: '2026-08-15T00:00:00Z',
+        approved_by: 'hades-tf', review_reference: 'docs/seguranca/test.md', scope: 'global',
+      })
+
+      const install1 = createLifecycleCommand('skills')
+      const capture1 = captureConsoleLog()
+      let err1
+      try {
+        await install1.parseAsync(['third-party', 'install', '--checksum', checksumValue, '--targets', 'claude', '--scope', 'global', '--yes-i-trust-this-source'], { from: 'user' })
+      } catch (err) {
+        err1 = err
+      } finally {
+        capture1.restore()
+      }
+      assert.ok(err1, 'expected install to fail with --yes-i-trust-this-source alone for --scope global')
+      assert.match(err1.message, /yes-global-scope-unverified/)
+      assert.match(capture1.output(), /trackfw validate/)
+      assert.equal(fs.existsSync(path.join(home, '.claude', 'skills', 'thirdparty', 'my-skill.md')), false)
+
+      const install2 = createLifecycleCommand('skills')
+      const capture2 = captureConsoleLog()
+      try {
+        await install2.parseAsync(['third-party', 'install', '--checksum', checksumValue, '--targets', 'claude', '--scope', 'global', '--yes-i-trust-this-source', '--yes-global-scope-unverified'], { from: 'user' })
+      } finally {
+        capture2.restore()
+      }
+      assert.match(capture2.output(), /trackfw validate/)
+      assert.equal(fs.existsSync(path.join(home, '.claude', 'skills', 'thirdparty', 'my-skill.md')), true)
     } finally {
       restoreFetch()
       restoreEnv()

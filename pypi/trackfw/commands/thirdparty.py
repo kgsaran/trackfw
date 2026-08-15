@@ -29,6 +29,22 @@ from trackfw.integrations.manager import IntegrationError, IntegrationManager
 # asserting its wording never drift apart silently.
 THIRD_PARTY_PROVENANCE_RULE = "thirdparty_artifact_has_provenance"
 
+# _THIRD_PARTY_GLOBAL_SCOPE_WARNING/_REFUSAL are the D4-bis literal strings
+# for --scope global: printed/raised VERBATIM by all 3 CLIs (the roadmap's
+# AC requires identical wording). Mirrors
+# internal/commands/integrations_thirdparty.go:thirdPartyGlobalScopeWarning/thirdPartyGlobalScopeRefusal
+# — keep these two strings byte-identical to the Go constants.
+_THIRD_PARTY_GLOBAL_SCOPE_WARNING = (
+    "warning: --scope global installs outside the project tree; this artifact will NEVER be verified by "
+    f'`trackfw validate` (the "{THIRD_PARTY_PROVENANCE_RULE}" rule only scans the project\'s own manifest — '
+    "an artifact under a home directory is invisible to it, per ADR-2026-08-12)."
+)
+_THIRD_PARTY_GLOBAL_SCOPE_REFUSAL = (
+    "install to --scope global requires --yes-global-scope-unverified as its own explicit confirmation "
+    "(D4-bis), distinct from --yes-i-trust-this-source: it confirms you understand `trackfw validate` will "
+    "never verify this installation"
+)
+
 # Indirection so tests can substitute the network fetch instead of hitting
 # the real network — mirrors trackfw.integrations.command's
 # scope_prompt_runner module-attribute pattern (callers MUST invoke via
@@ -150,8 +166,13 @@ def add_thirdparty_parser(actions: argparse._SubParsersAction, kind: str) -> Non
     install_parser.add_argument(
         "--yes-i-trust-this-source",
         action="store_true",
-        help="required in non-interactive mode, and as the additional explicit confirmation for "
-        "--scope global (D4)",
+        help="required in non-interactive mode (AC1)",
+    )
+    install_parser.add_argument(
+        "--yes-global-scope-unverified",
+        action="store_true",
+        help="required, in addition to --yes-i-trust-this-source, for --scope global: confirms this "
+        "installation will never be verified by `trackfw validate` (D4-bis)",
     )
     install_parser.set_defaults(func=lambda args, selected_kind=kind: execute_install(selected_kind, args))
 
@@ -216,6 +237,10 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
         raise IntegrationError("install requires --targets")
 
     scope = _resolve_third_party_scope(args)
+    # D4-bis — print the warning as early as possible, before any other
+    # output, so it is visible even if a later step aborts the command.
+    if scope == "global":
+        print(_THIRD_PARTY_GLOBAL_SCOPE_WARNING)
 
     project_root = os.getcwd()
     home = os.path.expanduser("~")
@@ -327,16 +352,11 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
         if not confirmed:
             raise IntegrationError("install cancelled")
 
-    # D4 — global scope requires an additional explicit confirmation
-    # beyond the project default. Autonomous decision (mirrors Go):
-    # reuse --yes-i-trust-this-source as that confirmation rather than a
-    # second flag, since both gate the same "I have reviewed this and
-    # accept the consequence" action.
-    if scope == "global" and not args.yes_i_trust_this_source:
-        raise IntegrationError(
-            "install to --scope global requires --yes-i-trust-this-source as the additional explicit "
-            "confirmation (D4)"
-        )
+    # D4-bis — global scope requires ITS OWN explicit confirmation, beyond
+    # --yes-i-trust-this-source (decision by KG, 2026-08-15, superseding
+    # the ML-3A choice to collapse both into --yes-i-trust-this-source).
+    if scope == "global" and not getattr(args, "yes_global_scope_unverified", False):
+        raise IntegrationError(_THIRD_PARTY_GLOBAL_SCOPE_REFUSAL)
 
     # D8c — the TOCTOU-closing approval check, verified per resolved
     # destination (provenance is keyed by destination, not by checksum

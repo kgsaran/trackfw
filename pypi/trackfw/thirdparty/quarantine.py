@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from .markers import checksum as compute_checksum
+from .markers import redact_url
 
 # Bump only alongside a migration path — see read_quarantine, which
 # refuses any other value rather than guessing at a compatible shape.
@@ -73,11 +74,14 @@ def new_quarantine_entry(
     matched_markers/requested_targets are stored as None (not []) when
     empty/falsy, mirroring Go's nil-slice-marshals-to-null behavior — the
     Go QuarantineEntry/MarkerCheck fields have no `omitempty` json tag and
-    a nil []string marshals to JSON `null`, not `[]`."""
+    a nil []string marshals to JSON `null`, not `[]`.
+
+    raw_url is stored via redact_url, not verbatim (D6-bis) — see
+    markers.redact_url's docstring."""
     result = "fail" if matched_markers else "pass"
     return {
         "schema_version": QUARANTINE_SCHEMA_VERSION,
-        "url": raw_url,
+        "url": redact_url(raw_url),
         "checksum_sha256": compute_checksum(raw),
         "fetched_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "content_base64": base64.b64encode(raw).decode("ascii"),

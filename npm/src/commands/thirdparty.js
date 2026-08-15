@@ -34,6 +34,19 @@ const api = {}
 // internal/commands/integrations_thirdparty.go:thirdPartyProvenanceRule.
 const THIRD_PARTY_PROVENANCE_RULE = 'thirdparty_artifact_has_provenance'
 
+// THIRD_PARTY_GLOBAL_SCOPE_WARNING/REFUSAL are the D4-bis literal strings
+// for --scope global: printed/returned VERBATIM by all 3 CLIs (the
+// roadmap's AC requires identical wording). Mirrors
+// internal/commands/integrations_thirdparty.go:thirdPartyGlobalScopeWarning/thirdPartyGlobalScopeRefusal
+// — keep these two strings byte-identical to the Go constants.
+const THIRD_PARTY_GLOBAL_SCOPE_WARNING =
+  'warning: --scope global installs outside the project tree; this artifact will NEVER be verified by ' +
+  '`trackfw validate` (the "' + THIRD_PARTY_PROVENANCE_RULE + '" rule only scans the project\'s own manifest — ' +
+  'an artifact under a home directory is invisible to it, per ADR-2026-08-12).'
+const THIRD_PARTY_GLOBAL_SCOPE_REFUSAL =
+  'install to --scope global requires --yes-global-scope-unverified as its own explicit confirmation (D4-bis), ' +
+  'distinct from --yes-i-trust-this-source: it confirms you understand `trackfw validate` will never verify this installation'
+
 // SLUG_PATTERN mirrors internal/commands/integrations_thirdparty.go:thirdPartySlugPattern.
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/
 
@@ -137,6 +150,9 @@ async function executeThirdPartyInstall(kind, options) {
   }
   if (!options.targets || !options.targets.length) throw new Error('install requires --targets')
   const scope = resolveThirdPartyScope(options)
+  // D4-bis — print the warning as early as possible, before any other
+  // output, so it is visible even if a later step aborts the command.
+  if (scope === 'global') console.log(THIRD_PARTY_GLOBAL_SCOPE_WARNING)
 
   const manager = new IntegrationManager()
   const projectRoot = manager.roots.project
@@ -219,13 +235,11 @@ async function executeThirdPartyInstall(kind, options) {
     if (!confirmed) throw new Error('install cancelled')
   }
 
-  // D4 — global scope requires an additional explicit confirmation beyond
-  // the project default. Autonomous decision (mirrors the Go reference):
-  // reuse --yes-i-trust-this-source as that confirmation rather than adding
-  // a second flag, since both gate the same "I have reviewed this and
-  // accept the consequence" action.
-  if (scope === 'global' && !options.yesITrustThisSource) {
-    throw new Error('install to --scope global requires --yes-i-trust-this-source as the additional explicit confirmation (D4)')
+  // D4-bis — global scope requires ITS OWN explicit confirmation, beyond
+  // --yes-i-trust-this-source (decision by KG, 2026-08-15, superseding the
+  // ML-3A choice to collapse both into --yes-i-trust-this-source).
+  if (scope === 'global' && !options.yesGlobalScopeUnverified) {
+    throw new Error(THIRD_PARTY_GLOBAL_SCOPE_REFUSAL)
   }
 
   // D8c — the TOCTOU-closing approval check, verified per resolved
@@ -345,7 +359,8 @@ function createInstallCommand(kind) {
     .option('--targets <targets>', 'target CLIs to install the skill file into (required)', csv)
     .option('--apply-to <ids>', 'catalog agent item IDs whose rendered file gets a reference to this artifact (optional; never inferred silently — AC3)', csv)
     .option('--scope <scope>', 'installation scope: project or global (default: project — D4)')
-    .option('--yes-i-trust-this-source', 'required in non-interactive mode, and as the additional explicit confirmation for --scope global (D4)', false)
+    .option('--yes-i-trust-this-source', 'required in non-interactive mode (AC1)', false)
+    .option('--yes-global-scope-unverified', 'required, in addition to --yes-i-trust-this-source, for --scope global: confirms this installation will never be verified by `trackfw validate` (D4-bis)', false)
     .action(async options => executeThirdPartyInstall(kind, options))
 }
 

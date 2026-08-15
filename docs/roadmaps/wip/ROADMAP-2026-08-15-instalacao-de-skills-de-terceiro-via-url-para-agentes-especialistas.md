@@ -617,7 +617,7 @@ falha de rede, aderência ao padrão do subsistema `internal/integrations/`.
 ---
 
 ### ML-4C — Microlote corretivo da barreira (D3-ter, D4-bis, D6-bis)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-08-15) — `make quality` verde, `apolo-tf` devolveu não commitado
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-4A ✅ e ML-4B ✅ (barreira executada).
 **Origem:** achados da Wave 4 verificados pelo arquiteto + decisões de KG (2026-08-15).

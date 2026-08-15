@@ -46,6 +46,12 @@ type QuarantineEntry struct {
 // base64-encoded, in content_base64 — never a path to another file. This is
 // deliberate (D8b): an indirection through a second file would reopen the
 // TOCTOU window the quarantine record exists to close.
+//
+// rawURL is stored via RedactURL, not verbatim (D6-bis): the quarantine
+// record is committed to git, and a pre-signed URL's query string can carry
+// a bearer token that must never become a permanent secret in history. The
+// unredacted URL was already used, in memory only, for the fetch itself
+// (D7) before this constructor is ever called.
 func NewQuarantineEntry(rawURL string, raw []byte, matchedMarkers []string, kind string, requestedTargets []string) QuarantineEntry {
 	result := "pass"
 	if len(matchedMarkers) > 0 {
@@ -53,7 +59,7 @@ func NewQuarantineEntry(rawURL string, raw []byte, matchedMarkers []string, kind
 	}
 	return QuarantineEntry{
 		SchemaVersion:  quarantineSchemaVersion,
-		URL:            rawURL,
+		URL:            RedactURL(rawURL),
 		ChecksumSHA256: Checksum(raw),
 		FetchedAt:      time.Now().UTC().Format(time.RFC3339),
 		ContentBase64:  base64.StdEncoding.EncodeToString(raw),

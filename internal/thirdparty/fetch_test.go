@@ -120,6 +120,35 @@ func TestFetch_RefusesContentOverSizeLimit(t *testing.T) {
 	}
 }
 
+// TestFetch_RefusesNon200Status covers the resp.StatusCode != http.StatusOK
+// branch in Fetch — present in the Go implementation since ML-2A, but never
+// exercised by a test (hefesto-tf finding, ML-4B/ML-4C): a server that
+// responds with a non-redirect, non-200 status (e.g. 404, 500) must be
+// refused, not silently treated as success.
+func TestFetch_RefusesNon200Status(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("not found"))
+	}))
+	defer srv.Close()
+
+	client := srv.Client()
+	client.Timeout = fetchClient.Timeout
+	client.CheckRedirect = fetchClient.CheckRedirect
+	old := fetchClient
+	fetchClient = client
+	defer func() { fetchClient = old }()
+
+	_, err := Fetch(srv.URL)
+	if err == nil {
+		t.Fatal("expected error for HTTP 404 response, got nil")
+	}
+	if !strings.Contains(err.Error(), "404") {
+		t.Fatalf("expected error to mention the HTTP status code, got: %v", err)
+	}
+}
+
 func TestFetch_RefusesDisallowedContentType(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
