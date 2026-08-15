@@ -17312,3 +17312,13 @@ D3-ter (fence aberto + comentário HTML + casefold divergente), D9 (terceiro art
 não previa), D11 (como identificar origem de terceiro), D4-bis e D6-bis (decisões de KG).
 
 **Débito rastreado:** `trackfw plugins install` sem gate — REQ aberta em backlog.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — abertura do PR
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas` empurrada para
+`origin` e PR aberto a pedido de KG. Merge é decisão do usuário — o arquiteto não faz merge,
+squash nem rebase.
+
+Estado entregue: 5 Waves, 10 MLs, `make quality` exit 0 (229 checagens), `trackfw validate` sem
+erros. Roadmap e REQ em `done`. Débito rastreado em REQ própria no backlog
+(`trackfw plugins install` sem gate).
