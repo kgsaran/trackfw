@@ -115,26 +115,53 @@ qualquer gap detectado sempre instrua o comando de correção, nunca só reporte
 > Dependências: Wave 1 completa
 
 ### ML-2A — Node.js
-**Status:** 🔄 Em andamento
-**Arquivos afetados:** módulo Node equivalente (localizar via grep por
-`credential_guard_hook_resolvable`/`credentialGuardScriptMarker` em `npm/src/`), teste
-equivalente
+**Status:** ✅ Concluído
+**Arquivos afetados:**
+- `npm/src/validator/index.js` (generalização de `collectCredentialGuardCommands` →
+  `collectCommandsWithMarker`/`validateCredentialGuardHookResolvable` →
+  `validateGuardHookResolvable` + regras `validateGitBranchGuardHookResolvable`/
+  `validateGitBranchGuardScriptIntegrity` + mecanismo genérico de escopo global
+  `validateGuardGlobalHookResolvable`/`validateGuardGlobalScriptIntegrity` e os 4 wrappers,
+  port 1:1 de `internal/validator/validator_git_branch_guard.go`; `RULE_DEFAULTS` ganhou
+  `git_branch_guard_script_integrity: 'warning'`; `validateUnfiltered` soma as mensagens de
+  escopo global sob a mesma regra de projeto via `.concat()`; constantes locais
+  `GIT_BRANCH_GUARD_SCRIPT_REFERENCE` e `CREDENTIAL_GUARD_GLOBAL_SCRIPT_REFERENCE` — cópia
+  local em vez de `require` direto de `generators/hooks.js` porque
+  `generateGitBranchGuardScript`/`generateGlobalCredentialGuardScript` fazem `console.log` de
+  sucesso a cada chamada, o que vazaria no output de `trackfw validate` (mesma razão já
+  documentada para `CREDENTIAL_GUARD_SCRIPT_REFERENCE`; sem ciclo de import em Node, a
+  decisão foi só por causa do side effect)
+- `npm/tests/git_branch_guard_hook_integrity.test.js` (novo — port de
+  `internal/validator/validator_git_branch_guard_test.go`; nome distinto de
+  `npm/tests/git_branch_guard.test.js` pré-existente, que cobre o gerador/wiring de hooks e o
+  bloqueio de `git commit/push/checkout -b`, não a validação)
 **Ações:** replicar 1:1 a lógica do ML-1A em JS puro, lendo o Go real (já implementado
 nesta branch) como fonte de verdade.
 **Critérios de aceite:**
-- [ ] testes do workspace Node verdes, mesmos casos do ML-1A
-- [ ] mensagens de violação idênticas (byte-a-byte) às do Go
-**Comandos de validação:** `npm test --workspace=npm` (ajustar nome real do workspace)
+- [x] testes do workspace Node verdes, mesmos casos do ML-1A
+- [x] mensagens de violação idênticas (byte-a-byte) às do Go
+**Comandos de validação:** `cd npm && npm test`
 
 ### ML-2B — Python
-**Status:** 🔄 Em andamento
-**Arquivos afetados:** módulo Python equivalente (localizar via grep em `pypi/trackfw/`),
-teste equivalente
+**Status:** ✅ Concluído
+**Arquivos afetados:**
+- `pypi/trackfw/validator.py` (generalização de `_collect_commands_with_marker`/
+  `validate_guard_hook_resolvable`/`validate_guard_script_integrity` + regras
+  `validate_git_branch_guard_hook_resolvable`/`validate_git_branch_guard_script_integrity` +
+  mecanismo genérico de escopo global `validate_guard_global_hook_resolvable`/
+  `validate_guard_global_script_integrity` e os 4 wrappers, port 1:1 de
+  `internal/validator/validator_git_branch_guard.go`; `_RULE_DEFAULTS` ganhou
+  `git_branch_guard_script_integrity: "warning"`; `validate_unfiltered` soma as mensagens de
+  escopo global sob a mesma regra de projeto)
+- `pypi/tests/test_git_branch_guard_validator.py` (novo — port de
+  `internal/validator/validator_git_branch_guard_test.go`; nome `_validator` para não colidir
+  com `pypi/tests/test_git_branch_guard.py` pré-existente, que cobre o gerador/wiring de hooks,
+  não a validação)
 **Ações:** replicar 1:1 a lógica do ML-1A em Python puro, lendo o Go real como fonte de
 verdade.
 **Critérios de aceite:**
-- [ ] `pytest pypi/tests -k git_branch_guard` verde, mesmos casos do ML-1A
-- [ ] mensagens de violação idênticas ao Go
+- [x] `pytest pypi/tests -k git_branch_guard` verde, mesmos casos do ML-1A
+- [x] mensagens de violação idênticas ao Go
 **Comandos de validação:** `python -m pytest pypi/tests -k git_branch_guard`
 
 ## Wave 3 — Validação cruzada (1 ML)

@@ -4,6 +4,73 @@
 
 ---
 
+## Sessão 2026-08-15 — Apolo (ML-2B: port Python de `trackfw validate` detectando scripts de hook ausentes/desatualizados — git-branch-guard) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/trackfw-validate-deve-detectar-scripts-de-hook` (já checked out, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md`.
+ML-2B marcado ✅ Concluído (port Python do ML-1A/Go, commit `4cec06d`). ML-2A (Node.js) está sendo
+implementado em paralelo por outro agente na mesma branch (`npm/src/validator/index.js` aparece
+modificado no `git status` — não é meu, não toquei nele). Wave 3 (paridade cruzada) segue
+`⬜ Pendente`.
+
+**O que mudou em `pypi/trackfw/validator.py`:**
+1. `_collect_credential_guard_commands` generalizada para `_collect_commands_with_marker(value,
+   marker, out)` (aceita qualquer marker, não só `trackfw-credential-guard.sh`).
+2. `validate_credential_guard_hook_resolvable` extraída para o genérico
+   `validate_guard_hook_resolvable(script_marker, cwd)`; `validate_git_branch_guard_hook_resolvable`
+   reusa a mesma função com `_GIT_BRANCH_GUARD_SCRIPT_MARKER = "trackfw-git-branch-guard.sh"`.
+3. Nova regra `git_branch_guard_script_integrity` via `validate_guard_script_integrity(rel_path,
+   reference_content, cwd)` genérico — compara `scripts/trackfw-git-branch-guard.sh` contra
+   `_GIT_BRANCH_GUARD_SCRIPT_REFERENCE` (cópia local literal do template, mesmo padrão já usado
+   para `_CREDENTIAL_GUARD_SCRIPT_REFERENCE` — Python **não tem** a restrição de ciclo de import do
+   Go, mas o padrão existente em `validator.py` já escolhia cópia local "for uniformity across the
+   3 stacks", então segui o mesmo caminho em vez de importar de `generators/init_gen.py`).
+   Severidade default `"warning"` em `_RULE_DEFAULTS` (mesmo raciocínio do credential-guard: sem
+   marcador de versão no script, não dá pra distinguir drift de adulteração).
+4. **Escopo GLOBAL — gap que não existia ainda nem para credential-guard em Python** (confirmado
+   por `grep -n "global"` em `validator.py` antes desta ML: zero ocorrências de checagem real,
+   só comentários de dedup). Portei o mecanismo genérico completo do Go
+   (`validator_git_branch_guard.go`): `_GLOBAL_GUARD_CONFIG_FILES` (lista dos 6
+   `~/.claude/settings.json` etc.), `validate_guard_global_hook_resolvable`/
+   `validate_guard_global_script_integrity` + os 4 wrappers finos
+   (`validate_credential_guard_global_hook_resolvable` etc., cada um dobrando suas mensagens na
+   MESMA regra do escopo de projeto — nenhuma entrada nova em `rules:` do `trackfw.yaml`). Isso
+   também exigiu `_CREDENTIAL_GUARD_GLOBAL_SCRIPT_REFERENCE` (template global do credential-guard,
+   diferente do de projeto — sem guarda `[ -f "trackfw.yaml" ]`, modo default `block`). Confirmei
+   que git-branch-guard **não tem wiring global hoje** (nenhum gerador escreve entrada em config
+   global referenciando `trackfw-git-branch-guard.sh`) — mesmo gap que o Go documentou; a checagem
+   fica silenciosa até essa wiring existir (não é regressão, coberto por teste dedicado
+   `test_git_branch_guard_global_sem_wiring_hoje_silencio`).
+5. `validate_unfiltered` agora soma `validate_*_global_*(cwd)` às mensagens de projeto antes de
+   `_apply_rule`, para as 4 regras (`credential_guard_hook_resolvable`,
+   `credential_guard_script_integrity`, `git_branch_guard_hook_resolvable`,
+   `git_branch_guard_script_integrity`).
+
+**Mensagens de violação** verificadas byte-idênticas ao Go (mesmo texto/ordem de interpolação em
+todos os 4 formatos: hook ausente/não-executável, projeto e global; integridade divergente,
+projeto e global).
+
+**Armadilha evitada, digna de nota para quem revisar o diff:** `pypi/tests/test_git_branch_guard.py`
+**já existia** (commit `9411210`, ML-3C do roadmap de git-branch-guard, cobre o *gerador* do
+script e o *wiring* de hooks por runtime — não a validação). Um `Write` inicial sobrecreveu esse
+arquivo por engano (mesmo nome, propósito diferente); revertido via `git checkout HEAD --` e meus
+testes novos foram para `pypi/tests/test_git_branch_guard_validator.py` (37 testes: 23 do arquivo
+original preservados + 14 novos meus). Sempre `git diff --stat`/`git status` antes de declarar um
+`Write` seguro quando o nome do arquivo já pode existir por outro ML anterior.
+
+**Testes:** `python -m pytest pypi/tests -k git_branch_guard` → 37 passed. Suite completa
+`python -m pytest pypi/tests -q` (== `make test-python`) → 1129 passed, 8 subtests passed. Notei 1
+teste pré-existente e não relacionado (`TestCredentialGuardHookResolvable.test_configuravel_via_rules`
+em `test_validator.py`) que falha quando rodado isolado mas passa na suite completa — reproduzido
+via `git stash` que essa flakiness já existia ANTES desta ML (não é regressão minha, não investiguei
+a causa raiz por estar fora do escopo do ML-2B).
+
+**Arquivos modificados/criados:** `pypi/trackfw/validator.py` (modificado),
+`pypi/tests/test_git_branch_guard_validator.py` (novo, 316 linhas). Nenhum commit/push feito — regra
+de Backend, aguardando trackfw_architect.
+
+---
+
 ## Sessão 2026-08-15 — Apolo (ML-1A: `trackfw ship` gera corpo de PR rico + exceção doc-only nos gates) — implementado, aguardando auditoria e commit por trackfw_architect
 
 Branch `feat/trackfw-ship-gera-corpo-de-pr-minimo` (já checked out, não criada por mim).
@@ -16150,3 +16217,85 @@ essa wiring, o mecanismo é ativo e testado end-to-end.
 
 Não fiz `git commit`/`push` — autoridade de Git é do `trackfw-architect`. Escopo Go apenas; ML-2A
 (Node.js) e ML-2B (Python) do mesmo roadmap ficam para agentes/sessões futuras.
+
+## Sessão 2026-08-15 — Apolo (ML-2A: Node.js `trackfw validate` detecta scripts de hook ausentes/desatualizados — git-branch-guard + escopo global) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Port 1:1 do Go (commit `4cec06d`) para `npm/src/validator/index.js`, mesma branch
+`feat/trackfw-validate-deve-detectar-scripts-de-hook`.
+
+**Arquivos modificados:**
+- `npm/src/validator/index.js`:
+  - `GIT_BRANCH_GUARD_SCRIPT_MARKER = 'trackfw-git-branch-guard.sh'` (const nova, ao lado de
+    `CREDENTIAL_GUARD_SCRIPT_MARKER`).
+  - `collectCredentialGuardCommands(value, out)` generalizada em
+    `collectCommandsWithMarker(value, marker, out)`; a antiga assinatura de 2 args foi
+    preservada como wrapper fino (ainda exportada, sem quebrar consumidores).
+  - `validateCredentialGuardHookResolvable(cwd)` generalizada em
+    `validateGuardHookResolvable(scriptMarker, cwd)`; `validateCredentialGuardHookResolvable` e
+    a nova `validateGitBranchGuardHookResolvable(cwd)` viraram wrappers finos.
+  - Nova `validateGitBranchGuardScriptIntegrity(cwd)` — compara
+    `scripts/trackfw-git-branch-guard.sh` contra `GIT_BRANCH_GUARD_SCRIPT_REFERENCE` (cópia local
+    nova, ver decisão de design abaixo).
+  - Novo mecanismo genérico de escopo GLOBAL — `GLOBAL_GUARD_CONFIG_FILES` (lista dos 6 arquivos
+    `$HOME`-rooted, **diferente** da lista de projeto para Copilot/Kiro — copiada 1:1 de
+    `globalGuardConfigFiles` do Go), `validateGuardGlobalHookResolvable(scriptMarker)` e
+    `validateGuardGlobalScriptIntegrity(scriptMarker, referenceContent)`, com os 4 wrappers
+    (`validateCredentialGuardGlobalHookResolvable`, `validateCredentialGuardGlobalScriptIntegrity`,
+    `validateGitBranchGuardGlobalHookResolvable`, `validateGitBranchGuardGlobalScriptIntegrity`).
+    **Este mecanismo era um gap total em Node antes deste ML** — Node não tinha NENHUMA checagem
+    de escopo global (nem para credential-guard, que já tem wiring global ativo há mais tempo);
+    fechado agora para os 2 guards, igual ao Go.
+  - `RULE_DEFAULTS.git_branch_guard_script_integrity = 'warning'` (mesmo raciocínio de
+    `credential_guard_script_integrity`: script sem marcador de versão, não dá para distinguir
+    drift de adulteração). `git_branch_guard_hook_resolvable` **não** entrou em
+    `CREDENTIAL_GUARD_ANCHORED_RULES` — mesma decisão do Go, severidade só-disco via
+    `diskRuleSeverity`, sem o mecanismo HEAD-vs-disco (que é específico de uma ADR de
+    credential-guard).
+  - `validateUnfiltered()`: as 2 regras de credential-guard e as 2 novas de git-branch-guard agora
+    somam `.concat()` das mensagens de projeto + global sob o MESMO nome de regra (só 1
+    `applyRule` por regra, sem novas entradas em `rules:` do `trackfw.yaml`).
+  - `require('os')` adicionado (faltava; `os.homedir()` usado pelas checagens de escopo global).
+- `npm/tests/git_branch_guard_hook_integrity.test.js` (**novo arquivo** — 15 testes, port de
+  `internal/validator/validator_git_branch_guard_test.go`). Nome deliberadamente distinto de
+  `npm/tests/git_branch_guard.test.js`, que já existia (ROADMAP-2026-08-14) cobrindo o
+  gerador/wiring de hooks e o bloqueio de `git commit/push/checkout -b` pelo próprio script —
+  **cuidado**: na primeira tentativa eu sobrescrevi esse arquivo pré-existente com
+  `Write` sem checar `git status` antes; percebi pelo `git status --short` mostrando " M" em vez
+  de "??" e revertive com `git show HEAD:npm/tests/git_branch_guard.test.js >
+  npm/tests/git_branch_guard.test.js` antes de criar o arquivo novo com nome distinto — nenhuma
+  perda final, mas registrar como lição: sempre `git status`/`ls` antes de `Write` num arquivo de
+  teste cujo nome eu só *supus* que seria novo.
+
+**Decisão de design — cópia local em vez de `require` direto do gerador:** o roadmap pedia para
+avaliar se, sem o import-cycle do Go, seria melhor importar `generateGitBranchGuardScript`/
+`generateGlobalCredentialGuardScript` direto de `npm/src/generators/hooks.js`. Não há ciclo de
+import real em Node (`hooks.js` não importa `validator/`), mas ambas as funções fazem
+`console.log('  ✓ ...')` a cada chamada — chamá-las de dentro de `trackfw validate` vazaria essa
+linha no output, quebrando o formato de saída. `CREDENTIAL_GUARD_SCRIPT_REFERENCE` (credential-
+guard, projeto) já resolvia isso com uma cópia local antes deste ML; segui o mesmo padrão para
+`GIT_BRANCH_GUARD_SCRIPT_REFERENCE` e criei `CREDENTIAL_GUARD_GLOBAL_SCRIPT_REFERENCE` (não
+existia ainda em Node) do mesmo jeito. As 2 constantes novas foram extraídas
+PROGRAMATICAMENTE do `hooks.js` real (via `eval` de um wrapper isolado do módulo, não
+transcrição manual) e verificadas byte-a-byte contra `generateGitBranchGuardScript`/
+`generateGlobalCredentialGuardScript` reais em teste dedicado — elimina risco de erro de
+transcrição em templates de shell script grandes com escaping de `` ` ``/`${`/`\`.
+
+**Validação:**
+- `node --check npm/src/validator/index.js` — sem erros de sintaxe.
+- `cd npm && npm test` (`node --test tests/*.test.js`) — 533 passed, 0 failed (518 pré-existentes +
+  15 novos).
+- Teste manual reproduzindo os 2 experimentos da REQ com `node npm/bin/trackfw validate --json`
+  neste próprio repo: (1) mover `scripts/trackfw-git-branch-guard.sh` para fora → warning
+  `git_branch_guard_hook_resolvable` nos 3 CLIs de hook registrados (modo lenient deste repo
+  rebaixa de violation para warning, mesmo padrão de todo o resto do validador aqui); (2)
+  restaurado, 1 byte alterado (append) → warning `git_branch_guard_script_integrity`; (3)
+  restaurado ao original → silêncio. `git status --short scripts/trackfw-git-branch-guard.sh`
+  confirmado limpo ao final.
+- Mensagens de violação/warning conferidas byte-a-byte contra os templates de string do Go
+  (`%s (%s) references %s resolved to %q, ...`/`~/%s (%s, global scope) ...`/`%s content
+  diverges from the template ...`) — idênticas.
+
+Não fiz `git commit`/`push` — autoridade de Git é do `trackfw-architect`. ML-2B (Python) já estava
+concluído por outro agente em paralelo (mesmo roadmap, Wave 2) quando terminei; não toquei em
+`pypi/`. Falta só Wave 3 (ML-3A — paridade cruzada `make quality` + teste manual E2E nos 3
+binários).
