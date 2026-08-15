@@ -58,16 +58,16 @@ o padrão de `backend`/`frontend`/`pkg_manager` (chave plana, campo string em
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] Novo campo `agent_conventions` em `trackfw.yaml` (texto livre, opcional, vazio por
+- [x] Novo campo `agent_conventions` em `trackfw.yaml` (texto livre, opcional, vazio por
       padrão) nos 3 CLIs.
-- [ ] `trackfwRulesBlock()` (e equivalentes Node/Python) ganha seção "### Project
+- [x] `trackfwRulesBlock()` (e equivalentes Node/Python) ganha seção "### Project
       Conventions" que só aparece quando `agent_conventions` não está vazio — injetada nos
       mesmos 7 arquivos de agente já cobertos por `InjectRulesForTool`/`InjectRulesDetected`.
-- [ ] `trackfw discover --init`/`trackfw init` propõe (não força) um valor inicial de
+- [x] `trackfw discover --init`/`trackfw init` propõe (não força) um valor inicial de
       framework de teste detectado por heurística de arquivo simples (best-effort).
-- [ ] Comportamento idêntico nos 3 CLIs (mesmo campo, mesmo texto injetado, byte-idêntico).
-- [ ] `make quality` passa sem novas divergências de paridade.
-- [ ] Documentação explícita (no próprio texto do bloco injetado E no roadmap) de que é
+- [x] Comportamento idêntico nos 3 CLIs (mesmo campo, mesmo texto injetado, byte-idêntico).
+- [x] `make quality` passa sem novas divergências de paridade.
+- [x] Documentação explícita (no próprio texto do bloco injetado E no roadmap) de que é
       convenção declarada pelo time, não inferência automática de "boas práticas".
 
 ## Wave 1 — Go (implementação de referência, 2 MLs)
@@ -237,7 +237,7 @@ o código em si estava correto desde a entrega do agente).
 > Dependências: Wave 2 completa
 
 ### ML-3A — Paridade, teste manual end-to-end e documentação explícita
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `docs/cli-parity.md` — nova linha/seção documentando `agent_conventions` (chave de
   `trackfw.yaml`, não um comando — ver formato já usado para outras chaves de config no
@@ -255,7 +255,19 @@ o código em si estava correto desde a entrega do agente).
    `agents update`) o valor de `agent_conventions` é escrito automaticamente — só lido
    quando já presente no `trackfw.yaml` do usuário.
 **Critérios de aceite:**
-- [ ] `make quality` verde
-- [ ] Os 2 cenários (com/sem `agent_conventions`) confirmados byte-idênticos nos 3 CLIs
-- [ ] Confirmado que nada escreve `agent_conventions` automaticamente em nenhum fluxo
+- [x] `make quality` verde
+- [x] Os 2 cenários (com/sem `agent_conventions`) confirmados byte-idênticos nos 3 CLIs
+- [x] Confirmado que nada escreve `agent_conventions` automaticamente em nenhum fluxo
 **Comandos de validação:** `make quality`
+
+**Execução real (2026-08-15):** `make quality` verde (build+vet+test Go, `npm test` 550
+passed, `pytest` 1172 passed, 112 cenários de falsificação todos OK). Os 3 cenários (com/sem
+`agent_conventions`, sugestão de `discover`) confirmados byte-idênticos entre os 3 binários
+via `diff` direto pelo orquestrador — incluindo o caso Python, onde uma primeira checagem deu
+falso-negativo por erro de `PYTHONPATH` relativo no script de teste manual (corrigido,
+implementação em si estava correta). Nenhum fluxo (`init`, `discover`, `discover --init`,
+`update`) escreve `agent_conventions` automaticamente — confirmado nos 3 CLIs. Documentada a
+chave `agent_conventions` em `docs/cli-parity.md` (tabela de campos `Update`/`Sync` lidos
+pelo config loader único, agora 12 campos). Achado incidental fora de escopo: divergência
+`roadmap_namespacing` Go/Node em fixture `--init` sem `docs/roadmaps/` — registrado como
+observação para investigação futura, não bloqueia esta REQ.

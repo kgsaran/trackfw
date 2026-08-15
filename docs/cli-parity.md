@@ -1118,8 +1118,8 @@ directory.
 ### `trackfw.yaml` fields consumed by `update` and `sync` — single loader, `Update`/`Sync` namespaces
 
 Since `REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis`, all
-eleven fields below are read exclusively by the shared config loader (Go `config.Load`, Node.js
-`loadConfig`, Python `load_config`) into two typed namespaces — `Update` (5 fields) and `Sync` (6
+twelve fields below are read exclusively by the shared config loader (Go `config.Load`, Node.js
+`loadConfig`, Python `load_config`) into two typed namespaces — `Update` (6 fields) and `Sync` (6
 fields). No module outside the loader opens, reads, or parses `trackfw.yaml` in any of the three
 runtimes; the five hand-rolled scanners that used to exist (`ReadUpdateConfig` in Go, the Node.js
 `readUpdateConfig`/`readConfigField`, and Python's `_read_config_field`) were removed. The keys stay
@@ -1133,6 +1133,7 @@ gained a namespace.
 | `backend` | `Update` | `""` | `trackfw update` — backend stack used when regenerating `CLAUDE.md`/agent-config stack sections and stack-specific hook commands |
 | `frontend` | `Update` | `""` | `trackfw update` — frontend stack used the same way as `backend` |
 | `pkg_manager` | `Update` | `""` | `trackfw update` — package manager (`npm`, `yarn`, `pnpm`, …) used to compose the build/test commands written into generated hooks and `CLAUDE.md` |
+| `agent_conventions` | `Update` | `""` | Free-text, team-declared project conventions (test framework, architecture pattern, API style, linter, etc.) — never inferred automatically. When non-empty, `trackfwRulesBlock()`'s injection into every AI agent file (CLAUDE.md, AGENTS.md, GEMINI.md, etc.) gains a "### Project Conventions" section with this text verbatim; absent/empty produces byte-identical output to before this field existed. `trackfw discover` may print a best-effort test-framework suggestion for the user to add here manually — it never writes this key itself |
 | `linear_api_key` | `Sync` | `""` | `trackfw sync` (Linear) — read first, environment variable is the fallback (AC5 precedence, unchanged) |
 | `linear_team_id` | `Sync` | `""` | `trackfw sync` (Linear) — same precedence as `linear_api_key` |
 | `jira_base_url` | `Sync` | `""` | `trackfw sync` (Jira) — same precedence |
