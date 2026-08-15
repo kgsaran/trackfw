@@ -269,7 +269,7 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
         known_agent_ids = {item["id"] for item in catalog["agents"]}
         for agent_id in apply_to:
             if agent_id not in known_agent_ids:
-                raise IntegrationError(f"unknown agent item {agent_id!r}")
+                raise IntegrationError(f"unknown agent item \"{agent_id}\"")
             for rt in resolved_targets:
                 _, agent_plans = plan_deployments(
                     "agents",
@@ -281,7 +281,7 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
                 )
                 if not agent_plans:
                     raise IntegrationError(
-                        f"target {rt['target_id']} has no supported agents surface for item {agent_id!r}"
+                        f"target {rt['target_id']} has no supported agents surface for item \"{agent_id}\""
                     )
                 inspection = manager.inspect(agent_plans[0])
                 # ADR imprecision found and resolved here (reported, not
@@ -299,13 +299,13 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
                 # silently skipping or installing at a mismatched scope.
                 if not inspection["managed"] or inspection["state"] == "not-installed":
                     raise IntegrationError(
-                        f"cannot attach reference: agent {agent_id!r} is not installed at --scope "
+                        f"cannot attach reference: agent \"{agent_id}\" is not installed at --scope "
                         f"{scope} for target {rt['target_id']}; run `trackfw agents install --scope "
                         f"{scope} --targets {rt['target_id']} --items {agent_id}` first"
                     )
                 if inspection["state"] == "modified":
                     raise IntegrationError(
-                        f"cannot attach reference: agent {agent_id!r} at --scope {scope} for target "
+                        f"cannot attach reference: agent \"{agent_id}\" at --scope {scope} for target "
                         f"{rt['target_id']} was modified outside trackfw; run `trackfw agents update "
                         f"--scope {scope} --targets {rt['target_id']} --items {agent_id} --force` first"
                     )
@@ -377,6 +377,12 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
                     "scope": scope,
                     "kind": "skills",
                     "item": f"thirdparty-{slug}",
+                    # ADR-2026-08-15 D11 — marks this destination for the
+                    # thirdparty_artifact_has_provenance validate rule.
+                    # Never set for catalog claims (see catalog.py's
+                    # plan_deployments), which keeps old manifests
+                    # (no "origin" key at all) reading as catalog claims.
+                    "origin": "thirdparty",
                 },
                 "destination": rt["destination"],
                 "content": normalized,

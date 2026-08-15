@@ -512,7 +512,7 @@ bater byte a byte com o Go.
 > Dependências: Wave 2 completa. **Sequencial** — toca `scripts/` e docs compartilhados.
 
 ### ML-3A — Contrato de paridade + `trackfw validate` + docs
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos afetados:** `scripts/check-cli-parity.sh`, `scripts/check-artifact-parity.sh`,
 `docs/cli-parity.md`, `internal/validator/validator_thirdparty_provenance.go` (novo) + espelhos
@@ -550,6 +550,41 @@ Node/Python, `scripts/check-thirdparty-parity.sh` (novo, adicionado ao alvo `par
 **Comandos de validação:** `make quality`
 
 ---
+
+---
+
+### ML-3B — Microlote corretivo: `installed_sha256` na proveniência (D2-bis)
+**Status:** ⬜ Pendente
+**Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Dependência:** ML-3A ✅ (commitado).
+**Origem:** auditoria do arquiteto sobre o ML-3A — ver **D2-bis** no ADR.
+**Arquivos afetados (3 stacks):**
+- `internal/thirdparty/provenance.go` + testes · `internal/validator/validator_thirdparty_provenance.go` + testes
+- `npm/src/thirdparty/provenance.js` · `npm/src/validator/index.js` · `npm/tests/`
+- `pypi/trackfw/thirdparty/provenance.py` · `pypi/trackfw/validator.py` · `pypi/tests/`
+- `scripts/check-thirdparty-parity.sh` · `docs/cli-parity.md`
+
+**Ações:**
+1. Adicionar `installed_sha256` à entrada de proveniência (SHA-256 dos bytes **normalizados**,
+   calculado na instalação pelo mesmo código que grava o arquivo). `checksum_sha256` **não muda**.
+2. Bump de `schema_version` da proveniência para `2`. Sem migração: a feature é inédita.
+3. Reescrever o ramo (ii) da regra `thirdparty_artifact_has_provenance` para
+   `sha256(arquivo instalado) == entry.installed_sha256`. **Remover a dependência do arquivo de
+   quarentena** neste ramo.
+4. A quarentena **continua** sendo escrita e commitada; sua ausência **deixa de ser erro** desta
+   regra (hoje é fail-closed — mudar).
+5. Atualizar o script de paridade e a doc.
+
+**Critérios de aceite:**
+- [ ] Ramo (ii) detecta adulteração pós-instalação **sem** consultar a quarentena — teste explícito
+      que apaga `.trackfw/thirdparty-quarantine/` e mostra que (a) a regra segue detectando
+      adulteração e (b) uma instalação íntegra **não** vira violação.
+- [ ] Instalação legítima com conteúdo bruto **não-canônico** (markdown com linha em branco final)
+      **não** gera violação — é o falso-positivo que D2-bis existe para matar.
+- [ ] `checksum_sha256` intocado e o vínculo de aprovação de D8c preservado.
+- [ ] Comportamento e saída idênticos nos 3 CLIs; `make quality` verde.
+
+**Comando de validação:** `make quality`
 
 ## Wave 4 — Barreira de revisão final
 > Dependências: Wave 3 completa.

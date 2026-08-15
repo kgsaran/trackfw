@@ -16974,3 +16974,74 @@ função `fetch` com o mesmo nome do módulo `fetch.py`, esse padrão de import 
 vincula a função, não o módulo. Usar `importlib.import_module` nesse caso.
 
 **Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.
+
+
+## Sessão 2026-08-15 — Apolo (INÍCIO: ML-3A — contrato de paridade + `trackfw validate` + docs)
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md`
+em `wip/`. Governança pré-satisfeita pelo despacho (Waves 0/1/2 já ✅, auditadas e commitadas) —
+executando ML-3A: renomear teste Go de D7-bis, campo `Claim.Origin` (D11) nos 3 CLIs, regra
+`trackfw validate` `thirdparty_artifact_has_provenance` (D2) nos 3 CLIs, `scripts/check-thirdparty-parity.sh`
+novo no alvo `parity`, `docs/cli-parity.md` e `CLAUDE.md`. Nenhum commit/push (autoridade
+exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-15 — Apolo (FIM: ML-3A concluído — `make quality` verde, não commitado)
+
+`make quality` (test Go + test-node + test-python + lint + parity, incluindo o novo
+`check-thirdparty-parity.sh`) verde, exit 0. 1218 testes Python + 8 subtests, todos os testes
+Go e Node, e as 112 falsificações passaram sem regressão. Roadmap `ML-3A` marcado
+`✅ Concluído`.
+
+**Dois achados não óbvios, documentados em código + vault note
+(`vault/notes/thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15.md`):**
+1. Domínio de chave — `integrations-manifest.json` usa destino **absoluto**;
+   `.trackfw/thirdparty-{quarantine,provenance,references}` usam destino **relativo à raiz do
+   projeto**. Uma implementação ingênua que usasse a chave absoluta do manifest para buscar em
+   `thirdparty-provenance.json` nunca encontraria a entrada — falso-positivo sistemático no ramo
+   (i), só descoberto testando o comando `install` real de ponta a ponta (não por fixtures
+   hand-authored). Fix: `filepath.Rel`/`path.relative`/`os.path.relpath` como chave nos 3 schemas
+   e nos 3 CLIs.
+2. **Imprecisão do ADR (D2 ramo ii), reportada e resolvida, não contornada em silêncio:** o texto
+   diz "checksum_sha256 não bate com o SHA-256 do conteúdo instalado", mas `checksum_sha256` é
+   hash dos bytes BRUTOS (D6), e o arquivo instalado é sempre o conteúdo NORMALIZADO
+   (`TrimSpace(raw)+"\n"`) — comparação literal geraria falso-positivo em toda instalação
+   legítima cujo bruto não fosse já canônico. Resolvido usando o registro de quarentena como
+   ponte auditável entre os dois domínios (auto-consistência quarentena↔provenance, depois
+   normaliza e compara byte-a-byte contra o instalado); fail-closed (D8f) se a quarentena estiver
+   ausente. Coberto por teste de regressão load-bearing nos 3 CLIs
+   (`branch_ii_legitimate_install_does_not_false_positive`). **`docs/roadmaps/.trackfw-attention.json`
+   segue ATIVO**, pedindo confirmação explícita do arquiteto sobre esta leitura de D2(ii) antes
+   do commit final — não apagar até essa confirmação.
+
+**Bug real encontrado pelo novo gate de paridade, corrigido:** `pypi/trackfw/commands/thirdparty.py`
+usava `{agent_id!r}` (repr Python, aspas simples) em 4 mensagens de erro citando `agent_id`,
+enquanto Go usa `%q` e Node usa aspas duplas explícitas — quebrava paridade byte-a-byte na
+mensagem de remediação D10.1. Corrigido para aspas duplas explícitas nas 4 ocorrências (não só
+nas 2 cobertas pela Parte D do script de paridade, para manter o arquivo internamente
+consistente). Nenhum teste pré-existente assumia a forma antiga; nenhum teste foi editado por
+essa correção.
+
+**Lacuna conhecida, documentada em `docs/cli-parity.md`, não coberta:** a Parte D do script de
+paridade só compara a mensagem D10.1 para `StateNotInstalled`; o caso irmão `StateModified` tem
+mensagem própria e não é comparado entre os 3 CLIs.
+
+**Arquivos tocados:** `internal/thirdparty/fetch_test.go` (rename D7-bis),
+`internal/integrations/manifest.go` (campo `Origin` + wrappers `ManifestPath`/`LoadManifest`),
+`internal/commands/integrations_thirdparty.go` (grava `Origin: "thirdparty"`),
+`internal/validator/validator_thirdparty_provenance.go` (novo),
+`internal/validator/validator_thirdparty_provenance_test.go` (novo),
+`internal/commands/integrations_thirdparty_validate_test.go` (novo, end-to-end),
+`internal/validator/validator.go` (registro da regra), `internal/thirdparty/markers_test.go`
+(4 testes de edge case de fence); `npm/src/integrations/manager.js`, `npm/src/commands/thirdparty.js`,
+`npm/src/validator/index.js`, `npm/tests/validator.test.js`, `npm/tests/thirdparty.test.js`;
+`pypi/trackfw/commands/thirdparty.py` (origin + fix de aspas), `pypi/trackfw/validator.py`,
+`pypi/tests/test_validator_thirdparty_provenance.py` (novo),
+`pypi/tests/test_thirdparty.py`; `scripts/check-thirdparty-parity.sh` (novo), `Makefile`
+(alvo `parity`), `docs/cli-parity.md`, `CLAUDE.md`,
+`docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md`
+(status ML-3A), `vault/notes/thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15.md`
+(novo) + `vault/notes/index.md`.
+
+**Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit — inclui
+a pendência ativa em `.trackfw-attention.json` sobre D2(ii).

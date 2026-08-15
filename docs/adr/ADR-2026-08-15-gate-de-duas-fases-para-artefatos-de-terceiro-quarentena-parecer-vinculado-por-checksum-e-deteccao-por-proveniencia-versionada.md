@@ -299,6 +299,37 @@ Notas de vault: `vault/notes/node-https-redirect-checkredirect-off-by-one-2026-0
    item de agente do catálogo (quem recebe a referência). Por isso o CLI separa `--targets` de
    `--apply-to`.
 
+### D2-bis — Emenda: o ramo (ii) compara `installed_sha256`, não o checksum de aprovação
+
+**O ramo (ii) de D2, como escrito, era falso.** Levantado pelo ML-3A e confirmado: `checksum_sha256`
+é o hash dos **bytes brutos** baixados (D6), enquanto o arquivo instalado é sempre a forma
+**normalizada** (`TrimSpace(raw) + "\n"`). Comparar um contra o outro produz **falso-positivo em toda
+instalação legítima** cujo conteúdo bruto não seja já exatamente canônico — markdown com linha em
+branco final, que é o caso comum. `manifest.Hash` também não serve: está no domínio normalizado.
+
+**Solução rejeitada (a que o ML-3A implementou):** usar o arquivo de quarentena como ponte entre os
+dois domínios. Está *correta* — e foi por isso que `make quality` passou — mas torna um artefato de
+**estágio** dependência obrigatória de um **gate permanente**. O diretório `.trackfw/thirdparty-quarantine/`
+tem nome, forma e localização de área temporária; alguém vai limpá-lo ou colocá-lo no `.gitignore`,
+e a partir daí `validate` falha para sempre **sem caminho de recuperação** — não dá para re-baixar,
+porque D6 proíbe rede dentro do `validate`, e o conteúdo a montante pode ter mudado. O footgun está
+no desenho, não no uso.
+
+**Decisão: adicionar `installed_sha256` à entrada de proveniência.**
+
+- `checksum_sha256` **permanece exatamente como está** — é o vínculo de aprovação sobre o que o
+  revisor de fato leu (D8c). Intocado.
+- `installed_sha256` = SHA-256 dos **bytes normalizados**, calculado no momento da instalação pelo
+  mesmo código que grava o arquivo.
+- Ramo (ii) passa a ser `sha256(arquivo instalado) == entry.installed_sha256`. Dois domínios viram
+  um; nenhum terceiro arquivo é consultado.
+- A quarentena **continua sendo escrita e commitada** para reconstrução por auditor — o que muda é
+  que a **ausência dela deixa de ser erro** desta regra.
+
+**Bump de `schema_version` é gratuito agora e caro depois:** a feature é inédita, não há nenhum
+arquivo de proveniência no mundo. Corrigir na origem em vez de carregar compatibilidade é a postura
+já registrada para este projeto.
+
 ### D11 — Como o `validate` identifica um destino "de origem de terceiro": campo `origin` na `Claim`
 
 Decisão do arquiteto, tomada antes do ML-3A para não travá-lo no meio (KG confirmou o

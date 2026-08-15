@@ -77,6 +77,56 @@ func TestCheckMarkers_MarkerInsideTildeFencedBlockAccepted(t *testing.T) {
 	}
 }
 
+// TestCheckMarkers_UnclosedFenceDropsRestOfDocument covers a case the
+// ML-1A/ML-3A roadmap explicitly called out as where a naive single-line
+// regex would diverge from the line-scanner: a fence opener with no
+// matching closer swallows everything through EOF as fenced content — the
+// scanner never finds a closer, so it never resumes emitting lines.
+func TestCheckMarkers_UnclosedFenceDropsRestOfDocument(t *testing.T) {
+	content := "```\n# Git authority\nstill inside, never closed\n"
+	matched := CheckMarkers([]byte(content))
+	if len(matched) != 0 {
+		t.Fatalf("expected no markers for an unclosed fence (content swallowed to EOF), got %v", matched)
+	}
+}
+
+// TestCheckMarkers_CloserShorterThanOpenerDoesNotClose covers the
+// CommonMark rule removeFencedBlocks implements: a closer needs AT LEAST as
+// many repeats as the opener. A 4-backtick opener is not closed by a
+// 3-backtick line — the "fence" never closes, so it too swallows the rest
+// of the document (same divergence-from-regex case as the unclosed test).
+func TestCheckMarkers_CloserShorterThanOpenerDoesNotClose(t *testing.T) {
+	content := "````\n# Git authority\n```\nstill fenced (closer too short)\n"
+	matched := CheckMarkers([]byte(content))
+	if len(matched) != 0 {
+		t.Fatalf("expected no markers when the closer is shorter than the opener, got %v", matched)
+	}
+}
+
+// TestCheckMarkers_IndentedFenceStillRecognized covers fencePrefixPattern's
+// leading-whitespace allowance: a fence opener/closer indented under a list
+// item or blockquote is still recognized as a fence delimiter, not read as
+// prose.
+func TestCheckMarkers_IndentedFenceStillRecognized(t *testing.T) {
+	content := "   ```\n   ## Git authority\n   ```\n\nRegular text.\n"
+	matched := CheckMarkers([]byte(content))
+	if len(matched) != 0 {
+		t.Fatalf("expected no markers for a marker inside an indented fence, got %v", matched)
+	}
+}
+
+// TestCheckMarkers_HeadingAfterClosedFenceStillMatches is the converse of
+// the fence-acceptance tests above: content AFTER a properly closed fence
+// must still be read as ordinary text, so a real heading following a fence
+// is not accidentally swallowed by removeFencedBlocks.
+func TestCheckMarkers_HeadingAfterClosedFenceStillMatches(t *testing.T) {
+	content := "```\nsome code, not a marker\n```\n\n## Git authority\n\nRegular text.\n"
+	matched := CheckMarkers([]byte(content))
+	if len(matched) != 1 || matched[0] != "git authority" {
+		t.Fatalf("expected a heading after a closed fence to still match, got %v", matched)
+	}
+}
+
 func TestCheckMarkers_FullwidthCompatibilityCharsRefused(t *testing.T) {
 	// U+FF03 FULLWIDTH NUMBER SIGN, U+FF27 FULLWIDTH LATIN CAPITAL LETTER G —
 	// NFKC folds both to ASCII "#" and "G". This is exactly what NFKC (step 3)

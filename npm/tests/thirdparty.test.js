@@ -10,6 +10,7 @@ const thirdpartyCmd = require('../src/commands/thirdparty')
 const { createLifecycleCommand } = require('../src/commands/integrations')
 const { checkMarkers, checksum } = require('../src/thirdparty/markers')
 const provenance = require('../src/thirdparty/provenance')
+const validator = require('../src/validator')
 
 const BENIGN_CONTENT = '# Example Third-Party Skill\n\nSome helpful, benign content for the agent to consume.\n'
 
@@ -112,6 +113,18 @@ function walkFiles(root) {
 // checkMarkers — fence acceptance, fullwidth refusal, cyrillic pass-through
 // -----------------------------------------------------------------------
 
+test('checkMarkers matches a literal H1 marker heading', () => {
+  const content = '# Git authority\n\nsome content redefining boundaries.\n'
+  assert.deepEqual(checkMarkers(content), ['git authority'])
+})
+
+test('checkMarkers matches a marker at heading level H6, not just H1', () => {
+  // headingLinePattern matches any level 1-6 — a marker buried at H6 must
+  // be caught the same as at H1.
+  const content = '###### Mode lock\n\nsome content.\n'
+  assert.deepEqual(checkMarkers(content), ['mode lock'])
+})
+
 test('checkMarkers accepts a marker quoted inside a fenced code block', () => {
   const content = '# Benign heading\n\n' +
     'Some documentation about how markers work:\n\n' +
@@ -126,6 +139,32 @@ test('checkMarkers accepts a marker quoted inside a fenced code block', () => {
 test('checkMarkers accepts a marker quoted inside a tilde-fenced code block', () => {
   const content = '# Benign heading\n\n~~~\n## Scope boundary\n~~~\n'
   assert.deepEqual(checkMarkers(content), [])
+})
+
+test('checkMarkers: unclosed fence drops the rest of the document', () => {
+  // The ML-1A/ML-3A roadmap explicitly called this out as where a naive
+  // single-line regex would diverge from the line-scanner: a fence opener
+  // with no matching closer swallows everything through EOF as fenced
+  // content — the scanner never resumes emitting lines.
+  const content = '```\n# Git authority\nstill inside, never closed\n'
+  assert.deepEqual(checkMarkers(content), [])
+})
+
+test('checkMarkers: closer shorter than opener does not close the fence', () => {
+  // CommonMark rule: the closer needs AT LEAST as many repeats as the
+  // opener. A 4-backtick opener is not closed by a 3-backtick line.
+  const content = '````\n# Git authority\n```\nstill fenced (closer too short)\n'
+  assert.deepEqual(checkMarkers(content), [])
+})
+
+test('checkMarkers: indented fence is still recognized as a fence delimiter', () => {
+  const content = '   ```\n   ## Git authority\n   ```\n\nRegular text.\n'
+  assert.deepEqual(checkMarkers(content), [])
+})
+
+test('checkMarkers: a heading after a closed fence still matches', () => {
+  const content = '```\nsome code, not a marker\n```\n\n## Git authority\n\nRegular text.\n'
+  assert.deepEqual(checkMarkers(content), ['git authority'])
 })
 
 test('checkMarkers refuses fullwidth compatibility characters (NFKC folds to ASCII)', () => {
@@ -522,6 +561,58 @@ test('third-party install via `agents third-party` still lands the artifact unde
       assert.equal(fs.existsSync(path.join(project, '.claude', 'agents', 'thirdparty')), false)
     } finally {
       restoreFetch()
+      restoreEnv()
+    }
+  })
+})
+
+// ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas, ML-3A —
+// thirdparty_artifact_has_provenance end-to-end, real command path (not hand-authored fixtures).
+// Mirrors internal/commands/integrations_thirdparty_validate_test.go — this exists because the
+// rule's own unit tests (npm/tests/validator.test.js) hand-author manifest/provenance JSON, and an
+// incorrect key-domain assumption baked into BOTH the rule and its fixtures would pass there while
+// still being wrong against the real command (exactly what happened in Go during this ML: the rule
+// initially looked up provenance by the manifest's ABSOLUTE destination, but
+// verifyApproval/upsertProvenanceEntry are actually called with the project-relative destination).
+test('third-party install passes thirdparty_artifact_has_provenance end-to-end', async () => {
+  const home = tmpHome()
+  const project = tmpProject()
+  await runInProject(home, project, async () => {
+    const restoreEnv = withOrchestratorSession()
+    try {
+      const agentsInstall = createLifecycleCommand('agents')
+      await agentsInstall.parseAsync(['install', '--targets', 'claude', '--items', 'backend', '--scope', 'project'], { from: 'user' })
+
+      const restoreFetch = stubThirdPartyFetch(BENIGN_CONTENT)
+      const url = 'https://example.com/skills/my-skill.md'
+      const checksumValue = await runFetch('skills', url)
+      const dest = '.claude/skills/thirdparty/my-skill.md'
+      provenance.upsertProvenanceEntry(project, dest, {
+        url, checksum_sha256: checksumValue, installed_at: '2026-08-15T00:00:00Z',
+        approved_by: 'hades-tf', review_reference: 'docs/seguranca/test.md', scope: 'project',
+      })
+
+      const install = createLifecycleCommand('skills')
+      const capture = captureConsoleLog()
+      try {
+        await install.parseAsync([
+          'third-party', 'install', '--checksum', checksumValue, '--targets', 'claude',
+          '--apply-to', 'backend', '--yes-i-trust-this-source',
+        ], { from: 'user' })
+      } finally {
+        capture.restore()
+        restoreFetch()
+      }
+
+      const msgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.deepEqual(msgs, [], 'a correctly approved+installed third-party artifact must not trip the rule')
+
+      // Negative counterpart: tamper the installed file, expect the rule to catch it.
+      fs.writeFileSync(path.join(project, dest), '# Example Third-Party Skill\n\nTAMPERED.\n')
+      const tamperedMsgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.equal(tamperedMsgs.length, 1, JSON.stringify(tamperedMsgs))
+      assert.match(tamperedMsgs[0], /D2 branch ii/)
+    } finally {
       restoreEnv()
     }
   })

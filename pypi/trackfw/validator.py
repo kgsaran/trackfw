@@ -2558,6 +2558,146 @@ def validate_adr_dirs_exist(cfg: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# thirdparty_artifact_has_provenance (ADR-2026-08-15 D2) — ML-3A
+# ---------------------------------------------------------------------------
+
+_THIRDPARTY_ORIGIN = "thirdparty"
+
+
+def validate_thirdparty_artifact_has_provenance(cwd: str = None) -> list:
+    """Regra "thirdparty_artifact_has_provenance" (ADR-2026-08-15 D2) — a detecção real, ancorada
+    em git, por trás do guardrail TRACKFW_ORCHESTRATOR_SESSION (que D2 é explícito não ser um
+    controle de segurança). NUNCA faz fetch de rede (D6) — lê só
+    .trackfw/integrations-manifest.json, .trackfw/thirdparty-provenance.json e
+    .trackfw/thirdparty-quarantine/<checksum>.json, todos já em disco (e, por convenção deste
+    projeto, versionados no repositório).
+
+    Duas ramificações, ambas fatais (error — a regra está deliberadamente ausente de
+    _RULE_DEFAULTS):
+      1. um artifact do manifest carrega um claim com origin == "thirdparty" mas
+         thirdparty-provenance.json não tem entrada chaveada por aquele destino;
+      2. existe entrada de proveniência, mas seu checksum_sha256 não pode ser reconciliado com o
+         que de fato está em disco no destino declarado.
+
+    Ramificação 2 — mesma imprecisão de D2 encontrada e resolvida na implementação Go (ver
+    internal/validator/validator_thirdparty_provenance.go's doc comment para a análise completa):
+    checksum_sha256 é sha256 dos bytes BRUTOS (D6), mas o arquivo instalado é
+    normalize_third_party_content(raw), que não é a função identidade em geral. A comparação
+    literal "sha256(arquivo instalado) == checksum_sha256" produziria falso-positivo em toda
+    instalação legítima cujo conteúdo bruto não fosse já exatamente strip+newline único.
+    Resolução: usar o registro de quarentena (que persiste após o install e não é git-ignored)
+    como ponte auditável entre os dois domínios — mesma leitura aplicada no Go e no Node, portada
+    aqui 1:1."""
+    from . import thirdparty as _thirdparty
+
+    root = cwd or os.getcwd()
+    manifest_path = os.path.join(root, ".trackfw", "integrations-manifest.json")
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except FileNotFoundError:
+        return []
+    except OSError as error:
+        raise RuntimeError(f"thirdparty_artifact_has_provenance: read {manifest_path}: {error}") from error
+
+    destinations = []
+    for destination, artifact in (manifest.get("artifacts") or {}).items():
+        claims = artifact.get("claims") or []
+        if any(claim.get("origin") == _THIRDPARTY_ORIGIN for claim in claims):
+            destinations.append(destination)
+    if not destinations:
+        return []
+    destinations.sort()
+
+    try:
+        prov = _thirdparty.load_provenance(root)
+    except Exception as error:  # noqa: BLE001 - mirrors Go's single wrapped error
+        raise RuntimeError(f"thirdparty_artifact_has_provenance: {error}") from error
+
+    msgs = []
+    for destination in destinations:
+        # Provenance keys are NOT the manifest's absolute destination —
+        # verified empirically against the real install command
+        # (pypi/trackfw/commands/thirdparty.py): verify_approval/
+        # upsert_provenance_entry are called with the project-root-relative
+        # (or "~/"-prefixed, global-scope) destination string BEFORE
+        # IntegrationManager._resolve() joins it against root to produce the
+        # absolute manifest key. Every claim reached here came from the
+        # PROJECT manifest, so its scope is always "project" (a
+        # global-scope claim lives in the home manifest instead, which this
+        # rule intentionally never reads). os.path.relpath inverts
+        # _resolve()'s os.path.join(root, relative) exactly. Mirrors
+        # internal/validator/validator_thirdparty_provenance.go.
+        provenance_key = os.path.relpath(destination, root)
+        entry = (prov.get("entries") or {}).get(provenance_key)
+        if not entry:
+            msgs.append({
+                "type": "violation",
+                "message": (
+                    f'thirdparty_artifact_has_provenance: "{destination}" is claimed as a third-party artifact but '
+                    "has no entry in .trackfw/thirdparty-provenance.json — obtain a favorable hades-tf review and "
+                    "record an approved provenance entry for this destination before this can pass validate "
+                    "(D2 branch i)"
+                ),
+            })
+            continue
+
+        checksum_sha256 = entry.get("checksum_sha256", "")
+        try:
+            quarantine_entry = _thirdparty.read_quarantine(root, checksum_sha256)
+        except Exception as error:  # noqa: BLE001 - mirrors Go's single wrapped error
+            msgs.append({
+                "type": "violation",
+                "message": (
+                    f'thirdparty_artifact_has_provenance: "{destination}" has a provenance entry for checksum '
+                    f"{checksum_sha256}, but .trackfw/thirdparty-quarantine/{checksum_sha256}.json could not be "
+                    f"read ({error}) — the quarantine record is required to verify the approval against the "
+                    "installed content (D2 branch ii, fail-closed per D8f)"
+                ),
+            })
+            continue
+
+        raw_content = _thirdparty.decode_content(quarantine_entry)
+        if _thirdparty.checksum(raw_content) != checksum_sha256:
+            msgs.append({
+                "type": "violation",
+                "message": (
+                    f'thirdparty_artifact_has_provenance: "{destination}" — quarantine record for checksum '
+                    f"{checksum_sha256} is not self-consistent (recomputed checksum does not match its own "
+                    "filename); the record may have been hand-edited"
+                ),
+            })
+            continue
+
+        try:
+            with open(destination, "rb") as fh:
+                installed = fh.read()
+        except OSError as error:
+            msgs.append({
+                "type": "violation",
+                "message": (
+                    f'thirdparty_artifact_has_provenance: "{destination}" is claimed as a third-party artifact with '
+                    f"an approved provenance entry, but the destination file could not be read ({error})"
+                ),
+            })
+            continue
+
+        expected = _thirdparty.normalize_third_party_content(raw_content)
+        if installed != expected:
+            msgs.append({
+                "type": "violation",
+                "message": (
+                    f'thirdparty_artifact_has_provenance: "{destination}" — installed content does not match the '
+                    f"checksum {checksum_sha256} approved in .trackfw/thirdparty-provenance.json (verified via its "
+                    "quarantine record) — the artifact was modified after approval or installed outside the "
+                    "fetch/install flow (D2 branch ii)"
+                ),
+            })
+
+    return msgs
+
+
+# ---------------------------------------------------------------------------
 # validate() — ponto de entrada principal
 # ---------------------------------------------------------------------------
 
@@ -2622,6 +2762,14 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule(
         "git_branch_guard_script_integrity",
         validate_git_branch_guard_script_integrity(cwd) + validate_git_branch_guard_global_script_integrity(cwd),
+        violations, warnings, cfg, cwd,
+    )
+
+    # ADR-2026-08-15-gate-de-duas-fases-..., ML-3A (D2): detecção ancorada em git por trás do
+    # guardrail TRACKFW_ORCHESTRATOR_SESSION.
+    _apply_rule(
+        "thirdparty_artifact_has_provenance",
+        validate_thirdparty_artifact_has_provenance(cwd),
         violations, warnings, cfg, cwd,
     )
 

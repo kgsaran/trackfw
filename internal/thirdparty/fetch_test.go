@@ -61,7 +61,7 @@ func TestFetch_RefusesRedirectDowngradeToHTTP(t *testing.T) {
 	}
 }
 
-func TestFetch_RefusesFourthRedirect(t *testing.T) {
+func TestFetch_RefusesThirdRedirect(t *testing.T) {
 	var mux *http.ServeMux
 	var srv *httptest.Server
 

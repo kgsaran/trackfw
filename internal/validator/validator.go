@@ -496,6 +496,16 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("git_branch_guard_script_integrity", append(gitBranchGuardScriptMsgs, gitBranchGuardGlobalScriptMsgs...), &violations, &warnings)
 
+	// ADR-2026-08-15-gate-de-duas-fases-..., ML-3A (D2): git-anchored detection behind the
+	// TRACKFW_ORCHESTRATOR_SESSION guardrail — flags a third-party artifact claim with no
+	// matching provenance entry, or a provenance entry whose checksum cannot be reconciled
+	// against the installed content via its quarantine record.
+	thirdPartyProvenanceMsgs, e := validateThirdPartyArtifactHasProvenance()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("thirdparty_artifact_has_provenance", thirdPartyProvenanceMsgs, &violations, &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -783,6 +793,12 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("git_branch_guard_script_integrity", append(gitBranchGuardScriptMsgsT, gitBranchGuardGlobalScriptMsgsT...), &violations, &warnings)
+
+	thirdPartyProvenanceMsgsT, e := validateThirdPartyArtifactHasProvenance()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("thirdparty_artifact_has_provenance", thirdPartyProvenanceMsgsT, &violations, &warnings)
 
 	return violations, warnings, nil
 }

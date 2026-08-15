@@ -263,7 +263,7 @@ async function executeThirdPartyInstall(kind, options) {
   // lives under "skills/thirdparty/" per D5.
   const normalized = normalizeThirdPartyContent(content)
   const plans = resolvedTargets.map(rt => ({
-    claim: { target: rt.targetID, surface: rt.surfaceID, scope, kind: 'skills', item: `thirdparty-${slug}` },
+    claim: { target: rt.targetID, surface: rt.surfaceID, scope, kind: 'skills', item: `thirdparty-${slug}`, origin: 'thirdparty' },
     destination: rt.destination,
     content: normalized,
     catalogVersion: `thirdparty:${options.checksum.slice(0, 12)}`,

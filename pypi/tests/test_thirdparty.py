@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from trackfw import identity
+from trackfw import validator as v
 from trackfw.commands import thirdparty as tp
 from trackfw.integrations.catalog import plan_deployments
 from trackfw.integrations.command import run as integrations_run
@@ -113,6 +114,13 @@ def test_check_markers_matches_literal_heading():
     assert matched == ["git authority"]
 
 
+def test_check_markers_matches_h6_heading():
+    # headingLinePattern matches any level 1-6, not just H1 — a marker
+    # buried at H6 must be caught the same as at H1.
+    matched = thirdparty_pkg.check_markers(b"###### Mode lock\n\nsome content.\n")
+    assert matched == ["mode lock"]
+
+
 def test_check_markers_ignores_marker_inside_fenced_block():
     content = (
         b"Some doc that quotes the marker list:\n\n"
@@ -134,6 +142,22 @@ def test_check_markers_closer_shorter_than_opener_does_not_close():
     # opener. A 3-backtick opener closed by a 2-backtick line never closes.
     content = b"````\n# Git authority\n```\nstill fenced\n"
     assert thirdparty_pkg.check_markers(content) == []
+
+
+def test_check_markers_indented_fence_still_recognized():
+    # fencePrefixPattern allows leading whitespace — a fence opener/closer
+    # indented under a list item or blockquote is still recognized as a
+    # fence delimiter, not read as prose.
+    content = b"   ```\n   # Git authority\n   ```\n\nRegular text.\n"
+    assert thirdparty_pkg.check_markers(content) == []
+
+
+def test_check_markers_heading_after_closed_fence_still_matches():
+    # Converse of the fence-acceptance tests: content AFTER a properly
+    # closed fence must still be read as ordinary text, so a real heading
+    # following a fence is not accidentally swallowed.
+    content = b"```\nsome code, not a marker\n```\n\n# Git authority\n\nRegular text.\n"
+    assert thirdparty_pkg.check_markers(content) == ["git authority"]
 
 
 def test_check_markers_tilde_fence_also_removed():
@@ -572,3 +596,32 @@ def test_fetch_refuses_non_200_status(monkeypatch):
     _patch_opener(monkeypatch, outcomes)
     with pytest.raises(fetch_mod.ThirdPartyFetchError, match="404"):
         fetch_mod.fetch("https://example.com/a")
+
+
+# ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas, ML-3A —
+# thirdparty_artifact_has_provenance end-to-end, real command path (not hand-authored fixtures).
+# Mirrors internal/commands/integrations_thirdparty_validate_test.go — exists because the rule's
+# own unit tests (test_validator_thirdparty_provenance.py) hand-author manifest/provenance JSON,
+# and an incorrect key-domain assumption baked into BOTH the rule and its fixtures would pass there
+# while still being wrong against the real command (exactly what happened in Go during this ML: the
+# rule initially looked up provenance by the manifest's ABSOLUTE destination, but
+# verify_approval/upsert_provenance_entry are actually called with the project-relative
+# destination).
+def test_install_passes_thirdparty_artifact_has_provenance_end_to_end(tmp_path, monkeypatch):
+    project, home = _fixture(tmp_path, monkeypatch)
+    _install_backend_agent(project, home)
+
+    checksum = _run_fetch(project, monkeypatch, "https://example.com/skills/my-skill.md")
+    dest = ".claude/skills/thirdparty/my-skill.md"
+    _upsert_provenance(project, dest, checksum)
+
+    tp.execute_install("skills", _install_args(checksum, apply_to="backend"))
+
+    msgs = v.validate_thirdparty_artifact_has_provenance()
+    assert msgs == [], "a correctly approved+installed third-party artifact must not trip the rule"
+
+    # Negative counterpart: tamper the installed file, expect the rule to catch it.
+    (project / dest).write_text("# Example Third-Party Skill\n\nTAMPERED.\n", encoding="utf-8")
+    tampered_msgs = v.validate_thirdparty_artifact_has_provenance()
+    assert len(tampered_msgs) == 1, tampered_msgs
+    assert "D2 branch ii" in tampered_msgs[0]["message"]

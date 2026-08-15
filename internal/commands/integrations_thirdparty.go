@@ -433,6 +433,7 @@ func executeThirdPartyInstall(cmd *cobra.Command, kind integrations.ItemKind, op
 			Claim: integrations.Claim{
 				Target: rt.targetID, Surface: rt.surfaceID, Scope: opts.scope,
 				Kind: integrations.KindSkills, Item: "thirdparty-" + slug,
+				Origin: "thirdparty", // D11 — marks this destination for thirdparty_artifact_has_provenance
 			},
 			Destination:    rt.destination,
 			Content:        normalized,

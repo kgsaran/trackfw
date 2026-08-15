@@ -60,3 +60,4 @@
 - [falsify-suite-locale-dependent-false-failure-2026-08-03](falsify-suite-locale-dependent-false-failure-2026-08-03.md)
 - [req-move-statedir-hardcoded-roadmapdir-2026-08-04](req-move-statedir-hardcoded-roadmapdir-2026-08-04.md)
 - [go-generateattentionscripts-cwd-vs-rootdir-2026-08-04](go-generateattentionscripts-cwd-vs-rootdir-2026-08-04.md)
+- [thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15](thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15.md)
