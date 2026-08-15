@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [python-import-submodule-as-shadowed-by-package-reexport-2026-08-15](python-import-submodule-as-shadowed-by-package-reexport-2026-08-15.md)
 - [node-https-redirect-checkredirect-off-by-one-2026-08-15](node-https-redirect-checkredirect-off-by-one-2026-08-15.md)
 - [go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15](go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15.md)
 - [credential-guard-hook-resolvable-nao-detecta-script-ausente-2026-08-15](credential-guard-hook-resolvable-nao-detecta-script-ausente-2026-08-15.md)

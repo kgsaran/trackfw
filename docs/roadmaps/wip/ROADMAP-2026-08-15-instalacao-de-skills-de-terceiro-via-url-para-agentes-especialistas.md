@@ -456,7 +456,7 @@ sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -ci "conforme .* Wave 0"   # deve s
 > ⛔ Nenhum dos dois toca `scripts/` nem `docs/cli-parity.md` — são da Wave 3, para não colidir.
 
 ### ML-2A — Porte Node.js 1:1
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-08-15) — 566/566 testes npm verdes
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos afetados:** `npm/src/integrations/index.js`, `npm/src/integrations/render.js`,
 `npm/src/integrations/manager.js`, `npm/src/thirdparty/` (novo — espelho de
@@ -491,7 +491,7 @@ seguindo o padrão de `npm/src/commands/plugins.js`.
 **Comandos de validação:** `cd npm && npm test`
 
 ### ML-2B — Porte Python 1:1
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-08-15) — 1207 testes pytest verdes
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos afetados:** `pypi/trackfw/integrations/command.py`,
 `pypi/trackfw/integrations/renderers.py`, `pypi/trackfw/integrations/manager.py`,
@@ -519,6 +519,8 @@ bater byte a byte com o Go.
 Node/Python, `scripts/check-thirdparty-parity.sh` (novo, adicionado ao alvo `parity` do
 `Makefile`, cobrindo os **três** schemas de D9), `CLAUDE.md` (seção do comando)
 **Ações:**
+0-bis. Renomear o teste Go `TestFetch_RefusesFourthRedirect` → `TestFetch_RefusesThirdRedirect`
+   (débito de D7-bis: o nome descreve mal o comportamento, que recusa o 3º hop, não o 4º).
 0. **Decisão de design pendente, resolver ANTES de codar:** como a regra
    `thirdparty_artifact_has_provenance` identifica que um destino é "de origem de terceiro"?
    `manifest.go` **não** ganhou campo novo na `Claim` no ML-1C. As opções são: (a) sniffing do

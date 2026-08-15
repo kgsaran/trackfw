@@ -243,6 +243,33 @@ desanexar uma referência **mutar o registro de auditoria por um motivo que não
 Não se escreve na coisa cuja integridade se está conferindo. Dois arquivos, duas chaves, dois
 leitores.
 
+### D7-bis — Emenda: o limite de redirect é "recusa o 3º", não "segue 3"
+
+O texto de D7 dizia "máximo 3 redirects". **Impreciso.** Medido empiricamente pelo arquiteto
+contra o `Fetch` do Go, com servidor de teste encadeado:
+
+```
+hops=1 → SEGUIU   hops=2 → SEGUIU   hops=3 → RECUSOU   hops=4 → RECUSOU
+```
+
+Causa: a semântica do `CheckRedirect` do `net/http` — o `via` conta **requests já completados**,
+não redirects já seguidos; na primeira chamada `len(via)` já vale 1. Portanto `maxRedirects = 3`
+**segue no máximo 2 hops**.
+
+**Decisão: o comportamento fica como está (segue 2, recusa o 3º) e é o TEXTO que se corrige.**
+Não há diferença de segurança entre 2 e 3 hops, e mudar o número exigiria alterar três CLIs já
+implementados e verificados. O que não pode ficar é a divergência entre spec e código, que
+convidaria um "conserto" futuro que quebraria a paridade.
+
+Os três CLIs reproduzem **a mesma contagem**: Go via `CheckRedirect`, Node via `requestsCompleted`
+(`npm/src/thirdparty/fetch.js`), Python via laço manual de redirect — o `max_redirections` do
+`urllib` conta de forma diferente e foi deliberadamente abandonado.
+
+⚠️ **Débito menor registrado:** o teste Go `TestFetch_RefusesFourthRedirect` tem nome que descreve
+mal o próprio comportamento (recusa o 3º, não o 4º). Renomear no ML-3A.
+
+Notas de vault: `vault/notes/node-https-redirect-checkredirect-off-by-one-2026-08-15.md`.
+
 ### D10 — Imprecisões deste ADR encontradas na implementação (registradas, não contornadas)
 
 1. **Escopo do `--apply-to`.** D5/D8 nunca disseram em que escopo o artefato do agente do catálogo
@@ -257,6 +284,15 @@ leitores.
    **nenhum comando a escreve** — o aprovador (`hades-tf`) grava direto no JSON versionado,
    **chaveado pelo destino RESOLVIDO**. Esse acoplamento era implícito e agora é normativo: sem ele,
    a Wave 2 não tem como portar o lado da escrita do handshake.
+4. **`resolve_third_party_skill_destination` retorna 3 valores no Python, não 2.** O
+   `PlannedArtifact` do Go não tem campo `Representation`, mas o `IntegrationManager.inspect` do
+   Python acessa `plan["representation"]` incondicionalmente — o dict de plano do Python carrega
+   mais campos que a struct do Go. Divergência de forma interna, **não** de comportamento
+   observável; a paridade de saída é preservada.
+5. **Entradas de proveniência precisam de canonicalização de chaves na escrita (Python).** Como
+   quem escreve a entrada é um chamador externo (o aprovador, D10.2) e não este pacote,
+   `write_provenance` reordena os campos para a ordem da struct do Go antes de serializar — sem
+   isso, a paridade byte-a-byte do JSON quebraria.
 3. **`requested_targets` de D8b é ambíguo** — não distingue target de CLI (onde o arquivo cai) de
    item de agente do catálogo (quem recebe a referência). Por isso o CLI separa `--targets` de
    `--apply-to`.

@@ -16884,3 +16884,93 @@ seguidos), então `maxRedirects=3` na prática só segue 2 hops antes de recusar
 com a mesma contagem em `fetch.js` para não divergir do Go no cenário `RefusesFourthRedirect`.
 
 **Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.
+
+---
+
+## Sessão 2026-08-15 — Apolo (ML-2B — porte Python 1:1 do gate de artefato de terceiro)
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap em
+`wip/`. Executado o porte Python da Wave 2, byte-a-byte a partir da referência Go
+(`internal/thirdparty/*`, `internal/commands/integrations_thirdparty.go`,
+`internal/integrations/render.go` D9, `internal/integrations/plan.go`). Escopo exclusivo
+`pypi/` — não tocado `npm/` (ML-2A, agente irmão em paralelo) nem `internal/` (leitura).
+
+**Arquivos criados:**
+- `pypi/trackfw/thirdparty/fetch.py` — HTTPS-only, timeout 30s, teto 2 MiB, allowlist de
+  Content-Type. Redirect loop MANUAL (não usa o `max_redirections` nativo do
+  `urllib.request.HTTPRedirectHandler`, que conta diferente do `net/http` do Go): usa um
+  `_NonFollowingRedirectHandler` que nunca segue automaticamente, captura o `HTTPError` de
+  cada hop e conta "requisições já completadas" antes de decidir seguir o próximo — replica o
+  off-by-one do Go descoberto pelo agente irmão do Node (`len(via) >= maxRedirects` do
+  `net/http.CheckRedirect`: só 2 redirects são seguidos antes do 3º ser recusado, apesar do
+  nome `maxRedirects = 3`), conforme instruído em
+  `vault/notes/node-https-redirect-checkredirect-off-by-one-2026-08-15.md`.
+- `pypi/trackfw/thirdparty/markers.py` — `check_markers`/`checksum`; `_remove_fenced_blocks`
+  portado como line-scanner com estado explícito (não regex de backreference, embora `re` do
+  Python suporte — mantido fiel ao algoritmo do Go, não à limitação do Go, conforme
+  `vault/notes/go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15.md`). Casefold
+  via `str.casefold()` (não `str.lower()`) conforme instruído no brief.
+- `pypi/trackfw/thirdparty/quarantine.py`, `provenance.py` — schemas JSON e assinaturas
+  `(root, ...)` idênticas ao Go; assimetria fail-closed preservada
+  (`read_quarantine` sempre erro se ausente; `load_provenance` ausente = vazio, só
+  `verify_approval` recusa por falta de entrada). `marker_check.matched_markers` e
+  `requested_targets` serializam `null` (não `[]`) quando vazios, replicando o nil-slice do Go.
+  `write_provenance` canonicaliza a ordem de chaves de cada entrada (a entrada de proveniência
+  é escrita por um caller EXTERNO — `hades-tf`/arquiteto, direto no JSON, D10.2 — não há
+  comando `install --approve` nesta ML; sem essa canonicalização, a ordem de inserção do dict
+  do caller divergiria da ordem de campos do struct Go).
+- `pypi/trackfw/thirdparty/references.py` — registro de referências (D9, terceiro schema,
+  `.trackfw/thirdparty-references.json`), `apply_third_party_references`,
+  `normalize_third_party_content`, `resolve_third_party_skill_destination`. Duplica
+  localmente `_truncate_before_id_segment` e a lógica de seleção de surface (em vez de
+  importar de `trackfw.integrations.catalog`) para evitar ciclo de import: `catalog.py`
+  importa este módulo para reaplicar referências após o render, então a direção inversa teria
+  criado um ciclo.
+- `pypi/trackfw/commands/thirdparty.py` — subcomandos `fetch`/`install`, guardrail D2
+  (`TRACKFW_ORCHESTRATOR_SESSION`), TOCTOU (D8c), precondições de `--apply-to` validadas ANTES
+  de qualquer escrita, `marker_override` exigido quando `marker_check.result == "fail"`.
+- `pypi/tests/test_thirdparty.py` — 35 testes: os mesmos 11 cenários do Go
+  (`integrations_thirdparty_test.go`) mais unitários de `check_markers` (fence aceito, fence
+  não fechado, closer mais curto que o abridor, tilde fence, largura total recusada, cirílico
+  passa, múltiplos marcadores) e de `fetch.py` com um opener mockado (sem sockets reais):
+  refusa HTTP puro, refusa downgrade de esquema em redirect, segue exatamente 2 redirects e
+  tem sucesso, recusa no 3º redirect (prova o off-by-one), Content-Type permitido/recusado,
+  teto de tamanho, status não-200.
+
+**Arquivos editados:**
+- `pypi/trackfw/integrations/catalog.py` — `plan_deployments` (D5/D9): novo parâmetro
+  `project_root` opcional; quando truthy e `kind == "agents"`, reaplica
+  `apply_third_party_references` após `render()`. Import feito dentro do loop (lazy) para
+  não competir com o import de módulo de `catalog.py` que `references.py` também depende (ver
+  nota de ciclo acima).
+- `pypi/trackfw/integrations/command.py` — `run()` agora sempre passa `project_root=os.getcwd()`
+  para o `plan_deployments` final (necessário para que um `agents update` comum, não só o
+  `third-party install`, resolva o registro de referências e assente em `state: "current"` —
+  mirror dos dois call-sites de `manager.ProjectRoot` no Go). `add_lifecycle_parser` registra
+  `add_thirdparty_parser(actions, kind)` (import lazy, mesmo padrão de `identity_wizard`) —
+  alcançável por `trackfw agents third-party` e `trackfw skills third-party`.
+- `pypi/trackfw/integrations/renderers.py` — nova função pública `normalize_markdown` (alias de
+  `_normalize_markdown`), ponto de extensão D5/D9: `thirdparty.references.normalize_third_party_content`
+  precisa da mesma convenção de strip+`\n` final, mas não pode importar um símbolo com
+  underscore de outro pacote.
+
+**Decisão autônoma reportada (extensão sobre a assinatura Go):**
+`resolve_third_party_skill_destination` retorna `(destination, surface_id, representation)` —
+3 valores, não 2 como `ResolveThirdPartySkillDestination` do Go. Motivo: o dict de plano
+Python (`trackfw.integrations.manager.IntegrationManager.inspect`) acessa
+`plan["representation"]` incondicionalmente (`plan["representation"]`, não `.get(...)`), ao
+contrário do `PlannedArtifact` do Go, que **não tem campo `Representation`**. Sem o terceiro
+valor de retorno, o plano sintético do artefato de terceiro quebraria com `KeyError` em
+`manager.install`.
+
+**Validação:** `python3 -m pytest pypi/tests -q` → `1207 passed, 8 subtests passed` (35 novos
+em `test_thirdparty.py`, 0 regressão nos 1172 pré-existentes). Nenhum teste pré-existente foi
+editado. `python3 -m py_compile` limpo em todos os arquivos tocados.
+
+**Nota de vault criada:** `vault/notes/python-import-submodule-as-shadowed-by-package-reexport-2026-08-15.md`
+— `import pacote.submodulo as alias` resolve por travessia de atributo a partir do pacote-topo,
+não por `sys.modules['pacote.submodulo']` direto; como `thirdparty/__init__.py` re-exporta uma
+função `fetch` com o mesmo nome do módulo `fetch.py`, esse padrão de import silenciosamente
+vincula a função, não o módulo. Usar `importlib.import_module` nesse caso.
+
+**Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.

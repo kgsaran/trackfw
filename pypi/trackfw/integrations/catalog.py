@@ -73,6 +73,14 @@ def plan_deployments(
     surfaces: dict[str, str] | None = None,
     all_surfaces: bool = False,
     identity_cfg: "identity.Config | None" = None,
+    # project_root, when truthy, lets plan_deployments apply the D5/D9
+    # third-party reference extension point (apply_third_party_references,
+    # trackfw.thirdparty.references) to every rendered "agents" artifact.
+    # Optional and source-compatible: every existing caller that does not
+    # set it gets byte-identical output to before this parameter existed
+    # (apply_third_party_references no-ops on a falsy root). Mirrors
+    # internal/integrations/plan.go's PlanRequest.ProjectRoot.
+    project_root: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if kind not in {"agents", "skills"}:
         raise ValueError(f"unsupported integration kind {kind!r}")
@@ -106,6 +114,21 @@ def plan_deployments(
                 for install_path in install_paths:
                     destination = install_path["path"].replace("{{id}}", item["id"])
                     rendered = render(kind, target["id"], surface["id"], item, content, capability, identity_cfg)
+                    rendered_bytes = rendered.encode("utf-8")
+                    # D5/D9 extension point: reproduce any persisted
+                    # third-party reference block so regenerating this
+                    # exact artifact (e.g. a later `trackfw agents
+                    # update`) settles at state "current" instead of
+                    # treating the attachment as drift. See
+                    # trackfw.thirdparty.references' module docstring for
+                    # why this cannot live inside render() itself (it does
+                    # not know the project root).
+                    if kind == "agents" and project_root:
+                        from trackfw.thirdparty.references import apply_third_party_references
+
+                        rendered_bytes = apply_third_party_references(
+                            project_root, rendered_bytes, target["id"], item["id"]
+                        )
                     claim = {
                         "target": target["id"],
                         "surface": surface["id"],
@@ -117,7 +140,7 @@ def plan_deployments(
                         {
                             "claim": claim,
                             "destination": destination,
-                            "content": rendered.encode("utf-8"),
+                            "content": rendered_bytes,
                             "catalog_version": catalog["version"],
                             "support_level": capability["support_level"],
                             "representation": capability["representation"],
