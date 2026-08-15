@@ -16406,3 +16406,47 @@ observação para o `trackfw_architect` avaliar se `changelog` deve ganhar uma l
 (comandos recentes como `commit`/`barrier` também não aparecem nela — pode já ser uma lacuna
 pré-existente, não introduzida por este ML). Falta Wave 3 (ML-3A — paridade cruzada e teste manual
 E2E nos 3 binários, que já corri como parte da validação deste ML e veio verde).
+
+## Sessão 2026-08-15 — Apolo (ML-1B: Go `SuggestedTestFramework` heurístico em `trackfw discover`, branch `feat/agentes-especialistas-aceitam-contexto-de-convencoes`) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+Implementado o ML-1B do roadmap `ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md`
+(ML-1A já estava commitado nesta branch — não toquei nele). Escopo: heurística best-effort de
+sugestão de framework de teste em `trackfw discover`, impressa apenas no relatório de texto,
+nunca escrita automaticamente em `trackfw.yaml`.
+
+**Arquivos modificados:**
+- `internal/discover/discover.go` — novo campo `DiscoveryResult.SuggestedTestFramework string`;
+  `Scan()` chama nova função `detectTestFramework(rootDir)` (best-effort, nunca erro) logo após a
+  detecção de CI system. Precedência: `jest.config.js`/`.ts` → `"jest"`; `vitest.config.js`/`.ts`
+  → `"vitest"`; `pytest.ini` OU `pyproject.toml` contendo `[tool.pytest` OU `setup.cfg` contendo
+  `[tool:pytest]` → `"pytest"`; `go.mod` presente E pelo menos um `*_test.go` em qualquer lugar
+  do repo (via `filepath.WalkDir`, helper `hasGoTestFile`) → `"go test"`; nenhum match → `""`.
+  Helper `hasFileWithSubstring(path, sub)` faz leitura best-effort (arquivo ausente/erro de
+  leitura → `false`, nunca propaga erro).
+- `internal/commands/discover.go` — no relatório de texto (não há flag `--json` neste comando),
+  logo antes da linha `Governance Score:`, imprime
+  `Suggested test framework: <valor> (add to trackfw.yaml as agent_conventions: if correct)`
+  somente quando `r.SuggestedTestFramework != ""`. `GenerateYAML`/fluxo `--init` NÃO foi tocado —
+  a sugestão nunca é escrita automaticamente em `trackfw.yaml` (confirmado por teste e manualmente).
+- `internal/discover/discover_test.go` — 13 novos testes cobrindo cada arquivo-gatilho
+  (jest `.js`/`.ts`, vitest `.js`/`.ts`, `pytest.ini`, `pyproject.toml` com/sem seção
+  `[tool.pytest...]`, `setup.cfg` com `[tool:pytest]`, `go.mod`+`*_test.go` presente/ausente) e o
+  caso sem nenhum gatilho.
+- `internal/commands/discover_test.go` — 3 novos testes: linha de sugestão presente/ausente no
+  relatório, e confirmação de que `discover --init` nunca escreve `agent_conventions` em
+  `trackfw.yaml` mesmo quando uma sugestão é impressa.
+
+**Validação:**
+- `go build ./...` — sem erros.
+- `go vet ./...` — sem warnings.
+- `go test ./internal/discover/... ./internal/commands/...` — verde.
+- `go test ./...` (suíte completa) — sem regressões.
+- Teste manual real com `bin/trackfw` reconstruído: fixture com `jest.config.js` → linha
+  `Suggested test framework: jest (add to trackfw.yaml as agent_conventions: if correct)`
+  presente; fixture vazia → linha ausente. `trackfw discover --init` na fixture com
+  `jest.config.js` gerou `trackfw.yaml` sem a chave `agent_conventions` (confirmado via `grep -c`
+  → `0`), provando que a sugestão nunca é persistida automaticamente.
+
+Não fiz `git commit`/`push` — autoridade de Git é do `trackfw_architect`. Não toquei em
+`internal/generators/agentfiles.go`/`config.go` (ML-1A, já commitado). Wave 2 (Node.js/Python) e
+Wave 3 (paridade cruzada + `docs/cli-parity.md`) seguem pendentes, fora do escopo deste ML.
