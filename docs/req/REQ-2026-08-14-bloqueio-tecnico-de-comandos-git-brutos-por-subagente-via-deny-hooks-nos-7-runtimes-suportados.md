@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-14
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md"
 ---
 
 # REQ: bloqueio tecnico de comandos git brutos por subagente via deny/hooks nos 7 runtimes suportados
 
-> Date: 2026-08-14 | Status: Open
+> Date: 2026-08-14 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -50,7 +50,7 @@ desta REQ é elevar o piso de enforcement de "convenção em markdown" para "blo
 técnico configurado", não prometer impossibilidade de bypass.
 
 ## Acceptance Criteria
-- [ ] Cada um dos 7 geradores de agente (`internal/generators/agentfiles.go` e
+- [x] Cada um dos 7 geradores de agente (`internal/generators/agentfiles.go` e
       equivalentes em `npm/src/` e `pypi/trackfw/`, respeitando a regra de paridade de
       3 CLIs) passa a emitir, além do bloco de instrução textual já existente, a
       configuração técnica de deny/hook nativa daquele runtime para os comandos
@@ -68,23 +68,28 @@ técnico configurado", não prometer impossibilidade de bypass.
       `PreToolUse`/`pre_run_command` condicional por `subagent_name` em
       Claude/Codex/Windsurf + geradores de subagente nativo, hoje inexistentes no
       trackfw, para Gemini/Amazon Q).
-- [ ] `make quality` (contratos de paridade Go/Node/Python) passa sem novas
+- [x] `make quality` (contratos de paridade Go/Node/Python) passa sem novas
       divergências entre os 3 CLIs.
-- [ ] Testado manualmente em pelo menos Claude Code (ambiente disponível nesta sessão)
+- [x] Testado manualmente em pelo menos Claude Code (ambiente disponível nesta sessão)
       confirmando que `git commit`/`git push`/`git checkout -b` brutos são bloqueados
       para um subagente especialista e que `trackfw branch new`/`trackfw ship`
-      continuam funcionando.
-- [ ] Documentação em `docs/cli-parity.md` ou equivalente registra o comportamento
+      continuam funcionando. Ampliado além do previsto: testado também contra o próprio
+      agente arquiteto (deny global, sem exceção) ao vivo neste repositório após
+      `trackfw update`, e 3 bugs de robustez encontrados nesse teste (comando encadeado,
+      path absoluto, falso-positivo de prosa) foram corrigidos nos 3 CLIs.
+- [x] Documentação em `docs/cli-parity.md` ou equivalente registra o comportamento
       esperado por runtime (tabela de suporte), para que divergências futuras sejam
       reconhecidas como decisão consciente, não regressão.
-- [ ] Novo comando `trackfw commit` (Go/Node/Python, paridade completa) recusa commit
+- [x] Novo comando `trackfw commit` (Go/Node/Python, paridade completa) recusa commit
       direto em `main`/branch protegida e recusa commit em branch `feat/fix/refactor`
       sem roadmap correspondente em `wip/`. Motivação direta: nesta sessão, um commit de
       artefatos de governança (REQ+roadmap) foi feito acidentalmente direto na `main`
       via `git commit` bruto (commit `cda74cd`, revertido antes do push) — nada no
       trackfw impediu isso no momento do commit, só depois manualmente. O deny/hook por
       runtime (critério acima) deve incluir `git commit` bruto, não só `checkout -b`/
-      `push`, e orientar para `trackfw commit`.
+      `push`, e orientar para `trackfw commit`. Fechado também com
+      `scripts/check-commit-parity.sh`, gate de paridade dedicado registrado em
+      `make quality`.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -95,4 +100,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md
