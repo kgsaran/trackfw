@@ -283,6 +283,79 @@ func TestGitBranchGuard_RawStdin_NonJSON_Blocks(t *testing.T) {
 	}
 }
 
+// --- Regressão de teste manual E2E (ML-4A): bugs reais no parser de segmentos --------------
+
+func TestGitBranchGuard_ChainedCommand_SecondGitBlocked(t *testing.T) {
+	// Bug 1: "git status; git push origin HEAD" não era bloqueado porque o parser antigo só
+	// coletava tokens a partir da PRIMEIRA ocorrência de "git" na string inteira.
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git status; git push origin HEAD"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (git push encadeado após ';' deve ser bloqueado), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "trackfw ship") {
+		t.Errorf("mensagem deveria orientar para 'trackfw ship', got: %s", stdout)
+	}
+}
+
+func TestGitBranchGuard_AbsolutePathGit_Blocks(t *testing.T) {
+	// Bug 2: "/usr/bin/git commit -m x" não era bloqueado porque o parser antigo comparava
+	// "$tok" = "git" por igualdade exata, e nunca por basename.
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"/usr/bin/git commit -m x"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (path absoluto para git deve ser bloqueado), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "trackfw commit") {
+		t.Errorf("mensagem deveria orientar para 'trackfw commit', got: %s", stdout)
+	}
+}
+
+func TestGitBranchGuard_ProseTextMentioningGitCommit_DoesNotBlock(t *testing.T) {
+	// Bug 3 (crítico): comando legítimo `bin/trackfw commit -m "..."` era bloqueado sempre
+	// que a mensagem de commit mencionava a frase "git commit" em algum lugar, porque o
+	// parser antigo procurava "git" em qualquer posição da string inteira, não só no primeiro
+	// token de um segmento real de comando.
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"bin/trackfw commit -m \"nota: antes do git commit real, valide o gate\""}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 0 {
+		t.Errorf("exit code: want 0 (comando legítimo 'trackfw commit' com prosa mencionando 'git commit' não deve ser bloqueado), got %d (stdout: %s, stderr: %s)", code, stdout, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("allow deveria ser silencioso, got: %s", stdout)
+	}
+}
+
+func TestGitBranchGuard_MultilineHeredocProseMentioningGitCommit_DoesNotBlock(t *testing.T) {
+	// Variante multi-linha do bug 3: um heredoc de mensagem de commit com "git commit" no
+	// meio de uma linha de prosa, não como primeiro token da linha.
+	dir, script := setupGitBranchGuardFixture(t)
+	cmd := "bin/trackfw commit -m \"$(cat <<'EOF'\n" +
+		"Fix guard parsing bug.\n" +
+		"Bug real encontrado pelo gate: comando escapava antes do git commit real.\n" +
+		"EOF\n" +
+		")\""
+	payload := `{"tool_input":{"command":"` + jsonEscape(cmd) + `"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 0 {
+		t.Errorf("exit code: want 0 (heredoc com 'git commit' no meio de uma linha de prosa não deve ser bloqueado), got %d (stdout: %s, stderr: %s)", code, stdout, stderr)
+	}
+}
+
+func jsonEscape(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	return s
+}
+
 func TestGitBranchGuard_EnvVarFallback_Blocks(t *testing.T) {
 	dir, script := setupGitBranchGuardFixture(t)
 

@@ -131,6 +131,55 @@ class TestGitBranchGuardScriptWindsurfStdin(unittest.TestCase):
         self.assertEqual(proc.returncode, 0)
 
 
+class TestGitBranchGuardManualE2ERegressions(unittest.TestCase):
+    """Regressão dos 3 bugs reais achados por teste manual end-to-end (ML-4A): o parser
+    original detectava o alvo (`git commit`/`git push`/`git checkout -b`) por busca de
+    substring/regex em QUALQUER lugar da string do comando, em vez de analisar o comando
+    por segmentos reais com "git" como primeiro token. Ver doc comment de match_subcommand
+    em _GIT_BRANCH_GUARD_SH (init_gen.py) para a causa raiz unificada e o fix."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        _generate_git_branch_guard_script(self.tmpdir)
+        self.script_path = os.path.join(self.tmpdir, 'scripts', 'trackfw-git-branch-guard.sh')
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self, command: str):
+        return subprocess.run(
+            ['bash', self.script_path],
+            input=json.dumps({'tool_input': {'command': command}}),
+            capture_output=True,
+            text=True,
+        )
+
+    def test_bug1_chained_command_blocks_second_segment_push(self):
+        # Falso negativo original: o parser só coletava tokens depois da PRIMEIRA
+        # ocorrência de "git" na string inteira, então o `push` do segundo comando
+        # (depois do `;`) nunca era analisado.
+        proc = self._run('git status; git push origin HEAD')
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn('git push bruto bloqueado', proc.stderr)
+
+    def test_bug2_absolute_path_git_blocks_commit(self):
+        # Falso negativo original: comparação `[ "$tok" = "git" ]` era igualdade exata de
+        # string, então `/usr/bin/git` nunca ativava a detecção.
+        proc = self._run('/usr/bin/git commit -m x')
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn('git commit bruto bloqueado', proc.stderr)
+
+    def test_bug3_prose_mentioning_git_commit_does_not_block_legit_trackfw_commit(self):
+        # Falso positivo original (crítico): uma chamada legítima a `trackfw commit`
+        # cuja mensagem menciona "git commit"/"git push" em algum lugar (ex.: dentro de
+        # um heredoc) era bloqueada porque o parser buscava o padrão livremente na string
+        # inteira, sem exigir que "git" fosse o primeiro token de um segmento real.
+        proc = self._run('bin/trackfw commit -m "test message mentioning git commit inside"')
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.stdout, '')
+        self.assertEqual(proc.stderr, '')
+
+
 class TestGitBranchGuardHookWiringIdempotent(unittest.TestCase):
     """Cada injetor rodado duas vezes deve produzir exatamente a mesma entrada de
     git-branch-guard (sem duplicar) -- o caso mais importante para este ML."""

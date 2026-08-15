@@ -436,6 +436,25 @@ const GLOBAL_CREDENTIAL_GUARD_SCRIPT = CG_HEADER + CG_DETECTION_CORE + CG_GLOBAL
 // generateGlobalGitBranchGuardScript below, mirroring Go's single
 // `gitBranchGuardScript` const reused by both Generate*/GenerateGlobal*
 // functions.
+//
+// KNOWN LIMITATION (fix for 3 real bugs found by ML-4A manual E2E testing, 2026-08-14 —
+// chained command `git status; git push ...` escaping detection, absolute path
+// `/usr/bin/git commit` escaping via exact-string compare, and prose mentioning "git commit"
+// inside a quoted string being read as a real command): the script's `match_subcommand()`
+// now splits the raw command into segments on `;`/`&&`/`||`/`|`/newline and only treats a
+// segment as a real git invocation if `git` (by basename) is that segment's FIRST token —
+// this fixes all 3 bugs, but the splitter is NOT shell-quote-aware. It splits on those
+// delimiter characters wherever they occur in the raw string, even inside single/double
+// quotes. Practical consequence proven live in this session: a line inside a multi-line
+// heredoc body that itself STARTS with the token `git` still blocks (newline is treated as
+// a command boundary regardless of quoting context), and testing this script by embedding a
+// literal `; git push`/`; git commit` substring inside a quoted JSON payload passed as a raw
+// Bash tool command can trip the SAME guard when it's wired as this session's own
+// PreToolUse/Bash hook — write such payloads to a file and pipe `< file.json` instead of
+// inlining them in the shell command text. This limitation applies equally to the generated
+// shell script itself (Go-generated and Node-generated content is byte-identical), even
+// though internal/generators/scaffold.go's gitBranchGuardScript doc comment does not yet
+// call it out explicitly — flagging for trackfw_architect to consider adding there too.
 // GBG_BACKTICK — literal 2-char sequence "\\`" (backslash + backtick), used to embed a
 // shell-escaped backtick (so REASON's `` `cmd` `` doesn't trigger bash command substitution
 // inside the surrounding double-quoted string) without breaking the enclosing JS template
@@ -494,59 +513,64 @@ fi
 
 [ -n "$CMD_RAW" ] || exit 0
 
-# --- 2. Casar contra "git (commit|push|checkout -b)", aceitando flags antes ------------------
+# --- 2. Casar contra "git (commit|push|checkout -b)", segmento por segmento -----------------
+# Cada segmento é um comando real (dividido por ; && || | e por quebra de linha). "git" só
+# conta se for o PRIMEIRO token do segmento (por basename, então /usr/bin/git também casa) —
+# nunca uma ocorrência solta em qualquer posição da string inteira. Isso evita: (a) o segundo
+# comando de uma cadeia escapar da checagem, (b) um path absoluto para o git escapar por
+# comparação de igualdade exata, e (c) texto de prosa (ex.: mensagem de commit mencionando
+# "git commit" no meio de uma frase) ser tratado como comando.
 match_subcommand() {
-  set -- $1
-  found=0
-  args=""
-  for tok in "$@"; do
-    if [ "$found" -eq 0 ]; then
-      if [ "$tok" = "git" ]; then
-        found=1
-      fi
-      continue
-    fi
-    args="$args $tok"
-  done
-  [ "$found" -eq 1 ] || return 1
+  normalized=$(printf '%s' "$1" | sed -e 's/&&/\\n/g' -e 's/||/\\n/g' -e 's/[;|]/\\n/g')
+  while IFS= read -r seg; do
+    seg_trimmed=$(printf '%s' "$seg" | sed -e 's/^[[:space:]]*//')
+    [ -n "$seg_trimmed" ] || continue
 
-  set -- $args
-  sub=""
-  while [ "$#" -gt 0 ]; do
-    tok="$1"
-    case "$tok" in
-      -C|-c|--work-tree|--git-dir|--namespace)
-        if [ "$#" -ge 2 ]; then shift 2; else shift; fi
-        continue
+    set -- $seg_trimmed
+    first="$1"
+    base="\${first##*/}"
+    [ "$base" = "git" ] || continue
+    shift
+
+    sub=""
+    while [ "$#" -gt 0 ]; do
+      tok="$1"
+      case "$tok" in
+        -C|-c|--work-tree|--git-dir|--namespace)
+          if [ "$#" -ge 2 ]; then shift 2; else shift; fi
+          continue
+          ;;
+        -*)
+          shift
+          continue
+          ;;
+        *)
+          sub="$tok"
+          shift
+          break
+          ;;
+      esac
+    done
+
+    case "$sub" in
+      commit)
+        echo "commit"
+        return 0
         ;;
-      -*)
-        shift
-        continue
+      push)
+        echo "push"
+        return 0
         ;;
-      *)
-        sub="$tok"
-        shift
-        break
+      checkout)
+        if [ "\${1:-}" = "-b" ]; then
+          echo "checkout-b"
+          return 0
+        fi
         ;;
     esac
-  done
-
-  case "$sub" in
-    commit)
-      echo "commit"
-      return 0
-      ;;
-    push)
-      echo "push"
-      return 0
-      ;;
-    checkout)
-      if [ "\${1:-}" = "-b" ]; then
-        echo "checkout-b"
-        return 0
-      fi
-      ;;
-  esac
+  done <<EOF
+$normalized
+EOF
   return 1
 }
 

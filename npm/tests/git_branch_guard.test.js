@@ -187,6 +187,44 @@ test('git checkout sem -b não bloqueia (allow silencioso)', () => {
   }
 })
 
+// --- Regressão: 3 bugs reais achados no teste manual end-to-end do ML-4A ---
+
+test('comando encadeado bloqueia o git push do segundo comando (bug 1)', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const payload = JSON.stringify({ tool_input: { command: 'git status; git push origin HEAD' } })
+    const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 2, `stderr: ${stderr}`)
+    assert.ok(stdout.includes('trackfw ship'))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('path absoluto para o git bloqueia por basename (bug 2)', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const payload = JSON.stringify({ tool_input: { command: '/usr/bin/git commit -m x' } })
+    const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 2, `stderr: ${stderr}`)
+    assert.ok(stdout.includes('trackfw commit'))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('prosa mencionando "git commit" dentro de string entre aspas NÃO bloqueia (bug 3, falso positivo crítico)', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const payload = JSON.stringify({ tool_input: { command: 'bin/trackfw commit -m "test message mentioning git commit inside"' } })
+    const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 0, `stderr: ${stderr}`)
+    assert.strictEqual(stdout, '')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 // --- Allow: comandos git inofensivos ----------------------------------------
 
 test('git status não bloqueia', () => {

@@ -4,6 +4,138 @@
 
 ---
 
+## Sessão 2026-08-14 — Apolo (fix: 3 bugs reais no parser do `gitBranchGuardScript`, achados por teste manual E2E ML-4A) — implementado, aguardando auditoria e commit por trackfw_architect
+
+Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`.
+
+**Causa raiz unificada dos 3 bugs:** `match_subcommand()` (função dentro da const
+`gitBranchGuardScript` em `internal/generators/scaffold.go`) fazia busca de "git" em
+QUALQUER posição da string inteira do comando recebido, sem respeitar limites de comando
+(`;`/`&&`/`||`/`|`/quebra de linha) nem exigir que "git" fosse o primeiro token de um
+segmento real, e comparava o token por igualdade exata (`[ "$tok" = "git" ]`, sem
+basename). Isso causava: (1) falso negativo em comando encadeado (`git status; git push
+...` não bloqueava o `push`); (2) falso negativo com path absoluto (`/usr/bin/git commit`
+não batia); (3) **falso positivo crítico** — `bin/trackfw commit -m "... git commit ..."`
+(chamada legítima ao comando que este mesmo roadmap criou) era bloqueado sempre que a
+mensagem de commit mencionasse a frase "git commit"/"git push" em prosa solta, porque a
+prosa dentro da string entre aspas também era varrida pelo parser.
+
+**Fix:** reescrita de `match_subcommand()` para operar por segmento (split por
+`&&`/`||`/`;`/`|`/newline via `sed`, iterado com `while read`), exigindo que o basename
+(`${first##*/}`) do PRIMEIRO token de cada segmento seja `git` antes de olhar o segundo
+token (subcomando). Isso corrige os 3 bugs de uma vez com a mesma lógica — nunca mais
+varre a string inteira à procura de "git" solto. Lógica de skip de flags (`-C`, `-c`,
+`--work-tree`, `--git-dir`, `--namespace`, `-*` genérico) preservada inalterada dentro de
+cada segmento, então os testes pré-existentes de "flags antes do subcomando"
+(`TestGitBranchGuard_CheckoutDashB_WithFlagsBefore_Blocks`,
+`TestGitBranchGuard_Push_WithNoPagerFlag_Blocks`) continuam passando sem alteração.
+
+**Ressalva documentada (não é regressão nova):** uma linha de heredoc que LITERALMENTE
+começa com `git commit ...`/`git push ...` como primeiro token da linha ainda seria
+(corretamente) tratada como comando também pelo shell real nesse caso raro — mesma
+linguagem já usada na REQ ("nenhum runtime tem garantia hermética documentada").
+
+**Testes novos** em `internal/generators/git_branch_guard_test.go`:
+`TestGitBranchGuard_ChainedCommand_SecondGitBlocked`,
+`TestGitBranchGuard_AbsolutePathGit_Blocks`,
+`TestGitBranchGuard_ProseTextMentioningGitCommit_DoesNotBlock` (+ variante multi-linha
+`TestGitBranchGuard_MultilineHeredocProseMentioningGitCommit_DoesNotBlock`, cobrindo o
+caso real de heredoc de mensagem de commit) — todos verdes, junto com os 20 testes
+pré-existentes do arquivo (nenhuma regressão).
+
+**Validação:** `go build ./...` OK · `go vet ./...` OK · `go test
+./internal/generators/...` verde (25 testes) · `go test ./...` completo verde · teste
+manual do script real gerado (`echo '{"tool_input":{"command":"bin/trackfw commit -m
+\"test message mentioning git commit inside\""}}' | bash
+scripts/trackfw-git-branch-guard.sh`) confirmado com `EXIT=0` (allow) — reproduzindo
+exatamente o caso 3 relatado. Confirmado também que os bugs 1 e 2 agora bloqueiam
+corretamente e que `git commit -m x` bruto legítimo continua bloqueado (sem regressão de
+sensibilidade).
+
+Nota: `scripts/trackfw-git-branch-guard.sh` continua sendo gerado em runtime (arquivo
+untracked, não versionado por si só) — a fonte de verdade é a const
+`gitBranchGuardScript` em `internal/generators/scaffold.go`.
+
+Não fiz commit/push — aguardando trackfw_architect auditar e commitar (não sou
+autoridade Git).
+
+---
+
+## Sessão 2026-08-14 — Apolo (fix pós-ML-4A: 3 bugs reais do parser do git-branch-guard, port Node.js) — em andamento
+
+Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`.
+
+Testes manuais end-to-end do ML-4A descobriram 3 bugs reais no parser de
+`GIT_BRANCH_GUARD_SCRIPT` (`npm/src/generators/hooks.js`) / `gitBranchGuardScript`
+(`internal/generators/scaffold.go`): (1) comando encadeado (`git status; git push ...`) escapa
+por só olhar o primeiro "git" da string inteira; (2) path absoluto (`/usr/bin/git commit`)
+escapa por comparar string crua em vez de basename; (3) FALSO POSITIVO crítico — prosa
+mencionando "git commit"/"git push" dentro de uma string entre aspas (ex: mensagem de commit
+do próprio `trackfw commit`) bloqueava um comando legítimo. Fazendo o port Node.js em paralelo
+ao fix Go (outro agente/sessão) — na leitura desta sessão, `internal/generators/scaffold.go`
+ainda estava na versão ANTIGA (com os 3 bugs), então implementei a lógica a partir da spec em
+prosa em vez de portar o Go real; byte-identidade fica como item de reconciliação pendente
+para quando o Go pousar (ver relatório final).
+
+**Atualização — concluído.** Antes de rodar os testes manuais, descobri que o Go (ML-3A/algum
+ML anterior) já havia POUSADO nesta mesma branch e — mais importante — `scripts/`
+`trackfw-git-branch-guard.sh` (gerado, untracked) já estava wireado como hook `PreToolUse`/`Bash`
+real em `.claude/settings.json` desta própria sessão. Isso significa que o script já continha o
+fix Go (versão corrigida, usando `sed 's/&&/\n/g' ... | while IFS= read -r seg; do ... done <<EOF`
+em vez do `tr` que eu tinha derivado da spec). Descartei minha primeira versão (baseada em `tr`) e
+portei a lógica REAL do Go (`internal/generators/scaffold.go:1244-1296`) byte-a-byte para
+`GIT_BRANCH_GUARD_SCRIPT` em `npm/src/generators/hooks.js` — `diff` entre o script gerado pelo
+Node e `scripts/trackfw-git-branch-guard.sh` (o mesmo arquivo que protege esta sessão, gerado a
+partir do Go) confirmou **IDENTICAL**.
+
+**Achado colateral relevante (armadilha para quem repetir este teste manual):** o guard script
+não é quote-aware — ele divide em segmentos por `;`/`&&`/`||`/`|`/quebra-de-linha em qualquer
+posição da string, mesmo dentro de aspas. Isso significa que comandos do PRÓPRIO Bash tool desta
+sessão que contêm literalmente `; git push`/`; git commit` etc. (mesmo dentro de um payload JSON
+entre aspas simples, ex.: `echo '{"...":"git status; git push ..."}}' | bash script.sh`) são
+bloqueados pelo hook real da sessão ANTES de chegar ao script de teste — porque o `;` dentro da
+string de teste quebra o comando do Bash tool em dois segmentos reais para o parser do guard.
+Solução usada: escrever os payloads JSON em arquivos via `Write` (não via texto literal em
+comando Bash) e invocar `bash "$S" < arquivo.json`, evitando qualquer substring
+`git (commit|push|checkout -b)` no próprio texto do comando Bash.
+
+Testes manuais dos 3 bugs (via arquivos de payload, evitando o próprio hook): bug1 (`git status;
+git push origin HEAD`) → bloqueado, `push`; bug2 (`/usr/bin/git commit -m x`) → bloqueado,
+`commit`; bug3 (`bin/trackfw commit -m "...git commit..."`) → **allow, exit 0** (o caso exato do
+passo 4 da tarefa). Regressões confirmadas: `checkout -b`, `--no-pager push`, `git status` sem
+mudança de comportamento.
+
+3 testes novos adicionados em `npm/tests/git_branch_guard.test.js` (bug 1/2/3). Suíte completa do
+workspace Node (`npm test` → `node --test tests/*.test.js`): **496 passed, 0 failed**.
+
+**Correção pós-advisor sobre a evidência de byte-identidade:** o diff inicial contra
+`scripts/trackfw-git-branch-guard.sh` (artefato em disco, gerado em algum momento anterior) não
+prova nada sobre o estado ATUAL do Go, já que `internal/generators/scaffold.go` seguia
+modificado/não commitado. Refiz a prova: `go build`, gerei um binário fresco temporário
+(`cmd/tmp-gbg-gen/main.go`, chamando `generators.GenerateGitBranchGuardScript` diretamente,
+apagado depois de usar — nunca commitado) para um diretório limpo, e comparei o output com o
+script gerado pelo Node. **Resultado: `diff` vazio — IDENTICAL contra o Go recém-compilado**,
+não só contra o artefato em disco.
+
+Adicionado comentário de limitação conhecida (quote-unaware splitter) em
+`npm/src/generators/hooks.js`, ACIMA da const `GIT_BRANCH_GUARD_SCRIPT` (não dentro dela — isso
+quebraria a byte-identidade do script gerado). Nota do vault criada:
+`vault/notes/git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14.md` (linkada no
+index) — documenta a armadilha de o próprio hook desta sessão bloquear os comandos de teste do
+agente (achado real, ~8 tool calls perdidos até diagnosticar) e o comportamento residual do
+heredoc.
+
+**Observação para o arquiteto (fora do escopo desta tarefa, não corrigida):** o conteúdo gerado
+por `pypi/trackfw/generators/init_gen.py::_GIT_BRANCH_GUARD_SH` diverge byte-a-byte do Go/Node
+(confirmados idênticos entre si) — mesma lógica/comportamento, implementação e comentários
+diferentes (`sed -E` com um único regex + herestring `<<<` no Python vs `sed -e` encadeado +
+heredoc `<<EOF` no Go/Node). Detalhado na nota do vault acima. Não toquei em `pypi/` — já
+implementado por outra sessão/ML, fora do escopo Node.js desta tarefa.
+
+Não fiz commit/push — aguardando trackfw_architect auditar e commitar.
+
 ## Sessão 2026-08-14 — Apolo (ML-4A: gate de paridade `check-commit-parity.sh`) — implementado, aguardando auditoria e commit por trackfw_architect
 
 Branch `feat/bloqueio-tecnico-de-comandos-git-brutos` (já checked out, não criada por mim).
@@ -15665,6 +15797,84 @@ mecanismo seguro de merge. `discover.js`/`InstallGates` (Go) ainda não geram
 antes de entregar (ver nota de fronteira de escopo acima) — o arquivo permanece exatamente como o
 agente do ML-3A o deixou, com `wantPre := 4` ainda pendente de reconciliação por quem tem
 autoridade sobre `internal/`.
+
+Não fiz `git add`/`commit`/`push` — fora da minha fronteira de autoridade Git. Entregando a
+trackfw_architect para auditoria e commit.
+
+## Sessão 2026-08-14 — Apolo (Backend) — port Python dos 3 bugs reais do teste manual E2E (ML-4A) — CONCLUÍDO, aguardando auditoria e commit por trackfw_architect
+
+**Escopo:** corrigir em `pypi/trackfw/generators/init_gen.py::_GIT_BRANCH_GUARD_SH` os 3 bugs
+reais encontrados por teste manual end-to-end durante ML-4A: (1) falso negativo em comando
+encadeado (`git status; git push origin HEAD` — o `push` do segundo comando nunca era
+analisado); (2) falso negativo com path absoluto (`/usr/bin/git commit` não batia em `[ "$tok"
+= "git" ]`); (3) falso positivo crítico (`bin/trackfw commit -m "...git commit..."` bloqueava
+uma chamada legítima porque o parser buscava o padrão livremente em qualquer posição da string
+inteira, não apenas no primeiro token de um segmento real).
+
+**Descoberta importante ao orientar:** quando li `internal/generators/scaffold.go` e
+`npm/src/generators/hooks.js` pela primeira vez, o fix do Go/Node ainda **não** tinha sido
+aplicado (mesma lógica buggy de substring livre). Fiz minha própria correção em Python seguindo
+a especificação em prosa da tarefa (segmentação por `;`/`&&`/`||`/`|`/quebra de linha + "git"
+como primeiro token por basename). Ao re-verificar antes de reportar conclusão, constatei que
+outro agente já havia corrigido Go e Node EM PARALELO nesta mesma sessão — reli os dois e
+**reescrevi minha versão Python para ficar byte-idêntica** (mesma técnica de heredoc, mesmos
+nomes de variável `normalized`/`seg`/`seg_trimmed`/`first`/`base`, mesmo comentário), em vez de
+manter uma implementação divergente-mas-equivalente. Confirmado byte-idêntico entre os 3 stacks
+via dump direto dos 3 geradores (`diff` vazio Go-vs-Python e Node-vs-Python).
+
+**Bug real encontrado e corrigido durante a implementação (não fazia parte da spec original):**
+minha primeira tentativa em Python usava `cmd | sed ... | while read; do ... return 0; done`
+(pipe). Empiricamente, `return 0` dentro do corpo desse `while` só encerra o subshell
+bifurcado pelo pipe — a função continuava na instrução seguinte ao pipeline (`return 1`), e o
+exit code da função vinha do lugar errado mesmo com o `stdout` (via `echo`) correto. Só
+descobri isso rodando `bash -x` sobre o script gerado; um teste que só inspeciona a STRING
+gerada (sem executá-la) não pegaria isso. Corrigido usando heredoc/herestring (mesma técnica que
+Go/Node já usavam) em vez de pipe — nota detalhada em
+[[git-branch-guard-pipe-into-while-loses-return-status-2026-08-14]]. Achado relacionado: `while
+read` do bash descarta a última linha de um pipe sem newline terminal (`read` retorna status 1
+no EOF mesmo tendo preenchido a variável) — o heredoc resolve isso de graça.
+
+**Meta-descoberta durante o teste manual:** o próprio hook `PreToolUse`/`Bash` desta sessão
+(`scripts/trackfw-git-branch-guard.sh`, dogfooded neste repo) intercepta os comandos Bash desta
+ferramenta. Comandos de teste que continham literalmente `"git push"`/`"git commit"` como
+substring do JSON de payload (dentro de aspas) eram bloqueados pelo PRÓPRIO guard antes de rodar
+— exatamente o bug 3 relatado pelo usuário, reproduzido ao vivo contra mim mesmo. Contornado
+escrevendo os payloads de teste em arquivos via `Write` e invocando `bash script.sh < arquivo`
+em vez de literal inline no comando Bash — nota já existente
+[[git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14]], atualizada com o fechamento
+da divergência Python-vs-Go/Node.
+
+**Verificado, não é mais um gap:** `scripts/trackfw-git-branch-guard.sh` (untracked, na raiz do
+repo) já está byte-idêntico à versão corrigida — foi regenerado por outro agente/passo desta
+mesma sessão antes de eu checar; não precisei regenerá-lo.
+
+**Comandos de validação executados:**
+- `python3 -m pytest pypi/tests -q` — 1079 passed, 8 subtests passed
+- `python3 -m pytest pypi/tests -k git_branch_guard -v` — 23 passed (3 novos testes de
+  regressão: `test_bug1_chained_command_blocks_second_segment_push`,
+  `test_bug2_absolute_path_git_blocks_commit`,
+  `test_bug3_prose_mentioning_git_commit_does_not_block_legit_trackfw_commit`)
+- Teste manual exato do enunciado (`echo '{"tool_input":{"command":"bin/trackfw commit -m
+  \"test message mentioning git commit inside\""}}' | bash <script>`) — exit 0, sem output,
+  confirmado
+- `python3 -c "... py_compile ..."` sobre `pypi/` — OK
+- `trackfw validate` — OK (1 aviso pré-existente, não relacionado: REQ sem ADR vinculado)
+- `make quality` (raiz) — **exit code 0**, incluindo todos os gates de paridade (`check-agent-
+  hooks-parity.sh`, `check-attention-scripts-parity.sh`, `check-harness-hooks-parity.sh`,
+  `check-commit-parity.sh` etc.) e as 112 cenários de `check-gates-falsify.sh`
+- `node --test tests/git_branch_guard.test.js` (workspace `npm/`) — 33 passed, 0 failed
+- `go test ./internal/generators/... -run TestGitBranchGuard -v` — 18 passed (inclui os testes
+  já nomeados para os 3 bugs: `TestGitBranchGuard_ChainedCommand_SecondGitBlocked`,
+  `TestGitBranchGuard_AbsolutePathGit_Blocks`,
+  `TestGitBranchGuard_ProseTextMentioningGitCommit_DoesNotBlock`)
+
+**Arquivos criados/modificados:**
+- `pypi/trackfw/generators/init_gen.py` (`_GIT_BRANCH_GUARD_SH`, função `match_subcommand`)
+- `pypi/tests/test_git_branch_guard.py` (nova classe `TestGitBranchGuardManualE2ERegressions`,
+  3 testes)
+- `vault/notes/git-branch-guard-pipe-into-while-loses-return-status-2026-08-14.md` (novo)
+- `vault/notes/git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14.md` (atualizado)
+- `vault/notes/index.md` (link novo)
 
 Não fiz `git add`/`commit`/`push` — fora da minha fronteira de autoridade Git. Entregando a
 trackfw_architect para auditoria e commit.
