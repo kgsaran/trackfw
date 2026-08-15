@@ -216,6 +216,62 @@ func TestDiscoverBootstrapLog(t *testing.T) {
 	}
 }
 
+// TestDiscoverReport_SuggestedTestFramework_Presente verifica que a linha de sugestão de
+// framework de teste aparece no relatório quando um arquivo-gatilho está presente.
+func TestDiscoverReport_SuggestedTestFramework_Presente(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFileCmd(t, filepath.Join(dir, "jest.config.js"), "module.exports = {}\n")
+
+	out, err := runDiscover(t, dir)
+	if err != nil {
+		t.Fatalf("discover command failed: %v", err)
+	}
+
+	want := "Suggested test framework: jest (add to trackfw.yaml as agent_conventions: if correct)"
+	if !strings.Contains(out, want) {
+		t.Errorf("output should contain suggestion line %q; got:\n%s", want, out)
+	}
+}
+
+// TestDiscoverReport_SuggestedTestFramework_Ausente verifica que a linha de sugestão está
+// ausente quando nenhum arquivo-gatilho é encontrado, e que `--init` continua gerando um
+// trackfw.yaml SEM a chave agent_conventions (a sugestão nunca é escrita automaticamente).
+func TestDiscoverReport_SuggestedTestFramework_Ausente(t *testing.T) {
+	dir := t.TempDir()
+
+	out, err := runDiscover(t, dir)
+	if err != nil {
+		t.Fatalf("discover command failed: %v", err)
+	}
+	if strings.Contains(out, "Suggested test framework:") {
+		t.Errorf("output should not contain suggestion line when no trigger file is present; got:\n%s", out)
+	}
+}
+
+// TestDiscoverInit_NuncaEscreveAgentConventions verifica que `discover --init` nunca escreve
+// a chave agent_conventions em trackfw.yaml, mesmo quando um framework de teste é sugerido.
+func TestDiscoverInit_NuncaEscreveAgentConventions(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFileCmd(t, filepath.Join(dir, "jest.config.js"), "module.exports = {}\n")
+
+	out, err := runDiscover(t, dir, "--init")
+	if err != nil {
+		t.Fatalf("discover --init failed: %v", err)
+	}
+	if !strings.Contains(out, "Suggested test framework: jest") {
+		t.Errorf("output should still suggest jest; got:\n%s", out)
+	}
+
+	yamlPath := filepath.Join(dir, "trackfw.yaml")
+	content, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatalf("trackfw.yaml not created: %v", err)
+	}
+	if strings.Contains(string(content), "agent_conventions") {
+		t.Errorf("trackfw.yaml should never contain agent_conventions automatically; got:\n%s", string(content))
+	}
+}
+
 // countNonEmptyLines conta linhas não-vazias em uma string.
 func countNonEmptyLines(s string) int {
 	count := 0

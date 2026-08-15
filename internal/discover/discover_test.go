@@ -578,6 +578,169 @@ func TestInstallHuskyNPX_SemPackageJSON(t *testing.T) {
 	}
 }
 
+// TestScan_SuggestedTestFramework_Jest verifica que a presença de jest.config.js
+// sugere "jest".
+func TestScan_SuggestedTestFramework_Jest(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "jest.config.js"), "module.exports = {}\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "jest" {
+		t.Errorf("expected 'jest', got %q", r.SuggestedTestFramework)
+	}
+}
+
+// TestScan_SuggestedTestFramework_JestTS verifica jest.config.ts também sugere "jest".
+func TestScan_SuggestedTestFramework_JestTS(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "jest.config.ts"), "export default {}\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "jest" {
+		t.Errorf("expected 'jest', got %q", r.SuggestedTestFramework)
+	}
+}
+
+// TestScan_SuggestedTestFramework_Vitest verifica que a presença de vitest.config.js
+// sugere "vitest".
+func TestScan_SuggestedTestFramework_Vitest(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "vitest.config.js"), "export default {}\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "vitest" {
+		t.Errorf("expected 'vitest', got %q", r.SuggestedTestFramework)
+	}
+}
+
+// TestScan_SuggestedTestFramework_VitestTS verifica vitest.config.ts também sugere "vitest".
+func TestScan_SuggestedTestFramework_VitestTS(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "vitest.config.ts"), "export default {}\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "vitest" {
+		t.Errorf("expected 'vitest', got %q", r.SuggestedTestFramework)
+	}
+}
+
+// TestScan_SuggestedTestFramework_PytestIni verifica que pytest.ini sugere "pytest".
+func TestScan_SuggestedTestFramework_PytestIni(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "pytest.ini"), "[pytest]\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "pytest" {
+		t.Errorf("expected 'pytest', got %q", r.SuggestedTestFramework)
+	}
+}
+
+// TestScan_SuggestedTestFramework_PyprojectToml verifica que pyproject.toml com seção
+// [tool.pytest.ini_options] sugere "pytest".
+func TestScan_SuggestedTestFramework_PyprojectToml(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "pyproject.toml"), "[tool.pytest.ini_options]\naddopts = \"-ra\"\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "pytest" {
+		t.Errorf("expected 'pytest', got %q", r.SuggestedTestFramework)
+	}
+}
+
+// TestScan_SuggestedTestFramework_PyprojectTomlSemPytest verifica que um pyproject.toml
+// SEM seção [tool.pytest...] não sugere "pytest".
+func TestScan_SuggestedTestFramework_PyprojectTomlSemPytest(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "pyproject.toml"), "[tool.black]\nline-length = 88\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "" {
+		t.Errorf("expected '', got %q", r.SuggestedTestFramework)
+	}
+}
+
+// TestScan_SuggestedTestFramework_SetupCfg verifica que setup.cfg com [tool:pytest]
+// sugere "pytest".
+func TestScan_SuggestedTestFramework_SetupCfg(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "setup.cfg"), "[tool:pytest]\ntestpaths = tests\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "pytest" {
+		t.Errorf("expected 'pytest', got %q", r.SuggestedTestFramework)
+	}
+}
+
+// TestScan_SuggestedTestFramework_GoTest verifica que go.mod + *_test.go em qualquer
+// lugar do repositório sugere "go test".
+func TestScan_SuggestedTestFramework_GoTest(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "go.mod"), "module example.com/foo\n\ngo 1.22\n")
+	mustMkdir(t, dir, "internal/foo")
+	mustWriteFile(t, filepath.Join(dir, "internal/foo/foo_test.go"), "package foo\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "go test" {
+		t.Errorf("expected 'go test', got %q", r.SuggestedTestFramework)
+	}
+}
+
+// TestScan_SuggestedTestFramework_GoModSemTestFile verifica que go.mod SEM nenhum
+// *_test.go NÃO sugere "go test".
+func TestScan_SuggestedTestFramework_GoModSemTestFile(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "go.mod"), "module example.com/foo\n\ngo 1.22\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "" {
+		t.Errorf("expected '', got %q", r.SuggestedTestFramework)
+	}
+}
+
+// TestScan_SuggestedTestFramework_Nenhum verifica que a ausência de todos os
+// arquivos-gatilho resulta em SuggestedTestFramework vazio (nunca erro).
+func TestScan_SuggestedTestFramework_Nenhum(t *testing.T) {
+	dir := t.TempDir()
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SuggestedTestFramework != "" {
+		t.Errorf("expected '', got %q", r.SuggestedTestFramework)
+	}
+}
+
 // helpers
 
 func mustMkdir(t *testing.T, base, rel string) {

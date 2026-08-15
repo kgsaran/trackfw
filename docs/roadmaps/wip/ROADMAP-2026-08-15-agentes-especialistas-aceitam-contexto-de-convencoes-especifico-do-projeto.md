@@ -139,7 +139,7 @@ byte-idêntica ao comportamento pré-ML quando não há `agent_conventions`. Tes
 Conventions" presente/ausente conforme esperado.
 
 ### ML-1B — Heurística de sugestão de framework de teste em `trackfw discover`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/discover/discover.go` — `DiscoveryResult` struct (~linha 281-296): adicionar
   campo `SuggestedTestFramework string`; `Scan()` (~linha 299-407): adicionar heurística
@@ -165,6 +165,13 @@ não escrever `agent_conventions` automaticamente em nenhum fluxo — isso viola
       sugestão aparece; fixture sem nenhum arquivo-gatilho → linha ausente,
       `trackfw.yaml` gerado por `--init` continua sem `agent_conventions`
 **Comandos de validação:** `go build ./... && go test ./internal/discover/... ./internal/commands/...`
+
+**Execução real (2026-08-15):** implementado por Apolo, auditado pelo orquestrador. Build/vet
+verdes, `go test ./...` (repo inteiro) sem regressões. Heurística: jest → vitest → pytest
+(`pytest.ini`/`pyproject.toml`/`setup.cfg`) → go test, `""` se nada bater. Teste manual real
+confirmou a linha de sugestão presente/ausente conforme o fixture, e que
+`trackfw discover --init` nunca escreve `agent_conventions` automaticamente (0 ocorrências no
+`trackfw.yaml` gerado mesmo com a sugestão impressa).
 
 ## Wave 2 — Node.js e Python (2 MLs em paralelo — arquivos distintos por stack)
 > Dependências: Wave 1 completa
