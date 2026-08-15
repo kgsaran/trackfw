@@ -590,7 +590,7 @@ Node/Python, `scripts/check-thirdparty-parity.sh` (novo, adicionado ao alvo `par
 > Dependências: Wave 3 completa.
 
 ### ML-4A — Revisão de segurança final (`hades-tf`)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-08-15) — libera para merge; achados foram para o ML-4C
 **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Arquivos afetados (escrita):** `docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md`
 (seção "Verificação pós-implementação" apensada)
@@ -603,7 +603,7 @@ proveniência é fatal-on-failure e versionada, e que o TOCTOU está fechado por
 - [ ] Nenhum código de produto modificado por este ML.
 
 ### ML-4B — Revisão de qualidade (`hefesto-tf`)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-08-15) — 0 bloqueante; achados foram para o ML-4C
 **Agente:** `hefesto-tf` (`subagent_type: hefesto-tf`)
 **Arquivos afetados (escrita):** `docs/qualidade/2026-08-15-skills-de-terceiro-via-url.md` (novo)
 **Ações:** avaliar duplicação entre os 3 portes, tratamento de erro, cobertura dos caminhos de
@@ -613,6 +613,61 @@ falha de rede, aderência ao padrão do subsistema `internal/integrations/`.
 - [ ] Nenhum código de produto modificado por este ML.
 
 ---
+
+---
+
+### ML-4C — Microlote corretivo da barreira (D3-ter, D4-bis, D6-bis)
+**Status:** ⬜ Pendente
+**Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Dependência:** ML-4A ✅ e ML-4B ✅ (barreira executada).
+**Origem:** achados da Wave 4 verificados pelo arquiteto + decisões de KG (2026-08-15).
+**Arquivos afetados (3 stacks):**
+- Go: `internal/thirdparty/markers.go`, `fetch.go`, `quarantine.go`, `provenance.go`,
+  `internal/commands/integrations_thirdparty.go`, `internal/integrations/render.go` (+ testes)
+- Node: `npm/src/thirdparty/{markers,fetch,quarantine,provenance}.js`,
+  `npm/src/commands/thirdparty.js`, `npm/src/integrations/render.js` (+ `npm/tests/`)
+- Python: `pypi/trackfw/thirdparty/{markers,fetch,quarantine,provenance}.py`,
+  `pypi/trackfw/commands/thirdparty.py`, `pypi/trackfw/integrations/renderers.py` (+ `pypi/tests/`)
+- `scripts/check-thirdparty-parity.sh`, `docs/cli-parity.md`
+
+**Ações:**
+1. **D3-ter(a) — fence não fechado deixa de conceder imunidade.** Fence **sem** fechamento não é
+   fence: as linhas seguintes voltam a ser escaneadas. Fence **fechado** continua ignorado.
+   ⚠️ O teste `TestCheckMarkers_UnclosedFenceDropsRestOfDocument` (e espelhos) assertava o
+   comportamento que sai — **substituir**, não afrouxar.
+2. **D3-ter(b) — comentário HTML neutralizado, não apagado.** O conteúdo dentro de `<!-- -->`
+   continua sendo escaneado; só os delimitadores saem.
+3. **D3-ter(c) — unificar o casefold** nos 3 CLIs (hoje Go/Node usam lowercase simples e Python usa
+   `str.casefold()`) e cobrir por teste de paridade.
+4. **D4-bis — `--scope global` com aviso próprio.** Continua permitido, mas emite aviso explícito
+   nomeando que aquela instalação **nunca será verificada por `trackfw validate`**, e exige
+   confirmação **própria**, distinta de `--yes-i-trust-this-source`.
+5. **D6-bis — redigir a query string** antes de persistir em quarentena e proveniência: gravar
+   `esquema://host/caminho` com query (e `userinfo`, se houver) substituídos por `[redacted]`.
+   A URL redigida é a que vai para os dois arquivos; a URL completa é usada só em memória, para o
+   fetch.
+6. **Menores, do `hefesto-tf`:** guarda de `end < start` ao localizar o marcador de fechamento em
+   `ApplyThirdPartyReferences`; teste de resposta HTTP não-200 no `Fetch` de Go e Node (hoje só
+   existe em Python).
+7. Atualizar a lista de lacunas declaradas de D3 em `docs/cli-parity.md` — remover fence-aberto e
+   comentário-HTML de "não coberto", já que passam a ser cobertos.
+
+**Critérios de aceite:**
+- [ ] Arquivo iniciado por ``` sem fechamento **e** contendo marcador → **recusado**, nos 3 CLIs.
+      (Hoje retorna `[]` — reproduzido pelo arquiteto.)
+- [ ] Marcador dentro de `<!-- -->` → **recusado**, nos 3 CLIs. (Hoje retorna `[]`.)
+- [ ] Fence **fechado** contendo marcador → **continua aceito**; o parecer
+      `docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` **não** pode passar a ser recusado
+      (regressão da emenda original de D3 — testar contra o arquivo real).
+- [ ] `--scope global` imprime aviso contendo "não será verificada"/`trackfw validate` e exige a
+      confirmação própria; mensagem idêntica nos 3 CLIs.
+- [ ] URL com query (`?token=abc`) → persistida como `[redacted]` em **ambos** os arquivos;
+      teste que faz `grep` do token nos JSONs gravados e exige **zero** ocorrências.
+- [ ] Casefold idêntico nos 3 CLIs, coberto pelo script de paridade.
+- [ ] `make quality` verde; nenhum teste pré-existente afrouxado (os que asseguravam a semântica
+      removida devem ser **substituídos** e citados no relatório).
+
+**Comando de validação:** `make quality`
 
 ## Notas de sequenciamento e autoridade
 

@@ -330,6 +330,55 @@ no desenho, não no uso.
 arquivo de proveniência no mundo. Corrigir na origem em vez de carregar compatibilidade é a postura
 já registrada para este projeto.
 
+### D3-ter — Emenda: fence não fechado e comentário HTML deixam de conceder imunidade
+
+Achados da barreira da Wave 4 — o do fence pelos **dois** auditores independentemente, o do
+comentário HTML só pelo `hades-tf`. Ambos reproduzidos pelo arquiteto nos 3 CLIs.
+
+**(a) Fence não fechado.** Um arquivo que começa com ``` e nunca fecha faz o line-scanner descartar
+**o documento inteiro até EOF**. Reproduzido: conteúdo iniciado por crase tripla e contendo
+`## Git authority` retorna `[]` em Node e Python. É **correto por CommonMark** — e havia teste
+marcando como intencional — mas para um scanner de segurança é a escolha errada: custa três
+caracteres, menos que **todas** as evasões que D3 declara não cobrir.
+**Decisão:** fence **sem fechamento** não é fence para efeito da checagem — as linhas seguintes
+voltam a ser escaneadas. Fence fechado continua sendo ignorado (a emenda original de D3 segue
+valendo, e é o que impede o parecer de recusar a si mesmo).
+
+**(b) Comentário HTML.** O passo 1 **apaga** o comentário antes de escanear, então
+`<!-- ## Git authority -->` passa limpo. Isso **contradiz a justificativa escrita no próprio D3**:
+um agente LLM lê comentário HTML no fluxo de tokens. Apagar antes de escanear remove exatamente o
+conteúdo que o agente vai ler.
+**Decisão:** o passo 1 passa a **neutralizar, não apagar** — o conteúdo dentro do comentário
+continua sendo escaneado; só os delimitadores saem.
+
+**(c) Casefold divergente (achado do `hefesto-tf`).** Go e Node usam lowercase simples; Python usa
+`str.casefold()` completo. Sem exploit contra os 6 marcadores ASCII, mas é divergência silenciosa e
+não testada num passo de normalização de segurança. **Decisão:** unificar nos 3 CLIs e cobrir por
+teste de paridade.
+
+### D4-bis — Emenda: `--scope global` permitido, com aviso próprio (decisão de KG, 2026-08-15)
+
+`--scope global` tira o artefato do perímetro de `thirdparty_artifact_has_provenance` — a regra lê
+só o manifest do projeto (`validator_thirdparty_provenance.go:99`). Ler também o manifest do home
+**não resolveria**: artefato em `~/` não está no git, não há o que detectar (ADR-2026-08-12).
+
+**Decisão de KG:** a opção **permanece disponível**, mas deixa de ser silenciosa. O comando passa a
+emitir **aviso explícito**, nomeando que aquela instalação **nunca será verificada por
+`trackfw validate`**, e exige **confirmação própria** — não a mesma `--yes-i-trust-this-source` já
+obrigatória em modo não-interativo, que hoje faz a "confirmação adicional" prometida por D4 colapsar
+numa flag só.
+
+### D6-bis — Emenda: a query string da URL é redigida antes de persistir
+
+Achado do `hades-tf`. A URL de origem é gravada **verbatim** em dois arquivos versionados
+(`thirdparty-quarantine/<checksum>.json` e `thirdparty-provenance.json`). Uma URL **pré-assinada**
+carrega token na query — que vira **segredo permanente no histórico do git**. É a mesma classe de
+risco que motivou o `credential-guard` deste projeto, e não foi considerada no ADR original.
+
+**Decisão de KG:** persistir `esquema://host/caminho` com a query substituída por `[redacted]`
+(idem `userinfo`, se presente). O valor de auditoria — *de onde veio* — é preservado; o token não
+entra no histórico. Nada quebra, porque a verificação de integridade usa **checksum**, nunca a URL.
+
 ### D11 — Como o `validate` identifica um destino "de origem de terceiro": campo `origin` na `Claim`
 
 Decisão do arquiteto, tomada antes do ML-3A para não travá-lo no meio (KG confirmou o
