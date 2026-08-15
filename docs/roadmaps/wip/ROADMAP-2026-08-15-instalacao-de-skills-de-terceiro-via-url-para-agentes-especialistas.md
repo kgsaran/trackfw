@@ -39,6 +39,12 @@ por máquina, e exigir referência ao parecer para consumar a instalação. O ha
 duas fases é decisão da Wave 0 (**Q8**); a propriedade *"não existe caminho de código que
 instale artefato de terceiro sem parecer prévio"* é requisito, não sugestão.
 
+> ⚠️ **O título deste roadmap, o da REQ e o slug da branch dizem só "skills" — é histórico.**
+> O escopo real, a partir da emenda acima, é **artefato de terceiro: skill E agent**. Quem for
+> implementar deve ler "artefato de terceiro" onde o título diz "skill"; o subcomando vale para
+> `trackfw skills` e `trackfw agents` (D1). Títulos e slug não foram renomeados de propósito, para
+> não quebrar o vínculo REQ↔roadmap↔branch já commitado.
+>
 > ⚠️ Isto amplia o alvo do trabalho: o subcomando third-party precisa existir tanto para
 > `skills` quanto para `agents` (`internal/commands/skills.go` **e**
 > `internal/commands/agents.go`, ambos sobre `newIntegrationsLifecycleCmd` em
@@ -320,8 +326,13 @@ sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -ci "conforme .* Wave 0"   # deve s
 - [ ] Testes cobrem: `http://` recusado; esquema não-http(s) recusado; downgrade para `http` em
       redirect recusado; 4º redirect recusado; conteúdo > 2 MiB recusado; `Content-Type: text/html`
       recusado; **cada um dos 6 marcadores** recusado como heading em `#` e em `######`;
-      marcador dentro de bloco cercado **aceito** (emenda de D3); marcador com homoglifo NFKC
-      recusado; conteúdo benigno aceito; checksum estável e igual ao `sha256sum` do arquivo.
+      marcador dentro de bloco cercado **aceito** (emenda de D3); marcador com caractere de
+      **largura total / compatibility-equivalent** (ex. `＃＃ Ｇit authority`) recusado — é o que
+      NFKC dobra. **Homoglifo de outro alfabeto (ex. `а` cirílico em "Git аuthority") NÃO é
+      coberto: o comportamento esperado é PASSAR**, conforme a seção "o que NÃO cobre" de D3 —
+      escreva o teste afirmando que passa, não tente fazê-lo falhar nem invente normalização que
+      o ADR não especifica. Além disso: conteúdo benigno aceito; checksum estável e igual ao
+      `sha256sum` do arquivo.
 - [ ] Nenhuma chamada de rede real (`httptest.Server`), compatível com
       `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1`.
 
