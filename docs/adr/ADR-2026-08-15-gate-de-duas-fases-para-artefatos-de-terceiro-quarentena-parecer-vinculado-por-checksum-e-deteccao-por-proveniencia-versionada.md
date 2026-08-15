@@ -278,8 +278,10 @@ Notas de vault: `vault/notes/node-https-redirect-checkredirect-off-by-one-2026-0
    modificado à mão **no MESMO escopo** da skill, falhando com a remediação exata. Justificativa: um
    caminho de skill relativo ao projeto injetado num arquivo de agente de escopo global estaria
    quebrado para todos os outros projetos que compartilham aquele arquivo do home.
-   ⚠️ **Consequência de UX a decidir com o usuário:** no caminho 100% default (catálogo em `global`,
-   terceiro em `project`), `--apply-to` **recusa** com mensagem de remediação. Ver Wave 3.
+   ✅ **Consequência de UX DECIDIDA por KG em 2026-08-15:** no caminho 100% default (catálogo em
+   `global`, terceiro em `project`), `--apply-to` **recusa** com mensagem de remediação — e fica
+   assim. A recusa explícita com o comando exato de correção é preferível a instalar num escopo
+   que produziria um link quebrado para os demais projetos.
 2. **Quem escreve a entrada de proveniência.** `VerifyApproval` exige entrada preexistente, mas
    **nenhum comando a escreve** — o aprovador (`hades-tf`) grava direto no JSON versionado,
    **chaveado pelo destino RESOLVIDO**. Esse acoplamento era implícito e agora é normativo: sem ele,
@@ -296,6 +298,42 @@ Notas de vault: `vault/notes/node-https-redirect-checkredirect-off-by-one-2026-0
 3. **`requested_targets` de D8b é ambíguo** — não distingue target de CLI (onde o arquivo cai) de
    item de agente do catálogo (quem recebe a referência). Por isso o CLI separa `--targets` de
    `--apply-to`.
+
+### D11 — Como o `validate` identifica um destino "de origem de terceiro": campo `origin` na `Claim`
+
+Decisão do arquiteto, tomada antes do ML-3A para não travá-lo no meio (KG confirmou o
+comportamento de recusa de D10.1 em 2026-08-15; esta decisão é complementar).
+
+`internal/integrations/manifest.go` ganha um campo na `Claim`:
+
+```go
+type Claim struct {
+    Target  string   `json:"target"`
+    Surface string   `json:"surface"`
+    Scope   string   `json:"scope"`
+    Kind    ItemKind `json:"kind"`
+    Item    string   `json:"item"`
+    Origin  string   `json:"origin,omitempty"` // "" = catálogo (default); "thirdparty" = artefato de terceiro
+}
+```
+
+**Por que não as alternativas:**
+
+- ❌ **Sniffing de caminho (`/thirdparty/`)** — heurística que quebra silenciosamente se o layout
+  de D5 mudar, e que não distingue um diretório homônimo criado pelo usuário.
+- ❌ **Usar a própria proveniência como índice** — **circular e logicamente impossível** para o ramo
+  (i) da regra. Esse ramo detecta *"destino de terceiro **sem** entrada de proveniência"*; se a
+  proveniência for o índice do que é de terceiro, um artefato ausente dela nunca é classificado
+  como de terceiro e a violação **nunca dispara**. O ramo (i) deixaria de existir na prática.
+- ✅ **Campo na `Claim`** — o manifest já é o registro canônico de posse por destino, é escrito no
+  mesmo ato da instalação, e o zero-value (`""`) mantém **retrocompatibilidade total** com
+  manifests existentes, que continuam lidos como catálogo. Sem migração.
+
+**Limite honesto, declarado (coerente com o ADR-2026-08-12):** essa detecção cobre o que foi
+instalado **pelo fluxo** (e portanto registrado no manifest). Um arquivo escrito à mão em
+`<target>/skills/thirdparty/` não está no manifest, não é `Managed`, e **não é pego por esta
+regra** — é pego pelo `git status`/diff/PR, a segunda camada que o projeto já assume. Não afirmar,
+em doc ou mensagem, que a regra detecta instalação arbitrária fora do fluxo.
 
 ## Consequences
 

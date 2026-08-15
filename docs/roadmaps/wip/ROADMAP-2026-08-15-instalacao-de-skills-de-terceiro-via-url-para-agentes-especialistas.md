@@ -521,11 +521,12 @@ Node/Python, `scripts/check-thirdparty-parity.sh` (novo, adicionado ao alvo `par
 **Ações:**
 0-bis. Renomear o teste Go `TestFetch_RefusesFourthRedirect` → `TestFetch_RefusesThirdRedirect`
    (débito de D7-bis: o nome descreve mal o comportamento, que recusa o 3º hop, não o 4º).
-0. **Decisão de design pendente, resolver ANTES de codar:** como a regra
-   `thirdparty_artifact_has_provenance` identifica que um destino é "de origem de terceiro"?
-   `manifest.go` **não** ganhou campo novo na `Claim` no ML-1C. As opções são: (a) sniffing do
-   caminho (`/thirdparty/`), (b) usar a própria proveniência como índice, ou (c) adicionar o campo
-   na `Claim` agora. Escolher, justificar em uma linha no commit, e aplicar igual nos 3 CLIs.
+0. **Decisão JÁ TOMADA pelo arquiteto — ver D11 no ADR. Não reabrir.** A `Claim` de
+   `internal/integrations/manifest.go` ganha `Origin string \`json:"origin,omitempty"\`` —
+   `""` = catálogo (retrocompatível, sem migração), `"thirdparty"` = artefato de terceiro. Aplicar
+   igual nos 3 CLIs. Usar a proveniência como índice foi **rejeitado por ser circular**: o ramo (i)
+   detecta destino de terceiro *sem* entrada de proveniência, então a proveniência não pode ser o
+   que define "é de terceiro".
 1. Estender o contrato de paridade para cobrir o novo subcomando nos 3 CLIs.
 2. Implementar em `trackfw validate` a regra **`thirdparty_artifact_has_provenance`** (D2), nos 3
    CLIs, **bidirecional**: (i) destino gerenciado com origem de terceiro sem entrada de
@@ -544,9 +545,8 @@ Node/Python, `scripts/check-thirdparty-parity.sh` (novo, adicionado ao alvo `par
       checksum divergente, nos 3 CLIs, com saída byte-idêntica.
 - [ ] `docs/cli-parity.md` documenta a exceção de escopo de D4, a limitação de D3 e os três
       schemas de D9.
-- [ ] **UX de D10.1 resolvida:** no caminho 100% default (catálogo `global` + terceiro `project`),
-      `--apply-to` hoje **recusa** com mensagem de remediação. Confirmar com KG se fica assim ou se
-      a mensagem deve sugerir o comando completo; se mudar, atualizar D10.1 no ADR.
+- [ ] UX de D10.1: **decidido por KG em 2026-08-15 — a recusa fica.** Garantir apenas que a
+      mensagem traga o comando exato de remediação, e que o comportamento seja idêntico nos 3 CLIs.
 **Comandos de validação:** `make quality`
 
 ---
