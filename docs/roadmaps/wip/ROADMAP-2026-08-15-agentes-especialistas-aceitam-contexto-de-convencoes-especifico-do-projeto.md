@@ -237,7 +237,7 @@ o código em si estava correto desde a entrega do agente).
 > Dependências: Wave 2 completa
 
 ### ML-3A — Paridade, teste manual end-to-end e documentação explícita
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `docs/cli-parity.md` — nova linha/seção documentando `agent_conventions` (chave de
   `trackfw.yaml`, não um comando — ver formato já usado para outras chaves de config no
