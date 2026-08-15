@@ -246,7 +246,12 @@ entre ADRs aceitos.
    explicitamente — emenda ou exceção escopada a skills de terceiro — e o porquê. Não deixar
    dois ADRs aceitos em contradição silenciosa.
 4. Reescrever as Waves 1 a 4 deste roadmap substituindo cada `<<TBD-Dn>>` pelo valor decidido.
-5. **Reescrever também AC4 e AC9 do bloco `## Acceptance Criteria` consolidado** com os valores
+5. **Guarda de escopo:** se a resposta de Q8(e) trouxer `trackfw plugins` (download de
+   **binário** de terceiro + `chmod 0755`) para dentro do escopo, **abrir REQ separada** — não
+   expandir esta REQ nem renomear a branch. Gate de binário é superfície de ameaça
+   materialmente distinta de gate de composição de markdown e arrastaria a Wave 2 de lado.
+   Registrar a decisão no ADR de qualquer forma (dentro, fora, ou REQ nova).
+6. **Reescrever também AC4 e AC9 do bloco `## Acceptance Criteria` consolidado** com os valores
    nomeados (escopo default nomeado; mecanismo de invocação e detecção nomeados). Nenhum AC pode
    restar referenciando "conforme a Wave 0" — todo AC precisa ser verificável sem abrir o ADR.
 
