@@ -9,6 +9,11 @@ function createProgram() {
     .name('trackfw')
     .description('trackfw — governed software delivery framework\nADR → REQ → ROADMAP → kanban')
     .version(`trackfw ${version}`)
+  // enablePositionalOptions: garante que uma flag de subcomando (ex.: o
+  // "changelog --version <x.y.z>") não seja capturada pela flag global
+  // "--version" do root — sem isto, commander casa "--version" contra o
+  // primeiro registro conhecido em toda a árvore de comandos.
+  program.enablePositionalOptions()
 
   program.addCommand(require('./init'))
   program.addCommand(require('./adr'))
@@ -16,6 +21,7 @@ function createProgram() {
   program.addCommand(require('./roadmap'))
   program.addCommand(require('./validate'))
   program.addCommand(require('./status'))
+  program.addCommand(require('./changelog'))
   program.addCommand(require('./log'))
   program.addCommand(require('./plugins'))
   program.addCommand(require('./discover'))

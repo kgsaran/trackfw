@@ -145,7 +145,7 @@ manual confirmado: `bin/trackfw changelog`, `--version 6.10.0`, `--version 999.0
 > Dependências: Wave 1 completa
 
 ### ML-2A — Node.js
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `npm/src/changelog/index.js` (novo) — port 1:1 de `internal/changelog/changelog.go`:
   `parseSections(content)`, `firstSection(sections)`, `findVersion(sections, version)`,
@@ -164,8 +164,16 @@ de `FormatSection`.
 - [ ] mensagens de erro e saída formatada idênticas (byte-a-byte) às do Go
 **Comandos de validação:** `cd npm && npm test`
 
+**Execução real (2026-08-15):** `npm test` → 549 passed, 0 failed. Ajuste não previsto
+no roadmap: `--version` global do commander (registrado no root) interceptava a flag
+`--version <x.y.z>` do subcomando `changelog` — corrigido com `program.enablePositionalOptions()`
+em `npm/src/commands/index.js` e `cmd.enablePositionalOptions()` em `changelog.js`;
+`trackfw --version`/`trackfw version` continuam funcionando (testes de regressão
+verdes). Paridade byte-a-byte confirmada pelo orquestrador contra o binário Go nos 4
+cenários (sem flags, `--version` existente, `--all`, `--version` inexistente).
+
 ### ML-2B — Python
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `pypi/trackfw/changelog.py` (novo) — port 1:1 de `internal/changelog/changelog.go`:
   `parse_sections(content)`, `first_section(sections)`, `find_version(sections, version)`,
@@ -180,6 +188,11 @@ verdade.
 - [ ] `python -m pytest pypi/tests -k changelog` verde, mesmos casos do ML-1A
 - [ ] mensagens de erro e saída formatada idênticas ao Go
 **Comandos de validação:** `python -m pytest pypi/tests -k changelog`
+
+**Execução real (2026-08-15):** `pytest pypi/tests -k changelog` → 13 passed; suíte
+completa `pytest pypi/tests` → 1142 passed, 8 subtests, 0 falhas. Paridade byte-a-byte
+confirmada pelo orquestrador contra o binário Go nos 4 cenários. `find_version`/
+`format_section` seguem a mesma semântica de `TrimLeft`/`TrimRight` do Go.
 
 ## Wave 3 — Validação cruzada (1 ML)
 > Dependências: Wave 2 completa
