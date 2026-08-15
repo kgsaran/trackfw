@@ -294,7 +294,7 @@ sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -ci "conforme .* Wave 0"   # deve s
 > ⚠️ **MLs sequenciais entre si** — os três compartilham o pacote novo `internal/thirdparty`.
 
 ### ML-1A — Pacote `internal/thirdparty`: fetch (D7), validação de marcadores (D3) e checksum (D6)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-08-15) — 20 testes verdes; auditado contra artefatos reais pelo arquiteto
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos afetados:**
 - `internal/thirdparty/fetch.go` (novo)
@@ -451,7 +451,15 @@ sed '/^### ML-0B/,/^## Wave 1/d' "$R" | grep -ci "conforme .* Wave 0"   # deve s
 `npm/src/commands/thirdparty.js` (novo), `npm/tests/thirdparty.test.js` (novo)
 **Ações:** porte literal do Go da Wave 1 — mesmas mensagens, mesmos códigos de saída, mesmos
 limites numéricos (30s, 2 MiB, 3 redirects), mesmo schema JSON de quarentena e de proveniência,
-mesma ordem de normalização de D3 (inclusive a remoção de blocos cercados). Rede via `fetch`
+mesma ordem de normalização de D3 (inclusive a remoção de blocos cercados).
+> 🔴 **Risco de paridade descoberto no ML-1A — leia antes de codar.** O Go implementou a remoção
+> de blocos cercados como **line-scanner com estado explícito** (regras CommonMark: mesmo caractere
+> delimitador, fechamento com repetição ≥ abertura), porque o `regexp` do Go (RE2) **não suporta
+> backreference** e o padrão sugerido pelo ADR daria panic em runtime. Node e Python **suportam**
+> backreference — e é exatamente por isso que a tentação de usar um regex de uma linha aqui é uma
+> armadilha: o comportamento divergiria do Go em casos de borda (fence não fechado, fechamento mais
+> curto que a abertura, fence indentado). **Porte o algoritmo line-scanner, não um regex.**
+> Detalhe em `vault/notes/go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15.md`. Rede via `fetch`
 seguindo o padrão de `npm/src/commands/plugins.js`.
 **Critérios de aceite:**
 - [ ] `cd npm && npm test` verde, sem regressão nos testes pré-existentes.

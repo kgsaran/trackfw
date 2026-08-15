@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15](go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15.md)
 - [credential-guard-hook-resolvable-nao-detecta-script-ausente-2026-08-15](credential-guard-hook-resolvable-nao-detecta-script-ausente-2026-08-15.md)
 - [git-branch-guard-pipe-into-while-loses-return-status-2026-08-14](git-branch-guard-pipe-into-while-loses-return-status-2026-08-14.md)
 - [git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14](git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14.md)

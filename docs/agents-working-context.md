@@ -16643,3 +16643,42 @@ esta REQ — o campo `adr:` é preenchido no ML-0B). Roadmap em `analyzing/`.
 
 **Estado:** Wave 0 ✅ completa (ML-0A + ML-0B). Wave 1 liberada para dispatch ao `apolo-tf`.
 Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, nada pushado.
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — INÍCIO: ML-1A pacote `internal/thirdparty`
+
+Recebido dispatch da Wave 1 (ML-1A). Escopo: `Fetch` (D7), `CheckMarkers` (D3) e `Checksum` (D6)
+em `internal/thirdparty/`, sem I/O de disco (quarentena/proveniência são ML-1B). Branch
+`feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas` já criada pelo
+`trackfw_architect`; nenhum commit será feito por este agente (autoridade de Git é exclusiva do
+`trackfw_architect`).
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — FIM: ML-1A concluído (não commitado)
+
+**Entregue:**
+- `internal/thirdparty/fetch.go` — `Fetch(rawURL string) ([]byte, error)`: recusa antes do
+  primeiro `Get` se scheme != `https`; `http.Client` dedicado (não reusa `internal/plugins`);
+  `CheckRedirect` com máx. 3 hops revalidando `https` a cada hop; `io.LimitReader` com teto de
+  2 MiB; recusa `Content-Type` fora de `text/plain` / `text/markdown` / `text/x-markdown`
+  (com/sem `; charset=`).
+- `internal/thirdparty/markers.go` — `CheckMarkers(content []byte) []string` seguindo a ordem
+  exata do ML-1A (remove HTML comments → remove fenced blocks → NFKC → casefold → colapsa
+  espaço+strip por linha → casa heading `^#{1,6}\s+` contra os 6 marcadores literais); e
+  `Checksum(raw []byte) string` (SHA-256 hex dos bytes brutos, réplica comentada de `contentHash`
+  de `internal/integrations/manager.go`, que é não-exportado).
+- `internal/thirdparty/fetch_test.go`, `internal/thirdparty/markers_test.go` — 20 casos de teste
+  cobrindo todos os critérios de aceite do ML-1A, incluindo fullwidth recusado e homoglifo
+  cirílico aceito (fronteira documentada de D3, não bug).
+
+**Decisão de baixo risco não trivial:** o parecer/ADR descreviam a remoção de blocos cercados
+como um único passo regex; `regexp` do Go (RE2) **não suporta backreferences**
+(`` (?ms)^(```|~~~).*?^\1[^\n]*$ `` gera panic em runtime, não erro de compilação — `go build`
+passa, só falha ao executar). Implementado `removeFencedBlocks` via scanner linha a linha
+(regra do CommonMark: fecha com o mesmo caractere delimitador, com repetições >= abertura).
+Registrado como nota de vault (ver `vault/notes/`) para quem for portar a Wave 2 (Node/Python) —
+lá não há essa restrição, então não repliquem o scanner ali por engano.
+
+**Validação:** `go build ./... && go vet ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test
+./internal/thirdparty/...` → PASS (20/20 testes). `git status --porcelain` mostra apenas
+`internal/thirdparty/` (untracked, 4 arquivos, nenhum outro caminho tocado).
+
+**Não commitado.** Devolvido ao `trackfw_architect` para auditoria e commit.
