@@ -15,11 +15,11 @@ REQ: docs/req/REQ-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-hi
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] `buildPRBody`/título de PR (Go/Node/Python) agregam `git log <base>..HEAD --no-merges`
+- [x] `buildPRBody`/título de PR (Go/Node/Python) agregam `git log <base>..HEAD --no-merges`
       em vez do corpo mínimo atual.
-- [ ] `trackfw ship` ganha exceção doc-only para os 2 gates que hoje bloqueiam push de
+- [x] `trackfw ship` ganha exceção doc-only para os 2 gates que hoje bloqueiam push de
       commits puramente de documentação (`isShipBranch` + `CheckShipGovernance`).
-- [ ] `make quality` passa sem novas divergências de paridade.
+- [x] `make quality` passa sem novas divergências de paridade.
 
 ## Diagnóstico / Contexto
 Achado real ao abrir o PR #169 desta sessão (`internal/commands/ship.go`):
@@ -151,7 +151,17 @@ como fonte de verdade (mesma orientação do ML-2A).
 > Dependências: Wave 2 completa
 
 ### ML-3A — Paridade e teste manual end-to-end
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+**Execução real:** os 3 cenários da exceção doc-only testados manualmente num clone
+descartável em `/tmp` (não a branch real, para não sujar o histórico): (1) branch
+`docs/<slug>` com só `.md` staged → `Governance: skipped (doc-only change)`, permite; (2)
+mesma branch + 1 arquivo `.go` staged junto → volta a bloquear (`does not match the
+required pattern feat|fix|refactor/<slug>`); (3) branch `feat/<slug>` sem roadmap em
+`wip/`, só `.md` staged → permite. Corpo de PR testado direto nesta branch real
+(`--dry-run`, arquivo de teste descartado antes do commit real): 11 commits agregados em
+`## Commits`/`## Detalhes`, título correto — confirma que o problema original do PR #169
+está resolvido pelo próprio mecanismo.
 **Arquivos afetados:** nenhum novo
 **Ações:**
 1. Rodar `make quality` na raiz.

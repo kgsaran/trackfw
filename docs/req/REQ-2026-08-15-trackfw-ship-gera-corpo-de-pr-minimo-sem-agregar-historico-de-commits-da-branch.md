@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-08-15
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-min
 
 # REQ: trackfw ship gera corpo de PR minimo sem agregar historico de commits da branch
 
-> Date: 2026-08-15 | Status: Open
+> Date: 2026-08-15 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -61,31 +61,31 @@ REQ+roadmap. Resultado prático: ficou impossível empurrar um REQ+roadmap novo 
 `backlog/` sem antes mover ALGUM roadmap para `wip/`.
 
 ## Acceptance Criteria
-- [ ] `buildPRBody` (Go) e equivalentes (Node/Python) passam a agregar
+- [x] `buildPRBody` (Go) e equivalentes (Node/Python) passam a agregar
       `git log <base>..HEAD --no-merges` (mensagens completas, não só a primeira linha)
       numa seção `## Commits` ou similar, em vez de só "Branch: %s\n\nCreated by trackfw
       ship."
-- [ ] Título do PR: se houver só 1 commit não-merge na branch, mantém o comportamento
+- [x] Título do PR: se houver só 1 commit não-merge na branch, mantém o comportamento
       atual (`firstLine` da mensagem do commit). Se houver mais de 1, usar um título que
       identifique o conjunto do trabalho — decisão de design a resolver no ML: pode ser
       a mensagem `-m` passada na chamada atual de `ship` (assumindo que é a mensagem
       "resumo" do PR, convenção já usada nesta sessão) ou derivar de outra fonte; **não
       travar a REQ nisso — abrir com uma opção razoável e documentar a escolha**.
-- [ ] Resolução de branch base para o `git log <base>..HEAD`: usar
+- [x] Resolução de branch base para o `git log <base>..HEAD`: usar
       `git symbolic-ref refs/remotes/origin/HEAD` com fallback para `main`, mesmo padrão
       já usado em outros pontos do código (`internal/validator/validator.go`,
       `internal/commands/commit.go`) — não hardcodar `main`.
-- [ ] Comportamento idêntico nos 3 CLIs (mesmo corpo de PR gerado para o mesmo histórico
+- [x] Comportamento idêntico nos 3 CLIs (mesmo corpo de PR gerado para o mesmo histórico
       de commits) — mensagens/formatação byte-idênticas onde aplicável.
-- [ ] Não quebra o design forge-agnóstico do `ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md`
+- [x] Não quebra o design forge-agnóstico do `ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md`
       — o corpo continua sendo texto/markdown simples, agnóstico de forge; só o conteúdo
       muda, não o mecanismo de flag (`--body`/`--description` por forge já existente).
-- [ ] `--dry-run` continua funcionando e mostra o corpo/título que seria usado.
-- [ ] `make quality` passa sem novas divergências de paridade.
-- [ ] Teste de regressão cobrindo o caso real que motivou esta REQ: branch com múltiplos
+- [x] `--dry-run` continua funcionando e mostra o corpo/título que seria usado.
+- [x] `make quality` passa sem novas divergências de paridade.
+- [x] Teste de regressão cobrindo o caso real que motivou esta REQ: branch com múltiplos
       commits não-merge, `ship` chamado no commit final — corpo do PR deve conter
       referência a todos os commits, não só o último.
-- [ ] `trackfw ship` ganha exceção para commits doc-only, cobrindo os 2 gates
+- [x] `trackfw ship` ganha exceção para commits doc-only, cobrindo os 2 gates
       identificados — coerente com a isenção já existente no CLAUDE.md §7 ("Alteração
       doc-only (markdown, comentários)" dispensa REQ+roadmap). Critério objetivo de
       detecção: se **todos** os arquivos staged (`git diff --cached --name-only`)
@@ -96,7 +96,7 @@ REQ+roadmap. Resultado prático: ficou impossível empurrar um REQ+roadmap novo 
       roadmap correspondente em `wip/`.
       Mudança em qualquer arquivo de código (mesmo 1 arquivo fora desse critério) mantém
       os dois gates atuais, sem exceção — a detecção é "tudo staged é doc" ou nada.
-- [ ] Teste de regressão cobrindo o caso real, os 2 gates: (1) branch `docs/<slug>` com
+- [x] Teste de regressão cobrindo o caso real, os 2 gates: (1) branch `docs/<slug>` com
       só arquivos `docs/`/`.md`/`vault/` staged — `ship` deve permitir; (2) branch
       `feat/<slug>` sem roadmap em `wip/`, com só arquivos doc-only staged — `ship` deve
       permitir; (3) qualquer uma das duas branches acima com pelo menos 1 arquivo de
