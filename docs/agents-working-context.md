@@ -4,6 +4,49 @@
 
 ---
 
+## Sessão 2026-08-15 — Hades (INÍCIO: ML-0A — parecer de segurança sobre skills de terceiro via URL)
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md`
+em `wip/`. Executando ML-0A: leitura obrigatória (REQ, `ADR-2026-08-12`, `ADR-2026-07-25`,
+`internal/plugins/plugins.go`, `internal/integrations/manager.go`/`manifest.go`, 3 notas do
+vault) e produção do parecer respondendo Q1–Q8. Escopo: apenas
+`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` + esta entrada de contexto. Nenhum
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-15 — Hades (FIM: ML-0A concluído — parecer de segurança entregue, não commitado)
+
+Entregue `docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md`, respondendo Q1–Q8 com
+veredito explícito em cada seção. Destaques para o ML-0B (Zeus/ADR):
+
+- **Q2 — guardrail, não controle** (cita `ADR-2026-08-12` diretamente): env var de sessão só
+  filtra o caso ingênuo; a detecção real proposta é a regra `thirdparty_artifact_has_provenance`
+  em `trackfw validate`, ancorada em `.trackfw/thirdparty-provenance.json` versionado.
+- **Q3** — 6 marcadores literais + ordem de normalização de 5 passos; seção "O que este critério
+  NÃO cobre" lista paráfrase, indireção, fragmentação, homoglifo residual, semântica sem heading
+  e auto-modificação como evasões reais e aceitas — o `grep` é tripwire para o caso descuidado,
+  não filtro contra adversário competente.
+- **Q4** — recomendo default `project` (exceção escopada ao `ADR-2026-07-25` D1, não emenda
+  geral): a detecção de Q2 depende do artefato estar dentro do repo (doutrina do
+  `ADR-2026-08-12` §2 sobre visibilidade).
+- **Q5** — arquivo separado + referência via marcadores (padrão `injectOrUpdateRules`), não bloco
+  apensado direto no arquivo do catálogo — apensar quebraria `manifest.go` (`StateModified` no
+  próximo `agents update`).
+- **Q8** — handshake de quarentena (`.trackfw/thirdparty-quarantine/<checksum>.json`) → parecer
+  do `hades-tf` → prova de aprovação vinculada por **checksum** em
+  `.trackfw/thirdparty-provenance.json` (fecha o TOCTOU, não impede forja por agente já com
+  escrita, mas torna a forja git-detectável, consistente com `ADR-2026-08-12`). **Achado
+  formal:** `trackfw plugins install` (`internal/plugins/plugins.go`) hoje baixa binário de
+  terceiro e faz `chmod 0755` sem gate nenhum — recomendo o mesmo gate, com severidade **maior**
+  que o caso de markdown (binário executa direto, markdown só influencia), como **REQ separada**.
+  Fail-closed sempre; CI nunca instala do zero, só valida o já commitado.
+
+**Validação:** `git status --porcelain` lista exclusivamente
+`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` e esta entrada em
+`docs/agents-working-context.md`. Nenhum arquivo de `internal/`, `npm/src/`, `pypi/trackfw/`,
+`scripts/` ou testes tocado. Nenhum commit/push feito — devolvo o trabalho para o
+`trackfw_architect` prosseguir com ML-0B (ADR + reescrita das Waves 1+).
+
 ## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap agentes-especialistas-convencoes concluídos) — pronto para PR
 
 Branch `feat/agentes-especialistas-aceitam-contexto-de-convencoes`. REQ

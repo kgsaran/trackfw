@@ -149,7 +149,7 @@ Fatos que condicionam o desenho e que **não podem ser reinventados**:
 > tarefa do ML-0B.
 
 ### ML-0A — Parecer de segurança do `hades-tf` sobre o desenho
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-08-15) — parecer em `docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md`
 **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Arquivos afetados (escrita):**
 - `docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` (novo — único arquivo que este ML cria)
