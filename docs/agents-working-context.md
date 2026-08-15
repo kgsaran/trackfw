@@ -4,6 +4,19 @@
 
 ---
 
+## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap validate-hooks concluídos) — pronto para PR
+
+Branch `feat/trackfw-validate-deve-detectar-scripts-de-hook`. REQ
+`REQ-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md`
+e roadmap correspondente movidos para `done/`. Wave 1 (Go, commit `4cec06d`), Wave 2
+(Node.js + Python, commit `059af1e`) e Wave 3 (ML-3A, commits `4385b4e`/`b86f0ae`) todas
+concluídas. `make quality` verde (build/vet/test dos 3 CLIs + 112 cenários de
+falsificação). Reproduzidos manualmente, contra os 3 binários, os 2 experimentos reais da
+REQ: script ausente → `git_branch_guard_hook_resolvable`; script com 1 byte alterado →
+`git_branch_guard_script_integrity`; script restaurado → silêncio, sem falso positivo.
+Próximo passo: abrir PR via `bin/trackfw ship` e, após merge, sincronizar `main` e limpar
+a branch local.
+
 ## Sessão 2026-08-15 — Apolo (ML-2B: port Python de `trackfw validate` detectando scripts de hook ausentes/desatualizados — git-branch-guard) — implementado, aguardando auditoria e commit por trackfw_architect
 
 Branch `feat/trackfw-validate-deve-detectar-scripts-de-hook` (já checked out, não criada por mim).
