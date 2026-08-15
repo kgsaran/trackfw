@@ -47,7 +47,7 @@ precisa subir para ANTES do Step 1.
 > Dependências: nenhuma
 
 ### ML-1A — `internal/commands/ship.go` + `internal/validator/validator.go`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/commands/ship.go` (`runShip`, `buildPRBody`, `firstLine`, `isShipBranch`)
 - `internal/validator/validator.go` (`CheckShipGovernance`, `validateBranchHasWIPRoadmap`)
