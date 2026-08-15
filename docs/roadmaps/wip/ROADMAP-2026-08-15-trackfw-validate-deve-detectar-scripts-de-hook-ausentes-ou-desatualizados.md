@@ -115,7 +115,7 @@ qualquer gap detectado sempre instrua o comando de correção, nunca só reporte
 > Dependências: Wave 1 completa
 
 ### ML-2A — Node.js
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** módulo Node equivalente (localizar via grep por
 `credential_guard_hook_resolvable`/`credentialGuardScriptMarker` em `npm/src/`), teste
 equivalente
@@ -127,7 +127,7 @@ nesta branch) como fonte de verdade.
 **Comandos de validação:** `npm test --workspace=npm` (ajustar nome real do workspace)
 
 ### ML-2B — Python
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** módulo Python equivalente (localizar via grep em `pypi/trackfw/`),
 teste equivalente
 **Ações:** replicar 1:1 a lógica do ML-1A em Python puro, lendo o Go real como fonte de
