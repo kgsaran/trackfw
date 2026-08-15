@@ -10,8 +10,21 @@ const { tildeify } = require('../lib/update-engine')
 
 const SCHEMA_VERSION = 1
 const sha256 = content => crypto.createHash('sha256').update(content).digest('hex')
-const claimKey = claim => [claim.target, claim.surface, claim.scope, claim.kind, claim.item].join('\u0000')
-const cleanClaim = claim => ({ target: claim.target, surface: claim.surface, scope: claim.scope, kind: claim.kind, item: claim.item })
+// claimKey includes origin (ADR-2026-08-15 D11) so a catalog claim and a
+// third-party claim that happen to share target/surface/scope/kind/item are
+// never treated as the same ownership record — mirrors Go's Claim struct
+// equality (`==`), field-by-field, which already includes Origin
+// (internal/integrations/manager.go's claimOwned/appendClaim/removeClaim).
+const claimKey = claim => [claim.target, claim.surface, claim.scope, claim.kind, claim.item, claim.origin || ''].join('\u0000')
+// cleanClaim omits origin entirely when falsy/absent, mirroring Go's
+// `json:"origin,omitempty"` — a catalog claim (origin "") must serialize
+// with NO "origin" key at all, byte-identical to a manifest written before
+// this field existed (retrocompatibility, D11).
+const cleanClaim = claim => {
+  const out = { target: claim.target, surface: claim.surface, scope: claim.scope, kind: claim.kind, item: claim.item }
+  if (claim.origin) out.origin = claim.origin
+  return out
+}
 
 class IntegrationManager {
   constructor({ projectRoot = process.cwd(), homeRoot = os.homedir() } = {}, { onSkip } = {}) {

@@ -4,6 +4,9 @@
 
 ## Índice
 
+- [python-import-submodule-as-shadowed-by-package-reexport-2026-08-15](python-import-submodule-as-shadowed-by-package-reexport-2026-08-15.md)
+- [node-https-redirect-checkredirect-off-by-one-2026-08-15](node-https-redirect-checkredirect-off-by-one-2026-08-15.md)
+- [go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15](go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15.md)
 - [credential-guard-hook-resolvable-nao-detecta-script-ausente-2026-08-15](credential-guard-hook-resolvable-nao-detecta-script-ausente-2026-08-15.md)
 - [git-branch-guard-pipe-into-while-loses-return-status-2026-08-14](git-branch-guard-pipe-into-while-loses-return-status-2026-08-14.md)
 - [git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14](git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14.md)
@@ -57,3 +60,5 @@
 - [falsify-suite-locale-dependent-false-failure-2026-08-03](falsify-suite-locale-dependent-false-failure-2026-08-03.md)
 - [req-move-statedir-hardcoded-roadmapdir-2026-08-04](req-move-statedir-hardcoded-roadmapdir-2026-08-04.md)
 - [go-generateattentionscripts-cwd-vs-rootdir-2026-08-04](go-generateattentionscripts-cwd-vs-rootdir-2026-08-04.md)
+- [thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15](thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15.md)
+- [thirdparty-markers-fence-html-comment-immunity-bugs-2026-08-15](thirdparty-markers-fence-html-comment-immunity-bugs-2026-08-15.md)

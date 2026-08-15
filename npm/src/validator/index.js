@@ -3,9 +3,11 @@
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const crypto = require('crypto')
 const { gitOutput } = require('./git-exec')
 const config = require('../config')
 const { checkTraceIds } = require('./traceid')
+const { loadProvenance } = require('../thirdparty/provenance')
 
 const STALE_WIP_DAYS = 7
 let staleWipNowMs = () => Date.now()
@@ -2274,6 +2276,122 @@ function saveBaseline(violations, warnings) {
   fs.writeFileSync(BASELINE_FILE, JSON.stringify(bf, null, 2), 'utf8')
 }
 
+function sha256Hex(buf) {
+  return crypto.createHash('sha256').update(buf).digest('hex')
+}
+
+// THIRDPARTY_ORIGIN é o valor de Claim.origin que marca um artefato do manifest como instalado
+// por `third-party install` (ADR-2026-08-15 D11).
+const THIRDPARTY_ORIGIN = 'thirdparty'
+
+// validateThirdPartyArtifactHasProvenance implementa a regra "thirdparty_artifact_has_provenance"
+// (ADR-2026-08-15 D2) — a detecção real, ancorada em git, por trás do guardrail
+// TRACKFW_ORCHESTRATOR_SESSION. NUNCA faz fetch de rede (D6): lê só
+// .trackfw/integrations-manifest.json, .trackfw/thirdparty-provenance.json e
+// .trackfw/thirdparty-quarantine/<checksum>.json, todos já em disco (e, por convenção deste
+// projeto, versionados no repositório).
+//
+// Duas ramificações, ambas fatais (error — a regra está deliberadamente ausente de RULE_DEFAULTS):
+//   1. um artifact do manifest carrega um claim com origin === "thirdparty" mas
+//      thirdparty-provenance.json não tem entrada chaveada por aquele destino;
+//   2. existe entrada de proveniência, mas seu installed_sha256 não pode ser reconciliado com o que
+//      de fato está em disco no destino declarado.
+//
+// Sobre a ramificação 2 (ADR-2026-08-15 D2-bis, ML-3B) — checksum_sha256 é sha256 dos bytes BRUTOS
+// (D6), mas o arquivo instalado é sempre NormalizeThirdPartyContent(raw) — não é a função
+// identidade em geral, então comparar checksum_sha256 direto contra sha256(arquivo instalado)
+// produz falso-positivo em toda instalação legítima cujo conteúdo bruto não fosse já exatamente
+// TrimSpace+newline único. A resolução ML-3A usava o registro de quarentena como ponte entre os
+// dois domínios — correta, mas tornava um artefato de ESTÁGIO (.trackfw/thirdparty-quarantine/,
+// destinado a ser podado) dependência obrigatória de um gate PERMANENTE. D2-bis resolve isso com
+// um segundo campo na entrada de proveniência, installed_sha256 = sha256(bytes NORMALIZADOS),
+// calculado no momento do install pelo mesmo código que grava o arquivo (npm/src/commands/thirdparty.js).
+// checksum_sha256 permanece intocado, é a âncora de aprovação D8c. A ramificação 2 agora compara
+// sha256(arquivo instalado) diretamente contra entry.installed_sha256 — dois domínios já
+// normalizados, sem ponte via quarentena. A ausência da quarentena deixou de ser erro desta regra.
+function validateThirdPartyArtifactHasProvenance(cwd) {
+  const root = cwd || process.cwd()
+
+  const manifestPath = path.join(root, '.trackfw', 'integrations-manifest.json')
+  let manifest
+  try {
+    const raw = fs.readFileSync(manifestPath, 'utf8')
+    manifest = JSON.parse(raw)
+  } catch (err) {
+    if (err.code === 'ENOENT') return []
+    throw new Error(`thirdparty_artifact_has_provenance: read ${manifestPath}: ${err.message}`)
+  }
+
+  const destinations = []
+  for (const [destination, artifact] of Object.entries(manifest.artifacts || {})) {
+    const claims = artifact.claims || []
+    if (claims.some(claim => claim.origin === THIRDPARTY_ORIGIN)) destinations.push(destination)
+  }
+  if (destinations.length === 0) return []
+  destinations.sort()
+
+  let prov
+  try {
+    prov = loadProvenance(root)
+  } catch (err) {
+    throw new Error(`thirdparty_artifact_has_provenance: ${err.message}`)
+  }
+
+  const msgs = []
+  for (const destination of destinations) {
+    // Provenance keys are NOT the manifest's absolute destination —
+    // verified empirically against the real install command
+    // (npm/src/commands/thirdparty.js): verifyApproval/upsertProvenanceEntry
+    // are called with the project-root-relative (or "~/"-prefixed,
+    // global-scope) destination string BEFORE IntegrationManager.resolve()
+    // joins it against root to produce the absolute manifest key. Every
+    // claim reached here came from the PROJECT manifest, so its scope is
+    // always "project" (a global-scope claim lives in the home manifest
+    // instead, which this rule intentionally never reads). path.relative
+    // inverts resolve()'s path.resolve(root, relative) exactly. Mirrors
+    // internal/validator/validator_thirdparty_provenance.go.
+    const provenanceKey = path.relative(root, destination)
+    const entry = (prov.entries || {})[provenanceKey]
+    if (!entry) {
+      msgs.push(
+        `thirdparty_artifact_has_provenance: "${destination}" is claimed as a third-party artifact but has no ` +
+        'entry in .trackfw/thirdparty-provenance.json — obtain a favorable hades-tf review and record an ' +
+        'approved provenance entry for this destination before this can pass validate (D2 branch i)'
+      )
+      continue
+    }
+
+    let installed
+    try {
+      installed = fs.readFileSync(destination)
+    } catch (err) {
+      msgs.push(
+        `thirdparty_artifact_has_provenance: "${destination}" is claimed as a third-party artifact with an ` +
+        `approved provenance entry, but the destination file could not be read (${err.message})`
+      )
+      continue
+    }
+
+    // entry.installed_sha256 may be `undefined` (key absent — e.g. an
+    // approver-authored entry from before `install` ever ran, or a partial
+    // install that failed between manager.Install and the installed_sha256
+    // upsert). Coerce to '' so the comparison and the message text match
+    // Go (zero-value "") and Python (.get(..., "")) byte-for-byte — do NOT
+    // interpolate entry.installed_sha256 directly, that renders the
+    // JS-only literal "undefined" into the violation message.
+    const installedSHA256 = entry.installed_sha256 || ''
+    if (sha256Hex(installed) !== installedSHA256) {
+      msgs.push(
+        `thirdparty_artifact_has_provenance: "${destination}" — installed content does not match ` +
+        `installed_sha256 ${installedSHA256} recorded in .trackfw/thirdparty-provenance.json — the ` +
+        'artifact was modified after approval or installed outside the fetch/install flow (D2 branch ii, D2-bis)'
+      )
+    }
+  }
+
+  return msgs
+}
+
 // validateUnfiltered executa todas as validações e retorna { violations, warnings } sem ratchet.
 async function validateUnfiltered() {
   resetMeta()
@@ -2303,6 +2421,10 @@ async function validateUnfiltered() {
   // validator_git_branch_guard.go.
   applyRule('git_branch_guard_hook_resolvable', validateGitBranchGuardHookResolvable().concat(validateGitBranchGuardGlobalHookResolvable()), violations, warnings)
   applyRule('git_branch_guard_script_integrity', validateGitBranchGuardScriptIntegrity().concat(validateGitBranchGuardGlobalScriptIntegrity()), violations, warnings)
+
+  // ADR-2026-08-15-gate-de-duas-fases-..., ML-3A (D2): detecção ancorada em git por trás do
+  // guardrail TRACKFW_ORCHESTRATOR_SESSION.
+  applyRule('thirdparty_artifact_has_provenance', validateThirdPartyArtifactHasProvenance(), violations, warnings)
 
   // Regras configuráveis via applyRule (popula _itemMeta automaticamente)
   applyRule('req_has_adr',          validateREQsHaveADR(),          violations, warnings)
@@ -2583,6 +2705,8 @@ module.exports = {
   GLOBAL_GUARD_CONFIG_FILES,
   validateGuardGlobalHookResolvable,
   validateGuardGlobalScriptIntegrity,
+  // ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas, ML-3A
+  validateThirdPartyArtifactHasProvenance,
   validateCredentialGuardGlobalHookResolvable,
   validateCredentialGuardGlobalScriptIntegrity,
   validateGitBranchGuardGlobalHookResolvable,

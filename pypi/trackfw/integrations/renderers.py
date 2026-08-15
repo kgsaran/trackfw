@@ -325,6 +325,18 @@ def _normalize_markdown(source: str) -> str:
     return source.strip() + "\n"
 
 
+def normalize_markdown(source: str) -> str:
+    """Public alias of _normalize_markdown (D5/D9 extension point) — lets
+    trackfw.thirdparty.references.normalize_third_party_content reuse the
+    exact strip+single-trailing-newline convention render() uses for
+    managed catalog skill content, without duplicating the rule.
+    Mirrors internal/integrations/render.go's NormalizeThirdPartyContent
+    calling the unexported normalizeMarkdown within the same Go package;
+    Python needs a public (non-underscore) name for the cross-package
+    call from trackfw.thirdparty, which cannot reach a private symbol."""
+    return _normalize_markdown(source)
+
+
 # ---------------------------------------------------------------------------
 # Renderer principal
 # ---------------------------------------------------------------------------

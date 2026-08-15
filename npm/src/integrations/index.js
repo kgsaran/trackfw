@@ -8,6 +8,7 @@ const { IntegrationManager } = require('./manager')
 const { legacyHashes } = require('./legacy')
 const identityStore = require('../identity')
 const { injectRulesForTool } = require('../generators/init')
+const { applyThirdPartyReferences } = require('../thirdparty/references')
 
 function parseSurfaces(values = []) {
   const result = {}
@@ -55,7 +56,17 @@ function buildPlans(kind, options = {}) {
       for (const item of selected.itemEntries) {
         for (const installPath of paths) {
           const destination = installPath.path.replace('{{id}}', item.id)
-          const content = render({ target: targetEntry.id, kind, item, content: readAsset(item), capability, destination, identity: identityConfig })
+          let content = render({ target: targetEntry.id, kind, item, content: readAsset(item), capability, destination, identity: identityConfig })
+          // D5/D9 extension point: reproduce any persisted third-party
+          // reference block so regenerating this exact artifact (e.g. a
+          // later `trackfw agents update`) settles at state "current"
+          // instead of treating the attachment as drift. See the doc
+          // comment on applyThirdPartyReferences (../thirdparty/references.js)
+          // for why this cannot live inside render() itself. Mirrors
+          // internal/integrations/plan.go:BuildPlans.
+          if (kind === 'agents' && options.projectRoot) {
+            content = applyThirdPartyReferences(options.projectRoot, content, targetEntry.id, item.id)
+          }
           const claim = { target: targetEntry.id, surface: surface.id, scope, kind, item: item.id }
           plans.push({
             claim,
@@ -100,8 +111,14 @@ function execute(kind, operation, options = {}, roots = {}) {
   // executeIntegrationMutation/executeIntegrationList).
   const homeRoot = roots.homeRoot || os.homedir()
   const identityConfig = options.identity !== undefined ? options.identity : identityStore.load(homeRoot)
-  const plans = buildPlans(kind, { ...options, identity: identityConfig })
   const manager = new IntegrationManager(roots, { onSkip: options.onSkip })
+  // D5/D9: manager.roots.project lets buildPlans reproduce any persisted
+  // third-party reference block (see the projectRoot doc comment above the
+  // applyThirdPartyReferences call in buildPlans) so a plain `agents update`
+  // settles at state "current" after a third-party attachment instead of
+  // reporting drift. Mirrors internal/commands/integrations_flags.go passing
+  // manager.ProjectRoot to BuildPlans at both call sites.
+  const plans = buildPlans(kind, { ...options, identity: identityConfig, projectRoot: options.projectRoot || manager.roots.project })
   let statuses
   if (operation === 'list') statuses = manager.inspect(plans)
   else if (operation === 'install') statuses = manager.install(plans, { force: options.force })

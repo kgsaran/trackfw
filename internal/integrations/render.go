@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -495,6 +498,218 @@ func removeFrontmatterModelLine(source []byte) []byte {
 	}
 
 	return []byte("---\n" + strings.Join(kept, "\n") + rest)
+}
+
+// --- D5 extension point: third-party skill reference composition ---
+//
+// ThirdPartyReference records one link from a catalog agent's rendered file
+// to a third-party skill artifact installed at Destination (D5). Entries are
+// persisted per-project (never per-home; third-party scope defaults to
+// "project" — D4) under thirdPartyReferencesPath, keyed by
+// "<targetID>/<agentItemID>".
+//
+// Why this exists: internal/commands/integrations_thirdparty.go's `install`
+// (fase 2) cannot simply append a reference block to an already-rendered
+// catalog agent file and write it once — the *next* plain `trackfw agents
+// update` would call BuildPlans → Render again, which re-derives content
+// straight from the catalog asset and knows nothing about the appended
+// block. That regenerated content would differ from what's on disk, so
+// Manager would either silently overwrite (wiping the reference) or skip
+// with a warning, depending on ownership state — see manager.go's
+// preflight/applyMutation. Persisting the reference here and having
+// BuildPlans call ApplyThirdPartyReferences after every Render (see
+// plan.go) makes the *canonical* render reproduce the block, so repeated
+// `agents update` runs settle at StateCurrent instead of fighting the
+// third-party attachment.
+type ThirdPartyReference struct {
+	Slug        string `json:"slug"`
+	Destination string `json:"destination"`
+	URL         string `json:"url"`
+}
+
+const thirdPartyReferencesSchemaVersion = 1
+
+type thirdPartyReferenceRegistry struct {
+	SchemaVersion int                              `json:"schema_version"`
+	Entries       map[string][]ThirdPartyReference `json:"entries"`
+}
+
+func thirdPartyReferencesPath(root string) string {
+	return filepath.Join(root, ".trackfw", "thirdparty-references.json")
+}
+
+func loadThirdPartyReferenceRegistry(root string) (thirdPartyReferenceRegistry, error) {
+	filename := thirdPartyReferencesPath(root)
+	data, err := os.ReadFile(filename)
+	if os.IsNotExist(err) {
+		return thirdPartyReferenceRegistry{SchemaVersion: thirdPartyReferencesSchemaVersion, Entries: map[string][]ThirdPartyReference{}}, nil
+	}
+	if err != nil {
+		return thirdPartyReferenceRegistry{}, fmt.Errorf("read thirdparty reference registry: %w", err)
+	}
+	var reg thirdPartyReferenceRegistry
+	if err := json.Unmarshal(data, &reg); err != nil {
+		return thirdPartyReferenceRegistry{}, fmt.Errorf("decode thirdparty reference registry: %w", err)
+	}
+	if reg.SchemaVersion != thirdPartyReferencesSchemaVersion {
+		return thirdPartyReferenceRegistry{}, fmt.Errorf("unsupported thirdparty reference registry schema %d", reg.SchemaVersion)
+	}
+	if reg.Entries == nil {
+		reg.Entries = map[string][]ThirdPartyReference{}
+	}
+	return reg, nil
+}
+
+func writeThirdPartyReferenceRegistry(root string, reg thirdPartyReferenceRegistry) error {
+	reg.SchemaVersion = thirdPartyReferencesSchemaVersion
+	if reg.Entries == nil {
+		reg.Entries = map[string][]ThirdPartyReference{}
+	}
+	data, err := json.MarshalIndent(reg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode thirdparty reference registry: %w", err)
+	}
+	data = append(data, '\n')
+	if err := atomicWrite(thirdPartyReferencesPath(root), data, 0o600); err != nil {
+		return fmt.Errorf("write thirdparty reference registry: %w", err)
+	}
+	return nil
+}
+
+// UpsertThirdPartyReference records (or replaces, keyed by ref.Slug) a
+// reference from the rendered catalog agent artifact (targetID,
+// agentItemID) to a third-party skill, and persists it under root
+// (project root — D4). Idempotent: calling it twice with the same Slug
+// replaces the prior entry instead of duplicating it.
+func UpsertThirdPartyReference(root, targetID, agentItemID string, ref ThirdPartyReference) error {
+	reg, err := loadThirdPartyReferenceRegistry(root)
+	if err != nil {
+		return err
+	}
+	key := targetID + "/" + agentItemID
+	refs := reg.Entries[key]
+	replaced := false
+	for i, existing := range refs {
+		if existing.Slug == ref.Slug {
+			refs[i] = ref
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		refs = append(refs, ref)
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].Slug < refs[j].Slug })
+	reg.Entries[key] = refs
+	return writeThirdPartyReferenceRegistry(root, reg)
+}
+
+// thirdPartyRefStart/thirdPartyRefEnd are the composition markers (D5),
+// dedicated and distinct from generators.rulesStart/rulesEnd (which govern
+// a different subsystem — auxiliary rules files, not catalog agent
+// artifacts). Mirrors the idempotent marker-replace pattern of
+// injectOrUpdateRules in internal/generators/agentfiles.go.
+const thirdPartyRefStart = "<!-- trackfw:thirdparty-skills:start -->"
+const thirdPartyRefEnd = "<!-- trackfw:thirdparty-skills:end -->"
+
+// ApplyThirdPartyReferences injects or updates the third-party reference
+// block in content for (targetID, agentItemID), based on entries persisted
+// by UpsertThirdPartyReference. When root is empty or there are no entries
+// for this key, content is returned byte-for-byte unchanged — this is the
+// guarantee that every agent artifact which never received a third-party
+// attachment renders exactly as it did before D5 was introduced, by
+// construction (mirrors the doc comment on Render about the no-identity
+// path being unchanged "not by coincidence").
+//
+// content is expected to already be normalizeMarkdown's output (a single
+// trailing "\n", no surrounding extra whitespace) — true for every caller,
+// since this is only invoked right after Render produces the "subagent"
+// markdown representation (plan.go, BuildPlans).
+func ApplyThirdPartyReferences(root string, content []byte, targetID, agentItemID string) ([]byte, error) {
+	if root == "" {
+		return content, nil
+	}
+	reg, err := loadThirdPartyReferenceRegistry(root)
+	if err != nil {
+		return nil, err
+	}
+	refs := reg.Entries[targetID+"/"+agentItemID]
+	if len(refs) == 0 {
+		return content, nil
+	}
+
+	var block strings.Builder
+	block.WriteString(thirdPartyRefStart + "\n")
+	for _, ref := range refs {
+		fmt.Fprintf(&block, "- Third-party skill %q: %s (source: %s)\n", ref.Slug, ref.Destination, ref.URL)
+	}
+	block.WriteString(thirdPartyRefEnd)
+
+	text := string(content)
+	start := strings.Index(text, thirdPartyRefStart)
+	if start == -1 {
+		if !strings.HasSuffix(text, "\n") {
+			text += "\n"
+		}
+		text += "\n" + block.String() + "\n"
+		return []byte(text), nil
+	}
+	// Search for the end marker starting at start, not from the beginning
+	// of text (hefesto-tf finding, ML-4C): searching the whole text could
+	// find an END marker that appears BEFORE start — e.g. leftover,
+	// unrelated content containing the literal end-marker string ahead of
+	// a genuine start marker — producing end < start. Slicing
+	// text[end+len(thirdPartyRefEnd):] in that case does not panic (both
+	// indices are valid), but silently corrupts the composed output by
+	// overlapping the wrong regions. Anchoring the search at start makes
+	// end < start impossible: end is either -1 or >= start by construction.
+	relEnd := strings.Index(text[start:], thirdPartyRefEnd)
+	if relEnd == -1 {
+		// Malformed (start without end): append a fresh block rather than
+		// guess at repair — mirrors injectOrUpdateRules' handling of the
+		// same malformed case.
+		text += "\n" + block.String() + "\n"
+		return []byte(text), nil
+	}
+	end := start + relEnd
+	newText := text[:start] + block.String() + text[end+len(thirdPartyRefEnd):]
+	return []byte(strings.TrimRight(newText, "\n") + "\n"), nil
+}
+
+// NormalizeThirdPartyContent applies the same normalization Render uses for
+// managed catalog skill content (TrimSpace + single trailing newline) to raw
+// third-party bytes before they are written through Manager.Install, so
+// third-party artifacts are stored with the same on-disk convention as
+// catalog artifacts.
+func NormalizeThirdPartyContent(content []byte) []byte {
+	return normalizeMarkdown(content)
+}
+
+// ResolveThirdPartySkillDestination computes where a third-party artifact's
+// content should live for (targetID, scope), per D5: the shared parent
+// directory of the target's own canonical project/global Skills install
+// path template (e.g. ".claude/skills/trackfw-{{id}}/SKILL.md" truncates to
+// ".claude/skills"), followed by "/thirdparty/<slug>.md". The directory
+// always comes from the catalog's own path template — never a hardcoded
+// ".claude" — so every target the catalog declares a Skills capability for
+// is supported without per-target special-casing (D5's explicit
+// requirement).
+func ResolveThirdPartySkillDestination(catalog *Catalog, targetID, scope, slug string) (destination, surfaceID string, err error) {
+	target, ok := catalog.Target(targetID)
+	if !ok {
+		return "", "", fmt.Errorf("unknown target %q", targetID)
+	}
+	surfaces, err := selectedSurfaces(target, KindSkills, "", false)
+	if err != nil {
+		return "", "", err
+	}
+	surface := surfaces[0]
+	installPath, ok := pathForScope(surface.Paths.Skills, scope)
+	if !ok {
+		return "", "", fmt.Errorf("target %s surface %s has no %s skills path", targetID, surface.ID, scope)
+	}
+	baseDir := truncateBeforeIDSegment(installPath.Path)
+	return baseDir + "/thirdparty/" + slug + ".md", surface.ID, nil
 }
 
 // agentTools retorna o conjunto de ferramentas para o agente.

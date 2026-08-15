@@ -540,6 +540,279 @@ test('credential_guard_hook_resolvable: configurável via rules (warning/off), d
   }
 })
 
+// ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas, ML-3A —
+// thirdparty_artifact_has_provenance (ADR-2026-08-15 D2). Port of
+// internal/validator/validator_thirdparty_provenance_test.go — same fixtures, same assertions.
+;(() => {
+  const crypto = require('crypto')
+
+  function sha256Hex(buf) {
+    return crypto.createHash('sha256').update(buf).digest('hex')
+  }
+
+  function writeJSON(filePath, value) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`)
+  }
+
+  function writeManifest(root, destination, origin) {
+    const claim = { target: 'claude', surface: 'code', scope: 'project', kind: 'skills', item: 'thirdparty-example' }
+    if (origin) claim.origin = origin
+    writeJSON(path.join(root, '.trackfw', 'integrations-manifest.json'), {
+      schema_version: 1,
+      artifacts: {
+        [destination]: {
+          destination,
+          sha256: 'irrelevant-for-this-rule',
+          catalog_version: 'thirdparty:abcdef123456',
+          claims: [claim],
+        },
+      },
+    })
+  }
+
+  // Keyed by destination MADE RELATIVE TO root — provenance is keyed by the
+  // project-root-relative path, never by the manifest's absolute
+  // destination (verified empirically against the real install command;
+  // see the Go sibling test's comment for the full explanation).
+  //
+  // checksum is the D6 raw-bytes approval anchor (checksum_sha256);
+  // installedSHA256 is the D2-bis field branch (ii) actually checks against
+  // the installed file's own hash. Independent parameters, never derived
+  // from one another — mirrors production, where one is written by the
+  // external approver and the other by the install command.
+  function writeProvenance(root, destination, checksum, installedSHA256) {
+    const relDest = path.relative(root, destination)
+    writeJSON(path.join(root, '.trackfw', 'thirdparty-provenance.json'), {
+      schema_version: 2,
+      entries: {
+        [relDest]: {
+          url: 'https://example.com/skill.md',
+          checksum_sha256: checksum,
+          installed_sha256: installedSHA256,
+          installed_at: '2026-08-15T00:00:00Z',
+          approved_by: 'hades-tf',
+          review_reference: 'docs/seguranca/example.md',
+          scope: 'project',
+          marker_override: false,
+        },
+      },
+    })
+  }
+
+  function writeQuarantine(root, rawBuf) {
+    const checksum = sha256Hex(rawBuf)
+    writeJSON(path.join(root, '.trackfw', 'thirdparty-quarantine', `${checksum}.json`), {
+      schema_version: 1,
+      url: 'https://example.com/skill.md',
+      checksum_sha256: checksum,
+      fetched_at: '2026-08-15T00:00:00Z',
+      content_base64: rawBuf.toString('base64'),
+      marker_check: { result: 'pass', matched_markers: [] },
+      kind: 'skill',
+      requested_targets: ['claude'],
+    })
+    return checksum
+  }
+
+  function withTmpCwd(fn) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-tp-'))
+    // Resolve symlinks (macOS: os.tmpdir() returns "/var/folders/..." but
+    // process.cwd() after chdir returns the physical "/private/var/folders/...").
+    // Passing the resolved root to fn keeps destination paths built by the
+    // caller consistent with what process.cwd() reports inside the rule.
+    const resolved = fs.realpathSync(tmp)
+    const origDir = process.cwd()
+    process.chdir(resolved)
+    config.reset()
+    try {
+      fn(resolved)
+    } finally {
+      process.chdir(origDir)
+      config.reset()
+      fs.rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+
+  test('thirdparty_artifact_has_provenance: sem manifest -> sem violations', () => {
+    withTmpCwd(() => {
+      const msgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.strictEqual(msgs.length, 0, JSON.stringify(msgs))
+    })
+  })
+
+  test('thirdparty_artifact_has_provenance: claim de catálogo (origin ausente) nunca é sinalizado', () => {
+    withTmpCwd(root => {
+      const destination = path.join(root, 'skill.md')
+      fs.writeFileSync(destination, 'catalog content\n')
+      writeManifest(root, destination, undefined)
+      const msgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.strictEqual(msgs.length, 0, JSON.stringify(msgs))
+    })
+  })
+
+  test('thirdparty_artifact_has_provenance: manifest legado sem campo origin lê como catálogo (retrocompat)', () => {
+    withTmpCwd(root => {
+      const destination = path.join(root, 'agent.md')
+      fs.writeFileSync(destination, 'legacy agent content\n')
+      const manifestPath = path.join(root, '.trackfw', 'integrations-manifest.json')
+      fs.mkdirSync(path.dirname(manifestPath), { recursive: true })
+      fs.writeFileSync(manifestPath, `{
+  "schema_version": 1,
+  "artifacts": {
+    ${JSON.stringify(destination)}: {
+      "destination": ${JSON.stringify(destination)},
+      "sha256": "irrelevant",
+      "catalog_version": "v1",
+      "claims": [
+        {"target": "claude", "surface": "code", "scope": "project", "kind": "agents", "item": "backend"}
+      ]
+    }
+  }
+}
+`)
+      const msgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.strictEqual(msgs.length, 0, JSON.stringify(msgs))
+    })
+  })
+
+  test('thirdparty_artifact_has_provenance: branch i — sem entrada de proveniência', () => {
+    withTmpCwd(root => {
+      const destination = path.join(root, 'skills', 'thirdparty', 'example.md')
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      fs.writeFileSync(destination, 'some content\n')
+      writeManifest(root, destination, 'thirdparty')
+      const msgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.strictEqual(msgs.length, 1, JSON.stringify(msgs))
+      assert(msgs[0].includes('D2 branch i'), msgs[0])
+      assert(msgs[0].includes(destination), msgs[0])
+    })
+  })
+
+  // Carrega-prova a mesma regressão coberta no Go (ver o comentário no arquivo Go irmão): o
+  // conteúdo bruto NÃO é canônico (linha em branco à frente/atrás) — checksum_sha256 é
+  // sha256(bruto), instalado_sha256 é sha256(normalize(bruto)). Uma implementação ingênua que
+  // compara sha256(arquivo instalado) contra checksum_sha256 FALHARIA aqui. Nenhum registro de
+  // quarentena é escrito neste teste — D2-bis existe exatamente para que a ramificação (ii) não
+  // dependa mais dele.
+  test('thirdparty_artifact_has_provenance: branch ii — install legítimo com conteúdo não-canônico não é falso-positivo', () => {
+    withTmpCwd(root => {
+      const raw = Buffer.from('\n# hello\n\nsome content\n\n\n', 'utf8')
+      const normalized = Buffer.from(`${raw.toString('utf8').trim()}\n`, 'utf8')
+      assert(!raw.equals(normalized), 'fixture não testa a divergência bruto/normalizado')
+      const checksumOfRaw = sha256Hex(raw)
+      const installedSHA256 = sha256Hex(normalized)
+      assert.notStrictEqual(checksumOfRaw, installedSHA256, 'fixture deve manter checksum_sha256 e installed_sha256 distintos')
+
+      const destination = path.join(root, 'skills', 'thirdparty', 'example.md')
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      fs.writeFileSync(destination, normalized)
+      writeManifest(root, destination, 'thirdparty')
+      writeProvenance(root, destination, checksumOfRaw, installedSHA256)
+
+      const msgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.strictEqual(msgs.length, 0, JSON.stringify(msgs))
+    })
+  })
+
+  test('thirdparty_artifact_has_provenance: branch ii — adulteração pós-aprovação é detectada', () => {
+    withTmpCwd(root => {
+      const raw = Buffer.from('# hello\n\nsome content\n', 'utf8')
+      const normalized = Buffer.from(`${raw.toString('utf8').trim()}\n`, 'utf8')
+      const destination = path.join(root, 'skills', 'thirdparty', 'example.md')
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      fs.writeFileSync(destination, Buffer.from('# hello\n\nTAMPERED CONTENT\n', 'utf8'))
+      writeManifest(root, destination, 'thirdparty')
+      writeProvenance(root, destination, sha256Hex(raw), sha256Hex(normalized))
+
+      const msgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.strictEqual(msgs.length, 1, JSON.stringify(msgs))
+      assert(msgs[0].includes('D2 branch ii'), msgs[0])
+    })
+  })
+
+  // Âncora de paridade: uma entrada de proveniência escrita só pelo aprovador (D10.2), nunca
+  // tendo passado por `install`, tem installed_sha256 AUSENTE (não vazio — ausente). Node ingênuo
+  // interpolaria `entry.installed_sha256 === undefined` como o literal "undefined" na mensagem,
+  // divergindo de Go/Python (string vazia). Este teste fixa o texto da mensagem para essa
+  // regressão não passar despercebida.
+  test('thirdparty_artifact_has_provenance: branch ii — installed_sha256 ausente é capturado sem "undefined"', () => {
+    withTmpCwd(root => {
+      const destination = path.join(root, 'skills', 'thirdparty', 'example.md')
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      fs.writeFileSync(destination, 'content\n')
+      writeManifest(root, destination, 'thirdparty')
+      // Hand-authored: sem a chave installed_sha256, exatamente como um aprovador (nunca tendo
+      // rodado `install`) escreveria.
+      const relDest = path.relative(root, destination)
+      writeJSON(path.join(root, '.trackfw', 'thirdparty-provenance.json'), {
+        schema_version: 2,
+        entries: {
+          [relDest]: {
+            url: 'https://example.com/skill.md',
+            checksum_sha256: 'a'.repeat(64),
+            installed_at: '2026-08-15T00:00:00Z',
+            approved_by: 'hades-tf',
+            review_reference: 'docs/seguranca/example.md',
+            scope: 'project',
+            marker_override: false,
+          },
+        },
+      })
+
+      const msgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.strictEqual(msgs.length, 1, JSON.stringify(msgs))
+      assert(!msgs[0].includes('undefined'), msgs[0])
+      assert(msgs[0].includes('installed_sha256  recorded'), msgs[0])
+    })
+  })
+
+  // Testes carrega-prova do ML-3B (ADR-2026-08-15 D2-bis): reproduzem o cenário exato que o
+  // desenho do ML-3A errava — apagar .trackfw/thirdparty-quarantine/ INTEIRO e confirmar que (a)
+  // instalação íntegra não vira violação e (b) adulteração continua detectada. Substituem o teste
+  // "quarentena ausente falha fechado (D8f)" do ML-3A: essa premissa (quarentena ausente = erro)
+  // era exatamente o footgun que D2-bis remove — não há mais dependência da quarentena na
+  // ramificação (ii), então sua ausência não é mais um caso de fail-closed.
+  test('thirdparty_artifact_has_provenance: branch ii — apagar quarentena não quebra install íntegro', () => {
+    withTmpCwd(root => {
+      const raw = Buffer.from('\n# hello\n\nsome content\n\n\n', 'utf8')
+      const normalized = Buffer.from(`${raw.toString('utf8').trim()}\n`, 'utf8')
+      const checksumOfRaw = writeQuarantine(root, raw) // registro real, como `fetch` escreveria
+
+      const destination = path.join(root, 'skills', 'thirdparty', 'example.md')
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      fs.writeFileSync(destination, normalized)
+      writeManifest(root, destination, 'thirdparty')
+      writeProvenance(root, destination, checksumOfRaw, sha256Hex(normalized))
+
+      fs.rmSync(path.join(root, '.trackfw', 'thirdparty-quarantine'), { recursive: true, force: true })
+
+      const msgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.strictEqual(msgs.length, 0, JSON.stringify(msgs))
+    })
+  })
+
+  test('thirdparty_artifact_has_provenance: branch ii — apagar quarentena não impede detecção de adulteração', () => {
+    withTmpCwd(root => {
+      const raw = Buffer.from('# hello\n\nsome content\n', 'utf8')
+      const normalized = Buffer.from(`${raw.toString('utf8').trim()}\n`, 'utf8')
+      const checksumOfRaw = writeQuarantine(root, raw)
+
+      const destination = path.join(root, 'skills', 'thirdparty', 'example.md')
+      fs.mkdirSync(path.dirname(destination), { recursive: true })
+      fs.writeFileSync(destination, Buffer.from('# hello\n\nTAMPERED CONTENT\n', 'utf8'))
+      writeManifest(root, destination, 'thirdparty')
+      writeProvenance(root, destination, checksumOfRaw, sha256Hex(normalized))
+
+      fs.rmSync(path.join(root, '.trackfw', 'thirdparty-quarantine'), { recursive: true, force: true })
+
+      const msgs = validator.validateThirdPartyArtifactHasProvenance()
+      assert.strictEqual(msgs.length, 1, JSON.stringify(msgs))
+      assert(msgs[0].includes('D2 branch ii'), msgs[0])
+    })
+  })
+})()
+
 // ML-2B — Resiliência CI/CD para adr_dirs inexistentes e isenção de adr_orphan em ADRs externos
 ;(async () => {
   await testAsync('adr_dirs inexistente com strict_ci_paths false (default) gera warning', async () => {

@@ -34,6 +34,7 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-hooks-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-harness-hooks-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-gates-falsify.sh
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-thirdparty-parity.sh
 
 sync-integration-assets:
 	scripts/sync-integration-assets.sh

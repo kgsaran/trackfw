@@ -203,6 +203,18 @@ def add_lifecycle_parser(subparsers, kind: str):
                 + ", ".join(_identity.preset_names()),
             )
         child.set_defaults(func=lambda args, selected_kind=kind: run(args, selected_kind))
+
+    # --- third-party (D1) — two-phase quarantine gate, reachable from both
+    # `trackfw agents third-party` and `trackfw skills third-party`.
+    # Imported lazily: trackfw.commands.thirdparty imports
+    # trackfw.integrations.catalog/manager, and this module (command.py)
+    # is imported BY trackfw.commands.agents/skills at trackfw.cli
+    # module-load time — a top-level import here would risk a load-time
+    # cycle the same way trackfw.commands.identity_wizard is imported
+    # lazily inside run() above.
+    from trackfw.commands.thirdparty import add_thirdparty_parser
+
+    add_thirdparty_parser(actions, kind)
     return parser
 
 
@@ -282,6 +294,13 @@ def run(args: argparse.Namespace, kind: str) -> int:
             surfaces=selected_surfaces,
             all_surfaces=not mutation,
             identity_cfg=ident,
+            # D5/D9 — lets a plain `trackfw agents update` (this is the
+            # canonical BuildPlans call site) reproduce any persisted
+            # third-party reference block instead of treating a prior
+            # `third-party install --apply-to` attachment as drift.
+            # Mirrors internal/commands/integrations_flags.go passing
+            # manager.ProjectRoot to BuildPlans at both of its call sites.
+            project_root=os.getcwd(),
         )
         def _on_skip(destination: str, reason: str) -> None:
             print(reason, file=sys.stderr)

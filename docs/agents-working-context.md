@@ -4,6 +4,49 @@
 
 ---
 
+## Sessão 2026-08-15 — Hades (INÍCIO: ML-0A — parecer de segurança sobre skills de terceiro via URL)
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md`
+em `wip/`. Executando ML-0A: leitura obrigatória (REQ, `ADR-2026-08-12`, `ADR-2026-07-25`,
+`internal/plugins/plugins.go`, `internal/integrations/manager.go`/`manifest.go`, 3 notas do
+vault) e produção do parecer respondendo Q1–Q8. Escopo: apenas
+`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` + esta entrada de contexto. Nenhum
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-15 — Hades (FIM: ML-0A concluído — parecer de segurança entregue, não commitado)
+
+Entregue `docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md`, respondendo Q1–Q8 com
+veredito explícito em cada seção. Destaques para o ML-0B (Zeus/ADR):
+
+- **Q2 — guardrail, não controle** (cita `ADR-2026-08-12` diretamente): env var de sessão só
+  filtra o caso ingênuo; a detecção real proposta é a regra `thirdparty_artifact_has_provenance`
+  em `trackfw validate`, ancorada em `.trackfw/thirdparty-provenance.json` versionado.
+- **Q3** — 6 marcadores literais + ordem de normalização de 5 passos; seção "O que este critério
+  NÃO cobre" lista paráfrase, indireção, fragmentação, homoglifo residual, semântica sem heading
+  e auto-modificação como evasões reais e aceitas — o `grep` é tripwire para o caso descuidado,
+  não filtro contra adversário competente.
+- **Q4** — recomendo default `project` (exceção escopada ao `ADR-2026-07-25` D1, não emenda
+  geral): a detecção de Q2 depende do artefato estar dentro do repo (doutrina do
+  `ADR-2026-08-12` §2 sobre visibilidade).
+- **Q5** — arquivo separado + referência via marcadores (padrão `injectOrUpdateRules`), não bloco
+  apensado direto no arquivo do catálogo — apensar quebraria `manifest.go` (`StateModified` no
+  próximo `agents update`).
+- **Q8** — handshake de quarentena (`.trackfw/thirdparty-quarantine/<checksum>.json`) → parecer
+  do `hades-tf` → prova de aprovação vinculada por **checksum** em
+  `.trackfw/thirdparty-provenance.json` (fecha o TOCTOU, não impede forja por agente já com
+  escrita, mas torna a forja git-detectável, consistente com `ADR-2026-08-12`). **Achado
+  formal:** `trackfw plugins install` (`internal/plugins/plugins.go`) hoje baixa binário de
+  terceiro e faz `chmod 0755` sem gate nenhum — recomendo o mesmo gate, com severidade **maior**
+  que o caso de markdown (binário executa direto, markdown só influencia), como **REQ separada**.
+  Fail-closed sempre; CI nunca instala do zero, só valida o já commitado.
+
+**Validação:** `git status --porcelain` lista exclusivamente
+`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` e esta entrada em
+`docs/agents-working-context.md`. Nenhum arquivo de `internal/`, `npm/src/`, `pypi/trackfw/`,
+`scripts/` ou testes tocado. Nenhum commit/push feito — devolvo o trabalho para o
+`trackfw_architect` prosseguir com ML-0B (ADR + reescrita das Waves 1+).
+
 ## Sessão 2026-08-15 — Zeus (encerramento: REQ+roadmap agentes-especialistas-convencoes concluídos) — pronto para PR
 
 Branch `feat/agentes-especialistas-aceitam-contexto-de-convencoes`. REQ
@@ -16533,3 +16576,749 @@ nenhum arquivo sob `pypi/` (outro agente trabalhava em paralelo no ML-2B/Python 
 Não fiz `git commit`/`push` — autoridade de Git é do `trackfw_architect`. Não toquei em nenhum
 arquivo sob `pypi/` (ML-2B, agente paralelo) nem em `internal/`/Go (Wave 1, já commitada). Wave 3
 (paridade cruzada final + `docs/cli-parity.md`) segue pendente, fora do escopo deste ML.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — INÍCIO: reescrita do roadmap de skills de terceiro via URL
+
+**Contexto:** único item em `backlog/` é
+`ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md`,
+gerado em formato stub a partir da REQ (MLs com títulos truncados, `Files affected`/`Actions`
+vazios, `## Acceptance Criteria` consolidado vazio). Não é executável.
+
+**Escopo desta sessão (aprovado por KG):** reescrever o roadmap com Waves/MLs decision-complete,
+incluindo Wave 0 (revisão de segurança `hades-tf`) como barreira bloqueante. Sem código de produto.
+Roadmap vai para `analyzing/` (regra 5 do protocolo: `wip/` só quando a implementação começa).
+
+**Restrições já levantadas na orientação:**
+- `ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills` decidiu default de escopo
+  **global**; a REQ pede "local ao projeto por padrão" → conflito real a resolver na Wave 0.
+- `ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido...` é a doutrina canônica: não há
+  prevenção técnica contra agente induzido com escrita no workspace; a resposta é **detecção
+  ancorada no git**. Logo, "só o orquestrador invoca via env var" é guardrail, não controle.
+- `trackfw branch new` só aceita roadmap em `wip/` ou `done/` (`internal/commands/branch.go:127-145`)
+  — `analyzing/` não satisfaz o gate, portanto nenhuma branch é criada nesta sessão.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — FIM: roadmap de skills de terceiro reescrito (não commitado)
+
+**Entregue:**
+- `docs/roadmaps/analyzing/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md`
+  reescrito do zero: mapa arquitetural apurado (subsistema real é `internal/integrations/`, não
+  `internal/generators/`), seção de conflitos abertos, 9 critérios de aceite consolidados
+  (AC1–AC9, cobrindo os 9 da REQ), 5 Waves.
+- Wave 0 é barreira bloqueante: ML-0A (`hades-tf`, parecer Q1–Q7 em `docs/seguranca/`) e ML-0B
+  (Zeus, ADR com D1–D7 + reescrita das Waves 1+ substituindo os placeholders `<<TBD-Dn>>`).
+- Waves 1+ deliberadamente contingentes: nome do comando, flags, formato de proveniência e
+  local de residência da skill são **saída** da Wave 0, marcados como `<<TBD-Dn>>`.
+- Todos os MLs de comportamento listam os 3 stacks (Go `internal/`, Node `npm/src/`,
+  Python `pypi/trackfw/`).
+
+**Correção de observação anterior:** o arquivo do roadmap NÃO tinha espaço à esquerda no nome —
+era artefato do alias `ls --color`. Nenhum rename feito.
+
+**Validação:** `trackfw validate` passa (7 warnings pré-existentes de REQ sem ADR, incluindo
+esta REQ — o campo `adr:` é preenchido no ML-0B). Roadmap em `analyzing/`.
+
+**Não commitado:** nenhuma branch criada (`trackfw branch new` exige roadmap em `wip/`/`done/`;
+`analyzing/` não satisfaz o gate) e commit direto na `main` é proibido. A branch nasce no ML-0B.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — ML-0B concluído: ADR D1–D8 + Waves 1–3 decision-complete
+
+**Entregue:**
+- ADR novo: `docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quarentena-parecer-vinculado-por-checksum-e-deteccao-por-proveniencia-versionada.md`
+  (Accepted), com D1–D8 mapeando Q1–Q8 do parecer do `hades-tf`.
+- REQ com campo `adr:` preenchido (warnings do validate caíram de 7 → 6).
+- Waves 1–3 reescritas com valores exatos; Wave 1 virou 3 MLs sequenciais (ML-1A pacote
+  `internal/thirdparty` fetch/markers/checksum; ML-1B quarentena + proveniência; ML-1C
+  subcomandos de duas fases + composição D5 + guardrail D2). AC4, AC9 e AC10 reescritos com
+  valores nomeados — nenhum AC delega verificação ao ADR.
+
+**Decisões que divergem ou emendam o parecer:**
+- **D3 ganhou emenda do arquiteto:** a normalização do parecer não removia blocos cercados, e o
+  próprio arquivo do parecer (que lista os 6 marcadores dentro de um fence) seria recusado pelo
+  critério que define. Decidido: passo de extração de headings opera sobre o conteúdo **sem**
+  blocos cercados. Contrapartida registrada no ADR.
+- **D4 confirmado por KG:** escopo `project` para third-party, como exceção escopada ao
+  `ADR-2026-07-25` D1, que segue valendo `global` para o catálogo.
+- **D8(e):** `trackfw plugins install` fica fora desta REQ, em REQ separada — registrado no ADR
+  como débito de segurança consciente e datado, não esquecimento.
+
+**Estado:** Wave 0 ✅ completa (ML-0A + ML-0B). Wave 1 liberada para dispatch ao `apolo-tf`.
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, nada pushado.
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — INÍCIO: ML-1A pacote `internal/thirdparty`
+
+Recebido dispatch da Wave 1 (ML-1A). Escopo: `Fetch` (D7), `CheckMarkers` (D3) e `Checksum` (D6)
+em `internal/thirdparty/`, sem I/O de disco (quarentena/proveniência são ML-1B). Branch
+`feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas` já criada pelo
+`trackfw_architect`; nenhum commit será feito por este agente (autoridade de Git é exclusiva do
+`trackfw_architect`).
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — FIM: ML-1A concluído (não commitado)
+
+**Entregue:**
+- `internal/thirdparty/fetch.go` — `Fetch(rawURL string) ([]byte, error)`: recusa antes do
+  primeiro `Get` se scheme != `https`; `http.Client` dedicado (não reusa `internal/plugins`);
+  `CheckRedirect` com máx. 3 hops revalidando `https` a cada hop; `io.LimitReader` com teto de
+  2 MiB; recusa `Content-Type` fora de `text/plain` / `text/markdown` / `text/x-markdown`
+  (com/sem `; charset=`).
+- `internal/thirdparty/markers.go` — `CheckMarkers(content []byte) []string` seguindo a ordem
+  exata do ML-1A (remove HTML comments → remove fenced blocks → NFKC → casefold → colapsa
+  espaço+strip por linha → casa heading `^#{1,6}\s+` contra os 6 marcadores literais); e
+  `Checksum(raw []byte) string` (SHA-256 hex dos bytes brutos, réplica comentada de `contentHash`
+  de `internal/integrations/manager.go`, que é não-exportado).
+- `internal/thirdparty/fetch_test.go`, `internal/thirdparty/markers_test.go` — 20 casos de teste
+  cobrindo todos os critérios de aceite do ML-1A, incluindo fullwidth recusado e homoglifo
+  cirílico aceito (fronteira documentada de D3, não bug).
+
+**Decisão de baixo risco não trivial:** o parecer/ADR descreviam a remoção de blocos cercados
+como um único passo regex; `regexp` do Go (RE2) **não suporta backreferences**
+(`` (?ms)^(```|~~~).*?^\1[^\n]*$ `` gera panic em runtime, não erro de compilação — `go build`
+passa, só falha ao executar). Implementado `removeFencedBlocks` via scanner linha a linha
+(regra do CommonMark: fecha com o mesmo caractere delimitador, com repetições >= abertura).
+Registrado como nota de vault (ver `vault/notes/`) para quem for portar a Wave 2 (Node/Python) —
+lá não há essa restrição, então não repliquem o scanner ali por engano.
+
+**Validação:** `go build ./... && go vet ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test
+./internal/thirdparty/...` → PASS (20/20 testes). `git status --porcelain` mostra apenas
+`internal/thirdparty/` (untracked, 4 arquivos, nenhum outro caminho tocado).
+
+**Não commitado.** Devolvido ao `trackfw_architect` para auditoria e commit.
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — INÍCIO: ML-1B quarentena (D8a/b) e proveniência (D6)
+
+Recebido dispatch da Wave 1 (ML-1B). Escopo: `internal/thirdparty/quarantine.go` e
+`provenance.go` (+ testes), persistência pura, sem comando e sem rede — consome `Fetch`,
+`CheckMarkers`, `Checksum` já entregues no ML-1A. Branch
+`feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas` já existe; nenhum
+commit será feito por este agente (autoridade de Git é exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — FIM: ML-1B concluído (não commitado)
+
+**Entregue:**
+- `internal/thirdparty/quarantine.go` — `QuarantineEntry` (schema exato do roadmap),
+  `NewQuarantineEntry`, `QuarantinePath(root, checksum)`, `WriteQuarantine`/`ReadQuarantine`
+  (fail-closed: arquivo ausente, JSON inválido ou `schema_version` != 1 → erro), método
+  `DecodeContent()`. Inclui `atomicWrite` (réplica comentada do padrão de
+  `internal/integrations/manager.go`, único ponto de escrita atômica do pacote).
+- `internal/thirdparty/provenance.go` — `Provenance`/`ProvenanceEntry` (chaveado por destino),
+  `LoadProvenance` (espelha `loadManifest`: arquivo ausente → vazio válido, JSON inválido/schema
+  != 1 → erro fatal), `WriteProvenance`/`UpsertProvenanceEntry` (comentário explícito no código
+  contrastando com o padrão best-effort de `appendTransitionLog`), `VerifyApproval(root,
+  checksum, dest)` (D8c: só passa com entrada exata do destino, checksum idêntico e
+  `approved_by` não vazio).
+- `internal/thirdparty/quarantine_test.go`, `provenance_test.go` — round-trip com UTF-8
+  multibyte, filename == checksum, 3 casos fail-closed em cada arquivo, escrita read-only
+  forçada (diretório `.trackfw` com `0500`) provando que a falha de proveniência aborta e
+  retorna erro, e os 4 casos de `VerifyApproval` (sucesso, destino ausente, checksum divergente,
+  `approved_by` vazio).
+
+**Decisão de baixo risco:** o roadmap especifica `VerifyApproval(checksum, dest string) error`
+sem `root`; segui a convenção já estabelecida em `internal/integrations/manager.go`
+(`manifestPath(root)`, `Manager.ProjectRoot`/`HomeDir`) e adicionei `root` como primeiro
+parâmetro em todas as funções deste pacote — sem isso não há como localizar
+`.trackfw/thirdparty-provenance.json` de forma testável (evita cwd implícito). Mesma escolha
+aplicada a `QuarantinePath`/`ReadQuarantine`/`WriteQuarantine`.
+
+**Nota sobre "fail-closed" (D8f) nos dois arquivos:** para quarentena, arquivo ausente é sempre
+erro (`ReadQuarantine` é chamado com um checksum que já deveria existir). Para proveniência,
+`LoadProvenance` trata ausência de arquivo como "nada instalado ainda" (mesmo comportamento de
+`loadManifest`) — o fail-closed real acontece em `VerifyApproval`, que falha se não houver
+entrada para o destino, não na função de leitura em si. As duas leituras continuam idênticas em
+rigor contra JSON malformado e `schema_version` incompatível.
+
+**Validação:** `go build ./... && go vet ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test
+./internal/thirdparty/...` → PASS (34 testes, incluindo os 20 do ML-1A + 14 novos). `go build
+./...` e `go vet ./...` na raiz do repo também limpos.
+
+**Não commitado.** Escrito apenas `internal/thirdparty/quarantine.go`, `provenance.go`,
+`quarantine_test.go`, `provenance_test.go` + esta entrada de contexto. `fetch.go`/`markers.go`
+não foram tocados. Devolvido ao `trackfw_architect` para auditoria e commit.
+
+## Sessão 2026-08-15 — Apolo (INÍCIO: ML-1C — subcomandos `third-party fetch`/`install`, composição D5, guardrail D2)
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap em
+`wip/`. ML-1A e ML-1B já concluídos e auditados. Executando ML-1C: dois novos subcomandos em
+`trackfw skills`/`trackfw agents` (`newIntegrationsLifecycleCmd`), extensão de composição
+idempotente em `internal/integrations/render.go`, escopo `project` default via
+`resolveThirdPartyScope` dedicado (sem tocar `resolveScope`/`agents_skills_test.go`).
+
+## Sessão 2026-08-15 — Apolo (FIM: ML-1C concluído — 10 testes verdes, não commitado)
+
+Entregue o subcomando `third-party fetch`/`third-party install`, disponível em `trackfw skills`
+e `trackfw agents` (D1), com quarentena → aprovação vinculada por checksum (D8c/TOCTOU fechado)
+→ instalação via `Manager` (nunca `os.WriteFile` cru), guardrail `TRACKFW_ORCHESTRATOR_SESSION`
+(D2, mensagem cita "guardrail" e a regra `thirdparty_artifact_has_provenance`), e composição por
+marcadores dedicados `<!-- trackfw:thirdparty-skills:start/end -->` (D5).
+
+**Arquivos tocados:**
+- `internal/commands/integrations_thirdparty.go` (novo) — comandos `fetch`/`install`.
+- `internal/commands/integrations_thirdparty_test.go` (novo) — 10 testes.
+- `internal/commands/integrations_flags.go` (editado) — registra `third-party` em
+  `newIntegrationsLifecycleCmd`; passa `manager.ProjectRoot` para `BuildPlans` nos dois call
+  sites (`executeIntegrationMutation`, `executeIntegrationList`).
+- `internal/integrations/render.go` (editado) — extensão D5: `ThirdPartyReference`,
+  registro `.trackfw/thirdparty-references.json`, `UpsertThirdPartyReference`,
+  `ApplyThirdPartyReferences` (injeção idempotente por marcadores),
+  `NormalizeThirdPartyContent`, `ResolveThirdPartySkillDestination` (nunca hardcoda `.claude/`).
+- **`internal/integrations/plan.go` (editado) — FORA da lista de arquivos do ML, decisão
+  reportada, não silenciosa.** Adicionado campo `PlanRequest.ProjectRoot` (opcional,
+  source-compatible) e uma chamada a `ApplyThirdPartyReferences` logo após `Render()` para
+  `KindAgents`. **Motivo:** sem isso, o AC5 do ML ("`agents update` não reporta `StateModified`
+  após anexar um artefato de terceiro") só valeria superficialmente — o `Render()` normal não
+  sabe nada sobre o bloco de referência injetado, então o próximo `agents update` recalcularia
+  conteúdo sem o bloco, e o `Manager` ou sobrescreveria silenciosamente (apagando a referência)
+  ou pularia com aviso de "outdated", dependendo do estado de posse. Persistir a referência em
+  `.trackfw/thirdparty-references.json` e fazer o `BuildPlans` reaplicá-la a cada render é o que
+  faz o estado convergir em `StateCurrent` de forma estável. Testado explicitamente em
+  `TestThirdPartyInstall_AgentsUpdateStaysCurrentAfterAttach` (compara bytes antes/depois de um
+  `agents update` subsequente).
+
+**Imprecisões do ADR encontradas e resolvidas (reportadas, não contornadas em silêncio):**
+1. **Escopo do agente-alvo de `--apply-to` não especificado.** D5/D8 nunca dizem em qual escopo
+   o artefato do agente que recebe a referência precisa estar. Como D4 dá ao third-party um
+   default (`project`) diferente do catálogo (`global`, `ADR-2026-07-25` D1), o caso comum é não
+   existir `.claude/agents/trackfw-<id>.md` (só `~/.claude/agents/...`), e injetar um caminho
+   relativo ao projeto num arquivo global quebraria para qualquer outro projeto que compartilhe
+   esse arquivo home-scoped. **Resolução:** exigir que o agente já esteja instalado, possuído
+   pelo trackfw e **não modificado à mão**, no MESMO escopo do artefato de terceiro; falhar
+   ruidosamente com o comando de remediação exato, nunca pular em silêncio (AC3 proíbe decisão
+   silenciosa). Testado em
+   `TestThirdPartyInstall_ApplyToRejectsHandModifiedAgentBeforeAnyWrite` — a checagem roda
+   **antes** de qualquer escrita (nem o skill file nem o registro de referências são gravados se
+   a precondição falhar).
+2. **Quem escreve a entrada de proveniência aprovada nunca é especificado.** `VerifyApproval`
+   exige uma entrada pré-existente keyed por destino resolvido — este ML não expõe nenhum
+   comando "approve"; a entrada precisa ser escrita fora da CLI (pelo `hades-tf`/arquiteto,
+   diretamente no JSON versionado) antes de `third-party install` rodar. Isso implica que quem
+   aprova precisa calcular o mesmo destino resolvido que `ResolveThirdPartySkillDestination`
+   produziria — acoplamento implícito que o ADR não nomeia.
+3. **`requested_targets` do schema de quarentena (D8b) não distingue "CLI targets" de "IDs de
+   agente do catálogo".** Por isso a CLI separa `--targets` (onde o arquivo de skill é instalado)
+   de `--apply-to` (quais agentes do catálogo recebem a linha de referência) — sem essa
+   distinção AC3 ("o usuário confirma explicitamente a quais agentes se aplica") não teria como
+   ser implementado de forma não ambígua.
+
+**Decisões autônomas de baixo risco:**
+- `--scope global` (D4, "confirmação explícita adicional") reaproveita
+  `--yes-i-trust-this-source` em vez de uma segunda flag — ambas gateiam a mesma ação de "revisei
+  e aceito a consequência".
+- Slug do artefato derivado da URL por padrão (`--slug` opcional para sobrescrever), validado
+  contra `^[a-z0-9][a-z0-9._-]{0,63}$` antes de tocar `Manager.resolve`.
+- `--checksum` validado contra `^[a-f0-9]{64}$` antes de qualquer uso (evita panic de slice em
+  `CatalogVersion` e mismatch confuso de arquivo de quarentena).
+- Falha de marker check (`marker_check.result == "fail"`) em `fetch --force-thirdparty-markers`
+  exige `marker_override: true` na entrada de proveniência de CADA destino antes de `install`
+  prosseguir — camada extra de auditabilidade não pedida literalmente pelo ADR, mas coerente com
+  "fica auditável, não silencioso" (D3).
+
+**Pendência explícita para a Wave 2 (Node/Python):** o novo artefato persistido
+`.trackfw/thirdparty-references.json` **não está mencionado no ADR** — é resultado da resolução
+acima. Quem portar para Node/Python só a partir de D1–D8 vai perder esse arquivo e divergir no
+comportamento de `agents update` pós-anexação. Precisa ser portado byte-a-byte junto com
+`thirdparty-quarantine`/`thirdparty-provenance`.
+
+**Validação:** `go build ./... && go vet ./... && TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test
+./...` → PASS (todos os pacotes, incluindo os 10 testes novos de
+`internal/commands/integrations_thirdparty_test.go`). `gofmt -l` limpo nos arquivos tocados.
+`internal/commands/agents_skills_test.go` não foi editado (diff vazio).
+
+**Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.
+
+---
+
+## Sessão 2026-08-15 — Apolo (ML-2A — porte Node.js 1:1 do gate de artefato de terceiro)
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap em
+`wip/`. Executando o porte Node.js da Wave 2, byte-a-byte a partir da referência Go
+(`internal/thirdparty/*`, `internal/commands/integrations_thirdparty.go`,
+`internal/integrations/render.go` D9, `internal/integrations/plan.go`). Escopo exclusivo
+`npm/` — não tocado `pypi/` (ML-2B, agente irmão em paralelo) nem `internal/` (leitura).
+
+**Arquivos criados:**
+- `npm/src/thirdparty/fetch.js` — HTTPS-only, 30s timeout, 2 MiB cap, allowlist de
+  Content-Type, redirect hops com a MESMA contagem "off-by-one" do `net/http.CheckRedirect`
+  do Go (ver nota do vault abaixo).
+- `npm/src/thirdparty/markers.js` — `checkMarkers`/`checksum`; `removeFencedBlocks` portado
+  como line-scanner (não regex de uma linha), replicando `strings.Trim` do Go via `trimChar`
+  local (trim só nas pontas, não `replaceAll` global) para não divergir em fence com conteúdo
+  interno contendo o próprio caractere delimitador.
+- `npm/src/thirdparty/quarantine.js`, `npm/src/thirdparty/provenance.js` — schemas JSON e
+  assinaturas `(root, ...)` idênticas ao Go; assimetria fail-closed preservada
+  (`readQuarantine` sempre erro se ausente; `loadProvenance` ausente = vazio, só
+  `verifyApproval` recusa).
+- `npm/src/thirdparty/references.js` — D9: `.trackfw/thirdparty-references.json`,
+  `upsertThirdPartyReference`, `applyThirdPartyReferences`, `normalizeThirdPartyContent`,
+  `resolveThirdPartySkillDestination` (reusa `target`/`surfaceFor` de `catalog.js`;
+  `truncateBeforeIdSegment` duplicado localmente porque `catalog.js` não o exporta e não
+  estava na lista de arquivos deste ML).
+- `npm/src/commands/thirdparty.js` — subcommand `third-party fetch|install`, guardrail D2,
+  precondições de `--apply-to` validadas antes de qualquer escrita, indirection
+  `api.thirdPartyFetch` (propriedade mutável no objeto exportado) para substituição em teste,
+  mesmo padrão de `identityWizard.runIdentityWizard` já usado no repo.
+- `npm/tests/thirdparty.test.js` — 16 testes cobrindo os 11 cenários do Go
+  (`integrations_thirdparty_test.go`) mais 5 unitários de `checkMarkers`/`checksum`
+  (fence aceito, fence com tilde, largura total recusada, cirílico passa, SHA-256 estável).
+
+**Arquivos editados:**
+- `npm/src/integrations/index.js` — `buildPlans` (D5/D9): novo `options.projectRoot`
+  opcional; quando setado e `kind === 'agents'`, reaplica `applyThirdPartyReferences` após o
+  `render()`. `execute()` agora sempre passa `projectRoot: manager.roots.project` para
+  `buildPlans` (mirror dos dois call-sites de `manager.ProjectRoot` em
+  `integrations_flags.go` no Go) — necessário para que um `agents update` comum, não só o
+  `third-party install`, resolva o registro de referências e assente em `state: "current"`.
+- `npm/src/commands/integrations.js` — `createLifecycleCommand` registra
+  `createThirdPartyCommand(kind)` como subcomando, alcançável por `agents` e `skills`.
+
+**Decisão de arquivo divergente do roadmap (reportada, não silenciosa):** o roadmap original
+listava `npm/src/integrations/plan.js` como arquivo a criar/editar para o campo `projectRoot`
+— esse arquivo não existe no Node (a Wave 1 do Node nunca teve um `plan.js` separado; a lógica
+equivalente ao `plan.go` do Go já vive em `buildPlans`/`execute` dentro de
+`npm/src/integrations/index.js`). A extensão D9 foi implementada lá. O roadmap já foi
+corrigido em paralelo pelo agente irmão (ML-2B) para refletir isso.
+
+**Validação:** `cd npm && npm test` → `566 passed, 0 failed` (16 novos, 0 regressão nos 550
+pré-existentes). Nenhum teste pré-existente foi editado.
+
+**Nota de vault criada:** `vault/notes/node-https-redirect-checkredirect-off-by-one-2026-08-15.md`
+— o `net/http.CheckRedirect` do Go conta requisições já completadas (não redirects já
+seguidos), então `maxRedirects=3` na prática só segue 2 hops antes de recusar o 3º. Portado
+com a mesma contagem em `fetch.js` para não divergir do Go no cenário `RefusesFourthRedirect`.
+
+**Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.
+
+---
+
+## Sessão 2026-08-15 — Apolo (ML-2B — porte Python 1:1 do gate de artefato de terceiro)
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap em
+`wip/`. Executado o porte Python da Wave 2, byte-a-byte a partir da referência Go
+(`internal/thirdparty/*`, `internal/commands/integrations_thirdparty.go`,
+`internal/integrations/render.go` D9, `internal/integrations/plan.go`). Escopo exclusivo
+`pypi/` — não tocado `npm/` (ML-2A, agente irmão em paralelo) nem `internal/` (leitura).
+
+**Arquivos criados:**
+- `pypi/trackfw/thirdparty/fetch.py` — HTTPS-only, timeout 30s, teto 2 MiB, allowlist de
+  Content-Type. Redirect loop MANUAL (não usa o `max_redirections` nativo do
+  `urllib.request.HTTPRedirectHandler`, que conta diferente do `net/http` do Go): usa um
+  `_NonFollowingRedirectHandler` que nunca segue automaticamente, captura o `HTTPError` de
+  cada hop e conta "requisições já completadas" antes de decidir seguir o próximo — replica o
+  off-by-one do Go descoberto pelo agente irmão do Node (`len(via) >= maxRedirects` do
+  `net/http.CheckRedirect`: só 2 redirects são seguidos antes do 3º ser recusado, apesar do
+  nome `maxRedirects = 3`), conforme instruído em
+  `vault/notes/node-https-redirect-checkredirect-off-by-one-2026-08-15.md`.
+- `pypi/trackfw/thirdparty/markers.py` — `check_markers`/`checksum`; `_remove_fenced_blocks`
+  portado como line-scanner com estado explícito (não regex de backreference, embora `re` do
+  Python suporte — mantido fiel ao algoritmo do Go, não à limitação do Go, conforme
+  `vault/notes/go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15.md`). Casefold
+  via `str.casefold()` (não `str.lower()`) conforme instruído no brief.
+- `pypi/trackfw/thirdparty/quarantine.py`, `provenance.py` — schemas JSON e assinaturas
+  `(root, ...)` idênticas ao Go; assimetria fail-closed preservada
+  (`read_quarantine` sempre erro se ausente; `load_provenance` ausente = vazio, só
+  `verify_approval` recusa por falta de entrada). `marker_check.matched_markers` e
+  `requested_targets` serializam `null` (não `[]`) quando vazios, replicando o nil-slice do Go.
+  `write_provenance` canonicaliza a ordem de chaves de cada entrada (a entrada de proveniência
+  é escrita por um caller EXTERNO — `hades-tf`/arquiteto, direto no JSON, D10.2 — não há
+  comando `install --approve` nesta ML; sem essa canonicalização, a ordem de inserção do dict
+  do caller divergiria da ordem de campos do struct Go).
+- `pypi/trackfw/thirdparty/references.py` — registro de referências (D9, terceiro schema,
+  `.trackfw/thirdparty-references.json`), `apply_third_party_references`,
+  `normalize_third_party_content`, `resolve_third_party_skill_destination`. Duplica
+  localmente `_truncate_before_id_segment` e a lógica de seleção de surface (em vez de
+  importar de `trackfw.integrations.catalog`) para evitar ciclo de import: `catalog.py`
+  importa este módulo para reaplicar referências após o render, então a direção inversa teria
+  criado um ciclo.
+- `pypi/trackfw/commands/thirdparty.py` — subcomandos `fetch`/`install`, guardrail D2
+  (`TRACKFW_ORCHESTRATOR_SESSION`), TOCTOU (D8c), precondições de `--apply-to` validadas ANTES
+  de qualquer escrita, `marker_override` exigido quando `marker_check.result == "fail"`.
+- `pypi/tests/test_thirdparty.py` — 35 testes: os mesmos 11 cenários do Go
+  (`integrations_thirdparty_test.go`) mais unitários de `check_markers` (fence aceito, fence
+  não fechado, closer mais curto que o abridor, tilde fence, largura total recusada, cirílico
+  passa, múltiplos marcadores) e de `fetch.py` com um opener mockado (sem sockets reais):
+  refusa HTTP puro, refusa downgrade de esquema em redirect, segue exatamente 2 redirects e
+  tem sucesso, recusa no 3º redirect (prova o off-by-one), Content-Type permitido/recusado,
+  teto de tamanho, status não-200.
+
+**Arquivos editados:**
+- `pypi/trackfw/integrations/catalog.py` — `plan_deployments` (D5/D9): novo parâmetro
+  `project_root` opcional; quando truthy e `kind == "agents"`, reaplica
+  `apply_third_party_references` após `render()`. Import feito dentro do loop (lazy) para
+  não competir com o import de módulo de `catalog.py` que `references.py` também depende (ver
+  nota de ciclo acima).
+- `pypi/trackfw/integrations/command.py` — `run()` agora sempre passa `project_root=os.getcwd()`
+  para o `plan_deployments` final (necessário para que um `agents update` comum, não só o
+  `third-party install`, resolva o registro de referências e assente em `state: "current"` —
+  mirror dos dois call-sites de `manager.ProjectRoot` no Go). `add_lifecycle_parser` registra
+  `add_thirdparty_parser(actions, kind)` (import lazy, mesmo padrão de `identity_wizard`) —
+  alcançável por `trackfw agents third-party` e `trackfw skills third-party`.
+- `pypi/trackfw/integrations/renderers.py` — nova função pública `normalize_markdown` (alias de
+  `_normalize_markdown`), ponto de extensão D5/D9: `thirdparty.references.normalize_third_party_content`
+  precisa da mesma convenção de strip+`\n` final, mas não pode importar um símbolo com
+  underscore de outro pacote.
+
+**Decisão autônoma reportada (extensão sobre a assinatura Go):**
+`resolve_third_party_skill_destination` retorna `(destination, surface_id, representation)` —
+3 valores, não 2 como `ResolveThirdPartySkillDestination` do Go. Motivo: o dict de plano
+Python (`trackfw.integrations.manager.IntegrationManager.inspect`) acessa
+`plan["representation"]` incondicionalmente (`plan["representation"]`, não `.get(...)`), ao
+contrário do `PlannedArtifact` do Go, que **não tem campo `Representation`**. Sem o terceiro
+valor de retorno, o plano sintético do artefato de terceiro quebraria com `KeyError` em
+`manager.install`.
+
+**Validação:** `python3 -m pytest pypi/tests -q` → `1207 passed, 8 subtests passed` (35 novos
+em `test_thirdparty.py`, 0 regressão nos 1172 pré-existentes). Nenhum teste pré-existente foi
+editado. `python3 -m py_compile` limpo em todos os arquivos tocados.
+
+**Nota de vault criada:** `vault/notes/python-import-submodule-as-shadowed-by-package-reexport-2026-08-15.md`
+— `import pacote.submodulo as alias` resolve por travessia de atributo a partir do pacote-topo,
+não por `sys.modules['pacote.submodulo']` direto; como `thirdparty/__init__.py` re-exporta uma
+função `fetch` com o mesmo nome do módulo `fetch.py`, esse padrão de import silenciosamente
+vincula a função, não o módulo. Usar `importlib.import_module` nesse caso.
+
+**Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.
+
+
+## Sessão 2026-08-15 — Apolo (INÍCIO: ML-3A — contrato de paridade + `trackfw validate` + docs)
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md`
+em `wip/`. Governança pré-satisfeita pelo despacho (Waves 0/1/2 já ✅, auditadas e commitadas) —
+executando ML-3A: renomear teste Go de D7-bis, campo `Claim.Origin` (D11) nos 3 CLIs, regra
+`trackfw validate` `thirdparty_artifact_has_provenance` (D2) nos 3 CLIs, `scripts/check-thirdparty-parity.sh`
+novo no alvo `parity`, `docs/cli-parity.md` e `CLAUDE.md`. Nenhum commit/push (autoridade
+exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-15 — Apolo (FIM: ML-3A concluído — `make quality` verde, não commitado)
+
+`make quality` (test Go + test-node + test-python + lint + parity, incluindo o novo
+`check-thirdparty-parity.sh`) verde, exit 0. 1218 testes Python + 8 subtests, todos os testes
+Go e Node, e as 112 falsificações passaram sem regressão. Roadmap `ML-3A` marcado
+`✅ Concluído`.
+
+**Dois achados não óbvios, documentados em código + vault note
+(`vault/notes/thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15.md`):**
+1. Domínio de chave — `integrations-manifest.json` usa destino **absoluto**;
+   `.trackfw/thirdparty-{quarantine,provenance,references}` usam destino **relativo à raiz do
+   projeto**. Uma implementação ingênua que usasse a chave absoluta do manifest para buscar em
+   `thirdparty-provenance.json` nunca encontraria a entrada — falso-positivo sistemático no ramo
+   (i), só descoberto testando o comando `install` real de ponta a ponta (não por fixtures
+   hand-authored). Fix: `filepath.Rel`/`path.relative`/`os.path.relpath` como chave nos 3 schemas
+   e nos 3 CLIs.
+2. **Imprecisão do ADR (D2 ramo ii), reportada e resolvida, não contornada em silêncio:** o texto
+   diz "checksum_sha256 não bate com o SHA-256 do conteúdo instalado", mas `checksum_sha256` é
+   hash dos bytes BRUTOS (D6), e o arquivo instalado é sempre o conteúdo NORMALIZADO
+   (`TrimSpace(raw)+"\n"`) — comparação literal geraria falso-positivo em toda instalação
+   legítima cujo bruto não fosse já canônico. Resolvido usando o registro de quarentena como
+   ponte auditável entre os dois domínios (auto-consistência quarentena↔provenance, depois
+   normaliza e compara byte-a-byte contra o instalado); fail-closed (D8f) se a quarentena estiver
+   ausente. Coberto por teste de regressão load-bearing nos 3 CLIs
+   (`branch_ii_legitimate_install_does_not_false_positive`). **`docs/roadmaps/.trackfw-attention.json`
+   segue ATIVO**, pedindo confirmação explícita do arquiteto sobre esta leitura de D2(ii) antes
+   do commit final — não apagar até essa confirmação.
+
+**Bug real encontrado pelo novo gate de paridade, corrigido:** `pypi/trackfw/commands/thirdparty.py`
+usava `{agent_id!r}` (repr Python, aspas simples) em 4 mensagens de erro citando `agent_id`,
+enquanto Go usa `%q` e Node usa aspas duplas explícitas — quebrava paridade byte-a-byte na
+mensagem de remediação D10.1. Corrigido para aspas duplas explícitas nas 4 ocorrências (não só
+nas 2 cobertas pela Parte D do script de paridade, para manter o arquivo internamente
+consistente). Nenhum teste pré-existente assumia a forma antiga; nenhum teste foi editado por
+essa correção.
+
+**Lacuna conhecida, documentada em `docs/cli-parity.md`, não coberta:** a Parte D do script de
+paridade só compara a mensagem D10.1 para `StateNotInstalled`; o caso irmão `StateModified` tem
+mensagem própria e não é comparado entre os 3 CLIs.
+
+**Arquivos tocados:** `internal/thirdparty/fetch_test.go` (rename D7-bis),
+`internal/integrations/manifest.go` (campo `Origin` + wrappers `ManifestPath`/`LoadManifest`),
+`internal/commands/integrations_thirdparty.go` (grava `Origin: "thirdparty"`),
+`internal/validator/validator_thirdparty_provenance.go` (novo),
+`internal/validator/validator_thirdparty_provenance_test.go` (novo),
+`internal/commands/integrations_thirdparty_validate_test.go` (novo, end-to-end),
+`internal/validator/validator.go` (registro da regra), `internal/thirdparty/markers_test.go`
+(4 testes de edge case de fence); `npm/src/integrations/manager.js`, `npm/src/commands/thirdparty.js`,
+`npm/src/validator/index.js`, `npm/tests/validator.test.js`, `npm/tests/thirdparty.test.js`;
+`pypi/trackfw/commands/thirdparty.py` (origin + fix de aspas), `pypi/trackfw/validator.py`,
+`pypi/tests/test_validator_thirdparty_provenance.py` (novo),
+`pypi/tests/test_thirdparty.py`; `scripts/check-thirdparty-parity.sh` (novo), `Makefile`
+(alvo `parity`), `docs/cli-parity.md`, `CLAUDE.md`,
+`docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md`
+(status ML-3A), `vault/notes/thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15.md`
+(novo) + `vault/notes/index.md`.
+
+**Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit — inclui
+a pendência ativa em `.trackfw-attention.json` sobre D2(ii).
+
+## Sessão 2026-08-15 — Apolo (INÍCIO: ML-3B, microlote corretivo — `installed_sha256`, D2-bis)
+
+Retomando o trabalho: a auditoria do arquiteto sobre o ML-3A recusou o desenho da resolução de
+D2(ii) (ponte via quarentena) — tecnicamente correta, mas tornava um artefato de estágio
+dependência obrigatória de um gate permanente. Decisão formalizada como **D2-bis** no ADR
+(`docs/adr/ADR-2026-08-15-gate-de-duas-fases-...md`). Escopo: adicionar `installed_sha256` à
+entrada de provenance, bump `schema_version` 1→2 sem migração, reescrever o ramo (ii) do
+`trackfw validate` para comparar domínios já normalizados sem tocar a quarentena, nos 3 CLIs.
+
+## Sessão 2026-08-15 — Apolo (FIM: ML-3B concluído — `make quality` verde, não commitado)
+
+**Arquivos tocados:**
+- Go: `internal/thirdparty/provenance.go` (campo `InstalledSHA256`, bump schema 1→2),
+  `internal/thirdparty/provenance_test.go`, `internal/commands/integrations_thirdparty.go`
+  (grava `installed_sha256` após `manager.Install` bem-sucedido, preservando os demais campos),
+  `internal/validator/validator_thirdparty_provenance.go` (ramo ii reescrito, sem
+  `ReadQuarantine`), `internal/validator/validator_thirdparty_provenance_test.go` (2 testes de
+  branch ii reescritos sem quarentena + 2 novos testes load-bearing que apagam
+  `.trackfw/thirdparty-quarantine/` inteiro, substituindo o teste de fail-closed do ML-3A).
+- Node: `npm/src/thirdparty/provenance.js` (bump schema), `npm/src/commands/thirdparty.js`
+  (grava `installed_sha256` com ordem de campo EXPLÍCITA, não spread — ver vault note),
+  `npm/src/validator/index.js` (ramo ii reescrito, removido `readQuarantine`/`decodeContent`/
+  `normalizeThirdPartyForValidation`), `npm/tests/validator.test.js` (mesma reescrita de testes).
+- Python: `pypi/trackfw/thirdparty/provenance.py` (`_ENTRY_FIELD_ORDER` + bump schema),
+  `pypi/trackfw/commands/thirdparty.py`, `pypi/trackfw/validator.py` (ramo ii reescrito),
+  `pypi/tests/test_validator_thirdparty_provenance.py` (mesma reescrita),
+  `pypi/tests/test_thirdparty.py` (schema_version 1→2 no teste de missing-file).
+- `scripts/check-thirdparty-parity.sh` (nova comparação byte-a-byte de
+  `thirdparty-provenance.json` incluindo `installed_sha256`, fixture com `schema_version: 2`),
+  `docs/cli-parity.md` (tabela de schemas + nova subseção "D2-bis — dois hashes, dois domínios"),
+  `vault/notes/thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15.md`
+  (Achado 2 marcado substituído + novo "Achado 2-bis" com a armadilha de ordem de campo no Node),
+  roadmap (status ML-3B → ✅ Concluído).
+
+**Testes substituídos (não apenas editados) e por quê:** `TestThirdPartyArtifactHasProvenance_BranchII_MissingQuarantineFailsClosed`
+(Go) / equivalentes Node/Python — a premissa do teste (quarentena ausente = erro fail-closed) era
+exatamente o comportamento que D2-bis remove; substituído por
+`..._QuarantineDeletionDoesNotBreakCleanInstall` + `..._QuarantineDeletionStillDetectsTamper`
+(e variantes de nome por CLI), que apagam `.trackfw/thirdparty-quarantine/` inteiro e provam as
+duas metades do critério de aceite do ML-3B. Os 2 testes de branch (ii) restantes
+(`LegitimateInstallDoesNotFalsePositive`, `TamperedAfterApprovalIsCaught`) foram reescritos (mesmo
+nome, fixture trocada) para não escrever nenhum registro de quarentena e para manter
+`checksum_sha256`/`installed_sha256` com valores deliberadamente diferentes, provando que o ramo
+(ii) usa o campo certo.
+
+**Armadilha de paridade encontrada e corrigida — ordem de campo no Node:** `installed_sha256`
+precisa ficar logo após `checksum_sha256` na ordem canônica de campos, e Go/Python garantem isso
+de graça (ordem de struct / `_ENTRY_FIELD_ORDER`), mas o Node não tinha nenhum mecanismo de
+canonicalização — um `{ ...existing, installed_sha256: x }` (spread) apenda a chave no fim,
+divergindo dos outros 2 CLIs. Pego pelo próprio `scripts/check-thirdparty-parity.sh` na primeira
+execução (conteúdo semanticamente igual, ordem de campo diferente). Fix: construção explícita do
+objeto no Node. Detalhe completo na vault note (Achado 2-bis).
+
+**`make quality` — evidência literal (saída completa, exit code 0):**
+```
+GO_BIN=bin/trackfw scripts/check-thirdparty-parity.sh
+OK: marker corpus cases present in all 3 stacks
+OK: thirdparty-provenance.json (including installed_sha256, D2-bis) is byte-identical across the 3 CLIs
+OK: third-party install stdout is byte-identical across the 3 CLIs (normalized)
+OK: installed skill file content is byte-identical across the 3 CLIs
+OK: thirdparty-references.json is byte-identical across the 3 CLIs (D9 schema 3)
+manifest claim semantics match (origin=thirdparty present, D11)
+OK: integrations-manifest.json claim (origin=thirdparty) is semantically identical across the 3 CLIs (D11)
+OK: D2 branch (i) violation message is byte-identical across the 3 CLIs (normalized)
+OK: D10.1 --apply-to scope-mismatch remediation message is byte-identical across the 3 CLIs
+Third-party artifact gate parity checks passed (D9 schemas, D2 branch i, D10.1, D3 corpus coverage)
+[exited with code 0]
+```
+Também verde antes disso: `go build ./...`, `go test ./...` (todos os pacotes), `go vet ./...`,
+`npm test` (573 testes), `python3 -m pytest` (1219 testes + 8 subtests), e as 112 falsificações
+de `check-gates-falsify.sh`. Nenhum teste pré-existente FORA do escopo de branch (ii) foi
+editado. `trackfw validate` roda sem violations (só warnings pré-existentes de REQs sem ADR
+linkado, não relacionados a este ML).
+
+**Correções pós-revisão (mesma sessão, antes da entrega):**
+1. `npm/src/validator/index.js` interpolava `entry.installed_sha256` diretamente na mensagem;
+   quando a chave está AUSENTE (entrada só do aprovador, nunca instalada) isso rendia o literal
+   `undefined`, divergindo de Go (`""` zero value) e Python (`.get(..., "")`). Corrigido com
+   `entry.installed_sha256 || ''`. Testes-âncora de paridade adicionados nos 3 CLIs
+   (`..._MissingInstalledSHA256IsCaught` / equivalentes) fixando o texto da mensagem.
+2. O fixture `CONTENT` em `scripts/check-thirdparty-parity.sh` era canônico, então
+   `installed_sha256 == checksum_sha256` por acidente — o gate passava idêntico quer o install
+   gravasse o hash do domínio normalizado (correto) ou do domínio bruto (o bug que D2-bis existe
+   para matar). Corrigido: `CONTENT` agora tem linha em branco final deliberada, a asserção Python
+   foi invertida (`normalized != raw`) e há um novo bloco que roda `validate --json` end-to-end
+   nos 3 CLIs confirmando ZERO violations de `thirdparty_artifact_has_provenance` para a
+   instalação legítima não-canônica — prova o critério de aceite pelo caminho real do `install`,
+   não só pelos testes unitários do validador (que só exercitam a leitura).
+3. `TestLoadProvenanceUnsupportedSchemaVersionIsError` (Go) usava `schema_version: 3`; trocado
+   para `1` — é a versão que plausivelmente aparece em disco (cópia de trabalho desatualizada),
+   e o critério de aceite fala explicitamente em "versão 1 recusada".
+
+`make quality` rodado de novo do zero após essas correções (rebuild do binário Go incluído):
+exit 0, zero linhas `FAIL` no log completo, `check-thirdparty-parity.sh` com a nova checagem
+`OK: D2-bis: legitimate install of non-canonical content produces zero validate violations
+end-to-end, all 3 CLIs`. `trackfw validate` sem violations (só os 7 warnings pré-existentes de
+REQs sem ADR, não relacionados a este ML).
+
+**Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.
+
+---
+
+## 2026-08-15 — hefesto-tf — ML-4B (barreira de qualidade, gate de artefatos de terceiro)
+
+**Início:** auditoria de qualidade da branch
+`feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas` (Waves 0–3 concluídas,
+`make quality` verde no `HEAD`). Escopo: apenas leitura + relatório — nenhum código de produto
+tocado, conforme fronteira do ML.
+
+**Fim:** relatório escrito em
+`docs/qualidade/2026-08-15-skills-de-terceiro-via-url.md` — 3 Alto, 4 Médio, 2 Baixo, 3
+Observação, **0 bloqueante**. Os 3 achados mais relevantes:
+
+1. `--scope global` em `third-party install` é permanentemente invisível para
+   `thirdparty_artifact_has_provenance` (a Claim vai para o manifest de `HomeDir`, a regra só lê
+   o manifest do projeto) — o próprio ADR explica por que o default é `project`, mas o código
+   permite `global` com só uma confirmação genérica, sem declarar essa consequência específica no
+   runtime nem no D2/D11 do ADR.
+2. Fence de markdown sem fechamento (ou closer mais curto que o abridor) em
+   `internal/thirdparty/markers.go:removeFencedBlocks` (e réplicas Node/Python) descarta o
+   documento inteiro até EOF da checagem de marcadores D3 — comportamento testado e intencional,
+   mas não listado entre os limites conhecidos do D3 no ADR/cli-parity.md; é um bypass mais barato
+   que os já documentados (paráfrase, indireção, homoglifo).
+3. Divergência de normalização entre CLIs no passo 4 (casefold) do D3: Go/Node usam lowercase
+   simples (deliberado, para bater com Go), Python usa `str.casefold()` completo (seguiu o texto
+   literal do ADR) — sem exploit prático hoje contra os 6 marcadores ASCII atuais, mas é uma
+   inconsistência silenciosa não coberta pelo corpus de paridade da Parte A do script.
+
+Outros achados: função `executeThirdPartyInstall` monolítica (~285 linhas) replicada nos 3 CLIs
+sem sub-funções testáveis isoladamente; `UpsertProvenanceEntry` com load-then-write não atômico
+entre processos concorrentes; cobertura de teste assimétrica para status HTTP não-200 no `Fetch`
+(só Python tem teste, Go e Node não); `ApplyThirdPartyReferences` não valida `end > start` ao
+localizar o marcador de fechamento. Débitos já conhecidos em `docs/cli-parity.md` (mensagem
+`StateModified` do D10.1 não comparada entre CLIs pela Parte D; divergência de wrapper de erro
+top-level cobra vs Node/Python) foram confirmados ainda abertos, não reabertos como achados novos.
+
+**Não commitado, sem push** — devolvido ao `trackfw_architect` para auditoria e decisão de quais
+achados viram ML de acompanhamento.
+
+---
+
+## 2026-08-15 — hades-tf — ML-4A (barreira de revisão final de segurança, pós-implementação)
+
+**Início:** verificação pós-implementação do gate de duas fases para artefatos de terceiro
+(branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, Waves 0-3
+concluídas, `make quality` verde no `HEAD`). Escopo: apenas leitura + falsificação real +
+apensar seção ao próprio parecer (`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md`) e
+esta entrada. Nenhum código de produto tocado no diff final.
+
+**Fim:** seção "Verificação pós-implementação (ML-4A, 2026-08-15)" apensada. Metodologia: leitura
+de código + execução real (não só grep/inspeção) — corpus de 14+ payloads de falsificação de
+marcadores rodado contra os 3 CLIs (`CheckMarkers`/`checkMarkers`/`check_markers`), e testes de
+integração temporários (escritos, executados, apagados antes de devolver — `git status
+--porcelain` limpo) exercitando `executeThirdPartyInstall`/`validator.Validate()` reais para TOCTOU
+(D8c), fail-closed em 3 variantes (D8f) e D2-bis (apagar `.trackfw/thirdparty-quarantine/` após
+install legítimo não quebra `validate`).
+
+**Veredito: libera para merge.** D1-D11 implementados como decidido, com três achados de precisão
+de documentação (não de implementação):
+
+1. **Fence de markdown não-fechado descarta o documento inteiro até EOF** da checagem D3 (não só o
+   "dentro" do fence) — confirmado idêntico nos 3 CLIs; mais barato de explorar que as evasões já
+   documentadas (paráfrase, indireção, homoglifo) porque não exige coordenação nem conhecimento de
+   Unicode, só uma linha ` ``` ` esquecida. Não listado no "NÃO cobre" do ADR. **Achado
+   independente do `hefesto-tf` (ML-4B) confirma a mesma causa raiz.**
+2. **Marcador dentro de comentário HTML passa limpo, e mais barato ainda que o fence** — o passo 1
+   (`htmlCommentPattern.ReplaceAllString`) **apaga** o comentário e seu conteúdo inteiro, em vez de
+   neutralizá-lo como texto não-heading, o que é o oposto da justificativa declarada do próprio
+   passo ("evitar esconder o marcador num comentário para escapar do match e reaparecer depois"):
+   um agente LLM lê o comentário no fluxo de tokens, ao contrário de um navegador. Confirmado
+   idêntico nos 3 CLIs; sintaxe Markdown perfeitamente válida e comum, sem distorcer nenhum
+   renderizador — mais discreto que o fence não-fechado. Achado exclusivo desta verificação.
+3. **`--scope global` tira o artefato inteiramente do perímetro de `thirdparty_artifact_has_provenance`**
+   (a regra só lê o manifest do projeto, nunca `HomeDir`) — o ADR já argumenta a favor do default
+   `project` por essa razão, mas nunca declara a consequência inversa por escrito. Ligado a um
+   segundo achado: a "confirmação explícita adicional" de D4 para `--scope global` colapsa na
+   mesma flag (`--yes-i-trust-this-source`) que já é obrigatória em modo não-interativo — no único
+   caminho sancionado (sessão de agente), não existe segunda camada de fato. **Também confirmado
+   de forma independente pelo `hefesto-tf`.**
+
+Achado novo de severidade Média, não coberto pelo ADR: a **URL de origem é gravada verbatim** em
+dois arquivos versionados (`thirdparty-quarantine/`, `thirdparty-provenance.json`) — uma URL
+pré-assinada com token na query string vira segredo permanente no histórico do git. `content_base64`
+em si é inerte hoje (só `fetch` escreve, só `install` lê, `validator` não lê mais desde D2-bis) —
+sem risco praticado. Crescimento indefinido do diretório de quarentena é débito aceito, não
+mitigado, sem subcomando de prune.
+
+**D8e (`trackfw plugins install` sem gate):** REQ ainda `Open`, código inalterado
+(`os.Chmod(0755)` continua sem gate). Severidade não mudou; urgência relativa aumentou — o padrão
+de duas fases está provado funcional de ponta a ponta, então a REQ não espera mais um desenho
+inédito, só a reaplicação de um padrão já demonstrado ao vetor de maior severidade.
+
+**Validação:** `git status --porcelain` lista exclusivamente
+`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` e esta entrada. Nenhum arquivo de
+`internal/`, `npm/src/`, `pypi/trackfw/`, `scripts/` ou teste permanece modificado (testes
+temporários de falsificação/TOCTOU/fail-closed foram escritos, executados e apagados durante a
+sessão). Nenhum commit/push feito — devolvo para o `trackfw_architect` decidir quais dos 5 achados
+(fence-swallow, comentário-HTML-apagado, URL-como-segredo, confirmação-D4-colapsada,
+perímetro-`--scope-global`) viram ML de acompanhamento, em conjunto com os achados do `hefesto-tf`
+(ML-4B) que se sobrepõem em 2 dos 5 pontos.
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — INÍCIO: ML-4C, microlote corretivo da barreira (D3-ter, D4-bis, D6-bis)
+
+Governança já satisfeita (roadmap em `wip/`, ML-4A/ML-4B concluídos e liberados para merge).
+Escopo: implementar as 3 emendas normativas do ADR (D3-ter, D4-bis, D6-bis) + 2 achados menores do
+`hefesto-tf`, nos 3 CLIs (Go canônico, depois Node e Python 1:1).
+
+## Sessão 2026-08-15 — Apolo (apolo-tf) — FIM: ML-4C concluído — `make quality` verde, não commitado
+
+**Arquivos tocados (Go):** `internal/thirdparty/markers.go` (neutralização de comentário HTML em vez
+de remoção; fence sem fechamento deixa de conceder imunidade; `RedactURL`), `markers_test.go`,
+`fetch_test.go` (teste de HTTP não-200), `quarantine.go`/`quarantine_test.go` (redação da URL na
+quarentena), `provenance.go`/`provenance_test.go` (redação da URL na proveniência, defesa em
+profundidade), `internal/integrations/render.go` (guarda `end < start` em
+`ApplyThirdPartyReferences`) + novo `internal/integrations/thirdparty_references_test.go`,
+`internal/commands/integrations_thirdparty.go` (`--yes-global-scope-unverified` distinto de
+`--yes-i-trust-this-source`, aviso D4-bis) + `integrations_thirdparty_test.go`.
+
+**Node:** `npm/src/thirdparty/{markers,fetch,quarantine,provenance,references}.js`,
+`npm/src/commands/thirdparty.js`, `npm/tests/thirdparty.test.js` (36 testes, todos verdes).
+
+**Python:** `pypi/trackfw/thirdparty/{markers,quarantine,provenance,references}.py`,
+`pypi/trackfw/thirdparty/__init__.py` (exporta `redact_url`), `pypi/trackfw/commands/thirdparty.py`,
+`pypi/tests/test_thirdparty.py` (53 testes no arquivo, todos verdes; suíte completa 1234 verdes).
+
+**Decisão autônoma registrada:** casefold unificado como lowercase simples (Go/Node já usavam;
+Python trocou de `str.casefold()` para `str.lower()`) — sem exploit conhecido contra os 6 marcadores
+ASCII em nenhum dos dois regimes; decisão de consistência, não de segurança.
+
+**Testes substituídos (semântica antiga saiu, não foi afrouxada):**
+`markers_test.go:85 TestCheckMarkers_UnclosedFenceDropsRestOfDocument` →
+`TestCheckMarkers_UnclosedFenceNoLongerGrantsImmunity` (mesmo em `TestCheckMarkers_CloserShorterThanOpenerDoesNotClose`
+→ `...ButStillCaught`, consequência da mesma emenda D3-ter(a), não citada nominalmente no ADR mas
+decorrente dele) e `TestCheckMarkers_HTMLCommentStrippedBeforeMatch` →
+`TestCheckMarkers_HTMLCommentNeutralizedContentStillMatches`; espelhos idênticos em
+`npm/tests/thirdparty.test.js:144` e `pypi/tests/test_thirdparty.py:132`/`:140`.
+
+**Não-regressão:** novo teste em cada stack lê o próprio
+`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` e exige zero marcadores — os 6 continuam
+dentro de um fence fechado, a emenda original de D3 não foi quebrada.
+
+**`scripts/check-thirdparty-parity.sh` e `docs/cli-parity.md` atualizados** com os novos nomes de
+caso do corpus (fence/HTML-comment agora invertidos: RECUSAM em vez de passar), o novo caso de
+casefold e o novo caso de não-regressão, e novas seções D3-ter/D4-bis/D6-bis.
+
+**`make quality` (raiz):** exit 0, todos os 112 cenários de falsificação + `check-thirdparty-parity.sh`
+OK. `trackfw validate`: 0 erros, 7 avisos pré-existentes (REQs sem ADR vinculado, não relacionados a
+este ML). Roadmap `ML-4C` marcado `✅ Concluído`. Devolvido não commitado, conforme fronteira.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — FECHAMENTO do roadmap de artefatos de terceiro
+
+Roadmap movido para `done/`, REQ para `done`. 5 Waves, 10 MLs, 19 commits na branch
+`feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`. Nada pushado.
+
+**O que a barreira da Wave 4 pegou depois de `make quality` verde** (registro para futuras
+discussões sobre o custo da barreira): evasão de 3 caracteres no critério de marcadores (fence
+aberto, achada pelos dois auditores independentemente), marcador em comentário HTML passando limpo
+por contradição interna do D3, `--scope global` fora do perímetro de detecção, e URL com token
+indo verbatim para arquivo versionado. Nenhum detectável por gate automatizado.
+
+**Correções do ADR feitas durante a execução, todas por evidência e não por opinião:** D2-bis
+(ramo (ii) comparava domínios de hash incompatíveis), D7-bis (limite de redirect era 2, não 3),
+D3-ter (fence aberto + comentário HTML + casefold divergente), D9 (terceiro artefato que o desenho
+não previa), D11 (como identificar origem de terceiro), D4-bis e D6-bis (decisões de KG).
+
+**Débito rastreado:** `trackfw plugins install` sem gate — REQ aberta em backlog.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — abertura do PR
+
+Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas` empurrada para
+`origin` e PR aberto a pedido de KG. Merge é decisão do usuário — o arquiteto não faz merge,
+squash nem rebase.
+
+Estado entregue: 5 Waves, 10 MLs, `make quality` exit 0 (229 checagens), `trackfw validate` sem
+erros. Roadmap e REQ em `done`. Débito rastreado em REQ própria no backlog
+(`trackfw plugins install` sem gate).

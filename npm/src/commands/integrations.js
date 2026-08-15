@@ -6,6 +6,7 @@ const { catalog, execute, parseSurfaces, buildPlans } = require('../integrations
 const identityStore = require('../identity')
 const identityWizard = require('./identity-wizard')
 const { t } = require('../i18n')
+const { createThirdPartyCommand } = require('./thirdparty')
 
 const csv = value => String(value).split(',').map(entry => entry.trim()).filter(Boolean)
 const collect = (value, previous) => previous.concat(value)
@@ -102,6 +103,12 @@ async function promptAmbiguousSurfaces(kind, options, prompts = require('@inquir
 
 function createLifecycleCommand(kind) {
   const root = new Command(kind).description(`Manage trackfw ${kind}`)
+  // third-party fetch/install (D1): reachable from both `trackfw agents
+  // third-party` and `trackfw skills third-party`, under the same
+  // two-phase quarantine gate. Mirrors
+  // internal/commands/integrations_flags.go registering `third-party` in
+  // newIntegrationsLifecycleCmd.
+  root.addCommand(createThirdPartyCommand(kind))
   for (const operation of ['list', 'install', 'uninstall', 'update']) {
     const mutation = operation !== 'list'
     const command = new Command(operation)

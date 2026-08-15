@@ -58,6 +58,24 @@ infra e templates de artefato são exceções explícitas.
 - **Build obrigatório** após qualquer alteração: `go build ./...`
 - **Atualizar `docs/agents-working-context.md`** ao iniciar e encerrar cada ciclo
 
+## Instalação de skills de terceiro (`trackfw <skills|agents> third-party`)
+
+Instala skills externas (via URL) em duas fases obrigatórias, com um ponto de revisão humana entre
+elas — **nunca instale sem revisar o conteúdo em quarentena antes de aprovar**:
+
+1. `trackfw <skills|agents> third-party fetch <url>` — baixa o conteúdo e grava um registro de quarentena em
+   `.trackfw/thirdparty-quarantine/<checksum>.json`. Nada é instalado ainda.
+2. **Revisão humana obrigatória** do conteúdo em quarentena, seguida da aprovação (que grava
+   `.trackfw/thirdparty-provenance.json` — nenhum comando do CLI escreve essa aprovação sozinho).
+3. `trackfw <skills|agents> third-party install --checksum <sha256> --targets <...>` — só instala se houver
+   aprovação de provenance correspondente ao checksum.
+
+O checker de markers usado em `fetch` é uma tripwire para o caso óbvio, não uma defesa contra um
+adversário competente (não cobre paráfrase, indireção, fragmentação, homoglifos ou conteúdo
+auto-modificável depois de aprovado). Detalhes completos, os 3 schemas JSON e as garantias/limites
+da regra `trackfw validate` `thirdparty_artifact_has_provenance` estão em
+`docs/cli-parity.md` (seção `trackfw <skills|agents> third-party`).
+
 ## Sinalização de Atenção para o Board (`trackfw serve`)
 
 Quando um agente precisar de confirmação ou ação do usuário durante uma implementação,

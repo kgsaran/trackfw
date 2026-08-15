@@ -3307,3 +3307,264 @@ não-governada). Registrado em `make quality`/`parity`. Encontrou um bug real de
 no Python (`pypi/trackfw/commands/commit.py`): `sys.stdout.write()` sem `flush()` antes de um
 `subprocess.run` com stdio herdado inverte a ordem da saída quando stdout não é um TTY — corrigido
 com `out.flush()`.
+
+## `trackfw <skills|agents> third-party` — instalação de skills de terceiro via URL (ADR-2026-08-15, ML-3A/ML-3B)
+
+### O comando, em duas fases
+
+`third-party` nunca instala em um passo. O fluxo é deliberadamente quebrado em duas invocações
+separadas para forçar um ponto de revisão humana entre "buscar da rede" e "gravar no sistema de
+arquivos do projeto/agente":
+
+1. **`trackfw <skills|agents> third-party fetch <url> [--slug <slug>]`** — busca o conteúdo bruto (raw) da URL,
+   roda o checker de markers (ver D3 abaixo) e grava um registro de **quarentena** em
+   `.trackfw/thirdparty-quarantine/<checksum_sha256>.json`, onde `checksum_sha256` é o hash SHA-256
+   dos bytes **brutos** recebidos da rede, antes de qualquer normalização (D6). Nada é instalado
+   nesta fase. `fetch` é o único subcomando que efetivamente toca a rede.
+2. **Aprovação externa (fora do CLI, D10.2)** — nenhum subcomando de `third-party` escreve em
+   `.trackfw/thirdparty-provenance.json`. Um aprovador humano ou um agente de revisão dedicado
+   (ex.: `hades-tf`) inspeciona o conteúdo em quarentena e, se aprovar, grava a entrada de
+   provenance diretamente, keyed pelo destino **relativo à raiz do projeto** (não pelo destino
+   absoluto do manifest — ver nota de paridade abaixo).
+3. **`trackfw <skills|agents> third-party install --checksum <sha256> --targets <t1,t2> [--apply-to <agentes>]`** —
+   consome o registro de quarentena pelo checksum informado, verifica a aprovação
+   (`VerifyApproval`) contra `.trackfw/thirdparty-provenance.json`, normaliza o conteúdo
+   (`NormalizeThirdPartyContent` = `TrimSpace(raw) + "\n"`) e só então grava o artefato de skill no
+   destino resolvido, registrando um `Claim` no manifest com `origin: "thirdparty"` (D11) e,
+   quando `--apply-to` for usado, injetando uma referência no(s) arquivo(s) de agente indicado(s)
+   (rastreada em `.trackfw/thirdparty-references.json`, D9 schema 3, para sobreviver a
+   `agents update`).
+
+**`fetch` nunca escreve fora de `.trackfw/thirdparty-quarantine/`; `install` nunca faz fetch de
+rede.** Essa separação é a barreira de revisão — ver "Limitação do critério de markers (D3)" abaixo
+para o que ela NÃO garante.
+
+### Os 3 schemas JSON (D9)
+
+| Schema | Caminho | Keyed por | Escrito por |
+|---|---|---|---|
+| Quarentena | `.trackfw/thirdparty-quarantine/<checksum_sha256>.json` | nome de arquivo = checksum SHA-256 dos bytes brutos | `third-party fetch` |
+| Provenance | `.trackfw/thirdparty-provenance.json` (`entries: {...}`, `schema_version: 2`) | destino **relativo à raiz do projeto** (não o destino absoluto usado nas chaves do `integrations-manifest.json`) | `checksum_sha256`/`approved_by`/etc: aprovador externo (D10.2). `installed_sha256`: `third-party install`, ver abaixo (D2-bis) |
+| References | `.trackfw/thirdparty-references.json` | id do agente-alvo → lista de skills de terceiro referenciadas | `third-party install --apply-to` |
+
+Os 3 schemas são cobertos byte-idênticos entre Go/Node/Python por `scripts/check-thirdparty-parity.sh`
+(Parte B), incluindo o round-trip completo via `third-party install` real (não apenas fixtures
+hand-authored).
+
+**Nota de paridade crítica — domínio de chave absoluto vs. relativo:** o `integrations-manifest.json`
+usa como chave o destino **absoluto** resolvido (`Manager.resolve()` em Go e equivalentes em
+Node/Python). Os 3 schemas de `.trackfw/thirdparty-*` usam o destino **relativo à raiz do projeto**
+(o valor pré-`resolve()`). Uma implementação inicial que usasse o destino absoluto do manifest como
+chave de busca em `thirdparty-provenance.json` nunca encontraria a entrada — falso-positivo
+sistemático do lado (i) da regra abaixo. Confirmado empiricamente contra o comando real (não por
+inspeção do ADR), nos 3 CLIs.
+
+### Escopo default diverge do catálogo (exceção D4)
+
+Ao contrário dos itens de catálogo (agentes, skills nativas), cujo escopo default é `global`,
+`third-party install` usa escopo default **`project`** (ADR-2026-07-25 D1 mantém `global` como
+default de catálogo; `third-party` é uma exceção documentada, não uma divergência). Motivo: um
+artefato de terceiro instalado por engano em escopo `global` vazaria para todos os projetos que
+compartilham o home do usuário, ampliando o raio de um erro de revisão. `--scope` continua
+aceitando `global` explicitamente quando desejado.
+
+### D4-bis — `--scope global` continua permitido, mas com aviso e confirmação próprios (ML-4C)
+
+Achado do `hades-tf`, decisão de KG (2026-08-15): `--scope global` tira o artefato do perímetro de
+`thirdparty_artifact_has_provenance` — a regra só lê o manifest do **projeto**
+(`validator_thirdparty_provenance.go:99`), e um artefato em `~/` não está no git, então não há o que
+detectar (coerente com ADR-2026-08-12). Isso **não** deixa de ser permitido, mas deixa de ser
+silencioso:
+
+- `install` imprime, sempre que `--scope global` for resolvido (antes de qualquer outra saída), um
+  aviso citando explicitamente que a instalação **nunca será verificada por `trackfw validate`**.
+- A confirmação para `--scope global` deixa de colapsar em `--yes-i-trust-this-source` (que já é
+  obrigatória em modo não-interativo, ver AC1) — nova flag própria,
+  **`--yes-global-scope-unverified`**, é exigida adicionalmente. As duas flags têm propósitos
+  distintos: uma confirma confiança na origem do conteúdo, a outra confirma que o usuário entende que
+  esta instalação específica nunca passará por `trackfw validate`.
+- Aviso e mensagem de recusa são **texto idêntico** nos 3 CLIs (constantes dedicadas em cada porte,
+  nunca inline, para não divergirem silenciosamente em uma edição futura).
+
+### `trackfw validate` — regra `thirdparty_artifact_has_provenance` (D2)
+
+Bidirecional, e **nunca faz fetch de rede** (D6 — a regra só lê `.trackfw/` e os artefatos já
+instalados no disco):
+
+- **Branch (i)** — todo destino cujo `Claim.origin == "thirdparty"` no manifest precisa ter uma
+  entrada correspondente em `thirdparty-provenance.json` (chave = destino relativo à raiz). Faltando,
+  é violação (mensagem inclui "D2 branch i" e o destino absoluto, para localização rápida).
+- **Branch (ii)** — toda entrada de provenance é verificada contra o conteúdo real instalado,
+  comparando `sha256(arquivo instalado)` diretamente contra `entry.installed_sha256` (ver "Dois
+  hashes, dois domínios" abaixo). Se `installed_sha256` não bater (ou estiver ausente/vazio, o que
+  nunca combina com o hash de um arquivo real), é violação. A regra **não lê mais o registro de
+  quarentena** — sua ausência não é mais considerada erro por esta ramificação (ver D2-bis abaixo).
+
+#### D2-bis — dois hashes, dois domínios (`schema_version: 2`, `installed_sha256`)
+
+A entrada de proveniência carrega **dois** hashes SHA-256, em domínios diferentes, e confundi-los
+foi um bug real encontrado na auditoria do ML-3A:
+
+| Campo | Domínio | Quando é calculado | Quem escreve | Para que serve |
+|---|---|---|---|---|
+| `checksum_sha256` | bytes **brutos** buscados da rede, antes de qualquer normalização (D6) | no `fetch` | aprovador externo (D10.2), como âncora do que ele efetivamente revisou | vínculo de aprovação D8c/TOCTOU (`verifyApproval`) |
+| `installed_sha256` | bytes **normalizados** (`normalize_third_party_content` = `TrimSpace(raw) + "\n"`) | no `install`, pelo mesmo código que grava o arquivo de destino | `third-party install` (único escritor de código deste campo) | detecção de adulteração pós-install / branch (ii) de `thirdparty_artifact_has_provenance` |
+
+**Por que dois campos, e não um:** o arquivo instalado é **sempre** o conteúdo normalizado, nunca o
+bruto — então `sha256(arquivo instalado)` só pode ser comparado de forma correta contra um hash que
+também esteja no domínio normalizado. Comparar `sha256(arquivo instalado)` direto contra
+`checksum_sha256` (a leitura literal do texto original de D2) produz **falso-positivo em toda
+instalação legítima** cujo conteúdo bruto não fosse já exatamente `TrimSpace + uma única quebra de
+linha` — o caso comum de qualquer markdown com linha em branco final. Coberto por um teste de
+regressão load-bearing nos 3 CLIs (`branch_ii_legitimate_install_does_not_false_positive` /
+equivalentes), que mantém `checksum_sha256` e `installed_sha256` com valores **deliberadamente
+diferentes** na fixture, para provar que a ramificação (ii) usa o campo certo.
+
+**Por que não usar o registro de quarentena como ponte (a solução do ML-3A, tecnicamente correta e
+substituída):** o ML-3A resolveu a mesma divergência de domínio lendo o `content_base64` da
+quarentena, normalizando-o e comparando contra o arquivo instalado. Funcionava, mas tornava um
+artefato de **estágio** (`.trackfw/thirdparty-quarantine/`, com nome, forma e propósito de diretório
+temporário) dependência obrigatória de um **gate permanente**: apagar ou colocar esse diretório no
+`.gitignore` faria `validate` falhar para sempre, sem caminho de recuperação (`validate` nunca faz
+fetch de rede, D6). `installed_sha256` remove essa dependência — a quarentena continua sendo escrita
+e commitada (valor de auditoria/reconstrução), mas sua ausência deixou de ser erro da ramificação
+(ii). Coberto pelos testes `branch_ii_quarantine_deletion_does_not_break_clean_install` /
+`branch_ii_quarantine_deletion_still_detects_tamper` (e equivalentes Node/Python), que apagam
+`.trackfw/thirdparty-quarantine/` inteiro antes de validar.
+
+**Quem escreve `installed_sha256`:** apenas `third-party install`, depois que o `manager.install`
+já gravou o arquivo com sucesso — nunca antes, nunca em caso de falha do install. Ele carrega a
+entrada de proveniência já existente (escrita pelo aprovador), preserva todos os demais campos
+intocados, e grava de volta só com `installed_sha256` preenchido. `checksum_sha256` nunca é tocado
+por este código — é sempre o valor que o aprovador gravou.
+
+**Ordem de campos e paridade byte-a-byte:** `installed_sha256` entra **logo após**
+`checksum_sha256` na ordem canônica de campos (`url`, `checksum_sha256`, `installed_sha256`,
+`installed_at`, `approved_by`, `review_reference`, `scope`, `marker_override`) — a mesma ordem nos 3
+CLIs (Go: ordem de declaração do struct `ProvenanceEntry`; Python:
+`provenance.py:_ENTRY_FIELD_ORDER`; Node: construção explícita do objeto em
+`commands/thirdparty.js`, deliberadamente **não** via spread de object, que apenas apenderia o campo
+no fim). `scripts/check-thirdparty-parity.sh` compara `thirdparty-provenance.json` byte a byte entre
+os 3 CLIs após um install real — essa ordem é o que garante que a comparação passe.
+- Claims sem `origin` (manifests legados, escritos antes deste campo existir) ou com
+  `origin == ""` são tratados como catálogo e nunca são flagados — retrocompatibilidade explícita,
+  testada nos 3 CLIs.
+
+**🔴 Limitação documentada (D11), mesmo destaque das demais seções deste documento:** esta regra só
+enxerga artefatos instalados através do próprio fluxo `third-party` do trackfw. Um arquivo de
+terceiro copiado manualmente para dentro do projeto, sem passar por `fetch`/`install`, não tem
+`Claim.origin == "thirdparty"` no manifest e portanto é invisível para esta regra — ela não é uma
+varredura de conteúdo do repositório, é uma auditoria de proveniência do que o próprio trackfw
+gravou.
+
+### Limitação do critério de markers (D3) — o que ele NÃO cobre
+
+O checker de markers (`checkMarkers`/`check_markers`/equivalentes) procura por um conjunto fechado
+de padrões textuais suspeitos (heading H1–H6 com determinado formato, blocos de código cercados por
+` ``` `/`~~~`, comentários HTML, etc.) no conteúdo bruto buscado por `fetch`, antes de permitir que
+ele entre em quarentena. Isso é uma **tripwire, não um filtro contra um adversário competente** —
+precisa ser lido explicitamente assim por qualquer agente ou humano que dependa dele:
+
+- **NÃO cobre paráfrase** — o mesmo conteúdo malicioso reescrito sem os padrões exatos passa direto.
+- **NÃO cobre indireção** — instruções que remetem a outro arquivo/URL não são seguidas nem
+  inspecionadas.
+- **NÃO cobre fragmentação** — conteúdo dividido em pedaços que só formam um padrão suspeito quando
+  concatenados escapa da checagem linha-a-linha.
+- **NÃO cobre homoglifos** — um heading escrito com caracteres cirílicos visualmente idênticos ao
+  ASCII (ex. а/a) não bate no padrão ASCII esperado; isso é intencional (ver caso de teste cirílico
+  em `markers_test.go`/equivalentes, que deve **passar**, i.e. não ser sinalizado) — não é um bug,
+  é a fronteira documentada do que o critério tenta pegar.
+- **NÃO cobre reivindicações semânticas sem heading** — texto que instrui um agente sem usar
+  nenhum dos formatos de heading reconhecidos não aciona o checker.
+- **NÃO cobre conteúdo auto-modificável** — nada impede que o conteúdo aprovado seja substituído
+  depois por outro conteúdo igualmente inocente-parecendo, exceto a checagem de checksum feita por
+  `thirdparty_artifact_has_provenance` (D2 branch ii) no momento de `validate`, que é uma auditoria
+  pós-fato, não uma prevenção.
+
+A defesa real contra um adversário competente é a barreira humana entre `fetch` e a aprovação de
+provenance (D10.2) — o checker de markers só existe para pegar o caso óbvio e barato, reduzindo o
+volume que chega à revisão humana.
+
+### D3-ter — fence não fechado e comentário HTML deixaram de conceder imunidade (ML-4C)
+
+Dois achados da barreira da Wave 4 (o do fence pelos **dois** auditores independentemente; o do
+comentário HTML só pelo `hades-tf`), ambos reproduzidos pelo arquiteto nos 3 CLIs antes da correção,
+e um terceiro achado do `hefesto-tf` (casefold divergente). Nenhum dos três estava listado acima como
+lacuna declarada de D3 — eram bugs no passo de normalização, não evasões aceitas:
+
+- **(a) Fence sem fechamento.** Antes: um arquivo iniciado por ``` sem fechamento até EOF fazia o
+  line-scanner descartar **o documento inteiro** como "dentro do fence", escondendo qualquer marcador
+  depois do abridor — `["\`\`\`", "## Git authority", ...]` retornava `[]`. Correção: fence **sem**
+  fechamento não é fence para este critério — as linhas voltam a ser escaneadas normalmente. Fence
+  **fechado** continua concedendo imunidade (a emenda original de D3, que impede o próprio parecer de
+  segurança de se recusar, é preservada).
+- **(b) Comentário HTML.** Antes: o passo 1 **apagava** o comentário inteiro antes de escanear, o que
+  contradizia a própria justificativa escrita do passo ("um agente LLM lê comentário HTML no fluxo de
+  tokens") — `<!-- ## Git authority -->` passava limpo. Correção: o passo 1 passa a **neutralizar**
+  (remover só os delimitadores `<!--`/`-->`), mantendo o conteúdo interno no fluxo escaneado.
+- **(c) Casefold divergente.** Go/Node usavam lowercase simples (`strings.ToLower`/
+  `toLowerCase()`); Python usava `str.casefold()` (casefold Unicode completo). Sem exploit conhecido
+  contra os 6 marcadores ASCII, mas era uma divergência silenciosa e não testada num passo de
+  normalização de segurança. Unificado: os 3 CLIs usam lowercase simples agora (Python trocou de
+  `casefold()` para `lower()`).
+
+**Não-regressão testada explicitamente:** rodar o checker contra o próprio
+`docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` (que lista os 6 marcadores dentro de um
+fence **fechado**) continua retornando zero marcadores nos 3 CLIs — as correções (a)/(b) não afetam
+conteúdo dentro de um fence fechado.
+
+### D6-bis — a query string da URL de origem é redigida antes de persistir (ML-4C)
+
+Achado do `hades-tf`: a URL completa (com query string) era gravada **verbatim** em
+`.trackfw/thirdparty-quarantine/<checksum>.json` e, potencialmente, em
+`.trackfw/thirdparty-provenance.json` — ambos versionados. Uma URL pré-assinada carrega token na
+query, que viraria segredo permanente no histórico do git.
+
+Correção: `RedactURL`/`redactURL`/`redact_url` (implementado uma vez por CLI, em
+`internal/thirdparty/markers.go`, `npm/src/thirdparty/markers.js`, `pypi/trackfw/thirdparty/markers.py`)
+grava `esquema://host/caminho` com a query (e o userinfo, se houver) substituídos pelo literal
+`[redacted]`. Aplicado no ponto de construção do registro de quarentena (`NewQuarantineEntry`) e,
+como defesa em profundidade, no ponto de escrita da proveniência (`WriteProvenance`) — mesmo sem
+nenhum comando neste código escrevendo `ProvenanceEntry.URL` hoje (D10.2: o aprovador externo grava a
+entrada diretamente). A URL completa continua sendo usada **só em memória**, para o `fetch` em si; a
+redigida é a que vai para os dois arquivos. Verificação de integridade usa checksum, nunca a URL —
+nada quebra.
+
+### Gate de paridade (`scripts/check-thirdparty-parity.sh`, ML-3A)
+
+Registrado em `make quality`/`parity`. Cobre, nos 3 CLIs:
+
+- Parte A — presença do corpus de casos de markers (heading H1/H6, fence com crase/til,
+  **fence não fechada** [ML-4C: agora RECUSA, não passa — D3-ter(a)], **fechador mais curto que o
+  abridor** [idem], **fence indentada**, fullwidth NFKC, homoglifo cirílico [deve passar],
+  comentário HTML [ML-4C: agora RECUSA — D3-ter(b), neutralizado em vez de apagado], casefold
+  simples vs. casefold Unicode completo [ML-4C: novo caso, D3-ter(c)], não-regressão contra o
+  próprio parecer de segurança [ML-4C: novo caso], prosa comum, espaços múltiplos, fence seguida de
+  heading real) nos 3 conjuntos de testes — os 2 primeiros casos em negrito são onde uma
+  implementação via regex divergiria de um line-scanner explícito; Go usa line-scanner porque RE2
+  não suporta backreferences, e Node/Python replicam o mesmo algoritmo (não usam backreferences)
+  para não divergir nesses casos.
+- Parte B — round-trip completo dos 3 schemas D9 via `third-party install` real (stdout, conteúdo
+  instalado, `thirdparty-references.json`, claim do manifest com `origin=thirdparty`) byte/semântica
+  idêntica entre os 3 CLIs.
+- Parte C — mensagem de violação da regra D2 branch (i) byte-idêntica (normalizada por caminho
+  absoluto do diretório temporário) entre os 3 CLIs, via `trackfw validate --json`.
+- Parte D — mensagem de remediação D10.1 (`--apply-to` contra agente em escopo divergente/ausente/
+  modificado) byte-idêntica entre os 3 CLIs, extraída apenas da linha `cannot attach reference:...`
+  — comparar a saída bruta de erro top-level não foi possível porque Node/Python não envolvem o
+  entrypoint do CLI em um handler top-level equivalente ao de Go/cobra, produzindo stack
+  trace/traceback estruturalmente diferentes; essa divergência é pré-existente e de escopo do
+  projeto inteiro (não específica de `third-party`), documentada como fora de escopo deste ML.
+
+**🔴 Bug real encontrado por este gate, corrigido no ML-3A:** `pypi/trackfw/commands/thirdparty.py`
+usava `f"...{agent_id!r}..."` (repr do Python → aspas simples, ex. `'backend'`) nas 4 mensagens de
+erro que citam `agent_id`, enquanto Go usa `%q` (aspas duplas) e Node usa aspas duplas explícitas no
+template literal. Corrigido para `f"...\"{agent_id}\"..."` nas 4 ocorrências (não só nas 2 cobertas
+pela Parte D) para manter o arquivo internamente consistente com o contrato de paridade auditado.
+Nenhum teste pré-existente assumia a forma antiga (aspas simples), portanto nenhum teste foi editado
+para essa correção.
+
+**🔴 Lacuna conhecida, não coberta por este gate:** a Parte D só exercita a mensagem D10.1 para o
+caso "agente não instalado" (`StateNotInstalled`). O caso irmão "agente modificado manualmente fora
+do trackfw" (`StateModified`) tem sua própria mensagem D10.1 e não é comparado entre os 3 CLIs por
+este script.

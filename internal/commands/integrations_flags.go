@@ -68,6 +68,7 @@ func newIntegrationsLifecycleCmd(kind integrations.ItemKind) *cobra.Command {
 		newIntegrationMutationCmd(kind, "install"),
 		newIntegrationMutationCmd(kind, "uninstall"),
 		newIntegrationMutationCmd(kind, "update"),
+		newIntegrationsThirdPartyCmd(kind),
 	)
 	return cmd
 }
@@ -196,6 +197,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	}
 	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope, Surfaces: surfaceMap, Identity: ident,
+		ProjectRoot: manager.ProjectRoot,
 	})
 	if err != nil {
 		return err
@@ -305,6 +307,7 @@ func executeIntegrationList(cmd *cobra.Command, kind integrations.ItemKind, opts
 	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope,
 		Surfaces: surfaceMap, AllSurfaces: true, Identity: ident,
+		ProjectRoot: manager.ProjectRoot,
 	})
 	if err != nil {
 		return err
