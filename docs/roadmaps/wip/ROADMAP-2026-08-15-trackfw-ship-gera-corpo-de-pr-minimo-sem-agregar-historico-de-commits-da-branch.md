@@ -151,7 +151,7 @@ como fonte de verdade (mesma orientação do ML-2A).
 > Dependências: Wave 2 completa
 
 ### ML-3A — Paridade e teste manual end-to-end
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** nenhum novo
 **Ações:**
 1. Rodar `make quality` na raiz.
