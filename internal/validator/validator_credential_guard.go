@@ -12,6 +12,12 @@ import (
 // procura dentro dos comandos de hook de projeto.
 const credentialGuardScriptMarker = "trackfw-credential-guard.sh"
 
+// gitBranchGuardScriptMarker é o nome do script que a regra git_branch_guard_hook_resolvable
+// procura dentro dos comandos de hook de projeto (ROADMAP-2026-08-15-trackfw-validate-deve-
+// detectar-scripts-de-hook-ausentes-ou-desatualizados, ML-1A). Mesmo padrão de
+// credentialGuardScriptMarker — só o nome do arquivo muda.
+const gitBranchGuardScriptMarker = "trackfw-git-branch-guard.sh"
+
 // credentialGuardHookFile associa um arquivo de hook de projeto ao CLI que o consome, para
 // compor mensagens de violação acionáveis.
 type credentialGuardHookFile struct {
@@ -72,35 +78,46 @@ func resolveCredentialGuardHookPath(raw, root string) (resolved string, ok bool)
 	}
 }
 
-// collectCredentialGuardCommands percorre recursivamente um valor JSON já decodificado
-// (map[string]interface{} / []interface{} / string / ...) e coleta todo valor-string que
-// referencia trackfw-credential-guard.sh, independentemente do nome do campo que o contém.
+// collectCommandsWithMarker percorre recursivamente um valor JSON já decodificado
+// (map[string]interface{} / []interface{} / string / ...) e coleta todo valor-string que contém
+// marker, independentemente do nome do campo que o contém.
 //
 // Os 6 formatos de hook usam campos diferentes para o comando: "command" (Claude/Codex/
 // Gemini/Cursor), "bash" (GitHub Copilot CLI), "action.command" (Kiro). Varrer por VALOR em vez
 // de por caminho de chave evita acoplar esta regra à forma exata de cada schema — decisão de
 // design deste ML, não replicar o parsing schema-aware que agentfiles.go faz para escrever os
 // hooks.
-func collectCredentialGuardCommands(v interface{}, out *[]string) {
+//
+// Generalizado (ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
+// desatualizados, ML-1A) para aceitar qualquer marker — originalmente hardcoded para
+// credentialGuardScriptMarker; reusado agora também para gitBranchGuardScriptMarker, sem duplicar
+// a travessia recursiva.
+func collectCommandsWithMarker(v interface{}, marker string, out *[]string) {
 	switch t := v.(type) {
 	case string:
-		if strings.Contains(t, credentialGuardScriptMarker) {
+		if strings.Contains(t, marker) {
 			*out = append(*out, t)
 		}
 	case map[string]interface{}:
 		for _, val := range t {
-			collectCredentialGuardCommands(val, out)
+			collectCommandsWithMarker(val, marker, out)
 		}
 	case []interface{}:
 		for _, val := range t {
-			collectCredentialGuardCommands(val, out)
+			collectCommandsWithMarker(val, marker, out)
 		}
 	}
 }
 
-// validateCredentialGuardHookResolvable é a regra "credential_guard_hook_resolvable": para cada
-// arquivo de hook de PROJETO que existir, extrai os comandos que referenciam
-// trackfw-credential-guard.sh, resolve o caminho e verifica que o script existe e é executável.
+// validateGuardHookResolvable é a implementação genérica compartilhada pelas regras
+// "credential_guard_hook_resolvable" e "git_branch_guard_hook_resolvable": para cada arquivo de
+// hook de PROJETO que existir, extrai os comandos que referenciam scriptMarker, resolve o caminho
+// e verifica que o script existe e é executável.
+//
+// Generalizado a partir da antiga validateCredentialGuardHookResolvable (ROADMAP-2026-08-15-
+// trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados, ML-1A) — a lógica de
+// resolução de caminho por CLI é idêntica para os 2 scripts, só o marker e o texto da mensagem
+// mudam.
 //
 // Riscos de regressão mapeados no roadmap (ver ML-1A):
 //   - A regra só avalia entradas que EXISTEM. Ausência de entrada de guard é estado legítimo (guard
@@ -110,7 +127,7 @@ func collectCredentialGuardCommands(v interface{}, out *[]string) {
 //     que o arquivo exista).
 //   - Arquivo de hook presente mas com JSON inválido é pulado em silêncio — validar a forma do
 //     JSON não é escopo desta regra.
-func validateCredentialGuardHookResolvable() ([]string, error) {
+func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error) {
 	root, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -134,7 +151,7 @@ func validateCredentialGuardHookResolvable() ([]string, error) {
 			if os.IsNotExist(readErr) {
 				continue
 			}
-			return nil, fmt.Errorf("credential_guard_hook_resolvable: lendo %s: %w", hf.path, readErr)
+			return nil, fmt.Errorf("%s: lendo %s: %w", ruleName, hf.path, readErr)
 		}
 
 		var parsed interface{}
@@ -143,7 +160,7 @@ func validateCredentialGuardHookResolvable() ([]string, error) {
 		}
 
 		var commands []string
-		collectCredentialGuardCommands(parsed, &commands)
+		collectCommandsWithMarker(parsed, scriptMarker, &commands)
 
 		seen := make(map[string]bool, len(commands))
 		for _, raw := range commands {
@@ -161,17 +178,29 @@ func validateCredentialGuardHookResolvable() ([]string, error) {
 			switch {
 			case statErr != nil:
 				msgs = append(msgs, fmt.Sprintf(
-					"%s (%s) references trackfw-credential-guard.sh resolved to %q, but the script does not exist — run `trackfw update` to regenerate it",
-					hf.path, hf.cli, resolved,
+					"%s (%s) references %s resolved to %q, but the script does not exist — run `trackfw update` to regenerate it",
+					hf.path, hf.cli, scriptMarker, resolved,
 				))
 			case info.Mode()&0111 == 0:
 				msgs = append(msgs, fmt.Sprintf(
-					"%s (%s) references trackfw-credential-guard.sh resolved to %q, but the script is not executable — run `trackfw update` to regenerate it",
-					hf.path, hf.cli, resolved,
+					"%s (%s) references %s resolved to %q, but the script is not executable — run `trackfw update` to regenerate it",
+					hf.path, hf.cli, scriptMarker, resolved,
 				))
 			}
 		}
 	}
 
 	return msgs, nil
+}
+
+// validateCredentialGuardHookResolvable é a regra "credential_guard_hook_resolvable" — ver
+// validateGuardHookResolvable para a implementação compartilhada.
+func validateCredentialGuardHookResolvable() ([]string, error) {
+	return validateGuardHookResolvable("credential_guard_hook_resolvable", credentialGuardScriptMarker)
+}
+
+// validateGitBranchGuardHookResolvable é a regra "git_branch_guard_hook_resolvable" — ver
+// validateGuardHookResolvable para a implementação compartilhada.
+func validateGitBranchGuardHookResolvable() ([]string, error) {
+	return validateGuardHookResolvable("git_branch_guard_hook_resolvable", gitBranchGuardScriptMarker)
 }

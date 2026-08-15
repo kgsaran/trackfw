@@ -16073,3 +16073,80 @@ histórico real.
 510 passed, 0 failed (64 em `ship.test.js`, todos novos casos inclusos). Não fiz
 `git commit`/`push` — autoridade de Git é do `trackfw-architect`; roadmap ML-2A marcado
 `✅ Concluído` no arquivo (frontmatter/pasta inalterados, roadmap segue em `wip/`).
+
+## Sessão 2026-08-15 — Apolo (ML-1A: `trackfw validate` detecta scripts de hook ausentes/desatualizados — git-branch-guard + escopo global) — CONCLUÍDO, aguardando auditoria/commit de `trackfw_architect`
+
+**Branch:** `feat/trackfw-validate-deve-detectar-scripts-de-hook` (já criada, não criei).
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md`,
+ML-1A → marcado `✅ Concluído`.
+**REQ:** `docs/req/REQ-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md`.
+
+**Escopo:** Go apenas (Waves 2/3, Node/Python, ficam para MLs futuros).
+
+**Arquivos criados:**
+- `internal/validator/validator_git_branch_guard.go` — regra `git_branch_guard_script_integrity`
+  (projeto); wrappers `validateGitBranchGuardHookResolvable`; e o mecanismo GENÉRICO de escopo
+  GLOBAL (`validateGuardGlobalHookResolvable`/`validateGuardGlobalScriptIntegrity`), reusado pelos
+  4 wrappers `validate{CredentialGuard,GitBranchGuard}Global{HookResolvable,ScriptIntegrity}`.
+- `internal/validator/validator_git_branch_guard_reference.go` — cópia local
+  `gitBranchGuardScriptReference` do template (mesmo padrão de `credentialGuardScriptReference`,
+  necessário por causa do import cycle validator↔generators).
+- `internal/validator/validator_credential_guard_global_reference.go` — cópia local
+  `credentialGuardGlobalScriptReference` (template GLOBAL do credential-guard — **diferente** do
+  template de projeto: sem o bloco de guarda `[ -f trackfw.yaml]`, default mode `block`).
+- `internal/validator/validator_git_branch_guard_integrity_external_test.go`,
+  `validator_credential_guard_global_integrity_external_test.go` — testes externos (package
+  `validator_test`) provando byte-igualdade contra `generators.Generate{GitBranchGuard,
+  GlobalGitBranchGuard,GlobalCredentialGuard}Script`.
+- `internal/validator/validator_git_branch_guard_test.go` — 17 testes cobrindo projeto + global
+  para os 2 guards.
+
+**Arquivos modificados:**
+- `internal/validator/validator_credential_guard.go` — generalizada
+  `collectCredentialGuardCommands`→`collectCommandsWithMarker(v, marker, out)` e
+  `validateCredentialGuardHookResolvable`→`validateGuardHookResolvable(ruleName, scriptMarker)`
+  (reuso, sem duplicar `resolveCredentialGuardHookPath`/`credentialGuardHookFiles`, conforme
+  roadmap pedia).
+- `internal/validator/validator.go` — `ruleDefaults["git_branch_guard_script_integrity"] =
+  "warning"` (git_branch_guard_hook_resolvable cai no default "error", sem entry); registradas as
+  2 regras novas + as 4 mensagens de escopo global somadas na MESMA regra do projeto, em
+  `Validate`/`ValidateTagged` (padrão `applyRule`/`applyRuleTagged` idêntico ao de
+  credential-guard). **Não** adicionei as 2 regras novas a `credentialGuardAnchoredRules` — isso
+  ligaria a severidade delas ao mecanismo HEAD-vs-disco de uma ADR específica de credential-guard
+  sem ADR própria cobrindo git-branch-guard; reportado como observação, não implementado.
+- `internal/validator/export_test.go` — `GitBranchGuardScriptReferenceForTest()`,
+  `CredentialGuardGlobalScriptReferenceForTest()`.
+
+**Decisão de design divergente do roadmap (reportar ao orquestrador):** o roadmap/REQ assumiam que
+"projeto delega para o global" é observável a partir do PROJETO — não é: dedup significa que o
+hook de PROJETO simplesmente OMITE a entrada quando o global está instalado, então o único lugar
+onde a dependência aparece é no PRÓPRIO arquivo de config GLOBAL do CLI
+(`~/.claude/settings.json` etc). O gatilho implementado (revisado com o advisor) é único: "um dos
+6 arquivos de config GLOBAL contém uma string referenciando o marker" — cobre os dois disjuntos do
+critério de aceite da REQ com um mecanismo só, reusando `collectCommandsWithMarker`.
+
+**Achado adicional (não é bug, é estado atual do produto):** hoje **não existe nenhum
+`harnessGitBranchGuardTarget*`** em `internal/generators/agentfiles.go`/`update.go` — `trackfw
+update harness` gera o SCRIPT global (`GenerateGlobalGitBranchGuardScript`) mas nunca o registra em
+nenhum `hooks.json`/`settings.json` global, e a wiring de PROJETO do git-branch-guard nunca dedupa
+contra global (comentário explícito em `agentfiles.go`: "No global-scope target exists for this
+guard yet"). Resultado: o mecanismo genérico de escopo global para git-branch-guard está pronto e
+testado (`TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio`), mas fica em silêncio hoje — só
+ativa quando essa wiring for implementada em um roadmap futuro. Para credential-guard, que já tem
+essa wiring, o mecanismo é ativo e testado end-to-end.
+
+**Validação:**
+- `go build ./...` — sem erros.
+- `go vet ./...` — sem warnings.
+- `go test ./internal/validator/...` — verde, incluindo os 17 testes novos (hook ausente/não-
+  executável, integridade 1-byte, silêncio com script íntegro, escopo global com dedup preservado
+  e o gap principal — global registrado mas script ausente/corrompido).
+- `go test ./...` (repo inteiro) — verde.
+- Teste manual reproduzindo os 2 experimentos da REQ com `bin/trackfw validate --json` neste
+  próprio repo: (1) `rm scripts/trackfw-git-branch-guard.sh` → 3 violações
+  `git_branch_guard_hook_resolvable` (Claude/Codex/Gemini); (2) restaurado, depois 1 byte alterado
+  (append) → warning `git_branch_guard_script_integrity`; (3) restaurado ao original → silêncio.
+  `git status`/`git diff scripts/trackfw-git-branch-guard.sh` confirmados limpos ao final.
+
+Não fiz `git commit`/`push` — autoridade de Git é do `trackfw-architect`. Escopo Go apenas; ML-2A
+(Node.js) e ML-2B (Python) do mesmo roadmap ficam para agentes/sessões futuras.
