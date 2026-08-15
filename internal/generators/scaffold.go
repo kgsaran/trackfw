@@ -23,6 +23,7 @@ type Config struct {
 	WipBySquad         bool      // default: false
 	RequireReqInCommit bool      // gera hook commit-msg que exige REQ: em feat/* e fix/*
 	Forge              string    // forge platform: "github", "gitlab", "bitbucket", "azure", or "" (omit key)
+	AgentConventions   string    // agent_conventions: free-text, multi-line, or "" (omit key)
 }
 
 var govDirs = []string{
@@ -665,6 +666,11 @@ roadmap_namespacing: flat
 
 	if cfg.Forge != "" {
 		content += fmt.Sprintf("forge: %s\n", cfg.Forge)
+	}
+
+	if cfg.AgentConventions != "" {
+		indented := strings.ReplaceAll(cfg.AgentConventions, "\n", "\n  ")
+		content += fmt.Sprintf("agent_conventions: |\n  %s\n", indented)
 	}
 
 	if cfg.BrownfieldMode {

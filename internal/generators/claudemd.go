@@ -201,7 +201,7 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("Decide low-risk details autonomously following existing project conventions, ")
 	sb.WriteString("and record autonomous decisions in the commit message.\n")
 
-	if err := injectOrUpdateRules("CLAUDE.md", sb.String()); err != nil {
+	if err := injectOrUpdateRules("CLAUDE.md", sb.String(), "."); err != nil {
 		return fmt.Errorf("updating CLAUDE.md: %w", err)
 	}
 	fmt.Println("  ✓ CLAUDE.md")

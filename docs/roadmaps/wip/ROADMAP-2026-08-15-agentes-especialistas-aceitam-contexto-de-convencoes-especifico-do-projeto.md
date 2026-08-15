@@ -74,7 +74,7 @@ o padrão de `backend`/`frontend`/`pkg_manager` (chave plana, campo string em
 > Dependências: nenhuma
 
 ### ML-1A — Campo `agent_conventions` (config + scaffold) + injeção no rules block
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `internal/config/config.go` — `UpdateConfig` struct (~linha 68-76): adicionar
   `AgentConventions string // agent_conventions: free-text, multi-line (default: "")`;
@@ -131,8 +131,15 @@ o padrão de `backend`/`frontend`/`pkg_manager` (chave plana, campo string em
       → bloco injetado idêntico ao gerado antes deste ML (sem a seção)
 **Comandos de validação:** `go build ./... && go test ./internal/config/... ./internal/generators/... && go vet ./...`
 
+**Execução real (2026-08-15):** implementado por Apolo, auditado pelo orquestrador. Build/vet
+verdes, `go test ./...` (suíte completa) sem regressões. Testes cobrem explicitamente o caso
+crítico de não-regressão: `TestInjectOrUpdateRules_NoTrackfwYAML_NoRegression` prova saída
+byte-idêntica ao comportamento pré-ML quando não há `agent_conventions`. Teste manual real via
+`trackfw update` (entrypoint real de `InjectRulesDetected`) confirmou a seção "### Project
+Conventions" presente/ausente conforme esperado.
+
 ### ML-1B — Heurística de sugestão de framework de teste em `trackfw discover`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/discover/discover.go` — `DiscoveryResult` struct (~linha 281-296): adicionar
   campo `SuggestedTestFramework string`; `Scan()` (~linha 299-407): adicionar heurística

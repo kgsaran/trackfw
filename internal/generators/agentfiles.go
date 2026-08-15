@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
 const rulesStart = "<!-- trackfw:rules:start -->"
@@ -31,7 +33,20 @@ var agentHeaders = map[string]string{
 	"cursor":   "---\ndescription: trackfw governance rules\nglob: \"**/*\"\nalwaysApply: true\n---\n",
 }
 
-func trackfwRulesBlock() string {
+func trackfwRulesBlock(agentConventions string) string {
+	conventionsSection := ""
+	if strings.TrimSpace(agentConventions) != "" {
+		conventionsSection = `
+
+### Project Conventions
+> Declared by the team in ` + "`trackfw.yaml`" + `'s ` + "`agent_conventions`" + ` field — NOT
+> inferred automatically. trackfw does not impose an architectural standard; it only
+> propagates what the project has already decided.
+
+` + strings.TrimSpace(agentConventions) + `
+`
+	}
+
 	return rulesStart + `
 ## trackfw — Governance Rules
 
@@ -74,7 +89,7 @@ Delete the file when resolved. Visible as a live banner in ` + "`trackfw serve`"
 - **Security wave:** include a red-team review wave in every feature roadmap
 - **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)
 - Use ` + "`/trackfw:architect`" + ` to define stack before the first REQ
-
+` + conventionsSection + `
 ### Key Commands
 - ` + "`trackfw context`" + ` — current governance state (always run first)
 - ` + "`trackfw status`" + ` — all artifacts and states
@@ -88,12 +103,12 @@ Delete the file when resolved. Visible as a live banner in ` + "`trackfw serve`"
 //   - File doesn't exist: creates with headerIfNew + rules block
 //   - File exists, no marker: appends rules block at end
 //   - File exists, has marker: replaces content between markers (idempotent update)
-func injectOrUpdateRules(filePath, headerIfNew string) error {
+func injectOrUpdateRules(filePath, headerIfNew, cwd string) error {
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return err
 	}
 
-	block := trackfwRulesBlock()
+	block := trackfwRulesBlock(config.ReadAgentConventions(cwd))
 
 	data, err := os.ReadFile(filePath)
 	if os.IsNotExist(err) {
@@ -141,7 +156,7 @@ func InjectRulesForTool(tool, cwd string) error {
 		return nil
 	}
 	header := agentHeaders[tool]
-	return injectOrUpdateRules(filepath.Join(cwd, relPath), header)
+	return injectOrUpdateRules(filepath.Join(cwd, relPath), header, cwd)
 }
 
 // InjectRulesDetected scans cwd for existing AI agent config files and injects
