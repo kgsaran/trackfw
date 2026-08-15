@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-15
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md"
 ---
 
 # REQ: instalacao de skills de terceiro via URL para agentes especialistas
@@ -53,6 +53,30 @@ harness do orquestrador injeta, nunca disponível em invocação humana direta d
 requisito em si (só o arquiteto invoca, só após revisão do `hades-tf`, nunca uso
 direto/manual) é inegociável, no mesmo espírito do resto desta REQ.
 
+**Emenda de escopo do usuário (2026-08-15, posterior à redação acima):** a revisão do
+`hades-tf` **não é um evento único de desenho** — é um **gate de runtime, recorrente,
+disparado a cada instalação de artefato de terceiro**. Dois esclarecimentos que ampliam o
+escopo original:
+
+1. **Vale para skill E para agent/plugin de terceiro**, não só skill. Qualquer artefato de
+   terceiro que vire instrução carregada por um agente (`skill`, `agent`, `plugin`) entra
+   no mesmo fluxo. A REQ nasceu com título só de "skills" — leia-se "artefato de terceiro"
+   em todos os critérios abaixo.
+2. **Os dois caminhos de entrada disparam o gate:**
+   - usuário executa o comando do `trackfw` (`skill add` / `agent add` / equivalente para
+     third-party);
+   - usuário pede em linguagem natural, dentro da sessão, "instala essa skill/agent pra mim".
+
+   Em ambos, a sequência é a mesma e é inegociável: **baixar → quarentena → `hades-tf`
+   analisa → só com parecer favorável instala**. Nunca instalar e revisar depois.
+
+**Consequência de design que decorre desta emenda:** um comando de CLI não consegue, por si,
+invocar um subagente. Logo o comando precisa ser desenhado para **parar** no meio do fluxo —
+baixar em quarentena, emitir um artefato de revisão legível por máquina, e exigir referência
+ao parecer do `hades-tf` para consumar a instalação. O desenho exato desse handshake em duas
+fases é decisão da Wave 0 do roadmap (Q8), mas a propriedade "não existe caminho de código que
+instale artefato de terceiro sem parecer prévio" é o requisito, não uma sugestão.
+
 ## Acceptance Criteria
 - [ ] Novo comando (ex.: `trackfw skill add <url>`) baixa o conteúdo, mas **nunca o
       carrega automaticamente** sem confirmação — mostra o conteúdo completo ao usuário
@@ -89,6 +113,12 @@ direto/manual) é inegociável, no mesmo espírito do resto desta REQ.
       execução em invocação humana direta de terminal. Fluxo obrigatório: usuário aponta
       URL → Zeus invoca `hades-tf` para análise de segurança (prompt injection, agent
       kidnapping) → só com parecer favorável do `hades-tf` a instalação prossegue.
+- [ ] **(Emenda 2026-08-15)** O gate do `hades-tf` é **de runtime e recorrente**, disparado a
+      cada instalação de artefato de terceiro — **skill, agent ou plugin** — e pelos dois
+      caminhos de entrada (comando explícito do `trackfw` e pedido em linguagem natural na
+      sessão). Não existe caminho de código que instale artefato de terceiro sem parecer
+      prévio: o comando baixa para quarentena, para, e só consuma a instalação mediante
+      referência ao parecer favorável.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -99,4 +129,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md

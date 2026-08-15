@@ -16533,3 +16533,46 @@ nenhum arquivo sob `pypi/` (outro agente trabalhava em paralelo no ML-2B/Python 
 Não fiz `git commit`/`push` — autoridade de Git é do `trackfw_architect`. Não toquei em nenhum
 arquivo sob `pypi/` (ML-2B, agente paralelo) nem em `internal/`/Go (Wave 1, já commitada). Wave 3
 (paridade cruzada final + `docs/cli-parity.md`) segue pendente, fora do escopo deste ML.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — INÍCIO: reescrita do roadmap de skills de terceiro via URL
+
+**Contexto:** único item em `backlog/` é
+`ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md`,
+gerado em formato stub a partir da REQ (MLs com títulos truncados, `Files affected`/`Actions`
+vazios, `## Acceptance Criteria` consolidado vazio). Não é executável.
+
+**Escopo desta sessão (aprovado por KG):** reescrever o roadmap com Waves/MLs decision-complete,
+incluindo Wave 0 (revisão de segurança `hades-tf`) como barreira bloqueante. Sem código de produto.
+Roadmap vai para `analyzing/` (regra 5 do protocolo: `wip/` só quando a implementação começa).
+
+**Restrições já levantadas na orientação:**
+- `ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills` decidiu default de escopo
+  **global**; a REQ pede "local ao projeto por padrão" → conflito real a resolver na Wave 0.
+- `ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido...` é a doutrina canônica: não há
+  prevenção técnica contra agente induzido com escrita no workspace; a resposta é **detecção
+  ancorada no git**. Logo, "só o orquestrador invoca via env var" é guardrail, não controle.
+- `trackfw branch new` só aceita roadmap em `wip/` ou `done/` (`internal/commands/branch.go:127-145`)
+  — `analyzing/` não satisfaz o gate, portanto nenhuma branch é criada nesta sessão.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — FIM: roadmap de skills de terceiro reescrito (não commitado)
+
+**Entregue:**
+- `docs/roadmaps/analyzing/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md`
+  reescrito do zero: mapa arquitetural apurado (subsistema real é `internal/integrations/`, não
+  `internal/generators/`), seção de conflitos abertos, 9 critérios de aceite consolidados
+  (AC1–AC9, cobrindo os 9 da REQ), 5 Waves.
+- Wave 0 é barreira bloqueante: ML-0A (`hades-tf`, parecer Q1–Q7 em `docs/seguranca/`) e ML-0B
+  (Zeus, ADR com D1–D7 + reescrita das Waves 1+ substituindo os placeholders `<<TBD-Dn>>`).
+- Waves 1+ deliberadamente contingentes: nome do comando, flags, formato de proveniência e
+  local de residência da skill são **saída** da Wave 0, marcados como `<<TBD-Dn>>`.
+- Todos os MLs de comportamento listam os 3 stacks (Go `internal/`, Node `npm/src/`,
+  Python `pypi/trackfw/`).
+
+**Correção de observação anterior:** o arquivo do roadmap NÃO tinha espaço à esquerda no nome —
+era artefato do alias `ls --color`. Nenhum rename feito.
+
+**Validação:** `trackfw validate` passa (7 warnings pré-existentes de REQ sem ADR, incluindo
+esta REQ — o campo `adr:` é preenchido no ML-0B). Roadmap em `analyzing/`.
+
+**Não commitado:** nenhuma branch criada (`trackfw branch new` exige roadmap em `wip/`/`done/`;
+`analyzing/` não satisfaz o gate) e commit direto na `main` é proibido. A branch nasce no ML-0B.
