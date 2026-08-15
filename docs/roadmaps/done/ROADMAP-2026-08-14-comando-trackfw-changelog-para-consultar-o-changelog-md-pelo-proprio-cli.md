@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-14
 req: "docs/req/REQ-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: comando trackfw changelog para consultar o CHANGELOG.md pelo proprio CLI
 
-> Created: 2026-08-14 | Status: wip
+> Created: 2026-08-14 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md -->
