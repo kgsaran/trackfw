@@ -13,3 +13,8 @@ npm/node_modules/
 
 # trackfw: baseline local de violations toleradas (nao versionado)
 .trackfw-baseline.json
+
+# trackfw: scripts gerados (dogfooding local) -- regenerados por trackfw init/update,
+# nunca versionados (conteudo derivado do binario, nao codigo-fonte)
+scripts/trackfw-credential-guard.sh
+scripts/trackfw-git-branch-guard.sh
