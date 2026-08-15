@@ -8,3 +8,19 @@ package validator
 func CredentialGuardScriptReferenceForTest() string {
 	return credentialGuardScriptReference
 }
+
+// GitBranchGuardScriptReferenceForTest exposes the unexported gitBranchGuardScriptReference
+// constant to the external test package (package validator_test) — same "export_test.go" pattern
+// as CredentialGuardScriptReferenceForTest above. See
+// validator_git_branch_guard_integrity_external_test.go for the consumer.
+func GitBranchGuardScriptReferenceForTest() string {
+	return gitBranchGuardScriptReference
+}
+
+// CredentialGuardGlobalScriptReferenceForTest exposes the unexported
+// credentialGuardGlobalScriptReference constant to the external test package (package
+// validator_test) — same "export_test.go" pattern as the two functions above. See
+// validator_credential_guard_global_integrity_external_test.go for the consumer.
+func CredentialGuardGlobalScriptReferenceForTest() string {
+	return credentialGuardGlobalScriptReference
+}

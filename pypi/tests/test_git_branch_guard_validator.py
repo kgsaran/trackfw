@@ -1,0 +1,316 @@
+"""
+ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados,
+ML-2B. Mirrors internal/validator/validator_git_branch_guard_test.go (Go).
+"""
+
+import json
+import os
+import shutil
+import stat
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from trackfw import config as _config
+from trackfw import validator as v
+from trackfw.generators.init_gen import _generate_git_branch_guard_script
+
+
+def _write(path: str, content: str = ""):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def _messages(items):
+    return [item["message"] for item in items]
+
+
+def _git_branch_guard_entry_claude_settings(script_cmd: str) -> str:
+    return json.dumps({
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"command": script_cmd, "type": "command"}]}
+            ]
+        }
+    })
+
+
+# ---- git_branch_guard_hook_resolvable (projeto) ----
+
+class TestGitBranchGuardHookResolvable(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_dispara_script_ausente(self):
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            _git_branch_guard_entry_claude_settings("$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"),
+        )
+        # scripts/trackfw-git-branch-guard.sh NÃO é criado — ausência proposital.
+        cfg = _config.defaults()
+        msgs = v.validate_git_branch_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertTrue(
+            any(
+                "does not exist" in m["message"]
+                and ".claude/settings.json" in m["message"]
+                and "trackfw-git-branch-guard.sh" in m["message"]
+                for m in msgs
+            ),
+            f"esperado violation de script ausente, obteve: {msgs}",
+        )
+
+    def test_dispara_script_nao_executavel(self):
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            _git_branch_guard_entry_claude_settings("$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"),
+        )
+        script_path = os.path.join(self.tmp, "scripts", "trackfw-git-branch-guard.sh")
+        _write(script_path, "#!/bin/sh\nexit 0\n")
+        os.chmod(script_path, 0o644)  # sem bit +x
+
+        cfg = _config.defaults()
+        msgs = v.validate_git_branch_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertTrue(
+            any("not executable" in m["message"] for m in msgs),
+            f"esperado violation de script não executável, obteve: {msgs}",
+        )
+
+    def test_nao_dispara_sem_entrada(self):
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            json.dumps({
+                "hooks": {
+                    "PostToolUse": [{"matcher": "AskUserQuestion", "hooks": [
+                        {"command": "scripts/trackfw-attention-cleanup.sh", "type": "command"}]}],
+                }
+            }),
+        )
+        cfg = _config.defaults()
+        msgs = v.validate_git_branch_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertEqual(msgs, [], f"esperado zero violations sem entrada de guard, obteve: {msgs}")
+
+    def test_nao_dispara_script_presente_e_executavel(self):
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            _git_branch_guard_entry_claude_settings("$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"),
+        )
+        script_path = os.path.join(self.tmp, "scripts", "trackfw-git-branch-guard.sh")
+        _write(script_path, v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE)
+        os.chmod(script_path, 0o755)
+
+        cfg = _config.defaults()
+        msgs = v.validate_git_branch_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertEqual(
+            msgs, [], f"esperado zero violations com script presente e executável, obteve: {msgs}"
+        )
+
+
+# ---- git_branch_guard_script_integrity (projeto) ----
+
+class TestGitBranchGuardScriptIntegrity(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_script_ausente_silencio(self):
+        # scripts/trackfw-git-branch-guard.sh NÃO existe — cobertura de ausência é
+        # git_branch_guard_hook_resolvable, não esta regra.
+        msgs = v.validate_git_branch_guard_script_integrity(self.tmp)
+        self.assertEqual(msgs, [])
+
+    def test_script_identico_ao_template_silencio(self):
+        _write(
+            os.path.join(self.tmp, "scripts/trackfw-git-branch-guard.sh"),
+            v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE,
+        )
+        msgs = v.validate_git_branch_guard_script_integrity(self.tmp)
+        self.assertEqual(msgs, [])
+
+    def test_um_byte_alterado_dispara(self):
+        tampered = v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE[:-1] + "X"
+        _write(os.path.join(self.tmp, "scripts/trackfw-git-branch-guard.sh"), tampered)
+
+        msgs = v.validate_git_branch_guard_script_integrity(self.tmp)
+        self.assertEqual(len(msgs), 1)
+        text = msgs[0]["message"]
+        self.assertIn("scripts/trackfw-git-branch-guard.sh", text)
+        self.assertIn("diverges from the template", text)
+
+    def test_severity_default_warning(self):
+        _write(os.path.join(self.tmp, "scripts/trackfw-git-branch-guard.sh"), "#!/usr/bin/env bash\nexit 0\n")
+        result = v.validate_unfiltered(self.tmp)
+        self.assertFalse(
+            any("trackfw-git-branch-guard.sh" in m for m in _messages(result["violations"]))
+        )
+        self.assertTrue(
+            any("trackfw-git-branch-guard.sh" in m for m in _messages(result["warnings"]))
+        )
+
+    def test_reference_e_byte_identico_ao_gerador_real(self):
+        _generate_git_branch_guard_script(self.tmp)
+        with open(os.path.join(self.tmp, "scripts", "trackfw-git-branch-guard.sh"), "r", encoding="utf-8") as f:
+            emitted = f.read()
+        self.assertEqual(emitted, v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE)
+
+
+# ---- Escopo global (credential-guard e git-branch-guard) ----
+
+def _global_guard_home(test_case):
+    """Cria um $HOME isolado (tempfile.mkdtemp) e aponta os.path.expanduser("~") pra lá via a
+    variável de ambiente HOME, isolando os testes de escopo global do $HOME real da máquina."""
+    home = tempfile.mkdtemp()
+    saved = os.environ.get("HOME")
+    os.environ["HOME"] = home
+
+    def _restore():
+        if saved is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = saved
+        shutil.rmtree(home, ignore_errors=True)
+
+    test_case.addCleanup(_restore)
+    return home
+
+
+def _global_claude_settings_with_command(script_abs_path: str) -> str:
+    """Monta ~/.claude/settings.json com uma entrada global PreToolUse[Bash] apontando para
+    script_abs_path — mesma forma que os geradores de harness global escrevem."""
+    return json.dumps({
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"command": script_abs_path, "type": "command"}]}
+            ]
+        }
+    })
+
+
+class TestGuardGlobalHookResolvable(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_sem_entrada_global_silencio(self):
+        _global_guard_home(self)
+
+        msgs = v.validate_credential_guard_global_hook_resolvable(self.tmp)
+        self.assertEqual(msgs, [], f"esperado zero violations sem entrada global, obteve: {msgs}")
+
+        gmsgs = v.validate_git_branch_guard_global_hook_resolvable(self.tmp)
+        self.assertEqual(
+            gmsgs, [],
+            f"esperado zero violations sem entrada global (git-branch-guard), obteve: {gmsgs}",
+        )
+
+    def test_global_instalado_e_integro_silencio(self):
+        # O gap principal que este ML fecha: hook de PROJETO ausente (dedup) + global instalado E
+        # íntegro → silêncio (dedup preservado).
+        home = _global_guard_home(self)
+
+        global_script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+        _write(global_script_path, v._CREDENTIAL_GUARD_GLOBAL_SCRIPT_REFERENCE)
+        os.chmod(global_script_path, 0o755)
+        _write(
+            os.path.join(home, ".claude", "settings.json"),
+            _global_claude_settings_with_command(global_script_path),
+        )
+
+        hook_msgs = v.validate_credential_guard_global_hook_resolvable(self.tmp)
+        self.assertEqual(
+            hook_msgs, [], f"esperado zero violations com global instalado e executável, obteve: {hook_msgs}"
+        )
+
+        integrity_msgs = v.validate_credential_guard_global_script_integrity(self.tmp)
+        self.assertEqual(
+            integrity_msgs, [],
+            f"esperado zero violations com script global íntegro, obteve: {integrity_msgs}",
+        )
+
+    def test_global_instalado_mas_script_ausente_dispara(self):
+        # Hook de PROJETO ausente + global REGISTRADO em ~/.claude/settings.json mas o script
+        # global não existe no disco → antes deste ML, `trackfw validate` silenciava; agora deve
+        # violar.
+        home = _global_guard_home(self)
+
+        global_script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+        # Script global NÃO é criado — ausência proposital, apesar de estar registrado.
+        _write(
+            os.path.join(home, ".claude", "settings.json"),
+            _global_claude_settings_with_command(global_script_path),
+        )
+
+        msgs = v.validate_credential_guard_global_hook_resolvable(self.tmp)
+        self.assertTrue(
+            any(
+                "does not exist" in m["message"]
+                and "global scope" in m["message"]
+                and "trackfw update harness" in m["message"]
+                for m in msgs
+            ),
+            f"esperado violation de script global ausente, obteve: {msgs}",
+        )
+
+    def test_global_instalado_mas_script_corrompido_dispara(self):
+        home = _global_guard_home(self)
+
+        global_script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+        _write(global_script_path, "#!/usr/bin/env bash\nexit 0\n")
+        os.chmod(global_script_path, 0o755)
+        _write(
+            os.path.join(home, ".claude", "settings.json"),
+            _global_claude_settings_with_command(global_script_path),
+        )
+
+        msgs = v.validate_credential_guard_global_script_integrity(self.tmp)
+        self.assertTrue(
+            any(
+                "diverges from the template" in m["message"]
+                and "global scope" in m["message"]
+                and "trackfw update harness" in m["message"]
+                for m in msgs
+            ),
+            f"esperado violation de integridade global, obteve: {msgs}",
+        )
+
+    def test_git_branch_guard_global_sem_wiring_hoje_silencio(self):
+        # Divergência de design documentada (idêntica ao Go, ver
+        # TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio em
+        # internal/validator/validator_git_branch_guard_test.go): hoje nenhum gerador de harness
+        # global de git-branch-guard escreve uma entrada em nenhum hooks.json/settings.json global
+        # -- só o script GLOBAL é gerado (generate_global_git_branch_guard_script), nunca
+        # referenciado em config global nenhum. Então, mesmo com o script global presente, nenhum
+        # arquivo de config global o referencia -- o mecanismo genérico
+        # (validate_guard_global_hook_resolvable) fica corretamente em silêncio até essa wiring
+        # existir. Gap separado, fora desta REQ -- não é regressão.
+        home = _global_guard_home(self)
+
+        global_script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+        _write(global_script_path, v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE)
+        os.chmod(global_script_path, 0o755)
+        # Nenhum ~/.claude/settings.json (ou equivalente) referencia trackfw-git-branch-guard.sh hoje.
+
+        msgs = v.validate_git_branch_guard_global_hook_resolvable(self.tmp)
+        self.assertEqual(msgs, [], f"esperado silêncio (sem wiring global hoje), obteve: {msgs}")
+
+
+if __name__ == "__main__":
+    unittest.main()

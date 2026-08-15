@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-15
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md"
 ---
 
 # REQ: trackfw validate deve detectar scripts de hook ausentes ou desatualizados
 
-> Date: 2026-08-15 | Status: Open
+> Date: 2026-08-15 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -65,23 +65,23 @@ sozinho), hoje nada acusa isso — o gap é maior no escopo global que no de pro
 porque não há nem o esqueleto de regra que existe para o projeto.
 
 ## Acceptance Criteria
-- [ ] `credential_guard_hook_resolvable` (ou uma regra irmã nova,
+- [x] `credential_guard_hook_resolvable` (ou uma regra irmã nova,
       `git_branch_guard_hook_resolvable` — decisão de design do ML: generalizar a regra
       existente para aceitar uma lista de markers, ou duplicar como regra própria;
       preferir generalizar, já que a lógica de resolução de caminho por CLI é idêntica)
       passa a cobrir também `trackfw-git-branch-guard.sh`: hook registrado que referencia
       esse script, com o script ausente ou não-executável, gera violação/aviso
       instruindo `trackfw update`.
-- [ ] Nova regra (ou extensão de `credential_guard_script_integrity`) cobre
+- [x] Nova regra (ou extensão de `credential_guard_script_integrity`) cobre
       `trackfw-git-branch-guard.sh`: script presente no disco mas com conteúdo diferente
       do que a versão atual do binário geraria (drift/desatualização) gera
       violação/aviso instruindo `trackfw update` — mesmo padrão já usado para
       credential-guard.
-- [ ] As duas checagens (resolvable + integrity) para git-branch-guard respeitam o
+- [x] As duas checagens (resolvable + integrity) para git-branch-guard respeitam o
       mesmo escopo de severidade/configuração via `trackfw.yaml` (`rules:`) que
       credential-guard já usa — não hardcodar severidade nova sem seguir o padrão
       existente.
-- [ ] Cobertura para escopo GLOBAL também — dois sub-critérios distintos, não confundir:
+- [x] Cobertura para escopo GLOBAL também — dois sub-critérios distintos, não confundir:
       (a) **dedup (já existe, preservar)**: quando o global está instalado, `validate`
       não deve reportar ausência de projeto para o hook correspondente;
       (b) **checagem real do global (NÃO existe hoje, é o gap principal deste
@@ -95,12 +95,12 @@ porque não há nem o esqueleto de regra que existe para o projeto.
       violação quando existe uma dependência real (projeto delega pro global, ou global
       está registrado em algum arquivo de config do CLI) e o alvo dessa dependência
       falha.
-- [ ] Comportamento idêntico nos 3 CLIs (Go/Node/Python) — mensagens byte-idênticas.
-- [ ] Teste de regressão cobrindo os 2 casos reais desta sessão: (1) hook de
+- [x] Comportamento idêntico nos 3 CLIs (Go/Node/Python) — mensagens byte-idênticas.
+- [x] Teste de regressão cobrindo os 2 casos reais desta sessão: (1) hook de
       git-branch-guard registrado + script ausente → violação/aviso; (2) hook + script
       presente mas com conteúdo desatualizado (simular alterando 1 byte) → violação/aviso;
       (3) script presente e íntegro → silêncio, sem falso positivo.
-- [ ] `make quality` passa sem novas divergências de paridade.
+- [x] `make quality` passa sem novas divergências de paridade.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -111,4 +111,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md

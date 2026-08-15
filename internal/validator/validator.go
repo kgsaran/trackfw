@@ -105,6 +105,12 @@ var ruleDefaults = map[string]string{
 	// credential_guard_mode_downgrade is deliberately absent from this map: it falls through to
 	// ruleSeverity's "error" default (see validator_credential_guard_integrity.go for why).
 	"credential_guard_script_integrity": "warning",
+	// ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
+	// desatualizados, ML-1A: same rationale as credential_guard_script_integrity above —
+	// scripts/trackfw-git-branch-guard.sh carries no version marker either, so this rule cannot
+	// tell legitimate drift from tampering. git_branch_guard_hook_resolvable is deliberately
+	// absent from this map (falls through to "error"), mirroring credential_guard_hook_resolvable.
+	"git_branch_guard_script_integrity": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -436,11 +442,18 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 
 	// ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A: controle positivo —
 	// detecta hook de credential-guard registrado cujo script não existe ou não é executável.
+	// ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
+	// desatualizados, ML-1A: soma as mensagens de escopo GLOBAL sob a MESMA regra — ver o
+	// comentário sobre os 4 wrappers em validator_git_branch_guard.go.
 	credentialGuardHookMsgs, e := validateCredentialGuardHookResolvable()
 	if e != nil {
 		return nil, nil, e
 	}
-	applyRule("credential_guard_hook_resolvable", credentialGuardHookMsgs, &violations, &warnings)
+	credentialGuardGlobalHookMsgs, e := validateCredentialGuardGlobalHookResolvable()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("credential_guard_hook_resolvable", append(credentialGuardHookMsgs, credentialGuardGlobalHookMsgs...), &violations, &warnings)
 
 	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
 	// detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).
@@ -448,13 +461,40 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	if e != nil {
 		return nil, nil, e
 	}
-	applyRule("credential_guard_script_integrity", credentialGuardScriptMsgs, &violations, &warnings)
+	credentialGuardGlobalScriptMsgs, e := validateCredentialGuardGlobalScriptIntegrity()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("credential_guard_script_integrity", append(credentialGuardScriptMsgs, credentialGuardGlobalScriptMsgs...), &violations, &warnings)
 
 	credentialGuardModeMsgs, e := validateCredentialGuardModeDowngrade()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRule("credential_guard_mode_downgrade", credentialGuardModeMsgs, &violations, &warnings)
+
+	// ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
+	// desatualizados, ML-1A: mesma cobertura acima (existência/executabilidade + integridade,
+	// projeto e global), generalizada para trackfw-git-branch-guard.sh.
+	gitBranchGuardHookMsgs, e := validateGitBranchGuardHookResolvable()
+	if e != nil {
+		return nil, nil, e
+	}
+	gitBranchGuardGlobalHookMsgs, e := validateGitBranchGuardGlobalHookResolvable()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("git_branch_guard_hook_resolvable", append(gitBranchGuardHookMsgs, gitBranchGuardGlobalHookMsgs...), &violations, &warnings)
+
+	gitBranchGuardScriptMsgs, e := validateGitBranchGuardScriptIntegrity()
+	if e != nil {
+		return nil, nil, e
+	}
+	gitBranchGuardGlobalScriptMsgs, e := validateGitBranchGuardGlobalScriptIntegrity()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("git_branch_guard_script_integrity", append(gitBranchGuardScriptMsgs, gitBranchGuardGlobalScriptMsgs...), &violations, &warnings)
 
 	return violations, warnings, nil
 }
@@ -690,11 +730,18 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 
 	// ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A: controle positivo —
 	// detecta hook de credential-guard registrado cujo script não existe ou não é executável.
+	// ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
+	// desatualizados, ML-1A: soma as mensagens de escopo GLOBAL sob a MESMA regra — ver o
+	// comentário sobre os 4 wrappers em validator_git_branch_guard.go.
 	credentialGuardHookMsgsT, e := validateCredentialGuardHookResolvable()
 	if e != nil {
 		return nil, nil, e
 	}
-	applyRuleTagged("credential_guard_hook_resolvable", credentialGuardHookMsgsT, &violations, &warnings)
+	credentialGuardGlobalHookMsgsT, e := validateCredentialGuardGlobalHookResolvable()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("credential_guard_hook_resolvable", append(credentialGuardHookMsgsT, credentialGuardGlobalHookMsgsT...), &violations, &warnings)
 
 	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
 	// detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).
@@ -702,13 +749,40 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	if e != nil {
 		return nil, nil, e
 	}
-	applyRuleTagged("credential_guard_script_integrity", credentialGuardScriptMsgsT, &violations, &warnings)
+	credentialGuardGlobalScriptMsgsT, e := validateCredentialGuardGlobalScriptIntegrity()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("credential_guard_script_integrity", append(credentialGuardScriptMsgsT, credentialGuardGlobalScriptMsgsT...), &violations, &warnings)
 
 	credentialGuardModeMsgsT, e := validateCredentialGuardModeDowngrade()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRuleTagged("credential_guard_mode_downgrade", credentialGuardModeMsgsT, &violations, &warnings)
+
+	// ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
+	// desatualizados, ML-1A: mesma cobertura acima (existência/executabilidade + integridade,
+	// projeto e global), generalizada para trackfw-git-branch-guard.sh.
+	gitBranchGuardHookMsgsT, e := validateGitBranchGuardHookResolvable()
+	if e != nil {
+		return nil, nil, e
+	}
+	gitBranchGuardGlobalHookMsgsT, e := validateGitBranchGuardGlobalHookResolvable()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("git_branch_guard_hook_resolvable", append(gitBranchGuardHookMsgsT, gitBranchGuardGlobalHookMsgsT...), &violations, &warnings)
+
+	gitBranchGuardScriptMsgsT, e := validateGitBranchGuardScriptIntegrity()
+	if e != nil {
+		return nil, nil, e
+	}
+	gitBranchGuardGlobalScriptMsgsT, e := validateGitBranchGuardGlobalScriptIntegrity()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("git_branch_guard_script_integrity", append(gitBranchGuardScriptMsgsT, gitBranchGuardGlobalScriptMsgsT...), &violations, &warnings)
 
 	return violations, warnings, nil
 }
