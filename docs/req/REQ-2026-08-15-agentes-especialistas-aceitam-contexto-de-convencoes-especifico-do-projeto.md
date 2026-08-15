@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-15
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md"
 ---
 
 # REQ: agentes especialistas aceitam contexto de convencoes especifico do projeto
@@ -67,4 +67,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md
