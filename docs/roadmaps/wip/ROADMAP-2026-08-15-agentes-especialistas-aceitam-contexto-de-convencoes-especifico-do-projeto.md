@@ -177,7 +177,7 @@ confirmou a linha de sugestão presente/ausente conforme o fixture, e que
 > Dependências: Wave 1 completa
 
 ### ML-2A — Node.js
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `npm/src/config/index.js` — `parse()` (linha 194): ler `agent_conventions` do YAML root
   para `cfg.update.agent_conventions` (ou equivalente camelCase se for o padrão já usado
@@ -199,8 +199,15 @@ implementado nesta branch) como fonte de verdade — mensagens/textos byte-idên
 - [ ] Seção "### Project Conventions" e linha de sugestão de `discover` byte-idênticas ao Go
 **Comandos de validação:** `cd npm && npm test`
 
+**Execução real (2026-08-15):** `npm test` → 550 passed, 0 failed (27 novos + suíte completa
+sem regressão). Paridade byte-a-byte confirmada pelo orquestrador contra o binário Go nos 3
+cenários (com/sem `agent_conventions`, sugestão de `discover`). Achado incidental, fora de
+escopo: `roadmap_namespacing` diverge entre Go/Node num fixture de `--init` sem
+`docs/roadmaps/` — não relacionado a esta REQ, registrado como observação, não investigado
+aqui.
+
 ### ML-2B — Python
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:**
 - `pypi/trackfw/config.py` — `defaults()` (linha 74): adicionar `"agent_conventions": ""`
   dentro do sub-dict `"update"`; `_parse()` (linha 192, leitura ~284-289): adicionar leitura
@@ -219,6 +226,12 @@ de verdade.
       regressão)
 - [ ] Seção e linha de sugestão byte-idênticas ao Go
 **Comandos de validação:** `python -m pytest pypi/tests -k agent_conventions`
+
+**Execução real (2026-08-15):** `pytest -k agent_conventions` → 30 passed; suíte completa →
+1172 passed, 8 subtests, 0 falhas. Paridade byte-a-byte confirmada pelo orquestrador contra o
+binário Go nos 3 cenários (nota: a primeira tentativa de verificação deu falso-negativo por
+`PYTHONPATH` relativo não sobreviver a `cd` entre diretórios — corrigido usando path absoluto;
+o código em si estava correto desde a entrega do agente).
 
 ## Wave 3 — Validação cruzada e documentação (1 ML)
 > Dependências: Wave 2 completa

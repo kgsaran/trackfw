@@ -3,6 +3,7 @@
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
+const { readAgentConventions } = require('../config/index.js')
 
 const GOV_DIRS = [
   'docs/adr',
@@ -398,7 +399,20 @@ const AGENT_HEADERS = {
   cursor:   '---\ndescription: trackfw governance rules\nglob: "**/*"\nalwaysApply: true\n---\n',
 }
 
-function trackfwRulesBlock() {
+function trackfwRulesBlock(agentConventions) {
+  let conventionsSection = ''
+  if (agentConventions && String(agentConventions).trim() !== '') {
+    conventionsSection = `
+
+### Project Conventions
+> Declared by the team in \`trackfw.yaml\`'s \`agent_conventions\` field — NOT
+> inferred automatically. trackfw does not impose an architectural standard; it only
+> propagates what the project has already decided.
+
+${String(agentConventions).trim()}
+`
+  }
+
   return RULES_START + `
 ## trackfw — Governance Rules
 
@@ -441,7 +455,7 @@ Delete the file when resolved. Visible as a live banner in \`trackfw serve\`.
 - **Security wave:** include a red-team review wave in every feature roadmap
 - **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)
 - Use \`/trackfw:architect\` to define stack before the first REQ
-
+` + conventionsSection + `
 ### Key Commands
 - \`trackfw context\` — current governance state (always run first)
 - \`trackfw status\` — all artifacts and states
@@ -457,10 +471,10 @@ Delete the file when resolved. Visible as a live banner in \`trackfw serve\`.
  * - Arquivo existe, sem marcador: appenda o bloco no final
  * - Arquivo existe, com marcador: substitui conteúdo entre marcadores
  */
-function injectOrUpdateRules(filePath, headerIfNew) {
+function injectOrUpdateRules(filePath, headerIfNew, cwd) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
 
-  const block = trackfwRulesBlock()
+  const block = trackfwRulesBlock(readAgentConventions(cwd))
 
   if (!fs.existsSync(filePath)) {
     let content = headerIfNew || ''
@@ -503,7 +517,8 @@ function injectRulesForTool(tool, cwd) {
   const relPath = AGENT_FILES[tool]
   if (!relPath) return
   const header = AGENT_HEADERS[tool] || ''
-  injectOrUpdateRules(path.join(cwd || process.cwd(), relPath), header)
+  const root = cwd || process.cwd()
+  injectOrUpdateRules(path.join(root, relPath), header, root)
 }
 
 /**
@@ -708,7 +723,7 @@ function generateClaudeMD(cfg) {
   content += 'Decide low-risk details autonomously following existing project conventions, '
   content += 'and record autonomous decisions in the commit message.\n'
 
-  injectOrUpdateRules('CLAUDE.md', content)
+  injectOrUpdateRules('CLAUDE.md', content, '.')
   console.log('  ✓ CLAUDE.md')
 }
 
