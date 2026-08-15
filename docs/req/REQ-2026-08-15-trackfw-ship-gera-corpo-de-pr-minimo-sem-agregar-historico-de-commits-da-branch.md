@@ -3,7 +3,7 @@ status: Done
 date: 2026-08-15
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md"
 ---
 
 # REQ: trackfw ship gera corpo de PR minimo sem agregar historico de commits da branch
@@ -111,4 +111,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md

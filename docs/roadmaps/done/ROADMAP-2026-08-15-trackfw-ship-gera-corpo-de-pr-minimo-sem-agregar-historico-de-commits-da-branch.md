@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-15
 req: "docs/req/REQ-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: trackfw ship gera corpo de PR minimo sem agregar historico de commits da branch
 
-> Created: 2026-08-15 | Status: wip
+> Created: 2026-08-15 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md -->
