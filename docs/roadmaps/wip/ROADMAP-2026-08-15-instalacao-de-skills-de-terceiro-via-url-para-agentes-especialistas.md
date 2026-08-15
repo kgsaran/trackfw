@@ -554,7 +554,7 @@ Node/Python, `scripts/check-thirdparty-parity.sh` (novo, adicionado ao alvo `par
 ---
 
 ### ML-3B — Microlote corretivo: `installed_sha256` na proveniência (D2-bis)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (apolo-tf, 2026-08-15) — aguardando auditoria/commit do arquiteto
 **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-3A ✅ (commitado).
 **Origem:** auditoria do arquiteto sobre o ML-3A — ver **D2-bis** no ADR.

@@ -11,7 +11,13 @@ const path = require('node:path')
 const { atomicWrite } = require('./quarantine')
 
 // PROVENANCE_SCHEMA_VERSION mirrors internal/thirdparty/provenance.go:provenanceSchemaVersion.
-const PROVENANCE_SCHEMA_VERSION = 1
+//
+// Bumped 1 -> 2 (ADR-2026-08-15 D2-bis, ML-3B) to add the entry field
+// installed_sha256 (SHA-256 of the NORMALIZED bytes, computed at install
+// time). checksum_sha256 (SHA-256 of the RAW bytes, the D8c approval
+// anchor) is unchanged. No migration path exists or is needed: at the time
+// of the bump no provenance file existed anywhere with schema_version 1.
+const PROVENANCE_SCHEMA_VERSION = 2
 
 function emptyProvenance() {
   return { schema_version: PROVENANCE_SCHEMA_VERSION, entries: {} }

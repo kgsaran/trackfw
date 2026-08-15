@@ -114,13 +114,53 @@ done
 [[ "$fail" -eq 0 ]] && ok "marker corpus cases present in all 3 stacks"
 
 # ── PART B — D9 three-schema round trip (network-free) ─────────────────────
+# CONTENT is DELIBERATELY NOT canonical (trailing blank line after the last
+# sentence) — the AC named case ("instalação legítima com conteúdo
+# não-canônico não gera violação") is only genuinely exercised end-to-end if
+# checksum_sha256 (raw domain) and installed_sha256 (normalized domain)
+# actually DIFFER for this fixture. Canonical content would make
+# INSTALLED_SHA256 == CHECKSUM, and the checks below would pass identically
+# whether install correctly writes the normalized-domain hash or incorrectly
+# writes the raw-domain hash (the exact bug D2-bis exists to prevent) —
+# discovered during this ML's own review when an earlier canonical-content
+# version of this fixture silently failed to discriminate the two.
 CONTENT='# Example Third-Party Skill
 
 Some helpful, benign content for the agent to consume.
+
 '
 CHECKSUM=$(printf '%s' "$CONTENT" | python3 -c 'import sys,hashlib; sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')
 CONTENT_B64=$(printf '%s' "$CONTENT" | python3 -c 'import sys,base64; sys.stdout.write(base64.b64encode(sys.stdin.buffer.read()).decode())')
 
+# NOT computed via an intermediate `$(...)` capture of the normalized
+# bytes — bash command substitution strips trailing newlines, which would
+# silently corrupt the very thing being hashed (normalize_third_party_content
+# always ends in exactly one "\n"). Compute the hash directly from $CONTENT
+# in a single Python process instead, asserting (not just commenting) that
+# normalize_third_party_content(CONTENT) != CONTENT — i.e. that this fixture
+# actually discriminates raw-domain from normalized-domain hashing, which is
+# the entire point of making CONTENT non-canonical above.
+INSTALLED_SHA256=$(printf '%s' "$CONTENT" | python3 -c '
+import sys, hashlib
+raw = sys.stdin.buffer.read()
+normalized = raw.strip() + b"\n"
+assert normalized != raw, "fixture CONTENT must NOT be canonical, or installed_sha256 cannot be distinguished from checksum_sha256 in this gate"
+sys.stdout.write(hashlib.sha256(normalized).hexdigest())
+')
+if [[ "$INSTALLED_SHA256" == "$CHECKSUM" ]]; then
+  bad "fixture setup: INSTALLED_SHA256 must differ from CHECKSUM (raw vs normalized), got the same value"
+fi
+
+# write_quarantine_and_provenance seeds the quarantine record (as `fetch`
+# would write it) and the EXTERNAL APPROVER's half of the provenance entry
+# (D10.2 — no subcommand writes provenance; a human/hades-tf writes it
+# directly, keyed by checksum_sha256 the approver reviewed). Deliberately
+# does NOT set installed_sha256: per ADR-2026-08-15 D2-bis, that field is
+# only known — and only written — by `third-party install` itself, at
+# install time, from the actual normalized bytes it writes to disk. The
+# fixture mirrors that: the approver-authored entry below is schema_version
+# 2 but installed_sha256-less, and each CLI's install command under test
+# must add it below (verified after the install loop, Part B).
 write_quarantine_and_provenance() {
   local project=$1
   mkdir -p "$project/.trackfw/thirdparty-quarantine"
@@ -138,7 +178,7 @@ write_quarantine_and_provenance() {
 EOF
   cat >"$project/.trackfw/thirdparty-provenance.json" <<EOF
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "entries": {
     ".claude/skills/thirdparty/my-skill.md": {
       "url": "https://example.com/skills/my-skill.md",
@@ -201,9 +241,34 @@ for runtime in "${runtimes[@]}"; do
     || bad "$runtime: integrations-manifest.json not found"
   cp "$project/.trackfw/thirdparty-references.json" "$WORK/$runtime-references.json" 2>/dev/null \
     || bad "$runtime: thirdparty-references.json not found"
+  cp "$project/.trackfw/thirdparty-provenance.json" "$WORK/$runtime-provenance.json" 2>/dev/null \
+    || bad "$runtime: thirdparty-provenance.json not found"
 
   echo "$project" >"$WORK/$runtime-project-path"
 done
+
+# D2-bis (ML-3B) — installed_sha256 must be (a) present, (b) equal to
+# sha256 of the NORMALIZED content actually installed (not checksum_sha256,
+# which stays the raw-bytes D8c approval anchor untouched by install), and
+# (c) byte-identical across the 3 CLIs. thirdparty-provenance.json has no
+# absolute-path fields (its entry key is already project-relative, per the
+# "Nota de paridade crítica" in docs/cli-parity.md), so a plain byte diff —
+# unlike integrations-manifest.json above — is meaningful without
+# normalization.
+for runtime in "${runtimes[@]}"; do
+  installed_sha256=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['entries']['.claude/skills/thirdparty/my-skill.md']['installed_sha256'])" "$WORK/$runtime-provenance.json" 2>/dev/null || true)
+  if [[ "$installed_sha256" != "$INSTALLED_SHA256" ]]; then
+    bad "$runtime: thirdparty-provenance.json installed_sha256 = '$installed_sha256', want '$INSTALLED_SHA256' (D2-bis)"
+  fi
+done
+if diff -u "$WORK/go-provenance.json" "$WORK/node-provenance.json" >/dev/null \
+  && diff -u "$WORK/go-provenance.json" "$WORK/python-provenance.json" >/dev/null; then
+  ok "thirdparty-provenance.json (including installed_sha256, D2-bis) is byte-identical across the 3 CLIs"
+else
+  bad "thirdparty-provenance.json differs across CLIs"
+  diff -u "$WORK/go-provenance.json" "$WORK/node-provenance.json" >&2 || true
+  diff -u "$WORK/go-provenance.json" "$WORK/python-provenance.json" >&2 || true
+fi
 
 if diff -u "$WORK/go-install.normalized" "$WORK/node-install.normalized" >/dev/null \
   && diff -u "$WORK/go-install.normalized" "$WORK/python-install.normalized" >/dev/null; then
@@ -268,6 +333,33 @@ if compare_manifest_claims \
 else
   bad "integrations-manifest.json claim semantics differ across CLIs"
 fi
+
+# D2-bis end-to-end, before Part C strips provenance below: a genuinely
+# legitimate install of the NON-CANONICAL $CONTENT fixture (see the comment
+# above CONTENT's definition) must produce ZERO
+# thirdparty_artifact_has_provenance violations in all 3 CLIs. This is the
+# actual AC ("instalação legítima com conteúdo não-canônico não é
+# falso-positivo") exercised end-to-end through the real `install` command
+# in all 3 stacks, not just through the validator unit tests (which
+# hand-author the provenance entry and so only exercise the reader half of
+# D2-bis, never the writer).
+for runtime in "${runtimes[@]}"; do
+  project=$(cd "$WORK/$runtime/project" && pwd -P)
+  set +e
+  run_cli "$runtime" "$project" "$WORK/$runtime/home" validate --json >"$WORK/$runtime-clean-validate.json" 2>"$WORK/$runtime-clean-validate.stderr"
+  set -e
+  violation_count=$(python3 -c "
+import json, sys
+with open(sys.argv[1], encoding='utf-8') as fh:
+    payload = json.load(fh)
+print(sum(1 for v in payload.get('violations', []) if v.get('rule') == 'thirdparty_artifact_has_provenance'))
+" "$WORK/$runtime-clean-validate.json")
+  if [[ "$violation_count" != "0" ]]; then
+    bad "$runtime: legitimate non-canonical install produced $violation_count thirdparty_artifact_has_provenance violation(s), want 0 (D2-bis end-to-end)"
+    cat "$WORK/$runtime-clean-validate.json" >&2
+  fi
+done
+[[ "$fail" -eq 0 ]] && ok "D2-bis: legitimate install of non-canonical content produces zero validate violations end-to-end, all 3 CLIs"
 
 # ── PART C — D2 branch (i) violation message byte-parity ───────────────────
 # Reuse the 3 projects above but strip the provenance entry, so the manifest

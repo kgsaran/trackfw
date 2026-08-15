@@ -17045,3 +17045,103 @@ mensagem própria e não é comparado entre os 3 CLIs.
 
 **Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit — inclui
 a pendência ativa em `.trackfw-attention.json` sobre D2(ii).
+
+## Sessão 2026-08-15 — Apolo (INÍCIO: ML-3B, microlote corretivo — `installed_sha256`, D2-bis)
+
+Retomando o trabalho: a auditoria do arquiteto sobre o ML-3A recusou o desenho da resolução de
+D2(ii) (ponte via quarentena) — tecnicamente correta, mas tornava um artefato de estágio
+dependência obrigatória de um gate permanente. Decisão formalizada como **D2-bis** no ADR
+(`docs/adr/ADR-2026-08-15-gate-de-duas-fases-...md`). Escopo: adicionar `installed_sha256` à
+entrada de provenance, bump `schema_version` 1→2 sem migração, reescrever o ramo (ii) do
+`trackfw validate` para comparar domínios já normalizados sem tocar a quarentena, nos 3 CLIs.
+
+## Sessão 2026-08-15 — Apolo (FIM: ML-3B concluído — `make quality` verde, não commitado)
+
+**Arquivos tocados:**
+- Go: `internal/thirdparty/provenance.go` (campo `InstalledSHA256`, bump schema 1→2),
+  `internal/thirdparty/provenance_test.go`, `internal/commands/integrations_thirdparty.go`
+  (grava `installed_sha256` após `manager.Install` bem-sucedido, preservando os demais campos),
+  `internal/validator/validator_thirdparty_provenance.go` (ramo ii reescrito, sem
+  `ReadQuarantine`), `internal/validator/validator_thirdparty_provenance_test.go` (2 testes de
+  branch ii reescritos sem quarentena + 2 novos testes load-bearing que apagam
+  `.trackfw/thirdparty-quarantine/` inteiro, substituindo o teste de fail-closed do ML-3A).
+- Node: `npm/src/thirdparty/provenance.js` (bump schema), `npm/src/commands/thirdparty.js`
+  (grava `installed_sha256` com ordem de campo EXPLÍCITA, não spread — ver vault note),
+  `npm/src/validator/index.js` (ramo ii reescrito, removido `readQuarantine`/`decodeContent`/
+  `normalizeThirdPartyForValidation`), `npm/tests/validator.test.js` (mesma reescrita de testes).
+- Python: `pypi/trackfw/thirdparty/provenance.py` (`_ENTRY_FIELD_ORDER` + bump schema),
+  `pypi/trackfw/commands/thirdparty.py`, `pypi/trackfw/validator.py` (ramo ii reescrito),
+  `pypi/tests/test_validator_thirdparty_provenance.py` (mesma reescrita),
+  `pypi/tests/test_thirdparty.py` (schema_version 1→2 no teste de missing-file).
+- `scripts/check-thirdparty-parity.sh` (nova comparação byte-a-byte de
+  `thirdparty-provenance.json` incluindo `installed_sha256`, fixture com `schema_version: 2`),
+  `docs/cli-parity.md` (tabela de schemas + nova subseção "D2-bis — dois hashes, dois domínios"),
+  `vault/notes/thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15.md`
+  (Achado 2 marcado substituído + novo "Achado 2-bis" com a armadilha de ordem de campo no Node),
+  roadmap (status ML-3B → ✅ Concluído).
+
+**Testes substituídos (não apenas editados) e por quê:** `TestThirdPartyArtifactHasProvenance_BranchII_MissingQuarantineFailsClosed`
+(Go) / equivalentes Node/Python — a premissa do teste (quarentena ausente = erro fail-closed) era
+exatamente o comportamento que D2-bis remove; substituído por
+`..._QuarantineDeletionDoesNotBreakCleanInstall` + `..._QuarantineDeletionStillDetectsTamper`
+(e variantes de nome por CLI), que apagam `.trackfw/thirdparty-quarantine/` inteiro e provam as
+duas metades do critério de aceite do ML-3B. Os 2 testes de branch (ii) restantes
+(`LegitimateInstallDoesNotFalsePositive`, `TamperedAfterApprovalIsCaught`) foram reescritos (mesmo
+nome, fixture trocada) para não escrever nenhum registro de quarentena e para manter
+`checksum_sha256`/`installed_sha256` com valores deliberadamente diferentes, provando que o ramo
+(ii) usa o campo certo.
+
+**Armadilha de paridade encontrada e corrigida — ordem de campo no Node:** `installed_sha256`
+precisa ficar logo após `checksum_sha256` na ordem canônica de campos, e Go/Python garantem isso
+de graça (ordem de struct / `_ENTRY_FIELD_ORDER`), mas o Node não tinha nenhum mecanismo de
+canonicalização — um `{ ...existing, installed_sha256: x }` (spread) apenda a chave no fim,
+divergindo dos outros 2 CLIs. Pego pelo próprio `scripts/check-thirdparty-parity.sh` na primeira
+execução (conteúdo semanticamente igual, ordem de campo diferente). Fix: construção explícita do
+objeto no Node. Detalhe completo na vault note (Achado 2-bis).
+
+**`make quality` — evidência literal (saída completa, exit code 0):**
+```
+GO_BIN=bin/trackfw scripts/check-thirdparty-parity.sh
+OK: marker corpus cases present in all 3 stacks
+OK: thirdparty-provenance.json (including installed_sha256, D2-bis) is byte-identical across the 3 CLIs
+OK: third-party install stdout is byte-identical across the 3 CLIs (normalized)
+OK: installed skill file content is byte-identical across the 3 CLIs
+OK: thirdparty-references.json is byte-identical across the 3 CLIs (D9 schema 3)
+manifest claim semantics match (origin=thirdparty present, D11)
+OK: integrations-manifest.json claim (origin=thirdparty) is semantically identical across the 3 CLIs (D11)
+OK: D2 branch (i) violation message is byte-identical across the 3 CLIs (normalized)
+OK: D10.1 --apply-to scope-mismatch remediation message is byte-identical across the 3 CLIs
+Third-party artifact gate parity checks passed (D9 schemas, D2 branch i, D10.1, D3 corpus coverage)
+[exited with code 0]
+```
+Também verde antes disso: `go build ./...`, `go test ./...` (todos os pacotes), `go vet ./...`,
+`npm test` (573 testes), `python3 -m pytest` (1219 testes + 8 subtests), e as 112 falsificações
+de `check-gates-falsify.sh`. Nenhum teste pré-existente FORA do escopo de branch (ii) foi
+editado. `trackfw validate` roda sem violations (só warnings pré-existentes de REQs sem ADR
+linkado, não relacionados a este ML).
+
+**Correções pós-revisão (mesma sessão, antes da entrega):**
+1. `npm/src/validator/index.js` interpolava `entry.installed_sha256` diretamente na mensagem;
+   quando a chave está AUSENTE (entrada só do aprovador, nunca instalada) isso rendia o literal
+   `undefined`, divergindo de Go (`""` zero value) e Python (`.get(..., "")`). Corrigido com
+   `entry.installed_sha256 || ''`. Testes-âncora de paridade adicionados nos 3 CLIs
+   (`..._MissingInstalledSHA256IsCaught` / equivalentes) fixando o texto da mensagem.
+2. O fixture `CONTENT` em `scripts/check-thirdparty-parity.sh` era canônico, então
+   `installed_sha256 == checksum_sha256` por acidente — o gate passava idêntico quer o install
+   gravasse o hash do domínio normalizado (correto) ou do domínio bruto (o bug que D2-bis existe
+   para matar). Corrigido: `CONTENT` agora tem linha em branco final deliberada, a asserção Python
+   foi invertida (`normalized != raw`) e há um novo bloco que roda `validate --json` end-to-end
+   nos 3 CLIs confirmando ZERO violations de `thirdparty_artifact_has_provenance` para a
+   instalação legítima não-canônica — prova o critério de aceite pelo caminho real do `install`,
+   não só pelos testes unitários do validador (que só exercitam a leitura).
+3. `TestLoadProvenanceUnsupportedSchemaVersionIsError` (Go) usava `schema_version: 3`; trocado
+   para `1` — é a versão que plausivelmente aparece em disco (cópia de trabalho desatualizada),
+   e o critério de aceite fala explicitamente em "versão 1 recusada".
+
+`make quality` rodado de novo do zero após essas correções (rebuild do binário Go incluído):
+exit 0, zero linhas `FAIL` no log completo, `check-thirdparty-parity.sh` com a nova checagem
+`OK: D2-bis: legitimate install of non-canonical content produces zero validate violations
+end-to-end, all 3 CLIs`. `trackfw validate` sem violations (só os 7 warnings pré-existentes de
+REQs sem ADR, não relacionados a este ML).
+
+**Não commitado e sem push.** Devolvido ao `trackfw_architect` para auditoria e commit.

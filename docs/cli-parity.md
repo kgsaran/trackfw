@@ -3308,7 +3308,7 @@ no Python (`pypi/trackfw/commands/commit.py`): `sys.stdout.write()` sem `flush()
 `subprocess.run` com stdio herdado inverte a ordem da saída quando stdout não é um TTY — corrigido
 com `out.flush()`.
 
-## `trackfw <skills|agents> third-party` — instalação de skills de terceiro via URL (ADR-2026-08-15, ML-3A)
+## `trackfw <skills|agents> third-party` — instalação de skills de terceiro via URL (ADR-2026-08-15, ML-3A/ML-3B)
 
 ### O comando, em duas fases
 
@@ -3344,7 +3344,7 @@ para o que ela NÃO garante.
 | Schema | Caminho | Keyed por | Escrito por |
 |---|---|---|---|
 | Quarentena | `.trackfw/thirdparty-quarantine/<checksum_sha256>.json` | nome de arquivo = checksum SHA-256 dos bytes brutos | `third-party fetch` |
-| Provenance | `.trackfw/thirdparty-provenance.json` (`entries: {...}`) | destino **relativo à raiz do projeto** (não o destino absoluto usado nas chaves do `integrations-manifest.json`) | aprovador externo (D10.2) — nenhum subcomando escreve aqui |
+| Provenance | `.trackfw/thirdparty-provenance.json` (`entries: {...}`, `schema_version: 2`) | destino **relativo à raiz do projeto** (não o destino absoluto usado nas chaves do `integrations-manifest.json`) | `checksum_sha256`/`approved_by`/etc: aprovador externo (D10.2). `installed_sha256`: `third-party install`, ver abaixo (D2-bis) |
 | References | `.trackfw/thirdparty-references.json` | id do agente-alvo → lista de skills de terceiro referenciadas | `third-party install --apply-to` |
 
 Os 3 schemas são cobertos byte-idênticos entre Go/Node/Python por `scripts/check-thirdparty-parity.sh`
@@ -3376,17 +3376,58 @@ instalados no disco):
 - **Branch (i)** — todo destino cujo `Claim.origin == "thirdparty"` no manifest precisa ter uma
   entrada correspondente em `thirdparty-provenance.json` (chave = destino relativo à raiz). Faltando,
   é violação (mensagem inclui "D2 branch i" e o destino absoluto, para localização rápida).
-- **Branch (ii)** — toda entrada de provenance é verificada contra o conteúdo real instalado.
-  Como `checksum_sha256` em provenance é o hash dos bytes **brutos** (pré-normalização, D6) e o
-  arquivo instalado é sempre o conteúdo **normalizado**, a regra usa o registro de quarentena como
-  ponte entre os dois domínios: recalcula o hash do `content_base64` da quarentena e confirma que
-  bate com `checksum_sha256` da provenance (auto-consistência), depois normaliza esse conteúdo bruto
-  e compara byte-a-byte contra o arquivo instalado. Comparar `checksum_sha256` diretamente contra o
-  SHA-256 do arquivo instalado normalizado teria produzido falso-positivo em qualquer instalação
-  legítima cujo conteúdo bruto não fosse já canônico — coberto por um teste de regressão
-  load-bearing nos 3 CLIs (`branch_ii_legitimate_install_does_not_false_positive` / equivalentes).
-  Se o registro de quarentena estiver ausente, a regra falha fechado (D8f), nunca degrada
-  silenciosamente.
+- **Branch (ii)** — toda entrada de provenance é verificada contra o conteúdo real instalado,
+  comparando `sha256(arquivo instalado)` diretamente contra `entry.installed_sha256` (ver "Dois
+  hashes, dois domínios" abaixo). Se `installed_sha256` não bater (ou estiver ausente/vazio, o que
+  nunca combina com o hash de um arquivo real), é violação. A regra **não lê mais o registro de
+  quarentena** — sua ausência não é mais considerada erro por esta ramificação (ver D2-bis abaixo).
+
+#### D2-bis — dois hashes, dois domínios (`schema_version: 2`, `installed_sha256`)
+
+A entrada de proveniência carrega **dois** hashes SHA-256, em domínios diferentes, e confundi-los
+foi um bug real encontrado na auditoria do ML-3A:
+
+| Campo | Domínio | Quando é calculado | Quem escreve | Para que serve |
+|---|---|---|---|---|
+| `checksum_sha256` | bytes **brutos** buscados da rede, antes de qualquer normalização (D6) | no `fetch` | aprovador externo (D10.2), como âncora do que ele efetivamente revisou | vínculo de aprovação D8c/TOCTOU (`verifyApproval`) |
+| `installed_sha256` | bytes **normalizados** (`normalize_third_party_content` = `TrimSpace(raw) + "\n"`) | no `install`, pelo mesmo código que grava o arquivo de destino | `third-party install` (único escritor de código deste campo) | detecção de adulteração pós-install / branch (ii) de `thirdparty_artifact_has_provenance` |
+
+**Por que dois campos, e não um:** o arquivo instalado é **sempre** o conteúdo normalizado, nunca o
+bruto — então `sha256(arquivo instalado)` só pode ser comparado de forma correta contra um hash que
+também esteja no domínio normalizado. Comparar `sha256(arquivo instalado)` direto contra
+`checksum_sha256` (a leitura literal do texto original de D2) produz **falso-positivo em toda
+instalação legítima** cujo conteúdo bruto não fosse já exatamente `TrimSpace + uma única quebra de
+linha` — o caso comum de qualquer markdown com linha em branco final. Coberto por um teste de
+regressão load-bearing nos 3 CLIs (`branch_ii_legitimate_install_does_not_false_positive` /
+equivalentes), que mantém `checksum_sha256` e `installed_sha256` com valores **deliberadamente
+diferentes** na fixture, para provar que a ramificação (ii) usa o campo certo.
+
+**Por que não usar o registro de quarentena como ponte (a solução do ML-3A, tecnicamente correta e
+substituída):** o ML-3A resolveu a mesma divergência de domínio lendo o `content_base64` da
+quarentena, normalizando-o e comparando contra o arquivo instalado. Funcionava, mas tornava um
+artefato de **estágio** (`.trackfw/thirdparty-quarantine/`, com nome, forma e propósito de diretório
+temporário) dependência obrigatória de um **gate permanente**: apagar ou colocar esse diretório no
+`.gitignore` faria `validate` falhar para sempre, sem caminho de recuperação (`validate` nunca faz
+fetch de rede, D6). `installed_sha256` remove essa dependência — a quarentena continua sendo escrita
+e commitada (valor de auditoria/reconstrução), mas sua ausência deixou de ser erro da ramificação
+(ii). Coberto pelos testes `branch_ii_quarantine_deletion_does_not_break_clean_install` /
+`branch_ii_quarantine_deletion_still_detects_tamper` (e equivalentes Node/Python), que apagam
+`.trackfw/thirdparty-quarantine/` inteiro antes de validar.
+
+**Quem escreve `installed_sha256`:** apenas `third-party install`, depois que o `manager.install`
+já gravou o arquivo com sucesso — nunca antes, nunca em caso de falha do install. Ele carrega a
+entrada de proveniência já existente (escrita pelo aprovador), preserva todos os demais campos
+intocados, e grava de volta só com `installed_sha256` preenchido. `checksum_sha256` nunca é tocado
+por este código — é sempre o valor que o aprovador gravou.
+
+**Ordem de campos e paridade byte-a-byte:** `installed_sha256` entra **logo após**
+`checksum_sha256` na ordem canônica de campos (`url`, `checksum_sha256`, `installed_sha256`,
+`installed_at`, `approved_by`, `review_reference`, `scope`, `marker_override`) — a mesma ordem nos 3
+CLIs (Go: ordem de declaração do struct `ProvenanceEntry`; Python:
+`provenance.py:_ENTRY_FIELD_ORDER`; Node: construção explícita do objeto em
+`commands/thirdparty.js`, deliberadamente **não** via spread de object, que apenas apenderia o campo
+no fim). `scripts/check-thirdparty-parity.sh` compara `thirdparty-provenance.json` byte a byte entre
+os 3 CLIs após um install real — essa ordem é o que garante que a comparação passe.
 - Claims sem `origin` (manifests legados, escritos antes deste campo existir) ou com
   `origin == ""` são tratados como catálogo e nunca são flagados — retrocompatibilidade explícita,
   testada nos 3 CLIs.

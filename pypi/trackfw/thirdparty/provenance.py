@@ -18,7 +18,13 @@ from .quarantine import _atomic_write
 
 # Bump only alongside a migration path — see load_provenance, which
 # refuses any other value.
-PROVENANCE_SCHEMA_VERSION = 1
+#
+# Bumped 1 -> 2 (ADR-2026-08-15 D2-bis, ML-3B) to add installed_sha256
+# (SHA-256 of the NORMALIZED bytes, computed at install time). checksum_sha256
+# (SHA-256 of the RAW bytes, the D8c approval anchor) is unchanged. No
+# migration path exists or is needed: at the time of the bump no provenance
+# file existed anywhere with schema_version 1.
+PROVENANCE_SCHEMA_VERSION = 2
 
 # Canonical field order of Go's ProvenanceEntry struct — provenance
 # entries, unlike quarantine records and reference entries (which this
@@ -31,6 +37,7 @@ PROVENANCE_SCHEMA_VERSION = 1
 _ENTRY_FIELD_ORDER = (
     "url",
     "checksum_sha256",
+    "installed_sha256",
     "installed_at",
     "approved_by",
     "review_reference",

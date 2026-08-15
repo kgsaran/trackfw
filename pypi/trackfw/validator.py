@@ -2576,18 +2576,22 @@ def validate_thirdparty_artifact_has_provenance(cwd: str = None) -> list:
     _RULE_DEFAULTS):
       1. um artifact do manifest carrega um claim com origin == "thirdparty" mas
          thirdparty-provenance.json não tem entrada chaveada por aquele destino;
-      2. existe entrada de proveniência, mas seu checksum_sha256 não pode ser reconciliado com o
+      2. existe entrada de proveniência, mas seu installed_sha256 não pode ser reconciliado com o
          que de fato está em disco no destino declarado.
 
-    Ramificação 2 — mesma imprecisão de D2 encontrada e resolvida na implementação Go (ver
-    internal/validator/validator_thirdparty_provenance.go's doc comment para a análise completa):
-    checksum_sha256 é sha256 dos bytes BRUTOS (D6), mas o arquivo instalado é
-    normalize_third_party_content(raw), que não é a função identidade em geral. A comparação
-    literal "sha256(arquivo instalado) == checksum_sha256" produziria falso-positivo em toda
-    instalação legítima cujo conteúdo bruto não fosse já exatamente strip+newline único.
-    Resolução: usar o registro de quarentena (que persiste após o install e não é git-ignored)
-    como ponte auditável entre os dois domínios — mesma leitura aplicada no Go e no Node, portada
-    aqui 1:1."""
+    Ramificação 2 (ADR-2026-08-15 D2-bis, ML-3B) — checksum_sha256 é sha256 dos bytes BRUTOS (D6),
+    mas o arquivo instalado é sempre normalize_third_party_content(raw), que não é a função
+    identidade em geral, então comparar checksum_sha256 direto contra sha256(arquivo instalado)
+    produz falso-positivo em toda instalação legítima cujo conteúdo bruto não fosse já exatamente
+    strip+newline único. A resolução ML-3A usava o registro de quarentena como ponte entre os dois
+    domínios — correta, mas tornava um artefato de ESTÁGIO (.trackfw/thirdparty-quarantine/,
+    destinado a ser podado) dependência obrigatória de um gate PERMANENTE. D2-bis resolve isso com
+    um segundo campo na entrada de proveniência, installed_sha256 = sha256(bytes NORMALIZADOS),
+    calculado no momento do install pelo mesmo código que grava o arquivo
+    (pypi/trackfw/commands/thirdparty.py). checksum_sha256 permanece intocado, é a âncora de
+    aprovação D8c. A ramificação 2 agora compara sha256(arquivo instalado) diretamente contra
+    entry["installed_sha256"] — dois domínios já normalizados, sem ponte via quarentena. A
+    ausência da quarentena deixou de ser erro desta regra."""
     from . import thirdparty as _thirdparty
 
     root = cwd or os.getcwd()
@@ -2642,33 +2646,7 @@ def validate_thirdparty_artifact_has_provenance(cwd: str = None) -> list:
             })
             continue
 
-        checksum_sha256 = entry.get("checksum_sha256", "")
-        try:
-            quarantine_entry = _thirdparty.read_quarantine(root, checksum_sha256)
-        except Exception as error:  # noqa: BLE001 - mirrors Go's single wrapped error
-            msgs.append({
-                "type": "violation",
-                "message": (
-                    f'thirdparty_artifact_has_provenance: "{destination}" has a provenance entry for checksum '
-                    f"{checksum_sha256}, but .trackfw/thirdparty-quarantine/{checksum_sha256}.json could not be "
-                    f"read ({error}) — the quarantine record is required to verify the approval against the "
-                    "installed content (D2 branch ii, fail-closed per D8f)"
-                ),
-            })
-            continue
-
-        raw_content = _thirdparty.decode_content(quarantine_entry)
-        if _thirdparty.checksum(raw_content) != checksum_sha256:
-            msgs.append({
-                "type": "violation",
-                "message": (
-                    f'thirdparty_artifact_has_provenance: "{destination}" — quarantine record for checksum '
-                    f"{checksum_sha256} is not self-consistent (recomputed checksum does not match its own "
-                    "filename); the record may have been hand-edited"
-                ),
-            })
-            continue
-
+        installed_sha256 = entry.get("installed_sha256", "")
         try:
             with open(destination, "rb") as fh:
                 installed = fh.read()
@@ -2682,15 +2660,14 @@ def validate_thirdparty_artifact_has_provenance(cwd: str = None) -> list:
             })
             continue
 
-        expected = _thirdparty.normalize_third_party_content(raw_content)
-        if installed != expected:
+        if _thirdparty.checksum(installed) != installed_sha256:
             msgs.append({
                 "type": "violation",
                 "message": (
-                    f'thirdparty_artifact_has_provenance: "{destination}" — installed content does not match the '
-                    f"checksum {checksum_sha256} approved in .trackfw/thirdparty-provenance.json (verified via its "
-                    "quarantine record) — the artifact was modified after approval or installed outside the "
-                    "fetch/install flow (D2 branch ii)"
+                    f'thirdparty_artifact_has_provenance: "{destination}" — installed content does not match '
+                    f"installed_sha256 {installed_sha256} recorded in .trackfw/thirdparty-provenance.json — the "
+                    "artifact was modified after approval or installed outside the fetch/install flow "
+                    "(D2 branch ii, D2-bis)"
                 ),
             })
 

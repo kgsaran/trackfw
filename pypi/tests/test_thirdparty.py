@@ -205,7 +205,7 @@ def test_read_quarantine_missing_file_is_always_an_error(tmp_path):
 
 def test_load_provenance_missing_file_returns_empty(tmp_path):
     prov = thirdparty_pkg.load_provenance(str(tmp_path))
-    assert prov == {"schema_version": 1, "entries": {}}
+    assert prov == {"schema_version": 2, "entries": {}}
 
 
 def test_verify_approval_missing_entry_fails_closed(tmp_path):

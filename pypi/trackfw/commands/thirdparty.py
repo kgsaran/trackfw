@@ -393,6 +393,22 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
         )
     manager.install(plans, force=False)
 
+    # D2-bis — record installed_sha256 (SHA-256 of the NORMALIZED bytes
+    # just installed) on each destination's existing provenance entry, now
+    # that the install actually succeeded. checksum_sha256 (the raw-bytes
+    # D8c approval anchor, written externally by the approver) is left
+    # untouched — only installed_sha256 is added/overwritten.
+    # rt["destination"] is already the provenance key: the
+    # project-root-relative (pre-resolve) string
+    # resolve_third_party_skill_destination returns, the same value
+    # verify_approval was just called with above.
+    installed_sha256 = thirdparty.checksum(normalized)
+    for rt in resolved_targets:
+        prov = thirdparty.load_provenance(project_root)
+        prov_entry = dict(prov["entries"].get(rt["destination"], {}))
+        prov_entry["installed_sha256"] = installed_sha256
+        thirdparty.upsert_provenance_entry(project_root, rt["destination"], prov_entry)
+
     # D5 — attach references to the requested catalog agent artifacts, at
     # the SAME scope as the skill file just installed. Preconditions were
     # already validated above, before the skill file was written — this

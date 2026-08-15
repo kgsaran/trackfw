@@ -49,18 +49,27 @@ func writeThirdPartyManifest(t *testing.T, root, destination, origin string) {
 // absolute destination. Verified empirically against the real install
 // command (see this ML's delivery report); do not "fix" this back to an
 // absolute key, it would silently break the rule.
-func writeThirdPartyProvenance(t *testing.T, root, destination, checksum string) {
+//
+// checksum is the D6 raw-bytes approval anchor (checksum_sha256);
+// installedSHA256 is the D2-bis field branch (ii) actually checks against
+// the installed file's own hash. Callers that only exercise branch (i), or
+// that intentionally want branch (ii) to diverge, pass whichever value
+// their scenario needs — the two are deliberately independent parameters,
+// never derived from one another, matching production where one is written
+// by the external approver and the other by the install command.
+func writeThirdPartyProvenance(t *testing.T, root, destination, checksum, installedSHA256 string) {
 	t.Helper()
 	relDest, err := filepath.Rel(root, destination)
 	if err != nil {
 		t.Fatalf("filepath.Rel: %v", err)
 	}
 	prov := map[string]interface{}{
-		"schema_version": 1,
+		"schema_version": 2,
 		"entries": map[string]interface{}{
 			relDest: map[string]interface{}{
 				"url":              "https://example.com/skill.md",
 				"checksum_sha256":  checksum,
+				"installed_sha256": installedSHA256,
 				"installed_at":     "2026-08-15T00:00:00Z",
 				"approved_by":      "hades-tf",
 				"review_reference": "docs/seguranca/example.md",
@@ -238,15 +247,21 @@ func destinationEnsureDir(t *testing.T, destination string) string {
 }
 
 // TestThirdPartyArtifactHasProvenance_BranchII_LegitimateInstallDoesNotFalsePositive
-// is the test the advisor flagged as load-bearing: raw fetched content that
-// is NOT already canonical (trailing blank line) must still validate clean
-// when the destination holds exactly NormalizeThirdPartyContent(raw) — the
-// real output of a correct install. A naive "hash the installed file and
-// compare to checksum_sha256" implementation FAILS this test, because
-// checksum_sha256 is sha256(raw), not sha256(normalized). Do not weaken this
-// fixture to already-canonical content; that would hide the exact bug this
-// rule's resolution exists to avoid (see this file's package doc / ML-3A
-// delivery report and docs/roadmaps/.trackfw-attention.json history).
+// is the test the advisor flagged as load-bearing (ML-3A) and D2-bis
+// (ML-3B) preserves: raw fetched content that is NOT already canonical
+// (leading/trailing blank lines) must still validate clean when the
+// destination holds exactly NormalizeThirdPartyContent(raw) and the
+// provenance entry's installed_sha256 is sha256 of THAT normalized content
+// — the real output of a correct install. A naive "hash the installed file
+// and compare to checksum_sha256" implementation FAILS this test, because
+// checksum_sha256 is sha256(raw), not sha256(normalized); this fixture
+// deliberately keeps checksum_sha256 and installed_sha256 at DIFFERENT
+// values (sha256(raw) vs sha256(normalized)) to prove branch (ii) is
+// comparing against installed_sha256, not checksum_sha256. No quarantine
+// record is written anywhere in this test — D2-bis's whole point is that
+// branch (ii) no longer touches the quarantine directory. Do not weaken
+// this fixture to already-canonical content; that would hide the exact bug
+// this rule's resolution exists to avoid (see this file's package doc).
 func TestThirdPartyArtifactHasProvenance_BranchII_LegitimateInstallDoesNotFalsePositive(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
@@ -258,14 +273,20 @@ func TestThirdPartyArtifactHasProvenance_BranchII_LegitimateInstallDoesNotFalseP
 	if string(raw) == string(normalized) {
 		t.Fatal("test fixture is not actually testing the raw/normalized divergence")
 	}
+	checksumOfRaw := sha256HexForTest(raw)
+	installedSHA256 := sha256HexForTest(normalized)
+	if checksumOfRaw == installedSHA256 {
+		t.Fatal("test fixture must keep checksum_sha256 and installed_sha256 distinct")
+	}
 
-	checksum := writeThirdPartyQuarantine(t, root, raw)
 	destination := filepath.Join(root, "skills", "thirdparty", "example.md")
 	if err := os.WriteFile(destinationEnsureDir(t, destination), normalized, 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	writeThirdPartyManifest(t, root, destination, "thirdparty")
-	writeThirdPartyProvenance(t, root, destination, checksum)
+	writeThirdPartyProvenance(t, root, destination, checksumOfRaw, installedSHA256)
+	// No quarantine directory exists at all — proves branch (ii) does not
+	// depend on it (D2-bis).
 
 	msgs, err := validateThirdPartyArtifactHasProvenance()
 	if err != nil {
@@ -282,16 +303,19 @@ func TestThirdPartyArtifactHasProvenance_BranchII_TamperedAfterApprovalIsCaught(
 	root := resolvedRootForTest(t, dir)
 
 	raw := []byte("# hello\n\nsome content\n")
-	checksum := writeThirdPartyQuarantine(t, root, raw)
+	normalized := []byte(strings.TrimSpace(string(raw)) + "\n")
+	installedSHA256 := sha256HexForTest(normalized)
+
 	destination := filepath.Join(root, "skills", "thirdparty", "example.md")
-	// Installed content diverges from NormalizeThirdPartyContent(raw) — as
-	// if someone hand-edited the file after approval.
+	// Installed content diverges from what installed_sha256 was recorded
+	// for — as if someone hand-edited the file after approval. No
+	// quarantine record exists anywhere in this test (D2-bis).
 	tampered := []byte("# hello\n\nTAMPERED CONTENT\n")
 	if err := os.WriteFile(destinationEnsureDir(t, destination), tampered, 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	writeThirdPartyManifest(t, root, destination, "thirdparty")
-	writeThirdPartyProvenance(t, root, destination, checksum)
+	writeThirdPartyProvenance(t, root, destination, sha256HexForTest(raw), installedSHA256)
 
 	msgs, err := validateThirdPartyArtifactHasProvenance()
 	if err != nil {
@@ -305,7 +329,17 @@ func TestThirdPartyArtifactHasProvenance_BranchII_TamperedAfterApprovalIsCaught(
 	}
 }
 
-func TestThirdPartyArtifactHasProvenance_BranchII_MissingQuarantineFailsClosed(t *testing.T) {
+// TestThirdPartyArtifactHasProvenance_BranchII_MissingInstalledSHA256IsCaught
+// covers the reachable state of an approver-authored provenance entry
+// (D10.2) that has never been through `install` — installed_sha256 is
+// ABSENT from the JSON entirely, not merely empty. This is mostly a
+// Go/Node/Python parity anchor: Node's naive `entry.installed_sha256` on a
+// missing key is `undefined`, which — if interpolated directly into the
+// violation message instead of coerced to "" first — renders the JS-only
+// literal "undefined" where Go and Python render an empty string, breaking
+// byte parity. This test pins the message text so that regression cannot
+// land silently.
+func TestThirdPartyArtifactHasProvenance_BranchII_MissingInstalledSHA256IsCaught(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
 	root := resolvedRootForTest(t, dir)
@@ -315,18 +349,119 @@ func TestThirdPartyArtifactHasProvenance_BranchII_MissingQuarantineFailsClosed(t
 		t.Fatalf("write: %v", err)
 	}
 	writeThirdPartyManifest(t, root, destination, "thirdparty")
-	// Provenance entry references a checksum with no matching quarantine
-	// record on disk (e.g. the quarantine directory was pruned).
-	writeThirdPartyProvenance(t, root, destination, strings.Repeat("a", 64))
+
+	// Hand-authored: no "installed_sha256" key at all, exactly what an
+	// approver (never having run `install`) would write.
+	relDest, err := filepath.Rel(root, destination)
+	if err != nil {
+		t.Fatalf("filepath.Rel: %v", err)
+	}
+	prov := map[string]interface{}{
+		"schema_version": 2,
+		"entries": map[string]interface{}{
+			relDest: map[string]interface{}{
+				"url":              "https://example.com/skill.md",
+				"checksum_sha256":  strings.Repeat("a", 64),
+				"installed_at":     "2026-08-15T00:00:00Z",
+				"approved_by":      "hades-tf",
+				"review_reference": "docs/seguranca/example.md",
+				"scope":            "project",
+				"marker_override":  false,
+			},
+		},
+	}
+	writeJSONFile(t, filepath.Join(root, ".trackfw", "thirdparty-provenance.json"), prov)
 
 	msgs, err := validateThirdPartyArtifactHasProvenance()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(msgs) != 1 {
-		t.Fatalf("expected exactly 1 violation (fail-closed), got %d: %v", len(msgs), msgs)
+		t.Fatalf("expected exactly 1 violation, got %d: %v", len(msgs), msgs)
 	}
-	if !strings.Contains(msgs[0], "D8f") {
-		t.Fatalf("expected message to reference fail-closed D8f, got: %s", msgs[0])
+	if strings.Contains(msgs[0], "undefined") {
+		t.Fatalf("message must not contain the JS-only literal 'undefined': %s", msgs[0])
+	}
+	if !strings.Contains(msgs[0], "installed_sha256  recorded") {
+		t.Fatalf("expected empty installed_sha256 rendered as an empty string, got: %s", msgs[0])
+	}
+}
+
+// TestThirdPartyArtifactHasProvenance_BranchII_QuarantineDeletionDoesNotBreakCleanInstall
+// and its sibling below are the load-bearing tests ML-3B exists for
+// (ADR-2026-08-15 D2-bis): they reproduce the exact scenario the ML-3A
+// design got wrong — build a REAL end-to-end state including a quarantine
+// record (as `fetch` would leave it), then delete
+// .trackfw/thirdparty-quarantine/ ENTIRELY, and confirm branch (ii) still
+// works correctly. This replaces
+// TestThirdPartyArtifactHasProvenance_BranchII_MissingQuarantineFailsClosed
+// (ML-3A), whose entire premise — that a missing quarantine record must
+// fail validate closed — was the footgun D2-bis was written to remove: a
+// STAGING directory (name, shape, and location of a directory meant to be
+// pruned) can no longer be a hard, unrecoverable dependency of a PERMANENT
+// gate. There is no D8f fail-closed case left in branch (ii) for a missing
+// quarantine record, because branch (ii) does not read the quarantine
+// directory at all anymore.
+func TestThirdPartyArtifactHasProvenance_BranchII_QuarantineDeletionDoesNotBreakCleanInstall(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	root := resolvedRootForTest(t, dir)
+
+	raw := []byte("\n# hello\n\nsome content\n\n\n") // non-canonical, same as above
+	normalized := []byte(strings.TrimSpace(string(raw)) + "\n")
+	checksumOfRaw := writeThirdPartyQuarantine(t, root, raw) // real quarantine record, as `fetch` would write it
+
+	destination := filepath.Join(root, "skills", "thirdparty", "example.md")
+	if err := os.WriteFile(destinationEnsureDir(t, destination), normalized, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	writeThirdPartyManifest(t, root, destination, "thirdparty")
+	writeThirdPartyProvenance(t, root, destination, checksumOfRaw, sha256HexForTest(normalized))
+
+	// Delete the ENTIRE quarantine directory — the ML-3B acceptance
+	// criterion, verbatim.
+	if err := os.RemoveAll(filepath.Join(root, ".trackfw", "thirdparty-quarantine")); err != nil {
+		t.Fatalf("RemoveAll quarantine: %v", err)
+	}
+
+	msgs, err := validateThirdPartyArtifactHasProvenance()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("a genuinely clean install must not be flagged just because the quarantine directory was pruned, got: %v", msgs)
+	}
+}
+
+func TestThirdPartyArtifactHasProvenance_BranchII_QuarantineDeletionStillDetectsTamper(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	root := resolvedRootForTest(t, dir)
+
+	raw := []byte("# hello\n\nsome content\n")
+	normalized := []byte(strings.TrimSpace(string(raw)) + "\n")
+	checksumOfRaw := writeThirdPartyQuarantine(t, root, raw)
+
+	destination := filepath.Join(root, "skills", "thirdparty", "example.md")
+	tampered := []byte("# hello\n\nTAMPERED CONTENT\n")
+	if err := os.WriteFile(destinationEnsureDir(t, destination), tampered, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	writeThirdPartyManifest(t, root, destination, "thirdparty")
+	writeThirdPartyProvenance(t, root, destination, checksumOfRaw, sha256HexForTest(normalized))
+
+	if err := os.RemoveAll(filepath.Join(root, ".trackfw", "thirdparty-quarantine")); err != nil {
+		t.Fatalf("RemoveAll quarantine: %v", err)
+	}
+
+	msgs, err := validateThirdPartyArtifactHasProvenance()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("tamper detection must survive quarantine deletion, got %d violations: %v", len(msgs), msgs)
+	}
+	if !strings.Contains(msgs[0], "D2 branch ii") {
+		t.Fatalf("expected message to reference D2 branch ii, got: %s", msgs[0])
 	}
 }

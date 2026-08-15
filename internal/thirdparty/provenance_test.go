@@ -13,6 +13,7 @@ func TestProvenanceRoundTripPreservesAllFields(t *testing.T) {
 	entry := ProvenanceEntry{
 		URL:             "https://example.com/skill.md",
 		ChecksumSHA256:  "abc123",
+		InstalledSHA256: "def456",
 		InstalledAt:     "2026-08-15T14:32:00Z",
 		ApprovedBy:      "hades-tf",
 		ReviewReference: "docs/seguranca/2026-08-15-skill-de-terceiro.md",
@@ -28,8 +29,8 @@ func TestProvenanceRoundTripPreservesAllFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProvenance: %v", err)
 	}
-	if prov.SchemaVersion != 1 {
-		t.Errorf("SchemaVersion = %d, want 1", prov.SchemaVersion)
+	if prov.SchemaVersion != 2 {
+		t.Errorf("SchemaVersion = %d, want 2", prov.SchemaVersion)
 	}
 	got, ok := prov.Entries["apolo-tf/skills/thirdparty/x.md"]
 	if !ok {
@@ -74,8 +75,8 @@ func TestLoadProvenanceMissingFileIsEmptyNotError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProvenance on missing file: %v", err)
 	}
-	if prov.SchemaVersion != 1 {
-		t.Errorf("SchemaVersion = %d, want 1", prov.SchemaVersion)
+	if prov.SchemaVersion != 2 {
+		t.Errorf("SchemaVersion = %d, want 2", prov.SchemaVersion)
 	}
 	if len(prov.Entries) != 0 {
 		t.Errorf("Entries = %v, want empty", prov.Entries)
@@ -97,19 +98,25 @@ func TestLoadProvenanceMalformedJSONIsError(t *testing.T) {
 	}
 }
 
+// TestLoadProvenanceUnsupportedSchemaVersionIsError uses schema_version 1
+// deliberately — the AC for the 1->2 bump (ML-3B, D2-bis) is "version 1
+// refused, fail-closed", and 1 is the version a stale working copy could
+// plausibly still have on disk (a provenance file written before this
+// bump), unlike an arbitrary future number. Still discriminating: 1 !=
+// provenanceSchemaVersion (2).
 func TestLoadProvenanceUnsupportedSchemaVersionIsError(t *testing.T) {
 	root := t.TempDir()
 	path := ProvenancePath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	body := `{"schema_version":2,"entries":{}}`
+	body := `{"schema_version":1,"entries":{}}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
 	if _, err := LoadProvenance(root); err == nil {
-		t.Fatal("expected error for schema_version 2, got nil")
+		t.Fatal("expected error for schema_version 1, got nil")
 	}
 }
 

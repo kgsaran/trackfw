@@ -445,6 +445,36 @@ func executeThirdPartyInstall(cmd *cobra.Command, kind integrations.ItemKind, op
 		return err
 	}
 
+	// D2-bis — record InstalledSHA256 (SHA-256 of the NORMALIZED bytes,
+	// i.e. sha256(normalized) above) on each destination's existing
+	// provenance entry, now that the install actually succeeded. This is
+	// computed by this exact code path, the same one that just wrote
+	// `normalized` to disk via manager.Install — see provenance.go's
+	// ProvenanceEntry doc for why this must be a distinct field from
+	// ChecksumSHA256 (the raw-bytes approval anchor, written externally by
+	// the approver and never touched here). Only InstalledSHA256 changes;
+	// every other field the approver wrote (url, checksum_sha256,
+	// approved_by, review_reference, scope, marker_override) is preserved
+	// verbatim by loading the entry first and mutating only this one field.
+	// rt.destination is already the provenance key: the
+	// project-root-relative (pre-Manager.resolve()) string
+	// ResolveThirdPartySkillDestination returns — the same value
+	// VerifyApproval was just called with above, NOT the absolute manifest
+	// destination (see this file's doc / docs/cli-parity.md "Nota de
+	// paridade crítica" for why those two domains must not be confused).
+	installedSHA256 := thirdparty.Checksum(normalized)
+	for _, rt := range resolvedTargets {
+		prov, err := thirdparty.LoadProvenance(manager.ProjectRoot)
+		if err != nil {
+			return err
+		}
+		provEntry := prov.Entries[rt.destination]
+		provEntry.InstalledSHA256 = installedSHA256
+		if err := thirdparty.UpsertProvenanceEntry(manager.ProjectRoot, rt.destination, provEntry); err != nil {
+			return err
+		}
+	}
+
 	// D5 — attach references to the requested catalog agent artifacts, at
 	// the SAME scope as the skill file just installed. Preconditions
 	// (installed, owned, not hand-modified, at this exact scope) were

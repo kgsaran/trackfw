@@ -10,15 +10,46 @@ import (
 // provenanceSchemaVersion is the schema_version written to and required by
 // the provenance file. Bump only alongside a migration path — see
 // LoadProvenance, which refuses any other value.
-const provenanceSchemaVersion = 1
+//
+// Bumped 1 -> 2 (ADR-2026-08-15 D2-bis, ML-3B) to add InstalledSHA256. No
+// migration path exists or is needed: at the time of the bump this feature
+// had not shipped, so no provenance file existed anywhere with
+// schema_version 1 — correcting at the source was free. LoadProvenance
+// still refuses any version other than the current one, fail-closed.
+const provenanceSchemaVersion = 2
 
 // ProvenanceEntry records how one destination came to hold third-party
-// content: which URL it came from, the checksum that was actually
-// installed, who approved it, and a reference to the human review that
-// justified the approval (D6).
+// content: which URL it came from, the checksum the approver reviewed, the
+// checksum of what was actually written to disk, who approved it, and a
+// reference to the human review that justified the approval (D6).
+//
+// Two different checksums live on this struct, in two different domains,
+// and D2-bis exists specifically because conflating them produces a
+// systematic false positive:
+//
+//   - ChecksumSHA256 — SHA-256 of the RAW bytes fetched from the network,
+//     before any normalization (D6). This is the approval anchor (D8c): it
+//     is the exact byte sequence hades-tf (or another approver) reviewed
+//     and is never touched by the install step. Written by the external
+//     approver, not by any subcommand — see D10.2.
+//   - InstalledSHA256 — SHA-256 of the NORMALIZED bytes
+//     (integrations.NormalizeThirdPartyContent, i.e. TrimSpace(raw)+"\n"),
+//     computed by executeThirdPartyInstall at install time, by the exact
+//     same code path that writes the destination file. This is what
+//     validateThirdPartyArtifactHasProvenance's branch (ii) compares
+//     against the installed file's own hash — same domain on both sides,
+//     no bridge artifact (like the quarantine record) required.
+//
+// Comparing ChecksumSHA256 directly against sha256(installed file) — the
+// literal reading of ADR-2026-08-15 D2's branch (ii) text — is WRONG: the
+// installed file is always normalized, so any raw content that was not
+// already exactly TrimSpace+"\n" (the common case: any file with a trailing
+// blank line) would false-positive as "tampered" on every validate run.
+// InstalledSHA256 exists to make branch (ii) compare like domains.
 type ProvenanceEntry struct {
 	URL             string `json:"url"`
 	ChecksumSHA256  string `json:"checksum_sha256"`
+	InstalledSHA256 string `json:"installed_sha256"`
 	InstalledAt     string `json:"installed_at"`
 	ApprovedBy      string `json:"approved_by"`
 	ReviewReference string `json:"review_reference"`

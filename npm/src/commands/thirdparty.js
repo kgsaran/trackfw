@@ -14,7 +14,7 @@ const { buildPlans, IntegrationManager } = require('../integrations')
 const thirdPartyFetchModule = require('../thirdparty/fetch')
 const { checkMarkers, checksum: sha256hex } = require('../thirdparty/markers')
 const { quarantinePath, newQuarantineEntry, writeQuarantine, readQuarantine, decodeContent } = require('../thirdparty/quarantine')
-const { loadProvenance, verifyApproval } = require('../thirdparty/provenance')
+const { loadProvenance, verifyApproval, upsertProvenanceEntry } = require('../thirdparty/provenance')
 const { upsertThirdPartyReference, normalizeThirdPartyContent, resolveThirdPartySkillDestination } = require('../thirdparty/references')
 
 // api is the module.exports object itself, referenced internally via
@@ -270,6 +270,42 @@ async function executeThirdPartyInstall(kind, options) {
     supportLevel: 'native',
   }))
   manager.install(plans, {})
+
+  // D2-bis — record installed_sha256 (SHA-256 of the NORMALIZED bytes just
+  // installed) on each destination's existing provenance entry, now that
+  // the install actually succeeded. checksum_sha256 (the raw-bytes D8c
+  // approval anchor, written externally by the approver) is left
+  // untouched — only installed_sha256 is added/overwritten. rt.destination
+  // is already the provenance key: the project-root-relative (pre-resolve)
+  // string resolveThirdPartySkillDestination returns, the same value
+  // verifyApproval was just called with above.
+  // Field order matters here for cross-CLI byte parity
+  // (scripts/check-thirdparty-parity.sh diffs thirdparty-provenance.json
+  // verbatim): url, checksum_sha256, installed_sha256, installed_at,
+  // approved_by, review_reference, scope, marker_override — mirrors Go's
+  // ProvenanceEntry struct field order and Python's _ENTRY_FIELD_ORDER
+  // (provenance.py), NOT plain object-spread insertion order (which would
+  // append installed_sha256 at the end instead of right after
+  // checksum_sha256).
+  const installedSHA256 = sha256hex(normalized)
+  for (const rt of resolvedTargets) {
+    const prov = loadProvenance(projectRoot)
+    const existing = prov.entries[rt.destination] || {}
+    const provEntry = {
+      url: existing.url,
+      checksum_sha256: existing.checksum_sha256,
+      installed_sha256: installedSHA256,
+      installed_at: existing.installed_at,
+      approved_by: existing.approved_by,
+      review_reference: existing.review_reference,
+      scope: existing.scope,
+      marker_override: existing.marker_override,
+    }
+    for (const key of Object.keys(provEntry)) {
+      if (provEntry[key] === undefined) delete provEntry[key]
+    }
+    upsertProvenanceEntry(projectRoot, rt.destination, provEntry)
+  }
 
   // D5 — attach references to the requested catalog agent artifacts, at
   // the SAME scope as the skill file just installed. Preconditions were
