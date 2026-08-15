@@ -15910,3 +15910,15 @@ parity gates (`check-agent-hooks-parity.sh`, `check-harness-hooks-parity.sh`,
 18 commits (todos via `bin/trackfw commit`, nenhum `git commit` bruto na main).
 
 Próximo passo: `trackfw ship` para push + abertura de PR.
+
+## Sessão 2026-08-15 — Zeus (arquiteto) — corpo de PR pobre, corrigido + REQ nova
+
+PR #169 abriu com título/corpo mínimos (`trackfw ship`'s `buildPRBody` ignora todo o
+histórico de commits da branch, usa só `firstLine` da mensagem `-m` daquela chamada).
+Confirmado no código (`internal/commands/ship.go`) que isso não é decisão documentada em
+`ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md` — lacuna de implementação. Corrigi o
+PR manualmente via `gh pr edit --title ... --body-file ...` com resumo completo do
+trabalho. Criei REQ+roadmap em `backlog/`
+(`REQ-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-...md`) para implementar isso de
+verdade no `trackfw ship` (agregar `git log <base>..HEAD` nos 3 CLIs), a ser feito
+depois que o usuário decidir a prioridade.
