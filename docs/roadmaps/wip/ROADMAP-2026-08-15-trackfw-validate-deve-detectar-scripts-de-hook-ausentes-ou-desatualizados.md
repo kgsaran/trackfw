@@ -49,7 +49,7 @@ qualquer gap detectado sempre instrua o comando de correção, nunca só reporte
 > Dependências: nenhuma
 
 ### ML-1A — Generalizar `credential_guard_hook_resolvable` + `credential_guard_script_integrity` para git-branch-guard
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:**
 - `internal/validator/validator_credential_guard.go` (ou arquivo novo
   `validator_git_branch_guard.go`, espelhando o padrão — decisão do ML: preferir
