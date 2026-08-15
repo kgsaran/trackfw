@@ -198,7 +198,7 @@ confirmada pelo orquestrador contra o binário Go nos 4 cenários. `find_version
 > Dependências: Wave 2 completa
 
 ### ML-3A — Paridade e teste manual end-to-end
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** nenhum novo (pode incluir `scripts/check-changelog-parity.sh`
 se o ML julgar necessário um gate de paridade dedicado, seguindo o padrão de
 `scripts/check-commit-parity.sh` já existente — decisão do ML)
