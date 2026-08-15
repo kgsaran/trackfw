@@ -41,6 +41,15 @@ COMMIT_PROTECTED_BRANCHES = {"main", "master"}
 # regra de governança branch_has_wip_roadmap.
 COMMIT_GOVERNED_PREFIXES = ("feat/", "fix/", "refactor/")
 
+# Diretórios (nos 3 CLIs suportados) onde um arquivo novo (status "A") sinaliza
+# que um novo comando de CLI foi adicionado — usado pela regra heurística
+# "feat" abaixo. Espelha commitCommandDirs em internal/commands/commit.go.
+COMMIT_COMMAND_DIRS = (
+    "internal/commands/",
+    "npm/src/commands/",
+    "pypi/trackfw/commands/",
+)
+
 
 # ────────────────────────────────────────────────────────────────────────────
 # Registro do subcomando
@@ -66,6 +75,12 @@ def register(subparsers):
             "requiring a roadmap — a warning is logged, but the commit proceeds.\n"
             "  4. When allowed: runs 'git commit -m <message>', propagating Git's own output "
             "and exit status literally.\n\n"
+            "'--suggest' takes a completely separate path: it prints a heuristic Conventional "
+            "Commits skeleton built from 'git diff --cached --name-status' (type + staged file "
+            "list) and exits without ever committing — no LLM call, just a structural "
+            "heuristic. It is not a ready-to-use message; review and edit before using it with "
+            "-m. When '--suggest' is set, '-m' (if also passed) is ignored and no commit ever "
+            "happens.\n\n"
             "Create the governance artifacts first if this blocks you:\n"
             "  trackfw req new \"title\"\n"
             "  trackfw roadmap new \"title\"\n"
@@ -77,6 +92,15 @@ def register(subparsers):
         "--message",
         default="",
         help="Commit message (required)",
+    )
+    commit_parser.add_argument(
+        "--suggest",
+        action="store_true",
+        default=False,
+        help=(
+            "Print a heuristic Conventional Commits message skeleton from staged files and "
+            "exit without committing (ignores -m)"
+        ),
     )
     commit_parser.set_defaults(func=_dispatch)
     return commit_parser
@@ -108,6 +132,134 @@ def _default_git_commit(message: str) -> int:
     user unmodified. Returns Git's exit code, propagated literally."""
     result = subprocess.run(["git", "commit", "-m", message])
     return result.returncode
+
+
+def _default_staged_name_status() -> tuple[str, str | None]:
+    """Runs `git diff --cached --name-status` and returns (raw_output, error_or_None)."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--name-status"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return ("", result.stderr.strip() or "git diff --cached --name-status failed")
+        return (result.stdout, None)
+    except FileNotFoundError:
+        return ("", "git not found in PATH")
+    except Exception as e:  # noqa: BLE001
+        return ("", str(e))
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# --suggest: heurística de mensagem de commit a partir do diff staged
+# ────────────────────────────────────────────────────────────────────────────
+
+def parse_staged_name_status(raw: str) -> list[tuple[str, str]]:
+    """Parses raw `git diff --cached --name-status` output (linhas
+    "<status>\\t<path>" separadas por tab) em pares (status, path), pulando linhas
+    em branco. Espelha parseStagedNameStatus em internal/commands/commit.go."""
+    files: list[tuple[str, str]] = []
+    for line in raw.split("\n"):
+        line = line.rstrip("\r")
+        if not line.strip():
+            continue
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        files.append((parts[0].strip(), parts[1]))
+    return files
+
+
+def is_test_file(path: str) -> bool:
+    """Reports whether path matches one of the recognized test-file naming conventions
+    across the 3 supported stacks: *_test.go, *.test.js, test_*.py, *_test.py."""
+    base = path.rsplit("/", 1)[-1]
+    if base.endswith("_test.go"):
+        return True
+    if base.endswith(".test.js"):
+        return True
+    if base.startswith("test_") and base.endswith(".py"):
+        return True
+    if base.endswith("_test.py"):
+        return True
+    return False
+
+
+def is_docs_file(path: str) -> bool:
+    """Reports whether path lives under docs/ or vault/, or has a .md extension."""
+    if path.startswith("docs/") or path.startswith("vault/"):
+        return True
+    return path.endswith(".md")
+
+
+def is_under_any_dir(path: str, dirs) -> bool:
+    """Reports whether path starts with any of the given directory prefixes."""
+    return any(path.startswith(d) for d in dirs)
+
+
+def suggested_commit_type(files: list[tuple[str, str]]) -> str:
+    """Returns the Conventional Commits type suggested for a set of staged files, following
+    the fixed-priority heuristic documented in ML-1A of
+    docs/roadmaps/wip/ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md
+    (first matching rule wins — this is a deliberately simple heuristic, not an attempt at
+    perfect classification). Espelha suggestedCommitType em internal/commands/commit.go:
+      1. every staged file matches a test-file pattern -> "test"
+      2. every staged file is under docs/ or vault/, or has a .md extension -> "docs"
+      3. at least one new ("A") file lives under one of COMMIT_COMMAND_DIRS -> "feat"
+      4. otherwise -> "fix"
+    """
+    all_tests = True
+    all_docs = True
+    has_new_command_file = False
+
+    for status, path in files:
+        if not is_test_file(path):
+            all_tests = False
+        if not is_docs_file(path):
+            all_docs = False
+        if status == "A" and is_under_any_dir(path, COMMIT_COMMAND_DIRS):
+            has_new_command_file = True
+
+    if all_tests:
+        return "test"
+    if all_docs:
+        return "docs"
+    if has_new_command_file:
+        return "feat"
+    return "fix"
+
+
+def build_suggested_message(staged_name_status=None) -> tuple[str, str | None]:
+    """Implements `trackfw commit --suggest`: reads the staged diff via staged_name_status,
+    classifies it with suggested_commit_type, and renders the heuristic Conventional Commits
+    skeleton described in ML-1A. It never calls exec_git_commit — no commit ever happens as a
+    side effect of this function. Espelha buildSuggestedMessage em
+    internal/commands/commit.go. Returns (message, error_or_None)."""
+    staged_name_status = staged_name_status or _default_staged_name_status
+
+    raw, err = staged_name_status()
+    if err is not None:
+        return ("", f"could not read staged changes (are you in a git repo?): {err}")
+
+    files = parse_staged_name_status(raw)
+    if not files:
+        return ("", "nothing staged — `git add` files first")
+
+    commit_type = suggested_commit_type(files)
+
+    lines = [
+        "# Sugestão heurística — NÃO é uma mensagem pronta, revise antes de usar.",
+        f"# Tipo sugerido: {commit_type}",
+        "",
+        f"{commit_type}(<escopo>): <descrição>",
+        "",
+        "## Arquivos staged",
+    ]
+    for status, path in files:
+        lines.append(f"{status}  {path}")
+
+    return ("\n".join(lines), None)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -207,6 +359,16 @@ def run_commit(
 
 
 def _dispatch(args):
+    # --suggest vence mesmo se -m também foi passado: toma um caminho completamente
+    # separado e nunca chega em run_commit/git commit real.
+    if getattr(args, "suggest", False):
+        message, err = build_suggested_message()
+        if err is not None:
+            sys.stderr.write(err + "\n")
+            sys.exit(1)
+        sys.stdout.write(message + "\n")
+        sys.exit(0)
+
     if not args.message.strip():
         sys.stderr.write(
             'commit message is required — use -m:\n'

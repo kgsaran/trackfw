@@ -6,7 +6,7 @@
 // ../commit/runner.js (mirrors the branch.js / branch/runner.js split already used in this CLI).
 
 const { Command } = require('commander')
-const { runCommit } = require('../commit/runner')
+const { runCommit, buildSuggestedMessage } = require('../commit/runner')
 
 function createCommitCommand() {
   const cmd = new Command('commit')
@@ -24,13 +24,30 @@ function createCommitCommand() {
       '     roadmap — a warning is logged, but the commit proceeds.\n' +
       "  4. When allowed: runs 'git commit -m <message>', propagating Git's own output and exit\n" +
       '     status literally.\n\n' +
+      "'--suggest' takes a completely separate path: it prints a heuristic Conventional Commits\n" +
+      "skeleton built from 'git diff --cached --name-status' (type + staged file list) and exits\n" +
+      'without ever committing — no LLM call, just a structural heuristic. It is not a\n' +
+      'ready-to-use message; review and edit before using it with -m. When \'--suggest\' is set,\n' +
+      "'-m' (if also passed) is ignored and no commit ever happens.\n\n" +
       'Create the governance artifacts first if this blocks you:\n' +
       '  trackfw req new "title"\n' +
       '  trackfw roadmap new "title"\n' +
       '  trackfw roadmap move <name> wip'
     )
     .option('-m, --message <msg>', 'Commit message (required)')
+    .option('--suggest', 'Print a heuristic Conventional Commits message skeleton from staged files and exit without committing (ignores -m)')
     .action((options) => {
+      if (options.suggest) {
+        try {
+          const suggestion = buildSuggestedMessage({})
+          process.stdout.write(suggestion + '\n')
+          return
+        } catch (err) {
+          process.stderr.write(err.message + '\n')
+          process.exit(1)
+        }
+      }
+
       const exitCode = runCommit(options.message || '', {})
       if (exitCode !== 0) {
         process.exit(exitCode)
