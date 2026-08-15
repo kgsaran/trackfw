@@ -65,6 +65,10 @@ func Scaffold(cfg Config) error {
 		return err
 	}
 
+	if err := GenerateGitBranchGuardScript(""); err != nil {
+		return err
+	}
+
 	if err := generateCIWorkflow(cfg); err != nil {
 		return err
 	}
@@ -1102,6 +1106,216 @@ const credentialGuardScript = credentialGuardHeader + credentialGuardProjectGuar
 // MODE/ROADMAP_DIR (credentialGuardGlobalTail) e a ausência da guarda de "dentro de projeto trackfw"
 // diferem. Ver credentialGuardGlobalTail para a decisão de design completa.
 const globalCredentialGuardScript = credentialGuardHeader + credentialGuardDetectionCore + credentialGuardGlobalTail
+
+// GenerateGitBranchGuardScript gera o script shell trackfw-git-branch-guard.sh em
+// <rootDir>/scripts. Se rootDir for "", usa o diretório de trabalho atual. Este ML (1A) só cria o
+// script canônico (referência Go) — não o injeta em nenhum hooks.json/settings.json de CLI (isso é
+// escopo da Wave 3, ver ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-
+// via-deny-hooks-nos-7-runtimes-suportados.md).
+//
+// Mesmo padrão de GenerateCredentialGuardScript: MkdirAll + WriteFile 0755.
+func GenerateGitBranchGuardScript(rootDir string) error {
+	if rootDir == "" {
+		rootDir = "."
+	}
+	scriptsDir := filepath.Join(rootDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		return err
+	}
+
+	path := filepath.Join(scriptsDir, "trackfw-git-branch-guard.sh")
+	if err := os.WriteFile(path, []byte(gitBranchGuardScript), 0755); err != nil {
+		return fmt.Errorf("writing git branch guard script: %w", err)
+	}
+	fmt.Printf("  ✓ %s\n", filepath.Join("scripts", "trackfw-git-branch-guard.sh"))
+
+	return nil
+}
+
+// GenerateGlobalGitBranchGuardScript gera o script shell trackfw-git-branch-guard.sh em escopo
+// global, em <home>/.trackfw/scripts/trackfw-git-branch-guard.sh. Destinado a ser referenciado por
+// hooks globais de CLI (~/.claude/settings.json, ~/.gemini/settings.json etc.), instalados via
+// `trackfw update harness` (mesmo padrão de GenerateGlobalCredentialGuardScript) — não é chamado
+// por `trackfw init`/`trackfw update` (escopo de projeto), que continuam usando
+// GenerateGitBranchGuardScript.
+//
+// O conteúdo do script é idêntico entre escopo de projeto e global — ao contrário do
+// credential-guard, o git branch guard não depende de trackfw.yaml (nenhuma leitura de
+// credential_guard.mode/roadmap_dir): a detecção de `git commit`/`git push`/`git checkout -b`
+// bruto e a mensagem de bloqueio são as mesmas em qualquer diretório. As duas funções existem
+// separadamente (em vez de uma única com destino parametrizado) só para espelhar exatamente o
+// par Generate*/GenerateGlobal* já estabelecido pelo credential-guard — consistência de padrão
+// entre os dois guards, não uma necessidade técnica deste guard específico.
+//
+// Escreve silenciosamente (sem fmt.Printf), mesmo racional de GenerateGlobalCredentialGuardScript:
+// evita vazar texto solto para o stdout de comandos que possam rodar com --json.
+func GenerateGlobalGitBranchGuardScript(home string) error {
+	if home == "" {
+		return fmt.Errorf("home directory vazio")
+	}
+	scriptsDir := filepath.Join(home, ".trackfw", "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		return err
+	}
+
+	path := filepath.Join(scriptsDir, "trackfw-git-branch-guard.sh")
+	if err := os.WriteFile(path, []byte(gitBranchGuardScript), 0755); err != nil {
+		return fmt.Errorf("writing global git branch guard script: %w", err)
+	}
+
+	return nil
+}
+
+// gitBranchGuardScript é o conteúdo canônico do hook de bloqueio de `git commit`/`git push`/
+// `git checkout -b` brutos por subagente (ML-1A, ROADMAP-2026-08-14). Suporta 3 formatos de
+// entrada, na seguinte ordem de precedência:
+//
+//  1. Argumentos de linha de comando ($1..$N) — runtimes que invocam o guard passando o comando
+//     git cru como argv (ex.: `trackfw-git-branch-guard.sh git commit -m "x"`).
+//  2. Payload JSON via stdin — runtimes que passam um payload de hook estruturado (Claude/Gemini/
+//     Windsurf/Amazon Q). Tenta `.tool_input.command`, `.command`, `.tool_info.command_line`
+//     (formato confirmado do payload `pre_run_command` do Windsurf, ver
+//     https://docs.devin.ai/desktop/cascade/hooks) e `.hook_input.command`, nessa ordem — via `jq`
+//     quando disponível, com fallback para grep/sed simples (mesmo espírito de
+//     credentialGuardDetectionCore: sem exigir jq/parser YAML completo).
+//  3. Texto cru via stdin, ou `$TRACKFW_GIT_COMMAND` como último fallback — cobre runtimes que só
+//     conseguem repassar uma variável de ambiente.
+//
+// Decisão de saída (simplificação deliberada do ML-1A, ver divergência reportada no roadmap): o
+// script emite SEMPRE os dois formatos de decisão simultaneamente — `{"decision":"block",...}` no
+// stdout (formato Claude/Gemini) e `exit 2` (formato Codex/Windsurf/Cursor por exit-code) — em vez
+// de um formato por runtime dentro do script. Um script único que responde nos dois formatos ao
+// mesmo tempo é mais simples de manter do que N variantes; a Wave 3 decide, por runtime, qual
+// metade da resposta esse runtime efetivamente consome (o formato `permission: "deny"` específico
+// do Cursor, se necessário, é responsabilidade do wiring da Wave 3 em cima deste mesmo script, não
+// deste script em si).
+//
+// Sem match: allow silencioso (`exit 0`, sem output) — mesmo padrão de "silent pass" do
+// credential-guard quando não há correspondência.
+const gitBranchGuardScript = `#!/usr/bin/env bash
+# trackfw git branch guard — bloqueia git commit/push/checkout -b brutos por subagente
+set -euo pipefail
+set -f
+
+# --- 1. Obter o comando git bruto ------------------------------------------------------------
+if [ "$#" -gt 0 ]; then
+  CMD_RAW="$*"
+else
+  INPUT=$(cat 2>/dev/null || true)
+  TRIMMED=$(printf '%s' "$INPUT" | sed -e 's/^[[:space:]]*//')
+  case "$TRIMMED" in
+    \{*)
+      CMD_RAW=""
+      if command -v jq >/dev/null 2>&1; then
+        CMD_RAW=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // .tool_info.command_line // .hook_input.command // empty' 2>/dev/null || true)
+      fi
+      if [ -z "$CMD_RAW" ] || [ "$CMD_RAW" = "null" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_info"[[:space:]]*:[[:space:]]*{[^}]*"command_line"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"hook_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+      fi
+      ;;
+    *)
+      CMD_RAW="$INPUT"
+      ;;
+  esac
+fi
+
+if [ -z "$CMD_RAW" ]; then
+  CMD_RAW="${TRACKFW_GIT_COMMAND:-}"
+fi
+
+[ -n "$CMD_RAW" ] || exit 0
+
+# --- 2. Casar contra "git (commit|push|checkout -b)", segmento por segmento -----------------
+# Cada segmento é um comando real (dividido por ; && || | e por quebra de linha). "git" só
+# conta se for o PRIMEIRO token do segmento (por basename, então /usr/bin/git também casa) —
+# nunca uma ocorrência solta em qualquer posição da string inteira. Isso evita: (a) o segundo
+# comando de uma cadeia escapar da checagem, (b) um path absoluto para o git escapar por
+# comparação de igualdade exata, e (c) texto de prosa (ex.: mensagem de commit mencionando
+# "git commit" no meio de uma frase) ser tratado como comando.
+match_subcommand() {
+  normalized=$(printf '%s' "$1" | sed -e 's/&&/\n/g' -e 's/||/\n/g' -e 's/[;|]/\n/g')
+  while IFS= read -r seg; do
+    seg_trimmed=$(printf '%s' "$seg" | sed -e 's/^[[:space:]]*//')
+    [ -n "$seg_trimmed" ] || continue
+
+    set -- $seg_trimmed
+    first="$1"
+    base="${first##*/}"
+    [ "$base" = "git" ] || continue
+    shift
+
+    sub=""
+    while [ "$#" -gt 0 ]; do
+      tok="$1"
+      case "$tok" in
+        -C|-c|--work-tree|--git-dir|--namespace)
+          if [ "$#" -ge 2 ]; then shift 2; else shift; fi
+          continue
+          ;;
+        -*)
+          shift
+          continue
+          ;;
+        *)
+          sub="$tok"
+          shift
+          break
+          ;;
+      esac
+    done
+
+    case "$sub" in
+      commit)
+        echo "commit"
+        return 0
+        ;;
+      push)
+        echo "push"
+        return 0
+        ;;
+      checkout)
+        if [ "${1:-}" = "-b" ]; then
+          echo "checkout-b"
+          return 0
+        fi
+        ;;
+    esac
+  done <<EOF
+$normalized
+EOF
+  return 1
+}
+
+SUBCOMMAND=$(match_subcommand "$CMD_RAW") || exit 0
+
+case "$SUBCOMMAND" in
+  checkout-b)
+    REASON="trackfw: git checkout -b bruto bloqueado. Use \` + "`" + `trackfw branch new <type>/<slug>\` + "`" + `. Ver CLAUDE.md §1."
+    ;;
+  commit)
+    REASON="trackfw: git commit bruto bloqueado. Use \` + "`" + `trackfw commit -m '<mensagem>'\` + "`" + `. Ver CLAUDE.md §1."
+    ;;
+  push)
+    REASON="trackfw: git push bruto bloqueado. Use \` + "`" + `trackfw ship\` + "`" + `. Ver CLAUDE.md §1."
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+
+printf '{"decision":"block","reason":"%s"}\n' "$REASON"
+echo "$REASON" >&2
+exit 2
+`
 
 func buildValidateScript(cfg Config) string {
 	base := `#!/usr/bin/env sh

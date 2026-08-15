@@ -200,17 +200,27 @@ func TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand(t *testi
 	}
 
 	// No duplicate hooks left behind inside the migrated matcher entries: exactly
-	// one command per matcher after the rewrite, not two (old + new side by side).
+	// one credential-guard command per matcher after the rewrite, not two (old +
+	// new side by side). PreToolUse[Bash] additionally carries the git-branch-guard
+	// command (ROADMAP-2026-08-14 ML-3A) merged into the same matcher entry, so its
+	// expected count is 2 (credential-guard + git-branch-guard), not 1.
 	pre, _ := hooks["PreToolUse"].([]interface{})
 	for _, item := range pre {
 		obj, _ := item.(map[string]interface{})
-		if obj["matcher"] != "Bash" {
-			continue
-		}
 		innerHooks, _ := obj["hooks"].([]interface{})
-		if len(innerHooks) != 1 {
-			t.Errorf("PreToolUse[Bash] expected exactly 1 hook after migration, got %d", len(innerHooks))
+		switch obj["matcher"] {
+		case "Bash":
+			if len(innerHooks) != 2 {
+				t.Errorf("PreToolUse[Bash] expected exactly 2 hooks (credential-guard + git-branch-guard) after migration, got %d", len(innerHooks))
+			}
+		case "Read":
+			if len(innerHooks) != 1 {
+				t.Errorf("PreToolUse[Read] expected exactly 1 hook after migration, got %d", len(innerHooks))
+			}
 		}
+	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", claudeGitGuardCmd) {
+		t.Error("PreToolUse[Bash] missing the git-branch-guard command")
 	}
 }
 
@@ -463,7 +473,10 @@ func TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing.
 	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
 	hooks, _ := data["hooks"].(map[string]interface{})
 
-	checkOne := func(event, matcher, command string) {
+	// wantHooks: PreToolUse[Bash] also carries the git-branch-guard command
+	// (ROADMAP-2026-08-14 ML-3A), merged into the same matcher entry, so its
+	// expected hook count is 2 instead of 1 for every other matcher here.
+	checkOne := func(event, matcher, command string, wantHooks int) {
 		arr, _ := hooks[event].([]interface{})
 		count := 0
 		for _, item := range arr {
@@ -473,8 +486,8 @@ func TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing.
 			}
 			count++
 			innerHooks, _ := obj["hooks"].([]interface{})
-			if len(innerHooks) != 1 {
-				t.Errorf("%s[%s]: expected exactly 1 hook, got %d", event, matcher, len(innerHooks))
+			if len(innerHooks) != wantHooks {
+				t.Errorf("%s[%s]: expected exactly %d hook(s), got %d", event, matcher, wantHooks, len(innerHooks))
 			}
 		}
 		if count != 1 {
@@ -484,12 +497,15 @@ func TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing.
 			t.Errorf("%s[%s]: expected command %q missing", event, matcher, command)
 		}
 	}
-	checkOne("PermissionRequest", ".*", codexSignalCmd)
-	checkOne("PreToolUse", "Bash", codexGuardCmd)
-	checkOne("PreToolUse", "apply_patch", codexGuardCmd)
-	checkOne("PostToolUse", ".*", codexCleanupCmd)
-	checkOne("PostToolUse", "Bash", codexGuardCmd)
-	checkOne("PostToolUse", "apply_patch", codexGuardCmd)
+	checkOne("PermissionRequest", ".*", codexSignalCmd, 1)
+	checkOne("PreToolUse", "Bash", codexGuardCmd, 2)
+	checkOne("PreToolUse", "apply_patch", codexGuardCmd, 1)
+	checkOne("PostToolUse", ".*", codexCleanupCmd, 1)
+	checkOne("PostToolUse", "Bash", codexGuardCmd, 1)
+	checkOne("PostToolUse", "apply_patch", codexGuardCmd, 1)
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", codexGitGuardCmd) {
+		t.Error("PreToolUse[Bash]: expected git-branch-guard command missing")
+	}
 }
 
 // --- Gemini ---
@@ -613,7 +629,10 @@ func TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing
 	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
 	hooks, _ := data["hooks"].(map[string]interface{})
 
-	checkOne := func(event, matcher, command string) {
+	// wantHooks: BeforeTool[run_shell_command] also carries the
+	// git-branch-guard command (ROADMAP-2026-08-14 ML-3A), merged into the
+	// same matcher entry, so its expected hook count is 2 instead of 1.
+	checkOne := func(event, matcher, command string, wantHooks int) {
 		arr, _ := hooks[event].([]interface{})
 		count := 0
 		for _, item := range arr {
@@ -623,8 +642,8 @@ func TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing
 			}
 			count++
 			innerHooks, _ := obj["hooks"].([]interface{})
-			if len(innerHooks) != 1 {
-				t.Errorf("%s[%s]: expected exactly 1 hook, got %d", event, matcher, len(innerHooks))
+			if len(innerHooks) != wantHooks {
+				t.Errorf("%s[%s]: expected exactly %d hook(s), got %d", event, matcher, wantHooks, len(innerHooks))
 			}
 		}
 		if count != 1 {
@@ -634,14 +653,17 @@ func TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing
 			t.Errorf("%s[%s]: expected command %q missing", event, matcher, command)
 		}
 	}
-	checkOne("Notification", "ToolPermission", geminiSignalCmd)
-	checkOne("BeforeTool", "run_shell_command", geminiGuardCmd)
-	checkOne("BeforeTool", "read_file|read_many_files", geminiGuardCmd)
-	checkOne("BeforeTool", "write_file|replace", geminiGuardCmd)
-	checkOne("AfterTool", "*", geminiCleanupCmd)
-	checkOne("AfterTool", "run_shell_command", geminiGuardCmd)
-	checkOne("AfterTool", "read_file|read_many_files", geminiGuardCmd)
-	checkOne("AfterTool", "write_file|replace", geminiGuardCmd)
+	checkOne("Notification", "ToolPermission", geminiSignalCmd, 1)
+	checkOne("BeforeTool", "run_shell_command", geminiGuardCmd, 2)
+	checkOne("BeforeTool", "read_file|read_many_files", geminiGuardCmd, 1)
+	checkOne("BeforeTool", "write_file|replace", geminiGuardCmd, 1)
+	checkOne("AfterTool", "*", geminiCleanupCmd, 1)
+	checkOne("AfterTool", "run_shell_command", geminiGuardCmd, 1)
+	checkOne("AfterTool", "read_file|read_many_files", geminiGuardCmd, 1)
+	checkOne("AfterTool", "write_file|replace", geminiGuardCmd, 1)
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", geminiGitGuardCmd) {
+		t.Error("BeforeTool[run_shell_command]: expected git-branch-guard command missing")
+	}
 }
 
 // --- Kiro ---
@@ -754,11 +776,13 @@ func TestInjectCopilotHooks(t *testing.T) {
 		t.Fatalf("expected hooks to be an object keyed by event, got %v", data["hooks"])
 	}
 
-	// 4 entries each: signal/cleanup + credential-guard "bash"/"view"/"create|edit"
-	// (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2).
+	// preToolUse: 5 entries -- signal + credential-guard "bash"/"view"/"create|edit"
+	// (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2) + git-branch-guard "bash"
+	// (ROADMAP-2026-08-14 ML-3A). postToolUse stays at 4 (git-branch-guard is
+	// PreToolUse-only, see InjectCopilotHooks doc comment).
 	pre, ok := hooks["preToolUse"].([]interface{})
-	if !ok || len(pre) != 4 {
-		t.Fatalf("expected preToolUse array of size 4, got %v", hooks["preToolUse"])
+	if !ok || len(pre) != 5 {
+		t.Fatalf("expected preToolUse array of size 5, got %v", hooks["preToolUse"])
 	}
 	post, ok := hooks["postToolUse"].([]interface{})
 	if !ok || len(post) != 4 {
@@ -850,11 +874,23 @@ func TestInjectCursorHooks(t *testing.T) {
 
 	before, _ := hooks["beforeShellExecution"].([]interface{})
 	after, _ := hooks["afterShellExecution"].([]interface{})
-	if len(before) != 1 || len(after) != 1 {
-		t.Fatalf("expected 1 beforeShellExecution and 1 afterShellExecution entry, got %d before, %d after", len(before), len(after))
+	// beforeShellExecution: 2 entries -- credential-guard + git-branch-guard
+	// (ROADMAP-2026-08-14 ML-3A, PreToolUse-only, see InjectCursorHooks doc
+	// comment). afterShellExecution stays at 1 (credential-guard only).
+	if len(before) != 2 || len(after) != 1 {
+		t.Fatalf("expected 2 beforeShellExecution and 1 afterShellExecution entry, got %d before, %d after", len(before), len(after))
 	}
 	if before[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
 		t.Errorf("beforeShellExecution[0] should be the credential-guard script, got %v", before[0])
+	}
+	foundGitGuard := false
+	for _, item := range before {
+		if item.(map[string]interface{})["command"] == "scripts/trackfw-git-branch-guard.sh" {
+			foundGitGuard = true
+		}
+	}
+	if !foundGitGuard {
+		t.Error("beforeShellExecution missing the git-branch-guard entry")
 	}
 	if after[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
 		t.Errorf("afterShellExecution[0] should be the credential-guard script, got %v", after[0])
@@ -948,5 +984,204 @@ func TestInjectWindsurfHooks(t *testing.T) {
 	str := string(content)
 	if !strings.Contains(str, "Windsurf users:") || !strings.Contains(str, "trackfw-attention.json") {
 		t.Errorf(".windsurfrules missing attention instructions: %s", str)
+	}
+}
+
+// --- Git branch guard wiring (ROADMAP-2026-08-14 ML-3A) ---
+//
+// The tests below cover the 7-runtime deny/hook wiring for
+// scripts/trackfw-git-branch-guard.sh, following the same "call the injector
+// twice, assert no duplicate" pattern already used above for
+// credential-guard.
+
+func TestInjectWindsurfHooks_WritesGitBranchGuardHook(t *testing.T) {
+	dir := t.TempDir()
+	if err := InjectWindsurfHooks(dir); err != nil {
+		t.Fatalf("first InjectWindsurfHooks failed: %v", err)
+	}
+	if err := InjectWindsurfHooks(dir); err != nil {
+		t.Fatalf("second InjectWindsurfHooks failed: %v", err)
+	}
+
+	path := filepath.Join(dir, ".windsurf", "hooks.json")
+	data := helperReadJSON(t, path)
+	hooksMap, ok := data["hooks"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected top-level \"hooks\" object, got %v", data["hooks"])
+	}
+	pre, ok := hooksMap["pre_run_command"].([]interface{})
+	if !ok || len(pre) != 1 {
+		t.Fatalf("expected exactly 1 pre_run_command entry (idempotent across 2 runs), got %v", hooksMap["pre_run_command"])
+	}
+	entry, _ := pre[0].(map[string]interface{})
+	if entry["command"] != "bash scripts/trackfw-git-branch-guard.sh" {
+		t.Errorf("expected command to be the git-branch-guard script, got %v", entry["command"])
+	}
+	if entry["show_output"] != true {
+		t.Errorf("expected show_output=true, got %v", entry["show_output"])
+	}
+}
+
+func TestInjectWindsurfHooks_MigratesLegacyHookFile(t *testing.T) {
+	dir := t.TempDir()
+	legacyPath := filepath.Join(dir, ".windsurf", "hooks", "trackfw-git-branch-guard.json")
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0755); err != nil {
+		t.Fatalf("mkdir legacy dir: %v", err)
+	}
+	if err := os.WriteFile(legacyPath, []byte(`{"version":1,"hooks":[]}`), 0644); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+
+	if err := InjectWindsurfHooks(dir); err != nil {
+		t.Fatalf("InjectWindsurfHooks failed: %v", err)
+	}
+
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Errorf("expected legacy hook file to be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".windsurf", "hooks.json")); err != nil {
+		t.Errorf("expected .windsurf/hooks.json to be written, got: %v", err)
+	}
+}
+
+func TestInjectWindsurfHooks_PreservesOtherEvents(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteJSON(t, filepath.Join(dir, ".windsurf", "hooks.json"), map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"post_run_command": []interface{}{
+				map[string]interface{}{"command": "echo done", "show_output": false},
+			},
+			"pre_run_command": []interface{}{
+				map[string]interface{}{"command": "some-other-tool-hook", "show_output": true},
+			},
+		},
+	})
+
+	if err := InjectWindsurfHooks(dir); err != nil {
+		t.Fatalf("InjectWindsurfHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".windsurf", "hooks.json"))
+	hooksMap, _ := data["hooks"].(map[string]interface{})
+	post, _ := hooksMap["post_run_command"].([]interface{})
+	if len(post) != 1 {
+		t.Errorf("expected pre-existing post_run_command entry to survive, got %v", post)
+	}
+	pre, _ := hooksMap["pre_run_command"].([]interface{})
+	if len(pre) != 2 {
+		t.Fatalf("expected 2 pre_run_command entries (pre-existing + git-guard), got %v", pre)
+	}
+	foundExisting, foundNew := false, false
+	for _, item := range pre {
+		obj, _ := item.(map[string]interface{})
+		switch obj["command"] {
+		case "some-other-tool-hook":
+			foundExisting = true
+		case "bash scripts/trackfw-git-branch-guard.sh":
+			foundNew = true
+		}
+	}
+	if !foundExisting {
+		t.Error("pre-existing pre_run_command entry was lost")
+	}
+	if !foundNew {
+		t.Error("git-branch-guard pre_run_command entry was not added")
+	}
+}
+
+func TestInjectAmazonQHooks_CreateAndIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	if err := InjectAmazonQHooks(dir); err != nil {
+		t.Fatalf("first InjectAmazonQHooks failed: %v", err)
+	}
+	if err := InjectAmazonQHooks(dir); err != nil {
+		t.Fatalf("second InjectAmazonQHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json"))
+
+	if data["name"] != "q_cli_default" {
+		t.Errorf("expected name=q_cli_default, got %v", data["name"])
+	}
+	tools, _ := data["tools"].([]interface{})
+	if len(tools) != 1 || tools[0] != "*" {
+		t.Errorf("expected tools=[\"*\"], got %v", data["tools"])
+	}
+
+	if !helperHasClaudeHook(data, "preToolUse", "execute_bash", "scripts/trackfw-git-branch-guard.sh") {
+		t.Error("hooks.preToolUse[execute_bash] missing the git-branch-guard command")
+	}
+	hooks, _ := data["hooks"].(map[string]interface{})
+	pre, _ := hooks["preToolUse"].([]interface{})
+	if len(pre) != 1 {
+		t.Errorf("expected exactly 1 preToolUse matcher entry (idempotent across 2 runs), got %d", len(pre))
+	}
+	obj, _ := pre[0].(map[string]interface{})
+	inner, _ := obj["hooks"].([]interface{})
+	if len(inner) != 1 {
+		t.Errorf("expected exactly 1 command inside preToolUse[execute_bash] (idempotent across 2 runs), got %d", len(inner))
+	}
+
+	toolsSettings, _ := data["toolsSettings"].(map[string]interface{})
+	execBash, _ := toolsSettings["execute_bash"].(map[string]interface{})
+	denied, _ := execBash["deniedCommands"].([]interface{})
+	if len(denied) != 1 || denied[0] != `^git (commit|push|checkout -b)` {
+		t.Errorf("expected exactly 1 deniedCommands entry (idempotent across 2 runs), got %v", denied)
+	}
+}
+
+func TestInjectAmazonQHooks_PreservesExistingSettings(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteJSON(t, filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json"), map[string]interface{}{
+		"someOtherSetting": "keep-me",
+		"name":             "q_cli_default",
+		"toolsSettings": map[string]interface{}{
+			"execute_bash": map[string]interface{}{
+				"deniedCommands": []interface{}{"^rm -rf /"},
+			},
+		},
+	})
+
+	if err := InjectAmazonQHooks(dir); err != nil {
+		t.Fatalf("InjectAmazonQHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json"))
+	if data["someOtherSetting"] != "keep-me" {
+		t.Errorf("expected unrelated setting to survive, got %v", data["someOtherSetting"])
+	}
+	toolsSettings, _ := data["toolsSettings"].(map[string]interface{})
+	execBash, _ := toolsSettings["execute_bash"].(map[string]interface{})
+	denied, _ := execBash["deniedCommands"].([]interface{})
+	if len(denied) != 2 {
+		t.Fatalf("expected 2 deniedCommands entries (pre-existing + git-guard), got %v", denied)
+	}
+	foundExisting, foundNew := false, false
+	for _, d := range denied {
+		switch d {
+		case "^rm -rf /":
+			foundExisting = true
+		case `^git (commit|push|checkout -b)`:
+			foundNew = true
+		}
+	}
+	if !foundExisting {
+		t.Error("pre-existing deniedCommands entry was lost")
+	}
+	if !foundNew {
+		t.Error("git-branch-guard deniedCommands entry was not added")
+	}
+}
+
+func TestInjectHooksDetected_DispatchesAmazonQWhenDirExists(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".amazonq"), 0755); err != nil {
+		t.Fatalf("mkdir .amazonq: %v", err)
+	}
+	if err := InjectHooksDetected(dir); err != nil {
+		t.Fatalf("InjectHooksDetected failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json")); err != nil {
+		t.Errorf("expected .amazonq/cli-agents/q_cli_default.json to be written by InjectHooksDetected, got: %v", err)
 	}
 }

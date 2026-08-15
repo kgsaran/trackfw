@@ -34,6 +34,7 @@ async function scaffold(cfg, cwd) {
   generateValidateScript(cfg, root)
   generateAttentionScripts(cfg, root)
   generateCredentialGuardScript(root)
+  generateGitBranchGuardScript(root)
   generateCIWorkflow(cfg, root)
   generateGitHooks(cfg, root)
   generateCommitMsgHook(cfg, root)
@@ -171,6 +172,11 @@ function generateAttentionScripts(cfg, cwd) {
 
 function generateCredentialGuardScript(cwd) {
   const { generateCredentialGuardScript: gen } = require('./hooks')
+  gen(cwd || process.cwd())
+}
+
+function generateGitBranchGuardScript(cwd) {
+  const { generateGitBranchGuardScript: gen } = require('./hooks')
   gen(cwd || process.cwd())
 }
 
@@ -1329,6 +1335,7 @@ module.exports = {
   generateValidateScript,
   generateAttentionScripts,
   generateCredentialGuardScript,
+  generateGitBranchGuardScript,
   generateCIWorkflow,
   generateGitHooks,
   generateCommitMsgHook,

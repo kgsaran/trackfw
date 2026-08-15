@@ -114,6 +114,10 @@ def main():
     from trackfw.commands import branch as branch_cmd
     branch_cmd.register(subparsers)
 
+    # --- commit ---
+    from trackfw.commands import commit as commit_cmd
+    commit_cmd.register(subparsers)
+
     args = parser.parse_args()
 
     if args.command is None:

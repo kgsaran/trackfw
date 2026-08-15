@@ -4,6 +4,9 @@
 
 ## Índice
 
+- [git-branch-guard-pipe-into-while-loses-return-status-2026-08-14](git-branch-guard-pipe-into-while-loses-return-status-2026-08-14.md)
+- [git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14](git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14.md)
+- [python-stdout-buffering-reorders-before-inherited-stdio-subprocess-2026-08-14](python-stdout-buffering-reorders-before-inherited-stdio-subprocess-2026-08-14.md)
 - [asset-parity-gate-nao-cobre-o-caminho-de-geracao-mas-o-caminho-e-fiel-2026-08-13](asset-parity-gate-nao-cobre-o-caminho-de-geracao-mas-o-caminho-e-fiel-2026-08-13.md)
 - [validador-git-env-bypass-filtre-por-prefixo-2026-08-12](validador-git-env-bypass-filtre-por-prefixo-2026-08-12.md)
 - [scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12](scenario-50-non-vacuity-obsoleta-pelo-anchoring-no-head-2026-08-12.md)

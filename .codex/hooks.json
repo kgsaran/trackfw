@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "scripts/trackfw-attention-signal.sh",
+            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh\"",
             "type": "command"
           }
         ],
@@ -15,11 +15,22 @@
       {
         "hooks": [
           {
-            "command": "scripts/trackfw-attention-cleanup.sh",
+            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-cleanup.sh\"",
             "type": "command"
           }
         ],
         "matcher": ".*"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
       }
     ]
   }

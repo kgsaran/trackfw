@@ -44,6 +44,23 @@ function mergeSimpleCommandArray(existing, command) {
 }
 
 /**
+ * Merge helper for Windsurf's `.windsurf/hooks.json` `hooks.<event>` arrays
+ * (e.g. `hooks.pre_run_command`): each entry is `{"command": "...",
+ * "show_output": bool}` -- one field richer than mergeSimpleCommandArray's
+ * plain `{"command"}` shape (Cursor), so it needs its own merge helper.
+ * Mirrors Go's mergeSimpleCommandArray call in InjectWindsurfHooks
+ * (internal/generators/agentfiles.go), which is generic over the entry
+ * shape via makeEntry/getCmd callbacks -- Node has no equivalent generic
+ * variant, so this is a dedicated function instead.
+ */
+function mergeWindsurfHookArray(existing, command, showOutput) {
+  const arr = Array.isArray(existing) ? existing.slice() : []
+  if (hasEntry(arr, 'command', command)) return arr
+  arr.push({ command, show_output: showOutput })
+  return arr
+}
+
+/**
  * Merge helper para arrays de hooks tipo GitHub Copilot
  * (hooks.preToolUse/postToolUse): cada entry é
  * {"type":"command","matcher":"bash","bash":"...","cwd":".","timeoutSec":10}
@@ -405,6 +422,218 @@ const CREDENTIAL_GUARD_SCRIPT = CG_HEADER + CG_PROJECT_GUARD + CG_DETECTION_CORE
 const GLOBAL_CREDENTIAL_GUARD_SCRIPT = CG_HEADER + CG_DETECTION_CORE + CG_GLOBAL_TAIL
 
 // ---------------------------------------------------------------------------
+// GIT_BRANCH_GUARD_SCRIPT — trackfw-git-branch-guard.sh (ML-1A, ROADMAP-2026-08-14)
+// ---------------------------------------------------------------------------
+// Byte-identical port of internal/generators/scaffold.go:gitBranchGuardScript
+// (Go's canonical reference). Blocks raw `git commit`/`git push`/
+// `git checkout -b` by a subagent, regardless of runtime contract: emits BOTH
+// `{"decision":"block","reason":"..."}` on stdout (Claude/Gemini JSON-stdout
+// style) AND `exit 2` (Codex/Windsurf/Cursor exit-code style) simultaneously,
+// same simplification decision as the Go const's doc comment. Unlike
+// CREDENTIAL_GUARD_SCRIPT, this script is IDENTICAL between project and
+// global scope (no trackfw.yaml dependency, no mode/roadmap_dir resolution)
+// — a single constant is written by both generateGitBranchGuardScript and
+// generateGlobalGitBranchGuardScript below, mirroring Go's single
+// `gitBranchGuardScript` const reused by both Generate*/GenerateGlobal*
+// functions.
+//
+// KNOWN LIMITATION (fix for 3 real bugs found by ML-4A manual E2E testing, 2026-08-14 —
+// chained command `git status; git push ...` escaping detection, absolute path
+// `/usr/bin/git commit` escaping via exact-string compare, and prose mentioning "git commit"
+// inside a quoted string being read as a real command): the script's `match_subcommand()`
+// now splits the raw command into segments on `;`/`&&`/`||`/`|`/newline and only treats a
+// segment as a real git invocation if `git` (by basename) is that segment's FIRST token —
+// this fixes all 3 bugs, but the splitter is NOT shell-quote-aware. It splits on those
+// delimiter characters wherever they occur in the raw string, even inside single/double
+// quotes. Practical consequence proven live in this session: a line inside a multi-line
+// heredoc body that itself STARTS with the token `git` still blocks (newline is treated as
+// a command boundary regardless of quoting context), and testing this script by embedding a
+// literal `; git push`/`; git commit` substring inside a quoted JSON payload passed as a raw
+// Bash tool command can trip the SAME guard when it's wired as this session's own
+// PreToolUse/Bash hook — write such payloads to a file and pipe `< file.json` instead of
+// inlining them in the shell command text. This limitation applies equally to the generated
+// shell script itself (Go-generated and Node-generated content is byte-identical), even
+// though internal/generators/scaffold.go's gitBranchGuardScript doc comment does not yet
+// call it out explicitly — flagging for trackfw_architect to consider adding there too.
+// GBG_BACKTICK — literal 2-char sequence "\\`" (backslash + backtick), used to embed a
+// shell-escaped backtick (so REASON's `` `cmd` `` doesn't trigger bash command substitution
+// inside the surrounding double-quoted string) without breaking the enclosing JS template
+// literal. Mirrors the exact same problem Go's `gitBranchGuardScript` const solves by
+// breaking out of its raw string and concatenating `"`"` — see scaffold.go's REASON lines
+// (`\` + "`" + `trackfw ...`). A plain, unescaped backtick inside a JS template literal
+// would either be interpreted as JS template-literal syntax (illegal placement) or, if
+// naively escaped as just `` \` ``, would defeat the same regex-based source extraction the
+// credential-guard parity test already documents as unable to handle string concatenation
+// (see the CG_PROJECT_TAIL/CG_GLOBAL_TAIL comment above) — an embedded, un-terminated
+// `` \` `` inside a single backtick-delimited block would make a naive
+// `` const NAME = \`...\` `` regex stop at the first inner backtick instead of the real
+// closing one. Splitting at every backtick insertion point, exactly like Go's own
+// workaround, sidesteps both problems.
+const GBG_BACKTICK = '\\`'
+
+const GIT_BRANCH_GUARD_SCRIPT = `#!/usr/bin/env bash
+# trackfw git branch guard — bloqueia git commit/push/checkout -b brutos por subagente
+set -euo pipefail
+set -f
+
+# --- 1. Obter o comando git bruto ------------------------------------------------------------
+if [ "$#" -gt 0 ]; then
+  CMD_RAW="$*"
+else
+  INPUT=$(cat 2>/dev/null || true)
+  TRIMMED=$(printf '%s' "$INPUT" | sed -e 's/^[[:space:]]*//')
+  case "$TRIMMED" in
+    \\{*)
+      CMD_RAW=""
+      if command -v jq >/dev/null 2>&1; then
+        CMD_RAW=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // .tool_info.command_line // .hook_input.command // empty' 2>/dev/null || true)
+      fi
+      if [ -z "$CMD_RAW" ] || [ "$CMD_RAW" = "null" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_info"[[:space:]]*:[[:space:]]*{[^}]*"command_line"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"hook_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -1)
+      fi
+      if [ -z "$CMD_RAW" ]; then
+        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -1)
+      fi
+      ;;
+    *)
+      CMD_RAW="$INPUT"
+      ;;
+  esac
+fi
+
+if [ -z "$CMD_RAW" ]; then
+  CMD_RAW="\${TRACKFW_GIT_COMMAND:-}"
+fi
+
+[ -n "$CMD_RAW" ] || exit 0
+
+# --- 2. Casar contra "git (commit|push|checkout -b)", segmento por segmento -----------------
+# Cada segmento é um comando real (dividido por ; && || | e por quebra de linha). "git" só
+# conta se for o PRIMEIRO token do segmento (por basename, então /usr/bin/git também casa) —
+# nunca uma ocorrência solta em qualquer posição da string inteira. Isso evita: (a) o segundo
+# comando de uma cadeia escapar da checagem, (b) um path absoluto para o git escapar por
+# comparação de igualdade exata, e (c) texto de prosa (ex.: mensagem de commit mencionando
+# "git commit" no meio de uma frase) ser tratado como comando.
+match_subcommand() {
+  normalized=$(printf '%s' "$1" | sed -e 's/&&/\\n/g' -e 's/||/\\n/g' -e 's/[;|]/\\n/g')
+  while IFS= read -r seg; do
+    seg_trimmed=$(printf '%s' "$seg" | sed -e 's/^[[:space:]]*//')
+    [ -n "$seg_trimmed" ] || continue
+
+    set -- $seg_trimmed
+    first="$1"
+    base="\${first##*/}"
+    [ "$base" = "git" ] || continue
+    shift
+
+    sub=""
+    while [ "$#" -gt 0 ]; do
+      tok="$1"
+      case "$tok" in
+        -C|-c|--work-tree|--git-dir|--namespace)
+          if [ "$#" -ge 2 ]; then shift 2; else shift; fi
+          continue
+          ;;
+        -*)
+          shift
+          continue
+          ;;
+        *)
+          sub="$tok"
+          shift
+          break
+          ;;
+      esac
+    done
+
+    case "$sub" in
+      commit)
+        echo "commit"
+        return 0
+        ;;
+      push)
+        echo "push"
+        return 0
+        ;;
+      checkout)
+        if [ "\${1:-}" = "-b" ]; then
+          echo "checkout-b"
+          return 0
+        fi
+        ;;
+    esac
+  done <<EOF
+$normalized
+EOF
+  return 1
+}
+
+SUBCOMMAND=$(match_subcommand "$CMD_RAW") || exit 0
+
+case "$SUBCOMMAND" in
+  checkout-b)
+    REASON="trackfw: git checkout -b bruto bloqueado. Use ` + GBG_BACKTICK + `trackfw branch new <type>/<slug>` + GBG_BACKTICK + `. Ver CLAUDE.md §1."
+    ;;
+  commit)
+    REASON="trackfw: git commit bruto bloqueado. Use ` + GBG_BACKTICK + `trackfw commit -m '<mensagem>'` + GBG_BACKTICK + `. Ver CLAUDE.md §1."
+    ;;
+  push)
+    REASON="trackfw: git push bruto bloqueado. Use ` + GBG_BACKTICK + `trackfw ship` + GBG_BACKTICK + `. Ver CLAUDE.md §1."
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+
+printf '{"decision":"block","reason":"%s"}\\n' "$REASON"
+echo "$REASON" >&2
+exit 2
+`
+
+// ---------------------------------------------------------------------------
+// generateGitBranchGuardScript — writes scripts/trackfw-git-branch-guard.sh
+// ---------------------------------------------------------------------------
+// This ML only creates the script — it is NOT wired into any hooks.json/
+// settings.json here (that is this roadmap's Wave 3 scope). Mirrors
+// generateCredentialGuardScript exactly (mkdirSync + writeFileSync, mode 0o755).
+function generateGitBranchGuardScript(cwd) {
+  const root = cwd || process.cwd()
+  const scriptsDir = path.join(root, 'scripts')
+  fs.mkdirSync(scriptsDir, { recursive: true })
+
+  const scriptPath = path.join(scriptsDir, 'trackfw-git-branch-guard.sh')
+  fs.writeFileSync(scriptPath, GIT_BRANCH_GUARD_SCRIPT, { encoding: 'utf8', mode: 0o755 })
+
+  console.log('  ✓ scripts/trackfw-git-branch-guard.sh')
+}
+
+// ---------------------------------------------------------------------------
+// generateGlobalGitBranchGuardScript — writes <home>/.trackfw/scripts/trackfw-git-branch-guard.sh
+// ---------------------------------------------------------------------------
+// Destinado a ser referenciado por hooks globais de CLI, instalados via
+// `trackfw update harness` -- não é chamado por `trackfw init`/`trackfw
+// update` (escopo de projeto), que continuam usando
+// generateGitBranchGuardScript. Mirrors generateGlobalCredentialGuardScript.
+function generateGlobalGitBranchGuardScript(home) {
+  if (!home) {
+    throw new Error('home directory vazio')
+  }
+  const scriptsDir = path.join(home, '.trackfw', 'scripts')
+  fs.mkdirSync(scriptsDir, { recursive: true })
+
+  const scriptPath = path.join(scriptsDir, 'trackfw-git-branch-guard.sh')
+  fs.writeFileSync(scriptPath, GIT_BRANCH_GUARD_SCRIPT, { encoding: 'utf8', mode: 0o755 })
+
+  console.log('  ✓ .trackfw/scripts/trackfw-git-branch-guard.sh')
+}
+
+// ---------------------------------------------------------------------------
 // generateCredentialGuardScript — writes scripts/trackfw-credential-guard.sh
 // ---------------------------------------------------------------------------
 // ML-1A only: creates the script. It is NOT wired into any hooks.json/settings.json
@@ -520,6 +749,53 @@ const GUARD_CMD_CURSOR = 'scripts/trackfw-credential-guard.sh'
 // instead of GUARD_CMD, matching the pattern this project's own custom hooks already relied on
 // successfully in practice.
 const GUARD_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
+
+// ---------------------------------------------------------------------------
+// GBG_CMD_* — git-branch-guard command per CLI (ROADMAP-2026-08-14, ML-3B,
+// Wave 3). Same path-resolution mechanism per runtime already established
+// above for GUARD_CMD_*/SIGNAL_CMD_* (Claude's $CLAUDE_PROJECT_DIR pin,
+// Codex's `$(git rev-parse --show-toplevel)` substitution, Gemini's
+// $GEMINI_PROJECT_DIR, Copilot/Cursor's project-root-relative path) — the
+// git branch guard has no per-CLI variance of its own, it just needs the
+// same "always resolve to the project root regardless of cwd drift" fix
+// each of those constants already encodes for the credential guard.
+//
+// Wiring scope of this ML (Claude/Codex/Gemini/Cursor): registers the guard
+// against the SAME hook events/matchers already used for the credential
+// guard in each of these 4 CLIs' existing merge-based hooks.json/
+// settings.json contract — a `Bash`/`run_shell_command`/`beforeShellExecution`
+// PreToolUse-equivalent entry is sufficient to intercept `git commit`/`push`/
+// `checkout -b` before they execute; no PostToolUse entry is added (unlike
+// the credential guard) because blocking after the git command already ran
+// is too late to be useful.
+//
+// NOT implemented in this ML (documented gap, mirrors the Go side of this
+// same roadmap wave, which also has not built these yet): GitHub Copilot's
+// `--deny-tool='shell(git commit)'`-style entries in a dedicated
+// permissions-config.json/settings.json (a different mechanism than the
+// existing `.github/hooks/trackfw-attention.json` hooks file this module
+// already generates for Copilot); Windsurf's `pre_run_command` hook +
+// `windsurf.cascadeCommandsAllowList` deny entry (injectWindsurfHooks today
+// only injects textual rules, same as Go's InjectWindsurfHooks); and Amazon Q
+// Developer's `preToolUse`/`execute_bash` hook + `deniedCommands` regex +
+// restricted custom-agent toolset (no Amazon Q hook generator exists in this
+// module today — only the textual `.amazonq/developer/guidelines.md` rules
+// generator in generators/init.js — matching Go, which also has no
+// InjectAmazonQHooks yet). Each of these requires a NEW file-format decision
+// this roadmap wave has not yet settled on either stack; building one from
+// scratch here, ahead of that decision, risks diverging from whatever the Go
+// side lands on. Flagged for a follow-up ML once that decision is made.
+const GBG_CMD_CLAUDE = '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'
+const GBG_CMD_CODEX = CODEX_ROOT + '/scripts/trackfw-git-branch-guard.sh"'
+const GBG_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'
+const GBG_CMD_CURSOR = 'scripts/trackfw-git-branch-guard.sh'
+const GBG_CMD_COPILOT = 'scripts/trackfw-git-branch-guard.sh'
+const GBG_CMD_PLAIN = 'scripts/trackfw-git-branch-guard.sh'
+// GBG_CMD_WINDSURF -- Windsurf invokes hooks.pre_run_command entries via a shell (confirmed
+// against https://docs.devin.ai/desktop/cascade/hooks), so the guard script is wrapped in
+// `bash <path>` rather than invoked directly, unlike every other CLI above. Mirrors Go's
+// windsurfGitGuardCmd (internal/generators/agentfiles.go).
+const GBG_CMD_WINDSURF = 'bash scripts/trackfw-git-branch-guard.sh'
 
 // ---------------------------------------------------------------------------
 // Global credential-guard dedup (ROADMAP-2026-08-06 Wave 3/ML-3A)
@@ -689,6 +965,13 @@ function injectClaudeHooks(cwd) {
     data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Write|Edit', GUARD_CMD_CLAUDE)
   }
 
+  // git branch guard (ROADMAP-2026-08-14, ML-3B/Wave 3, step 1): PreToolUse-only, matcher
+  // "Bash" — blocks raw `git commit`/`git push`/`git checkout -b` before they execute. No
+  // global-install dedup here (unlike GUARD_CMD_CLAUDE above): there is no per-CLI global
+  // git-branch-guard harness target yet (only the plain script-generation call at
+  // GenerateGlobalGitBranchGuardScript/generateGlobalGitBranchGuardScript exists so far).
+  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GBG_CMD_CLAUDE)
+
   writeJSON(filePath, data)
 }
 
@@ -741,6 +1024,11 @@ function injectCodexHooks(cwd) {
     data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'Bash', GUARD_CMD_CODEX)
     data.hooks.PostToolUse = mergeClaudeHookArray(data.hooks.PostToolUse, 'apply_patch', GUARD_CMD_CODEX)
   }
+
+  // git branch guard (ROADMAP-2026-08-14, ML-3B/Wave 3, step 2): PreToolUse-only, matcher
+  // "Bash" -- git commands only ever run via the Bash tool, never apply_patch. No
+  // global-install dedup (see GBG_CMD_CLAUDE comment).
+  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GBG_CMD_CODEX)
 
   writeJSON(filePath, data)
 }
@@ -807,6 +1095,11 @@ function injectGeminiHooks(cwd) {
     data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'read_file|read_many_files', GUARD_CMD_GEMINI)
     data.hooks.AfterTool = mergeClaudeHookArray(data.hooks.AfterTool, 'write_file|replace', GUARD_CMD_GEMINI)
   }
+
+  // git branch guard (ROADMAP-2026-08-14, ML-3B/Wave 3, step 3): BeforeTool-only, matcher
+  // "run_shell_command" -- git commands only ever run via the shell tool. No global-install
+  // dedup (see GBG_CMD_CLAUDE comment).
+  data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'run_shell_command', GBG_CMD_GEMINI)
 
   writeJSON(filePath, data)
 }
@@ -958,6 +1251,18 @@ function injectCopilotHooks(cwd) {
     postToolUse.push({ type: 'command', matcher: 'create|edit', bash: GUARD_CMD_COPILOT, cwd: '.', timeoutSec: 10 })
   }
 
+  // git branch guard (ROADMAP-2026-08-14, ML-3B/Wave 3, step 4): the roadmap describes
+  // `--deny-tool='shell(git commit)'`-style CLI flags in a permissions-config.json/
+  // settings.json file, but no such file/flag mechanism exists anywhere else in this
+  // module -- Copilot's only established deny-adjacent mechanism here is this same
+  // preToolUse/postToolUse hooks file already used for credential-guard above. Mirrors
+  // Go's InjectCopilotHooks (internal/generators/agentfiles.go), which made the same
+  // choice for the same reason; the CLI-flag/permissions-config.json approach is a
+  // documented, deliberate divergence from the roadmap's literal wording. This file is
+  // overwritten wholesale every run, so no dedup-against-global check is needed --
+  // added unconditionally, matching the always-on attention-signal/cleanup entries.
+  preToolUse.push({ type: 'command', matcher: 'bash', bash: GBG_CMD_COPILOT, cwd: '.', timeoutSec: 10 })
+
   const data = {
     version: 1,
     hooks: { preToolUse, postToolUse },
@@ -1090,16 +1395,178 @@ function injectCursorHooks(cwd) {
     }
   }
 
+  // git branch guard (ROADMAP-2026-08-14, ML-3B/Wave 3, step 5): beforeShellExecution-only --
+  // Cursor's dedicated pre-execution Bash event; git commands only ever run there. No
+  // global-install dedup (see GBG_CMD_CLAUDE comment).
+  if (!Array.isArray(data.hooks.beforeShellExecution)) data.hooks.beforeShellExecution = []
+  if (!hasEntry(data.hooks.beforeShellExecution, 'command', GBG_CMD_CURSOR)) {
+    data.hooks.beforeShellExecution.push({ command: GBG_CMD_CURSOR })
+  }
+
   writeJSON(filePath, data)
 }
 
 // ---------------------------------------------------------------------------
-// Windsurf — update .windsurfrules with attention instruction
+// Windsurf — update .windsurfrules with attention instruction, and register
+// the `pre_run_command` git-branch-guard hook in Windsurf's real hooks file.
 // ---------------------------------------------------------------------------
+// Path/schema correction (apolo-tf, 2026-08-14, post-ML-3A audit): the
+// original ML-3A implementation wrote a dedicated, wholly-owned file at
+// `.windsurf/hooks/trackfw-git-branch-guard.json` with an invented payload
+// shape (`{"version":1,"hooks":[{"name":...,"trigger":"pre_run_command",
+// "action":{...}}]}`) that was flagged in its own doc comment as UNCONFIRMED
+// against official documentation. A verification pass against
+// https://docs.devin.ai/desktop/cascade/hooks confirmed both the path and
+// the shape were wrong:
+//   - Windsurf reads hooks from a single fixed-name file, `.windsurf/hooks.json`
+//     -- NOT a directory of per-hook files under `.windsurf/hooks/`.
+//   - The schema is `{"hooks": {"<event>": [{"command": "...", "show_output":
+//     bool}]}}` -- an object keyed by event name (e.g. "pre_run_command",
+//     "post_run_command"), each mapping to an ARRAY of hook defs. There is no
+//     "name"/"trigger"/"action" envelope.
+//   - The hook script receives its context via stdin as JSON, including
+//     `tool_info.command_line` -- GIT_BRANCH_GUARD_SCRIPT above now tries
+//     this field explicitly (in addition to the generic `.command`/
+//     `.tool_input.command`/`.hook_input.command` fields it already
+//     handled). This is a byte-shared script across all 3 CLIs -- do not
+//     edit it again without mirroring Go's gitBranchGuardScript.
+//
+// Merge is idempotent and shaped like every other multi-tool settings file in
+// this module: existing `pre_run_command` entries from other tools (or a
+// prior trackfw run) are preserved; only an entry with our exact command
+// string is deduped via mergeWindsurfHookArray. Other events already present
+// (e.g. a user- or third-party-authored `post_run_command`) are left
+// untouched.
+//
+// Migration: if the stale `.windsurf/hooks/trackfw-git-branch-guard.json`
+// file from the incorrect ML-3A version exists on disk, it is removed here
+// (never left orphaned), and the now-possibly-empty legacy `.windsurf/hooks`
+// directory is best-effort cleaned up too -- mirrors Go's InjectWindsurfHooks
+// migration step exactly (os.Remove + best-effort rmdir).
+//
+// `windsurf.cascadeCommandsAllowList` (an IDE *user settings* key, not a
+// project-local file) remains out of scope -- same reasoning as before this
+// fix: trackfw has no established, confirmed mechanism for rewriting IDE user
+// settings safely, and inventing one on a guess repeats the exact mistake
+// this fix corrects. Documented as an open gap in docs/cli-parity.md.
+const LEGACY_WINDSURF_HOOKS_FILE = 'trackfw-git-branch-guard.json'
 
 function injectWindsurfHooks(cwd) {
   const { injectRulesForTool } = require('./init')
-  return injectRulesForTool('windsurf', cwd)
+  injectRulesForTool('windsurf', cwd)
+
+  // Migration: remove the incorrect, previously-written dedicated hook file
+  // from an older (buggy) trackfw run, so it doesn't linger as a dead,
+  // never-consumed artifact once the correct .windsurf/hooks.json exists.
+  const legacyDir = path.join(cwd, '.windsurf', 'hooks')
+  const legacyPath = path.join(legacyDir, LEGACY_WINDSURF_HOOKS_FILE)
+  try {
+    fs.unlinkSync(legacyPath)
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e
+  }
+  // Best-effort cleanup of the now-possibly-empty legacy directory; ignore
+  // failure (non-empty dir, e.g. holding unrelated user files, or already
+  // gone) -- never fatal.
+  try {
+    fs.rmdirSync(legacyDir)
+  } catch (_) {
+    // ignore
+  }
+
+  const dir = path.join(cwd, '.windsurf')
+  fs.mkdirSync(dir, { recursive: true })
+  const filePath = path.join(dir, 'hooks.json')
+  const data = readJSON(filePath)
+
+  if (typeof data.hooks !== 'object' || data.hooks === null || Array.isArray(data.hooks)) {
+    data.hooks = {}
+  }
+
+  data.hooks.pre_run_command = mergeWindsurfHookArray(data.hooks.pre_run_command, GBG_CMD_WINDSURF, true)
+
+  writeJSON(filePath, data)
+}
+
+// ---------------------------------------------------------------------------
+// Amazon Q Developer CLI — .amazonq/cli-agents/q_cli_default.json
+// (ROADMAP-2026-08-14, ML-3B/Wave 3, step 7)
+// ---------------------------------------------------------------------------
+// Path/schema correction (apolo-tf, 2026-08-14, post-ML-3A audit): the
+// original ML-3A implementation wrote to `.amazonq/settings.json`, which was
+// flagged in its own doc comment as NOT independently confirmed against
+// official Amazon Q documentation. Verification against
+// https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-custom-agents-configuration.html
+// and https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-agents-default-behavior.html
+// confirmed the real mechanism is a *custom agent* file, not a settings
+// file: `.amazonq/cli-agents/q_cli_default.json` -- `q_cli_default.json` is
+// the documented convention closest to activating automatically without
+// requiring a manual `--agent` flag, though AWS has an open bug where this
+// default-name override is not always honored
+// (github.com/aws/amazon-q-developer-cli#2922) -- a custom agent named
+// `q_cli_default.json` is not guaranteed to always be picked up
+// automatically depending on CLI version/config. Documented rather than
+// worked around.
+//
+// Two guard mechanisms are wired, unchanged from the original ML-3A
+// implementation -- only the target file (and the minimal-but-valid custom
+// agent envelope around it) moved:
+//   - hooks.preToolUse[matcher:"execute_bash"] -> the guard script, same
+//     matcher+hooks[].command shape already used by Claude/Codex/Gemini
+//     above (reuses mergeClaudeHookArray for idempotent merge).
+//   - toolsSettings.execute_bash.deniedCommands -> a regex denylist
+//     evaluated before allow, independent of and in addition to the hook.
+//
+// Minimal-but-valid custom agent schema (per command-line-custom-agents-
+// configuration.html): only set defaults for fields not already present, so
+// re-running against a hand-edited or previously-generated file never
+// clobbers user customization -- same "preserve existing settings" contract
+// as every other merge-based injector in this module. `tools: ["*"]` is
+// written on first creation so the default agent keeps today's unrestricted
+// tool access (this fix does not narrow what any agent can do, only where
+// the deny wiring lives). Mirrors Go's InjectAmazonQHooks
+// (internal/generators/agentfiles.go) field-for-field.
+//
+// Native custom-agent toolset restriction (REQ acceptance criterion): still
+// NOT implemented here -- this ML only wires the guard/deny fields on the
+// one default agent file; per-specialist-agent toolset restriction is out of
+// scope, same limitation already accepted for Gemini above.
+const AMAZONQ_CLI_AGENTS_DIR = 'cli-agents'
+const AMAZONQ_DEFAULT_AGENT_FILE = 'q_cli_default.json'
+const GBG_DENIED_COMMANDS_PATTERN = '^git (commit|push|checkout -b)'
+
+function injectAmazonQHooks(cwd) {
+  const filePath = path.join(cwd, '.amazonq', AMAZONQ_CLI_AGENTS_DIR, AMAZONQ_DEFAULT_AGENT_FILE)
+  const data = readJSON(filePath)
+
+  const defaults = {
+    name: 'q_cli_default',
+    description: 'trackfw-managed default agent — wires the git branch guard hook/denylist. See docs/cli-parity.md.',
+    prompt: null,
+    mcpServers: {},
+    tools: ['*'],
+    toolAliases: {},
+    allowedTools: [],
+    resources: [],
+    useLegacyMcpJson: false,
+  }
+  for (const [k, v] of Object.entries(defaults)) {
+    if (!Object.prototype.hasOwnProperty.call(data, k)) data[k] = v
+  }
+
+  if (!data.hooks) data.hooks = {}
+  data.hooks.preToolUse = mergeClaudeHookArray(data.hooks.preToolUse, 'execute_bash', GBG_CMD_PLAIN)
+
+  if (!data.toolsSettings) data.toolsSettings = {}
+  if (!data.toolsSettings.execute_bash) data.toolsSettings.execute_bash = {}
+  if (!Array.isArray(data.toolsSettings.execute_bash.deniedCommands)) {
+    data.toolsSettings.execute_bash.deniedCommands = []
+  }
+  if (!data.toolsSettings.execute_bash.deniedCommands.includes(GBG_DENIED_COMMANDS_PATTERN)) {
+    data.toolsSettings.execute_bash.deniedCommands.push(GBG_DENIED_COMMANDS_PATTERN)
+  }
+
+  writeJSON(filePath, data)
 }
 
 // ---------------------------------------------------------------------------
@@ -1146,6 +1613,13 @@ function injectHooksDetected(cwd) {
       check: () => fs.existsSync(path.join(root, '.windsurfrules')),
       fn: injectWindsurfHooks,
     },
+    // amazonq (ROADMAP-2026-08-14, ML-3B/Wave 3, step 7 dispatch): mirrors Go's
+    // hooks.go InjectHooksDetected entry -- dispatches injectAmazonQHooks (git branch
+    // guard, .amazonq/settings.json) whenever the .amazonq directory is present.
+    amazonq: {
+      check: () => fs.existsSync(path.join(root, '.amazonq')),
+      fn: injectAmazonQHooks,
+    },
   }
 
   for (const [name, { check, fn }] of Object.entries(detections)) {
@@ -1162,6 +1636,8 @@ module.exports = {
   generateAttentionScripts,
   generateCredentialGuardScript,
   generateGlobalCredentialGuardScript,
+  generateGitBranchGuardScript,
+  generateGlobalGitBranchGuardScript,
   injectClaudeHooks,
   injectCodexHooks,
   injectGeminiHooks,
@@ -1169,6 +1645,7 @@ module.exports = {
   injectCopilotHooks,
   injectCursorHooks,
   injectWindsurfHooks,
+  injectAmazonQHooks,
   injectHooksDetected,
   mergeClaudeHookArray,
   mergeSimpleCommandArray,

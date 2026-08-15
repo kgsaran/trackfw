@@ -151,8 +151,13 @@ func TestDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	hooks, _ := data["hooks"].(map[string]interface{})
 	before, _ := hooks["beforeShellExecution"].([]interface{})
 	after, _ := hooks["afterShellExecution"].([]interface{})
-	if len(before) != 0 {
-		t.Errorf("expected no project-scope beforeShellExecution entries (global already installed), got %v", before)
+	// The git-branch-guard entry (ROADMAP-2026-08-14 ML-3A) has no
+	// global-scope dedup target yet, so it is always added regardless of
+	// the global credential-guard dedup state exercised by this test —
+	// exactly 1 beforeShellExecution entry (git-branch-guard), 0 for
+	// credential-guard (skipped, global installed).
+	if len(before) != 1 || before[0].(map[string]interface{})["command"] != "scripts/trackfw-git-branch-guard.sh" {
+		t.Errorf("expected only the git-branch-guard beforeShellExecution entry (credential-guard skipped, global already installed), got %v", before)
 	}
 	if len(after) != 0 {
 		t.Errorf("expected no project-scope afterShellExecution entries (global already installed), got %v", after)
@@ -187,8 +192,23 @@ func TestDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pre, _ := hooks["preToolUse"].([]interface{})
 	post, _ := hooks["postToolUse"].([]interface{})
-	if len(pre) != 1 || pre[0].(map[string]interface{})["bash"] != "scripts/trackfw-attention-signal.sh" {
-		t.Errorf("expected only the attention-signal entry in preToolUse (global credential-guard installed), got %v", pre)
+	// preToolUse: attention-signal + git-branch-guard (ROADMAP-2026-08-14
+	// ML-3A, no global-scope dedup target yet, always added) — credential-guard
+	// is skipped (global installed), so exactly 2 entries.
+	if len(pre) != 2 {
+		t.Errorf("expected attention-signal + git-branch-guard entries in preToolUse (global credential-guard installed), got %v", pre)
+	}
+	if pre[0].(map[string]interface{})["bash"] != "scripts/trackfw-attention-signal.sh" {
+		t.Errorf("expected preToolUse[0] to be the attention-signal entry, got %v", pre[0])
+	}
+	foundGitGuard := false
+	for _, item := range pre {
+		if item.(map[string]interface{})["bash"] == "scripts/trackfw-git-branch-guard.sh" {
+			foundGitGuard = true
+		}
+	}
+	if !foundGitGuard {
+		t.Errorf("expected preToolUse to contain the git-branch-guard entry, got %v", pre)
 	}
 	if len(post) != 1 || post[0].(map[string]interface{})["bash"] != "scripts/trackfw-attention-cleanup.sh" {
 		t.Errorf("expected only the attention-cleanup entry in postToolUse (global credential-guard installed), got %v", post)

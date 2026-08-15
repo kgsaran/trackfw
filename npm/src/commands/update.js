@@ -207,7 +207,7 @@ function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing 
 
   if (include('agent-hooks')) targets.push(runFileTarget({
     id: 'agent-hooks',
-    path: '.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .kiro/hooks/trackfw-attention.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, scripts/trackfw-attention-*.sh, scripts/trackfw-credential-guard.sh',
+    path: '.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .kiro/hooks/trackfw-attention.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, scripts/trackfw-attention-*.sh, scripts/trackfw-credential-guard.sh, scripts/trackfw-git-branch-guard.sh',
     root: cwd,
     relPaths: [
       '.claude/settings.json',
@@ -219,11 +219,13 @@ function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing 
       'scripts/trackfw-attention-signal.sh',
       'scripts/trackfw-attention-cleanup.sh',
       'scripts/trackfw-credential-guard.sh',
+      'scripts/trackfw-git-branch-guard.sh',
     ],
     apply: (root) => {
       hooksGen.injectHooksDetected(root);
       hooksGen.generateAttentionScripts(cfg, root);
       hooksGen.generateCredentialGuardScript(root);
+      hooksGen.generateGitBranchGuardScript(root);
     },
     dryRun,
     installMissing,

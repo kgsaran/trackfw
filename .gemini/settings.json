@@ -4,18 +4,29 @@
       {
         "hooks": [
           {
-            "command": "scripts/trackfw-attention-cleanup.sh",
+            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh",
             "type": "command"
           }
         ],
         "matcher": "*"
       }
     ],
+    "BeforeTool": [
+      {
+        "hooks": [
+          {
+            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "run_shell_command"
+      }
+    ],
     "Notification": [
       {
         "hooks": [
           {
-            "command": "scripts/trackfw-attention-signal.sh",
+            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh",
             "type": "command"
           }
         ],

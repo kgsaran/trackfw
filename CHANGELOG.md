@@ -10,6 +10,31 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [Unreleased]
+
+### Added
+
+- **Bloqueio técnico de `git commit`/`git push`/`git checkout -b` brutos por subagente**
+  (ver `docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`) —
+  novo comando `trackfw commit -m "<mensagem>"` (Go/Node/Python) que recusa commit
+  direto em `main`/branch protegida e commit em `feat/fix/refactor` sem roadmap
+  correspondente em `wip/`, replicando o gate `branch_has_wip_roadmap` no momento do
+  commit. Novo guard script (`scripts/trackfw-git-branch-guard.sh`) ligado via hook
+  técnico (não só instrução textual) nos 7 runtimes suportados: Claude Code, Codex CLI,
+  Gemini CLI, GitHub Copilot, Cursor, Windsurf, Amazon Q Developer.
+
+### Notas de atualização
+
+- **A proteção só passa a valer depois de `trackfw update` (projetos existentes) ou
+  `trackfw init` (projetos novos).** Não é retroativa: se você já tem o trackfw
+  configurado num projeto, o guard não é ativado automaticamente — é preciso rodar
+  `trackfw update` (escopo de projeto) ou `trackfw update harness` (escopo global,
+  `~/.trackfw/scripts/`) para gerar o script e ligar o hook nos arquivos de config do
+  seu assistente de IA.
+- Deny é global em todos os 7 runtimes, inclusive para o agente arquiteto/orquestrador —
+  isolamento por subagente (arquiteto livre, especialistas bloqueados) fica como débito
+  técnico documentado, não implementado nesta versão.
+
 ## [6.10.0] - 2026-08-14
 
 ### Added

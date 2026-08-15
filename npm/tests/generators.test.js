@@ -333,12 +333,16 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   let data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
   // ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): PreToolUse/PostToolUse each gain two
   // new credential-guard entries (Read, Write|Edit) alongside the pre-existing Bash one.
+  // ROADMAP-2026-08-14 ML-3B: PreToolUse's "Bash" matcher entry additionally gains a second
+  // hook (git branch guard) alongside the credential-guard one -- same matcher entry, two
+  // different commands in its `hooks` array.
   assert.equal(data.hooks.PreToolUse.length, 5)
   assert.equal(data.hooks.PreToolUse[0].matcher, 'UserTool')
   assert.equal(data.hooks.PreToolUse[1].matcher, 'AskUserQuestion')
   assert.equal(data.hooks.PreToolUse[1].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.PreToolUse[2].matcher, 'Bash')
   assert.equal(data.hooks.PreToolUse[2].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.PreToolUse[2].hooks[1].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh')
   assert.equal(data.hooks.PreToolUse[3].matcher, 'Read')
   assert.equal(data.hooks.PreToolUse[3].hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(data.hooks.PreToolUse[4].matcher, 'Write|Edit')
@@ -355,7 +359,7 @@ test('injectClaudeHooks creates and merges .claude/settings.json idempotently', 
   data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
   assert.equal(data.hooks.PreToolUse.length, 5)
   assert.equal(data.hooks.PreToolUse[1].hooks.length, 1)
-  assert.equal(data.hooks.PreToolUse[2].hooks.length, 1)
+  assert.equal(data.hooks.PreToolUse[2].hooks.length, 2)
   assert.equal(data.hooks.PreToolUse[3].hooks.length, 1)
   assert.equal(data.hooks.PreToolUse[4].hooks.length, 1)
   assert.equal(data.hooks.PostToolUse.length, 4)
@@ -392,8 +396,13 @@ test('injectClaudeHooks migrates a legacy relative-path credential-guard command
   const readEntry = data.hooks.PreToolUse.find(e => e.matcher === 'Read')
   const writeEditEntry = data.hooks.PostToolUse.find(e => e.matcher === 'Write|Edit')
 
-  assert.equal(bashEntry.hooks.length, 1, 'expected exactly 1 hook after migration, not old+new side by side')
+  // ROADMAP-2026-08-14 ML-3B: the "Bash" matcher entry now also carries the git branch guard
+  // hook (a different command, same matcher) alongside the migrated credential-guard one --
+  // migration only rewrites the credential-guard command in place, it does not affect the
+  // separate git-branch-guard hook merged afterward.
+  assert.equal(bashEntry.hooks.length, 2, 'expected exactly 1 migrated credential-guard hook + 1 git-branch-guard hook, not old+new side by side')
   assert.equal(bashEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
+  assert.equal(bashEntry.hooks[1].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh')
   assert.equal(readEntry.hooks.length, 1)
   assert.equal(readEntry.hooks[0].command, '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh')
   assert.equal(writeEditEntry.hooks.length, 1)
@@ -459,6 +468,9 @@ test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () =>
   assert.equal(data.hooks.PermissionRequest[0].hooks[0].command, CODEX_SIGNAL_CMD)
   assert.equal(data.hooks.PreToolUse[0].matcher, 'Bash')
   assert.equal(data.hooks.PreToolUse[0].hooks[0].command, CODEX_GUARD_CMD)
+  // ROADMAP-2026-08-14 ML-3B: the "Bash" matcher entry also gains the git branch guard hook
+  // (a different command, same matcher), appended after the credential-guard one.
+  assert.equal(data.hooks.PreToolUse[0].hooks[1].command, '"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh"')
   // ADR-2026-08-06 emenda 7: Codex has no dedicated read matcher (documented limitation) --
   // only apply_patch (write/edit) is added alongside Bash.
   assert.equal(data.hooks.PreToolUse[1].matcher, 'apply_patch')
@@ -475,7 +487,7 @@ test('injectCodexHooks creates and merges .codex/hooks.json idempotently', () =>
   assert.equal(data.hooks.PermissionRequest.length, 1)
   assert.equal(data.hooks.PermissionRequest[0].hooks.length, 1)
   assert.equal(data.hooks.PreToolUse.length, 2)
-  assert.equal(data.hooks.PreToolUse[0].hooks.length, 1)
+  assert.equal(data.hooks.PreToolUse[0].hooks.length, 2)
   assert.equal(data.hooks.PreToolUse[1].hooks.length, 1)
   assert.equal(data.hooks.PostToolUse.length, 3)
   assert.equal(data.hooks.PostToolUse[1].hooks.length, 1)
@@ -542,7 +554,13 @@ test('injectCodexHooks migration wiring rewrites in place, does not duplicate', 
     assert.equal(entries[0].hooks[0].command, command, `${event}[${matcher}]: unexpected command`)
   }
   checkOne('PermissionRequest', '.*', CODEX_SIGNAL_CMD)
-  checkOne('PreToolUse', 'Bash', CODEX_GUARD_CMD)
+  // "Bash" now also carries the (non-migrated, freshly-added) git branch guard hook alongside
+  // the migrated credential-guard one (ROADMAP-2026-08-14 ML-3B) -- checked separately below
+  // instead of via checkOne, which asserts exactly 1 hook.
+  const preBash = data.hooks.PreToolUse.find(e => e.matcher === 'Bash')
+  assert.equal(preBash.hooks.length, 2, 'PreToolUse[Bash]: expected migrated credential-guard hook + git-branch-guard hook')
+  assert.equal(preBash.hooks[0].command, CODEX_GUARD_CMD)
+  assert.equal(preBash.hooks[1].command, '"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh"')
   checkOne('PreToolUse', 'apply_patch', CODEX_GUARD_CMD)
   checkOne('PostToolUse', '.*', CODEX_CLEANUP_CMD)
   checkOne('PostToolUse', 'Bash', CODEX_GUARD_CMD)
@@ -648,7 +666,14 @@ test('injectGeminiHooks migration wiring rewrites in place, does not duplicate',
     assert.equal(entries[0].hooks[0].command, command, `${event}[${matcher}]: unexpected command`)
   }
   checkOne('Notification', 'ToolPermission', GEMINI_SIGNAL_CMD)
-  checkOne('BeforeTool', 'run_shell_command', GEMINI_GUARD_CMD)
+  // "BeforeTool"'s "run_shell_command" matcher now also carries the (non-migrated,
+  // freshly-added) git branch guard hook alongside the migrated credential-guard one
+  // (ROADMAP-2026-08-14 ML-3B) -- checked separately below instead of via checkOne, which
+  // asserts exactly 1 hook.
+  const beforeShell = data.hooks.BeforeTool.find(e => e.matcher === 'run_shell_command')
+  assert.equal(beforeShell.hooks.length, 2, 'BeforeTool[run_shell_command]: expected migrated credential-guard hook + git-branch-guard hook')
+  assert.equal(beforeShell.hooks[0].command, GEMINI_GUARD_CMD)
+  assert.equal(beforeShell.hooks[1].command, '$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh')
   checkOne('BeforeTool', 'read_file|read_many_files', GEMINI_GUARD_CMD)
   checkOne('BeforeTool', 'write_file|replace', GEMINI_GUARD_CMD)
   checkOne('AfterTool', '*', GEMINI_CLEANUP_CMD)
@@ -716,7 +741,10 @@ test('injectCopilotHooks creates .github/hooks/trackfw-attention.json idempotent
   assert.equal(data1.version, 1)
   // ADR-2026-08-06 emenda 7 (ROADMAP-2026-08-08 Wave 2): +2 credential-guard entries (view,
   // create|edit) alongside the pre-existing bash one, in each of preToolUse/postToolUse.
-  assert.equal(data1.hooks.preToolUse.length, 4)
+  // ROADMAP-2026-08-14 ML-3B: preToolUse also gains +1 git-branch-guard entry (matcher
+  // "bash"), unconditional -- postToolUse is untouched (no PostToolUse wiring for this
+  // guard, see GBG_CMD_CLAUDE comment in hooks.js).
+  assert.equal(data1.hooks.preToolUse.length, 5)
   assert.equal(data1.hooks.postToolUse.length, 4)
 
   const findByBash = (arr, bash) => arr.find(e => e.bash === bash)
@@ -734,6 +762,9 @@ test('injectCopilotHooks creates .github/hooks/trackfw-attention.json idempotent
 
   const guardPreEdit = findByMatcher(data1.hooks.preToolUse, 'scripts/trackfw-credential-guard.sh', 'create|edit')
   assert.ok(guardPreEdit, 'preToolUse missing credential-guard create|edit entry')
+
+  const gitGuardPre = findByMatcher(data1.hooks.preToolUse, 'scripts/trackfw-git-branch-guard.sh', 'bash')
+  assert.ok(gitGuardPre, 'preToolUse missing git-branch-guard bash entry')
 
   const cleanup = findByBash(data1.hooks.postToolUse, 'scripts/trackfw-attention-cleanup.sh')
   assert.ok(cleanup, 'postToolUse missing attention-cleanup entry')
@@ -769,8 +800,11 @@ test('injectCursorHooks creates and merges .cursor/hooks.json idempotently', () 
   assert.equal(data.hooks.preToolUse[0].command, 'scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.postToolUse.length, 3)
   assert.equal(data.hooks.postToolUse[0].command, 'scripts/trackfw-attention-cleanup.sh')
-  assert.equal(data.hooks.beforeShellExecution.length, 1)
+  // ROADMAP-2026-08-14 ML-3B: beforeShellExecution also gains the git branch guard entry
+  // (a separate plain-command entry, no matcher) alongside the credential-guard one.
+  assert.equal(data.hooks.beforeShellExecution.length, 2)
   assert.equal(data.hooks.beforeShellExecution[0].command, 'scripts/trackfw-credential-guard.sh')
+  assert.equal(data.hooks.beforeShellExecution[1].command, 'scripts/trackfw-git-branch-guard.sh')
   assert.equal(data.hooks.afterShellExecution.length, 1)
   assert.equal(data.hooks.afterShellExecution[0].command, 'scripts/trackfw-credential-guard.sh')
 
@@ -788,7 +822,7 @@ test('injectCursorHooks creates and merges .cursor/hooks.json idempotently', () 
   data = JSON.parse(fs.readFileSync(hooksPath, 'utf8'))
   assert.equal(data.hooks.preToolUse.length, 3)
   assert.equal(data.hooks.postToolUse.length, 3)
-  assert.equal(data.hooks.beforeShellExecution.length, 1)
+  assert.equal(data.hooks.beforeShellExecution.length, 2)
   assert.equal(data.hooks.afterShellExecution.length, 1)
 })
 
