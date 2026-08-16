@@ -17893,3 +17893,55 @@ Go compila; Node carrega; Python importa. `--host` aparece no `--help` dos 3.
 
 REQ de higiene (8 itens), REQ de conformidade de i18n, e os dois achados da Wave 2 da higiene:
 janela de gravação parcial do manifest (→ `doctor`) e wrapper de erro divergente no `integrations`.
+
+## Sessão 2026-08-16 (retomada) — Zeus (arquiteto) — auditoria por medição do WIP do `serve`
+
+Retomada do ponto de parada. Antes de despachar qualquer agente, **medi eu mesmo** o estado real dos
+3 CLIs — o agente do ML-1A morreu sem relatório e nada no commit valia como evidência para Node e
+Python.
+
+### Medido (não lido): padrão dos 3 CLIs está correto
+
+```
+lsof:  tfw    IPv4 TCP 127.0.0.1:45901 (LISTEN)
+       node   IPv4 TCP 127.0.0.1:45902 (LISTEN)
+       Python IPv4 TCP 127.0.0.1:45903 (LISTEN)
+
+localhost  -> 200 / 200 / 200      ← AC6 preservado nos 3
+127.0.0.1  -> 200 / 200 / 200
+[::1]      -> 000 / 000 / 000      ← consistente entre os 3
+LAN        -> 000 / 000 / 000      ← recusado nos 3 (timeout)
+```
+
+Aviso de exposição **byte-idêntico nos 3**, verificado por execução real com `--host 0.0.0.0` e com
+o IP da LAN — não por leitura comparada do fonte. AC1, AC2, AC3 e AC6 fecham.
+
+A referência a `docs/cli-parity.md` "Aviso ao usuário — string pinada" nos comentários **existe de
+fato** (linha 2114) — não foi fabricada pelo agente.
+
+### Achado novo: `--host ::1` quebra em 2 dos 3 CLIs
+
+Divergência real, não hipótese — medida:
+
+| CLI | `--host ::1` | causa |
+|---|---|---|
+| Go | ❌ `too many colons in address` | `fmt.Sprintf("%s:%d")` em vez de `net.JoinHostPort` |
+| Node | ✅ escuta em `[::1]` | correto |
+| Python | ❌ `nodename nor servname provided` | `HTTPServer` é `AF_INET`; falta `address_family` |
+
+É o caso de teste que **discrimina** o gate de paridade do AC5 — melhor que o `::ffff:127.0.0.1`,
+onde os 3 falham (impacto de segurança nulo, ninguém escuta) e que fica fora de escopo.
+
+### Decisões tomadas
+
+1. **Padrão continua IPv4 `127.0.0.1` nos 3.** Um listener não faz loopback dual-stack, e a medição
+   mostra `localhost -> 200` nos 3 (o cliente faz fallback). Não-objetivo declarado; dual listener
+   só entraria se `localhost` falhasse em algum runtime, e não falha.
+2. **AC4 reescrito.** "`--help` byte-idêntico nos 3" é impossível — cobra imprime `Flags:`,
+   commander `Options:`, argparse `options:` + linha `usage:`. As 2 ocorrências de `--host` no
+   Python eram a synopsis do argparse, **não** duplicação de texto. O AC verificável é: string de
+   help *da flag* idêntica no fonte + aviso *renderizado* idêntico.
+3. **URL impressa entra no escopo do ML.** Os 3 imprimem `http://localhost:<porta>` seja qual for o
+   `--host`; com `--host 192.168.x.y` a URL não é alcançável e Node/Python abrem o browser no
+   endereço errado. Toca AC3 (o usuário precisa saber o que expôs).
+4. **`::ffff:127.0.0.1` e `127.0.0.2` fora de escopo**, declarado nas Notas do roadmap.
