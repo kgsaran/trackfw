@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-16
 req: "docs/req/REQ-2026-08-16-trackfw-branch-new-aceita-tipos-chore-e-docs-sem-gate-de-roadmap.md"
 squad: "apolo-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf"
 
 # Roadmap: `trackfw branch new` aceita tipos `chore` e `docs` sem gate de roadmap
 
-> Created: 2026-08-16 | Status: wip
+> Created: 2026-08-16 | Status: done
 
 ## Context
 
@@ -28,11 +28,11 @@ O vocabulário do `branch new` foi espelhado do `ship`, mas os dois já divergem
 aceita e só avisa; o `branch new` recusa.
 
 ## Acceptance Criteria
-- [ ] AC1 — `chore/<slug>` e `docs/<slug>` criam a branch, sem exigir roadmap.
-- [ ] AC2 — `feat`/`fix`/`refactor` continuam exigindo roadmap (gate **não** afrouxado).
-- [ ] AC3 — Tipo inválido continua recusado, com mensagem listando o vocabulário novo.
-- [ ] AC4 — Idêntico nos 3 CLIs; `scripts/check-branch-new-parity.sh` cobre os casos novos.
-- [ ] AC5 — `make quality` verde.
+- [x] AC1 — `chore/<slug>` e `docs/<slug>` criam a branch, sem exigir roadmap.
+- [x] AC2 — `feat`/`fix`/`refactor` continuam exigindo roadmap (gate **não** afrouxado).
+- [x] AC3 — Tipo inválido continua recusado, com mensagem listando o vocabulário novo.
+- [x] AC4 — Idêntico nos 3 CLIs; `scripts/check-branch-new-parity.sh` cobre os casos novos.
+- [x] AC5 — `make quality` verde.
 
 ---
 

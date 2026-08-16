@@ -17632,3 +17632,15 @@ enfraquecimento da lógica de match em si.
 `make quality` (118 cenários de falsificação) todos verdes — evidência completa no relatório do
 agente. Roadmap marcado com ML-1A ✅ Concluído. Nenhum commit/push (fora da autoridade deste
 agente) — devolvido ao `trackfw_architect` para auditoria e commit.
+
+## Sessão 2026-08-16 — Zeus (arquiteto) — fix do vocabulário de branch, PR aberto
+
+Fix pequeno e bloqueante da release: `trackfw branch new` passa a aceitar `chore` e `docs`, sem
+gate de roadmap, alinhando-se ao que `ship` e `commit` já faziam. Gate preservado para
+`feat|fix|refactor`, falsificado em repo isolado. Roadmap e REQ em `done`.
+
+Dois débitos do `git-branch-guard` registrados para REQ própria: brecha de contorno não coberta, e
+falso-positivo por prosa em mensagem de commit.
+
+**Próximo:** release 7.0.0, com o motivo da remoção de plugins (superfície de supply-chain) como
+justificativa central do CHANGELOG.
