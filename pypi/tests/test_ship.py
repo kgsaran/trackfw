@@ -19,6 +19,7 @@ import pytest
 from trackfw.ship.runner import (
     run_ship,
     is_ship_branch,
+    is_gated_ship_branch,
     is_git_write_cmd,
     normalize_branch_slug,
     _resolve_roadmap_dir,
@@ -144,14 +145,14 @@ def test_ship_master_branch_aborts():
     assert 'cannot run on' in out
 
 
-@pytest.mark.parametrize('branch', ['feature/foo', 'hotfix/bar', 'docs/update', 'mybranch'])
+@pytest.mark.parametrize('branch', ['feature/foo', 'hotfix/bar', 'chores/typo', 'mybranch'])
 def test_ship_wrong_pattern_aborts(branch):
     code, out, _ = run(branch=branch)
     assert code == 1
     assert 'does not match the required pattern' in out
 
 
-@pytest.mark.parametrize('branch', ['feat/my-feature', 'fix/bug-123', 'refactor/clean-up'])
+@pytest.mark.parametrize('branch', ['feat/my-feature', 'fix/bug-123', 'refactor/clean-up', 'chore/release-x.y.z', 'docs/update-readme'])
 def test_ship_valid_branch_not_rejected_at_step1(branch):
     code, out, _ = run(branch=branch)
     assert 'does not match the required pattern' not in out
@@ -234,11 +235,71 @@ def test_ship_mixed_doc_and_code_still_blocked_by_governance():
 
 
 def test_ship_mixed_doc_and_code_non_conforming_branch_still_blocked():
-    # Same mixed-content guarantee, but on a branch name that would fail
-    # is_ship_branch too.
-    code, out, _ = run(branch='docs/mixed', staged='docs/note.md\ntrackfw/ship/runner.py')
+    # Same mixed-content guarantee, but on a branch name outside the ship vocabulary entirely
+    # (feat/fix/refactor/chore/docs) — must still fail Step 1's branch-pattern check.
+    code, out, _ = run(branch='hotfix/mixed', staged='docs/note.md\ntrackfw/ship/runner.py')
     assert code == 1
     assert 'does not match the required pattern' in out
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# chore/docs branch-type exception — Step 2 skips governance regardless of staged content
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_ship_chore_branch_mixed_content_governance_skipped():
+    # "chore/release-x.y.z" carries a non-doc file staged (not doc-only) — proves the skip is
+    # keyed on branch type, not on the pre-existing doc-only staged-content exception.
+    called = {'value': False}
+
+    def _tracking_governance():
+        called['value'] = True
+        return ['should never be called']
+
+    git = MockGit(branch='chore/release-x.y.z', staged='trackfw/ship/runner.py')
+    lines = []
+    code = run_ship(
+        message='chore: release x.y.z',
+        dry_run=True,
+        exec_git=git.exec,
+        check_governance=_tracking_governance,
+        writeln=lambda s: lines.append(s),
+    )
+    out = '\n'.join(lines)
+    assert code == 0, f"chore branch must not be blocked by governance: {out}"
+    assert not called['value'], 'check_governance must not be called at all for a chore/docs branch'
+    assert 'Governance: skipped (chore/docs branch)' in out
+
+
+def test_ship_docs_branch_mixed_content_governance_skipped():
+    called = {'value': False}
+
+    def _tracking_governance():
+        called['value'] = True
+        return ['should never be called']
+
+    git = MockGit(branch='docs/update-readme', staged='docs/note.md\ntrackfw/ship/runner.py')
+    lines = []
+    code = run_ship(
+        message='docs: update readme',
+        dry_run=True,
+        exec_git=git.exec,
+        check_governance=_tracking_governance,
+        writeln=lambda s: lines.append(s),
+    )
+    out = '\n'.join(lines)
+    assert code == 0, f"docs branch must not be blocked by governance: {out}"
+    assert not called['value'], 'check_governance must not be called at all for a chore/docs branch'
+    assert 'Governance: skipped (chore/docs branch)' in out
+
+
+def test_ship_feat_branch_no_roadmap_non_regression():
+    # Non-regression: feat/fix/refactor branches must still be hard-gated on governance —
+    # loosening the gate for chore/docs must not loosen it for feat/fix/refactor.
+    v = ['branch "feat/no-roadmap" is a feat/fix/refactor branch but no roadmap is in wip/']
+    code, out, _ = run(branch='feat/no-roadmap', dry_run=True, violations=v)
+    assert code == 1, "expected governance error — feat/fix/refactor must still be gated"
+    assert 'governance check failed' in out
+    assert 'Governance: skipped' not in out
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -460,14 +521,24 @@ def test_ship_exec_never_receives_git_add_all():
 # is_ship_branch unit tests
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize('branch', ['feat/foo', 'feat/a-very-long-slug', 'fix/123', 'refactor/clean-up'])
+@pytest.mark.parametrize('branch', ['feat/foo', 'feat/a-very-long-slug', 'fix/123', 'refactor/clean-up', 'chore/x', 'docs/x'])
 def test_is_ship_branch_valid(branch):
     assert is_ship_branch(branch), f"{branch} should be valid"
 
 
-@pytest.mark.parametrize('branch', ['main', 'master', 'feature/foo', 'hotfix/bar', 'feat/', 'refactor/'])
+@pytest.mark.parametrize('branch', ['main', 'master', 'feature/foo', 'hotfix/bar', 'feat/', 'refactor/', 'chore/', 'docs/'])
 def test_is_ship_branch_invalid(branch):
     assert not is_ship_branch(branch), f"{branch} should be invalid"
+
+
+@pytest.mark.parametrize('branch', ['feat/foo', 'fix/123', 'refactor/clean-up'])
+def test_is_gated_ship_branch_true(branch):
+    assert is_gated_ship_branch(branch), f"{branch} should be gated"
+
+
+@pytest.mark.parametrize('branch', ['chore/x', 'docs/x', 'main', 'feature/foo', 'chore/', 'docs/'])
+def test_is_gated_ship_branch_false(branch):
+    assert not is_gated_ship_branch(branch), f"{branch} should not be gated"
 
 
 # ────────────────────────────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `agents` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
-| `ship` | yes | yes | yes | Governed `git commit + push + open PR/MR`; hard governance gate (see below) |
+| `ship` | yes | yes | yes | Governed `git commit + push + open PR/MR` for `feat`/`fix`/`refactor`/`chore`/`docs` branches; hard governance gate for `feat`/`fix`/`refactor` only — `chore`/`docs` skip it (see below) |
 | `branch` | yes | yes | yes | `new <type>/<slug>` — for `feat`/`fix`/`refactor`, gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after; `chore`/`docs` create the branch without that gate, mirroring the housekeeping exemption `trackfw ship`/`trackfw commit` already grant those types (see below) |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
@@ -611,9 +611,10 @@ change.
 `trackfw ship` runs a seven-step governed delivery sequence in all three runtimes:
 
 ```
-1. Validates branch name — must match feat|fix|refactor/<slug>
-2. Validates governance — REQ + roadmap in wip/ or done/ must exist
-   (hard gate: not affected by lenient mode or per-rule severity)
+1. Validates branch name — must match feat|fix|refactor|chore|docs/<slug>
+2. Validates governance — REQ + roadmap in wip/ or done/ must exist for feat/fix/refactor branches
+   (hard gate: not affected by lenient mode or per-rule severity); chore/docs branches skip this
+   check entirely, mirroring `trackfw commit`
 3. Detects pending squash-merges in other branches (advisory only)
 4. Reviews what is staged (git status --short + git diff --cached --stat)
 5. Commits with Conventional Commits format (-m is required)
@@ -688,10 +689,12 @@ This text is identical in Go, Node.js, and Python.
 and per-rule severity overrides — in lenient mode, governance violations become warnings
 and exit code is 0.
 
-`trackfw ship` does **not** respect lenient mode or per-rule severity. The governance
-check in step 2 (`CheckShipGovernance`) is always a hard gate: a branch without a linked
-REQ and a roadmap in `wip/` or `done/` **always** aborts ship with exit code 1, regardless of
-`governance_mode` or `rules:` configuration.
+`trackfw ship` does **not** respect lenient mode or per-rule severity, for `feat`/`fix`/`refactor`
+branches. The governance check in step 2 (`CheckShipGovernance`) is always a hard gate for those
+three types: a branch without a linked REQ and a roadmap in `wip/` or `done/` **always** aborts
+ship with exit code 1, regardless of `governance_mode` or `rules:` configuration. `chore`/`docs`
+branches skip step 2 entirely, by branch type — see "Two independent exemption axes" under
+`trackfw branch new` below for how this differs from the staged-content doc-only exemption.
 
 **Why:** `ship` is a delivery gate, not an audit tool. Lenient mode exists for teams
 still ramping up governance — it does not mean "ship without governance artifacts".
@@ -716,11 +719,22 @@ to **before** branch creation instead of after, for the `feat`/`fix`/`refactor` 
 the exact same matching logic those two commands already apply; the command never implements a
 second version of the rule.
 
-`chore` and `docs` are housekeeping types — already treated as roadmap-exempt by `trackfw ship`
-and `trackfw commit` (see their "doc-only"/housekeeping exemptions above) — so `trackfw branch
-new` creates `chore/<slug>` and `docs/<slug>` branches directly, without consulting `wip/`/`done/`
-at all. This is what unblocks branches like `chore/release-x.y.z`, which by definition have no
-REQ/roadmap of their own.
+`chore` and `docs` are housekeeping types — already treated as roadmap-exempt, by **branch type**,
+by `trackfw ship` and `trackfw commit` (see "Behavioural divergence from `trackfw validate`" above
+and `trackfw commit`'s own governed-prefix exemption) — so `trackfw branch new` creates
+`chore/<slug>` and `docs/<slug>` branches directly, without consulting `wip/`/`done/` at all. This
+is what unblocks branches like `chore/release-x.y.z`, which by definition have no REQ/roadmap of
+their own.
+
+**Two independent exemption axes — do not conflate them.** `trackfw ship` grants roadmap
+exemption along two separate axes that happen to overlap in practice but are checked differently:
+(1) **staged-content doc-only** — every staged file is under `docs/`, `vault/`, or has a `.md`
+extension (`allDocOnly`), regardless of branch name; prints `Governance: skipped (doc-only
+change)`. (2) **branch-type housekeeping** — the branch itself is `chore/<slug>` or `docs/<slug>`,
+regardless of what is staged (a `chore/` branch may stage code); prints `Governance: skipped
+(chore/docs branch)`. `trackfw branch new`'s exemption for `chore`/`docs` types is the branch-type
+axis (2) — it has no equivalent of axis (1), since there is nothing staged yet at branch-creation
+time.
 
 ### Command surface
 

@@ -9,9 +9,10 @@ function createShipCommand() {
   cmd
     .description(
       'trackfw ship runs a governed delivery sequence:\n\n' +
-      '  1. Validates branch name — must match feat|fix|refactor/<slug>\n' +
-      '  2. Validates governance — REQ + roadmap in wip/ must exist\n' +
-      '     (hard gate: not affected by lenient mode or per-rule severity)\n' +
+      '  1. Validates branch name — must match feat|fix|refactor|chore|docs/<slug>\n' +
+      '  2. Validates governance — REQ + roadmap in wip/ must exist for feat/fix/refactor branches\n' +
+      '     (hard gate: not affected by lenient mode or per-rule severity); chore/docs branches skip\n' +
+      "     this check, mirroring 'trackfw commit'\n" +
       '  3. Detects pending squash-merges in other branches (advisory only)\n' +
       '  4. Reviews what is staged (git status --short + git diff --cached --stat)\n' +
       '  5. Commits with Conventional Commits format (-m is required)\n' +
