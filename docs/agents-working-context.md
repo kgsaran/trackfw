@@ -17709,3 +17709,13 @@ por que remover em vez de proteger — o gate seria de revisão, não de supply 
 uma seção em branco. Volta quando houver conteúdo novo.
 
 Tag só após o merge deste PR.
+
+## Sessão 2026-08-16 — Zeus (arquiteto) — release 7.0.0 publicada + REQ de higiene
+
+Release 7.0.0 mergeada (#179). Tag `v7.0.0` anotada criada localmente com o changelog no corpo; o
+push da tag é bloqueado pelo guard e — decisão de KG — fica como ato humano deliberado, sem REQ por
+enquanto. É o único dos três bloqueios do protocolo de release em que o guard está certo: os outros
+dois eram efeito colateral e foram corrigidos (#177 `branch new`, #178 `ship`).
+
+REQ agregadora de higiene aberta com 7 débitos, todos não-bloqueantes e já com nota de vault ou
+registro em roadmap. Fica em backlog, sem roadmap.
