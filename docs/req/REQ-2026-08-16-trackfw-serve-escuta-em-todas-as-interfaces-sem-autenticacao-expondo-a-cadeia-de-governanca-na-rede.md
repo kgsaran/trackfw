@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-16
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md"
 ---
 
 # REQ: trackfw serve escuta em todas as interfaces sem autenticacao expondo a cadeia de governanca na rede
@@ -94,7 +94,7 @@ ADR: (a decidir — AC2 pode merecer registro por ser mudança de comportamento 
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md`
 
 ## Acceptance Criteria
 - [ ]

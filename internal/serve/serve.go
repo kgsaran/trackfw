@@ -18,8 +18,9 @@ var staticFiles embed.FS
 
 // ExposureWarningTemplate is the pinned, byte-identical warning printed by all
 // three runtimes (Go, Node.js, Python) whenever --host resolves to a
-// non-loopback interface. See docs/cli-parity.md "Aviso ao usuário — string
-// pinada" for the parity convention this follows.
+// non-loopback interface. See docs/cli-parity.md "`trackfw serve` —
+// endereço de escuta, `--host` e aviso de exposição" for the parity
+// convention this follows.
 const ExposureWarningTemplate = "WARNING: trackfw serve is binding to %s:%d — the governance chain (ADRs, REQs, roadmaps) will be readable without authentication by any device that can reach it."
 
 // ExposureWarning formats the pinned warning for the given host:port.
@@ -43,7 +44,8 @@ func IsLoopbackHost(host string) bool {
 // Node.js, Python): "localhost" is kept only when host is "localhost" or a
 // loopback IPv4 address (127.0.0.0/8), so the common case's output does not
 // change; IPv6 hosts get bracket notation (RFC 3986); anything else is
-// printed as-is. See docs/cli-parity.md and ML-1B in the exposure roadmap.
+// printed as-is. See docs/cli-parity.md "`trackfw serve` — endereço de
+// escuta, `--host` e aviso de exposição" (ML-1B).
 //
 // The IPv4-vs-IPv6 classification is by *literal syntax* (presence of ":"),
 // not by decoded address family — this matches Node's net.isIPv6(host) and

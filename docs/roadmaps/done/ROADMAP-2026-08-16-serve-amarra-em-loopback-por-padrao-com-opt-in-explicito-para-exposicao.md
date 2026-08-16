@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-16
 req: "docs/req/REQ-2026-08-16-trackfw-serve-escuta-em-todas-as-interfaces-sem-autenticacao-expondo-a-cadeia-de-governanca-na-rede.md"
 squad: "apolo-tf, hades-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: `serve` amarra em loopback por padrão, com opt-in explícito para exposição
 
-> Created: 2026-08-16 | Status: wip | **Prioridade: urgente (KG)**
+> Created: 2026-08-16 | Status: done | **Prioridade: urgente (KG)**
 
 ## Context
 

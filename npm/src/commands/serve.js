@@ -14,8 +14,9 @@ const { handleAttention } = require('../serve/api_attention')
 const STATIC_DIR = path.join(__dirname, '..', 'serve', 'static')
 
 // Aviso pinado, byte-idêntico entre os 3 runtimes (Go, Node.js, Python) — ver
-// docs/cli-parity.md "Aviso ao usuário — string pinada". Emitido quando
-// --host resolve para uma interface diferente de loopback.
+// docs/cli-parity.md "`trackfw serve` — endereço de escuta, `--host` e
+// aviso de exposição". Emitido quando --host resolve para uma interface
+// diferente de loopback.
 function exposureWarning(host, port) {
   return `WARNING: trackfw serve is binding to ${host}:${port} — the governance chain (ADRs, REQs, roadmaps) will be readable without authentication by any device that can reach it.`
 }

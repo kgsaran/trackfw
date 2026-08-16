@@ -17,8 +17,9 @@ from urllib.parse import urlparse
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "serve", "static")
 
 # Aviso pinado, byte-idêntico entre os 3 runtimes (Go, Node.js, Python) — ver
-# docs/cli-parity.md "Aviso ao usuário — string pinada". Emitido quando --host
-# resolve para uma interface diferente de loopback.
+# docs/cli-parity.md "`trackfw serve` — endereço de escuta, `--host` e
+# aviso de exposição". Emitido quando --host resolve para uma interface
+# diferente de loopback.
 EXPOSURE_WARNING_TEMPLATE = (
     "WARNING: trackfw serve is binding to {host}:{port} — the governance "
     "chain (ADRs, REQs, roadmaps) will be readable without authentication by "
