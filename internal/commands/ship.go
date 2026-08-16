@@ -61,12 +61,13 @@ func newShipCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "ship",
-		Short: "Governed git commit + push for feat/fix/refactor branches",
+		Short: "Governed git commit + push for feat/fix/refactor/chore/docs branches",
 		Long: `trackfw ship runs a governed delivery sequence:
 
-  1. Validates branch name — must match feat|fix|refactor/<slug>
-  2. Validates governance — REQ + roadmap in wip/ must exist
-     (hard gate: not affected by lenient mode or per-rule severity)
+  1. Validates branch name — must match feat|fix|refactor|chore|docs/<slug>
+  2. Validates governance — REQ + roadmap in wip/ must exist for feat/fix/refactor branches
+     (hard gate: not affected by lenient mode or per-rule severity); chore/docs branches skip
+     this check, mirroring 'trackfw commit'
   3. Detects pending squash-merges in other branches (advisory only)
   4. Reviews what is staged (git status --short + git diff --cached --stat)
   5. Commits with Conventional Commits format (-m is required)
@@ -168,7 +169,7 @@ func runShip(opts shipOpts, deps shipDeps) error {
 
 	if !docOnly && !isShipBranch(branch) {
 		return fmt.Errorf(
-			"branch %q does not match the required pattern feat|fix|refactor/<slug>\n"+
+			"branch %q does not match the required pattern feat|fix|refactor|chore|docs/<slug>\n"+
 				"Rename your branch or create a new one:\n  git checkout -b feat/<slug>",
 			branch,
 		)
@@ -181,6 +182,10 @@ func runShip(opts shipOpts, deps shipDeps) error {
 	// REQ+roadmap governance — mirrors the CLAUDE.md §7 exception for doc-only changes.
 	if docOnly {
 		fmt.Fprintf(deps.out, "Governance: skipped (doc-only change)\n")
+	} else if isShipBranch(branch) && !isGatedShipBranch(branch) {
+		// chore/docs: housekeeping types already exempted from this gate by
+		// `trackfw branch new` and `trackfw commit` — ship without it too.
+		fmt.Fprintf(deps.out, "Governance: skipped (chore/docs branch)\n")
 	} else {
 		violations := deps.checkGovernance()
 		if len(violations) > 0 {
@@ -510,9 +515,34 @@ func buildForgeCreateArgs(adapter forge.Adapter, title, body string) []string {
 	return args
 }
 
-// isShipBranch returns true when branch matches feat|fix|refactor/<slug>.
+// shipBranchPrefixes is the full vocabulary `trackfw ship` accepts on the branch name.
+// feat/fix/refactor are gated on Step 2's branch_has_wip_roadmap governance check (a hard gate
+// not affected by lenient mode); chore/docs are housekeeping types — already exempted from that
+// gate by `trackfw branch new` and `trackfw commit` — and ship without it too. Mirrors
+// branchValidTypes/branchGatedTypes in branch.go and commitGovernedPrefixes in commit.go.
+var shipBranchPrefixes = []string{"feat/", "fix/", "refactor/", "chore/", "docs/"}
+
+// shipGatedBranchPrefixes is the subset of shipBranchPrefixes that requires Step 2's
+// branch_has_wip_roadmap governance check. Keep in sync with branchGatedTypes (branch.go) and
+// commitGovernedPrefixes (commit.go).
+var shipGatedBranchPrefixes = []string{"feat/", "fix/", "refactor/"}
+
+// isShipBranch returns true when branch matches feat|fix|refactor|chore|docs/<slug>.
 func isShipBranch(branch string) bool {
-	for _, prefix := range []string{"feat/", "fix/", "refactor/"} {
+	return matchesBranchPrefix(branch, shipBranchPrefixes)
+}
+
+// isGatedShipBranch returns true when branch matches feat|fix|refactor/<slug> — the subset of
+// isShipBranch's vocabulary that requires Step 2's branch_has_wip_roadmap governance check.
+// chore/docs branches satisfy isShipBranch but return false here.
+func isGatedShipBranch(branch string) bool {
+	return matchesBranchPrefix(branch, shipGatedBranchPrefixes)
+}
+
+// matchesBranchPrefix returns true when branch starts with one of prefixes and has a non-empty
+// slug after the prefix.
+func matchesBranchPrefix(branch string, prefixes []string) bool {
+	for _, prefix := range prefixes {
 		if strings.HasPrefix(branch, prefix) && len(branch) > len(prefix) {
 			return true
 		}

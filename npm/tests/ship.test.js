@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const {
-  runShip, isShipBranch, isGitWriteCmd, normalizeBranchSlug, resolveRoadmapDir, resetConfig,
+  runShip, isShipBranch, isGatedShipBranch, isGitWriteCmd, normalizeBranchSlug, resolveRoadmapDir, resetConfig,
   GIT_WRITE_COMMANDS, buildForgeCreateArgs, firstLine, allDocOnly, defaultBaseBranch,
   gitCommitsSince, buildPRBody, COMMIT_MESSAGE_SEP,
 } = require('../src/ship/runner')
@@ -100,7 +100,7 @@ test('ship: master branch aborts', () => {
 })
 
 test('ship: wrong pattern aborts', () => {
-  for (const branch of ['feature/foo', 'hotfix/bar', 'docs/update', 'mybranch']) {
+  for (const branch of ['feature/foo', 'hotfix/bar', 'chores/typo', 'mybranch']) {
     const { deps, cap } = makeDeps({ branch, staged: 'file.js' })
     const code = runShip(makeOpts(), deps)
     assert.equal(code, 1, `${branch} should abort`)
@@ -109,7 +109,7 @@ test('ship: wrong pattern aborts', () => {
 })
 
 test('ship: valid branch patterns not rejected at step 1', () => {
-  for (const branch of ['feat/my-feature', 'fix/bug-123', 'refactor/clean-up']) {
+  for (const branch of ['feat/my-feature', 'fix/bug-123', 'refactor/clean-up', 'chore/release-x.y.z', 'docs/update-readme']) {
     const { deps, cap } = makeDeps({ branch, staged: 'file.js' })
     const code = runShip(makeOpts(), deps)
     // May fail at later steps, but must NOT fail with branch-pattern or main/master errors.
@@ -179,10 +179,62 @@ test('ship: mixed doc+code on feat branch is still blocked by governance', () =>
 })
 
 test('ship: mixed doc+code on non-conforming branch name is still blocked', () => {
-  const { deps, cap } = makeDeps({ branch: 'docs/mixed', staged: 'docs/note.md\ninternal/commands/ship.go' })
-  const code = runShip(makeOpts({ message: 'docs: mixed change' }), deps)
+  // Branch name outside the ship vocabulary entirely (feat/fix/refactor/chore/docs) — must still
+  // fail Step 1's branch-pattern check.
+  const { deps, cap } = makeDeps({ branch: 'hotfix/mixed', staged: 'docs/note.md\ninternal/commands/ship.go' })
+  const code = runShip(makeOpts({ message: 'fix: mixed change' }), deps)
   assert.equal(code, 1, 'expected branch-pattern error for a mixed doc+code change on a non-conforming branch')
   assert.ok(cap.output().includes('does not match the required pattern'))
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// chore/docs branch-type exception — Step 2 skips governance regardless of staged content
+// ────────────────────────────────────────────────────────────────────────────
+
+test('ship: chore branch with mixed content skips governance', () => {
+  // "chore/release-x.y.z" carries a non-doc file staged (not doc-only) — proves the skip is
+  // keyed on branch type, not on the pre-existing doc-only staged-content exception.
+  let called = false
+  const git = makeMockGit({ branch: 'chore/release-x.y.z', stagedFiles: 'internal/commands/ship.go' })
+  const cap = captureOutput()
+  const deps = {
+    execGit: git,
+    checkGovernance: () => { called = true; return ['should never be called'] },
+    writeln: cap.writeln,
+    availFn: () => false,
+    execForgeCLI: () => null,
+  }
+  const code = runShip(makeOpts({ message: 'chore: release x.y.z', dryRun: true }), deps)
+  assert.equal(code, 0, 'chore branch must not be blocked by governance')
+  assert.equal(called, false, 'checkGovernance must not be called at all for a chore/docs branch')
+  assert.ok(cap.output().includes('Governance: skipped (chore/docs branch)'), `expected chore/docs branch-type skip message, got:\n${cap.output()}`)
+})
+
+test('ship: docs branch with mixed content skips governance', () => {
+  let called = false
+  const git = makeMockGit({ branch: 'docs/update-readme', stagedFiles: 'docs/note.md\ninternal/commands/ship.go' })
+  const cap = captureOutput()
+  const deps = {
+    execGit: git,
+    checkGovernance: () => { called = true; return ['should never be called'] },
+    writeln: cap.writeln,
+    availFn: () => false,
+    execForgeCLI: () => null,
+  }
+  const code = runShip(makeOpts({ message: 'docs: update readme', dryRun: true }), deps)
+  assert.equal(code, 0, 'docs branch must not be blocked by governance')
+  assert.equal(called, false, 'checkGovernance must not be called at all for a chore/docs branch')
+  assert.ok(cap.output().includes('Governance: skipped (chore/docs branch)'), `expected chore/docs branch-type skip message, got:\n${cap.output()}`)
+})
+
+test('ship: feat branch without roadmap is still hard-gated (non-regression)', () => {
+  const violations = ['branch "feat/no-roadmap" is a feat/fix/refactor branch but no roadmap is in wip/']
+  const { deps, cap } = makeDeps({ branch: 'feat/no-roadmap', staged: 'file.js', violations })
+  const code = runShip(makeOpts({ dryRun: true }), deps)
+  assert.equal(code, 1, 'expected governance error — feat/fix/refactor must still be gated')
+  const out = cap.output()
+  assert.ok(out.includes('governance check failed'), 'must mention governance check failed')
+  assert.ok(!out.includes('Governance: skipped'), 'feat branch must never print a governance-skipped message')
 })
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -394,14 +446,26 @@ test('ship: execGit never receives git add . or git add -A', () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 test('isShipBranch: valid branches', () => {
-  for (const b of ['feat/foo', 'feat/a-very-long-slug', 'fix/123', 'refactor/clean-up']) {
+  for (const b of ['feat/foo', 'feat/a-very-long-slug', 'fix/123', 'refactor/clean-up', 'chore/x', 'docs/x']) {
     assert.ok(isShipBranch(b), `${b} should be valid`)
   }
 })
 
 test('isShipBranch: invalid branches', () => {
-  for (const b of ['main', 'master', 'feature/foo', 'hotfix/bar', 'feat/', 'refactor/']) {
+  for (const b of ['main', 'master', 'feature/foo', 'hotfix/bar', 'feat/', 'refactor/', 'chore/', 'docs/']) {
     assert.ok(!isShipBranch(b), `${b} should be invalid`)
+  }
+})
+
+test('isGatedShipBranch: gated branches', () => {
+  for (const b of ['feat/foo', 'fix/123', 'refactor/clean-up']) {
+    assert.ok(isGatedShipBranch(b), `${b} should be gated`)
+  }
+})
+
+test('isGatedShipBranch: not gated', () => {
+  for (const b of ['chore/x', 'docs/x', 'main', 'feature/foo', 'chore/', 'docs/']) {
+    assert.ok(!isGatedShipBranch(b), `${b} should not be gated`)
   }
 })
 

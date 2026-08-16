@@ -28,11 +28,26 @@ function isGitWriteCmd(args) {
 }
 
 /**
- * isShipBranch returns true when branch matches feat|fix|refactor/<slug>.
+ * isShipBranch returns true when branch matches feat|fix|refactor|chore|docs/<slug> — the full
+ * vocabulary `trackfw ship` accepts on the branch name. feat/fix/refactor are gated on Step 2's
+ * branch_has_wip_roadmap governance check (a hard gate not affected by lenient mode); chore/docs
+ * are housekeeping types — already exempted from that gate by `trackfw branch new` and
+ * `trackfw commit` — and ship without it too.
  * @param {string} branch
  * @returns {boolean}
  */
 function isShipBranch(branch) {
+  return /^(feat|fix|refactor|chore|docs)\/.+/.test(branch)
+}
+
+/**
+ * isGatedShipBranch returns true when branch matches feat|fix|refactor/<slug> — the subset of
+ * isShipBranch's vocabulary that requires Step 2's branch_has_wip_roadmap governance check.
+ * chore/docs branches satisfy isShipBranch but return false here.
+ * @param {string} branch
+ * @returns {boolean}
+ */
+function isGatedShipBranch(branch) {
   return /^(feat|fix|refactor)\/.+/.test(branch)
 }
 
@@ -78,8 +93,10 @@ function checkShipGovernance() {
   const branchResult = defaultExecGit(['symbolic-ref', '--short', 'HEAD'])
   const branch = branchResult.error ? '' : branchResult.stdout.trim()
 
-  // Check branch has matching roadmap in wip/
-  if (branch && isShipBranch(branch)) {
+  // Check branch has matching roadmap in wip/ — gated types only (feat/fix/refactor); chore/docs
+  // are exempted by the outer runShip Step 2 skip and never reach this function in practice, but
+  // isGatedShipBranch keeps this check correct in isolation too.
+  if (branch && isGatedShipBranch(branch)) {
     const slug = normalizeBranchSlug(branch.split('/').slice(1).join('/'))
     let hasMatch = false
     let wipFiles = []
@@ -412,7 +429,7 @@ function runShip(opts, deps = {}) {
 
   if (!docOnly && !isShipBranch(branch)) {
     writeln(
-      `error: branch "${branch}" does not match the required pattern feat|fix|refactor/<slug>\n` +
+      `error: branch "${branch}" does not match the required pattern feat|fix|refactor|chore|docs/<slug>\n` +
       'Rename your branch or create a new one:\n  git checkout -b feat/<slug>'
     )
     return 1
@@ -425,6 +442,10 @@ function runShip(opts, deps = {}) {
   // REQ+roadmap governance — mirrors the CLAUDE.md §7 exception for doc-only changes.
   if (docOnly) {
     writeln('Governance: skipped (doc-only change)')
+  } else if (isShipBranch(branch) && !isGatedShipBranch(branch)) {
+    // chore/docs: housekeeping types already exempted from this gate by
+    // `trackfw branch new` and `trackfw commit` — ship without it too.
+    writeln('Governance: skipped (chore/docs branch)')
   } else {
     const violations = checkGovernanceFn()
     if (violations.length > 0) {
@@ -602,6 +623,7 @@ function runShip(opts, deps = {}) {
 module.exports = {
   runShip,
   isShipBranch,
+  isGatedShipBranch,
   isGitWriteCmd,
   normalizeBranchSlug,
   checkShipGovernance,

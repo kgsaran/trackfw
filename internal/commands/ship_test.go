@@ -111,7 +111,7 @@ func TestShip_MasterBranch_Aborts(t *testing.T) {
 }
 
 func TestShip_WrongPattern_Aborts(t *testing.T) {
-	cases := []string{"feature/foo", "hotfix/bar", "docs/update", "mybranch"}
+	cases := []string{"feature/foo", "hotfix/bar", "chores/typo", "mybranch"}
 	for _, branch := range cases {
 		d, _ := makeDeps(branch, "file.go", nil)
 		err := runShip(shipOpts{message: "feat: x"}, d)
@@ -125,7 +125,7 @@ func TestShip_WrongPattern_Aborts(t *testing.T) {
 }
 
 func TestShip_ValidBranchPatterns_NotRejectedByStep1(t *testing.T) {
-	validBranches := []string{"feat/my-feature", "fix/bug-123", "refactor/clean-up"}
+	validBranches := []string{"feat/my-feature", "fix/bug-123", "refactor/clean-up", "chore/release-x.y.z", "docs/update-readme"}
 	for _, branch := range validBranches {
 		d, _ := makeDeps(branch, "file.go", nil)
 		err := runShip(shipOpts{message: "feat(scope): desc"}, d)
@@ -230,14 +230,92 @@ func TestShip_MixedDocAndCode_StillBlockedByGovernance(t *testing.T) {
 }
 
 func TestShip_MixedDocAndCode_NonConformingBranch_StillBlocked(t *testing.T) {
-	// Same mixed-content guarantee, but on a branch name that would fail isShipBranch too.
-	d, _ := makeDeps("docs/mixed", "docs/note.md\ninternal/commands/ship.go", nil)
-	err := runShip(shipOpts{message: "docs: mixed change"}, d)
+	// Same mixed-content guarantee, but on a branch name outside the ship vocabulary entirely
+	// (feat/fix/refactor/chore/docs) — must still fail Step 1's branch-pattern check.
+	d, _ := makeDeps("hotfix/mixed", "docs/note.md\ninternal/commands/ship.go", nil)
+	err := runShip(shipOpts{message: "fix: mixed change"}, d)
 	if err == nil {
 		t.Fatal("expected branch-pattern error for a mixed doc+code change on a non-conforming branch")
 	}
 	if !strings.Contains(err.Error(), "does not match the required pattern") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// chore/docs branch-type exception — Step 2 skips governance regardless of staged content
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestShip_ChoreBranch_MixedContent_GovernanceSkipped(t *testing.T) {
+	// "chore/release-x.y.z" carries a non-doc file staged (not doc-only) — proves the skip is
+	// keyed on branch type, not on the pre-existing doc-only staged-content exception.
+	called := false
+	m := &mockGit{branch: "chore/release-x.y.z", stagedFiles: "internal/commands/ship.go"}
+	d := shipDeps{
+		execGit: m.exec,
+		checkGovernance: func() []string {
+			called = true
+			return []string{"should never be called"}
+		},
+		out:          &bytes.Buffer{},
+		availFn:      func(string) bool { return false },
+		execForgeCLI: func(string, []string) error { return nil },
+	}
+	err := runShip(shipOpts{message: "chore: release x.y.z", dryRun: true}, d)
+	if err != nil {
+		t.Fatalf("chore branch must not be blocked by governance: %v", err)
+	}
+	if called {
+		t.Fatal("checkGovernance must not be called at all for a chore/docs branch")
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "Governance: skipped (chore/docs branch)") {
+		t.Fatalf("expected chore/docs branch-type skip message in output, got:\n%s", out)
+	}
+}
+
+func TestShip_DocsBranch_MixedContent_GovernanceSkipped(t *testing.T) {
+	// Same as above for "docs/", with mixed doc+code staged content.
+	called := false
+	m := &mockGit{branch: "docs/update-readme", stagedFiles: "docs/note.md\ninternal/commands/ship.go"}
+	d := shipDeps{
+		execGit: m.exec,
+		checkGovernance: func() []string {
+			called = true
+			return []string{"should never be called"}
+		},
+		out:          &bytes.Buffer{},
+		availFn:      func(string) bool { return false },
+		execForgeCLI: func(string, []string) error { return nil },
+	}
+	err := runShip(shipOpts{message: "docs: update readme", dryRun: true}, d)
+	if err != nil {
+		t.Fatalf("docs branch must not be blocked by governance: %v", err)
+	}
+	if called {
+		t.Fatal("checkGovernance must not be called at all for a chore/docs branch")
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "Governance: skipped (chore/docs branch)") {
+		t.Fatalf("expected chore/docs branch-type skip message in output, got:\n%s", out)
+	}
+}
+
+func TestShip_FeatBranch_NoRoadmap_NonRegression(t *testing.T) {
+	// Non-regression: feat/fix/refactor branches must still be hard-gated on governance —
+	// loosening the gate for chore/docs must not loosen it for feat/fix/refactor.
+	violations := []string{`branch "feat/no-roadmap" is a feat/fix/refactor branch but no roadmap is in wip/`}
+	d, _ := makeDeps("feat/no-roadmap", "file.go", violations)
+	err := runShip(shipOpts{message: "feat: x", dryRun: true}, d)
+	if err == nil {
+		t.Fatal("expected governance error — feat/fix/refactor must still be gated")
+	}
+	if !strings.Contains(err.Error(), "governance check failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if strings.Contains(out, "Governance: skipped") {
+		t.Fatalf("feat branch must never print a governance-skipped message, got:\n%s", out)
 	}
 }
 
@@ -534,17 +612,33 @@ func TestShip_ExecNeverReceivesGitAddAll(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestIsShipBranch(t *testing.T) {
-	valid := []string{"feat/foo", "feat/a-very-long-slug", "fix/123", "refactor/clean-up"}
+	valid := []string{"feat/foo", "feat/a-very-long-slug", "fix/123", "refactor/clean-up", "chore/x", "docs/x"}
 	for _, b := range valid {
 		if !isShipBranch(b) {
 			t.Errorf("isShipBranch(%q) should be true", b)
 		}
 	}
 
-	invalid := []string{"main", "master", "feature/foo", "hotfix/bar", "feat/", "refactor/"}
+	invalid := []string{"main", "master", "feature/foo", "hotfix/bar", "feat/", "refactor/", "chore/", "docs/"}
 	for _, b := range invalid {
 		if isShipBranch(b) {
 			t.Errorf("isShipBranch(%q) should be false", b)
+		}
+	}
+}
+
+func TestIsGatedShipBranch(t *testing.T) {
+	gated := []string{"feat/foo", "fix/123", "refactor/clean-up"}
+	for _, b := range gated {
+		if !isGatedShipBranch(b) {
+			t.Errorf("isGatedShipBranch(%q) should be true", b)
+		}
+	}
+
+	notGated := []string{"chore/x", "docs/x", "main", "feature/foo", "chore/", "docs/"}
+	for _, b := range notGated {
+		if isGatedShipBranch(b) {
+			t.Errorf("isGatedShipBranch(%q) should be false", b)
 		}
 	}
 }

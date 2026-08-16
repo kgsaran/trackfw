@@ -17644,3 +17644,54 @@ falso-positivo por prosa em mensagem de commit.
 
 **Próximo:** release 7.0.0, com o motivo da remoção de plugins (superfície de supply-chain) como
 justificativa central do CHANGELOG.
+
+## Sessão 2026-08-16 — Apolo (INÍCIO: ML-1A — `trackfw ship` aceita `chore`/`docs`)
+
+Branch `fix/trackfw-ship-aceita-branches-chore-e-docs-sem-gate-de-roadmap`, REQ e roadmap já em
+`wip/`. Par do fix já mergeado em #177 (`trackfw branch new`) — destranca a **publicação**, não só
+a criação da branch. Bloqueante para a release 7.0.0. Executando ML-1A: acrescentar
+`chore`/`docs` ao vocabulário de `trackfw ship` nos 3 CLIs, pulando a validação de governança
+(REQ+roadmap em `wip/`) inteiramente para esses dois tipos, mantendo o gate intacto para
+`feat`/`fix`/`refactor` (teste de não-regressão explícito) e sem tocar em `git-branch-guard`,
+`trackfw commit` nem `trackfw branch new`.
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-1A concluído — não commitado)
+
+`isShipBranch`/`isGatedShipBranch` (e equivalentes JS/Python) separam vocabulário
+(`feat|fix|refactor|chore|docs`) do subconjunto gated (`feat|fix|refactor`), espelhando
+`branchValidTypes`/`branchGatedTypes` de `branch.go`. Step 2 de `runShip` passa a pular
+`checkGovernance()` inteiramente para branch `chore`/`docs` — independente do conteúdo staged
+(diferente da isenção pré-existente por conteúdo `doc-only`, que continua intacta) — imprimindo
+`Governance: skipped (chore/docs branch)`. Mensagem de branch inválida e `--help` (regras 1/2)
+atualizados para citar o vocabulário completo, byte-idênticos nos 3 CLIs.
+
+**Achado não óbvio (nota do vault criada):** ao escrever `scripts/check-ship-parity.sh`
+descobri duas divergências **pré-existentes** entre CLIs, sem relação com esta ML — (1) o texto
+da violação `branch_has_wip_roadmap` diverge entre Go (`"...wip/ nor done/..."`) e Node/Python
+(`"...wip/..."` só); (2) `ship.go` nunca seta `SilenceErrors`, então o erro de padrão de branch
+cai no *stderr* prefixado `Error:` no Go mas no *stdout* prefixado `error:` no Node/Python. O
+script novo usa diff completo (`assert_three_way`) só nos 2 cenários novos (chore/docs, sob
+controle total desta ML) e asserções de conteúdo + exit code (`assert_exit_equal`) nos 2 cenários
+de não-regressão que tocam esse código antigo — ver
+`vault/notes/ship-checkgovernance-error-stream-wording-divergence-2026-08-16.md`.
+
+**Arquivos tocados:** `internal/commands/ship.go` + `internal/commands/ship_test.go` (Go);
+`npm/src/ship/runner.js` + `npm/src/commands/ship.js` + `npm/tests/ship.test.js` (Node);
+`pypi/trackfw/ship/runner.py` + `pypi/trackfw/commands/ship.py` + `pypi/tests/test_ship.py`
+(Python); `scripts/check-ship-parity.sh` (**novo** — não existia gate comportamental dedicado
+para `ship`, só o floor de comandos em `check-cli-parity.sh`) + `Makefile` (`parity:` target);
+`docs/cli-parity.md` (tabela de comandos, seção `trackfw ship`, seção `trackfw branch new` —
+separa explicitamente os dois eixos de isenção, doc-only vs. branch-type, que a prosa antiga
+conflava).
+
+**Não-regressão do gate:** `TestShip_FeatBranch_NoRoadmap_NonRegression`/equivalentes provam que
+`feat/<slug>` sem roadmap correspondente continua bloqueando com `governance check failed`, e que
+a mensagem `Governance: skipped` nunca aparece para esse branch — o skip só ocorre quando o tipo
+está fora do subconjunto gated, nunca por enfraquecimento do `checkGovernance()` em si.
+
+`go build ./...`, `go test ./internal/commands/... -run Ship` (34 testes), `node --test
+npm/tests/ship.test.js` (69 testes), `python3 -m pytest pypi/tests/test_ship.py` (110 testes),
+`bash scripts/check-ship-parity.sh` (4 cenários) e `make quality` (118 cenários de falsificação
++ todos os gates de paridade, incluindo o novo) todos verdes. Roadmap marcado com ML-1A ✅
+Concluído. Nenhum commit/push (fora da autoridade deste agente) — devolvido ao
+`trackfw_architect` para auditoria e commit.

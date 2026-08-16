@@ -26,7 +26,22 @@ def is_git_write_cmd(args):
 
 
 def is_ship_branch(branch):
-    """Returns True when branch matches feat|fix|refactor/<slug>."""
+    """
+    Returns True when branch matches feat|fix|refactor|chore|docs/<slug> — the full vocabulary
+    `trackfw ship` accepts on the branch name. feat/fix/refactor are gated on Step 2's
+    branch_has_wip_roadmap governance check (a hard gate not affected by lenient mode);
+    chore/docs are housekeeping types — already exempted from that gate by `trackfw branch new`
+    and `trackfw commit` — and ship without it too.
+    """
+    return bool(re.match(r'^(feat|fix|refactor|chore|docs)/.+', branch))
+
+
+def is_gated_ship_branch(branch):
+    """
+    Returns True when branch matches feat|fix|refactor/<slug> — the subset of is_ship_branch's
+    vocabulary that requires Step 2's branch_has_wip_roadmap governance check. chore/docs
+    branches satisfy is_ship_branch but return False here.
+    """
     return bool(re.match(r'^(feat|fix|refactor)/.+', branch))
 
 
@@ -93,7 +108,10 @@ def check_ship_governance():
     stdout, err = default_exec_git(['symbolic-ref', '--short', 'HEAD'])
     branch = stdout.strip() if not err else ''
 
-    if branch and is_ship_branch(branch):
+    # Gated types only (feat/fix/refactor); chore/docs are exempted by the outer run_ship Step 2
+    # skip and never reach this function in practice, but is_gated_ship_branch keeps this check
+    # correct in isolation too.
+    if branch and is_gated_ship_branch(branch):
         slug = normalize_branch_slug('/'.join(branch.split('/')[1:]))
         wip_files = []
         has_match = False
@@ -390,7 +408,7 @@ def run_ship(
 
     if not doc_only and not is_ship_branch(branch):
         writeln(
-            f'error: branch "{branch}" does not match the required pattern feat|fix|refactor/<slug>\n'
+            f'error: branch "{branch}" does not match the required pattern feat|fix|refactor|chore|docs/<slug>\n'
             'Rename your branch or create a new one:\n  git checkout -b feat/<slug>'
         )
         return 1
@@ -403,6 +421,10 @@ def run_ship(
     # changes.
     if doc_only:
         writeln('Governance: skipped (doc-only change)')
+    elif is_ship_branch(branch) and not is_gated_ship_branch(branch):
+        # chore/docs: housekeeping types already exempted from this gate by
+        # `trackfw branch new` and `trackfw commit` — ship without it too.
+        writeln('Governance: skipped (chore/docs branch)')
     else:
         violations = check_governance()
         if violations:
