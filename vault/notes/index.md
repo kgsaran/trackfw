@@ -5,6 +5,7 @@
 ## Índice
 
 - [bash-grep-F-embedded-newline-vacuous-match-2026-08-16](bash-grep-F-embedded-newline-vacuous-match-2026-08-16.md)
+- [commander-missing-subcommand-help-error-exit-1-2026-08-16](commander-missing-subcommand-help-error-exit-1-2026-08-16.md)
 - [ship-checkgovernance-error-stream-wording-divergence-2026-08-16](ship-checkgovernance-error-stream-wording-divergence-2026-08-16.md)
 - [found-and-false-suprime-branch-sem-quebrar-go-build-2026-08-16](found-and-false-suprime-branch-sem-quebrar-go-build-2026-08-16.md)
 - [cobra-silenceerrors-suppresses-usage-independently-of-per-command-flags-2026-08-16](cobra-silenceerrors-suppresses-usage-independently-of-per-command-flags-2026-08-16.md)
@@ -12,6 +13,7 @@
 - [node-https-redirect-checkredirect-off-by-one-2026-08-15](node-https-redirect-checkredirect-off-by-one-2026-08-15.md)
 - [go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15](go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15.md)
 - [credential-guard-hook-resolvable-nao-detecta-script-ausente-2026-08-15](credential-guard-hook-resolvable-nao-detecta-script-ausente-2026-08-15.md)
+- [git-branch-guard-quote-aware-segmentation-2026-08-16](git-branch-guard-quote-aware-segmentation-2026-08-16.md)
 - [git-branch-guard-falso-positivo-em-linha-de-mensagem-de-commit-2026-08-16](git-branch-guard-falso-positivo-em-linha-de-mensagem-de-commit-2026-08-16.md)
 - [git-branch-guard-pipe-into-while-loses-return-status-2026-08-14](git-branch-guard-pipe-into-while-loses-return-status-2026-08-14.md)
 - [git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14](git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14.md)

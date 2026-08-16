@@ -225,6 +225,89 @@ test('prosa mencionando "git commit" dentro de string entre aspas NÃO bloqueia 
   }
 })
 
+// --- ML-1A (ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-
+// release-7-0-0.md): item 1 (falso-positivo por prosa que COMEÇA a linha) + item 2 (brecha
+// `git switch -c`) -----------------------------------------------------------------------
+
+test('linha de mensagem de commit começando com "git checkout -b" (via heredoc, convenção do próprio CLAUDE.md) NÃO bloqueia', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const cmd = "bin/trackfw commit -m \"$(cat <<'EOF'\n" +
+      '  git checkout -b            -> bloqueado pelo guard\n' +
+      '  trackfw branch new chore/  -> recusado\n' +
+      'EOF\n' +
+      ')"'
+    const payload = JSON.stringify({ tool_input: { command: cmd } })
+    const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 0, `stderr: ${stderr}`)
+    assert.strictEqual(stdout, '')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('não-regressão: -m fechado seguido de git push real (; e &&) continua bloqueando', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    for (const cmd of ['git commit -m "x"; git push', 'git commit -m "x" && git push']) {
+      const payload = JSON.stringify({ tool_input: { command: cmd } })
+      const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
+      assert.strictEqual(code, 2, `cmd=${cmd} stderr: ${stderr}`)
+      assert.ok(stdout.includes('trackfw commit'), `cmd=${cmd} stdout: ${stdout}`)
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('não-regressão: heredoc mal-formado não esconde git push real (fallback de segurança)', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const cmd = "git status <<'EOF'\nwhatever\nNOTEOF\ngit push origin main"
+    const payload = JSON.stringify({ tool_input: { command: cmd } })
+    const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 2, `stderr: ${stderr}`)
+    assert.ok(stdout.includes('trackfw ship'))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('git switch -c bloqueia (forma alternativa a checkout -b)', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const payload = JSON.stringify({ tool_input: { command: 'git switch -c feat/x' } })
+    const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 2, `stderr: ${stderr}`)
+    assert.ok(stdout.includes('trackfw branch new'))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('git switch --track -c feat/x (flag antes de -c) bloqueia', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const payload = JSON.stringify({ tool_input: { command: 'git switch --track -c feat/x' } })
+    const { code, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 2, `stderr: ${stderr}`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('git switch main (sem -c) não bloqueia', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const payload = JSON.stringify({ tool_input: { command: 'git switch main' } })
+    const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 0, `stderr: ${stderr}`)
+    assert.strictEqual(stdout, '')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 // --- Allow: comandos git inofensivos ----------------------------------------
 
 test('git status não bloqueia', () => {

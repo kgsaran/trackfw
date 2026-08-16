@@ -180,6 +180,76 @@ class TestGitBranchGuardManualE2ERegressions(unittest.TestCase):
         self.assertEqual(proc.stderr, '')
 
 
+class TestGitBranchGuardML1AFalsePositiveAndSwitchC(unittest.TestCase):
+    """ML-1A (ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-
+    release-7-0-0.md): item 1 (falso-positivo por prosa que COMEÇA a linha) + item 2 (brecha
+    `git switch -c`)."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        _generate_git_branch_guard_script(self.tmpdir)
+        self.script_path = os.path.join(self.tmpdir, 'scripts', 'trackfw-git-branch-guard.sh')
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self, command: str):
+        return subprocess.run(
+            ['bash', self.script_path],
+            input=json.dumps({'tool_input': {'command': command}}),
+            capture_output=True,
+            text=True,
+        )
+
+    def test_commit_message_line_starting_with_git_checkout_dash_b_does_not_block(self):
+        # Reprodução literal do incidente real (vault/notes/git-branch-guard-falso-positivo-
+        # em-linha-de-mensagem-de-commit-2026-08-16.md): via heredoc (`-m "$(cat <<'EOF' ...
+        # EOF)"`, convenção deste próprio CLAUDE.md), a PRIMEIRA linha do corpo começa com
+        # "git checkout -b" -- diferente de test_bug3 (que testa "git commit" no MEIO de uma
+        # frase), aqui "git" é o PRIMEIRO token da linha.
+        cmd = (
+            "bin/trackfw commit -m \"$(cat <<'EOF'\n"
+            "  git checkout -b            -> bloqueado pelo guard\n"
+            "  trackfw branch new chore/  -> recusado\n"
+            "EOF\n"
+            ")\""
+        )
+        proc = self._run(cmd)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, '')
+
+    def test_quoted_message_then_real_chained_command_still_blocks(self):
+        # Não-regressão crítica: -m fechado seguido de git push real encadeado por ';' ou '&&'
+        # tem que continuar bloqueando.
+        for cmd in ('git commit -m "x"; git push', 'git commit -m "x" && git push'):
+            with self.subTest(cmd=cmd):
+                proc = self._run(cmd)
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertIn('git commit bruto bloqueado', proc.stderr)
+
+    def test_unterminated_heredoc_before_real_push_still_blocks(self):
+        # Fallback de segurança de strip_heredoc_bodies: heredoc mal-formado não pode esconder
+        # um git push real.
+        cmd = "git status <<'EOF'\nwhatever\nNOTEOF\ngit push origin main"
+        proc = self._run(cmd)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn('git push bruto bloqueado', proc.stderr)
+
+    def test_switch_dash_c_blocks(self):
+        proc = self._run('git switch -c feat/x')
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn('git switch -c bruto bloqueado', proc.stderr)
+
+    def test_switch_dash_c_flag_before_create_blocks(self):
+        proc = self._run('git switch --track -c feat/x')
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+
+    def test_switch_without_create_flag_allows(self):
+        proc = self._run('git switch main')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, '')
+
+
 class TestGitBranchGuardHookWiringIdempotent(unittest.TestCase):
     """Cada injetor rodado duas vezes deve produzir exatamente a mesma entrada de
     git-branch-guard (sem duplicar) -- o caso mais importante para este ML."""

@@ -49,7 +49,7 @@ todas, senão `trackfw validate` acusa divergência.
 > ⛔ **Nenhum ML desta wave toca `docs/cli-parity.md`** — é do ML-3A, sequencial, para não colidir.
 
 ### ML-1A — `git-branch-guard`: falso-positivo por prosa + brecha de contorno (itens 1 e 2)
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído (aguardando barreira ML-4A/`hades-tf`) · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `internal/generators/scaffold.go` (gerador canônico + variante global),
 `npm/src/generators/hooks.js`, `pypi/trackfw/generators/hooks.py`,
 `scripts/trackfw-git-branch-guard.sh`, `scripts/check-gates-falsify.sh`, + testes dos 3 stacks
@@ -64,15 +64,23 @@ todas, senão `trackfw validate` acusa divergência.
    alternativa e **não bloqueia** mensagem de commit com prosa. Braço baseline + braço detecção.
 
 **Critérios de aceite:**
-- [ ] Commit cuja mensagem contém linha iniciada por `git commit`/`git push` **passa**.
-- [ ] A forma alternativa de criar branch **é bloqueada**.
-- [ ] `git commit`/`git push`/`checkout -b` reais **continuam bloqueados** — não-regressão explícita.
-- [ ] As 3 cópias do script (gerador Go, espelhos Node/Python) e a de referência em `scripts/`
+- [x] Commit cuja mensagem contém linha iniciada por `git commit`/`git push` **passa**.
+- [x] A forma alternativa de criar branch (`git switch -c/-C/--create`) **é bloqueada**.
+- [x] `git commit`/`git push`/`checkout -b` reais **continuam bloqueados** — não-regressão explícita.
+- [x] As 3 cópias do script (gerador Go, espelhos Node/Python) e a de referência em `scripts/`
       permanecem **idênticas**; `trackfw validate` não acusa divergência de integridade.
-- [ ] Cenários de falsificação novos, com baseline e detecção.
+- [x] Cenários de falsificação novos, com baseline e detecção (Cenários 58/59 em
+      `scripts/check-gates-falsify.sh`).
+
+**Nota de execução:** foram encontradas mais 2 cópias do template do guard além das listadas nos
+"Arquivos" (`pypi/trackfw/validator.py::_GIT_BRANCH_GUARD_SCRIPT_REFERENCE` e
+`npm/src/validator/index.js::GIT_BRANCH_GUARD_SCRIPT_REFERENCE`, usadas por
+`git_branch_guard_script_integrity`) — atualizadas também, todas as 6 cópias confirmadas
+byte-idênticas via teste (`make quality` verde). Detalhe do design em
+`vault/notes/git-branch-guard-quote-aware-segmentation-2026-08-16.md`.
 
 ### ML-1B — `ship`: mensagem e stream de erro divergentes (item 3)
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
 **Arquivos:** `internal/commands/ship.go`, `npm/src/ship/runner.js`, `pypi/trackfw/ship/runner.py`,
 `scripts/check-ship-parity.sh`, + testes
 **Ações:** unificar a mensagem de violação de `checkShipGovernance` (Go diz `"...wip/ nor done/..."`,
@@ -82,7 +90,7 @@ Node/Python dizem só `"...wip/..."`) e o stream/prefixo de erro do passo 1 (`sh
 `check-ship-parity.sh`.
 
 ### ML-1C — `trackfw` sem argumento: exit code e stream divergentes (item 7)
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
 **Arquivos:** `internal/commands/root.go`, entrypoint Node (`npm/src/commands/index.js`),
 entrypoint Python (`pypi/trackfw/cli.py`), script de paridade, + testes
 **Estado medido:** Go sai **exit 0** com help em **stdout**; Node sai **exit 1** com help em
@@ -112,6 +120,42 @@ algum dos 3.** Se **órfã nos três** → remover dos três. Se **usada em algu
 **Ação:** remover `trackfw plugins` (não existe mais) e acrescentar `changelog` e `commit`, que
 faltam. Conferir contra a saída real de `trackfw --help`, **não** contra o `README.md`.
 **Aceite:** nenhum comando documentado que não exista; nenhum comando existente ausente.
+
+### ML-2C — Item 8: `agents update` recusa artefato unmanaged sem dizer o remédio
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Origem:** bug reportado por KG em uso real no projeto CMDB (2026-08-16). Acrescentado à REQ como
+item 8, a pedido dele — REQ própria seria desperdício para um item deste tamanho.
+
+**Arquivos:** `internal/integrations/manager.go` (mensagens em `:311` e `:422`),
+`npm/src/integrations/manager.js:189`, equivalente em `pypi/trackfw/integrations/manager.py`, + testes.
+**Não** tocar em `docs/cli-parity.md` (é do ML-3A).
+
+**Contexto medido pelo arquiteto no ambiente real:** dois artefatos existiam no disco e **não** no
+manifest. `trackfw agents update --force` falhava com `unmanaged artifact ... does not match a
+trackfw template`. O comportamento **está correto** — `preflight` recusa bytes desconhecidos no
+`update` **ignorando `--force` de propósito**, porque sobrescrever arquivo que o trackfw não escreveu
+seria destrutivo. O defeito é de **diagnosticabilidade**: a mensagem não diz o remédio, e o help do
+`--force` promete "replace or remove modified managed artifacts", levando o usuário a tentar
+exatamente o que já falhou. `trackfw agents install --force` resolve, e isso não aparece em lugar
+nenhum.
+
+**Ações:**
+1. A mensagem passa a **nomear o remédio**, com o comando pronto para copiar (item, target e escopo
+   preenchidos a partir do plano em questão), nos 3 CLIs, byte-idêntica.
+2. Revisar o texto do `--help` do `--force` para não prometer o que ele não faz no `update`.
+3. **Investigação que faz parte do ML e pode ampliá-lo:** apurar *por que* os artefatos ficaram fora
+   do manifest. Já verificado que **não é legado** — `iac`/`tooling` entraram no catálogo em
+   2026-07-26 (#72) e o manifest existe desde 2026-07-19 (#50). Se a causa for gravação parcial
+   ainda alcançável, **reportar antes de implementar**: aí a correção inclui detecção, não só
+   mensagem, e o escopo muda.
+
+**Critérios de aceite:**
+- [ ] Mensagem nomeia o remédio e é byte-idêntica nos 3 CLIs.
+- [ ] Não-regressão: `update` **continua recusando** bytes unmanaged mesmo com `--force` — a
+      correção é de texto, **não** de comportamento.
+- [ ] Conclusão da investigação registrada: caso isolado ou padrão que exige detecção.
+- [ ] `make quality` verde.
+
 
 ---
 

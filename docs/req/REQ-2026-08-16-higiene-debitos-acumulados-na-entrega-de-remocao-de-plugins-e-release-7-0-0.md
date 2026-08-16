@@ -82,10 +82,50 @@ do commander quando o comando raiz não tem `.action()`. **Pré-existente** e se
 preservado deliberadamente durante a entrega, para não esconder mudança de comportamento não
 relacionada dentro de um commit de deleção.
 
+### 8 — `agents update` recusa artefato unmanaged sem dizer o remédio (severidade: média)
+
+**Encontrado em uso real por KG (2026-08-16), fora desta entrega** — registrado aqui porque é
+pequeno e não-bloqueante, e abrir REQ própria seria desperdício.
+
+**Sintoma.** Num projeto com dois artefatos presentes no disco mas ausentes do manifest,
+`trackfw agents update --force` falha com:
+
+```
+Error: unmanaged artifact ".../.codex/agents/trackfw-iac.toml" does not match a trackfw template
+```
+
+**O comportamento está correto.** `preflight` (`internal/integrations/manager.go:308-312`) recusa
+bytes desconhecidos no `update` **ignorando `--force` de propósito** — o comentário no código é
+explícito: *"Force only authorizes replacing a modified artifact whose ownership is already proven.
+Unknown unmanaged bytes must go through install --force"*. Sobrescrever arquivo que o trackfw não
+escreveu seria destrutivo, e recusar é a decisão certa.
+
+**O defeito é de diagnosticabilidade.** A mensagem não diz o remédio, e o help do `--force` promete
+*"replace or remove modified managed artifacts"* — o que leva o usuário a tentar exatamente o que
+já falhou. O remédio real (`trackfw agents install --force`) não aparece em lugar nenhum.
+
+**Correção sugerida:** a mensagem passa a nomear o remédio, algo como
+
+```
+unmanaged artifact "<path>" does not match a trackfw template — trackfw did not write these bytes.
+Adopt it with: trackfw agents install --force --items <item> --targets <target> --scope <scope>
+```
+
+Nos 3 CLIs, com paridade da mensagem.
+
+**Investigação que faz parte do item, e pode mudar o tamanho dele:** *por que* os dois artefatos
+ficaram fora do manifest. Verificado que **não** é caso de legado — os agentes `iac`/`tooling`
+entraram no catálogo em 2026-07-26 (#72) e o manifest existe desde 2026-07-19 (#50). Se a causa for
+gravação parcial (arquivos escritos sem registro), outros projetos podem estar no mesmo estado e a
+correção real inclui **detecção**, não só mensagem melhor. Se for consequência de um fluxo já
+extinto, basta a mensagem.
+
 ## Acceptance Criteria
 
 - [ ] Cada item acima é resolvido **ou** explicitamente declarado como não-será-corrigido, com o
       motivo registrado.
+- [ ] Item 8: mensagem nomeia o remédio, **e** a investigação da causa conclui se é caso isolado ou
+      padrão que exige detecção.
 - [ ] Itens 3, 5 e 7 (divergências entre CLIs) ganham cobertura no contrato de paridade, para não
       reaparecerem.
 - [ ] Item 1 tem cenário de falsificação, conforme **P4** do `ADR-2026-07-26-principios-de-design-de-gates-verificaveis`.

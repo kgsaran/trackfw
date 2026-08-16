@@ -8,11 +8,10 @@
  */
 
 const { spawnSync } = require('child_process')
-const fs = require('fs')
-const path = require('path')
 const { load: loadConfig, reset: resetConfig } = require('../config')
 const { resolve: forgeResolve } = require('../forge/resolve')
 const { forgeAdapter } = require('../forge/adapter')
+const validator = require('../validator')
 
 // Git subcommands that modify local or remote state.
 // In --dry-run mode these are printed but not executed.
@@ -77,66 +76,25 @@ function defaultCheckGovernance() {
 
 /**
  * checkShipGovernance — hard gate (bypasses config/baseline/lenient).
- * Checks:
- *   1. Current branch has a matching roadmap in wip/
- *   2. WIP roadmaps have a linked REQ
+ *
+ * Delegates entirely to the shared validator functions already used by `trackfw validate`,
+ * `trackfw branch new` and `trackfw commit` — never reimplement this logic locally. Byte-
+ * identical to Go's CheckShipGovernance (internal/validator/validator.go), which has the same
+ * no-args shape and the same two checks:
+ *   1. validateBranchHasWIPRoadmap — current branch (feat/fix/refactor only; re-derived
+ *      internally from TRACKFW_BRANCH/git, same as Go) has a matching roadmap in wip/ OR done/
+ *   2. validateWIPHasREQ — every roadmap in wip/ has a linked REQ
+ * Before this ML, this function reimplemented both checks locally with its own wording (no
+ * "nor done/" clause, no done/ directory scan at all) — see
+ * vault/notes/ship-checkgovernance-error-stream-wording-divergence-2026-08-16.md. Duplicating
+ * the check was the actual root cause of the drift, not just the wording.
  * @returns {string[]} violation messages
  */
 function checkShipGovernance() {
-  const violations = []
-
-  // Resolve roadmap dir via config module (single source of truth; default: docs/roadmaps)
-  const roadmapDir = resolveRoadmapDir()
-  const wipDir = path.join(roadmapDir, 'wip')
-
-  // Get branch name
-  const branchResult = defaultExecGit(['symbolic-ref', '--short', 'HEAD'])
-  const branch = branchResult.error ? '' : branchResult.stdout.trim()
-
-  // Check branch has matching roadmap in wip/ — gated types only (feat/fix/refactor); chore/docs
-  // are exempted by the outer runShip Step 2 skip and never reach this function in practice, but
-  // isGatedShipBranch keeps this check correct in isolation too.
-  if (branch && isGatedShipBranch(branch)) {
-    const slug = normalizeBranchSlug(branch.split('/').slice(1).join('/'))
-    let hasMatch = false
-    let wipFiles = []
-
-    if (fs.existsSync(wipDir)) {
-      wipFiles = fs.readdirSync(wipDir).filter(f => f.endsWith('.md'))
-      for (const f of wipFiles) {
-        if (normalizeBranchSlug(f).includes(slug)) {
-          hasMatch = true
-          break
-        }
-      }
-    }
-
-    if (wipFiles.length === 0) {
-      violations.push(
-        `branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ — create governance artifacts first:\n` +
-        '  trackfw req new "<title>"\n' +
-        '  trackfw roadmap new "<title>"\n' +
-        '  trackfw roadmap move <name> wip'
-      )
-    } else if (!hasMatch) {
-      violations.push(
-        `branch "${branch}" has no matching roadmap in wip/ (found: ${wipFiles.join(', ')}) — ` +
-        'include the branch slug in the roadmap filename'
-      )
-    }
-
-    // Check WIP roadmaps have a linked REQ
-    if (hasMatch && fs.existsSync(wipDir)) {
-      for (const f of wipFiles) {
-        const content = fs.readFileSync(path.join(wipDir, f), 'utf8')
-        if (!content.includes('REQ:') && !content.includes('req:')) {
-          violations.push(`roadmap "${f}" is in wip but has no linked REQ`)
-        }
-      }
-    }
-  }
-
-  return violations
+  return [
+    ...validator.validateBranchHasWIPRoadmap(),
+    ...validator.validateWIPHasREQ(),
+  ]
 }
 
 /**
@@ -396,6 +354,15 @@ function runShip(opts, deps = {}) {
   const execGit = deps.execGit || defaultExecGit
   const checkGovernanceFn = deps.checkGovernance || defaultCheckGovernance
   const writeln = deps.writeln || ((s) => process.stdout.write(s + '\n'))
+  // writeErr — the terminal error line for every abort path below, written to STDERR with the
+  // "Error: " prefix. Mirrors Go exactly: ship.go returns these same messages as a bare
+  // fmt.Errorf(...), and internal/commands/root.go's Execute() wrapper prints them to stderr as
+  // `fmt.Fprintln(os.Stderr, cmd.ErrPrefix(), err.Error())` — cmd.ErrPrefix() is "Error:", and
+  // Fprintln inserts exactly one space between operands, so the wire format is
+  // "Error: <message>\n". Every multi-line detail printed BEFORE the abort (violation lists,
+  // remediation hints, "Note: ..." blocks) stays on stdout via writeln, same as Go's deps.out —
+  // only this final one-line (or one-block) summary moves to stderr.
+  const writeErr = deps.writeErr || ((s) => process.stderr.write(`Error: ${s}\n`))
 
   // Inner git wrapper: skips write commands in dry-run mode.
   function git(args) {
@@ -416,20 +383,20 @@ function runShip(opts, deps = {}) {
   // ─── Step 1: Branch validation ─────────────────────────────────────────────
   const branchResult = execGit(['symbolic-ref', '--short', 'HEAD'])
   if (branchResult.error) {
-    writeln(`error: could not determine current branch (are you in a git repo?): ${branchResult.error.message}`)
+    writeErr(`could not determine current branch (are you in a git repo?): ${branchResult.error.message}`)
     return 1
   }
   const branch = branchResult.stdout.trim()
 
   // main/master is blocked unconditionally — the doc-only exception never applies here.
   if (branch === 'main' || branch === 'master') {
-    writeln(`error: trackfw ship cannot run on "${branch}" — use a feature branch:\n  git checkout -b feat/<slug>`)
+    writeErr(`trackfw ship cannot run on "${branch}" — use a feature branch:\n  git checkout -b feat/<slug>`)
     return 1
   }
 
   if (!docOnly && !isShipBranch(branch)) {
-    writeln(
-      `error: branch "${branch}" does not match the required pattern feat|fix|refactor|chore|docs/<slug>\n` +
+    writeErr(
+      `branch "${branch}" does not match the required pattern feat|fix|refactor|chore|docs/<slug>\n` +
       'Rename your branch or create a new one:\n  git checkout -b feat/<slug>'
     )
     return 1
@@ -461,7 +428,7 @@ function runShip(opts, deps = {}) {
       writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")
       writeln("passes but 'trackfw ship' aborts here, you likely have lenient mode")
       writeln("configured — ship always requires REQ + roadmap in wip/.")
-      writeln(`\nerror: governance check failed: ${violations.length} violation(s)`)
+      writeErr(`governance check failed: ${violations.length} violation(s)`)
       return 1
     }
 
@@ -491,8 +458,8 @@ function runShip(opts, deps = {}) {
 
   // Reuses stagedFiles read at the top of the function (Step 0) — never re-query git here.
   if (stagedFiles.length === 0) {
-    writeln(
-      'error: nothing is staged — stage your files explicitly before running ship:\n' +
+    writeErr(
+      'nothing is staged — stage your files explicitly before running ship:\n' +
       '  git add <file1> <file2> ...\n' +
       "Never use 'git add .' or 'git add -A'"
     )
@@ -501,8 +468,8 @@ function runShip(opts, deps = {}) {
 
   // ─── Step 5: Commit ────────────────────────────────────────────────────────
   if (!opts.message) {
-    writeln(
-      'error: commit message is required — use -m:\n' +
+    writeErr(
+      'commit message is required — use -m:\n' +
       '  trackfw ship -m "feat(<scope>): <description>"'
     )
     return 1
@@ -510,7 +477,7 @@ function runShip(opts, deps = {}) {
 
   const { error: commitErr } = git(['commit', '-m', opts.message])
   if (commitErr) {
-    writeln(`error: git commit failed: ${commitErr.message}`)
+    writeErr(`git commit failed: ${commitErr.message}`)
     return 1
   }
 
@@ -522,7 +489,7 @@ function runShip(opts, deps = {}) {
   const pushArgs = buildPushArgs(branch, execGit)
   const { error: pushErr } = git(pushArgs)
   if (pushErr) {
-    writeln(`error: git push failed: ${pushErr.message}`)
+    writeErr(`git push failed: ${pushErr.message}`)
     return 1
   }
 

@@ -40,15 +40,140 @@ fi
 
 [ -n "$CMD_RAW" ] || exit 0
 
-# --- 2. Casar contra "git (commit|push|checkout -b)", segmento por segmento -----------------
-# Cada segmento é um comando real (dividido por ; && || | e por quebra de linha). "git" só
-# conta se for o PRIMEIRO token do segmento (por basename, então /usr/bin/git também casa) —
-# nunca uma ocorrência solta em qualquer posição da string inteira. Isso evita: (a) o segundo
-# comando de uma cadeia escapar da checagem, (b) um path absoluto para o git escapar por
-# comparação de igualdade exata, e (c) texto de prosa (ex.: mensagem de commit mencionando
-# "git commit" no meio de uma frase) ser tratado como comando.
+# --- 2. Pré-processamento anti-falso-positivo: neutraliza separadores reais (';', '&&',
+# '||', '|', quebra de linha) que estão DENTRO de aspas ou de corpo de heredoc, para que
+# conteúdo de mensagem (ex.: `-m "linha 1\nlinha 2"`) nunca seja fatiado em pseudo-segmentos
+# e lido como comando -------------------------------------------------------------------
+#
+# strip_heredoc_bodies: remove o CORPO de blocos heredoc (<<DELIM ... DELIM), preservando a
+# linha de abertura e a linha terminadora — cobre o padrão `git commit -F- <<'EOF' ... EOF`
+# (heredoc não citado, fora do escopo de quote_aware_split abaixo). Heurística por linha, não
+# sintaxe completa de shell: só remove o corpo quando encontra a linha terminadora
+# correspondente. Se o heredoc nunca fecha (terminador ausente ou não localizado), devolve o
+# texto ORIGINAL sem qualquer alteração — lado seguro: mais restritivo é preferível a esconder
+# um comando real atrás de um heredoc mal-formado.
+strip_heredoc_bodies() {
+  printf '%s' "$1" | awk '
+    BEGIN {
+      dq = sprintf("%c", 34)
+      sq = sprintf("%c", 39)
+      in_heredoc = 0
+      delim = ""
+      ok = 1
+    }
+    {
+      raw = raw $0 "\n"
+      if (in_heredoc) {
+        trimmed = $0
+        sub(/^[ \t]+/, "", trimmed)
+        sub(/[ \t]+$/, "", trimmed)
+        if (trimmed == delim) {
+          in_heredoc = 0
+          out = out $0 "\n"
+        }
+        next
+      }
+      if (match($0, /<<-?[ \t]*[^ \t]+/)) {
+        d = substr($0, RSTART, RLENGTH)
+        sub(/^<<-?[ \t]*/, "", d)
+        gsub(dq, "", d)
+        gsub(sq, "", d)
+        if (d != "") {
+          delim = d
+          in_heredoc = 1
+        }
+      }
+      out = out $0 "\n"
+    }
+    END {
+      if (in_heredoc) ok = 0
+      if (ok) { printf "%s", out } else { printf "%s", raw }
+    }
+  '
+}
+
+# quote_aware_split: emite o texto com ';' isolado, '&&', '||' e '|' isolado convertidos em
+# quebra de linha — EXCETO quando ocorrem dentro de uma string entre aspas simples ou duplas,
+# caso em que são preservados como texto e uma quebra de linha real dentro das aspas vira
+# espaço (nunca gera um novo pseudo-segmento). Substitui o antigo `sed` cego, que não
+# distinguia texto citado de sintaxe de comando — a causa raiz do falso-positivo de linha de
+# mensagem de commit iniciada por "git ...". Aspas não fechadas até o fim da entrada
+# permanecem "abertas" até o fim — mesma semântica do shell real: uma aspa não fechada nunca
+# deixa o texto seguinte executar como comando novo, só torna o restante parte da mesma
+# string.
+quote_aware_split() {
+  printf '%s' "$1" | awk '
+    BEGIN {
+      dq = sprintf("%c", 34)
+      sq = sprintf("%c", 39)
+      bs = sprintf("%c", 92)
+      nl = sprintf("%c", 10)
+    }
+    { s = (NR == 1) ? $0 : s nl $0 }
+    END {
+      n = length(s)
+      q = ""
+      out = ""
+      i = 1
+      while (i <= n) {
+        c = substr(s, i, 1)
+        if (q != "") {
+          if (q == dq && c == bs && i < n) {
+            nx = substr(s, i + 1, 1)
+            out = out c (nx == nl ? " " : nx)
+            i += 2
+            continue
+          }
+          if (c == q) {
+            q = ""
+            out = out c
+            i++
+            continue
+          }
+          out = out (c == nl ? " " : c)
+          i++
+          continue
+        }
+        if (c == dq || c == sq) {
+          q = c
+          out = out c
+          i++
+          continue
+        }
+        if (substr(s, i, 2) == "&&" || substr(s, i, 2) == "||") {
+          out = out nl
+          i += 2
+          continue
+        }
+        if (c == ";" || c == "|") {
+          out = out nl
+          i++
+          continue
+        }
+        out = out c
+        i++
+      }
+      printf "%s", out
+    }
+  '
+}
+
+# match_subcommand — casa contra "git (commit|push|checkout -b|switch -c)", segmento por
+# segmento. Cada segmento é um comando real, obtido depois do pré-processamento acima
+# (strip_heredoc_bodies + quote_aware_split), que converte ';', '&&', '||', '|' fora de aspas
+# em quebra de linha e neutraliza os mesmos separadores quando aparecem dentro de
+# aspas/heredoc. "git" só conta se for o PRIMEIRO token do segmento (por basename, então
+# /usr/bin/git também casa) — nunca uma ocorrência solta em qualquer posição da string
+# inteira. Isso evita: (a) o segundo comando de uma cadeia escapar da checagem, (b) um path
+# absoluto para o git escapar por comparação de igualdade exata, e (c) texto de prosa —
+# inclusive linha de mensagem de commit que COMEÇA com "git <sub>" (ex.: uma tabela
+# documentando comandos bloqueados) — ser tratado como comando, porque esse texto agora nunca
+# produz um novo segmento. `git switch -c/-C/--create` (forma alternativa a `checkout -b`
+# para criar branch) é reconhecido varrendo TODOS os tokens após o subcomando, não só o
+# primeiro — cobre `git switch --track -c feat/x` (flag antes de -c).
 match_subcommand() {
-  normalized=$(printf '%s' "$1" | sed -e 's/&&/\n/g' -e 's/||/\n/g' -e 's/[;|]/\n/g')
+  normalized=$(strip_heredoc_bodies "$1")
+  normalized=$(quote_aware_split "$normalized")
   while IFS= read -r seg; do
     seg_trimmed=$(printf '%s' "$seg" | sed -e 's/^[[:space:]]*//')
     [ -n "$seg_trimmed" ] || continue
@@ -94,6 +219,16 @@ match_subcommand() {
           return 0
         fi
         ;;
+      switch)
+        for tok2 in "$@"; do
+          case "$tok2" in
+            -c|-C|--create|--create=*|--force-create|--force-create=*)
+              echo "switch-c"
+              return 0
+              ;;
+          esac
+        done
+        ;;
     esac
   done <<EOF
 $normalized
@@ -106,6 +241,9 @@ SUBCOMMAND=$(match_subcommand "$CMD_RAW") || exit 0
 case "$SUBCOMMAND" in
   checkout-b)
     REASON="trackfw: git checkout -b bruto bloqueado. Use \`trackfw branch new <type>/<slug>\`. Ver CLAUDE.md §1."
+    ;;
+  switch-c)
+    REASON="trackfw: git switch -c bruto bloqueado. Use \`trackfw branch new <type>/<slug>\`. Ver CLAUDE.md §1."
     ;;
   commit)
     REASON="trackfw: git commit bruto bloqueado. Use \`trackfw commit -m '<mensagem>'\`. Ver CLAUDE.md §1."

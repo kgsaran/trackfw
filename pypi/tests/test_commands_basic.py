@@ -243,6 +243,19 @@ class TestUnknownCommand(unittest.TestCase):
         self.assertEqual(result.returncode, 1, msg=result.stderr)
         self.assertIn('Did you mean "validate"?', result.stderr)
 
+    def test_sem_argumento_exit_0_help_em_stdout(self):
+        """trackfw sem argumento e uso legitimo (pedir ajuda), nao um comando
+        desconhecido: exit 0, help em stdout, stderr vazio. Decisao do
+        arquiteto no ML-1C (ROADMAP-2026-08-16-higiene-sete-debitos-...), que
+        unificou o Node.js (antes exit 1/stderr, default do commander) para
+        este comportamento — Go e Python ja eram assim (cli.py: args.command
+        is None -> parser.print_help(); sys.exit(0))."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_trackfw(cwd=tmpdir)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertIn("usage:", result.stdout)
+
 
 class TestRealCommands(unittest.TestCase):
     def test_validate_uses_real_handler(self):

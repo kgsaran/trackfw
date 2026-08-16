@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 from trackfw import config as _config
+from trackfw import validator as _validator
 from trackfw.forge.resolve import resolve as forge_resolve
 from trackfw.forge.adapter import forge_adapter
 
@@ -94,60 +95,24 @@ def _resolve_roadmap_dir(cwd=None):
 def check_ship_governance():
     """
     Hard gate (bypasses config/baseline/lenient).
-    Checks:
-      1. Current branch has a matching roadmap in wip/
-      2. WIP roadmaps have a linked REQ
+
+    Delegates entirely to the shared validator functions already used by `trackfw validate`,
+    `trackfw branch new` and `trackfw commit` — never reimplement this logic locally.
+    Byte-identical to Go's CheckShipGovernance (internal/validator/validator.go), which has the
+    same no-args shape and the same two checks:
+      1. validate_branch_has_wip_roadmap — current branch (feat/fix/refactor only; re-derived
+         internally from TRACKFW_BRANCH/git, same as Go) has a matching roadmap in wip/ OR done/
+      2. validate_wip_has_req — every roadmap in wip/ has a linked REQ
+    Before this ML, this function reimplemented both checks locally with its own wording (no
+    "nor done/" clause, no done/ directory scan at all) — see
+    vault/notes/ship-checkgovernance-error-stream-wording-divergence-2026-08-16.md. Duplicating
+    the check was the actual root cause of the drift, not just the wording.
+
     Returns list of violation messages (empty = pass).
     """
-    violations = []
-
-    # Resolve via config module — single source of truth (default: docs/roadmaps)
-    roadmap_dir = _resolve_roadmap_dir()
-    wip_dir = os.path.join(roadmap_dir, 'wip')
-
-    stdout, err = default_exec_git(['symbolic-ref', '--short', 'HEAD'])
-    branch = stdout.strip() if not err else ''
-
-    # Gated types only (feat/fix/refactor); chore/docs are exempted by the outer run_ship Step 2
-    # skip and never reach this function in practice, but is_gated_ship_branch keeps this check
-    # correct in isolation too.
-    if branch and is_gated_ship_branch(branch):
-        slug = normalize_branch_slug('/'.join(branch.split('/')[1:]))
-        wip_files = []
-        has_match = False
-
-        if os.path.isdir(wip_dir):
-            wip_files = [f for f in os.listdir(wip_dir) if f.endswith('.md')]
-            for f in wip_files:
-                if slug in normalize_branch_slug(f):
-                    has_match = True
-                    break
-
-        if not wip_files:
-            violations.append(
-                f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ — '
-                'create governance artifacts first:\n'
-                '  trackfw req new "<title>"\n'
-                '  trackfw roadmap new "<title>"\n'
-                '  trackfw roadmap move <name> wip'
-            )
-        elif not has_match:
-            violations.append(
-                f'branch "{branch}" has no matching roadmap in wip/ '
-                f'(found: {", ".join(wip_files)}) — '
-                'include the branch slug in the roadmap filename'
-            )
-
-        if has_match and os.path.isdir(wip_dir):
-            for f in wip_files:
-                fpath = os.path.join(wip_dir, f)
-                try:
-                    content = open(fpath).read()
-                    if 'REQ:' not in content and 'req:' not in content:
-                        violations.append(f'roadmap "{f}" is in wip but has no linked REQ')
-                except OSError:
-                    pass
-
+    cfg = _config.load()
+    violations = list(_validator.validate_branch_has_wip_roadmap(cfg))
+    violations += [v['message'] for v in _validator.validate_wip_has_req(cfg)]
     return violations
 
 
@@ -333,6 +298,7 @@ def run_ship(
     exec_git=None,
     check_governance=None,
     writeln=None,
+    write_err=None,
 ):
     """
     Executes the seven-step ship sequence.
@@ -360,7 +326,15 @@ def run_ship(
     check_governance : callable() -> list[str]
         Injected governance check. Returns violation messages.
     writeln : callable(str) -> None
-        Injected output writer.
+        Injected output writer (stdout).
+    write_err : callable(str) -> None
+        Injected error writer (stderr) for the terminal error of every abort path below. Mirrors
+        Go exactly: ship.go returns these same messages as a bare exception, and
+        internal/commands/root.go's Execute() wrapper prints them to stderr as
+        `Error: <message>` (cmd.ErrPrefix() is "Error:", Fprintln inserts one space). Every
+        multi-line detail printed BEFORE the abort (violation lists, remediation hints,
+        "Note: ..." blocks) stays on stdout via writeln, same as Go's deps.out — only this final
+        one-line (or one-block) summary moves to stderr.
 
     Returns
     -------
@@ -373,6 +347,8 @@ def run_ship(
         check_governance = check_ship_governance
     if writeln is None:
         writeln = lambda s: print(s)  # noqa: E731
+    if write_err is None:
+        write_err = lambda s: print(f'Error: {s}', file=sys.stderr)  # noqa: E731
     if exec_forge_cli is None:
         exec_forge_cli = _default_exec_forge_cli
 
@@ -394,21 +370,21 @@ def run_ship(
     # ─── Step 1: Branch validation ─────────────────────────────────────────
     stdout, err = exec_git(['symbolic-ref', '--short', 'HEAD'])
     if err:
-        writeln(f'error: could not determine current branch (are you in a git repo?): {err}')
+        write_err(f'could not determine current branch (are you in a git repo?): {err}')
         return 1
     branch = stdout.strip()
 
     # main/master is blocked unconditionally — the doc-only exception never applies here.
     if branch in ('main', 'master'):
-        writeln(
-            f'error: trackfw ship cannot run on "{branch}" — use a feature branch:\n'
+        write_err(
+            f'trackfw ship cannot run on "{branch}" — use a feature branch:\n'
             '  git checkout -b feat/<slug>'
         )
         return 1
 
     if not doc_only and not is_ship_branch(branch):
-        writeln(
-            f'error: branch "{branch}" does not match the required pattern feat|fix|refactor|chore|docs/<slug>\n'
+        write_err(
+            f'branch "{branch}" does not match the required pattern feat|fix|refactor|chore|docs/<slug>\n'
             'Rename your branch or create a new one:\n  git checkout -b feat/<slug>'
         )
         return 1
@@ -439,7 +415,7 @@ def run_ship(
             writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")
             writeln("passes but 'trackfw ship' aborts here, you likely have lenient mode")
             writeln("configured — ship always requires REQ + roadmap in wip/.")
-            writeln(f'\nerror: governance check failed: {len(violations)} violation(s)')
+            write_err(f'governance check failed: {len(violations)} violation(s)')
             return 1
 
         writeln('Governance: OK')
@@ -468,8 +444,8 @@ def run_ship(
     # Reuses staged_files read at the top of the function (Step 0) — never re-query
     # git here.
     if not staged_files:
-        writeln(
-            'error: nothing is staged — stage your files explicitly before running ship:\n'
+        write_err(
+            'nothing is staged — stage your files explicitly before running ship:\n'
             '  git add <file1> <file2> ...\n'
             "Never use 'git add .' or 'git add -A'"
         )
@@ -477,15 +453,15 @@ def run_ship(
 
     # ─── Step 5: Commit ────────────────────────────────────────────────────
     if not message:
-        writeln(
-            'error: commit message is required — use -m:\n'
+        write_err(
+            'commit message is required — use -m:\n'
             '  trackfw ship -m "feat(<scope>): <description>"'
         )
         return 1
 
     _, commit_err = git(['commit', '-m', message])
     if commit_err:
-        writeln(f'error: git commit failed: {commit_err}')
+        write_err(f'git commit failed: {commit_err}')
         return 1
 
     if not dry_run:
@@ -495,7 +471,7 @@ def run_ship(
     push_args = _build_push_args(branch, exec_git)
     _, push_err = git(push_args)
     if push_err:
-        writeln(f'error: git push failed: {push_err}')
+        write_err(f'git push failed: {push_err}')
         return 1
 
     if not dry_run:

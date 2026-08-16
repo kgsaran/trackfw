@@ -356,6 +356,113 @@ func jsonEscape(s string) string {
 	return s
 }
 
+// --- ML-1A (ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-
+// release-7-0-0.md): item 1 (falso-positivo por prosa que COMEÇA a linha) + item 2 (brecha
+// `git switch -c`) -----------------------------------------------------------------------
+
+func TestGitBranchGuard_CommitMessageLineStartingWithGitCheckoutDashB_DoesNotBlock(t *testing.T) {
+	// Reprodução literal do incidente real (vault/notes/git-branch-guard-falso-positivo-em-
+	// linha-de-mensagem-de-commit-2026-08-16.md): uma mensagem de commit multi-linha via
+	// `-m "$(cat <<'EOF' ... EOF)"` (convenção deste próprio CLAUDE.md) cuja PRIMEIRA linha do
+	// corpo começa com "git checkout -b" era lida como um pseudo-segmento de comando pelo
+	// parser antigo (que segmentava por quebra de linha real sem noção de aspas). Diferente de
+	// TestGitBranchGuard_ProseTextMentioningGitCommit_DoesNotBlock (que testa "git commit" no
+	// MEIO de uma frase, já corrigido antes deste ML): aqui "git" é o PRIMEIRO token da linha.
+	dir, script := setupGitBranchGuardFixture(t)
+	cmd := "bin/trackfw commit -m \"$(cat <<'EOF'\n" +
+		"  git checkout -b            -> bloqueado pelo guard\n" +
+		"  trackfw branch new chore/  -> recusado\n" +
+		"EOF\n" +
+		")\""
+	payload := `{"tool_input":{"command":"` + jsonEscape(cmd) + `"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 0 {
+		t.Errorf("exit code: want 0 (linha de mensagem começando com 'git checkout -b' não deve bloquear), got %d (stdout: %s, stderr: %s)", code, stdout, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("allow deveria ser silencioso, got: %s", stdout)
+	}
+}
+
+func TestGitBranchGuard_QuotedMessageThenRealChainedCommand_StillBlocks(t *testing.T) {
+	// Não-regressão crítica (o risco que este ML foi avisado a não abrir): um `-m "..."`
+	// corretamente fechado seguido de um `git push` real encadeado por ';' ou '&&' TEM que
+	// continuar bloqueando — o pré-processamento quote-aware não pode esconder um comando real
+	// que vem DEPOIS da aspa de fechamento.
+	dir, script := setupGitBranchGuardFixture(t)
+
+	cases := []string{
+		`git commit -m "x"; git push`,
+		`git commit -m "x" && git push`,
+	}
+	for _, cmd := range cases {
+		payload := `{"tool_input":{"command":"` + jsonEscape(cmd) + `"}}`
+		code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+		if code != 2 {
+			t.Errorf("cmd=%q: exit code: want 2 (comando real encadeado após -m fechado deve bloquear), got %d (stdout: %s, stderr: %s)", cmd, code, stdout, stderr)
+		}
+		if !strings.Contains(stdout, "trackfw commit") {
+			t.Errorf("cmd=%q: mensagem deveria orientar para 'trackfw commit' (primeiro segmento casado), got: %s", cmd, stdout)
+		}
+	}
+}
+
+func TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks(t *testing.T) {
+	// Não-regressão do fallback de segurança de strip_heredoc_bodies: se o heredoc nunca fecha
+	// (terminador ausente/incompatível), o texto ORIGINAL deve ser usado — nunca esconder um
+	// `git push` real que vem depois.
+	dir, script := setupGitBranchGuardFixture(t)
+	cmd := "git status <<'EOF'\nwhatever\nNOTEOF\ngit push origin main"
+	payload := `{"tool_input":{"command":"` + jsonEscape(cmd) + `"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (heredoc mal-formado não pode esconder git push real), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "trackfw ship") {
+		t.Errorf("mensagem deveria orientar para 'trackfw ship', got: %s", stdout)
+	}
+}
+
+func TestGitBranchGuard_SwitchDashC_Blocks(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git switch -c feat/x"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (git switch -c é forma alternativa a checkout -b), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "trackfw branch new") {
+		t.Errorf("mensagem deveria orientar para 'trackfw branch new', got: %s", stdout)
+	}
+}
+
+func TestGitBranchGuard_SwitchDashC_FlagBeforeCreate_Blocks(t *testing.T) {
+	// git switch --track -c feat/x: -c não é o primeiro token após "switch", varredura de
+	// todos os tokens é necessária (mesmo espírito do bug 2, mas para "switch").
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git switch --track -c feat/x"}}`
+
+	code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (flag --track antes de -c), got %d (stderr: %s)", code, stderr)
+	}
+}
+
+func TestGitBranchGuard_SwitchWithoutCreateFlag_Allows(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git switch main"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 0 {
+		t.Errorf("exit code: want 0 (switch sem -c/-C/--create não é bloqueado), got %d (stderr: %s)", code, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("allow deveria ser silencioso, got: %s", stdout)
+	}
+}
+
 func TestGitBranchGuard_EnvVarFallback_Blocks(t *testing.T) {
 	dir, script := setupGitBranchGuardFixture(t)
 
