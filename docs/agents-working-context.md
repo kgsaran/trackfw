@@ -18220,3 +18220,21 @@ Não é explorável hoje, mas encerrar uma REQ de exposição deixando uma cópi
 código nunca executa.
 
 **Todos os ACs fechados (AC1–AC8). Falta só o PR.**
+
+**Hades — revisão de delta (`9314ae2..HEAD`), pós-PR-condicionado.** Escopo apertado: só o que
+entrou depois da Barreira ML-2A. Confirmado por conta própria (não pela palavra do arquiteto):
+`internal/server/server.go` removido de forma limpa e completa — zero referências (`git grep`),
+zero símbolos no binário recompilado (`go tool nm`), `go build`/`go vet` limpos, `go test
+./internal/serve/...` verde, nenhum teste órfão. A recomendação nº 2 do meu veredito original
+está endereçada. 4 comentários repontados no `internal/serve/serve.go`,
+`npm/src/commands/serve.js`, `pypi/trackfw/commands/serve.py`: só texto, sem lógica. A seção nova
+de `docs/cli-parity.md` foi verificada linha a linha contra o código real (ausência de auth via
+grep, destino stderr do aviso nas 3 linhas exatas, mecanismo de autodenúncia do gate lido em
+`check-serve-address-parity.sh` + Cenário 59 de `check-gates-falsify.sh`) — todas as afirmações
+procedem, nenhuma foi aceita por afirmação. Reexecutei o gate (`check-serve-address-parity.sh`)
+contra `b4697b8` com binário Go recompilado — a última execução real era contra `9314ae2`, antes
+da remoção de `internal/server/`. 10/10 OK, com `lsof` (medição real, não leitura de fonte).
+Também confirmei que o heading antigo citado nos comentários pré-delta ainda existe mas é seção
+não relacionada (aviso de `update --install-missing`), não duplicata stale. **APROVADO.** Parecer
+completo apenso em `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md` (apêndice
+"Revisão de delta").

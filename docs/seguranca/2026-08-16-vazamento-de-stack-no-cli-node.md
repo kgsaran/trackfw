@@ -591,3 +591,104 @@ forma independente, fecha 10/10.
 Nenhum dos três é motivo de bloqueio: os dois primeiros são recomendações de limpeza/hardening
 fora do escopo declarado da REQ, o terceiro foi investigado e não reproduzido de forma que
 contradiga a medição principal.
+
+---
+
+## Apêndice — Revisão de delta (`9314ae2..HEAD`), pós-abertura de PR
+
+Escopo: apenas o delta entre a árvore revisada na Barreira ML-2A (`9314ae2`) e `HEAD`
+(`b4697b8`), conforme solicitado. Não revalidei do zero a medição de bind/exposição dos 3 CLIs —
+reproduzi as partes que o delta poderia ter afetado.
+
+### A) Remoção de `internal/server/server.go` — limpa e completa
+
+Confirmado por conta própria, não pela palavra de quem propôs a remoção:
+
+- `git grep -rn "internal/server"` fora de `internal/serve` e do próprio parecer de segurança:
+  zero ocorrências. Nenhuma referência órfã no código-fonte.
+- `go build ./...` e `go vet ./...`: limpos, sem erros nem warnings.
+- `go tool nm` no binário Go recompilado: `0` símbolos com prefixo `internal/server.` (era o
+  próprio ponto que eu tinha usado como evidência de "código morto, não linkado" na Barreira
+  ML-2A — a remoção elimina até a possibilidade de reativação futura sem revisão, que era minha
+  recomendação nº 2).
+- Nenhum arquivo de teste órfão (`*server_test*`, diretório `internal/server/`): busca vazia.
+- `go test ./internal/serve/...`: verde.
+
+A recomendação nº 2 do meu veredito original ("Recomendo remoção, não bloqueio") foi endereçada
+integralmente. A superfície de ataque só diminuiu — a remoção é estritamente subtrativa, sem
+código vivo levado junto.
+
+### B) Prosa de segurança nova em `docs/cli-parity.md` — verificada linha a linha contra o código, não aceita por afirmação
+
+**Ausência de autenticação:** confirmado. `grep -rni "authorization\|authenticate\|apikey\|bearer"`
+em `internal/serve`, `npm/src/serve`, `pypi/trackfw/serve`: zero ocorrências nos 3.
+
+**Aviso só em stderr:** confirmado nos 3 runtimes, lido no código-fonte real, não assumido:
+- Go: `internal/serve/serve.go:125` — `fmt.Fprintln(os.Stderr, ExposureWarning(host, port))`.
+- Node: `npm/src/commands/serve.js:196` — `console.error(exposureWarning(host, port))`
+  (`console.error` vai para stderr no Node).
+- Python: `pypi/trackfw/commands/serve.py:216` — `print(_exposure_warning(host, port), file=sys.stderr)`.
+
+A caracterização "o aviso não protege uso não-interativo (Makefile/Dockerfile/CI)" é honesta e
+não suavizada — é a mesma ressalva que eu próprio já tinha registrado como risco residual nº 1
+na Barreira ML-2A, agora formalizada no contrato ao invés de ficar só no meu parecer.
+
+**Exceções intencionais — avaliação item a item:**
+- `::ffff:127.0.0.1` / `127.0.0.2` classificados como exceção porque "nenhum dos 3 consegue
+  escutar nesses endereços, logo o impacto de segurança é nulo": aceitável — divergência de
+  *mensagem de erro* sem superfície de exposição associada não é uma exceção de segurança
+  disfarçada, é uma exceção de parceria de UX legítima. Não reexecutei o bind nesses endereços
+  (fora do escopo do delta — comportamento herdado de `9314ae2`, não alterado aqui).
+- Loopback dual-stack (`127.0.0.1` + `::1` simultâneos) declarado "não é objetivo": correto e é a
+  postura mais conservadora, não uma concessão — um listener dual-stack ampliaria a superfície
+  em vez de reduzi-la, e o documento é explícito que isso não é uma limitação aceita por
+  conveniência, é a ausência do próprio defeito original (wildcard).
+- Porta padrão divergente (`4080` Go vs `8080` Node/Python) e prefixo de linha de URL divergente:
+  nenhum dos dois tem implicação de segurança — são convenções de apresentação pré-existentes ao
+  REQ, corretamente fora de escopo. Concordo que não misturar a correção de segurança com uma
+  mudança de interface não relacionada foi a decisão certa.
+
+Nenhuma das exceções listadas esconde risco. A lista é defensável.
+
+**Afirmação de autodenúncia do gate quando falta `lsof`:** verificada contra o código-fonte, não
+aceita por afirmação. Em `scripts/check-serve-address-parity.sh` (linhas 74-81, 165-171), quando
+`lsof` está ausente o braço de exclusão de wildcard é de fato pulado, degradando para um simples
+`connect` TCP em `127.0.0.1:$port` — que também teria sucesso contra um bind wildcard (`0.0.0.0`
+aceita conexões em `127.0.0.1`), então esse braço sozinho não provaria mais nada sobre o defeito
+original. Em `scripts/check-gates-falsify.sh`, o Cenário 59 (linhas 5166-5189) exercita
+exatamente essa lacuna: o braço de detecção corrompe `pypi/trackfw/commands/serve.py` para
+reintroduzir o bind wildcard e usa `assert_fails_with "expected lsof to show 127.0.0.1:"` — uma
+asserção que exige textualmente a mensagem de falha que só existe no braço `lsof`. Sem `lsof`, o
+script degradado nunca emite essa string (o bind wildcard também aceita `127.0.0.1`, então o
+`connect` de fallback passa), `assert_fails_with` falha por não encontrar o texto esperado, e o
+Cenário 59 do `check-gates-falsify.sh` reporta falha — não passa em silêncio. A afirmação do
+documento procede: é uma garantia real, não uma garantia falsa escrita num documento de contrato.
+
+### Verificações adicionais feitas antes de fechar o veredito
+
+- **Comentário repontado não esconde duplicata:** o heading antigo citado nos comentários
+  pré-delta, `### Aviso ao usuário — string pinada` (linha 2114 de `docs/cli-parity.md`), continua
+  existindo — mas é uma seção **diferente e não relacionada**, sobre o aviso de artefato
+  desatualizado pulado em `update --install-missing`, não sobre o aviso de exposição do `serve`.
+  Não é uma duplicata stale do mesmo contrato; o repoint estava correto e não deixou nada órfão.
+- **A alegação central da seção nova — "prova por escuta real, nunca por leitura de fonte" —
+  reexecutada, não só lida.** A leitura do script (feita acima) prova o *mecanismo*; só rodar o
+  gate prova que ele continua passando **nesta árvore**, já que a última execução real fora da
+  Barreira ML-2A foi contra `9314ae2`, antes da remoção de `internal/server/` e do reponte de
+  comentários em `internal/serve/serve.go`. Reexecutado: `GO_BIN=<binário recompilado em HEAD>
+  bash scripts/check-serve-address-parity.sh` → **10/10 OK**, todas as 4 sub-checagens
+  (default-bind loopback, `--host ::1`, aviso de exposição byte-idêntico, URL impressa) com
+  `lsof` disponível e usado (medição real de socket, não checagem de string em stdout). `go test
+  ./internal/serve/...` sozinho não seria suficiente aqui — prova compilação/unidade, não bind
+  real; o gate é o artefato que a prosa nova descreve, e é ele que precisava rodar contra `b4697b8`.
+
+### Veredito do delta
+
+**APROVADO.** A remoção de `internal/server/` é limpa, completa e estritamente subtrativa — a
+recomendação nº 2 do parecer original está endereçada. Os 4 comentários repontados são só texto
+e apontam para uma seção real, não para uma duplicata stale. A prosa nova em `docs/cli-parity.md`
+foi verificada contra o código real (ausência de auth, destino stderr, mecanismo de autodenúncia
+do gate) e o gate que ela descreve foi **reexecutado nesta árvore** (`b4697b8`), 10/10 — não
+aceita por afirmação de quem a escreveu, nem só por leitura do script. Nenhuma redação exige
+ajuste. Não reexecutei o bind em `::ffff:127.0.0.1`/`127.0.0.2` (fora do escopo do delta —
+comportamento herdado de `9314ae2`, não alterado aqui).
