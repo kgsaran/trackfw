@@ -101,10 +101,19 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- **`trackfw branch new` aceita `chore` e `docs`**, sem exigir roadmap — alinhando-o ao que
-  `trackfw ship` e `trackfw commit` já faziam para branches de housekeeping. O gate de governança
-  **continua valendo** para `feat`, `fix` e `refactor`. Sem isso, o próprio protocolo de release do
-  projeto ficava inexecutável pelos caminhos sancionados.
+- **`trackfw branch new` e `trackfw ship` aceitam branches `chore` e `docs`**, sem exigir REQ +
+  roadmap — alinhando os dois ao que o `trackfw commit` já fazia para branches de housekeeping. Em
+  ambos, **vocabulário** e **gate** passaram a ser coisas separadas: o conjunto de tipos aceitos
+  cresceu, mas o gate de governança **continua valendo integralmente** para `feat`, `fix` e
+  `refactor`.
+
+  Sem isso, o próprio **protocolo de release do projeto ficava inexecutável** pelos caminhos
+  sancionados: a criação de branch de release era recusada por um comando e a publicação pelo outro,
+  enquanto a via crua está bloqueada pelo guard de git. Efeito colateral não previsto do bloqueio
+  técnico de git bruto, que só apareceu na primeira release publicada depois dele.
+
+  Ganho colateral: `scripts/check-ship-parity.sh`, o primeiro contrato de paridade **comportamental**
+  do `trackfw ship` — antes só se verificava que o nome do comando aparecia no `--help`.
 
 ### Notas de atualização
 
