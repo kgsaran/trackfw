@@ -17591,3 +17591,8 @@ Node exit 1/stderr).
 
 **Próximo passo:** release **7.0.0** (breaking) em PR próprio — bump atômico nos 4 arquivos de
 versão + `CHANGELOG.md`, tag após o merge.
+
+## Sessão 2026-08-16 — Zeus (arquiteto) — abertura do PR da remoção de plugins
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw` empurrada e PR aberto a pedido de KG.
+Merge é decisão do usuário. Próximo passo: release 7.0.0 em PR próprio.
