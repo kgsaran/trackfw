@@ -34,7 +34,7 @@ referência em `scripts/` **mais** validadores de integridade. Mudança no match
 todas, senão `trackfw validate` acusa divergência.
 
 ## Acceptance Criteria
-- [x] AC1 — Itens 1 e 2 (guard) corrigidos, com **cenário de falsificação** conforme P4 do
+- [ ] AC1 — Itens 1 e 2 (guard) corrigidos, com **cenário de falsificação** conforme P4 do
       `ADR-2026-07-26-principios-de-design-de-gates-verificaveis`.
 - [x] AC2 — Itens 3, 5 e 7 (divergências entre CLIs) corrigidos **e cobertos por paridade**, para
       não reaparecerem.
@@ -223,6 +223,51 @@ ADR emendado com data e motivo.
 
 ---
 
+## Wave 5 — Corretivo da barreira (bloqueia o fechamento)
+
+### ML-4B — Fecha o que a barreira nomeou: prefixos, flags do `checkout`, claim e gate de paridade
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Origem:** veredito BLOQUEAR do ML-4A.
+
+**A linha de corte não é "B1 vs resto" — é custo do conserto:**
+
+| evasão | classe | entra aqui? |
+|---|---|---|
+| `env git …`, `command git …` | stripping de prefixo | ✅ sim — não exige tokenizador |
+| `git checkout -q -b`, `--no-track -b` | matcher só olha o token seguinte | ✅ sim — o de `switch` já varre todos |
+| `git${IFS}push`, `{git,push}`, `g""it push` | exige tokenizar como o bash | ❌ não — ver AC5 |
+
+Corrigir só as flags do `checkout` e deixar `env git`/`command git` abertas seria incoerente: são o
+mesmo custo e a mesma classe de "o agente emite sem estar tentando evadir".
+
+**Ações:**
+1. Matcher de `checkout` varre **todos** os tokens até achar `-b`/`-B`/`--orphan`, como o de `switch`.
+2. Ignorar prefixos `env` e `command` antes de decidir se o comando é `git`.
+3. **Header do script**: declarar que é **tripwire, não fronteira de segurança** — mesmo enquadramento
+   que o `CLAUDE.md` já usa para o checker de markers de terceiro, e coerente com o
+   `ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido…`. Nada de "quote-aware" sem qualificação.
+4. **Gate de paridade**: acrescentar `trackfw-git-branch-guard.sh` às duas listas de
+   `scripts/check-attention-scripts-parity.sh` (linhas ~133 e ~150), junto dos outros três scripts.
+5. **Cenário de falsificação novo (62)** — ou extensão do 60 — cobrindo prefixo e flag do `checkout`.
+
+**🔴 Onde este ML pode falhar em silêncio:**
+- São **6 cópias** do script. Toda mudança sai **do gerador**, byte-idêntica nas 6 — nunca editando
+  cópia a cópia. O próprio ML-1A achou 2 cópias além das 4 listadas.
+- Os Cenários **60/61** usam `corrupt_literal` contra literais de `internal/generators/scaffold.go`.
+  Mexer no template ali é **o mesmo modo de falha** que derrubou o Cenário 58 neste rebase: o literal
+  deixa de casar e o cenário vira inerte. Depois de tocar o template, rode `make quality` e confirme
+  que os dois braços de detecção **ainda reprovam** — exit code verde não basta.
+
+**Critérios de aceite:**
+- [ ] `env git commit`, `command git push`, `git checkout -q -b`, `git checkout --no-track -b` → **exit 2**.
+- [ ] Não-regressão: prosa com separador → **exit 0**; `git push`, `git commit`, `git switch -c/-C/--create`, `git checkout -b` → **exit 2**.
+- [ ] As 6 cópias byte-idênticas; `trackfw validate` sem divergência de integridade.
+- [ ] `check-attention-scripts-parity.sh` passa a cobrir o `git-branch-guard`.
+- [ ] Cenário de falsificação novo, com baseline **e** detecção; Cenários 60/61 continuam reprovando.
+- [ ] `make quality` verde.
+
+---
+
 ## Declaração de não-correção (AC5)
 
 Itens tocados por esta REQ que **não** foram corrigidos aqui, cada um com motivo e destino. Nada
@@ -236,13 +281,34 @@ nesta lista é omissão silenciosa.
 | **Wrapper de erro divergente no `integrations`** | Go usa `Error:`, Python usa `trackfw agents update:`, Node vazava a linha do `throw`. O vazamento do Node foi resolvido pelo handler global do #181; **a divergência de prefixo permanece**. | Mesma classe do item 3, corrigido só para o `ship` — fica para a REQ de i18n/saída |
 | **Mensagem de artefato unmanaged sem gate de paridade** | A byte-identidade entre os 3 está provada por **leitura do fonte**; os testes afirmam comportamento por stack, não paridade entre stacks. Lacuna registrada em `cli-parity.md`. | Recomendado gate no estilo `check-ship-parity.sh` — não criado aqui |
 | **`ship` diz `wip/` mas aceita `done/`** | Mensagem de erro e `--help` mais estritos que o código. Corrigir é mudar string de usuário nos 3 CLIs. | Emenda 1 do ADR do `ship` registra; sem REQ ainda |
+| **Evasões que exigem tokenização do bash** (`git${IFS}push`, `{git,push}`, `g""it push`) | Reproduzidas pelo arquiteto e **pré-existentes** — o guard da `main` já evadia todas. Fechá-las exige tokenizar como o bash, e o `ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita…` já decidiu que prevenção contra agente induzido não é alcançável, investindo em **detecção ancorada no `HEAD`**. Uma REQ de "fazer o guard tokenizar" nasceria contra esse ADR. | O que falta decidir é se o guard vira **tripwire declarado** ou merece exceção — isso é **emenda ao ADR-2026-08-12**, não REQ nova. O ML-4B já declara o tripwire no header. |
 | **`ship` não tem modo push-only** | O comando acopla commit+push e exige algo staged; empurrar trabalho já commitado exige `reset --soft` como contorno. Funciona, mas é contorno. | Questão aberta na Emenda 1 do ADR |
 
 ---
 
 ## Wave 4 — Barreira (só para os itens de segurança)
 ### ML-4A — `hades-tf`: revisão do guard
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Executado · **Veredito: 🔴 BLOQUEAR** · **Agente:** `hades-tf`
+**Parecer:** `docs/seguranca/2026-08-16-revisao-do-git-branch-guard.md`
+
+**Reproduzido pelo arquiteto, não aceito por relatório.** Sete evasões confirmadas (`exit 0` = evadiu):
+
+```
+git${IFS}push · {git,push} · g""it push · env git commit · command git push
+git checkout -q -b nova · git checkout --no-track -b nova
+```
+
+**Mas nenhuma é regressão do ML-1A.** Medi o guard da `main` (pré-ML-1A) com a mesma bateria: as
+**seis** primeiras já evadiam lá. E o ML-1A entregou o que prometeu — na `main`, prosa com separador
+é bloqueada indevidamente (`exit 2`) e `git switch -c` passa (`exit 0`); nesta branch, o inverso.
+O ML-1A é **estritamente aditivo**.
+
+**Por que o bloqueio procede mesmo assim**, e é acatado: (a) descrever a segmentação nova como
+"quote-aware" sem qualificar cria **confiança falsa** num guard trivialmente contornável; (b) não
+existe gate de paridade 3-stacks para este script — confirmei que `check-attention-scripts-parity.sh`
+cobre `attention-signal`, `attention-cleanup` e `credential-guard`, e **não** o `git-branch-guard`.
+
+**Resolvido pelo ML-4B abaixo.** O ML-1A **não** é revertido.
 **Escreve:** `docs/seguranca/2026-08-16-revisao-do-git-branch-guard.md`
 **Ações:** o ML-1A mexe num **controle de segurança**. Verificar que a correção do falso-positivo
 **não abriu** caminho para evasão real (ex.: esconder um comando dentro de algo que passe por

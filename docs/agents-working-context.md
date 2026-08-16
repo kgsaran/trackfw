@@ -18533,3 +18533,57 @@ quality` (test + test-node + test-python + lint + parity) — `[exited with code
 
 Nada commitado/pushed — devolvo para o `trackfw_architect` auditar e commitar. Não editei o
 roadmap (status é responsabilidade do arquiteto). Nota de vault criada e linkada no índice.
+
+---
+
+## 2026-08-16 — `hades-tf`: barreira ML-4A, revisão do `git-branch-guard` (ROADMAP-2026-08-16-higiene-sete-debitos)
+
+**Início:** revisão de segurança do guard alterado pelo ML-1A (correção de falso-positivo por prosa
++ fechamento da brecha `git switch -c`), na branch
+`fix/higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0`.
+
+**Veredito: BLOQUEAR.** Achei 4 bypasses reais e triviais, mais 1 secundário (B1) — nenhum coberto
+pelos testes Go/Node/Python nem pelos Cenários 60/61 do `check-gates-falsify.sh`:
+- `git${IFS}push` — guard permite (`exit 0`); bash real expande `${IFS}` e executa `git push`.
+- `{git,push}` como comando — guard permite; bash real faz brace expansion e **executa `git push`
+  de verdade** (confirmado por execução; só não houve push remoto porque a branch de teste não tem
+  upstream).
+- `g""it push` — guard permite; bash real remove as aspas vazias e executa `git push`.
+- `env git commit -m x` / `command git push` — guard permite; ambos executam o git subjacente
+  literalmente em qualquer shell, sem nenhum disfarce.
+- Achado secundário (B1): `git checkout <flag> -b nova` (qualquer flag entre `checkout` e `-b`, ex.
+  `-q`, `--no-track`) evade a detecção — o matcher de `checkout` só olha o token imediatamente
+  seguinte, ao contrário do de `switch` que varre todos os tokens.
+
+**Verificação de regressão feita, não só inferida:** peguei o guard no commit imediatamente anterior
+ao ML-1A (`git show b9ced66^:scripts/trackfw-git-branch-guard.sh`) e rodei a mesma bateria — todos os
+5 vetores acima já passavam (`exit 0`) **antes** deste ML também. Ou seja, **nenhum é regressão**; o
+delta próprio do ML-1A (prosa deixa de bloquear indevidamente, `switch -c` passa a bloquear) está
+limpo. O motivo do bloqueio não é "o ML quebrou algo" — é que o ML reescreveu a segmentação e a
+descreveu como "quote-aware" sem declarar que isso não cobre tokenização geral, criando confiança
+falsa sobre um guard que continua trivialmente contornável. Causa raiz comum de A1-A3: word-splitting
+ingênuo (`set -- $seg_trimmed`) sobre texto bruto sem nunca *avaliar* como o bash real avalia
+(expansão de parâmetro, brace expansion, remoção de aspas). A4 é causa distinta: `continue` no laço
+de segmentos pula para o próximo assim que o primeiro token não é `git`, nunca reexamina o resto do
+mesmo segmento.
+
+**O que verifiquei como correto, por execução:** path feliz (prosa não bloqueia, comandos reais
+encadeados continuam bloqueados, `switch -c/-C/--create` bloqueado inclusive com flag antes). As 6
+cópias do script (gerador Go canônico, `scripts/` de referência, espelhos Node/Python, referências
+de integridade Node/Python) são byte-idênticas hoje — confirmado rodando o gerador Go de verdade e
+comparando, mais `go test`/`node --test`/`pytest` das suítes dedicadas, todos verdes, mais
+`trackfw validate` sem erros. **Ressalva registrada no parecer:** não existe, ao contrário do
+credential-guard (`TestCredentialGuardScript_ParityAcrossStacks`), um teste que gere o script pelos
+3 stacks e compare os três entre si numa única asserção — a identidade de hoje não tem uma trava
+automática contra deriva futura entre stacks.
+
+**Entregável:** `docs/seguranca/2026-08-16-revisao-do-git-branch-guard.md` — parecer completo com
+tabela de vetores testados (sucesso e falha), prova de não-regressão contra o guard pré-ML-1A, e
+recomendação de correção que **evita eval/expansão real do shell dentro do guard** (isso abriria RCE
+no próprio hook) — lexer sem avaliação (ex. `shlex`/`mvdan.cc/sh`) ou fail-closed sobre os
+metacaracteres de obfuscação (`${`, `$(`, backtick, brace expansion).
+
+**Não fiz:** nenhuma correção de código de produto (fora do meu escopo); nenhum commit/push/branch
+(autoridade exclusiva do `trackfw_architect`). Devolvo para o arquiteto decidir se a correção destes
+vetores entra neste mesmo ML-1A (reabrindo) ou vira REQ própria — e se a declaração de risco residual
+(A1-A4/B1 pré-existentes, agora documentados) é aceitável como está ou exige correção antes do merge.
