@@ -4,12 +4,47 @@ Usa argparse (stdlib) e delega para subcomandos em trackfw/commands/.
 """
 
 import argparse
+import re
 import sys
 from trackfw import __version__
+from trackfw.unknown_command import format_unknown_command_error
+
+# Matches argparse's own message for an unrecognized COMMAND positional
+# (add_subparsers(dest="command", metavar="COMMAND")):
+#   argument COMMAND: invalid choice: 'x' (choose from 'a', 'b', ...)
+_UNKNOWN_COMMAND_RE = re.compile(r"^argument COMMAND: invalid choice: '(.*)' \(choose from")
+
+
+class TrackfwArgumentParser(argparse.ArgumentParser):
+    """Overrides error() ONLY for the top-level "unknown command" case, to emit
+    the canonical cross-CLI message (unknown_command.py) with exit code 1
+    instead of argparse's default "invalid choice" text and exit code 2.
+
+    Deliberately narrow: every other error on this parser (missing/invalid
+    top-level flags, "unrecognized arguments: ...", etc.) falls straight
+    through to the stdlib ArgumentParser.error() unchanged, so this cannot
+    alter the exit code of unrelated errors — required by
+    ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-
+    de-terceiro.md D3. Only used for the root parser; subparsers (one
+    ArgumentParser instance per subcommand) are unaffected, so an invalid
+    argument inside e.g. `trackfw roadmap move` keeps its own default exit
+    code and message.
+    """
+
+    def error(self, message):
+        match = _UNKNOWN_COMMAND_RE.match(message)
+        if match is None:
+            super().error(message)
+            return
+        typed = match.group(1)
+        candidates = getattr(self, "trackfw_command_names", [])
+        formatted = format_unknown_command_error(typed, candidates, self.prog)
+        sys.stderr.write(formatted + "\n")
+        sys.exit(1)
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    parser = TrackfwArgumentParser(
         prog="trackfw",
         description="trackfw — governed software delivery framework\nADR → REQ → ROADMAP → kanban",
     )
@@ -117,6 +152,10 @@ def main():
     # --- changelog ---
     from trackfw.commands import changelog as changelog_cmd
     changelog_cmd.register(subparsers)
+
+    # Snapshot the final command set for the "unknown command" error path
+    # above — must run after every .register(subparsers) call, before parsing.
+    parser.trackfw_command_names = list(subparsers.choices.keys())
 
     args = parser.parse_args()
 

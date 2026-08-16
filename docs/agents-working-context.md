@@ -17354,3 +17354,68 @@ não-relacionados: `<plugins>` de Maven em `generators/java.go`, `plugins:` de C
 `serve/static/app.js`, e o nome do arquivo do ADR em um comentário);
 `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./...` verde em todos os pacotes. Devolvido **não
 commitado**, conforme fronteira do ML.
+
+## Sessão 2026-08-16 — Apolo (backend) — ML-2A remoção do subsistema de plugins (mensagem canônica + docs)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, sequencial (Wave 2, ML-2A do mesmo
+roadmap acima; Wave 1/ML-1A/1B/1C já commitadas). Escopo: docs, `check-cli-parity.sh` e a mensagem
+canônica de comando desconhecido nos 3 CLIs (ADR D3).
+
+**Divergência medida na Wave 1** (texto, aspas, exit code 1 vs 2, sugestão) reconciliada para, em
+**stderr**, **exit 1**, byte-idêntico nos 3:
+```
+Error: unknown command "x" for "trackfw"
+Did you mean "validate"?
+Run 'trackfw --help' for usage.
+```
+A linha de sugestão só aparece com candidato próximo o suficiente. Nenhum dos 3 usa o mecanismo de
+sugestão nativo do próprio framework (cobra `SuggestionsFor`, commander `suggestSimilar`, ambos com
+distância/threshold diferentes) — os 3 reimplementam a MESMA distância de Levenshtein simples (sem
+transposição) e a mesma regra de escolha (`internal/commands/root.go` `suggestCommand`/
+`levenshteinDistance`; `npm/src/lib/unknown-command.js`; `pypi/trackfw/unknown_command.py`), para
+garantir que os 3 concordem sobre se/o-que sugerir para o mesmo typo.
+
+**Go (`internal/commands/root.go`):** `Execute()` reescrito com `root.SilenceErrors`/`SilenceUsage
+= true` + impressão própria — corrige de brinde um bug pré-existente e não relacionado a plugins
+(TODO erro do cobra saía **duas vezes** em stderr, já presente antes desta sessão, achado durante a
+implementação — reportado, não escondido). A reformatação replica os dois flags independentes
+`cmd.SilenceErrors`/`cmd.SilenceUsage` que comandos individuais já setavam (ex.: `branch.go`'s
+"new", que quer erro nu sem prefixo/usage) — sem isso, `check-branch-new-parity.sh` quebrava (Go
+ganhava prefixo+usage que Node/Python nunca tiveram). Candidatos de sugestão excluem `completion`
+(auto-registrado pelo cobra, sem equivalente em npm/pypi) via lista explícita, não via
+`root.Commands()` cru.
+
+**Python (`pypi/trackfw/cli.py`):** `TrackfwArgumentParser` sobrescreve `ArgumentParser.error()`
+**apenas** para o padrão `argument COMMAND: invalid choice: '...'`, trocando o exit code default do
+argparse (2) por 1 só nesse caso — todo outro erro argparse (flag desconhecida, argumento
+obrigatório ausente em subcomando) mantém exit 2, verificado por teste dedicado.
+
+**Novo:** `scripts/check-unknown-command-parity.sh` (adicionado a `make parity`) — 5 cenários:
+sem sugestão, com sugestão, `plugins` (removido, mesma mensagem canônica, sem caso especial),
+falsificação com binário real `trackfw-vaildate` no `PATH` (nunca executado, P4), e exit code de
+erro não-relacionado inalterado. `floor_commands` de `check-cli-parity.sh` recalibrado (removido
+`plugins`). `README.md`/`docs/cli-parity.md` atualizados; nova seção "Unknown top-level command" e
+"Plugin subsystem — removed" documentam a mensagem canônica, o critério de sugestão compartilhado,
+a divergência pré-existente Go-only `completion`, e a divergência pré-existente, fora de escopo,
+`trackfw` sem argumento (Go exit 0/stdout vs Node exit 1/stderr — commit `f9202f4`, não tocada).
+
+**Testes atualizados** (mensagens antigas quebrariam contra o novo contrato):
+`npm/tests/unknown-command.test.js`, `pypi/tests/test_commands_basic.py::TestUnknownCommand`
+(ambos com asserção byte-a-byte + falsificação PATH); novo `internal/commands/root_test.go` (Go
+não tinha teste dedicado de comando desconhecido antes desta sessão) com o mesmo padrão de
+falsificação via binário real, mais unitários de `suggestCommand`/`levenshteinDistance`.
+
+**Validação:** `go build ./...`, `go vet ./...`, `go test ./...` (todos pacotes), `npm test` (591
+testes), `python3 -m pytest pypi/tests -q` (1234 testes) — todos verdes. `make quality` exit 0,
+zero `FAIL`, 112/112 cenários de falsificação. `grep -rn "plugins" README.md CLAUDE.md scripts/`
+só retorna ocorrências no novo script de paridade descrevendo a remoção (`plugins-is-gone`), não o
+comando como existente.
+
+**Gap conhecido, não fechado nesta sessão:** o arquivo `scripts/check-gates-falsify.sh` (P4,
+~4800 linhas, 112 cenários catalogados) não ganhou um cenário dedicado provando que
+`check-unknown-command-parity.sh` detectaria uma regressão futura (mutar uma cópia do script/
+fixture e confirmar que ele reprova) — os 5 cenários do script novo são autocontidos e passam, mas
+não há a segunda camada de "prova de que o gate morde" que o resto do arquivo tem para os outros 17
+gates. Decisão consciente por escopo/esforço desta sessão; se o padrão do projeto exigir paridade
+total com os demais gates, é um ML pequeno à parte. Devolvido **não commitado**, conforme fronteira
+do ML — cabe a `trackfw_architect` auditar e commitar.

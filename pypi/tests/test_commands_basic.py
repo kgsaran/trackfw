@@ -179,15 +179,69 @@ class TestLog(unittest.TestCase):
 
 
 class TestUnknownCommand(unittest.TestCase):
-    """ADR-2026-08-15 (remocao do subsistema de plugins): comando desconhecido
-    nunca deve tentar executar um binario trackfw-* do PATH — deve falhar com
-    erro de comando desconhecido e exit code != 0."""
+    """ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-
+    de-terceiro.md (D3): comando desconhecido nunca deve tentar executar um
+    binario trackfw-* do PATH — deve falhar com a mensagem CANONICA
+    compartilhada pelos 3 CLIs, exit code 1 (nao mais o 2 default do argparse
+    para "invalid choice"). Pinado em docs/cli-parity.md e coberto byte-a-byte
+    por scripts/check-unknown-command-parity.sh."""
 
-    def test_comando_inexistente_retorna_erro_sem_executar_binario(self):
+    def test_comando_inexistente_sem_sugestao_proxima_mensagem_canonica_exit_1(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            result = run_trackfw("comando-inexistente", cwd=tmpdir)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("invalid choice: 'comando-inexistente'", result.stderr)
+            result = run_trackfw("comando-inexistente-xyz", cwd=tmpdir)
+        self.assertEqual(result.returncode, 1, msg=result.stderr)
+        self.assertEqual(
+            result.stderr.strip(),
+            'Error: unknown command "comando-inexistente-xyz" for "trackfw"\n'
+            "Run 'trackfw --help' for usage.",
+        )
+
+    def test_vaildate_typo_proximo_de_validate_inclui_did_you_mean(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_trackfw("vaildate", cwd=tmpdir)
+        self.assertEqual(result.returncode, 1, msg=result.stderr)
+        self.assertEqual(
+            result.stderr.strip(),
+            'Error: unknown command "vaildate" for "trackfw"\n'
+            'Did you mean "validate"?\n'
+            "Run 'trackfw --help' for usage.",
+        )
+
+    def test_plugins_nao_existe_mais_mesma_mensagem_canonica(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_trackfw("plugins", cwd=tmpdir)
+        self.assertEqual(result.returncode, 1, msg=result.stderr)
+        self.assertTrue(
+            result.stderr.strip().startswith('Error: unknown command "plugins" for "trackfw"'),
+            msg=result.stderr,
+        )
+
+    def test_outros_erros_de_argparse_mantem_exit_code_2(self):
+        # A sobrescrita de ArgumentParser.error() em cli.py e estritamente
+        # restrita ao "invalid choice" de COMMAND — nao deve alterar o exit
+        # code de nenhum outro erro do argparse (ex.: flag desconhecida).
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = run_trackfw("--esta-flag-nao-existe", cwd=tmpdir)
+        self.assertEqual(result.returncode, 2, msg=result.stderr)
+
+    def test_vaildate_nunca_executa_binario_externo_real_do_path(self):
+        # Falsificacao (P4): um executavel REAL trackfw-vaildate no PATH, com um
+        # marcador distintivo, nunca deve rodar — e o vetor exato que o fallback
+        # de execucao de plugin removido costumava abrir.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_bin_dir = os.path.join(tmpdir, "fake-bin")
+            os.makedirs(fake_bin_dir)
+            fake_bin_path = os.path.join(fake_bin_dir, "trackfw-vaildate")
+            with open(fake_bin_path, "w") as f:
+                f.write("#!/bin/sh\necho EXECUTOU_PLUGIN_MALICIOSO\n")
+            os.chmod(fake_bin_path, 0o755)
+
+            env = {"PATH": fake_bin_dir + os.pathsep + os.environ.get("PATH", "")}
+            result = run_trackfw("vaildate", cwd=tmpdir, env=env)
+
+        self.assertNotIn("EXECUTOU_PLUGIN_MALICIOSO", result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 1, msg=result.stderr)
+        self.assertIn('Did you mean "validate"?', result.stderr)
 
 
 class TestRealCommands(unittest.TestCase):

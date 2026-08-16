@@ -22,7 +22,6 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `update` | yes | yes | yes | Refresh managed artifacts |
 | `metrics` | yes | yes | yes | Delivery metrics |
 | `sync` | yes | yes | yes | Jira/Linear synchronization |
-| `plugins` | yes | yes | yes | Plugin operations supported by runtime |
 | `serve` | yes | yes | yes | Local dashboard |
 | `agents` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
@@ -3046,9 +3045,97 @@ generated artifact semantics require equivalent tests in all affected runtimes.
 `internal/serve/static` is the canonical dashboard asset source. Copies packaged
 by npm and PyPI must remain byte-identical and are checked in CI.
 
-Plugin downloads use timeouts, size limits, and atomic replacement. Registry
-entries do not currently publish checksums; adding signed SHA-256 metadata is a
-required compatibility change before checksum verification can become mandatory.
+## Plugin subsystem — removed (ADR-2026-08-15)
+
+`trackfw plugins {list,add,remove}` and all plugin download/execution code were
+removed by
+[`ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md`](adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md).
+trackfw no longer downloads, installs, manages, or executes third-party code.
+This also closes the previously-documented exception where Python never had
+plugin installation: with the removal, the three CLIs converge on the same
+behavior and the exception is no longer needed. The command row above has been
+deleted rather than marked `no`.
+
+Removal included the argument-dispatch fallback that used to turn ANY
+unrecognized top-level command into an attempt to execute a `trackfw-<name>`
+binary found on `PATH` (`internal/commands/root.go`'s old `RunPlugin` call). An
+unrecognized command is now always an "unknown command" error — see the next
+section for the canonical, cross-CLI message this produces.
+
+## Unknown top-level command — canonical message
+
+`trackfw <unrecognized>` produces, in **all three CLIs**, on **stderr**, **exit
+code 1**:
+
+```
+Error: unknown command "x" for "trackfw"
+Did you mean "validate"?
+Run 'trackfw --help' for usage.
+```
+
+The `Did you mean "..."?` line is present only when a close-enough command
+exists; with no eligible candidate, only the first and third lines are
+printed. Before this contract, the three frameworks' default behavior diverged
+in every dimension — text, quoting, exit code, and whether a suggestion was
+offered at all:
+
+```
+GO (cobra)       exit 1  Error: unknown command "x" for "trackfw"
+                          Run 'trackfw --help' for usage.
+NODE (commander) exit 1  error: unknown command 'x'
+                          (Did you mean validate?)
+PY (argparse)    exit 2  trackfw: error: argument COMMAND: invalid choice: 'x' (choose from ...)
+```
+
+None of the three frameworks' built-in suggestion mechanisms are used to
+produce the canonical message — cobra's `Command.SuggestionsFor`, commander's
+`suggestSimilar` (Damerau-Levenshtein, threshold 3, similarity ratio) and
+argparse's `invalid choice` listing all use different distance functions and
+thresholds, which would make the three CLIs disagree on whether/what to
+suggest for the same typo. Instead, all three reimplement the same plain
+(no-transposition) Levenshtein distance and the same suggestion-picking rule:
+
+- a candidate is eligible when its case-insensitive Levenshtein distance to
+  the typed text is `<= 2`, **or** it is a case-insensitive prefix match;
+- among eligible candidates, the one with the lowest distance wins, ties
+  broken alphabetically — a single, deterministic suggestion.
+
+Implementations: `internal/commands/root.go` (`suggestCommand`,
+`levenshteinDistance`), `npm/src/lib/unknown-command.js` (`suggestCommand`,
+`levenshteinDistance`), `pypi/trackfw/unknown_command.py` (`suggest_command`,
+`levenshtein_distance`). The Python entry point additionally overrides
+`ArgumentParser.error` narrowly — only for the top-level "invalid choice on
+COMMAND" message — specifically to change this one error's exit code from
+argparse's default `2` to `1` without touching the exit code of any other
+argparse error (missing/invalid flags, `unrecognized arguments: ...`, etc.),
+which stay `2` as before, consistent with the pre-existing, deliberately
+unpinned exit-code divergence for unknown *flags* noted below.
+
+Verified byte-for-byte across the three runtimes, plus the falsification
+vector (a real `trackfw-vaildate` executable placed on `PATH`, which the
+removal above must never invoke) by `scripts/check-unknown-command-parity.sh`
+(added to `make parity`).
+
+### Candidate set — "completion" is Go-only, and deliberately excluded
+
+Cobra auto-registers a `completion` subcommand that has no Node.js/Python
+equivalent (shell-completion script generator, framework built-in, unrelated
+to plugins). If the suggestion algorithm used cobra's own command list, a typo
+near "completion" would suggest it only in Go, breaking parity in an edge
+case. All three implementations instead use an explicit candidate list — in Go
+this is `root.Commands()` filtered to exclude `"completion"` by name, matching
+the fixed list that Node.js (`program.commands`) and Python
+(`subparsers.choices`) already have.
+
+### Pre-existing divergence — out of scope, not touched here
+
+`trackfw` **with no argument at all** behaves differently across runtimes: Go
+exits `0` and prints help to stdout; Node.js's default commander behavior
+exits `1` and prints help to stderr. This is a commander default (root command
+with no `.action()`), unrelated to plugins or to the unknown-command path
+above, and was already documented as a known gap when the plugin subsystem was
+removed (commit `f9202f4`). It is intentionally **not** "fixed" here — it
+needs its own REQ.
 
 
 ## Detecção de adulteração do credential-guard: as duas regras novas, e o que elas não veem (ROADMAP-2026-08-12-deteccao-de-adulteracao)

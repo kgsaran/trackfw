@@ -84,7 +84,12 @@ referências a `plugins`.
 > Dependências: Wave 1 completa. **Sequencial** — arquivos compartilhados.
 
 ### ML-2A — Docs + `check-cli-parity.sh` + paridade da mensagem de erro
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído (2026-08-15) — mensagem canônica implementada nos 3 CLIs (Go via
+`internal/commands/root.go`, Node via `npm/src/lib/unknown-command.js`, Python via
+`pypi/trackfw/unknown_command.py` + `TrackfwArgumentParser`), `floor_commands` recalibrado,
+`docs/cli-parity.md`/`README.md` atualizados, `scripts/check-unknown-command-parity.sh` novo
+adicionado a `make parity`, byte-idêntico + exit 1 verificado (com e sem sugestão) + falsificação
+com binário real `trackfw-vaildate` no PATH nos 3 CLIs; `make quality` exit 0 · **Agente:** `apolo-tf`
 **Arquivos:** `README.md`, `CLAUDE.md`, `docs/cli-parity.md`, `scripts/check-cli-parity.sh`
 **Ações:**
 1. Remover `plugins` de `floor_commands` (`check-cli-parity.sh:22`).
@@ -117,6 +122,38 @@ referências a `plugins`.
 - [ ] `make quality` verde.
 - [ ] `grep -rn "plugins" README.md CLAUDE.md scripts/` sem ocorrência que descreva o comando removido.
 - [ ] Mensagem de comando desconhecido byte-idêntica nos 3 CLIs, coberta por script de paridade.
+
+---
+
+### ML-2B — Corretivo: cenário de falsificação para o gate novo (P4 do ADR-2026-07-26)
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Dependência:** ML-2A ✅ (commitado).
+**Origem:** lacuna reportada pelo próprio ML-2A e confirmada pelo arquiteto como **violação de ADR
+aceito**, não como refinamento opcional.
+
+`docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md` estabelece **P4**: todo ML
+que mexe em gate exige um passo de falsificação, "com montagem e desmontagem do cenário negativo" —
+o ônus da prova é de quem altera. O `scripts/check-unknown-command-parity.sh` nasceu **sem** cenário
+em `scripts/check-gates-falsify.sh`, ao contrário dos outros 18 gates. Um gate que ninguém provou
+ser capaz de falhar é exatamente o padrão "teste que não consegue falhar" que esta entrega caçou em
+outros pontos.
+
+**Arquivos afetados:** `scripts/check-gates-falsify.sh`
+**Ações:**
+1. Adicionar cenário(s) de falsificação provando que `check-unknown-command-parity.sh` **reprova**
+   quando a paridade quebra. No mínimo: (a) divergência de **texto** da mensagem em um dos CLIs;
+   (b) divergência de **exit code**; (c) **ausência** da linha de sugestão em um dos CLIs.
+2. Seguir o padrão de montagem/desmontagem já usado pelos cenários existentes — o cenário negativo
+   é temporário e o repo volta ao estado original.
+
+**Critérios de aceite:**
+- [ ] Cada cenário novo, quando aplicado, faz `check-unknown-command-parity.sh` sair **≠ 0**; ao
+      desmontar, volta a sair 0.
+- [ ] Contagem de cenários em `check-gates-falsify.sh` sobe de 112 e a mensagem final reflete o novo
+      total.
+- [ ] `make quality` verde.
+
+**Comando de validação:** `make quality`
 
 ---
 
