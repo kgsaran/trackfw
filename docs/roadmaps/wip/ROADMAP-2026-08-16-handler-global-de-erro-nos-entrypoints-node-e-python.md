@@ -34,7 +34,7 @@ Comandos que capturam internamente imprimem limpo (`roadmap move`); os que não 
 - [x] AC2 — Handler global no Node **e** no Python; mensagem limpa em stderr, exit ≠ 0.
 - [x] AC3 — `TRACKFW_DEBUG=1` restaura a stack completa.
 - [x] AC4 — Caminhos de erro já corretos **não regridem** (byte a byte).
-- [ ] AC5 — Gate de paridade + cenário de falsificação (P4).
+- [x] AC5 — Gate de paridade + cenário de falsificação (P4).
 - [x] AC6 — `make quality` verde.
 
 ---
@@ -79,7 +79,7 @@ script de paridade novo ou existente, `scripts/check-gates-falsify.sh`, + testes
 ## Wave 2 — Barreira
 
 ### ML-2A — `hades-tf`: revisão do vazamento
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído (2026-08-16) — LIBERA; achado grave em `serve` reportado à parte · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md`
 **Ações:** confirmar que **nenhum** caminho de erro dos 3 CLIs vaza stack, caminho absoluto ou
 versão de runtime — varrer, não confiar no caminho corrigido. Avaliar se `TRACKFW_DEBUG` cria

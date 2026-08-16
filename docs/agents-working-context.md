@@ -17802,3 +17802,46 @@ Roadmap não editado (autoridade do arquiteto). Nenhum commit/push — devolvido
 
 `npm test` recontado após os ajustes: 608 testes (+2). `pytest`: 1262 (+1). `make quality`
 completo re-executado do zero após todos os ajustes — verde.
+
+## Sessão 2026-08-16 — Hades (INÍCIO: ML-2A — barreira de segurança do handler global)
+
+Branch `fix/handler-global-de-erro-nos-entrypoints-node-e-python` (mesma do ML-1A, sem commits
+novos meus). Escopo: varredura de outras superfícies de vazamento (stack/caminho/versão) nos 3
+CLIs além do caminho já corrigido, avaliação de `TRACKFW_DEBUG` como superfície de ativação por
+terceiro, avaliação de `panic` alcançável no Go, confirmação/contestação da severidade "baixa a
+moderada", e verificação empírica (não só leitura) de que o handler do ML-1A não mascara exit code
+nem mensagem. Entregável único: `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md`. Não
+modifico código de produto, não commito, não edito roadmap.
+
+## Sessão 2026-08-16 — Hades (FIM: ML-2A concluído — LIBERO o merge do ML-1A, achado novo fora de escopo)
+
+Relatório completo em `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md` (não
+commitado). Veredito do handler global (`npm/bin/trackfw`/`fatal-error.js`,
+`pypi/trackfw/cli.py`/`fatal_error.py`): correto, verificado por execução (não só leitura) —
+mensagem íntegra byte a byte, exit code preservado, `TRACKFW_DEBUG=1` restaura a stack, sem
+regressão de disponibilidade em `trackfw serve` (processo já morria com o mesmo throw sintético
+antes do ML-1A — comportamento padrão do Node, não introduzido pelo fix). Severidade "baixa a
+moderada" do arquiteto: confirmada. Gap dormente encontrado: `pypi/trackfw/cli.py` só protege
+`args.func(args)` dentro do `try/except`, não `parser.parse_args()`/`register(subparsers)` — o
+Node é simétrico e completo (`installGlobalHandlers()` roda antes do `require` do módulo de
+comandos, cobre até falha síncrona no carregamento) porque é chamado antes do require; confirmado
+corrompendo cópias isoladas dos dois pacotes em `/tmp`, nunca no repo.
+
+**Achado não relacionado ao ML-1A, mais grave que o vazamento original, descoberto ao varrer
+`trackfw serve` (item pedido no brief):** `internal/serve/serve.go` (`addr := fmt.Sprintf(":%d",
+port)`) e `pypi/trackfw/commands/serve.py:150` (`HTTPServer(("", port), ...)`) escutam em **todas
+as interfaces de rede**, não só loopback — diferente do Node, que restringe corretamente a
+`127.0.0.1` (`npm/src/commands/serve.js:151`). Verificado por execução real: bind + `curl` a partir
+do IP da LAN da máquina retornou HTTP 200 nos dois CLIs. Combinado com
+`pypi/trackfw/commands/serve.py:104` (`send_error(500, f"Cannot read file: {e}")`, que ecoa
+`str(OSError)` incluindo caminho absoluto de instalação do pacote), isso é exposição não
+autenticada de dados de governança do projeto (ADRs/REQs/roadmaps via `/api/board` etc.) para
+qualquer dispositivo na mesma rede — categoria mais séria que a que motivou este REQ. Não bloqueia
+o merge desta branch (nenhum arquivo de `serve` está no diff do ML-1A), mas recomendei abrir um REQ
+de correção dedicado com prioridade pelo menos igual à deste REQ. Achado colateral: código morto em
+`internal/server/server.go` (`http.Error` com `err.Error()` embutido) não referenciado por nenhum
+comando — recomendado remover em limpeza futura, não é vazamento ativo.
+
+Nenhum código de produto alterado; todas as reproduções foram feitas em cópias isoladas sob
+`/private/tmp/.../scratchpad`, nunca na árvore do repo. `git status` confirma apenas os dois
+artefatos permitidos sujos. Não commitei, não editei roadmap. Devolvido ao `trackfw_architect`.

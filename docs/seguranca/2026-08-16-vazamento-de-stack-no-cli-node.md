@@ -1,0 +1,401 @@
+# Barreira de segurança — vazamento de stack no CLI Node (ML-2A)
+
+> Data: 2026-08-16 | Autor: Hades (Security) | Branch:
+> `fix/handler-global-de-erro-nos-entrypoints-node-e-python` (sem commits deste agente)
+> Escopo do ML-1A auditado: `npm/bin/trackfw`, `npm/src/lib/fatal-error.js`,
+> `pypi/trackfw/fatal_error.py`, `pypi/trackfw/cli.py`
+
+## Resumo executivo
+
+O fix do ML-1A (handler global no entrypoint Node e no `args.func()` do Python) está **correto e
+verificado empiricamente** no caminho para o qual foi desenhado: mensagem íntegra, exit code
+preservado, `TRACKFW_DEBUG=1` restaura a stack sem regressão. **Libero o merge do ML-1A/ML-2A** —
+mas encontrei, varrendo `trackfw serve` como o brief pediu, um achado **não relacionado ao ML-1A,
+mais sério que o vazamento que motivou este REQ, e que exijo destacar antes de qualquer decisão de
+release**: `trackfw serve` do Go e do Python escutam em **todas as interfaces de rede** (`0.0.0.0`),
+não só em loopback — diferente do Node, que restringe corretamente a `127.0.0.1`. Confirmei por
+execução real (bind + `curl` a partir do IP da LAN da máquina, resposta HTTP 200) nos dois CLIs. Ver
+item 1-bis.
+
+Encontrei também um gap residual real (não um exploit, um caminho dormente) no Python: a cobertura
+do `fatal_error.py` não é simétrica com a do Node — `cli.py` só protege `args.func(args)`, não a
+construção do parser nem o `register(subparsers)` de cada comando. Verifiquei isso executando (não
+lendo), corrompendo uma cópia isolada do pacote.
+
+Nenhum outro caminho testado (saída `--json` de `validate`, hooks gerados, `sync`/`thirdparty`)
+vaza a mesma classe de informação de runtime/caminho/versão.
+
+## 1. Varredura de outros caminhos — 3 CLIs
+
+### Node
+- `npm/src/commands/serve.js`: servidor HTTP local (`127.0.0.1` apenas — não escuta em `0.0.0.0`).
+  Toda resposta de erro (`catch (_) { ... 500 ... }`) descarta o erro real e devolve texto genérico
+  `Internal Server Error` — **não vaza stack nem caminho**. Erro de bind de porta
+  (`server.on('error', ...)`) imprime só `err.message` (ex.: "Porta X já está em uso"), sem stack.
+  Confirmado por leitura, linhas 39-173.
+- `npm/src/commands/validate.js --json`: serializa apenas `{message, rule, file}` derivados de
+  strings de violação já formatadas pelo validador — nunca um objeto `Error`/stack. Nenhum
+  `JSON.stringify` em nenhum comando do repo serializa um objeto de erro (`grep` confirmou zero
+  ocorrências combinando `JSON.stringify` com `err`/`stack`/`catch`).
+- `npm/src/commands/sync.js`, `thirdparty.js` (caminhos de rede: API Linear/Jira, URLs
+  third-party): todo `catch` usa `e.message`, nunca `e.stack`; erros não capturados propagam para o
+  `.catch()` global do `bin/trackfw`, que já corta a stack. Testado empiricamente (ver §5).
+- Hooks gerados pelo produto (`scripts/trackfw-*.sh`, templates em `npm/src/generators/hooks.js`):
+  nenhum tem `set -x` nem `trap ... DEBUG`/ERR que ecoe comandos com caminho absoluto; os únicos
+  `echo ... >&2` são mensagens estáticas com prefixo `trackfw-<hook>:` (`credential-guard.sh:128,132`,
+  `git-branch-guard.sh:122`) — sem stack, sem `$0`/`BASH_SOURCE` no output.
+- `.trackfw-attention.json` (`npm/src/serve/api_attention.js`): schema fixo
+  (`roadmap/ml/message/level/timestamp`) escrito pelos próprios agentes, não por um handler de
+  erro — fora da classe de vazamento em questão; o conteúdo de `message` é o que o agente decidir
+  escrever (mesma superfície de qualquer texto livre gerado por LLM, não um vazamento de runtime).
+- Primitivas adicionais de vazamento sugeridas pelo advisor, varridas em todo `npm/src`:
+  `grep -rn "console.error(err)\|console.error(e)\b"` → zero ocorrências (nenhum `console.error`
+  bruto de um objeto `Error`, que imprimiria a stack via `util.inspect`); `grep -rn "\.stack"
+  npm/src` → única ocorrência é dentro do próprio `npm/src/lib/fatal-error.js`, sob
+  `TRACKFW_DEBUG=1`. Confirma que não há um segundo caminho de impressão de stack no CLI Node.
+
+### Python
+- `pypi/trackfw/cli.py`: **gap residual confirmado por execução** (não é leitura de código) — ver
+  item 5. `args.func(args)` é o único trecho dentro do `try/except Exception`; `parser.parse_args()`
+  e os `N` chamadas `<cmd>.register(subparsers)` que rodam antes dele ficam **fora** do handler.
+  Hoje nenhum `register()` real lança exceção em uso normal (são apenas `add_parser` +
+  `set_defaults`), então não há caminho de entrada do usuário que dispare isso hoje — mas o
+  comentário do próprio `fatal_error.py`/`cli.py` ("a per-entrypoint handler closes every future gap
+  at once") **não é verdade para este caminho**, e é fácil um `register()` futuro ganhar lógica que
+  falhe (ex.: leitura de config para decidir flags condicionais) sem ninguém perceber que caiu fora
+  da rede de segurança.
+- `pypi/trackfw/__main__.py` chama `main()` sem wrapper próprio — e o `console_script` real
+  (`pypi/pyproject.toml:[project.scripts] trackfw = "trackfw.cli:main"`, o que `pip install` de fato
+  registra) usa o mesmo `main()`, então o gap acima é o caminho de produção real, não um artefato
+  de teste.
+- Superfícies de rede/JSON Python (`sync`, `--json` equivalentes): mesma revisão de `e.message` vs
+  `traceback` já coberta pelo trabalho do ML-1A (REQ registra explicitamente que o Python não
+  vazava nos caminhos testados); não encontrei caminho novo.
+- `grep -rn "format_exc\|print_exc" pypi/trackfw` fora de `fatal_error.py` → zero ocorrências.
+  Confirma que não há um segundo caminho de traceback no CLI Python.
+- **`pypi/trackfw/commands/serve.py:104` — vazamento ativo de caminho absoluto, achado novo, fora
+  do escopo original do REQ.** `_serve_static_file()` faz `except OSError as e:
+  self.send_error(500, f"Cannot read file: {e}")` — a representação em string de `OSError` em
+  Python inclui o caminho do arquivo (ex.: `[Errno 2] No such file or directory:
+  '/Users/.../site-packages/trackfw/serve/static/<arquivo>'`), e essa string vai **direto para o
+  corpo da resposta HTTP 500**. O `_serve_static_file` restringe o alvo a `STATIC_DIR` (bloqueio de
+  path traversal com `os.path.basename` + `realpath` — testei mentalmente contra `../../etc/passwd`
+  e o `startswith(static_real + os.sep)` barra corretamente), então o que vaza é o **caminho de
+  instalação do pacote Python** (path do `site-packages`/venv), não um arquivo arbitrário do
+  usuário — mesma classe de dado que motivou o REQ original (item de menor valor sozinho, mas ver
+  item 1-bis: neste caso é alcançável pela rede, não só localmente).
+
+### Go
+Ver item 1-bis e item 3. Os handlers HTTP do pacote realmente usado
+(`internal/serve/api_file.go`, `api_board.go`, `serve.go`) usam só mensagens genéricas
+(`"internal error"`, `"cannot read roadmap dir"`) — **não vazam** `err.Error()`. Achado colateral:
+existe um `internal/server/server.go` com `http.Error(w, fmt.Sprintf("template error: %v", err),
+...)` na linha 373 que ecoaria um erro de execução de template — mas `grep -rln
+"internal/server\""` confirma que **nenhum arquivo do projeto importa esse pacote**; é código morto
+não compilado no binário final via nenhum caminho de comando (`internal/commands/serve.go` usa
+`internal/serve.Start`, não `internal/server`). Não é um vazamento ativo, mas é código morto que
+convém remover em limpeza futura para não confundir a próxima auditoria.
+
+## 1-bis. Achado principal — `trackfw serve` do Go e do Python expõe a rede (achado ativo, não dormente)
+
+**Este é o item mais sério deste relatório e não estava no escopo original do REQ — apareceu ao
+cumprir a instrução explícita de varrer `trackfw serve`.**
+
+`grep -n "Listen\|127.0.0.1\|0.0.0.0" internal/serve/serve.go` mostra `addr := fmt.Sprintf(":%d",
+port)` seguido de `http.ListenAndServe(addr, mux)` — endereço vazio antes do `:` significa **todas
+as interfaces**. `pypi/trackfw/commands/serve.py:150` faz o mesmo com
+`HTTPServer(("", port), handler_class)` — string vazia como host é `INADDR_ANY` em
+`socketserver`/`http.server`, também todas as interfaces. Só o Node restringe explicitamente:
+`npm/src/commands/serve.js:151` — `server.listen(port, '127.0.0.1', ...)`.
+
+**Verificado por execução, não por leitura:**
+
+```
+$ /tmp/trackfw-go-test serve --port 18099
+trackfw governance server running at http://localhost:18099
+$ lsof -nP -iTCP:18099 -sTCP:LISTEN
+trackfw-g ... TCP *:18099 (LISTEN)          # "*" = todas as interfaces
+$ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18099/
+200
+$ curl -s -o /dev/null -w "%{http_code}" http://192.168.3.137:18099/   # IP da LAN desta máquina
+200
+```
+
+Repeti o mesmo teste para o Python (`PYTHONPATH=pypi python3 -m trackfw serve --port 18098
+--no-open`): `loopback=200`, `lan=200`, idêntico.
+
+**Impacto:** qualquer dispositivo na mesma rede (Wi-Fi doméstico, rede corporativa, rede de
+coworking, hotspot compartilhado) consegue, sem autenticação nenhuma, acessar `/api/board`,
+`/api/chain`, `/api/metrics`, `/api/file` e ler o conteúdo de ADRs, REQs e roadmaps do repositório
+— que podem conter contexto de negócio, decisões de arquitetura e (dependendo do que o time
+documenta ali) informação sensível do projeto. Isso é **exposição de dados de governança do
+projeto para a rede local**, não um vazamento de stack — categoria mais grave do que a que motivou
+este REQ.
+
+**Isso combina com o achado do item 1 (Python `send_error` com `OSError`)**: o mesmo servidor que
+está exposto à rede tem, no Python, um caminho de erro que ecoa `str(OSError)` (inclui caminho
+absoluto do arquivo) na resposta HTTP — tornando esse vazamento de caminho **remotamente
+observável por qualquer um na LAN**, não só localmente.
+
+**Relação com o merge deste ML:** este bug é **pré-existente e não foi introduzido nem tocado pelo
+ML-1A/ML-2A** — nenhum arquivo de `internal/serve`, `npm/src/commands/serve.js` ou
+`pypi/trackfw/commands/serve.py` está no diff desta branch. **Não bloqueia o merge do handler
+global de erro.** Mas é grave o suficiente para exigir um REQ de correção próprio, com prioridade
+pelo menos igual à do REQ que originou este ML — recomendo `serve.go`/`serve.py` passarem a bindar
+`127.0.0.1`/`localhost` por padrão (com uma flag explícita tipo `--host 0.0.0.0` para quem
+realmente precisa expor, opt-in e documentado), espelhando o que o Node já faz corretamente.
+
+## 2. `TRACKFW_DEBUG` como superfície de ativação por terceiro
+
+**Veredito: não é uma superfície de ataque nova, com uma ressalva a documentar.**
+
+- `grep -rn "TRACKFW_DEBUG"` em todo o repo (`.yml`, `.yaml`, `.sh`, geradores de hooks Node/Python)
+  não encontrou nenhum lugar onde o próprio produto exporta ou sugere exportar essa variável em
+  templates de CI, hooks gerados (`.claude/`, `.codex/`, `scripts/trackfw-*.sh`) ou config
+  versionada. A variável só é lida, nunca escrita, pelo código do produto.
+- Para um terceiro ativá-la contra a vítima, ele precisaria escrever no ambiente dela — perfil de
+  shell, variável de CI compartilhado, ou um wrapper/hook que ela executa. **Nesse ponto o atacante
+  já tem a capacidade de rodar código arbitrário no ambiente da vítima**, o que é um problema
+  estritamente mais grave do que fazer o `trackfw` imprimir uma stack — a stack deixaria de ser o
+  vetor relevante.
+- Ressalva a documentar (não bloqueante): se o `trackfw` algum dia ganhar um comando que **herda**
+  env de um arquivo de config versionado no repositório do usuário (ex.: um `.env` lido
+  automaticamente) em vez de só do processo do shell, isso mudaria o cálculo — um `TRACKFW_DEBUG=1`
+  num `.env` commitado por engano voltaria a vazar para qualquer um que rodasse o CLI ali. Hoje isso
+  não existe (`config.Load()`/`config.load()` não leem `.env`), mas é o tipo de regressão que este
+  handler inteiro existe para evitar — vale um teste de não-regressão se essa feature for proposta.
+
+## 3. Go — `panic` alcançável por entrada do usuário
+
+**Veredito: não encontrei caminho de panic alcançável por entrada do usuário no estado atual.**
+
+Não há nenhum `recover()` em `internal/` ou `cmd/` — se algum `panic` ocorrer em qualquer caminho,
+o runtime do Go despeja goroutine trace e caminhos de arquivo `.go`, sem nenhuma rede de segurança.
+Confirmei `grep -n "trimpath\|ldflags" Makefile` → **nenhuma ocorrência**: o `go build` do projeto
+(`Makefile:7`, `go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw`) não usa `-trimpath`. **Correção
+importante em relação à minha primeira leitura:** isso NÃO é "igual ao `unhandledRejection`" do
+Node. Um panic do Go embute, em tempo de **compilação**, os caminhos absolutos de onde o binário
+foi construído — ou seja, a máquina/CI de quem publicou o release (hoje, a máquina do KG ou o
+runner de CI), não o ambiente da vítima que está rodando o binário já compilado. É um vazamento de
+informação real (caminho de build, útil para reconhecimento sobre a infraestrutura de release), mas
+de uma classe e de uma vítima diferentes do bug original — o REQ original vazava dados do ambiente
+de quem RODA o CLI (usuário, home, versão de runtime local); um panic do Go vazaria dados de quem
+CONSTRÓI o CLI. Severidade menor porque não expõe nada específico do usuário final.
+
+`grep -rn "panic(" internal cmd` (excluindo testes) retornou 5 ocorrências, todas defensivas contra
+**dessincronia interna de dados estáticos do binário**, não entrada do usuário:
+
+- `internal/identity/preset.go:216-230` — roda em `func init()` do pacote, no boot do processo,
+  comparando dois literais Go embutidos no binário (`presetOrder` vs `presets`). Não há entrada do
+  usuário no caminho — dispara igual para todo mundo se algum dia os literais dessincronizarem.
+- `internal/commands/identity_wizard.go:208,249` — comparam `identity.KnownAgentIDs()` (lista Go
+  estática) contra `catalog.Item(...)`, onde `catalog` vem de `integrations.LoadCatalog()`
+  (`internal/integrations/catalog.go:16` — `//go:embed assets`, `catalog.json` embutido no binário
+  em tempo de compilação, não lido de disco/rede em runtime). Confirmado por leitura do
+  `go:embed`: não há forma de um usuário ou config de projeto influenciar esse catálogo em runtime.
+
+**Conclusão:** os 5 `panic()` existentes são invariantes de build, não vulnerabilidades — se um
+disparar em produção é porque o binário foi construído com dados internos inconsistentes, e o
+comportamento (mesmo stack) seria idêntico para qualquer usuário, não haveria vazamento
+diferencial de segredo específico do ambiente da vítima.
+
+**Achado colateral, fora do escopo de panic mas da mesma classe de risco:** não há `recover()`
+nenhum no projeto. Não fiz varredura exaustiva de todo parser de arquivo do usuário (frontmatter de
+roadmap/REQ, `trackfw.yaml`) atrás de index-out-of-range/nil-deref alcançável por um arquivo
+malformado — os pontos que inspecionei (`extractFrontmatterField` em
+`internal/validator/validator.go:1541-1560`) fazem bounds-check antes de indexar
+(`strings.HasPrefix` antes de `content[3:]`) e não panicaram nos casos testados. Não é uma
+varredura completa de todo `internal/` — recomendo, como follow-up e **não como bloqueio deste
+ML**, um `recover()` no nível do `main()`/`Execute()` do cobra que espelhe o handler Node/Python,
+fechando a classe inteira de uma vez em vez de depender de cada parser individual nunca panicar.
+
+## 4. Severidade — confirmo "baixa a moderada", com uma nuance
+
+**Confirmo a classificação do arquiteto: baixa a moderada, não crítica.** Concordo com a
+justificativa (não é execução de código nem escalação de privilégio) e adiciono a razão que a torna
+defensável mesmo no pior caso:
+
+- O vetor de maior valor real — versão do runtime Node — é, na prática, **informação que qualquer
+  atacante já pode obter de outra forma** contra a maioria dos alvos (banners HTTP, `node
+  --version` se tiver shell, `package.json`/lockfile em CI logs). O vazamento economiza um passo de
+  reconhecimento, não abre uma porta nova.
+- Caminho absoluto de instalação e layout do home **têm valor real** para encadear com outra
+  vulnerabilidade (ex.: um path traversal separado que precise saber onde o binário/config vive),
+  mas sozinhos não são exploráveis.
+- O gatilho exige que o usuário **já esteja rodando o CLI em uma condição de erro não tratada**
+  (ex.: `agents update --force` contra um manifesto adulterado) — não é um vazamento passivo, é
+  amplificação de um erro que já ia acontecer de qualquer forma.
+
+Não subo para "moderada a alta" porque não há divulgação de segredo (token, credencial) nesse
+caminho especificamente — **verificado, não hedge**: `grep -n "token\|Authorization" sync.js` mostra
+que o token do Linear vai em `headers: { Authorization: apiKey }` (linha 86) e o do Jira em
+`Authorization: Basic <base64(email:token)>` (linhas 130/138) — **sempre em header HTTP, nunca em
+URL/query string**. O `fetch`/`https` do Node, quando falha (rede indisponível, DNS, TLS), produz
+`TypeError`/`FetchError` cujo `.message` descreve a falha de conexão (ex.: "fetch failed",
+"ECONNREFUSED") — não inclui o valor dos headers da requisição que falhou. Logo: **o token não
+alcança nenhuma string de erro nesses dois caminhos, com ou sem este fix** — não é só "teoricamente
+improvável", é estruturalmente impossível dado onde o token é colocado. Ressalva que mantenho: isso
+vale para os dois provedores hoje implementados; qualquer integração futura que monte a URL com o
+token embutido (`?token=...`) reabriria esse vetor via `e.message` contendo a URL — vale um teste de
+não-regressão se isso for proposto.
+
+Elevo a preocupação, porém, para o achado do item 1-bis: lá o dado que vaza (caminho de instalação
+via `OSError`) fica **remotamente acessível pela rede local sem autenticação**, o que é uma mudança
+de classe de severidade em relação ao vazamento original (que exigia acesso ao terminal onde o CLI
+já roda). Isso é reportado separadamente porque é um bug distinto, não uma correção da nota
+"baixa a moderada" acima — essa nota é sobre o caminho corrigido pelo ML-1A especificamente.
+
+## 5. O fix introduziu risco? — verificado por execução
+
+Executei os três cenários abaixo (não apenas li o diff), fora da árvore de trabalho (scratchpad),
+sem alterar código de produto:
+
+**a) Mensagem multi-linha e exit code — Node, caminho `unhandledRejection`:**
+```
+$ node repro.js   # Promise.reject(new Error("linha1\nlinha2 caminho /Users/segredo/instalacao"))
+Error: linha1
+linha2 caminho /Users/segredo/instalacao
+$ echo $?
+1
+```
+Mensagem íntegra byte a byte, exit code 1, sem stack — confirma o comportamento documentado no
+ML-1A.
+
+**b) `TRACKFW_DEBUG=1` restaura a stack sem regressão:**
+```
+$ TRACKFW_DEBUG=1 node repro.js
+Error: linha1
+linha2 caminho /Users/segredo/instalacao
+    at Object.<anonymous> (.../repro.js:4:16)
+    ... (stack completa)
+```
+
+**c) Caminho já limpo hoje (comando desconhecido) permanece inalterado:**
+```
+$ ./npm/bin/trackfw comando-inexistente
+Error: unknown command "comando-inexistente" for "trackfw"
+Run 'trackfw --help' for usage.
+$ echo $?
+1
+```
+Confirma que o handler global não interceptou/alterou um erro que já era tratado internamente pelo
+commander (nenhuma mensagem duplicada, nenhum exit code diferente de antes do ML-1A).
+
+**d) Python — `report_fatal_error` isolado:**
+```
+>>> report_fatal_error(ValueError('linha1\nlinha2 caminho /Users/segredo/instalacao'), command='roadmap list')
+trackfw roadmap list: linha1
+linha2 caminho /Users/segredo/instalacao
+```
+Mensagem íntegra; o exit code é responsabilidade do `sys.exit(1)` em `cli.py` (fora da função por
+design), não regride.
+
+**e) Gap residual do Python confirmado por execução (não bloqueante — ver §1):**
+Corrompi `register()` de um comando numa **cópia isolada** do pacote (`/tmp`, nunca no repo) para
+lançar antes de `args.func`:
+```
+$ python3 -m trackfw comando-qualquer
+Traceback (most recent call last):
+  ...
+  File ".../cli.py", line 155, in main
+    changelog_cmd.register(subparsers)
+  File ".../commands/changelog.py", line 45, in register
+    raise RuntimeError('corrupted register: ... /Users/segredo/pypi-copy')
+RuntimeError: corrupted register: ...
+```
+Traceback completo com caminho absoluto vazou — confirma que o handler Python não é uma rede de
+segurança total como o Node é (item abaixo).
+
+**f) Assimetria Node vs Python confirmada por execução:** o mesmo tipo de corrupção (lançar
+sincronamente antes do ponto onde o parsing normal do usuário começa) foi tentado contra o Node
+(`createProgram()` corrompido para lançar antes do `parseAsync()`), numa cópia isolada:
+```
+$ node bin/trackfw comando-qualquer
+Error: corrupted createProgram: caminho /Users/segredo/npm-copy
+$ echo $?
+1
+```
+**Não vazou** — porque `installGlobalHandlers()` é chamado ANTES do `require('../src/commands/index')`
+em `npm/bin/trackfw:8-10`, então `uncaughtException` cobre até uma falha síncrona no carregamento
+do módulo de comandos. O Python não tem esse equivalente global (`sys.excepthook` não é
+sobrescrito) — só protege `args.func`. Essa é a lacuna relatada em §1.
+
+**g) Preocupação do advisor sobre `trackfw serve` — processo derruba o servidor inteiro num throw
+não tratado? Verificado: sim, mas isso NÃO é regressão do ML-1A — é comportamento idêntico
+antes e depois do fix.** Testei com dois builds Node isolados: um com o handler do ML-1A
+(`npm-serve-test/`) e um baseline com `installGlobalHandlers()` comentado
+(`npm-serve-baseline/`), ambos com o mesmo `throw` sintético injetado em `handleAttention`
+(`GET /api/attention`), fora do repo:
+
+```
+# BASELINE (sem installGlobalHandlers(), pré-ML-1A):
+$ curl http://127.0.0.1:18086/                    → 200 (servidor de pé)
+$ curl http://127.0.0.1:18086/api/attention        → conexão falha (processo já morreu)
+$ curl http://127.0.0.1:18086/                     → conexão recusada (processo morto)
+stderr:
+Error: simulated bug baseline sem handler
+    at handleAttention (.../api_attention.js:17:9)
+    at Server.<anonymous> (.../serve.js:126:7)
+    at Server.emit (node:events:514:20)
+    ... + "Node.js v26.7.0"
+
+# FIXED (com installGlobalHandlers() do ML-1A):
+$ curl http://127.0.0.1:18087/                     → 200 (servidor de pé)
+$ curl http://127.0.0.1:18087/api/attention         → conexão falha (processo já morreu)
+stderr:
+Error: simulated bug in request handler /Users/segredo/instalacao
+```
+
+Em **ambos os casos** o processo do servidor morre inteiro ao primeiro throw síncrono não
+capturado num handler de request — esse é o comportamento **padrão do Node** para qualquer exceção
+não tratada (não é algo que `installGlobalHandlers()` introduziu; é o próprio Node que já mataria o
+processo mesmo sem nenhum listener de `uncaughtException`, só que imprimindo a stack antes). A
+única diferença observável entre os dois é o conteúdo do stderr: baseline vaza stack completa +
+versão do Node; fixed imprime só `Error: <mensagem>`. **Item 5 do advisor respondido com evidência
+negativa: não há regressão de disponibilidade introduzida pelo ML-1A.** Acho importante registrar,
+à parte, que `trackfw serve` não tem isolamento de falha por request (uma exceção não tratada em
+qualquer handler futuro derruba o dashboard inteiro) — isso é um problema de robustez pré-existente,
+ortogonal a este REQ, que vale nomear no mesmo follow-up do item 1-bis.
+
+## Veredito final
+
+1. **Item 1 (varredura):** nenhum caminho ativo de vazamento **na classe original do REQ** (stack
+   Node) além do já corrigido no ML-1A. Porém a varredura de `trackfw serve` encontrou dois achados
+   novos e reais, fora do escopo do REQ original: **(1-bis) Go e Python bindam `trackfw serve` em
+   todas as interfaces de rede** (achado ativo, verificado por execução, exposição de dados de
+   governança do projeto para a LAN sem autenticação) **e (1) o `OSError` do Python é ecoado na
+   resposta HTTP 500**, o que — combinado com o 1-bis — torna esse vazamento de caminho remotamente
+   observável. Também confirmei um gap dormente no Python (§1, §5e/f, `cli.py` sem cobertura de
+   `parser.parse_args()`/`register()`) — sem exploração possível hoje, registrado como dívida.
+2. **Item 2 (`TRACKFW_DEBUG`):** não é superfície nova; ativá-la remotamente já pressupõe
+   comprometimento maior.
+3. **Item 3 (Go):** sem panic alcançável por entrada do usuário hoje. Corrigido em relação à minha
+   leitura inicial: um panic do Go (se algum dia ocorrer) vazaria caminhos de build da máquina de
+   quem compilou o release, não do ambiente da vítima — severidade menor que o `unhandledRejection`
+   original. Recomendo `recover()` central como follow-up defensivo, não bloqueante.
+4. **Item 4 (severidade do ML-1A):** confirmo baixa a moderada para o caminho que o ML-1A corrigiu
+   especificamente. O token de integração (Linear/Jira) nunca alcança uma string de erro — vai só
+   em header HTTP, verificado no código, não é hedge. **Essa nota de severidade não se estende ao
+   achado 1-bis**, que reporto com prioridade própria (ver abaixo).
+5. **Item 5 (risco do fix):** nenhum — mensagem íntegra e exit code preservados, verificado por
+   execução nos dois CLIs. Também verifiquei, por sugestão do advisor, que o handler global não
+   introduz regressão de disponibilidade em `trackfw serve` — o processo já morria com o mesmo
+   throw sintético antes do ML-1A (comportamento padrão do Node), só a stack no stderr mudou.
+
+**LIBERO o merge do ML-1A/ML-2A.** Não há bloqueador no diff desta branch.
+
+**Mas registro em destaque, para decisão do KG/arquiteto, o achado 1-bis — fora do escopo desta
+branch mas descoberto ao cumprir a instrução de varrer `trackfw serve`:** `trackfw serve` do Go e
+do Python expõe o dashboard de governança (ADRs/REQs/roadmaps) para qualquer dispositivo na mesma
+rede local, sem autenticação, diferente do Node que já bloqueia corretamente em `127.0.0.1`.
+Recomendo abrir um REQ de correção dedicado, com prioridade pelo menos igual à deste REQ (é uma
+exposição de dados ativa e remotamente observável, não um vazamento condicionado a erro), para
+`serve.go`/`serve.py` passarem a bindar `127.0.0.1` por padrão.
+
+Follow-ups adicionais, não urgentes, não bloqueantes: (a) simetrizar `cli.py` com um
+`sys.excepthook` global cobrindo `parser.parse_args()`/`register()`, espelhando o
+`uncaughtException` do Node; (b) avaliar `recover()` central no Go como defesa em profundidade
+equivalente ao Node/Python; (c) corrigir `pypi/trackfw/commands/serve.py:104` para não ecoar
+`str(OSError)` na resposta HTTP (mensagem genérica, como já faz o Go/Node) — parte do mesmo REQ do
+item 1-bis; (d) remover o código morto `internal/server/server.go`, não referenciado por nenhum
+comando, para não confundir auditorias futuras.
