@@ -18044,3 +18044,42 @@ aos 3 arquivos de teste. `make quality` re-executado após o fix — verde de no
 
 **Não commitado** — autoridade exclusiva do `trackfw_architect`. Próximo: ML-1C (gate de paridade
 + cenário P4 usando `--host ::1` como discriminante) e Wave 2 (`hades-tf`, ML-2A).
+
+## Sessão 2026-08-16 (cont.) — Zeus — auditoria do ML-1B, rebase na main pós-#181
+
+**ML-1B auditado por medição própria, não por aceite do relatório.** Reproduzi cada critério:
+
+```
+padrao          lsof 127.0.0.1 nos 3 · curl localhost -> 200/200/200   (nao-regressao)
+--host ::1      lsof [::1]     nos 3 · curl [::1]     -> 200/200/200
+--host LAN      URL impressa contem o IP nos 3, nao localhost
+--host 192.0.2.1  Go exit 1, zero ocorrencias de 'listening' no stdout
+aviso           byte-identico nos 3 (diff das saidas reais, normalizado por porta)
+make quality    exit 0
+```
+
+Uma falha inicial minha foi de harness, não de código: em zsh, `$h` sem aspas **não** faz
+word-splitting, então `--host ::1` chegou como uma flag única e os 3 CLIs rejeitaram. Corrigido
+passando os argumentos separados — depois disso os 3 sobem em `[::1]`. Vale registrar porque o
+sintoma (3 CLIs falhando igual) imita perfeitamente um bug real de produto.
+
+O Python parecia não imprimir a URL: é **block buffering** de stdout quando não é tty, não bug.
+Com `python3 -u` a linha aparece.
+
+### Rebase na `main` após o merge do #181
+
+Dois conflitos, ambos em arquivo append-only e resolvidos mantendo os dois lados em ordem
+cronológica: `docs/roadmaps/.trackfw-log` e `docs/agents-working-context.md`. Nenhum conflito em
+código de produto — o #181 não tocou nenhum arquivo de `serve`.
+
+**Revalidação prometida:** o handler global de erro do #181 podia mudar a renderização dos erros de
+bind que eu tinha medido antes. Conferido — exit 1 nos 3, sem stack trace e sem caminho absoluto.
+`make quality` verde de novo pós-rebase (obrigatório: a main trouxe +212 linhas ao
+`check-gates-falsify.sh`).
+
+### Débito registrado, fora do escopo desta REQ
+
+Os 3 CLIs usam **prefixos diferentes** na linha de URL: Go `trackfw serve — listening on`, Node
+`trackfw serve:`, Python `trackfw dashboard:`. Divergência pré-existente numa string de usuário, que
+pela regra dura de paridade deveria ser pinada. Mesma coisa para o texto dos erros de bind. Não
+corrigido aqui para não misturar com a correção de segurança.

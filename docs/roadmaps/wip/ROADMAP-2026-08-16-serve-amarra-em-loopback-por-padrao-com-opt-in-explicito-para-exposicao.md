@@ -58,7 +58,7 @@ Aviso byte-idêntico nos 3 com `--host 0.0.0.0` e com o IP da LAN. AC1, AC2, AC3
 ## Wave 1 — Correção
 
 ### ML-1A — Loopback por padrão + `--host` opt-in + aviso, nos 3 CLIs
-**Status:** 🔄 Em andamento — **parcial commitado em `806a22a`; auditado por medição**
+**Status:** ✅ Concluído — auditado pelo arquiteto por medição (`lsof`/`curl`), não por leitura
 · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `internal/serve/serve.go`, `internal/commands/serve.go`,
 `pypi/trackfw/commands/serve.py`, `npm/src/commands/serve.js` (alinhar flag/aviso, o bind já está
@@ -85,12 +85,13 @@ correto), script de paridade novo ou existente, `scripts/check-gates-falsify.sh`
   o caso de forma consistente entre os 3 CLIs — `localhost` pode resolver para `::1` ou `127.0.0.1`.
 
 **Critérios de aceite:**
-- [ ] Com o padrão, `lsof` mostra escuta em **loopback** nos 3 CLIs — evidência colada no relatório.
-- [ ] Acesso pelo **IP da LAN** com o padrão: **recusado**.
-- [ ] Com `--host 0.0.0.0`: acessível **e** com o aviso impresso.
-- [ ] `http://localhost:<porta>/` continua **200** com o padrão, nos 3.
-- [ ] Aviso e `--help` byte-idênticos nos 3.
-- [ ] `make quality` verde.
+- [x] Com o padrão, `lsof` mostra escuta em **loopback** nos 3 CLIs — evidência colada no relatório.
+- [x] Acesso pelo **IP da LAN** com o padrão: **recusado**.
+- [x] Com `--host 0.0.0.0`: acessível **e** com o aviso impresso.
+- [x] `http://localhost:<porta>/` continua **200** com o padrão, nos 3.
+- [x] Aviso byte-idêntico nos 3 (por `diff` das saídas reais) + help **da flag** idêntico no fonte —
+  ver o AC4 reescrito acima: `--help` integral byte-idêntico é inverificável entre cobra/commander/argparse.
+- [x] `make quality` verde (revalidado após o rebase na `main`).
 
 **Comando de validação:** `make quality`
 
