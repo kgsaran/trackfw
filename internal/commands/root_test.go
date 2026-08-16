@@ -134,8 +134,10 @@ func TestFormatUnknownCommandError_PluginsIsGone(t *testing.T) {
 	if !ok {
 		t.Fatalf("formatUnknownCommandError não reconheceu o erro de comando desconhecido: %v", err)
 	}
-	if !strings.HasPrefix(msg, `Error: unknown command "plugins" for "trackfw"`) {
-		t.Errorf("mensagem inesperada para 'plugins': %q", msg)
+	want := "Error: unknown command \"plugins\" for \"trackfw\"\n" +
+		"Run 'trackfw --help' for usage."
+	if msg != want {
+		t.Errorf("mensagem canônica não bate byte-a-byte.\nesperado: %q\nobteve:   %q", want, msg)
 	}
 }
 

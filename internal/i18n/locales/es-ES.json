@@ -60,9 +60,6 @@
     "description": "Muestra métricas de entrega",
     "no_data": "No hay transiciones registradas aún."
   },
-  "errors": {
-    "pluginNotFound": "plugin {{name}} no encontrado"
-  },
   "discover": {
     "description": "Escanea el repositorio y detecta automáticamente la estructura de gobernanza"
   }

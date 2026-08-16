@@ -17526,3 +17526,33 @@ merge.**
 Nenhum arquivo de código de produto ou teste foi tocado. Não commitado, não pushado — conforme
 fronteira do ML e ausência de autoridade Git deste agente. **Devolvido ao `trackfw_architect`** para
 auditoria e commit.
+
+## Sessão 2026-08-16 — Apolo (ML-3C: corretivo dos 3 resíduos apontados pela barreira)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`. Três
+correções pontuais fechando o gate de deleção do subsistema de plugins:
+
+1. Removida a chave órfã `errors.pluginNotFound` de `internal/i18n/locales/{en-US,pt-BR,es-ES}.json`
+   (linha 63-65 de cada). Como era a única chave do objeto `errors` no Go, o bloco inteiro foi
+   removido (Node mantém `errors.notFound`, um key não relacionado — não há paralelo a preservar).
+   JSON validado com `python3 -c "import json; json.load(...)"` nos 3 arquivos.
+2. `pypi/trackfw/thirdparty/fetch.py:32-33` — comentário reescrito para espelhar
+   `internal/thirdparty/fetch.go:17-20` (justificativa "2 MiB porque é texto, não binário" mantida,
+   removida a referência ao "plugin binary download cap" inexistente, adicionada referência ao ADR
+   de remoção). `npm/src/thirdparty/fetch.js` já não tinha o comentário equivalente — nada a corrigir
+   ali.
+3. `internal/commands/root_test.go:137` — `TestFormatUnknownCommandError_PluginsIsGone` trocado de
+   `strings.HasPrefix` para igualdade byte-a-byte (`msg != want`), alinhado aos 2 testes irmãos do
+   mesmo arquivo. `strings` continua em uso em outras 2 linhas do arquivo (import preservado).
+
+Varredura adicional por `plugin` em `internal/`, `npm/src/`, `pypi/trackfw/` não achou resíduo além
+dos 3 já mapeados — os únicos matches restantes são referências históricas ao ADR de remoção,
+`spring-boot-maven-plugin` (XML de exemplo do gerador Java, não relacionado) e a chave `plugins:` da
+config do Chart.js em `serve/static/app.js` (biblioteca de terceiros, não relacionado).
+
+`make quality` exit 0 (falsificação + parity gates, todos os cenários OK). Teste isolado
+`go test ./internal/commands/... -run TestFormatUnknownCommandError_PluginsIsGone -v` → PASS.
+ML-3C marcado ✅ Concluído no roadmap, critérios de aceite marcados. Nenhum arquivo commitado nem
+pushado — conforme fronteira do ML e ausência de autoridade Git deste agente. **Devolvido ao
+`trackfw_architect`** para auditoria e commit.

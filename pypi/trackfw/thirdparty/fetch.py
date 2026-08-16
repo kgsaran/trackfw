@@ -29,8 +29,9 @@ import urllib.error
 import urllib.request
 from urllib.parse import urljoin, urlsplit
 
-# 2 MiB — deliberately smaller than the plugin binary download cap,
-# because this is text, not a binary release asset.
+# 2 MiB — deliberately small, since this is text, not a binary release
+# asset (the plugin subsystem that downloaded binary assets was removed;
+# see docs/adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md).
 MAX_CONTENT_SIZE = 2 << 20
 
 # Named to match Go's maxRedirects=3 constant, but see the module

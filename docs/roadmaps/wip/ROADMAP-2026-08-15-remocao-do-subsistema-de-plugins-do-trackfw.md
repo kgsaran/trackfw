@@ -175,7 +175,7 @@ remoção — o risco típico de deleção é deixar meio caminho.
 ---
 
 ### ML-3C — Corretivo: resíduos da deleção apontados pela barreira
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído (2026-08-16) · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-3A ✅ e ML-3B ✅.
 **Origem:** achados médios do `hefesto-tf`, dois deles corroborados pelo `hades-tf`.
 
@@ -191,15 +191,48 @@ remoção — o risco típico de deleção é deixar meio caminho.
    `HasPrefix` enquanto os dois testes irmãos usam igualdade byte a byte. Alinhar ao mais estrito.
 
 **Critérios de aceite:**
-- [ ] `grep -rn "pluginNotFound" internal/` → zero.
-- [ ] Nenhum comentário nos 3 stacks referencia teto/cap/download de plugin.
-- [ ] `TestFormatUnknownCommandError_PluginsIsGone` compara por igualdade exata.
-- [ ] `make quality` verde.
+- [x] `grep -rn "pluginNotFound" internal/` → zero.
+- [x] Nenhum comentário nos 3 stacks referencia teto/cap/download de plugin.
+- [x] `TestFormatUnknownCommandError_PluginsIsGone` compara por igualdade exata.
+- [x] `make quality` verde.
 
 **Fora de escopo, vira REQ própria:** `site/guide/commands.md` e `site/en/guide/commands.md`
 documentam `trackfw plugins`, mas o `git log` mostra que a deriva é **pré-existente** (arquivo
 anterior a esta branch, também desatualizado quanto a `changelog` e `commit`). Não é resíduo desta
 deleção e não infla este escopo.
+
+
+### ML-3D — Corretivo final: `errors.downloadFailed` órfã no Python
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Dependência:** ML-3C ✅.
+**Origem:** auditoria do arquiteto sobre o ML-3C — a correção fechou a assimetria do Go e deixou a
+irmã de pé no Python.
+
+Estado medido após o ML-3C:
+
+| | bloco `errors` |
+|---|---|
+| Go | removido (só tinha `pluginNotFound`) ✅ |
+| Node | `notFound` |
+| Python | `notFound`, **`downloadFailed`** ← resíduo |
+
+`errors.downloadFailed` (`"download failed: HTTP {{status}} for {{url}}"`) tem **zero consumidores**
+no Python e é claramente de plugins — *download* só existia lá. O ML-1B removeu a equivalente do
+Node; o ML-1C removeu só `pluginNotFound` do Python e deixou esta.
+
+**Ações:** remover `errors.downloadFailed` de `pypi/trackfw/i18n/locales/{en-US,pt-BR,es-ES}.json`.
+Validar o JSON depois de editar.
+
+**Critérios de aceite:**
+- [ ] `grep -rn "downloadFailed" pypi/` → zero.
+- [ ] JSON dos 3 locales do Python válido.
+- [ ] `make quality` verde.
+
+**FORA de escopo, documentado:** `errors.notFound` existe em Node e Python e **não** no Go — mas
+`git show main:internal/i18n/locales/en-US.json` prova que o bloco `errors` do Go **já continha
+apenas `pluginNotFound`** antes desta branch. Ou seja, a divergência de `notFound` é
+**pré-existente** e não foi criada por esta entrega. Vira REQ própria junto com a deriva de
+`site/guide/commands.md`.
 
 
 ## Notas
