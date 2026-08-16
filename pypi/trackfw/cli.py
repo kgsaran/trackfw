@@ -7,6 +7,7 @@ import argparse
 import re
 import sys
 from trackfw import __version__
+from trackfw.fatal_error import report_fatal_error
 from trackfw.unknown_command import format_unknown_command_error
 
 # Matches argparse's own message for an unrecognized COMMAND positional
@@ -164,7 +165,17 @@ def main():
         sys.exit(0)
 
     if hasattr(args, "func"):
-        args.func(args)
+        # Global backstop (defense in depth, see fatal_error.py): commands that
+        # already catch their own domain errors (e.g. agents/skills install —
+        # IntegrationError/OSError/ValueError in integrations/command.py:run())
+        # print their own clean message and raise SystemExit, which is a
+        # BaseException and therefore NOT caught here — it propagates
+        # unchanged. This except only catches what nothing else caught.
+        try:
+            args.func(args)
+        except Exception as error:  # noqa: BLE001 — intentional catch-all backstop
+            report_fatal_error(error, command=args.command)
+            sys.exit(1)
     else:
         parser.print_help()
         sys.exit(0)

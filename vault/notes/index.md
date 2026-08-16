@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [bash-grep-F-embedded-newline-vacuous-match-2026-08-16](bash-grep-F-embedded-newline-vacuous-match-2026-08-16.md)
 - [ship-checkgovernance-error-stream-wording-divergence-2026-08-16](ship-checkgovernance-error-stream-wording-divergence-2026-08-16.md)
 - [found-and-false-suprime-branch-sem-quebrar-go-build-2026-08-16](found-and-false-suprime-branch-sem-quebrar-go-build-2026-08-16.md)
 - [cobra-silenceerrors-suppresses-usage-independently-of-per-command-flags-2026-08-16](cobra-silenceerrors-suppresses-usage-independently-of-per-command-flags-2026-08-16.md)

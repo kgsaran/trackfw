@@ -30,19 +30,19 @@ Comandos que capturam internamente imprimem limpo (`roadmap move`); os que não 
 É por-comando — daí a correção ser **no entrypoint**, e não mais um `try/catch` onde alguém lembrar.
 
 ## Acceptance Criteria
-- [ ] AC1 — Nenhum caminho de erro do Node imprime stack, caminho absoluto, linha de fonte ou versão do runtime.
-- [ ] AC2 — Handler global no Node **e** no Python; mensagem limpa em stderr, exit ≠ 0.
-- [ ] AC3 — `TRACKFW_DEBUG=1` restaura a stack completa.
-- [ ] AC4 — Caminhos de erro já corretos **não regridem** (byte a byte).
+- [x] AC1 — Nenhum caminho de erro do Node imprime stack, caminho absoluto, linha de fonte ou versão do runtime.
+- [x] AC2 — Handler global no Node **e** no Python; mensagem limpa em stderr, exit ≠ 0.
+- [x] AC3 — `TRACKFW_DEBUG=1` restaura a stack completa.
+- [x] AC4 — Caminhos de erro já corretos **não regridem** (byte a byte).
 - [ ] AC5 — Gate de paridade + cenário de falsificação (P4).
-- [ ] AC6 — `make quality` verde.
+- [x] AC6 — `make quality` verde.
 
 ---
 
 ## Wave 1 — Correção
 
 ### ML-1A — Handler global (Node e Python) + gate
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído (2026-08-16) — vazamento eliminado, auditado por reprodução real · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `npm/bin/trackfw`, `npm/src/commands/index.js`, `pypi/trackfw/cli.py`,
 script de paridade novo ou existente, `scripts/check-gates-falsify.sh`, + testes dos 3 stacks.
 
