@@ -17854,3 +17854,387 @@ real; `hades-tf` liberou e confirmou a severidade declarada em vez de inflar.
 **Escalado à parte:** `trackfw serve` (Go e Python) escuta em todas as interfaces, sem autenticação.
 Verificado por mim: `TCP *:PORT (LISTEN)`, HTTP 200 pelo IP da LAN, `/api/chain` com 105 KB da
 cadeia de governança. KG autorizou atacar agora, em REQ própria.
+## Sessão 2026-08-16 — Zeus (arquiteto) — PARADA para reinício da máquina (retomada aqui)
+
+Trabalho interrompido a pedido de KG. Agente do ML-1A (`serve`) **encerrado no meio** — o que está
+commitado é **PARCIAL**, e este bloco é o ponto de retomada.
+
+### Estado por frente
+
+| frente | branch | situação |
+|---|---|---|
+| Vazamento de stack no Node | — | ✅ **PR #181 aberto**, aguardando merge de KG |
+| Higiene (7 débitos + item 8) | `fix/higiene-sete-debitos-...` | Waves 1 e 2 ✅ commitadas; **falta Wave 3** e PR |
+| Exposição do `serve` | `fix/serve-amarra-em-loopback-...` | **WIP parcial commitado** — ver abaixo |
+| `doctor` (janela de gravação parcial) | — | decidido por KG, **REQ ainda não criada** |
+
+### `serve` — o que já funciona e o que falta
+
+**Funciona (verificado por escuta real, não por leitura de código):**
+```
+TCP 127.0.0.1:45899 (LISTEN)   ← era TCP *:PORT
+localhost -> HTTP 200          ← dashboard preservado
+LAN       -> HTTP 000          ← recusado
+```
+Go compila; Node carrega; Python importa. `--host` aparece no `--help` dos 3.
+
+**Falta (a retomada começa aqui):**
+1. Verificar Node e Python **por escuta real** — só o Go foi medido com `lsof`.
+2. Conferir o **IPv6**: o bind do Go virou IPv4 (`127.0.0.1`); confirmar que `localhost` continua
+   funcionando onde resolve para `::1`, nos 3 CLIs. **É o ponto mais provável de quebra sutil.**
+3. Aviso ao usar `--host` não-loopback: existir e ser **byte-idêntico** nos 3.
+4. `--help` byte-idêntico nos 3 (o Python mostrou 2 ocorrências de `--host` contra 1 dos outros —
+   **investigar**, pode ser duplicação de texto).
+5. Gate de paridade do endereço padrão + **cenário P4** em `check-gates-falsify.sh`.
+6. `make quality` (ainda **não** rodou nesta branch).
+7. Barreira do `hades-tf` (ML-2A do roadmap).
+
+### Débitos abertos, todos já registrados
+
+REQ de higiene (8 itens), REQ de conformidade de i18n, e os dois achados da Wave 2 da higiene:
+janela de gravação parcial do manifest (→ `doctor`) e wrapper de erro divergente no `integrations`.
+
+## Sessão 2026-08-16 (retomada) — Zeus (arquiteto) — auditoria por medição do WIP do `serve`
+
+Retomada do ponto de parada. Antes de despachar qualquer agente, **medi eu mesmo** o estado real dos
+3 CLIs — o agente do ML-1A morreu sem relatório e nada no commit valia como evidência para Node e
+Python.
+
+### Medido (não lido): padrão dos 3 CLIs está correto
+
+```
+lsof:  tfw    IPv4 TCP 127.0.0.1:45901 (LISTEN)
+       node   IPv4 TCP 127.0.0.1:45902 (LISTEN)
+       Python IPv4 TCP 127.0.0.1:45903 (LISTEN)
+
+localhost  -> 200 / 200 / 200      ← AC6 preservado nos 3
+127.0.0.1  -> 200 / 200 / 200
+[::1]      -> 000 / 000 / 000      ← consistente entre os 3
+LAN        -> 000 / 000 / 000      ← recusado nos 3 (timeout)
+```
+
+Aviso de exposição **byte-idêntico nos 3**, verificado por execução real com `--host 0.0.0.0` e com
+o IP da LAN — não por leitura comparada do fonte. AC1, AC2, AC3 e AC6 fecham.
+
+A referência a `docs/cli-parity.md` "Aviso ao usuário — string pinada" nos comentários **existe de
+fato** (linha 2114) — não foi fabricada pelo agente.
+
+### Achado novo: `--host ::1` quebra em 2 dos 3 CLIs
+
+Divergência real, não hipótese — medida:
+
+| CLI | `--host ::1` | causa |
+|---|---|---|
+| Go | ❌ `too many colons in address` | `fmt.Sprintf("%s:%d")` em vez de `net.JoinHostPort` |
+| Node | ✅ escuta em `[::1]` | correto |
+| Python | ❌ `nodename nor servname provided` | `HTTPServer` é `AF_INET`; falta `address_family` |
+
+É o caso de teste que **discrimina** o gate de paridade do AC5 — melhor que o `::ffff:127.0.0.1`,
+onde os 3 falham (impacto de segurança nulo, ninguém escuta) e que fica fora de escopo.
+
+### Decisões tomadas
+
+1. **Padrão continua IPv4 `127.0.0.1` nos 3.** Um listener não faz loopback dual-stack, e a medição
+   mostra `localhost -> 200` nos 3 (o cliente faz fallback). Não-objetivo declarado; dual listener
+   só entraria se `localhost` falhasse em algum runtime, e não falha.
+2. **AC4 reescrito.** "`--help` byte-idêntico nos 3" é impossível — cobra imprime `Flags:`,
+   commander `Options:`, argparse `options:` + linha `usage:`. As 2 ocorrências de `--host` no
+   Python eram a synopsis do argparse, **não** duplicação de texto. O AC verificável é: string de
+   help *da flag* idêntica no fonte + aviso *renderizado* idêntico.
+3. **URL impressa entra no escopo do ML.** Os 3 imprimem `http://localhost:<porta>` seja qual for o
+   `--host`; com `--host 192.168.x.y` a URL não é alcançável e Node/Python abrem o browser no
+   endereço errado. Toca AC3 (o usuário precisa saber o que expôs).
+4. **`::ffff:127.0.0.1` e `127.0.0.2` fora de escopo**, declarado nas Notas do roadmap.
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-1B concluído — `--host ::1` nos 3 CLIs + URL impressa)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`. Executado
+ML-1B do roadmap acima (`docs/roadmaps/wip/ROADMAP-2026-08-16-...md`). Fecha AC3b e AC8; AC5 segue
+pendente (ML-1C, gate de paridade — próximo agente).
+
+**Go** (`internal/serve/serve.go`, `internal/commands/serve.go`):
+- `addr` trocado de `fmt.Sprintf("%s:%d", host, port)` para
+  `net.JoinHostPort(host, strconv.Itoa(port))` — o `%s:%d` cru quebrava com host IPv6 por faltar
+  colchetes ("too many colons in address").
+- Nova função `DisplayURL(host, port)`: mantém `http://localhost:<porta>` só para `localhost` ou
+  IPv4 em `127.0.0.0/8`; usa `http://[<host>]:<porta>` para qualquer IPv6 (inclusive `::1` — não
+  vira "localhost", fica com colchetes); qualquer outro host é impresso como está.
+- Consolidada a linha "listening on" — antes era impressa 2x (uma em `internal/commands/serve.go`
+  antes até de tentar o bind, outra em `internal/serve/serve.go`) e a primeira saía mesmo quando o
+  bind falhava depois. Agora `net.Listen` roda primeiro; só em caso de sucesso é que a linha
+  (única) é impressa, seguida de `http.Serve(ln, mux)`.
+
+**Python** (`pypi/trackfw/commands/serve.py`):
+- `_server_class_for_host(host)` retorna subclasse de `HTTPServer` com `address_family =
+  socket.AF_INET6` quando `ipaddress.ip_address(host).version == 6`, senão `AF_INET` (default da
+  stdlib) — antes `HTTPServer` tinha a família fixa em `AF_INET`, e IPv6 falhava com
+  "nodename nor servname provided".
+- `_display_url(host, port)` espelha a lógica do Go acima; usada tanto na mensagem impressa quanto
+  na URL passada para `_open_browser`.
+
+**Node.js** (`npm/src/commands/serve.js`):
+- Bind já estava correto (referência, não tocado). Adicionada `displayUrl(host, port)` espelhando
+  Go/Python; `server.listen(...)` callback agora usa essa URL no `console.log` e ao abrir o
+  browser (antes hardcoded `http://localhost:<porta>` mesmo com `--host` != loopback).
+- `displayUrl` e `isLoopbackHost` exportados de `src/commands/serve.js` para os testes.
+
+**Testes novos** (medição real via bind + `http.get`/`HTTPConnection`/`curl`, não leitura de
+string): `internal/serve/serve_test.go` (`TestDisplayURL`, `TestIsLoopbackHost`,
+`TestListenOnIPv6Loopback` — bind real em `net.JoinHostPort("::1","0")`),
+`npm/tests/serve_address.test.js` (bind real via `createServer(...).listen(0, '::1', ...)` +
+`http.get` com `family: 6`, e não-regressão em `127.0.0.1`), `pypi/tests/test_serve_address.py`
+(bind real via `_server_class_for_host` + `http.client.HTTPConnection`, não-regressão em
+`127.0.0.1`).
+
+**Evidência de auditoria por medição** (portas descartadas ao fim, nenhum processo/listener
+residual confirmado por `lsof` + `ps aux` após os testes):
+
+```
+GO   --host ::1            : lsof [::1]:PORT (LISTEN)         curl [::1] -> 200   linha única: "http://[::1]:PORT"
+GO   default (sem flags)   : lsof 127.0.0.1:PORT (LISTEN)     curl localhost -> 200 (não-regressão)
+GO   --host 192.168.3.137  : linha impressa "http://192.168.3.137:PORT" (não "localhost")
+GO   --host 192.0.2.1      : bind falha (unassignable); "listening on" aparece 0x no output — não afirma escuta que não existe
+NODE --host ::1            : lsof [::1]:PORT (LISTEN)         curl [::1] -> 200   "trackfw serve: http://[::1]:PORT"
+NODE default                : lsof 127.0.0.1:PORT (LISTEN)    curl localhost -> 200
+NODE --host 192.168.3.137  : "trackfw serve: http://192.168.3.137:PORT"
+PY   --host ::1             : lsof [::1]:PORT (LISTEN)        curl [::1] -> 200   "trackfw dashboard: http://[::1]:PORT"
+PY   default                 : lsof 127.0.0.1:PORT (LISTEN)   curl localhost -> 200
+PY   --host 192.168.3.137   : "trackfw dashboard: http://192.168.3.137:PORT"
+```
+
+Aviso de exposição (`--host 0.0.0.0`) verificado **byte-idêntico** nos 3 via `diff` das saídas reais
+de stderr (só a porta varia, texto igual) — AC4 não regrediu.
+
+`make quality` verde (log completo `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./...` → todos
+`ok`, incluindo `internal/serve`; `node --test tests/*.test.js` → 600 passed, 0 failed; `python3 -m
+pytest pypi/tests` → 1268 passed; `go vet`/`go build` limpos; todos os 118 cenários de falsificação
+e gates de paridade `OK`; exit code final **0**).
+
+**Arquivos alterados:** `internal/serve/serve.go`, `internal/commands/serve.go`,
+`internal/serve/serve_test.go` (novo), `pypi/trackfw/commands/serve.py`,
+`pypi/tests/test_serve_address.py` (novo), `npm/src/commands/serve.js`,
+`npm/tests/serve_address.test.js` (novo), roadmap (ML-1B → ✅ Concluído, AC3b/AC8/AC7 marcados).
+
+**Divergência encontrada e corrigida durante auto-revisão (advisor):** o `DisplayURL`/`_display_url`
+inicial do Go classificava `::ffff:127.0.0.1` (IPv4-mapped IPv6) pela família **decodificada**
+(`net.IP.To4() != nil`, que é não-nil mesmo para esse literal) e imprimia `"localhost"`; Node
+(`net.isIPv6`) e Python (`isinstance(ip, IPv6Address)`) classificam pela **sintaxe literal** (tem
+`:`) e retornavam colchetes — 3-way divergence introduzida na própria lógica nova. Corrigido no Go
+para classificar por sintaxe (`strings.Contains(host, ":")`) antes de checar loopback, igualando os
+3. **Hoje é inobservável em produção**: `::ffff:127.0.0.1` está fora de escopo desta REQ porque
+nenhum dos 3 CLIs consegue fazer bind nele (declarado nas Notas do roadmap), e os 3 só imprimem a
+URL após bind bem-sucedido — mas a lógica share-comment cita `docs/cli-parity.md` como contrato, e
+o gate de paridade do ML-1C teria acusado a divergência como regressão real. Caso novo adicionado
+aos 3 arquivos de teste. `make quality` re-executado após o fix — verde de novo (log completo, exit
+0; 1269 testes Python, 601 arquivos/casos Node incluindo o novo, Go `internal/serve` ok).
+
+**Observações para o próximo agente, não corrigidas aqui (fora do escopo do ML-1B):**
+- `docs/cli-parity.md` já documenta a seção "Aviso ao usuário — string pinada" (confirmado, linha
+  2114) mas **não** documenta a convenção nova de `DisplayURL`/`displayUrl`/`_display_url`
+  (localhost só para `localhost`/`127.0.0.0/8`; colchetes para qualquer host com `:`; resto verbatim).
+  Não é arquivo do ML-1B — avaliar se merece uma entrada lá antes do ML-1C fechar o gate de paridade
+  sobre ela.
+- `--host localhost` (não testado neste ML) pode resolver diferente por runtime — Go/Node podem
+  escolher `::1` no macOS; o Python `_server_class_for_host` cai em `AF_INET` no `ValueError` de
+  `ipaddress.ip_address("localhost")`. Divergência pré-existente, não introduzida aqui — **ML-1C
+  deve manter `--host ::1` como discriminante e não usar `--host localhost`.**
+- **ML-1A segue `🔄 Em andamento` com todos os checkboxes em aberto**, mesmo o ML-1B tendo suprido
+  os testes que faltavam para ele. Não é decisão minha fechar o ML-1A — sinalizando para o
+  `trackfw_architect` não tratar isso como descuido.
+
+**Não commitado** — autoridade exclusiva do `trackfw_architect`. Próximo: ML-1C (gate de paridade
++ cenário P4 usando `--host ::1` como discriminante) e Wave 2 (`hades-tf`, ML-2A).
+
+## Sessão 2026-08-16 (cont.) — Zeus — auditoria do ML-1B, rebase na main pós-#181
+
+**ML-1B auditado por medição própria, não por aceite do relatório.** Reproduzi cada critério:
+
+```
+padrao          lsof 127.0.0.1 nos 3 · curl localhost -> 200/200/200   (nao-regressao)
+--host ::1      lsof [::1]     nos 3 · curl [::1]     -> 200/200/200
+--host LAN      URL impressa contem o IP nos 3, nao localhost
+--host 192.0.2.1  Go exit 1, zero ocorrencias de 'listening' no stdout
+aviso           byte-identico nos 3 (diff das saidas reais, normalizado por porta)
+make quality    exit 0
+```
+
+Uma falha inicial minha foi de harness, não de código: em zsh, `$h` sem aspas **não** faz
+word-splitting, então `--host ::1` chegou como uma flag única e os 3 CLIs rejeitaram. Corrigido
+passando os argumentos separados — depois disso os 3 sobem em `[::1]`. Vale registrar porque o
+sintoma (3 CLIs falhando igual) imita perfeitamente um bug real de produto.
+
+O Python parecia não imprimir a URL: é **block buffering** de stdout quando não é tty, não bug.
+Com `python3 -u` a linha aparece.
+
+### Rebase na `main` após o merge do #181
+
+Dois conflitos, ambos em arquivo append-only e resolvidos mantendo os dois lados em ordem
+cronológica: `docs/roadmaps/.trackfw-log` e `docs/agents-working-context.md`. Nenhum conflito em
+código de produto — o #181 não tocou nenhum arquivo de `serve`.
+
+**Revalidação prometida:** o handler global de erro do #181 podia mudar a renderização dos erros de
+bind que eu tinha medido antes. Conferido — exit 1 nos 3, sem stack trace e sem caminho absoluto.
+`make quality` verde de novo pós-rebase (obrigatório: a main trouxe +212 linhas ao
+`check-gates-falsify.sh`).
+
+### Débito registrado, fora do escopo desta REQ
+
+Os 3 CLIs usam **prefixos diferentes** na linha de URL: Go `trackfw serve — listening on`, Node
+`trackfw serve:`, Python `trackfw dashboard:`. Divergência pré-existente numa string de usuário, que
+pela regra dura de paridade deveria ser pinada. Mesma coisa para o texto dos erros de bind. Não
+corrigido aqui para não misturar com a correção de segurança.
+
+## Sessão 2026-08-16 (cont.) — Apolo — ML-1C: gate de paridade do endereço de escuta + P4
+
+**Início:** roadmap `ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-
+para-exposicao.md` lido; ML-1A e ML-1B já ✅ auditados por medição. Escopo: fechar AC5 sem tocar
+`internal/serve/*`, `npm/src/commands/serve.js` nem `pypi/trackfw/commands/serve.py` (comportamento
+já correto).
+
+**Entregável 1 — `scripts/check-serve-address-parity.sh` (novo).** Sobe cada um dos 3 CLIs de
+verdade (não lê fonte), mede com `lsof -a -p PID -iTCP -sTCP:LISTEN -nP` e mata o processo em
+seguida. Quatro blocos: (1) padrão sem `--host` → `lsof` deve mostrar `127.0.0.1:PORT`, nunca
+`*:PORT`/`0.0.0.0:PORT` — a asserção central da REQ; (2) `--host ::1` → `[::1]:PORT` nos 3; (3)/(4)
+`--host 0.0.0.0` reaproveitado numa única execução para o aviso de exposição (`diff -u` byte-a-byte
+normalizando só a porta) e para a URL impressa (`http://0.0.0.0:PORT`, nunca contém `localhost`).
+
+**Decisão registrada:** o texto do ML-1C original usava `--host 192.0.2.1` para a asserção de URL —
+mas esse endereço é TEST-NET-1, não atribuível em nenhuma interface de uma máquina comum, e os 3
+CLIs falham o bind nele (confirmado na sessão do ML-1B: "Go exit 1, zero ocorrências de
+'listening'"). Testar a URL contra um host que nunca chega a escutar tornaria a asserção vácua por
+construção. Reaproveitei `--host 0.0.0.0` (já usado para o aviso de exposição) — sempre bindável,
+`DisplayURL`/`displayUrl`/`_display_url` retornam `http://0.0.0.0:PORT` para ele nos 3 (medido).
+
+**Armadilha de bash encontrada:** `port=$(next_port)` roda em subshell — o incremento da variável
+global se perdia e os 3 runtimes de cada bloco caíam na mesma porta (harmless aqui porque cada
+processo é morto antes do próximo subir, mas escondia um bug de design). Corrigido para
+`next_port; port=$PORT` (atribuição direta, sem substituição de comando).
+
+**Entregável 2 — `Makefile`:** `check-serve-address-parity.sh` registrado no alvo `parity`, antes de
+`check-gates-falsify.sh` (linha ~38).
+
+**Entregável 3 — Cenário 59 em `scripts/check-gates-falsify.sh`.** Sabota `pypi/trackfw/commands/
+serve.py`: `server_cls((host, port), handler_class)` → `server_cls(("", port), handler_class)` — a
+própria regressão original desta REQ (INADDR_ANY, host resolvido ignorado). Braço baseline (árvore
+limpa) + braço de detecção (`assert_fails_with` no diagnóstico literal `"expected lsof to show
+127.0.0.1:"`), seguindo o padrão dos Cenários 55–58 (`corrupt_literal` na implementação, nunca na
+asserção do gate; `setup_npm_tree` + cópia de `pypi/` e do próprio script novo para `$WORK`).
+Contador final do script atualizado de 119 para **120 cenários**, com a entrada `(59)` apensada ao
+texto do sumário.
+
+**Prova de não-vacuidade (rodada isolada, fora do harness, output colado):**
+```
+FAIL [default-bind/py]: expected lsof to show 127.0.0.1:46202, got '*:46202' — a wildcard/non-loopback
+default is the exact security regression this gate exists to catch
+FAIL [host-ipv6-loopback/py]: expected lsof to show [::1]:46205, got '*:46205'
+```
+Confirma que o gate pega a regressão em **dois** pontos independentes (bind padrão e bind com
+`--host ::1`), não só um.
+
+**Evidência de `make quality`:** exit 0 de ponta a ponta — `go build`/`go vet` limpos, `go test
+./...` todos `ok` (incluindo `internal/serve` sem alteração), `npm test` e `pytest pypi/tests`
+verdes, os 39 scripts do alvo `parity` (incluindo o novo) OK, e `check-gates-falsify.sh` reportando
+"Falsification checks passed (all 120 scenarios...)". `trackfw validate` — exit 0 (só warnings
+pré-existentes de REQs sem ADR/roadmap vinculado, sem relação com este ML).
+
+**Arquivos alterados:** `scripts/check-serve-address-parity.sh` (novo), `Makefile` (alvo `parity`),
+`scripts/check-gates-falsify.sh` (Cenário 59 + contador do sumário), roadmap (ML-1C → ✅ Concluído,
+AC5 marcado).
+
+**Não commitado** — autoridade exclusiva do `trackfw_architect`. Próximo: Wave 2 (`hades-tf`,
+ML-2A — confirmar por conexão real que a exposição fechou).
+
+## Sessão 2026-08-16 — Hades (INÍCIO: ML-2A — barreira de segurança, confirmar por conexão real
+que a exposição fechou)
+
+Branch: `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`. Escopo:
+subir os 3 CLIs de verdade e medir bind/exposição por `lsof`/`curl` (não por leitura), avaliar se
+`--host` cria caminho de exposição acidental, e varrer o produto por outro componente que abra
+porta. Sem commits deste agente — git é autoridade do `trackfw_architect`.
+
+## Sessão 2026-08-16 — Hades (FIM: ML-2A — APROVADO, com risco residual explicitado)
+
+**Veredito: APROVO.** Medido por `lsof` (assertiva primária) + `curl` (corroboração), nos 3 CLIs,
+para bind padrão (LAN IPv4 e os 2 endereços IPv6 desta máquina — inalcançável nos 3 casos) e para
+`--host 0.0.0.0` (controle positivo — exposto e alcançável, como esperado, com aviso
+byte-idêntico). Gate independente `check-serve-address-parity.sh`, rodado por mim: 10/10 OK.
+
+**Achados registrados como risco residual aceito, não bloqueadores:**
+1. O aviso de exposição vai só para stderr — não protege uso não-interativo (Makefile/Dockerfile/
+   CI). Verifiquei que hoje **não há** nenhuma ocorrência de `--host` não-loopback nem de
+   `TRACKFW_HOST`/config `host` em lugar nenhum do repo — o único jeito de expor é digitar a flag.
+2. `internal/server/server.go` (pacote morto, zero importadores, confirmado por
+   `go tool nm` — 0 símbolos linkados vs 52 de `internal/serve`) ainda tem o bind wildcard original
+   da regressão desta REQ. Recomendo remoção em limpeza futura.
+3. Flakiness transitória e não reproduzida: uma rodada do bind exposto do Node deu `curl`/`nc`
+   `000` na LAN enquanto `lsof` já mostrava `*:PORT (LISTEN)` — processo novo na mesma condição
+   respondeu 200 de primeira, 3 tentativas seguintes. Registrado, não muda o veredito.
+
+**Observação de definition-of-done (não é meu escopo corrigir):** ML-1B está marcado
+`✅ Concluído` no roadmap mas as 6 caixas de critério de aceite do próprio ML-1B continuam
+`- [ ]` — só as do ML-1A estão marcadas. Sinalizo para o `trackfw_architect` fechar antes de mover
+o roadmap para `done/`.
+
+**Escreveu:** apêndice em `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md` ("Apêndice
+— Barreira ML-2A"). Nenhum código de produto alterado. Nenhum commit/push (autoridade exclusiva do
+`trackfw_architect`).
+
+## Sessão 2026-08-16 (cont.) — Zeus — ML-1C auditado, barreira do Hades e Wave 3
+
+**ML-1C.** O agente morreu no meio (máquina dormiu) deixando o roadmap **já marcado como
+concluído**. Não aceitei a marcação — auditei o estado real. Rodei o gate novo na árvore limpa
+(10/10) e, o que importa de verdade, **sabotei eu mesmo** o bind do Python de volta para
+`server_cls(("", port), ...)`:
+
+```
+FAIL [default-bind/py]: expected lsof to show 127.0.0.1:46202, got '*:46202'
+FAIL [host-ipv6-loopback/py]: expected [::1]:46205, got '*:46205'
+```
+
+O gate pega a vulnerabilidade original. Não é verde por vacuidade. `make quality` exit 0, 120
+cenários (118 pré-rebase + 1 do #181 + 1 deste ML). Numeração do Cenário 59 correta — o 58 veio da
+`main`.
+
+Detalhe bom do script: sem `lsof`, ele **pula** a exclusão de wildcard em vez de passar em silêncio.
+Nesse modo o braço de detecção do Cenário 59 deixaria de reprovar e a falsificação ficaria vermelha
+— a vacuidade se auto-denuncia em vez de virar falso verde.
+
+**Barreira ML-2A — Hades APROVA.** Confirmou por conexão real, com **controle positivo**
+(`--host 0.0.0.0` fica alcançável), que é o que impede a medição de ser vacuosa. Sem vetor de
+exposição acidental: nenhuma ocorrência não-loopback em Makefile/Dockerfile/CI/docs/templates, e
+nem env (`TRACKFW_HOST`) nem `trackfw.yaml` alimentam o `--host`. Risco residual aceito e nomeado:
+o aviso só vai a stderr, então não protege uso não-interativo.
+
+Ele também pegou que as 6 caixas do ML-1B seguiam `- [ ]` embora o ML estivesse ✅ — fechei.
+
+**Wave 3 (ML-3A), achado da barreira.** `internal/server/server.go` era pacote morto carregando
+`addr := fmt.Sprintf(":%d", port)` + `ListenAndServe` — exatamente o defeito que esta REQ elimina.
+Verifiquei antes de agir: zero referências, 0 símbolos no binário (contra 52 de `internal/serve`),
+e `mv internal/server /tmp && go build ./...` passa. Removido.
+
+Fiz eu mesmo em vez de despachar: é `git rm -r` de diretório sem importadores — operação de Git, não
+escrita de código. Se exigisse mover ou reescrever uma linha iria para o `apolo-tf`.
+
+Não é explorável hoje, mas encerrar uma REQ de exposição deixando uma cópia wildcard do defeito na
+árvore é fechamento ruim: quem reativar o pacote reintroduz o bug e **nenhum gate pega**, porque o
+código nunca executa.
+
+**Todos os ACs fechados (AC1–AC8). Falta só o PR.**
+
+**Hades — revisão de delta (`9314ae2..HEAD`), pós-PR-condicionado.** Escopo apertado: só o que
+entrou depois da Barreira ML-2A. Confirmado por conta própria (não pela palavra do arquiteto):
+`internal/server/server.go` removido de forma limpa e completa — zero referências (`git grep`),
+zero símbolos no binário recompilado (`go tool nm`), `go build`/`go vet` limpos, `go test
+./internal/serve/...` verde, nenhum teste órfão. A recomendação nº 2 do meu veredito original
+está endereçada. 4 comentários repontados no `internal/serve/serve.go`,
+`npm/src/commands/serve.js`, `pypi/trackfw/commands/serve.py`: só texto, sem lógica. A seção nova
+de `docs/cli-parity.md` foi verificada linha a linha contra o código real (ausência de auth via
+grep, destino stderr do aviso nas 3 linhas exatas, mecanismo de autodenúncia do gate lido em
+`check-serve-address-parity.sh` + Cenário 59 de `check-gates-falsify.sh`) — todas as afirmações
+procedem, nenhuma foi aceita por afirmação. Reexecutei o gate (`check-serve-address-parity.sh`)
+contra `b4697b8` com binário Go recompilado — a última execução real era contra `9314ae2`, antes
+da remoção de `internal/server/`. 10/10 OK, com `lsof` (medição real, não leitura de fonte).
+Também confirmei que o heading antigo citado nos comentários pré-delta ainda existe mas é seção
+não relacionada (aviso de `update --install-missing`), não duplicata stale. **APROVADO.** Parecer
+completo apenso em `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md` (apêndice
+"Revisão de delta").

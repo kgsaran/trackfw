@@ -5,14 +5,82 @@ Espelho Python de internal/commands/serve.go e npm/src/commands/serve.js.
 """
 
 import functools
+import ipaddress
 import mimetypes
 import os
+import socket
 import sys
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "serve", "static")
+
+# Aviso pinado, byte-idêntico entre os 3 runtimes (Go, Node.js, Python) — ver
+# docs/cli-parity.md "`trackfw serve` — endereço de escuta, `--host` e
+# aviso de exposição". Emitido quando --host resolve para uma interface
+# diferente de loopback.
+EXPOSURE_WARNING_TEMPLATE = (
+    "WARNING: trackfw serve is binding to {host}:{port} — the governance "
+    "chain (ADRs, REQs, roadmaps) will be readable without authentication by "
+    "any device that can reach it."
+)
+
+# Texto de --help pinado, byte-idêntico entre os 3 runtimes.
+SERVE_HOST_FLAG_HELP = (
+    "Host to bind to (loopback only by default; use 0.0.0.0 to expose on the "
+    "network)"
+)
+
+
+def _is_loopback_host(host):
+    """Espelha internal/serve/serve.go IsLoopbackHost — 'localhost' ou IP loopback."""
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _exposure_warning(host, port):
+    return EXPOSURE_WARNING_TEMPLATE.format(host=host, port=port)
+
+
+def _display_url(host, port):
+    """Espelha internal/serve/serve.go DisplayURL — URL a imprimir/abrir no
+    browser. 'localhost' é mantido só para 'localhost' ou IPv4 loopback
+    (127.0.0.0/8), para não mudar a saída do caso comum; hosts IPv6 usam
+    colchetes; qualquer outro host é impresso como está."""
+    if host == "localhost":
+        return "http://localhost:{}".format(port)
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return "http://{}:{}".format(host, port)
+    if isinstance(ip, ipaddress.IPv6Address):
+        return "http://[{}]:{}".format(host, port)
+    if ip.is_loopback:
+        return "http://localhost:{}".format(port)
+    return "http://{}:{}".format(host, port)
+
+
+def _server_class_for_host(host):
+    """Retorna uma subclasse de HTTPServer com address_family AF_INET6 quando
+    host é um literal IPv6, e AF_INET (o default da stdlib) caso contrário —
+    espelha net.Listen("tcp", net.JoinHostPort(host, port)) do Go, que resolve
+    a família do socket a partir do endereço."""
+    family = socket.AF_INET
+    try:
+        if ipaddress.ip_address(host).version == 6:
+            family = socket.AF_INET6
+    except ValueError:
+        pass  # hostnames (ex.: "localhost") ficam em AF_INET, igual ao default da stdlib
+
+    class _Server(HTTPServer):
+        address_family = family
+
+    return _Server
 
 # Mapeamento explícito de extensões para garantir Content-Type correto
 MIME_TYPES = {
@@ -137,17 +205,22 @@ def cmd_serve(args):
     from trackfw import config as _config
 
     port = getattr(args, "port", 8080)
+    host = getattr(args, "host", "127.0.0.1")
     no_open = getattr(args, "no_open", False)
 
     cfg = _config.load()
 
-    url = f"http://localhost:{port}"
+    url = _display_url(host, port)
+
+    if not _is_loopback_host(host):
+        print(_exposure_warning(host, port), file=sys.stderr)
 
     # Criar handler com cfg injetado via functools.partial
     handler_class = functools.partial(TrackfwHandler, cfg)
+    server_cls = _server_class_for_host(host)
 
     try:
-        server = HTTPServer(("", port), handler_class)
+        server = server_cls((host, port), handler_class)
     except OSError as e:
         print(f"trackfw serve: cannot bind to port {port}: {e}", file=sys.stderr)
         sys.exit(1)
@@ -184,5 +257,12 @@ def register(subparsers):
         action="store_true",
         dest="no_open",
         help="Do not open browser automatically",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        metavar="HOST",
+        help=SERVE_HOST_FLAG_HELP,
     )
     parser.set_defaults(func=cmd_serve)

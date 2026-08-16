@@ -3678,3 +3678,68 @@ para essa correção.
 caso "agente não instalado" (`StateNotInstalled`). O caso irmão "agente modificado manualmente fora
 do trackfw" (`StateModified`) tem sua própria mensagem D10.1 e não é comparado entre os 3 CLIs por
 este script.
+
+## `trackfw serve` — endereço de escuta, `--host` e aviso de exposição (REQ-2026-08-16, ML-1A/1B/1C)
+
+Gate: `scripts/check-serve-address-parity.sh` (alvo `parity`) + Cenário 59 de
+`check-gates-falsify.sh`. O gate prova o contrato **por escuta real** — sobe cada runtime, mede com
+`lsof`, mata — e nunca por leitura de fonte. Um teste que só procurasse a string `"127.0.0.1"` no
+código passaria mesmo com o bind efetivo quebrado.
+
+**Origem:** `serve` escutava em todas as interfaces sem autenticação no Go e no Python;
+`/api/chain` devolvia a cadeia de governança inteira para qualquer dispositivo da rede.
+
+### Contrato pinado
+
+| item | valor, idêntico nos 3 runtimes |
+|---|---|
+| host padrão | `127.0.0.1` — **loopback IPv4**, nunca wildcard |
+| opt-in de exposição | flag `--host`, e **nada mais** (sem env, sem `trackfw.yaml`) |
+| help da flag | `Host to bind to (loopback only by default; use 0.0.0.0 to expose on the network)` |
+| aviso ao expor | `WARNING: trackfw serve is binding to <host>:<port> — the governance chain (ADRs, REQs, roadmaps) will be readable without authentication by any device that can reach it.` |
+| destino do aviso | **stderr**, emitido antes do bind |
+| `--host ::1` | escuta em `[::1]` nos 3 |
+
+A linha do aviso é comparada **byte a byte** entre os 3 pelo gate, normalizando só a porta.
+
+### URL impressa (e aberta no browser)
+
+Regra idêntica nos 3, implementada em `DisplayURL` (Go), `displayUrl` (Node) e `_display_url`
+(Python):
+
+1. host `localhost` ou **loopback IPv4** (`127.0.0.0/8`) → `http://localhost:<porta>`, para não
+   alterar a saída do caso comum;
+2. **literal IPv6** → `http://[<host>]:<porta>`, com colchetes (RFC 3986);
+3. qualquer outro → `http://<host>:<porta>`.
+
+A classificação IPv4/IPv6 é por **sintaxe do literal** (presença de `:`), **não** por família
+decodificada. `net.IP.To4()` do Go é não-nil para `::ffff:127.0.0.1`, enquanto `net.isIPv6()` do
+Node e `ipaddress.IPv6Address` do Python classificam o mesmo literal como IPv6 — decodificar
+produziria `localhost` no Go e colchetes nos outros dois, uma divergência de 3 vias em lógica de
+convenção compartilhada.
+
+### Exceções intencionais — divergências que **não** são violação do contrato
+
+- **Porta padrão diverge:** Go `4080`, Node e Python `8080`. Pré-existente a esta REQ, fora do seu
+  escopo, e **deliberadamente não corrigida aqui** para não misturar mudança de interface com uma
+  correção de segurança urgente.
+- **Prefixo da linha de URL diverge:** Go `trackfw serve — listening on <url>`, Node
+  `trackfw serve: <url>`, Python `trackfw dashboard: <url>`. O gate compara a **URL**, não a linha.
+- **Mensagem de erro de bind diverge:** cada runtime propaga o erro da própria stdlib.
+- **`--host ::ffff:127.0.0.1` e `--host 127.0.0.2`:** **nenhum** dos 3 consegue escutar nesses
+  endereços, logo o impacto de segurança é nulo; o que diverge é só o texto do erro.
+- **Loopback dual-stack não é objetivo.** Um listener não cobre `127.0.0.1` e `::1` ao mesmo tempo, e
+  o wildcard `:porta` é exatamente o defeito corrigido. Medido: `curl localhost` devolve 200 nos 3
+  com bind IPv4, porque o cliente faz fallback.
+
+### 🔴 O que este contrato **não** garante
+
+**Não há autenticação no `serve`.** Expor com `--host` deixa a cadeia de governança legível por
+qualquer um que alcance a porta — o aviso é a única mitigação, e por ir a stderr **não protege uso
+não-interativo** (Makefile, Dockerfile, CI redirecionam stderr para log). Se a exposição vier a ser
+intencional, é REQ própria. Ver o apêndice "Barreira ML-2A" em
+`docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md`.
+
+O gate degrada para teste de conexão quando falta `lsof`, e nesse modo **pula** a exclusão de
+wildcard em vez de passar em silêncio — o braço de detecção do Cenário 59 então deixa de reprovar e
+a falsificação fica vermelha. A vacuidade se denuncia sozinha em vez de virar falso verde.
