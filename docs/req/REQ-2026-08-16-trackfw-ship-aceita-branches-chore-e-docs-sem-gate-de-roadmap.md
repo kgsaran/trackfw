@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-16
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-16-trackfw-ship-aceita-branches-chore-e-docs-sem-gate-de-roadmap.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-16-trackfw-ship-aceita-branches-chore-e-docs-sem-gate-de-roadmap.md"
 ---
 
 # REQ: trackfw ship aceita branches chore e docs sem gate de roadmap
 
-> Date: 2026-08-16 | Status: Open
+> Date: 2026-08-16 | Status: done
 | Linear Issue: 
 | Jira Issue: 
 

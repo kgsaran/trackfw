@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-16
 req: ""
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: trackfw ship aceita branches chore e docs sem gate de roadmap
 
-> Created: 2026-08-16 | Status: wip
+> Created: 2026-08-16 | Status: done
 
 ## Context
 
