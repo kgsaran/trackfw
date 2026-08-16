@@ -27,7 +27,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
 | `ship` | yes | yes | yes | Governed `git commit + push + open PR/MR`; hard governance gate (see below) |
-| `branch` | yes | yes | yes | `new <type>/<slug>` — gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after (see below) |
+| `branch` | yes | yes | yes | `new <type>/<slug>` — for `feat`/`fix`/`refactor`, gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after; `chore`/`docs` create the branch without that gate, mirroring the housekeeping exemption `trackfw ship`/`trackfw commit` already grant those types (see below) |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
 | `changelog` | yes | yes | yes | Reads `CHANGELOG.md` at project root; no flags prints the first `## [...]` section (`Unreleased` or latest version); `--version <x.y.z>` prints a specific section (accepts an optional leading `v`); `--all` prints the entire file. Error messages byte-identical: `CHANGELOG.md not found — nothing to show`, `version "<x>" not found in CHANGELOG.md` |
@@ -712,35 +712,44 @@ they are raised by cobra/commander/argparse before the command handler runs.
 
 `trackfw branch new <type>/<slug>` moves the `branch_has_wip_roadmap` governance gate — already
 enforced by `trackfw validate` and `trackfw ship` (see "Regra `branch_has_wip_roadmap`" below) —
-to **before** branch creation instead of after. It reuses the exact same matching logic those two
-commands already apply; the command never implements a second version of the rule.
+to **before** branch creation instead of after, for the `feat`/`fix`/`refactor` types. It reuses
+the exact same matching logic those two commands already apply; the command never implements a
+second version of the rule.
+
+`chore` and `docs` are housekeeping types — already treated as roadmap-exempt by `trackfw ship`
+and `trackfw commit` (see their "doc-only"/housekeeping exemptions above) — so `trackfw branch
+new` creates `chore/<slug>` and `docs/<slug>` branches directly, without consulting `wip/`/`done/`
+at all. This is what unblocks branches like `chore/release-x.y.z`, which by definition have no
+REQ/roadmap of their own.
 
 ### Command surface
 
 | Element | Value |
 |---|---|
 | Invocation | `trackfw branch new <type>/<slug>` |
-| `<type>` | One of `feat`, `fix`, `refactor` — same vocabulary `trackfw ship` step 1 already validates |
-| `<slug>` | Non-empty; matched against roadmaps in `wip/` and `done/` the same way `branch_has_wip_roadmap` does |
+| `<type>` | One of `feat`, `fix`, `refactor`, `chore`, `docs` |
+| `<slug>` | Non-empty; for `feat`/`fix`/`refactor`, matched against roadmaps in `wip/` and `done/` the same way `branch_has_wip_roadmap` does. For `chore`/`docs`, no matching is performed. |
 | `--dry-run` | Reports whether the branch would be created or blocked, without executing `git` |
-| Exit 0 | Match found, branch created (or `--dry-run` reports "would create") |
-| Exit non-zero, usage error | Malformed spec (missing `/`, empty slug, invalid `<type>`) |
-| Exit non-zero, blocked | No matching roadmap in `wip/` nor `done/` — `git checkout -b` is **never** executed |
-| Exit = Git's own code | Match found, `git checkout -b` ran and failed (e.g. branch already exists → Git's `128`) |
+| Exit 0 | `feat`/`fix`/`refactor` with a match, or any `chore`/`docs` spec — branch created (or `--dry-run` reports "would create") |
+| Exit non-zero, usage error | Malformed spec (missing `/`, empty slug, invalid `<type>` — error message lists the full vocabulary: `feat, fix, refactor, chore, docs`) |
+| Exit non-zero, blocked | `feat`/`fix`/`refactor` only: no matching roadmap in `wip/` nor `done/` — `git checkout -b` is **never** executed |
+| Exit = Git's own code | Match found (or `chore`/`docs`), `git checkout -b` ran and failed (e.g. branch already exists → Git's `128`) |
 
 ### Decision flow
 
 ```
-1. Parse "<type>/<slug>" — <type> must be feat|fix|refactor, <slug> non-empty.
-2. Normalize the slug and check whether any roadmap filename in wip/ or done/ contains it —
-   the same BranchSlugMatchesRoadmap (Go) / branchSlugMatchesRoadmap (Node.js) /
-   branch_slug_matches_roadmap (Python) function trackfw validate calls for
-   branch_has_wip_roadmap. Not a reimplementation — the same function, imported.
-3. No match: print the same governance orientation message trackfw validate already prints for
-   this rule, exit non-zero, never invoke git.
-4. --dry-run with a match: print "[dry-run] would create branch "<type>/<slug>" (git checkout -b
-   <type>/<slug>)", exit 0, never invoke git.
-5. Match, no --dry-run: run `git checkout -b <type>/<slug>` with inherited stdio.
+1. Parse "<type>/<slug>" — <type> must be feat|fix|refactor|chore|docs, <slug> non-empty.
+2. For feat|fix|refactor only: normalize the slug and check whether any roadmap filename in
+   wip/ or done/ contains it — the same BranchSlugMatchesRoadmap (Go) /
+   branchSlugMatchesRoadmap (Node.js) / branch_slug_matches_roadmap (Python) function
+   trackfw validate calls for branch_has_wip_roadmap. Not a reimplementation — the same
+   function, imported. chore|docs skip this step entirely — matchSlug is never called.
+3. No match (feat|fix|refactor only): print the same governance orientation message
+   trackfw validate already prints for this rule, exit non-zero, never invoke git.
+4. --dry-run with a match (or chore|docs): print "[dry-run] would create branch "<type>/<slug>"
+   (git checkout -b <type>/<slug>)", exit 0, never invoke git.
+5. Match (or chore|docs), no --dry-run: run `git checkout -b <type>/<slug>` with inherited
+   stdio.
 ```
 
 ### Shared matching logic — never duplicated

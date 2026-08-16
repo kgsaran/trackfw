@@ -15,22 +15,25 @@ function createBranchCommand() {
   const newCmd = new Command('new')
   newCmd
     .description(
-      'Create a feat/fix/refactor branch, gated on a matching REQ + roadmap already in wip/ or done/\n\n' +
+      'Create a feat/fix/refactor/chore/docs branch; feat/fix/refactor gated on a matching REQ + roadmap already in wip/ or done/\n\n' +
       'trackfw branch new moves the branch_has_wip_roadmap governance gate (already enforced\n' +
       "by 'trackfw validate' and 'trackfw ship') to before branch creation, instead of after:\n\n" +
-      '  1. Validates <type> is one of feat, fix, refactor and <slug> is non-empty.\n' +
-      '  2. Checks whether a roadmap in wip/ or done/ matches the given slug — the exact matching\n' +
-      "     logic 'trackfw validate' already uses (normalized slug, filename contains match).\n" +
-      "  3. Without a match: blocks — 'git checkout -b' is never executed — and prints the same\n" +
-      "     governance orientation message 'trackfw validate' already prints for this rule.\n" +
-      "  4. With a match: runs 'git checkout -b <type>/<slug>', propagating Git's own output and\n" +
-      '     exit status literally.\n\n' +
+      '  1. Validates <type> is one of feat, fix, refactor, chore, docs and <slug> is non-empty.\n' +
+      '  2. For feat, fix, refactor: checks whether a roadmap in wip/ or done/ matches the given\n' +
+      "     slug — the exact matching logic 'trackfw validate' already uses (normalized slug,\n" +
+      "     filename contains match). Without a match: blocks — 'git checkout -b' is never\n" +
+      "     executed — and prints the same governance orientation message 'trackfw validate'\n" +
+      "     already prints for this rule.\n" +
+      "  3. For chore, docs: housekeeping types already treated as roadmap-exempt by 'trackfw ship'\n" +
+      "     and 'trackfw commit' — the branch is created without the roadmap gate.\n" +
+      "  4. With a match (or for chore/docs): runs 'git checkout -b <type>/<slug>', propagating\n" +
+      "     Git's own output and exit status literally.\n\n" +
       'Create the governance artifacts first if this blocks you:\n' +
       '  trackfw req new "title"\n' +
       '  trackfw roadmap new "title"\n' +
       '  trackfw roadmap move <name> wip'
     )
-    .argument('<spec>', '<type>/<slug>, type in feat, fix, refactor')
+    .argument('<spec>', '<type>/<slug>, type in feat, fix, refactor, chore, docs')
     .option('--dry-run', 'Report whether the branch would be created or blocked, without executing git', false)
     .action((spec, options) => {
       const exitCode = runBranchNew(spec, !!options.dryRun, {})

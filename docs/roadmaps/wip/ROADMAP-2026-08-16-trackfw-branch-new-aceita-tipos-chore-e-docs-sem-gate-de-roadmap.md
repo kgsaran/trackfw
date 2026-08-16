@@ -41,7 +41,7 @@ aceita e só avisa; o `branch new` recusa.
 > criaria coordenação sem ganho.
 
 ### ML-1A — `chore`/`docs` aceitos, sem afrouxar o gate dos demais
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 **Arquivos afetados:**
 - Go: `internal/commands/branch.go` (`branchValidTypes` :16, doc :58 e :157) + testes

@@ -36,7 +36,7 @@ function makeBranchDeps(matched, candidates) {
 // ────────────────────────────────────────────────────────────────────────────
 
 test('parseBranchSpec: valid types', () => {
-  for (const typ of ['feat', 'fix', 'refactor']) {
+  for (const typ of ['feat', 'fix', 'refactor', 'chore', 'docs']) {
     const { branchType, slug } = parseBranchSpec(`${typ}/my-slug`)
     assert.equal(branchType, typ)
     assert.equal(slug, 'my-slug')
@@ -44,7 +44,11 @@ test('parseBranchSpec: valid types', () => {
 })
 
 test('parseBranchSpec: invalid type', () => {
-  assert.throws(() => parseBranchSpec('chore/my-slug'), /invalid branch type/)
+  assert.throws(() => parseBranchSpec('banana/my-slug'), /invalid branch type/)
+  assert.throws(
+    () => parseBranchSpec('banana/my-slug'),
+    (err) => err.message === 'invalid branch type "banana" — must be one of feat, fix, refactor, chore, docs'
+  )
 })
 
 test('parseBranchSpec: empty slug', () => {
@@ -141,11 +145,52 @@ test('runBranchNew: invalid type never calls matchSlug or git', () => {
   let matchCalled = false
   const { deps, err, checkoutCalls } = makeBranchDeps(true, null)
   deps.matchSlug = () => { matchCalled = true; return { matched: true, candidates: [] } }
-  const code = runBranchNew('chore/my-slug', false, deps)
+  const code = runBranchNew('banana/my-slug', false, deps)
   assert.notEqual(code, 0)
   assert.equal(matchCalled, false)
   assert.equal(checkoutCalls.length, 0)
   assert.ok(err.join('\n').includes('invalid branch type'))
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// runBranchNew — chore/docs are housekeeping types: they create the branch without the
+// branch_has_wip_roadmap gate, and never call matchSlug.
+// ────────────────────────────────────────────────────────────────────────────
+
+test('runBranchNew: chore type skips gate and checks out branch', () => {
+  let matchCalled = false
+  // matched=false: gate would block if consulted
+  const { deps, out, checkoutCalls } = makeBranchDeps(false, null)
+  deps.matchSlug = () => { matchCalled = true; return { matched: false, candidates: [] } }
+  const code = runBranchNew('chore/release-7.0.0', false, deps)
+  assert.equal(code, 0)
+  assert.equal(matchCalled, false, 'matchSlug must not be called for chore — no roadmap gate applies')
+  assert.deepEqual(checkoutCalls, ['chore/release-7.0.0'])
+  assert.equal(out.length, 0)
+})
+
+test('runBranchNew: docs type skips gate and checks out branch', () => {
+  let matchCalled = false
+  const { deps, checkoutCalls } = makeBranchDeps(false, null)
+  deps.matchSlug = () => { matchCalled = true; return { matched: false, candidates: [] } }
+  const code = runBranchNew('docs/atualiza-readme', false, deps)
+  assert.equal(code, 0)
+  assert.equal(matchCalled, false, 'matchSlug must not be called for docs — no roadmap gate applies')
+  assert.deepEqual(checkoutCalls, ['docs/atualiza-readme'])
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// runBranchNew — non-regression: feat/fix/refactor without a matching roadmap must keep
+// blocking with the same governance orientation message.
+// ────────────────────────────────────────────────────────────────────────────
+
+test('runBranchNew: feat without matching roadmap still blocks (non-regression)', () => {
+  const { deps, out, checkoutCalls } = makeBranchDeps(false, null)
+  const code = runBranchNew('feat/no-roadmap-for-this', false, deps)
+  assert.notEqual(code, 0)
+  assert.equal(checkoutCalls.length, 0)
+  const want = validator.branchGovernanceOrientation('feat/no-roadmap-for-this')
+  assert.ok(out.join('\n').includes(want), `expected stdout to still include:\n${want}\ngot:\n${out.join('\n')}`)
 })
 
 test('runBranchNew: empty slug never calls matchSlug or git', () => {

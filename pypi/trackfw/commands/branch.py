@@ -31,7 +31,18 @@ import sys
 from .. import config as _config
 from .. import validator as _validator
 
-BRANCH_VALID_TYPES = {"feat", "fix", "refactor"}
+
+# BRANCH_VALID_TYPES é o vocabulário completo aceito por `trackfw branch new`. feat/fix/refactor
+# são gated numa REQ + roadmap correspondente já em wip/ ou done/ (BRANCH_GATED_TYPES abaixo);
+# chore/docs são tipos de housekeeping — já tratados como isentos de roadmap por `trackfw ship` e
+# `trackfw commit` — e criam a branch sem esse gate.
+BRANCH_VALID_TYPES = {"feat", "fix", "refactor", "chore", "docs"}
+
+# BRANCH_GATED_TYPES é o subconjunto de BRANCH_VALID_TYPES que exige uma REQ + roadmap
+# correspondente já em wip/ ou done/ antes de criar a branch. Manter sincronizado com o padrão
+# que `trackfw ship`/`trackfw commit` usam para decidir quando o gate branch_has_wip_roadmap se
+# aplica.
+BRANCH_GATED_TYPES = {"feat", "fix", "refactor"}
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -48,20 +59,26 @@ def register(subparsers):
 
     new_p = sub.add_parser(
         "new",
-        help="Create a feat/fix/refactor branch, gated on a matching REQ + roadmap already in wip/ or done/",
+        help=(
+            "Create a feat/fix/refactor/chore/docs branch; feat/fix/refactor gated on a "
+            "matching REQ + roadmap already in wip/ or done/"
+        ),
         description=(
             "trackfw branch new moves the branch_has_wip_roadmap governance gate (already "
             "enforced by 'trackfw validate' and 'trackfw ship') to before branch creation, "
             "instead of after:\n\n"
-            "  1. Validates <type> is one of feat, fix, refactor and <slug> is non-empty.\n"
-            "  2. Checks whether a roadmap in wip/ or done/ matches the given slug — the exact "
-            "matching logic 'trackfw validate' already uses (normalized slug, filename contains "
-            "match).\n"
-            "  3. Without a match: blocks — 'git checkout -b' is never executed — and prints the "
-            "same governance orientation message 'trackfw validate' already prints for this "
-            "rule.\n"
-            "  4. With a match: runs 'git checkout -b <type>/<slug>', propagating Git's own "
-            "output and exit status literally.\n\n"
+            "  1. Validates <type> is one of feat, fix, refactor, chore, docs and <slug> is "
+            "non-empty.\n"
+            "  2. For feat, fix, refactor: checks whether a roadmap in wip/ or done/ matches the "
+            "given slug — the exact matching logic 'trackfw validate' already uses (normalized "
+            "slug, filename contains match). Without a match: blocks — 'git checkout -b' is "
+            "never executed — and prints the same governance orientation message "
+            "'trackfw validate' already prints for this rule.\n"
+            "  3. For chore, docs: housekeeping types already treated as roadmap-exempt by "
+            "'trackfw ship' and 'trackfw commit' — the branch is created without the roadmap "
+            "gate.\n"
+            "  4. With a match (or for chore/docs): runs 'git checkout -b <type>/<slug>', "
+            "propagating Git's own output and exit status literally.\n\n"
             "Create the governance artifacts first if this blocks you:\n"
             "  trackfw req new \"title\"\n"
             "  trackfw roadmap new \"title\"\n"
@@ -96,19 +113,19 @@ def parse_branch_spec(spec: str):
     """Splits "<type>/<slug>" and validates both parts.
 
     Returns (branch_type, slug, error) — error is None on success. type must be one of feat,
-    fix, refactor (BRANCH_VALID_TYPES); slug must be non-empty. Espelha
+    fix, refactor, chore, docs (BRANCH_VALID_TYPES); slug must be non-empty. Espelha
     internal/commands/branch.go parseBranchSpec (mesmo comportamento: bloquear sem chamar git;
     a redação é adaptada ao estilo Python já usado neste CLI).
     """
     parts = spec.split("/", 1)
     if len(parts) != 2 or parts[0] == "":
         return None, None, (
-            f'invalid branch spec "{spec}" — expected <type>/<slug> with type in feat, fix, refactor'
+            f'invalid branch spec "{spec}" — expected <type>/<slug> with type in feat, fix, refactor, chore, docs'
         )
     branch_type, slug = parts[0], parts[1]
     if branch_type not in BRANCH_VALID_TYPES:
         return None, None, (
-            f'invalid branch type "{branch_type}" — must be one of feat, fix, refactor'
+            f'invalid branch type "{branch_type}" — must be one of feat, fix, refactor, chore, docs'
         )
     if slug.strip() == "":
         return None, None, f'branch slug is required — expected <type>/<slug>, got "{spec}"'
@@ -165,24 +182,28 @@ def run_branch_new(
 
     branch_name = f"{branch_type}/{slug}"
 
-    cfg = load_config()
-    wip_dirs = resolve_wip_dirs(cfg)
-    done_dirs = resolve_done_dirs(cfg)
+    # chore/docs são tipos de housekeeping — já tratados como isentos de roadmap por
+    # `trackfw ship` e `trackfw commit` — então o gate branch_has_wip_roadmap abaixo não se
+    # aplica a eles.
+    if branch_type in BRANCH_GATED_TYPES:
+        cfg = load_config()
+        wip_dirs = resolve_wip_dirs(cfg)
+        done_dirs = resolve_done_dirs(cfg)
 
-    normalized_slug = _validator.normalize_branch_slug(slug)
-    matched, candidates = match_slug(normalized_slug, wip_dirs, done_dirs)
+        normalized_slug = _validator.normalize_branch_slug(slug)
+        matched, candidates = match_slug(normalized_slug, wip_dirs, done_dirs)
 
-    if not matched:
-        if not candidates:
-            msg = _validator.branch_governance_orientation(branch_name)
-        else:
-            msg = _validator.branch_no_matching_roadmap_message(branch_name, candidates)
-        if dry_run:
-            out.write(f"[dry-run] would block: {msg}\n")
-        else:
-            out.write(msg + "\n")
-        err_out.write(f'blocked: no matching roadmap in wip/ nor done/ for "{branch_name}"\n')
-        return 1
+        if not matched:
+            if not candidates:
+                msg = _validator.branch_governance_orientation(branch_name)
+            else:
+                msg = _validator.branch_no_matching_roadmap_message(branch_name, candidates)
+            if dry_run:
+                out.write(f"[dry-run] would block: {msg}\n")
+            else:
+                out.write(msg + "\n")
+            err_out.write(f'blocked: no matching roadmap in wip/ nor done/ for "{branch_name}"\n')
+            return 1
 
     if dry_run:
         out.write(f'[dry-run] would create branch "{branch_name}" (git checkout -b {branch_name})\n')
