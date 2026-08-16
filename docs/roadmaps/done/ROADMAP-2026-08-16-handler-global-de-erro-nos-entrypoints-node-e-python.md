@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-16
 req: "docs/req/REQ-2026-08-16-erro-nao-tratado-no-cli-node-vaza-stack-trace-caminhos-absolutos-e-versao-do-runtime.md"
 squad: "apolo-tf, hades-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: Handler global de erro nos entrypoints Node e Python
 
-> Created: 2026-08-16 | Status: wip | **Prioridade: urgente (KG)**
+> Created: 2026-08-16 | Status: done | **Prioridade: urgente (KG)**
 
 ## Context
 

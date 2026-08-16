@@ -17845,3 +17845,12 @@ comando — recomendado remover em limpeza futura, não é vazamento ativo.
 Nenhum código de produto alterado; todas as reproduções foram feitas em cópias isoladas sob
 `/private/tmp/.../scratchpad`, nunca na árvore do repo. `git status` confirma apenas os dois
 artefatos permitidos sujos. Não commitei, não editei roadmap. Devolvido ao `trackfw_architect`.
+
+## Sessão 2026-08-16 — Zeus (arquiteto) — fecha a correção do vazamento de stack
+
+ML-1A e barreira ML-2A ✅. Roadmap e REQ em `done`. Vazamento eliminado e auditado por reprodução
+real; `hades-tf` liberou e confirmou a severidade declarada em vez de inflar.
+
+**Escalado à parte:** `trackfw serve` (Go e Python) escuta em todas as interfaces, sem autenticação.
+Verificado por mim: `TCP *:PORT (LISTEN)`, HTTP 200 pelo IP da LAN, `/api/chain` com 105 KB da
+cadeia de governança. KG autorizou atacar agora, em REQ própria.

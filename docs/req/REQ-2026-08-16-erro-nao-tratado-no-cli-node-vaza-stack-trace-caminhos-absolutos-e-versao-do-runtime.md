@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-16
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-16-handler-global-de-erro-nos-entrypoints-node-e-python.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-16-handler-global-de-erro-nos-entrypoints-node-e-python.md"
 ---
 
 # REQ: erro nao tratado no CLI Node vaza stack trace caminhos absolutos e versao do runtime
 
-> Date: 2026-08-16 | Status: Open
+> Date: 2026-08-16 | Status: done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -91,7 +91,7 @@ ADR: (não requerido — não há decisão arquitetural nova; AC3 é escolha de 
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-16-handler-global-de-erro-nos-entrypoints-node-e-python.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-16-handler-global-de-erro-nos-entrypoints-node-e-python.md`
 
 ## Acceptance Criteria
 - [ ]
