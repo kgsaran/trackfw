@@ -13,6 +13,31 @@ const { handleAttention } = require('../serve/api_attention')
 
 const STATIC_DIR = path.join(__dirname, '..', 'serve', 'static')
 
+// Aviso pinado, byte-idêntico entre os 3 runtimes (Go, Node.js, Python) — ver
+// docs/cli-parity.md "Aviso ao usuário — string pinada". Emitido quando
+// --host resolve para uma interface diferente de loopback.
+function exposureWarning(host, port) {
+  return `WARNING: trackfw serve is binding to ${host}:${port} — the governance chain (ADRs, REQs, roadmaps) will be readable without authentication by any device that can reach it.`
+}
+
+// Texto de --help pinado, byte-idêntico entre os 3 runtimes.
+const SERVE_HOST_FLAG_HELP = 'Host to bind to (loopback only by default; use 0.0.0.0 to expose on the network)'
+
+// Espelha internal/serve/serve.go IsLoopbackHost — 'localhost' ou IP loopback
+// (IPv4 127.0.0.0/8 inteiro, ou IPv6 ::1), igual a net.IP.IsLoopback() do Go
+// e ipaddress.ip_address(...).is_loopback do Python.
+function isLoopbackHost(host) {
+  const net = require('net')
+  if (host === 'localhost') return true
+  if (net.isIPv4(host)) {
+    return host.split('.')[0] === '127'
+  }
+  if (net.isIPv6(host)) {
+    return host === '::1' || host === '0:0:0:0:0:0:0:1'
+  }
+  return false
+}
+
 // Mapa de extensão → Content-Type
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -141,14 +166,20 @@ function createServeCommand() {
   cmd
     .description('Inicia o servidor HTTP do trackfw dashboard (kanban + chain + metrics)')
     .option('--port <port>', 'Porta do servidor', '8080')
+    .option('--host <host>', SERVE_HOST_FLAG_HELP, '127.0.0.1')
     .option('--no-open', 'Não abrir o browser automaticamente')
     .action((opts) => {
       const cfg = config.load()
       const port = parseInt(opts.port, 10) || 8080
+      const host = opts.host
 
       const server = createServer(cfg, port)
 
-      server.listen(port, '127.0.0.1', () => {
+      if (!isLoopbackHost(host)) {
+        console.error(exposureWarning(host, port))
+      }
+
+      server.listen(port, host, () => {
         console.log(`trackfw serve: http://localhost:${port}`)
 
         if (opts.open !== false) {

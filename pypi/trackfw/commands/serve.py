@@ -14,6 +14,36 @@ from urllib.parse import urlparse
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "serve", "static")
 
+# Aviso pinado, byte-idêntico entre os 3 runtimes (Go, Node.js, Python) — ver
+# docs/cli-parity.md "Aviso ao usuário — string pinada". Emitido quando --host
+# resolve para uma interface diferente de loopback.
+EXPOSURE_WARNING_TEMPLATE = (
+    "WARNING: trackfw serve is binding to {host}:{port} — the governance "
+    "chain (ADRs, REQs, roadmaps) will be readable without authentication by "
+    "any device that can reach it."
+)
+
+# Texto de --help pinado, byte-idêntico entre os 3 runtimes.
+SERVE_HOST_FLAG_HELP = (
+    "Host to bind to (loopback only by default; use 0.0.0.0 to expose on the "
+    "network)"
+)
+
+
+def _is_loopback_host(host):
+    """Espelha internal/serve/serve.go IsLoopbackHost — 'localhost' ou IP loopback."""
+    if host == "localhost":
+        return True
+    try:
+        import ipaddress
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _exposure_warning(host, port):
+    return EXPOSURE_WARNING_TEMPLATE.format(host=host, port=port)
+
 # Mapeamento explícito de extensões para garantir Content-Type correto
 MIME_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -137,17 +167,21 @@ def cmd_serve(args):
     from trackfw import config as _config
 
     port = getattr(args, "port", 8080)
+    host = getattr(args, "host", "127.0.0.1")
     no_open = getattr(args, "no_open", False)
 
     cfg = _config.load()
 
     url = f"http://localhost:{port}"
 
+    if not _is_loopback_host(host):
+        print(_exposure_warning(host, port), file=sys.stderr)
+
     # Criar handler com cfg injetado via functools.partial
     handler_class = functools.partial(TrackfwHandler, cfg)
 
     try:
-        server = HTTPServer(("", port), handler_class)
+        server = HTTPServer((host, port), handler_class)
     except OSError as e:
         print(f"trackfw serve: cannot bind to port {port}: {e}", file=sys.stderr)
         sys.exit(1)
@@ -184,5 +218,12 @@ def register(subparsers):
         action="store_true",
         dest="no_open",
         help="Do not open browser automatically",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        metavar="HOST",
+        help=SERVE_HOST_FLAG_HELP,
     )
     parser.set_defaults(func=cmd_serve)

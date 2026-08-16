@@ -17854,3 +17854,42 @@ real; `hades-tf` liberou e confirmou a severidade declarada em vez de inflar.
 **Escalado à parte:** `trackfw serve` (Go e Python) escuta em todas as interfaces, sem autenticação.
 Verificado por mim: `TCP *:PORT (LISTEN)`, HTTP 200 pelo IP da LAN, `/api/chain` com 105 KB da
 cadeia de governança. KG autorizou atacar agora, em REQ própria.
+## Sessão 2026-08-16 — Zeus (arquiteto) — PARADA para reinício da máquina (retomada aqui)
+
+Trabalho interrompido a pedido de KG. Agente do ML-1A (`serve`) **encerrado no meio** — o que está
+commitado é **PARCIAL**, e este bloco é o ponto de retomada.
+
+### Estado por frente
+
+| frente | branch | situação |
+|---|---|---|
+| Vazamento de stack no Node | — | ✅ **PR #181 aberto**, aguardando merge de KG |
+| Higiene (7 débitos + item 8) | `fix/higiene-sete-debitos-...` | Waves 1 e 2 ✅ commitadas; **falta Wave 3** e PR |
+| Exposição do `serve` | `fix/serve-amarra-em-loopback-...` | **WIP parcial commitado** — ver abaixo |
+| `doctor` (janela de gravação parcial) | — | decidido por KG, **REQ ainda não criada** |
+
+### `serve` — o que já funciona e o que falta
+
+**Funciona (verificado por escuta real, não por leitura de código):**
+```
+TCP 127.0.0.1:45899 (LISTEN)   ← era TCP *:PORT
+localhost -> HTTP 200          ← dashboard preservado
+LAN       -> HTTP 000          ← recusado
+```
+Go compila; Node carrega; Python importa. `--host` aparece no `--help` dos 3.
+
+**Falta (a retomada começa aqui):**
+1. Verificar Node e Python **por escuta real** — só o Go foi medido com `lsof`.
+2. Conferir o **IPv6**: o bind do Go virou IPv4 (`127.0.0.1`); confirmar que `localhost` continua
+   funcionando onde resolve para `::1`, nos 3 CLIs. **É o ponto mais provável de quebra sutil.**
+3. Aviso ao usar `--host` não-loopback: existir e ser **byte-idêntico** nos 3.
+4. `--help` byte-idêntico nos 3 (o Python mostrou 2 ocorrências de `--host` contra 1 dos outros —
+   **investigar**, pode ser duplicação de texto).
+5. Gate de paridade do endereço padrão + **cenário P4** em `check-gates-falsify.sh`.
+6. `make quality` (ainda **não** rodou nesta branch).
+7. Barreira do `hades-tf` (ML-2A do roadmap).
+
+### Débitos abertos, todos já registrados
+
+REQ de higiene (8 itens), REQ de conformidade de i18n, e os dois achados da Wave 2 da higiene:
+janela de gravação parcial do manifest (→ `doctor`) e wrapper de erro divergente no `integrations`.

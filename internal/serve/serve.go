@@ -4,7 +4,9 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
+	"os"
 
 	"github.com/kgsaran/trackfw/internal/config"
 )
@@ -12,8 +14,33 @@ import (
 //go:embed static
 var staticFiles embed.FS
 
-// Start registers HTTP routes and starts the server on the given port.
-func Start(port int) error {
+// ExposureWarningTemplate is the pinned, byte-identical warning printed by all
+// three runtimes (Go, Node.js, Python) whenever --host resolves to a
+// non-loopback interface. See docs/cli-parity.md "Aviso ao usuário — string
+// pinada" for the parity convention this follows.
+const ExposureWarningTemplate = "WARNING: trackfw serve is binding to %s:%d — the governance chain (ADRs, REQs, roadmaps) will be readable without authentication by any device that can reach it."
+
+// ExposureWarning formats the pinned warning for the given host:port.
+func ExposureWarning(host string, port int) string {
+	return fmt.Sprintf(ExposureWarningTemplate, host, port)
+}
+
+// IsLoopbackHost reports whether host is a loopback address ("127.0.0.1",
+// "::1") or the "localhost" name. Any other value is treated as a network
+// exposure and triggers ExposureWarning.
+func IsLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// Start registers HTTP routes and starts the server on the given host:port.
+// host defaults to "127.0.0.1" (loopback-only) at the caller (see
+// internal/commands/serve.go); an explicit non-loopback host is an opt-in
+// exposure and prints ExposureWarning to stderr before listening.
+func Start(port int, host string) error {
 	mux := http.NewServeMux()
 
 	// Serve static assets from embed.FS
@@ -56,7 +83,11 @@ func Start(port int) error {
 		attentionHandler(w, r, cfg)
 	})
 
-	addr := fmt.Sprintf(":%d", port)
-	fmt.Printf("trackfw serve — listening on http://localhost%s\n", addr)
+	if !IsLoopbackHost(host) {
+		fmt.Fprintln(os.Stderr, ExposureWarning(host, port))
+	}
+
+	addr := fmt.Sprintf("%s:%d", host, port)
+	fmt.Printf("trackfw serve — listening on http://localhost:%d\n", port)
 	return http.ListenAndServe(addr, mux)
 }
