@@ -18424,3 +18424,112 @@ baseline OK + braço de detecção provando não-vacuidade via rebuild de módul
 Nada commitado/pushed — devolvo para o `trackfw_architect` auditar e commitar. Barreira ML-4A
 (`hades-tf`) é o próximo passo do roadmap (Wave 4), revisão de segurança do guard antes de
 fechar a Wave 1.
+
+## Sessão 2026-08-16 — Apolo (INÍCIO: ML-2B — higiene de `site/guide/commands.md` e `site/en/guide/commands.md`)
+
+Branch `fix/higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0` (Wave 2, em
+paralelo com ML-2A/i18n e ML-2C/`internal/integrations/manager.go`). Escopo exclusivo: os dois
+arquivos de referência de comandos do site (pt e en) estavam em deriva — documentavam `trackfw
+plugins` (removido na 7.0.0) e estavam atrás de vários comandos reais (`baseline`, `branch new`,
+`changelog`, `commit`, `completion`, `configure`, `discover`, `note new`, `req move`, `update` /
+`update harness`, além de menção a `agents/skills third-party`). Fonte de verdade usada:
+`./bin/trackfw --help` e `./bin/trackfw <cmd> --help` para todos os 24 comandos top-level e seus
+subcomandos, não o `README.md`.
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-2B concluído — commands.md pt/en atualizados, não commitado)
+
+**Diff conceitual:**
+- **Removido** (pt e en): seção `trackfw plugins` (`list`/`add`/`remove`/`search`) — subsistema
+  removido na 7.0.0, comando não existe mais no binário.
+- **Adicionado** (pt e en, 8 seções novas cada): `trackfw discover`, `trackfw configure`,
+  `trackfw branch new`, `trackfw update` (+ `trackfw update harness`), `trackfw req move`,
+  `trackfw baseline`, `trackfw note new`, `trackfw changelog`, `trackfw commit`, `trackfw
+  completion`. Também um parágrafo mencionando `trackfw agents/skills third-party`
+  (`fetch`/`install`, gate de quarentena) dentro da seção já existente de `agents`/`skills`.
+  Total: cada arquivo passou a ter 30 seções `## \`trackfw ...\``, contagem idêntica entre pt/en
+  (só diverge o texto da seção `agents e skills` / `agents and skills`, que é tradução, não
+  conteúdo).
+- **Paridade pt/en restaurada**: o bloco de exemplo `export JIRA_...` + "Saída esperada" existia
+  em `trackfw sync` no pt mas faltava no en — adicionado ao en para equivalência de conteúdo.
+- **Corrigido**: exemplo de `trackfw version` atualizado de `v2.1.0` (fictício/desatualizado)
+  para `v7.0.0` (versão real do binário testado).
+
+**Método:** levantei a lista real com `./bin/trackfw --help` (24 comandos top-level) e depois
+`./bin/trackfw <cmd> --help` para cada um (incluindo subcomandos de `adr`, `agents`, `branch`,
+`completion`, `note`, `req`, `roadmap`, `skills`, `update`). Comparei contra o conteúdo de cada
+`.md`, removendo o que não existe e acrescentando o que faltava, preservando o estilo/tom/estrutura
+já usados (títulos `## \`trackfw <cmd>\``, blocos de flags em tabela, "Saída esperada"/"Expected
+output", "Se bloquear"/"If it blocks" para os comandos gated).
+
+**Outra deriva encontrada e NÃO corrigida (fora do escopo deste ML — reportando para decisão):**
+nenhuma. Verifiquei `site/index.md`, `site/en/index.md`, `site/guide/{ai-agents,getting-started}.md`
+e os equivalentes en — todos os comandos citados lá (`init`, `adr`, `agents`/`skills`, `context`,
+`req`, `roadmap`, `ship`, `status`, `validate`, `version`) existem no binário; nenhuma menção a
+`trackfw plugins` fora de `site/.vitepress/dist/` (build artifact gerado, não fonte).
+
+**Evidência:** `make quality` — dois runs completos, ambos `[exited with code 0]`
+(`Falsification checks passed (all 120 scenarios...)` + third-party parity gates). `git status
+--short` confirma que só `site/guide/commands.md` e `site/en/guide/commands.md` foram tocados por
+mim (demais arquivos modificados no working tree pertencem aos MLs irmãos 2A/2C, em paralelo).
+
+Nada commitado/pushed — devolvo para o `trackfw_architect` auditar e commitar. Não editei o
+roadmap (status é responsabilidade do arquiteto).
+
+## Sessão 2026-08-16 — Apolo (INÍCIO: ML-2C — diagnosticabilidade de `unmanaged artifact` em `agents/skills update --force` + investigação de gravação parcial)
+
+Escopo: subsistema `integrations` apenas (`internal/integrations/manager.go`,
+`internal/commands/integrations_flags.go`, `npm/src/integrations/manager.js`,
+`npm/src/commands/integrations.js`, `pypi/trackfw/integrations/manager.py`,
+`pypi/trackfw/integrations/command.py`). Bug real reportado pelo KG: `trackfw agents update
+--force` recusou um `.codex/agents/trackfw-iac.toml` unmanaged sem indicar o remédio
+(`agents install --force`), e o help do `--force` prometia algo que `update` não faz. Comportamento
+de recusa está correto e não muda — é ajuste de mensagem/help. Investigação adicional obrigatória
+sobre por que os artefatos ficaram fora do manifesto (achado registrado no vault, ver abaixo).
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-2C concluído — não commitado)
+
+**Mudanças:**
+1. `internal/integrations/manager.go`: nova função `unmanagedArtifactError(destination, claim)`
+   que nomeia o remédio com valores concretos — `unmanaged artifact "<path>" does not match a
+   trackfw template — trackfw did not write these bytes.\nAdopt it with: trackfw <kind> install
+   --force --items <item> --targets <target> --scope <scope>`. Usada nos DOIS pontos que geravam
+   `"unmanaged artifact %q does not match a trackfw template"`: `preflight` (mutationUpdate,
+   linha ~310) e `applyMutation` (linha ~421). Mesmo texto nos dois — justificativa: a ocorrência
+   em `applyMutation` é código morto defensivo hoje (preflight já intercepta o mesmo caso, tanto
+   para update quanto para install, antes de qualquer item chegar a `applyMutation`), mantida como
+   segunda linha de defesa; documentado inline com comentário explicando a inalcançabilidade atual.
+   Espelhado byte-idêntico em `npm/src/integrations/manager.js` (`unmanagedArtifactError`, usado em
+   `preflight` e `apply`) e `pypi/trackfw/integrations/manager.py` (`_unmanaged_artifact_error`,
+   usado em `_preflight` e `_apply`).
+2. `--force` help text: antes um único texto compartilhado entre `install`/`update`/`uninstall`
+   ("replace or remove modified managed artifacts" em Go, divergente nos outros 2 CLIs — gap de
+   paridade pré-existente também corrigido). Agora `forceHelp(operation)` (Go),
+   `forceHelp(operation)` (npm) e `_force_help(action)` (pypi) retornam texto por operação:
+   install = "replace a modified managed artifact, or adopt/overwrite an unmanaged file already on
+   disk"; update = "replace a modified managed artifact; never adopts unmanaged bytes — use
+   'install --force' for that"; uninstall = "remove a modified managed artifact". `addIntegrationFlags`
+   (Go) e os pontos equivalentes em npm/pypi passaram a receber a operação para escolher o texto.
+3. **Investigação da gravação parcial (item 3 do ML) — achado real, reportado, NÃO implementado
+   fix**: em `Manager.mutate()`, todos os bytes dos artefatos do batch são gravados em disco
+   (Loop 1, `applyMutation`) ANTES de qualquer manifesto ser persistido (Loop 2, `writeManifest`).
+   Interrupção do processo nessa janela (kill, crash, queda de energia) produz exatamente o sintoma
+   relatado: N arquivos corretos em disco, manifesto sem todas as entradas. Não é um bug de lógica
+   que sempre reproduz em execução limpa (o `defer` de rollback cobre erros retornados normalmente)
+   — é inerente à ordem de gravação (arquivos antes do manifesto) sem journal cross-file. Mudar isso
+   exigiria detecção (validate rule / doctor) e/ou reordenar a persistência — mudança de
+   comportamento, fora do escopo deste ML. Nota completa em
+   `vault/notes/integrations-manifest-write-precedes-persist-janela-de-registro-parcial-2026-08-16.md`.
+
+**Não-regressão confirmada:** `update` continua recusando bytes unmanaged mesmo com `--force`
+(testes existentes `internal/integrations/manager_test.go:148-152`,
+`internal/integrations/legacy_test.go:117-125`, `npm/tests/agents-skills.test.js:163-179`, e
+suíte pypi equivalente — todos verdes sem alteração, pois checam comportamento/regex, não o texto
+literal antigo). `install --force` continua adotando normalmente (mesmos testes).
+
+**Evidência:** `go build ./...` limpo; `go test ./...` — todos os pacotes OK; `cd npm && npm test`
+— 601/601 passed; `cd pypi && python3 -m pytest -q` — 1264 passed, 10 subtests passed; `make
+quality` (test + test-node + test-python + lint + parity) — `[exited with code 0]`, incluindo os
+120 cenários de falsificação e os gates de paridade third-party.
+
+Nada commitado/pushed — devolvo para o `trackfw_architect` auditar e commitar. Não editei o
+roadmap (status é responsabilidade do arquiteto). Nota de vault criada e linkada no índice.

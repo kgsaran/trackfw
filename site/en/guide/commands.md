@@ -48,6 +48,74 @@ $ trackfw init
 
 ---
 
+## `trackfw discover`
+
+Scans the repository and automatically detects the existing governance structure (ADRs, REQs,
+roadmaps, stack).
+
+```bash
+trackfw discover
+trackfw discover --init
+trackfw discover --bootstrap-log
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--init` | Generates a `trackfw.yaml` calibrated for the project from what was detected |
+| `--bootstrap-log` | Creates a retroactive `.trackfw-log` from files already in `done/` |
+
+---
+
+## `trackfw configure`
+
+Interactive wizard that guides `trackfw.yaml` configuration. Generates a sparse file: only
+fields that differ from the defaults are written.
+
+```bash
+trackfw configure
+```
+
+---
+
+## `trackfw branch new`
+
+Creates a `feat/`, `fix/`, `refactor/`, `chore/`, or `docs/` branch by moving the
+`branch_has_wip_roadmap` governance gate (already enforced by `trackfw validate` and
+`trackfw ship`) to **before** branch creation, instead of after.
+
+```bash
+trackfw branch new feat/oauth-login
+trackfw branch new fix/fix-401 --dry-run
+```
+
+### Behavior
+
+| Type | Behavior |
+|---|---|
+| `feat`, `fix`, `refactor` | Requires a roadmap with a matching slug already in `wip/` or `done/` — without a match, blocks and `git checkout -b` is never executed |
+| `chore`, `docs` | Exempt from the roadmap gate — the branch is created normally |
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Reports whether the branch would be created or blocked, without executing `git` |
+
+When allowed, runs `git checkout -b <type>/<slug>`, propagating Git's own output and exit status
+literally.
+
+### If it blocks
+
+```bash
+trackfw req new "title"
+trackfw roadmap new "title"
+trackfw roadmap move <name> wip
+```
+
+---
+
 ## `trackfw agents` and `trackfw skills`
 
 Manage specialist agents and governance skills with the same contract in the
@@ -113,6 +181,48 @@ Non-default surfaces are exercised as `target=surface`, the same format used by
 The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` commands
 have been removed. Use `agents` and `skills` with `--targets` (the target names
 above remain valid catalog values there) for all installation and update flows.
+
+`trackfw agents third-party` and `trackfw skills third-party` fetch and install third-party
+content under a two-phase quarantine gate — `fetch` downloads into quarantine without installing,
+`install` consumes an already-quarantined artifact with checksum-linked approval.
+
+---
+
+## `trackfw update`
+
+Re-applies current trackfw templates to a project already initialized with `trackfw init` or
+`trackfw discover --init`. A project-scope operation — it never touches the user's home
+directory. Updates the trackfw rules block in agent config files (`CLAUDE.md`, `GEMINI.md`,
+etc.), `scripts/trackfw-validate.sh`, the CI workflow, existing Codex agent/skill deployments,
+historical Claude slash commands, and Git hooks.
+
+```bash
+trackfw update
+trackfw update --dry-run --json
+trackfw update --targets claude,codex --install-missing
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Computes and reports target states without writing anything |
+| `--install-missing` | Also installs targets currently reported as missing |
+| `--targets <csv>` | Comma-separated subset of target IDs (unknown ID is a usage error) |
+| `--json` | Emits the result as a JSON document instead of the text report |
+
+### `trackfw update harness`
+
+Re-applies current templates to every already-installed global-scope artifact in the user's
+home directory (historical Claude compatibility skill, global Codex agent/skill deployments).
+Never requires `trackfw.yaml` and never touches the current repository — that is
+`trackfw update`'s job. Accepts the same `--dry-run`, `--json`, `--targets`, and
+`--install-missing` flags.
+
+```bash
+trackfw update harness
+trackfw update harness --install-missing
+```
 
 ---
 
@@ -182,6 +292,22 @@ trackfw req list
 ```
 REQ-2026-06-13-oauth-login.md        Open
 REQ-2026-06-10-export-report.md      Closed
+```
+
+---
+
+## `trackfw req move`
+
+Updates a REQ's status in place (frontmatter and header).
+
+```bash
+trackfw req move <partial-name> <status>
+```
+
+### Example
+
+```bash
+trackfw req move oauth-login Closed
 ```
 
 ---
@@ -290,6 +416,21 @@ squad: ""
 
 Location: docs/roadmaps/wip/ROADMAP-2026-06-13-implement-oauth.md
 ```
+
+---
+
+## `trackfw baseline`
+
+Runs all validations and saves the result as a baseline in `.trackfw-baseline.json`. The
+subsequent `trackfw validate` reports only violations that are **new** relative to that
+baseline — useful for adopting governance in a brownfield project without having to clear all
+existing debt at once.
+
+```bash
+trackfw baseline
+```
+
+Commit `.trackfw-baseline.json` to the repository to document the accepted debt.
 
 ---
 
@@ -615,6 +756,21 @@ jira_token: "ATATT..."
 jira_project: "PROJ"
 ```
 
+Or:
+```bash
+export JIRA_BASE_URL="https://company.atlassian.net"
+export JIRA_EMAIL="user@company.com"
+export JIRA_TOKEN="ATATT..."
+export JIRA_PROJECT="PROJ"
+```
+
+### Expected output
+
+```
+REQ-2026-06-13-oauth-login.md → LIN-42 (created)
+REQ-2026-06-10-export-report.md → already synced (skipped)
+```
+
 ---
 
 ## `trackfw log`
@@ -641,25 +797,80 @@ Date                 Roadmap                                            From    
 
 ---
 
-## `trackfw plugins`
+## `trackfw note new`
 
-Manages trackfw plugins.
+Creates a new knowledge note in `vault/notes/`.
 
 ```bash
-trackfw plugins list
-trackfw plugins add <repo>
-trackfw plugins remove <name>
-trackfw plugins search <keyword>
+trackfw note new "<title>"
 ```
 
-### Subcommands
+### Expected output
 
-| Subcommand | Description |
-|------------|-------------|
-| `list` | Lists installed plugins in `~/.trackfw/plugins/` |
-| `add <repo>` | Installs plugin from GitHub Releases (format `user/name[@tag]`) |
-| `remove <name>` | Removes installed plugin |
-| `search <keyword>` | Searches for plugins in the official registry |
+```
+created vault/notes/2026-06-13-note-title.md
+```
+
+---
+
+## `trackfw changelog`
+
+Reads entries from `CHANGELOG.md` without leaving the terminal.
+
+```bash
+trackfw changelog
+trackfw changelog --all
+trackfw changelog --version 7.0.0
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--all` | Shows the entire `CHANGELOG.md` |
+| `--version <x.y.z>` | Shows only the section for the given version |
+
+Without flags, shows the `[Unreleased]` section (or the most recent one, if there is no
+`[Unreleased]`).
+
+---
+
+## `trackfw commit`
+
+The missing intermediate step between raw `git commit` and `trackfw ship`: it commits staged
+changes directly, but blocks the commit **before** it happens when governance is missing, instead
+of letting it land and only catching it later.
+
+```bash
+trackfw commit -m "fix(api): correct 401 on refresh"
+trackfw commit --suggest
+```
+
+### Behavior by branch
+
+| Branch | Behavior |
+|---|---|
+| `main`/`master` | Always blocked — committing directly on the default branch is never permitted |
+| `feat/`, `fix/`, `refactor/` | Requires a roadmap with a matching slug already in `wip/` or `done/` (same logic as `trackfw branch new` and `trackfw validate`); without a match, blocks with the same governance orientation message |
+| Other (e.g. `docs/`, `chore/`) | Allowed without requiring a roadmap — a warning is logged, but the commit proceeds |
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `-m` / `--message` | Commit message (required, except with `--suggest`) |
+| `--suggest` | Prints a heuristic Conventional Commits message skeleton from `git diff --cached --name-status` and exits without committing (ignores `-m`; no LLM call) |
+
+When allowed, runs `git commit -m <message>`, propagating Git's own output and exit status
+literally.
+
+### If it blocks
+
+```bash
+trackfw req new "title"
+trackfw roadmap new "title"
+trackfw roadmap move <name> wip
+```
 
 ---
 
@@ -715,11 +926,23 @@ Forge:     github (source: remote)
 
 ---
 
+## `trackfw completion`
+
+Generates the trackfw autocompletion script for the given shell.
+
+```bash
+trackfw completion bash|fish|powershell|zsh
+```
+
+See `trackfw completion <shell> --help` for shell-specific installation instructions.
+
+---
+
 ## `trackfw version`
 
 Displays the installed version of trackfw.
 
 ```bash
 trackfw version
-# trackfw v2.1.0
+# trackfw v7.0.0
 ```

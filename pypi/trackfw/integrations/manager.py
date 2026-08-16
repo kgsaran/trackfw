@@ -283,12 +283,31 @@ class IntegrationManager:
                 return True
         elif operation == "update":
             if not owned and state == "modified":
-                raise IntegrationError(f"unmanaged artifact {destination} does not match a trackfw template")
+                raise IntegrationError(self._unmanaged_artifact_error(destination, plan["claim"]))
             if state == "modified" and not force:
                 raise IntegrationError(f"artifact {destination} is modified; use force")
         elif operation == "uninstall" and owned and state == "modified" and not force:
             raise IntegrationError(f"artifact {destination} is modified; use force")
         return False
+
+    @staticmethod
+    def _unmanaged_artifact_error(destination: Path, claim: dict[str, Any]) -> str:
+        """Error message for update/uninstall (or, defensively, install)
+        refusing bytes trackfw did not write. Names the remedy — trackfw did
+        not write these bytes, so the only safe way to bring the artifact
+        under management is ``<kind> install --force``, which explicitly
+        authorizes adopting/replacing unmanaged content — with the exact
+        flags to reproduce this plan's claim (item, target, scope), ready to
+        copy-paste. Mirrors internal/integrations/manager.go:
+        unmanagedArtifactError — canonical, byte-identical source of truth
+        across the 3 CLIs.
+        """
+        return (
+            f'unmanaged artifact "{destination}" does not match a trackfw template'
+            " — trackfw did not write these bytes.\n"
+            f"Adopt it with: trackfw {claim['kind']} install --force"
+            f" --items {claim['item']} --targets {claim['target']} --scope {claim['scope']}"
+        )
 
     @staticmethod
     def _frontmatter_name(content: bytes) -> str | None:
@@ -410,7 +429,16 @@ class IntegrationManager:
         write = not exists
         if exists and not owned:
             if actual_hash != desired_hash and not known and not force:
-                raise IntegrationError(f"unmanaged artifact {destination} does not match a trackfw template")
+                # Defense-in-depth: _preflight already rejects this exact case
+                # for "update" (unconditionally) and for "install" without
+                # --force (any state == "modified" is blocked before an
+                # active item ever reaches _apply). This branch is therefore
+                # not reachable via install/update/uninstall today, but stays
+                # as a second line of defense in case _preflight's guard is
+                # ever loosened — hence the identical remediation text, so a
+                # user who somehow hits it still gets the same actionable
+                # message. Mirrors internal/integrations/manager.go:applyMutation.
+                raise IntegrationError(self._unmanaged_artifact_error(destination, plan["claim"]))
             write = actual_hash != desired_hash and (operation == "update" or force)
         elif exists and owned:
             write = actual_hash != desired_hash

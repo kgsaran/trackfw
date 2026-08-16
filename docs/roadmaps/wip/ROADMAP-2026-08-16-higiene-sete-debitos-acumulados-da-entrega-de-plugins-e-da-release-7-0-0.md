@@ -106,7 +106,7 @@ sem argumento é uso legítimo (pedir ajuda), não erro, então `exit 0` em `std
 > concorrer com os MLs de código pelos mesmos revisores.
 
 ### ML-2A — i18n: `errors.notFound` divergente (item 5)
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído (2026-08-16) — órfã nos 3, removida; 31 divergências viraram REQ própria · **Agente:** `apolo-tf`
 **Arquivos:** `internal/i18n/locales/*.json`, `npm/src/i18n/locales/*.json`,
 `pypi/trackfw/i18n/locales/*.json`
 **Ação:** a chave existe em Node e Python e **não** no Go. **Primeiro verificar se tem consumidor em
@@ -115,14 +115,14 @@ algum dos 3.** Se **órfã nos três** → remover dos três. Se **usada em algu
 **Aceite:** os 3 locales coerentes entre si; nenhuma chave órfã introduzida ou mantida.
 
 ### ML-2B — Deriva de documentação em `site/` (item 6)
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído (2026-08-16) — 30 seções idênticas pt/en; falta só `trackfw help` · **Agente:** `apolo-tf`
 **Arquivos:** `site/guide/commands.md`, `site/en/guide/commands.md`
 **Ação:** remover `trackfw plugins` (não existe mais) e acrescentar `changelog` e `commit`, que
 faltam. Conferir contra a saída real de `trackfw --help`, **não** contra o `README.md`.
 **Aceite:** nenhum comando documentado que não exista; nenhum comando existente ausente.
 
 ### ML-2C — Item 8: `agents update` recusa artefato unmanaged sem dizer o remédio
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído (2026-08-16) — corpo da mensagem idêntico nos 3; causa raiz encontrada · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Origem:** bug reportado por KG em uso real no projeto CMDB (2026-08-16). Acrescentado à REQ como
 item 8, a pedido dele — REQ própria seria desperdício para um item deste tamanho.
 
@@ -159,6 +159,19 @@ nenhum.
 
 ---
 
+> 📌 **Dois achados da Wave 2 que NÃO entram neste roadmap** (registrados para decisão de KG):
+> 1. **Causa raiz do bug do CMDB encontrada:** em `Manager.mutate()`, **todos** os bytes do lote são
+>    escritos em disco **antes** de qualquer manifest ser persistido. Interrupção entre os dois laços
+>    deixa arquivos corretos sem registro — exatamente o sintoma observado (12 arquivos, mesmo
+>    timestamp, 10 registrados). O `defer` de rollback cobre erro retornado normalmente, **não**
+>    interrupção. Corrigir exige **detecção** (regra de `validate`/doctor) e/ou reordenar a
+>    persistência — mudança de comportamento, fora de escopo aqui.
+>    📎 `vault/notes/integrations-manifest-write-precedes-persist-janela-de-registro-parcial-2026-08-16.md`
+> 2. **Wrapper de entrega de erro diverge no `integrations`**, medido pelo arquiteto: Go usa
+>    `Error:`, Python usa `trackfw agents update:`, e o **Node imprime a linha de código-fonte do
+>    `throw`** — stack vazando em erro esperado. É a mesma classe do item 3, que foi corrigido
+>    apenas para o `ship`.
+
 ## Wave 3 — Consolidação (sequencial)
 
 ### ML-3A — `docs/cli-parity.md` + emenda ao ADR (itens 4 e consolidação)
@@ -166,6 +179,9 @@ nenhum.
 **Ações:**
 1. `docs/cli-parity.md`: registrar as divergências **eliminadas** nas Waves 1 e 2 — e **remover** as
    que estavam documentadas como conhecidas e deixaram de existir.
+1-bis. Documentar `trackfw help` em `site/guide/commands.md` e `site/en/guide/commands.md` — é o
+   único comando do binário ausente dos dois, e não é o `help` genérico do cobra: documenta as
+   chaves de configuração do `trackfw.yaml`.
 2. **(Arquiteto)** Emenda ao `docs/adr/ADR-2026-07-26-trackfw-ship-agnostico-de-forge.md`, cujo
    passo 1 ainda descreve o vocabulário antigo do `ship`. **Emenda, nunca reescrita** — o ADR é
    aceito.

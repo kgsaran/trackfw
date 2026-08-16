@@ -69,3 +69,4 @@
 - [go-generateattentionscripts-cwd-vs-rootdir-2026-08-04](go-generateattentionscripts-cwd-vs-rootdir-2026-08-04.md)
 - [thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15](thirdparty-provenance-key-domain-e-checksum-raw-vs-normalizado-2026-08-15.md)
 - [thirdparty-markers-fence-html-comment-immunity-bugs-2026-08-15](thirdparty-markers-fence-html-comment-immunity-bugs-2026-08-15.md)
+- [integrations-manifest-write-precedes-persist-janela-de-registro-parcial-2026-08-16](integrations-manifest-write-precedes-persist-janela-de-registro-parcial-2026-08-16.md)
