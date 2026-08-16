@@ -32,12 +32,14 @@ funciona; o problema é a interface de escuta somada à ausência de autenticaç
 - [x] AC1 — Padrão nos 3 CLIs é **loopback**, verificado por `lsof`/equivalente (não por leitura de código).
 - [x] AC2 — Exposição é **opt-in explícito** (`--host`), nunca padrão.
 - [x] AC3 — Ao expor, **aviso claro** de leitura sem autenticação.
-- [ ] AC3b — A **URL impressa** (e a aberta no browser) reflete o `--host` efetivo, não `localhost` fixo.
+- [x] AC3b — A **URL impressa** (e a aberta no browser) reflete o `--host` efetivo, não `localhost` fixo.
 - [x] AC4 — Aviso **renderizado** byte-idêntico nos 3 + string de help **da flag** byte-idêntica no fonte.
-- [ ] AC5 — Gate de paridade do endereço padrão + cenário de falsificação (P4), usando `--host ::1` como discriminante.
+- [ ] AC5 — Gate de paridade do endereço padrão + cenário de falsificação (P4), usando `--host ::1` como discriminante. (ML-1C, ainda pendente)
 - [x] AC6 — Não-regressão: dashboard continua acessível em `localhost` como hoje.
-- [ ] AC7 — `make quality` verde.
-- [ ] AC8 — `--host ::1` funciona nos **3** CLIs (hoje só no Node).
+- [x] AC7 — `make quality` verde ao fim do ML-1B (log completo colado no relatório do agente). ML-1C
+  vai tocar `scripts/check-gates-falsify.sh` — **revalidar `make quality` ao fim do ML-1C**, não
+  reusar esta evidência como definitiva.
+- [x] AC8 — `--host ::1` funciona nos **3** CLIs (hoje só no Node).
 
 > **AC4 foi reescrito.** "`--help` byte-idêntico nos 3" é inverificável: cobra imprime `Flags:`,
 > commander `Options:`, argparse `options:` + linha `usage:`. As 2 ocorrências de `--host` no help do
@@ -97,7 +99,8 @@ correto), script de paridade novo ou existente, `scripts/check-gates-falsify.sh`
 ## Wave 1b — Fechamento do ML-1A (depende da auditoria acima)
 
 ### ML-1B — `--host ::1` nos 3 CLIs + URL impressa reflete o host efetivo
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído — auditado por medição (`lsof`/`curl`), evidência abaixo e em
+`docs/agents-working-context.md` · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `internal/serve/serve.go`, `internal/commands/serve.go`,
 `pypi/trackfw/commands/serve.py`, `npm/src/commands/serve.js` + testes dos 3.
 

@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"fmt"
-
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/serve"
 	"github.com/spf13/cobra"
@@ -19,8 +17,8 @@ func newServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: i18n.T("serve.description"),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Printf("trackfw governance server running at http://localhost:%d\n", port)
-			fmt.Println("Press Ctrl+C to stop.")
+			// serve.Start prints the listening line itself, only after
+			// the bind succeeds — see internal/serve/serve.go.
 			return serve.Start(port, host)
 		},
 	}

@@ -38,6 +38,22 @@ function isLoopbackHost(host) {
   return false
 }
 
+// Espelha internal/serve/serve.go DisplayURL — URL a imprimir e a abrir no
+// browser. 'localhost' é mantido só para 'localhost' ou IPv4 loopback
+// (127.0.0.0/8), para não mudar a saída do caso comum; hosts IPv6 usam
+// colchetes; qualquer outro host é impresso como está.
+function displayUrl(host, port) {
+  const net = require('net')
+  if (host === 'localhost') return `http://localhost:${port}`
+  if (net.isIPv4(host)) {
+    return host.split('.')[0] === '127' ? `http://localhost:${port}` : `http://${host}:${port}`
+  }
+  if (net.isIPv6(host)) {
+    return `http://[${host}]:${port}`
+  }
+  return `http://${host}:${port}`
+}
+
 // Mapa de extensão → Content-Type
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -180,11 +196,11 @@ function createServeCommand() {
       }
 
       server.listen(port, host, () => {
-        console.log(`trackfw serve: http://localhost:${port}`)
+        const url = displayUrl(host, port)
+        console.log(`trackfw serve: ${url}`)
 
         if (opts.open !== false) {
           // Tentar abrir o browser
-          const url = `http://localhost:${port}`
           const { exec } = require('child_process')
           const platform = process.platform
           let openCmd
@@ -218,4 +234,4 @@ function createServeCommand() {
   return cmd
 }
 
-module.exports = { createServeCommand, createServer }
+module.exports = { createServeCommand, createServer, isLoopbackHost, displayUrl }

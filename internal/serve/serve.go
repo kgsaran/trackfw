@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/kgsaran/trackfw/internal/config"
 )
@@ -34,6 +36,40 @@ func IsLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// DisplayURL formats the URL to print and open in the browser for the given
+// host:port, following the same convention across all three runtimes (Go,
+// Node.js, Python): "localhost" is kept only when host is "localhost" or a
+// loopback IPv4 address (127.0.0.0/8), so the common case's output does not
+// change; IPv6 hosts get bracket notation (RFC 3986); anything else is
+// printed as-is. See docs/cli-parity.md and ML-1B in the exposure roadmap.
+//
+// The IPv4-vs-IPv6 classification is by *literal syntax* (presence of ":"),
+// not by decoded address family — this matches Node's net.isIPv6(host) and
+// Python's isinstance(ipaddress.ip_address(host), IPv6Address), both of
+// which classify "::ffff:127.0.0.1" as IPv6 despite it embedding an IPv4
+// address. Classifying by decoded family (net.IP.To4() != nil, which is
+// non-nil even for IPv4-mapped IPv6 literals) would make Go print
+// "localhost" for that host while Node/Python bracket it — a 3-way
+// divergence in shared, pinned-convention logic. That host is declared
+// out of scope (see roadmap Notes: none of the 3 runtimes can bind to it),
+// so the divergence was unobservable in practice, but the classification
+// still needs to agree so ML-1C's parity gate doesn't trip on it.
+func DisplayURL(host string, port int) string {
+	if host == "localhost" {
+		return fmt.Sprintf("http://localhost:%d", port)
+	}
+	if strings.Contains(host, ":") {
+		// IPv6 literal — always bracket, even when loopback (::1) or an
+		// IPv4-mapped form (::ffff:127.0.0.1), so the printed/opened URL
+		// matches what actually needs brackets to resolve.
+		return fmt.Sprintf("http://[%s]:%d", host, port)
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return fmt.Sprintf("http://localhost:%d", port)
+	}
+	return fmt.Sprintf("http://%s:%d", host, port)
 }
 
 // Start registers HTTP routes and starts the server on the given host:port.
@@ -87,7 +123,15 @@ func Start(port int, host string) error {
 		fmt.Fprintln(os.Stderr, ExposureWarning(host, port))
 	}
 
-	addr := fmt.Sprintf("%s:%d", host, port)
-	fmt.Printf("trackfw serve — listening on http://localhost:%d\n", port)
-	return http.ListenAndServe(addr, mux)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	// Print only after the listener is actually up — never claim to be
+	// listening while the bind is still pending or has failed.
+	fmt.Printf("trackfw serve — listening on %s\n", DisplayURL(host, port))
+	fmt.Println("Press Ctrl+C to stop.")
+	return http.Serve(ln, mux)
 }

@@ -17945,3 +17945,102 @@ onde os 3 falham (impacto de segurança nulo, ninguém escuta) e que fica fora d
    `--host`; com `--host 192.168.x.y` a URL não é alcançável e Node/Python abrem o browser no
    endereço errado. Toca AC3 (o usuário precisa saber o que expôs).
 4. **`::ffff:127.0.0.1` e `127.0.0.2` fora de escopo**, declarado nas Notas do roadmap.
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-1B concluído — `--host ::1` nos 3 CLIs + URL impressa)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`. Executado
+ML-1B do roadmap acima (`docs/roadmaps/wip/ROADMAP-2026-08-16-...md`). Fecha AC3b e AC8; AC5 segue
+pendente (ML-1C, gate de paridade — próximo agente).
+
+**Go** (`internal/serve/serve.go`, `internal/commands/serve.go`):
+- `addr` trocado de `fmt.Sprintf("%s:%d", host, port)` para
+  `net.JoinHostPort(host, strconv.Itoa(port))` — o `%s:%d` cru quebrava com host IPv6 por faltar
+  colchetes ("too many colons in address").
+- Nova função `DisplayURL(host, port)`: mantém `http://localhost:<porta>` só para `localhost` ou
+  IPv4 em `127.0.0.0/8`; usa `http://[<host>]:<porta>` para qualquer IPv6 (inclusive `::1` — não
+  vira "localhost", fica com colchetes); qualquer outro host é impresso como está.
+- Consolidada a linha "listening on" — antes era impressa 2x (uma em `internal/commands/serve.go`
+  antes até de tentar o bind, outra em `internal/serve/serve.go`) e a primeira saía mesmo quando o
+  bind falhava depois. Agora `net.Listen` roda primeiro; só em caso de sucesso é que a linha
+  (única) é impressa, seguida de `http.Serve(ln, mux)`.
+
+**Python** (`pypi/trackfw/commands/serve.py`):
+- `_server_class_for_host(host)` retorna subclasse de `HTTPServer` com `address_family =
+  socket.AF_INET6` quando `ipaddress.ip_address(host).version == 6`, senão `AF_INET` (default da
+  stdlib) — antes `HTTPServer` tinha a família fixa em `AF_INET`, e IPv6 falhava com
+  "nodename nor servname provided".
+- `_display_url(host, port)` espelha a lógica do Go acima; usada tanto na mensagem impressa quanto
+  na URL passada para `_open_browser`.
+
+**Node.js** (`npm/src/commands/serve.js`):
+- Bind já estava correto (referência, não tocado). Adicionada `displayUrl(host, port)` espelhando
+  Go/Python; `server.listen(...)` callback agora usa essa URL no `console.log` e ao abrir o
+  browser (antes hardcoded `http://localhost:<porta>` mesmo com `--host` != loopback).
+- `displayUrl` e `isLoopbackHost` exportados de `src/commands/serve.js` para os testes.
+
+**Testes novos** (medição real via bind + `http.get`/`HTTPConnection`/`curl`, não leitura de
+string): `internal/serve/serve_test.go` (`TestDisplayURL`, `TestIsLoopbackHost`,
+`TestListenOnIPv6Loopback` — bind real em `net.JoinHostPort("::1","0")`),
+`npm/tests/serve_address.test.js` (bind real via `createServer(...).listen(0, '::1', ...)` +
+`http.get` com `family: 6`, e não-regressão em `127.0.0.1`), `pypi/tests/test_serve_address.py`
+(bind real via `_server_class_for_host` + `http.client.HTTPConnection`, não-regressão em
+`127.0.0.1`).
+
+**Evidência de auditoria por medição** (portas descartadas ao fim, nenhum processo/listener
+residual confirmado por `lsof` + `ps aux` após os testes):
+
+```
+GO   --host ::1            : lsof [::1]:PORT (LISTEN)         curl [::1] -> 200   linha única: "http://[::1]:PORT"
+GO   default (sem flags)   : lsof 127.0.0.1:PORT (LISTEN)     curl localhost -> 200 (não-regressão)
+GO   --host 192.168.3.137  : linha impressa "http://192.168.3.137:PORT" (não "localhost")
+GO   --host 192.0.2.1      : bind falha (unassignable); "listening on" aparece 0x no output — não afirma escuta que não existe
+NODE --host ::1            : lsof [::1]:PORT (LISTEN)         curl [::1] -> 200   "trackfw serve: http://[::1]:PORT"
+NODE default                : lsof 127.0.0.1:PORT (LISTEN)    curl localhost -> 200
+NODE --host 192.168.3.137  : "trackfw serve: http://192.168.3.137:PORT"
+PY   --host ::1             : lsof [::1]:PORT (LISTEN)        curl [::1] -> 200   "trackfw dashboard: http://[::1]:PORT"
+PY   default                 : lsof 127.0.0.1:PORT (LISTEN)   curl localhost -> 200
+PY   --host 192.168.3.137   : "trackfw dashboard: http://192.168.3.137:PORT"
+```
+
+Aviso de exposição (`--host 0.0.0.0`) verificado **byte-idêntico** nos 3 via `diff` das saídas reais
+de stderr (só a porta varia, texto igual) — AC4 não regrediu.
+
+`make quality` verde (log completo `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./...` → todos
+`ok`, incluindo `internal/serve`; `node --test tests/*.test.js` → 600 passed, 0 failed; `python3 -m
+pytest pypi/tests` → 1268 passed; `go vet`/`go build` limpos; todos os 118 cenários de falsificação
+e gates de paridade `OK`; exit code final **0**).
+
+**Arquivos alterados:** `internal/serve/serve.go`, `internal/commands/serve.go`,
+`internal/serve/serve_test.go` (novo), `pypi/trackfw/commands/serve.py`,
+`pypi/tests/test_serve_address.py` (novo), `npm/src/commands/serve.js`,
+`npm/tests/serve_address.test.js` (novo), roadmap (ML-1B → ✅ Concluído, AC3b/AC8/AC7 marcados).
+
+**Divergência encontrada e corrigida durante auto-revisão (advisor):** o `DisplayURL`/`_display_url`
+inicial do Go classificava `::ffff:127.0.0.1` (IPv4-mapped IPv6) pela família **decodificada**
+(`net.IP.To4() != nil`, que é não-nil mesmo para esse literal) e imprimia `"localhost"`; Node
+(`net.isIPv6`) e Python (`isinstance(ip, IPv6Address)`) classificam pela **sintaxe literal** (tem
+`:`) e retornavam colchetes — 3-way divergence introduzida na própria lógica nova. Corrigido no Go
+para classificar por sintaxe (`strings.Contains(host, ":")`) antes de checar loopback, igualando os
+3. **Hoje é inobservável em produção**: `::ffff:127.0.0.1` está fora de escopo desta REQ porque
+nenhum dos 3 CLIs consegue fazer bind nele (declarado nas Notas do roadmap), e os 3 só imprimem a
+URL após bind bem-sucedido — mas a lógica share-comment cita `docs/cli-parity.md` como contrato, e
+o gate de paridade do ML-1C teria acusado a divergência como regressão real. Caso novo adicionado
+aos 3 arquivos de teste. `make quality` re-executado após o fix — verde de novo (log completo, exit
+0; 1269 testes Python, 601 arquivos/casos Node incluindo o novo, Go `internal/serve` ok).
+
+**Observações para o próximo agente, não corrigidas aqui (fora do escopo do ML-1B):**
+- `docs/cli-parity.md` já documenta a seção "Aviso ao usuário — string pinada" (confirmado, linha
+  2114) mas **não** documenta a convenção nova de `DisplayURL`/`displayUrl`/`_display_url`
+  (localhost só para `localhost`/`127.0.0.0/8`; colchetes para qualquer host com `:`; resto verbatim).
+  Não é arquivo do ML-1B — avaliar se merece uma entrada lá antes do ML-1C fechar o gate de paridade
+  sobre ela.
+- `--host localhost` (não testado neste ML) pode resolver diferente por runtime — Go/Node podem
+  escolher `::1` no macOS; o Python `_server_class_for_host` cai em `AF_INET` no `ValueError` de
+  `ipaddress.ip_address("localhost")`. Divergência pré-existente, não introduzida aqui — **ML-1C
+  deve manter `--host ::1` como discriminante e não usar `--host localhost`.**
+- **ML-1A segue `🔄 Em andamento` com todos os checkboxes em aberto**, mesmo o ML-1B tendo suprido
+  os testes que faltavam para ele. Não é decisão minha fechar o ML-1A — sinalizando para o
+  `trackfw_architect` não tratar isso como descuido.
+
+**Não commitado** — autoridade exclusiva do `trackfw_architect`. Próximo: ML-1C (gate de paridade
++ cenário P4 usando `--host ::1` como discriminante) e Wave 2 (`hades-tf`, ML-2A).
