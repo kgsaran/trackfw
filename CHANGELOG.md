@@ -10,30 +10,110 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
-## [Unreleased]
+## [7.0.0] - 2026-08-16
+
+> ⚠️ **Versão com Breaking Change.** O subsistema de plugins foi **removido**. Leia a seção
+> **Removed** antes de atualizar.
+
+### Removed
+
+- 🔴 **BREAKING — subsistema de plugins removido por completo: download, gestão e execução.**
+  Saem `trackfw plugins add`, `plugins search`, `plugins list` e `plugins remove`, o pacote de
+  download, o registry externo e a execução de binários de terceiro pelo trackfw.
+
+  **Motivo: o trackfw era, ele próprio, uma superfície de cadeia de suprimento (supply chain).**
+  Não houve incidente — o que havia era o caminho aberto, e ele era completo:
+
+  1. o `plugins add` baixava um **binário** de terceiro do GitHub Releases;
+  2. **sem verificação de assinatura**, **sem checksum publicado pelo autor** e **sem pinagem de
+     release** — nada provava que aquele artefato era o que o autor publicou;
+  3. a partir de um **registry apontando para a branch `main` de um repositório externo**, ou seja,
+     um alvo **mutável** que podia mudar de conteúdo entre uma execução e outra;
+  4. gravava o binário e o tornava **executável (`chmod 0755`)**;
+  5. e, por fim, **qualquer argumento desconhecido** passado ao `trackfw` executava um binário
+     `trackfw-<argumento>` encontrado no `PATH` — inclusive por **erro de digitação**.
+
+  Comprometer o repositório do plugin, ou o registry, significava executar código arbitrário na
+  máquina de quem usasse o trackfw — **sob a marca do trackfw**.
+
+  **Por que remover em vez de proteger.** Um gate de duas fases (quarentena → revisão de segurança →
+  instalação) chegou a ser projetado e avaliado. A análise mostrou que ele entregaria bem menos do
+  que aparentava:
+
+  - **seria gate de revisão, não de supply chain.** Sem verificação de origem, o checksum prova que
+    o binário instalado é *o que foi revisado* — e **não** que o autor publicou aquilo;
+  - **o revisor não consegue ler um binário** como lê um texto: o parecer certificaria proveniência
+    aceita, nunca ausência de malícia;
+  - **a detecção de instalação clandestina era estruturalmente impossível**, porque os plugins vivem
+    num diretório por-máquina compartilhado entre todos os projetos;
+  - e a permissão de execução tardia seria **redução de janela, não controle**.
+
+  **Removemos a superfície em vez de manter uma mitigação parcial que passaria falsa sensação de
+  proteção.** Um gate que parece proteger e não protege é pior que a ausência declarada dele.
+
+  **O que muda para você.** Instalar e executar ferramentas `trackfw-*` passa a ser **inteiramente
+  responsabilidade sua**, invocando o binário direto no shell, sem intermediação do trackfw. Não há
+  substituto embutido: se um sistema de extensão fizer sentido no futuro, nascerá com o gate
+  desenhado desde o início, e não acrescentado depois.
+
+  Detalhe completo em
+  `docs/adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md`
+  e no parecer de segurança `docs/seguranca/2026-08-15-gate-de-plugins-binario.md`.
 
 ### Added
 
-- **Bloqueio técnico de `git commit`/`git push`/`git checkout -b` brutos por subagente**
-  (ver `docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`) —
-  novo comando `trackfw commit -m "<mensagem>"` (Go/Node/Python) que recusa commit
-  direto em `main`/branch protegida e commit em `feat/fix/refactor` sem roadmap
-  correspondente em `wip/`, replicando o gate `branch_has_wip_roadmap` no momento do
-  commit. Novo guard script (`scripts/trackfw-git-branch-guard.sh`) ligado via hook
-  técnico (não só instrução textual) nos 7 runtimes suportados: Claude Code, Codex CLI,
-  Gemini CLI, GitHub Copilot, Cursor, Windsurf, Amazon Q Developer.
+- **Gate de duas fases para instalação de skill/agent de terceiro via URL** — `trackfw <skills|agents>
+  third-party fetch <url>` baixa para **quarentena** e **nunca instala**; a instalação só é consumada
+  por `third-party install --checksum <sha256>`, mediante aprovação **vinculada por checksum** (o que
+  fecha a janela entre revisar um conteúdo e instalar outro). Proveniência versionada em
+  `.trackfw/thirdparty-provenance.json`, nova regra `thirdparty_artifact_has_provenance` no
+  `trackfw validate`, e escopo `project` por padrão para que o artefato seja auditável no repositório.
+  **Limite declarado:** a checagem de conteúdo é um *tripwire* para o caso descuidado, **não** um
+  filtro contra adversário competente — paráfrase, indireção e homóglifo de outro alfabeto passam,
+  por decisão registrada.
+- **Bloqueio técnico de `git commit`/`git push`/criação de branch brutos por subagente** — novo
+  comando `trackfw commit -m "<mensagem>"` (3 CLIs), que recusa commit direto em branch protegida e
+  commit em `feat/fix/refactor` sem roadmap correspondente em `wip/`. Guard ligado por hook técnico
+  nos 7 runtimes suportados: Claude Code, Codex CLI, Gemini CLI, GitHub Copilot, Cursor, Windsurf e
+  Amazon Q Developer.
+- **`trackfw changelog`** — consulta o `CHANGELOG.md` pelo próprio CLI.
+- **`trackfw commit --suggest`** — imprime um esqueleto de mensagem em Conventional Commits derivado
+  do diff staged (heurística estrutural, sem chamada de modelo).
+- **Contexto de convenções do projeto para os agentes especialistas** — chave `agent_conventions` no
+  `trackfw.yaml`, composta nos arquivos de regras dos agentes. `trackfw discover` sugere o framework
+  de teste detectado, mas **nunca** grava a chave automaticamente.
+- **`trackfw validate` detecta scripts de hook ausentes ou desatualizados** (`git-branch-guard`,
+  escopo de projeto e global).
+
+### Changed
+
+- **Comando desconhecido agora é erro, com sugestão** — e a saída é **byte-idêntica nos 3 CLIs**,
+  em `stderr`, com exit 1:
+
+  ```
+  Error: unknown command "vaildate" for "trackfw"
+  Did you mean "validate"?
+  Run 'trackfw --help' for usage.
+  ```
+
+  Substitui o comportamento anterior, em que um argumento desconhecido executava um binário do
+  `PATH`. Um erro de digitação agora **sugere o comando certo** em vez de executar algo.
+
+### Fixed
+
+- **`trackfw branch new` aceita `chore` e `docs`**, sem exigir roadmap — alinhando-o ao que
+  `trackfw ship` e `trackfw commit` já faziam para branches de housekeeping. O gate de governança
+  **continua valendo** para `feat`, `fix` e `refactor`. Sem isso, o próprio protocolo de release do
+  projeto ficava inexecutável pelos caminhos sancionados.
 
 ### Notas de atualização
 
-- **A proteção só passa a valer depois de `trackfw update` (projetos existentes) ou
-  `trackfw init` (projetos novos).** Não é retroativa: se você já tem o trackfw
-  configurado num projeto, o guard não é ativado automaticamente — é preciso rodar
-  `trackfw update` (escopo de projeto) ou `trackfw update harness` (escopo global,
-  `~/.trackfw/scripts/`) para gerar o script e ligar o hook nos arquivos de config do
-  seu assistente de IA.
-- Deny é global em todos os 7 runtimes, inclusive para o agente arquiteto/orquestrador —
-  isolamento por subagente (arquiteto livre, especialistas bloqueados) fica como débito
-  técnico documentado, não implementado nesta versão.
+- **O bloqueio técnico de git bruto só passa a valer após `trackfw update`** (projetos existentes) ou
+  `trackfw init` (projetos novos). Não é retroativo.
+- Deny é global em todos os 7 runtimes, inclusive para o agente arquiteto/orquestrador — isolamento
+  por subagente fica como débito técnico documentado.
+- **Se você usava `trackfw plugins add`:** não há caminho de migração automático. Instale a ferramenta
+  por conta própria e invoque o binário diretamente.
 
 ## [6.10.0] - 2026-08-14
 
