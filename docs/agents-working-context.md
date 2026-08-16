@@ -18143,3 +18143,80 @@ AC5 marcado).
 
 **Não commitado** — autoridade exclusiva do `trackfw_architect`. Próximo: Wave 2 (`hades-tf`,
 ML-2A — confirmar por conexão real que a exposição fechou).
+
+## Sessão 2026-08-16 — Hades (INÍCIO: ML-2A — barreira de segurança, confirmar por conexão real
+que a exposição fechou)
+
+Branch: `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`. Escopo:
+subir os 3 CLIs de verdade e medir bind/exposição por `lsof`/`curl` (não por leitura), avaliar se
+`--host` cria caminho de exposição acidental, e varrer o produto por outro componente que abra
+porta. Sem commits deste agente — git é autoridade do `trackfw_architect`.
+
+## Sessão 2026-08-16 — Hades (FIM: ML-2A — APROVADO, com risco residual explicitado)
+
+**Veredito: APROVO.** Medido por `lsof` (assertiva primária) + `curl` (corroboração), nos 3 CLIs,
+para bind padrão (LAN IPv4 e os 2 endereços IPv6 desta máquina — inalcançável nos 3 casos) e para
+`--host 0.0.0.0` (controle positivo — exposto e alcançável, como esperado, com aviso
+byte-idêntico). Gate independente `check-serve-address-parity.sh`, rodado por mim: 10/10 OK.
+
+**Achados registrados como risco residual aceito, não bloqueadores:**
+1. O aviso de exposição vai só para stderr — não protege uso não-interativo (Makefile/Dockerfile/
+   CI). Verifiquei que hoje **não há** nenhuma ocorrência de `--host` não-loopback nem de
+   `TRACKFW_HOST`/config `host` em lugar nenhum do repo — o único jeito de expor é digitar a flag.
+2. `internal/server/server.go` (pacote morto, zero importadores, confirmado por
+   `go tool nm` — 0 símbolos linkados vs 52 de `internal/serve`) ainda tem o bind wildcard original
+   da regressão desta REQ. Recomendo remoção em limpeza futura.
+3. Flakiness transitória e não reproduzida: uma rodada do bind exposto do Node deu `curl`/`nc`
+   `000` na LAN enquanto `lsof` já mostrava `*:PORT (LISTEN)` — processo novo na mesma condição
+   respondeu 200 de primeira, 3 tentativas seguintes. Registrado, não muda o veredito.
+
+**Observação de definition-of-done (não é meu escopo corrigir):** ML-1B está marcado
+`✅ Concluído` no roadmap mas as 6 caixas de critério de aceite do próprio ML-1B continuam
+`- [ ]` — só as do ML-1A estão marcadas. Sinalizo para o `trackfw_architect` fechar antes de mover
+o roadmap para `done/`.
+
+**Escreveu:** apêndice em `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md` ("Apêndice
+— Barreira ML-2A"). Nenhum código de produto alterado. Nenhum commit/push (autoridade exclusiva do
+`trackfw_architect`).
+
+## Sessão 2026-08-16 (cont.) — Zeus — ML-1C auditado, barreira do Hades e Wave 3
+
+**ML-1C.** O agente morreu no meio (máquina dormiu) deixando o roadmap **já marcado como
+concluído**. Não aceitei a marcação — auditei o estado real. Rodei o gate novo na árvore limpa
+(10/10) e, o que importa de verdade, **sabotei eu mesmo** o bind do Python de volta para
+`server_cls(("", port), ...)`:
+
+```
+FAIL [default-bind/py]: expected lsof to show 127.0.0.1:46202, got '*:46202'
+FAIL [host-ipv6-loopback/py]: expected [::1]:46205, got '*:46205'
+```
+
+O gate pega a vulnerabilidade original. Não é verde por vacuidade. `make quality` exit 0, 120
+cenários (118 pré-rebase + 1 do #181 + 1 deste ML). Numeração do Cenário 59 correta — o 58 veio da
+`main`.
+
+Detalhe bom do script: sem `lsof`, ele **pula** a exclusão de wildcard em vez de passar em silêncio.
+Nesse modo o braço de detecção do Cenário 59 deixaria de reprovar e a falsificação ficaria vermelha
+— a vacuidade se auto-denuncia em vez de virar falso verde.
+
+**Barreira ML-2A — Hades APROVA.** Confirmou por conexão real, com **controle positivo**
+(`--host 0.0.0.0` fica alcançável), que é o que impede a medição de ser vacuosa. Sem vetor de
+exposição acidental: nenhuma ocorrência não-loopback em Makefile/Dockerfile/CI/docs/templates, e
+nem env (`TRACKFW_HOST`) nem `trackfw.yaml` alimentam o `--host`. Risco residual aceito e nomeado:
+o aviso só vai a stderr, então não protege uso não-interativo.
+
+Ele também pegou que as 6 caixas do ML-1B seguiam `- [ ]` embora o ML estivesse ✅ — fechei.
+
+**Wave 3 (ML-3A), achado da barreira.** `internal/server/server.go` era pacote morto carregando
+`addr := fmt.Sprintf(":%d", port)` + `ListenAndServe` — exatamente o defeito que esta REQ elimina.
+Verifiquei antes de agir: zero referências, 0 símbolos no binário (contra 52 de `internal/serve`),
+e `mv internal/server /tmp && go build ./...` passa. Removido.
+
+Fiz eu mesmo em vez de despachar: é `git rm -r` de diretório sem importadores — operação de Git, não
+escrita de código. Se exigisse mover ou reescrever uma linha iria para o `apolo-tf`.
+
+Não é explorável hoje, mas encerrar uma REQ de exposição deixando uma cópia wildcard do defeito na
+árvore é fechamento ruim: quem reativar o pacote reintroduz o bug e **nenhum gate pega**, porque o
+código nunca executa.
+
+**Todos os ACs fechados (AC1–AC8). Falta só o PR.**

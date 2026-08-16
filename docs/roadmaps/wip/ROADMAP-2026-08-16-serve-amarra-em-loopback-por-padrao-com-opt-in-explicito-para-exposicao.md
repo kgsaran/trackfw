@@ -132,12 +132,12 @@ correto), script de paridade novo ou existente, `scripts/check-gates-falsify.sh`
 - **Aviso deve continuar byte-idêntico** nos 3 depois da mudança (AC4 já fecha hoje — não quebre).
 
 **Critérios de aceite:**
-- [ ] `--host ::1` → `lsof` mostra `[::1]` e `curl http://[::1]:<porta>/` devolve **200** nos 3.
-- [ ] Padrão sem flags → `lsof` mostra `127.0.0.1` e `curl localhost` devolve **200** nos 3 (não-regressão).
-- [ ] `--host 192.168.x.y` → URL impressa contém o IP, não `localhost`, nos 3.
-- [ ] Go imprime a linha de listening **uma vez** e **não** a imprime quando o bind falha.
-- [ ] Aviso de exposição segue byte-idêntico nos 3 (`diff` das saídas reais, não do fonte).
-- [ ] Evidência de `lsof`/`curl` colada no relatório para **cada** CLI.
+- [x] `--host ::1` → `lsof` mostra `[::1]` e `curl http://[::1]:<porta>/` devolve **200** nos 3.
+- [x] Padrão sem flags → `lsof` mostra `127.0.0.1` e `curl localhost` devolve **200** nos 3 (não-regressão).
+- [x] `--host 192.168.x.y` → URL impressa contém o IP, não `localhost`, nos 3.
+- [x] Go imprime a linha de listening **uma vez** e **não** a imprime quando o bind falha.
+- [x] Aviso de exposição segue byte-idêntico nos 3 (`diff` das saídas reais, não do fonte).
+- [x] Evidência de `lsof`/`curl` colada no relatório para **cada** CLI.
 
 ### ML-1C — Gate de paridade do endereço padrão + cenário P4
 **Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
@@ -168,12 +168,55 @@ wildcard bind (`server_cls(("", port), ...)`) — a regressão original desta RE
 ## Wave 2 — Barreira
 
 ### ML-2A — `hades-tf`: confirmar que a exposição fechou
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído — **veredito: APROVA**, com 1 achado não-bloqueante (vira ML-3A)
+· **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** seção apensada a `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md`
+(apêndice "Barreira ML-2A" — 192 linhas acrescentadas, zero removidas: conferido que apensou)
 **Ações:** confirmar **por conexão real** que o padrão não é alcançável fora da máquina nos 3 CLIs;
 avaliar se o `--host` cria caminho de exposição acidental (ex.: alguém colocar em script ou config
 versionada); e verificar se **outro** componente do produto abre porta (o `serve` era o suspeito
 óbvio — procurar os não óbvios). **Veredito explícito; bloquear é saída legítima.**
+
+**Resultado (verificado pelo arquiteto, não só relatado):**
+1. Padrão inalcançável de fora — confirmado por conexão real nos 3, com **controle positivo**
+   (`--host 0.0.0.0` fica alcançável), que é o que impede a medição de ser vacuosa.
+2. `--host` não cria exposição acidental hoje: nenhuma ocorrência não-loopback em
+   Makefile/Dockerfile/CI/docs/templates, e **não há** vetor por env (`TRACKFW_HOST`) nem por
+   `trackfw.yaml`. Risco residual aceito: o aviso só vai a stderr e não protege uso não-interativo.
+3. Nenhum outro componente abre porta — **exceto** o achado do ML-3A abaixo.
+
+---
+
+## Wave 3 — Achado da barreira
+
+### ML-3A — Remover `internal/server/`, pacote morto com o bind wildcard original
+**Status:** ✅ Concluído · **Executor:** `trackfw_architect`
+**Arquivos:** `internal/server/server.go` (remoção do diretório).
+
+> **Por que não vai para o `apolo-tf`:** a ação é um `git rm -r` de um diretório sem importadores e
+> sem símbolos no binário — operação de Git, que é autoridade exclusiva do arquiteto, e não escrita
+> de código de produto. Despachar um especialista para rodar um comando seria cerimônia sem ganho.
+> Se a remoção exigisse mover ou reescrever qualquer linha, iria para o `apolo-tf`.
+
+**Por que entra nesta REQ e não vira débito:** o arquivo carrega
+`addr := fmt.Sprintf(":%d", port)` + `http.ListenAndServe` — **exatamente** a vulnerabilidade que
+esta REQ existe para eliminar. Não é explorável hoje, mas encerrar uma REQ de exposição deixando uma
+cópia wildcard do defeito na árvore é fechamento ruim: quem reativar o pacote reintroduz o bug, e
+**nenhum gate pega**, porque o código nunca executa.
+
+**Verificado pelo arquiteto antes de despachar (não é hipótese):**
+```
+grep internal/server (go|sh|md|yml|Makefile)  -> zero referencias
+go tool nm bin/trackfw | grep internal/server -> 0 simbolos   (internal/serve -> 52)
+mv internal/server /tmp && go build ./...     -> BUILD OK
+```
+
+**Ação:** `git rm -r internal/server/` — nada mais. Sem refactor, sem mover código para outro lugar.
+
+**Critérios de aceite:**
+- [x] `internal/server/` não existe mais.
+- [x] `go build ./...` e `go vet ./...` limpos.
+- [x] `make quality` verde (exit 0, 120 cenários).
 
 ---
 

@@ -399,3 +399,195 @@ equivalente ao Node/Python; (c) corrigir `pypi/trackfw/commands/serve.py:104` pa
 `str(OSError)` na resposta HTTP (mensagem genérica, como já faz o Go/Node) — parte do mesmo REQ do
 item 1-bis; (d) remover o código morto `internal/server/server.go`, não referenciado por nenhum
 comando, para não confundir auditorias futuras.
+
+---
+
+## Apêndice — Barreira ML-2A: confirmação de que o achado 1-bis fechou
+
+> Data: 2026-08-16 | Autor: Hades (Security) | Branch:
+> `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao` (sem commits deste
+> agente) | Roadmap:
+> `docs/roadmaps/wip/ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md`
+> | REQ: `docs/req/REQ-2026-08-16-trackfw-serve-escuta-em-todas-as-interfaces-sem-autenticacao-expondo-a-cadeia-de-governanca-na-rede.md`
+
+Este apêndice cobre o ML-2A: confirmar por conexão real que o achado 1-bis acima (Go/Python
+bindando `trackfw serve` em todas as interfaces) fechou nos 3 CLIs, avaliar se o `--host` opt-in
+introduzido para corrigi-lo abre um caminho de exposição acidental, e varrer o produto por outro
+componente que abra porta. **Tudo abaixo, salvo indicação contrária, foi medido subindo o processo
+e conectando nele — não inferido do diff ou do relatório do arquiteto/agente de implementação.**
+
+### 1. Padrão não é alcançável de fora da máquina — medido, não lido
+
+Build usado: `go build -o /tmp/tfw ./cmd/trackfw` (nenhum código de produto alterado). IP de LAN
+desta máquina: `192.168.3.137` (`ifconfig en0`).
+
+**Rodada 1 — bind padrão, sem `--host`, portas 47001/47002/47003:**
+
+```
+$ lsof -nP -iTCP:47001 -sTCP:LISTEN   # Go
+tfw  ... TCP 127.0.0.1:47001 (LISTEN)
+$ lsof -nP -iTCP:47002 -sTCP:LISTEN   # Node
+node ... TCP 127.0.0.1:47002 (LISTEN)
+$ lsof -nP -iTCP:47003 -sTCP:LISTEN   # Python
+Python ... TCP 127.0.0.1:47003 (LISTEN)
+
+curl localhost   -> go 200 / node 200 / py 200
+curl LAN (192.168.3.137) -> go 000 / node 000 / py 000
+```
+
+`lsof` é a asserção primária (mostra o endereço em que o socket está de fato ligado,
+independentemente do caminho de rede); `curl` na LAN corrobora, mas **não é a única evidência** —
+ver a ressalva sobre um falso-negativo transitório no item 1c abaixo, que é exatamente por que não
+confio em `curl` sozinho.
+
+**Rodada 2 — família IPv6, bind padrão, Go, porta 47031:** o padrão é um socket `AF_INET`
+(`net.Listen("tcp", ...)` com host IPv4 `127.0.0.1`), então a inalcançabilidade por IPv6 é
+esperada por construção — testei mesmo assim, para não deixar a alegação "inalcançável de fora"
+restrita a IPv4:
+
+```
+$ lsof -nP -iTCP:47031 -sTCP:LISTEN
+tfw ... TCP 127.0.0.1:47031 (LISTEN)          # nenhum listener IPv6
+$ curl http://[fdc0:83c9:2141:7700:1c93:3ea9:a8cf:2618]:47031/   # endereço IPv6 global da própria máquina
+-> 000
+```
+
+**Rodada 3 — controle positivo, `--host 0.0.0.0`, portas 47011/47012/47013:** prova que o harness
+de medição *detecta* exposição quando ela existe — sem isso, um `000` na rodada 1 não distinguiria
+"bind correto" de "meu curl/rede não está funcionando".
+
+```
+$ lsof -nP -iTCP:47011  # Go
+tfw  ... TCP *:47011 (LISTEN)
+$ lsof -nP -iTCP:47012  # Node
+node ... TCP *:47012 (LISTEN)
+$ lsof -nP -iTCP:47013  # Python
+Python ... TCP *:47013 (LISTEN)
+
+curl LAN (192.168.3.137) -> go 200 / node 200 (após reteste, ver 1c) / py 200
+```
+
+**1c — falso-negativo transitório encontrado e não escondido.** Na primeira rodada de exposição, o
+processo Node especificamente devolveu `curl` `000` e `nc` sem resposta na LAN, **enquanto o
+`lsof` já mostrava `*:47012 (LISTEN)`** — ou seja, um `curl` isolado teria me feito concluir (
+errado) que o Node continuava seguro por padrão mesmo com `--host 0.0.0.0`. Descartei essa
+hipótese porque (a) o mesmo processo respondia 200 via `127.0.0.1` no mesmo instante — não é o
+processo travado — e (b) matar e subir um Node **novo** na mesma exposição (`--host 0.0.0.0`,
+porta 47022) respondeu 200 tanto via loopback quanto via LAN de primeira. Não encontrei causa raiz
+determinística (suspeito de firewall de aplicação do macOS negociando permissão de forma
+assíncrona para um processo Node recém-lançado, mas não provei isso com certeza) — registro como
+uma flakiness observada uma vez, não reproduzida de forma confiável em 3 tentativas subsequentes
+com processos novos, e que **não muda o veredito**: quando reproduzível, o resultado foi sempre
+"exposto quando `--host` não-loopback, bloqueado quando padrão". O ponto prático: **não confiar em
+`curl` sozinho para provar ausência de exposição** — `lsof` (endereço do socket) é a fonte de
+verdade; `curl` é corroboração, sujeita a ruído de rede/firewall que pode mascarar um positivo.
+
+**Gate independente, rodado por mim:** `GO_BIN=/tmp/tfw scripts/check-serve-address-parity.sh` —
+10/10 `OK`, cobrindo bind padrão, `--host ::1` e a URL/aviso de exposição com `--host 0.0.0.0` nos
+3 CLIs, medido por execução real dentro do próprio script (não é reuso do relatório do ML-1C).
+
+**Conclusão do item 1:** confirmado por conexão real — o padrão não é alcançável de fora da
+máquina nos 3 CLIs, para os endereços testados (LAN IPv4, IPv6 global e link-local desta máquina).
+AC1 e AC6 fecham.
+
+### 2. `--host` cria caminho de exposição acidental?
+
+**Varredura do próprio repositório por uso não-loopback de `--host` ou `0.0.0.0`:**
+`grep -rn "\-\-host"` fora de `scripts/check-serve-address-parity.sh`,
+`scripts/check-gates-falsify.sh`, `docs/agents-working-context.md`, o roadmap/REQ desta mudança e
+os testes dos 3 CLIs (`npm/tests/serve_address.test.js`, `pypi/tests/test_serve_address.py`,
+`internal/serve/serve_test.go`) — **nenhuma ocorrência**. Não há Makefile, Dockerfile, CI, doc de
+onboarding ou template de artefato gerado (`discover --init`/`update`) com `--host 0.0.0.0` (ou
+qualquer valor não-loopback) pronto para copy-paste. **Verificado, não inferido**: o `--host`
+também não tem caminho de config/env por trás — `grep` por `TRACKFW_HOST`, `Getenv`,
+`process.env`, `os.environ` em `internal/serve`, `internal/commands/serve.go`,
+`npm/src/commands/serve.js`, `pypi/trackfw/commands/serve.py`, `internal/config`,
+`pypi/trackfw/config.py`, `npm/src/lib/config.js`, e por `host` em `trackfw.yaml`/
+`docs/cli-parity.md` — **zero ocorrências**. Isso importa porque o vetor perigoso de exposição
+acidental não é o flag digitado interativamente (visível em qualquer diff), é um valor
+`serve.host: 0.0.0.0` num `trackfw.yaml` versionado ou uma `TRACKFW_HOST` honrada silenciosamente
+por CI/Docker — **nenhum dos dois existe hoje**. A única forma de expor é escrever `--host` com um
+valor não-loopback, explicitamente, em algum lugar visível em `grep`/diff.
+
+**O aviso em stderr é suficiente como mitigação?** Não sozinho, e digo isso sem enfraquecer o
+veredito de aprovação — é uma nuance sobre o valor da mitigação, não um bloqueador, porque a REQ já
+declara autenticação fora de escopo (ver Notas do roadmap) e o aviso nunca foi proposto como
+controle técnico, só como sinalização. Concretamente: **stderr não protege nenhum dos cenários que
+o brief pede para avaliar.** Um `--host 0.0.0.0` num alvo de `Makefile`, num `CMD`/`ENTRYPOINT` de
+Dockerfile, num step de CI, ou num script chamado de forma não-interativa tem o stderr redirecionado
+para um log que ninguém lê em tempo real — o aviso dispara, mas não há humano ali para vê-lo antes
+do dano. O aviso é útil apenas para quem digita a flag manualmente num terminal interativo, que é
+justamente o caso onde a pessoa **já sabe** que está expondo (o `--host` não é acidental nesse
+caso, é intencional). Ou seja: o aviso mitiga bem o "typo mental" de quem esqueceu o que a flag faz,
+mas não mitiga em nada o cenário de maior probabilidade real — alguém copiar `--host 0.0.0.0` para
+um script versionado. **Isso não é motivo de bloqueio** porque (a) não há hoje nenhum caminho no
+próprio repositório com esse valor (item acima), e (b) autenticação — o controle que resolveria
+isso de verdade — está corretamente declarada fora de escopo desta REQ. É risco residual a
+nomear, não a suavizar.
+
+### 3. Outro componente do produto abre porta?
+
+Varredura dos 3 stacks por primitivas de servidor (`net.Listen`/`ListenAndServe`/`http.Serve` no
+Go; `.listen(`/`createServer` no Node; `HTTPServer`/`socketserver`/`socket.bind` no Python), fora
+de arquivos de teste:
+
+- **Go:** só `internal/serve/serve.go` (o `serve` real, já coberto acima) e
+  `internal/server/server.go:401` — pacote **morto**: `grep -rln
+  '"github.com/kgsaran/trackfw/internal/server"'` em todo o projeto retorna zero importadores, e
+  `go tool nm /tmp/tfw` (binário recém-compilado) confirma por prova de não-vacuidade —
+  `internal/serve\.` aparece 52 vezes no binário, `internal/server\.` aparece **0** vezes. Esse
+  pacote morto ainda tem `addr := fmt.Sprintf(":%d", port)` — o exato padrão da regressão original
+  desta REQ — mas não está linkado no binário publicado; não é um vazamento ativo, é uma armadilha
+  para quem reativar o pacote sem saber que ele nunca foi corrigido. Reitero a recomendação já
+  registrada no corpo principal deste documento: remover `internal/server/server.go` em limpeza
+  futura, para que a próxima varredura não precise reprovar isso de novo.
+- **Node:** único `http.createServer`/`.listen(` do produto é `npm/src/commands/serve.js`, já
+  coberto. Nenhuma outra ocorrência fora de testes.
+- **Python:** único `HTTPServer` do produto é `pypi/trackfw/commands/serve.py`, já coberto.
+  Nenhuma outra ocorrência fora de testes.
+- **Scripts (`scripts/`):** nenhum `nc -l`, `python -m http.server` ou servidor solto — as únicas
+  ocorrências de "listen"/"bind" em `scripts/` são dentro de `check-serve-address-parity.sh` e
+  `check-gates-falsify.sh`, que **invocam** o `serve` real para testá-lo, não abrem porta própria.
+- **Hooks e geradores** (`internal/generators`, `npm/src/generators`, `pypi/trackfw/generators` e
+  os hooks materializados por `discover --init`/`update` em `.claude/`, `.codex/`, etc.): nenhuma
+  ocorrência de `listen`/`createServer`/`HTTPServer`. Os hooks são scripts de guarda
+  (credential-guard, git-branch-guard) que escrevem só em stderr/exit code, não abrem socket.
+- **`site/`** (documentação estática, VitePress): as únicas ocorrências de `createServer`/`listen`
+  estão dentro de `site/.vitepress/dist/assets/chunks/*.js` — bundle de terceiro (framework
+  VitePress), não código do projeto, e é o *client-side* framework bundle, não um servidor.
+
+**Conclusão do item 3:** nenhum componente não óbvio do produto abre porta. O único achado é o
+código morto Go, já reportado no corpo principal deste documento e não novo.
+
+### Observação de definition-of-done, fora do meu escopo de correção
+
+O roadmap marca **ML-1B como `✅ Concluído`**, mas as 6 caixas de critério de aceite do ML-1B (do
+`--host ::1` até "evidência de `lsof`/`curl` colada") continuam **`- [ ]`** no arquivo — só as do
+ML-1A estão marcadas. Meu ML-2A não depende disso (medi tudo de novo, de forma independente), mas
+registro para o arquiteto fechar antes de mover o roadmap para `done/`: por §Definition of Done, a
+pasta/status não fecha com critérios de aceite pendentes no próprio arquivo, mesmo que o trabalho
+esteja de fato feito. Não editei o roadmap — não é meu escopo.
+
+### Veredito
+
+**APROVO.** Os 3 CLIs bindam em loopback por padrão, medido por `lsof` (assertiva primária) e
+corroborado por `curl`, para IPv4 LAN e para os dois endereços IPv6 desta máquina. `--host` é
+opt-in explícito, funciona, e o repositório não contém hoje nenhum caminho — flag, config ou env —
+que exponha por acidente. O gate de paridade `check-serve-address-parity.sh`, rodado por mim de
+forma independente, fecha 10/10.
+
+**Risco residual aceito, explicitado:**
+1. **O aviso de exposição não protege uso não-interativo** (Makefile/Dockerfile/CI) — só quem lê
+   stderr em tempo real se beneficia dele. Aceito porque hoje não há nenhuma ocorrência desse
+   padrão no repositório, e porque o controle que resolveria isso de fato (autenticação) está
+   corretamente fora de escopo desta REQ, não por omissão, mas por decisão declarada.
+2. **Código morto `internal/server/server.go`** ainda contém o padrão de bind exatamente igual à
+   regressão original, sem estar linkado no binário — não é explorável hoje, mas é uma armadilha
+   para reativação futura sem revisão de segurança. Recomendo remoção, não bloqueio.
+3. **Flakiness observada uma vez** no bind exposto do Node via `curl`/`nc` (LAN), não reproduzida
+   em processos novos, com `lsof` mostrando o bind correto o tempo todo — registrado para não
+   esconder um resultado anômalo, não é evidência contra o veredito.
+
+Nenhum dos três é motivo de bloqueio: os dois primeiros são recomendações de limpeza/hardening
+fora do escopo declarado da REQ, o terceiro foi investigado e não reproduzido de forma que
+contradiga a medição principal.
