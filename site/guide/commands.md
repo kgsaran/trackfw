@@ -79,6 +79,31 @@ trackfw configure
 
 ---
 
+## `trackfw help`
+
+**Não** é o `--help` genérico gerado pelo framework de CLI (cobra/commander/argparse) — esse
+continua disponível separadamente em todo comando (`trackfw --help`, `trackfw <comando>
+--help`). `trackfw help` é a superfície explícita de ajuda do projeto: lista os comandos
+disponíveis **e** documenta as chaves de configuração do `trackfw.yaml`.
+
+```bash
+trackfw help              # lista os comandos e todas as chaves de trackfw.yaml
+trackfw help <comando>    # ajuda daquele comando (equivalente a "<comando> --help")
+trackfw help <chave>      # documentação de uma chave de trackfw.yaml (tipo, default, exemplo, impacto)
+```
+
+Sem argumento, a saída tem duas seções: a lista de comandos disponíveis (nome + descrição curta)
+e uma tabela `KEY / DEFAULT / DESCRIÇÃO` com todas as chaves reconhecidas de `trackfw.yaml`
+(`adr_dirs`, `roadmap_namespacing`, `wip_limit`, `rules.*`, `trace_id_field`, etc.).
+
+Com um argumento que casa com o nome de uma chave de configuração, mostra tipo, valor default,
+descrição, um exemplo de uso em YAML e o impacto prático de alterá-la. Com um argumento que casa
+com o nome de um comando, mostra a ajuda desse comando. Um assunto desconhecido — nem comando nem
+chave — sai com código de saída diferente de zero e, quando há um nome próximo o suficiente,
+sugere a correção.
+
+---
+
 ## `trackfw branch new`
 
 Cria uma branch `feat/`, `fix/`, `refactor/`, `chore/` ou `docs/` movendo o gate de governança

@@ -150,6 +150,35 @@ Regra de validação `note_orphan` — notas em `vault/notes/` não referenciada
 | `index.md` | não conta como nota órfã |
 | Detecção de link | aceita `[texto](arquivo.md)` e `[[nome-da-nota]]` |
 
+## i18n locale keys — no orphan keys (ML-2A)
+
+> ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
+
+`errors.notFound` existed in the Node.js and Python locale files
+(`npm/src/i18n/locales/*.json`, `pypi/trackfw/i18n/locales/*.json`) but never in Go's
+(`internal/i18n/locales/*.json`), and had **no consumer in any of the three runtimes** — orphan in
+all three, not just missing in one. Removed from Node.js and Python rather than added to Go: a key
+nobody reads is dead weight, and adding it to Go would have created a third copy of unused
+content.
+
+The removal is scoped to this one key. Auditing all three locale trees during this ML surfaced 31
+further keys that diverge between stacks (present/absent, or textually different) — those are
+**not** touched here; they are tracked by
+`docs/req/REQ-2026-08-16-conformidade-estrutural-e-comportamental-de-i18n-entre-os-tres-clis.md`,
+a REQ of its own. `docs/cli-parity.md` does not otherwise document i18n locale-key parity as a
+contract; this section exists only to record that `errors.notFound` specifically is gone from all
+three, not to claim the broader 31-key set is resolved.
+
+## Site documentation drift (ML-2B) — out of this document's contract, registered anyway
+
+`site/guide/commands.md` and `site/en/guide/commands.md` are pt/en mirrors of the same command
+reference; `docs/cli-parity.md` does not contract them, because this document pins **CLI
+behavior**, not documentation prose. ML-2B (same roadmap as the other items in this section)
+removed `trackfw plugins` (no longer exists, ADR-2026-08-15) and added `changelog` and `commit`
+(existed but were undocumented) to both files, verified against the real `trackfw --help` output
+rather than `README.md`. Registered here only so the cleanup has a paper trail; it is not a new
+clause of the parity contract.
+
 ## Canonical governance references
 
 REQ frontmatter fields `adr:` and `roadmap:` use the same canonical reference
@@ -459,6 +488,68 @@ three runtimes:
 Neither is a parity gap: all three runtimes agree, and neither is reachable
 through the public `--scope` flag.
 
+## `update` refusing unmanaged content — message names the remedy (item 8, ML-2C)
+
+> ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
+
+**Behavior is unchanged and intentional, not a bug.** `update`'s preflight refuses to touch bytes
+trackfw did not write, deliberately **ignoring `--force`** — overwriting a file the user created
+or hand-edited outside of trackfw would be destructive. This applies even when the destination
+path matches a claimed artifact but the on-disk bytes match no known trackfw template. Only
+`install --force` may adopt/overwrite unmanaged content; `update --force` never does, by design.
+
+The defect fixed here was diagnosability, not the refusal itself: the error named no remedy, and
+`--force`'s own `--help` text promised "replace or remove modified managed artifacts" — leading a
+user straight into trying the operation that had just failed.
+
+**Message, byte-identical in all three runtimes:**
+
+```
+unmanaged artifact "<destination>" does not match a trackfw template — trackfw did not write these bytes.
+Adopt it with: trackfw <kind> install --force --items <item> --targets <target> --scope <scope>
+```
+
+`<kind>`, `<item>`, `<target>`, `<scope>` are filled in from the plan's own `Claim` for that
+artifact — never a generic placeholder. Canonical source:
+`internal/integrations/manager.go:unmanagedArtifactError` (Go); mirrored in
+`npm/src/integrations/manager.js:189` and `pypi/trackfw/integrations/manager.py:305-310`.
+
+**`--force` help text**, corrected to stop over-promising what `update --force` does:
+
+```
+Replace a modified managed artifact; never adopts unmanaged bytes — use 'install --force' for that
+```
+
+**Non-regression:** `update --force` still refuses unmanaged bytes — never silently adopts them.
+Covered per-stack by `TestManagerUpdateForceNeverAdoptsUnknownUnmanagedContent` (Go), `"install
+force replaces unknown unmanaged content while update force never does"` (Node.js), and
+`test_update_force_never_claims_unknown_unmanaged_file` (Python), plus an end-to-end scenario in
+`check-gates-falsify.sh` that runs the real repro and asserts `exit != 0`.
+
+**Root cause investigated, fix deferred.** The artifacts end up unmanaged-on-disk because
+`Manager.mutate()` writes every batch's bytes to disk **before** persisting the manifest — an
+interruption between the two loops leaves correctly-written files with no manifest entry. This is
+a pattern, not an isolated incident. Fixing it needs detection (a `validate`/`doctor` rule) and/or
+reordering persistence — out of scope for this ML; see
+`vault/notes/integrations-manifest-write-precedes-persist-janela-de-registro-parcial-2026-08-16.md`.
+
+**Parity gap, not yet closed by a gate.** The byte-identity claim above was verified by reading
+the source of the three implementations, **not** by a gate that runs all three CLIs and diffs
+their real stdout/stderr for this message. The three per-stack tests listed above assert the
+message *within* each runtime; none of them assert equality *across* runtimes. Until such a gate
+exists, a future edit to only one of the three copies would go undetected by `make quality`.
+Recommendation, not implemented here: add a scenario to a `check-integrations-parity.sh`-style
+script (or extend an existing one) that reproduces the unmanaged-artifact case against all three
+binaries and three-way-diffs the message, following the same pattern already used by
+`check-ship-parity.sh` and `check-branch-new-parity.sh`.
+
+A related, still-open divergence found during the same investigation but **not** fixed here: the
+error-wrapper prefix in `internal/integrations`/its Node.js/Python equivalents also diverges — Go
+uses `Error:`, Python uses `trackfw agents update:`, and Node.js prints the raw source line of the
+`throw` (a stack-trace leak on an expected error path). Same class of problem as the `ship`
+stream/prefix divergence fixed above, but only `ship` was fixed by this roadmap; this one remains
+open for a future ML.
+
 ## Non-interactive `--targets` error message (pre-existing, not part of the
 install-scope contract)
 
@@ -702,6 +793,35 @@ still ramping up governance — it does not mean "ship without governance artifa
 **Impact on users:** a team running `governance_mode: lenient` may see `trackfw validate`
 pass (exit 0) but `trackfw ship` abort. This is intentional. The error message from step
 2 explicitly mentions lenient mode to prevent confusion.
+
+### Step 2 governance check — shared implementation, byte-identical output (ML-1B)
+
+> ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
+
+`ship`'s step 2 (`CheckShipGovernance` in Go, `checkShipGovernance`/`check_ship_governance` in
+Node.js/Python) no longer contains its own copy of the `branch_has_wip_roadmap` matching logic.
+It delegates to the exact same validator functions `trackfw validate` and `trackfw branch new`
+already use — `validator.validateBranchHasWIPRoadmap` / `validator.validateWIPHasREQ` in Go,
+their Node.js (`npm/src/validator/index.js`) and Python (`pypi/trackfw/validator.py`)
+equivalents. Before this fix, Node.js and Python reimplemented the rule from scratch, with their
+own wording **and without ever scanning `done/`** — a branch with a matching roadmap only in
+`done/` would pass in Go and incorrectly fail in Node.js/Python. This was a behavioral
+divergence, not only a wording one.
+
+**Error stream and prefix.** The message and stream are byte-identical across the three
+runtimes: **stderr**, prefixed with `Error: `. This was already Go's actual behavior without any
+code change — `internal/commands/root.go`'s `Execute()` wrapper prints `Error: <msg>` to stderr
+for any `RunE` that does not opt out via `cmd.SilenceErrors` (unlike `branch.go`/`commit.go`,
+which deliberately silence it to print without the prefix), and `ship.go` never set
+`SilenceErrors`. The fix was entirely on the Node.js/Python side: `runShip`/`run_ship` gained a
+`writeErr`/`write_err` parameter (default: writes `Error: <msg>\n` to stderr), used only for the
+final one-line summary of each abort path; the detailed body (violation list, remediation hints,
+the `Note: ...` block) still goes to **stdout** via `writeln`, exactly as Go already did through
+`deps.out`.
+
+Covered by `scripts/check-ship-parity.sh` (`feat-still-gated-non-regression` and
+`invalid-branch-vocabulary` scenarios), which now runs a full three-way `diff -u` of stdout
+**and** stderr for these cases, not a substring/exit-code-only assertion.
 
 ### Usage silencing
 
@@ -3150,15 +3270,22 @@ this is `root.Commands()` filtered to exclude `"completion"` by name, matching
 the fixed list that Node.js (`program.commands`) and Python
 (`subparsers.choices`) already have.
 
-### Pre-existing divergence — out of scope, not touched here
+### Bare invocation (`trackfw` with no argument) — unified
 
-`trackfw` **with no argument at all** behaves differently across runtimes: Go
-exits `0` and prints help to stdout; Node.js's default commander behavior
-exits `1` and prints help to stderr. This is a commander default (root command
-with no `.action()`), unrelated to plugins or to the unknown-command path
-above, and was already documented as a known gap when the plugin subsystem was
-removed (commit `f9202f4`). It is intentionally **not** "fixed" here — it
-needs its own REQ.
+`trackfw` **with no argument at all** behaves identically across the three runtimes: **exit
+`0`**, help printed to **stdout**, **stderr empty**. This used to diverge — Go exited `0`
+with help on stdout while Node.js's default commander behavior exited `1` with help on
+stderr — and was documented as a known gap when the plugin subsystem was removed (commit
+`f9202f4`).
+
+**Decision (ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md,
+ML-1C):** Go's behavior is canonical — a bare `trackfw` invocation is a legitimate request for
+help, not an error, so it exits `0` with the help text on stdout. Node.js's default commander
+root-command-with-no-`.action()` behavior was overridden to match.
+
+Non-regression, measured alongside the fix: an actually unknown command (e.g. `trackfw zzz`)
+is unaffected by this change and keeps the contract from "Unknown top-level command — canonical
+message" above — **exit `1`**, message on **stderr**, identical across the three runtimes.
 
 
 ## Detecção de adulteração do credential-guard: as duas regras novas, e o que elas não veem (ROADMAP-2026-08-12-deteccao-de-adulteracao)
@@ -3337,8 +3464,12 @@ dos 7 runtimes sem precisar de uma variante de script por runtime:
    espírito de `credentialGuardDetectionCore`).
 3. **Texto cru via stdin**, ou `$TRACKFW_GIT_COMMAND` como último fallback.
 
-Padrão casado: `^git (commit|push|checkout -b)\b`, aceitando flags globais antes do subcomando
-(`git -C . commit`, `git --no-pager push`). Sem match: allow silencioso (`exit 0`, sem output).
+Padrão casado: `^git (commit|push|checkout -b|switch -c)\b`, aceitando flags globais antes do
+subcomando (`git -C . commit`, `git --no-pager push`). `switch -c`/`-C`/`--create` (a forma
+alternativa a `checkout -b` para criar branch — item 2 do
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md,
+ML-1A) é reconhecida varrendo **todos** os tokens após o subcomando `switch`, não só o primeiro,
+cobrindo `git switch --track -c feat/x`. Sem match: allow silencioso (`exit 0`, sem output).
 
 Com match, o script emite **os dois formatos de decisão simultaneamente** — `{"decision":"block",
 "reason":"..."}` no stdout (consumido por Claude/Gemini) **e** `exit 2` (consumido por
@@ -3351,6 +3482,7 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 | Subcomando bloqueado | Orientação |
 |---|---|
 | `checkout -b` | `trackfw branch new <type>/<slug>` |
+| `switch -c`/`-C`/`--create` | `trackfw branch new <type>/<slug>` |
 | `commit` | `trackfw commit -m '<mensagem>'` (comando novo, Wave 2 deste roadmap) |
 | `push` | `trackfw ship` |
 
@@ -3401,12 +3533,29 @@ padrão heredoc (`done <<EOF...EOF`) que o Go já usava, evitando o subshell. Ve
 `git-branch-guard-pipe-into-while-loses-return-status-2026-08-14.md` e
 `git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14.md`.
 
-**Limitação residual conhecida, não resolvida (documentada, não é regressão):** o parser não é um
-shell completo — um segmento cuja primeira palavra após um separador real for literalmente `git`
-ainda pode gerar falso positivo se esse texto estiver dentro de uma string entre aspas que contenha
-um desses separadores (ex.: `;` dentro de uma mensagem de commit citando um exemplo com múltiplos
-comandos git). Nenhum runtime tem garantia hermética documentada (mesma ressalva já registrada na
-REQ vinculada).
+### Segmentação quote-aware — resolve o falso-positivo de linha de mensagem (ML-1A, 2026-08-16)
+
+A limitação acima **foi resolvida**: `match_subcommand` passou a segmentar o comando através de
+`quote_aware_split` (scanner char-a-char em `awk`) + `strip_heredoc_bodies`, em vez do `sed` cego
+por separador. `;`/`&&`/`||`/`|`/quebra-de-linha deixam de ser tratados como separador de comando
+**enquanto dentro de uma string entre aspas simples ou duplas**, e o corpo de blocos heredoc é
+removido antes da segmentação — cobrindo exatamente o caso antes documentado como limitação (linha
+de mensagem de commit, ou tabela em texto, que **começa** com `git <sub>` depois de uma quebra de
+linha real dentro de uma string citada ou de um heredoc). Ver
+`vault/notes/git-branch-guard-quote-aware-segmentation-2026-08-16.md` e
+`vault/notes/git-branch-guard-falso-positivo-em-linha-de-mensagem-de-commit-2026-08-16.md`.
+
+**O que continua garantido, não regredido:** aspas não fechadas até o fim da entrada nunca
+"vazam" o texto seguinte como comando novo (mesma semântica do shell real); um heredoc mal-formado
+(sem linha terminadora) devolve o texto original intocado, preservando a segmentação de linha real
+— lado seguro, mais restritivo é preferível a esconder um comando atrás de um heredoc quebrado;
+um separador real **fora** de aspas, mesmo logo após uma aspa de fechamento (`git commit -m "x";
+git push`), continua sendo tratado como separador e o `push` continua bloqueado.
+
+Cenários de falsificação novos (baseline + detecção) provando os dois lados — falso-positivo
+eliminado e bloqueio real preservado — estão nos Cenários 60/61 de `scripts/check-gates-falsify.sh`.
+Nenhum runtime tem garantia hermética de shell completo (o parser continua sendo um scanner, não um
+interpretador de shell); essa ressalva geral permanece registrada na REQ vinculada.
 
 ### Gate de paridade do `trackfw commit` (`scripts/check-commit-parity.sh`, ML-4A)
 

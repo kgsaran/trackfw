@@ -34,13 +34,13 @@ referência em `scripts/` **mais** validadores de integridade. Mudança no match
 todas, senão `trackfw validate` acusa divergência.
 
 ## Acceptance Criteria
-- [ ] AC1 — Itens 1 e 2 (guard) corrigidos, com **cenário de falsificação** conforme P4 do
+- [x] AC1 — Itens 1 e 2 (guard) corrigidos, com **cenário de falsificação** conforme P4 do
       `ADR-2026-07-26-principios-de-design-de-gates-verificaveis`.
-- [ ] AC2 — Itens 3, 5 e 7 (divergências entre CLIs) corrigidos **e cobertos por paridade**, para
+- [x] AC2 — Itens 3, 5 e 7 (divergências entre CLIs) corrigidos **e cobertos por paridade**, para
       não reaparecerem.
-- [ ] AC3 — Itens 4 e 6 (documentação) atualizados; ADR corrigido por **emenda**, nunca reescrita.
-- [ ] AC4 — `make quality` verde; `trackfw validate` sem novas violações.
-- [ ] AC5 — Qualquer item que não for corrigido é **declarado** como não-será-corrigido, com motivo.
+- [x] AC3 — Itens 4 e 6 (documentação) atualizados; ADR corrigido por **emenda**, nunca reescrita.
+- [x] AC4 — `make quality` verde; `trackfw validate` sem novas violações.
+- [x] AC5 — Qualquer item que não for corrigido é **declarado** como não-será-corrigido, com motivo.
 
 ---
 
@@ -69,8 +69,9 @@ todas, senão `trackfw validate` acusa divergência.
 - [x] `git commit`/`git push`/`checkout -b` reais **continuam bloqueados** — não-regressão explícita.
 - [x] As 3 cópias do script (gerador Go, espelhos Node/Python) e a de referência em `scripts/`
       permanecem **idênticas**; `trackfw validate` não acusa divergência de integridade.
-- [x] Cenários de falsificação novos, com baseline e detecção (Cenários 58/59 em
-      `scripts/check-gates-falsify.sh`).
+- [x] Cenários de falsificação novos, com baseline e detecção — **Cenários 60 e 61** em
+      `scripts/check-gates-falsify.sh`. Renumerados de 58/59 no rebase de 2026-08-16: a `main` já
+      ocupava o 58 (vazamento de stack no Node, #181) e o 59 (loopback do `serve`, #182).
 
 **Nota de execução:** foram encontradas mais 2 cópias do template do guard além das listadas nos
 "Arquivos" (`pypi/trackfw/validator.py::_GIT_BRANCH_GUARD_SCRIPT_REFERENCE` e
@@ -150,11 +151,26 @@ nenhum.
    mensagem, e o escopo muda.
 
 **Critérios de aceite:**
-- [ ] Mensagem nomeia o remédio e é byte-idêntica nos 3 CLIs.
-- [ ] Não-regressão: `update` **continua recusando** bytes unmanaged mesmo com `--force` — a
-      correção é de texto, **não** de comportamento.
-- [ ] Conclusão da investigação registrada: caso isolado ou padrão que exige detecção.
-- [ ] `make quality` verde.
+- [x] Mensagem nomeia o remédio e é byte-idêntica nos 3 CLIs. Conferido no fonte dos 3
+      (`manager.go:641`, `manager.js:326`, `manager.py:305-310` — no Python é concatenação
+      multilinha, que um `grep` de uma linha faz parecer truncada).
+- [x] Não-regressão: `update` **continua recusando** bytes unmanaged mesmo com `--force`. Coberto
+      por teste nos **3** stacks, todos verdes no `make quality`:
+      `TestManagerUpdateForceNeverAdoptsUnknownUnmanagedContent` (Go) ·
+      `install force replaces unknown unmanaged content while update force never does` (Node) ·
+      `test_update_force_never_claims_unknown_unmanaged_file` (Python). Somado ao teste
+      end-to-end do Cenário 58, que roda o repro real e afirma `exit != 0`.
+- [x] Conclusão da investigação registrada: **é padrão, não caso isolado** — janela de gravação
+      parcial em `Manager.mutate()`. Nota de vault criada; correção exige detecção e ficou
+      **fora** deste roadmap (vira o `doctor`).
+- [x] `make quality` verde.
+- [x] Ação 2 (help do `--force`) conferida por execução: `replace a modified managed artifact;
+      never adopts unmanaged bytes — use 'install --force' for that` — não promete mais o que não faz.
+
+> **Lacuna registrada, não corrigida aqui:** a identidade byte-a-byte da mensagem entre os 3 foi
+> verificada por leitura do fonte, **não** por um gate que compare as três saídas reais. Os testes
+> existentes afirmam o comportamento por stack, não a paridade entre stacks. Fica como observação
+> para o ML-3A decidir se vira contrato em `cli-parity.md`.
 
 
 ---
@@ -175,7 +191,24 @@ nenhum.
 ## Wave 3 — Consolidação (sequencial)
 
 ### ML-3A — `docs/cli-parity.md` + emenda ao ADR (itens 4 e consolidação)
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` para `cli-parity.md`; **emenda do ADR é do arquiteto**
+**Status:** ✅ Concluído — auditado pelo arquiteto · **Agente:** `apolo-tf` (`cli-parity.md` + site);
+**Emenda 1 do ADR escrita pelo arquiteto**
+
+**Evidência da auditoria (verificada por execução própria, não por aceite do relatório):**
+```
+guard, prosa com separador   './scripts/trackfw-git-branch-guard.sh "trackfw commit -m \"veja: git status; git push...\""' -> exit 0
+guard, comando real          'git commit -m "x"; git push'  -> exit 2
+guard, git switch -c         'git switch -c nova'           -> exit 2
+```
+As duas remoções feitas no `cli-parity.md` (item 7 e a limitação residual do guard) descrevem
+divergências que de fato **deixaram de existir** — conferido acima, não apenas relatado.
+
+**Emenda 1 ao ADR do `ship`** (emenda, nunca reescrita — o ADR é aceito) registra o que mudou desde
+2026-07-26, tudo medido no binário: tipos de branch passaram a incluir `chore|docs`; o gate tem duas
+isenções novas (branch `chore/docs` e mudança doc-only); e **o gate aceita roadmap em `wip/` ou
+`done/`**, embora o `--help` e a mensagem de erro digam só `wip/` — divergência registrada, não
+corrigida (é string de usuário nos 3 CLIs). Também documentados `--no-pr`, o passo 4 bloqueante e o
+contorno de `reset --soft` para empurrar trabalho já commitado.
 **Ações:**
 1. `docs/cli-parity.md`: registrar as divergências **eliminadas** nas Waves 1 e 2 — e **remover** as
    que estavam documentadas como conhecidas e deixaram de existir.
@@ -187,6 +220,23 @@ nenhum.
    aceito.
 **Aceite:** `docs/cli-parity.md` não descreve como conhecida nenhuma divergência já corrigida;
 ADR emendado com data e motivo.
+
+---
+
+## Declaração de não-correção (AC5)
+
+Itens tocados por esta REQ que **não** foram corrigidos aqui, cada um com motivo e destino. Nada
+nesta lista é omissão silenciosa.
+
+| o quê | por que não aqui | destino |
+|---|---|---|
+| **31 chaves de i18n divergentes** entre os 3 CLIs | O ML-2A corrigiu a chave órfã e, ao varrer o resto, expôs problema estrutural: a **saída** diverge, não só a contagem de chaves. Corrigir exige mudar strings de usuário nos 3 CLIs — escopo maior que higiene. | `REQ-2026-08-16-conformidade-estrutural-e-comportamental-de-i18n-entre-os-tres-clis.md` |
+| **`trackfw help <chave>` diverge no `Impact:`** | Achado pelo `apolo-tf` no ML-3A, confirmado por execução pelo arquiteto. Em `roadmap_dir` os **três** CLIs dizem coisas diferentes sobre o mesmo campo. Mesma classe do item acima. | Registrado na mesma REQ de i18n |
+| **Janela de gravação parcial em `Manager.mutate()`** | Causa raiz do bug do CMDB. Os bytes de todo o lote são escritos antes de qualquer manifest ser persistido; interrupção entre os dois laços deixa arquivo sem registro. Corrigir exige **detecção** e/ou reordenar persistência — mudança de comportamento, não de texto. | Vira o comando `doctor` (REQ ainda não criada) |
+| **Wrapper de erro divergente no `integrations`** | Go usa `Error:`, Python usa `trackfw agents update:`, Node vazava a linha do `throw`. O vazamento do Node foi resolvido pelo handler global do #181; **a divergência de prefixo permanece**. | Mesma classe do item 3, corrigido só para o `ship` — fica para a REQ de i18n/saída |
+| **Mensagem de artefato unmanaged sem gate de paridade** | A byte-identidade entre os 3 está provada por **leitura do fonte**; os testes afirmam comportamento por stack, não paridade entre stacks. Lacuna registrada em `cli-parity.md`. | Recomendado gate no estilo `check-ship-parity.sh` — não criado aqui |
+| **`ship` diz `wip/` mas aceita `done/`** | Mensagem de erro e `--help` mais estritos que o código. Corrigir é mudar string de usuário nos 3 CLIs. | Emenda 1 do ADR do `ship` registra; sem REQ ainda |
+| **`ship` não tem modo push-only** | O comando acopla commit+push e exige algo staged; empurrar trabalho já commitado exige `reset --soft` como contorno. Funciona, mas é contorno. | Questão aberta na Emenda 1 do ADR |
 
 ---
 

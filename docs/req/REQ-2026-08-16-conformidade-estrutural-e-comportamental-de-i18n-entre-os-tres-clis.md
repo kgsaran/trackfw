@@ -87,6 +87,30 @@ caminho feliz e deixa passar a divergência de texto.
       **cenário de falsificação** conforme P4 do `ADR-2026-07-26-principios-de-design-de-gates-verificaveis`.
 - [ ] **AC6** — `make quality` verde.
 
+### Achado adicional — 2026-08-16: `trackfw help <chave>` diverge no campo `Impact:`
+
+Encontrado pelo `apolo-tf` no ML-3A da REQ de higiene e **confirmado por execução pelo arquiteto**.
+É a mesma classe do caso acima — saída de usuário divergente — e não estava coberto:
+
+```
+$ trackfw help wip_limit
+GO      Impact:  Aumentar reduz a frequência de bloqueio; diminuir exige mais disciplina.
+NODE    Impact:  Aumentar reduz a frequência de bloqueio.
+PY      Impact:  Aumentar reduz a frequência de bloqueio.
+
+$ trackfw help roadmap_dir
+GO      Impact:  Alterar muda onde o gate procura roadmaps em backlog/wip/blocked/done.
+NODE    Impact:  Subtrees backlog/, wip/, blocked/, done/, abandoned/ são relativos a este diretório.
+PY      Impact:  Afeta listagem, movimentação e validação de roadmaps.
+```
+
+Em `wip_limit` o Go diz mais que os outros dois. Em `roadmap_dir` **os três dizem coisas
+diferentes** — não é omissão, é conteúdo divergente descrevendo o mesmo campo de configuração.
+
+O comando em si e a sugestão para chave inexistente estão idênticos nos 3; a divergência é só no
+corpo do `Impact:`. Como `trackfw help` documenta as chaves do `trackfw.yaml`, três descrições
+diferentes do mesmo campo é pior que uma incompleta: o usuário não tem como saber qual vale.
+
 ## Escopo negativo
 
 - **Não** é para "igualar as 82 chaves" mecanicamente: copiar chave sem consumidor cria órfã nova e
