@@ -160,19 +160,47 @@ outros pontos.
 
 ## Wave 3 — Barreira final
 ### ML-3A — `hades-tf`: confirmar que a superfície sumiu
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído (2026-08-16) — libera; vetor eliminado, não movido · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** seção apensada a `docs/seguranca/2026-08-15-gate-de-plugins-binario.md`
 **Ações:** verificar que não sobrou caminho de download, de `chmod` de terceiro, nem de execução —
 incluindo indiretos (`exec.Command`, `subprocess`, `child_process`) que possam invocar `trackfw-*`.
 Confirmar que o débito D9 do ADR superseded está fechado. **Veredito explícito.**
 
 ### ML-3B — `hefesto-tf`: código órfão
-**Status:** ⬜ Pendente · **Agente:** `hefesto-tf` (`subagent_type: hefesto-tf`)
+**Status:** ✅ Concluído (2026-08-16) — 0 bloqueante, 2 médios → ML-3C · **Agente:** `hefesto-tf` (`subagent_type: hefesto-tf`)
 **Escreve:** `docs/qualidade/2026-08-15-remocao-de-plugins.md`
 **Ações:** procurar helpers, imports, constantes, fixtures e docs que ficaram sem uso após a
 remoção — o risco típico de deleção é deixar meio caminho.
 
 ---
+
+### ML-3C — Corretivo: resíduos da deleção apontados pela barreira
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Dependência:** ML-3A ✅ e ML-3B ✅.
+**Origem:** achados médios do `hefesto-tf`, dois deles corroborados pelo `hades-tf`.
+
+**Arquivos e correções exatas:**
+1. `internal/i18n/locales/en-US.json`, `pt-BR.json`, `es-ES.json` — remover a chave órfã
+   `errors.pluginNotFound` (linha ~64). **Verificado pelo arquiteto:** zero consumidores no Go, e
+   Node e Python **já removeram** as suas nesta mesma branch. É assimetria entre os 3 CLIs, criada
+   pela paralelização da Wave 1.
+2. `pypi/trackfw/thirdparty/fetch.py:32` — comentário cita *"deliberately smaller than the plugin
+   binary download cap"*, um teto que não existe mais. O equivalente em Go e o docstring do topo do
+   próprio arquivo já foram corrigidos; esta linha escapou. **Apontado pelos dois auditores.**
+3. `internal/commands/root_test.go:137` — `TestFormatUnknownCommandError_PluginsIsGone` usa
+   `HasPrefix` enquanto os dois testes irmãos usam igualdade byte a byte. Alinhar ao mais estrito.
+
+**Critérios de aceite:**
+- [ ] `grep -rn "pluginNotFound" internal/` → zero.
+- [ ] Nenhum comentário nos 3 stacks referencia teto/cap/download de plugin.
+- [ ] `TestFormatUnknownCommandError_PluginsIsGone` compara por igualdade exata.
+- [ ] `make quality` verde.
+
+**Fora de escopo, vira REQ própria:** `site/guide/commands.md` e `site/en/guide/commands.md`
+documentam `trackfw plugins`, mas o `git log` mostra que a deriva é **pré-existente** (arquivo
+anterior a esta branch, também desatualizado quanto a `changelog` e `commit`). Não é resíduo desta
+deleção e não infla este escopo.
+
 
 ## Notas
 - Remoção é **breaking change**: bump `7.0.0` + `CHANGELOG.md` em **PR próprio**, após este.

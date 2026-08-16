@@ -308,3 +308,164 @@ para REQ futura, pelo canal de discordância que a tarefa autoriza, não como re
 proveniência"), descreve o ramo (i), que P1 declara ausente por desenho. Reescrever para "Detecção
 de adulteração pós-aprovação dos plugins declarados pelo projeto (ramo ii); ausência de detecção de
 instalação-sem-aprovação declarada e justificada (ramo i)" antes de virar decisão `Dn` no ADR.
+
+---
+
+## Verificação pós-remoção (ML-3A, 2026-08-16)
+
+> Autor: `hades-tf` (Security Reviewer) | Barreira final da
+> `docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`
+> ADR verificado: `docs/adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md`
+> Branch: `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, `HEAD` no momento da verificação.
+
+Este apêndice não reavalia a decisão de remoção — já aceita no ADR — apenas verifica, **executando**,
+que ela foi implementada por completo nos 3 CLIs, sem resíduo e sem regressão lateral. Metodologia:
+`grep` estrutural nos 3 stacks para localizar todo caminho de rede/execução remanescente, seguido de
+leitura de cada ocorrência para classificar propósito, e uma prova executável para o item mais crítico
+(D9), não aceita por leitura de diff.
+
+### 1 — Caminho de download de binário executável
+
+**Veredito: eliminado.** Verificado nos 3 stacks, não só no Go:
+
+- **Go** — `internal/thirdparty/fetch.go` restringe `Content-Type` a `allowedContentTypes`
+  (`text/plain`, `text/markdown`, `text/x-markdown`; `fetch.go:43-100`), com comentário explícito
+  (`fetch.go:19-20`) documentando que o antigo caminho de download de asset binário foi removido.
+  Os demais usos de `net/http` no repo são servidor (`internal/serve/*`, `internal/server/server.go`
+  — serve o dashboard, não faz fetch de terceiro) ou cliente de API de sync (`internal/sync/jira.go`,
+  `internal/sync/linear.go` — Jira/Linear, dados textuais de issue, não artefato executável).
+- **Node.js** — `npm/src/thirdparty/fetch.js:28` declara `ALLOWED_CONTENT_TYPES = new Set(['text/
+  plain', 'text/markdown', 'text/x-markdown'])`, comentado como espelho literal do allowlist do Go.
+  Os demais `fetch(...)` no repo Node são `npm/src/serve/static/app.js` — chamadas do dashboard a
+  `/api/board`, `/api/attention`, `/api/chain`, `/api/metrics`, `/api/file` (mesma origem, não
+  externas).
+- **Python** — `pypi/trackfw/thirdparty/fetch.py:47` declara o mesmo `ALLOWED_CONTENT_TYPES` e
+  recusa por `_content_type_allowed` (linha 70, aplicado em 119-123). `urllib` fora desse arquivo
+  aparece em `commands/sync.py` (API Jira/Linear, mesmo caso do Go) e em módulos de parsing de URL
+  (`urlparse`) sem rede.
+
+`grep -rn "download\|release\|assets" internal/commands/update.go npm/src/commands/update.js
+pypi/trackfw/commands/update.py pypi/trackfw/commands/update_harness.py` retorna **zero**
+ocorrências — o autoupdate do trackfw (candidato óbvio a esconder um caminho de "baixar e dar chmod
+num binário") não tem nenhum mecanismo de download de asset; `update_harness.py:564` comenta
+explicitamente que o alvo "does NOT attempt a subprocess version probe". Os pacotes
+`internal/plugins/`, `npm/src/commands/plugins.js`, `pypi/trackfw/commands/plugins.py` não existem
+mais no filesystem (confirmado por `ls`, não por grep negativo). A ocorrência de `plugins:` em
+`internal/serve/static/app.js`/`npm/.../app.js`/`pypi/.../app.js` (linhas 805/860) é a chave de
+configuração nativa do Chart.js (`options.plugins.legend`), sem relação com o subsistema removido —
+falso positivo do grep, verificado por leitura de contexto.
+
+### 2 — Caminho de execução de binário de terceiro (indireto incluído)
+
+**Veredito: eliminado no caminho que importava (fallback de comando desconhecido); os `exec.Command`/
+`subprocess`/`child_process` remanescentes são todos toolchain fixa do projeto, não terceiro
+arbitrário.**
+
+Inventariei todo `exec.Command`/`os/exec` (Go), `child_process`/`spawn`/`execFile`/`exec(` (Node),
+`subprocess`/`shutil.which`/`os.system` (Python) fora de `_test`. Nenhum resolve um nome vindo de
+artefato baixado da rede ou de `~/.trackfw/plugins`; todos resolvem para um conjunto fechado,
+hardcoded no código:
+
+| Comando invocado | Onde | Nome vem de |
+|---|---|---|
+| `git` | `ship.go`/`branch.go`/`commit.go`/`barrier.go`/`validator_git_exec.go`/forge `resolve.go` e equivalentes Node/Python | literal `"git"` |
+| `gh`/`glab`/`az` | `ship.go:defaultExecForgeCLI`, `ship/runner.js`, `ship/runner.py` | `adapter.CLIName`, literal fixo por forge dentro de `NewAdapter` (`internal/forge/adapter.go:45,53,61`, confirmado por leitura — `CLIName` nunca é atribuído a partir de `resolution.Forge` ou de qualquer entrada de usuário/rede, só dos 3 literais `"gh"`/`"glab"`/`"az"` mais `""` para bitbucket/manual) |
+| `npm`, `npx husky`, `lefthook install` | `internal/discover/discover.go`, `npm/src/commands/discover.js`, `pypi/trackfw/commands/discover.py:380,385,437` (`subprocess.run(["npm",...])`, `["npx","husky","init"]`, `["lefthook","install"]`, lidos linha a linha) | literais, para instalar hooks de governança do próprio trackfw |
+| `sh -c <comando>` | `internal/commands/barrier.go:386` (`runGateCommand`) | comando de um bloco `` ```bash `` do **roadmap do próprio projeto** — artefato versionado no repo, revisado por PR, não artefato de terceiro baixado em runtime; fora do escopo desta remoção (é o "gates da wave" do `trackfw barrier`, mecanismo pré-existente e não tocado pelo ADR) |
+| `open`/`start`/`xdg-open` | `serve.go`/`serve.js`/`serve.py` | literal por plataforma, argumento é `http://localhost:<port>` com `port` sempre numérico (`parseInt(...,10)\|\|8080` em Node; `int` em Go/Python) — sem espaço para injeção de shell |
+
+Nenhuma dessas entradas é um binário `trackfw-*` de terceiro nem um artefato descoberto por varredura
+de diretório. O `runGateCommand` do `barrier.go` é o único item que executa um "comando arbitrário",
+mas a fonte é um arquivo de roadmap sob controle de versão e revisão do próprio projeto — categoria
+diferente de "binário de terceiro baixado", e pré-existente à REQ de plugins (não nasceu nem foi
+alargado por esta remoção). Registro aqui por completude do item 2, não como achado bloqueante.
+
+### 3 — Débito D9 (fallback de comando desconhecido) — provado por execução
+
+**Veredito: fechado, provado por execução real nos 3 CLIs, não por leitura de diff.**
+
+`internal/commands/root.go` não contém mais nenhum `RunPlugin`/fallback: `newRootCmd()` registra uma
+lista fechada de subcomandos (`root.go:37-63`) e qualquer argumento não reconhecido pelo cobra vira
+erro canônico via `formatUnknownCommandError` (`root.go:94`, `root.go:130-143`) — nunca
+`exec.Command`. Confirmado com `grep -rn "RunPlugin\|runPlugin\|run_plugin"` nos 3 stacks: zero
+ocorrências.
+
+Prova executável: criei um binário real `trackfw-vaildate` (script `#!/bin/sh` que imprime uma string
+sentinela `EXECUTOU_PLUGIN_MALICIOSO_<CLI>`), coloquei-o no início do `$PATH`, e rodei `trackfw
+vaildate` nos 3 CLIs a partir do `HEAD` da branch:
+
+- **Go** — `go build -o /tmp/trackfw-go-bin ./cmd/trackfw` e execução: `Error: unknown command
+  "vaildate" for "trackfw" / Did you mean "validate"? / Run 'trackfw --help' for usage.`, exit 1.
+- **Node.js** — `node npm/bin/trackfw vaildate`: mensagem byte-idêntica, exit 1.
+- **Python** — `python3 -c "sys.argv=['trackfw','vaildate']; from trackfw.cli import main;
+  sys.exit(main())"` com `PYTHONPATH=pypi`: mensagem byte-idêntica, exit 1.
+
+Em nenhum dos três a string sentinela apareceu no stdout/stderr — o binário malicioso nunca foi
+invocado. Isto é exatamente o cenário que `internal/commands/root_test.go`
+(`TestFormatUnknownCommandError_PluginsIsGone` e o teste de falsificação de `vaildate`) e os
+equivalentes `npm/tests/unknown-command.test.js` / `pypi/tests/test_commands_basic.py::
+TestUnknownCommand` já cobrem — a verificação aqui é a mesma prova, rodada de novo de forma
+independente pelo revisor de segurança, fora do harness de teste do implementador, sobre o `HEAD`
+real da branch.
+
+### 4 — `chmod` de artefato de terceiro e escrita em `~/.trackfw/plugins`
+
+**Veredito: eliminado.** `grep -rn "\.trackfw/plugins\|trackfw-plugins\|TRACKFW_PLUGIN"` nos 3 stacks
+retorna zero ocorrências. Os `chmod`/`os.chmod`/`fs.chmodSync` remanescentes nos 3 stacks são todos de
+domínios não relacionados a plugin: chaves de identidade (`internal/identity/identity.go`), o próprio
+gate de skills markdown (`internal/integrations/manager.go`, `internal/thirdparty/quarantine.go` e
+equivalentes Node/Python — o gate que este parecer já analisou em P3/P4, não tocado por esta remoção),
+e scripts de hook/attention gerados pelo próprio trackfw (`update.go`/`update.py`/`init_gen.py`,
+`0755` em arquivos que o trackfw mesmo escreveu, não terceiro).
+
+### 5 — Superfície ampliada do Python (`$PATH` inteiro)
+
+**Veredito: eliminada, confirmado pela mesma prova executável do item 3.** `pypi/trackfw/commands/
+plugins.py` — que continha `list` (varredura de `$PATH`) e `run` (`shutil.which` + `subprocess.run`)
+— não existe mais no filesystem. `grep -n "plugins" pypi/trackfw/cli.py` só retorna o comentário
+referenciando o ADR de remoção; nenhum comando `plugins`/`run` está registrado. A prova de D9 (item 3)
+já cobre o caso mais amplo: o binário sentinela estava no `$PATH`, que é exatamente a superfície que o
+`plugins run`/`list` do Python varria — e mesmo assim não foi descoberto nem executado, porque o
+mecanismo de descoberta em si foi removido, não apenas o comando `add`.
+
+**Nota não-bloqueante:** `pypi/build/lib/trackfw/commands/plugins.py` é um artefato de build local
+obsoleto (`pypi/build/`, `mtime` de 13/06, coberto por `pypi/.gitignore:11` — `pypi/build/` — e
+**não rastreado pelo git**, confirmado via `git ls-files pypi/build` retornando vazio). Não é
+publicado, não é parte do source tree, não afeta o pacote distribuído. Registrado por completude, não
+altera o veredito — recomendo `rm -rf pypi/build` como housekeeping local, sem necessidade de ML.
+
+**Nota não-bloqueante adicional:** `pypi/trackfw/thirdparty/fetch.py:32` mantém um comentário
+("2 MiB — deliberately smaller than the plugin binary download cap") referenciando um teto de
+download de plugin que não existe mais em lugar nenhum do código — comentário órfão, cosmético, não
+um caminho de código. Reportado para quem tocar o arquivo depois, não bloqueia esta barreira.
+
+### 6 — Regressão por caminho lateral (`update`, `init`, `serve`, `sync`, `ship`)
+
+**Veredito: nenhuma regressão.** `grep -n "exec\." internal/commands/{update,sync,init,serve}.go`
+não retorna nenhuma ocorrência — nenhum desses comandos executa processo externo no Go. Os
+equivalentes Node (`update.js`, `sync.js`, `init.js`, `serve.js`) e Python (`update.py`,
+`update_harness.py`, `sync.py`, `init.py`, `serve.py`) só invocam `open`/`start`/`xdg-open` com URL
+local numérica (`serve`) — já coberto no item 2, sem relação com terceiro. `ship` (nos 3 CLIs) só
+invoca `git` e o CLI de forge resolvido de tabela fixa — também já coberto no item 2. Nenhum desses
+comandos ganhou, herdou ou reintroduziu um caminho de descoberta/execução de binário `trackfw-*` ou
+de terceiro.
+
+### 7 — Veredito explícito
+
+**O vetor foi eliminado, não movido nem reduzido.** Os quatro pontos que P2 (seção original deste
+parecer) apontou como não cobertos pelo gate de markdown — execução sem interpretação, persistência
+por-máquina, alcançável pelo fallback de comando desconhecido, execução com privilégio total herdando
+stdio — deixam de ser relevantes porque **não existe mais nenhum caminho no código que baixe, instale
+ou execute um binário de terceiro**, nos 3 CLIs, confirmado por leitura exaustiva + prova executável
+do caso mais crítico (D9). Os `exec`/`subprocess`/`chmod` que restam pertencem a três domínios
+legítimos e não tocados por esta REQ: (a) a própria toolchain do trackfw (`git`, `gh`/`glab`/`az`,
+`npm`/`npx`/`lefthook` para hooks), (b) o gate de skills markdown (fora de escopo, já analisado em
+outro parecer), (c) o `runGateCommand` do `trackfw barrier`, que executa comandos de um roadmap
+versionado no próprio repo — categoria distinta de "binário de terceiro baixado em runtime".
+
+**Sem resíduo bloqueante.** O único achado registrado (`pypi/build/lib/trackfw/commands/plugins.py`,
+item 5) é um artefato de build local, não rastreado, não publicado — não bloqueia merge.
+
+**Libero esta barreira.** Nenhum item impede o merge do ML-3A. Não modifiquei nenhum arquivo de
+código de produto nem de teste; este apêndice é o único artefato produzido, junto com a entrada em
+`docs/agents-working-context.md`.

@@ -17459,3 +17459,70 @@ vazou para o repo real; toda montagem/desmontagem ocorreu em `$WORK` (`mktemp -d
 Roadmap: ML-2B marcado `✅ Concluído` (não commitado). **Devolvido ao `trackfw_architect`** para
 auditoria e commit — este agente não tem autoridade Git. Nota nova no vault:
 `vault/notes/found-and-false-suprime-branch-sem-quebrar-go-build-2026-08-16.md`.
+
+## Sessão 2026-08-16 — Hefesto (INÍCIO: ML-3B — código órfão, barreira final de qualidade)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`. Governança
+já satisfeita (Waves 1 e 2 auditadas e commitadas, `make quality` exit 0 no HEAD). Executando
+ML-3B em paralelo ao ML-3A (`hades-tf`, escrevendo em `docs/seguranca/`, não tocado por mim).
+Auditando `git diff main...HEAD` inteiro por código órfão, testes enfraquecidos/tautológicos,
+documentação residual, disciplina da triplicação da mensagem canônica de comando desconhecido e
+consistência do estado final entre os 3 CLIs. Escopo: apenas
+`docs/qualidade/2026-08-16-remocao-de-plugins.md` (novo) + esta entrada. Não modifico código de
+produto nem testes; não commito.
+
+## Sessão 2026-08-16 — Hefesto (FIM: ML-3B concluído — 1 achado alto, 2 médios, 2 baixos)
+
+Entregue `docs/qualidade/2026-08-16-remocao-de-plugins.md`. **Nenhum achado bloqueante para
+merge; nenhum achado Alto.** Os 3 mais relevantes:
+
+1. **Médio** — `internal/i18n/locales/{en-US,es-ES,pt-BR}.json:63-64`: chave `errors.pluginNotFound`
+   órfã (sem consumidor Go desde a Wave 1), enquanto os locales Node/Python equivalentes foram
+   corretamente podados na mesma entrega — assimetria entre os 3 CLIs. Achado mais bem confirmado
+   (dupla checagem).
+2. **Médio** — `pypi/trackfw/thirdparty/fetch.py:32`: comentário de `MAX_CONTENT_SIZE` ainda
+   referencia "the plugin binary download cap"; o docstring do topo do mesmo arquivo e o
+   `internal/thirdparty/fetch.go` irmão foram atualizados nesta mesma entrega, este comentário
+   específico ficou para trás.
+3. **Baixo** — `root_test.go`: `TestFormatUnknownCommandError_PluginsIsGone` usa `HasPrefix` em vez
+   de igualdade byte-a-byte como os 2 testes irmãos imediatamente acima.
+
+Investiguei também `site/guide/commands.md`/`site/en/guide/commands.md` (ainda documentam `trackfw
+plugins`, incluindo `search`, publicados via `deploy-docs.yml`) — inicialmente classificado Alto,
+**rebaixado a observação** após checar `git log` (última alteração PR #136, anterior a esta branch)
+e confirmar que a página também está atrasada em relação a `changelog`/`commit` (features recentes
+não relacionadas a plugins). Conclusão: doc drift pré-existente e mais amplo, não resíduo desta
+remoção — mesmo tratamento que `docs/cli-parity.md` já dá à divergência Go/Node do "sem argumento"
+(REQ própria, fora deste roadmap). AC4 (`~/.trackfw/plugins`, `RegistryURL`) checado à parte e
+confirmado zerado em código de produto.
+
+Também 1 achado baixo adicional (fraseado confuso no comentário de `suggestCommand` em `root.go`) e
+3 observações positivas (triplicação da mensagem canônica está disciplinada; testes novos não são
+tautológicos — ambos explicitamente checados por instrução do prompt; nota sobre o site). Devolvido
+**não commitado**, conforme fronteira do ML — cabe ao `trackfw_architect` auditar, decidir follow-up
+e commitar.
+
+## Sessão 2026-08-16 — Hades (ML-3A: verificação pós-remoção do subsistema de plugins, barreira final)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`. Verificação
+executável (não só leitura de diff) de que a remoção do ADR
+`docs/adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md`
+foi completa nos 3 CLIs — inventário de todo `exec.Command`/`subprocess`/`child_process` restante,
+classificado por origem do nome invocado (nenhum resolve para `~/.trackfw/plugins` nem terceiro
+baixado em runtime), e prova executável do débito D9: binário sentinela real `trackfw-vaildate` no
+`$PATH`, rodado contra os 3 binários (Go compilado, Node via `node npm/bin/trackfw`, Python via
+`trackfw.cli.main`) — nenhum invocou o sentinela; todos recusaram com a mensagem canônica de comando
+desconhecido, exit 1.
+
+**Veredito: vetor eliminado, não movido/reduzido.** Apêndice "Verificação pós-remoção (ML-3A,
+2026-08-16)" apensado a `docs/seguranca/2026-08-15-gate-de-plugins-binario.md`, com veredito
+item-a-item (1–7). Único achado não-bloqueante: `pypi/build/lib/trackfw/commands/plugins.py` é
+artefato de build local obsoleto, não rastreado pelo git (`pypi/.gitignore:11`), não afeta o pacote
+publicado — registrado por completude, sem ML necessário. **Barreira liberada — sem bloqueio ao
+merge.**
+
+Nenhum arquivo de código de produto ou teste foi tocado. Não commitado, não pushado — conforme
+fronteira do ML e ausência de autoridade Git deste agente. **Devolvido ao `trackfw_architect`** para
+auditoria e commit.
