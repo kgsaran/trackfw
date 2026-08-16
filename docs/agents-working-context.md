@@ -17419,3 +17419,43 @@ não há a segunda camada de "prova de que o gate morde" que o resto do arquivo 
 gates. Decisão consciente por escopo/esforço desta sessão; se o padrão do projeto exigir paridade
 total com os demais gates, é um ML pequeno à parte. Devolvido **não commitado**, conforme fronteira
 do ML — cabe a `trackfw_architect` auditar e commitar.
+
+## Sessão 2026-08-16 — Apolo (ML-2B: cenário de falsificação para check-unknown-command-parity.sh)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`. Fechando o
+gap acima: `scripts/check-gates-falsify.sh` não tinha cenário provando que
+`scripts/check-unknown-command-parity.sh` (criado pelo ML-2A) reprova quando a paridade quebra —
+violação do P4 de `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md`.
+
+**Arquivo tocado:** `scripts/check-gates-falsify.sh` (único). Adicionados os Cenários 55/56/57,
+logo antes do resumo final, cada um sabotando **um** CLI por vez, com braço baseline
+(`assert_succeeds`, ciclo limpo passa) + braço de detecção (`assert_fails_with`, ciclo sabotado
+falha):
+
+- **55 — texto (Python):** `format_unknown_command_error` (`pypi/trackfw/unknown_command.py`)
+  perde o sufixo ` for "{cmd_path}"` numa cópia isolada de `pypi/`. Detectado pelo próprio guard de
+  vacuidade do gate no cenário (a) "no-suggestion" (`canonical message missing`), antes mesmo de
+  chegar em `assert_three_way`.
+- **56 — exit code (Node.js):** `process.exit(1)` → `process.exit(3)` no listener `command:*`
+  (`npm/src/commands/index.js`). Detectado por `assert_three_way`'s exit-code check
+  (`exit codes diverge`).
+- **57 — sugestão ausente (Go):** `formatUnknownCommandError` (`internal/commands/root.go`) tem a
+  condição `found` neutralizada para `found && false` — suprime a linha "Did you mean" sem quebrar
+  `go build` (que reprovaria "declared and not used" se `found` ficasse sem uso real). Exige
+  rebuild de um binário Go isolado (padrão dos Cenários 25/26 — a prova não pode depender de
+  `make build` já ter rodado com a corrupção); detectado pelo guard de vacuidade do gate no
+  cenário (b) "with-suggestion" para o runtime `go`.
+
+Contagem do resumo final subiu de **112 para 118** (6 novos `assert_*` — 2 por discriminante), com
+a descrição dos 3 cenários novos no mesmo estilo dos existentes.
+
+**Validação:** `bash scripts/check-gates-falsify.sh` isolado — todos os 6 novos `OK` (baseline +
+detecção × 3), exit 0. `make quality` completo — exit 0, sem `FAIL`. `git status` ao final mostra
+apenas `scripts/check-gates-falsify.sh` (mais este arquivo e o roadmap) — nenhuma sabotagem
+vazou para o repo real; toda montagem/desmontagem ocorreu em `$WORK` (`mktemp -d`, limpo pelo
+`trap` do próprio `check-gates-falsify.sh`).
+
+Roadmap: ML-2B marcado `✅ Concluído` (não commitado). **Devolvido ao `trackfw_architect`** para
+auditoria e commit — este agente não tem autoridade Git. Nota nova no vault:
+`vault/notes/found-and-false-suprime-branch-sem-quebrar-go-build-2026-08-16.md`.

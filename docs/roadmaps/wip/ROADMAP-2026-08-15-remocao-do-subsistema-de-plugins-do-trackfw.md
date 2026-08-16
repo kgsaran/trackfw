@@ -126,7 +126,7 @@ com binário real `trackfw-vaildate` no PATH nos 3 CLIs; `make quality` exit 0 �
 ---
 
 ### ML-2B — Corretivo: cenário de falsificação para o gate novo (P4 do ADR-2026-07-26)
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído (não commitado — devolvido ao `trackfw_architect` para auditoria/commit) · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-2A ✅ (commitado).
 **Origem:** lacuna reportada pelo próprio ML-2A e confirmada pelo arquiteto como **violação de ADR
 aceito**, não como refinamento opcional.
@@ -147,11 +147,12 @@ outros pontos.
    é temporário e o repo volta ao estado original.
 
 **Critérios de aceite:**
-- [ ] Cada cenário novo, quando aplicado, faz `check-unknown-command-parity.sh` sair **≠ 0**; ao
-      desmontar, volta a sair 0.
-- [ ] Contagem de cenários em `check-gates-falsify.sh` sobe de 112 e a mensagem final reflete o novo
-      total.
-- [ ] `make quality` verde.
+- [x] Cada cenário novo, quando aplicado, faz `check-unknown-command-parity.sh` sair **≠ 0**; ao
+      desmontar, volta a sair 0. (Cenários 55/56/57, cada um com braço baseline `assert_succeeds`
+      exit 0 + braço de detecção `assert_fails_with` exit ≠ 0.)
+- [x] Contagem de cenários em `check-gates-falsify.sh` sobe de 112 para 118 e a mensagem final
+      reflete o novo total e descreve os 3 cenários novos.
+- [x] `make quality` verde.
 
 **Comando de validação:** `make quality`
 
