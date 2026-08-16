@@ -18083,3 +18083,63 @@ Os 3 CLIs usam **prefixos diferentes** na linha de URL: Go `trackfw serve — li
 `trackfw serve:`, Python `trackfw dashboard:`. Divergência pré-existente numa string de usuário, que
 pela regra dura de paridade deveria ser pinada. Mesma coisa para o texto dos erros de bind. Não
 corrigido aqui para não misturar com a correção de segurança.
+
+## Sessão 2026-08-16 (cont.) — Apolo — ML-1C: gate de paridade do endereço de escuta + P4
+
+**Início:** roadmap `ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-
+para-exposicao.md` lido; ML-1A e ML-1B já ✅ auditados por medição. Escopo: fechar AC5 sem tocar
+`internal/serve/*`, `npm/src/commands/serve.js` nem `pypi/trackfw/commands/serve.py` (comportamento
+já correto).
+
+**Entregável 1 — `scripts/check-serve-address-parity.sh` (novo).** Sobe cada um dos 3 CLIs de
+verdade (não lê fonte), mede com `lsof -a -p PID -iTCP -sTCP:LISTEN -nP` e mata o processo em
+seguida. Quatro blocos: (1) padrão sem `--host` → `lsof` deve mostrar `127.0.0.1:PORT`, nunca
+`*:PORT`/`0.0.0.0:PORT` — a asserção central da REQ; (2) `--host ::1` → `[::1]:PORT` nos 3; (3)/(4)
+`--host 0.0.0.0` reaproveitado numa única execução para o aviso de exposição (`diff -u` byte-a-byte
+normalizando só a porta) e para a URL impressa (`http://0.0.0.0:PORT`, nunca contém `localhost`).
+
+**Decisão registrada:** o texto do ML-1C original usava `--host 192.0.2.1` para a asserção de URL —
+mas esse endereço é TEST-NET-1, não atribuível em nenhuma interface de uma máquina comum, e os 3
+CLIs falham o bind nele (confirmado na sessão do ML-1B: "Go exit 1, zero ocorrências de
+'listening'"). Testar a URL contra um host que nunca chega a escutar tornaria a asserção vácua por
+construção. Reaproveitei `--host 0.0.0.0` (já usado para o aviso de exposição) — sempre bindável,
+`DisplayURL`/`displayUrl`/`_display_url` retornam `http://0.0.0.0:PORT` para ele nos 3 (medido).
+
+**Armadilha de bash encontrada:** `port=$(next_port)` roda em subshell — o incremento da variável
+global se perdia e os 3 runtimes de cada bloco caíam na mesma porta (harmless aqui porque cada
+processo é morto antes do próximo subir, mas escondia um bug de design). Corrigido para
+`next_port; port=$PORT` (atribuição direta, sem substituição de comando).
+
+**Entregável 2 — `Makefile`:** `check-serve-address-parity.sh` registrado no alvo `parity`, antes de
+`check-gates-falsify.sh` (linha ~38).
+
+**Entregável 3 — Cenário 59 em `scripts/check-gates-falsify.sh`.** Sabota `pypi/trackfw/commands/
+serve.py`: `server_cls((host, port), handler_class)` → `server_cls(("", port), handler_class)` — a
+própria regressão original desta REQ (INADDR_ANY, host resolvido ignorado). Braço baseline (árvore
+limpa) + braço de detecção (`assert_fails_with` no diagnóstico literal `"expected lsof to show
+127.0.0.1:"`), seguindo o padrão dos Cenários 55–58 (`corrupt_literal` na implementação, nunca na
+asserção do gate; `setup_npm_tree` + cópia de `pypi/` e do próprio script novo para `$WORK`).
+Contador final do script atualizado de 119 para **120 cenários**, com a entrada `(59)` apensada ao
+texto do sumário.
+
+**Prova de não-vacuidade (rodada isolada, fora do harness, output colado):**
+```
+FAIL [default-bind/py]: expected lsof to show 127.0.0.1:46202, got '*:46202' — a wildcard/non-loopback
+default is the exact security regression this gate exists to catch
+FAIL [host-ipv6-loopback/py]: expected lsof to show [::1]:46205, got '*:46205'
+```
+Confirma que o gate pega a regressão em **dois** pontos independentes (bind padrão e bind com
+`--host ::1`), não só um.
+
+**Evidência de `make quality`:** exit 0 de ponta a ponta — `go build`/`go vet` limpos, `go test
+./...` todos `ok` (incluindo `internal/serve` sem alteração), `npm test` e `pytest pypi/tests`
+verdes, os 39 scripts do alvo `parity` (incluindo o novo) OK, e `check-gates-falsify.sh` reportando
+"Falsification checks passed (all 120 scenarios...)". `trackfw validate` — exit 0 (só warnings
+pré-existentes de REQs sem ADR/roadmap vinculado, sem relação com este ML).
+
+**Arquivos alterados:** `scripts/check-serve-address-parity.sh` (novo), `Makefile` (alvo `parity`),
+`scripts/check-gates-falsify.sh` (Cenário 59 + contador do sumário), roadmap (ML-1C → ✅ Concluído,
+AC5 marcado).
+
+**Não commitado** — autoridade exclusiva do `trackfw_architect`. Próximo: Wave 2 (`hades-tf`,
+ML-2A — confirmar por conexão real que a exposição fechou).

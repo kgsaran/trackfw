@@ -34,11 +34,11 @@ funciona; o problema é a interface de escuta somada à ausência de autenticaç
 - [x] AC3 — Ao expor, **aviso claro** de leitura sem autenticação.
 - [x] AC3b — A **URL impressa** (e a aberta no browser) reflete o `--host` efetivo, não `localhost` fixo.
 - [x] AC4 — Aviso **renderizado** byte-idêntico nos 3 + string de help **da flag** byte-idêntica no fonte.
-- [ ] AC5 — Gate de paridade do endereço padrão + cenário de falsificação (P4), usando `--host ::1` como discriminante. (ML-1C, ainda pendente)
+- [x] AC5 — Gate de paridade do endereço padrão + cenário de falsificação (P4). (ML-1C concluído —
+  ver evidência abaixo)
 - [x] AC6 — Não-regressão: dashboard continua acessível em `localhost` como hoje.
-- [x] AC7 — `make quality` verde ao fim do ML-1B (log completo colado no relatório do agente). ML-1C
-  vai tocar `scripts/check-gates-falsify.sh` — **revalidar `make quality` ao fim do ML-1C**, não
-  reusar esta evidência como definitiva.
+- [x] AC7 — `make quality` verde. Revalidado pelo arquiteto **ao fim do ML-1C** (exit 0, 120 cenários
+  de falsificação), não reusando a evidência do ML-1B — o ML-1C tocou `check-gates-falsify.sh`.
 - [x] AC8 — `--host ::1` funciona nos **3** CLIs (hoje só no Node).
 
 > **AC4 foi reescrito.** "`--help` byte-idêntico nos 3" é inverificável: cobra imprime `Flags:`,
@@ -140,13 +140,28 @@ correto), script de paridade novo ou existente, `scripts/check-gates-falsify.sh`
 - [ ] Evidência de `lsof`/`curl` colada no relatório para **cada** CLI.
 
 ### ML-1C — Gate de paridade do endereço padrão + cenário P4
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
-**Arquivos:** `scripts/check-gates-falsify.sh` + script de gate de paridade.
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `scripts/check-serve-address-parity.sh` (novo), `Makefile` (alvo `parity`),
+`scripts/check-gates-falsify.sh` (Cenário 59).
 **Dependência:** ML-1B completo (o discriminante depende do comportamento final).
-**Ação:** gate que verifica o endereço de escuta **padrão** nos 3 por execução real, e cenário P4
-com braço baseline + braço de detecção, seguindo a estrutura já existente no script (ver os cenários
-`roadmap-move-parity` e `barrier/*` como modelo — `assert_fails_with` / `assert_lacks_pattern` e a
-prova de não-vacuidade com a regra desligada). **Discriminante:** `--host ::1`.
+**Ação:** gate que verifica o endereço de escuta **padrão** nos 3 por execução real (subindo o
+processo e medindo com `lsof`, matando em seguida), e Cenário 59 de `check-gates-falsify.sh` com
+braço baseline + braço de detecção, sabotando `pypi/trackfw/commands/serve.py` de volta para
+wildcard bind (`server_cls(("", port), ...)`) — a regressão original desta REQ.
+
+**Evidência:**
+- `GO_BIN=bin/trackfw scripts/check-serve-address-parity.sh` na árvore limpa: 10/10 asserções OK
+  (default-bind 127.0.0.1 nos 3, `--host ::1` → `[::1]` nos 3, aviso de exposição byte-idêntico com
+  `--host 0.0.0.0`, URL impressa contém `0.0.0.0` e não `localhost` nos 3).
+- Braço de detecção rodado isoladamente contra uma cópia sabotada (`server_cls(("", port), ...)`):
+  `FAIL [default-bind/py]: expected lsof to show 127.0.0.1:46202, got '*:46202' — a wildcard/non-loopback
+  default is the exact security regression this gate exists to catch` e
+  `FAIL [host-ipv6-loopback/py]: ... got '*:46205'` — prova de não-vacuidade.
+- Cenário 59 (baseline + detecção) integrado em `check-gates-falsify.sh`, contador final atualizado
+  para 120 cenários.
+- `make quality` verde de ponta a ponta (Go build+test, node test, python test, `go vet`, os 39
+  scripts de `parity` incluindo o novo, e `check-gates-falsify.sh`).
+- `trackfw validate` — exit 0 (só warnings pré-existentes, sem relação com este ML).
 
 ---
 
