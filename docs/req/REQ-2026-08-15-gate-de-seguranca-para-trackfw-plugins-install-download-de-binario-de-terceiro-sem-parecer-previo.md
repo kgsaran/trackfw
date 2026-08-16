@@ -1,14 +1,17 @@
 ---
-status: Open
+status: Closed
 date: 2026-08-15
 author: "Zeus (Arquiteto)"
-adr: "docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quarentena-parecer-vinculado-por-checksum-e-deteccao-por-proveniencia-versionada.md"
-roadmap: ""
+adr: "docs/adr/ADR-2026-08-15-gate-de-plugins-binario-deteccao-de-adulteracao-sem-deteccao-de-instalacao-e-chmod-apos-aprovacao.md"
+roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md"
 ---
 
 # REQ: Gate de segurança para `trackfw plugins install` — download de binário de terceiro sem parecer prévio
 
-> Date: 2026-08-15 | Status: Open
+> Date: 2026-08-15 | Status: **Closed — substituída**
+> Substituída por `docs/req/REQ-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`:
+> em vez de cercar o download de binário de terceiro, o subsistema de plugins é **removido**.
+> Preservada como registro da análise que levou a essa decisão.
 | Linear Issue:
 | Jira Issue:
 
@@ -21,7 +24,7 @@ esquecimento: foi escopado para fora daquela REQ e registrado para virar esta.
 **O estado atual, verificado no código em 2026-08-15** (`internal/plugins/plugins.go` e espelhos
 `npm/src/commands/plugins.js`, `pypi/trackfw/commands/plugins.py`):
 
-- `Install(repo)` resolve `name/repo[@tag]` para uma URL de GitHub Releases e **baixa um binário de
+- `plugins add` → `Install(repo)` resolve `name/repo[@tag]` para uma URL de GitHub Releases e **baixa um binário de
   terceiro**;
 - grava em disco e faz **`chmod 0755`** — o artefato passa a ser diretamente executável;
 - teto de 50 MiB (`maxPluginSize`) e `io.LimitReader`, mas **nenhuma validação de esquema de URL,
@@ -52,18 +55,43 @@ execução, permissão de arquivo) e teria arrastado de lado a Wave 2 daquele ro
 - [ ] **AC3** — Política de rede de binário definida explicitamente: HTTPS-only, limite de tamanho
       (o atual é 50 MiB — reavaliar), política de redirect e revalidação de esquema por hop, no
       mesmo rigor de D7/D7-bis.
-- [ ] **AC4** — Decidir e documentar o tratamento de **permissão de execução**: o `chmod 0755` só
-      pode acontecer **depois** da aprovação, nunca antes; avaliar se o artefato deve permanecer
-      não-executável em quarentena.
-- [ ] **AC5** — Avaliar verificação de **integridade e origem** que o caso markdown não tinha como
-      exigir: checksum publicado pelo autor, assinatura, ou pinagem de release. Se a conclusão for
-      "não é viável hoje", isso vai declarado no ADR, não omitido.
-- [ ] **AC6** — Detecção equivalente à regra `thirdparty_artifact_has_provenance` (D2/D11),
-      cobrindo plugins instalados sem proveniência e proveniência com checksum divergente.
+- [ ] **AC4** — ✅ **Decidido por KG em 2026-08-15:** o `chmod 0755` só ocorre **depois** da
+      aprovação; em quarentena o binário fica **sem bit de execução** (`0600`). O escopo atual
+      (`~/.trackfw/plugins`, global) é **mantido**, para não quebrar quem já usa plugins.
+      ⚠️ Consequência a resolver na Wave 0: escopo global fica **fora do perímetro da detecção**
+      (mesma situação de D4-bis) — onde a proveniência do plugin deve morar para que sobre alguma
+      detecção é a pergunta central do parecer.
+      Estado atual verificado: Go faz `os.Chmod(tmpPath, 0755)` **antes** do rename
+      (`internal/plugins/plugins.go:246`); Node nasce executável no próprio `writeFileSync`
+      (`npm/src/commands/plugins.js:108`).
+- [ ] **AC5** — ✅ **Decidido por KG em 2026-08-15: apenas o handshake.** Verificação de origem
+      (checksum publicado pelo autor, assinatura, pinagem de release) fica **fora de escopo** e o
+      limite vai **declarado no ADR** com o rigor de D3: o checksum garante que *o binário
+      instalado é o que foi revisado*, e **não** que o autor publicou aquilo. É gate de revisão,
+      não gate de supply-chain — confundir os dois é pior que não ter o gate.
+- [ ] **AC6** — ⚠️ **REESCRITO em 2026-08-15 — a versão original era INIMPLEMENTÁVEL.** Ela pedia
+      detecção de "plugin instalado sem proveniência" (ramo i), que o parecer do `hades-tf`
+      demonstrou ser **estruturalmente impossível** com escopo global: `~/.trackfw/plugins` é
+      compartilhado entre todos os projetos da máquina, então um plugin ali pode ter sido aprovado
+      em outro projeto — e uma regra que tentasse detectar dispararia falso-positivo entre projetos
+      não relacionados. Fica valendo:
+      - **ramo (ii), adulteração pós-aprovação: EXIGIDO** — índice versionado no projeto, chaveado
+        por nome de plugin, guardando o checksum aprovado; regra portada nos 3 CLIs;
+      - **ramo (i), instalação sem aprovação: DECLARADO AUSENTE** no ADR (D2), com a alternativa
+        rejeitada (mover plugins para escopo de projeto) registrada.
 - [ ] **AC7** — Revisão do `hades-tf` **antes** do primeiro ML de implementação, como na REQ irmã —
       pré-requisito de sequenciamento, não entregável.
-- [ ] **AC8** — Comportamento idêntico nos 3 CLIs; `make quality` passa sem novas divergências de
-      paridade.
+- [ ] **AC8** — ⚠️ **Corrigido em 2026-08-15 após mapeamento do código.** O comando real é
+      **`trackfw plugins add`** (não `install`), e **o Python NÃO possui caminho de instalação**:
+      `pypi/trackfw/commands/plugins.py` só tem `list` e `run` sobre executáveis `trackfw-*` já no
+      `PATH`. Portanto:
+      - **o gate** (quarentena + parecer + `chmod` tardio) vale para **Go e Node**; Python entra
+        como **exceção intencional documentada** em `docs/cli-parity.md`, porque não há caminho de
+        download a gatear — e implementá-lo só para ter o que gatear **inverteria a REQ**,
+        adicionando justamente o vetor que ela existe para fechar;
+      - **a regra de detecção** do `validate`, essa sim, é portada nos **3 CLIs** (o validator
+        Python já espelha o Go em `pypi/trackfw/validator.py`).
+      `make quality` passa sem novas divergências de paridade.
 
 ## Escopo negativo (o que esta REQ NÃO faz)
 
@@ -88,7 +116,7 @@ O ADR **próprio** desta REQ será escrito na Wave 0 do seu roadmap, após o par
 
 ## Linked Roadmap
 
-Roadmap: (a criar quando esta REQ sair do backlog — não iniciar sem REQ + roadmap em `wip`)
+Roadmap: `docs/roadmaps/abandoned/ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md`
 
 ## Referências
 

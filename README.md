@@ -157,9 +157,6 @@ trackfw ship -m "feat(auth): add login flow"
 | `trackfw serve` | Start a local governance dashboard (no cloud, no accounts) |
 | `trackfw status` | Show wip, blocked, REQs waiting on ADRs |
 | `trackfw log [--tail N]` | Show roadmap state transition history |
-| `trackfw plugins list` | List installed plugins |
-| `trackfw plugins add <user/repo>` | Install a plugin from GitHub Releases |
-| `trackfw plugins remove <name>` | Remove an installed plugin |
 | `trackfw agents list` | List available agents and deployment state across AI CLIs |
 | `trackfw agents install` | Install selected specialist agents |
 | `trackfw agents update` | Safely update managed agents |

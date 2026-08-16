@@ -2,6 +2,7 @@
 
 const { Command } = require('commander')
 const { version } = require('../../package.json')
+const { formatUnknownCommandError } = require('../lib/unknown-command')
 
 function createProgram() {
   const program = new Command()
@@ -15,6 +16,20 @@ function createProgram() {
   // primeiro registro conhecido em toda a árvore de comandos.
   program.enablePositionalOptions()
 
+  // Comando desconhecido — mensagem canônica compartilhada pelos 3 CLIs
+  // (ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-
+  // de-terceiro.md D3). Registrar um listener 'command:*' intercepta ANTES do
+  // commander chamar seu próprio Command.unknownCommand() — evita reformatar
+  // uma mensagem já impressa por ele (o padrão que causava dupla-impressão no
+  // Go, ver internal/commands/root.go) e evita depender do texto/threshold
+  // próprio de commander.suggestSimilar, que diverge de cobra/argparse.
+  program.on('command:*', (operands) => {
+    const typed = operands[0]
+    const candidates = program.commands.map((cmd) => cmd.name())
+    process.stderr.write(formatUnknownCommandError(typed, candidates, program.name()) + '\n')
+    process.exit(1)
+  })
+
   program.addCommand(require('./init'))
   program.addCommand(require('./adr'))
   program.addCommand(require('./req'))
@@ -23,7 +38,6 @@ function createProgram() {
   program.addCommand(require('./status'))
   program.addCommand(require('./changelog'))
   program.addCommand(require('./log'))
-  program.addCommand(require('./plugins'))
   program.addCommand(require('./discover'))
   program.addCommand(require('./update'))
   program.addCommand(require('./metrics'))
@@ -43,9 +57,6 @@ function createProgram() {
 
   const { createServeCommand } = require('./serve')
   program.addCommand(createServeCommand())
-
-  // plugin dispatch — comandos desconhecidos tentam executar plugin
-  program.hook('preSubcommand', () => {})
 
   return program
 }

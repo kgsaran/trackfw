@@ -1,5 +1,5 @@
 """
-Testes de unidade para commands/metrics.py, commands/context.py, commands/plugins.py.
+Testes de unidade para commands/metrics.py, commands/context.py.
 Usa unittest (stdlib) — sem dependências externas.
 """
 
@@ -244,106 +244,6 @@ class TestContext(unittest.TestCase):
 
         content_sem = "# REQ\nSem status\n"
         self.assertEqual(ctx_mod._extract_inline_status(content_sem), "unknown")
-
-
-class TestPlugins(unittest.TestCase):
-    """Testes para commands/plugins.py."""
-
-    def setUp(self):
-        self.orig_dir = os.getcwd()
-        self.tmpdir = tempfile.mkdtemp()
-        os.chdir(self.tmpdir)
-
-    def tearDown(self):
-        os.chdir(self.orig_dir)
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
-
-    def test_plugins_list_sem_plugins(self):
-        """Sem plugins no PATH → lista vazia sem erro."""
-        from trackfw.commands import plugins as plugins_mod
-
-        # Força PATH a apontar para diretório vazio
-        empty_dir = os.path.join(self.tmpdir, "empty_bin")
-        os.makedirs(empty_dir, exist_ok=True)
-
-        captured = io.StringIO()
-        with patch("sys.stdout", captured), \
-             patch.dict(os.environ, {"PATH": empty_dir}):
-
-            class FakeArgs:
-                plugins_command = "list"
-
-            plugins_mod._dispatch(FakeArgs())
-
-        output = captured.getvalue()
-        self.assertIn("No plugins installed", output)
-
-    def test_plugins_list_com_plugin(self):
-        """Com executável trackfw-* no PATH → aparece na lista."""
-        from trackfw.commands import plugins as plugins_mod
-
-        # Cria executável fake no tmpdir
-        plugin_file = os.path.join(self.tmpdir, "trackfw-myplugin")
-        with open(plugin_file, "w") as f:
-            f.write("#!/bin/sh\necho hello\n")
-        os.chmod(plugin_file, 0o755)
-
-        captured = io.StringIO()
-        with patch("sys.stdout", captured), \
-             patch.dict(os.environ, {"PATH": self.tmpdir}):
-
-            class FakeArgs:
-                plugins_command = "list"
-
-            plugins_mod._dispatch(FakeArgs())
-
-        output = captured.getvalue()
-        self.assertIn("trackfw-myplugin", output)
-
-    def test_find_plugins_in_path_sem_executaveis(self):
-        """_find_plugins_in_path retorna [] quando PATH não tem trackfw-*."""
-        from trackfw.commands import plugins as plugins_mod
-
-        empty_dir = os.path.join(self.tmpdir, "bin")
-        os.makedirs(empty_dir, exist_ok=True)
-
-        with patch.dict(os.environ, {"PATH": empty_dir}):
-            result = plugins_mod._find_plugins_in_path()
-
-        self.assertEqual(result, [])
-
-    def test_find_plugins_in_path_com_executavel(self):
-        """_find_plugins_in_path detecta executável trackfw-* no PATH."""
-        from trackfw.commands import plugins as plugins_mod
-
-        plugin = os.path.join(self.tmpdir, "trackfw-demo")
-        with open(plugin, "w") as f:
-            f.write("#!/bin/sh\n")
-        os.chmod(plugin, 0o755)
-
-        with patch.dict(os.environ, {"PATH": self.tmpdir}):
-            result = plugins_mod._find_plugins_in_path()
-
-        self.assertIn("trackfw-demo", result)
-
-    def test_plugins_run_nao_encontrado(self):
-        """plugins run <inexistente> → sys.exit(1)."""
-        from trackfw.commands import plugins as plugins_mod
-
-        empty_dir = os.path.join(self.tmpdir, "empty_bin")
-        os.makedirs(empty_dir, exist_ok=True)
-
-        with patch.dict(os.environ, {"PATH": empty_dir}), \
-             self.assertRaises(SystemExit) as cm:
-
-            class FakeArgs:
-                plugins_command = "run"
-                name = "inexistente"
-                plugin_args = []
-
-            plugins_mod._dispatch(FakeArgs())
-
-        self.assertEqual(cm.exception.code, 1)
 
 
 if __name__ == "__main__":

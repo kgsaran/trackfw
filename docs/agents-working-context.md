@@ -17322,3 +17322,277 @@ squash nem rebase.
 Estado entregue: 5 Waves, 10 MLs, `make quality` exit 0 (229 checagens), `trackfw validate` sem
 erros. Roadmap e REQ em `done`. Débito rastreado em REQ própria no backlog
 (`trackfw plugins install` sem gate).
+
+## Sessão 2026-08-15 — Apolo (backend Go) — ML-1A remoção do subsistema de plugins (Go)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw` (roadmap `ML-1A`, ADR
+`ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md`).
+Escopo exclusivo `internal/` (Go), em paralelo a ML-1B (npm) e ML-1C (pypi).
+
+**Apagado:** `internal/plugins/` (`plugins.go`, `plugins_test.go`) e `internal/commands/plugins.go`.
+
+**`internal/commands/root.go`:** removido `newPluginsCmd()` do `root.AddCommand`, removido
+`root.Args = cobra.ArbitraryArgs` e o `root.RunE` que fazia fallback para `RunPlugin(args[0], ...)`.
+Sem `RunE`/`Args` customizado, o cobra volta ao comportamento padrão: `trackfw` sem argumento
+imprime help (exit 0, inalterado); `trackfw <comando-inexistente>` é recusado pelo próprio cobra
+com `Error: unknown command "X" for "trackfw"` + `Run 'trackfw --help' for usage.` (exit 1),
+sem nunca tentar executar binário externo.
+
+**`internal/commands/agents_skills_test.go`:** `TestRemovedIntegrationAliasesAreUnknownCommands`
+trocou a chamada direta a `RunPlugin` (removida) por `root.Execute()` fim-a-fim, validando a
+mensagem exata do cobra `unknown command "X" for "trackfw"` — é o teste que cobre AC2/AC3.
+
+**`internal/i18n/locales/{en-US,pt-BR,es-ES}.json`:** removida a chave `plugins.*` (descrições do
+comando removido, órfãs).
+
+**`internal/thirdparty/fetch.go`:** comentários que referenciavam `internal/plugins.maxPluginSize`
+/ `internal/plugins.httpClient` atualizados — o pacote não existe mais.
+
+**Validação:** `go build ./...` e `go vet ./...` limpos; `grep -rn "plugins\|RunPlugin" internal/`
+sem ocorrências de código de produto do subsistema de plugins (os 3 achados restantes são
+não-relacionados: `<plugins>` de Maven em `generators/java.go`, `plugins:` de Chart.js em
+`serve/static/app.js`, e o nome do arquivo do ADR em um comentário);
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./...` verde em todos os pacotes. Devolvido **não
+commitado**, conforme fronteira do ML.
+
+## Sessão 2026-08-16 — Apolo (backend) — ML-2A remoção do subsistema de plugins (mensagem canônica + docs)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, sequencial (Wave 2, ML-2A do mesmo
+roadmap acima; Wave 1/ML-1A/1B/1C já commitadas). Escopo: docs, `check-cli-parity.sh` e a mensagem
+canônica de comando desconhecido nos 3 CLIs (ADR D3).
+
+**Divergência medida na Wave 1** (texto, aspas, exit code 1 vs 2, sugestão) reconciliada para, em
+**stderr**, **exit 1**, byte-idêntico nos 3:
+```
+Error: unknown command "x" for "trackfw"
+Did you mean "validate"?
+Run 'trackfw --help' for usage.
+```
+A linha de sugestão só aparece com candidato próximo o suficiente. Nenhum dos 3 usa o mecanismo de
+sugestão nativo do próprio framework (cobra `SuggestionsFor`, commander `suggestSimilar`, ambos com
+distância/threshold diferentes) — os 3 reimplementam a MESMA distância de Levenshtein simples (sem
+transposição) e a mesma regra de escolha (`internal/commands/root.go` `suggestCommand`/
+`levenshteinDistance`; `npm/src/lib/unknown-command.js`; `pypi/trackfw/unknown_command.py`), para
+garantir que os 3 concordem sobre se/o-que sugerir para o mesmo typo.
+
+**Go (`internal/commands/root.go`):** `Execute()` reescrito com `root.SilenceErrors`/`SilenceUsage
+= true` + impressão própria — corrige de brinde um bug pré-existente e não relacionado a plugins
+(TODO erro do cobra saía **duas vezes** em stderr, já presente antes desta sessão, achado durante a
+implementação — reportado, não escondido). A reformatação replica os dois flags independentes
+`cmd.SilenceErrors`/`cmd.SilenceUsage` que comandos individuais já setavam (ex.: `branch.go`'s
+"new", que quer erro nu sem prefixo/usage) — sem isso, `check-branch-new-parity.sh` quebrava (Go
+ganhava prefixo+usage que Node/Python nunca tiveram). Candidatos de sugestão excluem `completion`
+(auto-registrado pelo cobra, sem equivalente em npm/pypi) via lista explícita, não via
+`root.Commands()` cru.
+
+**Python (`pypi/trackfw/cli.py`):** `TrackfwArgumentParser` sobrescreve `ArgumentParser.error()`
+**apenas** para o padrão `argument COMMAND: invalid choice: '...'`, trocando o exit code default do
+argparse (2) por 1 só nesse caso — todo outro erro argparse (flag desconhecida, argumento
+obrigatório ausente em subcomando) mantém exit 2, verificado por teste dedicado.
+
+**Novo:** `scripts/check-unknown-command-parity.sh` (adicionado a `make parity`) — 5 cenários:
+sem sugestão, com sugestão, `plugins` (removido, mesma mensagem canônica, sem caso especial),
+falsificação com binário real `trackfw-vaildate` no `PATH` (nunca executado, P4), e exit code de
+erro não-relacionado inalterado. `floor_commands` de `check-cli-parity.sh` recalibrado (removido
+`plugins`). `README.md`/`docs/cli-parity.md` atualizados; nova seção "Unknown top-level command" e
+"Plugin subsystem — removed" documentam a mensagem canônica, o critério de sugestão compartilhado,
+a divergência pré-existente Go-only `completion`, e a divergência pré-existente, fora de escopo,
+`trackfw` sem argumento (Go exit 0/stdout vs Node exit 1/stderr — commit `f9202f4`, não tocada).
+
+**Testes atualizados** (mensagens antigas quebrariam contra o novo contrato):
+`npm/tests/unknown-command.test.js`, `pypi/tests/test_commands_basic.py::TestUnknownCommand`
+(ambos com asserção byte-a-byte + falsificação PATH); novo `internal/commands/root_test.go` (Go
+não tinha teste dedicado de comando desconhecido antes desta sessão) com o mesmo padrão de
+falsificação via binário real, mais unitários de `suggestCommand`/`levenshteinDistance`.
+
+**Validação:** `go build ./...`, `go vet ./...`, `go test ./...` (todos pacotes), `npm test` (591
+testes), `python3 -m pytest pypi/tests -q` (1234 testes) — todos verdes. `make quality` exit 0,
+zero `FAIL`, 112/112 cenários de falsificação. `grep -rn "plugins" README.md CLAUDE.md scripts/`
+só retorna ocorrências no novo script de paridade descrevendo a remoção (`plugins-is-gone`), não o
+comando como existente.
+
+**Gap conhecido, não fechado nesta sessão:** o arquivo `scripts/check-gates-falsify.sh` (P4,
+~4800 linhas, 112 cenários catalogados) não ganhou um cenário dedicado provando que
+`check-unknown-command-parity.sh` detectaria uma regressão futura (mutar uma cópia do script/
+fixture e confirmar que ele reprova) — os 5 cenários do script novo são autocontidos e passam, mas
+não há a segunda camada de "prova de que o gate morde" que o resto do arquivo tem para os outros 17
+gates. Decisão consciente por escopo/esforço desta sessão; se o padrão do projeto exigir paridade
+total com os demais gates, é um ML pequeno à parte. Devolvido **não commitado**, conforme fronteira
+do ML — cabe a `trackfw_architect` auditar e commitar.
+
+## Sessão 2026-08-16 — Apolo (ML-2B: cenário de falsificação para check-unknown-command-parity.sh)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`. Fechando o
+gap acima: `scripts/check-gates-falsify.sh` não tinha cenário provando que
+`scripts/check-unknown-command-parity.sh` (criado pelo ML-2A) reprova quando a paridade quebra —
+violação do P4 de `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md`.
+
+**Arquivo tocado:** `scripts/check-gates-falsify.sh` (único). Adicionados os Cenários 55/56/57,
+logo antes do resumo final, cada um sabotando **um** CLI por vez, com braço baseline
+(`assert_succeeds`, ciclo limpo passa) + braço de detecção (`assert_fails_with`, ciclo sabotado
+falha):
+
+- **55 — texto (Python):** `format_unknown_command_error` (`pypi/trackfw/unknown_command.py`)
+  perde o sufixo ` for "{cmd_path}"` numa cópia isolada de `pypi/`. Detectado pelo próprio guard de
+  vacuidade do gate no cenário (a) "no-suggestion" (`canonical message missing`), antes mesmo de
+  chegar em `assert_three_way`.
+- **56 — exit code (Node.js):** `process.exit(1)` → `process.exit(3)` no listener `command:*`
+  (`npm/src/commands/index.js`). Detectado por `assert_three_way`'s exit-code check
+  (`exit codes diverge`).
+- **57 — sugestão ausente (Go):** `formatUnknownCommandError` (`internal/commands/root.go`) tem a
+  condição `found` neutralizada para `found && false` — suprime a linha "Did you mean" sem quebrar
+  `go build` (que reprovaria "declared and not used" se `found` ficasse sem uso real). Exige
+  rebuild de um binário Go isolado (padrão dos Cenários 25/26 — a prova não pode depender de
+  `make build` já ter rodado com a corrupção); detectado pelo guard de vacuidade do gate no
+  cenário (b) "with-suggestion" para o runtime `go`.
+
+Contagem do resumo final subiu de **112 para 118** (6 novos `assert_*` — 2 por discriminante), com
+a descrição dos 3 cenários novos no mesmo estilo dos existentes.
+
+**Validação:** `bash scripts/check-gates-falsify.sh` isolado — todos os 6 novos `OK` (baseline +
+detecção × 3), exit 0. `make quality` completo — exit 0, sem `FAIL`. `git status` ao final mostra
+apenas `scripts/check-gates-falsify.sh` (mais este arquivo e o roadmap) — nenhuma sabotagem
+vazou para o repo real; toda montagem/desmontagem ocorreu em `$WORK` (`mktemp -d`, limpo pelo
+`trap` do próprio `check-gates-falsify.sh`).
+
+Roadmap: ML-2B marcado `✅ Concluído` (não commitado). **Devolvido ao `trackfw_architect`** para
+auditoria e commit — este agente não tem autoridade Git. Nota nova no vault:
+`vault/notes/found-and-false-suprime-branch-sem-quebrar-go-build-2026-08-16.md`.
+
+## Sessão 2026-08-16 — Hefesto (INÍCIO: ML-3B — código órfão, barreira final de qualidade)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`. Governança
+já satisfeita (Waves 1 e 2 auditadas e commitadas, `make quality` exit 0 no HEAD). Executando
+ML-3B em paralelo ao ML-3A (`hades-tf`, escrevendo em `docs/seguranca/`, não tocado por mim).
+Auditando `git diff main...HEAD` inteiro por código órfão, testes enfraquecidos/tautológicos,
+documentação residual, disciplina da triplicação da mensagem canônica de comando desconhecido e
+consistência do estado final entre os 3 CLIs. Escopo: apenas
+`docs/qualidade/2026-08-16-remocao-de-plugins.md` (novo) + esta entrada. Não modifico código de
+produto nem testes; não commito.
+
+## Sessão 2026-08-16 — Hefesto (FIM: ML-3B concluído — 1 achado alto, 2 médios, 2 baixos)
+
+Entregue `docs/qualidade/2026-08-16-remocao-de-plugins.md`. **Nenhum achado bloqueante para
+merge; nenhum achado Alto.** Os 3 mais relevantes:
+
+1. **Médio** — `internal/i18n/locales/{en-US,es-ES,pt-BR}.json:63-64`: chave `errors.pluginNotFound`
+   órfã (sem consumidor Go desde a Wave 1), enquanto os locales Node/Python equivalentes foram
+   corretamente podados na mesma entrega — assimetria entre os 3 CLIs. Achado mais bem confirmado
+   (dupla checagem).
+2. **Médio** — `pypi/trackfw/thirdparty/fetch.py:32`: comentário de `MAX_CONTENT_SIZE` ainda
+   referencia "the plugin binary download cap"; o docstring do topo do mesmo arquivo e o
+   `internal/thirdparty/fetch.go` irmão foram atualizados nesta mesma entrega, este comentário
+   específico ficou para trás.
+3. **Baixo** — `root_test.go`: `TestFormatUnknownCommandError_PluginsIsGone` usa `HasPrefix` em vez
+   de igualdade byte-a-byte como os 2 testes irmãos imediatamente acima.
+
+Investiguei também `site/guide/commands.md`/`site/en/guide/commands.md` (ainda documentam `trackfw
+plugins`, incluindo `search`, publicados via `deploy-docs.yml`) — inicialmente classificado Alto,
+**rebaixado a observação** após checar `git log` (última alteração PR #136, anterior a esta branch)
+e confirmar que a página também está atrasada em relação a `changelog`/`commit` (features recentes
+não relacionadas a plugins). Conclusão: doc drift pré-existente e mais amplo, não resíduo desta
+remoção — mesmo tratamento que `docs/cli-parity.md` já dá à divergência Go/Node do "sem argumento"
+(REQ própria, fora deste roadmap). AC4 (`~/.trackfw/plugins`, `RegistryURL`) checado à parte e
+confirmado zerado em código de produto.
+
+Também 1 achado baixo adicional (fraseado confuso no comentário de `suggestCommand` em `root.go`) e
+3 observações positivas (triplicação da mensagem canônica está disciplinada; testes novos não são
+tautológicos — ambos explicitamente checados por instrução do prompt; nota sobre o site). Devolvido
+**não commitado**, conforme fronteira do ML — cabe ao `trackfw_architect` auditar, decidir follow-up
+e commitar.
+
+## Sessão 2026-08-16 — Hades (ML-3A: verificação pós-remoção do subsistema de plugins, barreira final)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`. Verificação
+executável (não só leitura de diff) de que a remoção do ADR
+`docs/adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md`
+foi completa nos 3 CLIs — inventário de todo `exec.Command`/`subprocess`/`child_process` restante,
+classificado por origem do nome invocado (nenhum resolve para `~/.trackfw/plugins` nem terceiro
+baixado em runtime), e prova executável do débito D9: binário sentinela real `trackfw-vaildate` no
+`$PATH`, rodado contra os 3 binários (Go compilado, Node via `node npm/bin/trackfw`, Python via
+`trackfw.cli.main`) — nenhum invocou o sentinela; todos recusaram com a mensagem canônica de comando
+desconhecido, exit 1.
+
+**Veredito: vetor eliminado, não movido/reduzido.** Apêndice "Verificação pós-remoção (ML-3A,
+2026-08-16)" apensado a `docs/seguranca/2026-08-15-gate-de-plugins-binario.md`, com veredito
+item-a-item (1–7). Único achado não-bloqueante: `pypi/build/lib/trackfw/commands/plugins.py` é
+artefato de build local obsoleto, não rastreado pelo git (`pypi/.gitignore:11`), não afeta o pacote
+publicado — registrado por completude, sem ML necessário. **Barreira liberada — sem bloqueio ao
+merge.**
+
+Nenhum arquivo de código de produto ou teste foi tocado. Não commitado, não pushado — conforme
+fronteira do ML e ausência de autoridade Git deste agente. **Devolvido ao `trackfw_architect`** para
+auditoria e commit.
+
+## Sessão 2026-08-16 — Apolo (ML-3C: corretivo dos 3 resíduos apontados pela barreira)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`. Três
+correções pontuais fechando o gate de deleção do subsistema de plugins:
+
+1. Removida a chave órfã `errors.pluginNotFound` de `internal/i18n/locales/{en-US,pt-BR,es-ES}.json`
+   (linha 63-65 de cada). Como era a única chave do objeto `errors` no Go, o bloco inteiro foi
+   removido (Node mantém `errors.notFound`, um key não relacionado — não há paralelo a preservar).
+   JSON validado com `python3 -c "import json; json.load(...)"` nos 3 arquivos.
+2. `pypi/trackfw/thirdparty/fetch.py:32-33` — comentário reescrito para espelhar
+   `internal/thirdparty/fetch.go:17-20` (justificativa "2 MiB porque é texto, não binário" mantida,
+   removida a referência ao "plugin binary download cap" inexistente, adicionada referência ao ADR
+   de remoção). `npm/src/thirdparty/fetch.js` já não tinha o comentário equivalente — nada a corrigir
+   ali.
+3. `internal/commands/root_test.go:137` — `TestFormatUnknownCommandError_PluginsIsGone` trocado de
+   `strings.HasPrefix` para igualdade byte-a-byte (`msg != want`), alinhado aos 2 testes irmãos do
+   mesmo arquivo. `strings` continua em uso em outras 2 linhas do arquivo (import preservado).
+
+Varredura adicional por `plugin` em `internal/`, `npm/src/`, `pypi/trackfw/` não achou resíduo além
+dos 3 já mapeados — os únicos matches restantes são referências históricas ao ADR de remoção,
+`spring-boot-maven-plugin` (XML de exemplo do gerador Java, não relacionado) e a chave `plugins:` da
+config do Chart.js em `serve/static/app.js` (biblioteca de terceiros, não relacionado).
+
+`make quality` exit 0 (falsificação + parity gates, todos os cenários OK). Teste isolado
+`go test ./internal/commands/... -run TestFormatUnknownCommandError_PluginsIsGone -v` → PASS.
+ML-3C marcado ✅ Concluído no roadmap, critérios de aceite marcados. Nenhum arquivo commitado nem
+pushado — conforme fronteira do ML e ausência de autoridade Git deste agente. **Devolvido ao
+`trackfw_architect`** para auditoria e commit.
+
+## Sessão 2026-08-16 — Apolo (ML-3D: corretivo final — `errors.downloadFailed` órfã no Python)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, mesmo roadmap. O ML-3C fechou a
+assimetria do bloco `errors` no Go, mas deixou a chave irmã de pé no Python. Removida
+`errors.downloadFailed` (`"download failed: HTTP {{status}} for {{url}}"`, zero consumidores,
+resíduo de plugins — só o subsistema de download tinha essa mensagem) dos 3 locales:
+`pypi/trackfw/i18n/locales/{en-US,pt-BR,es-ES}.json`. `errors.notFound` preservada nos 3 —
+divergência pré-existente com o Go (confirmada via `git show main:internal/i18n/locales/en-US.json`,
+o bloco `errors` do Go já continha só `pluginNotFound` antes desta branch), fora do escopo deste ML,
+vira REQ própria.
+
+`grep -rn "downloadFailed" pypi/` → zero. JSON dos 3 locales validado com
+`python3 -c "import json; json.load(...)"`. `make quality` exit 0 (118 cenários de falsificação +
+gates de parity, todos OK). Nenhuma outra chave órfã encontrada na varredura. ML-3D marcado
+✅ Concluído no roadmap, critérios de aceite marcados. Nenhum arquivo commitado nem pushado —
+conforme fronteira do ML e ausência de autoridade Git deste agente. **Devolvido ao
+`trackfw_architect`** para auditoria e commit — este era o último ML pendente do roadmap.
+
+## Sessão 2026-08-16 — Zeus (arquiteto) — FECHAMENTO do roadmap de remoção de plugins
+
+Roadmap e REQ em `done`. 3 Waves, 8 MLs. `make quality` exit 0, `trackfw validate` sem erros.
+
+**Mudança de rumo do ciclo:** começou como gate de segurança para o download de binário; KG propôs
+remover o subsistema, e a proposta ganhou — o parecer do `hades-tf` já havia mostrado que o gate
+entregaria menos (detecção do ramo (i) impossível com escopo global, `chmod` tardio como redução de
+janela e não controle, revisor incapaz de ler binário). Cadeia anterior preservada: ADR Superseded,
+REQ Closed, roadmap em `abandoned/`.
+
+**Débitos com REQ a abrir:** divergência pré-existente de `errors.notFound` entre locales; deriva de
+`site/guide/commands.md`; divergência pré-existente de `trackfw` sem argumento (Go exit 0/stdout,
+Node exit 1/stderr).
+
+**Próximo passo:** release **7.0.0** (breaking) em PR próprio — bump atômico nos 4 arquivos de
+versão + `CHANGELOG.md`, tag após o merge.
+
+## Sessão 2026-08-16 — Zeus (arquiteto) — abertura do PR da remoção de plugins
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw` empurrada e PR aberto a pedido de KG.
+Merge é decisão do usuário. Próximo passo: release 7.0.0 em PR próprio.

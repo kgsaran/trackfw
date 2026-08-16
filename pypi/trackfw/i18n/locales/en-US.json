@@ -112,22 +112,6 @@
     "tail": "Number of recent transitions to show",
     "header": "── trackfw log ─────────────────────────"
   },
-  "plugins": {
-    "description": "Manage trackfw plugins",
-    "list": {
-      "description": "List installed plugins",
-      "empty": "No plugins installed. Use `trackfw plugins add <user/repo>` to install one."
-    },
-    "add": {
-      "description": "Install a plugin from GitHub Releases (user/repo or user/repo@tag)",
-      "installing": "Installing plugin from {{repo}}...",
-      "success": "Plugin \"{{name}}\" installed successfully."
-    },
-    "remove": {
-      "description": "Remove an installed plugin",
-      "success": "Plugin \"{{name}}\" removed."
-    }
-  },
   "metrics": {
     "description": "Show delivery metrics",
     "no_data": "No transitions recorded yet.",
@@ -135,8 +119,6 @@
     "export": "Export metrics to CSV file"
   },
   "errors": {
-    "notFound": "Not found: {{path}}",
-    "downloadFailed": "download failed: HTTP {{status}} for {{url}}",
-    "pluginNotFound": "plugin \"{{name}}\" not found"
+    "notFound": "Not found: {{path}}"
   }
 }

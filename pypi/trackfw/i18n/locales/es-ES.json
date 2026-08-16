@@ -112,22 +112,6 @@
     "tail": "Número de transiciones recientes a mostrar",
     "header": "── trackfw log ─────────────────────────"
   },
-  "plugins": {
-    "description": "Gestionar plugins de trackfw",
-    "list": {
-      "description": "Listar plugins instalados",
-      "empty": "No hay plugins instalados. Usa `trackfw plugins add <user/repo>` para instalar uno."
-    },
-    "add": {
-      "description": "Instalar un plugin desde GitHub Releases (user/repo o user/repo@tag)",
-      "installing": "Instalando plugin desde {{repo}}...",
-      "success": "Plugin \"{{name}}\" instalado correctamente."
-    },
-    "remove": {
-      "description": "Eliminar un plugin instalado",
-      "success": "Plugin \"{{name}}\" eliminado."
-    }
-  },
   "metrics": {
     "description": "Muestra métricas de entrega",
     "no_data": "No hay transiciones registradas aún.",
@@ -135,8 +119,6 @@
     "export": "Exportar métricas a archivo CSV"
   },
   "errors": {
-    "notFound": "No encontrado: {{path}}",
-    "downloadFailed": "fallo en la descarga: HTTP {{status}} para {{url}}",
-    "pluginNotFound": "plugin \"{{name}}\" no encontrado"
+    "notFound": "No encontrado: {{path}}"
   }
 }

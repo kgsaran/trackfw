@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [found-and-false-suprime-branch-sem-quebrar-go-build-2026-08-16](found-and-false-suprime-branch-sem-quebrar-go-build-2026-08-16.md)
+- [cobra-silenceerrors-suppresses-usage-independently-of-per-command-flags-2026-08-16](cobra-silenceerrors-suppresses-usage-independently-of-per-command-flags-2026-08-16.md)
 - [python-import-submodule-as-shadowed-by-package-reexport-2026-08-15](python-import-submodule-as-shadowed-by-package-reexport-2026-08-15.md)
 - [node-https-redirect-checkredirect-off-by-one-2026-08-15](node-https-redirect-checkredirect-off-by-one-2026-08-15.md)
 - [go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15](go-regexp-re2-sem-backreference-fenced-block-removal-2026-08-15.md)

@@ -19,7 +19,7 @@ GOCACHE=${GOCACHE:-/tmp/trackfw-go-cache} go build -o "$GO_BIN" ./cmd/trackfw
 # produces fewer commands than the floor (indicating a parser breakage), we
 # exit 1 rather than silently running a vacuous check.
 floor_commands=(
-  init adr req roadmap validate status log plugins discover update metrics
+  init adr req roadmap validate status log discover update metrics
   sync context baseline help configure serve version agents skills note ship
 )
 
