@@ -45,7 +45,7 @@ def _make_kwargs(matched: bool, candidates: list | None = None):
 # ────────────────────────────────────────────────────────────────────────────
 
 def test_parse_branch_spec_valid_types():
-    for typ in ("feat", "fix", "refactor"):
+    for typ in ("feat", "fix", "refactor", "chore", "docs"):
         branch_type, slug, err = parse_branch_spec(f"{typ}/my-slug")
         assert err is None
         assert branch_type == typ
@@ -53,9 +53,10 @@ def test_parse_branch_spec_valid_types():
 
 
 def test_parse_branch_spec_invalid_type():
-    branch_type, slug, err = parse_branch_spec("chore/my-slug")
+    branch_type, slug, err = parse_branch_spec("banana/my-slug")
     assert branch_type is None and slug is None
     assert "invalid branch type" in err
+    assert err == 'invalid branch type "banana" — must be one of feat, fix, refactor, chore, docs'
 
 
 def test_parse_branch_spec_empty_slug():
@@ -158,10 +159,61 @@ def test_run_branch_new_invalid_type_never_calls_match_or_git():
         return True, []
 
     kwargs["match_slug"] = fake_match
-    exit_code = run_branch_new("chore/my-slug", False, **kwargs)
+    exit_code = run_branch_new("banana/my-slug", False, **kwargs)
     assert exit_code != 0
     assert match_called["value"] is False
     assert calls == []
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# run_branch_new — chore/docs are housekeeping types: they create the branch without
+# the branch_has_wip_roadmap gate, and never call match_slug.
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_run_branch_new_chore_type_skips_gate_checks_out_branch():
+    match_called = {"value": False}
+    # matched=False: gate would block if consulted
+    kwargs, out, err_out, calls = _make_kwargs(False, None)
+
+    def fake_match(slug, wip_dirs, done_dirs):
+        match_called["value"] = True
+        return False, []
+
+    kwargs["match_slug"] = fake_match
+    exit_code = run_branch_new("chore/release-7.0.0", False, **kwargs)
+    assert exit_code == 0
+    assert match_called["value"] is False
+    assert calls == ["chore/release-7.0.0"]
+    assert out.getvalue() == ""
+
+
+def test_run_branch_new_docs_type_skips_gate_checks_out_branch():
+    match_called = {"value": False}
+    kwargs, out, err_out, calls = _make_kwargs(False, None)
+
+    def fake_match(slug, wip_dirs, done_dirs):
+        match_called["value"] = True
+        return False, []
+
+    kwargs["match_slug"] = fake_match
+    exit_code = run_branch_new("docs/atualiza-readme", False, **kwargs)
+    assert exit_code == 0
+    assert match_called["value"] is False
+    assert calls == ["docs/atualiza-readme"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# run_branch_new — non-regression: feat/fix/refactor without a matching roadmap must
+# keep blocking with the same governance orientation message.
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_run_branch_new_feat_without_roadmap_still_blocks_non_regression():
+    kwargs, out, err_out, calls = _make_kwargs(False, None)
+    exit_code = run_branch_new("feat/no-roadmap-for-this", False, **kwargs)
+    assert exit_code != 0
+    assert calls == []
+    want = _validator.branch_governance_orientation("feat/no-roadmap-for-this")
+    assert want in out.getvalue()
 
 
 def test_run_branch_new_empty_slug_never_calls_match_or_git():

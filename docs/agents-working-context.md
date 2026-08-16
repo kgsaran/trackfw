@@ -17596,3 +17596,51 @@ versão + `CHANGELOG.md`, tag após o merge.
 
 Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw` empurrada e PR aberto a pedido de KG.
 Merge é decisão do usuário. Próximo passo: release 7.0.0 em PR próprio.
+
+## Sessão 2026-08-16 — Apolo (INÍCIO: ML-1A — `trackfw branch new` aceita `chore`/`docs`)
+
+Branch `fix/trackfw-branch-new-aceita-tipos-chore-e-docs-sem-gate-de-roadmap`, REQ e roadmap já em
+`wip/`. Bloqueante para a branch de release 7.0.0 (`chore/release-7.0.0` não tinha caminho
+sancionado de criação). Executando ML-1A: acrescentar `chore`/`docs` ao vocabulário de
+`branch new` nos 3 CLIs, criando a branch sem gate de roadmap para esses dois tipos, mantendo o
+gate intacto para `feat`/`fix`/`refactor` (teste de não-regressão explícito).
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-1A concluído — não commitado)
+
+`branchValidTypes`/`BRANCH_VALID_TYPES` passa a `{feat, fix, refactor, chore, docs}`; novo
+conjunto `branchGatedTypes`/`BRANCH_GATED_TYPES` = `{feat, fix, refactor}` isola qual subconjunto
+consulta `matchSlug` (wip/done) antes de `git checkout -b`. `chore`/`docs` nunca chamam
+`matchSlug` — criam a branch direto, espelhando a isenção já concedida a esses tipos por
+`trackfw ship`/`trackfw commit`. Mensagem de tipo inválido agora lista o vocabulário completo,
+byte-idêntica nos 3 CLIs: `invalid branch type "banana" — must be one of feat, fix, refactor,
+chore, docs`.
+
+**Arquivos tocados:** `internal/commands/branch.go` + `internal/commands/branch_test.go` (Go);
+`npm/src/branch/runner.js` + `npm/src/commands/branch.js` + `npm/tests/branch.test.js` (Node);
+`pypi/trackfw/commands/branch.py` + `pypi/tests/test_branch.py` (Python);
+`scripts/check-branch-new-parity.sh` (+3 cenários: chore/docs pulam o gate, feat sem roadmap
+continua bloqueando); `docs/cli-parity.md` (seção `trackfw branch new` atualizada).
+
+**Não-regressão do gate:** teste dedicado em cada CLI (`TestRunBranchNew_FeatWithoutRoadmap_
+StillBlocks_NonRegression` / equivalentes) prova que `feat/<slug>` sem roadmap correspondente
+continua bloqueando com a mesma mensagem de orientação, mesmo com `matchSlug` devolvendo
+`matched=false` — o gate só é pulado quando o tipo está fora de `branchGatedTypes`, nunca por
+enfraquecimento da lógica de match em si.
+
+`go build ./...`, `go test ./internal/commands/...`, `node --test npm/tests/branch.test.js`,
+`python3 -m pytest pypi/tests/test_branch.py`, `bash scripts/check-branch-new-parity.sh` e
+`make quality` (118 cenários de falsificação) todos verdes — evidência completa no relatório do
+agente. Roadmap marcado com ML-1A ✅ Concluído. Nenhum commit/push (fora da autoridade deste
+agente) — devolvido ao `trackfw_architect` para auditoria e commit.
+
+## Sessão 2026-08-16 — Zeus (arquiteto) — fix do vocabulário de branch, PR aberto
+
+Fix pequeno e bloqueante da release: `trackfw branch new` passa a aceitar `chore` e `docs`, sem
+gate de roadmap, alinhando-se ao que `ship` e `commit` já faziam. Gate preservado para
+`feat|fix|refactor`, falsificado em repo isolado. Roadmap e REQ em `done`.
+
+Dois débitos do `git-branch-guard` registrados para REQ própria: brecha de contorno não coberta, e
+falso-positivo por prosa em mensagem de commit.
+
+**Próximo:** release 7.0.0, com o motivo da remoção de plugins (superfície de supply-chain) como
+justificativa central do CHANGELOG.

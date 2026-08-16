@@ -39,7 +39,7 @@ func makeBranchDeps(matched bool, candidates []string) (branchNewDeps, *bytes.Bu
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestParseBranchSpec_ValidTypes(t *testing.T) {
-	for _, typ := range []string{"feat", "fix", "refactor"} {
+	for _, typ := range []string{"feat", "fix", "refactor", "chore", "docs"} {
 		branchType, slug, err := parseBranchSpec(typ + "/my-slug")
 		if err != nil {
 			t.Fatalf("type %q: unexpected error: %v", typ, err)
@@ -51,12 +51,16 @@ func TestParseBranchSpec_ValidTypes(t *testing.T) {
 }
 
 func TestParseBranchSpec_InvalidType(t *testing.T) {
-	_, _, err := parseBranchSpec("chore/my-slug")
+	_, _, err := parseBranchSpec("banana/my-slug")
 	if err == nil {
 		t.Fatal("expected error for invalid type")
 	}
 	if !strings.Contains(err.Error(), "invalid branch type") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `invalid branch type "banana" — must be one of feat, fix, refactor, chore, docs`
+	if err.Error() != want {
+		t.Fatalf("unexpected error message.\ngot:  %q\nwant: %q", err.Error(), want)
 	}
 }
 
@@ -203,7 +207,7 @@ func TestRunBranchNew_InvalidType_NeverCallsMatchOrGit(t *testing.T) {
 		matchCalled = true
 		return true, nil
 	}
-	err := runBranchNew("chore/my-slug", false, deps)
+	err := runBranchNew("banana/my-slug", false, deps)
 	if err == nil {
 		t.Fatal("expected error for invalid type")
 	}
@@ -212,6 +216,73 @@ func TestRunBranchNew_InvalidType_NeverCallsMatchOrGit(t *testing.T) {
 	}
 	if len(*calls) != 0 {
 		t.Fatalf("git checkout must not run for an invalid type, got: %v", *calls)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// runBranchNew — chore/docs are housekeeping types: they create the branch without
+// the branch_has_wip_roadmap gate, and never call matchSlug.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestRunBranchNew_ChoreType_SkipsGate_ChecksOutBranch(t *testing.T) {
+	matchCalled := false
+	deps, out, calls := makeBranchDeps(false, nil) // matched=false: gate would block if consulted
+	deps.matchSlug = func(slug string, wipDirs, doneDirs []string) (bool, []string) {
+		matchCalled = true
+		return false, nil
+	}
+	err := runBranchNew("chore/release-7.0.0", false, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matchCalled {
+		t.Fatal("matchSlug must not be called for chore — no roadmap gate applies")
+	}
+	if len(*calls) != 1 || (*calls)[0] != "chore/release-7.0.0" {
+		t.Fatalf("expected git checkout -b chore/release-7.0.0, got %v", *calls)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("expected no extra output on successful checkout, got %q", out.String())
+	}
+}
+
+func TestRunBranchNew_DocsType_SkipsGate_ChecksOutBranch(t *testing.T) {
+	matchCalled := false
+	deps, _, calls := makeBranchDeps(false, nil) // matched=false: gate would block if consulted
+	deps.matchSlug = func(slug string, wipDirs, doneDirs []string) (bool, []string) {
+		matchCalled = true
+		return false, nil
+	}
+	err := runBranchNew("docs/atualiza-readme", false, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matchCalled {
+		t.Fatal("matchSlug must not be called for docs — no roadmap gate applies")
+	}
+	if len(*calls) != 1 || (*calls)[0] != "docs/atualiza-readme" {
+		t.Fatalf("expected git checkout -b docs/atualiza-readme, got %v", *calls)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// runBranchNew — non-regression: feat/fix/refactor without a matching roadmap must
+// keep blocking with the same governance orientation message.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestRunBranchNew_FeatWithoutRoadmap_StillBlocks_NonRegression(t *testing.T) {
+	deps, out, calls := makeBranchDeps(false, nil)
+	err := runBranchNew("feat/no-roadmap-for-this", false, deps)
+	if err == nil {
+		t.Fatal("expected error: feat without a matching roadmap must still block")
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("git checkout must not run when the gate blocks, got calls: %v", *calls)
+	}
+	got := out.String()
+	want := validator.BranchGovernanceOrientation("feat/no-roadmap-for-this")
+	if !strings.Contains(got, want) {
+		t.Fatalf("expected output to still contain the governance orientation message.\ngot: %q\nwant substring: %q", got, want)
 	}
 }
 

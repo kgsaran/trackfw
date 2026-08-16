@@ -16,12 +16,20 @@ const { spawnSync } = require('child_process')
 const config = require('../config')
 const validator = require('../validator')
 
-// branchValidTypes mirrors the vocabulary already enforced by `trackfw ship` (feat|fix|refactor).
-const branchValidTypes = new Set(['feat', 'fix', 'refactor'])
+// branchValidTypes is the full vocabulary accepted by `trackfw branch new`. feat/fix/refactor are
+// gated on a matching REQ + roadmap already in wip/ or done/ (branchGatedTypes below); chore/docs
+// are housekeeping types — already treated as roadmap-exempt by `trackfw ship` and `trackfw
+// commit` — and create the branch without that gate.
+const branchValidTypes = new Set(['feat', 'fix', 'refactor', 'chore', 'docs'])
+
+// branchGatedTypes is the subset of branchValidTypes that requires a matching REQ + roadmap
+// already in wip/ or done/ before the branch is created. Keep this in sync with the pattern
+// `trackfw ship`/`trackfw commit` use to decide when the branch_has_wip_roadmap gate applies.
+const branchGatedTypes = new Set(['feat', 'fix', 'refactor'])
 
 /**
  * parseBranchSpec splits "<type>/<slug>" and validates both parts. type must be one of
- * feat, fix, refactor (branchValidTypes); slug must be non-empty.
+ * feat, fix, refactor, chore, docs (branchValidTypes); slug must be non-empty.
  * @param {string} spec
  * @returns {{ branchType: string, slug: string }}
  * @throws {Error} when spec is malformed
@@ -30,12 +38,12 @@ function parseBranchSpec(spec) {
   const value = String(spec)
   const idx = value.indexOf('/')
   if (idx === -1 || value.slice(0, idx) === '') {
-    throw new Error(`invalid branch spec "${spec}" — expected <type>/<slug> with type in feat, fix, refactor`)
+    throw new Error(`invalid branch spec "${spec}" — expected <type>/<slug> with type in feat, fix, refactor, chore, docs`)
   }
   const branchType = value.slice(0, idx)
   const slug = value.slice(idx + 1)
   if (!branchValidTypes.has(branchType)) {
-    throw new Error(`invalid branch type "${branchType}" — must be one of feat, fix, refactor`)
+    throw new Error(`invalid branch type "${branchType}" — must be one of feat, fix, refactor, chore, docs`)
   }
   if (slug.trim() === '') {
     throw new Error(`branch slug is required — expected <type>/<slug>, got "${spec}"`)
@@ -102,24 +110,28 @@ function runBranchNew(spec, dryRun, deps = {}) {
 
   const branchName = `${branchType}/${slug}`
 
-  const cfg = loadConfig()
-  const wipDirs = resolveWIPDirs(cfg)
-  const doneDirs = resolveDoneDirs(cfg)
+  // chore/docs are housekeeping types — already treated as roadmap-exempt by `trackfw ship`
+  // and `trackfw commit` — so the branch_has_wip_roadmap gate below does not apply to them.
+  if (branchGatedTypes.has(branchType)) {
+    const cfg = loadConfig()
+    const wipDirs = resolveWIPDirs(cfg)
+    const doneDirs = resolveDoneDirs(cfg)
 
-  const normalizedSlug = validator.normalizeBranchSlug(slug)
-  const { matched, candidates } = matchSlug(normalizedSlug, wipDirs, doneDirs)
+    const normalizedSlug = validator.normalizeBranchSlug(slug)
+    const { matched, candidates } = matchSlug(normalizedSlug, wipDirs, doneDirs)
 
-  if (!matched) {
-    const msg = (!candidates || candidates.length === 0)
-      ? validator.branchGovernanceOrientation(branchName)
-      : validator.branchNoMatchingRoadmapMessage(branchName, candidates)
-    if (dryRun) {
-      writeln(`[dry-run] would block: ${msg}`)
-    } else {
-      writeln(msg)
+    if (!matched) {
+      const msg = (!candidates || candidates.length === 0)
+        ? validator.branchGovernanceOrientation(branchName)
+        : validator.branchNoMatchingRoadmapMessage(branchName, candidates)
+      if (dryRun) {
+        writeln(`[dry-run] would block: ${msg}`)
+      } else {
+        writeln(msg)
+      }
+      writeErr(`blocked: no matching roadmap in wip/ nor done/ for "${branchName}"`)
+      return 1
     }
-    writeErr(`blocked: no matching roadmap in wip/ nor done/ for "${branchName}"`)
-    return 1
   }
 
   if (dryRun) {
@@ -134,6 +146,7 @@ function runBranchNew(spec, dryRun, deps = {}) {
 
 module.exports = {
   branchValidTypes,
+  branchGatedTypes,
   parseBranchSpec,
   defaultGitCheckout,
   runBranchNew,

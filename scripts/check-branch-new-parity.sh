@@ -226,6 +226,92 @@ done
 assert_three_way "$BN_LABEL"
 
 # ---------------------------------------------------------------------------
+# Scenario (d) — chore type: housekeeping, creates the branch with wip/ EMPTY
+# (no roadmap at all) — proves the branch_has_wip_roadmap gate does not apply to
+# chore/docs. Uses --dry-run so no real git repo is needed here.
+# ---------------------------------------------------------------------------
+BN_LABEL="chore-skips-gate"
+for runtime in go node py; do
+  fixture="$WORK/d-$runtime"
+  make_base "$fixture"
+  # wip/ and done/ deliberately left empty.
+  run_branch_new "$runtime" "$fixture" chore/release-x.y.z --dry-run
+  echo "$BN_EXIT" >"$WORK/$BN_LABEL.$runtime.exit"
+  if [[ "$BN_EXIT" -ne 0 ]]; then
+    fail "branch-new-parity/$BN_LABEL/$runtime" "expected exit 0 (no gate for chore), got $BN_EXIT; stderr: $(cat "$BN_ERR_FILE")"
+    continue
+  fi
+  if ! grep -qF 'would create branch' "$BN_OUT_FILE"; then
+    fail "branch-new-parity/$BN_LABEL/$runtime" "vacuity guard: stdout missing 'would create branch'; stdout: $(cat "$BN_OUT_FILE")"
+    continue
+  fi
+done
+assert_three_way "$BN_LABEL"
+
+# ---------------------------------------------------------------------------
+# Scenario (e) — docs type: same as (d), housekeeping, wip/ EMPTY.
+# ---------------------------------------------------------------------------
+BN_LABEL="docs-skips-gate"
+for runtime in go node py; do
+  fixture="$WORK/e-$runtime"
+  make_base "$fixture"
+  run_branch_new "$runtime" "$fixture" docs/atualiza-readme --dry-run
+  echo "$BN_EXIT" >"$WORK/$BN_LABEL.$runtime.exit"
+  if [[ "$BN_EXIT" -ne 0 ]]; then
+    fail "branch-new-parity/$BN_LABEL/$runtime" "expected exit 0 (no gate for docs), got $BN_EXIT; stderr: $(cat "$BN_ERR_FILE")"
+    continue
+  fi
+  if ! grep -qF 'would create branch' "$BN_OUT_FILE"; then
+    fail "branch-new-parity/$BN_LABEL/$runtime" "vacuity guard: stdout missing 'would create branch'; stdout: $(cat "$BN_OUT_FILE")"
+    continue
+  fi
+done
+assert_three_way "$BN_LABEL"
+
+# ---------------------------------------------------------------------------
+# Scenario (f) — feat WITHOUT a matching roadmap still blocks (non-regression):
+# proves loosening the gate for chore/docs did not loosen it for feat/fix/refactor.
+# ---------------------------------------------------------------------------
+BN_LABEL="feat-still-gated-non-regression"
+for runtime in go node py; do
+  fixture="$WORK/f-$runtime"
+  make_base "$fixture"
+  # wip/ and done/ deliberately left empty — no roadmap for this slug anywhere.
+  run_branch_new "$runtime" "$fixture" feat/no-roadmap-for-this --dry-run
+  echo "$BN_EXIT" >"$WORK/$BN_LABEL.$runtime.exit"
+  if [[ "$BN_EXIT" -eq 0 ]]; then
+    fail "branch-new-parity/$BN_LABEL/$runtime" "expected non-zero exit (gate must still block feat without a roadmap), got 0"
+    continue
+  fi
+  if ! grep -qF 'no roadmap is in wip/ nor done/' "$BN_OUT_FILE"; then
+    fail "branch-new-parity/$BN_LABEL/$runtime" "vacuity guard: stdout missing orientation message; stdout: $(cat "$BN_OUT_FILE")"
+    continue
+  fi
+done
+assert_three_way "$BN_LABEL"
+
+# ---------------------------------------------------------------------------
+# Scenario (g) — invalid type: vocabulary listed in the error message must be
+# byte-identical across the three runtimes (feat, fix, refactor, chore, docs).
+# ---------------------------------------------------------------------------
+BN_LABEL="invalid-type-vocabulary"
+for runtime in go node py; do
+  fixture="$WORK/g-$runtime"
+  make_base "$fixture"
+  run_branch_new "$runtime" "$fixture" banana/whatever
+  echo "$BN_EXIT" >"$WORK/$BN_LABEL.$runtime.exit"
+  if [[ "$BN_EXIT" -eq 0 ]]; then
+    fail "branch-new-parity/$BN_LABEL/$runtime" "expected non-zero exit for invalid type, got 0"
+    continue
+  fi
+  if ! grep -qF 'must be one of feat, fix, refactor, chore, docs' "$BN_ERR_FILE"; then
+    fail "branch-new-parity/$BN_LABEL/$runtime" "vacuity guard: stderr missing full vocabulary; stderr: $(cat "$BN_ERR_FILE")"
+    continue
+  fi
+done
+assert_three_way "$BN_LABEL"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo
