@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-15
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md"
 ---
 
 # REQ: Remoção do subsistema de plugins do trackfw
 
-> Date: 2026-08-15 | Status: Open
+> Date: 2026-08-15 | Status: done
 | Linear Issue:
 | Jira Issue:
 
@@ -89,4 +89,4 @@ ADR: `docs/adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md`

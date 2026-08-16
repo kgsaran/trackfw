@@ -17556,3 +17556,38 @@ config do Chart.js em `serve/static/app.js` (biblioteca de terceiros, não relac
 ML-3C marcado ✅ Concluído no roadmap, critérios de aceite marcados. Nenhum arquivo commitado nem
 pushado — conforme fronteira do ML e ausência de autoridade Git deste agente. **Devolvido ao
 `trackfw_architect`** para auditoria e commit.
+
+## Sessão 2026-08-16 — Apolo (ML-3D: corretivo final — `errors.downloadFailed` órfã no Python)
+
+Branch `refactor/remocao-do-subsistema-de-plugins-do-trackfw`, mesmo roadmap. O ML-3C fechou a
+assimetria do bloco `errors` no Go, mas deixou a chave irmã de pé no Python. Removida
+`errors.downloadFailed` (`"download failed: HTTP {{status}} for {{url}}"`, zero consumidores,
+resíduo de plugins — só o subsistema de download tinha essa mensagem) dos 3 locales:
+`pypi/trackfw/i18n/locales/{en-US,pt-BR,es-ES}.json`. `errors.notFound` preservada nos 3 —
+divergência pré-existente com o Go (confirmada via `git show main:internal/i18n/locales/en-US.json`,
+o bloco `errors` do Go já continha só `pluginNotFound` antes desta branch), fora do escopo deste ML,
+vira REQ própria.
+
+`grep -rn "downloadFailed" pypi/` → zero. JSON dos 3 locales validado com
+`python3 -c "import json; json.load(...)"`. `make quality` exit 0 (118 cenários de falsificação +
+gates de parity, todos OK). Nenhuma outra chave órfã encontrada na varredura. ML-3D marcado
+✅ Concluído no roadmap, critérios de aceite marcados. Nenhum arquivo commitado nem pushado —
+conforme fronteira do ML e ausência de autoridade Git deste agente. **Devolvido ao
+`trackfw_architect`** para auditoria e commit — este era o último ML pendente do roadmap.
+
+## Sessão 2026-08-16 — Zeus (arquiteto) — FECHAMENTO do roadmap de remoção de plugins
+
+Roadmap e REQ em `done`. 3 Waves, 8 MLs. `make quality` exit 0, `trackfw validate` sem erros.
+
+**Mudança de rumo do ciclo:** começou como gate de segurança para o download de binário; KG propôs
+remover o subsistema, e a proposta ganhou — o parecer do `hades-tf` já havia mostrado que o gate
+entregaria menos (detecção do ramo (i) impossível com escopo global, `chmod` tardio como redução de
+janela e não controle, revisor incapaz de ler binário). Cadeia anterior preservada: ADR Superseded,
+REQ Closed, roadmap em `abandoned/`.
+
+**Débitos com REQ a abrir:** divergência pré-existente de `errors.notFound` entre locales; deriva de
+`site/guide/commands.md`; divergência pré-existente de `trackfw` sem argumento (Go exit 0/stdout,
+Node exit 1/stderr).
+
+**Próximo passo:** release **7.0.0** (breaking) em PR próprio — bump atômico nos 4 arquivos de
+versão + `CHANGELOG.md`, tag após o merge.

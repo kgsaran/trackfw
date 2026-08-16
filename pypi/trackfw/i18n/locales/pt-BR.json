@@ -119,7 +119,6 @@
     "export": "Exportar métricas para arquivo CSV"
   },
   "errors": {
-    "notFound": "Não encontrado: {{path}}",
-    "downloadFailed": "falha no download: HTTP {{status}} para {{url}}"
+    "notFound": "Não encontrado: {{path}}"
   }
 }

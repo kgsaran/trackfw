@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-15
 req: "docs/req/REQ-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md"
 squad: "apolo-tf, hades-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf, hades-tf, hefesto-tf"
 
 # Roadmap: Remoção do subsistema de plugins do trackfw
 
-> Created: 2026-08-15 | Status: wip
+> Created: 2026-08-15 | Status: done
 
 ## Context
 
@@ -32,13 +32,13 @@ Referências em doc/gates a atualizar: `README.md:160-162`, `CLAUDE.md`, `docs/c
 `scripts/check-cli-parity.sh:22` (lista `floor_commands` contém `plugins`).
 
 ## Acceptance Criteria
-- [ ] AC1 — Comandos e código de download/registry removidos nos 3 CLIs.
-- [ ] AC2 — Execução de plugin removida, incluindo o fallback de argumento desconhecido.
-- [ ] AC3 — Argumento desconhecido produz **erro de comando desconhecido**, mensagem idêntica nos 3 CLIs.
-- [ ] AC4 — Zero referências a `~/.trackfw/plugins` e ao `RegistryURL` em código de produto.
-- [ ] AC5 — `README.md`, `CLAUDE.md`, `docs/cli-parity.md` e `check-cli-parity.sh` atualizados.
-- [ ] AC6 — `make quality` verde, sem teste órfão.
-- [ ] AC7 — Breaking change no `CHANGELOG.md` + bump `7.0.0` — **PR próprio, fora deste roadmap**.
+- [x] AC1 — Comandos e código de download/registry removidos nos 3 CLIs.
+- [x] AC2 — Execução de plugin removida, incluindo o fallback de argumento desconhecido.
+- [x] AC3 — Argumento desconhecido produz **erro de comando desconhecido**, mensagem idêntica nos 3 CLIs.
+- [x] AC4 — Zero referências a `~/.trackfw/plugins` e ao `RegistryURL` em código de produto.
+- [x] AC5 — `README.md`, `CLAUDE.md`, `docs/cli-parity.md` e `check-cli-parity.sh` atualizados.
+- [x] AC6 — `make quality` verde, sem teste órfão.
+- [x] AC7 — Breaking change no `CHANGELOG.md` + bump `7.0.0` — **PR próprio, fora deste roadmap**.
 
 ---
 
@@ -203,7 +203,7 @@ deleção e não infla este escopo.
 
 
 ### ML-3D — Corretivo final: `errors.downloadFailed` órfã no Python
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-3C ✅.
 **Origem:** auditoria do arquiteto sobre o ML-3C — a correção fechou a assimetria do Go e deixou a
 irmã de pé no Python.
@@ -224,9 +224,9 @@ Node; o ML-1C removeu só `pluginNotFound` do Python e deixou esta.
 Validar o JSON depois de editar.
 
 **Critérios de aceite:**
-- [ ] `grep -rn "downloadFailed" pypi/` → zero.
-- [ ] JSON dos 3 locales do Python válido.
-- [ ] `make quality` verde.
+- [x] `grep -rn "downloadFailed" pypi/` → zero.
+- [x] JSON dos 3 locales do Python válido.
+- [x] `make quality` verde.
 
 **FORA de escopo, documentado:** `errors.notFound` existe em Node e Python e **não** no Go — mas
 `git show main:internal/i18n/locales/en-US.json` prova que o bloco `errors` do Go **já continha
@@ -239,3 +239,30 @@ apenas `pluginNotFound`** antes desta branch. Ou seja, a divergência de `notFou
 - Remoção é **breaking change**: bump `7.0.0` + `CHANGELOG.md` em **PR próprio**, após este.
 - Roadmap anterior (gate) em `docs/roadmaps/abandoned/`, com o motivo registrado.
 - Commits e branch são exclusivos do `trackfw_architect`.
+
+---
+
+## Evidência de fechamento (auditoria do arquiteto, 2026-08-16)
+
+| AC | Evidência |
+|---|---|
+| AC1 | `internal/plugins/`, `internal/commands/plugins.go`, `npm/src/commands/plugins.js` e `pypi/trackfw/commands/plugins.py` apagados |
+| AC2 | `RunPlugin` e o fallback `root.go:71-74` removidos; `hades-tf` varreu caminhos indiretos (`exec.Command`/`subprocess`/`child_process`) e confirmou que só resta toolchain fixa |
+| AC3 | Mensagem canônica byte-idêntica nos 3 CLIs, verificada por `diff` do arquiteto, com e sem linha de sugestão, exit 1 nos três |
+| AC4 | Zero ocorrências de `~/.trackfw/plugins` e `RegistryURL` em código de produto |
+| AC5 | `README.md`, `CLAUDE.md`, `docs/cli-parity.md` e `check-cli-parity.sh` atualizados |
+| AC6 | `make quality` exit 0; testes de plugins removidos junto com o código; nenhum teste órfão |
+| AC7 | Breaking change → **PR próprio de release 7.0.0**, fora deste roadmap |
+
+**Prova do vetor, feita com binário real e não por leitura de diff:** um executável
+`trackfw-vaildate` colocado no `PATH`, imprimindo `EXECUTOU_PLUGIN_MALICIOSO`, **não é executado**
+por nenhum dos 3 CLIs — todos recusam com a mensagem canônica. Verificado pelo arquiteto e,
+independentemente, pelo `hades-tf` na barreira.
+
+**Débitos deixados para trás, com REQ a abrir:**
+- divergência **pré-existente** de `errors.notFound` entre os locales (existe em Node e Python, não
+  no Go — comprovado em `git show main:`);
+- deriva de `site/guide/commands.md` e `site/en/guide/commands.md`, que documentam `trackfw plugins`
+  e também estão desatualizados quanto a `changelog` e `commit`;
+- divergência **pré-existente** de `trackfw` **sem argumento**: Go sai `exit 0` com stdout, Node sai
+  `exit 1` com help em stderr.
