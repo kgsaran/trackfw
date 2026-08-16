@@ -17695,3 +17695,17 @@ npm/tests/ship.test.js` (69 testes), `python3 -m pytest pypi/tests/test_ship.py`
 + todos os gates de paridade, incluindo o novo) todos verdes. Roadmap marcado com ML-1A ✅
 Concluído. Nenhum commit/push (fora da autoridade deste agente) — devolvido ao
 `trackfw_architect` para auditoria e commit.
+## Sessão 2026-08-16 — Zeus (arquiteto) — release 7.0.0
+
+Bump atômico nos 4 arquivos de versão + `CHANGELOG.md`. Branch `chore/release-7.0.0` criada pelo
+caminho sancionado, agora que o fix do vocabulário está mergeado.
+
+`CHANGELOG` escrito com a **superfície de supply chain** como justificativa central da remoção de
+plugins, a pedido de KG: a cadeia completa (binário de terceiro, sem assinatura, sem checksum do
+autor, sem pinagem, registry em branch mutável, `chmod 0755`, execução por typo) e o argumento de
+por que remover em vez de proteger — o gate seria de revisão, não de supply chain.
+
+`[Unreleased]` vazio removido para que `trackfw changelog` sem argumentos mostre a 7.0.0 em vez de
+uma seção em branco. Volta quando houver conteúdo novo.
+
+Tag só após o merge deste PR.
