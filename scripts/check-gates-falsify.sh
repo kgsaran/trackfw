@@ -4935,4 +4935,215 @@ assert_fails_with "unknown-command-parity/missing-suggestion/go-detects-regressi
   "vacuity guard: expected suggestion 'validate' missing" \
   env GO_BIN="$T57G_BIN" bash "$T57/scripts/check-unknown-command-parity.sh"
 
-echo "Falsification checks passed (all 118 scenarios, 18 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py; detection arm made self-discriminating (ML-1B, ROADMAP-2026-08-12) against the 2026-08-08 environmental-leak failure mode via a test-controlled synthetic \$HOME (Codex-only global guard, no Claude) plus an exclusivity assertion that none of the 5 non-sabotaged CLIs may appear in the FAIL set — proved against a leak-only (no sabotage) adversarial variant that the pre-ML-1B assertion set was satisfiable by pure environmental leak and the new exclusivity check rejects it (46), \`trackfw validate\`'s credential_guard_hook_resolvable rule (ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A/ML-2A) — a registered project-scope Claude credential-guard hook (.claude/settings.json) whose referenced script is missing must be flagged, and must stay silent when the script is present and executable, exercised end-to-end via the real Go binary against an otherwise-empty scaffold_adr_req_project fixture (the same fixture Scenario 29 pins to zero violations, so no other rule has material to fire) — detection arm asserts the exact validator diagnostic literal (unique across internal/validator/*.go per grep) rather than a generic non-zero exit, proved non-vacuous, no \$HOME dependency by design since the rule never reads outside the project root (47), check-attention-scripts-parity.sh extended (ML-0B, ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate) to cover scripts/trackfw-credential-guard.sh (project scope) alongside the two attention scripts — Node.js's CREDENTIAL_GUARD_SCRIPT composition line reordered (CG_PROJECT_GUARD and CG_DETECTION_CORE swapped, no CG_* block content touched) so the script actually emitted by \`discover --init\` diverges from Go/Python while the pre-existing Go-only TestCredentialGuardScript_ParityAcrossStacks (which reconstructs the script by regex-scraping and Go-hardcoded-order-concatenating the CG_*/_CG_* literals, never executing Node/Python) stays green — proves the shell gate closes a real coverage gap the structural unit test cannot see (48), \`trackfw validate\`'s credential_guard_script_integrity rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — scripts/trackfw-credential-guard.sh diverging from the template this trackfw binary would generate (via a real, isolated \`discover --init\` run, then a single tampered line appended) must be flagged with \`rules: credential_guard_script_integrity: error\` fixed in the fixture (default severity is warning, which does not flip validate's exit code), and must stay silent when the script is byte-identical to that binary's own template — detection arm asserts the exact validator diagnostic literal, proved non-vacuous via assert_would_now_fail (same exit!=0-and-message-present criterion as assert_fails_with, required to NOT hold against a config-only \`rules: ...: off\` neutering of the same corrupted fixture) rather than a message-absence-only check, single-delta design isolates the corruption (baseline vs. detection) and the severity override (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (49), \`trackfw validate\`'s credential_guard_mode_downgrade rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — credential_guard.mode: block committed at git HEAD followed by an uncommitted on-disk downgrade to mode: warn must be flagged (first check-gates-falsify.sh scenario to git-init/commit a real fixture repo, closing the gap Apolo found — no prior fixture had a HEAD for this rule to anchor against), and must stay silent when disk matches HEAD — non-vacuity mechanism REPLACED by ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard/ML-2A (ADR Emenda 2): the old \`rules: ...: off\` uncommitted neutering stopped proving anything once M4 anchored severity at HEAD, so it now commits \`rules: credential_guard_mode_downgrade: off\` TOGETHER with mode: block at HEAD (the ADR's legitimate-committed-disable path) instead, single-delta design isolates the uncommitted downgrade (baseline vs. detection) and the committed-off HEAD (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (50), the M4 mechanism itself (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A/ML-2A) — the decisive scenario: the COMBINED uncommitted edit (\`credential_guard.mode: warn\` + \`rules: credential_guard_mode_downgrade: off\`, both disk-only, HEAD only ever committing mode: block) must still be reported, self-discriminating against a contrast fixture where the SAME disk-side attack is applied but \`rules: ...: off\` is committed at HEAD alongside mode: block (legitimate, auditable) and is silenced — isolating commit-status of the off as the only variable; non-vacuity proved by temporarily reverting credentialGuardRuleSeverity to disk-only resolution (pre-ADR behavior), rebuilding bin/trackfw, confirming the detection arm goes red, then restoring and rebuilding (51), the .trackfw-baseline.json carve-out (Barreira B0/ML-1A/ML-2A) — a credential-guard violation listed in .trackfw-baseline.json by its full literal message continues to be reported, verified against the real BaselineFile{Violations,Warnings} shape and exact-message-match semantics in filterBaselineTagged (validator.go) rather than assumed from ADR prose, self-discriminating within a single fixture/single \`validate\` run: a filename_uniqueness (non-guard) violation listed in the SAME baseline by the same mechanism IS suppressed, proving the carve-out is specific to the 3 guard rules rather than the baseline format being broken outright (which would make the guard violation \"surviving\" prove nothing) — non-vacuity proved by temporarily dropping the \`&& !credentialGuardAnchoredRules[v.Rule]\` guard in filterBaselineTagged, rebuilding, confirming both violations get suppressed, then restoring and rebuilding (52), non-regression for non-guard rules (the most important scenario for confidence in M4, closing the \"blast radius\" question) — filename_uniqueness (not in credentialGuardAnchoredRules, default severity error) with \`rules: filename_uniqueness: off\` set disk-only and never committed continues to fully silence the rule exactly as before this ADR, proving diskRuleSeverity's disk-only path for the other ~38 rules received zero delta from M4; fixture carries a real git HEAD (committing a trackfw.yaml with no rules: block) specifically so the non-vacuity proof is meaningful — without a HEAD, credentialGuardRuleSeverity would fall back to disk-only regardless of anchoring, masking exactly the scope-leak this scenario exists to catch; non-vacuity proved by temporarily adding filename_uniqueness to credentialGuardAnchoredRules (simulating an M4 scope leak), rebuilding, confirming the silenced arm goes red (HEAD's absent rules: entry now resolves to the stricter default and wins over disk's off), then restoring and rebuilding (53), the GIT_* environment-variable bypass of the M4 anchoring (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1B/ML-2B) stays closed against both vectors found by ML-3B — GIT_DIR/GIT_WORK_TREE redirection to a decoy repository without a committed trackfw.yaml, and GIT_CONFIG_COUNT=abc failure-induction (unrelated to redirection, just makes the git subprocess exit 128) — each embedded with a raw \`git -C\` control proving the vector is a genuine attack (not inert) before testing the trackfw binary, plus a legitimate git-worktree control (worktree add/-C anchoring) proving normal worktree usage is unaffected; non-vacuity proved by temporarily reverting cleanGitEnv() (validator_git_exec.go) to return unfiltered os.Environ(), rebuilding bin/trackfw, confirming both detection arms go silent, then restoring and rebuilding (54), check-unknown-command-parity.sh (ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw, ML-2B) — gate created by ML-2A without a falsification scenario, closing the reported gap: canonical-message text drift via Python's format_unknown_command_error dropping the \` for \"{cmd_path}\"\` suffix, caught by the gate's own \"no-suggestion\" vacuity guard (55, baseline + detection), unknown-command exit code drift via Node's \`process.exit(1)\` changed to \`process.exit(3)\`, caught by assert_three_way's exit-code check (56, baseline + detection), and the \"Did you mean\" suggestion suppressed in Go by neutering formatUnknownCommandError's \`found\` branch (\`found && false\`, keeping \`found\` referenced so \`go build\` still succeeds), caught by the gate's \"with-suggestion\" vacuity guard for the go runtime, rebuilt via an isolated Go binary per Cenário 25/26 convention (57, baseline + detection) — one CLI sabotaged per discriminant, each baseline arm proving the clean cycle passes before its paired detection arm proves the corrupted cycle fails)"
+# ---------------------------------------------------------------------------
+# Cenário 58 — ML-1A da REQ-2026-08-16-erro-nao-tratado-no-cli-node-vaza-
+# stack-trace-caminhos-absolutos-e-versao-do-runtime: o handler global de
+# erro no entrypoint Node (npm/bin/trackfw) e no Python (trackfw.cli:main)
+# realmente impede que um erro não tratado vaze stack trace, caminho
+# absoluto de instalação e versão do runtime — e que remover o handler faz
+# o vazamento reaparecer, provando que o handler (não uma coincidência de
+# mensagem já limpa) é o mecanismo que fecha o gap.
+#
+# Node: fixture REAL — `trackfw agents install` seguido de adulteração do
+# manifesto + do artefato instalado, depois `trackfw agents update --force`,
+# que faz IntegrationManager.preflight lançar `Unmanaged artifact does not
+# match a trackfw template` (manager.js:189) sem NENHUM try/catch no
+# caminho — exatamente o vazamento medido na REQ.
+#   - baseline: bin/trackfw atual (parseAsync().catch(reportFatalError)) →
+#     stderr limpo, sem frames de stack, sem "npm/src/", sem "Node.js vX".
+#   - detecção: cópia isolada com bin/trackfw REVERTIDO para a forma
+#     pré-fix (`require(...).parseAsync(process.argv)`, sem .catch) →
+#     stderr volta a vazar a stack completa e a versão do runtime.
+#
+# Python: fixture SINTÉTICA — `roadmap list` não tinha, e continua sem ter,
+# nenhum try/except cobrindo cfg_module.load()/os.path.isdir
+# (commands/roadmap.py:_cmd_list); a REQ documenta que hoje nenhum caminho
+# Python vaza NOS CAMINHOS TESTADOS, então este cenário injeta um raise
+# determinístico em _cmd_list para provar a defesa em profundidade em
+# QUALQUER caminho, testado ou não. roadmap.py é corrompido IGUAL nos dois
+# braços — o único delta entre baseline e detecção é o handler em cli.py.
+#   - baseline: cli.py atual (try/except em torno de args.func) → stderr
+#     limpo "trackfw roadmap: ...", sem "Traceback".
+#   - detecção: cópia isolada com cli.py REVERTIDO para a forma pré-fix
+#     (chamada direta a args.func(args), sem try/except) → "Traceback"
+#     reaparece.
+#
+# Seam: corrupt_literal na IMPLEMENTAÇÃO (bin/trackfw, cli.py), nunca na
+# asserção.
+# ---------------------------------------------------------------------------
+
+# --- Node: baseline via o bin/trackfw REAL (é o próprio fix sob teste) -----
+S58N_BASE_ROOT="$WORK/s58-node-base"
+S58N_BASE_PROJECT="$S58N_BASE_ROOT/project"
+S58N_BASE_HOME="$S58N_BASE_ROOT/home"
+mkdir -p "$S58N_BASE_PROJECT" "$S58N_BASE_HOME"
+(cd "$S58N_BASE_PROJECT" && HOME="$S58N_BASE_HOME" node "$ROOT_DIR/npm/bin/trackfw" \
+  agents install --scope project --targets codex --items iac >/dev/null 2>&1)
+python3 - "$S58N_BASE_PROJECT" <<'PY'
+import json, sys, pathlib
+project = pathlib.Path(sys.argv[1])
+manifest_path = project / ".trackfw/integrations-manifest.json"
+manifest = json.loads(manifest_path.read_text())
+key = next(k for k in manifest["artifacts"] if "iac" in k)
+del manifest["artifacts"][key]
+manifest_path.write_text(json.dumps(manifest))
+PY
+printf '\n# tampered\n' >> "$S58N_BASE_PROJECT/.codex/agents/trackfw-iac.toml"
+
+set +e
+s58n_base_out=$(cd "$S58N_BASE_PROJECT" && HOME="$S58N_BASE_HOME" node "$ROOT_DIR/npm/bin/trackfw" \
+  agents update --force --scope project --targets codex --items iac 2>&1)
+s58n_base_status=$?
+set -e
+
+if [[ "$s58n_base_status" -eq 0 ]]; then
+  echo "FAIL [falsify/fatal-error-handler/node-baseline]: exit 0 inesperado — fixture não disparou o erro esperado" >&2
+  echo "  output: $(printf '%q' "$s58n_base_out")" >&2
+  exit 1
+fi
+if grep -qF "    at " <<<"$s58n_base_out" || grep -qF "npm/src/" <<<"$s58n_base_out" || grep -Eq 'Node\.js v[0-9]' <<<"$s58n_base_out"; then
+  echo "FAIL [falsify/fatal-error-handler/node-baseline]: stderr do bin/trackfw REAL ainda vaza stack/caminho de instalação/versão do runtime" >&2
+  echo "  output: $(printf '%q' "$s58n_base_out")" >&2
+  exit 1
+fi
+echo "OK   [falsify/fatal-error-handler/node-baseline]"
+
+# --- Node: detecção — bin/trackfw revertido para a forma pré-fix -----------
+S58N_MOD_ROOT="$WORK/s58-node-mod"
+setup_npm_tree "$S58N_MOD_ROOT"
+corrupt_literal \
+  "$ROOT_DIR/npm/bin/trackfw" "$S58N_MOD_ROOT/npm/bin/trackfw" \
+  $'#!/usr/bin/env node\n\'use strict\'\n\nconst { reportFatalError, installGlobalHandlers } = require(\'../src/lib/fatal-error\')\n\n// Registered before any command runs — see fatal-error.js for why this is a\n// single entrypoint-level handler instead of a try/catch per command.\ninstallGlobalHandlers()\n\nrequire(\'../src/commands/index\')\n  .createProgram()\n  .parseAsync(process.argv)\n  .catch((err) => {\n    // The primary path: an action (sync or async) threw, and since the\n    // program is driven by parseAsync() that surfaces here as a rejected\n    // promise — not as an uncaughtException/unhandledRejection, which is\n    // why this .catch exists in addition to installGlobalHandlers() above.\n    reportFatalError(err)\n    process.exitCode = 1\n  })\n' \
+  $'#!/usr/bin/env node\n\'use strict\'\n\nrequire(\'../src/commands/index\').createProgram().parseAsync(process.argv)\n' \
+  "s58-node-revert-fatal-handler"
+
+S58N_MOD_PROJECT="$WORK/s58-node-mod-project"
+S58N_MOD_HOME="$WORK/s58-node-mod-home"
+mkdir -p "$S58N_MOD_PROJECT" "$S58N_MOD_HOME"
+(cd "$S58N_MOD_PROJECT" && HOME="$S58N_MOD_HOME" node "$S58N_MOD_ROOT/npm/bin/trackfw" \
+  agents install --scope project --targets codex --items iac >/dev/null 2>&1)
+python3 - "$S58N_MOD_PROJECT" <<'PY'
+import json, sys, pathlib
+project = pathlib.Path(sys.argv[1])
+manifest_path = project / ".trackfw/integrations-manifest.json"
+manifest = json.loads(manifest_path.read_text())
+key = next(k for k in manifest["artifacts"] if "iac" in k)
+del manifest["artifacts"][key]
+manifest_path.write_text(json.dumps(manifest))
+PY
+printf '\n# tampered\n' >> "$S58N_MOD_PROJECT/.codex/agents/trackfw-iac.toml"
+
+set +e
+s58n_mod_out=$(cd "$S58N_MOD_PROJECT" && HOME="$S58N_MOD_HOME" node "$S58N_MOD_ROOT/npm/bin/trackfw" \
+  agents update --force --scope project --targets codex --items iac 2>&1)
+s58n_mod_status=$?
+set -e
+
+if grep -qF "    at " <<<"$s58n_mod_out" && grep -Eq 'Node\.js v[0-9]' <<<"$s58n_mod_out"; then
+  echo "OK   [falsify/fatal-error-handler/node-detects-regression]"
+else
+  echo "FAIL [falsify/fatal-error-handler/node-detects-regression]: bin/trackfw revertido não vazou stack/versão do runtime — braço de detecção vácuo" >&2
+  echo "  status=$s58n_mod_status output: $(printf '%q' "$s58n_mod_out")" >&2
+  exit 1
+fi
+
+# --- Go: baseline via o binário isolado já construído para os Cenários
+# 27+ ($T27_GO_BIN) — a REQ mede Go como "não vaza" (cobra trata o erro sem
+# handler dedicado), mas nenhum gate travava isso; sem um braço aqui, uma
+# mudança futura em cobra/SilenceErrors poderia reintroduzir o vazamento na
+# terceira linguagem sem que "nos 3 CLIs" da REQ/roadmap fosse honrado. Sem
+# braço de detecção: nenhum código Go foi tocado por este ML, não há
+# regressão own-code para provar — só o baseline precisa ficar travado.
+S58G_PROJECT="$WORK/s58-go-project"
+S58G_HOME="$WORK/s58-go-home"
+mkdir -p "$S58G_PROJECT" "$S58G_HOME"
+(cd "$S58G_PROJECT" && HOME="$S58G_HOME" "$T27_GO_BIN" \
+  agents install --scope project --targets codex --items iac >/dev/null 2>&1)
+python3 - "$S58G_PROJECT" <<'PY'
+import json, sys, pathlib
+project = pathlib.Path(sys.argv[1])
+manifest_path = project / ".trackfw/integrations-manifest.json"
+manifest = json.loads(manifest_path.read_text())
+key = next(k for k in manifest["artifacts"] if "iac" in k)
+del manifest["artifacts"][key]
+manifest_path.write_text(json.dumps(manifest))
+PY
+printf '\n# tampered\n' >> "$S58G_PROJECT/.codex/agents/trackfw-iac.toml"
+
+set +e
+s58g_out=$(cd "$S58G_PROJECT" && HOME="$S58G_HOME" "$T27_GO_BIN" \
+  agents update --force --scope project --targets codex --items iac 2>&1)
+s58g_status=$?
+set -e
+
+if [[ "$s58g_status" -eq 0 ]]; then
+  echo "FAIL [falsify/fatal-error-handler/go-baseline]: exit 0 inesperado — fixture não disparou o erro esperado" >&2
+  echo "  output: $(printf '%q' "$s58g_out")" >&2
+  exit 1
+fi
+if grep -qF "panic:" <<<"$s58g_out" || grep -qF "goroutine " <<<"$s58g_out" || grep -Eq '\.go:[0-9]+' <<<"$s58g_out"; then
+  echo "FAIL [falsify/fatal-error-handler/go-baseline]: stderr do binário Go vaza panic/goroutine/linha de fonte .go:N" >&2
+  echo "  output: $(printf '%q' "$s58g_out")" >&2
+  exit 1
+fi
+echo "OK   [falsify/fatal-error-handler/go-baseline]"
+
+# --- Python: fixture comum — _cmd_list corrompido para lançar sem try/except
+S58P_ROADMAP_OLD='def _cmd_list(args):
+    cfg = cfg_module.load()'
+S58P_ROADMAP_NEW='def _cmd_list(args):
+    raise RuntimeError(f"synthetic uncaught error at {__file__}")
+    cfg = cfg_module.load()'
+
+# --- Python: baseline — cli.py atual (com o try/except) --------------------
+S58P_BASE_PYPI="$WORK/s58-py-base/pypi"
+mkdir -p "$S58P_BASE_PYPI"
+cp -r "$ROOT_DIR/pypi/." "$S58P_BASE_PYPI/"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/commands/roadmap.py" "$S58P_BASE_PYPI/trackfw/commands/roadmap.py" \
+  "$S58P_ROADMAP_OLD" "$S58P_ROADMAP_NEW" "s58-py-base-roadmap-list-raise"
+
+set +e
+s58p_base_out=$(env PYTHONPATH="$S58P_BASE_PYPI" python3 -m trackfw roadmap list 2>&1)
+s58p_base_status=$?
+set -e
+
+if [[ "$s58p_base_status" -eq 0 ]]; then
+  echo "FAIL [falsify/fatal-error-handler/python-baseline]: exit 0 inesperado — fixture não disparou o erro esperado" >&2
+  echo "  output: $(printf '%q' "$s58p_base_out")" >&2
+  exit 1
+fi
+if [[ "$s58p_base_out" != "trackfw roadmap: synthetic uncaught error at "* ]] || grep -qF 'Traceback' <<<"$s58p_base_out"; then
+  echo "FAIL [falsify/fatal-error-handler/python-baseline]: cli.py atual ainda vaza traceback, ou a mensagem limpa mudou de forma" >&2
+  echo "  output: $(printf '%q' "$s58p_base_out")" >&2
+  exit 1
+fi
+echo "OK   [falsify/fatal-error-handler/python-baseline]"
+
+# --- Python: detecção — cli.py revertido para a forma pré-fix --------------
+S58P_MOD_PYPI="$WORK/s58-py-mod/pypi"
+mkdir -p "$S58P_MOD_PYPI"
+cp -r "$ROOT_DIR/pypi/." "$S58P_MOD_PYPI/"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/commands/roadmap.py" "$S58P_MOD_PYPI/trackfw/commands/roadmap.py" \
+  "$S58P_ROADMAP_OLD" "$S58P_ROADMAP_NEW" "s58-py-mod-roadmap-list-raise"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/cli.py" "$S58P_MOD_PYPI/trackfw/cli.py" \
+  $'    if hasattr(args, "func"):\n        # Global backstop (defense in depth, see fatal_error.py): commands that\n        # already catch their own domain errors (e.g. agents/skills install \xe2\x80\x94\n        # IntegrationError/OSError/ValueError in integrations/command.py:run())\n        # print their own clean message and raise SystemExit, which is a\n        # BaseException and therefore NOT caught here \xe2\x80\x94 it propagates\n        # unchanged. This except only catches what nothing else caught.\n        try:\n            args.func(args)\n        except Exception as error:  # noqa: BLE001 \xe2\x80\x94 intentional catch-all backstop\n            report_fatal_error(error, command=args.command)\n            sys.exit(1)\n    else:' \
+  $'    if hasattr(args, "func"):\n        args.func(args)\n    else:' \
+  "s58-py-revert-fatal-handler"
+
+set +e
+s58p_mod_out=$(env PYTHONPATH="$S58P_MOD_PYPI" python3 -m trackfw roadmap list 2>&1)
+s58p_mod_status=$?
+set -e
+
+if [[ "$s58p_mod_status" -ne 0 ]] && grep -qF 'Traceback (most recent call last)' <<<"$s58p_mod_out"; then
+  echo "OK   [falsify/fatal-error-handler/python-detects-regression]"
+else
+  echo "FAIL [falsify/fatal-error-handler/python-detects-regression]: cli.py revertido não vazou traceback — braço de detecção vácuo" >&2
+  echo "  status=$s58p_mod_status output: $(printf '%q' "$s58p_mod_out")" >&2
+  exit 1
+fi
+
+echo "Falsification checks passed (all 119 scenarios, 18 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py; detection arm made self-discriminating (ML-1B, ROADMAP-2026-08-12) against the 2026-08-08 environmental-leak failure mode via a test-controlled synthetic \$HOME (Codex-only global guard, no Claude) plus an exclusivity assertion that none of the 5 non-sabotaged CLIs may appear in the FAIL set — proved against a leak-only (no sabotage) adversarial variant that the pre-ML-1B assertion set was satisfiable by pure environmental leak and the new exclusivity check rejects it (46), \`trackfw validate\`'s credential_guard_hook_resolvable rule (ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A/ML-2A) — a registered project-scope Claude credential-guard hook (.claude/settings.json) whose referenced script is missing must be flagged, and must stay silent when the script is present and executable, exercised end-to-end via the real Go binary against an otherwise-empty scaffold_adr_req_project fixture (the same fixture Scenario 29 pins to zero violations, so no other rule has material to fire) — detection arm asserts the exact validator diagnostic literal (unique across internal/validator/*.go per grep) rather than a generic non-zero exit, proved non-vacuous, no \$HOME dependency by design since the rule never reads outside the project root (47), check-attention-scripts-parity.sh extended (ML-0B, ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate) to cover scripts/trackfw-credential-guard.sh (project scope) alongside the two attention scripts — Node.js's CREDENTIAL_GUARD_SCRIPT composition line reordered (CG_PROJECT_GUARD and CG_DETECTION_CORE swapped, no CG_* block content touched) so the script actually emitted by \`discover --init\` diverges from Go/Python while the pre-existing Go-only TestCredentialGuardScript_ParityAcrossStacks (which reconstructs the script by regex-scraping and Go-hardcoded-order-concatenating the CG_*/_CG_* literals, never executing Node/Python) stays green — proves the shell gate closes a real coverage gap the structural unit test cannot see (48), \`trackfw validate\`'s credential_guard_script_integrity rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — scripts/trackfw-credential-guard.sh diverging from the template this trackfw binary would generate (via a real, isolated \`discover --init\` run, then a single tampered line appended) must be flagged with \`rules: credential_guard_script_integrity: error\` fixed in the fixture (default severity is warning, which does not flip validate's exit code), and must stay silent when the script is byte-identical to that binary's own template — detection arm asserts the exact validator diagnostic literal, proved non-vacuous via assert_would_now_fail (same exit!=0-and-message-present criterion as assert_fails_with, required to NOT hold against a config-only \`rules: ...: off\` neutering of the same corrupted fixture) rather than a message-absence-only check, single-delta design isolates the corruption (baseline vs. detection) and the severity override (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (49), \`trackfw validate\`'s credential_guard_mode_downgrade rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — credential_guard.mode: block committed at git HEAD followed by an uncommitted on-disk downgrade to mode: warn must be flagged (first check-gates-falsify.sh scenario to git-init/commit a real fixture repo, closing the gap Apolo found — no prior fixture had a HEAD for this rule to anchor against), and must stay silent when disk matches HEAD — non-vacuity mechanism REPLACED by ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard/ML-2A (ADR Emenda 2): the old \`rules: ...: off\` uncommitted neutering stopped proving anything once M4 anchored severity at HEAD, so it now commits \`rules: credential_guard_mode_downgrade: off\` TOGETHER with mode: block at HEAD (the ADR's legitimate-committed-disable path) instead, single-delta design isolates the uncommitted downgrade (baseline vs. detection) and the committed-off HEAD (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (50), the M4 mechanism itself (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A/ML-2A) — the decisive scenario: the COMBINED uncommitted edit (\`credential_guard.mode: warn\` + \`rules: credential_guard_mode_downgrade: off\`, both disk-only, HEAD only ever committing mode: block) must still be reported, self-discriminating against a contrast fixture where the SAME disk-side attack is applied but \`rules: ...: off\` is committed at HEAD alongside mode: block (legitimate, auditable) and is silenced — isolating commit-status of the off as the only variable; non-vacuity proved by temporarily reverting credentialGuardRuleSeverity to disk-only resolution (pre-ADR behavior), rebuilding bin/trackfw, confirming the detection arm goes red, then restoring and rebuilding (51), the .trackfw-baseline.json carve-out (Barreira B0/ML-1A/ML-2A) — a credential-guard violation listed in .trackfw-baseline.json by its full literal message continues to be reported, verified against the real BaselineFile{Violations,Warnings} shape and exact-message-match semantics in filterBaselineTagged (validator.go) rather than assumed from ADR prose, self-discriminating within a single fixture/single \`validate\` run: a filename_uniqueness (non-guard) violation listed in the SAME baseline by the same mechanism IS suppressed, proving the carve-out is specific to the 3 guard rules rather than the baseline format being broken outright (which would make the guard violation \"surviving\" prove nothing) — non-vacuity proved by temporarily dropping the \`&& !credentialGuardAnchoredRules[v.Rule]\` guard in filterBaselineTagged, rebuilding, confirming both violations get suppressed, then restoring and rebuilding (52), non-regression for non-guard rules (the most important scenario for confidence in M4, closing the \"blast radius\" question) — filename_uniqueness (not in credentialGuardAnchoredRules, default severity error) with \`rules: filename_uniqueness: off\` set disk-only and never committed continues to fully silence the rule exactly as before this ADR, proving diskRuleSeverity's disk-only path for the other ~38 rules received zero delta from M4; fixture carries a real git HEAD (committing a trackfw.yaml with no rules: block) specifically so the non-vacuity proof is meaningful — without a HEAD, credentialGuardRuleSeverity would fall back to disk-only regardless of anchoring, masking exactly the scope-leak this scenario exists to catch; non-vacuity proved by temporarily adding filename_uniqueness to credentialGuardAnchoredRules (simulating an M4 scope leak), rebuilding, confirming the silenced arm goes red (HEAD's absent rules: entry now resolves to the stricter default and wins over disk's off), then restoring and rebuilding (53), the GIT_* environment-variable bypass of the M4 anchoring (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1B/ML-2B) stays closed against both vectors found by ML-3B — GIT_DIR/GIT_WORK_TREE redirection to a decoy repository without a committed trackfw.yaml, and GIT_CONFIG_COUNT=abc failure-induction (unrelated to redirection, just makes the git subprocess exit 128) — each embedded with a raw \`git -C\` control proving the vector is a genuine attack (not inert) before testing the trackfw binary, plus a legitimate git-worktree control (worktree add/-C anchoring) proving normal worktree usage is unaffected; non-vacuity proved by temporarily reverting cleanGitEnv() (validator_git_exec.go) to return unfiltered os.Environ(), rebuilding bin/trackfw, confirming both detection arms go silent, then restoring and rebuilding (54), check-unknown-command-parity.sh (ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw, ML-2B) — gate created by ML-2A without a falsification scenario, closing the reported gap: canonical-message text drift via Python's format_unknown_command_error dropping the \` for \"{cmd_path}\"\` suffix, caught by the gate's own \"no-suggestion\" vacuity guard (55, baseline + detection), unknown-command exit code drift via Node's \`process.exit(1)\` changed to \`process.exit(3)\`, caught by assert_three_way's exit-code check (56, baseline + detection), and the \"Did you mean\" suggestion suppressed in Go by neutering formatUnknownCommandError's \`found\` branch (\`found && false\`, keeping \`found\` referenced so \`go build\` still succeeds), caught by the gate's \"with-suggestion\" vacuity guard for the go runtime, rebuilt via an isolated Go binary per Cenário 25/26 convention (57, baseline + detection) — one CLI sabotaged per discriminant, each baseline arm proving the clean cycle passes before its paired detection arm proves the corrupted cycle fails), the global fatal-error handler in the Node and Python entrypoints, PLUS a Go baseline arm locking the third CLI's already-clean behavior against future regression (REQ-2026-08-16-erro-nao-tratado-no-cli-node-vaza-stack-trace-caminhos-absolutos-e-versao-do-runtime, ML-1A) — Node baseline reproduces the REAL unmanaged-artifact production bug end to end (agents install + manifest/artifact tamper + agents update --force) against the unmodified bin/trackfw and proves stderr carries no stack frame, no npm/src/ install path and no \"Node.js vX\"; Node detection reverts bin/trackfw's parseAsync().catch(reportFatalError) to its pre-fix bare parseAsync() call in an isolated copy against the SAME repro and proves the leak reappears; Go baseline runs the SAME repro against the isolated Go binary already built for Cenários 27+ and proves stderr carries no panic:/goroutine/.go:N line — no detection arm, since no Go code was touched by this ML and there is no own-code regression to prove, only \"nos 3 CLIs\" (REQ AC1/roadmap action 4) to lock; Python baseline/detection hold a synthetic corrupted commands/roadmap.py:_cmd_list (unconditional raise, since the REQ found no Python path leaks today) IDENTICAL across both arms and vary only cli.py's try/except around args.func — present it prints \"trackfw roadmap: ...\" with no Traceback, reverted to the pre-fix bare call it prints a full Traceback (58)"

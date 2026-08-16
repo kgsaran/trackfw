@@ -17719,3 +17719,138 @@ dois eram efeito colateral e foram corrigidos (#177 `branch new`, #178 `ship`).
 
 REQ agregadora de higiene aberta com 7 débitos, todos não-bloqueantes e já com nota de vault ou
 registro em roadmap. Fica em backlog, sem roadmap.
+
+## Sessão 2026-08-16 — Apolo (INÍCIO: ML-1A — handler global de erro Node/Python)
+
+Branch `fix/handler-global-de-erro-nos-entrypoints-node-e-python`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-16-handler-global-de-erro-nos-entrypoints-node-e-python.md`,
+REQ `docs/req/REQ-2026-08-16-erro-nao-tratado-no-cli-node-vaza-stack-trace-caminhos-absolutos-e-
+versao-do-runtime.md`, prioridade urgente (KG). Executando ML-1A: handler global em
+`npm/bin/trackfw` + `pypi/trackfw/cli.py`, gate de paridade e cenário P4 em
+`scripts/check-gates-falsify.sh`. Governança já satisfeita (branch criada por
+`trackfw branch new`, REQ+roadmap em `wip/`). Nenhum commit/push (autoridade exclusiva do
+`trackfw_architect`).
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-1A concluído — handler global entregue, não commitado)
+
+Reproduzi o vazamento real (`agents install` + adulteração de manifesto/artefato + `agents update
+--force`) contra o `npm/bin/trackfw` original e confirmei: usuário, layout do home, caminho de
+instalação, linha de fonte e `Node.js v26.7.0` vazavam via o `unhandledRejection` default do Node
+(o entrypoint chamava `.parseAsync(process.argv)` sem `.catch`, então um `throw` síncrono dentro de
+uma `action()` `async` vira rejeição não tratada, não um throw capturável por `try/catch` externo).
+
+**Node** (`npm/src/lib/fatal-error.js` novo, `npm/bin/trackfw`): `reportFatalError(err)` imprime só
+`Error: <mensagem>` em stderr (sem stack); com `TRACKFW_DEBUG=1` imprime `err.stack` inteiro (que já
+começa com `Error: <mensagem>`, por isso não duplica a linha). `bin/trackfw` chama
+`installGlobalHandlers()` (`unhandledRejection`/`uncaughtException` — defesa em profundidade) e
+encadeia `.catch(reportFatalError)` no `parseAsync()` — esse `.catch` é o caminho primário, já que
+`unhandledRejection` não é como o erro chega quando `parseAsync().catch()` existe.
+
+**Python** (`pypi/trackfw/fatal_error.py` novo, `pypi/trackfw/cli.py`): `report_fatal_error(error,
+command)` imprime `trackfw <command>: <mensagem>` (sem prefixo `Error:` — REQ pede explicitamente
+NÃO unificar prefixo entre CLIs); com `TRACKFW_DEBUG=1` imprime `traceback.print_exc()`. `cli.py`
+envolve `args.func(args)` num `try/except Exception` — deliberadamente **não** `except BaseException`,
+porque `SystemExit` (o que `integrations/command.py:run()` já lança para os próprios erros de
+domínio) precisa propagar intocado; senão o handler global engoliria o exit code e a mensagem que
+o `run()` já imprime, regredindo um caminho hoje limpo. Python **não vazava** nos caminhos testados
+(REQ), então este handler é defesa em profundidade pura — provado com um `raise` sintético injetado
+via `corrupt_literal` em `_cmd_list` (`roadmap.py` não tem nenhum `try/except` cobrindo
+`cfg_module.load()`/`os.path.isdir`).
+
+**Achado ao escrever o cenário P4** (registrado em nota de vault): `grep -qF $'\n    at '` com
+`ugrep` (grep instalado neste ambiente) decompõe um padrão fixo com `\n` embutido em DOIS padrões
+alternados — string vazia + `"    at "` — e a string vazia casa com QUALQUER linha, tornando o
+`grep -qF` vacuamente verdadeiro. Substituí por `grep -qF "    at "` (sem o `\n`, já que a
+indentação de 4 espaços já é suficientemente específica de frame de stack V8).
+
+Testes novos: `npm/tests/fatal-error.test.js` (7 casos — unidade de `reportFatalError`, rejeição
+assíncrona pós-`await` isolada via `Command` sintético, repro real ponta a ponta com/sem
+`TRACKFW_DEBUG`, não-regressão de `roadmap move`/comando desconhecido) e
+`pypi/tests/test_fatal_error.py` (6 casos — unidade de `report_fatal_error`, integração via
+`monkeypatch` em `trackfw.config.load` chamado por `roadmap list`, não-regressão do `SystemExit` de
+`roadmap move`). Cenário 58 em `scripts/check-gates-falsify.sh` (4 braços: baseline+detecção Node
+via o repro real com `bin/trackfw` revertido numa cópia isolada; baseline+detecção Python via
+`cli.py` revertido, mesma corrupção de `roadmap.py` nos dois braços — único delta é o handler).
+
+`go build ./...`, `npm test` (606 testes), `python3 -m pytest pypi/tests -q` (1261 testes + 8
+subtests), `bash scripts/check-gates-falsify.sh` (119 cenários) e `make quality` completo, todos
+verdes. Nenhuma mensagem de erro existente foi alterada — só o transporte (stderr limpo vs. stack).
+Roadmap não editado (autoridade do arquiteto). Nenhum commit/push — devolvido ao
+`trackfw_architect` para auditoria e commit.
+
+**Ajustes pós-revisão do advisor (mesma sessão, antes da entrega):**
+1. **Cenário 58 não cobria Go.** "Go: sem ação" (REQ) significa sem mudança de código, não
+   isenção do gate — a própria REQ/roadmap exigem "nos 3 CLIs". Adicionado braço
+   `falsify/fatal-error-handler/go-baseline` reusando `$T27_GO_BIN` e o mesmo repro real
+   (`agents install` + adulteração + `agents update --force`); sem braço de detecção (nenhum
+   código Go tocado, nada a regredir). Confirmei empiricamente que o Go de hoje já imprime
+   limpo nesse caminho (cobra mostra um bloco de `Usage:`/`Flags:` — ruído de UX pré-existente,
+   não vazamento — mas nenhum `panic:`/`goroutine `/`*.go:N`).
+2. **`installGlobalHandlers()` (unhandledRejection/uncaughtException) não tinha teste algum.**
+   Esse caminho chama `process.exit()` logo após escrever em stderr — se `reportFatalError`
+   usasse `process.stderr.write()` (assíncrono quando stderr é um pipe, exatamente a config de
+   todo teste `spawnSync` deste repo), o `exit()` poderia descartar a escrita pendente
+   ("engolir a mensagem", failure mode #2 do brief). Troquei para `fs.writeSync(2, ...)`
+   (syscall bloqueante, não corre risco de corrida com `exit()`) e adicionei
+   `npm/tests/fatal-error.test.js`: teste que dispara `unhandledRejection` real via
+   `spawnSync` (stderr como pipe) 20 vezes seguidas, provando mensagem íntegra + exit != 0 em
+   toda iteração.
+3. **Integridade de mensagem multi-linha não estava travada por assert nenhum** (só preservada
+   incidentalmente pelo código). Adicionado teste dedicado nos dois CLIs
+   (`fatal-error.test.js`/`test_fatal_error.py`) com mensagem de duas linhas, provando que
+   sobrevive byte a byte.
+
+`npm test` recontado após os ajustes: 608 testes (+2). `pytest`: 1262 (+1). `make quality`
+completo re-executado do zero após todos os ajustes — verde.
+
+## Sessão 2026-08-16 — Hades (INÍCIO: ML-2A — barreira de segurança do handler global)
+
+Branch `fix/handler-global-de-erro-nos-entrypoints-node-e-python` (mesma do ML-1A, sem commits
+novos meus). Escopo: varredura de outras superfícies de vazamento (stack/caminho/versão) nos 3
+CLIs além do caminho já corrigido, avaliação de `TRACKFW_DEBUG` como superfície de ativação por
+terceiro, avaliação de `panic` alcançável no Go, confirmação/contestação da severidade "baixa a
+moderada", e verificação empírica (não só leitura) de que o handler do ML-1A não mascara exit code
+nem mensagem. Entregável único: `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md`. Não
+modifico código de produto, não commito, não edito roadmap.
+
+## Sessão 2026-08-16 — Hades (FIM: ML-2A concluído — LIBERO o merge do ML-1A, achado novo fora de escopo)
+
+Relatório completo em `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md` (não
+commitado). Veredito do handler global (`npm/bin/trackfw`/`fatal-error.js`,
+`pypi/trackfw/cli.py`/`fatal_error.py`): correto, verificado por execução (não só leitura) —
+mensagem íntegra byte a byte, exit code preservado, `TRACKFW_DEBUG=1` restaura a stack, sem
+regressão de disponibilidade em `trackfw serve` (processo já morria com o mesmo throw sintético
+antes do ML-1A — comportamento padrão do Node, não introduzido pelo fix). Severidade "baixa a
+moderada" do arquiteto: confirmada. Gap dormente encontrado: `pypi/trackfw/cli.py` só protege
+`args.func(args)` dentro do `try/except`, não `parser.parse_args()`/`register(subparsers)` — o
+Node é simétrico e completo (`installGlobalHandlers()` roda antes do `require` do módulo de
+comandos, cobre até falha síncrona no carregamento) porque é chamado antes do require; confirmado
+corrompendo cópias isoladas dos dois pacotes em `/tmp`, nunca no repo.
+
+**Achado não relacionado ao ML-1A, mais grave que o vazamento original, descoberto ao varrer
+`trackfw serve` (item pedido no brief):** `internal/serve/serve.go` (`addr := fmt.Sprintf(":%d",
+port)`) e `pypi/trackfw/commands/serve.py:150` (`HTTPServer(("", port), ...)`) escutam em **todas
+as interfaces de rede**, não só loopback — diferente do Node, que restringe corretamente a
+`127.0.0.1` (`npm/src/commands/serve.js:151`). Verificado por execução real: bind + `curl` a partir
+do IP da LAN da máquina retornou HTTP 200 nos dois CLIs. Combinado com
+`pypi/trackfw/commands/serve.py:104` (`send_error(500, f"Cannot read file: {e}")`, que ecoa
+`str(OSError)` incluindo caminho absoluto de instalação do pacote), isso é exposição não
+autenticada de dados de governança do projeto (ADRs/REQs/roadmaps via `/api/board` etc.) para
+qualquer dispositivo na mesma rede — categoria mais séria que a que motivou este REQ. Não bloqueia
+o merge desta branch (nenhum arquivo de `serve` está no diff do ML-1A), mas recomendei abrir um REQ
+de correção dedicado com prioridade pelo menos igual à deste REQ. Achado colateral: código morto em
+`internal/server/server.go` (`http.Error` com `err.Error()` embutido) não referenciado por nenhum
+comando — recomendado remover em limpeza futura, não é vazamento ativo.
+
+Nenhum código de produto alterado; todas as reproduções foram feitas em cópias isoladas sob
+`/private/tmp/.../scratchpad`, nunca na árvore do repo. `git status` confirma apenas os dois
+artefatos permitidos sujos. Não commitei, não editei roadmap. Devolvido ao `trackfw_architect`.
+
+## Sessão 2026-08-16 — Zeus (arquiteto) — fecha a correção do vazamento de stack
+
+ML-1A e barreira ML-2A ✅. Roadmap e REQ em `done`. Vazamento eliminado e auditado por reprodução
+real; `hades-tf` liberou e confirmou a severidade declarada em vez de inflar.
+
+**Escalado à parte:** `trackfw serve` (Go e Python) escuta em todas as interfaces, sem autenticação.
+Verificado por mim: `TCP *:PORT (LISTEN)`, HTTP 200 pelo IP da LAN, `/api/chain` com 105 KB da
+cadeia de governança. KG autorizou atacar agora, em REQ própria.

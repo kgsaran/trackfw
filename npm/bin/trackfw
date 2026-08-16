@@ -1,4 +1,20 @@
 #!/usr/bin/env node
 'use strict'
 
-require('../src/commands/index').createProgram().parseAsync(process.argv)
+const { reportFatalError, installGlobalHandlers } = require('../src/lib/fatal-error')
+
+// Registered before any command runs — see fatal-error.js for why this is a
+// single entrypoint-level handler instead of a try/catch per command.
+installGlobalHandlers()
+
+require('../src/commands/index')
+  .createProgram()
+  .parseAsync(process.argv)
+  .catch((err) => {
+    // The primary path: an action (sync or async) threw, and since the
+    // program is driven by parseAsync() that surfaces here as a rejected
+    // promise — not as an uncaughtException/unhandledRejection, which is
+    // why this .catch exists in addition to installGlobalHandlers() above.
+    reportFatalError(err)
+    process.exitCode = 1
+  })
