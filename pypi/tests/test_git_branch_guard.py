@@ -56,7 +56,11 @@ class TestGitBranchGuardGenerator(unittest.TestCase):
         with open(script_path, 'r', encoding='utf-8') as f:
             content = f.read()
         self.assertTrue(content.startswith('#!/usr/bin/env bash'))
-        self.assertNotIn('trackfw.yaml', content)  # unlike credential-guard, no config dependency
+        # ML-1A (ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+        # integridade-independente-de-fiacao.md): ao contrário do estado anterior a este ML, o
+        # script agora DEPENDE de trackfw.yaml -- vira no-op fora de projeto trackfw. Ver
+        # TestGitBranchGuardNoOpOutsideProject abaixo para o comportamento em runtime.
+        self.assertIn('trackfw.yaml', content)
 
     def test_script_nao_comeca_com_linha_em_branco(self):
         # .lstrip('\n') deve remover a quebra de linha inicial do raw string.
@@ -109,6 +113,11 @@ class TestGitBranchGuardScriptWindsurfStdin(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp()
         _generate_git_branch_guard_script(self.tmpdir)
         self.script_path = os.path.join(self.tmpdir, 'scripts', 'trackfw-git-branch-guard.sh')
+        # ML-1A: o guard só bloqueia DENTRO de projeto trackfw -- estes testes exercitam
+        # comportamento de bloqueio, precisam de trackfw.yaml na raiz do cwd (que é
+        # explicitamente self.tmpdir via cwd= abaixo, nunca ambient).
+        with open(os.path.join(self.tmpdir, 'trackfw.yaml'), 'w', encoding='utf-8') as f:
+            f.write('project_name: fixture\n')
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -119,6 +128,7 @@ class TestGitBranchGuardScriptWindsurfStdin(unittest.TestCase):
             input=json.dumps(payload),
             capture_output=True,
             text=True,
+            cwd=self.tmpdir,
         )
 
     def test_windsurf_command_line_blocks_commit(self):
@@ -142,6 +152,11 @@ class TestGitBranchGuardManualE2ERegressions(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp()
         _generate_git_branch_guard_script(self.tmpdir)
         self.script_path = os.path.join(self.tmpdir, 'scripts', 'trackfw-git-branch-guard.sh')
+        # ML-1A: o guard só bloqueia DENTRO de projeto trackfw -- estes testes exercitam
+        # comportamento de bloqueio, precisam de trackfw.yaml na raiz do cwd (que é
+        # explicitamente self.tmpdir via cwd= abaixo, nunca ambient).
+        with open(os.path.join(self.tmpdir, 'trackfw.yaml'), 'w', encoding='utf-8') as f:
+            f.write('project_name: fixture\n')
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -152,6 +167,7 @@ class TestGitBranchGuardManualE2ERegressions(unittest.TestCase):
             input=json.dumps({'tool_input': {'command': command}}),
             capture_output=True,
             text=True,
+            cwd=self.tmpdir,
         )
 
     def test_bug1_chained_command_blocks_second_segment_push(self):
@@ -189,6 +205,11 @@ class TestGitBranchGuardML1AFalsePositiveAndSwitchC(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp()
         _generate_git_branch_guard_script(self.tmpdir)
         self.script_path = os.path.join(self.tmpdir, 'scripts', 'trackfw-git-branch-guard.sh')
+        # ML-1A: o guard só bloqueia DENTRO de projeto trackfw -- estes testes exercitam
+        # comportamento de bloqueio, precisam de trackfw.yaml na raiz do cwd (que é
+        # explicitamente self.tmpdir via cwd= abaixo, nunca ambient).
+        with open(os.path.join(self.tmpdir, 'trackfw.yaml'), 'w', encoding='utf-8') as f:
+            f.write('project_name: fixture\n')
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -199,6 +220,7 @@ class TestGitBranchGuardML1AFalsePositiveAndSwitchC(unittest.TestCase):
             input=json.dumps({'tool_input': {'command': command}}),
             capture_output=True,
             text=True,
+            cwd=self.tmpdir,
         )
 
     def test_commit_message_line_starting_with_git_checkout_dash_b_does_not_block(self):
@@ -248,6 +270,79 @@ class TestGitBranchGuardML1AFalsePositiveAndSwitchC(unittest.TestCase):
         proc = self._run('git switch main')
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout, '')
+
+
+class TestGitBranchGuardNoOpOutsideProject(unittest.TestCase):
+    """ML-1A (ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-
+    independente-de-fiacao.md): fora de projeto trackfw (sem trackfw.yaml em nenhum ancestral),
+    o guard vira no-op (exit 0), sem inspecionar o comando."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        _generate_git_branch_guard_script(self.tmpdir)
+        self.script_path = os.path.join(self.tmpdir, 'scripts', 'trackfw-git-branch-guard.sh')
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _run(self, command: str, cwd: str):
+        return subprocess.run(
+            ['bash', self.script_path],
+            input=json.dumps({'tool_input': {'command': command}}),
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+        )
+
+    def test_fixture_has_no_trackfw_yaml_ancestor(self):
+        # Não-vacuidade: prova (em vez de presumir) que tempfile.mkdtemp() não tem
+        # trackfw.yaml em nenhum ancestral.
+        d = self.tmpdir
+        while True:
+            self.assertFalse(
+                os.path.exists(os.path.join(d, 'trackfw.yaml')),
+                f'premissa violada: trackfw.yaml em {d}',
+            )
+            parent = os.path.dirname(d)
+            if parent == d:
+                break
+            d = parent
+
+    def test_git_push_without_trackfw_yaml_is_noop(self):
+        proc = self._run('git push', cwd=self.tmpdir)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, '')
+
+    def test_commit_checkout_branch_switch_without_trackfw_yaml_are_noop(self):
+        for cmd in ('git commit -m "x"', 'git checkout -b feat/x', 'git branch nova', 'git switch -c feat/x'):
+            with self.subTest(cmd=cmd):
+                proc = self._run(cmd, cwd=self.tmpdir)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_git_push_with_trackfw_yaml_still_blocks(self):
+        # Reverse-vacuity: MESMO script, só que rodado com trackfw.yaml no cwd -- prova que o
+        # 0 acima veio do no-op, não de um build quebrado.
+        with_yaml = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(with_yaml, 'trackfw.yaml'), 'w', encoding='utf-8') as f:
+                f.write('project_name: fixture\n')
+            proc = self._run('git push', cwd=with_yaml)
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+        finally:
+            shutil.rmtree(with_yaml, ignore_errors=True)
+
+    def test_trackfw_yaml_in_ancestor_subdirectory_still_blocks(self):
+        # A raiz do projeto é encontrada SUBINDO diretórios.
+        root = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(root, 'trackfw.yaml'), 'w', encoding='utf-8') as f:
+                f.write('project_name: fixture\n')
+            sub = os.path.join(root, 'a', 'b', 'c')
+            os.makedirs(sub)
+            proc = self._run('git push', cwd=sub)
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
 
 
 class TestGitBranchGuardHookWiringIdempotent(unittest.TestCase):

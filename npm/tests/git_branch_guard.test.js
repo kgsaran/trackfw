@@ -82,8 +82,18 @@ test('generateGitBranchGuardScript não injeta em nenhum hooks.json/settings.jso
 // credential_guard.test.js/runScript.
 // ---------------------------------------------------------------------------
 
+// setupFixture cria um diretório com trackfw.yaml na raiz — o guard só bloqueia DENTRO de um
+// projeto trackfw (ML-1A, ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-
+// trackfw.md). setupFixtureWithoutTrackfwYAML é o par usado pelos testes de no-op.
 function setupFixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-git-branch-guard-fx-'))
+  generateGitBranchGuardScript(dir)
+  fs.writeFileSync(path.join(dir, 'trackfw.yaml'), 'project_name: fixture\n', 'utf8')
+  return { dir, scriptPath: path.join(dir, 'scripts', 'trackfw-git-branch-guard.sh') }
+}
+
+function setupFixtureWithoutTrackfwYAML() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-git-branch-guard-fx-noop-'))
   generateGitBranchGuardScript(dir)
   return { dir, scriptPath: path.join(dir, 'scripts', 'trackfw-git-branch-guard.sh') }
 }
@@ -571,6 +581,75 @@ test('injectHooksDetected dispatches Amazon Q when .amazonq dir exists', () => {
     injectHooksDetected(tmp)
     assert.ok(fs.existsSync(path.join(tmp, '.amazonq', 'cli-agents', 'q_cli_default.json')), 'expected .amazonq/cli-agents/q_cli_default.json to be written by injectHooksDetected')
   })
+})
+
+// ---------------------------------------------------------------------------
+// ML-1A (ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-
+// independente-de-fiacao.md): no-op fora de projeto trackfw.
+// ---------------------------------------------------------------------------
+
+test('fixture sem trackfw.yaml não tem trackfw.yaml em nenhum ancestral (não-vacuidade)', () => {
+  const { dir } = setupFixtureWithoutTrackfwYAML()
+  try {
+    let d = dir
+    for (;;) {
+      assert.ok(!fs.existsSync(path.join(d, 'trackfw.yaml')), `premissa violada: trackfw.yaml em ${d}`)
+      const parent = path.dirname(d)
+      if (parent === d) break
+      d = parent
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('git push sem trackfw.yaml é no-op (exit 0)', () => {
+  const { dir, scriptPath } = setupFixtureWithoutTrackfwYAML()
+  try {
+    const payload = JSON.stringify({ tool_input: { command: 'git push' } })
+    const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 0, `stderr: ${stderr}`)
+    assert.strictEqual(stdout, '')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('git commit/checkout -b/branch/switch -c sem trackfw.yaml são no-op (exit 0)', () => {
+  const { dir, scriptPath } = setupFixtureWithoutTrackfwYAML()
+  try {
+    for (const cmd of ['git commit -m "x"', 'git checkout -b feat/x', 'git branch nova', 'git switch -c feat/x']) {
+      const payload = JSON.stringify({ tool_input: { command: cmd } })
+      const { code, stderr } = runGuard(dir, scriptPath, null, payload)
+      assert.strictEqual(code, 0, `cmd=${cmd} stderr: ${stderr}`)
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('git push com trackfw.yaml continua bloqueando (reverse-vacuity)', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const payload = JSON.stringify({ tool_input: { command: 'git push' } })
+    const { code, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 2, `stderr: ${stderr}`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('subdiretório de projeto trackfw continua protegido (raiz encontrada subindo)', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const sub = path.join(dir, 'a', 'b', 'c')
+    fs.mkdirSync(sub, { recursive: true })
+    const payload = JSON.stringify({ tool_input: { command: 'git push' } })
+    const { code, stderr } = runGuard(sub, scriptPath, null, payload)
+    assert.strictEqual(code, 2, `stderr: ${stderr}`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 console.log(`\n${passed} passed, ${failed} failed`)

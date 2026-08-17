@@ -1198,6 +1198,14 @@ func GenerateGlobalGitBranchGuardScript(home string) error {
 //
 // Sem match: allow silencioso (`exit 0`, sem output) — mesmo padrão de "silent pass" do
 // credential-guard quando não há correspondência.
+//
+// No-op fora de projeto trackfw (ML-1A, ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-
+// de-projeto-e-integridade-independente-de-fiacao.md): antes de qualquer parsing de comando, o
+// script sobe diretórios a partir do cwd físico até achar trackfw.yaml; sem trackfw.yaml em
+// nenhum ancestral, sai com 0 sem inspecionar nada. Decisão registrada no
+// ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-trackfw.md: cabear este script
+// no escopo global (Wave 2 do mesmo roadmap) exigia isso primeiro — sem o no-op, cabear
+// bloquearia git commit/push em todo repositório da máquina, com ou sem trackfw.yaml.
 const gitBranchGuardScript = `#!/usr/bin/env bash
 # trackfw git branch guard — bloqueia git commit/push/checkout -b/branch/worktree add -b
 # brutos por subagente
@@ -1217,6 +1225,29 @@ const gitBranchGuardScript = `#!/usr/bin/env bash
 # evasão por citação/tokenização do shell.
 set -euo pipefail
 set -f
+
+# --- 0. No-op fora de projeto trackfw (ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
+# projeto-trackfw.md): sobe diretórios a partir do cwd FÍSICO (pwd -P, resolve symlink) até
+# achar trackfw.yaml na raiz do projeto. Sem trackfw.yaml em nenhum ancestral, o guard não se
+# aplica — fora de projeto trackfw não há trackfw ship como alternativa, e bloquear ali é custo
+# sem contrapartida. Custo medido: só parameter expansion e test -f por nível, nenhum fork de
+# processo; limitado pela profundidade do caminho.
+_TRACKFW_ROOT_DIR=$(pwd -P)
+_TRACKFW_FOUND=0
+while :; do
+  if [ -f "$_TRACKFW_ROOT_DIR/trackfw.yaml" ]; then
+    _TRACKFW_FOUND=1
+    break
+  fi
+  if [ "$_TRACKFW_ROOT_DIR" = "/" ]; then
+    break
+  fi
+  _TRACKFW_ROOT_DIR="${_TRACKFW_ROOT_DIR%/*}"
+  if [ -z "$_TRACKFW_ROOT_DIR" ]; then
+    _TRACKFW_ROOT_DIR="/"
+  fi
+done
+[ "$_TRACKFW_FOUND" -eq 1 ] || exit 0
 
 # --- 1. Obter o comando git bruto ------------------------------------------------------------
 if [ "$#" -gt 0 ]; then
