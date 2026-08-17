@@ -2,8 +2,8 @@
 status: Open
 date: 2026-08-17
 author: "Zeus (Arquiteto)"
-adr: ""
-roadmap: ""
+adr: "docs/adr/ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-trackfw.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md"
 ---
 
 # REQ: o `git-branch-guard` global é instalado sem fiação, e a integridade do escopo global nunca é verificada
@@ -130,10 +130,11 @@ que é precisamente o assunto desta REQ.
   `/usr/local/bin`: instalar por ali cria uma segunda cópia sombreada. Compilar e usar `./bin/trackfw`.
 
 ## Linked ADR
-ADR: `docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md` (decide que a defesa mora no escopo global; esta REQ mostra que para o `git-branch-guard` isso não se concretizou)
+ADR: `docs/adr/ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-trackfw.md` (decide a bifurcação desta REQ)
+ADR de contexto: `docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md` (decide que a defesa mora no escopo global; esta REQ mostra que para o `git-branch-guard` isso não se concretizou)
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: <!-- sem roadmap; backlog -->
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`
