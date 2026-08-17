@@ -31,7 +31,7 @@ com roadmap próprio **depois** deste — as duas tocam os mesmos arquivos de va
 ## Acceptance Criteria
 
 - [x] AC1 — Script é **no-op** (exit 0) fora de projeto trackfw, e mantém o comportamento atual dentro.
-- [ ] AC2 — `git-branch-guard` cabeado no escopo global nos mesmos CLIs do `credential-guard`.
+- [x] AC2 — `git-branch-guard` cabeado no escopo global nos mesmos CLIs do `credential-guard`.
 - [ ] AC3 — Integridade de script global escrito pelo trackfw é verificada **independentemente** de
       haver config referenciando-o.
 - [ ] AC4 — Script defasado/adulterado em `~/.trackfw/scripts/` é **acusado**; hoje passa limpo.
@@ -194,7 +194,7 @@ Cenário 58 no rebase de anteontem não se repetiu.
 ## Wave 2 — Fiação global (depende da Wave 1)
 
 ### ML-2A — Cabear o `git-branch-guard` no escopo global
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído — pendente de auditoria do arquiteto · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-1A concluído e auditado. **Cabear antes do no-op quebra todos os repositórios.**
 **Arquivos:** alvos/geradores de harness nos 3 CLIs, `scripts/check-harness-hooks-parity.sh`,
 `scripts/check-gates-falsify.sh`.
@@ -213,12 +213,106 @@ já validado por gate de paridade estrutural.
 ~/.kiro/hooks/...json      ausente
 ```
 
+**Decisão registrada (Kiro, exceção estrutural):** `harnessCredentialGuardTargetKiro` reescreve
+`~/.kiro/hooks/trackfw-credential-guard.json` por INTEIRO a cada run (wholesale, nunca merge).
+Compartilhar esse arquivo com um segundo writer também-wholesale para o git-branch-guard faria os
+dois targets flapar eternamente (falha de idempotência). Kiro recebe arquivo dedicado separado,
+`~/.kiro/hooks/trackfw-git-branch-guard.json`, mesmo schema, hooks
+`trackfw-git-branch-guard-global-pre`/`-global-post`. Os outros 5 CLIs reusam os mesmos merge
+helpers do credential-guard (só troca o `scriptPath`) — os dois guards coexistem como 2 comandos
+distintos no mesmo array `hooks` do mesmo arquivo.
+
 **Critérios de aceite:**
-- [ ] Fiação global presente nos mesmos CLIs do `credential-guard`, com paridade estrutural nos 3 runtimes.
-- [ ] `check-harness-hooks-parity.sh` cobre a fiação nova e passa.
-- [ ] `update harness` é **idempotente**: rodar duas vezes não duplica entradas.
-- [ ] Não-regressão: fiação do `credential-guard` inalterada.
-- [ ] Cenário de falsificação novo (baseline + detecção).
+- [x] Fiação global presente nos mesmos CLIs do `credential-guard`, com paridade estrutural nos 3 runtimes.
+- [x] `check-harness-hooks-parity.sh` cobre a fiação nova e passa.
+- [x] `update harness` é **idempotente**: rodar duas vezes não duplica entradas.
+- [x] Não-regressão: fiação do `credential-guard` inalterada.
+- [x] Cenário de falsificação novo (baseline + detecção) — Cenário 66, com prova adicional de
+      não-regressão do Cenário 45 (label original continua passando na mesma árvore corrompida).
+- [x] `make quality` verde.
+
+**Evidência (colada, bruta):**
+```
+go build ./...                    → limpo
+go test ./internal/commands/... ./internal/generators/... → ok (inclui os novos)
+node --test npm/tests/update-harness.test.js → 66 tests, 0 fail
+PYTHONPATH=pypi python3 -m pytest pypi/tests/test_update_harness.py -q → 72 passed
+bash scripts/check-harness-hooks-parity.sh → 14 OK (12 credential-guard + 2 kiro git-branch-guard)
+make quality (completo)           → exit 0
+  go test ./...                   → todos os pacotes ok
+  node --test (todos)             → 637 passed, 0 failed
+  PYTHONPATH=pypi python3 -m pytest pypi/tests -q → 1316 passed, 14 subtests, 0 failed
+  scripts/check-gates-falsify.sh  → 127 cenários (126→127), 0 FAIL
+bin/trackfw validate (binário local recompilado) → exit 0, 17 warnings pré-existentes,
+  0 novos relacionados a este ML
+```
+
+Alvos filtrados (`--targets claude-credential-guard` isolado etc.) confirmados INALTERADOS — testes
+pré-existentes de credential-guard passam sem edição de expectativa.
+
+Lista de targets cresceu de 27 para 33 ids, byte-idêntica nos 3 runtimes — confirmado por
+`check-update-parity.sh` (`update-harness/target-list/three-runtimes-identical`).
+
+Duas observações reportadas (não corrigidas, fora do escopo desta ML): (1) `validate` passa a poder
+acusar `git_branch_guard_script_integrity`/`_hook_resolvable` em escopo global "de graça" assim que
+o usuário rodar `trackfw update harness` de verdade — a infraestrutura já existe de um ML anterior,
+este ML só a alimenta pela primeira vez; a Wave 3 formaliza isso para todo artefato global. (2) não
+existe dedup projeto+global para git-branch-guard (`globalGitBranchGuardInstalled<Tool>`, análogo ao
+que já existe para credential-guard) — um projeto trackfw com fiação global E de projeto rodaria o
+guard duas vezes por chamada; é fiação de projeto, fora do escopo declarado desta ML. Detalhes
+completos em `docs/agents-working-context.md`, entrada `apolo-tf — ML-2A (2026-08-17) — CONCLUÍDO`.
+
+---
+
+### Auditoria do ML-2A pelo arquiteto
+
+```
+alvos de harness      27 -> 33, lista byte-identica nos 3 runtimes
+dry-run               nao escreve no HOME real (conferido: 0 refs apos dry-run)
+idempotencia          HOME controlado, 2 rodadas -> 2 refs nas duas   IDEMPOTENTE
+credential-guard      inalterado (2 refs, como antes)
+paridade do harness   14/14 OK
+Cenario 45            continua detectando, e ganhou braco provando que o
+                      credential-guard nao e afetado pela corrupcao do git-branch-guard
+make quality          exit 0 · 127 cenarios · validate exit 0
+```
+
+**Ratificada** a decisão do agente de dar ao Kiro um arquivo dedicado
+(`~/.kiro/hooks/trackfw-git-branch-guard.json`) em vez de compartilhar o do `credential-guard`: o
+escritor do Kiro reescreve o documento inteiro em vez de mesclar, então compartilhar faria os dois
+alvos oscilarem para sempre. É a mesma classe de raciocínio que motivou o arquivo separado no
+catálogo original.
+
+---
+
+### ML-2B — Dedup projeto+global para o `git-branch-guard`
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `internal/generators/agentfiles.go` + espelhos Node/Python, `scripts/check-gates-falsify.sh`, testes.
+
+**O gap, medido:** o `credential-guard` tem `globalCredentialGuardInstalled<Tool>()` e o escopo de
+projeto **pula** a fiação quando a global existe — padrão usado em **19 pontos** de
+`agentfiles.go`. O `git-branch-guard` **não tem equivalente**. Com a fiação global do ML-2A somada à
+de projeto, o guard roda **duas vezes** por chamada de ferramenta.
+
+Impacto medido — o usuário vê a mensagem duplicada:
+```
+trackfw: git push bruto bloqueado. Use `trackfw ship`. Ver CLAUDE.md §1.
+trackfw: git push bruto bloqueado. Use `trackfw ship`. Ver CLAUDE.md §1.
+```
+
+**Por que não aceito como "fora de escopo", que foi como o agente classificou:** o ML-2A pediu
+seguir *"exatamente o padrão do `credential-guard`"*, e o dedup **é** parte desse padrão. Mais: esta
+frente inteira nasceu de **ruído de hook** no terminal do usuário. Fechá-la introduzindo ruído novo
+seria contraditório — e o ADR desta REQ argumenta que incômodo leva o usuário a desligar o guard, e
+guard desligado protege zero.
+
+**Critérios de aceite:**
+- [ ] Com fiação global presente, o escopo de projeto **não** cabea o `git-branch-guard`.
+- [ ] Sem fiação global, o escopo de projeto cabea normalmente — não-regressão.
+- [ ] Mensagem aparece **uma vez só** com ambos os escopos instalados; prove executando.
+- [ ] `credential-guard` inalterado (é o modelo, não pode mudar).
+- [ ] `$HOME` do teste controlado pelo fixture, nunca o real (precedente: Cenário 46).
+- [ ] Cenário de falsificação com baseline e detecção.
 - [ ] `make quality` verde.
 
 ---
@@ -247,7 +341,7 @@ verifica o script.
 - [ ] `$HOME` do teste é **controlado pelo fixture**, nunca o real — há precedente de vazamento de
       ambiente neste tipo de cenário (Cenário 46, ML-1B de 2026-08-12).
 - [ ] Cenário de falsificação (baseline + detecção), com prova de não-vacuidade.
-- [ ] `make quality` verde.
+- [x] `make quality` verde.
 
 ---
 

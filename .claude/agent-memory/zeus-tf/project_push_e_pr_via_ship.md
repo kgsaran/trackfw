@@ -11,9 +11,17 @@ Neste repositório, `git commit` e `git push` brutos são **bloqueados por hook*
 **Detalhes que custam tempo se descobertos na hora:**
 - `trackfw ship` **exige algo staged** — se todo o trabalho já foi commitado, ele falha com
   "nothing is staged" antes de qualquer push. Não existe modo "só empurrar".
-- O binário instalado em `/usr/local/bin/trackfw` costuma estar **desatualizado** em relação ao
-  repo (ex.: sem o subcomando `commit`). Use `./bin/trackfw` após `make build`, ou rode
-  `make install` para alinhar.
+- O binário do `PATH` costuma estar **desatualizado** em relação ao repo, e **`--version` NÃO
+  distingue o build**: medido em 2026-08-17, o instalado e o recém-compilado diziam `7.0.0` os dois,
+  enquanto o instalado emitia aviso **falso** de divergência do script do guard. Sempre
+  `make build` e usar `./bin/trackfw` antes de concluir qualquer auditoria.
+- **Não rode `make install` neste ambiente:** o CLI vem do **Homebrew**
+  (`/opt/homebrew/Cellar/trackfw/`), e o alvo `install` do Makefile grava em `/usr/local/bin` —
+  criaria uma segunda cópia sombreada, com PATH decidindo qual vence. Para alinhar de verdade,
+  atualize pelo Homebrew depois que houver tag nova.
+- Scripts de guard **globais** (`~/.trackfw/scripts/*.sh`) são reescritos por
+  `trackfw update harness`, mas **só fora de `--dry-run`** — o dry-run reporta `updated=0` e não
+  menciona essa escrita. Rodar o harness com `./bin/trackfw` é o que atualiza o guard global.
 - O gate de governança do `ship` e do `branch new` aceita roadmap em `wip/` **ou** `done/` — mas
   `analyzing/` **não** satisfaz, então nenhuma branch nasce enquanto o roadmap está em análise.
 

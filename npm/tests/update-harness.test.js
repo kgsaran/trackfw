@@ -753,6 +753,131 @@ test('kiro-credential-guard rewrites stale content (dedicated file, never merged
   assert.ok(!rewritten.includes('"stale"'))
 })
 
+// ---------------------------------------------------------------------------
+// `<tool>-git-branch-guard` — global-scope git-branch-guard hook wiring,
+// ROADMAP-2026-08-17 Wave 2/ML-2A. Table-driven mirror of the six
+// `<tool>-credential-guard` sections above: same 4-state contract, same
+// displayPath per tool, only the referenced script differs
+// (trackfw-git-branch-guard.sh instead of trackfw-credential-guard.sh) and
+// Kiro gets its OWN dedicated file (trackfw-git-branch-guard.json, never
+// trackfw-credential-guard.json — sharing would break idempotency, see
+// gitBranchGuardTargetKiro's doc comment in update-harness.js).
+// ---------------------------------------------------------------------------
+const GIT_BRANCH_GUARD_CASES = [
+  { tool: 'claude', relPath: ['.claude', 'settings.json'], displayPath: '~/.claude/settings.json' },
+  { tool: 'codex', relPath: ['.codex', 'hooks.json'], displayPath: '~/.codex/hooks.json' },
+  { tool: 'gemini', relPath: ['.gemini', 'settings.json'], displayPath: '~/.gemini/settings.json' },
+  { tool: 'cursor', relPath: ['.cursor', 'hooks.json'], displayPath: '~/.cursor/hooks.json' },
+  { tool: 'copilot', relPath: ['.copilot', 'settings.json'], displayPath: '~/.copilot/settings.json' },
+  {
+    tool: 'kiro',
+    relPath: ['.kiro', 'hooks', 'trackfw-git-branch-guard.json'],
+    displayPath: '~/.kiro/hooks/trackfw-git-branch-guard.json',
+  },
+]
+
+for (const { tool, relPath, displayPath } of GIT_BRANCH_GUARD_CASES) {
+  const targetId = `${tool}-git-branch-guard`
+
+  test(`${targetId} is missing without --install-missing`, () => {
+    const homeRoot = scratchHome()
+    const doc = JSON.parse(run(['update', 'harness', '--json', '--targets', targetId], homeRoot).stdout)
+    assert.equal(doc.targets[0].state, 'missing')
+    assert.equal(fs.existsSync(path.join(homeRoot, ...relPath)), false)
+  })
+
+  test(`${targetId} installs the absolute global git-branch-guard script path with --install-missing`, () => {
+    const homeRoot = scratchHome()
+    const doc = JSON.parse(
+      run(['update', 'harness', '--json', '--install-missing', '--targets', targetId], homeRoot).stdout
+    )
+    assert.equal(doc.targets[0].state, 'updated')
+    assert.equal(doc.targets[0].path, displayPath)
+
+    const written = fs.readFileSync(path.join(homeRoot, ...relPath), 'utf8')
+    const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    assert.ok(written.includes(wantScript), `${relPath.join('/')} does not reference ${wantScript}:\n${written}`)
+
+    const credScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+    if (tool !== 'kiro') {
+      assert.ok(
+        !written.includes(credScript),
+        `${relPath.join('/')} unexpectedly references trackfw-credential-guard.sh`
+      )
+    }
+  })
+
+  test(`${targetId} is idempotent`, () => {
+    const homeRoot = scratchHome()
+    run(['update', 'harness', '--json', '--install-missing', '--targets', targetId], homeRoot)
+    const first = fs.readFileSync(path.join(homeRoot, ...relPath), 'utf8')
+
+    const doc = JSON.parse(
+      run(['update', 'harness', '--json', '--install-missing', '--targets', targetId], homeRoot).stdout
+    )
+    assert.equal(doc.targets[0].state, 'skipped')
+    const second = fs.readFileSync(path.join(homeRoot, ...relPath), 'utf8')
+    assert.equal(first, second)
+  })
+
+  test(`${targetId} --dry-run does not write`, () => {
+    const homeRoot = scratchHome()
+    const doc = JSON.parse(
+      run(
+        ['update', 'harness', '--json', '--install-missing', '--dry-run', '--targets', targetId],
+        homeRoot
+      ).stdout
+    )
+    assert.equal(doc.dry_run, true)
+    assert.equal(doc.targets[0].state, 'updated')
+    assert.equal(fs.existsSync(path.join(homeRoot, ...relPath)), false)
+  })
+}
+
+test('claude-credential-guard and claude-git-branch-guard coexist in the same file, each with exactly 2 references (Pre+Post), and both stay idempotent across a second run', () => {
+  const homeRoot = scratchHome()
+  const targets = 'claude-credential-guard,claude-git-branch-guard'
+  run(['update', 'harness', '--json', '--install-missing', '--targets', targets], homeRoot)
+
+  const settingsPath = path.join(homeRoot, '.claude', 'settings.json')
+  const first = fs.readFileSync(settingsPath, 'utf8')
+  const credScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  const branchScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+  assert.equal(first.split(credScript).length - 1, 2, 'expected exactly 2 references to trackfw-credential-guard.sh (Pre+Post)')
+  assert.equal(first.split(branchScript).length - 1, 2, 'expected exactly 2 references to trackfw-git-branch-guard.sh (Pre+Post)')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', targets], homeRoot).stdout
+  )
+  for (const target of doc.targets) {
+    assert.equal(target.state, 'skipped', `${target.id} should be skipped on the second (idempotent) run`)
+  }
+  const second = fs.readFileSync(settingsPath, 'utf8')
+  assert.equal(first, second, 'settings.json content must not change on an idempotent re-run')
+})
+
+test('kiro-credential-guard and kiro-git-branch-guard write two SEPARATE files, neither one flapping across repeated runs', () => {
+  const homeRoot = scratchHome()
+  const targets = 'kiro-credential-guard,kiro-git-branch-guard'
+  run(['update', 'harness', '--json', '--install-missing', '--targets', targets], homeRoot)
+
+  const credPath = path.join(homeRoot, '.kiro', 'hooks', 'trackfw-credential-guard.json')
+  const branchPath = path.join(homeRoot, '.kiro', 'hooks', 'trackfw-git-branch-guard.json')
+  assert.ok(fs.existsSync(credPath))
+  assert.ok(fs.existsSync(branchPath))
+  const credBefore = fs.readFileSync(credPath, 'utf8')
+  const branchBefore = fs.readFileSync(branchPath, 'utf8')
+
+  const doc = JSON.parse(
+    run(['update', 'harness', '--json', '--install-missing', '--targets', targets], homeRoot).stdout
+  )
+  for (const target of doc.targets) {
+    assert.equal(target.state, 'skipped', `${target.id} should be skipped on the second run — files must not flap`)
+  }
+  assert.equal(fs.readFileSync(credPath, 'utf8'), credBefore)
+  assert.equal(fs.readFileSync(branchPath, 'utf8'), branchBefore)
+})
+
 test('a project-scoped catalog install under HOME is not touched by trackfw update (project scope stays project scope)', () => {
   const homeRoot = scratchHome()
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-harness-project-'))

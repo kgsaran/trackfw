@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 PYPI_ROOT = Path(__file__).parents[1]
 
 
@@ -99,25 +101,35 @@ def test_harness_declared_target_list_and_order(tmp_path):
     ids = declared_target_ids()
     assert ids[0] == "claude-skill"
     assert ids[1] == "claude-credential-guard"
-    assert ids[2:4] == ["claude-agents", "claude-skills"]
-    # codex-credential-guard sits immediately before codex-agents/codex-skills
-    # — same relative position as claude-credential-guard before
-    # claude-agents/claude-skills (ROADMAP-2026-08-06 Wave 2/ML-2B).
-    assert ids[4:7] == ["codex-credential-guard", "codex-agents", "codex-skills"]
-    # gemini-credential-guard sits immediately before gemini-agents/
-    # gemini-skills — same relative position (ROADMAP-2026-08-06 Wave 2/ML-2C).
-    assert ids[7:10] == ["gemini-credential-guard", "gemini-agents", "gemini-skills"]
-    assert ids[10:12] == ["antigravity-agents", "antigravity-skills"]
-    # cursor-credential-guard sits immediately before cursor-agents/
-    # cursor-skills — same relative position (ROADMAP-2026-08-06 Wave 2/ML-2D).
-    assert ids[12:15] == ["cursor-credential-guard", "cursor-agents", "cursor-skills"]
-    # copilot-credential-guard sits immediately before copilot-agents/
-    # copilot-skills — same relative position (ROADMAP-2026-08-06 Wave 2/ML-2E).
-    assert ids[15:18] == ["copilot-credential-guard", "copilot-agents", "copilot-skills"]
-    # kiro-credential-guard sits immediately before kiro-agents/kiro-skills —
-    # same relative position (ROADMAP-2026-08-06 Wave 2/ML-2F).
-    assert ids[-3:] == ["kiro-credential-guard", "kiro-agents", "kiro-skills"]
-    assert len(ids) == 7 + 10 * 2
+    assert ids[2] == "claude-git-branch-guard"
+    assert ids[3:5] == ["claude-agents", "claude-skills"]
+    # codex-credential-guard/codex-git-branch-guard sit immediately before
+    # codex-agents/codex-skills — same relative position as
+    # claude-credential-guard/claude-git-branch-guard before
+    # claude-agents/claude-skills (ROADMAP-2026-08-06 Wave 2/ML-2B;
+    # ROADMAP-2026-08-17 Wave 2/ML-2A for git-branch-guard).
+    assert ids[5:9] == ["codex-credential-guard", "codex-git-branch-guard", "codex-agents", "codex-skills"]
+    # gemini-credential-guard/gemini-git-branch-guard sit immediately before
+    # gemini-agents/gemini-skills — same relative position
+    # (ROADMAP-2026-08-06 Wave 2/ML-2C).
+    assert ids[9:13] == ["gemini-credential-guard", "gemini-git-branch-guard", "gemini-agents", "gemini-skills"]
+    assert ids[13:15] == ["antigravity-agents", "antigravity-skills"]
+    # cursor-credential-guard/cursor-git-branch-guard sit immediately before
+    # cursor-agents/cursor-skills — same relative position
+    # (ROADMAP-2026-08-06 Wave 2/ML-2D).
+    assert ids[15:19] == ["cursor-credential-guard", "cursor-git-branch-guard", "cursor-agents", "cursor-skills"]
+    # copilot-credential-guard/copilot-git-branch-guard sit immediately before
+    # copilot-agents/copilot-skills — same relative position
+    # (ROADMAP-2026-08-06 Wave 2/ML-2E).
+    assert ids[19:23] == ["copilot-credential-guard", "copilot-git-branch-guard", "copilot-agents", "copilot-skills"]
+    # kiro-credential-guard/kiro-git-branch-guard sit immediately before
+    # kiro-agents/kiro-skills — same relative position
+    # (ROADMAP-2026-08-06 Wave 2/ML-2F).
+    assert ids[-4:] == ["kiro-credential-guard", "kiro-git-branch-guard", "kiro-agents", "kiro-skills"]
+    # claude-skill + 2*(claude-credential-guard, git-branch-guard pairs for
+    # claude/codex/gemini/cursor/copilot/kiro = 6 pairs) + 20 agents/skills
+    # entries (2 per each of the 10 catalog targets) = 1 + 12 + 20 = 33.
+    assert len(ids) == 33
 
     home = tmp_path / "home"
     home.mkdir()
@@ -1153,3 +1165,159 @@ def test_credential_guard_kiro_rewrites_stale_content(tmp_path):
     assert payload["targets"][0]["state"] == "updated"
     rewritten = hook_path.read_text(encoding="utf-8")
     assert '"stale"' not in rewritten
+
+
+# ---------------------------------------------------------------------------
+# `<tool>-git-branch-guard` — global-scope git-branch-guard hook wiring,
+# ROADMAP-2026-08-17 Wave 2/ML-2A. Table-driven mirror of the six
+# `<tool>-credential-guard` sections above: same 4-state contract, same
+# displayPath per tool, only the referenced script differs
+# (trackfw-git-branch-guard.sh instead of trackfw-credential-guard.sh) and
+# Kiro gets its OWN dedicated file (trackfw-git-branch-guard.json, never
+# trackfw-credential-guard.json — sharing would break idempotency, see
+# _git_branch_guard_kiro_result's doc comment).
+# ---------------------------------------------------------------------------
+
+_GIT_BRANCH_GUARD_CASES = [
+    ("claude", (".claude", "settings.json"), "~/.claude/settings.json"),
+    ("codex", (".codex", "hooks.json"), "~/.codex/hooks.json"),
+    ("gemini", (".gemini", "settings.json"), "~/.gemini/settings.json"),
+    ("cursor", (".cursor", "hooks.json"), "~/.cursor/hooks.json"),
+    ("copilot", (".copilot", "settings.json"), "~/.copilot/settings.json"),
+    ("kiro", (".kiro", "hooks", "trackfw-git-branch-guard.json"), "~/.kiro/hooks/trackfw-git-branch-guard.json"),
+]
+
+
+@pytest.mark.parametrize("tool,rel_parts,display_path", _GIT_BRANCH_GUARD_CASES)
+def test_git_branch_guard_missing_without_install_missing(tmp_path, tool, rel_parts, display_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    target_id = f"{tool}-git-branch-guard"
+
+    result = cli("update", "harness", "--targets", target_id, "--json", cwd=project, home=home)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "missing"
+    assert not home.joinpath(*rel_parts).exists()
+
+
+@pytest.mark.parametrize("tool,rel_parts,display_path", _GIT_BRANCH_GUARD_CASES)
+def test_git_branch_guard_installs_absolute_path_with_install_missing(tmp_path, tool, rel_parts, display_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    target_id = f"{tool}-git-branch-guard"
+
+    result = cli(
+        "update", "harness", "--targets", target_id, "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["targets"][0]["state"] == "updated"
+    assert payload["targets"][0]["path"] == display_path
+
+    written = home.joinpath(*rel_parts).read_text(encoding="utf-8")
+    want_script = str(home / ".trackfw" / "scripts" / "trackfw-git-branch-guard.sh")
+    assert want_script in written
+
+    if tool != "kiro":
+        cred_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+        assert cred_script not in written
+
+
+@pytest.mark.parametrize("tool,rel_parts,display_path", _GIT_BRANCH_GUARD_CASES)
+def test_git_branch_guard_is_idempotent(tmp_path, tool, rel_parts, display_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    target_id = f"{tool}-git-branch-guard"
+
+    first = cli(
+        "update", "harness", "--targets", target_id, "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert first.returncode == 0, first.stderr
+    written_path = home.joinpath(*rel_parts)
+    first_bytes = written_path.read_bytes()
+
+    second = cli(
+        "update", "harness", "--targets", target_id, "--install-missing", "--json",
+        cwd=project, home=home,
+    )
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert payload["targets"][0]["state"] == "skipped"
+    assert written_path.read_bytes() == first_bytes
+
+
+@pytest.mark.parametrize("tool,rel_parts,display_path", _GIT_BRANCH_GUARD_CASES)
+def test_git_branch_guard_dry_run_does_not_write(tmp_path, tool, rel_parts, display_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    target_id = f"{tool}-git-branch-guard"
+
+    result = cli(
+        "update", "harness", "--targets", target_id, "--install-missing", "--dry-run", "--json",
+        cwd=project, home=home,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["targets"][0]["state"] == "updated"
+    assert not home.joinpath(*rel_parts).exists()
+
+
+def test_claude_credential_guard_and_git_branch_guard_coexist_idempotently(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    targets = "claude-credential-guard,claude-git-branch-guard"
+
+    first = cli("update", "harness", "--targets", targets, "--install-missing", "--json", cwd=project, home=home)
+    assert first.returncode == 0, first.stderr
+
+    settings_path = home / ".claude" / "settings.json"
+    first_text = settings_path.read_text(encoding="utf-8")
+    cred_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
+    branch_script = str(home / ".trackfw" / "scripts" / "trackfw-git-branch-guard.sh")
+    assert first_text.count(cred_script) == 2
+    assert first_text.count(branch_script) == 2
+
+    second = cli("update", "harness", "--targets", targets, "--install-missing", "--json", cwd=project, home=home)
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert all(target["state"] == "skipped" for target in payload["targets"])
+    assert settings_path.read_text(encoding="utf-8") == first_text
+
+
+def test_kiro_credential_guard_and_git_branch_guard_write_separate_files(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    targets = "kiro-credential-guard,kiro-git-branch-guard"
+
+    first = cli("update", "harness", "--targets", targets, "--install-missing", "--json", cwd=project, home=home)
+    assert first.returncode == 0, first.stderr
+
+    cred_path = home / ".kiro" / "hooks" / "trackfw-credential-guard.json"
+    branch_path = home / ".kiro" / "hooks" / "trackfw-git-branch-guard.json"
+    assert cred_path.exists()
+    assert branch_path.exists()
+    cred_before = cred_path.read_bytes()
+    branch_before = branch_path.read_bytes()
+
+    second = cli("update", "harness", "--targets", targets, "--install-missing", "--json", cwd=project, home=home)
+    assert second.returncode == 0, second.stderr
+    payload = json.loads(second.stdout)
+    assert all(target["state"] == "skipped" for target in payload["targets"])
+    assert cred_path.read_bytes() == cred_before
+    assert branch_path.read_bytes() == branch_before

@@ -18818,3 +18818,126 @@ Nota de vault: `vault/notes/git-branch-guard-noop-outside-project-fixtures-and-f
 Roadmap `ML-1A` marcado `✅ Concluído` (pendente de auditoria do arquiteto antes de fechar
 oficialmente — Wave 2 bloqueada até essa auditoria confirmar o no-op). Handoff para
 `trackfw_architect` auditar e commitar. Nenhum `git commit`/`push`/branch executado por mim.
+
+## apolo-tf — ML-2A (2026-08-17) — INICIADO
+
+Wave 2 do mesmo roadmap (`ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+integridade-independente-de-fiacao.md`), depende de ML-1A/1B já concluídas e auditadas (no-op sem
+EPIPE). Objetivo: cabear `git-branch-guard` no escopo global (`trackfw update harness`), nos
+mesmos 6 CLIs do `credential-guard` (claude, codex, gemini, cursor, copilot, kiro — Windsurf fica
+de fora, mesmo critério do credential-guard), seguindo exatamente o padrão dele. Vai tocar
+`internal/generators/update.go`, `npm/src/commands/update-harness.js`,
+`pypi/trackfw/commands/update_harness.py`, `scripts/check-harness-hooks-parity.sh`,
+`scripts/check-gates-falsify.sh`, `docs/cli-parity.md` (lista fixa de 27→33 ids), testes dos 3
+stacks. Decisão de design (orientada por consulta prévia): Kiro recebe **arquivo próprio**
+(`~/.kiro/hooks/trackfw-git-branch-guard.json`) em vez de compartilhar
+`trackfw-credential-guard.json` — o writer do Kiro é wholesale (reescreve o documento inteiro), não
+merge, então compartilhar o arquivo faria os dois targets flap entre si a cada run (falha de
+idempotência). Os outros 5 CLIs reusam os merge helpers existentes (`mergeClaudeHookArray` etc.),
+passando o scriptPath do git-branch-guard — nenhum helper de merge novo, nenhuma edição no gerador
+de template do script (`scaffold.go`/mirrors — já escrito desde ML-1A/1B). Nenhum `git
+commit`/`push`/branch por mim; handoff ao final para `trackfw_architect`.
+
+## apolo-tf — ML-2A (2026-08-17) — CONCLUÍDO
+
+Cabeado `git-branch-guard` no escopo global (`trackfw update harness`), nos mesmos 6 CLIs do
+`credential-guard` (claude, codex, gemini, cursor, copilot, kiro).
+
+**Padrão seguido, 5 dos 6 CLIs (claude/codex/gemini/cursor/copilot):** novas funções
+`harnessGitBranchGuardTarget<Tool>` (Go), `gitBranchGuardTarget<Tool>` (Node),
+`_git_branch_guard_<tool>_result` (Python), espelhando literalmente as `*CredentialGuardTarget<Tool>`
+já existentes, reusando os MESMOS merge helpers (`mergeCredentialGuardClaudeHooks`/`...GeminiHooks`/
+`...CursorHooks`/`...CopilotHooks` no Go; `mergeClaudeHookArray`/`mergeSimpleCommandArray`/
+`mergeCopilotHookArray` no Node; `_merge_claude_hook_array`/`_merge_simple_command_array`/
+`_merge_copilot_hook_array` no Python) — só troca o `scriptPath` para `trackfw-git-branch-guard.sh`.
+Os dois guards **coexistem no MESMO arquivo** (`~/.claude/settings.json` etc.) como duas entradas de
+comando distintas dentro do mesmo array `hooks` do matcher — os merge helpers já deduplicam por
+comando exato e anexam um segundo comando distinto sem sobrescrever o primeiro, então nenhum merge
+helper novo foi necessário.
+
+**Kiro é a exceção estrutural, decisão registrada:** `harnessCredentialGuardTargetKiro` reescreve
+`~/.kiro/hooks/trackfw-credential-guard.json` por INTEIRO a cada run (nunca faz merge). Compartilhar
+esse arquivo com um segundo writer também-wholesale para o git-branch-guard faria os dois targets
+entrarem em flap eternamente (cada run reescreve por cima do outro, ambos reportando `updated` para
+sempre — falha de idempotência). Por isso o Kiro recebe um **arquivo dedicado separado**,
+`~/.kiro/hooks/trackfw-git-branch-guard.json`, mesmo schema `{"version":"v1","hooks":[pre,post]}`,
+nomes de hook `trackfw-git-branch-guard-global-pre`/`-global-post`.
+
+**Lista de targets:** `HarnessTargetIDs`/`HARNESS_TARGET_IDS`/`declared_target_ids()` cresceu de 27
+para **33** ids — `<tool>-git-branch-guard` inserido imediatamente depois de `<tool>-credential-guard`
+e antes de `<tool>-agents`/`<tool>-skills`, nos 3 stacks, ordem byte-idêntica confirmada por
+`check-update-parity.sh` (`update-harness/target-list/three-runtimes-identical`, lista completa dos
+33 ids colada na evidência de `make quality`).
+
+**`scripts/check-harness-hooks-parity.sh`:** restruturado de tabela 1:1 `cli→arquivo` para
+`(cli,guard)→arquivo` — `hookfile_for(cli, guard)` (para Kiro retorna arquivos distintos por guard,
+para os outros 5 o mesmo arquivo independente do guard). Vacuidade (P2) e comparação estrutural
+(go-vs-node/go-vs-py) cobrem os 12 alvos; os labels ORIGINAIS `harness-hooks-parity/$cli/go-vs-node`/
+`go-vs-py` (usados pelo Cenário 45 pré-existente) foram preservados intocados para o arquivo de
+credential-guard — o Kiro ganhou um SEGUNDO par de labels
+`harness-hooks-parity/kiro/git-branch-guard/go-vs-node`/`go-vs-py` para seu arquivo próprio.
+
+**`scripts/check-gates-falsify.sh`:** Cenário 45 (pré-existente) teve o seam ampliado — a nova
+função Python `_git_branch_guard_kiro_result` introduziu uma SEGUNDA ocorrência do trecho
+`"trigger": "PostToolUse",` + `"matcher": "shell",` no arquivo, quebrando a checagem de unicidade do
+`corrupt_literal`; ampliei o contexto do seam do Cenário 45 para incluir `"name": "...-global-post"` +
+`"description": ...`, restrito à função de credential-guard. Cenário 66 novo: mesmo padrão do 45,
+agora para `_git_branch_guard_kiro_result` — corrompe o matcher `-global-post` do arquivo
+git-branch-guard do Kiro, prova detecção sob o label novo, e prova NÃO-REGRESSÃO explícita — o label
+original `harness-hooks-parity/kiro/go-vs-py` (credential-guard) continua passando na MESMA árvore
+corrompida, provando que os dois arquivos do Kiro são comparados de forma independente. Total:
+**127 cenários** (126→127), 0 FAIL, tanto standalone quanto dentro de `make quality`.
+
+**`docs/cli-parity.md`:** lista pinada de 27→33 atualizada com os 6 novos ids em posição, nova seção
+"Kiro global-scope git-branch-guard wiring" explicando a decisão do arquivo dedicado.
+
+**Testes novos:** `internal/commands/update_harness_test.go`
+(`TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI` tabela dos 6 CLIs +
+`TestUpdateHarnessCmd_GitBranchGuardAndCredentialGuardCoexistIdempotently`, prova 2 refs Pre+Post por
+script, idempotência em 2 runs), `npm/tests/update-harness.test.js` (mesma tabela + 2 testes de
+coexistência/idempotência Claude e Kiro), `pypi/tests/test_update_harness.py`
+(`_GIT_BRANCH_GUARD_CASES` parametrizado + `test_harness_declared_target_list_and_order` ajustado
+para os 33 ids + 2 testes de coexistência).
+
+**Evidência (colada, bruta):**
+```
+go build ./...                    → limpo
+go test ./internal/commands/... ./internal/generators/... → ok (inclui os novos)
+node --test npm/tests/update-harness.test.js → 66 tests, 0 fail
+PYTHONPATH=pypi python3 -m pytest pypi/tests/test_update_harness.py -q → 72 passed
+bash scripts/check-harness-hooks-parity.sh → 14 OK (12 credential-guard/2 kiro git-branch-guard extra)
+make quality (completo)           → exit 0
+  go test ./...                   → todos os pacotes ok
+  node --test (todos)             → 637 passed, 0 failed
+  PYTHONPATH=pypi python3 -m pytest pypi/tests -q → 1316 passed, 14 subtests, 0 failed
+  scripts/check-gates-falsify.sh  → 127 cenários, 0 FAIL
+bin/trackfw validate (binário local recompilado) → exit 0, 17 warnings pré-existentes,
+  0 warnings/violations novos relacionados a este ML
+```
+
+Alvos filtrados (`--targets claude-credential-guard` isolado etc.) confirmados INALTERADOS — os
+testes pré-existentes de credential-guard passam sem edição de expectativa, prova de não-regressão.
+
+**Duas observações reportadas, não corrigidas (fora do escopo desta ML por instrução explícita):**
+
+1. **`validate` passa a poder acusar `git_branch_guard_script_integrity`/`_hook_resolvable` em
+   escopo global "de graça" assim que o usuário rodar `trackfw update harness` de verdade** — a
+   infraestrutura (`validateGitBranchGuardGlobalScriptIntegrity`/`validateGitBranchGuardGlobalHookResolvable`,
+   `internal/validator/validator_git_branch_guard.go:242`) já existe e já está registrada em
+   `validator.go` (de um ML anterior a este) — este ML só a alimenta pela primeira vez, ao fazer os
+   configs globais referenciarem o script. O `~/.trackfw/scripts/trackfw-git-branch-guard.sh` real da
+   máquina de KG está desatualizado (ADR cita 123 vs 369 linhas) — só é regenerado, na prática,
+   quando KG rodar `trackfw update harness` de verdade (nenhum teste deste ML tocou o `$HOME` real).
+   Não fixado aqui — é o comportamento correto que a Wave 3 (próximo ML) formaliza para TODO artefato
+   global, não só este.
+2. **Sem dedup projeto+global para git-branch-guard, ao contrário do credential-guard.** Não existe
+   `globalGitBranchGuardInstalled<Tool>` análogo a `globalCredentialGuardInstalled<Tool>`
+   (`internal/generators/agentfiles.go:1607` em diante) — confirmado por grep, zero ocorrências.
+   Efeito: um projeto trackfw cujo usuário também rodou `trackfw update harness --targets
+   *-git-branch-guard` terá o guard cabeado **duas vezes** (global + projeto) para os mesmos CLIs,
+   rodando duas vezes por chamada de ferramenta, duas mensagens de stderr idênticas. Fora do escopo
+   declarado desta ML (é fiação de projeto, não deste roadmap) — nomeado aqui porque é exatamente a
+   classe de sintoma ("ruído de hook") que originou toda a frente.
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
+commitar.

@@ -440,6 +440,173 @@ func TestUpdateHarnessCmd_CredentialGuardKiroInstallsViaCLI(t *testing.T) {
 	}
 }
 
+// TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI is a table-driven mirror
+// of the six TestUpdateHarnessCmd_CredentialGuard<Tool>InstallsViaCLI tests
+// above, for the sibling <tool>-git-branch-guard targets (ROADMAP-2026-08-17
+// Wave 2/ML-2A). Same 4-state contract, same displayPath per tool, only the
+// referenced script differs (trackfw-git-branch-guard.sh instead of
+// trackfw-credential-guard.sh) and Kiro gets its OWN dedicated file
+// (trackfw-git-branch-guard.json, not a shared trackfw-credential-guard.json
+// — see harnessGitBranchGuardTargetKiro's doc comment for why sharing would
+// break idempotency).
+func TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI(t *testing.T) {
+	cases := []struct {
+		tool        string
+		relPath     string
+		displayPath string
+	}{
+		{"claude", filepath.Join(".claude", "settings.json"), "~/.claude/settings.json"},
+		{"codex", filepath.Join(".codex", "hooks.json"), "~/.codex/hooks.json"},
+		{"gemini", filepath.Join(".gemini", "settings.json"), "~/.gemini/settings.json"},
+		{"cursor", filepath.Join(".cursor", "hooks.json"), "~/.cursor/hooks.json"},
+		{"copilot", filepath.Join(".copilot", "settings.json"), "~/.copilot/settings.json"},
+		{"kiro", filepath.Join(".kiro", "hooks", "trackfw-git-branch-guard.json"), "~/.kiro/hooks/trackfw-git-branch-guard.json"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.tool, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+
+			targetID := tc.tool + "-git-branch-guard"
+			cmd := newUpdateHarnessCmd()
+			var out strings.Builder
+			cmd.SetOut(&out)
+			cmd.SetArgs([]string{"--json", "--targets", targetID, "--install-missing"})
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("trackfw update harness --targets %s --install-missing failed: %v", targetID, err)
+			}
+
+			line := strings.TrimSpace(out.String())
+			var doc struct {
+				Targets []struct {
+					ID    string `json:"id"`
+					State string `json:"state"`
+					Path  string `json:"path"`
+				} `json:"targets"`
+			}
+			if err := json.Unmarshal([]byte(line), &doc); err != nil {
+				t.Fatalf("invalid JSON: %v\n%s", err, line)
+			}
+			if len(doc.Targets) != 1 || doc.Targets[0].ID != targetID {
+				t.Fatalf("unexpected targets: %+v", doc.Targets)
+			}
+			if doc.Targets[0].State != "updated" {
+				t.Fatalf("state = %q, want updated", doc.Targets[0].State)
+			}
+			if doc.Targets[0].Path != tc.displayPath {
+				t.Fatalf("path = %q, want %s", doc.Targets[0].Path, tc.displayPath)
+			}
+
+			written := filepath.Join(home, tc.relPath)
+			data, err := os.ReadFile(written)
+			if err != nil {
+				t.Fatalf("%s was not written: %v", tc.relPath, err)
+			}
+			wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+			if !strings.Contains(string(data), wantScript) {
+				t.Fatalf("%s does not reference the absolute global script path %s:\n%s", tc.relPath, wantScript, data)
+			}
+
+			// Non-regression: credential-guard's own file (shared for the
+			// merge-based tools; Kiro's is a separate dedicated file with a
+			// different name and is never even touched here) never got its
+			// own script reference injected by the git-branch-guard target.
+			if tc.tool != "kiro" {
+				credScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+				if strings.Contains(string(data), credScript) {
+					t.Fatalf("%s unexpectedly references trackfw-credential-guard.sh — git-branch-guard target should not install credential-guard wiring", tc.relPath)
+				}
+			}
+		})
+	}
+}
+
+// TestUpdateHarnessCmd_GitBranchGuardAndCredentialGuardCoexistIdempotently
+// installs both guard targets for Claude (merge-based, shares one file) and
+// for Kiro (Kiro's credential-guard writer is wholesale, so it gets its own
+// file) twice in a row, proving: (1) both entries land in the expected
+// file(s), (2) a second run reports "skipped" for all four targets — the
+// idempotency AC this ML is required to paste evidence for.
+func TestUpdateHarnessCmd_GitBranchGuardAndCredentialGuardCoexistIdempotently(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	targets := "claude-credential-guard,claude-git-branch-guard,kiro-credential-guard,kiro-git-branch-guard"
+
+	run := func() map[string]string {
+		cmd := newUpdateHarnessCmd()
+		var out strings.Builder
+		cmd.SetOut(&out)
+		cmd.SetArgs([]string{"--json", "--targets", targets, "--install-missing"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("trackfw update harness --targets %s --install-missing failed: %v", targets, err)
+		}
+		var doc struct {
+			Targets []struct {
+				ID    string `json:"id"`
+				State string `json:"state"`
+			} `json:"targets"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &doc); err != nil {
+			t.Fatalf("invalid JSON: %v\n%s", err, out.String())
+		}
+		states := make(map[string]string, len(doc.Targets))
+		for _, tgt := range doc.Targets {
+			states[tgt.ID] = tgt.State
+		}
+		return states
+	}
+
+	first := run()
+	for _, id := range strings.Split(targets, ",") {
+		if first[id] != "updated" {
+			t.Fatalf("first run: %s state = %q, want updated (%v)", id, first[id], first)
+		}
+	}
+
+	claudeSettings := filepath.Join(home, ".claude", "settings.json")
+	claudeData, err := os.ReadFile(claudeSettings)
+	if err != nil {
+		t.Fatalf("~/.claude/settings.json not written: %v", err)
+	}
+	credScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	branchScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	if !strings.Contains(string(claudeData), credScript) || !strings.Contains(string(claudeData), branchScript) {
+		t.Fatalf("~/.claude/settings.json missing one of the two guard script references:\n%s", claudeData)
+	}
+	if strings.Count(string(claudeData), credScript) != 2 { // PreToolUse + PostToolUse
+		t.Fatalf("~/.claude/settings.json expected exactly 2 references to %s (Pre+Post), got %d:\n%s", credScript, strings.Count(string(claudeData), credScript), claudeData)
+	}
+	if strings.Count(string(claudeData), branchScript) != 2 {
+		t.Fatalf("~/.claude/settings.json expected exactly 2 references to %s (Pre+Post), got %d:\n%s", branchScript, strings.Count(string(claudeData), branchScript), claudeData)
+	}
+
+	kiroCredFile := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
+	kiroBranchFile := filepath.Join(home, ".kiro", "hooks", "trackfw-git-branch-guard.json")
+	if _, err := os.Stat(kiroCredFile); err != nil {
+		t.Fatalf("kiro credential-guard file not written: %v", err)
+	}
+	if _, err := os.Stat(kiroBranchFile); err != nil {
+		t.Fatalf("kiro git-branch-guard dedicated file not written: %v", err)
+	}
+
+	second := run()
+	for _, id := range strings.Split(targets, ",") {
+		if second[id] != "skipped" {
+			t.Fatalf("second run: %s state = %q, want skipped — idempotency broken (%v)", id, second[id], second)
+		}
+	}
+
+	claudeDataAfter, err := os.ReadFile(claudeSettings)
+	if err != nil {
+		t.Fatalf("~/.claude/settings.json unreadable after second run: %v", err)
+	}
+	if string(claudeDataAfter) != string(claudeData) {
+		t.Fatalf("~/.claude/settings.json content changed on second (idempotent) run:\nbefore:\n%s\nafter:\n%s", claudeData, claudeDataAfter)
+	}
+}
+
 func assertKeyOrder(t *testing.T, doc string, keys []string) {
 	t.Helper()
 	var positions []int
