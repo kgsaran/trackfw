@@ -7,8 +7,29 @@ const { reportFatalError, installGlobalHandlers } = require('../src/lib/fatal-er
 // single entrypoint-level handler instead of a try/catch per command.
 installGlobalHandlers()
 
-require('../src/commands/index')
-  .createProgram()
+const program = require('../src/commands/index').createProgram()
+
+// trackfw sem argumento é uso legítimo (pedir ajuda), não erro — decisão do
+// arquiteto no ML-1C (ROADMAP-2026-08-16-higiene-...). Sem intervenção,
+// commander trata "nenhum operando" como "provavelmente faltou um
+// subcomando" (Command._parseCommand: `this.commands.length && this.args
+// .length === 0 && !this._actionHandler` → `this.help({error: true})`) —
+// help em stderr, exit 1. Interceptar SÓ o caso de zero argumentos aqui,
+// antes de entrar no parser, reusa o MESMO texto de ajuda (outputHelp) na
+// saída canônica (stdout, exit 0) sem tocar no parsing normal — em
+// particular sem registrar uma .action() no root, que reclassificaria um
+// comando desconhecido (ex.: "trackfw naoexiste") como argumento posicional
+// da action em vez de disparar o listener 'command:*' (regressão descartada
+// em favor desta abordagem: ver ROADMAP ML-1C).
+//
+// Fica ANTES do parseAsync e DEPOIS de installGlobalHandlers(): o caminho de
+// zero argumentos é sucesso e nunca deve passar pelo reportFatalError abaixo.
+if (process.argv.length <= 2) {
+  program.outputHelp()
+  process.exit(0)
+}
+
+program
   .parseAsync(process.argv)
   .catch((err) => {
     // The primary path: an action (sync or async) threw, and since the

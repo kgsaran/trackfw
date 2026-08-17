@@ -186,7 +186,7 @@ class IntegrationManager {
       if (status.state === 'modified' && !force) throw new Error(`Artifact is modified; use --force: ${file}`)
       if (status.state === 'outdated' && owned && !force) return true // skip: bytes preserved, batch continues
     } else if (operation === 'update') {
-      if (!owned && status.state === 'modified') throw new Error(`Unmanaged artifact does not match a trackfw template: ${file}`)
+      if (!owned && status.state === 'modified') throw new Error(this.unmanagedArtifactError(file, plan.claim))
       if (status.state === 'modified' && !force) throw new Error(`Artifact is modified; use --force: ${file}`)
     } else if (operation === 'uninstall' && owned && status.state === 'modified' && !force) {
       throw new Error(`Artifact is modified; use --force: ${file}`)
@@ -282,7 +282,15 @@ class IntegrationManager {
       this.atomicWrite(file, plan.content, 0o644)
       actual = desired
     } else if (exists && !owned && actual !== desired && !knownLegacy && !force) {
-      throw new Error(`Unmanaged artifact does not match a trackfw template: ${file}`)
+      // Defense-in-depth: preflight already rejects this exact case for
+      // 'update' (unconditionally) and for 'install' without --force (any
+      // state === 'modified' is blocked before an active item ever reaches
+      // apply()). This branch is therefore not reachable via install/update/
+      // uninstall today, but stays as a second line of defense in case
+      // preflight's guard is ever loosened — hence the identical remediation
+      // text, so a user who somehow hits it still gets the same actionable
+      // message. Mirrors internal/integrations/manager.go:applyMutation.
+      throw new Error(this.unmanagedArtifactError(file, plan.claim))
     }
     if (!record.claims.some(claim => claimKey(claim) === key)) record.claims.push(cleanClaim(plan.claim))
     record.sha256 = actual
@@ -303,6 +311,19 @@ class IntegrationManager {
         else this.atomicWrite(file, snapshot.content, snapshot.mode)
       } catch { /* preserve original error */ }
     }
+  }
+
+  // unmanagedArtifactError — mensagem de erro para update/uninstall (ou,
+  // defensivamente, install) recusando bytes que o trackfw não escreveu.
+  // Nomeia o remédio — trackfw did not write these bytes, então a única forma
+  // segura de trazer o artefato sob gestão é `<kind> install --force`, que
+  // explicitamente autoriza adotar/substituir conteúdo unmanaged — com as
+  // flags exatas para reproduzir o claim deste plano (item, target, scope),
+  // prontas para copiar e colar. Espelha
+  // internal/integrations/manager.go:unmanagedArtifactError — fonte canônica
+  // do texto, byte a byte idêntica nos 3 CLIs.
+  unmanagedArtifactError(file, claim) {
+    return `unmanaged artifact "${file}" does not match a trackfw template — trackfw did not write these bytes.\nAdopt it with: trackfw ${claim.kind} install --force --items ${claim.item} --targets ${claim.target} --scope ${claim.scope}`
   }
 
   // tildeAbbrev — retorna o caminho de exibição abreviado para uso em mensagens

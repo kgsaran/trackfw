@@ -79,3 +79,40 @@ escopo.
   `invalid-branch-vocabulary`)
 - Ver também [[branch-new-exit-code-leak-vs-propagation-2026-08-04]] para o padrão correto de
   `SilenceErrors` + propagação literal de exit code.
+
+## Resolução (ML-1B do ROADMAP-2026-08-16-higiene-sete-debitos-acumulados..., 2026-08-16)
+
+Os dois achados descritos acima foram corrigidos. **Nenhuma das duas correções sugeridas foi
+aplicada como estava escrita** — a investigação mais funda (ver `advisor()` na sessão da ML)
+mostrou que a causa raiz do achado 1 era duplicação de lógica, não só de texto, e que o achado 2
+já descrevia o comportamento canônico do Go (a decisão do arquiteto foi adotar exatamente o que o
+Go já fazia).
+
+**Achado 1 — wording.** `checkShipGovernance`/`check_ship_governance` em Node e Python
+reimplementavam a regra `branch_has_wip_roadmap` do zero, com texto próprio e **sem escanear
+`done/` nenhuma vez** — não era só uma questão de wording, o comportamento também divergia (uma
+branch com roadmap só em `done/` passaria no Go e falharia no Node/Python). A correção foi
+**eliminar a duplicação**: as duas funções agora delegam para `validator.validateBranchHasWIPRoadmap`
++ `validator.validateWIPHasREQ` (Node: `npm/src/validator/index.js`; Python:
+`pypi/trackfw/validator.py`) — as mesmas funções que `trackfw branch new`/`trackfw commit` já
+usavam e que já eram byte-idênticas ao Go (`internal/validator/validator.go`
+`BranchGovernanceOrientation`/`BranchNoMatchingRoadmapMessage`). `checkShipGovernance()` em Node
+e `check_ship_governance()` em Python perderam toda a lógica de leitura de diretório/normalização
+de slug — hoje têm o mesmo formato "sem argumentos" que `validator.CheckShipGovernance()` no Go.
+
+**Achado 2 — stream/prefixo.** A decisão do arquiteto foi adotar o comportamento do Go como
+canônico: erro no **stderr**, prefixo `Error: `. Comparando com `internal/commands/root.go`
+(`Execute()`, linhas ~89-111), esse já era o comportamento real do Go **sem nenhuma mudança
+necessária** — `ship.go` não precisou setar `SilenceErrors`; o root wrapper já imprime
+`Error: <msg>` no stderr para qualquer `RunE` que não silencie erros (comportamento diferente de
+`branch.go`/`commit.go`, que silenciam de propósito para imprimir sem prefixo). A correção ficou
+inteiramente do lado de Node/Python: `runShip`/`run_ship` ganharam um parâmetro `writeErr`/
+`write_err` (default: escreve `Error: <msg>\n` em stderr) usado só para a linha-resumo final de
+cada caminho de aborto; todo o detalhe anterior (lista de violações, dicas de remediação,
+bloco "Note: ...") continua no stdout via `writeln`, exatamente como o Go já fazia via `deps.out`.
+
+**Prova**: `scripts/check-ship-parity.sh` — os cenários `feat-still-gated-non-regression` e
+`invalid-branch-vocabulary` passaram a usar `assert_three_way` (diff -u completo de stdout **e**
+stderr) em vez dos helpers `assert_exit_equal`/`assert_message_byte_identical`, que foram
+removidos do script junto com a normalização que descartava a divergência de prefixo. Os quatro
+cenários passam com saída byte-idêntica nos três runtimes.

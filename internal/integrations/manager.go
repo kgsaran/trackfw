@@ -308,7 +308,7 @@ func preflight(item resolvedPlan, manifest Manifest, force bool, operation mutat
 		// already proven. Unknown unmanaged bytes must go through install --force;
 		// update may adopt only the desired or a declared legacy template.
 		if !owned && inspection.State == StateModified {
-			return false, fmt.Errorf("unmanaged artifact %q does not match a trackfw template", item.destination)
+			return false, unmanagedArtifactError(item.destination, item.plan.Claim)
 		}
 		if inspection.State == StateModified && !force {
 			return false, fmt.Errorf("artifact %q is modified; use force to update it", item.destination)
@@ -419,7 +419,15 @@ func applyMutation(item resolvedPlan, manifest *Manifest, force bool, operation 
 	writeDesired := !exists
 	if exists && !owned {
 		if actualHash != desiredHash && !knownLegacy && !force {
-			return fmt.Errorf("unmanaged artifact %q does not match a trackfw template", item.destination)
+			// Defense-in-depth: preflight already rejects this exact case for
+			// mutationUpdate (unconditionally) and for mutationInstall without
+			// --force (any State == StateModified is blocked before an active
+			// item ever reaches applyMutation). This branch is therefore not
+			// reachable via Manager.Install/Update/Uninstall today, but it
+			// stays as a second line of defense in case preflight's guard is
+			// ever loosened — hence the identical remediation text, so a user
+			// who somehow hits it still gets the same actionable message.
+			return unmanagedArtifactError(item.destination, item.plan.Claim)
 		}
 		writeDesired = operation == mutationUpdate && actualHash != desiredHash || force && actualHash != desiredHash
 	} else if exists && owned {
@@ -615,6 +623,24 @@ func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	return os.Rename(temporaryName, filename)
+}
+
+// unmanagedArtifactError builds the error returned when update/uninstall (or,
+// defensively, install) refuses to touch bytes trackfw did not write. The
+// message names the remedy — trackfw did not write these bytes, so the only
+// safe way to bring the artifact under management is `<kind> install
+// --force`, which explicitly authorizes adopting/replacing unmanaged content
+// — with the exact flags to reproduce this plan's claim (item, target,
+// scope), so the user can copy-paste it instead of guessing.
+//
+// Mirrors npm/src/integrations/manager.js and pypi/trackfw/integrations/
+// manager.py — the wording here is the canonical, byte-identical source of
+// truth for the other two CLIs.
+func unmanagedArtifactError(destination string, claim Claim) error {
+	return fmt.Errorf(
+		"unmanaged artifact %q does not match a trackfw template — trackfw did not write these bytes.\nAdopt it with: trackfw %s install --force --items %s --targets %s --scope %s",
+		destination, claim.Kind, claim.Item, claim.Target, claim.Scope,
+	)
 }
 
 func contentHash(content []byte) string {

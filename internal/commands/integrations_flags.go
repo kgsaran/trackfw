@@ -83,7 +83,7 @@ func newIntegrationListCmd(kind integrations.ItemKind) *cobra.Command {
 			return executeIntegrationList(cmd, kind, opts)
 		},
 	}
-	addIntegrationFlags(cmd, &opts, false, kind)
+	addIntegrationFlags(cmd, &opts, false, kind, "list")
 	return cmd
 }
 
@@ -97,18 +97,18 @@ func newIntegrationMutationCmd(kind integrations.ItemKind, operation string) *co
 			return executeIntegrationMutation(cmd, kind, operation, &opts)
 		},
 	}
-	addIntegrationFlags(cmd, &opts, true, kind)
+	addIntegrationFlags(cmd, &opts, true, kind, operation)
 	return cmd
 }
 
-func addIntegrationFlags(cmd *cobra.Command, opts *integrationOptions, mutation bool, kind integrations.ItemKind) {
+func addIntegrationFlags(cmd *cobra.Command, opts *integrationOptions, mutation bool, kind integrations.ItemKind, operation string) {
 	cmd.Flags().StringSliceVar(&opts.targets, "targets", nil, "target CLIs (comma-separated)")
 	cmd.Flags().StringSliceVar(&opts.items, "items", nil, "catalog items (comma-separated; default: all)")
 	cmd.Flags().StringVar(&opts.scope, "scope", "", "installation scope: project or global (default: global; asks interactively)")
 	cmd.Flags().StringArrayVar(&opts.surfaces, "surface", nil, "target=surface selection (repeatable)")
 	cmd.Flags().BoolVar(&opts.json, "json", false, "print canonical JSON output")
 	if mutation {
-		cmd.Flags().BoolVar(&opts.force, "force", false, "replace or remove modified managed artifacts")
+		cmd.Flags().BoolVar(&opts.force, "force", false, forceHelp(operation))
 	}
 	// Identity flags are agents-only (ADR D5): skills have no identity, and
 	// newIntegrationsLifecycleCmd is shared between `agents` and `skills` —
@@ -117,6 +117,26 @@ func addIntegrationFlags(cmd *cobra.Command, opts *integrationOptions, mutation 
 	if mutation && kind == integrations.KindAgents {
 		cmd.Flags().BoolVar(&opts.identity, "identity", false, "reconfigure agent identity even if ~/.trackfw/identity.json already exists")
 		cmd.Flags().StringVar(&opts.identityPreset, "identity-preset", "", "agent identity preset (non-interactive): none, neutral, "+strings.Join(identity.PresetNames(), ", "))
+	}
+}
+
+// forceHelp returns the --force help text for a mutation subcommand. The
+// three operations grant --force different powers, and a single shared
+// string previously overstated update/uninstall's reach while never
+// mentioning install's ability to adopt unmanaged bytes — that ambiguity is
+// what sent a user straight into the "unmanaged artifact ... does not match
+// a trackfw template" error on `update --force` (see
+// unmanagedArtifactError in internal/integrations/manager.go for the
+// matching remediation). Mirrors npm/src/commands/integrations.js and
+// pypi/trackfw/integrations/command.py.
+func forceHelp(operation string) string {
+	switch operation {
+	case "install":
+		return "replace a modified managed artifact, or adopt/overwrite an unmanaged file already on disk"
+	case "uninstall":
+		return "remove a modified managed artifact"
+	default: // "update"
+		return "replace a modified managed artifact; never adopts unmanaged bytes — use 'install --force' for that"
 	}
 }
 

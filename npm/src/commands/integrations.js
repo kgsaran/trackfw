@@ -11,6 +11,21 @@ const { createThirdPartyCommand } = require('./thirdparty')
 const csv = value => String(value).split(',').map(entry => entry.trim()).filter(Boolean)
 const collect = (value, previous) => previous.concat(value)
 
+// forceHelp returns the --force help text for a mutation subcommand. The
+// three operations grant --force different powers, and a single shared
+// string previously overstated update/uninstall's reach while never
+// mentioning install's ability to adopt unmanaged bytes — that ambiguity is
+// what sent a user straight into the "Unmanaged artifact does not match a
+// trackfw template" error on `update --force` (see unmanagedArtifactError in
+// src/integrations/manager.js for the matching remediation). Mirrors
+// internal/commands/integrations_flags.go:forceHelp and
+// pypi/trackfw/integrations/command.py.
+function forceHelp(operation) {
+  if (operation === 'install') return 'Replace a modified managed artifact, or adopt/overwrite an unmanaged file already on disk'
+  if (operation === 'uninstall') return 'Remove a modified managed artifact'
+  return "Replace a modified managed artifact; never adopts unmanaged bytes — use 'install --force' for that"
+}
+
 function human(result) {
   const lines = [`Available ${result.kind} (catalog ${result.catalog_version}):`]
   for (const item of result.items) lines.push(`  ${item.id.padEnd(14)} ${item.name} — ${item.description}`)
@@ -117,7 +132,7 @@ function createLifecycleCommand(kind) {
       .option('--scope <scope>', 'Installation scope: project or global (default: global; asks interactively)')
       .option('--surface <target=surface>', 'Surface selection (repeatable)', collect, [])
       .option('--json', 'Print deterministic JSON')
-      .option('--force', 'Replace or remove modified artifacts')
+      .option('--force', forceHelp(operation))
 
     // Flags de identidade são exclusivas de agents (ADR D5): skills não têm
     // identidade, e createLifecycleCommand é compartilhado entre `agents` e

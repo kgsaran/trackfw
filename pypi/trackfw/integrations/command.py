@@ -159,6 +159,24 @@ def _prompt_ambiguous_surfaces(catalog, kind: str, targets: list[str], selected:
             selected[target_id] = _select_one(f"surface for {target['name']}", choices)
 
 
+def _force_help(action: str) -> str:
+    """--force help text for a mutation subparser. The three operations grant
+    --force different powers, and a single shared string previously
+    overstated update/uninstall's reach while never mentioning install's
+    ability to adopt unmanaged bytes — that ambiguity is what sent a user
+    straight into the "unmanaged artifact ... does not match a trackfw
+    template" error on ``update --force`` (see _unmanaged_artifact_error in
+    trackfw/integrations/manager.py for the matching remediation). Mirrors
+    internal/commands/integrations_flags.go:forceHelp and
+    npm/src/commands/integrations.js.
+    """
+    if action == "install":
+        return "Replace a modified managed artifact, or adopt/overwrite an unmanaged file already on disk"
+    if action == "uninstall":
+        return "Remove a modified managed artifact"
+    return "Replace a modified managed artifact; never adopts unmanaged bytes — use 'install --force' for that"
+
+
 def add_lifecycle_parser(subparsers, kind: str):
     parser = subparsers.add_parser(kind, help=f"List and manage trackfw {kind}")
     actions = parser.add_subparsers(dest="action", required=True)
@@ -183,7 +201,7 @@ def add_lifecycle_parser(subparsers, kind: str):
         child.add_argument("--json", action="store_true", help="Print deterministic JSON")
         mutation = action != "list"
         if mutation:
-            child.add_argument("--force", action="store_true", help="Replace/remove modified managed files")
+            child.add_argument("--force", action="store_true", help=_force_help(action))
         # Identity flags are agents-only (ADR D5): skills have no identity,
         # and this lifecycle command is shared between `agents` and
         # `skills` — without this kind gate, `trackfw skills install

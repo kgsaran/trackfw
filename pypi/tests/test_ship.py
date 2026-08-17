@@ -89,9 +89,16 @@ class MockGit:
 def make_deps(branch='feat/my-feature', staged='file.py', violations=None,
               config_forge='', repo_dir='', avail_fn=None, exec_forge_cli=None,
               remote_url=''):
-    """Builds a dict of injectable dependencies."""
+    """Builds a dict of injectable dependencies.
+
+    'lines' (stdout, via writeln) and 'err_lines' (stderr, via write_err) are kept as separate
+    buffers so ML-1B stream-routing can be tested directly; the combined text returned by run()
+    still concatenates both so the many pre-existing substring assertions below stay meaningful
+    regardless of which stream a given message lands on.
+    """
     git = MockGit(branch=branch, staged=staged, remote_url=remote_url)
     lines = []
+    err_lines = []
     cli_calls = []
 
     def _noop_forge_cli(name, args):
@@ -101,10 +108,12 @@ def make_deps(branch='feat/my-feature', staged='file.py', violations=None,
     return {
         'git': git,
         'lines': lines,
+        'err_lines': err_lines,
         'cli_calls': cli_calls,
         'exec_git': git.exec,
         'check_governance': lambda: violations if violations is not None else [],
         'writeln': lambda s: lines.append(s),
+        'write_err': lambda s: err_lines.append(f'Error: {s}'),
         'config_forge': config_forge,
         'repo_dir': repo_dir,
         # Step 7 safe defaults: no CLI invoked, no filesystem access.
@@ -123,10 +132,11 @@ def run(branch='feat/my-feature', staged='file.py', message='feat: test',
         exec_git=d['exec_git'],
         check_governance=d['check_governance'],
         writeln=d['writeln'],
+        write_err=d['write_err'],
         avail_fn=d['avail_fn'],
         exec_forge_cli=d['exec_forge_cli'],
     )
-    return code, '\n'.join(d['lines']), d['git']
+    return code, '\n'.join(d['lines'] + d['err_lines']), d['git']
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -172,6 +182,47 @@ def test_ship_no_wip_roadmap_aborts_with_remediation():
     assert 'trackfw roadmap new' in out
     assert 'trackfw roadmap move' in out
     assert 'lenient' in out, "output must mention lenient mode so users understand why validate passes but ship aborts"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# ML-1B — error stream/prefix parity: the final one-line summary of every abort path goes to
+# stderr with the "Error: " prefix (mirrors Go's cobra/root.go behavior exactly); everything
+# printed before it (violation lists, remediation hints) stays on stdout with no lowercase
+# "error: " leaking in. Byte-level cross-runtime parity for these scenarios is proven by
+# scripts/check-ship-parity.sh.
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_ship_governance_violation_summary_on_stderr_with_prefix():
+    v = ['branch "feat/foo" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/']
+    d = make_deps(branch='feat/foo', staged='file.py', violations=v)
+    code = run_ship(
+        message='feat: test',
+        exec_git=d['exec_git'],
+        check_governance=d['check_governance'],
+        writeln=d['writeln'],
+        write_err=d['write_err'],
+    )
+    assert code == 1
+    assert d['err_lines'] == ['Error: governance check failed: 1 violation(s)']
+    stdout = '\n'.join(d['lines'])
+    assert 'governance check failed' not in stdout, "the summary must NOT also appear on stdout"
+    for line in d['lines']:
+        assert not line.startswith('error: '), f"stdout line must not start with lowercase 'error: ': {line}"
+
+
+def test_ship_branch_pattern_mismatch_summary_on_stderr_with_prefix():
+    d = make_deps(branch='hotfix/whatever', staged='file.py')
+    code = run_ship(
+        message='fix: test',
+        exec_git=d['exec_git'],
+        check_governance=d['check_governance'],
+        writeln=d['writeln'],
+        write_err=d['write_err'],
+    )
+    assert code == 1
+    assert len(d['err_lines']) == 1
+    assert d['err_lines'][0].startswith('Error: branch "hotfix/whatever" does not match the required pattern')
+    assert d['lines'] == [], "nothing should have been written to stdout before this abort"
 
 
 # ────────────────────────────────────────────────────────────────────────────

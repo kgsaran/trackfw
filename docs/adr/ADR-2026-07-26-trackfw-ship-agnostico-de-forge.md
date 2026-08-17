@@ -113,3 +113,55 @@ criação. Verificação via `exec.LookPath`, reaproveitando o padrão de `exter
   embora seja mantida como fallback.
 - **Deixar o fluxo como skill em vez de comando** — rejeitada: skill não pode validar governança nem
   garantir paridade entre os 3 CLIs; o valor está justamente em ser gate executável.
+
+---
+
+## Emenda 1 — 2026-08-16: o passo 1 e o gate de governança mudaram desde a decisão original
+
+**Motivo:** o ML-3A da `ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0`
+encontrou o passo 1 da sequência descrevendo um vocabulário que o comando não usa mais. O ADR é
+**aceito** — isto é emenda, não reescrita: o texto original acima fica como registro do que foi
+decidido em 2026-07-26.
+
+Tudo abaixo foi **medido no binário atual**, não inferido do histórico.
+
+### O que mudou
+
+**1. Tipos de branch aceitos.** O passo 1 dizia `feat|fix|refactor/<slug>`. Hoje é
+`feat|fix|refactor|chore|docs/<slug>` — `chore` e `docs` entraram em #177 (`branch new`) e #178
+(`ship`), porque o fluxo de release e o de housekeeping não têm REQ e estavam sendo bloqueados por
+um gate desenhado para mudança de produto.
+
+**2. O gate de governança tem duas isenções que o ADR não previa.** O passo 2 é pulado quando:
+- a branch é `chore/` ou `docs/` — `Governance: skipped (chore/docs branch)`;
+- **todos** os arquivos staged são doc-only (`docs/`, `vault/`, `*.md`) — `Governance: skipped
+  (doc-only change)`, espelhando a exceção de trivialidade do `CLAUDE.md` §7.
+
+**3. O gate aceita roadmap em `wip/` OU `done/`.** `CheckShipGovernance` delega a
+`validateBranchHasWIPRoadmap`, que casa o slug da branch contra `resolveWIPDirs` **e**
+`resolveDoneDirs`. Confirmado por execução: com o roadmap já movido para `done/`, o `ship` imprime
+`Governance: OK`.
+
+> 🔴 **Divergência de mensagem, registrada e não corrigida aqui.** O texto do `--help` e o da
+> mensagem de erro do passo 2 afirmam *"ship always requires REQ + roadmap in **wip/**"*. O
+> comportamento real aceita `done/` também. A mensagem está mais estrita que o código — quem ler o
+> erro pode mover um roadmap concluído de volta para `wip/` sem necessidade. Correção é mudança de
+> string de usuário nos 3 CLIs, fora do escopo deste ML de documentação.
+
+**4. `--no-pr`.** Existe uma flag para pular a criação do PR/MR, mantendo commit + push. Não constava
+do desenho original, que tratava a abertura do PR como passo sempre executado (ou degradado para
+impressão de URL). Torna o `ship` utilizável como *push governado* puro.
+
+**5. O passo 4 é bloqueante.** "Revisa o que está staged" é, na prática, um erro duro: sem nada
+staged o comando aborta com `nothing is staged — stage your files explicitly before running ship`.
+O `ship` nunca executa `git add .` nem `git add -A`, por decisão explícita.
+
+### Consequência operacional descoberta em uso
+
+Como o `ship` **acopla** commit e push e exige algo staged, não existe caminho para "empurrar o que
+já foi commitado" — e o push bruto é bloqueado pelo hook de guarda. Para empurrar trabalho já
+commitado, o fluxo é desfazer o último commit com `git reset --soft HEAD~1` e deixar o `ship`
+refazê-lo. Isso funciona, mas é contorno, não desenho.
+
+**Não decidido aqui:** se o `ship` deve ganhar um modo push-only. Fica registrado como questão
+aberta — vira REQ própria se o contorno incomodar.

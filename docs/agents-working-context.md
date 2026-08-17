@@ -18238,3 +18238,518 @@ Também confirmei que o heading antigo citado nos comentários pré-delta ainda 
 não relacionada (aviso de `update --install-missing`), não duplicata stale. **APROVADO.** Parecer
 completo apenso em `docs/seguranca/2026-08-16-vazamento-de-stack-no-cli-node.md` (apêndice
 "Revisão de delta").
+## Sessão 2026-08-16 — Apolo (ML-1C concluído, não commitado)
+
+Branch `fix/higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md`.
+ML-1C (item 7): `trackfw` sem argumento agora sai `exit 0` com help em stdout nos 3 CLIs — Go e
+Python já eram assim; só Node.js divergia (`exit 1`, help em stderr, comportamento default do
+commander quando o root tem subcomandos mas nenhuma `.action()` própria). Comando desconhecido
+segue `exit 1`/stderr com a mensagem canônica, sem regressão — testado explicitamente.
+
+Arquivos tocados: `npm/bin/trackfw` (intercepta `process.argv.length <= 2` antes de
+`parseAsync`, chamando `program.outputHelp()` + `exit(0)` — **não** registrei `.action()` no
+root: essa alternativa óbvia quebra o listener `command:*` e faz comando desconhecido virar
+argumento posicional da action, silenciando o erro; achado documentado em nota de vault),
+`scripts/check-unknown-command-parity.sh` (cenário novo `bare-invocation-is-not-an-error`,
+`assert_three_way` ganhou parâmetro de exit code esperado), testes nos 3 CLIs
+(`npm/tests/unknown-command.test.js`, `internal/commands/root_test.go` — nova
+`TestBareInvocation_ExitZero_HelpOnStdout`, `pypi/tests/test_commands_basic.py` — nova
+`test_sem_argumento_exit_0_help_em_stdout`, documentando que Go/Python já estavam corretos).
+`internal/commands/root.go` inspecionado, sem alteração (já era o comportamento canônico).
+
+Nota de vault criada:
+`vault/notes/commander-missing-subcommand-help-error-exit-1-2026-08-16.md`, linkada no index.
+
+**Validação:** `go build ./... && go vet ./... && go test ./...` verde; `node --test` da suíte
+completa exceto `ship.test.js` (79+530 testes, todos verdes — arquivos meus incluídos);
+`pytest pypi/tests -q --ignore=tests/test_ship.py` (1146 passed); `bash
+scripts/check-unknown-command-parity.sh` verde (6 cenários, incluindo o novo). `make quality`
+completo **não** fecha verde no momento porque `npm/tests/ship.test.js` falha — arquivo em
+`npm/src/ship/runner.js` e `pypi/trackfw/ship/runner.py` estão sendo tocados agora mesmo pelo(s)
+agente(s) irmão(s) de ML-1A/ML-1B (fora do escopo deste ML-1C, que não toca `ship.go` /
+`internal/generators/` / `npm/src/ship/` / `pypi/trackfw/ship/` / `check-gates-falsify.sh` /
+`docs/cli-parity.md` por instrução explícita). `git status --porcelain` confirma que não toquei
+nenhum desses arquivos.
+
+Nada commitado/pushed — devolvo para o `trackfw_architect` auditar e commitar. `docs/cli-parity.md`
+(ML-3A) segue pendente para registrar esta divergência eliminada, é sequencial e não é meu.
+
+**Auto-revisão pós-implementação (via advisor):**
+- Cenário novo `bare-invocation-is-not-an-error` provado **não-vacuo**: revertido temporariamente
+  `npm/bin/trackfw` para o one-liner pré-fix, rodei `check-unknown-command-parity.sh` (só esse
+  cenário fica FAIL — os outros 5 continuam OK) e `node --test tests/unknown-command.test.js`
+  (o teste do ML-1C fica vermelho); restaurado o fix, tudo verde de novo.
+- Trocado `grep -qiF 'error'` (âncora fraca — falso-positivo com prosa que mencione "error", e
+  quase vácua) por dois marcadores literais por runtime (`Usage:`/`Available Commands:` no Go,
+  `Usage: trackfw`/`Commands:` no Node, `usage: trackfw`/`positional arguments:` no Python),
+  capturados da saída real medida nesta sessão.
+- **Sem braço de falsificação em `scripts/check-gates-falsify.sh`** — fora da minha fronteira
+  neste ML. Recomendo follow-up: sabotagem = reverter o guard de `npm/bin/trackfw` para o
+  one-liner, esperar o gate ficar vermelho (mesmo procedimento acima).
+- **`make quality` não fecha verde hoje** porque `npm/tests/ship.test.js` falha — atribuído a
+  `npm/src/ship/runner.js`, `pypi/trackfw/ship/runner.py`, `scripts/trackfw-git-branch-guard.sh`,
+  `scripts/check-ship-parity.sh`, `internal/generators/scaffold.go`,
+  `validator_git_branch_guard_reference.go` (todos em `git status --porcelain` fora do meu diff —
+  ML-1A/ML-1B em andamento pelos agentes irmãos). Rodei `test-go`, `test-python` e o gate de
+  paridade isoladamente (todos verdes) já que `make` aborta em `test-node` e não chega aos alvos
+  seguintes nessa invocação.
+- Conteúdo do help inalterado: `--help` não foi tocado pelo diff (só o caminho de zero-argumento
+  em `npm/bin/trackfw`), e `diff <(node bin/trackfw) <(node bin/trackfw --help)` é vazio.
+- **Questão de arquitetura para o ML-3A/arquiteto, não resolvida aqui:** o fix do Node vive no
+  entrypoint `npm/bin/trackfw`, enquanto Go e Python resolvem no código de biblioteca
+  (`Execute()`/`main()`). `createProgram()` sozinho não reproduz mais o contrato do CLI —
+  `npm/tests/help.test.js` chama `createProgram()` diretamente e não passa pelo `bin/trackfw`.
+  Registrar esse seam em `docs/cli-parity.md` (ML-3A); não mexi nisso.
+
+## Sessão 2026-08-16 — Apolo (INÍCIO: ML-1B — `ship`: mensagem e stream de erro divergentes)
+
+Branch `fix/higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md`
+em `wip/`. Escopo (fronteira explícita do handoff): só `ship` e sua paridade —
+`internal/commands/ship.go`, `npm/src/ship/runner.js`, `pypi/trackfw/ship/runner.py`,
+`scripts/check-ship-parity.sh`, testes dos 3 stacks. Ler
+`vault/notes/ship-checkgovernance-error-stream-wording-divergence-2026-08-16.md` antes de tocar
+código. Nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-1B concluído — não commitado)
+
+Duas divergências pré-existentes eliminadas na fonte, não só no texto:
+
+- **Wording (`checkShipGovernance`).** `npm/src/ship/runner.js` e `pypi/trackfw/ship/runner.py`
+  reimplementavam a regra `branch_has_wip_roadmap` do zero, com texto próprio e sem escanear
+  `done/` nenhuma vez — divergência de comportamento, não só de wording. Corrigido delegando para
+  as funções compartilhadas já usadas por `branch new`/`commit`
+  (`validateBranchHasWIPRoadmap`/`validate_branch_has_wip_roadmap` +
+  `validateWIPHasREQ`/`validate_wip_has_req`, já byte-idênticas ao Go). `checkShipGovernance()` /
+  `check_ship_governance()` perderam toda leitura de diretório/normalização de slug local.
+- **Stream/prefixo do passo 1.** Decisão do arquiteto: adotar o Go como canônico (stderr,
+  prefixo `Error: `). Consultado `internal/commands/root.go` (`Execute()`): esse já era o
+  comportamento real do Go, sem mudança necessária em `ship.go` — o wrapper de root já imprime
+  `Error: <msg>` em stderr para qualquer `RunE` que não silencie erros. Corrigido só do lado
+  Node/Python: `runShip`/`run_ship` ganharam `writeErr`/`write_err` (default: stderr, prefixo
+  `Error: `) usado apenas na linha-resumo final de cada aborto; o detalhe anterior (violações,
+  dicas de remediação) continua no stdout via `writeln`, igual ao Go.
+
+**Arquivos tocados:** `npm/src/ship/runner.js`, `pypi/trackfw/ship/runner.py`,
+`npm/tests/ship.test.js`, `pypi/tests/test_ship.py`, `scripts/check-ship-parity.sh`,
+`vault/notes/ship-checkgovernance-error-stream-wording-divergence-2026-08-16.md` (seção
+"Resolução" adicionada), roadmap (ML-1B marcado ✅). **`internal/commands/ship.go` não precisou de
+nenhuma mudança** — reportando explicitamente para não parecer omissão: `SilenceErrors` já não
+deveria ser setado, pois isso afastaria o Go do prefixo `Error: ` que o próprio arquiteto pinou
+como canônico (ver nota acima). `npm/src/commands/ship.js`/`pypi/trackfw/commands/ship.py`
+também não precisaram de mudança — o default de `writeErr`/`write_err` já mora no runner.
+
+`scripts/check-ship-parity.sh`: os cenários `feat-still-gated-non-regression` e
+`invalid-branch-vocabulary`, que antes usavam `assert_exit_equal`/`assert_message_byte_identical`
+(normalização que descartava a divergência de prefixo, porque ela era aceita), agora usam
+`assert_three_way` (diff -u completo de stdout e stderr) igual aos outros dois cenários — os
+helpers de normalização e os comentários que documentavam a divergência como aceita foram
+removidos do script.
+
+**Evidência:** `go build ./...` limpo; `go test ./internal/commands/... ./internal/validator/...`
+verde; `node --test tests/ship.test.js` — 71 passed, 0 failed; `pytest pypi/tests/test_ship.py -q`
+— 112 passed; `GO_BIN=bin/trackfw bash scripts/check-ship-parity.sh` — 4/4 cenários OK
+(`chore-skips-gate`, `docs-skips-gate`, `feat-still-gated-non-regression`,
+`invalid-branch-vocabulary`, todos via `assert_three_way`); `make quality` completo — exit code 0.
+
+Nada commitado/pushed — devolvo para o `trackfw_architect` auditar e commitar.
+`docs/cli-parity.md` (ML-3A) segue pendente, é sequencial e não é meu.
+
+## Sessão 2026-08-16 — Apolo (INÍCIO: ML-1A — `git-branch-guard` falso-positivo por prosa + brecha `switch -c`)
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md`,
+seção ML-1A. Branch já criada pelo `trackfw_architect`:
+`fix/higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0`. Escopo: só
+`git-branch-guard` (gerador/validador/cenário) — não toco `ship`, `root.go`, entrypoints,
+`docs/cli-parity.md` (isso é ML-1B/ML-1C/ML-3A, agentes irmãos em paralelo). Item 1 (falso-
+positivo por prosa que COMEÇA a linha) + item 2 (`git switch -c` não coberto) + P4 obrigatório.
+Consultado `vault/notes/git-branch-guard-falso-positivo-em-linha-de-mensagem-de-commit-2026-08-16.md`
+e `vault/notes/git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14.md` (limitação
+residual já documentada, resolvida por este ML) antes de tocar código.
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-1A concluído — não commitado)
+
+**Diagnóstico:** o antigo `match_subcommand()` segmentava o comando bruto por `;`/`&&`/`||`/`|`/
+quebra-de-linha sem noção alguma de aspas de shell. Uma mensagem de commit multi-linha (via
+`-m "$(cat <<'EOF' ... EOF)"`, convenção deste próprio CLAUDE.md) cuja PRIMEIRA linha do corpo
+começa com `git checkout -b` virava um pseudo-segmento cujo primeiro token era literalmente
+`git` — bloqueando um `trackfw commit` legítimo.
+
+**Correção (item 1):** generalizado o invariante em vez de reconhecer nomes de flag —
+`quote_aware_split()` (scanner char-a-char em `awk`) nunca trata `;`/`&&`/`||`/`|`/quebra-de-
+linha como separador enquanto dentro de uma string entre aspas simples/duplas; uma quebra de
+linha real dentro das aspas vira espaço em vez de fronteira de segmento. `strip_heredoc_bodies()`
+(pré-passo line-mode) cobre o caso irmão de heredoc SEM aspas ao redor (`-F- <<'EOF' ... EOF`),
+com fallback de segurança: heredoc mal-formado (terminador ausente) devolve o texto ORIGINAL
+intocado — nunca esconde um comando real. Não-vacuidade e não-regressão testadas explicitamente
+(`git commit -m "x"; git push`, `git commit -m "x" && git push`, heredoc mal-formado seguido de
+`git push` real — todos continuam bloqueando).
+
+**Correção (item 2):** `switch)` adicionado ao `case "$sub"` de `match_subcommand()`, varrendo
+TODOS os tokens após o subcomando (não só o primeiro, ao contrário de `checkout -b`) para casar
+`-c`/`-C`/`--create`/`--create=*`/`--force-create`/`--force-create=*` mesmo com flags antes
+(`git switch --track -c feat/x`).
+
+**Achado durante a implementação (não estava nos "Arquivos afetados" do roadmap):** existem 6
+cópias do template do guard, não 4 — além do gerador Go/Node/Python e da referência canônica em
+`scripts/`, há cópias `_REFERENCE`/`_SCRIPT_REFERENCE` usadas por
+`git_branch_guard_script_integrity` em `internal/validator/validator_git_branch_guard_reference.go`,
+`npm/src/validator/index.js` e `pypi/trackfw/validator.py`. Todas as 6 atualizadas e confirmadas
+byte-idênticas. Detalhe completo em
+`vault/notes/git-branch-guard-quote-aware-segmentation-2026-08-16.md`.
+
+**Arquivos tocados:** `scripts/trackfw-git-branch-guard.sh` (referência canônica),
+`internal/generators/scaffold.go`, `internal/validator/validator_git_branch_guard_reference.go`,
+`internal/generators/git_branch_guard_test.go` (+7 testes novos), `npm/src/generators/hooks.js`,
+`npm/src/validator/index.js`, `npm/tests/git_branch_guard.test.js` (+6 testes novos),
+`pypi/trackfw/generators/init_gen.py`, `pypi/trackfw/validator.py`,
+`pypi/tests/test_git_branch_guard.py` (+6 testes novos), `scripts/check-gates-falsify.sh`
+(Cenários 58 e 59, baseline+detecção cada, via módulo Go isolado + `corrupt_literal`),
+`vault/notes/git-branch-guard-quote-aware-segmentation-2026-08-16.md` (nova),
+`vault/notes/index.md`, roadmap (ML-1A marcado ✅, aguardando barreira ML-4A/`hades-tf`).
+
+**Evidência:** `go build ./...` limpo; `go test ./...` verde (`internal/generators` e
+`internal/validator` com os novos testes, incl. `TestGitBranchGuardScriptReference_MatchesGenerator`);
+`node tests/git_branch_guard.test.js` — 39 passed, 0 failed; `node
+tests/git_branch_guard_hook_integrity.test.js` — 15 passed, 0 failed (inclui
+`GIT_BRANCH_GUARD_SCRIPT_REFERENCE é byte-idêntico ao que generateGitBranchGuardScript emite`);
+`python3 -m unittest tests.test_git_branch_guard tests.test_git_branch_guard_validator` — 66
+tests, OK; `make quality` completo — exit code 0, `Falsification checks passed (all 120
+scenarios...)` incluindo os 2 novos (58 switch-c, 59 prose-in-message, cada um com braço
+baseline OK + braço de detecção provando não-vacuidade via rebuild de módulo Go isolado);
+`./bin/trackfw validate` — exit 0, nenhuma divergência de `git_branch_guard_script_integrity`
+(só os 11 warnings pré-existentes de REQs sem ADR/roadmap vinculado, não relacionados a este ML).
+
+Nada commitado/pushed — devolvo para o `trackfw_architect` auditar e commitar. Barreira ML-4A
+(`hades-tf`) é o próximo passo do roadmap (Wave 4), revisão de segurança do guard antes de
+fechar a Wave 1.
+
+## Sessão 2026-08-16 — Apolo (INÍCIO: ML-2B — higiene de `site/guide/commands.md` e `site/en/guide/commands.md`)
+
+Branch `fix/higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0` (Wave 2, em
+paralelo com ML-2A/i18n e ML-2C/`internal/integrations/manager.go`). Escopo exclusivo: os dois
+arquivos de referência de comandos do site (pt e en) estavam em deriva — documentavam `trackfw
+plugins` (removido na 7.0.0) e estavam atrás de vários comandos reais (`baseline`, `branch new`,
+`changelog`, `commit`, `completion`, `configure`, `discover`, `note new`, `req move`, `update` /
+`update harness`, além de menção a `agents/skills third-party`). Fonte de verdade usada:
+`./bin/trackfw --help` e `./bin/trackfw <cmd> --help` para todos os 24 comandos top-level e seus
+subcomandos, não o `README.md`.
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-2B concluído — commands.md pt/en atualizados, não commitado)
+
+**Diff conceitual:**
+- **Removido** (pt e en): seção `trackfw plugins` (`list`/`add`/`remove`/`search`) — subsistema
+  removido na 7.0.0, comando não existe mais no binário.
+- **Adicionado** (pt e en, 8 seções novas cada): `trackfw discover`, `trackfw configure`,
+  `trackfw branch new`, `trackfw update` (+ `trackfw update harness`), `trackfw req move`,
+  `trackfw baseline`, `trackfw note new`, `trackfw changelog`, `trackfw commit`, `trackfw
+  completion`. Também um parágrafo mencionando `trackfw agents/skills third-party`
+  (`fetch`/`install`, gate de quarentena) dentro da seção já existente de `agents`/`skills`.
+  Total: cada arquivo passou a ter 30 seções `## \`trackfw ...\``, contagem idêntica entre pt/en
+  (só diverge o texto da seção `agents e skills` / `agents and skills`, que é tradução, não
+  conteúdo).
+- **Paridade pt/en restaurada**: o bloco de exemplo `export JIRA_...` + "Saída esperada" existia
+  em `trackfw sync` no pt mas faltava no en — adicionado ao en para equivalência de conteúdo.
+- **Corrigido**: exemplo de `trackfw version` atualizado de `v2.1.0` (fictício/desatualizado)
+  para `v7.0.0` (versão real do binário testado).
+
+**Método:** levantei a lista real com `./bin/trackfw --help` (24 comandos top-level) e depois
+`./bin/trackfw <cmd> --help` para cada um (incluindo subcomandos de `adr`, `agents`, `branch`,
+`completion`, `note`, `req`, `roadmap`, `skills`, `update`). Comparei contra o conteúdo de cada
+`.md`, removendo o que não existe e acrescentando o que faltava, preservando o estilo/tom/estrutura
+já usados (títulos `## \`trackfw <cmd>\``, blocos de flags em tabela, "Saída esperada"/"Expected
+output", "Se bloquear"/"If it blocks" para os comandos gated).
+
+**Outra deriva encontrada e NÃO corrigida (fora do escopo deste ML — reportando para decisão):**
+nenhuma. Verifiquei `site/index.md`, `site/en/index.md`, `site/guide/{ai-agents,getting-started}.md`
+e os equivalentes en — todos os comandos citados lá (`init`, `adr`, `agents`/`skills`, `context`,
+`req`, `roadmap`, `ship`, `status`, `validate`, `version`) existem no binário; nenhuma menção a
+`trackfw plugins` fora de `site/.vitepress/dist/` (build artifact gerado, não fonte).
+
+**Evidência:** `make quality` — dois runs completos, ambos `[exited with code 0]`
+(`Falsification checks passed (all 120 scenarios...)` + third-party parity gates). `git status
+--short` confirma que só `site/guide/commands.md` e `site/en/guide/commands.md` foram tocados por
+mim (demais arquivos modificados no working tree pertencem aos MLs irmãos 2A/2C, em paralelo).
+
+Nada commitado/pushed — devolvo para o `trackfw_architect` auditar e commitar. Não editei o
+roadmap (status é responsabilidade do arquiteto).
+
+## Sessão 2026-08-16 — Apolo (INÍCIO: ML-2C — diagnosticabilidade de `unmanaged artifact` em `agents/skills update --force` + investigação de gravação parcial)
+
+Escopo: subsistema `integrations` apenas (`internal/integrations/manager.go`,
+`internal/commands/integrations_flags.go`, `npm/src/integrations/manager.js`,
+`npm/src/commands/integrations.js`, `pypi/trackfw/integrations/manager.py`,
+`pypi/trackfw/integrations/command.py`). Bug real reportado pelo KG: `trackfw agents update
+--force` recusou um `.codex/agents/trackfw-iac.toml` unmanaged sem indicar o remédio
+(`agents install --force`), e o help do `--force` prometia algo que `update` não faz. Comportamento
+de recusa está correto e não muda — é ajuste de mensagem/help. Investigação adicional obrigatória
+sobre por que os artefatos ficaram fora do manifesto (achado registrado no vault, ver abaixo).
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-2C concluído — não commitado)
+
+**Mudanças:**
+1. `internal/integrations/manager.go`: nova função `unmanagedArtifactError(destination, claim)`
+   que nomeia o remédio com valores concretos — `unmanaged artifact "<path>" does not match a
+   trackfw template — trackfw did not write these bytes.\nAdopt it with: trackfw <kind> install
+   --force --items <item> --targets <target> --scope <scope>`. Usada nos DOIS pontos que geravam
+   `"unmanaged artifact %q does not match a trackfw template"`: `preflight` (mutationUpdate,
+   linha ~310) e `applyMutation` (linha ~421). Mesmo texto nos dois — justificativa: a ocorrência
+   em `applyMutation` é código morto defensivo hoje (preflight já intercepta o mesmo caso, tanto
+   para update quanto para install, antes de qualquer item chegar a `applyMutation`), mantida como
+   segunda linha de defesa; documentado inline com comentário explicando a inalcançabilidade atual.
+   Espelhado byte-idêntico em `npm/src/integrations/manager.js` (`unmanagedArtifactError`, usado em
+   `preflight` e `apply`) e `pypi/trackfw/integrations/manager.py` (`_unmanaged_artifact_error`,
+   usado em `_preflight` e `_apply`).
+2. `--force` help text: antes um único texto compartilhado entre `install`/`update`/`uninstall`
+   ("replace or remove modified managed artifacts" em Go, divergente nos outros 2 CLIs — gap de
+   paridade pré-existente também corrigido). Agora `forceHelp(operation)` (Go),
+   `forceHelp(operation)` (npm) e `_force_help(action)` (pypi) retornam texto por operação:
+   install = "replace a modified managed artifact, or adopt/overwrite an unmanaged file already on
+   disk"; update = "replace a modified managed artifact; never adopts unmanaged bytes — use
+   'install --force' for that"; uninstall = "remove a modified managed artifact". `addIntegrationFlags`
+   (Go) e os pontos equivalentes em npm/pypi passaram a receber a operação para escolher o texto.
+3. **Investigação da gravação parcial (item 3 do ML) — achado real, reportado, NÃO implementado
+   fix**: em `Manager.mutate()`, todos os bytes dos artefatos do batch são gravados em disco
+   (Loop 1, `applyMutation`) ANTES de qualquer manifesto ser persistido (Loop 2, `writeManifest`).
+   Interrupção do processo nessa janela (kill, crash, queda de energia) produz exatamente o sintoma
+   relatado: N arquivos corretos em disco, manifesto sem todas as entradas. Não é um bug de lógica
+   que sempre reproduz em execução limpa (o `defer` de rollback cobre erros retornados normalmente)
+   — é inerente à ordem de gravação (arquivos antes do manifesto) sem journal cross-file. Mudar isso
+   exigiria detecção (validate rule / doctor) e/ou reordenar a persistência — mudança de
+   comportamento, fora do escopo deste ML. Nota completa em
+   `vault/notes/integrations-manifest-write-precedes-persist-janela-de-registro-parcial-2026-08-16.md`.
+
+**Não-regressão confirmada:** `update` continua recusando bytes unmanaged mesmo com `--force`
+(testes existentes `internal/integrations/manager_test.go:148-152`,
+`internal/integrations/legacy_test.go:117-125`, `npm/tests/agents-skills.test.js:163-179`, e
+suíte pypi equivalente — todos verdes sem alteração, pois checam comportamento/regex, não o texto
+literal antigo). `install --force` continua adotando normalmente (mesmos testes).
+
+**Evidência:** `go build ./...` limpo; `go test ./...` — todos os pacotes OK; `cd npm && npm test`
+— 601/601 passed; `cd pypi && python3 -m pytest -q` — 1264 passed, 10 subtests passed; `make
+quality` (test + test-node + test-python + lint + parity) — `[exited with code 0]`, incluindo os
+120 cenários de falsificação e os gates de paridade third-party.
+
+Nada commitado/pushed — devolvo para o `trackfw_architect` auditar e commitar. Não editei o
+roadmap (status é responsabilidade do arquiteto). Nota de vault criada e linkada no índice.
+
+---
+
+## 2026-08-16 — `hades-tf`: barreira ML-4A, revisão do `git-branch-guard` (ROADMAP-2026-08-16-higiene-sete-debitos)
+
+**Início:** revisão de segurança do guard alterado pelo ML-1A (correção de falso-positivo por prosa
++ fechamento da brecha `git switch -c`), na branch
+`fix/higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0`.
+
+**Veredito: BLOQUEAR.** Achei 4 bypasses reais e triviais, mais 1 secundário (B1) — nenhum coberto
+pelos testes Go/Node/Python nem pelos Cenários 60/61 do `check-gates-falsify.sh`:
+- `git${IFS}push` — guard permite (`exit 0`); bash real expande `${IFS}` e executa `git push`.
+- `{git,push}` como comando — guard permite; bash real faz brace expansion e **executa `git push`
+  de verdade** (confirmado por execução; só não houve push remoto porque a branch de teste não tem
+  upstream).
+- `g""it push` — guard permite; bash real remove as aspas vazias e executa `git push`.
+- `env git commit -m x` / `command git push` — guard permite; ambos executam o git subjacente
+  literalmente em qualquer shell, sem nenhum disfarce.
+- Achado secundário (B1): `git checkout <flag> -b nova` (qualquer flag entre `checkout` e `-b`, ex.
+  `-q`, `--no-track`) evade a detecção — o matcher de `checkout` só olha o token imediatamente
+  seguinte, ao contrário do de `switch` que varre todos os tokens.
+
+**Verificação de regressão feita, não só inferida:** peguei o guard no commit imediatamente anterior
+ao ML-1A (`git show b9ced66^:scripts/trackfw-git-branch-guard.sh`) e rodei a mesma bateria — todos os
+5 vetores acima já passavam (`exit 0`) **antes** deste ML também. Ou seja, **nenhum é regressão**; o
+delta próprio do ML-1A (prosa deixa de bloquear indevidamente, `switch -c` passa a bloquear) está
+limpo. O motivo do bloqueio não é "o ML quebrou algo" — é que o ML reescreveu a segmentação e a
+descreveu como "quote-aware" sem declarar que isso não cobre tokenização geral, criando confiança
+falsa sobre um guard que continua trivialmente contornável. Causa raiz comum de A1-A3: word-splitting
+ingênuo (`set -- $seg_trimmed`) sobre texto bruto sem nunca *avaliar* como o bash real avalia
+(expansão de parâmetro, brace expansion, remoção de aspas). A4 é causa distinta: `continue` no laço
+de segmentos pula para o próximo assim que o primeiro token não é `git`, nunca reexamina o resto do
+mesmo segmento.
+
+**O que verifiquei como correto, por execução:** path feliz (prosa não bloqueia, comandos reais
+encadeados continuam bloqueados, `switch -c/-C/--create` bloqueado inclusive com flag antes). As 6
+cópias do script (gerador Go canônico, `scripts/` de referência, espelhos Node/Python, referências
+de integridade Node/Python) são byte-idênticas hoje — confirmado rodando o gerador Go de verdade e
+comparando, mais `go test`/`node --test`/`pytest` das suítes dedicadas, todos verdes, mais
+`trackfw validate` sem erros. **Ressalva registrada no parecer:** não existe, ao contrário do
+credential-guard (`TestCredentialGuardScript_ParityAcrossStacks`), um teste que gere o script pelos
+3 stacks e compare os três entre si numa única asserção — a identidade de hoje não tem uma trava
+automática contra deriva futura entre stacks.
+
+**Entregável:** `docs/seguranca/2026-08-16-revisao-do-git-branch-guard.md` — parecer completo com
+tabela de vetores testados (sucesso e falha), prova de não-regressão contra o guard pré-ML-1A, e
+recomendação de correção que **evita eval/expansão real do shell dentro do guard** (isso abriria RCE
+no próprio hook) — lexer sem avaliação (ex. `shlex`/`mvdan.cc/sh`) ou fail-closed sobre os
+metacaracteres de obfuscação (`${`, `$(`, backtick, brace expansion).
+
+**Não fiz:** nenhuma correção de código de produto (fora do meu escopo); nenhum commit/push/branch
+(autoridade exclusiva do `trackfw_architect`). Devolvo para o arquiteto decidir se a correção destes
+vetores entra neste mesmo ML-1A (reabrindo) ou vira REQ própria — e se a declaração de risco residual
+(A1-A4/B1 pré-existentes, agora documentados) é aceitável como está ou exige correção antes do merge.
+
+## Sessão 2026-08-16 — Apolo (INÍCIO: ML-4B — fecha o veredito BLOQUEAR do `hades-tf` sobre o guard)
+
+Branch `fix/higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md`
+em `wip/`. Executando ML-4B: matcher de `checkout` varre todos os tokens (como o de `switch`),
+stripping de prefixo `env`/`command` antes de `git`, header do script declarado como tripwire (não
+fronteira de segurança, citando `ADR-2026-08-12`), `check-attention-scripts-parity.sh` estendido
+para cobrir `trackfw-git-branch-guard.sh`, Cenário 62 novo em `check-gates-falsify.sh`. Fora de
+escopo: `git${IFS}push`/`{git,push}`/`g""it push` (AC5, exigem tokenizador de shell completo).
+Nenhum commit/push/branch (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-16 — Apolo (FIM: ML-4B concluído — guard corrigido, gate de paridade criado, `make quality` verde)
+
+Todos os critérios de aceite do ML-4B fechados, com evidência de execução real (não relato):
+
+- **`checkout` varre todos os tokens até `-b`/`-B`/`--orphan`** (igual ao `switch`), fechando
+  `git checkout -q -b nova` e `git checkout --no-track -b nova`.
+- **Prefixos `env`/`command` descartados** antes de checar se o comando é `git`, via `while`
+  que reavalia `base` após cada `shift` — fecha `env git commit`/`command git push` sem exigir
+  tokenizador.
+- **Header do script** declara explicitamente "TRIPWIRE, NÃO FRONTEIRA DE SEGURANÇA", cita o
+  `ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido...` e qualifica a menção a
+  "quote-aware" para não sugerir imunidade a evasão por tokenização.
+- **⚠️ Expansão de escopo além da redação literal da ação 4, precisa ratificação do arquiteto:**
+  `discover --init` em **Go e Node não gerava** `scripts/trackfw-git-branch-guard.sh` antes deste
+  ML — só `trackfw init`/`update harness` chamavam o gerador nesses dois stacks. **Python já
+  gerava**: confirmei por `git diff`/`git log` que `pypi/trackfw/generators/hooks.py::
+  inject_hooks_detected` já chamava `_generate_git_branch_guard_script` incondicionalmente antes
+  desta sessão (código pré-existente, não tocado por mim), e o bloco `--init` de `discover.py` já
+  chama `inject_hooks_detected`. Acrescentar o script às listas do
+  `check-attention-scripts-parity.sh` sem corrigir Go/Node deixaria o gate vazio (arquivo ausente
+  falha no `-s` antes do diff, não prova paridade nenhuma). Corrigido em Go
+  (`internal/discover/discover.go::InstallGates`) e Node (`npm/src/commands/discover.js`) com
+  chamada explícita ao gerador, mesmo padrão já usado para `credential-guard` nesses dois stacks.
+  Em Python acrescentei a mesma chamada explícita em `discover.py` por paridade estrutural — é
+  redundante com o que `inject_hooks_detected` já fazia (mesma redundância pré-existente que já
+  ocorre lá para `attention-scripts`/`credential-guard`), não correção de bug em Python.
+  Confirmado por execução real: `discover --init` em Go/Node/Python fresh dirs agora emite o
+  script, e os três são byte-idênticos (`diff` direto). **Esta mudança altera o comportamento
+  observável de `trackfw discover --init`** em projetos brownfield (novo arquivo escrito) — devolvo
+  para o arquiteto decidir se ratifica aqui ou separa em REQ própria antes do merge.
+- **7 cópias literais do script, não 6** como o mapa do roadmap registrava —
+  `internal/validator/validator_git_branch_guard_reference.go` é uma cópia própria (Go: import
+  cycle entre `internal/validator` e `internal/generators`), além do gerador Go canônico, dos 2
+  espelhos Node/Python e dos 2 validators Node/Python que o ML-1A já tinha achado. Todas as 7
+  atualizadas a partir do gerador, nunca cópia a cópia; confirmadas byte-idênticas pelos testes
+  dedicados dos 3 stacks (`TestGitBranchGuardScriptReference_MatchesGenerator`,
+  `GIT_BRANCH_GUARD_SCRIPT_REFERENCE é byte-idêntico...`,
+  `test_reference_e_byte_identico_ao_gerador_real`), todos verdes.
+- **`check-attention-scripts-parity.sh`** estendido (linhas ~133/~150 + comentário de cabeçalho)
+  e executado de ponta a ponta contra os binários reais dos 3 CLIs: `OK` em
+  `trackfw-git-branch-guard.sh/go-vs-node` e `go-vs-py`.
+- **Cenário 62** em `check-gates-falsify.sh`, dois sub-casos (62a prefixo `env`/`command`, 62b
+  flag do `checkout` fora da primeira posição), cada um com braço baseline (guard limpo bloqueia)
+  e braço de detecção (`corrupt_literal` isola o literal do ML-4B em `scaffold.go`, reconstrói o
+  script via módulo Go isolado, prova que sem essa linha o comando evade). Cenários 60/61
+  (ML-1A) continuam reprovando — confirmado na mesma execução, sem tocar seus literais.
+- **`make quality` completo, verde**: `go test ./...`, `npm test`, `pytest` (79 passed), `go vet`,
+  e os 19 gates de paridade incluindo os 123 cenários de `check-gates-falsify.sh` (0 FAIL).
+  `trackfw validate` roda limpo (exit 0, só os 16 warnings pré-existentes de REQ sem ADR/roadmap,
+  nenhum ligado ao guard).
+
+**Fora de escopo, por decisão do AC5** (não tentado): `git${IFS}push`, `{git,push}`,
+`g""it push` — exigem tokenizar como o bash, cobertos pelo `ADR-2026-08-12`.
+
+**Arquivos alterados:** `internal/generators/scaffold.go`,
+`internal/validator/validator_git_branch_guard_reference.go`,
+`pypi/trackfw/generators/init_gen.py`, `pypi/trackfw/validator.py`,
+`npm/src/generators/hooks.js`, `npm/src/validator/index.js`,
+`scripts/trackfw-git-branch-guard.sh`, `internal/discover/discover.go`,
+`npm/src/commands/discover.js`, `pypi/trackfw/commands/discover.py`,
+`scripts/check-attention-scripts-parity.sh`, `scripts/check-gates-falsify.sh`,
+`docs/roadmaps/wip/ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md`.
+
+**Não fiz:** nenhum commit/push/branch (autoridade exclusiva do `trackfw_architect`). Devolvo para
+o arquiteto auditar o diff e decidir sobre commit/PR.
+
+**Revisão pós-entrega (mesma sessão), 5 correções aplicadas antes do handoff final:**
+1. Corrigi uma imprecisão factual no meu próprio relato: eu tinha escrito "`discover --init` nos 3
+   CLIs não gerava o script" — falso para Python, que já chamava o gerador dentro de
+   `inject_hooks_detected` (código pré-existente, não tocado por mim). Corrigido nos dois lugares
+   onde eu tinha escrito isso (nota de execução do roadmap + esta entrada) para "Go e Node não
+   geravam; Python já gerava". Reportar uma alegação sem verificar contra a evidência que eu mesma
+   já tinha coletado é exatamente a classe de erro que motivou o bloqueio do `hades-tf` neste
+   roadmap — não repito.
+2. Marquei explicitamente a mudança em `discover --init` (Go/Node passam a gerar o guard; Python
+   ganhou uma chamada redundante por paridade estrutural) como **expansão de escopo que precisa
+   ratificação do arquiteto** — altera comportamento observável de um comando em produção
+   (`discover --init` agora escreve um arquivo novo em projetos brownfield), não é só "acrescentar
+   a duas listas" como a ação 4 pedia literalmente.
+3. Reproduzido e **declarado** (não fechado) mais um residual: `env`/`command` **com** argumentos
+   (`env FOO=bar git push`, `env -i git commit`, `command -p git push`) ainda evadem — confirmado
+   por execução (exit 0). Adicionado ao header das 7 cópias e à tabela AC5 do roadmap.
+4. Tornei os dois sub-casos do Cenário 62 auto-discriminantes: cada braço de detecção agora prova,
+   contra o MESMO build corrompido, que um comando NÃO relacionado ao literal corrompido continua
+   bloqueado (62a: `git push` puro; 62b: `git checkout -b` puro) — sem isso, a corrupção original
+   de 62b (`-b|-B|--orphan|--orphan=*)` → padrão que nunca casa) provava "checkout detection
+   sumiu inteira", não especificamente "o token-scan do ML-4B sumiu". Retargetei a corrupção de
+   62b para a forma EXATA pré-ML-4B (`if [ "${1:-}" = "-b" ]; then`), que preserva a detecção de
+   `checkout -b` simples e derruba só `-q -b`/`--no-track -b` — discriminante preciso.
+5. **Declarado, não fechado:** a cobertura NOVA de `check-attention-scripts-parity.sh`
+   (`trackfw-git-branch-guard.sh`) não tem falsificação própria — Cenário 62 falsifica o matcher
+   do guard, não a extensão do gate de paridade em si. Mesmo padrão que motivou o Cenário 48
+   quando o ML-0B estendeu este gate para `credential-guard` (`ADR-2026-07-26-principios-de-
+   design-de-gates-verificaveis`: gate sem falsificação é "não-verificado"). Risco residual baixo
+   (Cenário 43 já prova o mecanismo de diff do gate não-vacuoso; ausência do script falha alto no
+   `-s` de vacuidade; deriva por-stack já é pega pelos 3 testes de byte-identidade dedicados) mas
+   não zero — registrado na tabela AC5 do roadmap com o gap explícito (caberia um Cenário 63
+   sabotando a cópia Node/Python do script e provando que o `go-vs-node`/`go-vs-py` estendido
+   reprova), fora do escopo literal da ação 5.
+
+Confirmei também, após a correção final do header (item 3), que a cópia em disco
+`scripts/trackfw-git-branch-guard.sh` bate com o template: `grep -i 'git.branch.guard\|integrity'`
+contra a saída de `trackfw validate` retornou vazia (nenhuma violação de
+`git_branch_guard_script_integrity`) — essa é a única das 7 cópias sem teste hard-fail dedicado
+(a regra tem severidade default `warning` e `validate` não roda dentro de `make quality`).
+
+Reexecutei `make quality` completo (0 FAIL) e `trackfw validate` (exit 0) depois destas 5
+correções — evidência em `/tmp/falsify-full2.log` e `/tmp/make-quality2.log` desta sessão.
+
+## apolo-tf — ML-4C (2026-08-17) — INÍCIO
+
+Executando ML-4C do `ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-
+da-release-7-0-0.md` (Wave 6, corretivo da reverificação do `hades-tf`, que levantou o bloqueio do
+ML-4A/ML-4B mas apontou dois furos na tabela AC5): fechar `git branch <nome>`/`-c/-C/-m/-M`,
+`git worktree add -b`, e `env CHAVE=valor git ...` no `git-branch-guard`, sem bloquear a bateria
+de leitura de `git branch` (`-a`, `-r`, `-l`, `--list`, `-v`, `--show-current`, `--contains`,
+`--merged`, `--sort=`, `--format=`, `-d`/`-D`).
+
+## apolo-tf — ML-4C (2026-08-17) — CONCLUÍDO
+
+**Arquivos tocados (7 cópias do guard + falsify + testes + roadmap + vault):**
+`internal/generators/scaffold.go` (`gitBranchGuardScript`, canônico),
+`internal/validator/validator_git_branch_guard_reference.go`, `npm/src/generators/hooks.js`,
+`npm/src/validator/index.js`, `pypi/trackfw/generators/init_gen.py`, `pypi/trackfw/validator.py`,
+`scripts/trackfw-git-branch-guard.sh` (referência versionada) — todas sincronizadas a partir do
+mesmo diff, byte-idênticas (confirmado via `discover --init` real nos 3 binários contra um dir
+limpo). `internal/generators/git_branch_guard_test.go` (+16 testes novos).
+`scripts/check-gates-falsify.sh` (Cenário 63, 3 sub-casos: `branch-create`, `worktree-add-b`,
+`env-var-assignment`, cada um baseline+detecção+auto-discriminação — total 124 cenários).
+
+**Decisão de design não óbvia** — `git branch` não pode ser "subcomando único = bloqueia" como
+`checkout -b`/`switch -c`: é majoritariamente leitura. Heurística implementada: bloqueia se
+(`-c/-C/-m/-M/--copy/--move` presente OU há argumento posicional puro) **e** `-d/-D/--delete`
+**não** está presente (delete tem posicional legítimo — o nome a apagar — e nunca deveria
+bloquear). Flags de valor conhecidas (`--contains`, `--sort`, `--format`, `--points-at`,
+`--merged`, `--no-merged`) têm o próximo token pulado para não virar falso positivo de
+"posicional de criação". Detalhe completo em
+`vault/notes/git-branch-guard-branch-create-heuristic-e-env-var-assignment-stripping-2026-08-17.md`.
+
+**Residual atualizado na tabela AC5:** `env`/`command` com FLAGS (`env -i`, `command -p`) ainda
+evadem — só a forma `env CHAVE=valor` foi fechada. A linha da tabela sobre isso foi reescrita para
+refletir o fechamento parcial. Também renumerei a menção a um "Cenário 63" hipotético na linha
+sobre falsificação do `check-attention-scripts-parity.sh` estendido para "Cenário 64" — esse
+número já é o Cenário 63 real deste ML.
+
+**Evidência:** `go build ./...` limpo · `go test ./internal/generators/... ./internal/validator/...`
+verde · `scripts/check-gates-falsify.sh` standalone: 124 cenários, 0 FAIL (log em
+`falsify-out.log` do scratchpad desta sessão) · `make quality` completo: exit 0 (log em
+`quality-out.log`) · `bin/trackfw validate` (binário local recompilado, não o `/opt/homebrew/bin/
+trackfw` v7.0.0 do PATH, que reportava divergência falsa por estar desatualizado): exit 0, 16
+warnings pré-existentes e não relacionados a este ML (gaps de ADR/Roadmap em outras REQs).
+
+Roadmap atualizado: ML-4C `✅ Concluído`, AC5 declarado revisado, checkboxes marcados. Handoff para
+`trackfw_architect` auditar e commitar.

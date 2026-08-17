@@ -117,8 +117,5 @@
     "no_data": "No hay transiciones registradas aún.",
     "since": "Filtrar por período (ej: 7d, 30d, 90d)",
     "export": "Exportar métricas a archivo CSV"
-  },
-  "errors": {
-    "notFound": "No encontrado: {{path}}"
   }
 }

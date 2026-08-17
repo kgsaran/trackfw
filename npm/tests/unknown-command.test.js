@@ -27,11 +27,18 @@ function runCLI(args, options = {}) {
   return spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', ...options })
 }
 
-test('trackfw sem argumento exibe help (comportamento preservado)', () => {
+test('trackfw sem argumento exibe help em stdout, exit 0 (não é erro — ML-1C)', () => {
+  // trackfw sem argumento é uso legítimo (pedir ajuda), não um comando
+  // desconhecido — decisão do arquiteto no ML-1C
+  // (ROADMAP-2026-08-16-higiene-sete-debitos-...). Antes desta correção,
+  // commander tratava a ausência de subcomando como "provavelmente faltou um
+  // subcomando" e chamava this.help({error: true}): help em stderr, exit 1 —
+  // divergente de Go e Python, que já eram exit 0/stdout.
   const result = runCLI([])
-  const output = `${result.stdout || ''}${result.stderr || ''}`
-  assert.match(output, /Usage: trackfw/, `esperava help contendo "Usage: trackfw", obteve: "${output}"`)
-  assert.match(output, /Commands:/, `esperava seção "Commands:" no help, obteve: "${output}"`)
+  assert.strictEqual(result.status, 0, `exit code deve ser 0, obteve ${result.status}`)
+  assert.strictEqual(result.stderr, '', `stderr deve ser vazio, obteve: "${result.stderr}"`)
+  assert.match(result.stdout, /Usage: trackfw/, `esperava help contendo "Usage: trackfw" em stdout, obteve: "${result.stdout}"`)
+  assert.match(result.stdout, /Commands:/, `esperava seção "Commands:" no help, obteve: "${result.stdout}"`)
 })
 
 test('trackfw comando-inexistente (sem sugestão próxima) produz mensagem canônica, exit 1', () => {

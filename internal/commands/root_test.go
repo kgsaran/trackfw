@@ -229,3 +229,32 @@ func TestUnknownCommand_NeverExecutesExternalBinary(t *testing.T) {
 		t.Errorf("esperava sugestão 'validate' mesmo com o binário externo presente no PATH; saída: %s", out)
 	}
 }
+
+// TestBareInvocation_ExitZero_HelpOnStdout — trackfw sem argumento é uso
+// legítimo (pedir ajuda), não um comando desconhecido: exit 0, help em
+// stdout, stderr vazio. Decisão do arquiteto no ML-1C
+// (ROADMAP-2026-08-16-higiene-sete-debitos-...), que unificou o Node.js
+// (antes exit 1/stderr, default do commander) para este comportamento — Go e
+// Python já eram assim. Roda o binário real (não newRootCmd() in-process)
+// para exercitar exatamente o mesmo caminho de Execute() que os testes de
+// comando desconhecido acima, e para poder observar exit code e stream
+// separadamente como um processo externo o faria.
+func TestBareInvocation_ExitZero_HelpOnStdout(t *testing.T) {
+	bin := rootBinary(t)
+
+	cmd := exec.Command(bin)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+
+	if runErr != nil {
+		t.Fatalf("esperava exit 0 para 'trackfw' sem argumento, obteve erro: %v (stderr: %s)", runErr, stderr.String())
+	}
+	if stderr.String() != "" {
+		t.Errorf("esperava stderr vazio, obteve: %q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Usage:") {
+		t.Errorf("esperava help contendo \"Usage:\" em stdout, obteve: %q", stdout.String())
+	}
+}

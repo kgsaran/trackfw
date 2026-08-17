@@ -57,12 +57,21 @@ function makeOpts({ message = 'feat: test', dryRun = false } = {}) {
   return { message, dryRun }
 }
 
+// captureOutput splits writeln (stdout) and writeErr (stderr) into separate buffers, but
+// output() concatenates both (stdout lines then stderr lines) so the many pre-existing
+// substring assertions below stay meaningful regardless of which stream a given message lands
+// on — they only prove the text is present, not which stream it's on. Tests that specifically
+// prove the ML-1B stream-routing fix (stderr + "Error: " prefix) use outLines/errLines directly.
 function captureOutput() {
-  const lines = []
+  const outLines = []
+  const errLines = []
   return {
-    writeln: (s) => lines.push(s),
-    lines,
-    output: () => lines.join('\n'),
+    writeln: (s) => outLines.push(s),
+    writeErr: (s) => errLines.push(`Error: ${s}`),
+    outLines,
+    errLines,
+    lines: outLines,
+    output: () => [...outLines, ...errLines].join('\n'),
   }
 }
 
@@ -73,6 +82,7 @@ function makeDeps({ branch, staged, violations = [], configForge = '', repoDir =
     execGit: git,
     checkGovernance: () => violations,
     writeln: cap.writeln,
+    writeErr: cap.writeErr,
     configForge,
     repoDir,
     availFn: availFn || (() => false),
@@ -134,6 +144,36 @@ test('ship: no wip roadmap aborts with remediation commands', () => {
   assert.ok(out.includes('trackfw roadmap new'), 'must mention trackfw roadmap new')
   assert.ok(out.includes('trackfw roadmap move'), 'must mention trackfw roadmap move')
   assert.ok(out.includes('lenient'), 'must mention lenient mode so users understand why validate passes but ship aborts')
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-1B — error stream/prefix parity: the final one-line summary of every abort path goes to
+// stderr with the "Error: " prefix (mirrors Go's cobra/root.go behavior exactly); everything
+// printed before it (violation lists, remediation hints) stays on stdout with no lowercase
+// "error: " leaking in. Byte-level cross-runtime parity for these scenarios is proven by
+// scripts/check-ship-parity.sh.
+// ────────────────────────────────────────────────────────────────────────────
+
+test('ship: governance violation — final summary lands on stderr with "Error: " prefix, not stdout', () => {
+  const violations = ['branch "feat/foo" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/']
+  const { deps, cap } = makeDeps({ branch: 'feat/foo', staged: 'file.js', violations })
+  const code = runShip(makeOpts(), deps)
+  assert.equal(code, 1)
+  assert.equal(cap.errLines.length, 1, 'exactly one line must be written to stderr')
+  assert.equal(cap.errLines[0], 'Error: governance check failed: 1 violation(s)')
+  assert.ok(!cap.outLines.join('\n').includes('governance check failed'), 'the summary must NOT also appear on stdout')
+  for (const l of cap.outLines) {
+    assert.ok(!/(^|\n)error: /.test(l), `stdout line must not start with lowercase "error: ": ${l}`)
+  }
+})
+
+test('ship: branch-pattern mismatch — Step 1 error lands on stderr with "Error: " prefix, not stdout', () => {
+  const { deps, cap } = makeDeps({ branch: 'hotfix/whatever', staged: 'file.js' })
+  const code = runShip(makeOpts(), deps)
+  assert.equal(code, 1)
+  assert.equal(cap.errLines.length, 1, 'exactly one line must be written to stderr')
+  assert.ok(cap.errLines[0].startsWith('Error: branch "hotfix/whatever" does not match the required pattern'))
+  assert.equal(cap.outLines.length, 0, 'nothing should have been written to stdout before this abort')
 })
 
 // ────────────────────────────────────────────────────────────────────────────

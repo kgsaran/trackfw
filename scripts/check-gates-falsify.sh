@@ -112,6 +112,80 @@ build_go_or_fail() {
 }
 
 # ---------------------------------------------------------------------------
+# Helper: emite scripts/trackfw-git-branch-guard.sh a partir de uma cópia de
+# módulo Go isolada (mesmo padrão de build_go_or_fail: copia cmd/+internal/+
+# go.mod/go.sum, corrompe UM arquivo, reconstrói) — usado pelos Cenários 58/59
+# (ML-1A, ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-
+# plugins-e-da-release-7-0-0.md). Em vez de reconstruir o binário `trackfw`
+# inteiro (que exigiria simular um wizard interativo de `init` só para chegar
+# ao script), adiciona um `cmd/` efêmero PRÓPRIO DA CÓPIA ISOLADA (nunca no
+# ROOT_DIR real) que chama generators.GenerateGitBranchGuardScript
+# diretamente — mesmo princípio de isolamento de build_go_or_fail, sem
+# depender de nenhum subcomando CLI existir.
+run_go_guard_dump() {
+  local label=$1
+  local module_dir=$2
+  local out_dir=$3
+  local log_file="$WORK/${label}.log"
+
+  mkdir -p "$module_dir/zz_dumpguard" "$out_dir"
+  cat > "$module_dir/zz_dumpguard/main.go" <<'GOEOF'
+package main
+
+import (
+	"os"
+
+	"github.com/kgsaran/trackfw/internal/generators"
+)
+
+func main() {
+	if err := generators.GenerateGitBranchGuardScript(os.Args[1]); err != nil {
+		panic(err)
+	}
+}
+GOEOF
+
+  set +e
+  (
+    cd "$module_dir" &&
+      env GOCACHE="$WORK/go-build-cache" go run ./zz_dumpguard "$out_dir"
+  ) >"$log_file" 2>&1
+  local status=$?
+  set -e
+
+  if [[ $status -ne 0 ]]; then
+    echo "FAIL [falsify/$label]: go run ./zz_dumpguard saiu com $status" >&2
+    echo "  output:" >&2
+    sed 's/^/    /' "$log_file" >&2
+    exit 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Helper: invoca scripts/trackfw-git-branch-guard.sh com um payload JSON via
+# stdin e afirma o exit code esperado (0 = allow silencioso, 2 = block). Os
+# helpers assert_fails_with/assert_succeeds não servem aqui porque não
+# oferecem stdin — o guard só lê o comando via stdin (formato de hook real).
+assert_guard_exit() {
+  local label=$1
+  local script=$2
+  local payload=$3
+  local want=$4
+  local out status
+  set +e
+  out=$(bash "$script" <<<"$payload" 2>&1)
+  status=$?
+  set -e
+  if [[ "$status" -ne "$want" ]]; then
+    echo "FAIL [falsify/$label]: exit $status, esperava $want" >&2
+    echo "  payload: $payload" >&2
+    echo "  output: $out" >&2
+    exit 1
+  fi
+  echo "OK   [falsify/$label]: exit $status"
+}
+
+# ---------------------------------------------------------------------------
 # Cenário 1 — check-static-assets.sh: byte drift em npm/src/serve/static/app.js
 # ---------------------------------------------------------------------------
 T1="$WORK/s1"
@@ -5009,12 +5083,17 @@ fi
 echo "OK   [falsify/fatal-error-handler/node-baseline]"
 
 # --- Node: detecção — bin/trackfw revertido para a forma pré-fix -----------
+# single-delta: o `new` abaixo reverte SÓ o handler global (installGlobalHandlers
+# + .catch/reportFatalError); a interceptação de zero-argumento do ML-1C
+# (ROADMAP-2026-08-16-higiene-...) é preservada tal qual está no bin/trackfw
+# atual — senão este cenário provaria duas regressões ao mesmo tempo em vez de
+# isolar o handler de erro como única variável.
 S58N_MOD_ROOT="$WORK/s58-node-mod"
 setup_npm_tree "$S58N_MOD_ROOT"
 corrupt_literal \
   "$ROOT_DIR/npm/bin/trackfw" "$S58N_MOD_ROOT/npm/bin/trackfw" \
-  $'#!/usr/bin/env node\n\'use strict\'\n\nconst { reportFatalError, installGlobalHandlers } = require(\'../src/lib/fatal-error\')\n\n// Registered before any command runs — see fatal-error.js for why this is a\n// single entrypoint-level handler instead of a try/catch per command.\ninstallGlobalHandlers()\n\nrequire(\'../src/commands/index\')\n  .createProgram()\n  .parseAsync(process.argv)\n  .catch((err) => {\n    // The primary path: an action (sync or async) threw, and since the\n    // program is driven by parseAsync() that surfaces here as a rejected\n    // promise — not as an uncaughtException/unhandledRejection, which is\n    // why this .catch exists in addition to installGlobalHandlers() above.\n    reportFatalError(err)\n    process.exitCode = 1\n  })\n' \
-  $'#!/usr/bin/env node\n\'use strict\'\n\nrequire(\'../src/commands/index\').createProgram().parseAsync(process.argv)\n' \
+  $'#!/usr/bin/env node\n\'use strict\'\n\nconst { reportFatalError, installGlobalHandlers } = require(\'../src/lib/fatal-error\')\n\n// Registered before any command runs — see fatal-error.js for why this is a\n// single entrypoint-level handler instead of a try/catch per command.\ninstallGlobalHandlers()\n\nconst program = require(\'../src/commands/index\').createProgram()\n\n// trackfw sem argumento é uso legítimo (pedir ajuda), não erro — decisão do\n// arquiteto no ML-1C (ROADMAP-2026-08-16-higiene-...). Sem intervenção,\n// commander trata "nenhum operando" como "provavelmente faltou um\n// subcomando" (Command._parseCommand: `this.commands.length && this.args\n// .length === 0 && !this._actionHandler` → `this.help({error: true})`) —\n// help em stderr, exit 1. Interceptar SÓ o caso de zero argumentos aqui,\n// antes de entrar no parser, reusa o MESMO texto de ajuda (outputHelp) na\n// saída canônica (stdout, exit 0) sem tocar no parsing normal — em\n// particular sem registrar uma .action() no root, que reclassificaria um\n// comando desconhecido (ex.: "trackfw naoexiste") como argumento posicional\n// da action em vez de disparar o listener \'command:*\' (regressão descartada\n// em favor desta abordagem: ver ROADMAP ML-1C).\n//\n// Fica ANTES do parseAsync e DEPOIS de installGlobalHandlers(): o caminho de\n// zero argumentos é sucesso e nunca deve passar pelo reportFatalError abaixo.\nif (process.argv.length <= 2) {\n  program.outputHelp()\n  process.exit(0)\n}\n\nprogram\n  .parseAsync(process.argv)\n  .catch((err) => {\n    // The primary path: an action (sync or async) threw, and since the\n    // program is driven by parseAsync() that surfaces here as a rejected\n    // promise — not as an uncaughtException/unhandledRejection, which is\n    // why this .catch exists in addition to installGlobalHandlers() above.\n    reportFatalError(err)\n    process.exitCode = 1\n  })\n' \
+  $'#!/usr/bin/env node\n\'use strict\'\n\nconst program = require(\'../src/commands/index\').createProgram()\n\n// trackfw sem argumento é uso legítimo (pedir ajuda), não erro — decisão do\n// arquiteto no ML-1C (ROADMAP-2026-08-16-higiene-...). Sem intervenção,\n// commander trata "nenhum operando" como "provavelmente faltou um\n// subcomando" (Command._parseCommand: `this.commands.length && this.args\n// .length === 0 && !this._actionHandler` → `this.help({error: true})`) —\n// help em stderr, exit 1. Interceptar SÓ o caso de zero argumentos aqui,\n// antes de entrar no parser, reusa o MESMO texto de ajuda (outputHelp) na\n// saída canônica (stdout, exit 0) sem tocar no parsing normal — em\n// particular sem registrar uma .action() no root, que reclassificaria um\n// comando desconhecido (ex.: "trackfw naoexiste") como argumento posicional\n// da action em vez de disparar o listener \'command:*\' (regressão descartada\n// em favor desta abordagem: ver ROADMAP ML-1C).\n//\n// Fica ANTES do parseAsync e DEPOIS de installGlobalHandlers(): o caminho de\n// zero argumentos é sucesso e nunca deve passar pelo reportFatalError abaixo.\nif (process.argv.length <= 2) {\n  program.outputHelp()\n  process.exit(0)\n}\n\nprogram.parseAsync(process.argv)\n' \
   "s58-node-revert-fatal-handler"
 
 S58N_MOD_PROJECT="$WORK/s58-node-mod-project"
@@ -5188,4 +5267,490 @@ assert_fails_with "serve-address-parity/wildcard-bind-regression/python-detects-
   "expected lsof to show 127.0.0.1:" \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T59/scripts/check-serve-address-parity.sh"
 
-echo "Falsification checks passed (all 120 scenarios, 18 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py; detection arm made self-discriminating (ML-1B, ROADMAP-2026-08-12) against the 2026-08-08 environmental-leak failure mode via a test-controlled synthetic \$HOME (Codex-only global guard, no Claude) plus an exclusivity assertion that none of the 5 non-sabotaged CLIs may appear in the FAIL set — proved against a leak-only (no sabotage) adversarial variant that the pre-ML-1B assertion set was satisfiable by pure environmental leak and the new exclusivity check rejects it (46), \`trackfw validate\`'s credential_guard_hook_resolvable rule (ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A/ML-2A) — a registered project-scope Claude credential-guard hook (.claude/settings.json) whose referenced script is missing must be flagged, and must stay silent when the script is present and executable, exercised end-to-end via the real Go binary against an otherwise-empty scaffold_adr_req_project fixture (the same fixture Scenario 29 pins to zero violations, so no other rule has material to fire) — detection arm asserts the exact validator diagnostic literal (unique across internal/validator/*.go per grep) rather than a generic non-zero exit, proved non-vacuous, no \$HOME dependency by design since the rule never reads outside the project root (47), check-attention-scripts-parity.sh extended (ML-0B, ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate) to cover scripts/trackfw-credential-guard.sh (project scope) alongside the two attention scripts — Node.js's CREDENTIAL_GUARD_SCRIPT composition line reordered (CG_PROJECT_GUARD and CG_DETECTION_CORE swapped, no CG_* block content touched) so the script actually emitted by \`discover --init\` diverges from Go/Python while the pre-existing Go-only TestCredentialGuardScript_ParityAcrossStacks (which reconstructs the script by regex-scraping and Go-hardcoded-order-concatenating the CG_*/_CG_* literals, never executing Node/Python) stays green — proves the shell gate closes a real coverage gap the structural unit test cannot see (48), \`trackfw validate\`'s credential_guard_script_integrity rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — scripts/trackfw-credential-guard.sh diverging from the template this trackfw binary would generate (via a real, isolated \`discover --init\` run, then a single tampered line appended) must be flagged with \`rules: credential_guard_script_integrity: error\` fixed in the fixture (default severity is warning, which does not flip validate's exit code), and must stay silent when the script is byte-identical to that binary's own template — detection arm asserts the exact validator diagnostic literal, proved non-vacuous via assert_would_now_fail (same exit!=0-and-message-present criterion as assert_fails_with, required to NOT hold against a config-only \`rules: ...: off\` neutering of the same corrupted fixture) rather than a message-absence-only check, single-delta design isolates the corruption (baseline vs. detection) and the severity override (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (49), \`trackfw validate\`'s credential_guard_mode_downgrade rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — credential_guard.mode: block committed at git HEAD followed by an uncommitted on-disk downgrade to mode: warn must be flagged (first check-gates-falsify.sh scenario to git-init/commit a real fixture repo, closing the gap Apolo found — no prior fixture had a HEAD for this rule to anchor against), and must stay silent when disk matches HEAD — non-vacuity mechanism REPLACED by ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard/ML-2A (ADR Emenda 2): the old \`rules: ...: off\` uncommitted neutering stopped proving anything once M4 anchored severity at HEAD, so it now commits \`rules: credential_guard_mode_downgrade: off\` TOGETHER with mode: block at HEAD (the ADR's legitimate-committed-disable path) instead, single-delta design isolates the uncommitted downgrade (baseline vs. detection) and the committed-off HEAD (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (50), the M4 mechanism itself (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A/ML-2A) — the decisive scenario: the COMBINED uncommitted edit (\`credential_guard.mode: warn\` + \`rules: credential_guard_mode_downgrade: off\`, both disk-only, HEAD only ever committing mode: block) must still be reported, self-discriminating against a contrast fixture where the SAME disk-side attack is applied but \`rules: ...: off\` is committed at HEAD alongside mode: block (legitimate, auditable) and is silenced — isolating commit-status of the off as the only variable; non-vacuity proved by temporarily reverting credentialGuardRuleSeverity to disk-only resolution (pre-ADR behavior), rebuilding bin/trackfw, confirming the detection arm goes red, then restoring and rebuilding (51), the .trackfw-baseline.json carve-out (Barreira B0/ML-1A/ML-2A) — a credential-guard violation listed in .trackfw-baseline.json by its full literal message continues to be reported, verified against the real BaselineFile{Violations,Warnings} shape and exact-message-match semantics in filterBaselineTagged (validator.go) rather than assumed from ADR prose, self-discriminating within a single fixture/single \`validate\` run: a filename_uniqueness (non-guard) violation listed in the SAME baseline by the same mechanism IS suppressed, proving the carve-out is specific to the 3 guard rules rather than the baseline format being broken outright (which would make the guard violation \"surviving\" prove nothing) — non-vacuity proved by temporarily dropping the \`&& !credentialGuardAnchoredRules[v.Rule]\` guard in filterBaselineTagged, rebuilding, confirming both violations get suppressed, then restoring and rebuilding (52), non-regression for non-guard rules (the most important scenario for confidence in M4, closing the \"blast radius\" question) — filename_uniqueness (not in credentialGuardAnchoredRules, default severity error) with \`rules: filename_uniqueness: off\` set disk-only and never committed continues to fully silence the rule exactly as before this ADR, proving diskRuleSeverity's disk-only path for the other ~38 rules received zero delta from M4; fixture carries a real git HEAD (committing a trackfw.yaml with no rules: block) specifically so the non-vacuity proof is meaningful — without a HEAD, credentialGuardRuleSeverity would fall back to disk-only regardless of anchoring, masking exactly the scope-leak this scenario exists to catch; non-vacuity proved by temporarily adding filename_uniqueness to credentialGuardAnchoredRules (simulating an M4 scope leak), rebuilding, confirming the silenced arm goes red (HEAD's absent rules: entry now resolves to the stricter default and wins over disk's off), then restoring and rebuilding (53), the GIT_* environment-variable bypass of the M4 anchoring (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1B/ML-2B) stays closed against both vectors found by ML-3B — GIT_DIR/GIT_WORK_TREE redirection to a decoy repository without a committed trackfw.yaml, and GIT_CONFIG_COUNT=abc failure-induction (unrelated to redirection, just makes the git subprocess exit 128) — each embedded with a raw \`git -C\` control proving the vector is a genuine attack (not inert) before testing the trackfw binary, plus a legitimate git-worktree control (worktree add/-C anchoring) proving normal worktree usage is unaffected; non-vacuity proved by temporarily reverting cleanGitEnv() (validator_git_exec.go) to return unfiltered os.Environ(), rebuilding bin/trackfw, confirming both detection arms go silent, then restoring and rebuilding (54), check-unknown-command-parity.sh (ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw, ML-2B) — gate created by ML-2A without a falsification scenario, closing the reported gap: canonical-message text drift via Python's format_unknown_command_error dropping the \` for \"{cmd_path}\"\` suffix, caught by the gate's own \"no-suggestion\" vacuity guard (55, baseline + detection), unknown-command exit code drift via Node's \`process.exit(1)\` changed to \`process.exit(3)\`, caught by assert_three_way's exit-code check (56, baseline + detection), and the \"Did you mean\" suggestion suppressed in Go by neutering formatUnknownCommandError's \`found\` branch (\`found && false\`, keeping \`found\` referenced so \`go build\` still succeeds), caught by the gate's \"with-suggestion\" vacuity guard for the go runtime, rebuilt via an isolated Go binary per Cenário 25/26 convention (57, baseline + detection) — one CLI sabotaged per discriminant, each baseline arm proving the clean cycle passes before its paired detection arm proves the corrupted cycle fails), the global fatal-error handler in the Node and Python entrypoints, PLUS a Go baseline arm locking the third CLI's already-clean behavior against future regression (REQ-2026-08-16-erro-nao-tratado-no-cli-node-vaza-stack-trace-caminhos-absolutos-e-versao-do-runtime, ML-1A) — Node baseline reproduces the REAL unmanaged-artifact production bug end to end (agents install + manifest/artifact tamper + agents update --force) against the unmodified bin/trackfw and proves stderr carries no stack frame, no npm/src/ install path and no \"Node.js vX\"; Node detection reverts bin/trackfw's parseAsync().catch(reportFatalError) to its pre-fix bare parseAsync() call in an isolated copy against the SAME repro and proves the leak reappears; Go baseline runs the SAME repro against the isolated Go binary already built for Cenários 27+ and proves stderr carries no panic:/goroutine/.go:N line — no detection arm, since no Go code was touched by this ML and there is no own-code regression to prove, only \"nos 3 CLIs\" (REQ AC1/roadmap action 4) to lock; Python baseline/detection hold a synthetic corrupted commands/roadmap.py:_cmd_list (unconditional raise, since the REQ found no Python path leaks today) IDENTICAL across both arms and vary only cli.py's try/except around args.func — present it prints \"trackfw roadmap: ...\" with no Traceback, reverted to the pre-fix bare call it prints a full Traceback (58), check-serve-address-parity.sh (ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao, ML-1C) — gate created by ML-1C without a falsification scenario, closing the reported gap: pypi/trackfw/commands/serve.py's server_cls((host, port), ...) reverted to server_cls((\"\", port), ...), reintroducing the exact wildcard-bind regression this REQ exists to fix, caught by the gate's own default-bind/py assertion (\"expected lsof to show 127.0.0.1:...\") — baseline arm proves the clean cycle passes across all 4 sub-checks (default loopback bind, ::1 bind, wildcard exposure warning, printed URL) before the paired detection arm proves the corrupted cycle fails (59)"
+# Cenários 60/61 — scripts/trackfw-git-branch-guard.sh (ML-1A,
+# ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-
+# da-release-7-0-0.md, itens 1 e 2). Cada cenário monta baseline (código
+# LIMPO) + detecção (UM literal corrompido em internal/generators/scaffold.go
+# via corrupt_literal, nunca na asserção) — mesmo padrão dos Cenários 55/56/57.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Cenário 60 — item 2 (brecha de contorno): `git switch -c` (forma
+# alternativa a `checkout -b` para criar branch) deve ser bloqueado. Braço
+# baseline prova que o guard LIMPO bloqueia; braço de detecção corrompe o
+# case "-c|-C|--create|--create=*|--force-create|--force-create=*)" do
+# gerador Go para um padrão que nunca casa, reconstrói o script a partir de
+# um módulo Go isolado, e prova que SEM essa linha o mesmo comando escapa
+# (exit 0 em vez de 2) — não-vacuidade: a detecção depende exatamente do
+# literal que o ML-1A adicionou, não de qualquer outro efeito colateral.
+# ---------------------------------------------------------------------------
+T60_BASE_MOD="$WORK/s60-base-mod"
+mkdir -p "$T60_BASE_MOD/cmd" "$T60_BASE_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T60_BASE_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T60_BASE_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T60_BASE_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T60_BASE_MOD/go.sum"
+
+T60_BASE_OUT="$WORK/s60-base-out"
+run_go_guard_dump "setup-s60-go-baseline-build" "$T60_BASE_MOD" "$T60_BASE_OUT"
+
+assert_guard_exit "git-branch-guard/switch-c/baseline-blocks" \
+  "$T60_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git switch -c feat/x"}}' \
+  2
+
+T60_MOD="$WORK/s60-mod"
+mkdir -p "$T60_MOD/cmd" "$T60_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T60_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T60_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T60_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T60_MOD/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/generators/scaffold.go" "$T60_MOD/internal/generators/scaffold.go" \
+  '-c|-C|--create|--create=*|--force-create|--force-create=*)' \
+  '--never-matches-anything-s58)' \
+  "s60-go-switch-c-detection-removed"
+
+T60_OUT="$WORK/s60-out"
+run_go_guard_dump "setup-s60-go-corrupted-build" "$T60_MOD" "$T60_OUT"
+
+assert_guard_exit "git-branch-guard/switch-c/detection-catches-bypass" \
+  "$T60_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git switch -c feat/x"}}' \
+  0
+
+# ---------------------------------------------------------------------------
+# Cenário 61 — item 1 (falso-positivo por prosa): uma mensagem de commit cuja
+# linha COMEÇA com "git checkout -b" (reprodução literal do
+# vault/notes/git-branch-guard-falso-positivo-em-linha-de-mensagem-de-commit-
+# 2026-08-16.md) não deve bloquear. Braço baseline prova que o guard LIMPO
+# permite; braço de detecção corrompe match_subcommand() para voltar a usar o
+# `sed` cego antigo (em vez de strip_heredoc_bodies + quote_aware_split),
+# reconstrói o script isolado, e prova que SEM a correção o mesmo comando
+# volta a ser bloqueado — não-vacuidade: a permissividade depende exatamente
+# do pré-processamento quote-aware introduzido por este ML, não de qualquer
+# outro efeito colateral. A prova de não-regressão complementar (comandos
+# reais encadeados atrás de um `-m` corretamente fechado continuam
+# bloqueados) está em internal/generators/git_branch_guard_test.go
+# (TestGitBranchGuard_ChainedCommand_SecondGitBlocked e as novas
+# TestGitBranchGuard_QuotedMessageThenRealChainedCommand_StillBlocks/
+# TestGitBranchGuard_SwitchDashC_Blocks/TestGitBranchGuard_SwitchWithoutCreateFlag_Allows).
+# ---------------------------------------------------------------------------
+# Reprodução literal do incidente real (vault note): `-m "$(cat <<'EOF' ...
+# EOF)"` (convenção de mensagem de commit multi-linha do próprio CLAUDE.md
+# deste repositório) — a quebra de linha REAL logo após `<<'EOF'` faz a
+# primeira linha do corpo (`  git checkout -b ...`) virar, depois de
+# stripar espaço à esquerda, seu PRÓPRIO segmento com "git" como primeiro
+# token. Um `-m "..."` sem heredoc, sem quebra de linha antes de "git", não
+# reproduz o bug (a linha inteira permanece grudada no segmento que começa
+# com "bin/trackfw").
+PROSE_PAYLOAD=$(python3 -c '
+import json
+cmd = ("bin/trackfw commit -m \"$(cat <<'"'"'EOF'"'"'\n"
+       "  git checkout -b            -> bloqueado pelo guard\n"
+       "  trackfw branch new chore/  -> recusado\n"
+       "EOF\n"
+       ")\"")
+print(json.dumps({"tool_input": {"command": cmd}}))
+')
+
+T61_BASE_MOD="$WORK/s61-base-mod"
+mkdir -p "$T61_BASE_MOD/cmd" "$T61_BASE_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T61_BASE_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T61_BASE_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T61_BASE_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T61_BASE_MOD/go.sum"
+
+T61_BASE_OUT="$WORK/s61-base-out"
+run_go_guard_dump "setup-s61-go-baseline-build" "$T61_BASE_MOD" "$T61_BASE_OUT"
+
+assert_guard_exit "git-branch-guard/prose-in-message/baseline-allows" \
+  "$T61_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  "$PROSE_PAYLOAD" \
+  0
+
+T61_MOD="$WORK/s61-mod"
+mkdir -p "$T61_MOD/cmd" "$T61_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T61_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T61_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T61_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T61_MOD/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/generators/scaffold.go" "$T61_MOD/internal/generators/scaffold.go" \
+  'normalized=$(strip_heredoc_bodies "$1")
+  normalized=$(quote_aware_split "$normalized")' \
+  'normalized=$(printf '"'"'%s'"'"' "$1" | sed -e '"'"'s/&&/\n/g'"'"' -e '"'"'s/||/\n/g'"'"' -e '"'"'s/[;|]/\n/g'"'"')' \
+  "s61-go-quote-aware-split-reverted"
+
+T61_OUT="$WORK/s61-out"
+run_go_guard_dump "setup-s61-go-corrupted-build" "$T61_MOD" "$T61_OUT"
+
+assert_guard_exit "git-branch-guard/prose-in-message/detection-catches-regression" \
+  "$T61_OUT/scripts/trackfw-git-branch-guard.sh" \
+  "$PROSE_PAYLOAD" \
+  2
+
+# ---------------------------------------------------------------------------
+# Cenário 62 — scripts/trackfw-git-branch-guard.sh (ML-4B,
+# ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-
+# da-release-7-0-0.md), corretivo do veredito BLOQUEAR do hades-tf
+# (docs/seguranca/2026-08-16-revisao-do-git-branch-guard.md): duas evasões
+# reproduzidas e fechadas nesse ML — prefixo `env`/`command` antes de `git`, e
+# flag do `checkout -b` fora da primeira posição de token (`-q -b`,
+# `--no-track -b`). Mesmo padrão baseline+detecção dos Cenários 60/61: braço
+# baseline prova que o guard LIMPO bloqueia; braço de detecção corrompe UM
+# literal isolado do gerador Go, reconstrói o script a partir de um módulo Go
+# isolado, e prova que sem essa linha o mesmo comando escapa (exit 0 em vez
+# de 2) — não-vacuidade: a detecção depende exatamente do literal que o
+# ML-4B adicionou, não de qualquer outro efeito colateral.
+# ---------------------------------------------------------------------------
+
+# --- 62a — prefixo env/command antes de git ---------------------------------
+T62A_BASE_MOD="$WORK/s62a-base-mod"
+mkdir -p "$T62A_BASE_MOD/cmd" "$T62A_BASE_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T62A_BASE_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T62A_BASE_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T62A_BASE_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T62A_BASE_MOD/go.sum"
+
+T62A_BASE_OUT="$WORK/s62a-base-out"
+run_go_guard_dump "setup-s62a-go-baseline-build" "$T62A_BASE_MOD" "$T62A_BASE_OUT"
+
+assert_guard_exit "git-branch-guard/env-command-prefix/baseline-blocks-env" \
+  "$T62A_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"env git commit -m \"x\""}}' \
+  2
+
+assert_guard_exit "git-branch-guard/env-command-prefix/baseline-blocks-command" \
+  "$T62A_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"command git push"}}' \
+  2
+
+T62A_MOD="$WORK/s62a-mod"
+mkdir -p "$T62A_MOD/cmd" "$T62A_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T62A_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T62A_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T62A_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T62A_MOD/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/generators/scaffold.go" "$T62A_MOD/internal/generators/scaffold.go" \
+  'while [ "$base" = "env" ] || [ "$base" = "command" ]; do' \
+  'while [ "$base" = "__never-matches-s62a__" ]; do' \
+  "s62a-go-env-command-prefix-stripping-removed"
+
+T62A_OUT="$WORK/s62a-out"
+run_go_guard_dump "setup-s62a-go-corrupted-build" "$T62A_MOD" "$T62A_OUT"
+
+assert_guard_exit "git-branch-guard/env-command-prefix/detection-catches-bypass-env" \
+  "$T62A_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"env git commit -m \"x\""}}' \
+  0
+
+assert_guard_exit "git-branch-guard/env-command-prefix/detection-catches-bypass-command" \
+  "$T62A_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"command git push"}}' \
+  0
+
+# Auto-discriminação: a corrupção acima é um `while` que nunca casa nenhum
+# `base` — se ela silenciasse o guard inteiro (em vez de só o stripping de
+# env/command), as duas asserções acima "provariam" bypass por um motivo
+# errado. `git push` puro (sem prefixo) contra o MESMO build corrompido
+# precisa continuar bloqueado — isola a corrupção ao stripping de
+# env/command, não a uma quebra geral do matcher.
+assert_guard_exit "git-branch-guard/env-command-prefix/detection-does-not-break-plain-push" \
+  "$T62A_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git push"}}' \
+  2
+
+# --- 62b — flag do checkout -b fora da primeira posição de token -----------
+T62B_BASE_MOD="$WORK/s62b-base-mod"
+mkdir -p "$T62B_BASE_MOD/cmd" "$T62B_BASE_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T62B_BASE_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T62B_BASE_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T62B_BASE_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T62B_BASE_MOD/go.sum"
+
+T62B_BASE_OUT="$WORK/s62b-base-out"
+run_go_guard_dump "setup-s62b-go-baseline-build" "$T62B_BASE_MOD" "$T62B_BASE_OUT"
+
+assert_guard_exit "git-branch-guard/checkout-flag-position/baseline-blocks-q-b" \
+  "$T62B_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git checkout -q -b nova"}}' \
+  2
+
+assert_guard_exit "git-branch-guard/checkout-flag-position/baseline-blocks-no-track" \
+  "$T62B_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git checkout --no-track -b nova"}}' \
+  2
+
+T62B_MOD="$WORK/s62b-mod"
+mkdir -p "$T62B_MOD/cmd" "$T62B_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T62B_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T62B_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T62B_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T62B_MOD/go.sum"
+
+# Corrupção retargetada para a forma EXATA pré-ML-4B (não um pattern
+# "nunca casa" genérico): reverte o for-loop de varredura de tokens para o
+# `if [ "${1:-}" = "-b" ]; then` original, que só olha o token IMEDIATAMENTE
+# seguinte a `checkout`. Isso preserva a detecção de `git checkout -b nova`
+# (a flag na primeira posição) e derruba só `-q -b`/`--no-track -b` — o
+# discriminante preciso do que o ML-4B mudou, não uma corrupção que também
+# apagaria a detecção de `checkout -b` simples (o que tornaria o cenário
+# indistinguível de "checkout detection sumiu inteira").
+corrupt_literal \
+  "$ROOT_DIR/internal/generators/scaffold.go" "$T62B_MOD/internal/generators/scaffold.go" \
+  '      checkout)
+        for tok2 in "$@"; do
+          case "$tok2" in
+            -b|-B|--orphan|--orphan=*)
+              echo "checkout-b"
+              return 0
+              ;;
+          esac
+        done
+        ;;' \
+  '      checkout)
+        if [ "${1:-}" = "-b" ]; then
+          echo "checkout-b"
+          return 0
+        fi
+        ;;' \
+  "s62b-go-checkout-token-scan-reverted-to-pre-ml4b"
+
+T62B_OUT="$WORK/s62b-out"
+run_go_guard_dump "setup-s62b-go-corrupted-build" "$T62B_MOD" "$T62B_OUT"
+
+assert_guard_exit "git-branch-guard/checkout-flag-position/detection-catches-bypass-q-b" \
+  "$T62B_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git checkout -q -b nova"}}' \
+  0
+
+assert_guard_exit "git-branch-guard/checkout-flag-position/detection-catches-bypass-no-track" \
+  "$T62B_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git checkout --no-track -b nova"}}' \
+  0
+
+# Auto-discriminação: contra o MESMO build corrompido (revertido para a
+# forma pré-ML-4B), `git checkout -b nova` — flag na primeira posição —
+# precisa continuar bloqueado. Prova que a corrupção isola exatamente o
+# token-scan que o ML-4B acrescentou, não a detecção de checkout -b como um
+# todo.
+assert_guard_exit "git-branch-guard/checkout-flag-position/detection-does-not-break-plain-checkout-b" \
+  "$T62B_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git checkout -b nova"}}' \
+  2
+
+# ---------------------------------------------------------------------------
+# Cenário 63 — scripts/trackfw-git-branch-guard.sh (ML-4C,
+# ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-
+# da-release-7-0-0.md), corretivo da reverificação do hades-tf após levantar
+# o bloqueio do ML-4A: três evasões apontadas e fechadas neste ML —
+# `git branch <nome>` (e -c/-C/-m/-M), `git worktree add -b`, e
+# `env CHAVE=valor git ...`. Mesmo padrão baseline+detecção dos Cenários
+# 60/61/62: braço baseline prova que o guard LIMPO bloqueia; braço de
+# detecção corrompe UM literal isolado do gerador Go, reconstrói o script a
+# partir de um módulo Go isolado, e prova que sem essa linha o mesmo comando
+# escapa (exit 0 em vez de 2) — não-vacuidade: a detecção depende exatamente
+# do literal que o ML-4C adicionou, não de qualquer outro efeito colateral.
+# ---------------------------------------------------------------------------
+
+# --- 63a — git branch <nome> (argumento posicional puro cria a branch) -----
+T63A_BASE_MOD="$WORK/s63a-base-mod"
+mkdir -p "$T63A_BASE_MOD/cmd" "$T63A_BASE_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T63A_BASE_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T63A_BASE_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T63A_BASE_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T63A_BASE_MOD/go.sum"
+
+T63A_BASE_OUT="$WORK/s63a-base-out"
+run_go_guard_dump "setup-s63a-go-baseline-build" "$T63A_BASE_MOD" "$T63A_BASE_OUT"
+
+assert_guard_exit "git-branch-guard/branch-create/baseline-blocks-positional" \
+  "$T63A_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git branch nova"}}' \
+  2
+
+assert_guard_exit "git-branch-guard/branch-create/baseline-blocks-dash-c" \
+  "$T63A_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git branch -c origem nova"}}' \
+  2
+
+assert_guard_exit "git-branch-guard/branch-create/baseline-allows-list" \
+  "$T63A_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git branch -a"}}' \
+  0
+
+assert_guard_exit "git-branch-guard/branch-create/baseline-allows-delete" \
+  "$T63A_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git branch -d nome"}}' \
+  0
+
+T63A_MOD="$WORK/s63a-mod"
+mkdir -p "$T63A_MOD/cmd" "$T63A_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T63A_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T63A_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T63A_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T63A_MOD/go.sum"
+
+# Corrupção isolada: neutraliza SÓ a marcação de "argumento posicional puro
+# cria branch" (saw_positional=1 -> saw_positional=0), sem tocar
+# branch_action (-c/-C/-m/-M) nem has_delete — prova que a detecção depende
+# exatamente desse literal, e não derruba -c/-C/-m/-M nem -d/-D (asserção de
+# auto-discriminação abaixo).
+corrupt_literal \
+  "$ROOT_DIR/internal/generators/scaffold.go" "$T63A_MOD/internal/generators/scaffold.go" \
+  '            *)
+              saw_positional=1
+              ;;
+          esac
+        done
+        if [ "$has_delete" != "1" ]; then' \
+  '            *)
+              saw_positional=0
+              ;;
+          esac
+        done
+        if [ "$has_delete" != "1" ]; then' \
+  "s63a-go-branch-positional-detection-removed"
+
+T63A_OUT="$WORK/s63a-out"
+run_go_guard_dump "setup-s63a-go-corrupted-build" "$T63A_MOD" "$T63A_OUT"
+
+assert_guard_exit "git-branch-guard/branch-create/detection-catches-bypass-positional" \
+  "$T63A_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git branch nova"}}' \
+  0
+
+# Auto-discriminação: contra o MESMO build corrompido, `git branch -c origem
+# nova` (via branch_action, não saw_positional) e `git branch -d nome`
+# (leitura/delete, nunca deveria bloquear) precisam se comportar
+# exatamente como antes — prova que a corrupção isola só o caminho de
+# argumento posicional puro.
+assert_guard_exit "git-branch-guard/branch-create/detection-does-not-break-dash-c" \
+  "$T63A_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git branch -c origem nova"}}' \
+  2
+
+assert_guard_exit "git-branch-guard/branch-create/detection-does-not-break-delete" \
+  "$T63A_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git branch -d nome"}}' \
+  0
+
+# --- 63b — git worktree add -b (forma direta de criar branch) --------------
+T63B_BASE_MOD="$WORK/s63b-base-mod"
+mkdir -p "$T63B_BASE_MOD/cmd" "$T63B_BASE_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T63B_BASE_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T63B_BASE_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T63B_BASE_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T63B_BASE_MOD/go.sum"
+
+T63B_BASE_OUT="$WORK/s63b-base-out"
+run_go_guard_dump "setup-s63b-go-baseline-build" "$T63B_BASE_MOD" "$T63B_BASE_OUT"
+
+assert_guard_exit "git-branch-guard/worktree-add-b/baseline-blocks" \
+  "$T63B_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git worktree add -b nova ../nova"}}' \
+  2
+
+assert_guard_exit "git-branch-guard/worktree-add-b/baseline-allows-without-b" \
+  "$T63B_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git worktree add ../nova existing-branch"}}' \
+  0
+
+T63B_MOD="$WORK/s63b-mod"
+mkdir -p "$T63B_MOD/cmd" "$T63B_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T63B_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T63B_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T63B_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T63B_MOD/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/generators/scaffold.go" "$T63B_MOD/internal/generators/scaffold.go" \
+  '      worktree)
+        if [ "${1:-}" = "add" ]; then' \
+  '      worktree)
+        if [ "${1:-}" = "__never-matches-s63b__" ]; then' \
+  "s63b-go-worktree-add-detection-removed"
+
+T63B_OUT="$WORK/s63b-out"
+run_go_guard_dump "setup-s63b-go-corrupted-build" "$T63B_MOD" "$T63B_OUT"
+
+assert_guard_exit "git-branch-guard/worktree-add-b/detection-catches-bypass" \
+  "$T63B_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git worktree add -b nova ../nova"}}' \
+  0
+
+# Auto-discriminação: contra o MESMO build corrompido, `git push` puro
+# continua bloqueado — isola a corrupção ao worktree add -b, não uma
+# quebra geral do matcher.
+assert_guard_exit "git-branch-guard/worktree-add-b/detection-does-not-break-plain-push" \
+  "$T63B_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"git push"}}' \
+  2
+
+# --- 63c — env CHAVE=valor git ... (stripping de atribuição de variável) ---
+T63C_BASE_MOD="$WORK/s63c-base-mod"
+mkdir -p "$T63C_BASE_MOD/cmd" "$T63C_BASE_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T63C_BASE_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T63C_BASE_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T63C_BASE_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T63C_BASE_MOD/go.sum"
+
+T63C_BASE_OUT="$WORK/s63c-base-out"
+run_go_guard_dump "setup-s63c-go-baseline-build" "$T63C_BASE_MOD" "$T63C_BASE_OUT"
+
+assert_guard_exit "git-branch-guard/env-var-assignment/baseline-blocks-single" \
+  "$T63C_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"env FOO=bar git push"}}' \
+  2
+
+assert_guard_exit "git-branch-guard/env-var-assignment/baseline-blocks-multiple" \
+  "$T63C_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"env FOO=bar BAZ=qux git commit -m x"}}' \
+  2
+
+assert_guard_exit "git-branch-guard/env-var-assignment/baseline-still-evades-flag-form" \
+  "$T63C_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"env -i git push"}}' \
+  0
+
+T63C_MOD="$WORK/s63c-mod"
+mkdir -p "$T63C_MOD/cmd" "$T63C_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T63C_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T63C_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T63C_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T63C_MOD/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/generators/scaffold.go" "$T63C_MOD/internal/generators/scaffold.go" \
+  '      if [ "$is_env" = "env" ]; then' \
+  '      if [ "$is_env" = "__never-matches-s63c__" ]; then' \
+  "s63c-go-env-var-assignment-stripping-removed"
+
+T63C_OUT="$WORK/s63c-out"
+run_go_guard_dump "setup-s63c-go-corrupted-build" "$T63C_MOD" "$T63C_OUT"
+
+assert_guard_exit "git-branch-guard/env-var-assignment/detection-catches-bypass-single" \
+  "$T63C_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"env FOO=bar git push"}}' \
+  0
+
+assert_guard_exit "git-branch-guard/env-var-assignment/detection-catches-bypass-multiple" \
+  "$T63C_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"env FOO=bar BAZ=qux git commit -m x"}}' \
+  0
+
+# Auto-discriminação: contra o MESMO build corrompido, a forma NUA (sem
+# atribuição de variável) `env git push`, fechada pelo ML-4B, precisa
+# continuar bloqueada — isola a corrupção ao stripping de CHAVE=valor, não
+# ao stripping de env/command como um todo.
+assert_guard_exit "git-branch-guard/env-var-assignment/detection-does-not-break-bare-env-prefix" \
+  "$T63C_OUT/scripts/trackfw-git-branch-guard.sh" \
+  '{"tool_input":{"command":"env git push"}}' \
+  2
+
+echo "Falsification checks passed (all 124 scenarios, 18 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection with positional assertion, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py; detection arm made self-discriminating (ML-1B, ROADMAP-2026-08-12) against the 2026-08-08 environmental-leak failure mode via a test-controlled synthetic \$HOME (Codex-only global guard, no Claude) plus an exclusivity assertion that none of the 5 non-sabotaged CLIs may appear in the FAIL set — proved against a leak-only (no sabotage) adversarial variant that the pre-ML-1B assertion set was satisfiable by pure environmental leak and the new exclusivity check rejects it (46), \`trackfw validate\`'s credential_guard_hook_resolvable rule (ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A/ML-2A) — a registered project-scope Claude credential-guard hook (.claude/settings.json) whose referenced script is missing must be flagged, and must stay silent when the script is present and executable, exercised end-to-end via the real Go binary against an otherwise-empty scaffold_adr_req_project fixture (the same fixture Scenario 29 pins to zero violations, so no other rule has material to fire) — detection arm asserts the exact validator diagnostic literal (unique across internal/validator/*.go per grep) rather than a generic non-zero exit, proved non-vacuous, no \$HOME dependency by design since the rule never reads outside the project root (47), check-attention-scripts-parity.sh extended (ML-0B, ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate) to cover scripts/trackfw-credential-guard.sh (project scope) alongside the two attention scripts — Node.js's CREDENTIAL_GUARD_SCRIPT composition line reordered (CG_PROJECT_GUARD and CG_DETECTION_CORE swapped, no CG_* block content touched) so the script actually emitted by \`discover --init\` diverges from Go/Python while the pre-existing Go-only TestCredentialGuardScript_ParityAcrossStacks (which reconstructs the script by regex-scraping and Go-hardcoded-order-concatenating the CG_*/_CG_* literals, never executing Node/Python) stays green — proves the shell gate closes a real coverage gap the structural unit test cannot see (48), \`trackfw validate\`'s credential_guard_script_integrity rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — scripts/trackfw-credential-guard.sh diverging from the template this trackfw binary would generate (via a real, isolated \`discover --init\` run, then a single tampered line appended) must be flagged with \`rules: credential_guard_script_integrity: error\` fixed in the fixture (default severity is warning, which does not flip validate's exit code), and must stay silent when the script is byte-identical to that binary's own template — detection arm asserts the exact validator diagnostic literal, proved non-vacuous via assert_would_now_fail (same exit!=0-and-message-present criterion as assert_fails_with, required to NOT hold against a config-only \`rules: ...: off\` neutering of the same corrupted fixture) rather than a message-absence-only check, single-delta design isolates the corruption (baseline vs. detection) and the severity override (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (49), \`trackfw validate\`'s credential_guard_mode_downgrade rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — credential_guard.mode: block committed at git HEAD followed by an uncommitted on-disk downgrade to mode: warn must be flagged (first check-gates-falsify.sh scenario to git-init/commit a real fixture repo, closing the gap Apolo found — no prior fixture had a HEAD for this rule to anchor against), and must stay silent when disk matches HEAD — non-vacuity mechanism REPLACED by ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard/ML-2A (ADR Emenda 2): the old \`rules: ...: off\` uncommitted neutering stopped proving anything once M4 anchored severity at HEAD, so it now commits \`rules: credential_guard_mode_downgrade: off\` TOGETHER with mode: block at HEAD (the ADR's legitimate-committed-disable path) instead, single-delta design isolates the uncommitted downgrade (baseline vs. detection) and the committed-off HEAD (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (50), the M4 mechanism itself (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A/ML-2A) — the decisive scenario: the COMBINED uncommitted edit (\`credential_guard.mode: warn\` + \`rules: credential_guard_mode_downgrade: off\`, both disk-only, HEAD only ever committing mode: block) must still be reported, self-discriminating against a contrast fixture where the SAME disk-side attack is applied but \`rules: ...: off\` is committed at HEAD alongside mode: block (legitimate, auditable) and is silenced — isolating commit-status of the off as the only variable; non-vacuity proved by temporarily reverting credentialGuardRuleSeverity to disk-only resolution (pre-ADR behavior), rebuilding bin/trackfw, confirming the detection arm goes red, then restoring and rebuilding (51), the .trackfw-baseline.json carve-out (Barreira B0/ML-1A/ML-2A) — a credential-guard violation listed in .trackfw-baseline.json by its full literal message continues to be reported, verified against the real BaselineFile{Violations,Warnings} shape and exact-message-match semantics in filterBaselineTagged (validator.go) rather than assumed from ADR prose, self-discriminating within a single fixture/single \`validate\` run: a filename_uniqueness (non-guard) violation listed in the SAME baseline by the same mechanism IS suppressed, proving the carve-out is specific to the 3 guard rules rather than the baseline format being broken outright (which would make the guard violation \"surviving\" prove nothing) — non-vacuity proved by temporarily dropping the \`&& !credentialGuardAnchoredRules[v.Rule]\` guard in filterBaselineTagged, rebuilding, confirming both violations get suppressed, then restoring and rebuilding (52), non-regression for non-guard rules (the most important scenario for confidence in M4, closing the \"blast radius\" question) — filename_uniqueness (not in credentialGuardAnchoredRules, default severity error) with \`rules: filename_uniqueness: off\` set disk-only and never committed continues to fully silence the rule exactly as before this ADR, proving diskRuleSeverity's disk-only path for the other ~38 rules received zero delta from M4; fixture carries a real git HEAD (committing a trackfw.yaml with no rules: block) specifically so the non-vacuity proof is meaningful — without a HEAD, credentialGuardRuleSeverity would fall back to disk-only regardless of anchoring, masking exactly the scope-leak this scenario exists to catch; non-vacuity proved by temporarily adding filename_uniqueness to credentialGuardAnchoredRules (simulating an M4 scope leak), rebuilding, confirming the silenced arm goes red (HEAD's absent rules: entry now resolves to the stricter default and wins over disk's off), then restoring and rebuilding (53), the GIT_* environment-variable bypass of the M4 anchoring (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1B/ML-2B) stays closed against both vectors found by ML-3B — GIT_DIR/GIT_WORK_TREE redirection to a decoy repository without a committed trackfw.yaml, and GIT_CONFIG_COUNT=abc failure-induction (unrelated to redirection, just makes the git subprocess exit 128) — each embedded with a raw \`git -C\` control proving the vector is a genuine attack (not inert) before testing the trackfw binary, plus a legitimate git-worktree control (worktree add/-C anchoring) proving normal worktree usage is unaffected; non-vacuity proved by temporarily reverting cleanGitEnv() (validator_git_exec.go) to return unfiltered os.Environ(), rebuilding bin/trackfw, confirming both detection arms go silent, then restoring and rebuilding (54), check-unknown-command-parity.sh (ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw, ML-2B) — gate created by ML-2A without a falsification scenario, closing the reported gap: canonical-message text drift via Python's format_unknown_command_error dropping the \` for \"{cmd_path}\"\` suffix, caught by the gate's own \"no-suggestion\" vacuity guard (55, baseline + detection), unknown-command exit code drift via Node's \`process.exit(1)\` changed to \`process.exit(3)\`, caught by assert_three_way's exit-code check (56, baseline + detection), and the \"Did you mean\" suggestion suppressed in Go by neutering formatUnknownCommandError's \`found\` branch (\`found && false\`, keeping \`found\` referenced so \`go build\` still succeeds), caught by the gate's \"with-suggestion\" vacuity guard for the go runtime, rebuilt via an isolated Go binary per Cenário 25/26 convention (57, baseline + detection) — one CLI sabotaged per discriminant, each baseline arm proving the clean cycle passes before its paired detection arm proves the corrupted cycle fails), the global fatal-error handler in the Node and Python entrypoints, PLUS a Go baseline arm locking the third CLI's already-clean behavior against future regression (REQ-2026-08-16-erro-nao-tratado-no-cli-node-vaza-stack-trace-caminhos-absolutos-e-versao-do-runtime, ML-1A) — Node baseline reproduces the REAL unmanaged-artifact production bug end to end (agents install + manifest/artifact tamper + agents update --force) against the unmodified bin/trackfw and proves stderr carries no stack frame, no npm/src/ install path and no \"Node.js vX\"; Node detection reverts bin/trackfw's parseAsync().catch(reportFatalError) to its pre-fix bare parseAsync() call in an isolated copy against the SAME repro and proves the leak reappears; Go baseline runs the SAME repro against the isolated Go binary already built for Cenários 27+ and proves stderr carries no panic:/goroutine/.go:N line — no detection arm, since no Go code was touched by this ML and there is no own-code regression to prove, only \"nos 3 CLIs\" (REQ AC1/roadmap action 4) to lock; Python baseline/detection hold a synthetic corrupted commands/roadmap.py:_cmd_list (unconditional raise, since the REQ found no Python path leaks today) IDENTICAL across both arms and vary only cli.py's try/except around args.func — present it prints \"trackfw roadmap: ...\" with no Traceback, reverted to the pre-fix bare call it prints a full Traceback (58), check-serve-address-parity.sh (ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao, ML-1C) — gate created by ML-1C without a falsification scenario, closing the reported gap: pypi/trackfw/commands/serve.py's server_cls((host, port), ...) reverted to server_cls((\"\", port), ...), reintroducing the exact wildcard-bind regression this REQ exists to fix, caught by the gate's own default-bind/py assertion (\"expected lsof to show 127.0.0.1:...\") — baseline arm proves the clean cycle passes across all 4 sub-checks (default loopback bind, ::1 bind, wildcard exposure warning, printed URL) before the paired detection arm proves the corrupted cycle fails (59, git-branch-guard: brecha de contorno via 'git switch -c' (60, baseline + deteccao) e falso-positivo por prosa em linha de mensagem de commit (61, baseline + deteccao) — ML-1A da ROADMAP-2026-08-16-higiene-sete-debitos, prefixo env/command antes de git e flag do checkout -b fora da primeira posicao de token (62, baseline + deteccao para cada sub-caso) — ML-4B corretivo do veredito BLOQUEAR do hades-tf, mesma ROADMAP, git branch <nome>/-c/-C/-m/-M, git worktree add -b, e env CHAVE=valor git ... (63, baseline + deteccao + auto-discriminacao para cada um dos 3 sub-casos) — ML-4C corretivo da reverificacao do hades-tf apos levantar o bloqueio, mesma ROADMAP)"
