@@ -485,3 +485,134 @@ func TestGitBranchGuard_EnvVarFallback_Blocks(t *testing.T) {
 		t.Fatalf("exit code: want 2 (fallback de env var), got %d (stderr: %s)", exitCode, errBuf.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-4C: git branch <nome> / -c/-C/-m/-M, git worktree add -b, env VAR=val.
+// ---------------------------------------------------------------------------
+
+func TestGitBranchGuard_BranchWithPositionalName_Blocks(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git branch nova"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (git branch <nome> cria branch), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "trackfw branch new") {
+		t.Errorf("mensagem deveria orientar para 'trackfw branch new', got: %s", stdout)
+	}
+}
+
+func TestGitBranchGuard_BranchDashC_Blocks(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git branch -c origem nova"}}`
+
+	code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (git branch -c copia/cria branch), got %d (stderr: %s)", code, stderr)
+	}
+}
+
+func TestGitBranchGuard_BranchDashM_Blocks(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git branch -m old new"}}`
+
+	code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (git branch -m renomeia/cria branch), got %d (stderr: %s)", code, stderr)
+	}
+}
+
+func TestGitBranchGuard_BranchNoArgs_Allows(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git branch"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 0 {
+		t.Errorf("exit code: want 0 (git branch sem args é leitura), got %d (stderr: %s)", code, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("allow deveria ser silencioso, got: %s", stdout)
+	}
+}
+
+func TestGitBranchGuard_BranchListFlags_Allows(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	for _, cmd := range []string{
+		"git branch -a", "git branch -r", "git branch -l", "git branch --list",
+		"git branch -v", "git branch -vv", "git branch --show-current",
+		"git branch --contains abc123", "git branch --merged", "git branch --no-merged",
+		"git branch --sort=-committerdate", "git branch --format=%(refname)",
+	} {
+		payload := `{"tool_input":{"command":"` + cmd + `"}}`
+		code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+		if code != 0 {
+			t.Errorf("%q: exit code want 0 (leitura), got %d (stderr: %s)", cmd, code, stderr)
+		}
+	}
+}
+
+func TestGitBranchGuard_BranchDelete_Allows(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	for _, cmd := range []string{"git branch -d nome", "git branch -D nome"} {
+		payload := `{"tool_input":{"command":"` + cmd + `"}}`
+		code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+		if code != 0 {
+			t.Errorf("%q: exit code want 0 (delete não cria branch), got %d (stderr: %s)", cmd, code, stderr)
+		}
+	}
+}
+
+func TestGitBranchGuard_WorktreeAddDashB_Blocks(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git worktree add -b nova ../nova"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (git worktree add -b cria branch), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stdout, "trackfw branch new") {
+		t.Errorf("mensagem deveria orientar para 'trackfw branch new', got: %s", stdout)
+	}
+}
+
+func TestGitBranchGuard_WorktreeAddWithoutDashB_Allows(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git worktree add ../nova existing-branch"}}`
+
+	code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 0 {
+		t.Errorf("exit code: want 0 (worktree add sem -b não cria branch), got %d (stderr: %s)", code, stderr)
+	}
+}
+
+func TestGitBranchGuard_EnvWithVarAssignment_Blocks(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"env FOO=bar git push"}}`
+
+	code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (env FOO=bar git push é a mesma classe de env git push), got %d (stderr: %s)", code, stderr)
+	}
+}
+
+func TestGitBranchGuard_EnvWithMultipleVarAssignments_Blocks(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"env FOO=bar BAZ=qux git commit -m x"}}`
+
+	code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (múltiplas atribuições antes de git), got %d (stderr: %s)", code, stderr)
+	}
+}
+
+func TestGitBranchGuard_EnvWithFlag_StillEvades(t *testing.T) {
+	// Declarado, não fechado: env com FLAG (não atribuição de variável) continua evadindo.
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"env -i git push"}}`
+
+	code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 0 {
+		t.Errorf("exit code: want 0 (env -i com flag continua fora do escopo declarado), got %d (stderr: %s)", code, stderr)
+	}
+}

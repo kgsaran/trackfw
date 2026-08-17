@@ -1093,17 +1093,19 @@ _GLOBAL_CREDENTIAL_GUARD_SH = _CG_HEADER + _CG_DETECTION_CORE + _CG_GLOBAL_TAIL
 # de string bash entre aspas duplas, usado nas três mensagens REASON) que uma string Python
 # não-raw interpretaria como sequência de escape inválida.
 _GIT_BRANCH_GUARD_SH = r"""#!/usr/bin/env bash
-# trackfw git branch guard — bloqueia git commit/push/checkout -b brutos por subagente
+# trackfw git branch guard — bloqueia git commit/push/checkout -b/branch/worktree add -b
+# brutos por subagente
 #
 # TRIPWIRE, NÃO FRONTEIRA DE SEGURANÇA: detecta o caso óbvio — comando git literal, sem
 # indireção de shell — não é defesa contra um agente adversário competente. Evasões que
 # exigem tokenizar como o bash (ex.: git${IFS}push, {git,push}, g""it push) permanecem
 # abertas por decisão: ver docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-
 # com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md. O stripping de
-# env/command abaixo só reconhece as formas SEM argumentos antes de git (env git ...,
-# command git ...) — env com flags ou atribuição de variável (env FOO=bar git ...,
-# env -i git ...) e command com flags (command -p git ...) continuam evadindo;
-# declarado, não fechado (ver AC5 da correção que adicionou esse stripping). A
+# env/command abaixo reconhece as formas SEM argumentos antes de git (env git ...,
+# command git ...) e o env seguido de uma sequência de atribuições CHAVE=valor
+# (env FOO=bar git ..., env FOO=bar BAZ=qux git ...) — env com FLAGS (env -i git ...,
+# env --ignore-environment git ...) e command com flags (command -p git ...) continuam
+# evadindo; declarado, não fechado (ver AC5 do ML que adicionou esse stripping). A
 # segmentação abaixo
 # (quote_aware_split) evita falso-positivo em texto citado — não deve ser lida como imune a
 # evasão por citação/tokenização do shell.
@@ -1292,8 +1294,25 @@ match_subcommand() {
     first="$1"
     base="${first##*/}"
     while [ "$base" = "env" ] || [ "$base" = "command" ]; do
+      is_env="$base"
       shift
       [ "$#" -gt 0 ] || break
+      if [ "$is_env" = "env" ]; then
+        while [ "$#" -gt 0 ]; do
+          case "$1" in
+            -*)
+              break
+              ;;
+            *=*)
+              shift
+              ;;
+            *)
+              break
+              ;;
+          esac
+        done
+        [ "$#" -gt 0 ] || break
+      fi
       first="$1"
       base="${first##*/}"
     done
@@ -1349,6 +1368,63 @@ match_subcommand() {
           esac
         done
         ;;
+      branch)
+        # git branch é majoritariamente leitura (sem args, -a, -r, -l, --list, -v/-vv,
+        # --show-current, --contains, --no-contains, --merged, --no-merged, --sort=,
+        # --format=, --points-at, -d/-D/--delete) — bloquear leitura seria pior que a
+        # brecha. Só bloqueia: (a) -c/-C/-m/-M/--copy/--move (cria/renomeia branch,
+        # qualquer posição de token) ou (b) um argumento posicional puro (nome da branch a
+        # criar), a menos que -d/-D/--delete também esteja presente (delete tem
+        # posicional legítimo — o nome a apagar). Flags de valor conhecidas (--contains,
+        # --no-contains, --sort, --format, --points-at, --merged, --no-merged) têm seu
+        # valor seguinte pulado quando vem em token separado, para não ser lido como
+        # posicional de criação.
+        branch_action=0
+        has_delete=0
+        saw_positional=0
+        skip_next=0
+        for tok2 in "$@"; do
+          if [ "$skip_next" = "1" ]; then
+            skip_next=0
+            continue
+          fi
+          case "$tok2" in
+            -c|-C|-m|-M|--copy|--copy=*|--move|--move=*)
+              branch_action=1
+              ;;
+            -d|-D|--delete|--delete=*)
+              has_delete=1
+              ;;
+            --contains|--no-contains|--sort|--format|--points-at|--merged|--no-merged)
+              skip_next=1
+              ;;
+            -*)
+              ;;
+            *)
+              saw_positional=1
+              ;;
+          esac
+        done
+        if [ "$has_delete" != "1" ]; then
+          if [ "$branch_action" = "1" ] || [ "$saw_positional" = "1" ]; then
+            echo "branch-create"
+            return 0
+          fi
+        fi
+        ;;
+      worktree)
+        if [ "${1:-}" = "add" ]; then
+          shift
+          for tok2 in "$@"; do
+            case "$tok2" in
+              -b|-B)
+                echo "worktree-add-b"
+                return 0
+                ;;
+            esac
+          done
+        fi
+        ;;
     esac
   done <<EOF
 $normalized
@@ -1364,6 +1440,12 @@ case "$SUBCOMMAND" in
     ;;
   switch-c)
     REASON="trackfw: git switch -c bruto bloqueado. Use \`trackfw branch new <type>/<slug>\`. Ver CLAUDE.md §1."
+    ;;
+  branch-create)
+    REASON="trackfw: git branch bruto bloqueado. Use \`trackfw branch new <type>/<slug>\`. Ver CLAUDE.md §1."
+    ;;
+  worktree-add-b)
+    REASON="trackfw: git worktree add -b bruto bloqueado. Use \`trackfw branch new <type>/<slug>\`. Ver CLAUDE.md §1."
     ;;
   commit)
     REASON="trackfw: git commit bruto bloqueado. Use \`trackfw commit -m '<mensagem>'\`. Ver CLAUDE.md §1."

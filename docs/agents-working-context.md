@@ -18707,3 +18707,49 @@ contra a saída de `trackfw validate` retornou vazia (nenhuma violação de
 
 Reexecutei `make quality` completo (0 FAIL) e `trackfw validate` (exit 0) depois destas 5
 correções — evidência em `/tmp/falsify-full2.log` e `/tmp/make-quality2.log` desta sessão.
+
+## apolo-tf — ML-4C (2026-08-17) — INÍCIO
+
+Executando ML-4C do `ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-
+da-release-7-0-0.md` (Wave 6, corretivo da reverificação do `hades-tf`, que levantou o bloqueio do
+ML-4A/ML-4B mas apontou dois furos na tabela AC5): fechar `git branch <nome>`/`-c/-C/-m/-M`,
+`git worktree add -b`, e `env CHAVE=valor git ...` no `git-branch-guard`, sem bloquear a bateria
+de leitura de `git branch` (`-a`, `-r`, `-l`, `--list`, `-v`, `--show-current`, `--contains`,
+`--merged`, `--sort=`, `--format=`, `-d`/`-D`).
+
+## apolo-tf — ML-4C (2026-08-17) — CONCLUÍDO
+
+**Arquivos tocados (7 cópias do guard + falsify + testes + roadmap + vault):**
+`internal/generators/scaffold.go` (`gitBranchGuardScript`, canônico),
+`internal/validator/validator_git_branch_guard_reference.go`, `npm/src/generators/hooks.js`,
+`npm/src/validator/index.js`, `pypi/trackfw/generators/init_gen.py`, `pypi/trackfw/validator.py`,
+`scripts/trackfw-git-branch-guard.sh` (referência versionada) — todas sincronizadas a partir do
+mesmo diff, byte-idênticas (confirmado via `discover --init` real nos 3 binários contra um dir
+limpo). `internal/generators/git_branch_guard_test.go` (+16 testes novos).
+`scripts/check-gates-falsify.sh` (Cenário 63, 3 sub-casos: `branch-create`, `worktree-add-b`,
+`env-var-assignment`, cada um baseline+detecção+auto-discriminação — total 124 cenários).
+
+**Decisão de design não óbvia** — `git branch` não pode ser "subcomando único = bloqueia" como
+`checkout -b`/`switch -c`: é majoritariamente leitura. Heurística implementada: bloqueia se
+(`-c/-C/-m/-M/--copy/--move` presente OU há argumento posicional puro) **e** `-d/-D/--delete`
+**não** está presente (delete tem posicional legítimo — o nome a apagar — e nunca deveria
+bloquear). Flags de valor conhecidas (`--contains`, `--sort`, `--format`, `--points-at`,
+`--merged`, `--no-merged`) têm o próximo token pulado para não virar falso positivo de
+"posicional de criação". Detalhe completo em
+`vault/notes/git-branch-guard-branch-create-heuristic-e-env-var-assignment-stripping-2026-08-17.md`.
+
+**Residual atualizado na tabela AC5:** `env`/`command` com FLAGS (`env -i`, `command -p`) ainda
+evadem — só a forma `env CHAVE=valor` foi fechada. A linha da tabela sobre isso foi reescrita para
+refletir o fechamento parcial. Também renumerei a menção a um "Cenário 63" hipotético na linha
+sobre falsificação do `check-attention-scripts-parity.sh` estendido para "Cenário 64" — esse
+número já é o Cenário 63 real deste ML.
+
+**Evidência:** `go build ./...` limpo · `go test ./internal/generators/... ./internal/validator/...`
+verde · `scripts/check-gates-falsify.sh` standalone: 124 cenários, 0 FAIL (log em
+`falsify-out.log` do scratchpad desta sessão) · `make quality` completo: exit 0 (log em
+`quality-out.log`) · `bin/trackfw validate` (binário local recompilado, não o `/opt/homebrew/bin/
+trackfw` v7.0.0 do PATH, que reportava divergência falsa por estar desatualizado): exit 0, 16
+warnings pré-existentes e não relacionados a este ML (gaps de ADR/Roadmap em outras REQs).
+
+Roadmap atualizado: ML-4C `✅ Concluído`, AC5 declarado revisado, checkboxes marcados. Handoff para
+`trackfw_architect` auditar e commitar.

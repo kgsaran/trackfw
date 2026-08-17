@@ -344,7 +344,7 @@ Cenários 60 e 61 **continuam reprovando** nos braços de detecção.
 ## Wave 6 — Segundo corretivo (achados da reverificação)
 
 ### ML-4C — Fecha `env VAR=val`, `git branch <nome>` e `git worktree add -b`
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Origem:** reverificação do `hades-tf`, que **levantou o bloqueio** e, ao mesmo tempo, apontou dois
 pontos em que a minha própria tabela AC5 estava incompleta. Ele tem razão nos dois.
 
@@ -378,11 +378,81 @@ do gerador (nunca editadas uma a uma) e o `corrupt_literal` dos Cenários 60/61/
 template mudar. Rodar `make quality` e conferir que os braços de detecção **ainda reprovam**.
 
 **Critérios de aceite:**
-- [ ] `git branch nova`, `git branch -c origem nova`, `git worktree add -b nova ..`, `env FOO=bar git push` → **exit 2**.
-- [ ] Leitura **não** bloqueia: `git branch`, `git branch -a`, `-r`, `--list`, `-v`, `--show-current` → **exit 0**.
-- [ ] Não-regressão completa da bateria já medida (push/commit/switch/checkout/prosa).
-- [ ] 6+ cópias byte-idênticas; Cenários 60/61/62 continuam reprovando; cenário novo para o que este ML fecha.
-- [ ] `make quality` verde.
+- [x] `git branch nova`, `git branch -c origem nova`, `git worktree add -b nova ..`, `env FOO=bar git push` → **exit 2**.
+- [x] Leitura **não** bloqueia: `git branch`, `git branch -a`, `-r`, `--list`, `-v`, `--show-current` → **exit 0**.
+- [x] Não-regressão completa da bateria já medida (push/commit/switch/checkout/prosa).
+- [x] 7 cópias byte-idênticas (confirmado por `discover --init` real em Go/Node/Python, diff byte-a-byte contra `scripts/trackfw-git-branch-guard.sh`); Cenários 60/61/62 continuam reprovando; Cenário 63 novo (3 sub-casos: `branch-create`, `worktree-add-b`, `env-var-assignment`), cada um com baseline + detecção + auto-discriminação.
+- [x] `make quality` verde.
+
+**Evidência de execução (própria, não relatada):**
+```
+== EVADE HOJE → agora exit 2 ==
+git branch nova                    exit=2
+git branch -c origem nova          exit=2
+git worktree add -b nova ..        exit=2
+env FOO=bar git push               exit=2
+
+== BATERIA DE LEITURA → exit 0 ==
+git branch (sem args)/-a/-r/-l/--list/-v/-vv/--show-current/
+  --contains x/--merged/--no-merged/--sort=.../--format=...   exit=0 (todas)
+git branch -d nome / -D nome                                  exit=0
+
+== NÃO-REGRESSÃO → exit 2 ==
+git push · git commit -m x · git switch -c/-C/--create ·
+git checkout -b · -q -b · --no-track -b · --orphan ·
+env git commit · command git push                             exit=2 (todas)
+
+== FALSO-POSITIVO → exit 0 ==
+trackfw commit -m "veja: git status; git push é bloqueado"     exit=0
+
+== FORA DE ESCOPO (declarado) → exit 0 ==
+git${IFS}push · {git,push} · g""it push · nice git push ·
+sudo git push · env -i git push                                exit=0 (todas)
+```
+
+`go build ./...` limpo · `go test ./internal/generators/... ./internal/validator/...` verde (16 testes novos
+adicionados a `git_branch_guard_test.go`) · `scripts/check-gates-falsify.sh` **124 cenários, 0 FAIL** (Cenário
+63a/63b/63c novos, todos OK; Cenários 60/61/62 continuam reprovando) · `make quality` verde (evidência completa
+abaixo, na seção de execução do roadmap).
+
+**Nota de execução — as 7 cópias, não 6+:** confirmado via `discover --init` real contra os 3 binários (Go,
+Node, Python) num diretório limpo: os três geram `scripts/trackfw-git-branch-guard.sh` byte-idêntico entre si
+e byte-idêntico à cópia de referência do repositório. `go build ./...`, `node -c` e `python3 -m ast` limpos
+nos 6 arquivos-fonte tocados (`internal/generators/scaffold.go`,
+`internal/validator/validator_git_branch_guard_reference.go`, `npm/src/generators/hooks.js`,
+`npm/src/validator/index.js`, `pypi/trackfw/generators/init_gen.py`, `pypi/trackfw/validator.py`) + a cópia de
+referência `scripts/trackfw-git-branch-guard.sh` = 7 no total.
+
+---
+
+### Auditoria do ML-4C pelo arquiteto — 33 payloads, execução própria
+
+```
+FECHOU (exit 2)      git branch nova · -c · -C · -m · git worktree add -b · env FOO=bar git push
+LEITURA OK (exit 0)  git branch · -a · -r · -l · --list · -v · -vv · --show-current
+                     --contains · --merged · --no-merged · --sort= · --format= · -d · -D
+NÃO REGREDIU (2)     push · commit · switch -c/-C/--create · checkout -b/-q -b/--no-track -b/--orphan
+                     env git commit · command git push · env env git push
+FALSO-POSITIVO (0)   trackfw commit -m "veja: git status; git push é bloqueado"
+DECLARADOS (0)       git${IFS}push · {git,push} · nice · sudo · env -i
+```
+
+As **15 formas de leitura** eram o risco que dominava este ML — bloquear `git branch -a` seria pior
+que a brecha, e foi um falso-positivo assim que originou esta REQ. Nenhuma bloqueia.
+
+`make quality` exit 0 · **124 cenários** · braços de detecção dos Cenários 60/61/62/63 continuam
+reprovando (o modo de falha que derrubou o 58 neste rebase).
+
+### 🔴 Armadilha de ambiente descoberta na auditoria
+
+O `trackfw` do `PATH` (`/opt/homebrew/bin/trackfw`) é um build **velho** e emite um aviso **falso**
+de divergência do script do guard. O agravante: `trackfw --version` diz `7.0.0` nos **dois** binários
+— o velho e o recém-compilado. **A versão não distingue o build**, então não há como perceber que o
+binário está desatualizado pela via óbvia.
+
+O exit code não muda (é warning, não violação), então as conclusões de `validate` desta REQ seguem
+válidas. Mas qualquer auditoria futura deve rodar `go build -o /tmp/tfw && /tmp/tfw validate`, nunca
+o binário do `PATH`.
 
 ---
 
@@ -402,8 +472,8 @@ nesta lista é omissão silenciosa.
 | **Evasões que exigem tokenização do bash** (`git${IFS}push`, `{git,push}`, `g""it push`) | Reproduzidas pelo arquiteto e **pré-existentes** — o guard da `main` já evadia todas. Fechá-las exige tokenizar como o bash, e o `ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita…` já decidiu que prevenção contra agente induzido não é alcançável, investindo em **detecção ancorada no `HEAD`**. Uma REQ de "fazer o guard tokenizar" nasceria contra esse ADR. | O que falta decidir é se o guard vira **tripwire declarado** ou merece exceção — isso é **emenda ao ADR-2026-08-12**, não REQ nova. O ML-4B já declara o tripwire no header. |
 | **Wrappers de comando em geral como prefixo** — medido por mim **depois** do ML-4B, atacando a lógica nova de stripping: `env -i git push`, `env --ignore-environment git push`, `ENV=1 env git push`, `nice git push`, `sudo git push` (todos `exit 0`). O ML-4B fechou a forma **nua** de `env`/`command` (e formas encadeadas: `env env`, `command env` etc. bloqueiam). | Enumerar wrappers é corrida sem fim — `nice`, `sudo`, `timeout`, `xargs`, `stdbuf`, `setsid`, e qualquer binário que receba um comando como argumento. Reconhecer todos exige resolver o comando efetivo, que é o mesmo problema de tokenização já declarado acima. | Coberto pela declaração de **tripwire** no header do script. Se virar exigência, é emenda ao `ADR-2026-08-12`, não REQ nova. |
 | **`ship` não tem modo push-only** | O comando acopla commit+push e exige algo staged; empurrar trabalho já commitado exige `reset --soft` como contorno. Funciona, mas é contorno. | Questão aberta na Emenda 1 do ADR |
-| **`env`/`command` COM argumentos ainda evadem o guard** (`env FOO=bar git push`, `env -i git commit -m "x"`, `command -p git push`) — reproduzido e confirmado por execução (exit 0 nos três) | O stripping do ML-4B só reconhece `env`/`command` **sem** argumentos antes de `git` (`env git ...`, `command git ...`). Reconhecer `env`/`command` com flags/atribuições exigiria entender a sintaxe própria desses dois builtins (não tokenização geral do bash) — mesma classe "o agente emite sem estar tentando evadir" que o ML-4B fechou para as formas simples, mas custo incremental novo, não coberto pela ação 4 original. Declarado no header do script (7 cópias), não fechado. | Fechar exige pular tokens `-*`/`*=*` após `env`/`command` antes de reler `base` — pequeno, mas re-sincroniza as 7 cópias e retarget do Cenário 62a. Fica para ML seguinte ou emenda a este, se o arquiteto priorizar. |
-| **A cobertura NOVA de `check-attention-scripts-parity.sh` (`trackfw-git-branch-guard.sh`) não tem falsificação própria** — só o matcher do guard foi falsificado (Cenário 62). Por `ADR-2026-07-26-principios-de-design-de-gates-verificaveis` (citado no AC1), um gate sem falsificação é "não-verificado" — mesmo padrão que motivou o Cenário 48 quando o ML-0B estendeu este gate para `credential-guard`. Risco residual considerado baixo, não zero: o Cenário 43 já prova que o **mecanismo** de diff do gate (o loop `go-vs-node`/`go-vs-py`) é não-vacuoso contra deriva real (drift no `attention-cleanup` do Python); acrescentar um 4º script reusa o mesmo loop. Ausência do arquivo falha alto, no guard `-s` de vacuidade, antes de qualquer diff. Deriva por-stack do literal já é pega independentemente pelos 3 testes de byte-identidade dedicados (Go/Node/Python) que rodei nesta sessão. | Caberia um Cenário 63 (ou extensão do 43) sabotando especificamente a cópia Node ou Python do `GIT_BRANCH_GUARD_SCRIPT`/`_GIT_BRANCH_GUARD_SH` e provando que o `go-vs-node`/`go-vs-py` do gate estendido reprova — não criado aqui, fora do escopo literal da ação 5 (que pedia falsificação do guard, não da extensão do gate). |
+| **`env`/`command` COM argumentos ainda evadem o guard** (`env -i git push`, `command -p git push`) — reproduzido e confirmado por execução (exit 0 nos três) | **Parcialmente fechado pelo ML-4C**: o ML-4C passou a reconhecer `env` seguido de uma sequência de atribuições `CHAVE=valor` (`env FOO=bar git push`, `env FOO=bar BAZ=qux git push` → agora bloqueiam, ver Cenário 63c de `check-gates-falsify.sh`). O que permanece aberto é `env`/`command` com **FLAGS** (`env -i git push`, `env --ignore-environment git push`, `command -p git push`) — reconhecer isso exigiria entender a sintaxe própria de flags desses dois builtins, custo incremental novo não coberto pela ação 3 do ML-4C. Declarado no header do script (7 cópias), não fechado. | Fechar exige reconhecer as flags de `env`/`command` (não só `CHAVE=valor`) antes de reler `base` — pequeno, mas re-sincroniza as 7 cópias e um novo cenário de falsificação. Fica para ML seguinte ou emenda a este, se o arquiteto priorizar. |
+| **A cobertura NOVA de `check-attention-scripts-parity.sh` (`trackfw-git-branch-guard.sh`) não tem falsificação própria** — só o matcher do guard foi falsificado (Cenários 62 e 63). Por `ADR-2026-07-26-principios-de-design-de-gates-verificaveis` (citado no AC1), um gate sem falsificação é "não-verificado" — mesmo padrão que motivou o Cenário 48 quando o ML-0B estendeu este gate para `credential-guard`. Risco residual considerado baixo, não zero: o Cenário 43 já prova que o **mecanismo** de diff do gate (o loop `go-vs-node`/`go-vs-py`) é não-vacuoso contra deriva real (drift no `attention-cleanup` do Python); acrescentar um 4º script reusa o mesmo loop. Ausência do arquivo falha alto, no guard `-s` de vacuidade, antes de qualquer diff. Deriva por-stack do literal já é pega independentemente pelos 3 testes de byte-identidade dedicados (Go/Node/Python) que rodei nesta sessão. | Caberia um Cenário 64 (ou extensão do 43) sabotando especificamente a cópia Node ou Python do `GIT_BRANCH_GUARD_SCRIPT`/`_GIT_BRANCH_GUARD_SH` e provando que o `go-vs-node`/`go-vs-py` do gate estendido reprova — não criado aqui, fora do escopo literal da ação 5 do ML-4B (que pedia falsificação do guard, não da extensão do gate). |
 
 ---
 
