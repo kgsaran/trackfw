@@ -18753,3 +18753,68 @@ warnings pré-existentes e não relacionados a este ML (gaps de ADR/Roadmap em o
 
 Roadmap atualizado: ML-4C `✅ Concluído`, AC5 declarado revisado, checkboxes marcados. Handoff para
 `trackfw_architect` auditar e commitar.
+
+## apolo-tf — ML-1A (2026-08-17) — INÍCIO
+
+Branch `fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao`
+(criada pelo arquiteto). Executando ML-1A do
+`docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`
+(Wave 1, bloqueia as demais): `scripts/trackfw-git-branch-guard.sh` (e as 7 cópias) vira **no-op**
+(exit 0, sem bloquear nada) quando não houver `trackfw.yaml` na raiz do repositório corrente —
+pré-requisito de segurança operacional para a Wave 2 (fiação global do guard), que sem isso
+bloquearia `git commit`/`git push` em toda a máquina do usuário, com ou sem projeto trackfw. Lido
+o ADR `docs/adr/ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-trackfw.md` na
+íntegra antes de codar.
+
+## apolo-tf — ML-1A (2026-08-17) — CONCLUÍDO
+
+**Decisão de design registrada (era responsabilidade minha, não do roadmap):** raiz do projeto
+localizada subindo diretórios a partir do cwd FÍSICO (`pwd -P`, resolve symlink) via parameter
+expansion/`test -f` puros — **sem** `git rev-parse --show-toplevel`. Medido: caminhada por
+builtins ≈0,77 ms/chamada contra ≈16 ms/chamada do `git rev-parse` (fork+exec) — ~21x mais caro —
+e `git rev-parse` sai 128 fora de repositório git (precisa tratamento extra) e resolve a raiz do
+**git**, não a de `trackfw.yaml` (resposta errada em submódulo/repo aninhado). Guard roda em toda
+chamada de ferramenta do agente — custo do fork por chamada era o discriminante decisivo.
+
+**Arquivos tocados (7 cópias do guard + testes 3 stacks + falsify + roadmap + vault):**
+`internal/generators/scaffold.go` (`gitBranchGuardScript`, bloco "--- 0. No-op..." inserido antes
+do parsing de comando), `internal/validator/validator_git_branch_guard_reference.go`,
+`npm/src/generators/hooks.js` (`GIT_BRANCH_GUARD_SCRIPT`, `${...}` escapado como `\${...}` no
+template literal), `npm/src/validator/index.js` (idem), `pypi/trackfw/generators/init_gen.py`
+(`_GIT_BRANCH_GUARD_SH`, raw string, sem escaping necessário), `pypi/trackfw/validator.py` (idem),
+`scripts/trackfw-git-branch-guard.sh` (referência versionada, regenerada via
+`GenerateGitBranchGuardScript` num módulo Go isolado — nunca editada à mão). Confirmado
+byte-idêntico nos 3 runtimes via `discover --init` real (Go/Node/Python) + `check-attention-scripts-parity.sh`.
+
+**Testes**: `internal/generators/git_branch_guard_test.go` (+6 testes: fixture "com trackfw.yaml"
+virou padrão para os testes de bloqueio pré-existentes; fixture par "sem trackfw.yaml" para os
+novos testes de no-op, incl. não-vacuidade e subdiretório profundo). `npm/tests/git_branch_guard.test.js`
+(mesmo padrão, +5 testes). `pypi/tests/test_git_branch_guard.py` (**achado**: os `subprocess.run`
+das 3 classes de teste que exercitam bloqueio NUNCA passavam `cwd=` — rodavam com o cwd AMBIENTE
+do processo pytest; corrigido para `cwd=self.tmpdir` explícito em todas + nova classe
+`TestGitBranchGuardNoOpOutsideProject`, 6 testes). `test_gera_script_executavel` invertido
+(`assertNotIn('trackfw.yaml', ...)` → `assertIn`, comentário desatualizado corrigido).
+
+**`scripts/check-gates-falsify.sh`**: mesmo achado do Python se repetia no gate — `assert_guard_exit`
+nunca fazia `cd`, herdando o cwd ambiente de quem chama o script. Cenários 60-63 (que testam
+bloqueio) ficariam silenciosamente dependentes do cwd de quem roda `make quality`. Fix sem mudar a
+assinatura do helper (usado só pelos Cenários 60-64): `cd` para um fixture COM `trackfw.yaml` logo
+antes do Cenário 60, `cd` de volta ao original logo depois do Cenário 63 — todo `assert_guard_exit`
+do bloco herda o cwd correto. Cenário 64 novo: 4 braços (baseline sem trackfw.yaml → 0; baseline
+com trackfw.yaml → 2, reverse-vacuity; detecção — corrompe `[ "$_TRACKFW_FOUND" -eq 1 ] || exit 0`
+→ 2 mesmo sem trackfw.yaml; auto-discriminação — mesmo build corrompido, dentro de projeto trackfw
+continua bloqueando). Total 125 cenários.
+
+**Evidência:** `go build ./...` limpo · `go test ./...` verde (inclui 24 testes de
+`git_branch_guard_test.go`, incl. os 6 novos) · `node --test`/`npm test`: 611 passed, 0 failed ·
+`PYTHONPATH=pypi python3 -m pytest pypi/tests/`: 1290 passed, 14 subtests · `check-gates-falsify.sh`
+standalone: 125 cenários, 0 FAIL, incluindo as linhas `OK` dos braços de detecção dos Cenários 60-64
+· `make quality` completo: exit 0 · `bin/trackfw validate` (binário local recompilado): exit 0, 17
+warnings pré-existentes não relacionados a este ML.
+
+Nota de vault: `vault/notes/git-branch-guard-noop-outside-project-fixtures-and-falsify-cwd-2026-08-17.md`
+(as duas armadilhas de fixture/cwd ambiente + a medição que descartou `git rev-parse`).
+
+Roadmap `ML-1A` marcado `✅ Concluído` (pendente de auditoria do arquiteto antes de fechar
+oficialmente — Wave 2 bloqueada até essa auditoria confirmar o no-op). Handoff para
+`trackfw_architect` auditar e commitar. Nenhum `git commit`/`push`/branch executado por mim.

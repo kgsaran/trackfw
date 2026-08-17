@@ -61,7 +61,8 @@ com roadmap próprio **depois** deste — as duas tocam os mesmos arquivos de va
 ## Wave 1 — No-op (bloqueia tudo o mais)
 
 ### ML-1A — Script vira no-op fora de projeto trackfw
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** 🔄 Em andamento — **auditoria do arquiteto REPROVOU**: regressão de EPIPE (ver ML-1B)
+· **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** template do guard no gerador Go + espelhos Node/Python + referência em `scripts/`
 (7 cópias, todas pelo gerador), testes dos 3, `scripts/check-gates-falsify.sh`.
 
@@ -72,17 +73,101 @@ raiz do repositório corrente. Dentro de projeto trackfw, comportamento **inalte
 `trackfw.yaml`? usar `git rev-parse --show-toplevel`?) e o custo disso, que roda em **toda** chamada
 de ferramenta. Meça, não presuma — se subir diretórios custar caro, diga.
 
+**Decisão registrada:** caminhada por diretórios a partir do cwd FÍSICO (`pwd -P`) usando só
+parameter expansion (`${_dir%/*}`) e `test -f` — **sem** `git rev-parse --show-toplevel`. Medido:
+≈0,77 ms/chamada (builtins, sem fork) contra ≈16 ms/chamada do `git rev-parse` (fork+exec) — ~21x
+mais caro; `git rev-parse` também sai 128 fora de um repositório git e resolve a raiz do **git**,
+não a de `trackfw.yaml` (resposta errada em submódulo/repo aninhado). Guard roda em toda chamada de
+ferramenta — o custo do fork por chamada foi o discriminante decisivo.
+
 **Critérios de aceite:**
-- [ ] Repo **sem** `trackfw.yaml`: `git push`, `git commit`, `git branch nova` → **exit 0**.
-- [ ] Repo **com** `trackfw.yaml`: bateria completa inalterada — `git push`, `git commit`,
+- [x] Repo **sem** `trackfw.yaml`: `git push`, `git commit`, `git branch nova` → **exit 0**.
+- [x] Repo **com** `trackfw.yaml`: bateria completa inalterada — `git push`, `git commit`,
       `switch -c/-C/--create`, `checkout -b/-q -b/--no-track -b/--orphan`, `git branch nova`,
       `worktree add -b`, `env FOO=bar git push`, `env git`, `command git` → **exit 2**;
       leitura (`git branch`, `-a`, `-r`, `--list`, `-v`, `--show-current`, `-d`, `-D`) → **exit 0**;
       prosa (`trackfw commit -m "veja: git status; git push é bloqueado"`) → **exit 0**.
-- [ ] Subdiretório de projeto trackfw **continua** protegido (a raiz é encontrada subindo).
-- [ ] 7 cópias byte-idênticas; `trackfw validate` sem divergência de integridade.
-- [ ] Cenário de falsificação novo (baseline + detecção) para o no-op.
-- [ ] **Cenários 60/61/62/63 continuam reprovando** nos braços de detecção — cole as linhas.
+- [x] Subdiretório de projeto trackfw **continua** protegido (a raiz é encontrada subindo).
+- [x] 7 cópias byte-idênticas; `trackfw validate` sem divergência de integridade.
+- [x] Cenário de falsificação novo (baseline + detecção) para o no-op — Cenário 64, 4 braços
+      (baseline sem/com trackfw.yaml + detecção + auto-discriminação).
+- [x] **Cenários 60/61/62/63 continuam reprovando** nos braços de detecção — cole as linhas
+      (ver relatório em `docs/agents-working-context.md`, entrada `apolo-tf — ML-1A (2026-08-17) —
+      CONCLUÍDO`, e a saída bruta do gate).
+- [x] `make quality` verde.
+
+**Evidência (colada, ver relatório completo em `docs/agents-working-context.md`):**
+```
+OK   [falsify/git-branch-guard/switch-c/detection-catches-bypass]: exit 0
+OK   [falsify/git-branch-guard/prose-in-message/detection-catches-regression]: exit 2
+OK   [falsify/git-branch-guard/env-command-prefix/detection-catches-bypass-env]: exit 0
+OK   [falsify/git-branch-guard/env-command-prefix/detection-catches-bypass-command]: exit 0
+OK   [falsify/git-branch-guard/checkout-flag-position/detection-catches-bypass-q-b]: exit 0
+OK   [falsify/git-branch-guard/checkout-flag-position/detection-catches-bypass-no-track]: exit 0
+OK   [falsify/git-branch-guard/branch-create/detection-catches-bypass-positional]: exit 0
+OK   [falsify/git-branch-guard/worktree-add-b/detection-catches-bypass]: exit 0
+OK   [falsify/git-branch-guard/env-var-assignment/detection-catches-bypass-single]: exit 0
+OK   [falsify/git-branch-guard/env-var-assignment/detection-catches-bypass-multiple]: exit 0
+OK   [falsify/git-branch-guard/no-op-outside-project/baseline-noop-without-trackfw-yaml]: exit 0
+OK   [falsify/git-branch-guard/no-op-outside-project/baseline-blocks-with-trackfw-yaml]: exit 2
+OK   [falsify/git-branch-guard/no-op-outside-project/detection-catches-bypass-without-trackfw-yaml]: exit 2
+OK   [falsify/git-branch-guard/no-op-outside-project/detection-does-not-break-inside-project]: exit 2
+Falsification checks passed (all 125 scenarios, ...)
+```
+`go build ./...` limpo · `go test ./...` verde · `npm test`: 611 passed, 0 failed ·
+`PYTHONPATH=pypi python3 -m pytest pypi/tests/`: 1290 passed, 14 subtests · `make quality`: exit 0 ·
+`bin/trackfw validate` (binário local): exit 0, 17 warnings pré-existentes não relacionados.
+
+---
+
+### 🔴 Auditoria do arquiteto — REPROVADA por regressão não testada
+
+Tudo o que o ML-1A prometeu **confere**, medido por mim: no-op fora de projeto (7 payloads → exit 0),
+bateria completa dentro do projeto inalterada (10 bloqueios + 4 leituras + prosa), subdiretório
+profundo continua protegido, 7 cópias sem divergência de integridade.
+
+**Mas o ML introduziu uma regressão que ele não testou.** O no-op sai em `exit 0` na **linha 42**,
+**antes** de o script ler o stdin (`CMD_RAW`, linha 79). Quem escreve o JSON no pipe recebe **EPIPE**:
+
+```
+guard desta branch, fora de projeto:   guard=0  escritor=ERRO   (5/5 rodadas)
+guard da main (antes do ML-1A):        guard=2  escritor=limpo  (3/3 rodadas)
+```
+
+Reprodutível em **100%** das rodadas, inclusive com payload pequeno — não é corrida de timing. Antes
+deste ML **todos** os caminhos de saída ficavam depois da leitura do stdin (`:79`, `:364`); este é o
+primeiro `exit` pré-leitura, logo a regressão é dele.
+
+**Por que bloqueia:** o sintoma que originou toda esta frente foi justamente **ruído de hook** no
+terminal do usuário (`hook error ... non-blocking status code` no CMDB). Trocar um erro de hook por
+outro seria fechar o ciclo no lugar errado.
+
+**Não verificado por mim:** a alegação de custo (~0,77 ms/chamada contra ~16 ms do `git rev-parse`).
+Minha medição foi dominada pelo startup do Python e não discrimina. A **decisão** de usar builtins em
+vez de `git rev-parse` está bem fundamentada por outros motivos que confirmei — `git rev-parse` sai
+128 fora de repositório git e resolve a raiz do **git**, não a do `trackfw.yaml`, dando resposta
+errada em submódulo e repo aninhado.
+
+---
+
+### ML-1B — Consumir o stdin antes do no-op
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** template do guard no gerador (7 cópias), `scripts/check-gates-falsify.sh`, testes.
+
+**Ação:** garantir que o script **consuma o stdin** antes de qualquer saída antecipada — mover a
+checagem do no-op para depois da leitura, ou drenar o stdin antes do `exit 0` da linha 42. A escolha
+é sua; o critério é o escritor nunca receber EPIPE.
+
+**Cuidado:** não desfaça o ganho de custo. A parte cara era o `fork` do `git rev-parse`, não ler o
+stdin — mas confirme, não presuma.
+
+**Critérios de aceite:**
+- [ ] Fora de projeto trackfw: guard → **exit 0** e **escritor sem erro**, em 5 rodadas seguidas.
+- [ ] Payload grande (>64 KB, estoura o buffer do pipe): escritor sem erro.
+- [ ] Dentro do projeto: bateria completa inalterada (bloqueios, leitura, prosa) — não regrida o que
+      o ML-1A acertou.
+- [ ] Cenário de falsificação cobrindo **o escritor não receber EPIPE** — é o que ninguém testou.
+- [ ] Cenários 60–64 continuam reprovando nos braços de detecção; cole as linhas.
 - [ ] `make quality` verde.
 
 ---
