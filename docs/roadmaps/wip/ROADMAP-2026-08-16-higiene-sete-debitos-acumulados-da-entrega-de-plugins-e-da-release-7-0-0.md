@@ -341,6 +341,51 @@ Cenários 60 e 61 **continuam reprovando** nos braços de detecção.
 
 ---
 
+## Wave 6 — Segundo corretivo (achados da reverificação)
+
+### ML-4C — Fecha `env VAR=val`, `git branch <nome>` e `git worktree add -b`
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Origem:** reverificação do `hades-tf`, que **levantou o bloqueio** e, ao mesmo tempo, apontou dois
+pontos em que a minha própria tabela AC5 estava incompleta. Ele tem razão nos dois.
+
+**Confirmado por mim (`exit 0` = evade):**
+```
+git branch nova              cria branch · o guard se chama git-branch-guard
+git branch -c origem nova    idem
+git worktree add -b nova ..  idem
+env FOO=bar git push         mesma classe da forma nua que o ML-4B fechou
+git checkout --orphan nova   -> exit 2 (já fechado como efeito colateral do ML-4B)
+```
+
+**Por que estes saem da tabela de declaração e viram correção:**
+- `git branch` e `worktree add -b` **criam branch**. Um guard chamado *git-branch-guard* que deixa
+  passar a forma mais direta de criar branch não é tripwire incompleto, é tripwire furado no
+  próprio alvo. É a mesma classe do `switch -c` que o ML-1A fechou.
+- `env FOO=bar git push` é o mesmo argumento que o ML-4B usou para a forma nua: é o que um agente
+  emite **sem estar tentando evadir**. Arquivá-lo ao lado de `nice`/`sudo` foi erro meu de
+  classificação — o `hades-tf` nomeou, e procede.
+
+**Ações:**
+1. Bloquear `git branch <nome>` e `git branch -c/-C/-m/-M <nome>`. **Não** bloquear as formas de
+   leitura: `git branch` sem argumento, `-a`, `-r`, `-l`, `--list`, `-v`, `--show-current`,
+   `--contains`, `--merged`. Falso-positivo aqui é pior que a brecha: listar branch é operação de
+   leitura que agentes fazem o tempo todo.
+2. Bloquear `git worktree add` quando houver `-b`/`-B`.
+3. No stripping de prefixo, pular `env` seguido de qualquer sequência de `CHAVE=valor`.
+
+**🔴 Onde pode falhar em silêncio:** mesmos dois modos das vezes anteriores — as **6+ cópias** saem
+do gerador (nunca editadas uma a uma) e o `corrupt_literal` dos Cenários 60/61/62 vira inerte se o
+template mudar. Rodar `make quality` e conferir que os braços de detecção **ainda reprovam**.
+
+**Critérios de aceite:**
+- [ ] `git branch nova`, `git branch -c origem nova`, `git worktree add -b nova ..`, `env FOO=bar git push` → **exit 2**.
+- [ ] Leitura **não** bloqueia: `git branch`, `git branch -a`, `-r`, `--list`, `-v`, `--show-current` → **exit 0**.
+- [ ] Não-regressão completa da bateria já medida (push/commit/switch/checkout/prosa).
+- [ ] 6+ cópias byte-idênticas; Cenários 60/61/62 continuam reprovando; cenário novo para o que este ML fecha.
+- [ ] `make quality` verde.
+
+---
+
 ## Declaração de não-correção (AC5)
 
 Itens tocados por esta REQ que **não** foram corrigidos aqui, cada um com motivo e destino. Nada

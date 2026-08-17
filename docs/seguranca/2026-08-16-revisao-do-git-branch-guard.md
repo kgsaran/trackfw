@@ -222,3 +222,165 @@ bypass de política. Duas direções seguras, sem essa armadilha:
 
 Confirmo que os demais itens da higiene (i18n, `site/`, `cli-parity.md`, `ship`) não foram tocados
 por esta revisão — fora do escopo desta barreira, como o roadmap determina.
+
+---
+
+## Reverificação do bloqueio (ML-4B) — `hades-tf`, 2026-08-17
+
+> Escopo apertado: só os dois motivos do bloqueio original (claim "quote-aware" sem qualificação;
+> ausência de gate de paridade 3-stacks) e a lógica NOVA introduzida pelo corretivo (stripping de
+> `env`/`command`, matcher de `checkout` varrendo todos os tokens). Método: leitura do diff +
+> execução direta de `./scripts/trackfw-git-branch-guard.sh` contra bateria adversarial própria,
+> incluindo confirmação em repositório-escrachadinho (`/tmp/hades_scratch`) de que os vetores que
+> encontrei realmente executam (ou não) no git real — não só no guard.
+
+### Veredito: **LEVANTAR O BLOQUEIO.**
+
+Os dois motivos que fundamentaram o bloqueio do ML-4A estão fechados, confirmados por execução:
+- Header do script (7 cópias) agora diz "TRIPWIRE, NÃO FRONTEIRA DE SEGURANÇA", citando o
+  `ADR-2026-08-12`. Nenhuma ocorrência de "quote-aware" sem qualificação restante (`grep -n
+  "quote-aware" scripts/trackfw-git-branch-guard.sh` só retorna a linha qualificada do comentário
+  da função `quote_aware_split`, que descreve o que a função faz — não uma alegação de robustez).
+- `scripts/check-attention-scripts-parity.sh` cobre `trackfw-git-branch-guard.sh` nos dois loops
+  (linhas 141 e 158) — confirmado por leitura e pela presença do script nas duas listas.
+
+Nenhum dos dois motivos do bloqueio dependia de fechar as evasões pré-existentes (A1–A4/B1 do
+parecer original) — eu mesmo escrevi isso na seção "Base do veredito" de 2026-08-16. Manter o
+bloqueio agora, com os dois motivos fechados, contradiria o padrão que eu mesmo declarei.
+
+### A) A lógica nova de stripping abriu algo que eu não vi?
+
+Ataquei o stripping de `env`/`command` e o matcher de `checkout` com vetores que a auditoria do
+arquiteto não cobriu. Resultado, tudo medido por execução:
+
+```
+BLOQUEIAM (consistente com o que o ML-4B prometeu):
+  env git push · command git push · env command git push · command env git push
+  env env env git push · env git checkout -b x
+
+EVADEM (já declarados pelo arquiteto em AC5, confirmo por execução própria, nada novo):
+  env -i git push · env --ignore-environment git push · ENV=1 env git push
+  env FOO=bar git push · command -p git push · env -- git push
+  env FOO=bar env git push · env env FOO=bar git push
+```
+
+**Nenhuma regressão.** Testei se o stripping poderia fazer o guard deixar de bloquear algo que
+bloqueava antes — três eixos, todos negativos:
+- Nome literal `env`/`command` como argumento do git (`git checkout -b env`, `git commit -m env`,
+  `git push env master`) — todos continuam `exit 2`. O `while` só descasca prefixos que ocupam a
+  posição de **primeiro token do segmento**, nunca um argumento posicional.
+- Prosa legítima citando "env"/"command" em mensagem de commit (`trackfw commit -m "env is
+  nice"`) — `exit 0`, sem falso-positivo novo.
+- Formas simples que o ML-4B prometeu fechar continuam fechadas mesmo com prefixo (`env git
+  checkout -q -b x`, `command git switch -c x`) — `exit 2`.
+
+**Vetor que investiguei a pedido do revisor e que resultou não-achado, registro para não repetir o
+trabalho:** o laço de flags globais (`-C|-c|--work-tree|--git-dir|--namespace)... shift 2`) pode, em
+tese, "comer" o subcomando real como se fosse o valor da flag — ex. `git -c checkout -b nova`,
+`git --git-dir checkout -b nova`, `git --namespace push`. Testei os quatro contra o guard: **todos
+`exit 0` (evadem no matcher)**. Mas testei também contra o **git real** em repo-escrachadinho
+(`/tmp/hades_scratch`, `git 2.x` do macOS) para confirmar se a evasão é real ou só um artefato do
+matcher:
+- `git -c checkout -b nova` → git real rejeita (`unknown option: -b`, porque `-c` exige a forma
+  `name=value`, e "checkout" não é `name=value` — git nunca chega a interpretar "-b" como flag de
+  subcomando).
+- `git -C checkout -b nova` → git real rejeita (`fatal: cannot change to 'checkout': No such file or
+  directory` — "checkout" é consumido como *caminho* de `-C`, nunca como subcomando).
+- `git --git-dir checkout -b nova` → git real rejeita (`unknown option: -b` — mesma dinâmica: `checkout`
+  vira o valor de `--git-dir`, sobra só `-b`/`nova`, e como `-b` não é uma flag global válida antes de
+  haver um subcomando, git aborta).
+- `git --namespace push` (forma space-separated) → mesma dinâmica, git real aborta com `usage: git...`
+  sem nunca invocar `push`.
+
+**Conclusão sobre este vetor: não é achado, é um descasamento de modelo mental sem efeito prático.**
+O guard "erra" no sentido de que sua leitura de `-c/-C/--git-dir/--namespace` como "sempre consome um
+valor e sobra um subcomando depois" é otimista — mas o próprio git é **mais restritivo** que essa
+leitura (`-c` exige `=`, `-C`/`--git-dir` tratam o token seguinte como caminho, não como argumento
+posicional recuperável), então a sequência de tokens que faria o guard evadir nunca é a mesma
+sequência que faz o git real executar `checkout -b`/`push`. Não fechar isso é correto — fechar
+introduziria complexidade no matcher sem nenhum ganho de segurança real. Não entra em AC5 como
+residual (não é um residual, é um não-achado) — mas registro aqui para o próximo revisor não repetir
+os ~20 min de verificação em `/tmp/hades_scratch`.
+
+### B) O matcher novo do `checkout` tem buraco?
+
+Confirmei por execução: `-q -b`, `--no-track -b`, `--quiet -b`, flag antes de qualquer posição
+(`git checkout HEAD -b x`, `git checkout -- file -b`) — todos `exit 2`, o scan varre mesmo com
+argumentos posicionais no meio. `--orphan` sozinho também fecha agora (`git checkout --orphan x` →
+`exit 2`), o que o parecer original de 2026-08-16 tinha listado como aberto (B2) — **fechado como
+efeito colateral do scan completo**, não estava na lista de ações do ML-4B mas resultou do mesmo
+código.
+
+Ainda abertos, sem mudança desde o parecer original, nenhum é regressão nem foi tocado por este ML:
+- `git worktree add -b nova ../wt` → `exit 0`, ainda cria branch de verdade. Já registrado como B2
+  no parecer original, fora do escopo textual do item 2 do ML-4B (que falava só de `checkout`/
+  `switch`). Continua sem entrada própria na tabela AC5 do roadmap — ver item (C) abaixo.
+- `git branch nova` (sem checkout) → `exit 0`, por design — bloquear quebraria o próprio protocolo
+  de higiene de branch do `CLAUDE.md` global (`git branch -d/-D`, `git branch -r --no-merged`). Não é
+  residual, é decisão de design correta.
+- `git branch -c origem nova` (copia branch) → `exit 0`. Cria branch nova de verdade sem passar por
+  `trackfw branch new`. Mesma classe de `git worktree add -b` — nunca mencionado em nenhum dos dois
+  pareceres nem em AC5.
+
+Não encontrei nada que faça o guard **parar de bloquear** uma forma que bloqueava antes do ML-4B —
+o scan é estritamente mais abrangente (percorre todos os tokens) que o `if [ "${1:-}" = "-b" ]`
+anterior, e "mais abrangente" nesse tipo de scan só pode aumentar detecção, nunca diminuir (não há
+`return`/`break` prematuro que uma flag adicional possa provocar — verifiquei o `for tok2 in "$@"`,
+ele sempre varre até o fim antes de desistir).
+
+### C) A declaração AC5 é honesta ou foi suavizada?
+
+Honesta na moldura (nenhuma linha nega ou minimiza o que mede), mas **incompleta em dois pontos** —
+não por má-fé, por o autor (interessado, como o próprio texto reconhece) ter fechado o texto antes de
+uma segunda rodada adversarial:
+
+1. **`env`/`command` COM argumentos não deveria ficar como residual permanente — deveria virar item
+   de correção do próximo ML, não ficar arquivado ao lado de `nice`/`sudo`/`timeout`.** A própria
+   linha 266-267 do roadmap argumenta: *"Corrigir só as flags do checkout e deixar env git/command
+   git abertas seria incoerente: são o mesmo custo e a mesma classe."* Esse argumento vale, com a
+   mesma força, um passo adiante: `env env git push` → `exit 2`, mas `env FOO=bar git push` →
+   `exit 0` — o guard bloqueia a forma contrivada e deixa passar a forma natural (`env` com
+   atribuição de variável é o uso **mais comum** de `env`, mais comum que `env git push` puro). A
+   própria linha 361 da tabela AC5 já concede que o fix é "pequeno" (pular tokens `-*`/`*=*` no
+   `while` existente). O argumento de "corrida sem fim" da linha 358 (`nice`/`sudo`/`timeout`) é
+   válido para programas arbitrários que recebem um comando como argumento — não é a mesma classe de
+   `env`/`command` com argumentos, que são os dois binários que o guard **já escolheu** reconhecer.
+   Meu veredito: não é motivo para reabrir o bloqueio, mas recomendo fortemente que a tabela AC5
+   reclassifique esta linha de "aceito como tripwire" para "próximo ML nomeado", não uma linha a mais
+   ao lado de wrappers arbitrários.
+
+2. **Verbos que criam branch de verdade fora de `checkout`/`switch` não estão na tabela AC5.**
+   `git worktree add -b` (já no parecer original, B2) e `git branch -c origem nova` (achado meu,
+   nesta reverificação) criam branches reais sem passar por `trackfw branch new` e não têm nenhuma
+   linha na "Declaração de não-correção (AC5)" — a tabela diz *"Nada nesta lista é omissão
+   silenciosa"*, o que deixa de ser estritamente verdade enquanto esses dois ficarem de fora dela.
+   Diferença de tratamento entre os dois: `git branch nova` sozinho é decisão de design correta (não
+   entra na tabela, porque bloquear quebraria o protocolo documentado de branch do `CLAUDE.md`);
+   `git worktree add -b` e `git branch -c` não têm esse conflito — são simplesmente casos que o
+   matcher nunca tentou cobrir.
+
+3. **A linha 357 da AC5 (evasões que exigem tokenizar como o bash) justifica a classe inteira com
+   "exige tokenizar como o bash"** — verdadeiro para `${IFS}`/`{git,push}`/`g""it push` como
+   *reconhecimento* de `git`, mas não é o motivo real para não adotar a recomendação #2 do meu
+   parecer original (fail-closed em `${`, `$(`, backtick, chaves). Motivo real e mais forte, que a
+   AC5 não menciona: o próprio protocolo de commit do `CLAUDE.md` do projeto usa
+   `git commit -m "$(cat <<'EOF' ... EOF)"` como padrão documentado — fail-closed em `$(` quebraria o
+   workflow oficial do projeto, não só "mensagens de commit elaboradas" como a recomendação original
+   dizia. Não é motivo para reabrir (a AC5 já declara não fechar isso, e concordo que não deveria),
+   só registro que o motivo dado é mais fraco que o motivo real, para quem revisar essa linha depois
+   não se apoiar num argumento incompleto.
+
+### O que NÃO bloqueia (registrado, não é achado)
+
+- `git checkout -- -b` → `exit 2`: falso-positivo na direção segura (checkout de um arquivo chamado
+  literalmente `-b`), aceitável para um tripwire que prefere bloquear demais.
+- Linha 361 da AC5 (gate de paridade novo sem falsificação própria, cenário 43 cobre o mecanismo) —
+  já é uma declaração honesta com escopo explícito, nada a acrescentar.
+
+### Risco residual se o bloqueio for levantado (é o que estou fazendo)
+
+Igual ao já registrado no parecer de 2026-08-16, mais os dois itens do bloco (C): `env`/`command` com
+argumentos, `git worktree add -b`/`git branch -c` sem entrada em AC5. Nenhum é regressão deste ML,
+nenhum foi introduzido por ele, e os dois motivos que fundamentaram o bloqueio original estão
+fechados e verificados por execução. Recomendo ao arquiteto abrir um ML nomeado (não uma linha
+perene em AC5) para o item (1) — é barato e o próprio autor já apontou o fix.
