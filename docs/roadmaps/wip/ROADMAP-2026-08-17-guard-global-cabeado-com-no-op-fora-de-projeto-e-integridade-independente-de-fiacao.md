@@ -30,7 +30,7 @@ com roadmap próprio **depois** deste — as duas tocam os mesmos arquivos de va
 
 ## Acceptance Criteria
 
-- [ ] AC1 — Script é **no-op** (exit 0) fora de projeto trackfw, e mantém o comportamento atual dentro.
+- [x] AC1 — Script é **no-op** (exit 0) fora de projeto trackfw, e mantém o comportamento atual dentro.
 - [ ] AC2 — `git-branch-guard` cabeado no escopo global nos mesmos CLIs do `credential-guard`.
 - [ ] AC3 — Integridade de script global escrito pelo trackfw é verificada **independentemente** de
       haver config referenciando-o.
@@ -61,7 +61,7 @@ com roadmap próprio **depois** deste — as duas tocam os mesmos arquivos de va
 ## Wave 1 — No-op (bloqueia tudo o mais)
 
 ### ML-1A — Script vira no-op fora de projeto trackfw
-**Status:** 🔄 Em andamento — **auditoria do arquiteto REPROVOU**: regressão de EPIPE (ver ML-1B)
+**Status:** ✅ Concluído — reprovado na 1ª auditoria (EPIPE), fechado pelo ML-1B
 · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** template do guard no gerador Go + espelhos Node/Python + referência em `scripts/`
 (7 cópias, todas pelo gerador), testes dos 3, `scripts/check-gates-falsify.sh`.
@@ -151,7 +151,7 @@ errada em submódulo e repo aninhado.
 ---
 
 ### ML-1B — Consumir o stdin antes do no-op
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído — auditado por medição própria · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** template do guard no gerador (7 cópias), `scripts/check-gates-falsify.sh`, testes.
 
 **Ação:** garantir que o script **consuma o stdin** antes de qualquer saída antecipada — mover a
@@ -162,13 +162,32 @@ checagem do no-op para depois da leitura, ou drenar o stdin antes do `exit 0` da
 stdin — mas confirme, não presuma.
 
 **Critérios de aceite:**
-- [ ] Fora de projeto trackfw: guard → **exit 0** e **escritor sem erro**, em 5 rodadas seguidas.
-- [ ] Payload grande (>64 KB, estoura o buffer do pipe): escritor sem erro.
-- [ ] Dentro do projeto: bateria completa inalterada (bloqueios, leitura, prosa) — não regrida o que
+- [x] Fora de projeto trackfw: guard → **exit 0** e **escritor sem erro**, em 5 rodadas seguidas.
+- [x] Payload grande (>64 KB, estoura o buffer do pipe): escritor sem erro.
+- [x] Dentro do projeto: bateria completa inalterada (bloqueios, leitura, prosa) — não regrida o que
       o ML-1A acertou.
-- [ ] Cenário de falsificação cobrindo **o escritor não receber EPIPE** — é o que ninguém testou.
-- [ ] Cenários 60–64 continuam reprovando nos braços de detecção; cole as linhas.
-- [ ] `make quality` verde.
+- [x] Cenário de falsificação cobrindo **o escritor não receber EPIPE** — é o que ninguém testou.
+- [x] Cenários 60–64 continuam reprovando nos braços de detecção; cole as linhas.
+- [x] `make quality` verde.
+
+---
+
+### Auditoria do ML-1B pelo arquiteto — aprovada
+
+```
+EPIPE fora de projeto     5/5 rodadas: guard=0, escritor=limpo   (antes: 5/5 ERRO)
+payload de 200 KB         guard=0, escritor=limpo
+dentro do projeto         11 bloqueios · 8 leituras · prosa — todos inalterados
+subdiretorio profundo     git push -> exit 2
+make quality              exit 0 · 126 cenarios · validate exit 0
+```
+
+Cenário 65 tem os três braços e a sabotagem é por `corrupt_literal` em
+`internal/generators/scaffold.go` — **na implementação, nunca na asserção**. O braço de detecção
+prova `escritor_erro=1` com o dreno removido, isolando a regressão ao dreno em si.
+
+Cenários 60–64 continuam reprovando nos braços de detecção — o modo de falha que derrubou o
+Cenário 58 no rebase de anteontem não se repetiu.
 
 ---
 

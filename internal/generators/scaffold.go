@@ -1206,6 +1206,12 @@ func GenerateGlobalGitBranchGuardScript(home string) error {
 // ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-trackfw.md: cabear este script
 // no escopo global (Wave 2 do mesmo roadmap) exigia isso primeiro — sem o no-op, cabear
 // bloquearia git commit/push em todo repositório da máquina, com ou sem trackfw.yaml.
+//
+// ML-1B (mesma ROADMAP, auditoria do arquiteto reprovou o ML-1A): o no-op saía com 0 ANTES de
+// ler o stdin, então quem escreve o payload JSON no pipe (o próprio harness) recebia EPIPE —
+// reprodutível em 100% das chamadas fora de projeto trackfw, não era corrida de timing. Fix:
+// o stdin é drenado (se não for um terminal interativo) ANTES do probe de raiz, e o valor lido
+// é reaproveitado no passo 1 abaixo — nunca há uma segunda leitura.
 const gitBranchGuardScript = `#!/usr/bin/env bash
 # trackfw git branch guard — bloqueia git commit/push/checkout -b/branch/worktree add -b
 # brutos por subagente
@@ -1226,7 +1232,17 @@ const gitBranchGuardScript = `#!/usr/bin/env bash
 set -euo pipefail
 set -f
 
-# --- 0. No-op fora de projeto trackfw (ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
+# --- 0. Drena o stdin ANTES de qualquer saída antecipada (ML-1B, ROADMAP-2026-08-17-guard-
+# global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md): sem isso,
+# quem escreve o payload JSON no pipe recebe EPIPE quando o no-op abaixo sai com 0 antes de ler
+# — reprodutível em 100% das chamadas fora de projeto trackfw, não é corrida de timing. Só drena
+# se stdin não for um terminal interativo (-t 0): em invocação manual sem pipe, "cat" bloquearia
+# esperando EOF (Ctrl-D). O valor lido é reaproveitado no passo 1 abaixo — nunca há uma segunda
+# leitura.
+_TRACKFW_STDIN=""
+[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)
+
+# --- 0b. No-op fora de projeto trackfw (ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
 # projeto-trackfw.md): sobe diretórios a partir do cwd FÍSICO (pwd -P, resolve symlink) até
 # achar trackfw.yaml na raiz do projeto. Sem trackfw.yaml em nenhum ancestral, o guard não se
 # aplica — fora de projeto trackfw não há trackfw ship como alternativa, e bloquear ali é custo
@@ -1253,7 +1269,7 @@ done
 if [ "$#" -gt 0 ]; then
   CMD_RAW="$*"
 else
-  INPUT=$(cat 2>/dev/null || true)
+  INPUT="$_TRACKFW_STDIN"
   TRIMMED=$(printf '%s' "$INPUT" | sed -e 's/^[[:space:]]*//')
   case "$TRIMMED" in
     \{*)
