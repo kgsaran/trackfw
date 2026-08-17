@@ -34,7 +34,7 @@ referência em `scripts/` **mais** validadores de integridade. Mudança no match
 todas, senão `trackfw validate` acusa divergência.
 
 ## Acceptance Criteria
-- [ ] AC1 — Itens 1 e 2 (guard) corrigidos, com **cenário de falsificação** conforme P4 do
+- [x] AC1 — Itens 1 e 2 (guard) corrigidos, com **cenário de falsificação** conforme P4 do
       `ADR-2026-07-26-principios-de-design-de-gates-verificaveis`.
 - [x] AC2 — Itens 3, 5 e 7 (divergências entre CLIs) corrigidos **e cobertos por paridade**, para
       não reaparecerem.
@@ -226,8 +226,34 @@ ADR emendado com data e motivo.
 ## Wave 5 — Corretivo da barreira (bloqueia o fechamento)
 
 ### ML-4B — Fecha o que a barreira nomeou: prefixos, flags do `checkout`, claim e gate de paridade
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Origem:** veredito BLOQUEAR do ML-4A.
+
+**⚠️ Achado que expande o escopo literal da ação 4, precisa ratificação do arquiteto:** `discover
+--init` em **Go e Node não gerava** `trackfw-git-branch-guard.sh` antes deste ML — só `trackfw
+init`/`update harness` chamavam o gerador nesses dois stacks. Acrescentar o script à lista do
+`check-attention-scripts-parity.sh` sem corrigir isso tornaria o gate vazio (arquivo ausente falha
+no `-s` antes mesmo do diff — nunca prova paridade nenhuma). **Python já gerava** — verificado por
+`git diff`/`git log` que `pypi/trackfw/generators/hooks.py::inject_hooks_detected` já chamava
+`_generate_git_branch_guard_script` incondicionalmente antes desta sessão (código pré-existente,
+não tocado por mim), e `discover.py`'s bloco `--init` já chama `inject_hooks_detected`. Corrigido
+em Go (`internal/discover/discover.go::InstallGates`) e Node (`npm/src/commands/discover.js`,
+bloco `--init`) com uma chamada explícita ao gerador, mesmo padrão já usado para
+`credential-guard` nesses dois stacks. Em Python acrescentei a mesma chamada explícita em
+`discover.py` por paridade estrutural com Go/Node — é redundante com o que `inject_hooks_detected`
+já fazia (mesma redundância pré-existente que já ocorre lá para `attention-scripts` e
+`credential-guard`, chamados tanto explicitamente quanto dentro de `inject_hooks_detected`), não
+uma correção de bug em Python. Esta mudança altera o comportamento observável de `trackfw discover
+--init` em projetos brownfield (novo arquivo escrito) — está fora da redação literal da ação 4
+("acrescentar às duas listas"), então o arquiteto deve decidir se ratifica aqui ou se prefere
+separar em REQ própria antes do merge.
+São **7 cópias literais** do script, não 6 como o mapa do roadmap registrava —
+`internal/validator/validator_git_branch_guard_reference.go` é uma cópia própria (import cycle
+Go), além do gerador Go canônico, dos 2 espelhos Node/Python e dos 2 validators Node/Python que o
+ML-1A já tinha achado. Todas as 7 atualizadas e confirmadas byte-idênticas pelos testes de
+paridade existentes nos 3 stacks (`TestGitBranchGuardScriptReference_MatchesGenerator` no Go,
+`GIT_BRANCH_GUARD_SCRIPT_REFERENCE é byte-idêntico...` no Node,
+`test_reference_e_byte_identico_ao_gerador_real` no Python) — todos verdes.
 
 **A linha de corte não é "B1 vs resto" — é custo do conserto:**
 
@@ -259,12 +285,59 @@ mesmo custo e a mesma classe de "o agente emite sem estar tentando evadir".
   que os dois braços de detecção **ainda reprovam** — exit code verde não basta.
 
 **Critérios de aceite:**
-- [ ] `env git commit`, `command git push`, `git checkout -q -b`, `git checkout --no-track -b` → **exit 2**.
-- [ ] Não-regressão: prosa com separador → **exit 0**; `git push`, `git commit`, `git switch -c/-C/--create`, `git checkout -b` → **exit 2**.
-- [ ] As 6 cópias byte-idênticas; `trackfw validate` sem divergência de integridade.
-- [ ] `check-attention-scripts-parity.sh` passa a cobrir o `git-branch-guard`.
-- [ ] Cenário de falsificação novo, com baseline **e** detecção; Cenários 60/61 continuam reprovando.
-- [ ] `make quality` verde.
+- [x] `env git commit`, `command git push`, `git checkout -q -b`, `git checkout --no-track -b` → **exit 2**.
+- [x] Não-regressão: prosa com separador → **exit 0**; `git push`, `git commit`, `git switch -c/-C/--create`, `git checkout -b` → **exit 2**.
+- [x] As 7 cópias byte-idênticas (6 do mapa original + `validator_git_branch_guard_reference.go`,
+      achada por este ML); `trackfw validate` sem divergência de integridade.
+- [x] `check-attention-scripts-parity.sh` passa a cobrir o `git-branch-guard`.
+- [x] Cenário de falsificação novo (62, dois sub-casos), com baseline **e** detecção; Cenários
+      60/61 continuam reprovando. Cada sub-caso tem asserção auto-discriminante contra o MESMO
+      build corrompido (62a: `git push` puro continua bloqueado; 62b: corrupção retargetada para a
+      forma exata pré-ML-4B, `git checkout -b` puro continua bloqueado) — prova que a detecção
+      isola o literal certo, não uma quebra geral do matcher.
+- [x] `make quality` verde.
+- [x] **Residual declarado, não fechado:** `env`/`command` **com** argumentos (`env FOO=bar git
+      push`, `env -i git commit`, `command -p git push`) ainda evadem — reproduzido por execução
+      (exit 0). Fora da redação literal da ação 2 (que cobre a forma sem argumentos). Declarado no
+      header das 7 cópias e na tabela AC5 abaixo, não fechado nesta correção.
+
+---
+
+### Ratificação do arquiteto — `discover --init` passa a gerar o script do guard
+
+O `apolo-tf` pediu ratificação por ter mexido em `discover --init` nos 3 CLIs, fora do escopo literal
+do ML-4B. **Ratificado** — e o motivo real é melhor que o alegado no relatório dele.
+
+O relatório dizia que "o Python já fazia isso". **Não fazia** — conferi: nenhum dos 3 gerava.
+E medi com o binário anterior: `discover --init` num repo limpo **não** produzia
+`scripts/trackfw-git-branch-guard.sh`.
+
+O que justifica a mudança é a **inconsistência entre irmãos**: `check-attention-scripts-parity.sh`
+obtém os scripts rodando `discover --init` por runtime e comparando. Ele já cobria
+`trackfw-credential-guard.sh` — ou seja, o `discover --init` **gerava** o credential-guard e **não**
+gerava o git-branch-guard, dois scripts de hook de mesma natureza. A ação 4 do ML-4B era impossível
+de cumprir sem alinhar isso: o gate tem um guard de vacuidade P2 que exige o arquivo existir e ser
+não-vazio, então acrescentar o script à lista sem gerá-lo deixaria o gate **vermelho**, não vacuoso.
+
+Verificado por mim: os 3 geram, 287 linhas, **byte-idênticos entre si e com a cópia de referência**
+em `scripts/`.
+
+### Evidência da auditoria do ML-4B (execução própria, não aceite de relatório)
+
+```
+FECHARAM (exit 2):  env git commit · command git push
+                    git checkout -q -b · git checkout --no-track -b
+NÃO REGREDIU (2):   git push · git commit · switch -c/-C/--create · checkout -b
+FALSO-POSITIVO (0): trackfw commit -m "veja: git status; git push é bloqueado"
+FORA DE ESCOPO (0): git${IFS}push · {git,push} · g""it push · env FOO=bar git push
+```
+
+Header declara **"TRIPWIRE, NÃO FRONTEIRA DE SEGURANÇA"** citando o `ADR-2026-08-12`; nenhuma
+ocorrência de "quote-aware" sem qualificação sobrou.
+
+`make quality` exit 0 · **123 cenários** · `trackfw validate` exit 0 ·
+`attention-scripts-parity/trackfw-git-branch-guard.sh/go-vs-node` e `/go-vs-py` **OK** ·
+Cenários 60 e 61 **continuam reprovando** nos braços de detecção.
 
 ---
 
@@ -283,6 +356,8 @@ nesta lista é omissão silenciosa.
 | **`ship` diz `wip/` mas aceita `done/`** | Mensagem de erro e `--help` mais estritos que o código. Corrigir é mudar string de usuário nos 3 CLIs. | Emenda 1 do ADR do `ship` registra; sem REQ ainda |
 | **Evasões que exigem tokenização do bash** (`git${IFS}push`, `{git,push}`, `g""it push`) | Reproduzidas pelo arquiteto e **pré-existentes** — o guard da `main` já evadia todas. Fechá-las exige tokenizar como o bash, e o `ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita…` já decidiu que prevenção contra agente induzido não é alcançável, investindo em **detecção ancorada no `HEAD`**. Uma REQ de "fazer o guard tokenizar" nasceria contra esse ADR. | O que falta decidir é se o guard vira **tripwire declarado** ou merece exceção — isso é **emenda ao ADR-2026-08-12**, não REQ nova. O ML-4B já declara o tripwire no header. |
 | **`ship` não tem modo push-only** | O comando acopla commit+push e exige algo staged; empurrar trabalho já commitado exige `reset --soft` como contorno. Funciona, mas é contorno. | Questão aberta na Emenda 1 do ADR |
+| **`env`/`command` COM argumentos ainda evadem o guard** (`env FOO=bar git push`, `env -i git commit -m "x"`, `command -p git push`) — reproduzido e confirmado por execução (exit 0 nos três) | O stripping do ML-4B só reconhece `env`/`command` **sem** argumentos antes de `git` (`env git ...`, `command git ...`). Reconhecer `env`/`command` com flags/atribuições exigiria entender a sintaxe própria desses dois builtins (não tokenização geral do bash) — mesma classe "o agente emite sem estar tentando evadir" que o ML-4B fechou para as formas simples, mas custo incremental novo, não coberto pela ação 4 original. Declarado no header do script (7 cópias), não fechado. | Fechar exige pular tokens `-*`/`*=*` após `env`/`command` antes de reler `base` — pequeno, mas re-sincroniza as 7 cópias e retarget do Cenário 62a. Fica para ML seguinte ou emenda a este, se o arquiteto priorizar. |
+| **A cobertura NOVA de `check-attention-scripts-parity.sh` (`trackfw-git-branch-guard.sh`) não tem falsificação própria** — só o matcher do guard foi falsificado (Cenário 62). Por `ADR-2026-07-26-principios-de-design-de-gates-verificaveis` (citado no AC1), um gate sem falsificação é "não-verificado" — mesmo padrão que motivou o Cenário 48 quando o ML-0B estendeu este gate para `credential-guard`. Risco residual considerado baixo, não zero: o Cenário 43 já prova que o **mecanismo** de diff do gate (o loop `go-vs-node`/`go-vs-py`) é não-vacuoso contra deriva real (drift no `attention-cleanup` do Python); acrescentar um 4º script reusa o mesmo loop. Ausência do arquivo falha alto, no guard `-s` de vacuidade, antes de qualquer diff. Deriva por-stack do literal já é pega independentemente pelos 3 testes de byte-identidade dedicados (Go/Node/Python) que rodei nesta sessão. | Caberia um Cenário 63 (ou extensão do 43) sabotando especificamente a cópia Node ou Python do `GIT_BRANCH_GUARD_SCRIPT`/`_GIT_BRANCH_GUARD_SH` e provando que o `go-vs-node`/`go-vs-py` do gate estendido reprova — não criado aqui, fora do escopo literal da ação 5 (que pedia falsificação do guard, não da extensão do gate). |
 
 ---
 

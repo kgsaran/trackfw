@@ -516,6 +516,12 @@ cmd.action((opts) => {
         console.warn(`⚠ credential guard script: ${e.message}`);
       }
       try {
+        const { generateGitBranchGuardScript } = require('../generators/hooks');
+        generateGitBranchGuardScript(cwd);
+      } catch (e) {
+        console.warn(`⚠ git branch guard script: ${e.message}`);
+      }
+      try {
         const { injectHooksDetected } = require('../generators/hooks');
         injectHooksDetected(cwd);
         console.log('✓ agent hooks injected');

@@ -473,6 +473,19 @@ const GBG_BACKTICK = '\\`'
 
 const GIT_BRANCH_GUARD_SCRIPT = `#!/usr/bin/env bash
 # trackfw git branch guard — bloqueia git commit/push/checkout -b brutos por subagente
+#
+# TRIPWIRE, NÃO FRONTEIRA DE SEGURANÇA: detecta o caso óbvio — comando git literal, sem
+# indireção de shell — não é defesa contra um agente adversário competente. Evasões que
+# exigem tokenizar como o bash (ex.: git\${IFS}push, {git,push}, g""it push) permanecem
+# abertas por decisão: ver docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-
+# com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md. O stripping de
+# env/command abaixo só reconhece as formas SEM argumentos antes de git (env git ...,
+# command git ...) — env com flags ou atribuição de variável (env FOO=bar git ...,
+# env -i git ...) e command com flags (command -p git ...) continuam evadindo;
+# declarado, não fechado (ver AC5 da correção que adicionou esse stripping). A
+# segmentação abaixo
+# (quote_aware_split) evita falso-positivo em texto citado — não deve ser lida como imune a
+# evasão por citação/tokenização do shell.
 set -euo pipefail
 set -f
 
@@ -644,6 +657,9 @@ quote_aware_split() {
 # produz um novo segmento. ` + "`" + `git switch -c/-C/--create` + "`" + ` (forma alternativa a ` + "`" + `checkout -b` + "`" + `
 # para criar branch) é reconhecido varrendo TODOS os tokens após o subcomando, não só o
 # primeiro — cobre ` + "`" + `git switch --track -c feat/x` + "`" + ` (flag antes de -c).
+# checkout -b é reconhecido do mesmo jeito: varre TODOS os tokens até achar -b/-B/--orphan,
+# não só o primeiro. Prefixos env e command antes de git são descartados antes da checagem do
+# basename — cobre env git push/command git push sem exigir tokenizar como o bash.
 match_subcommand() {
   normalized=$(strip_heredoc_bodies "$1")
   normalized=$(quote_aware_split "$normalized")
@@ -654,6 +670,12 @@ match_subcommand() {
     set -- $seg_trimmed
     first="$1"
     base="\${first##*/}"
+    while [ "$base" = "env" ] || [ "$base" = "command" ]; do
+      shift
+      [ "$#" -gt 0 ] || break
+      first="$1"
+      base="\${first##*/}"
+    done
     [ "$base" = "git" ] || continue
     shift
 
@@ -687,10 +709,14 @@ match_subcommand() {
         return 0
         ;;
       checkout)
-        if [ "\${1:-}" = "-b" ]; then
-          echo "checkout-b"
-          return 0
-        fi
+        for tok2 in "$@"; do
+          case "$tok2" in
+            -b|-B|--orphan|--orphan=*)
+              echo "checkout-b"
+              return 0
+              ;;
+          esac
+        done
         ;;
       switch)
         for tok2 in "$@"; do

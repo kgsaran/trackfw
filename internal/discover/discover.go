@@ -64,6 +64,9 @@ func InstallGates(r DiscoveryResult, rootDir string, w io.Writer) error {
 	if err := generators.GenerateCredentialGuardScript(rootDir); err != nil {
 		fmt.Fprintf(w, "  ⚠ credential guard script: %v\n", err)
 	}
+	if err := generators.GenerateGitBranchGuardScript(rootDir); err != nil {
+		fmt.Fprintf(w, "  ⚠ git branch guard script: %v\n", err)
+	}
 	if err := generators.InjectHooksDetected(rootDir); err != nil {
 		fmt.Fprintf(w, "  ⚠ agent hooks: %v\n", err)
 	}
