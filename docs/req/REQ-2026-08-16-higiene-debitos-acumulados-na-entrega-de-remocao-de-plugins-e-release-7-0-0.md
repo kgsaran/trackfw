@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-16
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md"
 ---
 
 # REQ: Higiene — débitos acumulados na entrega de remoção de plugins e na release 7.0.0
@@ -147,4 +147,4 @@ existente)
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md`

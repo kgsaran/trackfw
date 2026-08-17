@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-16
 req: "docs/req/REQ-2026-08-16-higiene-debitos-acumulados-na-entrega-de-remocao-de-plugins-e-release-7-0-0.md"
 squad: "apolo-tf, hades-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf, hades-tf, hefesto-tf"
 
 # Roadmap: Higiene — sete débitos acumulados da entrega de plugins e da release 7.0.0
 
-> Created: 2026-08-16 | Status: wip
+> Created: 2026-08-16 | Status: done
 
 ## Context
 
