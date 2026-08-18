@@ -126,7 +126,16 @@ class IntegrationManager {
       const file = this.resolve(scope, plan.destination)
       const record = manifests.get(scope).artifacts[file]
       const managed = Boolean(record && record.claims.some(claim => claimKey(claim) === claimKey(plan.claim)))
-      if (!fs.existsSync(file)) return { ...plan, destination: file, state: 'not-installed', managed }
+      // registered reports whether the manifest has ANY entry for this
+      // destination, regardless of claim ownership — unlike managed, which
+      // additionally requires this exact claim to own that entry. doctor
+      // (ML-2A) needs this distinction: a destination registered under a
+      // *different* claim must never be reported as an "unregistered
+      // write" — that would be the dominant false-positive doctor exists to
+      // avoid. Additive field; mirrors Inspection.Registered
+      // (internal/integrations/manager.go).
+      const registered = Boolean(record)
+      if (!fs.existsSync(file)) return { ...plan, destination: file, state: 'not-installed', managed, registered }
       const actual = sha256(fs.readFileSync(file))
       const desired = sha256(plan.content)
       let state
@@ -137,7 +146,7 @@ class IntegrationManager {
       } else if (actual === desired) state = 'current'
       else if ((plan.legacyHashes || []).includes(actual)) state = 'outdated'
       else state = 'modified'
-      return { ...plan, destination: file, state, managed }
+      return { ...plan, destination: file, state, managed, registered }
     })
   }
 

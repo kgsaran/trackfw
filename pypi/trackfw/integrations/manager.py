@@ -136,45 +136,87 @@ class IntegrationManager:
         content = (json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode()
         self._atomic_write(filename, content, 0o600)
 
-    def inspect(self, plan: dict[str, Any]) -> dict[str, Any]:
+    def _inspect_core(self, plan: dict[str, Any]) -> dict[str, Any]:
+        """Shared inspection core, returning every field both the public
+        `inspect()` contract and doctor (ML-2A, `inspect_full`) need. Kept
+        private and separate from `inspect()`'s return shape because
+        integrations/command.py's `list --json` passes `inspect()`'s dict
+        through verbatim (no field-picking, unlike Go/Node's dedicated
+        output structs) — an exact-key contract test
+        (test_list_json_has_exact_contract_and_deterministic_order) would
+        break if new keys were added to that dict. `resolved_destination`
+        and `registered` (doctor's needs) live only here and in
+        `inspect_full()`.
+        """
         destination, manifest_file, _ = self._resolve(plan)
         manifest = self._load_manifest(manifest_file)
         entry = manifest["artifacts"].get(str(destination))
         claim = plan["claim"]
         managed = bool(entry and claim in entry.get("claims", []))
-        result = {
-            "target": claim["target"],
-            "surface": claim["surface"],
-            "scope": claim["scope"],
-            "item": claim["item"],
+        core = {
+            "claim": claim,
             "support_level": plan["support_level"],
             "representation": plan["representation"],
             "destination": plan["destination"],
+            "resolved_destination": str(destination),
             "state": "not-installed",
             "managed": managed,
+            # registered reports whether the manifest has ANY entry for this
+            # destination, regardless of claim ownership — unlike managed,
+            # which additionally requires this exact claim to own that
+            # entry. doctor needs this distinction: a destination registered
+            # under a *different* claim must never be reported as an
+            # "unregistered write" — the dominant false-positive doctor
+            # exists to avoid. Mirrors Inspection.Registered
+            # (internal/integrations/manager.go).
+            "registered": bool(entry),
         }
         try:
             actual = _hash(destination.read_bytes())
         except FileNotFoundError:
-            return result
+            return core
         desired = _hash(plan["content"])
         if entry:
             if actual != entry["sha256"]:
-                result["state"] = "modified"
+                core["state"] = "modified"
             elif actual != desired or entry["catalog_version"] != plan["catalog_version"]:
-                result["state"] = "outdated"
+                core["state"] = "outdated"
             else:
-                result["state"] = "current"
+                core["state"] = "current"
         elif actual == desired:
-            result["state"] = "current"
+            core["state"] = "current"
         elif actual in plan.get("legacy_hashes", []):
-            result["state"] = "outdated"
+            core["state"] = "outdated"
         else:
-            result["state"] = "modified"
-        return result
+            core["state"] = "modified"
+        return core
+
+    def inspect(self, plan: dict[str, Any]) -> dict[str, Any]:
+        core = self._inspect_core(plan)
+        claim = core["claim"]
+        return {
+            "target": claim["target"],
+            "surface": claim["surface"],
+            "scope": claim["scope"],
+            "item": claim["item"],
+            "support_level": core["support_level"],
+            "representation": core["representation"],
+            "destination": core["destination"],
+            "state": core["state"],
+            "managed": core["managed"],
+        }
 
     def list(self, plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [self.inspect(plan) for plan in plans]
+
+    def inspect_full(self, plan: dict[str, Any]) -> dict[str, Any]:
+        """Like `inspect()`, but includes `claim`, `resolved_destination`
+        and `registered` — doctor (ML-2A) needs all three and must not
+        widen the public `inspect()`/`list()` JSON contract to get them."""
+        return self._inspect_core(plan)
+
+    def list_full(self, plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [self.inspect_full(plan) for plan in plans]
 
     def install(self, plans: list[dict[str, Any]], force: bool = False) -> None:
         self._mutate(plans, "install", force)

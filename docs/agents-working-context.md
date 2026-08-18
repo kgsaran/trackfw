@@ -19652,3 +19652,82 @@ unilateralmente por estar fora do escopo literal do ML-1A.
 `internal/integrations/manager.go`, `internal/integrations/manager_persistence_order_test.go` (novo),
 `npm/src/integrations/manager.js`, `npm/tests/manager-persistence-order.test.js` (novo),
 `pypi/trackfw/integrations/manager.py`, `pypi/tests/test_manager_persistence_order.py` (novo).
+
+## Sessão 2026-08-18 — Apolo (INÍCIO: ML-2A — comando `doctor` nos 3 CLIs)
+
+Branch `feat/doctor-detecta-artefato-fora-do-manifesto`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md`
+em `wip/`. Executando ML-2A: função de classificação + comando `doctor` + testes unitários nos 3
+CLIs (Go/Node/Python). Escopo enxuto — gate de paridade e cenário P4 ficam para o ML-2B. Nenhum
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-18 — Apolo (FIM: ML-2A concluído)
+
+`trackfw doctor` implementado nos 3 CLIs, reaproveitando `inspectResolved`/`manager.list`/
+`BuildPlans` — nada reimplementado. Duas classes, remédios diferentes, nunca fundidas:
+`unregistered-write` (conteúdo bate com o template do catálogo, sem entrada no manifesto — remédio
+`install --force` adota, seguro) e `hand-modified` (manifesto possui a entrada, hash não bate —
+remédio `install --force` sobrescreve, decisão do usuário). Saída nomeia o comando de remédio pronto
+para copiar nos dois casos.
+
+**Achado do advisor que mudou a implementação (não óbvio, evitou o falso-positivo dominante):** a
+classificação inicial usava `Inspection.Managed` para decidir "sem registro no manifesto" — errado.
+`Managed` exige que o manifesto tenha entrada **E** que seja desta claim exata (`claimOwned`); uma
+entrada registrada sob OUTRA claim (destino compartilhado por duas claims, algo alcançável ao varrer
+todo o catálogo × todos os targets × ambos os escopos, superfície muito maior que qualquer invocação
+existente) resolveria `Managed=false` + `StateCurrent` e seria erroneamente relatada como "escrita
+não registrada" quando na verdade já está registrada, só que por outra claim — exatamente o
+falso-positivo dominante que o comando existe para evitar. Corrigido adicionando um campo aditivo
+`Registered`/`registered` (Go/Node) que reporta apenas "o manifesto tem ALGUMA entrada", independente
+de qual claim é dona — distinto de `Managed`. Prova disso: teste dedicado ("registered under a
+DIFFERENT claim, content current -> must not be reported as unregistered") nos 3 CLIs.
+
+**Achado não óbvio em Python — quase vazou o contrato JSON do `list --json`:** adicionar os mesmos
+campos aditivos (`registered`, `resolved_destination`) direto no dict retornado por
+`IntegrationManager.inspect()` quebrou um teste de contrato existente
+(`test_list_json_has_exact_contract_and_deterministic_order`) porque, diferente de Go/Node (que têm
+structs de saída dedicados para `list --json`), o Python passa o dict de `inspect()` direto para o
+JSON de `list --json` (`integrations/command.py`, sem seleção de campos). Corrigido refatorando para
+um método privado `_inspect_core()` que ambos `inspect()` (mantém o contrato público inalterado) e o
+novo `inspect_full()`/`list_full()` (usado só por `doctor.py`) reaproveitam — sem duplicar a lógica
+de hash/estado. Nenhuma nota de vault criada: o comentário no próprio `_inspect_core` já documenta o
+porquê.
+
+**BuildPlans (Go) versus buildPlans/plan_deployments (Node/Python) — assimetria que exigiu desvio:**
+o `BuildPlans` do Go **erra** quando uma surface não suporta o scope pedido (`pathForScope` ok=false
+vira `fmt.Errorf`), por design, para pedidos explícitos de install/update. Já o Node/Python **pulam**
+silenciosamente essa combinação. Varrer o catálogo inteiro (todos os targets × ambos os escopos, como
+`doctor` precisa) bate nesse caso o tempo todo em Go. Em vez de alterar `BuildPlans` (mudaria contrato
+usado por install/update), Go ganhou `doctorPlansForScope`/`RunDoctor` (`internal/integrations/
+doctor.go`) que itera target×surface manualmente e pula via `pathForScope` antes de chamar
+`BuildPlans` por (target, surface) único — Node/Python não precisaram desse desvio.
+
+**Comando:** `trackfw doctor [--json]`, varre `agents`+`skills` × `project`+`global`. Sem findings:
+mensagem "no mismatches found". Ordenação determinística por chave total
+(destination, kind, item, target, surface, scope) — destino sozinho não é total quando um destino
+carrega mais de uma claim (necessário para o gate de paridade do ML-2B comparar as 3 saídas
+byte-a-byte).
+
+**Evidência:**
+- `go build ./... && go vet ./... && go test ./...` — todos os pacotes OK (novo:
+  `internal/integrations/doctor.go`, `doctor_test.go`; `internal/commands/doctor.go`, `doctor_test.go`).
+- `node --test` (npm) — 697 testes, 0 falhas (+8 novos em `npm/tests/doctor.test.js`).
+- `python3 -m pytest` (pypi) — 1376 testes + 28 subtests, 0 falhas (+8 novos em
+  `pypi/tests/test_doctor.py`).
+- `make quality` — exit 0, todos os 131 cenários de falsificação + gates de paridade OK.
+- `./bin/trackfw validate` — exit 0, só warnings pré-existentes (nenhum novo).
+- Smoke manual nos 3 CLIs (instalar → remover entrada do manifesto → `doctor` acusa
+  `unregistered-write`; reinstalar + editar à mão → `doctor` acusa `hand-modified`) — comportamento
+  idêntico em Go/Node/Python.
+
+**Fora de escopo confirmado (ML-2B):** gate de paridade comparando as 3 saídas reais, cenário P4.
+
+**Arquivos alterados:**
+`internal/integrations/manager.go` (campo `Inspection.Registered`), `internal/integrations/doctor.go`
+(novo), `internal/integrations/doctor_test.go` (novo), `internal/commands/doctor.go` (novo),
+`internal/commands/doctor_test.go` (novo), `internal/commands/root.go` (registro do comando),
+`npm/src/integrations/manager.js` (campo `registered`), `npm/src/integrations/doctor.js` (novo),
+`npm/src/commands/doctor.js` (novo), `npm/src/commands/index.js` (registro), `npm/tests/doctor.test.js`
+(novo), `pypi/trackfw/integrations/manager.py` (`_inspect_core`/`inspect_full`/`list_full`),
+`pypi/trackfw/integrations/doctor.py` (novo), `pypi/trackfw/commands/doctor.py` (novo),
+`pypi/trackfw/cli.py` (registro), `pypi/tests/test_doctor.py` (novo).

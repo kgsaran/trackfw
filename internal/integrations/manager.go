@@ -36,6 +36,15 @@ type Inspection struct {
 	State        LifecycleState `json:"state"`
 	SupportLevel string         `json:"support_level"`
 	Managed      bool           `json:"managed"`
+	// Registered reports whether the manifest has ANY entry for this
+	// destination, regardless of claim ownership — unlike Managed, which
+	// additionally requires this exact claim to own that entry (see
+	// claimOwned). doctor (ML-2A) needs this distinction: a destination
+	// registered under a *different* claim must never be reported as an
+	// "unregistered write" — that would be the dominant false-positive the
+	// command exists to avoid. Additive field; existing JSON consumers
+	// (list --json) build their own output struct and are unaffected.
+	Registered bool `json:"registered"`
 }
 
 type Manager struct {
@@ -606,6 +615,7 @@ func inspectResolved(plan PlannedArtifact, destination string, manifest Manifest
 	result := Inspection{Claim: plan.Claim, Destination: destination, SupportLevel: plan.SupportLevel}
 	entry, managed := manifest.Artifacts[destination]
 	result.Managed = managed && claimOwned(entry, plan.Claim)
+	result.Registered = managed
 	data, err := os.ReadFile(destination)
 	if os.IsNotExist(err) {
 		result.State = StateNotInstalled
