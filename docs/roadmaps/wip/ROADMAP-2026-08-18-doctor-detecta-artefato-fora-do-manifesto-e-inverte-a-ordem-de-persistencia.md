@@ -29,7 +29,7 @@ instalações que já estão no estado ruim. O `doctor` é o que revela essas.
 - [ ] AC4 — Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
 - [ ] AC5 — Não-regressão: `update` **continua recusando** bytes unmanaged mesmo com `--force`.
 - [ ] AC6 — Decisão sobre a janela registrada em ADR. ✅ **feito** — `ADR-2026-08-18`, inverter a ordem.
-- [ ] AC7 — Inversão implementada, com rollback preservado em erro normal.
+- [x] AC7 — Inversão implementada, com rollback preservado em erro normal. Evidência: ML-1A.
 - [ ] AC8 — `make quality` verde **e CI verde**.
 
 ## 🔴 Riscos que valem para todos os MLs
@@ -48,19 +48,63 @@ instalações que já estão no estado ruim. O `doctor` é o que revela essas.
 ## Wave 1 — Inversão da ordem (impede casos novos)
 
 ### ML-1A — Persistir manifesto antes dos artefatos
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `internal/integrations/manager.go` (`mutate`) + espelhos Node/Python, testes dos 3.
 
 **Ação:** trocar a ordem dos dois laços de `mutate` — persistir os manifestos **antes** de escrever
 os bytes. Ver o ADR para o raciocínio: cada escrita já é atômica, a janela é só de ordem, e a
 direção invertida é auto-reparável (`StateNotInstalled`) em vez de exigir humano (`unmanaged`).
 
+**Decisão sobre `uninstall` (registrada com justificativa, conforme pedido no handoff):**
+`uninstall` foi deliberadamente **NÃO invertido** — mantém a ordem pré-existente (bytes removidos
+primeiro, manifesto persistido depois). Regra geral que decide os dois casos: persistir o lado que
+torna o manifesto um **superset** do disco. Para install/update isso é manifesto-primeiro (uma
+interrupção deixa o manifesto declarando um artefato ainda ausente → `StateNotInstalled`,
+auto-reparável). Para uninstall, inverter da mesma forma (remover a entrada do manifesto antes de
+remover os bytes) produziria a direção **ruim**: uma interrupção deixaria um arquivo íntegro em
+disco, com conteúdo que ainda bate com o template do catálogo, mas **sem nenhum registro no
+manifesto** — resolve para `StateCurrent`/`managed=false`, um artefato órfão que parece legítimo e
+que nada detecta ou repara automaticamente. É exatamente a direção "disco à frente do manifesto"
+que o ADR existe para eliminar. Comentário equivalente está no código dos 3 CLIs para não ser
+"simetrizado" por engano depois.
+
 **Critérios de aceite:**
-- [ ] Interrupção simulada entre as fases deixa **manifesto à frente**, e `install`/`update` repara sozinho.
-- [ ] **Rollback preservado**: erro normal no meio do lote restaura arquivos **e** manifestos.
-- [ ] Não-regressão: `install`, `update` e `uninstall` inalterados no caminho feliz, nos 3 CLIs.
-- [ ] Cenário P4 com baseline e detecção.
-- [ ] `make quality` verde.
+- [x] Interrupção simulada entre as fases deixa **manifesto à frente**, e `install`/`update` repara sozinho.
+- [x] **Rollback preservado**: erro normal no meio do lote restaura arquivos **e** manifestos.
+- [x] Não-regressão: `install`, `update` e `uninstall` inalterados no caminho feliz, nos 3 CLIs.
+- [x] Cenário P4 com baseline e detecção.
+- [x] `make quality` verde.
+
+---
+
+### Auditoria do ML-1A — a assimetria do ADR, provada nos dois sentidos
+
+Medida por mim em projeto real e descartável, **não por leitura**:
+
+```
+manifesto a frente (direcao nova)     agents install         -> REPARA sozinho
+disco a frente + deriva (direcao ANTIGA, o caso do CMDB)
+                                      agents install         -> RECUSA: "is modified; use force"
+                                      agents install --force -> exige decisao humana
+```
+
+É exatamente o que o ADR afirmou. A primeira tentativa da minha auditoria falhou por **erro meu**
+(usei `--install-missing`, que é flag do `trackfw update`, não do `agents update`), e a segunda não
+reproduziu o caso ruim porque faltava a **deriva de conteúdo** — sem ela o `install` adota o arquivo.
+O caso real do CMDB exige disco-à-frente **somado** a conteúdo que deixou de bater com o template.
+
+**Decisão sobre o `uninstall`: melhor do que eu pedi.** Eu pedi que decidisse e justificasse; ele
+derivou a **regra geral** que decide os dois casos — *persistir o lado que torna o manifesto um
+superset do disco*. Para install/update isso é manifesto-primeiro; para uninstall, inverter
+produziria a direção **ruim** (arquivo íntegro, sem registro, parecendo legítimo e sem reparo
+automático). O comentário está no código dos 3 CLIs para não ser "simetrizado" por engano depois.
+
+**Bug pré-existente corrigido de passagem:** o laço de rollback do Python **não** engolia erro por
+item, ao contrário de Go e Node. Um restore falhando abortava antes de restaurar o resto — inclusive
+o manifesto. Agora espelha os outros dois. Era exatamente o risco 2 do handoff: quebrar o rollback
+trocaria uma falha rara de interrupção por uma falha comum de erro.
+
+`make quality` exit 0 · 131 cenários · `validate` exit 0.
 
 ---
 

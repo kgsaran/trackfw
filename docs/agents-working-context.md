@@ -19581,3 +19581,74 @@ dos 3 arquivos-fonte, que são espelhos estruturais idênticos).
 
 Nenhum arquivo de produto tocado. Nenhum commit/push/branch — autoridade exclusiva do
 `trackfw_architect`.
+
+## Sessão 2026-08-18 — Apolo (ML-1A: manifesto antes dos artefatos, ADR-2026-08-18)
+
+ML-1A do roadmap `docs/roadmaps/wip/ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md`,
+implementando `ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md`.
+
+**O que mudou, nos 3 CLIs:** `Manager.mutate()` (Go), `IntegrationManager.mutate()` (Node),
+`IntegrationManager._mutate()` (Python) — para `install`/`update`, o manifesto agora é persistido
+**antes** dos bytes dos artefatos. `applyMutation`/`apply`/`_apply` foi dividido em duas funções:
+`applyUninstall` (mantém o comportamento anterior, intocado) e `planArtifactWrite`/
+`planArtifactWrite`/`_plan_artifact_write` (calcula a atualização do manifesto em memória, sem
+tocar disco, e devolve um "pending write" que só é aplicado depois do manifesto persistido).
+
+**Uninstall foi deliberadamente NÃO invertido** — analisei e confirmei com o advisor: inverter
+uninstall produziria a direção RUIM (manifesto removido primeiro deixaria, numa interrupção, um
+arquivo íntegro em disco sem nenhum registro — `StateCurrent`/`managed=false`, órfão, nada detecta
+ou repara). A regra geral que decide os dois casos: persistir o lado que torna o manifesto um
+**superset** do disco — para install/update isso é manifesto-primeiro; para uninstall é
+disco-primeiro (que já era o comportamento existente). Comentário extenso no código nos 3 CLIs
+explica isso para não ser "simetrizado" por engano depois.
+
+**Provas executadas, não por leitura** (a AC pedia isso explicitamente):
+- Interrupção real via subprocesso que crasha (`os.Exit`/`process.exit`/`os._exit`) exatamente no
+  seam entre persistir o manifesto e escrever os bytes — prova que o disco fica manifesto-à-frente
+  (`StateNotInstalled`/`not-installed`) e que um `install` seguinte, SEM `--force`, repara sozinho.
+- Rollback em erro normal (não crash) com baseline não-vazio (v1 instalado, update para v2 falha no
+  meio da fase de escrita de bytes) — prova que manifesto E bytes voltam ao estado anterior.
+- **Rollback de lote com 2 artefatos** (achado do advisor, correção sobre a primeira rodada): os
+  dois testes acima usam UM artefato só, então a escrita nova nunca chega a acontecer (falha antes)
+  e "bytes == baseline" prova pouco — nada foi de fato sobrescrito. Adicionado um terceiro teste nos
+  3 CLIs com DOIS artefatos: o primeiro tem sua escrita bem-sucedida (bytes realmente viram v2), só
+  o segundo falha — o rollback então precisa reverter de verdade o primeiro artefato de volta para
+  v1. Esse é quem prova o AC7 honestamente. Também percebi que o reorder havia enfraquecido
+  silenciosamente `npm/tests/agents-skills.test.js:282` ("failed atomic mutation rolls files and
+  manifest back"): antes a 2ª escrita interceptada era um 2º artefato (que já tinha sido escrito),
+  agora é a 1ª escrita (o manifesto) — o teste continua verde mas parou de cobrir restauração
+  parcial de artefato. O novo teste de lote recupera essa cobertura.
+  Arquivos: `internal/integrations/manager_persistence_order_test.go`,
+  `npm/tests/manager-persistence-order.test.js`, `pypi/tests/test_manager_persistence_order.py`.
+
+**Achado não óbvio durante a implementação do teste de rollback em Python:** o rollback do Python
+(`except BaseException` em `_mutate`) NÃO engolia erro por item — diferente de Go
+(`_ = atomicWrite(...)`) e Node (`catch { /* preserve original error */ }`). Se o item que falhou
+ao restaurar fosse o primeiro do dict (ordem de inserção = artefatos antes do manifesto), o loop de
+rollback abortava e o manifesto NUNCA era restaurado. Corrigido em
+`pypi/trackfw/integrations/manager.py` (try/except por item com `except Exception` — mesma
+amplitude de Go/Node — ao invés do `(OSError, IntegrationError)` inicial, ajustado após revisão) —
+achado via teste real, não leitura de código; ver risco 2 do handoff. Nenhuma nota de vault criada
+porque o comentário no próprio código já documenta o porquê e a correção é pequena/local.
+
+**Evidência bruta (local — CI ainda não rodou; AC8 permanece não marcado no roadmap por isso):**
+- `go build ./... && go vet ./... && go test ./...` — todos os pacotes OK.
+- `node --test` (npm) — 689 testes, 0 falhas.
+- `python3 -m pytest` (pypi) — 1368 testes + 28 subtests, 0 falhas.
+- `make quality` — exit 0, todos os 131 cenários de falsificação + gates de paridade OK (rodado
+  duas vezes, antes e depois da correção do Python e dos testes de lote).
+- `./bin/trackfw validate` — 0 violações, só warnings pré-existentes (nenhum novo).
+
+**Fora de escopo confirmado:** Wave 2 (`doctor`, ML-2A) e Wave 3 (`hades-tf`, ML-3A) não tocados.
+`preflight`/`inspectResolved`/`atomicWrite` não alterados (só a ordem/estrutura em torno deles).
+Nenhum `git commit`/`push`/`branch` executado — autoridade exclusiva do `trackfw_architect`.
+
+**Pergunta para o arquiteto (não bloqueante):** a ordem de persistência (qual lado — manifesto ou
+bytes — fica "à frente" numa interrupção) agora é um contrato comportamental cross-CLI. Faz sentido
+registrar isso em `docs/cli-parity.md` como os outros contratos documentados lá? Não fiz
+unilateralmente por estar fora do escopo literal do ML-1A.
+
+**Arquivos alterados:**
+`internal/integrations/manager.go`, `internal/integrations/manager_persistence_order_test.go` (novo),
+`npm/src/integrations/manager.js`, `npm/tests/manager-persistence-order.test.js` (novo),
+`pypi/trackfw/integrations/manager.py`, `pypi/tests/test_manager_persistence_order.py` (novo).

@@ -142,6 +142,25 @@ type fileSnapshot struct {
 	mode   os.FileMode
 }
 
+// pendingWrite is a byte write to an artifact destination computed by
+// planArtifactWrite but not yet applied to disk. It is executed only after
+// the manifest carrying its (optimistic) target Hash/CatalogVersion has
+// already been persisted — see the ADR-2026-08-18 ordering in mutate.
+type pendingWrite struct {
+	destination string
+	content     []byte
+	mode        os.FileMode
+}
+
+// afterManifestPersist, when non-nil, runs immediately after manifests are
+// persisted and before artifact bytes are written during install/update
+// (never during uninstall, which is intentionally not inverted — see the
+// comment in mutate). It exists only so tests can simulate an interruption
+// exactly at the ADR-2026-08-18-ordering seam (manifest declares the target
+// state, no artifact bytes have moved yet) without goroutine trickery.
+// Production code never assigns it.
+var afterManifestPersist func()
+
 func (m Manager) mutate(plans []PlannedArtifact, force bool, operation mutation) (retErr error) {
 	resolved := make([]resolvedPlan, 0, len(plans))
 	manifests := make(map[string]Manifest)
@@ -250,13 +269,77 @@ func (m Manager) mutate(plans []PlannedArtifact, force bool, operation mutation)
 		}
 	}()
 
-	for _, item := range active {
-		manifest := manifests[item.manifest]
-		if err := applyMutation(item, &manifest, force, operation); err != nil {
+	// ADR-2026-08-18: install/update persist the manifest before writing
+	// artifact bytes (self-healing direction on interruption); uninstall
+	// keeps the original artifacts-before-manifest order. The two are
+	// deliberately NOT symmetric — see the comment below.
+	if operation == mutationUninstall {
+		// Uninstall is not inverted. Removing bytes first and persisting the
+		// manifest last means an interruption leaves the manifest still
+		// declaring an artifact whose file is now absent — inspectResolved
+		// resolves that as StateNotInstalled, the same self-healing
+		// direction install/update get from the inversion below. Inverting
+		// uninstall the same way (drop the manifest entry, then remove
+		// bytes) would instead leave, on interruption, a file on disk whose
+		// content still matches the catalog template but with no manifest
+		// entry at all — inspectResolved reports StateCurrent/managed=false,
+		// an orphaned artifact that looks legitimate and that nothing
+		// detects or repairs automatically. That is exactly the "disk ahead
+		// of manifest" bad direction the ADR exists to eliminate, so
+		// uninstall must not be simetrized with install/update here.
+		for _, item := range active {
+			manifest := manifests[item.manifest]
+			if err := applyUninstall(item, &manifest); err != nil {
+				return err
+			}
+			manifests[item.manifest] = manifest
+		}
+		if err := persistManifests(manifests); err != nil {
 			return err
 		}
-		manifests[item.manifest] = manifest
+	} else {
+		// Install/Update: compute the manifest update for every active item
+		// in memory (no bytes touched yet), persist all manifests, and only
+		// then write the artifact bytes. Each write is already atomic
+		// (atomicWrite); the window between the two phases is purely one of
+		// ordering. If interrupted after the manifest is on disk but before
+		// an artifact's bytes are written, the manifest already declares the
+		// artifact's target state while the file is absent or stale —
+		// inspectResolved resolves that to StateNotInstalled/StateModified,
+		// which `install`/`update --install-missing` repairs on its own,
+		// instead of the pre-ADR order's StateModified/`unmanaged` outcome
+		// that required a human to run `install --force`.
+		pendingWrites := make([]pendingWrite, 0, len(active))
+		for _, item := range active {
+			manifest := manifests[item.manifest]
+			write, err := planArtifactWrite(item, &manifest, force, operation)
+			if err != nil {
+				return err
+			}
+			manifests[item.manifest] = manifest
+			if write != nil {
+				pendingWrites = append(pendingWrites, *write)
+			}
+		}
+		if err := persistManifests(manifests); err != nil {
+			return err
+		}
+		if afterManifestPersist != nil {
+			afterManifestPersist()
+		}
+		for _, write := range pendingWrites {
+			if err := atomicWrite(write.destination, write.content, write.mode); err != nil {
+				return fmt.Errorf("write managed artifact %q: %w", write.destination, err)
+			}
+		}
 	}
+	committed = true
+	return nil
+}
+
+// persistManifests writes every manifest in the batch, in deterministic
+// (sorted) filename order.
+func persistManifests(manifests map[string]Manifest) error {
 	manifestFiles := make([]string, 0, len(manifests))
 	for filename := range manifests {
 		manifestFiles = append(manifestFiles, filename)
@@ -267,7 +350,6 @@ func (m Manager) mutate(plans []PlannedArtifact, force bool, operation mutation)
 			return err
 		}
 	}
-	committed = true
 	return nil
 }
 
@@ -383,35 +465,55 @@ func detectNameCollision(item resolvedPlan, force bool) error {
 	return nil
 }
 
-func applyMutation(item resolvedPlan, manifest *Manifest, force bool, operation mutation) error {
+// applyUninstall removes ownership of one artifact from manifest, and — once
+// no claim remains — the artifact's bytes and any empty ancestor directories
+// this managed. It mutates disk directly (not deferred), because uninstall
+// deliberately keeps the pre-ADR-2026-08-18 ordering: see the comment in
+// mutate for why this is not simetrized with planArtifactWrite.
+func applyUninstall(item resolvedPlan, manifest *Manifest) error {
+	entry, hasEntry := manifest.Artifacts[item.destination]
+	owned := hasEntry && claimOwned(entry, item.plan.Claim)
+	if !owned {
+		return nil
+	}
+	entry.Claims = removeClaim(entry.Claims, item.plan.Claim)
+	if len(entry.Claims) != 0 {
+		manifest.Artifacts[item.destination] = entry
+		return nil
+	}
+	if err := os.Remove(item.destination); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove managed artifact %q: %w", item.destination, err)
+	}
+	root := filepath.Dir(filepath.Dir(item.manifest))
+	if err := removeEmptyAncestors(filepath.Dir(item.destination), root); err != nil {
+		return fmt.Errorf("clean managed artifact directories: %w", err)
+	}
+	delete(manifest.Artifacts, item.destination)
+	return nil
+}
+
+// planArtifactWrite computes the manifest update for one install/update item
+// entirely in memory — it never touches the artifact's bytes on disk. The
+// caller (mutate) persists every manifest in the batch first, and only then
+// applies the returned *pendingWrite (ADR-2026-08-18). It returns (nil, nil)
+// when no byte write is needed.
+//
+// The manifest values it stores are deliberately *optimistic* when a write is
+// pending: Hash/CatalogVersion describe the content this call is about to
+// write, not what is currently on disk. That is the point of the inversion —
+// if interrupted before the pending write lands, the manifest already
+// declares the target state and inspectResolved resolves the (absent or
+// stale) file to StateNotInstalled/StateModified, both self-repairable by a
+// later install/update, never StateModified+unowned ("unmanaged").
+func planArtifactWrite(item resolvedPlan, manifest *Manifest, force bool, operation mutation) (*pendingWrite, error) {
 	entry, hasEntry := manifest.Artifacts[item.destination]
 	owned := hasEntry && claimOwned(entry, item.plan.Claim)
 	desiredHash := contentHash(item.plan.Content)
 
-	if operation == mutationUninstall {
-		if !owned {
-			return nil
-		}
-		entry.Claims = removeClaim(entry.Claims, item.plan.Claim)
-		if len(entry.Claims) != 0 {
-			manifest.Artifacts[item.destination] = entry
-			return nil
-		}
-		if err := os.Remove(item.destination); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove managed artifact %q: %w", item.destination, err)
-		}
-		root := filepath.Dir(filepath.Dir(item.manifest))
-		if err := removeEmptyAncestors(filepath.Dir(item.destination), root); err != nil {
-			return fmt.Errorf("clean managed artifact directories: %w", err)
-		}
-		delete(manifest.Artifacts, item.destination)
-		return nil
-	}
-
 	data, err := os.ReadFile(item.destination)
 	exists := err == nil
 	if err != nil && !os.IsNotExist(err) {
-		return err
+		return nil, err
 	}
 	actualHash := contentHash(data)
 	knownLegacy := hashIn(actualHash, item.plan.LegacyHashes)
@@ -422,36 +524,45 @@ func applyMutation(item resolvedPlan, manifest *Manifest, force bool, operation 
 			// Defense-in-depth: preflight already rejects this exact case for
 			// mutationUpdate (unconditionally) and for mutationInstall without
 			// --force (any State == StateModified is blocked before an active
-			// item ever reaches applyMutation). This branch is therefore not
-			// reachable via Manager.Install/Update/Uninstall today, but it
-			// stays as a second line of defense in case preflight's guard is
-			// ever loosened — hence the identical remediation text, so a user
-			// who somehow hits it still gets the same actionable message.
-			return unmanagedArtifactError(item.destination, item.plan.Claim)
+			// item ever reaches planArtifactWrite). This branch is therefore
+			// not reachable via Manager.Install/Update today, but it stays as
+			// a second line of defense in case preflight's guard is ever
+			// loosened — hence the identical remediation text, so a user who
+			// somehow hits it still gets the same actionable message. No
+			// manifest mutation happens on this path.
+			return nil, unmanagedArtifactError(item.destination, item.plan.Claim)
 		}
 		writeDesired = operation == mutationUpdate && actualHash != desiredHash || force && actualHash != desiredHash
 	} else if exists && owned {
 		writeDesired = actualHash != desiredHash
-	}
-	if writeDesired {
-		if err := atomicWrite(item.destination, item.plan.Content, 0o644); err != nil {
-			return fmt.Errorf("write managed artifact %q: %w", item.destination, err)
-		}
-		actualHash = desiredHash
 	}
 
 	if !hasEntry {
 		entry = ManifestArtifact{Destination: item.destination}
 	}
 	entry.Claims = appendClaim(entry.Claims, item.plan.Claim)
-	entry.Hash = actualHash
-	if actualHash == desiredHash {
+
+	var write *pendingWrite
+	if writeDesired {
+		// Optimistic: bytes have not moved yet, but the manifest must already
+		// describe the content we are about to write (see doc comment above).
+		entry.Hash = desiredHash
 		entry.CatalogVersion = item.plan.CatalogVersion
+		write = &pendingWrite{destination: item.destination, content: item.plan.Content, mode: 0o644}
 	} else {
-		entry.CatalogVersion = "legacy"
+		// No pending write: either the desired content already matches disk,
+		// or a known-legacy artifact is being adopted without rewriting its
+		// bytes (see TestManagerLegacyAdoptionAndUpdate). The manifest must
+		// reflect the actual, already-on-disk hash.
+		entry.Hash = actualHash
+		if actualHash == desiredHash {
+			entry.CatalogVersion = item.plan.CatalogVersion
+		} else {
+			entry.CatalogVersion = "legacy"
+		}
 	}
 	manifest.Artifacts[item.destination] = entry
-	return nil
+	return write, nil
 }
 
 // removeEmptyAncestors removes only empty real directories below root. It
