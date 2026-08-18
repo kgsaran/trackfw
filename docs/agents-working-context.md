@@ -18941,3 +18941,76 @@ testes pré-existentes de credential-guard passam sem edição de expectativa, p
 
 Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
 commitar.
+
+## Sessão 2026-08-17 — apolo-tf (ML-2B — dedup projeto+global para o `git-branch-guard`) — CONCLUÍDO
+
+Roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`,
+ML-2B. Escopo: fechar o gap que o próprio ML-2A relatou (fiação de projeto + global do
+`git-branch-guard` somadas rodam o guard duas vezes por chamada Bash, dobrando a mensagem de
+bloqueio) espelhando exatamente o padrão `globalCredentialGuardInstalled<Tool>` já existente.
+
+**Arquivos:**
+- `internal/generators/agentfiles.go` — `globalGitBranchGuardScriptPath()` +
+  `globalGitBranchGuardInstalled{Claude,Codex,Gemini,Cursor,Copilot}()`, e os 5 pontos de fiação
+  de projeto (Claude, Codex, Gemini, Copilot, Cursor) passaram a checar essas funções antes de
+  adicionar a entrada. Kiro não tem fiação de `git-branch-guard` (nada a mudar); Windsurf/AmazonQ
+  não têm alvo global (nada a mudar, mesmo padrão do `credential-guard`).
+- `internal/generators/git_branch_guard_dedup_test.go` (novo) — 12 testes: 5 dedup +
+  1 key-absent-not-empty (Cursor) + 2 fail-open + 2 execução real (mensagem uma vez / prova de
+  não-vacuidade com 2 mensagens).
+- `npm/src/generators/hooks.js` — mesmas funções/wraps espelhados; comentários "no global-install
+  dedup" removidos/corrigidos nos 5 pontos.
+- `npm/tests/git_branch_guard_dedup.test.js` (novo, 10 testes) +
+  `npm/tests/credential_guard_dedup.test.js` (comentários desatualizados corrigidos nos casos
+  Cursor/Copilot — as asserções em si continuavam corretas, só a explicação estava errada).
+- `pypi/trackfw/generators/hooks.py` — mesmas funções/wraps espelhados; bloco de design-note
+  acima de `_GIT_GUARD_CMD_CLAUDE` corrigido (dizia "no gating exists", agora existe).
+- `pypi/tests/test_git_branch_guard_dedup.py` (novo, 10 testes) +
+  `pypi/tests/test_credential_guard_dedup.py` (mesma correção de comentário).
+- `docs/roadmaps/wip/ROADMAP-2026-08-17-...md` — ML-2B marcado `✅ Concluído`, critérios
+  marcados, escopo real/armadilhas/débito residual documentados inline no roadmap.
+
+**Decisões registradas:**
+1. **Escopo real: 5 dos 6 CLIs do `credential-guard`.** Kiro nunca teve fiação de projeto do
+   `git-branch-guard` (confirmado por leitura de `InjectKiroHooks`/`inject_kiro_hooks`, não
+   presumido) — nada a deduplicar. Windsurf/AmazonQ têm fiação de projeto mas nenhum alvo global
+   (ML-2A não os cobriu; nem o `credential-guard` tem dedup para eles) — mesmo padrão, não é gap
+   novo.
+2. **Cursor "empty array vs absent key" (risco levantado pelo arquiteto/advisor antes de
+   escrever código):** quando os DOIS guards têm fiação global instalada,
+   `hooks.beforeShellExecution` tem de ficar **ausente** do JSON, não um array vazio presente —
+   os 3 stacks só tocam essa chave dentro do `if` de dedup correspondente. Teste dedicado nos 3
+   stacks prova ausência, não `len==0`.
+3. **AC3 ("mensagem uma vez só, prove executando") levado ao pé da letra:** os testes de "message
+   once" geram o script real, escrevem a fiação global E rodam o injetor de projeto, **leem e
+   combinam** as entradas de `PreToolUse`/`Bash` dos dois arquivos (projeto + `~/.claude/...`,
+   como o Claude Code realmente faz), e **executam** cada entrada com `git push`, contando
+   bloqueios reais (exit 2 + stderr) — não contagem de entradas no JSON. Braço de não-vacuidade
+   simula o estado pré-ML-2B (as duas entradas presentes) e prova que a mesma metodologia reporta
+   2 bloqueios, não 1.
+4. **Cenário de falsificação em teste de unidade, não em `scripts/check-gates-falsify.sh`:**
+   `check-agent-hooks-parity.sh` roda sempre com `$HOME` isolado e vazio, então o caminho "global
+   instalado" nunca é exercitado por esse gate — nem para o `credential-guard`, cujo dedup também
+   nunca ganhou cenário de falsificação em nível de shell (o Cenário 46 ataca o guard de
+   vacuidade de OUTRO gate). Os 12+10+10 testes novos cobrem baseline, fail-open e não-vacuidade
+   por execução real — mesmo rigor do Cenário 46, no nível de teste que já pegaria a classe de
+   regressão de 2026-08-08.
+
+**Débito residual explícito, não fechado:** o dedup é só-de-adição — um projeto que já tinha a
+entrada de projeto escrita ANTES do global ser instalado mantém as duas até algo tocar o arquivo
+manualmente; não há helper de remoção ativa no padrão do `credential-guard` para copiar. Mesma
+classe de gap que o `credential-guard` já tem, decisão do arquiteto se fecha ou não.
+
+**Evidência (colada, bruta):**
+```
+go build ./...                              → limpo
+go test ./...                               → todos os pacotes ok (inclui os 12 novos)
+npm test (npm --prefix npm test)            → 647 passed, 0 failed (10 novos)
+PYTHONPATH=pypi python3 -m pytest pypi/tests → 1326 passed, 14 subtests, 0 failed (10 novos)
+make quality (completo)                     → exit 0, 127 cenários (sem novo cenário shell — ver
+                                               decisão 4 acima), 0 FAIL
+bin/trackfw validate (binário local)         → exit 0, 17 warnings pré-existentes, 0 novos
+```
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
+commitar.

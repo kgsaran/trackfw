@@ -210,6 +210,95 @@ def _global_credential_guard_installed_kiro() -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Global git-branch-guard dedup (ROADMAP-2026-08-17 Wave 2/ML-2B)
+# ---------------------------------------------------------------------------
+# Mirrors the _global_credential_guard_installed_* family above exactly,
+# pointed at ~/.trackfw/scripts/trackfw-git-branch-guard.sh instead of
+# trackfw-credential-guard.sh. Only 5 of the 6 credential-guard dedup
+# targets have a git-branch-guard counterpart: Kiro's project-scope injector
+# (inject_kiro_hooks) never wires git-branch-guard at all -- see its
+# "Git branch guard" comment -- so there is no
+# _global_git_branch_guard_installed_kiro. Windsurf/AmazonQ wire
+# git-branch-guard at project scope but have no global-scope target (ML-2A
+# only added targets for the 6 CLIs credential-guard already covers) and no
+# credential-guard dedup precedent either -- consistent, not a gap.
+# ---------------------------------------------------------------------------
+
+def _global_git_branch_guard_script_path() -> str | None:
+    """Mirrors Go's globalGitBranchGuardScriptPath / Node's
+    globalGitBranchGuardScriptPath."""
+    home = os.path.expanduser('~')
+    if not home or home == '~':
+        return None
+    return os.path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+
+
+def _global_git_branch_guard_installed_claude() -> bool:
+    script_path = _global_git_branch_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.claude', 'settings.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _hook_array_has_command(hooks.get('PreToolUse'), 'Bash', script_path)
+
+
+def _global_git_branch_guard_installed_codex() -> bool:
+    script_path = _global_git_branch_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.codex', 'hooks.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _hook_array_has_command(hooks.get('PreToolUse'), 'Bash', script_path)
+
+
+def _global_git_branch_guard_installed_gemini() -> bool:
+    script_path = _global_git_branch_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.gemini', 'settings.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _hook_array_has_command(hooks.get('BeforeTool'), 'run_shell_command', script_path)
+
+
+def _global_git_branch_guard_installed_cursor() -> bool:
+    script_path = _global_git_branch_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.cursor', 'hooks.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _simple_array_has_value(hooks.get('beforeShellExecution'), 'command', script_path)
+
+
+def _global_git_branch_guard_installed_copilot() -> bool:
+    script_path = _global_git_branch_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.copilot', 'settings.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _simple_array_has_value(hooks.get('preToolUse'), 'bash', script_path)
+
+
 def _merge_claude_hook_array(hook_list: list, matcher: str, command: str) -> None:
     """Garante (idempotente) que hook_list tenha uma entrada matcher→command.
 
@@ -320,9 +409,12 @@ def inject_claude_hooks(cwd: str) -> None:
         _merge_claude_hook_array(pre_hooks, 'Read', _GUARD_CMD_CLAUDE)
         _merge_claude_hook_array(pre_hooks, 'Write|Edit', _GUARD_CMD_CLAUDE)
 
-    # Git branch guard (ML-3C): Bash-only, PreToolUse-only, unconditional -- see the
-    # design-note block above _GIT_GUARD_CMD_CLAUDE.
-    _merge_claude_hook_array(pre_hooks, 'Bash', _GIT_GUARD_CMD_CLAUDE)
+    # Git branch guard (ML-3C): Bash-only, PreToolUse-only -- see the design-note block
+    # above _GIT_GUARD_CMD_CLAUDE. Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip
+    # project-scope when the global one is already installed
+    # (`trackfw update harness --targets claude-git-branch-guard`).
+    if not _global_git_branch_guard_installed_claude():
+        _merge_claude_hook_array(pre_hooks, 'Bash', _GIT_GUARD_CMD_CLAUDE)
 
     # PostToolUse — AskUserQuestion matcher → cleanup; Bash matcher → credential guard
     _merge_claude_hook_array(post_hooks, 'AskUserQuestion', _CLEANUP_CMD_CLAUDE)
@@ -425,12 +517,15 @@ _GUARD_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
 #   - PreToolUse/before-* ONLY, no PostToolUse/after-*: blocking *after* the git
 #     command already ran accomplishes nothing; credential-guard's PostToolUse arm
 #     exists to catch leaks in tool *output*, which has no git-command analogue.
-#   - No `_global_git_branch_guard_installed_*`/skip-if-global-installed family: Go's
-#     agentfiles.go has no such gating for this guard (only credential-guard has it),
-#     and it would be unnecessary here regardless -- a subagent running the same
-#     blocked git command twice (once via the project hook, once via a global one) is
-#     merely idempotent, not a duplicate-warning problem like credential-guard's
-#     attention-signal file. Project-scope wiring below is therefore unconditional.
+#   - `_global_git_branch_guard_installed_*`/skip-if-global-installed family
+#     (ROADMAP-2026-08-17 Wave 2/ML-2B, added after this comment was first written):
+#     Go's agentfiles.go now HAS this gating (globalGitBranchGuardInstalled<Tool>),
+#     mirroring credential-guard's dedup family exactly -- running the same blocked
+#     git command's hook twice per Bash call is idempotent in EFFECT (still blocks),
+#     but doubles the block MESSAGE printed to the agent/user, which is the exact
+#     symptom this dedup exists to close (see the ML-2B roadmap's "Impacto medido").
+#     Applied to Claude/Codex/Gemini/Cursor/Copilot below (Kiro has no git-branch-guard
+#     project wiring at all, see inject_kiro_hooks).
 #   - No `_migrate_hook_command` calls: this is a brand-new script/command string with
 #     no legacy relative-path predecessor to rewrite (unlike credential-guard's
 #     `scripts/trackfw-credential-guard.sh` -> $CLAUDE_PROJECT_DIR/... fix history).
@@ -478,12 +573,15 @@ def inject_codex_hooks(cwd: str) -> None:
             pre_tool_hooks, 'apply_patch', _GUARD_CMD_CODEX,
         )
 
-    # Git branch guard (ML-3C): Bash-only, PreToolUse-only, unconditional -- see the
-    # design-note block above _GIT_GUARD_CMD_CLAUDE. No apply_patch matcher: git
-    # commit/push/checkout -b never reach Codex's apply_patch tool.
-    _merge_codex_hook_entry(
-        pre_tool_hooks, 'Bash', _GIT_GUARD_CMD_CODEX,
-    )
+    # Git branch guard (ML-3C): Bash-only, PreToolUse-only -- see the design-note block
+    # above _GIT_GUARD_CMD_CLAUDE. No apply_patch matcher: git commit/push/checkout -b
+    # never reach Codex's apply_patch tool. Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip
+    # project-scope when the global one is already installed
+    # (`trackfw update harness --targets codex-git-branch-guard`).
+    if not _global_git_branch_guard_installed_codex():
+        _merge_codex_hook_entry(
+            pre_tool_hooks, 'Bash', _GIT_GUARD_CMD_CODEX,
+        )
 
     post_hooks = hooks.setdefault('PostToolUse', [])
     _migrate_hook_command(post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh', _CLEANUP_CMD_CODEX)
@@ -581,9 +679,12 @@ def inject_gemini_hooks(cwd: str) -> None:
         _merge_claude_hook_array(before, 'read_file|read_many_files', _GUARD_CMD_GEMINI)
         _merge_claude_hook_array(before, 'write_file|replace', _GUARD_CMD_GEMINI)
 
-    # Git branch guard (ML-3C): run_shell_command-only, BeforeTool-only, unconditional
-    # -- see the design-note block above _GIT_GUARD_CMD_CLAUDE.
-    _merge_claude_hook_array(before, 'run_shell_command', _GIT_GUARD_CMD_GEMINI)
+    # Git branch guard (ML-3C): run_shell_command-only, BeforeTool-only -- see the
+    # design-note block above _GIT_GUARD_CMD_CLAUDE. Dedup (ROADMAP-2026-08-17 Wave
+    # 2/ML-2B): skip project-scope when the global one is already installed
+    # (`trackfw update harness --targets gemini-git-branch-guard`).
+    if not _global_git_branch_guard_installed_gemini():
+        _merge_claude_hook_array(before, 'run_shell_command', _GIT_GUARD_CMD_GEMINI)
 
     after = hooks.setdefault('AfterTool', [])
     _migrate_hook_command(after, '*', 'scripts/trackfw-attention-cleanup.sh', _CLEANUP_CMD_GEMINI)
@@ -779,16 +880,18 @@ def inject_copilot_hooks(cwd: str) -> None:
         post_tool_use.append(dict(write_entry))
 
     # Git branch guard (ML-3C, ROADMAP-2026-08-14): "bash" matcher, preToolUse only --
-    # see the design-note block above _GIT_GUARD_CMD_CLAUDE in this module. Unconditional
-    # (no _global_git_branch_guard_installed_* gating exists for this guard, unlike the
-    # credential-guard entries above).
-    pre_tool_use.append({
-        'type': 'command',
-        'matcher': 'bash',
-        'bash': _GIT_GUARD_CMD_PLAIN,
-        'cwd': '.',
-        'timeoutSec': 10,
-    })
+    # see the design-note block above _GIT_GUARD_CMD_CLAUDE in this module. Dedup
+    # (ROADMAP-2026-08-17 Wave 2/ML-2B): skip project-scope when the global one is
+    # already installed (`trackfw update harness --targets copilot-git-branch-guard`),
+    # same reasoning as the credential-guard dedup above.
+    if not _global_git_branch_guard_installed_copilot():
+        pre_tool_use.append({
+            'type': 'command',
+            'matcher': 'bash',
+            'bash': _GIT_GUARD_CMD_PLAIN,
+            'cwd': '.',
+            'timeoutSec': 10,
+        })
 
     data = {
         'version': 1,
@@ -940,14 +1043,19 @@ def inject_cursor_hooks(cwd: str) -> None:
             post.append({'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Write'})
 
     # Git branch guard (ML-3C, ROADMAP-2026-08-14): beforeShellExecution only -- see the
-    # design-note block above _GIT_GUARD_CMD_CLAUDE in this module. Defined outside the
-    # `_global_credential_guard_installed_cursor()` conditional above (unlike the
-    # credential-guard entries): no `_global_git_branch_guard_installed_*` gating exists
-    # for this guard, so it is wired unconditionally, and `before` must exist regardless
-    # of whether that conditional ran.
-    before = hooks.setdefault('beforeShellExecution', [])
-    if not _has_entry(before, 'command', _GIT_GUARD_CMD_PLAIN):
-        before.append({'command': _GIT_GUARD_CMD_PLAIN})
+    # design-note block above _GIT_GUARD_CMD_CLAUDE in this module. Dedup
+    # (ROADMAP-2026-08-17 Wave 2/ML-2B): skip project-scope when the global one is
+    # already installed (`trackfw update harness --targets cursor-git-branch-guard`). The
+    # key is intentionally only touched inside this conditional (never a bare
+    # `hooks.setdefault('beforeShellExecution', [])` outside it) so that when BOTH
+    # credential-guard and git-branch-guard are deduped away, the key stays absent from
+    # the emitted JSON rather than becoming a present-but-empty array -- matches Go's
+    # InjectCursorHooks, which check-agent-hooks-parity.sh's structural comparator
+    # treats as significant (absent key vs empty array is drift, not noise).
+    if not _global_git_branch_guard_installed_cursor():
+        before = hooks.setdefault('beforeShellExecution', [])
+        if not _has_entry(before, 'command', _GIT_GUARD_CMD_PLAIN):
+            before.append({'command': _GIT_GUARD_CMD_PLAIN})
 
     _write_json(file_path, data)
 

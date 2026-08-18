@@ -286,7 +286,7 @@ catálogo original.
 ---
 
 ### ML-2B — Dedup projeto+global para o `git-branch-guard`
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído — pendente de auditoria do arquiteto · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `internal/generators/agentfiles.go` + espelhos Node/Python, `scripts/check-gates-falsify.sh`, testes.
 
 **O gap, medido:** o `credential-guard` tem `globalCredentialGuardInstalled<Tool>()` e o escopo de
@@ -307,13 +307,121 @@ seria contraditório — e o ADR desta REQ argumenta que incômodo leva o usuár
 guard desligado protege zero.
 
 **Critérios de aceite:**
-- [ ] Com fiação global presente, o escopo de projeto **não** cabea o `git-branch-guard`.
-- [ ] Sem fiação global, o escopo de projeto cabea normalmente — não-regressão.
-- [ ] Mensagem aparece **uma vez só** com ambos os escopos instalados; prove executando.
-- [ ] `credential-guard` inalterado (é o modelo, não pode mudar).
-- [ ] `$HOME` do teste controlado pelo fixture, nunca o real (precedente: Cenário 46).
-- [ ] Cenário de falsificação com baseline e detecção.
-- [ ] `make quality` verde.
+- [x] Com fiação global presente, o escopo de projeto **não** cabea o `git-branch-guard`.
+- [x] Sem fiação global, o escopo de projeto cabea normalmente — não-regressão.
+- [x] Mensagem aparece **uma vez só** com ambos os escopos instalados; prove executando.
+- [x] `credential-guard` inalterado (é o modelo, não pode mudar).
+- [x] `$HOME` do teste controlado pelo fixture, nunca o real (precedente: Cenário 46).
+- [x] Cenário de falsificação com baseline e detecção.
+- [x] `make quality` verde.
+
+**Escopo real (medido, 5 dos 6 alvos de `credential-guard`):** dedup adicionado em
+Claude/Codex/Gemini/Cursor/Copilot — os mesmos 5 CLIs que já tinham a fiação de projeto do
+`git-branch-guard` **e** ganharam alvo global no ML-2A. **Kiro não tem fiação de projeto do
+`git-branch-guard`** (`InjectKiroHooks`/`inject_kiro_hooks` nunca a escreveram — confirmado por
+leitura, não presumido), logo não há nada a deduplicar ali; documentado no código, não é gap.
+Windsurf/AmazonQ têm fiação de projeto mas **nenhum alvo global** (ML-2A não os cobriu, mesmo
+padrão do `credential-guard`, que também não tem dedup para esses dois) — consistente, não é gap
+novo introduzido por este ML.
+
+**Armadilha do "empty array vs absent key" (Cursor):** quando os dois guards (`credential-guard`
+E `git-branch-guard`) têm fiação global instalada, `hooks.beforeShellExecution` não pode virar um
+array vazio *presente* — tem de ficar **ausente** do JSON, replicando o que o Go já fazia para o
+`credential-guard` sozinho. Os 3 stacks foram alinhados para só tocar essa chave dentro do `if`
+de dedup correspondente, nunca fora dele; teste dedicado
+(`TestGBGDedup_Cursor_BothGloballyInstalled_KeyAbsentNotEmpty` e espelhos Node/Python) prova a
+ausência da chave, não um array de tamanho 0.
+
+**Prova por execução (AC3), não contagem de JSON:** `TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled`
+(Go) e espelhos Node/Python geram o script real (`GenerateGitBranchGuardScript`/
+`GenerateGlobalGitBranchGuardScript`), escrevem a fiação global E rodam o injetor de projeto,
+depois **leem e combinam** as entradas de `PreToolUse`/`Bash` dos dois arquivos
+(`.claude/settings.json` do projeto E `~/.claude/settings.json`) — exatamente como o Claude Code
+faz na prática — e **executam** cada script registrado com `git push`, contando quantas vezes o
+processo bloqueia (`exit 2` + a razão no stderr). Braço de não-vacuidade
+(`TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled_NonVacuous`) simula o estado pré-ML-2B
+(as duas entradas presentes, sem dedup) e prova que a mesma metodologia de contagem por execução
+reporta 2 bloqueios — não 1 — fechando a lacuna que uma asserção só-de-JSON deixaria aberta.
+
+**Cenário de falsificação (P4):** implementado como testes de unidade nos 3 stacks
+(`internal/generators/git_branch_guard_dedup_test.go`,
+`npm/tests/git_branch_guard_dedup.test.js`, `pypi/tests/test_git_branch_guard_dedup.py`) — não
+como cenário novo em `scripts/check-gates-falsify.sh`. Motivo: `check-agent-hooks-parity.sh`
+sempre roda com `$HOME` isolado e **vazio** (nenhum guard global instalado), então o caminho
+"global instalado" nunca é exercitado por esse gate — nem para o `credential-guard`, cujo próprio
+dedup nunca ganhou um cenário de falsificação em nível de shell além do Cenário 46 (que ataca o
+guard de vacuidade de OUTRO gate, não o mecanismo de dedup em si). Os testes de unidade cobrem
+baseline (skip com global instalado), fail-open (sem global/`$HOME` corrompido, 2 casos) e
+não-vacuidade por execução real de processo — mesmo padrão de rigor do Cenário 46 (baseline +
+detecção + prova de não-vacuidade), só que no nível de teste que já teria pego a regressão
+original do `credential-guard` em 2026-08-08.
+
+**Débito residual explícito (não fechado, decisão do arquiteto):** o dedup do `credential-guard` é
+*só de adição* — nunca remove uma entrada de projeto já escrita por um `trackfw init`/`update`
+anterior. Um projeto que **já tinha** a fiação de projeto do `git-branch-guard` escrita antes do
+`trackfw update harness` instalar o guard global mantém as duas entradas até o próximo
+`trackfw init`/`update` **depois** de o global já estar presente — só então o dedup entra em
+efeito e a entrada de projeto para de ser reescrita (ela nunca é apagada ativamente; simplesmente
+deixa de ser reafirmada a cada rodada, e como `mergeClaudeHookArray`/equivalentes não removem
+entradas, ela sobrevive até alguém tocar o arquivo manualmente ou até um ML futuro adicionar
+remoção ativa). Não há helper de remoção no padrão do `credential-guard` para copiar. Não fechado
+aqui — mesma classe de gap, mesma decisão do arquiteto sobre corrigi-lo ou não.
+
+---
+
+### Diagnóstico do arquiteto — o dedup está certo, a comparação de caminho é que é frágil
+
+**O dedup funciona.** Medido com fixture próprio:
+```
+sem fiação global  -> projeto cabeia   (1 ref)
+com fiação global  -> projeto pula     (0 refs)     credential-guard também pula
+```
+
+**Mas `make quality` reprova**, no baseline do próprio Cenário 67:
+`entrada de git-branch-guard presente ... com a fiação global instalada`.
+
+**Causa raiz, provada.** O `TMPDIR` do macOS termina em `/`, então `$WORK` do falsify vira
+`/var/folders/.../T//trackfw-falsify.XXX` — com **barra dupla**. O fixture escreve o comando do hook
+com `//`; o Go monta o caminho esperado com `filepath.Join`, que **normaliza** e remove a barra
+duplicada. A comparação é de **string crua**:
+
+```go
+// agentfiles.go:1616
+if ok && hObj["command"] == command {
+```
+
+Discriminante medido:
+```
+HOME sem '//'  -> refs=0   dedup dispara
+HOME com '//'  -> refs=1   dedup NAO dispara
+```
+
+**Não é só bug de fixture.** `hookArrayHasCommand` é compartilhado, e o
+`globalCredentialGuardInstalled*` usa o mesmo comparador — a fragilidade é **pré-existente** no
+`credential-guard`, e o ML-2B apenas a herdou. Qualquer divergência inócua de forma no caminho
+(barra dupla, barra final, `/tmp` vs `/private/tmp` por symlink, config escrita à mão) faz o dedup
+falhar em silêncio e o guard voltar a rodar duas vezes.
+
+É a mesma classe que atravessa esta REQ inteira: **comparação por igualdade exata onde a
+comparação correta é normalizada** — igual ao ponto cego de resolvibilidade do hook, que tratava
+caminho como propriedade absoluta em vez de relativa ao cwd.
+
+**Corretivo (ML-2C):** normalizar os dois lados antes de comparar **e** corrigir o fixture para não
+depender de `//`. Corrigir só o fixture deixaria o produto frágil e o gate verde — o pior par.
+
+---
+
+### ML-2C — Comparar caminho de hook normalizado, não string crua
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `internal/generators/agentfiles.go` (`hookArrayHasCommand`) + espelhos Node/Python,
+`scripts/check-gates-falsify.sh` (fixture do Cenário 67), testes.
+
+**Critérios de aceite:**
+- [ ] `hookArrayHasCommand` normaliza ambos os lados antes de comparar (barra dupla, barra final).
+- [ ] Discriminante: `HOME` com `//` passa a deduplicar — hoje não deduplica.
+- [ ] Fixture do Cenário 67 deixa de depender de `//`, mas o **produto** também passa a tolerá-lo.
+- [ ] **Não-regressão do `credential-guard`:** dedup dele inalterado; **Cenário 46 continua passando**.
+- [ ] Cenários 60–67 verdes; `make quality` verde; `./bin/trackfw validate` exit 0.
 
 ---
 

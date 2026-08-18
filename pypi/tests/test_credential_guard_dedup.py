@@ -139,11 +139,12 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         inject_cursor_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.cursor', 'hooks.json'))
-        # ML-3C (ROADMAP-2026-08-14): beforeShellExecution still carries the unconditional
-        # git-branch-guard entry even when the global credential-guard dedup skips the
-        # project-scope credential-guard entry -- no `_global_git_branch_guard_installed_*`
-        # gating exists for this guard (see design-note above _GIT_GUARD_CMD_CLAUDE in
-        # trackfw/generators/hooks.py).
+        # ROADMAP-2026-08-17 Wave 2/ML-2B: git-branch-guard now has its own global dedup
+        # (_global_git_branch_guard_installed_cursor), but this fixture only wired the
+        # GLOBAL credential-guard entry, not git-branch-guard's -- so the git-branch-guard
+        # dedup check finds no matching command and fails open, keeping its project-scope
+        # entry. See test_git_branch_guard_dedup.py for the case where the git-branch-guard
+        # global IS installed.
         self.assertEqual(len(data['hooks'].get('beforeShellExecution', [])), 1)
         self.assertEqual(data['hooks']['beforeShellExecution'][0]['command'], 'scripts/trackfw-git-branch-guard.sh')
         self.assertEqual(len(data['hooks'].get('afterShellExecution', [])), 0)
@@ -164,10 +165,11 @@ class TestDedupSkipsProjectEntry(DedupTestCase):
         inject_copilot_hooks(project_dir)
 
         data = _read_json(os.path.join(project_dir, '.github', 'hooks', 'trackfw-attention.json'))
-        # ML-3C (ROADMAP-2026-08-14): preToolUse still carries the unconditional
-        # git-branch-guard entry even when the global credential-guard dedup skips the
-        # project-scope credential-guard entries -- see the cursor test above for the
-        # same design note.
+        # ROADMAP-2026-08-17 Wave 2/ML-2B: git-branch-guard now has its own global dedup
+        # (_global_git_branch_guard_installed_copilot), but this fixture only wired the
+        # GLOBAL credential-guard entry, not git-branch-guard's -- so the git-branch-guard
+        # dedup check finds no matching command and fails open, keeping its project-scope
+        # entry alongside the always-on attention-signal entry.
         self.assertEqual(len(data['hooks']['preToolUse']), 2)
         self.assertEqual(data['hooks']['preToolUse'][0]['bash'], 'scripts/trackfw-attention-signal.sh')
         self.assertEqual(data['hooks']['preToolUse'][1]['bash'], 'scripts/trackfw-git-branch-guard.sh')
