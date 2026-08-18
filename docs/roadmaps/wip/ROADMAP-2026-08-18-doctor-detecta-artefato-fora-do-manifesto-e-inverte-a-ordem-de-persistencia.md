@@ -1,0 +1,103 @@
+---
+status: wip
+date: 2026-08-18
+req: "docs/req/REQ-2026-08-17-doctor-detecta-artefato-em-disco-ausente-do-manifesto-apos-janela-de-gravacao-parcial.md"
+adr: "docs/adr/ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md"
+squad: "apolo-tf, hades-tf"
+---
+
+# Roadmap: `doctor` detecta artefato fora do manifesto, e a ordem de persistência inverte
+
+> Created: 2026-08-18 | Status: wip
+
+## Context
+
+REQ: `docs/req/REQ-2026-08-17-doctor-detecta-artefato-em-disco-ausente-do-manifesto-apos-janela-de-gravacao-parcial.md`
+ADR: `docs/adr/ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md`
+
+Origem: bug de KG no CMDB — 12 arquivos em disco, 10 no manifesto, e o `agents update --force`
+recusando com `unmanaged artifact`. O comportamento estava certo; o **estado** é que não deveria
+existir.
+
+Duas frentes, e a **ordem importa**: a inversão da frente 2 impede casos novos, mas **não** conserta
+instalações que já estão no estado ruim. O `doctor` é o que revela essas.
+
+## Acceptance Criteria
+- [ ] AC1 — Detecta **arquivo em disco ausente do manifesto** e o distingue de **arquivo modificado à mão**.
+- [ ] AC2 — A saída **nomeia o remédio**, com comando pronto para copiar.
+- [ ] AC3 — Paridade nos 3 CLIs, com **gate comparando saídas reais** — não por leitura de fonte.
+- [ ] AC4 — Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
+- [ ] AC5 — Não-regressão: `update` **continua recusando** bytes unmanaged mesmo com `--force`.
+- [ ] AC6 — Decisão sobre a janela registrada em ADR. ✅ **feito** — `ADR-2026-08-18`, inverter a ordem.
+- [ ] AC7 — Inversão implementada, com rollback preservado em erro normal.
+- [ ] AC8 — `make quality` verde **e CI verde**.
+
+## 🔴 Riscos que valem para todos os MLs
+
+1. **Falso-positivo é o risco dominante do `doctor`.** Acusar artefato legítimo treina o usuário a
+   ignorar a saída. A comparação é **por conteúdo contra o template do catálogo**, não por presença
+   de arquivo.
+2. **A frente 2 é o caminho de escrita de TODO `install`/`update`.** Qualquer regressão afeta tudo.
+3. **Fixture com manifesto de fato incompleto**, nunca mock — é o estado que se quer detectar.
+4. **`make quality` verde localmente não fecha AC** — o AC8 exige CI. Já errei isso nesta série.
+5. **AC3 não se fecha com teste por stack.** Exige gate comparando as três saídas reais; foi
+   exatamente a lacuna que virou ML corretivo nas duas REQs anteriores.
+
+---
+
+## Wave 1 — Inversão da ordem (impede casos novos)
+
+### ML-1A — Persistir manifesto antes dos artefatos
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `internal/integrations/manager.go` (`mutate`) + espelhos Node/Python, testes dos 3.
+
+**Ação:** trocar a ordem dos dois laços de `mutate` — persistir os manifestos **antes** de escrever
+os bytes. Ver o ADR para o raciocínio: cada escrita já é atômica, a janela é só de ordem, e a
+direção invertida é auto-reparável (`StateNotInstalled`) em vez de exigir humano (`unmanaged`).
+
+**Critérios de aceite:**
+- [ ] Interrupção simulada entre as fases deixa **manifesto à frente**, e `install`/`update` repara sozinho.
+- [ ] **Rollback preservado**: erro normal no meio do lote restaura arquivos **e** manifestos.
+- [ ] Não-regressão: `install`, `update` e `uninstall` inalterados no caminho feliz, nos 3 CLIs.
+- [ ] Cenário P4 com baseline e detecção.
+- [ ] `make quality` verde.
+
+---
+
+## Wave 2 — `doctor` (revela o estado ruim já existente)
+
+### ML-2A — Comando/regra que detecta artefato fora do manifesto
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Dependência:** ML-1A — a inversão muda o estado que o `doctor` vai encontrar.
+
+**Ação:** detectar **arquivo cujo conteúdo bate com o template do catálogo e que está ausente do
+manifesto** — isso não é adulteração, é escrita não registrada, e o remédio é diferente. Distinguir
+de **arquivo modificado à mão**, que continua sendo o caso de `install --force`.
+
+**Critérios de aceite:**
+- [ ] As duas classes são distinguidas e têm remédios diferentes; não podem ser fundidas.
+- [ ] A saída nomeia o remédio com comando pronto para copiar.
+- [ ] **Não acusa** artefato legítimo — risco 1.
+- [ ] Gate comparando as **três saídas reais**; teste por stack não fecha o AC3.
+- [ ] Cenário P4 reproduzindo a janela.
+- [ ] `make quality` verde.
+
+---
+
+## Wave 3 — Barreira
+
+### ML-3A — `hades-tf`: revisão da inversão e do diagnóstico
+**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Escreve:** `docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md`
+
+**Ações:** a inversão mexe no caminho de escrita de tudo — avaliar se abre caminho para o produto
+sobrescrever bytes que não escreveu, ou para o manifesto declarar como gerenciado algo que não é.
+Avaliar se o `doctor` pode ser induzido a chamar de "escrita não registrada" um artefato adulterado
+de fato — o que rebaixaria adulteração a acidente. **Veredito explícito; bloquear é saída legítima.**
+
+---
+
+## Notas
+- **Fora de escopo, declarado:** WAL/journal cross-file — rejeitado no ADR por desproporção.
+- **Fora de escopo:** afrouxar o `preflight`; ele recusar bytes desconhecidos é correto.
+- Commits e branch são exclusivos do `trackfw_architect`.
