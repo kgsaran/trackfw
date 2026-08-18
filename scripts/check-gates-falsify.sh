@@ -228,11 +228,21 @@ assert_writer_no_epipe() {
   local werr guard_status writer_status
   werr="$WORK/${label//\//_}.werr"
   set +e
+  # O payload NUNCA vai por argv (ARG_MAX/MAX_ARG_STRLEN do Linux: 128 KB por
+  # argumento -- um payload de 200 KB embutido na fonte do -c estourava e o
+  # escritor nem chegava a nascer, tornando o braço vácuo). Ele entra via a
+  # here-string do bash (<<<), que é implementada com um arquivo temporário e
+  # redirecionamento de fd -- não conta para o limite de argv/envp. O python3
+  # lê do PRÓPRIO stdin (o arquivo temporário do bash) e escreve no seu
+  # stdout, que É o pipe real para o guard -- preserva o mecanismo que este
+  # helper existe para provar (escritor externo, pipe de verdade, EPIPE
+  # observável via BrokenPipeError no stderr do escritor).
   python3 -c "
 import sys
-sys.stdout.write('''$payload''')
+data = sys.stdin.read()
+sys.stdout.write(data)
 sys.stdout.flush()
-" 2>"$werr" | bash "$script" >/dev/null 2>&1
+" <<<"$payload" 2>"$werr" | bash "$script" >/dev/null 2>&1
   guard_status=${PIPESTATUS[1]}
   writer_status=${PIPESTATUS[0]}
   set -e

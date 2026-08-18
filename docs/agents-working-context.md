@@ -19419,3 +19419,45 @@ forma — não tocado por design (arquivo dedicado sempre reescrito por inteiro)
 Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
 commitar. Roadmap permanece responsabilidade do arquiteto atualizar (Wave 4/ML-4B pendente de
 auditoria).
+
+---
+
+## Sessão 2026-08-18 — Apolo (INÍCIO: ML-4C — payload grande do Cenário 65 via argv, quebra em Linux/CI)
+
+Branch `fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao`,
+roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`
+em `wip/`. PR #186 abriu com `parity` vermelho no CI (Linux): `assert_writer_no_epipe` interpola o
+payload de 200 KB do Cenário 65 dentro da fonte do `python3 -c`, virando um argumento de `execve` —
+o Linux aplica `MAX_ARG_STRLEN` (128 KB por argumento), o macOS não barra do mesmo jeito. Escopo:
+só `scripts/check-gates-falsify.sh` (helper na linha ~222). Nenhum commit/push/branch (autoridade
+exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-18 — Apolo (FIM: ML-4C concluído — payload via here-string, provado em Linux real)
+
+**Fix:** o payload deixou de ser interpolado no código-fonte do `python3 -c`; agora entra via
+here-string do bash (`<<<"$payload"`), e o `python3` lê do próprio `sys.stdin`. A here-string do
+bash é implementada com arquivo temporário + `fd 0` redirecionado — nunca vira argumento de
+`execve`, então nunca esbarra em `MAX_ARG_STRLEN`, independentemente do tamanho do payload. O pipe
+real entre o `python3` (escritor) e o guard continua existindo — o mecanismo que o helper existe
+para provar (EPIPE observável via `BrokenPipeError` no stderr do escritor externo) não mudou.
+
+**Como confirmei, sem depender só de "passou no macOS" (o que falhou da vez passada):**
+1. Prova estrutural: rodei `python3 -c "... print(len(sys.argv)); data=sys.stdin.read() ..." <<<"$BIG"`
+   com payload de 300 KB — `argv` tem só o placeholder do `-c` (nunca o payload), o payload de fato
+   chega por `stdin` (300001 bytes lidos).
+2. **Reprodução em container Linux real** (`docker run python:3.12-slim`, mesmo runtime do CI):
+   a forma ANTIGA (payload em argv) reproduz **exatamente** o erro do CI —
+   `bash: line 12: /usr/local/bin/python3: Argument list too long`, exit 126. A forma NOVA
+   (here-string) roda limpo, exit 0, stderr vazio, no mesmo container/mesmo binário/mesmo
+   `ARG_MAX`/`MAX_ARG_STRLEN`.
+3. Gate completo em macOS: os 3 braços do Cenário 65 continuam `OK` (baseline pequeno, baseline
+   grande, detecção com EPIPE genuíno), `make quality` completo verde (130 cenários, 0 FAIL),
+   `./bin/trackfw validate` exit 0, 18 warnings — os mesmos pré-existentes já documentados no
+   roadmap (17 + o script global desatualizado real de KG), 0 novos.
+
+**Evidência bruta** colada no roadmap, seção ML-4C, incluindo a saída do container Docker
+lado a lado (forma antiga falha / forma nova passa).
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect`: auditar,
+commitar, dar push e confirmar `parity` verde no CI do PR #186 — essa última verificação depende do
+CI real e é responsabilidade do arquiteto pós-push.
