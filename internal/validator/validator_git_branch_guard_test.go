@@ -377,3 +377,103 @@ func TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio(t *testing.T) {
 		t.Errorf("esperado silêncio (sem wiring global hoje), obteve: %v", msgs)
 	}
 }
+
+// ---- git_branch_guard_script_integrity / credential_guard_script_integrity (escopo GLOBAL,
+// disparo por EXISTÊNCIA do artefato — ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
+// projeto-e-integridade-independente-de-fiacao, ML-3A) ----
+
+// TestGuardGlobalScriptIntegrity_DisparaSemNenhumaFiacao — o discriminante central deste ML: o
+// script global existe e diverge do template, mas ZERO arquivo de config (nenhum dos 6
+// globalGuardConfigFiles) referencia o marker. Antes deste ML, o laço da regra antiga nunca
+// entrava e o script podia apodrecer indefinidamente — foi assim que o git-branch-guard real de KG
+// ficou 3 versões atrasado com `validate` verde (motivação da REQ).
+func TestGuardGlobalScriptIntegrity_DisparaSemNenhumaFiacao(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	globalScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(globalScriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(globalScriptPath, []byte("#!/usr/bin/env bash\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write corrupted global script: %v", err)
+	}
+	// Nenhum arquivo de config é escrito neste $HOME — nenhuma fiação existe.
+
+	msgs, err := validateGitBranchGuardGlobalScriptIntegrity()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(msgs, "diverges from the template") || !hasViolation(msgs, globalScriptPath) {
+		t.Errorf("esperado violation de integridade global mesmo sem fiação, obteve: %v", msgs)
+	}
+}
+
+// TestGuardGlobalScriptIntegrity_AusenciaDoArtefato_Silencio — script global nunca instalado (nem
+// arquivo, nem fiação) não é erro: instalar o harness global é opcional, e falso-positivo aqui
+// afetaria todo usuário que nunca rodou `trackfw update harness`.
+func TestGuardGlobalScriptIntegrity_AusenciaDoArtefato_Silencio(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	msgs, err := validateGitBranchGuardGlobalScriptIntegrity()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("esperado silêncio com script global ausente, obteve: %v", msgs)
+	}
+
+	cmsgs, err := validateCredentialGuardGlobalScriptIntegrity()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(cmsgs) != 0 {
+		t.Errorf("esperado silêncio (credential-guard) com script global ausente, obteve: %v", cmsgs)
+	}
+}
+
+// TestGuardGlobalScriptIntegrity_NaoDuplicaComDoisConfigsReferenciandoOMesmoScript — prova de
+// "sem dupla emissão": o MESMO script corrompido é referenciado por 2 arquivos de config
+// diferentes (Claude E Codex) — antes deste ML, o laço antigo iterava por config e emitiria 2
+// mensagens; a checagem por existência do artefato avalia o caminho fixo em disco uma única vez,
+// então o resultado tem que ser exatamente 1 mensagem, nunca 2.
+func TestGuardGlobalScriptIntegrity_NaoDuplicaComDoisConfigsReferenciandoOMesmoScript(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	globalScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(globalScriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(globalScriptPath, []byte("#!/usr/bin/env bash\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write corrupted global script: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(globalClaudeSettingsWithCommand(globalScriptPath)), 0644); err != nil {
+		t.Fatalf("write claude settings: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".codex", "hooks.json"), []byte(globalClaudeSettingsWithCommand(globalScriptPath)), 0644); err != nil {
+		t.Fatalf("write codex hooks: %v", err)
+	}
+
+	msgs, err := validateGitBranchGuardGlobalScriptIntegrity()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("esperado exatamente 1 mensagem (script referenciado por 2 configs), obteve %d: %v", len(msgs), msgs)
+	}
+}

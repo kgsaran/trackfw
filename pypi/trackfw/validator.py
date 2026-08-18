@@ -2682,67 +2682,57 @@ def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -
     return msgs
 
 
-def validate_guard_global_script_integrity(script_marker: str, reference_content: str, cwd: str = None) -> list:
-    """Contraparte de escopo GLOBAL de validate_guard_script_integrity: para cada um dos 6
-    _GLOBAL_GUARD_CONFIG_FILES que referenciar script_marker, verifica que o conteúdo do script
-    referenciado bate byte-a-byte com reference_content. Mesma condição de disparo e contrato
-    fail-open de validate_guard_global_hook_resolvable (ver seu doc comment) -- esta função não
-    revalida existência/executabilidade, só conteúdo, espelhando a divisão de escopo de
-    *_hook_resolvable/*_script_integrity.
+def validate_guard_global_script_integrity(script_file_name: str, reference_content: str, cwd: str = None) -> list:
+    """Contraparte de escopo GLOBAL de validate_guard_script_integrity: verifica que o conteúdo de
+    ~/.trackfw/scripts/<script_file_name> (o local fixo em que os geradores globais escrevem) bate
+    byte-a-byte com reference_content.
 
     Port de validateGuardGlobalScriptIntegrity (internal/validator/validator_git_branch_guard.go).
+
+    ROADMAP-2026-08-17 (guard global cabeado com no-op / integridade independente de fiação),
+    ML-3A: dispara pela EXISTÊNCIA do artefato, não por nenhuma entrada em
+    _GLOBAL_GUARD_CONFIG_FILES referenciar script_marker -- a condição antiga fazia um script que o
+    trackfw escreveu (via `trackfw update harness`) mas que nenhum config ainda apontava poder
+    apodrecer indefinidamente com `validate` verde. "Se o trackfw escreveu o script, o trackfw
+    verifica o script" -- existência é a única precondição; fiação é irrelevante para saber se o
+    artefato em si divergiu.
+
+    Fail-open na ausência: um script que o trackfw nunca escreveu (usuário nunca rodou `update
+    harness`) não é erro.
+
+    Avaliação única por script (não uma vez por config referenciando-o): garante no máximo 1
+    mensagem, independente de quantos (ou nenhum) configs referenciam o mesmo caminho em disco --
+    é o que evita a dupla emissão agora que o git-branch-guard tem fiação global (Wave 2) E
+    artefato global simultaneamente.
+
+    script_file_name é o mesmo valor de _CREDENTIAL_GUARD_SCRIPT_MARKER/_GIT_BRANCH_GUARD_SCRIPT_MARKER
+    nos dois call sites abaixo -- ambos já são o nome literal do arquivo do script, mesma
+    equivalência que o port Go/Node também reaproveita.
     """
     home = os.path.expanduser("~")
     if not home or home == "~":
         return []
 
-    msgs = []
-    for rel_path, cli in _GLOBAL_GUARD_CONFIG_FILES:
-        full_path = os.path.join(home, rel_path)
-        try:
-            with open(full_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except OSError:
-            continue
+    script_path = os.path.join(home, ".trackfw", "scripts", script_file_name)
+    try:
+        with open(script_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except OSError:
+        # Não instalado não é violação -- mesmo contrato de todo outro check
+        # *_script_integrity (projeto e global) neste arquivo.
+        return []
 
-        try:
-            parsed = json.loads(content)
-        except (json.JSONDecodeError, ValueError):
-            continue
+    if content == reference_content:
+        return []
 
-        commands = []
-        _collect_commands_with_marker(parsed, script_marker, commands)
-
-        seen = set()
-        for raw in commands:
-            if raw in seen:
-                continue
-            seen.add(raw)
-
-            if not os.path.isabs(raw):
-                continue
-
-            try:
-                with open(raw, "r", encoding="utf-8") as f:
-                    script_content = f.read()
-            except OSError:
-                # Existência/legibilidade é responsabilidade de validate_guard_global_hook_resolvable
-                # -- não denunciar a mesma condição subjacente sob dois nomes de regra.
-                continue
-
-            if script_content == reference_content:
-                continue
-
-            msgs.append({
-                "type": "warning",
-                "message": (
-                    f'{raw} (global scope, referenced from ~/{rel_path}, {cli}) content diverges '
-                    f'from the template this version of trackfw generates — if you did not edit '
-                    f'this file by hand, run `trackfw update harness` to regenerate it'
-                ),
-            })
-
-    return msgs
+    return [{
+        "type": "warning",
+        "message": (
+            f'{script_path} (global scope) content diverges from the template this version of '
+            f'trackfw generates — if you did not edit this file by hand, run `trackfw update '
+            f'harness` to regenerate it'
+        ),
+    }]
 
 
 # validate_credential_guard_global_hook_resolvable / validate_credential_guard_global_script_integrity /

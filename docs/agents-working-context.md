@@ -19104,3 +19104,99 @@ make quality (completo)                                    → exit 0
 
 Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
 commitar. Wave 3 (ML-3A, integridade independente de fiação) segue pendente.
+
+---
+
+## Sessão 2026-08-18 — Apolo (ML-3A — integridade de script global independente de fiação) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`
+**REQ:** `docs/req/REQ-2026-08-17-guard-global-e-instalado-sem-fiacao-e-sua-integridade-nunca-e-verificada.md`
+
+**Ação:** `validateGuardGlobalScriptIntegrity` (e espelhos Node/Python) deixou de percorrer os 6
+arquivos de config global procurando referências a `scriptMarker` — passou a checar diretamente
+`~/.trackfw/scripts/<script>.sh` (caminho fixo escrito por `GenerateGlobal{CredentialGuard,GitBranchGuard}Script`),
+avaliado **uma única vez por script**, independentemente de quantos (ou nenhum) configs o
+referenciam. "Se o trackfw escreveu o script, o trackfw verifica o script."
+
+**Arquivos:**
+- `internal/validator/validator_git_branch_guard.go` — `validateGuardGlobalScriptIntegrity`
+  reescrita (assinatura mudou de `(ruleName, scriptMarker, referenceContent)` para
+  `(scriptFileName, referenceContent)`); os wrappers `validateCredentialGuardGlobalScriptIntegrity`/
+  `validateGitBranchGuardGlobalScriptIntegrity` continuam com a mesma assinatura pública (nenhuma
+  mudança em `validator.go`, que os invoca).
+- `npm/src/validator/index.js` — mesma reescrita de `validateGuardGlobalScriptIntegrity`.
+- `pypi/trackfw/validator.py` — mesma reescrita de `validate_guard_global_script_integrity`.
+- `internal/validator/validator_git_branch_guard_test.go`,
+  `npm/tests/git_branch_guard_hook_integrity.test.js`,
+  `pypi/tests/test_git_branch_guard_validator.py` — 3 testes novos por stack: dispara sem nenhuma
+  fiação (discriminante central), ausência do artefato é silêncio (credential e git-branch-guard),
+  não duplica com o mesmo script referenciado por 2 configs (Claude+Codex).
+- `internal/validator/main_test.go` (novo) — `TestMain` isolando `$HOME` para o binário de teste
+  inteiro do pacote `validator` (Go).
+- `pypi/tests/conftest.py` (novo) — fixture `session`+`autouse` isolando `$HOME` para a suíte
+  Python inteira.
+- `scripts/check-artifact-parity.sh`, `scripts/check-barrier.sh` — `export HOME="$WORK/home"`
+  isolado no início do script.
+- `scripts/check-gates-falsify.sh` — `export HOME="$WORK/home"` isolado globalmente (com
+  `GOPATH`/`GOCACHE`/`GOMODCACHE` fixados nos valores reais ANTES do isolamento, para não forçar
+  `go build` a rebaixar o cache de módulos a cada run); Cenário 68 novo (8 braços): baseline
+  íntegro sem fiação, ausência do artefato, detecção sem NENHUMA fiação (discriminante central),
+  não-vacuidade via `rules:...off`, não-duplicação para git-branch-guard (2 configs) e para
+  credential-guard (2 configs, não-regressão).
+
+**Achado colateral não-óbvio (nota de vault recomendada, não criada por restrição de escopo desta
+sessão — ver riscos abaixo):** ao trocar o gatilho de "referenciado por config" para "existe em
+disco", **toda** rotina que chama `Validate()`/`ValidateTagged()` sem isolar `$HOME` passou a
+enxergar o `$HOME` REAL de quem roda os testes/gates. Na máquina de KG isso quebrou
+`TestValidate_Clean` (Go), `test_json_sem_violations_summary_counts`/`test_sem_violations_projeto_vazio`
+(Python) e 2 scripts de gate (`check-artifact-parity.sh`, `check-barrier.sh`) — porque o
+`~/.trackfw/scripts/trackfw-git-branch-guard.sh` real de KG está genuinamente desatualizado (é
+exatamente o bug que motivou a REQ). Sem isolar `$HOME` nos runners de teste dos 3 stacks e nos
+gates de shell, a suíte inteira ficaria não-reprodutível entre máquinas. Resolvido isolando `$HOME`
+uma vez por runner/gate (não teste a teste), preservando os testes que já controlavam `$HOME`
+pontualmente (eles salvam/restauram em torno do valor sintético agora, não do real — sem conflito).
+
+**Evidência (colada, bruta):**
+```
+go build ./...                                            → limpo
+go test ./...                                              → ok, todos os pacotes
+cd npm && npm test                                          → 651 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q              → 1330 passed, 28 subtests passed
+make quality (completo)                                    → exit 0
+  scripts/check-gates-falsify.sh                             → 129 cenários, 0 FAIL
+    OK [falsify/git-branch-guard-global-script-integrity/baseline]
+    OK [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]
+    OK [falsify/git-branch-guard-global-script-integrity/detected-without-wiring]
+    PROOF [falsify/git-branch-guard-global-script-integrity/non-vacuity]
+    OK [falsify/git-branch-guard-global-script-integrity/no-double-report]
+    OK [falsify/credential-guard-global-script-integrity/no-double-report]
+./bin/trackfw validate (binário local recompilado, ./bin/trackfw não o do PATH) → exit 0
+  → 18 warnings: os 17 pré-existentes + 1 NOVO —
+    "/Users/kgsaran/.trackfw/scripts/trackfw-git-branch-guard.sh (global scope) content diverges
+    from the template this version of trackfw generates" — a regra agora acusa em produção, na
+    própria máquina de KG, o exato defeito que motivou a REQ (script real 3 versões atrasado).
+    Confirma AC3 (repro fiel) empiricamente, não só por teste sintético.
+```
+
+**Critérios de aceite do ML-3A:** todos fechados — script divergente é acusado mesmo sem config
+referenciando (discriminante central, provado); ausência não é acusada; credential-guard continua
+verificado sem duplicar (contagem exata de ocorrências na saída real, não só JSON); `$HOME` sempre
+do fixture, nunca o real (Cenário 46 preservado); cenário de falsificação com baseline+detecção e
+prova de não-vacuidade; paridade nos 3 CLIs com gate; `make quality` verde.
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
+commitar. Wave 4 (ML-4A, `hades-tf`) segue pendente — fora do escopo desta sessão.
+
+**Addendum (mesma sessão, pós-revisão):**
+- `scripts/check-validate-parity.sh` — `$HOME` isolado (com `GOPATH`/`GOMODCACHE` fixados antes,
+  mesma armadilha do `check-gates-falsify.sh`) + bloco novo comparando a mensagem do warning
+  `git_branch_guard_script_integrity` (escopo global) byte-a-byte entre Go/Node/Python — o gate
+  pré-existente só comparava `(rule, file)`, não o texto da mensagem, então uma divergência de
+  wording entre os 3 stacks (Python é montado por concatenação de f-strings) passaria despercebida.
+  Path do fixture normalizado contra o mesmo artefato de `$TMPDIR` terminando em `/` no macOS já
+  documentado no Cenário 67/ML-2C.
+- Roadmap: ML-3A marcado `✅ Concluído — pendente de auditoria do arquiteto` (padrão dos ML-2A/2B/2C
+  anteriores nesta mesma frente), critérios de aceite marcados, evidência colada, e 3 débitos
+  residuais explícitos reportados ao arquiteto (par `*_hook_resolvable` continua condicionado à
+  fiação; `globalGuardConfigFiles` não lista o arquivo dedicado do Kiro para git-branch-guard;
+  comentário desatualizado em `TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio` e espelhos).

@@ -287,3 +287,47 @@ test('CREDENTIAL_GUARD_GLOBAL_SCRIPT_REFERENCE é byte-idêntico ao que generate
   const emitted = fs.readFileSync(path.join(home, '.trackfw', 'scripts', 'trackfw-credential-guard.sh'), 'utf8')
   assert.equal(emitted, CREDENTIAL_GUARD_GLOBAL_SCRIPT_REFERENCE)
 })
+
+// ---- escopo global: integridade dispara por EXISTÊNCIA do artefato, não por fiação
+// (ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-
+// de-fiacao, ML-3A). Mirrors internal/validator/validator_git_branch_guard_test.go's
+// TestGuardGlobalScriptIntegrity_* (Go). ----
+
+test('escopo global git-branch-guard: dispara sem NENHUMA fiação — discriminante central do ML', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const globalScriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    fs.mkdirSync(path.dirname(globalScriptPath), { recursive: true })
+    fs.writeFileSync(globalScriptPath, '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
+    // Nenhum arquivo de config é escrito neste $HOME — nenhuma fiação existe.
+
+    const msgs = validateGitBranchGuardGlobalScriptIntegrity()
+    assert.equal(msgs.some(m => m.includes('diverges from the template')), true)
+    assert.equal(msgs.some(m => m.includes(globalScriptPath)), true)
+  })
+})
+
+test('escopo global: script nunca instalado (nem arquivo, nem fiação) → silêncio, credential e git-branch-guard', () => {
+  withEnv({ HOME: tmpDir() }, () => {
+    const gmsgs = validateGitBranchGuardGlobalScriptIntegrity()
+    assert.deepEqual(gmsgs, [])
+    const cmsgs = validateCredentialGuardGlobalScriptIntegrity()
+    assert.deepEqual(cmsgs, [])
+  })
+})
+
+test('escopo global: script referenciado por 2 configs (Claude + Codex) não duplica a mensagem', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const globalScriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    fs.mkdirSync(path.dirname(globalScriptPath), { recursive: true })
+    fs.writeFileSync(globalScriptPath, '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), globalClaudeSettingsWithCommand(globalScriptPath), 'utf8')
+    fs.mkdirSync(path.join(home, '.codex'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.codex', 'hooks.json'), globalClaudeSettingsWithCommand(globalScriptPath), 'utf8')
+
+    const msgs = validateGitBranchGuardGlobalScriptIntegrity()
+    assert.equal(msgs.length, 1, `esperado exatamente 1 mensagem, obteve ${msgs.length}: ${JSON.stringify(msgs)}`)
+  })
+})

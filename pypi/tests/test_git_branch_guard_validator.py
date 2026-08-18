@@ -312,5 +312,72 @@ class TestGuardGlobalHookResolvable(unittest.TestCase):
         self.assertEqual(msgs, [], f"esperado silêncio (sem wiring global hoje), obteve: {msgs}")
 
 
+# ---- git_branch_guard_script_integrity / credential_guard_script_integrity (escopo GLOBAL,
+# disparo por EXISTÊNCIA do artefato — ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
+# projeto-e-integridade-independente-de-fiacao, ML-3A). Mirrors
+# TestGuardGlobalScriptIntegrity_* em internal/validator/validator_git_branch_guard_test.go (Go).
+
+class TestGuardGlobalScriptIntegrityByExistence(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_dispara_sem_nenhuma_fiacao(self):
+        # O discriminante central deste ML: o script global existe e diverge do template, mas
+        # ZERO arquivo de config referencia o marker. Antes deste ML o laço antigo nunca entrava.
+        home = _global_guard_home(self)
+
+        global_script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+        _write(global_script_path, "#!/usr/bin/env bash\nexit 0\n")
+        os.chmod(global_script_path, 0o755)
+        # Nenhum arquivo de config é escrito neste $HOME.
+
+        msgs = v.validate_git_branch_guard_global_script_integrity(self.tmp)
+        self.assertTrue(
+            any(
+                "diverges from the template" in m["message"] and global_script_path in m["message"]
+                for m in msgs
+            ),
+            f"esperado violation de integridade global mesmo sem fiação, obteve: {msgs}",
+        )
+
+    def test_ausencia_do_artefato_silencio(self):
+        _global_guard_home(self)
+
+        msgs = v.validate_git_branch_guard_global_script_integrity(self.tmp)
+        self.assertEqual(msgs, [], f"esperado silêncio com script global ausente, obteve: {msgs}")
+
+        cmsgs = v.validate_credential_guard_global_script_integrity(self.tmp)
+        self.assertEqual(
+            cmsgs, [], f"esperado silêncio (credential-guard) com script global ausente, obteve: {cmsgs}"
+        )
+
+    def test_nao_duplica_com_dois_configs_referenciando_o_mesmo_script(self):
+        home = _global_guard_home(self)
+
+        global_script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+        _write(global_script_path, "#!/usr/bin/env bash\nexit 0\n")
+        os.chmod(global_script_path, 0o755)
+        _write(
+            os.path.join(home, ".claude", "settings.json"),
+            _global_claude_settings_with_command(global_script_path),
+        )
+        _write(
+            os.path.join(home, ".codex", "hooks.json"),
+            _global_claude_settings_with_command(global_script_path),
+        )
+
+        msgs = v.validate_git_branch_guard_global_script_integrity(self.tmp)
+        self.assertEqual(
+            len(msgs), 1,
+            f"esperado exatamente 1 mensagem (script referenciado por 2 configs), obteve {len(msgs)}: {msgs}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

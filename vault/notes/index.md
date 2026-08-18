@@ -72,3 +72,4 @@
 - [integrations-manifest-write-precedes-persist-janela-de-registro-parcial-2026-08-16](integrations-manifest-write-precedes-persist-janela-de-registro-parcial-2026-08-16.md)
 - [git-branch-guard-branch-create-heuristic-e-env-var-assignment-stripping-2026-08-17](git-branch-guard-branch-create-heuristic-e-env-var-assignment-stripping-2026-08-17.md)
 - [git-branch-guard-noop-outside-project-fixtures-and-falsify-cwd-2026-08-17](git-branch-guard-noop-outside-project-fixtures-and-falsify-cwd-2026-08-17.md)
+- [validate-global-guard-integrity-by-existence-makes-unisolated-home-systemic-2026-08-18](validate-global-guard-integrity-by-existence-makes-unisolated-home-systemic-2026-08-18.md)

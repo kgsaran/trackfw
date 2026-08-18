@@ -152,69 +152,55 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 }
 
 // validateGuardGlobalScriptIntegrity is the GLOBAL-scope counterpart of
-// validateCredentialGuardScriptIntegrity/validateGitBranchGuardScriptIntegrity: for each of the 6
-// globalGuardConfigFiles that references scriptMarker, verifies the referenced script's content
-// matches referenceContent byte-for-byte. Same trigger condition and fail-open contract as
-// validateGuardGlobalHookResolvable above (see its doc comment) — this function does not
-// re-validate existence/executability, only content, matching the project-scope split between
-// *_hook_resolvable and *_script_integrity.
-func validateGuardGlobalScriptIntegrity(ruleName, scriptMarker, referenceContent string) ([]string, error) {
+// validateCredentialGuardScriptIntegrity/validateGitBranchGuardScriptIntegrity: verifies the
+// content of ~/.trackfw/scripts/<scriptFileName> (the fixed location GenerateGlobal*Script writes
+// to — see globalCredentialGuardScriptPath/globalGitBranchGuardScriptPath in
+// internal/generators/agentfiles.go, both `filepath.Join(home, ".trackfw", "scripts", name)")
+// against referenceContent byte-for-byte.
+//
+// ROADMAP-2026-08-17 (guard global cabeado com no-op / integridade independente de fiação), ML-3A:
+// deliberately triggers on ARTIFACT EXISTENCE, not on any config file referencing scriptMarker.
+// Before this ML the trigger was "one of the 6 globalGuardConfigFiles references scriptMarker" —
+// which meant a script trackfw itself wrote (via `trackfw update harness`,
+// GenerateGlobal{CredentialGuard,GitBranchGuard}Script) but that no config yet pointed at could
+// rot indefinitely with `validate` green. Measured on KG's machine: the git-branch-guard script sat
+// 3 releases behind (123 lines vs. 369) with zero warnings, because nothing wired it until Wave 2
+// of this same roadmap. "If trackfw wrote the script, trackfw verifies the script" — existence is
+// the only precondition; wiring is irrelevant to whether the artifact itself has drifted.
+//
+// Fail-open on absence: a script trackfw never wrote (user never ran `update harness`) is not an
+// error — same silent-on-absence contract every other guard integrity check in this file has.
+//
+// Single evaluation per script (not per referencing config): this is what prevents the double
+// report now that git-branch-guard has BOTH global wiring (Wave 2) and a global artifact — under
+// the old per-config loop, a script referenced by N configs would have produced up to N messages;
+// checking the one fixed on-disk path exactly once caps it at 1 regardless of how many (or how
+// few — including zero) configs reference it.
+func validateGuardGlobalScriptIntegrity(scriptFileName, referenceContent string) ([]string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return nil, nil
 	}
 
-	var msgs []string
-	for _, gf := range globalGuardConfigFiles {
-		fullPath := filepath.Join(home, gf.path)
-		content, readErr := os.ReadFile(fullPath)
-		if readErr != nil {
-			if os.IsNotExist(readErr) {
-				continue
-			}
-			return nil, fmt.Errorf("%s: lendo %s: %w", ruleName, filepath.Join("~", gf.path), readErr)
-		}
-
-		var parsed interface{}
-		if jsonErr := json.Unmarshal(content, &parsed); jsonErr != nil {
-			continue
-		}
-
-		var commands []string
-		collectCommandsWithMarker(parsed, scriptMarker, &commands)
-
-		seen := make(map[string]bool, len(commands))
-		for _, raw := range commands {
-			if seen[raw] {
-				continue
-			}
-			seen[raw] = true
-
-			if !filepath.IsAbs(raw) {
-				continue
-			}
-
-			scriptContent, readScriptErr := os.ReadFile(raw)
-			if readScriptErr != nil {
-				// Existence/readability is validateGuardGlobalHookResolvable's job — do not
-				// double-report the same underlying condition under two rule names.
-				continue
-			}
-
-			if string(scriptContent) == referenceContent {
-				continue
-			}
-
-			msgs = append(msgs, fmt.Sprintf(
-				"%s (global scope, referenced from ~/%s, %s) content diverges from the template "+
-					"this version of trackfw generates — if you did not edit this file by hand, "+
-					"run `trackfw update harness` to regenerate it",
-				raw, gf.path, gf.cli,
-			))
-		}
+	path := filepath.Join(home, ".trackfw", "scripts", scriptFileName)
+	content, readErr := os.ReadFile(path)
+	if readErr != nil {
+		// Not installed is not a violation — same contract as every other *_script_integrity check
+		// (project-scope and global) in this package: existence is validateGuardGlobalHookResolvable's
+		// job when wiring exists at all, but here there may be no wiring, so absence is simply the
+		// legitimate "trackfw update harness was never run" state.
+		return nil, nil
 	}
 
-	return msgs, nil
+	if string(content) == referenceContent {
+		return nil, nil
+	}
+
+	return []string{fmt.Sprintf(
+		"%s (global scope) content diverges from the template this version of trackfw generates — "+
+			"if you did not edit this file by hand, run `trackfw update harness` to regenerate it",
+		path,
+	)}, nil
 }
 
 // validateCredentialGuardGlobalHookResolvable / validateCredentialGuardGlobalScriptIntegrity /
@@ -230,9 +216,7 @@ func validateCredentialGuardGlobalHookResolvable() ([]string, error) {
 }
 
 func validateCredentialGuardGlobalScriptIntegrity() ([]string, error) {
-	return validateGuardGlobalScriptIntegrity(
-		"credential_guard_script_integrity", credentialGuardScriptMarker, credentialGuardGlobalScriptReference,
-	)
+	return validateGuardGlobalScriptIntegrity(credentialGuardScriptMarker, credentialGuardGlobalScriptReference)
 }
 
 func validateGitBranchGuardGlobalHookResolvable() ([]string, error) {
@@ -240,7 +224,5 @@ func validateGitBranchGuardGlobalHookResolvable() ([]string, error) {
 }
 
 func validateGitBranchGuardGlobalScriptIntegrity() ([]string, error) {
-	return validateGuardGlobalScriptIntegrity(
-		"git_branch_guard_script_integrity", gitBranchGuardScriptMarker, gitBranchGuardScriptReference,
-	)
+	return validateGuardGlobalScriptIntegrity(gitBranchGuardScriptMarker, gitBranchGuardScriptReference)
 }

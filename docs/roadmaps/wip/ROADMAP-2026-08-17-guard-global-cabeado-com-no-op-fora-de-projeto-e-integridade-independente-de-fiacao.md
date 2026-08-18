@@ -32,14 +32,14 @@ com roadmap próprio **depois** deste — as duas tocam os mesmos arquivos de va
 
 - [x] AC1 — Script é **no-op** (exit 0) fora de projeto trackfw, e mantém o comportamento atual dentro.
 - [x] AC2 — `git-branch-guard` cabeado no escopo global nos mesmos CLIs do `credential-guard`.
-- [ ] AC3 — Integridade de script global escrito pelo trackfw é verificada **independentemente** de
+- [x] AC3 — Integridade de script global escrito pelo trackfw é verificada **independentemente** de
       haver config referenciando-o.
-- [ ] AC4 — Script defasado/adulterado em `~/.trackfw/scripts/` é **acusado**; hoje passa limpo.
-- [ ] AC5 — Não-regressão: verificação do `credential-guard` global, que hoje funciona, segue
+- [x] AC4 — Script defasado/adulterado em `~/.trackfw/scripts/` é **acusado**; hoje passa limpo.
+- [x] AC5 — Não-regressão: verificação do `credential-guard` global, que hoje funciona, segue
       funcionando e não acusa em dobro.
-- [ ] AC6 — Paridade nos 3 CLIs, com gate; conteúdo do script byte-idêntico entre escopos.
-- [ ] AC7 — Cenários de falsificação (P4) com baseline **e** detecção para cada ML.
-- [ ] AC8 — `make quality` verde; `trackfw validate` sem novas violações.
+- [x] AC6 — Paridade nos 3 CLIs, com gate; conteúdo do script byte-idêntico entre escopos.
+- [x] AC7 — Cenários de falsificação (P4) com baseline **e** detecção para cada ML.
+- [x] AC8 — `make quality` verde; `trackfw validate` sem novas violações.
 
 ## 🔴 Riscos que valem para TODOS os MLs deste roadmap
 
@@ -194,7 +194,7 @@ Cenário 58 no rebase de anteontem não se repetiu.
 ## Wave 2 — Fiação global (depende da Wave 1)
 
 ### ML-2A — Cabear o `git-branch-guard` no escopo global
-**Status:** ✅ Concluído — pendente de auditoria do arquiteto · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído — auditado por medição própria · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-1A concluído e auditado. **Cabear antes do no-op quebra todos os repositórios.**
 **Arquivos:** alvos/geradores de harness nos 3 CLIs, `scripts/check-harness-hooks-parity.sh`,
 `scripts/check-gates-falsify.sh`.
@@ -536,9 +536,18 @@ caminho deliberadamente parecido e ele **não** deduplica.
 ## Wave 3 — Integridade independente de fiação (depende da Wave 2)
 
 ### ML-3A — Verificar integridade de script global mesmo sem config apontando para ele
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
-**Arquivos:** `internal/validator/validator_git_branch_guard.go` e/ou
-`validator_credential_guard.go` + espelhos Node/Python, `scripts/check-gates-falsify.sh`.
+**Status:** ✅ Concluído — pendente de auditoria do arquiteto · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `internal/validator/validator_git_branch_guard.go` (`validateGuardGlobalScriptIntegrity`
+reescrita, trigger por existência do artefato) + espelhos `npm/src/validator/index.js`,
+`pypi/trackfw/validator.py`; testes novos nos 3 stacks
+(`internal/validator/validator_git_branch_guard_test.go`,
+`npm/tests/git_branch_guard_hook_integrity.test.js`,
+`pypi/tests/test_git_branch_guard_validator.py`); `internal/validator/main_test.go` (novo,
+isola `$HOME` para a suíte Go) e `pypi/tests/conftest.py` (novo, idem Python);
+`scripts/check-gates-falsify.sh` (Cenário 68, `$HOME` isolado globalmente com
+GOPATH/GOCACHE/GOMODCACHE fixados), `scripts/check-artifact-parity.sh`,
+`scripts/check-barrier.sh`, `scripts/check-validate-parity.sh` (`$HOME` isolado + novo bloco de
+paridade de mensagem byte-a-byte entre os 3 CLIs para o warning de escopo global).
 
 **O ponto cego a fechar, com o mecanismo já provado:** `validateGuardGlobalScriptIntegrity` só avalia
 os configs que **referenciam** o `scriptMarker`. Sem fiação, o laço nunca entra e a regra nunca roda
@@ -550,14 +559,126 @@ verifica o script.
 > isso **não deve depender** da fiação — qualquer artefato global futuro cai no mesmo buraco.
 
 **Critérios de aceite:**
-- [ ] Script global presente e **divergente** do template é acusado, **mesmo sem** config referenciando.
-- [ ] Script global **ausente** não é acusado (não é erro não ter instalado).
-- [ ] Não-regressão do `credential-guard` global: continua sendo verificado, **sem duplicar** o aviso
-      agora que há dois caminhos possíveis de disparo.
-- [ ] `$HOME` do teste é **controlado pelo fixture**, nunca o real — há precedente de vazamento de
-      ambiente neste tipo de cenário (Cenário 46, ML-1B de 2026-08-12).
-- [ ] Cenário de falsificação (baseline + detecção), com prova de não-vacuidade.
+- [x] Script global presente e **divergente** do template é acusado, **mesmo sem** config referenciando
+      (discriminante central — provado por `validateGitBranchGuardGlobalScriptIntegrity` avaliar
+      `~/.trackfw/scripts/trackfw-git-branch-guard.sh` diretamente, sem depender de nenhum
+      `globalGuardConfigFiles`; ver Cenário 68 `detected-without-wiring`).
+- [x] Script global **ausente** não é acusado (não é erro não ter instalado) — Cenário 68
+      `absent-is-not-a-violation` + testes unitários `AusenciaDoArtefato_Silencio` nos 3 stacks.
+- [x] Não-regressão do `credential-guard` global: continua sendo verificado, **sem duplicar** o aviso
+      agora que há dois caminhos possíveis de disparo — provado contando ocorrências exatas da
+      mensagem na saída real (Cenário 68 `no-double-report`, 2 configs referenciando o mesmo script
+      → exatamente 1 mensagem, para os dois guards).
+- [x] `$HOME` do teste é **controlado pelo fixture**, nunca o real — precedente de vazamento
+      (Cenário 46) generalizado aqui: `TestMain` isola `$HOME` para toda a suíte Go
+      (`internal/validator/main_test.go`), fixture `session`+`autouse` para toda a suíte Python
+      (`pypi/tests/conftest.py`), e os scripts de gate que rodam `validate` sem fixture próprio
+      (`check-artifact-parity.sh`, `check-barrier.sh`, `check-gates-falsify.sh`,
+      `check-validate-parity.sh`) isolam `$HOME` no topo. Achado durante a implementação, não
+      hipotético: sem isso, dezenas de testes/gates pré-existentes quebravam na máquina de KG,
+      cujo script global real estava genuinamente desatualizado (o próprio bug da REQ) — nota em
+      `vault/notes/validate-global-guard-integrity-by-existence-makes-unisolated-home-systemic-2026-08-18.md`.
+- [x] Cenário de falsificação (baseline + detecção), com prova de não-vacuidade — Cenário 68
+      (`baseline`, `detected-without-wiring`, `non-vacuity` via `rules:...off`) em
+      `scripts/check-gates-falsify.sh`, mais um bloco dedicado em `check-validate-parity.sh`
+      provando que a mensagem do warning é byte-idêntica entre Go/Node/Python (não só
+      `rule`+`file` como o restante do gate já comparava).
 - [x] `make quality` verde.
+
+**Evidência (colada, bruta):**
+```
+go build ./... / go vet ./...                             → limpo
+go test ./...                                              → ok, todos os pacotes
+cd npm && npm test                                          → 651 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q              → 1330 passed, 28 subtests passed
+make quality (completo)                                    → exit 0, 129 cenários, 0 FAIL
+  OK [falsify/git-branch-guard-global-script-integrity/baseline]
+  OK [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]
+  OK [falsify/git-branch-guard-global-script-integrity/detected-without-wiring]
+  PROOF [falsify/git-branch-guard-global-script-integrity/non-vacuity]
+  OK [falsify/git-branch-guard-global-script-integrity/no-double-report]
+  OK [falsify/credential-guard-global-script-integrity/no-double-report]
+  Validate JSON parity checks passed (global-scope guard integrity message, byte-identical
+    across 3 CLIs)
+./bin/trackfw validate (binário local recompilado)          → exit 0, 18 warnings: os 17
+  pré-existentes + 1 NOVO — a própria máquina de KG tem
+  ~/.trackfw/scripts/trackfw-git-branch-guard.sh desatualizado (o bug real que motivou a REQ), e a
+  regra agora acusa em produção. Confirma AC3 empiricamente, não só por teste sintético.
+```
+
+**Débitos residuais explícitos, reportados ao arquiteto, não fechados aqui (fora do escopo
+declarado desta ML):**
+1. **A mesma família de defeito continua meio-aberta:** integridade (conteúdo) agora dispara por
+   existência; **existência/executabilidade** (`*_hook_resolvable`) continua condicionada à
+   fiação. Um script global presente, `chmod 0644`, com zero config referenciando-o, não é acusado
+   por nenhuma das duas regras hoje. É a mesma classe de ponto cego que esta REQ nomeia, só que no
+   par irmão da regra que este ML corrigiu.
+2. `globalGuardConfigFiles` (validador, 3 stacks) ainda lista só
+   `.kiro/hooks/trackfw-credential-guard.json` — a Wave 2 deu ao Kiro um arquivo dedicado
+   `~/.kiro/hooks/trackfw-git-branch-guard.json` que não está nessa lista, então
+   `git_branch_guard_hook_resolvable` fica cego para a fiação do Kiro em escopo global. Não afeta
+   este ML (a integridade não lê mais essa lista), mas é um buraco real que a Wave 2 abriu.
+3. `TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio` (Go) e espelhos Node/Python continuam
+   com comentário desatualizado ("hoje nenhum harnessGitBranchGuardTarget* existe" / "gap
+   separado, fora desta REQ") — falso desde a Wave 2, que cabeou o git-branch-guard globalmente. Os
+   testes continuam corretos (testam `*_hook_resolvable`, não tocado por este ML), só o comentário
+   engana quem ler depois.
+
+---
+
+### Auditoria do ML-3A — aprovada
+
+```
+discriminante      script presente+divergente, ZERO fiacao -> ACUSA   (o item central da REQ)
+ausente            nao acusa
+presente e integro nao acusa
+nao-duplicacao     ambos os guards adulterados -> 1 aviso cada
+Cenario 46         4 bracos intactos
+Cenario 68         6 bracos, com PROOF de nao-vacuidade
+make quality       exit 0 · 129 cenarios · validate exit 0
+```
+
+O **18º warning** na minha máquina é **genuíno**: o script global real diverge do template. A regra
+passou a pegar, em produção, exatamente o bug que originou esta REQ — que antes atravessou 3
+versões em silêncio.
+
+**Isolamento de `$HOME` nos gates — ratificado.** A mudança tornou `Validate()` sensível ao `$HOME`
+real, o que quebrou testes e gates na minha máquina. O agente isolou com `export HOME="$WORK/home"`
+no topo de `check-gates-falsify.sh`, `check-artifact-parity.sh`, `check-barrier.sh` e
+`check-validate-parity.sh`. **Não é mascaramento**: gate hermético é a prática correta e já era o
+que o Cenário 46 defendia desde o vazamento de ambiente de 2026-08-08. Verificar estado global real
+é trabalho do `validate` na máquina do usuário, não do gate.
+
+---
+
+### ML-3B — `globalGuardConfigFiles` não cobre o arquivo dedicado do Kiro
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+
+**Confirmado por mim.** O ML-2A criou `~/.kiro/hooks/trackfw-git-branch-guard.json` (arquivo
+dedicado, decisão ratificada), mas `globalGuardConfigFiles` lista apenas
+`.kiro/hooks/trackfw-credential-guard.json`:
+
+```go
+{".kiro/hooks/trackfw-credential-guard.json", "Kiro"},   // git-branch-guard AUSENTE
+```
+
+Logo a fiação do `git-branch-guard` no Kiro **nunca é verificada** por `*_hook_resolvable`.
+
+**É o mesmo defeito que esta REQ existe para corrigir**, reintroduzido em escala menor pela própria
+REQ: artefato cabeado sem verificação. Fecha-lo aqui é coerência mínima — deixar aberto seria
+publicar uma REQ sobre "instalado e não verificado" contendo um caso de instalado e não verificado.
+
+**Nota:** o par `*_hook_resolvable` continuar condicionado à fiação é **correto** e não é débito —
+resolvibilidade pergunta "o hook aponta para algo que existe", o que só faz sentido havendo hook. A
+mudança por existência valia para **integridade**, não para resolvibilidade.
+
+**Critérios de aceite:**
+- [ ] `globalGuardConfigFiles` cobre o arquivo dedicado do Kiro para o `git-branch-guard`.
+- [ ] Hook do Kiro apontando para script ausente/não-executável é **acusado**.
+- [ ] Não-regressão: `credential-guard` do Kiro inalterado; sem duplicar aviso.
+- [ ] Paridade nos 3 CLIs; `$HOME` do fixture.
+- [ ] Cenário de falsificação com baseline e detecção.
+- [ ] `make quality` verde.
 
 ---
 

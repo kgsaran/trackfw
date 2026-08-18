@@ -2235,61 +2235,45 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
 }
 
 // validateGuardGlobalScriptIntegrity is the GLOBAL-scope counterpart of
-// validateCredentialGuardScriptIntegrity/validateGitBranchGuardScriptIntegrity: for each of the 6
-// GLOBAL_GUARD_CONFIG_FILES that references scriptMarker, verifies the referenced script's content
-// matches referenceContent byte-for-byte. Port of Go's validateGuardGlobalScriptIntegrity
-// (internal/validator/validator_git_branch_guard.go) — same trigger condition and fail-open
-// contract as validateGuardGlobalHookResolvable above; does not re-validate existence/
-// executability, only content, matching the project-scope split between *_hook_resolvable and
-// *_script_integrity.
-function validateGuardGlobalScriptIntegrity(scriptMarker, referenceContent) {
+// validateCredentialGuardScriptIntegrity/validateGitBranchGuardScriptIntegrity: verifies the
+// content of ~/.trackfw/scripts/<scriptFileName> (the fixed location the global generators write
+// to) against referenceContent byte-for-byte. Port of Go's validateGuardGlobalScriptIntegrity
+// (internal/validator/validator_git_branch_guard.go).
+//
+// ROADMAP-2026-08-17 (guard global cabeado com no-op / integridade independente de fiação), ML-3A:
+// deliberately triggers on ARTIFACT EXISTENCE, not on any GLOBAL_GUARD_CONFIG_FILES entry
+// referencing scriptMarker — the old per-config trigger meant a script trackfw itself wrote (via
+// `trackfw update harness`) but that no config yet pointed at could rot indefinitely with
+// `validate` green. "If trackfw wrote the script, trackfw verifies the script" — existence is the
+// only precondition; wiring is irrelevant to whether the artifact itself has drifted.
+//
+// Fail-open on absence: a script trackfw never wrote (user never ran `update harness`) is not an
+// error.
+//
+// Single evaluation per script (not per referencing config): caps the message count at 1
+// regardless of how many (or how few — including zero) configs reference the same on-disk path —
+// this is what prevents double-reporting now that git-branch-guard has both global wiring (Wave 2)
+// and a global artifact.
+//
+// scriptMarker doubles as the script's own filename (trackfw-credential-guard.sh /
+// trackfw-git-branch-guard.sh) in both call sites below — same equivalence the Go port relies on.
+function validateGuardGlobalScriptIntegrity(scriptFileName, referenceContent) {
   const home = os.homedir()
   if (!home) return []
 
-  const msgs = []
-  for (const gf of GLOBAL_GUARD_CONFIG_FILES) {
-    const fullPath = path.join(home, gf.relPath)
-    let content
-    try {
-      content = fs.readFileSync(fullPath, 'utf8')
-    } catch (e) {
-      if (e.code === 'ENOENT') continue
-      continue
-    }
-
-    let parsed
-    try {
-      parsed = JSON.parse(content)
-    } catch (_) {
-      continue
-    }
-
-    const commands = []
-    collectCommandsWithMarker(parsed, scriptMarker, commands)
-
-    const seen = new Set()
-    for (const raw of commands) {
-      if (seen.has(raw)) continue
-      seen.add(raw)
-
-      if (!path.isAbsolute(raw)) continue
-
-      let scriptContent
-      try {
-        scriptContent = fs.readFileSync(raw, 'utf8')
-      } catch (_) {
-        // Existence/readability is validateGuardGlobalHookResolvable's job — do not double-report
-        // the same underlying condition under two rule names.
-        continue
-      }
-
-      if (scriptContent === referenceContent) continue
-
-      msgs.push(`${raw} (global scope, referenced from ~/${gf.relPath}, ${gf.cli}) content diverges from the template this version of trackfw generates — if you did not edit this file by hand, run \`trackfw update harness\` to regenerate it`)
-    }
+  const scriptPath = path.join(home, '.trackfw', 'scripts', scriptFileName)
+  let content
+  try {
+    content = fs.readFileSync(scriptPath, 'utf8')
+  } catch (_) {
+    // Not installed is not a violation — same contract as every other *_script_integrity check
+    // (project-scope and global) in this file.
+    return []
   }
 
-  return msgs
+  if (content === referenceContent) return []
+
+  return [`${scriptPath} (global scope) content diverges from the template this version of trackfw generates — if you did not edit this file by hand, run \`trackfw update harness\` to regenerate it`]
 }
 
 // validateCredentialGuardGlobalHookResolvable / validateCredentialGuardGlobalScriptIntegrity /
@@ -2315,6 +2299,10 @@ function validateGitBranchGuardGlobalHookResolvable() {
 function validateGitBranchGuardGlobalScriptIntegrity() {
   return validateGuardGlobalScriptIntegrity(GIT_BRANCH_GUARD_SCRIPT_MARKER, GIT_BRANCH_GUARD_SCRIPT_REFERENCE)
 }
+// NOTE: CREDENTIAL_GUARD_SCRIPT_MARKER === 'trackfw-credential-guard.sh' and
+// GIT_BRANCH_GUARD_SCRIPT_MARKER === 'trackfw-git-branch-guard.sh' — both markers are already the
+// literal script filenames, so they double as scriptFileName above with no extra constant needed
+// (same reuse the Go port relies on).
 
 // CREDENTIAL_GUARD_MODE_LOOKBEHIND_LINES mirrors the shell script's own resolution of
 // credential_guard.mode (`grep -A 5 '^credential_guard:'`): the mode key is found on the matched
